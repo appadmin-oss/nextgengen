@@ -2152,6 +2152,7 @@ function cmWrapSel(ta, mark, setBody) {
 function CmComposer({ channels, active, me, onPosted, enterToSend }) {
   const [body, setBody] = React.useState("");
   const [media, setMedia] = React.useState(null); // {type,url,poster,bytes,duration}
+  const [preview, setPreview] = React.useState(false);
   const [up, setUp] = React.useState(0);
   const [ch, setCh] = React.useState(active !== "all" ? active : "commons");
   const [busy, setBusy] = React.useState(false);
@@ -2322,6 +2323,20 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
           <button type="button" className="cm-fmt-btn" aria-label="Italic (Ctrl or Cmd + I)" title="Italic (Ctrl/⌘+I)" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "_", setBody)}><i>i</i></button>
           <button type="button" className="cm-fmt-btn" aria-label="Strikethrough" title="Strikethrough" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "~", setBody)}><s>S</s></button>
           <button type="button" className="cm-fmt-btn cm-fmt-code" aria-label="Code (Ctrl or Cmd + E)" title="Code (Ctrl/⌘+E)" onMouseDown={e => e.preventDefault()} onClick={() => cmWrapSel(taRef.current, "`", setBody)}>{"</>"}</button>
+          {/* A preview, because the formatting is only worth offering if you can
+              see what it did before a hundred people read it. */}
+          <button type="button" className={"cm-fmt-btn cm-fmt-prev" + (preview ? " is-on" : "")}
+            aria-pressed={preview} aria-label="Preview the formatting" title="Preview"
+            onMouseDown={e => e.preventDefault()} onClick={() => setPreview(v => !v)}>👁</button>
+        </div>
+      )}
+
+      {preview && (
+        <div className="cm-preview">
+          <div className="cm-preview-lab">Preview</div>
+          {body.trim()
+            ? <NggMarkdown text={body} className="cm-preview-body"/>
+            : <p className="cm-preview-empty">Nothing to preview yet.</p>}
         </div>
       )}
 
@@ -2469,7 +2484,7 @@ function CmBodyBlock({ post, onVote }) {
   return (
     <>
       {post.moderationNote && <div className="cm-modnote">{post.moderationNote}</div>}
-      {post.body && <div className={"cm-msg-text" + (post.kind === "poll" ? " cm-poll-q" : "")}>{cmBody(post.body)}</div>}
+      {post.body && <div className={"cm-msg-text" + (post.kind === "poll" ? " cm-poll-q" : "")}><NggMarkdown text={post.body}/></div>}
       {post.kind === "poll" && post.poll && (
         <div className="cm-poll">
           {post.poll.options.map((o, i) => {
@@ -2487,7 +2502,9 @@ function CmBodyBlock({ post, onVote }) {
         </div>
       )}
       {post.mediaType === "image" && post.mediaUrl && <div className="cm-msg-media"><img src={cmOpt(post.mediaUrl, 1000)} alt={post.altText || ""} loading="lazy"/></div>}
-      {post.mediaType === "video" && post.mediaUrl && <div className="cm-msg-media"><video src={cmOpt(post.mediaUrl, 1280)} poster={post.mediaPoster} controls preload="metadata"/></div>}
+      {post.mediaType === "video" && post.mediaUrl && <div className="cm-msg-media"><NggVideo src={cmOpt(post.mediaUrl, 1280)} poster={post.mediaPoster || cmPoster(post.mediaUrl)}/></div>}
+      {post.mediaType === "doc" && post.mediaUrl && /\.pdf(\?|$)/i.test(post.mediaUrl) &&
+        <div className="cm-msg-media"><NggPdf src={post.mediaUrl} name={post.altText || "Document"}/></div>}
       {post.mediaType === "doc" && post.mediaUrl && (
         <a className="cm-doc-card" href={post.mediaUrl} target="_blank" rel="noopener noreferrer">
           <span className="cm-doc-card-ic" aria-hidden="true">📄</span>

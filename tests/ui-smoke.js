@@ -3049,6 +3049,64 @@ function unzipDocumentXml(buf) {
        tell -5 from -2+3, and a leading apostrophe on a number is a cosmetic
        cost, while a formula is an executable one. */
     ok('a negative number is escaped as well, erring toward safety', csv.minusNum === '"\'-5"');
+    /* The feed is written by children and read by children, so the renderer
+       emits React nodes and never HTML. These assert on the rendered DOM, not
+       on a string, because "does it inject markup" is only answerable there. */
+    const md = await pc.evaluate(() => {
+      const out = {};
+      const render = (text) => {
+        const host = document.createElement('div');
+        document.body.appendChild(host);
+        ReactDOM.createRoot(host).render(React.createElement(window.NggMarkdown, { text }));
+        return host;
+      };
+      const hosts = {
+        head:   render('# Big\n## Medium\n### Small'),
+        list:   render('- one\n- two\n\n1. first\n2. second'),
+        quote:  render('> quoted line'),
+        code:   render('```js\nconst x = 1;\n```'),
+        link:   render('see [the site](https://example.org/x) here'),
+        inline: render('*bold* and _italic_ and `code` and ~gone~'),
+        xss:    render('<img src=x onerror=alert(1)> <script>alert(2)<\/script>'),
+        badurl: render('[click](javascript:alert(1))'),
+        rule:   render('a\n\n---\n\nb'),
+      };
+      return new Promise(r => setTimeout(() => {
+        out.headTags = Array.from(hosts.head.querySelectorAll('h1,h2,h3,h4,h5,h6')).map(e => e.tagName);
+        out.uls = hosts.list.querySelectorAll('ul li').length;
+        out.ols = hosts.list.querySelectorAll('ol li').length;
+        out.quote = !!hosts.quote.querySelector('blockquote');
+        out.code = (hosts.code.querySelector('pre code') || {}).textContent;
+        const a = hosts.link.querySelector('a');
+        out.linkHref = a && a.getAttribute('href');
+        out.linkRel = a && a.getAttribute('rel');
+        out.linkText = a && a.textContent;
+        out.inline = hosts.inline.innerHTML;
+        out.xssImgs = hosts.xss.querySelectorAll('img').length;
+        out.xssScripts = hosts.xss.querySelectorAll('script').length;
+        out.xssText = hosts.xss.textContent;
+        out.badAnchors = hosts.badurl.querySelectorAll('a').length;
+        out.hr = hosts.rule.querySelectorAll('hr').length;
+        r(out);
+      }, 60));
+    });
+    ok('markdown renders headings, and starts at h4 so a member cannot inject a page-level heading',
+      md.headTags.join(',') === 'H4,H5,H6');
+    ok('bulleted and numbered lists both render', md.uls === 2 && md.ols === 2);
+    ok('a blockquote renders', md.quote === true);
+    ok('a fenced code block keeps its contents verbatim', md.code === 'const x = 1;');
+    ok('a horizontal rule renders', md.hr === 1);
+    ok('a link renders with its label and opens safely',
+      md.linkHref === 'https://example.org/x' && md.linkText === 'the site'
+      && /noopener/.test(md.linkRel) && /noreferrer/.test(md.linkRel));
+    ok('inline emphasis, code and strike all render',
+      /<b>bold<\/b>/.test(md.inline) && /<em>italic<\/em>/.test(md.inline)
+      && /<code[^>]*>code<\/code>/.test(md.inline) && /<s>gone<\/s>/.test(md.inline));
+    /* The whole reason this emits nodes instead of HTML. */
+    ok('typed HTML is shown as text, never parsed as markup',
+      md.xssImgs === 0 && md.xssScripts === 0 && /onerror=alert\(1\)/.test(md.xssText));
+    ok('a javascript: URL is not turned into a link at all', md.badAnchors === 0);
+
 
 
     /* ── The optimiser not arriving must not refuse the photo ──────────────

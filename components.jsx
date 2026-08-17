@@ -2284,8 +2284,238 @@ function nggCsvCell(v) {
   return '"' + s.replace(/"/g, '""') + '"';
 }
 
+
+/* ============================================================================
+   In-page viewers — markdown, video, PDF.
+
+   All three are built here rather than pulled in as libraries. That is a
+   deliberate trade for this project: the app is a no-build bundle served from
+   shared hosting to phones on Nigerian mobile data, and a markdown parser plus
+   a PDF renderer plus a video framework is comfortably more JavaScript than the
+   entire rest of the site. These do the part that is actually used.
+
+   Nothing here uses dangerouslySetInnerHTML. The markdown renderer emits React
+   nodes, so a post cannot inject markup no matter what a member types — which
+   matters more than usual on a feed written by children and read by children.
+   ========================================================================== */
+
+/** Inline spans: `code`, *bold*, _italic_, ~strike~, [text](https://…). */
+function nggMdInline(line, kp) {
+  const out = [];
+  let last = 0, idx = 0, m;
+  // Links first so their label is not eaten by the emphasis rules.
+  const re = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|`([^`\n]+)`|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*|_([^_\n]+)_|~([^~\n]+)~/g;
+  while ((m = re.exec(line))) {
+    if (m.index > last) out.push(line.slice(last, m.index));
+    const k = kp + (idx++);
+    if (m[1] != null) {
+      /* rel="noopener noreferrer" is not decoration: without it the opened page
+         gets a handle on this one through window.opener. */
+      out.push(<a key={k} href={m[2]} target="_blank" rel="noopener noreferrer nofollow ugc">{m[1]}</a>);
+    }
+    else if (m[3] != null) out.push(<code key={k} className="cm-code">{m[3]}</code>);
+    else if (m[4] != null) out.push(<b key={k}>{m[4]}</b>);
+    else if (m[5] != null) out.push(<b key={k}>{m[5]}</b>);
+    else if (m[6] != null) out.push(<em key={k}>{m[6]}</em>);
+    else out.push(<s key={k}>{m[7]}</s>);
+    last = re.lastIndex;
+  }
+  if (last < line.length) out.push(line.slice(last));
+  return out;
+}
+
+/**
+ * Markdown → React nodes. Block level: headings, lists, quotes, fenced code,
+ * rules, paragraphs.
+ *
+ * Headings start at <h4>, not <h1>. These render inside a feed card that already
+ * sits under the page's own headings, and a member typing "# Hi" should not be
+ * able to insert a document-level heading into somebody else's page outline.
+ */
+function NggMarkdown({ text, className }) {
+  const src = String(text || "");
+  const lines = src.split("\n");
+  const blocks = [];
+  let i = 0, key = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code — taken verbatim, including any markdown inside it.
+    const fence = line.match(/^```\s*([a-z0-9+#-]*)\s*$/i);
+    if (fence) {
+      const body = [];
+      i++;
+      while (i < lines.length && !/^```\s*$/.test(lines[i])) body.push(lines[i++]);
+      i++; // closing fence (or end of input — an unclosed fence still renders)
+      blocks.push(<pre key={key++} className="md-pre"><code>{body.join("\n")}</code></pre>);
+      continue;
+    }
+    if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) { blocks.push(<hr key={key++} className="md-hr"/>); i++; continue; }
+
+    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    if (h) {
+      const Tag = ["h4", "h5", "h6"][h[1].length - 1];
+      blocks.push(<Tag key={key++} className={"md-h md-h" + h[1].length}>{nggMdInline(h[2], "h" + key + "-")}</Tag>);
+      i++; continue;
+    }
+
+    if (/^\s*>\s?/.test(line)) {
+      const body = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) body.push(lines[i++].replace(/^\s*>\s?/, ""));
+      blocks.push(<blockquote key={key++} className="md-quote">{body.map((b, j) => <p key={j}>{nggMdInline(b, "q" + key + "-" + j + "-")}</p>)}</blockquote>);
+      continue;
+    }
+
+    const ul = /^\s*[-*+]\s+/, ol = /^\s*\d+[.)]\s+/;
+    if (ul.test(line) || ol.test(line)) {
+      const ordered = ol.test(line);
+      const re = ordered ? ol : ul;
+      const items = [];
+      while (i < lines.length && re.test(lines[i])) items.push(lines[i++].replace(re, ""));
+      const List = ordered ? "ol" : "ul";
+      blocks.push(<List key={key++} className="md-list">{items.map((it, j) => <li key={j}>{nggMdInline(it, "li" + key + "-" + j + "-")}</li>)}</List>);
+      continue;
+    }
+
+    if (line.trim() === "") { i++; continue; }
+
+    // Paragraph: consecutive non-blank lines that start no other block.
+    const para = [];
+    while (i < lines.length && lines[i].trim() !== ""
+      && !/^```/.test(lines[i]) && !/^\s*>/.test(lines[i]) && !/^#{1,3}\s/.test(lines[i])
+      && !ul.test(lines[i]) && !ol.test(lines[i]) && !/^\s*(---|\*\*\*|___)\s*$/.test(lines[i])) {
+      para.push(lines[i++]);
+    }
+    blocks.push(
+      <p key={key++} className="md-p">
+        {para.map((l, j) => (
+          <React.Fragment key={j}>
+            {nggMdInline(l, "p" + key + "-" + j + "-")}
+            {j < para.length - 1 && <br/>}
+          </React.Fragment>
+        ))}
+      </p>
+    );
+  }
+  return <div className={"md " + (className || "")}>{blocks}</div>;
+}
+
+function nggFmtTime(s) {
+  if (!isFinite(s) || s < 0) s = 0;
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return m + ":" + (sec < 10 ? "0" : "") + sec;
+}
+
+/**
+ * Video player.
+ *
+ * The native control bar differs on every browser, hides on mobile Safari at
+ * the worst moments, and gives no playback-speed control — which is the one
+ * control that matters for a recorded lesson. This is a thin shell over the
+ * same <video> element: the element does the decoding, this does the buttons.
+ *
+ * Keyboard follows what people already know from YouTube: space/k play, arrows
+ * seek, m mute, f fullscreen.
+ */
+function NggVideo({ src, poster, caption }) {
+  const ref = React.useRef(null);
+  const wrapRef = React.useRef(null);
+  const [playing, setPlaying] = React.useState(false);
+  const [t, setT] = React.useState(0);
+  const [dur, setDur] = React.useState(0);
+  const [vol, setVol] = React.useState(1);
+  const [muted, setMuted] = React.useState(false);
+  const [rate, setRate] = React.useState(1);
+  const [rateOpen, setRateOpen] = React.useState(false);
+
+  const v = () => ref.current;
+  const toggle = () => { const el = v(); if (!el) return; el.paused ? el.play() : el.pause(); };
+  const seekBy = (d) => { const el = v(); if (el) el.currentTime = Math.max(0, Math.min(el.duration || 0, el.currentTime + d)); };
+  const onKey = (e) => {
+    const k = e.key.toLowerCase();
+    if (k === " " || k === "k") { e.preventDefault(); toggle(); }
+    else if (k === "arrowright") { e.preventDefault(); seekBy(5); }
+    else if (k === "arrowleft") { e.preventDefault(); seekBy(-5); }
+    else if (k === "m") { const el = v(); if (el) { el.muted = !el.muted; setMuted(el.muted); } }
+    else if (k === "f") { const w = wrapRef.current; if (w) (document.fullscreenElement ? document.exitFullscreen() : w.requestFullscreen && w.requestFullscreen()); }
+  };
+
+  return (
+    <figure className="vp" ref={wrapRef} onKeyDown={onKey} tabIndex={0} aria-label="Video player">
+      <video ref={ref} src={src} poster={poster} preload="metadata" playsInline
+        onClick={toggle}
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
+        onTimeUpdate={e => setT(e.target.currentTime)}
+        onDurationChange={e => setDur(e.target.duration || 0)}
+        onVolumeChange={e => { setVol(e.target.volume); setMuted(e.target.muted); }}/>
+      {!playing && <button className="vp-big" onClick={toggle} aria-label="Play">▶</button>}
+      <div className="vp-bar">
+        <button className="vp-btn" onClick={toggle} aria-label={playing ? "Pause" : "Play"}>{playing ? "❚❚" : "▶"}</button>
+        <input className="vp-seek" type="range" min={0} max={Math.max(dur, 0.1)} step="0.1" value={t}
+          onChange={e => { const el = v(); if (el) el.currentTime = +e.target.value; }}
+          aria-label="Seek" aria-valuetext={nggFmtTime(t) + " of " + nggFmtTime(dur)}/>
+        <span className="vp-time">{nggFmtTime(t)} / {nggFmtTime(dur)}</span>
+        <button className="vp-btn" onClick={() => { const el = v(); if (el) { el.muted = !el.muted; setMuted(el.muted); } }}
+          aria-label={muted ? "Unmute" : "Mute"}>{muted || vol === 0 ? "🔇" : "🔊"}</button>
+        <input className="vp-vol" type="range" min={0} max={1} step="0.05" value={muted ? 0 : vol}
+          onChange={e => { const el = v(); if (el) { el.volume = +e.target.value; el.muted = +e.target.value === 0; } }}
+          aria-label="Volume"/>
+        <div className="vp-rate">
+          <button className="vp-btn" onClick={() => setRateOpen(o => !o)} aria-expanded={rateOpen} aria-label="Playback speed">{rate}×</button>
+          {rateOpen && <div className="vp-rate-menu" role="menu">
+            {[0.5, 0.75, 1, 1.25, 1.5, 2].map(r => (
+              <button key={r} role="menuitemradio" aria-checked={rate === r}
+                onClick={() => { const el = v(); if (el) el.playbackRate = r; setRate(r); setRateOpen(false); }}>{r}×</button>
+            ))}
+          </div>}
+        </div>
+        <button className="vp-btn" aria-label="Fullscreen"
+          onClick={() => { const w = wrapRef.current; if (w) (document.fullscreenElement ? document.exitFullscreen() : w.requestFullscreen && w.requestFullscreen()); }}>⛶</button>
+      </div>
+      {caption && <figcaption className="vp-cap">{caption}</figcaption>}
+    </figure>
+  );
+}
+
+/**
+ * PDF viewer.
+ *
+ * Rendering PDF pages in JavaScript means shipping PDF.js — roughly a megabyte
+ * before a single page is drawn, on a site whose whole bundle is 400KB gzipped
+ * and whose readers are on mobile data. Every browser these members use already
+ * has a PDF renderer built in, so this frames that one and supplies the chrome
+ * around it: a titled toolbar, open-in-new-tab, download, and an honest
+ * fallback for the browsers that decline to render inline.
+ *
+ * The frame is sandboxed. A PDF is an active document format, and these files
+ * are uploaded by members.
+ */
+function NggPdf({ src, name }) {
+  const [failed, setFailed] = React.useState(false);
+  const label = name || "Document";
+  return (
+    <div className="pdfv">
+      <div className="pdfv-bar">
+        <span className="pdfv-ic" aria-hidden="true">📄</span>
+        <span className="pdfv-name" title={label}>{label}</span>
+        <a className="pdfv-btn" href={src} target="_blank" rel="noopener noreferrer">Open</a>
+        <a className="pdfv-btn" href={src} download>Download</a>
+      </div>
+      {!failed
+        ? <iframe className="pdfv-frame" src={src + "#view=FitH"} title={label}
+            sandbox="allow-same-origin" onError={() => setFailed(true)}/>
+        : <div className="pdfv-fallback">
+            <p>This browser won’t show the document inline.</p>
+            <a className="btn btn-primary btn-sm" href={src} target="_blank" rel="noopener noreferrer">Open it in a new tab</a>
+          </div>}
+    </div>
+  );
+}
+
 Object.assign(window, {
   nggCsvCell,
+  NggMarkdown, NggVideo, NggPdf, nggMdInline, nggFmtTime,
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
   usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart, inkOn,

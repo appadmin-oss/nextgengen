@@ -5346,21 +5346,68 @@ function AdminDonations() {
 // ============================================================================
 
 /* ── Community 2.0 — moderation queue + channel management ─────────────── */
+/* How hard the feed is screened. Super-admin only — the server enforces that
+   too; this hides a control the account cannot use rather than relying on it. */
+function AdminCommunityModeration({ mode, onChanged }) {
+  const { hasCap } = useAuth();
+  const [busy, setBusy] = React.useState("");
+  if (!hasCap || !hasCap("rbac")) return null;
+  const MODES = [
+    ["strict", "Hold for review", "A borderline post waits for a mentor before anyone sees it. Every video waits."],
+    ["flag",   "Publish, then review", "Nothing is held up. Borderline posts go live and appear in your review queue."],
+    ["off",    "No screening", "Nothing is checked automatically. Reporting and deleting still work."],
+  ];
+  const pick = async (m) => {
+    if (m === mode || busy) return;
+    if (m === "off" && !(await dialog.confirm({
+      title: "Turn off automatic screening?",
+      body: "Posts and comments from members aged 10–17 will go straight to the feed with nothing checking them first.\n\n"
+          + "Reporting, deleting and your review queue keep working, and a member writing about harming themselves is still picked up and offered help — that is not part of this setting.\n\n"
+          + "This is recorded in the audit log against your account.",
+      cta: "Turn it off", danger: true,
+    }))) return;
+    setBusy(m);
+    try {
+      const r = await NGGApi.admin.community.moderation(m);
+      toast.success(r.released ? "Saved · " + r.released + " waiting item" + (r.released === 1 ? "" : "s") + " published"
+        : "Saved.");
+      if (r.videosStillHeld) toast.info(r.videosStillHeld + " video" + (r.videosStillHeld === 1 ? "" : "s") + " still waiting — frames aren't the whole clip, so those need a look.");
+      onChanged && onChanged(r.mode);
+    } catch (e) { toast.error(e.code === "forbidden" ? "Only a super admin can change this." : (e.code || e.message)); }
+    finally { setBusy(""); }
+  };
+  return (
+    <div className="admin-modmode">
+      <div className="admin-field-label">Automatic screening</div>
+      <div className="admin-modmode-row">
+        {MODES.map(([k, label, hint]) => (
+          <button key={k} type="button" className={"admin-modmode-opt" + (mode === k ? " is-on" : "")}
+            aria-pressed={mode === k} disabled={!!busy} onClick={() => pick(k)}>
+            <b>{label}</b><span>{hint}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminCommunity() {
   const [tab, setTab] = React.useState("moderation");
   const [pending, setPending] = React.useState(null);
-  const loadPending = () => NGGApi.admin.community.overview().then(r => setPending(r.pending)).catch(() => {});
+  const [mode, setMode] = React.useState("");
+  const loadPending = () => NGGApi.admin.community.overview().then(r => { setPending(r.pending); setMode(r.moderation || "strict"); }).catch(() => {});
   React.useEffect(() => { loadPending(); }, []);
   return (
     <div className="admin-section">
       <div className="admin-section-head">
         <h2 className="admin-h2">Community {pending && (pending.posts + pending.comments + (pending.reported || 0)) > 0 ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{pending.posts + pending.comments + (pending.reported || 0)} to review</span> : null}</h2>
       </div>
-      <p className="admin-hint">The members' social feed. Posts &amp; comments are AI-screened on submit; video and anything flagged waits here for your approval. Channels mirror the summer courses — add or archive them below.</p>
+      <p className="admin-hint">The members' social feed. {mode === "off" ? "Automatic screening is OFF — nothing is checked before it appears." : mode === "flag" ? "Posts publish immediately; anything borderline lands in the queue below." : "Posts & comments are screened on submit; video and anything borderline waits here for your approval."} Channels mirror the summer courses — add or archive them below.</p>
       <div className="admin-filters">
         <button className={"btn btn-sm " + (tab === "moderation" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("moderation")}>Moderation</button>
         <button className={"btn btn-sm " + (tab === "channels" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("channels")}>Channels</button>
       </div>
+      {tab === "moderation" && <AdminCommunityModeration mode={mode} onChanged={setMode}/>}
       {tab === "moderation" ? <AdminCommunityQueue onChange={loadPending}/> : <AdminCommunityChannels/>}
     </div>
   );

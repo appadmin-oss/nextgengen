@@ -5709,3 +5709,77 @@ body.own-chrome .fab-top { display: none; }
   .cm-pj-mitem { grid-template-columns: 1fr; }
   .cm-pj-mitem img, .cm-pj-mitem video { grid-row: auto; width: 100%; height: 140px; }
 }
+
+/* Community: the screening-mode control. Three named positions rather than a
+   switch, so the middle option is discoverable rather than hidden behind
+   "advanced". */
+.admin-modmode { margin: 0 0 16px; }
+.admin-modmode-row { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
+.admin-modmode-opt { display: grid; gap: 3px; text-align: left; padding: 12px 14px; min-height: 44px;
+  border: 1px solid rgba(12,20,50,.14); border-radius: 12px; background: #fff; font: inherit; cursor: pointer; }
+.admin-modmode-opt:hover:not(:disabled) { border-color: var(--gold-500, #f5b026); }
+.admin-modmode-opt.is-on { border-color: var(--navy-900, #16223e); box-shadow: inset 0 0 0 1px var(--navy-900, #16223e); }
+.admin-modmode-opt b { font-size: 14px; color: var(--ink-900, #16223e); }
+.admin-modmode-opt span { font-size: 12.5px; color: var(--ink-500, #5b6478); line-height: 1.4; }
+
+/* ── Markdown blocks ──────────────────────────────────────────────────────
+   Headings start at h4 because these render inside a feed card that already
+   sits under the page's own headings. */
+.md > *:first-child { margin-top: 0; }
+.md > *:last-child { margin-bottom: 0; }
+.md-p { margin: 0 0 8px; line-height: 1.5; }
+.md-h { margin: 12px 0 6px; line-height: 1.3; font-weight: 800; color: var(--ink-900, #16223e); }
+.md-h1 { font-size: 1.15em; } .md-h2 { font-size: 1.06em; } .md-h3 { font-size: 1em; }
+.md-list { margin: 0 0 8px; padding-left: 22px; }
+.md-list li { margin: 2px 0; line-height: 1.5; }
+.md-quote { margin: 8px 0; padding: 2px 0 2px 12px; border-left: 3px solid rgba(12,20,50,.18); color: var(--ink-700, #3b4459); }
+.md-quote p { margin: 0 0 4px; }
+.md-pre { margin: 8px 0; padding: 10px 12px; border-radius: 10px; overflow-x: auto;
+  background: #16223e; color: #eef2fb; font-size: 12.5px; line-height: 1.5; }
+.md-pre code { font-family: var(--font-mono, ui-monospace, monospace); white-space: pre; }
+.md-hr { border: 0; border-top: 1px solid rgba(12,20,50,.14); margin: 12px 0; }
+.md a { color: var(--link, #1b4fd8); text-decoration: underline; overflow-wrap: anywhere; }
+
+/* Composer preview */
+.cm-fmt-prev.is-on { background: var(--navy-900, #16223e); color: #fff; }
+.cm-preview { margin: 8px 0; padding: 10px 12px; border: 1px dashed rgba(12,20,50,.22); border-radius: 12px; background: rgba(12,20,50,.02); }
+.cm-preview-lab { font: 700 10px var(--font-mono, monospace); letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-500, #5b6478); margin-bottom: 6px; }
+.cm-preview-empty { margin: 0; font-size: 13px; color: var(--ink-500, #5b6478); }
+
+/* ── Video player ── */
+.vp { position: relative; margin: 0; background: #000; border-radius: 12px; overflow: hidden; }
+.vp:focus-visible { outline: 3px solid #1b6ef3; outline-offset: 2px; }
+.vp video { display: block; width: 100%; max-height: 70vh; background: #000; }
+.vp-big { position: absolute; inset: 0; margin: auto; width: 66px; height: 66px; border-radius: 50%;
+  border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 24px; cursor: pointer; }
+.vp-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #10131c; color: #eef2fb; flex-wrap: wrap; }
+.vp-btn { min-width: 36px; min-height: 36px; border: 0; border-radius: 8px; background: transparent;
+  color: #eef2fb; font: inherit; font-size: 14px; cursor: pointer; }
+.vp-btn:hover { background: rgba(255,255,255,.12); }
+.vp-seek { flex: 1 1 120px; min-width: 90px; accent-color: var(--gold-500, #f5b026); }
+.vp-vol { width: 74px; accent-color: var(--gold-500, #f5b026); }
+.vp-time { font-size: 12px; font-variant-numeric: tabular-nums; opacity: .85; }
+.vp-rate { position: relative; }
+.vp-rate-menu { position: absolute; bottom: 100%; right: 0; background: #10131c; border: 1px solid rgba(255,255,255,.16);
+  border-radius: 10px; padding: 4px; display: grid; gap: 2px; z-index: 5; }
+.vp-rate-menu button { min-width: 62px; min-height: 34px; border: 0; background: transparent; color: #eef2fb;
+  font: inherit; font-size: 13px; border-radius: 6px; cursor: pointer; }
+.vp-rate-menu button[aria-checked="true"] { background: var(--gold-500, #f5b026); color: #10131c; font-weight: 700; }
+.vp-cap { padding: 6px 10px; font-size: 12.5px; color: #cfd6e6; background: #10131c; }
+@media (max-width: 420px) { .vp-vol { display: none; } }
+
+/* ── PDF viewer ── */
+.pdfv { border: 1px solid rgba(12,20,50,.14); border-radius: 12px; overflow: hidden; background: #fff; }
+.pdfv-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(12,20,50,.04);
+  border-bottom: 1px solid rgba(12,20,50,.1); }
+.pdfv-ic { font-size: 16px; }
+.pdfv-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13.5px; font-weight: 700; color: var(--ink-900, #16223e); }
+.pdfv-btn { min-height: 36px; display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 8px;
+  border: 1px solid rgba(12,20,50,.16); background: #fff; font-size: 12.5px; font-weight: 700;
+  color: var(--ink-900, #16223e); text-decoration: none; }
+.pdfv-btn:hover { border-color: var(--gold-500, #f5b026); }
+.pdfv-frame { display: block; width: 100%; height: min(70vh, 640px); border: 0; background: #f4f5f8; }
+.pdfv-fallback { padding: 22px 16px; text-align: center; }
+.pdfv-fallback p { margin: 0 0 10px; color: var(--ink-700, #3b4459); font-size: 14px; }
