@@ -1315,13 +1315,24 @@ function CmArcade({ auth }) {
    not a board but the question "whose turn is it?". So the lobby leads with
    the games waiting on YOU, and everything else sorts below it. */
 
-/* SOLID glyphs for BOTH colours, coloured by fill and separated by an outline.
-   The obvious approach — outline glyphs (♔) for white, solid (♚) for black —
-   gives the two sides visibly different piece sets, because the outline forms
-   are drawn with much thinner strokes. It also leaves white pieces at roughly
-   1.2:1 against a light square, under the 3:1 that WCAG 1.4.11 asks of a
-   meaningful graphic. One silhouette per piece, painted light or dark, fixes
-   both at once. */
+/* The cburnett set — the pieces on lichess.org, by Colin M.L. Burnett, used
+   under the BSD option of his triple licence (see
+   assets/chess/cburnett/ATTRIBUTION.txt).
+
+   These replace the Unicode glyphs. A font glyph is at the mercy of whatever
+   the device has installed: on a cheap Android handset the chess block is
+   often missing entirely, so a board rendered in ♔♕♖ shows tofu boxes, and
+   where it IS present the outline forms are drawn with much thinner strokes
+   than the solid ones, so the two sides read as different piece sets. An SVG
+   is the same drawing on every device, and these are the drawings the players
+   will recognise from everywhere else.
+
+   Twelve files, about 7KB in total, cached like any other asset. */
+const CHESS_PIECE_SRC = (piece) =>
+  "/assets/chess/cburnett/" + (piece === piece.toUpperCase() ? "w" : "b") + piece.toUpperCase() + ".svg";
+/* Kept for the captured-material strip and the promotion picker, where a piece
+   is drawn at text size beside a number and an SVG would be heavier than the
+   job needs. */
 const CHESS_GLYPH = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
 const CHESS_NAME = { k: "king", q: "queen", r: "rook", b: "bishop", n: "knight", p: "pawn" };
 /* Standard relative values, for the material count every chess interface
@@ -1617,7 +1628,7 @@ function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, inter
                     + (isTarget ? (piece ? ", can capture here" : ", can move here") : "")
                     + (isLast ? ", last move" : "")
                     + (checkSquare === sq ? ", in check" : "")}>
-                  {piece && <span className={"mtg-pc" + (piece === piece.toUpperCase() ? " is-w" : " is-b")}>{CHESS_GLYPH[piece.toLowerCase()]}</span>}
+                  {piece && <img className="mtg-pc" src={CHESS_PIECE_SRC(piece)} alt="" draggable={false}/>}
                   {isTarget && !piece && <span className="mtg-dot" aria-hidden="true"/>}
                   {showFile && <span className="mtg-coord is-file" aria-hidden="true">{file}</span>}
                   {showRank && <span className="mtg-coord is-rank" aria-hidden="true">{rank}</span>}
@@ -1843,9 +1854,8 @@ function MatchGame({ matchId, onBack }) {
           <div className="mtg-promo-row">
             {["q", "r", "b", "n"].map(p => (
               <button key={p} className="mtg-promo-btn" onClick={() => send(promo.from + promo.to + p)}>
-                <span className={"mtg-pc" + (m.yourColour === "w" ? " is-w" : " is-b")}>
-                  {CHESS_GLYPH[p]}
-                </span>
+                <img className="mtg-pc" alt=""
+                  src={CHESS_PIECE_SRC(m.yourColour === "w" ? p.toUpperCase() : p)}/>
                 <em>{{ q: "Queen", r: "Rook", b: "Bishop", n: "Knight" }[p]}</em>
               </button>
             ))}

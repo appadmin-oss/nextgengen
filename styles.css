@@ -3072,15 +3072,14 @@ button.cm-star.mine { box-shadow: inset 0 0 0 1.5px rgba(224,138,0,0.5); }
   border: 4px solid rgba(47,158,68,.9); }
 .mtg-sq.is-check { background: radial-gradient(circle, #ff5a3c 0%, #e03a20 70%); }
 .mtg-sq:focus-visible { outline: 3px solid #1b6ef3; outline-offset: -3px; z-index: 1; }
-/* One SOLID silhouette per piece, painted light or dark and outlined, rather
-   than outline glyphs for white and solid for black — those are visibly
-   different piece sets, and white sat near 1.2:1 on a light square, under the
-   3:1 WCAG 1.4.11 asks of a meaningful graphic. */
-.mtg-pc { font-size: clamp(24px, 6.6vw, 46px); line-height: 1; user-select: none; }
-.mtg-pc.is-w { color: #fff;
-  text-shadow: 0 0 2px #14213d, 1px 0 1px #14213d, -1px 0 1px #14213d, 0 1px 1px #14213d, 0 -1px 1px #14213d; }
-.mtg-pc.is-b { color: #14213d;
-  text-shadow: 0 0 2px rgba(255,255,255,.7), 1px 0 1px rgba(255,255,255,.55), -1px 0 1px rgba(255,255,255,.55); }
+/* cburnett SVGs. Sized as a share of the square rather than in pixels, so the
+   piece scales with the board at every width and the drawing never sits on a
+   fractional pixel grid. The set carries its own outline, so no text-shadow
+   trickery is needed to keep white legible on a light square. */
+.mtg-pc { width: 88%; height: 88%; display: block; user-select: none; pointer-events: none; }
+/* The captured-material strip still uses text glyphs, where a piece is drawn at
+   text size beside a number and an SVG would be heavier than the job needs. */
+.mtg-seat-pc { line-height: 1; }
 .mtg-dot { width: 26%; height: 26%; border-radius: 50%; background: rgba(47,158,68,.55); }
 /* Coordinates on the edge squares only. On every square they are noise. */
 .mtg-coord { position: absolute; font-size: clamp(8px, 1.5vw, 11px); font-weight: 800;

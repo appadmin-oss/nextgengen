@@ -1,0 +1,18 @@
+Chess piece graphics — "cburnett"
+=================================
+
+Author:  Colin M.L. Burnett
+Source:  https://en.wikipedia.org/wiki/User:Cburnett/GFDL_images/Chess
+Via:     https://github.com/lichess-org/lila/tree/master/public/piece/cburnett
+         (the default piece set on lichess.org)
+
+Licence
+-------
+The author triple-licensed these images under the GFDL, the BSD licence and
+the GPL. This project uses them under the BSD licence, which is permissive and
+places no copyleft obligation on the rest of the site.
+
+Attribution is required and is given here, and in the credits shown to members
+alongside the board.
+
+The files are unmodified.
