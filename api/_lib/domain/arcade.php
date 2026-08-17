@@ -61,6 +61,21 @@ function arcade_games(): array {
             'blurb' => 'The letters are all there. Put them back in order.',
             'skill' => 'Vocabulary', 'kind' => 'type', 'questions' => 12, 'seconds' => 120,
         ],
+        'sequence' => [
+            'key' => 'sequence', 'name' => 'What Comes Next', 'icon' => '🔢',
+            'blurb' => 'Find the rule, then finish the run. The pattern is on screen; the answer is not.',
+            'skill' => 'Pattern reasoning', 'kind' => 'type', 'questions' => 12, 'seconds' => 150,
+        ],
+        'naira' => [
+            'key' => 'naira', 'name' => 'Market Maths', 'icon' => '🪙',
+            'blurb' => 'Change, totals and a discount — the arithmetic you actually do at a shop.',
+            'skill' => 'Money sense', 'kind' => 'type', 'questions' => 14, 'seconds' => 140,
+        ],
+        'proverb' => [
+            'key' => 'proverb', 'name' => 'Finish the Proverb', 'icon' => '🗣️',
+            'blurb' => 'The sayings your grandparents use. Four endings, one right.',
+            'skill' => 'Culture & language', 'kind' => 'choice', 'questions' => 12, 'seconds' => 110,
+        ],
     ];
 }
 
@@ -240,10 +255,153 @@ function arcade_scramble(string $w): string {
  * Build a round. Returns [questionsForClient, answerKey]. The key must never
  * appear in the client payload — every caller ships only the first element.
  */
+
+/**
+ * Number patterns. Server picks the rule, ships the first terms, keeps the next.
+ *
+ * A pattern game is gradable in a way a memory game is not: the sequence has to
+ * be on screen to be solved, but the ANSWER never is. That is the line the
+ * catalogue comment draws, and this sits on the right side of it.
+ */
+function arcade_gen_sequence(int $n, int $tier): array {
+    $qs = []; $keys = [];
+    for ($i = 0; $i < $n; $i++) {
+        // Higher tiers unlock harder rules rather than just bigger numbers —
+        // 4000 + 4000 is not more interesting than 4 + 4, only wider.
+        $kinds = $tier >= 4 ? ['add', 'mul', 'square', 'fib', 'alt', 'tri']
+               : ($tier >= 3 ? ['add', 'mul', 'square', 'fib', 'alt']
+               : ($tier >= 2 ? ['add', 'mul', 'square'] : ['add', 'mul']));
+        $kind = $kinds[random_int(0, count($kinds) - 1)];
+        $terms = [];
+        if ($kind === 'add') {
+            $a = random_int(1, 12); $d = random_int(2, 3 + $tier * 2);
+            for ($k = 0; $k < 5; $k++) $terms[] = $a + $d * $k;
+        } elseif ($kind === 'mul') {
+            $a = random_int(1, 4); $r = random_int(2, min(4, 1 + $tier));
+            for ($k = 0; $k < 5; $k++) $terms[] = $a * (int)($r ** $k);
+        } elseif ($kind === 'square') {
+            $s = random_int(1, 3 + $tier);
+            for ($k = 0; $k < 5; $k++) $terms[] = ($s + $k) * ($s + $k);
+        } elseif ($kind === 'fib') {
+            $x = random_int(1, 4); $y = random_int(2, 6);
+            $terms = [$x, $y];
+            for ($k = 0; $k < 3; $k++) $terms[] = $terms[count($terms) - 1] + $terms[count($terms) - 2];
+        } elseif ($kind === 'tri') {
+            // Triangular numbers: 1, 3, 6, 10, 15 …
+            $s = random_int(1, 4);
+            for ($k = 0; $k < 5; $k++) { $m = $s + $k; $terms[] = (int)($m * ($m + 1) / 2); }
+        } else {
+            // Alternating: add, then subtract a smaller step.
+            $a = random_int(6, 20); $up = random_int(4, 9); $down = random_int(1, 3);
+            $terms[] = $a;
+            for ($k = 1; $k < 5; $k++) $terms[] = $terms[$k - 1] + ($k % 2 ? $up : -$down);
+        }
+        $answer = array_pop($terms);
+        $qs[] = ['q' => implode(', ', $terms) . ', ?'];
+        $keys[] = (string)$answer;
+    }
+    return [$qs, $keys];
+}
+
+/**
+ * Money. Change from a note, totals, and a market discount.
+ *
+ * Denominations are the notes actually in circulation, and the amounts are the
+ * ones a teenager handles — this is the arithmetic they do at a shop, which is
+ * the reason it is worth practising over abstract sums.
+ */
+function arcade_gen_naira(int $n, int $tier): array {
+    $notes = [100, 200, 500, 1000];
+    $qs = []; $keys = [];
+    for ($i = 0; $i < $n; $i++) {
+        $kind = $tier >= 3 ? ['change', 'total', 'discount', 'unit'][random_int(0, 3)]
+              : ($tier >= 2 ? ['change', 'total', 'unit'][random_int(0, 2)] : ['change', 'total'][random_int(0, 1)]);
+        if ($kind === 'change') {
+            $note = $notes[random_int($tier >= 3 ? 1 : 0, min(3, 1 + $tier))];
+            $spend = random_int(1, ($note / 50) - 1) * 50;
+            $qs[] = ['q' => 'You pay with ₦' . number_format($note) . ' for something that costs ₦' . number_format($spend) . '. How much change?'];
+            $keys[] = (string)($note - $spend);
+        } elseif ($kind === 'total') {
+            $unit = random_int(1, 4) * 50;
+            $qty = random_int(2, 3 + $tier);
+            $qs[] = ['q' => $qty . ' at ₦' . number_format($unit) . ' each. What is the total?'];
+            $keys[] = (string)($unit * $qty);
+        } elseif ($kind === 'unit') {
+            $unit = random_int(1, 5) * 50;
+            $qty = random_int(2, 6);
+            $qs[] = ['q' => $qty . ' items cost ₦' . number_format($unit * $qty) . ' altogether. What does one cost?'];
+            $keys[] = (string)$unit;
+        } else {
+            // A round percentage off a round price — mental arithmetic, not a
+            // calculator exercise.
+            $price = random_int(2, 20) * 100;
+            $pct = [10, 20, 25, 50][random_int(0, 3)];
+            $qs[] = ['q' => '₦' . number_format($price) . ' with ' . $pct . '% off. What do you pay?'];
+            $keys[] = (string)((int)($price - $price * $pct / 100));
+        }
+    }
+    return [$qs, $keys];
+}
+
+/**
+ * Nigerian proverbs, finished from four options.
+ *
+ * Here because the rest of the catalogue could have been written for anywhere.
+ * These are the sayings the members' grandparents use, and getting them into a
+ * game the whole centre competes over is worth more than another arithmetic
+ * drill. The distractors are other real proverb endings, so a wrong answer is
+ * still something worth reading.
+ */
+function arcade_proverb_bank(): array {
+    return [
+        ['A child who washes his hands', 'can eat with kings'],
+        ['However far the stream flows', 'it never forgets its source'],
+        ['When the drumbeat changes', 'the dance must change'],
+        ['A single hand', 'cannot tie a bundle'],
+        ['The rain does not fall', 'on one roof alone'],
+        ['He who has people', 'is richer than he who has money'],
+        ['Where there are no dogs', 'the baboon is king'],
+        ['A tree is not felled', 'with one blow'],
+        ['Wisdom is like a baobab tree', 'no one person can embrace it'],
+        ['If you want to go quickly, go alone', 'if you want to go far, go together'],
+        ['Not to know is bad', 'not to wish to know is worse'],
+        ['A bird that flies off the earth', 'always lands on something'],
+        ['The one being carried', 'does not know how far the town is'],
+        ['Two people cannot blow', 'the same trumpet at once'],
+        ['When a needle falls into a well', 'many will look into the well'],
+        ['A person who has not travelled', 'thinks his mother is the best cook'],
+        ['Fine words', 'do not produce food'],
+        ['The eye never forgets', 'what the heart has seen'],
+        ['Little by little', 'the bird builds its nest'],
+        ['You cannot climb a tree', 'from the top downwards'],
+    ];
+}
+
 function arcade_generate(string $game, int $tier): array {
     $g = arcade_game($game);
     $n = (int)($g['questions'] ?? 10);
     if ($game === 'maths') return arcade_gen_maths($n, $tier);
+    if ($game === 'sequence') return arcade_gen_sequence($n, $tier);
+    if ($game === 'naira') return arcade_gen_naira($n, $tier);
+
+    if ($game === 'proverb') {
+        $bank = arcade_proverb_bank();
+        shuffle($bank);
+        $endings = array_map(fn($x) => $x[1], arcade_proverb_bank());
+        $qs = []; $keys = [];
+        foreach (array_slice($bank, 0, $n) as $item) {
+            // Distractors are other REAL proverb endings, so a wrong answer is
+            // still something worth having read.
+            $pool = array_values(array_filter($endings, fn($e) => $e !== $item[1]));
+            shuffle($pool);
+            $opts = array_slice($pool, 0, 3);
+            $opts[] = $item[1];
+            shuffle($opts);
+            $qs[] = ['q' => $item[0] . ' …', 'options' => $opts];
+            $keys[] = (string)array_search($item[1], $opts, true);
+        }
+        return [$qs, $keys];
+    }
 
     if ($game === 'naija') {
         $bank = arcade_naija_bank();
@@ -461,8 +619,12 @@ function arcade_round_submit(array $p): array {
  */
 function arcade_matches(string $game, string $want, string $got): bool {
     if ($got === '') return false;
-    if ($game === 'maths') {
-        $norm = fn(string $s) => preg_replace('/[\s,]/', '', $s);
+    /* Numeric games. Commas and spaces are stripped before comparing, because
+     * "1,250" and "1250" are the same answer and a child typing the separator
+     * they were taught should not be marked wrong. Naira answers are plain
+     * numbers, so a leading ₦ is tolerated too. */
+    if (in_array($game, ['maths', 'sequence', 'naira'], true)) {
+        $norm = fn(string $s) => preg_replace('/[\s,₦]/u', '', $s);
         return $norm($got) !== '' && $norm($got) === $norm($want);
     }
     if ($game === 'word') {

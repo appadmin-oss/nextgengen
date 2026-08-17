@@ -13636,5 +13636,120 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-YTTEST'");
 })();
 
+/* ── New arcade games ─────────────────────────────────────────────────────
+ * These check the ANSWERS, not just that questions came out. A generator that
+ * produces a plausible-looking question with the wrong key is worse than one
+ * that crashes: it silently marks children wrong.
+ */
+(function () {
+    chk('the catalogue now carries seven games', count(arcade_games()) === 7);
+    foreach (['sequence', 'naira', 'proverb'] as $k) {
+        chk("the $k game is in the catalogue with a time limit and a question count",
+            (int)(arcade_game($k)['questions'] ?? 0) > 0 && (int)(arcade_game($k)['seconds'] ?? 0) > 0);
+    }
+
+    /* ── Market Maths: every answer is re-derived from the question text ── */
+    $bad = [];
+    for ($tier = 1; $tier <= 5; $tier++) {
+        [$qs, $keys] = arcade_gen_naira(14, $tier);
+        foreach ($qs as $i => $q) {
+            $text = $q['q']; $key = (int)$keys[$i];
+            $num = function (string $s): int { return (int)str_replace(',', '', $s); };
+            if (preg_match('/pay with ₦([\d,]+).*costs ₦([\d,]+)/', $text, $m)) {
+                if ($key !== $num($m[1]) - $num($m[2])) $bad[] = "change: $text => $key";
+            } elseif (preg_match('/^(\d+) at ₦([\d,]+) each/', $text, $m)) {
+                if ($key !== (int)$m[1] * $num($m[2])) $bad[] = "total: $text => $key";
+            } elseif (preg_match('/^(\d+) items cost ₦([\d,]+)/', $text, $m)) {
+                if ($key !== intdiv($num($m[2]), (int)$m[1])) $bad[] = "unit: $text => $key";
+            } elseif (preg_match('/^₦([\d,]+) with (\d+)% off/', $text, $m)) {
+                if ($key !== $num($m[1]) - (int)($num($m[1]) * (int)$m[2] / 100)) $bad[] = "discount: $text => $key";
+            } else {
+                $bad[] = "unrecognised shape: $text";
+            }
+            if ($key < 0) $bad[] = "negative answer: $text";
+        }
+    }
+    chk('market maths: every answer is arithmetically right, at every tier', $bad === [],
+        $bad ? implode(' | ', array_slice($bad, 0, 3)) : '');
+    /* A child should never be asked for change they cannot have. */
+    [$q1, $k1] = arcade_gen_naira(30, 1);
+    chk('market maths: no answer is zero or negative', count(array_filter($k1, fn($k) => (int)$k <= 0)) === 0);
+
+    /* ── What Comes Next: the answer must follow a discoverable rule ──
+     * Solved independently here. If no known rule explains the key, the puzzle
+     * is unfair whether or not the generator thinks it is right. */
+    $unsolved = [];
+    for ($tier = 1; $tier <= 5; $tier++) {
+        [$qs, $keys] = arcade_gen_sequence(12, $tier);
+        foreach ($qs as $i => $q) {
+            $terms = array_map('intval', array_filter(array_map('trim', explode(',', str_replace('?', '', $q['q']))), fn($x) => $x !== ''));
+            $ans = (int)$keys[$i];
+            if (count($terms) !== 4) { $unsolved[] = 'wrong term count: ' . $q['q']; continue; }
+            [$a, $b, $c, $d] = $terms;
+            $ok = false;
+            // constant difference
+            if (($b - $a) === ($c - $b) && ($c - $b) === ($d - $c) && $ans === $d + ($d - $c)) $ok = true;
+            // constant ratio
+            if (!$ok && $a !== 0 && $b % $a === 0 && $c !== 0 && $d % $c === 0
+                && intdiv($b, $a) === intdiv($c, $b) && intdiv($c, $b) === intdiv($d, $c)
+                && $ans === $d * intdiv($d, $c)) $ok = true;
+            // squares
+            if (!$ok) { $r = (int)round(sqrt($d)); if ($r * $r === $d && $ans === ($r + 1) * ($r + 1)) $ok = true; }
+            // fibonacci-like
+            if (!$ok && $c === $a + $b && $d === $b + $c && $ans === $c + $d) $ok = true;
+            // triangular
+            if (!$ok) { $m = (int)round((-1 + sqrt(1 + 8 * $d)) / 2); if ($m * ($m + 1) / 2 === $d && $ans === (int)(($m + 1) * ($m + 2) / 2)) $ok = true; }
+            // alternating up/down
+            if (!$ok && ($b - $a) === ($d - $c) && $ans === $d + ($c - $b)) $ok = true;
+            if (!$ok) $unsolved[] = $q['q'] . ' => ' . $ans;
+        }
+    }
+    chk('what comes next: every run is solvable by a rule the terms actually show',
+        $unsolved === [], $unsolved ? implode(' | ', array_slice($unsolved, 0, 3)) : '');
+
+    /* ── Finish the Proverb ── */
+    [$pq, $pk] = arcade_generate('proverb', 1);
+    $endings = array_map(fn($x) => $x[1], arcade_proverb_bank());
+    chk('proverbs: a full round is generated', count($pq) === 12 && count($pk) === 12);
+    chk('proverbs: every question offers exactly four endings',
+        count(array_filter($pq, fn($q) => count($q['options'] ?? []) !== 4)) === 0);
+    chk('proverbs: the key indexes the option that is actually the right ending',
+        count(array_filter($pq, function ($q, $i) use ($pk, $endings) {
+            $opts = $q['options'];
+            return !isset($opts[(int)$pk[$i]]) || !in_array($opts[(int)$pk[$i]], $endings, true);
+        }, ARRAY_FILTER_USE_BOTH)) === 0);
+    chk('proverbs: no question repeats an option, so there is one right answer',
+        count(array_filter($pq, fn($q) => count(array_unique($q['options'])) !== 4)) === 0);
+    chk('proverbs: the distractors are real proverb endings, not filler',
+        count(array_filter($pq, fn($q) => count(array_diff($q['options'], $endings)) > 0)) === 0);
+    chk('proverbs: the prompt never contains its own answer',
+        count(array_filter($pq, fn($q, $i) => strpos($q['q'], $q['options'][(int)$pk[$i]]) !== false, ARRAY_FILTER_USE_BOTH)) === 0);
+
+    /* ── Grading ── */
+    chk('numeric games accept the separators a child was taught to write',
+        arcade_matches('sequence', '1250', '1,250') && arcade_matches('naira', '350', ' 350 ')
+        && arcade_matches('naira', '350', '₦350'));
+    chk('…and still reject a wrong number', !arcade_matches('sequence', '1250', '1200'));
+    chk('…and reject an empty answer', !arcade_matches('naira', '350', ''));
+    /* The trap the existing comment warns about: (int)'abc' is 0 in PHP, so a
+     * sloppy compare hands every option-0 question to anyone typing junk. */
+    chk('a choice game refuses junk rather than treating it as option 0',
+        !arcade_matches('proverb', '0', 'abc') && arcade_matches('proverb', '0', '0'));
+
+    /* The founding rule of the arcade: the client never receives the key. */
+    foreach (['sequence', 'naira', 'proverb'] as $game) {
+        [$qs, $keys] = arcade_generate($game, 3);
+        $json = json_encode($qs);
+        $leaks = array_filter($keys, function ($k) use ($qs, $game) {
+            // For choice games the key is an index, which legitimately appears
+            // nowhere; for numeric games the answer must not be in the prompt.
+            if ($game === 'proverb') return false;
+            foreach ($qs as $q) if (strpos((string)$q['q'], (string)$k) !== false && trim((string)$q['q']) === trim((string)$k)) return true;
+            return false;
+        });
+        chk("$game: the answer key is not shipped inside the questions", $leaks === []);
+    }
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

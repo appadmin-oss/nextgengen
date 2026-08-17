@@ -3117,3 +3117,7 @@ button.cm-star.mine { box-shadow: inset 0 0 0 1.5px rgba(224,138,0,0.5); }
 .mtg-promo-btn:hover { border-color: var(--gold-500, #f5b026); }
 .mtg-promo-btn em { font-style: normal; font-size: 11.5px; color: var(--ink-700); }
 .mtg-promo-btn .mtg-pc { font-size: 30px; }
+
+/* A worded prompt ("You pay with ₦500 for something that costs ₦150…") needs to
+   read as a sentence, not as a display numeral like a sum does. */
+.arc-q-text { font-size: clamp(1.05rem, 3.2vw, 1.45rem); line-height: 1.35; font-weight: 700; max-width: 30ch; }

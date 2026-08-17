@@ -1939,19 +1939,29 @@ function ArcadeRound({ round, onGraded, onQuit }) {
           </>
         ) : (
           <>
-            <h2 className={"arc-q" + (round.game === "word" ? " arc-q-scramble" : " arc-q-sum")}>{q.q}</h2>
-            {q.letters ? <div className="arc-hint">{q.letters} letters</div> : null}
-            <form onSubmit={(e) => { e.preventDefault(); next(); }}>
-              <input ref={inputRef} className="arc-in" value={answers[i]}
-                onChange={e => setAnswer(e.target.value)}
-                // Arithmetic wants the number pad on a phone; a word wants
-                // letters, with the browser's autocorrect out of the way — it
-                // "fixes" a deliberately scrambled word into something else.
-                inputMode={round.game === "maths" ? "numeric" : "text"}
-                autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
-                aria-label={round.game === "word" ? "Unscramble " + q.q : q.q}
-                placeholder={round.game === "maths" ? "Answer" : "Type the word"}/>
-            </form>
+            {/* Which games want the number pad is a SET, not one game key.
+                Hardcoding "maths" here meant every numeric game added later
+                silently got a text keyboard and a "Type the word" prompt. The
+                server grades these three the same way, so the input matches. */}
+            {(() => {
+              const numeric = ["maths", "sequence", "naira"].indexOf(round.game) !== -1;
+              const isWord = round.game === "word";
+              return <>
+                <h2 className={"arc-q" + (isWord ? " arc-q-scramble" : numeric ? " arc-q-sum" : " arc-q-text")}>{q.q}</h2>
+                {q.letters ? <div className="arc-hint">{q.letters} letters</div> : null}
+                <form onSubmit={(e) => { e.preventDefault(); next(); }}>
+                  <input ref={inputRef} className="arc-in" value={answers[i]}
+                    onChange={e => setAnswer(e.target.value)}
+                    // Arithmetic wants the number pad on a phone; a word wants
+                    // letters, with the browser's autocorrect out of the way — it
+                    // "fixes" a deliberately scrambled word into something else.
+                    inputMode={numeric ? "numeric" : "text"}
+                    autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                    aria-label={isWord ? "Unscramble " + q.q : q.q}
+                    placeholder={isWord ? "Type the word" : "Answer"}/>
+                </form>
+              </>;
+            })()}
           </>
         )}
       </div>
