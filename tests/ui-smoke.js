@@ -1340,6 +1340,61 @@ function unzipDocumentXml(buf) {
         return new Promise(function (r) { setTimeout(function () { r(body); }, 1200); });
       },
     };
+    /* The Math Lab hangs off the same screen. Two levels cleared, the third
+       open, the rest shut — the state that actually exercises the ladder. */
+    window.__mathStarts = [];
+    window.__mathSubmits = [];
+    var LV = [
+      { level: 1, name: 'Number & Numeration', band: 'JSS 1\u20132', icon: '\u2460',
+        blurb: 'Factors, multiples, fractions.', questions: 12, seconds: 300 },
+      { level: 2, name: 'Algebraic Processes', band: 'JSS 3', icon: '\u2461',
+        blurb: 'Expanding and factorising.', questions: 12, seconds: 330 },
+      { level: 3, name: 'Indices & Logarithms', band: 'SSS 1', icon: '\u2462',
+        blurb: 'The laws of indices.', questions: 12, seconds: 330 },
+      { level: 4, name: 'Surds', band: 'SSS 1\u20132', icon: '\u2463',
+        blurb: 'Rationalising a denominator.', questions: 10, seconds: 330 },
+      { level: 5, name: 'Quadratic Equations', band: 'SSS 2', icon: '\u2464',
+        blurb: 'Roots and the discriminant.', questions: 12, seconds: 360 },
+    ];
+    window.NGGApi.member.mathlab = {
+      board: function () {
+        return Promise.resolve({
+          passPct: 70, cleared: 2, total: LV.length,
+          levels: LV.map(function (l, i) {
+            return Object.assign({}, l, {
+              unlocked: i <= 2, cleared: i <= 1,
+              bestScore: i <= 1 ? 92 : 0, bestCorrect: i <= 1 ? 11 : 0, attempts: i <= 1 ? 1 : 0,
+            });
+          }),
+        });
+      },
+      start: function (level) {
+        window.__mathStarts.push(level);
+        return Promise.resolve({
+          roundId: 'ML-TESTPAPER', level: level, name: 'Indices & Logarithms', band: 'SSS 1',
+          seconds: fast ? 1 : 300,
+          questions: [
+            { q: 'Simplify 2^3 \u00d7 2^4, giving your answer as a number.' },
+            { q: 'Evaluate log3 of 81.' },
+            { q: 'Evaluate 49^(1/2).' },
+          ],
+        });
+      },
+      submit: function (roundId, answers) {
+        window.__mathSubmits.push({ roundId: roundId, answers: answers.slice() });
+        var body = {
+          correct: 2, total: 3, score: 67, ms: 41200, passPct: 70, cleared: false,
+          marks: [
+            { ok: true,  your: '128', answer: '128' },
+            { ok: false, your: '3',   answer: '4' },
+            { ok: true,  your: '7',   answer: '7' },
+          ],
+          unlocked: null,
+        };
+        if (!fast) return Promise.resolve(body);
+        return new Promise(function (r) { setTimeout(function () { r(body); }, 1200); });
+      },
+    };
     props = { auth: { member: { fullName: 'Amaka Amadi', centre: 'Egbeda' } } };
   } else { props = { setPage: function () {} }; }
   // Stand in for the export toolkit so a click can be traced all the way into
@@ -4207,6 +4262,231 @@ function unzipDocumentXml(buf) {
     ok('…and every piece of it clears 4.5:1 there (worst: '
        + (worst ? worst.ratio.toFixed(2) + ' on .' + String(worst.cls).split(' ')[0] : 'n/a') + ')',
        contrast.every(c => c.ratio >= 4.5));
+
+
+    /* ── The Math Lab ──────────────────────────────────────────────────────
+     * A ladder rather than a leaderboard, and the two things that can look
+     * right on screen while being wrong are the same two the Arcade has: a
+     * locked level that is only VISUALLY locked, and answers that go up
+     * indexed against the wrong questions. Both are read off the wire here.  */
+    const ml = await browser.newPage();
+    const mlErrs = [];
+    ml.on('pageerror', e => mlErrs.push(String(e.message)));
+    await ml.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok', { waitUntil: 'networkidle' });
+    await ml.waitForSelector('.ml-teaser', { timeout: 15000 });
+    ok('the Math Lab band mounts in the Arcade with no script error', mlErrs.length === 0);
+    if (mlErrs.length) console.error('       ', mlErrs.slice(0, 3).join(' | '));
+    const mlTeaser = await ml.evaluate(() => document.querySelector('.ml-teaser').innerText);
+    ok('…and names the level you are actually on, not just the feature',
+       /Indices & Logarithms/.test(mlTeaser));
+    ok('…and says how far up the ladder you are', /2 of 5 levels cleared/.test(mlTeaser));
+
+    await ml.evaluate(() => document.querySelector('.ml-teaser .arc-cta').click());
+    await ml.waitForSelector('.ml-ladder', { timeout: 10000 });
+    ok('opening it lists every level, locked ones included',
+       await ml.evaluate(() => document.querySelectorAll('.ml-lv').length) === 5);
+    ok('…with the cleared ones marked and the next one open',
+       await ml.evaluate(() => document.querySelectorAll('.ml-lv.is-cleared').length) === 2
+       && await ml.evaluate(() => document.querySelectorAll('.ml-lv.is-open').length) === 1);
+    /* A locked level must have NO control at all, not a disabled one: a
+       disabled button is skipped by the keyboard and explains nothing, and the
+       reason is the entire message. */
+    ok('a locked level offers no button to press, and says what would open it',
+       await ml.evaluate(() => {
+         const shut = Array.from(document.querySelectorAll('.ml-lv.is-locked'));
+         return shut.length === 2
+             && shut.every(l => l.querySelector('button') === null)
+             && /Clear level 3 to open this/.test(shut[0].innerText);
+       }));
+
+    /* Start the third level — by its number, which is not its array index. */
+    await ml.evaluate(() => document.querySelectorAll('.ml-lv')[2].querySelector('.ml-go').click());
+    await ml.waitForSelector('.ml-qs', { timeout: 10000 });
+    ok('starting a level asks the server for that level, not its position in the list',
+       (await ml.evaluate(() => window.__mathStarts)).join() === '3');
+    ok('the paper shows every question at once, the way a paper does',
+       await ml.evaluate(() => document.querySelectorAll('.ml-q').length) === 3
+       && await ml.evaluate(() => document.querySelectorAll('.ml-q .ml-q-in').length) === 3);
+    /* The answers to this paper are 128, 4 and 7 in the stub. None may appear
+       anywhere on the page while it is still being written. */
+    ok('…and carries no answer anywhere in it, in the markup or out of it',
+       await ml.evaluate(() => !/\b128\b/.test(document.getElementById('root').innerHTML)));
+
+    /* Filled in BACKWARDS. Answers keyed off focus order or off render order
+       rather than off the question's own index look identical on screen and
+       arrive scrambled; going last-to-first is what separates them. */
+    await ml.evaluate(async () => {
+      const set = (el, v) => {
+        const proto = Object.getPrototypeOf(el);
+        Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      const ins = Array.from(document.querySelectorAll('.ml-q-in'));
+      set(ins[2], 'third'); set(ins[0], 'first'); set(ins[1], 'second');
+    });
+    await ml.evaluate(() => document.querySelector('.ml-paper-ft .arc-next').click());
+    await ml.waitForSelector('.ml-score', { timeout: 10000 });
+    const mlSent = await ml.evaluate(() => window.__mathSubmits);
+    ok('answers go up indexed against the question they were typed against',
+       mlSent.length === 1 && mlSent[0].answers.join('|') === 'first|second|third');
+    ok('…on the round the server minted', mlSent[0].roundId === 'ML-TESTPAPER');
+
+    const mlMarked = await ml.evaluate(() => document.querySelector('.ml-marked').innerText);
+    ok('the marked paper shows the score against the pass mark', /67/.test(mlMarked) && /70%/.test(mlMarked));
+    ok('…and the right answer beside the one that was wrong, and only that one',
+       await ml.evaluate(() => {
+         const rights = document.querySelectorAll('.ml-mark-right');
+         return rights.length === 1
+             && /4/.test(rights[0].innerText)
+             && rights[0].closest('.ml-mark').classList.contains('is-no');
+       }));
+    ok('…marking each answer with a symbol as well as a colour',
+       await ml.evaluate(() => {
+         const rows = Array.from(document.querySelectorAll('.ml-mark'));
+         return rows.length === 3
+             && rows.filter(r => /✓/.test(r.innerText)).length === 2
+             && rows.filter(r => /✗/.test(r.innerText)).length === 1;
+       }));
+    await ml.close();
+
+    /* The clock running out hands the paper in — once. */
+    const mlT = await browser.newPage();
+    const mlTErrs = [];
+    mlT.on('pageerror', e => mlTErrs.push(String(e.message)));
+    await mlT.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok&fast=1', { waitUntil: 'networkidle' });
+    await mlT.waitForSelector('.ml-teaser', { timeout: 15000 });
+    await mlT.evaluate(() => document.querySelector('.ml-teaser .arc-cta').click());
+    await mlT.waitForSelector('.ml-ladder', { timeout: 10000 });
+    await mlT.evaluate(() => document.querySelectorAll('.ml-lv')[2].querySelector('.ml-go').click());
+    let mlGraded = true;
+    try { await mlT.waitForSelector('.ml-score', { timeout: 12000 }); }
+    catch (_) { mlGraded = false; }
+    await mlT.waitForTimeout(900);     // past the held grade, to catch a stray second send
+    const mlTimed = await mlT.evaluate(() => window.__mathSubmits);
+    await mlT.close();
+    ok('a paper whose clock runs out hands itself in without being told',
+       mlTErrs.length === 0 && mlGraded && mlTimed.length >= 1);
+    ok('…exactly once, however the ticking clock and a slow marking overlap (' + mlTimed.length + ')',
+       mlTimed.length === 1);
+
+    /* Legible on the surface it actually renders into — the same white-on-white
+       trap the Arcade stylesheet fell into, on a screen whose whole job is
+       telling a child which answers were wrong. */
+    const mlC = await browser.newPage();
+    await mlC.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok&css=1', { waitUntil: 'networkidle' });
+    await mlC.waitForSelector('.ml-teaser', { timeout: 15000 });
+    await mlC.waitForFunction(() => getComputedStyle(document.querySelector('.ml-teaser')).borderRadius !== '0px',
+                              null, { timeout: 10000 });
+    await mlC.evaluate(() => document.querySelector('.ml-teaser .arc-cta').click());
+    await mlC.waitForSelector('.ml-ladder', { timeout: 10000 });
+    await mlC.evaluate(() => {
+      const root = document.getElementById('root');
+      const wrap = document.createElement('div');
+      wrap.className = 'cm-slack-page';
+      wrap.innerHTML = '<div class="cm-slack"><main class="cm-col"><div class="cm-stream is-feed" id="mlslot"></div></main></div>';
+      root.parentNode.insertBefore(wrap, root);
+      document.getElementById('mlslot').appendChild(root);
+    });
+    const mlContrast = await mlC.evaluate(() => {
+      const lum = (r, g, b) => { const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const num = (s) => (String(s).match(/[\d.]+/g) || [0, 0, 0]).map(Number);
+      const backdrop = (el) => {
+        let n = el;
+        while (n) {
+          const c = getComputedStyle(n).backgroundColor, m = num(c);
+          if (c !== 'rgba(0, 0, 0, 0)' && c !== 'transparent' && (m.length < 4 || m[3] === 1)) return m;
+          n = n.parentElement;
+        }
+        return [255, 255, 255];
+      };
+      const out = [];
+      document.querySelectorAll('.ml *').forEach((el) => {
+        const t = (el.textContent || '').trim();
+        if (!t || el.children.length > 0) return;
+        const f = num(getComputedStyle(el).color), g = backdrop(el);
+        const a = f[3] === undefined ? 1 : f[3];
+        const c = [0, 1, 2].map(i => f[i] * a + g[i] * (1 - a));
+        const L1 = lum(c[0], c[1], c[2]), L2 = lum(g[0], g[1], g[2]);
+        out.push({ cls: String(el.className || el.tagName), ratio: (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05) });
+      });
+      return out;
+    });
+    await mlC.close();
+    const mlWorst = mlContrast.slice().sort((a, b) => a.ratio - b.ratio)[0];
+    ok('the Math Lab has text to measure on the community surface (' + mlContrast.length + ' nodes)',
+       mlContrast.length >= 15);
+    ok('…and every piece of it clears 4.5:1 there (worst: '
+       + (mlWorst ? mlWorst.ratio.toFixed(2) + ' on .' + String(mlWorst.cls).split(' ')[0] : 'n/a') + ')',
+       mlContrast.every(c => c.ratio >= 4.5));
+
+    /* ── The Math Lab on a phone ───────────────────────────────────────────
+     * The community composer shipped 24.6px wide on a phone because a flex row
+     * would not wrap, and nothing measured it. The Lab has two rows with the
+     * same shape — the level card (icon, blurb, action) and the paper footer —
+     * so they are measured on a real 360px viewport rather than read off the
+     * stylesheet. 360 and not 390: it is the narrowest Android in common use,
+     * and what fits there fits everywhere. */
+    const mlT2 = await browser.newContext({ viewport: { width: 360, height: 780 }, hasTouch: true });
+    const mlPh = await mlT2.newPage();
+    await mlPh.goto(BASE + '/tests/_boards_fixture.html?board=arcade&mode=ok&css=1', { waitUntil: 'networkidle' });
+    await mlPh.waitForSelector('.ml-teaser', { timeout: 15000 });
+    await mlPh.waitForFunction(() => getComputedStyle(document.querySelector('.ml-teaser')).borderRadius !== '0px',
+                               null, { timeout: 10000 });
+    await mlPh.evaluate(() => document.querySelector('.ml-teaser .arc-cta').click());
+    await mlPh.waitForSelector('.ml-ladder', { timeout: 10000 });
+    await mlPh.waitForTimeout(150);
+
+    const ladderPhone = await mlPh.evaluate(() => {
+      const doc = document.documentElement;
+      const cards = Array.from(document.querySelectorAll('.ml-lv'));
+      const btns = Array.from(document.querySelectorAll('.ml-lv .ml-go'));
+      return {
+        overflow: doc.scrollWidth - doc.clientWidth,
+        narrowest: Math.min(...cards.map(c => Math.round(c.getBoundingClientRect().width))),
+        smallestBtn: btns.length ? Math.min(...btns.map(b => {
+          const r = b.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height));
+        })) : 0,
+        blurbWidth: Math.min(...cards.map(c => Math.round(c.querySelector('.ml-lv-p').getBoundingClientRect().width))),
+      };
+    });
+    ok('the ladder does not push the page sideways on a 360px phone ('
+       + ladderPhone.overflow + 'px over)', ladderPhone.overflow <= 0);
+    ok('…every level card still uses the width it has (' + ladderPhone.narrowest + 'px)',
+       ladderPhone.narrowest >= 320);
+    /* The composer bug was exactly this: a row that would not wrap squeezed the
+       text to 24.6px while everything still LOOKED laid out. */
+    ok('…and the blurb is not squeezed to a column (' + ladderPhone.blurbWidth + 'px)',
+       ladderPhone.blurbWidth >= 150);
+    ok('…with every Start button a thumb-sized target (' + ladderPhone.smallestBtn + 'px)',
+       ladderPhone.smallestBtn >= 44);
+
+    await mlPh.evaluate(() => document.querySelectorAll('.ml-lv')[2].querySelector('.ml-go').click());
+    await mlPh.waitForSelector('.ml-qs', { timeout: 10000 });
+    await mlPh.waitForTimeout(150);
+    const paperPhone = await mlPh.evaluate(() => {
+      const doc = document.documentElement;
+      const ins = Array.from(document.querySelectorAll('.ml-q-in'));
+      const ft = document.querySelector('.ml-paper-ft .arc-next').getBoundingClientRect();
+      return {
+        overflow: doc.scrollWidth - doc.clientWidth,
+        narrowestIn: Math.min(...ins.map(i => Math.round(i.getBoundingClientRect().width))),
+        inHeight: Math.min(...ins.map(i => Math.round(i.getBoundingClientRect().height))),
+        // Below 16px, iOS Safari zooms the page on focus and the paper jumps
+        // every time a child taps an answer box.
+        fontPx: Math.min(...ins.map(i => parseFloat(getComputedStyle(i).fontSize))),
+        handIn: Math.round(Math.min(ft.width, ft.height)),
+      };
+    });
+    ok('the paper does not push the page sideways on a phone (' + paperPhone.overflow + 'px over)',
+       paperPhone.overflow <= 0);
+    ok('…every answer box is wide enough to type in (' + paperPhone.narrowestIn + 'px)',
+       paperPhone.narrowestIn >= 200);
+    ok('…and tall enough to tap (' + paperPhone.inHeight + 'px)', paperPhone.inHeight >= 44);
+    ok('…at a size iOS will not zoom the page for (' + paperPhone.fontPx + 'px)', paperPhone.fontPx >= 16);
+    ok('…and Hand it in is reachable without hunting (' + paperPhone.handIn + 'px)', paperPhone.handIn >= 40);
+    await mlPh.close();
+    await mlT2.close();
 
     /* ── The community on a phone ──────────────────────────────────────────
      * Measured against the real class names on a touch viewport. Two things

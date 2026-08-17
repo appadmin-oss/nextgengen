@@ -2963,6 +2963,172 @@ button.cm-star.mine { box-shadow: inset 0 0 0 1.5px rgba(224,138,0,0.5); }
   .arc-grid { grid-template-columns: 1fr; }
 }
 
+
+/* ── The Math Lab ───────────────────────────────────────────────────────────
+ * A ladder, deliberately quieter than the Arcade next to it. The Arcade is
+ * gold, fast and competitive; a maths paper wants the opposite — plenty of
+ * room, tabular figures, and nothing flashing while you think.
+ *
+ * Every state colour carries a second signal (a tick, a cross, the word
+ * "Cleared", the word "Locked"), because a red/green pass-fail that is ONLY
+ * red and green is invisible to the commonest colour blindness — and this is
+ * a screen whose entire job is telling a child which answers were wrong. */
+.ml { padding: 18px 20px 40px; max-width: 860px; margin: 0 auto; }
+
+.ml-hd { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+.ml-hd-txt { flex: 1 1 240px; min-width: 0; }
+.ml-h { font-size: clamp(1.4rem, 3.6vw, 1.9rem); font-weight: 800; letter-spacing: -0.02em;
+        margin: 0 0 2px; color: var(--ink-900); }
+.ml-sub { margin: 0; color: var(--ink-700); font-size: 14px; }
+.ml-prog { flex: none; background: var(--navy-900, #0c1432); color: #fff; border-radius: 14px;
+           padding: 10px 16px; font-variant-numeric: tabular-nums; line-height: 1; }
+.ml-prog b { font-size: 22px; font-weight: 800; }
+.ml-prog span { font-size: 14px; opacity: 0.7; }
+
+/* ── The teaser in the Arcade ── */
+/* background-COLOR as well as the gradient, not the `background` shorthand:
+ * the shorthand resets background-color to transparent, so anywhere the
+ * gradient does not paint — forced-colors, a print stylesheet, an older
+ * renderer — this band is white text on the white page beneath it. */
+.ml-teaser { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; justify-content: space-between;
+             background-color: #0c1432;
+             background-image: linear-gradient(135deg, #10204a, #0c1432); color: #fff;
+             border-radius: 20px; padding: 22px 24px; margin: 22px 0 0; }
+.ml-teaser .arc-eyebrow { color: rgba(255, 255, 255, 0.62); }
+.ml-teaser-txt { flex: 1 1 300px; min-width: 0; }
+.ml-teaser-h { font-size: clamp(1.25rem, 3vw, 1.6rem); font-weight: 800; margin: 0 0 6px; color: #fff; }
+.ml-teaser-p { margin: 0 0 14px; font-size: 14.5px; color: rgba(255, 255, 255, 0.78); max-width: 48ch; }
+.ml-teaser-p b { color: #fff; }
+.ml-teaser-prog { flex: 0 1 220px; min-width: 180px; }
+.ml-teaser-bar { height: 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
+.ml-teaser-bar > div { height: 100%; background: var(--gold-500, #f5b026); border-radius: 999px;
+                       transition: width 0.4s ease; }
+.ml-teaser-n { margin-top: 8px; font-size: 12.5px; color: rgba(255, 255, 255, 0.7);
+               font-variant-numeric: tabular-nums; }
+
+/* ── The ladder ── */
+.ml-ladder { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.ml-lv { display: flex; gap: 14px; align-items: center; background: #fff;
+         border: 1px solid var(--cream-200, #e8dec6); border-radius: 16px; padding: 14px 16px; }
+.ml-lv.is-cleared { border-color: #bcd9c4; background: #f6fbf7; }
+/* 1px at 3:1 against the page is the WCAG 2.2 floor for a non-text boundary;
+ * the locked card also dims its text, so the state does not rest on the edge. */
+.ml-lv.is-locked { background: var(--cream-100, #f3ecdb); border-style: dashed; }
+.ml-lv.is-locked .ml-lv-h, .ml-lv.is-locked .ml-lv-p { color: var(--ink-500); }
+/* The band chip is cream on cream inside a locked card, so it stops reading as
+   a chip at all. It carries the syllabus stage — the one thing a student
+   scanning a shut level actually wants — so it keeps its shape. */
+.ml-lv.is-locked .ml-lv-band { background: #fff; }
+.ml-lv-ic { flex: none; width: 44px; height: 44px; display: grid; place-items: center; font-size: 22px;
+            border-radius: 12px; background: var(--cream-100, #f3ecdb); }
+.ml-lv.is-cleared .ml-lv-ic { background: #dff0e4; }
+.ml-lv-body { flex: 1 1 auto; min-width: 0; }
+.ml-lv-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ml-lv-h { font-size: 16px; font-weight: 700; margin: 0; color: var(--ink-900); }
+.ml-lv-band { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+              color: var(--ink-700); background: var(--cream-100, #f3ecdb); border-radius: 999px;
+              padding: 3px 9px; }
+.ml-lv-p { margin: 4px 0 0; font-size: 13.5px; color: var(--ink-700); }
+.ml-lv-meta { margin-top: 6px; display: flex; gap: 7px; flex-wrap: wrap; font-size: 12px;
+              color: var(--ink-500); font-variant-numeric: tabular-nums; }
+.ml-lv-act { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.ml-lv-tick { font-size: 12px; font-weight: 700; color: #1d6b32; }
+.ml-lv-lock { font-size: 12px; color: var(--ink-500); max-width: 16ch; text-align: right; line-height: 1.4; }
+.ml-go { background: var(--navy-900, #0c1432); color: #fff; border: none; border-radius: 999px;
+         padding: 10px 18px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+         min-height: 44px; }
+.ml-go.is-again { background: #fff; color: var(--navy-900, #0c1432);
+                  border: 1px solid var(--cream-200, #e8dec6); }
+.ml-go:hover:not(:disabled) { filter: brightness(1.1); }
+.ml-go:disabled { opacity: 0.6; cursor: wait; }
+
+/* ── The paper ── */
+.ml-paper-hd { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px;
+               background: var(--cream-50, #fbf7ee); border-bottom: 1px solid var(--cream-200, #e8dec6);
+               padding: 12px 0; margin-bottom: 4px; }
+.ml-paper-ttl { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.ml-paper-ttl b { font-size: 15px; color: var(--ink-900); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ml-paper-ttl span { font-size: 11.5px; color: var(--ink-500); }
+
+.ml-qs { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+.ml-q { display: flex; gap: 12px; background: #fff; border: 1px solid var(--cream-200, #e8dec6);
+        border-radius: 14px; padding: 14px 16px; }
+.ml-q.is-done { border-color: #cddccf; }
+.ml-q-n { flex: none; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%;
+          background: var(--cream-100, #f3ecdb); font-size: 13px; font-weight: 700; color: var(--ink-700);
+          font-variant-numeric: tabular-nums; }
+.ml-q.is-done .ml-q-n { background: #dff0e4; color: #1d6b32; }
+.ml-q-body { flex: 1 1 auto; min-width: 0; }
+/* Maths reads wrong in a proportional face — "3x^2 − 5x" wants even digits and
+ * a minus the width of a plus. */
+.ml-q-t { margin: 0 0 10px; font-size: 15.5px; line-height: 1.55; color: var(--ink-900);
+          font-variant-numeric: tabular-nums; }
+.ml-q-in { width: 100%; max-width: 260px; box-sizing: border-box; font: inherit; font-size: 16px;
+           /* 16px exactly: anything smaller makes iOS Safari zoom the page on
+              focus, and a paper that jumps every time you tap an answer is
+              unusable on the phones these children actually have. */
+           padding: 10px 12px; min-height: 44px; border: 1px solid var(--cream-300, #ddd0b2);
+           border-radius: 10px; background: var(--cream-50, #fbf7ee); color: var(--ink-900);
+           font-variant-numeric: tabular-nums; }
+.ml-q-in:focus-visible { outline: 2px solid var(--navy-900, #0c1432); outline-offset: 1px; }
+
+.ml-paper-ft { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between;
+               gap: 12px; background: var(--cream-50, #fbf7ee); border-top: 1px solid var(--cream-200, #e8dec6);
+               padding: 12px 0; margin-top: 16px; }
+
+/* ── The marked paper ── */
+.ml-score { display: flex; align-items: center; gap: 18px; background: #fff;
+            border: 1px solid var(--cream-200, #e8dec6); border-radius: 20px; padding: 20px 22px; }
+.ml-score.is-pass { border-color: #bcd9c4; background: #f6fbf7; }
+.ml-score-pct { flex: none; font-size: 44px; font-weight: 800; line-height: 1; color: var(--ink-900);
+                font-variant-numeric: tabular-nums; }
+.ml-score.is-pass .ml-score-pct { color: #1d6b32; }
+.ml-score-pct span { font-size: 20px; opacity: 0.6; }
+.ml-score-txt { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ml-score-txt b { font-size: 16px; color: var(--ink-900); }
+.ml-score-txt span { font-size: 13.5px; color: var(--ink-700); }
+.ml-unlock { margin-top: 12px; background: #fff8e6; border: 1px solid var(--gold-300, #f0d79a);
+             border-radius: 14px; padding: 12px 16px; font-size: 14.5px; color: var(--ink-900); }
+
+.ml-marks-h { font-size: 14px; font-weight: 700; color: var(--ink-700); margin: 22px 0 10px; }
+.ml-marks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.ml-mark { display: grid; gap: 8px; padding: 12px 14px; border-radius: 12px;
+           background: #fff; border: 1px solid var(--cream-200, #e8dec6); font-size: 14px; }
+.ml-mark.is-ok { background: #f6fbf7; border-color: #cfe4d5; }
+.ml-mark.is-no { background: #fdf6f7; border-color: #eccdd3; }
+.ml-mark-q { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.ml-mark-ic { flex: none; width: 18px; text-align: center; font-weight: 800; }
+.ml-mark.is-ok .ml-mark-ic { color: #1d6b32; }
+.ml-mark.is-no .ml-mark-ic { color: #b3001b; }
+.ml-mark-n { flex: none; width: 32px; font-size: 12px; color: var(--ink-500); font-weight: 700; }
+.ml-mark-t { flex: 1 1 auto; min-width: 0; color: var(--ink-900); line-height: 1.5;
+             font-variant-numeric: tabular-nums; }
+/* The answers sit under the question, indented to the same rule as the text
+   above so the eye runs straight down the column. */
+.ml-mark-a { display: flex; flex-wrap: wrap; gap: 8px 20px; padding-left: 60px;
+             font-variant-numeric: tabular-nums; }
+.ml-mark-lab { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+               color: var(--ink-500); margin-right: 7px; }
+.ml-mark-yours { min-width: 0; color: var(--ink-900); }
+.ml-mark-yours i { color: var(--ink-500); font-style: italic; }
+.ml-mark-right { font-weight: 700; color: #145627; }
+.ml-mark-right .ml-mark-lab { color: #145627; opacity: 0.75; }
+.ml-marked-ft { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 22px; }
+
+@media (max-width: 640px) {
+  .ml { padding: 14px 14px 32px; }
+  .ml-teaser { padding: 18px; }
+  .ml-teaser-prog { flex: 1 1 100%; }
+  /* The action stack drops under the text rather than squeezing the blurb to a
+     column two words wide. */
+  .ml-lv { flex-wrap: wrap; }
+  .ml-lv-act { flex-direction: row; align-items: center; width: 100%; justify-content: flex-end; }
+  .ml-lv-lock { max-width: none; text-align: left; flex: 1; }
+  .ml-q-in { max-width: none; }
+  .ml-mark-a { padding-left: 28px; }
+  .ml-score { flex-direction: column; align-items: flex-start; gap: 10px; }
+}
+
 /* ── Community: tap targets ─────────────────────────────────────────────────
  * Measured on the real markup, nine controls came in under 40px and several
  * far under: the post menu at 34×22, the poll dismiss at 32×32, reaction chips
@@ -2998,6 +3164,13 @@ button.cm-star.mine { box-shadow: inset 0 0 0 1.5px rgba(224,138,0,0.5); }
     top: 50%; transform: translateY(-50%); height: 44px;
   }
   .cm-sb-item { min-height: 44px; }
+  /* The games. Finish/Hand it in came in at 38px — the control that ENDS a
+     round and a paper, and the one a child taps under time pressure, was the
+     smallest target on either screen. They sit in rows with room, so these
+     grow outright rather than reaching with a pseudo-element. */
+  .arc-next, .arc-sec, .arc-cta, .arc-play, .arc-opt, .ml-go {
+    min-height: 44px;
+  }
 }
 
 /* ══ Two-player matches (chess) ═══════════════════════════════════════════

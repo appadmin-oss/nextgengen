@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 90;
+const NGG_SCHEMA_TARGET = 91;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2418,6 +2418,19 @@ function db_migrate(PDO $db): void {
 
             ALTER TABLE match_games ADD COLUMN tournamentRound INTEGER DEFAULT 0;
             ALTER TABLE match_games ADD COLUMN tournamentStage TEXT DEFAULT '';
+        ",
+
+        /* Math Lab. One row per player per level — the best they have done and
+         * whether they have cleared it, which is what unlocks the next one. */
+        91 => "
+            CREATE TABLE math_progress (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              playerId TEXT NOT NULL, level INTEGER NOT NULL,
+              bestScore INTEGER DEFAULT 0, bestCorrect INTEGER DEFAULT 0,
+              attempts INTEGER DEFAULT 0, clearedAt TEXT DEFAULT '', updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_mathprog ON math_progress(playerId, level);
+            CREATE INDEX idx_mathprog_player ON math_progress(playerId);
         ",
     ];
 

@@ -541,6 +541,12 @@
         start:  (game) => request('/member/arcade.php', { body: { action: 'start', game } }),
         submit: (roundId, answers) => request('/member/arcade.php', { body: { action: 'submit', roundId, answers } }),
       },
+      // Math Lab — levels that unlock, JSS number work up to Further Maths.
+      mathlab: {
+        board:  () => request('/member/arcade.php' + qs({ view: 'mathlab' })),
+        start:  (level) => request('/member/arcade.php', { body: { action: 'mathStart', level } }),
+        submit: (roundId, answers) => request('/member/arcade.php', { body: { action: 'mathSubmit', roundId, answers } }),
+      },
       // Two-player, turn-based matches. There is no "send message" here by
       // design — react() takes one of a fixed set of reactions and nothing else.
       match: {

@@ -1261,6 +1261,7 @@ function CmArcade({ auth }) {
   const [round, setRound] = React.useState(null);    // active round (playing)
   const [result, setResult] = React.useState(null);  // graded round
   const [starting, setStarting] = React.useState("");
+  const [lab, setLab] = React.useState(false);      // in the Math Lab
 
   const load = React.useCallback(() => {
     NGGApi.member.arcade.home()
@@ -1281,6 +1282,7 @@ function CmArcade({ auth }) {
   const onGraded = (r, game) => { setRound(null); setResult({ ...r, game }); load(); };
   const backToHome = () => { setRound(null); setResult(null); };
 
+  if (lab) return <MathLab onDone={() => setLab(false)}/>;
   if (round) return <ArcadeRound round={round} onGraded={onGraded} onQuit={backToHome}/>;
   if (result) return <ArcadeResult result={result} games={(home && home.games) || []}
                                   onAgain={() => play(result.game)} onDone={backToHome}/>;
@@ -1298,6 +1300,7 @@ function CmArcade({ auth }) {
               <ArcadeCard key={g.key} game={g} busy={starting === g.key} onPlay={() => play(g.key)}/>
             ))}
           </div>
+          <MathLabTeaser onOpen={() => setLab(true)}/>
           <ArcadeBoard games={home.games} programme={home.programme}/>
           <p className="arc-fineprint">
             Rounds are marked on the server, so nobody can type their way to the top of the board.
@@ -1305,6 +1308,330 @@ function CmArcade({ auth }) {
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+/* ── The Math Lab ─────────────────────────────────────────────────────────
+   Twelve levels that unlock in order, from JSS number work to the Further
+   Maths papers.
+
+   It is a LADDER, not a leaderboard, and it looks different from the Arcade on
+   purpose. An arcade round is sixty seconds of reflex against a clock and a
+   board of other people's names. A maths paper is not that: you skip a hard
+   one, come back to it, change your mind. So the whole paper is on the page at
+   once the way a real paper is, the clock is generous, and there is no ranking
+   anywhere — the only thing you are measured against is the pass mark.
+
+   Nothing here knows an answer. The paper arrives as questions, the marking
+   comes back from the server, and a locked level is refused there too — this
+   file merely declines to draw a button for it.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* The way into the Lab from the Arcade. It loads the board so the band can
+   name the level you are actually on — "Start level 4: Surds" is an invitation,
+   "Math Lab" is a filing cabinet. */
+function MathLabTeaser({ onOpen }) {
+  const [board, setBoard] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.member.mathlab.board().then(r => { if (alive) setBoard(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const next = board && (board.levels.find(l => l.unlocked && !l.cleared) || board.levels[board.levels.length - 1]);
+  const pct = board ? Math.round((board.cleared / board.total) * 100) : 0;
+
+  return (
+    <section className="ml-teaser">
+      <div className="ml-teaser-txt">
+        <div className="arc-eyebrow">Not a race</div>
+        <h2 className="ml-teaser-h">🧮 Math Lab</h2>
+        <p className="ml-teaser-p">
+          Twelve levels that unlock one at a time — number and numeration up to Further Maths.
+          {next ? <> You are on <b>{next.name}</b>.</> : null}
+        </p>
+        <button className="arc-cta" onClick={onOpen}>
+          {board ? (board.cleared > 0 ? "Continue the ladder" : "Open the Math Lab") : "Open the Math Lab"}
+        </button>
+      </div>
+      {board && (
+        <div className="ml-teaser-prog">
+          <div className="ml-teaser-bar" aria-hidden="true"><div style={{ width: pct + "%" }}/></div>
+          <div className="ml-teaser-n">{board.cleared} of {board.total} levels cleared</div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MathLab({ onDone }) {
+  const [board, setBoard] = React.useState(null);
+  const [paper, setPaper] = React.useState(null);
+  const [marked, setMarked] = React.useState(null);
+  const [busy, setBusy] = React.useState(0);
+  const [err, setErr] = React.useState("");
+
+  const load = React.useCallback(() => {
+    NGGApi.member.mathlab.board()
+      .then(r => { setBoard(r); setErr(""); })
+      .catch(e => setErr((e && e.message) || "Could not open the Math Lab."));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const play = (level) => {
+    if (busy) return;
+    setBusy(level); setErr("");
+    NGGApi.member.mathlab.start(level)
+      .then(r => { setMarked(null); setPaper(r); })
+      .catch(e => setErr(e && e.message === "locked"
+        ? "Clear the level below this one first."
+        : ((e && e.message) || "Could not start that level.")))
+      .then(() => setBusy(0));
+  };
+
+  if (paper) return <MathPaper paper={paper} onQuit={() => setPaper(null)}
+                              onMarked={(r) => { setPaper(null); setMarked({ ...r, level: paper.level, name: paper.name,
+                                                                             questions: paper.questions }); load(); }}/>;
+  if (marked) return <MathMarked result={marked} onRetry={() => play(marked.level)}
+                                onNext={() => play(marked.level + 1)} onDone={() => setMarked(null)}/>;
+
+  return (
+    <div className="ml" data-screen-label="Math Lab">
+      <header className="ml-hd">
+        <button className="arc-quit" onClick={onDone}>← Arcade</button>
+        <div className="ml-hd-txt">
+          <h1 className="ml-h">🧮 Math Lab</h1>
+          <p className="ml-sub">Twelve levels. Clear one to open the next.</p>
+        </div>
+        {board && (
+          <div className="ml-prog" role="img"
+               aria-label={board.cleared + " of " + board.total + " levels cleared"}>
+            <b>{board.cleared}</b><span>/{board.total}</span>
+          </div>
+        )}
+      </header>
+
+      {err && <div className="arc-err" role="alert">{err}</div>}
+
+      {!board ? (
+        <div className="arc-skels">{[0, 1, 2, 3, 4, 5].map(i => <div key={i} className="arc-skel"/>)}</div>
+      ) : (
+        <>
+          <ol className="ml-ladder">
+            {board.levels.map(l => (
+              <MathLevelCard key={l.level} level={l} passPct={board.passPct}
+                             busy={busy === l.level} onPlay={() => play(l.level)}/>
+            ))}
+          </ol>
+          <p className="arc-fineprint">
+            Questions are generated fresh every time, so there is no paper to memorise —
+            and they are marked on the server, so the answers are never in the page.
+            {" "}{board.passPct}% clears a level.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function MathLevelCard({ level, passPct, onPlay, busy }) {
+  const state = level.cleared ? "cleared" : (level.unlocked ? "open" : "locked");
+  /* A locked level is a real <li> with real text, not a greyed-out button:
+     a disabled control is skipped by the keyboard and says nothing about WHY
+     it cannot be used. The reason is the whole message here. */
+  return (
+    <li className={"ml-lv is-" + state}>
+      <div className="ml-lv-ic" aria-hidden="true">{state === "locked" ? "🔒" : level.icon}</div>
+      <div className="ml-lv-body">
+        <div className="ml-lv-top">
+          <h3 className="ml-lv-h">{level.name}</h3>
+          <span className="ml-lv-band">{level.band}</span>
+        </div>
+        <p className="ml-lv-p">{level.blurb}</p>
+        <div className="ml-lv-meta">
+          <span>{level.questions} questions</span>
+          <span aria-hidden="true">·</span>
+          <span>{Math.round(level.seconds / 60)} minutes</span>
+          {level.attempts > 0 && <><span aria-hidden="true">·</span>
+            <span>best {level.bestScore}%</span></>}
+        </div>
+      </div>
+      <div className="ml-lv-act">
+        {state === "locked" ? (
+          <span className="ml-lv-lock">Clear level {level.level - 1} to open this</span>
+        ) : (
+          <>
+            {state === "cleared" && <span className="ml-lv-tick" aria-label="Cleared">✓ Cleared</span>}
+            <button className={"ml-go" + (state === "cleared" ? " is-again" : "")}
+                    onClick={onPlay} disabled={busy}>
+              {busy ? "…" : (state === "cleared" ? "Play again" : (level.attempts > 0 ? "Try again" : "Start"))}
+            </button>
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/* ---- The paper ------------------------------------------------------- */
+
+function MathPaper({ paper, onMarked, onQuit }) {
+  const total = paper.questions.length;
+  const [answers, setAnswers] = React.useState(() => paper.questions.map(() => ""));
+  const [left, setLeft] = React.useState(paper.seconds);
+  const [sending, setSending] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const sentRef = React.useRef(false);
+  const answersRef = React.useRef(answers);
+  React.useEffect(() => { answersRef.current = answers; }, [answers]);
+
+  const submit = React.useCallback(() => {
+    // Guarded with a ref for the same reason the Arcade is: the clock running
+    // out and a tap on Hand in can land in the same frame, and the second send
+    // comes back "already_submitted" over the top of a real mark.
+    if (sentRef.current) return;
+    sentRef.current = true;
+    setSending(true);
+    NGGApi.member.mathlab.submit(paper.roundId, answersRef.current)
+      .then(r => onMarked(r))
+      .catch(e => {
+        setErr((e && e.message) || "Could not hand that paper in.");
+        setSending(false);
+        sentRef.current = false;    // recoverable — the paper is only spent once marked
+      });
+  }, [paper, onMarked]);
+
+  /* Wall-clock deadline, not a decrementing counter: setInterval drifts and a
+     backgrounded tab stops firing it, so a student who took a call would come
+     back to a clock that had barely moved while the server's had run out. */
+  React.useEffect(() => {
+    const deadline = Date.now() + paper.seconds * 1000;
+    const tick = () => {
+      const s = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+      setLeft(s);
+      if (s <= 0) submit();
+    };
+    tick();
+    const t = setInterval(tick, 250);
+    return () => clearInterval(t);
+  }, [paper, submit]);
+
+  const setAnswer = (idx, v) => setAnswers(a => { const n = a.slice(); n[idx] = v; return n; });
+  const answered = answers.filter(a => String(a).trim() !== "").length;
+  const mm = Math.floor(left / 60), ss = String(left % 60).padStart(2, "0");
+  const urgent = left <= 60;
+
+  return (
+    <div className="ml ml-paper" data-screen-label="Math Lab paper">
+      <header className="ml-paper-hd">
+        <button className="arc-quit" onClick={onQuit} disabled={sending}>← Leave</button>
+        <div className="ml-paper-ttl">
+          <b>{paper.name}</b><span>{paper.band}</span>
+        </div>
+        <div className={"arc-clock" + (urgent ? " is-urgent" : "")} role="timer" aria-live="off">
+          {mm}:{ss}
+        </div>
+      </header>
+      {/* The clock is decorative for assistive tech — a per-second live region
+          is unusable. How much is answered is the signal worth announcing. */}
+      <div className="sr-only" aria-live="polite">{answered} of {total} answered.</div>
+
+      {err && <div className="arc-err" role="alert">{err}</div>}
+
+      <ol className="ml-qs">
+        {paper.questions.map((q, idx) => (
+          <li key={idx} className={"ml-q" + (String(answers[idx]).trim() !== "" ? " is-done" : "")}>
+            <div className="ml-q-n" aria-hidden="true">{idx + 1}</div>
+            <div className="ml-q-body">
+              <p className="ml-q-t" id={"mlq" + idx}>{q.q}</p>
+              <input className="ml-q-in" value={answers[idx]}
+                     onChange={e => setAnswer(idx, e.target.value)}
+                     // The number pad on a phone, with autocorrect out of the
+                     // way — it "helpfully" rewrites a minus sign.
+                     inputMode="text" autoComplete="off" autoCorrect="off"
+                     autoCapitalize="off" spellCheck={false}
+                     aria-labelledby={"mlq" + idx} placeholder="Your answer"/>
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <footer className="ml-paper-ft">
+        <span className="arc-count">{answered}/{total} answered</span>
+        <button className="arc-next is-finish" onClick={submit} disabled={sending}>
+          {sending ? "Marking…" : "Hand it in"}
+        </button>
+      </footer>
+    </div>
+  );
+}
+
+/* ---- The marked paper ------------------------------------------------ */
+
+function MathMarked({ result, onRetry, onNext, onDone }) {
+  const wrong = result.marks.filter(m => !m.ok).length;
+  return (
+    <div className="ml ml-marked" data-screen-label="Math Lab result">
+      <div className={"ml-score" + (result.cleared ? " is-pass" : "")}>
+        <div className="ml-score-pct">{result.score}<span>%</span></div>
+        <div className="ml-score-txt">
+          <b>{result.correct} of {result.total} right</b>
+          <span>{result.cleared
+            ? "Cleared — that is above the " + result.passPct + "% pass mark."
+            : "You need " + result.passPct + "% to clear this level. Have another go."}</span>
+        </div>
+      </div>
+
+      {result.unlocked && (
+        <div className="ml-unlock" role="status">
+          🔓 Level {result.unlocked.level} is open — <b>{result.unlocked.name}</b>
+        </div>
+      )}
+
+      {/* The worked answers come back only with the marking, never with the
+          paper. Showing them here is the point of the exercise: a mark with no
+          right answer beside it teaches nothing. */}
+      <h2 className="ml-marks-h">
+        {wrong === 0 ? "Every one right" : wrong + (wrong === 1 ? " to look at" : " to look at")}
+      </h2>
+      {/* The QUESTION is on the row, not just its number. "Q3: you wrote 5, the
+          answer is 3" is useless on its own — a child cannot learn from a mark
+          against a question they can no longer see. The paper is still in
+          hand here, so it is carried across from it. */}
+      <ol className="ml-marks">
+        {result.marks.map((m, i) => {
+          const q = (result.questions && result.questions[i]) ? result.questions[i].q : "";
+          return (
+            <li key={i} className={"ml-mark" + (m.ok ? " is-ok" : " is-no")}>
+              <div className="ml-mark-q">
+                <span className="ml-mark-ic" aria-hidden="true">{m.ok ? "✓" : "✗"}</span>
+                <span className="ml-mark-n">Q{i + 1}</span>
+                <span className="ml-mark-t">{q}</span>
+              </div>
+              <div className="ml-mark-a">
+                <span className="ml-mark-yours">
+                  <span className="ml-mark-lab">{m.ok ? "You wrote" : "You wrote"}</span>
+                  <span className="sr-only">{m.ok ? "Correct. " : "Wrong. "}</span>
+                  {String(m.your).trim() === "" ? <i>nothing</i> : m.your}
+                </span>
+                {!m.ok && (
+                  <span className="ml-mark-right">
+                    <span className="ml-mark-lab">Answer</span>
+                    <span className="sr-only">The answer is </span>{m.answer}
+                  </span>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+
+      <footer className="ml-marked-ft">
+        <button className="arc-sec" onClick={onDone}>Back to the ladder</button>
+        {result.unlocked
+          ? <button className="arc-next" onClick={onNext}>Start level {result.unlocked.level} →</button>
+          : <button className="arc-next" onClick={onRetry}>{result.cleared ? "Play it again" : "Try again"}</button>}
+      </footer>
     </div>
   );
 }

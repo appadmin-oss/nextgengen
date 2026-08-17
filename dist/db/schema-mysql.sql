@@ -1690,3 +1690,18 @@ CREATE TABLE IF NOT EXISTS tournament_entrants (
 ALTER TABLE match_games ADD COLUMN tournamentRound INT DEFAULT 0;
 ALTER TABLE match_games ADD COLUMN tournamentStage VARCHAR(16) DEFAULT '';
 INSERT INTO schema_version (version) VALUES (90) ON DUPLICATE KEY UPDATE version = version;
+
+-- v91 — Math Lab: a level ladder from JSS number work to Further Maths.
+CREATE TABLE IF NOT EXISTS math_progress (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  playerId VARCHAR(64) NOT NULL,
+  level INT NOT NULL,
+  bestScore INT DEFAULT 0,
+  bestCorrect INT DEFAULT 0,
+  attempts INT DEFAULT 0,
+  clearedAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_mathprog (playerId, level),
+  INDEX idx_mathprog_player (playerId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (91) ON DUPLICATE KEY UPDATE version = version;

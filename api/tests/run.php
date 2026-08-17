@@ -14042,5 +14042,405 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     fees_settings_save($save, 'test');
 })();
 
+
+/* ── Math Lab ─────────────────────────────────────────────────────────────
+   A twelve-level ladder from JSS number work to Further Maths.
+
+   THE POINT OF THIS BLOCK. Every question is generated, so every answer key
+   is produced by the same code that produced the question. Testing that the
+   key equals what the generator computed would therefore prove nothing — it
+   would be the generator marking its own homework, and a sign error in a
+   formula would sail through.
+
+   So this suite READS THE PRINTED QUESTION and solves it independently: it
+   parses the text a child would see and re-derives the answer with its own
+   arithmetic (its own gcd by brute force, its own nCr by Pascal's triangle,
+   its own trig from PHP's sin/cos). A generator whose formula is wrong now
+   disagrees with a second implementation, which is the only way this class of
+   bug is visible at all.
+
+   It also insists that EVERY generated question is recognised by the parser.
+   Without that, a question form nobody wrote a parser for would be silently
+   skipped and never checked — the exact failure this block exists to stop. */
+(function () {
+
+    /* Arithmetic re-implemented deliberately naively. Slow and obvious beats
+       clever here: if it shared an implementation with the generator it would
+       share the generator's mistakes. */
+    $gcd = function (int $a, int $b): int {
+        $a = abs($a); $b = abs($b); $best = 1;
+        for ($i = 1; $i <= max($a, $b); $i++) if ($a % $i === 0 && $b % $i === 0) $best = $i;
+        return $best;
+    };
+    $lcm = function (int $a, int $b): int {
+        for ($m = max($a, $b); ; $m += max($a, $b)) if ($m % $a === 0 && $m % $b === 0) return $m;
+    };
+    $ncr = function (int $n, int $r): int {          // Pascal's triangle, no factorials
+        $row = [1];
+        for ($i = 1; $i <= $n; $i++) {
+            $next = [1];
+            for ($j = 1; $j < $i; $j++) $next[] = $row[$j - 1] + $row[$j];
+            $next[] = 1;
+            $row = $next;
+        }
+        return $row[$r] ?? 0;
+    };
+    $npr = function (int $n, int $r): int { $p = 1; for ($i = 0; $i < $r; $i++) $p *= ($n - $i); return $p; };
+    $logb = function (int $b, int $v): int { $n = 0; while ($v > 1) { $v = intdiv($v, $b); $n++; } return $n; };
+    $isqrt = function (int $v): int { for ($i = 0; $i * $i <= $v; $i++) if ($i * $i === $v) return $i; return -1; };
+    $num = fn(string $s): int => (int)str_replace(',', '', $s);
+
+    /* Parse a printed polynomial back into coefficients keyed by power. The
+       generator prints with a typeset minus and superscripts; both are
+       normalised away first. */
+    $poly = function (string $s): array {
+        $s = str_replace(['−', '²', '³', ' '], ['-', '^2', '^3', ''], trim($s));
+        $s = preg_replace('/(?<=.)-/', '+-', $s);
+        $co = [];
+        foreach (explode('+', $s) as $t) {
+            if ($t === '') continue;
+            $neg = false;
+            if ($t[0] === '-') { $neg = true; $t = substr($t, 1); }
+            if ($t === '') continue;
+            if (strpos($t, 'x') === false) { $p = 0; $c = (int)$t; }
+            else {
+                [$cs, $rest] = array_pad(explode('x', $t, 2), 2, '');
+                $c = $cs === '' ? 1 : (int)$cs;
+                $p = $rest === '' ? 1 : (int)ltrim($rest, '^');
+            }
+            $co[$p] = ($co[$p] ?? 0) + ($neg ? -$c : $c);
+        }
+        return $co;
+    };
+    $at = fn(array $co, int $x): int => (int)array_sum(array_map(fn($p) => $co[$p] * ($x ** $p), array_keys($co)));
+    $vec = function (string $s): array {          // "3i − 6j" → [3, -6]
+        $s = str_replace(['−', ' '], ['-', ''], trim($s));
+        if (!preg_match('/^(-?\d*)i([+-]\d*)j$/', $s, $m)) return [];
+        $c1 = $m[1] === '' ? 1 : ($m[1] === '-' ? -1 : (int)$m[1]);
+        $c2 = $m[2] === '+' ? 1 : ($m[2] === '-' ? -1 : (int)$m[2]);
+        return [$c1, $c2];
+    };
+
+    /* Read a question, return the answer — or null if this parser does not
+       recognise the form, which the caller treats as a failure. */
+    $solve = function (string $raw) use ($gcd, $lcm, $ncr, $npr, $logb, $isqrt, $num, $poly, $at, $vec): ?string {
+        $q = str_replace('−', '-', $raw);
+        $m = [];
+
+        /* Level 1 — number and numeration */
+        if (preg_match('/L\.C\.M\. of (\d+) and (\d+)/', $q, $m)) return (string)$lcm((int)$m[1], (int)$m[2]);
+        if (preg_match('/H\.C\.F\. of (\d+) and (\d+)/', $q, $m)) return (string)$gcd((int)$m[1], (int)$m[2]);
+        if (preg_match('/^What is (\d+)% of ₦([\d,]+)\?$/u', $q, $m)) return (string)($num($m[2]) * (int)$m[1] / 100);
+        if (preg_match('/^₦([\d,]+) is shared among Ada, Bola and Chidi in the ratio (\d+):(\d+):(\d+)\..*naira\?$/u', $q, $m))
+            return (string)($num($m[1]) * (int)$m[3] / ((int)$m[2] + (int)$m[3] + (int)$m[4]));
+        if (preg_match('/^(\d+)\/(\d+) of (\d+) is what number\?$/', $q, $m))
+            return (string)((int)$m[3] * (int)$m[1] / (int)$m[2]);
+        if (preg_match('/^Find the simple interest on ₦([\d,]+) for (\d+) years? at (\d+)% per annum\.$/u', $q, $m))
+            return (string)($num($m[1]) * (int)$m[3] * (int)$m[2] / 100);
+
+        /* Level 2 — algebraic processes */
+        if (preg_match('/^Solve for x:\s+(.+) = (-?\d+)$/', $q, $m)) {
+            $c = $poly($m[1]);
+            return (string)(((int)$m[2] - ($c[0] ?? 0)) / ($c[1] ?? 1));
+        }
+        if (preg_match('/^Expand \(x\s*([+-]\s*\d+)?\)\(x\s*([+-]\s*\d+)?\)\. What is the coefficient of x\?$/', $q, $m))
+            return (string)((int)str_replace(' ', '', $m[1] ?: '0') + (int)str_replace(' ', '', $m[2] ?: '0'));
+        if (preg_match('/^If f\(x\) = (.+), find f\((-?\d+)\)\.$/', $q, $m)) return (string)$at($poly($m[1]), (int)$m[2]);
+        if (preg_match('/^Solve: (\d*)x \+ (\d*)y = (-?\d+) and (\d*)x \+ (\d*)y = (-?\d+)\. What is x\?$/', $q, $m)) {
+            $c = fn(string $v): int => $v === '' ? 1 : (int)$v;   // "x" means 1x
+            [$a1, $b1, $c1, $a2, $b2, $c2] = [$c($m[1]), $c($m[2]), (int)$m[3], $c($m[4]), $c($m[5]), (int)$m[6]];
+            $det = $a1 * $b2 - $a2 * $b1;
+            return $det === 0 ? null : (string)(($c1 * $b2 - $c2 * $b1) / $det);
+        }
+        if (preg_match('/^If y = (.+) and y = (-?\d+), find x\.$/', $q, $m)) {
+            $c = $poly($m[1]);
+            return (string)(((int)$m[2] - ($c[0] ?? 0)) / ($c[1] ?? 1));
+        }
+
+        /* Level 3 — indices and logarithms */
+        if (preg_match('/^Simplify (\d+)\^(\d+) × (\d+)\^(\d+), giving/u', $q, $m))
+            return (string)((int)$m[1] ** ((int)$m[2] + (int)$m[4]));
+        if (preg_match('/^Simplify (\d+)\^(\d+) ÷ (\d+)\^(\d+), giving/u', $q, $m))
+            return (string)((int)$m[1] ** ((int)$m[2] - (int)$m[4]));
+        if (preg_match('/^Evaluate log(\d+) of (\d+)\.$/', $q, $m)) return (string)$logb((int)$m[1], (int)$m[2]);
+        if (preg_match('/^Evaluate log(\d+) (\d+) \+ log(\d+) (\d+)\./', $q, $m))
+            return (string)$logb((int)$m[1], (int)$m[2] * (int)$m[4]);
+        if (preg_match('/^Evaluate (\d+)\^\(1\/2\)\.$/', $q, $m)) return (string)$isqrt((int)$m[1]);
+
+        /* Level 4 — surds */
+        if (preg_match('/^Simplify √(\d+) in the form a√(\d+)\. What is a\?$/u', $q, $m))
+            return (string)$isqrt(intdiv((int)$m[1], (int)$m[2]));
+        if (preg_match('/^(\d+)√(\d+) \+ (\d+)√(\d+) = k√(\d+)\. What is k\?$/u', $q, $m))
+            return $m[2] === $m[4] && $m[4] === $m[5] ? (string)((int)$m[1] + (int)$m[3]) : null;
+        if (preg_match('/^Rationalise (\d+)\/√(\d+)\. The answer is a√(\d+)\. What is a\?$/u', $q, $m))
+            return (string)((int)$m[1] / (int)$m[2]);
+        if (preg_match('/^\(√(\d+)\)² = \?$/u', $q, $m)) return $m[1];
+
+        /* Level 5 — quadratic equations */
+        if (preg_match('/^The roots of (.+) = 0 are (-?\d+) and k\. What is k\?$/', $q, $m)) {
+            $c = $poly($m[1]);
+            $sum = -($c[1] ?? 0) / ($c[2] ?? 1);       // α + β = −b/a
+            return (string)($sum - (int)$m[2]);
+        }
+        if (preg_match('/^For (.+) = 0, find the discriminant b² - 4ac\.$/u', $q, $m)) {
+            $c = $poly($m[1]);
+            return (string)((($c[1] ?? 0) ** 2) - 4 * ($c[2] ?? 0) * ($c[0] ?? 0));
+        }
+        if (preg_match('/^If α and β are the roots of (.+) = 0, find α \+ β\.$/u', $q, $m)) {
+            $c = $poly($m[1]);
+            return (string)(-($c[1] ?? 0) / ($c[2] ?? 1));
+        }
+        if (preg_match('/^If α and β are the roots of (.+) = 0, find αβ\.$/u', $q, $m)) {
+            $c = $poly($m[1]);
+            return (string)(($c[0] ?? 0) / ($c[2] ?? 1));
+        }
+
+        /* Level 6 — sequences and series */
+        if (preg_match('/^The first term of an A\.P\. is (-?\d+) and the common difference is (\d+)\. Find the (\d+)th term\.$/', $q, $m))
+            return (string)((int)$m[1] + ((int)$m[3] - 1) * (int)$m[2]);
+        if (preg_match('/^Find the sum of the first (\d+) terms of an A\.P\. whose first term is (\d+) and common difference (\d+)\.$/', $q, $m)) {
+            $s = 0; for ($i = 0; $i < (int)$m[1]; $i++) $s += (int)$m[2] + $i * (int)$m[3];   // just add them up
+            return (string)$s;
+        }
+        if (preg_match('/^The first term of a G\.P\. is (\d+) and the common ratio is (\d+)\. Find the (\d+)th term\.$/', $q, $m)) {
+            $t = (int)$m[1]; for ($i = 1; $i < (int)$m[3]; $i++) $t *= (int)$m[2];
+            return (string)$t;
+        }
+        if (preg_match('/^Find the sum of the first (\d+) terms of a G\.P\. with first term (\d+) and common ratio (\d+)\.$/', $q, $m)) {
+            $t = (int)$m[2]; $s = 0;
+            for ($i = 0; $i < (int)$m[1]; $i++) { $s += $t; $t *= (int)$m[3]; }
+            return (string)$s;
+        }
+        if (preg_match('/^Find the sum to infinity of a G\.P\. whose first term is (\d+) and common ratio is 1\/(\d+)\.$/', $q, $m))
+            return (string)((int)$m[1] / (1 - 1 / (int)$m[2]));
+
+        /* Level 7 — trigonometry */
+        if (preg_match('/^Evaluate (sin|cos|tan) (\d+)°\.$/u', $q, $m)) {
+            $r = deg2rad((float)$m[2]);
+            $v = $m[1] === 'sin' ? sin($r) : ($m[1] === 'cos' ? cos($r) : tan($r));
+            return (string)round($v, 6);
+        }
+        if (preg_match('/^Simplify sin²θ \+ cos²θ\.$/u', $q)) return '1';
+        if (preg_match('/sides (\d+) cm and (\d+) cm about the right angle/', $q, $m))
+            return (string)$isqrt((int)$m[1] ** 2 + (int)$m[2] ** 2);
+        if (preg_match('/b = (\d+), c = (\d+) and A = 120°/u', $q, $m))
+            return (string)((int)$m[1] ** 2 + (int)$m[2] ** 2 + (int)$m[1] * (int)$m[2]);   // cos 120° = −½
+
+        /* Level 8 — binomial and counting */
+        if (preg_match('/^Evaluate (\d+)C(\d+)\.$/', $q, $m)) return (string)$ncr((int)$m[1], (int)$m[2]);
+        if (preg_match('/^Evaluate (\d+)P(\d+)\.$/', $q, $m)) return (string)$npr((int)$m[1], (int)$m[2]);
+        if (preg_match('/expansion of \(1 \+ (\d*)x\)\^(\d+), find the coefficient of x\^(\d+)\.$/', $q, $m)) {
+            $a = $m[1] === '' ? 1 : (int)$m[1];
+            return (string)($ncr((int)$m[2], (int)$m[3]) * ($a ** (int)$m[3]));
+        }
+
+        /* Level 9 — matrices */
+        if (preg_match('/Multiply the matrix \((-?\d+) (-?\d+) ; (-?\d+) (-?\d+)\) by the column vector \((-?\d+) ; (-?\d+)\)/', $q, $m))
+            return (string)((int)$m[1] * (int)$m[5] + (int)$m[2] * (int)$m[6]);
+        if (preg_match('/determinant of the 2×2 matrix \((-?\d+) (-?\d+) ; (-?\d+) (-?\d+)\)/u', $q, $m)
+            || preg_match('/For \((-?\d+) (-?\d+) ; (-?\d+) (-?\d+)\), state the determinant/', $q, $m))
+            return (string)((int)$m[1] * (int)$m[4] - (int)$m[2] * (int)$m[3]);
+
+        /* Level 10 — differentiation */
+        if (preg_match('/^If y = (.+), find dy\/dx at x = (-?\d+)\.$/', $q, $m)
+            || preg_match('/^Find the gradient of the curve y = (.+) at x = (-?\d+)\.$/', $q, $m)) {
+            $c = $poly($m[1]); $x = (int)$m[2]; $d = 0;
+            foreach ($c as $p => $k) if ($p > 0) $d += $k * $p * ($x ** ($p - 1));
+            return (string)$d;
+        }
+        if (preg_match('/^Find the value of x at the turning point of y = (.+)\.$/', $q, $m)) {
+            $c = $poly($m[1]);
+            return (string)(-($c[1] ?? 0) / (2 * ($c[2] ?? 1)));
+        }
+
+        /* Level 11 — integration */
+        if (preg_match('/definite integral of (.+) dx from 0 to (\d+)\.$/', $q, $m)) {
+            $c = $poly(trim($m[1], '()')); $n = (int)$m[2]; $v = 0.0;
+            foreach ($c as $p => $k) $v += $k * ($n ** ($p + 1)) / ($p + 1);   // ∫₀ⁿ kx^p = kn^(p+1)/(p+1)
+            return (string)(int)round($v);
+        }
+        if (preg_match('/^Find the area under the curve y = 2x between x = (\d+) and x = (\d+)\.$/', $q, $m))
+            return (string)((int)$m[2] ** 2 - (int)$m[1] ** 2);
+
+        /* Level 12 — coordinate geometry and vectors */
+        if (preg_match('/^Find the distance between \((-?\d+), (-?\d+)\) and \((-?\d+), (-?\d+)\)\.$/', $q, $m))
+            return (string)$isqrt(((int)$m[3] - (int)$m[1]) ** 2 + ((int)$m[4] - (int)$m[2]) ** 2);
+        if (preg_match('/^Find the x-coordinate of the midpoint of \((-?\d+), (-?\d+)\) and \((-?\d+), (-?\d+)\)\.$/', $q, $m))
+            return (string)(((int)$m[1] + (int)$m[3]) / 2);
+        if (preg_match('/^Find the gradient of the line joining \((-?\d+), (-?\d+)\) and \((-?\d+), (-?\d+)\)\.$/', $q, $m)) {
+            $dx = (int)$m[3] - (int)$m[1];
+            return $dx === 0 ? null : (string)(((int)$m[4] - (int)$m[2]) / $dx);
+        }
+        if (preg_match('/^Given a = (.+?) and b = (.+?), find the scalar product a·b\.$/u', $raw, $m)) {
+            $v1 = $vec($m[1]); $v2 = $vec($m[2]);
+            return (count($v1) === 2 && count($v2) === 2) ? (string)($v1[0] * $v2[0] + $v1[1] * $v2[1]) : null;
+        }
+        if (preg_match('/^Find the magnitude of the vector (\d+)i \+ (\d+)j\.$/', $q, $m))
+            return (string)$isqrt((int)$m[1] ** 2 + (int)$m[2] ** 2);
+
+        return null;
+    };
+
+    /* ── The ladder itself ─────────────────────────────────────────────── */
+
+    chk('math lab: the ladder runs from JSS number work to Further Maths',
+        count(mathlab_levels()) === 12
+        && mathlab_level(1)['name'] === 'Number & Numeration'
+        && mathlab_level(12)['band'] === 'Further Maths / A-level');
+    chk('math lab: every level declares how many questions and how long',
+        count(array_filter(mathlab_levels(), fn($l) => (int)$l['questions'] > 0 && (int)$l['seconds'] > 0)) === 12);
+
+    /* ── Every generated answer, re-derived from the printed question ──── */
+
+    $unparsed = [];      // forms this suite does not recognise — must stay empty
+    $wrong = [];         // keys that disagree with the independent derivation
+    $checked = 0;
+    foreach (array_keys(mathlab_levels()) as $lv) {
+        for ($i = 0; $i < 250; $i++) {
+            [$text, $key] = mathlab_question($lv);
+            $mine = $solve($text);
+            $checked++;
+            if ($mine === null) { $unparsed[$lv][] = $text; continue; }
+            $same = (is_numeric($mine) && is_numeric($key))
+                ? abs((float)$mine - (float)$key) < 1e-9
+                : ((string)$mine === (string)$key);
+            if (!$same) $wrong[] = "L$lv  «{$text}»  key={$key}  derived={$mine}";
+        }
+    }
+    chk("math lab: every one of $checked generated questions is a form this suite can solve",
+        $unparsed === []);
+    if ($unparsed) foreach ($unparsed as $lv => $ex) echo "      level $lv unrecognised: " . $ex[0] . "\n";
+    chk('math lab: every answer key matches an independent derivation from the printed question',
+        $wrong === []);
+    if ($wrong) foreach (array_slice($wrong, 0, 8) as $w) echo "      $w\n";
+
+    /* Questions must also be legible: a stray "+ -6j" or "(x)" is a bug a
+       child sees before any test does. */
+    $ugly = [];
+    foreach (array_keys(mathlab_levels()) as $lv) {
+        for ($i = 0; $i < 120; $i++) {
+            [$text] = mathlab_question($lv);
+            // `(x)` only as a lone FACTOR — "f(x)" is how a function is written.
+            foreach (['+ -', '- -', '+ +', '(x)(', ')(x)', ' 1x', ' 1y', 'NAN', 'INF'] as $bad) {
+                if (strpos($text, $bad) !== false) $ugly[] = "L$lv «{$text}» has «{$bad}»";
+            }
+        }
+    }
+    chk('math lab: no question prints a doubled sign or an empty bracket', $ugly === []);
+    if ($ugly) foreach (array_slice(array_unique($ugly), 0, 6) as $u) echo "      $u\n";
+
+    /* ── Papers ────────────────────────────────────────────────────────── */
+
+    foreach (mathlab_levels() as $n => $lv) {
+        [$qs, $keys] = mathlab_generate($n, (int)$lv['questions']);
+        if (count($qs) !== (int)$lv['questions'] || count($keys) !== count($qs)) {
+            chk("math lab: level $n hands out a full paper", false);
+        }
+    }
+    chk('math lab: every level hands out a full paper with one key per question', true);
+
+    [$pq] = mathlab_generate(1, 12);
+    chk('math lab: a paper does not repeat a question', count(array_unique(array_column($pq, 'q'))) === 12);
+    chk('math lab: …and carries the question only, never the answer',
+        !array_key_exists('a', $pq[0]) && !array_key_exists('answer', $pq[0]) && array_keys($pq[0]) === ['q']);
+
+    /* ── Unlocking ─────────────────────────────────────────────────────── */
+
+    $ML = 'NGG-2025-0001';                       // Tunde Okonkwo, an NGG member
+    db_exec('DELETE FROM math_progress WHERE playerId = ?', [$ML]);
+    db_exec("DELETE FROM arcade_rounds WHERE game = 'mathlab'");
+
+    $b = backend_dispatch('mathlab.board', ['playerId' => $ML]);
+    chk('math lab: a new student sees the whole ladder', !empty($b['ok']) && count($b['levels']) === 12);
+    chk('math lab: …with level 1 open and everything above it shut',
+        $b['levels'][0]['unlocked'] === true
+        && count(array_filter($b['levels'], fn($l) => $l['unlocked'])) === 1);
+    chk('math lab: a nobody has no board', backend_dispatch('mathlab.board', ['playerId' => ''])['error'] === 'forbidden');
+
+    chk('math lab: a locked level is REFUSED by the server, not merely hidden',
+        backend_dispatch('mathlab.start', ['playerId' => $ML, 'level' => 5])['error'] === 'locked');
+    chk('math lab: a level that does not exist is refused',
+        backend_dispatch('mathlab.start', ['playerId' => $ML, 'level' => 99])['error'] === 'bad_level');
+
+    $r1 = backend_dispatch('mathlab.start', ['playerId' => $ML, 'level' => 1]);
+    chk('math lab: level 1 starts and ships a paper', !empty($r1['ok']) && count($r1['questions']) === 12);
+    chk('math lab: …and the payload never carries the key',
+        strpos(json_encode($r1), 'answerKey') === false
+        && count(array_filter($r1['questions'], fn($q) => array_keys($q) !== ['q'])) === 0);
+
+    /* Marked by solving the paper the way a student would — from the text. */
+    $answers = array_map(fn($q) => (string)$solve($q['q']), $r1['questions']);
+    $sub = backend_dispatch('mathlab.submit', ['playerId' => $ML, 'roundId' => $r1['roundId'], 'answers' => $answers]);
+    chk('math lab: a paper solved from the printed questions scores full marks',
+        !empty($sub['ok']) && $sub['correct'] === 12 && $sub['score'] === 100);
+    chk('math lab: …clears the level and says what it opened',
+        $sub['cleared'] === true && $sub['unlocked']['level'] === 2);
+    chk('math lab: the marking hands back the right answers, now the paper is in',
+        count($sub['marks']) === 12 && $sub['marks'][0]['ok'] === true && $sub['marks'][0]['answer'] !== '');
+    chk('math lab: elapsed time comes from the server, not the client', isset($sub['ms']) && $sub['ms'] >= 0);
+
+    chk('math lab: a paper cannot be handed in twice',
+        backend_dispatch('mathlab.submit', ['playerId' => $ML, 'roundId' => $r1['roundId'], 'answers' => $answers])['error'] === 'already_submitted');
+
+    $b2 = backend_dispatch('mathlab.board', ['playerId' => $ML]);
+    chk('math lab: clearing level 1 opens level 2 and nothing beyond it',
+        $b2['levels'][1]['unlocked'] === true && $b2['levels'][2]['unlocked'] === false);
+    chk('math lab: …and the cleared level is recorded with its best score',
+        $b2['levels'][0]['cleared'] === true && $b2['levels'][0]['bestScore'] === 100
+        && $b2['levels'][0]['attempts'] === 1);
+
+    /* A failed attempt records the try but opens nothing. */
+    $r2 = backend_dispatch('mathlab.start', ['playerId' => $ML, 'level' => 2]);
+    $bad = backend_dispatch('mathlab.submit', ['playerId' => $ML, 'roundId' => $r2['roundId'],
+        'answers' => array_fill(0, 12, 'banana')]);
+    chk('math lab: a blank-minded paper scores nothing', $bad['correct'] === 0 && $bad['score'] === 0);
+    chk('math lab: …does not clear the level', $bad['cleared'] === false && $bad['unlocked'] === null);
+    chk('math lab: …and leaves level 3 shut',
+        backend_dispatch('mathlab.board', ['playerId' => $ML])['levels'][2]['unlocked'] === false);
+
+    /* Clearing once is clearing for good — a later bad day must not re-lock
+       work a student has already shown they can do. */
+    $r3 = backend_dispatch('mathlab.start', ['playerId' => $ML, 'level' => 1]);
+    backend_dispatch('mathlab.submit', ['playerId' => $ML, 'roundId' => $r3['roundId'],
+        'answers' => array_fill(0, 12, '0')]);
+    $b3 = backend_dispatch('mathlab.board', ['playerId' => $ML]);
+    chk('math lab: a poor later attempt does not un-clear a cleared level',
+        $b3['levels'][0]['cleared'] === true && $b3['levels'][1]['unlocked'] === true);
+    chk('math lab: …and does not lower the best score on record',
+        $b3['levels'][0]['bestScore'] === 100 && $b3['levels'][0]['attempts'] === 2);
+
+    /* Somebody else's paper is somebody else's. */
+    $r4 = backend_dispatch('mathlab.start', ['playerId' => $ML, 'level' => 1]);
+    chk('math lab: you cannot hand in another student\'s paper',
+        backend_dispatch('mathlab.submit', ['playerId' => 'NGG-2025-0002', 'roundId' => $r4['roundId'],
+            'answers' => []])['error'] === 'not_yours');
+    chk('math lab: a paper that never existed cannot be handed in',
+        backend_dispatch('mathlab.submit', ['playerId' => $ML, 'roundId' => 'ML-NOPE',
+            'answers' => []])['error'] === 'not_found');
+
+    /* ── Marking ───────────────────────────────────────────────────────── */
+
+    chk('math lab: a comma-grouped answer is the same answer', mathlab_matches('12500', '12,500'));
+    chk('math lab: …so is one written with the naira sign', mathlab_matches('12500', '₦12500'));
+    chk('math lab: …so is 0.50 for 0.5', mathlab_matches('0.5', '0.50'));
+    chk('math lab: …and a typeset minus is the same as a hyphen', mathlab_matches('-7', '−7'));
+    chk('math lab: …and surrounding space does not cost a mark', mathlab_matches('42', '  42 '));
+    chk('math lab: a wrong value is wrong however it is written', !mathlab_matches('42', '43'));
+    chk('math lab: a blank is not a right answer, even against a blank key', !mathlab_matches('', ''));
+    chk('math lab: 4 is not 40', !mathlab_matches('4', '40'));
+
+    /* ── Housekeeping ──────────────────────────────────────────────────── */
+
+    db_exec("UPDATE arcade_rounds SET startedAt = '2019-01-01T00:00:00Z' WHERE game = 'mathlab'");
+    mathlab_prune();
+    chk('math lab: old papers are pruned',
+        (int)(db_row("SELECT COUNT(*) c FROM arcade_rounds WHERE game = 'mathlab'")['c'] ?? 0) === 0);
+    chk('math lab: …and pruning leaves the progress record alone',
+        (int)(db_row('SELECT COUNT(*) c FROM math_progress WHERE playerId = ?', [$ML])['c'] ?? 0) === 2);
+
+    db_exec('DELETE FROM math_progress WHERE playerId = ?', [$ML]);
+})();
+
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

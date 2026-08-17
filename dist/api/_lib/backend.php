@@ -419,6 +419,10 @@ function backend_dispatch(string $op, array $args = []): array {
             'arcade.board'            => 'arcade_leaderboard',
             'arcade.start'            => 'arcade_round_start',
             'arcade.submit'           => 'arcade_round_submit',
+            // Math Lab: a level ladder from JSS number work to Further Maths.
+            'mathlab.board'           => 'mathlab_board',
+            'mathlab.start'           => 'mathlab_start',
+            'mathlab.submit'          => 'mathlab_submit',
             // Two-player, turn-based. No free-text op exists by design.
             'match.list'              => 'match_list',
             'match.get'               => 'match_get',

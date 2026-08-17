@@ -17,6 +17,8 @@ if ($method === 'GET') {
             'game'     => (string)($_GET['game'] ?? ''),
             'scope'    => (string)($_GET['scope'] ?? 'week'),
         ]);
+    } elseif ($view === 'mathlab') {
+        $res = gs_call('mathlab.board', ['playerId' => $s['mid']]);
     } else {
         $res = gs_call('arcade.home', ['memberId' => $s['mid']]);
     }
@@ -32,6 +34,12 @@ if ($method === 'GET') {
             'roundId'  => (string)($b['roundId'] ?? ''),
             'answers'  => is_array($b['answers'] ?? null) ? $b['answers'] : [],
         ]);
+    } elseif ($action === 'mathStart') {
+        rate_limit_check('arcade.start');
+        $res = gs_call('mathlab.start', ['playerId' => $s['mid'], 'level' => (int)($b['level'] ?? 0)]);
+    } elseif ($action === 'mathSubmit') {
+        $res = gs_call('mathlab.submit', ['playerId' => $s['mid'], 'roundId' => (string)($b['roundId'] ?? ''),
+                                          'answers' => is_array($b['answers'] ?? null) ? $b['answers'] : []]);
     } else {
         json_error('unknown_action', 400);
     }
