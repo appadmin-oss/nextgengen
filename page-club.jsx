@@ -1315,8 +1315,19 @@ function CmArcade({ auth }) {
    not a board but the question "whose turn is it?". So the lobby leads with
    the games waiting on YOU, and everything else sorts below it. */
 
-const CHESS_GLYPH = { K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙",
-                      k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
+/* SOLID glyphs for BOTH colours, coloured by fill and separated by an outline.
+   The obvious approach — outline glyphs (♔) for white, solid (♚) for black —
+   gives the two sides visibly different piece sets, because the outline forms
+   are drawn with much thinner strokes. It also leaves white pieces at roughly
+   1.2:1 against a light square, under the 3:1 that WCAG 1.4.11 asks of a
+   meaningful graphic. One silhouette per piece, painted light or dark, fixes
+   both at once. */
+const CHESS_GLYPH = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
+const CHESS_NAME = { k: "king", q: "queen", r: "rook", b: "bishop", n: "knight", p: "pawn" };
+/* Standard relative values, for the material count every chess interface
+   shows. Kings are not counted — they are never off the board. */
+const CHESS_VALUE = { q: 9, r: 5, b: 3, n: 3, p: 1 };
+const CHESS_FULL = { p: 8, n: 2, b: 2, r: 2, q: 1 };
 /* The reaction vocabulary is the entire messaging surface — there is no text
    input anywhere in this feature, by design. The server holds the same list
    and refuses anything else. */
@@ -1340,6 +1351,27 @@ function chessSquares(fen) {
   return out;
 }
 function chessSqName(i) { return "abcdefgh"[i % 8] + (8 - Math.floor(i / 8)); }
+
+/* Material captured, per side, from the position alone.
+   Counting what is MISSING rather than replaying the move list means a game
+   joined halfway, or one staff open at ply 40, shows the right thing without
+   fetching every move. */
+function chessMaterial(squares) {
+  const have = {};
+  squares.forEach(p => { if (p) have[p] = (have[p] || 0) + 1; });
+  const gone = { w: [], b: [] };
+  let score = 0;
+  Object.keys(CHESS_FULL).forEach(t => {
+    const wMissing = CHESS_FULL[t] - (have[t.toUpperCase()] || 0);
+    const bMissing = CHESS_FULL[t] - (have[t] || 0);
+    // Promotion can leave MORE of a piece than started; clamp so a second
+    // queen never reads as a captured one.
+    for (let i = 0; i < Math.max(0, wMissing); i++) gone.w.push(t);
+    for (let i = 0; i < Math.max(0, bMissing); i++) gone.b.push(t);
+    score += Math.max(0, bMissing) * CHESS_VALUE[t] - Math.max(0, wMissing) * CHESS_VALUE[t];
+  });
+  return { gone, score };
+}
 
 function CmMatches({ auth }) {
   const [data, setData] = React.useState(null);
@@ -1463,12 +1495,129 @@ function MatchList({ title, rows, me, onOpen, emphasise }) {
   );
 }
 
+/* A player's side of the board: name, whether they are on move, and the pieces
+   they have captured. Standard in every chess client, and the material count is
+   the fastest way for a beginner to see they are behind. */
+function ChessSeat({ player, colour, gone, score, onMove }) {
+  return (
+    <div className={"mtg-seat" + (onMove ? " is-on" : "")}>
+      <span className={"mtg-seat-dot is-" + colour} aria-hidden="true"/>
+      <span className="mtg-seat-n">{player.name}</span>
+      <span className="mtg-seat-mat">
+        {gone.map((t, i) => <span key={t + i} className="mtg-seat-pc" aria-hidden="true">{CHESS_GLYPH[t]}</span>)}
+        {score > 0 && <b>+{score}</b>}
+      </span>
+      {gone.length > 0 && <span className="sr-only">
+        {"Captured: " + gone.map(t => CHESS_NAME[t]).join(", ") + (score > 0 ? ". Ahead by " + score + " points of material." : "")}
+      </span>}
+      {onMove && <span className="sr-only">On move.</span>}
+    </div>
+  );
+}
+
+/**
+ * The board.
+ *
+ * Conventions taken from the clients people have actually used (Lichess's
+ * Chessground is the reference implementation), because a chess player arrives
+ * with fixed expectations and spending their attention on a novel board is
+ * spending it in the wrong place:
+ *
+ *   • file/rank coordinates on the edge squares
+ *   • the last move highlighted, so you can see what your opponent played
+ *   • a king in check marked in red
+ *   • the selected square marked, legal destinations dotted, and a capture
+ *     drawn as a ring around the piece rather than a dot behind it
+ *   • a flip control, because looking at a game from the other side is a thing
+ *     people want to do
+ *
+ * Accessibility notes, both of which were real failures in the first version:
+ *
+ *   The squares are NEVER disabled. Disabling all 64 while waiting for the
+ *   opponent removed them from the tab order, which meant a keyboard or
+ *   screen-reader user could not read the position at all unless it was their
+ *   turn — and could never read it in staff view. They are always focusable and
+ *   always announced; only the click handler is conditional.
+ *
+ *   One roving tabindex plus arrow keys, per the ARIA grid pattern, instead of
+ *   64 tab stops. Tab reaches the board, arrows move within it. `role="row"`
+ *   wrappers are required — gridcells directly inside a grid is invalid ARIA
+ *   and screen readers announce the geometry wrongly.
+ */
+function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, interactive, onTap, onFlip }) {
+  const [cursor, setCursor] = React.useState("e4");
+  const order = [];
+  for (let i = 0; i < 64; i++) order.push(flip ? 63 - i : i);
+
+  const onKey = (e) => {
+    const f = "abcdefgh".indexOf(cursor[0]), r = +cursor[1];
+    const step = (df, dr) => {
+      // Arrows follow what the player SEES, so they invert with the board.
+      const nf = f + (flip ? -df : df), nr = r + (flip ? -dr : dr);
+      if (nf < 0 || nf > 7 || nr < 1 || nr > 8) return;
+      e.preventDefault();
+      const next = "abcdefgh"[nf] + nr;
+      setCursor(next);
+      const el = e.currentTarget.querySelector('[data-sq="' + next + '"]');
+      if (el) el.focus();
+    };
+    if (e.key === "ArrowRight") step(1, 0);
+    else if (e.key === "ArrowLeft") step(-1, 0);
+    else if (e.key === "ArrowUp") step(0, 1);
+    else if (e.key === "ArrowDown") step(0, -1);
+  };
+
+  return (
+    <div className="mtg-boardwrap">
+      <div className="mtg-board" role="grid" aria-label="Chess board" onKeyDown={onKey}>
+        {[0, 1, 2, 3, 4, 5, 6, 7].map(row => (
+          <div className="mtg-row" role="row" key={row}>
+            {order.slice(row * 8, row * 8 + 8).map(i => {
+              const sq = chessSqName(i);
+              const piece = squares[i];
+              const dark = ((Math.floor(i / 8) + (i % 8)) % 2) === 1;
+              const isTarget = targets.indexOf(sq) !== -1;
+              const isLast = lastMove && (lastMove.from === sq || lastMove.to === sq);
+              const file = sq[0], rank = sq[1];
+              // Coordinates on the edges only — on every square they are noise.
+              const showFile = flip ? rank === "8" : rank === "1";
+              const showRank = flip ? file === "h" : file === "a";
+              return (
+                <button key={sq} role="gridcell" data-sq={sq}
+                  tabIndex={sq === cursor ? 0 : -1}
+                  className={"mtg-sq" + (dark ? " is-dark" : "") + (from === sq ? " is-from" : "")
+                    + (isTarget ? (piece ? " is-capture" : " is-target") : "")
+                    + (isLast ? " is-last" : "") + (checkSquare === sq ? " is-check" : "")}
+                  aria-disabled={!interactive}
+                  onFocus={() => setCursor(sq)}
+                  onClick={() => interactive && onTap(sq, piece)}
+                  aria-label={sq
+                    + (piece ? ", " + (piece === piece.toUpperCase() ? "white" : "black") + " " + CHESS_NAME[piece.toLowerCase()] : ", empty")
+                    + (isTarget ? (piece ? ", can capture here" : ", can move here") : "")
+                    + (isLast ? ", last move" : "")
+                    + (checkSquare === sq ? ", in check" : "")}>
+                  {piece && <span className={"mtg-pc" + (piece === piece.toUpperCase() ? " is-w" : " is-b")}>{CHESS_GLYPH[piece.toLowerCase()]}</span>}
+                  {isTarget && !piece && <span className="mtg-dot" aria-hidden="true"/>}
+                  {showFile && <span className="mtg-coord is-file" aria-hidden="true">{file}</span>}
+                  {showRank && <span className="mtg-coord is-rank" aria-hidden="true">{rank}</span>}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <button type="button" className="mtg-flip" onClick={onFlip}>⇅ Flip the board</button>
+    </div>
+  );
+}
+
 /** One game: the board, the move list, and the six things you can say. */
 function MatchGame({ matchId, onBack }) {
   const [m, setM] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [from, setFrom] = React.useState("");
   const [promo, setPromo] = React.useState(null);   // { from, to } awaiting a piece
+  const [manualFlip, setManualFlip] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
   const load = React.useCallback(() => {
@@ -1499,11 +1648,19 @@ function MatchGame({ matchId, onBack }) {
   if (!m) return <div className="arc mtg"><div className="arc-skels"><div className="arc-skel"/></div></div>;
 
   const squares = chessSquares(m.state);
-  const flip = m.yourColour === "b";
-  const order = flip ? squares.map((_, i) => 63 - i) : squares.map((_, i) => i);
+  /* You look at your own pieces from your own side. Staff have no side, so they
+     get white's view — and either can flip, because looking at a position from
+     the other side is a normal thing to want. */
+  const baseFlip = m.yourColour === "b";
+  const flip = manualFlip ? !baseFlip : baseFlip;
   const legal = m.legal || [];
   const canMove = m.status === "active" && m.yourTurn && !busy;
   const targets = from ? legal.filter(u => u.slice(0, 2) === from).map(u => u.slice(2, 4)) : [];
+  const material = chessMaterial(squares);
+  // Whoever is at the bottom of the board as drawn.
+  const whiteSeat = m.players.A, blackSeat = m.players.B;
+  const bottomSeat = flip ? blackSeat : whiteSeat;
+  const topSeat = flip ? whiteSeat : blackSeat;
   /* A mentor opening a match is not one of the players, so `you` is empty.
      Everything below reads from the two NAMED players in that case — otherwise
      staff get a board captioned "You vs …" for a game they are not in, and a
@@ -1553,27 +1710,39 @@ function MatchGame({ matchId, onBack }) {
       </div>
 
       <div className="mtg-wrap">
-        <div className="mtg-board" role="grid" aria-label="Chess board">
-          {order.map(i => {
-            const sq = chessSqName(i);
-            const piece = squares[i];
-            const dark = ((Math.floor(i / 8) + (i % 8)) % 2) === 1;
-            const isTarget = targets.indexOf(sq) !== -1;
-            return (
-              <button key={sq} role="gridcell" className={"mtg-sq" + (dark ? " is-dark" : "") + (from === sq ? " is-from" : "") + (isTarget ? " is-target" : "")}
-                disabled={!canMove} onClick={() => tap(sq, piece)}
-                aria-label={sq + (piece ? " " + (piece === piece.toUpperCase() ? "white" : "black") + " " + ({ k: "king", q: "queen", r: "rook", b: "bishop", n: "knight", p: "pawn" }[piece.toLowerCase()]) : " empty")}>
-                {piece && <span className={"mtg-pc" + (piece === piece.toUpperCase() ? " is-w" : " is-b")}>{CHESS_GLYPH[piece]}</span>}
-                {isTarget && !piece && <span className="mtg-dot" aria-hidden="true"/>}
-              </button>
-            );
-          })}
+        <div>
+          <ChessSeat player={topSeat} colour={flip ? "w" : "b"} gone={flip ? material.gone.w : material.gone.b}
+            score={flip ? -material.score : material.score} onMove={m.turnColour === (flip ? "w" : "b") && m.status === "active"}/>
+          <ChessBoard squares={squares} flip={flip} from={from} targets={targets}
+            lastMove={m.lastMove} checkSquare={m.checkSquare} interactive={canMove}
+            onTap={tap} onFlip={() => setManualFlip(v => !v)}/>
+          <ChessSeat player={bottomSeat} colour={flip ? "b" : "w"} gone={flip ? material.gone.b : material.gone.w}
+            score={flip ? material.score : -material.score} onMove={m.turnColour === (flip ? "b" : "w") && m.status === "active"}/>
         </div>
 
         <aside className="mtg-side">
           <h3 className="mtl-h">Moves</h3>
+          {/* Numbered PAIRS — "1. e4 e5" — which is how chess notation is
+              written everywhere and how a child will be asked to write it at
+              school. A flat list of plies is the same information in a form
+              nobody reads. */}
           <ol className="mtg-moves">
-            {(m.moves || []).map(mv => <li key={mv.ply}><span className="mono">{mv.san}</span></li>)}
+            {(() => {
+              const mv = m.moves || [];
+              const rows = [];
+              for (let i = 0; i < mv.length; i += 2) {
+                rows.push(
+                  <li key={i}>
+                    {/* Written out rather than left to the <ol> marker: the row
+                        is a grid, which suppresses list markers entirely. */}
+                    <span className="mtg-mv-n">{(i / 2 + 1) + "."}</span>
+                    <span className="mtg-mv-w">{mv[i] ? mv[i].san : ""}</span>
+                    <span className="mtg-mv-b">{mv[i + 1] ? mv[i + 1].san : ""}</span>
+                  </li>
+                );
+              }
+              return rows;
+            })()}
             {!(m.moves || []).length && <li className="mtg-empty">No moves yet.</li>}
           </ol>
           {m.status === "active" && !m.staffView &&
@@ -1613,7 +1782,7 @@ function MatchGame({ matchId, onBack }) {
             {["q", "r", "b", "n"].map(p => (
               <button key={p} className="mtg-promo-btn" onClick={() => send(promo.from + promo.to + p)}>
                 <span className={"mtg-pc" + (m.yourColour === "w" ? " is-w" : " is-b")}>
-                  {CHESS_GLYPH[m.yourColour === "w" ? p.toUpperCase() : p]}
+                  {CHESS_GLYPH[p]}
                 </span>
                 <em>{{ q: "Queen", r: "Rook", b: "Bishop", n: "Knight" }[p]}</em>
               </button>

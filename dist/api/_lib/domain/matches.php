@@ -316,6 +316,27 @@ function match_get(array $p): array {
     $out['legal'] = ((string)$r['status'] === 'active' && (string)$r['turnPlayer'] === $viewer)
         ? chess_legal_uci((string)$r['state']) : [];
     $out['staffView'] = $staff;
+
+    /* Three facts the board cannot work out for itself, and which every chess
+     * interface people have used shows them:
+     *
+     *   lastMove — which two squares the opponent just played. Without it you
+     *     open the game and have to spot the difference against a position you
+     *     saw hours ago. This is the single most-missed convention.
+     *   check    — that a king is attacked, and which one. Being in check and
+     *     not being told is how a child loses a game they understood.
+     *   turnColour — whose move it is in the game's own terms, so the board can
+     *     say it without inferring from ids.
+     *
+     * Derived here rather than in the browser because the server already owns
+     * the position, and two implementations of "is this check" is one too many.
+     */
+    $last = $moves ? $moves[count($moves) - 1] : null;
+    $out['lastMove'] = $last ? ['from' => substr((string)$last['move'], 0, 2), 'to' => substr((string)$last['move'], 2, 2)] : null;
+    $pos = chess_parse_fen((string)$r['state']);
+    $out['turnColour'] = $pos ? (string)$pos['turn'] : '';
+    $out['check'] = $pos ? chess_in_check($pos) : false;
+    $out['checkSquare'] = ($pos && $out['check']) ? chess_idx_to_sq(chess_king_square($pos, $pos['turn'])) : '';
     return ['ok' => true, 'match' => $out];
 }
 
