@@ -1653,3 +1653,40 @@ CREATE TABLE IF NOT EXISTS match_reactions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (89) ON DUPLICATE KEY UPDATE version = version;
+
+-- v90 — admin-hosted tournaments, centre rounds through to a final.
+CREATE TABLE IF NOT EXISTS tournaments (
+  tournamentId VARCHAR(32) PRIMARY KEY,
+  name VARCHAR(160) NOT NULL,
+  game VARCHAR(24) NOT NULL DEFAULT 'chess',
+  programme VARCHAR(16) DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'draft',
+  stage VARCHAR(16) NOT NULL DEFAULT 'centre',
+  round INT DEFAULT 0,
+  winnerId VARCHAR(64) DEFAULT '',
+  winnerName VARCHAR(120) DEFAULT '',
+  createdBy VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40) NOT NULL,
+  updatedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_trn_status (status, updatedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS tournament_entrants (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tournamentId VARCHAR(32) NOT NULL,
+  playerId VARCHAR(64) NOT NULL,
+  playerName VARCHAR(120) DEFAULT '',
+  playerType VARCHAR(16) DEFAULT '',
+  centre VARCHAR(120) DEFAULT '',
+  stage VARCHAR(16) DEFAULT 'centre',
+  status VARCHAR(16) DEFAULT 'active',
+  centreChampion TINYINT DEFAULT 0,
+  eliminatedRound INT DEFAULT 0,
+  createdAt VARCHAR(40) NOT NULL,
+  UNIQUE KEY idx_trn_entrant (tournamentId, playerId),
+  INDEX idx_trn_entrant_t (tournamentId, centre)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE match_games ADD COLUMN tournamentRound INT DEFAULT 0;
+ALTER TABLE match_games ADD COLUMN tournamentStage VARCHAR(16) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (90) ON DUPLICATE KEY UPDATE version = version;

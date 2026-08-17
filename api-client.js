@@ -554,6 +554,10 @@
         react:   (matchId, reaction) => request('/member/match.php', { body: { action: 'react', matchId, reaction } }),
         report:  (matchId) => request('/member/match.php', { body: { action: 'report', matchId } }),
       },
+      // A player's own tournaments and their next game in each.
+      tournaments: {
+        mine: () => request('/member/match.php' + qs({ view: 'tournaments' })),
+      },
       changeEmail:         (email) => request('/member/account.php', { body: { action: 'change_email', email } }),
       exportData:          () => request('/member/account.php'),
       deleteAccount:       () => request('/member/account.php', { body: { action: 'delete' } }),
@@ -901,6 +905,17 @@
         candidates: (q) => request('/admin/mentors.php?view=candidates&q=' + encodeURIComponent(q || '')),
         promote:    (personId, opts) => request('/admin/mentors.php', { body: Object.assign({ action: 'promote', personId }, opts || {}) }),
         demote:     (mentorId) => request('/admin/mentors.php', { body: { action: 'demote', mentorId } }),
+      },
+      // Tournaments. Centre rounds, then the centre champions meet.
+      tournaments: {
+        list:     () => request('/admin/tournaments.php' + qs({ view: 'list' })),
+        bracket:  (tournamentId) => request('/admin/tournaments.php' + qs({ view: 'bracket', tournamentId })),
+        create:   (name, game, programme) => request('/admin/tournaments.php', { body: { action: 'create', name, game: game || 'chess', programme: programme || '' } }),
+        enter:    (tournamentId, playerId) => request('/admin/tournaments.php', { body: { action: 'enter', tournamentId, playerId } }),
+        withdraw: (tournamentId, playerId) => request('/admin/tournaments.php', { body: { action: 'withdraw', tournamentId, playerId } }),
+        advance:  (tournamentId) => request('/admin/tournaments.php', { body: { action: 'advance', tournamentId } }),
+        replay:   (tournamentId, matchId) => request('/admin/tournaments.php', { body: { action: 'replay', tournamentId, matchId } }),
+        cancel:   (tournamentId) => request('/admin/tournaments.php', { body: { action: 'cancel', tournamentId } }),
       },
       volunteers: {
         list:    () => request('/admin/volunteers.php'),

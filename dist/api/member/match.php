@@ -16,6 +16,8 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'list');
     if ($view === 'get') {
         $res = gs_call('match.get', ['playerId' => $s['mid'], 'matchId' => (string)($_GET['matchId'] ?? '')]);
+    } elseif ($view === 'tournaments') {
+        $res = gs_call('tournament.mine', ['playerId' => $s['mid']]);
     } elseif ($view === 'staff') {
         // A mentor or admin reviewing the matches at their centre.
         $res = gs_call('match.staff.list', ['requesterId' => $s['mid'], 'flagged' => (string)($_GET['flagged'] ?? '')]);

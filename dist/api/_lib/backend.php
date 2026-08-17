@@ -429,6 +429,16 @@ function backend_dispatch(string $op, array $args = []): array {
             'match.react'             => 'match_react',
             'match.report'            => 'match_report',
             'match.staff.list'        => 'match_staff_list',
+            // Tournaments: centre rounds through to a final.
+            'tournament.list'         => 'admin_tournaments_list',
+            'tournament.bracket'      => 'tournament_bracket',
+            'tournament.mine'         => 'tournament_mine',
+            'tournament.create'       => 'admin_tournament_create',
+            'tournament.enter'        => 'admin_tournament_enter',
+            'tournament.withdraw'     => 'admin_tournament_withdraw',
+            'tournament.advance'      => 'admin_tournament_advance',
+            'tournament.replay'       => 'admin_tournament_replay',
+            'tournament.cancel'       => 'admin_tournament_cancel',
             'student.communityLogin'  => 'community_id_login',   // legacy alias
             'admin.community.overview'      => 'admin_community_overview',
             'admin.community.channel.upsert'=> 'admin_community_channel_upsert',

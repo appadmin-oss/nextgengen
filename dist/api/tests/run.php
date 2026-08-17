@@ -13309,5 +13309,169 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         ($lob['reactions'] ?? []) === MATCH_REACTIONS && count(MATCH_REACTIONS) === 6);
 })();
 
+/* ── Tournaments ──────────────────────────────────────────────────────────
+ * The shape the programme runs in the physical world: every centre plays its
+ * own knockout, each centre produces a champion, and the champions meet. The
+ * point of the centre stage is that a child at a small centre can win
+ * something without being knocked out in round one by a big one.
+ */
+(function () {
+    $ADM = 'NGG-2025-0099';
+    $now = now_iso();
+    // Four at Egbeda, two at Ayobo — deliberately uneven, and one odd number
+    // so a bye has to happen.
+    $roster = [
+        ['TP-E1', 'Ade One',   'Egbeda'], ['TP-E2', 'Bola Two',  'Egbeda'],
+        ['TP-E3', 'Chi Three', 'Egbeda'], ['TP-E4', 'Dele Four', 'Egbeda'],
+        ['TP-E5', 'Eze Five',  'Egbeda'],
+        ['TP-A1', 'Fola Six',  'Ayobo'],  ['TP-A2', 'Gani Seven', 'Ayobo'],
+    ];
+    foreach ($roster as [$id, $name, $centre]) {
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'centre' => $centre, 'role' => 'member', 'status' => 'active',
+            'createdAt' => $now, 'updatedAt' => $now]);
+    }
+    db_insert('members', ['memberId' => 'TP-NC', 'fullName' => 'No Centre', 'email' => 'tpnc@example.com',
+        'type' => 'NGG', 'centre' => '', 'role' => 'member', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+
+    chk('a tournament needs a real name',
+        backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'x'])['error'] === 'name_required');
+    chk('a tournament needs a game that exists',
+        backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Ludo Cup', 'game' => 'ludo'])['error'] === 'bad_game');
+    chk('only staff with people access can host one',
+        backend_dispatch('tournament.create', ['requesterId' => 'NGG-2025-0001', 'name' => 'Sneaky Cup'])['error'] === 'forbidden');
+
+    $c = backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'NGG Chess Cup 2026', 'game' => 'chess', 'programme' => 'ngg']);
+    chk('an admin hosts a tournament', !empty($c['ok']) && !empty($c['tournamentId']));
+    $TID = (string)$c['tournamentId'];
+
+    foreach ($roster as [$id]) backend_dispatch('tournament.enter', ['requesterId' => $ADM, 'tournamentId' => $TID, 'playerId' => $id]);
+    chk('seven entrants across two centres',
+        (int)(db_row('SELECT COUNT(*) c FROM tournament_entrants WHERE tournamentId = ?', [$TID])['c'] ?? 0) === 7);
+    chk('entering twice is refused',
+        backend_dispatch('tournament.enter', ['requesterId' => $ADM, 'tournamentId' => $TID, 'playerId' => 'TP-E1'])['error'] === 'already_entered');
+    /* A player with no centre has no bracket. Letting them in produces an
+     * entrant who can never be paired and never eliminated, and the tournament
+     * stalls forever at "waiting for the last centre". */
+    chk('a player with no centre cannot enter — they would stall the bracket',
+        backend_dispatch('tournament.enter', ['requesterId' => $ADM, 'tournamentId' => $TID, 'playerId' => 'TP-NC'])['error'] === 'player_has_no_centre');
+    chk('an unknown player cannot enter',
+        backend_dispatch('tournament.enter', ['requesterId' => $ADM, 'tournamentId' => $TID, 'playerId' => 'NOBODY'])['error'] === 'not_a_player');
+    chk('a summer student cannot enter a club tournament',
+        backend_dispatch('tournament.enter', ['requesterId' => $ADM, 'tournamentId' => $TID, 'playerId' => 'SUM-R-1'])['error'] === 'wrong_programme');
+    chk('withdrawing removes an entrant', !empty(backend_dispatch('tournament.withdraw', ['requesterId' => $ADM, 'tournamentId' => $TID, 'playerId' => 'TP-E5'])['ok']));
+    backend_dispatch('tournament.enter', ['requesterId' => $ADM, 'tournamentId' => $TID, 'playerId' => 'TP-E5']);
+
+    // ── Round 1 ──
+    $r1 = backend_dispatch('tournament.advance', ['requesterId' => $ADM, 'tournamentId' => $TID]);
+    chk('round one pairs both centres separately', !empty($r1['ok']) && ($r1['stage'] ?? '') === 'centre' && (int)$r1['round'] === 1);
+    /* Egbeda has 5 (two matches + one bye), Ayobo has 2 (one match). */
+    chk('…three matches and one bye', (int)$r1['matches'] === 3 && (int)$r1['byes'] === 1);
+    $r1Matches = db_all('SELECT * FROM match_games WHERE tournamentId = ? AND tournamentRound = 1', [$TID]);
+    chk('nobody is ever paired across centres',
+        count(array_filter($r1Matches, function ($m) {
+            $a = db_row('SELECT centre FROM members WHERE memberId = ?', [$m['playerA']]);
+            $b = db_row('SELECT centre FROM members WHERE memberId = ?', [$m['playerB']]);
+            return (string)$a['centre'] !== (string)$b['centre'];
+        })) === 0);
+    /* A pairing is not an invitation — nobody chose their opponent and there is
+     * nothing to accept, so it opens ready to play. */
+    chk('a tournament pairing opens ACTIVE, not as an invitation',
+        count(array_filter($r1Matches, fn($m) => (string)$m['status'] !== 'active')) === 0);
+    chk('advancing mid-round is refused',
+        backend_dispatch('tournament.advance', ['requesterId' => $ADM, 'tournamentId' => $TID])['error'] === 'round_in_progress');
+
+    // Resign every round-1 game; playerB takes each.
+    foreach ($r1Matches as $m) match_resign(['playerId' => (string)$m['playerA'], 'matchId' => (string)$m['matchId']]);
+    chk('losing a tournament game eliminates you',
+        (int)(db_row("SELECT COUNT(*) c FROM tournament_entrants WHERE tournamentId = ? AND status = 'eliminated'", [$TID])['c'] ?? 0) === 3);
+    chk('…and a bye carries you through untouched',
+        (int)(db_row("SELECT COUNT(*) c FROM tournament_entrants WHERE tournamentId = ? AND status = 'active'", [$TID])['c'] ?? 0) === 4);
+
+    // ── Round 2: Egbeda still has 3, Ayobo is down to 1 ──
+    $r2 = backend_dispatch('tournament.advance', ['requesterId' => $ADM, 'tournamentId' => $TID]);
+    chk('round two pairs only the centre that still has players', (int)$r2['matches'] === 1 && (int)$r2['byes'] === 1);
+    chk('a centre already down to one is marked as having a champion',
+        (int)(db_row('SELECT COUNT(*) c FROM tournament_entrants WHERE tournamentId = ? AND centreChampion = 1', [$TID])['c'] ?? 0) === 1);
+    foreach (db_all('SELECT * FROM match_games WHERE tournamentId = ? AND tournamentRound = 2', [$TID]) as $m) {
+        match_resign(['playerId' => (string)$m['playerA'], 'matchId' => (string)$m['matchId']]);
+    }
+
+    // ── Round 3: Egbeda down to 2 → one more centre match ──
+    $r3 = backend_dispatch('tournament.advance', ['requesterId' => $ADM, 'tournamentId' => $TID]);
+    chk('the centre stage keeps going until each centre has one player', (int)$r3['matches'] === 1);
+    foreach (db_all('SELECT * FROM match_games WHERE tournamentId = ? AND tournamentRound = 3', [$TID]) as $m) {
+        match_resign(['playerId' => (string)$m['playerA'], 'matchId' => (string)$m['matchId']]);
+    }
+
+    // ── The final ──
+    $fin = backend_dispatch('tournament.advance', ['requesterId' => $ADM, 'tournamentId' => $TID]);
+    chk('once every centre has a champion the tournament moves to the final',
+        ($fin['stage'] ?? '') === 'final' && (int)($fin['champions'] ?? 0) === 2 && (int)$fin['matches'] === 1);
+    chk('…and the two champions are from different centres', (function () use ($TID) {
+        $m = db_row("SELECT * FROM match_games WHERE tournamentId = ? AND tournamentStage = 'final'", [$TID]);
+        $a = db_row('SELECT centre FROM members WHERE memberId = ?', [$m['playerA']]);
+        $b = db_row('SELECT centre FROM members WHERE memberId = ?', [$m['playerB']]);
+        return (string)$a['centre'] !== (string)$b['centre'];
+    })());
+
+    $final = db_row("SELECT * FROM match_games WHERE tournamentId = ? AND tournamentStage = 'final'", [$TID]);
+    match_resign(['playerId' => (string)$final['playerA'], 'matchId' => (string)$final['matchId']]);
+    $done = backend_dispatch('tournament.advance', ['requesterId' => $ADM, 'tournamentId' => $TID]);
+    chk('the last player standing wins the tournament',
+        !empty($done['complete']) && (string)$done['winnerId'] === (string)$final['playerB']);
+    chk('…and it is recorded on the tournament itself',
+        (string)(db_row('SELECT status FROM tournaments WHERE tournamentId = ?', [$TID])['status'] ?? '') === 'complete');
+    chk('a finished tournament cannot be advanced again',
+        backend_dispatch('tournament.advance', ['requesterId' => $ADM, 'tournamentId' => $TID])['error'] === 'already_finished');
+
+    /* A DRAWN knockout game eliminates nobody. Advancing one player on a
+     * coin-flip is the wrong answer in a children's competition, so the game is
+     * flagged for staff and replayed with the colours swapped. */
+    $d = backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Draw Cup', 'game' => 'chess', 'programme' => 'ngg']);
+    $DID = (string)$d['tournamentId'];
+    backend_dispatch('tournament.enter', ['requesterId' => $ADM, 'tournamentId' => $DID, 'playerId' => 'TP-A1']);
+    backend_dispatch('tournament.enter', ['requesterId' => $ADM, 'tournamentId' => $DID, 'playerId' => 'TP-A2']);
+    backend_dispatch('tournament.advance', ['requesterId' => $ADM, 'tournamentId' => $DID]);
+    $dm = db_row('SELECT * FROM match_games WHERE tournamentId = ?', [$DID]);
+    db_update('match_games', ['status' => 'complete', 'result' => 'draw', 'winnerId' => '', 'reason' => 'stalemate', 'turnPlayer' => ''], ['matchId' => (string)$dm['matchId']]);
+    match_tournament_report((string)$dm['matchId']);
+    chk('a drawn knockout game eliminates nobody',
+        (int)(db_row("SELECT COUNT(*) c FROM tournament_entrants WHERE tournamentId = ? AND status = 'active'", [$DID])['c'] ?? 0) === 2);
+    chk('…and is flagged for staff instead',
+        (int)(db_row('SELECT flagged FROM match_games WHERE matchId = ?', [$dm['matchId']])['flagged'] ?? 0) === 1);
+    $rp = backend_dispatch('tournament.replay', ['requesterId' => $ADM, 'tournamentId' => $DID, 'matchId' => (string)$dm['matchId']]);
+    chk('staff replay the drawn game', !empty($rp['ok']) && !empty($rp['matchId']));
+    $rpm = db_row('SELECT * FROM match_games WHERE matchId = ?', [(string)$rp['matchId']]);
+    chk('…with the colours swapped, which is the standard courtesy',
+        (string)$rpm['playerA'] === (string)$dm['playerB'] && (string)$rpm['playerB'] === (string)$dm['playerA']);
+    chk('a game that was not drawn cannot be replayed',
+        backend_dispatch('tournament.replay', ['requesterId' => $ADM, 'tournamentId' => $DID, 'matchId' => (string)$rp['matchId']])['error'] === 'not_a_draw');
+
+    /* A tournament match is a MATCH — same rules engine, same reactions, same
+     * staff visibility. That is the whole reason it lives in match_games. */
+    chk('a tournament game is played through the ordinary match rules',
+        !empty(match_move(['playerId' => (string)$rpm['playerA'], 'matchId' => (string)$rpm['matchId'], 'move' => 'e2e4'])['ok']));
+    chk('…and is visible to staff like any other game',
+        !empty(match_get(['playerId' => $ADM, 'matchId' => (string)$rpm['matchId']])['match']['staffView']));
+
+    // Cancelling stops the games without deleting a child's record of them.
+    backend_dispatch('tournament.cancel', ['requesterId' => $ADM, 'tournamentId' => $DID]);
+    chk('cancelling closes the open games',
+        (int)(db_row("SELECT COUNT(*) c FROM match_games WHERE tournamentId = ? AND status IN ('invited','active')", [$DID])['c'] ?? 0) === 0);
+    chk('…but keeps them on the record rather than deleting them',
+        (int)(db_row('SELECT COUNT(*) c FROM match_games WHERE tournamentId = ?', [$DID])['c'] ?? 0) >= 2);
+
+    // The bracket, as anybody reading it would expect it grouped.
+    $br = backend_dispatch('tournament.bracket', ['requesterId' => $ADM, 'tournamentId' => $TID]);
+    chk('the bracket groups entrants by centre', !empty($br['ok'])
+        && count($br['centres']) === 2 && count($br['centres']['Egbeda']) === 5);
+    chk('…and the rounds are keyed by stage and number',
+        isset($br['rounds']['centre-1']) && isset($br['rounds']['final-1']));
+    $mine = backend_dispatch('tournament.mine', ['playerId' => 'TP-A1']);
+    chk('a player can see the tournaments they are in', !empty($mine['ok']) && count($mine['tournaments']) >= 1);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

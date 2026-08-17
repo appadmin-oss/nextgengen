@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 89;
+const NGG_SCHEMA_TARGET = 90;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2382,6 +2382,42 @@ function db_migrate(PDO $db): void {
               reaction TEXT NOT NULL, createdAt TEXT NOT NULL
             );
             CREATE INDEX idx_match_react ON match_reactions(matchId, ply);
+        ",
+
+        /* Admin-hosted tournaments. Every centre plays its own knockout, the
+         * centre champions meet in a final. Two tables plus two columns on the
+         * match, because a tournament match IS a match — a parallel game table
+         * would mean two places a game can be played and two places a
+         * safeguarding review has to look. */
+        90 => "
+            CREATE TABLE tournaments (
+              tournamentId TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              game TEXT NOT NULL DEFAULT 'chess',
+              programme TEXT DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'draft',
+              stage TEXT NOT NULL DEFAULT 'centre',
+              round INTEGER DEFAULT 0,
+              winnerId TEXT DEFAULT '', winnerName TEXT DEFAULT '',
+              createdBy TEXT DEFAULT '',
+              createdAt TEXT NOT NULL, updatedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_trn_status ON tournaments(status, updatedAt);
+
+            CREATE TABLE tournament_entrants (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              tournamentId TEXT NOT NULL,
+              playerId TEXT NOT NULL, playerName TEXT DEFAULT '', playerType TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              stage TEXT DEFAULT 'centre', status TEXT DEFAULT 'active',
+              centreChampion INTEGER DEFAULT 0, eliminatedRound INTEGER DEFAULT 0,
+              createdAt TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX idx_trn_entrant ON tournament_entrants(tournamentId, playerId);
+            CREATE INDEX idx_trn_entrant_t ON tournament_entrants(tournamentId, centre);
+
+            ALTER TABLE match_games ADD COLUMN tournamentRound INTEGER DEFAULT 0;
+            ALTER TABLE match_games ADD COLUMN tournamentStage TEXT DEFAULT '';
         ",
     ];
 
