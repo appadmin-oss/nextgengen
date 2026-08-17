@@ -848,13 +848,14 @@ function CommunityApp({ setPage, auth }) {
      growing its own list of exceptions. A live search still wins: typing in
      the sidebar takes you back to results from wherever you were. */
   const isArcade = active === "arcade" && results === null;
+  const isMatches = active === "matches" && results === null;
   /* Same shape as the Arcade: a destination with its own view, no channel feed,
      no composer, no members rail. Named once so every "is this a channel?"
      test below excludes it instead of each growing its own exception. */
   const isJournal = active === "journal" && results === null;
   // A specific channel = chat layout (compact rows, members rail, oldest→newest);
   // All activity / Saved / search = a media-forward card feed (newest first).
-  const isChat = active !== "all" && active !== "bookmarks" && active !== "arcade" && active !== "journal" && results === null;
+  const isChat = active !== "all" && active !== "bookmarks" && active !== "arcade" && active !== "matches" && active !== "journal" && results === null;
   const postsRef = React.useRef([]);
   const streamRef = React.useRef(null);
   const searchRef = React.useRef(null);
@@ -918,7 +919,7 @@ function CommunityApp({ setPage, auth }) {
 
   // Channel members rail (chat view only).
   React.useEffect(() => {
-    if (active === "all" || active === "bookmarks" || active === "arcade" || active === "journal") { setChMembers(null); return; }
+    if (active === "all" || active === "bookmarks" || active === "arcade" || active === "matches" || active === "journal") { setChMembers(null); return; }
     let a = true; setChMembers(null);
     NGGApi.member.community.members(active).then(r => { if (a) setChMembers(r.members || []); }).catch(() => { if (a) setChMembers([]); });
     return () => { a = false; };
@@ -931,7 +932,7 @@ function CommunityApp({ setPage, auth }) {
     // The Arcade has no feed. Loading one for it would fetch an empty channel
     // on every visit and, worse, leave `posts` at [] so a return to All
     // activity flashed "nothing here yet" before the real feed landed.
-    if (active === "arcade" || active === "journal") return;
+    if (active === "arcade" || active === "matches" || active === "journal") return;
     const chObj = channels.find(c => c.slug === active);
     setUnreadMark(chObj ? (chObj.unread || 0) : 0);
     loadFeed(active, sort, 0, false);
@@ -961,7 +962,7 @@ function CommunityApp({ setPage, auth }) {
   // Near-real-time polling. If the reader is at the bottom, splice new messages
   // straight in (Slack-style); otherwise surface an unobtrusive pill.
   React.useEffect(() => {
-    if (active === "bookmarks" || active === "arcade" || active === "journal" || results !== null) return;
+    if (active === "bookmarks" || active === "arcade" || active === "matches" || active === "journal" || results !== null) return;
     const tick = () => {
       if (document.hidden) return;
       NGGApi.member.community.feed(active, sort, 0).then(r => {
@@ -1022,8 +1023,8 @@ function CommunityApp({ setPage, auth }) {
   // Chronological (oldest→newest) render order with author grouping.
   const chrono = React.useMemo(() => (posts ? [...posts].reverse() : posts), [posts]);
   const dividerIdx = (!results && chrono && unreadMark > 0) ? Math.max(0, chrono.length - unreadMark) : -1;
-  const headTitle = active === "all" ? "All activity" : active === "bookmarks" ? "Saved items" : active === "arcade" ? "Arcade" : active === "journal" ? "Programme journal" : (activeChannel ? activeChannel.name : active);
-  const headIcon = active === "all" ? "✦" : active === "bookmarks" ? "🔖" : active === "arcade" ? "🎮" : active === "journal" ? "📖" : (activeChannel ? activeChannel.icon : "#");
+  const headTitle = active === "all" ? "All activity" : active === "bookmarks" ? "Saved items" : active === "arcade" ? "Arcade" : active === "matches" ? "Play a friend" : active === "journal" ? "Programme journal" : (activeChannel ? activeChannel.name : active);
+  const headIcon = active === "all" ? "✦" : active === "bookmarks" ? "🔖" : active === "arcade" ? "🎮" : active === "matches" ? "♟️" : active === "journal" ? "📖" : (activeChannel ? activeChannel.icon : "#");
 
   // Sidebar mentors: the staff of the channel currently open (no fabricated
   // presence — we only surface who is actually a mentor here).
@@ -1072,6 +1073,9 @@ function CommunityApp({ setPage, auth }) {
             </button>
             <button className={"cm-sb-item" + (active === "arcade" ? " is-active" : "")} aria-current={active === "arcade" ? "page" : undefined} onClick={() => go("arcade")}>
               <span className="cm-sb-ic" aria-hidden="true">🎮</span><span className="cm-sb-name">Arcade</span>
+            </button>
+            <button className={"cm-sb-item" + (active === "matches" ? " is-active" : "")} aria-current={active === "matches" ? "page" : undefined} onClick={() => go("matches")}>
+              <span className="cm-sb-ic" aria-hidden="true">♟️</span><span className="cm-sb-name">Play a friend</span>
             </button>
             <div className="cm-sb-section" role="heading" aria-level={2}>
               <span>Channels</span>
@@ -1131,7 +1135,7 @@ function CommunityApp({ setPage, auth }) {
               {activeChannel && <span className="cm-hd-topic">{activeChannel.description}</span>}
             </div>
             <div className="cm-hd-actions">
-              {active !== "bookmarks" && !isArcade && !results && (
+              {active !== "bookmarks" && !isArcade && !isMatches && !results && (
                 <div className="cm-hd-sort" role="group" aria-label="Sort messages">
                   {[["latest", isChat ? "Newest" : "New"], ["trending", "Hot"]].map(([v, l]) => <button key={v} className={"cm-hd-sortbtn" + (sort === v ? " is-active" : "")} aria-pressed={sort === v} onClick={() => setSort(v)}>{l}</button>)}
                 </div>
@@ -1143,12 +1147,12 @@ function CommunityApp({ setPage, auth }) {
                   nobody could open. Catch-up survives that because the sidebar
                   footer offers it too; Details does not, so it is marked to
                   stay. */}
-              {!isArcade && <button className="cm-hd-btn cm-hd-btn-ai" onClick={catchMeUp} aria-label="AI catch-up summary" title="AI catch-up">✨</button>}
-              {!isArcade && <button className={"cm-hd-btn cm-hd-btn-info" + (info ? " is-on" : "")} onClick={() => setInfo(v => !v)} aria-label="Channel details" aria-expanded={info} title="Details">ⓘ</button>}
+              {!isArcade && !isMatches && <button className="cm-hd-btn cm-hd-btn-ai" onClick={catchMeUp} aria-label="AI catch-up summary" title="AI catch-up">✨</button>}
+              {!isArcade && !isMatches && <button className={"cm-hd-btn cm-hd-btn-info" + (info ? " is-on" : "")} onClick={() => setInfo(v => !v)} aria-label="Channel details" aria-expanded={info} title="Details">ⓘ</button>}
             </div>
           </header>
 
-          {isJournal ? <div className="cm-stream is-feed"><CmProgramJournal auth={auth}/></div> : isArcade ? <div className="cm-stream is-feed"><CmArcade auth={auth}/></div> : (
+          {isJournal ? <div className="cm-stream is-feed"><CmProgramJournal auth={auth}/></div> : isMatches ? <div className="cm-stream is-feed"><CmMatches auth={auth}/></div> : isArcade ? <div className="cm-stream is-feed"><CmArcade auth={auth}/></div> : (
           <div className={"cm-stream" + (isChat ? " is-chat" : " is-feed")} ref={streamRef} onScroll={onStreamScroll}
             role={isChat ? "log" : "feed"} aria-label={headTitle + " messages"} aria-busy={posts === null} {...(isChat ? { "aria-live": "polite", "aria-relevant": "additions" } : {})}>
             {/* Pinned brief for a channel (its description) */}
@@ -1193,7 +1197,7 @@ function CommunityApp({ setPage, auth }) {
               destination with its own authoring flow, not a channel. Leaving the
               channel composer docked under it offered a "Message #the channel"
               box that posts nowhere related to what is on screen. */}
-          {active !== "bookmarks" && !isArcade && !isJournal && !results && (
+          {active !== "bookmarks" && !isArcade && !isMatches && !isJournal && !results && (
             <div className="cm-dock">
               <CmComposer channels={channels} active={active} me={me} onPosted={onPosted} enterToSend={isChat}/>
             </div>
@@ -1201,7 +1205,7 @@ function CommunityApp({ setPage, auth }) {
         </main>
 
         {/* ── Right column: thread > details > channel members ─────── */}
-        {isArcade || isJournal ? null : thread ? (
+        {isArcade || isMatches || isJournal ? null : thread ? (
           <CmThread post={thread} me={me} channels={channels} onClose={() => setThread(null)} onPatch={patchPost} onRemove={removePost}/>
         ) : info ? (
           <aside className="cm-info">
@@ -1301,6 +1305,323 @@ function CmArcade({ auth }) {
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+/* ── Two-player matches ───────────────────────────────────────────────────
+   The Arcade's solo games are graded the instant you finish. A match is the
+   opposite shape: it runs for days, and the screen a child opens most often is
+   not a board but the question "whose turn is it?". So the lobby leads with
+   the games waiting on YOU, and everything else sorts below it. */
+
+const CHESS_GLYPH = { K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙",
+                      k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
+/* The reaction vocabulary is the entire messaging surface — there is no text
+   input anywhere in this feature, by design. The server holds the same list
+   and refuses anything else. */
+const MATCH_REACTION_LABEL = {
+  "good-game": ["🤝", "Good game"], "nice-move": ["👏", "Nice move"],
+  "thinking": ["🤔", "Thinking…"],  "oops": ["😅", "Oops"],
+  "well-played": ["🌟", "Well played"], "your-turn": ["👉", "Your turn"],
+};
+
+/** FEN placement → 64 squares, a8 first, so the array reads like the board. */
+function chessSquares(fen) {
+  const rows = String(fen || "").split(" ")[0].split("/");
+  const out = [];
+  for (let r = 0; r < 8; r++) {
+    const row = rows[r] || "8";
+    for (const ch of row) {
+      if (/\d/.test(ch)) { for (let i = 0; i < +ch; i++) out.push(""); }
+      else out.push(ch);
+    }
+  }
+  return out;
+}
+function chessSqName(i) { return "abcdefgh"[i % 8] + (8 - Math.floor(i / 8)); }
+
+function CmMatches({ auth }) {
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [openId, setOpenId] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+
+  const load = React.useCallback(() => {
+    NGGApi.member.match.list()
+      .then(r => { setData(r); setErr(""); })
+      .catch(e => setErr((e && e.message) || "Could not open your games."));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const invite = (opponentId) => {
+    if (busy) return;
+    setBusy(opponentId); setErr("");
+    NGGApi.member.match.invite("chess", opponentId)
+      .then(r => { load(); setOpenId(r.matchId); })
+      .catch(e => setErr(e.code === "already_playing" ? "You already have a game running with them." : ((e && e.message) || "Could not start that game.")))
+      .then(() => setBusy(""));
+  };
+  const respond = (matchId, accept) => {
+    setBusy(matchId);
+    NGGApi.member.match.respond(matchId, accept)
+      .then(() => { load(); if (accept) setOpenId(matchId); })
+      .catch(e => setErr((e && e.message) || "Could not answer that invitation."))
+      .then(() => setBusy(""));
+  };
+
+  if (openId) return <MatchGame matchId={openId} onBack={() => { setOpenId(""); load(); }}/>;
+
+  const matches = (data && data.matches) || [];
+  const me = (data && data.me) || {};
+  const yourMove = matches.filter(m => m.status === "active" && m.yourTurn);
+  const waiting  = matches.filter(m => m.status === "active" && !m.yourTurn);
+  const invites  = matches.filter(m => m.status === "invited" && m.you === "B");
+  const sent     = matches.filter(m => m.status === "invited" && m.you === "A");
+  const done     = matches.filter(m => m.status === "complete" || m.status === "declined");
+
+  return (
+    <div className="arc mtl" data-screen-label="Matches">
+      {err && <div className="arc-err" role="alert">{err}</div>}
+      <div className="mtl-hero">
+        <div>
+          <div className="arc-eyebrow">Play a friend</div>
+          <h2 className="arc-hero-h">Chess</h2>
+          <p className="arc-hero-p">
+            One move at a time — your opponent has days, not seconds. Play someone at your
+            own centre, and pick up the game whenever you like.
+          </p>
+        </div>
+        <div className="mtl-count">
+          <dl><dt>Your move</dt><dd>{yourMove.length}</dd></dl>
+        </div>
+      </div>
+
+      {!data ? <div className="arc-skels">{[0, 1, 2].map(i => <div key={i} className="arc-skel"/>)}</div> : <>
+        {invites.length > 0 && <section className="mtl-sec">
+          <h3 className="mtl-h">Invitations</h3>
+          {invites.map(m => (
+            <div key={m.matchId} className="mtl-row is-invite">
+              <span className="mtl-who">{m.players.A.name} invited you</span>
+              <span className="mtl-act">
+                <button className="btn btn-primary btn-sm" disabled={busy === m.matchId} onClick={() => respond(m.matchId, true)}>Accept</button>
+                <button className="btn btn-ghost btn-sm" disabled={busy === m.matchId} onClick={() => respond(m.matchId, false)}>Decline</button>
+              </span>
+            </div>
+          ))}
+        </section>}
+
+        <MatchList title="Your move" rows={yourMove} me={me} onOpen={setOpenId} emphasise/>
+        <MatchList title="Waiting on them" rows={waiting} me={me} onOpen={setOpenId}/>
+        <MatchList title="Invitations you sent" rows={sent} me={me} onOpen={setOpenId}/>
+        <MatchList title="Finished" rows={done} me={me} onOpen={setOpenId}/>
+
+        <section className="mtl-sec">
+          <h3 className="mtl-h">Start a game</h3>
+          <p className="mtl-hint">Everyone here is at {me.centre || "your centre"}.</p>
+          <div className="mtl-opps">
+            {((data && data.opponents) || []).map(o => (
+              <button key={o.id} className="mtl-opp" disabled={!!busy} onClick={() => invite(o.id)}>
+                <span className="mtl-opp-av" aria-hidden="true">{cmInitial(o.fullName)}</span>
+                <span className="mtl-opp-n">{o.fullName}</span>
+                <span className="mtl-opp-go" aria-hidden="true">♟</span>
+              </button>
+            ))}
+            {!((data && data.opponents) || []).length &&
+              <p className="mtl-hint">Nobody else at your centre is signed up yet.</p>}
+          </div>
+        </section>
+
+        <p className="arc-fineprint">
+          Every move is checked on the server, so an illegal move simply will not play.
+          Your mentors can see these games.
+        </p>
+      </>}
+    </div>
+  );
+}
+
+function MatchList({ title, rows, me, onOpen, emphasise }) {
+  if (!rows.length) return null;
+  return (
+    <section className="mtl-sec">
+      <h3 className="mtl-h">{title}</h3>
+      {rows.map(m => {
+        const them = m.you === "A" ? m.players.B : m.players.A;
+        const outcome = m.status !== "complete" ? ""
+          : m.result === "draw" ? "Drawn · " + (m.reason || "").replace(/_/g, " ")
+          : (m.winnerId === (me && me.id) ? "You won" : "You lost") + " · " + (m.reason || "").replace(/_/g, " ");
+        return (
+          <button key={m.matchId} className={"mtl-row" + (emphasise ? " is-turn" : "")} onClick={() => onOpen(m.matchId)}>
+            <span className="mtl-who">{them.name}</span>
+            <span className="mtl-meta">{outcome || (m.ply ? "move " + Math.ceil(m.ply / 2) : "not started")}</span>
+            <span className="mtl-go" aria-hidden="true">→</span>
+          </button>
+        );
+      })}
+    </section>
+  );
+}
+
+/** One game: the board, the move list, and the six things you can say. */
+function MatchGame({ matchId, onBack }) {
+  const [m, setM] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [from, setFrom] = React.useState("");
+  const [promo, setPromo] = React.useState(null);   // { from, to } awaiting a piece
+  const [busy, setBusy] = React.useState(false);
+
+  const load = React.useCallback(() => {
+    NGGApi.member.match.get(matchId)
+      .then(r => { setM(r.match); setErr(""); })
+      .catch(e => setErr((e && e.message) || "Could not open that game."));
+  }, [matchId]);
+  React.useEffect(() => { load(); }, [load]);
+
+  /* A match runs for days, so the other player's move arrives while this screen
+     is open. Poll gently, and only while it is actually their turn. */
+  React.useEffect(() => {
+    if (!m || m.status !== "active" || m.yourTurn) return;
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+  }, [m && m.status, m && m.yourTurn, load]);
+
+  const send = (uci) => {
+    setBusy(true); setErr(""); setFrom(""); setPromo(null);
+    NGGApi.member.match.move(matchId, uci)
+      .then(load)
+      .catch(e => setErr(e.code === "illegal_move" ? "That move isn't legal." : ((e && e.message) || "Could not play that move.")))
+      .then(() => setBusy(false));
+  };
+
+  if (err && !m) return <div className="arc mtg"><div className="arc-err" role="alert">{err}</div>
+    <button className="btn btn-ghost btn-sm" onClick={onBack}>← Back</button></div>;
+  if (!m) return <div className="arc mtg"><div className="arc-skels"><div className="arc-skel"/></div></div>;
+
+  const squares = chessSquares(m.state);
+  const flip = m.yourColour === "b";
+  const order = flip ? squares.map((_, i) => 63 - i) : squares.map((_, i) => i);
+  const legal = m.legal || [];
+  const canMove = m.status === "active" && m.yourTurn && !busy;
+  const targets = from ? legal.filter(u => u.slice(0, 2) === from).map(u => u.slice(2, 4)) : [];
+  /* A mentor opening a match is not one of the players, so `you` is empty.
+     Everything below reads from the two NAMED players in that case — otherwise
+     staff get a board captioned "You vs …" for a game they are not in, and a
+     finished one dereferences players[""] and blanks the screen. */
+  const isPlayer = m.you === "A" || m.you === "B";
+  const them = m.you === "A" ? m.players.B : m.players.A;
+  const title = isPlayer ? "You vs " + them.name : m.players.A.name + " vs " + m.players.B.name;
+
+  const tap = (sq, piece) => {
+    if (!canMove) return;
+    if (from && targets.indexOf(sq) !== -1) {
+      // A pawn reaching the last rank has four possible moves, not one.
+      const opts = legal.filter(u => u.slice(0, 2) === from && u.slice(2, 4) === sq);
+      if (opts.length > 1 && opts[0].length === 5) { setPromo({ from, to: sq }); return; }
+      send(from + sq);
+      return;
+    }
+    // Tapping your own piece re-aims rather than deselecting, which is what
+    // people expect when they change their mind mid-move.
+    if (piece && legal.some(u => u.slice(0, 2) === sq)) { setFrom(sq); return; }
+    setFrom("");
+  };
+
+  const reason = (m.reason || "").replace(/_/g, " ");
+  const winnerName = m.winnerId === m.players.A.id ? m.players.A.name
+    : m.winnerId === m.players.B.id ? m.players.B.name : "";
+  const statusLine = m.status === "complete"
+    ? (m.result === "draw" ? "Drawn — " + reason
+       : (isPlayer
+            ? (m.winnerId === m.players[m.you].id ? "You won" : them.name + " won")
+            : winnerName + " won") + " — " + reason)
+    : m.status === "invited" ? "Waiting for " + them.name + " to accept"
+    : !isPlayer ? "Waiting for " + (m.turnPlayer === m.players.A.id ? m.players.A.name : m.players.B.name)
+    : m.yourTurn ? "Your move" : "Waiting for " + them.name;
+
+  return (
+    <div className="arc mtg" data-screen-label="Chess match">
+      <button className="btn btn-ghost btn-sm mtg-back" onClick={onBack}>← All games</button>
+      {err && <div className="arc-err" role="alert">{err}</div>}
+
+      <div className="mtg-head">
+        <div>
+          <div className="arc-eyebrow">{m.staffView ? "Staff view" : "Chess"}</div>
+          <h2 className="mtg-h">{title}</h2>
+        </div>
+        <div className={"mtg-status" + (m.yourTurn && m.status === "active" ? " is-turn" : "")}>{statusLine}</div>
+      </div>
+
+      <div className="mtg-wrap">
+        <div className="mtg-board" role="grid" aria-label="Chess board">
+          {order.map(i => {
+            const sq = chessSqName(i);
+            const piece = squares[i];
+            const dark = ((Math.floor(i / 8) + (i % 8)) % 2) === 1;
+            const isTarget = targets.indexOf(sq) !== -1;
+            return (
+              <button key={sq} role="gridcell" className={"mtg-sq" + (dark ? " is-dark" : "") + (from === sq ? " is-from" : "") + (isTarget ? " is-target" : "")}
+                disabled={!canMove} onClick={() => tap(sq, piece)}
+                aria-label={sq + (piece ? " " + (piece === piece.toUpperCase() ? "white" : "black") + " " + ({ k: "king", q: "queen", r: "rook", b: "bishop", n: "knight", p: "pawn" }[piece.toLowerCase()]) : " empty")}>
+                {piece && <span className={"mtg-pc" + (piece === piece.toUpperCase() ? " is-w" : " is-b")}>{CHESS_GLYPH[piece]}</span>}
+                {isTarget && !piece && <span className="mtg-dot" aria-hidden="true"/>}
+              </button>
+            );
+          })}
+        </div>
+
+        <aside className="mtg-side">
+          <h3 className="mtl-h">Moves</h3>
+          <ol className="mtg-moves">
+            {(m.moves || []).map(mv => <li key={mv.ply}><span className="mono">{mv.san}</span></li>)}
+            {!(m.moves || []).length && <li className="mtg-empty">No moves yet.</li>}
+          </ol>
+          {m.status === "active" && !m.staffView &&
+            <button className="btn btn-ghost btn-sm mtg-resign" disabled={busy}
+              onClick={() => NGGApi.member.match.resign(matchId).then(load)}>Resign</button>}
+        </aside>
+      </div>
+
+      {!m.staffView && <div className="mtg-reacts">
+        <h3 className="mtl-h">Say something</h3>
+        <p className="mtl-hint">These are the only messages here — there is no typing.</p>
+        <div className="mtg-react-row">
+          {Object.keys(MATCH_REACTION_LABEL).map(k => (
+            <button key={k} className="mtg-react" disabled={busy}
+              onClick={() => NGGApi.member.match.react(matchId, k).then(load).catch(() => {})}>
+              <span aria-hidden="true">{MATCH_REACTION_LABEL[k][0]}</span> {MATCH_REACTION_LABEL[k][1]}
+            </button>
+          ))}
+        </div>
+        {(m.reactions || []).length > 0 && <div className="mtg-react-log">
+          {(m.reactions || []).slice(-6).map((r, i) => (
+            <span key={i} className="mtg-react-chip">
+              {(MATCH_REACTION_LABEL[r.reaction] || ["💬", r.reaction])[0]}{" "}
+              {(MATCH_REACTION_LABEL[r.reaction] || ["", r.reaction])[1]}
+            </span>
+          ))}
+        </div>}
+        <button className="mtg-report" onClick={() => NGGApi.member.match.report(matchId).then(load).catch(() => {})}>
+          Report this game to a mentor
+        </button>
+      </div>}
+
+      {promo && <div className="mtg-promo" role="dialog" aria-label="Choose a piece">
+        <div className="mtg-promo-box">
+          <h3 className="mtl-h">Promote to</h3>
+          <div className="mtg-promo-row">
+            {["q", "r", "b", "n"].map(p => (
+              <button key={p} className="mtg-promo-btn" onClick={() => send(promo.from + promo.to + p)}>
+                <span className={"mtg-pc" + (m.yourColour === "w" ? " is-w" : " is-b")}>
+                  {CHESS_GLYPH[m.yourColour === "w" ? p.toUpperCase() : p]}
+                </span>
+                <em>{{ q: "Queen", r: "Rook", b: "Bishop", n: "Knight" }[p]}</em>
+              </button>
+            ))}
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={() => setPromo(null)}>Cancel</button>
+        </div>
+      </div>}
     </div>
   );
 }

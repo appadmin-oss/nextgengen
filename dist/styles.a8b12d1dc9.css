@@ -2978,3 +2978,100 @@ button.cm-star.mine { box-shadow: inset 0 0 0 1.5px rgba(224,138,0,0.5); }
   }
   .cm-sb-item { min-height: 44px; }
 }
+
+/* ══ Two-player matches (chess) ═══════════════════════════════════════════
+   The board is the one element here that must stay square at every width, so
+   it is driven by aspect-ratio on a fixed 8-column grid rather than by fixed
+   pixel sizes — a phone gets a small board, a desktop a large one, and the
+   squares never go rectangular in between. */
+.mtl-hero { display: flex; flex-wrap: wrap; gap: 22px; align-items: center; justify-content: space-between;
+  background: linear-gradient(135deg, #eef2fb, #f7f0e4);
+  border: 1px solid var(--cream-200, #e8dec6); border-radius: 18px; padding: 22px 24px; margin-bottom: 22px; }
+.mtl-count dl { margin: 0; background: #fff; border: 1px solid var(--cream-200, #e8dec6);
+  border-radius: 12px; padding: 12px 18px; text-align: center; min-width: 104px; }
+.mtl-count dt { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-500); }
+.mtl-count dd { margin: 4px 0 0; font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ink-900); }
+
+.mtl-sec { margin-bottom: 26px; }
+.mtl-h { margin: 0 0 8px; font-size: 12px; font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-500); }
+.mtl-hint { margin: 0 0 10px; font-size: 13px; color: var(--ink-500); }
+.mtl-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  background: #fff; border: 1px solid var(--cream-200, #e8dec6); border-radius: 12px;
+  padding: 13px 16px; margin-bottom: 8px; min-height: 52px; font: inherit; color: var(--ink-900); cursor: pointer; }
+.mtl-row:hover { border-color: var(--gold-500, #f5b026); }
+.mtl-row.is-turn { border-left: 3px solid var(--gold-500, #f5b026); }
+.mtl-row.is-invite { cursor: default; flex-wrap: wrap; }
+.mtl-who { font-weight: 700; flex: 1 1 auto; min-width: 0; }
+.mtl-meta { font-size: 12.5px; color: var(--ink-500); }
+.mtl-go { color: var(--ink-500); }
+.mtl-act { display: flex; gap: 8px; }
+
+.mtl-opps { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); }
+.mtl-opp { display: flex; align-items: center; gap: 10px; background: #fff; font: inherit; text-align: left;
+  border: 1px solid var(--cream-200, #e8dec6); border-radius: 12px; padding: 10px 12px; min-height: 52px;
+  cursor: pointer; color: var(--ink-900); }
+.mtl-opp:hover:not(:disabled) { border-color: var(--gold-500, #f5b026); }
+.mtl-opp:disabled { opacity: .55; cursor: not-allowed; }
+.mtl-opp-av { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--navy-900, #16223e); color: #fff; font-size: 13px; font-weight: 800; flex: none; }
+.mtl-opp-n { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.mtl-opp-go { color: var(--ink-500); }
+
+/* ── The game ── */
+.mtg-back { margin-bottom: 12px; }
+.mtg-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.mtg-h { margin: 2px 0 0; font-size: clamp(1.15rem, 3vw, 1.5rem); font-weight: 800; color: var(--ink-900); }
+.mtg-status { font-size: 13px; font-weight: 700; color: var(--ink-700);
+  background: #fff; border: 1px solid var(--cream-200, #e8dec6); border-radius: 999px; padding: 7px 14px; }
+.mtg-status.is-turn { background: var(--gold-500, #f5b026); border-color: var(--gold-500, #f5b026); color: #0c1432; }
+
+.mtg-wrap { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 820px) { .mtg-wrap { grid-template-columns: minmax(0, 1fr) 210px; } }
+
+.mtg-board { display: grid; grid-template-columns: repeat(8, 1fr); aspect-ratio: 1 / 1;
+  width: 100%; max-width: 560px; border: 2px solid var(--navy-900, #16223e); border-radius: 8px;
+  overflow: hidden; box-shadow: 0 10px 30px -18px rgba(12,20,50,.6); }
+.mtg-sq { position: relative; display: grid; place-items: center; border: 0; padding: 0; cursor: pointer;
+  background: #f0d9b5; font: inherit; }
+.mtg-sq.is-dark { background: #b58863; }
+.mtg-sq:disabled { cursor: default; }
+.mtg-sq.is-from { box-shadow: inset 0 0 0 3px var(--gold-500, #f5b026); }
+.mtg-sq.is-target { box-shadow: inset 0 0 0 3px rgba(47,158,68,.85); }
+.mtg-sq:focus-visible { outline: 3px solid #1b6ef3; outline-offset: -3px; z-index: 1; }
+/* Glyph colour is set explicitly for BOTH sides: the outline glyphs (♔) render
+   as white shapes that vanish on a light square unless they are painted dark
+   and given a light edge, which is why this is not just `color: #fff`. */
+.mtg-pc { font-size: clamp(22px, 6.2vw, 42px); line-height: 1; user-select: none; }
+.mtg-pc.is-w { color: #fff; text-shadow: 0 0 1px #2b2b2b, 0 1px 2px rgba(0,0,0,.45); }
+.mtg-pc.is-b { color: #1d1d1d; text-shadow: 0 1px 1px rgba(255,255,255,.25); }
+.mtg-dot { width: 26%; height: 26%; border-radius: 50%; background: rgba(47,158,68,.55); }
+
+.mtg-side { background: #fff; border: 1px solid var(--cream-200, #e8dec6); border-radius: 14px; padding: 14px 16px; }
+.mtg-moves { margin: 0; padding-left: 20px; max-height: 320px; overflow-y: auto;
+  font-size: 13.5px; color: var(--ink-900); }
+.mtg-moves li { padding: 1px 0; }
+.mtg-empty { list-style: none; margin-left: -20px; color: var(--ink-500); }
+.mtg-resign { margin-top: 12px; width: 100%; }
+
+.mtg-reacts { margin-top: 24px; background: #fff; border: 1px solid var(--cream-200, #e8dec6);
+  border-radius: 14px; padding: 16px 18px; }
+.mtg-react-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.mtg-react { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 14px;
+  border-radius: 999px; border: 1px solid var(--cream-200, #e8dec6); background: var(--cream-50, #fdf9f0);
+  font: inherit; font-size: 13.5px; font-weight: 600; color: var(--ink-900); cursor: pointer; }
+.mtg-react:hover:not(:disabled) { border-color: var(--gold-500, #f5b026); }
+.mtg-react-log { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.mtg-react-chip { font-size: 12.5px; color: var(--ink-700); background: var(--cream-100, #f7f0e4);
+  border-radius: 999px; padding: 4px 10px; }
+.mtg-report { margin-top: 14px; background: none; border: 0; padding: 6px 0; font: inherit;
+  font-size: 13px; color: var(--coral-text, #c1341c); text-decoration: underline; cursor: pointer; min-height: 44px; }
+
+.mtg-promo { position: fixed; inset: 0; background: rgba(12,20,50,.55); display: grid; place-items: center; z-index: 60; padding: 20px; }
+.mtg-promo-box { background: #fff; border-radius: 16px; padding: 20px 22px; max-width: 380px; width: 100%; }
+.mtg-promo-row { display: flex; gap: 10px; margin-bottom: 14px; }
+.mtg-promo-btn { flex: 1; display: grid; place-items: center; gap: 4px; padding: 12px 6px; min-height: 76px;
+  border: 1px solid var(--cream-200, #e8dec6); border-radius: 12px; background: var(--cream-50, #fdf9f0); cursor: pointer; font: inherit; }
+.mtg-promo-btn:hover { border-color: var(--gold-500, #f5b026); }
+.mtg-promo-btn em { font-style: normal; font-size: 11.5px; color: var(--ink-700); }
+.mtg-promo-btn .mtg-pc { font-size: 30px; }
