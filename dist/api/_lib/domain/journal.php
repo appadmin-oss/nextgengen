@@ -72,6 +72,19 @@ function journal_shape(array $r, int $level): array {
         'media'      => safe_json((string)($r['mediaJson'] ?? '')) ?: [],
         'people'     => journal_tags((string)$r['entryId']),
     ];
+
+    /* How long after the event it was written down.
+     *
+     * Backdating has to be allowed — the meeting was on Tuesday and the write-up
+     * happens on Friday. But an institutional record that presents a write-up as
+     * contemporaneous when it was not is quietly misleading, and this is the
+     * record a funder or a safeguarding review reads. Both timestamps are
+     * already stored, so the gap is derivable; publishing it lets the entry say
+     * "recorded 3 days later" out loud instead of hiding it.
+     */
+    $occ = strtotime((string)($r['occurredAt'] ?? ''));
+    $made = strtotime((string)($r['createdAt'] ?? ''));
+    $out['recordedAfterDays'] = ($occ && $made && $made > $occ) ? (int)floor(($made - $occ) / 86400) : 0;
     /* The share token is a credential. It goes to staff, who hand it out — never
      * in a public or member-facing payload, or reading an entry would be enough
      * to mint a link to it. */
@@ -111,6 +124,74 @@ function journal_set_tags(string $entryId, array $people): void {
 
 /* ── Writes (journalist capability) ──────────────────────────────────────── */
 
+/**
+ * Clean an entry's attachments.
+ *
+ * A journal entry is the programme's institutional record, and the thing people
+ * most want to attach to "what happened" is a photograph of it. Each item is
+ * {type, url, alt, caption}; anything that is not a plain https URL is dropped
+ * rather than stored, on the same rule the Community feed uses for post media.
+ *
+ * Dropped, not refused: a caption that came back malformed should not lose
+ * somebody the paragraph they just wrote. What must not happen is an unchecked
+ * URL reaching an <img src>, and that is what this prevents.
+ */
+function journal_media_clean($in): array {
+    if (!is_array($in)) return [];
+    $out = [];
+    foreach ($in as $item) {
+        if (!is_array($item)) continue;
+        $url = trim((string)($item['url'] ?? ''));
+        if ($url === '' || !preg_match('#^https://#i', $url)) continue;
+        $type = strtolower(trim((string)($item['type'] ?? 'image')));
+        if (!in_array($type, ['image', 'video'], true)) $type = 'image';
+        $out[] = [
+            'type' => $type,
+            'url' => substr($url, 0, 500),
+            // Alt text is an accessibility requirement, not decoration: these
+            // entries are read by people using screen readers too.
+            'alt' => substr(trim((string)($item['alt'] ?? '')), 0, 240),
+            'caption' => substr(trim((string)($item['caption'] ?? '')), 0, 240),
+            'poster' => preg_match('#^https://#i', (string)($item['poster'] ?? '')) ? substr((string)$item['poster'], 0, 500) : '',
+        ];
+        // A dozen photographs on one entry is an album, not a record.
+        if (count($out) >= 12) break;
+    }
+    return $out;
+}
+
+/**
+ * When the thing being recorded actually happened.
+ *
+ * Backdating is REQUIRED for this to be usable at all: the meeting was on
+ * Tuesday and somebody writes it up on Friday, and a journal that stamps it
+ * Friday is wrong about the one fact it exists to preserve. So a date in the
+ * past is accepted deliberately.
+ *
+ * It is also bounded, because `occurredAt` is the feed's sort key. Unvalidated,
+ * a mistyped year does not error — it silently buries the entry at the bottom of
+ * the journal or pins it to the top forever, which is worse than a refusal.
+ *
+ *   • a date (YYYY-MM-DD) or a full ISO timestamp is accepted
+ *   • the future is refused beyond a day's slack for timezones
+ *   • before 2015 is refused as a typo — the programme did not exist
+ *
+ * Honesty about backdating needs no column: `createdAt` already says when it
+ * was written and `occurredAt` when it happened, so the gap between them is
+ * derivable, and journal_shape publishes it.
+ */
+function journal_occurred_at($in, string $fallback = ''): array {
+    $raw = trim((string)($in ?? ''));
+    if ($raw === '') return ['ok' => true, 'value' => $fallback !== '' ? $fallback : now_iso()];
+    // A bare date means midnight UTC on that day.
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) $raw .= 'T00:00:00Z';
+    $ts = strtotime($raw);
+    if ($ts === false) return ['ok' => false, 'error' => 'bad_date'];
+    if ($ts > time() + 86400) return ['ok' => false, 'error' => 'date_in_future'];
+    if ($ts < strtotime('2015-01-01')) return ['ok' => false, 'error' => 'date_too_old'];
+    return ['ok' => true, 'value' => gmdate('Y-m-d\TH:i:s\Z', $ts)];
+}
+
 function journal_entry_save(array $p): array {
     $g = admin_cap_gate($p, 'journal'); if (!$g['ok']) return $g;
     $me = $g['requester'];
@@ -127,21 +208,38 @@ function journal_entry_save(array $p): array {
      * staff-only, full stop; widening is a separate, audited call. This is what
      * stops an entry naming a child becoming world-readable because a form sent
      * a stale default. */
+    /* Load the existing row FIRST when editing, so a field the form did not
+     * send can keep its stored value instead of being overwritten with a
+     * default. That is what turned "edit the title" into "delete the
+     * photographs" — mediaJson was rewritten as [] on every save because the
+     * editor never sent a media key. */
+    $existing = null;
+    if ($entryId !== '') {
+        $existing = db_row('SELECT * FROM program_journal WHERE entryId = ?', [$entryId]);
+        if (!$existing) return ['ok' => false, 'error' => 'not_found'];
+    }
+
+    $when = journal_occurred_at($p['occurredAt'] ?? '', (string)($existing['occurredAt'] ?? ''));
+    if (!$when['ok']) return ['ok' => false, 'error' => $when['error']];
+
     $fields = [
         'title' => substr($title, 0, 240),
         'body' => (string)($p['body'] ?? ''),
         'kind' => $kind,
         'status' => $status,
         'centreId' => substr(trim((string)($p['centreId'] ?? '')), 0, 48),
-        'occurredAt' => substr(trim((string)($p['occurredAt'] ?? '')), 0, 40) ?: now_iso(),
-        'mediaJson' => json_encode(is_array($p['media'] ?? null) ? $p['media'] : [], JSON_UNESCAPED_SLASHES),
+        'occurredAt' => $when['value'],
         'pinned' => !empty($p['pinned']) ? 1 : 0,
         'updatedAt' => now_iso(),
     ];
+    // Only touched when the caller actually says something about attachments.
+    if (array_key_exists('media', $p)) {
+        $fields['mediaJson'] = json_encode(journal_media_clean($p['media']), JSON_UNESCAPED_SLASHES);
+    } elseif ($existing === null) {
+        $fields['mediaJson'] = '[]';
+    }
 
     if ($entryId !== '') {
-        $row = db_row('SELECT entryId FROM program_journal WHERE entryId = ?', [$entryId]);
-        if (!$row) return ['ok' => false, 'error' => 'not_found'];
         db_update('program_journal', $fields, ['entryId' => $entryId]);
         audit('journal.update', (string)$me['memberId'], $entryId, ['kind' => $kind, 'status' => $status], (string)($p['ip'] ?? ''));
     } else {

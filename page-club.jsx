@@ -2634,9 +2634,33 @@ function CmJournalCard({ e, canAuthor, onEdit, onVisibility, onShare, compact })
         <span className="chip status-archived" title={vis.hint}>{vis.icon} {vis.label}</span>
       </header>
       <h4 className="cm-pj-title">{e.title}</h4>
+      {/* Photographs sit above the prose: on a card in a feed, the picture is
+          what makes somebody stop and read the paragraph. The first is shown
+          large and the rest as a strip, so a twelve-photo entry does not push
+          everything else off the screen. */}
+      {(e.media || []).length > 0 && (
+        <div className={"cm-pj-shots" + (compact ? " is-compact" : "")}>
+          {(e.media || []).slice(0, compact ? 1 : 5).map((m, i) => (
+            <figure key={m.url + i} className={"cm-pj-shot" + (i === 0 ? " is-lead" : "")}>
+              {m.type === "video"
+                ? <video src={cmOpt(m.url, 900)} poster={m.poster || cmPoster(m.url)} controls preload="metadata"/>
+                : <img src={cmOpt(m.url, i === 0 ? 900 : 320)} alt={m.alt || ""} loading="lazy"/>}
+              {!compact && m.caption && <figcaption>{m.caption}</figcaption>}
+            </figure>
+          ))}
+          {(e.media || []).length > (compact ? 1 : 5) &&
+            <span className="cm-pj-more">+{(e.media || []).length - (compact ? 1 : 5)} more</span>}
+        </div>
+      )}
       {!compact && e.body && <p className="cm-pj-body">{e.body}</p>}
       <div className="cm-pj-meta">
         {pjDate(e.occurredAt)}{e.authorName ? " · " + e.authorName : ""}
+        {/* An institutional record that presents a late write-up as
+            contemporaneous is quietly misleading, and this is the record a
+            funder or a safeguarding review reads. Say it on the card. */}
+        {e.recordedAfterDays > 0 && <span className="cm-pj-late" title={"Written up on " + pjDate(e.createdAt)}>
+          {" · recorded " + (e.recordedAfterDays === 1 ? "a day" : e.recordedAfterDays + " days") + " later"}
+        </span>}
       </div>
       {(e.people || []).length > 0 && (
         <div className="cm-pj-people">
@@ -2667,11 +2691,49 @@ function CmJournalEditor({ entry, onClose, onSaved }) {
     status: (entry && entry.status) || "open",
     occurredAt: (entry && entry.occurredAt) || new Date().toISOString(),
     people: (entry && entry.people) || [],
+    /* Always sent, even when empty. The server only touches attachments when
+       the payload mentions them, and an editor that omitted the key was how
+       "edit the title" used to mean "delete the photographs". */
+    media: (entry && entry.media) || [],
   }));
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
   const [who, setWho] = React.useState("");
+  const [up, setUp] = React.useState(0);
+  const fileRef = React.useRef(null);
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+
+  /* Today, as the date input wants it. Used as `max`: the journal records what
+     happened, and nothing has happened tomorrow yet. */
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const occurredStr = String(f.occurredAt || "").slice(0, 10);
+  const daysLate = (() => {
+    if (!occurredStr) return 0;
+    const d = Math.floor((Date.parse(todayStr) - Date.parse(occurredStr)) / 86400000);
+    return d > 0 ? d : 0;
+  })();
+
+  const addFiles = async (list) => {
+    const files = Array.from(list || []).filter(x => /^image\/|^video\//.test(x.type));
+    if (!files.length) return;
+    if (f.media.length + files.length > 12) { toast.error("Twelve attachments is the limit for one entry."); return; }
+    setUp(1);
+    for (const file of files) {
+      const mb = file.size / 1024 / 1024;
+      const isVid = /^video\//.test(file.type);
+      if (isVid && mb > CM_VIDEO_MAX_MB) { toast.error(file.name + " is too large for a clip."); continue; }
+      if (!isVid && mb > CM_IMAGE_MAX_MB) { toast.error(file.name + " is too large."); continue; }
+      try {
+        const r = await NGGApi.uploadFile(file, "journal", pct => setUp(Math.max(1, pct)));
+        setF(x => ({ ...x, media: x.media.concat([{
+          type: (r.resourceType === "video" || isVid) ? "video" : "image",
+          url: r.url, poster: isVid ? cmPoster(r.url) : "", alt: "", caption: "",
+        }]) }));
+      } catch (_) { toast.error("Couldn't upload " + (file.name || "that file") + "."); }
+    }
+    setUp(0);
+  };
+  const setMediaField = (i, k, v) => setF(x => ({ ...x, media: x.media.map((m, j) => j === i ? { ...m, [k]: v } : m) }));
 
   const addPerson = () => {
     const name = who.trim();
@@ -2688,9 +2750,13 @@ function CmJournalEditor({ entry, onClose, onSaved }) {
     try { const r = await NGGApi.member.programJournal.save(f); onSaved(r.entry); }
     catch (e) {
       const d = e.data || {};
-      setErr(d.error === "title_required" ? "A title is required."
-        : d.error === "bad_kind" ? "Pick one of the listed kinds."
-        : d.error === "forbidden" ? "Your account isn't set up to write journal entries."
+      const code = d.error || e.code;
+      setErr(code === "title_required" ? "A title is required."
+        : code === "bad_kind" ? "Pick one of the listed kinds."
+        : code === "forbidden" ? "Your account isn't set up to write journal entries."
+        : code === "date_in_future" ? "That date hasn't happened yet — the journal records what did."
+        : code === "date_too_old" ? "That date is before the programme existed — check the year."
+        : code === "bad_date" ? "That date didn't make sense."
         : (e.code || e.message || "Couldn't save."));
       setBusy(false);
     }
@@ -2719,15 +2785,50 @@ function CmJournalEditor({ entry, onClose, onSaved }) {
               {Object.keys(PJ_STATUS).map(k => <option key={k} value={k}>{PJ_STATUS[k]}</option>)}
             </select>
           </label>}
-          <label className="cm-pj-lab">When
-            <input className="cm-pj-in" type="date" value={String(f.occurredAt).slice(0, 10)}
-              onChange={e => set("occurredAt", e.target.value ? new Date(e.target.value).toISOString() : new Date().toISOString())}/>
+          {/* Backdating is the normal case, not an edge case: the meeting was on
+              Tuesday and the write-up happens on Friday. `max` stops the future,
+              which is the one direction that makes no sense for a record of what
+              happened. */}
+          <label className="cm-pj-lab">When it happened
+            <input className="cm-pj-in" type="date" value={occurredStr} max={todayStr} min="2015-01-01"
+              onChange={e => set("occurredAt", e.target.value ? e.target.value : todayStr)}/>
           </label>
         </div>
+        {daysLate > 0 && <p className="cm-pj-hint" style={{ marginTop: -4 }}>
+          Recorded {daysLate === 1 ? "a day" : daysLate + " days"} after the event — the entry will say so,
+          so the record stays honest about when it was written.
+        </p>}
         <label className="cm-pj-lab">Detail
           <textarea className="cm-pj-in" rows={5} value={f.body} onChange={e => set("body", e.target.value)}
             placeholder="What was said, what was decided, what changed as a result."/>
         </label>
+        {/* Photographs. The thing people most want to attach to "what happened"
+            is a picture of it, and an entry with none is the reason this feature
+            went unused. Alt text is asked for per image because these entries
+            are read with screen readers too. */}
+        <div className="cm-pj-lab">Photos and clips
+          <div className="cm-pj-media">
+            {f.media.map((m, i) => (
+              <div key={m.url + i} className="cm-pj-mitem">
+                {m.type === "video"
+                  ? <video src={cmOpt(m.url, 640)} poster={m.poster} controls preload="metadata"/>
+                  : <img src={cmOpt(m.url, 640)} alt={m.alt || ""}/>}
+                <input className="cm-pj-in" value={m.caption} placeholder="Caption (optional)"
+                  onChange={e => setMediaField(i, "caption", e.target.value)} aria-label={"Caption for attachment " + (i + 1)}/>
+                <input className="cm-pj-in" value={m.alt} placeholder="Describe it for a screen reader"
+                  onChange={e => setMediaField(i, "alt", e.target.value)} aria-label={"Alt text for attachment " + (i + 1)}/>
+                <button type="button" className="cm-pj-mx" aria-label={"Remove attachment " + (i + 1)}
+                  onClick={() => set("media", f.media.filter((_, j) => j !== i))}>✕</button>
+              </div>
+            ))}
+          </div>
+          <input ref={fileRef} type="file" accept="image/*,video/*" multiple hidden
+            onChange={e => { addFiles(e.target.files); if (fileRef.current) fileRef.current.value = ""; }}/>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={!!up}
+            onClick={() => fileRef.current && fileRef.current.click()}>
+            {up ? "Uploading… " + up + "%" : (f.media.length ? "Add another" : "Add a photo or clip")}
+          </button>
+        </div>
         <label className="cm-pj-lab">Who was involved
           <div style={{ display: "flex", gap: 6 }}>
             <input className="cm-pj-in" value={who} onChange={e => setWho(e.target.value)} placeholder="Name"

@@ -10032,6 +10032,84 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         db_exec('DELETE FROM program_journal WHERE entryId = ?', [$r['entry']['entryId']]);
         return $vis === 'staff';
     })());
+    /* ── Attachments ─────────────────────────────────────────────────────
+     * The thing people most want to attach to "what happened" is a photograph
+     * of it. What must not happen is an unchecked URL reaching an <img src>. */
+    $M = backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099',
+        'title' => 'Prize day at Egbeda', 'kind' => 'note',
+        'media' => [
+            ['type' => 'image', 'url' => 'https://cdn.example.org/a.jpg', 'alt' => 'Two students holding a trophy', 'caption' => 'The robotics prize'],
+            ['type' => 'video', 'url' => 'https://cdn.example.org/b.mp4', 'poster' => 'https://cdn.example.org/b.jpg'],
+            ['type' => 'image', 'url' => 'http://cdn.example.org/insecure.jpg'],
+            ['type' => 'image', 'url' => 'javascript:alert(1)'],
+            ['type' => 'image', 'url' => ''],
+            'not-even-an-object',
+        ]]);
+    $MID = (string)($M['entry']['entryId'] ?? '');
+    chk('journal: photos and clips are attached to an entry', count($M['entry']['media'] ?? []) === 2);
+    chk('journal: a non-https attachment is dropped, not stored',
+        !in_array('http://cdn.example.org/insecure.jpg', array_column($M['entry']['media'], 'url'), true));
+    chk('journal: a javascript: URL never reaches an img src',
+        !count(array_filter($M['entry']['media'], fn($m) => stripos((string)$m['url'], 'javascript:') !== false)));
+    chk('journal: alt text and captions survive the round trip',
+        ($M['entry']['media'][0]['alt'] ?? '') === 'Two students holding a trophy'
+        && ($M['entry']['media'][0]['caption'] ?? '') === 'The robotics prize');
+    chk('journal: an unknown media type falls back to image rather than being trusted',
+        ($M['entry']['media'][1]['type'] ?? '') === 'video');
+    chk('journal: twelve attachments is the ceiling', (function () {
+        $many = array_map(fn($i) => ['type' => 'image', 'url' => 'https://cdn.example.org/' . $i . '.jpg'], range(1, 30));
+        $r = backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099', 'title' => 'Album', 'media' => $many]);
+        $n = count($r['entry']['media'] ?? []);
+        db_exec('DELETE FROM program_journal WHERE entryId = ?', [$r['entry']['entryId']]);
+        return $n === 12;
+    })());
+
+    /* This is the bug the feature had before: the editor never sent a media
+     * key, so every save rewrote mediaJson as [] and editing a title deleted
+     * the photographs. */
+    chk('journal: editing an entry WITHOUT mentioning media keeps the photos', (function () use ($MID) {
+        $r = backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099', 'entryId' => $MID,
+            'title' => 'Prize day at Egbeda (corrected)']);
+        return count($r['entry']['media'] ?? []) === 2 && ($r['entry']['title'] ?? '') === 'Prize day at Egbeda (corrected)';
+    })());
+    chk('journal: sending an empty media list DOES clear them, because that is explicit',
+        count(backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099', 'entryId' => $MID,
+            'title' => 'Prize day at Egbeda', 'media' => []])['entry']['media'] ?? []) === 0);
+
+    /* ── Backdating ──────────────────────────────────────────────────────
+     * Required, because the meeting was on Tuesday and the write-up happens on
+     * Friday. Bounded, because occurredAt is the feed's sort key and a mistyped
+     * year silently buries the entry instead of erroring. */
+    $back = backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099',
+        'title' => 'Board met about intake', 'occurredAt' => '2026-03-04']);
+    chk('journal: an entry can be backdated to when it actually happened',
+        strpos((string)($back['entry']['occurredAt'] ?? ''), '2026-03-04') === 0);
+    chk('journal: …and it says how long after the event it was written',
+        (int)($back['entry']['recordedAfterDays'] ?? 0) > 0);
+    chk('journal: an entry written the same day is not labelled late',
+        (int)(backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099',
+            'title' => 'Today', 'occurredAt' => gmdate('Y-m-d')])['entry']['recordedAfterDays'] ?? -1) === 0);
+    chk('journal: a full ISO timestamp is accepted too',
+        strpos((string)(backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099',
+            'title' => 'Timestamped', 'occurredAt' => '2026-05-06T14:30:00Z'])['entry']['occurredAt'] ?? ''), '2026-05-06T14:30') === 0);
+    chk('journal: a date in the future is refused',
+        backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099',
+            'title' => 'Next year', 'occurredAt' => gmdate('Y-m-d', time() + 30 * 86400)])['error'] === 'date_in_future');
+    chk('journal: a mistyped year is refused rather than silently burying the entry',
+        backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099',
+            'title' => 'Typo', 'occurredAt' => '2016-03-04'])['ok'] === true
+        && backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099',
+            'title' => 'Typo', 'occurredAt' => '0206-03-04'])['error'] === 'date_too_old');
+    chk('journal: nonsense in the date field is refused',
+        backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099',
+            'title' => 'Bad', 'occurredAt' => 'last thursday-ish'])['error'] === 'bad_date');
+    chk('journal: editing without sending a date keeps the backdate', (function () use ($back) {
+        $id = (string)$back['entry']['entryId'];
+        $r = backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099', 'entryId' => $id, 'title' => 'Board met about intake (v2)']);
+        return strpos((string)($r['entry']['occurredAt'] ?? ''), '2026-03-04') === 0;
+    })());
+    db_exec("DELETE FROM program_journal WHERE title IN ('Today','Timestamped','Typo','Board met about intake (v2)')");
+
     chk('journal: people are tagged with roles, and duplicates collapse', (function () use ($EID) {
         $t = journal_tags($EID);
         $ids = array_column($t, 'personId');
