@@ -67,6 +67,7 @@ const ADMIN_SECTIONS = [
   { id: "photos",      group: "Content",  label: "Photo review", title: "Photo review",        icon: "◲", cap: "content" },
   { id: "comments",    group: "Content",  label: "Comments",     title: "Comment moderation",  icon: "💬", cap: "content" },
   { id: "community",   group: "Content",  label: "Community",    title: "Community",           icon: "❖", cap: "content" },
+  { id: "tournaments", group: "Content",  label: "Tournaments",  title: "Tournaments",         icon: "♟", cap: "people" },
   { id: "broadcast",   group: "Content",  label: "Announce",     title: "Announcements",       icon: "📣", cap: "content" },
   { id: "forms",       group: "Content",  label: "Forms",        title: "Forms",               icon: "▤", cap: "content" },
   { id: "site",        group: "Content",  label: "Site content", title: "Site content",        icon: "◧", cap: "settings" },
@@ -298,6 +299,7 @@ function AdminPage({ setPage }) {
           {view === "integrations" && <AdminIntegrations/>}
           {view === "comments" && <AdminComments/>}
           {view === "community" && <AdminCommunity/>}
+          {view === "tournaments" && <AdminTournaments/>}
           {view === "assessment" && <AdminAssessment/>}
           {view === "donations" && <AdminDonations/>}
         </main>
@@ -5387,6 +5389,293 @@ function AdminCommunityModeration({ mode, onChanged }) {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Tournaments — centre rounds through to a final
+// ============================================================================
+
+const TRN_STATUS_CHIP = {
+  draft: "status-draft", open: "chip-lime", running: "chip-gold",
+  complete: "chip-navy", cancelled: "status-archived",
+};
+
+function AdminTournaments() {
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [openId, setOpenId] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const [name, setName] = React.useState("");
+  const [programme, setProgramme] = React.useState("ngg");
+
+  const load = React.useCallback(() => {
+    NGGApi.admin.tournaments.list()
+      .then(r => { setData(r); setErr(""); })
+      .catch(e => setErr(e.code || e.message || "Couldn't load tournaments."));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const create = async () => {
+    if (name.trim().length < 3) { toast.error("Give it a name people will recognise."); return; }
+    setBusy("new");
+    try {
+      const r = await NGGApi.admin.tournaments.create(name.trim(), "chess", programme);
+      toast.success("Created. Add the players next.");
+      setName(""); load(); setOpenId(r.tournamentId);
+    } catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(""); }
+  };
+
+  if (openId) return <AdminTournamentBracket tournamentId={openId} onBack={() => { setOpenId(""); load(); }}/>;
+
+  const rows = (data && data.tournaments) || [];
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head"><h2 className="admin-h2">Tournaments</h2></div>
+      <p className="admin-hint">
+        Every centre plays its own knockout, then the centre champions meet in a final. A child at a
+        small centre can win something without being knocked out in round one by a big one.
+      </p>
+      {err && <div className="admin-err" role="alert">{err}</div>}
+
+      <div className="admin-card" style={{ marginBottom: 18 }}>
+        <div className="admin-field-label">Host a new one</div>
+        <div className="trn-new">
+          <input className="admin-in" value={name} maxLength={160} placeholder="e.g. NGG Chess Cup 2026"
+            onChange={e => setName(e.target.value)} aria-label="Tournament name"/>
+          <select className="admin-in" value={programme} onChange={e => setProgramme(e.target.value)} aria-label="Programme">
+            <option value="ngg">NGG Club</option>
+            <option value="summer">Summer School</option>
+            <option value="">Both</option>
+          </select>
+          <button className="btn btn-primary btn-sm" disabled={busy === "new"} onClick={create}>
+            {busy === "new" ? "Creating…" : "Create"}
+          </button>
+        </div>
+      </div>
+
+      {!data ? <div className="admin-skel"/> : rows.length === 0 ? (
+        <div className="admin-empty">No tournaments yet. Create one above, add the players, then start round one.</div>
+      ) : (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr>
+              <th>Name</th><th>Stage</th><th>Entrants</th><th>Still in</th><th>Games open</th><th/>
+            </tr></thead>
+            <tbody>
+              {rows.map(t => (
+                <tr key={t.tournamentId}>
+                  <td>
+                    <div className="admin-cell-name">{t.name}</div>
+                    <div className="mono admin-cell-sub">{t.tournamentId}{t.programme ? " · " + t.programme : ""}</div>
+                  </td>
+                  <td>
+                    <span className={"chip " + (TRN_STATUS_CHIP[t.status] || "status-draft")}>{t.status}</span>
+                    {t.status === "running" && <div className="mono admin-cell-sub">{t.stage} · round {t.round}</div>}
+                    {t.winnerName && <div className="admin-cell-sub">🏆 {t.winnerName}</div>}
+                  </td>
+                  <td className="mono">{t.entrants}</td>
+                  <td className="mono">{t.live}</td>
+                  <td className="mono">{t.openMatches > 0
+                    ? <span className="chip chip-gold">{t.openMatches}</span>
+                    : <span className="admin-cell-sub">none</span>}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setOpenId(t.tournamentId)}>Open</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One tournament: entrants, the advance control, and the bracket. */
+function AdminTournamentBracket({ tournamentId, onBack }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const [pool, setPool] = React.useState([]);
+  const [q, setQ] = React.useState("");
+
+  const load = React.useCallback(() => {
+    NGGApi.admin.tournaments.bracket(tournamentId)
+      .then(r => { setD(r); setErr(""); })
+      .catch(e => setErr(e.code || e.message || "Couldn't load the bracket."));
+  }, [tournamentId]);
+  React.useEffect(() => { load(); }, [load]);
+
+  // Who can still be added. Only while entries are open.
+  React.useEffect(() => {
+    if (!d || d.tournament.status !== "open") { setPool([]); return; }
+    NGGApi.admin.members.list({ status: "active", type: d.tournament.programme === "summer" ? "Summer" : "NGG", limit: 200 })
+      .then(r => setPool(r.members || [])).catch(() => setPool([]));
+  }, [d && d.tournament.status, d && d.tournament.programme]);
+
+  const act = async (label, fn) => {
+    setBusy(label);
+    try { const r = await fn(); return r; }
+    catch (e) {
+      const map = {
+        round_in_progress: "Some games from this round are still being played.",
+        no_entrants: "Nobody has been entered yet.",
+        already_finished: "This tournament is already over.",
+        player_has_no_centre: "That member has no centre, so they would have no bracket.",
+        already_entered: "They are already in.",
+        wrong_programme: "They are not in this tournament's programme.",
+        entries_closed: "Entries closed when round one started.",
+      };
+      toast.error(map[e.code] || e.code || e.message);
+      return null;
+    } finally { setBusy(""); load(); }
+  };
+
+  if (err) return <div className="admin-section">
+    <button className="btn btn-ghost btn-sm" onClick={onBack}>← All tournaments</button>
+    <div className="admin-err" role="alert">{err}</div></div>;
+  if (!d) return <div className="admin-section"><div className="admin-skel"/></div>;
+
+  const t = d.tournament;
+  const centres = d.centres || {};
+  const rounds = d.rounds || {};
+  const roundKeys = Object.keys(rounds).sort();
+  const openGames = Object.keys(rounds).reduce((n, k) =>
+    n + rounds[k].filter(m => m.status === "active" || m.status === "invited").length, 0);
+  const draws = Object.keys(rounds).reduce((acc, k) =>
+    acc.concat(rounds[k].filter(m => m.result === "draw")), []);
+  const entered = Object.keys(centres).reduce((acc, c) => acc.concat(centres[c].map(x => x.playerId)), []);
+  const shortlist = pool
+    .filter(m => entered.indexOf(m.memberId) === -1)
+    .filter(m => !q || (m.fullName || "").toLowerCase().indexOf(q.toLowerCase()) !== -1)
+    .slice(0, 24);
+
+  return (
+    <div className="admin-section">
+      <button className="btn btn-ghost btn-sm" onClick={onBack}>← All tournaments</button>
+      <div className="admin-section-head" style={{ marginTop: 10 }}>
+        <h2 className="admin-h2">{t.name} <span className={"chip " + (TRN_STATUS_CHIP[t.status] || "status-draft")}>{t.status}</span></h2>
+      </div>
+      <p className="admin-hint">
+        {t.status === "open" && "Entries are open. Add players, then start round one — that closes entries."}
+        {t.status === "running" && t.stage === "centre" && "Centre rounds. Each centre plays its own knockout until one player is left."}
+        {t.status === "running" && t.stage === "final" && "The final. The centre champions are playing each other."}
+        {t.status === "complete" && (t.winnerName ? "Won by " + t.winnerName + "." : "Finished.")}
+        {t.status === "cancelled" && "Cancelled. The games are closed but still on the record."}
+      </p>
+
+      {/* The one control that moves it forward, with the reason it is refused
+          stated up front rather than as an error after a click. */}
+      {t.status !== "complete" && t.status !== "cancelled" && (
+        <div className="trn-advance">
+          <div>
+            <b>{t.stage === "centre" ? "Centre stage" : "Final"}{t.round > 0 ? " · round " + t.round : ""}</b>
+            <div className="admin-cell-sub">
+              {openGames > 0
+                ? openGames + " game" + (openGames === 1 ? "" : "s") + " still being played — the next round waits for them."
+                : t.round === 0 ? "Ready to start." : "All games finished. Ready for the next round."}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-primary btn-sm" disabled={!!busy || openGames > 0}
+              onClick={() => act("adv", () => NGGApi.admin.tournaments.advance(tournamentId))}>
+              {busy === "adv" ? "Working…" : t.round === 0 ? "Start round one" : "Next round"}
+            </button>
+            <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={async () => {
+              if (!(await dialog.confirm({ title: "Cancel " + t.name + "?",
+                body: "Open games are closed. Nothing is deleted — the games stay on the record.",
+                cta: "Cancel it", danger: true }))) return;
+              act("cancel", () => NGGApi.admin.tournaments.cancel(tournamentId));
+            }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* A drawn knockout game eliminates nobody, so it blocks the round until
+          somebody decides. Surfaced here rather than left for staff to find. */}
+      {draws.length > 0 && (
+        <div className="trn-draws">
+          <b>{draws.length} drawn game{draws.length === 1 ? "" : "s"} to replay</b>
+          <p className="admin-cell-sub" style={{ margin: "2px 0 8px" }}>
+            A draw knocks nobody out. Replaying swaps the colours.
+          </p>
+          {draws.map(m => (
+            <div key={m.matchId} className="trn-draw-row">
+              <span>{m.a.name} vs {m.b.name} <span className="admin-cell-sub">· {m.centre}</span></span>
+              <button className="btn btn-primary btn-sm" disabled={!!busy}
+                onClick={() => act("rp" + m.matchId, () => NGGApi.admin.tournaments.replay(tournamentId, m.matchId))}>
+                Replay
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Entrants, grouped by the bracket they actually play in. */}
+      <h3 className="admin-h3" style={{ marginTop: 20 }}>Entrants</h3>
+      {Object.keys(centres).length === 0 && <div className="admin-empty">Nobody entered yet.</div>}
+      <div className="trn-centres">
+        {Object.keys(centres).sort().map(c => (
+          <div key={c} className="trn-centre">
+            <div className="trn-centre-h">{c || "No centre"} <span className="admin-cell-sub">
+              {centres[c].filter(x => x.status === "active").length} of {centres[c].length} still in</span></div>
+            {centres[c].map(p => (
+              <div key={p.playerId} className={"trn-player" + (p.status === "eliminated" ? " is-out" : "")}>
+                <span>{p.name}</span>
+                {p.centreChampion && <span className="chip chip-gold">champion</span>}
+                {p.status === "eliminated" && <span className="admin-cell-sub">out{p.eliminatedRound ? " · round " + p.eliminatedRound : ""}</span>}
+                {t.status === "open" && (
+                  <button className="trn-x" aria-label={"Withdraw " + p.name} disabled={!!busy}
+                    onClick={() => act("w" + p.playerId, () => NGGApi.admin.tournaments.withdraw(tournamentId, p.playerId))}>✕</button>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {t.status === "open" && (
+        <div className="admin-card" style={{ marginTop: 14 }}>
+          <div className="admin-field-label">Add players</div>
+          <input className="admin-in" value={q} placeholder="Search by name" onChange={e => setQ(e.target.value)} aria-label="Search members"/>
+          <div className="trn-pool">
+            {shortlist.map(m => (
+              <button key={m.memberId} className="trn-pool-item" disabled={!!busy}
+                onClick={() => act("e" + m.memberId, () => NGGApi.admin.tournaments.enter(tournamentId, m.memberId))}>
+                <b>{m.fullName}</b>
+                <span className="admin-cell-sub">{m.centre || "no centre"}</span>
+              </button>
+            ))}
+            {shortlist.length === 0 && <p className="admin-cell-sub">Nobody left to add.</p>}
+          </div>
+        </div>
+      )}
+
+      {/* The bracket itself, round by round. */}
+      {roundKeys.length > 0 && <>
+        <h3 className="admin-h3" style={{ marginTop: 22 }}>Games</h3>
+        {roundKeys.map(k => (
+          <div key={k} className="trn-round">
+            <div className="trn-round-h mono">{k.replace("centre-", "CENTRE ROUND ").replace("final-", "FINAL ROUND ")}</div>
+            {rounds[k].map(m => (
+              <div key={m.matchId} className="trn-game">
+                <span className={"trn-side" + (m.winnerId === m.a.id ? " is-win" : m.winnerId ? " is-lose" : "")}>{m.a.name}</span>
+                <span className="trn-v">v</span>
+                <span className={"trn-side" + (m.winnerId === m.b.id ? " is-win" : m.winnerId ? " is-lose" : "")}>{m.b.name}</span>
+                <span className="admin-cell-sub trn-game-meta">
+                  {m.centre}
+                  {m.status === "complete"
+                    ? " · " + (m.result === "draw" ? "drawn" : "won") + (m.reason ? " (" + String(m.reason).replace(/_/g, " ") + ")" : "")
+                    : " · in play, move " + Math.max(1, Math.ceil(m.ply / 2))}
+                </span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </>}
     </div>
   );
 }

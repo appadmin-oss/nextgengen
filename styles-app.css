@@ -5832,3 +5832,65 @@ body.own-chrome .fab-top { display: none; }
 .dash-cost-head b { font-size: 15px; color: var(--ink-900, #16223e); font-variant-numeric: tabular-nums; }
 .dash-cost-note { margin-top: 3px; font-size: 12.5px; color: #2f7a3f; font-weight: 600; }
 .dash-cost-earned { margin-top: 6px; font-size: 12.5px; color: var(--ink-500, #5b6478); line-height: 1.45; }
+
+/* ── Tournaments console ──────────────────────────────────────────────────
+   The advance control is one button, and the reason it is refused is stated
+   beside it rather than fired as an error after a click. */
+.trn-new { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; }
+@media (max-width: 620px) { .trn-new { grid-template-columns: 1fr; } }
+
+.trn-advance { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-radius: 12px; margin-bottom: 14px;
+  background: rgba(12,20,50,.035); border: 1px solid rgba(12,20,50,.1); }
+
+/* A drawn knockout game blocks the round until somebody decides, so it is
+   surfaced rather than left for staff to find. */
+.trn-draws { padding: 12px 14px; border-radius: 12px; margin-bottom: 14px;
+  background: #fff6e2; border: 1px solid #d99400; }
+.trn-draw-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 6px 0; border-top: 1px solid rgba(0,0,0,.08); font-size: 13.5px; }
+
+.trn-centres { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+.trn-centre { border: 1px solid rgba(12,20,50,.12); border-radius: 12px; padding: 10px 12px; background: #fff; }
+.trn-centre-h { font-weight: 800; font-size: 13.5px; margin-bottom: 6px; color: var(--ink-900, #16223e); }
+.trn-player { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13.5px;
+  border-top: 1px solid rgba(12,20,50,.06); }
+.trn-player.is-out { opacity: .55; text-decoration: line-through; }
+.trn-x { margin-left: auto; width: 26px; height: 26px; min-height: 26px; border-radius: 50%; cursor: pointer;
+  border: 1px solid rgba(0,0,0,.12); background: #fff; font-size: 12px; line-height: 1; color: var(--ink-700, #333); }
+.trn-x:hover { border-color: var(--coral, #e4032b); color: var(--coral, #e4032b); }
+
+.trn-pool { display: grid; gap: 6px; margin-top: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); max-height: 260px; overflow-y: auto; }
+.trn-pool-item { display: grid; gap: 1px; text-align: left; padding: 8px 10px; min-height: 44px; cursor: pointer;
+  border: 1px solid rgba(12,20,50,.12); border-radius: 10px; background: #fff; font: inherit; }
+.trn-pool-item:hover:not(:disabled) { border-color: var(--gold-500, #f5b026); }
+.trn-pool-item b { font-size: 13.5px; color: var(--ink-900, #16223e); }
+
+.trn-round { margin-bottom: 14px; }
+.trn-round-h { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; color: var(--ink-500, #5b6478); margin-bottom: 4px; }
+.trn-game { display: grid; gap: 2px 8px; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr);
+  align-items: baseline; padding: 7px 0; border-bottom: 1px solid rgba(12,20,50,.07); font-size: 13.5px; }
+.trn-side { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.trn-side.is-win { font-weight: 800; color: var(--ink-900, #16223e); }
+.trn-side.is-lose { opacity: .55; }
+.trn-v { color: var(--ink-500, #5b6478); font-size: 11.5px; }
+.trn-game-meta { grid-column: 1 / -1; }
+
+/* ── Admin helpers that were being used without existing ──────────────────
+   `.admin-error` is referenced in two long-standing places and `.admin-err`,
+   `.admin-field-label` and `.admin-skel` in the newer sections — none of them
+   had a rule, so an admin error message rendered as plain unstyled text in the
+   middle of a page. Defined once here, both spellings, because renaming live
+   markup is a bigger change than honouring it. */
+.admin-err, .admin-error { background: #fdeaee; border: 1px solid #e4032b; color: #8c0119;
+  padding: 10px 14px; border-radius: 10px; margin: 0 0 14px; font-size: 14px; }
+.admin-field-label { font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-500, #5b6478); margin-bottom: 6px; }
+/* A loading placeholder, not a spinner: the console lists tables, and a block
+   the shape of the table it is about to become moves less than a spinner does. */
+.admin-skel { height: 132px; border-radius: 12px; margin: 6px 0 14px;
+  background: linear-gradient(100deg, rgba(12,20,50,.05) 30%, rgba(12,20,50,.10) 50%, rgba(12,20,50,.05) 70%);
+  background-size: 300% 100%; animation: adminSkel 1.3s ease-in-out infinite; }
+@keyframes adminSkel { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .admin-skel { animation: none; } }
