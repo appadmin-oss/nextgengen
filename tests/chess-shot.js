@@ -83,12 +83,12 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
         players: { A: { id: 'NGG-2026-0110', name: 'Aisha M.' }, B: { id: 'NGG-2026-0044', name: 'You' } } }
     ],
     opponents: [
-      { id: 'NGG-2026-0051', fullName: 'Temiloluwa Adeyemi' },
-      { id: 'NGG-2026-0062', fullName: 'Chidinma Okafor' },
-      { id: 'NGG-2026-0070', fullName: 'Ibrahim Suleiman' },
-      { id: 'NGG-2026-0081', fullName: 'Folasade Bakare' },
-      { id: 'NGG-2026-0093', fullName: 'Zainab Kolawole' },
-      { id: 'NGG-2026-0102', fullName: 'Emeka Nwosu' }
+      { id: 'NGG-2026-0051', fullName: 'Temiloluwa Adeyemi', centre: 'Egbeda' },
+      { id: 'NGG-2026-0062', fullName: 'Chidinma Okafor', centre: 'Egbeda' },
+      { id: 'NGG-2026-0070', fullName: 'Ibrahim Suleiman', centre: 'Ayobo' },
+      { id: 'NGG-2026-0081', fullName: 'Folasade Bakare', centre: 'Ikotun' },
+      { id: 'NGG-2026-0093', fullName: 'Zainab Kolawole', centre: 'Ayobo' },
+      { id: 'NGG-2026-0102', fullName: 'Emeka Nwosu', centre: 'Egbeda' }
     ]
   };
   var GAMES = {
@@ -119,6 +119,13 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
       players: { A: { id: 'NGG-2026-0062', name: 'Chidinma O.' }, B: { id: 'NGG-2026-0051', name: 'Temiloluwa A.' } },
       moves: [ { ply: 1, san: 'f3' }, { ply: 2, san: 'e5' }, { ply: 3, san: 'g4' }, { ply: 4, san: 'Qh4#' } ],
       reactions: [], legal: [], staffView: true },
+    'MT-SP': { matchId: 'MT-SP', game: 'chess', status: 'active', you: '', yourColour: '',
+      yourTurn: false, ply: 5, state: ${JSON.stringify(ITALIAN)}, centre: 'Ayobo',
+      lastMove: { from: 'f1', to: 'c4' }, turnColour: 'b', check: false, checkSquare: '',
+      players: { A: { id: 'X1', name: 'Halima N.' }, B: { id: 'X2', name: 'Ibrahim S.' } },
+      moves: [ { ply: 1, san: 'e4' }, { ply: 2, san: 'e5' }, { ply: 3, san: 'Nf3' },
+               { ply: 4, san: 'Nc6' }, { ply: 5, san: 'Bc4' } ],
+      reactions: [], legal: [], staffView: false, spectator: true },
     'MT-S': { matchId: 'MT-S', game: 'chess', status: 'active', you: '', yourColour: '',
       yourTurn: false, ply: 5, state: ${JSON.stringify(ITALIAN)}, centre: 'Egbeda',
       lastMove: { from: 'f1', to: 'c4' }, turnColour: 'b', check: false, checkSquare: '',
@@ -136,7 +143,14 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
     resign: function () { return ok({ ok: true }); },
     report: function () { return ok({ ok: true }); },
     invite: function () { return ok({ ok: true, matchId: 'MT-1' }); },
-    respond: function () { return ok({ ok: true }); }
+    respond: function () { return ok({ ok: true }); },
+    poll: function () { return ok({ ok: true, ply: 5, status: 'active', yourTurn: true, changed: false }); },
+    watch: function () { return ok({ ok: true, live: [
+      { matchId: 'MT-W1', game: 'chess', a: { id: 'X1', name: 'Halima N.', centre: 'Ayobo' },
+        b: { id: 'X2', name: 'Ibrahim S.' }, ply: 14, mine: false, lastMoveAt: '2026-08-17T10:00:00Z' },
+      { matchId: 'MT-W2', game: 'chess', a: { id: 'X3', name: 'Zainab K.', centre: 'Ikotun' },
+        b: { id: 'X4', name: 'Emeka N.' }, ply: 6, mine: false, lastMoveAt: '2026-08-17T09:58:00Z' }
+    ], recent: [] }); }
   } } };
   window.useAuth = function () { return { isSignedIn: true, isAdmin: false, member: { memberId: 'NGG-2026-0044' } }; };
 </script>
@@ -182,6 +196,8 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
     await shoot('game-phone',  'screen=game&id=MT-2',    { width: 390,  height: 844 });
     await shoot('finished',    'screen=game&id=MT-6',    { width: 1180, height: 980 });
     await shoot('staff-view',  'screen=game&id=MT-S',    { width: 1180, height: 980 });
+    // Anyone can watch: read-only, with the one control that matters.
+    await shoot('spectator',   'screen=game&id=MT-SP',   { width: 1180, height: 980 });
     /* A FINISHED game seen by staff. This is the path that used to blank the
        screen: `you` is empty for a mentor, so the completed-status line
        dereferenced players[""]. */

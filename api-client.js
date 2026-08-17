@@ -547,6 +547,10 @@
         list:    () => request('/member/match.php' + qs({ view: 'list' })),
         get:     (matchId) => request('/member/match.php' + qs({ view: 'get', matchId })),
         staff:   (flagged) => request('/member/match.php' + qs({ view: 'staff', flagged: flagged ? 1 : '' })),
+        // The live tick: ply only, plus the position when it moved.
+        poll:    (matchId, since) => request('/member/match.php' + qs({ view: 'poll', matchId, since })),
+        // Games anyone can watch.
+        watch:   () => request('/member/match.php' + qs({ view: 'watch' })),
         invite:  (game, opponentId) => request('/member/match.php', { body: { action: 'invite', game, opponentId } }),
         respond: (matchId, accept) => request('/member/match.php', { body: { action: 'respond', matchId, accept } }),
         move:    (matchId, move) => request('/member/match.php', { body: { action: 'move', matchId, move } }),

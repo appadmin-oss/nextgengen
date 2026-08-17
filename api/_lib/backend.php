@@ -429,6 +429,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'match.react'             => 'match_react',
             'match.report'            => 'match_report',
             'match.staff.list'        => 'match_staff_list',
+            'match.poll'              => 'match_poll',
+            'match.watch'             => 'match_live_list',
             // Tournaments: centre rounds through to a final.
             'tournament.list'         => 'admin_tournaments_list',
             'tournament.bracket'      => 'tournament_bracket',

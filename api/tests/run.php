@@ -13203,8 +13203,10 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     // Pairing — the safeguarding boundary.
     chk('you cannot invite yourself',
         match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-A'])['error'] === 'cannot_play_yourself');
-    chk('you cannot invite somebody at another centre',
-        match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-C'])['error'] === 'different_centre');
+    /* Anyone plays anyone now. The centre was a supervision boundary; games are
+       public instead, and open watching is the stronger check. */
+    chk('you CAN invite somebody at another centre',
+        !empty(match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-C'])['ok']));
     chk('you cannot invite somebody who does not exist',
         match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'NOBODY'])['error'] === 'opponent_not_found');
     chk('an unknown game is refused',
@@ -13262,8 +13264,20 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $staffView = match_get(['requesterId' => 'NGG-2025-0099', 'playerId' => 'NGG-2025-0099', 'matchId' => $mid]);
     chk('staff can open a match they are not playing in', !empty($staffView['ok']) && !empty($staffView['match']['staffView']));
     chk('…and see every move played', count($staffView['match']['moves']) === 1);
-    chk('…while another child still cannot',
-        match_get(['playerId' => 'MPL-C', 'matchId' => $mid])['error'] === 'not_yours');
+    /* And any signed-in member can watch. A game a hundred people could be
+       watching is a safer game than a private one. */
+    $watch = match_get(['playerId' => 'MPL-C', 'matchId' => $mid]);
+    chk('…and so can any other member, as a spectator',
+        !empty($watch['ok']) && !empty($watch['match']['spectator']));
+    chk('…who is not mistaken for one of the players',
+        ($watch['match']['you'] ?? 'x') === '' && ($watch['match']['yourColour'] ?? 'x') === '');
+    chk('…and is handed no legal moves, because watching is read only',
+        ($watch['match']['legal'] ?? ['x']) === []);
+    chk('a spectator cannot move in a game they are watching',
+        match_move(['playerId' => 'MPL-C', 'matchId' => $mid, 'move' => 'e7e5'])['error'] === 'not_yours');
+    chk('…nor resign it', match_resign(['playerId' => 'MPL-C', 'matchId' => $mid])['error'] === 'not_yours');
+    chk('…nor react into it',
+        match_react(['playerId' => 'MPL-C', 'matchId' => $mid, 'reaction' => 'oops'])['error'] === 'not_yours');
     $staffList = match_staff_list(['requesterId' => 'NGG-2025-0099', 'centre' => 'Egbeda']);
     chk('a match appears in the staff list for its centre',
         !empty($staffList['ok']) && in_array($mid, array_column($staffList['matches'], 'matchId'), true));
@@ -13272,8 +13286,12 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('a player can report their own match', !empty(match_report(['playerId' => 'MPL-B', 'matchId' => $mid])['ok']));
     chk('…and it is flagged for staff',
         (int)(db_row('SELECT flagged FROM match_games WHERE matchId = ?', [$mid])['flagged'] ?? 0) === 1);
-    chk('a child outside the game cannot report it',
-        match_report(['playerId' => 'MPL-C', 'matchId' => $mid])['error'] === 'not_yours');
+    /* Reporting is the one thing a spectator CAN do. More eyes on a game is
+       only worth something if any of them can raise a hand. */
+    chk('a spectator can report a game they are watching',
+        !empty(match_report(['playerId' => 'MPL-C', 'matchId' => $mid])['ok']));
+    chk('…but somebody who is not a member at all cannot',
+        match_report(['playerId' => 'NOBODY-AT-ALL', 'matchId' => $mid])['error'] === 'not_a_player');
 
     // Resignation, and what it does to the record.
     chk('resigning hands the win to the opponent',
@@ -13308,12 +13326,62 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     // The lobby a child actually sees.
     $lob = match_list(['playerId' => 'MPL-A']);
     chk('the lobby lists your games', !empty($lob['ok']) && count($lob['matches']) >= 2);
-    chk('…and offers only opponents at your own centre',
-        !in_array('MPL-C', array_column($lob['opponents'], 'id'), true)
+    chk('…and offers opponents from every centre, not just your own',
+        in_array('MPL-C', array_column($lob['opponents'], 'id'), true)
         && in_array('MPL-B', array_column($lob['opponents'], 'id'), true));
+    chk('…carrying the centre so a child can find the friend they mean',
+        count(array_filter($lob['opponents'], fn($o) => !array_key_exists('centre', $o))) === 0);
     chk('…and never offers you yourself', !in_array('MPL-A', array_column($lob['opponents'], 'id'), true));
     chk('the reaction vocabulary is fixed and published to the client',
         ($lob['reactions'] ?? []) === MATCH_REACTIONS && count(MATCH_REACTIONS) === 6);
+
+    /* ── Live play ────────────────────────────────────────────────────────
+     * There are no WebSockets on shared hosting, so this is polling — and the
+     * cost of polling is what decides whether it works on a Nigerian mobile
+     * connection. The tick has to stay tiny. */
+    $inv3 = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-B']);
+    $lv = (string)$inv3['matchId'];
+    match_respond(['playerId' => 'MPL-B', 'matchId' => $lv, 'accept' => true]);
+
+    $t0 = match_poll(['playerId' => 'MPL-A', 'matchId' => $lv, 'since' => 0]);
+    chk('a poll at the current ply reports no change', !empty($t0['ok']) && empty($t0['changed']));
+    /* The whole point: a quiet tick carries no position, no move list and no
+     * reactions. Nineteen polls in twenty are this one. */
+    chk('…and carries nothing but the ply and whose turn it is',
+        !isset($t0['state']) && !isset($t0['moves']) && !isset($t0['reactions']));
+    chk('…while still saying whose turn it is', ($t0['yourTurn'] ?? null) === true);
+
+    match_move(['playerId' => 'MPL-A', 'matchId' => $lv, 'move' => 'd2d4']);
+    $t1 = match_poll(['playerId' => 'MPL-A', 'matchId' => $lv, 'since' => 0]);
+    chk('a poll after a move reports the change', !empty($t1['changed']) && (int)$t1['ply'] === 1);
+    /* The position rides along on the one poll that has news, so the client does
+     * not need a second round trip to draw the board. */
+    chk('…and brings the new position with it, saving a round trip',
+        isset($t1['state']) && strpos((string)$t1['state'], ' b ') !== false);
+    chk('…and the turn has passed', ($t1['yourTurn'] ?? null) === false);
+    chk('a spectator can poll a game too', !empty(match_poll(['playerId' => 'MPL-C', 'matchId' => $lv, 'since' => 0])['ok']));
+    chk('polling an unknown game is refused',
+        match_poll(['playerId' => 'MPL-A', 'matchId' => 'MT-NOPE', 'since' => 0])['error'] === 'not_found');
+
+    /* The front door to watching. */
+    $w = match_live_list(['playerId' => 'MPL-C']);
+    chk('live games are listed for anyone to watch',
+        !empty($w['ok']) && in_array($lv, array_column($w['live'], 'matchId'), true));
+    chk('…marked so the lobby knows which are yours', (function () use ($w, $lv) {
+        $row = array_values(array_filter($w['live'], fn($x) => $x['matchId'] === $lv));
+        return $row && $row[0]['mine'] === false;
+    })());
+    $wMine = match_live_list(['playerId' => 'MPL-A']);
+    chk('…and yours are marked as yours', (function () use ($wMine, $lv) {
+        $row = array_values(array_filter($wMine['live'], fn($x) => $x['matchId'] === $lv));
+        return $row && $row[0]['mine'] === true;
+    })());
+    match_resign(['playerId' => 'MPL-A', 'matchId' => $lv]);
+    $w2 = match_live_list(['playerId' => 'MPL-C']);
+    chk('a finished game leaves the live list', !in_array($lv, array_column($w2['live'], 'matchId'), true));
+    /* …but stays reachable, so a game that ends while somebody is watching does
+       not simply vanish from under them. */
+    chk('…and appears under recently finished', in_array($lv, array_column($w2['recent'], 'matchId'), true));
 })();
 
 /* ── Tournaments ──────────────────────────────────────────────────────────

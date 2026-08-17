@@ -16,6 +16,12 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'list');
     if ($view === 'get') {
         $res = gs_call('match.get', ['playerId' => $s['mid'], 'matchId' => (string)($_GET['matchId'] ?? '')]);
+    } elseif ($view === 'poll') {
+        // The live tick. Deliberately tiny — see match_poll.
+        $res = gs_call('match.poll', ['playerId' => $s['mid'], 'matchId' => (string)($_GET['matchId'] ?? ''),
+                                      'since' => (string)($_GET['since'] ?? '-1')]);
+    } elseif ($view === 'watch') {
+        $res = gs_call('match.watch', ['playerId' => $s['mid']]);
     } elseif ($view === 'tournaments') {
         $res = gs_call('tournament.mine', ['playerId' => $s['mid']]);
     } elseif ($view === 'staff') {

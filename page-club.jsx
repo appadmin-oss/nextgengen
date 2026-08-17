@@ -1379,10 +1379,12 @@ function CmMatches({ auth }) {
   const [openId, setOpenId] = React.useState("");
   const [busy, setBusy] = React.useState("");
 
+  const [watch, setWatch] = React.useState(null);
   const load = React.useCallback(() => {
     NGGApi.member.match.list()
       .then(r => { setData(r); setErr(""); })
       .catch(e => setErr((e && e.message) || "Could not open your games."));
+    NGGApi.member.match.watch().then(setWatch).catch(() => setWatch(null));
   }, []);
   React.useEffect(() => { load(); }, [load]);
 
@@ -1448,14 +1450,33 @@ function CmMatches({ auth }) {
         <MatchList title="Invitations you sent" rows={sent} me={me} onOpen={setOpenId}/>
         <MatchList title="Finished" rows={done} me={me} onOpen={setOpenId}/>
 
+        {/* Games anyone can watch. Live first and most-recently-moved at the top,
+            because a game that moved ten seconds ago is worth opening and one
+            that moved on Tuesday is not. */}
+        {watch && (watch.live || []).filter(g => !g.mine).length > 0 && (
+          <section className="mtl-sec">
+            <h3 className="mtl-h">Watch a game</h3>
+            <p className="mtl-hint">Anyone can watch. You can’t move or react in a game you’re watching.</p>
+            {(watch.live || []).filter(g => !g.mine).slice(0, 8).map(g => (
+              <button key={g.matchId} className="mtl-row" onClick={() => setOpenId(g.matchId)}>
+                <span className="mtl-who">{g.a.name} v {g.b.name}</span>
+                <span className="mtl-meta">
+                  {g.a.centre ? g.a.centre + " · " : ""}move {Math.max(1, Math.ceil(g.ply / 2))}
+                </span>
+                <span className="mtl-go" aria-hidden="true">→</span>
+              </button>
+            ))}
+          </section>
+        )}
+
         <section className="mtl-sec">
           <h3 className="mtl-h">Start a game</h3>
-          <p className="mtl-hint">Everyone here is at {me.centre || "your centre"}.</p>
+          <p className="mtl-hint">Anyone, at any centre.</p>
           <div className="mtl-opps">
             {((data && data.opponents) || []).map(o => (
               <button key={o.id} className="mtl-opp" disabled={!!busy} onClick={() => invite(o.id)}>
                 <span className="mtl-opp-av" aria-hidden="true">{cmInitial(o.fullName)}</span>
-                <span className="mtl-opp-n">{o.fullName}</span>
+                <span className="mtl-opp-n">{o.fullName}{o.centre ? <em className="mtl-opp-c"> · {o.centre}</em> : null}</span>
                 <span className="mtl-opp-go" aria-hidden="true">♟</span>
               </button>
             ))}
@@ -1627,13 +1648,42 @@ function MatchGame({ matchId, onBack }) {
   }, [matchId]);
   React.useEffect(() => { load(); }, [load]);
 
-  /* A match runs for days, so the other player's move arrives while this screen
-     is open. Poll gently, and only while it is actually their turn. */
+  /* LIVE.
+   *
+   * The same game is played both ways: two children at the same screen-time
+   * move seconds apart, and two children in different weeks move a day apart.
+   * Nothing switches modes — the board simply updates faster when the other
+   * player is actually there.
+   *
+   * There are no WebSockets on shared hosting, so this polls. What makes that
+   * affordable on a Nigerian mobile connection is that the tick is tiny: it
+   * asks for the ply and nothing else, and only fetches the real thing —
+   * moves, reactions — when the answer moves. Nineteen ticks in twenty carry a
+   * couple of hundred bytes.
+   *
+   * It also STOPS when the tab is hidden. A board left open in a background tab
+   * polling every two seconds for an afternoon is somebody's data, and they did
+   * not agree to spend it on a game they are not looking at. */
   React.useEffect(() => {
-    if (!m || m.status !== "active" || m.yourTurn) return;
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
-  }, [m && m.status, m && m.yourTurn, load]);
+    if (!m || m.status !== "active") return;
+    let alive = true, timer = null;
+    const tick = () => {
+      if (!alive) return;
+      if (document.visibilityState === "hidden") { timer = setTimeout(tick, 4000); return; }
+      NGGApi.member.match.poll(matchId, m.ply)
+        .then(r => {
+          if (!alive) return;
+          if (r.changed) load();                    // something happened — get the detail
+          else if (r.status !== "active") load();   // resigned or ended between ticks
+        })
+        .catch(() => {})
+        .then(() => { if (alive) timer = setTimeout(tick, m.yourTurn ? 6000 : 2500); });
+    };
+    /* Slower while it is YOUR move: nothing can change until you move, except
+       your opponent resigning, and that can wait six seconds. */
+    timer = setTimeout(tick, m.yourTurn ? 6000 : 2500);
+    return () => { alive = false; if (timer) clearTimeout(timer); };
+  }, [m && m.status, m && m.yourTurn, m && m.ply, matchId, load]);
 
   const send = (uci) => {
     setBusy(true); setErr(""); setFrom(""); setPromo(null);
@@ -1703,7 +1753,7 @@ function MatchGame({ matchId, onBack }) {
 
       <div className="mtg-head">
         <div>
-          <div className="arc-eyebrow">{m.staffView ? "Staff view" : "Chess"}</div>
+          <div className="arc-eyebrow">{m.staffView ? "Staff view" : m.spectator ? "Watching" : "Chess"}</div>
           <h2 className="mtg-h">{title}</h2>
         </div>
         <div className={"mtg-status" + (m.yourTurn && m.status === "active" ? " is-turn" : "")}>{statusLine}</div>
@@ -1745,13 +1795,13 @@ function MatchGame({ matchId, onBack }) {
             })()}
             {!(m.moves || []).length && <li className="mtg-empty">No moves yet.</li>}
           </ol>
-          {m.status === "active" && !m.staffView &&
+          {m.status === "active" && !m.spectator &&
             <button className="btn btn-ghost btn-sm mtg-resign" disabled={busy}
               onClick={() => NGGApi.member.match.resign(matchId).then(load)}>Resign</button>}
         </aside>
       </div>
 
-      {!m.staffView && <div className="mtg-reacts">
+      {!m.spectator && <div className="mtg-reacts">
         <h3 className="mtl-h">Say something</h3>
         <p className="mtl-hint">These are the only messages here — there is no typing.</p>
         <div className="mtg-react-row">
@@ -1774,6 +1824,18 @@ function MatchGame({ matchId, onBack }) {
           Report this game to a mentor
         </button>
       </div>}
+
+      {/* A watcher can do exactly one thing, and it is the useful one. Games are
+          public here, so more people can see one going wrong than can act on
+          it — that is only worth something if any of them can raise a hand. */}
+      {m.spectator && (
+        <div className="mtg-watching">
+          <p>You’re watching this game. {m.players.A.name} and {m.players.B.name} are playing.</p>
+          <button className="mtg-report" onClick={() => NGGApi.member.match.report(matchId).then(load).catch(() => {})}>
+            Report this game to a mentor
+          </button>
+        </div>
+      )}
 
       {promo && <div className="mtg-promo" role="dialog" aria-label="Choose a piece">
         <div className="mtg-promo-box">

@@ -3142,3 +3142,10 @@ button.cm-star.mine { box-shadow: inset 0 0 0 1.5px rgba(224,138,0,0.5); }
 /* A worded prompt ("You pay with ₦500 for something that costs ₦150…") needs to
    read as a sentence, not as a display numeral like a sum does. */
 .arc-q-text { font-size: clamp(1.05rem, 3.2vw, 1.45rem); line-height: 1.35; font-weight: 700; max-width: 30ch; }
+
+/* A spectator's one control, and a plain statement of what they are looking at
+   — a board with no controls and no explanation reads as broken. */
+.mtg-watching { margin-top: 20px; padding: 14px 16px; border-radius: 14px;
+  background: #fff; border: 1px solid var(--cream-200, #e8dec6); }
+.mtg-watching p { margin: 0; font-size: 13.5px; color: var(--ink-700, #3b4459); }
+.mtl-opp-c { font-style: normal; font-weight: 500; color: var(--ink-500); font-size: 12px; }

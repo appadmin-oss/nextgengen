@@ -19,16 +19,18 @@ declare(strict_types=1);
  *   a fixed list. You cannot moderate a chat that cannot be written, and a
  *   grooming risk that has nowhere to be typed does not need detecting.
  *
- *   Staff-visible by default. Every match at a centre is readable by the
- *   mentors and admins who cover that centre, including the full move list.
- *   Nothing here is private between two children.
+ *   Public by default. Any signed-in member can watch any game, including the
+ *   full move list — and so can staff. A game a hundred people could be
+ *   watching is a safer game than a private one: there is no quiet corner to
+ *   be in. Watching is strictly read-only.
  *
- *   Same centre, same programme. You can only be matched with someone your
- *   own staff already supervise, which is what makes "staff-visible" mean
- *   anything — there is always a named adult responsible for both players.
+ *   Anyone plays anyone. Pairing is not restricted by centre or programme.
+ *   The protections above do not depend on who is playing whom, which is what
+ *   makes opening it up safe: there is no free-text field to type into
+ *   whoever the opponent turns out to be.
  *
- *   Reportable. Either player, or any staff member, can flag a match; a
- *   flagged match surfaces in the console.
+ *   Reportable by ANY viewer, not only the players and staff. More eyes on a
+ *   game is only worth something if any of them can raise a hand.
  *
  * SERVER-AUTHORITATIVE, like the rest of the Arcade. The server holds the
  * position, decides whose turn it is, and validates every move through the
@@ -70,20 +72,28 @@ function match_person(string $id): ?array {
 /** Public shape of a match for one viewer. `youAre` orients the board. */
 function match_public(array $r, string $viewer, bool $staff = false): array {
     $isA = (string)$r['playerA'] === $viewer;
+    $isB = (string)$r['playerB'] === $viewer;
+    /* A spectator is NEITHER player, so `you` must be empty for them. The old
+     * expression fell through to 'B' for anybody who was not player A, which
+     * was harmless while only players and staff could open a match and wrong
+     * the moment anyone could watch — it would have drawn the board from the
+     * black side and captioned it "You vs …" for a stranger. */
+    $side = $isA ? 'A' : ($isB ? 'B' : '');
     return [
         'matchId'   => (string)$r['matchId'],
         'game'      => (string)$r['game'],
         'status'    => (string)$r['status'],
         'centre'    => (string)($r['centre'] ?? ''),
         'programme' => (string)($r['programme'] ?? ''),
-        'you'       => $staff && !$isA && (string)$r['playerB'] !== $viewer ? '' : ($isA ? 'A' : 'B'),
+        'you'       => $side,
         'players'   => [
             'A' => ['id' => (string)$r['playerA'], 'name' => (string)$r['playerAName']],
             'B' => ['id' => (string)$r['playerB'], 'name' => (string)$r['playerBName']],
         ],
         // Chess: A is always white. Stated rather than inferred, because the
         // board has to be drawn from one player's side.
-        'yourColour' => $r['game'] === 'chess' ? ($isA ? 'w' : 'b') : '',
+        // A spectator has no colour; the board draws from white's side for them.
+        'yourColour' => ($r['game'] === 'chess' && $side !== '') ? ($isA ? 'w' : 'b') : '',
         'turnPlayer' => (string)($r['turnPlayer'] ?? ''),
         'yourTurn'   => (string)($r['turnPlayer'] ?? '') === $viewer,
         'state'      => (string)($r['state'] ?? ''),
@@ -110,11 +120,18 @@ function match_invite(array $p): array {
     if (!$them) return ['ok' => false, 'error' => 'opponent_not_found'];
     if ($them['id'] === $me['id']) return ['ok' => false, 'error' => 'cannot_play_yourself'];
 
-    /* Same centre and same programme. This is the safeguarding boundary, not a
-     * convenience: it guarantees one set of staff already supervises both
-     * children, which is what makes every other protection here enforceable. */
-    if (trim((string)$me['centre']) === '' || $me['centre'] !== $them['centre']) return ['ok' => false, 'error' => 'different_centre'];
-    if ($me['programme'] !== $them['programme']) return ['ok' => false, 'error' => 'different_programme'];
+    /* Anyone may play anyone, across centres and across programmes.
+     *
+     * This was originally restricted to a single centre so that one set of
+     * staff already supervised both children. That is no longer the model: a
+     * game is public here, watchable by any member, and open watching is a
+     * stronger check than a private game with a named supervisor — there is no
+     * quiet corner to be in.
+     *
+     * The protections that actually do the work are unchanged and do not
+     * depend on the pairing: there is no free-text field to type into, the
+     * vocabulary is six fixed reactions, one per move, and any viewer can
+     * report the game. */
 
     /* One live match per pair per game. Without this, "invite" is a spam
      * button pointed at another child. */
@@ -259,9 +276,14 @@ function match_report(array $p): array {
     $viewer = (string)($p['playerId'] ?? '');
     $r = db_row('SELECT * FROM match_games WHERE matchId = ? LIMIT 1', [(string)($p['matchId'] ?? '')]);
     if (!$r) return ['ok' => false, 'error' => 'not_found'];
-    $isPlayer = (string)$r['playerA'] === $viewer || (string)$r['playerB'] === $viewer;
-    $isStaff = function_exists('mentor_gate') && !empty(mentor_gate(['requesterId' => $viewer])['ok']);
-    if (!$isPlayer && !$isStaff) return ['ok' => false, 'error' => 'not_yours'];
+    /* ANY signed-in viewer may report, not only the players and staff. Games are
+     * public here, so more people can see one going wrong than can act on it —
+     * and more eyes on a game is only worth something if any of them can raise
+     * a hand. The reporter must be a real person, which is what this checks. */
+    if (!match_person($viewer)
+        && !(function_exists('mentor_gate') && !empty(mentor_gate(['requesterId' => $viewer])['ok']))) {
+        return ['ok' => false, 'error' => 'not_a_player'];
+    }
     db_update('match_games', ['flagged' => 1, 'updatedAt' => now_iso()], ['matchId' => (string)$r['matchId']]);
     audit('match.reported', $viewer, (string)$r['matchId'], ['game' => (string)$r['game']], (string)($p['ip'] ?? ''));
     return ['ok' => true];
@@ -278,17 +300,18 @@ function match_list(array $p): array {
                     ORDER BY (status = 'active') DESC, updatedAt DESC LIMIT 60", [$id, $id]);
     $matches = array_map(fn($r) => match_public($r, $id), $rows);
 
-    /* Who you may invite: active people at YOUR centre in YOUR programme.
-     * Names only — a child picking an opponent has no business being handed a
-     * contact list. */
+    /* Who you may invite: anybody active, at any centre, in either programme.
+     * The centre is carried so the list can be grouped and a child can find the
+     * friend they mean — it is no longer a boundary.
+     *
+     * Names and centres only. A child picking an opponent still has no business
+     * being handed a contact list, so nothing else travels. */
     $opps = [];
-    if ($me['programme'] === 'summer') {
-        foreach (db_all("SELECT studentId id, fullName FROM summer_students WHERE status = 'active' AND centre = ? AND studentId <> ? ORDER BY fullName LIMIT 200",
-                        [(string)$me['centre'], $id]) as $o) $opps[] = $o;
-    } else {
-        foreach (db_all("SELECT memberId id, fullName FROM members WHERE status = 'active' AND type = 'NGG' AND centre = ? AND memberId <> ? AND role = 'member' ORDER BY fullName LIMIT 200",
-                        [(string)$me['centre'], $id]) as $o) $opps[] = $o;
-    }
+    foreach (db_all("SELECT memberId id, fullName, centre, 'ngg' programme FROM members
+                     WHERE status = 'active' AND type = 'NGG' AND role = 'member' AND memberId <> ?
+                     ORDER BY fullName LIMIT 300", [$id]) as $o) $opps[] = $o;
+    foreach (db_all("SELECT studentId id, fullName, centre, 'summer' programme FROM summer_students
+                     WHERE status = 'active' AND studentId <> ? ORDER BY fullName LIMIT 300", [$id]) as $o) $opps[] = $o;
     return ['ok' => true, 'matches' => $matches, 'opponents' => $opps,
             'games' => array_values(match_games()), 'reactions' => MATCH_REACTIONS,
             'me' => ['id' => $id, 'centre' => (string)$me['centre'], 'programme' => (string)$me['programme']]];
@@ -300,13 +323,18 @@ function match_get(array $p): array {
     $viewer = (string)($p['playerId'] ?? '');
     $r = db_row('SELECT * FROM match_games WHERE matchId = ? LIMIT 1', [(string)($p['matchId'] ?? '')]);
     if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    /* Anyone signed in may watch. A game here is public — that is the point of
+     * open play, and a game a hundred people could be watching is a safer game
+     * than a private one, because there is no quiet corner to be in.
+     *
+     * Watching is READ ONLY, enforced below and in every write op: a spectator
+     * cannot move, resign or react. They can report, because more eyes on a
+     * game is only useful if any of them can raise a hand. */
     $isPlayer = (string)$r['playerA'] === $viewer || (string)$r['playerB'] === $viewer;
     $staff = false;
     if (!$isPlayer) {
         $g = function_exists('mentor_gate') ? mentor_gate(['requesterId' => $viewer]) : ['ok' => false];
-        // A mentor sees the matches at the centres they cover; null = everywhere.
-        $staff = !empty($g['ok']) && (($g['centres'] ?? null) === null || in_array((string)$r['centre'], $g['centres'] ?? [], true));
-        if (!$staff) return ['ok' => false, 'error' => 'not_yours'];
+        $staff = !empty($g['ok']);
     }
     $moves = db_all('SELECT ply, playerId, move, san, createdAt FROM match_moves WHERE matchId = ? ORDER BY ply', [(string)$r['matchId']]);
     $reacts = db_all('SELECT ply, playerId, reaction, createdAt FROM match_reactions WHERE matchId = ? ORDER BY id', [(string)$r['matchId']]);
@@ -316,6 +344,7 @@ function match_get(array $p): array {
     $out['legal'] = ((string)$r['status'] === 'active' && (string)$r['turnPlayer'] === $viewer)
         ? chess_legal_uci((string)$r['state']) : [];
     $out['staffView'] = $staff;
+    $out['spectator'] = !$isPlayer;
 
     /* Three facts the board cannot work out for itself, and which every chess
      * interface people have used shows them:
@@ -338,6 +367,83 @@ function match_get(array $p): array {
     $out['check'] = $pos ? chess_in_check($pos) : false;
     $out['checkSquare'] = ($pos && $out['check']) ? chess_idx_to_sq(chess_king_square($pos, $pos['turn'])) : '';
     return ['ok' => true, 'match' => $out];
+}
+
+
+/* ── Live play ────────────────────────────────────────────────────────────
+ *
+ * Chess here is played BOTH ways: two children at the same screen-time move a
+ * few seconds apart, and two children in different weeks move a day apart. The
+ * same match supports both — nothing switches modes, the board just updates
+ * faster when the other player is actually there.
+ *
+ * There are no WebSockets on shared hosting, so this is polling. The cost of
+ * polling is what makes it work or not on a Nigerian mobile connection, so the
+ * poll is deliberately TINY: no move list, no reactions, no position unless it
+ * changed. The client asks "what ply are we on" every couple of seconds and
+ * only fetches the real thing when the answer moves.
+ */
+function match_poll(array $p): array {
+    $viewer = (string)($p['playerId'] ?? '');
+    $r = db_row('SELECT matchId, status, turnPlayer, ply, state, result, winnerId, reason, playerA, playerB, lastMoveAt
+                 FROM match_games WHERE matchId = ? LIMIT 1', [(string)($p['matchId'] ?? '')]);
+    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+
+    $ply = (int)$r['ply'];
+    $since = (int)($p['since'] ?? -1);
+    $out = [
+        'ok' => true, 'ply' => $ply, 'status' => (string)$r['status'],
+        'yourTurn' => (string)$r['turnPlayer'] === $viewer,
+        'changed' => $since < 0 || $since !== $ply,
+    ];
+    /* The position rides along when it changed, which saves the client a second
+     * round trip on the one poll in twenty that actually has news. Everything
+     * else — the move list, the reactions — is fetched by match.get, and only
+     * then. */
+    if ($out['changed']) {
+        $out['state'] = (string)$r['state'];
+        $out['result'] = (string)($r['result'] ?? '');
+        $out['winnerId'] = (string)($r['winnerId'] ?? '');
+        $out['reason'] = (string)($r['reason'] ?? '');
+        $out['lastMoveAt'] = (string)($r['lastMoveAt'] ?? '');
+    }
+    return $out;
+}
+
+/**
+ * Games worth watching.
+ *
+ * Live ones first, most recently moved at the top, because a game that moved
+ * ten seconds ago is worth opening and one that moved on Tuesday is not. Any
+ * signed-in member sees this — it is the front door to watching.
+ */
+function match_live_list(array $p): array {
+    $viewer = (string)($p['playerId'] ?? '');
+    $rows = db_all("SELECT * FROM match_games
+                    WHERE status = 'active'
+                    ORDER BY (lastMoveAt <> '') DESC, lastMoveAt DESC, updatedAt DESC LIMIT 40");
+    $live = [];
+    foreach ($rows as $r) {
+        $live[] = [
+            'matchId' => (string)$r['matchId'], 'game' => (string)$r['game'],
+            'a' => ['id' => (string)$r['playerA'], 'name' => (string)$r['playerAName'], 'centre' => (string)($r['centre'] ?? '')],
+            'b' => ['id' => (string)$r['playerB'], 'name' => (string)$r['playerBName']],
+            'ply' => (int)$r['ply'],
+            'lastMoveAt' => (string)($r['lastMoveAt'] ?? ''),
+            'tournamentId' => (string)($r['tournamentId'] ?? ''),
+            // So the lobby can mark "this one is yours" without a second pass.
+            'mine' => (string)$r['playerA'] === $viewer || (string)$r['playerB'] === $viewer,
+        ];
+    }
+    // Recently finished, so a game that ended mid-watch is still reachable.
+    $done = array_map(fn($r) => [
+        'matchId' => (string)$r['matchId'],
+        'a' => ['name' => (string)$r['playerAName']], 'b' => ['name' => (string)$r['playerBName']],
+        'result' => (string)($r['result'] ?? ''), 'winnerId' => (string)($r['winnerId'] ?? ''),
+        'reason' => (string)($r['reason'] ?? ''), 'ply' => (int)$r['ply'],
+    ], db_all("SELECT * FROM match_games WHERE status = 'complete' ORDER BY updatedAt DESC LIMIT 10"));
+
+    return ['ok' => true, 'live' => $live, 'recent' => $done];
 }
 
 /** Staff: every match at the centres this person covers. Flagged first. */
