@@ -207,6 +207,12 @@ function unzipDocumentXml(buf) {
   // Mount the built bundle directly: React, a stubbed NGGApi, then render the
   // board under test into a root div. No API, no router, no service worker.
   fs.writeFileSync(FIX, `<!doctype html><html><head>
+<!-- REQUIRED for any assertion that measures a phone layout.
+     Without it a mobile-emulated context falls back to a 980px layout viewport,
+     so a 320px "phone" run measures a desktop page: the composer row came out
+     946px wide at every width below 1180 and the crushed-field bug was
+     invisible to this suite. -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <script>
   /* Opt-in stylesheets. The centre-hero assertions measure layout, and geometry
      read off an unstyled page means nothing — but loading the real CSS changes
@@ -420,6 +426,7 @@ function unzipDocumentXml(buf) {
             : b === 'analytics' ? 'AnalyticsWorkspace'
             : b === 'assess' ? 'AdminAssessment'
             : b === 'fees' ? 'AdminFees'
+            : b === 'composer' ? 'CmComposer'
             : b === 'account' ? 'DashboardObligations'
             : b === 'gatedesk' ? 'GatePage'
             : b === 'summer' ? 'SummerPage' : b === 'club' ? 'ClubPage' : 'StatusPage';
@@ -875,6 +882,13 @@ function unzipDocumentXml(buf) {
                                  fees: Object.assign({}, FEECFG, { monthlyDues: 1150 }) }); },
     };
     props = {};
+  } else if (b === 'composer') {
+    /* The community composer on its own, so its LAYOUT can be measured without
+       standing up the whole feed. */
+    window.NGGApi.member.community = window.NGGApi.member.community || {};
+    window.NGGApi.member.community.mentions = function () { return Promise.resolve({ people: [] }); };
+    props = { channels: [{ slug: 'commons', name: 'The Commons' }], active: 'commons',
+              me: { memberId: 'M1', fullName: 'Test Member' }, onPosted: function () {}, enterToSend: false };
   } else if (b === 'account') {
     /* The member's own account, mid-service: a real balance, and a training fee
        part-earned-off — the number the card exists to show them. */
@@ -3056,6 +3070,28 @@ function unzipDocumentXml(buf) {
        tell -5 from -2+3, and a leading apostrophe on a number is a cosmetic
        cost, while a formula is an executable one. */
     ok('a negative number is escaped as well, erring toward safety', csv.minusNum === '"\'-5"');
+    /* ── The composer must be usable on a phone ──────────────────────────
+     * It was not. The action dock is `flex: none` and about 320px of icon
+     * buttons; on a desktop row that leaves plenty for the message field, but
+     * at 390px it left TWENTY-FIVE PIXELS — a vertical sliver. Typing still
+     * technically worked, which is exactly why every existing test passed over
+     * it. Measured as rendered, at the widths members actually hold. */
+    for (const w of [320, 390, 414, 620, 1180]) {
+      const cp = await browser.newContext({ viewport: { width: w, height: 800 }, hasTouch: w < 800, isMobile: w < 800 });
+      const cpg = await cp.newPage();
+      await cpg.goto(BASE + '/tests/_boards_fixture.html?board=composer&css=1', { waitUntil: 'networkidle' });
+      await cpg.waitForTimeout(200);
+      const box = await cpg.evaluate(() => {
+        const el = document.getElementById('cm-input-box');
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { w: Math.round(r.width), h: Math.round(r.height) };
+      });
+      ok('the message field is usable at ' + w + 'px (' + (box ? box.w + 'x' + box.h : 'missing') + ')',
+        !!box && box.w >= Math.min(240, w - 80) && box.h <= 90);
+      await cp.close();
+    }
+
     /* The feed is written by children and read by children, so the renderer
        emits React nodes and never HTML. These assert on the rendered DOM, not
        on a string, because "does it inject markup" is only answerable there. */

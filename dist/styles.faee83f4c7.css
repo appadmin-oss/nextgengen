@@ -2265,13 +2265,34 @@ img { background-color: rgba(12,20,50,0.04); }
 .cm-code { font-family: var(--font-mono); font-size: 0.88em; background: rgba(12,20,50,0.07); border: 1px solid rgba(12,20,50,0.08); border-radius: 5px; padding: 1px 5px; }
 
 /* ── Single-row dock (matches the design) ─────────────────────────────── */
-.cm-dockrow { display: flex; align-items: flex-end; gap: 11px; }
+.cm-dockrow { display: flex; align-items: flex-end; gap: 11px; flex-wrap: wrap; }
 .cm-dock-avatar { width: 40px; height: 40px; flex: none; }
-.cm-dock-field { flex: 1; min-width: 0; position: relative; }
+/* The floor is the fix for the composer being unusable on a phone.
+ *
+ * The action dock is `flex: none` and about 320px of icon buttons. On a desktop
+ * row that leaves plenty for the message field; at 390px it left TWENTY-FIVE
+ * PIXELS, so the field was a vertical sliver — and because grow() sizes the
+ * textarea from scrollHeight, a 25px-wide box measured as 168px tall. Typing
+ * still technically worked, which is why it passed every test we had.
+ *
+ * min-width stops the field being crushed at any width, and the wrap rule below
+ * moves the dock to its own line when it no longer fits beside it. */
+.cm-dock-field { flex: 1 1 220px; min-width: min(100%, 200px); position: relative; }
 .cm-dock-field .cm-input { padding: 9px 0; }
 /* Autocomplete menus open UPWARD (the dock sits at the bottom). */
 .cm-dock-field .cm-mention-menu { top: auto; bottom: calc(100% + 10px); margin: 0; }
 .cm-dock-actions { display: flex; align-items: center; gap: 2px; flex: none; padding-bottom: 2px; }
+/* Below this the dock cannot sit beside the field without crushing it, so it
+   takes its own row — which is what every phone messaging composer does. The
+   buttons scroll horizontally rather than wrapping into a second block, so the
+   composer keeps one predictable height. */
+@media (max-width: 620px) {
+  .cm-dock-field { flex: 1 1 100%; }
+  .cm-dock-actions { flex: 1 1 100%; justify-content: flex-start; overflow-x: auto;
+    scrollbar-width: none; padding-top: 2px; }
+  .cm-dock-actions::-webkit-scrollbar { display: none; }
+  .cm-dock-ic { flex: none; }
+}
 .cm-dock-ic { width: 38px; height: 38px; border-radius: 10px; border: none; background: none; cursor: pointer; font-size: 17px; color: #5a6488; display: grid; place-items: center; transition: background .14s; }
 .cm-dock-ic:hover { background: #eef0f4; }
 .cm-dock-ic:disabled { opacity: 0.5; cursor: default; }
