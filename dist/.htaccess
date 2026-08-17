@@ -85,9 +85,18 @@ AddDefaultCharset UTF-8
   # sure you'll keep using it. Hard to roll back from preload.
   # Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
 
-  # Content-Security-Policy — loose because we run in-browser Babel + Google
-  # Fonts. When you switch to a precompiled bundle, remove 'unsafe-inline'
-  # and 'unsafe-eval' from script-src.
+  # Content-Security-Policy.
+  #
+  # frame-src is REQUIRED, not optional. There is no default for it: without the
+  # directive it inherits default-src 'self', which silently blocks every
+  # cross-origin iframe — the in-page PDF viewer (documents are served from
+  # Cloudinary) and YouTube embeds both render as an empty box with a console
+  # error and nothing else. Only the two hosts we actually frame are listed.
+  #
+  # youtube-nocookie.com rather than youtube.com for the embed itself: it is the
+  # same player without the tracking cookie being set before a member presses
+  # play. youtube.com stays listed because the player redirects to it for some
+  # content, and a blocked redirect looks like a broken video.
   #
   # worker-src: pica (the image resampler behind upload shrinking and the photo
   # studio) starts its worker pool from a blob URL. Without this it inherits
@@ -101,6 +110,7 @@ img-src 'self' data: https: blob:; \
 font-src 'self' https://fonts.gstatic.com data:; \
 connect-src 'self' https://api.cloudinary.com blob:; \
 worker-src 'self' blob:; \
+frame-src 'self' https://res.cloudinary.com https://www.youtube-nocookie.com https://www.youtube.com; \
 frame-ancestors 'self'; \
 base-uri 'self'; \
 form-action 'self'; \

@@ -2513,9 +2513,53 @@ function NggPdf({ src, name }) {
   );
 }
 
+
+/**
+ * YouTube embed, loaded only when asked.
+ *
+ * The iframe is NOT in the page until a member presses play. Three reasons, in
+ * order of how much they matter here:
+ *
+ *   1. A feed with six embedded videos otherwise opens six connections to
+ *      Google and pulls the player bundle six times, on mobile data, before
+ *      anybody has watched anything.
+ *   2. Nothing is sent to YouTube about a child who merely scrolled past.
+ *   3. It scrolls and renders like an image until it is a video.
+ *
+ * The src is built from an 11-character id the SERVER validated, never from a
+ * pasted URL, so this cannot be steered into framing something else.
+ * youtube-nocookie.com is the same player without the tracking cookie; rel=0
+ * and modestbranding trim the end-of-video suggestions as far as the embed API
+ * still allows.
+ */
+function NggYouTube({ id, thumb, title }) {
+  const [playing, setPlaying] = React.useState(false);
+  if (!/^[A-Za-z0-9_-]{11}$/.test(String(id || ""))) return null;
+  const label = title || "YouTube video";
+  const poster = thumb || ("https://i.ytimg.com/vi/" + id + "/hqdefault.jpg");
+  if (!playing) {
+    return (
+      <button type="button" className="yt yt-cover" onClick={() => setPlaying(true)}
+        aria-label={"Play " + label + " on YouTube"}>
+        <img src={poster} alt="" loading="lazy"/>
+        <span className="yt-play" aria-hidden="true">▶</span>
+        <span className="yt-badge" aria-hidden="true">YouTube</span>
+      </button>
+    );
+  }
+  return (
+    <div className="yt">
+      <iframe
+        src={"https://www.youtube-nocookie.com/embed/" + id + "?autoplay=1&rel=0&modestbranding=1&playsinline=1"}
+        title={label} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowFullScreen loading="lazy" referrerPolicy="strict-origin-when-cross-origin"/>
+    </div>
+  );
+}
+
 Object.assign(window, {
   nggCsvCell,
-  NggMarkdown, NggVideo, NggPdf, nggMdInline, nggFmtTime,
+  NggMarkdown, NggVideo, NggPdf, NggYouTube, nggMdInline, nggFmtTime,
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
   usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart, inkOn,

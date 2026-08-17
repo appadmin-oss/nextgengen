@@ -549,6 +549,43 @@ function community_extract_url(string $body): string {
     if (preg_match('#\bhttps://[^\s<>"\'\]]+#i', $body, $m)) return rtrim($m[0], '.,;:)]}\'"');
     return '';
 }
+
+/**
+ * The YouTube video id in a URL, or ''.
+ *
+ * Only the shapes people actually paste: a watch link, a share link, /embed/,
+ * /shorts/ and /live/. Recognising the ID on the SERVER matters — the client
+ * then only ever builds an embed URL from an 11-character id it was handed,
+ * so a crafted link cannot turn into an arbitrary iframe src.
+ *
+ * Any query string is discarded along the way, which also drops the `list=`
+ * parameter: a member sharing one video should not hand the reader an autoplay
+ * playlist.
+ */
+function community_youtube_id(string $url): string {
+    $url = trim($url);
+    if ($url === '' || !preg_match('#^https://#i', $url)) return '';
+    $p = parse_url($url);
+    $host = strtolower((string)($p['host'] ?? ''));
+    $host = preg_replace('/^(www|m|music)\./', '', $host);
+    $path = (string)($p['path'] ?? '');
+    $id = '';
+    if ($host === 'youtu.be') {
+        $id = trim($path, '/');
+    } elseif ($host === 'youtube.com' || $host === 'youtube-nocookie.com') {
+        // `~` delimiter, not `#`: the character class needs a literal # in it,
+        // which would otherwise close the pattern early and silently match the
+        // wrong thing.
+        if (preg_match('~^/(embed|shorts|live|v)/([^/?&#]+)~', $path, $m)) $id = $m[2];
+        else {
+            parse_str((string)($p['query'] ?? ''), $q);
+            $id = (string)($q['v'] ?? '');
+        }
+    }
+    // A YouTube id is exactly 11 characters of [A-Za-z0-9_-]. Anything else is
+    // not an id, and must not be echoed into an iframe src.
+    return preg_match('/^[A-Za-z0-9_-]{11}$/', $id) ? $id : '';
+}
 /** Block private / loopback / link-local hosts so the unfurl can't be pointed
  *  at internal services (SSRF). */
 function community_host_is_private(string $host): bool {
@@ -698,8 +735,29 @@ function community_post_create(array $p): array {
     $author = community_author($viewer);
     $alt = $mediaType === 'doc' ? ($docName ?: 'Document')
         : ($mediaType === 'image' ? ($body !== '' ? mb_substr($body, 0, 160) : ('Photo shared by ' . $author['name'] . ($author['centre'] ? ' · ' . $author['centre'] : ''))) : '');
+    /* A YouTube link becomes a player rather than a link card.
+     *
+     * Held under `strict` on the same reasoning as an uploaded clip: nobody has
+     * watched it. It is arguably stricter than the plain link to the same video,
+     * which publishes with an unfurl — and that is the intended difference.
+     * Embedding plays the video inside our own page to an audience of children,
+     * which is closer to showing it than to mentioning it.
+     */
+    $ytId = ($mediaType === 'none' && $kind === 'post') ? community_youtube_id(community_extract_url($body)) : '';
+    if ($ytId !== '' && $mode === 'strict') $status = 'pending';
+
     // Link preview — only when there's no other attachment and the post is live.
-    $preview = ($mediaType === 'none' && $kind === 'post' && $status === 'published') ? community_unfurl(community_extract_url($body)) : [];
+    $preview = ($mediaType === 'none' && $kind === 'post' && $status === 'published' && $ytId === '')
+        ? community_unfurl(community_extract_url($body)) : [];
+    /* Carried in linkPreview rather than as a new mediaType: `mediaType` is
+     * read in a dozen places and gates the upload, size and frame-check paths,
+     * none of which apply to a link somebody pasted. */
+    if ($ytId !== '') {
+        $preview = ['kind' => 'youtube', 'youtubeId' => $ytId,
+                    'url' => 'https://www.youtube.com/watch?v=' . $ytId,
+                    'image' => 'https://i.ytimg.com/vi/' . $ytId . '/hqdefault.jpg',
+                    'site' => 'YouTube', 'title' => 'YouTube video'];
+    }
     $id = 'CP-' . strtoupper(rand_hex(6));
     $now = now_iso();
     db_insert('community_posts', [

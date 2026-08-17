@@ -5783,3 +5783,19 @@ body.own-chrome .fab-top { display: none; }
 .pdfv-frame { display: block; width: 100%; height: min(70vh, 640px); border: 0; background: #f4f5f8; }
 .pdfv-fallback { padding: 22px 16px; text-align: center; }
 .pdfv-fallback p { margin: 0 0 10px; color: var(--ink-700, #3b4459); font-size: 14px; }
+
+/* ── YouTube embed (click to load) ────────────────────────────────────────
+   Reserves the 16:9 box up front so the feed does not jump when the poster
+   arrives or when the iframe replaces it. */
+.yt { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9;
+  border: 0; padding: 0; border-radius: 12px; overflow: hidden; background: #000; }
+.yt iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.yt-cover { cursor: pointer; }
+.yt-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.yt-play { position: absolute; inset: 0; margin: auto; width: 62px; height: 44px; border-radius: 10px;
+  background: rgba(0,0,0,.72); color: #fff; font-size: 19px; display: grid; place-items: center; }
+.yt-cover:hover .yt-play { background: #e4032b; }
+.yt-badge { position: absolute; bottom: 8px; right: 10px; font: 700 10px var(--font-mono, monospace);
+  letter-spacing: .1em; text-transform: uppercase; color: #fff; background: rgba(0,0,0,.6);
+  padding: 3px 7px; border-radius: 5px; }
+.yt-cover:focus-visible { outline: 3px solid #1b6ef3; outline-offset: 2px; }

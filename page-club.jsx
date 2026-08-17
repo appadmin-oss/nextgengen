@@ -2512,7 +2512,13 @@ function CmBodyBlock({ post, onVote }) {
           <span className="cm-doc-card-dl" aria-hidden="true">↗</span>
         </a>
       )}
-      {post.linkPreview && post.linkPreview.title && (
+      {/* A shared YouTube link plays in place. Everything else stays a card. */}
+      {post.linkPreview && post.linkPreview.kind === "youtube" && post.linkPreview.youtubeId && (
+        <div className="cm-msg-media">
+          <NggYouTube id={post.linkPreview.youtubeId} thumb={post.linkPreview.image} title={post.linkPreview.title}/>
+        </div>
+      )}
+      {post.linkPreview && post.linkPreview.kind !== "youtube" && post.linkPreview.title && (
         <a className="cm-link-card" href={post.linkPreview.url} target="_blank" rel="noopener noreferrer">
           {post.linkPreview.image && <span className="cm-link-thumb" style={{ backgroundImage: "url(" + post.linkPreview.image + ")" }} aria-hidden="true"/>}
           <span className="cm-link-body">
