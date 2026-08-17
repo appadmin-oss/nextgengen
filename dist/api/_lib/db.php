@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 88;
+const NGG_SCHEMA_TARGET = 89;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2339,6 +2339,49 @@ function db_migrate(PDO $db): void {
         // nothing, which is the property that makes this safe to add.
         88 => "
             ALTER TABLE volunteers ADD COLUMN capsExtra TEXT DEFAULT '';
+        ",
+
+        /* Turn-based matches between two players. There is deliberately no
+         * free-text column in any of these three tables: the only thing a
+         * player can send their opponent is one of a fixed set of reactions,
+         * so there is no message field to moderate in the first place. */
+        89 => "
+            CREATE TABLE match_games (
+              matchId TEXT PRIMARY KEY,
+              game TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'invited',
+              programme TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              playerA TEXT NOT NULL, playerAName TEXT DEFAULT '', playerAType TEXT DEFAULT '',
+              playerB TEXT NOT NULL, playerBName TEXT DEFAULT '', playerBType TEXT DEFAULT '',
+              turnPlayer TEXT DEFAULT '',
+              state TEXT,
+              ply INTEGER DEFAULT 0,
+              result TEXT DEFAULT '', winnerId TEXT DEFAULT '', reason TEXT DEFAULT '',
+              tournamentId TEXT DEFAULT '',
+              flagged INTEGER DEFAULT 0,
+              createdAt TEXT NOT NULL, updatedAt TEXT DEFAULT '', lastMoveAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_match_players ON match_games(playerA, playerB);
+            CREATE INDEX idx_match_status ON match_games(status, updatedAt);
+            CREATE INDEX idx_match_centre ON match_games(centre, game);
+            CREATE INDEX idx_match_tournament ON match_games(tournamentId);
+
+            CREATE TABLE match_moves (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              matchId TEXT NOT NULL, ply INTEGER NOT NULL, playerId TEXT NOT NULL,
+              move TEXT NOT NULL, san TEXT DEFAULT '', stateAfter TEXT,
+              createdAt TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX idx_match_move_ply ON match_moves(matchId, ply);
+            CREATE INDEX idx_match_move_match ON match_moves(matchId);
+
+            CREATE TABLE match_reactions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              matchId TEXT NOT NULL, ply INTEGER DEFAULT 0, playerId TEXT NOT NULL,
+              reaction TEXT NOT NULL, createdAt TEXT NOT NULL
+            );
+            CREATE INDEX idx_match_react ON match_reactions(matchId, ply);
         ",
     ];
 

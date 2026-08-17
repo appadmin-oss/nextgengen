@@ -1595,3 +1595,61 @@ INSERT INTO schema_version (version) VALUES (87) ON DUPLICATE KEY UPDATE version
 -- per-person; registering on a self-service form still grants nothing.
 ALTER TABLE volunteers ADD COLUMN capsExtra TEXT;
 INSERT INTO schema_version (version) VALUES (88) ON DUPLICATE KEY UPDATE version = version;
+
+-- v89 — turn-based matches between two players (chess first).
+-- Deliberately carries NO free-text column anywhere: the only thing a player
+-- can send is one of a fixed set of reactions. Every match is readable by
+-- staff at the centre and can be reported.
+CREATE TABLE IF NOT EXISTS match_games (
+  matchId VARCHAR(32) PRIMARY KEY,
+  game VARCHAR(24) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'invited',
+  programme VARCHAR(16) DEFAULT '',
+  centre VARCHAR(120) DEFAULT '',
+  playerA VARCHAR(64) NOT NULL,
+  playerAName VARCHAR(120) DEFAULT '',
+  playerAType VARCHAR(16) DEFAULT '',
+  playerB VARCHAR(64) NOT NULL,
+  playerBName VARCHAR(120) DEFAULT '',
+  playerBType VARCHAR(16) DEFAULT '',
+  turnPlayer VARCHAR(64) DEFAULT '',
+  state MEDIUMTEXT,
+  ply INT DEFAULT 0,
+  result VARCHAR(16) DEFAULT '',
+  winnerId VARCHAR(64) DEFAULT '',
+  reason VARCHAR(32) DEFAULT '',
+  tournamentId VARCHAR(32) DEFAULT '',
+  flagged TINYINT DEFAULT 0,
+  createdAt VARCHAR(40) NOT NULL,
+  updatedAt VARCHAR(40) DEFAULT '',
+  lastMoveAt VARCHAR(40) DEFAULT '',
+  INDEX idx_match_players (playerA, playerB),
+  INDEX idx_match_status (status, updatedAt),
+  INDEX idx_match_centre (centre, game),
+  INDEX idx_match_tournament (tournamentId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS match_moves (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  matchId VARCHAR(32) NOT NULL,
+  ply INT NOT NULL,
+  playerId VARCHAR(64) NOT NULL,
+  move VARCHAR(16) NOT NULL,
+  san VARCHAR(16) DEFAULT '',
+  stateAfter MEDIUMTEXT,
+  createdAt VARCHAR(40) NOT NULL,
+  UNIQUE KEY idx_match_move_ply (matchId, ply),
+  INDEX idx_match_move_match (matchId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS match_reactions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  matchId VARCHAR(32) NOT NULL,
+  ply INT DEFAULT 0,
+  playerId VARCHAR(64) NOT NULL,
+  reaction VARCHAR(24) NOT NULL,
+  createdAt VARCHAR(40) NOT NULL,
+  INDEX idx_match_react (matchId, ply)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (89) ON DUPLICATE KEY UPDATE version = version;

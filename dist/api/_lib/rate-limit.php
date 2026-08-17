@@ -63,6 +63,13 @@ function rate_limit_default(string $op): ?array {
         // a runaway script, nothing finer; the real gate is the session, and an
         // abandoned round is pruned within the week.
         'arcade.start'       => ['max' => 120, 'window' => 60],
+        /* Inviting somebody to a match is the one action here that reaches
+         * ANOTHER child, so it is rate-limited more tightly than play itself.
+         * Keyed on IP, and a whole centre shares one connection, so this still
+         * has to clear a class arranging games at break. Repeat invitations to
+         * the same person are refused outright by the domain layer
+         * (already_playing) — this is the ceiling on a script. */
+        'match.invite'       => ['max' => 40, 'window' => 60],
         // A shared journal entry's token is the only thing between a guess and a
         // programme record, so guessing should be expensive. Generous enough for
         // a link legitimately opened by a group from one office connection.

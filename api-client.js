@@ -541,6 +541,19 @@
         start:  (game) => request('/member/arcade.php', { body: { action: 'start', game } }),
         submit: (roundId, answers) => request('/member/arcade.php', { body: { action: 'submit', roundId, answers } }),
       },
+      // Two-player, turn-based matches. There is no "send message" here by
+      // design — react() takes one of a fixed set of reactions and nothing else.
+      match: {
+        list:    () => request('/member/match.php' + qs({ view: 'list' })),
+        get:     (matchId) => request('/member/match.php' + qs({ view: 'get', matchId })),
+        staff:   (flagged) => request('/member/match.php' + qs({ view: 'staff', flagged: flagged ? 1 : '' })),
+        invite:  (game, opponentId) => request('/member/match.php', { body: { action: 'invite', game, opponentId } }),
+        respond: (matchId, accept) => request('/member/match.php', { body: { action: 'respond', matchId, accept } }),
+        move:    (matchId, move) => request('/member/match.php', { body: { action: 'move', matchId, move } }),
+        resign:  (matchId) => request('/member/match.php', { body: { action: 'resign', matchId } }),
+        react:   (matchId, reaction) => request('/member/match.php', { body: { action: 'react', matchId, reaction } }),
+        report:  (matchId) => request('/member/match.php', { body: { action: 'report', matchId } }),
+      },
       changeEmail:         (email) => request('/member/account.php', { body: { action: 'change_email', email } }),
       exportData:          () => request('/member/account.php'),
       deleteAccount:       () => request('/member/account.php', { body: { action: 'delete' } }),

@@ -12985,5 +12985,251 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = ?", [$mid]);
 })();
 
+/* ── Chess rules ──────────────────────────────────────────────────────────
+ * A tournament decided by a rules bug is worse than no tournament, so the
+ * generator is checked against published perft node counts rather than
+ * against a handful of positions somebody thought of. These six are the
+ * standard set: Kiwipete covers castling and pins, position 3 is the
+ * en-passant-discovered-check trap, position 4 is promotions under check.
+ * A single wrong node at any depth means a rule is wrong somewhere.
+ */
+(function () {
+    foreach ([
+        ['the opening position',        CHESS_START_FEN, 3, 8902],
+        ['Kiwipete (castling + pins)',  'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1', 3, 97862],
+        ['en passant + discovered check', '8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1', 4, 43238],
+        ['promotions',                  'r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1', 3, 9467],
+        ['a sharp middlegame',          'rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8', 3, 62379],
+        ['a quiet middlegame',          'r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10', 2, 2079],
+    ] as [$name, $fen, $depth, $want]) {
+        chk("perft: $name to depth $depth", chess_perft($fen, $depth) === $want);
+    }
+
+    // FEN round-trips, or stored positions drift from played ones.
+    chk('a position survives a FEN round trip',
+        chess_to_fen(chess_parse_fen(CHESS_START_FEN)) === CHESS_START_FEN);
+    chk('malformed FEN is refused rather than assumed to be the start',
+        chess_parse_fen('not a fen') === null
+        && chess_parse_fen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBN w KQkq - 0 1') === null);
+    chk('a position with no king is refused',
+        chess_parse_fen('rnbq1bnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1') === null);
+
+    // The move API is the only way the match layer changes a position.
+    $r = chess_move(CHESS_START_FEN, 'e2e4');
+    chk('a legal opening move is played and named', !empty($r['ok']) && $r['san'] === 'e4');
+    chk('…and it sets the en-passant square', strpos($r['fen'], ' b KQkq e3 ') !== false);
+    chk('an illegal move is refused', chess_move(CHESS_START_FEN, 'e2e5')['error'] === 'illegal_move');
+    chk('a move for the wrong side is refused', chess_move(CHESS_START_FEN, 'e7e5')['error'] === 'illegal_move');
+    chk('a malformed move is refused', chess_move(CHESS_START_FEN, 'Qxf7#')['error'] === 'bad_move');
+    chk('a move onto a garbage position is refused', chess_move('rubbish', 'e2e4')['error'] === 'bad_fen');
+
+    // Fool's mate — the first thing children discover, so it had better end.
+    $fen = CHESS_START_FEN;
+    foreach (['f2f3', 'e7e5', 'g2g4'] as $mv) $fen = chess_move($fen, $mv)['fen'];
+    $mate = chess_move($fen, 'd8h4');
+    chk('checkmate ends the game and names the winner',
+        $mate['status']['state'] === 'checkmate' && $mate['status']['winner'] === 'b' && $mate['san'] === 'Qh4#');
+    chk('…and no move is legal in a mated position', chess_legal_uci($mate['fen']) === []);
+
+    // Castling, both sides, plus the rights that must die with it.
+    $cast = chess_move('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'e1g1');
+    chk('white castles kingside', !empty($cast['ok']) && $cast['san'] === 'O-O'
+        && strpos($cast['fen'], 'R4RK1') !== false);
+    chk('…and loses both its castling rights', strpos($cast['fen'], ' b kq ') !== false);
+    $cq = chess_move('r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1', 'e8c8');
+    chk('black castles queenside', !empty($cq['ok']) && $cq['san'] === 'O-O-O');
+    chk('castling out of check is refused',
+        !in_array('e1g1', chess_legal_uci('r3k2r/8/8/8/4r3/8/8/R3K2R w KQkq - 0 1'), true));
+    chk('castling THROUGH check is refused',
+        !in_array('e1g1', chess_legal_uci('r3k2r/8/8/8/5r2/8/8/R3K2R w KQkq - 0 1'), true));
+    /* Rxa8: white's rook LEAVES a1 (killing Q) and CAPTURES on a8 (killing q).
+     * Both corners lose their right in one move; the two kingside rights are
+     * untouched. The capture half is the one implementations forget. */
+    chk('a rook captured on its corner kills that castling right',
+        strpos(chess_move('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'a1a8')['fen'], ' b Kk ') !== false);
+
+    // En passant, and under-promotion — the two moves a keen child tries first.
+    $ep = chess_move('8/8/8/3pP3/8/8/8/K6k w - d6 0 1', 'e5d6');
+    chk('en passant captures the pawn beside the destination',
+        !empty($ep['ok']) && $ep['san'] === 'exd6' && strpos($ep['fen'], '3P4/8/8/8') !== false);
+    chk('under-promotion to a knight is allowed',
+        chess_move('8/P7/8/8/8/8/8/K6k w - - 0 1', 'a7a8n')['san'] === 'a8=N');
+    chk('a promotion must name a piece',
+        chess_move('8/P7/8/8/8/8/8/K6k w - - 0 1', 'a7a8')['error'] === 'illegal_move');
+
+    // Draws. Each is a real way a children's game actually ends.
+    /* Qg6 covers g7, g8 and h7 without attacking h8 — the queen-too-close
+     * stalemate, and the way a winning child most often throws the game away.
+     * Qf6 instead would be CHECK along f6–g7–h8, which is a different result
+     * entirely. */
+    chk('stalemate is a draw, not a loss',
+        chess_move('7k/5Q2/8/8/8/8/8/K7 w - - 0 1', 'f7g6')['status']['state'] === 'stalemate');
+    chk('…while the same queen one square along is check, not stalemate',
+        chess_move('7k/5Q2/8/8/8/8/8/K7 w - - 0 1', 'f7f6')['status']['state'] === 'check');
+    chk('king against king is insufficient material',
+        chess_status(chess_parse_fen('8/8/8/4k3/8/8/8/K7 w - - 0 1'))['reason'] === 'insufficient_material');
+    chk('king and bishop against king is insufficient material',
+        chess_status(chess_parse_fen('8/8/8/4k3/8/8/8/KB6 w - - 0 1'))['reason'] === 'insufficient_material');
+    chk('king and knight against king is insufficient material',
+        chess_status(chess_parse_fen('8/8/8/4k3/8/8/8/KN6 w - - 0 1'))['reason'] === 'insufficient_material');
+    chk('…but a single pawn is still winnable, so it is not a draw',
+        chess_status(chess_parse_fen('8/8/8/4k3/8/8/P7/K7 w - - 0 1'))['state'] === 'active');
+    chk('the fifty-move rule draws at a hundred half-moves',
+        chess_status(chess_parse_fen('8/8/4k3/8/8/4K3/8/6R1 w - - 100 80'))['reason'] === 'fifty_move');
+    chk('threefold repetition draws',
+        chess_status(chess_parse_fen('8/8/4k3/8/8/4K3/8/6R1 w - - 5 80'),
+            [chess_repetition_key(chess_parse_fen('8/8/4k3/8/8/4K3/8/6R1 w - - 5 80')) => 3])['reason'] === 'threefold');
+
+    // The clock the fifty-move rule counts.
+    chk('a capture resets the half-move clock',
+        explode(' ', chess_move('8/8/3p4/4P3/8/8/8/K6k w - - 9 40', 'e5d6')['fen'])[4] === '0');
+    chk('a quiet piece move advances it',
+        explode(' ', chess_move('8/8/8/8/8/8/6R1/K6k w - - 9 40', 'g2g4')['fen'])[4] === '10');
+
+    // Disambiguation — two knights that can both reach a square.
+    chk('SAN disambiguates by file when two pieces can reach the square',
+        chess_move('8/8/8/8/8/8/8/K1N1N2k w - - 0 1', 'c1d3')['san'] === 'Ncd3');
+
+    // What the board lights up must be exactly what the server will accept.
+    $uci = chess_legal_uci(CHESS_START_FEN);
+    chk('the opening position offers exactly twenty legal moves', count($uci) === 20);
+    chk('…and every one of them is actually playable',
+        count(array_filter($uci, fn($u) => !empty(chess_move(CHESS_START_FEN, $u)['ok']))) === 20);
+})();
+
+/* ── Two-player matches ───────────────────────────────────────────────────
+ * These are minors playing minors, so the tests are mostly about the
+ * safeguarding boundary rather than about chess: who may be matched with
+ * whom, who may move, what may be sent, and who can see it afterwards.
+ */
+(function () {
+    $now = now_iso();
+    foreach ([
+        ['MPL-A', 'Ada Player',  'Egbeda'],
+        ['MPL-B', 'Bode Player', 'Egbeda'],
+        ['MPL-C', 'Chidi Other', 'Ayobo'],
+    ] as [$id, $name, $centre]) {
+        db_exec("DELETE FROM members WHERE memberId = ?", [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'centre' => $centre, 'role' => 'member', 'status' => 'active',
+            'createdAt' => $now, 'updatedAt' => $now]);
+    }
+
+    // Pairing — the safeguarding boundary.
+    chk('you cannot invite yourself',
+        match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-A'])['error'] === 'cannot_play_yourself');
+    chk('you cannot invite somebody at another centre',
+        match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-C'])['error'] === 'different_centre');
+    chk('you cannot invite somebody who does not exist',
+        match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'NOBODY'])['error'] === 'opponent_not_found');
+    chk('an unknown game is refused',
+        match_invite(['playerId' => 'MPL-A', 'game' => 'poker', 'opponentId' => 'MPL-B'])['error'] === 'bad_game');
+
+    $inv = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-B']);
+    chk('a match at the same centre is invited', !empty($inv['ok']) && ($inv['status'] ?? '') === 'invited');
+    $mid = (string)$inv['matchId'];
+    chk('inviting the same person twice is refused rather than spamming them',
+        match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-B'])['error'] === 'already_playing');
+
+    // Nobody is on move until the invitation is answered.
+    chk('no move is possible before the invitation is accepted',
+        match_move(['playerId' => 'MPL-A', 'matchId' => $mid, 'move' => 'e2e4'])['error'] === 'not_active');
+    chk('only the invited player may answer',
+        match_respond(['playerId' => 'MPL-A', 'matchId' => $mid, 'accept' => true])['error'] === 'not_yours');
+    chk('the invited player accepts', !empty(match_respond(['playerId' => 'MPL-B', 'matchId' => $mid, 'accept' => true])['ok']));
+    chk('answering twice is refused',
+        match_respond(['playerId' => 'MPL-B', 'matchId' => $mid, 'accept' => true])['error'] === 'not_pending');
+
+    // Turn order, enforced on the server.
+    chk('the player who was not invited moves first (white)',
+        match_move(['playerId' => 'MPL-B', 'matchId' => $mid, 'move' => 'e7e5'])['error'] === 'not_your_turn');
+    $m1 = match_move(['playerId' => 'MPL-A', 'matchId' => $mid, 'move' => 'e2e4']);
+    chk('a legal move is accepted and recorded in SAN', !empty($m1['ok']) && $m1['san'] === 'e4');
+    chk('…and the turn passes', match_move(['playerId' => 'MPL-A', 'matchId' => $mid, 'move' => 'd2d4'])['error'] === 'not_your_turn');
+    chk('an illegal move is refused by the server, not the board',
+        match_move(['playerId' => 'MPL-B', 'matchId' => $mid, 'move' => 'e7e4'])['error'] === 'illegal_move');
+    chk('a stranger cannot move in somebody else\'s game',
+        match_move(['playerId' => 'MPL-C', 'matchId' => $mid, 'move' => 'e7e5'])['error'] === 'not_yours');
+
+    // What the board offers must be exactly what the server accepts.
+    $view = match_get(['playerId' => 'MPL-B', 'matchId' => $mid]);
+    chk('the player on move is handed their legal moves', count($view['match']['legal']) === 20);
+    chk('…and the player NOT on move is handed none',
+        match_get(['playerId' => 'MPL-A', 'matchId' => $mid])['match']['legal'] === []);
+    chk('each player is told which colour they are',
+        $view['match']['yourColour'] === 'b' && match_get(['playerId' => 'MPL-A', 'matchId' => $mid])['match']['yourColour'] === 'w');
+
+    // Reactions are the entire messaging surface.
+    chk('a preset reaction is accepted',
+        !empty(match_react(['playerId' => 'MPL-B', 'matchId' => $mid, 'reaction' => 'nice-move'])['ok']));
+    chk('anything not on the list is refused — there is no free text',
+        match_react(['playerId' => 'MPL-B', 'matchId' => $mid, 'reaction' => 'meet me at the gate'])['error'] === 'bad_reaction');
+    match_react(['playerId' => 'MPL-B', 'matchId' => $mid, 'reaction' => 'thinking']);
+    chk('a player cannot buzz their opponent repeatedly — one reaction per move',
+        (int)(db_row('SELECT COUNT(*) c FROM match_reactions WHERE matchId = ? AND playerId = ?', [$mid, 'MPL-B'])['c'] ?? 0) === 1);
+    chk('…and the latest one is what stands',
+        (string)(db_row('SELECT reaction FROM match_reactions WHERE matchId = ? AND playerId = ?', [$mid, 'MPL-B'])['reaction'] ?? '') === 'thinking');
+    chk('an outsider cannot react into a game they are not in',
+        match_react(['playerId' => 'MPL-C', 'matchId' => $mid, 'reaction' => 'oops'])['error'] === 'not_yours');
+
+    /* Nothing here is private between two children: a mentor covering the
+     * centre reads the match and its whole move list without being a player. */
+    $staffView = match_get(['requesterId' => 'NGG-2025-0099', 'playerId' => 'NGG-2025-0099', 'matchId' => $mid]);
+    chk('staff can open a match they are not playing in', !empty($staffView['ok']) && !empty($staffView['match']['staffView']));
+    chk('…and see every move played', count($staffView['match']['moves']) === 1);
+    chk('…while another child still cannot',
+        match_get(['playerId' => 'MPL-C', 'matchId' => $mid])['error'] === 'not_yours');
+    $staffList = match_staff_list(['requesterId' => 'NGG-2025-0099', 'centre' => 'Egbeda']);
+    chk('a match appears in the staff list for its centre',
+        !empty($staffList['ok']) && in_array($mid, array_column($staffList['matches'], 'matchId'), true));
+
+    // Reporting.
+    chk('a player can report their own match', !empty(match_report(['playerId' => 'MPL-B', 'matchId' => $mid])['ok']));
+    chk('…and it is flagged for staff',
+        (int)(db_row('SELECT flagged FROM match_games WHERE matchId = ?', [$mid])['flagged'] ?? 0) === 1);
+    chk('a child outside the game cannot report it',
+        match_report(['playerId' => 'MPL-C', 'matchId' => $mid])['error'] === 'not_yours');
+
+    // Resignation, and what it does to the record.
+    chk('resigning hands the win to the opponent',
+        (match_resign(['playerId' => 'MPL-B', 'matchId' => $mid])['winnerId'] ?? '') === 'MPL-A');
+    chk('…and the game is over for both of them',
+        match_move(['playerId' => 'MPL-A', 'matchId' => $mid, 'move' => 'd2d4'])['error'] === 'not_active');
+    chk('the reason is recorded, not just the result',
+        (string)(db_row('SELECT reason FROM match_games WHERE matchId = ?', [$mid])['reason'] ?? '') === 'resignation');
+
+    /* A full game, played move by move through the API, ending in mate. This
+     * is the one test that proves the rules engine and the match layer agree
+     * about when a game is finished. */
+    $inv2 = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-B']);
+    $m2 = (string)$inv2['matchId'];
+    match_respond(['playerId' => 'MPL-B', 'matchId' => $m2, 'accept' => true]);
+    foreach ([['MPL-A', 'f2f3'], ['MPL-B', 'e7e5'], ['MPL-A', 'g2g4']] as [$who, $mv]) {
+        match_move(['playerId' => $who, 'matchId' => $m2, 'move' => $mv]);
+    }
+    $mate = match_move(['playerId' => 'MPL-B', 'matchId' => $m2, 'move' => 'd8h4']);
+    chk('a game played through the API ends in checkmate',
+        ($mate['gameState'] ?? '') === 'checkmate' && ($mate['winnerId'] ?? '') === 'MPL-B' && ($mate['san'] ?? '') === 'Qh4#');
+    chk('…the match is closed and nobody is on move',
+        (string)(db_row('SELECT status FROM match_games WHERE matchId = ?', [$m2])['status'] ?? '') === 'complete'
+        && (string)(db_row('SELECT turnPlayer FROM match_games WHERE matchId = ?', [$m2])['turnPlayer'] ?? '') === '');
+    chk('…and all four moves are on the record for staff to read',
+        (int)(db_row('SELECT COUNT(*) c FROM match_moves WHERE matchId = ?', [$m2])['c'] ?? 0) === 4);
+
+    // Once a pair have finished, they may play again.
+    chk('a finished match does not block a rematch',
+        !empty(match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-B'])['ok']));
+
+    // The lobby a child actually sees.
+    $lob = match_list(['playerId' => 'MPL-A']);
+    chk('the lobby lists your games', !empty($lob['ok']) && count($lob['matches']) >= 2);
+    chk('…and offers only opponents at your own centre',
+        !in_array('MPL-C', array_column($lob['opponents'], 'id'), true)
+        && in_array('MPL-B', array_column($lob['opponents'], 'id'), true));
+    chk('…and never offers you yourself', !in_array('MPL-A', array_column($lob['opponents'], 'id'), true));
+    chk('the reaction vocabulary is fixed and published to the client',
+        ($lob['reactions'] ?? []) === MATCH_REACTIONS && count(MATCH_REACTIONS) === 6);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

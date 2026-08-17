@@ -419,6 +419,16 @@ function backend_dispatch(string $op, array $args = []): array {
             'arcade.board'            => 'arcade_leaderboard',
             'arcade.start'            => 'arcade_round_start',
             'arcade.submit'           => 'arcade_round_submit',
+            // Two-player, turn-based. No free-text op exists by design.
+            'match.list'              => 'match_list',
+            'match.get'               => 'match_get',
+            'match.invite'            => 'match_invite',
+            'match.respond'           => 'match_respond',
+            'match.move'              => 'match_move',
+            'match.resign'            => 'match_resign',
+            'match.react'             => 'match_react',
+            'match.report'            => 'match_report',
+            'match.staff.list'        => 'match_staff_list',
             'student.communityLogin'  => 'community_id_login',   // legacy alias
             'admin.community.overview'      => 'admin_community_overview',
             'admin.community.channel.upsert'=> 'admin_community_channel_upsert',
