@@ -1588,3 +1588,10 @@ INSERT INTO schema_version (version) VALUES (86) ON DUPLICATE KEY UPDATE version
 ALTER TABLE members ADD COLUMN displayId VARCHAR(24) DEFAULT '';
 ALTER TABLE members ADD COLUMN disciplines VARCHAR(120) DEFAULT '';
 INSERT INTO schema_version (version) VALUES (87) ON DUPLICATE KEY UPDATE version = version;
+
+-- v88 — a volunteer can be granted a portal capability per person.
+-- "Admin / Ops" volunteers are not console staff and hold no role capability,
+-- so the mentor portal had no way to admit them. Granting is explicit and
+-- per-person; registering on a self-service form still grants nothing.
+ALTER TABLE volunteers ADD COLUMN capsExtra TEXT;
+INSERT INTO schema_version (version) VALUES (88) ON DUPLICATE KEY UPDATE version = version;

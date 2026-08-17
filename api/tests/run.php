@@ -7746,6 +7746,58 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     chk('a self-registered "Admin / Ops" volunteer is not let in',
         backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-1'])['error'] === 'not_a_mentor');
 
+    /* …until somebody actually grants it. The centres are run by volunteers,
+     * and the ones doing the running need the roster; what must not happen is
+     * a public form being one edit away from a child's behaviour record. So
+     * the grant is per person, made by a super admin, and audited. */
+    chk('only a super admin can grant portal access',
+        backend_dispatch('admin.volunteers.caps', ['requesterId' => 'NGG-2025-0710', 'volunteerId' => 'VOL-OPS-1', 'caps' => ['summer']])['error'] === 'forbidden');
+    chk('granting to an unknown volunteer is refused',
+        backend_dispatch('admin.volunteers.caps', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-NOPE', 'caps' => ['summer']])['error'] === 'not_found');
+
+    $grant = backend_dispatch('admin.volunteers.caps', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-OPS-1', 'caps' => ['summer']]);
+    chk('a super admin grants the summer roster to an Ops volunteer', !empty($grant['ok']) && ($grant['caps'] ?? []) === ['summer']);
+    $ops = backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-1']);
+    $opsIds = array_column($ops['students'] ?? [], 'studentId');
+    chk('…and now the portal opens for them', !empty($ops['ok']));
+    chk('…on the summer children at their own centre', in_array('SUM-R-1', $opsIds, true));
+    chk('…and NOT on another centre — a grant is not an admin\'s reach',
+        !in_array('SUM-AY-1', $opsIds, true));
+    chk('…nor on a cohort they were not granted', !in_array('NGG-2025-0601', $opsIds, true));
+    chk('…and they are never asked to pick a centre, because they have one',
+        empty($ops['needsCentre']));
+
+    /* The capability list is an allow-list. A volunteer record is created by a
+     * public form, so 'people'/'rbac' must not be reachable through it even if
+     * the request asks for them by name. */
+    $over = backend_dispatch('admin.volunteers.caps', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-OPS-1', 'caps' => ['people', 'rbac', 'settings', 'club']]);
+    chk('console capabilities cannot be granted to a volunteer', ($over['caps'] ?? null) === ['club']);
+    $ops2 = backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-1', 'centre' => 'Egbeda']);
+    $ops2Ids = array_column($ops2['students'] ?? [], 'studentId');
+    chk('…so "club" moved them to the club roll, not to everything',
+        in_array('NGG-2025-0601', $ops2Ids, true) && !in_array('SUM-R-1', $ops2Ids, true));
+
+    /* Naming somebody else's centre is the obvious way to try to widen a
+     * grant, so it is checked against what they hold, not against what they
+     * asked for. */
+    chk('a granted volunteer cannot name another centre',
+        backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-1', 'centre' => 'Ayobo'])['error'] === 'not_your_centre');
+
+    /* A grant to somebody with no centre would hold a capability and see an
+     * empty roster — that reads as a broken portal, not as the missing centre
+     * it actually is. Refuse it at the point of granting. */
+    db_insert('volunteers', ['volunteerId' => 'VOL-OPS-2', 'fullName' => 'Ops Nowhere', 'email' => 'ops2@example.com',
+        'role' => 'admin', 'centre' => '', 'status' => 'active', 'createdAt' => now_iso()]);
+    chk('a volunteer with no centre cannot be granted access',
+        backend_dispatch('admin.volunteers.caps', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-OPS-2', 'caps' => ['summer']])['error'] === 'volunteer_has_no_centre');
+
+    // Revoking is granting nothing — and it puts them straight back outside.
+    backend_dispatch('admin.volunteers.caps', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-OPS-1', 'caps' => []]);
+    chk('revoking access closes the portal again',
+        backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-1'])['error'] === 'not_a_mentor');
+    chk('the grant and the revoke are both in the audit log',
+        (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'volunteer.caps' AND subject = 'VOL-OPS-1'")['c'] ?? 0) >= 2);
+
     // A volunteer mentor is narrowed by their faculty, the way a mentors-table
     // record is narrowed by its department.
     db_insert('volunteers', ['volunteerId' => 'VOL-MEN-1', 'fullName' => 'Vera VolMentor', 'email' => 'volmen1@example.com',

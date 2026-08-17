@@ -45,7 +45,11 @@ function mentor_requester(string $mid): ?array {
         'fullName' => (string)($v['fullName'] ?? ''),
         'email'    => (string)($v['email'] ?? ''),
         'role'     => 'volunteer',
-        'capsExtra' => '',
+        /* Granted per person by a super admin, never by the role. 'volunteer'
+         * carries no role capability, so whatever is here is the whole of what
+         * they hold — which is why filling in the self-service form still
+         * grants nothing. */
+        'capsExtra' => (string)($v['capsExtra'] ?? ''),
         '__volunteer' => $v,
     ];
 }
@@ -73,10 +77,22 @@ function mentor_gate(array $p): array {
      * console's own portal showing them that class and nothing else. */
     $progs = mentor_admin_programmes(member_effective_caps($m));
     if ($progs) {
+        $centres = admin_centre_names_in_scope($m);
+        /* A VOLUNTEER holding a granted capability is not an admin, and must
+         * not inherit an admin's reach. `admin_centre_names_in_scope` is
+         * null-means-everywhere, so without this a granted Ops volunteer at
+         * Egbeda would open the portal onto every child in the programme.
+         * Their reach is the centre written on their own record — and a
+         * volunteer with no centre gets [], which the roster's IN-list turns
+         * into `AND 1 = 0`. Fails closed, not open. */
+        if (isset($m['__volunteer'])) {
+            $own = trim((string)($m['__volunteer']['centre'] ?? ''));
+            $centres = $own !== '' ? [$own] : [];
+        }
         return ['ok' => true, 'member' => $m, 'role' => 'admin', 'rank' => 'admin',
-            'mentor' => ['fullName' => (string)($m['fullName'] ?? ''), 'centre' => '', 'department' => '', 'rank' => 'admin'],
+            'mentor' => ['fullName' => (string)($m['fullName'] ?? ''), 'centre' => (string)($m['__volunteer']['centre'] ?? ''), 'department' => '', 'rank' => 'admin'],
             'programmes' => $progs,
-            'centres' => admin_centre_names_in_scope($m),
+            'centres' => $centres,
             'courses' => null];
     }
 

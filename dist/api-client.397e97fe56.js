@@ -894,6 +894,8 @@
         approve: (id) => request('/admin/volunteers.php', { body: { action: 'approve', id } }),
         decline: (id, reason) => request('/admin/volunteers.php', { body: { action: 'decline', id, reason: reason || '' } }),
         safeguard: (volunteerId, status) => request('/admin/volunteers.php', { body: { action: 'safeguard', volunteerId, status } }),
+        // Portal access, granted per person by a super admin. caps ⊆ ['summer','club'].
+        caps:      (volunteerId, caps) => request('/admin/volunteers.php', { body: { action: 'caps', volunteerId, caps } }),
         update:  (volunteerId, data) => request('/admin/volunteers.php', { body: { action: 'update', volunteerId, data } }),
         remove:  (volunteerId) => request('/admin/volunteers.php', { body: { action: 'delete', volunteerId } }),
         needsList:  () => request('/admin/volunteers.php?view=needs'),

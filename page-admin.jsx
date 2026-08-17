@@ -8109,6 +8109,46 @@ function VolunteerEditor({ v, onSaved, onDelete }) {
    plus a boolean that can contradict it. */
 const VOL_NO_CENTRE = " none";
 
+/* Portal access for a volunteer.
+   The centres are run by volunteers, and the ones running them need the
+   roster. What must not happen is a public form being one edit away from a
+   child's behaviour record — so this is a deliberate, per-person grant, it is
+   super-admin only, and it is audited. The two options are the two rosters;
+   a volunteer's reach is always the centre on their own record. */
+function VolunteerPortalAccess({ v, onSaved }) {
+  const { hasCap } = useAuth();
+  const [busy, setBusy] = React.useState(false);
+  const caps = v.caps || [];
+  if (!hasCap || !hasCap("rbac")) return null;
+  const noCentre = !(v.centre || "").trim();
+  const toggle = async (cap) => {
+    const next = caps.indexOf(cap) === -1 ? caps.concat([cap]) : caps.filter(c => c !== cap);
+    setBusy(true);
+    try { await NGGApi.admin.volunteers.caps(v.volunteerId, next); toast.success(next.length ? "Portal access updated." : "Portal access removed."); onSaved && onSaved(); }
+    catch (e) { toast.error(e.code === "volunteer_has_no_centre" ? "Give them a centre first — access is scoped to it." : (e.code || e.message)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(12,20,50,.10)" }}>
+      <div className="admin-field-label">Mentor portal access</div>
+      <p className="admin-hint" style={{ margin: "2px 0 8px" }}>
+        {noCentre
+          ? "This volunteer has no centre. Access is scoped to a centre, so set one above before granting it."
+          : <>Opens the roster for {v.centre} only. Registering as a volunteer grants nothing on its own — this is the grant.</>}
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {[["summer", "Summer School roster"], ["club", "NGG Club roster"]].map(([cap, label]) => (
+          <button key={cap} type="button" role="switch" aria-checked={caps.indexOf(cap) !== -1}
+            disabled={busy || noCentre} onClick={() => toggle(cap)}
+            className={"btn btn-sm " + (caps.indexOf(cap) !== -1 ? "btn-primary" : "btn-ghost")}>
+            {caps.indexOf(cap) !== -1 ? "✓ " : ""}{label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminVolunteers() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -8245,6 +8285,14 @@ function AdminVolunteers() {
                         {v.safeguarding === "cleared"
                           ? <span className="chip chip-lime">✓ screened</span>
                           : <span className="chip status-archived">pending</span>}
+                        {/* Who can open the roster is a safeguarding fact, so it
+                            belongs next to the screening state rather than
+                            behind an Edit click. */}
+                        {(v.caps || []).length > 0 &&
+                          <span className="chip chip-navy" style={{ marginLeft: 6 }}
+                            title={"Mentor portal access at " + (v.centre || "—") + ": " + (v.caps || []).join(" + ")}>
+                            portal · {(v.caps || []).join(" + ")}
+                          </span>}
                       </td>
                       <td className="mono" style={{ fontSize: 12 }}><a href={"/q/" + v.token} target="_blank" rel="noreferrer">/q/{(v.token || "").slice(0, 10)}…</a></td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
@@ -8254,7 +8302,10 @@ function AdminVolunteers() {
                           : <button className="btn btn-primary btn-sm" disabled={busy === "s" + v.volunteerId} onClick={() => setSafeguard(v, "cleared")}>{busy === "s" + v.volunteerId ? "…" : "Mark screened"}</button>}
                       </td>
                     </tr>
-                    {editId === v.volunteerId && <tr><td colSpan={7} style={{ background: "rgba(12,20,50,0.03)" }}><VolunteerEditor v={v} onSaved={() => { setEditId(""); load(); }} onDelete={() => removeVol(v)}/></td></tr>}
+                    {editId === v.volunteerId && <tr><td colSpan={7} style={{ background: "rgba(12,20,50,0.03)" }}>
+                      <VolunteerEditor v={v} onSaved={() => { setEditId(""); load(); }} onDelete={() => removeVol(v)}/>
+                      <VolunteerPortalAccess v={v} onSaved={load}/>
+                    </td></tr>}
                     </React.Fragment>
                   ))}
                 </tbody>

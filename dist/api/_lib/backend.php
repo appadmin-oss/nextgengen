@@ -341,6 +341,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.volunteers.delete'   => 'admin_volunteer_delete',
             'admin.volunteers.decline'  => 'admin_volunteer_decline',
             'admin.volunteers.safeguard' => 'admin_volunteer_safeguard',
+            'admin.volunteers.caps'     => 'admin_volunteer_caps_set',
             'admin.volunteers.needs.list'   => 'admin_volunteer_needs_list',
             'admin.volunteers.needs.upsert' => 'admin_volunteer_need_upsert',
             'admin.volunteers.needs.delete' => 'admin_volunteer_need_delete',

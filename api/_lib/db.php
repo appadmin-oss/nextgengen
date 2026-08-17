@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 87;
+const NGG_SCHEMA_TARGET = 88;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2330,6 +2330,15 @@ function db_migrate(PDO $db): void {
         87 => "
             ALTER TABLE members ADD COLUMN displayId TEXT DEFAULT '';
             ALTER TABLE members ADD COLUMN disciplines TEXT DEFAULT '';
+        ",
+
+        // A volunteer can be granted a portal capability per person. An
+        // "Admin / Ops" volunteer holds no role capability, so the mentor
+        // portal had no way to admit them at all. Granting is explicit and
+        // per-person: filling in the self-service volunteer form still grants
+        // nothing, which is the property that makes this safe to add.
+        88 => "
+            ALTER TABLE volunteers ADD COLUMN capsExtra TEXT DEFAULT '';
         ",
     ];
 

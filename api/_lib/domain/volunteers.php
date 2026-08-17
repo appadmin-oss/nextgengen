@@ -528,6 +528,44 @@ function admin_volunteer_safeguard(array $p): array {
     return ['ok' => true];
 }
 
+/**
+ * Super admin: grant a volunteer access to the mentor portal.
+ *
+ * A volunteer who registered as "Admin / Ops" holds no role capability, so
+ * `mentor_gate` had nowhere to admit them and the portal answered
+ * `not_a_mentor` — correctly, because a self-service form is not a grant of
+ * oversight over children's behaviour records. The people who actually run a
+ * centre still need to get in, so the grant is made HERE, per person, by a
+ * super admin, and recorded in the audit log.
+ *
+ * The grantable set is deliberately narrower than a staff member's. Only the
+ * two programme capabilities are offered: they open a programme's roster at
+ * the volunteer's own centre and nothing else. 'people', 'rbac' and the rest
+ * are not grantable to a volunteer at all — a volunteer record is created by a
+ * public form, and no public form should be one edit away from the console.
+ */
+function admin_volunteer_caps_set(array $p): array {
+    if (!admin_is_super($p)) return ['ok' => false, 'error' => 'forbidden'];
+    $volunteerId = (string)($p['volunteerId'] ?? '');
+    $v = db_row('SELECT id, centre FROM volunteers WHERE volunteerId = ? LIMIT 1', [$volunteerId]);
+    if (!$v) return ['ok' => false, 'error' => 'not_found'];
+
+    // 'summer' → the Summer School roster; 'club' → the NGG Club roster.
+    $valid = ['summer', 'club'];
+    $in = is_array($p['caps'] ?? null) ? $p['caps'] : [];
+    $caps = array_values(array_unique(array_filter(array_map('strval', $in), fn($c) => in_array($c, $valid, true))));
+
+    /* A grant with no centre on the record is refused rather than stored.
+     * `mentor_gate` fails such a volunteer closed — they would hold a
+     * capability and see an empty roster, which reads as a broken portal
+     * rather than as the missing centre it actually is. */
+    if ($caps && trim((string)($v['centre'] ?? '')) === '') return ['ok' => false, 'error' => 'volunteer_has_no_centre'];
+
+    db_update('volunteers', ['capsExtra' => json_encode($caps, JSON_UNESCAPED_SLASHES), 'updatedAt' => now_iso()], ['id' => $v['id']]);
+    audit('volunteer.caps', (string)($p['requesterId'] ?? ''), $volunteerId, ['caps' => $caps], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'volunteerId' => $volunteerId, 'caps' => $caps, 'centre' => (string)$v['centre']];
+}
+
 /* ── Upcoming sessions (capacity-aware) — offered at approval ─────────────── */
 
 function volunteer_upcoming_sessions(int $limit = 3): array {
@@ -576,8 +614,14 @@ function admin_volunteers_list(array $p): array {
         $a['dobAge'] = !empty($a['dob']) && function_exists('dob_age') ? dob_age((string)$a['dob']) : null;
     }
     unset($a);
-    $roster = db_all('SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, visibilityConsent, token, status, safeguarding, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
-    foreach ($roster as &$v) $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
+    $roster = db_all('SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, visibilityConsent, token, status, safeguarding, capsExtra, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
+    foreach ($roster as &$v) {
+        $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
+        // Portal access granted to this person. Always an array so the console
+        // can render "no access" without distinguishing null from '' from '[]'.
+        $v['caps'] = json_decode((string)($v['capsExtra'] ?? ''), true) ?: [];
+        unset($v['capsExtra']);
+    }
     unset($v);
     return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster];
 }
