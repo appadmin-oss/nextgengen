@@ -1189,24 +1189,38 @@ function DashboardObligations({ account }) {
         {a.mouAt && <span className="chip chip-lime" title={"MOU accomplished " + String(a.mouAt).slice(0, 10)}>MOU DONE</span>}
       </div>
 
+      {/* REAL money only — dues and fines. The training fee is the cost of a
+          place given free, and putting the two in one figure is how a family
+          comes to believe they owe six figures for something free. */}
       {owed > 0 ? (
         <React.Fragment>
           <div className="dash-account-figure">{naira(owed)}</div>
-          <div className="dash-account-sub">outstanding</div>
+          <div className="dash-account-sub">to pay</div>
         </React.Fragment>
       ) : (
         <React.Fragment>
-          <div className="dash-account-figure is-clear">All clear</div>
-          <div className="dash-account-sub">nothing outstanding</div>
+          <div className="dash-account-figure is-clear">Nothing to pay</div>
+          <div className="dash-account-sub">dues and fines are clear</div>
         </React.Fragment>
       )}
 
-      {/* The write-down, said as what it is: something service earns, not a
-          discount granted. This is the line worth putting above the ledger. */}
-      {a.trainingCharged > 0 && (
-        <div className="dash-account-earned">
-          <b>{naira(a.trainingEarned + a.trainingWrittenOff)}</b> of your {naira(a.trainingCharged)} training fee
-          {a.mouAt ? " has been written off — your MOU is complete." : " has been earned off by your service so far."}
+      {/* The cost of the place, stated as a fact about what the programme
+          spends — not as a bill, and never added to the figure above. */}
+      {a.programmeCost > 0 && (
+        <div className="dash-cost">
+          <div className="dash-cost-head">
+            Cost of your training: <b>{naira(a.programmeCost)}</b>
+          </div>
+          <div className="dash-cost-note">
+            Covered by NGG — this is not something you are asked to pay.
+          </div>
+          {(a.programmeCovered > 0 || a.mouAt) && (
+            <div className="dash-cost-earned">
+              {a.mouAt
+                ? "Your MOU is complete, so the whole of it is settled."
+                : <><b>{naira(a.programmeCovered)}</b> of it has been earned off by your service so far.</>}
+            </div>
+          )}
         </div>
       )}
 
@@ -1354,8 +1368,12 @@ function DashboardFines({ c }) {
 
 /* A member's words for the ledger kinds. Plainer than the admin labels: nobody
    outside an office calls a payment "payment received". */
+/* The ledger's own words. `training` is labelled as COVERED here as well as in
+   the panel above: a row reading "Training fee ₦75,000" in a list of things a
+   family owes is read as a bill however carefully the rest of the card is
+   worded. */
 const ACCOUNT_KIND_LABEL = {
-  membership: "Membership fee", dues: "Monthly dues", training: "Training fee",
+  membership: "Membership fee", dues: "Monthly dues", training: "Training place — covered by NGG",
   fine: "Fine", adjustment: "Adjustment",
   payment: "You paid", writeoff: "Written off", waiver: "Waived",
 };

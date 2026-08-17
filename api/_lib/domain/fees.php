@@ -582,15 +582,54 @@ function fees_balance(array $member, ?array $cfg = null, ?string $asOf = null): 
         : ((int)$ten['serviceMonths'] > 0 ? min(1.0, $ten['servedMonths'] / (int)$ten['serviceMonths']) : 0.0);
     $earned = (int)floor(max(0, $trainingCharged - $trainingWritten) * $earnedPct);
     $outstanding = max(0, $charged - $credited);
+
+    /* ── What a family is ASKED FOR, versus what the programme COVERS ──────
+     *
+     * The training fee is not a debt. It is the cost of a place the child has
+     * been given free, carried on the account so the programme can say what it
+     * spends and what the member is earning off through service. Nobody is
+     * expected to pay it.
+     *
+     * Membership, dues and fines ARE real money.
+     *
+     * Keeping those in one number was the most consequential thing wrong here.
+     * `payable` fed the reminder cron, so guardians were emailed "the balance
+     * outstanding is ₦225,000" about a programme their child attends for
+     * nothing. That message is warm and credible, which makes it worse, not
+     * better: the likely outcome is a family quietly withdrawing a child from
+     * something free rather than a payment.
+     *
+     * So `payable` is now REAL money only. Every screen that asks a family for
+     * a figure, and every reminder, reads it.
+     */
+    $realCharged = 0; $realCredited = 0;
+    foreach (fees_entries($memberId) as $e) {
+        if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
+        $kind = (string)$e['kind']; $amt = (int)$e['amount'];
+        if ((string)$e['direction'] === 'charge') {
+            if ($kind !== 'training') $realCharged += $amt;
+        } else {
+            // A writeoff settles the notional training fee; payments and
+            // waivers settle real money.
+            if ($kind !== 'writeoff') $realCredited += $amt;
+        }
+    }
+    $payable = max(0, $realCharged - $realCredited);
+
     $cap = (int)$cfg['balanceCap'];
     return [
         'charged' => $charged, 'credited' => $credited,
         'outstanding' => $outstanding,
-        /* What a family is actually being asked for: what is outstanding, less
-           the training the member has already earned off but which has not been
-           posted yet. Reported alongside `outstanding` rather than instead of it,
-           so nobody has to guess which of the two a figure on a screen is. */
-        'payable' => max(0, $outstanding - $earned),
+        /* Real money a family is asked for. Training is deliberately NOT in
+           here — see above. Reported alongside `outstanding` (which is the
+           whole account, notional included) so nobody has to guess which of the
+           two a figure on a screen is. */
+        'payable' => $payable,
+        'realCharged' => $realCharged, 'realCredited' => $realCredited,
+        /* The notional side, named for what it is so a screen can say it
+           without implying a bill. */
+        'programmeCost' => $trainingCharged,
+        'programmeCovered' => min($trainingCharged, $earned + $trainingWritten),
         'trainingCharged' => $trainingCharged, 'trainingWrittenOff' => $trainingWritten,
         'trainingEarned' => $earned,
         'byKind' => $byKind,
@@ -727,28 +766,34 @@ function fees_reminder_send(array $cand, ?array $cfg = null): bool {
     $first = esc_html(explode(' ', trim((string)($m['fullName'] ?? '')))[0] ?: 'your child');
     $bal = fees_balance($m, $cfg);
     $money = fn(int $n) => fees_money_text($n, $cfg);
+    /* Real money ONLY. The training fee is the cost of a free place, not a bill,
+     * and naming it in an email to a guardian is how a family comes to believe
+     * they owe ₦225,000 for something their child attends for nothing. */
     $lines = [];
-    foreach (['membership' => 'Membership fee', 'dues' => 'Monthly dues', 'training' => 'Training fee', 'fine' => 'Fines'] as $k => $label) {
+    foreach (['membership' => 'Membership fee', 'dues' => 'Monthly dues', 'fine' => 'Fines'] as $k => $label) {
         $v = (int)($bal['byKind'][$k] ?? 0);
         if ($v > 0) $lines[] = '<tr><td style="padding:2px 12px 2px 0">' . $label . '</td><td style="padding:2px 0">' . $money($v) . '</td></tr>';
     }
-    $earned = (int)$bal['trainingEarned'];
     $body = '<p style="margin:0 0 10px">This is a note about ' . $first . '\'s account at Next Generation Genius. '
-          . 'The balance outstanding is <b>' . $money((int)$bal['payable']) . '</b>.</p>';
+          . 'The amount to pay is <b>' . $money((int)$bal['payable']) . '</b>.</p>';
     if ($lines) $body .= '<table style="margin:0 0 10px;font-size:14px">' . implode('', $lines) . '</table>';
-    if ($earned > 0) {
-        $body .= '<p style="margin:0 0 10px;color:#5a6488;font-size:13px">' . $money($earned)
-              . ' of the training fee has already been written off against ' . $first . '\'s service, and is not included above.</p>';
+    /* Said once, positively, and never as part of the figure: the training is
+     * covered, and a guardian seeing the number on the dashboard should be told
+     * why it is not being asked for. */
+    if ((int)$bal['programmeCost'] > 0) {
+        $body .= '<p style="margin:0 0 10px;color:#5a6488;font-size:13px">'
+              . $first . '\'s training place costs the programme ' . $money((int)$bal['programmeCost'])
+              . '. That is covered by Next Generation Genius and is not something you are asked to pay.</p>';
     }
     $body .= '<p style="margin:0 0 10px">If any of this looks wrong, or if now is a difficult time, please reply to this '
           . 'message or speak to your centre coordinator — we would rather hear from you than not.</p>';
     $html = email_template([
-        'title' => 'Account balance', 'intro' => $first . '\'s account has an outstanding balance.',
+        'title' => 'Account balance', 'intro' => $first . '\'s account has an amount to pay.',
         'bodyHtml' => $body,
         'footNote' => 'You are receiving this because you are ' . $first . '\'s guardian at Next Generation Genius. '
                     . 'Tell your centre coordinator if you would prefer not to receive these.',
     ]);
-    $ok = (bool)@send_mail($cand['to'], $first . '\'s account — ' . $money((int)$bal['payable']) . ' outstanding', $html);
+    $ok = (bool)@send_mail($cand['to'], $first . '\'s account — ' . $money((int)$bal['payable']) . ' to pay', $html);
     /* Stamped whether or not the transport succeeded. The alternative is a
      * mailer that is failing quietly and a family reminded on every single cron
      * tick because nothing recorded the attempt. */

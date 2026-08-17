@@ -519,6 +519,10 @@ function policy_issue(string $personId, string $type, string $kind, int $tier, a
             'issuedBy' => substr((string)($extra['issuedBy'] ?? 'system'), 0, 64),
             'issuedAt' => $now, 'createdAt' => $now,
         ]);
+        if ($kind === 'fine') {
+            $new = db_row('SELECT id FROM sanctions WHERE personId = ? AND kind = ? AND tier = ?', [$personId, $kind, $tier]);
+            policy_fine_to_ledger($personId, $type, (int)($new['id'] ?? 0), (int)($extra['amount'] ?? 0), (string)($extra['reason'] ?? ''));
+        }
         event_emit('policy.sanction', ['ref' => $personId, 'kind' => $kind, 'tier' => $tier, 'personType' => $type, 'reason' => (string)($extra['reason'] ?? '')]);
         return true;
     } catch (\Throwable $e) {
@@ -537,9 +541,63 @@ function policy_issue(string $personId, string $type, string $kind, int $tier, a
             'endsAt' => (string)($extra['endsAt'] ?? ''),
             'issuedAt' => $now, 'clearedAt' => '', 'clearedBy' => '',
         ], ['id' => (int)$row['id']]);
+        if ($kind === 'fine') {
+            policy_fine_to_ledger($personId, $type, (int)$row['id'], (int)($extra['amount'] ?? 0), (string)($extra['reason'] ?? ''));
+        }
         event_emit('policy.sanction', ['ref' => $personId, 'kind' => $kind, 'tier' => $tier, 'personType' => $type, 'reason' => (string)($extra['reason'] ?? ''), 'reissued' => true]);
         return true;
     }
+}
+
+
+/**
+ * A policy fine is money, so it belongs on the ledger.
+ *
+ * There were two fine systems and they did not know about each other. A fine
+ * issued by the policy engine for lateness lived only in `sanctions`, so it was
+ * never in `payable`, never chased, and never in the arrears list — while a fine
+ * an admin typed in lived only in `member_ledger`, so the compliance record did
+ * not know it existed. "What does this member owe" had two different answers
+ * depending on which screen a coordinator opened, and a coordinator who noticed
+ * and recorded the policy fine by hand billed the family twice.
+ *
+ * The ledger is now the single answer for money; `sanctions` stays the
+ * disciplinary record, with its own due process, appeals and thresholds. This is
+ * the one bridge between them.
+ *
+ * Idempotent on the sanction id, so re-running policy evaluation cannot charge
+ * a family twice for the same infraction — which is the failure that matters
+ * most here, and the reason this posts through fees_post rather than inserting
+ * directly.
+ */
+function policy_fine_to_ledger(string $personId, string $type, int $sanctionId, int $amount, string $reason): void {
+    // Only members carry a fee ledger. Summer students and volunteers are
+    // disciplined by the same policy but do not have an account.
+    if ($type !== 'member' || $amount <= 0 || $sanctionId <= 0) return;
+    if (!function_exists('fees_post')) return;
+    if (!db_row('SELECT id FROM members WHERE memberId = ? LIMIT 1', [$personId])) return;
+    fees_post($personId, 'fine', $amount, [
+        // The sanction id IS the period key: one ledger row per sanction, ever.
+        'periodKey' => 'sanction-' . $sanctionId,
+        'note' => 'Policy fine' . ($reason !== '' ? ' — ' . $reason : ''),
+        'by' => 'policy',
+    ]);
+}
+
+/**
+ * A sanction that is lifted, voided or paid must stop being money owed.
+ *
+ * Without this, clearing a wrongly-logged infraction left the charge sitting on
+ * the family's account for ever — the disciplinary record would say "lifted"
+ * while the ledger went on asking for the money, which is the worst of both.
+ */
+function policy_fine_void_ledger(string $personId, int $sanctionId, string $why = 'Sanction lifted'): void {
+    if ($sanctionId <= 0) return;
+    $row = db_row("SELECT entryId FROM member_ledger WHERE memberId = ? AND kind = 'fine' AND periodKey = ? AND (voidedAt IS NULL OR voidedAt = '') LIMIT 1",
+                  [$personId, 'sanction-' . $sanctionId]);
+    if (!$row) return;
+    db_update('member_ledger', ['voidedAt' => now_iso(), 'voidedBy' => 'policy',
+                                'voidReason' => substr($why, 0, 255)], ['entryId' => (string)$row['entryId']]);
 }
 
 /** Sanctions still in force. A lifted/cleared/served/paid one is history. */
@@ -1074,6 +1132,11 @@ function policy_relift(string $personId, string $type): int {
         if ($kind === 'fine' && $tier >= 3000) $holds = (int)$counts['idcard_lost'] >= ($tier - 3000);
         if (!$holds) {
             db_update('sanctions', ['status' => 'lifted', 'clearedAt' => now_iso(), 'clearedBy' => 'system'], ['id' => (int)$s['id']]);
+            /* A lifted fine must stop being money owed. Without this, clearing a
+             * wrongly-logged infraction left the charge on the family's account
+             * for ever: the disciplinary record said "lifted" while the ledger
+             * went on asking for the money. */
+            if ($kind === 'fine') policy_fine_void_ledger($personId, (int)$s['id'], 'Sanction lifted — threshold no longer met');
             $lifted++;
         }
     }
@@ -1097,6 +1160,22 @@ function admin_policy_sanction_update(array $p): array {
         'clearedBy' => in_array($status, ['active', 'proposed'], true) ? '' : (string)$g['requester']['memberId'],
         'note' => substr((string)($p['note'] ?? ''), 0, 240),
     ], ['id' => $sid]);
+    /* Keep the ledger in step with the disciplinary record.
+     *
+     * A fine WAIVED or overturned on appeal stops being money owed. A fine
+     * marked PAID does not get voided here — a payment is recorded against the
+     * ledger as a payment, so voiding the charge as well would erase the fact
+     * that anything was ever owed and leave the money unaccounted for. Reissuing
+     * a fine set back to `active` re-posts it, idempotently. */
+    if ((string)$s['kind'] === 'fine') {
+        if (in_array($status, ['waived', 'cleared', 'lifted'], true)) {
+            policy_fine_void_ledger((string)$s['personId'], $sid,
+                $status === 'waived' ? 'Fine waived' : 'Fine overturned');
+        } elseif ($status === 'active') {
+            policy_fine_to_ledger((string)$s['personId'], (string)$s['personType'], $sid,
+                (int)($s['amount'] ?? 0), (string)($s['reason'] ?? ''));
+        }
+    }
     audit('policy.sanction.update', (string)$g['requester']['memberId'], (string)$s['personId'], ['sanctionId' => $sid, 'kind' => $s['kind'], 'status' => $status], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'state' => policy_state((string)$s['personId'], (string)$s['personType'])];
 }
@@ -1159,8 +1238,10 @@ function admin_policy_reinstate(array $p): array {
     // archived so it cannot immediately re-evict on the next evaluation.
     db_exec("UPDATE infractions SET voidedAt = ?, voidedBy = ?, voidReason = 'Cleared on reinstatement (Part IV).' WHERE personId = ? AND (voidedAt IS NULL OR voidedAt = '')",
             [now_iso(), (string)$g['requester']['memberId'], $id]);
-    foreach (db_all("SELECT id FROM sanctions WHERE personId = ? AND status IN ('active','proposed')", [$id]) as $s) {
+    foreach (db_all("SELECT id, kind FROM sanctions WHERE personId = ? AND status IN ('active','proposed')", [$id]) as $s) {
         db_update('sanctions', ['status' => 'cleared', 'clearedAt' => now_iso(), 'clearedBy' => (string)$g['requester']['memberId']], ['id' => (int)$s['id']]);
+        // Reinstatement is a fresh start, so the fines go with the record.
+        if ((string)$s['kind'] === 'fine') policy_fine_void_ledger($id, (int)$s['id'], 'Cleared on reinstatement (Part IV).');
     }
     audit('policy.reinstate', (string)$g['requester']['memberId'], $id, ['daysServed' => $since, 'override' => $override], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'reinstated' => true, 'override' => $override && (bool)$unmet, 'state' => policy_state($id, $type)];

@@ -11976,9 +11976,16 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         if ((int)$b['trainingEarned'] !== $expect) return false;
         // Earned is NOT the same as written off — nothing has been forgiven yet.
         if ((int)$b['trainingWrittenOff'] !== 0) return false;
-        /* And `payable` is less than `outstanding` by exactly what has been
-           earned, so the two figures on the screen cannot be confused. */
-        return (int)$b['payable'] === (int)$b['outstanding'] - (int)$b['trainingEarned'];
+        /* `payable` is REAL money only, and the training fee is not real money —
+           it is the cost of a free place, carried so the programme can say what
+           it spends. So the two figures differ by the whole of the training that
+           has not been written off, not merely by the part earned. This is the
+           invariant that keeps a notional cost out of every screen and every
+           email that asks a family to pay. */
+        if ((int)$b['payable'] !== (int)$b['outstanding'] - ((int)$b['trainingCharged'] - (int)$b['trainingWrittenOff'])) return false;
+        // And the notional side is reported under its own name.
+        return (int)$b['programmeCost'] === (int)$b['trainingCharged']
+            && (int)$b['programmeCovered'] === (int)$b['trainingEarned'] + (int)$b['trainingWrittenOff'];
     })());
 
     chk('fees: a member with no service yet has earned none of the training fee off', (function () use ($ADM) {
@@ -13858,6 +13865,112 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-TFEE%'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-TFEE%'");
     db_exec("DELETE FROM sessions WHERE sessionId LIKE 'TFS-%'");
+    fees_settings_save($save, 'test');
+})();
+
+/* ── Real money vs the cost of a free place ───────────────────────────────
+ * The training fee is not a debt: it is what a place costs the programme, for
+ * a child who attends free. Membership, dues and fines ARE real money. Keeping
+ * both in one figure meant the reminder cron emailed guardians "the balance
+ * outstanding is ₦225,000" about something their child gets for nothing.
+ */
+(function () {
+    $ADM = 'NGG-2025-0099';
+    $save = fees_settings();
+    fees_settings_save(['enabled' => true, 'trainingFee' => 60000, 'trainingMonths' => 18,
+                        'serviceMonths' => 18, 'membershipFee' => 0, 'monthlyDues' => 0,
+                        'balanceCap' => 0, 'remindEnabled' => true, 'remindMinBalance' => 1], 'test');
+
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-SPLIT%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-SPLIT%'");
+    db_insert('members', ['memberId' => 'NGG-SPLIT-A', 'fullName' => 'Split A', 'email' => 'splita@example.com',
+        'parentEmail' => 'guardian-split@example.com', 'type' => 'NGG', 'centre' => 'Egbeda',
+        'role' => 'member', 'status' => 'active', 'joinDate' => gmdate('Y-m-d', strtotime('-3 months')),
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    // A notional training charge and a real fine.
+    fees_post('NGG-SPLIT-A', 'training', 60000, ['periodKey' => 'S1', 'sessionId' => 'S1', 'note' => 'Training fee', 'by' => 'test']);
+    fees_post('NGG-SPLIT-A', 'fine', 5000, ['periodKey' => 'f1', 'note' => 'Late three times', 'by' => 'test']);
+    $b = fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-SPLIT-A'"));
+
+    chk('the training fee is NOT money a family is asked for', (int)$b['payable'] === 5000);
+    chk('…while the whole account still totals both, for the programme\'s own books',
+        (int)$b['outstanding'] === 65000);
+    chk('…and the cost of the place is reported under its own name',
+        (int)$b['programmeCost'] === 60000);
+    chk('a fine IS real money', (int)$b['byKind']['fine'] === 5000 && (int)$b['realCharged'] === 5000);
+
+    /* The email is the thing that actually reached a family, so it is asserted
+     * on directly rather than inferred from the balance. */
+    $cand = fees_reminder_candidates();
+    $mine = array_values(array_filter($cand['due'], fn($c) => $c['memberId'] === 'NGG-SPLIT-A'));
+    chk('a reminder chases the fine, not the cost of the free place',
+        count($mine) === 1 && (int)$mine[0]['payable'] === 5000);
+
+    // Paying the fine clears what is payable, and leaves the notional alone.
+    fees_post('NGG-SPLIT-A', 'payment', 5000, ['periodKey' => 'p1', 'note' => 'Paid', 'by' => 'test']);
+    $b2 = fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-SPLIT-A'"));
+    chk('paying the fine leaves nothing to pay', (int)$b2['payable'] === 0);
+    chk('…and does not touch the cost of the place', (int)$b2['programmeCost'] === 60000);
+    $cand2 = fees_reminder_candidates();
+    chk('…so the family is not chased again',
+        count(array_filter($cand2['due'], fn($c) => $c['memberId'] === 'NGG-SPLIT-A')) === 0);
+
+    /* ── One answer to "what does this member owe" ─────────────────────────
+     * There were two fine systems that did not know about each other: policy
+     * fines lived in `sanctions` and never reached the ledger, so they were
+     * never chased; admin fines lived in the ledger and never reached the
+     * compliance record. A coordinator who noticed and recorded a policy fine by
+     * hand billed the family twice. */
+    if (function_exists('policy_issue')) {
+        db_exec("DELETE FROM sanctions WHERE personId = 'NGG-SPLIT-A'");
+        policy_issue('NGG-SPLIT-A', 'member', 'fine', 3, ['amount' => 7500, 'reason' => 'Lateness cap reached', 'issuedBy' => $ADM]);
+        $sanc = db_row("SELECT id FROM sanctions WHERE personId = 'NGG-SPLIT-A' AND kind = 'fine' ORDER BY id DESC LIMIT 1");
+        $b3 = fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-SPLIT-A'"));
+        chk('a policy fine now reaches the ledger, so it is actually chased', (int)$b3['payable'] === 7500);
+        chk('…recorded against the sanction that caused it', (int)(db_row(
+            "SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-SPLIT-A' AND periodKey = ?",
+            ['sanction-' . (int)$sanc['id']])['c'] ?? 0) === 1);
+
+        /* Re-running policy evaluation must not charge a family twice for the
+         * same infraction. This is the failure that matters most. */
+        policy_issue('NGG-SPLIT-A', 'member', 'fine', 3, ['amount' => 7500, 'reason' => 'Lateness cap reached', 'issuedBy' => $ADM]);
+        chk('re-evaluating the same threshold does not bill the family twice',
+            (int)fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-SPLIT-A'"))['payable'] === 7500);
+
+        // Waiving it must stop it being money owed.
+        backend_dispatch('admin.policy.sanction.update', ['requesterId' => $ADM, 'sanctionId' => (int)$sanc['id'], 'status' => 'waived']);
+        chk('waiving a fine stops it being money owed',
+            (int)fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-SPLIT-A'"))['payable'] === 0);
+        chk('…by voiding the ledger row rather than deleting it, so the history survives',
+            (int)(db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-SPLIT-A' AND periodKey = ? AND voidedAt <> ''",
+                  ['sanction-' . (int)$sanc['id']])['c'] ?? 0) === 1);
+
+        /* A fine marked PAID is NOT voided: a payment is recorded as a payment,
+         * and voiding the charge as well would erase the fact that anything was
+         * ever owed and leave the money unaccounted for. */
+        db_exec("DELETE FROM sanctions WHERE personId = 'NGG-SPLIT-A'");
+        db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-SPLIT-A' AND kind = 'fine'");
+        policy_issue('NGG-SPLIT-A', 'member', 'fine', 4, ['amount' => 2500, 'reason' => 'Late again', 'issuedBy' => $ADM]);
+        $s2 = db_row("SELECT id FROM sanctions WHERE personId = 'NGG-SPLIT-A' AND kind = 'fine' ORDER BY id DESC LIMIT 1");
+        backend_dispatch('admin.policy.sanction.update', ['requesterId' => $ADM, 'sanctionId' => (int)$s2['id'], 'status' => 'paid']);
+        chk('a fine marked paid keeps its charge on the record',
+            (int)(db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-SPLIT-A' AND periodKey = ? AND (voidedAt IS NULL OR voidedAt = '')",
+                  ['sanction-' . (int)$s2['id']])['c'] ?? 0) === 1);
+
+        /* Only members carry a ledger. A summer student is disciplined by the
+         * same policy but has no account, and inventing one for them would put a
+         * charge on a child nobody is billing. */
+        db_exec("DELETE FROM sanctions WHERE personId = 'SUM-R-1' AND kind = 'fine'");
+        policy_issue('SUM-R-1', 'student', 'fine', 3, ['amount' => 5000, 'reason' => 'Lateness', 'issuedBy' => $ADM]);
+        chk('a summer student gets no ledger entry — they have no account',
+            (int)(db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'SUM-R-1'")['c'] ?? 0) === 0);
+        db_exec("DELETE FROM sanctions WHERE personId = 'SUM-R-1' AND kind = 'fine'");
+        db_exec("DELETE FROM sanctions WHERE personId = 'NGG-SPLIT-A'");
+    }
+
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-SPLIT%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-SPLIT%'");
     fees_settings_save($save, 'test');
 })();
 

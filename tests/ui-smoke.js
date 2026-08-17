@@ -878,18 +878,25 @@ function unzipDocumentXml(buf) {
   } else if (b === 'account') {
     /* The member's own account, mid-service: a real balance, and a training fee
        part-earned-off — the number the card exists to show them. */
+    /* Coherent with the real/notional split: ₦6,500 of REAL money (dues + a
+       fine) less a ₦2,000 payment leaves ₦4,500 to pay, while the ₦75,000
+       training fee is the cost of a free place and is never part of that. */
     var ACC = {
-        memberId: 'NGG-2024-0117', payable: 44000, outstanding: 62000,
-        charged: 101000, credited: 39000,
+        memberId: 'NGG-2024-0117', payable: 4500, outstanding: 77500,
+        charged: 81500, credited: 2000,
+        realCharged: 6500, realCredited: 2000,
+        programmeCost: 75000, programmeCovered: 18000,
         trainingCharged: 75000, trainingEarned: 18000, trainingWrittenOff: 0,
+        trainingFeePerSession: 75000, schedule: [],
         mouAt: '', currency: 'NGN', remindOff: false,
         tenure: { start: '2024-09-01', months: 22, phase: 'service', trainingMonths: 18,
-                  serviceMonths: 18, servedMonths: 4, complete: false },
+                  serviceMonths: 18, servedMonths: 4, complete: false,
+                  standing: 'clear', creditPausedAt: '', creditStopped: false },
         entries: [
-          { kind: 'payment', direction: 'credit', amount: 21000, note: '', createdAt: '2026-07-02T09:00:00Z', void: false },
+          { kind: 'payment', direction: 'credit', amount: 2000, note: '', createdAt: '2026-07-02T09:00:00Z', void: false },
           { kind: 'training', direction: 'charge', amount: 75000, note: 'Training fee — 2026 session', createdAt: '2026-06-01T09:00:00Z', void: false },
+          { kind: 'dues', direction: 'charge', amount: 6000, note: 'Monthly dues 2026-05', createdAt: '2026-05-12T09:00:00Z', void: false },
           { kind: 'fine', direction: 'charge', amount: 500, note: 'Late arrival — three times in August', createdAt: '2026-05-11T09:00:00Z', void: false },
-          { kind: 'waiver', direction: 'credit', amount: 1000, note: 'Hard month at home', createdAt: '2026-05-01T09:00:00Z', void: false },
         ] };
     props = { account: ACC };
   } else if (b === 'roster') {
@@ -5134,13 +5141,24 @@ function unzipDocumentXml(buf) {
     ok('the member account card mounts with no script error', acErrs.length === 0);
     if (acErrs.length) console.error('       ', acErrs.slice(0, 2).join(' | '));
     const acText = await acp.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
-    ok('…showing what is outstanding, as a figure and in plain words',
-      /₦44,000/.test(acText) && /outstanding/i.test(acText));
-    /* THE LINE THAT MATTERS. Their service earning the training fee off is the
-       most encouraging number in the subsystem and the one they could not see. */
-    ok('…and leading with what their service has already earned off',
-      /₦18,000/.test(acText) && /₦75,000 training fee/.test(acText)
-      && /earned off by your service/i.test(acText));
+    /* REAL money only, and called what it is. The training fee is the cost of a
+       place given free; when the two shared one figure the reminder cron emailed
+       guardians "the balance outstanding is ₦225,000" about a programme their
+       child attends for nothing. */
+    ok('…showing what there is to pay, as a figure and in plain words',
+      /₦4,500/.test(acText) && /to pay/i.test(acText));
+    ok('…and NEVER presenting the cost of the free place as money owed',
+      !/₦77,500/.test(acText) && !/outstanding/i.test(acText));
+    /* The cost is still shown — a member should know what their place is worth —
+       but as a fact about what the programme spends, next to a plain statement
+       that nobody is asking them for it. */
+    ok('…stating the cost of the training place, and that it is covered',
+      /₦75,000/.test(acText) && /Cost of your training/i.test(acText)
+      && /Covered by NGG/i.test(acText) && /not something you are asked to pay/i.test(acText));
+    /* THE LINE THAT MATTERS. Their service earning the cost off is the most
+       encouraging number in the subsystem and the one they could not see. */
+    ok('…and what their service has already earned off',
+      /₦18,000/.test(acText) && /earned off by your service/i.test(acText));
     ok('…and where they are in the three years',
       /MONTH 22 OF 36/.test(acText) && /SERVICE/.test(acText) && /4\/18 SERVED/.test(acText));
     /* No deadline, no consequence, nobody threatened — and a person to talk to.
@@ -5166,8 +5184,13 @@ function unzipDocumentXml(buf) {
       const rows = await acp.evaluate(() => Array.from(document.querySelectorAll('.dash-account-row')).map(r => r.innerText.replace(/\s+/g, ' ')));
       ok('…then listing every entry in the member\'s own words',
         acBefore === 0 && rows.length === 4
-        && /You paid/.test(rows.join(' ')) && /Waived/.test(rows.join(' '))
+        && /You paid/.test(rows.join(' ')) && /Monthly dues/.test(rows.join(' '))
         && /Fine/.test(rows.join(' ')));
+      /* And the training row is labelled as covered even inside the list. A row
+         reading "Training fee ₦75,000" among things a family owes reads as a
+         bill however carefully the panel above is worded. */
+      ok('…with the training row named as covered, not as a charge',
+        /covered by NGG/i.test(rows.join(' ')));
       /* Their record, not our operational one: no staff id, no bank reference,
          no entry id. The server withholds them; this proves the screen cannot
          leak them either. */

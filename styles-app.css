@@ -5821,3 +5821,14 @@ body.own-chrome .fab-top { display: none; }
 .dash-account-halt { margin-top: 10px; padding: 9px 12px; border-radius: 10px; font-size: 13px; line-height: 1.45;
   background: #fdeaee; border: 1px solid #e4032b; color: #8c0119; }
 .dash-account-halt.is-paused { background: #fff6e2; border-color: #d99400; color: #6b4600; }
+
+/* ── Dashboard: cost of the place (NOT a bill) ────────────────────────────
+   Deliberately quiet — a neutral panel, not the red of something owed. A
+   figure this size next to money a family does owe has to look like a
+   different KIND of thing, or it reads as part of the same total. */
+.dash-cost { margin-top: 12px; padding: 10px 12px; border-radius: 10px;
+  background: rgba(12,20,50,.035); border: 1px solid rgba(12,20,50,.09); }
+.dash-cost-head { font-size: 13.5px; color: var(--ink-700, #3b4459); }
+.dash-cost-head b { font-size: 15px; color: var(--ink-900, #16223e); font-variant-numeric: tabular-nums; }
+.dash-cost-note { margin-top: 3px; font-size: 12.5px; color: #2f7a3f; font-weight: 600; }
+.dash-cost-earned { margin-top: 6px; font-size: 12.5px; color: var(--ink-500, #5b6478); line-height: 1.45; }
