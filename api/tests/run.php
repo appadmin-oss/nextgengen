@@ -12985,5 +12985,117 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = ?", [$mid]);
 })();
 
+/* ── Chess rules ──────────────────────────────────────────────────────────
+ * A tournament decided by a rules bug is worse than no tournament, so the
+ * generator is checked against published perft node counts rather than
+ * against a handful of positions somebody thought of. These six are the
+ * standard set: Kiwipete covers castling and pins, position 3 is the
+ * en-passant-discovered-check trap, position 4 is promotions under check.
+ * A single wrong node at any depth means a rule is wrong somewhere.
+ */
+(function () {
+    foreach ([
+        ['the opening position',        CHESS_START_FEN, 3, 8902],
+        ['Kiwipete (castling + pins)',  'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1', 3, 97862],
+        ['en passant + discovered check', '8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1', 4, 43238],
+        ['promotions',                  'r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1', 3, 9467],
+        ['a sharp middlegame',          'rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8', 3, 62379],
+        ['a quiet middlegame',          'r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10', 2, 2079],
+    ] as [$name, $fen, $depth, $want]) {
+        chk("perft: $name to depth $depth", chess_perft($fen, $depth) === $want);
+    }
+
+    // FEN round-trips, or stored positions drift from played ones.
+    chk('a position survives a FEN round trip',
+        chess_to_fen(chess_parse_fen(CHESS_START_FEN)) === CHESS_START_FEN);
+    chk('malformed FEN is refused rather than assumed to be the start',
+        chess_parse_fen('not a fen') === null
+        && chess_parse_fen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBN w KQkq - 0 1') === null);
+    chk('a position with no king is refused',
+        chess_parse_fen('rnbq1bnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w - - 0 1') === null);
+
+    // The move API is the only way the match layer changes a position.
+    $r = chess_move(CHESS_START_FEN, 'e2e4');
+    chk('a legal opening move is played and named', !empty($r['ok']) && $r['san'] === 'e4');
+    chk('…and it sets the en-passant square', strpos($r['fen'], ' b KQkq e3 ') !== false);
+    chk('an illegal move is refused', chess_move(CHESS_START_FEN, 'e2e5')['error'] === 'illegal_move');
+    chk('a move for the wrong side is refused', chess_move(CHESS_START_FEN, 'e7e5')['error'] === 'illegal_move');
+    chk('a malformed move is refused', chess_move(CHESS_START_FEN, 'Qxf7#')['error'] === 'bad_move');
+    chk('a move onto a garbage position is refused', chess_move('rubbish', 'e2e4')['error'] === 'bad_fen');
+
+    // Fool's mate — the first thing children discover, so it had better end.
+    $fen = CHESS_START_FEN;
+    foreach (['f2f3', 'e7e5', 'g2g4'] as $mv) $fen = chess_move($fen, $mv)['fen'];
+    $mate = chess_move($fen, 'd8h4');
+    chk('checkmate ends the game and names the winner',
+        $mate['status']['state'] === 'checkmate' && $mate['status']['winner'] === 'b' && $mate['san'] === 'Qh4#');
+    chk('…and no move is legal in a mated position', chess_legal_uci($mate['fen']) === []);
+
+    // Castling, both sides, plus the rights that must die with it.
+    $cast = chess_move('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'e1g1');
+    chk('white castles kingside', !empty($cast['ok']) && $cast['san'] === 'O-O'
+        && strpos($cast['fen'], 'R4RK1') !== false);
+    chk('…and loses both its castling rights', strpos($cast['fen'], ' b kq ') !== false);
+    $cq = chess_move('r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1', 'e8c8');
+    chk('black castles queenside', !empty($cq['ok']) && $cq['san'] === 'O-O-O');
+    chk('castling out of check is refused',
+        !in_array('e1g1', chess_legal_uci('r3k2r/8/8/8/4r3/8/8/R3K2R w KQkq - 0 1'), true));
+    chk('castling THROUGH check is refused',
+        !in_array('e1g1', chess_legal_uci('r3k2r/8/8/8/5r2/8/8/R3K2R w KQkq - 0 1'), true));
+    /* Rxa8: white's rook LEAVES a1 (killing Q) and CAPTURES on a8 (killing q).
+     * Both corners lose their right in one move; the two kingside rights are
+     * untouched. The capture half is the one implementations forget. */
+    chk('a rook captured on its corner kills that castling right',
+        strpos(chess_move('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1', 'a1a8')['fen'], ' b Kk ') !== false);
+
+    // En passant, and under-promotion — the two moves a keen child tries first.
+    $ep = chess_move('8/8/8/3pP3/8/8/8/K6k w - d6 0 1', 'e5d6');
+    chk('en passant captures the pawn beside the destination',
+        !empty($ep['ok']) && $ep['san'] === 'exd6' && strpos($ep['fen'], '3P4/8/8/8') !== false);
+    chk('under-promotion to a knight is allowed',
+        chess_move('8/P7/8/8/8/8/8/K6k w - - 0 1', 'a7a8n')['san'] === 'a8=N');
+    chk('a promotion must name a piece',
+        chess_move('8/P7/8/8/8/8/8/K6k w - - 0 1', 'a7a8')['error'] === 'illegal_move');
+
+    // Draws. Each is a real way a children's game actually ends.
+    /* Qg6 covers g7, g8 and h7 without attacking h8 — the queen-too-close
+     * stalemate, and the way a winning child most often throws the game away.
+     * Qf6 instead would be CHECK along f6–g7–h8, which is a different result
+     * entirely. */
+    chk('stalemate is a draw, not a loss',
+        chess_move('7k/5Q2/8/8/8/8/8/K7 w - - 0 1', 'f7g6')['status']['state'] === 'stalemate');
+    chk('…while the same queen one square along is check, not stalemate',
+        chess_move('7k/5Q2/8/8/8/8/8/K7 w - - 0 1', 'f7f6')['status']['state'] === 'check');
+    chk('king against king is insufficient material',
+        chess_status(chess_parse_fen('8/8/8/4k3/8/8/8/K7 w - - 0 1'))['reason'] === 'insufficient_material');
+    chk('king and bishop against king is insufficient material',
+        chess_status(chess_parse_fen('8/8/8/4k3/8/8/8/KB6 w - - 0 1'))['reason'] === 'insufficient_material');
+    chk('king and knight against king is insufficient material',
+        chess_status(chess_parse_fen('8/8/8/4k3/8/8/8/KN6 w - - 0 1'))['reason'] === 'insufficient_material');
+    chk('…but a single pawn is still winnable, so it is not a draw',
+        chess_status(chess_parse_fen('8/8/8/4k3/8/8/P7/K7 w - - 0 1'))['state'] === 'active');
+    chk('the fifty-move rule draws at a hundred half-moves',
+        chess_status(chess_parse_fen('8/8/4k3/8/8/4K3/8/6R1 w - - 100 80'))['reason'] === 'fifty_move');
+    chk('threefold repetition draws',
+        chess_status(chess_parse_fen('8/8/4k3/8/8/4K3/8/6R1 w - - 5 80'),
+            [chess_repetition_key(chess_parse_fen('8/8/4k3/8/8/4K3/8/6R1 w - - 5 80')) => 3])['reason'] === 'threefold');
+
+    // The clock the fifty-move rule counts.
+    chk('a capture resets the half-move clock',
+        explode(' ', chess_move('8/8/3p4/4P3/8/8/8/K6k w - - 9 40', 'e5d6')['fen'])[4] === '0');
+    chk('a quiet piece move advances it',
+        explode(' ', chess_move('8/8/8/8/8/8/6R1/K6k w - - 9 40', 'g2g4')['fen'])[4] === '10');
+
+    // Disambiguation — two knights that can both reach a square.
+    chk('SAN disambiguates by file when two pieces can reach the square',
+        chess_move('8/8/8/8/8/8/8/K1N1N2k w - - 0 1', 'c1d3')['san'] === 'Ncd3');
+
+    // What the board lights up must be exactly what the server will accept.
+    $uci = chess_legal_uci(CHESS_START_FEN);
+    chk('the opening position offers exactly twenty legal moves', count($uci) === 20);
+    chk('…and every one of them is actually playable',
+        count(array_filter($uci, fn($u) => !empty(chess_move(CHESS_START_FEN, $u)['ok']))) === 20);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
