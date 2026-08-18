@@ -1705,3 +1705,46 @@ CREATE TABLE IF NOT EXISTS math_progress (
   INDEX idx_mathprog_player (playerId)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (91) ON DUPLICATE KEY UPDATE version = version;
+
+-- v92 — the mentoring record: what was said, and what was agreed.
+-- Staff writing about a child, read by staff, never served to the child's own
+-- portal. Every write audited; every read gated by the roster's own scope.
+-- metOn is separate from createdAt because a conversation is written up after
+-- it happens, and a record that insists otherwise is a false record.
+CREATE TABLE IF NOT EXISTS mentor_meetings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectId VARCHAR(64) NOT NULL,
+  subjectType VARCHAR(16) NOT NULL DEFAULT 'member',
+  mentorId VARCHAR(64) NOT NULL,
+  mentorName VARCHAR(120) DEFAULT '',
+  metOn VARCHAR(12) NOT NULL,
+  kind VARCHAR(24) DEFAULT 'one-to-one',
+  discussed TEXT,
+  agreed TEXT,
+  concern TINYINT NOT NULL DEFAULT 0,
+  centre VARCHAR(120) DEFAULT '',
+  createdAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_mm_subject (subjectId, metOn),
+  INDEX idx_mm_mentor (mentorId, metOn),
+  INDEX idx_mm_concern (centre, concern)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS mentor_goals (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectId VARCHAR(64) NOT NULL,
+  subjectType VARCHAR(16) NOT NULL DEFAULT 'member',
+  goal TEXT NOT NULL,
+  setById VARCHAR(64) NOT NULL,
+  setByName VARCHAR(120) DEFAULT '',
+  dueOn VARCHAR(12) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'open',
+  closedOn VARCHAR(12) DEFAULT '',
+  closedById VARCHAR(64) DEFAULT '',
+  centre VARCHAR(120) DEFAULT '',
+  createdAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_mg_subject (subjectId, status),
+  INDEX idx_mg_due (status, dueOn)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (92) ON DUPLICATE KEY UPDATE version = version;

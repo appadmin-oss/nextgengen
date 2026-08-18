@@ -89,7 +89,14 @@ function mentor_gate(array $p): array {
             $own = trim((string)($m['__volunteer']['centre'] ?? ''));
             $centres = $own !== '' ? [$own] : [];
         }
+        /* An admin who ALSO holds a mentor record keeps their own mentees.
+         * Their reach is the admin's, but "the children assigned to me" is a
+         * different question from "the children I may see", and a coordinator
+         * who mentors a class of six should still be able to open that six. */
+        $ownMentor = db_row("SELECT mentorId FROM mentors WHERE status = 'active' AND (memberId = ? OR volunteerId = ?) LIMIT 1",
+                            [(string)$m['memberId'], (string)$m['memberId']]);
         return ['ok' => true, 'member' => $m, 'role' => 'admin', 'rank' => 'admin',
+            'mentorId' => (string)($ownMentor['mentorId'] ?? ''),
             'mentor' => ['fullName' => (string)($m['fullName'] ?? ''), 'centre' => (string)($m['__volunteer']['centre'] ?? ''), 'department' => '', 'rank' => 'admin'],
             'programmes' => $progs,
             'centres' => $centres,
@@ -114,6 +121,10 @@ function mentor_gate(array $p): array {
         $isLead = trim((string)($mentor['rank'] ?? 'mentor')) === 'lead';
         return ['ok' => true, 'member' => $m, 'role' => 'mentor',
             'rank' => $isLead ? 'lead' : 'mentor',
+            /* Carried so the roster can answer "who is assigned to ME". It was
+             * absent, which is why the pairing an admin makes had no effect on
+             * the mentor's own screen — see mentor_roster. */
+            'mentorId' => (string)($mentor['mentorId'] ?? ''),
             'mentor' => ['fullName' => (string)($mentor['fullName'] ?? ''), 'centre' => $centre,
                          'department' => $isLead ? '' : $dept, 'rank' => $isLead ? 'lead' : 'mentor'],
             'programmes' => mentor_programmes($mentor),
@@ -140,7 +151,10 @@ function mentor_gate(array $p): array {
         $courses = $isInstructor
             ? array_values(array_filter(array_map('strval', json_decode((string)($v['courses'] ?? ''), true) ?: [])))
             : ($faculty !== '' ? academy_courses_for($faculty) : []);
+        $volMentor = db_row("SELECT mentorId FROM mentors WHERE status = 'active' AND volunteerId = ? LIMIT 1",
+                            [(string)($v['volunteerId'] ?? '')]);
         return ['ok' => true, 'member' => $m, 'role' => $isInstructor ? 'instructor' : 'mentor', 'rank' => 'mentor',
+            'mentorId' => (string)($volMentor['mentorId'] ?? ''),
             'mentor' => ['fullName' => (string)($v['fullName'] ?? ''), 'centre' => $centre,
                          'department' => $isInstructor ? implode(' · ', $courses) : $faculty, 'rank' => 'mentor'],
             'programmes' => ['summer'],
@@ -235,6 +249,39 @@ function mentor_roster(array $p): array {
 
     $needsCentre = ($want === '' && count($pickable) !== 1);
 
+    /* MY MENTEES, or the whole centre.
+     *
+     * `mentor_assignments` has always been written — an admin pairs a child
+     * with a mentor and the child's own dashboard says who their mentor is —
+     * but nothing on the MENTOR's side ever read it. So the portal showed every
+     * active child in the centre, and the pairing an admin had carefully made
+     * changed nothing about what the mentor saw. Two features that were meant
+     * to be one.
+     *
+     * `scope=mine` is that link. It is the default whenever this person has
+     * mentees, because "the children I am responsible for" is the question a
+     * mentor opens the portal to answer; the centre list stays one tap away for
+     * the register, and stays the default for anyone with no pairings so nobody
+     * lands on an empty screen. */
+    $mentorId = trim((string)($g['mentorId'] ?? ''));
+    $mineIds = [];
+    if ($mentorId !== '') {
+        $sc = session_current();
+        $sessionId = (string)($sc['current']['sessionId'] ?? '');
+        $sql = "SELECT memberId FROM mentor_assignments WHERE mentorId = ? AND status = 'active'";
+        $args = [$mentorId];
+        // Scoped to the running session when there is one: last year's mentees
+        // are not this year's class.
+        if ($sessionId !== '') { $sql .= ' AND sessionId = ?'; $args[] = $sessionId; }
+        $mineIds = array_values(array_unique(array_map('strval', array_column(db_all($sql, $args), 'memberId'))));
+    }
+    $scope = (string)($p['scope'] ?? '');
+    if ($scope !== 'mine' && $scope !== 'centre') $scope = $mineIds ? 'mine' : 'centre';
+    if ($scope === 'mine' && !$mineIds) $scope = 'centre';
+    // Naming a mentee list answers the centre question too — you are not being
+    // asked to pick a centre in order to see six named children.
+    if ($scope === 'mine') $needsCentre = false;
+
     /* The roster is whichever cohorts this person supervises — and ONLY those.
      * It used to read summer_students unconditionally, so an NGG mentor was
      * shown summer children they had no business seeing while their own Club
@@ -248,10 +295,19 @@ function mentor_roster(array $p): array {
         $where .= " AND $col IN (" . implode(',', array_fill(0, count($vals), '?')) . ')';
         foreach ($vals as $v) $args[] = $v;
     };
+    /* In `mine` the assignment IS the scope: a mentor keeps a child who has
+     * moved centre or changed track, and re-filtering by centre would drop them
+     * off their own list without saying so.
+     *
+     * The summer branch is queried the same way even though nothing pairs a
+     * summer student today — `admin_assign_mentor` writes member ids only, so
+     * this returns nothing for that cohort. Written this way rather than
+     * skipped so that pairing summer students is a change in one place, and so
+     * this does not quietly start showing the whole centre if it ever is. */
     if (!$needsCentre && mentor_covers($g, 'summer')) {
         $where = "status = 'active'"; $args = [];
-        $inList($centres, 'centre', $where, $args);
-        $inList($courses, 'track', $where, $args);
+        if ($scope === 'mine') { $inList($mineIds, 'studentId', $where, $args); }
+        else { $inList($centres, 'centre', $where, $args); $inList($courses, 'track', $where, $args); }
         foreach (db_all("SELECT studentId, fullName, track, centre, photoUrl FROM summer_students WHERE $where ORDER BY fullName LIMIT 400", $args) as $r) {
             $r['kind'] = 'student';
             $rows[] = $r;
@@ -259,8 +315,8 @@ function mentor_roster(array $p): array {
     }
     if (!$needsCentre && mentor_covers($g, 'ngg')) {
         $where = "status = 'active' AND type = 'NGG'"; $args = [];
-        $inList($centres, 'centre', $where, $args);
-        $inList($courses, 'track', $where, $args);
+        if ($scope === 'mine') { $inList($mineIds, 'memberId', $where, $args); }
+        else { $inList($centres, 'centre', $where, $args); $inList($courses, 'track', $where, $args); }
         foreach (db_all("SELECT memberId studentId, fullName, track, centre, photoUrl FROM members WHERE $where ORDER BY fullName LIMIT 400", $args) as $r) {
             $r['kind'] = 'member';
             $rows[] = $r;
@@ -311,6 +367,8 @@ function mentor_roster(array $p): array {
         'centre' => $want,
         'centres' => $pickable,
         'needsCentre' => $needsCentre,
+        'scope' => $scope,
+        'mineCount' => count($mineIds),
         'mentor' => ['name' => (string)($g['mentor']['fullName'] ?? ''),
                      'centre' => $want !== '' ? $want : (string)($g['mentor']['centre'] ?? ''),
                      'department' => (string)($g['mentor']['department'] ?? ''),
@@ -327,7 +385,24 @@ function mentor_v3_rate(array $p): array {
     $subjectId = (string)($p['subjectId'] ?? '');
     $verbal = (int)($p['verbal'] ?? 0); $vocal = (int)($p['vocal'] ?? 0); $visual = (int)($p['visual'] ?? 0);
     foreach (['verbal' => $verbal, 'vocal' => $vocal, 'visual' => $visual] as $v) if ($v < 1 || $v > 5) return ['ok' => false, 'error' => 'bad_score'];
-    $s = db_row("SELECT studentId, centre, track FROM summer_students WHERE studentId = ? LIMIT 1", [$subjectId]);
+    /* Resolve the subject in whichever cohort this mentor supervises — the same
+     * control mentor_star_give applies, and for the same reason: the subject id
+     * is posted by the client, so scoping the roster alone would be cosmetic.
+     *
+     * This read summer_students and NOTHING ELSE, which is the bug the roster
+     * had fixed and this did not. An NGG mentor could list their Club members
+     * and star them, but every V3 rating came back 'not_found' — so the one
+     * cohort-wide score that the Champions board is computed from could not be
+     * given to a Club member at all. */
+    $s = null;
+    if (mentor_covers($g, 'summer')) {
+        $s = db_row("SELECT studentId, centre, track FROM summer_students WHERE studentId = ? LIMIT 1", [$subjectId]);
+    }
+    if (!$s && mentor_covers($g, 'ngg')) {
+        $s = db_row("SELECT memberId studentId, centre, track FROM members WHERE memberId = ? AND type = 'NGG' LIMIT 1", [$subjectId]);
+    }
+    // 'not_found' rather than 'wrong_programme': a mentor has no business
+    // learning whether an id they cannot supervise exists at all.
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
     if (!mentor_scope_ok($g, $s)) return ['ok' => false, 'error' => 'not_your_centre'];
     $period = iso_week_period();

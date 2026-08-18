@@ -14442,5 +14442,304 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 })();
 
 
+
+/* ── The mentoring record ─────────────────────────────────────────────────
+   Two things are proved here.
+
+   FIRST, that the pairing an admin makes reaches the mentor. `mentor_assignments`
+   has always been written — an admin pairs a child with a mentor, and the
+   CHILD's dashboard says who their mentor is — but nothing on the mentor's side
+   ever read it. The portal showed every active child in the centre, so the
+   pairing changed nothing about what the mentor actually saw. Two features that
+   were meant to be one.
+
+   SECOND, that a mentor can keep a record rather than only a score. Until now
+   the whole trace of a mentor on a child was a star for today and a V3 for this
+   week — nothing carried from one week to the next, and a mentor taking over a
+   class inherited numbers and no context. */
+(function () {
+    $ADM = 'NGG-2025-0099';
+
+    /* An NGG mentor with NGG mentees. It has to be NGG: admin_assign_mentor
+       writes member ids, so a summer student cannot currently be paired at all
+       — which the roster test below pins down rather than glosses over. */
+    db_insert('members', ['memberId' => 'NGG-MENT-1', 'fullName' => 'Nkechi Mentor', 'email' => 'nkechi@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('mentors', ['mentorId' => 'MEN-NGG-1', 'fullName' => 'Nkechi Mentor', 'email' => 'nkechi@example.com',
+        'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'rank' => 'mentor',
+        'memberId' => 'NGG-MENT-1', 'createdAt' => now_iso()]);
+    // A second mentor at the same centre, so "mine" is provably not "everyone".
+    db_insert('members', ['memberId' => 'NGG-MENT-2', 'fullName' => 'Segun Mentor', 'email' => 'segun@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('mentors', ['mentorId' => 'MEN-NGG-2', 'fullName' => 'Segun Mentor', 'email' => 'segun@example.com',
+        'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'rank' => 'mentor',
+        'memberId' => 'NGG-MENT-2', 'createdAt' => now_iso()]);
+    // A lead at the centre — the person a raised concern must reach.
+    db_insert('members', ['memberId' => 'NGG-LEAD-1', 'fullName' => 'Folake Lead', 'email' => 'folake@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('mentors', ['mentorId' => 'MEN-LEAD-1', 'fullName' => 'Folake Lead', 'email' => 'folake@example.com',
+        'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'rank' => 'lead',
+        'memberId' => 'NGG-LEAD-1', 'createdAt' => now_iso()]);
+
+    // Four children at Egbeda, one at Ayobo.
+    foreach ([['NGG-KID-1', 'Ada Child', 'Egbeda'], ['NGG-KID-2', 'Bola Child', 'Egbeda'],
+              ['NGG-KID-3', 'Chidi Child', 'Egbeda'], ['NGG-KID-4', 'Dupe Child', 'Egbeda'],
+              ['NGG-KID-5', 'Emeka Child', 'Ayobo']] as $k) {
+        db_insert('members', ['memberId' => $k[0], 'fullName' => $k[1], 'type' => 'NGG', 'status' => 'active',
+            'role' => 'member', 'centre' => $k[2], 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+
+    /* ── The pairing reaches the mentor ─────────────────────────────────── */
+
+    $r0 = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-MENT-1']);
+    chk('a mentor with no mentees lands on their centre, not an empty screen',
+        !empty($r0['ok']) && $r0['scope'] === 'centre' && $r0['mineCount'] === 0
+        && count($r0['students']) >= 4);
+
+    backend_dispatch('admin.mentor.assign', ['requesterId' => $ADM, 'memberId' => 'NGG-KID-1', 'mentorId' => 'MEN-NGG-1']);
+    backend_dispatch('admin.mentor.assign', ['requesterId' => $ADM, 'memberId' => 'NGG-KID-2', 'mentorId' => 'MEN-NGG-1']);
+    backend_dispatch('admin.mentor.assign', ['requesterId' => $ADM, 'memberId' => 'NGG-KID-3', 'mentorId' => 'MEN-NGG-2']);
+
+    $r1 = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-MENT-1']);
+    $mineIds = array_map(fn($s) => $s['studentId'], $r1['students']);
+    sort($mineIds);
+    chk('once paired, the roster opens on the children assigned to THIS mentor',
+        $r1['scope'] === 'mine' && $mineIds === ['NGG-KID-1', 'NGG-KID-2']);
+    chk('…and says how many mentees there are', $r1['mineCount'] === 2);
+    chk('…and another mentor at the same centre gets their own child, not these',
+        array_map(fn($s) => $s['studentId'],
+                  backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-MENT-2'])['students']) === ['NGG-KID-3']);
+
+    $rC = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-MENT-1', 'scope' => 'centre']);
+    chk('the whole centre is still one tap away',
+        $rC['scope'] === 'centre' && count($rC['students']) >= 4
+        && in_array('NGG-KID-4', array_map(fn($s) => $s['studentId'], $rC['students']), true));
+
+    /* A mentee who moves centre stays a mentee. The assignment IS the scope in
+       `mine`, so re-filtering by centre would drop a child off their own
+       mentor's list without saying so. */
+    db_update('members', ['centre' => 'Ayobo'], ['memberId' => 'NGG-KID-2']);
+    $rM = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-MENT-1']);
+    chk('a mentee who moves centre stays on their mentor\'s list',
+        in_array('NGG-KID-2', array_map(fn($s) => $s['studentId'], $rM['students']), true));
+    db_update('members', ['centre' => 'Egbeda'], ['memberId' => 'NGG-KID-2']);
+
+    /* Ending the pairing ends it on the roster too. */
+    backend_dispatch('admin.mentor.assign', ['requesterId' => $ADM, 'memberId' => 'NGG-KID-2', 'mentorId' => '']);
+    chk('un-assigning a child takes them off the mentor\'s list',
+        backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-MENT-1'])['mineCount'] === 1);
+    backend_dispatch('admin.mentor.assign', ['requesterId' => $ADM, 'memberId' => 'NGG-KID-2', 'mentorId' => 'MEN-NGG-1']);
+
+    /* ── One child's record ─────────────────────────────────────────────── */
+
+    chk('a child outside the mentor\'s centre has no record they can open',
+        backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-5'])['error'] === 'not_your_centre');
+    chk('a child who does not exist is not found',
+        backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NOBODY'])['error'] === 'not_found');
+    chk('a summer student is not an NGG mentor\'s to open',
+        backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'SUM-R-1'])['error'] === 'not_your_cohort');
+    chk('somebody who is not a mentor at all opens nothing',
+        backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-2025-0001', 'subjectId' => 'NGG-KID-1'])['error'] === 'not_a_mentor');
+
+    $c = backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1']);
+    chk('the record opens with the child on it',
+        !empty($c['ok']) && $c['subject']['fullName'] === 'Ada Child' && $c['subject']['kind'] === 'member');
+    chk('…and names the mentor they are actually assigned to',
+        $c['mentor']['mentorId'] === 'MEN-NGG-1' && $c['mentor']['isMine'] === true);
+    /* Eight weeks with the gaps kept AS gaps. A trend that silently drops the
+       unrated weeks reads as eight weeks of steady attention when it may be
+       three, and the missing weeks are the finding. */
+    chk('the V3 trend is eight weeks long whether or not anyone rated them',
+        count($c['v3']) === 8 && count(array_filter($c['v3'], fn($w) => $w['rated'] === false)) === 8);
+    chk('…and the newest week is last, so it reads left to right',
+        $c['v3'][7]['period'] === iso_week_period());
+
+    backend_dispatch('member.mentor.v3.rate', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
+        'verbal' => 5, 'vocal' => 4, 'visual' => 4]);
+    backend_dispatch('behaviour.star.give', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
+        'stars' => 3, 'category' => 'discipline', 'note' => 'Led the group']);
+    $c = backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1']);
+    /* This is also the regression test for a real defect. mentor_v3_rate read
+       summer_students and nothing else — the cohort bug the ROSTER had fixed
+       and the rating path had not. An NGG mentor could list their Club members
+       and star them, but every V3 rating came back 'not_found', so the one
+       score the Champions board is computed from could never be given to a
+       Club member at all. */
+    chk('an NGG mentor can V3-rate a Club member, not only a summer student',
+        $c['v3'][7]['rated'] === true && $c['v3'][7]['verbal'] === 5);
+    chk('…and still cannot rate a child at another centre',
+        backend_dispatch('member.mentor.v3.rate', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-5',
+            'verbal' => 3, 'vocal' => 3, 'visual' => 3])['error'] === 'not_your_centre');
+    chk('…nor one in a cohort they do not supervise',
+        backend_dispatch('member.mentor.v3.rate', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'SUM-R-1',
+            'verbal' => 3, 'vocal' => 3, 'visual' => 3])['error'] === 'not_found');
+    chk('stars carry both the history and the running total',
+        $c['stars']['total'] === 3 && count($c['stars']['recent']) === 1
+        && $c['stars']['recent'][0]['note'] === 'Led the group');
+
+    /* ── Meetings ───────────────────────────────────────────────────────── */
+
+    chk('a meeting with nothing in it is not a meeting',
+        backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-MENT-1',
+            'subjectId' => 'NGG-KID-1', 'discussed' => '  ', 'agreed' => ''])['error'] === 'empty');
+    chk('…and an essay is refused rather than truncated',
+        backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-MENT-1',
+            'subjectId' => 'NGG-KID-1', 'discussed' => str_repeat('a', 4001)])['error'] === 'too_long');
+
+    $m1 = backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
+        'metOn' => '2026-01-14', 'kind' => 'one-to-one',
+        'discussed' => 'Struggling with the walk home after dark.', 'agreed' => 'Guardian to collect on Thursdays.']);
+    chk('a meeting is written up and kept', !empty($m1['ok']) && (int)$m1['id'] > 0);
+    /* Backdating matters: a mentor writes up a conversation days after it
+       happens, and a record that insists otherwise is a false record. */
+    chk('…on the day it actually happened, not the day it was typed',
+        (string)db_row('SELECT metOn FROM mentor_meetings WHERE id = ?', [(int)$m1['id']])['metOn'] === '2026-01-14');
+    chk('…but not on a day that has not happened yet',
+        (function () {
+            $r = backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-MENT-1',
+                'subjectId' => 'NGG-KID-1', 'metOn' => '2099-01-01', 'discussed' => 'Time travel.']);
+            $on = (string)db_row('SELECT metOn FROM mentor_meetings WHERE id = ?', [(int)$r['id']])['metOn'];
+            db_exec('DELETE FROM mentor_meetings WHERE id = ?', [(int)$r['id']]);
+            return $on === gmdate('Y-m-d');
+        })());
+    chk('an unknown kind falls back rather than being stored',
+        (function () {
+            $r = backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-MENT-1',
+                'subjectId' => 'NGG-KID-1', 'kind' => 'seance', 'discussed' => 'x']);
+            $k = (string)db_row('SELECT kind FROM mentor_meetings WHERE id = ?', [(int)$r['id']])['kind'];
+            db_exec('DELETE FROM mentor_meetings WHERE id = ?', [(int)$r['id']]);
+            return $k === 'one-to-one';
+        })());
+
+    $c = backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1']);
+    chk('the meeting is on the child\'s record, marked as this mentor\'s own',
+        count($c['meetings']) === 1 && $c['meetings'][0]['mine'] === true
+        && $c['meetings'][0]['agreed'] === 'Guardian to collect on Thursdays.');
+
+    /* Only the author may edit. A lead rewriting another mentor's account of a
+       conversation they were not in is not oversight — it is the record losing
+       its author. A lead who disagrees writes their own entry, and both stand. */
+    chk('another mentor cannot rewrite an account of a conversation they were not in',
+        backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-MENT-2', 'subjectId' => 'NGG-KID-1',
+            'id' => (int)$m1['id'], 'discussed' => 'Nothing happened.'])['error'] === 'not_yours');
+    chk('…nor can a LEAD, whose remedy is to write their own entry',
+        backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-LEAD-1', 'subjectId' => 'NGG-KID-1',
+            'id' => (int)$m1['id'], 'discussed' => 'Overruled.'])['error'] === 'not_yours');
+    chk('the author can correct their own entry',
+        !empty(backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
+            'id' => (int)$m1['id'], 'metOn' => '2026-01-14',
+            'discussed' => 'Struggling with the walk home after dark.',
+            'agreed' => 'Guardian to collect on Thursdays and Fridays.'])['ok']));
+    chk('an entry cannot be moved onto a different child by id',
+        backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-2',
+            'id' => (int)$m1['id'], 'discussed' => 'Wrong child.'])['error'] === 'wrong_subject');
+
+    /* A concern is RAISED, not merely stored. A flag nobody is told about is a
+       flag nobody sees. */
+    db_exec("DELETE FROM notifications WHERE memberId = 'NGG-LEAD-1'");
+    $m2 = backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
+        'kind' => 'guardian', 'discussed' => 'Guardian says she has not been sleeping.', 'concern' => true]);
+    chk('a concern reaches the lead mentor at that centre',
+        (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-LEAD-1'")['c'] ?? 0) === 1);
+    chk('…and the mentor who raised it is not notified about their own entry',
+        (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-MENT-1' AND kind = 'mentor'")['c'] ?? 0) === 0);
+
+    /* NONE of this is ever served to the child. These are staff notes, and a
+       child reading a safeguarding concern written about them is a different
+       and much worse product. */
+    chk('nothing a mentor writes reaches the child\'s own portal',
+        (function () {
+            $d = backend_dispatch('member.dashboard', ['memberId' => 'NGG-KID-1']);
+            $json = json_encode($d);
+            return strpos($json, 'has not been sleeping') === false
+                && strpos($json, 'Guardian to collect') === false;
+        })());
+
+    chk('only the author may delete an entry',
+        backend_dispatch('member.mentor.meeting.delete', ['requesterId' => 'NGG-MENT-2',
+            'subjectId' => 'NGG-KID-1', 'id' => (int)$m2['id']])['error'] === 'not_yours');
+    backend_dispatch('member.mentor.meeting.delete', ['requesterId' => 'NGG-MENT-1',
+        'subjectId' => 'NGG-KID-1', 'id' => (int)$m2['id']]);
+    chk('a deleted entry is gone',
+        (int)(db_row('SELECT COUNT(*) c FROM mentor_meetings WHERE id = ?', [(int)$m2['id']])['c'] ?? 0) === 0);
+    /* The text is gone; the fact that it existed is not. A deleted safeguarding
+       note is exactly the thing a review needs to be able to see. */
+    chk('…but the audit log still records that a concern was written and removed',
+        (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'mentor.meeting.delete' AND subject = 'NGG-KID-1'")['c'] ?? 0) === 1);
+
+    /* ── Goals ──────────────────────────────────────────────────────────── */
+
+    chk('a goal with no words is not a goal',
+        backend_dispatch('member.mentor.goal.save', ['requesterId' => 'NGG-MENT-1',
+            'subjectId' => 'NGG-KID-1', 'goal' => '   '])['error'] === 'empty');
+    $g1 = backend_dispatch('member.mentor.goal.save', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
+        'goal' => 'Present her project to the whole centre.', 'dueOn' => gmdate('Y-m-d', time() + 30 * 86400)]);
+    $g2 = backend_dispatch('member.mentor.goal.save', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
+        'goal' => 'Read one book a fortnight.', 'dueOn' => '2020-01-01']);   // long past
+    chk('a goal is set with a date', !empty($g1['ok']) && !empty($g2['ok']));
+
+    $c = backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1']);
+    $byId = [];
+    foreach ($c['goals'] as $gl) $byId[$gl['id']] = $gl;
+    chk('a goal past its date is flagged overdue, and one ahead of it is not',
+        $byId[(int)$g2['id']]['overdue'] === true && $byId[(int)$g1['id']]['overdue'] === false);
+
+    chk('a goal can only take a status that means something',
+        backend_dispatch('member.mentor.goal.status', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
+            'id' => (int)$g1['id'], 'status' => 'brilliant'])['error'] === 'bad_status');
+    /* 'dropped' exists on purpose: without it the only way to clear a goal that
+       stopped being the right goal is to mark it done, and a record where
+       everything is always achieved is a record nobody believes. */
+    backend_dispatch('member.mentor.goal.status', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
+        'id' => (int)$g2['id'], 'status' => 'dropped']);
+    chk('a goal that stopped being the right goal can be dropped, not faked as done',
+        (string)db_row('SELECT status FROM mentor_goals WHERE id = ?', [(int)$g2['id']])['status'] === 'dropped');
+    chk('…and closing one stamps the day it closed',
+        (string)db_row('SELECT closedOn FROM mentor_goals WHERE id = ?', [(int)$g2['id']])['closedOn'] === gmdate('Y-m-d'));
+    backend_dispatch('member.mentor.goal.status', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
+        'id' => (int)$g2['id'], 'status' => 'open']);
+    chk('reopening a goal clears the closing date rather than leaving a lie behind',
+        (string)db_row('SELECT closedOn FROM mentor_goals WHERE id = ?', [(int)$g2['id']])['closedOn'] === '');
+
+    chk('open goals sort ahead of closed ones',
+        // `use ($g1)` matters: a closure does not inherit scope in PHP, and
+        // without it this marked goal id 0 as done and then asserted that the
+        // still-untouched first goal was open — passing for the wrong reason.
+        (function () use ($g1) {
+            backend_dispatch('member.mentor.goal.status', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
+                'id' => (int)$g1['id'], 'status' => 'done']);
+            $c = backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1']);
+            return count($c['goals']) === 2
+                && $c['goals'][0]['status'] === 'open'
+                && $c['goals'][1]['status'] === 'done';
+        })());
+
+    /* ── What needs attention ───────────────────────────────────────────── */
+
+    backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
+        'discussed' => 'Has stopped speaking up in class.', 'concern' => true]);
+    $a = backend_dispatch('member.mentor.attention', ['requesterId' => 'NGG-LEAD-1']);
+    chk('the lead has a queue of what was raised, with the child named',
+        !empty($a['ok']) && count($a['concerns']) === 1
+        && $a['concerns'][0]['fullName'] === 'Ada Child');
+    chk('…and the goals that have gone past their date',
+        count(array_filter($a['overdue'], fn($o) => (int)$o['id'] === (int)$g2['id'])) === 1);
+    chk('the queue is scoped like the roster — another centre is not in it',
+        backend_dispatch('member.mentor.attention', ['requesterId' => 'NGG-LEAD-1', 'centre' => 'Ayobo'])['error'] === 'not_your_centre');
+    chk('somebody who is not a mentor has no queue',
+        backend_dispatch('member.mentor.attention', ['requesterId' => 'NGG-2025-0001'])['error'] === 'not_a_mentor');
+
+    // Leave the fixtures behind for the suites that follow.
+    db_exec("DELETE FROM mentor_meetings WHERE subjectId LIKE 'NGG-KID%'");
+    db_exec("DELETE FROM mentor_goals WHERE subjectId LIKE 'NGG-KID%'");
+    db_exec("DELETE FROM mentor_assignments WHERE mentorId LIKE 'MEN-NGG%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-KID%'");
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-MENT-1','NGG-MENT-2','NGG-LEAD-1')");
+    db_exec("DELETE FROM mentors WHERE mentorId LIKE 'MEN-NGG%' OR mentorId = 'MEN-LEAD-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

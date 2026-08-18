@@ -7,12 +7,30 @@ $s = require_session();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
-    // `centre` narrows an admin (or anyone else covering more than one) to a
-    // single class. The gate rejects a centre outside their scope.
-    $res = gs_call('member.mentor.roster', [
-        'requesterId' => $s['mid'],
-        'centre'      => (string)($_GET['centre'] ?? ''),
-    ]);
+    $view = (string)($_GET['view'] ?? 'roster');
+    if ($view === 'child') {
+        // One child's whole record — history, meetings, goals. Gated on the
+        // subject, not merely on the requester.
+        $res = gs_call('member.mentor.child', [
+            'requesterId' => $s['mid'],
+            'subjectId'   => (string)($_GET['subjectId'] ?? ''),
+        ]);
+    } elseif ($view === 'attention') {
+        $res = gs_call('member.mentor.attention', [
+            'requesterId' => $s['mid'],
+            'centre'      => (string)($_GET['centre'] ?? ''),
+        ]);
+    } else {
+        // `centre` narrows an admin (or anyone else covering more than one) to a
+        // single class. The gate rejects a centre outside their scope.
+        // `scope` picks between the children assigned to this mentor and the
+        // whole centre.
+        $res = gs_call('member.mentor.roster', [
+            'requesterId' => $s['mid'],
+            'centre'      => (string)($_GET['centre'] ?? ''),
+            'scope'       => (string)($_GET['scope'] ?? ''),
+        ]);
+    }
 } elseif ($method === 'POST') {
     $b = read_json_body();
     if ((string)($b['action'] ?? '') === 'star') {
@@ -44,6 +62,43 @@ if ($method === 'GET') {
             // nothing.
         ] + array_intersect_key($b, array_flip(['stars', 'category', 'severity', 'note']))
           + ['ip' => client_ip()]);
+    } elseif ((string)($b['action'] ?? '') === 'meeting') {
+        rate_limit_check('mentor.meeting');
+        $res = gs_call('member.mentor.meeting.save', [
+            'requesterId' => $s['mid'],
+            'subjectId'   => $b['subjectId'] ?? '',
+            'id'          => $b['id'] ?? 0,
+            'metOn'       => $b['metOn'] ?? '',
+            'kind'        => $b['kind'] ?? '',
+            'discussed'   => $b['discussed'] ?? '',
+            'agreed'      => $b['agreed'] ?? '',
+            'concern'     => !empty($b['concern']),
+            'ip'          => client_ip(),
+        ]);
+    } elseif ((string)($b['action'] ?? '') === 'meetingDelete') {
+        $res = gs_call('member.mentor.meeting.delete', [
+            'requesterId' => $s['mid'],
+            'subjectId'   => $b['subjectId'] ?? '',
+            'id'          => $b['id'] ?? 0,
+            'ip'          => client_ip(),
+        ]);
+    } elseif ((string)($b['action'] ?? '') === 'goal') {
+        $res = gs_call('member.mentor.goal.save', [
+            'requesterId' => $s['mid'],
+            'subjectId'   => $b['subjectId'] ?? '',
+            'id'          => $b['id'] ?? 0,
+            'goal'        => $b['goal'] ?? '',
+            'dueOn'       => $b['dueOn'] ?? '',
+            'ip'          => client_ip(),
+        ]);
+    } elseif ((string)($b['action'] ?? '') === 'goalStatus') {
+        $res = gs_call('member.mentor.goal.status', [
+            'requesterId' => $s['mid'],
+            'subjectId'   => $b['subjectId'] ?? '',
+            'id'          => $b['id'] ?? 0,
+            'status'      => $b['status'] ?? '',
+            'ip'          => client_ip(),
+        ]);
     } else { json_error('unknown_action', 400); }
 } else {
     json_error('method_not_allowed', 405);

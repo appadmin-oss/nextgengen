@@ -470,7 +470,14 @@
     member: {
       dashboard:     () => request('/member/dashboard.php'),
       anchor:        () => request('/member/anchor.php'),
-      mentorRoster:  (centre) => request('/member/mentor.php' + (centre ? '?centre=' + encodeURIComponent(centre) : '')),
+      mentorRoster:  (centre, scope) => request('/member/mentor.php' + qs({ centre: centre || '', scope: scope || '' })),
+      // The mentoring record for one child: history, meetings, goals.
+      mentorChild:   (subjectId) => request('/member/mentor.php' + qs({ view: 'child', subjectId })),
+      mentorAttention: (centre) => request('/member/mentor.php' + qs({ view: 'attention', centre: centre || '' })),
+      mentorMeeting: (subjectId, m) => request('/member/mentor.php', { body: Object.assign({ action: 'meeting', subjectId }, m || {}) }),
+      mentorMeetingDelete: (subjectId, id) => request('/member/mentor.php', { body: { action: 'meetingDelete', subjectId, id } }),
+      mentorGoal:    (subjectId, g) => request('/member/mentor.php', { body: Object.assign({ action: 'goal', subjectId }, g || {}) }),
+      mentorGoalStatus: (subjectId, id, status) => request('/member/mentor.php', { body: { action: 'goalStatus', subjectId, id, status } }),
       starGive:      (subjectId, stars, category, note) => request('/member/mentor.php', { body: { action: 'star', subjectId, stars, category, note } }),
       v3Rate:        (subjectId, verbal, vocal, visual, note) => request('/member/mentor.php', { body: { action: 'v3', subjectId, verbal, vocal, visual, note } }),
       bulkAward: (subjectIds, opts) => request('/member/mentor.php', { body: Object.assign({ action: 'bulk', subjectIds }, opts || {}) }),

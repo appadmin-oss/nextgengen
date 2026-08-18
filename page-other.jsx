@@ -6368,6 +6368,529 @@ const PORTAL_ROLES = {
   admin:      { eyebrow: "STAFF · ALL CENTRES", they: "students" },
 };
 
+/* ── One child's mentoring record ─────────────────────────────────────────
+   The screen a mentor opens with the child in front of them.
+
+   Until now the whole trace of a mentor on a child was a star for today and a
+   V3 for this week. Both are scores, both are transient, and neither records a
+   conversation — so nothing carried from one week to the next and a mentor
+   taking over a class inherited numbers and no context. This is the record:
+   what has happened, what was said, and what was agreed.
+
+   Everything here is staff-only. None of it is served to the child's own
+   portal, and the server enforces that rather than this file.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const MC_NAVY = "#16223e", MC_GOLD = "#ffce54", MC_CARD = "rgba(255,255,255,.06)";
+
+function MentorChildSheet({ student, onClose, onChanged }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [tab, setTab] = React.useState("record");
+  const closeRef = React.useRef(null);
+
+  const load = React.useCallback(() => {
+    NGGApi.member.mentorChild(student.studentId)
+      .then(r => { setD(r); setErr(""); })
+      .catch(e => setErr((e && e.message) || "Could not open that record."));
+  }, [student.studentId]);
+  React.useEffect(() => { load(); }, [load]);
+  // Escape closes, and focus starts on the close control rather than wherever
+  // it happened to be behind the sheet.
+  React.useEffect(() => {
+    const k = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", k);
+    if (closeRef.current) closeRef.current.focus();
+    return () => document.removeEventListener("keydown", k);
+  }, [onClose]);
+
+  const after = () => { load(); if (onChanged) onChanged(); };
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label={"Record for " + student.fullName}
+      style={{ position: "fixed", inset: 0, zIndex: 120, background: MC_NAVY, color: "#eef2fb",
+               overflowY: "auto", padding: "18px 16px calc(40px + env(safe-area-inset-bottom,0px))" }}>
+      <div style={{ maxWidth: 760, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+          <button ref={closeRef} onClick={onClose}
+            style={{ minWidth: 44, minHeight: 44, borderRadius: 12, border: "1px solid rgba(255,255,255,.24)",
+                     background: "transparent", color: "#eef2fb", fontSize: 18, cursor: "pointer" }}
+            aria-label="Close record">←</button>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>{student.fullName}</h2>
+            <div style={{ fontSize: 12.5, color: "rgba(230,238,255,.6)" }}>
+              {(d && d.subject.centre) || student.centre || ""}
+              {d && d.subject.track ? " · " + d.subject.track : ""}
+              {d && d.mentor.name ? " · mentor: " + d.mentor.name + (d.mentor.isMine ? " (you)" : "") : " · no mentor assigned"}
+            </div>
+          </div>
+        </div>
+
+        {err && <div role="alert" style={{ background: "rgba(255,90,110,.16)", border: "1px solid rgba(255,90,110,.5)",
+                     borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 14 }}>{err}</div>}
+
+        {!d ? <div style={{ textAlign: "center", padding: "60px 0" }}><div className="dash-spinner"/></div> : <>
+          <McStats d={d}/>
+          <McV3 weeks={d.v3}/>
+
+          <div role="tablist" style={{ display: "flex", gap: 4, margin: "22px 0 14px", borderBottom: "1px solid rgba(255,255,255,.12)" }}>
+            {[["record", "Conversations (" + d.meetings.length + ")"], ["goals", "Goals (" + d.goals.filter(g => g.status === "open").length + ")"]].map(([k, label]) => (
+              <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+                style={{ padding: "11px 14px", minHeight: 44, background: "none", border: "none", cursor: "pointer",
+                         borderBottom: "2px solid " + (tab === k ? MC_GOLD : "transparent"), marginBottom: -1,
+                         color: tab === k ? "#fff" : "rgba(230,238,255,.6)", fontWeight: 700, fontSize: 14, fontFamily: "inherit" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "record"
+            ? <McMeetings d={d} subjectId={student.studentId} busy={busy} setBusy={setBusy} onDone={after} setErr={setErr}/>
+            : <McGoals d={d} subjectId={student.studentId} busy={busy} setBusy={setBusy} onDone={after} setErr={setErr}/>}
+        </>}
+      </div>
+    </div>
+  );
+}
+
+/* A KPI row rather than a chart: three headline numbers with no trend between
+   them is a stat row, and a three-bar bar chart of unrelated quantities would
+   be inventing a comparison that does not exist. */
+function McStats({ d }) {
+  const tiles = [
+    ["Stars", d.stars.total, "all time"],
+    ["Sessions", d.attendance.total, d.attendance.last90 + " in 90 days"],
+    ["Last seen", d.attendance.lastSeen || "—", d.attendance.lastSeen ? "" : "never checked in"],
+  ];
+  return (
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+      {tiles.map(([label, value, sub]) => (
+        <div key={label} style={{ flex: "1 1 150px", minWidth: 130, background: MC_CARD,
+              border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, padding: "12px 14px" }}>
+          <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".14em",
+                        color: "rgba(230,238,255,.55)", textTransform: "uppercase" }}>{label}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+          {sub ? <div style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)" }}>{sub}</div> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── The V3 trend ─────────────────────────────────────────────────────────
+   Eight weeks × three measures, each on a fixed 1–5 scale.
+
+   SMALL MULTIPLES, not a grouped or stacked bar. Three series crammed into one
+   eight-week strip is unreadable at 360px, and stacking them would make the
+   reader compare inner segments across columns — the thing stacked bars are
+   worst at. Three separate rows, each direct-labelled, answers both questions a
+   mentor actually has: is this going up, and which of the three is weak.
+
+   Because the ROW LABEL carries the identity, colour has no identity job here —
+   so there is one colour, and height alone encodes the value. Colouring the
+   bars by their own value would double-encode what the height already says.
+
+   AN UNRATED WEEK IS NOT A ZERO. The gaps are the finding: a trend that
+   silently drops the weeks nobody rated reads as eight weeks of steady
+   attention when it might be three. An unrated week is an empty dashed track;
+   a rated 1 is a short solid bar. They cannot be confused. */
+function McV3({ weeks }) {
+  const rows = [["verbal", "Verbal"], ["vocal", "Vocal"], ["visual", "Visual"]];
+  const rated = weeks.filter(w => w.rated).length;
+  const shortWeek = (p) => String(p).split("-W")[1] || p;
+  return (
+    <section style={{ background: MC_CARD, border: "1px solid rgba(255,255,255,.12)",
+                      borderRadius: 16, padding: "14px 16px", marginTop: 12 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>V3 over eight weeks</h3>
+        <span style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)" }}>
+          {rated === 0 ? "Not rated in this period" : rated + " of 8 weeks rated · each out of 5"}
+        </span>
+      </div>
+
+      {rows.map(([key, label]) => (
+        <div key={key} style={{ display: "flex", alignItems: "flex-end", gap: 10, marginBottom: 8, maxWidth: 420 }}>
+          {/* Direct label — identity never rests on colour. */}
+          <div style={{ flex: "none", width: 52, fontSize: 11.5, fontWeight: 700,
+                        color: "rgba(230,238,255,.72)", paddingBottom: 2 }}>{label}</div>
+          <div style={{ flex: 1, display: "flex", alignItems: "flex-end", gap: 3, height: 46 }}>
+            {weeks.map((w) => {
+              const v = w.rated ? w[key] : 0;
+              return (
+                <div key={w.period} tabIndex={0}
+                  aria-label={label + ", week " + shortWeek(w.period) + ": " + (w.rated ? v + " out of 5" : "not rated")}
+                  title={label + " · week " + shortWeek(w.period) + " · " + (w.rated ? v + "/5" : "not rated")}
+                  /* border-box, and a border on BOTH states: the unrated cell
+                     is dashed and the rated one is not, and without this they
+                     are different heights and the bars hang out of the track. */
+                  style={{ flex: 1, minWidth: 0, height: "100%", boxSizing: "border-box",
+                           display: "flex", alignItems: "flex-end",
+                           // The track shows the 1–5 scale so a short bar reads as
+                           // "low", not as "the chart is small".
+                           background: w.rated ? "rgba(255,255,255,.05)" : "transparent",
+                           border: "1px " + (w.rated ? "solid transparent" : "dashed rgba(255,255,255,.22)"),
+                           borderRadius: 3, outlineOffset: 2 }}>
+                  {w.rated && (
+                    <div style={{ width: "100%", height: (v / 5) * 100 + "%",
+                                  // 4px rounded data-end, square at the baseline.
+                                  background: MC_GOLD, borderRadius: "4px 4px 0 0" }}/>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <div style={{ display: "flex", gap: 3, marginLeft: 62, marginTop: 2, maxWidth: 420 - 62 }}>
+        {weeks.map((w, i) => (
+          <div key={w.period} style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: 9.5,
+                 color: "rgba(230,238,255,.4)", fontVariantNumeric: "tabular-nums" }}>
+            {/* Every other week, so eight labels do not collide at 360px. */}
+            {i % 2 === 0 ? shortWeek(w.period) : " "}
+          </div>
+        ))}
+      </div>
+
+      {/* The table view. Always in the DOM for anyone who cannot read the strip
+          at all — a chart with no textual equivalent is a chart some people
+          simply do not get. */}
+      <table className="sr-only">
+        <caption>V3 ratings by week, each out of 5</caption>
+        <thead><tr><th>Week</th>{rows.map(([k, l]) => <th key={k}>{l}</th>)}</tr></thead>
+        <tbody>
+          {weeks.map(w => (
+            <tr key={w.period}>
+              <th scope="row">{w.period}</th>
+              {rows.map(([k]) => <td key={k}>{w.rated ? w[k] : "not rated"}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+/* ── Conversations ────────────────────────────────────────────────────── */
+
+function McMeetings({ d, subjectId, busy, setBusy, onDone, setErr }) {
+  const [open, setOpen] = React.useState(false);
+  const [edit, setEdit] = React.useState(null);
+  const del = (id) => {
+    if (!window.confirm("Delete this entry? The fact that it existed stays in the audit log.")) return;
+    setBusy(true);
+    NGGApi.member.mentorMeetingDelete(subjectId, id)
+      .then(() => onDone()).catch(e => setErr((e && e.message) || "Could not delete that."))
+      .then(() => setBusy(false));
+  };
+  return (
+    <>
+      {!open && !edit && (
+        <button onClick={() => setOpen(true)}
+          style={{ width: "100%", padding: "13px 18px", minHeight: 44, borderRadius: 12, border: "1px dashed rgba(255,255,255,.3)",
+                   background: "transparent", color: MC_GOLD, fontWeight: 700, fontSize: 14.5, cursor: "pointer", marginBottom: 14 }}>
+          + Write up a conversation
+        </button>
+      )}
+      {(open || edit) && <McMeetingForm subjectId={subjectId} kinds={d.kinds} entry={edit}
+        onCancel={() => { setOpen(false); setEdit(null); }}
+        onSaved={() => { setOpen(false); setEdit(null); onDone(); }} setErr={setErr}/>}
+
+      {!d.meetings.length && !open && (
+        <p style={{ color: "rgba(230,238,255,.5)", fontSize: 13.5 }}>
+          Nothing written down yet. A star says a child did well; this is where what they actually said goes.
+        </p>
+      )}
+
+      <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        {d.meetings.map(m => (
+          <li key={m.id} style={{ background: MC_CARD, borderRadius: 14, padding: "12px 14px",
+                border: "1px solid " + (m.concern ? "rgba(255,150,90,.55)" : "rgba(255,255,255,.12)") }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+              <b style={{ fontSize: 13.5, fontVariantNumeric: "tabular-nums" }}>{m.metOn}</b>
+              <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em",
+                             color: "rgba(230,238,255,.55)" }}>{m.kind}</span>
+              {/* A concern says so in words as well as in colour — an orange
+                  border alone is invisible to a good many readers. */}
+              {m.concern && <span style={{ fontSize: 11, fontWeight: 800, color: "#ffb27a" }}>⚑ CONCERN RAISED</span>}
+              <span style={{ flex: 1 }}/>
+              <span style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)" }}>{m.mentorName || "—"}</span>
+            </div>
+            {m.discussed ? <p style={{ margin: "0 0 6px", fontSize: 14, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{m.discussed}</p> : null}
+            {m.agreed ? <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, color: "#a7e8c6", whiteSpace: "pre-wrap" }}>
+              <b style={{ fontSize: 11, letterSpacing: ".08em" }}>AGREED </b>{m.agreed}</p> : null}
+            {/* Only the author gets these. A lead who disagrees writes their own
+                entry — both then stand, which is what a record is for. */}
+            {m.mine && (
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button onClick={() => setEdit(m)} disabled={busy}
+                  style={{ padding: "8px 12px", minHeight: 40, borderRadius: 10, border: "1px solid rgba(255,255,255,.24)",
+                           background: "transparent", color: "#cdd6ea", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Edit</button>
+                <button onClick={() => del(m.id)} disabled={busy}
+                  style={{ padding: "8px 12px", minHeight: 40, borderRadius: 10, border: "1px solid rgba(255,120,140,.4)",
+                           background: "transparent", color: "#ff9db0", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Delete</button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
+function McMeetingForm({ subjectId, kinds, entry, onCancel, onSaved, setErr }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [metOn, setMetOn] = React.useState((entry && entry.metOn) || today);
+  const [kind, setKind] = React.useState((entry && entry.kind) || "one-to-one");
+  const [discussed, setDiscussed] = React.useState((entry && entry.discussed) || "");
+  const [agreed, setAgreed] = React.useState((entry && entry.agreed) || "");
+  const [concern, setConcern] = React.useState(!!(entry && entry.concern));
+  const [saving, setSaving] = React.useState(false);
+  const field = { width: "100%", boxSizing: "border-box", padding: "11px 13px", borderRadius: 11, fontSize: 16,
+                  background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.2)", color: "#eef2fb",
+                  fontFamily: "inherit", minHeight: 44 };
+  const save = (e) => {
+    e.preventDefault();
+    if (!discussed.trim() && !agreed.trim()) { setErr("Write down what was discussed, or what was agreed."); return; }
+    setSaving(true); setErr("");
+    NGGApi.member.mentorMeeting(subjectId, { id: (entry && entry.id) || 0, metOn, kind, discussed, agreed, concern })
+      .then(() => onSaved())
+      .catch(er => { setErr((er && er.message) === "too_long" ? "That is longer than the record will hold — keep it to the essentials."
+                                                             : ((er && er.message) || "Could not save that.")); setSaving(false); });
+  };
+  return (
+    <form onSubmit={save} style={{ background: MC_CARD, border: "1px solid rgba(255,255,255,.16)",
+          borderRadius: 16, padding: "14px 16px", marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <label style={{ flex: "1 1 150px" }}>
+          <span style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
+                         color: "rgba(230,238,255,.6)", marginBottom: 4 }}>WHEN IT HAPPENED</span>
+          {/* Backdating on purpose: a write-up happens after the conversation,
+              and a record that insists otherwise is a false record. */}
+          <input type="date" value={metOn} max={today} onChange={e => setMetOn(e.target.value)} style={field}/>
+        </label>
+        <label style={{ flex: "1 1 150px" }}>
+          <span style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
+                         color: "rgba(230,238,255,.6)", marginBottom: 4 }}>KIND</span>
+          <select value={kind} onChange={e => setKind(e.target.value)} style={field}>
+            {(kinds || []).map(k => <option key={k} value={k} style={{ color: MC_NAVY }}>{k}</option>)}
+          </select>
+        </label>
+      </div>
+      <label>
+        <span style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
+                       color: "rgba(230,238,255,.6)", marginBottom: 4 }}>WHAT WAS DISCUSSED</span>
+        <textarea value={discussed} onChange={e => setDiscussed(e.target.value)} rows={4}
+          placeholder="In their words where you can." style={{ ...field, resize: "vertical" }}/>
+      </label>
+      <label>
+        <span style={{ display: "block", fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
+                       color: "rgba(230,238,255,.6)", marginBottom: 4 }}>WHAT WAS AGREED</span>
+        <textarea value={agreed} onChange={e => setAgreed(e.target.value)} rows={2}
+          placeholder="Something specific enough to check next time." style={{ ...field, resize: "vertical" }}/>
+      </label>
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", padding: "4px 0" }}>
+        <input type="checkbox" checked={concern} onChange={e => setConcern(e.target.checked)}
+          style={{ width: 20, height: 20, marginTop: 2, accentColor: "#ff9d5c", flex: "none" }}/>
+        <span style={{ fontSize: 13.5, lineHeight: 1.45 }}>
+          <b>This needs a lead's attention.</b>
+          <span style={{ display: "block", color: "rgba(230,238,255,.6)", fontSize: 12.5 }}>
+            The lead mentors at this centre are told straight away. Use it whenever you are unsure — that is what it is for.
+          </span>
+        </span>
+      </label>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <button type="button" onClick={onCancel} disabled={saving}
+          style={{ padding: "11px 18px", minHeight: 44, borderRadius: 11, border: "1px solid rgba(255,255,255,.24)",
+                   background: "transparent", color: "#cdd6ea", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+        <button type="submit" disabled={saving}
+          style={{ padding: "11px 22px", minHeight: 44, borderRadius: 11, border: "none", background: MC_GOLD,
+                   color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>{saving ? "Saving…" : (entry ? "Save changes" : "Save")}</button>
+      </div>
+    </form>
+  );
+}
+
+/* ── Goals ────────────────────────────────────────────────────────────── */
+
+function McGoals({ d, subjectId, busy, setBusy, onDone, setErr }) {
+  const [goal, setGoal] = React.useState("");
+  const [dueOn, setDueOn] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const field = { padding: "11px 13px", borderRadius: 11, fontSize: 16, background: "rgba(255,255,255,.07)",
+                  border: "1px solid rgba(255,255,255,.2)", color: "#eef2fb", fontFamily: "inherit", minHeight: 44,
+                  boxSizing: "border-box" };
+  const add = (e) => {
+    e.preventDefault();
+    if (!goal.trim()) return;
+    setSaving(true); setErr("");
+    NGGApi.member.mentorGoal(subjectId, { goal, dueOn })
+      .then(() => { setGoal(""); setDueOn(""); onDone(); })
+      .catch(er => setErr((er && er.message) || "Could not save that."))
+      .then(() => setSaving(false));
+  };
+  const setStatus = (id, status) => {
+    setBusy(true);
+    NGGApi.member.mentorGoalStatus(subjectId, id, status)
+      .then(() => onDone()).catch(er => setErr((er && er.message) || "Could not update that."))
+      .then(() => setBusy(false));
+  };
+  const open = d.goals.filter(g => g.status === "open");
+  const closed = d.goals.filter(g => g.status !== "open");
+  return (
+    <>
+      <form onSubmit={add} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+        <input value={goal} onChange={e => setGoal(e.target.value)} maxLength={500}
+          placeholder="Something specific, that can be finished" aria-label="The goal"
+          style={{ ...field, flex: "1 1 220px", minWidth: 180 }}/>
+        <input type="date" value={dueOn} onChange={e => setDueOn(e.target.value)}
+          aria-label="Due date (optional)" style={{ ...field, flex: "0 1 160px" }}/>
+        <button type="submit" disabled={saving || !goal.trim()}
+          style={{ padding: "11px 20px", minHeight: 44, borderRadius: 11, border: "none", background: MC_GOLD,
+                   color: "#2b2100", fontWeight: 800, cursor: "pointer", opacity: (saving || !goal.trim()) ? .55 : 1 }}>Add</button>
+      </form>
+
+      {!d.goals.length && <p style={{ color: "rgba(230,238,255,.5)", fontSize: 13.5 }}>
+        No goals set. One specific thing with a date beats five vague ones.
+      </p>}
+
+      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+        {open.concat(closed).map(g => (
+          <li key={g.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+                background: MC_CARD, borderRadius: 13, padding: "11px 14px",
+                border: "1px solid " + (g.overdue ? "rgba(255,150,90,.5)" : "rgba(255,255,255,.12)"),
+                opacity: g.status === "open" ? 1 : .6 }}>
+            <div style={{ flex: "1 1 160px", minWidth: 0 }}>
+              <div style={{ fontSize: 14.5, fontWeight: 600,
+                            textDecoration: g.status === "done" ? "line-through" : "none" }}>{g.goal}</div>
+              <div style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)", fontVariantNumeric: "tabular-nums" }}>
+                {g.dueOn ? "due " + g.dueOn : "no date"}
+                {/* The word as well as the colour. */}
+                {g.overdue ? " · OVERDUE" : ""}
+                {g.status !== "open" ? " · " + g.status : ""}
+                {g.setByName ? " · " + g.setByName : ""}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+              {g.status === "open" ? <>
+                <button onClick={() => setStatus(g.id, "done")} disabled={busy}
+                  style={{ padding: "8px 12px", minHeight: 40, borderRadius: 10, border: "1px solid #7fd1a6",
+                           background: "transparent", color: "#a7e8c6", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>✓ Done</button>
+                {/* 'Drop' exists so a goal that stopped being the right goal is
+                    not cleared by pretending it was achieved. A record where
+                    everything is always achieved is a record nobody believes. */}
+                <button onClick={() => setStatus(g.id, "dropped")} disabled={busy}
+                  style={{ padding: "8px 12px", minHeight: 40, borderRadius: 10, border: "1px solid rgba(255,255,255,.24)",
+                           background: "transparent", color: "#cdd6ea", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Drop</button>
+              </> : (
+                <button onClick={() => setStatus(g.id, "open")} disabled={busy}
+                  style={{ padding: "8px 12px", minHeight: 40, borderRadius: 10, border: "1px solid rgba(255,255,255,.24)",
+                           background: "transparent", color: "#cdd6ea", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Reopen</button>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/* ── What needs attention ─────────────────────────────────────────────────
+   The lead's queue: concerns raised by mentors at this centre, and goals that
+   have gone past their date.
+
+   This screen is the reason the concern flag exists. A mentor ticking "this
+   needs a lead's attention" sends a notification, but a notification is read
+   once and then gone — the standing list of what is outstanding has to live
+   somewhere, and this is it.
+   ═══════════════════════════════════════════════════════════════════════ */
+function MentorAttention({ centre, onOpenChild }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.member.mentorAttention(centre || "")
+      .then(r => { if (alive) { setD(r); setErr(""); } })
+      .catch(e => { if (alive) setErr((e && e.message) || "Could not load that."); });
+    return () => { alive = false; };
+  }, [centre]);
+
+  if (err) return <div role="alert" style={{ background: "rgba(255,90,110,.16)", border: "1px solid rgba(255,90,110,.5)",
+                       borderRadius: 12, padding: "10px 14px", fontSize: 14 }}>{err}</div>;
+  if (!d) return <div style={{ textAlign: "center", padding: "50px 0" }}><div className="dash-spinner"/></div>;
+
+  const nothing = !d.concerns.length && !d.overdue.length;
+  const card = { background: "rgba(255,255,255,.06)", borderRadius: 14, padding: "12px 14px" };
+  const open = (id, name) => onOpenChild && onOpenChild({ studentId: id, fullName: name });
+
+  return (
+    <>
+      {nothing && (
+        <p style={{ color: "rgba(230,238,255,.6)", fontSize: 14, lineHeight: 1.6 }}>
+          Nothing outstanding. Concerns a mentor raises appear here, along with any goal that has gone past its date.
+        </p>
+      )}
+
+      {d.concerns.length > 0 && <>
+        <h3 style={{ fontSize: 13, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase",
+                     color: "rgba(230,238,255,.6)", margin: "0 0 10px" }}>
+          Concerns raised ({d.concerns.length})
+        </h3>
+        <ul style={{ listStyle: "none", margin: "0 0 24px", padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+          {d.concerns.map(c => (
+            <li key={c.id} style={{ ...card, border: "1px solid rgba(255,150,90,.55)" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+                <button type="button" onClick={() => open(c.subjectId, c.fullName)}
+                  style={{ background: "none", border: "none", padding: 0, font: "inherit", cursor: "pointer",
+                           color: "#fff", fontWeight: 800, fontSize: 15, textDecoration: "underline",
+                           textDecorationColor: "rgba(255,255,255,.3)", textUnderlineOffset: 3 }}>
+                  {c.fullName}
+                </button>
+                {/* The word, not only the colour. */}
+                <span style={{ fontSize: 11, fontWeight: 800, color: "#ffb27a" }}>⚑ CONCERN</span>
+                <span style={{ flex: 1 }}/>
+                <span style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)", fontVariantNumeric: "tabular-nums" }}>
+                  {c.metOn} · {c.mentorName || "—"}
+                </span>
+              </div>
+              {c.discussed ? <p style={{ margin: "0 0 4px", fontSize: 14, lineHeight: 1.5 }}>{c.discussed}</p> : null}
+              {c.agreed ? <p style={{ margin: 0, fontSize: 13, color: "#a7e8c6" }}>
+                <b style={{ fontSize: 10.5, letterSpacing: ".08em" }}>AGREED </b>{c.agreed}</p> : null}
+            </li>
+          ))}
+        </ul>
+      </>}
+
+      {d.overdue.length > 0 && <>
+        <h3 style={{ fontSize: 13, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase",
+                     color: "rgba(230,238,255,.6)", margin: "0 0 10px" }}>
+          Goals past their date ({d.overdue.length})
+        </h3>
+        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+          {d.overdue.map(o => (
+            <li key={o.id} style={{ ...card, border: "1px solid rgba(255,255,255,.12)",
+                  display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ flex: "1 1 180px", minWidth: 0 }}>
+                <div style={{ fontSize: 14.5 }}>{o.goal}</div>
+                <div style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)", fontVariantNumeric: "tabular-nums" }}>
+                  due {o.dueOn} · OVERDUE{o.setByName ? " · " + o.setByName : ""}
+                </div>
+              </div>
+              <button type="button" onClick={() => open(o.subjectId, o.fullName)}
+                style={{ marginLeft: "auto", padding: "9px 14px", minHeight: 44, borderRadius: 10,
+                         border: "1px solid rgba(255,255,255,.24)", background: "transparent",
+                         color: "#cdd6ea", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                {o.fullName} →
+              </button>
+            </li>
+          ))}
+        </ul>
+      </>}
+    </>
+  );
+}
+
 function MentorPortal() {
   const auth = (window.useAuth || (() => null))();
   const [data, setData] = React.useState(null);
@@ -6381,18 +6904,26 @@ function MentorPortal() {
      more than one — a mentor at a single centre never sees the control. */
   const [centre, setCentre] = React.useState("");
   const [tabState, setTabState] = React.useState("");   // "" = the role's default
+  /* "" lets the SERVER decide: my mentees if I have any, the centre otherwise.
+     Deciding it here would mean guessing before the roster has loaded. */
+  const [scope, setScope] = React.useState("");
+  const [childOn, setChildOn] = React.useState(null);  // whose record is open
   const [remarkOn, setRemarkOn] = React.useState(null); // child whose thread is open
   const navy = "#16223e", gold = "#ffce54";
-  const load = React.useCallback((c) => {
+  const load = React.useCallback((c, sc) => {
     setState("loading");
-    NGGApi.member.mentorRoster(c || "").then(r => { setData(r); setState("ready"); })
+    NGGApi.member.mentorRoster(c || "", sc || "").then(r => { setData(r); setState("ready"); })
       .catch(e => { const c2 = e.code || e.message; setState(c2 === "unauthorized" ? "need-auth" : c2 === "not_a_mentor" ? "not-mentor" : "error"); });
   }, []);
-  React.useEffect(() => { load(centre); }, [load, centre]);
-  React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(centre); }, [auth && auth.isSignedIn]);
+  React.useEffect(() => { load(centre, scope); }, [load, centre, scope]);
+  React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(centre, scope); }, [auth && auth.isSignedIn]);
   // Switching centre is switching class: a selection carried across would
   // apply an observation to children the mentor is no longer looking at.
-  const pickCentre = (c) => { setPicked([]); setQuery(""); setCentre(c); };
+  /* Picking a centre also drops back to the centre list. Staying on "my
+     mentees" would leave the centre control visibly set to somewhere the list
+     on screen does not come from — mentees are scoped by the assignment, not
+     by centre. */
+  const pickCentre = (c) => { setPicked([]); setQuery(""); setScope("centre"); setCentre(c); };
 
   const shell = (ch) => (
     <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 18px 90px" }}>
@@ -6426,7 +6957,7 @@ function MentorPortal() {
       : <p style={{ color: "rgba(230,238,255,.55)", fontSize: 13.5, textAlign: "center" }}>Card sign-in is on the Community page.</p>}
   </div>);
   if (state === "not-mentor") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 22 }}>This account has no class</h1><p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>The portal opens for mentors, instructors and admin staff. If that's you, make sure you're signed in with the email on your mentor record, or with the ID card issued for your instructor or volunteer role.</p></div>);
-  if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load your class</h1><button onClick={() => load(centre)} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
+  if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load your class</h1><button onClick={() => load(centre, scope)} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
 
   const m = data.mentor || {}, students = data.students || [];
   const done = students.filter(s => s.starredToday).length;
@@ -6440,6 +6971,31 @@ function MentorPortal() {
   /* The centre switcher. An admin reaches the whole programme, and a roster of
      "the whole programme" truncated to the first 400 names is not a roster —
      so the server asks for one centre and this is where it gets picked. */
+  /* MY MENTEES vs THE WHOLE CENTRE.
+     `mentor_assignments` has always been written — an admin pairs a child with
+     a mentor, and the CHILD's dashboard names them — but nothing on the
+     mentor's side ever read it, so the portal showed every active child in the
+     centre and the pairing changed nothing about what the mentor saw. This is
+     that link. It only appears for someone who actually has mentees; a mentor
+     with none is never shown a switch with one empty side. */
+  const scopePicker = (data.mineCount > 0) && (
+    <div role="group" aria-label="Which children to show"
+      style={{ display: "inline-flex", gap: 2, padding: 3, marginBottom: 14, borderRadius: 12,
+               background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.14)" }}>
+      {[["mine", "My mentees (" + data.mineCount + ")"], ["centre", "Whole centre"]].map(([k, label]) => {
+        const on = (data.scope || "centre") === k;
+        return (
+          <button key={k} type="button" aria-pressed={on} onClick={() => { setPicked([]); setScope(k); }}
+            style={{ padding: "9px 14px", minHeight: 44, borderRadius: 10, border: "none", cursor: "pointer",
+                     fontFamily: "inherit", fontWeight: 700, fontSize: 13.5,
+                     background: on ? gold : "transparent", color: on ? "#2b2100" : "#cdd6ea" }}>
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   const centrePicker = centres.length > 1 && (
     <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
       <span style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)" }}>CENTRE</span>
@@ -6486,11 +7042,28 @@ function MentorPortal() {
      they cover a centre, not a class. */
   const teachCourses = (data.courses && data.courses.length) ? data.courses : [];
   const canTeach = role === "instructor" || (role === "admin" && teachCourses.length > 0);
-  const tab = canTeach ? (tabState || (role === "instructor" ? "session" : "class")) : "class";
+  /* The queue is for whoever can act on it across a centre — a lead mentor, or
+     an admin. A single mentor's own concerns are already on the records they
+     wrote them on; the queue is the CENTRE view, and it is the reason the flag
+     exists at all. */
+  const canOversee = role === "lead" || role === "admin";
 
-  const tabs = canTeach && (
-    <div role="tablist" style={{ display: "flex", gap: 4, marginBottom: 16, borderBottom: "1px solid rgba(255,255,255,.12)" }}>
-      {[["session", "Today's session"], ["class", "Stars & notes"], ["skills", "Skills"]].map(([k, label]) => (
+  /* One tab row rather than two. It was rendered only for people who teach, so
+     a lead mentor — the person the concern flag exists for — had no way to
+     reach anything but the roster. */
+  const tabList = (canTeach ? [["session", "Today's session"], ["class", "Stars & notes"], ["skills", "Skills"]]
+                            : [["class", "Stars & notes"]])
+    .concat(canOversee ? [["attention", "Needs attention"]] : []);
+
+  /* An explicit choice wins, but only if it is a tab this person actually has —
+     otherwise switching centre into a role with fewer tabs would leave a
+     selection pointing at nothing. */
+  const defaultTab = canTeach ? (role === "instructor" ? "session" : "class") : "class";
+  const tab = tabList.some(([k]) => k === tabState) ? tabState : defaultTab;
+
+  const tabs = tabList.length > 1 && (
+    <div role="tablist" style={{ display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap", borderBottom: "1px solid rgba(255,255,255,.12)" }}>
+      {tabList.map(([k, label]) => (
         <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTabState(k)}
           style={{ padding: "11px 14px", minHeight: 44, background: "none", border: "none", cursor: "pointer",
                    borderBottom: "2px solid " + (tab === k ? gold : "transparent"), marginBottom: -1,
@@ -6515,10 +7088,16 @@ function MentorPortal() {
   if (tab === "skills") return shell(<>{header}{centrePicker}{tabs}
     <SkillsPanel courses={teachCourses} centre={data.centre || m.centre || ""}/>
   </>);
+  if (tab === "attention") return shell(<>{header}{centrePicker}{tabs}
+    <MentorAttention centre={data.centre || m.centre || ""} onOpenChild={setChildOn}/>
+    {childOn && <MentorChildSheet student={childOn} onClose={() => setChildOn(null)}
+                                  onChanged={() => load(centre, scope)}/>}
+  </>);
 
   return shell(<>
     {header}
     {centrePicker}
+    {scopePicker}
     {tabs}
     {!students.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No {roleMeta.they} here yet.</p>}
 
@@ -6549,10 +7128,16 @@ function MentorPortal() {
             aria-label={"Select " + s.fullName}
             style={{ width: 20, height: 20, flex: "none", accentColor: gold, cursor: "pointer" }}/>
           <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: "linear-gradient(180deg,#dff0fb,#8fbb3f)", flex: "none" }}>{s.photoUrl ? <img src={s.photoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }}/> : null}</div>
-          <div style={{ flex: "1 1 120px", minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>{s.fullName}</div>
+          {/* The NAME opens the record. It is already the thing a mentor looks
+              at, and this row overflowed at 390px with three buttons on it —
+              a fourth would have made it worse. */}
+          <button type="button" onClick={() => setChildOn(s)}
+            aria-label={"Open the record for " + s.fullName}
+            style={{ flex: "1 1 120px", minWidth: 0, textAlign: "left", background: "none", border: "none",
+                     padding: 0, color: "inherit", font: "inherit", cursor: "pointer" }}>
+            <div style={{ fontWeight: 700, fontSize: 15, textDecoration: "underline", textDecorationColor: "rgba(255,255,255,.25)", textUnderlineOffset: 3 }}>{s.fullName}</div>
             <div style={{ fontSize: 12, color: "rgba(230,238,255,.55)" }}>{s.track || ""}{s.v3 ? " · V3 " + (s.v3.verbal + s.v3.vocal + s.v3.visual) + "/15" : ""}</div>
-          </div>
+          </button>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "0 0 auto", marginLeft: "auto" }}>
             {s.starredToday
               ? <span title={s.note} style={{ color: gold, fontWeight: 800, fontSize: 16 }}>{"★".repeat(s.starredToday)}</span>
@@ -6587,11 +7172,13 @@ function MentorPortal() {
       presets={data.presets || []}
       categories={data.categories || []}
       onClose={() => setBulkOpen(false)}
-      onDone={(res) => { setBulkOpen(false); setPicked([]); load(); return res; }}
+      onDone={(res) => { setBulkOpen(false); setPicked([]); load(centre, scope); return res; }}
       subjectIds={picked}/>}
-    {sheet && <MentorStarSheet student={sheet} categories={data.categories || []} onClose={() => setSheet(null)} onDone={() => { setSheet(null); load(centre); }}/>}
-    {v3sheet && <MentorV3Sheet student={v3sheet} period={data.period} onClose={() => setV3sheet(null)} onDone={() => { setV3sheet(null); load(centre); }}/>}
+    {sheet && <MentorStarSheet student={sheet} categories={data.categories || []} onClose={() => setSheet(null)} onDone={() => { setSheet(null); load(centre, scope); }}/>}
+    {v3sheet && <MentorV3Sheet student={v3sheet} period={data.period} onClose={() => setV3sheet(null)} onDone={() => { setV3sheet(null); load(centre, scope); }}/>}
     {remarkOn && <RemarksSheet student={remarkOn} onClose={() => setRemarkOn(null)}/>}
+    {childOn && <MentorChildSheet student={childOn} onClose={() => setChildOn(null)}
+                                  onChanged={() => load(centre, scope)}/>}
   </>);
 }
 

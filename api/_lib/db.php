@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 91;
+const NGG_SCHEMA_TARGET = 92;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2431,6 +2431,62 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX idx_mathprog ON math_progress(playerId, level);
             CREATE INDEX idx_mathprog_player ON math_progress(playerId);
+        ",
+
+        /* The mentoring record — what was actually said, and what was agreed.
+         *
+         * Until now a mentor's only trace on a child was a star for today and a
+         * V3 rating for this week. Both are scores. Neither records a
+         * conversation, so nothing carried from one week to the next and a
+         * mentor who took over a class inherited nothing but numbers.
+         *
+         * ON THE FREE TEXT. The two-player match tables in this codebase have
+         * no free-text column at all, deliberately — that is child-to-child,
+         * and no moderator can read every message between children in real
+         * time. This is the opposite case: staff writing about a child, read by
+         * staff, and a mentoring programme that cannot record "she said she is
+         * being followed home" is not doing safeguarding, it is avoiding it.
+         * So the text exists, and the controls are the ones that fit it — every
+         * write audited, every read gated by the same scope that governs the
+         * roster, `concern` to raise something to a lead, and NOTHING here is
+         * ever served to the child's own portal.
+         *
+         * `metOn` is separate from createdAt because mentors write up a
+         * conversation afterwards, often days later, and a record that insists
+         * the meeting happened when the typing happened is a false record. */
+        92 => "
+            CREATE TABLE mentor_meetings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectId TEXT NOT NULL,
+              subjectType TEXT NOT NULL DEFAULT 'member',
+              mentorId TEXT NOT NULL,
+              mentorName TEXT DEFAULT '',
+              metOn TEXT NOT NULL,
+              kind TEXT DEFAULT 'one-to-one',
+              discussed TEXT DEFAULT '',
+              agreed TEXT DEFAULT '',
+              concern INTEGER NOT NULL DEFAULT 0,
+              centre TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '', updatedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_mm_subject ON mentor_meetings(subjectId, metOn);
+            CREATE INDEX idx_mm_mentor ON mentor_meetings(mentorId, metOn);
+            CREATE INDEX idx_mm_concern ON mentor_meetings(centre, concern);
+
+            CREATE TABLE mentor_goals (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectId TEXT NOT NULL,
+              subjectType TEXT NOT NULL DEFAULT 'member',
+              goal TEXT NOT NULL,
+              setById TEXT NOT NULL, setByName TEXT DEFAULT '',
+              dueOn TEXT DEFAULT '',
+              status TEXT DEFAULT 'open',
+              closedOn TEXT DEFAULT '', closedById TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '', updatedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_mg_subject ON mentor_goals(subjectId, status);
+            CREATE INDEX idx_mg_due ON mentor_goals(status, dueOn);
         ",
     ];
 

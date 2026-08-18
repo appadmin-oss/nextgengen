@@ -417,6 +417,7 @@ function unzipDocumentXml(buf) {
             : b === 'signin' ? 'CmStudentSignIn' : b === 'gatephoto' ? 'GatePhoto' : b === 'capture' ? 'PhotoCapture' : b === 'fieldupload' ? 'FieldUpload' : b === 'centre' ? 'CentreDetail'
             : b === 'builder' ? 'SummerFormBuilder' : b === 'gatereg' ? 'GateRegister'
             : b === 'arcade' ? 'CmArcade'
+            : b === 'mentor' ? 'MentorPortal'
             : b === 'consent' ? 'MemberConsentEditor'
             : b === 'checkin' ? 'GateCheckin'
             : b === 'roster' ? 'SummerRoster'
@@ -1270,6 +1271,92 @@ function unzipDocumentXml(buf) {
         ? { gated: true, handle: 'ngg0777', mayName: true,
             site_visibility: { status: 'granted', method: 'Paper form', by: 'Prior Staff', at: '2026-06-01T09:00:00Z' } }
         : { gated: true, handle: 'ngg0777', mayName: false } } };
+  } else if (b === 'mentor') {
+    /* The Mentor Portal. Two things here can look right on screen and be wrong:
+       the V3 trend, whose bar heights ARE the data, and the mentee scope, which
+       is the link between an admin's pairing and what the mentor sees. Both are
+       measured rather than eyeballed. */
+    window.useAuth = function () { return { isSignedIn: true, openSignIn: function () {} }; };
+    var MTS_MINE = [
+      { studentId: 'K1', kind: 'member', fullName: 'Adaeze Okonkwo', track: 'Robotics', photoUrl: '',
+        starredToday: 3, note: 'Led the group', byMe: true, v3: { verbal: 5, vocal: 4, visual: 4, note: '' } },
+      { studentId: 'K2', kind: 'member', fullName: 'Bolanle Adeyemi', track: 'Design', photoUrl: '',
+        starredToday: 0, note: '', byMe: false, v3: null },
+    ];
+    var MTS_ALL = MTS_MINE.concat([
+      { studentId: 'K3', kind: 'member', fullName: 'Chidera Nwosu', track: 'Robotics', photoUrl: '',
+        starredToday: 0, note: '', byMe: false, v3: null },
+      { studentId: 'K4', kind: 'member', fullName: 'Damilola Bakare', track: 'Coding', photoUrl: '',
+        starredToday: 0, note: '', byMe: false, v3: null },
+    ]);
+    /* 1, 3 and 5 out of 5 → 20%, 60% and 100% of the track. Chosen so that a
+       bar drawn against the wrong denominator, or overflowing its track, is
+       arithmetic rather than an opinion. */
+    var MTS_WK = ['2026-W27','2026-W28','2026-W29','2026-W30','2026-W31','2026-W32','2026-W33','2026-W34'];
+    var MTS_RATED = { '2026-W30': [1, 3, 5], '2026-W32': [3, 3, 3], '2026-W34': [5, 4, 4] };
+    var MTS_V3 = MTS_WK.map(function (p) {
+      var r = MTS_RATED[p];
+      return r ? { period: p, rated: true, verbal: r[0], vocal: r[1], visual: r[2], note: '' }
+               : { period: p, rated: false, verbal: 0, vocal: 0, visual: 0, note: '' };
+    });
+    window.__mtrSaves = [];
+    var MTS_CHILD = {
+      subject: { subjectId: 'K1', kind: 'member', fullName: 'Adaeze Okonkwo', centre: 'Egbeda', track: 'Robotics', photoUrl: '', status: 'active' },
+      mentor: { mentorId: 'MEN-1', name: 'Nkechi Mentor', isMine: true },
+      stars: { total: 24, recent: [{ date: '2026-08-18', stars: 3, category: 'discipline', note: 'Led the group', givenById: 'M1' }] },
+      v3: MTS_V3,
+      attendance: { total: 41, last90: 22, lastSeen: '2026-08-15' },
+      meetings: [
+        { id: 2, metOn: '2026-08-11', kind: 'guardian', discussed: 'Guardian says she has not been sleeping.',
+          agreed: 'Check in every Monday.', concern: true, mentorId: 'M1', mentorName: 'Nkechi Mentor', mine: true, createdAt: '' },
+        { id: 1, metOn: '2026-07-28', kind: 'one-to-one', discussed: 'Wants to lead the demo.',
+          agreed: 'She opens it.', concern: false, mentorId: 'M9', mentorName: 'Segun Mentor', mine: false, createdAt: '' },
+      ],
+      goals: [
+        { id: 1, goal: 'Open the robotics demo.', dueOn: '2026-09-12', status: 'open', closedOn: '', setById: 'M1', setByName: 'Nkechi Mentor', overdue: false, createdAt: '' },
+        { id: 2, goal: 'Read one book a fortnight.', dueOn: '2026-08-01', status: 'open', closedOn: '', setById: 'M1', setByName: 'Nkechi Mentor', overdue: true, createdAt: '' },
+        { id: 3, goal: 'Join the Tuesday coding club.', dueOn: '2026-06-30', status: 'done', closedOn: '2026-06-24', setById: 'M1', setByName: 'Nkechi Mentor', overdue: false, createdAt: '' },
+      ],
+      kinds: ['one-to-one', 'group', 'call', 'guardian', 'check-in'],
+      canWrite: true, role: 'mentor', rank: 'mentor', sessionId: 'S-2026',
+    };
+    window.NGGApi.member = window.NGGApi.member || {};
+    window.NGGApi.member.mentorRoster = function (centre, scope) {
+      var mine = (scope || 'mine') === 'mine';
+      window.__mtrScope = scope;
+      return Promise.resolve({
+        today: '2026-08-18', period: '2026-W34', categories: ['discipline'], presets: [],
+        role: 'mentor', rank: 'mentor', centre: 'Egbeda', centres: ['Egbeda'], needsCentre: false,
+        scope: mine ? 'mine' : 'centre', mineCount: 2,
+        mentor: { name: 'Nkechi Mentor', centre: 'Egbeda', department: '', programmes: ['ngg'] },
+        students: mine ? MTS_MINE : MTS_ALL,
+      });
+    };
+    window.NGGApi.member.mentorChild = function (id) { window.__mtrChild = id; return Promise.resolve(MTS_CHILD); };
+    window.NGGApi.member.mentorMeeting = function (subjectId, m) { window.__mtrSaves.push({ subjectId: subjectId, m: m }); return Promise.resolve({ id: 3 }); };
+    window.NGGApi.member.mentorMeetingDelete = function () { return Promise.resolve({}); };
+    window.NGGApi.member.mentorGoal = function (subjectId, g) { window.__mtrSaves.push({ subjectId: subjectId, g: g }); return Promise.resolve({ id: 4 }); };
+    window.NGGApi.member.mentorGoalStatus = function (subjectId, id, status) { window.__mtrSaves.push({ status: status, id: id }); return Promise.resolve({}); };
+    window.NGGApi.member.mentorAttention = function () {
+      return Promise.resolve({
+        concerns: [{ id: 2, subjectId: 'K1', subjectType: 'member', metOn: '2026-08-11', kind: 'guardian',
+                     discussed: 'Guardian says she has not been sleeping.', agreed: 'Check in every Monday.',
+                     mentorName: 'Nkechi Mentor', centre: 'Egbeda', fullName: 'Adaeze Okonkwo' }],
+        overdue: [{ id: 2, subjectId: 'K1', goal: 'Read one book a fortnight.', dueOn: '2026-08-01',
+                    setByName: 'Nkechi Mentor', centre: 'Egbeda', fullName: 'Adaeze Okonkwo' }],
+        centres: ['Egbeda'], centre: '', rank: 'lead',
+      });
+    };
+    /* lead=1 makes the same fixture answer as a lead mentor, which is what
+       decides whether the centre-wide queue exists at all. (No backticks in
+       here: this whole block lives inside a template literal.) */
+    if (new URLSearchParams(location.search).get('lead') === '1') {
+      var plain = window.NGGApi.member.mentorRoster;
+      window.NGGApi.member.mentorRoster = function (centre, scope) {
+        return plain(centre, scope).then(function (r) { r.rank = 'lead'; return r; });
+      };
+    }
+    props = {};
   } else if (b === 'arcade') {
     /* The Arcade grades on the server, so the interesting client behaviour is
        what it SENDS: the answers must line up with the questions they were
@@ -4419,6 +4506,259 @@ function unzipDocumentXml(buf) {
     ok('…and every piece of it clears 4.5:1 there (worst: '
        + (mlWorst ? mlWorst.ratio.toFixed(2) + ' on .' + String(mlWorst.cls).split(' ')[0] : 'n/a') + ')',
        mlContrast.every(c => c.ratio >= 4.5));
+
+
+    /* ── The Mentor Portal ─────────────────────────────────────────────────
+     * Two things here can look right on screen and be wrong underneath. The
+     * mentee SCOPE is the link between an admin's pairing and what a mentor
+     * actually sees — it was missing entirely, and a switch that renders but
+     * asks the server for the wrong thing looks identical. And the V3 trend's
+     * bar heights ARE the data: a bar drawn against the wrong denominator, or
+     * spilling out of its track, is a chart that lies quietly. Both measured. */
+    const mt = await browser.newPage();
+    const mtErrs = [];
+    mt.on('pageerror', e => mtErrs.push(String(e.message)));
+    await mt.goto(BASE + '/tests/_boards_fixture.html?board=mentor&mode=ok&css=1', { waitUntil: 'networkidle' });
+    await mt.waitForSelector('[aria-label="Which children to show"]', { timeout: 15000 });
+    ok('the mentor portal mounts with no script error', mtErrs.length === 0);
+    if (mtErrs.length) console.error('       ', mtErrs.slice(0, 3).join(' | '));
+
+    /* The scope switch only exists for someone who HAS mentees — a mentor with
+       none must never be shown a control with one empty side. */
+    ok('a mentor with mentees gets the my-mentees switch, showing how many',
+       /My mentees \(2\)/.test(await mt.evaluate(() => document.querySelector('[aria-label="Which children to show"]').innerText)));
+    ok('…and it opens on their mentees, not on the whole centre',
+       await mt.evaluate(() => document.querySelectorAll('button[aria-label^="Open the record for"]').length) === 2);
+    ok('…with the pressed state on the side actually being shown',
+       await mt.evaluate(() => {
+         const b = Array.from(document.querySelectorAll('[aria-label="Which children to show"] button'));
+         return b[0].getAttribute('aria-pressed') === 'true' && b[1].getAttribute('aria-pressed') === 'false';
+       }));
+
+    await mt.evaluate(() => document.querySelectorAll('[aria-label="Which children to show"] button')[1].click());
+    await mt.waitForFunction(() => document.querySelectorAll('button[aria-label^="Open the record for"]').length === 4,
+                             null, { timeout: 8000 }).catch(() => {});
+    ok('switching to the whole centre asks the SERVER for the centre, not just a filter',
+       await mt.evaluate(() => window.__mtrScope) === 'centre'
+       && await mt.evaluate(() => document.querySelectorAll('button[aria-label^="Open the record for"]').length) === 4);
+    await mt.evaluate(() => document.querySelectorAll('[aria-label="Which children to show"] button')[0].click());
+    await mt.waitForFunction(() => document.querySelectorAll('button[aria-label^="Open the record for"]').length === 2,
+                             null, { timeout: 8000 }).catch(() => {});
+
+    /* Open one child's record. */
+    await mt.evaluate(() => document.querySelector('button[aria-label^="Open the record for"]').click());
+    await mt.waitForSelector('[role="dialog"]', { timeout: 8000 });
+    await mt.waitForTimeout(300);
+    ok('a name opens that child\'s record, asked for by id',
+       await mt.evaluate(() => window.__mtrChild) === 'K1');
+
+    /* ── The V3 trend ───────────────────────────────────────────────────── */
+
+    const strip = await mt.evaluate(() => {
+      const cells = Array.from(document.querySelectorAll('[aria-label*=", week "]'));
+      return cells.map(c => {
+        const bar = c.firstElementChild;
+        const cb = c.getBoundingClientRect(), bb = bar ? bar.getBoundingClientRect() : null;
+        return {
+          label: c.getAttribute('aria-label'),
+          cellH: Math.round(cb.height), cellBottom: Math.round(cb.bottom),
+          barH: bb ? Math.round(bb.height) : 0, barBottom: bb ? Math.round(bb.bottom) : 0,
+          hasBar: !!bar,
+        };
+      });
+    });
+    ok('the trend draws three rows of eight weeks (' + strip.length + ' cells)', strip.length === 24);
+    /* An unrated week must carry NO bar. A zero-height bar and an empty track
+       look the same at a glance but mean opposite things — "rated 0" is not a
+       score that exists, and the gaps are the finding. */
+    const unrated = strip.filter(c => /not rated/.test(c.label));
+    ok('an unrated week has no bar at all, so a gap can never read as a zero (' + unrated.length + ' gaps)',
+       unrated.length === 15 && unrated.every(c => !c.hasBar));
+    /* Every cell the same height — the unrated cell carries a dashed border and
+       the rated one does not, which silently made them different sizes. */
+    ok('every week cell is the same height, dashed or not',
+       new Set(strip.map(c => c.cellH)).size === 1);
+    /* The bars ARE the data: 1, 3 and 5 out of 5 must be 20%, 60% and 100% of
+       the track, within a pixel of rounding. */
+    const rated = strip.filter(c => /out of 5/.test(c.label));
+    const wrong = rated.filter(c => {
+      const v = Number((c.label.match(/(\d) out of 5/) || [])[1]);
+      const want = (v / 5) * (c.cellH - 2);      // less the 1px border top and bottom
+      return Math.abs(c.barH - want) > 1.5;
+    });
+    ok('each bar is its value out of five, not out of something else ('
+       + rated.length + ' bars, ' + wrong.length + ' wrong)', rated.length === 9 && wrong.length === 0);
+    /* Bars grow from one baseline and stay inside the track. This is the bug
+       box-sizing caused: the bar hung out of the bottom of its own cell. */
+    ok('no bar spills out of its track',
+       rated.every(c => c.barBottom <= c.cellBottom + 1 && c.barH <= c.cellH));
+
+    /* Identity comes from the row label, never from colour alone — which is why
+       there is one colour here and the height does the work. */
+    ok('each row of the trend is named, so identity never rests on colour',
+       await mt.evaluate(() => {
+         const t = document.querySelector('[role="dialog"]').innerText;
+         return /Verbal/.test(t) && /Vocal/.test(t) && /Visual/.test(t);
+       }));
+    ok('…and the strip has a table equivalent for anyone who cannot read it',
+       await mt.evaluate(() => {
+         const tb = document.querySelector('[role="dialog"] table.sr-only');
+         return !!tb && tb.querySelectorAll('tbody tr').length === 8;
+       }));
+    ok('the trend says how many weeks were actually rated, not just how many are drawn',
+       /3 of 8 weeks rated/.test(await mt.evaluate(() => document.querySelector('[role="dialog"]').innerText)));
+
+    /* ── Conversations ──────────────────────────────────────────────────── */
+
+    ok('a conversation shows what was discussed and what was agreed',
+       await mt.evaluate(() => {
+         const t = document.querySelector('[role="dialog"]').innerText;
+         return /has not been sleeping/.test(t) && /Check in every Monday/.test(t);
+       }));
+    /* A raised concern says so in WORDS. An orange border alone is invisible to
+       a good many readers, on the one screen where that matters most. */
+    ok('a raised concern is stated in words, not only in a colour',
+       /CONCERN RAISED/.test(await mt.evaluate(() => document.querySelector('[role="dialog"]').innerText)));
+    /* Only the author gets Edit and Delete. The fixture has one entry by this
+       mentor and one by another; exactly one pair of controls may exist. */
+    ok('only the author of an entry can edit or delete it',
+       await mt.evaluate(() => {
+         const btns = Array.from(document.querySelectorAll('[role="dialog"] button'));
+         return btns.filter(b => b.textContent.trim() === 'Edit').length === 1
+             && btns.filter(b => b.textContent.trim() === 'Delete').length === 1;
+       }));
+
+    await mt.evaluate(() => {
+      const b = Array.from(document.querySelectorAll('[role="dialog"] button'))
+        .find(x => /Write up a conversation/.test(x.textContent || ''));
+      if (b) b.click();
+    });
+    await mt.waitForSelector('[role="dialog"] textarea', { timeout: 8000 });
+    /* Backdating is the point: a write-up happens after the conversation. But
+       the date control must not offer a day that has not happened. */
+    ok('the date can be backdated but not set into the future',
+       await mt.evaluate(() => {
+         const d = document.querySelector('[role="dialog"] input[type="date"]');
+         return !!d.max && d.max === new Date().toISOString().slice(0, 10);
+       }));
+    await mt.evaluate(() => {
+      const set = (el, v) => {
+        const proto = Object.getPrototypeOf(el);
+        Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      const tas = document.querySelectorAll('[role="dialog"] textarea');
+      set(tas[0], 'She spoke up in the group today.');
+      set(tas[1], 'Ask her to open the next session.');
+      document.querySelector('[role="dialog"] input[type="checkbox"]').click();
+      Array.from(document.querySelectorAll('[role="dialog"] button'))
+        .find(x => /^Save$/.test(x.textContent.trim())).click();
+    });
+    await mt.waitForTimeout(400);
+    const mtSaved = await mt.evaluate(() => window.__mtrSaves);
+    ok('a written-up conversation goes up against the right child, whole',
+       mtSaved.length >= 1 && mtSaved[0].subjectId === 'K1'
+       && mtSaved[0].m.discussed === 'She spoke up in the group today.'
+       && mtSaved[0].m.agreed === 'Ask her to open the next session.');
+    ok('…and the concern flag goes with it', mtSaved[0].m.concern === true);
+
+    /* ── Goals ──────────────────────────────────────────────────────────── */
+
+    await mt.evaluate(() => {
+      const b = Array.from(document.querySelectorAll('[role="dialog"] [role="tab"]')).find(x => /Goals/.test(x.textContent || ''));
+      if (b) b.click();
+    });
+    await mt.waitForTimeout(300);
+    const goalsTxt = await mt.evaluate(() => document.querySelector('[role="dialog"]').innerText);
+    ok('the goals tab counts the OPEN ones, not every goal ever set', /Goals \(2\)/.test(goalsTxt));
+    /* Overdue in words as well as in colour, for the same reason as the
+       concern flag. */
+    ok('a goal past its date says OVERDUE, not just turns orange', /OVERDUE/.test(goalsTxt));
+    ok('a goal that was dropped or done can be reopened rather than retyped',
+       await mt.evaluate(() => Array.from(document.querySelectorAll('[role="dialog"] button'))
+         .some(b => /Reopen/.test(b.textContent || ''))));
+    /* 'Drop' exists so a goal that stopped being the right goal is not cleared
+       by pretending it was achieved. */
+    ok('an open goal can be dropped as well as marked done',
+       await mt.evaluate(() => {
+         const b = Array.from(document.querySelectorAll('[role="dialog"] button'));
+         return b.filter(x => /Done/.test(x.textContent || '')).length === 2
+             && b.filter(x => /Drop/.test(x.textContent || '')).length === 2;
+       }));
+
+    /* A plain mentor has no centre-wide queue — their own concerns are on the
+       records they wrote them on. */
+    ok('a plain mentor is not given the centre-wide queue',
+       await mt.evaluate(() => !Array.from(document.querySelectorAll('[role="tab"]'))
+         .some(t => /Needs attention/.test(t.textContent || ''))));
+    await mt.close();
+
+    /* ── The lead's queue ───────────────────────────────────────────────────
+     * The reason the concern flag exists. A notification is read once and gone;
+     * the standing list of what is outstanding has to live somewhere. It was
+     * unreachable — the tab row rendered only for people who TEACH, so a lead
+     * mentor had no way to reach anything but the roster. */
+    const mtL = await browser.newPage();
+    const mtLErrs = [];
+    mtL.on('pageerror', e => mtLErrs.push(String(e.message)));
+    await mtL.goto(BASE + '/tests/_boards_fixture.html?board=mentor&mode=ok&css=1&lead=1', { waitUntil: 'networkidle' });
+    await mtL.waitForSelector('[role="tab"]', { timeout: 15000 });
+    ok('a lead gets a Needs attention tab, and no script error getting it',
+       mtLErrs.length === 0 && await mtL.evaluate(() => Array.from(document.querySelectorAll('[role="tab"]'))
+         .some(t => /Needs attention/.test(t.textContent || ''))));
+    await mtL.evaluate(() => {
+      const t = Array.from(document.querySelectorAll('[role="tab"]')).find(x => /Needs attention/.test(x.textContent || ''));
+      if (t) t.click();
+    });
+    await mtL.waitForTimeout(500);
+    const queue = await mtL.evaluate(() => document.body.innerText);
+    ok('…listing the concerns raised, with the child named',
+       /concerns raised \(1\)/i.test(queue) && /Adaeze Okonkwo/.test(queue));
+    ok('…and the goals that have gone past their date',
+       /goals past their date \(1\)/i.test(queue) && /OVERDUE/.test(queue));
+    /* Straight from the queue into the record — the point of a queue is that
+       you can act on it, not that you can read it. */
+    await mtL.evaluate(() => {
+      const b = Array.from(document.querySelectorAll('button')).find(x => /Adaeze Okonkwo/.test(x.textContent || ''));
+      if (b) b.click();
+    });
+    await mtL.waitForSelector('[role="dialog"]', { timeout: 8000 }).catch(() => {});
+    ok('…and a name in the queue opens that child\'s record',
+       await mtL.evaluate(() => window.__mtrChild) === 'K1');
+    await mtL.close();
+
+    /* ── The portal on a phone ──────────────────────────────────────────── */
+
+    const mtT = await browser.newContext({ viewport: { width: 360, height: 780 }, hasTouch: true });
+    const mtP = await mtT.newPage();
+    await mtP.goto(BASE + '/tests/_boards_fixture.html?board=mentor&mode=ok&css=1', { waitUntil: 'networkidle' });
+    await mtP.waitForSelector('[aria-label="Which children to show"]', { timeout: 15000 });
+    await mtP.evaluate(() => document.querySelector('button[aria-label^="Open the record for"]').click());
+    await mtP.waitForSelector('[role="dialog"]', { timeout: 8000 });
+    await mtP.waitForTimeout(300);
+    const phone = await mtP.evaluate(() => {
+      const doc = document.documentElement;
+      const cells = Array.from(document.querySelectorAll('[aria-label*=", week "]'));
+      const btns = Array.from(document.querySelectorAll('[role="dialog"] button'))
+        .filter(b => b.getBoundingClientRect().width > 1);
+      return {
+        overflow: doc.scrollWidth - doc.clientWidth,
+        narrowestCell: Math.min(...cells.map(c => c.getBoundingClientRect().width)),
+        smallestBtn: Math.min(...btns.map(b => {
+          const r = b.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height));
+        })),
+      };
+    });
+    ok('the record does not push the page sideways on a 360px phone (' + phone.overflow + 'px over)',
+       phone.overflow <= 0);
+    /* Eight weeks in a 360px column is the tightest this gets. Below about 12px
+       a column stops reading as a bar and starts reading as a tick. */
+    ok('…and a week is still wide enough to read as a bar ('
+       + phone.narrowestCell.toFixed(1) + 'px)', phone.narrowestCell >= 12);
+    ok('…with every control in the record a thumb-sized target (' + phone.smallestBtn + 'px)',
+       phone.smallestBtn >= 40);
+    await mtP.close();
+    await mtT.close();
 
     /* ── The Math Lab on a phone ───────────────────────────────────────────
      * The community composer shipped 24.6px wide on a phone because a flex row
