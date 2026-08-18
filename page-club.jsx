@@ -1530,13 +1530,19 @@ function CmMobileMessage({ post, prev, me, onPatch, onRemove, onOpenThread, onLo
       <div className="cmm-msg-body">
         <CmBodyBlock post={post} onVote={(i) => act.vote(i)}/>
       </div>
-      <CmReactChips post={post} onReact={act.react}/>
-      <div className="cmm-msg-acts">
-        <button className="cmm-msg-act" onClick={() => setPicker(p => !p)} aria-expanded={picker}>React</button>
-        <button className="cmm-msg-act" onClick={() => onOpenThread(post)}>
-          {replies > 0 ? replies + (replies === 1 ? " reply" : " replies") : "Reply"}
-          {post.lastCommentAt && <span className="cmm-msg-act-sub">{cmAgo(post.lastCommentAt)}</span>}
-        </button>
+      {/* Reactions and actions share ONE line. They were two, each with its own
+          vertical air, which on a feed of fifteen messages is fifteen rows of
+          furniture between people and what they came to read. They wrap on a
+          narrow screen rather than being cut off. */}
+      <div className="cmm-msg-foot">
+        <CmReactChips post={post} onReact={act.react}/>
+        <div className="cmm-msg-acts">
+          <button className="cmm-msg-act" onClick={() => setPicker(p => !p)} aria-expanded={picker}>React</button>
+          <button className="cmm-msg-act" onClick={() => onOpenThread(post)}>
+            {replies > 0 ? replies + (replies === 1 ? " reply" : " replies") : "Reply"}
+            {post.lastCommentAt && <span className="cmm-msg-act-sub">{cmAgo(post.lastCommentAt)}</span>}
+          </button>
+        </div>
       </div>
       {picker && (
         <div className="cmm-picker" role="group" aria-label="Pick a reaction">
@@ -1608,11 +1614,30 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
     openJump: () => setJump(true),
   };
 
+  /* The FAB steps aside while you read downward.
+   *
+   * A floating button is by definition on top of the content, and the corner
+   * it floats in is where a card's own action lands — the document card's
+   * Preview button sits exactly under it. Hiding it on the way down and
+   * bringing it back on the way up is the standard answer and the honest one:
+   * somebody scrolling INTO the feed is reading, and somebody scrolling back
+   * up is done reading and may want to write. The threshold keeps a small
+   * jitter from flickering it. */
+  const [fabHidden, setFabHidden] = React.useState(false);
+  const lastY = React.useRef(0);
+  const onBodyScroll = React.useCallback((e) => {
+    const y = e.currentTarget.scrollTop;
+    const dy = y - lastY.current;
+    if (Math.abs(dy) < 12) return;
+    setFabHidden(dy > 0 && y > 80);
+    lastY.current = y;
+  }, []);
+
   const openChannel = (slug) => { setChannel(slug); setTab("channels"); };
 
   return (
     <div className="cmm" data-screen-label="Community">
-      <div className={"cmm-body" + (barHidden ? " no-bar" : "")}>
+      <div className={"cmm-body" + (barHidden ? " no-bar" : "")} onScroll={onBodyScroll}>
         {/* Base layer: whichever tab is selected. */}
         {!channel && tab === "today" && (
           <CmToday auth={auth} counts={counts} onCounts={refreshCounts}
@@ -1638,7 +1663,9 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
           from the Arcade or the Journal, and a button that does nothing where
           it sits teaches people not to trust it. */}
       {!barHidden && !thread && (tab === "today" || tab === "channels") && (
-        <button className="cmm-fab" onClick={() => setComposer(true)} aria-label="Write a post">
+        <button className={"cmm-fab" + (fabHidden ? " is-away" : "")}
+                onClick={() => setComposer(true)} aria-label="Write a post"
+                tabIndex={fabHidden ? -1 : 0}>
           {cmUiIcon("plus", 26)}
         </button>
       )}

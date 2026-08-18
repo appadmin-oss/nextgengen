@@ -896,6 +896,14 @@ article > .photo-zoom img {
   transition: transform 0.6s cubic-bezier(0.2,0.7,0.2,1);
 }
 article:hover { transform: translateY(-3px); }
+/* …but not in the community. A message is not a promo tile, and lifting one on
+   hover is decoration on a surface that is read, not browsed. It also had a
+   real cost: a transform makes an element the containing block for any
+   `position: fixed` descendant, so hovering a message card captured the
+   full-screen document reader inside it. The viewer is portalled out of the
+   tree for that reason as well — belt and braces, because the next global
+   animation somebody adds will not know about this either. */
+.cm-app article:hover, .cmm article:hover { transform: none; }
 
 /* ---- Section reveal on scroll (removed auto-animation — caused
    invisible sections during initial load). Use IntersectionObserver
@@ -2310,10 +2318,12 @@ img { background-color: rgba(12,20,50,0.04); }
   font-family: var(--c-font-mono); font-size: 10.5px; font-weight: 700;
   display: grid; place-items: center; border: 2px solid var(--c-surface); }
 
+/* A search field nobody has typed in yet should not be the loudest thing on
+   the screen. Shorter, softer, and on the paper rather than a card. */
 .cmm-search { display: flex; align-items: center; gap: 10px; width: calc(100% - 2 * var(--c-gutter));
-  margin: 4px var(--c-gutter) 12px; height: 48px; padding: 0 14px;
-  border-radius: var(--c-r-input); border: 1px solid var(--c-border-strong);
-  background: var(--c-card); color: var(--c-faint); font-size: 14.5px;
+  margin: 2px var(--c-gutter) 12px; height: 46px; padding: 0 13px;
+  border-radius: var(--c-r-input); border: 1px solid var(--c-border);
+  background: var(--c-card); color: var(--c-faint); font-size: 14px;
   text-align: left; cursor: pointer; }
 .cmm-search:focus-visible { outline: 2px solid var(--c-blue); outline-offset: 2px; }
 
@@ -2332,7 +2342,7 @@ img { background-color: rgba(12,20,50,0.04); }
   padding: 1px 6px; border-radius: var(--c-r-chip); background: var(--c-neutral-chip-2); color: var(--c-body-soft); }
 .cmm-chip.is-on .cmm-chip-n { background: rgba(255,255,255,.16); color: #fff; }
 
-.cmm-feed { display: flex; flex-direction: column; gap: 12px; padding: 0 var(--c-gutter); }
+.cmm-feed { display: flex; flex-direction: column; gap: 9px; padding: 0 var(--c-gutter); }
 .cmm-list { padding: 0 var(--c-gutter); }
 .cmm-list-h { font-family: var(--c-font-mono); font-size: 10.5px; font-weight: 700;
   letter-spacing: 0.14em; color: var(--c-muted); margin: 18px 0 8px; }
@@ -2405,7 +2415,7 @@ img { background-color: rgba(12,20,50,0.04); }
 /* ── Message ── */
 .cmm-msg { padding: 12px 0 6px; border-bottom: 1px solid var(--c-divider-soft); -webkit-touch-callout: none; }
 .cmm-msg.is-grouped { padding-top: 2px; }
-.cmm-msg-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 6px; }
+.cmm-msg-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 5px; }
 .cmm-msg-av { width: 40px; height: 40px; flex: none; border-radius: var(--c-r-pill); font-size: 15px; }
 .cmm-msg-meta { min-width: 0; }
 .cmm-msg-name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
@@ -2417,15 +2427,28 @@ img { background-color: rgba(12,20,50,0.04); }
 .cmm-tag.is-you { background: var(--c-purple-tint); color: var(--c-purple); }
 .cmm-msg-body { font-size: 15.5px; line-height: 1.55; color: var(--c-body); }
 .cmm-msg.is-grouped .cmm-msg-body { padding-left: 50px; }
-.cmm-msg-acts { display: flex; gap: 8px; margin-top: 8px; }
+/* Actions are TYPE, not buttons.
+   They used to be outlined pills, which put a bordered box inside a bordered
+   box inside a bordered card — three frames deep for two words, thirty
+   rectangles down a feed of fifteen messages, all competing with the thing
+   people came to read. Weight and colour mark them as controls; the 44px
+   comes from padding, so the target is unchanged and only the paint is gone. */
+.cmm-msg-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.cmm-msg-acts { display: flex; align-items: center; gap: 2px; margin-left: -10px; }
+.cmm-msg-foot .cm-chips { margin-top: 0; }
+/* When both are present the actions sit after the reactions, and the negative
+   pull that hangs them off the card edge would close the gap between them. */
+.cmm-msg-foot .cm-chips + .cmm-msg-acts { margin-left: -4px; }
 .cmm-msg-act { display: inline-flex; align-items: center; gap: 6px; min-height: var(--c-tap);
-  padding: 0 14px; border-radius: var(--c-r-btn); border: 1px solid var(--c-border-strong);
-  background: var(--c-card); color: var(--c-ink); font-size: 13px; font-weight: 700; cursor: pointer; }
-.cmm-msg-act:focus-visible { outline: 2px solid var(--c-blue); outline-offset: 2px; }
+  padding: 0 10px; border: 0; border-radius: var(--c-r-sm); background: none;
+  color: var(--c-body-soft); font-size: 13.5px; font-weight: 700; cursor: pointer; }
+.cmm-msg-act:hover { background: var(--c-neutral-chip); color: var(--c-ink); }
+.cmm-msg-act:focus-visible { outline: 2px solid var(--c-blue); outline-offset: -2px; }
 .cmm-msg-act-sub { font-family: var(--c-font-mono); font-size: 10.5px; font-weight: 500; color: var(--c-faint); }
-.cmm-picker { display: flex; gap: 6px; margin-top: 8px; }
+.cmm-picker { display: flex; gap: 4px; margin-top: 6px; }
 .cmm-picker button { width: var(--c-tap); height: var(--c-tap); border-radius: var(--c-r-sm);
-  border: 1px solid var(--c-border-strong); background: var(--c-card); font-size: 19px; cursor: pointer; }
+  border: 0; background: var(--c-neutral-chip); font-size: 19px; cursor: pointer; }
+.cmm-picker button:hover { background: var(--c-neutral-chip-2); }
 
 /* ── Tab bar ── */
 .cmm-tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
@@ -2445,6 +2468,11 @@ img { background-color: rgba(12,20,50,0.04); }
   border: 0; border-radius: var(--c-r-hero); background: var(--c-accent); color: var(--c-ink-deep);
   box-shadow: var(--c-sh-fab); cursor: pointer; }
 .cmm-fab:focus-visible { outline: 2px solid var(--c-ink-deep); outline-offset: 3px; }
+/* Away, not gone: it slides down behind the tab bar and comes straight back on
+   an upward scroll. `visibility` rather than `display` so the transition runs,
+   and pointer-events off so it cannot be tapped while it is on its way out. */
+.cmm-fab { transition: transform .18s ease-out, opacity .18s ease-out; }
+.cmm-fab.is-away { transform: translateY(120%); opacity: 0; pointer-events: none; }
 
 /* ── Sheets & overlays ── */
 .cmm-scrim { position: fixed; inset: 0; z-index: 20; background: var(--c-overlay);
@@ -2541,7 +2569,7 @@ img { background-color: rgba(12,20,50,0.04); }
 .cm-avatar-all { background: var(--c-ink-deep); }
 
 .cm-card { background: var(--c-card); border: 1px solid var(--c-border);
-  border-radius: var(--c-r-card); padding: 15px; }
+  border-radius: var(--c-r-card); padding: 14px 15px 6px; }
 /* The Today feed is the channel's message in a card, not a second component
    with its own ideas about how many actions a message may carry. */
 .cmm-msg.is-card { padding: 15px; border-bottom: 0; }
@@ -2552,8 +2580,11 @@ img { background-color: rgba(12,20,50,0.04); }
 .cm-card-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .cm-card-author { font-family: var(--c-font-display); font-weight: 700; font-size: 14.5px; color: var(--c-ink); }
 .cm-card-sub { font-family: var(--c-font-mono); font-size: 11px; color: var(--c-faint); }
-.cm-card-chan { flex: none; font-family: var(--c-font-mono); font-size: 10.5px; font-weight: 700;
-  padding: 3px 8px; border-radius: var(--c-r-chip); background: var(--c-neutral-chip); color: var(--c-body-soft); }
+/* Where a message came from is a caption, not a badge. Filled, it read as
+   loud as the author's name; the feed is mostly one or two channels and this
+   label is orientation, not news. */
+.cm-card-chan { flex: none; font-family: var(--c-font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .04em; color: var(--c-faint); background: none; padding: 0; }
 .cm-card-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .cm-card-reacts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cm-card-reply { display: inline-flex; align-items: center; gap: 6px; min-height: var(--c-tap);
@@ -2580,20 +2611,27 @@ img { background-color: rgba(12,20,50,0.04); }
 .cm-progress { height: 8px; border-radius: var(--c-r-pill); background: var(--c-neutral-chip); overflow: hidden; }
 .cm-progress > span { display: block; height: 100%; background: var(--c-green); }
 
-/* Reactions */
-.cm-chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.cm-chip-react { display: inline-flex; align-items: center; gap: 5px; min-height: 34px;
-  padding: 0 10px; border-radius: var(--c-r-pill); border: 1px solid var(--c-border-strong);
-  background: var(--c-card); color: var(--c-ink); font-size: 13px; cursor: pointer; }
-.cm-chip-react.mine { background: var(--c-blue-tint); border: 1.5px solid var(--c-blue); color: var(--c-blue); }
+/* Reactions — a tint, not an outline.
+   A reaction summary is a READING, and outlining each count turns a quiet
+   line of feedback into a row of buttons demanding attention. Yours is
+   filled blue, which is the one distinction here worth paint. The reach
+   stays 44px through the row's own padding; only the frame is gone. */
+.cm-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+.cm-chip-react { display: inline-flex; align-items: center; gap: 5px; min-height: 30px;
+  padding: 0 9px; border-radius: var(--c-r-pill); border: 0;
+  background: var(--c-neutral-chip); color: var(--c-body-soft); font-size: 13px; cursor: pointer; }
+.cm-chip-react:hover { background: var(--c-neutral-chip-2); }
+.cm-chip-react.mine { background: var(--c-blue-tint); color: var(--c-blue); font-weight: 700; }
 .cm-chip-react b { font-family: var(--c-font-mono); font-size: 11.5px; font-variant-numeric: tabular-nums; }
-/* 44 square, not 34. It sits in a row of reaction chips that are 34px tall,
-   and matching them visually was the reason it was too small to hit — the
-   chips reach 44 through padding on their own row, and this one had nothing
-   to reach with. Being the odd control that is slightly larger is a much
-   smaller cost than being the one nobody can tap. */
-.cm-react-add { width: var(--c-tap); height: var(--c-tap); border-radius: var(--c-r-pill);
-  border: 1px dashed var(--c-border-strong); background: none; color: var(--c-muted); cursor: pointer; }
+/* Painted at 30 to sit level with the reaction chips, reaching 44 through a
+   pseudo-element. The chips get their reach from the row's own padding; this
+   one sits at the end of the row with nothing to reach into, and matching them
+   visually is what made it too small to hit. The inset is smaller than half
+   the row gap, so neighbouring chips cannot steal each other's taps. */
+.cm-react-add { position: relative; width: 30px; height: 30px; border-radius: var(--c-r-pill);
+  border: 0; background: var(--c-neutral-chip); color: var(--c-muted); cursor: pointer; }
+.cm-react-add::after { content: ""; position: absolute; left: 50%; top: 50%;
+  width: var(--c-tap); height: var(--c-tap); transform: translate(-50%, -50%); }
 .cm-emoji-wrap, .cm-tool-wrap { position: relative; }
 .cm-emoji-pop, .cm-picker { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 5;
   display: flex; gap: 4px; padding: 6px; border-radius: var(--c-r-btn);
@@ -2650,9 +2688,9 @@ img { background-color: rgba(12,20,50,0.04); }
 .cm-doc-ic { font-size: 19px; }
 .cm-doc-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cm-doc-card { display: flex; align-items: center; gap: 12px; margin-top: 10px; min-height: 62px;
-  padding: 11px 14px; border-radius: var(--c-r-card); border: 1px solid var(--c-border);
+  padding: 11px 14px; border-radius: var(--c-r-btn); border: 0;
   background: var(--c-surface); color: var(--c-ink); text-decoration: none; }
-.cm-doc-card:hover { border-color: var(--c-accent); }
+.cm-doc-card:hover { background: var(--c-neutral-chip); }
 .cm-doc-card-ic { font-size: 22px; flex: none; }
 .cm-doc-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .cm-doc-card-name { font-size: 15px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

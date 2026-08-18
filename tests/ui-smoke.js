@@ -4891,10 +4891,17 @@ function unzipDocumentXml(buf) {
            around it is tall. A ::after that widens the hit area still returns
            the element itself, so real extensions are still credited. */
         const owns = (x, y) => { const h = document.elementFromPoint(x, y); return !!h && (h === el || el.contains(h)); };
-        let up = 0, down = 0;
+        /* Probe BOTH axes the same way. This measured height by reach and width
+           by painted box, which reported a control with a 44px pseudo-element
+           hit area as 30px wide — the exact case the "hittable area, not
+           painted box" note above exists to handle. */
+        let up = 0, down = 0, left = 0, right = 0;
         for (let d = 1; d <= 30; d++) { if (owns(cx, cy - d)) up = d; else break; }
         for (let d = 1; d <= 30; d++) { if (owns(cx, cy + d)) down = d; else break; }
-        if (up + down + 1 < 40 || r.width < 40) out.push(String(el.className).split(' ')[0] + ' ' + Math.round(r.width) + 'x' + (up + down + 1));
+        for (let d = 1; d <= 30; d++) { if (owns(cx - d, cy)) left = d; else break; }
+        for (let d = 1; d <= 30; d++) { if (owns(cx + d, cy)) right = d; else break; }
+        const h = up + down + 1, w = left + right + 1;
+        if (h < 40 || w < 40) out.push(String(el.className).split(' ')[0] + ' ' + w + 'x' + h);
       });
       return out;
     });

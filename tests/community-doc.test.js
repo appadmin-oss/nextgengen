@@ -142,16 +142,34 @@ function chk(name, cond) {
       return false;
     }));
     chk('the page count comes from the document itself, not from the caller',
-        /Page 1 of 3/.test(await page.locator('.pdfv-count').innerText()));
-    chk('there is no way back past page 1', await page.locator('.pdfv-pg[disabled]').count() === 1);
+        /1 \/ 3/.test(await page.locator('.pdfv-count').innerText()));
+    chk('there is no way back past page 1', await page.locator('.pdfv-round[disabled]').count() === 1);
+
+    /* FULL SCREEN, and provably so. `position: fixed` is measured against the
+       nearest transformed ancestor, and this viewer opens from inside a message
+       card under a global `article:hover` lift — which was enough to wedge a
+       full-screen reader into a 356px box in the feed. It is portalled to
+       <body> so no ancestor can capture it; this asserts the outcome. */
+    const box = await page.evaluate(() => {
+      const el = document.querySelector('.pdfv-full');
+      const r = el.getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y),
+               vw: innerWidth, vh: innerHeight, parent: el.parentElement.tagName };
+    });
+    chk('the reader fills the screen (' + box.w + 'x' + box.h + ')',
+        box.w === box.vw && box.h === box.vh && box.x === 0 && box.y === 0);
+    chk('…because it is portalled out of the feed, not rendered inside it',
+        box.parent === 'BODY');
+    chk('…and the page underneath cannot scroll behind it',
+        await page.evaluate(() => getComputedStyle(document.body).overflow === 'hidden'));
 
     /* Compare the PIXELS, not the length of their encoding. Two pages of the
        same document differ by a single glyph here, and their PNGs can compress
        to byte-identical lengths — an assertion that passed or failed on the
        compressor's mood rather than on whether the page turned. */
     const firstPixels = await page.evaluate(() => document.querySelector('.pdfv-canvas').toDataURL());
-    await page.locator('.pdfv-pg').last().click();
-    await page.waitForFunction(() => /Page 2 of 3/.test(document.querySelector('.pdfv-count').textContent));
+    await page.locator('.pdfv-round').last().click();
+    await page.waitForFunction(() => /2 \/ 3/.test(document.querySelector('.pdfv-count').textContent));
     // The canvas is redrawn asynchronously after the page number updates.
     await page.waitForFunction((was) => {
       const c = document.querySelector('.pdfv-canvas');
@@ -161,12 +179,12 @@ function chk(name, cond) {
       document.querySelector('.pdfv-canvas').toDataURL() !== was, firstPixels));
 
     chk('the real document is always one tap away',
-        await page.locator('.pdfv-bar a[href$=".pdf"]').count() >= 1);
+        await page.locator('.pdfv-bar a[download]').count() === 1);
 
     /* Zoom must RE-RENDER, not stretch. A bigger canvas is the observable
        difference between real zoom and a scaled picture. */
     const beforeZoom = await page.evaluate(() => document.querySelector('.pdfv-canvas').width);
-    await page.locator('.pdfv-btn[aria-label="Zoom in"]').click();
+    await page.locator('.pdfv-round[aria-label="Zoom in"]').click();
     await page.waitForFunction((w) => document.querySelector('.pdfv-canvas').width > w, beforeZoom);
     chk('zooming re-renders at a higher resolution rather than scaling pixels',
         await page.evaluate((w) => document.querySelector('.pdfv-canvas').width > w, beforeZoom)
@@ -174,15 +192,25 @@ function chk(name, cond) {
 
     // Arrow keys page it — the only route for a keyboard user, and expected of
     // anything that shows a page number.
-    await page.locator('.pdfv').press('ArrowRight');
-    await page.waitForFunction(() => /Page 3 of 3/.test(document.querySelector('.pdfv-count').textContent));
-    chk('arrow keys turn the page', /Page 3 of 3/.test(await page.locator('.pdfv-count').innerText()));
-    chk('…and stop at the last page', await page.locator('.pdfv-pg[disabled]').count() === 1);
+    await page.locator('.pdfv-full').press('ArrowRight');
+    await page.waitForFunction(() => /3 \/ 3/.test(document.querySelector('.pdfv-count').textContent));
+    chk('arrow keys turn the page', /3 \/ 3/.test(await page.locator('.pdfv-count').innerText()));
+    chk('…and stop at the last page', await page.locator('.pdfv-round[disabled]').count() === 1);
 
     const small = await page.evaluate(() =>
-      [...document.querySelectorAll('.pdfv-btn, .pdfv-pg')]
+      [...document.querySelectorAll('.pdfv-round, .pdfv-x, .pdfv-act')]
         .filter(el => el.getBoundingClientRect().height < 44).length);
     chk('every viewer control is at least 44px tall', small === 0);
+
+    /* Escape closes it and hands the page back — including its scroll, which
+       the reader locked on the way in. A modal that leaves the body locked
+       behind it is a page nobody can scroll and nothing on screen to explain
+       why. */
+    await page.locator('.pdfv-full').press('Escape');
+    await page.waitForSelector('.pdfv-full', { state: 'detached', timeout: 5000 });
+    chk('Escape closes the reader and unlocks the page',
+        await page.evaluate(() => getComputedStyle(document.body).overflow !== 'hidden'));
+    chk('…and the document is offered again, closed', await page.locator('.pdfv-open').count() === 1);
 
     /* A document that cannot be opened must SAY WHICH failure it was. "Could
        not open" covers a missing file, a password and a corrupt file, and a
@@ -196,10 +224,13 @@ function chk(name, cond) {
       return new Promise(r => setTimeout(() => r(true), 50));
     });
     await page.locator('#missing-host .pdfv-open').click();
-    await page.waitForSelector('#missing-host .pdfv-fallback', { timeout: 30000 });
+    /* Not scoped to the host: the reader is portalled to <body>, so its failure
+       state is there too. Scoping to where the component was WRITTEN rather
+       than where it renders is exactly the assumption the portal breaks. */
+    await page.waitForSelector('.pdfv-fallback', { timeout: 30000 });
     chk('a document that is not there says so, and still offers the link',
-        /could not be found/i.test(await page.locator('#missing-host .pdfv-fallback p').innerText())
-        && await page.locator('#missing-host .pdfv-fallback a').count() === 1);
+        /could not be found/i.test(await page.locator('.pdfv-fallback p').innerText())
+        && await page.locator('.pdfv-fallback a').count() === 1);
 
     chk('no page errors', errors.length === 0);
     if (errors.length) errors.forEach(e => console.log('    ' + e));

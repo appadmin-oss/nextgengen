@@ -5773,14 +5773,16 @@ body.own-chrome .fab-top { display: none; }
    Closed by default (a card), opening into a page-image reader. Sizes follow
    the community's touch rules: every control is at least 44px, the open-card
    row is 62px, and nothing here relies on hover to be discoverable. */
-.pdfv { border: 1px solid var(--line-200, #e7e2d4); border-radius: 18px; overflow: hidden; background: #fff; }
+.pdfv { border: 0; background: none; }
 
-/* Closed: the document offered, not yet fetched. */
-.pdfv-closed { border: 0; border-radius: 0; }
+/* Closed: the document offered, not yet fetched. Borderless — it sits INSIDE
+   a message card, and a bordered box in a bordered box is the frame-in-frame
+   the rest of this sheet spent its time removing. */
+.pdfv-closed { border: 0; border-radius: 0; background: none; }
 .pdfv-open { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 62px;
-  padding: 11px 14px; border: 1px solid var(--line-200, #e7e2d4); border-radius: 18px;
-  background: var(--surface, #fbf7ed); text-align: left; cursor: pointer; }
-.pdfv-open:hover { border-color: var(--gold-500, #f5b026); }
+  padding: 11px 14px; border: 0; border-radius: var(--c-r-btn, 14px);
+  background: var(--c-surface, #fbf7ed); text-align: left; cursor: pointer; }
+.pdfv-open:hover { background: var(--c-neutral-chip, #f2eee0); }
 .pdfv-open:focus-visible { outline: 2px solid var(--blue-600, #1f4bc4); outline-offset: 2px; }
 .pdfv-open-ic { flex: 0 0 auto; font-size: 22px; line-height: 1; }
 .pdfv-open-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -5789,59 +5791,70 @@ body.own-chrome .fab-top { display: none; }
 .pdfv-open-meta { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px;
   letter-spacing: .04em; color: var(--ink-500, #5f6785); }
 .pdfv-open-cta { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 36px;
-  padding: 0 14px; border-radius: 999px; background: var(--ink-deep, #0c1432);
+  padding: 0 14px; border-radius: var(--c-r-pill, 999px); background: var(--c-ink-deep, #0c1432);
   color: #fff; font-size: 12.5px; font-weight: 700; }
 
-/* Open: toolbar, page, pager. */
-.pdfv-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; flex-wrap: wrap;
-  background: var(--surface, #fbf7ed); border-bottom: 1px solid var(--line-200, #e7e2d4); }
-.pdfv-ic { font-size: 16px; }
-.pdfv-name { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 13.5px; font-weight: 700; color: var(--ink-900, #0a1130); }
-.pdfv-btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
-  padding: 6px 12px; border-radius: 14px;
-  border: 1px solid var(--line-300, #ded8c6); background: #fff; font-size: 12.5px; font-weight: 700;
-  color: var(--ink-900, #0a1130); text-decoration: none; cursor: pointer; }
-.pdfv-btn:hover { border-color: var(--gold-500, #f5b026); }
-.pdfv-btn:focus-visible { outline: 2px solid var(--blue-600, #1f4bc4); outline-offset: 2px; }
-.pdfv-btn:disabled { opacity: .38; cursor: default; }
-.pdfv-btn-sq { min-width: 44px; padding: 6px 8px; font-size: 17px; line-height: 1; }
-.pdfv-zoom { display: inline-flex; align-items: center; gap: 4px; }
-.pdfv-zoomv { min-width: 46px; text-align: center;
-  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; font-weight: 600;
-  color: var(--ink-700, #46506a); font-variant-numeric: tabular-nums; }
+/* ── Open: the full-screen reader ────────────────────────────────────────
+   Above everything including the tab bar. A document is read, not glanced at,
+   and a page rendered into a short well between two other people's messages
+   is neither. */
+.pdfv-full { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column;
+  background: var(--c-ink-deep, #0c1432); color: #fff; }
+.pdfv-full:focus { outline: none; }
 
-/* The page itself. Scrolls in both directions, because a zoomed page is wider
-   than the phone holding it and clipping it would hide the text. */
-.pdfv-page { background: #f4f5f8; padding: 10px; max-height: min(72vh, 720px);
-  overflow: auto; -webkit-overflow-scrolling: touch; display: flex; justify-content: center; }
-.pdfv-canvas { display: block; max-width: none; border-radius: 4px; background: #fff;
-  box-shadow: 0 2px 10px -4px rgba(12,20,50,.35); }
-.pdfv-pageerr { padding: 26px 16px; text-align: center; font-size: 13.5px; color: var(--ink-500, #5f6785); }
+.pdfv-bar { flex: none; display: flex; align-items: center; gap: 4px;
+  padding: max(6px, env(safe-area-inset-top)) 6px 6px;
+  border-bottom: 1px solid rgba(255,255,255,.09); }
+.pdfv-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--c-font-display, Sora, sans-serif); font-size: 15px; font-weight: 700;
+  color: #fff; padding: 0 4px; }
+.pdfv-x, .pdfv-act { width: var(--c-tap, 44px); height: var(--c-tap, 44px); flex: none;
+  display: grid; place-items: center; border: 0; border-radius: var(--c-r-sm, 12px);
+  background: none; color: rgba(255,255,255,.86); cursor: pointer; }
+.pdfv-x:hover, .pdfv-act:hover { background: rgba(255,255,255,.1); color: #fff; }
+.pdfv-x:focus-visible, .pdfv-act:focus-visible { outline: 2px solid var(--c-accent, #f5b026); outline-offset: -3px; }
+
+/* The page. Scrolls both ways, because a zoomed page is wider than the phone
+   holding it and clipping it would hide the text. */
+.pdfv-page { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch;
+  display: flex; justify-content: center; align-items: flex-start;
+  padding: 14px 10px; background: #11182f; }
+.pdfv-canvas { display: block; max-width: none; border-radius: 3px; background: #fff;
+  box-shadow: 0 10px 30px -12px rgba(0,0,0,.6); }
+.pdfv-pageerr { padding: 40px 20px; text-align: center; font-size: 14px; color: rgba(255,255,255,.7); }
+
+.pdfv-foot { flex: none; display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(255,255,255,.09); }
+.pdfv-zoom, .pdfv-pager { display: inline-flex; align-items: center; gap: 6px; }
+.pdfv-round { width: var(--c-tap, 44px); height: var(--c-tap, 44px); display: inline-flex;
+  align-items: center; justify-content: center; border: 0; border-radius: var(--c-r-pill, 999px);
+  background: rgba(255,255,255,.09); color: #fff; font-size: 19px; line-height: 1; cursor: pointer; }
+.pdfv-round:disabled { opacity: .3; cursor: default; }
+.pdfv-round:focus-visible { outline: 2px solid var(--c-accent, #f5b026); outline-offset: 2px; }
+.pdfv-zoomv, .pdfv-count { min-width: 48px; text-align: center;
+  font-family: var(--c-font-mono, monospace); font-size: 12px; font-weight: 600;
+  color: rgba(255,255,255,.8); font-variant-numeric: tabular-nums; }
 
 /* Waiting for half a megabyte of library on a slow connection. A page-shaped
-   skeleton says what is coming; a spinner says only that something is wrong. */
-.pdfv-skel { width: 100%; max-width: 420px; min-height: 220px; padding: 20px 18px;
-  background: #fff; border-radius: 4px; box-shadow: 0 2px 10px -4px rgba(12,20,50,.35);
-  display: flex; flex-direction: column; gap: 12px; }
+   skeleton says what is coming; a spinner says only that something is busy. */
+.pdfv-skel { width: 100%; max-width: 420px; min-height: 240px; padding: 22px 20px;
+  background: #fff; border-radius: 3px; display: flex; flex-direction: column; gap: 13px; }
 .pdfv-skel-line { height: 11px; border-radius: 3px;
-  background: linear-gradient(90deg, #eceadf 25%, #f5f3ea 50%, #eceadf 75%);
+  background: linear-gradient(90deg, #eceadf 25%, #f7f5ee 50%, #eceadf 75%);
   background-size: 200% 100%; animation: pdfvShimmer 1.4s linear infinite; }
 @keyframes pdfvShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .pdfv-skel-line { animation: none; } }
 
-.pdfv-pager { display: flex; align-items: center; justify-content: center; gap: 14px;
-  padding: 8px 10px; border-top: 1px solid var(--line-200, #e7e2d4); background: var(--surface, #fbf7ed); }
-.pdfv-pg { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 999px; border: 1px solid var(--line-300, #ded8c6); background: #fff;
-  font-size: 20px; line-height: 1; color: var(--ink-900, #0a1130); cursor: pointer; }
-.pdfv-pg:disabled { opacity: .38; cursor: default; }
-.pdfv-pg:focus-visible { outline: 2px solid var(--blue-600, #1f4bc4); outline-offset: 2px; }
-.pdfv-count { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px;
-  font-weight: 600; letter-spacing: .06em; color: var(--ink-700, #46506a); font-variant-numeric: tabular-nums; }
+.pdfv-fallback { margin: auto; padding: 30px 20px; text-align: center; max-width: 34ch; }
+.pdfv-fallback p { margin: 0 0 14px; color: rgba(255,255,255,.78); font-size: 14.5px; line-height: 1.55; }
 
-.pdfv-fallback { padding: 26px 16px; text-align: center; }
-.pdfv-fallback p { margin: 0 0 12px; color: var(--ink-700, #46506a); font-size: 14px; }
+@media (min-width: 1024px) {
+  /* A document on a desktop is still the whole task, but a full-bleed page is
+     not how anyone reads one. */
+  .pdfv-page { padding: 24px; }
+  .pdfv-bar, .pdfv-foot { padding-inline: 16px; }
+}
 
 /* ── YouTube embed (click to load) ────────────────────────────────────────
    Reserves the 16:9 box up front so the feed does not jump when the poster

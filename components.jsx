@@ -2601,7 +2601,29 @@ function NggPdf({ src, name, pages, bytes }) {
   const [failure, setFailure] = React.useState("");
   const [width, setWidth] = React.useState(0);
   const hostRef = React.useRef(null);
+  const shellRef = React.useRef(null);
   const label = name || "Document";
+
+  const close = React.useCallback(() => setOpen(false), []);
+
+  /* Full-screen means the page underneath must stop being interactive: lock
+     its scroll, take focus into the viewer, and answer the phone's own Back
+     — on Android that is the button people press to leave, and a viewer that
+     ignores it navigates the whole app away instead of closing a document. */
+  React.useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const t = setTimeout(() => { if (shellRef.current) shellRef.current.focus(); }, 30);
+    history.pushState({ pdfv: 1 }, "");
+    const onPop = () => setOpen(false);
+    window.addEventListener("popstate", onPop);
+    return () => {
+      document.body.style.overflow = prev;
+      clearTimeout(t);
+      window.removeEventListener("popstate", onPop);
+    };
+  }, [open]);
 
   /* Fit the page to the column it is being read in. A PDF is authored at a
      fixed size and a phone is 390px wide, so "scale 1" is the wrong default
@@ -2671,6 +2693,7 @@ function NggPdf({ src, name, pages, bytes }) {
   const onKey = (e) => {
     if (e.key === "ArrowRight" || e.key === "PageDown") { e.preventDefault(); turn(1); }
     else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); turn(-1); }
+    else if (e.key === "Escape") { e.preventDefault(); close(); }
   };
 
   const meta = [
@@ -2695,30 +2718,46 @@ function NggPdf({ src, name, pages, bytes }) {
     );
   }
 
-  return (
-    <div className="pdfv" onKeyDown={onKey} tabIndex={-1}>
-      <div className="pdfv-bar">
-        <span className="pdfv-ic" aria-hidden="true">📄</span>
+  /* FULL SCREEN. A document is a thing you read, not a thing you glance at
+   * inside a feed, and a page rendered into a 300px-tall well between two
+   * other people's messages is neither. Opening one takes the whole screen —
+   * the reader is doing one thing now — and closing gives the feed back
+   * exactly as it was.
+   *
+   * It also removes the worst of the small-screen arithmetic: no competing
+   * with the tab bar for the bottom of the phone, no inner scroll area inside
+   * an outer scroll area, and pinch-zoom that works on the page rather than
+   * on a box containing the page.
+   */
+  /* PORTALLED to <body>, not rendered where it sits.
+   *
+   * `position: fixed` is measured against the nearest ancestor that has a
+   * transform, filter or containment — and this viewer opens from inside a
+   * message card, under a global `article:hover { transform: translateY(-3px) }`.
+   * A hover three levels up was enough to turn a full-screen reader into a
+   * 356x157 box wedged into the feed. Any future animation anywhere above it
+   * would do the same. A full-screen layer must not be able to be captured by
+   * its ancestors, so it does not live among them. */
+  return ReactDOM.createPortal(
+    <div className="pdfv-full" role="dialog" aria-modal="true" aria-label={label}
+         onKeyDown={onKey} tabIndex={-1} ref={shellRef}>
+      <header className="pdfv-bar">
+        <button type="button" className="pdfv-x" onClick={close} aria-label="Close the document">
+          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor"
+                  strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </button>
         <span className="pdfv-name" title={label}>{label}</span>
-        {status === "ready" && (
-          <span className="pdfv-zoom" role="group" aria-label="Zoom">
-            <button type="button" className="pdfv-btn pdfv-btn-sq"
-                    onClick={() => setZoom(z => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}
-                    disabled={zoom <= 0.5} aria-label="Zoom out">−</button>
-            <span className="pdfv-zoomv" aria-live="polite">{Math.round(zoom * 100)}%</span>
-            <button type="button" className="pdfv-btn pdfv-btn-sq"
-                    onClick={() => setZoom(z => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
-                    disabled={zoom >= 3} aria-label="Zoom in">+</button>
-          </span>
-        )}
-        <a className="pdfv-btn" href={src} target="_blank" rel="noopener noreferrer">Open</a>
-        <a className="pdfv-btn" href={src} download={label}>Download</a>
-        <button type="button" className="pdfv-btn" onClick={() => setOpen(false)}
-                aria-label="Close the preview">Close</button>
-      </div>
+        <a className="pdfv-act" href={src} download={label} aria-label="Download this document">
+          <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14" fill="none" stroke="currentColor"
+                  strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </a>
+      </header>
 
-      <div className="pdfv-page" ref={hostRef}
-           style={width ? { minHeight: 0 } : undefined}>
+      <div className="pdfv-page" ref={hostRef}>
         {status === "loading" && (
           /* A skeleton the shape of a page, not a spinner. The wait here is
              the library downloading, which on a slow connection is long
@@ -2744,16 +2783,30 @@ function NggPdf({ src, name, pages, bytes }) {
         )}
       </div>
 
-      {status === "ready" && total > 1 && (
-        <div className="pdfv-pager">
-          <button type="button" className="pdfv-pg" onClick={() => turn(-1)}
-                  disabled={at <= 1} aria-label="Previous page">‹</button>
-          <span className="pdfv-count" aria-live="polite">Page {at} of {total}</span>
-          <button type="button" className="pdfv-pg" onClick={() => turn(1)}
-                  disabled={at >= total} aria-label="Next page">›</button>
-        </div>
+      {status === "ready" && (
+        <footer className="pdfv-foot">
+          <span className="pdfv-zoom" role="group" aria-label="Zoom">
+            <button type="button" className="pdfv-round"
+                    onClick={() => setZoom(z => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}
+                    disabled={zoom <= 0.5} aria-label="Zoom out">−</button>
+            <span className="pdfv-zoomv" aria-live="polite">{Math.round(zoom * 100)}%</span>
+            <button type="button" className="pdfv-round"
+                    onClick={() => setZoom(z => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
+                    disabled={zoom >= 3} aria-label="Zoom in">+</button>
+          </span>
+          {total > 1 && (
+            <span className="pdfv-pager">
+              <button type="button" className="pdfv-round" onClick={() => turn(-1)}
+                      disabled={at <= 1} aria-label="Previous page">‹</button>
+              <span className="pdfv-count" aria-live="polite">{at} / {total}</span>
+              <button type="button" className="pdfv-round" onClick={() => turn(1)}
+                      disabled={at >= total} aria-label="Next page">›</button>
+            </span>
+          )}
+        </footer>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
 
