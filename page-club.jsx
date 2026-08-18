@@ -493,12 +493,34 @@ function cmBody(text) {
   return out;
 }
 function cmInitial(name) { return (String(name || "•").trim()[0] || "•").toUpperCase(); }
-function cmColor(seed) { const p = ["#e4032b", "#f5b026", "#2f9e44", "#b07cff", "#3b5bdb", "#ff5a3c", "#17a2b8"]; let h = 0; for (const c of String(seed || "")) h = (h * 31 + c.charCodeAt(0)) >>> 0; return p[h % p.length]; }
+/* Avatar colour is STABLE and, for two roles, MEANINGFUL.
+ *
+ * A mentor is green and you are purple, everywhere, every time; everybody else
+ * cycles through the remaining four. That is the design bundle's rule and it is
+ * doing real work in a space read by children: "is a mentor in this thread" is
+ * a question the colour answers before any label is read, and a hue that
+ * changes between the feed and the channel answers it wrongly. The hash keeps
+ * the other four stable per person for the same reason — a face you recognise
+ * is worth more than an even spread of colours. */
+const CM_AVATAR_CYCLE = ["#17a2b8", "#f5b026", "#b07cff", "#3b5bdb"];
+function cmColor(seed, role) {
+  if (role === "mentor") return "#2f9e44";
+  if (role === "you") return "#b07cff";
+  let h = 0;
+  for (const c of String(seed || "")) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return CM_AVATAR_CYCLE[h % CM_AVATAR_CYCLE.length];
+}
+/** The role an author's colour should carry, from a shaped post's author. */
+function cmRoleOf(post) {
+  if (!post || !post.author) return "";
+  if (post.author.isMe) return "you";
+  return post.canStar ? "mentor" : "";
+}
 // A member's avatar — their profile photo when we have one, else a colour + initial.
-function cmAvatar(name, seed, photo, extraClass) {
+function cmAvatar(name, seed, photo, extraClass, role) {
   const cls = "cm-avatar" + (extraClass ? " " + extraClass : "");
   if (photo) return <span className={cls + " cm-avatar-photo"} aria-hidden="true"><img src={cmOpt(photo, 96)} alt="" loading="lazy"/></span>;
-  const bg = cmColor(seed);
+  const bg = cmColor(seed, role);
   return <span className={cls} style={{ background: bg, color: inkOn(bg).ink }} aria-hidden="true">{cmInitial(name)}</span>;
 }
 
@@ -823,73 +845,885 @@ function CommunityPublic({ setPage, auth }) {
    topic · a chronological message stream (oldest→newest) grouped by author
    with a hover toolbar · a composer docked at the bottom (Enter to send) ·
    threads in a right-hand pane · mark-as-read on view. */
-function CommunityApp({ setPage, auth }) {
-  const [channels, setChannels] = React.useState([]);
-  const [active, setActive] = React.useState("all");
-  const [sort, setSort] = React.useState("latest");
+/* ══════════════════════════════════════════════════════════════════════════
+   THE COMMUNITY, MOBILE-FIRST
+   ══════════════════════════════════════════════════════════════════════════
+
+   The community was a desktop workspace — sidebar, stream, members rail — and
+   it is read on a phone. Not "also on a phone": the members are teenagers at
+   two Nigerian centres, and the phone IS the product. A three-column layout
+   folded into one column is not a mobile design, it is a desktop design that
+   has run out of room, and it shows in every place where the phone version has
+   a scrollbar the desktop version does not.
+
+   So this is the phone build, to the design bundle's spec, and the workspace
+   above stays as the DESKTOP build — which the bundle also specifies (3A) and
+   which the mentors and admins who run the programme from a laptop still need.
+   One breakpoint decides which mounts, at the bundle's own 1024px.
+
+   Four destinations in the tab bar — Today, Channels, Arcade, Journal — and
+   nothing else. Everything not in the bar is reachable from the avatar (the
+   account surfaces), the bell (notifications) or search. Nothing is
+   browse-only; that rule is what keeps a four-item bar honest instead of
+   hiding a fifth destination nobody can find.
+
+   Two rules run through all of it, and both are testable:
+     · Every tappable row clears 44px, primary CTAs 52px, tab items 56px.
+     · Nothing auto-scrolls. New messages offer a pill; the reader decides.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/* ── Icons ────────────────────────────────────────────────────────────────
+   Stroked, 24px grid, 1.8–2.4px weight, per the bundle. Inline SVG rather
+   than the emoji the old build used in navigation: an emoji renders as a
+   different picture on every phone in the centre, and it cannot take the
+   active colour that tells you which tab you are on. */
+function cmTabIcon(name) {
+  const P = { fill: "none", stroke: "currentColor", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round" };
+  const wrap = (d) => <svg width="23" height="23" viewBox="0 0 24 24" aria-hidden="true">{d}</svg>;
+  if (name === "today")    return wrap(<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" {...P}/>);
+  if (name === "channels") return wrap(<><path d="M4 6h16M4 12h16M4 18h10" {...P}/></>);
+  if (name === "arcade")   return wrap(<><rect x="2.5" y="7" width="19" height="11" rx="4" {...P}/><path d="M7 12.5h3M8.5 11v3M15.5 11.5h.01M17.5 13.5h.01" {...P}/></>);
+  if (name === "journal")  return wrap(<><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z" {...P}/><path d="M5 17a3 3 0 0 1 3-3h11" {...P}/></>);
+  return null;
+}
+function cmUiIcon(name, size) {
+  const P = { fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" };
+  const s = size || 20;
+  const wrap = (d) => <svg width={s} height={s} viewBox="0 0 24 24" aria-hidden="true">{d}</svg>;
+  if (name === "search") return wrap(<><circle cx="11" cy="11" r="7" {...P}/><path d="m20 20-3.5-3.5" {...P}/></>);
+  if (name === "bell")   return wrap(<path d="M6 10a6 6 0 0 1 12 0v4l2 3H4l2-3z" {...P}/>);
+  if (name === "plus")   return wrap(<path d="M12 5v14M5 12h14" {...P}/>);
+  if (name === "back")   return wrap(<path d="m14 6-6 6 6 6" {...P}/>);
+  if (name === "down")   return wrap(<path d="M12 5v14M6 13l6 6 6-6" {...P}/>);
+  if (name === "chev")   return wrap(<path d="m9 6 6 6-6 6" {...P}/>);
+  return null;
+}
+
+/* ── Small shared pieces ───────────────────────────────────────────────── */
+
+/** A bottom sheet. Scrim closes it; Escape closes it; focus goes inside. */
+function CmSheet({ title, onClose, children, labelledBy }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    // Move focus into the sheet so a keyboard or screen-reader user is not
+    // left behind on the page underneath, still able to tab through it.
+    const t = setTimeout(() => { const el = ref.current; if (el) el.focus(); }, 30);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); clearTimeout(t); document.body.style.overflow = prev; };
+  }, [onClose]);
+  return (
+    <div className="cmm-scrim" onClick={onClose}>
+      <div className="cmm-sheet" role="dialog" aria-modal="true"
+           aria-label={labelledBy ? undefined : title} aria-labelledby={labelledBy}
+           tabIndex={-1} ref={ref} onClick={e => e.stopPropagation()}>
+        <span className="cmm-grab" aria-hidden="true"/>
+        {title && <h2 className="cmm-sheet-h">{title}</h2>}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** A horizontal chip row. Bleeds to the screen edge and never wraps. */
+function CmChips({ items, value, onPick, label }) {
+  return (
+    <div className="cmm-chips" role="tablist" aria-label={label}>
+      {items.map(it => (
+        <button key={it.id} role="tab" aria-selected={value === it.id}
+                className={"cmm-chip" + (value === it.id ? " is-on" : "")}
+                onClick={() => onPick(it.id)}>
+          {it.label}
+          {it.count > 0 && <span className="cmm-chip-n">{it.count}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The empty state. Never an empty list — a list with nothing in it looks
+ *  broken, and the difference matters most on the filter a member chose. */
+function CmEmpty({ icon, title, body, action }) {
+  return (
+    <div className="cmm-empty">
+      <span className="cmm-empty-ic" aria-hidden="true">{icon}</span>
+      <h3 className="cmm-empty-h">{title}</h3>
+      {body && <p className="cmm-empty-p">{body}</p>}
+      {action}
+    </div>
+  );
+}
+
+/** Loading. Card-shaped, because a spinner tells you nothing about what is
+ *  coming and this feed is cards. */
+function CmSkeleton({ rows }) {
+  return (
+    <div className="cmm-skel" aria-live="polite" aria-label="Loading">
+      {Array.from({ length: rows || 3 }).map((_, i) => (
+        <div className="cmm-skel-card" key={i}>
+          <div className="cmm-skel-head">
+            <span className="cmm-skel-av"/>
+            <span className="cmm-skel-lines">
+              <span className="cmm-skel-line" style={{ width: "42%" }}/>
+              <span className="cmm-skel-line" style={{ width: "28%" }}/>
+            </span>
+          </div>
+          <span className="cmm-skel-line" style={{ width: "94%" }}/>
+          <span className="cmm-skel-line" style={{ width: "78%" }}/>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Today ────────────────────────────────────────────────────────────────
+   The daily landing screen: catch up, then act. Header, search, filter chips,
+   feed. The filters are REAL — unread and mentions are server-side queries and
+   the chip counts come from one endpoint that agrees with them, because a chip
+   reading "Unread 4" over a filter that then shows six is the part of the
+   screen a member uses to decide whether to look at all. */
+function CmToday({ auth, counts, onCounts, onOpenAccount, onOpenThread, onCompose, onOpenChannel, offline }) {
+  const [filter, setFilter] = React.useState("all");
+  const [sheetFor, setSheetFor] = React.useState(null);
   const [posts, setPosts] = React.useState(null);
-  const [page, setPage2] = React.useState(0);
-  const [hasMore, setHasMore] = React.useState(false);
-  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const mem = auth.member || {};
+
+  const load = React.useCallback((f) => {
+    setPosts(null); setErr("");
+    const channel = f === "saved" ? "bookmarks" : f === "all" ? "all" : f;
+    NGGApi.member.community.feed(channel, "latest", 0)
+      .then(r => setPosts(r.posts || []))
+      .catch(() => { setPosts([]); setErr("Couldn't load the feed. Pull down or try again."); });
+  }, []);
+  React.useEffect(() => { load(filter); }, [filter, load]);
+
+  const patch = (postId, p) => setPosts(ps => (ps || []).map(x => x.postId === postId ? { ...x, ...p } : x));
+  const remove = (postId) => setPosts(ps => (ps || []).filter(x => x.postId !== postId));
+
+  const greeting = (() => {
+    const h = new Date().getHours();
+    const first = String(mem.fullName || "there").trim().split(/\s+/)[0];
+    return (h < 12 ? "Good morning, " : h < 17 ? "Good afternoon, " : "Good evening, ") + first;
+  })();
+
+  const chips = [
+    { id: "all", label: "All" },
+    { id: "unread", label: "Unread", count: counts.unread },
+    { id: "mentions", label: "Mentions", count: counts.mentions },
+    { id: "saved", label: "Saved", count: 0 },
+  ];
+
+  return (
+    <>
+      <header className="cmm-head">
+        <button className="cmm-av-btn" onClick={onOpenAccount} aria-label="Your account">
+          {cmAvatar(mem.fullName || "You", mem.memberId || "you", mem.photoUrl, "cmm-av", "you")}
+        </button>
+        <div className="cmm-head-txt">
+          <h1 className="cmm-greet">{greeting}</h1>
+          <p className="cmm-sub">{[mem.centre, mem.track].filter(Boolean).join(" · ") || "Member"}</p>
+        </div>
+        <button className="cmm-icon-btn" onClick={() => setFilter("mentions")}
+                aria-label={counts.mentions > 0 ? counts.mentions + " unread mentions" : "Mentions"}>
+          {cmUiIcon("bell", 21)}
+          {counts.mentions > 0 && <span className="cmm-badge">{counts.mentions > 99 ? "99+" : counts.mentions}</span>}
+        </button>
+      </header>
+
+      <button className="cmm-search" onClick={onCompose.openJump}>
+        {cmUiIcon("search", 18)}
+        <span>Search messages, people, entries</span>
+      </button>
+
+      <CmChips items={chips} value={filter} onPick={setFilter} label="Filter the feed"/>
+
+      {/* Offline is a real state, and it is hidden on Saved — saved items are
+          already on this device, so an offline warning there is a lie. */}
+      {offline && filter !== "saved" && (
+        <div className="cmm-offline" role="status">
+          You're offline. This is what was here when you last had signal.
+        </div>
+      )}
+
+      <div className="cmm-feed">
+        {posts === null && <CmSkeleton rows={3}/>}
+        {err && posts && posts.length === 0 && (
+          <CmEmpty icon="⚠" title="That didn't load" body={err}
+                   action={<button className="cmm-cta" onClick={() => load(filter)}>Try again</button>}/>
+        )}
+        {posts && posts.length === 0 && !err && (
+          filter === "saved"
+            ? <CmEmpty icon="🔖" title="Nothing saved yet"
+                       body="Long-press any message and choose Save to your list. It'll wait here for you."/>
+            : filter === "unread"
+              ? <CmEmpty icon="✓" title="You're all caught up" body="Nothing new since you last looked."/>
+              : filter === "mentions"
+                ? <CmEmpty icon="@" title="No mentions" body="When somebody tags you by name, it lands here."/>
+                : <CmEmpty icon="✦" title="Nothing here yet"
+                           body="Be the first to post something to your centre."
+                           action={<button className="cmm-cta" onClick={onCompose.open}>Write a post</button>}/>
+        )}
+        {posts && posts.map(p => (
+          <CmMobileMessage key={p.postId} post={p} me={mem.fullName} card showChannel
+                           onPatch={patch} onRemove={remove} onOpenThread={onOpenThread}
+                           onLongPress={() => setSheetFor(p)}/>
+        ))}
+      </div>
+
+      {sheetFor && (
+        <CmActionsSheetHost post={sheetFor} staff={!!sheetFor.canStar}
+                            onClose={() => setSheetFor(null)}
+                            onPatch={patch} onRemove={remove} onOpenThread={onOpenThread}/>
+      )}
+    </>
+  );
+}
+
+/* ── Channels ─────────────────────────────────────────────────────────────
+   Rows of at least 62px carrying an avatar, the name, a one-line preview and
+   either an unread count or a relative time. Joined channels are separated
+   from discoverable ones, because "which of these am I in" is the question
+   this screen is actually asked. */
+function CmChannels({ channels, onOpen, onCompose }) {
+  const joined = channels.filter(c => !c.discover);
+  const discover = channels.filter(c => c.discover);
+  const Row = (c) => (
+    <button key={c.slug} className="cmm-ch-row" onClick={() => onOpen(c.slug)}>
+      <span className="cmm-ch-av" style={{ background: "var(--c-purple-tint)", color: "var(--c-purple)" }} aria-hidden="true">
+        {c.icon || "#"}
+      </span>
+      <span className="cmm-ch-body">
+        <span className="cmm-ch-name">{c.name}</span>
+        <span className="cmm-ch-prev">{c.lastMessage || c.purpose || "No messages yet"}</span>
+      </span>
+      {c.unread > 0
+        ? <span className="cmm-ch-badge">{c.unread > 99 ? "99+" : c.unread}</span>
+        : <span className="cmm-ch-time">{c.lastAt ? cmAgo(c.lastAt) : ""}</span>}
+    </button>
+  );
+  return (
+    <>
+      <header className="cmm-head cmm-head-plain">
+        <div className="cmm-head-txt">
+          <h1 className="cmm-h1">Channels</h1>
+          <p className="cmm-sub">{joined.length} joined · {discover.length} to discover</p>
+        </div>
+      </header>
+      <div className="cmm-list">
+        {!channels.length && <CmSkeleton rows={4}/>}
+        {joined.length > 0 && <div className="cmm-list-h">YOUR CHANNELS</div>}
+        {joined.map(Row)}
+        {discover.length > 0 && <div className="cmm-list-h">DISCOVER</div>}
+        {discover.map(Row)}
+      </div>
+    </>
+  );
+}
+
+/* ── Account ──────────────────────────────────────────────────────────────
+   Reached by tapping the avatar on Today, NOT a fifth tab. Settings are a
+   monthly task and the tab bar is for daily ones; giving this a permanent
+   quarter of the bar would cost the community a destination that is used
+   every day. */
+function CmAccount({ auth, counts, onClose, onGo, setPage }) {
+  const mem = auth.member || {};
+  const stats = [
+    { n: mem.stars != null ? mem.stars : "—", l: "Stars" },
+    { n: mem.postCount != null ? mem.postCount : "—", l: "Posts" },
+    { n: mem.streak != null ? mem.streak : "—", l: "Streak" },
+  ];
+  const Row = ({ label, sub, badge, onClick, danger }) => (
+    <button className={"cmm-acc-row" + (danger ? " is-danger" : "")} onClick={onClick}>
+      <span className="cmm-acc-label">{label}{sub && <span className="cmm-acc-sub">{sub}</span>}</span>
+      {badge > 0 && <span className="cmm-ch-badge">{badge}</span>}
+      <span className="cmm-acc-chev" aria-hidden="true">{cmUiIcon("chev", 16)}</span>
+    </button>
+  );
+  return (
+    <div className="cmm-screen cmm-account" role="region" aria-label="Your account">
+      <header className="cmm-head cmm-head-back">
+        <button className="cmm-icon-btn" onClick={onClose} aria-label="Back">{cmUiIcon("back", 22)}</button>
+        <h1 className="cmm-h1">You</h1>
+      </header>
+      <div className="cmm-acc-id">
+        {cmAvatar(mem.fullName || "You", mem.memberId || "you", mem.photoUrl, "cmm-av-lg", "you")}
+        <div className="cmm-acc-name">{mem.fullName || "Member"}</div>
+        <div className="cmm-sub">
+          {[mem.centre, mem.track].filter(Boolean).join(" · ") || "Member"}
+          {mem.joinedAt ? " · joined " + pjDate(mem.joinedAt) : ""}
+        </div>
+      </div>
+      <div className="cmm-acc-stats">
+        {stats.map(s => (
+          <div className="cmm-acc-stat" key={s.l}>
+            <div className="cmm-acc-n">{s.n}</div>
+            <div className="cmm-acc-l">{s.l}</div>
+          </div>
+        ))}
+      </div>
+      <div className="cmm-acc-group">
+        <Row label="Saved items" badge={counts.saved} onClick={() => onGo("saved")}/>
+        <Row label="Your posts & replies" onClick={() => onGo("mine")}/>
+        <Row label="Play a friend" onClick={() => onGo("matches")}/>
+        <Row label="Mentors & members" onClick={() => onGo("people")}/>
+      </div>
+      <div className="cmm-acc-group">
+        <Row label="Notifications" onClick={() => setPage("dashboard")}/>
+        <Row label="Switch centre" sub={mem.centre || ""} onClick={() => setPage("dashboard")}/>
+        <Row label="Accessibility & text size" onClick={() => setPage("dashboard")}/>
+        <Row label="Help" onClick={() => setPage("contact")}/>
+      </div>
+      <button className="cmm-signout" onClick={() => auth.signOut && auth.signOut()}>Sign out</button>
+    </div>
+  );
+}
+
+/* ── Message actions sheet ────────────────────────────────────────────────
+   THE core information-hierarchy decision of the redesign. Two actions stay on
+   the card — React, and N replies — and the other seven live here, behind a
+   long-press. A message card carrying nine controls is a card nobody reads;
+   these seven are each used occasionally by someone who already knows they
+   want them, which is exactly what a long-press is for.
+
+   Long-press, not a "…" button: the button would be a tenth control on the
+   card, which is the problem it was meant to solve. */
+function CmActionsSheet({ post, act, staff, onClose, onOpenThread, onJournal }) {
+  const REACTIONS = ["👏", "🔥", "💡", "❤️", "😂"];
+  const Row = ({ label, sub, chip, onClick, danger, top }) => (
+    <button className={"cmm-act-row" + (danger ? " is-danger" : "") + (top ? " has-rule" : "")}
+            onClick={() => { onClick(); onClose(); }}>
+      <span className="cmm-act-label">{label}</span>
+      {sub && <span className="cmm-act-sub">{sub}</span>}
+      {chip && <span className="cmm-act-chip">{chip}</span>}
+    </button>
+  );
+  return (
+    <CmSheet title={null} onClose={onClose} labelledBy="cmm-act-h">
+      <h2 className="sr-only" id="cmm-act-h">Actions for this message</h2>
+      <div className="cmm-act-emoji" role="group" aria-label="React">
+        {REACTIONS.map(e => (
+          <button key={e} className="cmm-act-em" onClick={() => { act.react(e); onClose(); }}
+                  aria-label={"React with " + e}>{e}</button>
+        ))}
+      </div>
+      <Row label="Reply in thread" onClick={() => onOpenThread(post)}/>
+      {staff && <Row label="Give a Genius Star" sub={post.starred ? "Given" : ""} onClick={act.star}/>}
+      <Row label={post.bookmarked ? "Remove from your list" : "Save to your list"} onClick={act.bookmark}/>
+      {staff && onJournal && <Row label="Record in the journal" chip="mentors" onClick={() => onJournal(post)}/>}
+      <Row label="Copy link" onClick={() => {
+        const url = location.origin + "/community?post=" + post.postId;
+        if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => toast.ok("Link copied.")).catch(() => {});
+      }}/>
+      <Row label="Report to a mentor" danger top onClick={() => act.report()}/>
+    </CmSheet>
+  );
+}
+
+/* ── Jump-to sheet ────────────────────────────────────────────────────────
+   The mobile equivalent of the desktop command bar. Opened from the search
+   field, because that is where somebody already goes to look for something —
+   a second entry point for "find" would split the habit. */
+function CmJumpSheet({ channels, onClose, onOpenChannel, onCompose }) {
+  const [q, setQ] = React.useState("");
+  const [scope, setScope] = React.useState("all");
+  const [hits, setHits] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const inputRef = React.useRef(null);
+  React.useEffect(() => { const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 60); return () => clearTimeout(t); }, []);
+  React.useEffect(() => {
+    const s = q.trim();
+    if (s.length < 2) { setHits(null); setBusy(false); return; }
+    setBusy(true);
+    const t = setTimeout(() => {
+      NGGApi.member.community.search(s, "all")
+        .then(r => { setHits(r.posts || []); setBusy(false); })
+        .catch(() => { setHits([]); setBusy(false); });
+    }, 280);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const chanHits = q.trim().length >= 1
+    ? channels.filter(c => c.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 4) : [];
+  // A slash command is an ACTION, not a search term — surfaced as one.
+  const actions = q.startsWith("/")
+    ? [{ id: "homework", label: "/homework", sub: "Set homework for a channel" },
+       { id: "poll", label: "/poll", sub: "Ask the channel a question" }]
+        .filter(a => a.label.startsWith(q.trim()))
+    : [];
+
+  /* Highlight the matched substring. Finding your search term in a wall of
+     grey text is the difference between a result list and a wall of text. */
+  const mark = (text) => {
+    const s = q.trim(); if (!s) return text;
+    const i = String(text).toLowerCase().indexOf(s.toLowerCase());
+    if (i < 0) return text;
+    return <>{text.slice(0, i)}<mark className="cmm-mark">{text.slice(i, i + s.length)}</mark>{text.slice(i + s.length)}</>;
+  };
+
+  return (
+    <CmSheet title="Jump to" onClose={onClose}>
+      <div className="cmm-jump-field">
+        {cmUiIcon("search", 18)}
+        <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)}
+               placeholder="Messages, people, entries — or / for a command"
+               aria-label="Search the community"/>
+      </div>
+      <CmChips label="Narrow the search" value={scope} onPick={setScope}
+               items={[{ id: "all", label: "All" }, { id: "messages", label: "Messages" },
+                       { id: "people", label: "People" }, { id: "journal", label: "Journal" }]}/>
+      <div className="cmm-jump-results">
+        {actions.length > 0 && <div className="cmm-list-h">ACTIONS</div>}
+        {actions.map(a => (
+          <button key={a.id} className="cmm-jump-row" onClick={() => { onClose(); onCompose(a.id); }}>
+            <span className="cmm-jump-mono">{a.label}</span>
+            <span className="cmm-jump-sub">{a.sub}</span>
+          </button>
+        ))}
+        {chanHits.length > 0 && <div className="cmm-list-h">CHANNELS</div>}
+        {chanHits.map(c => (
+          <button key={c.slug} className="cmm-jump-row" onClick={() => { onClose(); onOpenChannel(c.slug); }}>
+            <span className="cmm-jump-name">{mark(c.name)}</span>
+            <span className="cmm-jump-sub">{c.unread > 0 ? c.unread + " unread" : "Channel"}</span>
+          </button>
+        ))}
+        {busy && <div className="cmm-jump-note">Searching…</div>}
+        {hits && hits.length > 0 && <div className="cmm-list-h">MESSAGES</div>}
+        {hits && hits.map(p => (
+          <button key={p.postId} className="cmm-jump-row" onClick={() => { onClose(); onOpenChannel(p.channel.slug); }}>
+            <span className="cmm-jump-name">{mark(String(p.body || "").slice(0, 90))}</span>
+            <span className="cmm-jump-sub">{p.author.name} · {p.channel.name} · {cmAgo(p.createdAt)}</span>
+          </button>
+        ))}
+        {hits && hits.length === 0 && !busy && q.trim().length >= 2 && (
+          <div className="cmm-jump-note">Nothing matched “{q.trim()}”.</div>
+        )}
+      </div>
+    </CmSheet>
+  );
+}
+
+/* ── Channel ──────────────────────────────────────────────────────────────
+   The full channel screen. Everything the desktop channel could do, in one
+   column, with the two rules that matter on a phone held to: nothing
+   auto-scrolls, and every action clears a thumb. */
+function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, counts, onCounts }) {
+  const [posts, setPosts] = React.useState(null);
+  const [members, setMembers] = React.useState(null);
+  const [fresh, setFresh] = React.useState(null);
+  const [unreadMark, setUnreadMark] = React.useState(0);
   const [digest, setDigest] = React.useState(null);
-  const [fresh, setFresh] = React.useState(null);   // newest-first array found by polling
-  const [thread, setThread] = React.useState(null); // open post (thread pane)
-  const [unreadMark, setUnreadMark] = React.useState(0); // #unread frozen at channel entry
-  const [sbOpen, setSbOpen] = React.useState(false);      // mobile sidebar drawer
-  const [query, setQuery] = React.useState("");
-  const [results, setResults] = React.useState(null);     // search results (null = not searching)
-  const [searching, setSearching] = React.useState(false);
-  const [info, setInfo] = React.useState(false);          // channel-details pane
-  const [chMembers, setChMembers] = React.useState(null); // members rail (chat view)
-  const me = (auth.member && auth.member.fullName) || "You";
-  /* The Arcade is a destination in the sidebar, not a channel — it has no
-     feed, no members rail and no composer. Named once here so every
-     "is this a channel?" test below can exclude it, rather than each one
-     growing its own list of exceptions. A live search still wins: typing in
-     the sidebar takes you back to results from wherever you were. */
-  const isArcade = active === "arcade" && results === null;
-  const isMatches = active === "matches" && results === null;
-  /* Same shape as the Arcade: a destination with its own view, no channel feed,
-     no composer, no members rail. Named once so every "is this a channel?"
-     test below excludes it instead of each growing its own exception. */
-  const isJournal = active === "journal" && results === null;
-  // A specific channel = chat layout (compact rows, members rail, oldest→newest);
-  // All activity / Saved / search = a media-forward card feed (newest first).
-  const isChat = active !== "all" && active !== "bookmarks" && active !== "arcade" && active !== "matches" && active !== "journal" && results === null;
-  const postsRef = React.useRef([]);
+  const [dismissedCatchup, setDismissed] = React.useState(false);
+  const [sheetFor, setSheetFor] = React.useState(null);
   const streamRef = React.useRef(null);
-  const searchRef = React.useRef(null);
-  const atBottomRef = React.useRef(true);
+  const atBottom = React.useRef(true);
+  const postsRef = React.useRef([]);
+  const ch = channels.find(c => c.slug === slug) || { name: slug, slug };
+  const mem = auth.member || {};
+  const staff = !!(posts || []).length && (posts || [])[0] && (posts || [])[0].canStar;
+
   React.useEffect(() => { postsRef.current = posts || []; }, [posts]);
 
+  React.useEffect(() => {
+    setPosts(null); setFresh(null); setDismissed(false);
+    setUnreadMark(ch.unread || 0);
+    NGGApi.member.community.feed(slug, "latest", 0)
+      .then(r => setPosts(r.posts || [])).catch(() => setPosts([]));
+    NGGApi.member.community.members(slug)
+      .then(r => setMembers(r.members || [])).catch(() => setMembers([]));
+    const t = setTimeout(() => {
+      NGGApi.member.community.markRead(slug)
+        .then(() => NGGApi.member.community.today().then(onCounts).catch(() => {}))
+        .catch(() => {});
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [slug]); // eslint-disable-line
+
+  /* Polling, and the rule the bundle is emphatic about: NEVER auto-scroll.
+     A message arriving while somebody is reading three screens up should not
+     move the page under their thumb. It offers a pill instead. */
+  React.useEffect(() => {
+    const tick = () => {
+      if (document.hidden) return;
+      NGGApi.member.community.feed(slug, "latest", 0).then(r => {
+        const cur = postsRef.current;
+        const have = new Set(cur.map(x => x.postId));
+        const incoming = r.posts || [];
+        if (!cur.length) { setPosts(incoming); return; }
+        const news = incoming.filter(x => !have.has(x.postId));
+        if (!news.length) return;
+        if (atBottom.current) setPosts(incoming); else setFresh(incoming);
+      }).catch(() => {});
+    };
+    const id = setInterval(tick, 20000);
+    return () => clearInterval(id);
+  }, [slug]);
+
+  const onScroll = (e) => {
+    const el = e.currentTarget;
+    atBottom.current = (el.scrollHeight - el.scrollTop - el.clientHeight) < 120;
+    if (atBottom.current && fresh) { setPosts(fresh); setFresh(null); }
+  };
+  const jumpToNew = () => {
+    if (fresh) { setPosts(fresh); setFresh(null); }
+    const el = streamRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
+
+  const patch = (postId, p) => setPosts(ps => (ps || []).map(x => x.postId === postId ? { ...x, ...p } : x));
+  const remove = (postId) => setPosts(ps => (ps || []).filter(x => x.postId !== postId));
+
+  const chrono = React.useMemo(() => (posts ? [...posts].reverse() : posts), [posts]);
+  const dividerAt = (chrono && unreadMark > 0) ? Math.max(0, chrono.length - unreadMark) : -1;
+  const newCount = fresh ? fresh.filter(x => !(posts || []).some(p => p.postId === x.postId)).length : 0;
+
+  const catchUp = () => {
+    setDigest({ loading: true });
+    NGGApi.member.community.digest(slug)
+      .then(r => setDigest({ text: r.digest, ai: r.ai }))
+      .catch(() => setDigest({ text: "Couldn't summarise right now." }));
+  };
+
+  return (
+    <div className="cmm-screen cmm-channel">
+      <header className="cmm-ch-head">
+        <button className="cmm-icon-btn" onClick={onBack} aria-label="Back to channels">{cmUiIcon("back", 22)}</button>
+        <span className="cmm-ch-av sm" aria-hidden="true">{ch.icon || "#"}</span>
+        <div className="cmm-head-txt">
+          <h1 className="cmm-ch-title">{ch.name}</h1>
+          <p className="cmm-sub">
+            {members === null ? "…" : members.length + (members.length === 1 ? " member" : " members")}
+            {members && members.some(m => m.staff) ? " · " + members.filter(m => m.staff).length + " mentor" : ""}
+          </p>
+        </div>
+      </header>
+
+      {/* Presence: who has actually posted here. No invented "online" dots —
+          a green light that does not mean anything is worse than none. */}
+      {members && members.length > 0 && (
+        <div className="cmm-presence">
+          <span className="cmm-stack" aria-hidden="true">
+            {members.slice(0, 5).map(m => (
+              <span key={m.memberId || m.name} className="cmm-stack-av"
+                    style={{ background: cmColor(m.name, m.staff ? "mentor" : "") }}>{cmInitial(m.name)}</span>
+            ))}
+          </span>
+          {ch.purpose && <span className="cmm-purpose">{ch.purpose}</span>}
+        </div>
+      )}
+
+      {/* Catch me up — only when there IS something to catch up on, and
+          dismissible. A permanent banner is furniture nobody reads. */}
+      {unreadMark > 0 && !dismissedCatchup && !digest && (
+        <div className="cmm-catchup">
+          <div className="cmm-catchup-txt">
+            <b>While you were away</b>
+            <span>{unreadMark} {unreadMark === 1 ? "message" : "messages"}</span>
+          </div>
+          <button className="cmm-catchup-go" onClick={catchUp}>Catch me up</button>
+          <button className="cmm-catchup-x" onClick={() => setDismissed(true)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+      {digest && (
+        <div className="cmm-digest" role="status">
+          {digest.loading ? "Summarising…" : digest.text}
+          {!digest.loading && <button className="cmm-catchup-x" onClick={() => setDigest(null)} aria-label="Dismiss">✕</button>}
+        </div>
+      )}
+
+      <div className="cmm-stream" ref={streamRef} onScroll={onScroll}>
+        {chrono === null && <CmSkeleton rows={4}/>}
+        {chrono && chrono.length === 0 && (
+          <CmEmpty icon="#" title="Nothing here yet"
+                   body={"Be the first to say something in " + ch.name + "."}
+                   action={<button className="cmm-cta" onClick={onCompose.open}>Write a message</button>}/>
+        )}
+        {chrono && chrono.map((p, i) => (
+          <React.Fragment key={p.postId}>
+            {i === dividerAt && (
+              <div className="cmm-newline" role="separator">
+                <span>NEW</span>
+              </div>
+            )}
+            <CmMobileMessage post={p} prev={chrono[i - 1]} me={mem.fullName}
+                             onPatch={patch} onRemove={remove}
+                             onOpenThread={onOpenThread}
+                             onLongPress={() => setSheetFor(p)}/>
+          </React.Fragment>
+        ))}
+      </div>
+
+      {newCount > 0 && (
+        <button className="cmm-newpill" onClick={jumpToNew}>
+          {cmUiIcon("down", 15)} {newCount} new {newCount === 1 ? "message" : "messages"}
+        </button>
+      )}
+
+      {sheetFor && (
+        <CmActionsSheetHost post={sheetFor} staff={staff} onClose={() => setSheetFor(null)}
+                            onPatch={patch} onRemove={remove} onOpenThread={onOpenThread}/>
+      )}
+    </div>
+  );
+}
+
+/** The actions sheet needs a post's action helpers, and useCmActions is a hook
+ *  — so it is called here rather than conditionally inside the channel. */
+function CmActionsSheetHost({ post, staff, onClose, onPatch, onRemove, onOpenThread }) {
+  const act = useCmActions(post, onPatch, onRemove);
+  return <CmActionsSheet post={post} act={act} staff={staff} onClose={onClose} onOpenThread={onOpenThread}/>;
+}
+
+/* ── A message on a phone ─────────────────────────────────────────────────
+   Two actions on the card and seven in the sheet. 40px avatar, name, the
+   mentor/you chips, time and centre, the body, a reaction summary, then React
+   and N replies — both 44px, side by side. */
+function CmMobileMessage({ post, prev, me, onPatch, onRemove, onOpenThread, onLongPress, card, showChannel }) {
+  const act = useCmActions(post, onPatch, onRemove);
+  const [picker, setPicker] = React.useState(false);
+  const timer = React.useRef(null);
+  const moved = React.useRef(false);
+
+  /* Long-press: 480ms, cancelled by movement so a scroll is never mistaken for
+     a press. contextmenu is suppressed on the card because on Android a long
+     press otherwise opens the browser's own menu over ours. */
+  const down = () => { moved.current = false; timer.current = setTimeout(() => { if (!moved.current) onLongPress(); }, 480); };
+  const up = () => { if (timer.current) clearTimeout(timer.current); };
+  const move = () => { moved.current = true; if (timer.current) clearTimeout(timer.current); };
+  React.useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  const grouped = prev && prev.author && post.author && prev.author.name === post.author.name
+    && prev.kind !== "poll" && post.kind !== "poll"
+    && (new Date((post.createdAt || "").replace(" ", "T")) - new Date((prev.createdAt || "").replace(" ", "T"))) < 5 * 60 * 1000;
+  const replies = post.commentCount || 0;
+
+  /* `card` is the Today feed: the same message with a border around it and the
+     channel it came from. NOT a second component — the two-actions-and-a-sheet
+     rule is the redesign's central decision, and a feed with its own message
+     component is how that rule quietly stops applying on one screen. */
+  const head = card || !grouped;
+
+  return (
+    <article className={(card ? "cm-card cmm-msg is-card" : "cmm-msg") + (!card && grouped ? " is-grouped" : "")}
+             onPointerDown={down} onPointerUp={up} onPointerLeave={up} onPointerMove={move}
+             onContextMenu={(e) => { e.preventDefault(); onLongPress(); }}>
+      {head && (
+        <div className="cmm-msg-head">
+          {cmAvatar(post.author.name, post.author.name + post.author.centre, post.author.photo, "cmm-msg-av", cmRoleOf(post))}
+          <div className="cmm-msg-meta">
+            <span className="cmm-msg-name">
+              {post.author.name}
+              {post.canStar && <span className="cmm-tag is-mentor">mentor</span>}
+              {post.author.isMe && <span className="cmm-tag is-you">you</span>}
+            </span>
+            <span className="cmm-msg-time">
+              {cmAgo(post.createdAt)}{post.author.centre ? " · " + post.author.centre : ""}
+            </span>
+          </div>
+          {showChannel && post.channel && (
+            <span className="cm-card-chan">{post.channel.icon || "#"} {post.channel.name}</span>
+          )}
+        </div>
+      )}
+      <div className="cmm-msg-body">
+        <CmBodyBlock post={post} onVote={(i) => act.vote(i)}/>
+      </div>
+      <CmReactChips post={post} onReact={act.react}/>
+      <div className="cmm-msg-acts">
+        <button className="cmm-msg-act" onClick={() => setPicker(p => !p)} aria-expanded={picker}>React</button>
+        <button className="cmm-msg-act" onClick={() => onOpenThread(post)}>
+          {replies > 0 ? replies + (replies === 1 ? " reply" : " replies") : "Reply"}
+          {post.lastCommentAt && <span className="cmm-msg-act-sub">{cmAgo(post.lastCommentAt)}</span>}
+        </button>
+      </div>
+      {picker && (
+        <div className="cmm-picker" role="group" aria-label="Pick a reaction">
+          {["👏", "🔥", "💡", "❤️", "😂"].map(e => (
+            <button key={e} onClick={() => { act.react(e); setPicker(false); }} aria-label={"React with " + e}>{e}</button>
+          ))}
+        </div>
+      )}
+    </article>
+  );
+}
+
+/* ── The shell ────────────────────────────────────────────────────────────
+   Tab bar, FAB, and the stack of things that sit over a screen: a channel, a
+   thread, the account surface, the composer, the jump sheet. Held here rather
+   than inside each screen so Back has one meaning and the tab bar has one
+   place that decides whether it is visible. */
+function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
+  const [tab, setTab] = React.useState("today");
+  const [channel, setChannel] = React.useState(null);   // open channel slug
+  const [thread, setThread] = React.useState(null);     // open post
+  const [account, setAccount] = React.useState(false);
+  const [composer, setComposer] = React.useState(false);
+  const [jump, setJump] = React.useState(false);
+  const [counts, setCounts] = React.useState({ unread: 0, mentions: 0, saved: 0 });
+  const [offline, setOffline] = React.useState(() => typeof navigator !== "undefined" && navigator.onLine === false);
+  const mem = auth.member || {};
+
+  React.useEffect(() => {
+    const on = () => setOffline(false), off = () => setOffline(true);
+    window.addEventListener("online", on); window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
+
+  const refreshCounts = React.useCallback(() => {
+    NGGApi.member.community.today()
+      .then(r => setCounts({ unread: r.unread || 0, mentions: r.mentions || 0, saved: r.saved || 0 }))
+      .catch(() => {});
+  }, []);
+  React.useEffect(() => { refreshCounts(); }, [refreshCounts]);
+
+  /* Back has one meaning: close the top-most thing. Wired to the hardware and
+     gesture Back too, because on Android that is the button people actually
+     press, and a sheet that ignores it navigates the whole app away instead. */
+  const closeTop = React.useCallback(() => {
+    if (jump) { setJump(false); return true; }
+    if (composer) { setComposer(false); return true; }
+    if (account) { setAccount(false); return true; }
+    if (thread) { setThread(null); return true; }
+    if (channel) { setChannel(null); return true; }
+    return false;
+  }, [jump, composer, account, thread, channel]);
+
+  React.useEffect(() => {
+    const depth = (jump ? 1 : 0) + (composer ? 1 : 0) + (account ? 1 : 0) + (thread ? 1 : 0) + (channel ? 1 : 0);
+    if (!depth) return;
+    history.pushState({ cmm: depth }, "");
+    const onPop = () => { closeTop(); };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [jump, composer, account, thread, channel]); // eslint-disable-line
+
+  // The tab bar hides wherever the bundle says it does: in a thread, and over
+  // any full-screen surface. A nav bar under a modal is a nav bar that lies.
+  const barHidden = !!thread || account;
+
+  const compose = {
+    open: () => setComposer(true),
+    openJump: () => setJump(true),
+  };
+
+  const openChannel = (slug) => { setChannel(slug); setTab("channels"); };
+
+  return (
+    <div className="cmm" data-screen-label="Community">
+      <div className={"cmm-body" + (barHidden ? " no-bar" : "")}>
+        {/* Base layer: whichever tab is selected. */}
+        {!channel && tab === "today" && (
+          <CmToday auth={auth} counts={counts} onCounts={refreshCounts}
+                   onOpenAccount={() => setAccount(true)}
+                   onOpenThread={setThread} onCompose={compose}
+                   onOpenChannel={openChannel} offline={offline}/>
+        )}
+        {!channel && tab === "channels" && (
+          <CmChannels channels={channels} onOpen={openChannel} onCompose={compose}/>
+        )}
+        {tab === "arcade" && !channel && <div className="cmm-pad"><CmArcade auth={auth}/></div>}
+        {tab === "journal" && !channel && <div className="cmm-pad"><CmProgramJournal auth={auth}/></div>}
+
+        {/* A channel covers the tab it was opened from. */}
+        {channel && (
+          <CmChannel slug={channel} channels={channels} auth={auth}
+                     onBack={() => setChannel(null)} onOpenThread={setThread}
+                     onCompose={compose} counts={counts} onCounts={refreshCounts}/>
+        )}
+      </div>
+
+      {/* The FAB. Today and Channels only — there is nothing to compose into
+          from the Arcade or the Journal, and a button that does nothing where
+          it sits teaches people not to trust it. */}
+      {!barHidden && !thread && (tab === "today" || tab === "channels") && (
+        <button className="cmm-fab" onClick={() => setComposer(true)} aria-label="Write a post">
+          {cmUiIcon("plus", 26)}
+        </button>
+      )}
+
+      {!barHidden && (
+        <nav className="cmm-tabs" aria-label="Community">
+          {[["today", "Today"], ["channels", "Channels"], ["arcade", "Arcade"], ["journal", "Journal"]].map(([id, label]) => (
+            <button key={id} className={"cmm-tab" + (tab === id && !channel ? " is-on" : "")}
+                    aria-current={tab === id && !channel ? "page" : undefined}
+                    onClick={() => { setChannel(null); setTab(id); }}>
+              {cmTabIcon(id)}
+              <span className="cmm-tab-l">{label}</span>
+              {id === "today" && counts.unread > 0 && <span className="cmm-tab-dot" aria-hidden="true"/>}
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {/* Over-layers, outermost last. */}
+      {thread && (
+        <div className="cmm-over">
+          <CmThread post={thread} me={mem.fullName} channels={channels}
+                    onClose={() => setThread(null)}
+                    onPatch={() => {}} onRemove={() => setThread(null)}/>
+        </div>
+      )}
+      {account && (
+        <div className="cmm-over">
+          <CmAccount auth={auth} counts={counts} setPage={setPage}
+                     onClose={() => setAccount(false)}
+                     onGo={(where) => {
+                       setAccount(false);
+                       if (where === "saved") setTab("today");
+                       if (where === "matches") setTab("arcade");
+                     }}/>
+        </div>
+      )}
+      {composer && (
+        <CmSheet title="New post" onClose={() => setComposer(false)}>
+          <CmComposer channels={channels} active={channel || "commons"} me={mem.fullName}
+                      onPosted={() => { setComposer(false); refreshCounts(); reloadChannels(); }}/>
+        </CmSheet>
+      )}
+      {jump && (
+        <CmJumpSheet channels={channels} onClose={() => setJump(false)}
+                     onOpenChannel={openChannel}
+                     onCompose={() => { setJump(false); setComposer(true); }}/>
+      )}
+    </div>
+  );
+}
+
+function CommunityApp({ setPage, auth }) {
+  /* The community, at every width.
+   *
+   * This used to fork: a three-pane workspace for a laptop and, below a
+   * breakpoint, the same markup with its columns stacked. That is not a
+   * responsive design, it is a desktop design running out of room, and the
+   * phone — which is what the members actually hold — got whatever was left
+   * over. The redesign inverts it. One set of screens, authored for a 390px
+   * phone, which the stylesheet then lays out as the bundle's floating panes
+   * once there is a desktop's worth of room.
+   *
+   * All this component still owns is the channel list, because every screen
+   * below needs it and none of them should each fetch their own copy. */
+  const [channels, setChannels] = React.useState([]);
+
   const reloadChannels = React.useCallback(() => {
-    NGGApi.member.community.channels().then(r => setChannels(r.channels || [])).catch(() => {});
+    NGGApi.member.community.channels()
+      .then(r => setChannels(r.channels || []))
+      .catch(() => {});
   }, []);
   React.useEffect(() => { reloadChannels(); }, [reloadChannels]);
 
-  // ⌘K / Ctrl-K focuses the sidebar search (matching the hint chip).
-  React.useEffect(() => {
-    const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
-        e.preventDefault(); setSbOpen(true);
-        requestAnimationFrame(() => { const el = searchRef.current; if (el) { el.focus(); el.select(); } });
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // Mark the body while the full-height community app is mounted — the global
-  // floats (quick-nav hint, a11y FAB, back-to-top) reposition/hide so they
-  // never overlap the workspace chrome.
+  /* Marks the body while the community is mounted: the site's own floating
+     furniture (quick-nav hint, back-to-top) hides so it never lands on top of
+     the tab bar. */
   React.useEffect(() => {
     document.body.classList.add("cm-app");
     return () => document.body.classList.remove("cm-app");
   }, []);
 
-  // The full-height app pane sits below the sticky site nav, whose height varies
-  // (the brand wraps on narrow screens). Measure it so the composer docks at the
-  // real viewport bottom instead of guessing.
+  /* The app sits below the sticky site nav, whose height changes when the
+     brand wraps. Measured rather than guessed, so the tab bar docks at the
+     real viewport bottom on every phone. */
   React.useEffect(() => {
     const sync = () => {
       const nav = document.querySelector(".topnav");
@@ -898,346 +1732,18 @@ function CommunityApp({ setPage, auth }) {
     };
     sync();
     window.addEventListener("resize", sync);
-    const t = setTimeout(sync, 300); // after fonts/logo settle
-    return () => { window.removeEventListener("resize", sync); clearTimeout(t); document.documentElement.style.removeProperty("--cm-nav"); };
-  }, []);
-
-  const scrollBottom = (smooth) => {
-    const el = streamRef.current; if (!el) return;
-    requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }); });
-  };
-
-  const loadFeed = React.useCallback((ch, so, pg, append) => {
-    const chat = ch !== "all" && ch !== "bookmarks";
-    NGGApi.member.community.feed(ch, so, pg).then(r => {
-      setHasMore(!!r.hasMore);
-      setPosts(prev => append && prev ? prev.concat(r.posts || []) : (r.posts || []));
-      setLoadingMore(false);
-      if (!append && chat) scrollBottom(false); // chat pins to the newest; feed stays at top
-    }).catch(() => { setPosts(p => p || []); setLoadingMore(false); });
-  }, []);
-
-  // Channel members rail (chat view only).
-  React.useEffect(() => {
-    if (active === "all" || active === "bookmarks" || active === "arcade" || active === "matches" || active === "journal") { setChMembers(null); return; }
-    let a = true; setChMembers(null);
-    NGGApi.member.community.members(active).then(r => { if (a) setChMembers(r.members || []); }).catch(() => { if (a) setChMembers([]); });
-    return () => { a = false; };
-  }, [active]);
-
-  // Entering a channel: freeze its unread count (for the "New" divider), load
-  // the feed, then mark it read so the sidebar badge clears.
-  React.useEffect(() => {
-    setPosts(null); setPage2(0); setFresh(null); setThread(null);
-    // The Arcade has no feed. Loading one for it would fetch an empty channel
-    // on every visit and, worse, leave `posts` at [] so a return to All
-    // activity flashed "nothing here yet" before the real feed landed.
-    if (active === "arcade" || active === "matches" || active === "journal") return;
-    const chObj = channels.find(c => c.slug === active);
-    setUnreadMark(chObj ? (chObj.unread || 0) : 0);
-    loadFeed(active, sort, 0, false);
-    if (active !== "all" && active !== "bookmarks") {
-      const t = setTimeout(() => {
-        NGGApi.member.community.markRead(active).then(() => {
-          setChannels(cs => cs.map(c => c.slug === active ? { ...c, unread: 0 } : c));
-        }).catch(() => {});
-      }, 1200);
-      return () => clearTimeout(t);
-    }
-  }, [active, sort, loadFeed]); // eslint-disable-line
-
-  const more = () => {
-    if (loadingMore) return; setLoadingMore(true);
-    const el = streamRef.current; const prevH = el ? el.scrollHeight : 0;
-    const n = page + 1; setPage2(n);
-    NGGApi.member.community.feed(active, sort, n).then(r => {
-      setHasMore(!!r.hasMore);
-      setPosts(prev => (prev || []).concat(r.posts || []));
-      setLoadingMore(false);
-      // keep the reader's position when older messages prepend at the top
-      requestAnimationFrame(() => { if (el) el.scrollTop = el.scrollHeight - prevH + el.scrollTop; });
-    }).catch(() => setLoadingMore(false));
-  };
-
-  // Near-real-time polling. If the reader is at the bottom, splice new messages
-  // straight in (Slack-style); otherwise surface an unobtrusive pill.
-  React.useEffect(() => {
-    if (active === "bookmarks" || active === "arcade" || active === "matches" || active === "journal" || results !== null) return;
-    const tick = () => {
-      if (document.hidden) return;
-      NGGApi.member.community.feed(active, sort, 0).then(r => {
-        const cur = postsRef.current; const have = new Set(cur.map(x => x.postId));
-        const incoming = (r.posts || []);
-        const news = incoming.filter(x => !have.has(x.postId));
-        if (!news.length || !cur.length) return;
-        const chat = active !== "all" && active !== "bookmarks";
-        if (!chat) { setPosts(incoming); } // feed: newest slides in at the top, no scroll
-        else if (atBottomRef.current) { setPosts(incoming); scrollBottom(true); }
-        else setFresh(incoming);
-      }).catch(() => {});
+    const t = setTimeout(sync, 300);      // after fonts and the logo settle
+    return () => {
+      window.removeEventListener("resize", sync);
+      clearTimeout(t);
+      document.documentElement.style.removeProperty("--cm-nav");
     };
-    const id = setInterval(tick, 20000);
-    return () => clearInterval(id);
-  }, [active, sort, results]);
-  const showFresh = () => { if (fresh) { setPosts(fresh); setFresh(null); scrollBottom(true); } };
-
-  const onStreamScroll = (e) => {
-    const el = e.currentTarget;
-    atBottomRef.current = (el.scrollHeight - el.scrollTop - el.clientHeight) < 120;
-    if (atBottomRef.current && fresh) { setPosts(fresh); setFresh(null); }
-  };
-
-  const onPosted = (post) => {
-    if (isChat) { setPosts(p => (p || []).concat(post)); scrollBottom(true); }   // chat: newest at bottom
-    else setPosts(p => [post].concat(p || []));                                   // feed: newest at top
-  };
-  const patchPost = (postId, patch) => {
-    setPosts(p => (p || []).map(x => x.postId === postId ? { ...x, ...patch } : x));
-    setThread(t => t && t.postId === postId ? { ...t, ...patch } : t);
-  };
-  const removePost = (postId) => { setPosts(p => (p || []).filter(x => x.postId !== postId)); setThread(t => t && t.postId === postId ? null : t); };
-
-  const activeChannel = channels.find(c => c.slug === active);
-  const catchMeUp = () => {
-    setDigest({ loading: true });
-    NGGApi.member.community.digest(active).then(r => setDigest({ text: r.digest, ai: r.ai, channel: activeChannel ? activeChannel.name : "the community" }))
-      .catch(() => setDigest({ text: "Couldn't summarise right now.", channel: "" }));
-  };
-
-  // Search (debounced) — shows results in place of the stream.
-  React.useEffect(() => {
-    const q = query.trim();
-    if (q.length < 2) { setResults(null); setSearching(false); return; }
-    setSearching(true);
-    const t = setTimeout(() => {
-      NGGApi.member.community.search(q, active === "bookmarks" ? "all" : active)
-        .then(r => { setResults(r.posts || []); setSearching(false); })
-        .catch(() => { setResults([]); setSearching(false); });
-    }, 300);
-    return () => clearTimeout(t);
-  }, [query, active]);
-
-  const totalUnread = channels.reduce((s, c) => s + (c.unread || 0), 0);
-  const go = (slug) => { setActive(slug); setSbOpen(false); setQuery(""); setResults(null); };
-
-  // Chronological (oldest→newest) render order with author grouping.
-  const chrono = React.useMemo(() => (posts ? [...posts].reverse() : posts), [posts]);
-  const dividerIdx = (!results && chrono && unreadMark > 0) ? Math.max(0, chrono.length - unreadMark) : -1;
-  const headTitle = active === "all" ? "All activity" : active === "bookmarks" ? "Saved items" : active === "arcade" ? "Arcade" : active === "matches" ? "Play a friend" : active === "journal" ? "Programme journal" : (activeChannel ? activeChannel.name : active);
-  const headIcon = active === "all" ? "✦" : active === "bookmarks" ? "🔖" : active === "arcade" ? "🎮" : active === "matches" ? "♟️" : active === "journal" ? "📖" : (activeChannel ? activeChannel.icon : "#");
-
-  // Sidebar mentors: the staff of the channel currently open (no fabricated
-  // presence — we only surface who is actually a mentor here).
-  const sbMentors = (chMembers || []).filter(m => m.staff);
-  const mem = auth.member || {};
-  const meSub = [mem.centre, mem.track].filter(Boolean).join(" · ") || "Member";
+  }, []);
 
   return (
-    <div className="page cm-slack-page" data-screen-label="Community">
-      <div className={"cm-slack" + (sbOpen ? " sb-open" : "") + (thread ? " thread-open" : "")}>
-        {/* ── Sidebar ─────────────────────────────────────────────── */}
-        <aside className="cm-sb">
-          {/* Workspace card + mobile close */}
-          <div className="cm-sb-head">
-            <div className="cm-sb-ws">
-              <div className="cm-sb-ws-txt">
-                <div className="cm-sb-ws-name">The Community</div>
-                <div className="cm-sb-ws-sub">{channels.length} {channels.length === 1 ? "channel" : "channels"} · NGG</div>
-              </div>
-              <span className="cm-sb-ws-switch" aria-hidden="true">{cmNavIcon("switch")}</span>
-            </div>
-            <button className="cm-sb-x" onClick={() => setSbOpen(false)} aria-label="Close">✕</button>
-          </div>
-          <div className="cm-sb-search">
-            <span className="cm-sb-search-ic" aria-hidden="true">{cmNavIcon("search")}</span>
-            <input ref={searchRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search messages" aria-label="Search messages"
-              aria-keyshortcuts="Meta+K Control+K"/>
-            {query
-              ? <button className="cm-sb-search-x" onClick={() => setQuery("")} aria-label="Clear search">✕</button>
-              : <span className="cm-sb-kbd" aria-hidden="true">⌘K</span>}
-          </div>
-          <nav className="cm-sb-nav" aria-label="Community channels">
-            <button className={"cm-sb-item" + (active === "all" ? " is-active" : "")} aria-current={active === "all" ? "page" : undefined} onClick={() => go("all")}
-              aria-label={"All activity" + (totalUnread > 0 ? ", " + totalUnread + " unread" : "")}>
-              <span className="cm-sb-ic" aria-hidden="true">{cmNavIcon("all")}</span><span className="cm-sb-name">All activity</span>
-              {totalUnread > 0 && <span className="cm-sb-badge" aria-hidden="true">{totalUnread}</span>}
-            </button>
-            <button className={"cm-sb-item" + (active === "bookmarks" ? " is-active" : "")} aria-current={active === "bookmarks" ? "page" : undefined} onClick={() => go("bookmarks")}>
-              <span className="cm-sb-ic" aria-hidden="true">{cmNavIcon("saved")}</span><span className="cm-sb-name">Saved items</span>
-            </button>
-            {/* The programme's own record, not a channel — the community holds
-                conversation, which is fast and gone; this holds what was decided,
-                advised, contributed and resolved. */}
-            <button className={"cm-sb-item" + (active === "journal" ? " is-active" : "")} aria-current={active === "journal" ? "page" : undefined} onClick={() => go("journal")}>
-              <span className="cm-sb-ic" aria-hidden="true">📖</span><span className="cm-sb-name">Programme journal</span>
-            </button>
-            <button className={"cm-sb-item" + (active === "arcade" ? " is-active" : "")} aria-current={active === "arcade" ? "page" : undefined} onClick={() => go("arcade")}>
-              <span className="cm-sb-ic" aria-hidden="true">🎮</span><span className="cm-sb-name">Arcade</span>
-            </button>
-            <button className={"cm-sb-item" + (active === "matches" ? " is-active" : "")} aria-current={active === "matches" ? "page" : undefined} onClick={() => go("matches")}>
-              <span className="cm-sb-ic" aria-hidden="true">♟️</span><span className="cm-sb-name">Play a friend</span>
-            </button>
-            <div className="cm-sb-section" role="heading" aria-level={2}>
-              <span>Channels</span>
-              {auth.isAdmin && <button className="cm-sb-add" onClick={() => setPage("admin")} aria-label="Add a channel" title="Add a channel">{cmNavIcon("plus")}</button>}
-            </div>
-            {channels.map(c => (
-              <button key={c.slug} className={"cm-sb-item cm-sb-chan" + (active === c.slug ? " is-active" : "") + (c.unread > 0 ? " has-unread" : "")} onClick={() => go(c.slug)}
-                aria-current={active === c.slug ? "page" : undefined}
-                aria-label={c.name + (c.unread > 0 ? ", " + c.unread + " unread" : "")}>
-                <span className="cm-sb-hash" aria-hidden="true">#</span>
-                <span className="cm-sb-name">{c.name}</span>
-                {c.unread > 0 && <span className="cm-sb-badge" aria-hidden="true">{c.unread}</span>}
-              </button>
-            ))}
-            {sbMentors.length > 0 && (
-              <>
-                <div className="cm-sb-section" role="heading" aria-level={2}>Mentors</div>
-                {sbMentors.map(m => (
-                  <div key={m.name} className="cm-sb-item cm-sb-mentor">
-                    {cmAvatar(m.name, m.name, m.photo, "cm-avatar-xs")}
-                    <span className="cm-sb-name">{m.name}</span>
-                  </div>
-                ))}
-              </>
-            )}
-          </nav>
-          <div className="cm-sb-foot">
-            <button className="cm-sb-foot-btn" onClick={catchMeUp}>
-              <span className="cm-sb-star" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 14 8.5 20 10 14 11.5 12 17.5 10 11.5 4 10 10 8.5 12 2.5Z" fill="#d0ff3a"/></svg>
-              </span>
-              Catch me up
-            </button>
-            <div className="cm-sb-me">
-              {cmAvatar(me, me, mem.photoUrl, "cm-avatar-sm")}
-              <div className="cm-sb-me-txt">
-                <div className="cm-sb-me-name">{me}</div>
-                <div className="cm-sb-me-sub">{meSub}</div>
-              </div>
-              <button className="cm-sb-me-gear" onClick={() => setPage("profile")} aria-label="Your profile & settings" title="Profile & settings">{cmNavIcon("gear")}</button>
-            </div>
-          </div>
-        </aside>
-        <div className="cm-sb-scrim" onClick={() => setSbOpen(false)}/>
-
-        {/* ── Main column ─────────────────────────────────────────── */}
-        <main className="cm-col">
-          <header className={"cm-hd" + (isChat ? " cm-hd-chat" : "")}>
-            <button className="cm-hd-burger" onClick={() => setSbOpen(true)} aria-label="Open channels" aria-expanded={sbOpen}>☰</button>
-            {isChat && activeChannel && <span className="cm-hd-badge" style={{ background: activeChannel.color, color: inkOn(activeChannel.color).ink }} aria-hidden="true">{activeChannel.icon}</span>}
-            <div className="cm-hd-title">
-              <div className="cm-hd-line">
-                {!isChat && <span className="cm-hd-ic" aria-hidden="true">{headIcon}</span>}
-                <span className="cm-hd-name" role="heading" aria-level={1}>{headTitle}</span>
-                {isChat && chMembers && <span className="cm-hd-count">· {chMembers.length} {chMembers.length === 1 ? "member" : "members"}</span>}
-              </div>
-              {activeChannel && <span className="cm-hd-topic">{activeChannel.description}</span>}
-            </div>
-            <div className="cm-hd-actions">
-              {active !== "bookmarks" && !isArcade && !isMatches && !results && (
-                <div className="cm-hd-sort" role="group" aria-label="Sort messages">
-                  {[["latest", isChat ? "Newest" : "New"], ["trending", "Hot"]].map(([v, l]) => <button key={v} className={"cm-hd-sortbtn" + (sort === v ? " is-active" : "")} aria-pressed={sort === v} onClick={() => setSort(v)}>{l}</button>)}
-                </div>
-              )}
-              {/* Two icon buttons, and only one of them has another way in. The
-                  mobile header hides `cm-hd-btn` to make room — which quietly
-                  made channel Details unreachable on a phone, while the
-                  stylesheet went on carefully laying out the full-screen pane
-                  nobody could open. Catch-up survives that because the sidebar
-                  footer offers it too; Details does not, so it is marked to
-                  stay. */}
-              {!isArcade && !isMatches && <button className="cm-hd-btn cm-hd-btn-ai" onClick={catchMeUp} aria-label="AI catch-up summary" title="AI catch-up">✨</button>}
-              {!isArcade && !isMatches && <button className={"cm-hd-btn cm-hd-btn-info" + (info ? " is-on" : "")} onClick={() => setInfo(v => !v)} aria-label="Channel details" aria-expanded={info} title="Details">ⓘ</button>}
-            </div>
-          </header>
-
-          {isJournal ? <div className="cm-stream is-feed"><CmProgramJournal auth={auth}/></div> : isMatches ? <div className="cm-stream is-feed"><CmMatches auth={auth}/></div> : isArcade ? <div className="cm-stream is-feed"><CmArcade auth={auth}/></div> : (
-          <div className={"cm-stream" + (isChat ? " is-chat" : " is-feed")} ref={streamRef} onScroll={onStreamScroll}
-            role={isChat ? "log" : "feed"} aria-label={headTitle + " messages"} aria-busy={posts === null} {...(isChat ? { "aria-live": "polite", "aria-relevant": "additions" } : {})}>
-            {/* Pinned brief for a channel (its description) */}
-            {isChat && activeChannel && activeChannel.description && (
-              <div className="cm-brief"><span className="cm-brief-ic">📌</span><div className="cm-brief-txt"><b>{activeChannel.name}</b> — {activeChannel.description}</div></div>
-            )}
-            {results !== null ? (
-              <div className="cm-cardfeed">
-                <div className="cm-search-head">{searching ? "Searching…" : (results.length + " result" + (results.length === 1 ? "" : "s") + " for “" + query.trim() + "”")}</div>
-                {results.map(p => <CmCard key={p.postId} post={p} me={me} onPatch={patchPost} onRemove={removePost} onOpenThread={setThread} showChannel/>)}
-                {!searching && results.length === 0 && <div className="cm-empty"><div className="cm-empty-ic">🔍</div><p>No messages match that search.</p></div>}
-              </div>
-            ) : posts === null ? (
-              <div className="cm-skeletons">{[0, 1, 2, 3].map(i => <div key={i} className={isChat ? "cm-msg-skel" : "cm-card-skel"}/>)}</div>
-            ) : (isChat ? chrono : posts).length === 0 ? (
-              <div className="cm-empty">
-                <div className="cm-empty-ic">{active === "bookmarks" ? "🔖" : (headIcon || "💬")}</div>
-                <h3>{active === "bookmarks" ? "Nothing saved yet" : ("Welcome to " + headTitle)}</h3>
-                <p>{active === "bookmarks" ? "Hover a card and tap Save to keep it here." : isChat ? "This is the very beginning of the channel. Say hello 👋" : "Nothing here yet. Be the first to share something today."}</p>
-              </div>
-            ) : isChat ? (
-              <div className="cm-msgs">
-                {hasMore && <button className="cm-load-older" disabled={loadingMore} onClick={more}>{loadingMore ? "Loading…" : "↑ Load earlier messages"}</button>}
-                {chrono.map((p, i) => (
-                  <React.Fragment key={p.postId}>
-                    {i === dividerIdx && <div className="cm-new-divider"><span>New</span></div>}
-                    <CmMessage post={p} prev={i > 0 ? chrono[i - 1] : null} me={me} onPatch={patchPost} onRemove={removePost} onOpenThread={setThread}/>
-                  </React.Fragment>
-                ))}
-              </div>
-            ) : (
-              <div className="cm-cardfeed">
-                {posts.map(p => <CmCard key={p.postId} post={p} me={me} onPatch={patchPost} onRemove={removePost} onOpenThread={setThread} showChannel/>)}
-                {hasMore && <button className="cm-more" disabled={loadingMore} onClick={more}>{loadingMore ? "Loading…" : "Load more"}</button>}
-              </div>
-            )}
-            {fresh && <button className="cm-fresh" onClick={showFresh}>↓ New messages — jump to latest</button>}
-          </div>
-          )}
-
-          {/* The journal is excluded for the same reason the Arcade is: it is a
-              destination with its own authoring flow, not a channel. Leaving the
-              channel composer docked under it offered a "Message #the channel"
-              box that posts nowhere related to what is on screen. */}
-          {active !== "bookmarks" && !isArcade && !isMatches && !isJournal && !results && (
-            <div className="cm-dock">
-              <CmComposer channels={channels} active={active} me={me} onPosted={onPosted} enterToSend={isChat}/>
-            </div>
-          )}
-        </main>
-
-        {/* ── Right column: thread > details > channel members ─────── */}
-        {isArcade || isMatches || isJournal ? null : thread ? (
-          <CmThread post={thread} me={me} channels={channels} onClose={() => setThread(null)} onPatch={patchPost} onRemove={removePost}/>
-        ) : info ? (
-          <aside className="cm-info">
-            <div className="cm-info-head"><span>Details</span><button onClick={() => setInfo(false)} aria-label="Close">✕</button></div>
-            {activeChannel ? (
-              <>
-                <div className="cm-info-name" style={{ color: activeChannel.color }}>{activeChannel.icon} {activeChannel.name}</div>
-                {activeChannel.faculty && <div className="cm-info-faculty">{activeChannel.faculty}</div>}
-                <p className="cm-info-desc">{activeChannel.description}</p>
-                <div className="cm-info-stat">{activeChannel.posts} message{activeChannel.posts === 1 ? "" : "s"}</div>
-              </>
-            ) : <p className="cm-info-desc">{active === "all" ? "Everything from every channel, newest first." : "Messages you've saved for later."}</p>}
-            <div className="cm-info-rules">
-              <div className="cm-info-rules-h">{activeChannel && activeChannel.rules ? "Channel rules" : "House rules"}</div>
-              <ul>
-                {activeChannel && activeChannel.rules
-                  ? activeChannel.rules.split("\n").map(r => r.trim()).filter(Boolean).map((r, i) => <li key={i}>{r}</li>)
-                  : <>
-                      <li>Be kind — this is a shared room.</li>
-                      <li>No personal contact details.</li>
-                      <li>Every message is mentor-watched + AI-checked.</li>
-                      <li>Something wrong? Report it to a mentor.</li>
-                    </>}
-              </ul>
-            </div>
-          </aside>
-        ) : isChat ? (
-          <CmMembersRail members={chMembers}/>
-        ) : null}
-      </div>
-
-      {digest && <CmDigest digest={digest} onClose={() => setDigest(null)}/>}
+    <div className="page cm-page" data-screen-label="Community">
+      <CmMobileApp auth={auth} setPage={setPage} channels={channels}
+                   reloadChannels={reloadChannels}/>
     </div>
   );
 }
@@ -3010,143 +3516,10 @@ function CmReactChips({ post, onReact }) {
 }
 
 /* ---- One message row in the stream (Slack-style, grouped by author) ---- */
-function CmMessage({ post, prev, me, onPatch, onRemove, onOpenThread, standalone }) {
-  const [picker, setPicker] = React.useState(false);
-  const [menu, setMenu] = React.useState(false);
-  const act = useCmActions(post, onPatch, onRemove);
-  const grouped = !standalone && prev && prev.author && post.author && prev.author.name === post.author.name
-    && prev.kind !== "poll" && post.kind !== "poll"
-    && (new Date((post.createdAt || "").replace(" ", "T")) - new Date((prev.createdAt || "").replace(" ", "T"))) < 5 * 60 * 1000;
-  const react = (e) => { setPicker(false); act.react(e); };
-
-  return (
-    <div className={"cm-msg" + (grouped ? " grouped" : "") + (post.status !== "published" ? " is-pending" : "")}
-      role="article" aria-label={post.author.name + (post.author.isMe ? " (you)" : "") + " · " + cmAgo(post.createdAt)}>
-      <div className="cm-msg-gutter">
-        {grouped
-          ? <span className="cm-msg-tinytime" aria-hidden="true">{cmAgo(post.createdAt)}</span>
-          : cmAvatar(post.author.name, post.author.name + post.author.centre, post.author.photo)}
-      </div>
-      <div className="cm-msg-main">
-        {!grouped && (
-          <div className="cm-msg-head">
-            <span className="cm-msg-author">{post.author.name}</span>
-            {post.author.isMe && <span className="cm-you">you</span>}
-            {standalone && <span className="cm-msg-in" style={{ color: post.channel.color }}>in {post.channel.icon} {post.channel.name}</span>}
-            <span className="cm-msg-time">{cmAgo(post.createdAt)}</span>
-            {post.author.centre && <span className="cm-msg-centre">{post.author.centre}</span>}
-            {post.featured && <span className="cm-featured" title="On the public Showcase">✨</span>}
-            {post.pinned && <span className="cm-pin" title="Pinned">📌</span>}
-          </div>
-        )}
-        <CmBodyBlock post={post} onVote={act.vote}/>
-        <div className="cm-msg-chiprow"><CmStar post={post} onStar={act.star}/><CmReactChips post={post} onReact={react}/></div>
-        {post.commentCount > 0 && (
-          <button className="cm-thread-link" onClick={() => onOpenThread && onOpenThread(post)}>
-            💬 {post.commentCount} repl{post.commentCount === 1 ? "y" : "ies"}
-            {post.lastCommentAt && <span className="cm-thread-ago">Last reply {cmAgo(post.lastCommentAt)}</span>}
-          </button>
-        )}
-      </div>
-
-      {/* Hover toolbar */}
-      <div className="cm-msg-tools" role="group" aria-label="Message actions">
-        <div className="cm-tool-wrap">
-          <button className="cm-tool" onClick={() => setPicker(p => !p)} aria-label="Add a reaction" aria-expanded={picker} title="React">😊</button>
-          {picker && <div className="cm-picker" role="menu" aria-label="Pick a reaction" onMouseLeave={() => setPicker(false)}>{CM_REACTIONS.map(e => <button key={e} className={"cm-picker-e" + (post.myReaction === e ? " is-on" : "")} aria-label={"React " + e} onClick={() => react(e)}>{e}</button>)}</div>}
-        </div>
-        <button className="cm-tool" onClick={() => onOpenThread && onOpenThread(post)} aria-label={"Reply in thread" + (post.commentCount ? " (" + post.commentCount + " replies)" : "")} title="Reply in thread">💬</button>
-        {post.canStar && <button className={"cm-tool" + (post.starred ? " is-star" : "")} onClick={act.star} aria-pressed={post.starred} aria-label={post.starred ? "Remove Genius Star" : "Give a Genius Star"} title={post.starred ? "Remove Genius Star" : "Give a Genius Star"}>⭐</button>}
-        <button className={"cm-tool" + (post.bookmarked ? " is-on" : "")} onClick={act.bookmark} aria-pressed={post.bookmarked} aria-label={post.bookmarked ? "Remove from saved" : "Save message"} title={post.bookmarked ? "Saved" : "Save"}>{post.bookmarked ? "🔖" : "🏷️"}</button>
-        <button className="cm-tool" onClick={act.share} aria-label="Share message" title="Share">↗</button>
-        <div className="cm-tool-wrap">
-          <button className="cm-tool" onClick={() => setMenu(m => !m)} aria-label="More actions" aria-expanded={menu} title="More">⋯</button>
-          {menu && (
-            <div className="cm-menu" onMouseLeave={() => setMenu(false)}>
-              <button className="cm-menu-item" onClick={() => { setMenu(false); onOpenThread && onOpenThread(post); }}>💬 Reply in thread</button>
-              <button className="cm-menu-item" onClick={() => { setMenu(false); act.bookmark(); }}>{post.bookmarked ? "Remove from saved" : "🔖 Save message"}</button>
-              {post.author.isMe
-                ? <button className="cm-menu-item cm-menu-danger" onClick={() => { setMenu(false); act.del(); }}>Delete message</button>
-                : <button className="cm-menu-item" onClick={() => { setMenu(false); act.report(); }}>🚩 Report to a mentor</button>}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ---- Card post (All activity / Saved / search — media-forward feed) ---- */
-function CmCard({ post, me, onPatch, onRemove, onOpenThread, showChannel }) {
-  const [picker, setPicker] = React.useState(false);
-  const [menu, setMenu] = React.useState(false);
-  const act = useCmActions(post, onPatch, onRemove);
-  const react = (e) => { setPicker(false); act.react(e); };
-  const replies = post.commentCount || 0;
-  return (
-    <article className={"cm-card" + (post.status !== "published" ? " is-pending" : "")} aria-label={post.author.name + (post.author.isMe ? " (you)" : "") + " in " + post.channel.name + " · " + cmAgo(post.createdAt)}>
-      <div className="cm-card-head">
-        {cmAvatar(post.author.name, post.author.name + post.author.centre, post.author.photo)}
-        <div className="cm-card-meta">
-          <span className="cm-card-author">{post.author.name}{post.author.isMe && <span className="cm-you">you</span>}</span>
-          <span className="cm-card-sub">{cmAgo(post.createdAt)}{post.author.centre ? " · " + post.author.centre : ""}</span>
-        </div>
-        {showChannel && <span className="cm-card-chan" style={{ color: post.channel.color }}>{post.channel.icon} {post.channel.name}</span>}
-        {post.featured && <span className="cm-featured" title="On the public Showcase" aria-label="Featured on the public Showcase">✨</span>}
-      </div>
-      <CmBodyBlock post={post} onVote={act.vote}/>
-      <div className="cm-card-bar">
-        <div className="cm-card-reacts">
-          <CmStar post={post} onStar={act.star}/>
-          <CmReactChips post={post} onReact={react}/>
-          <div className="cm-tool-wrap">
-            <button className={"cm-react-add" + (post.myReaction ? " is-on" : "")} onClick={() => setPicker(p => !p)} aria-label="Add a reaction" aria-expanded={picker}>{post.myReaction || "😊"} <span>React</span></button>
-            {picker && <div className="cm-picker" role="menu" aria-label="Pick a reaction" onMouseLeave={() => setPicker(false)}>{CM_REACTIONS.map(e => <button key={e} className={"cm-picker-e" + (post.myReaction === e ? " is-on" : "")} aria-label={"React " + e} onClick={() => react(e)}>{e}</button>)}</div>}
-          </div>
-        </div>
-        <button className="cm-card-reply" onClick={() => onOpenThread && onOpenThread(post)} aria-label={replies ? "Open thread, " + replies + (replies === 1 ? " reply" : " replies") : "Reply in a thread"}>💬 {replies ? (replies + (replies === 1 ? " reply" : " replies")) : "Reply"}</button>
-        <button className={"cm-pill-ic" + (post.bookmarked ? " is-on" : "")} onClick={act.bookmark} aria-pressed={post.bookmarked} aria-label={post.bookmarked ? "Remove from saved" : "Save post"} title={post.bookmarked ? "Saved" : "Save"}>{post.bookmarked ? "🔖" : "🏷️"}</button>
-        <button className="cm-pill-ic" onClick={act.share} aria-label="Share post" title="Share">↗</button>
-        <div className="cm-tool-wrap">
-          <button className="cm-pill-ic" onClick={() => setMenu(m => !m)} aria-label="More actions" aria-expanded={menu} title="More">⋯</button>
-          {menu && (
-            <div className="cm-menu" onMouseLeave={() => setMenu(false)}>
-              {post.author.isMe
-                ? <button className="cm-menu-item cm-menu-danger" onClick={() => { setMenu(false); act.del(); }}>Delete post</button>
-                : <button className="cm-menu-item" onClick={() => { setMenu(false); act.report(); }}>🚩 Report to a mentor</button>}
-            </div>
-          )}
-        </div>
-      </div>
-    </article>
-  );
-}
 
 /* ---- Channel members rail (chat view) ---- */
-function CmMembersRail({ members }) {
-  if (members === null) return <aside className="cm-rail2"><div className="cm-rail2-load">Loading…</div></aside>;
-  const staff = members.filter(m => m.staff);
-  const rest = members.filter(m => !m.staff);
-  const row = (m, i) => (
-    <div key={i} className="cm-rail2-row">
-      {cmAvatar(m.name, m.name, m.photo, "cm-avatar-sm")}
-      <div className="cm-rail2-info"><div className="cm-rail2-name">{m.name}</div><div className="cm-rail2-sub">{m.centre || "—"}{m.posts ? " · " + m.posts + " post" + (m.posts === 1 ? "" : "s") : ""}</div></div>
-    </div>
-  );
-  return (
-    <aside className="cm-rail2">
-      {members.length === 0 ? (
-        <div className="cm-rail2-empty">No one has posted here yet — be the first.</div>
-      ) : (
-        <>
-          {staff.length > 0 && <><div className="cm-rail2-h">Mentors · {staff.length}</div>{staff.map(row)}</>}
-          <div className="cm-rail2-h">In this channel · {rest.length}</div>
-          {rest.map(row)}
-        </>
-      )}
-    </aside>
-  );
-}
 
 /* ---- Thread pane (root message + replies + reply composer) ---- */
 function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
@@ -3186,7 +3559,7 @@ function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
       </div>
       <div className="cm-thread-body">
         <div className="cm-thread-root">
-          <div className="cm-msg-gutter">{cmAvatar(post.author.name, post.author.name + post.author.centre, post.author.photo)}</div>
+          <div className="cm-msg-gutter">{cmAvatar(post.author.name, post.author.name + post.author.centre, post.author.photo, "", cmRoleOf(post))}</div>
           <div className="cm-msg-main">
             <div className="cm-msg-head">
               <span className="cm-msg-author">{post.author.name}</span>
@@ -3221,18 +3594,6 @@ function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
 }
 
 /* ---- AI digest modal ---- */
-function CmDigest({ digest, onClose }) {
-  return (
-    <div className="cm-modal-back" onClick={onClose}>
-      <div className="cm-modal" onClick={e => e.stopPropagation()}>
-        <div className="mono cm-card-eyebrow">✨ CATCH ME UP{digest.channel ? " · " + digest.channel : ""}</div>
-        {digest.loading ? <p className="cm-digest-body">Summarising…</p> : <p className="cm-digest-body">{digest.text}</p>}
-        {digest.ai === false && !digest.loading && <p className="cm-digest-foot">Live AI summaries turn on when the community gets busier.</p>}
-        <button className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
-      </div>
-    </div>
-  );
-}
 
 /* ── The Programme Journal ───────────────────────────────────────────────────
  *

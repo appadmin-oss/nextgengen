@@ -578,6 +578,8 @@
         search:   (q, channel) => request('/member/community.php' + qs({ view: 'search', q, channel: channel || 'all' })),
         members:  (channel) => request('/member/community.php' + qs({ view: 'members', channel })),
         markRead: (channel) => request('/member/community.php', { body: { action: 'markRead', channel } }),
+        // Filter-chip counts for the Today screen (unread / mentions / saved).
+        today:    () => request('/member/community.php' + qs({ view: 'today' })),
       },
       arcade: {
         home:   () => request('/member/arcade.php' + qs({ view: 'home' })),

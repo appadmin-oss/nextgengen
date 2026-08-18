@@ -53,9 +53,11 @@ function chk(name, cond) {
 
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'dist', 'build-manifest.json'), 'utf8'));
 
-  /* A real Cloudinary PDF url — image resource type, `.pdf` still on the end,
-     which is what the fixed upload path now produces. */
-  const PDF = 'https://res.cloudinary.com/demo/image/upload/v1/ngg/community/handout_abc.pdf';
+  /* A REAL three-page PDF, served from this repo. The viewer now renders pages
+     with pdf.js rather than asking a CDN for pictures of them, so the test has
+     to hand it an actual document — and a local one, because a suite that needs
+     the network to prove a renderer works reports outages as bugs. */
+  const PDF = '/tests/_fixture-handout.pdf';
 
   fs.writeFileSync(FIX, `<!doctype html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -70,7 +72,7 @@ function chk(name, cond) {
 <script src="/dist/${manifest.bundle.file}"></script>
 <script>
   ReactDOM.createRoot(document.getElementById('root')).render(
-    React.createElement(window.NggPdf, { src: ${JSON.stringify(PDF)}, name: 'Week 3 handout.pdf', pages: 9, bytes: 842000 })
+    React.createElement(window.NggPdf, { src: ${JSON.stringify(PDF)}, name: 'Week 3 handout.pdf', pages: 3, bytes: 1125 })
   );
 </script>
 </body></html>`);
@@ -81,7 +83,9 @@ function chk(name, cond) {
     await waitForServer(BASE, 15000);
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const errors = [];
+    const requested = [];
     page.on('pageerror', e => errors.push(String(e)));
+    page.on('request', r => requested.push(r.url()));
     await page.goto(BASE + '/tests/_doc_fixture.html', { waitUntil: 'networkidle' });
 
     /* ── The classifier, exercised in the browser it actually runs in ──────
@@ -111,55 +115,91 @@ function chk(name, cond) {
     /* ── The viewer ───────────────────────────────────────────────────── */
     chk('a document is offered closed, not fetched on sight',
         await page.locator('.pdfv-open').count() === 1
-        && await page.locator('.pdfv-img').count() === 0);
+        && await page.locator('.pdfv-canvas').count() === 0);
     chk('…naming the file and what it costs to open',
         /Week 3 handout\.pdf/.test(await page.locator('.pdfv-open-name').innerText())
-        && /PDF · 9 pages · 822 KB/.test(await page.locator('.pdfv-open-meta').innerText()));
+        && /PDF · 3 pages · 1 KB/.test(await page.locator('.pdfv-open-meta').innerText()));
+
+    /* Nothing about pdf.js may be on the wire until somebody asks for it. It is
+       half a megabyte plus a one-megabyte worker, and this is the whole reason
+       the viewer opens closed. */
+    const early = requested.filter(u => /pdfjs/.test(u));
+    chk('the pdf.js library is NOT fetched until a document is opened', early.length === 0);
 
     await page.locator('.pdfv-open').click();
-    /* `attached`, not `visible`. What is under test is the URL this viewer
-       asks Cloudinary for; whether the sandbox running the test can reach
-       Cloudinary to paint it is not this suite's business, and asserting on
-       visibility makes a network outage look like a broken viewer. */
-    await page.waitForSelector('.pdfv-img', { state: 'attached' });
+    await page.waitForSelector('.pdfv-canvas', { state: 'attached', timeout: 30000 });
 
-    const src1 = await page.locator('.pdfv-img').getAttribute('src');
-    chk('opening it renders page 1 as an image, not a document frame',
-        /\/pg_1,/.test(src1) && /\.jpg$/.test(src1) && await page.locator('.pdfv-frame').count() === 0);
-    chk('the page count is shown', /Page 1 of 9/.test(await page.locator('.pdfv-count').innerText()));
+    chk('opening it fetches the library and its worker, once',
+        requested.some(u => /pdfjs\.min\.js/.test(u)) && requested.some(u => /pdfjs\.worker/.test(u)));
+    chk('page 1 renders to a canvas with real pixels', await page.evaluate(() => {
+      const c = document.querySelector('.pdfv-canvas');
+      if (!c || !c.width || !c.height) return false;
+      // Not a blank canvas: some pixel must differ from the top-left one.
+      const d = c.getContext('2d').getImageData(0, 0, c.width, Math.min(c.height, 400)).data;
+      for (let i = 4; i < d.length; i += 4) {
+        if (d[i] !== d[0] || d[i + 1] !== d[1] || d[i + 2] !== d[2]) return true;
+      }
+      return false;
+    }));
+    chk('the page count comes from the document itself, not from the caller',
+        /Page 1 of 3/.test(await page.locator('.pdfv-count').innerText()));
     chk('there is no way back past page 1', await page.locator('.pdfv-pg[disabled]').count() === 1);
 
+    /* Compare the PIXELS, not the length of their encoding. Two pages of the
+       same document differ by a single glyph here, and their PNGs can compress
+       to byte-identical lengths — an assertion that passed or failed on the
+       compressor's mood rather than on whether the page turned. */
+    const firstPixels = await page.evaluate(() => document.querySelector('.pdfv-canvas').toDataURL());
     await page.locator('.pdfv-pg').last().click();
-    await page.waitForFunction(() => /pg_2,/.test(document.querySelector('.pdfv-img').src));
-    chk('turning the page fetches the next page, only then',
-        /\/pg_2,/.test(await page.locator('.pdfv-img').getAttribute('src'))
-        && /Page 2 of 9/.test(await page.locator('.pdfv-count').innerText()));
+    await page.waitForFunction(() => /Page 2 of 3/.test(document.querySelector('.pdfv-count').textContent));
+    // The canvas is redrawn asynchronously after the page number updates.
+    await page.waitForFunction((was) => {
+      const c = document.querySelector('.pdfv-canvas');
+      return c && c.width > 0 && c.toDataURL() !== was;
+    }, firstPixels, { timeout: 15000 }).catch(() => {});
+    chk('turning the page draws a different page', await page.evaluate((was) =>
+      document.querySelector('.pdfv-canvas').toDataURL() !== was, firstPixels));
 
     chk('the real document is always one tap away',
         await page.locator('.pdfv-bar a[href$=".pdf"]').count() >= 1);
 
-    // Expanding asks for more pixels, because that is the point of expanding.
-    await page.locator('.pdfv-btn', { hasText: 'Expand' }).click();
-    await page.waitForFunction(() => /w_1400/.test(document.querySelector('.pdfv-img').src));
-    chk('expanding requests a larger page', /w_1400/.test(await page.locator('.pdfv-img').getAttribute('src')));
+    /* Zoom must RE-RENDER, not stretch. A bigger canvas is the observable
+       difference between real zoom and a scaled picture. */
+    const beforeZoom = await page.evaluate(() => document.querySelector('.pdfv-canvas').width);
+    await page.locator('.pdfv-btn[aria-label="Zoom in"]').click();
+    await page.waitForFunction((w) => document.querySelector('.pdfv-canvas').width > w, beforeZoom);
+    chk('zooming re-renders at a higher resolution rather than scaling pixels',
+        await page.evaluate((w) => document.querySelector('.pdfv-canvas').width > w, beforeZoom)
+        && /125%/.test(await page.locator('.pdfv-zoomv').innerText()));
 
-    /* Every control a thumb has to hit clears 44px — the community's rule,
-       and this viewer is read on a 390px phone. */
+    // Arrow keys page it — the only route for a keyboard user, and expected of
+    // anything that shows a page number.
+    await page.locator('.pdfv').press('ArrowRight');
+    await page.waitForFunction(() => /Page 3 of 3/.test(document.querySelector('.pdfv-count').textContent));
+    chk('arrow keys turn the page', /Page 3 of 3/.test(await page.locator('.pdfv-count').innerText()));
+    chk('…and stop at the last page', await page.locator('.pdfv-pg[disabled]').count() === 1);
+
     const small = await page.evaluate(() =>
       [...document.querySelectorAll('.pdfv-btn, .pdfv-pg')]
         .filter(el => el.getBoundingClientRect().height < 44).length);
     chk('every viewer control is at least 44px tall', small === 0);
 
-    // A non-PDF document must NOT claim to be previewable.
-    const cardOnly = await page.evaluate((pdf) => {
+    /* A document that cannot be opened must SAY WHICH failure it was. "Could
+       not open" covers a missing file, a password and a corrupt file, and a
+       reader can act on exactly one of those. */
+    const missing = await page.evaluate(() => {
       const host = document.createElement('div');
       document.body.appendChild(host);
+      host.id = 'missing-host';
       ReactDOM.createRoot(host).render(
-        React.createElement(window.NggPdf, { src: pdf.replace('.pdf', '.docx'), name: 'notes.docx' }));
-      return new Promise(r => setTimeout(() => r(host.innerHTML), 60));
-    }, PDF);
-    chk('a document with no page images falls back rather than pretending',
-        /pdfv-open/.test(cardOnly));
+        React.createElement(window.NggPdf, { src: '/tests/_no-such-file.pdf', name: 'gone.pdf', pages: 2 }));
+      return new Promise(r => setTimeout(() => r(true), 50));
+    });
+    await page.locator('#missing-host .pdfv-open').click();
+    await page.waitForSelector('#missing-host .pdfv-fallback', { timeout: 30000 });
+    chk('a document that is not there says so, and still offers the link',
+        /could not be found/i.test(await page.locator('#missing-host .pdfv-fallback p').innerText())
+        && await page.locator('#missing-host .pdfv-fallback a').count() === 1);
 
     chk('no page errors', errors.length === 0);
     if (errors.length) errors.forEach(e => console.log('    ' + e));

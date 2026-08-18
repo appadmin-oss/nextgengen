@@ -5798,17 +5798,37 @@ body.own-chrome .fab-top { display: none; }
 .pdfv-ic { font-size: 16px; }
 .pdfv-name { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 13.5px; font-weight: 700; color: var(--ink-900, #0a1130); }
-.pdfv-btn { min-height: 44px; display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 14px;
+.pdfv-btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center;
+  padding: 6px 12px; border-radius: 14px;
   border: 1px solid var(--line-300, #ded8c6); background: #fff; font-size: 12.5px; font-weight: 700;
   color: var(--ink-900, #0a1130); text-decoration: none; cursor: pointer; }
 .pdfv-btn:hover { border-color: var(--gold-500, #f5b026); }
 .pdfv-btn:focus-visible { outline: 2px solid var(--blue-600, #1f4bc4); outline-offset: 2px; }
+.pdfv-btn:disabled { opacity: .38; cursor: default; }
+.pdfv-btn-sq { min-width: 44px; padding: 6px 8px; font-size: 17px; line-height: 1; }
+.pdfv-zoom { display: inline-flex; align-items: center; gap: 4px; }
+.pdfv-zoomv { min-width: 46px; text-align: center;
+  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; font-weight: 600;
+  color: var(--ink-700, #46506a); font-variant-numeric: tabular-nums; }
 
-.pdfv-page { background: #f4f5f8; padding: 10px; max-height: min(72vh, 720px); overflow: auto;
-  -webkit-overflow-scrolling: touch; }
-.pdfv-img { display: block; width: 100%; height: auto; border-radius: 6px;
-  box-shadow: 0 2px 10px -4px rgba(12,20,50,.35); background: #fff; }
-.pdfv-wide .pdfv-page { max-height: none; }
+/* The page itself. Scrolls in both directions, because a zoomed page is wider
+   than the phone holding it and clipping it would hide the text. */
+.pdfv-page { background: #f4f5f8; padding: 10px; max-height: min(72vh, 720px);
+  overflow: auto; -webkit-overflow-scrolling: touch; display: flex; justify-content: center; }
+.pdfv-canvas { display: block; max-width: none; border-radius: 4px; background: #fff;
+  box-shadow: 0 2px 10px -4px rgba(12,20,50,.35); }
+.pdfv-pageerr { padding: 26px 16px; text-align: center; font-size: 13.5px; color: var(--ink-500, #5f6785); }
+
+/* Waiting for half a megabyte of library on a slow connection. A page-shaped
+   skeleton says what is coming; a spinner says only that something is wrong. */
+.pdfv-skel { width: 100%; max-width: 420px; min-height: 220px; padding: 20px 18px;
+  background: #fff; border-radius: 4px; box-shadow: 0 2px 10px -4px rgba(12,20,50,.35);
+  display: flex; flex-direction: column; gap: 12px; }
+.pdfv-skel-line { height: 11px; border-radius: 3px;
+  background: linear-gradient(90deg, #eceadf 25%, #f5f3ea 50%, #eceadf 75%);
+  background-size: 200% 100%; animation: pdfvShimmer 1.4s linear infinite; }
+@keyframes pdfvShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .pdfv-skel-line { animation: none; } }
 
 .pdfv-pager { display: flex; align-items: center; justify-content: center; gap: 14px;
   padding: 8px 10px; border-top: 1px solid var(--line-200, #e7e2d4); background: var(--surface, #fbf7ed); }
@@ -5820,10 +5840,8 @@ body.own-chrome .fab-top { display: none; }
 .pdfv-count { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px;
   font-weight: 600; letter-spacing: .06em; color: var(--ink-700, #46506a); font-variant-numeric: tabular-nums; }
 
-.pdfv-frame { display: block; width: 100%; height: min(70vh, 640px); border: 0; background: #f4f5f8; }
-.pdfv-note { padding: 10px 14px; font-size: 12.5px; color: var(--ink-500, #5f6785);
-  border-top: 1px solid var(--line-200, #e7e2d4); background: var(--surface, #fbf7ed); }
-.pdfv-note a { color: var(--blue-600, #1f4bc4); font-weight: 700; }
+.pdfv-fallback { padding: 26px 16px; text-align: center; }
+.pdfv-fallback p { margin: 0 0 12px; color: var(--ink-700, #46506a); font-size: 14px; }
 
 /* ── YouTube embed (click to load) ────────────────────────────────────────
    Reserves the 16:9 box up front so the feed does not jump when the poster

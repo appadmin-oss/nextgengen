@@ -12,6 +12,8 @@ if ($method === 'GET') {
     elseif ($view === 'mention')   $res = gs_call('community.mentionSearch', ['q' => $_GET['q'] ?? '', 'memberId' => $s['mid']]);
     elseif ($view === 'search')    $res = gs_call('community.search', ['memberId' => $s['mid'], 'q' => $_GET['q'] ?? '', 'channel' => $_GET['channel'] ?? '']);
     elseif ($view === 'members')   $res = gs_call('community.channelMembers', ['channel' => $_GET['channel'] ?? '']);
+    // The Today screen's filter-chip counts, in one request rather than three.
+    elseif ($view === 'today')     $res = gs_call('community.today', ['memberId' => $s['mid']]);
     else                           $res = gs_call('community.feed', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? 'all', 'sort' => $_GET['sort'] ?? 'latest', 'page' => (int)($_GET['page'] ?? 0)]);
 } elseif ($method === 'POST') {
     $b = read_json_body();

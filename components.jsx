@@ -178,6 +178,19 @@ const VENDOR_LIBS = {
      vendor-build.js because the package is ESM/CJS with no UMD. 414KB, so it is
      fetched by the Export button and never by the page. */
   docx: { js: ["/vendor/docx.min.js"], global: "docx" },
+  /* PDF.js 5.4.624, legacy build — the community's document reader.
+   *
+   * 486KB (151KB gzipped) for the library, and the worker it starts is another
+   * 1MB on top. That is a real cost on a Nigerian mobile connection and it was
+   * refused once for exactly that reason. It is affordable now only because it
+   * is loaded from HERE: nothing fetches it until a member opens a document,
+   * and it is fetched once per browser and then cached. A reader who never
+   * taps a PDF never pays for any of it.
+   *
+   * `needs` is not used — pdf.js has no dependency on the page — but the
+   * worker path has to be set before the first getDocument(), which the viewer
+   * does on the resolved global. */
+  pdfjs: { js: ["/vendor/pdfjs.min.js"], global: "pdfjsLib" },
 };
 const _vendorLoads = {};
 function loadVendorAsset(url, kind) {
@@ -2478,45 +2491,96 @@ function NggVideo({ src, poster, caption }) {
   );
 }
 
-/* ── PDF viewing ──────────────────────────────────────────────────────────
+/* ── The document reader ──────────────────────────────────────────────────
  *
- * Rendering PDF pages in JavaScript means shipping PDF.js — roughly a megabyte
- * before a single page is drawn, on a site whose whole bundle is 400KB gzipped
- * and whose readers are on Nigerian mobile data. That trade was refused once
- * and is refused again here. What replaced it is not the browser's built-in
- * frame either, because that frame has two failures this audience meets first:
+ * PDF.js, rendering real pages to a canvas, loaded only when a member opens a
+ * document.
  *
- *   · iOS Safari renders page one into an iframe and then will not scroll it.
- *     A ten-page handout is a one-page handout on every iPhone in the centre.
- *   · An <iframe> fires no error event when the browser declines to render a
- *     PDF, so the honest fallback that was written for that case never ran.
- *     A reader got a blank grey rectangle and no way to know why.
+ * The cost is not small and is worth naming: 486KB of library and a 1MB worker,
+ * roughly 450KB gzipped between them, on connections where that is a real
+ * expense. It buys three things the page-image approach could not:
  *
- * So the primary path is PAGES AS IMAGES. Cloudinary already stores each
- * uploaded PDF as a multi-page image asset, and `pg_N` delivers any single page
- * as a JPEG — which every browser on earth renders, scrolls and pinch-zooms
- * without a plugin, at a fraction of the bytes of the document itself. One page
- * is fetched at a time, so a nine-page document costs one page's worth of data
- * until somebody actually turns it.
+ *   · ANY pdf renders — one stored locally when no media cloud is configured,
+ *     one attached from an older post, one a member downloaded and re-shared.
+ *     Page images only ever worked for PDFs that happened to live on Cloudinary
+ *     as image-type assets, which is a property of our upload plumbing rather
+ *     than a property of the document.
+ *   · The text is TEXT. It can be selected, copied, read by a screen reader and
+ *     found with the browser's own find-in-page. A picture of a page is a
+ *     picture: a homework sheet a member cannot copy a question out of, and a
+ *     document a blind member cannot read at all.
+ *   · Zoom is real. Pinching a JPEG enlarges its pixels; re-rendering at a
+ *     higher scale enlarges the type.
  *
- * The native frame remains the fallback for a PDF we cannot page (one stored
- * outside Cloudinary), and "Open" always sits in the toolbar, because the real
- * document is the thing being shared and no viewer should stand between a
- * member and it.
+ * The expense is contained rather than argued away. Nothing here is fetched
+ * until somebody taps Preview, one page renders at a time, and the worker keeps
+ * parsing off the main thread — on the phones this is read on, rasterising a
+ * page on the main thread locks the interface for seconds.
  */
 
-/** Cloudinary delivery URL for one page of a stored PDF, as a JPEG. */
-function nggPdfPageUrl(src, page, width) {
-  if (!nggPdfCanPage(src)) return "";
-  return String(src)
-    .replace("/upload/", "/upload/pg_" + Math.max(1, page | 0) + ",w_" + (width || 900) + ",c_limit,q_auto:good,f_jpg/")
-    .replace(/\.pdf(\?.*)?$/i, ".jpg");
+/** Point pdf.js at its worker and its fonts. Idempotent; call before use. */
+function nggPdfConfigure(lib) {
+  if (lib && lib.GlobalWorkerOptions && !lib.GlobalWorkerOptions.workerSrc) {
+    lib.GlobalWorkerOptions.workerSrc = "/vendor/pdfjs.worker.min.js";
+  }
+  return lib;
 }
 
-/** Can this source be paged as images? Cloudinary image-type PDFs only. */
-function nggPdfCanPage(src) {
-  const u = String(src || "");
-  return /res\.cloudinary\.com/.test(u) && u.indexOf("/image/upload/") >= 0 && /\.pdf(\?|$)/i.test(u);
+/* Documents are opened over the network, and the network is the thing that
+   fails here. Loading options in one place so the failure modes are one set. */
+const NGG_PDF_OPTS = {
+  // Base-14 fonts for documents that reference one without embedding it —
+  // most things exported by older Word, and by phone scanner apps.
+  standardFontDataUrl: "/vendor/pdfjs-standard-fonts/",
+  // cmaps are NOT shipped (1.7MB, CJK only). A document that needs them fails
+  // with a clear message rather than everybody paying for them.
+  isEvalSupported: false,   // the CSP forbids eval; pdf.js has a slower path
+};
+
+/** One rendered page. Owns its canvas and cancels cleanly on change. */
+function NggPdfPage({ doc, page, scale, onSize }) {
+  const canvasRef = React.useRef(null);
+  const [err, setErr] = React.useState("");
+
+  React.useEffect(() => {
+    if (!doc) return;
+    let cancelled = false;
+    let task = null;
+    (async () => {
+      try {
+        const pg = await doc.getPage(page);
+        if (cancelled) return;
+        /* Render at the device's real pixel density, then let CSS scale it
+           back down. Rendering at CSS pixels on a 3x phone screen produces
+           type that looks like a fax. */
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const vp = pg.getViewport({ scale: scale * dpr });
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        canvas.width = Math.floor(vp.width);
+        canvas.height = Math.floor(vp.height);
+        canvas.style.width = Math.floor(vp.width / dpr) + "px";
+        canvas.style.height = Math.floor(vp.height / dpr) + "px";
+        if (onSize) onSize(Math.floor(vp.width / dpr), Math.floor(vp.height / dpr));
+        task = pg.render({ canvasContext: canvas.getContext("2d"), viewport: vp });
+        await task.promise;
+      } catch (e) {
+        // A cancelled render is the expected outcome of turning the page
+        // quickly; it is not a failure and must not be reported as one.
+        if (!cancelled && !/cancell?ed/i.test(String(e && e.message))) {
+          setErr("This page could not be drawn.");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (task && task.cancel) { try { task.cancel(); } catch (_) {} }
+    };
+  }, [doc, page, scale]); // eslint-disable-line
+
+  if (err) return <div className="pdfv-pageerr">{err}</div>;
+  return <canvas className="pdfv-canvas" ref={canvasRef} role="img"
+                 aria-label={"Page " + page}/>;
 }
 
 /**
@@ -2524,19 +2588,91 @@ function nggPdfCanPage(src) {
  *
  * Closed by default. A feed can carry several documents and none of them should
  * spend a reader's data before the reader asks — the same rule the YouTube
- * embed already follows.
+ * embed already follows, and it matters far more now that opening one costs
+ * half a megabyte of library.
  */
 function NggPdf({ src, name, pages, bytes }) {
   const [open, setOpen] = React.useState(false);
+  const [doc, setDoc] = React.useState(null);
+  const [total, setTotal] = React.useState(Math.max(0, pages | 0));
   const [page, setPage] = React.useState(1);
-  const [wide, setWide] = React.useState(false);
-  const [imgFailed, setImgFailed] = React.useState(false);
+  const [zoom, setZoom] = React.useState(1);
+  const [status, setStatus] = React.useState("idle"); // idle|loading|ready|failed
+  const [failure, setFailure] = React.useState("");
+  const [width, setWidth] = React.useState(0);
+  const hostRef = React.useRef(null);
   const label = name || "Document";
-  const total = Math.max(0, pages | 0);
-  const canPage = nggPdfCanPage(src) && !imgFailed;
 
-  // A page that does not exist cannot be shown; clamp rather than 404.
-  const at = total ? Math.min(Math.max(1, page), total) : Math.max(1, page);
+  /* Fit the page to the column it is being read in. A PDF is authored at a
+     fixed size and a phone is 390px wide, so "scale 1" is the wrong default
+     everywhere — the useful default is "as wide as there is room for". */
+  const fitScale = React.useCallback((pdfPage) => {
+    const host = hostRef.current;
+    const avail = host ? Math.max(240, host.clientWidth - 20) : 340;
+    const natural = pdfPage.getViewport({ scale: 1 }).width || 612;
+    return avail / natural;
+  }, []);
+  const [base, setBase] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!open || doc || status === "loading") return;
+    let dead = false;
+    setStatus("loading"); setFailure("");
+    (async () => {
+      try {
+        const lib = nggPdfConfigure(await loadVendor("pdfjs"));
+        const task = lib.getDocument(Object.assign({ url: src }, NGG_PDF_OPTS));
+        const d = await task.promise;
+        if (dead) { d.destroy(); return; }
+        setDoc(d);
+        setTotal(d.numPages);
+        const first = await d.getPage(1);
+        if (!dead) { setBase(fitScale(first)); setStatus("ready"); }
+      } catch (e) {
+        if (dead) return;
+        const msg = String((e && e.message) || e);
+        /* Say which failure it was. "Could not open" covers a missing file, a
+           password, a CORS refusal and a browser that ran out of memory, and
+           a reader can act on exactly one of those. */
+        setFailure(
+          /password/i.test(msg) ? "This document is password-protected."
+          : /Missing PDF|404|Unexpected server response/i.test(msg) ? "This document could not be found on the server."
+          : /Invalid PDF|corrupt/i.test(msg) ? "This file is not a readable PDF."
+          : "This document could not be opened here.");
+        setStatus("failed");
+      }
+    })();
+    return () => { dead = true; };
+  }, [open, src]); // eslint-disable-line
+
+  // Release the worker's memory when the reader closes the document.
+  React.useEffect(() => () => { if (doc) { try { doc.destroy(); } catch (_) {} } }, [doc]);
+
+  // Re-fit when the column changes width (rotation, expand, desktop resize).
+  React.useEffect(() => {
+    if (!doc || !open) return;
+    const host = hostRef.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      doc.getPage(1).then(p => setBase(fitScale(p))).catch(() => {});
+    });
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [doc, open, fitScale]);
+
+  const at = total ? Math.min(Math.max(1, page), total) : page;
+  const turn = React.useCallback((d) => setPage(p => {
+    const n = p + d;
+    return n < 1 ? 1 : (total && n > total ? total : n);
+  }), [total]);
+
+  // Arrow keys page the document while the viewer has focus. Expected of
+  // anything that shows a page number, and the only route for a keyboard user.
+  const onKey = (e) => {
+    if (e.key === "ArrowRight" || e.key === "PageDown") { e.preventDefault(); turn(1); }
+    else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); turn(-1); }
+  };
+
   const meta = [
     "PDF",
     total ? total + (total === 1 ? " page" : " pages") : "",
@@ -2560,49 +2696,62 @@ function NggPdf({ src, name, pages, bytes }) {
   }
 
   return (
-    <div className={"pdfv" + (wide ? " pdfv-wide" : "")}>
+    <div className="pdfv" onKeyDown={onKey} tabIndex={-1}>
       <div className="pdfv-bar">
         <span className="pdfv-ic" aria-hidden="true">📄</span>
         <span className="pdfv-name" title={label}>{label}</span>
-        <button type="button" className="pdfv-btn" onClick={() => setWide(w => !w)}
-                aria-pressed={wide}>{wide ? "Shrink" : "Expand"}</button>
+        {status === "ready" && (
+          <span className="pdfv-zoom" role="group" aria-label="Zoom">
+            <button type="button" className="pdfv-btn pdfv-btn-sq"
+                    onClick={() => setZoom(z => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}
+                    disabled={zoom <= 0.5} aria-label="Zoom out">−</button>
+            <span className="pdfv-zoomv" aria-live="polite">{Math.round(zoom * 100)}%</span>
+            <button type="button" className="pdfv-btn pdfv-btn-sq"
+                    onClick={() => setZoom(z => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
+                    disabled={zoom >= 3} aria-label="Zoom in">+</button>
+          </span>
+        )}
         <a className="pdfv-btn" href={src} target="_blank" rel="noopener noreferrer">Open</a>
         <a className="pdfv-btn" href={src} download={label}>Download</a>
         <button type="button" className="pdfv-btn" onClick={() => setOpen(false)}
                 aria-label="Close the preview">Close</button>
       </div>
 
-      {canPage ? (
-        <>
-          <div className="pdfv-page">
-            <img className="pdfv-img" src={nggPdfPageUrl(src, at, wide ? 1400 : 900)}
-                 alt={"Page " + at + " of " + label} loading="lazy"
-                 onError={() => setImgFailed(true)}/>
+      <div className="pdfv-page" ref={hostRef}
+           style={width ? { minHeight: 0 } : undefined}>
+        {status === "loading" && (
+          /* A skeleton the shape of a page, not a spinner. The wait here is
+             the library downloading, which on a slow connection is long
+             enough that a reader needs to see the shape of what is coming. */
+          <div className="pdfv-skel" aria-live="polite" aria-label="Opening the document">
+            <span className="pdfv-skel-line" style={{ width: "72%" }}/>
+            <span className="pdfv-skel-line" style={{ width: "95%" }}/>
+            <span className="pdfv-skel-line" style={{ width: "88%" }}/>
+            <span className="pdfv-skel-line" style={{ width: "94%" }}/>
+            <span className="pdfv-skel-line" style={{ width: "61%" }}/>
           </div>
-          {/* Paging is hidden for a single-page document rather than shown
-              disabled — there is nothing to turn. */}
-          {(total > 1 || total === 0) && (
-            <div className="pdfv-pager">
-              <button type="button" className="pdfv-pg" onClick={() => setPage(p => Math.max(1, p - 1))}
-                      disabled={at <= 1} aria-label="Previous page">‹</button>
-              <span className="pdfv-count" aria-live="polite">
-                Page {at}{total ? " of " + total : ""}
-              </span>
-              <button type="button" className="pdfv-pg" onClick={() => setPage(p => p + 1)}
-                      disabled={!!total && at >= total} aria-label="Next page">›</button>
-            </div>
-          )}
-        </>
-      ) : (
-        /* No page images available. Try the browser's own renderer, and say so
-           plainly underneath rather than leaving a grey rectangle to explain
-           itself — the frame will not tell us whether it worked. */
-        <>
-          <iframe className="pdfv-frame" src={src + "#view=FitH"} title={label}/>
-          <div className="pdfv-note">
-            Not showing? <a href={src} target="_blank" rel="noopener noreferrer">Open it in a new tab</a>.
+        )}
+        {status === "failed" && (
+          <div className="pdfv-fallback">
+            <p>{failure}</p>
+            <a className="btn btn-primary btn-sm" href={src} target="_blank" rel="noopener noreferrer">
+              Open it in a new tab
+            </a>
           </div>
-        </>
+        )}
+        {status === "ready" && doc && base > 0 && (
+          <NggPdfPage doc={doc} page={at} scale={base * zoom} onSize={(w) => setWidth(w)}/>
+        )}
+      </div>
+
+      {status === "ready" && total > 1 && (
+        <div className="pdfv-pager">
+          <button type="button" className="pdfv-pg" onClick={() => turn(-1)}
+                  disabled={at <= 1} aria-label="Previous page">‹</button>
+          <span className="pdfv-count" aria-live="polite">Page {at} of {total}</span>
+          <button type="button" className="pdfv-pg" onClick={() => turn(1)}
+                  disabled={at >= total} aria-label="Next page">›</button>
+        </div>
       )}
     </div>
   );

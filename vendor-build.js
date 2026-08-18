@@ -49,6 +49,18 @@ const PACKAGES = {
      a security warning and Google Docs refuses. Published as ESM+CJS with no
      UMD build, so it goes through the same bundle step as Filerobot. */
   'docx': '9.7.1',
+  /* PDF.js — the community's document reader.
+   *
+   * The LEGACY build, deliberately. The default build targets recent evergreen
+   * browsers; the legacy one is transpiled down and is what renders on the
+   * older Android WebViews that a shared centre phone actually runs. 50KB more
+   * for a document that opens instead of one that throws.
+   *
+   * Published ESM-only, so both halves go through esbuild below: the library
+   * as an IIFE exposing window.pdfjsLib, and the worker as a CLASSIC worker
+   * script, because `new Worker(url)` without {type:'module'} is the form every
+   * target browser supports. */
+  'pdfjs-dist': '5.4.624',
 };
 
 /* THE TWEAK THAT MAKES FILEROBOT WORK HERE.
@@ -175,6 +187,51 @@ function build(outDir) {
     '--outfile=' + path.join(outDir, 'filerobot-image-editor.min.js'),
   ], work);
 
+  /* PDF.js, in two pieces.
+   *
+   * The worker is not an optimisation here, it is the whole design: parsing and
+   * rasterising a PDF on the main thread locks the page for as long as it takes,
+   * and on the phones this is read on that is seconds per page. Bundled to IIFE
+   * so it loads as a classic worker.
+   *
+   * `pdfjsLib` is assigned from the namespace rather than re-exported, because
+   * the viewer reads `window.pdfjsLib.getDocument` and `GlobalWorkerOptions`. */
+  fs.writeFileSync(path.join(work, 'entry-pdfjs.js'),
+    'import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";\n'
+    + 'window.pdfjsLib = pdfjsLib;\nexport default pdfjsLib;\n');
+  log('bundling pdf.js (legacy build) + its worker');
+  run(fs.existsSync(esbuild) ? esbuild : 'npx', [
+    ...(fs.existsSync(esbuild) ? [] : ['esbuild']),
+    path.join(work, 'entry-pdfjs.js'), '--bundle', '--minify', '--format=iife', '--target=es2019',
+    '--define:process.env.NODE_ENV="production"',
+    '--outfile=' + path.join(outDir, 'pdfjs.min.js'),
+  ], work);
+  run(fs.existsSync(esbuild) ? esbuild : 'npx', [
+    ...(fs.existsSync(esbuild) ? [] : ['esbuild']),
+    path.join(work, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.mjs'),
+    '--bundle', '--minify', '--format=iife', '--target=es2019',
+    '--outfile=' + path.join(outDir, 'pdfjs.worker.min.js'),
+  ], work);
+  const pdfOut = fs.readFileSync(path.join(outDir, 'pdfjs.min.js'), 'utf8');
+  for (const sym of ['getDocument', 'GlobalWorkerOptions']) {
+    if (!pdfOut.includes(sym)) throw new Error('pdf.js bundle is missing ' + sym);
+  }
+  if (!pdfOut.includes('window.pdfjsLib')) throw new Error('pdf.js bundle does not publish window.pdfjsLib');
+
+  /* Standard fonts, for PDFs that reference a base-14 font without embedding it
+     — which is most things exported by older Word and by phone scanners. They
+     are fetched ONE FILE AT A TIME, only when a document actually needs one, so
+     the whole folder is never a download; it is 800KB of files that mostly sit
+     there. cmaps (a further 1.7MB) are deliberately NOT shipped: they exist for
+     CJK text, which this programme does not produce, and a reader who meets a
+     Japanese PDF gets a clear failure rather than everyone paying for it. */
+  const fontsSrc = path.join(work, 'node_modules', 'pdfjs-dist', 'standard_fonts');
+  const fontsOut = path.join(outDir, 'pdfjs-standard-fonts');
+  fs.rmSync(fontsOut, { recursive: true, force: true });
+  fs.mkdirSync(fontsOut, { recursive: true });
+  for (const f of fs.readdirSync(fontsSrc)) fs.copyFileSync(path.join(fontsSrc, f), path.join(fontsOut, f));
+  log('copied', fs.readdirSync(fontsOut).length, 'standard fonts');
+
   log('bundling docx');
   run(fs.existsSync(esbuild) ? esbuild : 'npx', [
     ...(fs.existsSync(esbuild) ? [] : ['esbuild']),
@@ -233,7 +290,7 @@ const OUTPUTS = [
   'fabric.min.js', 'tui-image-editor.min.js', 'tui-image-editor.min.css',
   'tui-color-picker.min.js', 'tui-color-picker.min.css',
   'filerobot-image-editor.min.js', 'filerobot-image-editor.min.css',
-  'docx.min.js',
+  'docx.min.js', 'pdfjs.min.js', 'pdfjs.worker.min.js',
 ];
 
 /* Verify vendor/VERSIONS.json against the bytes on disk.

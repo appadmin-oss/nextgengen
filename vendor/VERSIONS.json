@@ -60,8 +60,8 @@
     "filerobot-image-editor.min.js": {
       "package": "filerobot-image-editor",
       "version": "5.0.0",
-      "bytes": 1012616,
-      "sha256": "74dfa67ef0557122d13d870fc784d899f0ebe158d8e0db39cb5af1f8d645d7a4",
+      "bytes": 1012573,
+      "sha256": "6837a7bbd96914647c031dc06c4aa02818d1b8be83bac130d1cb8175630c0493",
       "note": "vendor-build.js PACKAGES (bundled here, not copied)"
     },
     "html2canvas.min.js": {
@@ -133,6 +133,13 @@
       "sha256": "6ceaf3322256abb103806d788fbbc09e1a82b49d84ba0526c485a9c02a6acfbd",
       "note": "licence text for filerobot-image-editor"
     },
+    "licenses/pdfjs-dist-LICENSE.txt": {
+      "package": "pdfjs-dist",
+      "version": null,
+      "bytes": 10174,
+      "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+      "note": "licence text for pdfjs-dist"
+    },
     "licenses/pica-LICENSE.txt": {
       "package": "pica",
       "version": null,
@@ -153,6 +160,132 @@
       "bytes": 1077,
       "sha256": "6a77faa16797bc76a1f0b38dbb408464a86fa33244e23b9229e9f81d80a05da4",
       "note": "licence text for tui-image-editor"
+    },
+    "pdfjs-standard-fonts/FoxitDingbats.pfb": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 29513,
+      "sha256": "845c752392b6c914fb989c75a08b7792b88f542d2499042ef2889f8c814a16ed",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/FoxitFixed.pfb": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 17597,
+      "sha256": "b6c8fe53f134b8b6d4578cd2d544df4cee9624c4efa8d51a560fb40ea296101b",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/FoxitFixedBold.pfb": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 18055,
+      "sha256": "f1b7159702973f54fc86254ea38bcf3712b2a736eb3a0995751e9f4bb45ad603",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/FoxitFixedBoldItalic.pfb": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 19151,
+      "sha256": "8a000945843bd31add06aee63bf9fd41b7578b4f3242a4b7cd46349ad9d24d4d",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/FoxitFixedItalic.pfb": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 18746,
+      "sha256": "5007faf8320fa1fcc08b8894b356ad976f60b992ba29ee5272578bbdebaf3876",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/FoxitSerif.pfb": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 19469,
+      "sha256": "4f57d2b9d884af8f907bf22df6019b52d86cbf6214fdbd02b1ae05472a543f35",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/FoxitSerifBold.pfb": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 19395,
+      "sha256": "0bdf4b04e964139818d51eda03d566ba999fc3ba2421b1c6c51f9dc969022e80",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/FoxitSerifBoldItalic.pfb": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 20733,
+      "sha256": "a406cac82583bf98175cb62c87ed5e95c45fbb34eece63a10b0a13e793cb2e10",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/FoxitSerifItalic.pfb": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 21227,
+      "sha256": "610ae0687198045c4db5d1a6650fd5e92536631706382eb8b72e38df578d0ae9",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/FoxitSymbol.pfb": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 16729,
+      "sha256": "47967d055530e7357088a08403115425643ec2cdfd6201ba8af0fbd7116c1539",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/LICENSE_FOXIT": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 1553,
+      "sha256": "b578cdd2345840ada550bd12519533812320d5f1d21cf4c1c7e1b1b0a31c98b7",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/LICENSE_LIBERATION": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 4414,
+      "sha256": "93fed46019c38bbe566b479d22148e2e8a1e85ada614accb0211c37b2c61c19b",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/LiberationSans-Bold.ttf": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 137052,
+      "sha256": "361c61b82d575c5c35fd9157fda8b0194bcfcd0d88ea8521a4fb5dd53d33dddc",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/LiberationSans-BoldItalic.ttf": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 135124,
+      "sha256": "a224075ac17495ad0a3af3bc0a419ac0704a8b3fd1095456201fb9b095fc281d",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/LiberationSans-Italic.ttf": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 162036,
+      "sha256": "832b4406dbef23628800d3aaad21048534ac84d7e3ad955be83b8172ed8ef512",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs-standard-fonts/LiberationSans-Regular.ttf": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 139512,
+      "sha256": "f8ace1f892b2bd9dc1792ba7f097fa7588f84fed48321480e04de5390828221f",
+      "note": "base-14 font for PDFs that do not embed one; fetched individually, on demand"
+    },
+    "pdfjs.min.js": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 497871,
+      "sha256": "fc12dbfc7e13a5cdebe1d5dff615a1336847e45d0d8811705648a2789c70108f",
+      "note": "vendor-build.js PACKAGES (legacy build, bundled to IIFE)"
+    },
+    "pdfjs.worker.min.js": {
+      "package": "pdfjs-dist",
+      "version": "5.4.624",
+      "bytes": 1086707,
+      "sha256": "6bfa4ed114e3d865c8c6390037b0880d772749cfdf16873a031cd9209f3ae457",
+      "note": "vendor-build.js PACKAGES (legacy worker, bundled as a classic worker)"
     },
     "phosphor/Phosphor-Fill.woff2": {
       "package": "@phosphor-icons/web",

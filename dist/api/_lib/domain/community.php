@@ -459,6 +459,53 @@ function community_mention_search(array $p): array {
     return ['ok' => true, 'people' => array_slice($uniq, 0, 10)];
 }
 
+/** This member's own @handle — a student's stored one, or the derived member
+ *  handle. Used by the mentions filter to find posts that name them. */
+function community_handle_for(string $memberId): string {
+    if ($memberId === '') return '';
+    $s = db_row("SELECT handle FROM summer_students WHERE studentId = ? AND handle <> '' LIMIT 1", [$memberId]);
+    if ($s) return strtolower((string)$s['handle']);
+    $m = db_row("SELECT fullName FROM members WHERE memberId = ? LIMIT 1", [$memberId]);
+    return $m ? strtolower(community_member_handle((string)$m['fullName'])) : '';
+}
+
+/**
+ * The counts behind the Today screen's filter chips.
+ *
+ * One request rather than three speculative feed fetches. A chip that says
+ * "Unread 4" has to be RIGHT — a number that disagrees with what the filter
+ * then shows is worse than no number, because it is the part of the screen a
+ * member uses to decide whether to look at all.
+ */
+function community_today_counts(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    if ($viewer === '') return ['ok' => false, 'error' => 'forbidden'];
+    community_ensure_channels();
+
+    $unread = (int)(db_row(
+        "SELECT COUNT(*) c FROM community_posts cp
+          WHERE cp.status = 'published' AND cp.authorId <> ?
+            AND cp.createdAt > COALESCE(
+                (SELECT r.lastReadAt FROM community_reads r
+                  WHERE r.memberId = ? AND r.channelId = cp.channelId), '')",
+        [$viewer, $viewer])['c'] ?? 0);
+
+    $handle = community_handle_for($viewer);
+    $mentions = 0;
+    if ($handle !== '') {
+        $mentions = (int)(db_row(
+            "SELECT COUNT(*) c FROM community_posts cp
+              WHERE cp.status = 'published' AND cp.authorId <> ?
+                AND (LOWER(cp.body) LIKE ? OR LOWER(cp.body) LIKE ? OR LOWER(cp.body) LIKE ? OR LOWER(cp.body) LIKE ?)",
+            [$viewer, '@' . $handle, '@' . $handle . ' %', '% @' . $handle, '% @' . $handle . ' %'])['c'] ?? 0);
+    }
+
+    $saved = (int)(db_row("SELECT COUNT(*) c FROM community_bookmarks WHERE memberId = ?", [$viewer])['c'] ?? 0);
+
+    return ['ok' => true, 'unread' => $unread, 'mentions' => $mentions, 'saved' => $saved,
+            'handle' => $handle];
+}
+
 /* ── Posts ────────────────────────────────────────────────────────────── */
 
 /** Build the client shape of a post for a given viewer. */
@@ -521,6 +568,30 @@ function community_feed(array $p): array {
     if ($channel === 'bookmarks') {
         $where[] = "cp.postId IN (SELECT postId FROM community_bookmarks WHERE memberId = ?)";
         $args[] = $viewer;
+    } elseif ($channel === 'unread') {
+        /* Everything posted since this member last read the channel it is in.
+         *
+         * A channel they have never opened has no read row, and everything in
+         * it is unread — which is the honest answer and the one a new member
+         * needs. Their own posts are excluded: nobody has unread news from
+         * themselves, and seeing your own message in a catch-up list is how a
+         * filter teaches people to stop trusting it. */
+        $where[] = "cp.authorId <> ? AND cp.createdAt > COALESCE("
+                 . "(SELECT r.lastReadAt FROM community_reads r WHERE r.memberId = ? AND r.channelId = cp.channelId), '')";
+        $args[] = $viewer; $args[] = $viewer;
+    } elseif ($channel === 'mentions') {
+        /* Posts that name this member. The handle is matched with word-ish
+         * boundaries so @ada does not light up for @adaeze — being notified for
+         * somebody else's name is the fastest way to lose a reader's attention
+         * for the notifications that are theirs. */
+        $handle = community_handle_for($viewer);
+        if ($handle === '') return ['ok' => true, 'posts' => [], 'hasMore' => false];
+        $where[] = "cp.authorId <> ? AND (LOWER(cp.body) LIKE ? OR LOWER(cp.body) LIKE ? OR LOWER(cp.body) LIKE ? OR LOWER(cp.body) LIKE ?)";
+        $args[] = $viewer;
+        $args[] = '@' . $handle;              // the whole body is the mention
+        $args[] = '@' . $handle . ' %';       // at the start
+        $args[] = '% @' . $handle;            // at the end
+        $args[] = '% @' . $handle . ' %';     // in the middle
     } elseif ($channel !== 'all' && $channel !== '') {
         $ch = db_row("SELECT channelId FROM community_channels WHERE slug = ? LIMIT 1", [$channel]);
         if (!$ch) return ['ok' => true, 'posts' => [], 'hasMore' => false];

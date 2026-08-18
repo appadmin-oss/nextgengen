@@ -4841,25 +4841,38 @@ function unzipDocumentXml(buf) {
     await cmP.waitForFunction(() => Array.from(document.styleSheets).some(ss => {
       try { return (ss.href || '').indexOf('styles.css') !== -1 && ss.cssRules.length > 0; } catch (_) { return false; }
     }), null, { timeout: 10000 });
-    // Stand the community's own markup up; the classes are what carry the CSS.
+    /* Stand the community's own markup up; the classes are what carry the CSS.
+       This is the REDESIGNED markup — the tab bar, the message actions, the
+       filter chips — because the design it used to assert on (a sidebar, a
+       header with a burger and two icon buttons) no longer exists. A test that
+       keeps measuring deleted chrome passes forever and protects nothing. */
     await cmP.evaluate(() => {
       document.body.className = 'cm-app';
-      document.body.innerHTML = '<div class="page cm-slack-page"><div class="cm-slack">'
-        + '<aside class="cm-sb"><nav class="cm-sb-nav">'
-        + '<button class="cm-sb-item cm-sb-chan"><span class="cm-sb-hash">#</span><span class="cm-sb-name">Practical Coding</span></button>'
-        + '</nav></aside>'
-        + '<main class="cm-col"><header class="cm-hd">'
-        + '<button class="cm-hd-burger">☰</button>'
-        + '<div class="cm-hd-title"><div class="cm-hd-line"><span class="cm-hd-name">Commons</span></div></div>'
-        + '<div class="cm-hd-actions"><button class="cm-hd-sortbtn">New</button>'
-        + '<button class="cm-hd-btn cm-hd-btn-ai">✨</button>'
-        + '<button class="cm-hd-btn cm-hd-btn-info">ⓘ</button></div></header>'
-        + '<div class="cm-stream is-feed"><div class="cm-cardfeed"><article class="cm-card">'
-        + '<div class="cm-card-body">Hello</div><div class="cm-card-foot">'
-        + '<button class="cm-chip-react">👏 3</button>'
-        + '<button class="cm-card-reply">2 replies</button>'
-        + '<button class="cm-menu-btn">⋯</button></div></article></div></div></main>'
-        + '</div></div>';
+      document.body.innerHTML = '<div class="page cm-page"><div class="cmm">'
+        + '<div class="cmm-body">'
+        + '<header class="cmm-head"><button class="cmm-av-btn"><span class="cm-avatar cmm-av">A</span></button>'
+        + '<div class="cmm-head-txt"><h1 class="cmm-greet">Good morning, Ada</h1>'
+        + '<p class="cmm-sub">Egbeda · Coding</p></div>'
+        + '<button class="cmm-icon-btn">B</button></header>'
+        + '<button class="cmm-search"><span>Search messages</span></button>'
+        + '<div class="cmm-chips"><button class="cmm-chip is-on">All</button>'
+        + '<button class="cmm-chip">Unread<span class="cmm-chip-n">4</span></button></div>'
+        + '<div class="cmm-list"><button class="cmm-ch-row"><span class="cmm-ch-av">#</span>'
+        + '<span class="cmm-ch-body"><span class="cmm-ch-name">Commons</span>'
+        + '<span class="cmm-ch-prev">Hello</span></span></button></div>'
+        + '<div class="cmm-stream"><article class="cmm-msg">'
+        + '<div class="cmm-msg-body">Hello</div>'
+        + '<div class="cm-chips"><button class="cm-chip-react">👏 <b>3</b></button>'
+        + '<button class="cm-react-add">+</button></div>'
+        + '<div class="cmm-msg-acts"><button class="cmm-msg-act">React</button>'
+        + '<button class="cmm-msg-act">2 replies</button></div></article></div></div>'
+        + '<button class="cmm-fab">+</button>'
+        + '<nav class="cmm-tabs">'
+        + '<button class="cmm-tab is-on"><span class="cmm-tab-l">Today</span></button>'
+        + '<button class="cmm-tab"><span class="cmm-tab-l">Channels</span></button>'
+        + '<button class="cmm-tab"><span class="cmm-tab-l">Arcade</span></button>'
+        + '<button class="cmm-tab"><span class="cmm-tab-l">Journal</span></button>'
+        + '</nav></div></div>';
     });
     await cmP.waitForTimeout(250);
 
@@ -4868,13 +4881,9 @@ function unzipDocumentXml(buf) {
        not there while missing one that is. */
     const tiny = await cmP.evaluate(() => {
       const out = [];
-      document.querySelectorAll('.cm-col button, .cm-sb button').forEach(el => {
+      document.querySelectorAll('.cmm button').forEach(el => {
         const r = el.getBoundingClientRect();
         if (r.width < 1 || r.height < 1) return;
-        /* The sidebar is parked off-canvas on a phone until the burger opens
-           it. elementFromPoint over an off-screen element reports whatever is
-           painted there instead, so measuring it says nothing about the
-           target — it is measured when it is open, not while it is away. */
         if (r.right <= 0 || r.left >= window.innerWidth) return;
         const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
         /* An ancestor at the probe point is the ancestor being hit, not the
@@ -4883,25 +4892,37 @@ function unzipDocumentXml(buf) {
            the element itself, so real extensions are still credited. */
         const owns = (x, y) => { const h = document.elementFromPoint(x, y); return !!h && (h === el || el.contains(h)); };
         let up = 0, down = 0;
-        for (let d = 1; d <= 24; d++) { if (owns(cx, cy - d)) up = d; else break; }
-        for (let d = 1; d <= 24; d++) { if (owns(cx, cy + d)) down = d; else break; }
+        for (let d = 1; d <= 30; d++) { if (owns(cx, cy - d)) up = d; else break; }
+        for (let d = 1; d <= 30; d++) { if (owns(cx, cy + d)) down = d; else break; }
         if (up + down + 1 < 40 || r.width < 40) out.push(String(el.className).split(' ')[0] + ' ' + Math.round(r.width) + 'x' + (up + down + 1));
       });
       return out;
     });
     ok('the community has controls to measure on a phone (control)',
-       await cmP.evaluate(() => document.querySelectorAll('.cm-col button').length) >= 5);
+       await cmP.evaluate(() => document.querySelectorAll('.cmm button').length) >= 10);
     ok('…and every one of them is a 40px+ target (' + (tiny.length ? tiny.join(', ') : 'all pass') + ')',
        tiny.length === 0);
-    /* Details has no other entry point. Catch-up does — the sidebar footer —
-       so it is the one that may give up its space. */
-    ok('channel Details can still be opened on a phone',
+
+    /* The four destinations are all reachable, all the time. The redesign put
+       them in a tab bar precisely so none of them can be hidden behind a
+       burger the way the channel list used to be. */
+    ok('all four destinations are on screen, none behind a menu',
        await cmP.evaluate(() => {
-         const b = document.querySelector('.cm-hd-btn-info');
-         return !!b && getComputedStyle(b).display !== 'none' && b.getBoundingClientRect().width > 0;
+         const tabs = [...document.querySelectorAll('.cmm-tab')];
+         return tabs.length === 4 && tabs.every(t => {
+           const r = t.getBoundingClientRect();
+           return getComputedStyle(t).display !== 'none' && r.width > 40 && r.top < window.innerHeight;
+         });
        }));
-    ok('…while AI catch-up yields its space, since the sidebar still offers it',
-       await cmP.evaluate(() => getComputedStyle(document.querySelector('.cm-hd-btn-ai')).display === 'none'));
+    /* The tab bar must sit ON the viewport bottom and the FAB above it — the
+       one place a phone layout most often gets wrong, because the two are
+       positioned independently and only collide on a real screen. */
+    ok('the tab bar is docked at the bottom and the FAB clears it',
+       await cmP.evaluate(() => {
+         const bar = document.querySelector('.cmm-tabs').getBoundingClientRect();
+         const fab = document.querySelector('.cmm-fab').getBoundingClientRect();
+         return Math.abs(bar.bottom - window.innerHeight) < 2 && fab.bottom <= bar.top + 1;
+       }));
     await cmP.close(); await cmT.close();
 
     /* ── The Control Room on a phone ───────────────────────────────────────

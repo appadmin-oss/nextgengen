@@ -414,6 +414,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'community.pollVote'      => 'community_poll_vote',
             'community.mentionSearch' => 'community_mention_search',
             'community.markRead'      => 'community_mark_read',
+            'community.today'         => 'community_today_counts',
             'community.search'        => 'community_search',
             'community.channelMembers'=> 'community_channel_members',
             'community.star'          => 'community_star',
