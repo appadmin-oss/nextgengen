@@ -6913,7 +6913,14 @@ function MentorPortal() {
   const load = React.useCallback((c, sc) => {
     setState("loading");
     NGGApi.member.mentorRoster(c || "", sc || "").then(r => { setData(r); setState("ready"); })
-      .catch(e => { const c2 = e.code || e.message; setState(c2 === "unauthorized" ? "need-auth" : c2 === "not_a_mentor" ? "not-mentor" : "error"); });
+      .catch(e => {
+        const c2 = e.code || e.message;
+        setState(c2 === "unauthorized" ? "need-auth"
+               : c2 === "not_a_mentor" ? "not-mentor"
+               : c2 === "not_cleared" ? "not-cleared"
+               : c2 === "no_centre" ? "no-centre"
+               : "error");
+      });
   }, []);
   React.useEffect(() => { load(centre, scope); }, [load, centre, scope]);
   React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(centre, scope); }, [auth && auth.isSignedIn]);
@@ -6955,6 +6962,23 @@ function MentorPortal() {
     {typeof CmStudentSignIn === "function"
       ? <CmStudentSignIn dest="/mentor" roles={["instructor"]}/>
       : <p style={{ color: "rgba(230,238,255,.55)", fontSize: 13.5, textAlign: "center" }}>Card sign-in is on the Community page.</p>}
+  </div>);
+  /* A centre Ops volunteer whose safeguarding is not cleared, or whose record
+     names no centre, is not a stranger and not an error — they are one staff
+     action away, and each of these says which one. */
+  if (state === "not-cleared") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}>
+    <h1 style={{ fontSize: 22 }}>Your safeguarding check isn’t cleared yet</h1>
+    <p style={{ color: "rgba(230,238,255,.6)", marginTop: 8, maxWidth: 430, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
+      The portal opens once your screening is cleared — the same check required before anyone takes a
+      register. Ask your centre coordinator where yours has got to.
+    </p>
+  </div>);
+  if (state === "no-centre") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}>
+    <h1 style={{ fontSize: 22 }}>No centre on your record</h1>
+    <p style={{ color: "rgba(230,238,255,.6)", marginTop: 8, maxWidth: 430, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
+      The portal shows a centre’s children, and yours doesn’t name one yet. A coordinator can add it to
+      your volunteer record in the console.
+    </p>
   </div>);
   if (state === "not-mentor") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 22 }}>This account has no class</h1><p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>The portal opens for mentors, instructors and admin staff. If that's you, make sure you're signed in with the email on your mentor record, or with the ID card issued for your instructor or volunteer role.</p></div>);
   if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load your class</h1><button onClick={() => load(centre, scope)} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);

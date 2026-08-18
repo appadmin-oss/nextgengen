@@ -7738,13 +7738,18 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     chk('an instructor CAN star a child in their own course',
         !empty(backend_dispatch('behaviour.star.give', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-PIANO', 'stars' => 2, 'note' => 'Kept time'])['ok']));
 
-    // A volunteer who registered as "Admin / Ops" is not console staff. That
-    // lane is a self-service form; a capability is what actually grants
-    // oversight of a child's behaviour record.
+    /* A volunteer who registered as "Admin / Ops" is not console staff. That
+     * lane is a self-service form, so ticking the box must buy nothing on its
+     * own — two doors can open for this person, and neither is the tick.
+     *
+     * The reason code is 'not_cleared' rather than 'not_a_mentor' because their
+     * ROLE is now a door (see the centre Ops lane): it is safeguarding
+     * clearance that is missing, not standing. Telling them "you have no class"
+     * would send them to the wrong person for help. */
     db_insert('volunteers', ['volunteerId' => 'VOL-OPS-1', 'fullName' => 'Ops Person', 'email' => 'ops1@example.com',
         'role' => 'admin', 'centre' => 'Egbeda', 'status' => 'active', 'createdAt' => now_iso()]);
-    chk('a self-registered "Admin / Ops" volunteer is not let in',
-        backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-1'])['error'] === 'not_a_mentor');
+    chk('a self-registered "Admin / Ops" volunteer is not let in on the tick alone',
+        backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-1'])['error'] === 'not_cleared');
 
     /* …until somebody actually grants it. The centres are run by volunteers,
      * and the ones doing the running need the roster; what must not happen is
@@ -7791,10 +7796,16 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     chk('a volunteer with no centre cannot be granted access',
         backend_dispatch('admin.volunteers.caps', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-OPS-2', 'caps' => ['summer']])['error'] === 'volunteer_has_no_centre');
 
-    // Revoking is granting nothing — and it puts them straight back outside.
+    /* Revoking is granting nothing — and it puts them straight back outside.
+     * This volunteer's safeguarding is still 'pending', so the centre Ops lane
+     * does not catch them on the way past; a CLEARED Ops volunteer would keep
+     * the portal after a revoke, because their role opens a different door and
+     * revoking a capability does not close it. */
     backend_dispatch('admin.volunteers.caps', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => 'VOL-OPS-1', 'caps' => []]);
     chk('revoking access closes the portal again',
-        backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-1'])['error'] === 'not_a_mentor');
+        backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-1'])['error'] === 'not_cleared');
+    chk('…and a capability revoked from an uncleared volunteer leaves no way back in',
+        mentor_portal_role('VOL-OPS-1') === '');
     chk('the grant and the revoke are both in the audit log',
         (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'volunteer.caps' AND subject = 'VOL-OPS-1'")['c'] ?? 0) >= 2);
 
@@ -14739,6 +14750,94 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-KID%'");
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-MENT-1','NGG-MENT-2','NGG-LEAD-1')");
     db_exec("DELETE FROM mentors WHERE mentorId LIKE 'MEN-NGG%' OR mentorId = 'MEN-LEAD-1'");
+})();
+
+
+/* ── The centre Ops volunteer ─────────────────────────────────────────────
+   'admin' is one of the three roles the volunteer form offers, and it does not
+   mean console staff — it means somebody running a CENTRE. The portal refused
+   that role outright, so a centre's own Ops volunteer could not see the
+   children at the centre they run.
+
+   The reason it was refused is real and has not gone away: the volunteer form
+   is PUBLIC, and anybody can tick "Admin / Ops". So the door is not the role —
+   it is safeguarding clearance, which is a staff action, and which this
+   codebase already requires before a volunteer may take a register. These tests
+   are mostly about what stays shut. */
+(function () {
+    db_insert('volunteers', ['volunteerId' => 'VOL-OPS-C', 'fullName' => 'Ngozi Centre', 'email' => 'ngozic@example.com',
+        'role' => 'admin', 'status' => 'active', 'centre' => 'Egbeda', 'faculty' => 'Music',
+        'safeguarding' => 'pending', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    /* Ticking "Admin / Ops" on a public form must buy nothing on its own. */
+    chk('a centre Ops volunteer whose safeguarding is not cleared is refused',
+        backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-C'])['error'] === 'not_cleared');
+    chk('…and the nav does not offer them the portal either',
+        mentor_portal_role('VOL-OPS-C') === '');
+
+    db_update('volunteers', ['safeguarding' => 'cleared'], ['volunteerId' => 'VOL-OPS-C']);
+    $g = mentor_gate(['requesterId' => 'VOL-OPS-C']);
+    chk('clearing safeguarding opens the portal for them',
+        !empty($g['ok']) && $g['role'] === 'admin' && $g['rank'] === 'admin');
+
+    /* THE WHOLE CENTRE. A mentor is narrowed to a department and an instructor
+       to their courses; centre Ops is narrowed to neither, because their job is
+       the place rather than a class. */
+    chk('…on the whole centre, not narrowed to a faculty',
+        array_key_exists('courses', $g) && $g['courses'] === null);
+    chk('…and on both cohorts, which is what "the whole centre" means',
+        ($g['programmes'] ?? []) === ['summer', 'ngg']);
+
+    $r = backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-C']);
+    $ids = array_column($r['students'] ?? [], 'studentId');
+    chk('the roster carries the summer children at that centre', in_array('SUM-R-1', $ids, true));
+    chk('…and the club members beside them', in_array('NGG-2025-0601', $ids, true));
+    chk('…and they are never asked to pick a centre, because they have one',
+        empty($r['needsCentre']) && $r['centre'] === 'Egbeda');
+
+    /* What stays shut. A role is not an admin's reach any more than a grant is:
+       this opens the whole of ONE centre, not the programme. */
+    chk('a centre Ops volunteer cannot reach another centre\'s children',
+        !in_array('SUM-AY-1', $ids, true));
+    chk('…and naming that centre outright is refused',
+        backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-C', 'centre' => 'Ayobo'])['error'] === 'not_your_centre');
+    /* Scoping the roster alone would be cosmetic — the subject id is posted by
+       the client, so the write path is checked too. */
+    chk('…and so is starring a child there, however the id is posted',
+        backend_dispatch('behaviour.star.give', ['requesterId' => 'VOL-OPS-C', 'subjectId' => 'SUM-AY-1',
+            'stars' => 2])['error'] === 'not_your_centre');
+    chk('…and opening that child\'s mentoring record',
+        backend_dispatch('member.mentor.child', ['requesterId' => 'VOL-OPS-C',
+            'subjectId' => 'SUM-AY-1'])['error'] === 'not_your_centre');
+
+    /* A record with no centre cannot answer "the whole of WHICH centre", and an
+       empty roster reads as a broken portal rather than as the missing field it
+       actually is. */
+    db_update('volunteers', ['centre' => ''], ['volunteerId' => 'VOL-OPS-C']);
+    chk('a centre Ops volunteer with no centre is told so, not shown an empty class',
+        backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-C'])['error'] === 'no_centre');
+    db_update('volunteers', ['centre' => 'Egbeda'], ['volunteerId' => 'VOL-OPS-C']);
+
+    /* An archived volunteer is nobody, cleared or not. */
+    db_update('volunteers', ['status' => 'archived'], ['volunteerId' => 'VOL-OPS-C']);
+    /* 'no_requester', not 'not_a_mentor': an archived volunteer does not resolve
+       to a person at all, so the gate never gets as far as asking what they
+       are. Shut is shut either way — this pins WHERE it shuts. */
+    chk('an archived Ops volunteer is shut out again',
+        backend_dispatch('member.mentor.roster', ['requesterId' => 'VOL-OPS-C'])['error'] === 'no_requester');
+    db_update('volunteers', ['status' => 'active'], ['volunteerId' => 'VOL-OPS-C']);
+
+    /* The other two volunteer roles keep the narrowing that fits them: a role
+       of 'admin' is the only one that means the whole centre. */
+    db_insert('volunteers', ['volunteerId' => 'VOL-OPS-M', 'fullName' => 'Tunde Teach', 'email' => 'tundet@example.com',
+        'role' => 'mentor', 'status' => 'active', 'centre' => 'Egbeda', 'faculty' => 'Music',
+        'safeguarding' => 'cleared', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $gm = mentor_gate(['requesterId' => 'VOL-OPS-M']);
+    chk('a volunteer MENTOR is still held to their faculty, not handed the centre',
+        !empty($gm['ok']) && $gm['role'] === 'mentor' && is_array($gm['courses'] ?? null));
+    chk('…and still covers the summer cohort only', ($gm['programmes'] ?? []) === ['summer']);
+
+    db_exec("DELETE FROM volunteers WHERE volunteerId IN ('VOL-OPS-C','VOL-OPS-M')");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

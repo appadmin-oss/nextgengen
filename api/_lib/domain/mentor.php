@@ -138,7 +138,7 @@ function mentor_gate(array $p): array {
      * was given oversight of behaviour data. */
     $v = $m['__volunteer'] ?? ($email !== ''
         ? db_row("SELECT * FROM volunteers WHERE lower(email) = ? AND status = 'active'
-                  AND role IN ('mentor','instructor') ORDER BY id DESC LIMIT 1", [$email])
+                  AND role IN ('mentor','instructor','admin') ORDER BY id DESC LIMIT 1", [$email])
         : null);
     if ($v && in_array((string)($v['role'] ?? ''), ['mentor', 'instructor'], true)) {
         $isInstructor = (string)$v['role'] === 'instructor';
@@ -160,6 +160,40 @@ function mentor_gate(array $p): array {
             'programmes' => ['summer'],
             'centres' => $centre !== '' ? [$centre] : null,
             'courses' => $courses ?: null];
+    }
+
+    /* The centre Ops lane.
+     *
+     * 'admin' is one of the three roles the volunteer form offers (VOL_ROLES)
+     * and it does not mean console staff — it means somebody running a CENTRE.
+     * Their job is the place, not a class, so they get the centre entire: both
+     * cohorts, and no narrowing by faculty or course the way a mentor or an
+     * instructor is narrowed.
+     *
+     * GATED ON SAFEGUARDING, NOT ON WHAT THE APPLICANT TYPED. The volunteer
+     * form is public and anybody can tick "Admin / Ops"; clearing safeguarding
+     * is a staff action, and it is already the bar this codebase applies before
+     * a volunteer may so much as take attendance. Without it, a public form
+     * would be a route into children's records.
+     *
+     * Still their OWN centre. A grant is not an admin's reach, and neither is a
+     * role: this opens the whole of one centre, not the programme.
+     */
+    if ($v && (string)($v['role'] ?? '') === 'admin') {
+        $centre = trim((string)($v['centre'] ?? ''));
+        if ((string)($v['safeguarding'] ?? 'pending') !== 'cleared') return ['ok' => false, 'error' => 'not_cleared'];
+        // No centre means no answer to "the whole of WHICH centre", and an
+        // empty roster reads as a broken portal rather than a missing field.
+        if ($centre === '') return ['ok' => false, 'error' => 'no_centre'];
+        $opsMentor = db_row("SELECT mentorId FROM mentors WHERE status = 'active' AND volunteerId = ? LIMIT 1",
+                            [(string)($v['volunteerId'] ?? '')]);
+        return ['ok' => true, 'member' => $m, 'role' => 'admin', 'rank' => 'admin',
+            'mentorId' => (string)($opsMentor['mentorId'] ?? ''),
+            'mentor' => ['fullName' => (string)($v['fullName'] ?? ''), 'centre' => $centre,
+                         'department' => '', 'rank' => 'admin'],
+            'programmes' => ['summer', 'ngg'],
+            'centres' => [$centre],
+            'courses' => null];
     }
 
     return ['ok' => false, 'error' => 'not_a_mentor'];
