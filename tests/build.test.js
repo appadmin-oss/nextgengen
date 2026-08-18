@@ -23,6 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
 // Distinctive name: if this suite ever dies mid-run, the leftover is obvious
@@ -181,6 +182,39 @@ process.on('exit', cleanup);
     ok('an offline navigation falls back to the shell, and never to a bare 504',
       /ignoreSearch/.test(sw) && /OFFLINE_HTML/.test(sw)
       && /shellResponse\(\)/.test(sw));
+    /* ── vendor/ is identified, not just present ──────────────────────────
+     * Eleven of the files in vendor/ are committed minified blobs with no
+     * build step — React and Babel among them. Without a manifest there was no
+     * recorded version, no integrity hash, and nothing that would notice one
+     * being hand-edited: "are we exposed to CVE-X in jspdf?" was unanswerable
+     * without reverse-engineering the file. VERSIONS.json pins every byte;
+     * this keeps it honest, because a manifest that drifts from the files it
+     * describes is worse than none — it reads as verified when it is not. */
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'vendor', 'VERSIONS.json'), 'utf8'));
+    const listed = Object.keys(manifest.files || {});
+    const walk = (dir, base) => fs.readdirSync(dir).sort().flatMap((n) => {
+      const rel = base ? base + '/' + n : n;
+      if (rel === 'VERSIONS.json') return [];
+      return fs.statSync(path.join(dir, n)).isDirectory() ? walk(path.join(dir, n), rel) : [rel];
+    });
+    const onDisk = walk(path.join(ROOT, 'vendor'), '');
+    ok('every file in vendor/ is listed in VERSIONS.json',
+      onDisk.every((f) => listed.includes(f)) && listed.every((f) => onDisk.includes(f)));
+    const mismatched = onDisk.filter((rel) => {
+      const want = manifest.files[rel];
+      if (!want) return true;
+      const got = crypto.createHash('sha256')
+        .update(fs.readFileSync(path.join(ROOT, 'vendor', rel))).digest('hex');
+      return got !== want.sha256;
+    });
+    ok('…and its recorded sha256 matches the bytes on disk', mismatched.length === 0);
+    if (mismatched.length) console.error('    drifted: ' + mismatched.join(', '));
+    /* Naming the package is required; naming the VERSION is not yet possible
+       for five of them and has deliberately not been guessed. A wrong version
+       in a manifest is worse than an absent one — it answers a security
+       question confidently and incorrectly. */
+    ok('every third-party file at least names its package',
+      Object.entries(manifest.files).every(([, e]) => e.package || (e.note || '').includes('first-party')));
   } catch (e) {
     fail++; console.error('  ✗ harness error: ' + (e && e.message));
   } finally { cleanup(); }

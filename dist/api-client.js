@@ -232,6 +232,29 @@
     }
   }
 
+  /* What is this file, in the four terms the signer understands?
+   *
+   * This used to be one line — video, or else image — and "or else image" is
+   * what turned every shared PDF into a PNG: the server signed an image upload
+   * with an `f_auto` incoming transformation, and Cloudinary dutifully
+   * rasterised page one and stored that instead of the document.
+   *
+   * MIME type first, because the file picker and the camera both set it, then
+   * the extension, because a file dragged from some Android file managers
+   * arrives with an empty `type`. A document must be recognised by either
+   * route — being wrong here silently destroys the thing the member attached.
+   */
+  const DOC_EXT = /\.(pdf|docx?|pptx?|xlsx?|txt|csv|rtf|odt|ods|odp|zip)$/i;
+  function mediaKindOf(file) {
+    const type = (file && file.type) || '';
+    const name = (file && file.name) || '';
+    if (/^video\//.test(type)) return 'video';
+    if (type === 'application/pdf' || /\.pdf$/i.test(name)) return 'pdf';
+    if (/^image\//.test(type)) return 'image';
+    if (DOC_EXT.test(name) || /^(application|text)\//.test(type)) return 'raw';
+    return 'image';
+  }
+
   async function uploadFile(file, kind, onProgress) {
     kind = kind || 'proof';
     if (onProgress) onProgress(0);
@@ -239,7 +262,7 @@
     // Headshots are captured on PUBLIC surfaces (apply, gate registration, the
     // guardian reshoot page) where there is no session — so they sign through
     // the public headshot endpoint. Everything else uses the member endpoint.
-    const mediaKind = /^video\//.test(file.type || '') ? 'video' : 'image';
+    const mediaKind = mediaKindOf(file);
     const sig = kind === 'headshot'
       ? await request('/public/upload-headshot-sign.php', { body: {} })
       : await request('/member/upload-sign.php', { body: { kind, mediaKind } });
@@ -254,13 +277,23 @@
       // server-side; the FormData must match the signed params exactly).
       if (sig.eager) { fd.append('eager', sig.eager); if (sig.eagerAsync) fd.append('eager_async', 'true'); }
       if (sig.transformation) fd.append('transformation', sig.transformation);
+      // Documents keep the member's own filename, so the delivered URL still
+      // ends in the real extension. Signed server-side — must match exactly.
+      if (sig.useFilename) { fd.append('use_filename', 'true'); fd.append('unique_filename', 'true'); }
       const xhr = new XMLHttpRequest();
       xhr.open('POST', sig.uploadUrl);
       if (onProgress) xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
       xhr.onload = () => {
         let d = {}; try { d = JSON.parse(xhr.responseText); } catch (_) {}
         if (xhr.status >= 200 && xhr.status < 300 && d.secure_url) {
-          resolve({ url: d.secure_url, publicId: d.public_id, resourceType: d.resource_type, format: d.format, bytes: d.bytes });
+          /* `format` is what Cloudinary decided it stored, and it is the honest
+             answer to "did the document survive the trip". A caller that asked
+             to upload a PDF and is handed back format 'png' has been given a
+             picture of page one — worth knowing at the call site rather than
+             three screens later when somebody tries to open it. */
+          resolve({ url: d.secure_url, publicId: d.public_id, resourceType: d.resource_type,
+                    format: d.format, bytes: d.bytes, mediaKind: mediaKind,
+                    pages: d.pages || 0, originalName: file.name || '' });
         } else {
           reject(new Error((d.error && d.error.message) || ('upload_failed_' + xhr.status)));
         }
@@ -453,6 +486,10 @@
     // Exposed for the browser test: the no-network fallback shrink, which
     // decides whether a photo is accepted when the optimiser cannot be fetched.
     __canvasShrink: canvasShrink,
+    // …and the classifier that decides what a file IS. Worth testing directly:
+    // getting this wrong does not fail an upload, it silently stores something
+    // other than what the member chose.
+    __mediaKindOf: mediaKindOf,
     auth: {
       gateway: (identifier) => request('/auth/gateway.php', { body: { identifier } }),
       request: (identifier) => request('/auth/request.php', { body: { identifier } }),

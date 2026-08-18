@@ -236,7 +236,58 @@ const OUTPUTS = [
   'docx.min.js',
 ];
 
+/* Verify vendor/VERSIONS.json against the bytes on disk.
+ *
+ * The recipe above can only speak for the five packages it builds. The other
+ * eleven files in vendor/ — React, Babel, jspdf, jsQR, pica and the rest — are
+ * committed blobs with no build step, and until VERSIONS.json existed they had
+ * no recorded version, no integrity hash and nothing that would notice one
+ * being edited by hand. This is the part of `--check` that covers them.
+ *
+ * Runs WITHOUT npm, so it works on a machine that cannot reach the registry —
+ * which matters, because it is the only integrity check most of vendor/ has.
+ */
+function checkManifest() {
+  const file = path.join(VENDOR, 'VERSIONS.json');
+  if (!fs.existsSync(file)) { console.error('  ✗ vendor/VERSIONS.json is missing'); return 1; }
+  const manifest = JSON.parse(fs.readFileSync(file, 'utf8')).files || {};
+
+  const onDisk = [];
+  (function walk(dir, base) {
+    for (const name of fs.readdirSync(dir).sort()) {
+      const rel = base ? base + '/' + name : name;
+      if (rel === 'VERSIONS.json') continue;
+      const full = path.join(dir, name);
+      if (fs.statSync(full).isDirectory()) walk(full, rel); else onDisk.push(rel);
+    }
+  })(VENDOR, '');
+
+  let bad = 0;
+  for (const rel of onDisk) {
+    const entry = manifest[rel];
+    if (!entry) { console.error('  ✗ ' + rel + ' is in vendor/ but not in VERSIONS.json'); bad++; continue; }
+    const h = sha(fs.readFileSync(path.join(VENDOR, rel)));
+    if (h !== entry.sha256) {
+      console.error('  ✗ ' + rel + ' does not match VERSIONS.json (disk ' + h + ' vs manifest ' + entry.sha256 + ')');
+      bad++;
+    }
+  }
+  for (const rel of Object.keys(manifest)) {
+    if (!onDisk.includes(rel)) { console.error('  ✗ ' + rel + ' is in VERSIONS.json but missing from vendor/'); bad++; }
+  }
+  if (!bad) {
+    const unresolved = Object.entries(manifest).filter(([, e]) => e.package && !e.version).map(([k]) => k);
+    console.log('  ✓ VERSIONS.json matches all ' + onDisk.length + ' files in vendor/');
+    if (unresolved.length) {
+      console.log('  · version still unestablished for: ' + unresolved.join(', '));
+      console.log('    (identified by hash, not yet by version — see the note in VERSIONS.json)');
+    }
+  }
+  return bad;
+}
+
 if (CHECK) {
+  const manifestBad = checkManifest();
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ngg-vendor-check-'));
   build(tmp);
   let bad = 0;
@@ -249,8 +300,9 @@ if (CHECK) {
     else console.log(`  ✓ ${f} ${ha}`);
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  if (bad) { console.error(`\n❌ ${bad} vendored file(s) do not match this recipe.`); process.exit(1); }
-  console.log('\n✅ vendored design libraries match vendor-build.js');
+  bad += manifestBad;
+  if (bad) { console.error(`\n❌ ${bad} vendored file(s) do not match this recipe or the manifest.`); process.exit(1); }
+  console.log('\n✅ vendored libraries match vendor-build.js and VERSIONS.json');
 } else {
   build(VENDOR);
   for (const f of OUTPUTS) {

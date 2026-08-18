@@ -2478,39 +2478,143 @@ function NggVideo({ src, poster, caption }) {
   );
 }
 
-/**
- * PDF viewer.
+/* ── PDF viewing ──────────────────────────────────────────────────────────
  *
  * Rendering PDF pages in JavaScript means shipping PDF.js — roughly a megabyte
  * before a single page is drawn, on a site whose whole bundle is 400KB gzipped
- * and whose readers are on mobile data. Every browser these members use already
- * has a PDF renderer built in, so this frames that one and supplies the chrome
- * around it: a titled toolbar, open-in-new-tab, download, and an honest
- * fallback for the browsers that decline to render inline.
+ * and whose readers are on Nigerian mobile data. That trade was refused once
+ * and is refused again here. What replaced it is not the browser's built-in
+ * frame either, because that frame has two failures this audience meets first:
  *
- * The frame is sandboxed. A PDF is an active document format, and these files
- * are uploaded by members.
+ *   · iOS Safari renders page one into an iframe and then will not scroll it.
+ *     A ten-page handout is a one-page handout on every iPhone in the centre.
+ *   · An <iframe> fires no error event when the browser declines to render a
+ *     PDF, so the honest fallback that was written for that case never ran.
+ *     A reader got a blank grey rectangle and no way to know why.
+ *
+ * So the primary path is PAGES AS IMAGES. Cloudinary already stores each
+ * uploaded PDF as a multi-page image asset, and `pg_N` delivers any single page
+ * as a JPEG — which every browser on earth renders, scrolls and pinch-zooms
+ * without a plugin, at a fraction of the bytes of the document itself. One page
+ * is fetched at a time, so a nine-page document costs one page's worth of data
+ * until somebody actually turns it.
+ *
+ * The native frame remains the fallback for a PDF we cannot page (one stored
+ * outside Cloudinary), and "Open" always sits in the toolbar, because the real
+ * document is the thing being shared and no viewer should stand between a
+ * member and it.
  */
-function NggPdf({ src, name }) {
-  const [failed, setFailed] = React.useState(false);
+
+/** Cloudinary delivery URL for one page of a stored PDF, as a JPEG. */
+function nggPdfPageUrl(src, page, width) {
+  if (!nggPdfCanPage(src)) return "";
+  return String(src)
+    .replace("/upload/", "/upload/pg_" + Math.max(1, page | 0) + ",w_" + (width || 900) + ",c_limit,q_auto:good,f_jpg/")
+    .replace(/\.pdf(\?.*)?$/i, ".jpg");
+}
+
+/** Can this source be paged as images? Cloudinary image-type PDFs only. */
+function nggPdfCanPage(src) {
+  const u = String(src || "");
+  return /res\.cloudinary\.com/.test(u) && u.indexOf("/image/upload/") >= 0 && /\.pdf(\?|$)/i.test(u);
+}
+
+/**
+ * The document viewer.
+ *
+ * Closed by default. A feed can carry several documents and none of them should
+ * spend a reader's data before the reader asks — the same rule the YouTube
+ * embed already follows.
+ */
+function NggPdf({ src, name, pages, bytes }) {
+  const [open, setOpen] = React.useState(false);
+  const [page, setPage] = React.useState(1);
+  const [wide, setWide] = React.useState(false);
+  const [imgFailed, setImgFailed] = React.useState(false);
   const label = name || "Document";
+  const total = Math.max(0, pages | 0);
+  const canPage = nggPdfCanPage(src) && !imgFailed;
+
+  // A page that does not exist cannot be shown; clamp rather than 404.
+  const at = total ? Math.min(Math.max(1, page), total) : Math.max(1, page);
+  const meta = [
+    "PDF",
+    total ? total + (total === 1 ? " page" : " pages") : "",
+    bytes ? nggFmtBytes(bytes) : "",
+  ].filter(Boolean).join(" · ");
+
+  if (!open) {
+    return (
+      <div className="pdfv pdfv-closed">
+        <button type="button" className="pdfv-open" onClick={() => setOpen(true)}
+                aria-label={"Preview " + label}>
+          <span className="pdfv-open-ic" aria-hidden="true">📄</span>
+          <span className="pdfv-open-body">
+            <span className="pdfv-open-name">{label}</span>
+            <span className="pdfv-open-meta">{meta}</span>
+          </span>
+          <span className="pdfv-open-cta">Preview</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="pdfv">
+    <div className={"pdfv" + (wide ? " pdfv-wide" : "")}>
       <div className="pdfv-bar">
         <span className="pdfv-ic" aria-hidden="true">📄</span>
         <span className="pdfv-name" title={label}>{label}</span>
+        <button type="button" className="pdfv-btn" onClick={() => setWide(w => !w)}
+                aria-pressed={wide}>{wide ? "Shrink" : "Expand"}</button>
         <a className="pdfv-btn" href={src} target="_blank" rel="noopener noreferrer">Open</a>
-        <a className="pdfv-btn" href={src} download>Download</a>
+        <a className="pdfv-btn" href={src} download={label}>Download</a>
+        <button type="button" className="pdfv-btn" onClick={() => setOpen(false)}
+                aria-label="Close the preview">Close</button>
       </div>
-      {!failed
-        ? <iframe className="pdfv-frame" src={src + "#view=FitH"} title={label}
-            sandbox="allow-same-origin" onError={() => setFailed(true)}/>
-        : <div className="pdfv-fallback">
-            <p>This browser won’t show the document inline.</p>
-            <a className="btn btn-primary btn-sm" href={src} target="_blank" rel="noopener noreferrer">Open it in a new tab</a>
-          </div>}
+
+      {canPage ? (
+        <>
+          <div className="pdfv-page">
+            <img className="pdfv-img" src={nggPdfPageUrl(src, at, wide ? 1400 : 900)}
+                 alt={"Page " + at + " of " + label} loading="lazy"
+                 onError={() => setImgFailed(true)}/>
+          </div>
+          {/* Paging is hidden for a single-page document rather than shown
+              disabled — there is nothing to turn. */}
+          {(total > 1 || total === 0) && (
+            <div className="pdfv-pager">
+              <button type="button" className="pdfv-pg" onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={at <= 1} aria-label="Previous page">‹</button>
+              <span className="pdfv-count" aria-live="polite">
+                Page {at}{total ? " of " + total : ""}
+              </span>
+              <button type="button" className="pdfv-pg" onClick={() => setPage(p => p + 1)}
+                      disabled={!!total && at >= total} aria-label="Next page">›</button>
+            </div>
+          )}
+        </>
+      ) : (
+        /* No page images available. Try the browser's own renderer, and say so
+           plainly underneath rather than leaving a grey rectangle to explain
+           itself — the frame will not tell us whether it worked. */
+        <>
+          <iframe className="pdfv-frame" src={src + "#view=FitH"} title={label}/>
+          <div className="pdfv-note">
+            Not showing? <a href={src} target="_blank" rel="noopener noreferrer">Open it in a new tab</a>.
+          </div>
+        </>
+      )}
     </div>
   );
+}
+
+/** Human file size. Used by the document card and the viewer toolbar. */
+function nggFmtBytes(n) {
+  const b = Number(n) || 0;
+  if (b <= 0) return "";
+  if (b < 1024) return b + " B";
+  if (b < 1024 * 1024) return Math.round(b / 1024) + " KB";
+  return (b / 1024 / 1024).toFixed(b < 10 * 1024 * 1024 ? 1 : 0) + " MB";
 }
 
 
@@ -2559,7 +2663,7 @@ function NggYouTube({ id, thumb, title }) {
 
 Object.assign(window, {
   nggCsvCell,
-  NggMarkdown, NggVideo, NggPdf, NggYouTube, nggMdInline, nggFmtTime,
+  NggMarkdown, NggVideo, NggPdf, NggYouTube, nggMdInline, nggFmtTime, nggFmtBytes,
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
   usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart, inkOn,

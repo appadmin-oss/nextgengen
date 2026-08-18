@@ -88,6 +88,11 @@ require $ROOT . '/_lib/webcron.php';
 // headers emitted at load — so the idle-clock behaviour can be tested here
 // rather than only through a live HTTP request.
 require $ROOT . '/_lib/session.php';
+/* rate-limit.php is pure declarations too. The floors it defines are a
+ * security control — the ceiling on guessing a password, an OTP or a kiosk
+ * code when a deployment's config.php predates the bucket — and a control the
+ * harness cannot see is a control nobody can prove still holds. */
+require $ROOT . '/_lib/rate-limit.php';
 
 // send_mail must not attempt real delivery in tests. Override with a no-op
 // recorder BEFORE any handler calls it.
@@ -304,6 +309,72 @@ chk('broadcast history lists past announcements', (function () {
     return !empty($h['ok']) && (bool)array_filter($h['announcements'], fn($a) => $a['title'] === 'Egbeda only' && $a['audience'] === 'Egbeda');
 })());
 
+/* ── Brute-force floors ───────────────────────────────────────────────────
+ *
+ * rate_limit_default() exists so a config.php that predates a bucket cannot
+ * silently fall through to the loose 60/minute default. It covered the
+ * second-tier buckets and skipped the credential ones — the deployment that
+ * most needs a floor being precisely the one running an old config. Every
+ * bucket named here must have a floor, and none of them may be looser than
+ * the 60/min default it is meant to replace. */
+chk('every bucket that only lived in config.example now has a floor', (function () {
+    foreach (['auth.gateway', 'auth.request', 'auth.verify', 'gate.unlock',
+              'circle.lookup', 'circle.connect', 'upload.sign', 'hook'] as $op) {
+        $f = rate_limit_default($op);
+        if (!$f || !isset($f['max'], $f['window'])) return false;
+    }
+    return true;
+})());
+/* Having a floor is not enough — a floor looser than the default it replaces
+   would be decorative. Checked as a RATE, so 6-per-300s reads as tighter than
+   60-per-60s rather than merely smaller. `hook` is deliberately not in this
+   list: it carries HMAC-signed webhook bursts, not a guessable secret, and is
+   meant to be looser than the default. */
+chk('…and every guessable-secret bucket is tighter than the loose default', (function () {
+    foreach (['auth.gateway', 'auth.request', 'auth.verify', 'gate.unlock',
+              'circle.lookup', 'circle.connect', 'upload.sign'] as $op) {
+        $f = rate_limit_default($op);
+        if (($f['max'] / $f['window']) > (60 / 60)) return false;
+    }
+    return true;
+})());
+chk('…and the guessable-secret buckets are tighter than the mail ones',
+    rate_limit_default('circle.lookup')['max'] / rate_limit_default('circle.lookup')['window']
+    < rate_limit_default('apply')['max'] / rate_limit_default('apply')['window']);
+chk('an unknown bucket still has no floor, so it falls to the configured default',
+    rate_limit_default('something.invented') === null);
+
+/* ── Trusted proxies ──────────────────────────────────────────────────────
+ *
+ * client_ip() reads request state so it is exercised over HTTP elsewhere; the
+ * CIDR arithmetic it rests on is pure, and it decides whether a forwarded
+ * header is believed. Getting it wrong in the permissive direction restores
+ * the original hole — every rate limit in the product opted out of by a header
+ * — and in the strict direction lumps every visitor behind a CDN into one
+ * bucket. Both are worth a test. */
+chk('an address inside a /20 is inside it', ip_in_cidr('173.245.55.9', '173.245.48.0/20'));
+chk('…and one just outside it is not', ip_in_cidr('173.245.64.1', '173.245.48.0/20') === false);
+chk('a /32 matches exactly one address',
+    ip_in_cidr('10.0.0.7', '10.0.0.7/32') && !ip_in_cidr('10.0.0.8', '10.0.0.7/32'));
+chk('a bare address behaves as a /32',
+    ip_in_cidr('127.0.0.1', '127.0.0.1') && !ip_in_cidr('127.0.0.2', '127.0.0.1'));
+chk('a /0 is not accidentally everybody — it is asked for explicitly',
+    ip_in_cidr('8.8.8.8', '0.0.0.0/0'));
+chk('IPv6 ranges work', ip_in_cidr('2400:cb00::1', '2400:cb00::/32')
+    && !ip_in_cidr('2401:cb00::1', '2400:cb00::/32'));
+chk('v4 and v6 never match each other',
+    !ip_in_cidr('2400:cb00::1', '173.245.48.0/20') && !ip_in_cidr('173.245.55.9', '2400:cb00::/32'));
+chk('rubbish never matches', !ip_in_cidr('not-an-ip', '10.0.0.0/8')
+    && !ip_in_cidr('10.0.0.1', 'not-a-cidr') && !ip_in_cidr('10.0.0.1', '')
+    && !ip_in_cidr('10.0.0.1', '10.0.0.0/99'));
+/* The default — no trusted_proxies configured — must trust NOBODY, because
+   that is what makes a forwarded header worthless to an attacker. */
+chk('with no trusted proxies configured, no proxy is trusted',
+    ip_is_trusted_proxy('173.245.55.9', []) === false);
+chk('a listed proxy is trusted and an unlisted one is not',
+    ip_is_trusted_proxy('173.245.55.9', ['173.245.48.0/20']) === true
+    && ip_is_trusted_proxy('9.9.9.9', ['173.245.48.0/20']) === false);
+
 // ── TOTP ──
 $setup = backend_dispatch('auth.totpSetup', ['memberId' => 'NGG-2025-0099']);
 $secret = $setup['secret'];
@@ -314,6 +385,48 @@ chk('totp setup mints 8 backup codes', is_array($setup['backupCodes']) && count(
 $bc = $setup['backupCodes'][0];
 chk('a backup code satisfies the 2FA gate', backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => $bc])['backupUsed'] === true);
 chk('a backup code cannot be reused', empty(backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => $bc])['ok']));
+
+/* Re-enrolment is refused once a secret exists — the 2FA bypass.
+ *
+ * auth/admin-totp-setup.php runs on a session that has NOT passed 2FA (it must:
+ * a first-time enroller has no code to give). So while this op would overwrite
+ * an existing secret, a stolen password alone was enough to re-issue the second
+ * factor and then satisfy the gate with it. The check is that the STORED secret
+ * is untouched, not merely that the call returned an error — a refusal that
+ * still wrote would be the same breach with a worse error message. */
+chk('totp re-enrolment is refused once enrolled', (function () {
+    $before = (string)(db_row("SELECT totpSecret FROM members WHERE memberId='NGG-2025-0099'")['totpSecret'] ?? '');
+    $re = backend_dispatch('auth.totpSetup', ['memberId' => 'NGG-2025-0099']);
+    $after = (string)(db_row("SELECT totpSecret FROM members WHERE memberId='NGG-2025-0099'")['totpSecret'] ?? '');
+    return $before !== '' && ($re['error'] ?? '') === 'already_enrolled' && $after === $before;
+})());
+chk('…and the refusal hands back no secret to enrol with',
+    !isset(backend_dispatch('auth.totpSetup', ['memberId' => 'NGG-2025-0099'])['secret']));
+chk('…so the authenticator that was already working still works',
+    backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099',
+        'code' => totp_code($secret, intdiv(time(), 30))])['ok'] === true);
+chk('…and the refusal is recorded for the person whose factor was targeted',
+    (string)(db_row("SELECT subject FROM audit_log WHERE event='admin.totp.setup_refused' ORDER BY id DESC LIMIT 1")['subject'] ?? '') === 'NGG-2025-0099');
+
+/* Guessing the second factor is bounded, and bounded against the ADMIN.
+ * Six digits with a ±1 window is a small space; the endpoint's IP bucket was
+ * the only ceiling on it, and an IP is a header claim until a trusted proxy
+ * vouches for it. */
+chk('eight wrong codes lock the admin\'s second factor', (function () {
+    attempt_reset('totp', 'NGG-2025-0099');
+    for ($i = 0; $i < 8; $i++) backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => '000000']);
+    return backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => '000000'])['error'] === 'too_many_attempts';
+})());
+chk('…and the CORRECT code is refused while the lock holds', (function () use ($secret) {
+    return backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099',
+        'code' => totp_code($secret, intdiv(time(), 30))])['error'] === 'too_many_attempts';
+})());
+chk('…and a correct code works again once it lifts', (function () use ($secret) {
+    attempt_reset('totp', 'NGG-2025-0099');   // stands in for the clock
+    return backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099',
+        'code' => totp_code($secret, intdiv(time(), 30))])['ok'] === true;
+})());
+
 // Super-admin recovery: reset a member's 2FA + password; non-super is refused.
 chk('super-admin can reset a member 2FA', !empty(backend_dispatch('admin.members.reset2fa', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0099'])['ok']) && (string)(db_row("SELECT totpSecret FROM members WHERE memberId='NGG-2025-0099'")['totpSecret'] ?? '') === '');
 chk('non-super cannot reset 2FA', backend_dispatch('admin.members.reset2fa', ['requesterId' => 'NGG-2025-0001', 'memberId' => 'NGG-2025-0099'])['error'] === 'forbidden');
@@ -2487,6 +2600,13 @@ chk('a partial name does not match — the compare is exact, not a prefix', (fun
 })());
 chk('lookup rejects an unknown code', backend_dispatch('circle.lookup', ['code' => '000000', 'name' => 'Tunde'])['error'] === 'not_found');
 chk('connect requires consent', backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Tunde', 'role' => 'parent'])['error'] === 'consent_required');
+/* The block above deliberately walks every way a lookup can be refused, all
+   against the same code — which is exactly the shape the guess ceiling exists
+   to stop, and no real guardian ever does. Clear the count so what follows
+   tests the MATCHING rules rather than the ceiling; the ceiling gets its own
+   test at the end of this section. */
+attempt_reset('circle.code', $code);
+
 /* connect is its own request and nothing stops it being called directly, so
    skipping lookup must not skip the check. This is the one that actually
    protects the dashboard. */
@@ -2500,6 +2620,40 @@ chk('…nor with the wrong name', (function () use ($code) {
 })());
 chk('…and no link row is created by either refused attempt',
     (int)db_row("SELECT COUNT(*) c FROM circle_links WHERE guardianName = 'Not A Parent'")['c'] === 0);
+
+/* ── The guess ceiling ────────────────────────────────────────────────────
+ * Six digits resolving to a child's name needs a ceiling that does not depend
+ * on the caller being honest about where they are calling from. The IP bucket
+ * in front of this endpoint was the only one, and an IP is a header claim.
+ * This one counts against the CODE, so rotating addresses buys nothing. */
+chk('guessing one code repeatedly locks that code, not the guesser', (function () use ($code) {
+    attempt_reset('circle.code', $code);
+    for ($i = 0; $i < 10; $i++) backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Nobody']);
+    return backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Tunde'])['error'] === 'too_many_attempts';
+})());
+chk('…and connect is shut too, not just lookup', (function () use ($code) {
+    $r = backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Tunde', 'role' => 'parent', 'consent' => true]);
+    return ($r['error'] ?? '') === 'too_many_attempts' && empty($r['token']);
+})());
+chk('…and the lockout is recorded without printing the code',
+    (function () {
+        $r = db_row("SELECT subject FROM audit_log WHERE event = 'circle.code_lockout' ORDER BY id DESC LIMIT 1");
+        return $r && strpos((string)$r['subject'], '••••') !== false;
+    })());
+chk('…and a correct code answers again once the lock lifts', (function () use ($code) {
+    attempt_reset('circle.code', $code);   // stands in for the clock
+    return !empty(backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Tunde'])['student']['name']);
+})());
+/* A success clears the count. Otherwise a family who mistyped nine times and
+   then got it right would be one slip from an hour's lockout. */
+chk('a correct answer clears the count', (function () use ($code) {
+    attempt_reset('circle.code', $code);
+    for ($i = 0; $i < 9; $i++) backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Nobody']);
+    backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Tunde']);      // success → reset
+    for ($i = 0; $i < 9; $i++) backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Nobody']);
+    return !empty(backend_dispatch('circle.lookup', ['code' => $code, 'name' => 'Tunde'])['student']['name']);
+})());
+attempt_reset('circle.code', $code);
 $conn = backend_dispatch('circle.connect', ['code' => $code, 'name' => 'Tunde', 'role' => 'parent', 'guardianName' => 'A Parent', 'consent' => true]);
 chk('connect mints a portal token', !empty($conn['token']) && $conn['role'] === 'parent');
 $ctok = $conn['token'];
@@ -3569,6 +3723,54 @@ chk('bootstrap loads every domain file, so a new one cannot pass tests and 404 l
     if ($missing) fwrite(STDERR, "       bootstrap.php is missing: " . implode(', ', $missing) . "\n");
     return $missing === [];
 })());
+
+/** Just the `$map = [ ... ];` literal from backend.php.
+ *  Scoped deliberately: the file also RETURNS arrays like
+ *  ['ok' => false, 'error' => 'unknown_op'], which match the same shape and
+ *  would otherwise be read as routes to a handler called unknown_op(). */
+function backend_map_src(string $root): string {
+    $src = (string)@file_get_contents($root . '/_lib/backend.php');
+    $start = strpos($src, '$map = [');
+    if ($start === false) return '';
+    $end = strpos($src, "\n        ];", $start);
+    return $end === false ? '' : substr($src, $start, $end - $start);
+}
+
+/* ── Every route in the dispatcher actually goes somewhere ────────────────
+ *
+ * backend_dispatch() is a map of ~400 op strings to handler names, and nothing
+ * checked that the right-hand side exists. A renamed or deleted handler, or a
+ * typo in either column, passes review, passes every test that does not happen
+ * to call that one op, and then throws in production — where the dispatcher's
+ * catch turns it into a flat `internal` with the real cause only in the error
+ * log. That is the failure a centre reports by telephone.
+ *
+ * All of them resolve today. This is the guard, not a fix: it costs one
+ * reflection call per op and it makes the class of mistake impossible to ship.
+ */
+chk('every dispatcher op resolves to a function that exists', (function () use ($ROOT) {
+    $src = backend_map_src($ROOT);
+    preg_match_all("/'([a-zA-Z0-9._]+)'\s*=>\s*'([a-z0-9_]+)'/", $src, $m, PREG_SET_ORDER);
+    $broken = [];
+    foreach ($m as [, $op, $fn]) {
+        if (!function_exists($fn)) $broken[] = $op . ' -> ' . $fn . '()';
+    }
+    if ($broken) fwrite(STDERR, "       unresolvable: " . implode(', ', $broken) . "\n");
+    // Guard the guard: if the regex stops matching, this must fail loudly
+    // rather than passing over an empty list.
+    return count($m) > 300 && $broken === [];
+})());
+/* Two ops may share a handler (a legacy alias), but one op must not appear
+   twice — the second silently wins and the first is dead code that reads as
+   live wiring. */
+chk('…and no op is declared twice', (function () use ($ROOT) {
+    $src = backend_map_src($ROOT);
+    preg_match_all("/'([a-zA-Z0-9._]+)'\s*=>\s*'[a-z0-9_]+'/", $src, $m);
+    $dupes = array_keys(array_filter(array_count_values($m[1]), fn($n) => $n > 1));
+    if ($dupes) fwrite(STDERR, "       duplicated ops: " . implode(', ', $dupes) . "\n");
+    return $dupes === [];
+})());
+
 
 /* ── The organisation, not only the summer programme ─────────────────────────
  *
@@ -13334,12 +13536,75 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('a finished match does not block a rematch',
         !empty(match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-B'])['ok']));
 
+    /* ── The move and the board it produced are written together ──────────
+     * A move is one fact stored in two tables. Recorded apart, an interruption
+     * between them leaves a move on the record that the board does not show —
+     * and the board is what both children are looking at. This forces a
+     * failure between the two writes and checks that NEITHER survived. */
+    chk('an interrupted move leaves neither half behind', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-C'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-C', 'matchId' => $m, 'accept' => true]);
+        $before = db_row('SELECT state, ply FROM match_games WHERE matchId = ?', [$m]);
+        try {
+            db_tx(function () use ($m) {
+                db_insert('match_moves', ['matchId' => $m, 'ply' => 1, 'playerId' => 'MPL-A',
+                    'move' => 'e2e4', 'san' => 'e4', 'stateAfter' => 'x', 'createdAt' => now_iso()]);
+                db_update('match_games', ['ply' => 1, 'state' => 'wrecked'], ['matchId' => $m]);
+                throw new RuntimeException('interrupted mid-write');
+            });
+        } catch (Throwable $e) { /* expected */ }
+        $after = db_row('SELECT state, ply FROM match_games WHERE matchId = ?', [$m]);
+        $moves = (int)(db_row('SELECT COUNT(*) c FROM match_moves WHERE matchId = ?', [$m])['c'] ?? 0);
+        return $moves === 0 && $after['state'] === $before['state'] && (int)$after['ply'] === (int)$before['ply'];
+    })());
+    chk('…and a move that completes is still there afterwards', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-C'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-C', 'matchId' => $m, 'accept' => true]);
+        $r = match_move(['playerId' => 'MPL-A', 'matchId' => $m, 'move' => 'e2e4']);
+        return !empty($r['ok'])
+            && (int)(db_row('SELECT COUNT(*) c FROM match_moves WHERE matchId = ?', [$m])['c'] ?? 0) === 1
+            && (int)(db_row('SELECT ply FROM match_games WHERE matchId = ?', [$m])['ply'] ?? 0) === 1;
+    })());
+    /* A wrapped operation must be callable from inside another one — PDO
+       throws on a second beginTransaction, so the helper joins instead. */
+    chk('a transaction inside a transaction joins rather than throwing',
+        db_tx(fn() => db_tx(fn() => 'inner ran')) === 'inner ran');
+
     // The lobby a child actually sees.
     $lob = match_list(['playerId' => 'MPL-A']);
     chk('the lobby lists your games', !empty($lob['ok']) && count($lob['matches']) >= 2);
     chk('…and offers opponents from every centre, not just your own',
         in_array('MPL-C', array_column($lob['opponents'], 'id'), true)
         && in_array('MPL-B', array_column($lob['opponents'], 'id'), true));
+
+    /* The chess ops are tested by calling their domain functions directly, which
+       proves the game and proves nothing about the wiring that reaches it. Route
+       one of each kind through the dispatcher so the eleven `match.*` map entries
+       are exercised as map entries. */
+    chk('the chess ops are reachable through the dispatcher, not just as functions', (function () {
+        /* Its own pair. Everything above has left MPL-A, B and C in live games,
+           and "one live match per pair" would refuse the invite — which would
+           make this report on test ORDER rather than on the wiring it is for. */
+        $now = now_iso();
+        foreach ([['MPL-D', 'Dayo Router', 'Egbeda'], ['MPL-E', 'Ese Router', 'Egbeda']] as [$id, $name, $centre]) {
+            db_exec("DELETE FROM members WHERE memberId = ?", [$id]);
+            db_insert('members', ['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.com',
+                'type' => 'NGG', 'centre' => $centre, 'role' => 'member', 'status' => 'active',
+                'createdAt' => $now, 'updatedAt' => $now]);
+        }
+        $inv = backend_dispatch('match.invite', ['playerId' => 'MPL-D', 'game' => 'chess', 'opponentId' => 'MPL-E']);
+        if (empty($inv['ok'])) return false;
+        $mid = (string)$inv['matchId'];
+        $acc = backend_dispatch('match.respond', ['playerId' => 'MPL-E', 'matchId' => $mid, 'accept' => true]);
+        $mv  = backend_dispatch('match.move', ['playerId' => 'MPL-D', 'matchId' => $mid, 'move' => 'e2e4']);
+        $get = backend_dispatch('match.get', ['playerId' => 'MPL-D', 'matchId' => $mid]);
+        $pol = backend_dispatch('match.poll', ['playerId' => 'MPL-D', 'matchId' => $mid, 'since' => 0]);
+        $lst = backend_dispatch('match.list', ['playerId' => 'MPL-D']);
+        $rsg = backend_dispatch('match.resign', ['playerId' => 'MPL-E', 'matchId' => $mid]);
+        return !empty($acc['ok']) && ($mv['san'] ?? '') === 'e4'
+            && ($get['match']['matchId'] ?? '') === $mid && (int)($pol['ply'] ?? -1) === 1
+            && !empty($lst['ok']) && ($rsg['winnerId'] ?? '') === 'MPL-D';
+    })());
     chk('…carrying the centre so a child can find the friend they mean',
         count(array_filter($lob['opponents'], fn($o) => !array_key_exists('centre', $o))) === 0);
     chk('…and never offers you yourself', !in_array('MPL-A', array_column($lob['opponents'], 'id'), true));

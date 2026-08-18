@@ -486,7 +486,11 @@ function community_post_shape(array $row, string $viewerId): array {
         'author' => ['name' => (string)$row['authorName'], 'initial' => '', 'centre' => (string)$row['authorCentre'], 'isMe' => $isMe, 'photo' => community_photo_for((string)$row['authorId'])],
         'body' => (string)$row['body'],
         'mediaType' => (string)$row['mediaType'], 'mediaUrl' => (string)$row['mediaUrl'], 'mediaPoster' => (string)$row['mediaPoster'], 'altText' => (string)$row['altText'],
-        'linkPreview' => (($lp = json_decode((string)($row['linkPreview'] ?? ''), true)) && is_array($lp) && !empty($lp['title'])) ? $lp : null,
+        /* Format is served from the record, falling back to the url only for
+         * posts written before v93. The reader must never have to guess. */
+        'mediaFormat' => (string)($row['mediaFormat'] ?? '') ?: upload_ext((string)$row['mediaUrl']),
+        'mediaBytes' => (int)($row['mediaBytes'] ?? 0), 'mediaPages' => (int)($row['mediaPages'] ?? 0),
+        'linkPreview' =>(($lp = json_decode((string)($row['linkPreview'] ?? ''), true)) && is_array($lp) && !empty($lp['title'])) ? $lp : null,
         'status' => (string)$row['status'], 'pinned' => (int)$row['pinned'] === 1, 'featured' => (int)($row['featured'] ?? 0) === 1,
         'reactions' => $reacts, 'myReaction' => (string)$mine, 'commentCount' => $comments, 'lastCommentAt' => $lastComment,
         'stars' => $stars, 'starred' => (bool)$starred, 'canStar' => community_actor_is_staff($viewerId),
@@ -674,6 +678,33 @@ function community_post_create(array $p): array {
     if ($mediaUrl !== '' && !preg_match('#^https://#i', $mediaUrl)) return ['ok' => false, 'error' => 'bad_media'];
     if ($mediaUrl === '') $mediaType = 'none';
     $docName = mb_substr(trim((string)($d['mediaName'] ?? '')), 0, 160);
+    /* The stored format, taken from the upload result rather than sniffed off
+     * the url. Trusted only as far as it goes: it is checked against the url's
+     * own extension below, and a document whose format is not one we accept is
+     * refused outright rather than published as an unopenable link. */
+    $mediaFormat = strtolower(preg_replace('/[^a-z0-9]/i', '', (string)($d['mediaFormat'] ?? '')));
+    $mediaPages = max(0, min(9999, (int)($d['mediaPages'] ?? 0)));
+    $mediaBytes = max(0, (int)($d['mediaBytes'] ?? 0));
+
+    if ($mediaType === 'doc') {
+        // Fall back to the url when the client sent no format (the local-storage
+        // path has no cloud to ask), then insist the answer is one we allow.
+        if ($mediaFormat === '') $mediaFormat = upload_ext($mediaUrl);
+        if (!upload_is_doc_ext($mediaFormat)) {
+            return ['ok' => false, 'error' => 'bad_document',
+                'message' => 'That file type can\'t be shared here. Documents can be PDF, Word, Excel, PowerPoint, text or zip.'];
+        }
+        if ($mediaBytes > 25 * 1024 * 1024) {
+            return ['ok' => false, 'error' => 'doc_too_big',
+                'message' => 'That file is too large — keep documents under 25MB.'];
+        }
+        if ($docName === '') $docName = 'Document';
+    } elseif ($mediaType !== 'none') {
+        // An image or a clip must not arrive claiming to be a document format —
+        // that combination is what the old signer produced, and it is the shape
+        // of a file that was converted on the way in.
+        if (upload_is_doc_ext($mediaFormat)) $mediaFormat = '';
+    }
 
     // Poll: a question (body) + 2-4 short options; no media.
     $pollOptions = [];
@@ -765,6 +796,7 @@ function community_post_create(array $p): array {
         'authorName' => $author['name'] . ($author['initial'] ? ' ' . $author['initial'] : ''), 'authorCentre' => $author['centre'],
         'body' => $body, 'kind' => $kind, 'pollOptions' => $kind === 'poll' ? json_encode($pollOptions, JSON_UNESCAPED_SLASHES) : '',
         'mediaType' => $mediaType, 'mediaUrl' => $mediaUrl, 'mediaPoster' => trim((string)($d['mediaPoster'] ?? '')),
+        'mediaFormat' => $mediaFormat, 'mediaBytes' => $mediaBytes, 'mediaPages' => $mediaPages,
         'altText' => $alt, 'status' => $status,
         'moderation' => json_encode(['verdict' => $screen['verdict'], 'reason' => $screen['reason'],
                                      'by' => 'ai', 'at' => $now, 'mode' => $mode,
@@ -782,7 +814,7 @@ function community_post_create(array $p): array {
     // Mirror shared documents to a configured Drive integration (any drive:
     // Google Drive, Dropbox, OneDrive… via its webhook). Best-effort.
     if ($status === 'published' && $mediaType === 'doc' && function_exists('event_emit')) {
-        event_emit('community.document', ['postId' => $id, 'name' => $alt, 'url' => $mediaUrl, 'channel' => $chSlug, 'author' => $author['name'], 'bytes' => (int)($d['mediaBytes'] ?? 0)]);
+        event_emit('community.document', ['postId' => $id, 'name' => $alt, 'url' => $mediaUrl, 'channel' => $chSlug, 'author' => $author['name'], 'format' => $mediaFormat, 'bytes' => $mediaBytes]);
     }
     $row = db_row("SELECT * FROM community_posts WHERE postId = ?", [$id]);
     return ['ok' => true, 'post' => community_post_shape($row, $viewer), 'queued' => $status !== 'published'];

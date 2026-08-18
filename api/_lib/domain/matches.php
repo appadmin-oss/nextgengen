@@ -221,9 +221,16 @@ function match_move(array $p): array {
         $patch['turnPlayer'] = $other;
     }
 
-    db_insert('match_moves', ['matchId' => (string)$r['matchId'], 'ply' => $ply, 'playerId' => $viewer,
-        'move' => (string)$res['uci'], 'san' => (string)$res['san'], 'stateAfter' => (string)$res['fen'], 'createdAt' => $now]);
-    db_update('match_games', $patch, ['matchId' => (string)$r['matchId']]);
+    /* The move and the position it produced are one fact. Recorded apart, an
+     * interruption between them leaves a move on the record that the board
+     * does not reflect — and the board is what both players are looking at.
+     * The UNIQUE (matchId, ply) index already stopped two racing moves from
+     * both landing; this makes the losing one leave nothing behind. */
+    db_tx(function () use ($r, $ply, $viewer, $res, $now, $patch) {
+        db_insert('match_moves', ['matchId' => (string)$r['matchId'], 'ply' => $ply, 'playerId' => $viewer,
+            'move' => (string)$res['uci'], 'san' => (string)$res['san'], 'stateAfter' => (string)$res['fen'], 'createdAt' => $now]);
+        db_update('match_games', $patch, ['matchId' => (string)$r['matchId']]);
+    });
 
     if (($patch['status'] ?? '') === 'complete' && function_exists('match_tournament_report')) {
         match_tournament_report((string)$r['matchId']);

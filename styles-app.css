@@ -5769,20 +5769,61 @@ body.own-chrome .fab-top { display: none; }
 .vp-cap { padding: 6px 10px; font-size: 12.5px; color: #cfd6e6; background: #10131c; }
 @media (max-width: 420px) { .vp-vol { display: none; } }
 
-/* ── PDF viewer ── */
-.pdfv { border: 1px solid rgba(12,20,50,.14); border-radius: 12px; overflow: hidden; background: #fff; }
-.pdfv-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(12,20,50,.04);
-  border-bottom: 1px solid rgba(12,20,50,.1); }
+/* ── Document viewer ──────────────────────────────────────────────────────
+   Closed by default (a card), opening into a page-image reader. Sizes follow
+   the community's touch rules: every control is at least 44px, the open-card
+   row is 62px, and nothing here relies on hover to be discoverable. */
+.pdfv { border: 1px solid var(--line-200, #e7e2d4); border-radius: 18px; overflow: hidden; background: #fff; }
+
+/* Closed: the document offered, not yet fetched. */
+.pdfv-closed { border: 0; border-radius: 0; }
+.pdfv-open { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 62px;
+  padding: 11px 14px; border: 1px solid var(--line-200, #e7e2d4); border-radius: 18px;
+  background: var(--surface, #fbf7ed); text-align: left; cursor: pointer; }
+.pdfv-open:hover { border-color: var(--gold-500, #f5b026); }
+.pdfv-open:focus-visible { outline: 2px solid var(--blue-600, #1f4bc4); outline-offset: 2px; }
+.pdfv-open-ic { flex: 0 0 auto; font-size: 22px; line-height: 1; }
+.pdfv-open-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pdfv-open-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 15px; font-weight: 700; color: var(--ink-900, #0a1130); }
+.pdfv-open-meta { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px;
+  letter-spacing: .04em; color: var(--ink-500, #5f6785); }
+.pdfv-open-cta { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 36px;
+  padding: 0 14px; border-radius: 999px; background: var(--ink-deep, #0c1432);
+  color: #fff; font-size: 12.5px; font-weight: 700; }
+
+/* Open: toolbar, page, pager. */
+.pdfv-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; flex-wrap: wrap;
+  background: var(--surface, #fbf7ed); border-bottom: 1px solid var(--line-200, #e7e2d4); }
 .pdfv-ic { font-size: 16px; }
-.pdfv-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 13.5px; font-weight: 700; color: var(--ink-900, #16223e); }
-.pdfv-btn { min-height: 36px; display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 8px;
-  border: 1px solid rgba(12,20,50,.16); background: #fff; font-size: 12.5px; font-weight: 700;
-  color: var(--ink-900, #16223e); text-decoration: none; }
+.pdfv-name { flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13.5px; font-weight: 700; color: var(--ink-900, #0a1130); }
+.pdfv-btn { min-height: 44px; display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 14px;
+  border: 1px solid var(--line-300, #ded8c6); background: #fff; font-size: 12.5px; font-weight: 700;
+  color: var(--ink-900, #0a1130); text-decoration: none; cursor: pointer; }
 .pdfv-btn:hover { border-color: var(--gold-500, #f5b026); }
+.pdfv-btn:focus-visible { outline: 2px solid var(--blue-600, #1f4bc4); outline-offset: 2px; }
+
+.pdfv-page { background: #f4f5f8; padding: 10px; max-height: min(72vh, 720px); overflow: auto;
+  -webkit-overflow-scrolling: touch; }
+.pdfv-img { display: block; width: 100%; height: auto; border-radius: 6px;
+  box-shadow: 0 2px 10px -4px rgba(12,20,50,.35); background: #fff; }
+.pdfv-wide .pdfv-page { max-height: none; }
+
+.pdfv-pager { display: flex; align-items: center; justify-content: center; gap: 14px;
+  padding: 8px 10px; border-top: 1px solid var(--line-200, #e7e2d4); background: var(--surface, #fbf7ed); }
+.pdfv-pg { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px; border: 1px solid var(--line-300, #ded8c6); background: #fff;
+  font-size: 20px; line-height: 1; color: var(--ink-900, #0a1130); cursor: pointer; }
+.pdfv-pg:disabled { opacity: .38; cursor: default; }
+.pdfv-pg:focus-visible { outline: 2px solid var(--blue-600, #1f4bc4); outline-offset: 2px; }
+.pdfv-count { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px;
+  font-weight: 600; letter-spacing: .06em; color: var(--ink-700, #46506a); font-variant-numeric: tabular-nums; }
+
 .pdfv-frame { display: block; width: 100%; height: min(70vh, 640px); border: 0; background: #f4f5f8; }
-.pdfv-fallback { padding: 22px 16px; text-align: center; }
-.pdfv-fallback p { margin: 0 0 10px; color: var(--ink-700, #3b4459); font-size: 14px; }
+.pdfv-note { padding: 10px 14px; font-size: 12.5px; color: var(--ink-500, #5f6785);
+  border-top: 1px solid var(--line-200, #e7e2d4); background: var(--surface, #fbf7ed); }
+.pdfv-note a { color: var(--blue-600, #1f4bc4); font-weight: 700; }
 
 /* ── YouTube embed (click to load) ────────────────────────────────────────
    Reserves the 16:9 box up front so the feed does not jump when the poster

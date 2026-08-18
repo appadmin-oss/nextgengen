@@ -216,9 +216,51 @@ function circle_match(string $code, string $name): ?array {
     return null;
 }
 
+/* Guessing a child's invite code, bounded.
+ *
+ * The code is six digits and it resolves — with a matching name part — to a
+ * child's name and member id. config.example.php calls the IP bucket in front
+ * of this a "safeguarding throttle", and until client_ip() stopped believing
+ * forwarded headers that is all it was: a limit the caller could opt out of by
+ * changing a header between requests.
+ *
+ * Counted against the CODE. That bounds the case this most needs bounding —
+ * somebody who knows which child they are after and is working through the
+ * codes that could be theirs. Broad enumeration across many codes is bounded by
+ * the IP bucket instead, which is now worth something. (The deeper fix for
+ * enumeration is more entropy in the code itself; that is a change to something
+ * printed on paper and handed to families, so it is not made here.)
+ */
+function circle_guess_guard(string $code): ?array {
+    $key = preg_replace('/\D/', '', $code);
+    if ($key !== '' && attempt_locked('circle.code', $key)) {
+        return ['ok' => false, 'error' => 'too_many_attempts'];
+    }
+    return null;
+}
+function circle_guess_failed(string $code, string $ip = ''): void {
+    $key = preg_replace('/\D/', '', $code);
+    if ($key === '') return;
+    /* Ten, and fifteen minutes — deliberately not tighter.
+     *
+     * A lock keyed on the code protects that child, and can also be used
+     * AGAINST them: anybody who can fail ten times can keep a real guardian
+     * from connecting for as long as they keep failing. So the number has to
+     * hold two things at once, and the guessing side has enormous headroom to
+     * give away. Ten per fifteen minutes is forty an hour against a million
+     * codes — some three thousand years to walk the space — while a locked-out
+     * family waits a quarter of an hour rather than until tomorrow. */
+    if (attempt_fail('circle.code', $key, 10, 900)) {
+        audit('circle.code_lockout', 'guardian', substr($key, 0, 2) . '••••', [], $ip);
+    }
+}
+
 function circle_lookup(array $p): array {
-    $m = circle_match((string)($p['code'] ?? ''), (string)($p['name'] ?? ''));
-    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $code = (string)($p['code'] ?? '');
+    if ($blocked = circle_guess_guard($code)) return $blocked;
+    $m = circle_match($code, (string)($p['name'] ?? ''));
+    if (!$m) { circle_guess_failed($code, (string)($p['ip'] ?? '')); return ['ok' => false, 'error' => 'not_found']; }
+    attempt_reset('circle.code', preg_replace('/\D/', '', $code));
     return ['ok' => true, 'student' => ['name' => $m['fullName'], 'memberId' => $m['memberId']]];
 }
 
@@ -228,9 +270,13 @@ function circle_connect(array $p): array {
     if (empty($p['consent'])) return ['ok' => false, 'error' => 'consent_required'];
     // Checked here too, not just on lookup. `connect` is a separate request and
     // nothing stops it being called directly — a gate that only guards the
-    // step before it is not a gate.
-    $m = circle_match((string)($p['code'] ?? ''), (string)($p['name'] ?? ''));
-    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    // step before it is not a gate. The attempt guard likewise: a ceiling that
+    // only covers the read half is a ceiling with a door beside it.
+    $code = (string)($p['code'] ?? '');
+    if ($blocked = circle_guess_guard($code)) return $blocked;
+    $m = circle_match($code, (string)($p['name'] ?? ''));
+    if (!$m) { circle_guess_failed($code, (string)($p['ip'] ?? '')); return ['ok' => false, 'error' => 'not_found']; }
+    attempt_reset('circle.code', preg_replace('/\D/', '', $code));
     $linkId = 'CL-' . strtoupper(rand_hex(6));
     db_insert('circle_links', [
         'linkId' => $linkId, 'memberId' => $m['memberId'], 'role' => $role,

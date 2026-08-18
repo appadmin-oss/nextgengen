@@ -1110,11 +1110,25 @@ function gate_unlock(array $p): array {
         audit('gate.unlock_expired', 'kiosk', (string)$gate['gateId'], [], (string)($p['ip'] ?? ''));
         return ['ok' => false, 'error' => 'password_expired'];
     }
+    /* A ceiling counted against THIS GATE, not against whoever is knocking.
+     * The IP bucket in front of this endpoint (gate.unlock, 8 per 5 minutes) is
+     * the only thing that used to stand between a kiosk password and a script,
+     * and an IP bucket can be shed by rotating a forwarded header. A centre's
+     * check-in desk is worth more than that. */
+    $gid = (string)$gate['gateId'];
+    if (attempt_locked('gate.unlock', $gid)) {
+        audit('gate.unlock_locked', 'kiosk', $gid, [], (string)($p['ip'] ?? ''));
+        return ['ok' => false, 'error' => 'too_many_attempts'];
+    }
     $pw = (string)($p['password'] ?? '');
     if ($pw === '' || !password_verify($pw, (string)$gate['passHash'])) {
-        audit('gate.unlock_fail', 'kiosk', (string)$gate['gateId'], [], (string)($p['ip'] ?? ''));
-        return ['ok' => false, 'error' => 'bad_password'];
+        // Ten, not eight: a busy desk mistypes, and locking a centre out of
+        // its own check-in is itself a harm. Fifteen minutes either way.
+        $locked = attempt_fail('gate.unlock', $gid, 10, 900);
+        audit($locked ? 'gate.unlock_lockout' : 'gate.unlock_fail', 'kiosk', $gid, [], (string)($p['ip'] ?? ''));
+        return ['ok' => false, 'error' => $locked ? 'too_many_attempts' : 'bad_password'];
     }
+    attempt_reset('gate.unlock', $gid);
     audit('gate.unlock', 'kiosk:' . $gate['gateId'], (string)$gate['gateId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'gate' => [
         'gateId' => (string)$gate['gateId'], 'name' => (string)$gate['name'],

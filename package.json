@@ -12,6 +12,7 @@
     "test:smtp": "php api/tests/smtp-send.php",
     "test:kiosk": "node tests/kiosk-offline.js",
     "test:cards": "node tests/card-export.test.js",
+    "test:docs": "node tests/community-doc.test.js",
     "test:scanners": "node tests/scanners.test.js",
     "test:journal": "node tests/journal-smoke.js",
     "test:ui": "node tests/ui-smoke.js",
@@ -21,7 +22,7 @@
     "test:mathlab": "node tests/mathlab-shot.js",
     "test:mentor": "node tests/mentor-shot.js",
     "test:forms": "node tests/forms-submit.js && node tests/forms-offline.js && node tests/forms-selfreg-ui.js",
-    "test:all": "node build.js && node tests/build.test.js && php api/tests/run.php && node tests/card-export.test.js && node tests/scanners.test.js && node tests/forms-submit.js && node tests/forms-offline.js && node tests/forms-selfreg-ui.js && node tests/kiosk-offline.js && node tests/ui-smoke.js && node tests/chess-shot.js && node tests/dashboard-shot.js && node tests/tournament-shot.js && node tests/mathlab-shot.js && node tests/mentor-shot.js && node tests/journal-smoke.js",
+    "test:all": "node build.js && node tests/build.test.js && php api/tests/run.php && node tests/card-export.test.js && node tests/community-doc.test.js && node tests/scanners.test.js && node tests/forms-submit.js && node tests/forms-offline.js && node tests/forms-selfreg-ui.js && node tests/kiosk-offline.js && node tests/ui-smoke.js && node tests/chess-shot.js && node tests/dashboard-shot.js && node tests/tournament-shot.js && node tests/mathlab-shot.js && node tests/mentor-shot.js && node tests/journal-smoke.js",
     "test:build": "node tests/build.test.js",
     "vendor:tanstack": "esbuild tools/vendor-tanstack/entry.js --bundle --format=iife --minify --legal-comments=none --alias:react=./tools/vendor-tanstack/react-shim.js --alias:react-dom=./tools/vendor-tanstack/react-dom-shim.js --outfile=vendor/tanstack-table.min.js"
   },

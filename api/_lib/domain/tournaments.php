@@ -162,6 +162,18 @@ function admin_tournament_advance(array $p): array {
     if (!$t) return ['ok' => false, 'error' => 'not_found'];
     if (in_array((string)$t['status'], ['complete', 'cancelled'], true)) return ['ok' => false, 'error' => 'already_finished'];
 
+    /* Advancing a round is many writes and ONE decision: pair the survivors,
+     * mark the champions, bump the round. Half of that is not a smaller
+     * version of it — it is a bracket where some players have an opponent,
+     * others are waiting for a round that already moved on, and no operator
+     * can tell by looking which half landed. Rolled back whole, the mentor
+     * simply presses Advance again. */
+    return db_tx(fn() => tournament_advance_now($t, $p));
+}
+
+/** The advance itself. Only called inside the transaction opened above. */
+function tournament_advance_now(array $t, array $p): array {
+
     $tid = (string)$t['tournamentId'];
     $open = (int)(db_row("SELECT COUNT(*) c FROM match_games WHERE tournamentId = ? AND status IN ('invited','active')", [$tid])['c'] ?? 0);
     if ($open > 0) return ['ok' => false, 'error' => 'round_in_progress', 'remaining' => $open];

@@ -277,6 +277,9 @@ function web_cron_maintenance(): void {
     $maxId = (int)(db_row('SELECT MAX(id) m FROM audit_log')['m'] ?? 0);
     if ($maxId > 5000) db_exec('DELETE FROM audit_log WHERE id <= ?', [$maxId - 5000]);
     if (function_exists('ops_prune')) ops_prune(30);
+    // Expired brute-force locks. Left alone the table grows one row per code or
+    // gate ever guessed at, and a lock nobody is serving is just a stale row.
+    if (function_exists('attempt_guard_gc')) attempt_guard_gc();
     // Prune device sessions revoked more than 30 days ago.
     $cut30 = gmdate('Y-m-d\TH:i:s\Z', time() - 30 * 86400);
     db_exec("DELETE FROM device_sessions WHERE revokedAt IS NOT NULL AND revokedAt != '' AND revokedAt < ?", [$cut30]);

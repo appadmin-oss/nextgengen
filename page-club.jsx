@@ -2613,8 +2613,28 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
     try {
       const r = await NGGApi.uploadFile(f, "post", pct => setUp(Math.max(1, pct)));
       const type = isDoc ? "doc" : ((r.resourceType === "video" || isVid) ? "video" : "image");
-      setMedia({ type, url: r.url, poster: type === "video" ? cmPoster(r.url) : "", bytes: f.size, duration, name: f.name || "document" });
-    } catch (_) { toast.error("Upload failed — try again."); }
+      /* Carry the STORED format, not a guess from the URL.
+       *
+       * The viewer used to ask "does this url end in .pdf?", which is a
+       * question about a filename rather than about the file, and it answered
+       * wrongly for every document the upload path had re-encoded. Cloudinary
+       * tells us what it actually kept; record that and let the reader trust
+       * it. `cmDocFormat` falls back to the filename for the local-storage
+       * path, where there is no cloud to ask. */
+      const format = (r.format || "").toLowerCase() || cmDocFormat(f.name || "");
+      setMedia({ type, url: r.url, poster: type === "video" ? cmPoster(r.url) : "",
+                 bytes: f.size, duration, name: f.name || "document",
+                 format, pages: r.pages || 0 });
+      if (isDoc && format && format !== cmDocFormat(f.name || "")) {
+        // The upload path changed the file out from under the member. Never
+        // silent: this is exactly the failure that shipped PDFs as pictures.
+        toast.error("That file was converted to ." + format + " on upload — the original could not be stored.");
+      }
+    } catch (e) {
+      toast.error(isDoc && /uploads_disabled|503/.test(String(e && e.message))
+        ? "Document sharing needs file storage configured — ask an admin."
+        : "Upload failed — try again.");
+    }
     finally { setUp(0); }
   };
   const pick = async (e) => { const f = e.target.files && e.target.files[0]; await uploadFile(f); if (fileRef.current) fileRef.current.value = ""; };
@@ -2678,7 +2698,7 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
     try {
       const payload = isPoll
         ? { channel: ch, body: body.trim(), kind: "poll", pollOptions: poll.map(o => o.trim()).filter(Boolean) }
-        : { channel: ch, body: body.trim(), mediaType: media ? media.type : "none", mediaUrl: media ? media.url : "", mediaPoster: media ? media.poster : "", mediaName: media && media.type === "doc" ? media.name : "", mediaBytes: media ? media.bytes : 0, mediaDuration: media ? media.duration : 0 };
+        : { channel: ch, body: body.trim(), mediaType: media ? media.type : "none", mediaUrl: media ? media.url : "", mediaPoster: media ? media.poster : "", mediaName: media && media.type === "doc" ? media.name : "", mediaFormat: media ? (media.format || "") : "", mediaPages: media ? (media.pages || 0) : 0, mediaBytes: media ? media.bytes : 0, mediaDuration: media ? media.duration : 0 };
       const r = await NGGApi.member.community.post(payload);
       setBody(""); setMedia(null); setPoll(null); setEmoji(false);
       try { localStorage.removeItem(draftKey); } catch (_) {}
@@ -2912,14 +2932,29 @@ function CmBodyBlock({ post, onVote }) {
       )}
       {post.mediaType === "image" && post.mediaUrl && <div className="cm-msg-media"><img src={cmOpt(post.mediaUrl, 1000)} alt={post.altText || ""} loading="lazy"/></div>}
       {post.mediaType === "video" && post.mediaUrl && <div className="cm-msg-media"><NggVideo src={cmOpt(post.mediaUrl, 1280)} poster={post.mediaPoster || cmPoster(post.mediaUrl)}/></div>}
-      {post.mediaType === "doc" && post.mediaUrl && /\.pdf(\?|$)/i.test(post.mediaUrl) &&
-        <div className="cm-msg-media"><NggPdf src={post.mediaUrl} name={post.altText || "Document"}/></div>}
+      {/* A document either previews in place or is offered as a card — never
+          both, and never neither. Which one is decided by the format the server
+          RECORDED, not by pattern-matching the url: that test asked whether a
+          filename ended `.pdf`, and it answered "no" for every PDF the upload
+          path had quietly turned into a PNG, so the viewer never appeared. */}
       {post.mediaType === "doc" && post.mediaUrl && (
-        <a className="cm-doc-card" href={post.mediaUrl} target="_blank" rel="noopener noreferrer">
-          <span className="cm-doc-card-ic" aria-hidden="true">📄</span>
-          <span className="cm-doc-card-body"><span className="cm-doc-card-name">{post.altText || "Document"}</span><span className="cm-doc-card-sub">{cmDocExt(post.mediaUrl)} · opens in a new tab</span></span>
-          <span className="cm-doc-card-dl" aria-hidden="true">↗</span>
-        </a>
+        cmIsPdf(post) ? (
+          <div className="cm-msg-media">
+            <NggPdf src={post.mediaUrl} name={post.altText || "Document"}
+                    pages={post.mediaPages || 0} bytes={post.mediaBytes || 0}/>
+          </div>
+        ) : (
+          <a className="cm-doc-card" href={post.mediaUrl} target="_blank" rel="noopener noreferrer">
+            <span className="cm-doc-card-ic" aria-hidden="true">📄</span>
+            <span className="cm-doc-card-body">
+              <span className="cm-doc-card-name">{post.altText || "Document"}</span>
+              <span className="cm-doc-card-sub">
+                {cmDocExt(post)}{post.mediaBytes ? " · " + nggFmtBytes(post.mediaBytes) : ""} · opens in a new tab
+              </span>
+            </span>
+            <span className="cm-doc-card-dl" aria-hidden="true">↗</span>
+          </a>
+        )
       )}
       {/* A shared YouTube link plays in place. Everything else stays a card. */}
       {post.linkPreview && post.linkPreview.kind === "youtube" && post.linkPreview.youtubeId && (
@@ -2940,10 +2975,23 @@ function CmBodyBlock({ post, onVote }) {
     </>
   );
 }
+/* What format is this attachment, really?
+ *
+ * `mediaFormat` is what the server recorded from the upload result; the url is
+ * consulted only for posts written before that column existed. Deriving it from
+ * the url alone is what made a converted document look like a legitimate one. */
+function cmDocFormat(urlOrName) {
+  const path = String(urlOrName || "").split(/[?#]/)[0];
+  const m = /\.([a-z0-9]{1,5})$/i.exec(path);
+  return m ? m[1].toLowerCase() : "";
+}
+function cmPostFormat(post) {
+  return String((post && post.mediaFormat) || "").toLowerCase() || cmDocFormat(post && post.mediaUrl);
+}
+function cmIsPdf(post) { return cmPostFormat(post) === "pdf"; }
 // File extension label for a doc card.
-function cmDocExt(url) {
-  const m = /\.([a-z0-9]{1,5})(?:\?|#|$)/i.exec(String(url || ""));
-  return m ? m[1].toUpperCase() : "FILE";
+function cmDocExt(post) {
+  return (cmPostFormat(post) || "file").toUpperCase();
 }
 
 /* ---- Reaction chips (click to toggle) ---- */

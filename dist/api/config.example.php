@@ -276,6 +276,59 @@ return [
     // Public origin (no trailing slash). Used in CORS + redirects.
     'app_origin'      => 'https://yourdomain.com',
 
+    /* ---------------------------------------------------------------------
+     * Whose word to take for "who is calling".
+     *
+     * `CF-Connecting-IP` and `X-Forwarded-For` are claims. They are worth
+     * believing only when they arrive through something that would have
+     * overwritten a forged one — otherwise a caller simply picks their own
+     * address, and since EVERY rate limit is keyed on the answer, picking a
+     * fresh one per request means no rate limit at all. That is the difference
+     * between an eight-guess ceiling on the kiosk password and none.
+     *
+     * List the CIDRs your traffic genuinely arrives from. Only when Apache's
+     * REMOTE_ADDR is inside one of them is a forwarded header believed.
+     *
+     * EMPTY (the default) = trust nothing, use REMOTE_ADDR. Correct for a
+     * direct-to-Apache shared host. If you are behind Cloudflare and leave this
+     * empty, every visitor looks like the same edge address: throttles get
+     * stricter, never looser, which is the right way round to be wrong.
+     *
+     * Cloudflare publishes its ranges at https://www.cloudflare.com/ips/ —
+     * paste the current v4 + v6 lists here if you sit behind it.
+     * ------------------------------------------------------------------- */
+    'trusted_proxies' => [
+        // '173.245.48.0/20', '103.21.244.0/22', …   // Cloudflare IPv4
+        // '2400:cb00::/32', '2606:4700::/32', …     // Cloudflare IPv6
+        // '127.0.0.1',                              // local reverse proxy
+    ],
+
+    /* Browser origins allowed to call the PUBLIC api cross-origin. Sister sites
+     * embed the volunteer form headlessly. No credentials cross the boundary;
+     * an origin not on this list simply gets no CORS headers. Omit the key to
+     * accept the built-in Afrovanguard defaults. */
+    'cors_origins' => [
+        'https://sts.afrovanguard.org.ng',
+        'https://afrovanguard.org.ng',
+        'https://www.afrovanguard.org.ng',
+    ],
+
+    /* Where application logs and PHP warnings are written. The folder ships
+     * with a deny-all .htaccess; move it outside the web root if your host
+     * allows. */
+    'log_dir' => __DIR__ . '/logs',
+
+    /* The MySQL schema mirror, replayed additively when its hash changes.
+     * Only set this if the repo layout differs from the default. */
+    'mysql_schema_path' => __DIR__ . '/../db/schema-mysql.sql',
+
+    /* Organisation identity, used in emails, certificates and printed cards. */
+    'org' => [
+        'name'  => 'Next Generation Genius',
+        'short' => 'NGG',
+        'email' => 'hello@yourdomain.com',
+    ],
+
     // -----------------------------------------------------------------------
     // Afrovanguard mentorship connection. NGG ("Next Gen") is a program inside
     // Afrovanguard's Street-To-Stardom (STS) — but NGG is the MAIN, live site.

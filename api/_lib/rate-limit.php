@@ -15,6 +15,26 @@ declare(strict_types=1);
  */
 function rate_limit_default(string $op): ?array {
     static $d = [
+        /* THE CREDENTIAL BUCKETS COME FIRST, because they are the ones this
+         * function exists for and the ones it used to leave out.
+         *
+         * Every bucket below this group had a floor; `auth.verify`,
+         * `auth.request`, `gate.unlock` and the two circle buckets did not —
+         * they lived only in config.example.php. So a deployment whose
+         * config.php predated them (the exact case the docblock above
+         * describes) silently ran password sign-in, OTP delivery, TOTP
+         * verification and the kiosk password at the loose 60/minute default.
+         * The module was applying its own stated principle to the second-tier
+         * buckets and not to the first-tier ones. */
+        'auth.gateway'       => ['max' => 30, 'window' => 60],    // identifier lookup only; sends nothing
+        'auth.request'       => ['max' => 5,  'window' => 60],    // EMAILS a sign-in code — mail-amplification
+        'auth.verify'        => ['max' => 10, 'window' => 60],    // password / OTP / TOTP checks
+        'gate.unlock'        => ['max' => 8,  'window' => 300],   // kiosk desk password
+        'circle.lookup'      => ['max' => 6,  'window' => 300],   // 6-digit code → a child's name
+        'circle.connect'     => ['max' => 5,  'window' => 600],   // consumes a code; tighter still
+        'upload.sign'        => ['max' => 30, 'window' => 60],    // mints a cloud upload signature
+        'hook'               => ['max' => 120, 'window' => 60],   // inbound webhook bursts
+
         'apply'              => ['max' => 6,  'window' => 60],    // sends an acknowledgement email to a client-supplied address
         'apply.hour'         => ['max' => 30, 'window' => 3600],  // mail-amplification ceiling per IP
         'contact'            => ['max' => 5,  'window' => 60],    // notifies admins on every send

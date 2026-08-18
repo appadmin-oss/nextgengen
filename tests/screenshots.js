@@ -178,7 +178,7 @@ function seed() {
     'db' => ['dsn' => '', 'sqlite_path' => ${JSON.stringify(DB)}],
     'mail' => ['from_name' => 'NGG', 'from_email' => 'no-reply@example.org', 'reply_to' => 'r@example.org', 'smtp' => ['host' => '']],
     'app_origin' => ${JSON.stringify(BASE)},
-    'cookie_secret' => 'shots_secret_0123456789abcdefgh',
+    'cookie_secret' => 'shots_secret_0123456789abcdefghi',
     'cookie_secure' => false, 'cookie_name' => 'ngg_sess', 'cookie_domain' => '', 'cookie_samesite' => 'Lax',
     'cache_dir' => ${JSON.stringify(CACHE)},
     'rate_limits' => ['default' => ['max' => 100000, 'window' => 60]],

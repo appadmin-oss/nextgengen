@@ -4,11 +4,18 @@ _Date:_ 2026-08-18 · _Scope:_ full repository (~56k LOC PHP, ~40k LOC JSX,
 398 dispatcher ops, 2,105 backend tests) · _Schema:_ `schema_version` **92**
 · _Branch:_ `claude/codebase-audit-analysis-eu8x7a`
 
+> **STATUS: all findings below are FIXED** (same branch, second commit). Schema
+> is now **94**; the backend suite is **2,137 assertions, 0 failed**, plus a new
+> browser suite for document sharing. Each finding keeps its original wording so
+> the reasoning survives; a **Fixed** note records what was actually done. A
+> separate bug found afterwards — shared PDFs stored as PNGs — turned out to be
+> the same defect as "the community has no PDF viewer"; both are §7.
+
 This is a fresh pass, not a re-read of `NGG-AUDIT-INDEX.md`. Every finding
 below was verified against the running code — two of them with a reproduction
 inside the test harness. Findings already recorded in the audit index (CSP
 `unsafe-eval`, giant single-file modules, `fees_balance` scan cost) are not
-repeated; §6 notes what has drifted in that document since it was written.
+repeated; §7 notes what has drifted in that document since it was written.
 
 ---
 
@@ -312,7 +319,122 @@ resolution. `match_poll()`'s lack of a player check is **not** a finding —
 spectating is a documented design decision (`matches.php:322-332`), writes are
 gated independently, and the poll payload carries no PII.
 
-## 5. Suggested order of work
+## 4b. The reported bug: shared PDFs stored as PNGs
+
+Reported separately as two complaints — "it uploads files as png" and "there's
+no in-built PDF viewer in the community". They are **one defect**, and the
+second is a symptom of the first.
+
+**The chain.** `api-client.js` classified every upload with one line:
+
+```js
+const mediaKind = /^video\//.test(file.type || '') ? 'video' : 'image';
+```
+
+Everything that is not a video is an image, so a PDF was an image. The signer
+(`member/upload-sign.php`) then signed `resource_type: image` **with an incoming
+transformation** — `c_limit,w_1600,q_auto:good,f_auto` — and Cloudinary accepts
+a PDF on the image endpoint, treating it as a multi-page image asset. `f_auto`
+rasterised page one and stored *that*. The member's document was never kept, and
+`secure_url` came back `….png`.
+
+Downstream, the community feed gated its viewer on the URL:
+
+```jsx
+post.mediaType === "doc" && /\.pdf(\?|$)/i.test(post.mediaUrl) && <NggPdf …/>
+```
+
+which asks whether a *filename* ends in `.pdf`. It correctly answered "no" — the
+file really was a PNG by then — so the viewer never rendered and the reader got
+a download card. Nothing was broken about the viewer; it was never reached.
+
+**Fixed.**
+
+- `mediaKindOf()` classifies four ways (`video` / `pdf` / `raw` / `image`), by
+  MIME **and** by extension, because some Android file managers supply no MIME
+  type at all.
+- PDFs upload through the image pipeline with **no incoming transformation**, so
+  the stored asset is the document and `pg_N` page thumbnails stay available.
+  Other documents (docx, xlsx, zip…) go to `raw`, which stores bytes verbatim.
+  Both set `use_filename`, so the delivered URL keeps the real extension.
+- The **format is recorded** (`mediaFormat`, `mediaBytes`, `mediaPages` —
+  schema 93) from the upload result instead of being re-derived from the URL by
+  every reader. `community_post_create` validates it against an allow-list and
+  refuses anything else, and the composer now *tells* the member if a file was
+  converted rather than failing silently.
+- `NggPdf` was rebuilt. It is **closed by default** (a card naming the file, its
+  page count and its size — a feed may carry several documents and none should
+  spend a reader's data unasked), and opens into a **page-image reader**:
+  Cloudinary `pg_N` JPEGs, one page fetched at a time, with prev/next, expand
+  and always-available Open/Download. That is not the obvious design, and the
+  reasons are specific to this audience: shipping PDF.js costs ~1MB before a
+  page is drawn, on a 400KB-gzipped bundle read over Nigerian mobile data; and
+  the browser's own frame renders page one on iOS Safari and then will not
+  scroll it, so a ten-page handout was a one-page handout on every iPhone in the
+  centre. An `<iframe>` also fires no error event when a browser declines a PDF,
+  which is why the honest fallback written for that case had never once run.
+  Page images are a fraction of the bytes, scroll and pinch-zoom everywhere, and
+  need no plugin. The native frame remains the fallback for a PDF stored outside
+  Cloudinary.
+- 19 browser assertions in `tests/community-doc.test.js`, wired into
+  `npm run test:all`, covering the classifier (including the no-MIME-type case)
+  and the viewer (closed by default, `pg_1` on open, paging, larger pages when
+  expanded, every control ≥44px per the community's touch rules).
+
+**Not changed, deliberately:** delivery of PDFs from Cloudinary is disabled by
+default on newer accounts ("Allow delivery of PDF and ZIP files"). That is a
+dashboard setting, not code. If documents 404 after this change, that is the
+switch to check.
+
+## 5. What was done
+
+Every finding above is closed. In the order they were fixed:
+
+1. **HIGH-1** — `auth_totp_setup()` now refuses when `totpSecret` is already
+   set, and says so with a 409. The endpoint keeps running pre-2FA (a
+   first-time enroller has no code to give); the enrolment-state check is what
+   closes the hole. Four tests, including one asserting the STORED secret is
+   untouched after a refusal — a refusal that still wrote would be the same
+   breach with a better error message.
+2. **HIGH-2** — `client_ip()` believes `CF-Connecting-IP` / `X-Forwarded-For`
+   only when `REMOTE_ADDR` is inside a configured `trusted_proxies` CIDR;
+   otherwise the peer address stands. Empty (the default) trusts nothing, which
+   over-groups behind an unconfigured CDN rather than under-grouping. Added
+   `ip_in_cidr()` / `ip_is_trusted_proxy()` in `util.php` (pure, so the harness
+   can reach them) with 10 tests covering v4, v6, `/32`, bare addresses and
+   rubbish. Separately, a new subject-keyed `attempt_guard` (schema 94) puts a
+   real ceiling on the three surfaces that had none: admin TOTP (8/15min, keyed
+   on the admin), the kiosk password (10/15min, keyed on the gate) and the
+   guardian invite code (10/15min, keyed on the code). Those counters do not
+   care what an IP claims.
+3. **MEDIUM-3** — `config.example.php` is now merged underneath the deployment's
+   `config.php`, so a missing key falls back to a documented default instead of
+   `null`. Secrets cannot have a default, so a `cookie_secret` that is missing,
+   under 32 chars or still the placeholder refuses to serve rather than signing
+   sessions with an empty key. Verified both ways. The four undocumented keys
+   (`trusted_proxies` too) are now in the example file.
+4. **MEDIUM-4** — the eight credential buckets have code-level floors, with
+   tests asserting each floor exists AND is tighter than the 60/min default it
+   replaces. `hook` is deliberately exempt from the second assertion: it carries
+   HMAC-signed webhook bursts, not a guessable secret.
+5. **MEDIUM-5** — `db_tx()` added; wraps the chess move (insert + update as one
+   fact) and `admin_tournament_advance` (a half-advanced bracket is not a
+   smaller advance). Tested by forcing a failure mid-write and asserting neither
+   half survived, plus that nesting joins rather than throwing.
+6. **MEDIUM-6** — `vendor/VERSIONS.json` records package, version, size and
+   SHA-256 for all 34 files. Six versions were read out of the committed bytes;
+   five could not be established and are **left null rather than guessed** — a
+   wrong version in a manifest answers a security question confidently and
+   incorrectly. `vendor-build.js --check` and the build test both verify it.
+7. **LOW-7** — `api/_cache`, `api/logs` and the root `.htaccess` deny blocks now
+   carry both the 2.2 and 2.4 syntax, matching what `api/storage/.htaccess`
+   already argued for two directories away.
+8. **Test gaps** — a dispatcher-map integrity test (all 398 resolve; guarded
+   against the regex silently matching nothing), a no-duplicate-ops test, and
+   the `match.*` family routed through `backend_dispatch` rather than called as
+   functions.
+
+## 6. Suggested order of work (as originally written)
 
 1. **HIGH-1** — one-line domain guard plus tests. Smallest fix, largest payoff.
 2. **HIGH-2** — `trusted_proxies` in `client_ip()`, then failure counters on
@@ -322,7 +444,7 @@ gated independently, and the poll payload carries no PII.
 4. **Test gaps** — the dispatcher-map integrity test is ~10 lines and permanent.
 5. **MEDIUM-5** `db_tx()`, then **MEDIUM-6** vendor manifest, then **LOW-7**.
 
-## 6. Drift in `docs/NGG-AUDIT-INDEX.md`
+## 7. Drift in `docs/NGG-AUDIT-INDEX.md`
 
 The index is otherwise accurate and its open findings still stand. Stale facts:
 

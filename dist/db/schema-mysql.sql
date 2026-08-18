@@ -851,6 +851,9 @@ CREATE TABLE IF NOT EXISTS community_posts (
   mediaType VARCHAR(16) DEFAULT 'none',
   mediaUrl VARCHAR(512) DEFAULT '',
   mediaPoster VARCHAR(512) DEFAULT '',
+  mediaFormat VARCHAR(16) DEFAULT '',
+  mediaBytes BIGINT DEFAULT 0,
+  mediaPages INT DEFAULT 0,
   altText VARCHAR(400) DEFAULT '',
   status VARCHAR(16) DEFAULT 'published',
   pinned TINYINT DEFAULT 0,
@@ -1748,3 +1751,26 @@ CREATE TABLE IF NOT EXISTS mentor_goals (
   INDEX idx_mg_due (status, dueOn)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (92) ON DUPLICATE KEY UPDATE version = version;
+
+-- v93 — what a shared document actually is, recorded rather than guessed from
+-- its url. See the migration note in api/_lib/db.php.
+ALTER TABLE community_posts ADD COLUMN mediaFormat VARCHAR(16) DEFAULT '';
+ALTER TABLE community_posts ADD COLUMN mediaBytes BIGINT DEFAULT 0;
+ALTER TABLE community_posts ADD COLUMN mediaPages INT DEFAULT 0;
+
+INSERT INTO schema_version (version) VALUES (93) ON DUPLICATE KEY UPDATE version = version;
+
+-- v94 — a brute-force ceiling keyed on the SUBJECT under attack rather than on
+-- the attacker's self-declared IP. See the migration note in api/_lib/db.php.
+CREATE TABLE IF NOT EXISTS attempt_guard (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  scope VARCHAR(40) NOT NULL,
+  subject VARCHAR(190) NOT NULL,
+  fails INT NOT NULL DEFAULT 0,
+  lockedUntil VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_attempt_key (scope, subject),
+  INDEX idx_attempt_stale (updatedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (94) ON DUPLICATE KEY UPDATE version = version;

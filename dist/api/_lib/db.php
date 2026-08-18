@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 92;
+const NGG_SCHEMA_TARGET = 94;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2488,6 +2488,51 @@ function db_migrate(PDO $db): void {
             CREATE INDEX idx_mg_subject ON mentor_goals(subjectId, status);
             CREATE INDEX idx_mg_due ON mentor_goals(status, dueOn);
         ",
+
+        /* What a shared document ACTUALLY is, recorded rather than guessed.
+         *
+         * The community stored a media url and nothing else about the file, so
+         * everything downstream — the viewer, the doc card's type label, the
+         * Drive mirror — re-derived the format by pattern-matching the url. That
+         * is a question about a filename, not about a file, and it answered
+         * wrongly for every document the upload path had re-encoded on the way
+         * in (a PDF signed as an image came back a PNG, and the viewer that
+         * keyed on `.pdf` therefore never appeared). The upload path is fixed;
+         * this makes the answer a stored fact so nothing has to guess again.
+         */
+        93 => "
+            ALTER TABLE community_posts ADD COLUMN mediaFormat TEXT DEFAULT '';
+            ALTER TABLE community_posts ADD COLUMN mediaBytes INTEGER DEFAULT 0;
+            ALTER TABLE community_posts ADD COLUMN mediaPages INTEGER DEFAULT 0;
+        ",
+
+        /* A brute-force ceiling that does not depend on the caller being honest
+         * about who they are.
+         *
+         * The rate limiter keys on the client IP, and an IP is a claim from a
+         * header until a trusted proxy vouches for it. Password sign-in and OTP
+         * always had an account-level lockout underneath (members.failedLogins),
+         * so they survived a spoofed header — but admin TOTP, the kiosk gate
+         * password and the guardian invite-code lookup had nothing but the IP
+         * bucket. Those three guard, respectively, the admin console's second
+         * factor, a centre's check-in desk, and a six-digit code that resolves
+         * to a child's name.
+         *
+         * Keyed on the SUBJECT being attacked (the admin, the gate, the code)
+         * rather than on the attacker, because the subject is the thing we can
+         * actually identify. */
+        94 => "
+            CREATE TABLE attempt_guard (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              scope TEXT NOT NULL,
+              subject TEXT NOT NULL,
+              fails INTEGER NOT NULL DEFAULT 0,
+              lockedUntil TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_attempt_key ON attempt_guard(scope, subject);
+            CREATE INDEX idx_attempt_stale ON attempt_guard(updatedAt);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
@@ -2584,4 +2629,41 @@ function db_exec(string $sql, array $params = []): int {
     $stmt = db_conn()->prepare($sql);
     $stmt->execute($params);
     return $stmt->rowCount();
+}
+
+/**
+ * Run $fn inside a transaction. Commits on return, rolls back on throw.
+ *
+ * Until this existed the only transaction in the codebase wrapped schema
+ * migrations, and every multi-row business write was a sequence of independent
+ * statements: a chess move inserted into `match_moves` and then updated
+ * `match_games`, a fee posted a ledger row and then touched the member. Each
+ * pair is one fact recorded in two places, and anything that interrupts the
+ * gap — a fatal, a timeout, a killed worker — leaves the halves disagreeing.
+ * That is not a hypothetical on shared hosting, where PHP-FPM will happily
+ * reap a request mid-write.
+ *
+ * Nested calls join the outer transaction rather than opening a second one
+ * (PDO would throw), so a helper that wraps itself is safe to call from inside
+ * another wrapped operation. Only the outermost frame commits.
+ *
+ * The return value of $fn is passed through, so this reads as an expression:
+ *     $post = db_tx(fn() => community_write($d));
+ */
+function db_tx(callable $fn) {
+    $db = db_conn();
+    if ($db->inTransaction()) return $fn();   // already inside one — just run
+
+    $db->beginTransaction();
+    try {
+        $out = $fn();
+        $db->commit();
+        return $out;
+    } catch (Throwable $e) {
+        // rollBack() itself throws if the driver already unwound the
+        // transaction (a MySQL deadlock does this), and losing the original
+        // exception to that would hide the actual fault.
+        if ($db->inTransaction()) { try { $db->rollBack(); } catch (Throwable $_) {} }
+        throw $e;
+    }
 }
