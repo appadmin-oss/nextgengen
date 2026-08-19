@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 95;
+const NGG_SCHEMA_TARGET = 96;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2545,6 +2545,17 @@ function db_migrate(PDO $db): void {
          * id, later. */
         95 => "
             ALTER TABLE notifications ADD COLUMN linkRef TEXT DEFAULT '';
+        ",
+
+        /* How long a clip runs.
+         *
+         * The post handler has always CHECKED the duration — a clip over three
+         * minutes is refused — and then thrown the number away. So the Files
+         * list could say how big a video is but not how long, which is the
+         * figure a member on metered data actually decides on: "18 MB" and
+         * "4:12" answer different questions and they need both. */
+        96 => "
+            ALTER TABLE community_posts ADD COLUMN mediaDuration INTEGER DEFAULT 0;
         ",
     ];
 

@@ -403,6 +403,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'community.channels'      => 'community_channels',
             'community.feed'          => 'community_feed',
             'community.post.get'      => 'community_post_get',
+            'community.files'         => 'community_channel_files',
             'community.post'          => 'community_post_create',
             'community.react'         => 'community_react',
             'community.comments'      => 'community_comments',

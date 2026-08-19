@@ -2591,8 +2591,23 @@ function NggPdfPage({ doc, page, scale, onSize }) {
  * embed already follows, and it matters far more now that opening one costs
  * half a megabyte of library.
  */
-function NggPdf({ src, name, pages, bytes }) {
-  const [open, setOpen] = React.useState(false);
+/**
+ * The document reader.
+ *
+ * Two ways in, one reader. Left alone it renders its own card and opens when
+ * that card is tapped — how a document arrives in a message. Given `open` and
+ * `onClose` it renders no card at all and is driven from outside — how the
+ * Files screen opens the same document from a list. A second reader for the
+ * second entry point is how the two would drift apart.
+ */
+function NggPdf({ src, name, pages, bytes, open: openProp, onClose }) {
+  const controlled = typeof openProp === "boolean";
+  const [openState, setOpenState] = React.useState(false);
+  const open = controlled ? openProp : openState;
+  const setOpen = React.useCallback((v) => {
+    if (controlled) { if (!v && onClose) onClose(); return; }
+    setOpenState(v);
+  }, [controlled, onClose]);
   const [doc, setDoc] = React.useState(null);
   const [total, setTotal] = React.useState(Math.max(0, pages | 0));
   const [page, setPage] = React.useState(1);
@@ -2703,6 +2718,7 @@ function NggPdf({ src, name, pages, bytes }) {
   ].filter(Boolean).join(" · ");
 
   if (!open) {
+    if (controlled) return null;   // the list that owns it draws its own row
     return (
       <div className="pdfv pdfv-closed">
         <button type="button" className="pdfv-open" onClick={() => setOpen(true)}

@@ -214,6 +214,76 @@ function community_channel_members(array $p): array {
     return ['ok' => true, 'members' => $members, 'count' => count($members)];
 }
 
+/**
+ * Every file shared in a channel, newest first.
+ *
+ * Derived from the posts, not from a second store: a file in this community IS
+ * a message with something attached, and a Files list built from its own table
+ * would be a second answer to "what has been shared here" that could disagree
+ * with the first. Grouping (pinned / this week / older) is decided here rather
+ * than on the client, so the list a member scrolls and the list a mentor
+ * curates are the same list.
+ *
+ * `kind` narrows to doc | image | video. The counts always describe the WHOLE
+ * channel, so the filter chips can say "Docs 9" while showing photos.
+ */
+function community_channel_files(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    $slug = (string)($p['channel'] ?? '');
+    $kind = (string)($p['kind'] ?? 'all');
+    $ch = db_row("SELECT channelId, name, slug FROM community_channels WHERE slug = ? LIMIT 1", [$slug]);
+    if (!$ch) return ['ok' => true, 'files' => [], 'counts' => ['all' => 0, 'doc' => 0, 'image' => 0, 'video' => 0]];
+
+    $rows = db_all(
+        "SELECT postId, authorId, authorName, authorCentre, body, mediaType, mediaUrl, mediaPoster,
+                altText, mediaFormat, mediaBytes, mediaPages, mediaDuration, pinned, createdAt
+           FROM community_posts
+          WHERE channelId = ? AND status = 'published' AND mediaType <> 'none' AND mediaUrl <> ''
+          ORDER BY createdAt DESC LIMIT 300", [(string)$ch['channelId']]);
+
+    $counts = ['all' => 0, 'doc' => 0, 'image' => 0, 'video' => 0];
+    $files = [];
+    $weekAgo = date('Y-m-d H:i:s', time() - 7 * 86400);
+    foreach ($rows as $r) {
+        $t = (string)$r['mediaType'];
+        if (!isset($counts[$t])) continue;
+        $counts['all']++; $counts[$t]++;
+        if ($kind !== 'all' && $kind !== $t) continue;
+        $fmt = (string)($r['mediaFormat'] ?? '') ?: upload_ext((string)$r['mediaUrl']);
+        $files[] = [
+            'postId' => (string)$r['postId'],
+            'kind' => $t,
+            'format' => $fmt,
+            'name' => (string)($r['altText'] ?? '') ?: (community_file_fallback_name($t, $fmt)),
+            'url' => (string)$r['mediaUrl'],
+            'poster' => (string)($r['mediaPoster'] ?? ''),
+            'bytes' => (int)($r['mediaBytes'] ?? 0),
+            'pages' => (int)($r['mediaPages'] ?? 0),
+            'duration' => (int)($r['mediaDuration'] ?? 0),
+            'pinned' => (int)$r['pinned'] === 1,
+            'author' => ['name' => (string)$r['authorName'], 'centre' => (string)$r['authorCentre'],
+                         'isMe' => (string)$r['authorId'] === $viewer,
+                         'photo' => community_photo_for((string)$r['authorId'])],
+            'note' => mb_substr(trim((string)$r['body']), 0, 120),
+            'createdAt' => (string)$r['createdAt'],
+            // pinned → thisWeek → older. The client renders the groups in that
+            // order and never has to re-derive "is this week" from a timezone
+            // it does not know.
+            'group' => (int)$r['pinned'] === 1 ? 'pinned' : ((string)$r['createdAt'] >= $weekAgo ? 'week' : 'older'),
+        ];
+    }
+    return ['ok' => true, 'files' => $files, 'counts' => $counts,
+            'channel' => ['slug' => (string)$ch['slug'], 'name' => (string)$ch['name']]];
+}
+
+/** A name for a file whose poster never gave it one. */
+function community_file_fallback_name(string $kind, string $format): string {
+    $ext = $format !== '' ? '.' . $format : '';
+    if ($kind === 'image') return 'Photo' . $ext;
+    if ($kind === 'video') return 'Video' . $ext;
+    return 'Document' . $ext;
+}
+
 /** Search published posts by text (whole community or one channel). */
 function community_search(array $p): array {
     $viewer = (string)($p['memberId'] ?? '');
@@ -566,6 +636,7 @@ function community_post_shape(array $row, string $viewerId): array {
          * posts written before v93. The reader must never have to guess. */
         'mediaFormat' => (string)($row['mediaFormat'] ?? '') ?: upload_ext((string)$row['mediaUrl']),
         'mediaBytes' => (int)($row['mediaBytes'] ?? 0), 'mediaPages' => (int)($row['mediaPages'] ?? 0),
+        'mediaDuration' => (int)($row['mediaDuration'] ?? 0),
         'linkPreview' =>(($lp = json_decode((string)($row['linkPreview'] ?? ''), true)) && is_array($lp) && !empty($lp['title'])) ? $lp : null,
         'status' => (string)$row['status'], 'pinned' => (int)$row['pinned'] === 1, 'featured' => (int)($row['featured'] ?? 0) === 1,
         'reactions' => $reacts, 'myReaction' => (string)$mine, 'commentCount' => $comments, 'lastCommentAt' => $lastComment,
@@ -938,6 +1009,8 @@ function community_post_create(array $p): array {
         'body' => $body, 'kind' => $kind, 'pollOptions' => $kind === 'poll' ? json_encode($pollOptions, JSON_UNESCAPED_SLASHES) : '',
         'mediaType' => $mediaType, 'mediaUrl' => $mediaUrl, 'mediaPoster' => trim((string)($d['mediaPoster'] ?? '')),
         'mediaFormat' => $mediaFormat, 'mediaBytes' => $mediaBytes, 'mediaPages' => $mediaPages,
+        // Checked above, and now kept: the Files list needs "4:12", not only "18 MB".
+        'mediaDuration' => $mediaType === 'video' ? max(0, (int)($d['mediaDuration'] ?? 0)) : 0,
         'altText' => $alt, 'status' => $status,
         'moderation' => json_encode(['verdict' => $screen['verdict'], 'reason' => $screen['reason'],
                                      'by' => 'ai', 'at' => $now, 'mode' => $mode,

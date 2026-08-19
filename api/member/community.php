@@ -12,6 +12,8 @@ if ($method === 'GET') {
     elseif ($view === 'mention')   $res = gs_call('community.mentionSearch', ['q' => $_GET['q'] ?? '', 'memberId' => $s['mid']]);
     elseif ($view === 'search')    $res = gs_call('community.search', ['memberId' => $s['mid'], 'q' => $_GET['q'] ?? '', 'channel' => $_GET['channel'] ?? '']);
     elseif ($view === 'members')   $res = gs_call('community.channelMembers', ['channel' => $_GET['channel'] ?? '']);
+    // Every file shared in a channel — the Files screen.
+    elseif ($view === 'files')     $res = gs_call('community.files', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? '', 'kind' => $_GET['kind'] ?? 'all']);
     // The Today screen's filter-chip counts, in one request rather than three.
     elseif ($view === 'today')     $res = gs_call('community.today', ['memberId' => $s['mid']]);
     // One post by id — deep links (a shared url, a notification) resolve here.

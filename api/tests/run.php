@@ -6956,6 +6956,52 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
         return $r['ok'] && $r['post']['postId'] === $pid;
     })());
     chk('community: an unknown post id is not found', backend_dispatch('community.post.get', ['memberId' => 'CM-A', 'postId' => 'CP-NOPE'])['error'] === 'not_found');
+
+    /* ── Files in a channel (turn 4A) ──────────────────────────────────────
+       Derived from the posts, because a file here IS a message with something
+       attached. A separate store would be a second answer to "what has been
+       shared in this channel" that could disagree with the first. */
+    db_insert('members', ['memberId' => 'CM-H', 'fullName' => 'Hauwa Sani', 'email' => 'h@ex.co', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'CM-I', 'fullName' => 'Ibrahim Kalu', 'email' => 'i@ex.co', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('community: a shared document appears in the channel\'s files', (function () {
+        backend_dispatch('community.post', ['memberId' => 'CM-H', 'data' => ['channel' => 'commons', 'body' => 'Running order for the showcase',
+            'mediaType' => 'doc', 'mediaUrl' => 'https://res.cloudinary.com/x/raw/upload/running-order.pdf',
+            'mediaName' => 'Showcase running order.pdf', 'mediaFormat' => 'pdf', 'mediaPages' => 6, 'mediaBytes' => 389120], 'ip' => '1.1.1.1']);
+        $r = backend_dispatch('community.files', ['memberId' => 'CM-A', 'channel' => 'commons']);
+        foreach ($r['files'] as $f) {
+            if ($f['name'] !== 'Showcase running order.pdf') continue;
+            return $f['kind'] === 'doc' && $f['format'] === 'pdf' && $f['pages'] === 6 && $f['bytes'] === 389120;
+        }
+        return false;
+    })());
+    chk('community: a clip keeps its duration, not only its size', (function () {
+        // A clip is always held for a mentor first (frames are not the whole
+        // video), so publish it the way a mentor would before asking the Files
+        // list about it.
+        $vp = backend_dispatch('community.post', ['memberId' => 'CM-I', 'data' => ['channel' => 'commons', 'body' => 'Market recording',
+            'mediaType' => 'video', 'mediaUrl' => 'https://res.cloudinary.com/x/video/upload/market.mp4',
+            'mediaBytes' => 18874368, 'mediaDuration' => 172], 'ip' => '1.1.1.1']);
+        backend_dispatch('admin.community.moderate', ['requesterId' => 'NGG-2025-0099', 'kind' => 'post',
+            'id' => (string)($vp['post']['postId'] ?? ''), 'action' => 'approve']);
+        $r = backend_dispatch('community.files', ['memberId' => 'CM-A', 'channel' => 'commons', 'kind' => 'video']);
+        foreach ($r['files'] as $f) if ($f['kind'] === 'video' && $f['duration'] === 172) return true;
+        return false;
+    })());
+    chk('community: the kind filter narrows the list but not the counts', (function () {
+        $r = backend_dispatch('community.files', ['memberId' => 'CM-A', 'channel' => 'commons', 'kind' => 'doc']);
+        if (!$r['ok'] || $r['counts']['video'] < 1) return false;      // counts describe the whole channel
+        foreach ($r['files'] as $f) if ($f['kind'] !== 'doc') return false;
+        return true;
+    })());
+    chk('community: files are grouped pinned / this week / older', (function () {
+        $r = backend_dispatch('community.files', ['memberId' => 'CM-A', 'channel' => 'commons']);
+        foreach ($r['files'] as $f) if (!in_array($f['group'], ['pinned', 'week', 'older'], true)) return false;
+        return count($r['files']) > 0;
+    })());
+    chk('community: an unknown channel has no files rather than an error', (function () {
+        $r = backend_dispatch('community.files', ['memberId' => 'CM-A', 'channel' => 'no-such-channel']);
+        return $r['ok'] && $r['files'] === [];
+    })());
     chk('community: a mention notification carries the post it is about', (function () {
         $n = db_row("SELECT linkRef FROM notifications WHERE memberId = 'CM-A' AND kind = 'community.mention' ORDER BY id DESC LIMIT 1");
         if (!$n || (string)$n['linkRef'] === '') return false;

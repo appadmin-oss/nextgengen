@@ -577,6 +577,7 @@
         mentions: (q) => request('/member/community.php' + qs({ view: 'mention', q })),
         search:   (q, channel) => request('/member/community.php' + qs({ view: 'search', q, channel: channel || 'all' })),
         members:  (channel) => request('/member/community.php' + qs({ view: 'members', channel })),
+        files:    (channel, kind) => request('/member/community.php' + qs({ view: 'files', channel, kind: kind || 'all' })),
         markRead: (channel) => request('/member/community.php', { body: { action: 'markRead', channel } }),
         // One post by id — what a shared link or a notification resolves to.
         post_get: (postId) => request('/member/community.php' + qs({ view: 'post', postId })),

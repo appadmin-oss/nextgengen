@@ -1780,3 +1780,9 @@ INSERT INTO schema_version (version) VALUES (94) ON DUPLICATE KEY UPDATE version
 ALTER TABLE notifications ADD COLUMN linkRef VARCHAR(64) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (95) ON DUPLICATE KEY UPDATE version = version;
+
+-- v96 — how long a clip runs, kept rather than only validated.
+-- See the migration note in api/_lib/db.php.
+ALTER TABLE community_posts ADD COLUMN mediaDuration INT DEFAULT 0;
+
+INSERT INTO schema_version (version) VALUES (96) ON DUPLICATE KEY UPDATE version = version;

@@ -899,6 +899,7 @@ function cmUiIcon(name, size) {
   if (name === "back")   return wrap(<path d="m14 6-6 6 6 6" {...P}/>);
   if (name === "down")   return wrap(<path d="M12 5v14M6 13l6 6 6-6" {...P}/>);
   if (name === "chev")   return wrap(<path d="m9 6 6 6-6 6" {...P}/>);
+  if (name === "files")  return wrap(<path d="M4 7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" {...P}/>);
   return null;
 }
 
@@ -1230,7 +1231,7 @@ function CmActionsSheet({ post, act, staff, onClose, onOpenThread, onJournal }) 
       {staff && onJournal && <Row label="Record in the journal" chip="mentors" onClick={() => onJournal(post)}/>}
       <Row label="Copy link" onClick={() => {
         const url = location.origin + "/community?post=" + post.postId;
-        if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => toast.ok("Link copied.")).catch(() => {});
+        if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => toast.success("Link copied.")).catch(() => {});
       }}/>
       <Row label="Report to a mentor" danger top onClick={() => act.report()}/>
     </CmSheet>
@@ -1358,6 +1359,466 @@ function CmJumpSheet({ channels, scope, setScope, staff, onClose, onOpenChannel,
         {nothing && <div className="cmm-jump-note">Nothing matched “{q.trim()}”.</div>}
       </div>
     </CmSheet>
+  );
+}
+
+/* ── Files ────────────────────────────────────────────────────────────────
+   Turn 4A. Every file shared in a channel, on one screen, built around the
+   constraint the design keeps returning to: members are on metered data, and
+   nothing may cost them megabytes they did not agree to spend.
+
+   Three pieces make that true rather than decorative — a real offline store
+   (Cache Storage, so a saved file opens with the radio off), a real byte
+   figure on every row, and a real threshold above which nothing transfers
+   until somebody taps. */
+
+const CM_ASK_MB = 5;                       // ask first above this
+const CM_FILE_CACHE = "ngg-files-v1";
+const CM_DATA_KEY = "ngg.cm.datapref";     // { saver: bool, ask: bool }
+
+function cmDataPref() {
+  try { return Object.assign({ saver: true, ask: true }, JSON.parse(localStorage.getItem(CM_DATA_KEY) || "{}")); }
+  catch (_) { return { saver: true, ask: true }; }
+}
+function cmSetDataPref(patch) {
+  const next = Object.assign(cmDataPref(), patch);
+  try { localStorage.setItem(CM_DATA_KEY, JSON.stringify(next)); } catch (_) {}
+  return next;
+}
+
+/* The offline store.
+ *
+ * Cache Storage, not IndexedDB: the thing being kept IS an HTTP response, and
+ * keeping it as one means the viewer fetches the same URL whether the file is
+ * on the device or not — there is no second code path to keep in step, and no
+ * blob URL to leak. Absent Cache Storage (older Android WebView, a page served
+ * without TLS in development) every call resolves to "nothing saved", which is
+ * the truth rather than an error. */
+const cmOffline = {
+  ok() { return typeof caches !== "undefined" && !!caches; },
+  /* Cache Storage keys on the ABSOLUTE url it fetched. A file url may reach us
+     relative, so every lookup resolves first — otherwise a file is saved and
+     then reported as not saved, which is the worst of both. */
+  key(url) { try { return new URL(url, location.href).href; } catch (_) { return String(url); } },
+  async open() { return this.ok() ? caches.open(CM_FILE_CACHE) : null; },
+  async list() {
+    const c = await this.open(); if (!c) return {};
+    const out = {};
+    for (const req of await c.keys()) {
+      const res = await c.match(req);
+      const len = res ? Number(res.headers.get("content-length") || 0) : 0;
+      out[req.url] = { bytes: len };
+    }
+    return out;
+  },
+  async has(url) { const c = await this.open(); return !!(c && await c.match(this.key(url))); },
+  async save(url) {
+    const c = await this.open(); if (!c) throw new Error("no-cache");
+    await c.add(new Request(this.key(url), { mode: "cors" }));
+    return true;
+  },
+  async remove(url) { const c = await this.open(); return c ? c.delete(this.key(url)) : false; },
+};
+
+function cmBytes(n) {
+  if (!n) return "";
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return Math.round(n / 1024) + " KB";
+  const mb = n / 1024 / 1024;
+  return (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + " MB";
+}
+function cmClock(secs) {
+  const t = Math.max(0, Math.round(secs || 0));
+  return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+}
+/** The badge on a document row — the format, in three letters. */
+function cmFileTag(f) {
+  if (f.kind === "image") return "IMG";
+  if (f.kind === "video") return "VID";
+  return (f.format || "doc").slice(0, 4).toUpperCase();
+}
+/** Which files this app can actually open in place. Everything else gets a
+    row that says so and offers the honest alternatives, rather than a preview
+    that opens a blank rectangle. */
+function cmCanPreview(f) {
+  if (f.kind === "image" || f.kind === "video") return true;
+  return String(f.format || "").toLowerCase() === "pdf";
+}
+
+const CM_FILE_GROUPS = [
+  { id: "pinned", label: "Pinned by mentors" },
+  { id: "week",   label: "This week" },
+  { id: "older",  label: "Older" },
+];
+
+function CmFiles({ slug, channelName, onBack, onOpenThread }) {
+  const [kind, setKind] = React.useState("all");
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [saved, setSaved] = React.useState({});      // url -> {bytes}
+  const [sheetFor, setSheetFor] = React.useState(null);
+  const [reading, setReading] = React.useState(null); // the open document
+  const [gallery, setGallery] = React.useState(-1);   // index into photos
+  const [playing, setPlaying] = React.useState(null);
+
+  const load = React.useCallback(() => {
+    setData(null); setErr("");
+    NGGApi.member.community.files(slug, "all")
+      .then(r => setData(r))
+      .catch(() => { setData({ files: [], counts: {} }); setErr("Couldn't load the files in this channel."); });
+  }, [slug]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const refreshSaved = React.useCallback(() => { cmOffline.list().then(setSaved).catch(() => {}); }, []);
+  React.useEffect(() => { refreshSaved(); }, [refreshSaved]);
+
+  const files = (data && data.files) || [];
+  const counts = (data && data.counts) || {};
+  const shown = kind === "all" ? files : files.filter(f => f.kind === kind);
+  const photos = files.filter(f => f.kind === "image");
+  const savedList = Object.keys(saved);
+  const savedBytes = savedList.reduce((n, u) => n + (saved[u].bytes || 0), 0);
+
+  const chips = [
+    { id: "all", label: "All", count: counts.all },
+    { id: "doc", label: "Docs", count: counts.doc },
+    { id: "image", label: "Photos", count: counts.image },
+    { id: "video", label: "Video", count: counts.video },
+  ];
+
+  /* Opening a file is the only place bytes leave the network, so it is the
+     only place that asks. Anything already saved opens immediately — it costs
+     nothing — and so does anything under the threshold. */
+  const open = (f) => {
+    const isSaved = !!saved[cmOffline.key(f.url)];
+    const big = (f.bytes || 0) > CM_ASK_MB * 1024 * 1024;
+    if (!isSaved && big && cmDataPref().ask) { setSheetFor({ file: f, reason: "cost" }); return; }
+    reallyOpen(f);
+  };
+  const reallyOpen = (f) => {
+    if (f.kind === "image") { setGallery(photos.findIndex(x => x.postId === f.postId)); return; }
+    if (f.kind === "video") { setPlaying(f); return; }
+    if (cmCanPreview(f)) { setReading(f); return; }
+    setSheetFor({ file: f, reason: "nopreview" });
+  };
+
+  const Row = (f) => {
+    const isSaved = !!saved[cmOffline.key(f.url)];
+    const meta = [
+      isSaved ? "✓ offline" : "",
+      f.kind === "video" && f.duration ? cmClock(f.duration) : "",
+      f.pages ? f.pages + (f.pages === 1 ? " page" : " pages") : "",
+      cmBytes(f.bytes),
+    ].filter(Boolean).join(" · ");
+    const big = (f.bytes || 0) > CM_ASK_MB * 1024 * 1024;
+    return (
+      <div className="cmm-file" key={f.postId}>
+        <button className="cmm-file-main" onClick={() => open(f)}
+                onContextMenu={(e) => { e.preventDefault(); setSheetFor({ file: f, reason: "actions" }); }}>
+          {f.kind === "image" || (f.kind === "video" && f.poster)
+            ? <span className="cmm-file-thumb"><img src={cmOpt(f.poster || f.url, 128)} alt="" loading="lazy"/>
+                {f.kind === "video" && <span className="cmm-file-play" aria-hidden="true">▶</span>}</span>
+            : <span className={"cmm-file-tag is-" + f.kind}>{cmFileTag(f)}</span>}
+          <span className="cmm-file-body">
+            <span className="cmm-file-name">{f.name}</span>
+            <span className="cmm-file-meta">
+              {isSaved && <span className="cmm-file-off">✓ offline</span>}
+              {meta.replace(/^✓ offline · ?/, "")}
+            </span>
+            <span className="cmm-file-who">{f.author.name}{f.createdAt ? " · " + cmAgo(f.createdAt) : ""}</span>
+          </span>
+          {/* The one badge that changes a decision: this will cost you. */}
+          {big && !isSaved && <span className="cmm-file-wifi">Wi-Fi</span>}
+        </button>
+        <button className="cmm-file-more" aria-label={"Actions for " + f.name}
+                onClick={() => setSheetFor({ file: f, reason: "actions" })}>⋯</button>
+      </div>
+    );
+  };
+
+  return (
+    <div className="cmm-screen" role="region" aria-label={"Files in " + (channelName || "this channel")}>
+      <header className="cmm-head cmm-head-back">
+        <button className="cmm-icon-btn" onClick={onBack} aria-label="Back to the channel">{cmUiIcon("back", 22)}</button>
+        <div className="cmm-head-txt">
+          <h1 className="cmm-h1">Files</h1>
+          <p className="cmm-sub">{channelName}{counts.all ? " · " + counts.all + " files" : ""}</p>
+        </div>
+      </header>
+
+      <CmChips items={chips} value={kind} onPick={setKind} label="Filter by kind"/>
+
+      {savedList.length > 0 && (
+        <div className="cmm-off-bar">
+          <span>
+            <b>{savedList.length} {savedList.length === 1 ? "file" : "files"} saved offline</b>
+            {savedBytes ? " · " + cmBytes(savedBytes) : ""}. Available with no data.
+          </span>
+          <button onClick={() => setSheetFor({ reason: "manage" })}>Manage</button>
+        </div>
+      )}
+
+      {data === null && <CmSkeleton rows={4}/>}
+      {err && data && shown.length === 0 && (
+        <CmEmpty icon="⚠" title="That didn't load" body={err}
+                 action={<button className="cmm-cta" onClick={load}>Try again</button>}/>
+      )}
+      {data && shown.length === 0 && !err && (
+        <CmEmpty icon="🗂" title={kind === "all" ? "No files yet" : "Nothing of that kind yet"}
+                 body="Anything shared in this channel — a handout, a photo, a recording — collects here."/>
+      )}
+
+      {data && shown.length > 0 && CM_FILE_GROUPS.map(g => {
+        const rows = shown.filter(f => f.group === g.id);
+        if (!rows.length) return null;
+        return (
+          <div className="cmm-file-group" key={g.id}>
+            <div className="cmm-list-h">{g.label.toUpperCase()}</div>
+            {rows.map(Row)}
+          </div>
+        );
+      })}
+
+      {data && shown.length > 0 && (
+        <p className="cmm-file-hint">Hold any file for share, save offline, or send to your journal.</p>
+      )}
+
+      {sheetFor && (
+        <CmFileSheet entry={sheetFor} saved={saved} files={files}
+                     onClose={() => setSheetFor(null)}
+                     onOpen={(f) => { setSheetFor(null); reallyOpen(f); }}
+                     onSavedChange={refreshSaved}
+                     onOpenThread={onOpenThread}/>
+      )}
+      {reading && (
+        <NggPdf src={reading.url} name={reading.name} pages={reading.pages} bytes={reading.bytes}
+                open onClose={() => setReading(null)}/>
+      )}
+      {gallery >= 0 && photos[gallery] && (
+        <CmPhotoViewer photos={photos} index={gallery} onIndex={setGallery} onClose={() => setGallery(-1)}/>
+      )}
+      {playing && <CmVideoSheet file={playing} onClose={() => setPlaying(null)}/>}
+    </div>
+  );
+}
+
+/* ── The file actions sheet ───────────────────────────────────────────────
+   One sheet, four jobs, because they are the same conversation: what this
+   costs, how to avoid paying it twice, where else it could go, and how to
+   report it. The cost is stated in megabytes — the unit the member is billed
+   in — before anything is transferred. */
+function CmFileSheet({ entry, saved, files, onClose, onOpen, onSavedChange, onOpenThread }) {
+  const f = entry.file;
+  const [pref, setPref] = React.useState(cmDataPref);
+  const [busy, setBusy] = React.useState("");
+
+  const isSaved = f && !!saved[cmOffline.key(f.url)];
+  const mb = f ? (f.bytes || 0) / 1024 / 1024 : 0;
+
+  const save = async () => {
+    if (!f) return;
+    setBusy("save");
+    try {
+      if (isSaved) { await cmOffline.remove(f.url); toast.success("Removed from this device."); }
+      else { await cmOffline.save(f.url); toast.success("Saved. It opens with no data now."); }
+      onSavedChange();
+      // The sheet has done its job; leaving it up hides the list it just
+      // changed, which is the one thing the member wants to look at now.
+      onClose();
+      return;
+    } catch (_) {
+      toast.error("Couldn't save it offline. Your browser may not allow it here.");
+    }
+    setBusy("");
+  };
+
+  const Row = ({ label, sub, onClick, danger, icon }) => (
+    <button className={"cmm-act-row" + (danger ? " is-danger" : "")} onClick={onClick} disabled={!!busy}>
+      {icon && <span className="cmm-act-ic" aria-hidden="true">{icon}</span>}
+      <span className="cmm-act-label">{label}</span>
+      {sub && <span className="cmm-act-sub">{sub}</span>}
+    </button>
+  );
+
+  if (entry.reason === "manage") {
+    const savedFiles = files.filter(x => saved[cmOffline.key(x.url)]);
+    return (
+      <CmSheet title="Saved on this device" onClose={onClose}>
+        {savedFiles.length === 0 && <p className="cmm-jump-note">Nothing from this channel is saved here.</p>}
+        {savedFiles.map(x => (
+          <div className="cmm-act-row" key={x.postId}>
+            <span className="cmm-act-label">{x.name}</span>
+            <span className="cmm-act-sub">{cmBytes(saved[cmOffline.key(x.url)].bytes || x.bytes)}</span>
+            <button className="cmm-act-x" onClick={() => cmOffline.remove(x.url).then(onSavedChange)}
+                    aria-label={"Remove " + x.name + " from this device"}>Remove</button>
+          </div>
+        ))}
+      </CmSheet>
+    );
+  }
+
+  return (
+    <CmSheet title={f ? f.name : "File"} onClose={onClose}>
+      {entry.reason === "cost" && (
+        <div className="cmm-cost">
+          <p><b>This is {cmBytes(f.bytes)} on mobile data.</b>{f.kind === "video" ? " Watching in data saver uses about " + cmBytes((f.bytes || 0) * 0.35) + " instead." : ""}</p>
+          <div className="cmm-cost-opts">
+            <button className={"cmm-cost-opt" + (pref.saver ? " is-on" : "")}
+                    onClick={() => setPref(cmSetDataPref({ saver: true }))}>Data saver</button>
+            <button className={"cmm-cost-opt" + (!pref.saver ? " is-on" : "")}
+                    onClick={() => setPref(cmSetDataPref({ saver: false }))}>Full quality</button>
+          </div>
+          <label className="cmm-check">
+            <input type="checkbox" checked={pref.ask}
+                   onChange={e => setPref(cmSetDataPref({ ask: e.target.checked }))}/>
+            <span>Always ask before files over {CM_ASK_MB} MB</span>
+          </label>
+          <button className="cmm-cta" onClick={() => onOpen(f)}>
+            {f.kind === "video" ? "Play" : "Open"} · {cmBytes(pref.saver && f.kind === "video" ? (f.bytes || 0) * 0.35 : f.bytes)}
+          </button>
+        </div>
+      )}
+
+      {entry.reason === "nopreview" && (
+        <div className="cmm-cost">
+          {/* No dead ends. This app cannot render a spreadsheet and will not
+              pretend to — it says so, and offers the two things that do work. */}
+          <p><b>No preview for {(f.format || "this kind of file").toUpperCase()}.</b> {cmBytes(f.bytes)} · shared by {f.author.name}.</p>
+          <a className="cmm-cta" href={f.url} target="_blank" rel="noopener noreferrer">Open in another app</a>
+        </div>
+      )}
+
+      {f && (
+        <>
+          <Row icon="⤓" label={isSaved ? "Remove from this device" : "Save offline"}
+               sub={isSaved ? cmBytes(saved[cmOffline.key(f.url)].bytes || f.bytes) : (mb > CM_ASK_MB ? "Wi-Fi recommended · " + cmBytes(f.bytes) : cmBytes(f.bytes))}
+               onClick={save}/>
+          {onOpenThread && <Row icon="💬" label="Open the message it came with"
+                                onClick={() => { onClose(); NGGApi.member.community.post_get(f.postId).then(r => r.post && onOpenThread(r.post)).catch(() => {}); }}/>}
+          <Row icon="🔗" label="Copy link" onClick={() => {
+            const url = location.origin + "/community?post=" + f.postId;
+            if (navigator.clipboard) navigator.clipboard.writeText(url).then(() => toast.success("Link copied.")).catch(() => {});
+            onClose();
+          }}/>
+          <Row icon="↗" label="Open in another app" onClick={() => { window.open(f.url, "_blank", "noopener"); onClose(); }}/>
+          <Row icon="⚑" label="Report this file" danger onClick={() => {
+            NGGApi.member.community.report("post", f.postId, "").then(() => toast.success("Sent to the mentors.")).catch(() => toast.error("Couldn't send that."));
+            onClose();
+          }}/>
+        </>
+      )}
+    </CmSheet>
+  );
+}
+
+/* ── Photo viewer ─────────────────────────────────────────────────────────
+   Full screen, portalled for the same reason the document reader is: a
+   transformed ancestor anywhere above would otherwise capture `position:
+   fixed` and wedge it into the feed. Swipe moves between siblings, and the
+   neighbour each way is prefetched so the swipe lands on an image rather than
+   on a wait. */
+function CmPhotoViewer({ photos, index, onIndex, onClose }) {
+  const f = photos[index];
+  const touch = React.useRef(null);
+  React.useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowRight") onIndex(Math.min(photos.length - 1, index + 1));
+      else if (e.key === "ArrowLeft") onIndex(Math.max(0, index - 1));
+    };
+    document.addEventListener("keydown", onKey);
+    history.pushState({ cmPhoto: 1 }, "");
+    const onPop = () => onClose();
+    window.addEventListener("popstate", onPop);
+    return () => {
+      document.body.style.overflow = prev;
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("popstate", onPop);
+    };
+  }, [index, photos.length, onIndex, onClose]);
+
+  // Prefetch one neighbour each way — no further, because each one is real data.
+  React.useEffect(() => {
+    [index - 1, index + 1].forEach(i => {
+      const n = photos[i]; if (!n) return;
+      const img = new Image(); img.src = cmOpt(n.url, 1200);
+    });
+  }, [index, photos]);
+
+  if (!f) return null;
+  const down = (e) => { const t = e.touches && e.touches[0]; touch.current = t ? { x: t.clientX, y: t.clientY } : null; };
+  const up = (e) => {
+    const s = touch.current, t = e.changedTouches && e.changedTouches[0];
+    touch.current = null;
+    if (!s || !t) return;
+    const dx = t.clientX - s.x, dy = t.clientY - s.y;
+    if (Math.abs(dx) < 48 || Math.abs(dy) > Math.abs(dx)) return;
+    if (dx < 0) onIndex(Math.min(photos.length - 1, index + 1));
+    else onIndex(Math.max(0, index - 1));
+  };
+
+  return ReactDOM.createPortal(
+    <div className="cmm-photo" role="dialog" aria-modal="true" aria-label={f.name}
+         onTouchStart={down} onTouchEnd={up}>
+      <header className="cmm-photo-bar">
+        <button className="cmm-photo-x" onClick={onClose} aria-label="Close">✕</button>
+        <span className="cmm-photo-n" aria-live="polite">{index + 1} / {photos.length}</span>
+        <a className="cmm-photo-dl" href={f.url} target="_blank" rel="noopener noreferrer" aria-label="Open the original">↗</a>
+      </header>
+      <div className="cmm-photo-stage">
+        <img src={cmOpt(f.url, 1400)} alt={f.name}/>
+      </div>
+      <footer className="cmm-photo-foot">
+        <div className="cmm-photo-cap">{f.note || f.name}</div>
+        <div className="cmm-photo-sub">
+          {f.author.name}{f.createdAt ? " · " + cmAgo(f.createdAt) : ""}{f.bytes ? " · " + cmBytes(f.bytes) : ""}
+        </div>
+        {photos.length > 1 && <div className="cmm-photo-hint">Swipe for the next photo</div>}
+      </footer>
+    </div>,
+    document.body
+  );
+}
+
+/** A video opened from the Files list — full screen, over everything. */
+function CmVideoSheet({ file, onClose }) {
+  React.useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    history.pushState({ cmVideo: 1 }, "");
+    const onPop = () => onClose();
+    window.addEventListener("popstate", onPop);
+    return () => {
+      document.body.style.overflow = prev;
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("popstate", onPop);
+    };
+  }, [onClose]);
+  return ReactDOM.createPortal(
+    <div className="cmm-photo is-video" role="dialog" aria-modal="true" aria-label={file.name}>
+      <header className="cmm-photo-bar">
+        <button className="cmm-photo-x" onClick={onClose} aria-label="Close">✕</button>
+        <span className="cmm-photo-n">{file.name}</span>
+        <span className="cmm-photo-dl" aria-hidden="true"/>
+      </header>
+      <div className="cmm-photo-stage">
+        <NggVideo src={cmOpt(file.url, cmDataPref().saver ? 640 : 1280)}
+                  poster={file.poster || cmPoster(file.url)}/>
+      </div>
+      <footer className="cmm-photo-foot">
+        <div className="cmm-photo-cap">{file.note || file.name}</div>
+        <div className="cmm-photo-sub">
+          {file.author.name}{file.duration ? " · " + cmClock(file.duration) : ""}
+          {file.bytes ? " · " + cmBytes(file.bytes) : ""}
+          {cmDataPref().saver ? " · data saver" : ""}
+        </div>
+      </footer>
+    </div>,
+    document.body
   );
 }
 
@@ -1491,7 +1952,7 @@ function CmTextSize({ onClose }) {
    The full channel screen. Everything the desktop channel could do, in one
    column, with the two rules that matter on a phone held to: nothing
    auto-scrolls, and every action clears a thumb. */
-function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, counts, onCounts }) {
+function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, counts, onCounts, onOpenFiles }) {
   const [posts, setPosts] = React.useState(null);
   const [members, setMembers] = React.useState(null);
   const [fresh, setFresh] = React.useState(null);
@@ -1581,6 +2042,11 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
             {members && members.some(m => m.staff) ? " · " + members.filter(m => m.staff).length + " mentor" : ""}
           </p>
         </div>
+        {/* Files live one tap from the conversation they were shared in — the
+            only place anybody looks for them. */}
+        <button className="cmm-icon-btn" onClick={() => onOpenFiles(slug)} aria-label="Files in this channel">
+          {cmUiIcon("files", 21)}
+        </button>
       </header>
 
       {/* Presence: who has actually posted here. No invented "online" dots —
@@ -1753,6 +2219,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
   const [account, setAccount] = React.useState(false);
   const [composer, setComposer] = React.useState(false);
   const [jump, setJump] = React.useState(false);
+  const [files, setFiles] = React.useState(null);      // slug whose Files are open
   const [composeSeed, setComposeSeed] = React.useState(null);  // {cmd, body} from the jump sheet
   const [counts, setCounts] = React.useState({ unread: 0, mentions: 0, saved: 0, staff: false });
   const [todayFilter, setTodayFilter] = React.useState("all");
@@ -1796,6 +2263,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
      gesture Back too, because on Android that is the button people actually
      press, and a sheet that ignores it navigates the whole app away instead. */
   const closeTop = React.useCallback(() => {
+    if (files) { setFiles(null); return true; }
     if (a11y) { setA11y(false); return true; }
     if (notifs) { setNotifs(false); return true; }
     if (jump) { setJump(false); return true; }
@@ -1804,7 +2272,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
     if (thread) { setThread(null); return true; }
     if (channel) { setChannel(null); return true; }
     return false;
-  }, [a11y, notifs, jump, composer, account, thread, channel]);
+  }, [files, a11y, notifs, jump, composer, account, thread, channel]);
 
   /* One history entry per open layer — kept in step, both ways.
    *
@@ -1817,7 +2285,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
    * way out. */
   const owned = React.useRef(0);
   const selfPops = React.useRef(0);
-  const depth = (a11y ? 1 : 0) + (notifs ? 1 : 0) + (jump ? 1 : 0) + (composer ? 1 : 0)
+  const depth = (files ? 1 : 0) + (a11y ? 1 : 0) + (notifs ? 1 : 0) + (jump ? 1 : 0) + (composer ? 1 : 0)
               + (account ? 1 : 0) + (thread ? 1 : 0) + (channel ? 1 : 0);
 
   React.useEffect(() => {
@@ -1849,7 +2317,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
 
   // The tab bar hides wherever the bundle says it does: in a thread, and over
   // any full-screen surface. A nav bar under a modal is a nav bar that lies.
-  const barHidden = !!thread || account || notifs || a11y;
+  const barHidden = !!thread || account || notifs || a11y || !!files;
 
   const compose = {
     open: () => { setComposeSeed(null); setComposer(true); },
@@ -1899,7 +2367,8 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
         {channel && (
           <CmChannel slug={channel} channels={channels} auth={auth}
                      onBack={() => setChannel(null)} onOpenThread={setThread}
-                     onCompose={compose} counts={counts} onCounts={refreshCounts}/>
+                     onCompose={compose} counts={counts} onCounts={refreshCounts}
+                     onOpenFiles={setFiles}/>
         )}
       </div>
 
@@ -1979,6 +2448,13 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
       )}
       {a11y && (
         <div className="cmm-over"><CmTextSize onClose={() => setA11y(false)}/></div>
+      )}
+      {files && (
+        <div className="cmm-over">
+          <CmFiles slug={files} channelName={(channels.find(c => c.slug === files) || {}).name || files}
+                   onBack={() => setFiles(null)}
+                   onOpenThread={(p) => { setFiles(null); setThread(p); }}/>
+        </div>
       )}
     </div>
   );
