@@ -103,6 +103,14 @@ function match_public(array $r, string $viewer, bool $staff = false): array {
         'reason'     => (string)($r['reason'] ?? ''),
         'flagged'    => (int)($r['flagged'] ?? 0) === 1,
         'tournamentId' => (string)($r['tournamentId'] ?? ''),
+        // The terms both players agreed before the board existed.
+        'timeControl' => (string)($r['timeControl'] ?? '1day'),
+        'rated'      => (int)($r['rated'] ?? 1) === 1,
+        'channelSlug'=> (string)($r['channelSlug'] ?? ''),
+        // The viewer's OWN rating change. `ratingDelta` is stored from white's
+        // side on a row two people read, so it is flipped for black rather than
+        // shown to both as the same number.
+        'ratingDelta'=> $side === '' ? 0 : ($side === 'A' ? (int)($r['ratingDelta'] ?? 0) : -(int)($r['ratingDelta'] ?? 0)),
         'updatedAt'  => (string)($r['updatedAt'] ?? ''),
         'lastMoveAt' => (string)($r['lastMoveAt'] ?? ''),
     ];
@@ -232,14 +240,36 @@ function match_move(array $p): array {
         db_update('match_games', $patch, ['matchId' => (string)$r['matchId']]);
     });
 
-    if (($patch['status'] ?? '') === 'complete' && function_exists('match_tournament_report')) {
-        match_tournament_report((string)$r['matchId']);
+    if (($patch['status'] ?? '') === 'complete') {
+        match_settle_chess((string)$r['matchId']);
+        if (function_exists('match_tournament_report')) match_tournament_report((string)$r['matchId']);
     }
 
     return ['ok' => true, 'san' => (string)$res['san'], 'state' => (string)$res['fen'],
             'status' => ($patch['status'] ?? (string)$r['status']),
             'gameState' => (string)$status['state'], 'reason' => (string)$status['reason'],
             'winnerId' => (string)($patch['winnerId'] ?? ''), 'ply' => $ply];
+}
+
+/**
+ * Settle a chess game's ratings, exactly once.
+ *
+ * Guarded on `settledAt`: a rating applied twice is indistinguishable from one
+ * applied once, right up until somebody notices their number moved 64 points
+ * for a single win. The delta is stored on the match so "+8" can be shown on
+ * the result screen and "+32 this week" summed without a second ledger.
+ */
+function match_settle_chess(string $matchId): void {
+    if (!function_exists('chess_settle')) return;
+    $r = db_row("SELECT * FROM match_games WHERE matchId = ? LIMIT 1", [$matchId]);
+    if (!$r || (string)$r['game'] !== 'chess' || (string)$r['status'] !== 'complete') return;
+    if ((string)($r['settledAt'] ?? '') !== '') return;
+    $res = chess_settle((string)$r['playerA'], (string)$r['playerB'], (string)($r['winnerId'] ?? ''),
+                        (int)($r['rated'] ?? 1) === 1);
+    if (empty($res['ok'])) return;
+    // Stored from WHITE's side. Two people read this row, so it is flipped for
+    // black in match_public() rather than shown to both as the same number.
+    db_update('match_games', ['ratingDelta' => (int)$res['deltaA'], 'settledAt' => now_iso()], ['matchId' => $matchId]);
 }
 
 /** Resign. The only way to end a game you are losing, and it must exist —
@@ -253,6 +283,7 @@ function match_resign(array $p): array {
     $other = (string)$r['playerA'] === $viewer ? (string)$r['playerB'] : (string)$r['playerA'];
     db_update('match_games', ['status' => 'complete', 'result' => 'win', 'winnerId' => $other,
         'reason' => 'resignation', 'turnPlayer' => '', 'updatedAt' => now_iso()], ['matchId' => (string)$r['matchId']]);
+    match_settle_chess((string)$r['matchId']);
     if (function_exists('match_tournament_report')) match_tournament_report((string)$r['matchId']);
     return ['ok' => true, 'status' => 'complete', 'winnerId' => $other];
 }

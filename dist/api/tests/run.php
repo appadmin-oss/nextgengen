@@ -13670,6 +13670,154 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         $moves = (int)(db_row('SELECT COUNT(*) c FROM match_moves WHERE matchId = ?', [$m])['c'] ?? 0);
         return $moves === 0 && $after['state'] === $before['state'] && (int)$after['ply'] === (int)$before['ply'];
     })());
+    /* ── Finding a game — design turn 6A ─────────────────────────────────
+       Ratings, player search and challenges. The safeguarding boundary is
+       unchanged and is re-checked here, because this is the layer that opens
+       chess up: still no free text, still expiring, still one challenge per
+       pair. */
+
+    // Ratings settle on a real finished game, both sides, once.
+    chk('a rated win moves both ratings, in opposite directions', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-B'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-B', 'matchId' => $m, 'accept' => true]);
+        db_update('match_games', ['rated' => 1], ['matchId' => $m]);
+        $before = ['a' => chess_rating_of('MPL-A'), 'b' => chess_rating_of('MPL-B')];
+        match_resign(['playerId' => 'MPL-B', 'matchId' => $m]);          // A wins
+        $after = ['a' => chess_rating_of('MPL-A'), 'b' => chess_rating_of('MPL-B')];
+        return $after['a'] > $before['a'] && $after['b'] < $before['b']
+            && ($after['a'] - $before['a']) === ($before['b'] - $after['b']);
+    })());
+    chk('…and settling the same game twice does not move them again', (function () {
+        $m = (string)(db_row("SELECT matchId FROM match_games WHERE status = 'complete' AND game = 'chess' AND settledAt <> '' ORDER BY updatedAt DESC LIMIT 1")['matchId'] ?? '');
+        if ($m === '') return false;
+        $before = chess_rating_of('MPL-A');
+        match_settle_chess($m);
+        return chess_rating_of('MPL-A') === $before;
+    })());
+    chk('a CASUAL game leaves the ratings alone but still counts head to head', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-C'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-C', 'matchId' => $m, 'accept' => true]);
+        db_update('match_games', ['rated' => 0], ['matchId' => $m]);
+        $before = chess_rating_of('MPL-A');
+        $h2hBefore = chess_h2h_text('MPL-A', 'MPL-C');
+        match_resign(['playerId' => 'MPL-C', 'matchId' => $m]);
+        return chess_rating_of('MPL-A') === $before && chess_h2h_text('MPL-A', 'MPL-C') !== $h2hBefore;
+    })());
+    chk('the head-to-head line reads from the asker\'s side',
+        strpos(chess_h2h_text('MPL-A', 'MPL-B'), 'You lead') === 0
+        && strpos(chess_h2h_text('MPL-B', 'MPL-A'), 'They lead') === 0);
+    chk('a rating cannot fall through the floor', (function () {
+        db_update('chess_ratings', ['rating' => 410], ['playerId' => 'MPL-C']);
+        chess_settle('MPL-A', 'MPL-C', 'MPL-A', true);
+        return chess_rating_of('MPL-C') >= 400;
+    })());
+
+    // Search.
+    chk('player search finds somebody by name and reports their rating', (function () {
+        $r = chess_players(['playerId' => 'MPL-A', 'q' => 'Bode']);
+        foreach ($r['players'] as $pl) if ($pl['id'] === 'MPL-B') return $pl['rating'] > 0 && $pl['name'] === 'Bode Player';
+        return false;
+    })());
+    chk('…and never returns the searcher themselves', (function () {
+        $r = chess_players(['playerId' => 'MPL-A', 'q' => 'Ada']);
+        foreach ($r['players'] as $pl) if ($pl['id'] === 'MPL-A') return false;
+        return true;
+    })());
+    chk('…carrying the head-to-head record on the row', (function () {
+        $r = chess_players(['playerId' => 'MPL-A', 'q' => 'Bode']);
+        foreach ($r['players'] as $pl) if ($pl['id'] === 'MPL-B') return strpos($pl['headToHead'], 'lead') !== false;
+        return false;
+    })());
+    chk('the club filter keeps the search inside the member\'s own centre', (function () {
+        $r = chess_players(['playerId' => 'MPL-A', 'club' => true]);
+        foreach ($r['players'] as $pl) if ($pl['centre'] !== 'Egbeda') return false;
+        return true;
+    })());
+    chk('the rating band excludes anybody outside it', (function () {
+        db_update('chess_ratings', ['rating' => 1900], ['playerId' => 'MPL-B']);
+        $r = chess_players(['playerId' => 'MPL-A', 'band' => '1100-1400']);
+        foreach ($r['players'] as $pl) if ($pl['id'] === 'MPL-B') return false;
+        return true;
+    })());
+    /* Search returns a name, a centre, a rating and a record — and nothing a
+       child could use to contact anybody. The list of allowed keys IS the
+       safeguarding rule, so it is asserted rather than described. */
+    chk('a search row carries nothing that could contact anybody', (function () {
+        $r = chess_players(['playerId' => 'MPL-A', 'q' => 'Bode']);
+        $allowed = ['id', 'name', 'centre', 'programme', 'mentor', 'rating', 'online', 'lastSeen', 'headToHead'];
+        foreach ($r['players'] as $pl) if (array_diff(array_keys($pl), $allowed)) return false;
+        return count($r['players']) > 0;
+    })());
+
+    // Challenges.
+    chk('a challenge states its terms and expires in 24 hours', (function () {
+        $c = chess_challenge_create(['playerId' => 'MPL-A', 'opponentId' => 'MPL-C',
+            'timeControl' => '5+3', 'colourPref' => 'white', 'rated' => true]);
+        if (empty($c['ok'])) return false;
+        $row = db_row("SELECT * FROM chess_challenges WHERE challengeId = ?", [$c['challengeId']]);
+        $ttl = strtotime((string)$row['expiresAt']) - time();
+        return (string)$row['timeControl'] === '5+3' && $ttl > 86000 && $ttl <= 86400;
+    })());
+    chk('a made-up time control is refused',
+        chess_challenge_create(['playerId' => 'MPL-B', 'opponentId' => 'MPL-C', 'timeControl' => '99+99'])['error'] === 'bad_time_control');
+    chk('you cannot challenge the same person twice at once',
+        chess_challenge_create(['playerId' => 'MPL-A', 'opponentId' => 'MPL-C', 'timeControl' => '5+3'])['error'] === 'already_challenged');
+    chk('you cannot challenge yourself',
+        chess_challenge_create(['playerId' => 'MPL-A', 'opponentId' => 'MPL-A'])['error'] === 'cannot_play_yourself');
+    chk('only the person a challenge names may answer it', (function () {
+        $id = (string)(db_row("SELECT challengeId FROM chess_challenges WHERE fromId = 'MPL-A' AND toId = 'MPL-C' AND status = 'open'")['challengeId'] ?? '');
+        return chess_challenge_respond(['playerId' => 'MPL-B', 'challengeId' => $id])['error'] === 'not_yours';
+    })());
+    chk('accepting a challenge makes a game on exactly the terms agreed', (function () {
+        $id = (string)(db_row("SELECT challengeId FROM chess_challenges WHERE fromId = 'MPL-A' AND toId = 'MPL-C' AND status = 'open'")['challengeId'] ?? '');
+        $r = chess_challenge_respond(['playerId' => 'MPL-C', 'challengeId' => $id]);
+        if (empty($r['ok'])) return false;
+        $m = db_row("SELECT * FROM match_games WHERE matchId = ?", [$r['matchId']]);
+        // colourPref was 'white', so the CHALLENGER is white and on move.
+        return (string)$m['playerA'] === 'MPL-A' && (string)$m['turnPlayer'] === 'MPL-A'
+            && (string)$m['timeControl'] === '5+3' && (int)$m['rated'] === 1
+            && (string)$m['status'] === 'active' && $r['yourColour'] === 'b';
+    })());
+    chk('…and the challenge is spent, not still open', (function () {
+        $row = db_row("SELECT status FROM chess_challenges WHERE fromId = 'MPL-A' AND toId = 'MPL-C' ORDER BY createdAt DESC LIMIT 1");
+        return (string)($row['status'] ?? '') === 'accepted';
+    })());
+    chk('an OPEN challenge can be taken by anybody except its author', (function () {
+        $c = chess_challenge_create(['playerId' => 'MPL-B', 'timeControl' => '10+0', 'colourPref' => 'random']);
+        if (empty($c['ok'])) return false;
+        if (chess_challenge_respond(['playerId' => 'MPL-B', 'challengeId' => $c['challengeId']])['error'] !== 'cannot_play_yourself') return false;
+        $r = chess_challenge_respond(['playerId' => 'MPL-C', 'challengeId' => $c['challengeId']]);
+        return !empty($r['ok']) && $r['matchId'] !== '';
+    })());
+    chk('an expired challenge cannot be accepted', (function () {
+        // A fresh pair: MPL-B and MPL-C are already playing each other by now,
+        // and one live game per pair is itself a rule under test above.
+        db_insert('members', ['memberId' => 'MPL-D', 'fullName' => 'Dami Player', 'email' => 'mpl-d@example.com',
+            'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'member', 'status' => 'active',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $c = chess_challenge_create(['playerId' => 'MPL-C', 'opponentId' => 'MPL-D', 'timeControl' => '3+2']);
+        if (empty($c['ok'])) return false;
+        db_update('chess_challenges', ['expiresAt' => date('Y-m-d H:i:s', time() - 60)], ['challengeId' => $c['challengeId']]);
+        return chess_challenge_respond(['playerId' => 'MPL-D', 'challengeId' => $c['challengeId']])['error'] === 'not_open';
+    })());
+    chk('the challenge list separates what is aimed at you from what is open', (function () {
+        $c = chess_challenge_create(['playerId' => 'MPL-A', 'opponentId' => 'MPL-B', 'timeControl' => '1day']);
+        $l = chess_challenges_list(['playerId' => 'MPL-B']);
+        $toMe = array_column($l['toYou'], 'challengeId');
+        foreach ($l['open'] as $o) if ($o['from']['id'] === 'MPL-B') return false;   // never your own
+        return in_array($c['challengeId'], $toMe, true);
+    })());
+
+    // The computer's level ladder is anchored to the member's own rating.
+    chk('the suggested computer level tracks the member\'s rating', (function () {
+        db_update('chess_ratings', ['rating' => 1250], ['playerId' => 'MPL-A']);
+        $p = chess_profile(['playerId' => 'MPL-A']);
+        foreach ($p['levels'] as $l) if (!empty($l['suggested'])) return $l['level'] === 4;
+        return false;
+    })());
+    chk('…and eight levels are offered, not seven or nine',
+        count(chess_profile(['playerId' => 'MPL-A'])['levels']) === 8);
+
     chk('…and a move that completes is still there afterwards', (function () {
         $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-C'])['matchId'] ?? '';
         match_respond(['playerId' => 'MPL-C', 'matchId' => $m, 'accept' => true]);

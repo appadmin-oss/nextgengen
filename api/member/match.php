@@ -24,6 +24,16 @@ if ($method === 'GET') {
         $res = gs_call('match.watch', ['playerId' => $s['mid']]);
     } elseif ($view === 'tournaments') {
         $res = gs_call('tournament.mine', ['playerId' => $s['mid']]);
+    } elseif ($view === 'players') {
+        // Design turn 6A — the search screen. Names, centres, ratings and a
+        // head-to-head line; nothing that could be used to contact anybody.
+        $res = gs_call('chess.players', ['playerId' => $s['mid'], 'q' => (string)($_GET['q'] ?? ''),
+            'club' => !empty($_GET['club']), 'online' => !empty($_GET['online']),
+            'band' => (string)($_GET['band'] ?? ''), 'mentors' => !empty($_GET['mentors'])]);
+    } elseif ($view === 'challenges') {
+        $res = gs_call('chess.challenges', ['playerId' => $s['mid']]);
+    } elseif ($view === 'chess') {
+        $res = gs_call('chess.profile', ['playerId' => $s['mid']]);
     } elseif ($view === 'staff') {
         // A mentor or admin reviewing the matches at their centre.
         $res = gs_call('match.staff.list', ['requesterId' => $s['mid'], 'flagged' => (string)($_GET['flagged'] ?? '')]);
@@ -37,6 +47,18 @@ if ($method === 'GET') {
     if ($action === 'invite') {
         rate_limit_check('match.invite');
         $res = gs_call('match.invite', ['playerId' => $s['mid'], 'game' => (string)($b['game'] ?? ''), 'opponentId' => (string)($b['opponentId'] ?? '')]);
+    } elseif ($action === 'challenge') {
+        rate_limit_check('match.invite');
+        $res = gs_call('chess.challenge', ['playerId' => $s['mid'],
+            'opponentId' => (string)($b['opponentId'] ?? ''),
+            'timeControl' => (string)($b['timeControl'] ?? '1day'),
+            'colourPref' => (string)($b['colourPref'] ?? 'random'),
+            'rated' => !empty($b['rated']),
+            'channelSlug' => (string)($b['channelSlug'] ?? '')]);
+    } elseif ($action === 'challengeRespond') {
+        $res = gs_call('chess.respond', ['playerId' => $s['mid'],
+            'challengeId' => (string)($b['challengeId'] ?? ''),
+            'action' => (string)($b['answer'] ?? 'accept')]);
     } elseif ($action === 'respond') {
         $res = gs_call('match.respond', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? ''), 'accept' => !empty($b['accept'])]);
     } elseif ($action === 'move') {

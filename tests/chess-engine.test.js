@@ -1,0 +1,171 @@
+#!/usr/bin/env node
+/* ============================================================================
+   The chess rules, on the device.
+
+   Two implementations of one rulebook — api/_lib/domain/chess.php for games
+   between members, chess-engine.jsx for the computer opponent a member plays
+   with no signal. Two implementations always drift; the only question is
+   whether anybody notices before a child does.
+
+   perft is what notices. It counts every legal move sequence to a given depth
+   from a given position, so a single wrong number means some rule — castling
+   through check, en-passant, a rook captured on its corner killing the right —
+   is wrong somewhere. The positions below are the standard ones the chess
+   programming community uses precisely because each of them breaks a different
+   naive engine.
+
+   The counts are also compared against the PHP engine directly, so this stays
+   a parity test rather than a copy of the same numbers twice.
+
+   Run:  node tests/chess-engine.test.js
+   ========================================================================== */
+const path = require('path');
+const { execFileSync } = require('child_process');
+
+const ROOT = path.resolve(__dirname, '..');
+global.window = global;
+require(path.join(ROOT, 'chess-engine.jsx'));
+const C = window.NggChess;
+
+let passed = 0, failed = 0;
+function chk(name, cond) {
+  if (cond) { passed++; console.log('  ✓ ' + name); }
+  else { failed++; console.log('  ✗ FAIL: ' + name); }
+}
+
+/* The five standard perft positions. Kept shallow enough to run in seconds —
+   the depths chosen are the ones that first expose each position's trap. */
+const POSITIONS = [
+  { name: 'the opening position', fen: C.START_FEN, counts: [20, 400, 8902, 197281] },
+  { name: 'Kiwipete — castling, pins and promotions at once',
+    fen: 'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1',
+    counts: [48, 2039, 97862] },
+  { name: 'the en-passant discovered-check endgame',
+    fen: '8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1', counts: [14, 191, 2812, 43238] },
+  { name: 'a position where under-promotion matters',
+    fen: 'r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1', counts: [6, 264, 9467] },
+  { name: 'a cramped middlegame with a knight fork available',
+    fen: 'rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8', counts: [44, 1486, 62379] },
+];
+
+for (const p of POSITIONS) {
+  const got = p.counts.map((_, i) => C.perft(p.fen, i + 1));
+  chk('perft is exact for ' + p.name, got.join() === p.counts.join());
+}
+
+/* Parity with the SERVER engine, which is the referee for every game between
+   two members. A position reached offline and the same position reached
+   online have to be the same position. */
+let php = null;
+try {
+  const script = `<?php
+    require '${ROOT}/api/_lib/domain/chess.php';
+    $out = [];
+    foreach (${JSON.stringify(POSITIONS.map(p => p.fen))} as $i => $fen) {
+      $d = ${JSON.stringify(POSITIONS.map(p => p.counts.length))}[$i];
+      $row = [];
+      for ($k = 1; $k <= $d; $k++) $row[] = chess_perft($fen, $k);
+      $out[] = $row;
+    }
+    echo json_encode($out);`;
+  php = JSON.parse(execFileSync('php', ['-r', script.replace(/^<\?php/, '')], { encoding: 'utf8' }));
+} catch (e) {
+  console.log('  ⏭  PHP parity skipped (' + (e.message || e).toString().split('\n')[0] + ')');
+}
+if (php) {
+  const js = POSITIONS.map(p => p.counts.map((_, i) => C.perft(p.fen, i + 1)));
+  chk('the device engine and the server engine agree, move for move',
+      JSON.stringify(js) === JSON.stringify(php));
+}
+
+/* ── SAN, because the move list is what a member reads back ─────────────── */
+chk('castling is written O-O, not Kg1', C.move(
+  'r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1', 'e1g1').san === 'O-O');
+chk('a knight that shares a square with another is disambiguated',
+    C.move('8/8/8/8/8/8/8/K1N1N2k w - - 0 1', 'c1d3').san === 'Ncd3');
+chk('mate is written with a hash, not a plus',
+    C.move('6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1', 'a1a8').san === 'Ra8#');
+chk('a promotion names the piece it becomes',
+    C.move('8/P6k/8/8/8/8/8/K7 w - - 0 1', 'a7a8q').san === 'a8=Q');
+
+/* ── Draws, the rules nobody implements until a game hangs on one ──────── */
+chk('king and bishop against king is a draw by material',
+    C.status(C.parseFen('8/8/8/4k3/8/8/8/KB6 w - - 0 1')).reason === 'insufficient_material');
+chk('…but king and two bishops is not',
+    C.status(C.parseFen('8/8/8/4k3/8/8/8/KBB5 w - - 0 1')).state === 'active');
+chk('a hundred half-moves is a draw',
+    C.status(C.parseFen('8/8/8/3k4/8/8/3K4/7R w - - 100 60')).reason === 'fifty_move');
+chk('stalemate is not checkmate',
+    C.status(C.parseFen('7k/5Q2/6K1/8/8/8/8/8 b - - 0 1')).state === 'stalemate');
+
+/* ── The opponent ───────────────────────────────────────────────────────
+   Not "is it strong" — it is deliberately not. What must hold is that it is
+   an OPPONENT: it plays legal moves, it takes what is free, and it finds mate
+   when mate is there. And that its mistakes are the ones the level promised. */
+chk('the computer takes a hanging queen', (() => {
+  const m = C.bestMove('rnb1kbnr/ppp1pppp/8/3q4/8/2N5/PPPPPPPP/R1BQKBNR w KQkq - 0 3', 8, () => 0.99);
+  return m && m.uci === 'c3d5';
+})());
+chk('…and finds mate in one', (() => {
+  const m = C.bestMove('6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1', 6, () => 0.99);
+  return m && m.san === 'Ra8#';
+})());
+chk('every level plays a LEGAL move, at every level', (() => {
+  const fen = 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4';
+  const legal = C.legalUci(fen);
+  for (let lv = 1; lv <= 8; lv++) {
+    const m = C.bestMove(fen, lv, () => 0.5);
+    if (!m || legal.indexOf(m.uci) < 0) return false;
+  }
+  return true;
+})());
+chk('a beginner level really does play something other than the best move', (() => {
+  // rand() forced low, so the slip fires: level 1 slips 60% of the time.
+  const m = C.bestMove('r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4', 1, () => 0.01);
+  return m && m.slipped === true && m.uci !== m.best;
+})());
+chk('…and the hardest level never does', (() => {
+  const m = C.bestMove('r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4', 8, () => 0.001);
+  return m && m.slipped === false && m.uci === m.best;
+})());
+chk('a slip never picks a move it has not looked at', (() => {
+  // The mistakes must be human-shaped — a worse plan, not an absurd one.
+  const fen = 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4';
+  const legal = C.legalUci(fen);
+  for (let i = 0; i < 20; i++) {
+    const m = C.bestMove(fen, 2, () => (i % 7) / 7);
+    if (!m || legal.indexOf(m.uci) < 0) return false;
+  }
+  return true;
+})());
+chk('the blunder warning fires when a queen is given away…', (() => {
+  // Qxb7+ wins a pawn and loses the queen to Kxb7 on the next move — the exact
+  // shape of mistake a child makes, and the exact shape quiescence has to see
+  // to notice, because it happens one ply past the horizon.
+  const bad = C.blunderCheck('2k5/1p6/8/8/8/8/1Q6/4K3 w - - 0 1', 'b2b7', 2);
+  return bad && bad.blunder === true && bad.loss > 500;
+})());
+chk('…and stays quiet on an ordinary opening move', (() => {
+  // Warning about every inaccuracy teaches a child to dismiss the warning,
+  // which costs more than the pawn it was about.
+  const fine = C.blunderCheck('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', 'e2e4', 2);
+  return fine && fine.blunder === false;
+})());
+
+/* Speed is a correctness property here: a bot that thinks for six seconds on
+   a 2GB Android is a bot children stop playing. Generous, because CI is not a
+   phone — this is a regression guard, not a benchmark. */
+chk('the hardest level answers a middlegame position in under three seconds', (() => {
+  const t = Date.now();
+  C.bestMove('r2q1rk1/pp1bbppp/2n1pn2/2pp4/3P1B2/2P1PN2/PPQN1PPP/R3KB1R w KQ - 0 9', 8, () => 0.99);
+  return Date.now() - t < 3000;
+})());
+
+/* A malformed FEN must REFUSE, never quietly assume the start position — a
+   board that silently resets is worse than one that will not open. */
+chk('a malformed FEN is refused rather than guessed at', C.parseFen('not a fen') === null
+    && C.parseFen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq') === null
+    && C.parseFen('8/8/8/8/8/8/8/8 w - - 0 1') === null);   // no kings
+
+console.log((failed ? '❌ FAIL' : '✅ PASS') + ': ' + passed + ' passed, ' + failed + ' failed (chess engine)');
+process.exit(failed ? 1 : 0);

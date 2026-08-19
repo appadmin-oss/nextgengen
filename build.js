@@ -35,6 +35,7 @@ const DIST = path.join(ROOT, 'dist');
 // into a single file — globals each script attaches to `window` stay
 // available to later scripts.
 const ORDER = [
+  'chess-engine.jsx',
   'motion.jsx',
   'safety.jsx',
   'auth.jsx',

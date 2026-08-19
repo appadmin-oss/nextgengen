@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 96;
+const NGG_SCHEMA_TARGET = 97;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2556,6 +2556,76 @@ function db_migrate(PDO $db): void {
          * "4:12" answer different questions and they need both. */
         96 => "
             ALTER TABLE community_posts ADD COLUMN mediaDuration INTEGER DEFAULT 0;
+        ",
+
+        /* Chess as a club fixture rather than a novelty (design turn 6A).
+         *
+         * Three things the match tables could not express:
+         *
+         *   A RATING. Without one, "find an opponent" is a list of names and a
+         *   child has no way to tell whether they are about to be crushed. Elo,
+         *   not Glicko — a club needs a number members recognise from every
+         *   other chess app they have used, and the deviation term Glicko adds
+         *   buys accuracy nobody here is going to read.
+         *
+         *   A CHALLENGE that is not yet a game. An invite created a match row
+         *   immediately, so its terms (time control, colour, rated) had nowhere
+         *   to live before it was accepted, an OPEN challenge — one anybody may
+         *   take — had no representation at all, and nothing expired: an
+         *   unanswered invite sat in a child's list forever.
+         *
+         *   HEAD-TO-HEAD. "You lead 3-2" is the single most useful thing on
+         *   the search row, and counting it from match_games on every keystroke
+         *   is a table scan per result.
+         */
+        97 => "
+            CREATE TABLE chess_ratings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              playerId TEXT NOT NULL,
+              rating INTEGER NOT NULL DEFAULT 1200,
+              games INTEGER NOT NULL DEFAULT 0,
+              wins INTEGER NOT NULL DEFAULT 0,
+              losses INTEGER NOT NULL DEFAULT 0,
+              draws INTEGER NOT NULL DEFAULT 0,
+              peak INTEGER NOT NULL DEFAULT 1200,
+              lastPlayedAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_chess_rating_player ON chess_ratings(playerId);
+
+            CREATE TABLE chess_challenges (
+              challengeId TEXT PRIMARY KEY,
+              fromId TEXT NOT NULL, fromName TEXT DEFAULT '',
+              toId TEXT DEFAULT '', toName TEXT DEFAULT '',
+              timeControl TEXT DEFAULT '1day',
+              colourPref TEXT DEFAULT 'random',
+              rated INTEGER DEFAULT 1,
+              channelSlug TEXT DEFAULT '',
+              status TEXT DEFAULT 'open',
+              matchId TEXT DEFAULT '',
+              createdAt TEXT NOT NULL,
+              expiresAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_chess_ch_to ON chess_challenges(toId, status);
+            CREATE INDEX idx_chess_ch_open ON chess_challenges(status, expiresAt);
+
+            CREATE TABLE chess_head2head (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              pairKey TEXT NOT NULL,
+              playerId TEXT NOT NULL,
+              opponentId TEXT NOT NULL,
+              wins INTEGER NOT NULL DEFAULT 0,
+              losses INTEGER NOT NULL DEFAULT 0,
+              draws INTEGER NOT NULL DEFAULT 0,
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_chess_h2h ON chess_head2head(playerId, opponentId);
+
+            ALTER TABLE match_games ADD COLUMN timeControl TEXT DEFAULT '1day';
+            ALTER TABLE match_games ADD COLUMN rated INTEGER DEFAULT 1;
+            ALTER TABLE match_games ADD COLUMN channelSlug TEXT DEFAULT '';
+            ALTER TABLE match_games ADD COLUMN ratingDelta INTEGER DEFAULT 0;
+            ALTER TABLE match_games ADD COLUMN settledAt TEXT DEFAULT '';
         ",
     ];
 

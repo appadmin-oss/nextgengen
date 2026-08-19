@@ -444,6 +444,14 @@ function backend_dispatch(string $op, array $args = []): array {
             'match.staff.list'        => 'match_staff_list',
             'match.poll'              => 'match_poll',
             'match.watch'             => 'match_live_list',
+
+            /* Finding a game — design turn 6A. The match ops above PLAY chess;
+             * these are the part that comes before a board exists. */
+            'chess.players'           => 'chess_players',
+            'chess.profile'           => 'chess_profile',
+            'chess.challenges'        => 'chess_challenges_list',
+            'chess.challenge'         => 'chess_challenge_create',
+            'chess.respond'           => 'chess_challenge_respond',
             // Tournaments: centre rounds through to a final.
             'tournament.list'         => 'admin_tournaments_list',
             'tournament.bracket'      => 'tournament_bracket',

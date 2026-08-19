@@ -2606,6 +2606,109 @@ img { background-color: rgba(12,20,50,0.04); }
 .cmm-photo-sub, .cmm-photo-hint { margin-top: 4px; font-family: var(--c-font-mono);
   font-size: 11px; opacity: .6; }
 
+/* ── Chess · finding a game (turn 6A) ──
+   Rows are 66px, buttons 44px, and every control clears a thumb — the same
+   constants the rest of the community uses, because a member should not have
+   to re-learn where things are because the screen changed subject. */
+.cmc { padding-bottom: 24px; }
+.cmc-head { display: flex; align-items: flex-start; gap: 12px; padding: 6px var(--c-gutter) 12px; }
+.cmc-head > div { flex: 1; min-width: 0; }
+.cmc-h { margin: 0; font-family: var(--c-font-display); font-weight: 800; font-size: 22px; letter-spacing: -0.02em; }
+.cmc-sub { margin: 2px 0 0; font-size: 13px; color: var(--c-muted); }
+.cmc-rating { flex: none; font-family: var(--c-font-display); font-weight: 800; font-size: 26px;
+  font-variant-numeric: tabular-nums; color: var(--c-blue); }
+.cmc-sec { padding: 0 var(--c-gutter); }
+.cmc-sec .cmm-list-h { margin-left: 0; }
+
+.cmc-game, .cmc-player, .cmc-ch { display: flex; align-items: center; gap: 11px; width: 100%;
+  min-height: 66px; padding: 10px 0; border: 0; border-bottom: 1px solid var(--c-divider-soft);
+  background: none; text-align: left; color: var(--c-ink); cursor: pointer; }
+.cmc-ch, .cmc-player { cursor: default; }
+.cmc-game.is-quiet { opacity: .72; }
+.cmc-av { flex: none; display: grid; place-items: center; width: 38px; height: 38px;
+  border-radius: var(--c-r-av); color: #fff; font-family: var(--c-font-display);
+  font-weight: 800; font-size: 14px; }
+.cmc-game-body, .cmc-player-body, .cmc-ch-body, .cmc-side-b {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cmc-game-who { display: flex; align-items: center; gap: 6px; font-size: 14.5px; font-weight: 600; }
+.cmc-game-sub { font-family: var(--c-font-mono); font-size: 11px; color: var(--c-muted); }
+.cmc-game-cta { flex: none; font-size: 13px; font-weight: 700; color: var(--c-blue); }
+.cmc-player-rating { flex: none; font-family: var(--c-font-mono); font-size: 13px; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: var(--c-body); }
+/* The time control, as a label rather than a badge: it is the first thing read
+   on an open challenge and the last thing that needs decoration. */
+.cmc-tc { flex: none; min-width: 46px; font-family: var(--c-font-mono); font-size: 11.5px;
+  font-weight: 700; color: var(--c-purple); }
+.cmc-ch-acts { flex: none; display: flex; align-items: center; gap: 6px; }
+.cmc-decline { min-height: var(--c-tap); padding: 0 12px; border: 0; background: none;
+  font-size: 13px; font-weight: 700; color: var(--c-muted); cursor: pointer; }
+.cmc-decline.is-wide { display: block; width: 100%; margin-top: 8px; }
+.cmm-cta.is-sm { flex: none; width: auto; min-height: var(--c-tap); padding: 0 15px; font-size: 13px; }
+.cmc-note { margin: 8px 0 0; font-family: var(--c-font-mono); font-size: 11px; color: var(--c-faint); }
+.cmc-note-inline { font-weight: 400; color: var(--c-muted); }
+.cmc-blurb { margin: 10px 0 0; font-size: 14px; line-height: 1.55; color: var(--c-body); }
+.cmc-tile { display: block; width: 100%; margin-top: 8px; padding: 14px;
+  border-radius: var(--c-r-card); border: 1px solid var(--c-border); background: var(--c-card);
+  text-align: left; cursor: pointer; }
+.cmc-tile-h { display: block; font-size: 15px; font-weight: 700; color: var(--c-ink); }
+.cmc-tile-s { display: block; margin-top: 3px; font-family: var(--c-font-mono);
+  font-size: 11px; color: var(--c-muted); }
+.cmc-results { padding: 0 var(--c-gutter) 30px; }
+
+/* ── The challenge sheet: every term visible before it is sent ── */
+.cmc-opts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.cmc-opts.is-three { grid-template-columns: repeat(3, 1fr); }
+.cmc-opt { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-height: 56px; border-radius: var(--c-r-btn); border: 1px solid var(--c-border-strong);
+  background: var(--c-card); color: var(--c-ink); cursor: pointer; }
+.cmc-opt.is-on { border-color: var(--c-blue); background: var(--c-blue-tint); color: var(--c-blue); }
+.cmc-opt-n { font-size: 14px; font-weight: 700; }
+.cmc-opt-k { font-family: var(--c-font-mono); font-size: 9.5px; letter-spacing: .06em; opacity: .7; }
+
+/* ── The computer's level sheet ── */
+.cmc-level { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.cmc-level-n { font-family: var(--c-font-display); font-weight: 800; font-size: 20px; }
+.cmc-level-r { font-family: var(--c-font-mono); font-size: 11.5px; color: var(--c-muted); }
+.cmc-slider { width: 100%; margin: 12px 0 4px; accent-color: var(--c-blue); height: var(--c-tap); }
+.cmc-level-ends { display: flex; justify-content: space-between;
+  font-family: var(--c-font-mono); font-size: 10.5px; color: var(--c-faint); }
+.cmc-aids { display: flex; flex-direction: column; border-radius: var(--c-r-card);
+  border: 1px solid var(--c-border); background: var(--c-card); overflow: hidden; }
+.cmc-aid { display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 10px 14px;
+  border-bottom: 1px solid var(--c-divider-soft); cursor: pointer; }
+.cmc-aid:last-child { border-bottom: 0; }
+.cmc-aid-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cmc-aid-l { font-size: 14.5px; font-weight: 600; }
+.cmc-aid-s { font-family: var(--c-font-mono); font-size: 11px; color: var(--c-muted); }
+
+/* ── The offline game ── */
+.cmc-game-screen { padding-bottom: 30px; }
+.cmc-players { padding: 6px var(--c-gutter); }
+.cmc-side { display: flex; align-items: center; gap: 11px; }
+.cmc-moves { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none;
+  padding: 10px var(--c-gutter); font-family: var(--c-font-mono); font-size: 12px; color: var(--c-body); }
+.cmc-moves::-webkit-scrollbar { display: none; }
+.cmc-move { flex: none; white-space: nowrap; }
+.cmc-move b { color: var(--c-faint); font-weight: 700; }
+/* Five actions at thumb height, evenly split — the row the design specifies,
+   and the reason none of them is hidden behind a menu. */
+.cmc-acts { display: flex; gap: 6px; padding: 8px var(--c-gutter) 0; }
+.cmc-acts button { flex: 1; min-height: var(--c-tap); border-radius: var(--c-r-btn);
+  border: 1px solid var(--c-border-strong); background: var(--c-card);
+  font-size: 12.5px; font-weight: 700; color: var(--c-ink); cursor: pointer; }
+.cmc-acts button:disabled { opacity: .4; cursor: default; }
+
+/* Chess in the Arcade — a fixture, above the solo rounds. */
+.arc-chess { display: flex; align-items: center; gap: 14px; width: 100%; margin-bottom: 14px;
+  padding: 16px; border-radius: var(--c-r-card); border: 1px solid var(--c-border);
+  background: var(--c-card); text-align: left; cursor: pointer; color: var(--c-ink); }
+.arc-chess-ic { flex: none; display: grid; place-items: center; width: 46px; height: 46px;
+  border-radius: var(--c-r-av); background: var(--c-purple-tint); color: var(--c-purple); font-size: 24px; }
+.arc-chess-b { flex: 1; min-width: 0; }
+.arc-chess-h { display: block; font-family: var(--c-font-display); font-weight: 800; font-size: 17px; }
+.arc-chess-s { display: block; margin-top: 2px; font-size: 12.5px; color: var(--c-muted); }
+.arc-chess-go { flex: none; color: var(--c-faint); display: grid; place-items: center; }
+
 /* ── Notifications ──
    Unread carries a rule down its leading edge rather than a filled row: a list
    where most rows are tinted is a list with no signal left in the tint. */

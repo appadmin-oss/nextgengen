@@ -2537,6 +2537,8 @@ function CmArcade({ auth }) {
   const [result, setResult] = React.useState(null);  // graded round
   const [starting, setStarting] = React.useState("");
   const [lab, setLab] = React.useState(false);      // in the Math Lab
+  const [chess, setChess] = React.useState(false);  // in the chess section
+  const [matchId, setMatchId] = React.useState("");
 
   const load = React.useCallback(() => {
     NGGApi.member.arcade.home()
@@ -2558,6 +2560,8 @@ function CmArcade({ auth }) {
   const backToHome = () => { setRound(null); setResult(null); };
 
   if (lab) return <MathLab onDone={() => setLab(false)}/>;
+  if (matchId) return <MatchGame matchId={matchId} onBack={() => setMatchId("")}/>;
+  if (chess) return <CmChess auth={auth} onOpenMatch={setMatchId}/>;
   if (round) return <ArcadeRound round={round} onGraded={onGraded} onQuit={backToHome}/>;
   if (result) return <ArcadeResult result={result} games={(home && home.games) || []}
                                   onAgain={() => play(result.game)} onDone={backToHome}/>;
@@ -2570,6 +2574,17 @@ function CmArcade({ auth }) {
       ) : (
         <>
           <ArcadeHero home={home} onPlay={play} busy={starting}/>
+          {/* Chess is a club fixture, not a novelty — it leads, above the
+              solo rounds, because a game waiting on your move is the thing
+              most likely to be why somebody opened this tab. */}
+          <button className="arc-chess" onClick={() => setChess(true)}>
+            <span className="arc-chess-ic" aria-hidden="true">♟</span>
+            <span className="arc-chess-b">
+              <span className="arc-chess-h">Chess</span>
+              <span className="arc-chess-s">Play a club member, take an open challenge, or play the computer offline</span>
+            </span>
+            <span className="arc-chess-go" aria-hidden="true">{cmUiIcon("chev", 18)}</span>
+          </button>
           <div className="arc-grid">
             {home.games.map(g => (
               <ArcadeCard key={g.key} game={g} busy={starting === g.key} onPlay={() => play(g.key)}/>
@@ -2984,6 +2999,673 @@ function chessMaterial(squares) {
     score += Math.max(0, bMissing) * CHESS_VALUE[t] - Math.max(0, wMissing) * CHESS_VALUE[t];
   });
   return { gone, score };
+}
+
+/* ── Chess · finding a game (design turn 6A) ──────────────────────────────
+   Three routes to a game, not one: search a name, take an open challenge, or
+   play the computer. The third costs nothing and works with the radio off,
+   which on these devices is the difference between chess being available and
+   chess being available when the centre's signal happens to be up.
+
+   The safeguarding model is the match layer's and is not weakened here: no
+   free text anywhere, every game publicly watchable, reportable by anyone.
+   A challenge carries a time control, a colour and a rated flag — each a fixed
+   vocabulary, none of them a message. */
+
+const CM_TIME_CONTROLS = [
+  { id: "3+2",  name: "3+2",   kind: "Blitz" },
+  { id: "5+3",  name: "5+3",   kind: "Blitz" },
+  { id: "10+0", name: "10+0",  kind: "Rapid" },
+  { id: "1day", name: "1 day", kind: "Daily" },
+];
+
+function cmSeenAgo(iso, online) {
+  if (online) return "online";
+  if (!iso) return "not played yet";
+  return "last seen " + cmAgo(iso);
+}
+
+/** The chess hub: your standing, the games waiting on you, and the three ways in. */
+function CmChess({ auth, onOpenMatch }) {
+  const [profile, setProfile] = React.useState(null);
+  const [matches, setMatches] = React.useState(null);
+  const [challenges, setChallenges] = React.useState(null);
+  const [screen, setScreen] = React.useState("");        // "" | search | computer
+  const [challengeFor, setChallengeFor] = React.useState(null);
+  const [err, setErr] = React.useState("");
+
+  const load = React.useCallback(() => {
+    NGGApi.member.match.chess().then(setProfile).catch(() => {});
+    NGGApi.member.match.list().then(r => setMatches(r.matches || [])).catch(() => setMatches([]));
+    NGGApi.member.match.challenges().then(setChallenges).catch(() => setChallenges({ toYou: [], open: [], fromYou: [] }));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const answer = (id, ans) => {
+    NGGApi.member.match.answer(id, ans)
+      .then(r => { load(); if (ans === "accept" && r.matchId) onOpenMatch(r.matchId); })
+      .catch(e => setErr(cmChessError(e)));
+  };
+
+  if (screen === "search") {
+    return <CmChessSearch onBack={() => { setScreen(""); load(); }}
+                          onChallenge={(pl) => setChallengeFor(pl)}
+                          challengeFor={challengeFor}
+                          onSent={() => { setChallengeFor(null); setScreen(""); load(); }}
+                          onCancel={() => setChallengeFor(null)}
+                          onOpenMatch={onOpenMatch}/>;
+  }
+  if (screen === "computer") {
+    return <CmChessComputer profile={profile} onBack={() => setScreen("")}/>;
+  }
+
+  const yourMove = (matches || []).filter(m => m.status === "active" && m.yourTurn);
+  const theirMove = (matches || []).filter(m => m.status === "active" && !m.yourTurn);
+  const toYou = (challenges && challenges.toYou) || [];
+  const open = (challenges && challenges.open) || [];
+
+  return (
+    <div className="cmc">
+      {err && <div className="cmm-offline" role="alert">{err}</div>}
+
+      <div className="cmc-head">
+        <div>
+          <h2 className="cmc-h">Chess</h2>
+          <p className="cmc-sub">
+            {profile ? <>Your rating <b>{profile.rating}</b>
+              {profile.provisional ? " · provisional" : (profile.weekDelta ? (profile.weekDelta > 0 ? " · +" : " · ") + profile.weekDelta + " this week" : "")}</>
+              : "Loading your standing…"}
+          </p>
+        </div>
+        {profile && <div className="cmc-rating">{profile.rating}</div>}
+      </div>
+
+      {/* Waiting on YOU, first and always. A queue that hides whose move it is
+          is a queue where games quietly die. */}
+      {yourMove.length > 0 && (
+        <section className="cmc-sec">
+          <div className="cmm-list-h">YOUR TURN · {yourMove.length}</div>
+          {yourMove.map(m => (
+            <button key={m.matchId} className="cmc-game" onClick={() => onOpenMatch(m.matchId)}>
+              <span className="cmc-av" style={{ background: cmColor(cmOtherName(m), "") }}>{cmInitial(cmOtherName(m))}</span>
+              <span className="cmc-game-body">
+                <span className="cmc-game-who">{cmOtherName(m)}</span>
+                <span className="cmc-game-sub">Move {m.ply + 1} · you are {m.yourColour === "w" ? "White" : "Black"}</span>
+              </span>
+              <span className="cmc-game-cta">Move</span>
+            </button>
+          ))}
+        </section>
+      )}
+
+      {toYou.length > 0 && (
+        <section className="cmc-sec">
+          <div className="cmm-list-h">CHALLENGES FOR YOU</div>
+          {toYou.map(c => (
+            <div className="cmc-ch" key={c.challengeId}>
+              <span className="cmc-ch-body">
+                <span className="cmc-game-who">{c.from.name} · {c.from.rating}</span>
+                <span className="cmc-game-sub">{cmTermsLine(c)}</span>
+              </span>
+              <span className="cmc-ch-acts">
+                <button className="cmm-cta is-sm" onClick={() => answer(c.challengeId, "accept")}>Accept</button>
+                <button className="cmc-decline" onClick={() => answer(c.challengeId, "decline")}>No</button>
+              </span>
+            </div>
+          ))}
+        </section>
+      )}
+
+      <section className="cmc-sec">
+        <div className="cmm-list-h">NEW GAME</div>
+        <button className="cmm-cta" onClick={() => setScreen("search")}>Play a club member</button>
+        {/* The cost line is the reason daily games lead. A move is a few
+            hundred bytes; that is the fact that makes chess affordable here. */}
+        <p className="cmc-note">Daily games use almost no data — a move is smaller than a text message.</p>
+      </section>
+
+      {open.length > 0 && (
+        <section className="cmc-sec">
+          <div className="cmm-list-h">OPEN CHALLENGES · ANYONE CAN TAKE</div>
+          {open.map(c => (
+            <div className="cmc-ch" key={c.challengeId}>
+              <span className="cmc-tc">{cmTcName(c.timeControl)}</span>
+              <span className="cmc-ch-body">
+                <span className="cmc-game-who">{c.from.name} · {c.from.rating}</span>
+                <span className="cmc-game-sub">{c.rated ? "Rated" : "Casual"} · posted {cmAgo(c.createdAt)}</span>
+              </span>
+              <button className="cmm-cta is-sm" onClick={() => answer(c.challengeId, "accept")}>Accept</button>
+            </div>
+          ))}
+        </section>
+      )}
+
+      <section className="cmc-sec">
+        <div className="cmm-list-h">TRAIN</div>
+        <button className="cmc-tile" onClick={() => setScreen("computer")}>
+          <span className="cmc-tile-h">Play the computer</span>
+          <span className="cmc-tile-s">Works with no signal · nothing to download</span>
+        </button>
+      </section>
+
+      {theirMove.length > 0 && (
+        <section className="cmc-sec">
+          <div className="cmm-list-h">WAITING ON THEM</div>
+          {theirMove.map(m => (
+            <button key={m.matchId} className="cmc-game is-quiet" onClick={() => onOpenMatch(m.matchId)}>
+              <span className="cmc-av" style={{ background: cmColor(cmOtherName(m), "") }}>{cmInitial(cmOtherName(m))}</span>
+              <span className="cmc-game-body">
+                <span className="cmc-game-who">{cmOtherName(m)}</span>
+                <span className="cmc-game-sub">Their move · {m.lastMoveAt ? cmAgo(m.lastMoveAt) : "not started"}</span>
+              </span>
+            </button>
+          ))}
+        </section>
+      )}
+
+      {matches !== null && !yourMove.length && !theirMove.length && !toYou.length && !open.length && (
+        <CmEmpty icon="♟" title="No games yet"
+                 body="Challenge somebody at your centre, or play the computer while you wait."/>
+      )}
+    </div>
+  );
+}
+
+function cmOtherName(m) {
+  return m.you === "A" ? m.players.B.name : m.players.A.name;
+}
+function cmTcName(id) {
+  const t = CM_TIME_CONTROLS.filter(x => x.id === id)[0];
+  return t ? t.name : id;
+}
+function cmTermsLine(c) {
+  const t = CM_TIME_CONTROLS.filter(x => x.id === c.timeControl)[0];
+  const colour = c.colourPref === "random" ? "colours drawn" : "they play " + c.colourPref;
+  return (t ? t.kind + " " + t.name : c.timeControl) + " · " + colour + " · " + (c.rated ? "rated" : "casual");
+}
+function cmChessError(e) {
+  const map = {
+    already_playing: "You already have a game running with them.",
+    already_challenged: "You've already challenged them — it's still waiting.",
+    already_open: "You already have an open challenge posted.",
+    cannot_play_yourself: "You can't play yourself.",
+    not_open: "That challenge has expired or been taken.",
+    not_yours: "That challenge isn't yours to answer.",
+  };
+  return map[e && e.code] || (e && e.message) || "That didn't work.";
+}
+
+/* ── Search a player (6A · 1) ─────────────────────────────────────────────
+   Filters that answer the question actually being asked — "who can I play
+   right now, near my strength" — and a head-to-head record on every row, so
+   a child knows what they are walking into before they tap Challenge. */
+function CmChessSearch({ onBack, onChallenge, challengeFor, onSent, onCancel, onOpenMatch }) {
+  const [q, setQ] = React.useState("");
+  const [club, setClub] = React.useState(false);
+  const [online, setOnline] = React.useState(false);
+  const [band, setBand] = React.useState("");
+  const [mentors, setMentors] = React.useState(false);
+  const [data, setData] = React.useState(null);
+  const [challenges, setChallenges] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const inputRef = React.useRef(null);
+
+  React.useEffect(() => { const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 60); return () => clearTimeout(t); }, []);
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      setData(null);
+      NGGApi.member.match.players({ q: q.trim(), club: club ? 1 : "", online: online ? 1 : "", band: band, mentors: mentors ? 1 : "" })
+        .then(setData).catch(() => setData({ players: [] }));
+    }, 260);
+    return () => clearTimeout(t);
+  }, [q, club, online, band, mentors]);
+  React.useEffect(() => {
+    NGGApi.member.match.challenges().then(setChallenges).catch(() => {});
+  }, []);
+
+  const band1100 = band === "1100-1400";
+  const players = (data && data.players) || [];
+  const open = (challenges && challenges.open) || [];
+
+  const accept = (id) => {
+    NGGApi.member.match.answer(id, "accept")
+      .then(r => { if (r.matchId) onOpenMatch(r.matchId); })
+      .catch(e => setErr(cmChessError(e)));
+  };
+
+  return (
+    <div className="cmm-screen" role="region" aria-label="Find a chess opponent">
+      <header className="cmm-head cmm-head-back">
+        <button className="cmm-icon-btn" onClick={onBack} aria-label="Back">{cmUiIcon("back", 22)}</button>
+        <h1 className="cmm-h1">Find a game</h1>
+      </header>
+
+      <div className="cmm-pad">
+        <div className="cmm-jump-field">
+          {cmUiIcon("search", 18)}
+          <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)}
+                 placeholder="Search a player" aria-label="Search players by name"/>
+          {q && <button className="cmm-jump-clear" onClick={() => setQ("")} aria-label="Clear">×</button>}
+        </div>
+      </div>
+
+      {/* Toggles, not one-of-four: "my club AND online" is the common question,
+          and a radio group would make it unaskable. */}
+      <div className="cmm-chips" role="group" aria-label="Narrow the search">
+        <button className={"cmm-chip" + (club ? " is-on" : "")} aria-pressed={club} onClick={() => setClub(v => !v)}>My club</button>
+        <button className={"cmm-chip" + (online ? " is-on" : "")} aria-pressed={online} onClick={() => setOnline(v => !v)}>Online now</button>
+        <button className={"cmm-chip" + (band1100 ? " is-on" : "")} aria-pressed={band1100}
+                onClick={() => setBand(band1100 ? "" : "1100-1400")}>1100–1400</button>
+        <button className={"cmm-chip" + (mentors ? " is-on" : "")} aria-pressed={mentors} onClick={() => setMentors(v => !v)}>Mentors</button>
+      </div>
+
+      {err && <div className="cmm-offline" role="alert">{err}</div>}
+
+      <div className="cmc-results">
+        {data === null && <CmSkeleton rows={3}/>}
+        {data && players.length === 0 && (
+          <CmEmpty icon="🔍" title="Nobody matched"
+                   body={q.trim() ? "Try a different name, or drop a filter." : "Drop a filter — or post an open challenge anyone can take."}/>
+        )}
+        {data && players.length > 0 && <div className="cmm-list-h">{players.length} RESULT{players.length === 1 ? "" : "S"}</div>}
+        {players.map(pl => (
+          <div className="cmc-player" key={pl.id}>
+            <span className="cmc-av" style={{ background: cmColor(pl.name, pl.mentor ? "mentor" : "") }}>{cmInitial(pl.name)}</span>
+            <span className="cmc-player-body">
+              <span className="cmc-game-who">
+                {pl.name}
+                {pl.mentor && <span className="cmm-tag is-mentor">mentor</span>}
+              </span>
+              <span className="cmc-game-sub">
+                {pl.centre} · {cmSeenAgo(pl.lastSeen, pl.online)}
+                {pl.headToHead ? " · " + pl.headToHead : ""}
+              </span>
+            </span>
+            <span className="cmc-player-rating">{pl.rating}</span>
+            <button className="cmm-cta is-sm" onClick={() => onChallenge(pl)}>Challenge</button>
+          </div>
+        ))}
+
+        <div className="cmm-list-h">OPEN CHALLENGES · ANYONE CAN TAKE</div>
+        {open.length === 0 && <p className="cmc-note">Nothing posted right now.</p>}
+        {open.map(c => (
+          <div className="cmc-ch" key={c.challengeId}>
+            <span className="cmc-tc">{cmTcName(c.timeControl)}</span>
+            <span className="cmc-ch-body">
+              <span className="cmc-game-who">{c.from.name} wants a game</span>
+              <span className="cmc-game-sub">{c.from.rating} · posted {cmAgo(c.createdAt)} · {c.rated ? "rated" : "casual"}</span>
+            </span>
+            <button className="cmm-cta is-sm" onClick={() => accept(c.challengeId)}>Accept</button>
+          </div>
+        ))}
+        <button className="cmc-tile" onClick={() => onChallenge({ id: "", name: "anyone in the club", open: true })}>
+          <span className="cmc-tile-h">Post your own open challenge</span>
+          <span className="cmc-tile-s">Anyone in the club can take it</span>
+        </button>
+      </div>
+
+      {challengeFor && (
+        <CmChessChallengeSheet player={challengeFor} onClose={onCancel} onSent={onSent}/>
+      )}
+    </div>
+  );
+}
+
+/* ── Send a challenge (6A · 2) ────────────────────────────────────────────
+   Every term stated BEFORE it is sent — time control, colour, rated or not,
+   and whether the club may watch. A game whose terms are discovered on the
+   board is a game one player agreed to and the other did not. */
+function CmChessChallengeSheet({ player, onClose, onSent }) {
+  const [tc, setTc] = React.useState("1day");
+  const [colour, setColour] = React.useState("random");
+  const [rated, setRated] = React.useState(true);
+  const [channel, setChannel] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+
+  const send = () => {
+    setBusy(true); setErr("");
+    NGGApi.member.match.challenge({
+      opponentId: player.open ? "" : player.id,
+      timeControl: tc, colourPref: colour, rated: rated, channelSlug: channel,
+    })
+      .then(() => { toast.success(player.open ? "Posted. Anyone can take it." : "Challenge sent."); onSent(); })
+      .catch(e => { setErr(cmChessError(e)); setBusy(false); });
+  };
+
+  return (
+    <CmSheet title={player.open ? "Post an open challenge" : "Challenge " + player.name} onClose={onClose}>
+      {!player.open && (
+        <p className="cmc-note">
+          {player.rating}{player.headToHead ? " · " + player.headToHead : ""}
+          {player.online ? " · online" : ""}
+        </p>
+      )}
+
+      <div className="cmm-list-h">TIME CONTROL</div>
+      <div className="cmc-opts">
+        {CM_TIME_CONTROLS.map(t => (
+          <button key={t.id} className={"cmc-opt" + (tc === t.id ? " is-on" : "")}
+                  aria-pressed={tc === t.id} onClick={() => setTc(t.id)}>
+            <span className="cmc-opt-n">{t.name}</span>
+            <span className="cmc-opt-k">{t.kind}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="cmm-list-h">YOU PLAY</div>
+      <div className="cmc-opts is-three">
+        {[["white", "White"], ["black", "Black"], ["random", "Random"]].map(([id, label]) => (
+          <button key={id} className={"cmc-opt" + (colour === id ? " is-on" : "")}
+                  aria-pressed={colour === id} onClick={() => setColour(id)}>
+            <span className="cmc-opt-n">{label}</span>
+          </button>
+        ))}
+      </div>
+
+      <label className="cmm-check">
+        <input type="checkbox" checked={rated} onChange={e => setRated(e.target.checked)}/>
+        <span>Rated game <span className="cmc-note-inline">— it moves both ratings</span></span>
+      </label>
+      <label className="cmm-check">
+        <input type="checkbox" checked={channel !== ""} onChange={e => setChannel(e.target.checked ? "commons" : "")}/>
+        <span>Post to the channel <span className="cmc-note-inline">— the club can watch</span></span>
+      </label>
+
+      {err && <div className="cmm-offline" role="alert">{err}</div>}
+
+      <button className="cmm-cta" onClick={send} disabled={busy}>
+        {busy ? "Sending…" : (player.open ? "Post the challenge" : "Send challenge")}
+      </button>
+      <p className="cmc-note">
+        {player.open ? "It stays up for 24 hours." : "Expires in 24 hours if they don't answer."}
+      </p>
+    </CmSheet>
+  );
+}
+
+/* ── Play the computer (6A · 3) ───────────────────────────────────────────
+   The one screen in the community that needs no network at all. The rules and
+   the opponent both ship with the app (chess-engine.jsx), so a member at a
+   centre whose signal has gone can still play — which is most of why chess is
+   worth having here.
+
+   The practice aids are the point of the level, not decoration: take-backs,
+   a hint, and a warning before a blunder are how a child gets better between
+   real games. None of it touches the club rating, and the screen says so. */
+
+const CM_CHESS_AID_KEY = "ngg.cm.chessaids";
+function cmChessAids() {
+  try { return Object.assign({ takeback: true, hint: true, warn: true }, JSON.parse(localStorage.getItem(CM_CHESS_AID_KEY) || "{}")); }
+  catch (_) { return { takeback: true, hint: true, warn: true }; }
+}
+function cmSetChessAids(patch) {
+  const next = Object.assign(cmChessAids(), patch);
+  try { localStorage.setItem(CM_CHESS_AID_KEY, JSON.stringify(next)); } catch (_) {}
+  return next;
+}
+
+function CmChessComputer({ profile, onBack }) {
+  const suggested = React.useMemo(() => {
+    const levels = (profile && profile.levels) || [];
+    const s = levels.filter(l => l.suggested)[0];
+    return s ? s.level : 4;
+  }, [profile]);
+  const [level, setLevel] = React.useState(suggested);
+  React.useEffect(() => { setLevel(suggested); }, [suggested]);
+  const [aids, setAids] = React.useState(cmChessAids);
+  const [playing, setPlaying] = React.useState(false);
+
+  const levels = (profile && profile.levels) || (window.NggChess ? NggChess.LEVELS.map(l => ({ level: l.level, rating: l.rating, blurb: l.blurb })) : []);
+  const info = levels.filter(l => l.level === level)[0] || levels[3] || { rating: 1250, blurb: "" };
+  const myRating = profile ? profile.rating : 0;
+
+  if (playing) {
+    return <CmComputerGame level={level} aids={aids} onBack={() => setPlaying(false)}/>;
+  }
+
+  return (
+    <div className="cmm-screen" role="region" aria-label="Play the computer">
+      <header className="cmm-head cmm-head-back">
+        <button className="cmm-icon-btn" onClick={onBack} aria-label="Back">{cmUiIcon("back", 22)}</button>
+        <div className="cmm-head-txt">
+          <h1 className="cmm-h1">Play the computer</h1>
+          <p className="cmm-sub">Works with no signal · nothing to download</p>
+        </div>
+      </header>
+
+      <div className="cmm-pad">
+        <div className="cmm-list-h">STRENGTH · LEVEL {level} OF 8</div>
+        <div className="cmc-level">
+          <div className="cmc-level-n">Level {level}</div>
+          <div className="cmc-level-r">
+            ≈ {info.rating}
+            {myRating ? (Math.abs(info.rating - myRating) <= 120 ? " · about your rating"
+              : (info.rating > myRating ? " · above your rating" : " · below your rating")) : ""}
+          </div>
+        </div>
+        <input className="cmc-slider" type="range" min="1" max="8" step="1" value={level}
+               onChange={e => setLevel(+e.target.value)} aria-label="Computer strength, 1 to 8"/>
+        <div className="cmc-level-ends"><span>Level 1 · learning</span><span>Level 8 · brutal</span></div>
+        <p className="cmc-blurb">{info.blurb}</p>
+
+        <div className="cmm-list-h">PRACTICE HELP</div>
+        <div className="cmc-aids">
+          {[["takeback", "Take back moves", "Unrated practice only"],
+            ["hint", "Show a hint", "Highlights one good square"],
+            ["warn", "Warn me before a blunder", "Only when it is really bad"]].map(([id, label, sub]) => (
+            <label key={id} className={"cmc-aid" + (aids[id] ? " is-on" : "")}>
+              <input type="checkbox" checked={aids[id]} onChange={e => setAids(cmSetChessAids({ [id]: e.target.checked }))}/>
+              <span className="cmc-aid-body">
+                <span className="cmc-aid-l">{label}</span>
+                <span className="cmc-aid-s">{sub}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        <button className="cmm-cta" onClick={() => setPlaying(true)}>Play level {level}</button>
+        <p className="cmc-note">Computer games don't change your club rating.</p>
+      </div>
+    </div>
+  );
+}
+
+/* The offline game itself.
+ *
+ * Every rule here is the device engine's, and the device engine is a mirror of
+ * the server's — checked move-for-move by perft in tests/chess-engine.test.js.
+ * A position reached here is the same position it would be online. */
+function CmComputerGame({ level, aids, onBack }) {
+  const C = window.NggChess;
+  const [fen, setFen] = React.useState(C.START_FEN);
+  const [history, setHistory] = React.useState([]);      // [{fen, san, uci}]
+  const [from, setFrom] = React.useState("");
+  const [thinking, setThinking] = React.useState(false);
+  const [hint, setHint] = React.useState("");
+  const [warn, setWarn] = React.useState(null);          // {uci, loss, best}
+  const [over, setOver] = React.useState(null);
+  const [flip, setFlip] = React.useState(false);
+
+  const pos = React.useMemo(() => C.parseFen(fen), [fen, C]);
+  const legal = React.useMemo(() => (pos ? C.legalMoves(pos).map(C.uciOf) : []), [pos, C]);
+  const myTurn = pos && pos.turn === "w" && !thinking && !over;
+  const targets = from ? legal.filter(u => u.slice(0, 2) === from).map(u => u.slice(2, 4)) : [];
+  const last = history.length ? history[history.length - 1] : null;
+
+  const squares = React.useMemo(() => {
+    // The board component reads a flat 64 in a1..h8-from-the-top order, which
+    // is the same order the 0x88 board walks with the off-board files skipped.
+    const out = [];
+    if (!pos) return out;
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) out.push(pos.board[r * 16 + f]);
+    return out;
+  }, [pos]);
+
+  const counts = React.useMemo(() => {
+    const c = {};
+    [C.START_FEN].concat(history.map(h => h.fen)).forEach(f => {
+      const p = C.parseFen(f); if (!p) return;
+      const k = C.repetitionKey(p); c[k] = (c[k] || 0) + 1;
+    });
+    return c;
+  }, [history, C]);
+
+  const finish = (st) => {
+    if (st.state === "checkmate") setOver({ win: st.winner === "w", reason: "checkmate" });
+    else if (st.state === "stalemate") setOver({ draw: true, reason: "stalemate" });
+    else if (st.state === "draw") setOver({ draw: true, reason: st.reason });
+  };
+
+  const commit = (uci) => {
+    const r = C.move(fen, uci, counts);
+    if (!r.ok) return;
+    setFen(r.fen);
+    setHistory(h => h.concat([{ fen: r.fen, san: r.san, uci: uci }]));
+    setFrom(""); setHint(""); setWarn(null);
+    if (r.status.state === "checkmate" || r.status.state === "stalemate" || r.status.state === "draw") {
+      finish(r.status);
+      return;
+    }
+    /* Hand the paint a frame before the search starts. Level 8 thinks for up
+       to a second or so on a low-end device, and a board that freezes mid-move
+       reads as a crash rather than as thinking. */
+    setThinking(true);
+    setTimeout(() => {
+      const reply = C.bestMove(r.fen, level);
+      if (!reply) { setThinking(false); return; }
+      const after = C.move(r.fen, reply.uci, counts);
+      setThinking(false);
+      if (!after.ok) return;
+      setFen(after.fen);
+      setHistory(h => h.concat([{ fen: after.fen, san: after.san, uci: reply.uci }]));
+      if (after.status.state === "checkmate" || after.status.state === "stalemate" || after.status.state === "draw") finish(after.status);
+    }, 30);
+  };
+
+  const play = (uci) => {
+    // The warning is asked BEFORE the move is made, which is the only moment
+    // it is worth anything. Confirming plays it anyway — this is a nudge, not
+    // a veto, and a practice aid that overrules a child is a worse teacher.
+    if (aids.warn && !warn) {
+      const check = C.blunderCheck(fen, uci, 2);
+      if (check && check.blunder) { setWarn({ uci: uci, loss: check.loss, best: check.best }); return; }
+    }
+    commit(uci);
+  };
+
+  const tap = (sq, piece) => {
+    if (!myTurn) return;
+    if (from && targets.indexOf(sq) !== -1) {
+      const opts = legal.filter(u => u.slice(0, 2) === from && u.slice(2, 4) === sq);
+      // Promotion: four moves share the pair of squares. Queen unless asked.
+      play(opts.length > 1 ? from + sq + "q" : opts[0]);
+      return;
+    }
+    if (from === sq) { setFrom(""); return; }
+    if (piece && legal.some(u => u.slice(0, 2) === sq)) { setFrom(sq); return; }
+    setFrom("");
+  };
+
+  /* Take back BOTH plies — mine and its reply. Undoing only my own move would
+     leave the computer on move in a position it never chose, which is not
+     what "take back" means to anybody who has played chess. */
+  const takeBack = () => {
+    if (history.length < 2) { setFen(C.START_FEN); setHistory([]); setFrom(""); setOver(null); return; }
+    const next = history.slice(0, -2);
+    setFen(next.length ? next[next.length - 1].fen : C.START_FEN);
+    setHistory(next); setFrom(""); setOver(null); setHint(""); setWarn(null);
+  };
+
+  const showHint = () => {
+    const a = C.analyse(fen, 2);
+    if (a) { setHint(a.best.uci); toast.success("Look at " + a.best.uci.slice(2, 4) + "."); }
+  };
+
+  const checkSq = pos && C.inCheck(pos) ? C.idxToSq(C.kingSquare(pos, pos.turn)) : "";
+
+  return (
+    <div className="cmm-screen cmc-game-screen" role="region" aria-label={"Chess against level " + level}>
+      <header className="cmm-head cmm-head-back">
+        <button className="cmm-icon-btn" onClick={onBack} aria-label="Leave the game">{cmUiIcon("back", 22)}</button>
+        <div className="cmm-head-txt">
+          <h1 className="cmm-h1">Level {level}</h1>
+          <p className="cmm-sub">Unrated practice · no signal needed</p>
+        </div>
+      </header>
+
+      <div className="cmc-players">
+        <div className="cmc-side">
+          <span className="cmc-av" style={{ background: "#3b3f51" }}>C</span>
+          <span className="cmc-side-b">
+            <span className="cmc-game-who">Computer · level {level}</span>
+            <span className="cmc-game-sub">{thinking ? "Thinking…" : (pos && pos.turn === "b" ? "Its move" : "Waiting")}</span>
+          </span>
+        </div>
+      </div>
+
+      <ChessBoard squares={squares} flip={flip} from={from} targets={targets}
+                  lastMove={last ? { from: last.uci.slice(0, 2), to: last.uci.slice(2, 4) } : null}
+                  checkSquare={checkSq} interactive={!!myTurn} onTap={tap}
+                  onFlip={() => setFlip(f => !f)}/>
+
+      <div className="cmc-players">
+        <div className="cmc-side">
+          <span className="cmc-av" style={{ background: "#b07cff" }}>Y</span>
+          <span className="cmc-side-b">
+            <span className="cmc-game-who">You · White</span>
+            <span className="cmc-game-sub">{over ? "Game over" : (myTurn ? "Your move" : "…")}</span>
+          </span>
+        </div>
+      </div>
+
+      {/* The move list, scrolling sideways — a phone has no room for a column
+          of it, and the last few plies are the ones anybody looks at. */}
+      {history.length > 0 && (
+        <div className="cmc-moves" aria-label="Moves played">
+          {history.map((h, i) => (
+            <span key={i} className="cmc-move">
+              {i % 2 === 0 && <b>{Math.floor(i / 2) + 1}.</b>} {h.san}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="cmc-acts">
+        <button onClick={() => setFlip(f => !f)}>Flip</button>
+        {aids.takeback && <button onClick={takeBack} disabled={!history.length}>Take back</button>}
+        {aids.hint && <button onClick={showHint} disabled={!myTurn}>Hint</button>}
+        <button onClick={() => setOver({ win: false, reason: "resigned" })} disabled={!!over}>Resign</button>
+      </div>
+      {hint && <p className="cmc-note">Hint: try {hint.slice(0, 2)} → {hint.slice(2, 4)}.</p>}
+
+      {warn && (
+        <CmSheet title="Are you sure?" onClose={() => setWarn(null)}>
+          <p className="cmc-blurb">
+            That gives away about {Math.round(warn.loss / 100)} points of material.
+            {warn.best ? " " + warn.best.san + " keeps everything." : ""}
+          </p>
+          <button className="cmm-cta" onClick={() => setWarn(null)}>Let me think again</button>
+          <button className="cmc-decline is-wide" onClick={() => { const u = warn.uci; setWarn({ uci: u, forced: true }); commit(u); }}>
+            Play it anyway
+          </button>
+        </CmSheet>
+      )}
+
+      {over && (
+        <CmSheet title={over.draw ? "Drawn" : (over.win ? "You won" : "You lost")} onClose={onBack}>
+          <p className="cmc-blurb">
+            {over.draw ? "Nobody can force a win from here — " + String(over.reason).replace(/_/g, " ") + "."
+              : (over.win ? "Checkmate against level " + level + ". Try level " + Math.min(8, level + 1) + " next."
+                : (over.reason === "resigned" ? "You resigned." : "Checkmate. Level " + Math.max(1, level - 1) + " is a fairer fight."))}
+          </p>
+          <p className="cmc-note">This was practice — your club rating is untouched.</p>
+          <button className="cmm-cta" onClick={() => { setFen(C.START_FEN); setHistory([]); setOver(null); setFrom(""); }}>Play again</button>
+          <button className="cmc-decline is-wide" onClick={onBack}>Back to chess</button>
+        </CmSheet>
+      )}
+    </div>
+  );
 }
 
 function CmMatches({ auth }) {

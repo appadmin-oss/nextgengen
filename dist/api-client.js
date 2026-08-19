@@ -612,6 +612,15 @@
         resign:  (matchId) => request('/member/match.php', { body: { action: 'resign', matchId } }),
         react:   (matchId, reaction) => request('/member/match.php', { body: { action: 'react', matchId, reaction } }),
         report:  (matchId) => request('/member/match.php', { body: { action: 'report', matchId } }),
+
+        /* Finding a game — design turn 6A. Search a player, post or take a
+           challenge, read your own standing. Playing the computer is not here
+           at all: it happens on the device and touches no endpoint. */
+        players:   (q) => request('/member/match.php' + qs(Object.assign({ view: 'players' }, q || {}))),
+        chess:     () => request('/member/match.php' + qs({ view: 'chess' })),
+        challenges: () => request('/member/match.php' + qs({ view: 'challenges' })),
+        challenge: (d) => request('/member/match.php', { body: Object.assign({ action: 'challenge' }, d || {}) }),
+        answer:    (challengeId, answer) => request('/member/match.php', { body: { action: 'challengeRespond', challengeId, answer } }),
       },
       // A player's own tournaments and their next game in each.
       tournaments: {

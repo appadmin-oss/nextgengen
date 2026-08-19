@@ -1786,3 +1786,55 @@ INSERT INTO schema_version (version) VALUES (95) ON DUPLICATE KEY UPDATE version
 ALTER TABLE community_posts ADD COLUMN mediaDuration INT DEFAULT 0;
 
 INSERT INTO schema_version (version) VALUES (96) ON DUPLICATE KEY UPDATE version = version;
+
+-- v97 — chess as a club fixture: ratings, challenges that are not yet games,
+-- and a head-to-head counter. See the migration note in api/_lib/db.php.
+CREATE TABLE IF NOT EXISTS chess_ratings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  playerId VARCHAR(64) NOT NULL,
+  rating INT NOT NULL DEFAULT 1200,
+  games INT NOT NULL DEFAULT 0,
+  wins INT NOT NULL DEFAULT 0,
+  losses INT NOT NULL DEFAULT 0,
+  draws INT NOT NULL DEFAULT 0,
+  peak INT NOT NULL DEFAULT 1200,
+  lastPlayedAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_chess_rating_player (playerId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS chess_challenges (
+  challengeId VARCHAR(64) PRIMARY KEY,
+  fromId VARCHAR(64) NOT NULL, fromName VARCHAR(190) DEFAULT '',
+  toId VARCHAR(64) DEFAULT '', toName VARCHAR(190) DEFAULT '',
+  timeControl VARCHAR(16) DEFAULT '1day',
+  colourPref VARCHAR(8) DEFAULT 'random',
+  rated TINYINT DEFAULT 1,
+  channelSlug VARCHAR(64) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'open',
+  matchId VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40) NOT NULL,
+  expiresAt VARCHAR(40) DEFAULT '',
+  INDEX idx_chess_ch_to (toId, status),
+  INDEX idx_chess_ch_open (status, expiresAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS chess_head2head (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  pairKey VARCHAR(140) NOT NULL,
+  playerId VARCHAR(64) NOT NULL,
+  opponentId VARCHAR(64) NOT NULL,
+  wins INT NOT NULL DEFAULT 0,
+  losses INT NOT NULL DEFAULT 0,
+  draws INT NOT NULL DEFAULT 0,
+  updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_chess_h2h (playerId, opponentId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE match_games ADD COLUMN timeControl VARCHAR(16) DEFAULT '1day';
+ALTER TABLE match_games ADD COLUMN rated TINYINT DEFAULT 1;
+ALTER TABLE match_games ADD COLUMN channelSlug VARCHAR(64) DEFAULT '';
+ALTER TABLE match_games ADD COLUMN ratingDelta INT DEFAULT 0;
+ALTER TABLE match_games ADD COLUMN settledAt VARCHAR(40) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (97) ON DUPLICATE KEY UPDATE version = version;
