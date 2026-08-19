@@ -874,6 +874,9 @@ function public_notification(array $n): array {
         'title' => $n['title'],
         'body' => $n['body'],
         'linkPage' => $n['linkPage'],
+        // The id of the thing this notification is about (a post, today), so
+        // the client can open it instead of dropping the member in a feed.
+        'linkRef' => (string)($n['linkRef'] ?? ''),
         'readAt' => $n['readAt'] ?: '',
         'createdAt' => $n['createdAt'],
     ];

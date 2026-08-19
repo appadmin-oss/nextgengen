@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 94;
+const NGG_SCHEMA_TARGET = 95;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2532,6 +2532,19 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX idx_attempt_key ON attempt_guard(scope, subject);
             CREATE INDEX idx_attempt_stale ON attempt_guard(updatedAt);
+        ",
+
+        /* A notification that can be FOLLOWED.
+         *
+         * Notifications carried a `linkPage` ("community") and nothing else, so
+         * "Ada mentioned you" could tell a member that something had happened
+         * and then drop them at the top of a feed to hunt for it. The one
+         * notification whose entire purpose is "somebody is talking to you,
+         * here" was the one that could not say where. `linkRef` is the id of
+         * the thing the notification is about — a post, today; anything with an
+         * id, later. */
+        95 => "
+            ALTER TABLE notifications ADD COLUMN linkRef TEXT DEFAULT '';
         ",
     ];
 

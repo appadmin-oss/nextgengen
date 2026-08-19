@@ -14,6 +14,8 @@ if ($method === 'GET') {
     elseif ($view === 'members')   $res = gs_call('community.channelMembers', ['channel' => $_GET['channel'] ?? '']);
     // The Today screen's filter-chip counts, in one request rather than three.
     elseif ($view === 'today')     $res = gs_call('community.today', ['memberId' => $s['mid']]);
+    // One post by id — deep links (a shared url, a notification) resolve here.
+    elseif ($view === 'post')      $res = gs_call('community.post.get', ['memberId' => $s['mid'], 'postId' => $_GET['postId'] ?? '']);
     else                           $res = gs_call('community.feed', ['memberId' => $s['mid'], 'channel' => $_GET['channel'] ?? 'all', 'sort' => $_GET['sort'] ?? 'latest', 'page' => (int)($_GET['page'] ?? 0)]);
 } elseif ($method === 'POST') {
     $b = read_json_body();

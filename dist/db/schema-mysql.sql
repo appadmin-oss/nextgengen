@@ -1774,3 +1774,9 @@ CREATE TABLE IF NOT EXISTS attempt_guard (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (94) ON DUPLICATE KEY UPDATE version = version;
+
+-- v95 — a notification that can be FOLLOWED: the id of the thing it is about.
+-- See the migration note in api/_lib/db.php.
+ALTER TABLE notifications ADD COLUMN linkRef VARCHAR(64) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (95) ON DUPLICATE KEY UPDATE version = version;

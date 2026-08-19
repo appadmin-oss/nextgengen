@@ -514,7 +514,10 @@ function cmColor(seed, role) {
 function cmRoleOf(post) {
   if (!post || !post.author) return "";
   if (post.author.isMe) return "you";
-  return post.canStar ? "mentor" : "";
+  /* `author.staff` — NOT `canStar`, which is what the VIEWER may do. Reading
+     the viewer's capability as the author's role turned every avatar in the
+     feed mentor-green the moment a mentor was the one looking. */
+  return post.author.staff ? "mentor" : "";
 }
 // A member's avatar — their profile photo when we have one, else a colour + initial.
 function cmAvatar(name, seed, photo, extraClass, role) {
@@ -984,8 +987,7 @@ function CmSkeleton({ rows }) {
    the chip counts come from one endpoint that agrees with them, because a chip
    reading "Unread 4" over a filter that then shows six is the part of the
    screen a member uses to decide whether to look at all. */
-function CmToday({ auth, counts, onCounts, onOpenAccount, onOpenThread, onCompose, onOpenChannel, offline }) {
-  const [filter, setFilter] = React.useState("all");
+function CmToday({ auth, counts, onCounts, onOpenAccount, onOpenThread, onCompose, onOpenChannel, offline, filter, setFilter }) {
   const [sheetFor, setSheetFor] = React.useState(null);
   const [posts, setPosts] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -993,14 +995,21 @@ function CmToday({ auth, counts, onCounts, onOpenAccount, onOpenThread, onCompos
 
   const load = React.useCallback((f) => {
     setPosts(null); setErr("");
-    const channel = f === "saved" ? "bookmarks" : f === "all" ? "all" : f;
+    const channel = f === "saved" ? "bookmarks" : f;
     NGGApi.member.community.feed(channel, "latest", 0)
       .then(r => setPosts(r.posts || []))
       .catch(() => { setPosts([]); setErr("Couldn't load the feed. Pull down or try again."); });
   }, []);
   React.useEffect(() => { load(filter); }, [filter, load]);
 
-  const patch = (postId, p) => setPosts(ps => (ps || []).map(x => x.postId === postId ? { ...x, ...p } : x));
+  const patch = (postId, p) => {
+    setPosts(ps => (ps || []).map(x => x.postId === postId ? { ...x, ...p } : x));
+    /* Saving something changes the Saved chip. The chips were fetched once at
+       start-up, so the count sat still while the list under it moved — and a
+       counter that disagrees with the list is the reason people stop reading
+       counters at all. Only bookmarks move a count, so only bookmarks refetch. */
+    if (p && Object.prototype.hasOwnProperty.call(p, "bookmarked")) onCounts();
+  };
   const remove = (postId) => setPosts(ps => (ps || []).filter(x => x.postId !== postId));
 
   const greeting = (() => {
@@ -1013,7 +1022,8 @@ function CmToday({ auth, counts, onCounts, onOpenAccount, onOpenThread, onCompos
     { id: "all", label: "All" },
     { id: "unread", label: "Unread", count: counts.unread },
     { id: "mentions", label: "Mentions", count: counts.mentions },
-    { id: "saved", label: "Saved", count: 0 },
+    { id: "saved", label: "Saved", count: counts.saved },
+    { id: "mine", label: "Yours" },
   ];
 
   return (
@@ -1062,6 +1072,10 @@ function CmToday({ auth, counts, onCounts, onOpenAccount, onOpenThread, onCompos
               ? <CmEmpty icon="✓" title="You're all caught up" body="Nothing new since you last looked."/>
               : filter === "mentions"
                 ? <CmEmpty icon="@" title="No mentions" body="When somebody tags you by name, it lands here."/>
+              : filter === "mine"
+                ? <CmEmpty icon="✎" title="You haven't posted yet"
+                           body="Anything you write — and anything still waiting on a mentor — shows up here."
+                           action={<button className="cmm-cta" onClick={onCompose.open}>Write your first post</button>}/>
                 : <CmEmpty icon="✦" title="Nothing here yet"
                            body="Be the first to post something to your centre."
                            action={<button className="cmm-cta" onClick={onCompose.open}>Write a post</button>}/>
@@ -1069,12 +1083,13 @@ function CmToday({ auth, counts, onCounts, onOpenAccount, onOpenThread, onCompos
         {posts && posts.map(p => (
           <CmMobileMessage key={p.postId} post={p} me={mem.fullName} card showChannel
                            onPatch={patch} onRemove={remove} onOpenThread={onOpenThread}
+                           onOpenChannel={onOpenChannel}
                            onLongPress={() => setSheetFor(p)}/>
         ))}
       </div>
 
       {sheetFor && (
-        <CmActionsSheetHost post={sheetFor} staff={!!sheetFor.canStar}
+        <CmActionsSheetHost post={sheetFor} staff={!!counts.staff}
                             onClose={() => setSheetFor(null)}
                             onPatch={patch} onRemove={remove} onOpenThread={onOpenThread}/>
       )}
@@ -1167,13 +1182,13 @@ function CmAccount({ auth, counts, onClose, onGo, setPage }) {
       <div className="cmm-acc-group">
         <Row label="Saved items" badge={counts.saved} onClick={() => onGo("saved")}/>
         <Row label="Your posts & replies" onClick={() => onGo("mine")}/>
-        <Row label="Play a friend" onClick={() => onGo("matches")}/>
+        <Row label="Play a friend" sub="Arcade" onClick={() => onGo("matches")}/>
         <Row label="Mentors & members" onClick={() => onGo("people")}/>
       </div>
       <div className="cmm-acc-group">
-        <Row label="Notifications" onClick={() => setPage("dashboard")}/>
-        <Row label="Switch centre" sub={mem.centre || ""} onClick={() => setPage("dashboard")}/>
-        <Row label="Accessibility & text size" onClick={() => setPage("dashboard")}/>
+        <Row label="Notifications" onClick={() => onGo("notifications")}/>
+        <Row label="Your profile" sub={mem.centre || ""} onClick={() => setPage("profile")}/>
+        <Row label="Accessibility & text size" onClick={() => onGo("a11y")}/>
         <Row label="Help" onClick={() => setPage("contact")}/>
       </div>
       <button className="cmm-signout" onClick={() => auth.signOut && auth.signOut()}>Sign out</button>
@@ -1226,33 +1241,52 @@ function CmActionsSheet({ post, act, staff, onClose, onOpenThread, onJournal }) 
    The mobile equivalent of the desktop command bar. Opened from the search
    field, because that is where somebody already goes to look for something —
    a second entry point for "find" would split the habit. */
-function CmJumpSheet({ channels, onClose, onOpenChannel, onCompose }) {
+function CmJumpSheet({ channels, scope, setScope, staff, onClose, onOpenChannel, onOpenThread, onOpenJournal, onCompose }) {
   const [q, setQ] = React.useState("");
-  const [scope, setScope] = React.useState("all");
-  const [hits, setHits] = React.useState(null);
+  const [hits, setHits] = React.useState(null);        // messages
+  const [people, setPeople] = React.useState(null);
+  const [entries, setEntries] = React.useState(null);  // programme journal
   const [busy, setBusy] = React.useState(false);
   const inputRef = React.useRef(null);
   React.useEffect(() => { const t = setTimeout(() => inputRef.current && inputRef.current.focus(), 60); return () => clearTimeout(t); }, []);
+
+  /* The scope chips are REAL.
+   *
+   * They used to set a state nobody read: whatever you narrowed to, the same
+   * message search ran. Three scopes, three different sources — messages,
+   * people, and the programme journal — so narrowing now changes both what is
+   * fetched and what is shown, and a scope with nothing behind it is never
+   * offered. */
+  const wants = (kind) => scope === "all" || scope === kind;
+
   React.useEffect(() => {
-    const s = q.trim();
-    if (s.length < 2) { setHits(null); setBusy(false); return; }
+    const term = q.trim();
+    if (term.length < 2) { setHits(null); setPeople(null); setEntries(null); setBusy(false); return; }
     setBusy(true);
     const t = setTimeout(() => {
-      NGGApi.member.community.search(s, "all")
-        .then(r => { setHits(r.posts || []); setBusy(false); })
-        .catch(() => { setHits([]); setBusy(false); });
+      const jobs = [];
+      if (wants("messages")) jobs.push(NGGApi.member.community.search(term, "all")
+        .then(r => setHits(r.posts || [])).catch(() => setHits([])));
+      else setHits(null);
+      if (wants("people")) jobs.push(NGGApi.member.community.mentions(term)
+        .then(r => setPeople((r.people || []).filter(x => x.kind !== "all"))).catch(() => setPeople([])));
+      else setPeople(null);
+      if (wants("journal")) jobs.push(NGGApi.member.programJournal.feed({ q: term, per: 6 })
+        .then(r => setEntries(r.entries || [])).catch(() => setEntries([])));
+      else setEntries(null);
+      Promise.all(jobs).then(() => setBusy(false), () => setBusy(false));
     }, 280);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, scope]); // eslint-disable-line
 
-  const chanHits = q.trim().length >= 1
+  const chanHits = wants("messages") && q.trim().length >= 1
     ? channels.filter(c => c.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 4) : [];
-  // A slash command is an ACTION, not a search term — surfaced as one.
+
+  /* Slash commands come from the SAME list the composer runs, so the sheet
+     cannot advertise a command the composer has never heard of — it offered
+     "/homework", which did nothing at all when you picked it. */
   const actions = q.startsWith("/")
-    ? [{ id: "homework", label: "/homework", sub: "Set homework for a channel" },
-       { id: "poll", label: "/poll", sub: "Ask the channel a question" }]
-        .filter(a => a.label.startsWith(q.trim()))
-    : [];
+    ? CM_SLASH.filter(a => ("/" + a.cmd).startsWith(q.trim().toLowerCase())) : [];
 
   /* Highlight the matched substring. Finding your search term in a wall of
      grey text is the difference between a result list and a wall of text. */
@@ -1263,6 +1297,9 @@ function CmJumpSheet({ channels, onClose, onOpenChannel, onCompose }) {
     return <>{text.slice(0, i)}<mark className="cmm-mark">{text.slice(i, i + s.length)}</mark>{text.slice(i + s.length)}</>;
   };
 
+  const nothing = q.trim().length >= 2 && !busy && actions.length === 0 && chanHits.length === 0
+    && (hits || []).length === 0 && (people || []).length === 0 && (entries || []).length === 0;
+
   return (
     <CmSheet title="Jump to" onClose={onClose}>
       <div className="cmm-jump-field">
@@ -1270,16 +1307,20 @@ function CmJumpSheet({ channels, onClose, onOpenChannel, onCompose }) {
         <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)}
                placeholder="Messages, people, entries — or / for a command"
                aria-label="Search the community"/>
+        {q && <button className="cmm-jump-clear" onClick={() => setQ("")} aria-label="Clear the search">×</button>}
       </div>
       <CmChips label="Narrow the search" value={scope} onPick={setScope}
                items={[{ id: "all", label: "All" }, { id: "messages", label: "Messages" },
                        { id: "people", label: "People" }, { id: "journal", label: "Journal" }]}/>
       <div className="cmm-jump-results">
+        {q.trim().length < 2 && !q.startsWith("/") && (
+          <div className="cmm-jump-note">Type at least two letters. Start with <b>/</b> for a command.</div>
+        )}
         {actions.length > 0 && <div className="cmm-list-h">ACTIONS</div>}
         {actions.map(a => (
-          <button key={a.id} className="cmm-jump-row" onClick={() => { onClose(); onCompose(a.id); }}>
-            <span className="cmm-jump-mono">{a.label}</span>
-            <span className="cmm-jump-sub">{a.sub}</span>
+          <button key={a.cmd} className="cmm-jump-row" onClick={() => onCompose(a.cmd, "")}>
+            <span className="cmm-jump-mono">/{a.cmd}</span>
+            <span className="cmm-jump-sub">{a.hint}</span>
           </button>
         ))}
         {chanHits.length > 0 && <div className="cmm-list-h">CHANNELS</div>}
@@ -1289,19 +1330,160 @@ function CmJumpSheet({ channels, onClose, onOpenChannel, onCompose }) {
             <span className="cmm-jump-sub">{c.unread > 0 ? c.unread + " unread" : "Channel"}</span>
           </button>
         ))}
-        {busy && <div className="cmm-jump-note">Searching…</div>}
+        {people && people.length > 0 && <div className="cmm-list-h">PEOPLE</div>}
+        {people && people.map(pp => (
+          /* Tapping a person starts a message TO them. There is no member
+             profile to open, and a row that only highlights itself is a row
+             that wasted the tap. */
+          <button key={pp.handle} className="cmm-jump-row" onClick={() => onCompose("", "@" + pp.handle + " ")}>
+            <span className="cmm-jump-name">{mark(pp.name || pp.handle)} <span className="cmm-jump-mono">@{pp.handle}</span></span>
+            <span className="cmm-jump-sub">{pp.centre || "Member"} · Write to them</span>
+          </button>
+        ))}
         {hits && hits.length > 0 && <div className="cmm-list-h">MESSAGES</div>}
         {hits && hits.map(p => (
-          <button key={p.postId} className="cmm-jump-row" onClick={() => { onClose(); onOpenChannel(p.channel.slug); }}>
+          <button key={p.postId} className="cmm-jump-row" onClick={() => { onClose(); onOpenThread(p); }}>
             <span className="cmm-jump-name">{mark(String(p.body || "").slice(0, 90))}</span>
             <span className="cmm-jump-sub">{p.author.name} · {p.channel.name} · {cmAgo(p.createdAt)}</span>
           </button>
         ))}
-        {hits && hits.length === 0 && !busy && q.trim().length >= 2 && (
-          <div className="cmm-jump-note">Nothing matched “{q.trim()}”.</div>
-        )}
+        {entries && entries.length > 0 && <div className="cmm-list-h">JOURNAL</div>}
+        {entries && entries.map(e => (
+          <button key={e.entryId} className="cmm-jump-row" onClick={() => { onClose(); onOpenJournal(e); }}>
+            <span className="cmm-jump-name">{mark(String(e.title || e.body || "").slice(0, 90))}</span>
+            <span className="cmm-jump-sub">{(e.kind || "entry")}{e.createdAt ? " · " + cmAgo(e.createdAt) : ""}</span>
+          </button>
+        ))}
+        {busy && <div className="cmm-jump-note">Searching…</div>}
+        {nothing && <div className="cmm-jump-note">Nothing matched “{q.trim()}”.</div>}
       </div>
     </CmSheet>
+  );
+}
+
+/* ── Notifications ────────────────────────────────────────────────────────
+   The Account row used to leave the Community for the dashboard, which is the
+   one place a member is NOT when they tap "Notifications" from inside a
+   conversation. Mentions land here, so tapping one has to arrive at the
+   message it is about — a notification you can read but not follow is a
+   notification that has told you about a problem and then hidden it. */
+function CmNotifications({ onClose, onOpenThread, onCounts }) {
+  const [rows, setRows] = React.useState(null);
+  const [err, setErr] = React.useState("");
+
+  const load = React.useCallback(() => {
+    setRows(null); setErr("");
+    NGGApi.member.notifications()
+      .then(r => setRows(r.notifications || r.items || []))
+      .catch(() => { setRows([]); setErr("Couldn't load your notifications."); });
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const [opening, setOpening] = React.useState("");
+  const open = (n) => {
+    if (n.notifId && !n.readAt) {
+      setRows(rs => (rs || []).map(x => x.notifId === n.notifId ? { ...x, readAt: "now" } : x));
+      NGGApi.member.markRead(n.notifId).then(onCounts).catch(() => {});
+    }
+    const ref = n.linkRef || "";
+    if (!ref) return;                     // nothing to follow: reading it was the point
+    setOpening(n.notifId);
+    NGGApi.member.community.post_get(ref)
+      .then(r => { setOpening(""); if (r.post) onOpenThread(r.post); else toast.error("That message is no longer there."); })
+      .catch(() => { setOpening(""); toast.error("Couldn't open that message."); });
+  };
+
+  const markAll = () => {
+    const unread = (rows || []).filter(n => !n.readAt);
+    if (!unread.length) return;
+    setRows(rs => (rs || []).map(x => ({ ...x, readAt: x.readAt || "now" })));
+    Promise.all(unread.map(n => NGGApi.member.markRead(n.notifId).catch(() => {}))).then(onCounts);
+  };
+
+  return (
+    <div className="cmm-screen" role="region" aria-label="Notifications">
+      <header className="cmm-head cmm-head-back">
+        <button className="cmm-icon-btn" onClick={onClose} aria-label="Back">{cmUiIcon("back", 22)}</button>
+        <h1 className="cmm-h1">Notifications</h1>
+        {rows && rows.some(n => !n.readAt) && (
+          <button className="cmm-head-act" onClick={markAll}>Mark all read</button>
+        )}
+      </header>
+      <div className="cmm-feed">
+        {rows === null && <CmSkeleton rows={4}/>}
+        {err && rows && rows.length === 0 && (
+          <CmEmpty icon="⚠" title="That didn't load" body={err}
+                   action={<button className="cmm-cta" onClick={load}>Try again</button>}/>
+        )}
+        {rows && rows.length === 0 && !err && (
+          <CmEmpty icon="🔔" title="Nothing yet"
+                   body="Mentions, replies and Genius Stars land here."/>
+        )}
+        {rows && rows.map(n => (
+          <button key={n.notifId} className={"cmm-notif" + (n.readAt ? "" : " is-new")} onClick={() => open(n)}
+                  aria-busy={opening === n.notifId}>
+            <span className="cmm-notif-t">{n.title || "Update"}</span>
+            {n.body && <span className="cmm-notif-b">{n.body}</span>}
+            <span className="cmm-notif-w">
+              {n.createdAt ? cmAgo(n.createdAt) : ""}{n.linkRef ? " · Open" : ""}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Text size ────────────────────────────────────────────────────────────
+   A real control, stored on the device and applied to the Community's own
+   root so it scales the type without touching the 44px tap targets — bigger
+   text must not mean a smaller button. */
+const CM_TEXT_SIZES = [
+  { id: "s",  label: "Small",   scale: 0.92 },
+  { id: "m",  label: "Default", scale: 1 },
+  { id: "l",  label: "Large",   scale: 1.12 },
+  { id: "xl", label: "Largest", scale: 1.25 },
+];
+const CM_TEXT_KEY = "ngg.cm.textsize";
+function cmApplyTextSize(id) {
+  const opt = CM_TEXT_SIZES.find(o => o.id === id) || CM_TEXT_SIZES[1];
+  try { document.documentElement.style.setProperty("--cm-text-scale", String(opt.scale)); } catch (_) {}
+  return opt.id;
+}
+function cmStoredTextSize() {
+  try { return localStorage.getItem(CM_TEXT_KEY) || "m"; } catch (_) { return "m"; }
+}
+function CmTextSize({ onClose }) {
+  const [size, setSize] = React.useState(cmStoredTextSize);
+  const pick = (id) => {
+    setSize(cmApplyTextSize(id));
+    try { localStorage.setItem(CM_TEXT_KEY, id); } catch (_) {}
+  };
+  return (
+    <div className="cmm-screen" role="region" aria-label="Accessibility and text size">
+      <header className="cmm-head cmm-head-back">
+        <button className="cmm-icon-btn" onClick={onClose} aria-label="Back">{cmUiIcon("back", 22)}</button>
+        <h1 className="cmm-h1">Text size</h1>
+      </header>
+      <div className="cmm-pad">
+        <p className="cmm-sub">Changes apply straight away, on this device only.</p>
+        <div className="cmm-size-list" role="radiogroup" aria-label="Text size">
+          {CM_TEXT_SIZES.map(o => (
+            <button key={o.id} role="radio" aria-checked={size === o.id}
+                    className={"cmm-size-row" + (size === o.id ? " is-on" : "")}
+                    onClick={() => pick(o.id)}>
+              <span className="cmm-size-l" style={{ fontSize: (15 * o.scale).toFixed(1) + "px" }}>{o.label}</span>
+              <span className="cmm-size-eg" style={{ fontSize: (15 * o.scale).toFixed(1) + "px" }}>
+                Practice makes progress.
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="cmm-sub" style={{ marginTop: 16 }}>
+          Buttons stay the same size on purpose — larger text should never mean a smaller target.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -1322,7 +1504,10 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
   const postsRef = React.useRef([]);
   const ch = channels.find(c => c.slug === slug) || { name: slug, slug };
   const mem = auth.member || {};
-  const staff = !!(posts || []).length && (posts || [])[0] && (posts || [])[0].canStar;
+  // The viewer's own capability, served once with the counts. Derived from
+  // the first post it vanished on an empty channel — exactly where a mentor
+  // most needs their tools.
+  const staff = !!counts.staff;
 
   React.useEffect(() => { postsRef.current = posts || []; }, [posts]);
 
@@ -1334,9 +1519,7 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
     NGGApi.member.community.members(slug)
       .then(r => setMembers(r.members || [])).catch(() => setMembers([]));
     const t = setTimeout(() => {
-      NGGApi.member.community.markRead(slug)
-        .then(() => NGGApi.member.community.today().then(onCounts).catch(() => {}))
-        .catch(() => {});
+      NGGApi.member.community.markRead(slug).then(() => onCounts()).catch(() => {});
     }, 1200);
     return () => clearTimeout(t);
   }, [slug]); // eslint-disable-line
@@ -1480,7 +1663,7 @@ function CmActionsSheetHost({ post, staff, onClose, onPatch, onRemove, onOpenThr
    Two actions on the card and seven in the sheet. 40px avatar, name, the
    mentor/you chips, time and centre, the body, a reaction summary, then React
    and N replies — both 44px, side by side. */
-function CmMobileMessage({ post, prev, me, onPatch, onRemove, onOpenThread, onLongPress, card, showChannel }) {
+function CmMobileMessage({ post, prev, me, onPatch, onRemove, onOpenThread, onLongPress, card, showChannel, onOpenChannel }) {
   const act = useCmActions(post, onPatch, onRemove);
   const [picker, setPicker] = React.useState(false);
   const timer = React.useRef(null);
@@ -1515,7 +1698,7 @@ function CmMobileMessage({ post, prev, me, onPatch, onRemove, onOpenThread, onLo
           <div className="cmm-msg-meta">
             <span className="cmm-msg-name">
               {post.author.name}
-              {post.canStar && <span className="cmm-tag is-mentor">mentor</span>}
+              {post.author.staff && <span className="cmm-tag is-mentor">mentor</span>}
               {post.author.isMe && <span className="cmm-tag is-you">you</span>}
             </span>
             <span className="cmm-msg-time">
@@ -1523,7 +1706,10 @@ function CmMobileMessage({ post, prev, me, onPatch, onRemove, onOpenThread, onLo
             </span>
           </div>
           {showChannel && post.channel && (
-            <span className="cm-card-chan">{post.channel.icon || "#"} {post.channel.name}</span>
+            onOpenChannel
+              ? <button className="cm-card-chan is-link" onClick={(e) => { e.stopPropagation(); onOpenChannel(post.channel.slug); }}
+                        aria-label={"Open " + post.channel.name}>{post.channel.icon || "#"} {post.channel.name}</button>
+              : <span className="cm-card-chan">{post.channel.icon || "#"} {post.channel.name}</span>
           )}
         </div>
       )}
@@ -1567,9 +1753,31 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
   const [account, setAccount] = React.useState(false);
   const [composer, setComposer] = React.useState(false);
   const [jump, setJump] = React.useState(false);
-  const [counts, setCounts] = React.useState({ unread: 0, mentions: 0, saved: 0 });
+  const [composeSeed, setComposeSeed] = React.useState(null);  // {cmd, body} from the jump sheet
+  const [counts, setCounts] = React.useState({ unread: 0, mentions: 0, saved: 0, staff: false });
+  const [todayFilter, setTodayFilter] = React.useState("all");
+  const [notifs, setNotifs] = React.useState(false);
+  const [a11y, setA11y] = React.useState(false);
+  const [jumpScope, setJumpScope] = React.useState("all");
   const [offline, setOffline] = React.useState(() => typeof navigator !== "undefined" && navigator.onLine === false);
   const mem = auth.member || {};
+
+  /* Two things that have to happen once, before anything else is drawn.
+     The stored text size, so a member who needs larger type never sees a frame
+     of the default; and a ?post= deep link, which is what "Copy link" produces
+     and what a notification email points at — it opened the community and then
+     did nothing at all with the id it was handed. */
+  React.useEffect(() => { cmApplyTextSize(cmStoredTextSize()); }, []);
+  React.useEffect(() => {
+    let pid = "";
+    try { pid = new URLSearchParams(location.search).get("post") || ""; } catch (_) {}
+    if (!pid) return;
+    let live = true;
+    NGGApi.member.community.post_get(pid)
+      .then(r => { if (live && r.post) setThread(r.post); })
+      .catch(() => { if (live) toast.error("That link didn't resolve to a message."); });
+    return () => { live = false; };
+  }, []);
 
   React.useEffect(() => {
     const on = () => setOffline(false), off = () => setOffline(true);
@@ -1579,7 +1787,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
 
   const refreshCounts = React.useCallback(() => {
     NGGApi.member.community.today()
-      .then(r => setCounts({ unread: r.unread || 0, mentions: r.mentions || 0, saved: r.saved || 0 }))
+      .then(r => setCounts({ unread: r.unread || 0, mentions: r.mentions || 0, saved: r.saved || 0, staff: !!r.staff }))
       .catch(() => {});
   }, []);
   React.useEffect(() => { refreshCounts(); }, [refreshCounts]);
@@ -1588,30 +1796,64 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
      gesture Back too, because on Android that is the button people actually
      press, and a sheet that ignores it navigates the whole app away instead. */
   const closeTop = React.useCallback(() => {
+    if (a11y) { setA11y(false); return true; }
+    if (notifs) { setNotifs(false); return true; }
     if (jump) { setJump(false); return true; }
     if (composer) { setComposer(false); return true; }
     if (account) { setAccount(false); return true; }
     if (thread) { setThread(null); return true; }
     if (channel) { setChannel(null); return true; }
     return false;
-  }, [jump, composer, account, thread, channel]);
+  }, [a11y, notifs, jump, composer, account, thread, channel]);
+
+  /* One history entry per open layer — kept in step, both ways.
+   *
+   * This pushed an entry every time the layer COUNT changed and never removed
+   * one, so closing a sheet with its own X left a phantom entry behind: the
+   * next Back press appeared to do nothing, and after a few opens and closes
+   * leaving the Community took five presses. The rule is symmetric now — going
+   * deeper pushes, coming back up in-app pops, and the pops we ask for
+   * ourselves are counted so the listener doesn't close a second layer on the
+   * way out. */
+  const owned = React.useRef(0);
+  const selfPops = React.useRef(0);
+  const depth = (a11y ? 1 : 0) + (notifs ? 1 : 0) + (jump ? 1 : 0) + (composer ? 1 : 0)
+              + (account ? 1 : 0) + (thread ? 1 : 0) + (channel ? 1 : 0);
 
   React.useEffect(() => {
-    const depth = (jump ? 1 : 0) + (composer ? 1 : 0) + (account ? 1 : 0) + (thread ? 1 : 0) + (channel ? 1 : 0);
-    if (!depth) return;
-    history.pushState({ cmm: depth }, "");
-    const onPop = () => { closeTop(); };
+    const onPop = () => {
+      if (selfPops.current > 0) { selfPops.current -= 1; return; }
+      if (owned.current > 0) owned.current -= 1;
+      closeTop();
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [jump, composer, account, thread, channel]); // eslint-disable-line
+  }, [closeTop]);
+
+  React.useEffect(() => {
+    if (depth > owned.current) {
+      for (let i = owned.current; i < depth; i++) history.pushState({ cmm: i + 1 }, "");
+      owned.current = depth;
+    } else if (depth < owned.current) {
+      const back = owned.current - depth;
+      owned.current = depth;
+      selfPops.current += back;
+      history.go(-back);
+    }
+  }, [depth]);
+
+  // Leaving the Community entirely should not strand our entries in the stack.
+  React.useEffect(() => () => {
+    if (owned.current > 0) { selfPops.current += owned.current; history.go(-owned.current); owned.current = 0; }
+  }, []);
 
   // The tab bar hides wherever the bundle says it does: in a thread, and over
   // any full-screen surface. A nav bar under a modal is a nav bar that lies.
-  const barHidden = !!thread || account;
+  const barHidden = !!thread || account || notifs || a11y;
 
   const compose = {
-    open: () => setComposer(true),
-    openJump: () => setJump(true),
+    open: () => { setComposeSeed(null); setComposer(true); },
+    openJump: () => { setJumpScope("all"); setJump(true); },
   };
 
   /* The FAB steps aside while you read downward.
@@ -1634,6 +1876,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
   }, []);
 
   const openChannel = (slug) => { setChannel(slug); setTab("channels"); };
+  const openToday = (f) => { setChannel(null); setThread(null); setTab("today"); setTodayFilter(f); };
 
   return (
     <div className="cmm" data-screen-label="Community">
@@ -1641,6 +1884,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
         {/* Base layer: whichever tab is selected. */}
         {!channel && tab === "today" && (
           <CmToday auth={auth} counts={counts} onCounts={refreshCounts}
+                   filter={todayFilter} setFilter={setTodayFilter}
                    onOpenAccount={() => setAccount(true)}
                    onOpenThread={setThread} onCompose={compose}
                    onOpenChannel={openChannel} offline={offline}/>
@@ -1664,7 +1908,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
           it sits teaches people not to trust it. */}
       {!barHidden && !thread && (tab === "today" || tab === "channels") && (
         <button className={"cmm-fab" + (fabHidden ? " is-away" : "")}
-                onClick={() => setComposer(true)} aria-label="Write a post"
+                onClick={() => { setComposeSeed(null); setComposer(true); }} aria-label="Write a post"
                 tabIndex={fabHidden ? -1 : 0}>
           {cmUiIcon("plus", 26)}
         </button>
@@ -1697,22 +1941,44 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
           <CmAccount auth={auth} counts={counts} setPage={setPage}
                      onClose={() => setAccount(false)}
                      onGo={(where) => {
+                       /* Every row lands somewhere real. Four of them used to
+                          fall through this switch and simply close the screen,
+                          which reads as a tap the app ignored. */
+                       if (where === "notifications") { setNotifs(true); return; }
+                       if (where === "a11y") { setA11y(true); return; }
                        setAccount(false);
-                       if (where === "saved") setTab("today");
-                       if (where === "matches") setTab("arcade");
+                       if (where === "saved") openToday("saved");
+                       else if (where === "mine") openToday("mine");
+                       else if (where === "people") { setJumpScope("people"); setJump(true); }
+                       else if (where === "matches") { setChannel(null); setTab("arcade"); }
                      }}/>
         </div>
       )}
       {composer && (
-        <CmSheet title="New post" onClose={() => setComposer(false)}>
+        <CmSheet title="New post" onClose={() => { setComposer(false); setComposeSeed(null); }}>
           <CmComposer channels={channels} active={channel || "commons"} me={mem.fullName}
-                      onPosted={() => { setComposer(false); refreshCounts(); reloadChannels(); }}/>
+                      seed={composeSeed}
+                      onPosted={() => { setComposer(false); setComposeSeed(null); refreshCounts(); reloadChannels(); }}/>
         </CmSheet>
       )}
       {jump && (
-        <CmJumpSheet channels={channels} onClose={() => setJump(false)}
+        <CmJumpSheet channels={channels} scope={jumpScope} setScope={setJumpScope}
+                     staff={!!counts.staff}
+                     onClose={() => { setJump(false); setJumpScope("all"); }}
                      onOpenChannel={openChannel}
-                     onCompose={() => { setJump(false); setComposer(true); }}/>
+                     onOpenThread={setThread}
+                     onOpenJournal={() => { setChannel(null); setTab("journal"); }}
+                     onCompose={(cmd, seed) => { setJump(false); setComposeSeed({ cmd: cmd || "", body: seed || "" }); setComposer(true); }}/>
+      )}
+      {notifs && (
+        <div className="cmm-over">
+          <CmNotifications onClose={() => setNotifs(false)}
+                           onOpenThread={(p) => { setNotifs(false); setAccount(false); setThread(p); }}
+                           onCounts={refreshCounts}/>
+        </div>
+      )}
+      {a11y && (
+        <div className="cmm-over"><CmTextSize onClose={() => setA11y(false)}/></div>
       )}
     </div>
   );
@@ -3091,7 +3357,7 @@ function cmWrapSel(ta, mark, setBody) {
   requestAnimationFrame(() => { try { ta.focus(); ta.selectionStart = s + mark.length; ta.selectionEnd = s + mark.length + sel.length; } catch (_) {} });
 }
 
-function CmComposer({ channels, active, me, onPosted, enterToSend }) {
+function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
   const [body, setBody] = React.useState("");
   const [media, setMedia] = React.useState(null); // {type,url,poster,bytes,duration}
   const [preview, setPreview] = React.useState(false);
@@ -3219,6 +3485,23 @@ function CmComposer({ channels, active, me, onPosted, enterToSend }) {
     else if (cmd === "shrug") setBody("¯\\_(ツ)_/¯ ");
     requestAnimationFrame(() => taRef.current && taRef.current.focus());
   };
+
+  /* Opened FROM the jump sheet: run the command, or start the message it
+     handed us. Runs once, after the draft restore above, so it wins — the
+     member asked for this in the last half second and a stale draft did not. */
+  const seeded = React.useRef(false);
+  React.useEffect(() => {
+    if (!seed || seeded.current) return;
+    seeded.current = true;
+    if (seed.cmd) runSlash(seed.cmd);
+    else if (seed.body) {
+      setBody(b => (b && !b.startsWith(seed.body) ? seed.body + b : seed.body));
+      requestAnimationFrame(() => {
+        const ta = taRef.current; if (!ta) return;
+        ta.focus(); try { ta.selectionStart = ta.selectionEnd = ta.value.length; } catch (_) {}
+      });
+    }
+  }, [seed]); // eslint-disable-line
 
   const pollAdd = () => setPoll(p => (p && p.length < 4 ? p.concat("") : p));
   const pollSet = (i, v) => setPoll(p => p.map((x, j) => j === i ? v : x));

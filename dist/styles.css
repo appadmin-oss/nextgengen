@@ -2513,7 +2513,36 @@ img { background-color: rgba(12,20,50,0.04); }
 .cmm-jump-mono { font-family: var(--c-font-mono); font-size: 13.5px; font-weight: 700; color: var(--c-blue); }
 .cmm-jump-sub { font-family: var(--c-font-mono); font-size: 11px; color: var(--c-muted); }
 .cmm-jump-note { padding: 18px 4px; font-size: 13.5px; color: var(--c-muted); }
+.cmm-jump-clear { flex: none; width: var(--c-tap); height: var(--c-tap); margin: -8px -10px -8px 0;
+  border: 0; background: none; color: var(--c-muted); font-size: 20px; line-height: 1; cursor: pointer; }
 .cmm-mark { background: var(--c-accent-tint); color: var(--c-accent-ink); border-radius: 3px; padding: 0 2px; }
+
+/* ── Header action (a text button on the right of a back header) ── */
+.cmm-head-act { margin-left: auto; min-height: var(--c-tap); padding: 0 4px; border: 0;
+  background: none; font-size: 13.5px; font-weight: 700; color: var(--c-blue); cursor: pointer; }
+
+/* ── Notifications ──
+   Unread carries a rule down its leading edge rather than a filled row: a list
+   where most rows are tinted is a list with no signal left in the tint. */
+.cmm-notif { display: flex; flex-direction: column; gap: 3px; width: 100%;
+  padding: 13px var(--c-gutter); border: 0; border-bottom: 1px solid var(--c-divider-soft);
+  border-left: 3px solid transparent; background: none; text-align: left; cursor: pointer; }
+.cmm-notif.is-new { border-left-color: var(--c-blue); }
+.cmm-notif-t { font-size: 14.5px; font-weight: 600; color: var(--c-ink); }
+.cmm-notif.is-new .cmm-notif-t { font-weight: 800; }
+.cmm-notif-b { font-size: 13.5px; color: var(--c-muted); }
+.cmm-notif-w { font-family: var(--c-font-mono); font-size: 11px; color: var(--c-faint); }
+
+/* ── Text size ── */
+.cmm-size-list { display: flex; flex-direction: column; border-radius: var(--c-r-card);
+  border: 1px solid var(--c-border); background: var(--c-card); overflow: hidden; margin-top: 12px; }
+.cmm-size-row { display: flex; flex-direction: column; gap: 2px; width: 100%; min-height: var(--c-cta);
+  padding: 12px 14px; border: 0; border-bottom: 1px solid var(--c-divider-soft);
+  background: none; text-align: left; cursor: pointer; color: var(--c-ink); }
+.cmm-size-row:last-child { border-bottom: 0; }
+.cmm-size-row.is-on { background: var(--c-blue-tint); box-shadow: inset 3px 0 0 var(--c-blue); }
+.cmm-size-l { font-weight: 700; }
+.cmm-size-eg { color: var(--c-muted); }
 
 /* ── Account ── */
 .cmm-account { padding-bottom: 40px; }
@@ -2584,7 +2613,15 @@ img { background-color: rgba(12,20,50,0.04); }
    loud as the author's name; the feed is mostly one or two channels and this
    label is orientation, not news. */
 .cm-card-chan { flex: none; font-family: var(--c-font-mono); font-size: 10.5px; font-weight: 600;
-  letter-spacing: .04em; color: var(--c-faint); background: none; padding: 0; }
+  letter-spacing: .04em; color: var(--c-faint); background: none; padding: 0; border: 0; }
+/* The caption is also the way INTO the channel it names — the one place in the
+   feed where "where is this from" and "take me there" are the same question.
+   It stays a caption: the tap area is grown underneath it rather than the label
+   being grown into a button. */
+.cm-card-chan.is-link { position: relative; cursor: pointer; color: var(--c-muted); }
+.cm-card-chan.is-link::after { content: ""; position: absolute; top: 50%; right: 0;
+  width: max(100%, 44px); height: var(--c-tap); transform: translateY(-50%); }
+.cm-card-chan.is-link:hover, .cm-card-chan.is-link:focus-visible { color: var(--c-blue); }
 .cm-card-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .cm-card-reacts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cm-card-reply { display: inline-flex; align-items: center; gap: 6px; min-height: var(--c-tap);
@@ -3453,3 +3490,17 @@ img { background-color: rgba(12,20,50,0.04); }
   background: #fff; border: 1px solid var(--cream-200, #e8dec6); }
 .mtg-watching p { margin: 0; font-size: 13.5px; color: var(--ink-700, #3b4459); }
 .mtl-opp-c { font-style: normal; font-weight: 500; color: var(--ink-500); font-size: 12px; }
+
+/* ════════════════════════════════════════════════════════════════
+   TEXT SIZE — last, on purpose
+   ════════════════════════════════════════════════════════════════ */
+/* Member-chosen text size (Account → Accessibility & text size).
+   Applied to the READING surfaces — the message body, a channel's preview
+   line, a notification, a search result — and deliberately not to the shell.
+   `zoom` or a root font-size would have scaled the tab bar and the tap targets
+   with it, and it is the reading that is hard, not the tapping. */
+.cmm-msg-body { font-size: calc(15.5px * var(--cm-text-scale, 1)); }
+.cmm-ch-prev  { font-size: calc(13px   * var(--cm-text-scale, 1)); }
+.cmm-notif-t, .cmm-jump-name { font-size: calc(14.5px * var(--cm-text-scale, 1)); }
+.cmm-notif-b  { font-size: calc(13.5px * var(--cm-text-scale, 1)); }
+.cmm-acc-row  { font-size: calc(15px   * var(--cm-text-scale, 1)); }

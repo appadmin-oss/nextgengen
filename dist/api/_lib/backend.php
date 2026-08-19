@@ -402,6 +402,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.centre'           => 'public_centre_page',
             'community.channels'      => 'community_channels',
             'community.feed'          => 'community_feed',
+            'community.post.get'      => 'community_post_get',
             'community.post'          => 'community_post_create',
             'community.react'         => 'community_react',
             'community.comments'      => 'community_comments',

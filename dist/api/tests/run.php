@@ -6895,6 +6895,73 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     })());
     chk('community: staff can toggle the star back off', backend_dispatch('community.star', ['memberId' => 'NGG-2025-0099', 'postId' => $pid])['stars'] === 0);
 
+    /* ── The Mentions feed and the mention NOTIFIER agree ──────────────────
+       They were two different rules: SQL matched space-delimited handles while
+       community_mentions() (which decides who is told) matches a regex. So
+       "@ada-n, look at this?" notified Ada and was then missing from her
+       Mentions — told about a message she could not find. */
+    // Fresh authors: community_spam_check refuses two posts from one member
+    // inside 15 seconds, which a test run is comfortably inside.
+    db_insert('members', ['memberId' => 'CM-F', 'fullName' => 'Femi Bello', 'email' => 'f@ex.co', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'CM-G', 'fullName' => 'Gozie Nwosu', 'email' => 'g@ex.co', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('community: punctuation after a handle still notifies', (function () {
+        backend_dispatch('community.post', ['memberId' => 'CM-F', 'data' => ['channel' => 'commons', 'body' => 'Hey @ada-n, can you look at this?'], 'ip' => '1.1.1.1']);
+        return (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'CM-A' AND kind = 'community.mention'")['c'] ?? 0) === 2;
+    })());
+    chk('community: and that same post appears in Mentions', (function () {
+        $f = backend_dispatch('community.feed', ['memberId' => 'CM-A', 'channel' => 'mentions']);
+        foreach ($f['posts'] as $p) if (strpos($p['body'], 'can you look at this?') !== false) return true;
+        return false;
+    })());
+    chk('community: a LONGER handle does not match a shorter one', (function () {
+        // @ada-njoku must never land in @ada-n's Mentions. The SQL LIKE catches
+        // it; community_mentions() is what throws it back.
+        backend_dispatch('community.post', ['memberId' => 'CM-G', 'data' => ['channel' => 'commons', 'body' => 'Different person: @ada-njoku here'], 'ip' => '1.1.1.1']);
+        $f = backend_dispatch('community.feed', ['memberId' => 'CM-A', 'channel' => 'mentions']);
+        foreach ($f['posts'] as $p) if (strpos($p['body'], 'ada-njoku') !== false) return false;
+        return true;
+    })());
+    chk('community: the Mentions chip counts what the filter shows', (function () {
+        $c = backend_dispatch('community.today', ['memberId' => 'CM-A']);
+        $f = backend_dispatch('community.feed', ['memberId' => 'CM-A', 'channel' => 'mentions']);
+        return $c['ok'] && $c['mentions'] === count($f['posts']);
+    })());
+    chk('community: today reports the viewer\'s own staff capability', (function () {
+        return backend_dispatch('community.today', ['memberId' => 'NGG-2025-0099'])['staff'] === true
+            && backend_dispatch('community.today', ['memberId' => 'CM-A'])['staff'] === false;
+    })());
+
+    /* `author.staff` is the AUTHOR's role; `canStar` is the VIEWER's power.
+       The client read the second as the first, so every avatar in the feed went
+       mentor-green the moment a mentor was the one reading. */
+    chk('community: author.staff describes the author, not the reader', (function () use ($pid) {
+        $f = backend_dispatch('community.feed', ['memberId' => 'NGG-2025-0099', 'channel' => 'commons']);
+        foreach ($f['posts'] as $p) if ($p['postId'] === $pid) return $p['author']['staff'] === false && $p['canStar'] === true;
+        return false;
+    })());
+
+    // "Your posts & replies" — a real feed, including what is still pending.
+    chk('community: the `mine` feed returns only the viewer\'s own posts', (function () {
+        $f = backend_dispatch('community.feed', ['memberId' => 'CM-D', 'channel' => 'mine']);
+        if (!$f['ok'] || !count($f['posts'])) return false;
+        foreach ($f['posts'] as $p) if (!$p['author']['isMe']) return false;
+        return true;
+    })());
+
+    /* One post by id — what a shared link and a notification resolve to.
+       There was no way to ask for a single post, so "Copy link" produced a url
+       that opened the community and did nothing with the id in it. */
+    chk('community: a single post resolves by id', (function () use ($pid) {
+        $r = backend_dispatch('community.post.get', ['memberId' => 'CM-A', 'postId' => $pid]);
+        return $r['ok'] && $r['post']['postId'] === $pid;
+    })());
+    chk('community: an unknown post id is not found', backend_dispatch('community.post.get', ['memberId' => 'CM-A', 'postId' => 'CP-NOPE'])['error'] === 'not_found');
+    chk('community: a mention notification carries the post it is about', (function () {
+        $n = db_row("SELECT linkRef FROM notifications WHERE memberId = 'CM-A' AND kind = 'community.mention' ORDER BY id DESC LIMIT 1");
+        if (!$n || (string)$n['linkRef'] === '') return false;
+        return backend_dispatch('community.post.get', ['memberId' => 'CM-A', 'postId' => (string)$n['linkRef']])['ok'] === true;
+    })());
+
     // Admin-settable channel rules round-trip.
     $up = backend_dispatch('admin.community.channel.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Robotics Crew', 'rules' => "Be kind.\nShip weekly."]]);
     chk('community: admin can save channel rules', $up['ok'] && $up['channelId']);

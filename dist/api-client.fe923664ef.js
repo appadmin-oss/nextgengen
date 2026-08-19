@@ -578,6 +578,8 @@
         search:   (q, channel) => request('/member/community.php' + qs({ view: 'search', q, channel: channel || 'all' })),
         members:  (channel) => request('/member/community.php' + qs({ view: 'members', channel })),
         markRead: (channel) => request('/member/community.php', { body: { action: 'markRead', channel } }),
+        // One post by id — what a shared link or a notification resolves to.
+        post_get: (postId) => request('/member/community.php' + qs({ view: 'post', postId })),
         // Filter-chip counts for the Today screen (unread / mentions / saved).
         today:    () => request('/member/community.php' + qs({ view: 'today' })),
       },

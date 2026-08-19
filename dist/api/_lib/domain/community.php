@@ -315,13 +315,16 @@ function community_screen(string $text): array {
 
 /** Drop a notification for a member (skips self-notifications). Members with an
  *  email on file also get an email (students have none → in-app only). */
-function community_notify(string $memberId, string $actorId, string $kind, string $title, string $body, bool $email = true): void {
+function community_notify(string $memberId, string $actorId, string $kind, string $title, string $body, bool $email = true, string $ref = ''): void {
     if ($memberId === '' || $memberId === $actorId) return;
     // Recipients may be full members OR summer students (the community serves both).
     $member = db_row("SELECT memberId, fullName, email FROM members WHERE memberId = ? LIMIT 1", [$memberId]);
     if (!$member && !db_row("SELECT studentId FROM summer_students WHERE studentId = ? LIMIT 1", [$memberId])) return;
     db_insert('notifications', ['notifId' => 'NT-' . strtoupper(rand_hex(6)), 'memberId' => $memberId, 'kind' => $kind,
-        'title' => mb_substr($title, 0, 160), 'body' => mb_substr($body, 0, 400), 'linkPage' => 'community', 'createdAt' => now_iso()]);
+        'title' => mb_substr($title, 0, 160), 'body' => mb_substr($body, 0, 400), 'linkPage' => 'community',
+        // The post this is ABOUT, so the member can be taken to it rather than
+        // told that something happened somewhere in the feed.
+        'linkRef' => $ref, 'createdAt' => now_iso()]);
     if ($email && $member && !empty($member['email'])) {
         community_send_notify_email((string)$member['email'], (string)($member['fullName'] ?? ''), $title, $body);
     }
@@ -374,10 +377,15 @@ function community_resolve_handle(string $handle): array {
 /** Is this actor a mentor/admin (allowed to @all / @channel)? Students and
  *  plain members can only mention individuals. */
 function community_actor_is_staff(string $actorId): bool {
+    // Memoised: post shaping asks this once per row, and a feed page is
+    // usually a handful of authors repeated. One query each, not one per post.
+    static $seen = [];
+    if ($actorId === '') return false;
+    if (isset($seen[$actorId])) return $seen[$actorId];
     $m = db_row("SELECT role FROM members WHERE memberId = ? LIMIT 1", [$actorId]);
-    if (!$m) return false;
+    if (!$m) return $seen[$actorId] = false;
     $role = strtolower((string)$m['role']);
-    return $role !== 'member' && ($role === 'mentor' || $role === 'staff' || $role === 'coordinator' || is_admin_role($role));
+    return $seen[$actorId] = ($role !== 'member' && ($role === 'mentor' || $role === 'staff' || $role === 'coordinator' || is_admin_role($role)));
 }
 
 /**
@@ -426,6 +434,12 @@ function community_screen_video(string $url): string {
 function community_mentions(string $body): array {
     if (!preg_match_all('/@([a-z0-9][a-z0-9._-]{1,30})/i', $body, $m)) return [];
     return array_values(array_unique(array_map('strtolower', $m[1])));
+}
+
+/** Keep only the post rows that really mention $handle (see community_feed). */
+function community_filter_mentions(array $rows, string $handle): array {
+    $handle = strtolower($handle);
+    return array_values(array_filter($rows, fn($r) => in_array($handle, community_mentions((string)($r['body'] ?? '')), true)));
 }
 
 /** Autocomplete for @mentions — students (by handle) + members (by derived
@@ -493,17 +507,24 @@ function community_today_counts(array $p): array {
     $handle = community_handle_for($viewer);
     $mentions = 0;
     if ($handle !== '') {
-        $mentions = (int)(db_row(
-            "SELECT COUNT(*) c FROM community_posts cp
-              WHERE cp.status = 'published' AND cp.authorId <> ?
-                AND (LOWER(cp.body) LIKE ? OR LOWER(cp.body) LIKE ? OR LOWER(cp.body) LIKE ? OR LOWER(cp.body) LIKE ?)",
-            [$viewer, '@' . $handle, '@' . $handle . ' %', '% @' . $handle, '% @' . $handle . ' %'])['c'] ?? 0);
+        /* Counted by the SAME rule community_feed() filters by. A chip that
+         * says "Mentions 4" opening a list of 2 is worse than no chip: the
+         * LIKE is only the net, community_filter_mentions() is the answer.
+         * Capped — the chip is a nudge, not an inbox total. */
+        $mentions = count(community_filter_mentions(db_all(
+            "SELECT cp.body FROM community_posts cp
+              WHERE cp.status = 'published' AND cp.authorId <> ? AND LOWER(cp.body) LIKE ?
+              ORDER BY cp.createdAt DESC LIMIT 200",
+            [$viewer, '%@' . $handle . '%']), $handle));
     }
 
     $saved = (int)(db_row("SELECT COUNT(*) c FROM community_bookmarks WHERE memberId = ?", [$viewer])['c'] ?? 0);
 
+    /* `staff` is the VIEWER's capability, sent once with the counts. The
+     * client was inferring it from the first post in whatever list happened to
+     * be on screen, so a mentor lost their mentor tools on an empty channel. */
     return ['ok' => true, 'unread' => $unread, 'mentions' => $mentions, 'saved' => $saved,
-            'handle' => $handle];
+            'staff' => community_actor_is_staff($viewer), 'handle' => $handle];
 }
 
 /* ── Posts ────────────────────────────────────────────────────────────── */
@@ -530,7 +551,15 @@ function community_post_shape(array $row, string $viewerId): array {
     return [
         'postId' => $pid, 'kind' => $kind, 'poll' => $poll,
         'channel' => ['slug' => (string)($ch['slug'] ?? ''), 'name' => (string)($ch['name'] ?? 'Channel'), 'color' => (string)($ch['color'] ?? '#3b5bdb'), 'icon' => (string)($ch['icon'] ?? '')],
-        'author' => ['name' => (string)$row['authorName'], 'initial' => '', 'centre' => (string)$row['authorCentre'], 'isMe' => $isMe, 'photo' => community_photo_for((string)$row['authorId'])],
+        /* `staff` belongs to the AUTHOR; `canStar` below belongs to the VIEWER.
+         * They were being conflated on the client, which turned every message
+         * green and gave every one of them a `mentor` chip the moment a mentor
+         * was the one reading — inverting the single signal the design leans on
+         * hardest ("is a mentor in this thread"), for exactly the people who
+         * rely on it. Two different questions, so two different fields. */
+        'author' => ['name' => (string)$row['authorName'], 'initial' => '', 'centre' => (string)$row['authorCentre'],
+                     'isMe' => $isMe, 'staff' => community_actor_is_staff((string)$row['authorId']),
+                     'photo' => community_photo_for((string)$row['authorId'])],
         'body' => (string)$row['body'],
         'mediaType' => (string)$row['mediaType'], 'mediaUrl' => (string)$row['mediaUrl'], 'mediaPoster' => (string)$row['mediaPoster'], 'altText' => (string)$row['altText'],
         /* Format is served from the record, falling back to the url only for
@@ -554,6 +583,27 @@ function community_status_note(string $status): string {
     return '';
 }
 
+/**
+ * One post by id.
+ *
+ * Every deep link into the community — a notification about a mention, the
+ * "Copy link" URL a member pastes to a friend — resolves to a single post, and
+ * there was no way to ask for one: the client could fetch a feed page and hope
+ * the post was on it. Published posts are readable by any signed-in member;
+ * anything else only by its author, which is the same rule the feed applies.
+ */
+function community_post_get(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    $pid = (string)($p['postId'] ?? '');
+    if ($pid === '') return ['ok' => false, 'error' => 'missing_post'];
+    $row = db_row("SELECT * FROM community_posts WHERE postId = ? LIMIT 1", [$pid]);
+    if (!$row) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$row['status'] !== 'published' && (string)$row['authorId'] !== $viewer) {
+        return ['ok' => false, 'error' => 'not_found'];
+    }
+    return ['ok' => true, 'post' => community_post_shape($row, $viewer)];
+}
+
 /** The feed. channel: slug | 'all' | 'bookmarks'; sort: latest | trending. */
 function community_feed(array $p): array {
     community_ensure_channels();
@@ -565,6 +615,7 @@ function community_feed(array $p): array {
 
     $where = ["(cp.status = 'published'" . ($viewer !== '' ? " OR cp.authorId = ?" : "") . ")"];
     $args = $viewer !== '' ? [$viewer] : [];
+    $mentionFilter = '';   // set by the `mentions` branch; applied after the read
     if ($channel === 'bookmarks') {
         $where[] = "cp.postId IN (SELECT postId FROM community_bookmarks WHERE memberId = ?)";
         $args[] = $viewer;
@@ -579,19 +630,28 @@ function community_feed(array $p): array {
         $where[] = "cp.authorId <> ? AND cp.createdAt > COALESCE("
                  . "(SELECT r.lastReadAt FROM community_reads r WHERE r.memberId = ? AND r.channelId = cp.channelId), '')";
         $args[] = $viewer; $args[] = $viewer;
+    } elseif ($channel === 'mine') {
+        /* Everything this member wrote, including what is still awaiting a
+         * mentor. "Your posts & replies" that hides the post you are anxious
+         * about is the one view where omitting a row is worse than showing a
+         * pending badge. */
+        $where[] = "cp.authorId = ?";
+        $args[] = $viewer;
     } elseif ($channel === 'mentions') {
-        /* Posts that name this member. The handle is matched with word-ish
-         * boundaries so @ada does not light up for @adaeze — being notified for
-         * somebody else's name is the fastest way to lose a reader's attention
-         * for the notifications that are theirs. */
+        /* Posts that name this member — by the SAME rule the notifier uses.
+         *
+         * This matched space-delimited LIKE patterns while community_mentions()
+         * (which decides who gets notified) matches a regex. So "@ada, can you
+         * look at this?" notified Ada and then did not appear in her Mentions:
+         * she was told about a message she could not then find. One definition
+         * now — SQL narrows the rows, community_mentions() decides, so the two
+         * cannot drift again. */
         $handle = community_handle_for($viewer);
         if ($handle === '') return ['ok' => true, 'posts' => [], 'hasMore' => false];
-        $where[] = "cp.authorId <> ? AND (LOWER(cp.body) LIKE ? OR LOWER(cp.body) LIKE ? OR LOWER(cp.body) LIKE ? OR LOWER(cp.body) LIKE ?)";
+        $where[] = "cp.authorId <> ? AND LOWER(cp.body) LIKE ?";
         $args[] = $viewer;
-        $args[] = '@' . $handle;              // the whole body is the mention
-        $args[] = '@' . $handle . ' %';       // at the start
-        $args[] = '% @' . $handle;            // at the end
-        $args[] = '% @' . $handle . ' %';     // in the middle
+        $args[] = '%@' . $handle . '%';
+        $mentionFilter = $handle;
     } elseif ($channel !== 'all' && $channel !== '') {
         $ch = db_row("SELECT channelId FROM community_channels WHERE slug = ? LIMIT 1", [$channel]);
         if (!$ch) return ['ok' => true, 'posts' => [], 'hasMore' => false];
@@ -606,8 +666,18 @@ function community_feed(array $p): array {
         $rows = db_all("SELECT cp.*, (SELECT COUNT(*) FROM community_reactions r WHERE r.postId = cp.postId) rc,
                         (SELECT COUNT(*) FROM community_comments c WHERE c.postId = cp.postId AND c.status='published') cc
                         FROM community_posts cp WHERE $whereSql ORDER BY cp.createdAt DESC LIMIT 200", $args);
+        if ($mentionFilter !== '') $rows = community_filter_mentions($rows, $mentionFilter);
         usort($rows, fn($a, $b) => (((int)$b['rc'] + (int)$b['cc'] * 2)) <=> (((int)$a['rc'] + (int)$a['cc'] * 2)));
         $slice = array_slice($rows, $page * $limit, $limit + 1);
+    } elseif ($mentionFilter !== '') {
+        /* The LIKE above is a NET, not the answer: it also catches "@adaeze"
+         * when the viewer is "@ada". community_mentions() — the same function
+         * the notifier uses — decides which of those rows really name this
+         * member, so a post can never be notified about and then be missing
+         * from Mentions. Because the rejects are only known after the read,
+         * pagination has to happen after the filter, over a window. */
+        $rows = db_all("SELECT cp.* FROM community_posts cp WHERE $whereSql ORDER BY cp.pinned DESC, cp.createdAt DESC LIMIT 400", $args);
+        $slice = array_slice(community_filter_mentions($rows, $mentionFilter), $page * $limit, $limit + 1);
     } else {
         $slice = db_all("SELECT cp.* FROM community_posts cp WHERE $whereSql ORDER BY cp.pinned DESC, cp.createdAt DESC LIMIT ? OFFSET ?",
             array_merge($args, [$limit + 1, $page * $limit]));
@@ -901,25 +971,25 @@ function community_notify_mentions(string $body, string $actorId, string $actorN
         if (in_array($h, ['all', 'everyone', 'channel', 'here'], true)) continue;
         foreach (community_resolve_handle($h) as $r) {
             if (isset($done[$r['id']])) continue; $done[$r['id']] = 1;
-            community_notify($r['id'], $actorId, 'community.mention', $actorName . ' mentioned you', mb_substr($body, 0, 160));
+            community_notify($r['id'], $actorId, 'community.mention', $actorName . ' mentioned you', mb_substr($body, 0, 160), true, $postId);
         }
     }
     // @all / @channel — mentors & admins only, and only within a real channel.
     if ($tagAll && $channelId !== '' && community_actor_is_staff($actorId)) {
-        community_notify_channel($channelId, $actorId, $actorName, mb_substr($body, 0, 160), $done);
+        community_notify_channel($channelId, $actorId, $actorName, mb_substr($body, 0, 160), $done, $postId);
     }
 }
 
 /** Tag-all: notify everyone who has posted in a channel (excluding the actor
  *  and anyone already individually notified). Members with email also get an
  *  email; capped so a single post can't fan out without bound. */
-function community_notify_channel(string $channelId, string $actorId, string $actorName, string $body, array $skip = []): void {
+function community_notify_channel(string $channelId, string $actorId, string $actorName, string $body, array $skip = [], string $ref = ''): void {
     $rows = db_all("SELECT DISTINCT authorId FROM community_posts WHERE channelId = ? AND status = 'published' AND authorId <> ? LIMIT 500", [$channelId, $actorId]);
     $n = 0;
     foreach ($rows as $r) {
         $id = (string)$r['authorId'];
         if ($id === '' || isset($skip[$id])) continue;
-        community_notify($id, $actorId, 'community.tagall', $actorName . ' tagged the channel', $body);
+        community_notify($id, $actorId, 'community.tagall', $actorName . ' tagged the channel', $body, true, $ref);
         if (++$n >= 500) break;
     }
     audit('community.tagall', $actorId, $channelId, ['recipients' => $n], '');
@@ -991,7 +1061,7 @@ function community_star(array $p): array {
         db_insert('community_stars', ['postId' => $pid, 'memberId' => $viewer, 'createdAt' => now_iso()]);
         $starred = true;
         $actor = community_author($viewer);
-        community_notify((string)$post['authorId'], $viewer, 'community.star', '⭐ ' . $actor['name'] . ' gave your post a Genius Star', 'A mentor recognised your work in the community.');
+        community_notify((string)$post['authorId'], $viewer, 'community.star', '⭐ ' . $actor['name'] . ' gave your post a Genius Star', 'A mentor recognised your work in the community.', true, (string)$post['postId']);
         audit('community.star', $viewer, $pid, [], (string)($p['ip'] ?? ''));
     }
     $stars = (int)(db_row("SELECT COUNT(*) c FROM community_stars WHERE postId = ?", [$pid])['c'] ?? 0);
@@ -1041,7 +1111,7 @@ function community_comment_create(array $p): array {
     audit('community.comment', $viewer, $id, ['postId' => $pid, 'status' => $status], (string)($p['ip'] ?? ''));
     if ($status === 'published') {
         $post = db_row("SELECT authorId, channelId FROM community_posts WHERE postId = ? LIMIT 1", [$pid]);
-        if ($post) community_notify((string)$post['authorId'], $viewer, 'community.reply', $author['name'] . ' replied to your post', mb_substr($body, 0, 120));
+        if ($post) community_notify((string)$post['authorId'], $viewer, 'community.reply', $author['name'] . ' replied to your post', mb_substr($body, 0, 120), true, (string)$post['postId']);
         // @mentions inside a reply notify (and email) too.
         community_notify_mentions($body, $viewer, $author['name'], $pid, $post ? (string)$post['channelId'] : '');
     }
@@ -1304,7 +1374,7 @@ function admin_community_moderate(array $p): array {
         db_update('community_posts', ['pinned' => $act === 'pin' ? 1 : 0, 'updatedAt' => $now], ['postId' => $pid]);
     } elseif ($act === 'feature' || $act === 'unfeature') {
         db_update('community_posts', ['featured' => $act === 'feature' ? 1 : 0, 'updatedAt' => $now], ['postId' => $pid]);
-        if ($act === 'feature') { $o = db_row("SELECT authorId FROM community_posts WHERE postId = ?", [$pid]); if ($o) community_notify((string)$o['authorId'], $by, 'community.featured', 'Your post is on the public Showcase ✨', 'A mentor featured your post — it now shines on the public NGG Showcase.'); }
+        if ($act === 'feature') { $o = db_row("SELECT authorId FROM community_posts WHERE postId = ?", [$pid]); if ($o) community_notify((string)$o['authorId'], $by, 'community.featured', 'Your post is on the public Showcase ✨', 'A mentor featured your post — it now shines on the public NGG Showcase.', true, $pid); }
     } else {
         $map = ['approve' => 'published', 'hide' => 'hidden', 'remove' => 'removed'];
         if (!isset($map[$act])) return ['ok' => false, 'error' => 'bad_action'];
