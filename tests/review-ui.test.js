@@ -79,7 +79,7 @@ const LADDER = {
         { rank: 3, move: 0,  playerId: 'P3', name: 'Chidi O.',  centre: 'Egbeda', kind: 'volunteer',
           score: 5.5, played: 8, streak: 2, status: 'active', isMe: false, photo: '' },
       ],
-      me: { rank: 11, move: 3, playerId: 'ME', name: 'You', centre: 'Egbeda', kind: 'member',
+      me: { rank: 11, move: 3, playerId: 'ME', name: 'Temiloluwa A.', centre: 'Egbeda', kind: 'member',
             score: 3, played: 8, streak: 0, status: 'active', isMe: true, photo: '' } },
     { tournament: { tournamentId: 'TRN-COLD', name: 'Term Swiss', formatName: 'Swiss',
                     timeControl: '1day', status: 'running', round: 2, totalRounds: 7 },
@@ -191,7 +191,8 @@ const LADDER = {
     chk('…with a real control over it, not just a picture',
         await scrub.count() === 1 && (await scrub.getAttribute('aria-label') || '').toLowerCase().includes('move'));
     chk('…and the graph itself describes what it shows',
-        (await page.locator('.rev-graph svg').getAttribute('aria-label') || '').toLowerCase().includes('white is better'));
+        (await page.locator('.rev-graph svg').getAttribute('aria-label') || '').toLowerCase()
+          .includes("white's advantage"));
 
     chk('every move is listed', await page.locator('.rev-move').count() === 4);
     chk('…and a bad one is named in words, not only in colour', await page.evaluate(() => {

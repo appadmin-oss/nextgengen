@@ -3338,7 +3338,14 @@ function CmLadderRow({ e, top }) {
         {e.photo ? <img src={cmOpt(e.photo, 64)} alt="" loading="lazy"/> : cmInitial(e.name)}
       </span>
       <span className="lad-who">
-        <span className="lad-name">{e.name}{e.isMe ? " · you" : ""}</span>
+        {/* A marker rather than a suffix on the name. The highlighted row says
+            "this is you" to somebody who can see it and to nobody else, so the
+            word has to be there — but appended to the name it read "Adaeze N.
+            · you", and on the fixture where the name IS "You", "You · you". */}
+        <span className="lad-name">
+          {e.name}
+          {e.isMe && <span className="lad-you">you</span>}
+        </span>
         <span className="lad-sub">
           {e.centre || "—"}
           {e.streak >= 2 ? <span className="lad-streak"> · {e.streak} in a row</span> : null}
@@ -5265,14 +5272,26 @@ function cmCp(score) {
 }
 
 /* How long the engine gets per position. A review nobody waits for is a review
-   nobody reads, so the default is the one that keeps a sixty-move game under
-   about half a minute; "careful" is there for a coach going through a game
-   with a child, where the wait is the lesson. */
+   nobody reads, so the default is the one that keeps an ordinary club game
+   under about half a minute; "careful" is there for a coach going through a
+   game with a child, where the wait is the lesson. */
 const CM_REVIEW_SPEEDS = [
-  { id: "quick",   label: "Quick",   ms: 120, sub: "about 15 seconds" },
-  { id: "normal",  label: "Normal",  ms: 300, sub: "about 40 seconds" },
-  { id: "careful", label: "Careful", ms: 800, sub: "a couple of minutes" },
+  { id: "quick",   label: "Quick",   ms: 120 },
+  { id: "normal",  label: "Normal",  ms: 300 },
+  { id: "careful", label: "Careful", ms: 800 },
 ];
+
+/* The wait, worked out from THIS game rather than written down.
+   A fixed "about 40 seconds" printed beside a seven-move game is a promise the
+   screen breaks by four seconds in the member's favour — which still teaches
+   them the estimates are decoration. */
+function cmReviewWait(positions, ms) {
+  const secs = Math.round(positions * ms / 1000);
+  if (secs < 10) return "a few seconds";
+  if (secs < 90) return "about " + (Math.round(secs / 5) * 5) + " seconds";
+  const mins = secs / 60;
+  return "about " + (mins < 1.75 ? "a minute and a half" : Math.round(mins) + " minutes");
+}
 
 function CmReviewGraph({ evals, at, onPick, plies }) {
   /* An area chart, white's advantage above the line and black's below. Drawn
@@ -5289,15 +5308,21 @@ function CmReviewGraph({ evals, at, onPick, plies }) {
   };
   let d = "M 0 " + (H / 2);
   for (let i = 0; i <= plies; i++) { const [x, y] = pt(i); d += " L " + x.toFixed(2) + " " + y.toFixed(2); }
-  const area = d + " L " + W + " " + (H / 2) + " Z";
+  /* Filled from the line to the TOP, over a dark ground: the pale area is
+     White's share of the position and the dark remainder is Black's, which is
+     how every chess site draws this and the only version that can be read
+     without a legend. An earlier draft shaded from the line DOWN over a
+     two-tone background, which made the bottom half permanently dark — so a
+     dead-level game looked like Black was winning it from move one. */
+  const area = d + " L " + W + " 0 L 0 0 Z";
   const cursor = (at / n) * W;
   return (
     <div className="rev-graph">
       <svg viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" role="img"
-           aria-label={"Evaluation across " + plies + " moves. The line above the middle means White is better, below means Black."}>
-        <rect x="0" y="0" width={W} height={H / 2} className="rev-g-w"/>
-        <rect x="0" y={H / 2} width={W} height={H / 2} className="rev-g-b"/>
-        <path d={area} className="rev-g-area"/>
+           aria-label={"How the game stood after each of " + plies + " moves. The pale area is White's advantage; where it drops below halfway, Black was better."}>
+        <rect x="0" y="0" width={W} height={H} className="rev-g-b"/>
+        <path d={area} className="rev-g-w"/>
+        <line x1="0" y1={H / 2} x2={W} y2={H / 2} className="rev-g-mid" vectorEffect="non-scaling-stroke"/>
         <path d={d} className="rev-g-line" vectorEffect="non-scaling-stroke"/>
         <line x1={cursor} y1="0" x2={cursor} y2={H} className="rev-g-cursor" vectorEffect="non-scaling-stroke"/>
       </svg>
@@ -5513,11 +5538,16 @@ function CmGameReview({ m, onBack }) {
                 <button key={sp.id} className={"cmc-opt" + (speed === sp.id ? " is-on" : "")}
                         aria-pressed={speed === sp.id} onClick={() => setSpeed(sp.id)}>
                   <span className="cmc-opt-n">{sp.label}</span>
-                  <span className="cmc-opt-k">{sp.sub}</span>
+                  <span className="cmc-opt-k">{cmReviewWait(total, sp.ms)}</span>
                 </button>
               ))}
             </div>
-            <button className="cmm-cta" onClick={run}>Review {line.plies.length} moves</button>
+            {/* MOVES, not plies. Chess counts in pairs and so does everybody
+                who plays it: a seven-move game is not a thirteen-move game,
+                whatever the array length says. */}
+            <button className="cmm-cta" onClick={run}>
+              Review {Math.ceil(line.plies.length / 2)} move{line.plies.length > 2 ? "s" : ""}
+            </button>
           </div>
         )}
 
@@ -5525,7 +5555,7 @@ function CmGameReview({ m, onBack }) {
           <div className="rev-start">
             <h2 className="rev-h">Already reviewed</h2>
             <p className="rev-p">
-              This game was gone through {cmAgo(stored.createdAt)}, to depth {stored.engine.depth || "?"}.
+              This game was gone through {cmAgo(stored.createdAt)} ago, to depth {stored.engine.depth || "?"}.
               Those are the numbers below, so both of you are looking at the same ones.
             </p>
             <button className="cmm-cta is-ghost" onClick={run}>Go through it again on this phone</button>
@@ -5535,7 +5565,9 @@ function CmGameReview({ m, onBack }) {
         {phase === "running" && (
           <div className="rev-run" role="status" aria-live="polite">
             <div className="rev-bar"><span style={{ width: progress + "%" }}/></div>
-            <p className="rev-p">Thinking about move {Math.max(1, Math.ceil(scores.length / 2))} of {Math.ceil(total / 2)}…</p>
+            <p className="rev-p">
+              Thinking about move {Math.max(1, Math.ceil(scores.length / 2))} of {Math.ceil(line.plies.length / 2)}…
+            </p>
             <button className="btn btn-ghost btn-sm" onClick={() => { stop.current = true; }}>
               Stop and keep what we have
             </button>
@@ -5609,11 +5641,12 @@ function CmGameReview({ m, onBack }) {
                       : "."}
                   </p>
                 )}
-                {here.loss > 0 && (
+                {here.tag.tag !== "good" && here.tag.tag !== "best" && here.loss > 0 && (
                   <p className="rev-verdict-c">
                     It cost about {(here.loss / 100).toFixed(1)} pawns.
                   </p>
                 )}
+                {here.tag.tag === "good" && <p className="rev-verdict-c">Nothing wrong with it.</p>}
               </div>
             )}
 
@@ -5627,7 +5660,12 @@ function CmGameReview({ m, onBack }) {
                     <span className="rev-move-n">{v.white ? Math.ceil(v.ply / 2) + "." : ""}</span>
                     <span className="rev-move-s">{v.san}</span>
                     <span className="rev-move-t">{v.tag.tag === "good" || v.tag.tag === "best" ? "" : v.tag.label}</span>
-                    {v.loss > 0 && <span className="rev-move-l">−{(v.loss / 100).toFixed(1)}</span>}
+                    {/* Only where it means something. Two searches a ply apart
+                        disagree by a few centipawns on a perfectly good move,
+                        and printing that beside every move tells a child they
+                        made forty small mistakes in a game they played well. */}
+                    {v.tag.tag !== "good" && v.tag.tag !== "best" && v.loss > 0
+                      && <span className="rev-move-l">−{(v.loss / 100).toFixed(1)}</span>}
                   </button>
                 </li>
               ))}

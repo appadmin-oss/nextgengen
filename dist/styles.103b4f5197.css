@@ -3180,7 +3180,11 @@ img { background-color: rgba(12,20,50,0.04); }
 
   /* Reading column. The rule the bundle is explicit about. */
   .cmm-feed, .cmm-list, .cmm-stream { max-width: 72ch; margin-inline: auto; }
-  .cmm-head, .cmm-search, .cmm-chips { max-width: 72ch; margin-inline: auto; }
+  /* `.cmm-ch-head` belongs in this list too: it is the header ABOVE a
+     `.cmm-stream`, and the stream was being centred into the reading column
+     while its own header stayed hard left. On a wide screen the two then
+     disagree by a couple of hundred pixels and the screen reads as broken. */
+  .cmm-head, .cmm-ch-head, .cmm-search, .cmm-chips { max-width: 72ch; margin-inline: auto; }
   .cmm-search { width: 100%; }
   .cmm-channel { height: auto; min-height: calc(100dvh - var(--cm-nav, 64px) - 26px); }
 
@@ -4128,7 +4132,17 @@ img { background-color: rgba(12,20,50,0.04); }
 .rev-h { margin: 0 0 6px; font-family: var(--c-font-display); font-size: 19px; font-weight: 800; color: var(--c-ink); }
 .rev-p { margin: 0 0 14px; font-size: 13.5px; line-height: 1.55; color: var(--c-body-soft); }
 .rev-start { padding: 4px var(--c-gutter) 10px; }
-.rev-start .cmm-cta { margin-top: 14px; }
+/* Full width, like every other primary action in this shell. `.cmm-cta` is an
+   inline-flex, so dropped into a plain block it shrinks to its text and sits
+   at the left of a column of full-width options above it. */
+.rev-start .cmm-cta { display: flex; align-items: center; justify-content: center;
+  width: 100%; margin-top: 14px; }
+/* Re-running a review that already exists is the secondary action: the stored
+   numbers are the ones both players see, and offering to replace them with the
+   same weight would invite exactly the re-rolling the server refuses. */
+.rev-start .cmm-cta.is-ghost { background: none; border: 1px solid var(--c-border);
+  color: var(--c-ink); font-weight: 700; }
+.rev-start .cmm-cta.is-ghost:hover { border-color: var(--c-ink); }
 
 .rev-run { padding: 14px var(--c-gutter); }
 .rev-bar { height: 8px; border-radius: 999px; background: var(--c-neutral-chip); overflow: hidden; }
@@ -4163,9 +4177,11 @@ img { background-color: rgba(12,20,50,0.04); }
 .rev-graph { margin: 16px 0 6px; }
 .rev-graph svg { display: block; width: 100%; height: 92px; background: var(--c-card);
   border-top: 1px solid var(--c-border); border-bottom: 1px solid var(--c-border); }
+/* Pale is White's share of the position, dark is Black's — the form every
+   chess site uses, readable without a legend. */
 .rev-g-w { fill: #fbf7ed; }
-.rev-g-b { fill: #e6e2d6; }
-.rev-g-area { fill: rgba(22,34,62,.16); }
+.rev-g-b { fill: #3a4460; }
+.rev-g-mid { stroke: rgba(120,126,146,.55); stroke-width: 1; stroke-dasharray: 3 3; }
 .rev-g-line { fill: none; stroke: var(--c-ink); stroke-width: 1.5; }
 .rev-g-cursor { stroke: var(--c-red); stroke-width: 1.5; }
 /* A real range input over the graph: draggable with a thumb, steppable with a
@@ -4244,6 +4260,10 @@ img { background-color: rgba(12,20,50,0.04); }
 .lad-who { min-width: 0; display: flex; flex-direction: column; }
 .lad-name { font-size: 14px; font-weight: 700; color: var(--c-ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lad-you { margin-left: 6px; padding: 1px 7px; border-radius: var(--c-r-pill);
+  background: var(--c-blue); color: #fff; font-family: var(--c-font-mono);
+  font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  vertical-align: 1px; }
 .lad-sub { font-size: 11.5px; color: var(--c-muted); }
 .lad-streak { color: var(--gold-text, #8a5f00); font-weight: 700; }
 .lad-score { font-family: var(--c-font-mono); font-size: 15px; font-weight: 800; color: var(--c-ink);
