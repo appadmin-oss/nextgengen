@@ -371,6 +371,36 @@ function chess_insufficient_material(array $pos): bool {
 }
 
 /**
+ * Could this side ever deliver mate, by any legal sequence?
+ *
+ * The one-sided question FIDE 6.9 asks when a flag falls: your opponent runs
+ * out of time, but if YOU could not possibly mate them, the game is drawn
+ * rather than won. A child winning on time against a bare king would be the
+ * app getting a rule wrong in the most visible place there is.
+ *
+ * Deliberately the "any possible series of legal moves" test, not the "can
+ * force it" test. K+N+N cannot force mate but a helpmate exists, so it counts —
+ * that is what 6.9 says, and it is what every other chess app does.
+ */
+function chess_has_mating_material(string $fen, string $colour): bool {
+    $pos = chess_parse_fen($fen);
+    if (!$pos) return true;                      // unreadable: never draw on a guess
+    $minors = 0;
+    for ($i = 0; $i < 128; $i++) {
+        if ($i & 0x88) continue;
+        $p = $pos['board'][$i];
+        if ($p === '') continue;
+        if (chess_colour_of($p) !== $colour) continue;
+        $t = strtolower($p);
+        if ($t === 'k') continue;
+        if ($t === 'p' || $t === 'r' || $t === 'q') return true;
+        $minors++;                               // bishop or knight
+    }
+    // King alone, or king and one minor: no mate is reachable.
+    return $minors >= 2;
+}
+
+/**
  * The state of the game after the position is reached.
  *
  * `$positionCounts` maps a repetition key → how many times it has occurred,

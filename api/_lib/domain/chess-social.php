@@ -161,64 +161,48 @@ function chess_is_online(string $lastSeen): bool {
  * choosing an opponent has no business being handed a contact list, so nothing
  * else travels — the same rule match_list() already applies.
  */
+/**
+ * Who can I play?
+ *
+ * Rebuilt on directory_search(), so the four kinds of person who hold an
+ * account here are one list rather than two. The old shape had a `mentors`
+ * boolean that swapped the query entirely: asking for mentors hid every
+ * member, and not asking hid every mentor — and since role != 'member' was
+ * excluded outright, staff were invisible in both directions.
+ *
+ * `kinds` replaces it. Nothing is hidden by default; a filter narrows.
+ */
 function chess_players(array $p): array {
     $me = match_person((string)($p['playerId'] ?? ''));
     if (!$me) return ['ok' => false, 'error' => 'not_a_player'];
     $meId = (string)$me['id'];
-    $q = trim((string)($p['q'] ?? ''));
-    $club = !empty($p['club']);          // my centre only
-    $online = !empty($p['online']);
-    $band = (string)($p['band'] ?? '');   // "1100-1400", or ''
-    $mentors = !empty($p['mentors']);
 
-    $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
-    $rows = [];
-    if ($mentors) {
-        /* Mentors are volunteers, not members — the one group a plain member
-         * search would silently exclude, and the group a child most often
-         * wants to challenge ("will explain his moves"). */
-        foreach (db_all("SELECT volunteerId id, fullName, centre FROM volunteers
-                         WHERE status = 'active' AND volunteerId <> ? AND fullName LIKE ?
-                         ORDER BY fullName LIMIT 40", [$meId, $like]) as $r) {
-            $rows[] = $r + ['programme' => 'ngg', 'mentor' => true];
-        }
-    } else {
-        foreach (db_all("SELECT memberId id, fullName, centre FROM members
-                         WHERE status = 'active' AND role = 'member' AND memberId <> ? AND fullName LIKE ?
-                         ORDER BY fullName LIMIT 40", [$meId, $like]) as $r) {
-            $rows[] = $r + ['programme' => 'ngg', 'mentor' => false];
-        }
-        foreach (db_all("SELECT studentId id, fullName, centre FROM summer_students
-                         WHERE status = 'active' AND studentId <> ? AND fullName LIKE ?
-                         ORDER BY fullName LIMIT 40", [$meId, $like]) as $r) {
-            $rows[] = $r + ['programme' => 'summer', 'mentor' => false];
-        }
-    }
+    // Back-compat: the old boolean still works, and now means "narrow to
+    // volunteers and staff" rather than "swap to a different query".
+    $kinds = array_values(array_intersect((array)($p['kinds'] ?? []), DIRECTORY_KINDS));
+    if (!$kinds && !empty($p['mentors'])) $kinds = ['volunteer', 'staff'];
 
-    [$lo, $hi] = [0, 4000];
-    if (preg_match('/^(\d{3,4})\s*-\s*(\d{3,4})$/', $band, $m)) { $lo = (int)$m[1]; $hi = (int)$m[2]; }
+    $r = directory_search([
+        'q' => (string)($p['q'] ?? ''),
+        'kinds' => $kinds,
+        'centre' => !empty($p['club']) ? (string)$me['centre'] : '',
+        'band' => (string)($p['band'] ?? ''),
+        'online' => !empty($p['online']),
+        'exclude' => [$meId],
+        'limit' => 30,
+    ]);
 
     $out = [];
-    foreach ($rows as $r) {
-        $id = (string)$r['id'];
-        if ($club && (string)$r['centre'] !== (string)$me['centre']) continue;
-        $rating = chess_rating_of($id);
-        if ($rating < $lo || $rating > $hi) continue;
-        $seen = chess_last_seen($id);
-        $isOnline = chess_is_online($seen);
-        if ($online && !$isOnline) continue;
+    foreach ($r['people'] as $x) {
         $out[] = [
-            'id' => $id,
-            'name' => (string)$r['fullName'],
-            'centre' => (string)$r['centre'],
-            'programme' => (string)$r['programme'],
-            'mentor' => !empty($r['mentor']),
-            'rating' => $rating,
-            'online' => $isOnline,
-            'lastSeen' => $seen,
-            'headToHead' => chess_h2h_text($meId, $id),
+            'id' => $x['id'], 'name' => $x['name'], 'centre' => $x['centre'],
+            'programme' => $x['programme'], 'kind' => $x['kind'], 'role' => $x['role'],
+            // Kept for the existing client, which badges a coach.
+            'mentor' => in_array($x['kind'], ['volunteer', 'staff'], true),
+            'rating' => $x['rating'], 'online' => $x['online'], 'lastSeen' => $x['lastSeen'],
+            'photo' => $x['photo'],
+            'headToHead' => chess_h2h_text($meId, $x['id']),
         ];
-        if (count($out) >= 30) break;
     }
     // Somebody who is around, and near your strength, first — that is the
     // order the question "who can I play right now" is actually asked in.
@@ -227,8 +211,9 @@ function chess_players(array $p): array {
         if ($a['online'] !== $b['online']) return $a['online'] ? -1 : 1;
         return abs($a['rating'] - $myRating) <=> abs($b['rating'] - $myRating);
     });
-    return ['ok' => true, 'players' => $out, 'me' => ['id' => $meId, 'rating' => $myRating,
-            'centre' => (string)$me['centre'], 'name' => (string)$me['fullName']]];
+    return ['ok' => true, 'players' => $out, 'kinds' => DIRECTORY_KINDS,
+            'me' => ['id' => $meId, 'rating' => $myRating,
+                     'centre' => (string)$me['centre'], 'name' => (string)$me['fullName']]];
 }
 
 /* ── Challenges ───────────────────────────────────────────────────────────
@@ -238,7 +223,9 @@ function chess_players(array $p): array {
  *
  * Everything expires. An unanswered invitation used to sit in a child's list
  * forever, which turns the list into a place nobody looks. */
-const CHESS_TIME_CONTROLS = ['3+2', '5+3', '10+0', '1day'];
+/* The vocabulary lives in chess-clock.php now, so the list a challenge sheet
+   offers and the list the clock knows how to run cannot drift apart. */
+const CHESS_TIME_CONTROLS = ['3+2', '5+3', '10+0', '15+10', '1day'];
 const CHESS_CHALLENGE_TTL = 86400;   // 24 hours, as the sheet promises
 
 function chess_challenge_shape(array $r, string $viewer): array {
@@ -340,7 +327,8 @@ function chess_challenges_list(array $p): array {
             'toYou' => array_map(fn($r) => chess_challenge_shape($r, $viewer), $mine),
             'fromYou' => array_map(fn($r) => chess_challenge_shape($r, $viewer), $sent),
             'open' => array_map(fn($r) => chess_challenge_shape($r, $viewer), $open),
-            'timeControls' => CHESS_TIME_CONTROLS];
+            'timeControls' => CHESS_TIME_CONTROLS,
+            'clockOptions' => chess_clock_options()];
 }
 
 /**
@@ -402,7 +390,10 @@ function chess_challenge_respond(array $p): array {
             'channelSlug' => (string)$r['channelSlug'],
             'turnPlayer' => (string)$white['id'], 'state' => CHESS_START_FEN, 'ply' => 0,
             'createdAt' => $now, 'updatedAt' => $now,
-        ]);
+        ] + chess_clock_init((string)$r['timeControl']));
+        // A challenge game opens ACTIVE, so the clock starts with it.
+        db_update('match_games', ['clockRunning' => chess_clock_is_live((string)$r['timeControl']) ? 1 : 0,
+                                  'turnStartedAt' => $now], ['matchId' => $matchId]);
         db_update('chess_challenges', ['status' => 'accepted', 'matchId' => $matchId], ['challengeId' => (string)$r['challengeId']]);
     });
 
@@ -459,4 +450,116 @@ function chess_level_table(int $myRating): array {
     }
     return array_map(fn($l) => ['level' => $l[0], 'rating' => $l[1], 'blurb' => $l[2],
                                 'suggested' => $l[0] === $best], $levels);
+}
+
+/* ── The player directory ─────────────────────────────────────────────────
+ *
+ * One search across everybody who can sit at a board: NGG members, summer
+ * students, the Volunteer Vanguard, and staff. Before this there were two
+ * half-directories — chess_players() with an either/or "mentors" toggle that
+ * hid every member the moment you looked for a coach, and the tournament
+ * entry screen which called admin.members.list() and so could only ever see
+ * members and students. A volunteer could be found in one and not entered in
+ * the other.
+ *
+ * Everything a caller filters on is a fixed vocabulary. There is no free text
+ * in the result beyond a name that was already on file.
+ */
+
+const DIRECTORY_KINDS = ['member', 'student', 'volunteer', 'staff'];
+
+/**
+ * Search the directory.
+ *
+ *   q        name fragment
+ *   kinds    array of DIRECTORY_KINDS; empty = all four
+ *   centre   exact centre name, '' = every centre
+ *   band     "1100-1400" rating band, '' = any
+ *   online   only people seen in the last few minutes
+ *   exclude  playerIds to leave out (already entered, or yourself)
+ *
+ * Ordered by rating descending, which is the order a tournament director
+ * reads a list of possible entrants in.
+ */
+function directory_search(array $p): array {
+    $q       = trim((string)($p['q'] ?? ''));
+    $kinds   = array_values(array_intersect((array)($p['kinds'] ?? []), DIRECTORY_KINDS));
+    if (!$kinds) $kinds = DIRECTORY_KINDS;
+    $centre  = trim((string)($p['centre'] ?? ''));
+    $exclude = array_flip(array_map('strval', (array)($p['exclude'] ?? [])));
+    $limit   = max(1, min(200, (int)($p['limit'] ?? 40)));
+
+    $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
+    $rows = [];
+
+    /* Members and staff come from one table and are split by role, so the two
+     * cannot disagree about who is who. */
+    if (array_intersect(['member', 'staff'], $kinds)) {
+        foreach (db_all("SELECT memberId id, fullName, centre, role, type FROM members
+                          WHERE status = 'active' AND fullName LIKE ? ORDER BY fullName LIMIT 400", [$like]) as $r) {
+            $role = strtolower(trim((string)($r['role'] ?? '')));
+            $kind = ($role !== '' && $role !== 'member') ? 'staff' : 'member';
+            if (!in_array($kind, $kinds, true)) continue;
+            $rows[] = ['id' => (string)$r['id'], 'name' => (string)$r['fullName'],
+                       'centre' => (string)($r['centre'] ?? ''), 'kind' => $kind, 'role' => $role ?: 'member',
+                       'programme' => ((string)($r['type'] ?? '') === 'Summer') ? 'summer' : 'ngg'];
+        }
+    }
+    if (in_array('student', $kinds, true)) {
+        foreach (db_all("SELECT studentId id, fullName, centre FROM summer_students
+                          WHERE status = 'active' AND fullName LIKE ? ORDER BY fullName LIMIT 400", [$like]) as $r) {
+            $rows[] = ['id' => (string)$r['id'], 'name' => (string)$r['fullName'],
+                       'centre' => (string)($r['centre'] ?? ''), 'kind' => 'student', 'role' => 'student',
+                       'programme' => 'summer'];
+        }
+    }
+    if (in_array('volunteer', $kinds, true)) {
+        foreach (db_all("SELECT volunteerId id, fullName, COALESCE(centre,'') centre, COALESCE(role,'volunteer') role
+                          FROM volunteers WHERE status = 'active' AND fullName LIKE ? ORDER BY fullName LIMIT 400", [$like]) as $r) {
+            $rows[] = ['id' => (string)$r['id'], 'name' => (string)$r['fullName'],
+                       'centre' => (string)($r['centre'] ?? ''), 'kind' => 'volunteer',
+                       'role' => strtolower((string)$r['role']) ?: 'volunteer', 'programme' => 'ngg'];
+        }
+    }
+
+    [$lo, $hi] = [0, 4000];
+    $band = (string)($p['band'] ?? '');
+    if (preg_match('/^(\d{3,4})\s*-\s*(\d{3,4})$/', $band, $m)) { $lo = (int)$m[1]; $hi = (int)$m[2]; }
+    $onlineOnly = !empty($p['online']);
+
+    $out = [];
+    foreach ($rows as $r) {
+        if (isset($exclude[$r['id']])) continue;
+        if ($centre !== '' && $r['centre'] !== $centre) continue;
+        $rating = function_exists('chess_rating_of') ? chess_rating_of($r['id']) : CHESS_START_RATING;
+        if ($rating < $lo || $rating > $hi) continue;
+        $seen = function_exists('chess_last_seen') ? chess_last_seen($r['id']) : '';
+        $online = function_exists('chess_is_online') ? chess_is_online($seen) : false;
+        if ($onlineOnly && !$online) continue;
+        $r['rating'] = $rating;
+        $r['online'] = $online;
+        $r['lastSeen'] = $seen;
+        $r['photo'] = function_exists('community_photo_for') ? community_photo_for($r['id']) : '';
+        $out[] = $r;
+    }
+    /* De-dupe on id. A person can only be in one table, but an id collision
+     * between tables would otherwise show them twice with two ratings. */
+    $seenIds = []; $uniq = [];
+    foreach ($out as $r) { if (isset($seenIds[$r['id']])) continue; $seenIds[$r['id']] = 1; $uniq[] = $r; }
+    usort($uniq, fn($a, $b) => [$b['rating'], $a['name']] <=> [$a['rating'], $b['name']]);
+
+    return ['ok' => true, 'people' => array_slice($uniq, 0, $limit), 'total' => count($uniq),
+            'kinds' => DIRECTORY_KINDS];
+}
+
+/** Every centre that has at least one person in it — for the filter menus. */
+function directory_centres(): array {
+    $set = [];
+    foreach (["SELECT DISTINCT centre c FROM members WHERE status='active' AND centre <> ''",
+              "SELECT DISTINCT centre c FROM summer_students WHERE status='active' AND centre <> ''",
+              "SELECT DISTINCT centre c FROM volunteers WHERE status='active' AND centre <> ''"] as $sql) {
+        foreach (db_all($sql) as $r) { $c = trim((string)$r['c']); if ($c !== '') $set[$c] = 1; }
+    }
+    $out = array_keys($set); sort($out);
+    return $out;
 }

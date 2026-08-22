@@ -13885,12 +13885,219 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     })());
     /* Search returns a name, a centre, a rating and a record — and nothing a
        child could use to contact anybody. The list of allowed keys IS the
-       safeguarding rule, so it is asserted rather than described. */
+       safeguarding rule, so it is asserted rather than described.
+
+       `kind`, `role` and `photo` were added with the unified directory. The
+       first two are categories the client already badges; the photo is the
+       same avatar the community feed shows beside every message, inside the
+       same members-only walled garden. None of them is a contact route, which
+       is the property the denylist below states outright. */
     chk('a search row carries nothing that could contact anybody', (function () {
         $r = chess_players(['playerId' => 'MPL-A', 'q' => 'Bode']);
-        $allowed = ['id', 'name', 'centre', 'programme', 'mentor', 'rating', 'online', 'lastSeen', 'headToHead'];
-        foreach ($r['players'] as $pl) if (array_diff(array_keys($pl), $allowed)) return false;
+        $allowed = ['id', 'name', 'centre', 'programme', 'kind', 'role', 'mentor',
+                    'rating', 'online', 'lastSeen', 'photo', 'headToHead'];
+        $never = ['email', 'phone', 'guardianPhone', 'guardianEmail', 'address', 'dob', 'handle'];
+        foreach ($r['players'] as $pl) {
+            if (array_diff(array_keys($pl), $allowed)) return false;
+            if (array_intersect(array_keys($pl), $never)) return false;
+        }
         return count($r['players']) > 0;
+    })());
+
+    /* ── Clocks that actually run ───────────────────────────────────────────
+       `timeControl` used to be a label: '3+2' was stored, shown on the
+       challenge sheet, and nothing ever counted down. These assert the three
+       properties that make a clock real — it charges the mover, it flags, and
+       the server is the only thing that decides either. */
+
+    chk('a blitz game starts both clocks at the control\'s time', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-C',
+                           'timeControl' => '3+2', 'rated' => false])['matchId'] ?? '';
+        if ($m === '') return false;
+        match_respond(['playerId' => 'MPL-C', 'matchId' => $m, 'accept' => true]);
+        $r = db_row("SELECT * FROM match_games WHERE matchId = ?", [$m]);
+        $GLOBALS['__clockMatch'] = $m;
+        return (int)$r['whiteMs'] === 180000 && (int)$r['blackMs'] === 180000
+            && (int)$r['incrementMs'] === 2000 && (int)$r['clockRunning'] === 1;
+    })());
+
+    chk('…and white\'s clock is already running before their first move', (function () {
+        $g = match_get(['playerId' => 'MPL-A', 'matchId' => $GLOBALS['__clockMatch']])['match'];
+        return $g['clock']['running'] === true && $g['clock']['turn'] === 'w';
+    })());
+
+    chk('thinking time is charged to the mover, and the increment added', (function () {
+        $m = $GLOBALS['__clockMatch'];
+        // Wind the clock back 5s to stand in for five seconds of thought.
+        db_update('match_games', ['turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 5)], ['matchId' => $m]);
+        $before = (int)db_row("SELECT whiteMs FROM match_games WHERE matchId = ?", [$m])['whiteMs'];
+        match_move(['playerId' => 'MPL-A', 'matchId' => $m, 'move' => 'e2e4']);
+        $after = (int)db_row("SELECT whiteMs FROM match_games WHERE matchId = ?", [$m])['whiteMs'];
+        // ~5s off, 2s back on: about 3s spent, allowing for the lag grace.
+        $spent = $before - $after;
+        return $spent > 2000 && $spent < 4000;
+    })());
+
+    chk('…and the clock passes to the other player', (function () {
+        $r = db_row("SELECT * FROM match_games WHERE matchId = ?", [$GLOBALS['__clockMatch']]);
+        $c = chess_clock_state($r);
+        return $c['turn'] === 'b' && (int)$r['blackMs'] === 180000;
+    })());
+
+    chk('the opponent\'s clock is only wound down in the read, never stored', (function () {
+        $m = $GLOBALS['__clockMatch'];
+        db_update('match_games', ['turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 4)], ['matchId' => $m]);
+        $stored = (int)db_row("SELECT blackMs FROM match_games WHERE matchId = ?", [$m])['blackMs'];
+        $shown = match_get(['playerId' => 'MPL-C', 'matchId' => $m])['match']['clock']['blackMs'];
+        return $stored === 180000 && $shown < 178000 && $shown > 174000;
+    })());
+
+    chk('running out of time loses the game, decided by the server', (function () {
+        $m = $GLOBALS['__clockMatch'];
+        db_update('match_games', ['blackMs' => 900, 'turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 30)], ['matchId' => $m]);
+        // Nobody has called anything yet: the row is still active.
+        if ((string)db_row("SELECT status FROM match_games WHERE matchId = ?", [$m])['status'] !== 'active') return false;
+        // Reading the board is what settles it.
+        $g = match_get(['playerId' => 'MPL-A', 'matchId' => $m])['match'];
+        $r = db_row("SELECT * FROM match_games WHERE matchId = ?", [$m]);
+        return $g['status'] === 'complete' && (string)$r['reason'] === 'timeout'
+            && (string)$r['winnerId'] === 'MPL-A' && (int)$r['clockRunning'] === 0;
+    })());
+
+    chk('a move that arrives after the flag fell is refused', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-B',
+                           'timeControl' => '3+2'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-B', 'matchId' => $m, 'accept' => true]);
+        db_update('match_games', ['whiteMs' => 500, 'turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 20)], ['matchId' => $m]);
+        $r = match_move(['playerId' => 'MPL-A', 'matchId' => $m, 'move' => 'e2e4']);
+        return ($r['error'] ?? '') === 'flagged';
+    })());
+
+    /* FIDE 6.9 — a flag falls, but the opponent could never mate: it is a draw.
+       Winning on time against a bare king is the app getting a rule wrong in
+       the most visible place there is. */
+    chk('flagging against a bare king is a draw, not a win', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-C',
+                           'timeControl' => '3+2'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-C', 'matchId' => $m, 'accept' => true]);
+        // Black to move with only a king; white has a lone king too.
+        db_update('match_games', [
+            'state' => '4k3/8/8/8/8/8/8/4K3 b - - 0 40',
+            'blackMs' => 400, 'turnPlayer' => 'MPL-C',
+            'turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 20)], ['matchId' => $m]);
+        chess_clock_flag_check($m);
+        $r = db_row("SELECT * FROM match_games WHERE matchId = ?", [$m]);
+        return (string)$r['result'] === 'draw' && (string)$r['reason'] === 'timeout_vs_insufficient';
+    })());
+    chk('…but flagging against a king and rook is a win', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-B',
+                           'timeControl' => '3+2'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-B', 'matchId' => $m, 'accept' => true]);
+        db_update('match_games', [
+            'state' => '4k3/8/8/8/8/8/8/R3K3 b - - 0 40',
+            'blackMs' => 400, 'turnPlayer' => 'MPL-B',
+            'turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 20)], ['matchId' => $m]);
+        chess_clock_flag_check($m);
+        $r = db_row("SELECT * FROM match_games WHERE matchId = ?", [$m]);
+        return (string)$r['result'] === 'win' && (string)$r['winnerId'] === 'MPL-A'
+            && (string)$r['reason'] === 'timeout';
+    })());
+    chk('two knights CAN mate, so that flag is a win (FIDE 6.9 is "any legal series")',
+        chess_has_mating_material('4k3/8/8/8/8/8/8/1NN1K3 w - - 0 1', 'w') === true
+        && chess_has_mating_material('4k3/8/8/8/8/8/8/2N1K3 w - - 0 1', 'w') === false);
+
+    chk('a correspondence game has a deadline, not a countdown', (function () {
+        $m = match_invite(['playerId' => 'MPL-B', 'game' => 'chess', 'opponentId' => 'MPL-C',
+                           'timeControl' => '1day'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-C', 'matchId' => $m, 'accept' => true]);
+        $c = match_get(['playerId' => 'MPL-B', 'matchId' => $m])['match']['clock'];
+        return $c['live'] === false && $c['running'] === false && isset($c['deadlineMs']);
+    })());
+
+    chk('the sweeper flags games nobody is watching', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-B',
+                           'timeControl' => '5+3'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-B', 'matchId' => $m, 'accept' => true]);
+        db_update('match_games', ['state' => '4k3/8/8/8/8/8/8/R3K3 w - - 0 40',
+            'whiteMs' => 300, 'turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 60)], ['matchId' => $m]);
+        $n = chess_clock_sweep(50);
+        return $n >= 1 && (string)db_row("SELECT status FROM match_games WHERE matchId = ?", [$m])['status'] === 'complete';
+    })());
+
+    chk('the clock table and the challenge vocabulary cannot drift apart', (function () {
+        foreach (CHESS_TIME_CONTROLS as $tc) if (!isset(CHESS_CLOCK_TABLE[$tc])) return false;
+        return count(chess_clock_options()) === count(CHESS_CLOCK_TABLE);
+    })());
+
+    /* ── The directory: all four kinds of person, one list ─────────────────
+       A volunteer could be FOUND (the mentors tab searched `volunteers`) and
+       then never played, because match_person() resolved members and students
+       only — so challenging a coach answered `opponent_not_found`. Staff were
+       invisible in both directions: the member query excluded role != 'member'
+       and the mentor query only looked at volunteers. */
+    $now2 = now_iso();
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'DIR-VOL'");
+    db_insert('volunteers', ['volunteerId' => 'DIR-VOL', 'fullName' => 'Bisi Coach',
+        'email' => 'dir-vol@example.com', 'role' => 'Instructor', 'centre' => 'Egbeda',
+        'status' => 'active', 'createdAt' => $now2]);
+    db_exec("DELETE FROM members WHERE memberId = 'DIR-STAFF'");
+    db_insert('members', ['memberId' => 'DIR-STAFF', 'fullName' => 'Bisi Coordinator',
+        'email' => 'dir-staff@example.com', 'type' => 'NGG', 'centre' => 'Egbeda',
+        'role' => 'coordinator', 'status' => 'active', 'createdAt' => $now2, 'updatedAt' => $now2]);
+    db_exec("DELETE FROM summer_students WHERE studentId = 'DIR-STU'");
+    db_insert('summer_students', ['studentId' => 'DIR-STU', 'fullName' => 'Bisi Student',
+        'centre' => 'Egbeda', 'status' => 'active', 'enrolledAt' => $now2]);
+
+    chk('a volunteer resolves as a player at all', (function () {
+        $p = match_person('DIR-VOL');
+        return $p && $p['kind'] === 'volunteer' && $p['id'] === 'DIR-VOL';
+    })());
+    chk('…so a child can actually challenge their coach', (function () {
+        $c = chess_challenge_create(['playerId' => 'MPL-A', 'opponentId' => 'DIR-VOL',
+            'timeControl' => '10+0', 'colourPref' => 'random', 'rated' => false]);
+        return !empty($c['ok']);
+    })());
+    chk('a member with a role resolves as staff, not as a plain member',
+        (match_person('DIR-STAFF')['kind'] ?? '') === 'staff');
+    chk('the directory returns all four kinds in one search', (function () {
+        $r = directory_search(['q' => 'Bisi']);
+        $kinds = array_unique(array_column($r['people'], 'kind'));
+        sort($kinds);
+        return $r['ok'] && $kinds === ['staff', 'student', 'volunteer'];
+    })());
+    chk('…and narrows to the kinds asked for', (function () {
+        $r = directory_search(['q' => 'Bisi', 'kinds' => ['volunteer']]);
+        return count($r['people']) === 1 && $r['people'][0]['id'] === 'DIR-VOL';
+    })());
+    chk('…filters by centre', (function () {
+        $r = directory_search(['q' => 'Bisi', 'centre' => 'Nowhere']);
+        return $r['people'] === [];
+    })());
+    chk('…excludes who it is told to', (function () {
+        $r = directory_search(['q' => 'Bisi', 'exclude' => ['DIR-VOL', 'DIR-STAFF', 'DIR-STU']]);
+        return $r['people'] === [];
+    })());
+    chk('…and orders by rating, strongest first', (function () {
+        db_exec("DELETE FROM chess_ratings WHERE playerId IN ('DIR-VOL','DIR-STAFF','DIR-STU')");
+        foreach ([['DIR-VOL', 1700], ['DIR-STAFF', 1500], ['DIR-STU', 900]] as [$id, $rt]) {
+            db_insert('chess_ratings', ['playerId' => $id, 'rating' => $rt, 'games' => 12,
+                'wins' => 0, 'losses' => 0, 'draws' => 0, 'peak' => $rt, 'lastPlayedAt' => '', 'updatedAt' => '']);
+        }
+        $r = directory_search(['q' => 'Bisi']);
+        return array_column($r['people'], 'id') === ['DIR-VOL', 'DIR-STAFF', 'DIR-STU'];
+    })());
+    chk('…and honours a rating band', (function () {
+        $r = directory_search(['q' => 'Bisi', 'band' => '1400-1800']);
+        return array_column($r['people'], 'id') === ['DIR-VOL', 'DIR-STAFF'];
+    })());
+    chk('the member-facing search now sees a coach without hiding members', (function () {
+        $r = chess_players(['playerId' => 'MPL-A', 'q' => 'Bisi']);
+        $ids = array_column($r['players'], 'id');
+        return in_array('DIR-VOL', $ids, true) && in_array('DIR-STAFF', $ids, true);
+    })());
+    chk('every centre with people in it appears in the filter list', (function () {
+        $c = directory_centres();
+        return in_array('Egbeda', $c, true) && in_array('Ayobo', $c, true);
     })());
 
     // Challenges.

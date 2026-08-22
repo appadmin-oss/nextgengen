@@ -1887,3 +1887,106 @@ CREATE INDEX idx_cbook_member ON community_bookmarks (memberId);
 CREATE INDEX idx_creport_reporter ON community_reports (memberId);
 
 INSERT INTO schema_version (version) VALUES (98) ON DUPLICATE KEY UPDATE version = version;
+
+-- 99: Tournaments 2.0 — real formats, real clocks, real ratings.
+--
+-- The old shape was one format (centre knockout → final), no clock, and
+-- alphabetical pairing. This adds the three things a chess club actually
+-- needs: a choice of format, time that really runs out, and a rating the
+-- pairing is built from.
+ALTER TABLE tournaments ADD COLUMN format VARCHAR(16) DEFAULT 'centre';
+  -- centre | knockout | swiss | roundrobin | arena
+ALTER TABLE tournaments ADD COLUMN timeControl VARCHAR(16) DEFAULT '10+0';
+ALTER TABLE tournaments ADD COLUMN rated TINYINT DEFAULT 1;
+ALTER TABLE tournaments ADD COLUMN totalRounds INT DEFAULT 0;
+  -- Swiss/round-robin: how many rounds are planned. 0 = derive from entrants.
+ALTER TABLE tournaments ADD COLUMN description VARCHAR(600) DEFAULT '';
+ALTER TABLE tournaments ADD COLUMN centres TEXT;
+  -- JSON array. Empty/absent = every centre.
+ALTER TABLE tournaments ADD COLUMN eligibility TEXT;
+  -- JSON: which kinds of person may enter (member/student/volunteer/staff),
+  -- plus optional rating floor/ceiling and age band.
+ALTER TABLE tournaments ADD COLUMN startsAt VARCHAR(40) DEFAULT '';
+ALTER TABLE tournaments ADD COLUMN endsAt VARCHAR(40) DEFAULT '';
+  -- Arena only: the window the arena runs for.
+ALTER TABLE tournaments ADD COLUMN settings TEXT;
+  -- JSON, format-specific knobs kept out of the column list.
+
+-- Standings live on the entrant: one row per player per tournament, which is
+-- what every format needs and what the old knockout-only shape had no room for.
+ALTER TABLE tournament_entrants ADD COLUMN seed INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN ratingAtEntry INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN score DECIMAL(5,1) DEFAULT 0;
+  -- Win 1, draw 0.5, loss 0. Decimal because half points are the whole point.
+ALTER TABLE tournament_entrants ADD COLUMN played INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN wins INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN draws INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN losses INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN byes INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN whiteCount INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN blackCount INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN lastColour VARCHAR(1) DEFAULT '';
+  -- Swiss colour balance: alternate, and never give three of one colour.
+ALTER TABLE tournament_entrants ADD COLUMN opponents TEXT;
+  -- JSON array of playerIds already faced — Swiss must not repeat a pairing.
+ALTER TABLE tournament_entrants ADD COLUMN tiebreak1 DECIMAL(7,2) DEFAULT 0;
+  -- Buchholz (sum of opponents' scores).
+ALTER TABLE tournament_entrants ADD COLUMN tiebreak2 DECIMAL(7,2) DEFAULT 0;
+  -- Sonneborn-Berger.
+ALTER TABLE tournament_entrants ADD COLUMN performance INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN ratingDelta INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN withdrawn TINYINT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN arenaStreak INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN arenaPoints INT DEFAULT 0;
+
+-- One row per round, so a round has a state of its own rather than being
+-- inferred from "are any games still open".
+CREATE TABLE IF NOT EXISTS tournament_rounds (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tournamentId VARCHAR(32) NOT NULL,
+  round INT NOT NULL,
+  stage VARCHAR(16) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'pending',   -- pending | live | complete
+  pairedAt VARCHAR(40) DEFAULT '',
+  closedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_trn_round (tournamentId, stage, round)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- A pairing is not a match. A bye has no match, and a pairing exists the
+-- moment the round is drawn — before anybody has moved a piece.
+CREATE TABLE IF NOT EXISTS tournament_pairings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tournamentId VARCHAR(32) NOT NULL,
+  round INT NOT NULL,
+  stage VARCHAR(16) DEFAULT '',
+  board INT DEFAULT 0,
+  centre VARCHAR(120) DEFAULT '',
+  whiteId VARCHAR(64) DEFAULT '',
+  whiteName VARCHAR(120) DEFAULT '',
+  blackId VARCHAR(64) DEFAULT '',
+  blackName VARCHAR(120) DEFAULT '',
+  matchId VARCHAR(32) DEFAULT '',
+  isBye TINYINT DEFAULT 0,
+  result VARCHAR(8) DEFAULT '',           -- '' | '1-0' | '0-1' | '0.5-0.5' | 'bye'
+  scoredAt VARCHAR(40) DEFAULT '',
+  createdAt VARCHAR(40) NOT NULL,
+  INDEX idx_trn_pair (tournamentId, stage, round, board),
+  INDEX idx_trn_pair_match (matchId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Real clocks. A time control was a LABEL — '3+2' was stored and nothing ever
+-- counted down. The server now holds the remaining time, applies the increment
+-- on each move, and is the only thing allowed to decide that somebody flagged.
+-- timeControl / rated / ratingDelta / settledAt already exist (migration 97);
+-- what was missing is the time itself.
+ALTER TABLE match_games ADD COLUMN initialMs INT DEFAULT 0;
+ALTER TABLE match_games ADD COLUMN incrementMs INT DEFAULT 0;
+ALTER TABLE match_games ADD COLUMN whiteMs INT DEFAULT 0;
+ALTER TABLE match_games ADD COLUMN blackMs INT DEFAULT 0;
+ALTER TABLE match_games ADD COLUMN clockRunning TINYINT DEFAULT 0;
+ALTER TABLE match_games ADD COLUMN turnStartedAt VARCHAR(40) DEFAULT '';
+  -- When the clock for the player to move started. Elapsed = now - this.
+ALTER TABLE match_games ADD COLUMN board INT DEFAULT 0;
+CREATE INDEX idx_match_clock ON match_games (status, clockRunning);
+
+INSERT INTO schema_version (version) VALUES (99) ON DUPLICATE KEY UPDATE version = version;
