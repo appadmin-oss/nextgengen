@@ -7008,6 +7008,150 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
         return backend_dispatch('community.post.get', ['memberId' => 'CM-A', 'postId' => (string)$n['linkRef']])['ok'] === true;
     })());
 
+    /* ── The safeguarding audit (turn 7) ──────────────────────────────────
+
+       Three paths used to terminate in nothing: a crisis disclosure was
+       discarded with no record, a reported comment reached no human, and
+       approving a held post dropped its @mentions for good. Each of those is
+       pinned below, because each of them looked like working code. */
+
+    // A crisis disclosure is refused AND raised. The refusal is the moment it
+    // becomes something to act on, not the moment it stops mattering.
+    chk('community: a crisis post is refused with the helpline reply', (function () {
+        $r = backend_dispatch('community.post', ['memberId' => 'CM-SG1', 'data' => ['channel' => 'commons', 'body' => 'i want to kill myself'], 'ip' => '9.9.9.9']);
+        return empty($r['ok']) && $r['error'] === 'crisis' && strpos((string)$r['message'], '112') !== false;
+    })());
+    chk('community: …and it is recorded as an open safeguarding case', (function () {
+        $c = db_row("SELECT * FROM community_safeguarding WHERE authorId = 'CM-SG1' ORDER BY id DESC LIMIT 1");
+        return $c && (string)$c['status'] === 'open' && (string)$c['surface'] === 'post' && trim((string)$c['body']) !== '';
+    })());
+    chk('community: …and it raises behaviour.flagged for a human', (function () {
+        foreach (db_all("SELECT payload FROM outbox WHERE kind = 'behaviour.flagged' ORDER BY id DESC LIMIT 20") as $e) {
+            $p = json_decode((string)$e['payload'], true) ?: [];
+            if (($p['subjectId'] ?? '') === 'CM-SG1') return ($p['severity'] ?? '') === 'urgent' && ($p['source'] ?? '') === 'community.post';
+        }
+        return false;
+    })());
+    chk('community: a crisis comment is raised too', (function () use ($pid) {
+        backend_dispatch('community.comment', ['memberId' => 'CM-B', 'postId' => $pid, 'body' => 'sometimes i want to kill myself', 'ip' => '9.9.9.9']);
+        $c = db_row("SELECT * FROM community_safeguarding WHERE surface = 'comment' ORDER BY id DESC LIMIT 1");
+        return $c && (string)$c['status'] === 'open';
+    })());
+    chk('community: the admin overview counts open safeguarding cases separately', (function () {
+        $o = backend_dispatch('admin.community.overview', ['requesterId' => 'NGG-2025-0099']);
+        return $o['ok'] && ($o['safeguarding'] ?? 0) >= 2;
+    })());
+    chk('community: a safeguarding case can be acknowledged', (function () {
+        $q = backend_dispatch('admin.community.safeguarding', ['requesterId' => 'NGG-2025-0099']);
+        if (!$q['ok'] || !$q['cases']) return false;
+        $id = $q['cases'][0]['caseId'];
+        if (!backend_dispatch('admin.community.safeguarding.ack', ['requesterId' => 'NGG-2025-0099', 'caseId' => $id])['ok']) return false;
+        $c = db_row("SELECT status FROM community_safeguarding WHERE caseId = ?", [$id]);
+        return $c && (string)$c['status'] === 'acknowledged';
+    })());
+
+    // Reporting a COMMENT reaches the queue. It used to be filtered on a status
+    // the moderation map never writes, so the list was empty by construction.
+    chk('community: a reported comment surfaces in the moderation queue', (function () use ($pid) {
+        $c = backend_dispatch('community.comment', ['memberId' => 'CM-C', 'postId' => $pid, 'body' => 'a reply worth reporting', 'ip' => '1.1.1.1']);
+        if (empty($c['ok'])) return false;
+        $cid = $c['comment']['commentId'];
+        backend_dispatch('community.report', ['memberId' => 'CM-D', 'targetType' => 'comment', 'targetId' => $cid, 'reason' => 'This is unkind']);
+        $q = backend_dispatch('admin.community.queue', ['requesterId' => 'NGG-2025-0099', 'status' => 'reported']);
+        foreach ($q['comments'] as $row) if ($row['commentId'] === $cid) return (int)$row['reportCount'] === 1;
+        return false;
+    })());
+    chk('community: …and the moderator can read why it was reported', (function () {
+        $q = backend_dispatch('admin.community.queue', ['requesterId' => 'NGG-2025-0099', 'status' => 'reported']);
+        foreach ($q['comments'] as $row) {
+            foreach ($row['reports'] as $rep) if ($rep['reason'] === 'This is unkind' && $rep['by'] !== '') return true;
+        }
+        return false;
+    })());
+
+    // Approving a held post owes its @mentions — this dropped them entirely,
+    // so the post appeared in Mentions and the person was never told.
+    chk('community: approving a held post fires its mentions', (function () {
+        setting_set('community_moderation', ['mode' => 'strict']);
+        $before = (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'CM-A' AND kind = 'community.mention'")['c'] ?? 0);
+        // A video always waits for a mentor, whatever the text screen decides.
+        $r = backend_dispatch('community.post', ['memberId' => 'CM-J', 'data' => ['channel' => 'commons', 'body' => 'clip for @ada-n',
+            'mediaType' => 'video', 'mediaUrl' => 'https://x/clip.mp4', 'mediaBytes' => 1024, 'mediaDuration' => 20], 'ip' => '1.1.1.1']);
+        if (empty($r['ok']) || $r['queued'] !== true) return false;
+        $held = (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'CM-A' AND kind = 'community.mention'")['c'] ?? 0);
+        if ($held !== $before) return false;                 // held → silent, correctly
+        backend_dispatch('admin.community.moderate', ['requesterId' => 'NGG-2025-0099', 'kind' => 'post', 'id' => $r['post']['postId'], 'action' => 'approve']);
+        $after = (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'CM-A' AND kind = 'community.mention'")['c'] ?? 0);
+        if ($after !== $before + 1) return false;
+        // Idempotent: a hide-then-approve must not notify the same people twice.
+        backend_dispatch('admin.community.moderate', ['requesterId' => 'NGG-2025-0099', 'kind' => 'post', 'id' => $r['post']['postId'], 'action' => 'hide']);
+        backend_dispatch('admin.community.moderate', ['requesterId' => 'NGG-2025-0099', 'kind' => 'post', 'id' => $r['post']['postId'], 'action' => 'approve']);
+        return (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'CM-A' AND kind = 'community.mention'")['c'] ?? 0) === $before + 1;
+    })());
+
+    // Releasing the backlog must ADD a flag, never replace a real report count.
+    chk('community: releasing the backlog keeps existing report counts', (function () {
+        setting_set('community_moderation', ['mode' => 'strict']);
+        $r = backend_dispatch('community.post', ['memberId' => 'CM-K', 'data' => ['channel' => 'commons', 'body' => 'held clip',
+            'mediaType' => 'video', 'mediaUrl' => 'https://x/held.mp4', 'mediaBytes' => 1024, 'mediaDuration' => 12], 'ip' => '1.1.1.1']);
+        $held = $r['post']['postId'];
+        // Video stays held on release, so use a text post the screen queued.
+        db_update('community_posts', ['status' => 'pending', 'mediaType' => 'none', 'reportCount' => 6], ['postId' => $held]);
+        backend_dispatch('admin.community.moderation', ['requesterId' => 'NGG-2025-0099', 'mode' => 'flag']);
+        $row = db_row("SELECT status, reportCount FROM community_posts WHERE postId = ?", [$held]);
+        setting_set('community_moderation', ['mode' => 'strict']);
+        return $row && (string)$row['status'] === 'published' && (int)$row['reportCount'] === 6;
+    })());
+
+    // Deleting a post must not leave its stars, ballots or reports behind.
+    chk('community: deleting a post clears every child row', (function () {
+        $r = backend_dispatch('community.post', ['memberId' => 'CM-L', 'data' => ['channel' => 'commons', 'kind' => 'poll',
+            'body' => 'Delete me?', 'pollOptions' => ['Yes', 'No']], 'ip' => '1.1.1.1']);
+        $id = $r['post']['postId'];
+        backend_dispatch('community.pollVote', ['memberId' => 'CM-A', 'postId' => $id, 'choice' => 0]);
+        backend_dispatch('community.star', ['memberId' => 'NGG-2025-0099', 'postId' => $id]);
+        backend_dispatch('community.report', ['memberId' => 'CM-B', 'targetType' => 'post', 'targetId' => $id, 'reason' => 'test']);
+        backend_dispatch('community.delete', ['memberId' => 'CM-L', 'targetType' => 'post', 'targetId' => $id]);
+        return (int)(db_row("SELECT COUNT(*) c FROM community_poll_votes WHERE postId = ?", [$id])['c'] ?? 0) === 0
+            && (int)(db_row("SELECT COUNT(*) c FROM community_stars WHERE postId = ?", [$id])['c'] ?? 0) === 0
+            && (int)(db_row("SELECT COUNT(*) c FROM community_reports WHERE targetId = ?", [$id])['c'] ?? 0) === 0;
+    })());
+
+    // A Genius Star's notification pointed at a column the query never selected,
+    // so every one of them was a link to nowhere.
+    chk('community: a Genius Star notification links to the post', (function () use ($pid) {
+        backend_dispatch('community.star', ['memberId' => 'NGG-2025-0099', 'postId' => $pid]);
+        $n = db_row("SELECT linkRef FROM notifications WHERE kind = 'community.star' ORDER BY id DESC LIMIT 1");
+        return $n && (string)$n['linkRef'] === $pid;
+    })());
+
+    // Reacting to something nobody can see used to be allowed.
+    chk('community: a hidden post cannot be reacted to by a stranger', (function () use ($pid) {
+        backend_dispatch('admin.community.moderate', ['requesterId' => 'NGG-2025-0099', 'kind' => 'post', 'id' => $pid, 'action' => 'hide']);
+        $r = backend_dispatch('community.react', ['memberId' => 'CM-D', 'postId' => $pid, 'emoji' => '👏']);
+        backend_dispatch('admin.community.moderate', ['requesterId' => 'NGG-2025-0099', 'kind' => 'post', 'id' => $pid, 'action' => 'approve']);
+        return ($r['error'] ?? '') === 'not_found';
+    })());
+    chk('community: saving a post that does not exist is refused', backend_dispatch('community.bookmark', ['memberId' => 'CM-A', 'postId' => 'CP-GHOST'])['error'] === 'not_found');
+
+    // The batched page shaper must return exactly what the per-post one did.
+    chk('community: the batched feed shape matches the single-post shape', (function () {
+        $f = backend_dispatch('community.feed', ['memberId' => 'CM-A', 'channel' => 'commons']);
+        if (empty($f['posts'])) return false;
+        foreach (array_slice($f['posts'], 0, 5) as $batched) {
+            $one = backend_dispatch('community.post.get', ['memberId' => 'CM-A', 'postId' => $batched['postId']])['post'] ?? null;
+            if (!$one) return false;
+            foreach (['reactions', 'myReaction', 'commentCount', 'bookmarked', 'stars', 'starred', 'channel', 'poll'] as $k) {
+                if (json_encode($batched[$k]) !== json_encode($one[$k])) return false;
+            }
+        }
+        return true;
+    })());
+
+    // A name that resolves into private space must not be unfurled.
+    chk('community: the unfurl guard rejects a host that resolves to loopback', community_host_is_private('localtest.me') || community_host_is_private('127.0.0.1'));
+    chk('community: …and rejects an unresolvable host rather than trying it', community_host_is_private('no-such-host.invalid-tld-xyz'));
+
     // Admin-settable channel rules round-trip.
     $up = backend_dispatch('admin.community.channel.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Robotics Crew', 'rules' => "Be kind.\nShip weekly."]]);
     chk('community: admin can save channel rules', $up['ok'] && $up['channelId']);

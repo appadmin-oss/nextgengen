@@ -2663,6 +2663,8 @@ function db_migrate(PDO $db): void {
             ALTER TABLE community_comments ADD COLUMN reportCount INTEGER DEFAULT 0;
             ALTER TABLE community_posts ADD COLUMN notifiedAt TEXT DEFAULT '';
             ALTER TABLE community_comments ADD COLUMN notifiedAt TEXT DEFAULT '';
+            UPDATE community_posts SET notifiedAt = createdAt WHERE status = 'published' AND (notifiedAt IS NULL OR notifiedAt = '');
+            UPDATE community_comments SET notifiedAt = createdAt WHERE status = 'published' AND (notifiedAt IS NULL OR notifiedAt = '');
 
             CREATE INDEX idx_cpost_feed ON community_posts(status, pinned, createdAt);
             CREATE INDEX idx_cpost_featured ON community_posts(featured, status);

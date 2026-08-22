@@ -1872,6 +1872,11 @@ ALTER TABLE community_comments ADD COLUMN reportCount INT DEFAULT 0;
 -- after a hide would otherwise fire them twice.
 ALTER TABLE community_posts ADD COLUMN notifiedAt VARCHAR(40) DEFAULT '';
 ALTER TABLE community_comments ADD COLUMN notifiedAt VARCHAR(40) DEFAULT '';
+-- Everything already live has had whatever notifications it was going to get.
+-- Backfilled so a hide-and-reapprove on an old post cannot suddenly notify
+-- people about a conversation from months ago.
+UPDATE community_posts SET notifiedAt = createdAt WHERE status = 'published' AND (notifiedAt IS NULL OR notifiedAt = '');
+UPDATE community_comments SET notifiedAt = createdAt WHERE status = 'published' AND (notifiedAt IS NULL OR notifiedAt = '');
 
 -- The feed's main ordering (pinned first, then newest) had no index that could
 -- serve it — every page was a filesort over the whole table.

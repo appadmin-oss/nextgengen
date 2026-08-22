@@ -743,6 +743,9 @@ function community_prefetch(array $rows, string $viewerId): ?array {
     $pollIds = array_values(array_unique(array_map(fn($r) => (string)$r['postId'],
         array_filter($rows, fn($r) => (string)($r['kind'] ?? 'post') === 'poll'))));
     if ($pollIds) {
+        // Seed every poll, so a poll with no votes yet still counts as
+        // prefetched and does not silently fall back to its own two queries.
+        foreach ($pollIds as $pi) $pre['polls'][$pi] = ['counts' => []];
         $pin = implode(',', array_fill(0, count($pollIds), '?'));
         foreach (db_all("SELECT postId, choice, COUNT(*) c FROM community_poll_votes WHERE postId IN ($pin) GROUP BY postId, choice", $pollIds) as $r) {
             $pre['polls'][(string)$r['postId']]['counts'][(int)$r['choice']] = (int)$r['c'];
@@ -1200,8 +1203,19 @@ function community_post_create(array $p): array {
     }
 
     $author = community_author($viewer);
+    /* Alt text is what the POSTER says is in the picture, when they say it.
+     *
+     * This used to be derived: the caption for an image post, or "Photo shared
+     * by Ada · Ikeja" when there was no caption. Both are wrong for the job. A
+     * copy of the caption makes a screen reader read the same sentence twice,
+     * and the fallback describes who posted it rather than what it shows. The
+     * composer now asks, and an unanswered question means alt="" — announced
+     * as decorative, which is honest, where a bad description is not.
+     *
+     * A document keeps its filename: that IS the description of a file. */
+    $altIn = mb_substr(trim((string)($d['altText'] ?? '')), 0, 160);
     $alt = $mediaType === 'doc' ? ($docName ?: 'Document')
-        : ($mediaType === 'image' ? ($body !== '' ? mb_substr($body, 0, 160) : ('Photo shared by ' . $author['name'] . ($author['centre'] ? ' · ' . $author['centre'] : ''))) : '');
+        : ($mediaType === 'image' ? $altIn : '');
     /* A YouTube link becomes a player rather than a link card.
      *
      * Held under `strict` on the same reasoning as an uploaded clip: nobody has

@@ -42,7 +42,18 @@ function rate_limit_default(string $op): ?array {
         'application.status' => ['max' => 20, 'window' => 300],   // (ref,email) brute-force lookup
         'summer.profile'     => ['max' => 12, 'window' => 300],   // a minor's name + photo + attendance, by guessable handle
         'student.login'      => ['max' => 8,  'window' => 300],   // ID-card credential check — brute-force ceiling
-        'community.post'     => ['max' => 12, 'window' => 60],    // feed post/comment write rate
+        /* Scoped per MEMBER at the route (see api/member/community.php), not per
+           IP alone. A centre is one address: thirty children in a computer room
+           shared twelve posts a minute between them, and the thirteenth was
+           told to slow down. The same reasoning is written out for
+           'summer.register' below and was never applied here.
+
+           The real per-author control is community_spam_check(), which throttles
+           on behaviour (15s between posts, duplicate detection, 15/hour). This
+           stays a runaway-script ceiling, sized so a busy classroom never
+           reaches it. */
+        'community.post'     => ['max' => 12, 'window' => 60],    // per member
+        'community.post.ip'  => ['max' => 240, 'window' => 60],   // per address — a whole centre
         /* Telemetry, not an action: the client reports once per page when a
            configured media cloud refused an upload. Sized so a whole centre on
            one WiFi during a broken deployment still gets its warnings recorded —

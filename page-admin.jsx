@@ -5684,20 +5684,112 @@ function AdminCommunity() {
   const [tab, setTab] = React.useState("moderation");
   const [pending, setPending] = React.useState(null);
   const [mode, setMode] = React.useState("");
-  const loadPending = () => NGGApi.admin.community.overview().then(r => { setPending(r.pending); setMode(r.moderation || "strict"); }).catch(() => {});
+  const [safeguarding, setSafeguarding] = React.useState(0);
+  const loadPending = () => NGGApi.admin.community.overview().then(r => { setPending(r.pending); setMode(r.moderation || "strict"); setSafeguarding(r.safeguarding || 0); }).catch(() => {});
   React.useEffect(() => { loadPending(); }, []);
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Community {pending && (pending.posts + pending.comments + (pending.reported || 0)) > 0 ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{pending.posts + pending.comments + (pending.reported || 0)} to review</span> : null}</h2>
+        {/* Two badges, never one number. "Four things to review" and "a child
+            said something about hurting themselves" are different queues and
+            must not be summed into a single figure somebody can clear by
+            clicking Approve four times. */}
+        <h2 className="admin-h2">Community {pending && (pending.posts + pending.comments + (pending.reported || 0)) > 0 ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{pending.posts + pending.comments + (pending.reported || 0)} to review</span> : null}{safeguarding > 0 ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle", marginLeft: 6 }}>🛟 {safeguarding} safeguarding</span> : null}</h2>
       </div>
       <p className="admin-hint">The members' social feed. {mode === "off" ? "Automatic screening is OFF — nothing is checked before it appears." : mode === "flag" ? "Posts publish immediately; anything borderline lands in the queue below." : "Posts & comments are screened on submit; video and anything borderline waits here for your approval."} Channels mirror the summer courses — add or archive them below.</p>
       <div className="admin-filters">
         <button className={"btn btn-sm " + (tab === "moderation" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("moderation")}>Moderation</button>
         <button className={"btn btn-sm " + (tab === "channels" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("channels")}>Channels</button>
+        <button className={"btn btn-sm " + (tab === "safeguarding" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("safeguarding")}>
+          Safeguarding{safeguarding > 0 ? " · " + safeguarding : ""}
+        </button>
       </div>
       {tab === "moderation" && <AdminCommunityModeration mode={mode} onChanged={setMode}/>}
-      {tab === "moderation" ? <AdminCommunityQueue onChange={loadPending}/> : <AdminCommunityChannels/>}
+      {tab === "moderation" ? <AdminCommunityQueue onChange={loadPending}/>
+        : tab === "safeguarding" ? <AdminCommunitySafeguarding onChange={loadPending}/>
+        : <AdminCommunityChannels/>}
+    </div>
+  );
+}
+
+/* Open safeguarding cases.
+   A child wrote something the crisis gate caught. The post was refused and
+   they were shown a helpline — this is the record of it, which used not to
+   exist at all. Its own screen on purpose: moderation is about whether a
+   message belongs in the feed, and running these past somebody in the same
+   list as "approve, approve, approve" is how a disclosure gets clicked past. */
+function AdminCommunitySafeguarding({ onChange }) {
+  const [status, setStatus] = React.useState("open");
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const load = () => NGGApi.admin.community.safeguarding(status).then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [status]);
+  const ack = async (caseId) => {
+    setBusy(caseId);
+    try { await NGGApi.admin.community.safeguardingAck(caseId); load(); onChange && onChange(); }
+    catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(""); }
+  };
+  return (
+    <div>
+      <p className="admin-hint">
+        Caught by the crisis screen before anything was posted. The child saw the helpline reply
+        and their message was <b>not</b> published. Acknowledging records who read it and when —
+        it does not contact anybody, so make the call first.
+      </p>
+      <div className="admin-filters">
+        <label className="sr-only" htmlFor="admin-sg-status">Show cases</label>
+        <select id="admin-sg-status" className="admin-select" value={status} onChange={e => setStatus(e.target.value)}>
+          <option value="open">Open</option><option value="acknowledged">Acknowledged</option><option value="all">All</option>
+        </select>
+      </div>
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        d === null ? <div className="dash-spinner"/> :
+        d.cases.length === 0 ? <div className="admin-empty">{status === "open" ? "No open safeguarding cases." : "Nothing here."}</div> :
+        <div className="admin-app-list">
+          {d.cases.map(c => (
+            <div className={"admin-app" + (c.status === "open" ? " admin-app-urgent" : "")} key={c.caseId}>
+              <div className="admin-app-top">
+                <div>
+                  <div className="admin-cell-name">{c.author} {c.status === "open" && <span className="chip chip-crimson">needs a person</span>}</div>
+                  <div className="mono admin-cell-sub">{fmtDate(c.createdAt)} · in a {c.surface}{c.channel ? " · #" + c.channel : ""} · {c.caseId}</div>
+                </div>
+                <span className={"chip status-" + (c.status === "open" ? "draft" : "published")}>{c.status}</span>
+              </div>
+              <blockquote className="admin-sg-body">{c.body}</blockquote>
+              <div className="admin-app-actions">
+                {c.status === "open"
+                  ? <button className="btn btn-primary btn-sm" disabled={busy === c.caseId} onClick={() => ack(c.caseId)}>{busy === c.caseId ? "Saving…" : "I've spoken to them"}</button>
+                  : <span className="mono admin-cell-sub">Acknowledged {fmtDate(c.acknowledgedAt)}</span>}
+              </div>
+            </div>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+/* What the people who reported this actually said.
+   community_reports has been collecting that sentence since schema v49 and no
+   screen ever read it — the whole table was write-only apart from its own
+   duplicate check. A count tells a moderator something is wrong; only the
+   reason tells them what, and whether it needs a safeguarding response rather
+   than a moderation one. */
+function AdminCommunityReports({ reports }) {
+  if (!reports || !reports.length) return null;
+  return (
+    <div className="admin-reports">
+      <div className="mono admin-reports-h">🚩 {reports.length} report{reports.length === 1 ? "" : "s"}</div>
+      <ul className="admin-reports-list">
+        {reports.map((r, i) => (
+          <li key={i}>
+            <span className="admin-reports-by">{r.by}</span>
+            <span className="admin-reports-why">{r.reason || <em>no reason given</em>}</span>
+            <span className="mono admin-reports-at">{fmtDate(r.at)}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -5733,6 +5825,7 @@ function AdminCommunityQueue({ onChange }) {
                 {p.mediaType === "image" && p.mediaUrl && <img src={p.mediaUrl} alt="" style={{ maxWidth: 220, borderRadius: 10, marginBottom: 8 }}/>}
                 {p.mediaType === "video" && p.mediaUrl && <video src={p.mediaUrl} poster={p.mediaPoster} controls style={{ maxWidth: 260, borderRadius: 10, marginBottom: 8 }}/>}
                 {p.moderation && p.moderation.reason && <div className="mono admin-cell-sub" style={{ marginBottom: 8 }}>AI: {p.moderation.verdict} · {p.moderation.reason}</div>}
+                <AdminCommunityReports reports={p.reports}/>
                 <div className="admin-app-actions">
                   {p.status !== "published" && <button className="btn btn-primary btn-sm" onClick={() => act("post", p.postId, "approve")}>Approve</button>}
                   {p.status !== "hidden" && <button className="btn btn-ghost btn-sm" onClick={() => act("post", p.postId, "hide")}>Hide</button>}
@@ -5748,10 +5841,14 @@ function AdminCommunityQueue({ onChange }) {
             {d.comments.map(c => (
               <div className="admin-app" key={c.commentId}>
                 <div className="admin-app-top">
-                  <div className="admin-cell-name">{c.name}</div>
+                  {/* A reported comment could not appear here at all until the
+                      queue stopped filtering them by a status the moderation
+                      map never writes. Comments are where bullying lives. */}
+                  <div className="admin-cell-name">{c.name} {c.reportCount > 0 && <span className="chip chip-crimson">🚩 {c.reportCount}</span>}</div>
                   <span className={"chip status-" + (c.status === "published" ? "published" : c.status === "removed" ? "archived" : "draft")}>{c.status}</span>
                 </div>
                 <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{c.body}</p>
+                <AdminCommunityReports reports={c.reports}/>
                 <div className="admin-app-actions">
                   {c.status !== "published" && <button className="btn btn-primary btn-sm" onClick={() => act("comment", c.commentId, "approve")}>Approve</button>}
                   {c.status !== "hidden" && <button className="btn btn-ghost btn-sm" onClick={() => act("comment", c.commentId, "hide")}>Hide</button>}

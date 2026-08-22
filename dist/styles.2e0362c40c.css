@@ -2832,7 +2832,62 @@ img { background-color: rgba(12,20,50,0.04); }
 .cm-you { font-family: var(--c-font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: .08em;
   padding: 2px 6px; margin-left: 6px; border-radius: var(--c-r-chip);
   background: var(--c-purple-tint); color: var(--c-purple); }
-.cm-count { font-variant-numeric: tabular-nums; }
+.cm-count { flex: none; align-self: center; padding: 0 4px;
+  font-family: var(--c-font-mono); font-size: 11.5px; font-variant-numeric: tabular-nums;
+  color: var(--c-muted); }
+.cm-count.over { color: var(--c-red-ink); font-weight: 700; }
+
+/* ── The crisis reply ──────────────────────────────────────────────────────
+   Held on screen until it is dismissed. Everything else in this app can be
+   tapped away by accident; this asks for the button. Deliberately calm rather
+   than alarming — red banners read as "you did something wrong", and the child
+   has not.                                                                  */
+.cm-crisis-scrim { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
+  padding: 20px; background: rgba(8, 12, 28, .72); backdrop-filter: blur(3px); }
+.cm-crisis { width: min(440px, 100%); max-height: 88vh; overflow-y: auto;
+  background: var(--c-card); border-radius: var(--c-r-btn); padding: 26px 24px 22px;
+  box-shadow: 0 24px 64px rgba(8, 12, 28, .34); border-top: 4px solid var(--c-blue); }
+.cm-crisis:focus { outline: none; }
+.cm-crisis-h { margin: 0 0 10px; font-family: var(--c-font-display); font-size: 21px;
+  font-weight: 700; line-height: 1.2; color: var(--c-ink); }
+.cm-crisis-b { margin: 0 0 18px; font-size: 15px; line-height: 1.62; color: var(--c-ink); }
+.cm-crisis-calls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.cm-crisis-call { display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  min-height: var(--c-cta); padding: 10px 16px; border-radius: var(--c-r-sm);
+  background: var(--c-blue); color: #fff; text-decoration: none; }
+.cm-crisis-call:hover { filter: brightness(1.06); }
+.cm-crisis-call:focus-visible { outline: 3px solid var(--c-ink); outline-offset: 2px; }
+.cm-crisis-call-l { font-size: 13.5px; opacity: .92; }
+.cm-crisis-call-n { font-family: var(--c-font-mono); font-size: 16px; font-weight: 700;
+  white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cm-crisis-note { margin: 0 0 18px; font-size: 13.5px; line-height: 1.55; color: var(--c-muted); }
+.cm-crisis-x { width: 100%; min-height: var(--c-cta); border: 1px solid var(--c-border-strong);
+  border-radius: var(--c-r-sm); background: var(--c-card); font: inherit; font-size: 15px;
+  font-weight: 600; color: var(--c-ink); cursor: pointer; }
+.cm-crisis-x:hover { background: var(--c-neutral-chip); }
+.cm-crisis-x:focus-visible { outline: 2px solid var(--c-blue); outline-offset: 2px; }
+
+/* Describe-this-photo. Optional, and said to be optional. */
+.cm-alt-row { display: flex; flex-direction: column; gap: 5px; margin: 8px 0 2px; }
+.cm-alt-lab { font-size: 12.5px; font-weight: 600; color: var(--c-ink); }
+.cm-alt-lab span { font-weight: 400; color: var(--c-muted); }
+.cm-alt-input { min-height: var(--c-tap); padding: 0 12px; border-radius: var(--c-r-sm);
+  border: 1px solid var(--c-border-strong); background: var(--c-card); font: inherit; font-size: 14px; }
+.cm-alt-input:focus-visible { outline: 2px solid var(--c-blue); outline-offset: 1px; }
+
+/* A load failure over messages already on screen: a banner, not an empty state. */
+.cmm-staleban { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin: 8px var(--c-gutter); padding: 9px 12px; border-radius: var(--c-r-sm);
+  background: var(--c-neutral-chip); border: 1px solid var(--c-border-strong);
+  font-size: 13px; color: var(--c-ink); }
+.cmm-staleban button { min-height: 32px; padding: 0 12px; border-radius: var(--c-r-pill);
+  border: 1px solid var(--c-border-strong); background: var(--c-card);
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; color: var(--c-ink); }
+.cmm-staleban button:focus-visible { outline: 2px solid var(--c-blue); outline-offset: 2px; }
+
+/* The link thumbnail is an <img> now, not an interpolated background url(). */
+.cm-link-thumb > img { width: 100%; height: 100%; object-fit: cover;
+  border-radius: inherit; display: block; }
 .cm-progress { height: 8px; border-radius: var(--c-r-pill); background: var(--c-neutral-chip); overflow: hidden; }
 .cm-progress > span { display: block; height: 100%; background: var(--c-green); }
 

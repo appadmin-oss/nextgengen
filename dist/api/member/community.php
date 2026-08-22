@@ -23,12 +23,17 @@ if ($method === 'GET') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
     if ($action === 'post') {
-        rate_limit_check('community.post');
+        // Two buckets: a generous ceiling on the shared centre address, and the
+        // real limit on the person. Keyed on the member so one busy classroom
+        // cannot lock out the rest of the room.
+        rate_limit_check('community.post.ip');
+        rate_limit_check('community.post', $s['mid']);
         $res = gs_call('community.post', ['memberId' => $s['mid'], 'data' => $b['data'] ?? [], 'ip' => client_ip()]);
     } elseif ($action === 'react') {
         $res = gs_call('community.react', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'emoji' => $b['emoji'] ?? '']);
     } elseif ($action === 'comment') {
-        rate_limit_check('community.post');
+        rate_limit_check('community.post.ip');
+        rate_limit_check('community.post', $s['mid']);
         $res = gs_call('community.comment', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '', 'body' => $b['body'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'bookmark') {
         $res = gs_call('community.bookmark', ['memberId' => $s['mid'], 'postId' => $b['postId'] ?? '']);

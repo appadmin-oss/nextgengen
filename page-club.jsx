@@ -688,9 +688,11 @@ function CommunityPublic({ setPage, auth }) {
     { value: stats && stats.centres > 0 ? String(stats.centres).padStart(2, "0") : (centres.length ? String(centres.length).padStart(2, "0") : "—"), label: "Centres live", color: "#f5b026" },
   ];
   const tabBtn = (k, label, icon) => (
-    <button key={k} onClick={() => { setView(k); setPanel(null); }}
-      style={{ fontFamily: "var(--font-body)", fontSize: 13.5, fontWeight: 600, padding: "12px 6px", border: "none", background: "none", cursor: "pointer", borderBottom: "2.5px solid " + (view === k ? "var(--gold-500)" : "transparent"), color: view === k ? "#fff" : "rgba(255,255,255,0.55)", display: "inline-flex", alignItems: "center", gap: 7 }}>
-      <i className={"ph " + icon}/>{label}
+    // aria-pressed, because which tab is current was signalled by colour and a
+    // gold underline alone — neither of which reaches a screen reader.
+    <button key={k} onClick={() => { setView(k); setPanel(null); }} aria-pressed={view === k}
+      style={{ fontFamily: "var(--font-body)", fontSize: 13.5, fontWeight: 600, padding: "12px 6px", border: "none", background: "none", cursor: "pointer", borderBottom: "2.5px solid " + (view === k ? "var(--gold-500)" : "transparent"), color: view === k ? "#fff" : "rgba(255,255,255,0.72)", display: "inline-flex", alignItems: "center", gap: 7 }}>
+      <i className={"ph " + icon} aria-hidden="true"/>{label}
     </button>
   );
 
@@ -706,8 +708,12 @@ function CommunityPublic({ setPage, auth }) {
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--lime,#d0ff3a)" }}/>{all.length ? all.length + " GENIUSES ON THE BOARD" : "THE MOVEMENT"}
             </span>
             <div style={{ position: "relative", width: 260, maxWidth: "44vw" }}>
-              <i className="ph ph-magnifying-glass" style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.5)", fontSize: 15 }}/>
-              <input value={q} onChange={e => { setQ(e.target.value); if (e.target.value) setView("members"); }} placeholder="Search members…" style={{ width: "100%", fontFamily: "inherit", fontSize: 13, padding: "9px 12px 9px 34px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.18)", background: "rgba(255,255,255,0.08)", color: "#fff", outline: "none" }}/>
+              {/* A placeholder is not a label: it disappears the moment anyone
+                  types, and a screen reader announced this as an unnamed edit
+                  field. Every input in the signed-in app already does this. */}
+              <label className="sr-only" htmlFor="cm-pub-search">Search members by name or centre</label>
+              <i className="ph ph-magnifying-glass" aria-hidden="true" style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.72)", fontSize: 15 }}/>
+              <input id="cm-pub-search" type="search" value={q} onChange={e => { setQ(e.target.value); if (e.target.value) setView("members"); }} placeholder="Search members…" style={{ width: "100%", fontFamily: "inherit", fontSize: 13, padding: "9px 12px 9px 34px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.28)", background: "rgba(255,255,255,0.08)", color: "#fff", outline: "none" }}/>
             </div>
           </div>
           <h1 className="display" style={{ fontWeight: 800, fontSize: "clamp(30px,4.6vw,48px)", letterSpacing: "-0.03em", lineHeight: 1, margin: "18px 0 10px" }}>The Genius community.</h1>
@@ -727,7 +733,10 @@ function CommunityPublic({ setPage, auth }) {
               <div key={i} style={{ borderLeft: i === 0 ? "none" : "1px solid rgba(255,255,255,0.14)", padding: "20px 0 20px " + (i === 0 ? "0" : "16px") }}>
                 <div className="display" style={{ fontWeight: 800, fontSize: "clamp(24px,3.2vw,32px)", color: k.color, fontVariantNumeric: "tabular-nums" }}>{k.value}</div>
                 <div className="mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.6)", marginTop: 6 }}>{k.label}</div>
-                {k.note && <div className="mono" style={{ fontSize: 10, color: "rgba(255,255,255,0.42)", marginTop: 3 }}>{k.note}</div>}
+                {/* Was rgba(255,255,255,0.42): 4.09:1 over the hero's darkest
+                    stop at 10px, under the 4.5:1 floor, and worse over the
+                    lighter stops. 0.62 clears it across the whole gradient. */}
+                {k.note && <div className="mono" style={{ fontSize: 10.5, color: "rgba(255,255,255,0.62)", marginTop: 3 }}>{k.note}</div>}
               </div>
             ))}
           </div>
@@ -926,6 +935,55 @@ function CmSheet({ title, onClose, children, labelledBy }) {
         <span className="cmm-grab" aria-hidden="true"/>
         {title && <h2 className="cmm-sheet-h">{title}</h2>}
         {children}
+      </div>
+    </div>
+  );
+}
+
+/* ── The crisis reply ─────────────────────────────────────────────────────
+   When the screen catches a child writing about harming themselves, the server
+   answers with a helpline. That answer used to arrive as toast.error() — a red
+   strip headed "Heads up", six and a half seconds, two phone numbers as plain
+   text, no way to get it back. It is the most important sentence this product
+   ever says to anybody and it was being delivered by the component that also
+   says "Upload failed".
+
+   So: a dialog that stays until it is dismissed, numbers that dial, and no
+   auto-close of any kind. The message is the server's, not ours — it names the
+   numbers, and we turn them into something a thumb can reach.               */
+
+const CM_CRISIS_TEL = [
+  { label: "Emergency services", num: "112" },
+  { label: "NGG safeguarding", num: "+2349037776318", show: "+234 903 777 6318" },
+];
+
+function CmCrisisDialog({ message, onClose }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    /* Deliberately NO Escape handler and no scrim click-through. Every other
+       sheet in here closes on a stray tap; this one asks for the button. */
+    const t = setTimeout(() => { const el = ref.current; if (el) el.focus(); }, 30);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { clearTimeout(t); document.body.style.overflow = prev; };
+  }, []);
+  return (
+    <div className="cm-crisis-scrim">
+      <div className="cm-crisis" role="alertdialog" aria-modal="true"
+           aria-labelledby="cm-crisis-h" aria-describedby="cm-crisis-b"
+           tabIndex={-1} ref={ref}>
+        <h2 className="cm-crisis-h" id="cm-crisis-h">Please talk to someone now</h2>
+        <p className="cm-crisis-b" id="cm-crisis-b">{message}</p>
+        <div className="cm-crisis-calls">
+          {CM_CRISIS_TEL.map(t => (
+            <a key={t.num} className="cm-crisis-call" href={"tel:" + t.num}>
+              <span className="cm-crisis-call-l">{t.label}</span>
+              <span className="cm-crisis-call-n">{t.show || t.num}</span>
+            </a>
+          ))}
+        </div>
+        <p className="cm-crisis-note">Your message wasn't posted, and it's still in the box if you want it. You're not in trouble.</p>
+        <button className="cm-crisis-x" onClick={onClose}>I've read this</button>
       </div>
     </div>
   );
@@ -1972,18 +2030,27 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
 
   React.useEffect(() => { postsRef.current = posts || []; }, [posts]);
 
+  /* Three states, not two.
+     A dropped connection used to `setPosts([])`, which renders the empty-channel
+     copy — "be the first to post something" — in a channel holding two hundred
+     messages. Failure and emptiness are different facts and must not share a
+     screen. */
+  const [loadErr, setLoadErr] = React.useState(false);
+  const [reloadTick, setReload] = React.useState(0);
+
   React.useEffect(() => {
-    setPosts(null); setFresh(null); setDismissed(false);
+    setPosts(null); setFresh(null); setDismissed(false); setLoadErr(false);
     setUnreadMark(ch.unread || 0);
     NGGApi.member.community.feed(slug, "latest", 0)
-      .then(r => setPosts(r.posts || [])).catch(() => setPosts([]));
+      .then(r => { setPosts(r.posts || []); setLoadErr(false); })
+      .catch(() => { setPosts([]); setLoadErr(true); });
     NGGApi.member.community.members(slug)
       .then(r => setMembers(r.members || [])).catch(() => setMembers([]));
     const t = setTimeout(() => {
       NGGApi.member.community.markRead(slug).then(() => onCounts()).catch(() => {});
     }, 1200);
     return () => clearTimeout(t);
-  }, [slug]); // eslint-disable-line
+  }, [slug, reloadTick]); // eslint-disable-line
 
   /* Polling, and the rule the bundle is emphatic about: NEVER auto-scroll.
      A message arriving while somebody is reading three screens up should not
@@ -1992,6 +2059,7 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
     const tick = () => {
       if (document.hidden) return;
       NGGApi.member.community.feed(slug, "latest", 0).then(r => {
+        setLoadErr(false);
         const cur = postsRef.current;
         const have = new Set(cur.map(x => x.postId));
         const incoming = r.posts || [];
@@ -2039,7 +2107,9 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
           <h1 className="cmm-ch-title">{ch.name}</h1>
           <p className="cmm-sub">
             {members === null ? "…" : members.length + (members.length === 1 ? " member" : " members")}
-            {members && members.some(m => m.staff) ? " · " + members.filter(m => m.staff).length + " mentor" : ""}
+            {members && members.some(m => m.staff)
+              ? " · " + members.filter(m => m.staff).length + " mentor" + (members.filter(m => m.staff).length === 1 ? "" : "s")
+              : ""}
           </p>
         </div>
         {/* Files live one tap from the conversation they were shared in — the
@@ -2084,10 +2154,23 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
 
       <div className="cmm-stream" ref={streamRef} onScroll={onScroll}>
         {chrono === null && <CmSkeleton rows={4}/>}
-        {chrono && chrono.length === 0 && (
+        {chrono && chrono.length === 0 && loadErr && (
+          <CmEmpty icon="!" title="Couldn't load this channel"
+                   body="The messages are still there — the connection dropped on the way. Try again."
+                   action={<button className="cmm-cta" onClick={() => setReload(n => n + 1)}>Try again</button>}/>
+        )}
+        {chrono && chrono.length === 0 && !loadErr && (
           <CmEmpty icon="#" title="Nothing here yet"
                    body={"Be the first to say something in " + ch.name + "."}
                    action={<button className="cmm-cta" onClick={onCompose.open}>Write a message</button>}/>
+        )}
+        {/* A failure that arrives while messages are already on screen is a
+            quiet banner, not an empty state — the ones you have are still good. */}
+        {chrono && chrono.length > 0 && loadErr && (
+          <div className="cmm-staleban" role="status">
+            Can't reach the community right now — showing what you already had.
+            <button onClick={() => setReload(n => n + 1)}>Retry</button>
+          </div>
         )}
         {chrono && chrono.map((p, i) => (
           <React.Fragment key={p.postId}>
@@ -4525,10 +4608,18 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
   const [poll, setPoll] = React.useState(null); // null | [opt, opt, ...]
   const [ment, setMent] = React.useState(null); // {q, start, items}
   const [mentIdx, setMentIdx] = React.useState(0);
+  const [slashIdx, setSlashIdx] = React.useState(0);
   const [emoji, setEmoji] = React.useState(false);
   const [drag, setDrag] = React.useState(false);
   const [showFmt, setShowFmt] = React.useState(false); // format tools revealed on demand
+  const [alt, setAlt] = React.useState("");           // what's in the picture
+  const [crisis, setCrisis] = React.useState("");     // the helpline reply, held on screen
   const fileRef = React.useRef(null);
+  /* Every keystroke after an @ used to fire its own request with no debounce
+     and no ordering, so a slow answer for "@a" could land after — and
+     overwrite — the answer for "@ada". One timer, one sequence number. */
+  const mentSeq = React.useRef(0);
+  const mentTimer = React.useRef(null);
   const docRef = React.useRef(null);
   const taRef = React.useRef(null);
   const draftKey = "ngg.cm.draft." + ch;
@@ -4566,7 +4657,7 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
       const meta = await cmVideoMeta(f); duration = Math.round(meta.duration || 0);
       if (duration > CM_VIDEO_MAX_SECS) { toast.error("That clip is " + Math.round(duration / 60) + " min — keep it under 3 minutes."); return; }
     }
-    setPoll(null); setUp(1);
+    setPoll(null); setUp(1); setAlt("");
     try {
       const r = await NGGApi.uploadFile(f, "post", pct => setUp(Math.max(1, pct)));
       const type = isDoc ? "doc" : ((r.resourceType === "video" || isVid) ? "video" : "image");
@@ -4618,11 +4709,22 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
     const val = e.target.value; setBody(val);
     const caret = e.target.selectionStart || val.length;
     const m = val.slice(0, caret).match(/@([a-z0-9._-]{0,20})$/i);
+    if (mentTimer.current) clearTimeout(mentTimer.current);
     if (m) {
       const start = caret - m[0].length;
-      NGGApi.member.community.mentions(m[1] || "").then(r => { setMent({ q: m[1] || "", start, items: r.people || [] }); setMentIdx(0); }).catch(() => {});
-    } else setMent(null);
+      const q = m[1] || "";
+      const seq = ++mentSeq.current;
+      mentTimer.current = setTimeout(() => {
+        NGGApi.member.community.mentions(q)
+          .then(r => {
+            if (seq !== mentSeq.current) return;   // a newer keystroke won
+            setMent({ q, start, items: r.people || [] }); setMentIdx(0);
+          })
+          .catch(() => {});
+      }, 150);
+    } else { mentSeq.current++; setMent(null); }
   };
+  React.useEffect(() => () => { if (mentTimer.current) clearTimeout(mentTimer.current); }, []);
   const pickMention = (handle) => {
     const ta = taRef.current;
     if (!ment || !ta) return;
@@ -4636,6 +4738,13 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
   const slashQ = /^\/(\w*)$/.exec(body.trim());
   const slashItems = slashQ ? CM_SLASH.filter(s => s.cmd.startsWith(slashQ[1].toLowerCase())) : [];
   const slashOpen = !!slashQ && slashItems.length > 0 && !media;
+  const mentOpen = !!(ment && ment.items.length > 0);
+  // What the combobox on the textarea reports: is a popup open, and which
+  // option is current. Slash wins when both could be, which matches the render.
+  const menuOpen = slashOpen || mentOpen;
+  const activeOptId = slashOpen ? ("cm-slash-opt-" + Math.min(slashIdx, slashItems.length - 1))
+                    : mentOpen ? ("cm-mention-opt-" + mentIdx) : undefined;
+  React.useEffect(() => { setSlashIdx(0); }, [slashQ && slashQ[1]]);
   const runSlash = (cmd) => {
     setBody("");
     if (cmd === "poll") setPoll(["", ""]);
@@ -4672,15 +4781,21 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
     try {
       const payload = isPoll
         ? { channel: ch, body: body.trim(), kind: "poll", pollOptions: poll.map(o => o.trim()).filter(Boolean) }
-        : { channel: ch, body: body.trim(), mediaType: media ? media.type : "none", mediaUrl: media ? media.url : "", mediaPoster: media ? media.poster : "", mediaName: media && media.type === "doc" ? media.name : "", mediaFormat: media ? (media.format || "") : "", mediaPages: media ? (media.pages || 0) : 0, mediaBytes: media ? media.bytes : 0, mediaDuration: media ? media.duration : 0 };
+        : { channel: ch, body: body.trim(), altText: alt.trim(), mediaType: media ? media.type : "none", mediaUrl: media ? media.url : "", mediaPoster: media ? media.poster : "", mediaName: media && media.type === "doc" ? media.name : "", mediaFormat: media ? (media.format || "") : "", mediaPages: media ? (media.pages || 0) : 0, mediaBytes: media ? media.bytes : 0, mediaDuration: media ? media.duration : 0 };
       const r = await NGGApi.member.community.post(payload);
-      setBody(""); setMedia(null); setPoll(null); setEmoji(false);
+      setBody(""); setMedia(null); setPoll(null); setEmoji(false); setAlt("");
       try { localStorage.removeItem(draftKey); } catch (_) {}
       if (r.queued) toast.success("Posted — a mentor will approve it shortly.");
       else toast.success("Posted ✓");
       if (r.post) onPosted && onPosted(r.post);
     } catch (e) {
-      toast.error(e.detail || (e.code === "crisis" ? "Please talk to a trusted adult now." : "Couldn't post — try again."));
+      /* A crisis reply is not an error message. It gets a dialog that stays,
+         with numbers that dial — never the toast host, which auto-dismisses
+         after 6.5 seconds and headlines it "Heads up". The draft is left
+         exactly where it is: this is the one failure where clearing the box
+         would take away the thing the child was trying to say. */
+      if (e.code === "crisis") setCrisis(e.detail || "Please talk to a trusted adult right now. If you're in danger, call 112, or NGG safeguarding on +234 903 777 6318. You're not in trouble, and you're not alone.");
+      else toast.error(e.detail || "Couldn't post — try again.");
     } finally { setBusy(false); }
   };
 
@@ -4695,7 +4810,11 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
       if (e.key === "Escape") { e.preventDefault(); setMent(null); return; }
     }
     if (slashOpen) {
-      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); runSlash(slashItems[0].cmd); return; }
+      // Arrow keys used to do nothing here and Enter always took the first
+      // item, so a highlighted second option could not actually be chosen.
+      if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx(i => (i + 1) % slashItems.length); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx(i => (i - 1 + slashItems.length) % slashItems.length); return; }
+      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); runSlash((slashItems[slashIdx] || slashItems[0]).cmd); return; }
       if (e.key === "Escape") { e.preventDefault(); setBody(""); return; }
     }
     // Formatting shortcuts.
@@ -4755,40 +4874,74 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
         </div>
       )}
 
+      {crisis && <CmCrisisDialog message={crisis} onClose={() => setCrisis("")}/>}
+
       {media && (
         <div className="cm-media-preview">
           {media.type === "video" ? <video src={cmOpt(media.url, 1280)} poster={media.poster} controls className="cm-media"/>
             : media.type === "doc" ? <div className="cm-doc-chip"><span className="cm-doc-ic" aria-hidden="true">📄</span><span className="cm-doc-name">{media.name}</span></div>
             : <img src={cmOpt(media.url, 900)} alt="" className="cm-media"/>}
-          <button className="cm-media-x" onClick={() => setMedia(null)} aria-label="Remove attachment">✕</button>
+          <button className="cm-media-x" onClick={() => { setMedia(null); setAlt(""); }} aria-label="Remove attachment">✕</button>
         </div>
       )}
-      {up > 0 && <div className="cm-progress" role="progressbar" aria-label="Uploading"><span style={{ width: up + "%" }}/></div>}
+      {/* Ask what's in the picture.
+          The server used to derive alt text from the caption, so a screen
+          reader read the caption and then read it again as the description —
+          and when there was no caption it fell back to "Photo shared by Ada",
+          which describes provenance, not content. Optional on purpose: left
+          empty the image is marked decorative, which is at least honest. */}
+      {media && media.type === "image" && (
+        <div className="cm-alt-row">
+          <label className="cm-alt-lab" htmlFor="cm-alt-box">Describe this photo <span>for people using a screen reader</span></label>
+          <input id="cm-alt-box" className="cm-alt-input" value={alt} maxLength={160}
+                 onChange={e => setAlt(e.target.value)}
+                 placeholder="e.g. three students holding up a finished robot"/>
+        </div>
+      )}
+      {up > 0 && (
+        <div className="cm-progress" role="progressbar" aria-label="Uploading"
+             aria-valuenow={up} aria-valuemin={0} aria-valuemax={100} aria-valuetext={up + "% uploaded"}>
+          <span style={{ width: up + "%" }}/>
+        </div>
+      )}
 
       {/* Single-row dock */}
       <div className="cm-dockrow">
         <div className="cm-dock-field">
           <label className="sr-only" htmlFor="cm-input-box">Message {active !== "all" ? "#" + chName : "the community"}</label>
+          {/* A real combobox. Both menus were role="listbox" holding buttons —
+              an invalid child for that role — with nothing on the input saying
+              a menu had opened and no aria-activedescendant, so the highlight
+              arrow keys move was never announced to anyone who couldn't see
+              it. Now the input owns the popup and names the active option. */}
           <textarea id="cm-input-box" ref={taRef} className="cm-input" rows={1} maxLength={2000} value={body} onChange={onBody} onKeyDown={onKey} onPaste={onPaste}
+            role="combobox" aria-expanded={menuOpen} aria-autocomplete="list"
+            aria-controls={menuOpen ? (slashOpen ? "cm-slash-list" : "cm-mention-list") : undefined}
+            aria-activedescendant={activeOptId}
+            aria-describedby="cm-input-hint"
             aria-label={"Message " + (active !== "all" ? "#" + chName : "the community")}
             placeholder={poll ? "Ask the crew a question…" : ("Message " + (active !== "all" ? "#" + chName : "the crew") + "…")}/>
           {slashOpen && (
-            <div className="cm-mention-menu cm-slash-menu" role="listbox" aria-label="Commands">
+            <div className="cm-mention-menu cm-slash-menu" id="cm-slash-list" role="listbox" aria-label="Commands">
               {slashItems.map((s, i) => (
-                <button key={s.cmd} role="option" aria-selected={i === 0} className={"cm-mention-item" + (i === 0 ? " is-active" : "")} onMouseDown={e => e.preventDefault()} onClick={() => runSlash(s.cmd)}>
+                <div key={s.cmd} id={"cm-slash-opt-" + i} role="option" aria-selected={i === slashIdx}
+                     className={"cm-mention-item" + (i === slashIdx ? " is-active" : "")}
+                     onMouseDown={e => e.preventDefault()} onMouseEnter={() => setSlashIdx(i)} onClick={() => runSlash(s.cmd)}>
                   <span className="cm-slash-ic" aria-hidden="true">{s.icon}</span>
                   <span><b>/{s.cmd}</b> <span className="cm-slash-hint">{s.hint}</span></span>
-                </button>
+                </div>
               ))}
             </div>
           )}
-          {ment && ment.items.length > 0 && (
-            <div className="cm-mention-menu" role="listbox" aria-label="People to mention">
+          {mentOpen && (
+            <div className="cm-mention-menu" id="cm-mention-list" role="listbox" aria-label="People to mention">
               {ment.items.map((pp, i) => (
-                <button key={pp.handle} role="option" aria-selected={i === mentIdx} className={"cm-mention-item" + (i === mentIdx ? " is-active" : "")} onMouseDown={e => e.preventDefault()} onMouseEnter={() => setMentIdx(i)} onClick={() => pickMention(pp.handle)}>
+                <div key={pp.handle} id={"cm-mention-opt-" + i} role="option" aria-selected={i === mentIdx}
+                     className={"cm-mention-item" + (i === mentIdx ? " is-active" : "")}
+                     onMouseDown={e => e.preventDefault()} onMouseEnter={() => setMentIdx(i)} onClick={() => pickMention(pp.handle)}>
                   <span className={"cm-avatar cm-avatar-sm" + (pp.kind === "all" ? " cm-avatar-all" : "")} style={pp.kind === "all" ? {} : { background: cmColor(pp.handle), color: inkOn(cmColor(pp.handle)).ink }} aria-hidden="true">{pp.kind === "all" ? "📣" : cmInitial(pp.name || pp.handle)}</span>
                   <span><b>@{pp.handle}</b>{pp.name ? " · " + pp.name : ""}{pp.centre ? " · " + pp.centre : ""}{pp.kind === "mentor" ? <span className="cm-ment-badge">mentor</span> : null}</span>
-                </button>
+                </div>
               ))}
             </div>
           )}
@@ -4802,15 +4955,31 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
           <div className="cm-emoji-wrap">
             {iconBtn(cmIcon("emoji"), "Emoji", () => setEmoji(v => !v), emoji ? " is-on" : "")}
             {emoji && (
-              <div className="cm-emoji-pop" role="menu" aria-label="Emoji" onMouseLeave={() => setEmoji(false)}>
-                {CM_EMOJI.map(em => <button key={em} type="button" className="cm-emoji-e" aria-label={"Insert " + em} onMouseDown={e => e.preventDefault()} onClick={() => cmInsertAt(taRef.current, em, setBody)}>{em}</button>)}
+              /* Escape closes it and hands focus back. It closed on mouse-leave
+                 alone, so a keyboard user could tab in and not get out. */
+              <div className="cm-emoji-pop" role="menu" aria-label="Emoji"
+                   onMouseLeave={() => setEmoji(false)}
+                   onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setEmoji(false); if (taRef.current) taRef.current.focus(); } }}>
+                {CM_EMOJI.map(em => <button key={em} type="button" role="menuitem" className="cm-emoji-e" aria-label={"Insert " + em} onMouseDown={e => e.preventDefault()} onClick={() => cmInsertAt(taRef.current, em, setBody)}>{em}</button>)}
               </div>
             )}
           </div>
           {iconBtn("Aa", "Formatting", () => setShowFmt(v => !v), showFmt ? " is-on" : "")}
+          {/* The counter lives here, not in the channel picker below — that block
+              only renders on the aggregate views, so inside an actual channel
+              there was no counter at all and maxLength silently stopped
+              accepting keystrokes at 2,000. */}
+          {body.length > 1600 && (
+            <span className={"cm-count" + (remaining <= 0 ? " over" : "")} aria-live="polite">
+              <span className="sr-only">{remaining <= 0 ? "Character limit reached. " : ""}{remaining} characters left</span>
+              <span aria-hidden="true">{remaining}</span>
+            </span>
+          )}
           <span className="cm-send-wrap">
             <button className="cm-send-btn" disabled={busy || up > 0 || !canPost} onClick={submit} aria-label={poll ? "Post poll" : "Send message"}>{busy ? "…" : poll ? "Ask" : "Send"}</button>
-            <span className="cm-send-tip" role="tooltip">{enterToSend ? <><b>Enter</b> to send · <b>Shift + Enter</b> for a new line</> : <>Press <b>Send</b> to share · <b>Shift + Enter</b> for a new line</>}</span>
+            {/* aria-describedby on the textarea points here; it was an orphan
+                role="tooltip" that nothing referenced. */}
+            <span className="cm-send-tip" id="cm-input-hint" role="tooltip">{enterToSend ? <><b>Enter</b> to send · <b>Shift + Enter</b> for a new line</> : <>Press <b>Send</b> to share · <b>Shift + Enter</b> for a new line</>}</span>
           </span>
         </div>
       </div>
@@ -4823,7 +4992,6 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
           <select id="cm-chan-select" className="cm-chan-select" value={ch} onChange={e => setCh(e.target.value)}>
             {channels.filter(c => c.slug !== "bookmarks").map(c => <option key={c.slug} value={c.slug}>{c.icon} {c.name}</option>)}
           </select>
-          {body.length > 1600 && <span className={"cm-count" + (remaining < 0 ? " over" : "")}>{remaining}</span>}
         </div>
       )}
     </div>
@@ -4890,18 +5058,25 @@ function CmBodyBlock({ post, onVote }) {
       {post.body && <div className={"cm-msg-text" + (post.kind === "poll" ? " cm-poll-q" : "")}><NggMarkdown text={post.body}/></div>}
       {post.kind === "poll" && post.poll && (
         <div className="cm-poll">
+          {/* Not disabled once you've voted. community_poll_vote() updates an
+              existing ballot on purpose — "changing your vote is allowed" — and
+              disabling the buttons made that unreachable, while dropping them
+              out of the tab order with nothing saying why. */}
           {post.poll.options.map((o, i) => {
             const voted = post.poll.myVote >= 0;
             const mine = post.poll.myVote === i;
             return (
-              <button key={i} className={"cm-poll-row" + (voted ? " voted" : "") + (mine ? " mine" : "")} onClick={() => !voted && onVote(i)} disabled={voted}>
-                {voted && <span className="cm-poll-bar" style={{ width: o.pct + "%" }}/>}
+              <button key={i} className={"cm-poll-row" + (voted ? " voted" : "") + (mine ? " mine" : "")}
+                      aria-pressed={mine}
+                      aria-label={o.text + (voted ? ", " + o.pct + "%, " + o.votes + " vote" + (o.votes === 1 ? "" : "s") + (mine ? ", your vote" : "") : "")}
+                      onClick={() => onVote(i)}>
+                {voted && <span className="cm-poll-bar" style={{ width: o.pct + "%" }} aria-hidden="true"/>}
                 <span className="cm-poll-text">{mine ? "✓ " : ""}{o.text}</span>
-                {voted && <span className="cm-poll-pct">{o.pct}%</span>}
+                {voted && <span className="cm-poll-pct" aria-hidden="true">{o.pct}%</span>}
               </button>
             );
           })}
-          <div className="cm-poll-total">{post.poll.totalVotes} vote{post.poll.totalVotes === 1 ? "" : "s"}{post.poll.myVote < 0 ? " · tap to vote" : ""}</div>
+          <div className="cm-poll-total">{post.poll.totalVotes} vote{post.poll.totalVotes === 1 ? "" : "s"}{post.poll.myVote < 0 ? " · tap to vote" : " · tap again to change your vote"}</div>
         </div>
       )}
       {post.mediaType === "image" && post.mediaUrl && <div className="cm-msg-media"><img src={cmOpt(post.mediaUrl, 1000)} alt={post.altText || ""} loading="lazy"/></div>}
@@ -4938,7 +5113,9 @@ function CmBodyBlock({ post, onVote }) {
       )}
       {post.linkPreview && post.linkPreview.kind !== "youtube" && post.linkPreview.title && (
         <a className="cm-link-card" href={post.linkPreview.url} target="_blank" rel="noopener noreferrer">
-          {post.linkPreview.image && <span className="cm-link-thumb" style={{ backgroundImage: "url(" + post.linkPreview.image + ")" }} aria-hidden="true"/>}
+          {/* An <img>, not an interpolated url() — a background-image built by
+              string concatenation puts remote text inside a CSS declaration. */}
+          {post.linkPreview.image && <span className="cm-link-thumb" aria-hidden="true"><img src={post.linkPreview.image} alt="" loading="lazy"/></span>}
           <span className="cm-link-body">
             {post.linkPreview.site && <span className="cm-link-site">{post.linkPreview.site}</span>}
             <span className="cm-link-title">{post.linkPreview.title}</span>
@@ -4994,6 +5171,7 @@ function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
   const [comments, setComments] = React.useState(null);
   const [body, setBody] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const [crisis, setCrisis] = React.useState("");
   const act = useCmActions(post, onPatch, onRemove);
   const endRef = React.useRef(null);
   React.useEffect(() => {
@@ -5017,10 +5195,16 @@ function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
       setBody(""); setComments(c => (c || []).concat(r.comment));
       if (r.queued) toast.success("Reply in review — a mentor will approve it.");
       else onPatch(post.postId, { commentCount: (post.commentCount || 0) + 1 });
-    } catch (e) { toast.error(e.detail || "Couldn't reply — try again."); } finally { setBusy(false); }
+    } catch (e) {
+      // Same rule as the composer: a helpline is not a toast. The reply stays
+      // in the box.
+      if (e.code === "crisis") setCrisis(e.detail || "Please talk to a trusted adult right now. If you're in danger, call 112, or NGG safeguarding on +234 903 777 6318. You're not in trouble, and you're not alone.");
+      else toast.error(e.detail || "Couldn't reply — try again.");
+    } finally { setBusy(false); }
   };
   return (
     <aside className="cm-thread" ref={paneRef} role="dialog" aria-label={"Thread in " + post.channel.name}>
+      {crisis && <CmCrisisDialog message={crisis} onClose={() => setCrisis("")}/>}
       <div className="cm-thread-head">
         <div><span className="cm-thread-title" role="heading" aria-level={2}>Thread</span><span className="cm-thread-chan" style={{ color: post.channel.color }}>{post.channel.icon} {post.channel.name}</span></div>
         <button className="cm-thread-x" onClick={onClose} aria-label="Close thread">✕</button>

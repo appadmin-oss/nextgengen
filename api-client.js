@@ -854,6 +854,10 @@
         moderate:      (kind, id, act) => request('/admin/community.php', { body: { action: 'moderate', kind, id, do: act } }),
         // How hard the feed is screened: 'strict' | 'flag' | 'off'. Super admin.
         moderation:    (mode) => request('/admin/community.php', { body: { action: 'moderation', mode } }),
+        /* Crisis disclosures the screen caught. A queue of its own, never
+           folded into moderation — see the domain comment on why. */
+        safeguarding:    (status) => request('/admin/community.php' + qs({ view: 'safeguarding', status: status || 'open' })),
+        safeguardingAck: (caseId) => request('/admin/community.php', { body: { action: 'safeguardingAck', caseId } }),
       },
       summer: {
         overview:     () => request('/admin/summer.php?view=overview'),

@@ -121,6 +121,19 @@ function AuthProvider({ children }) {
     },
     signOut: async () => {
       try { await NGGApi.auth.logout(); } catch (_) {}
+      /* Unsent community drafts are per-person, and these are shared machines:
+         children sign in with an ID card at a centre computer, so whatever was
+         left in the composer was waiting in the box for whoever sat down next.
+         Cleared here rather than in the composer, because the composer is not
+         mounted at the moment that matters. */
+      try {
+        const stale = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.indexOf("ngg.cm.draft.") === 0) stale.push(k);
+        }
+        stale.forEach(k => localStorage.removeItem(k));
+      } catch (_) {}
       setMember(null);
       setAdminOk(false);
       // Leave any members-only page (dashboard/admin) for home on sign-out.
