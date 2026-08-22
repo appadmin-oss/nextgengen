@@ -45,7 +45,9 @@ const GAME = {
   turnColour: 'w', check: true, checkSquare: 'e1', result: 'win', winnerId: 'THEM',
   reason: 'checkmate', timeControl: '10+0', rated: true, variant: 'standard',
   variantData: null, startFen: '',
-  players: { A: { id: 'ME', name: 'You' }, B: { id: 'THEM', name: 'Emeka N.' } },
+  players: { A: { id: 'ME', name: 'You', rating: 1240 },
+             B: { id: 'THEM', name: 'Emeka N.', rating: 1310 } },
+  ratingDelta: -9,
   moves: [
     { ply: 1, move: 'f2f3', san: 'f3', playerId: 'ME' },
     { ply: 2, move: 'e7e5', san: 'e5', playerId: 'THEM' },
@@ -158,31 +160,44 @@ const LADDER = {
 
     await page.locator('.rev-start .cmc-opt', { hasText: 'Quick' }).click();
     await page.locator('.cmm-cta').click();
-    await page.waitForSelector('.rev-sides', { timeout: 30000 });
+    await page.waitForSelector('.rev-tiles', { timeout: 30000 });
 
     /* The tab has to stay alive while it thinks. If the loop did not yield,
        nothing here would have painted until the very end. */
-    chk('the analysis actually produced two summaries', await page.locator('.rev-side').count() === 2);
+    chk('the analysis actually produced two summaries', await page.locator('.rev-tile').count() === 2);
     chk('…and the page is still responsive — it painted while it worked',
         await page.evaluate(() => document.readyState === 'complete'));
 
     await page.waitForFunction(() => !document.querySelector('.rev-run'), null, { timeout: 30000 });
 
-    const white = await page.locator('.rev-side').first().innerText();
-    const black = await page.locator('.rev-side').nth(1).innerText();
+    const white = await page.locator('.rev-tile').first().innerText();
+    const black = await page.locator('.rev-tile').nth(1).innerText();
     /* Fool's mate: White played the two worst moves on the board and got mated
        in two. Any analysis worth printing has to put Black well ahead. */
     const acc = (t) => +((t.match(/(\d+)\s*%/) || [])[1] || -1);
     chk('the player who got mated in two scores worse than the one who mated them',
         acc(white) >= 0 && acc(black) >= 0 && acc(black) > acc(white));
-    chk('…and White is charged with blunders', /[1-9]\s*blunder/.test(white));
+    chk('…and White is charged with blunders',
+        /[1-9]\s*blunder/.test(await page.locator('.rev-legend').innerText()));
 
     chk('the accuracy is not passed off as a number from somewhere else',
         (await page.locator('.rev-note').innerText()).toLowerCase().includes('not with a number from another app'));
 
-    chk('the turning point is named', await page.locator('.rev-turn').count() === 1);
+    chk('the turning point is named',
+        (await page.locator('.rev-card').allInnerTexts()).join(' ').includes('The moment it turned'));
+    chk('…and shown, not only named — a crop of the board at that move',
+        await page.locator('.rev-mini').count() === 1);
+    chk('the result is stated with what it cost or earned',
+        (await page.locator('.rev-res').innerText()).toLowerCase().includes('you '));
+    chk('…and offers the two things a child wants next',
+        (await page.locator('.rev-res-acts').innerText()).includes('Rematch'));
 
     /* ── Walking through it ──────────────────────────────────────────────── */
+
+    chk('the board is not on the summary — it is behind "Replay move by move"',
+        await page.locator('.rev-board').count() === 0);
+    await page.locator('.rev-replay').first().click();
+    await page.waitForSelector('.rev-board', { timeout: 8000 });
 
     chk('the game is drawn as a graph', await page.locator('.rev-graph svg').count() === 1);
     /* A picture is not enough. The same information has to be reachable with a
@@ -223,9 +238,9 @@ const LADDER = {
 
     await page.evaluate((s) => { window.__unmount(); window.__stored = s; }, STORED);
     await page.evaluate(() => window.__render('CmGameReview', { m: window.__game, onBack: () => {} }));
-    await page.waitForSelector('.rev-sides', { timeout: 8000 });
+    await page.waitForSelector('.rev-tiles', { timeout: 8000 });
     chk('a game somebody has already reviewed shows their numbers instead of recomputing',
-        (await page.locator('.rev-side').first().innerText()).includes('31'));
+        (await page.locator('.rev-tile').first().innerText()).includes('31'));
     chk('…and says so, with when and how deep',
         (await page.locator('.rev-start').innerText()).toLowerCase().includes('already reviewed'));
     chk('…while still offering to go through it again',

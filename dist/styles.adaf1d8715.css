@@ -4076,33 +4076,16 @@ img { background-color: rgba(12,20,50,0.04); }
    always ONE most useful thing to do here, and it now leads.               */
 
 .cmc-head { display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 14px; padding: 4px var(--c-gutter) 14px; }
+  gap: 10px; padding: 4px var(--c-gutter) 14px; }
 .cmc-head-t { min-width: 0; }
 .cmc-h { margin: 0; font-family: var(--c-font-display); font-weight: 800; font-size: 26px;
   letter-spacing: -0.03em; line-height: 1.1; }
-.cmc-sub { margin: 3px 0 0; font-family: var(--c-font-mono); font-size: 11.5px; color: var(--c-muted); }
+.cmc-sub { margin: 3px 0 0; font-family: var(--c-font-mono); font-size: 11px; color: var(--c-muted); }
 .cmc-rating { flex: none; display: flex; flex-direction: column; align-items: flex-end; }
 .cmc-rating-n { font-family: var(--c-font-display); font-weight: 800; font-size: 30px;
   line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--c-ink); }
 .cmc-rating-l { font-family: var(--c-font-mono); font-size: 9.5px; letter-spacing: .14em;
   text-transform: uppercase; color: var(--c-muted); margin-top: 3px; }
-
-/* The one thing. Dark, so it reads as the primary action on a page of white
-   cards without needing to be bigger than everything else. */
-.cmc-next { display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; width: 100%;
-  margin: 0 var(--c-gutter) 14px; width: calc(100% - var(--c-gutter) * 2);
-  padding: 15px 17px; border: 0; border-radius: var(--c-r-btn);
-  background: var(--c-ink-deep); color: #fff; text-align: left; font: inherit; cursor: pointer; }
-.cmc-next:focus-visible { outline: 3px solid var(--c-accent); outline-offset: 2px; }
-.cmc-next-l { font-family: var(--c-font-mono); font-size: 10px; letter-spacing: .14em;
-  text-transform: uppercase; color: var(--c-accent); }
-.cmc-next.is-answer .cmc-next-l { color: #a9f0c0; }
-.cmc-next-n { font-family: var(--c-font-display); font-weight: 800; font-size: 19px;
-  letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cmc-next-s { font-size: 13px; color: rgba(255,255,255,.72); }
-.cmc-next-go { grid-column: 2; grid-row: 1 / span 3; align-self: center;
-  font-weight: 800; font-size: 14.5px; color: var(--c-accent); white-space: nowrap; }
-.cmc-next.is-answer .cmc-next-go { color: #a9f0c0; }
 
 /* ── House promotions ──────────────────────────────────────────────────── */
 
@@ -4132,89 +4115,143 @@ img { background-color: rgba(12,20,50,0.04); }
 .cm-promo-x:focus-visible { outline: 2px solid var(--c-blue); outline-offset: -2px; }
 
 /* ── After-game review ──────────────────────────────────────────────────────
-   The screen a child learns from. Everything here is inside `.cm-app`'s
-   palette, so it uses the --c-* tokens rather than the marketing site's. */
+   The design's shape: what happened, how well you played, where it turned, and
+   who could look at it with you. The board sits BEHIND "Replay move by move"
+   rather than under all of it — the summary answers "how did I play" and the
+   replay answers "show me", and stacking both on one scroll meant neither was
+   the screen. */
 .mtg-review { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 12px;
   width: 100%; max-width: 560px; margin: 0 0 14px; padding: 14px 16px; text-align: left;
-  border: 1px solid var(--navy-900, #16223e); border-radius: 14px;
-  background: var(--navy-900, #16223e); color: #fff; cursor: pointer; font: inherit; }
-.mtg-review:hover { background: #1d2b4d; }
+  border: 0; border-radius: 14px; background: var(--gold-500); color: #0c1432;
+  cursor: pointer; font: inherit; }
+.mtg-review:hover { background: var(--gold-400); }
 .mtg-review-h { font-size: 15px; font-weight: 800; }
-.mtg-review-s { grid-column: 1; font-size: 12.5px; opacity: .82; }
+.mtg-review-s { grid-column: 1; font-size: 12.5px; opacity: .78; }
 .mtg-review-go { grid-row: 1 / span 2; grid-column: 2; font-size: 22px; }
-.mtg-review:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outline-offset: 2px; }
+.mtg-review:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
 
-.rev .cmm-stream { padding-bottom: 40px; }
+.rev .cmm-stream { padding: 0 var(--c-gutter) 40px; display: flex; flex-direction: column; gap: 14px; }
 .rev-h { margin: 0 0 6px; font-family: var(--c-font-display); font-size: 19px; font-weight: 800; color: var(--c-ink); }
 .rev-p { margin: 0 0 14px; font-size: 13.5px; line-height: 1.55; color: var(--c-body-soft); }
-.rev-start { padding: 4px var(--c-gutter) 10px; }
-/* Full width, like every other primary action in this shell. `.cmm-cta` is an
-   inline-flex, so dropped into a plain block it shrinks to its text and sits
-   at the left of a column of full-width options above it. */
+.rev-start { padding: 10px 0; }
 .rev-start .cmm-cta { display: flex; align-items: center; justify-content: center;
   width: 100%; margin-top: 14px; }
-/* Re-running a review that already exists is the secondary action: the stored
-   numbers are the ones both players see, and offering to replace them with the
-   same weight would invite exactly the re-rolling the server refuses. */
 .rev-start .cmm-cta.is-ghost { background: none; border: 1px solid var(--c-border);
   color: var(--c-ink); font-weight: 700; }
 .rev-start .cmm-cta.is-ghost:hover { border-color: var(--c-ink); }
 
-.rev-run { padding: 14px var(--c-gutter); }
+.rev-run { padding: 14px 0; }
 .rev-bar { height: 8px; border-radius: 999px; background: var(--c-neutral-chip); overflow: hidden; }
 .rev-bar span { display: block; height: 100%; background: var(--c-blue); transition: width .2s linear; }
+@media (prefers-reduced-motion: reduce) { .rev-bar span { transition: none; } }
 
-/* Two panels, one per player. Side by side even on a phone: the whole point is
-   the comparison, and stacking them makes it a scroll. */
-.rev-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px var(--c-gutter) 0; }
-.rev-side { padding: 12px; border: 1px solid var(--c-border); border-radius: var(--c-r-card);
-  background: var(--c-card); text-align: center; }
-.rev-side-h { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 6px; }
-.rev-side-n { font-size: 13px; font-weight: 700; color: var(--c-ink);
+/* 1 · The result. */
+.rev-res { display: flex; flex-direction: column; gap: 12px; padding: 18px;
+  border-radius: 20px; background: var(--c-ink-deep); color: #fff; }
+.rev-res-eyebrow { font-family: var(--c-font-mono); font-size: 10.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: #d0ff3a; }
+.rev-res.is-lost .rev-res-eyebrow { color: #ffb3bf; }
+.rev-res.is-drawn .rev-res-eyebrow { color: #ffd680; }
+.rev-res-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.rev-res-rating { font-family: var(--c-font-display); font-weight: 800; font-size: 28px;
+  letter-spacing: -0.02em; }
+.rev-res-delta { margin-left: 6px; font-size: 20px; }
+.rev-res-unit { font-size: 15px; font-weight: 600; opacity: .7; }
+.rev-res-delta.is-up { color: #d0ff3a; }
+.rev-res-delta.is-down { color: #ffb3bf; }
+.rev-res-vs { font-family: var(--c-font-mono); font-size: 12px; color: rgba(255,255,255,.72); }
+.rev-res-acts { display: flex; gap: 8px; }
+.rev-res-a { flex: 1; min-height: 48px; border: 0; border-radius: 14px;
+  background: rgba(255,255,255,.14); color: #fff; font: inherit; font-size: 14.5px;
+  font-weight: 700; cursor: pointer; }
+.rev-res-a:hover:not(:disabled) { background: rgba(255,255,255,.22); }
+.rev-res-a.is-primary { background: var(--c-gold, #f5b026); color: #0c1432; font-weight: 800;
+  font-family: var(--c-font-display); }
+.rev-res-a.is-primary:hover:not(:disabled) { background: #ffc34d; }
+.rev-res-a:disabled { opacity: .6; cursor: default; }
+
+/* 2 · A card. Everything below the result is one of these. */
+.rev-card { padding: 15px; border-radius: 18px; background: var(--c-card);
+  border: 1px solid var(--c-border); display: flex; flex-direction: column; gap: 12px; }
+.rev-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rev-card-h { margin: 0; font-family: var(--c-font-display); font-size: 16px; font-weight: 800;
+  color: var(--c-ink); }
+.rev-card-n { font-family: var(--c-font-mono); font-size: 11px; font-weight: 700; color: var(--c-muted); }
+
+.rev-tiles { display: flex; gap: 10px; }
+.rev-tile { flex: 1; text-align: center; padding: 11px 8px; border-radius: 14px;
+  background: var(--c-surface); border: 1px solid var(--c-border); }
+.rev-tile-n { font-family: var(--c-font-display); font-size: 24px; font-weight: 800; color: var(--c-muted); }
+.rev-tile-n.is-good { color: var(--c-green-ink, #1c6b32); }
+.rev-tile-l { margin-top: 2px; font-family: var(--c-font-mono); font-size: 10.5px; color: var(--c-muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rev-acc { font-family: var(--c-font-display); font-weight: 800; line-height: 1; color: var(--c-ink); }
-.rev-acc-n { font-size: 34px; }
-.rev-acc-p { font-size: 16px; color: var(--c-muted); }
-.rev-acc-l { font-family: var(--c-font-mono); font-size: 9.5px; letter-spacing: .14em;
-  text-transform: uppercase; color: var(--c-muted); margin-bottom: 8px; }
-.rev-counts { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--c-body-soft); }
-.rev-counts li { padding: 1px 0; }
-.rev-counts b { color: var(--c-ink); }
-.rev-counts .is-bad b { color: var(--c-red-ink); }
-.rev-note { margin: 10px var(--c-gutter) 0; font-size: 12px; line-height: 1.5; color: var(--c-muted); }
 
-.rev-turn { margin: 14px var(--c-gutter) 0; padding: 12px 14px; border-radius: var(--c-r-card);
-  background: var(--c-gold-tint, #fdf3dd); border: 1px solid var(--c-gold, #f5b026); }
-.rev-turn-h { font-family: var(--c-font-mono); font-size: 9.5px; letter-spacing: .14em;
-  text-transform: uppercase; color: var(--gold-text, #8a5f00); }
-.rev-turn-b { margin: 4px 0 8px; font-size: 14px; line-height: 1.5; color: var(--c-ink); }
+/* A bar per move, tall for a good one. The picture IS the navigation: each bar
+   jumps the replay to its move. */
+.rev-bars { display: flex; align-items: flex-end; justify-content: center; gap: 5px;
+  height: 82px; padding: 9px 10px;
+  border-radius: 12px; background: var(--c-surface); border: 1px solid var(--c-border); }
+.rev-bar { flex: 1; min-width: 6px; max-width: 18px; border: 0; border-radius: 3px 3px 2px 2px;
+  padding: 0; cursor: pointer; }
+.rev-bar:hover { filter: brightness(1.15); }
+.rev-bar:focus-visible { outline: 2px solid var(--c-ink); outline-offset: 1px; }
+.rev-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-family: var(--c-font-mono);
+  font-size: 11px; color: var(--c-body-soft); }
+.rev-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
 
-/* The graph. Above the middle is White, below is Black. */
-.rev-graph { margin: 16px 0 6px; }
+/* 3 · The moment it turned. */
+.rev-turn-row { display: flex; gap: 12px; align-items: center; }
+.rev-mini { width: 76px; height: 76px; flex: none; border-radius: 10px; overflow: hidden;
+  display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); }
+.rev-mini-sq { background: #f0d9b5; display: grid; place-items: center; }
+.rev-mini-sq.is-dark { background: #b58863; }
+.rev-mini-sq.is-at { background: #cdd26a; }
+.rev-mini-sq img { width: 90%; height: 90%; }
+.rev-turn-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.rev-turn-m { font-family: var(--c-font-mono); font-size: 12.5px; font-weight: 700; color: var(--c-red-ink); }
+.rev-turn-p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--c-body-soft); }
+.rev-replay { min-height: 48px; border: 0; border-radius: 14px; background: var(--c-ink-deep);
+  color: #fff; font: inherit; font-family: var(--c-font-display); font-size: 14.5px;
+  font-weight: 800; cursor: pointer; }
+.rev-replay:hover { background: #16223e; }
+
+/* 4 · The mentor hand-off. */
+.rev-ask { display: flex; align-items: center; gap: 11px; padding: 12px 13px; border-radius: 16px;
+  background: #fff3d6; border: 1px solid #e6c368; }
+.rev-ask-av { width: 34px; height: 34px; flex: none; border-radius: 50%; background: var(--c-green, #2f9e44);
+  color: #fff; display: grid; place-items: center; font-family: var(--c-font-display);
+  font-size: 15px; font-weight: 800; }
+.rev-ask-t { flex: 1; font-size: 13.5px; line-height: 1.45; color: #4a3c14; }
+.rev-ask-b { flex: none; min-height: 40px; padding: 0 14px; border: 0; border-radius: 12px;
+  background: var(--c-ink-deep); color: #fff; font: inherit; font-size: 13px; font-weight: 700;
+  cursor: pointer; }
+.rev-ask-b:disabled { opacity: .6; }
+
+.rev-note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--c-muted); }
+.rev-back { align-self: flex-start; min-height: var(--c-tap); padding: 8px 12px; border: 0;
+  background: none; font: inherit; font-size: 13px; font-weight: 700; color: var(--c-blue); cursor: pointer; }
+
+/* The replay. */
+.rev-graph { margin: 0; }
 .rev-graph svg { display: block; width: 100%; height: 92px; background: var(--c-card);
-  border-top: 1px solid var(--c-border); border-bottom: 1px solid var(--c-border); }
-/* Pale is White's share of the position, dark is Black's — the form every
-   chess site uses, readable without a legend. */
+  border-radius: 12px; border: 1px solid var(--c-border); }
 .rev-g-w { fill: #fbf7ed; }
 .rev-g-b { fill: #3a4460; }
 .rev-g-mid { stroke: rgba(120,126,146,.55); stroke-width: 1; stroke-dasharray: 3 3; }
 .rev-g-line { fill: none; stroke: var(--c-ink); stroke-width: 1.5; }
 .rev-g-cursor { stroke: var(--c-red); stroke-width: 1.5; }
-/* A real range input over the graph: draggable with a thumb, steppable with a
-   keyboard, and announced. The picture alone is neither. */
-.rev-scrub { display: block; width: calc(100% - var(--c-gutter) * 2); margin: 8px var(--c-gutter) 0;
-  min-height: var(--c-tap); accent-color: var(--c-blue); }
+.rev-scrub { display: block; width: 100%; margin: 8px 0 0; min-height: var(--c-tap);
+  accent-color: var(--c-blue); }
 
-.rev-board { max-width: 480px; margin: 6px auto 0; padding: 0 var(--c-gutter); }
-.rev-nav { display: flex; align-items: center; justify-content: center; gap: 4px;
-  padding: 10px var(--c-gutter) 0; }
+.rev-board { max-width: 480px; margin: 0 auto; width: 100%; }
+.rev-nav { display: flex; align-items: center; justify-content: center; gap: 4px; }
 .rev-nav-b { min-width: var(--c-tap); min-height: var(--c-tap); border: 1px solid var(--c-border);
   border-radius: var(--c-r-sm); background: var(--c-card); font: inherit; font-size: 15px;
   color: var(--c-ink); cursor: pointer; }
 .rev-nav-b:hover { border-color: var(--c-ink); }
 .rev-nav-at { flex: 1; text-align: center; font-size: 13px; font-weight: 700; color: var(--c-ink); }
 
-.rev-verdict { margin: 12px var(--c-gutter) 0; padding: 12px 14px; border-radius: var(--c-r-card);
+.rev-verdict { padding: 12px 14px; border-radius: 14px;
   border: 1px solid var(--c-border); background: var(--c-card); }
 .rev-verdict-h { font-size: 14px; font-weight: 800; color: var(--c-ink); }
 .rev-verdict-b, .rev-verdict-c { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--c-body-soft); }
@@ -4223,7 +4260,7 @@ img { background-color: rgba(12,20,50,0.04); }
 .rev-verdict.is-mistake { border-color: var(--c-gold, #f5b026); background: var(--c-gold-tint, #fdf3dd); }
 .rev-verdict.is-best .rev-verdict-h { color: var(--c-green-ink, #1c6b32); }
 
-.rev-list { list-style: none; margin: 8px 0 0; padding: 0 var(--c-gutter); }
+.rev-list { list-style: none; margin: 0; padding: 0; }
 .rev-move { display: grid; grid-template-columns: 2.6em 4.5em 1fr auto; align-items: center; gap: 8px;
   width: 100%; min-height: var(--c-tap); padding: 6px 10px; text-align: left;
   border: 0; border-bottom: 1px solid var(--c-border); background: none; font: inherit; cursor: pointer; }
@@ -4235,6 +4272,15 @@ img { background-color: rgba(12,20,50,0.04); }
 .rev-move-l { font-family: var(--c-font-mono); font-size: 12px; color: var(--c-muted); }
 .rev-move.is-blunder .rev-move-t, .rev-move.is-blunder .rev-move-l { color: var(--c-red-ink); }
 .rev-move.is-mistake .rev-move-t, .rev-move.is-mistake .rev-move-l { color: var(--gold-text, #8a5f00); }
+
+@media (min-width: 900px) {
+  /* Two columns: the result and the numbers on the left, the story on the
+     right. A 560px-wide phone column centred in 1200px is not a desktop. */
+  .rev .cmm-stream { display: grid; grid-template-columns: 1fr 1fr; align-items: start;
+    max-width: 940px; margin-inline: auto; }
+  .rev-res, .rev-note { grid-column: 1 / -1; }
+  .rev-back, .rev-graph, .rev-board, .rev-nav, .rev-verdict, .rev-list { grid-column: 1 / -1; }
+}
 
 /* ── The live ladder ────────────────────────────────────────────────────── */
 .lad { margin: 0 0 18px; border-top: 1px solid var(--c-border); }
@@ -4562,4 +4608,132 @@ img { background-color: rgba(12,20,50,0.04); }
   /* The strip is the phone's glance; on a desktop the whole list is open in
      the panel beside the board and a second copy is noise. */
   .mtg-strip { display: none; }
+}
+
+/* ── The lobby's new-game block ─────────────────────────────────────────────
+   The design's order: pick the pace, then who against. "Have I got ten
+   minutes" is a question a child can answer; "who" is the one they browse. */
+.cmc-stats { flex: none; min-height: var(--c-tap); padding: 0 14px; border-radius: var(--c-r-btn);
+  border: 1px solid var(--c-border); background: var(--c-card); font: inherit;
+  font-family: var(--c-font-display); font-size: 14.5px; font-weight: 800; color: var(--c-ink);
+  cursor: pointer; }
+.cmc-stats:hover { border-color: var(--c-ink); }
+
+.cmc-tcs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
+.cmc-tc-tile { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; min-height: 68px; border-radius: var(--c-r-btn); border: 1px solid var(--c-border);
+  background: var(--c-card); font: inherit; cursor: pointer; }
+.cmc-tc-tile.is-on { border-color: var(--c-ink-deep); border-width: 2px; }
+.cmc-tc-n { font-family: var(--c-font-display); font-size: 19px; font-weight: 800; color: var(--c-ink); }
+.cmc-tc-k { font-family: var(--c-font-mono); font-size: 11px; color: var(--c-muted); }
+
+.cmc-newrow { display: flex; gap: 10px; }
+.cmc-newrow .cmm-cta { flex: 1; display: flex; align-items: center; justify-content: center; }
+.cmc-post { flex: none; width: var(--c-cta); min-height: var(--c-cta); border-radius: var(--c-r-btn);
+  border: 1px solid var(--c-border); background: var(--c-card); font-size: 22px;
+  color: var(--c-ink); cursor: pointer; }
+.cmc-post:hover { border-color: var(--c-ink); }
+
+/* ── The lobby's cards ──────────────────────────────────────────────────────
+   The design draws every row here as a card — white, hairline border, generous
+   radius — and gives the game at the top of your queue a blue edge. The rows
+   used to be divider-separated lines, which read as a settings screen rather
+   than a set of things you can tap into.                                    */
+
+/* 44px of target, ~30px of footprint. The negative margins pull the button's
+   padding back over the gutter so the chevron sits where the design puts it
+   and the standing line beside it still fits on one row of a 360px phone. */
+.cmc-back { flex: none; display: grid; place-items: center;
+  width: var(--c-tap); height: var(--c-tap); margin: -6px -7px 0 -12px;
+  border: 0; background: none; border-radius: var(--c-r-sm);
+  font-size: 30px; line-height: 1; color: var(--c-ink); cursor: pointer; }
+.cmc-back:hover { background: var(--c-neutral-chip); }
+.cmc-back:focus-visible { outline: 2px solid var(--c-blue); outline-offset: -2px; }
+
+.cmc-game, .cmc-ch { gap: 12px; min-height: 72px; margin-bottom: 8px; padding: 12px 14px;
+  border: 1px solid var(--c-border); border-radius: var(--c-r-card); background: var(--c-card); }
+/* The one you should play next. A border rather than a fill: the card still
+   belongs to the list it is in, which is what makes "first" legible at all. */
+.cmc-game.is-lead { border-color: var(--c-blue); box-shadow: 0 0 0 1px var(--c-blue); }
+.cmc-game.is-quiet { opacity: 1; background: none; border-style: dashed; }
+.cmc-game.is-quiet .cmc-game-who { font-weight: 600; color: var(--c-body); }
+.cmc-game:hover { border-color: var(--c-ink); }
+.cmc-game:focus-visible { outline: 2px solid var(--c-blue); outline-offset: 2px; }
+
+/* Their rating, beside their name and quieter than it. Without it a child
+   cannot tell whether the game they are about to lose was a fair one. */
+.cmc-game-r { font-family: var(--c-font-mono); font-size: 12px; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--c-muted); }
+.cmc-game-sub.is-yours { color: var(--c-blue); font-weight: 700; }
+
+/* How long you have, right-aligned: the figure large, the pace under it. This
+   is the column the old row spent on the word "Move", which said nothing the
+   rest of the card had not already said. */
+.cmc-game-when { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.cmc-game-clock { font-family: var(--c-font-display); font-size: 20px; font-weight: 800;
+  line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--c-ink); }
+.cmc-game-clock.is-long { font-size: 14.5px; letter-spacing: 0; }
+.cmc-game.is-quiet .cmc-game-clock { color: var(--c-muted); }
+.cmc-game-tc { font-family: var(--c-font-mono); font-size: 10.5px; color: var(--c-faint); }
+
+/* ── TRAIN ──────────────────────────────────────────────────────────────────
+   Two shapes, because they are two different invitations: the dark card is the
+   thing you do alone with no signal, the gold one is the thing the club is
+   doing together this afternoon.                                            */
+
+.cmc-train { display: flex; align-items: center; gap: 13px; width: 100%;
+  min-height: 76px; margin-bottom: 8px; padding: 13px 14px;
+  border: 1px solid transparent; border-radius: var(--c-r-card);
+  text-align: left; font: inherit; cursor: pointer; }
+.cmc-train:focus-visible { outline: 3px solid var(--c-blue); outline-offset: 2px; }
+.cmc-train-ic { flex: none; display: grid; place-items: center; width: 46px; height: 46px;
+  border-radius: var(--c-r-sm); font-size: 24px; line-height: 1; }
+.cmc-train-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.cmc-train-h { font-family: var(--c-font-display); font-size: 15.5px; font-weight: 800;
+  letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmc-train-s { font-family: var(--c-font-mono); font-size: 11px; }
+.cmc-train-go { flex: none; min-height: var(--c-tap); display: flex; align-items: center;
+  padding: 0 17px; border-radius: var(--c-r-btn); font-size: 14.5px; font-weight: 800; }
+
+.cmc-train.is-dark { background: var(--c-ink-deep); color: #fff; }
+.cmc-train.is-dark .cmc-train-ic { background: rgba(255,255,255,.09); color: #fff; }
+.cmc-train.is-dark .cmc-train-s { color: rgba(255,255,255,.66); }
+.cmc-train.is-dark .cmc-train-go { background: var(--c-accent); color: #3a2500; }
+.cmc-train.is-dark:hover .cmc-train-go { background: #ffc44d; }
+
+.cmc-train.is-arena { background: var(--c-accent-tint); border-color: var(--c-accent-border);
+  color: var(--c-ink); }
+.cmc-train.is-arena .cmc-train-ic { background: rgba(255,255,255,.7); }
+.cmc-train.is-arena .cmc-train-s { color: var(--c-accent-ink); }
+.cmc-train.is-arena .cmc-train-go { background: var(--c-ink-deep); color: #fff; }
+.cmc-train.is-arena:hover { border-color: var(--c-accent-ink-2); }
+
+/* Phone: the wrappers are not there. The sections are already in the order a
+   phone wants them, so the columns dissolve rather than being reordered. */
+.cmc-col { display: contents; }
+
+/* ── The lobby on a desktop ─────────────────────────────────────────────────
+   Not a stretched phone. The design's desktop hub is a wide column of things
+   you act on with a narrow rail of things you read, and that is what this is:
+   the queue and the new-game block on the left, training and the club's own
+   events on the right. Below 1080px there is not enough width for a 340px rail
+   without squeezing a game card to the point where the name ellipsises, so
+   there is no rail.                                                          */
+@media (min-width: 1080px) {
+  .cmc { display: grid; grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 0 26px; align-items: start; max-width: 1140px; margin: 0 auto;
+    padding-bottom: 40px; }
+  .cmc > .cmc-head, .cmc > .cm-promo, .cmc > .cmm-offline, .cmc > .cmm-empty {
+    grid-column: 1 / -1; }
+  .cmc-col { display: flex; flex-direction: column; }
+  .cmc-col.is-main { grid-column: 1; }
+  .cmc-col.is-rail { grid-column: 2; }
+  /* The rail's own cards are 340px wide; the action goes UNDER the text
+     rather than beside it. Left beside it, "Play the computer" ellipsised to
+     "Play th…" to make room for a button four characters long. */
+  .cmc-col.is-rail .cmc-train { display: grid; grid-template-columns: 46px minmax(0, 1fr);
+    gap: 11px 12px; align-items: center; }
+  .cmc-col.is-rail .cmc-train-h { white-space: normal; overflow: visible; }
+  .cmc-col.is-rail .cmc-train-go { grid-column: 1 / -1; justify-content: center; }
+  .cmc-head { max-width: none; }
 }

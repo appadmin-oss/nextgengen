@@ -14496,6 +14496,34 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         in_array('MPL-C', array_column($lob['opponents'], 'id'), true)
         && in_array('MPL-B', array_column($lob['opponents'], 'id'), true));
 
+    /* The lobby TICK, which is a different endpoint and was answering a
+     * different question from the one the screen asks. The hub reads
+     * `tournaments` off it to title its tournament card and `arena` to draw
+     * the club's own event; neither was ever sent, so the card read "Club
+     * tournaments" through an entire tournament and the arena card could not
+     * appear at all. A count nobody computes is a count that is always zero. */
+    $poll = chess_lobby_poll(['playerId' => 'MPL-A']);
+    chk('the lobby tick answers with the counts the hub badges',
+        !empty($poll['ok']) && isset($poll['games'], $poll['yourMove'], $poll['sig']));
+    chk('…and counts the tournaments the club is running',
+        isset($poll['tournaments']) && $poll['tournaments'] === (int)(db_row(
+            "SELECT COUNT(*) c FROM tournaments WHERE game = 'chess' AND status IN ('open','running')")['c'] ?? -1));
+    chk('…and names one of them, with enough to draw the card',
+        $poll['tournaments'] === 0
+        || (is_array($poll['arena']) && $poll['arena']['tournamentId'] !== ''
+            && $poll['arena']['name'] !== '' && isset($poll['arena']['players'], $poll['arena']['joined'])));
+    chk('…and the signature moves when the featured event does',
+        (function () use ($poll) {
+            if (!$poll['tournaments']) return true;
+            $tid = (string)$poll['arena']['tournamentId'];
+            db_update('tournaments', ['status' => 'complete', 'updatedAt' => now_iso()], ['tournamentId' => $tid]);
+            $after = chess_lobby_poll(['playerId' => 'MPL-A']);
+            db_update('tournaments', ['status' => 'running', 'updatedAt' => now_iso()], ['tournamentId' => $tid]);
+            return $after['sig'] !== $poll['sig'];
+        })());
+    chk('the lobby tick refuses a caller who is not a player',
+        (chess_lobby_poll(['playerId' => ''])['error'] ?? '') === 'not_a_player');
+
     /* The chess ops are tested by calling their domain functions directly, which
        proves the game and proves nothing about the wiring that reaches it. Route
        one of each kind through the dispatcher so the eleven `match.*` map entries

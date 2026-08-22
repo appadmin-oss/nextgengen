@@ -32,7 +32,9 @@ const GAME = {
      halfmove clock — and a board that disagrees with its own move list is the
      one thing a review screen must never do. */
   state: 'rn1q1bnr/ppp1kB1p/3p2p1/3NN3/4P3/8/PPPP1PPP/R1BbK2R b KQ - 2 7',
-  players: { A: { id: 'ME', name: 'You' }, B: { id: 'THEM', name: 'Chidinma O.' } },
+  players: { A: { id: 'ME', name: 'You', rating: 1240 },
+             B: { id: 'THEM', name: 'Chidinma O.', rating: 1198 } },
+  ratingDelta: 8,
   moves: [
     { ply: 1,  move: 'e2e4', san: 'e4',    playerId: 'ME' },
     { ply: 2,  move: 'e7e5', san: 'e5',    playerId: 'THEM' },
@@ -116,7 +118,7 @@ const LADDER = {
   fs.writeFileSync(FIX, `<!doctype html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css">
-<style>body{margin:0;background:#fbf7ed}</style>
+<style>body{margin:0;background:#fbf7ed}/* The site's cursor sprite follows the pointer, and the harness's last click leaves it sitting in the middle of whatever it clicked. It photographed as a stray ring inside the Accuracy card for weeks. */.ngg-cursor{display:none!important}</style>
 </head><body class="cm-app"><div id="root"></div>
 <script src="/dist/vendor/react.production.min.js"></script>
 <script src="/dist/vendor/react-dom.production.min.js"></script>
@@ -167,11 +169,10 @@ const LADDER = {
     const analyse = async (page) => {
       await page.locator('.rev-start .cmc-opt', { hasText: 'Normal' }).click();
       await page.locator('.cmm-cta').click();
-      await page.waitForSelector('.rev-sides', { timeout: 60000 });
+      await page.waitForSelector('.rev-tiles', { timeout: 60000 });
       await page.waitForFunction(() => !document.querySelector('.rev-run'), null, { timeout: 60000 });
-      // Land on the move the review calls the turning point.
-      const turn = page.locator('.rev-turn .btn');
-      if (await turn.count()) await turn.click();
+      // The summary is the screen; the replay sits behind it, which is the
+      // design's shape. Shot as it lands.
       await page.waitForTimeout(300);
     };
     await shoot('done', 'screen=review', { width: 430, height: 900 }, analyse);

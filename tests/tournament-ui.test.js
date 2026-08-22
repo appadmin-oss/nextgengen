@@ -136,6 +136,23 @@ const ROUNDS = {
   NGGApi.member.tournaments.rounds = () => Promise.resolve(${JSON.stringify(ROUNDS)});
   NGGApi.member.tournaments.join = (id) => { window.__joined.push(id); return Promise.resolve({ ok: true }); };
   NGGApi.member.tournaments.draw = () => { window.__drawn++; return Promise.resolve({ ok: true, round: 3, boards: 4, byes: 0 }); };
+  /* The hub's own data, so the route walk sees the lobby a member sees rather
+     than the empty shell four rejected requests leave behind. */
+  NGGApi.member.match.chess = () => Promise.resolve({ ok: true, rating: 1240, games: 18,
+    wins: 9, losses: 6, draws: 3, peak: 1263, provisional: false, weekDelta: 32, levels: [] });
+  NGGApi.member.match.list = () => Promise.resolve({ ok: true, matches: [
+    { matchId: 'MT-A', game: 'chess', status: 'active', you: 'A', yourTurn: true, ply: 11,
+      yourColour: 'w', timeControl: '10+0',
+      clock: { live: true, running: true, turn: 'w', whiteMs: 252000, blackMs: 301000, flagged: '' },
+      players: { A: { id: 'NGG-1', name: 'You', rating: 1240 },
+                 B: { id: 'NGG-2', name: 'Temiloluwa A.', rating: 1198 } } } ] });
+  NGGApi.member.match.challenges = () => Promise.resolve({ ok: true, toYou: [], open: [], fromYou: [] });
+  NGGApi.member.match.lobby = () => Promise.resolve({ ok: true, yourMove: 1, games: 1,
+    challengesToYou: 0, openChallenges: 0, accepted: [], tournaments: 2, sig: 'x',
+    arena: { tournamentId: 'TRN-1', name: 'Egbeda club arena', format: 'arena', status: 'running',
+             startsAt: '', timeControl: '5+3', players: 14, joined: false } });
+  NGGApi.member.promo = () => Promise.resolve({ ok: true, promo: null });
+  NGGApi.member.promoTrack = () => Promise.resolve({ ok: true });
   NGGApi.member.tournaments.create = (d) => {
     window.__created = d;
     if (d.format === 'arena' && d.timeControl === '1day') {
@@ -371,6 +388,28 @@ const ROUNDS = {
       await mountHub('member');
       await routed.waitForSelector('.cmc-sec', { timeout: 8000 });
       chk('[' + width + '] the chess hub itself renders', rErr.length === 0);
+
+      /* The lobby the design asks for, checked where it actually renders. Every
+         one of these was a hole the shot showed and no test did: a header with
+         no rating in it, a game row with no clock, and a card for the club's
+         own arena that the poll never sent the data for. */
+      chk('[' + width + '] the header carries the rating and the week',
+          /Your rating 1240 · \+32 this week/.test(await routed.evaluate(() => document.body.innerText)));
+      chk('[' + width + '] a game you are on move in is one card, with their rating',
+          (await routed.locator('.cmc-game').count()) === 1
+          && (await routed.locator('.cmc-game-r').first().innerText()) === '1198');
+      chk('[' + width + '] …and it shows YOUR clock, not just whose turn it is',
+          (await routed.locator('.cmc-game-clock').first().innerText()).trim() === '4:12');
+      chk('[' + width + '] the first game in the queue is the one marked to play',
+          await routed.locator('.cmc-game').first().evaluate(el => el.classList.contains('is-lead')));
+      /* The poll that carries the club's own events fires at 1200ms. Asserting
+         before it lands tests the loading state and calls it the screen. */
+      await routed.waitForSelector('.cmc-train.is-arena', { timeout: 8000 }).catch(() => {});
+      chk('[' + width + '] the club arena gets its own card, with a way in',
+          (await routed.locator('.cmc-train.is-arena').count()) === 1
+          && (await routed.locator('.cmc-train.is-arena .cmc-train-go').innerText()).trim() === 'Join');
+      chk('[' + width + '] …and the tournament tile counts what is running',
+          (await routed.locator('.trn-entry').innerText()).indexOf('2 tournaments running') >= 0);
 
       await routed.locator('.trn-entry').click();
       await routed.waitForTimeout(500);

@@ -628,6 +628,37 @@ function chess_lobby_poll(array $p): array {
                        'name' => (string)$c['toName']];
     }
 
+    /* What the club is doing, which the lobby draws as one card rather than a
+     * list: the count, and the single event most worth naming. Running beats
+     * open beats the rest, and among equals the one that moved most recently
+     * wins — during an event that is the event.
+     *
+     * The client used to read `tournaments` off this response and it was never
+     * sent, so the card read "Club tournaments" through an entire tournament.
+     * A count nobody computes is a count that is always zero. */
+    $trns = db_all("SELECT tournamentId, name, format, status, startsAt, timeControl
+                      FROM tournaments
+                     WHERE game = 'chess' AND status IN ('open','running')
+                     ORDER BY (status = 'running') DESC, updatedAt DESC LIMIT 12");
+    $featured = null;
+    if ($trns) {
+        $t = $trns[0];
+        $tid = (string)$t['tournamentId'];
+        $featured = [
+            'tournamentId' => $tid,
+            'name'    => (string)$t['name'],
+            'format'  => (string)($t['format'] ?? ''),
+            'status'  => (string)$t['status'],
+            'startsAt'=> (string)($t['startsAt'] ?? ''),
+            'timeControl' => (string)($t['timeControl'] ?? ''),
+            'players' => (int)(db_row('SELECT COUNT(*) c FROM tournament_entrants WHERE tournamentId = ?', [$tid])['c'] ?? 0),
+            // Whether the button should say Join or Open. Cheap, and the
+            // difference between the two is the whole point of the card.
+            'joined'  => (bool)db_row('SELECT id FROM tournament_entrants WHERE tournamentId = ? AND playerId = ? LIMIT 1', [$tid, $me]),
+        ];
+        $sig[] = 't' . $tid . ':' . $featured['status'] . ':' . $featured['players'];
+    }
+
     foreach ($toYou as $c) $sig[] = 'c' . $c['challengeId'];
     foreach ($open as $c)  $sig[] = 'o' . $c['challengeId'];
     foreach ($accepted as $a) $sig[] = 'a' . $a['challengeId'];
@@ -636,6 +667,7 @@ function chess_lobby_poll(array $p): array {
             'games' => count($live), 'yourMove' => $yourMove,
             'challengesToYou' => count($toYou), 'openChallenges' => count($open),
             'accepted' => $accepted,
+            'tournaments' => count($trns), 'arena' => $featured,
             // One short string that changes whenever anything above did.
             'sig' => substr(sha1(implode('|', $sig)), 0, 16)];
 }

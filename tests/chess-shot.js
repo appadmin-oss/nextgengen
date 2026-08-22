@@ -50,7 +50,7 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/dist/styles.css">
 <link rel="stylesheet" href="/dist/styles-app.css">
-<style>body{margin:0;background:var(--cream-50,#fdf9f0);}</style>
+<style>body{margin:0;background:var(--cream-50,#fdf9f0);}/* The site's cursor sprite follows the pointer, and the harness's last click leaves it sitting in the middle of whatever it clicked. It photographed as a stray ring inside the Accuracy card for weeks. */.ngg-cursor{display:none!important}</style>
 </head><body><div id="root"></div>
 <script src="/dist/vendor/react.production.min.js"></script>
 <script src="/dist/vendor/react-dom.production.min.js"></script>
@@ -65,12 +65,24 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
     reactions: ['good-game','nice-move','thinking','oops','well-played','your-turn'],
     games: [{ key: 'chess', name: 'Chess', icon: '♟️' }],
     matches: [
-      { matchId: 'MT-1', game: 'chess', status: 'active', you: 'A', yourTurn: true, ply: 7,
-        players: { A: { id: 'NGG-2026-0044', name: 'You' }, B: { id: 'NGG-2026-0051', name: 'Temiloluwa A.' } } },
+      /* Ratings, a time control and a clock on every row, because the lobby
+         card draws all three. A fixture that leaves them off photographs a
+         card with holes in it and calls the screen finished. */
+      { matchId: 'MT-1', game: 'chess', status: 'active', you: 'A', yourTurn: true, ply: 11,
+        yourColour: 'w', timeControl: '10+0',
+        clock: { live: true, running: true, turn: 'w', whiteMs: 252000, blackMs: 301000, flagged: '' },
+        players: { A: { id: 'NGG-2026-0044', name: 'You', rating: 1240 },
+                   B: { id: 'NGG-2026-0051', name: 'Temiloluwa A.', rating: 1198 } } },
       { matchId: 'MT-2', game: 'chess', status: 'active', you: 'B', yourTurn: true, ply: 3,
-        players: { A: { id: 'NGG-2026-0062', name: 'Chidinma O.' }, B: { id: 'NGG-2026-0044', name: 'You' } } },
+        yourColour: 'b', timeControl: '1day',
+        clock: { live: false, running: false, deadlineMs: Date.now() + 61200000 },
+        players: { A: { id: 'NGG-2026-0062', name: 'Chidinma O.', rating: 1105 },
+                   B: { id: 'NGG-2026-0044', name: 'You', rating: 1240 } } },
       { matchId: 'MT-3', game: 'chess', status: 'active', you: 'A', yourTurn: false, ply: 12,
-        players: { A: { id: 'NGG-2026-0044', name: 'You' }, B: { id: 'NGG-2026-0070', name: 'Ibrahim S.' } } },
+        yourColour: 'w', timeControl: '1day', lastMoveAt: '2026-08-22T06:10:00Z',
+        clock: { live: false, running: false, deadlineMs: Date.now() + 40000000 },
+        players: { A: { id: 'NGG-2026-0044', name: 'You', rating: 1240 },
+                   B: { id: 'NGG-2026-0070', name: 'Ibrahim S.', rating: 1320 } } },
       { matchId: 'MT-4', game: 'chess', status: 'invited', you: 'B', yourTurn: false, ply: 0,
         players: { A: { id: 'NGG-2026-0081', name: 'Folasade B.' }, B: { id: 'NGG-2026-0044', name: 'You' } } },
       { matchId: 'MT-5', game: 'chess', status: 'invited', you: 'A', yourTurn: false, ply: 0,
@@ -165,6 +177,9 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
   };
   function ok(v) { return Promise.resolve(v); }
   window.NGGApi = { member: {
+    /* The lobby shot renders the REAL chess hub now, which asks for these. */
+    tournaments: { browse: function () { return ok({ ok: true, tournaments: [], formats: {} }); },
+                   ladder: function () { return ok({ ok: true, ladders: [], hotCount: 0, windowHours: 6 }); } },
     /* The finished-game screen carries a popup promotion. It is not what these
        shots are of, so it is stubbed to "nothing to show". */
     promo: function () { return ok({ ok: true, promo: null }); },
@@ -179,6 +194,22 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
     invite: function () { return ok({ ok: true, matchId: 'MT-1' }); },
     respond: function () { return ok({ ok: true }); },
     poll: function () { return ok({ ok: true, ply: 5, status: 'active', yourTurn: true, changed: false }); },
+    lobby: function () { return ok({ ok: true, yourMove: 2, games: 3, challengesToYou: 1,
+      openChallenges: 1, accepted: [], tournaments: 2, sig: 'x',
+      arena: { tournamentId: 'TRN-1', name: 'Egbeda club arena', format: 'arena',
+               status: 'open', startsAt: '2026-08-29T16:00:00Z', timeControl: '5+3',
+               players: 14, joined: false } }); },
+    challenges: function () { return ok({ ok: true, toYou: [
+      { challengeId: 'CH-1', from: { id: 'X9', name: 'Zara I.', rating: 1180 }, timeControl: '5+3',
+        rated: true, colourPref: 'random', createdAt: '2026-08-22T09:00:00Z' } ],
+      open: [ { challengeId: 'CH-2', from: { id: 'X8', name: 'Mr Adewale', rating: 1400 },
+        timeControl: '1day', rated: false, colourPref: 'random', createdAt: '2026-08-22T08:40:00Z' } ],
+      fromYou: [] }); },
+    /* FLAT, like chess_profile() actually answers. It used to be wrapped in a
+       "profile" key here and nowhere else, so the shot photographed a header
+       reading "Your rating" with no number in it and nobody noticed. */
+    chess: function () { return ok({ ok: true, rating: 1240, games: 18, wins: 9, losses: 6,
+      draws: 3, peak: 1263, provisional: false, weekDelta: 32, levels: [] }); },
     review: function () { return ok({ ok: true, review: null }); },
     watch: function () { return ok({ ok: true, live: [
       { matchId: 'MT-W1', game: 'chess', a: { id: 'X1', name: 'Halima N.', centre: 'Ayobo' },
@@ -196,7 +227,12 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
      above and brings its own real useAuth; calling that outside a component
      is an invalid hook call, which React reports as the cryptic #321. */
   var AUTH = { isSignedIn: true, isAdmin: false, member: { memberId: 'NGG-2026-0044' } };
-  var el = screen === 'lobby' ? React.createElement(CmMatches, { auth: AUTH })
+  /* The community marks the body while it is mounted, and a good half of the
+     chess styling is scoped to that class. Without it here the shots lie:
+     dark cards render as invisible white-on-cream text. The real app adds it
+     in CommunityPage, above every chess screen, so the fixture does too. */
+  document.body.classList.add('cm-app');
+  var el = screen === 'lobby' ? React.createElement(CmChess, { auth: AUTH, onOpenMatch: function () {}, onBack: function () {} })
          : React.createElement(MatchGame, { matchId: Q.get('id') || 'MT-2', onBack: function () {} });
   ReactDOM.createRoot(document.getElementById('root')).render(el);
 </script>
@@ -216,7 +252,11 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
       const errs = [];
       page.on('pageerror', e => errs.push(String(e && e.message)));
       await page.goto(BASE + '/tests/_chess_fixture.html?' + query, { waitUntil: 'networkidle' });
-      await page.waitForTimeout(400);
+      /* Long enough for the lobby's poll to land. It fires at 1200ms, and the
+         tournament count and the arena card only exist once it has — a shot
+         taken at 400ms photographed a screen still waiting for its data and
+         called that the design. */
+      await page.waitForTimeout(name.indexOf('lobby') === 0 ? 2200 : 400);
       const text = await page.evaluate(() => document.body.innerText.trim());
       if (!text) problems.push(name + ': rendered nothing');
       if (errs.length) problems.push(name + ': ' + errs[0]);
