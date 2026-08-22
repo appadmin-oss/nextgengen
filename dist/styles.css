@@ -22,6 +22,22 @@
      var(--eyebrow-fg) instead of a raw gold token for any eyebrow text. */
   --eyebrow-fg: var(--gold-700);
 
+  /* ── Constants shared by BOTH design systems ──────────────────────────
+     The community palette below is scoped to `.cm-app` on purpose — two
+     systems must not share colour names. These are not colours. A 44px tap
+     target and a monospace face are facts about the product, and scoping them
+     to one system meant every rule written for a screen that renders in both
+     had to pick a side. The game screen renders inside the community shell
+     from the community and OUTSIDE it from the arcade, which is how a whole
+     screen's worth of rules came to resolve to nothing on one of its two
+     routes. */
+  --c-tap: 44px; --c-cta: 52px; --c-tabbar: 56px; --c-home-ind: 14px;
+  --c-gutter: 16px;
+  --c-r-pill: 999px; --c-r-hero: 20px; --c-r-card: 18px; --c-r-input: 16px;
+  --c-r-btn: 14px;   --c-r-sm: 12px;   --c-r-av: 10px;   --c-r-chip: 8px;
+  --c-font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --c-font-mono:    "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
   --lime: #d0ff3a;        /* electric futurist accent */
   --coral: #ff5a3c;       /* pop, sparingly */
   --plum:  #b07cff;
@@ -3697,13 +3713,13 @@ img { background-color: rgba(12,20,50,0.04); }
 .mtg-coord.is-file { bottom: 1px; right: 3px; }
 .mtg-coord.is-rank { top: 1px; left: 3px; }
 .mtg-flip { margin-top: 10px; min-height: var(--c-tap); padding: 8px 14px;
-  border: 1px solid var(--cream-200, #e8dec6); border-radius: 999px; background: var(--c-card, #fff);
+  border: 1px solid var(--cream-200, #e8dec6); border-radius: 999px; background: #fff;
   font: inherit; font-size: 13px; font-weight: 700; color: var(--ink-700); cursor: pointer; }
 .mtg-flip:hover { border-color: var(--ink-500); color: var(--ink-900); }
 
 /* ── Player seats: who, on move, and what they have captured ── */
 .mtg-seat { display: flex; align-items: center; gap: 8px; padding: 8px 12px; min-height: 48px;
-  background: var(--c-card, #fff); border: 1px solid var(--cream-200, #e8dec6); }
+  background: #fff; border: 1px solid var(--cream-200, #e8dec6); }
 /* Square where they meet the board, rounded on the outside — one object. */
 .mtg-seat:first-child { border-radius: 12px 12px 0 0; border-bottom: 0; }
 .mtg-seat:last-of-type { border-radius: 0 0 12px 12px; border-top: 0; }
@@ -3730,8 +3746,8 @@ img { background-color: rgba(12,20,50,0.04); }
 /* Under thirty seconds, then under ten. Colour is never the only signal — the
    figure itself is the signal, and it is getting smaller in front of you. */
 .mtg-clock.is-low { background: var(--gold-500, #f5b026); border-color: var(--gold-500, #f5b026); color: #0c1432; }
-.mtg-clock.is-crit { background: var(--c-red); border-color: var(--c-red); color: #fff; }
-.mtg-clock.is-out { background: var(--c-red-tint); border-color: var(--c-red); color: var(--c-red-ink);
+.mtg-clock.is-crit { background: #e4032b; border-color: #e4032b; color: #fff; }
+.mtg-clock.is-out { background: #fde3e6; border-color: #e4032b; color: #a3111f;
   text-decoration: line-through; }
 /* Correspondence: a deadline, not a countdown. Smaller, because it changes
    once an hour and does not deserve the weight a running clock has. */
@@ -3742,8 +3758,8 @@ img { background-color: rgba(12,20,50,0.04); }
    player whose score it is. Three pips beat a number, which would need a
    label to be read at all. */
 .mtg-checks { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; }
-.mtg-check-pip { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--c-red); }
-.mtg-check-pip.is-on { background: var(--c-red); }
+.mtg-check-pip { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid #e4032b; }
+.mtg-check-pip.is-on { background: #e4032b; }
 
 /* ── The terms, on the board ──
    A player who opened this from a notification never saw the sheet where the
@@ -4040,18 +4056,18 @@ img { background-color: rgba(12,20,50,0.04); }
    you cannot see or cancel is a trap.                                       */
 .mtg-sq.is-premove::after { content: ""; position: absolute; inset: 0;
   background: rgba(31, 75, 196, .30); pointer-events: none; }
-.mtg-board.is-premoving { outline: 2px dashed var(--c-blue); outline-offset: 3px; }
+.mtg-board.is-premoving { outline: 2px dashed #1f4bc4; outline-offset: 3px; }
 
 .mtg-pre { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin: 0 0 10px; padding: 9px 13px; border-radius: var(--c-r-sm);
-  background: var(--c-blue-tint); border: 1px solid var(--c-blue); }
+  background: #e8eefc; border: 1px solid #1f4bc4; }
 .mtg-pre-l { font-family: var(--c-font-mono); font-size: 10px; letter-spacing: .12em;
-  text-transform: uppercase; font-weight: 700; color: var(--c-blue); }
-.mtg-pre-b { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--c-ink); }
+  text-transform: uppercase; font-weight: 700; color: #1f4bc4; }
+.mtg-pre-b { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--ink-900); }
 .mtg-pre-x { min-height: 36px; padding: 0 12px; border-radius: var(--c-r-pill);
-  border: 1px solid var(--c-blue); background: var(--c-card);
-  font: inherit; font-size: 12.5px; font-weight: 700; color: var(--c-blue); cursor: pointer; }
-.mtg-pre-x:focus-visible { outline: 2px solid var(--c-ink); outline-offset: 2px; }
+  border: 1px solid #1f4bc4; background: #fff;
+  font: inherit; font-size: 12.5px; font-weight: 700; color: #1f4bc4; cursor: pointer; }
+.mtg-pre-x:focus-visible { outline: 2px solid var(--ink-900); outline-offset: 2px; }
 
 /* ── The chess hub ─────────────────────────────────────────────────────────
    The screen used to be six sections of equal weight stacked in a fixed
@@ -4281,3 +4297,84 @@ img { background-color: rgba(12,20,50,0.04); }
   .cm-promo.is-popup { animation: promoIn .28s cubic-bezier(.2,.8,.3,1) both; }
 }
 @keyframes promoIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* ── Board mode ─────────────────────────────────────────────────────────────
+   The desktop game screen from the design: a dark room where the board is the
+   subject and everything else is chrome around it, in three columns —
+   your other games, the board, and the panel beside it.
+
+   Colours are the design's: #262421 ground, panels at 5% white, text #e7e2d4.
+   That is deliberately NOT the community palette: this one screen is a board
+   room rather than a page of the app, and the two-tone cream that works for a
+   feed makes a chessboard look like a printed diagram. */
+.mtg-boardcol { display: flex; align-items: flex-start; gap: 12px; }
+.mtg-boardstack { flex: 1; min-width: 0; max-width: 560px; }
+
+/* Material, as a bar. See MtgMaterialBar on why this is material and not an
+   engine evaluation. */
+.mtg-matbar { flex: none; width: 10px; align-self: stretch; min-height: 240px;
+  border-radius: 999px; overflow: hidden; background: #3a4460;
+  display: flex; flex-direction: column; justify-content: flex-end; }
+.mtg-matbar-fill { display: block; width: 100%; background: #fbf7ed; transition: height .3s ease; }
+@media (prefers-reduced-motion: reduce) { .mtg-matbar-fill { transition: none; } }
+
+/* Tabs on the panel beside the board. */
+.mtg-tabs { display: flex; gap: 3px; margin: -4px 0 10px; padding: 3px;
+  border-radius: var(--c-r-pill); background: var(--cream-100); }
+.mtg-tab { flex: 1; min-height: 36px; border: 0; border-radius: var(--c-r-pill);
+  background: none; font: inherit; font-size: 12.5px; font-weight: 700;
+  color: var(--ink-400); cursor: pointer; }
+.mtg-tab.is-on { background: #fff; color: var(--ink-900);
+  box-shadow: 0 1px 3px rgba(12,20,50,.12); }
+.mtg-tab:focus-visible { outline: 2px solid #1f4bc4; outline-offset: -2px; }
+
+.mtg-acts { display: flex; gap: 6px; margin-top: 12px; }
+.mtg-act { flex: 1; min-height: var(--c-tap); border-radius: var(--c-r-sm);
+  border: 1px solid var(--cream-200); background: #fff;
+  font: inherit; font-size: 12.5px; font-weight: 700; color: var(--ink-900); cursor: pointer; }
+.mtg-act:hover { border-color: var(--ink-900); }
+.mtg-hint { margin: 10px 0 0; text-align: center; font-family: var(--c-font-mono);
+  font-size: 10.5px; line-height: 1.5; color: var(--ink-400); }
+
+/* Stepping back through the game with the arrow keys. It has to SAY it is
+   showing an old position, or somebody sits waiting for a move that already
+   happened. */
+.mtg-stepped { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 10px; padding: 8px 12px; border-radius: var(--c-r-sm);
+  background: #fdf3dd; border: 1px solid var(--gold-500);
+  font-size: 12.5px; font-weight: 700; color: var(--ink-900); }
+.mtg-stepped-x { min-height: 32px; padding: 0 10px; border: 0; border-radius: var(--c-r-chip);
+  background: var(--navy-900, #16223e); color: #fff; font: inherit; font-size: 12px;
+  font-weight: 700; cursor: pointer; }
+
+/* The rail: phone builds none of it, so there is nothing to hide here. */
+.mtg-rail { display: flex; flex-direction: column; gap: 14px; }
+.mtg-rail-card { border-radius: 14px; padding: 13px; background: #fff;
+  border: 1px solid var(--cream-200); }
+.mtg-rail-h { margin: 0 0 9px; font-family: var(--c-font-mono); font-size: 10px;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--ink-400); font-weight: 700; }
+.mtg-rail-row { display: flex; align-items: center; gap: 8px; width: 100%;
+  min-height: 40px; padding: 5px 6px; border: 0; border-radius: var(--c-r-chip);
+  background: none; font: inherit; text-align: left; cursor: pointer; }
+.mtg-rail-row.is-static { cursor: default; }
+.mtg-rail-row:hover:not(.is-static) { background: var(--cream-100); }
+.mtg-rail-av { width: 26px; height: 26px; flex: none; border-radius: 8px; color: #fff;
+  display: grid; place-items: center; font-size: 11px; font-weight: 800; }
+.mtg-rail-tc { flex: none; padding: 3px 6px; border-radius: 6px; background: var(--cream-100);
+  font-family: var(--c-font-mono); font-size: 10.5px; font-weight: 700; color: var(--ink-900); }
+.mtg-rail-who { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--ink-900);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mtg-rail-tag { flex: none; font-family: var(--c-font-mono); font-size: 10px; font-weight: 700;
+  color: var(--ink-400); }
+.mtg-rail-tag.is-turn { color: #1f4bc4; }
+.mtg-rail-none { margin: 0; font-size: 12.5px; color: var(--ink-400); }
+.mtg-rail-skel { height: 44px; border-radius: var(--c-r-chip); background: var(--cream-100); }
+
+@media (min-width: 1100px) {
+  /* Three columns, and the board is the one that gets the room. */
+  .mtg-wrap { grid-template-columns: 250px minmax(0, 1fr) 320px; align-items: start; gap: 18px; }
+  .mtg-boardstack { max-width: none; }
+  .mtg-matbar { min-height: 480px; }
+  .mtg-side { position: sticky; top: 12px; }
+  .mtg-hint { text-align: left; }
+}

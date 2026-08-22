@@ -346,6 +346,60 @@ const ROUNDS = {
         .every(e => e.getBoundingClientRect().height >= 40);
     }));
 
+    /* ── The route, not just the screen ──────────────────────────────────
+       Everything above mounts a tournament component directly. That is how
+       the tournaments route came to be completely broken while this file was
+       green: the hub read `isDirector` on its way past the routing returns and
+       the constant was declared below them, so every tap on Tournaments threw
+       "Cannot access 'isDirector' before initialization" and rendered nothing
+       at all. A component test cannot see that. Walking in from the hub can. */
+
+    for (const width of [390, 1280]) {
+      const routed = await browser.newPage({ viewport: { width, height: 900 } });
+      const rErr = [];
+      routed.on('pageerror', e => rErr.push(String(e.message)));
+      await routed.goto(BASE + '/tests/_trn_fixture.html', { waitUntil: 'networkidle' });
+      const mountHub = (role) => routed.evaluate((r) => {
+        ReactDOM.createRoot(document.getElementById('root')).render(
+          React.createElement(window.CmChess, {
+            auth: { isSignedIn: true, isAdmin: false,
+                    member: { memberId: 'NGG-1', fullName: 'Test Member', role: r } },
+            onOpenMatch: () => {},
+          }));
+      }, role);
+
+      await mountHub('member');
+      await routed.waitForSelector('.cmc-sec', { timeout: 8000 });
+      chk('[' + width + '] the chess hub itself renders', rErr.length === 0);
+
+      await routed.locator('.trn-entry').click();
+      await routed.waitForTimeout(500);
+      chk('[' + width + '] tapping Tournaments opens the list rather than throwing',
+          rErr.length === 0 && (await routed.locator('.trn-card').count()) > 0);
+
+      await routed.locator('.trn-card').first().click();
+      await routed.waitForTimeout(700);
+      chk('[' + width + '] …and opening one shows the tournament',
+          rErr.length === 0
+          && (await routed.evaluate(() => document.body.innerText)).indexOf('Club Championship') >= 0);
+
+      await mountHub('club_admin');
+      await routed.waitForSelector('.cmc-sec', { timeout: 8000 });
+      const ladder = routed.locator('.cmc-tile', { hasText: 'Live ladder' });
+      if (await ladder.count()) { await ladder.click(); await routed.waitForTimeout(500); }
+      chk('[' + width + '] the ladder opens from the hub', rErr.length === 0);
+
+      await mountHub('club_admin');
+      await routed.waitForSelector('.cmc-sec', { timeout: 8000 });
+      const host = routed.locator('.cmc-tile', { hasText: 'Host a tournament' });
+      if (await host.count()) { await host.click(); await routed.waitForTimeout(500); }
+      chk('[' + width + '] …and so does the wizard, for a director',
+          rErr.length === 0 && (await routed.locator('.trn-wiz').count()) > 0);
+
+      if (rErr.length) console.log('  [' + width + '] route errors: ' + rErr.slice(0, 3).join(' | '));
+      await routed.close();
+    }
+
     chk('no page errors across the whole run', errors.length === 0);
   } finally {
     await browser.close();

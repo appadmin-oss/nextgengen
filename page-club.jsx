@@ -4105,6 +4105,22 @@ function CmChess({ auth, onOpenMatch }) {
       .catch(e => setErr(cmChessError(e)));
   };
 
+  /* Who sees the director's controls.
+     `counts.staff` is the viewer's own capability, served by the community
+     endpoint that already computes it — the same signal the message actions
+     use. It is a HINT for what to draw: every tournament write still goes
+     through admin_cap_gate on the server, so showing the button to somebody
+     who should not have it would get them a refusal, not a tournament.
+
+     Declared ABOVE the routing returns, and that is not a style preference:
+     it sat below them and the tournaments route read it on the way past, so
+     every tap on Tournaments threw "Cannot access 'isDirector' before
+     initialization" and rendered nothing at all. A `const` is in its temporal
+     dead zone until the line that declares it runs, and an early return above
+     that line still executes. */
+  const isDirector = !!(auth && auth.member && auth.member.role
+                        && String(auth.member.role).toLowerCase() !== "member");
+
   if (screen === "search") {
     return <CmChessSearch onBack={() => { setScreen(""); load(); }}
                           onChallenge={(pl) => setChallengeFor(pl)}
@@ -4132,15 +4148,6 @@ function CmChess({ auth, onOpenMatch }) {
                    onOpen={setOpenTrn} onCreate={() => setScreen("trnNew")}
                    onBack={() => { setScreen(""); load(); }}/>;
   }
-
-  /* Who sees the director's controls.
-     `counts.staff` is the viewer's own capability, served by the community
-     endpoint that already computes it — the same signal the message actions
-     use. It is a HINT for what to draw: every tournament write still goes
-     through admin_cap_gate on the server, so showing the button to somebody
-     who should not have it would get them a refusal, not a tournament. */
-  const isDirector = !!(auth && auth.member && auth.member.role
-                        && String(auth.member.role).toLowerCase() !== "member");
 
   const yourMove = (matches || []).filter(m => m.status === "active" && m.yourTurn);
   const theirMove = (matches || []).filter(m => m.status === "active" && !m.yourTurn);
@@ -5677,9 +5684,146 @@ function CmGameReview({ m, onBack }) {
   );
 }
 
+/* ── Material, as a bar ───────────────────────────────────────────────────
+   The design puts an EVALUATION bar beside the board. This is material, and
+   the difference is not cosmetic: an evaluation bar during a live game is the
+   engine telling a child whether they are winning, which in a rated club game
+   is assistance. Material is already on the board and both players can count
+   it, so a bar showing it reveals nothing. The real evaluation is in the
+   review, after the game, where knowing it is the whole point. */
+function MtgMaterialBar({ score, flip }) {
+  /* score is from White's side. Nine pawns of material is a rout, so that is
+     the end of the scale rather than infinity. */
+  const clamped = Math.max(-9, Math.min(9, (score || 0) / 100));
+  const whiteShare = 50 + (clamped / 9) * 50;
+  const top = flip ? whiteShare : 100 - whiteShare;
+  const label = Math.abs(clamped) < 0.5 ? "Material is level"
+    : (clamped > 0 ? "White" : "Black") + " is ahead by " + Math.abs(Math.round(clamped)) + " points of material";
+  return (
+    <div className="mtg-matbar" role="img" aria-label={label}>
+      <span className="mtg-matbar-fill" style={{ height: (100 - top) + "%" }}/>
+    </div>
+  );
+}
+
+/* The reactions, as a panel. Lifted out of the game screen so the same block
+   serves the tab beside the board and the section under it. */
+function MtgSay({ m, busy, onSay }) {
+  return (
+    <div className="mtg-reacts">
+      <p className="mtl-hint">These are the only messages here — there is no typing.</p>
+      <div className="mtg-react-row">
+        {Object.keys(MATCH_REACTION_LABEL).map(k => (
+          <button key={k} className="mtg-react" disabled={busy} onClick={() => onSay(k)}>
+            <span aria-hidden="true">{MATCH_REACTION_LABEL[k][0]}</span> {MATCH_REACTION_LABEL[k][1]}
+          </button>
+        ))}
+      </div>
+      {(m.reactions || []).length > 0 && <>
+        <h4 className="mtl-h is-sub">Said so far</h4>
+        <div className="mtg-react-log">
+          {(m.reactions || []).slice(-6).map((r, i) => {
+            const mine = r.playerId === (m.players[m.you === "A" ? "A" : "B"] || {}).id;
+            const who = mine ? "You" : (r.playerId === m.players.A.id ? m.players.A.name : m.players.B.name);
+            return (
+              <span key={i} className="mtg-react-chip">
+                <span aria-hidden="true">{(MATCH_REACTION_LABEL[r.reaction] || ["💬", r.reaction])[0]}</span>
+                <b>{who}</b>
+                {(MATCH_REACTION_LABEL[r.reaction] || ["", r.reaction])[1]}
+              </span>
+            );
+          })}
+        </div>
+      </>}
+    </div>
+  );
+}
+
+/* ── The rail beside the board ────────────────────────────────────────────
+   Desktop only, and it is the reason the desktop layout exists at all: on a
+   wide screen the board leaves two columns of empty space, and what belongs in
+   them is the rest of your chess — the other games waiting on you and the
+   challenges you could take — so switching between them does not mean leaving
+   the board and coming back.
+
+   Fetched once, on mount, and not polled. The board's own tick already tells
+   this screen when something changed; a second poll for a sidebar would double
+   the request count on somebody's data bundle for a list that changes a few
+   times an hour. */
+function MtgRail({ matchId, onOpen }) {
+  const [games, setGames] = React.useState(null);
+  const [chal, setChal] = React.useState(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    try {
+      NGGApi.member.match.list()
+        .then(r => { if (alive) setGames((r.matches || []).filter(g => g.matchId !== matchId)); })
+        .catch(() => { if (alive) setGames([]); });
+      NGGApi.member.match.challenges()
+        .then(r => { if (alive) setChal(r); })
+        .catch(() => { if (alive) setChal({ toYou: [], open: [] }); });
+    } catch (_) { setGames([]); setChal({ toYou: [], open: [] }); }
+    return () => { alive = false; };
+  }, [matchId]);
+
+  const yours = (games || []).filter(g => g.status === "active" || g.status === "invited");
+  const open = ((chal && chal.open) || []).concat((chal && chal.toYou) || []);
+
+  return (
+    <aside className="mtg-rail" aria-label="Your other games">
+      <section className="mtg-rail-card">
+        <h3 className="mtg-rail-h">Your games{yours.length ? " · " + yours.length : ""}</h3>
+        {games === null ? <div className="mtg-rail-skel"/>
+          : yours.length === 0 ? <p className="mtg-rail-none">Nothing else on.</p>
+          : yours.slice(0, 6).map(g => (
+            <button key={g.matchId} className="mtg-rail-row" onClick={() => onOpen(g.matchId)}>
+              <span className="mtg-rail-av" style={{ background: cmColor(cmOtherName(g), "") }}>
+                {cmInitial(cmOtherName(g))}
+              </span>
+              <span className="mtg-rail-who">{cmOtherName(g)}</span>
+              <span className={"mtg-rail-tag" + (g.yourTurn ? " is-turn" : "")}>
+                {g.yourTurn ? "Your move" : "Waiting"}
+              </span>
+            </button>
+          ))}
+      </section>
+
+      <section className="mtg-rail-card">
+        <h3 className="mtg-rail-h">Open challenges</h3>
+        {chal === null ? <div className="mtg-rail-skel"/>
+          : open.length === 0 ? <p className="mtg-rail-none">None posted.</p>
+          : open.slice(0, 5).map(c => (
+            <div key={c.challengeId} className="mtg-rail-row is-static">
+              <span className="mtg-rail-tc">{cmTcName(c.timeControl)}</span>
+              <span className="mtg-rail-who">{c.from.name}</span>
+              <span className="mtg-rail-tag">{c.rated ? "rated" : "casual"}</span>
+            </div>
+          ))}
+      </section>
+    </aside>
+  );
+}
+
 function MatchGame({ matchId, onBack }) {
   const [m, setM] = React.useState(null);
   const [reviewing, setReviewing] = React.useState(false);
+  /* Board mode. On a wide screen the design turns this into a dark
+     three-column room: the board is the subject and everything else is chrome
+     around it. Driven by matchMedia rather than by a CSS-only rearrangement
+     because two of the three columns do not exist on a phone at all — building
+     them and hiding them would cost two requests a member on a handset never
+     needed. */
+  const [wide, setWide] = React.useState(false);
+  const [tab, setTab] = React.useState("moves");
+  React.useEffect(() => {
+    if (!window.matchMedia) return;
+    const q = window.matchMedia("(min-width: 1100px)");
+    const on = () => setWide(q.matches);
+    on();
+    if (q.addEventListener) { q.addEventListener("change", on); return () => q.removeEventListener("change", on); }
+    q.addListener(on); return () => q.removeListener(on);
+  }, []);
   const [err, setErr] = React.useState("");
   const [from, setFrom] = React.useState("");
   const [promo, setPromo] = React.useState(null);   // { from, to } awaiting a piece
@@ -5771,6 +5915,32 @@ function MatchGame({ matchId, onBack }) {
       .then(r => { if (!quiet) setBusy(false); return r; });
   }, [matchId, load]);
 
+  /* ← and → step through the moves, which is what every chess interface does
+     and what the hint line beside the board promises. Bound on the document
+     rather than on the board, because after a move the focus is wherever the
+     player last tapped. Ignored while a text field has focus — there is none
+     on this screen today, and there will be one the day somebody adds a
+     search box. */
+  const [reviewAt, setReviewAt] = React.useState(-1);   // -1 = live position
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const total = ((m && m.moves) || []).length;
+      if (!total) return;
+      e.preventDefault();
+      setReviewAt(v => {
+        const cur = v < 0 ? total : v;
+        const next = e.key === "ArrowLeft" ? Math.max(0, cur - 1) : Math.min(total, cur + 1);
+        return next >= total ? -1 : next;      // back to live at the end
+      });
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [m && m.moves && m.moves.length]);
+
   /* Play the premove the moment the turn comes back. Cleared first, so a
      rejected one cannot loop. */
   React.useEffect(() => {
@@ -5810,7 +5980,28 @@ function MatchGame({ matchId, onBack }) {
     <button className="btn btn-ghost btn-sm" onClick={onBack}>← Back</button></div>;
   if (!m) return <div className="arc mtg"><div className="arc-skels"><div className="arc-skel"/></div></div>;
 
-  const squares = chessSquares(m.state);
+  /* The position on screen. Live unless the player has stepped back with the
+     arrow keys, in which case it is replayed from the move list — which also
+     means stepping back cannot accidentally move a piece, because the board is
+     not interactive when it is not showing the live position.
+     
+     Deliberately NOT a useMemo: everything from here down is below this
+     component's early returns, and a hook below a conditional return is a
+     hook that sometimes does not run. Replaying at most a couple of hundred
+     moves costs less than the bug that would buy. */
+  const stepped = reviewAt >= 0 && reviewAt < ((m.moves || []).length);
+  let shownFen = m.state;
+  if (stepped && window.NggChess) {
+    let fen = m.startFen || window.NggChess.START_FEN;
+    let good = true;
+    for (let i = 0; i < reviewAt && good; i++) {
+      const r = window.NggChess.move(fen, m.moves[i].move);
+      if (!r || !r.ok) good = false; else fen = r.fen;
+    }
+    if (good) shownFen = fen;
+  }
+
+  const squares = chessSquares(shownFen);
   /* You look at your own pieces from your own side. Staff have no side, so they
      get white's view — and either can flip, because looking at a position from
      the other side is a normal thing to want. */
@@ -5966,15 +6157,32 @@ function MatchGame({ matchId, onBack }) {
       )}
 
       <div className="mtg-wrap">
-        <div>
+        {wide && <MtgRail matchId={matchId} onOpen={(id) => { window.location.hash = "#match-" + id; }}/>}
+        <div className="mtg-boardcol">
+          {/* The bar beside the board.
+           *
+           * The design shows an EVALUATION bar here. This is material instead,
+           * and the difference matters: an evaluation bar during a live game is
+           * the engine telling a child whether they are winning, which in a
+           * rated club game is assistance. Material is already on the board —
+           * both players can count it — so showing it reveals nothing either of
+           * them could not see. The real evaluation appears in the review,
+           * after the game, where knowing it is the point.
+           */}
+          <MtgMaterialBar score={material.score} flip={flip}/>
+          <div className="mtg-boardstack">
           <ChessSeat player={topSeat} colour={flip ? "w" : "b"} gone={flip ? material.gone.w : material.gone.b}
             score={flip ? -material.score : material.score} onMove={m.turnColour === (flip ? "w" : "b") && m.status === "active"}
             clock={m.clock} yours={isPlayer && m.yourColour === (flip ? "w" : "b")}
             checks={vChecks ? vChecks[flip ? "w" : "b"] : null}/>
-          <ChessBoard squares={squares} flip={flip} from={from || preFrom} targets={targets}
-            lastMove={m.lastMove} checkSquare={m.checkSquare}
-            interactive={canMove || (isPlayer && m.status === "active" && clockIsLive)}
-            premove={premove} premoving={!canMove} goals={goals}
+          <ChessBoard squares={squares} flip={flip} from={stepped ? "" : (from || preFrom)}
+            targets={stepped ? [] : targets}
+            lastMove={stepped
+              ? (reviewAt > 0 ? { from: m.moves[reviewAt - 1].move.slice(0, 2), to: m.moves[reviewAt - 1].move.slice(2, 4) } : null)
+              : m.lastMove}
+            checkSquare={stepped ? "" : m.checkSquare}
+            interactive={!stepped && (canMove || (isPlayer && m.status === "active" && clockIsLive))}
+            premove={stepped ? null : premove} premoving={!canMove} goals={goals}
             onTap={tap}/>
           <ChessSeat player={bottomSeat} colour={flip ? "b" : "w"} gone={flip ? material.gone.b : material.gone.w}
             score={flip ? material.score : -material.score} onMove={m.turnColour === (flip ? "b" : "w") && m.status === "active"}
@@ -5986,15 +6194,36 @@ function MatchGame({ matchId, onBack }) {
           <button type="button" className="mtg-flip" onClick={() => setManualFlip(v => !v)}>
             ⇅ Flip the board
           </button>
+          {stepped && (
+            <div className="mtg-stepped" role="status">
+              <span>Looking at move {Math.ceil(reviewAt / 2) || 1} of {Math.ceil((m.moves || []).length / 2)}</span>
+              <button className="mtg-stepped-x" onClick={() => setReviewAt(-1)}>Back to the game</button>
+            </div>
+          )}
+          </div>
         </div>
 
         <aside className="mtg-side">
-          <h3 className="mtl-h">Moves</h3>
+          {/* Tabs, so the panel beside the board holds everything that belongs
+              beside a board rather than just the notation. On a phone the same
+              panel sits under it and the tabs still earn their place: the move
+              list and the reactions were two stacked sections you had to
+              scroll past each other to reach. */}
+          <div className="mtg-tabs" role="tablist" aria-label="Beside the board">
+            {[["moves", "Moves"],
+              ["chat", m.spectator ? "Said" : "Say something"],
+              ["watch", "Watching"]].map(([id, label]) => (
+              <button key={id} role="tab" aria-selected={tab === id}
+                      className={"mtg-tab" + (tab === id ? " is-on" : "")}
+                      onClick={() => setTab(id)}>{label}</button>
+            ))}
+          </div>
+          <h3 className="mtl-h sr-only">Moves</h3>
           {/* Numbered PAIRS — "1. e4 e5" — which is how chess notation is
               written everywhere and how a child will be asked to write it at
               school. A flat list of plies is the same information in a form
               nobody reads. */}
-          <ol className="mtg-moves">
+          {tab === "moves" && <ol className="mtg-moves">
             {(() => {
               const mv = m.moves || [];
               const rows = [];
@@ -6012,56 +6241,39 @@ function MatchGame({ matchId, onBack }) {
               return rows;
             })()}
             {!(m.moves || []).length && <li className="mtg-empty">No moves yet.</li>}
-          </ol>
-          {m.status === "active" && !m.spectator &&
-            <button className="btn btn-ghost btn-sm mtg-resign" disabled={busy}
-              onClick={() => NGGApi.member.match.resign(matchId).then(load)}>Resign</button>}
+          </ol>}
+
+          {tab === "chat" && (
+            m.spectator
+              ? <p className="mtl-hint">Only the two players can say anything here.</p>
+              : <MtgSay m={m} busy={busy} onSay={(k) =>
+                  NGGApi.member.match.react(matchId, k).then(load).catch(() => {})}/>
+          )}
+
+          {tab === "watch" && (
+            <div className="mtg-watchers">
+              <p className="mtl-hint">
+                Games here are public to the club — anybody signed in can watch this one, and a
+                mentor can be asked to look at it.
+              </p>
+              <button className="mtg-report" onClick={() => NGGApi.member.match.report(matchId).then(load).catch(() => {})}>
+                Report this game to a mentor
+              </button>
+            </div>
+          )}
+
+          {/* The two controls that end a game, and the line that says how to
+              play one with a keyboard. Outside the tabs: resigning is not a
+              thing you should have to find a tab for. */}
+          {m.status === "active" && !m.spectator && (
+            <div className="mtg-acts">
+              <button className="mtg-act" disabled={busy}
+                onClick={() => NGGApi.member.match.resign(matchId).then(load)}>Resign</button>
+            </div>
+          )}
+          <p className="mtg-hint">Tap a piece, then where it goes · ← → step through the moves</p>
         </aside>
       </div>
-
-      {!m.spectator && <div className="mtg-reacts">
-        <h3 className="mtl-h">Say something</h3>
-        <p className="mtl-hint">These are the only messages here — there is no typing.</p>
-        <div className="mtg-react-row">
-          {Object.keys(MATCH_REACTION_LABEL).map(k => (
-            <button key={k} className="mtg-react" disabled={busy}
-              onClick={() => NGGApi.member.match.react(matchId, k).then(load).catch(() => {})}>
-              <span aria-hidden="true">{MATCH_REACTION_LABEL[k][0]}</span> {MATCH_REACTION_LABEL[k][1]}
-            </button>
-          ))}
-        </div>
-        {(m.reactions || []).length > 0 && <>
-          <h4 className="mtl-h is-sub">Said so far</h4>
-          <div className="mtg-react-log">
-            {(m.reactions || []).slice(-6).map((r, i) => {
-              const mine = r.playerId === (m.players[m.you === "A" ? "A" : "B"] || {}).id;
-              const who = mine ? "You" : (r.playerId === m.players.A.id ? m.players.A.name : m.players.B.name);
-              return (
-                <span key={i} className="mtg-react-chip">
-                  <span aria-hidden="true">{(MATCH_REACTION_LABEL[r.reaction] || ["💬", r.reaction])[0]}</span>
-                  <b>{who}</b>
-                  {(MATCH_REACTION_LABEL[r.reaction] || ["", r.reaction])[1]}
-                </span>
-              );
-            })}
-          </div>
-        </>}
-        <button className="mtg-report" onClick={() => NGGApi.member.match.report(matchId).then(load).catch(() => {})}>
-          Report this game to a mentor
-        </button>
-      </div>}
-
-      {/* A watcher can do exactly one thing, and it is the useful one. Games are
-          public here, so more people can see one going wrong than can act on
-          it — that is only worth something if any of them can raise a hand. */}
-      {m.spectator && (
-        <div className="mtg-watching">
-          <p>You’re watching this game. {m.players.A.name} and {m.players.B.name} are playing.</p>
-          <button className="mtg-report" onClick={() => NGGApi.member.match.report(matchId).then(load).catch(() => {})}>
-            Report this game to a mentor
-          </button>
-        </div>
-      )}
 
       {promo && <div className="mtg-promo" role="dialog" aria-label="Choose a piece">
         <div className="mtg-promo-box">
