@@ -218,11 +218,18 @@ const GAMES = {
 
     /* ── The terms, on the board ─────────────────────────────────────────── */
 
-    await show('live', '.mtg-terms');
-    const terms = await page.locator('.mtg-terms').innerText();
+    /* The terms live in the header now rather than in a chip row under it —
+       the design titles a board screen with them, and a chip row repeating the
+       title was the same sentence twice. The PROPERTY under test is unchanged:
+       a player who opened this from a notification can see what game it is. */
+    await show('live', '.mtg-head');
+    const terms = await page.locator('.mtg-head').innerText();
     chk('the board states the terms the game was agreed on',
-        terms.includes('Standard') && terms.includes('3+2') && terms.includes('Rated'));
+        terms.includes('3+2') && terms.toLowerCase().includes('casual') === false
+        && terms.toLowerCase().includes('rated'));
     chk('an ordinary game gets no variant rule to read', await page.locator('.mtg-vrule').count() === 0);
+    chk('…and its title names the pace rather than the variant',
+        (await page.locator('.mtg-h').innerText()).toLowerCase().includes('blitz'));
     chk('…and no marked squares', await page.locator('.mtg-sq.is-goal').count() === 0);
     chk('…and no check pips', await page.locator('.mtg-checks').count() === 0);
 
@@ -230,7 +237,7 @@ const GAMES = {
 
     await show('c960', '.mtg-vrule');
     chk('a Chess960 game says which of the 960 positions it is',
-        (await page.locator('.mtg-terms').innerText()).includes('42'));
+        (await page.locator('.mtg-head').innerText()).includes('42'));
     chk('…and says what the variant does, on the board rather than only in the challenge',
         (await page.locator('.mtg-vrule').innerText()).toLowerCase().includes('shuffled'));
 

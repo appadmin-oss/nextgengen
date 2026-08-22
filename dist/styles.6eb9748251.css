@@ -4307,12 +4307,16 @@ img { background-color: rgba(12,20,50,0.04); }
    That is deliberately NOT the community palette: this one screen is a board
    room rather than a page of the app, and the two-tone cream that works for a
    feed makes a chessboard look like a printed diagram. */
-.mtg-boardcol { display: flex; align-items: flex-start; gap: 12px; }
-.mtg-boardstack { flex: 1; min-width: 0; max-width: 560px; }
+.mtg-boardcol { min-width: 0; }
+.mtg-boardstack { min-width: 0; }
+/* The bar is beside the BOARD. Beside the whole column it stretched over the
+   seats, the move strip and the buttons and read as a page divider. */
+.mtg-boardrow { display: flex; align-items: stretch; gap: 10px; }
+.mtg-boardrow .mtg-boardwrap { flex: 1; min-width: 0; }
 
 /* Material, as a bar. See MtgMaterialBar on why this is material and not an
    engine evaluation. */
-.mtg-matbar { flex: none; width: 10px; align-self: stretch; min-height: 240px;
+.mtg-matbar { flex: none; width: 10px; align-self: stretch;
   border-radius: 999px; overflow: hidden; background: #3a4460;
   display: flex; flex-direction: column; justify-content: flex-end; }
 .mtg-matbar-fill { display: block; width: 100%; background: #fbf7ed; transition: height .3s ease; }
@@ -4374,7 +4378,188 @@ img { background-color: rgba(12,20,50,0.04); }
   /* Three columns, and the board is the one that gets the room. */
   .mtg-wrap { grid-template-columns: 250px minmax(0, 1fr) 320px; align-items: start; gap: 18px; }
   .mtg-boardstack { max-width: none; }
-  .mtg-matbar { min-height: 480px; }
   .mtg-side { position: sticky; top: 12px; }
   .mtg-hint { text-align: left; }
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE BOARD ROOM
+   ──────────────────────────────────────────────────────────────────────────
+   The game screen is DARK, on a phone and on a desktop, and that is the
+   design's decision rather than a preference: a chessboard is a bright object,
+   and the cream that carries a feed puts it on a page instead of on a table.
+   Everything here is the design's own palette — #262421 ground, panels at 5%
+   white, #e7e2d4 text, gold for the thing it is your turn to do.
+
+   Scoped to `.mtg` so it cannot leak into the lobby, which the design keeps
+   cream on purpose: you arrive in the light and sit down in the dark.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.mtg {
+  --bd-ground: #262421;
+  --bd-panel:  rgba(255,255,255,0.05);
+  --bd-panel-2:rgba(255,255,255,0.10);
+  --bd-line:   rgba(255,255,255,0.08);
+  --bd-text:   #e7e2d4;
+  /* The design's greys are #9a958c and #6f6b64. The second measures 2.5:1 on
+     the panel it sits on and the first 4.48:1 — under the 4.5 minimum, and
+     both are used for small text: the hint line, the move numbers, the "1 day"
+     under a clock. Lifted to the nearest tone on the same warm axis that
+     clears AA on the ground AND on the 5% panel. Fidelity to a colour does not
+     outrank being able to read it, and this audience is children on cheap
+     screens in bright rooms. */
+  --bd-dim:    #9c978e;
+  --bd-faint:  #9d978d;
+  --bd-gold:   #f5b026;
+  --bd-lime:   #d0ff3a;
+
+  background: var(--bd-ground);
+  color: var(--bd-text);
+  border-radius: 16px;
+  padding: 4px 14px 24px;
+}
+/* A rounded dark card rather than a full-bleed wash. Bleeding to the edges
+   needs a negative margin the size of the container's padding, and this screen
+   has three containers with three different paddings — the community shell,
+   the arcade, and a test fixture. A card is right in all of them. */
+.mtg .arc-eyebrow { color: var(--bd-dim); }
+
+.mtg .mtg-back { margin: 6px 0 2px; padding: 8px 12px; min-height: var(--c-tap);
+  background: var(--bd-panel); border: 1px solid var(--bd-line); border-radius: 999px;
+  color: var(--bd-text); font-weight: 700; }
+.mtg .mtg-back:hover { background: var(--bd-panel-2); color: #fff; border-color: var(--bd-line); }
+
+.mtg-head { display: grid; grid-template-columns: 1fr auto; align-items: center;
+  gap: 10px; padding: 6px 0 14px; margin: 0; }
+.mtg-head-mid { min-width: 0; }
+.mtg-h { margin: 0; font-family: var(--c-font-display); font-size: 16px; font-weight: 800;
+  color: #fff; letter-spacing: -0.01em; }
+.mtg-sub { margin-top: 2px; font-family: var(--c-font-mono); font-size: 11.5px; color: var(--bd-dim); }
+.mtg-status { flex: none; font-size: 12px; font-weight: 700; color: var(--bd-text);
+  background: var(--bd-panel); border: 1px solid var(--bd-line); border-radius: 999px;
+  padding: 6px 12px; white-space: nowrap; }
+.mtg-status.is-turn { background: var(--bd-gold); border-color: var(--bd-gold); color: #0c1432; }
+
+/* The terms, restated as quiet chips on the dark ground. */
+.mtg-terms { gap: 6px; margin: 0 0 12px; }
+.mtg-term { border-color: var(--bd-line); background: var(--bd-panel); color: var(--bd-text); }
+.mtg-term.is-variant { border-color: var(--bd-gold); background: var(--bd-gold); color: #0c1432; }
+.mtg-vrule { color: var(--bd-dim); margin-bottom: 14px; }
+
+/* Seats: avatar, name, rating, clock. The clock the design fills white is the
+   one that is running for the player whose seat it is. */
+.mtg-seat { background: none; border: 0; border-radius: 0; padding: 8px 0; min-height: 52px; gap: 10px; }
+.mtg-seat:first-child, .mtg-seat:last-of-type { border: 0; border-radius: 0; }
+.mtg-seat.is-on { background: none; }
+.mtg-seat-dot { width: 34px; height: 34px; border-radius: 10px; border: 0;
+  display: grid; place-items: center; font: 800 14px var(--c-font-display); color: #fff; }
+.mtg-seat-dot.is-w { background: #b07cff; }
+.mtg-seat-dot.is-b { background: #17a2b8; }
+.mtg-seat-n { flex: 1; min-width: 0; font-family: var(--c-font-display); font-size: 14.5px;
+  font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mtg-seat.is-on .mtg-seat-n::after { content: ""; }
+.mtg-seat-r { margin-left: 7px; font-family: var(--c-font-mono); font-size: 11.5px;
+  font-weight: 500; color: var(--bd-dim); }
+.mtg-seat-mat { color: var(--bd-dim); font-size: 13px; }
+.mtg-seat-mat b { color: var(--bd-text); }
+
+.mtg-clock { min-width: 92px; padding: 7px 12px; border-radius: 10px;
+  border: 0; background: var(--bd-panel-2); color: rgba(255,255,255,.7); font-size: 20px; }
+.mtg-clock.is-running { background: #f7f6f5; color: #16223e; }
+.mtg-clock.is-low { background: var(--bd-gold); color: #0c1432; }
+.mtg-clock.is-crit { background: #e4032b; color: #fff; }
+.mtg-clock.is-out { background: rgba(228,3,43,.2); color: #ff8b9c; text-decoration: line-through; }
+.mtg-clock.is-daily { background: var(--bd-panel-2); color: var(--bd-dim); font-size: 12.5px; min-width: 0; }
+
+/* The board itself keeps its own colours — those are the board's, not the
+   room's — but loses the light border that framed it against cream. */
+.mtg-board { border: 0; border-radius: 4px; box-shadow: 0 18px 40px -22px rgba(0,0,0,.7); }
+.mtg-boardwrap { max-width: none; }
+.mtg-matbar { background: #4a4844; }
+.mtg-matbar-fill { background: #f7f6f5; }
+
+.mtg-flip { margin-top: 12px; border-color: var(--bd-line); background: var(--bd-panel);
+  color: var(--bd-text); }
+.mtg-flip:hover { border-color: var(--bd-dim); color: #fff; }
+
+/* The move strip: the glance under the board. */
+.mtg-strip { display: flex; align-items: center; gap: 7px; overflow-x: auto; margin-top: 14px;
+  padding: 10px 12px; border-radius: 12px; background: var(--bd-panel);
+  font-family: var(--c-font-mono); font-size: 13px; scrollbar-width: none; }
+.mtg-strip::-webkit-scrollbar { display: none; }
+.mtg-strip-n { color: var(--bd-faint); flex: none; }
+.mtg-strip-s { color: var(--bd-text); flex: none; }
+.mtg-strip-s.is-last { padding: 2px 8px; border-radius: 6px; background: var(--bd-gold);
+  color: #262421; font-weight: 800; }
+
+.mtg-stepped { background: var(--bd-panel-2); border-color: var(--bd-line); color: var(--bd-text); }
+.mtg-stepped-x { background: var(--bd-gold); color: #0c1432; }
+
+/* The panel beside — or under — the board. */
+.mtg-side { background: var(--bd-panel); border: 0; border-radius: 14px; padding: 10px; }
+.mtg-tabs { background: transparent; padding: 0; gap: 3px; margin: 0 0 8px; }
+.mtg-tab { color: var(--bd-dim); border-radius: 9px; }
+.mtg-tab.is-on { background: var(--bd-panel-2); color: #fff; box-shadow: none; }
+.mtg-moves { color: var(--bd-text); font-family: var(--c-font-mono); font-size: 13px;
+  max-height: 340px; padding: 2px; }
+.mtg-mv-n { color: var(--bd-faint); }
+.mtg-mv-w, .mtg-mv-b { color: var(--bd-text); }
+.mtg-moves .mtg-empty { color: var(--bd-dim); }
+.mtl-h { color: var(--bd-dim); }
+.mtl-hint { color: var(--bd-dim); }
+.mtg-acts { gap: 6px; }
+.mtg-act { min-height: 40px; border: 0; border-radius: 11px; background: var(--bd-panel-2);
+  color: #fff; font-size: 12.5px; }
+.mtg-act:hover { background: rgba(255,255,255,.18); }
+.mtg-act.is-danger { color: #ff8b9c; }
+.mtg-hint { color: var(--bd-faint); font-size: 10.5px; }
+
+/* Reactions, on the dark ground. */
+.mtg-reacts { background: none; border: 0; padding: 0; }
+.mtg-react { border-color: var(--bd-line); background: var(--bd-panel); color: var(--bd-text); }
+.mtg-react:hover:not(:disabled) { background: var(--bd-panel-2); }
+.mtg-react-chip { background: var(--bd-panel); color: var(--bd-dim); }
+.mtg-react-chip b { color: #fff; }
+.mtg-report { color: #ff8b9c; }
+.mtg-watchers .mtl-hint { color: var(--bd-dim); }
+
+/* The rail, in the room's own colours. */
+.mtg-rail-card { background: var(--bd-panel); border: 0; }
+.mtg-rail-h { color: var(--bd-dim); }
+.mtg-rail-row:hover:not(.is-static) { background: var(--bd-panel-2); }
+.mtg-rail-who { color: var(--bd-text); }
+.mtg-rail-tag { color: var(--bd-dim); }
+.mtg-rail-tag.is-turn { color: var(--bd-gold); }
+.mtg-rail-tc { background: var(--bd-panel-2); color: #fff; }
+.mtg-rail-none { color: var(--bd-dim); }
+.mtg-rail-skel { background: var(--bd-panel); }
+
+/* The premove banner and the review offer, restated dark. */
+.mtg-pre { background: var(--bd-panel-2); border-color: var(--bd-line); }
+.mtg-pre-l { color: var(--bd-gold); }
+.mtg-pre-b { color: var(--bd-text); }
+.mtg-pre-x { background: var(--bd-panel-2); color: #fff; }
+.mtg-review { border-color: var(--bd-gold); background: var(--bd-gold); color: #0c1432; }
+.mtg-review:hover { background: #ffc34d; }
+.mtg-review-go { color: #0c1432; }
+.mtg-promo-box { background: #2f2c28; color: var(--bd-text); }
+
+/* A promotion announcement lands in a dark room, so it stops being a cream
+   card floating on it. */
+.mtg .cm-promo { background: var(--bd-panel); border-color: var(--bd-line); }
+.mtg .cm-promo-h, .mtg .cm-promo-cta { color: #fff; }
+.mtg .cm-promo-b, .mtg .cm-promo-eyebrow { color: var(--bd-dim); }
+.mtg .cm-promo-x { color: var(--bd-dim); }
+
+@media (min-width: 1100px) {
+  /* Three columns, and the board gets the room. */
+  .mtg { border-radius: 14px; margin: 0; padding: 18px; }
+  .mtg-wrap { grid-template-columns: 250px minmax(0, 1fr) 320px; align-items: start; gap: 18px; }
+  .mtg-boardstack { max-width: none; }
+  .mtg-side { position: sticky; top: 12px; }
+  .mtg-hint { text-align: left; }
+  /* The strip is the phone's glance; on a desktop the whole list is open in
+     the panel beside the board and a second copy is noise. */
+  .mtg-strip { display: none; }
 }

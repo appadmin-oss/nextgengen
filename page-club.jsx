@@ -4349,6 +4349,12 @@ function cmTcName(id) {
   const t = CM_TIME_CONTROLS.filter(x => x.id === id)[0];
   return t ? t.name : id;
 }
+/** "Rapid", "Blitz", "Daily" — the WORD for a time control, which is how the
+ *  design titles a game and how players describe one to each other. */
+function cmTcKind(id) {
+  const t = CM_TIME_CONTROLS.filter(x => x.id === id)[0];
+  return t ? t.kind : "Game";
+}
 function cmTermsLine(c) {
   const t = CM_TIME_CONTROLS.filter(x => x.id === c.timeControl)[0];
   const colour = c.colourPref === "random" ? "colours drawn" : "they play " + c.colourPref;
@@ -5115,8 +5121,11 @@ function MtgChecks({ n }) {
 function ChessSeat({ player, colour, gone, score, onMove, clock, yours, checks }) {
   return (
     <div className={"mtg-seat" + (onMove ? " is-on" : "")}>
-      <span className={"mtg-seat-dot is-" + colour} aria-hidden="true"/>
-      <span className="mtg-seat-n">{player.name}</span>
+      <span className={"mtg-seat-dot is-" + colour} aria-hidden="true">{cmInitial(player.name)}</span>
+      <span className="mtg-seat-n">
+        {player.name}
+        {player.rating ? <span className="mtg-seat-r">{player.rating}</span> : null}
+      </span>
       {checks !== undefined && checks !== null && <MtgChecks n={checks}/>}
       <span className="mtg-seat-mat">
         {gone.map((t, i) => <span key={t + i} className="mtg-seat-pc" aria-hidden="true">{CHESS_GLYPH[t]}</span>)}
@@ -6094,10 +6103,22 @@ function MatchGame({ matchId, onBack }) {
           somebody mid-sentence to say "knight f3" is worse than waiting. */}
       <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{say}</p>
 
+      {/* The header the design specifies: the TERMS in the middle, because on a
+          board screen "what game is this" is the question, and the players are
+          named on their own seats a few pixels below. */}
       <div className="mtg-head">
-        <div>
-          <div className="arc-eyebrow">{m.staffView ? "Staff view" : m.spectator ? "Watching" : "Chess"}</div>
-          <h2 className="mtg-h">{title}</h2>
+        <div className="mtg-head-mid">
+          <div className="mtg-h">
+            {vr.name !== "Standard" ? vr.name : cmTcKind(m.timeControl)} {cmTcName(m.timeControl)}
+            {" · "}{m.rated ? "rated" : "casual"}
+          </div>
+          <div className="mtg-sub">
+            {m.variant === "chess960" && vd.positionId !== undefined
+              ? "position " + vd.positionId + " · " : ""}
+            {m.centre ? m.centre + " club · " : ""}
+            {m.status === "complete" ? statusLine
+              : (m.moves || []).length ? "move " + Math.ceil((m.moves.length + 1) / 2) : "no moves yet"}
+          </div>
         </div>
         <div className={"mtg-status" + (m.yourTurn && m.status === "active" ? " is-turn" : "")}>{statusLine}</div>
       </div>
@@ -6127,18 +6148,6 @@ function MatchGame({ matchId, onBack }) {
           the sheet where the clock and the variant were agreed, and "why did
           my king walking to e4 end the game" is not a question a screen should
           leave anybody holding. */}
-      <div className="mtg-terms">
-        <span className={"mtg-term" + (m.variant && m.variant !== "standard" ? " is-variant" : "")}>
-          {vr.name}
-          {/* The separator lives inside the span: .mtg-term is a flex container,
-              and a leading space at the start of a flex item's line box is
-              collapsed away, which ran the two together as "Chess960· 137". */}
-          {m.variant === "chess960" && vd.positionId !== undefined
-            && <span className="mtg-term-id">{"\u00a0· position "}<b className="mono">{vd.positionId}</b></span>}
-        </span>
-        {!!m.timeControl && <span className="mtg-term">{cmTcName(m.timeControl)}</span>}
-        <span className="mtg-term">{m.rated ? "Rated" : "Casual"}</span>
-      </div>
       {m.variant && m.variant !== "standard" && <p className="mtg-vrule">{vr.rule}</p>}
 
       {/* A queued premove is a promise the board has made on your behalf. It
@@ -6169,12 +6178,13 @@ function MatchGame({ matchId, onBack }) {
            * them could not see. The real evaluation appears in the review,
            * after the game, where knowing it is the point.
            */}
-          <MtgMaterialBar score={material.score} flip={flip}/>
           <div className="mtg-boardstack">
           <ChessSeat player={topSeat} colour={flip ? "w" : "b"} gone={flip ? material.gone.w : material.gone.b}
             score={flip ? -material.score : material.score} onMove={m.turnColour === (flip ? "w" : "b") && m.status === "active"}
             clock={m.clock} yours={isPlayer && m.yourColour === (flip ? "w" : "b")}
             checks={vChecks ? vChecks[flip ? "w" : "b"] : null}/>
+          <div className="mtg-boardrow">
+          <MtgMaterialBar score={material.score} flip={flip}/>
           <ChessBoard squares={squares} flip={flip} from={stepped ? "" : (from || preFrom)}
             targets={stepped ? [] : targets}
             lastMove={stepped
@@ -6184,16 +6194,33 @@ function MatchGame({ matchId, onBack }) {
             interactive={!stepped && (canMove || (isPlayer && m.status === "active" && clockIsLive))}
             premove={stepped ? null : premove} premoving={!canMove} goals={goals}
             onTap={tap}/>
+          </div>
           <ChessSeat player={bottomSeat} colour={flip ? "b" : "w"} gone={flip ? material.gone.b : material.gone.w}
             score={flip ? material.score : -material.score} onMove={m.turnColour === (flip ? "b" : "w") && m.status === "active"}
             clock={m.clock} yours={isPlayer && m.yourColour === (flip ? "b" : "w")}
             checks={vChecks ? vChecks[flip ? "b" : "w"] : null}/>
-          {/* Under the whole seat–board–seat stack, not inside it: looking at a
-              position from the other side is a normal thing to want, and the
-              control for it should not sit between a player and their board. */}
-          <button type="button" className="mtg-flip" onClick={() => setManualFlip(v => !v)}>
-            ⇅ Flip the board
-          </button>
+          {/* The move strip. One line, the last few moves, the current one in a
+              chip — which is what fits under a board on a phone. The full list
+              lives in the panel; this is the glance. */}
+          {(m.moves || []).length > 0 && (
+            <div className="mtg-strip" aria-hidden="true">
+              {(() => {
+                const mv = m.moves || [];
+                const cut = Math.max(0, mv.length - 5);
+                const out = [];
+                for (let i = cut; i < mv.length; i++) {
+                  if (i % 2 === 0) out.push(<span key={"n" + i} className="mtg-strip-n">{(i / 2 + 1) + "."}</span>);
+                  out.push(
+                    <span key={i} className={"mtg-strip-s" + (i === mv.length - 1 ? " is-last" : "")}>
+                      {mv[i].san}
+                    </span>
+                  );
+                }
+                return out;
+              })()}
+            </div>
+          )}
+
           {stepped && (
             <div className="mtg-stepped" role="status">
               <span>Looking at move {Math.ceil(reviewAt / 2) || 1} of {Math.ceil((m.moves || []).length / 2)}</span>
@@ -6211,7 +6238,7 @@ function MatchGame({ matchId, onBack }) {
               scroll past each other to reach. */}
           <div className="mtg-tabs" role="tablist" aria-label="Beside the board">
             {[["moves", "Moves"],
-              ["chat", m.spectator ? "Said" : "Say something"],
+              ["chat", m.spectator ? "Said" : "Say"],
               ["watch", "Watching"]].map(([id, label]) => (
               <button key={id} role="tab" aria-selected={tab === id}
                       className={"mtg-tab" + (tab === id ? " is-on" : "")}
@@ -6265,12 +6292,20 @@ function MatchGame({ matchId, onBack }) {
           {/* The two controls that end a game, and the line that says how to
               play one with a keyboard. Outside the tabs: resigning is not a
               thing you should have to find a tab for. */}
-          {m.status === "active" && !m.spectator && (
-            <div className="mtg-acts">
-              <button className="mtg-act" disabled={busy}
-                onClick={() => NGGApi.member.match.resign(matchId).then(load)}>Resign</button>
-            </div>
-          )}
+          {/* The row the design puts at the bottom of a board screen. Flip
+              lives here rather than under the board: it is a control, and
+              controls belong together, not between a player and their game. */}
+          <div className="mtg-acts">
+            <button type="button" className="mtg-act mtg-flip" onClick={() => setManualFlip(v => !v)}>
+              <span aria-hidden="true">⇅</span> Flip
+            </button>
+            {m.status === "active" && !m.spectator && (
+              <button className="mtg-act is-danger" disabled={busy}
+                onClick={() => NGGApi.member.match.resign(matchId).then(load)}>
+                <span aria-hidden="true">⚑</span> Resign
+              </button>
+            )}
+          </div>
           <p className="mtg-hint">Tap a piece, then where it goes · ← → step through the moves</p>
         </aside>
       </div>

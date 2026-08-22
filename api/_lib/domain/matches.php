@@ -127,8 +127,13 @@ function match_public(array $r, string $viewer, bool $staff = false): array {
         'programme' => (string)($r['programme'] ?? ''),
         'you'       => $side,
         'players'   => [
-            'A' => ['id' => (string)$r['playerA'], 'name' => (string)$r['playerAName']],
-            'B' => ['id' => (string)$r['playerB'], 'name' => (string)$r['playerBName']],
+            /* The rating travels with the seat. Every chess interface people
+             * have used puts it beside the name, and without it a child cannot
+             * tell whether the game they are about to lose was a fair one. */
+            'A' => ['id' => (string)$r['playerA'], 'name' => (string)$r['playerAName'],
+                    'rating' => function_exists('chess_rating_of') ? chess_rating_of((string)$r['playerA']) : 0],
+            'B' => ['id' => (string)$r['playerB'], 'name' => (string)$r['playerBName'],
+                    'rating' => function_exists('chess_rating_of') ? chess_rating_of((string)$r['playerB']) : 0],
         ],
         // Chess: A is always white. Stated rather than inferred, because the
         // board has to be drawn from one player's side.
