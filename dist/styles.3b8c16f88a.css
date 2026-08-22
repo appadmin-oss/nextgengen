@@ -3965,3 +3965,65 @@ img { background-color: rgba(12,20,50,0.04); }
   border: 1px solid var(--c-blue); background: var(--c-card);
   font: inherit; font-size: 12.5px; font-weight: 700; color: var(--c-blue); cursor: pointer; }
 .mtg-pre-x:focus-visible { outline: 2px solid var(--c-ink); outline-offset: 2px; }
+
+/* ── The chess hub ─────────────────────────────────────────────────────────
+   The screen used to be six sections of equal weight stacked in a fixed
+   order, so a member with a game waiting scrolled past nothing and a member
+   with none scrolled past four headings to reach the button. There is almost
+   always ONE most useful thing to do here, and it now leads.               */
+
+.cmc-head { display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; padding: 4px var(--c-gutter) 14px; }
+.cmc-head-t { min-width: 0; }
+.cmc-h { margin: 0; font-family: var(--c-font-display); font-weight: 800; font-size: 26px;
+  letter-spacing: -0.03em; line-height: 1.1; }
+.cmc-sub { margin: 3px 0 0; font-family: var(--c-font-mono); font-size: 11.5px; color: var(--c-muted); }
+.cmc-rating { flex: none; display: flex; flex-direction: column; align-items: flex-end; }
+.cmc-rating-n { font-family: var(--c-font-display); font-weight: 800; font-size: 30px;
+  line-height: 1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; color: var(--c-ink); }
+.cmc-rating-l { font-family: var(--c-font-mono); font-size: 9.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--c-muted); margin-top: 3px; }
+
+/* The one thing. Dark, so it reads as the primary action on a page of white
+   cards without needing to be bigger than everything else. */
+.cmc-next { display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; width: 100%;
+  margin: 0 var(--c-gutter) 14px; width: calc(100% - var(--c-gutter) * 2);
+  padding: 15px 17px; border: 0; border-radius: var(--c-r-btn);
+  background: var(--c-ink-deep); color: #fff; text-align: left; font: inherit; cursor: pointer; }
+.cmc-next:focus-visible { outline: 3px solid var(--c-accent); outline-offset: 2px; }
+.cmc-next-l { font-family: var(--c-font-mono); font-size: 10px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--c-accent); }
+.cmc-next.is-answer .cmc-next-l { color: #a9f0c0; }
+.cmc-next-n { font-family: var(--c-font-display); font-weight: 800; font-size: 19px;
+  letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmc-next-s { font-size: 13px; color: rgba(255,255,255,.72); }
+.cmc-next-go { grid-column: 2; grid-row: 1 / span 3; align-self: center;
+  font-weight: 800; font-size: 14.5px; color: var(--c-accent); white-space: nowrap; }
+.cmc-next.is-answer .cmc-next-go { color: #a9f0c0; }
+
+/* ── House promotions ──────────────────────────────────────────────────── */
+
+.cm-promo { --promo-accent: var(--c-blue);
+  display: flex; align-items: flex-start; gap: 12px; position: relative;
+  margin: 0 var(--c-gutter) 14px; padding: 13px 14px;
+  border-radius: var(--c-r-btn); background: var(--c-card);
+  border: 1px solid var(--c-border); border-left: 3px solid var(--promo-accent); }
+.cm-promo-img { flex: none; width: 56px; height: 56px; border-radius: var(--c-r-sm); overflow: hidden; }
+.cm-promo-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cm-promo-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding-right: 30px; }
+.cm-promo-eyebrow { font-family: var(--c-font-mono); font-size: 9.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--promo-accent); font-weight: 700; }
+.cm-promo-h { font-family: var(--c-font-display); font-weight: 800; font-size: 15.5px;
+  letter-spacing: -0.01em; line-height: 1.3; color: var(--c-ink); }
+.cm-promo-b { font-size: 13.5px; line-height: 1.5; color: var(--c-body-soft); }
+.cm-promo-cta { align-self: flex-start; min-height: var(--c-tap); margin-top: 5px; padding: 0 14px;
+  border-radius: var(--c-r-pill); border: 1px solid var(--promo-accent); background: none;
+  font: inherit; font-size: 13px; font-weight: 700; color: var(--promo-accent); cursor: pointer; }
+.cm-promo-cta:focus-visible { outline: 2px solid var(--c-ink); outline-offset: 2px; }
+/* 44px and findable. A dismiss nobody can see turns a promotion into
+   furniture, and furniture is what people learn to scroll past. */
+.cm-promo-x { position: absolute; top: 6px; right: 6px; width: 44px; height: 44px;
+  display: grid; place-items: center; border: 0; background: none;
+  color: var(--c-muted); font-size: 15px; cursor: pointer; border-radius: var(--c-r-sm); }
+.cm-promo-x:hover { background: var(--c-neutral-chip); color: var(--c-ink); }
+.cm-promo-x:focus-visible { outline: 2px solid var(--c-blue); outline-offset: -2px; }

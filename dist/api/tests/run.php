@@ -13904,6 +13904,93 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         return count($r['players']) > 0;
     })());
 
+    /* ── House promotions ───────────────────────────────────────────────────
+       NGG telling its own members about its own programmes. The tests that
+       matter are the edges that keep it first-party: no arbitrary URLs, no
+       behavioural targeting, a dismissal that sticks, and a count that cannot
+       be inflated by refreshing. */
+    $ADMP = 'NGG-2025-0099';
+    chk('a promo can only send somebody to an in-app page', (function () use ($ADMP) {
+        $bad = backend_dispatch('admin.promo.upsert', ['requesterId' => $ADMP, 'data' => [
+            'title' => 'Sponsored thing', 'placement' => 'chess', 'ctaPage' => 'https://example.com/buy']]);
+        return ($bad['error'] ?? '') === 'bad_destination';
+    })());
+    chk('…and an http image is refused', (function () use ($ADMP) {
+        $bad = backend_dispatch('admin.promo.upsert', ['requesterId' => $ADMP, 'data' => [
+            'title' => 'Mixed content', 'placement' => 'chess', 'imageUrl' => 'http://x/y.png']]);
+        return ($bad['error'] ?? '') === 'bad_image';
+    })());
+    $pr = backend_dispatch('admin.promo.upsert', ['requesterId' => $ADMP, 'data' => [
+        'title' => 'Summer intake is open', 'body' => 'Eight weeks, five centres.',
+        'kind' => 'programme', 'placement' => 'chess', 'ctaLabel' => 'See the programme',
+        'ctaPage' => 'summer', 'status' => 'live', 'priority' => 10]]);
+    chk('a live promo is created and served to a member', (function () use ($pr) {
+        if (empty($pr['ok'])) return false;
+        $r = backend_dispatch('promo.for', ['memberId' => 'MPL-A', 'placement' => 'chess']);
+        return $r['promo'] && $r['promo']['promoId'] === $pr['promoId']
+            && $r['promo']['ctaPage'] === 'summer';
+    })());
+    chk('…and never carries an admin-only figure to a member', (function () {
+        $r = backend_dispatch('promo.for', ['memberId' => 'MPL-A', 'placement' => 'chess']);
+        return $r['promo'] && !isset($r['promo']['impressions']) && !isset($r['promo']['audience']);
+    })());
+    chk('only ONE promo is served per placement, never a stack', (function () use ($ADMP) {
+        backend_dispatch('admin.promo.upsert', ['requesterId' => $ADMP, 'data' => [
+            'title' => 'Second thing', 'placement' => 'chess', 'status' => 'live', 'priority' => 1]]);
+        $r = backend_dispatch('promo.for', ['memberId' => 'MPL-A', 'placement' => 'chess']);
+        return isset($r['promo']) && !is_array($r['promo'][0] ?? null);
+    })());
+    chk('…and priority decides which one', (function () use ($pr) {
+        $r = backend_dispatch('promo.for', ['memberId' => 'MPL-A', 'placement' => 'chess']);
+        return $r['promo']['promoId'] === $pr['promoId'];   // priority 10 beats 1
+    })());
+    chk('an impression counts once per person, not once per render', (function () use ($pr) {
+        for ($i = 0; $i < 5; $i++) backend_dispatch('promo.track', ['memberId' => 'MPL-A', 'promoId' => $pr['promoId'], 'event' => 'seen']);
+        return (int)db_row("SELECT impressions FROM promos WHERE promoId = ?", [$pr['promoId']])['impressions'] === 1;
+    })());
+    chk('…and a click counts once too', (function () use ($pr) {
+        for ($i = 0; $i < 4; $i++) backend_dispatch('promo.track', ['memberId' => 'MPL-A', 'promoId' => $pr['promoId'], 'event' => 'click']);
+        return (int)db_row("SELECT clicks FROM promos WHERE promoId = ?", [$pr['promoId']])['clicks'] === 1;
+    })());
+    chk('a dismissal is permanent — somebody who said no is not asked again', (function () use ($pr) {
+        backend_dispatch('promo.track', ['memberId' => 'MPL-A', 'promoId' => $pr['promoId'], 'event' => 'dismiss']);
+        $r = backend_dispatch('promo.for', ['memberId' => 'MPL-A', 'placement' => 'chess']);
+        // The next one down is served instead; the dismissed one is not.
+        return !$r['promo'] || $r['promo']['promoId'] !== $pr['promoId'];
+    })());
+    chk('…for that person only', (function () use ($pr) {
+        $r = backend_dispatch('promo.for', ['memberId' => 'MPL-B', 'placement' => 'chess']);
+        return $r['promo'] && $r['promo']['promoId'] === $pr['promoId'];
+    })());
+    chk('a promo outside its window is not shown', (function () use ($ADMP) {
+        $f = backend_dispatch('admin.promo.upsert', ['requesterId' => $ADMP, 'data' => [
+            'title' => 'Next term', 'placement' => 'arcade', 'status' => 'live',
+            'startsAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 86400)]]);
+        $r = backend_dispatch('promo.for', ['memberId' => 'MPL-B', 'placement' => 'arcade']);
+        return !$r['promo'];
+    })());
+    chk('targeting is by centre and role, and it narrows', (function () use ($ADMP) {
+        backend_dispatch('admin.promo.upsert', ['requesterId' => $ADMP, 'data' => [
+            'title' => 'Ayobo only', 'placement' => 'dashboard', 'status' => 'live',
+            'centres' => ['Ayobo']]]);
+        $egbeda = backend_dispatch('promo.for', ['memberId' => 'MPL-A', 'placement' => 'dashboard']);  // Egbeda
+        $ayobo  = backend_dispatch('promo.for', ['memberId' => 'MPL-C', 'placement' => 'dashboard']);  // Ayobo
+        return !$egbeda['promo'] && $ayobo['promo'] && $ayobo['promo']['title'] === 'Ayobo only';
+    })());
+    chk('the click-through figure is withheld until it means anything', (function () use ($ADMP) {
+        $l = backend_dispatch('admin.promos.list', ['requesterId' => $ADMP]);
+        foreach ($l['promos'] as $x) {
+            // Under 30 impressions a rate is noise, and a number that looks
+            // like a measurement invites a decision it cannot support.
+            if ($x['impressions'] < 30 && $x['ctr'] !== null) return false;
+        }
+        return true;
+    })());
+    chk('a member cannot reach the admin promo list', (function () {
+        $r = backend_dispatch('admin.promos.list', ['requesterId' => 'MPL-A']);
+        return empty($r['ok']);
+    })());
+
     /* ── Variants ───────────────────────────────────────────────────────────
        Three, each a small delta on the rules the engine already has rather
        than a second engine — a second move generator is a second place for a
@@ -16150,6 +16237,104 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('…and still covers the summer cohort only', ($gm['programmes'] ?? []) === ['summer']);
 
     db_exec("DELETE FROM volunteers WHERE volunteerId IN ('VOL-OPS-C','VOL-OPS-M')");
+})();
+
+/* ── House promotions: the gates, the schedule, and the accounting ─────────
+ *
+ * Complements the promotion block in the chess suite above, which covers
+ * serving, priority and dismissal. What is checked here is the rest of the
+ * perimeter: who may write one, what a promotion may not say, that a schedule
+ * with an END is enforced and not just a start, and that the counting cannot
+ * be talked into a number the club would act on.
+ *
+ * Starts from an empty table so a leftover live promo from the block above
+ * cannot answer a question meant for one of these.
+ */
+(function () {
+    db_exec('DELETE FROM promos'); db_exec('DELETE FROM promo_seen');
+
+    db_insert('members', ['memberId' => 'PRM-A', 'fullName' => 'Promo Reader', 'email' => 'prm-a@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('summer_students', ['studentId' => 'PRM-S', 'cohortId' => '', 'handle' => 'prmkid',
+        'fullName' => 'Promo Kid', 'age' => 12, 'centre' => 'Egbeda', 'status' => 'active',
+        'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    $save = fn(array $d, string $who = 'NGG-2025-0099') =>
+        backend_dispatch('admin.promo.upsert', ['requesterId' => $who, 'data' => $d]);
+    $for = fn(string $who, string $where = 'chess') =>
+        backend_dispatch('promo.for', ['memberId' => $who, 'placement' => $where])['promo'];
+
+    // ── Who may write one ──
+    chk('a plain member cannot write a promotion',
+        ($save(['title' => 'Sneaky'], 'NGG-2025-0001')['error'] ?? '') === 'forbidden');
+    chk('an editor can — a promotion is published copy, not a roster action',
+        !empty($save(['title' => 'Editor promo', 'status' => 'draft'], 'NGG-2025-0002')['ok']));
+
+    // ── What it may say ──
+    chk('a promotion needs a title worth reading',
+        ($save(['title' => 'x'])['error'] ?? '') === 'title_required');
+    chk('a destination that is not one of the app\'s own pages is refused',
+        ($save(['title' => 'Ghost page', 'ctaPage' => 'nowhere'])['error'] ?? '') === 'bad_destination');
+    chk('a placement nobody renders is refused rather than silently stored',
+        ($save(['title' => 'Nowhere to put it', 'placement' => 'billboard'])['error'] ?? '') === 'bad_placement');
+
+    // ── Serving ──
+    chk('a draft reaches nobody', $for('PRM-A') === null);
+    chk('an unknown placement is empty, not an error that names the table',
+        backend_dispatch('promo.for', ['memberId' => 'PRM-A', 'placement' => 'billboard'])['promo'] === null);
+
+    $live = $save(['title' => 'Summer intake opens Monday', 'placement' => 'chess', 'status' => 'live',
+                   'ctaPage' => 'summer', 'priority' => 10, 'kinds' => ['student']])['promoId'];
+    chk('a promotion aimed at summer children reaches a summer child',
+        ($for('PRM-S')['promoId'] ?? '') === $live);
+    chk('…and not a club member, because the target is the roster\'s own fact',
+        $for('PRM-A') === null);
+
+    // ── A schedule with an end is enforced at the end too ──
+    $base = ['promoId' => $live, 'title' => 'Summer intake opens Monday', 'placement' => 'chess',
+             'status' => 'live', 'ctaPage' => 'summer', 'priority' => 10];
+    $save($base + ['endsAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]);
+    chk('a promotion that ended yesterday has stopped', $for('PRM-A') === null);
+    $save($base);
+    chk('…and clearing the end date brings it back', ($for('PRM-A')['promoId'] ?? '') === $live);
+
+    // ── Accounting ──
+    /* A click arriving from somebody with no recorded view still books the
+       view — the alternative is a promotion with more clicks than impressions,
+       which is a figure nobody can act on. */
+    backend_dispatch('promo.track', ['memberId' => 'PRM-A', 'promoId' => $live, 'event' => 'click']);
+    chk('a click from somebody with no recorded view books the view too',
+        (int)db_row('SELECT impressions FROM promos WHERE promoId = ?', [$live])['impressions'] === 1
+        && (int)db_row('SELECT clicks FROM promos WHERE promoId = ?', [$live])['clicks'] === 1);
+    chk('an event that is not one of the three is refused',
+        (backend_dispatch('promo.track', ['memberId' => 'PRM-A', 'promoId' => $live, 'event' => 'purchase'])['error'] ?? '') === 'bad_event');
+    chk('tracking a promotion that does not exist is refused',
+        (backend_dispatch('promo.track', ['memberId' => 'PRM-A', 'promoId' => 'PR-NOPE', 'event' => 'seen'])['error'] ?? '') === 'not_found');
+    chk('a signed-out reader is not tracked at all',
+        (backend_dispatch('promo.track', ['memberId' => '', 'promoId' => $live, 'event' => 'seen'])['error'] ?? '') === 'forbidden');
+
+    db_exec('UPDATE promos SET impressions = 40, clicks = 6 WHERE promoId = ?', [$live]);
+    $shown = null;
+    foreach (backend_dispatch('admin.promos.list', ['requesterId' => 'NGG-2025-0099'])['promos'] as $r)
+        if ($r['promoId'] === $live) $shown = $r;
+    chk('the click-through figure is reported once there is enough of it to mean something',
+        is_array($shown) && $shown['ctr'] === 15.0);
+    chk('the admin form offers in-app pages only — there is nowhere to type a domain',
+        !array_filter(backend_dispatch('admin.promos.list', ['requesterId' => 'NGG-2025-0099'])['pages'],
+                      fn($pg) => str_contains($pg, '://')));
+
+    // ── Deleting ──
+    chk('deleting a promotion that is not there is refused',
+        (backend_dispatch('admin.promo.delete', ['requesterId' => 'NGG-2025-0099', 'promoId' => 'PR-NOPE'])['error'] ?? '') === 'not_found');
+    backend_dispatch('admin.promo.delete', ['requesterId' => 'NGG-2025-0099', 'promoId' => $live]);
+    chk('deleting a promotion takes its per-member reading records with it',
+        !db_row('SELECT id FROM promos WHERE promoId = ?', [$live])
+        && !db_row('SELECT id FROM promo_seen WHERE promoId = ?', [$live]));
+
+    db_exec('DELETE FROM promos'); db_exec('DELETE FROM promo_seen');
+    db_exec("DELETE FROM members WHERE memberId = 'PRM-A'");
+    db_exec("DELETE FROM summer_students WHERE studentId = 'PRM-S'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

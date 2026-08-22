@@ -3143,6 +3143,80 @@ function cmSeenAgo(iso, online) {
   return "last seen " + cmAgo(iso);
 }
 
+/* ── House promotions ─────────────────────────────────────────────────────
+   NGG telling its own members about its own programmes, inside the surfaces
+   they already use. One per placement, never a stack — a chess screen with an
+   ad column on it is a chess screen people stop opening.
+
+   Three properties this component has to hold, and they are the reason it is
+   worth its own component rather than being inlined:
+
+     · it is DISMISSIBLE, and a dismissal is permanent;
+     · it is visibly a promotion rather than a message from a mentor — it
+       carries an eyebrow saying which programme it is from, because a child
+       should always be able to tell who is talking to them;
+     · the impression is counted once, when it actually renders, and not by
+       whoever happened to fetch it.                                        */
+
+function CmPromo({ placement, onGo }) {
+  const [promo, setPromo] = React.useState(null);
+  const [gone, setGone] = React.useState(false);
+  const counted = React.useRef("");
+
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.member.promo(placement)
+      .then(r => { if (alive) setPromo(r.promo || null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [placement]);
+
+  /* Counted on RENDER, not on fetch. A prefetch that never reaches the screen
+     is not an impression, and counting it makes a promotion that nobody saw
+     look like one that worked. */
+  React.useEffect(() => {
+    if (!promo || gone || counted.current === promo.promoId) return;
+    counted.current = promo.promoId;
+    NGGApi.member.promoTrack(promo.promoId, "seen").catch(() => {});
+  }, [promo, gone]);
+
+  if (!promo || gone) return null;
+
+  const go = () => {
+    NGGApi.member.promoTrack(promo.promoId, "click").catch(() => {});
+    if (promo.ctaPage && onGo) onGo(promo.ctaPage, promo.ctaRef);
+  };
+  const dismiss = () => {
+    setGone(true);
+    NGGApi.member.promoTrack(promo.promoId, "dismiss").catch(() => {});
+  };
+
+  const KIND = { programme: "From the programme", event: "Coming up",
+                 tournament: "Tournament", notice: "Notice" };
+
+  return (
+    <aside className="cm-promo" style={promo.accent ? { "--promo-accent": promo.accent } : null}
+           aria-label="Programme announcement">
+      {promo.imageUrl && <span className="cm-promo-img" aria-hidden="true">
+        <img src={cmOpt(promo.imageUrl, 320)} alt="" loading="lazy"/>
+      </span>}
+      <span className="cm-promo-body">
+        <span className="cm-promo-eyebrow">{KIND[promo.kind] || KIND.programme}</span>
+        <span className="cm-promo-h">{promo.title}</span>
+        {promo.body && <span className="cm-promo-b">{promo.body}</span>}
+        {promo.ctaLabel && promo.ctaPage && (
+          <button className="cm-promo-cta" onClick={go}>{promo.ctaLabel} →</button>
+        )}
+      </span>
+      {/* 44px, and it says what it does. A dismiss you cannot find is a promo
+          that becomes furniture. */}
+      <button className="cm-promo-x" onClick={dismiss} aria-label={"Hide this announcement: " + promo.title}>
+        <span aria-hidden="true">✕</span>
+      </button>
+    </aside>
+  );
+}
+
 /* ── Tournaments ──────────────────────────────────────────────────────────
    Everything a tournament needs on a phone, in the design system's own
    tokens. Three screens and a wizard:
@@ -3848,28 +3922,82 @@ function CmChess({ auth, onOpenMatch }) {
   const toYou = (challenges && challenges.toYou) || [];
   const open = (challenges && challenges.open) || [];
 
+  /* THE ONE THING.
+     The screen used to be six sections of equal weight — your turn, challenges,
+     new game, open challenges, train, waiting — stacked in a fixed order, so a
+     member with a game waiting scrolled past nothing and a member with none
+     scrolled past four headings to find the button. There is almost always a
+     single most useful thing to do here, and the screen should lead with it. */
+  const next = yourMove.length ? { kind: "move", m: yourMove[0] }
+             : toYou.length ? { kind: "answer", c: toYou[0] }
+             : lobby && lobby.accepted && lobby.accepted.length ? { kind: "accepted", a: lobby.accepted[0] }
+             : null;
+
   return (
     <div className="cmc">
       {err && <div className="cmm-offline" role="alert">{err}</div>}
 
-      <div className="cmc-head">
-        <div>
+      {/* Identity and standing, in one line rather than a heading plus a
+          subtitle plus a floating number saying the same thing twice. */}
+      <header className="cmc-head">
+        <div className="cmc-head-t">
           <h2 className="cmc-h">Chess</h2>
           <p className="cmc-sub">
-            {profile ? <>Your rating <b>{profile.rating}</b>
-              {profile.provisional ? " · provisional" : (profile.weekDelta ? (profile.weekDelta > 0 ? " · +" : " · ") + profile.weekDelta + " this week" : "")}</>
+            {profile
+              ? <>{profile.provisional ? "Provisional" : "Rated"}
+                  {profile.games ? " · " + profile.games + (profile.games === 1 ? " game" : " games") : ""}
+                  {profile.weekDelta ? " · " + (profile.weekDelta > 0 ? "+" : "") + profile.weekDelta + " this week" : ""}</>
               : "Loading your standing…"}
           </p>
         </div>
-        {profile && <div className="cmc-rating">{profile.rating}</div>}
-      </div>
+        {profile && (
+          <div className="cmc-rating" aria-label={"Your rating is " + profile.rating}>
+            <span className="cmc-rating-n">{profile.rating}</span>
+            <span className="cmc-rating-l">rating</span>
+          </div>
+        )}
+      </header>
+
+      {/* The single most useful action, given as one card rather than found by
+          scrolling. Everything below it is still there and still ordered. */}
+      {next && (
+        <button className={"cmc-next is-" + next.kind}
+                onClick={() => next.kind === "move" ? onOpenMatch(next.m.matchId)
+                             : next.kind === "accepted" ? onOpenMatch(next.a.matchId)
+                             : answer(next.c.challengeId, "accept")}>
+          <span className="cmc-next-l">
+            {next.kind === "move" ? "Your move" : next.kind === "accepted" ? "Your game is on" : "Somebody wants a game"}
+          </span>
+          <span className="cmc-next-n">
+            {next.kind === "move" ? cmOtherName(next.m)
+             : next.kind === "accepted" ? next.a.name
+             : next.c.from.name + " · " + next.c.from.rating}
+          </span>
+          <span className="cmc-next-s">
+            {next.kind === "move" ? "Move " + (next.m.ply + 1) + " · you are " + (next.m.yourColour === "w" ? "White" : "Black")
+             : next.kind === "accepted" ? "They took your challenge"
+             : cmTermsLine(next.c)}
+          </span>
+          <span className="cmc-next-go" aria-hidden="true">
+            {next.kind === "answer" ? "Accept →" : "Play →"}
+          </span>
+        </button>
+      )}
+
+      {/* One house promotion, dismissible. Placed below the primary action so
+          it can never sit between a member and their own game. */}
+      <CmPromo placement="chess" onGo={(page) => { if (window.__navigate) window.__navigate(page); }}/>
 
       {/* Waiting on YOU, first and always. A queue that hides whose move it is
           is a queue where games quietly die. */}
-      {yourMove.length > 0 && (
+      {/* The rest of them. The first is already the card above; repeating it
+          here would make the screen look like it has two of everything. */}
+      {yourMove.length > (next && next.kind === "move" ? 1 : 0) && (
         <section className="cmc-sec">
-          <div className="cmm-list-h">YOUR TURN · {yourMove.length}</div>
-          {yourMove.map(m => (
+          <div className="cmm-list-h">
+            {next && next.kind === "move" ? "ALSO YOUR TURN · " + (yourMove.length - 1) : "YOUR TURN · " + yourMove.length}
+          </div>
+          {yourMove.slice(next && next.kind === "move" ? 1 : 0).map(m => (
             <button key={m.matchId} className="cmc-game" onClick={() => onOpenMatch(m.matchId)}>
               <span className="cmc-av" style={{ background: cmColor(cmOtherName(m), "") }}>{cmInitial(cmOtherName(m))}</span>
               <span className="cmc-game-body">
@@ -3882,10 +4010,12 @@ function CmChess({ auth, onOpenMatch }) {
         </section>
       )}
 
-      {toYou.length > 0 && (
+      {toYou.length > (next && next.kind === "answer" ? 1 : 0) && (
         <section className="cmc-sec">
-          <div className="cmm-list-h">CHALLENGES FOR YOU</div>
-          {toYou.map(c => (
+          <div className="cmm-list-h">
+            {next && next.kind === "answer" ? "MORE CHALLENGES" : "CHALLENGES FOR YOU"}
+          </div>
+          {toYou.slice(next && next.kind === "answer" ? 1 : 0).map(c => (
             <div className="cmc-ch" key={c.challengeId}>
               <span className="cmc-ch-body">
                 <span className="cmc-game-who">{c.from.name} · {c.from.rating}</span>
@@ -6533,4 +6663,4 @@ function JournalEntryPage() {
   );
 }
 
-Object.assign(window, { SummerPage, ClubPage, BadgePin, CommunityPage, CmStudentSignIn, CmProgramJournal, JournalEntryPage, CmTrnList, CmTrnDetail, CmTrnCreate, CmTrnStandings, CmTrnRounds });
+Object.assign(window, { SummerPage, ClubPage, BadgePin, CommunityPage, CmStudentSignIn, CmProgramJournal, JournalEntryPage, CmTrnList, CmTrnDetail, CmTrnCreate, CmTrnStandings, CmTrnRounds, CmPromo });

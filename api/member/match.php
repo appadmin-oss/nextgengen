@@ -40,6 +40,10 @@ if ($method === 'GET') {
             'band' => (string)($_GET['band'] ?? ''), 'mentors' => !empty($_GET['mentors'])]);
     } elseif ($view === 'challenges') {
         $res = gs_call('chess.challenges', ['playerId' => $s['mid']]);
+    } elseif ($view === 'promo') {
+        // A house promotion for this placement, or none. See promos.php on why
+        // this is deliberately first-party only.
+        $res = gs_call('promo.for', ['memberId' => $s['mid'], 'placement' => (string)($_GET['placement'] ?? 'chess')]);
     } elseif ($view === 'lobby') {
         // The cheap tick behind the chess screen — see chess_lobby_poll.
         $res = gs_call('chess.lobby', ['playerId' => $s['mid']]);
@@ -75,6 +79,9 @@ if ($method === 'GET') {
         $res = gs_call('chess.respond', ['playerId' => $s['mid'],
             'challengeId' => (string)($b['challengeId'] ?? ''),
             'action' => (string)($b['answer'] ?? 'accept')]);
+    } elseif ($action === 'promoTrack') {
+        $res = gs_call('promo.track', ['memberId' => $s['mid'], 'promoId' => (string)($b['promoId'] ?? ''),
+                                       'event' => (string)($b['event'] ?? '')]);
     } elseif ($action === 'trnJoin') {
         $res = gs_call('tournament.join', ['playerId' => $s['mid'], 'tournamentId' => (string)($b['tournamentId'] ?? ''), 'ip' => $ip]);
     } elseif ($action === 'trnLeave') {

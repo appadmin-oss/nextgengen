@@ -68,6 +68,7 @@ const ADMIN_SECTIONS = [
   { id: "comments",    group: "Content",  label: "Comments",     title: "Comment moderation",  icon: "💬", cap: "content" },
   { id: "community",   group: "Content",  label: "Community",    title: "Community",           icon: "❖", cap: "content" },
   { id: "tournaments", group: "Content",  label: "Tournaments",  title: "Tournaments",         icon: "♟", cap: "people" },
+  { id: "promos",      group: "Content",  label: "Promotions",   title: "Promotions",          icon: "◈", cap: "content" },
   { id: "broadcast",   group: "Content",  label: "Announce",     title: "Announcements",       icon: "📣", cap: "content" },
   { id: "forms",       group: "Content",  label: "Forms",        title: "Forms",               icon: "▤", cap: "content" },
   { id: "site",        group: "Content",  label: "Site content", title: "Site content",        icon: "◧", cap: "settings" },
@@ -300,6 +301,7 @@ function AdminPage({ setPage }) {
           {view === "comments" && <AdminComments/>}
           {view === "community" && <AdminCommunity/>}
           {view === "tournaments" && <AdminTournaments/>}
+          {view === "promos" && <AdminPromos/>}
           {view === "assessment" && <AdminAssessment/>}
           {view === "donations" && <AdminDonations/>}
         </main>
@@ -5399,6 +5401,262 @@ function AdminCommunityModeration({ mode, onChanged }) {
 }
 
 // ============================================================================
+/* ============================================================================
+   Programme promotions — house announcements in the members' own surfaces.
+
+   Deliberately narrow. There is no URL field, no audience builder beyond the
+   facts the roster already holds, and no third-party anything: the audience is
+   children, and behavioural advertising to minors is a different product with
+   a different legal footing. See api/_lib/domain/promos.php.
+   ========================================================================== */
+
+const PROMO_PLACEMENT_LABEL = {
+  chess: "Chess screen", community: "Community feed",
+  dashboard: "Member dashboard", arcade: "Arcade",
+};
+const PROMO_KIND_LABEL = {
+  programme: "Programme", event: "Event", tournament: "Tournament", notice: "Notice",
+};
+
+function AdminPromos() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [editing, setEditing] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+
+  const load = React.useCallback(() => {
+    NGGApi.admin.promos.list()
+      .then(r => { setD(r); setErr(""); })
+      .catch(e => setErr(e.code || e.message || "Couldn't load promotions."));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const save = async (data) => {
+    setBusy("save");
+    try { await NGGApi.admin.promos.save(data); toast.success("Saved."); setEditing(null); load(); }
+    catch (e) { toast.error(e.detail || e.code || e.message); }
+    finally { setBusy(""); }
+  };
+  const remove = async (p) => {
+    if (!(await dialog.confirm({ title: "Delete “" + p.title + "”?",
+      body: "The promotion and its counts go. This cannot be undone.", confirmLabel: "Delete" }))) return;
+    try { await NGGApi.admin.promos.remove(p.promoId); toast.success("Deleted."); load(); }
+    catch (e) { toast.error(e.code || e.message); }
+  };
+  const setStatus = async (p, status) => {
+    await save(Object.assign({}, p, { status, kinds: p.audience.kinds,
+      centres: p.audience.centres, programme: p.audience.programme }));
+  };
+
+  if (editing) {
+    return <AdminPromoEdit promo={editing} meta={d} busy={busy === "save"}
+                           onCancel={() => setEditing(null)} onSave={save}/>;
+  }
+
+  const rows = (d && d.promos) || [];
+  const live = rows.filter(p => p.status === "live");
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head"><h2 className="admin-h2">Promotions</h2></div>
+      <p className="admin-hint">
+        Announcements for your own programmes, shown inside the screens members already use —
+        one per screen, never a stack, and always dismissible. They can only link to a page in
+        this app: there is no field for an outside address, because the audience is children.
+      </p>
+      {err && <div className="admin-err" role="alert">{err}</div>}
+
+      <div className="admin-card trn-host-card" style={{ marginBottom: 18 }}>
+        <div className="admin-field-label">New promotion</div>
+        <p className="admin-hint" style={{ margin: "0 0 12px" }}>
+          {live.length === 0 ? "Nothing is live right now."
+            : live.length + (live.length === 1 ? " promotion is" : " promotions are") + " live across "
+              + new Set(live.map(p => p.placement)).size + " screen(s)."}
+        </p>
+        <button className="btn btn-primary" onClick={() => setEditing({ status: "draft", placement: "chess",
+          kind: "programme", priority: 0, audience: { kinds: [], centres: [], programme: "" } })}>
+          Write a promotion →
+        </button>
+      </div>
+
+      {!d ? <div className="admin-skel"/> : rows.length === 0 ? (
+        <div className="admin-empty">No promotions yet. Write one and it appears on the screen you choose.</div>
+      ) : (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr>
+              <th>Promotion</th><th>Where</th><th>Audience</th><th>Seen</th><th>Clicks</th><th>Hidden</th><th/>
+            </tr></thead>
+            <tbody>
+              {rows.map(p => (
+                <tr key={p.promoId}>
+                  <td>
+                    <div className="admin-cell-name">{p.title}</div>
+                    <div className="mono admin-cell-sub">
+                      {PROMO_KIND_LABEL[p.kind] || p.kind}
+                      {p.ctaPage ? " → " + p.ctaPage : " · no link"}
+                      {p.startsAt || p.endsAt ? " · scheduled" : ""}
+                    </div>
+                  </td>
+                  <td>
+                    <div>{PROMO_PLACEMENT_LABEL[p.placement] || p.placement}</div>
+                    <span className={"chip " + (p.status === "live" ? "chip-lime" : p.status === "draft" ? "status-draft" : "status-archived")}>{p.status}</span>
+                  </td>
+                  <td className="mono admin-cell-sub">
+                    {p.audience.kinds.length || p.audience.centres.length || p.audience.programme
+                      ? [p.audience.kinds.join("/"), p.audience.centres.join("/"), p.audience.programme]
+                          .filter(Boolean).join(" · ")
+                      : "everyone"}
+                  </td>
+                  <td className="mono">{p.impressions}</td>
+                  <td className="mono">
+                    {p.clicks}
+                    {/* A rate under thirty impressions is noise, and a number
+                        that looks like a measurement invites a decision it
+                        cannot support. The server withholds it; so do we. */}
+                    {p.ctr !== null && p.ctr !== undefined
+                      ? <div className="admin-cell-sub">{p.ctr}%</div>
+                      : <div className="admin-cell-sub">—</div>}
+                  </td>
+                  <td className="mono">{p.dismissals}</td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    {p.status !== "live"
+                      ? <button className="btn btn-primary btn-sm" onClick={() => setStatus(p, "live")}>Publish</button>
+                      : <button className="btn btn-ghost btn-sm" onClick={() => setStatus(p, "ended")}>End</button>}
+                    <button className="btn btn-ghost btn-sm" onClick={() => setEditing(p)}>Edit</button>
+                    <button className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={() => remove(p)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Write one. Short on purpose — a promotion is a headline, a line and a
+    destination, and a form that asks for more gets filled in with less. */
+function AdminPromoEdit({ promo, meta, busy, onCancel, onSave }) {
+  const [f, setF] = React.useState({
+    promoId: promo.promoId || "", title: promo.title || "", body: promo.body || "",
+    kind: promo.kind || "programme", placement: promo.placement || "chess",
+    ctaLabel: promo.ctaLabel || "", ctaPage: promo.ctaPage || "", imageUrl: promo.imageUrl || "",
+    priority: promo.priority || 0, status: promo.status || "draft",
+    startsAt: promo.startsAt || "", endsAt: promo.endsAt || "",
+    kinds: (promo.audience && promo.audience.kinds) || [],
+    centres: (promo.audience && promo.audience.centres) || [],
+    programme: (promo.audience && promo.audience.programme) || "",
+  });
+  const set = (patch) => setF(v => Object.assign({}, v, patch));
+  const pages = (meta && meta.pages) || ["community", "club", "summer", "events"];
+  const centres = (meta && meta.centres) || [];
+  const toggle = (list, v) => list.indexOf(v) >= 0 ? list.filter(x => x !== v) : list.concat(v);
+
+  return (
+    <div className="admin-section">
+      <button className="btn btn-ghost btn-sm" onClick={onCancel}>← All promotions</button>
+      <div className="admin-section-head" style={{ marginTop: 10 }}>
+        <h2 className="admin-h2">{f.promoId ? "Edit promotion" : "New promotion"}</h2>
+      </div>
+
+      <div className="trn-admin-wrap">
+        <label className="trn-field">
+          <span className="trn-field-l">Headline</span>
+          <input className="trn-in" value={f.title} maxLength={120}
+                 placeholder="e.g. Summer intake is open" onChange={e => set({ title: e.target.value })}/>
+        </label>
+        <label className="trn-field">
+          <span className="trn-field-l">A line about it <span>optional</span></span>
+          <textarea className="trn-in trn-ta" rows={2} value={f.body} maxLength={400}
+                    placeholder="Eight weeks, five centres, starts 6 July."
+                    onChange={e => set({ body: e.target.value })}/>
+        </label>
+
+        <fieldset className="trn-fs">
+          <legend className="trn-legend">Where it appears</legend>
+          <div className="trn-seg">
+            {Object.keys(PROMO_PLACEMENT_LABEL).map(k => (
+              <button key={k} type="button" aria-pressed={f.placement === k}
+                      className={"trn-seg-b" + (f.placement === k ? " is-on" : "")}
+                      onClick={() => set({ placement: k })}>{PROMO_PLACEMENT_LABEL[k]}</button>
+            ))}
+          </div>
+        </fieldset>
+
+        <div className="trn-band">
+          <label className="trn-field">
+            <span className="trn-field-l">Button says</span>
+            <input className="trn-in" value={f.ctaLabel} maxLength={48}
+                   placeholder="See the programme" onChange={e => set({ ctaLabel: e.target.value })}/>
+          </label>
+          <label className="trn-field">
+            <span className="trn-field-l">Takes them to <span>a page in this app</span></span>
+            <select className="trn-in" value={f.ctaPage} onChange={e => set({ ctaPage: e.target.value })}>
+              <option value="">Nowhere — just a notice</option>
+              {pages.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </label>
+        </div>
+
+        <fieldset className="trn-fs">
+          <legend className="trn-legend">Who sees it</legend>
+          <p className="trn-hint" style={{ marginTop: 0, marginBottom: 10 }}>
+            Leave everything unticked to reach the whole club. Targeting uses the roster —
+            centre, programme and role — and nothing about what anybody has read or played.
+          </p>
+          {TRN_KINDS.map(k => (
+            <label key={k.id} className={"trn-check" + (f.kinds.indexOf(k.id) >= 0 ? " is-on" : "")}>
+              <input type="checkbox" checked={f.kinds.indexOf(k.id) >= 0}
+                     onChange={() => set({ kinds: toggle(f.kinds, k.id) })}/>
+              <span>{k.label}</span>
+            </label>
+          ))}
+          {centres.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <span className="trn-field-l" style={{ display: "block", marginBottom: 6 }}>Centres</span>
+              {centres.map(c => (
+                <label key={c} className={"trn-check" + (f.centres.indexOf(c) >= 0 ? " is-on" : "")}>
+                  <input type="checkbox" checked={f.centres.indexOf(c) >= 0}
+                         onChange={() => set({ centres: toggle(f.centres, c) })}/>
+                  <span>{c}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </fieldset>
+
+        <div className="trn-band">
+          <label className="trn-field">
+            <span className="trn-field-l">Starts <span>optional</span></span>
+            <input className="trn-in" type="datetime-local"
+                   value={f.startsAt ? f.startsAt.slice(0, 16) : ""}
+                   onChange={e => set({ startsAt: e.target.value ? e.target.value + ":00Z" : "" })}/>
+          </label>
+          <label className="trn-field">
+            <span className="trn-field-l">Ends <span>optional</span></span>
+            <input className="trn-in" type="datetime-local"
+                   value={f.endsAt ? f.endsAt.slice(0, 16) : ""}
+                   onChange={e => set({ endsAt: e.target.value ? e.target.value + ":00Z" : "" })}/>
+          </label>
+        </div>
+
+        <label className="trn-field">
+          <span className="trn-field-l">Priority <span>higher wins when two are live on one screen</span></span>
+          <input className="trn-in" type="number" min="0" max="100" value={f.priority}
+                 onChange={e => set({ priority: Math.max(0, Math.min(100, +e.target.value || 0)) })}/>
+        </label>
+
+        <div className="trn-wiz-foot" style={{ position: "static", padding: "14px 0 0" }}>
+          <button className="trn-back" onClick={onCancel}>Cancel</button>
+          <button className="cmm-cta" disabled={busy || f.title.trim().length < 3}
+                  onClick={() => onSave(f)}>{busy ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Tournaments — centre rounds through to a final
 // ============================================================================
 
@@ -11559,4 +11817,4 @@ function ClubAdminPortal({ setPage }) {
 /* AdminVolunteers is exported so the roster can be mounted on its own. It
    needs nothing but its one data call — no auth, no shell — and the console
    around it is what makes the rest of the admin tree expensive to test. */
-Object.assign(window, { AdminPage, SummerAdminPortal, ClubAdminPortal, AdminVolunteers, SummerGates });
+Object.assign(window, { AdminPage, SummerAdminPortal, ClubAdminPortal, AdminVolunteers, SummerGates, AdminPromos });

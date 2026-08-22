@@ -627,6 +627,10 @@
            on mount and never again, so an accepted challenge was invisible
            until the member navigated away and came back. */
         lobby: () => request('/member/match.php' + qs({ view: 'lobby' })),
+        /* A house promotion for a placement — NGG's own programmes, first
+           party only. `track` counts once per person, not per render. */
+        promo: (placement) => request('/member/match.php' + qs({ view: 'promo', placement: placement || 'chess' })),
+        promoTrack: (promoId, event) => request('/member/match.php', { body: { action: 'promoTrack', promoId, event } }),
         challenge: (d) => request('/member/match.php', { body: Object.assign({ action: 'challenge' }, d || {}) }),
         answer:    (challengeId, answer) => request('/member/match.php', { body: { action: 'challengeRespond', challengeId, answer } }),
       },
@@ -868,6 +872,11 @@
       donations:    () => request('/admin/donations.php'),
       comments:     (status) => request('/admin/comments.php' + qs({ status: status || 'pending' })),
       commentModerate: (commentId, act) => request('/admin/comments.php', { body: { commentId, do: act } }),
+      promos: {
+        list:   () => request('/admin/promos.php'),
+        save:   (data) => request('/admin/promos.php', { body: { action: 'save', data } }),
+        remove: (promoId) => request('/admin/promos.php', { body: { action: 'delete', promoId } }),
+      },
       community: {
         overview:      () => request('/admin/community.php' + qs({ view: 'overview' })),
         queue:         (status) => request('/admin/community.php' + qs({ view: 'queue', status: status || 'pending' })),
