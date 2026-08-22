@@ -60,6 +60,30 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
  window.NGGApi={ admin:{ tournaments:{
    list:function(){return Promise.resolve(LIST);},
    bracket:function(){return Promise.resolve(BRACKET);},
+   /* The control room renders the standings and pairings tables from the same
+      components the members' screen uses, so the shot needs them too. */
+   standings:function(){return Promise.resolve({tournament:{tournamentId:'TRN-1',name:'Egbeda Centre Cup',
+       format:'centre',formatName:'Centre cup',status:'running',round:2,totalRounds:0,tiebreak:'buchholz'},
+     standings:[
+       {rank:1,playerId:'E1',name:'Ade One',centre:'Egbeda',kind:'member',score:2.5,played:3,
+        wins:2,draws:1,losses:0,buchholz:5.5,sonneborn:4.25,performance:1310,rating:1240,status:'active'},
+       {rank:2,playerId:'E5',name:'Eze Five',centre:'Egbeda',kind:'student',score:2,played:3,
+        wins:2,draws:0,losses:1,buchholz:5,sonneborn:3,performance:1255,rating:1190,status:'active'},
+       {rank:3,playerId:'E2',name:'Bola Two',centre:'Ayobo',kind:'volunteer',score:1,played:3,
+        wins:1,draws:0,losses:2,buchholz:4.5,sonneborn:1.5,performance:1105,rating:1160,status:'eliminated'}
+     ]});},
+   rounds:function(){return Promise.resolve({rounds:[
+     {round:1,boards:[
+       {board:1,centre:'Egbeda',white:{id:'E1',name:'Ade One'},black:{id:'E5',name:'Eze Five'},
+        matchId:'M1',isBye:false,result:'1-0',status:'complete',ply:44,isMine:false,clock:null},
+       {board:2,centre:'Egbeda',white:{id:'E2',name:'Bola Two'},black:{id:'',name:''},
+        matchId:'',isBye:true,result:'bye',status:'bye',ply:0,isMine:false,clock:null}
+     ]},
+     {round:2,boards:[
+       {board:1,centre:'Egbeda',white:{id:'E1',name:'Ade One'},black:{id:'E2',name:'Bola Two'},
+        matchId:'M4',isBye:false,result:'',status:'active',ply:9,isMine:false,clock:null}
+     ]}
+   ]});},
    create:function(){return Promise.resolve({tournamentId:'TRN-NEW'});},
    enter:function(){return Promise.resolve({ok:true});},
    withdraw:function(){return Promise.resolve({ok:true});},

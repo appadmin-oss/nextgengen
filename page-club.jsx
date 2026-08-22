@@ -4857,7 +4857,7 @@ function mtgSpeakClock(ms) {
   return m + " minute" + (m === 1 ? "" : "s") + (s ? " " + s + " second" + (s === 1 ? "" : "s") : "");
 }
 
-function MtgClock({ clock, side, yours }) {
+function MtgClock({ clock, side, yours, onMove }) {
   const [, tick] = React.useState(0);
   const gotAt = React.useRef(Date.now());
   const said = React.useRef(0);
@@ -4888,9 +4888,13 @@ function MtgClock({ clock, side, yours }) {
 
   if (!clock) return null;
   if (!clock.live) {
-    // Correspondence: there is no countdown, there is a day to reply in.
-    if (!clock.deadlineMs) return null;
-    return <span className="mtg-clock is-daily" aria-label={"Reply within " + mtgDeadline(clock.deadlineMs)}>
+    /* Correspondence: there is no countdown, there is a day to reply in — and
+       it belongs to ONE player. Showing it on both seats says the person
+       waiting is also on a clock, which is not true and is the sort of thing
+       that makes somebody move a game they had a day to think about. */
+    if (!clock.deadlineMs || !onMove) return null;
+    return <span className="mtg-clock is-daily"
+                 aria-label={(yours ? "You must reply within " : "They must reply within ") + mtgDeadline(clock.deadlineMs)}>
       {mtgDeadline(clock.deadlineMs)}
     </span>;
   }
@@ -4930,7 +4934,7 @@ function ChessSeat({ player, colour, gone, score, onMove, clock, yours, checks }
         {gone.map((t, i) => <span key={t + i} className="mtg-seat-pc" aria-hidden="true">{CHESS_GLYPH[t]}</span>)}
         {score > 0 && <b>+{score}</b>}
       </span>
-      <MtgClock clock={clock} side={colour} yours={yours}/>
+      <MtgClock clock={clock} side={colour} yours={yours} onMove={onMove}/>
       {gone.length > 0 && <span className="sr-only">
         {"Captured: " + gone.map(t => CHESS_NAME[t]).join(", ") + (score > 0 ? ". Ahead by " + score + " points of material." : "")}
       </span>}
@@ -5045,7 +5049,6 @@ function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, inter
           </div>
         ))}
       </div>
-      <button type="button" className="mtg-flip" onClick={onFlip}>⇅ Flip the board</button>
     </div>
   );
 }
@@ -5290,10 +5293,13 @@ function MatchGame({ matchId, onBack }) {
       <div className="mtg-terms">
         <span className={"mtg-term" + (m.variant && m.variant !== "standard" ? " is-variant" : "")}>
           {vr.name}
+          {/* The separator lives inside the span: .mtg-term is a flex container,
+              and a leading space at the start of a flex item's line box is
+              collapsed away, which ran the two together as "Chess960· 137". */}
           {m.variant === "chess960" && vd.positionId !== undefined
-            && <span className="mtg-term-id mono"> · no. {vd.positionId}</span>}
+            && <span className="mtg-term-id">{"\u00a0· position "}<b className="mono">{vd.positionId}</b></span>}
         </span>
-        <span className="mtg-term">{cmTcName(m.timeControl)}</span>
+        {!!m.timeControl && <span className="mtg-term">{cmTcName(m.timeControl)}</span>}
         <span className="mtg-term">{m.rated ? "Rated" : "Casual"}</span>
       </div>
       {m.variant && m.variant !== "standard" && <p className="mtg-vrule">{vr.rule}</p>}
@@ -5323,11 +5329,17 @@ function MatchGame({ matchId, onBack }) {
             lastMove={m.lastMove} checkSquare={m.checkSquare}
             interactive={canMove || (isPlayer && m.status === "active" && clockIsLive)}
             premove={premove} premoving={!canMove} goals={goals}
-            onTap={tap} onFlip={() => setManualFlip(v => !v)}/>
+            onTap={tap}/>
           <ChessSeat player={bottomSeat} colour={flip ? "b" : "w"} gone={flip ? material.gone.b : material.gone.w}
             score={flip ? material.score : -material.score} onMove={m.turnColour === (flip ? "b" : "w") && m.status === "active"}
             clock={m.clock} yours={isPlayer && m.yourColour === (flip ? "b" : "w")}
             checks={vChecks ? vChecks[flip ? "b" : "w"] : null}/>
+          {/* Under the whole seat–board–seat stack, not inside it: looking at a
+              position from the other side is a normal thing to want, and the
+              control for it should not sit between a player and their board. */}
+          <button type="button" className="mtg-flip" onClick={() => setManualFlip(v => !v)}>
+            ⇅ Flip the board
+          </button>
         </div>
 
         <aside className="mtg-side">
@@ -5372,14 +5384,22 @@ function MatchGame({ matchId, onBack }) {
             </button>
           ))}
         </div>
-        {(m.reactions || []).length > 0 && <div className="mtg-react-log">
-          {(m.reactions || []).slice(-6).map((r, i) => (
-            <span key={i} className="mtg-react-chip">
-              {(MATCH_REACTION_LABEL[r.reaction] || ["💬", r.reaction])[0]}{" "}
-              {(MATCH_REACTION_LABEL[r.reaction] || ["", r.reaction])[1]}
-            </span>
-          ))}
-        </div>}
+        {(m.reactions || []).length > 0 && <>
+          <h4 className="mtl-h is-sub">Said so far</h4>
+          <div className="mtg-react-log">
+            {(m.reactions || []).slice(-6).map((r, i) => {
+              const mine = r.playerId === (m.players[m.you === "A" ? "A" : "B"] || {}).id;
+              const who = mine ? "You" : (r.playerId === m.players.A.id ? m.players.A.name : m.players.B.name);
+              return (
+                <span key={i} className="mtg-react-chip">
+                  <span aria-hidden="true">{(MATCH_REACTION_LABEL[r.reaction] || ["💬", r.reaction])[0]}</span>
+                  <b>{who}</b>
+                  {(MATCH_REACTION_LABEL[r.reaction] || ["", r.reaction])[1]}
+                </span>
+              );
+            })}
+          </div>
+        </>}
         <button className="mtg-report" onClick={() => NGGApi.member.match.report(matchId).then(load).catch(() => {})}>
           Report this game to a mentor
         </button>

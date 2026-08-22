@@ -195,9 +195,15 @@ const GAMES = {
         (await page.locator('.mtg-clock.is-out .sr-only').first().innerText()).toLowerCase().includes('out of time'));
 
     await show('daily', '.mtg-clock.is-daily');
+    /* One deadline, on the seat it belongs to. Showing it on both says the
+       player who is waiting is also on a clock, which is not true. */
     chk('a correspondence game shows a deadline, not a countdown',
-        await page.locator('.mtg-clock.is-daily').count() === 2
+        await page.locator('.mtg-clock.is-daily').count() === 1
         && !/\d:\d\d/.test((await clockText())[0]));
+    chk('…on the seat of whoever has to move', await page.evaluate(() => {
+      const seats = document.querySelectorAll('.mtg-seat');
+      return !seats[0].querySelector('.mtg-clock') && !!seats[1].querySelector('.mtg-clock');
+    }));
     chk('…in a unit a child can act on', /\d+[dhm]/.test((await clockText())[0]));
 
     /* ── The terms, on the board ─────────────────────────────────────────── */
@@ -253,6 +259,14 @@ const GAMES = {
         return on(0) === 2 && on(1) === 1;    // seats swapped, scores with them
       });
     })());
+    /* Painted, not merely present: a span is inline by default, and width and
+       height on an inline box are ignored — a pip with no size is a pip nobody
+       can see. */
+    chk('…and each pip is actually drawn, not a zero-sized span', await page.evaluate(() => {
+      const p = document.querySelector('.mtg-check-pip');
+      const r = p && p.getBoundingClientRect();
+      return !!r && r.width >= 8 && r.height >= 8;
+    }));
     chk('…and it is a number to a screen reader, not three unlabelled dots',
         (await page.locator('.mtg-checks').first().getAttribute('aria-label')).indexOf('of 3 checks') >= 0);
 

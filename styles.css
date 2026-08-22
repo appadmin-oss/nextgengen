@@ -2212,7 +2212,15 @@ img { background-color: rgba(12,20,50,0.04); }
    than the default that mobile has to escape from.
    ================================================================ */
 
-.cm-app, .cm-page {
+/* `.cm-tokens` is the third entry, and it exists for the places where a
+   community component is rendered INSIDE the admin console — the tournament
+   standings and pairings tables, and the promotion form. Those are deliberately
+   the same components a member sees, so a director and a player never read two
+   different versions of one table; but the two design systems keep separate
+   variable names, so without this the --c-* references resolve to nothing and
+   the component renders half-dressed. Wrapping the island re-declares the
+   palette for it without leaking either system into the other. */
+.cm-app, .cm-page, .cm-tokens {
   /* Surfaces */
   --c-canvas:        #eceadf;   /* desktop app background                      */
   --c-surface:       #fbf7ed;   /* app background, composer bars               */
@@ -3632,10 +3640,16 @@ img { background-color: rgba(12,20,50,0.04); }
   background: #fff; border: 1px solid var(--cream-200, #e8dec6); border-radius: 999px; padding: 7px 14px; }
 .mtg-status.is-turn { background: var(--gold-500, #f5b026); border-color: var(--gold-500, #f5b026); color: #0c1432; }
 
-.mtg-wrap { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); align-items: start; }
-@media (min-width: 820px) { .mtg-wrap { grid-template-columns: minmax(0, 1fr) 210px; } }
+/* The board column is bounded by the board, not by the page: with
+   minmax(0,1fr) the column stretched to the full width while the board stopped
+   at 560px, so the move list floated off to the right with a lane of dead
+   space between them. Bounding the first column puts the two side by side. */
+.mtg-wrap { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); align-items: start;
+  justify-content: start; }
+@media (min-width: 820px) { .mtg-wrap { grid-template-columns: minmax(0, 560px) minmax(210px, 300px); } }
 
 .mtg-boardwrap { width: 100%; max-width: 560px; }
+.mtg-boardwrap .mtg-board { border-radius: 0; }
 .mtg-board { display: grid; grid-template-rows: repeat(8, 1fr); aspect-ratio: 1 / 1;
   width: 100%; border: 2px solid var(--navy-900, #16223e); border-radius: 8px;
   overflow: hidden; box-shadow: 0 10px 30px -18px rgba(12,20,50,.6); }
@@ -3678,12 +3692,18 @@ img { background-color: rgba(12,20,50,0.04); }
 .mtg-sq.is-dark .mtg-coord { color: rgba(255,247,235,.85); }
 .mtg-coord.is-file { bottom: 1px; right: 3px; }
 .mtg-coord.is-rank { top: 1px; left: 3px; }
-.mtg-flip { margin-top: 8px; background: none; border: 0; padding: 8px 2px; min-height: 44px;
-  font: inherit; font-size: 13px; font-weight: 700; color: var(--ink-500); cursor: pointer; }
-.mtg-flip:hover { color: var(--ink-900); }
+.mtg-flip { margin-top: 10px; min-height: var(--c-tap); padding: 8px 14px;
+  border: 1px solid var(--cream-200, #e8dec6); border-radius: 999px; background: var(--c-card, #fff);
+  font: inherit; font-size: 13px; font-weight: 700; color: var(--ink-700); cursor: pointer; }
+.mtg-flip:hover { border-color: var(--ink-500); color: var(--ink-900); }
 
 /* ── Player seats: who, on move, and what they have captured ── */
-.mtg-seat { display: flex; align-items: center; gap: 8px; padding: 8px 4px; min-height: 40px; }
+.mtg-seat { display: flex; align-items: center; gap: 8px; padding: 8px 12px; min-height: 48px;
+  background: var(--c-card, #fff); border: 1px solid var(--cream-200, #e8dec6); }
+/* Square where they meet the board, rounded on the outside — one object. */
+.mtg-seat:first-child { border-radius: 12px 12px 0 0; border-bottom: 0; }
+.mtg-seat:last-of-type { border-radius: 0 0 12px 12px; border-top: 0; }
+.mtg-seat.is-on { background: var(--cream-050, #fbf7ed); }
 .mtg-seat-dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid var(--navy-900, #16223e); flex: none; }
 .mtg-seat-dot.is-w { background: #fff; }
 .mtg-seat-dot.is-b { background: #14213d; }
@@ -3729,7 +3749,8 @@ img { background-color: rgba(12,20,50,0.04); }
   border: 1px solid var(--cream-200, #e8dec6); background: #fff;
   font-size: 12px; font-weight: 700; color: var(--ink-700); }
 .mtg-term.is-variant { border-color: var(--navy-900, #16223e); background: var(--navy-900, #16223e); color: #fff; }
-.mtg-term-id { font-weight: 600; opacity: .85; }
+.mtg-term-id { font-weight: 600; opacity: .9; }
+.mtg-term-id b { font-weight: 700; margin-left: 2px; }
 .mtg-vrule { margin: 0 0 14px; max-width: 62ch; font-size: 13px; line-height: 1.55; color: var(--ink-700); }
 
 /* Move list as numbered pairs — how notation is written everywhere. */
@@ -3739,7 +3760,11 @@ img { background-color: rgba(12,20,50,0.04); }
 .mtg-mv-w, .mtg-mv-b { font-variant-numeric: tabular-nums; font-weight: 600; }
 .mtg-moves .mtg-empty { display: block; color: var(--ink-500); }
 
-.mtg-side { background: #fff; border: 1px solid var(--cream-200, #e8dec6); border-radius: 14px; padding: 14px 16px; }
+.mtl-h.is-sub { margin-top: 14px; }
+.mtg-react-chip b { font-weight: 700; margin: 0 4px 0 5px; color: var(--ink-900); }
+
+.mtg-side { background: #fff; border: 1px solid var(--cream-200, #e8dec6); border-radius: 14px; padding: 14px 16px;
+  position: sticky; top: 12px; }
 .mtg-moves { margin: 0; padding-left: 20px; max-height: 320px; overflow-y: auto;
   font-size: 13.5px; color: var(--ink-900); }
 .mtg-moves li { padding: 1px 0; }

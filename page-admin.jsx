@@ -5556,7 +5556,7 @@ function AdminPromoEdit({ promo, meta, busy, onCancel, onSave }) {
         <h2 className="admin-h2">{f.promoId ? "Edit promotion" : "New promotion"}</h2>
       </div>
 
-      <div className="trn-admin-wrap">
+      <div className="cm-tokens trn-admin-wrap">
         <label className="trn-field">
           <span className="trn-field-l">Headline</span>
           <input className="trn-in" value={f.title} maxLength={120}
@@ -5684,7 +5684,7 @@ function AdminTournaments() {
   if (creating && typeof CmTrnCreate === "function") {
     return (
       <div className="admin-section">
-        <div className="trn-admin-wrap">
+        <div className="cm-tokens trn-admin-wrap">
           <CmTrnCreate onBack={() => setCreating(false)}
                        onCreated={(id) => { setCreating(false); load(); setOpenId(id); }}/>
         </div>
@@ -5733,7 +5733,7 @@ function AdminTournaments() {
                   <td>
                     <div>{t.formatName || t.format || "Centre cup"}</div>
                     <div className="mono admin-cell-sub">
-                      {t.timeControl || "1day"} · {t.rated === false ? "casual" : "rated"}
+                      {admTc(t.timeControl)} · {t.rated === false ? "casual" : "rated"}
                     </div>
                   </td>
                   <td>
@@ -5762,17 +5762,33 @@ function AdminTournaments() {
 /** Standings and pairings inside the console, from the same components the
     members' screen uses — so a director and a player are never looking at two
     different renderings of the same table. */
+/* Wire values, not labels. "1day" printed straight out reads as a typo, and
+   the tournament list and the control room were both printing it. */
+const ADM_TC_LABEL = { "3+2": "3+2", "5+3": "5+3", "10+0": "10+0", "15+10": "15+10", "1day": "1 day" };
+function admTc(id) { return ADM_TC_LABEL[id] || id || "1 day"; }
+
 function AdminTrnTables({ tournamentId }) {
   const [tab, setTab] = React.useState("standings");
   const [st, setSt] = React.useState(null);
   const [rounds, setRounds] = React.useState(null);
+  /* This is a panel INSIDE the director's control room, so it has to fail on
+     its own. A rejected promise was already caught; a call that throws before
+     it returns one was not, and that took the whole bracket screen down with
+     it — advance control, entrants and all — for a table that is nice to have
+     open beside them. */
   React.useEffect(() => {
-    NGGApi.admin.tournaments.standings(tournamentId).then(setSt).catch(() => setSt(null));
-    NGGApi.admin.tournaments.rounds(tournamentId).then(r => setRounds(r.rounds || [])).catch(() => setRounds([]));
+    const load = (fn, ok, no) => {
+      try { fn().then(ok).catch(no); } catch (_) { no(); }
+    };
+    load(() => NGGApi.admin.tournaments.standings(tournamentId), setSt, () => setSt(null));
+    load(() => NGGApi.admin.tournaments.rounds(tournamentId), r => setRounds(r.rounds || []), () => setRounds([]));
   }, [tournamentId]);
   if (!st) return null;
+  /* These are the members' own components. They are built against the
+     community palette, which is scoped away from the admin console — see
+     `.cm-tokens` in styles.css. */
   return (
-    <div className="trn-admin-wrap" style={{ marginTop: 18 }}>
+    <div className="cm-tokens trn-admin-wrap" style={{ marginTop: 18 }}>
       <div className="trn-tabs" role="tablist" aria-label="Tournament tables">
         {[["standings", "Standings"], ["rounds", "Pairings"]].map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id}
@@ -5853,7 +5869,7 @@ function AdminTournamentBracket({ tournamentId, onBack }) {
         <h2 className="admin-h2">{t.name} <span className={"chip " + (TRN_STATUS_CHIP[t.status] || "status-draft")}>{t.status}</span></h2>
       </div>
       <p className="admin-hint">
-        <b>{t.formatName || "Centre cup"}</b> · {t.timeControl || "1day"} · {t.rated === false ? "casual" : "rated"}
+        <b>{t.formatName || "Centre cup"}</b> · {admTc(t.timeControl)} · {t.rated === false ? "casual" : "rated"}
         {t.totalRounds ? " · " + t.totalRounds + " rounds" : ""}
         {" — "}
         {t.status === "open" && "entries are open. Players can enter themselves from the chess screen; drawing round one closes entries."}

@@ -104,6 +104,35 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
               'e8e7','c6b8','c6d4','c6b4','c6a5','c6e7','a7a6','a7a5','b7b6','b7b5','d7d6','d7d5',
               'f7f6','f7f5','g7g6','g7g5','h7h6','h7h5'],
       staffView: false },
+    'MT-CLK': { matchId: 'MT-CLK', game: 'chess', status: 'active', you: 'A', yourColour: 'w',
+      yourTurn: true, ply: 5, state: ${JSON.stringify(ITALIAN)}, turnColour: 'w', check: false, checkSquare: '',
+      lastMove: { from: 'f1', to: 'c4' }, timeControl: '3+2', rated: false,
+      variant: 'threecheck', variantData: { checks: { w: 2, b: 1 } },
+      clock: { timeControl: '3+2', live: true, running: true, initialMs: 180000, incrementMs: 2000,
+               whiteMs: 27400, blackMs: 143000, turn: 'w', flagged: '', serverNowMs: 0 },
+      players: { A: { id: 'NGG-2026-0044', name: 'You' }, B: { id: 'NGG-2026-0062', name: 'Chidinma O.' } },
+      moves: [ { ply: 1, san: 'e4' }, { ply: 2, san: 'e5' }, { ply: 3, san: 'Nf3' },
+               { ply: 4, san: 'Nc6' }, { ply: 5, san: 'Bc4' } ],
+      reactions: [], legal: ['e1g1', 'c4f7'], staffView: false },
+    'MT-960': { matchId: 'MT-960', game: 'chess', status: 'active', you: 'A', yourColour: 'w',
+      yourTurn: true, ply: 0, state: 'nrbbqknr/pppppppp/8/8/8/8/PPPPPPPP/NRBBQKNR w KQkq - 0 1',
+      turnColour: 'w', check: false, checkSquare: '', timeControl: '10+0', rated: true,
+      variant: 'chess960', variantData: { positionId: 137 },
+      startFen: 'nrbbqknr/pppppppp/8/8/8/8/PPPPPPPP/NRBBQKNR w KQkq - 0 1',
+      clock: { timeControl: '10+0', live: true, running: true, initialMs: 600000, incrementMs: 0,
+               whiteMs: 600000, blackMs: 600000, turn: 'w', flagged: '', serverNowMs: 0 },
+      players: { A: { id: 'NGG-2026-0044', name: 'You' }, B: { id: 'NGG-2026-0062', name: 'Chidinma O.' } },
+      moves: [], reactions: [], legal: ['b2b4', 'g2g4'], staffView: false },
+    'MT-KOTH': { matchId: 'MT-KOTH', game: 'chess', status: 'active', you: 'A', yourColour: 'w',
+      yourTurn: true, ply: 5, state: ${JSON.stringify(ITALIAN)}, turnColour: 'w', check: false, checkSquare: '',
+      lastMove: { from: 'f1', to: 'c4' }, timeControl: '1day', rated: false,
+      variant: 'kingofthehill', variantData: null,
+      clock: { timeControl: '1day', live: false, running: false, initialMs: 0, incrementMs: 0,
+               whiteMs: 0, blackMs: 0, turn: '', flagged: '', deadlineMs: Date.now() + 3600000 * 19 },
+      players: { A: { id: 'NGG-2026-0044', name: 'You' }, B: { id: 'NGG-2026-0062', name: 'Chidinma O.' } },
+      moves: [ { ply: 1, san: 'e4' }, { ply: 2, san: 'e5' }, { ply: 3, san: 'Nf3' },
+               { ply: 4, san: 'Nc6' }, { ply: 5, san: 'Bc4' } ],
+      reactions: [], legal: ['e1g1', 'c4f7'], staffView: false },
     'MT-6': { matchId: 'MT-6', game: 'chess', status: 'complete', you: 'A', yourColour: 'w',
       yourTurn: false, ply: 4, state: ${JSON.stringify(MATED)}, result: 'win',
       lastMove: { from: 'd8', to: 'h4' }, turnColour: 'w', check: true, checkSquare: 'e1',
@@ -194,6 +223,12 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
     await shoot('lobby-phone', 'screen=lobby',           { width: 390,  height: 844 });
     await shoot('game',        'screen=game&id=MT-2',    { width: 1180, height: 980 });
     await shoot('game-phone',  'screen=game&id=MT-2',    { width: 390,  height: 844 });
+    // The clock and the variants — the surfaces that used to exist only on the
+    // server, recorded here so a change to them shows up in a diff.
+    await shoot('game-clock',  'screen=game&id=MT-CLK',  { width: 1180, height: 980 });
+    await shoot('game-clock-phone', 'screen=game&id=MT-CLK', { width: 390, height: 844 });
+    await shoot('game-960',    'screen=game&id=MT-960',  { width: 1180, height: 980 });
+    await shoot('game-hill',   'screen=game&id=MT-KOTH', { width: 1180, height: 980 });
     await shoot('finished',    'screen=game&id=MT-6',    { width: 1180, height: 980 });
     await shoot('staff-view',  'screen=game&id=MT-S',    { width: 1180, height: 980 });
     // Anyone can watch: read-only, with the one control that matters.
