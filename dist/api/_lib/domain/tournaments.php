@@ -23,10 +23,21 @@ declare(strict_types=1);
 const TOURNAMENT_STATUSES = ['draft', 'open', 'running', 'complete', 'cancelled'];
 
 function tournament_public(array $t): array {
+    $fmt = (string)($t['format'] ?? 'centre');
+    $meta = function_exists('tournament_format_meta') ? (tournament_format_meta()[$fmt] ?? null) : null;
     return [
         'tournamentId' => (string)$t['tournamentId'],
         'name'      => (string)$t['name'],
         'game'      => (string)$t['game'],
+        // The three things the old list could not show, because there was
+        // nowhere to set them: what kind of event it is, how fast, and
+        // whether it counts.
+        'format'      => $fmt,
+        'formatName'  => $meta ? $meta['name'] : ucfirst($fmt),
+        'timeControl' => (string)($t['timeControl'] ?? '1day'),
+        'rated'       => (int)($t['rated'] ?? 1) === 1,
+        'totalRounds' => (int)($t['totalRounds'] ?? 0),
+        'description' => (string)($t['description'] ?? ''),
         'programme' => (string)($t['programme'] ?? ''),
         'status'    => (string)$t['status'],
         'stage'     => (string)$t['stage'],
@@ -49,14 +60,51 @@ function admin_tournament_create(array $p): array {
     $programme = (string)($p['programme'] ?? '');
     if (!in_array($programme, ['summer', 'ngg', ''], true)) return ['ok' => false, 'error' => 'bad_programme'];
 
+    /* Format, time control and who may enter — the three things the creation
+     * screen used to have no way to ask, so every tournament was a centre cup
+     * with no clock.
+     *
+     * The DEFAULT stays 'centre', deliberately. Swiss is the better answer for
+     * most club events and is what the wizard preselects, but changing what an
+     * omitted parameter means would silently re-shape every tournament created
+     * by an existing caller. The new interface always sends a format; the old
+     * one keeps the behaviour it had. */
+    $format = (string)($p['format'] ?? 'centre');
+    if (!in_array($format, TOURNAMENT_FORMATS, true)) return ['ok' => false, 'error' => 'bad_format'];
+    /* And the default clock follows the default format: a centre cup created
+     * without one is the old correspondence-paced event, not a rapid game
+     * somebody would flag out of before they knew a clock existed. */
+    $tc = (string)($p['timeControl'] ?? ($format === 'centre' ? '1day' : '10+0'));
+    if (!isset(CHESS_CLOCK_TABLE[$tc])) return ['ok' => false, 'error' => 'bad_time_control'];
+    /* An arena is a window of continuous play; a correspondence control makes
+     * no sense in one, because the window would close before a game finished. */
+    if ($format === 'arena' && !chess_clock_is_live($tc)) return ['ok' => false, 'error' => 'arena_needs_a_clock'];
+
+    $kinds = array_values(array_intersect((array)($p['kinds'] ?? []), DIRECTORY_KINDS));
+    $centres = array_values(array_filter(array_map('strval', (array)($p['centres'] ?? []))));
+    $rounds = max(0, min(15, (int)($p['totalRounds'] ?? 0)));
+
     $id = 'TRN-' . strtoupper(rand_hex(6));
     $now = now_iso();
     db_insert('tournaments', [
-        'tournamentId' => $id, 'name' => substr($name, 0, 160), 'game' => $game,
-        'programme' => $programme, 'status' => 'open', 'stage' => 'centre', 'round' => 0,
+        'tournamentId' => $id, 'name' => mb_substr($name, 0, 160), 'game' => $game,
+        'description' => mb_substr(trim((string)($p['description'] ?? '')), 0, 600),
+        'programme' => $programme, 'status' => 'open',
+        'format' => $format, 'timeControl' => $tc,
+        'rated' => !empty($p['rated']) ? 1 : 0,
+        'totalRounds' => $rounds,
+        'centres' => $centres ? json_encode($centres, JSON_UNESCAPED_SLASHES) : '',
+        'eligibility' => json_encode([
+            'kinds' => $kinds ?: DIRECTORY_KINDS,
+            'minRating' => max(0, (int)($p['minRating'] ?? 0)),
+            'maxRating' => max(0, (int)($p['maxRating'] ?? 0)),
+        ], JSON_UNESCAPED_SLASHES),
+        'startsAt' => (string)($p['startsAt'] ?? ''), 'endsAt' => (string)($p['endsAt'] ?? ''),
+        'stage' => $format === 'centre' ? 'centre' : 'main', 'round' => 0,
         'createdBy' => (string)$g['requester']['memberId'], 'createdAt' => $now, 'updatedAt' => $now,
     ]);
-    audit('tournament.create', (string)$g['requester']['memberId'], $id, ['name' => $name, 'game' => $game], (string)($p['ip'] ?? ''));
+    audit('tournament.create', (string)$g['requester']['memberId'], $id,
+          ['name' => $name, 'format' => $format, 'timeControl' => $tc], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'tournamentId' => $id];
 }
 
@@ -76,17 +124,21 @@ function admin_tournament_enter(array $p): array {
     /* No centre means no bracket. Letting them in would produce an entrant who
      * can never be paired and never eliminated, which stalls the whole
      * tournament at "waiting for the last centre". */
-    if (trim((string)$person['centre']) === '') return ['ok' => false, 'error' => 'player_has_no_centre'];
+    // Only the centre cup brackets BY centre; every other format is fine
+    // without one, and volunteers legitimately work across centres.
+    if ((string)($t['format'] ?? 'centre') === 'centre' && trim((string)$person['centre']) === '') {
+        return ['ok' => false, 'error' => 'player_has_no_centre'];
+    }
     if (db_row('SELECT id FROM tournament_entrants WHERE tournamentId = ? AND playerId = ?', [(string)$t['tournamentId'], (string)$person['id']])) {
         return ['ok' => false, 'error' => 'already_entered'];
     }
-    db_insert('tournament_entrants', [
-        'tournamentId' => (string)$t['tournamentId'], 'playerId' => (string)$person['id'],
-        'playerName' => (string)$person['fullName'], 'playerType' => (string)$person['kind'],
-        'centre' => (string)$person['centre'], 'stage' => 'centre', 'status' => 'active',
-        'createdAt' => now_iso(),
-    ]);
-    return ['ok' => true, 'playerId' => (string)$person['id'], 'centre' => (string)$person['centre']];
+    /* One entry path, so a director adding somebody by hand and a member
+     * joining themselves produce the same row — with the rating frozen and the
+     * field reseeded, which the old insert did neither of. */
+    $r = trn_add_entrant($t, (string)$person['id']);
+    if (empty($r['ok'])) return $r;
+    return ['ok' => true, 'playerId' => (string)$person['id'], 'centre' => (string)$person['centre'],
+            'rating' => (int)$r['rating']];
 }
 
 function admin_tournament_withdraw(array $p): array {
@@ -257,6 +309,10 @@ function tournament_finish(array $t, ?array $winner): array {
 function match_tournament_report(string $matchId): void {
     $m = db_row('SELECT * FROM match_games WHERE matchId = ? LIMIT 1', [$matchId]);
     if (!$m || (string)($m['tournamentId'] ?? '') === '') return;
+    /* Scoring, standings and tiebreaks live in tournaments2.php and handle
+     * every format including this one. The elimination below is kept because
+     * the centre cup's own advance engine reads `status`. */
+    if (function_exists('trn_score_match')) trn_score_match($matchId);
     $tid = (string)$m['tournamentId'];
     $winner = (string)($m['winnerId'] ?? '');
     if ($winner === '') {

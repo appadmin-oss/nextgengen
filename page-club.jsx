@@ -3108,14 +3108,621 @@ function cmSeenAgo(iso, online) {
   return "last seen " + cmAgo(iso);
 }
 
+/* ── Tournaments ──────────────────────────────────────────────────────────
+   Everything a tournament needs on a phone, in the design system's own
+   tokens. Three screens and a wizard:
+
+     CmTrnList      the tournaments you can see — the thing that did not exist
+     CmTrnDetail    standings, pairings, and your own next board
+     CmTrnCreate    the director's wizard, reachable from the chess screen
+
+   The old admin interface was a table and a three-field inline form: name, a
+   programme dropdown, Create. It could not ask for a format, a time control,
+   who may enter, or how many rounds — so every tournament was a centre cup at
+   correspondence pace whether or not that was what anybody wanted.          */
+
+const TRN_TC = [
+  { id: "3+2",   name: "3+2",   sub: "Blitz" },
+  { id: "5+3",   name: "5+3",   sub: "Blitz" },
+  { id: "10+0",  name: "10+0",  sub: "Rapid" },
+  { id: "15+10", name: "15+10", sub: "Rapid" },
+  { id: "1day",  name: "1 day", sub: "Daily" },
+];
+
+const TRN_KINDS = [
+  { id: "member",    label: "NGG members" },
+  { id: "student",   label: "Summer students" },
+  { id: "volunteer", label: "Volunteers" },
+  { id: "staff",     label: "Staff & admins" },
+];
+
+function trnStatusChip(t) {
+  if (t.status === "open") return ["Entries open", "is-open"];
+  if (t.status === "running") return ["Round " + t.round + (t.totalRounds ? " of " + t.totalRounds : ""), "is-live"];
+  if (t.status === "complete") return ["Finished", "is-done"];
+  return [t.status, ""];
+}
+
+/** mm:ss for a clock the server sent, ticked forward locally between polls. */
+function trnClock(ms) {
+  const t = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+  if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  if (t < 10) return s + "." + Math.floor((Math.max(0, ms) % 1000) / 100);
+  return m + ":" + String(s).padStart(2, "0");
+}
+
+/* ── The list ─────────────────────────────────────────────────────────── */
+
+function CmTrnList({ auth, staff, onOpen, onCreate, onBack }) {
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState(false);
+  const [busy, setBusy] = React.useState("");
+
+  const load = React.useCallback(() => {
+    NGGApi.member.tournaments.browse()
+      .then(r => { setData(r.tournaments || []); setErr(false); })
+      .catch(() => { setData([]); setErr(true); });
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const join = async (t) => {
+    setBusy(t.tournamentId);
+    try { await NGGApi.member.tournaments.join(t.tournamentId); toast.success("You're in."); load(); }
+    catch (e) { toast.error(e.detail || e.message || "Couldn't enter."); }
+    finally { setBusy(""); }
+  };
+
+  return (
+    <div className="cmm-screen">
+      <header className="cmm-ch-head">
+        <button className="cmm-icon-btn" onClick={onBack} aria-label="Back to chess">{cmUiIcon("back", 22)}</button>
+        <div className="cmm-head-txt">
+          <h1 className="cmm-ch-title">Tournaments</h1>
+          <p className="cmm-sub">{data === null ? "…" : data.length + (data.length === 1 ? " event" : " events")}</p>
+        </div>
+        {staff && (
+          <button className="cmm-icon-btn" onClick={onCreate} aria-label="Host a tournament">
+            <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1 }}>＋</span>
+          </button>
+        )}
+      </header>
+
+      <div className="cmm-stream">
+        {data === null ? <CmSkeleton rows={3}/>
+         : err ? <CmEmpty icon="!" title="Couldn't load tournaments"
+                          body="The connection dropped on the way. Try again."
+                          action={<button className="cmm-cta" onClick={load}>Try again</button>}/>
+         : data.length === 0 ? <CmEmpty icon="♟" title="No tournaments yet"
+                          body={staff ? "Host one and the club will see it here."
+                                      : "When a mentor sets one up, it appears here."}
+                          action={staff ? <button className="cmm-cta" onClick={onCreate}>Host a tournament</button> : null}/>
+         : data.map(t => {
+            const [chip, cls] = trnStatusChip(t);
+            return (
+              <article key={t.tournamentId} className={"trn-card " + cls}>
+                <button className="trn-card-main" onClick={() => onOpen(t.tournamentId)}>
+                  <span className={"trn-chip " + cls}>{chip}</span>
+                  <span className="trn-card-h">{t.name}</span>
+                  <span className="trn-card-meta">
+                    {t.formatName} · {cmTcName(t.timeControl)} · {t.rated ? "rated" : "casual"}
+                  </span>
+                  <span className="trn-card-sub">{t.entrants} {t.entrants === 1 ? "player" : "players"}
+                    {t.winnerName ? " · won by " + t.winnerName : ""}
+                    {t.you && t.you.entered && t.status === "running"
+                      ? " · you're on " + (Math.round(t.you.score * 10) / 10) : ""}</span>
+                </button>
+                <div className="trn-card-foot">
+                  {t.you && t.you.entered
+                    ? (t.nextMatchId
+                        ? <button className="cmm-cta is-sm" onClick={() => onOpen(t.tournamentId)}>Your board is live</button>
+                        : <span className="trn-in">✓ You're entered</span>)
+                    : t.canJoin
+                      ? <button className="cmm-cta is-sm" disabled={busy === t.tournamentId}
+                                onClick={() => join(t)}>{busy === t.tournamentId ? "…" : "Enter"}</button>
+                      : <span className="trn-why">{t.status === "open" ? "Not open to you" : "Entries closed"}</span>}
+                  <button className="trn-more" onClick={() => onOpen(t.tournamentId)}>Details →</button>
+                </div>
+              </article>
+            );
+          })}
+      </div>
+    </div>
+  );
+}
+
+/* ── One tournament ───────────────────────────────────────────────────── */
+
+function CmTrnDetail({ tournamentId, staff, onBack, onOpenMatch }) {
+  const [tab, setTab] = React.useState("standings");
+  const [st, setSt] = React.useState(null);
+  const [rounds, setRounds] = React.useState(null);
+  const [err, setErr] = React.useState(false);
+  const [busy, setBusy] = React.useState("");
+
+  const load = React.useCallback(() => {
+    NGGApi.member.tournaments.standings(tournamentId)
+      .then(r => { setSt(r); setErr(false); }).catch(() => setErr(true));
+    NGGApi.member.tournaments.rounds(tournamentId)
+      .then(r => setRounds(r.rounds || [])).catch(() => setRounds([]));
+  }, [tournamentId]);
+  React.useEffect(() => { load(); }, [load]);
+
+  /* A live round is the one thing on this screen that changes by itself, so it
+     polls — but only while something is actually being played, and never in a
+     hidden tab. A finished tournament is a static page and costs nothing. */
+  const live = st && st.tournament && st.tournament.status === "running";
+  React.useEffect(() => {
+    if (!live) return;
+    let alive = true;
+    const id = setInterval(() => { if (alive && !document.hidden) load(); }, 10000);
+    return () => { alive = false; clearInterval(id); };
+  }, [live, load]);
+
+  const t = st && st.tournament;
+  const draw = async () => {
+    setBusy("draw");
+    try {
+      const r = await NGGApi.member.tournaments.draw(tournamentId);
+      toast.success(r.complete ? "That's the event finished."
+        : "Round " + r.round + " drawn — " + r.boards + (r.boards === 1 ? " board" : " boards")
+          + (r.byes ? " and " + r.byes + " bye" + (r.byes === 1 ? "" : "s") : "") + ".");
+      load();
+    } catch (e) { toast.error(e.detail || e.message || "Couldn't draw the round."); }
+    finally { setBusy(""); }
+  };
+  const join = async () => {
+    setBusy("join");
+    try { await NGGApi.member.tournaments.join(tournamentId); toast.success("You're in."); load(); }
+    catch (e) { toast.error(e.detail || e.message || "Couldn't enter."); }
+    finally { setBusy(""); }
+  };
+
+  if (err && !st) return (
+    <div className="cmm-screen">
+      <header className="cmm-ch-head">
+        <button className="cmm-icon-btn" onClick={onBack} aria-label="Back">{cmUiIcon("back", 22)}</button>
+        <div className="cmm-head-txt"><h1 className="cmm-ch-title">Tournament</h1></div>
+      </header>
+      <CmEmpty icon="!" title="Couldn't load this tournament" body="Try again in a moment."
+               action={<button className="cmm-cta" onClick={load}>Try again</button>}/>
+    </div>
+  );
+  if (!t) return <div className="cmm-screen"><CmSkeleton rows={4}/></div>;
+
+  const [chip, cls] = trnStatusChip(t);
+  const mine = (rounds && rounds.length ? rounds[0].boards : []).filter(b => b.isMine && b.status === "active");
+
+  return (
+    <div className="cmm-screen">
+      <header className="cmm-ch-head">
+        <button className="cmm-icon-btn" onClick={onBack} aria-label="Back to tournaments">{cmUiIcon("back", 22)}</button>
+        <div className="cmm-head-txt">
+          <h1 className="cmm-ch-title">{t.name}</h1>
+          <p className="cmm-sub">{t.formatName} · {cmTcName(t.timeControl)} · {t.entrants} players</p>
+        </div>
+        <span className={"trn-chip " + cls}>{chip}</span>
+      </header>
+
+      {/* Your own board, above everything. Somebody opening a tournament
+          during a round is looking for one thing. */}
+      {mine.length > 0 && (
+        <div className="trn-yours">
+          {mine.map(b => (
+            <button key={b.matchId} className="trn-yours-btn" onClick={() => onOpenMatch(b.matchId)}>
+              <span className="trn-yours-l">Your board · {b.board}</span>
+              <span className="trn-yours-n">vs {b.white.id === (st.standings.find(x => x.isMe) || {}).playerId ? b.black.name : b.white.name}</span>
+              <span className="trn-yours-go">Play →</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {t.description && <p className="trn-desc">{t.description}</p>}
+
+      {t.you && !t.you.entered && t.canJoin && (
+        <div className="trn-join-bar">
+          <button className="cmm-cta" disabled={busy === "join"} onClick={join}>
+            {busy === "join" ? "Entering…" : "Enter this tournament"}
+          </button>
+        </div>
+      )}
+
+      {staff && t.status !== "complete" && t.status !== "cancelled" && (
+        <div className="trn-director">
+          <span className="trn-director-l">Director</span>
+          <button className="cmm-cta is-sm" disabled={busy === "draw"} onClick={draw}>
+            {busy === "draw" ? "Drawing…" : (t.round === 0 ? "Draw round one" : "Draw round " + (t.round + 1))}
+          </button>
+        </div>
+      )}
+
+      <div className="trn-tabs" role="tablist" aria-label="Tournament views">
+        {[["standings", "Standings"], ["rounds", "Pairings"]].map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={tab === id}
+                  className={"trn-tab" + (tab === id ? " is-on" : "")}
+                  onClick={() => setTab(id)}>{label}</button>
+        ))}
+      </div>
+
+      <div className="cmm-stream">
+        {tab === "standings" ? <CmTrnStandings st={st}/> : <CmTrnRounds rounds={rounds} onOpenMatch={onOpenMatch}/>}
+      </div>
+    </div>
+  );
+}
+
+/** The cross-table. Tiebreaks are shown, not applied invisibly — a child who
+    finished third needs to see what separated them. */
+function CmTrnStandings({ st }) {
+  const arena = st.tournament.format === "arena";
+  if (!st.standings.length) {
+    return <CmEmpty icon="♟" title="Nobody has entered yet" body="The table fills up as players join."/>;
+  }
+  return (
+    <div className="trn-tbl-wrap">
+      <table className="trn-tbl">
+        <caption className="sr-only">Standings for {st.tournament.name}</caption>
+        <thead>
+          <tr>
+            <th scope="col" className="trn-num">#</th>
+            <th scope="col">Player</th>
+            <th scope="col" className="trn-num">{arena ? "Pts" : "Score"}</th>
+            <th scope="col" className="trn-num trn-hide-sm">W/D/L</th>
+            <th scope="col" className="trn-num trn-hide-sm" title="Buchholz — the sum of your opponents' scores">
+              {arena ? "Streak" : "Buch"}
+            </th>
+            <th scope="col" className="trn-num" title="The rating you played at over this event">Perf</th>
+          </tr>
+        </thead>
+        <tbody>
+          {st.standings.map(r => (
+            <tr key={r.playerId} className={(r.isMe ? "is-me " : "") + (r.withdrawn ? "is-out" : "")}>
+              <td className="trn-num">{r.rank}</td>
+              <td>
+                <span className="trn-who">
+                  {cmAvatar(r.name, r.name + r.centre, r.photo, "cm-avatar-sm")}
+                  <span className="trn-who-t">
+                    <b>{r.name}{r.isMe ? <span className="cm-you">you</span> : null}</b>
+                    <span className="trn-who-s">
+                      {r.rating}{r.centre ? " · " + r.centre : ""}
+                      {r.kind === "volunteer" || r.kind === "staff" ? <span className="cm-ment-badge">mentor</span> : null}
+                      {r.withdrawn ? " · withdrew" : (r.status === "eliminated" ? " · out" : "")}
+                    </span>
+                    {/* On a narrow phone the W/D/L and tiebreak columns are
+                        dropped for width. Saying the tiebreak is shown and then
+                        hiding it on the screen most members use would be the
+                        promise broken exactly where it matters, so it moves
+                        into this line rather than disappearing. */}
+                    <span className="trn-who-x">
+                      {r.wins}/{r.draws}/{r.losses}
+                      {" · "}{arena ? "streak " + r.arenaStreak : "buch " + (Math.round(r.buchholz * 10) / 10)}
+                    </span>
+                  </span>
+                </span>
+              </td>
+              <td className="trn-num trn-score">{arena ? r.arenaPoints : (Math.round(r.score * 10) / 10)}</td>
+              <td className="trn-num trn-hide-sm">{r.wins}/{r.draws}/{r.losses}</td>
+              <td className="trn-num trn-hide-sm">{arena ? r.arenaStreak : (Math.round(r.buchholz * 10) / 10)}</td>
+              <td className="trn-num">{r.performance || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="trn-tbl-note">
+        {arena ? "Two points a win, one a draw. A third win in a row is worth double."
+               : "Ties are split by Buchholz — the total score of everybody you played."}
+      </p>
+    </div>
+  );
+}
+
+/** The pairing sheet, newest round first, with live clocks on the open boards. */
+function CmTrnRounds({ rounds, onOpenMatch }) {
+  if (rounds === null) return <CmSkeleton rows={3}/>;
+  if (!rounds.length) return <CmEmpty icon="♟" title="No rounds yet" body="Pairings appear when the first round is drawn."/>;
+  return (
+    <>
+      {rounds.map(r => (
+        <section key={r.round} className="trn-round">
+          <div className="cmm-list-h">ROUND {r.round}</div>
+          {r.boards.map(b => (
+            <div key={b.board + "-" + (b.matchId || b.white.id)}
+                 className={"trn-board" + (b.isMine ? " is-mine" : "") + (b.isBye ? " is-bye" : "")}>
+              <span className="trn-board-n">{b.isBye ? "—" : b.board}</span>
+              {b.isBye ? (
+                <span className="trn-board-body"><b>{b.white.name}</b><span className="trn-board-s">Bye · a full point</span></span>
+              ) : (
+                <span className="trn-board-body">
+                  <span className="trn-side">
+                    <span className="trn-disc trn-disc-w" aria-hidden="true"/>
+                    <b>{b.white.name}</b>
+                  </span>
+                  <span className="trn-side">
+                    <span className="trn-disc trn-disc-b" aria-hidden="true"/>
+                    <b>{b.black.name}</b>
+                  </span>
+                </span>
+              )}
+              <span className="trn-board-r">
+                {b.result ? <span className="trn-res">{b.result === "0.5-0.5" ? "½–½" : b.result}</span>
+                 : b.status === "active" ? <TrnLiveClock clock={b.clock}/> : null}
+                {b.matchId && <button className="trn-watch" onClick={() => onOpenMatch(b.matchId)}>
+                  {b.isMine && b.status === "active" ? "Play" : "Watch"}
+                </button>}
+              </span>
+            </div>
+          ))}
+        </section>
+      ))}
+    </>
+  );
+}
+
+/**
+ * A clock that ticks between polls.
+ *
+ * The server sends the authoritative remaining time; this counts it down
+ * locally so the number moves, and every poll snaps it back. It never decides
+ * anything — a clock that reaches zero here just shows 0:00 and waits for the
+ * server to say the game is over, which is the only place that can be decided.
+ */
+function TrnLiveClock({ clock }) {
+  const [, tick] = React.useState(0);
+  // When this reading arrived. Everything the countdown subtracts is measured
+  // from here, so a slow response shortens the tick rather than the clock.
+  const gotAt = React.useRef(Date.now());
+  const key = clock ? clock.whiteMs + ":" + clock.blackMs + ":" + clock.turn : "";
+  React.useEffect(() => { gotAt.current = Date.now(); }, [key]);
+  React.useEffect(() => {
+    if (!clock || !clock.running) return;
+    const id = setInterval(() => tick(n => n + 1), 500);
+    return () => clearInterval(id);
+  }, [clock && clock.running, clock && clock.turn]);
+  if (!clock || !clock.live) return null;
+
+  const base = clock.turn === "w" ? clock.whiteMs : clock.blackMs;
+  const drift = clock.running ? Math.max(0, Date.now() - gotAt.current) : 0;
+  const shown = Math.max(0, base - drift);
+  const low = shown < 30000;
+  return (
+    <span className={"trn-clock" + (low ? " is-low" : "")} aria-label={"Clock: " + trnClock(shown)}>
+      {trnClock(shown)}
+    </span>
+  );
+}
+
+/* ── The director's wizard ────────────────────────────────────────────────
+   Four steps, because there are four decisions and they are not equally
+   important: what kind of event it is, how fast, who may play, and what it is
+   called. The old form asked for a name and a programme and then made every
+   other choice silently on the director's behalf.
+
+   Each step says what the choice MEANS rather than only naming it. "Swiss" is
+   a word; "Everyone plays every round. Nobody is knocked out." is the decision
+   somebody is actually making about a Saturday with thirty children in it.   */
+
+const TRN_STEPS = ["Format", "Clock", "Who plays", "Name it"];
+
+function CmTrnCreate({ onBack, onCreated }) {
+  const [step, setStep] = React.useState(0);
+  const [busy, setBusy] = React.useState(false);
+  const [f, setF] = React.useState({
+    format: "swiss", timeControl: "10+0", rated: true, totalRounds: 0,
+    kinds: ["member", "student", "volunteer", "staff"],
+    centres: [], minRating: 0, maxRating: 0,
+    programme: "", name: "", description: "",
+  });
+  const set = (patch) => setF(v => Object.assign({}, v, patch));
+  const [formats, setFormats] = React.useState(null);
+
+  React.useEffect(() => {
+    NGGApi.member.tournaments.browse().then(r => setFormats(r.formats || null)).catch(() => {});
+  }, []);
+
+  const meta = formats || {
+    swiss: { name: "Swiss", blurb: "Everyone plays every round. Nobody is knocked out.", best: "8–60 players" },
+    knockout: { name: "Knockout", blurb: "Lose once and you are out. Seeded by rating.", best: "8–64 players" },
+    roundrobin: { name: "Round robin", blurb: "Everybody plays everybody, once.", best: "4–12 players" },
+    centre: { name: "Centre cup", blurb: "Each centre runs its own knockout; the champions meet.", best: "Several centres" },
+    arena: { name: "Arena", blurb: "A timed window. Finish a game, get another straight away.", best: "Drop-in sessions" },
+  };
+
+  const liveOnly = f.format === "arena";
+  const tcs = liveOnly ? TRN_TC.filter(t => t.id !== "1day") : TRN_TC;
+
+  const canNext = step === 0 ? !!f.format
+                : step === 1 ? !!f.timeControl
+                : step === 2 ? f.kinds.length > 0
+                : f.name.trim().length >= 3;
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.tournaments.create({
+        name: f.name.trim(), description: f.description.trim(),
+        format: f.format, timeControl: f.timeControl, rated: f.rated,
+        totalRounds: f.totalRounds || 0, programme: f.programme,
+        kinds: f.kinds, centres: f.centres,
+        minRating: f.minRating || 0, maxRating: f.maxRating || 0,
+      });
+      toast.success("Created. The club can see it now.");
+      onCreated && onCreated(r.tournamentId);
+    } catch (e) { toast.error(e.detail || e.message || "Couldn't create it."); }
+    finally { setBusy(false); }
+  };
+
+  const toggleKind = (id) => set({
+    kinds: f.kinds.indexOf(id) >= 0 ? f.kinds.filter(k => k !== id) : f.kinds.concat(id),
+  });
+
+  return (
+    <div className="cmm-screen trn-wiz">
+      <header className="cmm-ch-head">
+        <button className="cmm-icon-btn" onClick={step === 0 ? onBack : () => setStep(step - 1)}
+                aria-label={step === 0 ? "Cancel" : "Back a step"}>{cmUiIcon("back", 22)}</button>
+        <div className="cmm-head-txt">
+          <h1 className="cmm-ch-title">Host a tournament</h1>
+          <p className="cmm-sub">Step {step + 1} of {TRN_STEPS.length} · {TRN_STEPS[step]}</p>
+        </div>
+      </header>
+
+      <ol className="trn-steps" aria-label="Progress">
+        {TRN_STEPS.map((s, i) => (
+          <li key={s} className={"trn-step" + (i === step ? " is-on" : "") + (i < step ? " is-done" : "")}>
+            <span className="sr-only">{i < step ? "Done: " : i === step ? "Current: " : ""}{s}</span>
+            <span aria-hidden="true">{s}</span>
+          </li>
+        ))}
+      </ol>
+
+      <div className="cmm-stream">
+        {step === 0 && (
+          <fieldset className="trn-fs">
+            <legend className="trn-legend">What kind of event?</legend>
+            {Object.keys(meta).map(id => (
+              <label key={id} className={"trn-opt" + (f.format === id ? " is-on" : "")}>
+                <input type="radio" name="trn-format" className="sr-only" checked={f.format === id}
+                       onChange={() => set({ format: id, timeControl: id === "arena" && f.timeControl === "1day" ? "5+3" : f.timeControl })}/>
+                <span className="trn-opt-h">{meta[id].name}</span>
+                <span className="trn-opt-b">{meta[id].blurb}</span>
+                <span className="trn-opt-m">Best for {meta[id].best}</span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+
+        {step === 1 && (
+          <>
+            <fieldset className="trn-fs">
+              <legend className="trn-legend">How long does each player get?</legend>
+              <div className="trn-tcs">
+                {tcs.map(t => (
+                  <label key={t.id} className={"trn-tc" + (f.timeControl === t.id ? " is-on" : "")}>
+                    <input type="radio" name="trn-tc" className="sr-only" checked={f.timeControl === t.id}
+                           onChange={() => set({ timeControl: t.id })}/>
+                    <span className="trn-tc-n">{t.name}</span>
+                    <span className="trn-tc-s">{t.sub}</span>
+                  </label>
+                ))}
+              </div>
+              {liveOnly && <p className="trn-hint">An arena needs a running clock — the window would close before a daily game finished.</p>}
+              {f.timeControl === "1day" && <p className="trn-hint">Daily games use almost no data. A move is smaller than a text message.</p>}
+            </fieldset>
+
+            <label className="trn-switch">
+              <input type="checkbox" checked={f.rated} onChange={e => set({ rated: e.target.checked })}/>
+              <span>
+                <b>Rated</b>
+                <span className="trn-hint">Results move everybody's club rating. Turn it off for a fun event.</span>
+              </span>
+            </label>
+
+            {(f.format === "swiss") && (
+              <label className="trn-field">
+                <span className="trn-field-l">Rounds <span>leave at 0 and we work it out from the entry list</span></span>
+                <input className="trn-in" type="number" min="0" max="11" value={f.totalRounds}
+                       onChange={e => set({ totalRounds: Math.max(0, Math.min(11, +e.target.value || 0)) })}/>
+              </label>
+            )}
+          </>
+        )}
+
+        {step === 2 && (
+          <>
+            <fieldset className="trn-fs">
+              <legend className="trn-legend">Who can enter?</legend>
+              {TRN_KINDS.map(k => (
+                <label key={k.id} className={"trn-check" + (f.kinds.indexOf(k.id) >= 0 ? " is-on" : "")}>
+                  <input type="checkbox" checked={f.kinds.indexOf(k.id) >= 0} onChange={() => toggleKind(k.id)}/>
+                  <span>{k.label}</span>
+                </label>
+              ))}
+              {f.kinds.length === 0 && <p className="trn-hint is-warn">Pick at least one group, or nobody can enter.</p>}
+            </fieldset>
+
+            <fieldset className="trn-fs">
+              <legend className="trn-legend">Programme</legend>
+              <div className="trn-seg">
+                {[["", "Everyone"], ["ngg", "NGG Club"], ["summer", "Summer School"]].map(([v, l]) => (
+                  <button key={v || "all"} type="button" aria-pressed={f.programme === v}
+                          className={"trn-seg-b" + (f.programme === v ? " is-on" : "")}
+                          onClick={() => set({ programme: v })}>{l}</button>
+                ))}
+              </div>
+            </fieldset>
+
+            <div className="trn-band">
+              <label className="trn-field">
+                <span className="trn-field-l">Lowest rating <span>0 for no floor</span></span>
+                <input className="trn-in" type="number" min="0" max="3000" value={f.minRating}
+                       onChange={e => set({ minRating: Math.max(0, +e.target.value || 0) })}/>
+              </label>
+              <label className="trn-field">
+                <span className="trn-field-l">Highest rating <span>0 for no ceiling</span></span>
+                <input className="trn-in" type="number" min="0" max="3000" value={f.maxRating}
+                       onChange={e => set({ maxRating: Math.max(0, +e.target.value || 0) })}/>
+              </label>
+            </div>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <label className="trn-field">
+              <span className="trn-field-l">Name it</span>
+              <input className="trn-in" value={f.name} maxLength={160} autoComplete="off"
+                     placeholder="e.g. Egbeda Saturday Blitz" onChange={e => set({ name: e.target.value })}/>
+            </label>
+            <label className="trn-field">
+              <span className="trn-field-l">A line about it <span>optional</span></span>
+              <textarea className="trn-in trn-ta" value={f.description} maxLength={600} rows={3}
+                        placeholder="Who it is for, when it starts, anything players should know."
+                        onChange={e => set({ description: e.target.value })}/>
+            </label>
+
+            {/* Say the whole thing back before it is real. A director is about
+                to publish this to the club; they should read it as a sentence,
+                not re-derive it from four screens of controls. */}
+            <div className="trn-review">
+              <div className="trn-review-h">You are about to host</div>
+              <p className="trn-review-b">
+                <b>{f.name.trim() || "an unnamed tournament"}</b> — a {meta[f.format].name.toLowerCase()} at{" "}
+                {cmTcName(f.timeControl)}, {f.rated ? "rated" : "casual"}, open to{" "}
+                {f.kinds.length === TRN_KINDS.length ? "everybody" : f.kinds.map(k => (TRN_KINDS.find(x => x.id === k) || {}).label).join(", ").toLowerCase()}
+                {f.programme ? " in the " + (f.programme === "ngg" ? "NGG Club" : "Summer School") : ""}
+                {f.minRating || f.maxRating ? ", rated " + (f.minRating || "any") + "–" + (f.maxRating || "any") : ""}.
+              </p>
+              <p className="trn-review-s">Entries open straight away. You draw the first round when everybody is here.</p>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="trn-wiz-foot">
+        {step > 0 && <button className="trn-back" onClick={() => setStep(step - 1)}>Back</button>}
+        {step < TRN_STEPS.length - 1
+          ? <button className="cmm-cta" disabled={!canNext} onClick={() => setStep(step + 1)}>Next</button>
+          : <button className="cmm-cta" disabled={!canNext || busy} onClick={submit}>
+              {busy ? "Creating…" : "Create and open entries"}
+            </button>}
+      </div>
+    </div>
+  );
+}
+
 /** The chess hub: your standing, the games waiting on you, and the three ways in. */
 function CmChess({ auth, onOpenMatch }) {
   const [profile, setProfile] = React.useState(null);
   const [matches, setMatches] = React.useState(null);
   const [challenges, setChallenges] = React.useState(null);
-  const [screen, setScreen] = React.useState("");        // "" | search | computer
+  const [screen, setScreen] = React.useState("");        // "" | search | computer | trn | trnNew
+  const [openTrn, setOpenTrn] = React.useState("");
   const [challengeFor, setChallengeFor] = React.useState(null);
   const [err, setErr] = React.useState("");
+  const [lobby, setLobby] = React.useState(null);
+  const sigRef = React.useRef("");
+  const toldRef = React.useRef({});
 
   const load = React.useCallback(() => {
     NGGApi.member.match.chess().then(setProfile).catch(() => {});
@@ -3123,6 +3730,44 @@ function CmChess({ auth, onOpenMatch }) {
     NGGApi.member.match.challenges().then(setChallenges).catch(() => setChallenges({ toYou: [], open: [], fromYou: [] }));
   }, []);
   React.useEffect(() => { load(); }, [load]);
+
+  /* The lobby tick.
+     This screen used to load once on mount and never again, so a challenge
+     somebody accepted sat unseen until the member navigated away and came
+     back — the most time-sensitive event in the whole feature was the one
+     thing the screen could not notice.
+
+     The poll is cheap on purpose: four counts and a signature. Nothing is
+     re-fetched unless the signature moved, so a quiet lobby costs a few dozen
+     bytes every few seconds and a busy one refreshes within one tick. It
+     stops entirely in a hidden tab — a chess screen left open in a background
+     tab is somebody's data, and they did not agree to spend it. */
+  React.useEffect(() => {
+    if (screen) return;                       // not on the hub: nothing to refresh
+    let alive = true, timer = null;
+    const tick = () => {
+      if (!alive) return;
+      if (document.visibilityState === "hidden") { timer = setTimeout(tick, 8000); return; }
+      NGGApi.member.match.lobby()
+        .then(r => {
+          if (!alive) return;
+          setLobby(r);
+          if (r.sig && r.sig !== sigRef.current) { sigRef.current = r.sig; load(); }
+          /* Somebody taking your challenge is worth saying out loud, once.
+             It is the event a member is actually waiting for, and finding it
+             by noticing a list got longer is not the same as being told. */
+          (r.accepted || []).forEach(a => {
+            if (toldRef.current[a.challengeId]) return;
+            toldRef.current[a.challengeId] = 1;
+            toast.success(a.name + " took your challenge — the game is on.", "Your move");
+          });
+        })
+        .catch(() => {})
+        .then(() => { if (alive) timer = setTimeout(tick, 5000); });
+    };
+    timer = setTimeout(tick, 1200);
+    return () => { alive = false; if (timer) clearTimeout(timer); };
+  }, [screen, load]);
 
   const answer = (id, ans) => {
     NGGApi.member.match.answer(id, ans)
@@ -3141,6 +3786,27 @@ function CmChess({ auth, onOpenMatch }) {
   if (screen === "computer") {
     return <CmChessComputer profile={profile} onBack={() => setScreen("")}/>;
   }
+  if (screen === "trnNew") {
+    return <CmTrnCreate onBack={() => setScreen("trn")}
+                        onCreated={(id) => { setOpenTrn(id); setScreen("trn"); }}/>;
+  }
+  if (screen === "trn") {
+    return openTrn
+      ? <CmTrnDetail tournamentId={openTrn} staff={isDirector}
+                     onBack={() => setOpenTrn("")} onOpenMatch={onOpenMatch}/>
+      : <CmTrnList auth={auth} staff={isDirector}
+                   onOpen={setOpenTrn} onCreate={() => setScreen("trnNew")}
+                   onBack={() => { setScreen(""); load(); }}/>;
+  }
+
+  /* Who sees the director's controls.
+     `counts.staff` is the viewer's own capability, served by the community
+     endpoint that already computes it — the same signal the message actions
+     use. It is a HINT for what to draw: every tournament write still goes
+     through admin_cap_gate on the server, so showing the button to somebody
+     who should not have it would get them a refusal, not a tournament. */
+  const isDirector = !!(auth && auth.member && auth.member.role
+                        && String(auth.member.role).toLowerCase() !== "member");
 
   const yourMove = (matches || []).filter(m => m.status === "active" && m.yourTurn);
   const theirMove = (matches || []).filter(m => m.status === "active" && !m.yourTurn);
@@ -3198,6 +3864,24 @@ function CmChess({ auth, onOpenMatch }) {
           ))}
         </section>
       )}
+
+      {/* Tournaments, above "new game": during an event the tournament IS the
+          reason somebody opened this screen. */}
+      <section className="cmc-sec">
+        <div className="cmm-list-h">TOURNAMENTS</div>
+        <button className="cmc-tile trn-entry" onClick={() => { setOpenTrn(""); setScreen("trn"); }}>
+          <span className="cmc-tile-h">
+            {lobby && lobby.tournaments ? lobby.tournaments + " running" : "Club tournaments"}
+          </span>
+          <span className="cmc-tile-s">Swiss, knockout, round robin and arena · live standings</span>
+        </button>
+        {isDirector && (
+          <button className="cmc-tile is-ghost" onClick={() => { setOpenTrn(""); setScreen("trnNew"); }}>
+            <span className="cmc-tile-h">Host a tournament</span>
+            <span className="cmc-tile-s">Set the format and clock, then draw round one</span>
+          </button>
+        )}
+      </section>
 
       <section className="cmc-sec">
         <div className="cmm-list-h">NEW GAME</div>
@@ -5692,4 +6376,4 @@ function JournalEntryPage() {
   );
 }
 
-Object.assign(window, { SummerPage, ClubPage, BadgePin, CommunityPage, CmStudentSignIn, CmProgramJournal, JournalEntryPage });
+Object.assign(window, { SummerPage, ClubPage, BadgePin, CommunityPage, CmStudentSignIn, CmProgramJournal, JournalEntryPage, CmTrnList, CmTrnDetail, CmTrnCreate, CmTrnStandings, CmTrnRounds });

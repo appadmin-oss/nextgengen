@@ -61,11 +61,45 @@ function match_initial_state(string $game): string {
 /* ── Who a player is ──────────────────────────────────────────────────────
  * A player is a club member or a summer student. Both are looked up the same
  * way so the rest of the file never has to care which. */
+/**
+ * Resolve anybody who is allowed to play a game.
+ *
+ * Four kinds of person hold an account here and all four turn up at a board:
+ * NGG members, summer students, the Volunteer Vanguard (instructors, mentors,
+ * coordinators) and staff/admins — who are members carrying a role.
+ *
+ * This used to resolve members and students only. The consequence was quiet
+ * and complete: chess_players() offers a "mentors" tab that searches
+ * `volunteers`, so a child could find their coach, tap Challenge, and be told
+ * `opponent_not_found` — because chess_challenge_create() resolves the target
+ * through here. A mentor could be searched for and never played. The same gap
+ * kept every volunteer out of every tournament.
+ *
+ * `kind` is what they are; `role` is what they do. Both are returned, because
+ * a tournament's eligibility rules are written in terms of both.
+ */
 function match_person(string $id): ?array {
-    $m = db_row("SELECT memberId id, fullName, centre, 'member' kind, type FROM members WHERE memberId = ? AND status = 'active' LIMIT 1", [$id]);
-    if ($m) { $m['programme'] = ((string)($m['type'] ?? '') === 'Summer') ? 'summer' : 'ngg'; unset($m['type']); return $m; }
+    if ($id === '') return null;
+    $m = db_row("SELECT memberId id, fullName, centre, role, 'member' kind, type FROM members WHERE memberId = ? AND status = 'active' LIMIT 1", [$id]);
+    if ($m) {
+        $role = strtolower(trim((string)($m['role'] ?? '')));
+        $m['programme'] = ((string)($m['type'] ?? '') === 'Summer') ? 'summer' : 'ngg';
+        // Staff are members with a role. Kept as their own kind so a tournament
+        // can invite them, or exclude them, without guessing from a job title.
+        $m['kind'] = ($role !== '' && $role !== 'member') ? 'staff' : 'member';
+        $m['role'] = $role;
+        unset($m['type']);
+        return $m;
+    }
     $s = db_row("SELECT studentId id, fullName, centre, 'student' kind FROM summer_students WHERE studentId = ? AND status = 'active' LIMIT 1", [$id]);
-    if ($s) { $s['programme'] = 'summer'; return $s; }
+    if ($s) { $s['programme'] = 'summer'; $s['role'] = 'student'; return $s; }
+    /* Volunteers have no `centre` column — they work across centres — so their
+     * centre is the one they are assigned to, or blank. A blank centre is fine
+     * for a Swiss or a knockout; only the centre-bracket format needs one, and
+     * that format checks for it separately. */
+    $v = db_row("SELECT volunteerId id, fullName, COALESCE(centre, '') centre, COALESCE(role, 'volunteer') role, 'volunteer' kind
+                 FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$id]);
+    if ($v) { $v['programme'] = 'ngg'; return $v; }
     return null;
 }
 
@@ -102,6 +136,11 @@ function match_public(array $r, string $viewer, bool $staff = false): array {
         'winnerId'   => (string)($r['winnerId'] ?? ''),
         'reason'     => (string)($r['reason'] ?? ''),
         'flagged'    => (int)($r['flagged'] ?? 0) === 1,
+        // The clock, computed rather than stored: the mover's number is wound
+        // down by however long they have been thinking, so what the board
+        // renders and what the server would act on cannot disagree.
+        'clock'      => function_exists('chess_clock_state') ? chess_clock_state($r) : null,
+        'board'      => (int)($r['board'] ?? 0),
         'tournamentId' => (string)($r['tournamentId'] ?? ''),
         // The terms both players agreed before the board existed.
         'timeControl' => (string)($r['timeControl'] ?? '1day'),
@@ -158,8 +197,13 @@ function match_invite(array $p): array {
         // The invited player has not accepted, so nobody is on move yet.
         'turnPlayer' => '', 'state' => match_initial_state($game), 'ply' => 0,
         'tournamentId' => (string)($p['tournamentId'] ?? ''),
+        'rated' => !empty($p['rated']) ? 1 : 0,
+        /* The clock is set when the game is CREATED and started when it is
+         * accepted, so the terms cannot change between agreeing to a blitz
+         * game and sitting down to one. */
         'createdAt' => $now, 'updatedAt' => $now,
-    ]);
+    ] + (function_exists('chess_clock_init') && $game === 'chess'
+            ? chess_clock_init((string)($p['timeControl'] ?? '1day')) : []));
     return ['ok' => true, 'matchId' => $matchId, 'status' => 'invited'];
 }
 
@@ -180,6 +224,8 @@ function match_respond(array $p): array {
     // A accepted-into-active match puts A on move; in chess A is white.
     db_update('match_games', ['status' => 'active', 'turnPlayer' => (string)$r['playerA'], 'updatedAt' => $now],
               ['matchId' => (string)$r['matchId']]);
+    // White's clock starts the moment the game does, not on their first move.
+    if (function_exists('chess_clock_start')) chess_clock_start((string)$r['matchId']);
     return ['ok' => true, 'status' => 'active'];
 }
 
@@ -201,6 +247,15 @@ function match_move(array $p): array {
     if ((string)$r['status'] !== 'active') return ['ok' => false, 'error' => 'not_active'];
     if ((string)$r['turnPlayer'] !== $viewer) return ['ok' => false, 'error' => 'not_your_turn'];
     if ((string)$r['game'] !== 'chess') return ['ok' => false, 'error' => 'bad_game'];
+
+    /* Have they already lost on time? Checked BEFORE the move is validated, so
+     * a move that arrives after the flag fell cannot be played. The board polls
+     * and would normally have caught this; this is the case where it did not,
+     * because the player was offline and came back to a position they could
+     * still legally move in. */
+    if (function_exists('chess_clock_flag_check') && chess_clock_flag_check((string)$r['matchId'])) {
+        return ['ok' => false, 'error' => 'flagged', 'message' => 'Your time ran out.'];
+    }
 
     /* Threefold repetition is a property of the GAME, not of the position, so
      * the counts are rebuilt from the move list rather than stored. */
@@ -227,6 +282,13 @@ function match_move(array $p): array {
         $patch += ['status' => 'complete', 'result' => 'draw', 'winnerId' => '', 'reason' => (string)$status['reason'], 'turnPlayer' => ''];
     } else {
         $patch['turnPlayer'] = $other;
+    }
+
+    /* Charge the mover for their thinking time and add their increment.
+     * Merged into the same patch as the move, so the position and the clock
+     * that produced it are written together or not at all. */
+    if (function_exists('chess_clock_on_move')) {
+        $patch = array_merge($patch, chess_clock_on_move($r, ($patch['status'] ?? '') === 'complete'));
     }
 
     /* The move and the position it produced are one fact. Recorded apart, an
@@ -281,8 +343,9 @@ function match_resign(array $p): array {
     if ((string)$r['playerA'] !== $viewer && (string)$r['playerB'] !== $viewer) return ['ok' => false, 'error' => 'not_yours'];
     if ((string)$r['status'] !== 'active') return ['ok' => false, 'error' => 'not_active'];
     $other = (string)$r['playerA'] === $viewer ? (string)$r['playerB'] : (string)$r['playerA'];
-    db_update('match_games', ['status' => 'complete', 'result' => 'win', 'winnerId' => $other,
-        'reason' => 'resignation', 'turnPlayer' => '', 'updatedAt' => now_iso()], ['matchId' => (string)$r['matchId']]);
+    $stop = function_exists('chess_clock_stop') ? chess_clock_stop() : [];
+    db_update('match_games', array_merge($stop, ['status' => 'complete', 'result' => 'win', 'winnerId' => $other,
+        'reason' => 'resignation', 'turnPlayer' => '', 'updatedAt' => now_iso()]), ['matchId' => (string)$r['matchId']]);
     match_settle_chess((string)$r['matchId']);
     if (function_exists('match_tournament_report')) match_tournament_report((string)$r['matchId']);
     return ['ok' => true, 'status' => 'complete', 'winnerId' => $other];
@@ -361,6 +424,14 @@ function match_get(array $p): array {
     $viewer = (string)($p['playerId'] ?? '');
     $r = db_row('SELECT * FROM match_games WHERE matchId = ? LIMIT 1', [(string)($p['matchId'] ?? '')]);
     if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    /* Every read of a live game is also the flag check. This is where the
+     * clock is really enforced: whoever looks first — either player, or a
+     * spectator — settles a game whose time has run out, and re-reads the row
+     * so nobody is ever shown a board that the server already considers over. */
+    if ((string)$r['status'] === 'active' && function_exists('chess_clock_flag_check')
+        && chess_clock_flag_check((string)$r['matchId'])) {
+        $r = db_row('SELECT * FROM match_games WHERE matchId = ? LIMIT 1', [(string)$r['matchId']]) ?: $r;
+    }
     /* Anyone signed in may watch. A game here is public — that is the point of
      * open play, and a game a hundred people could be watching is a safer game
      * than a private one, because there is no quiet corner to be in.
@@ -423,9 +494,17 @@ function match_get(array $p): array {
  */
 function match_poll(array $p): array {
     $viewer = (string)($p['playerId'] ?? '');
-    $r = db_row('SELECT matchId, status, turnPlayer, ply, state, result, winnerId, reason, playerA, playerB, lastMoveAt
-                 FROM match_games WHERE matchId = ? LIMIT 1', [(string)($p['matchId'] ?? '')]);
+    $r = db_row('SELECT * FROM match_games WHERE matchId = ? LIMIT 1', [(string)($p['matchId'] ?? '')]);
     if (!$r) return ['ok' => false, 'error' => 'not_found'];
+
+    /* The poll is also a flag check. It is the most frequent read of a live
+     * game by a long way, so it is where a clock running out is normally
+     * noticed — waiting for somebody to open the full board would mean a
+     * player sat watching their opponent's clock sit at 0:00. */
+    if ((string)$r['status'] === 'active' && function_exists('chess_clock_flag_check')
+        && chess_clock_flag_check((string)$r['matchId'])) {
+        $r = db_row('SELECT * FROM match_games WHERE matchId = ? LIMIT 1', [(string)$r['matchId']]) ?: $r;
+    }
 
     $ply = (int)$r['ply'];
     $since = (int)($p['since'] ?? -1);
@@ -433,6 +512,10 @@ function match_poll(array $p): array {
         'ok' => true, 'ply' => $ply, 'status' => (string)$r['status'],
         'yourTurn' => (string)$r['turnPlayer'] === $viewer,
         'changed' => $since < 0 || $since !== $ply,
+        /* The clock rides on EVERY poll, not only the ones with news. A
+         * countdown drawn in the browser drifts, and the tab sleeps; this is
+         * the number it re-syncs to, and it is a handful of bytes. */
+        'clock' => function_exists('chess_clock_state') ? chess_clock_state($r) : null,
     ];
     /* The position rides along when it changed, which saves the client a second
      * round trip on the one poll in twenty that actually has news. Everything

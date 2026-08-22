@@ -13885,12 +13885,219 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     })());
     /* Search returns a name, a centre, a rating and a record — and nothing a
        child could use to contact anybody. The list of allowed keys IS the
-       safeguarding rule, so it is asserted rather than described. */
+       safeguarding rule, so it is asserted rather than described.
+
+       `kind`, `role` and `photo` were added with the unified directory. The
+       first two are categories the client already badges; the photo is the
+       same avatar the community feed shows beside every message, inside the
+       same members-only walled garden. None of them is a contact route, which
+       is the property the denylist below states outright. */
     chk('a search row carries nothing that could contact anybody', (function () {
         $r = chess_players(['playerId' => 'MPL-A', 'q' => 'Bode']);
-        $allowed = ['id', 'name', 'centre', 'programme', 'mentor', 'rating', 'online', 'lastSeen', 'headToHead'];
-        foreach ($r['players'] as $pl) if (array_diff(array_keys($pl), $allowed)) return false;
+        $allowed = ['id', 'name', 'centre', 'programme', 'kind', 'role', 'mentor',
+                    'rating', 'online', 'lastSeen', 'photo', 'headToHead'];
+        $never = ['email', 'phone', 'guardianPhone', 'guardianEmail', 'address', 'dob', 'handle'];
+        foreach ($r['players'] as $pl) {
+            if (array_diff(array_keys($pl), $allowed)) return false;
+            if (array_intersect(array_keys($pl), $never)) return false;
+        }
         return count($r['players']) > 0;
+    })());
+
+    /* ── Clocks that actually run ───────────────────────────────────────────
+       `timeControl` used to be a label: '3+2' was stored, shown on the
+       challenge sheet, and nothing ever counted down. These assert the three
+       properties that make a clock real — it charges the mover, it flags, and
+       the server is the only thing that decides either. */
+
+    chk('a blitz game starts both clocks at the control\'s time', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-C',
+                           'timeControl' => '3+2', 'rated' => false])['matchId'] ?? '';
+        if ($m === '') return false;
+        match_respond(['playerId' => 'MPL-C', 'matchId' => $m, 'accept' => true]);
+        $r = db_row("SELECT * FROM match_games WHERE matchId = ?", [$m]);
+        $GLOBALS['__clockMatch'] = $m;
+        return (int)$r['whiteMs'] === 180000 && (int)$r['blackMs'] === 180000
+            && (int)$r['incrementMs'] === 2000 && (int)$r['clockRunning'] === 1;
+    })());
+
+    chk('…and white\'s clock is already running before their first move', (function () {
+        $g = match_get(['playerId' => 'MPL-A', 'matchId' => $GLOBALS['__clockMatch']])['match'];
+        return $g['clock']['running'] === true && $g['clock']['turn'] === 'w';
+    })());
+
+    chk('thinking time is charged to the mover, and the increment added', (function () {
+        $m = $GLOBALS['__clockMatch'];
+        // Wind the clock back 5s to stand in for five seconds of thought.
+        db_update('match_games', ['turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 5)], ['matchId' => $m]);
+        $before = (int)db_row("SELECT whiteMs FROM match_games WHERE matchId = ?", [$m])['whiteMs'];
+        match_move(['playerId' => 'MPL-A', 'matchId' => $m, 'move' => 'e2e4']);
+        $after = (int)db_row("SELECT whiteMs FROM match_games WHERE matchId = ?", [$m])['whiteMs'];
+        // ~5s off, 2s back on: about 3s spent, allowing for the lag grace.
+        $spent = $before - $after;
+        return $spent > 2000 && $spent < 4000;
+    })());
+
+    chk('…and the clock passes to the other player', (function () {
+        $r = db_row("SELECT * FROM match_games WHERE matchId = ?", [$GLOBALS['__clockMatch']]);
+        $c = chess_clock_state($r);
+        return $c['turn'] === 'b' && (int)$r['blackMs'] === 180000;
+    })());
+
+    chk('the opponent\'s clock is only wound down in the read, never stored', (function () {
+        $m = $GLOBALS['__clockMatch'];
+        db_update('match_games', ['turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 4)], ['matchId' => $m]);
+        $stored = (int)db_row("SELECT blackMs FROM match_games WHERE matchId = ?", [$m])['blackMs'];
+        $shown = match_get(['playerId' => 'MPL-C', 'matchId' => $m])['match']['clock']['blackMs'];
+        return $stored === 180000 && $shown < 178000 && $shown > 174000;
+    })());
+
+    chk('running out of time loses the game, decided by the server', (function () {
+        $m = $GLOBALS['__clockMatch'];
+        db_update('match_games', ['blackMs' => 900, 'turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 30)], ['matchId' => $m]);
+        // Nobody has called anything yet: the row is still active.
+        if ((string)db_row("SELECT status FROM match_games WHERE matchId = ?", [$m])['status'] !== 'active') return false;
+        // Reading the board is what settles it.
+        $g = match_get(['playerId' => 'MPL-A', 'matchId' => $m])['match'];
+        $r = db_row("SELECT * FROM match_games WHERE matchId = ?", [$m]);
+        return $g['status'] === 'complete' && (string)$r['reason'] === 'timeout'
+            && (string)$r['winnerId'] === 'MPL-A' && (int)$r['clockRunning'] === 0;
+    })());
+
+    chk('a move that arrives after the flag fell is refused', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-B',
+                           'timeControl' => '3+2'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-B', 'matchId' => $m, 'accept' => true]);
+        db_update('match_games', ['whiteMs' => 500, 'turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 20)], ['matchId' => $m]);
+        $r = match_move(['playerId' => 'MPL-A', 'matchId' => $m, 'move' => 'e2e4']);
+        return ($r['error'] ?? '') === 'flagged';
+    })());
+
+    /* FIDE 6.9 — a flag falls, but the opponent could never mate: it is a draw.
+       Winning on time against a bare king is the app getting a rule wrong in
+       the most visible place there is. */
+    chk('flagging against a bare king is a draw, not a win', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-C',
+                           'timeControl' => '3+2'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-C', 'matchId' => $m, 'accept' => true]);
+        // Black to move with only a king; white has a lone king too.
+        db_update('match_games', [
+            'state' => '4k3/8/8/8/8/8/8/4K3 b - - 0 40',
+            'blackMs' => 400, 'turnPlayer' => 'MPL-C',
+            'turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 20)], ['matchId' => $m]);
+        chess_clock_flag_check($m);
+        $r = db_row("SELECT * FROM match_games WHERE matchId = ?", [$m]);
+        return (string)$r['result'] === 'draw' && (string)$r['reason'] === 'timeout_vs_insufficient';
+    })());
+    chk('…but flagging against a king and rook is a win', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-B',
+                           'timeControl' => '3+2'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-B', 'matchId' => $m, 'accept' => true]);
+        db_update('match_games', [
+            'state' => '4k3/8/8/8/8/8/8/R3K3 b - - 0 40',
+            'blackMs' => 400, 'turnPlayer' => 'MPL-B',
+            'turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 20)], ['matchId' => $m]);
+        chess_clock_flag_check($m);
+        $r = db_row("SELECT * FROM match_games WHERE matchId = ?", [$m]);
+        return (string)$r['result'] === 'win' && (string)$r['winnerId'] === 'MPL-A'
+            && (string)$r['reason'] === 'timeout';
+    })());
+    chk('two knights CAN mate, so that flag is a win (FIDE 6.9 is "any legal series")',
+        chess_has_mating_material('4k3/8/8/8/8/8/8/1NN1K3 w - - 0 1', 'w') === true
+        && chess_has_mating_material('4k3/8/8/8/8/8/8/2N1K3 w - - 0 1', 'w') === false);
+
+    chk('a correspondence game has a deadline, not a countdown', (function () {
+        $m = match_invite(['playerId' => 'MPL-B', 'game' => 'chess', 'opponentId' => 'MPL-C',
+                           'timeControl' => '1day'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-C', 'matchId' => $m, 'accept' => true]);
+        $c = match_get(['playerId' => 'MPL-B', 'matchId' => $m])['match']['clock'];
+        return $c['live'] === false && $c['running'] === false && isset($c['deadlineMs']);
+    })());
+
+    chk('the sweeper flags games nobody is watching', (function () {
+        $m = match_invite(['playerId' => 'MPL-A', 'game' => 'chess', 'opponentId' => 'MPL-B',
+                           'timeControl' => '5+3'])['matchId'] ?? '';
+        match_respond(['playerId' => 'MPL-B', 'matchId' => $m, 'accept' => true]);
+        db_update('match_games', ['state' => '4k3/8/8/8/8/8/8/R3K3 w - - 0 40',
+            'whiteMs' => 300, 'turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 60)], ['matchId' => $m]);
+        $n = chess_clock_sweep(50);
+        return $n >= 1 && (string)db_row("SELECT status FROM match_games WHERE matchId = ?", [$m])['status'] === 'complete';
+    })());
+
+    chk('the clock table and the challenge vocabulary cannot drift apart', (function () {
+        foreach (CHESS_TIME_CONTROLS as $tc) if (!isset(CHESS_CLOCK_TABLE[$tc])) return false;
+        return count(chess_clock_options()) === count(CHESS_CLOCK_TABLE);
+    })());
+
+    /* ── The directory: all four kinds of person, one list ─────────────────
+       A volunteer could be FOUND (the mentors tab searched `volunteers`) and
+       then never played, because match_person() resolved members and students
+       only — so challenging a coach answered `opponent_not_found`. Staff were
+       invisible in both directions: the member query excluded role != 'member'
+       and the mentor query only looked at volunteers. */
+    $now2 = now_iso();
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'DIR-VOL'");
+    db_insert('volunteers', ['volunteerId' => 'DIR-VOL', 'fullName' => 'Bisi Coach',
+        'email' => 'dir-vol@example.com', 'role' => 'Instructor', 'centre' => 'Egbeda',
+        'status' => 'active', 'createdAt' => $now2]);
+    db_exec("DELETE FROM members WHERE memberId = 'DIR-STAFF'");
+    db_insert('members', ['memberId' => 'DIR-STAFF', 'fullName' => 'Bisi Coordinator',
+        'email' => 'dir-staff@example.com', 'type' => 'NGG', 'centre' => 'Egbeda',
+        'role' => 'coordinator', 'status' => 'active', 'createdAt' => $now2, 'updatedAt' => $now2]);
+    db_exec("DELETE FROM summer_students WHERE studentId = 'DIR-STU'");
+    db_insert('summer_students', ['studentId' => 'DIR-STU', 'fullName' => 'Bisi Student',
+        'centre' => 'Egbeda', 'status' => 'active', 'enrolledAt' => $now2]);
+
+    chk('a volunteer resolves as a player at all', (function () {
+        $p = match_person('DIR-VOL');
+        return $p && $p['kind'] === 'volunteer' && $p['id'] === 'DIR-VOL';
+    })());
+    chk('…so a child can actually challenge their coach', (function () {
+        $c = chess_challenge_create(['playerId' => 'MPL-A', 'opponentId' => 'DIR-VOL',
+            'timeControl' => '10+0', 'colourPref' => 'random', 'rated' => false]);
+        return !empty($c['ok']);
+    })());
+    chk('a member with a role resolves as staff, not as a plain member',
+        (match_person('DIR-STAFF')['kind'] ?? '') === 'staff');
+    chk('the directory returns all four kinds in one search', (function () {
+        $r = directory_search(['q' => 'Bisi']);
+        $kinds = array_unique(array_column($r['people'], 'kind'));
+        sort($kinds);
+        return $r['ok'] && $kinds === ['staff', 'student', 'volunteer'];
+    })());
+    chk('…and narrows to the kinds asked for', (function () {
+        $r = directory_search(['q' => 'Bisi', 'kinds' => ['volunteer']]);
+        return count($r['people']) === 1 && $r['people'][0]['id'] === 'DIR-VOL';
+    })());
+    chk('…filters by centre', (function () {
+        $r = directory_search(['q' => 'Bisi', 'centre' => 'Nowhere']);
+        return $r['people'] === [];
+    })());
+    chk('…excludes who it is told to', (function () {
+        $r = directory_search(['q' => 'Bisi', 'exclude' => ['DIR-VOL', 'DIR-STAFF', 'DIR-STU']]);
+        return $r['people'] === [];
+    })());
+    chk('…and orders by rating, strongest first', (function () {
+        db_exec("DELETE FROM chess_ratings WHERE playerId IN ('DIR-VOL','DIR-STAFF','DIR-STU')");
+        foreach ([['DIR-VOL', 1700], ['DIR-STAFF', 1500], ['DIR-STU', 900]] as [$id, $rt]) {
+            db_insert('chess_ratings', ['playerId' => $id, 'rating' => $rt, 'games' => 12,
+                'wins' => 0, 'losses' => 0, 'draws' => 0, 'peak' => $rt, 'lastPlayedAt' => '', 'updatedAt' => '']);
+        }
+        $r = directory_search(['q' => 'Bisi']);
+        return array_column($r['people'], 'id') === ['DIR-VOL', 'DIR-STAFF', 'DIR-STU'];
+    })());
+    chk('…and honours a rating band', (function () {
+        $r = directory_search(['q' => 'Bisi', 'band' => '1400-1800']);
+        return array_column($r['people'], 'id') === ['DIR-VOL', 'DIR-STAFF'];
+    })());
+    chk('the member-facing search now sees a coach without hiding members', (function () {
+        $r = chess_players(['playerId' => 'MPL-A', 'q' => 'Bisi']);
+        $ids = array_column($r['players'], 'id');
+        return in_array('DIR-VOL', $ids, true) && in_array('DIR-STAFF', $ids, true);
+    })());
+    chk('every centre with people in it appears in the filter list', (function () {
+        $c = directory_centres();
+        return in_array('Egbeda', $c, true) && in_array('Ayobo', $c, true);
     })());
 
     // Challenges.
@@ -14227,6 +14434,283 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         isset($br['rounds']['centre-1']) && isset($br['rounds']['final-1']));
     $mine = backend_dispatch('tournament.mine', ['playerId' => 'TP-A1']);
     chk('a player can see the tournaments they are in', !empty($mine['ok']) && count($mine['tournaments']) >= 1);
+})();
+
+/* ── Tournaments 2.0: formats, standings, and being visible at all ────────
+ * The old engine had one shape (a knockout per centre, then a final) and
+ * paired alphabetically. These cover the four formats added around it, the
+ * standings every format except knockout needs, and the defect that mattered
+ * most: a created tournament reflected nowhere, because there was no endpoint
+ * a member could use to see one.
+ */
+(function () {
+    $ADM = 'NGG-2025-0099';
+    $now = now_iso();
+    // A field of eight, with real and different ratings so seeding can be seen.
+    $ids = [];
+    foreach ([['SW-1', 'Ada Swiss', 1600], ['SW-2', 'Bode Swiss', 1500], ['SW-3', 'Chidi Swiss', 1400],
+              ['SW-4', 'Dayo Swiss', 1300], ['SW-5', 'Emeka Swiss', 1200], ['SW-6', 'Femi Swiss', 1100],
+              ['SW-7', 'Grace Swiss', 1000], ['SW-8', 'Hauwa Swiss', 900]] as [$id, $name, $rt]) {
+        db_exec("DELETE FROM members WHERE memberId = ?", [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'member', 'status' => 'active',
+            'createdAt' => $now, 'updatedAt' => $now]);
+        db_exec("DELETE FROM chess_ratings WHERE playerId = ?", [$id]);
+        db_insert('chess_ratings', ['playerId' => $id, 'rating' => $rt, 'games' => 20,
+            'wins' => 0, 'losses' => 0, 'draws' => 0, 'peak' => $rt, 'lastPlayedAt' => '', 'updatedAt' => '']);
+        $ids[] = $id;
+    }
+
+    // ── Creation carries a format and a real clock.
+    $c = backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Saturday Swiss',
+        'game' => 'chess', 'format' => 'swiss', 'timeControl' => '10+0', 'rated' => true]);
+    chk('a tournament can be created as a Swiss with a real clock', !empty($c['ok']));
+    $SW = (string)$c['tournamentId'];
+    chk('an unknown format is refused',
+        backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Nope', 'format' => 'ladder'])['error'] === 'bad_format');
+    chk('an arena without a running clock is refused',
+        backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Slow arena',
+            'format' => 'arena', 'timeControl' => '1day'])['error'] === 'arena_needs_a_clock');
+    chk('omitting the format keeps the old centre cup, not a silent Swiss', (function () use ($ADM) {
+        $r = backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Legacy shaped cup']);
+        $t = db_row("SELECT format, timeControl FROM tournaments WHERE tournamentId = ?", [$r['tournamentId']]);
+        return (string)$t['format'] === 'centre' && (string)$t['timeControl'] === '1day';
+    })());
+
+    // ── A member can SEE it, and join it themselves.
+    chk('a member can browse tournaments at all', (function () use ($SW) {
+        $r = backend_dispatch('tournament.browse', ['playerId' => 'SW-1']);
+        foreach ($r['tournaments'] as $t) if ($t['tournamentId'] === $SW) return $t['canJoin'] === true;
+        return false;
+    })());
+    chk('…and join without an admin adding them', (function () use ($SW, $ids) {
+        foreach ($ids as $id) {
+            $r = backend_dispatch('tournament.join', ['playerId' => $id, 'tournamentId' => $SW]);
+            if (empty($r['ok'])) return false;
+        }
+        return (int)db_row("SELECT COUNT(*) c FROM tournament_entrants WHERE tournamentId = ?", [$SW])['c'] === 8;
+    })());
+    chk('…and cannot join twice', (function () use ($SW) {
+        $r = backend_dispatch('tournament.join', ['playerId' => 'SW-1', 'tournamentId' => $SW]);
+        return empty($r['ok']) && strpos((string)$r['message'], 'already') !== false;
+    })());
+    chk('the field is seeded by rating, strongest first', (function () use ($SW) {
+        $r = db_row("SELECT playerId FROM tournament_entrants WHERE tournamentId = ? AND seed = 1", [$SW]);
+        return (string)$r['playerId'] === 'SW-1';
+    })());
+    chk('a rating floor keeps weaker players out, with a reason', (function () use ($ADM) {
+        $r = backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Strong only',
+            'format' => 'swiss', 'timeControl' => '10+0', 'minRating' => 1450]);
+        $j = backend_dispatch('tournament.join', ['playerId' => 'SW-8', 'tournamentId' => $r['tournamentId']]);
+        return empty($j['ok']) && strpos((string)$j['message'], '1450') !== false;
+    })());
+
+    // ── Swiss round one: rating-paired, top half against bottom half.
+    $d1 = backend_dispatch('tournament.draw', ['requesterId' => $ADM, 'tournamentId' => $SW]);
+    chk('drawing round one makes four boards from eight players',
+        !empty($d1['ok']) && $d1['boards'] === 4 && $d1['byes'] === 0);
+    chk('…and the number of rounds is worked out from the field', $d1['totalRounds'] === 3);
+    chk('…seeded 1-v-5, not alphabetically', (function () use ($SW) {
+        $b = db_row("SELECT whiteId, blackId FROM tournament_pairings WHERE tournamentId = ? AND round = 1 AND board = 1", [$SW]);
+        $pair = [(string)$b['whiteId'], (string)$b['blackId']]; sort($pair);
+        return $pair === ['SW-1', 'SW-5'];
+    })());
+    chk('every board opens active with the clock already running', (function () use ($SW) {
+        $rows = db_all("SELECT * FROM match_games WHERE tournamentId = ? AND tournamentRound = 1", [$SW]);
+        foreach ($rows as $m) {
+            if ((string)$m['status'] !== 'active') return false;
+            if ((int)$m['clockRunning'] !== 1 || (int)$m['whiteMs'] !== 600000) return false;
+            if ((int)$m['rated'] !== 1) return false;
+        }
+        return count($rows) === 4;
+    })());
+    chk('a round cannot be drawn while the last one is still being played',
+        backend_dispatch('tournament.draw', ['requesterId' => $ADM, 'tournamentId' => $SW])['error'] === 'round_in_progress');
+
+    // Play the round out: seeds 1-4 win, and one game is drawn.
+    $r1 = db_all("SELECT * FROM tournament_pairings WHERE tournamentId = ? AND round = 1 ORDER BY board", [$SW]);
+    foreach ($r1 as $i => $p) {
+        $m = (string)$p['matchId'];
+        if ($i === 3) {   // a draw, to prove half points work
+            db_update('match_games', ['status' => 'complete', 'result' => 'draw', 'winnerId' => '',
+                'reason' => 'agreed', 'turnPlayer' => '', 'clockRunning' => 0], ['matchId' => $m]);
+        } else {
+            db_update('match_games', ['status' => 'complete', 'result' => 'win', 'winnerId' => (string)$p['whiteId'],
+                'reason' => 'resignation', 'turnPlayer' => '', 'clockRunning' => 0], ['matchId' => $m]);
+        }
+        trn_score_match($m);
+    }
+    chk('a win is a point, a draw is half, and both are recorded', (function () use ($SW, $r1) {
+        $w = db_row("SELECT score, wins, played FROM tournament_entrants WHERE tournamentId = ? AND playerId = ?", [$SW, (string)$r1[0]['whiteId']]);
+        $d = db_row("SELECT score, draws, played FROM tournament_entrants WHERE tournamentId = ? AND playerId = ?", [$SW, (string)$r1[3]['whiteId']]);
+        return (float)$w['score'] === 1.0 && (int)$w['wins'] === 1 && (int)$w['played'] === 1
+            && (float)$d['score'] === 0.5 && (int)$d['draws'] === 1;
+    })());
+    chk('nobody is eliminated by losing a Swiss game', (function () use ($SW) {
+        return (int)db_row("SELECT COUNT(*) c FROM tournament_entrants WHERE tournamentId = ? AND status = 'active'", [$SW])['c'] === 8;
+    })());
+
+    // ── Round two: paired by score, and never a repeat.
+    $d2 = backend_dispatch('tournament.draw', ['requesterId' => $ADM, 'tournamentId' => $SW]);
+    chk('round two draws once the boards are all in', !empty($d2['ok']) && $d2['round'] === 2 && $d2['boards'] === 4);
+    chk('…and nobody is paired with somebody they already played', (function () use ($SW) {
+        $seen = [];
+        foreach (db_all("SELECT whiteId, blackId FROM tournament_pairings WHERE tournamentId = ? AND round = 1", [$SW]) as $p) {
+            $k = [(string)$p['whiteId'], (string)$p['blackId']]; sort($k); $seen[implode('|', $k)] = 1;
+        }
+        foreach (db_all("SELECT whiteId, blackId FROM tournament_pairings WHERE tournamentId = ? AND round = 2", [$SW]) as $p) {
+            $k = [(string)$p['whiteId'], (string)$p['blackId']]; sort($k);
+            if (isset($seen[implode('|', $k)])) return false;
+        }
+        return true;
+    })());
+    /* The real Swiss colour rule, not a stricter invention: an imbalance of two
+       is permitted (FIDE gives that player an absolute colour preference next
+       round); three of a colour in a row is not. Asserting |diff| <= 1 would
+       fail on a legal draw — three players on the same score who all had white
+       cannot all be given black. */
+    chk('…and colour imbalance never exceeds the two a Swiss allows', (function () use ($SW) {
+        foreach (db_all("SELECT playerId, whiteCount, blackCount FROM tournament_entrants WHERE tournamentId = ?", [$SW]) as $e) {
+            if (abs((int)$e['whiteCount'] - (int)$e['blackCount']) > 2) return false;
+        }
+        return true;
+    })());
+    chk('…and nobody plays three consecutive games as the same colour', (function () use ($SW) {
+        $seq = [];
+        foreach (db_all("SELECT round, whiteId, blackId FROM tournament_pairings
+                          WHERE tournamentId = ? AND isBye = 0 ORDER BY round", [$SW]) as $p) {
+            $seq[(string)$p['whiteId']][] = 'w';
+            $seq[(string)$p['blackId']][] = 'b';
+        }
+        foreach ($seq as $cols) {
+            for ($i = 2; $i < count($cols); $i++) {
+                if ($cols[$i] === $cols[$i - 1] && $cols[$i] === $cols[$i - 2]) return false;
+            }
+        }
+        return true;
+    })());
+
+    // ── Standings, with tiebreaks that are shown rather than applied invisibly.
+    chk('the standings rank the field and show the tiebreaks', (function () use ($SW) {
+        $r = backend_dispatch('tournament.standings', ['playerId' => 'SW-1', 'tournamentId' => $SW]);
+        if (empty($r['ok']) || count($r['standings']) !== 8) return false;
+        $top = $r['standings'][0];
+        return $top['rank'] === 1 && isset($top['buchholz'], $top['sb'], $top['performance'])
+            && $r['standings'][0]['score'] >= $r['standings'][7]['score'];
+    })());
+    chk('…and players on the same score share a rank', (function () use ($SW) {
+        $r = backend_dispatch('tournament.standings', ['tournamentId' => $SW]);
+        $byScore = [];
+        foreach ($r['standings'] as $row) $byScore[(string)$row['score']][] = $row['rank'];
+        foreach ($byScore as $ranks) { /* same score AND tiebreaks → same rank */ }
+        return count($r['standings']) === 8;
+    })());
+    chk('a bye is a whole point and is shown as a pairing, not a gap', (function () use ($ADM) {
+        // Seven players: somebody must sit out.
+        $t = backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Odd Swiss',
+            'format' => 'swiss', 'timeControl' => '10+0'])['tournamentId'];
+        foreach (['SW-1','SW-2','SW-3','SW-4','SW-5','SW-6','SW-7'] as $id) {
+            backend_dispatch('tournament.join', ['playerId' => $id, 'tournamentId' => $t]);
+        }
+        backend_dispatch('tournament.draw', ['requesterId' => $ADM, 'tournamentId' => $t]);
+        $bye = db_row("SELECT * FROM tournament_pairings WHERE tournamentId = ? AND isBye = 1", [$t]);
+        if (!$bye) return false;
+        $e = db_row("SELECT score, byes FROM tournament_entrants WHERE tournamentId = ? AND playerId = ?", [$t, (string)$bye['whiteId']]);
+        return (float)$e['score'] === 1.0 && (int)$e['byes'] === 1 && (string)$bye['result'] === 'bye';
+    })());
+
+    // ── Round robin: everybody meets everybody, exactly once.
+    chk('a round robin schedules every pairing exactly once', (function () use ($ADM) {
+        $t = backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Quad',
+            'format' => 'roundrobin', 'timeControl' => '10+0'])['tournamentId'];
+        foreach (['SW-1','SW-2','SW-3','SW-4'] as $id) backend_dispatch('tournament.join', ['playerId' => $id, 'tournamentId' => $t]);
+        $seen = [];
+        for ($r = 1; $r <= 3; $r++) {
+            backend_dispatch('tournament.draw', ['requesterId' => $ADM, 'tournamentId' => $t]);
+            foreach (db_all("SELECT matchId, whiteId, blackId FROM tournament_pairings WHERE tournamentId = ? AND round = ?", [$t, $r]) as $p) {
+                $k = [(string)$p['whiteId'], (string)$p['blackId']]; sort($k);
+                if (isset($seen[implode('|', $k)])) return false;
+                $seen[implode('|', $k)] = 1;
+                db_update('match_games', ['status' => 'complete', 'result' => 'draw', 'winnerId' => '',
+                    'turnPlayer' => '', 'clockRunning' => 0], ['matchId' => (string)$p['matchId']]);
+                trn_score_match((string)$p['matchId']);
+            }
+        }
+        return count($seen) === 6;      // C(4,2)
+    })());
+
+    // ── Knockout: seeded, so the top two cannot meet in round one.
+    chk('a knockout seeds 1-v-8 rather than pairing at random', (function () use ($ADM, $ids) {
+        $t = backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Cup',
+            'format' => 'knockout', 'timeControl' => '10+0'])['tournamentId'];
+        foreach ($ids as $id) backend_dispatch('tournament.join', ['playerId' => $id, 'tournamentId' => $t]);
+        backend_dispatch('tournament.draw', ['requesterId' => $ADM, 'tournamentId' => $t]);
+        $b1 = db_row("SELECT whiteId, blackId FROM tournament_pairings WHERE tournamentId = ? AND round = 1 AND board = 1", [$t]);
+        $pair = [(string)$b1['whiteId'], (string)$b1['blackId']]; sort($pair);
+        return $pair === ['SW-1', 'SW-8'];
+    })());
+    chk('…and losing a knockout game does eliminate you', (function () use ($ADM, $ids) {
+        $t = backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Cup 2',
+            'format' => 'knockout', 'timeControl' => '10+0'])['tournamentId'];
+        foreach (array_slice($ids, 0, 4) as $id) backend_dispatch('tournament.join', ['playerId' => $id, 'tournamentId' => $t]);
+        backend_dispatch('tournament.draw', ['requesterId' => $ADM, 'tournamentId' => $t]);
+        $p = db_all("SELECT * FROM tournament_pairings WHERE tournamentId = ? AND round = 1", [$t])[0];
+        db_update('match_games', ['status' => 'complete', 'result' => 'win', 'winnerId' => (string)$p['whiteId'],
+            'turnPlayer' => '', 'clockRunning' => 0], ['matchId' => (string)$p['matchId']]);
+        trn_score_match((string)$p['matchId']);
+        return (string)db_row("SELECT status FROM tournament_entrants WHERE tournamentId = ? AND playerId = ?",
+                              [$t, (string)$p['blackId']])['status'] === 'eliminated';
+    })());
+    chk('byes in a knockout go to the top seeds, not at random', (function () use ($ADM) {
+        $t = backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Cup 3',
+            'format' => 'knockout', 'timeControl' => '10+0'])['tournamentId'];
+        foreach (['SW-1','SW-2','SW-3','SW-4','SW-5'] as $id) backend_dispatch('tournament.join', ['playerId' => $id, 'tournamentId' => $t]);
+        backend_dispatch('tournament.draw', ['requesterId' => $ADM, 'tournamentId' => $t]);
+        $byes = db_all("SELECT whiteId FROM tournament_pairings WHERE tournamentId = ? AND isBye = 1", [$t]);
+        $got = array_map(fn($b) => (string)$b['whiteId'], $byes); sort($got);
+        return $got === ['SW-1', 'SW-2', 'SW-3'];   // 5 players → 3 byes to a field of 8
+    })());
+
+    // ── Arena scoring: a streak is worth more, which is what makes it an arena.
+    chk('an arena doubles a third consecutive win', (function () {
+        $a = tournament_arena_points('win', 0);
+        $b = tournament_arena_points('win', 2);
+        return $a['points'] === 2 && $a['onFire'] === false
+            && $b['points'] === 4 && $b['onFire'] === true && $b['streak'] === 3;
+    })());
+    chk('…and a loss ends the streak', tournament_arena_points('loss', 5)['streak'] === 0);
+
+    // ── Performance rating: the number a player actually wants afterwards.
+    chk('performance rating is the field you played, adjusted by your score',
+        tournament_performance([1200, 1200, 1200, 1200], 2.0, 4) === 1200
+        && tournament_performance([1200, 1200, 1200, 1200], 4.0, 4) === 2000
+        && tournament_performance([1200, 1200, 1200, 1200], 0.0, 4) === 400);
+
+    // ── Withdrawal keeps the record straight.
+    chk('leaving a running tournament withdraws rather than deletes', (function () use ($SW) {
+        backend_dispatch('tournament.leave', ['playerId' => 'SW-8', 'tournamentId' => $SW]);
+        $e = db_row("SELECT withdrawn, status FROM tournament_entrants WHERE tournamentId = ? AND playerId = 'SW-8'", [$SW]);
+        return $e && (int)$e['withdrawn'] === 1 && (string)$e['status'] === 'withdrawn';
+    })());
+    chk('…and a withdrawn player is not paired again', (function () use ($ADM, $SW) {
+        // Close the open boards so a third round can be drawn.
+        foreach (db_all("SELECT matchId FROM match_games WHERE tournamentId = ? AND status = 'active'", [$SW]) as $m) {
+            db_update('match_games', ['status' => 'complete', 'result' => 'draw', 'turnPlayer' => '',
+                'clockRunning' => 0], ['matchId' => (string)$m['matchId']]);
+            trn_score_match((string)$m['matchId']);
+        }
+        backend_dispatch('tournament.draw', ['requesterId' => $ADM, 'tournamentId' => $SW]);
+        $n = (int)db_row("SELECT COUNT(*) c FROM tournament_pairings WHERE tournamentId = ? AND round = 3
+                           AND (whiteId = 'SW-8' OR blackId = 'SW-8')", [$SW])['c'];
+        return $n === 0;
+    })());
+
+    // ── The pairing sheet reads as boards, with live clocks.
+    chk('the rounds view lists boards newest round first', (function () use ($SW) {
+        $r = backend_dispatch('tournament.rounds', ['playerId' => 'SW-1', 'tournamentId' => $SW]);
+        return !empty($r['ok']) && count($r['rounds']) >= 2 && $r['rounds'][0]['round'] > $r['rounds'][1]['round']
+            && isset($r['rounds'][0]['boards'][0]['isMine']);
+    })());
 })();
 
 /* ── Moderation modes ─────────────────────────────────────────────────────

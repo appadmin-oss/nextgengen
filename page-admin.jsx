@@ -2269,6 +2269,11 @@ function SummerGates() {
           </div>
         </div>
       )}
+
+      {/* Standings and pairings, from the same components the members' screen
+          renders — a director and a player never look at two different
+          versions of one table. */}
+      <AdminTrnTables tournamentId={tournamentId}/>
       {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         gates === null ? <div className="dash-spinner"/> :
         gates.length === 0 ? <div className="admin-empty">No links yet. A <b>public sign-up</b> link is the one you send to families; a <b>review desk</b> is where what they send comes in to be checked.</div> :
@@ -5406,9 +5411,7 @@ function AdminTournaments() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [openId, setOpenId] = React.useState("");
-  const [busy, setBusy] = React.useState("");
-  const [name, setName] = React.useState("");
-  const [programme, setProgramme] = React.useState("ngg");
+  const [creating, setCreating] = React.useState(false);
 
   const load = React.useCallback(() => {
     NGGApi.admin.tournaments.list()
@@ -5417,16 +5420,23 @@ function AdminTournaments() {
   }, []);
   React.useEffect(() => { load(); }, [load]);
 
-  const create = async () => {
-    if (name.trim().length < 3) { toast.error("Give it a name people will recognise."); return; }
-    setBusy("new");
-    try {
-      const r = await NGGApi.admin.tournaments.create(name.trim(), "chess", programme);
-      toast.success("Created. Add the players next.");
-      setName(""); load(); setOpenId(r.tournamentId);
-    } catch (e) { toast.error(e.code || e.message); }
-    finally { setBusy(""); }
-  };
+  /* ONE creation interface, not two.
+     This screen used to carry its own inline form — a name, a programme
+     dropdown and a Create button — which could not ask for a format, a clock,
+     who may enter or how many rounds. Rather than grow a second wizard beside
+     the one on the chess screen, the console opens the same component: a
+     director gets the same four steps wherever they start, and there is one
+     place to change when the questions change. */
+  if (creating && typeof CmTrnCreate === "function") {
+    return (
+      <div className="admin-section">
+        <div className="trn-admin-wrap">
+          <CmTrnCreate onBack={() => setCreating(false)}
+                       onCreated={(id) => { setCreating(false); load(); setOpenId(id); }}/>
+        </div>
+      </div>
+    );
+  }
 
   if (openId) return <AdminTournamentBracket tournamentId={openId} onBack={() => { setOpenId(""); load(); }}/>;
 
@@ -5435,25 +5445,20 @@ function AdminTournaments() {
     <div className="admin-section">
       <div className="admin-section-head"><h2 className="admin-h2">Tournaments</h2></div>
       <p className="admin-hint">
-        Every centre plays its own knockout, then the centre champions meet in a final. A child at a
-        small centre can win something without being knocked out in round one by a big one.
+        Five formats. A <b>Swiss</b> is usually the right one for a club session — everybody plays
+        every round and nobody goes home after one loss. A <b>centre cup</b> runs a knockout per
+        centre and puts the champions in a final, so a child at a small centre can win something
+        without meeting a big one in round one. Players enter themselves from the chess screen.
       </p>
       {err && <div className="admin-err" role="alert">{err}</div>}
 
-      <div className="admin-card" style={{ marginBottom: 18 }}>
+      <div className="admin-card trn-host-card" style={{ marginBottom: 18 }}>
         <div className="admin-field-label">Host a new one</div>
-        <div className="trn-new">
-          <input className="admin-in" value={name} maxLength={160} placeholder="e.g. NGG Chess Cup 2026"
-            onChange={e => setName(e.target.value)} aria-label="Tournament name"/>
-          <select className="admin-in" value={programme} onChange={e => setProgramme(e.target.value)} aria-label="Programme">
-            <option value="ngg">NGG Club</option>
-            <option value="summer">Summer School</option>
-            <option value="">Both</option>
-          </select>
-          <button className="btn btn-primary btn-sm" disabled={busy === "new"} onClick={create}>
-            {busy === "new" ? "Creating…" : "Create"}
-          </button>
-        </div>
+        <p className="admin-hint" style={{ margin: "0 0 12px" }}>
+          Swiss, knockout, round robin, a centre cup or a timed arena — with a real clock,
+          and a rating that moves. Four steps, and you can see the whole thing before it is published.
+        </p>
+        <button className="btn btn-primary" onClick={() => setCreating(true)}>Host a tournament →</button>
       </div>
 
       {!data ? <div className="admin-skel"/> : rows.length === 0 ? (
@@ -5462,7 +5467,7 @@ function AdminTournaments() {
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead><tr>
-              <th>Name</th><th>Stage</th><th>Entrants</th><th>Still in</th><th>Games open</th><th/>
+              <th>Name</th><th>Format</th><th>Stage</th><th>Entrants</th><th>Still in</th><th>Games open</th><th/>
             </tr></thead>
             <tbody>
               {rows.map(t => (
@@ -5470,6 +5475,12 @@ function AdminTournaments() {
                   <td>
                     <div className="admin-cell-name">{t.name}</div>
                     <div className="mono admin-cell-sub">{t.tournamentId}{t.programme ? " · " + t.programme : ""}</div>
+                  </td>
+                  <td>
+                    <div>{t.formatName || t.format || "Centre cup"}</div>
+                    <div className="mono admin-cell-sub">
+                      {t.timeControl || "1day"} · {t.rated === false ? "casual" : "rated"}
+                    </div>
                   </td>
                   <td>
                     <span className={"chip " + (TRN_STATUS_CHIP[t.status] || "status-draft")}>{t.status}</span>
@@ -5490,6 +5501,34 @@ function AdminTournaments() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Standings and pairings inside the console, from the same components the
+    members' screen uses — so a director and a player are never looking at two
+    different renderings of the same table. */
+function AdminTrnTables({ tournamentId }) {
+  const [tab, setTab] = React.useState("standings");
+  const [st, setSt] = React.useState(null);
+  const [rounds, setRounds] = React.useState(null);
+  React.useEffect(() => {
+    NGGApi.admin.tournaments.standings(tournamentId).then(setSt).catch(() => setSt(null));
+    NGGApi.admin.tournaments.rounds(tournamentId).then(r => setRounds(r.rounds || [])).catch(() => setRounds([]));
+  }, [tournamentId]);
+  if (!st) return null;
+  return (
+    <div className="trn-admin-wrap" style={{ marginTop: 18 }}>
+      <div className="trn-tabs" role="tablist" aria-label="Tournament tables">
+        {[["standings", "Standings"], ["rounds", "Pairings"]].map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={tab === id}
+                  className={"trn-tab" + (tab === id ? " is-on" : "")}
+                  onClick={() => setTab(id)}>{label}</button>
+        ))}
+      </div>
+      {tab === "standings"
+        ? (typeof CmTrnStandings === "function" ? <CmTrnStandings st={st}/> : null)
+        : (typeof CmTrnRounds === "function" ? <CmTrnRounds rounds={rounds} onOpenMatch={() => {}}/> : null)}
     </div>
   );
 }
@@ -5560,11 +5599,15 @@ function AdminTournamentBracket({ tournamentId, onBack }) {
         <h2 className="admin-h2">{t.name} <span className={"chip " + (TRN_STATUS_CHIP[t.status] || "status-draft")}>{t.status}</span></h2>
       </div>
       <p className="admin-hint">
-        {t.status === "open" && "Entries are open. Add players, then start round one — that closes entries."}
-        {t.status === "running" && t.stage === "centre" && "Centre rounds. Each centre plays its own knockout until one player is left."}
-        {t.status === "running" && t.stage === "final" && "The final. The centre champions are playing each other."}
-        {t.status === "complete" && (t.winnerName ? "Won by " + t.winnerName + "." : "Finished.")}
-        {t.status === "cancelled" && "Cancelled. The games are closed but still on the record."}
+        <b>{t.formatName || "Centre cup"}</b> · {t.timeControl || "1day"} · {t.rated === false ? "casual" : "rated"}
+        {t.totalRounds ? " · " + t.totalRounds + " rounds" : ""}
+        {" — "}
+        {t.status === "open" && "entries are open. Players can enter themselves from the chess screen; drawing round one closes entries."}
+        {t.status === "running" && t.stage === "centre" && "each centre plays its own knockout until one player is left."}
+        {t.status === "running" && t.stage === "final" && "the centre champions are playing each other."}
+        {t.status === "running" && t.stage === "main" && "round " + t.round + (t.totalRounds ? " of " + t.totalRounds : "") + " is being played."}
+        {t.status === "complete" && (t.winnerName ? "won by " + t.winnerName + "." : "finished.")}
+        {t.status === "cancelled" && "cancelled. The games are closed but still on the record."}
       </p>
 
       {/* The one control that moves it forward, with the reason it is refused
@@ -5581,8 +5624,8 @@ function AdminTournamentBracket({ tournamentId, onBack }) {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-primary btn-sm" disabled={!!busy || openGames > 0}
-              onClick={() => act("adv", () => NGGApi.admin.tournaments.advance(tournamentId))}>
-              {busy === "adv" ? "Working…" : t.round === 0 ? "Start round one" : "Next round"}
+              onClick={() => act("adv", () => NGGApi.admin.tournaments.draw(tournamentId))}>
+              {busy === "adv" ? "Working…" : t.round === 0 ? "Draw round one" : "Draw round " + (t.round + 1)}
             </button>
             <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={async () => {
               if (!(await dialog.confirm({ title: "Cancel " + t.name + "?",

@@ -53,8 +53,13 @@ const CHESS_DAILY_MOVE_MS = 86400000;
  * it decides games. A flat allowance per move is the honest correction — it
  * cannot be gamed (it is the same for both players and does not accumulate)
  * and it stops the network from flagging anybody.
+ *
+ * 500ms is the figure the design plan specifies (§3.4, "the mover is credited
+ * the round-trip time up to 500ms, as lichess does"). Lichess measures the
+ * actual lag and caps it; this credits the cap flat, which is more generous on
+ * a fast connection and identical on a slow one — the case that matters here.
  */
-const CHESS_CLOCK_LAG_GRACE_MS = 300;
+const CHESS_CLOCK_LAG_GRACE_MS = 500;
 
 function chess_clock_spec(string $timeControl): array {
     return CHESS_CLOCK_TABLE[$timeControl] ?? CHESS_CLOCK_TABLE['1day'];

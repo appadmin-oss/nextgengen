@@ -1002,7 +1002,18 @@
       tournaments: {
         list:     () => request('/admin/tournaments.php' + qs({ view: 'list' })),
         bracket:  (tournamentId) => request('/admin/tournaments.php' + qs({ view: 'bracket', tournamentId })),
-        create:   (name, game, programme) => request('/admin/tournaments.php', { body: { action: 'create', name, game: game || 'chess', programme: programme || '' } }),
+        /* The full specification. The old signature took a name, a game and a
+           programme, which is why every tournament was a centre cup with no
+           clock — there was nowhere to say otherwise. Kept variadic-friendly:
+           pass an object for the new form, or the old three arguments. */
+        create:   (data, game, programme) => request('/admin/tournaments.php', {
+          body: typeof data === 'string'
+            ? { action: 'create', name: data, game: game || 'chess', programme: programme || '' }
+            : Object.assign({ action: 'create', game: 'chess' }, data) }),
+        draw:     (tournamentId) => request('/admin/tournaments.php', { body: { action: 'draw', tournamentId } }),
+        standings:(tournamentId) => request('/admin/tournaments.php' + qs({ view: 'standings', tournamentId })),
+        rounds:   (tournamentId) => request('/admin/tournaments.php' + qs({ view: 'rounds', tournamentId })),
+        directory:(opts) => request('/admin/tournaments.php', { body: Object.assign({ action: 'directory' }, opts || {}) }),
         enter:    (tournamentId, playerId) => request('/admin/tournaments.php', { body: { action: 'enter', tournamentId, playerId } }),
         withdraw: (tournamentId, playerId) => request('/admin/tournaments.php', { body: { action: 'withdraw', tournamentId, playerId } }),
         advance:  (tournamentId) => request('/admin/tournaments.php', { body: { action: 'advance', tournamentId } }),

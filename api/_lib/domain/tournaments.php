@@ -23,10 +23,21 @@ declare(strict_types=1);
 const TOURNAMENT_STATUSES = ['draft', 'open', 'running', 'complete', 'cancelled'];
 
 function tournament_public(array $t): array {
+    $fmt = (string)($t['format'] ?? 'centre');
+    $meta = function_exists('tournament_format_meta') ? (tournament_format_meta()[$fmt] ?? null) : null;
     return [
         'tournamentId' => (string)$t['tournamentId'],
         'name'      => (string)$t['name'],
         'game'      => (string)$t['game'],
+        // The three things the old list could not show, because there was
+        // nowhere to set them: what kind of event it is, how fast, and
+        // whether it counts.
+        'format'      => $fmt,
+        'formatName'  => $meta ? $meta['name'] : ucfirst($fmt),
+        'timeControl' => (string)($t['timeControl'] ?? '1day'),
+        'rated'       => (int)($t['rated'] ?? 1) === 1,
+        'totalRounds' => (int)($t['totalRounds'] ?? 0),
+        'description' => (string)($t['description'] ?? ''),
         'programme' => (string)($t['programme'] ?? ''),
         'status'    => (string)$t['status'],
         'stage'     => (string)$t['stage'],

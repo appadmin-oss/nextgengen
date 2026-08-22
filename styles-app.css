@@ -5930,8 +5930,6 @@ body.own-chrome .fab-top { display: none; }
 /* ── Tournaments console ──────────────────────────────────────────────────
    The advance control is one button, and the reason it is refused is stated
    beside it rather than fired as an error after a click. */
-.trn-new { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; }
-@media (max-width: 620px) { .trn-new { grid-template-columns: 1fr; } }
 
 .trn-advance { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
   padding: 12px 14px; border-radius: 12px; margin-bottom: 14px;
@@ -5988,3 +5986,18 @@ body.own-chrome .fab-top { display: none; }
   background-size: 300% 100%; animation: adminSkel 1.3s ease-in-out infinite; }
 @keyframes adminSkel { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) { .admin-skel { animation: none; } }
+
+
+/* The tournament components are shared with the members' app, which sizes them
+   for a phone. Inside the console they get a reading width and the app's own
+   gutter, so a table meant for 390px does not stretch across a 1440px desk. */
+.trn-admin-wrap { --c-gutter: 0px; max-width: 720px; }
+.trn-admin-wrap .cmm-screen { height: auto; min-height: 0; }
+.trn-admin-wrap .cmm-stream { overflow: visible; padding: 0; }
+.trn-admin-wrap .cmm-ch-head { padding-left: 0; padding-right: 0; }
+
+/* The console centres text inside .admin-card by default, which reads as a
+   banner rather than as a thing you act on. This card is a lead-in to the
+   wizard, so it is set left like the prose above it. */
+.trn-host-card { text-align: left; }
+.trn-host-card .admin-hint { max-width: 62ch; margin-left: 0; }

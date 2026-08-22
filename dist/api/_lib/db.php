@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 98;
+const NGG_SCHEMA_TARGET = 99;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2670,6 +2670,92 @@ function db_migrate(PDO $db): void {
             CREATE INDEX idx_cpost_featured ON community_posts(featured, status);
             CREATE INDEX idx_cbook_member ON community_bookmarks(memberId);
             CREATE INDEX idx_creport_reporter ON community_reports(memberId);
+        ",
+
+        /* 99 — Tournaments 2.0.
+         *
+         *   FORMATS. One shape (centre knockout → final) became five. Swiss is
+         *   what a chess club actually runs: everybody plays every round,
+         *   nobody is out after one loss, and pairing is by score then rating.
+         *
+         *   STANDINGS on the entrant row, because every format except knockout
+         *   needs a running score, colour balance and an opponent history, and
+         *   the knockout-only shape had nowhere to keep any of it.
+         *
+         *   CLOCKS. `timeControl` was a LABEL: '3+2' was stored and nothing
+         *   ever counted down. The server now holds the remaining milliseconds,
+         *   applies the Fischer increment on each move, and is the only thing
+         *   allowed to decide somebody flagged.
+         */
+        99 => "
+            ALTER TABLE tournaments ADD COLUMN format TEXT DEFAULT 'centre';
+            ALTER TABLE tournaments ADD COLUMN timeControl TEXT DEFAULT '10+0';
+            ALTER TABLE tournaments ADD COLUMN rated INTEGER DEFAULT 1;
+            ALTER TABLE tournaments ADD COLUMN totalRounds INTEGER DEFAULT 0;
+            ALTER TABLE tournaments ADD COLUMN description TEXT DEFAULT '';
+            ALTER TABLE tournaments ADD COLUMN centres TEXT;
+            ALTER TABLE tournaments ADD COLUMN eligibility TEXT;
+            ALTER TABLE tournaments ADD COLUMN startsAt TEXT DEFAULT '';
+            ALTER TABLE tournaments ADD COLUMN endsAt TEXT DEFAULT '';
+            ALTER TABLE tournaments ADD COLUMN settings TEXT;
+
+            ALTER TABLE tournament_entrants ADD COLUMN seed INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN ratingAtEntry INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN score REAL DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN played INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN wins INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN draws INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN losses INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN byes INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN whiteCount INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN blackCount INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN lastColour TEXT DEFAULT '';
+            ALTER TABLE tournament_entrants ADD COLUMN opponents TEXT;
+            ALTER TABLE tournament_entrants ADD COLUMN tiebreak1 REAL DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN tiebreak2 REAL DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN performance INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN ratingDelta INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN withdrawn INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN arenaStreak INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN arenaPoints INTEGER DEFAULT 0;
+
+            CREATE TABLE tournament_rounds (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              tournamentId TEXT NOT NULL,
+              round INTEGER NOT NULL,
+              stage TEXT DEFAULT '',
+              status TEXT DEFAULT 'pending',
+              pairedAt TEXT DEFAULT '',
+              closedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_trn_round ON tournament_rounds(tournamentId, stage, round);
+
+            CREATE TABLE tournament_pairings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              tournamentId TEXT NOT NULL,
+              round INTEGER NOT NULL,
+              stage TEXT DEFAULT '',
+              board INTEGER DEFAULT 0,
+              centre TEXT DEFAULT '',
+              whiteId TEXT DEFAULT '', whiteName TEXT DEFAULT '',
+              blackId TEXT DEFAULT '', blackName TEXT DEFAULT '',
+              matchId TEXT DEFAULT '',
+              isBye INTEGER DEFAULT 0,
+              result TEXT DEFAULT '',
+              scoredAt TEXT DEFAULT '',
+              createdAt TEXT NOT NULL
+            );
+            CREATE INDEX idx_trn_pair ON tournament_pairings(tournamentId, stage, round, board);
+            CREATE INDEX idx_trn_pair_match ON tournament_pairings(matchId);
+
+            ALTER TABLE match_games ADD COLUMN initialMs INTEGER DEFAULT 0;
+            ALTER TABLE match_games ADD COLUMN incrementMs INTEGER DEFAULT 0;
+            ALTER TABLE match_games ADD COLUMN whiteMs INTEGER DEFAULT 0;
+            ALTER TABLE match_games ADD COLUMN blackMs INTEGER DEFAULT 0;
+            ALTER TABLE match_games ADD COLUMN clockRunning INTEGER DEFAULT 0;
+            ALTER TABLE match_games ADD COLUMN turnStartedAt TEXT DEFAULT '';
+            ALTER TABLE match_games ADD COLUMN board INTEGER DEFAULT 0;
+            CREATE INDEX idx_match_clock ON match_games(status, clockRunning);
         ",
     ];
 

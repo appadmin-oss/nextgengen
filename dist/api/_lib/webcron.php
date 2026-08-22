@@ -175,6 +175,11 @@ function web_cron_run(): void {
                 if (web_cron_due('deliver', web_cron_cfg('deliver', 60)))       web_cron_guard('deliveries_dispatch', fn() => deliveries_dispatch(8));
                 if (web_cron_due('reminders', web_cron_cfg('reminders', 900)))  web_cron_guard('reminders', 'web_cron_reminders');
                 if (web_cron_due('maint', web_cron_cfg('maint', 3600)))         web_cron_guard('maintenance', 'web_cron_maintenance');
+                /* Flag anybody whose clock ran out while nobody was watching.
+                 * The board poll catches this the instant somebody looks; two
+                 * players who both closed the tab leave a game open forever,
+                 * holding up a tournament round that cannot then close. */
+                if (web_cron_due('clocks', web_cron_cfg('clocks', 60)))          web_cron_guard('chess_clocks', fn() => chess_clock_sweep(40));
                 // Weekly engagement snapshot — captured opportunistically at most
                 // once every 7 days even with no external cron. Idempotent per
                 // week, so a slightly-early or -late firing just refreshes the row.
