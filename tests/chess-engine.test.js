@@ -242,5 +242,128 @@ chk('a malformed FEN is refused rather than guessed at', C.parseFen('not a fen')
     && C.parseFen('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq') === null
     && C.parseFen('8/8/8/8/8/8/8/8 w - - 0 1') === null);   // no kings
 
+
+/* ── The transposition key, and why it changed ─────────────────────────────
+   The old key was `pos.board.join("") + turn + castling + ep`. Array.join
+   drops empty strings entirely, so it encoded the SEQUENCE of pieces and not
+   where any of them stood: three positions with completely different pawn
+   structures produced one key. Measured at the time, on a random walk: 14% of
+   positions shared a key with a genuinely different position, worst bucket
+   eighteen.
+
+   The engine was therefore reading cached scores from unrelated positions, and
+   the depth it reported was fiction. These tests exist so that cannot come
+   back quietly. */
+chk('the position key tells different positions apart', (function () {
+  const seen = new Map();
+  let s = 7;
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  for (let g = 0; g < 25; g++) {
+    let pos = C.parseFen(C.START_FEN);
+    for (let ply = 0; ply < 50; ply++) {
+      const mv = C.legalMoves(pos);
+      if (!mv.length) break;
+      pos = C.apply(pos, mv[Math.floor(rnd() * mv.length)]);
+      const truth = C.toFen(pos).split(' ').slice(0, 4).join(' ');
+      const had = seen.get(pos.hash);
+      if (had !== undefined && had !== truth) return false;   // two positions, one key
+      seen.set(pos.hash, truth);
+    }
+  }
+  return seen.size > 500;
+})());
+
+chk('…and the incremental hash never drifts from a full recompute', (function () {
+  /* apply() maintains the hash as pieces move rather than recomputing it. A
+     drift corrupts the table silently and shows up as the engine playing a
+     move it never searched, so it is checked on every node of a random walk —
+     including the fiddly ones: castling, en passant and promotion. */
+  let s = 991, checked = 0;
+  const rnd = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  const starts = [C.START_FEN,
+    'r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1',
+    '8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1',
+    '8/PPPk4/8/8/8/8/4Kppp/8 w - - 0 1'];
+  for (const f of starts) {
+    for (let g = 0; g < 12; g++) {
+      let pos = C.parseFen(f);
+      for (let ply = 0; ply < 40; ply++) {
+        const mv = C.legalMoves(pos);
+        if (!mv.length) break;
+        pos = C.apply(pos, mv[Math.floor(rnd() * mv.length)]);
+        checked++;
+        if (pos.hash !== C.hashOf(pos).h) return false;
+      }
+    }
+  }
+  return checked > 1000;
+})());
+
+/* ── Legality by make/unmake ───────────────────────────────────────────────
+   legalMoves() used to build a whole new position per candidate move just to
+   ask whether the king was left en prise. It now mutates four squares and puts
+   them back, so the board it was handed has to come out unchanged. */
+chk('testing legality leaves the position exactly as it was', (function () {
+  const fens = ['r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1',
+                '8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 b - - 0 1',
+                '8/PPPk4/8/8/8/8/4Kppp/8 w - - 0 1',
+                'rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3'];
+  for (const f of fens) {
+    const pos = C.parseFen(f);
+    const before = pos.board.join('|') + pos.turn + pos.castling + pos.ep + pos.hash;
+    C.legalMoves(pos);
+    if (pos.board.join('|') + pos.turn + pos.castling + pos.ep + pos.hash !== before) return false;
+  }
+  return true;
+})());
+
+/* Perft is the only thing that proves a move generator. Kiwipete is the
+   standard position for exactly the cases make/unmake gets wrong: castling
+   through check, en passant, and a rook captured on its own corner. */
+chk('perft is exact from the start position', C.perft(C.START_FEN, 4) === 197281);
+chk('…and on Kiwipete, which is where castling and en passant go wrong',
+    C.perft('r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1', 3) === 97862);
+
+/* ── Static exchange evaluation ────────────────────────────────────────────
+   What stops the engine spending its quiescence budget on QxP-defended-by-a-
+   pawn, and what stops it ordering that move first. */
+chk('a capture that wins material is found', (function () {
+  const r = C.positionScore('4k3/8/8/3r4/8/8/8/3RK3 w - - 0 1', { ms: 250 });
+  return r && r.best === 'd1d5';
+})());
+chk('…and one that loses a queen for a pawn is not played for the pawn', (function () {
+  /* Qxd5 wins a pawn for exactly one ply and then loses the queen to the
+     knight. An engine without SEE plays it at shallow depth. */
+  const r = C.positionScore('rnbqkbnr/ppp1pppp/8/3p4/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 2', { ms: 400 });
+  return r && r.best !== 'd1d5';
+})());
+
+/* ── Null-move pruning must not fire in zugzwang ───────────────────────────
+   Passing is usually bad for you, which is what makes null-move pruning sound.
+   In a king-and-pawn ending it often is not, and an engine that prunes there
+   hallucinates safety in exactly the endings club children reach most. */
+chk('a king-and-pawn ending is still searched to a real depth', (function () {
+  const r = C.positionScore('8/8/8/4k3/8/4K3/4P3/8 w - - 0 1', { ms: 600 });
+  return r && r.depth >= 8 && typeof r.score === 'number';
+})());
+
+/* ── The review helpers ────────────────────────────────────────────────── */
+chk('a position search reports the line, not just the move', (function () {
+  const r = C.positionScore('r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 4 3',
+                            { ms: 400, pv: 4 });
+  return r && r.pv.length >= 2 && r.pv[0].uci === r.best && r.pv.every(x => x.san);
+})());
+chk('accuracy falls as the average loss rises, and stays inside 0 and 100', (function () {
+  const a = [0, 10, 25, 50, 100, 200, 400, 2000].map(C.accuracyFrom);
+  for (let i = 1; i < a.length; i++) if (a[i] > a[i - 1]) return false;
+  return a[0] === 100 && a.every(x => x >= 0 && x <= 100);
+})());
+chk('…and a move that WAS the best one costs nothing, whatever the arithmetic says',
+    C.classifyLoss(240, true).tag === 'best' && C.classifyLoss(240, false).tag === 'mistake');
+chk('the bands are ordered, so a bigger loss is never called a smaller thing', (function () {
+  const t = (n) => C.classifyLoss(n, false).tag;
+  return t(10) === 'good' && t(60) === 'inaccuracy' && t(150) === 'mistake' && t(500) === 'blunder';
+})());
+
 console.log((failed ? '❌ FAIL' : '✅ PASS') + ': ' + passed + ' passed, ' + failed + ' failed (chess engine)');
 process.exit(failed ? 1 : 0);

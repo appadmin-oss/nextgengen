@@ -242,6 +242,11 @@ function trn_draw_now(array $t, string $by, string $ip): array {
     $entrants = db_all("SELECT * FROM tournament_entrants WHERE tournamentId = ? AND withdrawn = 0", [$tid]);
     if (count($entrants) < 2) return ['ok' => false, 'error' => 'no_entrants'];
 
+    /* Snapshot where everybody stands BEFORE this round is paired, so the
+     * ladder can say "up two" against a position that actually existed. A
+     * delta computed any other way is an arrow drawn on a guess. */
+    trn_snapshot_ranks($tid, $fmt);
+
     // How many rounds this event runs, decided once on the first draw.
     $total = (int)($t['totalRounds'] ?? 0);
     if ($total <= 0) {
@@ -421,6 +426,21 @@ function trn_score_match(string $matchId): void {
  * is breaking. The field is small — tens, not thousands — so this is cheap and
  * being obviously correct is worth more than being incremental.
  */
+/** Write each entrant's current position into `lastRank`, for the ladder's
+ *  movement arrows. Called just before a draw, which is the only moment the
+ *  table is about to change wholesale. */
+function trn_snapshot_ranks(string $tid, string $fmt): void {
+    $rows = tournament_standings_sort(
+        db_all('SELECT * FROM tournament_entrants WHERE tournamentId = ?', [$tid]), $fmt);
+    $rank = 0; $last = null; $i = 0;
+    foreach ($rows as $r) {
+        $key = [(float)$r['score'], (float)$r['tiebreak1'], (float)$r['tiebreak2']];
+        if ($key !== $last) { $rank = $i + 1; $last = $key; }
+        $i++;
+        db_update('tournament_entrants', ['lastRank' => $rank], ['id' => (int)$r['id']]);
+    }
+}
+
 function trn_recalc_tiebreaks(string $tid): void {
     $entrants = db_all('SELECT * FROM tournament_entrants WHERE tournamentId = ?', [$tid]);
     if (!$entrants) return;
@@ -585,4 +605,120 @@ function tournament_rounds(array $p): array {
     $out = [];
     foreach ($rounds as $n => $boards) $out[] = ['round' => $n, 'boards' => $boards];
     return ['ok' => true, 'tournament' => trn_shape($t, $viewer), 'rounds' => $out];
+}
+
+/* ── The ladder ───────────────────────────────────────────────────────────
+ *
+ * The tournaments list answers "what is on". The ladder answers the question
+ * a member actually opens the app with: "what is happening RIGHT NOW, and
+ * where am I in it".
+ *
+ * WHAT MAKES A TOURNAMENT HOT. Not size, and not how recently it was created —
+ * either of those makes the same event top the list for a fortnight while
+ * nothing happens in it. Hot is measured in moves: boards in play now, and
+ * moves played in the last few hours. An arena at a Saturday session outranks
+ * a term-long Swiss with sixty entrants and one game a week, which is the
+ * right answer for a child deciding where to look.
+ *
+ * WHY MOVEMENT IS THE POINT. A table of positions is a fact; a table of
+ * positions with "up two since this morning" beside them is a reason to come
+ * back. The delta is computed against a snapshot rather than guessed: every
+ * entrant row already carries the rank it held at the last draw, so the
+ * comparison is against something that actually happened.
+ */
+
+const LADDER_HOT_WINDOW_HOURS = 6;
+
+/** Moves played in a tournament's games inside the window, and boards live. */
+function ladder_heat(string $tid, string $since): array {
+    $row = db_row(
+        "SELECT COUNT(*) moves FROM match_moves mv
+           JOIN match_games g ON g.matchId = mv.matchId
+          WHERE g.tournamentId = ? AND mv.createdAt >= ?", [$tid, $since]);
+    $live = db_row(
+        "SELECT COUNT(*) n FROM match_games WHERE tournamentId = ? AND status = 'active'", [$tid]);
+    $players = db_row(
+        "SELECT COUNT(DISTINCT mv.playerId) n FROM match_moves mv
+           JOIN match_games g ON g.matchId = mv.matchId
+          WHERE g.tournamentId = ? AND mv.createdAt >= ?", [$tid, $since]);
+    return [
+        'moves' => (int)($row['moves'] ?? 0),
+        'live' => (int)($live['n'] ?? 0),
+        'players' => (int)($players['n'] ?? 0),
+    ];
+}
+
+/**
+ * The ladder: the events with something happening in them, each with its top
+ * of the table and where the viewer sits.
+ */
+function tournament_ladder(array $p): array {
+    $me = match_person((string)($p['playerId'] ?? ''));
+    if (!$me) return ['ok' => false, 'error' => 'not_a_player'];
+    $viewer = (string)$me['id'];
+    $since = gmdate('Y-m-d H:i:s', time() - LADDER_HOT_WINDOW_HOURS * 3600);
+
+    /* Running and open events only. A finished tournament has a result page,
+     * not a ladder — nothing is going to move on it again. */
+    $rows = db_all("SELECT * FROM tournaments WHERE game = 'chess' AND status IN ('running','open')
+                    ORDER BY updatedAt DESC LIMIT 24");
+    $out = [];
+    foreach ($rows as $t) {
+        $tid = (string)$t['tournamentId'];
+        /* No visibility filter, deliberately: tournament_browse() shows every
+         * event to everybody and eligibility is checked when somebody tries to
+         * ENTER. Two different answers to "can I see this" would be a bug
+         * waiting to happen, and seeing an event you cannot enter is how a
+         * child finds out the club runs one for their centre. */
+        $heat = ladder_heat($tid, $since);
+        /* The score. Live boards dominate deliberately: a game being played
+         * this minute is the thing worth showing somebody now, and the move
+         * count is what separates two events that both have one board up. */
+        $score = $heat['live'] * 100 + $heat['moves'] * 2 + $heat['players'] * 5;
+        if ((string)$t['status'] === 'open') $score += 20;   // enterable is worth something
+
+        $ent = tournament_standings_sort(
+            db_all('SELECT * FROM tournament_entrants WHERE tournamentId = ?', [$tid]),
+            (string)($t['format'] ?? 'centre'));
+        if (!$ent) continue;
+
+        $top = []; $mine = null; $rank = 0; $lastKey = null; $i = 0;
+        foreach ($ent as $r) {
+            $key = [(float)$r['score'], (float)$r['tiebreak1'], (float)$r['tiebreak2']];
+            if ($key !== $lastKey) { $rank = $i + 1; $lastKey = $key; }
+            $i++;
+            /* Movement since the last draw. `lastRank` is written when a round
+             * is paired, so this compares against a position that existed
+             * rather than against a number invented for the arrow. */
+            $was = (int)($r['lastRank'] ?? 0);
+            $entry = [
+                'rank' => $rank, 'move' => $was > 0 ? $was - $rank : 0,
+                'playerId' => (string)$r['playerId'], 'name' => (string)$r['playerName'],
+                'centre' => (string)$r['centre'], 'kind' => (string)$r['playerType'],
+                'score' => (float)$r['score'], 'played' => (int)$r['played'],
+                'streak' => (int)($r['arenaStreak'] ?? 0),
+                'status' => (string)$r['status'],
+                'isMe' => (string)$r['playerId'] === $viewer,
+                'photo' => function_exists('community_photo_for') ? community_photo_for((string)$r['playerId']) : '',
+            ];
+            if ($i <= 5) $top[] = $entry;
+            if ($entry['isMe']) $mine = $entry;
+        }
+
+        $out[] = [
+            'tournament' => trn_shape($t, $viewer),
+            'heat' => $heat + ['score' => $score],
+            'top' => $top,
+            'me' => $mine,
+            'entrants' => count($ent),
+        ];
+    }
+
+    usort($out, fn($a, $b) => $b['heat']['score'] <=> $a['heat']['score']);
+    /* Everything with a pulse first, then everything else — but the whole list
+     * is returned, because "nothing is hot today" is a real answer and an
+     * empty screen is not. */
+    $hot = array_values(array_filter($out, fn($x) => $x['heat']['score'] >= 20));
+    return ['ok' => true, 'ladders' => array_slice($out, 0, 8),
+            'hotCount' => count($hot), 'windowHours' => LADDER_HOT_WINDOW_HOURS];
 }

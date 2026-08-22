@@ -5408,7 +5408,10 @@ function AdminCommunityModeration({ mode, onChanged }) {
 
 const PROMO_PLACEMENT_LABEL = {
   chess: "Chess screen", community: "Community feed",
-  dashboard: "Member dashboard", arcade: "Arcade",
+  dashboard: "Member dashboard", arcade: "Arcade", game: "Beside a game",
+};
+const PROMO_SHAPE_LABEL = {
+  card: "Strip in the screen", popup: "Small card, once",
 };
 const PROMO_KIND_LABEL = {
   programme: "Programme", event: "Event", tournament: "Tournament", notice: "Notice",
@@ -5440,6 +5443,8 @@ function AdminPromos() {
     catch (e) { toast.error(e.code || e.message); }
   };
   const setStatus = async (p, status) => {
+    /* Everything, not just the status: save() is an upsert of the whole row,
+       so a Publish that forwards three fields silently blanks the rest. */
     await save(Object.assign({}, p, { status, kinds: p.audience.kinds,
       centres: p.audience.centres, programme: p.audience.programme }));
   };
@@ -5489,8 +5494,10 @@ function AdminPromos() {
                     <div className="admin-cell-name">{p.title}</div>
                     <div className="mono admin-cell-sub">
                       {PROMO_KIND_LABEL[p.kind] || p.kind}
+                      {p.shape === "popup" ? " · popup" : ""}
                       {p.ctaPage ? " → " + p.ctaPage : " · no link"}
                       {p.startsAt || p.endsAt ? " · scheduled" : ""}
+                      {p.imageUrl ? (p.inlineImage ? " · picture (in database)" : " · picture") : ""}
                     </div>
                   </td>
                   <td>
@@ -5501,7 +5508,8 @@ function AdminPromos() {
                     {p.audience.kinds.length || p.audience.centres.length || p.audience.programme
                       ? [p.audience.kinds.join("/"), p.audience.centres.join("/"), p.audience.programme]
                           .filter(Boolean).join(" · ")
-                      : "everyone"}
+                      : p.tournamentId ? "one event" : "everyone"}
+                    {p.tournamentId && p.audience.kinds.length ? " · one event" : ""}
                   </td>
                   <td className="mono">{p.impressions}</td>
                   <td className="mono">
@@ -5533,11 +5541,73 @@ function AdminPromos() {
 
 /** Write one. Short on purpose — a promotion is a headline, a line and a
     destination, and a form that asks for more gets filled in with less. */
+/**
+ * The picture on a promotion.
+ *
+ * Goes through the same upload path as every other image in the product, which
+ * tries the configured cloud first and falls back to an inline data URI when
+ * there is no cloud. Both are supported, and the difference is stated here
+ * rather than hidden, because it is a real one: a cloud URL is a hundred bytes
+ * inside every promo the members fetch, and an inline image is its whole size,
+ * every time, on a connection somebody is paying for by the megabyte.
+ */
+function AdminPromoImage({ value, max, onChange }) {
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const inline = typeof value === "string" && value.slice(0, 5) === "data:";
+
+  const pick = async (file) => {
+    if (!file) return;
+    setBusy(true); setErr("");
+    try {
+      /* `kind` decides how hard the shrink is before upload. A promo image is
+         drawn at about 320px wide, so anything bigger is data nobody sees. */
+      const r = await NGGApi.uploadOrInline(file, "promo");
+      if (r.inline && r.url.length > max) {
+        setErr("That picture is too big to store without a cloud set up (" +
+               Math.round(r.url.length / 1024) + "KB, limit " + Math.round(max / 1024) + "KB). Try a smaller one.");
+      } else {
+        onChange(r.url);
+      }
+    } catch (e) {
+      setErr((e && e.message) || "That upload did not work.");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="trn-field">
+      <span className="trn-field-l">Picture <span>optional</span></span>
+      <div className="promo-img-row">
+        {value ? (
+          <span className="promo-img-thumb">
+            <img src={value} alt="The picture on this promotion, as members will see it."/>
+          </span>
+        ) : <span className="promo-img-thumb is-empty" aria-hidden="true">◫</span>}
+        <div className="promo-img-acts">
+          <label className="btn btn-ghost btn-sm">
+            {busy ? "Uploading…" : value ? "Change picture" : "Add a picture"}
+            <input type="file" accept="image/*" className="sr-only" disabled={busy}
+                   onChange={e => pick(e.target.files && e.target.files[0])}/>
+          </label>
+          {value && <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange("")}>Remove</button>}
+          <p className="admin-hint" style={{ margin: "6px 0 0" }}>
+            {!value ? "Wide pictures work best — it is shown small, beside the words."
+              : inline ? "Stored in the database, because no image cloud is set up. It is sent to every member who sees this promotion, so keep it small."
+              : "On the image cloud, so it costs members almost nothing to load."}
+          </p>
+          {err && <div className="admin-err" role="alert">{err}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminPromoEdit({ promo, meta, busy, onCancel, onSave }) {
   const [f, setF] = React.useState({
     promoId: promo.promoId || "", title: promo.title || "", body: promo.body || "",
     kind: promo.kind || "programme", placement: promo.placement || "chess",
     ctaLabel: promo.ctaLabel || "", ctaPage: promo.ctaPage || "", imageUrl: promo.imageUrl || "",
+    shape: promo.shape || "card", tournamentId: promo.tournamentId || "",
     priority: promo.priority || 0, status: promo.status || "draft",
     startsAt: promo.startsAt || "", endsAt: promo.endsAt || "",
     kinds: (promo.audience && promo.audience.kinds) || [],
@@ -5580,6 +5650,25 @@ function AdminPromoEdit({ promo, meta, busy, onCancel, onSave }) {
           </div>
         </fieldset>
 
+        <fieldset className="trn-fs">
+          <legend className="trn-legend">How it appears</legend>
+          <div className="trn-seg">
+            {Object.keys(PROMO_SHAPE_LABEL).map(k => (
+              <button key={k} type="button" aria-pressed={f.shape === k}
+                      className={"trn-seg-b" + (f.shape === k ? " is-on" : "")}
+                      onClick={() => set({ shape: k })}>{PROMO_SHAPE_LABEL[k]}</button>
+            ))}
+          </div>
+          <p className="trn-hint">
+            {f.shape === "popup"
+              ? "A small card beside a game that has just finished or is about to start. Each member sees it once, ever — being seen is what spends it, so nobody gets it twice."
+              : "A strip inside the screen. It stays until the member hides it, and a member who hides it is not shown it again."}
+          </p>
+        </fieldset>
+
+        <AdminPromoImage value={f.imageUrl} max={(meta && meta.inlineMax) || 60000}
+                         onChange={(url) => set({ imageUrl: url })}/>
+
         <div className="trn-band">
           <label className="trn-field">
             <span className="trn-field-l">Button says</span>
@@ -5608,6 +5697,20 @@ function AdminPromoEdit({ promo, meta, busy, onCancel, onSave }) {
               <span>{k.label}</span>
             </label>
           ))}
+          {/* One event's players, and nobody else. "Round three is drawn" is
+              news to an entrant and noise to the other ninety members. */}
+          {(meta && meta.tournaments || []).length > 0 && (
+            <label className="trn-field" style={{ marginTop: 12 }}>
+              <span className="trn-field-l">Only the people in one tournament <span>optional</span></span>
+              <select className="trn-in" value={f.tournamentId}
+                      onChange={e => set({ tournamentId: e.target.value })}>
+                <option value="">Anybody who matches above</option>
+                {(meta.tournaments || []).map(t => (
+                  <option key={t.tournamentId} value={t.tournamentId}>{t.name} · {t.status}</option>
+                ))}
+              </select>
+            </label>
+          )}
           {centres.length > 0 && (
             <div style={{ marginTop: 10 }}>
               <span className="trn-field-l" style={{ display: "block", marginBottom: 6 }}>Centres</span>

@@ -164,7 +164,12 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
       reactions: [], legal: [], staffView: true, flagged: true }
   };
   function ok(v) { return Promise.resolve(v); }
-  window.NGGApi = { member: { match: {
+  window.NGGApi = { member: {
+    /* The finished-game screen carries a popup promotion. It is not what these
+       shots are of, so it is stubbed to "nothing to show". */
+    promo: function () { return ok({ ok: true, promo: null }); },
+    promoTrack: function () { return ok({ ok: true }); },
+    match: {
     list: function () { return ok(LOBBY); },
     get: function (id) { return ok({ ok: true, match: GAMES[id] }); },
     move: function () { return ok({ ok: true }); },
@@ -174,6 +179,7 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
     invite: function () { return ok({ ok: true, matchId: 'MT-1' }); },
     respond: function () { return ok({ ok: true }); },
     poll: function () { return ok({ ok: true, ply: 5, status: 'active', yourTurn: true, changed: false }); },
+    review: function () { return ok({ ok: true, review: null }); },
     watch: function () { return ok({ ok: true, live: [
       { matchId: 'MT-W1', game: 'chess', a: { id: 'X1', name: 'Halima N.', centre: 'Ayobo' },
         b: { id: 'X2', name: 'Ibrahim S.' }, ply: 14, mine: false, lastMoveAt: '2026-08-17T10:00:00Z' },

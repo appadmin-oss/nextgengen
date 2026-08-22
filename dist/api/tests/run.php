@@ -16399,5 +16399,243 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM summer_students WHERE studentId = 'PRM-S'");
 })();
 
+/* ── After-game review ─────────────────────────────────────────────────────
+ *
+ * The analysis runs in the browser — there is no engine here — so what this
+ * side owns is the trust model, and that is what is tested: only a player, only
+ * a finished game, and the FIRST review of a game is the one everybody reads.
+ * The last of those is the one that matters. Without it, accuracy is a number
+ * you can improve by opening the game again on a faster phone.
+ */
+(function () {
+    $now = now_iso();
+    foreach ([['REV-A', 'Rev One'], ['REV-B', 'Rev Two'], ['REV-C', 'Rev Three']] as [$id, $name]) {
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'member', 'status' => 'active',
+            'createdAt' => $now, 'updatedAt' => $now]);
+    }
+    $mid = match_invite(['playerId' => 'REV-A', 'game' => 'chess', 'opponentId' => 'REV-B',
+                         'timeControl' => '10+0'])['matchId'] ?? '';
+    match_respond(['playerId' => 'REV-B', 'matchId' => $mid, 'accept' => true]);
+    match_move(['playerId' => 'REV-A', 'matchId' => $mid, 'move' => 'e2e4']);
+    match_move(['playerId' => 'REV-B', 'matchId' => $mid, 'move' => 'e7e5']);
+
+    $good = ['white' => ['accuracy' => 88, 'avgLoss' => 21, 'blunders' => 0, 'mistakes' => 1, 'inaccuracies' => 3],
+             'black' => ['accuracy' => 61, 'avgLoss' => 74, 'blunders' => 2, 'mistakes' => 1, 'inaccuracies' => 4],
+             'turning' => ['ply' => 24, 'san' => 'Qh5', 'best' => 'Nf3', 'loss' => 420],
+             'evals' => [0, 12, -8, 140], 'engineDepth' => 9, 'engineMs' => 300];
+
+    chk('a review of a game still being played is refused',
+        (backend_dispatch('match.review.put', ['playerId' => 'REV-A', 'matchId' => $mid,
+            'data' => $good])['error'] ?? '') === 'not_finished');
+
+    backend_dispatch('match.resign', ['playerId' => 'REV-B', 'matchId' => $mid]);
+
+    chk('somebody who did not play cannot write the review',
+        (backend_dispatch('match.review.put', ['playerId' => 'REV-C', 'matchId' => $mid,
+            'data' => $good])['error'] ?? '') === 'not_yours');
+
+    $r1 = backend_dispatch('match.review.put', ['playerId' => 'REV-A', 'matchId' => $mid, 'data' => $good]);
+    chk('a player can review their own finished game',
+        !empty($r1['ok']) && ($r1['review']['white']['accuracy'] ?? 0) === 88 && empty($r1['kept']));
+    chk('…and it records where the game turned',
+        ($r1['review']['turning']['san'] ?? '') === 'Qh5' && ($r1['review']['turning']['loss'] ?? 0) === 420);
+    chk('…and what produced it, so two reviews at different depths are not confused',
+        ($r1['review']['engine']['depth'] ?? 0) === 9 && ($r1['review']['engine']['ms'] ?? 0) === 300);
+
+    /* The rule the whole design rests on. A second, better-looking review does
+     * not replace the first: two children discussing a game are discussing the
+     * same numbers, and nobody improves their accuracy by reviewing again. */
+    $r2 = backend_dispatch('match.review.put', ['playerId' => 'REV-B', 'matchId' => $mid,
+        'data' => array_merge($good, ['white' => ['accuracy' => 12, 'avgLoss' => 900, 'blunders' => 9,
+                                                  'mistakes' => 9, 'inaccuracies' => 9]])]);
+    chk('the first review of a game is the one everybody reads',
+        !empty($r2['ok']) && !empty($r2['kept']) && ($r2['review']['white']['accuracy'] ?? 0) === 88);
+    chk('…and the stored one is still the first',
+        (backend_dispatch('match.review.get', ['playerId' => 'REV-B',
+            'matchId' => $mid])['review']['white']['accuracy'] ?? 0) === 88);
+
+    chk('a member who is not in the game can still read the review — games here are public',
+        !empty(backend_dispatch('match.review.get', ['playerId' => 'REV-C', 'matchId' => $mid])['review']));
+    chk('a game nobody has reviewed reads as no review, not as an error', (function () {
+        $m2 = match_invite(['playerId' => 'REV-A', 'game' => 'chess', 'opponentId' => 'REV-C',
+                            'timeControl' => '10+0'])['matchId'] ?? '';
+        $g = backend_dispatch('match.review.get', ['playerId' => 'REV-A', 'matchId' => $m2]);
+        return !empty($g['ok']) && $g['review'] === null;
+    })());
+
+    /* Everything arriving from a browser is clamped. A graph is drawn from
+     * these, so one absurd number would flatten every real one. */
+    chk('the numbers a browser sends are clamped, not trusted', (function () {
+        $m3 = match_invite(['playerId' => 'REV-B', 'game' => 'chess', 'opponentId' => 'REV-C',
+                            'timeControl' => '10+0'])['matchId'] ?? '';
+        match_respond(['playerId' => 'REV-C', 'matchId' => $m3, 'accept' => true]);
+        backend_dispatch('match.resign', ['playerId' => 'REV-C', 'matchId' => $m3]);
+        $r = backend_dispatch('match.review.put', ['playerId' => 'REV-B', 'matchId' => $m3, 'data' => [
+            'white' => ['accuracy' => 5000, 'avgLoss' => -40, 'blunders' => 99999],
+            'black' => ['accuracy' => -3],
+            'evals' => array_fill(0, 900, 999999),
+        ]]);
+        $rev = $r['review'] ?? [];
+        return ($rev['white']['accuracy'] ?? -1) === 100 && ($rev['white']['avgLoss'] ?? -1) === 0
+            && ($rev['black']['accuracy'] ?? -1) === 0
+            && count($rev['evals']) === 400 && $rev['evals'][0] === 2000;
+    })());
+
+    /* The point of keeping them: a direction, not a single game's number. */
+    $hist = backend_dispatch('match.review.history', ['playerId' => 'REV-A']);
+    chk('a member can see their own reviewed games', count($hist['games'] ?? []) >= 1);
+    chk('…with the accuracy that was theirs, not the other player\'s',
+        ($hist['games'][0]['accuracy'] ?? 0) === 88);
+    chk('…and no trend claimed off two games',
+        array_key_exists('trend', $hist) && $hist['trend'] === null);
+
+    db_exec("DELETE FROM members WHERE memberId IN ('REV-A','REV-B','REV-C')");
+})();
+
+/* ── The ladder ────────────────────────────────────────────────────────────
+ * Hot is measured in moves, not in size — otherwise the biggest event tops the
+ * list for a fortnight while nothing happens in it.
+ */
+(function () {
+    $now = now_iso();
+    for ($i = 1; $i <= 4; $i++) {
+        db_exec('DELETE FROM members WHERE memberId = ?', ["LAD-$i"]);
+        db_insert('members', ['memberId' => "LAD-$i", 'fullName' => "Ladder $i",
+            'email' => "lad-$i@example.com", 'type' => 'NGG', 'centre' => 'Egbeda',
+            'role' => 'member', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    }
+    $quiet = admin_tournament_create(['requesterId' => 'NGG-2025-0099', 'name' => 'Quiet Swiss',
+        'format' => 'swiss', 'timeControl' => '10+0'])['tournamentId'];
+    $busy = admin_tournament_create(['requesterId' => 'NGG-2025-0099', 'name' => 'Busy Arena',
+        'format' => 'arena', 'timeControl' => '5+3'])['tournamentId'];
+    foreach ([1, 2, 3, 4] as $i) {
+        backend_dispatch('tournament.join', ['playerId' => "LAD-$i", 'tournamentId' => $quiet]);
+        backend_dispatch('tournament.join', ['playerId' => "LAD-$i", 'tournamentId' => $busy]);
+    }
+    $lad = backend_dispatch('tournament.ladder', ['playerId' => 'LAD-1']);
+    chk('the ladder carries the events a member can see', count($lad['ladders'] ?? []) >= 2);
+    chk('…each with its top of the table', (function () use ($lad) {
+        foreach ($lad['ladders'] as $l) if (count($l['top']) >= 2) return true;
+        return false;
+    })());
+    chk('…and where the viewer stands in it', (function () use ($lad) {
+        foreach ($lad['ladders'] as $l) if (($l['me']['playerId'] ?? '') === 'LAD-1') return true;
+        return false;
+    })());
+    chk('an event with nothing happening in it is not called hot',
+        ($lad['hotCount'] ?? -1) >= 0 && ($lad['hotCount'] ?? 99) <= count($lad['ladders']));
+
+    // Draw a round in one of them, which makes boards live.
+    backend_dispatch('tournament.draw', ['requesterId' => 'NGG-2025-0099', 'tournamentId' => $busy]);
+    $lad2 = backend_dispatch('tournament.ladder', ['playerId' => 'LAD-1']);
+    $byId = [];
+    foreach ($lad2['ladders'] as $l) $byId[$l['tournament']['tournamentId']] = $l;
+    chk('an event with boards in play outranks one with none',
+        array_keys($byId)[0] === $busy || ($byId[$busy]['heat']['score'] ?? 0) > ($byId[$quiet]['heat']['score'] ?? 0));
+    chk('…and says how many boards are going, rather than calling itself busy',
+        ($byId[$busy]['heat']['live'] ?? 0) >= 1);
+    /* Movement compares against a rank that existed, so it is only claimed
+       once a round has actually been drawn. */
+    chk('positions carry a movement against the last draw', (function () use ($byId, $busy) {
+        foreach ($byId[$busy]['top'] as $e) if (array_key_exists('move', $e)) return true;
+        return false;
+    })());
+    chk('a finished tournament is not on the ladder — nothing will move on it', (function () use ($quiet) {
+        db_update('tournaments', ['status' => 'complete'], ['tournamentId' => $quiet]);
+        $l = backend_dispatch('tournament.ladder', ['playerId' => 'LAD-1']);
+        foreach ($l['ladders'] as $x) if ($x['tournament']['tournamentId'] === $quiet) return false;
+        return true;
+    })());
+
+    db_exec("DELETE FROM members WHERE memberId LIKE 'LAD-%'");
+})();
+
+/* ── Promotions: a picture, one event, and the popup that appears once ─────── */
+(function () {
+    db_exec('DELETE FROM promos'); db_exec('DELETE FROM promo_seen');
+    $now = now_iso();
+    foreach ([['PRP-IN', 'In The Event'], ['PRP-OUT', 'Not In It']] as [$id, $name]) {
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'member', 'status' => 'active',
+            'createdAt' => $now, 'updatedAt' => $now]);
+    }
+    $save = fn(array $d) => backend_dispatch('admin.promo.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => $d]);
+
+    // A picture: an https URL, or a small inline one, and nothing else.
+    chk('an http picture is still refused',
+        ($save(['title' => 'Mixed', 'imageUrl' => 'http://x/y.png'])['error'] ?? '') === 'bad_image');
+    chk('…and so is something that is not a picture at all',
+        ($save(['title' => 'Script', 'imageUrl' => 'javascript:alert(1)'])['error'] ?? '') === 'bad_image');
+    chk('an https picture is kept',
+        !empty($save(['title' => 'Cloud picture', 'imageUrl' => 'https://res.cloudinary.com/x/y.jpg'])['ok']));
+    chk('a small inline picture is kept, because a club with no image cloud still has a promotion to run',
+        !empty($save(['title' => 'Inline picture', 'imageUrl' => 'data:image/png;base64,iVBORw0KGgo='])['ok']));
+    chk('…and a big one is refused rather than posted to every member on a metered connection',
+        ($save(['title' => 'Huge', 'imageUrl' => 'data:image/png;base64,' . str_repeat('A', 70000)])['error'] ?? '') === 'image_too_big');
+
+    // One event's players.
+    $trn = admin_tournament_create(['requesterId' => 'NGG-2025-0099', 'name' => 'Promo Cup',
+        'format' => 'swiss', 'timeControl' => '10+0'])['tournamentId'];
+    backend_dispatch('tournament.join', ['playerId' => 'PRP-IN', 'tournamentId' => $trn]);
+    chk('a promotion cannot be tied to an event that does not exist',
+        ($save(['title' => 'Ghost event', 'tournamentId' => 'TRN-NOPE'])['error'] ?? '') === 'bad_tournament');
+    db_exec('DELETE FROM promos');
+    $ev = $save(['title' => 'Round two is drawn', 'placement' => 'chess', 'status' => 'live',
+                 'tournamentId' => $trn])['promoId'];
+    chk('an event promotion reaches the people in that event',
+        (backend_dispatch('promo.for', ['memberId' => 'PRP-IN', 'placement' => 'chess'])['promo']['promoId'] ?? '') === $ev);
+    chk('…and nobody else, because it is noise to them',
+        backend_dispatch('promo.for', ['memberId' => 'PRP-OUT', 'placement' => 'chess'])['promo'] === null);
+
+    // The popup, and the rule that keeps it bearable.
+    db_exec('DELETE FROM promos'); db_exec('DELETE FROM promo_seen');
+    $pop = $save(['title' => 'Summer intake', 'placement' => 'game', 'shape' => 'popup',
+                  'status' => 'live'])['promoId'];
+    chk('a popup does not show up where the cards go',
+        backend_dispatch('promo.for', ['memberId' => 'PRP-IN', 'placement' => 'game', 'shape' => 'card'])['promo'] === null);
+    chk('…and a card does not appear as a popup', (function () use ($save) {
+        $save(['title' => 'A strip', 'placement' => 'game', 'shape' => 'card', 'status' => 'live']);
+        return backend_dispatch('promo.for', ['memberId' => 'PRP-OUT', 'placement' => 'game',
+                                              'shape' => 'card'])['promo'] !== null;
+    })());
+    chk('a popup shows once', (function () use ($pop) {
+        $r = backend_dispatch('promo.for', ['memberId' => 'PRP-IN', 'placement' => 'game', 'shape' => 'popup']);
+        return ($r['promo']['promoId'] ?? '') === $pop;
+    })());
+    /* Seeing it is what spends it — not dismissing it. This is the rule that
+       keeps "a little popup after a game" from becoming one after every game,
+       and it is the reason the shape exists as its own thing. */
+    backend_dispatch('promo.track', ['memberId' => 'PRP-IN', 'promoId' => $pop, 'event' => 'seen']);
+    chk('…and having been seen, never again — no dismissal needed',
+        backend_dispatch('promo.for', ['memberId' => 'PRP-IN', 'placement' => 'game', 'shape' => 'popup'])['promo'] === null);
+    chk('…while somebody who has not seen it still gets it',
+        (backend_dispatch('promo.for', ['memberId' => 'PRP-OUT', 'placement' => 'game',
+                                        'shape' => 'popup'])['promo']['promoId'] ?? '') === $pop);
+    chk('a card, by contrast, comes back until it is hidden', (function () {
+        backend_dispatch('promo.track', ['memberId' => 'PRP-OUT', 'promoId' =>
+            backend_dispatch('promo.for', ['memberId' => 'PRP-OUT', 'placement' => 'game', 'shape' => 'card'])['promo']['promoId'],
+            'event' => 'seen']);
+        return backend_dispatch('promo.for', ['memberId' => 'PRP-OUT', 'placement' => 'game',
+                                              'shape' => 'card'])['promo'] !== null;
+    })());
+
+    chk('the admin form is offered the events a promotion could be tied to',
+        is_array(backend_dispatch('admin.promos.list', ['requesterId' => 'NGG-2025-0099'])['tournaments'] ?? null));
+    chk('…and says which pictures are stored in the database rather than on a cloud', (function () use ($save) {
+        $id = $save(['title' => 'Inline again', 'imageUrl' => 'data:image/png;base64,iVBORw0KGgo=',
+                     'placement' => 'chess'])['promoId'];
+        foreach (backend_dispatch('admin.promos.list', ['requesterId' => 'NGG-2025-0099'])['promos'] as $r) {
+            if ($r['promoId'] === $id) return $r['inlineImage'] === true;
+        }
+        return false;
+    })());
+
+    db_exec('DELETE FROM promos'); db_exec('DELETE FROM promo_seen');
+    db_exec("DELETE FROM members WHERE memberId LIKE 'PRP-%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

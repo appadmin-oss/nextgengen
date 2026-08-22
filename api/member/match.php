@@ -28,6 +28,9 @@ if ($method === 'GET') {
         // Every tournament a member can see — the endpoint that did not exist,
         // which is why a created tournament reflected nowhere.
         $res = gs_call('tournament.browse', ['playerId' => $s['mid']]);
+    } elseif ($view === 'trnLadder') {
+        // What has a pulse right now. See tournament_ladder().
+        $res = gs_call('tournament.ladder', ['playerId' => $s['mid']]);
     } elseif ($view === 'trnStandings') {
         $res = gs_call('tournament.standings', ['playerId' => $s['mid'], 'tournamentId' => (string)($_GET['tournamentId'] ?? '')]);
     } elseif ($view === 'trnRounds') {
@@ -43,7 +46,14 @@ if ($method === 'GET') {
     } elseif ($view === 'promo') {
         // A house promotion for this placement, or none. See promos.php on why
         // this is deliberately first-party only.
-        $res = gs_call('promo.for', ['memberId' => $s['mid'], 'placement' => (string)($_GET['placement'] ?? 'chess')]);
+        $res = gs_call('promo.for', ['memberId' => $s['mid'],
+            'placement' => (string)($_GET['placement'] ?? 'chess'),
+            'shape' => (string)($_GET['shape'] ?? 'card')]);
+    } elseif ($view === 'review') {
+        // The stored review for one game, or null if nobody has run one yet.
+        $res = gs_call('match.review.get', ['playerId' => $s['mid'], 'matchId' => (string)($_GET['matchId'] ?? '')]);
+    } elseif ($view === 'reviewHistory') {
+        $res = gs_call('match.review.history', ['playerId' => $s['mid']]);
     } elseif ($view === 'lobby') {
         // The cheap tick behind the chess screen — see chess_lobby_poll.
         $res = gs_call('chess.lobby', ['playerId' => $s['mid']]);
@@ -79,6 +89,11 @@ if ($method === 'GET') {
         $res = gs_call('chess.respond', ['playerId' => $s['mid'],
             'challengeId' => (string)($b['challengeId'] ?? ''),
             'action' => (string)($b['answer'] ?? 'accept')]);
+    } elseif ($action === 'reviewSave') {
+        // The browser did the analysing; this only keeps the result, and only
+        // the first one for a game. See _lib/domain/match-review.php.
+        $res = gs_call('match.review.put', ['playerId' => $s['mid'],
+            'matchId' => (string)($b['matchId'] ?? ''), 'data' => $b['data'] ?? []]);
     } elseif ($action === 'promoTrack') {
         $res = gs_call('promo.track', ['memberId' => $s['mid'], 'promoId' => (string)($b['promoId'] ?? ''),
                                        'event' => (string)($b['event'] ?? '')]);

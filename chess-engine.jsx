@@ -42,10 +42,86 @@
   function idxToSq(i) {
     return String.fromCharCode(97 + (i & 15)) + String.fromCharCode(49 + (7 - (i >> 4)));
   }
-  function isWhite(p) { return p !== "" && p === p.toUpperCase(); }
-  function colourOf(p) { return p === "" ? "" : (p === p.toUpperCase() ? "w" : "b"); }
+  /* A table, not a comparison. `p === p.toUpperCase()` allocates a string for
+     every piece on every square of every node, which at 30-odd nodes' worth of
+     board scans a second is millions of one-character strings. */
+  var WHITE_PIECE = { P: true, N: true, B: true, R: true, Q: true, K: true };
+  var COLOUR_OF = { P: "w", N: "w", B: "w", R: "w", Q: "w", K: "w",
+                    p: "b", n: "b", b: "b", r: "b", q: "b", k: "b" };
+  function isWhite(p) { return WHITE_PIECE[p] === true; }
+  function colourOf(p) { return COLOUR_OF[p] || ""; }
 
   /** FEN → position, or null. Null means REFUSE — never "assume the start". */
+  /* ── Position hashing ─────────────────────────────────────────────────────
+     ttKey() used to be `pos.board.join("") + turn + castling + ep`: a 128-char
+     string built at EVERY node, and the largest single allocation in the
+     search. It is now a Zobrist hash carried on the position and updated by
+     apply() as pieces move, so reading a node's key costs nothing.
+
+     This reverses an earlier decision, and the reason is worth recording
+     because the earlier measurement was not wrong — it was measuring the wrong
+     thing. Zobrist was tried with 30-bit integer keys in a plain object and
+     came out SLOWER; that was the container, not the hash, because a plain
+     object keyed by integers takes V8's dictionary path. The table is a Map
+     now, and the hash is incremental rather than recomputed, which is where
+     the win actually lives.
+
+     53 bits, assembled from two 32-bit halves, because that is the largest
+     integer a double holds exactly. At 120k entries a collision is vanishingly
+     unlikely, and it would cost one wrong bound rather than an illegal move:
+     the move that comes back is always checked against the legal list. */
+
+  var ZP_A = new Int32Array(12 * 128), ZP_B = new Int32Array(12 * 128);
+  var ZC_A = new Int32Array(16), ZC_B = new Int32Array(16);
+  var ZE_A = new Int32Array(8),  ZE_B = new Int32Array(8);
+  var ZT_A = 0, ZT_B = 0;
+  (function seedZobrist() {
+    // xorshift32 from a fixed seed: the tables must be identical on every
+    // device and every run, or two clients disagree about a cached position.
+    var s = 0x2f6e2b1 >>> 0;
+    function r() { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s | 0; }
+    for (var i = 0; i < ZP_A.length; i++) { ZP_A[i] = r(); ZP_B[i] = r(); }
+    for (var c = 0; c < 16; c++) { ZC_A[c] = r(); ZC_B[c] = r(); }
+    for (var e = 0; e < 8; e++) { ZE_A[e] = r(); ZE_B[e] = r(); }
+    ZT_A = r(); ZT_B = r();
+  })();
+
+  var PIECE_IDX = { P: 0, N: 1, B: 2, R: 3, Q: 4, K: 5, p: 6, n: 7, b: 8, r: 9, q: 10, k: 11 };
+
+  function castMask(c) {
+    var m = 0;
+    if (!c) return 0;
+    if (c.indexOf("K") >= 0) m |= 1;
+    if (c.indexOf("Q") >= 0) m |= 2;
+    if (c.indexOf("k") >= 0) m |= 4;
+    if (c.indexOf("q") >= 0) m |= 8;
+    return m;
+  }
+
+  /** The two halves combined into one exact integer, for use as a Map key.
+   *  32 + 20 bits, not 32 + 21: the wider version tops out just above 2^53,
+   *  where a double stops being exact, so the largest keys quietly lost their
+   *  low bits and distinct positions collided. */
+  function zCombine(a, b) { return (a >>> 0) * 1048576 + (b >>> 12); }
+
+  /** The hash from scratch. Used when a position is parsed, and by the test
+   *  that checks the incremental version never drifts from it. */
+  function hashOf(pos) {
+    var a = 0, b = 0;
+    for (var i = 0; i < 128; i++) {
+      if (i & 0x88) continue;
+      var p = pos.board[i];
+      if (p === "") continue;
+      var k = PIECE_IDX[p] * 128 + i;
+      a ^= ZP_A[k]; b ^= ZP_B[k];
+    }
+    var cm = castMask(pos.castling);
+    a ^= ZC_A[cm]; b ^= ZC_B[cm];
+    if (pos.ep >= 0) { var f = pos.ep & 15; a ^= ZE_A[f]; b ^= ZE_B[f]; }
+    if (pos.turn === "b") { a ^= ZT_A; b ^= ZT_B; }
+    return { a: a, b: b, h: zCombine(a, b) };
+  }
+
   function parseFen(fen) {
     var parts = String(fen || "").trim().split(/\s+/);
     if (parts.length < 4) return null;
@@ -77,13 +153,17 @@
     for (var j = 0; j < 128; j++) if (board[j] === "k" || board[j] === "K") kings[board[j]]++;
     if (kings.k !== 1 || kings.K !== 1) return null;
 
-    return {
+    var pos = {
       board: board, turn: turn,
       castling: castling === "-" ? "" : castling,
       ep: epIdx,
       half: Math.max(0, isNaN(half) ? 0 : half),
       full: Math.max(1, isNaN(full) ? 1 : full),
+      ha: 0, hb: 0, hash: 0,
     };
+    var z = hashOf(pos);
+    pos.ha = z.a; pos.hb = z.b; pos.hash = z.h;
+    return pos;
   }
 
   function toFen(pos) {
@@ -105,45 +185,117 @@
       + " " + pos.half + " " + pos.full;
   }
 
+  /* Flat offset arrays and direct character comparisons.
+     The previous version walked `for (var key in OFFSETS)` and called
+     colourOf() on every square it looked at — a for-in and a string compare,
+     inside the function the legality test calls once per candidate move. The
+     piece to look for is known before the loop starts, so the loop can just
+     compare against it. */
+  var KNIGHT_OFF = [-33, -31, -18, -14, 14, 18, 31, 33];
+  var DIAG_OFF = [-17, -15, 15, 17];
+  var ORTHO_OFF = [-16, -1, 1, 16];
+  var KING_OFF = [-17, -16, -15, -1, 1, 15, 16, 17];
+
   function squareAttacked(pos, sq, by) {
-    var board = pos.board, i, d, t, p, lower;
-    // Pawns attack diagonally, and only forwards — the direction is the whole
-    // of the rule and the classic place to get the sign backwards.
-    var pDir = by === "w" ? 16 : -16;      // from `sq` looking BACK at the attacker
-    for (var k = -1; k <= 1; k += 2) {
-      t = sq + pDir + k;
-      if (t & 0x88) continue;
-      p = board[t];
-      if (p !== "" && colourOf(p) === by && p.toLowerCase() === "p") return true;
+    var b = pos.board, t, p, i, d;
+    var white = by === "w";
+    // Pawns attack diagonally and only forwards, so this looks BACK from the
+    // square towards where such a pawn would have to stand. The sign is the
+    // whole of the rule and the classic place to get it backwards.
+    var pDir = white ? 16 : -16;
+    var P = white ? "P" : "p";
+    t = sq + pDir - 1; if (!(t & 0x88) && b[t] === P) return true;
+    t = sq + pDir + 1; if (!(t & 0x88) && b[t] === P) return true;
+    var N = white ? "N" : "n";
+    for (i = 0; i < 8; i++) { t = sq + KNIGHT_OFF[i]; if (!(t & 0x88) && b[t] === N) return true; }
+    var K = white ? "K" : "k";
+    for (i = 0; i < 8; i++) { t = sq + KING_OFF[i]; if (!(t & 0x88) && b[t] === K) return true; }
+    var B = white ? "B" : "b", Q = white ? "Q" : "q", R = white ? "R" : "r";
+    for (i = 0; i < 4; i++) {
+      d = DIAG_OFF[i]; t = sq + d;
+      while (!(t & 0x88)) { p = b[t]; if (p !== "") { if (p === B || p === Q) return true; break; } t += d; }
     }
-    for (var key in OFFSETS) {
-      if (key === "b" || key === "r") continue;     // covered by q, plus their own loops below
-      var offs = OFFSETS[key];
-      for (i = 0; i < offs.length; i++) {
-        d = offs[i]; t = sq + d;
-        if (key === "n" || key === "k") {
-          if (t & 0x88) continue;
-          p = board[t];
-          if (p !== "" && colourOf(p) === by && p.toLowerCase() === key) return true;
-          continue;
-        }
-        // queen offsets, walked as rays: a bishop or rook on the matching ray
-        // attacks too, which is why this loop tests three piece letters.
-        while (!(t & 0x88)) {
-          p = board[t];
-          if (p !== "") {
-            if (colourOf(p) === by) {
-              lower = p.toLowerCase();
-              var diagonal = (d === -17 || d === -15 || d === 15 || d === 17);
-              if (lower === "q" || (diagonal ? lower === "b" : lower === "r")) return true;
-            }
-            break;
-          }
-          t += d;
-        }
-      }
+    for (i = 0; i < 4; i++) {
+      d = ORTHO_OFF[i]; t = sq + d;
+      while (!(t & 0x88)) { p = b[t]; if (p !== "") { if (p === R || p === Q) return true; break; } t += d; }
     }
     return false;
+  }
+
+  /** The index of the LEAST valuable piece of `by` attacking `sq`, or -1.
+   *  The order the squares are looked at is the order of piece value, which is
+   *  what makes this the cheapest attacker rather than any attacker. */
+  function smallestAttackerIdx(pos, sq, by) {
+    var b = pos.board, t, p, i, d;
+    var white = by === "w";
+    var pDir = white ? 16 : -16;
+    var P = white ? "P" : "p";
+    t = sq + pDir - 1; if (!(t & 0x88) && b[t] === P) return t;
+    t = sq + pDir + 1; if (!(t & 0x88) && b[t] === P) return t;
+    var N = white ? "N" : "n";
+    for (i = 0; i < 8; i++) { t = sq + KNIGHT_OFF[i]; if (!(t & 0x88) && b[t] === N) return t; }
+    var B = white ? "B" : "b", Q = white ? "Q" : "q", R = white ? "R" : "r", K = white ? "K" : "k";
+    var bishop = -1, rook = -1, queen = -1;
+    for (i = 0; i < 4; i++) {
+      d = DIAG_OFF[i]; t = sq + d;
+      while (!(t & 0x88)) {
+        p = b[t];
+        if (p !== "") { if (p === B) { if (bishop < 0) bishop = t; } else if (p === Q && queen < 0) queen = t; break; }
+        t += d;
+      }
+    }
+    if (bishop >= 0) return bishop;
+    for (i = 0; i < 4; i++) {
+      d = ORTHO_OFF[i]; t = sq + d;
+      while (!(t & 0x88)) {
+        p = b[t];
+        if (p !== "") { if (p === R) { if (rook < 0) rook = t; } else if (p === Q && queen < 0) queen = t; break; }
+        t += d;
+      }
+    }
+    if (rook >= 0) return rook;
+    if (queen >= 0) return queen;
+    for (i = 0; i < 8; i++) { t = sq + KING_OFF[i]; if (!(t & 0x88) && b[t] === K) return t; }
+    return -1;
+  }
+
+  /* ── Static exchange evaluation ───────────────────────────────────────────
+     "If I take on this square, and we both keep taking with our cheapest
+     piece, do I come out ahead?" This is what stops the engine spending its
+     quiescence budget on QxP-defended-by-a-pawn, and what stops it ordering
+     that move first because the victim happens to be a pawn worth taking.
+
+     Recursive swap-off on the board itself, restored on every path. X-rays
+     fall out for free, because each step re-scans a board that has had the
+     previous attacker removed from it. Pins are ignored, which is the standard
+     simplification: SEE is an ordering and pruning heuristic, and the search
+     behind it is what is allowed to be exactly right. */
+  function seeSwap(pos, to, side) {
+    var b = pos.board;
+    var idx = smallestAttackerIdx(pos, to, side);
+    if (idx < 0) return 0;
+    var attacker = b[idx], victim = b[to];
+    if (victim === "") return 0;
+    b[idx] = ""; b[to] = attacker;
+    var v = VALUE[victim.toLowerCase()] - seeSwap(pos, to, side === "w" ? "b" : "w");
+    b[idx] = attacker; b[to] = victim;
+    // A capture nobody has to make is never made: the side to move can stand
+    // pat rather than continue a losing exchange.
+    return v < 0 ? 0 : v;
+  }
+
+  /** Net material after the exchange on m.to, in centipawns, from the mover's
+   *  point of view. Negative means the capture loses material. */
+  function seeCapture(pos, m) {
+    if (m.captured === "") return 0;
+    var b = pos.board;
+    var us = colourOf(m.piece);
+    var saveFrom = b[m.from], saveTo = b[m.to];
+    b[m.from] = ""; b[m.to] = m.piece;
+    var v = VALUE[m.captured.toLowerCase()] - seeSwap(pos, m.to, us === "w" ? "b" : "w");
+    b[m.from] = saveFrom; b[m.to] = saveTo;
+    if (m.promotion) v += VALUE[m.promotion] - VALUE.p;
+    return v;
   }
 
   function kingSquare(pos, colour) {
@@ -159,6 +311,36 @@
 
   function mk(from, to, piece, captured, promotion, flag) {
     return { from: from, to: to, piece: piece, captured: captured, promotion: promotion, flag: flag };
+  }
+
+  /**
+   * Would this move leave our own king attacked? Mutates the board, asks, and
+   * puts it back — so `pos` is byte-for-byte what it was on every return path.
+   *
+   * `kIdx` is the king's square before the move, passed in because finding it
+   * scans the board and it does not move for thirty of the thirty-one moves in
+   * a typical list.
+   */
+  function leavesKingInCheck(pos, m, us, kIdx) {
+    var b = pos.board;
+    var from = m.from, to = m.to;
+    var moved = b[from], captured = b[to];
+    var epSq = -1, epPiece = "";
+    var rFrom = -1, rTo = -1, rook = "";
+
+    b[from] = "";
+    b[to] = m.promotion !== "" ? (us === "w" ? m.promotion.toUpperCase() : m.promotion) : moved;
+    if (m.flag === "e") { epSq = to + (us === "w" ? 16 : -16); epPiece = b[epSq]; b[epSq] = ""; }
+    else if (m.flag === "k") { rFrom = to + 1; rTo = to - 1; rook = b[rFrom]; b[rTo] = rook; b[rFrom] = ""; }
+    else if (m.flag === "q") { rFrom = to - 2; rTo = to + 1; rook = b[rFrom]; b[rTo] = rook; b[rFrom] = ""; }
+
+    var k = (moved === "K" || moved === "k") ? to : kIdx;
+    var bad = k >= 0 && squareAttacked(pos, k, us === "w" ? "b" : "w");
+
+    b[from] = moved; b[to] = captured;
+    if (epSq >= 0) b[epSq] = epPiece;
+    if (rFrom >= 0) { b[rFrom] = rook; b[rTo] = ""; }
+    return bad;
   }
 
   function legalMoves(pos) {
@@ -238,41 +420,109 @@
       }
     }
 
+    /* Legality by make/unmake on the board itself.
+     *
+     * This used to call apply() per candidate — a fresh 128-element array, a
+     * castling-rights rebuild and (since hashing) a Zobrist update, thirty-odd
+     * times per node, purely to ask "does this leave my king en prise?". The
+     * answer needs four squares changed and changed back. Nothing else about
+     * the position is touched, so nothing else has to be built.
+     *
+     * The board is restored on every path below, including the early one. */
     var legal = [];
+    var kIdxNow = kingSquare(pos, us);
     for (var m = 0; m < moves.length; m++) {
-      var after = apply(pos, moves[m]);
-      if (!inCheck(after, us)) legal.push(moves[m]);
+      if (!leavesKingInCheck(pos, moves[m], us, kIdxNow)) legal.push(moves[m]);
     }
     return legal;
   }
 
+  /* Hot: called once per node, so every allocation here is multiplied by the
+     node count. What used to be in it — a `strip` closure, two `forEach`es
+     over literal arrays, and `split().join()` per right — cost more than the
+     board copy did. The rights are a four-character string, so they are
+     rebuilt directly.
+
+     It also maintains the Zobrist hash incrementally. Every XOR below is
+     paired with the board change on the line above it; the invariant that
+     `pos.hash === hashOf(pos)` is asserted on every node of a random game by
+     the engine test, because a hash that drifts corrupts the table silently
+     and shows up as the engine playing a move it never searched. */
+  var CASTLE_CHARS = "KQkq";
   function apply(pos, m) {
     var b = pos.board.slice();
     var us = colourOf(m.piece);
     var lower = m.piece.toLowerCase();
+    var ha = pos.ha, hb = pos.hb, k;
 
+    // The piece leaves `from`.
+    k = PIECE_IDX[m.piece] * 128 + m.from;
+    ha ^= ZP_A[k]; hb ^= ZP_B[k];
     b[m.from] = "";
-    b[m.to] = m.promotion !== "" ? (us === "w" ? m.promotion.toUpperCase() : m.promotion) : m.piece;
 
-    if (m.flag === "e") b[m.to + (us === "w" ? 16 : -16)] = "";
-    else if (m.flag === "k") { b[m.to - 1] = b[m.to + 1]; b[m.to + 1] = ""; }
-    else if (m.flag === "q") { b[m.to + 1] = b[m.to - 2]; b[m.to - 2] = ""; }
+    // Anything captured leaves the board — en passant takes it off a DIFFERENT
+    // square from the one the pawn lands on, which is the case to get wrong.
+    if (m.captured !== "") {
+      var csq = m.flag === "e" ? (m.to + (us === "w" ? 16 : -16)) : m.to;
+      k = PIECE_IDX[m.captured] * 128 + csq;
+      ha ^= ZP_A[k]; hb ^= ZP_B[k];
+    }
 
+    // The piece — or what it promoted into — arrives on `to`.
+    var landed = m.promotion !== "" ? (us === "w" ? m.promotion.toUpperCase() : m.promotion) : m.piece;
+    b[m.to] = landed;
+    k = PIECE_IDX[landed] * 128 + m.to;
+    ha ^= ZP_A[k]; hb ^= ZP_B[k];
+
+    if (m.flag === "e") {
+      b[m.to + (us === "w" ? 16 : -16)] = "";
+    } else if (m.flag === "k" || m.flag === "q") {
+      var rFrom = m.flag === "k" ? m.to + 1 : m.to - 2;
+      var rTo   = m.flag === "k" ? m.to - 1 : m.to + 1;
+      var rook = b[rFrom];
+      b[rTo] = rook; b[rFrom] = "";
+      k = PIECE_IDX[rook] * 128 + rFrom; ha ^= ZP_A[k]; hb ^= ZP_B[k];
+      k = PIECE_IDX[rook] * 128 + rTo;   ha ^= ZP_A[k]; hb ^= ZP_B[k];
+    }
+
+    /* Castling rights. Moving the king kills both of its own; moving a rook
+       off a corner, or capturing one ON its corner, kills that one. The second
+       is the case everybody forgets. */
     var rights = pos.castling;
-    function strip(chars) { chars.forEach(function (c) { rights = rights.split(c).join(""); }); }
-    if (lower === "k") strip(us === "w" ? ["K", "Q"] : ["k", "q"]);
-    // A rook captured ON its corner also kills the right — the case everybody forgets.
-    [[112, "Q"], [119, "K"], [0, "q"], [7, "k"]].forEach(function (pair) {
-      if (m.from === pair[0] || m.to === pair[0]) strip([pair[1]]);
-    });
+    if (rights !== "") {
+      var drop = 0;
+      if (lower === "k") drop |= us === "w" ? 3 : 12;
+      if (m.from === 112 || m.to === 112) drop |= 2;   // a1 → Q
+      if (m.from === 119 || m.to === 119) drop |= 1;   // h1 → K
+      if (m.from === 0   || m.to === 0)   drop |= 8;   // a8 → q
+      if (m.from === 7   || m.to === 7)   drop |= 4;   // h8 → k
+      if (drop) {
+        var keep = castMask(rights) & ~drop;
+        var out = "";
+        for (var ci = 0; ci < 4; ci++) if (keep & (1 << ci)) out += CASTLE_CHARS[ci];
+        rights = out;
+      }
+    }
+    var oldMask = castMask(pos.castling), newMask = castMask(rights);
+    if (oldMask !== newMask) {
+      ha ^= ZC_A[oldMask] ^ ZC_A[newMask];
+      hb ^= ZC_B[oldMask] ^ ZC_B[newMask];
+    }
+
+    var newEp = m.flag === "b" ? (m.from + (us === "w" ? -16 : 16)) : -1;
+    if (pos.ep >= 0) { var of = pos.ep & 15; ha ^= ZE_A[of]; hb ^= ZE_B[of]; }
+    if (newEp >= 0)  { var nf = newEp & 15;  ha ^= ZE_A[nf]; hb ^= ZE_B[nf]; }
+
+    ha ^= ZT_A; hb ^= ZT_B;                 // the side to move always flips
 
     return {
       board: b,
       turn: us === "w" ? "b" : "w",
       castling: rights,
-      ep: m.flag === "b" ? (m.from + (us === "w" ? -16 : 16)) : -1,
+      ep: newEp,
       half: (lower === "p" || m.captured !== "") ? 0 : pos.half + 1,
       full: pos.full + (us === "b" ? 1 : 0),
+      ha: ha, hb: hb, hash: (ha >>> 0) * 1048576 + (hb >>> 12),
     };
   }
 
@@ -444,44 +694,133 @@
   /** Score in centipawns from the side-to-move's point of view. */
   function evaluate(pos) {
     var score = 0;
-    var pawnFiles = { w: [0,0,0,0,0,0,0,0], b: [0,0,0,0,0,0,0,0] };
-    var bishops = { w: 0, b: 0 };
-    /* One pass, not two. The phase used to be its own 128-square loop called
-       from here, so every leaf walked the board twice; the kings are noted and
-       scored at the end instead. */
-    var np = 0, kingIdx = { w: -1, b: -1 };
+    var b = pos.board;
+    /* Per-file pawn counts, and the most advanced pawn on each file. Both fall
+       out of the one pass the loop below already makes, and between them they
+       answer doubled, isolated and passed without a second scan. Ranks are
+       0x88 rows, so 0 is the eighth rank and 7 is the first: "advanced" for
+       White means a SMALLER number. */
+    var wFile = [0,0,0,0,0,0,0,0], bFile = [0,0,0,0,0,0,0,0];
+    var wBest = [8,8,8,8,8,8,8,8], bBest = [-1,-1,-1,-1,-1,-1,-1,-1];
+    var wBishops = 0, bBishops = 0;
+    var wRooks = [], bRooks = [];
+    var np = 0, wKing = -1, bKing = -1;
+
     for (var i = 0; i < 128; i++) {
       if (i & 0x88) continue;
-      var p = pos.board[i];
+      var p = b[i];
       if (p === "") continue;
-      var lower = p.toLowerCase();
-      var white = isWhite(p);
+      var white = WHITE_PIECE[p] === true;
+      var lower = white ? p.toLowerCase() : p;
       var rank = i >> 4, file = i & 15;
       var idx = white ? (rank * 8 + file) : ((7 - rank) * 8 + file);
-      if (lower === "k") { kingIdx[white ? "w" : "b"] = idx; continue; }
-      score += white ? (VALUE[lower] + (PST[lower] ? PST[lower][idx] : 0))
-                     : -(VALUE[lower] + (PST[lower] ? PST[lower][idx] : 0));
+      if (lower === "k") { if (white) wKing = i; else bKing = i; continue; }
+      score += white ? (VALUE[lower] + PST[lower][idx]) : -(VALUE[lower] + PST[lower][idx]);
       if (lower === "n" || lower === "b") np += 1;
       else if (lower === "r") np += 2;
       else if (lower === "q") np += 4;
-      if (lower === "p") pawnFiles[white ? "w" : "b"][file]++;
-      if (lower === "b") bishops[white ? "w" : "b"]++;
+      if (lower === "p") {
+        if (white) { wFile[file]++; if (rank < wBest[file]) wBest[file] = rank; }
+        else       { bFile[file]++; if (rank > bBest[file]) bBest[file] = rank; }
+      } else if (lower === "b") { if (white) wBishops++; else bBishops++; }
+      else if (lower === "r") { if (white) wRooks.push(file); else bRooks.push(file); }
     }
+
     // 24 is the full complement of non-pawn material at the start.
-    var phase = Math.max(0, Math.min(1, (24 - np) / 24));
-    if (kingIdx.w >= 0) score += VALUE.k + Math.round(PST.k[kingIdx.w] * (1 - phase) + PST_KING_END[kingIdx.w] * phase);
-    if (kingIdx.b >= 0) score -= VALUE.k + Math.round(PST.k[kingIdx.b] * (1 - phase) + PST_KING_END[kingIdx.b] * phase);
-    /* Three structural terms, chosen because each one fixes a behaviour a
-       child can SEE the bot getting wrong, not because they add rating:
-       doubled pawns (it happily trades into them), the bishop pair (it gives
-       one away for a knight for nothing), and a bare king in the middle. */
-    for (var f = 0; f < 8; f++) {
-      if (pawnFiles.w[f] > 1) score -= 18 * (pawnFiles.w[f] - 1);
-      if (pawnFiles.b[f] > 1) score += 18 * (pawnFiles.b[f] - 1);
+    var phase = (24 - np) / 24;
+    if (phase < 0) phase = 0; else if (phase > 1) phase = 1;
+
+    if (wKing >= 0) {
+      var wk = (wKing >> 4) * 8 + (wKing & 15);
+      score += VALUE.k + Math.round(PST.k[wk] * (1 - phase) + PST_KING_END[wk] * phase);
     }
-    if (bishops.w >= 2) score += 30;
-    if (bishops.b >= 2) score -= 30;
+    if (bKing >= 0) {
+      var bkr = 7 - (bKing >> 4), bk = bkr * 8 + (bKing & 15);
+      score -= VALUE.k + Math.round(PST.k[bk] * (1 - phase) + PST_KING_END[bk] * phase);
+    }
+
+    /* ── Pawn structure ──────────────────────────────────────────────────
+       Each term is here because a child can watch the bot get it wrong
+       without it, not because it adds rating on a list somewhere.
+
+       DOUBLED: it trades into them cheerfully.
+       ISOLATED: it makes them and then cannot defend them.
+       PASSED: without this the engine will not push a pawn that is going to
+         queen, because a pawn on the seventh scores the same 100 as a pawn on
+         the second and the piece-square table's twenty points do not cover the
+         difference. This is the single most visible weakness in a pawn ending,
+         and pawn endings are what club children reach. */
+    for (var f = 0; f < 8; f++) {
+      if (wFile[f] > 1) score -= 16 * (wFile[f] - 1);
+      if (bFile[f] > 1) score += 16 * (bFile[f] - 1);
+      var wl = f > 0 ? wFile[f - 1] : 0, wr = f < 7 ? wFile[f + 1] : 0;
+      var bl = f > 0 ? bFile[f - 1] : 0, br = f < 7 ? bFile[f + 1] : 0;
+      if (wFile[f] && !wl && !wr) score -= 14;
+      if (bFile[f] && !bl && !br) score += 14;
+
+      if (wFile[f]) {
+        // Nothing black on this file or either neighbour, in front of it.
+        var wr0 = wBest[f];
+        var blocked = (bBest[f] >= 0 && bBest[f] < wr0)
+          || (f > 0 && bBest[f - 1] >= 0 && bBest[f - 1] < wr0)
+          || (f < 7 && bBest[f + 1] >= 0 && bBest[f + 1] < wr0);
+        if (!blocked) score += PASSED[7 - wr0];
+      }
+      if (bFile[f]) {
+        var br0 = bBest[f];
+        var blocked2 = (wBest[f] < 8 && wBest[f] > br0)
+          || (f > 0 && wBest[f - 1] < 8 && wBest[f - 1] > br0)
+          || (f < 7 && wBest[f + 1] < 8 && wBest[f + 1] > br0);
+        if (!blocked2) score -= PASSED[br0];
+      }
+    }
+
+    /* Rooks belong on files pawns have left. Without this the engine leaves a
+       rook on b1 for forty moves and cannot say why. */
+    for (var ri = 0; ri < wRooks.length; ri++) {
+      var rf = wRooks[ri];
+      if (!wFile[rf]) score += bFile[rf] ? 12 : 25;
+    }
+    for (var rj = 0; rj < bRooks.length; rj++) {
+      var rf2 = bRooks[rj];
+      if (!bFile[rf2]) score -= wFile[rf2] ? 12 : 25;
+    }
+
+    if (wBishops >= 2) score += 30;
+    if (bBishops >= 2) score -= 30;
+
+    /* The pawns in front of a castled king, while there are pieces to punish
+       their absence. Faded out with the phase, because in an endgame those
+       same pawns should be marching. */
+    if (phase < 0.7) {
+      var shield = Math.round((1 - phase / 0.7) * 12);
+      if (shield > 0) {
+        if (wKing >= 0 && (wKing >> 4) === 7) score += shield * pawnShield(b, wKing, "P", -16);
+        if (bKing >= 0 && (bKing >> 4) === 0) score -= shield * pawnShield(b, bKing, "p", 16);
+      }
+    }
+
     return pos.turn === "w" ? score : -score;
+  }
+
+  /* A passed pawn by the rank it has reached, from its own side's view. The
+     jump at the sixth and seventh is the point: a pawn two squares from
+     queening is not worth twice a pawn four squares away. */
+  var PASSED = [0, 8, 14, 24, 44, 78, 120, 0];
+
+  /** How many of the three squares in front of the king hold one of its own
+   *  pawns, 0 to 3. */
+  function pawnShield(b, k, pawn, fwd) {
+    var n = 0;
+    for (var d = -1; d <= 1; d++) {
+      var t = k + fwd + d;
+      if (!(t & 0x88) && b[t] === pawn) n++;
+      else {
+        var t2 = k + fwd + fwd + d;
+        if (!(t2 & 0x88) && b[t2] === pawn) n++;
+      }
+    }
+    return n;
   }
 
   // Search order decides how much alpha-beta actually prunes. Captures first,
@@ -501,14 +840,33 @@
      it winning a pawn — the single most obvious way a weak engine looks
      broken rather than weak. */
   function quiesce(pos, alpha, beta, depth) {
+    nodes++;
     var stand = evaluate(pos);
     if (stand >= beta) return beta;
     if (stand > alpha) alpha = stand;
     if (depth <= 0) return alpha;
-    var caps = legalMoves(pos).filter(function (m) { return m.captured !== "" || m.promotion !== ""; });
-    caps = ordered(pos, caps);
+    var all = legalMoves(pos);
+    /* Captures only, and only the ones that are not obviously bad.
+     *
+     * Without the SEE filter the quiescence budget goes on lines like QxP
+     * defended by a pawn: the engine plays it, gets recaptured, and has spent
+     * a whole sub-tree learning what one subtraction would have told it. The
+     * filter is also the ordering key, so the exchange is evaluated once and
+     * used twice.
+     *
+     * A losing capture is skipped rather than searched last, because
+     * quiescence has no depth to spare — that is the whole point of it. */
+    var caps = [];
+    for (var c = 0; c < all.length; c++) {
+      var mv = all[c];
+      if (mv.captured === "" && mv.promotion === "") continue;
+      var gain = mv.promotion !== "" ? 800 : seeCapture(pos, mv);
+      if (gain < 0) continue;
+      caps.push({ m: mv, g: gain });
+    }
+    caps.sort(function (a, b) { return b.g - a.g; });
     for (var i = 0; i < caps.length; i++) {
-      var score = -quiesce(apply(pos, caps[i]), -beta, -alpha, depth - 1);
+      var score = -quiesce(apply(pos, caps[i].m), -beta, -alpha, depth - 1);
       if (score >= beta) return beta;
       if (score > alpha) alpha = score;
     }
@@ -526,28 +884,16 @@
      across moves would be faster still and is not worth the class of bug it
      invites on a device with 2GB of RAM. */
 
-  var TT = Object.create(null);      // key → { d, score, flag, move }
-  var TT_SIZE = 0;
-  var TT_MAX = 120000;               // ~ a few MB of small objects
+  var TT = new Map();                // hash → { d, score, flag, move }
+  var TT_MAX = 200000;               // ~ a few MB of small objects
   var killers = [];                  // [ply] → [uci, uci]
   var history = Object.create(null); // uci → cutoff count
   var nodes = 0, deadline = 0, aborted = false;
 
-  /* The key is a string, and it was measured against the alternative.
-   *
-   * A Zobrist hash is the textbook answer and was tried here: 30-bit keys,
-   * XORed per piece-square, no allocation. It made the search SLOWER —
-   * level-8 endgame depth fell from 8 to 5 — because a dictionary object keyed
-   * by integers takes a different and slower path in V8 than one keyed by
-   * strings. The textbook answer is right about the algorithm and wrong about
-   * this runtime, so the measurement wins.
-   *
-   * The FEN minus the move counters IS the position, and the counters are
-   * exactly what must not be part of the key. */
-  function ttKey(pos) {
-    return pos.board.join("") + pos.turn + (pos.castling || "") + (pos.ep || "-");
-  }
-  function ttReset() { TT = Object.create(null); TT_SIZE = 0; killers = []; history = Object.create(null); historyUsed = false; }
+  /* The key is the position's Zobrist hash, maintained by apply(). See the
+   * hashing block near the top for why this replaced a string key and why the
+   * first attempt at it measured slower. */
+  function ttReset() { TT = new Map(); killers = []; history = Object.create(null); historyUsed = false; }
   function ttPut(key, d, score, flag, move) {
     /* Never store a mate score. It is measured in plies FROM THE ROOT, so the
        same entry read at a different distance reports the wrong one — the
@@ -555,11 +901,11 @@
        position is cheap to re-search and being right about mate is not
        optional. */
     if (Math.abs(score) > 90000) return;
-    if (TT_SIZE >= TT_MAX) { TT = Object.create(null); TT_SIZE = 0; }
-    var e = TT[key];
+    if (TT.size >= TT_MAX) TT.clear();
+    var e = TT.get(key);
     if (e && e.d > d) return;         // keep the deeper answer
-    if (!e) TT_SIZE++;
-    TT[key] = { d: d, score: score, flag: flag, move: move };
+    if (e) { e.d = d; e.score = score; e.flag = flag; e.move = move; return; }
+    TT.set(key, { d: d, score: score, flag: flag, move: move });
   }
 
   /* Move ordering, best first:
@@ -586,8 +932,12 @@
       var m = moves[i];
       var sc;
       if (m.captured) {
-        // Most valuable victim, least valuable attacker. No string needed.
-        sc = 100000 + VALUE[m.captured.toLowerCase()] * 10 - VALUE[m.piece.toLowerCase()];
+        /* Most-valuable-victim first is a guess; the exchange is the answer.
+           A capture that loses material is ordered BELOW the quiet moves,
+           because a quiet move that does nothing still beats one that hands
+           over a rook. */
+        var g = seeCapture(pos, m);
+        sc = g >= 0 ? 100000 + g : -100000 + g;
       } else if (m.promotion) {
         sc = 90000;
       } else {
@@ -595,7 +945,7 @@
       }
       /* The three tests that DO need the uci are only asked for quiet moves,
          and only when there is something to compare against. */
-      if (sc < 90000 && (ttMove || kk.length || historyUsed)) {
+      if (sc > -90000 && sc < 90000 && (ttMove || kk.length || historyUsed)) {
         var u = uciOf(m);
         if (ttMove && u === ttMove) sc = 1000000;
         else if (u === kk[0]) sc = 80000;
@@ -613,6 +963,37 @@
   }
   var historyUsed = false;
 
+  /** A "pass": the same position with the other side to move. Only ever used
+   *  by null-move pruning, and never on a real board — passing is not a legal
+   *  chess move. The board array is SHARED rather than copied, which is safe
+   *  because apply() always builds a new one and never writes into its parent. */
+  function applyNull(pos) {
+    var ha = pos.ha ^ ZT_A, hb = pos.hb ^ ZT_B;
+    if (pos.ep >= 0) { var f = pos.ep & 15; ha ^= ZE_A[f]; hb ^= ZE_B[f]; }
+    return { board: pos.board, turn: pos.turn === "w" ? "b" : "w", castling: pos.castling,
+             ep: -1, half: pos.half + 1, full: pos.full,
+             ha: ha, hb: hb, hash: zCombine(ha, hb) };
+  }
+
+  /** Does the side to move have anything but pawns and a king?
+   *  Null-move pruning assumes passing is bad for you. In a king-and-pawn
+   *  ending it often is not — that is zugzwang, where every move you have
+   *  loses and passing would save you — so the pruning has to be switched off
+   *  exactly there or the engine hallucinates safety in the endings children
+   *  reach most. */
+  function hasPieces(pos) {
+    var b = pos.board, want = pos.turn === "w";
+    for (var i = 0; i < 128; i++) {
+      if (i & 0x88) continue;
+      var p = b[i];
+      if (p === "") continue;
+      var l = p.toLowerCase();
+      if (l === "p" || l === "k") continue;
+      if ((p === p.toUpperCase()) === want) return true;
+    }
+    return false;
+  }
+
   function timeUp() {
     // Checked every few thousand nodes rather than every node: Date.now() is
     // not free, and on a low-end Android it is measurably not free.
@@ -625,8 +1006,8 @@
     nodes++;
     if (timeUp()) return alpha;
 
-    var key = ttKey(pos);
-    var hit = TT[key];
+    var key = pos.hash;
+    var hit = TT.get(key);
     var ttMove = hit ? hit.move : null;
     if (hit && hit.d >= depth) {
       if (hit.flag === 0) return hit.score;                      // exact
@@ -657,10 +1038,46 @@
     var checkNow = inCheck(pos);
     if (checkNow) depth++;
 
+    /* ── Null-move pruning ────────────────────────────────────────────────
+       Give the opponent a free move. If the position is still good enough to
+       beat beta even after handing them a tempo, it is good enough to stop
+       looking — nothing they do here is going to hurt. This is the single
+       largest saving in the search and it costs fifteen lines.
+
+       Three guards, each for a real failure rather than for form:
+         · not in check — passing while in check is not a position at all;
+         · only at depth 3 and up — below that the reduced search is the
+           whole search, and it prunes the answer;
+         · only with pieces on the board — see hasPieces(). */
+    if (!checkNow && depth >= 3 && beta < 90000 && hasPieces(pos)) {
+      var R = depth >= 6 ? 3 : 2;
+      var nullScore = -negamax(applyNull(pos), depth - 1 - R, -beta, -beta + 1, ply + 1);
+      if (aborted) return alpha;
+      if (nullScore >= beta) return beta;
+    }
+
     moves = orderedFull(pos, moves, ply, ttMove);
     var best = -100000, bestMv = null, origAlpha = alpha;
     for (var i = 0; i < moves.length; i++) {
-      var score = -negamax(apply(pos, moves[i]), depth - 1, -beta, -alpha, ply + 1);
+      var child = apply(pos, moves[i]);
+      var score;
+      /* ── Late move reductions ──────────────────────────────────────────
+         The ordering above is good, so a quiet move sitting fifth or later is
+         probably not the best move. Search it shallower first, and only pay
+         for the full depth if the cheap search says it might be. Wrong
+         occasionally, and the re-search is what makes being wrong cheap. */
+      var reduce = 0;
+      if (depth >= 3 && i >= 3 && !moves[i].captured && !moves[i].promotion
+          && !checkNow && !inCheck(child)) {
+        reduce = i >= 6 ? 2 : 1;
+        if (reduce >= depth) reduce = depth - 1;
+      }
+      if (reduce > 0) {
+        score = -negamax(child, depth - 1 - reduce, -alpha - 1, -alpha, ply + 1);
+        if (!aborted && score > alpha) score = -negamax(child, depth - 1, -beta, -alpha, ply + 1);
+      } else {
+        score = -negamax(child, depth - 1, -beta, -alpha, ply + 1);
+      }
       if (aborted) return alpha;
       if (score > best) { best = score; bestMv = uciOf(moves[i]); }
       if (score > alpha) alpha = score;
@@ -778,10 +1195,20 @@
    * that is random by design is otherwise untestable, and "sometimes wrong"
    * is exactly the behaviour worth pinning down.
    */
-  function bestMove(fen, level, rand) {
+  function bestMove(fen, level, rand, opts) {
     var pos = parseFen(fen);
     if (!pos) return null;
+    /* `opts` overrides the level's budget without inventing a new level.
+       Analysis and the benchmark both want "level 8's search, but for this
+       long and this deep"; a ninth level would be a level a child could
+       choose, and this is not a level. */
     var info = levelInfo(level || 4);
+    if (opts) {
+      info = { level: info.level, depth: opts.depth || info.depth, ms: opts.ms || info.ms,
+               slip: opts.slip !== undefined ? opts.slip : info.slip,
+               blunder: info.blunder, book: opts.book !== undefined ? opts.book : info.book,
+               rating: info.rating, blurb: info.blurb };
+    }
     var moves = legalMoves(pos);
     if (!moves.length) return null;
     var random = rand || Math.random;
@@ -877,6 +1304,100 @@
     };
   }
 
+  /* ── The line, not just the move ──────────────────────────────────────────
+     After a search the table holds the best move for every position on the
+     principal variation, so the line can be walked out of it. Capped, and
+     stopped on a repeat, because a table entry can point into a cycle and a
+     review that prints the same move forty times is worse than one that prints
+     three moves. */
+  function extractPv(pos, limit) {
+    var out = [], seen = Object.create(null), cur = pos;
+    for (var i = 0; i < (limit || 6); i++) {
+      var e = TT.get(cur.hash);
+      if (!e || !e.move) break;
+      if (seen[cur.hash]) break;
+      seen[cur.hash] = 1;
+      var legal = legalMoves(cur), found = null;
+      for (var j = 0; j < legal.length; j++) if (uciOf(legal[j]) === e.move) { found = legal[j]; break; }
+      if (!found) break;                       // a collision, or a stale entry
+      out.push({ uci: e.move, san: san(cur, found, legal) });
+      cur = apply(cur, found);
+    }
+    return out;
+  }
+
+  /* ── After-game review ────────────────────────────────────────────────────
+     What a child gets after the game is over: what the position was worth
+     before their move, what it was worth after, and what the engine would
+     have played. Deliberately exposed one POSITION at a time rather than as a
+     whole-game call, for two reasons:
+
+       · a sixty-move game at a serious budget is fifteen seconds of solid
+         computation, and doing that in one synchronous call freezes the tab on
+         the phones this is for;
+       · scoring each position once is enough. The value of the move played at
+         position i is the value of position i+1 with the sign flipped, so a
+         review needs n+1 searches and not 2n.
+  */
+  function positionScore(fen, opts) {
+    var pos = parseFen(fen);
+    if (!pos) return null;
+    var moves = legalMoves(pos);
+    if (!moves.length) {
+      return { score: inCheck(pos) ? -99000 : 0, best: null, san: "", pv: [], terminal: true };
+    }
+    var r = bestMove(fen, 8, function () { return 0.99; },
+                     { ms: (opts && opts.ms) || 400, depth: (opts && opts.depth) || 20,
+                       slip: 0, book: false });
+    if (!r) return null;
+    /* The ROOT is never written to the table — negamax stores the nodes below
+       it — so the line starts with the move we already know and is walked from
+       the position it leads to. */
+    var pv = [], head = null;
+    for (var i = 0; i < moves.length; i++) if (uciOf(moves[i]) === r.uci) { head = moves[i]; break; }
+    if (head) {
+      pv.push({ uci: r.uci, san: san(pos, head, moves) });
+      pv = pv.concat(extractPv(apply(pos, head), ((opts && opts.pv) || 4) - 1));
+    }
+    return { score: r.score, best: r.uci, san: r.san, depth: r.depth, pv: pv, terminal: false };
+  }
+
+  /* The thresholds. Centipawns, and chosen for a child rather than copied from
+     a server that grades masters: a fifty-point slip is not worth a word, and
+     calling it one teaches them to ignore the words that matter. */
+  var REVIEW_BANDS = [
+    { at: 300, tag: "blunder",    label: "Blunder" },
+    { at: 120, tag: "mistake",    label: "Mistake" },
+    { at: 50,  tag: "inaccuracy", label: "Inaccuracy" },
+  ];
+
+  /** What to call a move that cost this much. */
+  function classifyLoss(loss, wasBest) {
+    if (wasBest) return { tag: "best", label: "Best move" };
+    for (var i = 0; i < REVIEW_BANDS.length; i++) {
+      if (loss >= REVIEW_BANDS[i].at) return { tag: REVIEW_BANDS[i].tag, label: REVIEW_BANDS[i].label };
+    }
+    return { tag: "good", label: "Good" };
+  }
+
+  /**
+   * Accuracy from the average centipawn loss.
+   *
+   * There is no standard for this and every site computes it differently, so
+   * what matters is that it is monotonic, bounded, and explainable in one
+   * sentence: an average loss of nothing is 100, and it falls away steeply at
+   * first and then slowly, because the difference between losing 10 and 40
+   * centipawns a move is far bigger than between 200 and 230.
+   *
+   * It is NOT comparable with any other site's number, and the screen says so
+   * rather than implying a child's 82 means what a 82 means elsewhere.
+   */
+  function accuracyFrom(avgLoss) {
+    if (!(avgLoss >= 0)) return 0;
+    var a = 100 * Math.exp(-avgLoss / 90);
+    return Math.max(0, Math.min(100, Math.round(a)));
+  }
+
   /**
    * A hint: the best move here, and how much better it is than the average.
    * Used by the practice aids — "highlights one good square" — and by the
@@ -940,7 +1461,9 @@
     },
     apply: apply, san: san, status: status, move: move, uciOf: uciOf,
     inCheck: inCheck, kingSquare: kingSquare, repetitionKey: repetitionKey,
-    perft: perft, evaluate: evaluate,
+    perft: perft, evaluate: evaluate, hashOf: hashOf,
     bestMove: bestMove, analyse: analyse, blunderCheck: blunderCheck,
+    positionScore: positionScore, classifyLoss: classifyLoss,
+    accuracyFrom: accuracyFrom, REVIEW_BANDS: REVIEW_BANDS,
   };
 })(typeof window !== "undefined" ? window : globalThis);

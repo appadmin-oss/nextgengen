@@ -116,6 +116,11 @@ const GAMES = {
   NGGApi.member.match.poll = () => Promise.resolve({ ok: true, changed: false, status: 'active' });
   NGGApi.member.match.move = () => Promise.resolve({ ok: true });
   NGGApi.member.match.challenge = (d) => { window.__sent = d; return Promise.resolve({ ok: true }); };
+  // The finished-game screen carries a popup promotion and offers a review.
+  // Neither is what this file tests, so both are stubbed to "nothing to show".
+  NGGApi.member.promo = () => Promise.resolve({ ok: true, promo: null });
+  NGGApi.member.promoTrack = () => Promise.resolve({ ok: true });
+  NGGApi.member.match.review = () => Promise.resolve({ ok: true, review: null });
 
   let root = null;
   window.__render = (what, props) => {
@@ -141,7 +146,12 @@ const GAMES = {
 
     const show = async (which, sel) => {
       await page.evaluate(w => window.__board(w), which);
-      await page.waitForSelector(sel || '.mtg-board', { timeout: 8000 });
+      try {
+        await page.waitForSelector(sel || '.mtg-board', { timeout: 8000 });
+      } catch (e) {
+        console.log('  ! could not render "' + which + '": ' + (errors[0] || e.message));
+        throw e;
+      }
     };
     const clocks = () => page.locator('.mtg-clock');
     const clockText = async () => (await clocks().allInnerTexts()).map(t => t.split('\n')[0].trim());

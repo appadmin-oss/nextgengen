@@ -3956,7 +3956,7 @@ img { background-color: rgba(12,20,50,0.04); }
 .trn-vts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .trn-vt { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px;
   min-height: var(--c-tap); padding: 9px 12px; border-radius: var(--c-r-sm);
-  border: 1px solid var(--c-line); background: var(--c-card); cursor: pointer; }
+  border: 1px solid var(--c-border); background: var(--c-card); cursor: pointer; }
 .trn-vt.is-on { border-color: var(--c-blue); background: var(--c-blue-tint); }
 .trn-vt-n { font-size: 14px; font-weight: 700; color: var(--c-ink); }
 .trn-vt-s { font-size: 11.5px; color: var(--c-muted); }
@@ -4110,3 +4110,154 @@ img { background-color: rgba(12,20,50,0.04); }
   color: var(--c-muted); font-size: 15px; cursor: pointer; border-radius: var(--c-r-sm); }
 .cm-promo-x:hover { background: var(--c-neutral-chip); color: var(--c-ink); }
 .cm-promo-x:focus-visible { outline: 2px solid var(--c-blue); outline-offset: -2px; }
+
+/* ── After-game review ──────────────────────────────────────────────────────
+   The screen a child learns from. Everything here is inside `.cm-app`'s
+   palette, so it uses the --c-* tokens rather than the marketing site's. */
+.mtg-review { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 12px;
+  width: 100%; max-width: 560px; margin: 0 0 14px; padding: 14px 16px; text-align: left;
+  border: 1px solid var(--navy-900, #16223e); border-radius: 14px;
+  background: var(--navy-900, #16223e); color: #fff; cursor: pointer; font: inherit; }
+.mtg-review:hover { background: #1d2b4d; }
+.mtg-review-h { font-size: 15px; font-weight: 800; }
+.mtg-review-s { grid-column: 1; font-size: 12.5px; opacity: .82; }
+.mtg-review-go { grid-row: 1 / span 2; grid-column: 2; font-size: 22px; }
+.mtg-review:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outline-offset: 2px; }
+
+.rev .cmm-stream { padding-bottom: 40px; }
+.rev-h { margin: 0 0 6px; font-family: var(--c-font-display); font-size: 19px; font-weight: 800; color: var(--c-ink); }
+.rev-p { margin: 0 0 14px; font-size: 13.5px; line-height: 1.55; color: var(--c-body-soft); }
+.rev-start { padding: 4px var(--c-gutter) 10px; }
+.rev-start .cmm-cta { margin-top: 14px; }
+
+.rev-run { padding: 14px var(--c-gutter); }
+.rev-bar { height: 8px; border-radius: 999px; background: var(--c-neutral-chip); overflow: hidden; }
+.rev-bar span { display: block; height: 100%; background: var(--c-blue); transition: width .2s linear; }
+
+/* Two panels, one per player. Side by side even on a phone: the whole point is
+   the comparison, and stacking them makes it a scroll. */
+.rev-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px var(--c-gutter) 0; }
+.rev-side { padding: 12px; border: 1px solid var(--c-border); border-radius: var(--c-r-card);
+  background: var(--c-card); text-align: center; }
+.rev-side-h { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 6px; }
+.rev-side-n { font-size: 13px; font-weight: 700; color: var(--c-ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rev-acc { font-family: var(--c-font-display); font-weight: 800; line-height: 1; color: var(--c-ink); }
+.rev-acc-n { font-size: 34px; }
+.rev-acc-p { font-size: 16px; color: var(--c-muted); }
+.rev-acc-l { font-family: var(--c-font-mono); font-size: 9.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--c-muted); margin-bottom: 8px; }
+.rev-counts { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--c-body-soft); }
+.rev-counts li { padding: 1px 0; }
+.rev-counts b { color: var(--c-ink); }
+.rev-counts .is-bad b { color: var(--c-red-ink); }
+.rev-note { margin: 10px var(--c-gutter) 0; font-size: 12px; line-height: 1.5; color: var(--c-muted); }
+
+.rev-turn { margin: 14px var(--c-gutter) 0; padding: 12px 14px; border-radius: var(--c-r-card);
+  background: var(--c-gold-tint, #fdf3dd); border: 1px solid var(--c-gold, #f5b026); }
+.rev-turn-h { font-family: var(--c-font-mono); font-size: 9.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--gold-text, #8a5f00); }
+.rev-turn-b { margin: 4px 0 8px; font-size: 14px; line-height: 1.5; color: var(--c-ink); }
+
+/* The graph. Above the middle is White, below is Black. */
+.rev-graph { margin: 16px 0 6px; }
+.rev-graph svg { display: block; width: 100%; height: 92px; background: var(--c-card);
+  border-top: 1px solid var(--c-border); border-bottom: 1px solid var(--c-border); }
+.rev-g-w { fill: #fbf7ed; }
+.rev-g-b { fill: #e6e2d6; }
+.rev-g-area { fill: rgba(22,34,62,.16); }
+.rev-g-line { fill: none; stroke: var(--c-ink); stroke-width: 1.5; }
+.rev-g-cursor { stroke: var(--c-red); stroke-width: 1.5; }
+/* A real range input over the graph: draggable with a thumb, steppable with a
+   keyboard, and announced. The picture alone is neither. */
+.rev-scrub { display: block; width: calc(100% - var(--c-gutter) * 2); margin: 8px var(--c-gutter) 0;
+  min-height: var(--c-tap); accent-color: var(--c-blue); }
+
+.rev-board { max-width: 480px; margin: 6px auto 0; padding: 0 var(--c-gutter); }
+.rev-nav { display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 10px var(--c-gutter) 0; }
+.rev-nav-b { min-width: var(--c-tap); min-height: var(--c-tap); border: 1px solid var(--c-border);
+  border-radius: var(--c-r-sm); background: var(--c-card); font: inherit; font-size: 15px;
+  color: var(--c-ink); cursor: pointer; }
+.rev-nav-b:hover { border-color: var(--c-ink); }
+.rev-nav-at { flex: 1; text-align: center; font-size: 13px; font-weight: 700; color: var(--c-ink); }
+
+.rev-verdict { margin: 12px var(--c-gutter) 0; padding: 12px 14px; border-radius: var(--c-r-card);
+  border: 1px solid var(--c-border); background: var(--c-card); }
+.rev-verdict-h { font-size: 14px; font-weight: 800; color: var(--c-ink); }
+.rev-verdict-b, .rev-verdict-c { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--c-body-soft); }
+.rev-verdict.is-blunder { border-color: var(--c-red); background: var(--c-red-tint); }
+.rev-verdict.is-blunder .rev-verdict-h { color: var(--c-red-ink); }
+.rev-verdict.is-mistake { border-color: var(--c-gold, #f5b026); background: var(--c-gold-tint, #fdf3dd); }
+.rev-verdict.is-best .rev-verdict-h { color: var(--c-green-ink, #1c6b32); }
+
+.rev-list { list-style: none; margin: 8px 0 0; padding: 0 var(--c-gutter); }
+.rev-move { display: grid; grid-template-columns: 2.6em 4.5em 1fr auto; align-items: center; gap: 8px;
+  width: 100%; min-height: var(--c-tap); padding: 6px 10px; text-align: left;
+  border: 0; border-bottom: 1px solid var(--c-border); background: none; font: inherit; cursor: pointer; }
+.rev-move:hover { background: var(--c-neutral-chip); }
+.rev-move.is-at { background: var(--c-blue-tint); }
+.rev-move-n { font-family: var(--c-font-mono); font-size: 12px; color: var(--c-muted); }
+.rev-move-s { font-weight: 700; font-size: 14px; color: var(--c-ink); }
+.rev-move-t { font-size: 12px; font-weight: 700; color: var(--c-muted); }
+.rev-move-l { font-family: var(--c-font-mono); font-size: 12px; color: var(--c-muted); }
+.rev-move.is-blunder .rev-move-t, .rev-move.is-blunder .rev-move-l { color: var(--c-red-ink); }
+.rev-move.is-mistake .rev-move-t, .rev-move.is-mistake .rev-move-l { color: var(--gold-text, #8a5f00); }
+
+/* ── The live ladder ────────────────────────────────────────────────────── */
+.lad { margin: 0 0 18px; border-top: 1px solid var(--c-border); }
+.lad-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; min-height: var(--c-tap); padding: 12px var(--c-gutter) 8px; text-align: left;
+  border: 0; background: none; font: inherit; cursor: pointer; }
+.lad-head-t { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lad-name-t { font-family: var(--c-font-display); font-size: 15.5px; font-weight: 800; color: var(--c-ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lad-meta { font-size: 11.5px; color: var(--c-muted); }
+/* The pulse. A live count beats any adjective, so the chip carries a number. */
+.lad-live, .lad-warm, .lad-open, .lad-quiet { flex: none; display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: var(--c-r-pill); font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.lad-live { background: var(--c-red-tint); color: var(--c-red-ink); }
+.lad-warm { background: var(--c-gold-tint, #fdf3dd); color: var(--gold-text, #8a5f00); }
+.lad-open { background: var(--c-blue-tint); color: var(--c-blue-ink, #1a3d8f); }
+.lad-quiet { background: var(--c-neutral-chip); color: var(--c-muted); }
+.lad-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-red); }
+@media (prefers-reduced-motion: no-preference) {
+  .lad-dot { animation: ladPulse 2s ease-in-out infinite; }
+}
+@keyframes ladPulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+.lad-list { list-style: none; margin: 0; padding: 0; }
+.lad-list.is-mine { border-top: 1px dashed var(--c-border); }
+.lad-gap { padding: 2px var(--c-gutter); color: var(--c-faint); font-size: 14px; letter-spacing: .3em; }
+.lad-row { display: grid; grid-template-columns: 1.8em 2.6em auto 1fr auto; align-items: center; gap: 8px;
+  padding: 7px var(--c-gutter); min-height: 46px; }
+.lad-row.is-me { background: var(--c-blue-tint); }
+.lad-row.is-out { opacity: .55; }
+.lad-rank { font-family: var(--c-font-mono); font-size: 13px; font-weight: 700; color: var(--c-muted);
+  text-align: right; font-variant-numeric: tabular-nums; }
+.lad-move { font-family: var(--c-font-mono); font-size: 11px; font-weight: 700; color: var(--c-muted); }
+.lad-move.is-up { color: var(--c-green-ink, #1c6b32); }
+.lad-move.is-down { color: var(--c-red-ink); }
+.lad-av { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; flex: none;
+  display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 800; }
+.lad-av img { width: 100%; height: 100%; object-fit: cover; }
+.lad-who { min-width: 0; display: flex; flex-direction: column; }
+.lad-name { font-size: 14px; font-weight: 700; color: var(--c-ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lad-sub { font-size: 11.5px; color: var(--c-muted); }
+.lad-streak { color: var(--gold-text, #8a5f00); font-weight: 700; }
+.lad-score { font-family: var(--c-font-mono); font-size: 15px; font-weight: 800; color: var(--c-ink);
+  font-variant-numeric: tabular-nums; }
+.lad-more { display: block; width: 100%; min-height: var(--c-tap); padding: 10px var(--c-gutter);
+  text-align: left; border: 0; border-top: 1px solid var(--c-border); background: none;
+  font: inherit; font-size: 13px; font-weight: 700; color: var(--c-blue); cursor: pointer; }
+
+/* A popup promotion. The same card, moved — not a modal: it does not cover the
+   board, does not trap focus and does not darken anything. It slides in once
+   and is never seen again. */
+.cm-promo.is-popup { max-width: 560px; margin: 0 0 14px; border-width: 2px;
+  border-color: var(--promo-accent); box-shadow: 0 10px 28px -18px rgba(12,20,50,.5); }
+@media (prefers-reduced-motion: no-preference) {
+  .cm-promo.is-popup { animation: promoIn .28s cubic-bezier(.2,.8,.3,1) both; }
+}
+@keyframes promoIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }

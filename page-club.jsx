@@ -3179,18 +3179,28 @@ function cmSeenAgo(iso, online) {
      · the impression is counted once, when it actually renders, and not by
        whoever happened to fetch it.                                        */
 
-function CmPromo({ placement, onGo }) {
+function CmPromo({ placement, shape, onGo }) {
   const [promo, setPromo] = React.useState(null);
   const [gone, setGone] = React.useState(false);
   const counted = React.useRef("");
+  const popup = shape === "popup";
 
   React.useEffect(() => {
     let alive = true;
-    NGGApi.member.promo(placement)
-      .then(r => { if (alive) setPromo(r.promo || null); })
-      .catch(() => {});
+    /* A rejected promise was already caught; a call that throws before
+       returning one was not, and this component is mounted INSIDE the chess
+       screen and the game screen. An announcement is the least important thing
+       on either of them and must never be able to take one down — which is
+       exactly what an older cached api-client against a newer bundle would
+       do, and a service worker makes that a real Tuesday rather than a
+       hypothetical. */
+    try {
+      NGGApi.member.promo(placement, shape || "card")
+        .then(r => { if (alive) setPromo(r.promo || null); })
+        .catch(() => {});
+    } catch (_) {}
     return () => { alive = false; };
-  }, [placement]);
+  }, [placement, shape]);
 
   /* Counted on RENDER, not on fetch. A prefetch that never reaches the screen
      is not an impression, and counting it makes a promotion that nobody saw
@@ -3198,25 +3208,39 @@ function CmPromo({ placement, onGo }) {
   React.useEffect(() => {
     if (!promo || gone || counted.current === promo.promoId) return;
     counted.current = promo.promoId;
-    NGGApi.member.promoTrack(promo.promoId, "seen").catch(() => {});
+    try { NGGApi.member.promoTrack(promo.promoId, "seen").catch(() => {}); } catch (_) {}
   }, [promo, gone]);
 
   if (!promo || gone) return null;
 
+  const track = (what) => {
+    try { NGGApi.member.promoTrack(promo.promoId, what).catch(() => {}); } catch (_) {}
+  };
   const go = () => {
-    NGGApi.member.promoTrack(promo.promoId, "click").catch(() => {});
+    track("click");
     if (promo.ctaPage && onGo) onGo(promo.ctaPage, promo.ctaRef);
   };
-  const dismiss = () => {
-    setGone(true);
-    NGGApi.member.promoTrack(promo.promoId, "dismiss").catch(() => {});
-  };
+  const dismiss = () => { setGone(true); track("dismiss"); };
 
   const KIND = { programme: "From the programme", event: "Coming up",
                  tournament: "Tournament", notice: "Notice" };
 
   return (
-    <aside className="cm-promo" style={promo.accent ? { "--promo-accent": promo.accent } : null}
+    /* A popup is the same card, moved and announced.
+     *
+     * NOT a modal, deliberately. It does not trap focus, it does not darken
+     * the screen, and it does not sit over the board — the game is what the
+     * member came for and an announcement that blocks it is an announcement
+     * they learn to dismiss without reading. It is a region a screen reader is
+     * told about politely, and it goes away for good the moment it is seen
+     * (see PROMO_SHAPES on the server).
+     *
+     * `role="status"` rather than `alert`: this is news, not an alarm, and
+     * interrupting a child mid-sentence to mention the summer intake is worse
+     * than waiting for them to finish. */
+    <aside className={"cm-promo" + (popup ? " is-popup" : "")}
+           style={promo.accent ? { "--promo-accent": promo.accent } : null}
+           role={popup ? "status" : undefined} aria-live={popup ? "polite" : undefined}
            aria-label="Programme announcement">
       {promo.imageUrl && <span className="cm-promo-img" aria-hidden="true">
         <img src={cmOpt(promo.imageUrl, 320)} alt="" loading="lazy"/>
@@ -3280,6 +3304,145 @@ function trnClock(ms) {
   if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
   if (t < 10) return s + "." + Math.floor((Math.max(0, ms) % 1000) / 100);
   return m + ":" + String(s).padStart(2, "0");
+}
+
+/* ── The ladder ───────────────────────────────────────────────────────────
+   The tournaments list answers "what is on". This answers the question a
+   member actually opens the app with: what is happening right now, and where
+   am I in it.
+
+   Hot is measured in moves, not in size — see tournament_ladder() on the
+   server. An arena at a Saturday session outranks a term-long Swiss with sixty
+   entrants and one game a week, which is the right answer for a child deciding
+   where to look.
+
+   The movement arrow is the reason this screen exists. A table of positions is
+   a fact; a table with "up two since this morning" beside it is a reason to
+   come back. It compares against the standing recorded when the round was
+   paired, so it is a real change rather than an arrow drawn on a guess. */
+
+function CmLadderRow({ e, top }) {
+  const move = e.move || 0;
+  return (
+    <li className={"lad-row" + (e.isMe ? " is-me" : "") + (e.status === "eliminated" ? " is-out" : "")}>
+      <span className="lad-rank">{e.rank}</span>
+      {/* An arrow AND a number AND a word for a screen reader: colour and
+          shape are never the only way this is said. */}
+      <span className={"lad-move" + (move > 0 ? " is-up" : move < 0 ? " is-down" : "")}>
+        {move !== 0 && <>
+          <span aria-hidden="true">{move > 0 ? "▲" : "▼"}{Math.abs(move)}</span>
+          <span className="sr-only">{(move > 0 ? "up " : "down ") + Math.abs(move) + " places"}</span>
+        </>}
+      </span>
+      <span className="lad-av" style={{ background: cmColor(e.name, "") }} aria-hidden="true">
+        {e.photo ? <img src={cmOpt(e.photo, 64)} alt="" loading="lazy"/> : cmInitial(e.name)}
+      </span>
+      <span className="lad-who">
+        <span className="lad-name">{e.name}{e.isMe ? " · you" : ""}</span>
+        <span className="lad-sub">
+          {e.centre || "—"}
+          {e.streak >= 2 ? <span className="lad-streak"> · {e.streak} in a row</span> : null}
+        </span>
+      </span>
+      <span className="lad-score">{e.score % 1 === 0 ? e.score : e.score.toFixed(1)}</span>
+    </li>
+  );
+}
+
+function CmTrnLadder({ onOpen, onBack }) {
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState(false);
+
+  const load = React.useCallback(() => {
+    NGGApi.member.tournaments.ladder()
+      .then(r => { setData(r); setErr(false); })
+      .catch(() => { setData({ ladders: [] }); setErr(true); });
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  /* A ladder with live boards on it changes while you are looking at it, so it
+     refreshes — slowly, because this is a standings table and not a board, and
+     because the data is somebody's. Stopped while the tab is hidden. */
+  React.useEffect(() => {
+    let timer = null, alive = true;
+    const tick = () => {
+      if (!alive) return;
+      if (document.visibilityState !== "hidden") load();
+      timer = setTimeout(tick, 20000);
+    };
+    timer = setTimeout(tick, 20000);
+    return () => { alive = false; if (timer) clearTimeout(timer); };
+  }, [load]);
+
+  const ladders = (data && data.ladders) || [];
+
+  return (
+    <div className="cmm-screen">
+      <header className="cmm-ch-head">
+        <button className="cmm-icon-btn" onClick={onBack} aria-label="Back to chess">{cmUiIcon("back", 22)}</button>
+        <div className="cmm-head-txt">
+          <h1 className="cmm-ch-title">Live ladder</h1>
+          <p className="cmm-sub">
+            {data === null ? "…"
+              : data.hotCount ? data.hotCount + (data.hotCount === 1 ? " event has" : " events have") + " games going"
+              : "Nothing running just now"}
+          </p>
+        </div>
+      </header>
+
+      <div className="cmm-stream">
+        {err && <div className="cmm-offline" role="alert">Couldn't load the ladder. It will try again.</div>}
+        {data === null && <div className="cmm-skels"><div className="cmm-skel"/><div className="cmm-skel"/></div>}
+
+        {data !== null && ladders.length === 0 && (
+          <div className="cmm-empty">
+            <p>No tournaments are running. When one starts, this is where you watch it move.</p>
+          </div>
+        )}
+
+        {ladders.map(l => (
+          <section className="lad" key={l.tournament.tournamentId}>
+            <button className="lad-head" onClick={() => onOpen(l.tournament.tournamentId)}>
+              <span className="lad-head-t">
+                <span className="lad-name-t">{l.tournament.name}</span>
+                <span className="lad-meta">
+                  {l.tournament.formatName} · {cmTcName(l.tournament.timeControl)} · {l.entrants} players
+                </span>
+              </span>
+              {/* The pulse. A count of boards actually being played beats any
+                  adjective, so that is what it says. */}
+              {l.heat.live > 0
+                ? <span className="lad-live"><span className="lad-dot" aria-hidden="true"/>
+                    {l.heat.live} board{l.heat.live === 1 ? "" : "s"} live</span>
+                : l.heat.moves > 0
+                  ? <span className="lad-warm">{l.heat.moves} move{l.heat.moves === 1 ? "" : "s"} today</span>
+                  : l.tournament.status === "open"
+                    ? <span className="lad-open">Entries open</span>
+                    : <span className="lad-quiet">Quiet</span>}
+            </button>
+
+            <ol className="lad-list">
+              {l.top.map(e => <CmLadderRow key={e.playerId} e={e}/>)}
+            </ol>
+
+            {/* Where you are, if you are not in the five above it. Somebody in
+                fourteenth should not have to open a second screen to find
+                that out. */}
+            {l.me && l.me.rank > 5 && (
+              <ol className="lad-list is-mine">
+                <li className="lad-gap" aria-hidden="true">⋯</li>
+                <CmLadderRow e={l.me}/>
+              </ol>
+            )}
+
+            <button className="lad-more" onClick={() => onOpen(l.tournament.tournamentId)}>
+              Full table →
+            </button>
+          </section>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /* ── The list ─────────────────────────────────────────────────────────── */
@@ -3950,6 +4113,10 @@ function CmChess({ auth, onOpenMatch }) {
     return <CmTrnCreate onBack={() => setScreen("trn")}
                         onCreated={(id) => { setOpenTrn(id); setScreen("trn"); }}/>;
   }
+  if (screen === "ladder") {
+    return <CmTrnLadder onBack={() => setScreen("")}
+                        onOpen={(id) => { setOpenTrn(id); setScreen("trn"); }}/>;
+  }
   if (screen === "trn") {
     return openTrn
       ? <CmTrnDetail tournamentId={openTrn} staff={isDirector}
@@ -4090,6 +4257,13 @@ function CmChess({ auth, onOpenMatch }) {
             {lobby && lobby.tournaments ? lobby.tournaments + " running" : "Club tournaments"}
           </span>
           <span className="cmc-tile-s">Swiss, knockout, round robin and arena · live standings</span>
+        </button>
+        {/* The ladder, beside the list rather than inside it: "what is on" and
+            "what is happening right now" are two different questions and a
+            member with ten minutes is asking the second one. */}
+        <button className="cmc-tile is-ghost" onClick={() => setScreen("ladder")}>
+          <span className="cmc-tile-h">Live ladder</span>
+          <span className="cmc-tile-s">Who is climbing, and which boards are going right now</span>
         </button>
         {isDirector && (
           <button className="cmc-tile is-ghost" onClick={() => { setOpenTrn(""); setScreen("trnNew"); }}>
@@ -5054,8 +5228,420 @@ function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, inter
 }
 
 /** One game: the board, the move list, and the six things you can say. */
+/* ── After-game review ────────────────────────────────────────────────────
+   What a child actually learns from. The game is over, nothing is at stake,
+   and this is the one moment they will look at their own moves properly.
+
+   WHERE IT RUNS. In the browser, on the engine that already ships for offline
+   play. There is no engine on the server and there is not going to be one — a
+   request that thinks for fifteen seconds does not survive shared hosting, and
+   every game reviewed by every player would be the most expensive thing the
+   club does. The idle CPU is on the phone in the child's hand.
+
+   WHAT THAT COSTS, and what is done about it. A sixty-move game is a hundred
+   and twenty positions and about half a minute of solid computation on a
+   mid-range Android. So:
+
+     · the loop yields between positions, so the tab stays alive and scrollable
+       rather than freezing — the failure that makes people force-quit an app;
+     · results render AS THEY ARRIVE, so the graph draws itself and the wait is
+       visible progress rather than a spinner;
+     · it can be stopped, and stopping keeps what it has;
+     · one search per POSITION, not two per move. What a move was worth is the
+       next position's score with the sign flipped, so a game needs n+1
+       searches rather than 2n. That halves the wait for free.
+
+   And it is stored, so the second person to open the game reads the first
+   one's work instead of spending their own battery on the same arithmetic. */
+
+/* Mate scores are ±99000-ish and would flatten every real number on the graph
+   and turn one missed mate into a loss of two hundred pawns. Mapped to a large
+   but finite advantage, which is what "you were winning" means to a reader. */
+function cmCp(score) {
+  if (!(typeof score === "number")) return 0;
+  if (score > 90000) return 1000;
+  if (score < -90000) return -1000;
+  return Math.max(-1000, Math.min(1000, score));
+}
+
+/* How long the engine gets per position. A review nobody waits for is a review
+   nobody reads, so the default is the one that keeps a sixty-move game under
+   about half a minute; "careful" is there for a coach going through a game
+   with a child, where the wait is the lesson. */
+const CM_REVIEW_SPEEDS = [
+  { id: "quick",   label: "Quick",   ms: 120, sub: "about 15 seconds" },
+  { id: "normal",  label: "Normal",  ms: 300, sub: "about 40 seconds" },
+  { id: "careful", label: "Careful", ms: 800, sub: "a couple of minutes" },
+];
+
+function CmReviewGraph({ evals, at, onPick, plies }) {
+  /* An area chart, white's advantage above the line and black's below. Drawn
+     as one path rather than as bars: a bar per ply is unreadable at sixty
+     plies on a phone, and the shape of the game is the thing being shown. */
+  const W = 100, H = 40;
+  const n = Math.max(1, plies);
+  const pt = (i) => {
+    const v = Math.max(-1000, Math.min(1000, evals[i] === undefined ? 0 : evals[i]));
+    // A square root, so the difference between +50 and +250 is visible at all.
+    // Linear centipawns make every ordinary game a flat line with one spike.
+    const t = Math.sign(v) * Math.sqrt(Math.abs(v) / 1000);
+    return [(i / n) * W, H / 2 - t * (H / 2)];
+  };
+  let d = "M 0 " + (H / 2);
+  for (let i = 0; i <= plies; i++) { const [x, y] = pt(i); d += " L " + x.toFixed(2) + " " + y.toFixed(2); }
+  const area = d + " L " + W + " " + (H / 2) + " Z";
+  const cursor = (at / n) * W;
+  return (
+    <div className="rev-graph">
+      <svg viewBox={"0 0 " + W + " " + H} preserveAspectRatio="none" role="img"
+           aria-label={"Evaluation across " + plies + " moves. The line above the middle means White is better, below means Black."}>
+        <rect x="0" y="0" width={W} height={H / 2} className="rev-g-w"/>
+        <rect x="0" y={H / 2} width={W} height={H / 2} className="rev-g-b"/>
+        <path d={area} className="rev-g-area"/>
+        <path d={d} className="rev-g-line" vectorEffect="non-scaling-stroke"/>
+        <line x1={cursor} y1="0" x2={cursor} y2={H} className="rev-g-cursor" vectorEffect="non-scaling-stroke"/>
+      </svg>
+      {/* The graph is a picture. This is the same information as something a
+          screen reader can move through, and a thumb can drag. */}
+      <input className="rev-scrub" type="range" min="0" max={plies} value={at}
+             onChange={e => onPick(+e.target.value)}
+             aria-label="Move number" aria-valuetext={"Move " + Math.ceil(at / 2) + " of " + Math.ceil(plies / 2)}/>
+    </div>
+  );
+}
+
+function CmReviewSide({ name, colour, s, engine }) {
+  return (
+    <div className={"rev-side is-" + colour}>
+      <div className="rev-side-h">
+        <span className={"mtg-seat-dot is-" + colour} aria-hidden="true"/>
+        <span className="rev-side-n">{name}</span>
+      </div>
+      <div className="rev-acc" aria-label={name + " played at " + s.accuracy + " percent accuracy"}>
+        <span className="rev-acc-n">{s.accuracy}</span><span className="rev-acc-p">%</span>
+      </div>
+      <div className="rev-acc-l">accuracy</div>
+      <ul className="rev-counts">
+        <li><b>{s.inaccuracies}</b> inaccurac{s.inaccuracies === 1 ? "y" : "ies"}</li>
+        <li><b>{s.mistakes}</b> mistake{s.mistakes === 1 ? "" : "s"}</li>
+        <li className={s.blunders ? "is-bad" : ""}><b>{s.blunders}</b> blunder{s.blunders === 1 ? "" : "s"}</li>
+      </ul>
+    </div>
+  );
+}
+
+function CmGameReview({ m, onBack }) {
+  const engine = window.NggChess;
+  /* Every position of the game, replayed from the move list. Done once and
+     memoised — a Chess960 game starts somewhere other than the usual square,
+     which is what startFen is for. */
+  const line = React.useMemo(() => {
+    if (!engine) return null;
+    const start = m.startFen || engine.START_FEN;
+    const fens = [start], plies = [];
+    let fen = start;
+    for (const mv of (m.moves || [])) {
+      const res = engine.move(fen, mv.move);
+      if (!res || !res.ok) break;          // a move we cannot replay ends the line
+      fen = res.fen;
+      fens.push(fen);
+      plies.push({ uci: mv.move, san: mv.san, playerId: mv.playerId });
+    }
+    return { fens, plies };
+  }, [m.matchId]);
+
+  const [scores, setScores] = React.useState([]);
+  const [phase, setPhase] = React.useState("idle");   // idle | running | done | stored
+  const [speed, setSpeed] = React.useState("normal");
+  const [at, setAt] = React.useState(0);
+  const [stored, setStored] = React.useState(undefined);   // undefined = not asked yet
+  const [flip, setFlip] = React.useState(false);
+  const stop = React.useRef(false);
+
+  // Somebody may already have reviewed this game. Their numbers, not ours.
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.member.match.review(m.matchId)
+      .then(r => { if (alive) setStored(r.review || null); })
+      .catch(() => { if (alive) setStored(null); });
+    return () => { alive = false; };
+  }, [m.matchId]);
+
+  const budget = (CM_REVIEW_SPEEDS.find(s => s.id === speed) || CM_REVIEW_SPEEDS[1]).ms;
+  const total = line ? line.fens.length : 0;
+
+  const run = () => {
+    if (!line || !engine) return;
+    stop.current = false;
+    setPhase("running");
+    setScores([]);
+    let i = 0;
+    const acc = [];
+    const step = () => {
+      if (stop.current) { setPhase("done"); return; }
+      if (i >= line.fens.length) { setPhase("done"); return; }
+      /* One position, then hand the thread back. Without the yield the whole
+         review is a single task and the tab is frozen for its duration —
+         nothing paints, nothing scrolls, and the phone offers to close it. */
+      acc[i] = engine.positionScore(line.fens[i], { ms: budget, depth: 30, pv: 4 });
+      i++;
+      setScores(acc.slice());
+      setTimeout(step, 0);
+    };
+    setTimeout(step, 0);
+  };
+  React.useEffect(() => () => { stop.current = true; }, []);
+
+  /* The per-move verdicts, derived from the scores as they arrive so the list
+     fills in behind the graph. */
+  const verdicts = React.useMemo(() => {
+    if (!line) return [];
+    const out = [];
+    for (let i = 0; i < line.plies.length; i++) {
+      const a = scores[i], b = scores[i + 1];
+      if (!a || !b) break;
+      const before = cmCp(a.score);
+      // b.score is from the OTHER side's view, so flipping it gives what the
+      // position is worth to the player who just moved.
+      const after = -cmCp(b.score);
+      const wasBest = a.best === line.plies[i].uci;
+      const loss = wasBest ? 0 : Math.max(0, before - after);
+      out.push({
+        ply: i + 1, uci: line.plies[i].uci, san: line.plies[i].san,
+        white: i % 2 === 0, loss: loss, best: a.san, bestUci: a.best,
+        pv: a.pv || [], tag: engine.classifyLoss(loss, wasBest),
+        evalAfter: (i % 2 === 0) ? -cmCp(b.score) : cmCp(b.score),
+      });
+    }
+    return out;
+  }, [scores, line]);
+
+  /* White's advantage after every ply, which is what the graph draws. Index 0
+     is the starting position. */
+  const evals = React.useMemo(() => {
+    const out = [];
+    for (let i = 0; i < scores.length; i++) {
+      const s = scores[i];
+      if (!s) break;
+      // scores[i] is from the side to move at position i: White on even plies.
+      out.push(i % 2 === 0 ? cmCp(s.score) : -cmCp(s.score));
+    }
+    return out;
+  }, [scores]);
+
+  const summary = React.useMemo(() => {
+    const side = (isWhite) => {
+      const mine = verdicts.filter(v => v.white === isWhite);
+      if (!mine.length) return { accuracy: 0, avgLoss: 0, blunders: 0, mistakes: 0, inaccuracies: 0, moves: 0 };
+      const avg = mine.reduce((t, v) => t + v.loss, 0) / mine.length;
+      return {
+        accuracy: engine.accuracyFrom(avg), avgLoss: Math.round(avg), moves: mine.length,
+        blunders: mine.filter(v => v.tag.tag === "blunder").length,
+        mistakes: mine.filter(v => v.tag.tag === "mistake").length,
+        inaccuracies: mine.filter(v => v.tag.tag === "inaccuracy").length,
+      };
+    };
+    /* The turning point. A sign change matters more than a big number: losing
+       300 centipawns while already lost changed nothing, and losing 250 while
+       level is the moment the game went. */
+    let turning = null;
+    for (const v of verdicts) {
+      const beforeIdx = v.ply - 1;
+      const flipped = beforeIdx > 0 && Math.sign(evals[beforeIdx]) !== 0
+        && Math.sign(evals[beforeIdx]) !== Math.sign(evals[v.ply] || 0);
+      const weight = v.loss + (flipped ? 200 : 0);
+      if (v.loss >= 120 && (!turning || weight > turning.weight)) turning = { v: v, weight: weight };
+    }
+    return { white: side(true), black: side(false), turning: turning ? turning.v : null };
+  }, [verdicts, evals]);
+
+  /* Keep it, once, when the whole game has been analysed. A partial review
+     would be a number that looks like the game's and is about half of it. */
+  const savedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (phase !== "done" || savedRef.current) return;
+    if (!line || verdicts.length !== line.plies.length || !line.plies.length) return;
+    if (stored) return;                       // somebody got here first
+    if (m.spectator || m.staffView) return;   // a review is the players' own
+    savedRef.current = true;
+    const depths = scores.filter(Boolean).map(s => s.depth || 0);
+    NGGApi.member.match.reviewSave(m.matchId, {
+      white: summary.white, black: summary.black,
+      turning: summary.turning
+        ? { ply: summary.turning.ply, san: summary.turning.san,
+            best: summary.turning.best, loss: summary.turning.loss }
+        : null,
+      evals: evals,
+      engineDepth: depths.length ? Math.round(depths.reduce((a, b) => a + b, 0) / depths.length) : 0,
+      engineMs: budget,
+    }).then(r => { if (r && r.review) setStored(r.review); }).catch(() => {});
+  }, [phase, verdicts.length, line, stored]);
+
+  if (!engine || !line) {
+    return <div className="cmm-screen"><div className="cmm-offline" role="alert">
+      The review needs the chess engine, which has not loaded.
+    </div></div>;
+  }
+
+  const shown = Math.min(at, line.fens.length - 1);
+  const squares = chessSquares(line.fens[shown]);
+  const lastPly = shown > 0 ? line.plies[shown - 1] : null;
+  const here = shown > 0 ? verdicts[shown - 1] : null;
+  const progress = total ? Math.round((scores.length / total) * 100) : 0;
+  const names = { w: m.players.A.name, b: m.players.B.name };
+
+  return (
+    <div className="cmm-screen rev">
+      <header className="cmm-ch-head">
+        <button className="cmm-icon-btn" onClick={onBack} aria-label="Back to the game">{cmUiIcon("back", 22)}</button>
+        <div className="cmm-head-txt">
+          <h1 className="cmm-ch-title">Game review</h1>
+          <p className="cmm-sub">{names.w} vs {names.b}</p>
+        </div>
+      </header>
+
+      <div className="cmm-stream">
+        {/* Before it starts, or while it runs. */}
+        {phase === "idle" && !stored && (
+          <div className="rev-start">
+            <h2 className="rev-h">Go through the game</h2>
+            <p className="rev-p">
+              Your phone does the thinking — nothing is sent anywhere. Longer means a better answer.
+            </p>
+            <div className="cmc-opts is-three">
+              {CM_REVIEW_SPEEDS.map(sp => (
+                <button key={sp.id} className={"cmc-opt" + (speed === sp.id ? " is-on" : "")}
+                        aria-pressed={speed === sp.id} onClick={() => setSpeed(sp.id)}>
+                  <span className="cmc-opt-n">{sp.label}</span>
+                  <span className="cmc-opt-k">{sp.sub}</span>
+                </button>
+              ))}
+            </div>
+            <button className="cmm-cta" onClick={run}>Review {line.plies.length} moves</button>
+          </div>
+        )}
+
+        {phase === "idle" && stored && (
+          <div className="rev-start">
+            <h2 className="rev-h">Already reviewed</h2>
+            <p className="rev-p">
+              This game was gone through {cmAgo(stored.createdAt)}, to depth {stored.engine.depth || "?"}.
+              Those are the numbers below, so both of you are looking at the same ones.
+            </p>
+            <button className="cmm-cta is-ghost" onClick={run}>Go through it again on this phone</button>
+          </div>
+        )}
+
+        {phase === "running" && (
+          <div className="rev-run" role="status" aria-live="polite">
+            <div className="rev-bar"><span style={{ width: progress + "%" }}/></div>
+            <p className="rev-p">Thinking about move {Math.max(1, Math.ceil(scores.length / 2))} of {Math.ceil(total / 2)}…</p>
+            <button className="btn btn-ghost btn-sm" onClick={() => { stop.current = true; }}>
+              Stop and keep what we have
+            </button>
+          </div>
+        )}
+
+        {/* The summary, from whichever review we are showing. */}
+        {(verdicts.length > 0 || stored) && (() => {
+          const w = verdicts.length ? summary.white : stored.white;
+          const b = verdicts.length ? summary.black : stored.black;
+          const t = verdicts.length ? summary.turning : stored.turning;
+          return (
+            <>
+              <div className="rev-sides">
+                <CmReviewSide name={names.w} colour="w" s={w}/>
+                <CmReviewSide name={names.b} colour="b" s={b}/>
+              </div>
+              {/* Said once, plainly: this is not a score to compare with a
+                  score from somewhere else. */}
+              <p className="rev-note">
+                Accuracy here is our own measure, worked out on this phone. It is for comparing
+                your games with each other — not with a number from another app.
+              </p>
+              {t && (
+                <div className="rev-turn">
+                  <div className="rev-turn-h">Where the game turned</div>
+                  <p className="rev-turn-b">
+                    Move {Math.ceil(t.ply / 2)}{t.ply % 2 ? "" : "…"} <b>{t.san}</b>
+                    {t.best && t.best !== t.san ? <> — <b>{t.best}</b> was better.</> : "."}
+                  </p>
+                  {verdicts.length > 0 && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => setAt(t.ply)}>Show me</button>
+                  )}
+                </div>
+              )}
+            </>
+          );
+        })()}
+
+        {/* The board and the graph, once there is something to walk through. */}
+        {verdicts.length > 0 && (
+          <>
+            <CmReviewGraph evals={evals} at={shown} plies={line.plies.length} onPick={setAt}/>
+
+            <div className="rev-board">
+              <ChessBoard squares={squares} flip={flip} from="" targets={[]}
+                lastMove={lastPly ? { from: lastPly.uci.slice(0, 2), to: lastPly.uci.slice(2, 4) } : null}
+                checkSquare="" interactive={false} premove={null} premoving={false}
+                goals={m.variant === "kingofthehill" ? CM_HILL : null} onTap={() => {}}/>
+            </div>
+
+            <div className="rev-nav">
+              <button className="rev-nav-b" onClick={() => setAt(0)} aria-label="First move">⏮</button>
+              <button className="rev-nav-b" onClick={() => setAt(Math.max(0, shown - 1))} aria-label="Previous move">◀</button>
+              <span className="rev-nav-at" aria-live="polite">
+                {shown === 0 ? "Start" : ("Move " + Math.ceil(shown / 2) + (shown % 2 ? "." : "…") + " " + line.plies[shown - 1].san)}
+              </span>
+              <button className="rev-nav-b" onClick={() => setAt(Math.min(line.plies.length, shown + 1))} aria-label="Next move">▶</button>
+              <button className="rev-nav-b" onClick={() => setAt(line.plies.length)} aria-label="Last move">⏭</button>
+              <button className="rev-nav-b" onClick={() => setFlip(v => !v)} aria-label="Flip the board">⇅</button>
+            </div>
+
+            {here && (
+              <div className={"rev-verdict is-" + here.tag.tag}>
+                <div className="rev-verdict-h">{here.tag.label}</div>
+                {here.tag.tag !== "best" && here.tag.tag !== "good" && (
+                  <p className="rev-verdict-b">
+                    <b>{here.best}</b> was the move
+                    {here.pv && here.pv.length > 1
+                      ? <> — the line runs {here.pv.slice(0, 4).map(x => x.san).join(" ")}.</>
+                      : "."}
+                  </p>
+                )}
+                {here.loss > 0 && (
+                  <p className="rev-verdict-c">
+                    It cost about {(here.loss / 100).toFixed(1)} pawns.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <h3 className="mtl-h">Every move</h3>
+            <ol className="rev-list">
+              {verdicts.map(v => (
+                <li key={v.ply}>
+                  <button className={"rev-move is-" + v.tag.tag + (v.ply === shown ? " is-at" : "")}
+                          onClick={() => setAt(v.ply)}
+                          aria-current={v.ply === shown ? "true" : undefined}>
+                    <span className="rev-move-n">{v.white ? Math.ceil(v.ply / 2) + "." : ""}</span>
+                    <span className="rev-move-s">{v.san}</span>
+                    <span className="rev-move-t">{v.tag.tag === "good" || v.tag.tag === "best" ? "" : v.tag.label}</span>
+                    {v.loss > 0 && <span className="rev-move-l">−{(v.loss / 100).toFixed(1)}</span>}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MatchGame({ matchId, onBack }) {
   const [m, setM] = React.useState(null);
+  const [reviewing, setReviewing] = React.useState(false);
   const [err, setErr] = React.useState("");
   const [from, setFrom] = React.useState("");
   const [promo, setPromo] = React.useState(null);   // { from, to } awaiting a piece
@@ -5180,6 +5766,8 @@ function MatchGame({ matchId, onBack }) {
     setSay(line);
   }, [m && m.ply, m && m.status, m]);
 
+  if (m && reviewing) return <CmGameReview m={m} onBack={() => setReviewing(false)}/>;
+
   if (err && !m) return <div className="arc mtg"><div className="arc-err" role="alert">{err}</div>
     <button className="btn btn-ghost btn-sm" onClick={onBack}>← Back</button></div>;
   if (!m) return <div className="arc mtg"><div className="arc-skels"><div className="arc-skel"/></div></div>;
@@ -5284,6 +5872,26 @@ function MatchGame({ matchId, onBack }) {
         </div>
         <div className={"mtg-status" + (m.yourTurn && m.status === "active" ? " is-turn" : "")}>{statusLine}</div>
       </div>
+
+      {/* The game is over and nothing is at stake — the one moment a child
+          will look at their own moves properly. Offered here rather than
+          buried in a menu, and only once there is a whole game to look at. */}
+      {/* The one moment an announcement is welcome: the game is over, nothing
+          is at stake and the member is deciding what to do next. Placed after
+          the result and before the board, never over it. Shown once per
+          person, ever — the server spends it on being seen. */}
+      {(m.status === "complete" || m.status === "invited") && (
+        <CmPromo placement="game" shape="popup"
+                 onGo={(page) => { if (window.__navigate) window.__navigate(page); }}/>
+      )}
+
+      {m.status === "complete" && (m.moves || []).length >= 4 && (
+        <button className="mtg-review" onClick={() => setReviewing(true)}>
+          <span className="mtg-review-h">Go through the game</span>
+          <span className="mtg-review-s">See where it turned, and what was better</span>
+          <span className="mtg-review-go" aria-hidden="true">→</span>
+        </button>
+      )}
 
       {/* The terms, on the board rather than only in the challenge that
           created it. A player who opened this from a notification never saw
@@ -6894,4 +7502,4 @@ function JournalEntryPage() {
   );
 }
 
-Object.assign(window, { SummerPage, ClubPage, BadgePin, CommunityPage, CmStudentSignIn, CmProgramJournal, JournalEntryPage, CmTrnList, CmTrnDetail, CmTrnCreate, CmTrnStandings, CmTrnRounds, CmPromo });
+Object.assign(window, { SummerPage, ClubPage, BadgePin, CommunityPage, CmStudentSignIn, CmProgramJournal, JournalEntryPage, CmTrnList, CmTrnDetail, CmTrnCreate, CmTrnStandings, CmTrnRounds, CmPromo, CmGameReview, CmTrnLadder });

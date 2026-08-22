@@ -133,6 +133,11 @@
        the tightest limit in common use — a 413 on a form's last tap is the
        worst possible place to discover a body limit. */
     inline: { maxPx: 1000, quality: 0.78 },
+    /* A promotion's picture is drawn about 320px wide beside two lines of
+       text, and it ships inside every promo the members fetch when there is no
+       image cloud to put it on. Anything bigger is data nobody sees, paid for
+       by somebody's bundle. */
+    promo: { maxPx: 640, quality: 0.72 },
   };
   let _toolsPromise = null;
   function ensureImageTools() {
@@ -627,9 +632,14 @@
            on mount and never again, so an accepted challenge was invisible
            until the member navigated away and came back. */
         lobby: () => request('/member/match.php' + qs({ view: 'lobby' })),
+        /* After-game review. The engine runs in the browser — there is none
+           on shared hosting — so these two only fetch and keep the result. */
+        review:        (matchId) => request('/member/match.php' + qs({ view: 'review', matchId })),
+        reviewSave:    (matchId, data) => request('/member/match.php', { body: { action: 'reviewSave', matchId, data } }),
+        reviewHistory: () => request('/member/match.php' + qs({ view: 'reviewHistory' })),
         /* A house promotion for a placement — NGG's own programmes, first
            party only. `track` counts once per person, not per render. */
-        promo: (placement) => request('/member/match.php' + qs({ view: 'promo', placement: placement || 'chess' })),
+        promo: (placement, shape) => request('/member/match.php' + qs({ view: 'promo', placement: placement || 'chess', shape: shape || 'card' })),
         promoTrack: (promoId, event) => request('/member/match.php', { body: { action: 'promoTrack', promoId, event } }),
         challenge: (d) => request('/member/match.php', { body: Object.assign({ action: 'challenge' }, d || {}) }),
         answer:    (challengeId, answer) => request('/member/match.php', { body: { action: 'challengeRespond', challengeId, answer } }),
@@ -640,6 +650,9 @@
         /* Every tournament a member can SEE. There was no such call, which is
            why a created tournament reflected nowhere. */
         browse:    () => request('/member/match.php' + qs({ view: 'trnBrowse' })),
+        /* What has a pulse right now — boards in play and moves in the last
+           few hours, with each event's top of the table. */
+        ladder:    () => request('/member/match.php' + qs({ view: 'trnLadder' })),
         standings: (tournamentId) => request('/member/match.php' + qs({ view: 'trnStandings', tournamentId })),
         rounds:    (tournamentId) => request('/member/match.php' + qs({ view: 'trnRounds', tournamentId })),
         join:      (tournamentId) => request('/member/match.php', { body: { action: 'trnJoin', tournamentId } }),

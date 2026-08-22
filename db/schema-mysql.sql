@@ -2064,3 +2064,64 @@ CREATE TABLE IF NOT EXISTS promo_seen (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (100) ON DUPLICATE KEY UPDATE version = version;
+
+-- ---------------------------------------------------------------------------
+-- 101: game review, the tournament ladder, and promotions that carry a picture
+--      and can belong to one event.
+-- ---------------------------------------------------------------------------
+
+-- One review per game, not one per viewer.
+--
+-- The analysis runs in the browser — there is no engine on shared hosting and
+-- there is not going to be one — so this is a cache of a client's work rather
+-- than a server's own finding. Two things follow, and both are enforced below:
+-- the row records WHAT computed it (engine depth and budget), and the first
+-- writer wins. A second player opening the same game reads the review the
+-- first one produced rather than replacing it, so the numbers two children
+-- discuss are the same numbers.
+--
+-- Deliberately not used for anything competitive. It is a coaching record: a
+-- client could lie about it, and nothing that matters is downstream of it.
+CREATE TABLE IF NOT EXISTS match_reviews (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  matchId VARCHAR(32) NOT NULL,
+  -- Per side, from the review that produced them.
+  whiteAccuracy INT DEFAULT 0,
+  blackAccuracy INT DEFAULT 0,
+  whiteAvgLoss INT DEFAULT 0,
+  blackAvgLoss INT DEFAULT 0,
+  whiteBlunders INT DEFAULT 0,
+  blackBlunders INT DEFAULT 0,
+  whiteMistakes INT DEFAULT 0,
+  blackMistakes INT DEFAULT 0,
+  whiteInaccuracies INT DEFAULT 0,
+  blackInaccuracies INT DEFAULT 0,
+  -- The move where the game turned, and what was available instead.
+  turningPly INT DEFAULT 0,
+  turningSan VARCHAR(16) DEFAULT '',
+  turningBest VARCHAR(16) DEFAULT '',
+  turningLoss INT DEFAULT 0,
+  -- The evaluation after every ply, from White's side, as a compact JSON list.
+  -- Read by the graph; small enough to store whole (200 plies of small ints).
+  evals TEXT,
+  -- What produced it, so a review computed by a phone that managed depth 6 is
+  -- not silently compared with one computed by a laptop at depth 14.
+  engineDepth INT DEFAULT 0,
+  engineMs INT DEFAULT 0,
+  byId VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40) NOT NULL,
+  UNIQUE KEY idx_review_match (matchId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Where each entrant stood before the current round was paired. The ladder's
+-- movement arrows compare against this rather than against a guess.
+ALTER TABLE tournament_entrants ADD COLUMN lastRank INT DEFAULT 0;
+
+-- A promotion can belong to one tournament, and can carry a picture.
+ALTER TABLE promos ADD COLUMN tournamentId VARCHAR(32) DEFAULT '';
+-- 'card' is the strip already in use; 'popup' is the one that appears once
+-- before or after a game and then not again.
+ALTER TABLE promos ADD COLUMN shape VARCHAR(16) DEFAULT 'card';
+CREATE INDEX idx_promo_trn ON promos (tournamentId);
+
+INSERT INTO schema_version (version) VALUES (101) ON DUPLICATE KEY UPDATE version = version;

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 100;
+const NGG_SCHEMA_TARGET = 101;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2804,6 +2804,28 @@ function db_migrate(PDO $db): void {
               seenAt TEXT DEFAULT '', clickedAt TEXT DEFAULT '', dismissedAt TEXT DEFAULT ''
             );
             CREATE UNIQUE INDEX idx_promo_seen ON promo_seen(promoId, memberId);
+        ",
+        101 => "
+            CREATE TABLE match_reviews (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              matchId TEXT UNIQUE NOT NULL,
+              whiteAccuracy INTEGER DEFAULT 0, blackAccuracy INTEGER DEFAULT 0,
+              whiteAvgLoss INTEGER DEFAULT 0,  blackAvgLoss INTEGER DEFAULT 0,
+              whiteBlunders INTEGER DEFAULT 0, blackBlunders INTEGER DEFAULT 0,
+              whiteMistakes INTEGER DEFAULT 0, blackMistakes INTEGER DEFAULT 0,
+              whiteInaccuracies INTEGER DEFAULT 0, blackInaccuracies INTEGER DEFAULT 0,
+              turningPly INTEGER DEFAULT 0, turningSan TEXT DEFAULT '',
+              turningBest TEXT DEFAULT '', turningLoss INTEGER DEFAULT 0,
+              evals TEXT,
+              engineDepth INTEGER DEFAULT 0, engineMs INTEGER DEFAULT 0,
+              byId TEXT DEFAULT '', createdAt TEXT NOT NULL
+            );
+
+            ALTER TABLE tournament_entrants ADD COLUMN lastRank INTEGER DEFAULT 0;
+
+            ALTER TABLE promos ADD COLUMN tournamentId TEXT DEFAULT '';
+            ALTER TABLE promos ADD COLUMN shape TEXT DEFAULT 'card';
+            CREATE INDEX idx_promo_trn ON promos(tournamentId);
         ",
     ];
 

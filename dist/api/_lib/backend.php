@@ -444,6 +444,11 @@ function backend_dispatch(string $op, array $args = []): array {
             'match.staff.list'        => 'match_staff_list',
             'match.poll'              => 'match_poll',
             'match.watch'             => 'match_live_list',
+            // After-game review. The analysis runs in the browser; these two
+            // only keep the result. See _lib/domain/match-review.php.
+            'match.review.get'        => 'match_review_get',
+            'match.review.put'        => 'match_review_put',
+            'match.review.history'    => 'match_review_history',
 
             /* Finding a game — design turn 6A. The match ops above PLAY chess;
              * these are the part that comes before a board exists. */
@@ -459,6 +464,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'tournament.create'       => 'admin_tournament_create',
             'tournament.enter'        => 'admin_tournament_enter',
             'tournament.browse'       => 'tournament_browse',
+            // What is actually happening right now — see tournament_ladder().
+            'tournament.ladder'       => 'tournament_ladder',
             'tournament.join'         => 'tournament_join',
             'tournament.leave'        => 'tournament_leave',
             'tournament.standings'    => 'tournament_standings',

@@ -215,6 +215,35 @@ process.on('exit', cleanup);
        question confidently and incorrectly. */
     ok('every third-party file at least names its package',
       Object.entries(manifest.files).every(([, e]) => e.package || (e.note || '').includes('first-party')));
+
+    /* ── Custom properties that do not exist ────────────────────────────────
+       A `var(--c-line)` where the token is called `--c-border` is not a
+       warning, an error, or a lint failure. The declaration is simply dropped
+       and the element renders with no border — silently, on one screen, in one
+       state, and usually the one nobody screenshots.
+
+       This found ten of them at once: an entire screen's borders were missing
+       because a token was invented rather than looked up. A fallback is always
+       allowed — `var(--x, 14px)` is a deliberate default, not a typo — so only
+       bare uses are checked. */
+    const css = ['styles.css', 'styles-app.css']
+      .filter(f => fs.existsSync(path.join(ROOT, f)))
+      .map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+    const declared = new Set((css.match(/--[a-z0-9-]+\s*:/g) || []).map(x => x.replace(/\s*:$/, '')));
+    /* A property can also be set from an inline style — `style={{ "--ki-i": i }}`
+       is how a per-element animation delay is passed, and there is nowhere in
+       the stylesheet for it to be declared. Those count as declared. */
+    for (const f of fs.readdirSync(ROOT).filter(x => /\.(jsx|js)$/.test(x))) {
+      const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+      for (const m of src.match(/["'](--[a-z0-9-]+)["']\s*:/g) || []) {
+        declared.add(m.replace(/^["']|["']\s*:$/g, ''));
+      }
+    }
+    const bare = [...new Set((css.match(/var\(\s*--[a-z0-9-]+\s*\)/g) || [])
+      .map(x => x.replace(/^var\(\s*|\s*\)$/g, '')))].filter(v => !declared.has(v));
+    ok('every custom property used without a fallback is actually declared', bare.length === 0);
+    if (bare.length) console.error('    undeclared: ' + bare.join(', '));
+
   } catch (e) {
     fail++; console.error('  ✗ harness error: ' + (e && e.message));
   } finally { cleanup(); }
