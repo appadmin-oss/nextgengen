@@ -5206,6 +5206,16 @@ body.own-chrome .fab-top { display: none; }
 .dsn-chip:hover { border-color: rgba(255, 255, 255, 0.34); color: #fff; }
 .dsn-chip.is-on { background: var(--gold-500, #f5b026); border-color: var(--gold-500, #f5b026); color: #2b2100; }
 .dsn-chip:focus-visible { outline: 2px solid var(--gold-500, #f5b026); outline-offset: 2px; }
+.dsn-chip-n {
+  font: 700 10px var(--font-mono, monospace); font-variant-numeric: tabular-nums;
+  opacity: .72; margin-left: 3px;
+}
+/* A count worth acting on, marked as one. Amber and a number, not a red dot:
+   twelve children with no photograph is a fact to deal with before the run,
+   not an error state. Off entirely when the count is zero, because a warning
+   that is always on is furniture. */
+.dsn-chip.is-warn { border-color: rgba(255, 214, 138, 0.5); color: #ffd68a; }
+.dsn-chip.is-warn.is-on { background: #ffd68a; border-color: #ffd68a; color: #2b2100; }
 
 .dsn-merge-all { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
 .dsn-merge-pager {
@@ -5217,6 +5227,70 @@ body.own-chrome .fab-top { display: none; }
 /* Over the renderer's ceiling. Amber and a sentence, not a red dot: it is a
    fact to act on before the run, not a failure. */
 .dsn-merge-note.is-over { color: #ffd68a; font-weight: 700; }
+
+/* ── Seeing the actual card ──────────────────────────────────────────────────
+   The table says Chidi has no photograph. The card SHOWS the grey rectangle
+   where a face goes, which is the only form of that fact anybody can act on
+   before four hundred pieces are printed. */
+.dsn-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 12px; padding: 4px 2px 8px;
+}
+.dsn-card-art { position: relative; }
+/* On the artwork, top-left, with a shadow so it reads against a white card
+   and a dark one alike. */
+.dsn-card-tick {
+  position: absolute; top: 7px; left: 7px; z-index: 1;
+  width: 18px; height: 18px; accent-color: var(--dsn-gold, #f5b026); cursor: pointer;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .45));
+}
+/* What is wrong with this one, in words, across the bottom of the artwork —
+   the grid exists to be scanned, and a bare "!" makes you hover to find out. */
+.dsn-card-warn {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 1;
+  padding: 3px 6px; text-align: center;
+  font: 700 8.5px var(--font-mono, monospace); letter-spacing: .05em; text-transform: uppercase;
+  color: #2b2100; background: rgba(255, 214, 138, 0.94);
+}
+.dsn-card {
+  border-radius: 10px; overflow: hidden; background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.dsn-card.is-on { border-color: var(--gold-500, #f5b026); background: rgba(245, 176, 38, 0.1); }
+/* The one on the canvas right now. A second, different mark from "ticked":
+   proofing and including are different decisions. */
+.dsn-card.is-proof { box-shadow: 0 0 0 2px #7fb2ff; }
+.dsn-thumb {
+  display: block; position: relative; width: 100%; height: 0;
+  background: rgba(0, 0, 0, 0.25);
+}
+.dsn-thumb img, .dsn-thumb-wait { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dsn-thumb img { object-fit: contain; display: block; }
+/* The frame it will fill, so a grid of forty does not jump as each one lands.
+   A pulse rather than a spinner: forty spinners is a disco. */
+.dsn-thumb-wait { background: rgba(255, 255, 255, 0.05); animation: dsn-thumb-pulse 1.4s ease-in-out infinite; }
+@keyframes dsn-thumb-pulse { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dsn-thumb-wait { animation: none; } }
+
+.dsn-card-name {
+  display: flex; flex-direction: column; gap: 1px; width: 100%; min-width: 0;
+  padding: 7px 9px 8px; border: 0; background: none; cursor: pointer; text-align: left; font: inherit;
+}
+.dsn-card-name b { font-size: 11.5px; color: #eef2fb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsn-card-name span { font: 400 9.5px var(--font-mono, monospace); color: rgba(230, 238, 255, 0.5); }
+.dsn-card-name:hover b { text-decoration: underline; }
+.dsn-card-name:focus-visible, .dsn-proof:focus-visible {
+  outline: 2px solid var(--gold-500, #f5b026); outline-offset: 2px; border-radius: 3px; }
+.dsn-card .dsn-merge-flag { flex: none; padding: 1px 6px; }
+
+/* The name in the list view is the same control as the name on a card. */
+.dsn-proof {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-weight: 600; color: inherit; text-align: left;
+}
+.dsn-proof:hover { text-decoration: underline; }
+.dsn-tbl tbody tr.is-proof td { box-shadow: inset 2px 0 0 #7fb2ff; }
+.dsn-view { margin-left: 0; }
 /* Amber, not red: a child with no photograph is not an error, it is a fact the
    operator has to decide about before three hundred pieces are printed. */
 .dsn-merge-flag {

@@ -615,6 +615,11 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
        "no card" — and the "no card" row is the acceptance test for the whole
        feature: a child the card payload cannot see is in this run. */
     await page.screenshot({ path: path.join(ROOT, 'tests', 'screens', 'studio-batch.png'), fullPage: false });
+    await page.click('.dsn-view .dsn-chip:has-text("Cards")');
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: path.join(ROOT, 'tests', 'screens', 'studio-batch-cards.png'), fullPage: false });
+    await page.click('.dsn-view .dsn-chip:has-text("List")');
+    await page.waitForTimeout(200);
     ok('…including the people an ID-card read cannot see, flagged on the row',
       merged.flags.filter(f => f === 'no card').length === 1
       && merged.flags.filter(f => f === 'no photo').length === 3);
@@ -690,7 +695,47 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     }));
     ok('the readiness chip narrows to the rows that will print wrong',
       needs.rows === 3 && needs.ok === 0);
+    /* The COUNT is the reason anybody clicks it: "Needs attention" makes you
+       click to find out whether it is two or two hundred. */
+    ok('…and says how many before you click it',
+      (await page.locator('.dsn-chip:has-text("Needs attention") .dsn-chip-n').textContent()).trim() === '3');
     await page.click('.dsn-chip:has-text("Everyone")');
+    await page.waitForTimeout(200);
+
+    /* Shift-click a range. Picking two hundred out of a thousand one tick at a
+       time is not a workflow, and "select all" plus two hundred unticks is not
+       one either. */
+    await page.click('.dsn-tbl tbody tr:nth-child(1) input[type=checkbox]');   // untick + anchor
+    await page.click('.dsn-tbl tbody tr:nth-child(3) input[type=checkbox]', { modifiers: ['Shift'] });
+    ok('shift-click carries the anchor row\'s state across the whole range',
+      (await page.evaluate(() => document.querySelectorAll('.dsn-tbl tbody tr.is-on').length)) === 0);
+    await page.click('.dsn-tbl tbody tr:nth-child(1) input[type=checkbox]');   // re-tick + anchor
+    await page.click('.dsn-tbl tbody tr:nth-child(3) input[type=checkbox]', { modifiers: ['Shift'] });
+    ok('…and back the other way, so a range never half-ticks',
+      (await page.evaluate(() => document.querySelectorAll('.dsn-tbl tbody tr.is-on').length)) === 3);
+
+    /* Seeing the card, which is the whole point of the batch panel: a table
+       says Chidi has no photograph, the card shows the hole where the face
+       goes. Drawn by the SAME renderer that writes the print file. */
+    await page.click('.dsn-view .dsn-chip:has-text("Cards")');
+    await page.waitForSelector('.dsn-card img', { timeout: 20000 });
+    await page.waitForTimeout(1800);
+    const thumbs = await page.evaluate(() => {
+      const imgs = Array.from(document.querySelectorAll('.dsn-card img'));
+      return { n: imgs.length, real: imgs.filter(i => /^data:image\/png/.test(i.src) && i.src.length > 3000).length };
+    });
+    ok('every card in the grid is a real render, not a placeholder (' + thumbs.real + '/' + thumbs.n + ')',
+      thumbs.n === 3 && thumbs.real === 3);
+
+    /* Clicking a name proofs THAT person on the canvas. The toolbar's preview
+       picker only ever knew the card payload; this list is a bigger
+       population, so a child whose photograph was rejected — visible to the
+       merge, invisible to the card read — had no way to be looked at. */
+    await page.click('.dsn-card-name:has-text("Chidi")');
+    await page.waitForTimeout(400);
+    ok('clicking a name proofs that person on the canvas',
+      /Proofing Chidi/.test(await page.evaluate(() => document.body.innerText)));
+    await page.click('.dsn-view .dsn-chip:has-text("List")');
     await page.waitForTimeout(200);
 
     // Paging, because a thousand rows is not a scroll.

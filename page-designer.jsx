@@ -255,6 +255,106 @@ function dsnMergeAudit(tpl, rows) {
   return out;
 }
 
+/* ── Seeing the actual card ──────────────────────────────────────────────────
+ *
+ * A table tells you Chidi Gamma has no photograph. It does not tell you what
+ * that LOOKS like, and "what does it look like" is the only question that
+ * matters before four hundred of them go to a printer. So the picker can show
+ * the real thing: each person's card, drawn by the same renderer that draws the
+ * proof and writes the print file, at about two hundred pixels wide.
+ *
+ * The same renderer, not a cheaper approximation of it. That is the rule this
+ * whole file is built on and it is worth more here than anywhere: a thumbnail
+ * grid that renders cards a second way is a grid that can disagree with the
+ * print, which is worse than having no grid at all.
+ *
+ * Rendering four hundred cards on the main thread would lock the tab, so:
+ *
+ *   · only what is on the page is ever asked for;
+ *   · one at a time, through a queue, yielding between each;
+ *   · cached by design AND person, so paging back is instant;
+ *   · and every pending job is dropped the moment the design changes, because
+ *     its answer is about a card that no longer exists.
+ */
+
+const DSN_THUMB_PX = 210;          // the long-ish edge, in device pixels
+const DSN_THUMB_CACHE_MAX = 400;   // ~200 people, both orientations, before eviction
+
+const _dsnThumbs = new Map();      // key → data URL
+let _dsnThumbEpoch = 0;            // bumped when the design changes
+const _dsnThumbQ = [];
+let _dsnThumbBusy = false;
+
+/** Everything about a design that changes what a card LOOKS like. A cache key
+ *  built from the id alone would serve yesterday's artwork after an edit. */
+function dsnThumbSig(tpl) {
+  try { return JSON.stringify(tpl); } catch (_) { return String(Math.random()); }
+}
+
+function dsnThumbKey(sig, rowKey) { return rowKey + "|" + sig.length + "|" + sig.slice(0, 400); }
+
+function _dsnThumbPump() {
+  if (_dsnThumbBusy) return;
+  const job = _dsnThumbQ.shift();
+  if (!job) return;
+  /* Two ways a job stops being worth doing, and both have to be checked HERE
+     rather than after the render: the design changed, or the card scrolled off
+     the page. Without the second, paging forward leaves the previous page's
+     twenty-five renders queued IN FRONT of the ones you are looking at, so the
+     grid you are staring at fills last. */
+  if (job.epoch !== _dsnThumbEpoch || job.dead()) return _dsnThumbPump();
+  _dsnThumbBusy = true;
+  const dpi = DSN_THUMB_PX / ((Number(job.tpl.wMm) || 54) / 25.4);
+  dsnRaster(job.tpl, job.row, job.fabric, dpi)
+    .then(px => {
+      if (job.epoch !== _dsnThumbEpoch) return;
+      if (_dsnThumbs.size >= DSN_THUMB_CACHE_MAX) {
+        // Oldest first. A Map iterates in insertion order, so this is FIFO.
+        const oldest = _dsnThumbs.keys().next().value;
+        if (oldest !== undefined) _dsnThumbs.delete(oldest);
+      }
+      _dsnThumbs.set(job.key, px.url);
+      job.done(px.url);
+    })
+    .catch(() => job.done(""))
+    .then(() => {
+      _dsnThumbBusy = false;
+      /* Yield to the browser between cards. Without this the queue is a
+         synchronous loop wearing a promise, and a page of fifty freezes the
+         tab for as long as it takes — including the Stop button. */
+      setTimeout(_dsnThumbPump, 0);
+    });
+}
+
+/** One person's card, drawn for real. Renders nothing until it is asked for,
+ *  and shows the frame it will occupy while it waits so the grid does not jump
+ *  as forty of them land one after another. */
+function DsnThumb({ tpl, row, fabric, sig }) {
+  const key = dsnThumbKey(sig, row.key);
+  const [url, setUrl] = React.useState(() => _dsnThumbs.get(key) || "");
+  React.useEffect(() => {
+    const cached = _dsnThumbs.get(key);
+    if (cached) { setUrl(cached); return; }
+    if (!fabric || !tpl) return;
+    setUrl("");
+    let live = true;
+    _dsnThumbQ.push({ key, tpl, row, fabric, epoch: _dsnThumbEpoch,
+                      dead: () => !live,
+                      done: (u) => { if (live) setUrl(u); } });
+    _dsnThumbPump();
+    return () => { live = false; };
+  }, [key, fabric]);
+
+  const ratio = ((Number(tpl.h) || 972) / (Number(tpl.w) || 590)) * 100;
+  return (
+    <span className="dsn-thumb" style={{ paddingTop: ratio + "%" }}>
+      {url
+        ? <img src={url} alt="" loading="lazy"/>
+        : <span className="dsn-thumb-wait" aria-hidden="true"/>}
+    </span>
+  );
+}
+
 /* ── The people picker ───────────────────────────────────────────────────────
  *
  * This was a wall of tick-boxes: every matched person as a card in a wrapping
@@ -299,15 +399,26 @@ function DsnSortTh({ label, col, sort, onSort, numeric, defaultDir }) {
   );
 }
 
-function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMax }) {
+function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMax,
+                         tpl, fabric, onProof, proofKey }) {
   const [page, setPage] = React.useState(0);
   const [size, setSize] = React.useState(50);
+  /* "list" | "cards". Cards is the answer to "let me see them": the table says
+     Chidi has no photograph, the card SHOWS the grey rectangle where a face
+     goes. Twenty-five to a page rather than fifty, because a wall of a hundred
+     thumbnails is the scroll this rebuild set out to remove. */
+  const [view, setView] = React.useState("list");
+  const sig = React.useMemo(() => dsnThumbSig(tpl), [tpl]);
+  /* Every queued thumbnail is about a card that no longer exists the moment
+     the design changes. Dropped rather than rendered and thrown away. */
+  React.useEffect(() => { _dsnThumbEpoch++; }, [sig]);
   /* "" | "ready" | "problem" — the readiness chip. Applied on the client
      rather than sent to the server because it is derived from two fields the
      rows already carry, and a round trip to hide half a list you are holding
      is a round trip for nothing. */
   const [only, setOnly] = React.useState("");
 
+  const readyCount = React.useMemo(() => rows.filter(dsnRowReady).length, [rows]);
   const shown = React.useMemo(
     () => only === "" ? rows : rows.filter(r => (only === "ready") === dsnRowReady(r)),
     [rows, only]);
@@ -323,6 +434,28 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
   const has = (k) => picked.indexOf(k) !== -1;
   const addAll = (list) => setPicked(p => p.concat(list.filter(k => p.indexOf(k) === -1)));
   const dropAll = (list) => setPicked(p => p.filter(k => list.indexOf(k) === -1));
+
+  /* Shift-click a range, the way every list of things anybody has ever had to
+     select from works. Picking two hundred out of a thousand one tick at a
+     time is not a workflow, and "select all" plus two hundred unticks is not
+     either. Anchored on the last row TOUCHED rather than the last row ticked,
+     so shift-clicking after an untick extends from where your hand was. */
+  const anchor = React.useRef("");
+  const toggle = (row, ev) => {
+    const list = shown;                       // the range spans the filter, not the page
+    const iTo = list.findIndex(x => x.key === row.key);
+    const iFrom = anchor.current ? list.findIndex(x => x.key === anchor.current) : -1;
+    if (ev && ev.shiftKey && iFrom >= 0 && iTo >= 0 && iFrom !== iTo) {
+      const lo = Math.min(iFrom, iTo), hi = Math.max(iFrom, iTo);
+      const span = list.slice(lo, hi + 1).map(x => x.key);
+      // The anchor's own state decides which way the range goes, so a
+      // shift-click never flips half a range on and half a range off.
+      has(anchor.current) ? addAll(span) : dropAll(span);
+    } else {
+      has(row.key) ? dropAll([row.key]) : addAll([row.key]);
+    }
+    anchor.current = row.key;
+  };
   const keys = shown.map(r => r.key);
   const pageKeys = slice.map(r => r.key);
   const pageAllOn = pageKeys.length > 0 && pageKeys.every(has);
@@ -330,6 +463,7 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
   const over = inRun > runMax;
 
   React.useEffect(() => { setPage(0); }, [only, sort.col, sort.dir, rows.length]);
+  React.useEffect(() => { setSize(view === "cards" ? 25 : 50); setPage(0); }, [view]);
 
   return (
     <>
@@ -349,10 +483,19 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPicked([])}
                 disabled={!inRun}>Clear</button>
 
+        {/* The COUNT is the reason anybody clicks these. "Needs attention"
+            makes you click to find out whether it is two or two hundred;
+            "Needs attention · 12" has already answered the question, and
+            answered it before a run rather than during one. */}
         <span className="dsn-chips" role="group" aria-label="Show only">
-          {[["", "Everyone"], ["ready", "Ready to print"], ["problem", "Needs attention"]].map(([v, l]) => (
-            <button key={v} type="button" className={"dsn-chip" + (only === v ? " is-on" : "")}
-                    aria-pressed={only === v} onClick={() => setOnly(v)}>{l}</button>
+          {[["", "Everyone", rows.length],
+            ["ready", "Ready to print", readyCount],
+            ["problem", "Needs attention", rows.length - readyCount]].map(([v, l, n]) => (
+            <button key={v} type="button" className={"dsn-chip" + (only === v ? " is-on" : "")
+                                                   + (v === "problem" && n > 0 ? " is-warn" : "")}
+                    aria-pressed={only === v} onClick={() => setOnly(v)}>
+              {l} <span className="dsn-chip-n">{fmtNum(n)}</span>
+            </button>
           ))}
         </span>
 
@@ -360,8 +503,55 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
           {fmtNum(inRun)} in the run
           {over ? " — " + fmtNum(runMax) + " is the most one run can render" : ""}
         </span>
+
+        <span className="dsn-chips dsn-view" role="group" aria-label="How to show them">
+          {[["list", "List"], ["cards", "Cards"]].map(([v, l]) => (
+            <button key={v} type="button" className={"dsn-chip" + (view === v ? " is-on" : "")}
+                    aria-pressed={view === v} onClick={() => setView(v)}>{l}</button>
+          ))}
+        </span>
       </div>
 
+      {view === "cards" ? (
+        <div className="dsn-merge-list">
+          <div className="dsn-cards">
+            {slice.map(r => {
+              const on = has(r.key);
+              const ready = dsnRowReady(r);
+              return (
+                <div key={r.key} className={"dsn-card" + (on ? " is-on" : "")
+                                          + (proofKey === r.key ? " is-proof" : "")}>
+                  <div className="dsn-card-art">
+                    <DsnThumb tpl={tpl} row={r} fabric={fabric} sig={sig}/>
+                    {/* The tick sits ON the artwork, the way every grid of
+                        things you select from does it. In the footer it took
+                        the width the name needed, so every name over about
+                        nine characters ellipsised — on a grid whose entire
+                        purpose is telling people apart. */}
+                    <input type="checkbox" className="dsn-card-tick" checked={on}
+                           aria-label={"Include " + dsnRowName(r)}
+                           onClick={e => toggle(r, e)} onChange={() => {}}/>
+                    {!ready && (
+                      <span className="dsn-card-warn"
+                            title={[!r.photoUrl && "no photograph", !r.token && "no ID card"].filter(Boolean).join(" · ")}>
+                        {!r.photoUrl && !r.token ? "no photo · no card" : !r.photoUrl ? "no photo" : "no card"}
+                      </span>
+                    )}
+                  </div>
+                  {/* The name opens the proof rather than toggling the tick:
+                      two different intentions, and a control that did both
+                      would do the wrong one half the time. */}
+                  <button type="button" className="dsn-card-name" onClick={() => onProof(r)}
+                          title="Proof this one on the canvas">
+                    <b>{dsnRowName(r)}</b>
+                    <span>{r.displayId || "—"}</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
       <div className="dsn-merge-list">
         <table className="dsn-tbl">
           <thead><tr>
@@ -377,12 +567,22 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
             {slice.map(r => {
               const on = has(r.key);
               return (
-                <tr key={r.key} className={on ? "is-on" : ""}>
+                <tr key={r.key} className={(on ? "is-on" : "") + (proofKey === r.key ? " is-proof" : "")}>
                   <td className="dsn-th-tick">
                     <input type="checkbox" checked={on} aria-label={"Include " + dsnRowName(r)}
-                           onChange={() => on ? dropAll([r.key]) : addAll([r.key])}/>
+                           onClick={e => toggle(r, e)} onChange={() => {}}/>
                   </td>
-                  <td className="dsn-td-who">{r.firstName || dsnRowName(r)}</td>
+                  <td className="dsn-td-who">
+                    {/* Clicking a name proofs that person on the canvas. The
+                        preview picker in the toolbar only ever knew the card
+                        payload; this list is a bigger population, so somebody
+                        the merge can see and the card read cannot had no way
+                        to be looked at before printing four hundred of them. */}
+                    <button type="button" className="dsn-proof" onClick={() => onProof(r)}
+                            title="Proof this one on the canvas">
+                      {r.firstName || dsnRowName(r)}
+                    </button>
+                  </td>
                   <td className="dsn-td-who">{r.surname || "—"}</td>
                   <td className="dsn-td-mono">{r.displayId || "—"}</td>
                   <td className="dsn-td-mono">{(r.centre && r.centre.name) || "—"}</td>
@@ -400,12 +600,13 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
             })}
           </tbody>
         </table>
-        {shown.length === 0 && (
-          <p className="dsn-hint" style={{ padding: "14px 4px" }}>
-            Nobody here {only === "ready" ? "is ready to print" : "needs attention"} — try “Everyone”.
-          </p>
-        )}
       </div>
+      )}
+      {shown.length === 0 && (
+        <p className="dsn-hint" style={{ padding: "14px 4px" }}>
+          Nobody here {only === "ready" ? "is ready to print" : "needs attention"} — try “Everyone”.
+        </p>
+      )}
 
       <div className="dsn-merge-pager">
         <button type="button" className="btn btn-ghost btn-sm" disabled={at <= 0}
@@ -481,7 +682,23 @@ function DesignerPage() {
   const histRef = React.useRef({ past: [], future: [], last: "" });
   const [histTick, setHistTick] = React.useState(0);
 
-  const row = rowIdx >= 0 && rows[rowIdx] ? rows[rowIdx] : DSN_SAMPLE;
+  /* Whoever the batch picker was last asked to proof. It takes precedence over
+     the toolbar's preview picker, because it is the more specific request: the
+     toolbar knows the card payload and the picker knows the merge roster, and
+     the merge roster is bigger. Somebody the merge can see and the card read
+     cannot — a child whose photograph was rejected — had no way to be LOOKED
+     at before four hundred pieces went to the printer. */
+  const [proofRow, setProofRow] = React.useState(null);
+  const row = proofRow || (rowIdx >= 0 && rows[rowIdx] ? rows[rowIdx] : DSN_SAMPLE);
+  const proofOne = React.useCallback((r) => {
+    setProofRow(r);
+    // The canvas is above the batch panel and a long roster pushes it off
+    // screen — proofing somebody you then cannot see is not proofing.
+    if (hostRef.current && hostRef.current.scrollIntoView) {
+      hostRef.current.scrollIntoView({ block: "center",
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    }
+  }, []);
 
   /* Fabric is fetched when this screen opens and never before — it is 292KB for
      a page most admins never visit. */
@@ -1343,13 +1560,24 @@ function DesignerPage() {
             onChange={e => setTpl(p => ({ ...p, name: e.target.value }))}/>
           {/* Proof against a REAL child, not only the sample. This is the control
               that turns "it looks right" into "it is right for this cohort". */}
-          <select className="admin-select" value={rowIdx} aria-label="Preview with"
-            onChange={e => setRowIdx(Number(e.target.value))} style={{ maxWidth: 240 }}>
+          <select className="admin-select" value={proofRow ? -1 : rowIdx} aria-label="Preview with"
+            /* Clears a proof taken from the batch picker. Two controls setting
+               the same thing must not disagree — a select still reading
+               "Sample data" while the canvas shows Chidi is a screen lying
+               about what is on it. */
+            onChange={e => { setProofRow(null); setRowIdx(Number(e.target.value)); }}
+            style={{ maxWidth: 240 }}>
             <option value={-1}>Sample data</option>
             {rows.slice(0, 300).map((r, i) => (
               <option key={i} value={i}>{[r.firstName, r.surname].filter(Boolean).join(" ") || r.displayId}</option>
             ))}
           </select>
+          {proofRow && (
+            <button className="btn btn-ghost btn-sm" onClick={() => setProofRow(null)}
+                    title="Back to the preview picker">
+              Proofing {dsnRowName(proofRow)} ✕
+            </button>
+          )}
           <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={save}>{busy === "save" ? "…" : "Save"}</button>
           <button className="btn btn-primary btn-sm" disabled={!!busy || errs.length > 0} onClick={publish}
             title={errs.length ? "Fix the errors first" : "Freeze this design for print runs"}>
@@ -1488,6 +1716,8 @@ function DesignerPage() {
 
           {merge && merge.rows.length > 0 && (
             <DsnMergePicker rows={merge.rows} audience={mf.audience}
+                            tpl={tpl} fabric={libs && libs.fabric}
+                            onProof={proofOne} proofKey={proofRow ? proofRow.key : ""}
                             picked={picked} setPicked={setPicked}
                             /* The REQUESTED order, not the echoed one. The
                                server confirms what it applied and that matters
