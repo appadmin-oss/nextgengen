@@ -301,6 +301,30 @@ process.on('exit', cleanup);
         }
       });
     }
+    /* ── Destructive actions go through the styled dialog ───────────────────
+       A native confirm() cannot say what it is about to destroy in more than
+       one undifferentiated paragraph, cannot name its own buttons (so the most
+       destructive action in the product read "OK" / "Cancel"), and — the part
+       that matters — Chrome offers "prevent this page from creating additional
+       dialogs" after a few in a row, which silently disables EVERY subsequent
+       one. A coordinator who ticks that while clearing a few 2FA enrolments
+       then gets delete-and-anonymise with no gate at all.
+
+       dialog.confirm (safety.jsx) is focus-managed, names its own buttons,
+       carries a danger state, and cannot be switched off by the browser. */
+    const nativeConfirm = [];
+    for (const f of orderList) {
+      if (f === 'safety.jsx') continue;                  // where dialog.confirm lives
+      const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+      src.split('\n').forEach((line, i) => {
+        if (/\bdialog\.confirm\(/.test(line)) return;
+        if (/(^|[^.\w])(window\.)?confirm\s*\(/.test(line)) nativeConfirm.push(f + ':' + (i + 1));
+      });
+    }
+    ok('no destructive action hides behind a native browser confirm()'
+       + (nativeConfirm.length ? ' — ' + nativeConfirm.slice(0, 6).join(', ') : ''),
+       nativeConfirm.length === 0);
+
     ok('nothing formats a date or number in the device locale'
        + (localeOffenders.length ? ' — ' + localeOffenders.slice(0, 6).join(', ')
           + (localeOffenders.length > 6 ? ' +' + (localeOffenders.length - 6) + ' more' : '') : ''),

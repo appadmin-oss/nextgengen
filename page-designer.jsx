@@ -198,6 +198,19 @@ function dsnPerSheet(tpl, sheetW, sheetH) {
   return Math.max(fit(sheetW || 210, sheetH || 297), fit(sheetH || 297, sheetW || 210));
 }
 
+/** "40 seconds", "3 minutes", "1 hour 10 minutes" — how much longer, said the
+ *  way somebody deciding whether to wait would say it. Deliberately coarse: an
+ *  estimate accurate to the second is an estimate pretending to be a fact. */
+function dsnEta(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 15) return "a few seconds";
+  if (s < 90) return Math.round(s / 10) * 10 + " seconds";
+  const m = Math.round(s / 60);
+  if (m < 60) return m + " minute" + (m === 1 ? "" : "s");
+  const h = Math.floor(m / 60), r = m % 60;
+  return h + " hour" + (h === 1 ? "" : "s") + (r ? " " + r + " minute" + (r === 1 ? "" : "s") : "");
+}
+
 /** A filename per person that a coordinator can match to a child by eye. */
 function dsnRowFile(tpl, r, i) {
   const who = String(r.displayId || r.key || "").replace(/\W+/g, "-").replace(/^-|-$/g, "");
@@ -908,9 +921,16 @@ function DesignerPage() {
     }
 
     runCancel.current = false;
-    setRun({ i: 0, n: rows.length, note: "" });
+    setRun({ i: 0, n: rows.length, note: "", left: "" });
     const failed = [];
     let stopped = "";
+    /* When the run started, so it can say how much longer it has.
+       Nielsen's third limit: past ten seconds people stop attending to a task
+       unless they are told when it ends, and a 240-card run at 300dpi is
+       minutes. "Rendering 12 of 240" answers where it is and not how long,
+       which is the question somebody deciding whether to go and do something
+       else is actually asking. */
+    const startedAt = Date.now();
     try {
       const bleedMm = Number(tpl.bleedMm) || 0;
       const wMm = Number(tpl.wMm) || 54, hMm = Number(tpl.hMm) || 89;
@@ -921,7 +941,12 @@ function DesignerPage() {
 
       for (let i = 0; i < rows.length; i++) {
         if (runCancel.current) { stopped = "cancelled"; break; }
-        setRun({ i, n: rows.length, note: dsnRowName(rows[i]) });
+        /* Measured, not guessed, and only once there is something to measure:
+           an estimate from a single sample swings wildly and reads as broken.
+           Rounded up to the next half-minute past two minutes, because false
+           precision on a long wait is its own kind of lie. */
+        setRun({ i, n: rows.length, note: dsnRowName(rows[i]),
+                 left: i >= 2 ? dsnEta((Date.now() - startedAt) / i * (rows.length - i)) : "" });
         let px = null;
         try { px = await dsnRaster(tpl, rows[i], libs.fabric, mdpi); }
         catch (e) { failed.push(dsnRowName(rows[i])); }
@@ -976,7 +1001,7 @@ function DesignerPage() {
       // number would tell an operator the file holds people it does not.
       const made = mode === "pdf" ? pages : mode === "sheet" ? faces.length : files.length;
       if (stopped !== "too_big" && made > 0) {
-        setRun({ i: rows.length, n: rows.length, note: "writing the file…" });
+        setRun({ i: rows.length, n: rows.length, note: "writing the file…", left: "" });
         await new Promise(r => setTimeout(r, 0));
         const stem = dsnFileName(tpl) + "-" + made;
         if (mode === "pdf") {
@@ -1291,8 +1316,19 @@ function DesignerPage() {
             <button className="btn btn-ghost btn-sm" disabled={!!run || !picked.length} onClick={() => runMerge("zip")}
               title="A PNG per person, named for them">ZIP of images</button>
             {run && <>
+              {/* A bar as well as a count. The count says where it is; the bar
+                  says how far through, which is the thing an eye reads without
+                  arithmetic. aria-live is off on the bar — the same fact is in
+                  the status line beside it, and a progress bar that announces
+                  itself 240 times is unusable with a screen reader. */}
+              <div className="dsn-run" role="progressbar" aria-hidden="true"
+                   aria-valuemin={0} aria-valuemax={run.n} aria-valuenow={run.i}>
+                <span style={{ width: Math.round(run.i / Math.max(1, run.n) * 100) + "%" }}/>
+              </div>
               <span className="dsn-merge-note" role="status">
-                {run.note === "writing the file…" ? run.note : "Rendering " + (run.i + 1) + " of " + run.n + " — " + run.note}
+                {run.note === "writing the file…" ? run.note
+                  : "Rendering " + (run.i + 1) + " of " + run.n + " — " + run.note
+                    + (run.left ? " · about " + run.left + " left" : "")}
               </span>
               <button className="btn btn-ghost btn-sm" onClick={() => { runCancel.current = true; }}>Stop</button>
             </>}

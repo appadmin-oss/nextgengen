@@ -1750,6 +1750,16 @@ body.cm-app .fab-top { display: none; }
 .admin-sort-th.is-on .admin-sort-ind { opacity: 1; color: var(--navy-700, #1c2a5e); }
 .admin-table th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; color: var(--ink-500); text-transform: uppercase; }
 .admin-cell-name { font-weight: 600; }
+/* The row's primary action, as a control rather than a click handler on the
+   <tr>. Styled as text because it IS the row's name — the affordance is the
+   row, and the button exists so a keyboard can reach what a mouse already
+   could. */
+.admin-cell-link {
+  display: block; padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; color: inherit; text-align: left;
+}
+.admin-cell-link:hover .admin-cell-name { text-decoration: underline; }
+.admin-cell-link:focus-visible { outline: 2px solid var(--navy-700, #1c2a5e); outline-offset: 2px; border-radius: 3px; }
 .admin-cell-sub { font-size: 10px; color: var(--ink-500); margin-top: 2px; letter-spacing: 0.1em; }
 .admin-empty { text-align: center; color: var(--ink-500); padding: 32px; }
 
@@ -4954,6 +4964,14 @@ body.own-chrome .fab-top { display: none; }
 .dsn-canvas-host { line-height: 0; box-shadow: 0 18px 46px rgba(0, 0, 0, 0.42); border-radius: 6px; overflow: hidden; }
 .dsn-stage-note { font: 400 11.5px var(--font-mono, monospace); color: rgba(230, 238, 255, 0.5); }
 .dsn-hint { font-size: 12.5px; color: rgba(230, 238, 255, 0.55); line-height: 1.5; }
+/* The merge run's progress bar. Determinate, because the run knows exactly how
+   many pieces it has — an indeterminate spinner on a job that can last minutes
+   tells somebody nothing they can act on. */
+.dsn-run { flex: 1 1 120px; min-width: 90px; max-width: 220px; height: 6px;
+  border-radius: 999px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.dsn-run span { display: block; height: 100%; border-radius: 999px;
+  background: var(--gold-500, #f5b026); transition: width .18s linear; }
+@media (prefers-reduced-motion: reduce) { .dsn-run span { transition: none; } }
 /* A hint that is bad news, and one that is a caveat.
 
    Contrast was never the problem here — the old #ff9a9a measured 8.5:1 on this

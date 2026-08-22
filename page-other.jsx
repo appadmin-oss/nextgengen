@@ -5653,7 +5653,10 @@ function CardStudio() {
     }
   };
   const delUnit = async (unit) => {
-    if (!confirm("Remove " + unit.name + "?")) return;
+    if (!(await dialog.confirm({ title: "Remove " + unit.name + "?",
+      body: isVol ? "The tier is removed. Cards already printed keep the colour they were printed with."
+                  : "The centre is removed from the pickers. Members already assigned to it keep the name on their record.",
+      cta: "Remove", danger: true }))) return;
     try { if (isVol) await NGGApi.admin.registration.hierarchyDelete(unit.tierId); else await NGGApi.admin.registration.centreDelete(unit.centreId); load(); }
     catch (e) {}
   };
@@ -5707,7 +5710,10 @@ function CardStudio() {
     const id = isVol ? card.volunteerId : card.studentId;
     if (!id || resending) return;
     const who = card.firstName || "this person";
-    if (!confirm("Resend " + who + "'s ID?\n\nEmails the digital ID and the scannable QR to the " + (isVol ? "volunteer" : "parent") + ", and texts a link by SMS if a number is on file.")) return;
+    if (!(await dialog.confirm({ title: "Resend " + who + "'s ID?",
+      body: "Emails the digital ID and the scannable QR to the " + (isVol ? "volunteer" : "parent")
+            + ", and texts a link by SMS if a number is on file.",
+      cta: "Send it again" }))) return;
     setResending(id); setNotice(""); setMsg("");
     try {
       const qrPng = card.token ? await qrPngFor(card.token) : "";
@@ -5883,7 +5889,15 @@ function CardStudio() {
       if (missingArt.length) {
         warn.push("Card artwork that will not load, so it prints missing:\n  " + missingArt.join("\n  "));
       }
-      if (warn.length && !confirm(warn.join("\n\n") + "\n\nExport anyway?")) return;
+      /* A pre-flight the operator has to read: what will be WRONG on the
+         printed sheet, before the sheet exists. In the styled dialog rather
+         than a native one, so the list is legible and the buttons say what
+         they do — "OK" on a warning about eleven missing photographs is not
+         a sentence anybody should have to interpret. */
+      if (warn.length && !(await dialog.confirm({
+        title: "Some cards will print with gaps",
+        body: warn.join("\n\n"), cta: "Export anyway", cancel: "Go back and fix it", danger: true,
+      }))) return;
       setExp("Preparing…");
       const CE = await ensureLib();
       // Scale to hit the chosen DPI at the chosen trim width (card is 295 CSS
@@ -6612,8 +6626,10 @@ function McV3({ weeks }) {
 function McMeetings({ d, subjectId, busy, setBusy, onDone, setErr }) {
   const [open, setOpen] = React.useState(false);
   const [edit, setEdit] = React.useState(null);
-  const del = (id) => {
-    if (!window.confirm("Delete this entry? The fact that it existed stays in the audit log.")) return;
+  const del = async (id) => {
+    if (!(await dialog.confirm({ title: "Delete this entry?",
+      body: "The entry goes. The fact that it existed, and that you removed it, stays in the audit log.",
+      cta: "Delete entry", danger: true }))) return;
     setBusy(true);
     NGGApi.member.mentorMeetingDelete(subjectId, id)
       .then(() => onDone()).catch(e => setErr((e && e.message) || "Could not delete that."))

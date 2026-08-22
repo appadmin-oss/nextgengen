@@ -609,7 +609,11 @@ function DashboardSecurity() {
   };
   const revoke = async (sid) => { setBusy(sid); try { await NGGApi.member.securityRevoke(sid); load(); } catch (e) { toast.error(humanError(e)); } finally { setBusy(""); } };
   const revokeOthers = async () => {
-    if (!confirm("Sign out of every other device?")) return;
+    if (!(await dialog.confirm({
+      title: "Sign out of every other device?",
+      body: "Any phone, tablet or computer signed in as you — apart from this one — is signed out. "
+          + "You stay signed in here.",
+      cta: "Sign the others out" }))) return;
     setBusy("others"); try { const r = await NGGApi.member.securityRevokeOthers(); toast.success("Signed out " + (r.revoked || 0) + " other device(s)."); load(); } catch (e) { toast.error(humanError(e)); } finally { setBusy(""); }
   };
   const sessions = d ? (d.sessions || []) : null;
@@ -657,8 +661,32 @@ function DashboardAccount({ m }) {
     } catch (e) { toast.error(humanError(e)); } finally { setBusy(""); }
   };
   const del = async () => {
-    if (!confirm("Delete your account? This removes your profile and journal and signs you out. This cannot be undone.")) return;
-    if (!confirm("Are you absolutely sure? There is no undo.")) return;
+    /* The most destructive thing anybody can do in this product, and it was
+       two stacked native confirms — the second of them "Are you absolutely
+       sure? There is no undo." Two generic dialogs in a row is not twice the
+       friction; it is a rhythm people click through, and neither one said what
+       actually gets destroyed.
+
+       One dialog that names it, then a typed word. Type-to-confirm is reserved
+       for the genuinely catastrophic and this qualifies: a child's journal is
+       not recoverable from anywhere once this runs. */
+    const ok = await dialog.confirm({
+      title: "Delete your account?",
+      body: "This removes your profile, your journal entries, your missions and your XP, "
+          + "and signs you out everywhere. Nobody — not your mentor, not an admin — can get it back. "
+          + "If you only want to stop for a while, ask a mentor to pause your account instead.",
+      cta: "I understand, continue", cancel: "Keep my account", danger: true,
+    });
+    if (!ok) return;
+    const typed = await dialog.prompt({
+      title: "Type DELETE to confirm",
+      body: "Last step. This is here so nobody deletes their journal by accident.",
+      label: "Type DELETE", placeholder: "DELETE", cta: "Delete my account", cancel: "Cancel",
+    });
+    if (String(typed || "").trim().toUpperCase() !== "DELETE") {
+      if (typed !== null) toast.error("That did not match, so nothing was deleted.", "Account kept");
+      return;
+    }
     setBusy("delete");
     try { await NGGApi.member.deleteAccount(); toast.success("Your account has been deleted."); setTimeout(() => { window.location.href = "/"; }, 800); }
     catch (e) { toast.error(humanError(e)); setBusy(""); }

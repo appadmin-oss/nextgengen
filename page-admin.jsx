@@ -1095,7 +1095,18 @@ function AdminMembers() {
               {list.map(m => (
                 <tr key={m.memberId} className="admin-row-click" onClick={() => setViewing(m.memberId)}>
                   <td>
-                    <div className="admin-cell-name">{m.fullName}</div>
+                    {/* The name is the control, not the row.
+                        Opening a member was a click handler on the <tr> and
+                        nothing else: reachable with a mouse, and by keyboard
+                        not at all — you could tab to Edit but never to the
+                        primary action on the primary admin screen. A row is
+                        not a button and cannot become one without swallowing
+                        the Edit button inside it, so the NAME is the button
+                        and the row click stays as a convenience on top. */}
+                    <button type="button" className="admin-cell-link"
+                            onClick={(e) => { e.stopPropagation(); setViewing(m.memberId); }}>
+                      <span className="admin-cell-name">{m.fullName}</span>
+                    </button>
                     <div className="mono admin-cell-sub">{m.memberId} · {m.email}</div>
                   </td>
                   <td>{m.type}</td>
@@ -1324,19 +1335,27 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
               <span className="admin-label">Account recovery</span>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={async () => {
-                  if (!confirm("Reset this member's 2FA? They'll re-enrol an authenticator at next admin sign-in.")) return;
+                  if (!(await dialog.confirm({ title: "Reset this member's 2FA?",
+                    body: "They will re-enrol an authenticator the next time they sign in to the Console. Until they do, they cannot get in.",
+                    cta: "Reset 2FA" }))) return;
                   try { await NGGApi.admin.members.reset2fa(d.memberId); toast.success("2FA reset — they'll set it up again next sign-in.", "Done"); } catch (e) { toast.error(e.code || e.message); }
                 }}>Reset 2FA</button>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={async () => {
-                  if (!confirm("Clear this member's password? They'll sign in via an emailed code and can set a new one.")) return;
+                  if (!(await dialog.confirm({ title: "Clear this member's password?",
+                    body: "Their current password stops working. They sign in with an emailed code and set a new one.",
+                    cta: "Clear password" }))) return;
                   try { await NGGApi.admin.members.resetPassword(d.memberId); toast.success("Password cleared — they can sign in by email code.", "Done"); } catch (e) { toast.error(e.code || e.message); }
                 }}>Reset password</button>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={async () => {
-                  if (!confirm("View the app as this member? You'll be signed in as them until you stop impersonating.")) return;
+                  if (!(await dialog.confirm({ title: "View the app as " + (d.fullName || "this member") + "?",
+                    body: "You will be signed in as them — and anything you do will be recorded against them — until you stop impersonating.",
+                    cta: "View as them" }))) return;
                   try { await NGGApi.admin.members.impersonate(d.memberId); window.location.href = "/dashboard"; } catch (e) { toast.error(e.code || e.message); }
                 }}>View as member</button>
                 <button type="button" className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={async () => {
-                  if (!confirm("Delete & anonymise this member? Their PII and journal are scrubbed and sessions revoked. This cannot be undone.")) return;
+                  if (!(await dialog.confirm({ title: "Delete and anonymise " + (d.fullName || "this member") + "?",
+                    body: "Their name, contact details and journal entries are scrubbed and every session is revoked. The record of the deletion stays in the audit log. This cannot be undone.",
+                    cta: "Delete and anonymise", cancel: "Keep the member", danger: true }))) return;
                   try { await NGGApi.admin.members.remove(d.memberId); toast.success("Member deleted & anonymised.", "Done"); (onSaved || onClose)(); } catch (e) { toast.error(e.code || e.message); }
                 }}>Delete member</button>
               </div>
@@ -4041,7 +4060,8 @@ function ProjRow({ p, subjectType, subjectId, onChanged }) {
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
   const del = async () => {
-    if (!window.confirm("Remove this project from the member's profile? This can't be undone.")) return;
+    if (!(await dialog.confirm({ title: "Remove this project?",
+      body: "It comes off the member's profile for good.", cta: "Remove project", danger: true }))) return;
     setBusy(true);
     try { await NGGApi.admin.profiles.projectDelete(subjectType, subjectId, p.id); onChanged(); }
     catch (e) { toast.error(e.code || e.message); setBusy(false); }
@@ -4073,7 +4093,8 @@ function NoteRow({ n, subjectType, subjectId, onChanged }) {
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
   const del = async () => {
-    if (!window.confirm("Delete this mentor note? This can't be undone.")) return;
+    if (!(await dialog.confirm({ title: "Delete this mentor note?",
+      body: "The note is removed for good.", cta: "Delete note", danger: true }))) return;
     setBusy(true);
     try { await NGGApi.admin.profiles.noteDelete(subjectType, subjectId, n.id); onChanged(); }
     catch (e) { toast.error(e.code || e.message); setBusy(false); }
@@ -6925,7 +6946,8 @@ function AdminIntegrations() {
     } catch (e) { toast.error(e.code || e.message, "Couldn't save"); } finally { setBusy(""); }
   };
   const test = async (id) => { setBusy("t" + id); try { const r = await NGGApi.admin.integrations.test(id); r.delivered ? toast.success("Test delivered.", "OK") : toast.error(r.error || "No detail", "Test failed"); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
-  const remove = async (id) => { if (!confirm("Delete this integration?")) return; try { await NGGApi.admin.integrations.remove(id); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const remove = async (id) => { if (!(await dialog.confirm({ title: "Delete this integration?",
+    body: "Anything relying on it stops working immediately.", cta: "Delete", danger: true }))) return; try { await NGGApi.admin.integrations.remove(id); load(); } catch (e) { toast.error(e.code || e.message); } };
   const dispatch = async () => { setBusy("disp"); try { const r = await NGGApi.admin.integrations.dispatch(); toast.success("Attempted " + (r.attempted || 0) + ", delivered " + (r.delivered || 0) + ", failed " + (r.failed || 0) + ".", "Queue drained"); load(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
   const retry = async (id = "") => { setBusy("r" + id); try { const r = await NGGApi.admin.integrations.retry(id); const dsp = r.dispatch || {}; toast.success("Requeued " + (r.requeued || 0) + " · delivered " + (dsp.delivered || 0) + ", failed " + (dsp.failed || 0) + ".", "Retry"); load(); } catch (e) { toast.error(e.code || e.message, "Retry failed"); } finally { setBusy(""); } };
   const syncMembers = async () => { setBusy("sync"); try { const r = await NGGApi.admin.integrations.syncMembers(); toast.success("Sent " + (r.chunksSent || 0) + " chunk(s), " + (r.total || 0) + " members.", "Sheets sync"); } catch (e) { toast.error(e.code || e.message, "Sync failed"); } finally { setBusy(""); } };
