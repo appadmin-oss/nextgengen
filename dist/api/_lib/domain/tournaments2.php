@@ -35,6 +35,9 @@ function trn_shape(array $t, string $viewer = ''): array {
         'formatBlurb' => $meta['blurb'],
         'programme'   => (string)($t['programme'] ?? ''),
         'timeControl' => (string)($t['timeControl'] ?? '10+0'),
+        'variant'     => (string)($t['variant'] ?? 'standard'),
+        'variantName' => function_exists('chess_variant_meta')
+            ? (chess_variant_meta()[(string)($t['variant'] ?? 'standard')]['name'] ?? 'Standard') : 'Standard',
         'rated'       => (int)($t['rated'] ?? 1) === 1,
         'status'      => (string)$t['status'],
         'stage'       => (string)$t['stage'],
@@ -276,13 +279,15 @@ function trn_draw_now(array $t, string $by, string $ip): array {
             'programme' => (string)($t['programme'] ?? ''), 'centre' => (string)$pair['centre'],
             'playerA' => (string)$pair['whiteId'], 'playerAName' => (string)$pair['whiteName'], 'playerAType' => '',
             'playerB' => (string)$pair['blackId'], 'playerBName' => (string)$pair['blackName'], 'playerBType' => '',
-            'turnPlayer' => (string)$pair['whiteId'],
-            'state' => match_initial_state((string)$t['game']), 'ply' => 0,
+            'turnPlayer' => (string)$pair['whiteId'], 'ply' => 0,
             'tournamentId' => $tid, 'tournamentRound' => $round, 'tournamentStage' => $stage,
             'board' => (int)$pair['board'],
             'rated' => (int)($t['rated'] ?? 1),
             'createdAt' => $now, 'updatedAt' => $now,
-        ] + chess_clock_init((string)($t['timeControl'] ?? '10+0')));
+        ] + chess_clock_init((string)($t['timeControl'] ?? '10+0'))
+          + ((string)$t['game'] === 'chess'
+                ? chess_variant_start((string)($t['variant'] ?? 'standard'))
+                : ['state' => match_initial_state((string)$t['game']), 'variant' => 'standard']));
         db_update('match_games', [
             'clockRunning' => chess_clock_is_live((string)($t['timeControl'] ?? '10+0')) ? 1 : 0,
             'turnStartedAt' => $now,

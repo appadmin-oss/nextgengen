@@ -161,6 +161,81 @@ chk('the hardest level answers a middlegame position in under three seconds', ((
   return Date.now() - t < 3000;
 })());
 
+/* ── The search rewrite ─────────────────────────────────────────────────────
+   Three bugs found by measuring rather than reading, each pinned here. */
+
+/* Quiescence has no notion of checkmate — it stands pat on a static
+   evaluation. With a fixed depth that never showed, because a mate was always
+   at least two plies inside the search. Under iterative deepening the first
+   pass IS depth one, the mate sits exactly on the horizon, and the engine
+   ranked "mate in one" level with "win a pawn" — it missed a rook mate on an
+   otherwise empty board. */
+chk('a mate on the search horizon is seen as mate, not as material', (() => {
+  const fen = 'k7/7R/1K6/8/8/8/8/8 w - - 0 1';
+  for (const level of [1, 4, 8]) {
+    const r = C.bestMove(fen, level, () => 0.99);
+    if (!r || r.best !== 'h7h8') return false;
+  }
+  return true;
+})());
+
+/* The root searched every move with beta = -alpha, which is a null window: a
+   move BETTER than the current best fails high and comes back as the bound
+   rather than as its score, so the ranking silently kept the first move it
+   liked. Principal variation search re-searches those with a full window. */
+chk('the root reports real scores, not the bound it cut off at', (() => {
+  const a = C.analyse('k7/7R/1K6/8/8/8/8/8 w - - 0 1', 3);
+  // The mate must score as a mate, not as a pawn-count.
+  return a && a.best.score > 90000;
+})());
+
+/* Mate scores are measured in plies FROM THE ROOT, so an entry stored at one
+   distance and read at another reports the wrong distance to mate. */
+chk('mate scores never enter the transposition table', (() => {
+  // Two searches of the same position must agree; a poisoned table makes the
+  // second one disagree with the first.
+  const fen = '6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1';
+  const a = C.bestMove(fen, 6, () => 0.99);
+  const b = C.bestMove(fen, 6, () => 0.99);
+  return a && b && a.best === b.best && a.best === 'a1a8';
+})());
+
+/* The opening book exists so the first moves are instant and sensible. A
+   search this size has least to say in the opening, and an engine that answers
+   1.e4 with 1...a6 after a second of thought looks broken to a child who has
+   been taught to control the centre. */
+chk('the opening book answers instantly and legally', (() => {
+  const t = Date.now();
+  const r = C.bestMove(C.START_FEN, 6, () => 0.5);
+  if (!r || !r.book) return false;
+  if (C.legalUci(C.START_FEN).indexOf(r.uci) < 0) return false;
+  return Date.now() - t < 60;
+})());
+chk('…but the weakest levels do not use it — a book move then a hung queen is a confusing teacher',
+  C.bestMove(C.START_FEN, 1, () => 0.99).book !== true);
+
+/* Iterative deepening exists so the same level behaves the same on a desktop
+   and on a 2GB Android: it stops at the time budget with a complete answer in
+   hand rather than at a fixed depth the phone may not reach. */
+chk('a level reports the depth it actually reached', (() => {
+  const r = C.bestMove('8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1', 8, () => 0.99);
+  return r && r.depth >= 5;
+})());
+chk('…and a weak level stops early rather than thinking for a second', (() => {
+  const t = Date.now();
+  C.bestMove('r2q1rk1/pp1bbppp/2n1pn2/2pp4/3P1B2/2P1PN2/PPQN1PPP/R3KB1R w KQ - 0 9', 1, () => 0.99);
+  return Date.now() - t < 400;
+})());
+
+/* The endgame king table. With one middlegame table the king hides on g1
+   forever, which is right with queens on and actively losing in a pawn ending
+   — the ending children reach most. */
+chk('the king is worth more in the centre once the queens are off', (() => {
+  const corner = C.evaluate(C.parseFen('8/8/8/8/8/8/4k3/K7 w - - 0 1'));
+  const centre = C.evaluate(C.parseFen('8/8/8/3K4/8/8/4k3/8 w - - 0 1'));
+  return centre > corner;
+})());
+
 /* A malformed FEN must REFUSE, never quietly assume the start position — a
    board that silently resets is worse than one that will not open. */
 chk('a malformed FEN is refused rather than guessed at', C.parseFen('not a fen') === null

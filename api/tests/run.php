@@ -13904,6 +13904,106 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         return count($r['players']) > 0;
     })());
 
+    /* ── Variants ───────────────────────────────────────────────────────────
+       Three, each a small delta on the rules the engine already has rather
+       than a second engine — a second move generator is a second place for a
+       legality bug to live, and a legality bug in a children's game is a lost
+       game somebody cannot explain. */
+
+    chk('all 960 Chess960 positions are legal by the rules that define them', (function () {
+        for ($id = 0; $id < 960; $id++) {
+            $back = chess960_backrank($id);
+            if (strlen($back) !== 8) return false;
+            // One king, two rooks, two bishops, two knights, one queen.
+            $c = count_chars($back, 1);
+            if (($c[ord('k')] ?? 0) !== 1 || ($c[ord('q')] ?? 0) !== 1) return false;
+            if (($c[ord('r')] ?? 0) !== 2 || ($c[ord('b')] ?? 0) !== 2 || ($c[ord('n')] ?? 0) !== 2) return false;
+            // Bishops on opposite colours.
+            $bs = [];
+            for ($i = 0; $i < 8; $i++) if ($back[$i] === 'b') $bs[] = $i % 2;
+            if (count($bs) !== 2 || $bs[0] === $bs[1]) return false;
+            // The king stands between its rooks, or castling means nothing.
+            $k = strpos($back, 'k'); $r1 = strpos($back, 'r'); $r2 = strrpos($back, 'r');
+            if (!($r1 < $k && $k < $r2)) return false;
+        }
+        return true;
+    })());
+    chk('…position 518 is the ordinary starting position, as everywhere else',
+        chess960_backrank(518) === 'rnbqkbnr');
+    chk('…and a Chess960 game never silently starts as ordinary chess', (function () {
+        for ($i = 0; $i < 40; $i++) if (chess960_random_id() === 518) return false;
+        return true;
+    })());
+    chk('…every generated start position is one the rules engine accepts', (function () {
+        foreach ([0, 1, 42, 137, 518, 700, 959] as $id) {
+            $fen = chess960_fen($id);
+            $pos = chess_parse_fen($fen);
+            if (!$pos) return false;
+            if (count(chess_legal_moves($pos)) < 10) return false;   // pawns alone give 16
+        }
+        return true;
+    })());
+
+    chk('a King of the Hill game is won by walking the king to the middle', (function () {
+        // White king one step from e4, black king far away.
+        $before = '8/8/8/8/8/4K3/8/7k w - - 0 1';
+        $d = []; $d2 = [];
+        $out = chess_variant_outcome('kingofthehill', '8/8/8/8/4K3/8/8/7k b - - 1 1', 'w', $d);
+        $none = chess_variant_outcome('kingofthehill', $before, 'w', $d2);
+        return $out && $out['reason'] === 'king_of_the_hill' && $none === null;
+    })());
+    chk('…and checkmate still wins it too — a variant ADDS a way to win', (function () {
+        // The outcome hook is only consulted after the standard status check,
+        // which is what this asserts about the ordering in match_move.
+        $src = file_get_contents(__DIR__ . '/../_lib/domain/matches.php');
+        $mate = strpos($src, "'reason' => 'checkmate'");
+        $vend = strpos($src, 'chess_variant_outcome');
+        return $mate !== false && $vend !== false && $mate < $vend;
+    })());
+
+    chk('three checks wins a three-check game, and two do not', (function () {
+        $data = ['checks' => ['w' => 0, 'b' => 0]];
+        // A position where black is in check.
+        $checked = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
+        $r1 = chess_variant_outcome('threecheck', $checked, 'b', $data);
+        $r2 = chess_variant_outcome('threecheck', $checked, 'b', $data);
+        if ($r1 !== null || $r2 !== null) return false;          // one and two: nothing
+        $r3 = chess_variant_outcome('threecheck', $checked, 'b', $data);
+        return $r3 && $r3['reason'] === 'three_checks'
+            && chess_variant_checks($data)['b'] === 3;
+    })());
+    chk('…and a move that gives no check does not count', (function () {
+        $data = ['checks' => ['w' => 0, 'b' => 0]];
+        chess_variant_outcome('threecheck', CHESS_START_FEN, 'w', $data);
+        return chess_variant_checks($data)['w'] === 0;
+    })());
+
+    chk('an unknown variant is refused rather than silently played as chess',
+        chess_variant_valid('bughouse') === false && chess_variant_valid('chess960') === true);
+    chk('a challenge can name a variant, and a bad one is refused', (function () {
+        $bad = chess_challenge_create(['playerId' => 'MPL-A', 'opponentId' => 'MPL-C',
+            'timeControl' => '5+3', 'variant' => 'atomic']);
+        return ($bad['error'] ?? '') === 'bad_variant';
+    })());
+    $nowVar = now_iso();
+    foreach ([['VAR-A', 'Variant One'], ['VAR-B', 'Variant Two']] as [$vid, $vname]) {
+        db_exec("DELETE FROM members WHERE memberId = ?", [$vid]);
+        db_insert('members', ['memberId' => $vid, 'fullName' => $vname, 'email' => strtolower($vid) . '@example.com',
+            'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'member', 'status' => 'active',
+            'createdAt' => $nowVar, 'updatedAt' => $nowVar]);
+    }
+    chk('a Chess960 game really starts from a shuffled position', (function () {
+        $m = match_invite(['playerId' => 'VAR-A', 'game' => 'chess', 'opponentId' => 'VAR-B',
+                           'timeControl' => '10+0', 'variant' => 'chess960'])['matchId'] ?? '';
+        if ($m === '') return false;
+        $r = db_row("SELECT variant, state, startFen, variantData FROM match_games WHERE matchId = ?", [$m]);
+        $vd = json_decode((string)$r['variantData'], true);
+        return (string)$r['variant'] === 'chess960'
+            && (string)$r['state'] === (string)$r['startFen']
+            && (string)$r['state'] !== CHESS_START_FEN
+            && isset($vd['positionId']);
+    })());
+
     /* ── A move can be retried safely ───────────────────────────────────────
        A move used to be identified only by its ply. A client that sent one,
        lost the response and retried either collided with UNIQUE(matchId, ply)

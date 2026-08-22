@@ -57,13 +57,18 @@ if ($method === 'GET') {
     $ip = client_ip();
     if ($action === 'invite') {
         rate_limit_check('match.invite');
-        $res = gs_call('match.invite', ['playerId' => $s['mid'], 'game' => (string)($b['game'] ?? ''), 'opponentId' => (string)($b['opponentId'] ?? '')]);
+        $res = gs_call('match.invite', ['playerId' => $s['mid'], 'game' => (string)($b['game'] ?? ''),
+            'opponentId' => (string)($b['opponentId'] ?? ''),
+            'timeControl' => (string)($b['timeControl'] ?? '1day'),
+            'variant' => (string)($b['variant'] ?? 'standard'),
+            'rated' => !empty($b['rated'])]);
     } elseif ($action === 'challenge') {
         rate_limit_check('match.invite');
         $res = gs_call('chess.challenge', ['playerId' => $s['mid'],
             'opponentId' => (string)($b['opponentId'] ?? ''),
             'timeControl' => (string)($b['timeControl'] ?? '1day'),
             'colourPref' => (string)($b['colourPref'] ?? 'random'),
+            'variant' => (string)($b['variant'] ?? 'standard'),
             'rated' => !empty($b['rated']),
             'channelSlug' => (string)($b['channelSlug'] ?? '')]);
     } elseif ($action === 'challengeRespond') {
@@ -89,6 +94,7 @@ if ($method === 'GET') {
                 'game' => 'chess', 'programme' => (string)($b['programme'] ?? ''),
                 'format' => (string)($b['format'] ?? 'swiss'),
                 'timeControl' => (string)($b['timeControl'] ?? '10+0'),
+                'variant' => (string)($b['variant'] ?? 'standard'),
                 'rated' => !empty($b['rated']), 'totalRounds' => (int)($b['totalRounds'] ?? 0),
                 'description' => (string)($b['description'] ?? ''),
                 'kinds' => (array)($b['kinds'] ?? []), 'centres' => (array)($b['centres'] ?? []),

@@ -35,6 +35,7 @@ function tournament_public(array $t): array {
         'format'      => $fmt,
         'formatName'  => $meta ? $meta['name'] : ucfirst($fmt),
         'timeControl' => (string)($t['timeControl'] ?? '1day'),
+        'variant'     => (string)($t['variant'] ?? 'standard'),
         'rated'       => (int)($t['rated'] ?? 1) === 1,
         'totalRounds' => (int)($t['totalRounds'] ?? 0),
         'description' => (string)($t['description'] ?? ''),
@@ -79,6 +80,8 @@ function admin_tournament_create(array $p): array {
     /* An arena is a window of continuous play; a correspondence control makes
      * no sense in one, because the window would close before a game finished. */
     if ($format === 'arena' && !chess_clock_is_live($tc)) return ['ok' => false, 'error' => 'arena_needs_a_clock'];
+    $variant = (string)($p['variant'] ?? 'standard');
+    if (!chess_variant_valid($variant)) return ['ok' => false, 'error' => 'bad_variant'];
 
     $kinds = array_values(array_intersect((array)($p['kinds'] ?? []), DIRECTORY_KINDS));
     $centres = array_values(array_filter(array_map('strval', (array)($p['centres'] ?? []))));
@@ -90,7 +93,7 @@ function admin_tournament_create(array $p): array {
         'tournamentId' => $id, 'name' => mb_substr($name, 0, 160), 'game' => $game,
         'description' => mb_substr(trim((string)($p['description'] ?? '')), 0, 600),
         'programme' => $programme, 'status' => 'open',
-        'format' => $format, 'timeControl' => $tc,
+        'format' => $format, 'timeControl' => $tc, 'variant' => $variant,
         'rated' => !empty($p['rated']) ? 1 : 0,
         'totalRounds' => $rounds,
         'centres' => $centres ? json_encode($centres, JSON_UNESCAPED_SLASHES) : '',

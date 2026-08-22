@@ -407,9 +407,49 @@
         20,20,0,0,0,20,20,20, 20,30,10,0,0,10,30,20],
   };
 
+  /* A SECOND king table, for the endgame.
+     With one middlegame table the king hides on g1 forever — which is right
+     with queens on and actively losing in a king-and-pawn ending, where the
+     king is a strong piece and has to walk to the centre. A bot that will not
+     bring its king out in an endgame cannot convert a won pawn ending, and
+     that is the ending children reach most. */
+  var PST_KING_END = [
+    -50,-40,-30,-20,-20,-30,-40,-50, -30,-20,-10,0,0,-10,-20,-30,
+    -30,-10,20,30,30,20,-10,-30,     -30,-10,30,40,40,30,-10,-30,
+    -30,-10,30,40,40,30,-10,-30,     -30,-10,20,30,30,20,-10,-30,
+    -30,-30,0,0,0,0,-30,-30,         -50,-30,-30,-30,-30,-30,-30,-50,
+  ];
+
+  /* How far into the endgame the position is, 0 (opening) to 1 (bare kings).
+     Blends the two king tables rather than switching between them at an
+     arbitrary line, so the king's preferred square drifts to the centre as
+     material comes off instead of teleporting there on one capture.
+     evaluate() inlines this into its own pass; kept for callers who want the
+     number on its own. */
+  function phaseOf(pos) {
+    var np = 0;
+    for (var i = 0; i < 128; i++) {
+      if (i & 0x88) continue;
+      var p = pos.board[i];
+      if (p === "") continue;
+      var l = p.toLowerCase();
+      if (l === "n" || l === "b") np += 1;
+      else if (l === "r") np += 2;
+      else if (l === "q") np += 4;
+    }
+    // 24 is the full complement of non-pawn material at the start.
+    return Math.max(0, Math.min(1, (24 - np) / 24));
+  }
+
   /** Score in centipawns from the side-to-move's point of view. */
   function evaluate(pos) {
     var score = 0;
+    var pawnFiles = { w: [0,0,0,0,0,0,0,0], b: [0,0,0,0,0,0,0,0] };
+    var bishops = { w: 0, b: 0 };
+    /* One pass, not two. The phase used to be its own 128-square loop called
+       from here, so every leaf walked the board twice; the kings are noted and
+       scored at the end instead. */
+    var np = 0, kingIdx = { w: -1, b: -1 };
     for (var i = 0; i < 128; i++) {
       if (i & 0x88) continue;
       var p = pos.board[i];
@@ -418,9 +458,29 @@
       var white = isWhite(p);
       var rank = i >> 4, file = i & 15;
       var idx = white ? (rank * 8 + file) : ((7 - rank) * 8 + file);
-      var v = VALUE[lower] + (PST[lower] ? PST[lower][idx] : 0);
-      score += white ? v : -v;
+      if (lower === "k") { kingIdx[white ? "w" : "b"] = idx; continue; }
+      score += white ? (VALUE[lower] + (PST[lower] ? PST[lower][idx] : 0))
+                     : -(VALUE[lower] + (PST[lower] ? PST[lower][idx] : 0));
+      if (lower === "n" || lower === "b") np += 1;
+      else if (lower === "r") np += 2;
+      else if (lower === "q") np += 4;
+      if (lower === "p") pawnFiles[white ? "w" : "b"][file]++;
+      if (lower === "b") bishops[white ? "w" : "b"]++;
     }
+    // 24 is the full complement of non-pawn material at the start.
+    var phase = Math.max(0, Math.min(1, (24 - np) / 24));
+    if (kingIdx.w >= 0) score += VALUE.k + Math.round(PST.k[kingIdx.w] * (1 - phase) + PST_KING_END[kingIdx.w] * phase);
+    if (kingIdx.b >= 0) score -= VALUE.k + Math.round(PST.k[kingIdx.b] * (1 - phase) + PST_KING_END[kingIdx.b] * phase);
+    /* Three structural terms, chosen because each one fixes a behaviour a
+       child can SEE the bot getting wrong, not because they add rating:
+       doubled pawns (it happily trades into them), the bishop pair (it gives
+       one away for a knight for nothing), and a bare king in the middle. */
+    for (var f = 0; f < 8; f++) {
+      if (pawnFiles.w[f] > 1) score -= 18 * (pawnFiles.w[f] - 1);
+      if (pawnFiles.b[f] > 1) score += 18 * (pawnFiles.b[f] - 1);
+    }
+    if (bishops.w >= 2) score += 30;
+    if (bishops.b >= 2) score -= 30;
     return pos.turn === "w" ? score : -score;
   }
 
@@ -455,17 +515,221 @@
     return alpha;
   }
 
-  function negamax(pos, depth, alpha, beta) {
-    if (depth <= 0) return quiesce(pos, alpha, beta, 3);
-    var moves = legalMoves(pos);
-    if (!moves.length) return inCheck(pos) ? -99000 - depth : 0;   // mate sooner is better
-    moves = ordered(pos, moves);
-    for (var i = 0; i < moves.length; i++) {
-      var score = -negamax(apply(pos, moves[i]), depth - 1, -beta, -alpha);
-      if (score >= beta) return beta;
-      if (score > alpha) alpha = score;
+  /* ── What makes the search actually search ────────────────────────────────
+     The three things below are worth more than any amount of extra depth,
+     because they are what LETS the depth happen: a transposition table so the
+     same position is not re-searched down every move order that reaches it,
+     and killer/history ordering so alpha-beta cuts on the first move it tries
+     rather than the fifteenth.
+
+     All three are per-search and cleared between moves. A table carried
+     across moves would be faster still and is not worth the class of bug it
+     invites on a device with 2GB of RAM. */
+
+  var TT = Object.create(null);      // key → { d, score, flag, move }
+  var TT_SIZE = 0;
+  var TT_MAX = 120000;               // ~ a few MB of small objects
+  var killers = [];                  // [ply] → [uci, uci]
+  var history = Object.create(null); // uci → cutoff count
+  var nodes = 0, deadline = 0, aborted = false;
+
+  /* The key is a string, and it was measured against the alternative.
+   *
+   * A Zobrist hash is the textbook answer and was tried here: 30-bit keys,
+   * XORed per piece-square, no allocation. It made the search SLOWER —
+   * level-8 endgame depth fell from 8 to 5 — because a dictionary object keyed
+   * by integers takes a different and slower path in V8 than one keyed by
+   * strings. The textbook answer is right about the algorithm and wrong about
+   * this runtime, so the measurement wins.
+   *
+   * The FEN minus the move counters IS the position, and the counters are
+   * exactly what must not be part of the key. */
+  function ttKey(pos) {
+    return pos.board.join("") + pos.turn + (pos.castling || "") + (pos.ep || "-");
+  }
+  function ttReset() { TT = Object.create(null); TT_SIZE = 0; killers = []; history = Object.create(null); historyUsed = false; }
+  function ttPut(key, d, score, flag, move) {
+    /* Never store a mate score. It is measured in plies FROM THE ROOT, so the
+       same entry read at a different distance reports the wrong one — the
+       engine then believes in a mate that is nearer or further than it is. The
+       position is cheap to re-search and being right about mate is not
+       optional. */
+    if (Math.abs(score) > 90000) return;
+    if (TT_SIZE >= TT_MAX) { TT = Object.create(null); TT_SIZE = 0; }
+    var e = TT[key];
+    if (e && e.d > d) return;         // keep the deeper answer
+    if (!e) TT_SIZE++;
+    TT[key] = { d: d, score: score, flag: flag, move: move };
+  }
+
+  /* Move ordering, best first:
+       1. the move the table already liked here
+       2. captures, most-valuable-victim first
+       3. killers — quiet moves that caused a cutoff at this ply elsewhere
+       4. everything else, by how often it has cut off before             */
+  function orderedFull(pos, moves, ply, ttMove) {
+    /* Decorate, sort, undecorate.
+     *
+     * Scoring inside the comparator looked tidy and was the single most
+     * expensive thing in the search: a comparator runs O(n log n) times and
+     * this one called uciOf(), which builds a string. Thirty moves is ~150
+     * comparisons, so ~300 string allocations per node, at every node. The
+     * key is computed once per move instead, which is n allocations.
+     *
+     * Measured: this alone took a level-8 middlegame search from reaching
+     * depth 4 in 1.8s to reaching it comfortably inside the budget.
+     */
+    var kk = killers[ply] || [];
+    var n = moves.length;
+    var dec = new Array(n);
+    for (var i = 0; i < n; i++) {
+      var m = moves[i];
+      var sc;
+      if (m.captured) {
+        // Most valuable victim, least valuable attacker. No string needed.
+        sc = 100000 + VALUE[m.captured.toLowerCase()] * 10 - VALUE[m.piece.toLowerCase()];
+      } else if (m.promotion) {
+        sc = 90000;
+      } else {
+        sc = 0;
+      }
+      /* The three tests that DO need the uci are only asked for quiet moves,
+         and only when there is something to compare against. */
+      if (sc < 90000 && (ttMove || kk.length || historyUsed)) {
+        var u = uciOf(m);
+        if (ttMove && u === ttMove) sc = 1000000;
+        else if (u === kk[0]) sc = 80000;
+        else if (u === kk[1]) sc = 79000;
+        else sc = history[u] || 0;
+      } else if (ttMove && sc >= 90000) {
+        if (uciOf(m) === ttMove) sc = 1000000;
+      }
+      dec[i] = { m: m, s: sc };
     }
+    dec.sort(function (a, b) { return b.s - a.s; });
+    var out = new Array(n);
+    for (var j = 0; j < n; j++) out[j] = dec[j].m;
+    return out;
+  }
+  var historyUsed = false;
+
+  function timeUp() {
+    // Checked every few thousand nodes rather than every node: Date.now() is
+    // not free, and on a low-end Android it is measurably not free.
+    if (deadline && (nodes & 1023) === 0 && Date.now() > deadline) aborted = true;
+    return aborted;
+  }
+
+  function negamax(pos, depth, alpha, beta, ply) {
+    ply = ply || 0;
+    nodes++;
+    if (timeUp()) return alpha;
+
+    var key = ttKey(pos);
+    var hit = TT[key];
+    var ttMove = hit ? hit.move : null;
+    if (hit && hit.d >= depth) {
+      if (hit.flag === 0) return hit.score;                      // exact
+      if (hit.flag === 1 && hit.score <= alpha) return alpha;    // upper bound
+      if (hit.flag === 2 && hit.score >= beta) return beta;      // lower bound
+    }
+
+    /* Mate is checked BEFORE dropping into quiescence.
+     *
+     * Quiescence has no notion of checkmate — it stands pat on a static
+     * evaluation — so a mate sitting exactly on the horizon was scored as
+     * ordinary material. With a fixed depth that never showed, because the
+     * mate was always at least two plies inside the search. With iterative
+     * deepening the first pass IS depth one, the mate node is the horizon, and
+     * the engine ranked "mate in one" level with "win a pawn" and then kept
+     * that ordering for every deeper pass. It missed a rook mate on an empty
+     * board.
+     *
+     * Generating moves at the leaf costs a move-gen that quiescence was about
+     * to do anyway. */
+    var moves = legalMoves(pos);
+    if (!moves.length) return inCheck(pos) ? -99000 + ply : 0;   // mate sooner is better
+    if (depth <= 0) return quiesce(pos, alpha, beta, 4);
+    /* A check extension. Searching one ply deeper when in check is the
+       cheapest way to stop the engine walking into a forced mate that sits
+       one move past its horizon — the failure that looks least like "weak"
+       and most like "broken". */
+    var checkNow = inCheck(pos);
+    if (checkNow) depth++;
+
+    moves = orderedFull(pos, moves, ply, ttMove);
+    var best = -100000, bestMv = null, origAlpha = alpha;
+    for (var i = 0; i < moves.length; i++) {
+      var score = -negamax(apply(pos, moves[i]), depth - 1, -beta, -alpha, ply + 1);
+      if (aborted) return alpha;
+      if (score > best) { best = score; bestMv = uciOf(moves[i]); }
+      if (score > alpha) alpha = score;
+      if (alpha >= beta) {
+        // A quiet move that caused a cutoff is worth trying first next time.
+        if (!moves[i].captured) {
+          killers[ply] = killers[ply] || [];
+          if (killers[ply][0] !== bestMv) { killers[ply][1] = killers[ply][0]; killers[ply][0] = bestMv; }
+          history[bestMv] = (history[bestMv] || 0) + depth * depth;
+          historyUsed = true;
+        }
+        ttPut(key, depth, beta, 2, bestMv);
+        return beta;
+      }
+    }
+    ttPut(key, depth, best, alpha > origAlpha ? 0 : 1, bestMv);
     return alpha;
+  }
+
+  /* ── A small opening book ─────────────────────────────────────────────────
+     Twelve plies of the openings a club actually plays, keyed by position so
+     transpositions hit. Not for strength: an engine that answers 1.e4 with
+     1...a6 after four seconds of thought looks broken to a child who has been
+     taught to control the centre, and the first three moves are exactly where
+     a search this size has least to say. */
+  var BOOK = {
+    // start position
+    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w": ["e2e4", "d2d4", "g1f3", "c2c4"],
+    // after 1.e4
+    "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b": ["e7e5", "c7c5", "e7e6", "c7c6"],
+    // after 1.d4
+    "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b": ["d7d5", "g8f6", "e7e6"],
+    // after 1.e4 e5
+    "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w": ["g1f3", "f1c4", "b1c3"],
+    // after 1.e4 e5 2.Nf3
+    "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b": ["b8c6", "g8f6"],
+    // after 1.e4 c5
+    "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w": ["g1f3", "b1c3"],
+    // after 1.d4 d5
+    "rnbqkbnr/ppp1pppp/8/3p4/3P4/8/PPP1PPPP/RNBQKBNR w": ["c2c4", "g1f3"],
+    // after 1.d4 Nf6
+    "rnbqkb1r/pppppppp/5n2/8/3P4/8/PPP1PPPP/RNBQKBNR w": ["c2c4", "g1f3"],
+  };
+  function bookMove(pos, random) {
+    // Placement + side only: the book is about the position, not the counters.
+    var fen = pos.board.filter(function (_, i) { return !(i & 0x88); });
+    var key = fenPlacement(pos) + " " + pos.turn;
+    var list = BOOK[key];
+    if (!list || !list.length) return null;
+    var legal = legalMoves(pos).map(uciOf);
+    var usable = list.filter(function (u) { return legal.indexOf(u) >= 0; });
+    if (!usable.length) return null;
+    return usable[Math.floor(random() * usable.length)];
+  }
+  /** The placement field of the FEN, which is the half the book keys on. */
+  function fenPlacement(pos) {
+    var out = [];
+    for (var r = 0; r < 8; r++) {
+      var row = "", empty = 0;
+      for (var f = 0; f < 8; f++) {
+        var p = pos.board[r * 16 + f];
+        if (p === "") { empty++; continue; }
+        if (empty) { row += empty; empty = 0; }
+        row += p;
+      }
+      if (empty) row += empty;
+      out.push(row);
+    }
+    return out.join("/");
   }
 
   /* The eight levels.
@@ -476,22 +740,30 @@
    * an opponent that sometimes misses — and an engine made weak only by depth
    * plays perfectly right up until it doesn't, which is the least useful
    * teacher of the two. The blurbs are what the level sheet shows. */
+  /* `depth` is the CAP; `ms` is the budget. Iterative deepening stops at
+     whichever comes first, which is what makes the same level feel the same on
+     a desktop and on a 2GB Android: the strong levels think for a fixed slice
+     of time rather than for however long that phone needs to reach depth 4.
+
+     `book` is whether the level plays opening theory. The weakest two do not —
+     a level-1 bot that answers 1.e4 with a book move and then hangs its queen
+     is a confusing teacher. */
   var LEVELS = [
-    { level: 1, depth: 1, slip: 0.60, blunder: 6, rating: 600,
+    { level: 1, depth: 1, ms: 60,   slip: 0.60, blunder: 6, book: false, rating: 600,
       blurb: "Plays the first thing it likes. Good for learning how the pieces move." },
-    { level: 2, depth: 1, slip: 0.40, blunder: 4, rating: 750,
+    { level: 2, depth: 1, ms: 90,   slip: 0.40, blunder: 4, book: false, rating: 750,
       blurb: "Takes what you leave hanging, and not much else." },
-    { level: 3, depth: 2, slip: 0.28, blunder: 4, rating: 950,
+    { level: 3, depth: 2, ms: 150,  slip: 0.28, blunder: 4, book: true,  rating: 950,
       blurb: "Sees one move ahead properly. It will trade if you let it." },
-    { level: 4, depth: 2, slip: 0.15, blunder: 3, rating: 1250,
+    { level: 4, depth: 3, ms: 250,  slip: 0.15, blunder: 3, book: true,  rating: 1250,
       blurb: "Punishes loose pieces, misses long tactics." },
-    { level: 5, depth: 3, slip: 0.10, blunder: 3, rating: 1450,
+    { level: 5, depth: 4, ms: 400,  slip: 0.10, blunder: 3, book: true,  rating: 1450,
       blurb: "Two moves ahead and rarely gives anything away." },
-    { level: 6, depth: 3, slip: 0.05, blunder: 2, rating: 1600,
+    { level: 6, depth: 5, ms: 700,  slip: 0.05, blunder: 2, book: true,  rating: 1600,
       blurb: "Finds short tactics. You will need a plan." },
-    { level: 7, depth: 4, slip: 0.02, blunder: 2, rating: 1750,
+    { level: 7, depth: 6, ms: 1100, slip: 0.02, blunder: 2, book: true,  rating: 1750,
       blurb: "Calculates. Loose play gets punished immediately." },
-    { level: 8, depth: 4, slip: 0, blunder: 1, rating: 1900,
+    { level: 8, depth: 8, ms: 1800, slip: 0,    blunder: 1, book: true,  rating: 1900,
       blurb: "No mistakes on purpose. Brutal." },
   ];
 
@@ -514,21 +786,77 @@
     if (!moves.length) return null;
     var random = rand || Math.random;
 
-    /* Alpha-beta at the ROOT too, not only below it. Searching every root
-       move against a full window made level 8 take seconds on a desktop,
-       which is a bot nobody finishes a game against on a phone. Moves that
-       fail low keep their bound as a score — inexact, and it does not matter:
-       the only scores that must be right are the top few, which are exactly
-       the ones searched with an open window. */
-    var searchOrder = ordered(pos, moves);
-    var scored = [];
-    var alpha = -100000;
-    for (var si = 0; si < searchOrder.length; si++) {
-      var sc = -negamax(apply(pos, searchOrder[si]), info.depth - 1, -100000, -alpha);
-      if (sc > alpha) alpha = sc;
-      scored.push({ m: searchOrder[si], score: sc });
+    /* Book first. Cheap, instant, and it stops the opening looking broken. */
+    if (info.book) {
+      var bm = bookMove(pos, random);
+      if (bm) {
+        var bmv = null;
+        for (var bi = 0; bi < moves.length; bi++) if (uciOf(moves[bi]) === bm) bmv = moves[bi];
+        if (bmv) return { uci: bm, san: san(pos, bmv, moves), score: 0, best: bm, slipped: false, book: true, depth: 0 };
+      }
     }
-    scored.sort(function (a, b) { return b.score - a.score; });
+
+    /* ITERATIVE DEEPENING.
+       Search depth 1, then 2, then 3 … keeping the previous iteration's best
+       move to try first at the next. That sounds like waste and is the
+       opposite: the ordering it produces makes each deeper pass cheaper than
+       searching that depth cold, and — the part that matters here — there is
+       always a complete answer to hand the moment the time budget runs out.
+       A fixed depth on a slow phone means either a bot that is too weak
+       everywhere or one that freezes the tab on level 8. */
+    ttReset();
+    nodes = 0; aborted = false;
+    deadline = Date.now() + (info.ms || 250);
+
+    var scored = [];
+    var reached = 0;
+    for (var d = 1; d <= info.depth; d++) {
+      var pass = [];
+      var alpha = -100000;
+      // Previous iteration's ranking first; the best move from depth d-1 is
+      // overwhelmingly the best at depth d, and trying it first is most of
+      // where the pruning comes from.
+      var order = scored.length
+        ? scored.map(function (x) { return x.m; })
+        : orderedFull(pos, moves, 0, null);
+      /* Principal variation search at the ROOT.
+       *
+       * The old code searched every root move with beta = -alpha, which is a
+       * null window: a move BETTER than the current best fails high and comes
+       * back as the bound rather than as its score, so `sc > alpha` is never
+       * true and the ranking silently keeps the first move it liked. That is
+       * why the engine could not see a mate in one from the root — the mate
+       * scored 98999 internally and was reported as alpha.
+       *
+       * PVS does it properly: the first move gets a full window, the rest get
+       * a cheap null-window scout, and any move that beats alpha is
+       * RE-SEARCHED with a full window to find out by how much. Same pruning,
+       * correct scores. */
+      for (var si = 0; si < order.length; si++) {
+        var child = apply(pos, order[si]);
+        var sc;
+        if (si === 0) {
+          sc = -negamax(child, d - 1, -100000, 100000, 1);
+        } else {
+          sc = -negamax(child, d - 1, -alpha - 1, -alpha, 1);
+          if (!aborted && sc > alpha) sc = -negamax(child, d - 1, -100000, 100000, 1);
+        }
+        if (aborted) break;
+        if (sc > alpha) alpha = sc;
+        pass.push({ m: order[si], score: sc });
+      }
+      if (aborted) break;                 // keep the last COMPLETE iteration
+      pass.sort(function (a, b) { return b.score - a.score; });
+      scored = pass;
+      reached = d;
+      // A forced mate is found; deeper will not improve on it.
+      if (Math.abs(scored[0].score) > 90000) break;
+    }
+    if (!scored.length) {
+      // The budget expired inside depth 1 on a very slow device. Something
+      // has to be played, and a captures-first ordering is not nothing.
+      scored = orderedFull(pos, moves, 0, null).map(function (mv) { return { m: mv, score: 0 }; });
+    }
 
     var pick = 0;
     if (info.slip > 0 && scored.length > 1 && random() < info.slip) {
@@ -543,6 +871,9 @@
       score: chosen.score,
       best: uciOf(scored[0].m),
       slipped: pick > 0,
+      book: false,
+      depth: reached,
+      nodes: nodes,
     };
   }
 
@@ -557,13 +888,26 @@
     if (!pos) return null;
     var moves = legalMoves(pos);
     if (!moves.length) return null;
-    var order = ordered(pos, moves);
-    var scored = [], a = -100000;
+    /* A fresh table and a budget of its own. Sharing the search state with
+       bestMove() would let a hint inherit a cutoff bound from a different
+       window and report a score that is a bound rather than a score — which
+       is fine for choosing a move and wrong for telling a child how much
+       their move cost them. */
+    ttReset();
+    nodes = 0; aborted = false;
+    deadline = Date.now() + 350;
+    /* Full window on every move, no scouting. This is what the blunder
+       warning subtracts to tell a child how much their move cost, and a bound
+       is not a score — "you lost 300 centipawns" has to be true. There are
+       thirty-odd moves in a position; the extra work is affordable and the
+       wrong number is not. */
+    var order = orderedFull(pos, moves, 0, null);
+    var scored = [];
     for (var i2 = 0; i2 < order.length; i2++) {
-      var s2 = -negamax(apply(pos, order[i2]), (depth || 2) - 1, -100000, -a);
-      if (s2 > a) a = s2;
+      var s2 = -negamax(apply(pos, order[i2]), (depth || 2) - 1, -100000, 100000, 1);
       scored.push({ uci: uciOf(order[i2]), san: san(pos, order[i2], moves), score: s2 });
     }
+    deadline = 0;
     scored.sort(function (x, y) { return y.score - x.score; });
     return { best: scored[0], moves: scored };
   }

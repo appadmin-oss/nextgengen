@@ -54,8 +54,14 @@ function match_games(): array {
 function match_game(string $key): ?array { return match_games()[$key] ?? null; }
 
 /** Opening state for a game. Chess stores a FEN; anything else stores JSON. */
-function match_initial_state(string $game): string {
-    return $game === 'chess' ? CHESS_START_FEN : '{}';
+function match_initial_state(string $game, string $variant = 'standard'): string {
+    if ($game !== 'chess') return '{}';
+    /* Chess960 does not start from a constant, so a game can no longer be
+     * replayed from one — the position is chosen here and stored on the row. */
+    if ($variant !== 'standard' && function_exists('chess_variant_start')) {
+        return (string)chess_variant_start($variant)['state'];
+    }
+    return CHESS_START_FEN;
 }
 
 /* ── Who a player is ──────────────────────────────────────────────────────
@@ -144,6 +150,9 @@ function match_public(array $r, string $viewer, bool $staff = false): array {
         'tournamentId' => (string)($r['tournamentId'] ?? ''),
         // The terms both players agreed before the board existed.
         'timeControl' => (string)($r['timeControl'] ?? '1day'),
+        'variant'    => (string)($r['variant'] ?? 'standard'),
+        'variantData'=> json_decode((string)($r['variantData'] ?? ''), true) ?: null,
+        'startFen'   => (string)($r['startFen'] ?? ''),
         'rated'      => (int)($r['rated'] ?? 1) === 1,
         'channelSlug'=> (string)($r['channelSlug'] ?? ''),
         // The viewer's OWN rating change. `ratingDelta` is stored from white's
@@ -195,7 +204,7 @@ function match_invite(array $p): array {
         'playerA' => (string)$me['id'],   'playerAName' => (string)$me['fullName'],   'playerAType' => (string)$me['kind'],
         'playerB' => (string)$them['id'], 'playerBName' => (string)$them['fullName'], 'playerBType' => (string)$them['kind'],
         // The invited player has not accepted, so nobody is on move yet.
-        'turnPlayer' => '', 'state' => match_initial_state($game), 'ply' => 0,
+        'turnPlayer' => '', 'ply' => 0,
         'tournamentId' => (string)($p['tournamentId'] ?? ''),
         'rated' => !empty($p['rated']) ? 1 : 0,
         /* The clock is set when the game is CREATED and started when it is
@@ -203,7 +212,11 @@ function match_invite(array $p): array {
          * game and sitting down to one. */
         'createdAt' => $now, 'updatedAt' => $now,
     ] + (function_exists('chess_clock_init') && $game === 'chess'
-            ? chess_clock_init((string)($p['timeControl'] ?? '1day')) : []));
+            ? chess_clock_init((string)($p['timeControl'] ?? '1day')) : [])
+      + ($game === 'chess' && function_exists('chess_variant_start')
+            ? chess_variant_start(chess_variant_valid((string)($p['variant'] ?? 'standard'))
+                                  ? (string)($p['variant'] ?? 'standard') : 'standard')
+            : ['state' => match_initial_state($game)]));
     return ['ok' => true, 'matchId' => $matchId, 'status' => 'invited'];
 }
 
@@ -310,7 +323,23 @@ function match_move(array $p): array {
     } elseif (in_array($status['state'], ['stalemate', 'draw'], true)) {
         $patch += ['status' => 'complete', 'result' => 'draw', 'winnerId' => '', 'reason' => (string)$status['reason'], 'turnPlayer' => ''];
     } else {
-        $patch['turnPlayer'] = $other;
+        /* A variant ADDS a way to win; it never removes the ordinary ones, so
+         * this is asked only after checkmate and the draw rules have had their
+         * say. Reaching the hill and being stalemated on the same move is
+         * still a draw, which is the honest reading. */
+        $variant = (string)($r['variant'] ?? 'standard');
+        $vdata = json_decode((string)($r['variantData'] ?? ''), true);
+        $vdata = is_array($vdata) ? $vdata : [];
+        $vend = ($variant !== 'standard' && function_exists('chess_variant_outcome'))
+            ? chess_variant_outcome($variant, (string)$res['fen'], $viewer === (string)$r['playerA'] ? 'w' : 'b', $vdata)
+            : null;
+        if ($vdata) $patch['variantData'] = json_encode($vdata, JSON_UNESCAPED_SLASHES);
+        if ($vend) {
+            $patch += ['status' => 'complete', 'result' => 'win', 'winnerId' => $viewer,
+                       'reason' => (string)$vend['reason'], 'turnPlayer' => ''];
+        } else {
+            $patch['turnPlayer'] = $other;
+        }
     }
 
     /* Charge the mover for their thinking time and add their increment.

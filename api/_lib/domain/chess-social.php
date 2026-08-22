@@ -238,6 +238,7 @@ function chess_challenge_shape(array $r, string $viewer): array {
                  'isMe' => (string)$r['toId'] === $viewer],
         'open' => (string)$r['toId'] === '',
         'timeControl' => (string)$r['timeControl'],
+        'variant' => (string)($r['variant'] ?? 'standard'),
         'colourPref' => (string)$r['colourPref'],
         'rated' => (int)$r['rated'] === 1,
         'channelSlug' => (string)$r['channelSlug'],
@@ -263,6 +264,8 @@ function chess_challenge_create(array $p): array {
     if (!in_array($tc, CHESS_TIME_CONTROLS, true)) return ['ok' => false, 'error' => 'bad_time_control'];
     $colour = (string)($p['colourPref'] ?? 'random');
     if (!in_array($colour, ['white', 'black', 'random'], true)) return ['ok' => false, 'error' => 'bad_colour'];
+    $variant = (string)($p['variant'] ?? 'standard');
+    if (!chess_variant_valid($variant)) return ['ok' => false, 'error' => 'bad_variant'];
 
     $toId = trim((string)($p['opponentId'] ?? ''));
     $toName = '';
@@ -293,7 +296,7 @@ function chess_challenge_create(array $p): array {
     db_insert('chess_challenges', [
         'challengeId' => $id, 'fromId' => $meId, 'fromName' => (string)$me['fullName'],
         'toId' => $toId, 'toName' => $toName,
-        'timeControl' => $tc, 'colourPref' => $colour,
+        'timeControl' => $tc, 'colourPref' => $colour, 'variant' => $variant,
         'rated' => !empty($p['rated']) ? 1 : 0,
         'channelSlug' => (string)($p['channelSlug'] ?? ''),
         'status' => 'open', 'createdAt' => $now,
@@ -328,7 +331,8 @@ function chess_challenges_list(array $p): array {
             'fromYou' => array_map(fn($r) => chess_challenge_shape($r, $viewer), $sent),
             'open' => array_map(fn($r) => chess_challenge_shape($r, $viewer), $open),
             'timeControls' => CHESS_TIME_CONTROLS,
-            'clockOptions' => chess_clock_options()];
+            'clockOptions' => chess_clock_options(),
+            'variants' => chess_variant_meta()];
 }
 
 /**
@@ -387,10 +391,12 @@ function chess_challenge_respond(array $p): array {
             // Agreed before the board existed, and carried with it so the result
             // is settled by the terms both players actually saw.
             'timeControl' => (string)$r['timeControl'], 'rated' => (int)$r['rated'],
+            'variant' => (string)($r['variant'] ?? 'standard'),
             'channelSlug' => (string)$r['channelSlug'],
-            'turnPlayer' => (string)$white['id'], 'state' => CHESS_START_FEN, 'ply' => 0,
+            'turnPlayer' => (string)$white['id'], 'ply' => 0,
             'createdAt' => $now, 'updatedAt' => $now,
-        ] + chess_clock_init((string)$r['timeControl']));
+        ] + chess_clock_init((string)$r['timeControl'])
+          + chess_variant_start((string)($r['variant'] ?? 'standard')));
         // A challenge game opens ACTIVE, so the clock starts with it.
         db_update('match_games', ['clockRunning' => chess_clock_is_live((string)$r['timeControl']) ? 1 : 0,
                                   'turnStartedAt' => $now], ['matchId' => $matchId]);

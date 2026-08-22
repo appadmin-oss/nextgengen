@@ -36,6 +36,7 @@ if ($method === 'GET') {
             'description' => (string)($b['description'] ?? ''),
         ] + array_filter([
             'format' => $b['format'] ?? null, 'timeControl' => $b['timeControl'] ?? null,
+            'variant' => $b['variant'] ?? null,
             'rated' => $b['rated'] ?? null, 'totalRounds' => $b['totalRounds'] ?? null,
             'kinds' => $b['kinds'] ?? null, 'centres' => $b['centres'] ?? null,
             'minRating' => $b['minRating'] ?? null, 'maxRating' => $b['maxRating'] ?? null,
