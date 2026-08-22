@@ -1990,3 +1990,77 @@ ALTER TABLE match_games ADD COLUMN board INT DEFAULT 0;
 CREATE INDEX idx_match_clock ON match_games (status, clockRunning);
 
 INSERT INTO schema_version (version) VALUES (99) ON DUPLICATE KEY UPDATE version = version;
+
+-- 100: the board — idempotent moves, variants, and programme promotions.
+--
+-- IDEMPOTENCY. A move was identified only by its ply, so a client that sent a
+-- move, lost the response and retried had two outcomes and no way to tell them
+-- apart: the retry either collided with UNIQUE(matchId, ply) and surfaced as a
+-- failure for a move that HAD landed, or — if the opponent had replied in the
+-- meantime — applied a second time at a new ply. On a 3G handset at a centre
+-- that is not a rare case. The client now names each move once.
+-- NULL, not ''. Both MySQL and SQLite treat NULLs in a UNIQUE index as
+-- distinct, so a move with no client id (an old row, or a caller that does not
+-- send one) does not collide with the next one — while two arrivals carrying
+-- the SAME id collide exactly as intended.
+ALTER TABLE match_moves ADD COLUMN clientMoveId VARCHAR(40) DEFAULT NULL;
+CREATE UNIQUE INDEX idx_match_move_client ON match_moves (matchId, clientMoveId);
+ALTER TABLE match_moves ADD COLUMN msSpent INT DEFAULT 0;
+  -- How long the mover actually thought. The clock already knows; keeping it
+  -- per move is what makes a time graph and "you spent 4 minutes on move 12"
+  -- possible without replaying the whole game.
+
+-- VARIANTS. The rules engine now answers to more than one set of rules.
+ALTER TABLE match_games ADD COLUMN variant VARCHAR(24) DEFAULT 'standard';
+  -- standard | chess960 | kingofthehill | threecheck
+ALTER TABLE match_games ADD COLUMN variantData TEXT;
+  -- JSON. Chess960 keeps its start position id; three-check keeps the counts.
+ALTER TABLE match_games ADD COLUMN startFen VARCHAR(120) DEFAULT '';
+  -- Chess960 does not start from the standard position, so a game can no
+  -- longer be replayed from a constant.
+ALTER TABLE tournaments ADD COLUMN variant VARCHAR(24) DEFAULT 'standard';
+ALTER TABLE chess_challenges ADD COLUMN variant VARCHAR(24) DEFAULT 'standard';
+
+-- PROMOTIONS. First-party only: NGG promoting NGG's own programmes to its own
+-- members. There is no third-party ad network here and there must not be one —
+-- these are children, and behavioural advertising to minors is a different
+-- product with a different legal footing.
+CREATE TABLE IF NOT EXISTS promos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  promoId VARCHAR(32) UNIQUE NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  body VARCHAR(400) DEFAULT '',
+  kind VARCHAR(24) DEFAULT 'programme',   -- programme | event | tournament | notice
+  placement VARCHAR(32) DEFAULT 'chess',  -- chess | community | dashboard | arcade
+  ctaLabel VARCHAR(48) DEFAULT '',
+  ctaPage VARCHAR(64) DEFAULT '',         -- an in-app page id, never a raw url
+  ctaRef VARCHAR(64) DEFAULT '',
+  imageUrl VARCHAR(512) DEFAULT '',
+  accent VARCHAR(16) DEFAULT '',
+  priority INT DEFAULT 0,
+  status VARCHAR(16) DEFAULT 'draft',     -- draft | live | ended
+  startsAt VARCHAR(40) DEFAULT '',
+  endsAt VARCHAR(40) DEFAULT '',
+  audience TEXT,                          -- JSON: kinds, centres, programme
+  impressions INT DEFAULT 0,
+  clicks INT DEFAULT 0,
+  dismissals INT DEFAULT 0,
+  createdBy VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40) NOT NULL,
+  updatedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_promo_live (status, placement, priority)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- One row per person per promo, so a dismissal sticks and an impression is not
+-- counted forty times by one member refreshing a screen.
+CREATE TABLE IF NOT EXISTS promo_seen (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  promoId VARCHAR(32) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  seenAt VARCHAR(40) DEFAULT '',
+  clickedAt VARCHAR(40) DEFAULT '',
+  dismissedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_promo_seen (promoId, memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (100) ON DUPLICATE KEY UPDATE version = version;

@@ -13904,6 +13904,64 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         return count($r['players']) > 0;
     })());
 
+    /* ── A move can be retried safely ───────────────────────────────────────
+       A move used to be identified only by its ply. A client that sent one,
+       lost the response and retried either collided with UNIQUE(matchId, ply)
+       — surfacing as a failure for a move that HAD landed — or, if the
+       opponent had replied meanwhile, played a second time at a new ply. On a
+       3G handset at a centre neither is rare. */
+    // Their own players: the pairs above already have games open, and
+    // match_invite refuses a second live match between the same two people.
+    $nowIdem = now_iso();
+    foreach ([['IDM-A', 'Idem One'], ['IDM-B', 'Idem Two'], ['IDM-C', 'Idem Three'], ['IDM-D', 'Idem Four']] as [$iid, $iname]) {
+        db_exec("DELETE FROM members WHERE memberId = ?", [$iid]);
+        db_insert('members', ['memberId' => $iid, 'fullName' => $iname, 'email' => strtolower($iid) . '@example.com',
+            'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'member', 'status' => 'active',
+            'createdAt' => $nowIdem, 'updatedAt' => $nowIdem]);
+    }
+    chk('the same move id twice plays once and reports the original outcome', (function () {
+        $m = match_invite(['playerId' => 'IDM-A', 'game' => 'chess', 'opponentId' => 'IDM-B',
+                           'timeControl' => '10+0'])['matchId'] ?? '';
+        if ($m === '') return false;
+        match_respond(['playerId' => 'IDM-B', 'matchId' => $m, 'accept' => true]);
+        $one = match_move(['playerId' => 'IDM-A', 'matchId' => $m, 'move' => 'e2e4', 'clientMoveId' => 'cm-1']);
+        $two = match_move(['playerId' => 'IDM-A', 'matchId' => $m, 'move' => 'e2e4', 'clientMoveId' => 'cm-1']);
+        $plies = (int)db_row("SELECT COUNT(*) c FROM match_moves WHERE matchId = ?", [$m])['c'];
+        $GLOBALS['__idemMatch'] = $m;
+        return !empty($one['ok']) && !empty($two['ok']) && !empty($two['replayed'])
+            && $two['san'] === $one['san'] && $plies === 1;
+    })());
+    chk('…even after the opponent has already replied', (function () {
+        $m = $GLOBALS['__idemMatch'];
+        match_move(['playerId' => 'IDM-B', 'matchId' => $m, 'move' => 'e7e5', 'clientMoveId' => 'cm-2']);
+        // The first player retries their ORIGINAL move; it must not play again.
+        $r = match_move(['playerId' => 'IDM-A', 'matchId' => $m, 'move' => 'e2e4', 'clientMoveId' => 'cm-1']);
+        return !empty($r['ok']) && !empty($r['replayed'])
+            && (int)db_row("SELECT COUNT(*) c FROM match_moves WHERE matchId = ?", [$m])['c'] === 2;
+    })());
+    chk('…and a DIFFERENT id is a different move', (function () {
+        $m = $GLOBALS['__idemMatch'];
+        $r = match_move(['playerId' => 'IDM-A', 'matchId' => $m, 'move' => 'g1f3', 'clientMoveId' => 'cm-3']);
+        return !empty($r['ok']) && empty($r['replayed'])
+            && (int)db_row("SELECT COUNT(*) c FROM match_moves WHERE matchId = ?", [$m])['c'] === 3;
+    })());
+    chk('moves with no id at all still work, and do not collide', (function () {
+        $m = match_invite(['playerId' => 'IDM-C', 'game' => 'chess', 'opponentId' => 'IDM-D',
+                           'timeControl' => '10+0'])['matchId'] ?? '';
+        match_respond(['playerId' => 'IDM-D', 'matchId' => $m, 'accept' => true]);
+        $a = match_move(['playerId' => 'IDM-C', 'matchId' => $m, 'move' => 'd2d4']);
+        $b = match_move(['playerId' => 'IDM-D', 'matchId' => $m, 'move' => 'd7d5']);
+        return !empty($a['ok']) && !empty($b['ok'])
+            && (int)db_row("SELECT COUNT(*) c FROM match_moves WHERE matchId = ?", [$m])['c'] === 2;
+    })());
+    chk('a move records how long its player actually thought', (function () {
+        $m = $GLOBALS['__idemMatch'];
+        db_update('match_games', ['turnStartedAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 7)], ['matchId' => $m]);
+        match_move(['playerId' => 'IDM-B', 'matchId' => $m, 'move' => 'b8c6', 'clientMoveId' => 'cm-4']);
+        $ms = (int)db_row("SELECT msSpent FROM match_moves WHERE matchId = ? AND clientMoveId = 'cm-4'", [$m])['msSpent'];
+        return $ms > 5000 && $ms < 9000;
+    })());
+
     /* ── Clocks that actually run ───────────────────────────────────────────
        `timeControl` used to be a label: '3+2' was stored, shown on the
        challenge sheet, and nothing ever counted down. These assert the three

@@ -3048,6 +3048,41 @@ const MATCH_REACTION_LABEL = {
   "well-played": ["🌟", "Well played"], "your-turn": ["👉", "Your turn"],
 };
 
+/**
+ * Say a move out loud.
+ *
+ * "Nf3" read character by character is "en eff three", which is not a move.
+ * Screen readers do exactly that with SAN, so the notation is expanded into
+ * the words a person would actually use at a board. Everything a child is
+ * taught to write stays written; only the spoken form changes.
+ */
+function cmSpeakSan(san) {
+  let t = String(san || "");
+  if (!t) return "a move";
+  if (t === "O-O" || t === "0-0") return "castles kingside";
+  if (t === "O-O-O" || t === "0-0-0") return "castles queenside";
+  let suffix = "";
+  if (/#$/.test(t)) { suffix = ", checkmate"; t = t.slice(0, -1); }
+  else if (/\+$/.test(t)) { suffix = ", check"; t = t.slice(0, -1); }
+  const names = { K: "king", Q: "queen", R: "rook", B: "bishop", N: "knight" };
+  // Promotion first, so "=Q" does not get read as part of the square.
+  let promoted = "";
+  const pm = /=([QRBN])$/.exec(t);
+  if (pm) { promoted = ", promoting to " + names[pm[1]]; t = t.slice(0, -2); }
+  const piece = names[t[0]] ? names[t[0]] : "pawn";
+  if (names[t[0]]) t = t.slice(1);
+  const takes = t.indexOf("x") >= 0;
+  t = t.replace("x", "");
+  // Anything left before the destination square is a disambiguating file or rank.
+  const dest = t.slice(-2);
+  const disamb = t.slice(0, -2);
+  let out = piece;
+  if (disamb) out += " on " + disamb;
+  out += takes ? " takes on " : " to ";
+  out += dest;
+  return out + promoted + suffix;
+}
+
 /** FEN placement → 64 squares, a8 first, so the array reads like the board. */
 function chessSquares(fen) {
   const rows = String(fen || "").split(" ")[0].split("/");
@@ -4627,7 +4662,7 @@ function ChessSeat({ player, colour, gone, score, onMove }) {
  *   wrappers are required — gridcells directly inside a grid is invalid ARIA
  *   and screen readers announce the geometry wrongly.
  */
-function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, interactive, onTap, onFlip }) {
+function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, interactive, premove, premoving, onTap, onFlip }) {
   const [cursor, setCursor] = React.useState("e4");
   const order = [];
   for (let i = 0; i < 64; i++) order.push(flip ? 63 - i : i);
@@ -4652,7 +4687,9 @@ function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, inter
 
   return (
     <div className="mtg-boardwrap">
-      <div className="mtg-board" role="grid" aria-label="Chess board" onKeyDown={onKey}>
+      <div className={"mtg-board" + (premoving ? " is-premoving" : "")} role="grid"
+           aria-label={premoving ? "Chess board — setting a premove" : "Chess board"}
+           onKeyDown={onKey}>
         {[0, 1, 2, 3, 4, 5, 6, 7].map(row => (
           <div className="mtg-row" role="row" key={row}>
             {order.slice(row * 8, row * 8 + 8).map(i => {
@@ -4661,6 +4698,7 @@ function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, inter
               const dark = ((Math.floor(i / 8) + (i % 8)) % 2) === 1;
               const isTarget = targets.indexOf(sq) !== -1;
               const isLast = lastMove && (lastMove.from === sq || lastMove.to === sq);
+              const isPre = !!premove && (premove.slice(0, 2) === sq || premove.slice(2, 4) === sq);
               const file = sq[0], rank = sq[1];
               // Coordinates on the edges only — on every square they are noise.
               const showFile = flip ? rank === "8" : rank === "1";
@@ -4670,7 +4708,8 @@ function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, inter
                   tabIndex={sq === cursor ? 0 : -1}
                   className={"mtg-sq" + (dark ? " is-dark" : "") + (from === sq ? " is-from" : "")
                     + (isTarget ? (piece ? " is-capture" : " is-target") : "")
-                    + (isLast ? " is-last" : "") + (checkSquare === sq ? " is-check" : "")}
+                    + (isLast ? " is-last" : "") + (checkSquare === sq ? " is-check" : "")
+                    + (isPre ? " is-premove" : "")}
                   aria-disabled={!interactive}
                   onFocus={() => setCursor(sq)}
                   onClick={() => interactive && onTap(sq, piece)}
@@ -4678,7 +4717,12 @@ function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, inter
                     + (piece ? ", " + (piece === piece.toUpperCase() ? "white" : "black") + " " + CHESS_NAME[piece.toLowerCase()] : ", empty")
                     + (isTarget ? (piece ? ", can capture here" : ", can move here") : "")
                     + (isLast ? ", last move" : "")
-                    + (checkSquare === sq ? ", in check" : "")}>
+                    + (isPre ? ", premove" : "")
+                    + (checkSquare === sq ? ", in check" : "")
+                    /* Say WHAT a tap will do while a premove is being set,
+                       rather than leaving the square sounding identical to
+                       one that would move a piece now. */
+                    + (premoving && interactive ? ", tap to premove" : "")}>
                   {piece && <img className="mtg-pc" src={CHESS_PIECE_SRC(piece)} alt="" draggable={false}/>}
                   {isTarget && !piece && <span className="mtg-dot" aria-hidden="true"/>}
                   {showFile && <span className="mtg-coord is-file" aria-hidden="true">{file}</span>}
@@ -4702,6 +4746,15 @@ function MatchGame({ matchId, onBack }) {
   const [promo, setPromo] = React.useState(null);   // { from, to } awaiting a piece
   const [manualFlip, setManualFlip] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  /* A premove: the move you want to play the instant the opponent replies.
+     Blitz is unplayable without it — three minutes each means a round trip is
+     a meaningful fraction of your clock, and every chess app people have used
+     has this. Held as UCI, played by the effect below, cancelled by any tap on
+     the board or by the position turning out not to allow it. */
+  const [premove, setPremove] = React.useState(null);
+  const [preFrom, setPreFrom] = React.useState("");
+  const [say, setSay] = React.useState("");        // the live-region announcement
+  const lastAnnounced = React.useRef(-1);
 
   const load = React.useCallback(() => {
     NGGApi.member.match.get(matchId)
@@ -4747,13 +4800,70 @@ function MatchGame({ matchId, onBack }) {
     return () => { alive = false; if (timer) clearTimeout(timer); };
   }, [m && m.status, m && m.yourTurn, m && m.ply, matchId, load]);
 
-  const send = (uci) => {
-    setBusy(true); setErr(""); setFrom(""); setPromo(null);
-    NGGApi.member.match.move(matchId, uci)
-      .then(load)
-      .catch(e => setErr(e.code === "illegal_move" ? "That move isn't legal." : ((e && e.message) || "Could not play that move.")))
-      .then(() => setBusy(false));
+  /* One id per move attempt, so a retry after a dropped response replays the
+     original outcome instead of failing on a move that already landed. Kept in
+     a ref rather than state: it must survive a re-render without becoming one. */
+  const moveIds = React.useRef({});
+  const newMoveId = () => {
+    try {
+      if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+    } catch (_) {}
+    return "mv-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
   };
+
+  const send = React.useCallback((uci, opts) => {
+    const quiet = opts && opts.quiet;
+    if (!quiet) { setBusy(true); setErr(""); }
+    setFrom(""); setPromo(null);
+    // Same uci from the same position reuses its id, so a double-tap or a
+    // manual retry is the same attempt rather than a second move.
+    const key = uci + "@" + matchId;
+    if (!moveIds.current[key]) moveIds.current[key] = newMoveId();
+    const id = moveIds.current[key];
+    return NGGApi.member.match.move(matchId, uci, id)
+      .then(r => { delete moveIds.current[key]; load(); return r; })
+      .catch(e => {
+        /* An illegal premove is not an error the player made — the position
+           changed under it. Drop it quietly and let them move again. */
+        if (quiet) { setPremove(null); return null; }
+        setErr(e.code === "illegal_move" ? "That move isn't legal." : ((e && e.message) || "Could not play that move."));
+        return null;
+      })
+      .then(r => { if (!quiet) setBusy(false); return r; });
+  }, [matchId, load]);
+
+  /* Play the premove the moment the turn comes back. Cleared first, so a
+     rejected one cannot loop. */
+  React.useEffect(() => {
+    if (!premove || !m || m.status !== "active" || !m.yourTurn || busy) return;
+    const uci = premove;
+    setPremove(null);
+    send(uci, { quiet: true });
+  }, [premove, m && m.yourTurn, m && m.status, m && m.ply, busy, send]);
+
+  /* Say what happened, once per ply.
+     A board that changes silently is a board a screen-reader user cannot
+     follow: they hear nothing when the opponent moves and have to re-read
+     sixty-four squares to find out what did. */
+  React.useEffect(() => {
+    if (!m || !m.moves || !m.moves.length) return;
+    if (m.ply === lastAnnounced.current) return;
+    lastAnnounced.current = m.ply;
+    const last = m.moves[m.moves.length - 1];
+    const mine = last.playerId === (m.players[m.you === "A" ? "A" : "B"] || {}).id;
+    const who = mine ? "You play" : (cmOtherName(m) + " plays");
+    let line = who + " " + cmSpeakSan(last.san) + ".";
+    if (m.status === "complete") {
+      line += " " + (m.result === "draw" ? "The game is drawn."
+                   : (m.winnerId === (m.players[m.you === "A" ? "A" : "B"] || {}).id ? "You win." : "You lose."))
+            + (m.reason ? " By " + String(m.reason).replace(/_/g, " ") + "." : "");
+    } else if (m.check) {
+      line += " Check.";
+    } else if (m.yourTurn) {
+      line += " Your move.";
+    }
+    setSay(line);
+  }, [m && m.ply, m && m.status, m]);
 
   if (err && !m) return <div className="arc mtg"><div className="arc-err" role="alert">{err}</div>
     <button className="btn btn-ghost btn-sm" onClick={onBack}>← Back</button></div>;
@@ -4767,6 +4877,10 @@ function MatchGame({ matchId, onBack }) {
   const flip = manualFlip ? !baseFlip : baseFlip;
   const legal = m.legal || [];
   const canMove = m.status === "active" && m.yourTurn && !busy;
+  /* Premoves are for games with a running clock. On a daily game there is
+     nothing to save — you have twenty-four hours — and a move queued a day in
+     advance against a position you have not seen is a way to lose a game. */
+  const clockIsLive = !!(m.clock && m.clock.live);
   const targets = from ? legal.filter(u => u.slice(0, 2) === from).map(u => u.slice(2, 4)) : [];
   const material = chessMaterial(squares);
   // Whoever is at the bottom of the board as drawn.
@@ -4782,7 +4896,25 @@ function MatchGame({ matchId, onBack }) {
   const title = isPlayer ? "You vs " + them.name : m.players.A.name + " vs " + m.players.B.name;
 
   const tap = (sq, piece) => {
-    if (!canMove) return;
+    /* Not your turn, but the game is live and you are in it: this is a
+       PREMOVE. Blitz is close to unplayable without one — at three minutes
+       each a round trip is a real fraction of your clock — and it is a
+       convention every chess app people have used already has.
+
+       Deliberately unvalidated against the current position: the whole point
+       is that the position has not happened yet. The server rejects an
+       illegal one and send() drops it quietly, which is the same outcome as
+       every other implementation of this. */
+    if (!canMove) {
+      if (!isPlayer || m.status !== "active" || !clockIsLive) return;
+      if (preFrom && preFrom !== sq) { setPremove(preFrom + sq); setPreFrom(""); return; }
+      if (piece && ((m.yourColour === "w") === (piece === piece.toUpperCase()))) { setPreFrom(sq); setPremove(null); return; }
+      setPreFrom(""); setPremove(null);
+      return;
+    }
+    // Any tap on your own turn cancels a waiting premove — you have changed
+    // your mind, and a premove firing after that is the worst kind of surprise.
+    if (premove || preFrom) { setPremove(null); setPreFrom(""); }
     if (from && targets.indexOf(sq) !== -1) {
       // A pawn reaching the last rank has four possible moves, not one.
       const opts = legal.filter(u => u.slice(0, 2) === from && u.slice(2, 4) === sq);
@@ -4813,6 +4945,14 @@ function MatchGame({ matchId, onBack }) {
       <button className="btn btn-ghost btn-sm mtg-back" onClick={onBack}>← All games</button>
       {err && <div className="arc-err" role="alert">{err}</div>}
 
+      {/* What just happened, for anybody not looking at the board.
+          A game that changes silently is a game a screen-reader user cannot
+          follow — they hear nothing when the opponent moves and have to
+          re-read sixty-four squares to work out what did. `polite` rather
+          than `assertive`: a move is news, not an alarm, and interrupting
+          somebody mid-sentence to say "knight f3" is worse than waiting. */}
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">{say}</p>
+
       <div className="mtg-head">
         <div>
           <div className="arc-eyebrow">{m.staffView ? "Staff view" : m.spectator ? "Watching" : "Chess"}</div>
@@ -4821,12 +4961,29 @@ function MatchGame({ matchId, onBack }) {
         <div className={"mtg-status" + (m.yourTurn && m.status === "active" ? " is-turn" : "")}>{statusLine}</div>
       </div>
 
+      {/* A queued premove is a promise the board has made on your behalf. It
+          has to be visible and it has to be cancellable, or it is a trap. */}
+      {(premove || preFrom) && (
+        <div className="mtg-pre" role="status">
+          <span className="mtg-pre-l">Premove</span>
+          <span className="mtg-pre-b">
+            {premove ? premove.slice(0, 2) + " → " + premove.slice(2, 4)
+                     : "from " + preFrom + " — tap where it goes"}
+          </span>
+          <button className="mtg-pre-x" onClick={() => { setPremove(null); setPreFrom(""); }}>
+            Cancel<span className="sr-only"> premove</span>
+          </button>
+        </div>
+      )}
+
       <div className="mtg-wrap">
         <div>
           <ChessSeat player={topSeat} colour={flip ? "w" : "b"} gone={flip ? material.gone.w : material.gone.b}
             score={flip ? -material.score : material.score} onMove={m.turnColour === (flip ? "w" : "b") && m.status === "active"}/>
-          <ChessBoard squares={squares} flip={flip} from={from} targets={targets}
-            lastMove={m.lastMove} checkSquare={m.checkSquare} interactive={canMove}
+          <ChessBoard squares={squares} flip={flip} from={from || preFrom} targets={targets}
+            lastMove={m.lastMove} checkSquare={m.checkSquare}
+            interactive={canMove || (isPlayer && m.status === "active" && clockIsLive)}
+            premove={premove} premoving={!canMove}
             onTap={tap} onFlip={() => setManualFlip(v => !v)}/>
           <ChessSeat player={bottomSeat} colour={flip ? "b" : "w"} gone={flip ? material.gone.b : material.gone.w}
             score={flip ? material.score : -material.score} onMove={m.turnColour === (flip ? "b" : "w") && m.status === "active"}/>

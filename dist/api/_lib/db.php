@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 99;
+const NGG_SCHEMA_TARGET = 100;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2756,6 +2756,54 @@ function db_migrate(PDO $db): void {
             ALTER TABLE match_games ADD COLUMN turnStartedAt TEXT DEFAULT '';
             ALTER TABLE match_games ADD COLUMN board INTEGER DEFAULT 0;
             CREATE INDEX idx_match_clock ON match_games(status, clockRunning);
+        ",
+
+        /* 100 — the board.
+         *
+         *   IDEMPOTENCY. A move was identified only by its ply. A client that
+         *   sent a move, lost the response and retried either collided with
+         *   UNIQUE(matchId, ply) — surfacing as a failure for a move that HAD
+         *   landed — or, if the opponent had replied meanwhile, applied a
+         *   second time at a new ply. On a 3G handset at a centre that is not
+         *   rare. The client names each move once now.
+         *
+         *   VARIANTS. Chess960 does not start from a constant, so the start
+         *   position has to be stored rather than assumed.
+         *
+         *   PROMOTIONS. First-party only — NGG promoting its own programmes to
+         *   its own members. No third-party ad network, deliberately.
+         */
+        100 => "
+            ALTER TABLE match_moves ADD COLUMN clientMoveId TEXT DEFAULT NULL;
+            CREATE UNIQUE INDEX idx_match_move_client ON match_moves(matchId, clientMoveId);
+            ALTER TABLE match_moves ADD COLUMN msSpent INTEGER DEFAULT 0;
+
+            ALTER TABLE match_games ADD COLUMN variant TEXT DEFAULT 'standard';
+            ALTER TABLE match_games ADD COLUMN variantData TEXT;
+            ALTER TABLE match_games ADD COLUMN startFen TEXT DEFAULT '';
+            ALTER TABLE tournaments ADD COLUMN variant TEXT DEFAULT 'standard';
+            ALTER TABLE chess_challenges ADD COLUMN variant TEXT DEFAULT 'standard';
+
+            CREATE TABLE promos (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              promoId TEXT UNIQUE NOT NULL,
+              title TEXT NOT NULL, body TEXT DEFAULT '',
+              kind TEXT DEFAULT 'programme', placement TEXT DEFAULT 'chess',
+              ctaLabel TEXT DEFAULT '', ctaPage TEXT DEFAULT '', ctaRef TEXT DEFAULT '',
+              imageUrl TEXT DEFAULT '', accent TEXT DEFAULT '',
+              priority INTEGER DEFAULT 0, status TEXT DEFAULT 'draft',
+              startsAt TEXT DEFAULT '', endsAt TEXT DEFAULT '', audience TEXT,
+              impressions INTEGER DEFAULT 0, clicks INTEGER DEFAULT 0, dismissals INTEGER DEFAULT 0,
+              createdBy TEXT DEFAULT '', createdAt TEXT NOT NULL, updatedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_promo_live ON promos(status, placement, priority);
+
+            CREATE TABLE promo_seen (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              promoId TEXT NOT NULL, memberId TEXT NOT NULL,
+              seenAt TEXT DEFAULT '', clickedAt TEXT DEFAULT '', dismissedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_promo_seen ON promo_seen(promoId, memberId);
         ",
     ];
 

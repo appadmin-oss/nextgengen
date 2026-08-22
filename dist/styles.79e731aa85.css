@@ -3946,3 +3946,22 @@ img { background-color: rgba(12,20,50,0.04); }
 @media (prefers-reduced-motion: reduce) {
   .trn-card, .trn-tab, .trn-opt, .trn-tc { transition: none; }
 }
+
+/* ── Premoves ──────────────────────────────────────────────────────────────
+   A queued premove is a promise the board has made on your behalf, so it is
+   marked on the squares AND stated above the board with a way out. A premove
+   you cannot see or cancel is a trap.                                       */
+.mtg-sq.is-premove::after { content: ""; position: absolute; inset: 0;
+  background: rgba(31, 75, 196, .30); pointer-events: none; }
+.mtg-board.is-premoving { outline: 2px dashed var(--c-blue); outline-offset: 3px; }
+
+.mtg-pre { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 10px; padding: 9px 13px; border-radius: var(--c-r-sm);
+  background: var(--c-blue-tint); border: 1px solid var(--c-blue); }
+.mtg-pre-l { font-family: var(--c-font-mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; font-weight: 700; color: var(--c-blue); }
+.mtg-pre-b { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--c-ink); }
+.mtg-pre-x { min-height: 36px; padding: 0 12px; border-radius: var(--c-r-pill);
+  border: 1px solid var(--c-blue); background: var(--c-card);
+  font: inherit; font-size: 12.5px; font-weight: 700; color: var(--c-blue); cursor: pointer; }
+.mtg-pre-x:focus-visible { outline: 2px solid var(--c-ink); outline-offset: 2px; }

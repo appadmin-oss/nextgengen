@@ -107,7 +107,11 @@ if ($method === 'GET') {
     } elseif ($action === 'respond') {
         $res = gs_call('match.respond', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? ''), 'accept' => !empty($b['accept'])]);
     } elseif ($action === 'move') {
-        $res = gs_call('match.move', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? ''), 'move' => (string)($b['move'] ?? '')]);
+        $res = gs_call('match.move', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? ''),
+            'move' => (string)($b['move'] ?? ''),
+            // Names this move once, so a retry after a lost response replays
+            // the original outcome instead of failing or moving twice.
+            'clientMoveId' => mb_substr((string)($b['clientMoveId'] ?? ''), 0, 40)]);
     } elseif ($action === 'resign') {
         $res = gs_call('match.resign', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? '')]);
     } elseif ($action === 'react') {

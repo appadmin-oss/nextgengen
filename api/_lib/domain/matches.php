@@ -245,6 +245,35 @@ function match_move(array $p): array {
     if (!$r) return ['ok' => false, 'error' => 'not_found'];
     if ((string)$r['playerA'] !== $viewer && (string)$r['playerB'] !== $viewer) return ['ok' => false, 'error' => 'not_yours'];
     if ((string)$r['status'] !== 'active') return ['ok' => false, 'error' => 'not_active'];
+
+    /* Has this exact move already landed?
+     *
+     * A move used to be identified only by its ply, so a client that sent one,
+     * lost the response and retried had two bad outcomes and no way to tell
+     * them apart: the retry collided with UNIQUE(matchId, ply) and surfaced as
+     * a failure for a move that HAD been played, or — if the opponent had
+     * replied in between — applied a second time at a new ply. On a 3G handset
+     * at a centre neither is rare.
+     *
+     * The client names each move once. Replaying the same id returns the
+     * original outcome rather than doing anything, so a retry is free and a
+     * double-tap is harmless. Answered BEFORE the turn check, because by the
+     * time a retry arrives it is usually the opponent's move — the honest
+     * answer is "that already worked", not "not your turn".
+     */
+    $cmid = trim((string)($p['clientMoveId'] ?? ''));
+    if ($cmid !== '') {
+        $prev = db_row('SELECT * FROM match_moves WHERE matchId = ? AND clientMoveId = ? LIMIT 1',
+                       [(string)$r['matchId'], $cmid]);
+        if ($prev) {
+            return ['ok' => true, 'replayed' => true,
+                    'san' => (string)$prev['san'], 'state' => (string)$prev['stateAfter'],
+                    'status' => (string)$r['status'], 'ply' => (int)$prev['ply'],
+                    'gameState' => '', 'reason' => (string)($r['reason'] ?? ''),
+                    'winnerId' => (string)($r['winnerId'] ?? '')];
+        }
+    }
+
     if ((string)$r['turnPlayer'] !== $viewer) return ['ok' => false, 'error' => 'not_your_turn'];
     if ((string)$r['game'] !== 'chess') return ['ok' => false, 'error' => 'bad_game'];
 
@@ -287,8 +316,18 @@ function match_move(array $p): array {
     /* Charge the mover for their thinking time and add their increment.
      * Merged into the same patch as the move, so the position and the clock
      * that produced it are written together or not at all. */
+    $msSpent = 0;
     if (function_exists('chess_clock_on_move')) {
-        $patch = array_merge($patch, chess_clock_on_move($r, ($patch['status'] ?? '') === 'complete'));
+        $clockPatch = chess_clock_on_move($r, ($patch['status'] ?? '') === 'complete');
+        if ($clockPatch) {
+            // What this move actually cost them, taken from the clock rather
+            // than measured a second time — one answer, not two.
+            $wasWhite = (string)$r['turnPlayer'] === (string)$r['playerA'];
+            $before = (int)($wasWhite ? $r['whiteMs'] : $r['blackMs']);
+            $after  = (int)($wasWhite ? $clockPatch['whiteMs'] : $clockPatch['blackMs']);
+            $msSpent = max(0, $before - $after + (int)($r['incrementMs'] ?? 0));
+        }
+        $patch = array_merge($patch, $clockPatch);
     }
 
     /* The move and the position it produced are one fact. Recorded apart, an
@@ -296,9 +335,13 @@ function match_move(array $p): array {
      * does not reflect — and the board is what both players are looking at.
      * The UNIQUE (matchId, ply) index already stopped two racing moves from
      * both landing; this makes the losing one leave nothing behind. */
-    db_tx(function () use ($r, $ply, $viewer, $res, $now, $patch) {
+    db_tx(function () use ($r, $ply, $viewer, $res, $now, $patch, $cmid, $msSpent) {
         db_insert('match_moves', ['matchId' => (string)$r['matchId'], 'ply' => $ply, 'playerId' => $viewer,
-            'move' => (string)$res['uci'], 'san' => (string)$res['san'], 'stateAfter' => (string)$res['fen'], 'createdAt' => $now]);
+            'move' => (string)$res['uci'], 'san' => (string)$res['san'], 'stateAfter' => (string)$res['fen'],
+            // NULL rather than '', so two moves without an id do not collide.
+            'clientMoveId' => $cmid !== '' ? $cmid : null,
+            'msSpent' => $msSpent,
+            'createdAt' => $now]);
         db_update('match_games', $patch, ['matchId' => (string)$r['matchId']]);
     });
 

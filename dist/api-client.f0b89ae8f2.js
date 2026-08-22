@@ -608,7 +608,10 @@
         watch:   () => request('/member/match.php' + qs({ view: 'watch' })),
         invite:  (game, opponentId) => request('/member/match.php', { body: { action: 'invite', game, opponentId } }),
         respond: (matchId, accept) => request('/member/match.php', { body: { action: 'respond', matchId, accept } }),
-        move:    (matchId, move) => request('/member/match.php', { body: { action: 'move', matchId, move } }),
+        /* Every move carries an id the client generates, so a retry after a
+           dropped response replays the original outcome rather than failing on
+           a move that already landed — or playing it twice. */
+        move: (matchId, move, clientMoveId) => request('/member/match.php', { body: { action: 'move', matchId, move, clientMoveId: clientMoveId || '' } }),
         resign:  (matchId) => request('/member/match.php', { body: { action: 'resign', matchId } }),
         react:   (matchId, reaction) => request('/member/match.php', { body: { action: 'react', matchId, reaction } }),
         report:  (matchId) => request('/member/match.php', { body: { action: 'report', matchId } }),
