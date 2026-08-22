@@ -104,7 +104,12 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     mergeRows: function (f) {
       window.__mergeQuery = f;
       return Promise.resolve({
-        ok: true, audience: (f && f.audience) || 'students', total: 3, matched: 3, truncated: false, limit: 600,
+        ok: true, audience: (f && f.audience) || 'students', total: 3, matched: 3, truncated: false,
+        // As the real endpoint answers: the LIST ceiling, the RUN ceiling, and
+        // the order actually applied. They are three different numbers and the
+        // picker reads all three.
+        limit: 2000, runMax: 600,
+        sort: (f && f.sort) || 'name', dir: (f && f.dir) || 'asc',
         facets: { centres: ['Egbeda', 'Ijaiye'], tracks: ['Coding', 'Piano'], roles: [], maxAttended: 9 },
         rows: [
           { key: 'MRG-1', studentId: 'MRG-1', displayId: 'NGG-26-0101', firstName: 'Amina', surname: 'Alpha',
@@ -597,10 +602,10 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     await page.selectOption('select[aria-label="Open a design"]', '__new_student');
     await page.waitForTimeout(1200);
     await page.click('button:has-text("Batch…")');
-    await page.waitForSelector('.dsn-merge-row', { timeout: 8000 });
+    await page.waitForSelector('.dsn-tbl tbody tr', { timeout: 8000 });
     const merged = await page.evaluate(() => ({
-      rows: document.querySelectorAll('.dsn-merge-row').length,
-      ticked: document.querySelectorAll('.dsn-merge-row.is-on').length,
+      rows: document.querySelectorAll('.dsn-tbl tbody tr').length,
+      ticked: document.querySelectorAll('.dsn-tbl tbody tr.is-on').length,
       flags: Array.from(document.querySelectorAll('.dsn-merge-flag')).map(e => e.textContent),
       asked: window.__mergeQuery,
     }));
@@ -609,6 +614,7 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     /* The flags are the thing an operator scans for. Three "no photo" and one
        "no card" — and the "no card" row is the acceptance test for the whole
        feature: a child the card payload cannot see is in this run. */
+    await page.screenshot({ path: path.join(ROOT, 'tests', 'screens', 'studio-batch.png'), fullPage: false });
     ok('…including the people an ID-card read cannot see, flagged on the row',
       merged.flags.filter(f => f === 'no card').length === 1
       && merged.flags.filter(f => f === 'no photo').length === 3);
@@ -634,11 +640,70 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     await page.waitForTimeout(500);
     ok('…and a filter is a new read, not a client-side sieve over old rows',
       (await page.evaluate(() => (window.__mergeQuery || {}).q)) === 'Beta');
+
+    /* ── 13b. The picker at roster scale ────────────────────────────────────
+       It was a wrapping grid of tick-boxes in insertion order inside a 520px
+       box. Fine at two hundred; at a thousand it is a scroll with no landmarks
+       and no way to bring anybody to the top. */
+
+    /* THE bug this rebuild exists to fix, and the one that cost work rather
+       than patience: every read replaced the selection with "everything that
+       just came back". Untick somebody, type one letter in the search box, and
+       they were silently back in the run — and a run spanning two filters was
+       impossible to build at all. */
     await page.fill('.dsn-merge-q input', '');
+    await page.waitForTimeout(500);
+    // Untick one person, then narrow and widen the filter around them.
+    await page.click('.dsn-tbl tbody tr:nth-child(1) input[type=checkbox]');
+    const tickedBefore = await page.evaluate(() => document.querySelectorAll('.dsn-tbl tbody tr.is-on').length);
+    await page.fill('.dsn-merge-q input', 'Gamma');
+    await page.waitForTimeout(500);
+    await page.fill('.dsn-merge-q input', '');
+    await page.waitForTimeout(600);
+    const tickedAfter = await page.evaluate(() => document.querySelectorAll('.dsn-tbl tbody tr.is-on').length);
+    ok('unticking somebody survives a filter change (' + tickedBefore + ' → ' + tickedAfter + ')',
+      tickedBefore === 2 && tickedAfter === 2);
+    // Put them back so the run below is the three the later checks expect.
+    await page.click('.dsn-tbl tbody tr:nth-child(1) input[type=checkbox]');
+
+    /* Sorting is a SERVER read. Sorting the page in hand would order one page
+       of the roster and call it the roster. */
+    await page.click('.dsn-th:has-text("Surname") button');
+    await page.waitForTimeout(500);
+    const sorted = await page.evaluate(() => window.__mergeQuery || {});
+    ok('a column header orders the run on the server, not the page in hand',
+      sorted.sort === 'surname' && sorted.dir === 'asc');
+    await page.click('.dsn-th:has-text("Surname") button');
+    await page.waitForTimeout(500);
+    ok('…and clicking it again reverses rather than re-sorting the same way',
+      (await page.evaluate(() => (window.__mergeQuery || {}).dir)) === 'desc');
+    ok('…with the sorted column announced to assistive tech',
+      (await page.locator('.dsn-th:has-text("Surname")').getAttribute('aria-sort')) === 'descending');
+
+    /* The readiness chip is the filter an operator actually reaches for: the
+       question before a print run is "which of these will come out wrong". */
+    await page.click('.dsn-chip:has-text("Needs attention")');
+    await page.waitForTimeout(200);
+    const needs = await page.evaluate(() => ({
+      rows: document.querySelectorAll('.dsn-tbl tbody tr').length,
+      ok: document.querySelectorAll('.dsn-merge-flag--ok').length,
+    }));
+    ok('the readiness chip narrows to the rows that will print wrong',
+      needs.rows === 3 && needs.ok === 0);
+    await page.click('.dsn-chip:has-text("Everyone")');
+    await page.waitForTimeout(200);
+
+    // Paging, because a thousand rows is not a scroll.
+    await page.selectOption('.dsn-merge-size select', '25');
+    await page.waitForTimeout(200);
+    ok('the picker pages rather than scrolling, and says where it is',
+      /1–3 of 3/.test(await page.evaluate(() => document.querySelector('.dsn-merge-pager .dsn-merge-note').textContent)));
+
+    await page.click('.dsn-th:has-text("Name") button');
     await page.waitForTimeout(500);
 
     // Drop one person, then run. Two pieces must come out, not three.
-    await page.click('.dsn-merge-row:nth-child(3) input[type=checkbox]');
+    await page.click('.dsn-tbl tbody tr:nth-child(3) input[type=checkbox]');
     await page.selectOption('.dsn-merge-run select', '150');
     await page.click('button:has-text("ZIP of images")');
 

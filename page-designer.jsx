@@ -173,6 +173,11 @@ function dsnDownload(blob, name) {
    real number instead of at page ninety with a crash. */
 const DSN_MERGE_BUDGET = 350 * 1024 * 1024;
 
+/* What the server says one run may render, if the server did not say. Only
+   reached when an old response is in flight during a deploy; the number that
+   counts is MERGE_RUN_MAX in merge.php. */
+const MERGE_RUN_FALLBACK = 600;
+
 function dsnRowName(r) {
   return [r.firstName, r.surname].filter(Boolean).join(" ").trim() || r.displayId || r.key || "unnamed";
 }
@@ -250,6 +255,176 @@ function dsnMergeAudit(tpl, rows) {
   return out;
 }
 
+/* ── The people picker ───────────────────────────────────────────────────────
+ *
+ * This was a wall of tick-boxes: every matched person as a card in a wrapping
+ * grid, in the order the rows happened to be inserted, inside a 520px box. At
+ * two hundred that is tolerable. At a thousand — which is what a real cohort
+ * is — it is a scroll with no landmarks, no way to bring the ones you want to
+ * the top, and no way to answer "which of these will print with a hole in it"
+ * short of reading every row.
+ *
+ * It is a table now, the way every tool that does this for a living draws it:
+ * columns you can order by, a page at a time, and the two filters an operator
+ * actually reaches for as chips rather than buried in a select.
+ *
+ * Paged rather than virtualised, deliberately. A windowed list keeps the
+ * scrollbar and drops every off-screen row out of the DOM, which is exactly
+ * the set a keyboard cannot then tab to and a screen reader cannot count. Pages
+ * keep the whole visible set real, and "go to page 12" beats scrolling to it.
+ */
+
+const DSN_PAGE_SIZES = [25, 50, 100, 250];
+
+/** Is this row going to print correctly? The one question the list is scanned
+ *  for, in one place so the chip, the column and the badge cannot disagree. */
+function dsnRowReady(r) {
+  return !!(r && r.photoUrl && r.token);
+}
+
+/** A column header you can order by. Same contract as the admin tables: a real
+ *  button, aria-sort on the cell, and the arrow hidden from the accessibility
+ *  tree because aria-sort already says it. */
+function DsnSortTh({ label, col, sort, onSort, numeric, defaultDir }) {
+  const active = sort.col === col;
+  const next = active ? (sort.dir === "asc" ? "desc" : "asc") : (defaultDir || (numeric ? "desc" : "asc"));
+  return (
+    <th className={"dsn-th" + (numeric ? " is-num" : "") + (active ? " is-on" : "")}
+        aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" onClick={() => onSort(col, next)}>
+        <span>{label}</span>
+        <span className="dsn-th-ind" aria-hidden="true">{active ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
+      </button>
+    </th>
+  );
+}
+
+function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMax }) {
+  const [page, setPage] = React.useState(0);
+  const [size, setSize] = React.useState(50);
+  /* "" | "ready" | "problem" — the readiness chip. Applied on the client
+     rather than sent to the server because it is derived from two fields the
+     rows already carry, and a round trip to hide half a list you are holding
+     is a round trip for nothing. */
+  const [only, setOnly] = React.useState("");
+
+  const shown = React.useMemo(
+    () => only === "" ? rows : rows.filter(r => (only === "ready") === dsnRowReady(r)),
+    [rows, only]);
+  const pages = Math.max(1, Math.ceil(shown.length / size));
+  const at = Math.min(page, pages - 1);
+  const slice = shown.slice(at * size, at * size + size);
+
+  /* Selection is a Set and lives OUTSIDE this component, so it survives a
+     filter, a sort and a page turn. It used to be reset to "everything that
+     just came back" on every read, which meant unticking five children and
+     then typing one letter in the search box silently re-ticked them — and
+     made a run spanning two filters impossible to build. */
+  const has = (k) => picked.indexOf(k) !== -1;
+  const addAll = (list) => setPicked(p => p.concat(list.filter(k => p.indexOf(k) === -1)));
+  const dropAll = (list) => setPicked(p => p.filter(k => list.indexOf(k) === -1));
+  const keys = shown.map(r => r.key);
+  const pageKeys = slice.map(r => r.key);
+  const pageAllOn = pageKeys.length > 0 && pageKeys.every(has);
+  const inRun = picked.length;
+  const over = inRun > runMax;
+
+  React.useEffect(() => { setPage(0); }, [only, sort.col, sort.dir, rows.length]);
+
+  return (
+    <>
+      <div className="dsn-merge-picks">
+        {/* Gmail's rule: the tick on the header selects what you can SEE, and
+            the sentence underneath offers the rest. Conflating the two is how
+            somebody prints fifty certificates believing they printed four
+            hundred. */}
+        <label className="dsn-merge-all">
+          <input type="checkbox" checked={pageAllOn}
+                 aria-label={pageAllOn ? "Untick this page" : "Tick this page"}
+                 onChange={() => pageAllOn ? dropAll(pageKeys) : addAll(pageKeys)}/>
+          <span>This page</span>
+        </label>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => addAll(keys)}
+                disabled={keys.every(has)}>Select all {fmtNum(shown.length)}</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPicked([])}
+                disabled={!inRun}>Clear</button>
+
+        <span className="dsn-chips" role="group" aria-label="Show only">
+          {[["", "Everyone"], ["ready", "Ready to print"], ["problem", "Needs attention"]].map(([v, l]) => (
+            <button key={v} type="button" className={"dsn-chip" + (only === v ? " is-on" : "")}
+                    aria-pressed={only === v} onClick={() => setOnly(v)}>{l}</button>
+          ))}
+        </span>
+
+        <span className={"dsn-merge-note" + (over ? " is-over" : "")} role="status">
+          {fmtNum(inRun)} in the run
+          {over ? " — " + fmtNum(runMax) + " is the most one run can render" : ""}
+        </span>
+      </div>
+
+      <div className="dsn-merge-list">
+        <table className="dsn-tbl">
+          <thead><tr>
+            <th className="dsn-th-tick"><span className="sr-only">Include</span></th>
+            <DsnSortTh label="Name" col="name" sort={sort} onSort={onSort}/>
+            <DsnSortTh label="Surname" col="surname" sort={sort} onSort={onSort}/>
+            <DsnSortTh label="ID" col="displayId" sort={sort} onSort={onSort}/>
+            <DsnSortTh label="Centre" col="centre" sort={sort} onSort={onSort}/>
+            {audience === "students" && <DsnSortTh label="Days" col="attended" sort={sort} onSort={onSort} numeric/>}
+            <DsnSortTh label="Status" col="ready" sort={sort} onSort={onSort} defaultDir="asc"/>
+          </tr></thead>
+          <tbody>
+            {slice.map(r => {
+              const on = has(r.key);
+              return (
+                <tr key={r.key} className={on ? "is-on" : ""}>
+                  <td className="dsn-th-tick">
+                    <input type="checkbox" checked={on} aria-label={"Include " + dsnRowName(r)}
+                           onChange={() => on ? dropAll([r.key]) : addAll([r.key])}/>
+                  </td>
+                  <td className="dsn-td-who">{r.firstName || dsnRowName(r)}</td>
+                  <td className="dsn-td-who">{r.surname || "—"}</td>
+                  <td className="dsn-td-mono">{r.displayId || "—"}</td>
+                  <td className="dsn-td-mono">{(r.centre && r.centre.name) || "—"}</td>
+                  {audience === "students" && <td className="dsn-td-mono is-num">{r.attended}</td>}
+                  <td>
+                    {dsnRowReady(r)
+                      ? <span className="dsn-merge-flag dsn-merge-flag--ok">ready</span>
+                      : <>
+                          {!r.photoUrl && <span className="dsn-merge-flag dsn-merge-flag--photo">no photo</span>}
+                          {!r.token && <span className="dsn-merge-flag dsn-merge-flag--card">no card</span>}
+                        </>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {shown.length === 0 && (
+          <p className="dsn-hint" style={{ padding: "14px 4px" }}>
+            Nobody here {only === "ready" ? "is ready to print" : "needs attention"} — try “Everyone”.
+          </p>
+        )}
+      </div>
+
+      <div className="dsn-merge-pager">
+        <button type="button" className="btn btn-ghost btn-sm" disabled={at <= 0}
+                onClick={() => setPage(at - 1)}>← Prev</button>
+        <span className="dsn-merge-note" role="status">
+          {shown.length ? fmtNum(at * size + 1) + "–" + fmtNum(Math.min(shown.length, (at + 1) * size))
+            + " of " + fmtNum(shown.length) : "none"}
+        </span>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={at >= pages - 1}
+                onClick={() => setPage(at + 1)}>Next →</button>
+        <label className="dsn-prop dsn-merge-size"><span>Per page</span>
+          <select value={size} onChange={e => { setSize(Number(e.target.value)); setPage(0); }}>
+            {DSN_PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
+          </select></label>
+      </div>
+    </>
+  );
+}
+
 function DesignerPage() {
   /* Read through window, the way CardStudio does. `useAuth` is a top-level
      binding in the bundle, so a test fixture that stubs window.useAuth would be
@@ -279,8 +454,16 @@ function DesignerPage() {
   const [mergeOpen, setMergeOpen] = React.useState(false);
   const [merge, setMerge] = React.useState(null);
   const [mf, setMf] = React.useState({ audience: "students", centre: "", track: "", role: "",
-                                       q: "", from: "", to: "", attendedMin: 0, photo: "", issued: "" });
+                                       q: "", from: "", to: "", attendedMin: 0, photo: "", issued: "",
+                                       // How the run is ordered. Part of the filter state because
+                                       // the server does the ordering — sorting the page in hand
+                                       // would order one page of the roster and call it the roster.
+                                       sort: "name", dir: "asc" });
   const [picked, setPicked] = React.useState([]);      // the keys actually in the run
+  /* Whether the operator has made a choice yet. Without this the "start with
+     everybody ticked" default cannot be told apart from "they cleared it", and
+     one of those has to survive the next read. */
+  const pickedTouched = React.useRef(false);
   const [mdpi, setMdpi] = React.useState(300);
   const [run, setRun] = React.useState(null);          // { i, n, note } while a batch is rendering
   const runCancel = React.useRef(false);
@@ -334,11 +517,35 @@ function DesignerPage() {
     const t = setTimeout(() => {
       NGGApi.admin.registration.mergeRows(mf).then(r => {
         if (dead) return;
-        setMerge({ rows: r.rows || [], facets: r.facets || {}, total: r.total || 0,
-                   matched: r.matched || 0, truncated: !!r.truncated, limit: r.limit || 0, error: "" });
-        setPicked((r.rows || []).map(x => x.key));
+        const rows = r.rows || [];
+        setMerge({ rows, facets: r.facets || {}, total: r.total || 0,
+                   matched: r.matched || 0, truncated: !!r.truncated, limit: r.limit || 0,
+                   runMax: r.runMax || MERGE_RUN_FALLBACK, sort: r.sort || "name", dir: r.dir || "asc",
+                   error: "" });
+        /* The selection SURVIVES the read.
+           It used to be replaced by "everything that just came back", which
+           meant unticking five children and then typing one letter in the
+           search box silently re-ticked all five — and made a run spanning two
+           filters impossible to build at all, because narrowing to Egbeda
+           threw away everyone from Ayobo you had already chosen.
+
+           Two rules instead. Anybody already chosen stays chosen, whether or
+           not the current filter shows them. And the FIRST read of a freshly
+           opened panel starts with everything ticked, because "print this
+           whole cohort" is the common case and unticking a few beats ticking
+           four hundred. */
+        /* Decided HERE, not inside the updater. React defers a functional
+           setState to the render phase, so `pickedTouched.current` would
+           already have been flipped by the line below it by the time the
+           updater ran — and the first read would keep an empty selection
+           instead of ticking everybody. */
+        const firstRead = !pickedTouched.current;
+        pickedTouched.current = true;
+        if (firstRead) setPicked(rows.map(x => x.key));
       }).catch(e => {
-        if (!dead) { setMerge({ rows: [], facets: {}, total: 0, matched: 0, error: e.code || e.message || "could not read the roster" }); setPicked([]); }
+        if (!dead) setMerge({ rows: [], facets: {}, total: 0, matched: 0,
+                              runMax: MERGE_RUN_FALLBACK, sort: "name", dir: "asc",
+                              error: e.code || e.message || "could not read the roster" });
       });
     }, 220);
     return () => { dead = true; clearTimeout(t); };
@@ -902,6 +1109,21 @@ function DesignerPage() {
     const rows = mergeRows();
     if (!tpl || !libs || !rows.length || run) return;
 
+    /* The renderer's ceiling, enforced BEFORE anything is rendered.
+       The picker can now hold two thousand people — browsing is cheap and the
+       roster is the roster — but the browser still holds every rendered page
+       in memory until the file is written, so a run is capped where it always
+       was. Said here, with the number and the arithmetic, rather than
+       discovered at page 601 when the tab dies. */
+    const runMax = (merge && merge.runMax) || MERGE_RUN_FALLBACK;
+    if (rows.length > runMax) {
+      const parts = Math.ceil(rows.length / runMax);
+      toast.error(fmtNum(rows.length) + " are ticked and one run can render " + fmtNum(runMax)
+        + ". Sort by centre and do it in " + parts + " runs, or narrow the filters.",
+        "Too many for one run");
+      return;
+    }
+
     /* The same rule that guards publishing, re-run against THESE people: the
        QR module size depends on the longest token in the batch, so a design
        that passed against the sample can still be unscannable for this run. */
@@ -1141,7 +1363,7 @@ function DesignerPage() {
             {/* The one that makes this worth having in November: the same three
                 exports, but once per child on a filtered roster. */}
             <button className={"btn btn-sm " + (mergeOpen ? "btn-primary" : "btn-ghost")} disabled={!!busy}
-              aria-expanded={mergeOpen} onClick={() => setMergeOpen(o => !o)}
+              aria-expanded={mergeOpen} onClick={() => setMergeOpen(o => { if (!o) pickedTouched.current = false; return !o; })}
               title="One design, one per person, from the roster">Batch…</button>
           </div>
         </>}
@@ -1264,37 +1486,19 @@ function DesignerPage() {
             </p>
           )}
 
-          {merge && merge.rows.length > 0 && <>
-            <div className="dsn-merge-picks">
-              <button className="btn btn-ghost btn-sm" onClick={() => setPicked(merge.rows.map(r => r.key))}>All</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setPicked([])}>None</button>
-              <button className="btn btn-ghost btn-sm"
-                onClick={() => setPicked(merge.rows.filter(r => picked.indexOf(r.key) === -1).map(r => r.key))}>Invert</button>
-              <span className="dsn-merge-note">{picked.length} of {merge.rows.length} ticked</span>
-            </div>
-            <div className="dsn-merge-list">
-              {merge.rows.map(r => {
-                const on = picked.indexOf(r.key) !== -1;
-                return (
-                  <label key={r.key} className={"dsn-merge-row" + (on ? " is-on" : "")}>
-                    <input type="checkbox" checked={on} aria-label={"Include " + dsnRowName(r)}
-                      onChange={() => setPicked(p => on ? p.filter(x => x !== r.key) : p.concat([r.key]))}/>
-                    <span className="dsn-merge-who">{dsnRowName(r)}</span>
-                    <span className="dsn-merge-meta">{r.displayId}</span>
-                    <span className="dsn-merge-meta">{(r.centre && r.centre.name) || "—"}</span>
-                    {mf.audience === "students" && <span className="dsn-merge-meta">{r.attended} day{r.attended === 1 ? "" : "s"}</span>}
-                    {/* Said on the row rather than only in the summary: this is
-                        the thing an operator scans the list for. A green "ready"
-                        badge makes a clean row scannable at a glance across
-                        hundreds; the problems keep their own colours. */}
-                    {r.photoUrl && r.token && <span className="dsn-merge-flag dsn-merge-flag--ok">ready</span>}
-                    {!r.photoUrl && <span className="dsn-merge-flag dsn-merge-flag--photo">no photo</span>}
-                    {!r.token && <span className="dsn-merge-flag dsn-merge-flag--card">no card</span>}
-                  </label>
-                );
-              })}
-            </div>
-          </>}
+          {merge && merge.rows.length > 0 && (
+            <DsnMergePicker rows={merge.rows} audience={mf.audience}
+                            picked={picked} setPicked={setPicked}
+                            /* The REQUESTED order, not the echoed one. The
+                               server confirms what it applied and that matters
+                               for correctness, but driving the arrow off the
+                               response means the header does not move until
+                               the round trip lands — and does not move at all
+                               against a server that does not echo. */
+                            sort={{ col: mf.sort || "name", dir: mf.dir || "asc" }}
+                            onSort={(col, dir) => setMf(f => ({ ...f, sort: col, dir }))}
+                            runMax={merge.runMax || 600}/>
+          )}
           {merge && merge.rows.length === 0 && !merge.error &&
             <p className="dsn-hint">Nobody matches these filters.</p>}
 

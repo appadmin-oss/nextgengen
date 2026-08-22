@@ -40,7 +40,10 @@ if ($method === 'GET') {
         'from' => (string)($_GET['from'] ?? ''), 'to' => (string)($_GET['to'] ?? ''),
         'attendedMin' => (int)($_GET['attendedMin'] ?? 0),
         'photo' => (string)($_GET['photo'] ?? ''), 'issued' => (string)($_GET['issued'] ?? ''),
-        'limit' => (int)($_GET['limit'] ?? 0)]);
+        'limit' => (int)($_GET['limit'] ?? 0),
+        // How the run is ordered. Validated against MERGE_SORTS in the domain
+        // layer; anything else is served by name rather than refused.
+        'sort' => (string)($_GET['sort'] ?? ''), 'dir' => (string)($_GET['dir'] ?? '')]);
     else json_error('unknown_view', 400);
 } elseif ($method === 'POST') {
     $b = read_json_body();

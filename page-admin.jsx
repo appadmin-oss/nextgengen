@@ -1019,22 +1019,29 @@ function AdminMembers() {
   const [editing, setEditing] = React.useState(null);
   const [viewing, setViewing] = React.useState(null);
   const [printing, setPrinting] = React.useState(false);
+  /* Ordering lives on the SERVER, not in the rendered page: this table is
+     paged, so sorting the fifty rows in hand would order page three of the
+     roster and call it the roster. The column allow-list is in
+     admin_members_list.
+
+     Declared above every reader — the CSV export and the print run both send
+     it now, and a `const` read from a line above the one that declares it is
+     a temporal dead zone waiting for somebody to move a function. */
+  const [sort, setSort] = React.useState({ col: "createdAt", dir: "desc" });
 
   const [exporting, setExporting] = React.useState(false);
   const exportCsv = async () => {
     setExporting(true);
     try {
-      const r = await NGGApi.admin.members.list(Object.assign({}, filters, { all: 1 }));
+      // Same rule as the print run: the file comes out in the order the
+      // person exporting it was looking at.
+      const r = await NGGApi.admin.members.list(Object.assign({}, filters, {
+        all: 1, sort: sort.col, dir: sort.dir }));
       downloadCsv("members", (r.members || []).map(m => ({ memberId: m.memberId, fullName: m.fullName, email: m.email, type: m.type, status: m.status, centre: m.centre, track: m.track || "" })));
     } catch (e) { toast.error(e.code || e.message, "Export failed"); } finally { setExporting(false); }
   };
   // A failed fetch must surface an error + retry, never leave the spinner
   // hanging forever (previously there was no .catch here). Server-paged.
-  /* Ordering lives on the SERVER, not in the rendered page: this table is
-     paged, so sorting the fifty rows in hand would order page three of the
-     roster and call it the roster. The column allow-list is in
-     admin_members_list. */
-  const [sort, setSort] = React.useState({ col: "createdAt", dir: "desc" });
   const load = (p = page, so = sort) => { setErr(""); return NGGApi.admin.members.list(Object.assign({}, filters, { page: p, pageSize: meta.pageSize, sort: so.col, dir: so.dir })).then(r => { setList(r.members || []); setMeta({ total: r.total || 0, pageSize: r.pageSize || 50 }); }).catch(e => setErr(e.code || e.message || "load_failed")); };
   /* Re-sorting goes back to page one. Keeping the page number would land
      somebody on "page 4 of a different order", which is a place nobody meant
@@ -1125,7 +1132,7 @@ function AdminMembers() {
       }
       {editing && <AdminMemberEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
       {viewing && <AdminMemberDetail memberId={viewing} onClose={() => setViewing(null)} onEdit={(m) => { setViewing(null); setEditing(m); }} onChanged={load}/>}
-      {printing && <AdminMemberIdBatch filters={filters} total={meta.total} onClose={() => setPrinting(false)}/>}
+      {printing && <AdminMemberIdBatch filters={filters} sort={sort} total={meta.total} onClose={() => setPrinting(false)}/>}
     </div>
   );
 }
@@ -1141,7 +1148,7 @@ function AdminMembers() {
 // entirely in the browser (the host has no headless renderer), one card at a
 // time, cancellable, so the whole cohort neither locks the tab nor blows memory.
 // ============================================================================
-function AdminMemberIdBatch({ filters, total, onClose }) {
+function AdminMemberIdBatch({ filters, sort, total, onClose }) {
   const { panelRef, close } = useAdminDrawer(onClose, false);
   const [mode, setMode] = React.useState("zip");
   const [dpi, setDpi] = React.useState(300);
@@ -1164,7 +1171,14 @@ function AdminMemberIdBatch({ filters, total, onClose }) {
     setRun({ i: 0, n: total || 0, note: "reading the roster…" });
     let members = [];
     try {
-      const r = await NGGApi.admin.members.list(Object.assign({}, filters, { all: 1 }));
+      /* The order on SCREEN, carried into the print.
+         This read passed the filters and dropped the sort, so a coordinator
+         who put the roster in name order and pressed Print IDs got a stack in
+         createdAt order — a different sequence from the list they were looking
+         at, with nothing to say so. A print run's order is the whole reason
+         somebody sorted the table. */
+      const r = await NGGApi.admin.members.list(Object.assign({}, filters, {
+        all: 1, sort: (sort && sort.col) || "", dir: (sort && sort.dir) || "" }));
       members = r.members || [];
     } catch (e) { toast.error(e.code || e.message || "Couldn't read the roster", "Print failed"); setRun(null); return; }
     if (!members.length) { toast.error("Nobody matches these filters."); setRun(null); return; }

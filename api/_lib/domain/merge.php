@@ -32,10 +32,45 @@ declare(strict_types=1);
  * each one look like".
  */
 
-/** A run of six hundred is already an hour on a laser printer. Beyond this the
- *  browser is the wrong tool and the answer is two runs. */
-const MERGE_MAX_ROWS = 600;
+/* Two different ceilings, because they exist for two different reasons.
+ *
+ * They used to be one number, MERGE_MAX_ROWS = 600, doing both jobs — and the
+ * browser's limit was silently applied to BROWSING. A coordinator with a
+ * thousand children could not see the thousand-and-first, could not search for
+ * them, and was told "only the first 600 are listed" as though that were a
+ * property of the roster rather than of the renderer.
+ *
+ * · RUN is the real constraint: six hundred cards is already an hour on a
+ *   laser printer, and the browser holds every page in memory until the file
+ *   is written. That number stays.
+ * · LIST is only "how many rows may travel in one response". The picker is
+ *   windowed now — it draws the forty rows on screen and not the other 1,960 —
+ *   so this can be generous, and the population it counts over must be the
+ *   whole population or the totals and the facets are both lies. */
+const MERGE_RUN_MAX = 600;
+const MERGE_LIST_MAX = 2000;
+/* Kept for callers that still name it, and equal to the RUN cap because that
+ * is what it always actually meant. */
+const MERGE_MAX_ROWS = MERGE_RUN_MAX;
+/* How deep the base read goes before anything is filtered. Everything past
+ * this is invisible to the count, the facets and the search alike, so it is a
+ * ceiling on the PROGRAMME rather than on the run — set where admin.php
+ * already sets its export ceiling. */
+const MERGE_SCAN_MAX = 5000;
 const MERGE_AUDIENCES = ['students', 'volunteers'];
+
+/* How a print run may be ordered.
+ *
+ * There was no ordering at all: rows came back in `id ASC`, which is the order
+ * the rows were inserted, which is nothing anybody printing a stack of
+ * certificates wants. A guillotine operator wants them grouped by centre; a
+ * coordinator handing them out at assembly wants them alphabetical; somebody
+ * chasing the children who nearly qualified wants them by attendance.
+ *
+ * An allow-list rather than a column name, because these sort SHAPED rows in
+ * PHP rather than SQL — the shaping is what produces `attended` and the
+ * display name in the first place. */
+const MERGE_SORTS = ['name', 'surname', 'displayId', 'centre', 'attended', 'ready'];
 
 /**
  * Gate per audience rather than once for the screen.
@@ -93,9 +128,12 @@ function admin_merge_rows(array $p): array {
     $total = count($rows);
 
     $matched = array_values(array_filter($rows, fn($r) => merge_keep($r, $p)));
-    $limit = (int)($p['limit'] ?? MERGE_MAX_ROWS);
-    if ($limit < 1 || $limit > MERGE_MAX_ROWS) $limit = MERGE_MAX_ROWS;
+    merge_sort($matched, (string)($p['sort'] ?? ''), (string)($p['dir'] ?? ''));
 
+    $limit = (int)($p['limit'] ?? MERGE_LIST_MAX);
+    if ($limit < 1 || $limit > MERGE_LIST_MAX) $limit = MERGE_LIST_MAX;
+
+    $sort = in_array((string)($p['sort'] ?? ''), MERGE_SORTS, true) ? (string)$p['sort'] : 'name';
     return [
         'ok' => true,
         'audience' => $audience,
@@ -106,8 +144,62 @@ function admin_merge_rows(array $p): array {
         // batch: a silently truncated print run is a child without a certificate.
         'truncated' => count($matched) > $limit,
         'limit' => $limit,
+        // The browser's ceiling, sent rather than hard-coded on the client, so
+        // the two cannot drift into telling an operator different numbers.
+        'runMax' => MERGE_RUN_MAX,
+        // The order actually applied — not the one requested. A request for a
+        // column that does not exist is served by name, and saying otherwise
+        // would have the picker draw an arrow beside a column it is not on.
+        'sort' => $sort,
+        'dir' => strtolower((string)($p['dir'] ?? '')) === 'desc' ? 'desc' : 'asc',
         'facets' => $facets,
     ];
+}
+
+/**
+ * Order a filtered set of shaped rows, in place.
+ *
+ * Sorted here rather than in SQL because two of the six keys do not exist in
+ * any table: `attended` is counted from the attendance rows at read time, and
+ * `ready` is a judgement about a photograph and a token. Sorting the query and
+ * then computing those would order the roster by something other than what the
+ * screen shows, which is the bug this function exists to not have.
+ *
+ * Every comparison falls through to the display id, so the order is total: two
+ * children with the same name in the same centre come out the same way every
+ * time, and a printed stack matches the list that was on screen.
+ */
+function merge_sort(array &$rows, string $sort, string $dir): void {
+    if (!in_array($sort, MERGE_SORTS, true)) $sort = 'name';
+    $desc = strtolower($dir) === 'desc';
+    $txt = fn($v) => mb_strtolower(trim((string)$v));
+    $key = function (array $r) use ($sort, $txt) {
+        switch ($sort) {
+            // Surname first is how a register is filed and how a stack of
+            // certificates gets handed out; "name" is how a person reads it.
+            case 'surname':   return [$txt($r['surname'] ?? ''), $txt($r['firstName'] ?? '')];
+            case 'displayId': return [$txt($r['displayId'] ?? '')];
+            case 'centre':    return [$txt($r['centre']['name'] ?? ''), $txt($r['surname'] ?? '')];
+            case 'attended':  return [(int)($r['attended'] ?? 0)];
+            /* "Ready" is the one an operator sorts by before a print run: it
+               puts everything that will come out wrong at one end of the list
+               instead of scattered through a thousand rows. 0 = will print
+               with a hole in it, 1 = fine. */
+            case 'ready':     return [(trim((string)($r['photoUrl'] ?? '')) !== ''
+                                       && trim((string)($r['token'] ?? '')) !== '') ? 1 : 0];
+            default:          return [$txt($r['firstName'] ?? ''), $txt($r['surname'] ?? '')];
+        }
+    };
+    usort($rows, function ($a, $b) use ($key, $desc) {
+        $ka = $key($a); $kb = $key($b);
+        for ($i = 0; $i < count($ka); $i++) {
+            $c = is_int($ka[$i]) ? ($ka[$i] <=> $kb[$i]) : strcmp((string)$ka[$i], (string)$kb[$i]);
+            if ($c !== 0) return $desc ? -$c : $c;
+        }
+        // The tiebreak that makes the order total. NOT reversed with the rest:
+        // it is there to be stable, not to be meaningful.
+        return strcmp((string)($a['displayId'] ?? $a['key'] ?? ''), (string)($b['displayId'] ?? $b['key'] ?? ''));
+    });
 }
 
 /** One filter predicate, so the count and the rows can never disagree. */
@@ -166,7 +258,7 @@ function merge_student_rows(): array {
     $c = summer_ensure_cohort();
     $cohortId = (string)($c['cohortId'] ?? '');
     $rows = db_all("SELECT * FROM summer_students WHERE cohortId = ? AND regStatus = 'verified'
-                    ORDER BY id ASC LIMIT " . (MERGE_MAX_ROWS * 2), [$cohortId]);
+                    ORDER BY id ASC LIMIT " . MERGE_SCAN_MAX, [$cohortId]);
     $expiryOf = [];
     if ($rows) {
         $ids = array_column($rows, 'studentId');
@@ -192,7 +284,7 @@ function merge_student_rows(): array {
 
 /** Every active volunteer — again with or without a card. */
 function merge_volunteer_rows(): array {
-    $rows = db_all("SELECT * FROM volunteers WHERE status = 'active' ORDER BY id ASC LIMIT " . (MERGE_MAX_ROWS * 2));
+    $rows = db_all("SELECT * FROM volunteers WHERE status = 'active' ORDER BY id ASC LIMIT " . MERGE_SCAN_MAX);
     $expiryOf = [];
     $tokens = array_values(array_filter(array_map(fn($v) => (string)($v['token'] ?? ''), $rows)));
     if ($tokens) {

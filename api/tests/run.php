@@ -11846,6 +11846,79 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         return $inCards === false && $find($m, 'MRG-B') !== null && $find($m, 'MRG-A') !== null;
     })());
 
+    /* ── Ordering a print run ─────────────────────────────────────────────
+       There was none. Rows came back in `id ASC` — the order they happened to
+       be inserted — which is nothing anybody printing a stack of certificates
+       wants. A guillotine operator wants them grouped by centre; somebody
+       handing them out at assembly wants them alphabetical; somebody chasing
+       the children who nearly qualified wants them by attendance. */
+    $names = function (array $r) { return array_map(fn($x) => $x['firstName'] . ' ' . $x['surname'], $r['rows'] ?? []); };
+    $ours = function (array $r) {
+        return array_values(array_filter($r['rows'] ?? [], fn($x) => strpos((string)$x['key'], 'MRG-') === 0));
+    };
+
+    chk('merge: a run can be ordered by name', (function () use ($rows, $ours) {
+        $r = $ours($rows(['q' => 'Merg', 'sort' => 'name', 'dir' => 'asc']));
+        $got = array_map(fn($x) => $x['firstName'], $r);
+        return $got === ['Xola', 'Yakubu', 'Zubaida'];
+    })());
+    chk('…and by surname, which is how a register is filed', (function () use ($rows, $ours) {
+        $r = $ours($rows(['q' => 'Merg', 'sort' => 'surname', 'dir' => 'asc']));
+        // Mergson before Merglet? No — Merglet sorts first, and the two
+        // Merglets then order by first name: Yakubu, Zubaida, then Mergson.
+        return array_map(fn($x) => $x['surname'] . '/' . $x['firstName'], $r)
+            === ['Merglet/Yakubu', 'Merglet/Zubaida', 'Mergson/Xola'];
+    })());
+    chk('…and by attendance, largest first, which is the certificate question', (function () use ($rows, $ours) {
+        $r = $ours($rows(['q' => 'Merg', 'sort' => 'attended', 'dir' => 'desc']));
+        return array_map(fn($x) => (int)$x['attended'], $r) === [5, 3, 0];
+    })());
+    chk('…and by whether the piece will actually print correctly', (function () use ($rows, $ours) {
+        /* The sort an operator reaches for before a run: it puts everything
+           that will come out with a hole in it at one end of the list instead
+           of scattered through a thousand rows. MRG-B has neither photo nor
+           card, so ascending it comes first. */
+        $r = $ours($rows(['q' => 'Merg', 'sort' => 'ready', 'dir' => 'asc']));
+        return count($r) === 3 && $r[0]['key'] === 'MRG-B';
+    })());
+    chk('…the direction really reverses it', (function () use ($rows, $ours) {
+        $a = array_map(fn($x) => $x['key'], $ours($rows(['q' => 'Merg', 'sort' => 'name', 'dir' => 'asc'])));
+        $d = array_map(fn($x) => $x['key'], $ours($rows(['q' => 'Merg', 'sort' => 'name', 'dir' => 'desc'])));
+        return $a === array_reverse($d) && count($a) === 3;
+    })());
+    chk('…an unknown sort key falls back to name rather than erroring', (function () use ($rows, $ours) {
+        $r = $rows(['q' => 'Merg', 'sort' => 'id ASC; DROP TABLE summer_students--']);
+        $got = array_map(fn($x) => $x['firstName'], $ours($r));
+        return !empty($r['ok']) && $r['sort'] === 'name' && $got === ['Xola', 'Yakubu', 'Zubaida']
+            // These sort SHAPED rows in PHP, so the key never reaches SQL —
+            // asserted anyway, because that is the claim the allow-list makes.
+            && (int)db_row('SELECT COUNT(*) c FROM summer_students')['c'] > 0;
+    })());
+    chk('…and the response says which order it actually used', (function () use ($rows) {
+        $r = $rows(['sort' => 'centre', 'dir' => 'desc']);
+        $d = $rows([]);
+        return $r['sort'] === 'centre' && $r['dir'] === 'desc'
+            && $d['sort'] === 'name' && $d['dir'] === 'asc';
+    })());
+    chk('…and the order is total, so the same request twice is the same stack', (function () use ($rows) {
+        /* Every comparison falls through to the display id. Without that, two
+           children with the same name in the same centre can swap places
+           between two reads and the printed stack stops matching the list that
+           was on screen. */
+        $a = array_map(fn($x) => $x['key'], $rows(['sort' => 'centre'])['rows']);
+        $b = array_map(fn($x) => $x['key'], $rows(['sort' => 'centre'])['rows']);
+        return $a === $b && count($a) > 2;
+    })());
+    chk('merge: browsing is not capped at what one run can render', (function () use ($rows) {
+        /* One number used to do both jobs, so a coordinator with a thousand
+           children was told "only the first 600 are listed" — a property of the
+           renderer reported as a property of the roster. Two ceilings now, and
+           the run one is sent so the picker and the server cannot drift. */
+        $r = $rows([]);
+        return $r['limit'] === MERGE_LIST_MAX && $r['runMax'] === MERGE_RUN_MAX
+            && MERGE_LIST_MAX > MERGE_RUN_MAX;
+    })());
+
     chk('merge: attendance is counted from the register, not read from the cached column', (function () use ($rows, $find) {
         $m = $rows([]);
         $a = $find($m, 'MRG-A'); $b = $find($m, 'MRG-B'); $c = $find($m, 'MRG-C');

@@ -1155,7 +1155,8 @@
                         track: (f && f.track) || '', role: (f && f.role) || '', q: (f && f.q) || '',
                         from: (f && f.from) || '', to: (f && f.to) || '',
                         attendedMin: (f && f.attendedMin) || 0, photo: (f && f.photo) || '',
-                        issued: (f && f.issued) || '', limit: (f && f.limit) || 0 })),
+                        issued: (f && f.issued) || '', limit: (f && f.limit) || 0,
+                        sort: (f && f.sort) || '', dir: (f && f.dir) || '' })),
         // Resend a student's or volunteer's ID (email + SMS where on file).
         // qrPng (optional data URL) is cached server-side so the email can embed
         // the scannable QR via the hosted /api/public/qr.php image.
