@@ -1128,7 +1128,7 @@ function DonateWidget() {
       <p style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", margin: "12px 0 14px", lineHeight: 1.5 }}>Back the next generation — every naira funds a Saturday.</p>
       <form onSubmit={give} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", gap: 8 }}>
-          {["2000", "5000", "10000"].map(a => <button type="button" key={a} onClick={() => setD(o => ({ ...o, amount: a }))} className={"btn btn-sm " + (d.amount === a ? "btn-gold" : "btn-on-dark-ghost")}>₦{Number(a).toLocaleString()}</button>)}
+          {["2000", "5000", "10000"].map(a => <button type="button" key={a} onClick={() => setD(o => ({ ...o, amount: a }))} className={"btn btn-sm " + (d.amount === a ? "btn-gold" : "btn-on-dark-ghost")}>{fmtMoney(a)}</button>)}
         </div>
         <input className="admin-input" type="number" min="100" value={d.amount} onChange={e => setD(o => ({ ...o, amount: e.target.value }))} placeholder="Amount (₦)" style={{ padding: 10, borderRadius: 8, border: "none" }}/>
         <input className="admin-input" value={d.name} onChange={e => setD(o => ({ ...o, name: e.target.value }))} placeholder="Your name (optional)" style={{ padding: 10, borderRadius: 8, border: "none" }}/>
@@ -1166,10 +1166,10 @@ function ApplicationStatusLookup() {
         <input className="admin-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email you applied with" style={{ padding: 10, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)" }}/>
         <button className="btn btn-primary btn-sm" disabled={busy || !ref.trim() || !email.trim()}>{busy ? "Checking…" : "Check status"}</button>
       </form>
-      {err && <p style={{ color: "var(--coral)", fontSize: 13, marginTop: 10 }}>{err}</p>}
+      {err && <p role="alert" style={{ color: "var(--coral)", fontSize: 13, marginTop: 10 }}>{err}</p>}
       {res && <div style={{ marginTop: 12, padding: "12px 14px", background: "var(--cream-50)", borderRadius: 10 }}>
         <div style={{ fontWeight: 700 }}>{res.label}</div>
-        <div className="mono" style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 4 }}>Submitted {new Date(res.submittedAt).toLocaleDateString()}</div>
+        <div className="mono" style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 4 }}>Submitted {fmtDate(res.submittedAt)}</div>
       </div>}
     </div>
   );
@@ -1263,7 +1263,7 @@ function ProfileCommunityCTA({ token, name }) {
     <div className="card" style={{ padding: 20, marginBottom: 20, background: "var(--navy-900,#0c1432)", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
       <div>
         <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 18 }}>Enter the Community</div>
-        <div style={{ fontSize: 13.5, color: "rgba(255,255,255,0.72)", marginTop: 2 }}>Signed in as {name} · from your ID card. {err && <span style={{ color: "#ffb3b3" }}>{err}</span>}</div>
+        <div style={{ fontSize: 13.5, color: "rgba(255,255,255,0.72)", marginTop: 2 }}>Signed in as {name} · from your ID card. {err && <span role="alert" style={{ color: "#ffb3b3" }}>{err}</span>}</div>
       </div>
       <button className="btn btn-gold" disabled={busy} onClick={enter}>{busy ? "…" : "Enter →"}</button>
     </div>
@@ -1611,7 +1611,7 @@ function CertificatePage() {
   );
   const c = state.cert;
   const isCompletion = c.type === "completion";
-  const issued = new Date(c.issuedAt).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  const issued = fmtDateLong(c.issuedAt);
   return (
     <div className="cert-page" style={{ minHeight: "100vh", background: "#0a1130", padding: "48px 20px", display: "grid", placeItems: "center" }}>
       <style>{`@media print { .cert-page { background: #fff !important; padding: 0 !important; } .cert-noprint { display: none !important; } .cert-card { box-shadow: none !important; border: 1px solid #ddd !important; } }`}</style>
@@ -2199,7 +2199,7 @@ function CirclePortal({ setPage }) {
     <input value={guardianName} onChange={e => setGuardianName(e.target.value)} placeholder="Your name (optional)"
       aria-label="Your name (optional)"
       style={{ width: "100%", marginTop: 12, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, color: "#fff", font: "600 15px var(--font-body,sans-serif)", padding: "13px 15px", outline: "none" }}/>
-    {err && <div className="circle-err">{err}</div>}
+    {err && <div role="alert" className="circle-err">{err}</div>}
     {(() => {
       const ready = code.length === 6 && childName.trim().length >= 2;
       return <button className="btn btn-lg" disabled={!ready || busy} onClick={submitCode} style={{ width: "100%", marginTop: 18, background: ready ? teal : "rgba(255,255,255,.12)", color: ready ? "#06231d" : "rgba(255,255,255,.4)", border: "none", fontWeight: 800 }}>{busy ? "Checking…" : "Find student →"}</button>;
@@ -2232,7 +2232,7 @@ function CirclePortal({ setPage }) {
       <span aria-hidden="true" style={{ width: 26, height: 26, borderRadius: 8, border: "2px solid " + (consent ? teal : "rgba(255,255,255,.3)"), background: consent ? teal : "transparent", display: "grid", placeItems: "center", color: "#06231d", fontWeight: 800 }}>{consent ? "✓" : ""}</span>
       <span style={{ flex: 1, fontSize: 13, lineHeight: 1.4 }}>I agree to Anchor's guardian terms &amp; the student's privacy.</span>
     </button>
-    {err && <div className="circle-err">{err}</div>}
+    {err && <div role="alert" className="circle-err">{err}</div>}
     <button className="btn btn-lg" disabled={!consent || busy} onClick={connect} style={{ width: "100%", marginTop: 14, background: consent ? teal : "rgba(255,255,255,.12)", color: consent ? "#06231d" : "rgba(255,255,255,.4)", border: "none", fontWeight: 800 }}>{busy ? "Connecting…" : "Connect securely 🔗"}</button>
   </>);
 
@@ -2506,7 +2506,7 @@ function ParentVerifyPage() {
       </p>
     </div>
 
-    {err && <p style={{ color: "#b03535", fontSize: 13.5, margin: "10px 0 0" }}>{err}</p>}
+    {err && <p role="alert" style={{ color: "#b03535", fontSize: 13.5, margin: "10px 0 0" }}>{err}</p>}
     {!busy && !err && !ready && (
       <p style={{ color: "#8a7a2e", fontSize: 13, margin: "10px 0 0" }}>
         {!p0Done ? "Tick all the required boxes above to confirm."
@@ -3809,7 +3809,7 @@ function GatePage() {
     <form onSubmit={doUnlock} style={{ display: "flex", flexDirection: "column", gap: 9 }}>
       <input type="password" value={pw} onChange={e => { setPw(e.target.value); if (unlockErr) setUnlockErr(""); }} placeholder="Desk password" autoComplete="off"
         style={{ width: "100%", padding: "12px 14px", borderRadius: 11, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 16, fontFamily: "inherit" }}/>
-      {unlockErr && <div style={{ fontSize: 12.5, color: "#ff9a9a" }}>{unlockErr}</div>}
+      {unlockErr && <div role="alert" style={{ fontSize: 12.5, color: "#ff9a9a" }}>{unlockErr}</div>}
       <button type="submit" disabled={unlockBusy || !pw.trim()} style={{ padding: "12px 26px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", opacity: pw.trim() ? 1 : .55 }}>{unlockBusy ? "Unlocking…" : "Unlock the desk"}</button>
       <p style={{ color: "rgba(230,238,255,.5)", fontSize: 11.5, textAlign: "center", margin: "2px 0 0", lineHeight: 1.5 }}>Ask your coordinator for the desk password. It works only for this gate and expires automatically.</p>
     </form>
@@ -4007,7 +4007,7 @@ function RegFieldList({ fields, form, set, errors, visible, inputS, gold, mut })
           value={form[f.key] || ""} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder || ""} inputMode={f.type === "phone" ? "tel" : undefined}/>
           )}
           {f.help && !errMsg && <span style={{ ...mut, display: "block", fontSize: 11.5, marginTop: 4 }}>{f.help}</span>}
-          {errMsg && <span style={{ display: "block", fontSize: 12, marginTop: 4, color: "#ff9a9a" }}>{errMsg}</span>}
+          {errMsg && <span role="alert" style={{ display: "block", fontSize: 12, marginTop: 4, color: "#ff9a9a" }}>{errMsg}</span>}
         </label>
       );
         })}
@@ -4348,7 +4348,7 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
         )}
       </div>
       <p style={{ ...mut, fontSize: 12.5, textAlign: "center", margin: 0 }}>Center the face — we crop, brighten and set a clean backdrop automatically. Used only for the student ID.</p>
-      {uErr && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,206,84,.12)", border: "1px solid rgba(255,206,84,.4)", fontSize: 13 }}>{uErr}</div>}
+      {uErr && <div role="alert" style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,206,84,.12)", border: "1px solid rgba(255,206,84,.4)", fontSize: 13 }}>{uErr}</div>}
       {/* No `capture` attribute: it forces the camera on mobile and removes
           "choose an existing photo" entirely, so the overlay's device-photo
           button could never actually upload one. The camera has its own
@@ -4544,7 +4544,7 @@ function ReshootPage() {
           ? <img src={ctx.student.photoUrl} alt="Current" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: .45 }}/>
           : <div style={{ textAlign: "center" }}><div style={{ fontSize: 34 }}>📷</div><p style={{ ...mut, fontSize: 13, margin: "8px 0 0" }}>Tap below to take or choose a photo</p></div>}
     </div>
-    {uErr && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,206,84,.12)", border: "1px solid rgba(255,206,84,.4)", fontSize: 13, marginBottom: 10 }}>{uErr}</div>}
+    {uErr && <div role="alert" style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,206,84,.12)", border: "1px solid rgba(255,206,84,.4)", fontSize: 13, marginBottom: 10 }}>{uErr}</div>}
     <input ref={fileRef} type="file" accept="image/*" capture="user" style={{ display: "none" }} onChange={e => { const f = e.target.files && e.target.files[0]; if (f) upload(f); }}/>
 
     {!photoUrl
@@ -4790,14 +4790,14 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
           const r = await NGGApi.public.gate.checkin(g, item.token, item.scannedAt);
           dequeue(item.token);
           const st = r.student || {};
-          setRecent(list => [{ name: st.fullName || item.token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), already: !!r.already, synced: true }, ...list].slice(0, 12));
+          setRecent(list => [{ name: st.fullName || item.token, at: fmtTime(new Date()), already: !!r.already, synced: true }, ...list].slice(0, 12));
         } catch (e) {
           if (isNetErr(e)) break;                       // still offline — stop, keep the rest
           // The server rejected a banked scan (e.g. unassigned card). Drop it, but
           // never silently: tell the operator and flag it so it can be re-scanned.
           dequeue(item.token);
           setErr("A saved scan couldn't be synced (" + (e.code === "qr_unassigned" ? "code not assigned" : e.code === "student_not_found" ? "no member for that code" : e.code === "policy_suspended" ? "that person is suspended" : e.code === "policy_evicted" ? "that person has been evicted" : e.code === "id_expired" ? "that ID has expired" : (e.code || "rejected")) + "). " + (/^policy_/.test(e.code || "") ? "They are NOT checked in — refer them to the coordinator." : "Please re-scan that card."));
-          setRecent(list => [{ name: item.token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), failed: true }, ...list].slice(0, 12));
+          setRecent(list => [{ name: item.token, at: fmtTime(new Date()), failed: true }, ...list].slice(0, 12));
         }
       }
     } finally { flushing.current = false; }
@@ -4840,7 +4840,7 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
       });
       setRecent(list => [{
         name: st.fullName,
-        at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        at: fmtTime(new Date()),
         already: !!r.already,
         volunteer: isVol,
         role: st.role || "",
@@ -4855,7 +4855,7 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
         // Offline / unreachable — bank it and sync later so the scan isn't lost.
         const q = loadQ(); if (!q.some(x => x.token === token)) { q.push({ token, at: Date.now(), scannedAt: new Date().toISOString() }); saveQ(q); }
         announce("queued", { name: token, sub: "No signal — this scan will sync automatically." });
-        setRecent(list => [{ name: token, at: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), queued: true }, ...list].slice(0, 12));
+        setRecent(list => [{ name: token, at: fmtTime(new Date()), queued: true }, ...list].slice(0, 12));
         setCode("");
       } else {
         const c = e2.code || e2.message;
@@ -4888,7 +4888,7 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
             : <button type="button" onClick={closeRoll} disabled={dutyBusy || !duty.volunteer} style={{ padding: "8px 16px", borderRadius: 10, border: "1px solid " + gold, background: "transparent", color: gold, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{dutyBusy ? "Closing…" : "Close the roll"}</button>}
         </div>
       )}
-      {dutyMsg && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(111,220,157,.12)", border: "1px solid rgba(111,220,157,.35)", fontSize: 13 }}>{dutyMsg}</div>}
+      {dutyMsg && <div role="alert" style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(111,220,157,.12)", border: "1px solid rgba(111,220,157,.35)", fontSize: 13 }}>{dutyMsg}</div>}
       {/* The outcome, before anything else on the screen. */}
       <ScanResult result={scan} onDone={() => setScan(null)}/>
       {/* QR-first: the camera scans continuously; typing is the fallback. */}
@@ -5041,6 +5041,21 @@ function cardRgb(hex) {
 function cardInk(hex) {
   return inkOn(hex);
 }
+/* The caption ink — "VOLUNTEER ID", "VALID TO" — the small upper-case labels
+   that say what the number under them means.
+
+   It was #aeb4c0, which measures 2.08:1 on the white panel. That is not a
+   subtle miss: it is roughly a quarter of the contrast the label needs, on the
+   one piece of text that makes an ID number legible as an ID number, printed
+   on a card a steward reads at a gate under a fluorescent tube. It survived
+   this long because preflight had no way to measure it and nobody photographs
+   a caption. #687083 is the same cool neutral, still visibly a caption against
+   the #1B2B6B name and the #5b6478 body, and 4.96:1.
+
+   Named rather than repeated: the same three characters appear in the two
+   system templates in card-template.jsx, and a caption that is one grey on the
+   drawn card and another on the printed one is its own bug. */
+const CARD_CAPTION_INK = "#687083";
 /** Are two card colours close enough to merge into one shape? Redmean distance
  *  — cheap, and markedly better than plain RGB at matching what an eye does.
  *
@@ -5316,7 +5331,7 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
   const phW = Math.round(phH * 404 / 318);
   const field = (label, value, big) => (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: px(5) }}>
-      <span style={{ fontSize: px(11), fontWeight: 600, letterSpacing: px(2.4), textTransform: "uppercase", color: "#aeb4c0", lineHeight: 1 }}>{label}</span>
+      <span style={{ fontSize: px(11), fontWeight: 600, letterSpacing: px(2.4), textTransform: "uppercase", color: CARD_CAPTION_INK, lineHeight: 1 }}>{label}</span>
       <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontVariantNumeric: "tabular-nums",
                      fontSize: px(big ? 21 : 15), fontWeight: 500, color: big ? CARD_NAVY : "#5b6478", lineHeight: 1 }}>{value}</span>
     </div>
@@ -6208,7 +6223,7 @@ function CardStudio() {
                 ? (wanted.length - miss.length) + " matched · not in this batch: " + miss.slice(0, 6).join(", ") + (miss.length > 6 ? " +" + (miss.length - 6) : "")
                 : wanted.length + " matched.");
             }} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid " + gold, background: "transparent", color: gold, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Add these</button>
-            {pasteMsg && <span className="mono" style={{ fontSize: 12, color: /not in this batch|Nothing/.test(pasteMsg) ? "#ffce54" : "#6fdc9d" }}>{pasteMsg}</span>}
+            {pasteMsg && <span role="alert" className="mono" style={{ fontSize: 12, color: /not in this batch|Nothing/.test(pasteMsg) ? "#ffce54" : "#6fdc9d" }}>{pasteMsg}</span>}
           </div>
         )}
       </div>
@@ -6251,14 +6266,34 @@ function CardStudio() {
         const near = colourNeighbours(mColor, units);
         if (!near.length) return null;
         return (
-          <p style={{ fontSize: 12.5, lineHeight: 1.55, margin: "10px 0 0", color: "#ffd48a" }}>
+          <p role="status" style={{ fontSize: 12.5, lineHeight: 1.55, margin: "10px 0 0", color: "#ffd48a" }}>
             <b>That colour is close to {near.map(n => n.name).join(", ")}.</b>{" "}
             {"Two " + (isVol ? "tiers" : "centres") + " that look alike defeat the point of colouring by " + (isVol ? "tier" : "centre") + " — nobody can tell the cards apart across a room. "}
             Pick something further away if you can.
           </p>
         );
       })()}
-      {msg && <p style={{ color: "#ff9a9a", fontSize: 13, margin: "10px 0 0" }}>{msg}</p>}
+      {/* The other thing that is free to fix here and expensive later: a colour
+          that NO ink reads on.
+
+          cardInk() picks the better of black and white, and for most colours
+          the better one is fine. For a band in the middle it is not: white has
+          gone too dark and black has not gone light enough, and both land under
+          4.5:1. #D64545 tops out at 4.38 and #4C6FFF at 4.45 — close enough to
+          look deliberate on a screen and not close enough to read on a card
+          across a hall. The card cannot solve this; only the picker can. */}
+      {(() => {
+        if (!/^#[0-9a-fA-F]{6}$/.test(mColor) || inkIsLegible(mColor, 4.5)) return null;
+        const best = Math.max(inkContrast(mColor, "#ffffff") || 0, inkContrast(mColor, "#10131a") || 0);
+        return (
+          <p role="status" style={{ fontSize: 12.5, lineHeight: 1.55, margin: "8px 0 0", color: "#ffd48a" }}>
+            <b>Nothing reads well on that colour.</b>{" "}
+            The best either black or white manages is {best.toFixed(1)}:1, and text needs 4.5:1 to be
+            read at arm's length. Nudge it darker or lighter — a small move is usually enough.
+          </p>
+        );
+      })()}
+      {msg && <p role="alert" style={{ color: "#ff9a9a", fontSize: 13, margin: "10px 0 0" }}>{msg}</p>}
     </div>
 
     <div className="no-print" style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14, padding: 16, marginBottom: 30 }}>
@@ -6273,7 +6308,7 @@ function CardStudio() {
         </label>
         <span style={{ fontSize: 12, color: "rgba(230,238,255,.5)" }}>mm</span>
         <button onClick={saveSize} style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>Save size</button>
-        {sizeMsg && <span className="mono" style={{ fontSize: 12, color: sizeMsg[0] === "S" ? "#6fdc9d" : "#ff9a9a" }}>{sizeMsg}</span>}
+        {sizeMsg && <span role="alert" className="mono" style={{ fontSize: 12, color: sizeMsg[0] === "S" ? "#6fdc9d" : "#ff9a9a" }}>{sizeMsg}</span>}
       </div>
       <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "10px 0 0" }}>Default is 54 × 75&nbsp;mm. Width 50–60, height 64–100. The card reflows to any proportion without distortion — preview, PNG/PDF export and print all follow.</p>
     </div>
@@ -7491,7 +7526,7 @@ function RemarksSheet({ student, onClose }) {
         <textarea value={body} onChange={e => setBody(e.target.value)} rows={3} maxLength={1200}
           placeholder={REMARK_KIND_META[kind].hint + "…"} aria-label="Your note"
           style={{ width: "100%", boxSizing: "border-box", padding: "11px 12px", borderRadius: 11, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontSize: 15, resize: "vertical", fontFamily: "inherit" }}/>
-        {err && <p style={{ color: "#ff9a9a", fontSize: 13, margin: "8px 0 0" }}>{err}</p>}
+        {err && <p role="alert" style={{ color: "#ff9a9a", fontSize: 13, margin: "8px 0 0" }}>{err}</p>}
         <button onClick={submit} disabled={busy || !body.trim()}
           style={{ width: "100%", marginTop: 10, padding: "13px", borderRadius: 12, border: "none", minHeight: 44,
                    background: body.trim() ? gold : "rgba(255,255,255,.12)", color: body.trim() ? "#2b2100" : "rgba(230,238,255,.4)",
@@ -7650,7 +7685,7 @@ function MentorBulkSheet({ count, subjectIds, presets, categories, onClose, onDo
               style={{ width: "100%", padding: "12px 14px", borderRadius: 12, fontSize: 15, resize: "vertical", fontFamily: "inherit",
                        background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.16)", color: "#eef2fb" }}/>
 
-            {err && <p style={{ color: "#ffb0b0", fontSize: 13.5, margin: "10px 0 0" }}>{err}</p>}
+            {err && <p role="alert" style={{ color: "#ffb0b0", fontSize: 13.5, margin: "10px 0 0" }}>{err}</p>}
             <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
               <button type="button" onClick={onClose} disabled={busy}
                 style={{ flex: "0 0 auto", padding: "14px 18px", borderRadius: 12, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#cdd6ea", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
@@ -7706,7 +7741,7 @@ function MentorV3Sheet({ student, period, onClose, onDone }) {
           </div>
         ))}
         <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={300} placeholder="Optional note — what stood out this week?" style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontSize: 14, resize: "vertical" }}/>
-        {err && <p style={{ color: "#ff9a9a", fontSize: 13, margin: "8px 0 0" }}>{err}</p>}
+        {err && <p role="alert" style={{ color: "#ff9a9a", fontSize: 13, margin: "8px 0 0" }}>{err}</p>}
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           <button onClick={submit} disabled={busy} style={{ flex: 1, padding: "13px", borderRadius: 12, border: "none", background: green, color: "#08301f", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "Saving…" : "Save V3 · " + total + "/15"}</button>
           <button onClick={onClose} disabled={busy} style={{ padding: "13px 18px", borderRadius: 12, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
@@ -7745,7 +7780,7 @@ function MentorStarSheet({ student, categories, onClose, onDone }) {
           ))}
         </div>
         <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={300} placeholder="Optional note — what did they do well?" style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#fff", fontSize: 14, resize: "vertical" }}/>
-        {err && <p style={{ color: "#ff9a9a", fontSize: 13, margin: "8px 0 0" }}>{err}</p>}
+        {err && <p role="alert" style={{ color: "#ff9a9a", fontSize: 13, margin: "8px 0 0" }}>{err}</p>}
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           <button onClick={submit} disabled={busy} style={{ flex: 1, padding: "13px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "Saving…" : "Give " + stars + " ★"}</button>
           <button onClick={onClose} disabled={busy} style={{ padding: "13px 18px", borderRadius: 12, border: "1px solid rgba(255,255,255,.2)", background: "transparent", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Cancel</button>

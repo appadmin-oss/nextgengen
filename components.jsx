@@ -111,17 +111,58 @@ function inkRgb(hex) {
   if (!/^[0-9a-fA-F]{6}$/.test(s)) return null;
   return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
 }
-function inkOn(hex) {
+/** WCAG 2.1 relative luminance. The one place this arithmetic lives. */
+function inkLum(hex) {
   const rgb = inkRgb(hex);
+  if (!rgb) return null;
+  const lin = rgb.map(v => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
+  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+}
+
+/** The WCAG 2.1 contrast ratio between two colours, 1–21. Null if either is
+ *  not a hex we can read — a caller deciding whether to warn must be able to
+ *  tell "these clash" from "I could not measure this". */
+function inkContrast(a, b) {
+  const x = inkLum(a), y = inkLum(b);
+  if (x == null || y == null) return null;
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/* The luminance at which #10131a and #fff are equally legible on a background.
+   Solving 1.05/(L+0.05) = (L+0.05)/(L_dark+0.05) for L_dark = L("#10131a")
+   gives L = sqrt(1.05 × 0.0565) − 0.05 = 0.1936, where both inks measure
+   4.31:1. Picking the ink by this number is the best either can do.
+
+   It used to be 0.42, which is more than twice the crossover, so every
+   background between the two got white text when black was the better choice.
+   That is not a rounding difference. #76B043 — the DEFAULT centre colour, the
+   one a new centre gets before anybody picks one — measured 2.60:1 with white
+   and measures 7.13:1 with black. Six of the eight roster avatar colours and
+   four of the five community ones were on the wrong side of it, two of them
+   below 3:1, and the same function inks printed ID cards, where nobody finds
+   out until a box of them arrives. */
+const INK_CROSSOVER_L = 0.1936;
+
+function inkOn(hex) {
+  const L = inkLum(hex);
   // Unparseable (a CSS keyword, an rgba() string, a missing value) keeps the old
   // behaviour rather than guessing: white with a shadow, which is what every
   // caller did unconditionally before.
-  if (!rgb) return { ink: "#fff", shadow: "0 1px 2px rgba(0,0,0,.4)", hairline: "rgba(255,255,255,.55)", light: false };
-  const lin = rgb.map(v => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
-  const L = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
-  return L > 0.42
+  if (L == null) return { ink: "#fff", shadow: "0 1px 2px rgba(0,0,0,.4)", hairline: "rgba(255,255,255,.55)", light: false };
+  return L > INK_CROSSOVER_L
     ? { ink: "#10131a", shadow: "none", hairline: "rgba(0,0,0,.35)", light: true }
     : { ink: "#fff", shadow: "0 1px 2px rgba(0,0,0,.4)", hairline: "rgba(255,255,255,.55)", light: false };
+}
+
+/** Is there ANY ink that reads on this colour? Some colours are legible with
+ *  neither: they sit in the band where white has gone too dark and black has
+ *  not yet gone light enough. Worth saying at the moment somebody picks one,
+ *  because by the time it is a centre colour it is on every card that centre
+ *  prints. `min` is the ratio to clear — 4.5 for body text, 3 for the large
+ *  type a card band is set in. */
+function inkIsLegible(hex, min) {
+  const best = Math.max(inkContrast(hex, "#ffffff") || 0, inkContrast(hex, "#10131a") || 0);
+  return best >= (min || 4.5);
 }
 
 /* ── Heavy design libraries, fetched only when a screen actually opens ───────
@@ -1622,7 +1663,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
           {!shot && <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "43%", transform: "translate(-50%,-50%)", width: "62%", height: "72%", border: "2px dashed rgba(255,255,255,0.65)", borderRadius: "50%" }}/>}
           {!shot && <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: 12, fontSize: 12.5, color: "#fff", background: "linear-gradient(transparent, rgba(0,0,0,0.65))", textAlign: "center" }}>Line your face up with the oval, then press Capture.</div>}
         </div>
-        {err && <div style={{ fontSize: 13, color: "#ffb0b0", maxWidth: 360, textAlign: "center", lineHeight: 1.4 }}>{err}</div>}
+        {err && <div role="alert" style={{ fontSize: 13, color: "#ffb0b0", maxWidth: 360, textAlign: "center", lineHeight: 1.4 }}>{err}</div>}
         {/* Advice, in a colour that is not a rejection. The photo stays and
             "Use photo" still works — that is the whole point. */}
         {advice && !err && <div style={{ fontSize: 13, color: "#ffe0ad", maxWidth: 360, textAlign: "center", lineHeight: 1.45, padding: "9px 12px", borderRadius: 10, background: "rgba(245,176,38,0.14)", border: "1px solid rgba(245,176,38,0.34)" }}>{advice.text}</div>}
@@ -1913,7 +1954,7 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
             <p className="mono" style={{ fontSize: 11, color: "#99a", marginTop: 10 }}>
               Runs entirely on this device {"—"} nothing is sent until you apply, and the tone sliders bake into the {OUT_W}{"×"}{OUT_H} frame that gets uploaded. Reframing only; never generative.
             </p>
-            {err && <p style={{ color: "var(--coral, #ff5a3c)", fontSize: 13, margin: "12px 0 0" }}>{err}</p>}
+            {err && <p role="alert" style={{ color: "var(--coral, #ff5a3c)", fontSize: 13, margin: "12px 0 0" }}>{err}</p>}
             <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
               <button className="btn btn-primary btn-sm" disabled={!!busy || !ready || !target.subjectId} onClick={applyStudio}>{busy === "studio" ? "Applying…" : "Apply & save"}</button>
               <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => onClose && onClose()}>Cancel</button>
@@ -1954,7 +1995,7 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
             </div>
           </div>
         </div>
-        {err && <p style={{ color: "var(--coral, #ff5a3c)", fontSize: 13, margin: "12px 0 0" }}>{err}</p>}
+        {err && <p role="alert" style={{ color: "var(--coral, #ff5a3c)", fontSize: 13, margin: "12px 0 0" }}>{err}</p>}
         <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
           <button className="btn btn-primary btn-sm" disabled={!!busy || !base} onClick={save}>{busy === "save" ? "Saving…" : "Save edit"}</button>
           {target.subjectId && <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => fileRef.current && fileRef.current.click()}>{busy === "replace" ? "Uploading…" : "Replace photo"}</button>}
@@ -2412,6 +2453,92 @@ function NggMarkdown({ text, className }) {
     );
   }
   return <div className={"md " + (className || "")}>{blocks}</div>;
+}
+
+/* ── One way to write a date, and one way to write a number ──────────────────
+ *
+ * This product used to have three. Counted across the sources: 25 bare
+ * `toLocaleString()` calls, 13 more passing `undefined` as the locale, 7
+ * pinned to en-GB and 3 to en-US. The bare and undefined ones render in
+ * whatever locale the DEVICE is set to, so two coordinators looking at the
+ * same record saw different strings; the pinned ones disagreed with each
+ * other outright. 08/09/2026 is the 8th of September on one screen in this app
+ * and the 9th of August on another, and nothing on either screen says which.
+ *
+ * Two of those calls outlived their screen: a generated analytics PDF stamped
+ * with the exporter's device locale, and an events table with US month names.
+ *
+ * So: one locale, chosen and stated. en-GB, because the programme is Nigerian
+ * and Nigeria writes dates day-first — and because a fixed wrong-ish locale is
+ * still better than a variable one, since a report has to mean the same thing
+ * to the person who exports it and the person who reads it a month later.
+ *
+ * Every one of these takes anything — a Date, an ISO string, a number, null,
+ * a string that is not a date — and returns "" for what it cannot read. A
+ * formatter that throws on bad input is a formatter that takes a screen down
+ * because one row had an empty column.                                       */
+
+const NGG_LOCALE = "en-GB";
+
+/** Anything → a Date, or null. Accepts the "YYYY-MM-DD HH:MM:SS" the API
+ *  sometimes returns, which Safari refuses to parse without the T. */
+function nggDate(v) {
+  if (v == null || v === "") return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+  if (typeof v === "number") { const d = new Date(v); return isNaN(d.getTime()) ? null : d; }
+  const s = String(v).trim();
+  if (!s) return null;
+  let d = new Date(s);
+  if (isNaN(d.getTime()) && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) d = new Date(s.replace(" ", "T") + "Z");
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/** "22 Aug 2026". The default for anything a person reads and might act on. */
+function fmtDate(v) {
+  const d = nggDate(v);
+  return d ? d.toLocaleDateString(NGG_LOCALE, { day: "numeric", month: "short", year: "numeric" }) : "";
+}
+/** "22 Aug" — for a list where the year is obvious from context. */
+function fmtDayMonth(v) {
+  const d = nggDate(v);
+  return d ? d.toLocaleDateString(NGG_LOCALE, { day: "numeric", month: "short" }) : "";
+}
+/** "Saturday 22 August 2026" — for a single date that is the subject of a page. */
+function fmtDateLong(v) {
+  const d = nggDate(v);
+  return d ? d.toLocaleDateString(NGG_LOCALE, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "";
+}
+/** "14:30". Twenty-four hour, because a record is read later by somebody who
+ *  was not there and "2:30" without a suffix has cost people a session. */
+function fmtTime(v) {
+  const d = nggDate(v);
+  return d ? d.toLocaleTimeString(NGG_LOCALE, { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+}
+/** "4pm", "4:30pm" — how you tell a child when to turn up. Member-facing
+ *  surfaces only; anything that is a RECORD uses fmtTime. */
+function fmtTimeFriendly(v) {
+  const d = nggDate(v);
+  if (!d) return "";
+  return d.toLocaleTimeString(NGG_LOCALE, { hour: "numeric", minute: "2-digit", hour12: true })
+          .replace(":00", "").replace(/\s/g, "").toLowerCase();
+}
+/** "22 Aug 2026, 14:30". */
+function fmtDateTime(v) {
+  const d = nggDate(v);
+  return d ? fmtDate(d) + ", " + fmtTime(d) : "";
+}
+/** "1,234". Integers keep their grouping; a fraction keeps up to `dp` places
+ *  and drops trailing zeros, so 2.50 reads 2.5 and 2.00 reads 2. */
+function fmtNum(n, dp) {
+  const v = typeof n === "number" ? n : Number(n);
+  if (v == null || !isFinite(v)) return "";
+  return v.toLocaleString(NGG_LOCALE, { maximumFractionDigits: dp == null ? 0 : dp });
+}
+/** "₦1,234". The symbol is not part of the locale — this programme prices in
+ *  naira wherever it is read from. */
+function fmtMoney(n) {
+  const v = typeof n === "number" ? n : Number(n);
+  return "₦" + (isFinite(v) ? v.toLocaleString(NGG_LOCALE, { maximumFractionDigits: 0 }) : "0");
 }
 
 function nggFmtTime(s) {
@@ -2882,9 +3009,15 @@ function NggYouTube({ id, thumb, title }) {
 Object.assign(window, {
   nggCsvCell,
   NggMarkdown, NggVideo, NggPdf, NggYouTube, nggMdInline, nggFmtTime, nggFmtBytes,
+  // One date, one number, one locale. See the block above nggDate.
+  NGG_LOCALE, nggDate, fmtDate, fmtDayMonth, fmtDateLong, fmtTime, fmtTimeFriendly,
+  fmtDateTime, fmtNum, fmtMoney,
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
-  usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart, inkOn,
+  usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart,
+  // The contrast arithmetic, exported so preflight and the colour pickers use
+  // the SAME numbers the renderer inks with rather than a second copy of it.
+  inkOn, inkLum, inkContrast, inkIsLegible, INK_CROSSOVER_L,
   loadVendor, VENDOR_LIBS, nggPublishScope, useNggScope,
   Uploader, A11ySettingsPanel, A11yNavButton, PhotoEditor, PhotoCapture, ImageLightbox, SignaturePad,
   // Exported for the browser tests: both decide whether a family's photo is

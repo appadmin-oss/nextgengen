@@ -1221,10 +1221,21 @@ function DesignerPage() {
               <input value={mf.q} placeholder="name or ID" onChange={e => setFilter("q", e.target.value)}/></label>
           </div>
 
-          {merge && merge.error && <p className="dsn-hint" style={{ color: "#ff9a9a" }}>{merge.error}</p>}
+          {/* role="alert" and a word, not a colour.
+              These were a plain <p> whose only signal was that it turned red,
+              so an operator setting up a 240-person run whose roster read had
+              failed got a silent colour change — nothing announced, and nothing
+              at all for anyone who cannot see the difference between #ff9a9a
+              and #e6eeff on a dark panel. Colour alone is never the signal. */}
+          {merge && merge.error && (
+            <p className="dsn-hint dsn-hint-bad" role="alert">
+              <b>Could not read the roster.</b> {merge.error}
+            </p>
+          )}
           {merge && merge.truncated && (
-            <p className="dsn-hint" style={{ color: "#ffce54" }}>
-              {merge.matched} people match but only the first {merge.limit} are listed. Narrow the filters and run it in two.
+            <p className="dsn-hint dsn-hint-warn" role="status">
+              <b>Only the first {merge.limit} are listed.</b> {merge.matched} people match.
+              Narrow the filters and run it in two.
             </p>
           )}
 

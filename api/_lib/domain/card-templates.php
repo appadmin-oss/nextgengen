@@ -252,6 +252,127 @@ function ctpl_mm_per_unit(array $t): float {
     return ((float)($t['wMm'] ?? 54) ?: 54.0) / $w;
 }
 
+/* ── Can you read it? ────────────────────────────────────────────────────────
+ * Mirrors tplInkProblems() in card-template.jsx. Preflight knew whether the QR
+ * would scan and whether type sat too near the trim; it did not know whether
+ * the type was legible, so a card with its role line printed in the tier colour
+ * ON a pill filled with the tier colour published with zero errors.
+ *
+ * The server has no roster to resolve {{bindings}} against, so it checks the
+ * two cases that need no data: ink and paint that are the SAME STRING (1:1
+ * whatever they resolve to), and pairs that are literal on both sides. The
+ * client, which is proofing against real rows, additionally measures the bound
+ * pairs and warns. Publish refuses on what is decidable here.
+ *
+ * 3:1 refuses and 4.5:1 warns, at every size: WCAG's large-text allowance is
+ * defined in CSS pixels and this is a document measured in millimetres for a
+ * printer, so borrowing the number would borrow a precision we do not have. */
+const CTPL_INK_ERROR_RATIO = 3.0;
+const CTPL_INK_WARN_RATIO = 4.5;
+
+/** WCAG 2.1 relative luminance. Null for anything that is not a hex we read. */
+function ctpl_lum(string $hex): ?float {
+    $h = ltrim(trim($hex), '#');
+    if (strlen($h) === 3) $h = $h[0] . $h[0] . $h[1] . $h[1] . $h[2] . $h[2];
+    if (!preg_match('/^[0-9a-fA-F]{6}$/', $h)) return null;
+    $l = 0.0;
+    foreach ([0.2126, 0.7152, 0.0722] as $i => $k) {
+        $c = hexdec(substr($h, $i * 2, 2)) / 255;
+        $l += $k * ($c <= 0.04045 ? $c / 12.92 : pow(($c + 0.055) / 1.055, 2.4));
+    }
+    return $l;
+}
+function ctpl_contrast(string $a, string $b): ?float {
+    $x = ctpl_lum($a); $y = ctpl_lum($b);
+    if ($x === null || $y === null) return null;
+    return (max($x, $y) + 0.05) / (min($x, $y) + 0.05);
+}
+function ctpl_covers(array $el, float $x, float $y): bool {
+    $ex = (float)($el['x'] ?? 0); $ey = (float)($el['y'] ?? 0);
+    return $x >= $ex && $y >= $ey && $x <= $ex + (float)($el['w'] ?? 0) && $y <= $ey + (float)($el['h'] ?? 0);
+}
+
+/**
+ * The paint under element $i, or null when we cannot say.
+ * Returns ['card' => true] when nothing is between the text and the card.
+ */
+function ctpl_paint_under(array $els, int $i) {
+    $el = $els[$i];
+    $cx = (float)($el['x'] ?? 0) + (float)($el['w'] ?? 0) / 2;
+    $cy = (float)($el['y'] ?? 0) + (float)($el['h'] ?? 0) / 2;
+    for ($j = $i - 1; $j >= 0; $j--) {
+        $u = $els[$j];
+        if (!empty($u['hidden']) || !ctpl_covers($u, $cx, $cy)) continue;
+        // A photograph under the words. WCAG cannot measure that either, and
+        // warning about every name over a picture would teach people to ignore
+        // this check — the one outcome worse than not having it.
+        if (($u['type'] ?? '') === 'image') return null;
+        if (!in_array($u['type'] ?? '', ['rect', 'shape', 'ellipse'], true)) continue;
+        if (isset($u['opacity']) && (float)$u['opacity'] < 1) return null;   // composited
+        return $u['fill'] ?? '';
+    }
+    return ['card' => true];
+}
+
+/** Every literal colour a paint value can be — a gradient counts as all of its
+ *  stops, because text only has to be illegible over part of one. */
+function ctpl_paint_colours($paint): array {
+    if (is_array($paint) && isset($paint['stops']) && is_array($paint['stops'])) {
+        $out = [];
+        foreach ($paint['stops'] as $st) {
+            $c = (string)($st['color'] ?? '');
+            if ($c !== '') $out[] = $c;
+        }
+        return $out;
+    }
+    return is_string($paint) && $paint !== '' ? [$paint] : [];
+}
+
+function ctpl_ink_problems(array $t, callable $add): void {
+    $els = is_array($t['elements'] ?? null) ? array_values($t['elements']) : [];
+    foreach ($els as $i => $el) {
+        if (($el['type'] ?? '') !== 'text' || !empty($el['hidden'])) continue;
+        $text = trim((string)($el['text'] ?? ''));
+        if ($text === '') continue;                       // an empty line cannot be unreadable
+        $under = ctpl_paint_under($els, $i);
+        if ($under === null) continue;
+        $isCard = is_array($under) && !empty($under['card']);
+        $paint = $isCard ? (string)($t['background'] ?? '#ffffff') : $under;
+        $where = $isCard ? 'the card' : 'what it sits on';
+        $ink = $el['color'] ?? '';
+        $label = '“' . mb_substr($text, 0, 24) . '”';
+
+        // 1 · The same string: 1:1 whatever it resolves to. No data needed.
+        if (is_string($ink) && is_string($paint) && trim($ink) !== ''
+            && strcasecmp(trim($ink), trim($paint)) === 0) {
+            $add('error', $label . ' is the same colour as ' . $where . ' — it will print invisible',
+                 (string)($el['id'] ?? ''));
+            continue;
+        }
+
+        // 2 · Measured, where both sides are literal. A {{binding}} is the
+        //     client's to resolve — it has the roster and this does not.
+        if (!is_string($ink) || strpos($ink, '#') !== 0) continue;
+        $worst = null; $worstFor = '';
+        foreach (ctpl_paint_colours($paint) as $bg) {
+            if (strpos($bg, '#') !== 0) continue;
+            $r = ctpl_contrast($ink, $bg);
+            if ($r === null) continue;
+            if ($worst === null || $r < $worst) { $worst = $r; $worstFor = $ink . ' on ' . $bg; }
+        }
+        if ($worst === null) continue;
+        $said = $label . ' measures ' . number_format($worst, 2) . ':1 against ' . $where
+              . ' (' . $worstFor . ')';
+        if ($worst < CTPL_INK_ERROR_RATIO) {
+            $add('error', $said . ' — that cannot be read', (string)($el['id'] ?? ''));
+        } elseif ($worst < CTPL_INK_WARN_RATIO) {
+            $add('warn', $said . ' — ' . CTPL_INK_WARN_RATIO
+                 . ':1 is the floor for text somebody has to read across a hall',
+                 (string)($el['id'] ?? ''));
+        }
+    }
+}
+
 function ctpl_preflight(array $t): array {
     $problems = [];
     $add = function (string $level, string $message, string $elId = '') use (&$problems) {
@@ -321,6 +442,9 @@ function ctpl_preflight(array $t): array {
             }
         }
     }
+    /* Legibility, last: the messages read better after the structural ones. */
+    ctpl_ink_problems($t, $add);
+
     return $problems;
 }
 

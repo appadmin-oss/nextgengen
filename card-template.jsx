@@ -346,6 +346,126 @@ function tplQrModules(payload) {
   return 29;
 }
 
+/* ── Can you read it? ────────────────────────────────────────────────────────
+   The check every other preflight rule assumed somebody else was doing.
+
+   Preflight knew whether the QR would scan, whether a field was missing, and
+   whether type sat too near the trim. It did not know whether the type was
+   legible, so a volunteer card with the role line printed in the tier colour
+   ON a pill filled with the tier colour passed with zero errors and would
+   publish. That is not a hypothetical: it is one wrong pick in a colour
+   picker, and it is 240 unreadable cards before anyone notices.
+
+   Two questions, and they have different answers:
+
+   · Is the ink the SAME STRING as the paint under it? Decidable from the
+     template alone, with no data — "{{tier.color}}" on "{{tier.color}}" is
+     1:1 whatever the tier turns out to be. Always an error, and checked
+     identically on the server.
+   · Is the measured contrast too low? Needs literal colours. Where a binding
+     is involved the client resolves it against the real rows it is proofing
+     with; the server, which has no rows, checks only the literal pairs. The
+     asymmetry is deliberate and stated rather than hidden: the deterministic
+     case is what publish refuses on, and the data-resolved case is a warning
+     to the person who can still fix it.
+
+   Thresholds are 3:1 to refuse and 4.5:1 to warn, applied at every size. WCAG's
+   large-text allowance is defined in CSS pixels and this is a document measured
+   in millimetres for a printer, so borrowing the number would be borrowing a
+   precision we do not have. */
+
+const TPL_INK_ERROR_RATIO = 3;
+const TPL_INK_WARN_RATIO = 4.5;
+
+/* The sentinel for "nothing is between this text and the card itself". A
+   unique object rather than a string, so it can never collide with a real
+   fill value, and declared above its readers rather than below them. */
+const TPL_PAINT_IS_CARD = { card: true };
+
+/** Does this element's box contain the point? Bounding boxes, including for an
+ *  ellipse — a rounder answer would be more correct and no more useful, since
+ *  what we want to know is what the middle of the line is sitting on. */
+function tplCovers(el, x, y) {
+  const ex = Number(el.x) || 0, ey = Number(el.y) || 0;
+  return x >= ex && y >= ey && x <= ex + (Number(el.w) || 0) && y <= ey + (Number(el.h) || 0);
+}
+
+/** The paint under element `i`: the topmost opaque shape below it that covers
+ *  the middle of it, or the sentinel for "the card itself". Null means we
+ *  cannot say — a photograph, or something part-transparent — and a caller
+ *  that cannot say should stay quiet rather than measure the wrong thing. */
+function tplPaintUnder(els, i) {
+  const el = els[i];
+  const cx = (Number(el.x) || 0) + (Number(el.w) || 0) / 2;
+  const cy = (Number(el.y) || 0) + (Number(el.h) || 0) / 2;
+  for (let j = i - 1; j >= 0; j--) {
+    const u = els[j];
+    if (u.hidden || !tplCovers(u, cx, cy)) continue;
+    // A picture under the words. WCAG cannot measure that either, and warning
+    // about every name laid over a photograph would train people to ignore
+    // this check — which is the one outcome worse than not having it.
+    if (u.type === "image") return null;
+    if (u.type !== "rect" && u.type !== "shape" && u.type !== "ellipse") continue;
+    if (u.opacity != null && Number(u.opacity) < 1) return null;   // composited
+    return u.fill == null ? "" : u.fill;
+  }
+  return TPL_PAINT_IS_CARD;
+}
+
+/** Every literal colour a paint value can resolve to. A gradient is measured
+ *  against every stop, because text only has to be illegible over part of one. */
+function tplPaintColours(paint, row) {
+  if (paint && typeof paint === "object" && paint.stops) {
+    return (paint.stops || []).map(s => tplBindValue(s.color, row)).filter(Boolean);
+  }
+  const v = tplBindValue(paint, row);
+  return typeof v === "string" && v ? [v] : [];
+}
+
+function tplInkProblems(t, rows, add) {
+  const els = (t || {}).elements || [];
+  const proofRows = (rows && rows.length) ? rows : [];
+  els.forEach((el, i) => {
+    if (el.type !== "text" || el.hidden) return;
+    if (!String(el.text == null ? "" : el.text).trim()) return;   // an empty line cannot be unreadable
+    const under = tplPaintUnder(els, i);
+    if (under === null) return;
+    const isCard = under === TPL_PAINT_IS_CARD;
+    const paint = isCard ? (t.background || "#ffffff") : under;
+    const where = isCard ? "the card" : "what it sits on";
+
+    /* 1 · The same string, so 1:1 whatever it resolves to. No data needed. */
+    if (typeof el.color === "string" && typeof paint === "string"
+        && el.color.trim() && el.color.trim().toLowerCase() === paint.trim().toLowerCase()) {
+      add("error", "“" + String(el.text).slice(0, 24) + "” is the same colour as "
+        + where + " — it will print invisible", el.id);
+      return;
+    }
+
+    /* 2 · Measured. Bindings need a row to resolve against; without rows we
+           can still measure the pairs that are literal on both sides. */
+    const inkFor = (row) => tplBindValue(el.color, row);
+    const trials = proofRows.length ? proofRows : [null];
+    let worst = null, worstFor = "";
+    trials.forEach(row => {
+      const ink = inkFor(row);
+      if (typeof ink !== "string" || !/^#/.test(ink)) return;
+      tplPaintColours(paint, row).forEach(bg => {
+        if (!/^#/.test(bg)) return;
+        const r = (typeof inkContrast === "function") ? inkContrast(ink, bg) : null;
+        if (r == null) return;
+        if (worst == null || r < worst) { worst = r; worstFor = ink + " on " + bg; }
+      });
+    });
+    if (worst == null) return;
+    const said = "“" + String(el.text).slice(0, 24) + "” measures "
+      + worst.toFixed(2) + ":1 against " + where + " (" + worstFor + ")";
+    if (worst < TPL_INK_ERROR_RATIO) add("error", said + " — that cannot be read", el.id);
+    else if (worst < TPL_INK_WARN_RATIO) add("warn", said + " — " + TPL_INK_WARN_RATIO
+      + ":1 is the floor for text somebody has to read across a hall", el.id);
+  });
+}
+
 function tplPreflight(template, rows, requiredFields) {
   const t = template || {};
   const els = t.elements || [];
@@ -430,6 +550,10 @@ function tplPreflight(template, rows, requiredFields) {
     });
   });
 
+  /* Legibility, last, because it is the check most likely to be argued with
+     and the messages read better after the structural ones. */
+  tplInkProblems(t, rows, add);
+
   return problems;
 }
 
@@ -458,9 +582,9 @@ const TPL_SYSTEM = [
         color: "{{ink.tier}}", align: "center", letterSpacing: 3.2, transform: "upper", vAlign: "middle", fit: true },
       { id: "qr", type: "qr", x: 128, y: 700, w: 98, h: 98, token: "{{token}}" },
       { id: "rule", type: "rect", x: 248, y: 712, w: 1, h: 74, fill: "#e6e8ee" },
-      { id: "idlabel", type: "text", x: 270, y: 706, w: 200, text: "VOLUNTEER ID", size: 11, weight: 600, color: "#aeb4c0", letterSpacing: 2.4 },
+      { id: "idlabel", type: "text", x: 270, y: 706, w: 200, text: "VOLUNTEER ID", size: 11, weight: 600, color: "#687083", letterSpacing: 2.4 },
       { id: "idvalue", type: "text", x: 270, y: 722, w: 200, text: "{{displayId}}", size: 21, weight: 500, color: "#1B2B6B", font: "monospace" },
-      { id: "vlabel", type: "text", x: 270, y: 757, w: 200, text: "VALID TO", size: 11, weight: 600, color: "#aeb4c0", letterSpacing: 2.4 },
+      { id: "vlabel", type: "text", x: 270, y: 757, w: 200, text: "VALID TO", size: 11, weight: 600, color: "#687083", letterSpacing: 2.4 },
       { id: "vvalue", type: "text", x: 270, y: 773, w: 200, text: "{{expiresAt}}", size: 15, weight: 500, color: "#5b6478", font: "monospace" },
       { id: "band", type: "text", x: 35, y: 890, w: 520, h: 52, text: "{{centre.code}}  ·  {{centre.name}}", size: 25, weight: 600,
         color: "{{ink.centre}}", align: "center", letterSpacing: 5, transform: "upper", vAlign: "middle", fit: true, minSize: 22 },
@@ -1027,6 +1151,7 @@ Object.assign(window, {
   tplMmPerUnit, tplQrModules,
   TPL_QR_GOOD_MODULE_MM, TPL_QR_MIN_MODULE_MM,
   tplBindValue, tplResolve, tplFitSize, tplToFabric, tplPreflight,
+  tplPaintUnder, tplInkProblems, TPL_INK_ERROR_RATIO, TPL_INK_WARN_RATIO,
   MemberIDCard, MemberIDCardBatch,
   NggcMemberCard, NggcMemberCardExport, nggcEnsureFonts, nggcDisplayId, nggcDisciplines, nggcName,
 });

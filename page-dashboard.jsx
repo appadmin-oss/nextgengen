@@ -473,7 +473,7 @@ function DashboardKpis({ session, prog, stats, account, acctState }) {
       <div className="ngg-kpi">
         <div className="ngg-kpi-top"><span className="ngg-kpi-l">Level</span><span className="chip chip-gold">{prog.rank.name}</span></div>
         <div className="ngg-kpi-n">{String(prog.level).padStart(2, "0")}</div>
-        <div className="ngg-kpi-s">{prog.total.toLocaleString()} XP{prog.next ? " · next at " + prog.next.at.toLocaleString() : " · top rank"}</div>
+        <div className="ngg-kpi-s">{fmtNum(prog.total)} XP{prog.next ? " · next at " + fmtNum(prog.next.at) : " · top rank"}</div>
       </div>
       <div className="ngg-kpi">
         <div className="ngg-kpi-top"><span className="ngg-kpi-l">Streak</span></div>
@@ -940,7 +940,7 @@ function AssignmentCard({ a, onMutate }) {
   );
 }
 
-function fmtShortDate(d) { if (!d) return ""; const x = new Date(d); return isNaN(x) ? "" : x.toLocaleDateString("en-GB", { day:"numeric", month:"short" }); }
+function fmtShortDate(d) { return fmtDayMonth(d); }
 
 // ----------------------------------------------------------------------------
 
@@ -1029,8 +1029,8 @@ function DashboardStats({ stats, prog }) {
         <div className="dash-xp-fill" style={{width: prog.pct + "%"}}/>
       </div>
       <div className="dash-xp-meta">
-        <span>{prog.total.toLocaleString()} XP</span>
-        <span>{prog.next ? "→ " + prog.next.name + " at " + prog.next.at.toLocaleString() : "Top rank reached ★"}</span>
+        <span>{fmtNum(prog.total)} XP</span>
+        <span>{prog.next ? "→ " + prog.next.name + " at " + fmtNum(prog.next.at) : "Top rank reached ★"}</span>
       </div>
       {/* The badges themselves, not just how many. The ids were already in the
           payload and only the COUNT was rendered — a member could see they had
@@ -1123,8 +1123,7 @@ const NGV_ROLE_LABEL = { volunteer: "Volunteer", instructor: "Instructor", mento
 function ngvWhen(iso) {
   try {
     var d = new Date(iso);
-    return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })
-      + " · " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    return fmtDate(d) + " · " + fmtTime(d);
   } catch (e) { return String(iso || "").slice(0, 16).replace("T", " "); }
 }
 function DashboardNgv({ ngv }) {
@@ -1415,7 +1414,7 @@ function DashboardEvents({ events, onRsvp }) {
 function DashboardEventRow({ e, onRsvp }) {
   const d = new Date(e.startAt);
   const dd = String(d.getDate()).padStart(2, "0");
-  const mm = d.toLocaleString("en-US", { month: "short" });
+  const mm = fmtDayMonth(d).replace(/^\d+\s*/, "");
   return (
     <div className="dash-event">
       <div className="dash-event-date">
@@ -1424,7 +1423,7 @@ function DashboardEventRow({ e, onRsvp }) {
       </div>
       <div className="dash-event-body">
         <div className="dash-event-title">{e.title}</div>
-        <div className="dash-event-meta">CACENTRE {e.centre} · {d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}</div>
+        <div className="dash-event-meta">CACENTRE {e.centre} · {fmtTime(d)}</div>
       </div>
       <button
         className={"btn btn-sm " + (e.myRsvp === "going" ? "btn-gold" : "btn-ghost")}

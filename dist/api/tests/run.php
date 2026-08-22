@@ -3671,6 +3671,80 @@ chk('…while the QR on the card we already print passes, with the warning it de
     $warns = implode(' ', array_column(array_filter($p, fn($x) => $x['level'] === 'warn'), 'message'));
     return $errs === [] && strpos($warns, 'comfortable floor') !== false;
 })());
+/* ── Can you read it? ─────────────────────────────────────────────────────
+   The rule that was missing. Preflight knew whether the QR would scan and
+   whether type sat too near the trim; it did not know whether the type was
+   legible, so a card with its role line inked in the tier colour ON a pill
+   filled with the tier colour published with zero errors. One wrong pick in a
+   colour picker, 240 unreadable cards, and the first anybody hears of it is a
+   box arriving from the printer. */
+$TPL_INK = function (array $extra) {
+    return ['name' => 'Ink', 'kind' => 'student', 'w' => 590, 'h' => 972, 'safe' => 30,
+            'background' => '#ffffff',
+            'elements' => array_merge([
+                ['id' => 'panel', 'type' => 'rect', 'x' => 30, 'y' => 30, 'w' => 530, 'h' => 830, 'fill' => '#ffffff'],
+            ], $extra, [
+                ['id' => 'i', 'type' => 'text', 'x' => 80, 'y' => 620, 'w' => 430, 'h' => 30,
+                 'text' => '{{displayId}}', 'color' => '#1B2B6B'],
+                ['id' => 'q', 'type' => 'qr', 'x' => 128, 'y' => 700, 'w' => 98, 'h' => 98, 'token' => '{{token}}'],
+            ])];
+};
+$TPL_MSGS = function (array $t, string $level) {
+    return implode(' | ', array_column(array_filter(ctpl_preflight($t),
+        fn($x) => $x['level'] === $level), 'message'));
+};
+chk('preflight refuses text inked with the colour it sits on', (function () use ($TPL_INK, $TPL_MSGS) {
+    /* The exact mistake, and the one case that needs NO data: two bindings that
+       are the same string are 1:1 whatever they resolve to. */
+    $t = $TPL_INK([
+        ['id' => 'pill', 'type' => 'rect', 'x' => 115, 'y' => 400, 'w' => 360, 'h' => 46, 'fill' => '{{tier.color}}'],
+        ['id' => 'surname', 'type' => 'text', 'x' => 115, 'y' => 400, 'w' => 360, 'h' => 46,
+         'text' => '{{surname}}', 'color' => '{{tier.color}}'],
+    ]);
+    return strpos($TPL_MSGS($t, 'error'), 'same colour as what it sits on') !== false;
+})());
+chk('…and refuses a literal pair nobody could read', (function () use ($TPL_INK, $TPL_MSGS) {
+    $t = $TPL_INK([['id' => 'surname', 'type' => 'text', 'x' => 80, 'y' => 400, 'w' => 430, 'h' => 56,
+                    'text' => '{{surname}}', 'color' => '#fdfdfd']]);   // near-white on the white panel
+    return strpos($TPL_MSGS($t, 'error'), 'cannot be read') !== false;
+})());
+chk('…and warns rather than refuses in the band that is thin but legible', (function () use ($TPL_INK, $TPL_MSGS) {
+    $t = $TPL_INK([['id' => 'surname', 'type' => 'text', 'x' => 80, 'y' => 400, 'w' => 430, 'h' => 56,
+                    'text' => '{{surname}}', 'color' => '#949494']]);   // 3.29:1 on white
+    return $TPL_MSGS($t, 'error') === '' && strpos($TPL_MSGS($t, 'warn'), 'floor for text') !== false;
+})());
+chk('…and says nothing about type over a photograph, which nobody can measure', (function () use ($TPL_INK, $TPL_MSGS) {
+    /* A warning on every name laid over a picture would train people to skip
+       past this check, which is the one outcome worse than not having it. */
+    $t = $TPL_INK([
+        ['id' => 'photo', 'type' => 'image', 'x' => 93, 'y' => 380, 'w' => 404, 'h' => 318, 'src' => '{{photo}}'],
+        ['id' => 'over', 'type' => 'text', 'x' => 120, 'y' => 400, 'w' => 300, 'h' => 40,
+         'text' => 'OVER THE PHOTO', 'color' => '#ffffff'],
+    ]);
+    return strpos($TPL_MSGS($t, 'error') . $TPL_MSGS($t, 'warn'), 'OVER THE PHOTO') === false;
+})());
+chk('…and a card that is invisible cannot be PUBLISHED, not merely flagged', (function () use ($TPL_INK) {
+    /* The check that matters: the client can be bypassed, the server cannot. */
+    $t = $TPL_INK([
+        ['id' => 'pill', 'type' => 'rect', 'x' => 115, 'y' => 400, 'w' => 360, 'h' => 46, 'fill' => '#8A1538'],
+        ['id' => 'surname', 'type' => 'text', 'x' => 115, 'y' => 400, 'w' => 360, 'h' => 46,
+         'text' => '{{surname}}', 'color' => '#8A1538'],
+    ]);
+    $s = backend_dispatch('admin.card.template.save', ['requesterId' => 'NGG-2025-0099', 'template' => $t]);
+    $p = backend_dispatch('admin.card.template.publish',
+        ['requesterId' => 'NGG-2025-0099', 'templateId' => $s['templateId']]);
+    return ($p['error'] ?? '') === 'preflight'
+        && strpos(implode(' ', array_column($p['problems'] ?? [], 'message')), 'print invisible') !== false;
+})());
+chk('the server measures contrast the same way the browser does', (function () {
+    // Both sides implement WCAG 2.1 relative luminance. Two fixed points and
+    // one real pair, so a drift in either shows up here rather than on paper.
+    return abs(ctpl_contrast('#000000', '#ffffff') - 21.0) < 0.01
+        && abs(ctpl_contrast('#76B043', '#76B043') - 1.0) < 0.001
+        && abs(ctpl_contrast('#76B043', '#ffffff') - 2.60) < 0.01
+        && ctpl_contrast('not a colour', '#fff') === null;
+})());
+
 chk('…and a card that never shows the child\'s name', (function () use ($TPL_OK) {
     $bad = $TPL_OK; $bad['name'] = 'Nameless';
     $bad['elements'][0]['text'] = 'Fixed heading';
@@ -6185,6 +6259,76 @@ chk('members export returns all rows, unpaged', (function () {
     $all = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'all' => 1]);
     return count($paged['members']) === 2 && count($all['members']) === $all['total'] && $all['total'] > 2;
 })());
+/* ── Ordering the roster ──────────────────────────────────────────────────
+   The list was ORDER BY createdAt DESC with no way to ask for anything else,
+   so a coordinator holding four hundred children could not put them in name
+   order. Sorting is server-side because the table is PAGED: ordering the fifty
+   rows in hand would order page three of the roster and call it the roster. */
+chk('the roster can be ordered by name, and it really is ordered', (function () {
+    $r = backend_dispatch('admin.members.list',
+        ['requesterId' => 'NGG-2025-0099', 'all' => 1, 'sort' => 'fullName', 'dir' => 'asc']);
+    $names = array_map(fn($m) => strtolower((string)$m['fullName']), $r['members']);
+    $sorted = $names; sort($sorted, SORT_STRING);
+    return !empty($r['ok']) && count($names) > 2 && $names === $sorted;
+})());
+chk('…and the other way round', (function () {
+    $r = backend_dispatch('admin.members.list',
+        ['requesterId' => 'NGG-2025-0099', 'all' => 1, 'sort' => 'fullName', 'dir' => 'desc']);
+    $names = array_map(fn($m) => strtolower((string)$m['fullName']), $r['members']);
+    $sorted = $names; rsort($sorted, SORT_STRING);
+    return $names === $sorted;
+})());
+chk('…case-insensitively, because "amina" after "Zainab" is not an order', (function () {
+    /* A byte sort puts every capital ahead of every lower-case letter, so a
+       roster with one lower-cased entry looks shuffled to the person reading
+       it. Proven with a row that only differs by case. */
+    db_insert('members', ['memberId' => 'NGG-2025-CASE', 'fullName' => 'aaron lowercase',
+        'email' => 'case@example.com', 'type' => 'NGG', 'status' => 'active', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.members.list',
+        ['requesterId' => 'NGG-2025-0099', 'all' => 1, 'sort' => 'fullName', 'dir' => 'asc']);
+    $first = strtolower((string)($r['members'][0]['fullName'] ?? ''));
+    db_exec('DELETE FROM members WHERE memberId = ?', ['NGG-2025-CASE']);
+    return $first === 'aaron lowercase';
+})());
+chk('…and paging under a sort never repeats or skips a person', (function () {
+    /* Ties break on memberId. Without a tiebreak, two members sharing a centre
+       can swap places between two queries and paging shows one of them twice
+       and the other never — the bug that looks like data loss. */
+    $seen = []; $page = 1;
+    for (;;) {
+        $r = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099',
+            'pageSize' => 2, 'page' => $page, 'sort' => 'centre', 'dir' => 'asc']);
+        foreach ($r['members'] as $m) $seen[] = (string)$m['memberId'];
+        if (count($r['members']) < 2 || $page > 40) break;
+        $page++;
+    }
+    $total = (int)backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099'])['total'];
+    return count($seen) === count(array_unique($seen)) && count($seen) === $total;
+})());
+chk('an unknown sort column falls back rather than erroring or reaching SQL', (function () {
+    /* The column name ends up in SQL TEXT, so it is chosen from an allow-list
+       and never interpolated as given. A stale bookmark asking for a column
+       that no longer exists must show the roster, not a failure — and an
+       injection attempt must show the roster too. */
+    $bad = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099',
+        'sort' => 'fullName; DROP TABLE members--', 'dir' => 'asc']);
+    $inj = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099',
+        'sort' => '(SELECT 1)', 'dir' => 'asc']);
+    $plain = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($bad['ok']) && !empty($inj['ok']) && $bad['sort'] === 'createdAt'
+        && $bad['total'] === $plain['total']
+        // The table is, in fact, still there.
+        && (int)db_row('SELECT COUNT(*) c FROM members')['c'] === $plain['total'];
+})());
+chk('…and the response says which order it actually used', (function () {
+    $r = backend_dispatch('admin.members.list',
+        ['requesterId' => 'NGG-2025-0099', 'sort' => 'centre', 'dir' => 'asc']);
+    $d = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099']);
+    return $r['sort'] === 'centre' && $r['dir'] === 'asc'
+        && $d['sort'] === 'createdAt' && $d['dir'] === 'desc';
+})());
+
 chk('audit export returns all rows, unpaged', (function () {
     $all = backend_dispatch('admin.audit.tail', ['requesterId' => 'NGG-2025-0099', 'all' => 1]);
     return !empty($all['ok']) && count($all['audit']) === $all['total'];

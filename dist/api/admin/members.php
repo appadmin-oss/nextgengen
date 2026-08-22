@@ -17,6 +17,11 @@ if ($method === 'GET') {
         'pageSize' => $_GET['pageSize'] ?? null,
         'all'      => $_GET['all']      ?? null,
         'staff'    => $_GET['staff']    ?? null,
+        // Which column the roster is ordered by, and which way. Validated
+        // against an allow-list in admin_members_list — the value ends up in
+        // SQL text, so it is never interpolated as given.
+        'sort'     => $_GET['sort']     ?? '',
+        'dir'      => $_GET['dir']      ?? '',
         'ip'     => client_ip(),
     ]);
     if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);

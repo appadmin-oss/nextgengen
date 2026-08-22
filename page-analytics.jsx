@@ -31,7 +31,7 @@ const AN_SERIES = ["#3B5BDB", "#C2410C", "#0E9F6E", "#A21CAF", "#4D7C0F", "#0369
 const AN_RATE_TONE = (r) => (r >= 80 ? AN_TONE.good : r >= 55 ? AN_TONE.warn : AN_TONE.bad);
 const AN_RATE_LABEL = (r) => (r >= 80 ? "On track" : r >= 55 ? "Watch" : "Needs attention");
 
-function anFmt(n) { return (n === null || n === undefined || n !== n) ? "—" : Number(n).toLocaleString(); }
+function anFmt(n) { return (n === null || n === undefined || n !== n) ? "—" : fmtNum(n); }
 /* Always quoted, and always formula-guarded. The old version quoted only when
    the value contained a comma or a quote, which left `=cmd|...` unquoted AND
    unescaped — the exact shape of a CSV-injection payload. */
@@ -973,7 +973,7 @@ function AnActivityDrawer({ opts, defaults, onClose, onSaved }) {
           </div>
         </div>
 
-        {err && <p style={{ color: AN_TONE.bad, fontSize: 13, margin: 0 }}>{err}</p>}
+        {err && <p role="alert" style={{ color: AN_TONE.bad, fontSize: 13, margin: 0 }}>{err}</p>}
         <div style={{ display: "flex", gap: 10 }}>
           <button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save activity"}</button>
           <button className="an-chip" onClick={onClose}>Cancel</button>
@@ -1102,7 +1102,7 @@ function AnalyticsWorkspace() {
       <span className="an-live"><i/>Live analytics</span>
       <h1 className="display" style={{ fontSize: "clamp(30px,4.5vw,46px)", margin: "14px 0 4px", lineHeight: 1.02 }}>Summer School Analytics</h1>
       <p style={{ color: "rgba(255,255,255,.7)", margin: 0, fontSize: 14 }}>
-        {ws.filters.rangeLabel} · Week {ex.program ? ex.program.week : ""} · Updated {new Date(ws.generatedAt).toLocaleTimeString()} · Scoped to your centres
+        {ws.filters.rangeLabel} · Week {ex.program ? ex.program.week : ""} · Updated {fmtTime(ws.generatedAt)} · Scoped to your centres
       </p>
       <div className="an-herostats">
         <div className="an-herostat"><div className="v">{anFmt(ex.totalStudents)}</div><div className="l">Students</div></div>
@@ -1565,7 +1565,7 @@ function AnGrowth({ centre, onDrill }) {
       produced them, and are never shown to a student or guardian.
     </p>
 
-    {err && <div className="an-card"><div className="an-empty" style={{ color: AN_TONE.bad }}>{err}</div></div>}
+    {err && <div role="alert" className="an-card"><div className="an-empty" style={{ color: AN_TONE.bad }}>{err}</div></div>}
     {loading && !g && <div className="an-card"><div className="an-empty">Scoring the cohort…</div></div>}
 
     {g && <>
@@ -2791,7 +2791,7 @@ function AnalystPane({ onClose }) {
           </div>
         )}
 
-        {err && <div className={"anp-err" + (err.code === "question_identifies_someone" ? " is-bad" : "")}>{err.text}</div>}
+        {err && <div role="alert" className={"anp-err" + (err.code === "question_identifies_someone" ? " is-bad" : "")}>{err.text}</div>}
         <div ref={endRef}/>
       </div>
 
@@ -2883,7 +2883,7 @@ function AnalystPane({ onClose }) {
                         )}
                       </>
                     )}
-                    {repErr && <p className="anp-synth-note" data-level="error">Couldn't read the set: {repErr}</p>}
+                    {repErr && <p role="alert" className="anp-synth-note" data-level="error">Couldn't read the set: {repErr}</p>}
                   </div>
                 )}
                 <div className="anp-report-out">
@@ -3342,7 +3342,7 @@ async function exportPdf(ws) {
     const ex = ws.executive, re = ws.research; let y = 56;
     doc.setFont("helvetica", "bold"); doc.setFontSize(20); doc.text("Summer School Analytics", 40, y);
     doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(120);
-    y += 18; doc.text(`${ws.filters.rangeLabel} · generated ${new Date(ws.generatedAt).toLocaleString()}`, 40, y);
+    y += 18; doc.text(`${ws.filters.rangeLabel} · generated ${fmtDateTime(ws.generatedAt)}`, 40, y);
     doc.setTextColor(20); y += 26; doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text("Executive summary", 40, y);
     doc.setFont("helvetica", "normal"); doc.setFontSize(10); y += 16;
     const kv = [

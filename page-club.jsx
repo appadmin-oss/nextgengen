@@ -264,7 +264,7 @@ function ClubPage({ setPage }) {
                       <div style={{fontSize:22, fontWeight:700, fontFamily:"var(--font-display)"}}>{featured.first} · {featured.community}</div>
                       <div style={{fontSize:13, color:"var(--gold-400)", marginTop:2}}>{featured.title}</div>
                       <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.6)", marginTop:4}}>
-                        LVL {featured.level} · {featured.xp.toLocaleString()} XP · ★ {featured.stars} · {featured.streak}-day streak
+                        LVL {featured.level} · {fmtNum(featured.xp)} XP · ★ {featured.stars} · {featured.streak}-day streak
                       </div>
                     </div>
                   </div>
@@ -323,7 +323,7 @@ function ClubPage({ setPage }) {
                     </div>
                     <div style={{display:"flex", gap:6, flexWrap:"wrap"}}>
                       <span className="chip" style={{fontSize:11, padding:"3px 8px"}}>Lvl {m.level}</span>
-                      <span className="chip chip-gold" style={{fontSize:11, padding:"3px 8px"}}>{m.xp.toLocaleString()} XP</span>
+                      <span className="chip chip-gold" style={{fontSize:11, padding:"3px 8px"}}>{fmtNum(m.xp)} XP</span>
                     </div>
                     <Progress value={(m.week/12)*100} variant="lime" />
                   </div>
@@ -349,7 +349,7 @@ function ClubPage({ setPage }) {
                         <div className="mono" style={{fontSize:10, color:"var(--ink-500)"}}>{m.community.toUpperCase()}</div>
                       </div>
                       <div style={{textAlign:"right"}}>
-                        <div style={{fontWeight:700, fontSize:14, fontFamily:"var(--font-mono)"}}>{m.xp.toLocaleString()}</div>
+                        <div style={{fontWeight:700, fontSize:14, fontFamily:"var(--font-mono)"}}>{fmtNum(m.xp)}</div>
                         <div style={{fontSize:10, color:"var(--gold-500)"}}>↑ {Math.floor(m.xp/100)}</div>
                       </div>
                     </div>
@@ -630,7 +630,7 @@ function CmStudentSignIn({ compact, dest, roles }) {
         </>
       )}
       <label className="cm-stu-remember"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}/><span>Stay signed in for 30 days</span></label>
-      {err && <div className="cm-stu-err">{err}</div>}
+      {err && <div role="alert" className="cm-stu-err">{err}</div>}
     </div>
   );
 }
@@ -677,13 +677,13 @@ function CommunityPublic({ setPage, auth }) {
     // Members + the card-holders (students, instructors) who have signed in.
     // The old count read the members table alone, so every summer student and
     // every instructor in the community was invisible to it.
-    { value: stats && stats.communityMembers > 0 ? stats.communityMembers.toLocaleString()
-        : (stats && stats.activeMembers > 0 ? stats.activeMembers.toLocaleString() : (all.length ? String(all.length) : "—")),
+    { value: stats && stats.communityMembers > 0 ? fmtNum(stats.communityMembers)
+        : (stats && stats.activeMembers > 0 ? fmtNum(stats.activeMembers) : (all.length ? String(all.length) : "—")),
       label: "In the community", color: "#fff",
       note: stats && (stats.communityStudents || stats.communityInstructors)
         ? [stats.communityStudents ? stats.communityStudents + " students" : "", stats.communityInstructors ? stats.communityInstructors + " instructors" : ""].filter(Boolean).join(" · ")
         : "" },
-    { value: stats && stats.missionsVerified > 0 ? stats.missionsVerified.toLocaleString() : "—", label: "Missions verified", color: "#fff" },
+    { value: stats && stats.missionsVerified > 0 ? fmtNum(stats.missionsVerified) : "—", label: "Missions verified", color: "#fff" },
     { value: stats && stats.mentors > 0 ? String(stats.mentors) : "—", label: "Volunteer mentors", color: "#d0ff3a" },
     { value: stats && stats.centres > 0 ? String(stats.centres).padStart(2, "0") : (centres.length ? String(centres.length).padStart(2, "0") : "—"), label: "Centres live", color: "#f5b026" },
   ];
@@ -777,7 +777,7 @@ function CommunityPublic({ setPage, auth }) {
                     <span className="display" style={{ width: 24, fontWeight: 800, fontSize: 15, color: i < 3 ? "var(--gold-600,#a07400)" : "var(--ink-400)" }}>{i + 1}</span>
                     <span className="display" style={{ width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 15, color: inkOn(colorFor(m.first)).ink, background: colorFor(m.first), flex: "none" }}>{(m.first[0] || "?").toUpperCase()}</span>
                     <span style={{ flex: 1, minWidth: 0 }}><b className="display" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink-900)" }}>{nameOf(m)}</b><span className="mono" style={{ display: "block", fontSize: 10.5, color: "var(--ink-400)", marginTop: 2 }}>{m.centre || "—"} · LVL {m.level}</span></span>
-                    <span className="mono" style={{ fontSize: 12.5, color: "var(--gold-600,#a07400)", fontWeight: 600 }}>{(m.xp || 0).toLocaleString()} XP</span>
+                    <span className="mono" style={{ fontSize: 12.5, color: "var(--gold-600,#a07400)", fontWeight: 600 }}>{fmtNum(m.xp || 0)} XP</span>
                   </button>
                 ))}
               </div>
@@ -840,7 +840,7 @@ function CommunityPublic({ setPage, auth }) {
             <h3 className="display" style={{ fontWeight: 800, fontSize: 20, margin: "14px 0 3px" }}>{nameOf(panel)}</h3>
             <div className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>{panel.centre || "—"} · Level {panel.level}</div>
             <div style={{ display: "flex", justifyContent: "center", gap: 8, margin: "16px 0" }}>
-              <span className="mono" style={{ fontSize: 11.5, background: "var(--cream-50,#faf6ec)", border: "1px solid var(--cream-200,#e8dec6)", borderRadius: 999, padding: "5px 12px" }}>{(panel.xp || 0).toLocaleString()} XP</span>
+              <span className="mono" style={{ fontSize: 11.5, background: "var(--cream-50,#faf6ec)", border: "1px solid var(--cream-200,#e8dec6)", borderRadius: 999, padding: "5px 12px" }}>{fmtNum(panel.xp || 0)} XP</span>
               <span className="mono" style={{ fontSize: 11.5, background: "var(--cream-50,#faf6ec)", border: "1px solid var(--cream-200,#e8dec6)", borderRadius: 999, padding: "5px 12px" }}>{panel.streak || 0}d streak</span>
               <span className="mono" style={{ fontSize: 11.5, background: "var(--cream-50,#faf6ec)", border: "1px solid var(--cream-200,#e8dec6)", borderRadius: 999, padding: "5px 12px" }}>Wk {panel.week || 1}</span>
             </div>
@@ -7797,7 +7797,7 @@ function CmJournalEditor({ entry, onClose, onSaved }) {
             </span>
           ))}
         </div>}
-        {err && <p style={{ color: "#c0341a", fontSize: 13, margin: "0 0 8px" }}>{err}</p>}
+        {err && <p role="alert" style={{ color: "#c0341a", fontSize: 13, margin: "0 0 8px" }}>{err}</p>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary btn-sm" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save entry"}</button>
@@ -7865,7 +7865,7 @@ function CmProgramJournal({ auth }) {
           onClick={() => setEditing({})}>＋ New entry</button>}
       </header>
 
-      {err && <div className="cm-pj-empty" style={{ color: "#c0341a" }}>{err}</div>}
+      {err && <div role="alert" className="cm-pj-empty" style={{ color: "#c0341a" }}>{err}</div>}
 
       {/* Memories first: a journal nobody re-reads is an archive. */}
       {mem && mem.length > 0 && (

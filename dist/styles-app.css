@@ -1717,6 +1717,37 @@ body.cm-app .fab-top { display: none; }
 .admin-app.is-selected { outline: 2px solid var(--gold-500); outline-offset: 1px; }
 .admin-table { width: 100%; border-collapse: collapse; }
 .admin-table th, .admin-table td { padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(12,20,50,0.06); font-size: 14px; }
+/* A column of numbers, aligned on its digits.
+   Every column in here was left-aligned in proportional figures, including
+   Enrolled, Present today, Late, Attendance, Level, Streak and Points — the
+   columns people open the screen FOR. Left-aligned with a proportional 1
+   narrower than a 0, you cannot scan down for the outlier, which is the only
+   thing a column of numbers is for. The community's standings table already
+   did this right (.trn-num in styles.css); this is the same rule, brought back
+   to the admin tables it was never applied to. */
+.admin-table th.admin-num, .admin-table td.admin-num {
+  text-align: right; font-variant-numeric: tabular-nums; }
+/* The unit trails the figure and must not push it out of the column. */
+.admin-num small { font-weight: 400; color: var(--ink-500); }
+
+/* A sortable column header. The button fills the cell so the whole header is
+   the target — 316 header cells in this app and a 12px arrow would be a
+   24×24 miss on every one of them. */
+.admin-sort-th { padding: 0 !important; }
+.admin-sort-btn {
+  display: flex; align-items: center; gap: 6px; width: 100%; min-height: 40px;
+  padding: 12px 14px; border: 0; background: none; cursor: pointer;
+  font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit;
+  text-align: inherit;
+}
+.admin-num .admin-sort-btn { justify-content: flex-end; }
+.admin-sort-btn:hover { background: rgba(12, 20, 50, 0.05); color: var(--ink-900); }
+.admin-sort-btn:focus-visible { outline: 2px solid var(--navy-700, #1c2a5e); outline-offset: -2px; }
+/* The unsorted state is deliberately faint and the sorted one is not: the
+   arrow is a hint until it is an answer. */
+.admin-sort-ind { font-size: 9px; opacity: .35; }
+.admin-sort-th.is-on { color: var(--ink-900); }
+.admin-sort-th.is-on .admin-sort-ind { opacity: 1; color: var(--navy-700, #1c2a5e); }
 .admin-table th { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em; color: var(--ink-500); text-transform: uppercase; }
 .admin-cell-name { font-weight: 600; }
 .admin-cell-sub { font-size: 10px; color: var(--ink-500); margin-top: 2px; letter-spacing: 0.1em; }
@@ -4923,6 +4954,25 @@ body.own-chrome .fab-top { display: none; }
 .dsn-canvas-host { line-height: 0; box-shadow: 0 18px 46px rgba(0, 0, 0, 0.42); border-radius: 6px; overflow: hidden; }
 .dsn-stage-note { font: 400 11.5px var(--font-mono, monospace); color: rgba(230, 238, 255, 0.5); }
 .dsn-hint { font-size: 12.5px; color: rgba(230, 238, 255, 0.55); line-height: 1.5; }
+/* A hint that is bad news, and one that is a caveat.
+
+   Contrast was never the problem here — the old #ff9a9a measured 8.5:1 on this
+   panel. The problem was that colour was the ONLY signal: two paragraphs in
+   the same place, the same size and the same weight, differing by hue, one of
+   them meaning "your roster did not load" and neither of them announced. Red
+   and amber are also the pair most people with a colour vision deficiency
+   cannot separate.
+
+   So: a bold lead sentence that says which it is in words, a left bar and a
+   tinted well so it is visibly not ordinary help text, and role="alert" /
+   role="status" in the markup so it is heard as well as seen. */
+.dsn-hint-bad, .dsn-hint-warn {
+  margin-top: 10px; padding: 8px 11px; border-radius: 8px;
+  border-left: 3px solid currentColor; background: rgba(255, 255, 255, 0.05);
+}
+.dsn-hint-bad { color: #ffb0b0; }
+.dsn-hint-warn { color: #ffd68a; }
+.dsn-hint-bad b, .dsn-hint-warn b { display: block; }
 /* minmax(0, 1fr), not 1fr: a grid track sized 1fr has an automatic MINIMUM of
    its content, so a number input with a default size pushes the column wider
    than the rail and the second one is simply cut off the edge. */
@@ -5417,6 +5467,11 @@ body.own-chrome .fab-top { display: none; }
   padding: 8px 10px; background: #f7f8fb; border-bottom: 1px solid #eef0f4;
 }
 .anp-tbl td { padding: 7px 10px; border-bottom: 1px solid #f4f5f8; }
+.anp-tbl th.anp-num, .anp-tbl td.anp-num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Analytics is nothing but numbers, so every figure in it gets tabular
+   digits whether or not its cell was marked — a chart label that reflows
+   as the value ticks is the same bug in a smaller box. */
+.anp-tbl-bar em, .anp-chart, .anp-kpi-n { font-variant-numeric: tabular-nums; }
 .anp-tbl tr:last-child td { border-bottom: 0; }
 .anp-tbl-k { font-weight: 600; color: var(--ink-900, #0a1130); }
 .anp-tbl-bar { display: flex; align-items: center; gap: 7px; }

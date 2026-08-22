@@ -12,7 +12,7 @@ function mapApiPost(p) {
     category: p.category || "Journal",
     title: p.title, excerpt: p.excerpt || "",
     author: { name: p.authorId || "NGG Editorial", role: "NGG", portrait: p.slug || "ngg" },
-    date: p.publishAt ? new Date(p.publishAt).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : "",
+    date: fmtDate(p.publishAt),
     read: Math.max(2, Math.round(words / 200)) + " min",
     body: p.body || "", api: true,
   };

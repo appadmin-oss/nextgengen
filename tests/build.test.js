@@ -242,6 +242,69 @@ process.on('exit', cleanup);
     const bare = [...new Set((css.match(/var\(\s*--[a-z0-9-]+\s*\)/g) || [])
       .map(x => x.replace(/^var\(\s*|\s*\)$/g, '')))].filter(v => !declared.has(v));
     ok('every custom property used without a fallback is actually declared', bare.length === 0);
+
+    /* ── Two files, one name ────────────────────────────────────────────────
+       The bundle is a plain concatenation into ONE scope — build() says so
+       above, and it is why `inkOn` defined in components.jsx is callable from
+       page-club.jsx without an import. The corollary is easy to forget: two
+       files declaring `function fmtDate` are not two functions. The later one
+       in ORDER silently replaces the earlier one for the entire app, including
+       for the file that defined it first.
+
+       That is not hypothetical — adding shared fmtDate/fmtTime helpers to
+       components.jsx immediately collided with two local ones in
+       page-admin.jsx, and the symptom would have been every date in the
+       product quietly changing format. Nothing else catches it: both files
+       parse, the bundle builds, and one of the two definitions is simply
+       gone. */
+    const orderList = (fs.readFileSync(path.join(ROOT, 'build.js'), 'utf8')
+      .match(/const ORDER = \[([\s\S]*?)\];/) || [, ''])[1]
+      .match(/'([^']+)'/g).map(x => x.replace(/'/g, ''));
+    const owner = {}, collisions = [];
+    for (const f of orderList) {
+      const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+      for (const m of src.matchAll(/^(?:function|const|let|class)\s+([A-Za-z_$][\w$]*)/gm)) {
+        const n = m[1];
+        if (owner[n] && owner[n] !== f) collisions.push(n + ' (' + owner[n] + ' and ' + f + ')');
+        owner[n] = f;
+      }
+    }
+    ok('no top-level name is declared in two bundled files'
+       + (collisions.length ? ' — ' + collisions.slice(0, 5).join(', ') : ''),
+       collisions.length === 0);
+
+    /* ── One locale, chosen and stated ──────────────────────────────────────
+       A bare toLocaleString() renders in the DEVICE's locale, so two
+       coordinators reading the same record see different strings, and an
+       exported PDF carries whatever the exporter's laptop was set to. Worse,
+       the pinned calls disagreed with each other: en-GB in seven places and
+       en-US in three, which makes 08/09/2026 mean two different days inside
+       one product.
+
+       The fix is components.jsx's fmtDate/fmtTime/fmtNum family, all pinned to
+       one locale. This keeps them the only place that decides. */
+    const localeOffenders = [];
+    /* The journal is its own bundle and does not get components.jsx, so it
+       carries its own copy of the family — and is held to the same rule. */
+    for (const f of orderList.concat(['journal/app.jsx'])) {
+      if (f === 'components.jsx' || f === 'journal/app.jsx') {
+        // The two files that DEFINE the formatters may name the locale.
+        const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+        if (!/NGG_LOCALE\s*=\s*["']en-GB["']/.test(src)) localeOffenders.push(f + ' (no pinned locale)');
+        continue;
+      }
+      const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+      src.split('\n').forEach((line, i) => {
+        if (/\/\/\s*locale-ok/.test(line)) return;       // deliberate, and says so
+        if (/toLocale(Date|Time)?String\(\s*(\)|undefined|\[\])/.test(line)) {
+          localeOffenders.push(f + ':' + (i + 1));
+        }
+      });
+    }
+    ok('nothing formats a date or number in the device locale'
+       + (localeOffenders.length ? ' — ' + localeOffenders.slice(0, 6).join(', ')
+          + (localeOffenders.length > 6 ? ' +' + (localeOffenders.length - 6) + ' more' : '') : ''),
+       localeOffenders.length === 0);
     if (bare.length) console.error('    undeclared: ' + bare.join(', '));
 
   } catch (e) {

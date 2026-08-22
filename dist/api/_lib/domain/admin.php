@@ -66,6 +66,31 @@ function admin_members_list(array $p): array {
         foreach ($scopeNames as $nm) $params[] = $nm;
     }
     $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+
+    /* How the page is ordered.
+     *
+     * It was ORDER BY createdAt DESC, full stop, with no way to ask for
+     * anything else — so a coordinator holding four hundred children could not
+     * put them in name order, or find the ones with no centre set, or group
+     * the roster the way the register in their hand is grouped. Newest-first
+     * is a reasonable DEFAULT and a poor only-option.
+     *
+     * An allow-list, not a passthrough: the column name goes into the SQL
+     * text, so a caller must not be able to choose it freely. Anything not on
+     * this list falls back to the default rather than erroring — a stale
+     * bookmark should show the roster, not a failure. */
+    $sortable = ['createdAt' => 'createdAt', 'fullName' => 'fullName', 'memberId' => 'memberId',
+                 'centre' => 'centre', 'status' => 'status', 'type' => 'type', 'role' => 'role'];
+    $sortKey = (string)($p['sort'] ?? '');
+    $sortCol = $sortable[$sortKey] ?? 'createdAt';
+    $dir = strtolower((string)($p['dir'] ?? '')) === 'asc' ? 'ASC' : 'DESC';
+    if ($sortKey === '') $dir = 'DESC';                     // the default is newest first
+    /* Text sorts case-insensitively, because "amina" filed after "Zainab" is
+     * not a sort order anybody asked for, and ties break on the id so paging
+     * cannot show the same person twice or skip one. */
+    $textCols = ['fullName', 'centre', 'status', 'type', 'role'];
+    $orderExpr = in_array($sortCol, $textCols, true) ? "lower($sortCol)" : $sortCol;
+    $orderSql = " ORDER BY $orderExpr $dir, memberId ASC";
     // Accurate total for the filtered set, computed before paging so the client
     // can render "N–M of T" and page controls without loading every row.
     $total = (int) db_row('SELECT COUNT(*) c FROM members' . $whereSql, $params)['c'];
@@ -73,16 +98,23 @@ function admin_members_list(array $p): array {
     // still cap the result so an unbounded table can't be requested by default.
     // Export mode: every matching row (bounded), no paging — for a full CSV.
     if (!empty($p['all'])) {
-        $rows = db_all('SELECT * FROM members' . $whereSql . ' ORDER BY createdAt DESC LIMIT 5000', $params);
+        $rows = db_all('SELECT * FROM members' . $whereSql . $orderSql . ' LIMIT 5000', $params);
         audit('admin.members.export', $g['requester']['memberId'], '', ['count' => count($rows)], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'total' => $total, 'members' => admin_members_with_consent($rows)];
     }
     $pageSize = min(200, max(1, (int)($p['pageSize'] ?? 50)));
     $page = max(1, (int)($p['page'] ?? 1));
     $offset = ($page - 1) * $pageSize;
-    $sql = 'SELECT * FROM members' . $whereSql . ' ORDER BY createdAt DESC LIMIT ? OFFSET ?';
+    $sql = 'SELECT * FROM members' . $whereSql . $orderSql . ' LIMIT ? OFFSET ?';
     $rows = db_all($sql, array_merge($params, [$pageSize, $offset]));
     return ['ok' => true, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize,
+            /* Echoed back so the header can show which column it is on and
+             * which way. The RESOLVED key, not the requested one: a request
+             * for a column that does not exist is served in the default order,
+             * and saying otherwise would have the header draw an arrow beside a
+             * column the rows are not actually sorted by. */
+            'sort' => array_search($sortCol, $sortable, true) ?: 'createdAt',
+            'dir' => strtolower($dir),
             'members' => admin_members_with_consent($rows),
             // How much of the roster is still unrecorded, for the whole filtered
             // set rather than this page. Without it an admin paging through 400

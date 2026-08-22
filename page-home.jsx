@@ -74,7 +74,7 @@ function Hero({ setPage }) {
   // as the fallback so the strip never reads as an empty movement.
   const kpiN = (key, evergreen, pad) => {
     if (!stats || !(stats[key] > 0)) return evergreen;
-    return pad ? String(stats[key]).padStart(2, "0") : stats[key].toLocaleString() + "+";
+    return pad ? String(stats[key]).padStart(2, "0") : fmtNum(stats[key]) + "+";
   };
   const heroKpis = [
     { value: kpiN("activeMembers", "500+"), label: "Teen creators in motion", gold: false },
@@ -630,7 +630,7 @@ function EventsBand({ setPage }) {
 
   const fmt = (iso) => {
     if (!iso) return "";
-    try { return new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); }
+    try { return fmtDate(iso) + " · " + fmtTime(iso); }
     catch (_) { return iso; }
   };
 
@@ -715,7 +715,7 @@ function CentreFindUs({ meta, accent }) {
     </div>
   );
 }
-function sFmt(n) { return (n == null ? 0 : n).toLocaleString("en-US"); }
+function sFmt(n) { return fmtNum(n == null ? 0 : n); }
 function joinNames(arr) { return arr.length <= 1 ? (arr[0] || "") : arr.length === 2 ? arr[0] + " & " + arr[1] : arr.slice(0, -1).join(", ") + " & " + arr[arr.length - 1]; }
 
 /* Poll a public live board.
@@ -1562,7 +1562,7 @@ function StatusPage({ setPage, previewConfig }) {
       </section>
 
       {!d && !err && <div className="container" style={{ padding: "60px 0", textAlign: "center" }}><div className="dash-spinner"/></div>}
-      {err && <div className="container" style={{ padding: "30px 0", textAlign: "center", color: "#e03131" }}>Couldn't load the board — <button onClick={retry} style={{ background: "none", border: "none", color: "#1c2a5e", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</div>}
+      {err && <div role="alert" className="container" style={{ padding: "30px 0", textAlign: "center", color: "#e03131" }}>Couldn't load the board — <button onClick={retry} style={{ background: "none", border: "none", color: "#1c2a5e", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</div>}
       <style>{`@keyframes statuspulse{0%{box-shadow:0 0 0 0 rgba(111,220,157,0.55)}70%{box-shadow:0 0 0 8px rgba(111,220,157,0)}100%{box-shadow:0 0 0 0 rgba(111,220,157,0)}}
 .hero-cols{display:grid}@media(max-width:860px){.hero-cols{grid-template-columns:1fr!important;gap:28px!important}}
 .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}@media(max-width:920px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.kpi-grid{grid-template-columns:1fr}}
@@ -2387,7 +2387,7 @@ function VolunteerStatusPage({ setPage, previewConfig }) {
       </section>
 
       {!d && !err && <div className="container" style={{ padding: "60px 0", textAlign: "center" }}><div className="dash-spinner"/></div>}
-      {err && <div className="container" style={{ padding: "30px 0", textAlign: "center", color: "#e03131" }}>Couldn't load the board — <button onClick={retry} style={{ background: "none", border: "none", color: "#5a3fb0", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</div>}
+      {err && <div role="alert" className="container" style={{ padding: "30px 0", textAlign: "center", color: "#e03131" }}>Couldn't load the board — <button onClick={retry} style={{ background: "none", border: "none", color: "#5a3fb0", textDecoration: "underline", cursor: "pointer" }}>retry</button>.</div>}
       <style>{`@keyframes volpulse{0%{box-shadow:0 0 0 0 rgba(208,255,58,0.6)}70%{box-shadow:0 0 0 8px rgba(208,255,58,0)}100%{box-shadow:0 0 0 0 rgba(208,255,58,0)}}
 .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}@media(max-width:920px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.kpi-grid{grid-template-columns:1fr}}
 .insight-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}@media(max-width:1000px){.insight-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.insight-grid{grid-template-columns:1fr}}

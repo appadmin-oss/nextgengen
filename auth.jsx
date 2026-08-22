@@ -484,7 +484,7 @@ function SignInModal({ seed, onClose, onVerified }) {
               required
               minLength={3}
             />
-            {err && <div className="signin-err">{err}</div>}
+            {err && <div role="alert" className="signin-err">{err}</div>}
             <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || identifier.trim().length < 3}>
               {busy ? "One moment…" : "Continue →"}
             </button>
@@ -525,7 +525,7 @@ function SignInModal({ seed, onClose, onVerified }) {
                 style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink-500)", letterSpacing: "0.06em" }}
               >{showPw ? "HIDE" : "SHOW"}</button>
             </div>
-            {err && <div className="signin-err">{err}</div>}
+            {err && <div role="alert" className="signin-err">{err}</div>}
             <label className="signin-remember">
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}/>
               <span>Stay signed in for 30 days</span>
@@ -583,7 +583,7 @@ function SignInModal({ seed, onClose, onVerified }) {
               onChange={(e) => setOtp(e.target.value.replace(/[^\d ]/g, ""))}
               required
             />
-            {err && <div className="signin-err">{err}</div>}
+            {err && <div role="alert" className="signin-err">{err}</div>}
             <label className="signin-remember">
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}/>
               <span>Stay signed in for 30 days</span>
@@ -621,7 +621,7 @@ function SignInModal({ seed, onClose, onVerified }) {
             <p className="signin-hint" style={{ margin: "4px 0 0", fontSize: 13, color: "var(--ink-500)" }}>
               We'll email a link and a 6-digit code so you can set a new password.
             </p>
-            {err && <div className="signin-err">{err}</div>}
+            {err && <div role="alert" className="signin-err">{err}</div>}
             <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || identifier.trim().length < 3}>
               {busy ? "Sending…" : "Email me a set-password link →"}
             </button>
@@ -682,7 +682,7 @@ function SignInModal({ seed, onClose, onVerified }) {
                 style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink-500)", letterSpacing: "0.06em" }}
               >{showPw ? "HIDE" : "SHOW"}</button>
             </div>
-            {err && <div className="signin-err">{err}</div>}
+            {err && <div role="alert" className="signin-err">{err}</div>}
             <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || newPw.length < 8 || (!resetToken && otp.replace(/\s/g, "").length !== 6)}>
               {busy ? "Setting…" : "Set password & sign in →"}
             </button>

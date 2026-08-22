@@ -399,7 +399,7 @@ function AdminTotpGate({ onPass, member }) {
               onChange={(e) => setCode(e.target.value.replace(/[^\d ]/g, ""))}
               autoFocus
             />
-            {err && <div className="signin-err">{err}</div>}
+            {err && <div role="alert" className="signin-err">{err}</div>}
             <button className="btn btn-primary btn-lg" disabled={busy || code.replace(/\s/g, "").length !== 6}>
               {busy ? "Verifying…" : "Unlock admin →"}
             </button>
@@ -455,7 +455,7 @@ function AdminTopbar({ section, setSection, setPage, member, analyst, toggleAnal
             ✦ Analyst<kbd>⌘J</kbd>
           </button>
         )}
-        {exp && <span className={"admin-session-chip" + (exp.warn ? " warn" : "")} title={sessionExp ? "Your sign-in ends " + new Date(sessionExp * 1000).toLocaleString() : ""}>🔑 {exp.text}</span>}
+        {exp && <span className={"admin-session-chip" + (exp.warn ? " warn" : "")} title={sessionExp ? "Your sign-in ends " + fmtDateTime(sessionExp * 1000) : ""}>🔑 {exp.text}</span>}
         {Array.isArray(member.caps) && member.caps.indexOf("summer") !== -1 && (
           <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("summer-admin")}>Summer ↗</button>
         )}
@@ -611,7 +611,7 @@ function AdminHome({ setSection, hasCap, member }) {
           <h3 className="admin-h3">Recent activity</h3>
           <div className="admin-activity">
             {(o.recent || []).map((r, i) => (
-              <div className="admin-activity-row" key={i}><span className="mono admin-activity-when">{fmtTime(r.at)}</span><span className="mono admin-activity-ev">{r.event}</span><span className="admin-activity-sub">{r.subject || ""}</span></div>
+              <div className="admin-activity-row" key={i}><span className="mono admin-activity-when">{fmtDateTime(r.at)}</span><span className="mono admin-activity-ev">{r.event}</span><span className="admin-activity-sub">{r.subject || ""}</span></div>
             ))}
           </div>
         </div>
@@ -671,15 +671,15 @@ function AdminDashboard() {
       <h3 className="admin-h3" style={{ margin: "0 0 10px" }}>Centre performance</h3>
       {!(d.byCentre || []).length ? <div className="admin-empty">No active centres yet — add them under Registration → Centres.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Centre</th><th>Enrolled</th><th>Present today</th><th>Late</th><th>Attendance</th></tr></thead>
+          <thead><tr><th>Centre</th><th className="admin-num">Enrolled</th><th className="admin-num">Present today</th><th className="admin-num">Late</th><th className="admin-num">Attendance</th></tr></thead>
           <tbody>
             {(d.byCentre || []).map(c => (
               <tr key={c.centreId || c.name}>
                 <td><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: c.color || "#76B043", marginRight: 8 }}/><b>{c.name}</b> <span className="mono admin-cell-sub">{c.code}</span></td>
-                <td className="mono">{c.enrolled}</td>
-                <td className="mono">{c.present}</td>
-                <td className="mono">{c.late ? <span style={{ color: "#e03131" }}>{c.late}</span> : "—"}</td>
-                <td><span style={{ fontWeight: 700, color: rateColor(c.rate) }}>{c.rate}%</span></td>
+                <td className="mono admin-num">{c.enrolled}</td>
+                <td className="mono admin-num">{c.present}</td>
+                <td className="mono admin-num">{c.late ? <span style={{ color: "#e03131" }}>{c.late}</span> : "—"}</td>
+                <td className="admin-num"><span style={{ fontWeight: 700, color: rateColor(c.rate) }}>{c.rate}%</span></td>
               </tr>
             ))}
           </tbody>
@@ -709,6 +709,42 @@ function AdminTile({ n, l, onClick, loading }) {
   );
 }
 
+/* A column header you can order by.
+ *
+ * There are 51 tables and 316 header cells in this file and, until this, not
+ * one sortable column: a coordinator holding four hundred children could not
+ * put the roster in name order, and `aria-sort` did not appear anywhere in the
+ * codebase. Newest-first is a fine default and a poor only-option.
+ *
+ * A real <button> inside the <th>, not a click handler on the cell — a header
+ * that reorders the table is a control, and a control has to be reachable by
+ * keyboard and announce what it does. `aria-sort` on the th is what tells a
+ * screen-reader user which column the table is currently ordered by; the arrow
+ * is the same information for everyone else.
+ *
+ * Clicking the active column flips direction. Clicking a new one starts at the
+ * direction that column is USEFULLY read in: names ascend (A first), dates and
+ * numbers descend (newest, largest first), because that is what somebody means
+ * when they say "sort by joined".
+ */
+function SortTh({ label, col, sort, onSort, numeric, defaultDir }) {
+  const active = sort && sort.col === col;
+  const dir = active ? sort.dir : null;
+  const next = active ? (dir === "asc" ? "desc" : "asc") : (defaultDir || (numeric ? "desc" : "asc"));
+  return (
+    <th className={"admin-sort-th" + (numeric ? " admin-num" : "") + (active ? " is-on" : "")}
+        aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" className="admin-sort-btn" onClick={() => onSort(col, next)}>
+        <span>{label}</span>
+        {/* Hidden from the accessibility tree: aria-sort on the th already
+            says this, and a screen reader announcing "sorted ascending ▲"
+            reads the same fact twice. */}
+        <span className="admin-sort-ind" aria-hidden="true">{active ? (dir === "asc" ? "▲" : "▼") : "↕"}</span>
+      </button>
+    </th>
+  );
+}
+
 // Shared pagination control. Renders "N–M of T" plus prev/next; hides itself
 // when everything fits on one page. `page` is 1-based.
 function Pager({ page, pageSize, total, onPage }) {
@@ -718,7 +754,7 @@ function Pager({ page, pageSize, total, onPage }) {
   const to = Math.min(total, page * pageSize);
   return (
     <div className="admin-pager" role="navigation" aria-label="Pagination">
-      <span className="admin-pager-count mono">{from.toLocaleString()}–{to.toLocaleString()} of {total.toLocaleString()}</span>
+      <span className="admin-pager-count mono">{fmtNum(from)}–{fmtNum(to)} of {fmtNum(total)}</span>
       <div className="admin-pager-btns">
         <button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page">← Prev</button>
         <span className="admin-pager-page mono" aria-current="page">Page {page} / {pages}</span>
@@ -782,9 +818,9 @@ function AdminAttendanceDuty() {
       {board === null ? <div className="dash-spinner"/> :
         board.length === 0 ? <div className="admin-empty">No points logged yet.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>#</th><th>Volunteer</th><th>Level</th><th>Streak</th><th>Points</th></tr></thead>
+          <thead><tr><th className="admin-num">#</th><th>Volunteer</th><th className="admin-num">Level</th><th className="admin-num">Streak</th><th className="admin-num">Points</th></tr></thead>
           <tbody>{board.map(v => (
-            <tr key={v.volunteerId}><td className="mono">{v.rank}</td><td>{v.fullName} <span className="chip" style={{ fontSize: 10 }}>{v.role}</span></td><td>L{v.level} · {v.levelName}</td><td>{v.streak}d</td><td><b>{v.points}</b></td></tr>
+            <tr key={v.volunteerId}><td className="mono admin-num">{v.rank}</td><td>{v.fullName} <span className="chip" style={{ fontSize: 10 }}>{v.role}</span></td><td className="admin-num">L{v.level} · {v.levelName}</td><td className="admin-num">{v.streak}d</td><td className="admin-num"><b>{fmtNum(v.points)}</b></td></tr>
           ))}</tbody>
         </table></div>}
     </div>
@@ -994,7 +1030,16 @@ function AdminMembers() {
   };
   // A failed fetch must surface an error + retry, never leave the spinner
   // hanging forever (previously there was no .catch here). Server-paged.
-  const load = (p = page) => { setErr(""); return NGGApi.admin.members.list(Object.assign({}, filters, { page: p, pageSize: meta.pageSize })).then(r => { setList(r.members || []); setMeta({ total: r.total || 0, pageSize: r.pageSize || 50 }); }).catch(e => setErr(e.code || e.message || "load_failed")); };
+  /* Ordering lives on the SERVER, not in the rendered page: this table is
+     paged, so sorting the fifty rows in hand would order page three of the
+     roster and call it the roster. The column allow-list is in
+     admin_members_list. */
+  const [sort, setSort] = React.useState({ col: "createdAt", dir: "desc" });
+  const load = (p = page, so = sort) => { setErr(""); return NGGApi.admin.members.list(Object.assign({}, filters, { page: p, pageSize: meta.pageSize, sort: so.col, dir: so.dir })).then(r => { setList(r.members || []); setMeta({ total: r.total || 0, pageSize: r.pageSize || 50 }); }).catch(e => setErr(e.code || e.message || "load_failed")); };
+  /* Re-sorting goes back to page one. Keeping the page number would land
+     somebody on "page 4 of a different order", which is a place nobody meant
+     to be and which looks exactly like data going missing. */
+  const onSort = (col, dir) => { const so = { col, dir }; setSort(so); setPage(1); setList(null); load(1, so); };
   // Filter changes reset to page 1; the debounced search does too.
   React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [filters.centre, filters.status, filters.type]);
   React.useEffect(() => {
@@ -1007,7 +1052,7 @@ function AdminMembers() {
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Members {meta.total ? <span className="admin-count mono">{meta.total.toLocaleString()}</span> : null}</h2>
+        <h2 className="admin-h2">Members {meta.total ? <span className="admin-count mono">{fmtNum(meta.total)}</span> : null}</h2>
         <div className="admin-section-actions">
           <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={exporting || !meta.total} title="Exports all members matching the current filters">{exporting ? "Exporting…" : "Export CSV"}</button>
           <button className="btn btn-ghost btn-sm" onClick={() => setPrinting(true)} disabled={!meta.total} title="Print ID cards for every member matching the current filters">Print IDs</button>
@@ -1035,7 +1080,16 @@ function AdminMembers() {
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead><tr>
-              <th>Member</th><th>Type</th><th>Centre</th><th>Status</th><th>Track</th><th></th>
+              <SortTh label="Member" col="fullName" sort={sort} onSort={onSort}/>
+              <SortTh label="Type" col="type" sort={sort} onSort={onSort}/>
+              <SortTh label="Centre" col="centre" sort={sort} onSort={onSort}/>
+              <SortTh label="Status" col="status" sort={sort} onSort={onSort}/>
+              {/* Track is not a column the server can order by — it lives on
+                  the enrolment, not the member row — so it stays a plain
+                  header rather than a control that would do nothing. */}
+              <th>Track</th>
+              <SortTh label="Joined" col="createdAt" sort={sort} onSort={onSort} defaultDir="desc"/>
+              <th><span className="sr-only">Actions</span></th>
             </tr></thead>
             <tbody>
               {list.map(m => (
@@ -1048,10 +1102,11 @@ function AdminMembers() {
                   <td>{m.centre}</td>
                   <td><span className={"chip status-" + m.status}>{memberStatusLabel(m.status)}</span></td>
                   <td>{m.track || "—"}</td>
+                  <td className="mono admin-cell-sub">{fmtDate(m.createdAt)}</td>
                   <td onClick={(e) => e.stopPropagation()}><button className="btn btn-ghost btn-sm" onClick={() => setEditing(m)}>Edit</button></td>
                 </tr>
               ))}
-              {list.length === 0 && <tr><td colSpan="6" className="admin-empty">No members match.</td></tr>}
+              {list.length === 0 && <tr><td colSpan="7" className="admin-empty">No members match.</td></tr>}
             </tbody>
           </table>
           <Pager page={page} pageSize={meta.pageSize} total={meta.total} onPage={goPage}/>
@@ -1136,7 +1191,7 @@ function AdminMemberIdBatch({ filters, total, onClose }) {
         </div>
         <div className="admin-fields">
           <p className="admin-hint">
-            One card for every member the current filters match — <b>{(total || 0).toLocaleString()}</b> in all.
+            One card for every member the current filters match — <b>{fmtNum(total || 0)}</b> in all.
             Narrow the list first (centre, type, status) to print a subset.
           </p>
           <label className="admin-field"><span className="admin-label">Card design</span>
@@ -1172,7 +1227,7 @@ function AdminMemberIdBatch({ filters, total, onClose }) {
             ? <button type="button" className="btn btn-ghost" onClick={() => { cancelRef.current = true; }}>Stop</button>
             : <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>}
           <button type="button" className="btn btn-primary" onClick={start} disabled={!!run || !total}>
-            {run ? "Working…" : "Print " + (total || 0).toLocaleString()}
+            {run ? "Working…" : "Print " + fmtNum(total || 0)}
           </button>
         </div>
       </div>
@@ -4505,7 +4560,7 @@ function AdminEvents() {
             <button key={ev.eventId} className="admin-event-row" onClick={() => setEditing(ev)}>
               <div className="admin-event-date-block">
                 <div>{ev.startAt ? new Date(ev.startAt).getDate() : "—"}</div>
-                <div className="mono">{ev.startAt ? new Date(ev.startAt).toLocaleString("en", { month: "short" }) : ""}</div>
+                <div className="mono">{ev.startAt ? fmtDayMonth(ev.startAt) : ""}</div>
               </div>
               <div>
                 <div className="admin-event-title">{ev.title}</div>
@@ -6454,7 +6509,7 @@ function AdminOps() {
         Acknowledging a fault does not silence it — if it happens again it comes straight back.
         For an uptime monitor, watch <code>/api/public/health.php</code>: it answers 503 when the site cannot serve.
       </p>
-      {err && <p className="admin-error">{err}</p>}
+      {err && <p role="alert" className="admin-error">{err}</p>}
       {!d && !err && <p className="admin-hint">Loading…</p>}
 
       {d && <>
@@ -6634,7 +6689,7 @@ function AdminStaff() {
           Mentors and instructors together, quietest first. These are counts of work filed, not a rating — the point is to notice who has stopped, not to rank anyone.
           {d && d.scope === "lead" && " You're seeing your own centre."}
         </p>
-        {err && <p className="admin-error">{err}</p>}
+        {err && <p role="alert" className="admin-error">{err}</p>}
         {!d && !err && <p className="admin-hint">Loading…</p>}
         {d && (
           <div className="admin-chips" style={{ marginBottom: 12 }}>
@@ -6972,7 +7027,7 @@ function AdminAudit() {
         <h2 className="admin-h2">Audit trail <span className="chip chip-gold" style={{ fontSize: 11, verticalAlign: "middle" }}>super admin</span></h2>
         <button className="btn btn-ghost btn-sm" disabled={!rows || !rows.length} onClick={exportCsv}>Export CSV</button>
       </div>
-      <p className="admin-hint">Every action taken by admins and managers, most recent first. This accountability record is visible to super admins only.{data && data.total ? " " + data.total.toLocaleString() + " entries." : ""}</p>
+      <p className="admin-hint">Every action taken by admins and managers, most recent first. This accountability record is visible to super admins only.{data && data.total ? " " + fmtNum(data.total) + " entries." : ""}</p>
       <div className="admin-filters">
         <select className="admin-select" value={f.actor} onChange={e => setF(o => ({ ...o, actor: e.target.value }))}>
           <option value="">All actors</option>
@@ -6992,7 +7047,7 @@ function AdminAudit() {
           <tbody>
             {rows.map((r, i) => (
               <tr key={i}>
-                <td className="mono">{fmtTime(r.at)}</td>
+                <td className="mono">{fmtDateTime(r.at)}</td>
                 <td>{r.actorName || r.actorId || "system"}</td>
                 <td>{r.actorRole ? <span className={"chip " + roleChip(r.actorRole)} style={{ fontSize: 10 }}>{r.actorRole}</span> : <span className="mono" style={{ color: "var(--ink-400)" }}>—</span>}</td>
                 <td className="mono">{r.event}</td>
@@ -7135,7 +7190,7 @@ function AdminAnchor() {
 
       {draft && !dirty && (
         <div className="admin-anchor-restore">
-          <span>↩ You have an unsaved draft{draft.savedAt ? " from " + fmtTime(draft.savedAt) : ""}.</span>
+          <span>↩ You have an unsaved draft{draft.savedAt ? " from " + fmtDateTime(draft.savedAt) : ""}.</span>
           <span style={{ flex: 1 }}/>
           <button className="btn btn-primary btn-sm" onClick={restoreDraft}>Restore draft</button>
           <button className="btn btn-ghost btn-sm" onClick={clearDraft}>Discard</button>
@@ -10402,8 +10457,15 @@ function FieldUpload({ label, value, onChange, kind, accept, placeholder }) {
   );
 }
 
-function fmtDate(d) { if (!d) return ""; const x = new Date(d); return x.toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" }); }
-function fmtTime(d) { if (!d) return ""; const x = new Date(d); return x.toLocaleString("en-GB"); }
+/* fmtDate and fmtTime used to be declared here, formatting to en-GB by hand.
+   They are in components.jsx now, with the rest of them, because the bundle is
+   a plain concatenation into ONE scope: two files declaring `function fmtDate`
+   is not two functions, it is the later file silently replacing the earlier
+   one for the whole app. The build test fails on a duplicate top-level name
+   now, which is how this was found.
+
+   The old local fmtTime returned a DATE AND a time ("22/08/2026, 14:30"), so
+   its three callers say fmtDateTime rather than fmtTime, which is time alone. */
 
 // ── Check-in kiosk (Phase 2): camera + handheld/USB scanner + offline queue ──
 const KIOSK_Q = "ngg_summer_kiosk_q";
@@ -10551,7 +10613,7 @@ function SummerKiosk({ onCheckin }) {
                   aria-label={"Switch to the " + (camFacing === "environment" ? "front" : "back") + " camera"}
                   onClick={() => setCamFacing(f => (f === "environment" ? "user" : "environment"))}>🔄</button>
               )}
-              {camErr && <div className="summer-cam-err">{camErr}</div>}
+              {camErr && <div role="alert" className="summer-cam-err">{camErr}</div>}
             </div>
           ) : (
             <form onSubmit={submitManual} className="summer-scan-form">
@@ -10636,7 +10698,7 @@ const STATE_CHIP = {
   suspended: { label: "Suspended", cls: "status-archived" },
   evicted:   { label: "Evicted",   cls: "status-archived" },
 };
-const naira = (n) => "₦" + Number(n || 0).toLocaleString();
+const naira = (n) => fmtMoney(n);
 
 function PolicyStateChip({ state }) {
   const s = STATE_CHIP[state] || STATE_CHIP.clear;
@@ -11596,9 +11658,9 @@ function SummerAttendance() {
           <div className="admin-table-wrap"><table className="admin-table att-table">
             <thead><tr>
               <th>Volunteer</th><th>Role</th>
-              <th>Days in<span className="att-th-sub">of their own open days</span></th>
-              <th>Rate<span className="att-th-sub">{win.ranged ? "in this range" : "since they joined"}</span></th>
-              <th>On time</th><th>Streak</th>
+              <th className="admin-num">Days in<span className="att-th-sub">of their own open days</span></th>
+              <th className="admin-num">Rate<span className="att-th-sub">{win.ranged ? "in this range" : "since they joined"}</span></th>
+              <th className="admin-num">On time</th><th className="admin-num">Streak</th>
               <th>Pattern<span className="att-th-sub">oldest → newest</span></th>
               <th>Last seen</th><th>Today</th>
             </tr></thead>
@@ -11609,11 +11671,11 @@ function SummerAttendance() {
                 {/* Their own denominator: programme days since THEY joined, not
                     the whole window — a volunteer who started in week four did
                     not miss weeks one to three. */}
-                <td className="mono">{r.present}/{r.expected}{r.joined ? <div style={{ fontSize: 10.5, color: "var(--ink-500)" }}>from {r.joined}</div> : null}</td>
+                <td className="mono admin-num">{r.present}/{r.expected}{r.joined ? <div style={{ fontSize: 10.5, color: "var(--ink-500)" }}>from {r.joined}</div> : null}</td>
                 <td style={{ minWidth: 120 }}>{r.rate == null ? <span className="mono" style={{ color: "var(--ink-500)" }}>no days yet</span>
-                  : <div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: Math.min(100, r.rate) + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono">{r.rate}%</span></div>}</td>
-                <td className="mono" style={{ color: (r.onTimePct != null && r.onTimePct < 80) ? "var(--gold-700,#7a5600)" : undefined }}>{r.onTimePct == null ? "—" : r.onTimePct + "%"}</td>
-                <td className="mono">{r.streak ? r.streak : "—"}</td>
+                  : <div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: Math.min(100, r.rate) + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono admin-num">{r.rate}%</span></div>}</td>
+                <td className="mono admin-num" style={{ color: (r.onTimePct != null && r.onTimePct < 80) ? "var(--gold-700,#7a5600)" : undefined }}>{r.onTimePct == null ? "—" : r.onTimePct + "%"}</td>
+                <td className="mono admin-num">{r.streak ? r.streak : "—"}</td>
                 <td><AttPattern pattern={r.pattern} missedRun={r.missedRun}/>
                   {r.stopped ? <div className="mono att-stopped">{attMissedLabel(r)}</div> : null}</td>
                 <td className="mono">{r.lastSeen || "—"}</td>
@@ -11640,9 +11702,9 @@ function SummerAttendance() {
             hold the window in their head to know what 62% was 62% of. */}
         <thead><tr>
           <th>Child</th><th>Track</th>
-          <th>Days in<span className="att-th-sub">of {a.sessionDays} open</span></th>
-          <th>Rate<span className="att-th-sub">{win.ranged ? "in this range" : "this term"}</span></th>
-          <th>Late</th><th>Standing</th>
+          <th className="admin-num">Days in<span className="att-th-sub">of {a.sessionDays} open</span></th>
+          <th className="admin-num">Rate<span className="att-th-sub">{win.ranged ? "in this range" : "this term"}</span></th>
+          <th className="admin-num">Late</th><th>Standing</th>
           <th>Pattern<span className="att-th-sub">oldest → newest</span></th>
           <th>Last seen</th><th>Today</th>
         </tr></thead>
@@ -11652,12 +11714,12 @@ function SummerAttendance() {
             <td>{r.track || "—"}</td>
             {/* A child who has never once appeared is a different problem from
                 one attending badly, and 0/10 read the same as 3/10 at a glance. */}
-            <td className="mono">{(r.present || 0) === 0
+            <td className="mono admin-num">{(r.present || 0) === 0
               ? <b style={{ color: "var(--coral)" }}>never</b>
               : <>{r.present}<span style={{ color: "var(--ink-500)" }}>/{a.sessionDays}</span></>}
               {r.halfDays ? <span title={r.halfDays + " half-day(s) — missed the Musing Period"} style={{ color: "var(--ink-500)" }}> ·{r.halfDays}½</span> : null}</td>
-            <td style={{ minWidth: 120 }}><div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: Math.min(100, r.rate) + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono">{r.rate}%</span></div></td>
-            <td className="mono">{r.lates ? r.lates : "—"}</td>
+            <td style={{ minWidth: 120 }}><div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: Math.min(100, r.rate) + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono admin-num">{r.rate}%</span></div></td>
+            <td className="mono admin-num">{r.lates ? r.lates : "—"}</td>
             <td>{r.state && r.state !== "clear" ? <PolicyStateChip state={r.state}/> : <span className="mono" style={{ color: "var(--ink-500)" }}>—</span>}</td>
             <td><AttPattern pattern={r.pattern} missedRun={r.missedRun}/>
               {r.stopped ? <div className="mono att-stopped">{attMissedLabel(r)}</div>
@@ -11844,7 +11906,7 @@ function PortalLogin({ brand, onVerified }) {
                 <button type="button" onClick={() => setShowPw(v => !v)} aria-label={showPw ? "Hide password" : "Show password"}
                   style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink-500)", letterSpacing: "0.06em" }}>{showPw ? "HIDE" : "SHOW"}</button>
               </div>
-              {err && <div className="signin-err">{err}</div>}
+              {err && <div role="alert" className="signin-err">{err}</div>}
               <button className="btn btn-primary btn-lg" type="submit" disabled={busy || !identifier.trim() || !password}>{busy ? "Signing in…" : "Sign in →"}</button>
               <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-id"); }}>Email me a sign-in code instead</button>
             </form>
@@ -11853,7 +11915,7 @@ function PortalLogin({ brand, onVerified }) {
             <form onSubmit={requestCode}>
               <input className="signin-input" type="text" autoComplete="username" placeholder="NGG-2025-0042  or  you@email.com"
                 value={identifier} onChange={e => setIdentifier(e.target.value)} required minLength={3} autoFocus/>
-              {err && <div className="signin-err">{err}</div>}
+              {err && <div role="alert" className="signin-err">{err}</div>}
               <button className="btn btn-primary btn-lg" type="submit" disabled={busy || !identifier.trim()}>{busy ? "Sending…" : "Send me a code →"}</button>
               <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("password"); }}>← Back to password</button>
             </form>
@@ -11862,7 +11924,7 @@ function PortalLogin({ brand, onVerified }) {
             <form onSubmit={verifyOtp}>
               <input className="signin-input signin-otp" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={7}
                 pattern="[0-9 ]*" placeholder="••• •••" value={otp} onChange={e => setOtp(e.target.value.replace(/[^\d ]/g, ""))} required autoFocus/>
-              {err && <div className="signin-err">{err}</div>}
+              {err && <div role="alert" className="signin-err">{err}</div>}
               <button className="btn btn-primary btn-lg" type="submit" disabled={busy || otp.replace(/\s/g, "").length !== 6}>{busy ? "Verifying…" : "Sign in →"}</button>
               <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-id"); setOtp(""); }}>← Back to send a code</button>
             </form>
@@ -11937,4 +11999,8 @@ function ClubAdminPortal({ setPage }) {
 /* AdminVolunteers is exported so the roster can be mounted on its own. It
    needs nothing but its one data call — no auth, no shell — and the console
    around it is what makes the rest of the admin tree expensive to test. */
-Object.assign(window, { AdminPage, SummerAdminPortal, ClubAdminPortal, AdminVolunteers, SummerGates, AdminPromos });
+Object.assign(window, { AdminPage, SummerAdminPortal, ClubAdminPortal, AdminVolunteers, SummerGates, AdminPromos,
+  // Exported for tests/admin-table.test.js: a sortable header is a control
+  // with keyboard, focus, target-size and aria-sort obligations, and none of
+  // those can be asserted by rendering the whole admin shell.
+  SortTh, Pager });

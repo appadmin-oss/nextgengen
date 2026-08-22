@@ -356,7 +356,7 @@ function CentreDetail({ slug, go, setPage }) {
                         <div className="centre-top-name">{s.first} {s.initial}{s.track ? <span className="centre-top-track"> · {s.track}</span> : null}</div>
                         <div className="mono centre-top-sub">Level {s.level} · {s.badges} badge{s.badges === 1 ? "" : "s"}{s.streak ? " · " + s.streak + "-day streak" : ""}</div>
                       </div>
-                      <div className="centre-top-xp"><div className="centre-top-xp-n">{s.xp.toLocaleString()}</div><div className="mono centre-top-xp-l">XP</div></div>
+                      <div className="centre-top-xp"><div className="centre-top-xp-n">{fmtNum(s.xp)}</div><div className="mono centre-top-xp-l">XP</div></div>
                     </div>
                   ))}
                 </div>

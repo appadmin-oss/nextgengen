@@ -269,6 +269,63 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     ok('…and a name that only fits at the minimum size, from the REAL roster',
       /only fits at the minimum size/.test(flight.longName));
 
+    /* ── 4b. …including type nobody can read ──────────────────────────────
+       Preflight knew whether the QR would scan and whether type sat too near
+       the trim. It did not know whether the type was LEGIBLE, so a volunteer
+       card with its role line printed in the tier colour on a pill filled with
+       the tier colour passed with zero errors and would publish. One wrong pick
+       in a colour picker, 240 unreadable cards. */
+    const ink = await page.evaluate(() => {
+      const base = window.TPL_SYSTEM.find(x => x.id === 'sys-volunteer-front');
+      const clone = () => JSON.parse(JSON.stringify(base));
+      const errs = (t, rows) => window.tplPreflight(t, rows || [], window.TPL_REQUIRED.volunteer)
+        .filter(p => p.level === 'error').map(p => p.message).join(' | ');
+      const warns = (t, rows) => window.tplPreflight(t, rows || [], window.TPL_REQUIRED.volunteer)
+        .filter(p => p.level === 'warn').map(p => p.message).join(' | ');
+
+      // The exact mistake: the role line inked with the pill's own colour.
+      const same = clone();
+      same.elements.find(e => e.id === 'role').color = '{{tier.color}}';
+
+      // Literal, and decidable with no roster at all: near-white on the panel.
+      const pale = clone();
+      pale.elements.find(e => e.id === 'surname').color = '#fdfdfd';
+
+      // Only the DATA can answer this one: a tier colour that the template's
+      // hard-coded ink does not read on.
+      const bound = clone();
+      // Chosen to land in the WARN band against this tier colour, so the check
+      // proves the binding was resolved rather than that anything grey fails.
+      bound.elements.find(e => e.id === 'role').color = '#a4a4a4';
+      const boundRow = [{ surname: 'B', token: 'T', displayId: 'X',
+                          centre: { color: '#00225F' }, tier: { color: '#8A1538' } }];
+
+      // Type over a PHOTOGRAPH is unmeasurable, by us and by WCAG. It must not
+      // be reported, or the check becomes noise people learn to skip past.
+      const onPhoto = clone();
+      const photo = onPhoto.elements.find(e => e.id === 'photo');
+      onPhoto.elements.push({ id: 'over', type: 'text', x: photo.x + 10, y: photo.y + 10,
+                              w: 100, h: 30, text: 'OVER', color: '#ffffff' });
+
+      return { same: errs(same), pale: errs(pale), bound: warns(bound, boundRow),
+               photo: errs(onPhoto) + ' | ' + warns(onPhoto) };
+    });
+    ok('preflight refuses text inked with the colour it sits on',
+      /same colour as what it sits on/.test(ink.same));
+    ok('…and text measured too pale against the panel under it',
+      /measures 1\.0\d:1/.test(ink.pale) && /cannot be read/.test(ink.pale));
+    ok('…and warns on a pair only the roster could resolve',
+      /measures 3\.\d\d:1/.test(ink.bound) && /floor for text/.test(ink.bound));
+    ok('…and says nothing about type over a photograph, which nobody can measure',
+      !/OVER/.test(ink.photo));
+    const sysErrs = await page.evaluate(() => window.TPL_SYSTEM
+      .filter(t => t.kind !== 'graphic')
+      .map(t => t.id + ': ' + window.tplPreflight(t, [], window.TPL_REQUIRED[t.kind] || [])
+        .filter(p => p.level === 'error').map(p => p.message).join(' | '))
+      .filter(l => !/: $/.test(l)));
+    ok('…while every card we already print still passes it'
+       + (sysErrs.length ? ' — ' + sysErrs.join('  //  ') : ''), sysErrs.length === 0);
+
     /* ── 5. One renderer, three scales ──────────────────────────────────────
        The export is the same function that drew the preview, at a multiplier —
        not a screenshot of the screen. Asserted by rendering the same template at
