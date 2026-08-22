@@ -82,6 +82,9 @@ function admin_tournament_create(array $p): array {
     if ($format === 'arena' && !chess_clock_is_live($tc)) return ['ok' => false, 'error' => 'arena_needs_a_clock'];
     $variant = (string)($p['variant'] ?? 'standard');
     if (!chess_variant_valid($variant)) return ['ok' => false, 'error' => 'bad_variant'];
+    // A variant that changes what winning is cannot move a rating built on
+    // standard chess. See chess_variant_rateable().
+    $rated = !empty($p['rated']) && chess_variant_rateable($variant);
 
     $kinds = array_values(array_intersect((array)($p['kinds'] ?? []), DIRECTORY_KINDS));
     $centres = array_values(array_filter(array_map('strval', (array)($p['centres'] ?? []))));
@@ -94,7 +97,7 @@ function admin_tournament_create(array $p): array {
         'description' => mb_substr(trim((string)($p['description'] ?? '')), 0, 600),
         'programme' => $programme, 'status' => 'open',
         'format' => $format, 'timeControl' => $tc, 'variant' => $variant,
-        'rated' => !empty($p['rated']) ? 1 : 0,
+        'rated' => $rated ? 1 : 0,
         'totalRounds' => $rounds,
         'centres' => $centres ? json_encode($centres, JSON_UNESCAPED_SLASHES) : '',
         'eligibility' => json_encode([

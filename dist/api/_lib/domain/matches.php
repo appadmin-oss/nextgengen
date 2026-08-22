@@ -206,7 +206,10 @@ function match_invite(array $p): array {
         // The invited player has not accepted, so nobody is on move yet.
         'turnPlayer' => '', 'ply' => 0,
         'tournamentId' => (string)($p['tournamentId'] ?? ''),
-        'rated' => !empty($p['rated']) ? 1 : 0,
+        // A variant that changes what winning IS cannot move a rating built on
+        // standard chess. See chess_variant_rateable().
+        'rated' => (!empty($p['rated']) && (!function_exists('chess_variant_rateable')
+                    || chess_variant_rateable((string)($p['variant'] ?? 'standard')))) ? 1 : 0,
         /* The clock is set when the game is CREATED and started when it is
          * accepted, so the terms cannot change between agreeing to a blitz
          * game and sitting down to one. */
@@ -301,8 +304,13 @@ function match_move(array $p): array {
 
     /* Threefold repetition is a property of the GAME, not of the position, so
      * the counts are rebuilt from the move list rather than stored. */
+    /* Seeded with the position this game actually STARTED from, not the
+     * standard one: a Chess960 game begins somewhere else, and counting a
+     * position that never occurred towards threefold is wrong even where it
+     * happens to be unreachable. */
     $counts = [];
-    $startPos = chess_parse_fen(match_initial_state('chess'));
+    $startFen = trim((string)($r['startFen'] ?? ''));
+    $startPos = chess_parse_fen($startFen !== '' ? $startFen : match_initial_state('chess'));
     if ($startPos) $counts[chess_repetition_key($startPos)] = 1;
     foreach (db_all('SELECT stateAfter FROM match_moves WHERE matchId = ? ORDER BY ply', [(string)$r['matchId']]) as $mv) {
         $pos = chess_parse_fen((string)$mv['stateAfter']);

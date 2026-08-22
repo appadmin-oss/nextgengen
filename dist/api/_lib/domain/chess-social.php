@@ -266,6 +266,13 @@ function chess_challenge_create(array $p): array {
     if (!in_array($colour, ['white', 'black', 'random'], true)) return ['ok' => false, 'error' => 'bad_colour'];
     $variant = (string)($p['variant'] ?? 'standard');
     if (!chess_variant_valid($variant)) return ['ok' => false, 'error' => 'bad_variant'];
+    /* A variant that changes what winning IS cannot move a rating built on
+     * standard chess — see chess_variant_rateable(). Corrected here rather
+     * than refused, because "rated" is a checkbox somebody ticked before they
+     * picked the variant, and failing the whole challenge over it would be a
+     * dead end where a quiet correction is the truthful outcome. The client
+     * says so too; this is the half that cannot be bypassed. */
+    $rated = !empty($p['rated']) && chess_variant_rateable($variant);
 
     $toId = trim((string)($p['opponentId'] ?? ''));
     $toName = '';
@@ -297,7 +304,7 @@ function chess_challenge_create(array $p): array {
         'challengeId' => $id, 'fromId' => $meId, 'fromName' => (string)$me['fullName'],
         'toId' => $toId, 'toName' => $toName,
         'timeControl' => $tc, 'colourPref' => $colour, 'variant' => $variant,
-        'rated' => !empty($p['rated']) ? 1 : 0,
+        'rated' => $rated ? 1 : 0,
         'channelSlug' => (string)($p['channelSlug'] ?? ''),
         'status' => 'open', 'createdAt' => $now,
         'expiresAt' => date('Y-m-d H:i:s', time() + CHESS_CHALLENGE_TTL),
@@ -305,7 +312,7 @@ function chess_challenge_create(array $p): array {
 
     if ($toId !== '' && function_exists('community_notify')) {
         community_notify($toId, $meId, 'chess.challenge', $me['fullName'] . ' challenged you to chess',
-            chess_terms_line($tc, $colour, !empty($p['rated'])), true, '');
+            chess_terms_line($tc, $colour, $rated), true, '');
     }
     return ['ok' => true, 'challengeId' => $id, 'expiresAt' => date('Y-m-d H:i:s', time() + CHESS_CHALLENGE_TTL)];
 }

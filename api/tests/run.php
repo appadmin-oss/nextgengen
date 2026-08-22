@@ -14091,6 +14091,68 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             && isset($vd['positionId']);
     })());
 
+    /* ── What a variant may move ────────────────────────────────────────────
+       One Elo pool cannot measure two different games. Chess960 is the same
+       game with the opening book removed, so it rates honestly; the two that
+       change what WINNING is do not. The rule lives in one function and is
+       enforced on every path that can create a game, because a rule enforced
+       on two of three paths is a bug waiting for the third. */
+    chk('a variant that changes the objective cannot move a rating',
+        chess_variant_rateable('standard') && chess_variant_rateable('chess960')
+        && !chess_variant_rateable('kingofthehill') && !chess_variant_rateable('threecheck'));
+    chk('…and the rule travels with the variant, so a screen renders it rather than a copy',
+        chess_variant_meta()['chess960']['rated'] === true
+        && chess_variant_meta()['threecheck']['rated'] === false);
+    /* Their own pair: VAR-A and VAR-B are already in a live Chess960 game
+       above, and both the challenge layer and match_invite refuse a second
+       live game between the same two people. */
+    foreach ([['VAR-C', 'Variant Three'], ['VAR-D', 'Variant Four'], ['VAR-E', 'Variant Five'], ['VAR-F', 'Variant Six']] as [$vid, $vname]) {
+        db_exec("DELETE FROM members WHERE memberId = ?", [$vid]);
+        db_insert('members', ['memberId' => $vid, 'fullName' => $vname, 'email' => strtolower($vid) . '@example.com',
+            'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'member', 'status' => 'active',
+            'createdAt' => $nowVar, 'updatedAt' => $nowVar]);
+    }
+    chk('a rated King of the Hill challenge is quietly made casual, not refused', (function () {
+        $r = chess_challenge_create(['playerId' => 'VAR-C', 'opponentId' => 'VAR-D',
+            'timeControl' => '5+3', 'variant' => 'kingofthehill', 'rated' => true]);
+        if (empty($r['ok'])) return false;
+        $row = db_row('SELECT rated, variant FROM chess_challenges WHERE challengeId = ?', [$r['challengeId']]);
+        db_exec('DELETE FROM chess_challenges WHERE challengeId = ?', [$r['challengeId']]);
+        return (int)$row['rated'] === 0 && (string)$row['variant'] === 'kingofthehill';
+    })());
+    chk('…while a rated Chess960 challenge stays rated', (function () {
+        $r = chess_challenge_create(['playerId' => 'VAR-C', 'opponentId' => 'VAR-D',
+            'timeControl' => '5+3', 'variant' => 'chess960', 'rated' => true]);
+        if (empty($r['ok'])) return false;
+        $row = db_row('SELECT rated FROM chess_challenges WHERE challengeId = ?', [$r['challengeId']]);
+        db_exec('DELETE FROM chess_challenges WHERE challengeId = ?', [$r['challengeId']]);
+        return (int)$row['rated'] === 1;
+    })());
+    chk('a direct invite is held to the same rule', (function () {
+        $m = match_invite(['playerId' => 'VAR-E', 'game' => 'chess', 'opponentId' => 'VAR-F',
+                           'timeControl' => '10+0', 'variant' => 'threecheck', 'rated' => true])['matchId'] ?? '';
+        if ($m === '') return false;
+        $rated = (int)db_row('SELECT rated FROM match_games WHERE matchId = ?', [$m])['rated'];
+        db_exec('DELETE FROM match_games WHERE matchId = ?', [$m]);
+        return $rated === 0;
+    })());
+    chk('…and so is a tournament', (function () {
+        $t = admin_tournament_create(['requesterId' => 'NGG-2025-0099', 'name' => 'Hill Cup',
+            'format' => 'swiss', 'timeControl' => '10+0', 'variant' => 'kingofthehill', 'rated' => true]);
+        if (empty($t['ok'])) return false;
+        $row = db_row('SELECT rated, variant FROM tournaments WHERE tournamentId = ?', [$t['tournamentId']]);
+        db_exec('DELETE FROM tournaments WHERE tournamentId = ?', [$t['tournamentId']]);
+        return (int)$row['rated'] === 0 && (string)$row['variant'] === 'kingofthehill';
+    })());
+
+    /* Threefold counts the positions of THIS game. A Chess960 game does not
+       begin at the standard position, so seeding the count with it counts a
+       position that never occurred. */
+    chk('repetition is counted from the position the game actually started at', (function () {
+        $src = file_get_contents(__DIR__ . '/../_lib/domain/matches.php');
+        return strpos($src, "\$startFen !== '' ? \$startFen : match_initial_state('chess')") !== false;
+    })());
+
     /* ── A move can be retried safely ───────────────────────────────────────
        A move used to be identified only by its ply. A client that sent one,
        lost the response and retried either collided with UNIQUE(matchId, ply)

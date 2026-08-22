@@ -3137,6 +3137,27 @@ const CM_TIME_CONTROLS = [
   { id: "1day", name: "1 day", kind: "Daily" },
 ];
 
+/* The variants, in the words a twelve-year-old reads once and understands.
+   `rated` mirrors chess_variant_rateable() on the server: Chess960 is the same
+   game with the opening book removed, so it moves a rating honestly; the two
+   that change what WINNING is do not, because one number cannot measure two
+   different games. The server corrects a request that disagrees — this list is
+   what lets the screen say so before anybody is surprised by it. */
+const CM_VARIANTS = [
+  { id: "standard", name: "Standard", short: "Ordinary chess", rated: true,
+    rule: "The game as it is played everywhere." },
+  { id: "chess960", name: "Chess960", short: "Shuffled back row", rated: true,
+    rule: "The back row is shuffled — the same for both of you. Nothing to memorise, so nobody can arrive prepared." },
+  { id: "kingofthehill", name: "King of the Hill", short: "King to the middle", rated: false,
+    rule: "Walk your king onto d4, d5, e4 or e5 and you win. Checkmate still wins too." },
+  { id: "threecheck", name: "Three-check", short: "Check three times", rated: false,
+    rule: "Check your opponent three times and you win. Checkmate still wins too." },
+];
+function cmVariant(id) { return CM_VARIANTS.filter(v => v.id === (id || "standard"))[0] || CM_VARIANTS[0]; }
+
+/** The four squares that win King of the Hill. */
+const CM_HILL = ["d4", "d5", "e4", "e5"];
+
 function cmSeenAgo(iso, online) {
   if (online) return "online";
   if (!iso) return "not played yet";
@@ -3617,7 +3638,7 @@ function CmTrnCreate({ onBack, onCreated }) {
   const [step, setStep] = React.useState(0);
   const [busy, setBusy] = React.useState(false);
   const [f, setF] = React.useState({
-    format: "swiss", timeControl: "10+0", rated: true, totalRounds: 0,
+    format: "swiss", timeControl: "10+0", variant: "standard", rated: true, totalRounds: 0,
     kinds: ["member", "student", "volunteer", "staff"],
     centres: [], minRating: 0, maxRating: 0,
     programme: "", name: "", description: "",
@@ -3650,7 +3671,8 @@ function CmTrnCreate({ onBack, onCreated }) {
     try {
       const r = await NGGApi.member.tournaments.create({
         name: f.name.trim(), description: f.description.trim(),
-        format: f.format, timeControl: f.timeControl, rated: f.rated,
+        format: f.format, timeControl: f.timeControl, variant: f.variant,
+        rated: f.rated && cmVariant(f.variant).rated,
         totalRounds: f.totalRounds || 0, programme: f.programme,
         kinds: f.kinds, centres: f.centres,
         minRating: f.minRating || 0, maxRating: f.maxRating || 0,
@@ -3719,11 +3741,38 @@ function CmTrnCreate({ onBack, onCreated }) {
               {f.timeControl === "1day" && <p className="trn-hint">Daily games use almost no data. A move is smaller than a text message.</p>}
             </fieldset>
 
-            <label className="trn-switch">
-              <input type="checkbox" checked={f.rated} onChange={e => set({ rated: e.target.checked })}/>
+            <fieldset className="trn-fs">
+              <legend className="trn-legend">Which game?</legend>
+              {/* Its own class rather than the time-control tile's, so the two
+                  groups of tiles are never mistaken for one another — by a
+                  stylesheet, by a test, or by somebody reading this later. */}
+              <div className="trn-vts">
+                {CM_VARIANTS.map(x => (
+                  <label key={x.id} className={"trn-vt" + (f.variant === x.id ? " is-on" : "")}>
+                    <input type="radio" name="trn-variant" className="sr-only" checked={f.variant === x.id}
+                           onChange={() => set({ variant: x.id })}/>
+                    <span className="trn-vt-n">{x.name}</span>
+                    <span className="trn-vt-s">{x.short}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="trn-hint">{cmVariant(f.variant).rule}</p>
+            </fieldset>
+
+            {/* A variant that changes what winning IS cannot move a rating
+                built on standard chess, so the switch is locked rather than
+                left to be silently overruled by the server. */}
+            <label className={"trn-switch" + (cmVariant(f.variant).rated ? "" : " is-locked")}>
+              <input type="checkbox" checked={f.rated && cmVariant(f.variant).rated}
+                     disabled={!cmVariant(f.variant).rated}
+                     onChange={e => set({ rated: e.target.checked })}/>
               <span>
                 <b>Rated</b>
-                <span className="trn-hint">Results move everybody's club rating. Turn it off for a fun event.</span>
+                <span className="trn-hint">
+                  {cmVariant(f.variant).rated
+                    ? "Results move everybody's club rating. Turn it off for a fun event."
+                    : cmVariant(f.variant).name + " is always casual — one rating cannot measure two different games."}
+                </span>
               </span>
             </label>
 
@@ -3797,7 +3846,9 @@ function CmTrnCreate({ onBack, onCreated }) {
               <div className="trn-review-h">You are about to host</div>
               <p className="trn-review-b">
                 <b>{f.name.trim() || "an unnamed tournament"}</b> — a {meta[f.format].name.toLowerCase()} at{" "}
-                {cmTcName(f.timeControl)}, {f.rated ? "rated" : "casual"}, open to{" "}
+                {cmTcName(f.timeControl)}
+                {f.variant !== "standard" ? ", played as " + cmVariant(f.variant).name : ""},{" "}
+                {f.rated && cmVariant(f.variant).rated ? "rated" : "casual"}, open to{" "}
                 {f.kinds.length === TRN_KINDS.length ? "everybody" : f.kinds.map(k => (TRN_KINDS.find(x => x.id === k) || {}).label).join(", ").toLowerCase()}
                 {f.programme ? " in the " + (f.programme === "ngg" ? "NGG Club" : "Summer School") : ""}
                 {f.minRating || f.maxRating ? ", rated " + (f.minRating || "any") + "–" + (f.maxRating || "any") : ""}.
@@ -4250,16 +4301,23 @@ function CmChessSearch({ onBack, onChallenge, challengeFor, onSent, onCancel, on
 function CmChessChallengeSheet({ player, onClose, onSent }) {
   const [tc, setTc] = React.useState("1day");
   const [colour, setColour] = React.useState("random");
+  const [variant, setVariant] = React.useState("standard");
   const [rated, setRated] = React.useState(true);
   const [channel, setChannel] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
 
+  const v = cmVariant(variant);
+  // Whether this game CAN be rated is a property of the variant, not a
+  // preference. The server enforces it; the sheet says so first.
+  const canRate = v.rated;
+
   const send = () => {
     setBusy(true); setErr("");
     NGGApi.member.match.challenge({
       opponentId: player.open ? "" : player.id,
-      timeControl: tc, colourPref: colour, rated: rated, channelSlug: channel,
+      timeControl: tc, colourPref: colour, variant: variant,
+      rated: rated && canRate, channelSlug: channel,
     })
       .then(() => { toast.success(player.open ? "Posted. Anyone can take it." : "Challenge sent."); onSent(); })
       .catch(e => { setErr(cmChessError(e)); setBusy(false); });
@@ -4295,9 +4353,28 @@ function CmChessChallengeSheet({ player, onClose, onSent }) {
         ))}
       </div>
 
-      <label className="cmm-check">
-        <input type="checkbox" checked={rated} onChange={e => setRated(e.target.checked)}/>
-        <span>Rated game <span className="cmc-note-inline">— it moves both ratings</span></span>
+      <div className="cmm-list-h">WHICH GAME</div>
+      <div className="cmc-opts">
+        {CM_VARIANTS.map(x => (
+          <button key={x.id} className={"cmc-opt" + (variant === x.id ? " is-on" : "")}
+                  aria-pressed={variant === x.id} onClick={() => setVariant(x.id)}>
+            <span className="cmc-opt-n">{x.name}</span>
+            <span className="cmc-opt-k">{x.short}</span>
+          </button>
+        ))}
+      </div>
+      {/* The rule of whichever one is selected, in the sheet where it is
+          chosen. Learning what King of the Hill is after losing to it is the
+          worst place to learn it. */}
+      <p className="cmc-note cmc-vrule">{v.rule}</p>
+
+      <label className={"cmm-check" + (canRate ? "" : " is-locked")}>
+        <input type="checkbox" checked={rated && canRate} disabled={!canRate}
+               onChange={e => setRated(e.target.checked)}/>
+        <span>Rated game <span className="cmc-note-inline">
+          {canRate ? "— it moves both ratings"
+                   : "— " + v.name + " is always casual: one rating cannot measure two different games"}
+        </span></span>
       </label>
       <label className="cmm-check">
         <input type="checkbox" checked={channel !== ""} onChange={e => setChannel(e.target.checked ? "commons" : "")}/>
@@ -4746,15 +4823,114 @@ function MatchList({ title, rows, me, onOpen, emphasise }) {
 /* A player's side of the board: name, whether they are on move, and the pieces
    they have captured. Standard in every chess client, and the material count is
    the fastest way for a beginner to see they are behind. */
-function ChessSeat({ player, colour, gone, score, onMove }) {
+/* ── The clock ────────────────────────────────────────────────────────────
+   A three-minute game whose clock you cannot see is not a three-minute game.
+   The server is the authority: chess_clock_state() winds the mover's number
+   down by however long they have actually been thinking, and every poll snaps
+   this back to it. What happens in between is a local countdown from the
+   moment the reading ARRIVED — not from the reading's own timestamp — so a
+   slow response shortens the tick rather than the clock. A display that ran
+   ahead of the server would show a child flagging with four seconds left.
+
+   It does not announce itself. A live region firing twice a second is unusable
+   with a screen reader, so the ticking figure is hidden from the accessibility
+   tree and the announcements happen at the three moments that change what you
+   would do: a minute, thirty seconds, ten. */
+
+const MTG_CALLOUTS = [[60000, "One minute left."], [30000, "Thirty seconds left."], [10000, "Ten seconds left."]];
+
+/** "1d 4h", "3h 20m", "18m" — a correspondence deadline, not a countdown. */
+function mtgDeadline(ms) {
+  const left = ms - Date.now();
+  if (left <= 0) return "overdue";
+  const d = Math.floor(left / 86400000), h = Math.floor((left % 86400000) / 3600000);
+  if (d > 0) return d + "d " + h + "h";
+  const m = Math.floor((left % 3600000) / 60000);
+  return h > 0 ? h + "h " + m + "m" : Math.max(1, m) + "m";
+}
+
+/** The same number, said rather than shown: "2 minutes 45 seconds". */
+function mtgSpeakClock(ms) {
+  const t = Math.max(0, Math.round(ms / 5000) * 5);   // to the nearest 5s, so it
+  const m = Math.floor(t / 60), s = t % 60;           // does not churn every tick
+  if (m === 0) return s + " second" + (s === 1 ? "" : "s");
+  return m + " minute" + (m === 1 ? "" : "s") + (s ? " " + s + " second" + (s === 1 ? "" : "s") : "");
+}
+
+function MtgClock({ clock, side, yours }) {
+  const [, tick] = React.useState(0);
+  const gotAt = React.useRef(Date.now());
+  const said = React.useRef(0);
+  const [say, setSay] = React.useState("");
+  const key = clock ? clock.whiteMs + ":" + clock.blackMs + ":" + clock.turn + ":" + clock.running : "";
+  const running = !!(clock && clock.running && clock.turn === side);
+
+  React.useEffect(() => { gotAt.current = Date.now(); tick(n => n + 1); }, [key]);
+  React.useEffect(() => {
+    if (!running) return;
+    /* 200ms rather than 1000: at ten seconds the display shows tenths, and a
+       tenths readout that only moves once a second is worse than none. */
+    const id = setInterval(() => tick(n => n + 1), 200);
+    return () => clearInterval(id);
+  }, [running, key]);
+
+  const base = clock ? (side === "w" ? clock.whiteMs : clock.blackMs) : 0;
+  const shown = Math.max(0, base - (running ? Math.max(0, Date.now() - gotAt.current) : 0));
+
+  React.useEffect(() => {
+    if (!yours || !running) { return; }
+    if (shown > 60000) { said.current = 0; return; }
+    for (let i = 0; i < MTG_CALLOUTS.length; i++) {
+      const [at, line] = MTG_CALLOUTS[i];
+      if (shown <= at && (said.current === 0 || at < said.current)) { said.current = at; setSay(line); return; }
+    }
+  }, [shown, yours, running]);
+
+  if (!clock) return null;
+  if (!clock.live) {
+    // Correspondence: there is no countdown, there is a day to reply in.
+    if (!clock.deadlineMs) return null;
+    return <span className="mtg-clock is-daily" aria-label={"Reply within " + mtgDeadline(clock.deadlineMs)}>
+      {mtgDeadline(clock.deadlineMs)}
+    </span>;
+  }
+
+  const out = clock.flagged === side || shown <= 0;
+  return (
+    <span className={"mtg-clock" + (running ? " is-running" : "")
+                   + (shown < 30000 ? " is-low" : "") + (shown < 10000 ? " is-crit" : "")
+                   + (out ? " is-out" : "")}>
+      <span aria-hidden="true">{out ? "0:00" : trnClock(shown)}</span>
+      {/* Readable on demand, never announced — aria-live is off, so a screen
+          reader speaks it when the player moves to it and not otherwise. */}
+      <span className="sr-only" aria-live="off">{out ? "Out of time." : mtgSpeakClock(shown) + " left"}</span>
+      {yours && <span className="sr-only" role="status" aria-live="assertive">{say}</span>}
+    </span>
+  );
+}
+
+/* Three-check keeps a score that decides the game, so it belongs beside the
+   player it belongs to rather than in a strip above the board. Three pips,
+   filled as they are delivered — a number would need a label to be read. */
+function MtgChecks({ n }) {
+  return (
+    <span className="mtg-checks" aria-label={n + " of 3 checks given"}>
+      {[0, 1, 2].map(i => <span key={i} className={"mtg-check-pip" + (i < n ? " is-on" : "")} aria-hidden="true"/>)}
+    </span>
+  );
+}
+
+function ChessSeat({ player, colour, gone, score, onMove, clock, yours, checks }) {
   return (
     <div className={"mtg-seat" + (onMove ? " is-on" : "")}>
       <span className={"mtg-seat-dot is-" + colour} aria-hidden="true"/>
       <span className="mtg-seat-n">{player.name}</span>
+      {checks !== undefined && checks !== null && <MtgChecks n={checks}/>}
       <span className="mtg-seat-mat">
         {gone.map((t, i) => <span key={t + i} className="mtg-seat-pc" aria-hidden="true">{CHESS_GLYPH[t]}</span>)}
         {score > 0 && <b>+{score}</b>}
       </span>
+      <MtgClock clock={clock} side={colour} yours={yours}/>
       {gone.length > 0 && <span className="sr-only">
         {"Captured: " + gone.map(t => CHESS_NAME[t]).join(", ") + (score > 0 ? ". Ahead by " + score + " points of material." : "")}
       </span>}
@@ -4792,7 +4968,7 @@ function ChessSeat({ player, colour, gone, score, onMove }) {
  *   wrappers are required — gridcells directly inside a grid is invalid ARIA
  *   and screen readers announce the geometry wrongly.
  */
-function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, interactive, premove, premoving, onTap, onFlip }) {
+function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, interactive, premove, premoving, goals, onTap, onFlip }) {
   const [cursor, setCursor] = React.useState("e4");
   const order = [];
   for (let i = 0; i < 64; i++) order.push(flip ? 63 - i : i);
@@ -4829,6 +5005,11 @@ function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, inter
               const isTarget = targets.indexOf(sq) !== -1;
               const isLast = lastMove && (lastMove.from === sq || lastMove.to === sq);
               const isPre = !!premove && (premove.slice(0, 2) === sq || premove.slice(2, 4) === sq);
+              /* King of the Hill: these four squares WIN the game, so they are
+                 part of the position and not decoration. Marked with a ring
+                 rather than a fill, because a fill reads as "a piece can move
+                 here" — which is what the move dots already mean. */
+              const isGoal = !!goals && goals.indexOf(sq) !== -1;
               const file = sq[0], rank = sq[1];
               // Coordinates on the edges only — on every square they are noise.
               const showFile = flip ? rank === "8" : rank === "1";
@@ -4839,7 +5020,7 @@ function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, inter
                   className={"mtg-sq" + (dark ? " is-dark" : "") + (from === sq ? " is-from" : "")
                     + (isTarget ? (piece ? " is-capture" : " is-target") : "")
                     + (isLast ? " is-last" : "") + (checkSquare === sq ? " is-check" : "")
-                    + (isPre ? " is-premove" : "")}
+                    + (isPre ? " is-premove" : "") + (isGoal ? " is-goal" : "")}
                   aria-disabled={!interactive}
                   onFocus={() => setCursor(sq)}
                   onClick={() => interactive && onTap(sq, piece)}
@@ -4848,6 +5029,7 @@ function ChessBoard({ squares, flip, from, targets, lastMove, checkSquare, inter
                     + (isTarget ? (piece ? ", can capture here" : ", can move here") : "")
                     + (isLast ? ", last move" : "")
                     + (isPre ? ", premove" : "")
+                    + (isGoal ? ", hill square — a king here wins" : "")
                     + (checkSquare === sq ? ", in check" : "")
                     /* Say WHAT a tap will do while a premove is being set,
                        rather than leaving the square sounding identical to
@@ -5013,6 +5195,15 @@ function MatchGame({ matchId, onBack }) {
   const clockIsLive = !!(m.clock && m.clock.live);
   const targets = from ? legal.filter(u => u.slice(0, 2) === from).map(u => u.slice(2, 4)) : [];
   const material = chessMaterial(squares);
+  /* The variant, and the state a player has to be able to see to play it: the
+     Chess960 position number (so a coach can set the same one up again), the
+     four squares that win King of the Hill, and each side's check count. None
+     of this is decoration — a three-check game where you cannot see the score
+     is a game you can lose without noticing it was close. */
+  const vr = cmVariant(m.variant);
+  const vd = m.variantData || {};
+  const vChecks = m.variant === "threecheck" ? (vd.checks || { w: 0, b: 0 }) : null;
+  const goals = m.variant === "kingofthehill" ? CM_HILL : null;
   // Whoever is at the bottom of the board as drawn.
   const whiteSeat = m.players.A, blackSeat = m.players.B;
   const bottomSeat = flip ? blackSeat : whiteSeat;
@@ -5091,6 +5282,22 @@ function MatchGame({ matchId, onBack }) {
         <div className={"mtg-status" + (m.yourTurn && m.status === "active" ? " is-turn" : "")}>{statusLine}</div>
       </div>
 
+      {/* The terms, on the board rather than only in the challenge that
+          created it. A player who opened this from a notification never saw
+          the sheet where the clock and the variant were agreed, and "why did
+          my king walking to e4 end the game" is not a question a screen should
+          leave anybody holding. */}
+      <div className="mtg-terms">
+        <span className={"mtg-term" + (m.variant && m.variant !== "standard" ? " is-variant" : "")}>
+          {vr.name}
+          {m.variant === "chess960" && vd.positionId !== undefined
+            && <span className="mtg-term-id mono"> · no. {vd.positionId}</span>}
+        </span>
+        <span className="mtg-term">{cmTcName(m.timeControl)}</span>
+        <span className="mtg-term">{m.rated ? "Rated" : "Casual"}</span>
+      </div>
+      {m.variant && m.variant !== "standard" && <p className="mtg-vrule">{vr.rule}</p>}
+
       {/* A queued premove is a promise the board has made on your behalf. It
           has to be visible and it has to be cancellable, or it is a trap. */}
       {(premove || preFrom) && (
@@ -5109,14 +5316,18 @@ function MatchGame({ matchId, onBack }) {
       <div className="mtg-wrap">
         <div>
           <ChessSeat player={topSeat} colour={flip ? "w" : "b"} gone={flip ? material.gone.w : material.gone.b}
-            score={flip ? -material.score : material.score} onMove={m.turnColour === (flip ? "w" : "b") && m.status === "active"}/>
+            score={flip ? -material.score : material.score} onMove={m.turnColour === (flip ? "w" : "b") && m.status === "active"}
+            clock={m.clock} yours={isPlayer && m.yourColour === (flip ? "w" : "b")}
+            checks={vChecks ? vChecks[flip ? "w" : "b"] : null}/>
           <ChessBoard squares={squares} flip={flip} from={from || preFrom} targets={targets}
             lastMove={m.lastMove} checkSquare={m.checkSquare}
             interactive={canMove || (isPlayer && m.status === "active" && clockIsLive)}
-            premove={premove} premoving={!canMove}
+            premove={premove} premoving={!canMove} goals={goals}
             onTap={tap} onFlip={() => setManualFlip(v => !v)}/>
           <ChessSeat player={bottomSeat} colour={flip ? "b" : "w"} gone={flip ? material.gone.b : material.gone.w}
-            score={flip ? material.score : -material.score} onMove={m.turnColour === (flip ? "b" : "w") && m.status === "active"}/>
+            score={flip ? material.score : -material.score} onMove={m.turnColour === (flip ? "b" : "w") && m.status === "active"}
+            clock={m.clock} yours={isPlayer && m.yourColour === (flip ? "b" : "w")}
+            checks={vChecks ? vChecks[flip ? "b" : "w"] : null}/>
         </div>
 
         <aside className="mtg-side">

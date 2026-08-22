@@ -3656,6 +3656,12 @@ img { background-color: rgba(12,20,50,0.04); }
 .mtg-sq.is-capture::after { content: ""; position: absolute; inset: 6%; border-radius: 50%;
   border: 4px solid rgba(47,158,68,.9); }
 .mtg-sq.is-check { background: radial-gradient(circle, #ff5a3c 0%, #e03a20 70%); }
+/* King of the Hill: these four squares WIN the game, so they are part of the
+   position. Drawn as a dashed ring rather than a fill — a fill reads as "a
+   piece can move here", which is exactly what the move dots already mean. */
+.mtg-sq.is-goal::before { content: ""; position: absolute; inset: 11%; border-radius: 7px;
+  border: 3px dashed rgba(22,34,62,.6); pointer-events: none; }
+.mtg-sq.is-dark.is-goal::before { border-color: rgba(255,247,235,.78); }
 .mtg-sq:focus-visible { outline: 3px solid #1b6ef3; outline-offset: -3px; z-index: 1; }
 /* cburnett SVGs. Sized as a share of the square rather than in pixels, so the
    piece scales with the board at every width and the drawing never sits on a
@@ -3686,6 +3692,45 @@ img { background-color: rgba(12,20,50,0.04); }
 .mtg-seat-mat { display: flex; align-items: center; gap: 1px; margin-left: auto; font-size: 15px; color: #6b7280; }
 .mtg-seat-mat b { font-size: 12.5px; margin-left: 5px; color: var(--ink-700); }
 .mtg-seat-pc { line-height: 1; }
+
+/* ── The clock ──
+   The side to move carries a filled clock and the other is quiet. That is what
+   a physical clock does and what every chess app copies, and it answers "whose
+   move is it" from across a room without reading a word. Tabular numerals so
+   the digits do not jitter as they count down. */
+.mtg-clock { flex: none; margin-left: 10px; min-width: 72px; padding: 6px 10px;
+  border-radius: 8px; border: 1px solid var(--cream-200, #e8dec6); background: #fff;
+  font-family: var(--c-font-mono); font-size: 17px; font-weight: 700;
+  font-variant-numeric: tabular-nums; text-align: center; color: var(--ink-700); }
+.mtg-clock.is-running { background: var(--navy-900, #16223e); border-color: var(--navy-900, #16223e); color: #fff; }
+/* Under thirty seconds, then under ten. Colour is never the only signal — the
+   figure itself is the signal, and it is getting smaller in front of you. */
+.mtg-clock.is-low { background: var(--gold-500, #f5b026); border-color: var(--gold-500, #f5b026); color: #0c1432; }
+.mtg-clock.is-crit { background: var(--c-red); border-color: var(--c-red); color: #fff; }
+.mtg-clock.is-out { background: var(--c-red-tint); border-color: var(--c-red); color: var(--c-red-ink);
+  text-decoration: line-through; }
+/* Correspondence: a deadline, not a countdown. Smaller, because it changes
+   once an hour and does not deserve the weight a running clock has. */
+.mtg-clock.is-daily { min-width: 0; font-size: 12.5px; font-weight: 700; color: var(--ink-700);
+  background: var(--cream-050, #fbf7ed); }
+
+/* Three-check keeps a score that decides the game, so it sits beside the
+   player whose score it is. Three pips beat a number, which would need a
+   label to be read at all. */
+.mtg-checks { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; }
+.mtg-check-pip { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--c-red); }
+.mtg-check-pip.is-on { background: var(--c-red); }
+
+/* ── The terms, on the board ──
+   A player who opened this from a notification never saw the sheet where the
+   clock and the variant were agreed. */
+.mtg-terms { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.mtg-term { display: inline-flex; align-items: center; padding: 5px 11px; border-radius: 999px;
+  border: 1px solid var(--cream-200, #e8dec6); background: #fff;
+  font-size: 12px; font-weight: 700; color: var(--ink-700); }
+.mtg-term.is-variant { border-color: var(--navy-900, #16223e); background: var(--navy-900, #16223e); color: #fff; }
+.mtg-term-id { font-weight: 600; opacity: .85; }
+.mtg-vrule { margin: 0 0 14px; max-width: 62ch; font-size: 13px; line-height: 1.55; color: var(--ink-700); }
 
 /* Move list as numbered pairs — how notation is written everywhere. */
 .mtg-moves { list-style: none; padding-left: 0; }
@@ -3881,6 +3926,19 @@ img { background-color: rgba(12,20,50,0.04); }
 .trn-opt-m { font-family: var(--c-font-mono); font-size: 10.5px; color: var(--c-muted); }
 
 .trn-tcs { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 8px; }
+/* Variant tiles. Their own class, not the time control's: the names are words
+   rather than "5+3", so they need a wider cell and their own text sizes. */
+.trn-vts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.trn-vt { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px;
+  min-height: var(--c-tap); padding: 9px 12px; border-radius: var(--c-r-sm);
+  border: 1px solid var(--c-line); background: var(--c-card); cursor: pointer; }
+.trn-vt.is-on { border-color: var(--c-blue); background: var(--c-blue-tint); }
+.trn-vt-n { font-size: 14px; font-weight: 700; color: var(--c-ink); }
+.trn-vt-s { font-size: 11.5px; color: var(--c-muted); }
+/* A disabled control keeps full contrast. The sentence beside it explains why
+   it is disabled, and dimming that sentence hides the one thing the reader
+   needs. Only the pointer says "not this". */
+.trn-switch.is-locked input, .cmm-check.is-locked input { cursor: not-allowed; }
 .trn-tc { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   min-height: 58px; border-radius: var(--c-r-sm); background: var(--c-card);
   border: 1.5px solid var(--c-border-strong); cursor: pointer; }

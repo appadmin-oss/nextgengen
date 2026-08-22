@@ -2272,10 +2272,6 @@ function SummerGates() {
         </div>
       )}
 
-      {/* Standings and pairings, from the same components the members' screen
-          renders — a director and a player never look at two different
-          versions of one table. */}
-      <AdminTrnTables tournamentId={tournamentId}/>
       {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         gates === null ? <div className="dash-spinner"/> :
         gates.length === 0 ? <div className="admin-empty">No links yet. A <b>public sign-up</b> link is the one you send to families; a <b>review desk</b> is where what they send comes in to be checked.</div> :
@@ -5914,6 +5910,11 @@ function AdminTournamentBracket({ tournamentId, onBack }) {
           ))}
         </div>
       )}
+
+      {/* Standings and pairings, from the same components the members' screen
+          renders — a director and a player never look at two different
+          versions of one table. */}
+      <AdminTrnTables tournamentId={tournamentId}/>
 
       {/* Entrants, grouped by the bracket they actually play in. */}
       <h3 className="admin-h3" style={{ marginTop: 20 }}>Entrants</h3>

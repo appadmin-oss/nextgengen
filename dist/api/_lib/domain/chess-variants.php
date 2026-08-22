@@ -29,6 +29,15 @@ declare(strict_types=1);
 const CHESS_VARIANTS = ['standard', 'chess960', 'kingofthehill', 'threecheck'];
 
 function chess_variant_meta(): array {
+    /* `rated` travels with the variant so the client renders one rule rather
+     * than a copy of it. A rule spelled out in two places is a rule that goes
+     * out of step. */
+    $out = [];
+    foreach (chess_variant_meta_raw() as $k => $v) $out[$k] = $v + ['rated' => chess_variant_rateable($k)];
+    return $out;
+}
+
+function chess_variant_meta_raw(): array {
     return [
         'standard' => [
             'name' => 'Standard', 'short' => 'Standard chess',
@@ -55,6 +64,27 @@ function chess_variant_meta(): array {
 
 function chess_variant_valid(string $v): bool {
     return in_array($v, CHESS_VARIANTS, true);
+}
+
+/**
+ * May a game of this variant move the club rating?
+ *
+ * Chess960 may. It is the same pieces, the same rules and the same skill —
+ * only the opening book is gone — so a rating built on it means the thing a
+ * rating is supposed to mean. King of the Hill and Three-check may not: they
+ * change what winning IS, so a result in one measures a different ability, and
+ * folding it into the same number makes that number describe nobody.
+ *
+ * The honest alternative is a rating pool per variant, which is a schema and a
+ * settlement change rather than a rule. At a club of this size, with a handful
+ * of variant games a week, a separate pool would hold too few results to say
+ * anything anyway. This is the smaller correct answer, not a placeholder: if
+ * variant play grows enough to be worth rating, the pools are the change to
+ * make, and the trigger is a variant seeing enough games that its players
+ * start asking who is best at it.
+ */
+function chess_variant_rateable(string $v): bool {
+    return $v === 'standard' || $v === 'chess960';
 }
 
 /* ── Chess960 ─────────────────────────────────────────────────────────────
