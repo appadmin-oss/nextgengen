@@ -24,6 +24,14 @@ if ($method === 'GET') {
         $res = gs_call('match.watch', ['playerId' => $s['mid']]);
     } elseif ($view === 'tournaments') {
         $res = gs_call('tournament.mine', ['playerId' => $s['mid']]);
+    } elseif ($view === 'trnBrowse') {
+        // Every tournament a member can see — the endpoint that did not exist,
+        // which is why a created tournament reflected nowhere.
+        $res = gs_call('tournament.browse', ['playerId' => $s['mid']]);
+    } elseif ($view === 'trnStandings') {
+        $res = gs_call('tournament.standings', ['playerId' => $s['mid'], 'tournamentId' => (string)($_GET['tournamentId'] ?? '')]);
+    } elseif ($view === 'trnRounds') {
+        $res = gs_call('tournament.rounds', ['playerId' => $s['mid'], 'tournamentId' => (string)($_GET['tournamentId'] ?? '')]);
     } elseif ($view === 'players') {
         // Design turn 6A — the search screen. Names, centres, ratings and a
         // head-to-head line; nothing that could be used to contact anybody.
@@ -32,6 +40,9 @@ if ($method === 'GET') {
             'band' => (string)($_GET['band'] ?? ''), 'mentors' => !empty($_GET['mentors'])]);
     } elseif ($view === 'challenges') {
         $res = gs_call('chess.challenges', ['playerId' => $s['mid']]);
+    } elseif ($view === 'lobby') {
+        // The cheap tick behind the chess screen — see chess_lobby_poll.
+        $res = gs_call('chess.lobby', ['playerId' => $s['mid']]);
     } elseif ($view === 'chess') {
         $res = gs_call('chess.profile', ['playerId' => $s['mid']]);
     } elseif ($view === 'staff') {
@@ -59,6 +70,40 @@ if ($method === 'GET') {
         $res = gs_call('chess.respond', ['playerId' => $s['mid'],
             'challengeId' => (string)($b['challengeId'] ?? ''),
             'action' => (string)($b['answer'] ?? 'accept')]);
+    } elseif ($action === 'trnJoin') {
+        $res = gs_call('tournament.join', ['playerId' => $s['mid'], 'tournamentId' => (string)($b['tournamentId'] ?? ''), 'ip' => $ip]);
+    } elseif ($action === 'trnLeave') {
+        $res = gs_call('tournament.leave', ['playerId' => $s['mid'], 'tournamentId' => (string)($b['tournamentId'] ?? '')]);
+    } elseif ($action === 'trnCreate' || $action === 'trnDraw' || $action === 'trnEnter' || $action === 'trnDirectory') {
+        /* Running a tournament FROM the chess screen.
+         *
+         * A director is a member with a role, sitting in the club with the
+         * players in front of them — asking them to leave the app, open the
+         * admin console and come back is how a Saturday event gets set up
+         * badly or not at all. The capability check is the same one the console
+         * uses (admin_cap_gate on 'people' inside each op); this route only
+         * decides WHERE the button lives, never who may press it. */
+        if ($action === 'trnCreate') {
+            $res = gs_call('tournament.create', [
+                'requesterId' => $s['mid'], 'name' => (string)($b['name'] ?? ''),
+                'game' => 'chess', 'programme' => (string)($b['programme'] ?? ''),
+                'format' => (string)($b['format'] ?? 'swiss'),
+                'timeControl' => (string)($b['timeControl'] ?? '10+0'),
+                'rated' => !empty($b['rated']), 'totalRounds' => (int)($b['totalRounds'] ?? 0),
+                'description' => (string)($b['description'] ?? ''),
+                'kinds' => (array)($b['kinds'] ?? []), 'centres' => (array)($b['centres'] ?? []),
+                'minRating' => (int)($b['minRating'] ?? 0), 'maxRating' => (int)($b['maxRating'] ?? 0),
+                'ip' => $ip]);
+        } elseif ($action === 'trnDraw') {
+            $res = gs_call('tournament.draw', ['requesterId' => $s['mid'], 'tournamentId' => (string)($b['tournamentId'] ?? ''), 'ip' => $ip]);
+        } elseif ($action === 'trnEnter') {
+            $res = gs_call('tournament.enter', ['requesterId' => $s['mid'], 'tournamentId' => (string)($b['tournamentId'] ?? ''), 'playerId' => (string)($b['playerId'] ?? ''), 'ip' => $ip]);
+        } else {
+            $res = gs_call('tournament.directory', [
+                'q' => (string)($b['q'] ?? ''), 'kinds' => (array)($b['kinds'] ?? []),
+                'centre' => (string)($b['centre'] ?? ''), 'band' => (string)($b['band'] ?? ''),
+                'exclude' => (array)($b['exclude'] ?? []), 'limit' => (int)($b['limit'] ?? 40)]);
+        }
     } elseif ($action === 'respond') {
         $res = gs_call('match.respond', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? ''), 'accept' => !empty($b['accept'])]);
     } elseif ($action === 'move') {

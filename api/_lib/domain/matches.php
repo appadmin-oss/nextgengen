@@ -494,9 +494,17 @@ function match_get(array $p): array {
  */
 function match_poll(array $p): array {
     $viewer = (string)($p['playerId'] ?? '');
-    $r = db_row('SELECT matchId, status, turnPlayer, ply, state, result, winnerId, reason, playerA, playerB, lastMoveAt
-                 FROM match_games WHERE matchId = ? LIMIT 1', [(string)($p['matchId'] ?? '')]);
+    $r = db_row('SELECT * FROM match_games WHERE matchId = ? LIMIT 1', [(string)($p['matchId'] ?? '')]);
     if (!$r) return ['ok' => false, 'error' => 'not_found'];
+
+    /* The poll is also a flag check. It is the most frequent read of a live
+     * game by a long way, so it is where a clock running out is normally
+     * noticed — waiting for somebody to open the full board would mean a
+     * player sat watching their opponent's clock sit at 0:00. */
+    if ((string)$r['status'] === 'active' && function_exists('chess_clock_flag_check')
+        && chess_clock_flag_check((string)$r['matchId'])) {
+        $r = db_row('SELECT * FROM match_games WHERE matchId = ? LIMIT 1', [(string)$r['matchId']]) ?: $r;
+    }
 
     $ply = (int)$r['ply'];
     $since = (int)($p['since'] ?? -1);
@@ -504,6 +512,10 @@ function match_poll(array $p): array {
         'ok' => true, 'ply' => $ply, 'status' => (string)$r['status'],
         'yourTurn' => (string)$r['turnPlayer'] === $viewer,
         'changed' => $since < 0 || $since !== $ply,
+        /* The clock rides on EVERY poll, not only the ones with news. A
+         * countdown drawn in the browser drifts, and the tab sleeps; this is
+         * the number it re-syncs to, and it is a handful of bytes. */
+        'clock' => function_exists('chess_clock_state') ? chess_clock_state($r) : null,
     ];
     /* The position rides along when it changed, which saves the client a second
      * round trip on the one poll in twenty that actually has news. Everything

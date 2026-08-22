@@ -619,12 +619,30 @@
         players:   (q) => request('/member/match.php' + qs(Object.assign({ view: 'players' }, q || {}))),
         chess:     () => request('/member/match.php' + qs({ view: 'chess' })),
         challenges: () => request('/member/match.php' + qs({ view: 'challenges' })),
+        /* The lobby tick. A few dozen bytes and a signature — the screen only
+           reloads when something actually changed. CmChess used to load once
+           on mount and never again, so an accepted challenge was invisible
+           until the member navigated away and came back. */
+        lobby: () => request('/member/match.php' + qs({ view: 'lobby' })),
         challenge: (d) => request('/member/match.php', { body: Object.assign({ action: 'challenge' }, d || {}) }),
         answer:    (challengeId, answer) => request('/member/match.php', { body: { action: 'challengeRespond', challengeId, answer } }),
       },
       // A player's own tournaments and their next game in each.
       tournaments: {
         mine: () => request('/member/match.php' + qs({ view: 'tournaments' })),
+        /* Every tournament a member can SEE. There was no such call, which is
+           why a created tournament reflected nowhere. */
+        browse:    () => request('/member/match.php' + qs({ view: 'trnBrowse' })),
+        standings: (tournamentId) => request('/member/match.php' + qs({ view: 'trnStandings', tournamentId })),
+        rounds:    (tournamentId) => request('/member/match.php' + qs({ view: 'trnRounds', tournamentId })),
+        join:      (tournamentId) => request('/member/match.php', { body: { action: 'trnJoin', tournamentId } }),
+        leave:     (tournamentId) => request('/member/match.php', { body: { action: 'trnLeave', tournamentId } }),
+        // Directors run an event from the chess screen; the capability check
+        // is the same one the admin console uses, inside the domain op.
+        create:    (data) => request('/member/match.php', { body: Object.assign({ action: 'trnCreate' }, data) }),
+        draw:      (tournamentId) => request('/member/match.php', { body: { action: 'trnDraw', tournamentId } }),
+        enter:     (tournamentId, playerId) => request('/member/match.php', { body: { action: 'trnEnter', tournamentId, playerId } }),
+        directory: (opts) => request('/member/match.php', { body: Object.assign({ action: 'trnDirectory' }, opts || {}) }),
       },
       changeEmail:         (email) => request('/member/account.php', { body: { action: 'change_email', email } }),
       exportData:          () => request('/member/account.php'),

@@ -563,3 +563,66 @@ function directory_centres(): array {
     $out = array_keys($set); sort($out);
     return $out;
 }
+
+/**
+ * The lobby tick.
+ *
+ * CmChess loaded once on mount and never again, so a challenge you accepted
+ * sat there until the member navigated away and came back: three separate
+ * requests (profile, matches, challenges), none of them repeated, to answer a
+ * question that changes every few seconds. Somebody accepting your game is the
+ * single most time-sensitive event in the whole chess feature, and it was the
+ * one thing the screen could not notice.
+ *
+ * This is the cheap counterpart to match_poll(): four counts and a signature.
+ * The client compares the signature with the last one it saw and only reloads
+ * the full lobby when it changed — so the common case (nothing happened) is a
+ * few dozen bytes and one indexed query per table, and the uncommon case is
+ * noticed within a couple of seconds.
+ */
+function chess_lobby_poll(array $p): array {
+    $me = (string)($p['playerId'] ?? '');
+    if ($me === '') return ['ok' => false, 'error' => 'not_a_player'];
+    chess_challenges_expire();
+
+    /* Your live games, and whether any of them is waiting on you. `yourMove`
+     * is what the lobby badges, so it is counted here rather than inferred
+     * from a list the client would otherwise have to fetch to find out. */
+    $live = db_all("SELECT matchId, ply, turnPlayer, updatedAt FROM match_games
+                     WHERE game = 'chess' AND status IN ('invited','active')
+                       AND (playerA = ? OR playerB = ?)
+                     ORDER BY updatedAt DESC LIMIT 50", [$me, $me]);
+    $yourMove = 0; $sig = [];
+    foreach ($live as $g) {
+        if ((string)$g['turnPlayer'] === $me) $yourMove++;
+        $sig[] = $g['matchId'] . ':' . (int)$g['ply'];
+    }
+
+    $toYou = db_all("SELECT challengeId FROM chess_challenges WHERE status = 'open' AND toId = ? ORDER BY createdAt DESC LIMIT 30", [$me]);
+    $open  = db_all("SELECT challengeId FROM chess_challenges WHERE status = 'open' AND toId = '' AND fromId <> ? ORDER BY createdAt DESC LIMIT 30", [$me]);
+
+    /* A challenge you sent that has just been ACCEPTED is the event this whole
+     * endpoint exists for. Reported explicitly, with the match to open, so the
+     * client can offer "Zara took your game — play" rather than making the
+     * member work out which of their games is new. */
+    $accepted = [];
+    foreach (db_all("SELECT challengeId, toId, toName, matchId FROM chess_challenges
+                      WHERE fromId = ? AND status = 'accepted' AND matchId <> ''
+                      ORDER BY challengeId DESC LIMIT 5", [$me]) as $c) {
+        $m = db_row("SELECT status FROM match_games WHERE matchId = ? LIMIT 1", [(string)$c['matchId']]);
+        if (!$m || (string)$m['status'] !== 'active') continue;
+        $accepted[] = ['challengeId' => (string)$c['challengeId'], 'matchId' => (string)$c['matchId'],
+                       'name' => (string)$c['toName']];
+    }
+
+    foreach ($toYou as $c) $sig[] = 'c' . $c['challengeId'];
+    foreach ($open as $c)  $sig[] = 'o' . $c['challengeId'];
+    foreach ($accepted as $a) $sig[] = 'a' . $a['challengeId'];
+
+    return ['ok' => true,
+            'games' => count($live), 'yourMove' => $yourMove,
+            'challengesToYou' => count($toYou), 'openChallenges' => count($open),
+            'accepted' => $accepted,
+            // One short string that changes whenever anything above did.
+            'sig' => substr(sha1(implode('|', $sig)), 0, 16)];
+}
