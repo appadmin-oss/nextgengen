@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 97;
+const NGG_SCHEMA_TARGET = 98;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2626,6 +2626,48 @@ function db_migrate(PDO $db): void {
             ALTER TABLE match_games ADD COLUMN channelSlug TEXT DEFAULT '';
             ALTER TABLE match_games ADD COLUMN ratingDelta INTEGER DEFAULT 0;
             ALTER TABLE match_games ADD COLUMN settledAt TEXT DEFAULT '';
+        ",
+
+        /* 98 — the community audit.
+         *
+         *   SAFEGUARDING. The crisis gate used to decide correctly and then
+         *   throw the decision away: a child writing about self-harm had the
+         *   post refused, saw a helpline, and no adult was ever told. The
+         *   refusal is the moment a disclosure becomes something to act on,
+         *   not the moment it stops mattering — so it is kept, and raised.
+         *
+         *   COMMENT REPORTS. `reportCount` existed on posts only, and the
+         *   queue looked for comments with status 'reported' — a status the
+         *   moderation map never writes. Reporting a bullying reply reached
+         *   nobody. Comments now carry the same counter posts do.
+         *
+         *   INDEXES. Nothing could serve the feed's own ORDER BY, so every
+         *   page was a filesort over the whole table.
+         */
+        98 => "
+            CREATE TABLE community_safeguarding (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              caseId TEXT NOT NULL UNIQUE,
+              authorId TEXT NOT NULL,
+              authorName TEXT DEFAULT '',
+              surface TEXT DEFAULT 'post',
+              channelSlug TEXT DEFAULT '',
+              body TEXT,
+              status TEXT DEFAULT 'open',
+              acknowledgedBy TEXT DEFAULT '',
+              acknowledgedAt TEXT DEFAULT '',
+              createdAt TEXT
+            );
+            CREATE INDEX idx_csafe_status ON community_safeguarding(status, createdAt);
+
+            ALTER TABLE community_comments ADD COLUMN reportCount INTEGER DEFAULT 0;
+            ALTER TABLE community_posts ADD COLUMN notifiedAt TEXT DEFAULT '';
+            ALTER TABLE community_comments ADD COLUMN notifiedAt TEXT DEFAULT '';
+
+            CREATE INDEX idx_cpost_feed ON community_posts(status, pinned, createdAt);
+            CREATE INDEX idx_cpost_featured ON community_posts(featured, status);
+            CREATE INDEX idx_cbook_member ON community_bookmarks(memberId);
+            CREATE INDEX idx_creport_reporter ON community_reports(memberId);
         ",
     ];
 

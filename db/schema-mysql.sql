@@ -1838,3 +1838,47 @@ ALTER TABLE match_games ADD COLUMN ratingDelta INT DEFAULT 0;
 ALTER TABLE match_games ADD COLUMN settledAt VARCHAR(40) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (97) ON DUPLICATE KEY UPDATE version = version;
+
+-- 98: the community audit — safeguarding records, comment reports, and the
+-- indexes the feed's own ORDER BY needs.
+--
+-- `community_safeguarding` exists because the crisis gate used to decide
+-- correctly and then throw the decision away: a child writing about self-harm
+-- had their post refused, was shown a helpline, and no adult was ever told.
+-- The refusal is the moment the disclosure becomes something to act on, not
+-- the moment it stops mattering — so it is kept here, and an event is raised.
+CREATE TABLE IF NOT EXISTS community_safeguarding (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  caseId VARCHAR(48) UNIQUE NOT NULL,
+  authorId VARCHAR(48) NOT NULL,
+  authorName VARCHAR(120) DEFAULT '',
+  surface VARCHAR(16) DEFAULT 'post',      -- post | comment
+  channelSlug VARCHAR(64) DEFAULT '',
+  body TEXT,                               -- what the child actually wrote
+  status VARCHAR(16) DEFAULT 'open',       -- open | acknowledged
+  acknowledgedBy VARCHAR(48) DEFAULT '',
+  acknowledgedAt VARCHAR(40) DEFAULT '',
+  createdAt VARCHAR(40),
+  INDEX idx_csafe_status (status, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Reported comments had nowhere to surface: the queue selected them by
+-- `status = 'reported'`, which the moderation map never writes, so a child
+-- reporting a bullying reply reached no human at all.
+ALTER TABLE community_comments ADD COLUMN reportCount INT DEFAULT 0;
+
+-- Stamped the first time a post goes live, so approving a held post fires its
+-- @mentions exactly once — approve used to fire them never, and a re-approval
+-- after a hide would otherwise fire them twice.
+ALTER TABLE community_posts ADD COLUMN notifiedAt VARCHAR(40) DEFAULT '';
+ALTER TABLE community_comments ADD COLUMN notifiedAt VARCHAR(40) DEFAULT '';
+
+-- The feed's main ordering (pinned first, then newest) had no index that could
+-- serve it — every page was a filesort over the whole table.
+CREATE INDEX idx_cpost_feed ON community_posts (status, pinned, createdAt);
+CREATE INDEX idx_cpost_featured ON community_posts (featured, status);
+-- `WHERE memberId = ?` for the Saved count; the unique key leads with postId.
+CREATE INDEX idx_cbook_member ON community_bookmarks (memberId);
+CREATE INDEX idx_creport_reporter ON community_reports (memberId);
+
+INSERT INTO schema_version (version) VALUES (98) ON DUPLICATE KEY UPDATE version = version;
