@@ -620,6 +620,107 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     await page.screenshot({ path: path.join(ROOT, 'tests', 'screens', 'studio-batch-cards.png'), fullPage: false });
     await page.click('.dsn-view .dsn-chip:has-text("List")');
     await page.waitForTimeout(200);
+
+    /* Review evidence: the batch panel at a narrow desktop and the studio's
+       own chrome, so a UX pass has the same screens an operator does. */
+    /* ── 13c. The panel as an operator meets it ─────────────────────────────
+       Measured on the RENDERED page rather than reasoned about from the
+       stylesheet, because this panel is a translucent surface over a dark
+       ground and the only way to know what its small text actually measures
+       is to composite it and look.
+
+       These were one-off probes during a UX pass. They are assertions now:
+       every number below was a real answer that could quietly stop being
+       true — a token change three files away, a new wrapper with its own
+       background, a font-size nudge — and none of it shows up in a
+       screenshot or a functional test. */
+    const seen = await page.evaluate(() => {
+      const lum = ([r, g, b]) => {
+        const l = [r, g, b].map(v => { const x = v / 255;
+          return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); });
+        return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2];
+      };
+      const parse = (s) => (s.match(/[\d.]+/g) || []).slice(0, 4).map(Number);
+      /* Composite every ancestor background down to one opaque colour. A
+         translucent panel over a dark page is not the colour the stylesheet
+         names, and measuring the named one gives an answer that is wrong in
+         the safe direction — which is the worst kind. */
+      const bgOf = (el) => {
+        let out = [11, 17, 32];
+        const chain = [];
+        for (let n = el; n; n = n.parentElement) chain.unshift(n);
+        for (const n of chain) {
+          const c = parse(getComputedStyle(n).backgroundColor);
+          if (c.length < 3) continue;
+          const a = c.length > 3 ? c[3] : 1;
+          if (a === 0) continue;
+          out = [0, 1, 2].map(i => c[i] * a + out[i] * (1 - a));
+        }
+        return out;
+      };
+      const ratio = (el) => {
+        const fg = parse(getComputedStyle(el).color);
+        const a = fg.length > 3 ? fg[3] : 1;
+        const bg = bgOf(el);
+        const on = [0, 1, 2].map(i => fg[i] * a + bg[i] * (1 - a));
+        const x = lum(on), y = lum(bg);
+        return Math.round(((Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)) * 100) / 100;
+      };
+      const panel = document.querySelector('.dsn-merge');
+      const focusable = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+      const stops = Array.from(panel.querySelectorAll(focusable));
+      const ticks = Array.from(document.querySelectorAll('.dsn-tbl tbody input[type=checkbox]'))
+        .map(e => e.getBoundingClientRect());
+      const text = {};
+      [['idCell', '.dsn-td-mono'], ['runNote', '.dsn-merge-note'],
+       ['chip', '.dsn-chip:not(.is-on)'], ['filterLabel', '.dsn-merge-filters .dsn-prop span'],
+       ['colHeader', '.dsn-th:not(.is-on) button']].forEach(([k, sel]) => {
+        const e = document.querySelector(sel);
+        if (e) text[k] = { r: ratio(e), px: parseFloat(getComputedStyle(e).fontSize) };
+      });
+      return {
+        text, stops: stops.length, offTab: stops.filter(e => e.tabIndex < 0).length,
+        tick: ticks[0] ? { w: Math.round(ticks[0].width),
+                           pitch: ticks[1] ? Math.round(ticks[1].top - ticks[0].top) : 0 } : null,
+      };
+    });
+
+    const dim = Object.keys(seen.text).filter(k => seen.text[k].r < 4.5)
+      .map(k => k + ' ' + seen.text[k].r + ':1');
+    ok('every piece of small text in the batch panel clears 4.5:1 where it lands'
+       + (dim.length ? ' — ' + dim.join(', ') : ''), dim.length === 0);
+    ok('nothing in the panel is taken out of the tab order ('
+       + seen.stops + ' stops)', seen.stops > 20 && seen.offTab === 0);
+    /* WCAG 2.5.8 is 24×24, with a spacing exception: imagine a 24px circle on
+       each target, and if none overlap it passes. A row tick is smaller than
+       24px and legal only because the rows are far enough apart — so the row
+       pitch is the thing that has to hold, not the tick. */
+    ok('row ticks clear 2.5.8, by size or by the spacing exception ('
+       + seen.tick.w + 'px, ' + seen.tick.pitch + 'px apart)',
+       seen.tick.w >= 24 || seen.tick.pitch >= 24);
+
+    /* 200% text zoom on a small window. WCAG 1.4.4 wants the content usable,
+       and the failure mode is a horizontal scrollbar on the whole document. */
+    await page.setViewportSize({ width: 700, height: 900 });
+    await page.evaluate(() => { document.documentElement.style.fontSize = '32px'; });
+    await page.waitForTimeout(400);
+    const overflowPx = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    ok('at 200% text zoom on a 700px window the page does not scroll sideways ('
+       + overflowPx + 'px)', overflowPx <= 1);
+    await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+
+    /* The review screens. Off by default — they are for looking at, not for
+       asserting, and rendering them on every run costs seconds for nobody. */
+    if (process.env.DSN_SHOTS) {
+      for (const [name, w, h] of [['1440', 1440, 1000], ['1100', 1100, 950], ['820', 820, 1000]]) {
+        await page.setViewportSize({ width: w, height: h });
+        await page.waitForTimeout(500);
+        await page.screenshot({ path: path.join(ROOT, 'tests', 'screens', 'ux-studio-' + name + '.png') });
+      }
+    }
+    await page.setViewportSize({ width: 1400, height: 1000 });
+    await page.waitForTimeout(300);
     ok('…including the people an ID-card read cannot see, flagged on the row',
       merged.flags.filter(f => f === 'no card').length === 1
       && merged.flags.filter(f => f === 'no photo').length === 3);
