@@ -53,7 +53,7 @@ const ADMIN_SECTIONS = [
   { id: "behaviour",   group: "People",   label: "Behaviour",    title: "Behaviour monitor",   icon: "◔", cap: "people" },
   { id: "fees",        group: "People",   label: "Dues & fees",  title: "Dues & fees",         icon: "₦", cap: "fees" },
   { id: "staff",       group: "People",   label: "Staff activity", title: "Staff activity",    icon: "◑", cap: "people" },
-  { id: "engagement",  group: "People",   label: "Engagement",   title: "Team engagement",     icon: "📈", cap: "audit" },
+  { id: "engagement",  group: "People",   label: "Engagement",   title: "Engagement",          icon: "📈", cap: "audit" },
   { id: "registration",group: "People",   label: "Registration", title: "Registration",        icon: "❑", cap: "summer" },
   { id: "qr",          group: "People",   label: "QR codes",     title: "QR codes",            icon: "▦", cap: "summer" },
   { id: "attendance",  group: "People",   label: "Attendance duty", title: "Attendance duty",  icon: "🗓", cap: "summer" },
@@ -848,6 +848,207 @@ function engActivity(r) {
 
 const ENG_LINE = { all: "#111827", volunteer: "#2b8a3e", instructor: "#1971c2", mentor: "#9c36b5" };
 
+/* ── Community engagement ──
+ *
+ * The bands are on REPLY RATE, not on volume, because volume is the metric
+ * that rises while a community dies: one enthusiastic child posting forty
+ * times to silence scores beautifully on posts, reactions and members alike.
+ * A channel where nobody answers is a noticeboard, and that is what the word
+ * says. */
+const CENG_BAND_STYLE = {
+  healthy:     { background: "#e6f7ec", color: "#137a3a" },
+  quiet:       { background: "#fff4e0", color: "#9a5b00" },
+  noticeboard: { background: "#fdecec", color: "#c0322b" },
+};
+const CENG_BAND_LABEL = { healthy: "Healthy", quiet: "Quiet", noticeboard: "Noticeboard" };
+/* Named rungs rather than a score. A reader is not a failure — most healthy
+   communities are mostly readers — so the ladder describes what somebody did,
+   and only `silent` is phrased as something to act on. */
+const CENG_RUNG = {
+  /* `label` counts them ("6 started conversations"); `was` describes one
+     person in the past ("was posting"). One string cannot do both — "was
+     started conversations" is what you get if you try. */
+  poster:  { label: "Started conversations", was: "posting",   tone: "#137a3a" },
+  replier: { label: "Replied to others",     was: "replying",  tone: "#1971c2" },
+  reactor: { label: "Reacted or voted",      was: "reacting",  tone: "#7048e8" },
+  reader:  { label: "Read, said nothing",    was: "reading",   tone: "#5f6874" },
+  silent:  { label: "Gone quiet",            was: "quiet",     tone: "#c0322b" },
+};
+
+/** A stat with its own sentence under it. A number with no unit and no
+ *  denominator is the thing people misread on a dashboard. */
+function CengStat({ label, value, sub, warn }) {
+  return (
+    <div style={{ border: "1px solid var(--line,#e7e9ee)", borderRadius: 12, padding: "12px 14px" }}>
+      <div className="mono" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em",
+                                     color: "var(--ink-400,#5f6874)" }}>{label}</div>
+      <div style={{ fontSize: "1.5rem", fontWeight: 800, fontVariantNumeric: "tabular-nums",
+                    color: warn ? "#c0322b" : "inherit" }}>{value}</div>
+      <div style={{ fontSize: ".82rem", color: "var(--ink-400,#5f6874)" }}>{sub}</div>
+    </div>
+  );
+}
+
+function CommunityEngagementPanel() {
+  const [days, setDays] = React.useState(30);
+  const [channel, setChannel] = React.useState("");
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+
+  const load = React.useCallback(() => {
+    setErr(""); setData(null);
+    return NGGApi.admin.communityEngagement({ days, channel })
+      .then(setData).catch(e => setErr(e.code || e.message || "load_failed"));
+  }, [days, channel]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const h = (data && data.headline) || {};
+  const chans = (data && data.channels) || [];
+  const unanswered = (data && data.unanswered) || [];
+  const quiet = (data && data.quiet) || [];
+  const ladder = (data && data.ladder) || {};
+
+  return (
+    <React.Fragment>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 6px" }}>
+        <select className="admin-select" value={days} onChange={e => setDays(Number(e.target.value))}
+                aria-label="Window" style={{ maxWidth: 150 }}>
+          <option value={7}>Last 7 days</option><option value={30}>Last 30 days</option>
+          <option value={90}>Last 90 days</option>
+        </select>
+        <select className="admin-select" value={channel} onChange={e => setChannel(e.target.value)}
+                aria-label="Channel" style={{ maxWidth: 200 }}>
+          <option value="">Every channel</option>
+          {chans.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+        </select>
+      </div>
+      <p className="admin-hint">
+        Not post counts — those rise while a community dies. The reply rate is the
+        headline because it is the only number here one determined person cannot
+        produce alone. Posts under 24 hours old are left out: this morning's post
+        has not been ignored.
+      </p>
+
+      {err ? <ErrorState code={err} onRetry={load}/> :
+       !data ? <div className="dash-spinner"/> :
+       <React.Fragment>
+         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))",
+                       gap: 12, margin: "6px 0 18px" }}>
+           <CengStat label="Posts answered" value={h.replyRate + "%"}
+                     warn={h.band === "noticeboard"}
+                     sub={(h.postsJudged - h.unanswered) + " of " + h.postsJudged + " · "
+                          + (CENG_BAND_LABEL[h.band] || h.band)}/>
+           <CengStat label="Voices" value={fmtNum(h.contributors)}
+                     sub={h.contributorRate + "% of the " + fmtNum(h.audience) + " who have ever taken part"}/>
+           <CengStat label="Came back" value={h.returnRate + "%"}
+                     warn={h.returnedOf > 0 && h.returnRate < 40}
+                     sub={h.returnedOf
+                       ? "of the " + fmtNum(h.returnedOf) + " active last period · " + fmtNum(h.newcomers) + " new"
+                       : "nobody was active last period"}/>
+           <CengStat label="First reply" value={h.medianFirstReplyHours == null ? "—" : h.medianFirstReplyHours + "h"}
+                     sub={h.medianFirstReplyHours == null ? "nothing was answered" : "median wait for an answer"}/>
+           <CengStat label="Opened it" value={fmtNum(h.reach)}
+                     sub={h.reachRate + "% of the audience read something"}/>
+           <CengStat label="Never turned up" value={fmtNum(h.neverJoinedIn)}
+                     sub={"of " + fmtNum(h.roster) + " active members, have never opened it"}/>
+         </div>
+
+         {/* The ladder. Reading is not a failure and is not drawn as one. */}
+         <h3 className="admin-h3" style={{ margin: "0 0 6px" }}>Who took part</h3>
+         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 18px" }}>
+           {["poster", "replier", "reactor", "reader", "silent"].map(k => (
+             <span key={k} className="chip" style={{ fontWeight: 700 }}>
+               <span aria-hidden="true" style={{ display: "inline-block", width: 8, height: 8, borderRadius: 8,
+                                                 background: CENG_RUNG[k].tone, marginRight: 6 }}/>
+               {fmtNum(ladder[k] || 0)} {CENG_RUNG[k].label.toLowerCase()}
+             </span>
+           ))}
+         </div>
+
+         {/* Per channel, worst first — "the community is quiet" is not an
+             answer, and this is what turns it into one. */}
+         {chans.length > 0 && (
+           <React.Fragment>
+             <h3 className="admin-h3" style={{ margin: "0 0 6px" }}>By channel, worst first</h3>
+             <div className="admin-table-wrap" style={{ margin: "0 0 18px" }}>
+               <table className="admin-table">
+                 <thead><tr>
+                   <th scope="col">Channel</th>
+                   <th scope="col" className="admin-num">Answered</th>
+                   <th scope="col" className="admin-num">Posts</th>
+                   <th scope="col" className="admin-num">Voices</th>
+                   <th scope="col" className="admin-num">First reply</th>
+                 </tr></thead>
+                 <tbody>
+                   {chans.map(c => (
+                     <tr key={c.slug}>
+                       <td>{c.name}{" "}
+                         <span className="chip" style={Object.assign({ fontWeight: 800, fontSize: 11 },
+                                                                     CENG_BAND_STYLE[c.band] || {})}>
+                           {CENG_BAND_LABEL[c.band] || c.band}
+                         </span>
+                       </td>
+                       <td className="mono admin-num">{c.answered}/{c.judged} ({c.replyRate}%)</td>
+                       <td className="mono admin-num">{fmtNum(c.posts)}</td>
+                       <td className="mono admin-num">{fmtNum(c.voices)}</td>
+                       <td className="mono admin-num">{c.medianFirstReplyHours == null ? "—" : c.medianFirstReplyHours + "h"}</td>
+                     </tr>
+                   ))}
+                 </tbody>
+               </table>
+             </div>
+           </React.Fragment>
+         )}
+
+         {/* The two lists somebody can act on this afternoon. Everything above
+             is context for these. */}
+         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 18 }}>
+           <div>
+             <h3 className="admin-h3" style={{ margin: "0 0 6px" }}>
+               Waiting for an answer{data.unansweredTotal > unanswered.length
+                 ? " (" + unanswered.length + " of " + fmtNum(data.unansweredTotal) + ")" : ""}
+             </h3>
+             {unanswered.length === 0
+               ? <EmptyState title="Everything has been answered" message="Every post old enough to judge has at least one reply."/>
+               : <ul className="admin-list" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                   {unanswered.map(p => (
+                     <li key={p.postId} style={{ padding: "8px 0", borderBottom: "1px solid var(--line,#e7e9ee)" }}>
+                       <div style={{ fontSize: ".9rem" }}>{p.excerpt || "(no text)"}</div>
+                       <div className="mono" style={{ fontSize: 12, color: "var(--ink-400,#5f6874)" }}>
+                         {p.authorName || p.authorId}{p.centre ? " · " + p.centre : ""} · {fmtDate(p.createdAt)}
+                       </div>
+                     </li>
+                   ))}
+                 </ul>}
+           </div>
+           <div>
+             <h3 className="admin-h3" style={{ margin: "0 0 6px" }}>
+               Gone quiet{data.quietTotal > quiet.length
+                 ? " (" + quiet.length + " of " + fmtNum(data.quietTotal) + ")" : ""}
+             </h3>
+             <p className="admin-hint" style={{ margin: "0 0 6px" }}>
+               Took part last period and has done nothing since — not even opened it.
+               Somebody who has dropped from posting to reading is still here, and is not listed.
+             </p>
+             {quiet.length === 0
+               ? <EmptyState title="Nobody has dropped off" message="Everybody who took part last period is still here."/>
+               : <ul className="admin-list" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                   {quiet.map(q => (
+                     <li key={q.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--line,#e7e9ee)" }}>
+                       <div style={{ fontSize: ".9rem" }}>{q.name}</div>
+                       <div className="mono" style={{ fontSize: 12, color: "var(--ink-400,#5f6874)" }}>
+                         {q.centre || "no centre"}{q.was && CENG_RUNG[q.was] ? " · was " + CENG_RUNG[q.was].was : ""}
+                       </div>
+                     </li>
+                   ))}
+                 </ul>}
+           </div>
+         </div>
+       </React.Fragment>}
+    </React.Fragment>
+  );
+}
+
 // Compact inline-SVG line chart of weekly average engagement (overall + per role).
 function EngTrendChart({ series }) {
   if (!series || !series.length) return <div className="admin-empty">No snapshots yet — the weekly job hasn't run.</div>;
@@ -941,11 +1142,14 @@ function EngagementPanel() {
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Team engagement</h2>
-        <div style={{ display: "flex", gap: 6 }}>{tabBtn("now", "Now")}{tabBtn("trends", "Trends")}</div>
+        <h2 className="admin-h2">Engagement</h2>
+        <div style={{ display: "flex", gap: 6 }}>
+          {tabBtn("now", "Team")}{tabBtn("trends", "Trends")}{tabBtn("community", "Community")}
+        </div>
       </div>
 
-      {tab === "now" ?
+      {tab === "community" ? <CommunityEngagementPanel/> :
+       tab === "now" ?
         <React.Fragment>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 6px" }}>
             {roleSelect}

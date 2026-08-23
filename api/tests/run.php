@@ -16462,6 +16462,27 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             $duds[] = "an unreduced fraction: $q";
         }
     }
+    /* A question with more than one right answer marks a child WRONG for
+       being right, and the answer-key sweep cannot catch it: the key IS a
+       right answer, so it agrees with an independent derivation every time.
+       "Find the mode of: 5, 7, 5, 7, 5, 7" printed once in about 450 draws
+       and had no unique mode at all. */
+    $ambiguous = [];
+    for ($i = 0; $i < 4000; $i++) {
+        [$q, $key] = mathlab_question(14, 1);
+        if (!preg_match('/^Find the mode of: ([\d, ]+)\.$/', $q, $m)) continue;
+        $counts = array_count_values(array_map('intval', explode(', ', $m[1])));
+        arsort($counts);
+        $top = array_values($counts)[0];
+        if (count(array_filter($counts, fn($n) => $n === $top)) > 1) {
+            $ambiguous[] = "$q (no single mode)";
+        } elseif ((string)array_key_first($counts) !== (string)$key) {
+            $ambiguous[] = "$q (key=$key, mode=" . array_key_first($counts) . ')';
+        }
+    }
+    chk('math lab: no question has two right answers, one of which is marked wrong'
+        . ($ambiguous ? ' — ' . $ambiguous[0] : ''), $ambiguous === []);
+
     chk('math lab: no question is technically correct and pedagogically empty'
         . ($duds ? ' — ' . implode('; ', array_slice(array_unique($duds), 0, 3)) : ''),
         $duds === []);

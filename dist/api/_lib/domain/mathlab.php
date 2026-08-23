@@ -570,9 +570,22 @@ function mathlab_q_statistics(int $form): array {
             $mid = intdiv($k, 2);
             $median = $k % 2 === 1 ? $list[$mid] : ($list[$mid - 1] + $list[$mid]) / 2;
             return ['Find the median of: ' . $shown . '.', mathlab_num($median)]; }
-        case 3: { // A mode planted, so there is exactly one.
+        case 3: { /* A mode planted — and the rest of the list built to be all
+                     DIFFERENT, from each other and from it.
+             
+                     Planting three copies into a list of random numbers does
+                     not give a unique mode: the four remaining slots could
+                     hold three of a kind, or two pairs, and "find the mode of
+                     5, 7, 5, 7, 5, 7" has no answer. It printed once in every
+                     ~450 draws, and every one of them marked a child WRONG for
+                     an answer that was right — which is the exact failure this
+                     whole generated-question design exists to rule out. */
             $m = random_int(2, 30);
-            $list[0] = $m; $list[1] = $m; $list[2] = $m;
+            $rest = [];
+            $pool = array_diff(range(2, 30), [$m]);
+            shuffle($pool);
+            for ($i = 3; $i < $k; $i++) $rest[] = array_pop($pool);
+            $list = array_merge([$m, $m, $m], $rest);
             shuffle($list);
             return ['Find the mode of: ' . implode(', ', $list) . '.', (string)$m]; }
         case 4: return ['Find the range of: ' . $shown . '.', (string)(max($list) - min($list))];

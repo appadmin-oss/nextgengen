@@ -828,6 +828,9 @@
       overview:     () => request('/admin/overview.php'),
       engagement:   (opts) => request('/admin/engagement.php' + qs(opts || {})),
       engagementTrends: (opts) => request('/admin/engagement.php' + qs(Object.assign({ view: 'trends' }, opts || {}))),
+      /* Whether the community is a community: reply rate, distinct voices,
+         reach, return rate, answer speed, and the posts nobody answered. */
+      communityEngagement: (opts) => request('/admin/engagement.php' + qs(Object.assign({ view: 'community' }, opts || {}))),
       dashboard:    () => request('/admin/dashboard.php'),
       statusPages:  () => request('/admin/status-pages.php'),
       statusPagesSet: (data) => request('/admin/status-pages.php', { body: { data } }),
