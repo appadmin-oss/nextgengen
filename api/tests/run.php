@@ -15029,6 +15029,71 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         return (string)$t['format'] === 'centre' && (string)$t['timeControl'] === '1day';
     })());
 
+    /* ── The centre cup is a fixture list too ─────────────────────────────
+     *
+     * Four of the five formats record a pairing the moment a round is drawn —
+     * that is what the tournament_pairings table is FOR, per its own schema
+     * comment: "a pairing exists the moment the round is drawn, before anybody
+     * has moved a piece", and "a bye has no match".
+     *
+     * The centre cup wrote none of them. Its fixtures were reconstructed from
+     * match_games, so a bye — which has no match by definition — appeared
+     * nowhere, and tournament.rounds, the fixture list a member actually
+     * opens, came back EMPTY for the one format the programme runs in the
+     * physical world. */
+    $CUP = (function () use ($ADM) {
+        $r = backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Alimosho centre cup']);
+        $tid = (string)$r['tournamentId'];
+        // Five at one centre and two at another: an odd bracket, so a bye.
+        $field = [['CUP-1', 'Ada Cup', 'Egbeda', 1600], ['CUP-2', 'Bode Cup', 'Egbeda', 1500],
+                  ['CUP-3', 'Chidi Cup', 'Egbeda', 1400], ['CUP-4', 'Dayo Cup', 'Egbeda', 1300],
+                  ['CUP-5', 'Emeka Cup', 'Egbeda', 1200], ['CUP-6', 'Femi Cup', 'Ayobo', 1100],
+                  ['CUP-7', 'Grace Cup', 'Ayobo', 1000]];
+        foreach ($field as [$id, $name, $centre, $rt]) {
+            db_insert('members', ['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.com',
+                'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => $centre,
+                'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+            db_insert('chess_ratings', ['playerId' => $id, 'rating' => $rt, 'games' => 20, 'wins' => 10,
+                'losses' => 8, 'draws' => 2, 'peak' => $rt, 'updatedAt' => now_iso()]);
+            backend_dispatch('tournament.enter', ['requesterId' => $ADM, 'tournamentId' => $tid, 'playerId' => $id]);
+        }
+        backend_dispatch('tournament.advance', ['requesterId' => $ADM, 'tournamentId' => $tid]);
+        return $tid;
+    })();
+
+    chk('a centre cup records its fixtures, not just its games', (function () use ($CUP) {
+        $n = (int)db_row('SELECT COUNT(*) c FROM tournament_pairings WHERE tournamentId = ?', [$CUP])['c'];
+        // Egbeda: five entrants, so two boards and one bye. Ayobo: one board.
+        return $n === 4;
+    })());
+    chk('…including the bye, which has no match and used to appear nowhere', (function () use ($CUP) {
+        $b = db_all("SELECT * FROM tournament_pairings WHERE tournamentId = ? AND isBye = 1", [$CUP]);
+        return count($b) === 1 && (string)$b[0]['result'] === 'bye' && (string)$b[0]['matchId'] === '';
+    })());
+    chk('…so the fixture list a member opens is no longer empty for a centre cup', (function () use ($CUP) {
+        $r = backend_dispatch('tournament.rounds', ['tournamentId' => $CUP, 'playerId' => 'CUP-1']);
+        if (empty($r['ok']) || !$r['rounds']) return false;
+        $boards = 0;
+        foreach ($r['rounds'] as $rd) $boards += count($rd['boards']);
+        // And the heading names the stage, because a centre cup numbers its
+        // rounds from one in each of two stages.
+        return $boards === 4 && strpos((string)$r['rounds'][0]['label'], 'entre') !== false;
+    })());
+    chk('…and the bracket is SEEDED, so the two strongest are not drawn together first', (function () use ($CUP) {
+        /* Five at Egbeda rated 1600 down to 1200. Seeded, the top seed takes
+           the bye and 2v5, 3v4 play. Paired alphabetically — which is what
+           this did — Ada (1600) met Bode (1500) on board one and the centre
+           was settled in round one. */
+        $eg = db_all("SELECT * FROM tournament_pairings WHERE tournamentId = ? AND centre = 'Egbeda' AND isBye = 0", [$CUP]);
+        foreach ($eg as $p) {
+            $pair = [(string)$p['whiteId'], (string)$p['blackId']];
+            sort($pair);
+            if ($pair === ['CUP-1', 'CUP-2']) return false;
+        }
+        $bye = db_row("SELECT whiteId FROM tournament_pairings WHERE tournamentId = ? AND isBye = 1", [$CUP]);
+        return count($eg) === 2 && (string)$bye['whiteId'] === 'CUP-1';
+    })());
+
     // ── A member can SEE it, and join it themselves.
     chk('a member can browse tournaments at all', (function () use ($SW) {
         $r = backend_dispatch('tournament.browse', ['playerId' => 'SW-1']);
@@ -15100,6 +15165,141 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     })());
     chk('nobody is eliminated by losing a Swiss game', (function () use ($SW) {
         return (int)db_row("SELECT COUNT(*) c FROM tournament_entrants WHERE tournamentId = ? AND status = 'active'", [$SW])['c'] === 8;
+    })());
+
+    /* ── The fixture list, simulated to its end at every field size ────────
+     *
+     * One eight-player event proves the wiring. It does not prove the ENGINE,
+     * and the engine is where a tournament actually goes wrong: a repeat
+     * pairing or a third white in a row is not a crash, it is a fixture list a
+     * director has to explain to a room of children.
+     *
+     * So this runs the pairing functions directly — no database, no rounds to
+     * close — over every field from four to forty, plays each event to its
+     * full length, and checks what a fixture list has to satisfy. It found two
+     * real defects the single scripted event could not: a repeat in ROUND TWO
+     * of a nine-player Swiss (eleven of thirty-seven field sizes produced one
+     * somewhere), and a player finishing three whites clear of their blacks,
+     * which the Swiss colour rule does not allow. */
+    $simSwiss = function (int $n): array {
+        $es = [];
+        for ($i = 0; $i < $n; $i++) {
+            $es[] = ['playerId' => 'S' . $i, 'playerName' => 'Sim ' . $i, 'ratingAtEntry' => 1600 - $i * 17,
+                     'seed' => $i + 1, 'score' => 0.0, 'byes' => 0, 'whiteCount' => 0, 'blackCount' => 0,
+                     'opponents' => '[]', 'withdrawn' => 0, 'status' => 'active', 'lastColour' => ''];
+        }
+        $ix = []; foreach ($es as $i => $e) $ix[$e['playerId']] = $i;
+        $met = []; $problems = [];
+        $rounds = tournament_swiss_rounds($n);
+        for ($r = 1; $r <= $rounds; $r++) {
+            $res = tournament_pair_swiss($es, $r);
+            $covered = [];
+            foreach ($res['pairings'] as $p) {
+                $k = [(string)$p['whiteId'], (string)$p['blackId']]; sort($k); $k = implode('|', $k);
+                if (isset($met[$k])) $problems[] = "repeat in round $r";
+                $met[$k] = 1;
+                foreach ([$p['whiteId'], $p['blackId']] as $id) {
+                    if (isset($covered[$id])) $problems[] = "$id twice in round $r";
+                    $covered[$id] = 1;
+                }
+                // Apply the round, the way trn_note_pairing does.
+                foreach ([[$p['whiteId'], $p['blackId'], 'w'], [$p['blackId'], $p['whiteId'], 'b']] as [$me, $opp, $col]) {
+                    $i = $ix[$me];
+                    $o = json_decode($es[$i]['opponents'], true) ?: [];
+                    $o[] = $opp;
+                    $es[$i]['opponents'] = json_encode($o);
+                    $es[$i][$col === 'w' ? 'whiteCount' : 'blackCount']++;
+                    $es[$i]['lastColour'] = $col;
+                }
+                // A deterministic spread of results, so the run is repeatable.
+                $wi = $ix[$p['whiteId']]; $bi = $ix[$p['blackId']];
+                $out = crc32($p['whiteId'] . $p['blackId'] . $r) % 3;
+                if ($out === 0) $es[$wi]['score'] += 1;
+                elseif ($out === 1) $es[$bi]['score'] += 1;
+                else { $es[$wi]['score'] += 0.5; $es[$bi]['score'] += 0.5; }
+            }
+            foreach ($res['byes'] as $b) {
+                $i = $ix[$b['playerId']];
+                if (isset($covered[$b['playerId']])) $problems[] = "paired AND bye in round $r";
+                $covered[$b['playerId']] = 1;
+                $es[$i]['byes']++; $es[$i]['score'] += 1;
+            }
+            if (count($covered) !== $n) $problems[] = "round $r covered " . count($covered) . " of $n";
+            if (count($res['byes']) > 1) $problems[] = "round $r gave " . count($res['byes']) . ' byes';
+        }
+        $worstColour = 0; $byes = [];
+        foreach ($es as $e) {
+            $worstColour = max($worstColour, abs((int)$e['whiteCount'] - (int)$e['blackCount']));
+            $byes[] = (int)$e['byes'];
+        }
+        return ['problems' => $problems, 'colour' => $worstColour,
+                'byeSpread' => $byes ? max($byes) - min($byes) : 0];
+    };
+    $swissRuns = [];
+    for ($n = 4; $n <= 40; $n++) $swissRuns[$n] = $simSwiss($n);
+
+    chk('Swiss: every field from 4 to 40 pairs a full round every round, with no repeats', (function () use ($swissRuns) {
+        $bad = [];
+        foreach ($swissRuns as $n => $r) if ($r['problems']) $bad[] = $n . ': ' . $r['problems'][0];
+        if ($bad) fwrite(STDERR, "    " . implode('; ', array_slice($bad, 0, 4)) . "\n");
+        return $bad === [];
+    })());
+    chk('…and nobody ends more than two of one colour clear, which is the Swiss limit', (function () use ($swissRuns) {
+        $worst = 0; $at = 0;
+        foreach ($swissRuns as $n => $r) if ($r['colour'] > $worst) { $worst = $r['colour']; $at = $n; }
+        if ($worst > 2) fwrite(STDERR, "    imbalance $worst at n=$at\n");
+        return $worst <= 2;
+    })());
+    chk('…and no player takes a second bye while somebody else has had none', (function () use ($swissRuns) {
+        foreach ($swissRuns as $n => $r) if ($r['byeSpread'] > 1) return false;
+        return true;
+    })());
+
+    /* Round robin and knockout, to the same standard. Both were already
+     * correct when this was written — asserted so they stay that way. */
+    chk('round robin: everybody meets everybody exactly once, at every field size', (function () {
+        foreach ([3, 4, 5, 6, 7, 8, 10, 12] as $n) {
+            $es = [];
+            for ($i = 0; $i < $n; $i++) {
+                $es[] = ['playerId' => 'R' . $i, 'playerName' => 'RR ' . $i, 'ratingAtEntry' => 1500,
+                         'seed' => $i + 1, 'score' => 0.0, 'byes' => 0, 'whiteCount' => 0, 'blackCount' => 0,
+                         'opponents' => '[]', 'withdrawn' => 0, 'status' => 'active', 'lastColour' => ''];
+            }
+            $met = [];
+            for ($r = 1; $r <= tournament_roundrobin_rounds($n); $r++) {
+                foreach (tournament_pair_roundrobin($es, $r)['pairings'] as $p) {
+                    $k = [(string)$p['whiteId'], (string)$p['blackId']]; sort($k);
+                    $k = implode('|', $k);
+                    if (isset($met[$k])) return false;              // a repeat
+                    $met[$k] = 1;
+                }
+            }
+            if (count($met) !== $n * ($n - 1) / 2) return false;     // a missing fixture
+        }
+        return true;
+    })());
+    chk('knockout: every field size reduces to exactly one survivor', (function () {
+        foreach ([2, 3, 5, 6, 8, 11, 16, 20, 33] as $n) {
+            $es = [];
+            for ($i = 0; $i < $n; $i++) {
+                $es[] = ['playerId' => 'K' . $i, 'playerName' => 'KO ' . $i, 'ratingAtEntry' => 1600 - $i,
+                         'seed' => $i + 1, 'whiteCount' => 0, 'blackCount' => 0, 'opponents' => '[]',
+                         'withdrawn' => 0, 'status' => 'active', 'lastColour' => ''];
+            }
+            $live = $n; $r = 0;
+            while ($live > 1 && $r < 12) {
+                $r++;
+                $res = tournament_pair_knockout($es, $r);
+                if (!$res['pairings']) return false;                 // stalled
+                $through = array_map(fn($p) => (string)$p['whiteId'], $res['pairings']);
+                foreach ($res['byes'] as $b) $through[] = (string)$b['playerId'];
+                $keep = array_flip($through);
+                foreach ($es as $i => $e) if (!isset($keep[$e['playerId']])) $es[$i]['status'] = 'eliminated';
+                $live = count($through);
+            }
+            if ($live !== 1) return false;
+        }
+        return true;
     })());
 
     // ── Round two: paired by score, and never a repeat.

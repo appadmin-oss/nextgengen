@@ -576,7 +576,11 @@ function tournament_rounds(array $p): array {
     if (!$t) return ['ok' => false, 'error' => 'not_found'];
     $viewer = (string)($p['playerId'] ?? '');
 
-    $pairs = db_all('SELECT * FROM tournament_pairings WHERE tournamentId = ? ORDER BY round DESC, board ASC', [$tid]);
+    /* Ordered by STAGE as well as round. A centre cup runs two stages and
+       numbers its rounds from one in each, so grouping on the round alone put
+       the centre round one and the final round one in the same bucket — two
+       different sets of fixtures under one heading. */
+    $pairs = db_all('SELECT * FROM tournament_pairings WHERE tournamentId = ? ORDER BY stage ASC, round DESC, board ASC', [$tid]);
     $ids = array_values(array_filter(array_map(fn($x) => (string)$x['matchId'], $pairs)));
     $states = [];
     if ($ids) {
@@ -587,7 +591,8 @@ function tournament_rounds(array $p): array {
     }
     $rounds = [];
     foreach ($pairs as $p2) {
-        $r = (int)$p2['round'];
+        $stage = (string)($p2['stage'] ?? '');
+        $r = ($stage === '' ? '' : $stage . ':') . (int)$p2['round'];
         $m = $states[(string)$p2['matchId']] ?? null;
         $rounds[$r][] = [
             'board' => (int)$p2['board'], 'centre' => (string)$p2['centre'],
@@ -603,7 +608,19 @@ function tournament_rounds(array $p): array {
     }
     krsort($rounds);
     $out = [];
-    foreach ($rounds as $n => $boards) $out[] = ['round' => $n, 'boards' => $boards];
+    foreach ($rounds as $key => $boards) {
+        $bits = explode(':', (string)$key);
+        $stage = count($bits) > 1 ? $bits[0] : '';
+        $n = (int)end($bits);
+        $out[] = [
+            'round' => $n,
+            'stage' => $stage,
+            // What a heading should say. A centre cup needs to name its stage
+            // — "Centre round 2" and "Final round 2" are different fixtures.
+            'label' => $stage === '' ? 'Round ' . $n : ucfirst($stage) . ' round ' . $n,
+            'boards' => $boards,
+        ];
+    }
     return ['ok' => true, 'tournament' => trn_shape($t, $viewer), 'rounds' => $out];
 }
 

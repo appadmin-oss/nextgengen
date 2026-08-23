@@ -168,22 +168,58 @@ function tournament_live_entrants(string $tid, string $stage): array {
 /**
  * Pair one bracket into matches.
  *
- * Deterministic order (by name) rather than random: a bracket a child cannot
- * predict is a bracket a child cannot check, and "why am I playing him again"
- * is a question staff should be able to answer from the screen.
+ * On the SHARED knockout engine, and recording pairings like every other
+ * format. Both of those are changes, and both were defects:
  *
- * An odd entrant gets a bye and advances untouched. Byes go to whoever is
- * LAST in the order, so the same person cannot draw one every round by virtue
- * of their name.
+ * · It paired alphabetically — entrants ordered by name, then [0] v [1],
+ *   [2] v [3]. That is the exact flaw tournament_pair_knockout's own comment
+ *   describes fixing: a draw could put the two strongest children on board one
+ *   of round one and settle the centre before it started. It is seeded now:
+ *   the field is ordered by rating and the strongest plays the weakest, so the
+ *   top two can only meet at the end of their centre.
+ *
+ * · The bye went to whoever sorted LAST, and the comment here claimed that
+ *   meant "the same person cannot draw one every round by virtue of their
+ *   name". It meant the opposite — sort by name, take the last, and the child
+ *   at the end of the alphabet draws the bye every round they survive. It goes
+ *   to the top seed now, which is the knockout standard and is at least a
+ *   reason somebody can be told.
+ *
+ * What it deliberately does NOT do is hand the whole bracket to
+ * tournament_pair_knockout. That engine pads the field to a power of two, so
+ * five entrants become one game and three byes; this one halves, so five
+ * become two games and one bye. Both are real knockout shapes and the halving
+ * one is what the programme runs in the hall — replacing it would be changing
+ * the tournament, not fixing it.
+ *
+ * · It wrote no tournament_pairings rows. Four of the five formats record a
+ *   fixture the moment a round is drawn — that is what the table is FOR, per
+ *   its own schema comment — and the centre cup instead left its fixture list
+ *   to be reconstructed from match_games. A bye has no match, so a centre-cup
+ *   bye appeared nowhere at all, and tournament_rounds(), which is the fixture
+ *   list a member actually opens, returned nothing for a centre cup.
  */
 function tournament_pair_bracket(array $t, array $entrants, string $stage, int $round): array {
     $made = []; $byes = [];
     $n = count($entrants);
     if ($n <= 1) return ['matches' => [], 'byes' => $n === 1 ? [$entrants[0]] : []];
 
-    $pairs = (int)floor($n / 2);
-    for ($i = 0; $i < $pairs; $i++) {
-        $a = $entrants[$i * 2]; $b = $entrants[$i * 2 + 1];
+    $tid = (string)$t['tournamentId'];
+
+    /* Seeded, strongest against weakest. An odd field gives the bye to the
+     * top seed and the rest fold around them, which is the standard bracket:
+     * 1 byes, 2 v 5, 3 v 4. */
+    usort($entrants, fn($x, $y) => [(int)$y['ratingAtEntry'], (string)$x['playerName']]
+                               <=> [(int)$x['ratingAtEntry'], (string)$y['playerName']]);
+    $bye = null;
+    if ($n % 2 === 1) { $bye = array_shift($entrants); }
+
+    $pairs = [];
+    $c = count($entrants);
+    for ($i = 0; $i < $c / 2; $i++) $pairs[] = [$entrants[$i], $entrants[$c - 1 - $i]];
+
+    $board = 1;
+    foreach ($pairs as [$a, $b]) {
         $now = now_iso();
         $matchId = 'MT-' . strtoupper(rand_hex(9));
         db_insert('match_games', [
@@ -196,14 +232,42 @@ function tournament_pair_bracket(array $t, array $entrants, string $stage, int $
             'playerB' => (string)$b['playerId'], 'playerBName' => (string)$b['playerName'], 'playerBType' => (string)$b['playerType'],
             'turnPlayer' => (string)$a['playerId'],
             'state' => match_initial_state((string)$t['game']), 'ply' => 0,
-            'tournamentId' => (string)$t['tournamentId'],
+            'tournamentId' => $tid,
             'tournamentRound' => $round, 'tournamentStage' => $stage,
+            'board' => $board,
             'createdAt' => $now, 'updatedAt' => $now,
         ]);
+        trn_record_pairing($tid, $stage, $round, $board, (string)$a['centre'],
+                           $a, $b, $matchId, false);
+        $board++;
         $made[] = $matchId;
     }
-    if ($n % 2 === 1) $byes[] = $entrants[$n - 1];
+    if ($bye) {
+        // A bye is a fixture too — the one the old engine could not show.
+        trn_record_pairing($tid, $stage, $round, 0, (string)($bye['centre'] ?? ''),
+                           $bye, null, '', true);
+        $byes[] = $bye;
+    }
     return ['matches' => $made, 'byes' => $byes];
+}
+
+/**
+ * Write one fixture. Shared by every format, so a fixture list means the same
+ * thing whichever engine drew it — and so a bye is a row rather than an
+ * absence somebody has to infer.
+ */
+function trn_record_pairing(string $tid, string $stage, int $round, int $board, string $centre,
+                            array $white, ?array $black, string $matchId, bool $isBye): void {
+    db_insert('tournament_pairings', [
+        'tournamentId' => $tid, 'round' => $round, 'stage' => $stage, 'board' => $board,
+        'centre' => $centre,
+        'whiteId' => (string)$white['playerId'], 'whiteName' => (string)$white['playerName'],
+        'blackId' => $black ? (string)$black['playerId'] : '',
+        'blackName' => $black ? (string)$black['playerName'] : '',
+        'matchId' => $matchId, 'isBye' => $isBye ? 1 : 0,
+        'result' => $isBye ? 'bye' : '', 'scoredAt' => $isBye ? now_iso() : '',
+        'createdAt' => now_iso(),
+    ]);
 }
 
 /**

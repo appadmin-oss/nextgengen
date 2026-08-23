@@ -168,24 +168,75 @@ function tournament_pair_swiss(array $entrants, int $round): array {
     }
     krsort($groups, SORT_NUMERIC);
 
-    $pairings = [];
-    $board = 1;
+    /* Pairs are held as the two ENTRANTS until the end, not as the flat rows
+     * the writer stores. The repair below has to ask "have these two met",
+     * and the stored row carries ids and names only. */
+    $made = [];
     $carry = [];
     foreach ($groups as $group) {
         $pool = array_merge($carry, $group);
         $carry = [];
         $paired = tournament_swiss_fold($pool);
-        foreach ($paired['pairs'] as [$a, $b]) {
-            [$w, $bl] = tournament_assign_colours($a, $b);
-            $pairings[] = tournament_pair($w, $bl, $board++);
-        }
+        foreach ($paired['pairs'] as [$a, $b]) $made[] = [$a, $b];
         $carry = $paired['left'];
     }
-    /* Anybody still unpaired at the bottom has met everybody left. Pair them
-     * with each other in score order rather than leaving them out: a repeat
-     * pairing is a smaller wrong than a player who does not get a game. */
+    /* Whoever is left at the bottom could not be paired inside their own score
+     * group. Before accepting a repeat, TRY TO SWAP.
+     *
+     * Measured before this existed: simulating twelve field sizes to their
+     * full length produced a repeat pairing at nine players in ROUND TWO —
+     * after one round, when nobody has met more than one person and a legal
+     * partner obviously exists. The leftovers were simply paired with each
+     * other and the repeat accepted, because the fold only ever looks inside
+     * one score group and never revisits a pair it has already made.
+     *
+     * This is the transposition step the header says the honest club subset
+     * leaves out. It is bounded and it is not clever: for each leftover pair
+     * that would be a repeat, walk the pairings already made and look for one
+     * we can exchange a player with such that BOTH resulting pairs are fresh.
+     * One pass, first fit, no backtracking. It does not make this a Dutch
+     * implementation; it makes it stop producing a repeat when an obvious swap
+     * was available. */
     while (count($carry) >= 2) {
-        $a = array_shift($carry); $b = array_shift($carry);
+        $a = array_shift($carry);
+        /* Choose $a's partner rather than taking whoever is next in the list.
+         * Two things to want, in order: somebody $a has not met, and somebody
+         * whose colour debt runs the other way. Taking the adjacent player was
+         * how a field of thirty ended with a player three whites clear of
+         * their blacks — an imbalance a Swiss does not allow. */
+        $pick = 0; $best = -1;
+        foreach ($carry as $i => $cand) {
+            $score = (tournament_have_met($a, $cand) ? 0 : 2)
+                   + (tournament_colours_oppose($a, $cand) ? 1 : 0);
+            if ($score > $best) { $best = $score; $pick = $i; }
+            if ($best === 3) break;                      // fresh and complementary
+        }
+        $b = $carry[$pick];
+        array_splice($carry, $pick, 1);
+        if (tournament_have_met($a, $b)) tournament_swap_out($made, $a, $b);
+        $made[] = [$a, $b];
+    }
+
+    /* One last pass for colour.
+     *
+     * Everything above chooses greedily, one pairing at a time, and greedy is
+     * not enough: simulating every field from four to forty still left ONE of
+     * them with a player three whites clear of their blacks, which a Swiss
+     * does not allow. Tuning the greedy score just moved which field it was —
+     * n=30 became n=21 — which is the signal that the problem is not the score
+     * but the absence of a second look.
+     *
+     * So: after the pairs exist, find anybody the assignment would push past
+     * two and try to exchange partners with another pair. Same shape as the
+     * repeat repair, same bounds, and it only accepts an exchange that lowers
+     * the worst imbalance without introducing a repeat. */
+    tournament_colour_repair($made);
+
+    /* Flatten. Boards are numbered by strength and the swap can move somebody,
+     * so they are assigned once here rather than maintained through it. */
+    $pairings = [];
+    $board = 1;
+    foreach ($made as [$a, $b]) {
         [$w, $bl] = tournament_assign_colours($a, $b);
         $pairings[] = tournament_pair($w, $bl, $board++);
     }
@@ -193,6 +244,95 @@ function tournament_pair_swiss(array $entrants, int $round): array {
     $byes = $bye ? [$bye] : [];
     foreach ($carry as $left) $byes[] = $left;
     return ['pairings' => $pairings, 'byes' => $byes];
+}
+
+/**
+ * Exchange partners between pairs until nobody is over the colour limit, or
+ * until no exchange helps. Bounded: at most one improving pass per offending
+ * pair, and every candidate exchange is checked for repeats first.
+ */
+function tournament_colour_repair(array &$made): void {
+    $n = count($made);
+    for ($i = 0; $i < $n; $i++) {
+        if (tournament_colour_cost($made[$i][0], $made[$i][1]) <= 2) continue;
+        for ($j = 0; $j < $n; $j++) {
+            if ($j === $i) continue;
+            [$a, $b] = $made[$i];
+            [$c, $d] = $made[$j];
+            // The two ways to re-cut a pair of pairs.
+            foreach ([[[$a, $c], [$b, $d]], [[$a, $d], [$b, $c]]] as [$p, $q]) {
+                if (tournament_have_met($p[0], $p[1]) || tournament_have_met($q[0], $q[1])) continue;
+                $before = max(tournament_colour_cost($a, $b), tournament_colour_cost($c, $d));
+                $after  = max(tournament_colour_cost($p[0], $p[1]), tournament_colour_cost($q[0], $q[1]));
+                if ($after < $before) { $made[$i] = $p; $made[$j] = $q; break 2; }
+            }
+        }
+    }
+}
+
+/**
+ * What this pairing would cost, in colour terms: the worst imbalance either
+ * player is left with once the colours are handed out. Zero is perfect.
+ *
+ * Measured against the assignment that would ACTUALLY be made — asking
+ * tournament_assign_colours rather than assuming the good case — so the score
+ * cannot disagree with what then happens.
+ */
+function tournament_colour_cost(array $a, array $b): int {
+    [$w, $bl] = tournament_assign_colours($a, $b);
+    $bal = function (array $e, int $d) {
+        return abs(((int)($e['whiteCount'] ?? 0) - (int)($e['blackCount'] ?? 0)) + $d);
+    };
+    return max($bal($w, 1), $bal($bl, -1));
+}
+
+/**
+ * Would giving these two a game help both their colour histories?
+ *
+ * True when one is owed white and the other owed black, or when neither is
+ * owed anything — in both cases the pairing can be coloured without pushing
+ * anybody further from level. False when both lean the same way, which is the
+ * pairing that eventually produces a third white in a row.
+ */
+function tournament_colours_oppose(array $a, array $b): bool {
+    $balA = (int)($a['whiteCount'] ?? 0) - (int)($a['blackCount'] ?? 0);
+    $balB = (int)($b['whiteCount'] ?? 0) - (int)($b['blackCount'] ?? 0);
+    return ($balA > 0 && $balB < 0) || ($balA < 0 && $balB > 0) || ($balA === 0 && $balB === 0);
+}
+
+/** Have these two already played each other in this event? */
+function tournament_have_met(array $a, array $b): bool {
+    return in_array((string)$b['playerId'], tournament_opponents_of($a), true);
+}
+
+/**
+ * Try to break up an already-made pairing so that $a and $b do not have to
+ * repeat. Mutates $pairings in place and swaps $a or $b for somebody fresh.
+ *
+ * The exchange is only taken when BOTH new pairs are fresh — swapping one
+ * repeat for another is not progress. Returns whether anything moved, so a
+ * caller can tell "fixed" from "genuinely stuck", which is the difference
+ * between a bug and the last resort this was always meant to be.
+ */
+function tournament_swap_out(array &$made, array &$a, array &$b): bool {
+    foreach ($made as $i => [$x, $y]) {
+        // Either half of an existing pair can be the one we take.
+        foreach ([[$x, $y], [$y, $x]] as [$taken, $partner]) {
+            // $a takes $taken's place beside $partner; $taken joins $b.
+            if (!tournament_have_met($a, $partner) && !tournament_have_met($taken, $b)) {
+                $made[$i] = [$a, $partner];
+                $a = $taken;
+                return true;
+            }
+            // …or $b does, and $a keeps its place.
+            if (!tournament_have_met($b, $partner) && !tournament_have_met($taken, $a)) {
+                $made[$i] = [$b, $partner];
+                $b = $taken;
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 /**
@@ -216,17 +356,23 @@ function tournament_swiss_fold(array $pool): array {
             $found = $i; break;
         }
         if ($found < 0) { $left[] = $a; continue; }
-        /* Among the candidates who have not met $a, prefer one whose colour
-         * debt runs the other way. A Swiss allows an imbalance of two but not
-         * three of a colour in a row, and taking the first legal partner walks
-         * straight into it whenever two players who both had white are on the
-         * same score. */
-        $balA = (int)($a['whiteCount'] ?? 0) - (int)($a['blackCount'] ?? 0);
+        /* Among the candidates who have not met $a, pick the one that leaves
+         * both players' colour histories most level.
+         *
+         * This used to take the first candidate whose debt merely ran the
+         * other way, and fall back to the first fresh one otherwise. First-fit
+         * is not good enough: a Swiss allows an imbalance of two and not
+         * three, and simulating every field from four to forty put a player at
+         * THREE whites clear at n=30 — a genuine violation, not a rounding of
+         * the rule. Scoring the candidates instead costs one pass over a list
+         * that is already in memory. */
         $seenSet = array_flip($seen);
+        $bestCost = PHP_INT_MAX;
         foreach ($bot as $i => $cand) {
             if (isset($seenSet[(string)$cand['playerId']])) continue;
-            $balC = (int)($cand['whiteCount'] ?? 0) - (int)($cand['blackCount'] ?? 0);
-            if (($balA > 0 && $balC < 0) || ($balA < 0 && $balC > 0) || ($balA === 0 && $balC === 0)) { $found = $i; break; }
+            $cost = tournament_colour_cost($a, $cand);
+            if ($cost < $bestCost) { $bestCost = $cost; $found = $i; }
+            if ($cost === 0) break;                      // cannot do better
         }
         $pairs[] = [$a, $bot[$found]];
         array_splice($bot, $found, 1);
