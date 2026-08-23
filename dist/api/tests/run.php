@@ -17455,5 +17455,320 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'PRP-%'");
 })();
 
+/* ── Filling a field, and saying when it runs ──────────────────────────────
+ *
+ * Two gaps that made a tournament harder to run than to build. Entrants could
+ * only be added one at a time, so the field was whoever the director happened
+ * to remember; and startsAt/endsAt were columns nothing validated and nothing
+ * read, so a director could set an event to end before it began and see no
+ * symptom at all.
+ * ───────────────────────────────────────────────────────────────────────── */
+(function () {
+    $ADM = 'NGG-2025-0099';
+    db_exec("DELETE FROM tournaments WHERE name LIKE 'Invite %'");
+    db_exec("DELETE FROM tournament_invites");
+    db_exec("DELETE FROM notifications WHERE kind = 'tournament'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'INV-%'");
+
+    $now = now_iso();
+    /* Six children at two centres, plus one at a centre the event excludes. */
+    /* Centres nothing else in this suite uses, so the counts below are this
+       fixture's and not whatever earlier sections left in the members table. */
+    $roster = [['INV-A', 'Ada Uche', 'Inviteton'], ['INV-B', 'Bimbo Sanni', 'Inviteton'],
+               ['INV-C', 'Chike Obi', 'Inviteton'], ['INV-D', 'Dupe Alao', 'Askborough'],
+               ['INV-E', 'Ejiro Uwa', 'Askborough'], ['INV-F', 'Femi Bello', 'Elsewhere']];
+    foreach ($roster as [$id, $nm, $ctr]) {
+        db_insert('members', ['memberId' => $id, 'fullName' => $nm, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'centre' => $ctr, 'role' => 'member', 'status' => 'active',
+            'createdAt' => $now, 'updatedAt' => $now]);
+    }
+
+    /* ── The window ──────────────────────────────────────────────────────── */
+
+    $hence = fn(int $days) => gmdate('Y-m-d\TH:i:s\Z', time() + $days * 86400);
+    $ago   = fn(int $days) => gmdate('Y-m-d\TH:i:s\Z', time() - $days * 86400);
+
+    chk('a tournament that ends before it begins is refused',
+        backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Invite Backwards',
+            'format' => 'swiss', 'timeControl' => '10+0',
+            'startsAt' => $hence(7), 'endsAt' => $hence(2)])['error'] === 'ends_before_it_starts');
+    chk('…so is one that already ended',
+        backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Invite Past',
+            'format' => 'swiss', 'timeControl' => '10+0',
+            'endsAt' => $ago(2)])['error'] === 'ends_in_the_past');
+    chk('…and one starting last year, which is a mistyped date rather than a plan',
+        backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Invite Ancient',
+            'format' => 'swiss', 'timeControl' => '10+0',
+            'startsAt' => $ago(9), 'endsAt' => $hence(2)])['error'] === 'starts_in_the_past');
+    /* And the message names the box worth fixing: a start 300 days ago with an
+       end next week is a mistyped year, not an over-long window. */
+    chk('…naming the field actually worth correcting, not the one that also looks wrong',
+        backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Invite Mistype',
+            'format' => 'swiss', 'timeControl' => '10+0',
+            'startsAt' => $ago(300), 'endsAt' => $hence(2)])['error'] === 'starts_in_the_past');
+    chk('…and a "tournament" running for a year, which is a season',
+        backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Invite Forever',
+            'format' => 'swiss', 'timeControl' => '10+0',
+            'startsAt' => $hence(1), 'endsAt' => $hence(400)])['error'] === 'window_too_long');
+    chk('a date that is not a date is refused rather than stored as nonsense',
+        backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Invite Garbage',
+            'format' => 'swiss', 'timeControl' => '10+0',
+            'startsAt' => 'next Thursday-ish'])['error'] === 'bad_start');
+    chk('no dates at all is still fine — plenty of club events start when somebody says go',
+        !empty(backend_dispatch('tournament.create', ['requesterId' => $ADM,
+            'name' => 'Invite Undated', 'format' => 'swiss', 'timeControl' => '10+0'])['ok']));
+
+    $c = backend_dispatch('tournament.create', ['requesterId' => $ADM, 'name' => 'Invite Open Cup',
+        'format' => 'swiss', 'timeControl' => '10+0', 'centres' => ['Inviteton', 'Askborough'],
+        'kinds' => ['member'], 'startsAt' => $hence(3), 'endsAt' => $hence(10)]);
+    chk('a tournament can be given a start and an end', !empty($c['ok']));
+    $TID = (string)$c['tournamentId'];
+
+    $pub = backend_dispatch('tournament.bracket', ['tournamentId' => $TID])['tournament'];
+    chk('…and every screen reads the same computed window, not its own idea of one',
+        ($pub['window']['durationDays'] ?? 0) === 7
+        && $pub['window']['entriesClosed'] === false
+        && $pub['window']['overdue'] === false
+        && ($pub['window']['secondsToStart'] ?? 0) > 0);
+
+    /* ── Inviting ────────────────────────────────────────────────────────── */
+
+    $dry = backend_dispatch('tournament.inviteAll',
+        ['requesterId' => $ADM, 'tournamentId' => $TID, 'dryRun' => true]);
+    chk('the director can see how many it would ask before it asks anybody',
+        !empty($dry['ok']) && $dry['dryRun'] === true && $dry['wouldInvite'] === 5);
+    chk('…and a dry run sends nothing',
+        (int)(db_row("SELECT COUNT(*) c FROM tournament_invites")['c'] ?? 0) === 0);
+
+    $r = backend_dispatch('tournament.inviteAll', ['requesterId' => $ADM, 'tournamentId' => $TID]);
+    chk('inviting everybody asks exactly the people the tournament allows',
+        !empty($r['ok']) && $r['invited'] === 5);
+    chk('…and leaves out the child at a centre the event is not running at',
+        (int)(db_row("SELECT COUNT(*) c FROM tournament_invites WHERE tournamentId = ? AND playerId = 'INV-F'",
+              [$TID])['c'] ?? 0) === 0);
+    chk('…each of whom actually gets told',
+        (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE kind = 'tournament'")['c'] ?? 0) === 5);
+    chk('…and the message says what they have been asked to',
+        strpos((string)(db_row("SELECT body FROM notifications WHERE kind = 'tournament' LIMIT 1")['body'] ?? ''),
+               'Swiss') === 0);
+
+    /* An invitation is not an entry. This is the whole distinction: a child
+       signed up without being asked gets a bye, a forfeit and a rating loss
+       for a game they never agreed to play. */
+    chk('an invitation does NOT enter anybody',
+        (int)(db_row("SELECT COUNT(*) c FROM tournament_entrants WHERE tournamentId = ?", [$TID])['c'] ?? 0) === 0);
+
+    $again = backend_dispatch('tournament.inviteAll', ['requesterId' => $ADM, 'tournamentId' => $TID]);
+    chk('pressing it twice does not send everybody a second copy',
+        $again['invited'] === 0 && $again['alreadyInvited'] === 5);
+
+    /* Conversion, which nothing could answer before because nobody recorded
+       who was asked. */
+    backend_dispatch('tournament.join', ['playerId' => 'INV-A', 'tournamentId' => $TID]);
+    backend_dispatch('tournament.enter', ['requesterId' => $ADM, 'tournamentId' => $TID, 'playerId' => 'INV-D']);
+    $st = backend_dispatch('tournament.bracket', ['tournamentId' => $TID])['invites'];
+    chk('taking up an invitation is recorded, whichever way they came in',
+        $st['invited'] === 5 && $st['joined'] === 2 && $st['acceptRate'] === 40);
+
+    chk('somebody already entered is not invited again',
+        backend_dispatch('tournament.inviteAll',
+            ['requesterId' => $ADM, 'tournamentId' => $TID, 'dryRun' => true])['eligible'] === 3);
+
+    chk('a plain member cannot invite the whole club to anything',
+        backend_dispatch('tournament.inviteAll',
+            ['requesterId' => 'INV-B', 'tournamentId' => $TID])['error'] === 'forbidden');
+
+    /* ── The window is a gate, not a label ───────────────────────────────── */
+
+    /* Move the start into the past and entries must shut — the join path and
+       the card have to agree, because they ask the same function. */
+    db_update('tournaments', ['startsAt' => $ago(1)], ['tournamentId' => $TID]);
+    $t2 = db_row('SELECT * FROM tournaments WHERE tournamentId = ?', [$TID]);
+    chk('once it has started, entries are shut',
+        trn_window($t2)['entriesClosed'] === true && trn_window($t2)['started'] === true);
+    chk('…and a child who tries to join is told why, not just refused',
+        strpos((string)(backend_dispatch('tournament.join',
+            ['playerId' => 'INV-B', 'tournamentId' => $TID])['message'] ?? ''), 'already started') !== false);
+    chk('…and nobody can be invited to a race that is already run',
+        backend_dispatch('tournament.inviteAll',
+            ['requesterId' => $ADM, 'tournamentId' => $TID, 'dryRun' => true])['wouldInvite'] === 0);
+
+    /* Past its end and still running is the thing a director needs to see and
+       had no way to. Nothing is force-closed: ending a live game by the clock
+       on the wall would void real play. */
+    db_update('tournaments', ['endsAt' => $ago(1)], ['tournamentId' => $TID]);
+    $t3 = db_row('SELECT * FROM tournaments WHERE tournamentId = ?', [$TID]);
+    chk('an event past its end date is flagged as overdue', trn_window($t3)['overdue'] === true);
+    chk('…but nothing is force-closed over the top of live games',
+        (string)$t3['status'] === 'open');
+    db_update('tournaments', ['status' => 'complete'], ['tournamentId' => $TID]);
+    chk('…and a finished event is not "overdue", it is finished',
+        trn_window(db_row('SELECT * FROM tournaments WHERE tournamentId = ?', [$TID]))['overdue'] === false);
+
+    db_exec("DELETE FROM tournaments WHERE name LIKE 'Invite %'");
+    db_exec("DELETE FROM tournament_invites");
+    db_exec("DELETE FROM tournament_entrants WHERE tournamentId = ?", [$TID]);
+    db_exec("DELETE FROM notifications WHERE kind = 'tournament'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'INV-%'");
+})();
+
+/* ── Community engagement: the numbers that can fail ───────────────────────
+ *
+ * The point of this suite is the arithmetic, so the fixture is built by hand
+ * with an answer that can be worked out on paper:
+ *
+ *   Channel "loud"   4 posts old enough to judge, 3 of them answered  → 75%
+ *   Channel "quiet"  4 posts old enough to judge, 0 answered          → 0%
+ *   Plus 1 post two hours old with no reply, in "loud" — inside the grace
+ *   window, so it must count in `posts` and NOT in `postsJudged`.
+ *   Overall: 6 of 8 judged posts answered → 75%… no: 3 of 8 → 38%.
+ *
+ * People:
+ *   AMA  posted in both windows                → contributor, returned
+ *   BOLA posted last window, silent this one   → quiet (the actionable band)
+ *   CHI  only reacted this window              → reactor
+ *   DELE only read this window                 → reader
+ *   EMEK commented this window, new            → replier, newcomer
+ *   FUNM on the roster, has never once turned up → neverJoinedIn
+ * ─────────────────────────────────────────────────────────────────────────── */
+(function () {
+    foreach (['community_posts', 'community_comments', 'community_reactions',
+              'community_reads', 'community_poll_votes', 'community_channels'] as $t) {
+        db_exec("DELETE FROM $t");
+    }
+    db_exec("DELETE FROM members WHERE memberId LIKE 'CE-%'");
+
+    $ago = fn(float $hours) => gmdate('Y-m-d\TH:i:s\Z', time() - (int)round($hours * 3600));
+    $people = [['CE-AMA', 'Amaka Obi'], ['CE-BOLA', 'Bola Ade'], ['CE-CHI', 'Chidi Eze'],
+               ['CE-DELE', 'Dele Kola'], ['CE-EMEK', 'Emeka Nwosu'], ['CE-FUNM', 'Funmi Bello']];
+    foreach ($people as [$id, $name]) {
+        db_insert('members', ['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'centre' => 'Egbeda', 'role' => 'member', 'status' => 'active',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    foreach ([['CH-LOUD', 'loud', 'Loud Room'], ['CH-QUIET', 'quiet', 'Quiet Room']] as $i => [$cid, $slug, $nm]) {
+        db_insert('community_channels', ['channelId' => $cid, 'slug' => $slug, 'name' => $nm,
+            'kind' => 'club', 'status' => 'active', 'sortOrder' => $i, 'createdAt' => now_iso()]);
+    }
+
+    $post = function (string $pid, string $cid, string $author, float $hoursAgo) {
+        db_insert('community_posts', ['postId' => $pid, 'channelId' => $cid, 'authorId' => $author,
+            'authorName' => $author, 'authorCentre' => 'Egbeda', 'body' => 'Post ' . $pid,
+            'status' => 'published', 'createdAt' => gmdate('Y-m-d\TH:i:s\Z', time() - (int)round($hoursAgo * 3600))]);
+    };
+    $reply = function (string $pid, string $who, float $hoursAgo) {
+        db_insert('community_comments', ['commentId' => 'C-' . $pid . '-' . $who, 'postId' => $pid,
+            'memberId' => $who, 'memberName' => $who, 'body' => 'reply', 'status' => 'published',
+            'createdAt' => gmdate('Y-m-d\TH:i:s\Z', time() - (int)round($hoursAgo * 3600))]);
+    };
+
+    /* This window (the last 30 days). Three answered posts in "loud", each
+       answered a known number of hours later: 2, 4 and 12 → median 4. */
+    $post('P1', 'CH-LOUD', 'CE-AMA', 200);   $reply('P1', 'CE-EMEK', 198);   // 2h
+    $post('P2', 'CH-LOUD', 'CE-AMA', 150);   $reply('P2', 'CE-EMEK', 146);   // 4h
+    $post('P3', 'CH-LOUD', 'CE-AMA', 100);   $reply('P3', 'CE-EMEK', 88);    // 12h
+    $post('P4', 'CH-LOUD', 'CE-AMA', 90);                                     // ignored
+    foreach ([80, 70, 60, 50] as $i => $h) $post('Q' . $i, 'CH-QUIET', 'CE-AMA', $h);   // all ignored
+    $post('FRESH', 'CH-LOUD', 'CE-AMA', 2);  // inside the grace window
+
+    db_insert('community_reactions', ['postId' => 'P1', 'memberId' => 'CE-CHI', 'emoji' => '👍',
+        'createdAt' => $ago(120)]);
+    db_insert('community_reads', ['memberId' => 'CE-DELE', 'channelId' => 'CH-LOUD',
+        'lastReadAt' => $ago(30), 'updatedAt' => $ago(30)]);
+
+    /* The window before: AMA and BOLA both posted. AMA is back; BOLA is not. */
+    $post('OLD-A', 'CH-LOUD', 'CE-AMA', 24 * 40);
+    $post('OLD-B', 'CH-LOUD', 'CE-BOLA', 24 * 40);
+
+    $r = backend_dispatch('admin.community.engagement',
+        ['requesterId' => 'NGG-2025-0099', 'days' => 30]);
+    chk('community engagement: the report is gated and comes back', !empty($r['ok']));
+    $h = $r['headline'] ?? [];
+
+    /* Reply rate is the headline because it is the only figure here that one
+       determined person cannot manufacture alone. 3 answered of 8 judged. */
+    chk('community engagement: the reply rate counts answered posts, not posts',
+        ($h['posts'] ?? 0) === 9 && ($h['postsJudged'] ?? 0) === 8 && ($h['replyRate'] ?? -1) === 38);
+    chk('community engagement: …and a post from two hours ago is not yet "ignored"',
+        ($h['posts'] ?? 0) - ($h['postsJudged'] ?? 0) === 1);
+    chk('community engagement: …which bands the community by how much of it gets answered',
+        ($h['band'] ?? '') === 'quiet');
+    chk('community engagement: the median first reply is the middle wait, not the mean',
+        abs((float)($h['medianFirstReplyHours'] ?? 0) - 4) < 0.2);
+
+    /* Contributors counts PEOPLE. Amaka posting nine times is one voice. */
+    chk('community engagement: a contributor is a person, not a post',
+        ($h['contributors'] ?? 0) === 3);          // AMA (posts), CHI (react), EMEK (comments)
+    chk('community engagement: reading is counted, and counted separately',
+        ($h['reach'] ?? 0) === 1);
+
+    /* The one that says whether the community is alive: of the two people who
+       took part last window, one came back. */
+    chk('community engagement: the return rate is over people who were here before',
+        ($h['returnedOf'] ?? 0) === 2 && ($h['returnRate'] ?? -1) === 50);
+    chk('community engagement: …and newcomers are the ones who were not',
+        ($h['newcomers'] ?? 0) === 2);             // CHI and EMEK
+
+    /* Growth's number: on the roster, never once turned up. */
+    chk('community engagement: somebody who has never opened it at all is counted',
+        ($h['roster'] ?? 0) >= 6 && ($h['neverJoinedIn'] ?? 0) >= 1);
+
+    /* The ladder. A reader is not a failure and is not scored as one. */
+    $L = $r['ladder'] ?? [];
+    chk('community engagement: the participation ladder places everybody once',
+        ($L['poster'] ?? 0) === 1 && ($L['replier'] ?? 0) === 1
+        && ($L['reactor'] ?? 0) === 1 && ($L['reader'] ?? 0) === 1);
+
+    /* The two lists somebody can act on this afternoon. */
+    chk('community engagement: the ones who went quiet are named, not just counted',
+        ($r['quietTotal'] ?? 0) === 1
+        && ($r['quiet'][0]['id'] ?? '') === 'CE-BOLA'
+        && ($r['quiet'][0]['name'] ?? '') === 'CE-BOLA');
+    chk('community engagement: …and somebody who only dropped from posting to reading is not flagged',
+        count(array_filter($r['quiet'], fn($q) => $q['id'] === 'CE-DELE')) === 0);
+    chk('community engagement: the unanswered posts are listed so they can be answered',
+        ($r['unansweredTotal'] ?? 0) === 5);
+    /* P4 went up 90 hours ago, Q0 80 — so P4 is the one that has been waiting
+       longest, even though it is in the healthier channel. The list is ordered
+       by the wait, not by which room it is in. */
+    chk('community engagement: …longest ignored first, because that is the one to answer',
+        ($r['unanswered'][0]['postId'] ?? '') === 'P4'
+        && ($r['unanswered'][1]['postId'] ?? '') === 'Q0');
+    chk('community engagement: …and each carries enough to find it',
+        ($r['unanswered'][0]['authorName'] ?? '') !== ''
+        && ($r['unanswered'][0]['excerpt'] ?? '') !== '');
+
+    /* Per channel, worst first — "the community is quiet" is not an answer, and
+       this is what turns it into one. */
+    $ch = $r['channels'] ?? [];
+    chk('community engagement: every channel is scored on its own',
+        count($ch) === 2 && $ch[0]['slug'] === 'quiet' && $ch[1]['slug'] === 'loud');
+    chk('community engagement: …worst first, because the list exists to be worked from the top',
+        $ch[0]['replyRate'] === 0 && $ch[1]['replyRate'] === 75);
+    chk('community engagement: …and says how many different voices are in it',
+        $ch[1]['voices'] === 1);
+
+    /* One channel on its own. */
+    $only = backend_dispatch('admin.community.engagement',
+        ['requesterId' => 'NGG-2025-0099', 'days' => 30, 'channel' => 'loud']);
+    chk('community engagement: one channel can be asked about by itself',
+        !empty($only['ok']) && ($only['headline']['postsJudged'] ?? 0) === 4
+        && ($only['headline']['replyRate'] ?? 0) === 75);
+    chk('community engagement: a channel that does not exist is refused, not silently empty',
+        (backend_dispatch('admin.community.engagement',
+            ['requesterId' => 'NGG-2025-0099', 'channel' => 'nope'])['error'] ?? '') === 'no_such_channel');
+
+    /* It reads the community, so it is behind the M&E capability like the
+       staff-side engagement it sits beside. */
+    chk('community engagement: a plain member cannot read the community\'s vital signs',
+        empty(backend_dispatch('admin.community.engagement', ['requesterId' => 'CE-AMA'])['ok']));
+
+    foreach (['community_posts', 'community_comments', 'community_reactions',
+              'community_reads', 'community_poll_votes', 'community_channels'] as $t) {
+        db_exec("DELETE FROM $t");
+    }
+    db_exec("DELETE FROM members WHERE memberId LIKE 'CE-%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

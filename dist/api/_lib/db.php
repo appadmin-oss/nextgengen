@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 101;
+const NGG_SCHEMA_TARGET = 102;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2826,6 +2826,30 @@ function db_migrate(PDO $db): void {
             ALTER TABLE promos ADD COLUMN tournamentId TEXT DEFAULT '';
             ALTER TABLE promos ADD COLUMN shape TEXT DEFAULT 'card';
             CREATE INDEX idx_promo_trn ON promos(tournamentId);
+        ",
+        102 => "
+            /* Who was ASKED to a tournament, as distinct from who entered it.
+               A director could add entrants one at a time and nothing else; the
+               only way to fill a field was to sign children up without asking,
+               which is not an invitation. This table is the ask. It also makes
+               the obvious question answerable — 40 invited, 11 joined — which
+               nothing could answer before, because nobody recorded the 40. */
+            CREATE TABLE tournament_invites (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              tournamentId TEXT NOT NULL,
+              playerId TEXT NOT NULL,
+              playerName TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              invitedBy TEXT DEFAULT '',
+              invitedAt TEXT NOT NULL,
+              /* Set when they act on it. joinedAt is written by the join path,
+                 so invite→entry conversion is a fact rather than an inference
+                 from timestamps that happen to be close together. */
+              joinedAt TEXT DEFAULT '',
+              declinedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_trn_invite_unique ON tournament_invites(tournamentId, playerId);
+            CREATE INDEX idx_trn_invite_player ON tournament_invites(playerId);
         ",
     ];
 

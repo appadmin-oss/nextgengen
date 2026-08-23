@@ -56,19 +56,29 @@ const LIST = [
   { tournamentId: 'TRN-OPEN', name: 'Egbeda Saturday Blitz', description: '', format: 'swiss',
     formatName: 'Swiss', formatBlurb: '', timeControl: '5+3', rated: true, status: 'open',
     round: 0, totalRounds: 0, entrants: 12, winnerName: '', programme: '',
-    you: { entered: false }, canJoin: true, nextMatchId: '' },
+    you: { entered: false }, canJoin: true, nextMatchId: '',
+    startsAt: '', endsAt: '',
+    window: { hasWindow: false, entriesClosed: false, started: false, overdue: false,
+              startsAt: '', endsAt: '', secondsToStart: null, secondsLeft: null, durationDays: null } },
   { tournamentId: 'TRN-LIVE', name: 'Club Championship', description: 'Five rounds over five weeks.',
     format: 'swiss', formatName: 'Swiss', timeControl: '10+0', rated: true, status: 'running',
     round: 2, totalRounds: 5, entrants: 8, winnerName: '', programme: '',
-    you: { entered: true, score: 1.5, played: 2 }, canJoin: false, nextMatchId: 'MT-MINE' },
+    you: { entered: true, score: 1.5, played: 2 }, canJoin: false, nextMatchId: 'MT-MINE',
+    startsAt: '', endsAt: '',
+    window: { hasWindow: false, entriesClosed: false, started: false, overdue: false,
+              startsAt: '', endsAt: '', secondsToStart: null, secondsLeft: null, durationDays: null } },
   { tournamentId: 'TRN-SHUT', name: 'Under 1200 Cup', description: '', format: 'knockout',
     formatName: 'Knockout', timeControl: '10+0', rated: false, status: 'open',
     round: 0, totalRounds: 0, entrants: 4, winnerName: '', programme: '',
-    you: { entered: false }, canJoin: false, nextMatchId: '' },
+    you: { entered: false }, canJoin: false, nextMatchId: '',
+    startsAt: '', endsAt: '',
+    window: { hasWindow: false, entriesClosed: false, started: false, overdue: false,
+              startsAt: '', endsAt: '', secondsToStart: null, secondsLeft: null, durationDays: null } },
 ];
 
 const STANDINGS = {
   ok: true,
+  invites: { invited: 40, joined: 12, acceptRate: 30 },
   tournament: Object.assign({}, LIST[1], { formatName: 'Swiss' }),
   standings: [
     { rank: 1, playerId: 'P1', name: 'Ada N.', centre: 'Egbeda', kind: 'member', seed: 1, rating: 1600,
@@ -120,7 +130,7 @@ const ROUNDS = {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css">
 <style>body{margin:0;background:#fbf7ed}#root{height:100vh;display:flex;flex-direction:column}</style>
-</head><body class="cm-app"><div id="root"></div>
+</head><body class="cm-app"><div id="root"></div><div id="dlg"></div>
 <script src="/dist/vendor/react.production.min.js"></script>
 <script src="/dist/vendor/react-dom.production.min.js"></script>
 <script src="/dist/vendor/tanstack-table.min.js"></script>
@@ -132,10 +142,20 @@ const ROUNDS = {
   window.__joined = [];
   window.__drawn = 0;
   NGGApi.member.tournaments.browse = () => Promise.resolve({ ok: true, tournaments: ${JSON.stringify(LIST)}, formats: ${JSON.stringify(FORMATS)} });
-  NGGApi.member.tournaments.standings = () => Promise.resolve(${JSON.stringify(STANDINGS)});
+  window.__ST = ${JSON.stringify(STANDINGS)};
+  NGGApi.member.tournaments.standings = () => Promise.resolve(window.__ST);
   NGGApi.member.tournaments.rounds = () => Promise.resolve(${JSON.stringify(ROUNDS)});
   NGGApi.member.tournaments.join = (id) => { window.__joined.push(id); return Promise.resolve({ ok: true }); };
   NGGApi.member.tournaments.draw = () => { window.__drawn++; return Promise.resolve({ ok: true, round: 3, boards: 4, byes: 0 }); };
+  /* Inviting. The dry run comes back first and its count goes into the
+     dialog, so the stub records both calls separately. */
+  window.__invites = [];
+  NGGApi.member.tournaments.inviteAll = (id, dry) => {
+    window.__invites.push({ id: id, dry: !!dry });
+    return Promise.resolve(dry
+      ? { ok: true, dryRun: true, eligible: 40, wouldInvite: 38, alreadyInvited: 2, notEligible: 0 }
+      : { ok: true, invited: 38, eligible: 40, alreadyInvited: 2, notEligible: 0 });
+  };
   /* The hub's own data, so the route walk sees the lobby a member sees rather
      than the empty shell four rejected requests leave behind. */
   NGGApi.member.match.chess = () => Promise.resolve({ ok: true, rating: 1240, games: 18,
@@ -161,9 +181,24 @@ const ROUNDS = {
     }
     return Promise.resolve({ ok: true, tournamentId: 'TRN-NEW' });
   };
+  /* ONE dialog host, mounted once, exactly as App does it. dialog.confirm()
+     resolves through every mounted host's listener, so a second host means a
+     second copy of every dialog — and a fixture with none returns a promise
+     nobody ever settles, which looks precisely like a button that does
+     nothing. */
+  ReactDOM.createRoot(document.getElementById('dlg')).render(React.createElement(window.DialogHost));
+  /* And one root for the screen, reused. createRoot on the same element per
+     render leaks a root per call, which is how the host above came to be
+     mounted five times. */
+  window.__root = ReactDOM.createRoot(document.getElementById('root'));
+  window.__renderSeq = 0;
   window.__render = (what, props) => {
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(React.createElement(window[what], props));
+    /* A fresh key every time. CmTrnDetail loads in an effect keyed on
+       tournamentId, so re-rendering it with the same id leaves the OLD data on
+       screen — and a test that then reshapes the stub would be asserting
+       against the previous fixture without ever knowing. */
+    window.__root.render(React.createElement(window[what],
+      Object.assign({ key: 'r' + (++window.__renderSeq) }, props)));
   };
 </script>
 </body></html>`);
@@ -278,9 +313,112 @@ const ROUNDS = {
     await page.waitForSelector('.trn-director', { timeout: 8000 });
     chk('…a director is, and it names the round it will draw',
         (await page.locator('.trn-director').innerText()).indexOf('Draw round 3') >= 0);
-    await page.locator('.trn-director button').click();
+    await page.locator('.trn-director button', { hasText: 'Draw' }).click();
     await page.waitForTimeout(300);
     chk('…and drawing it calls through', await page.evaluate(() => window.__drawn) === 1);
+
+    /* Asked, and said yes. Without the first number the second is not a rate,
+       and a director filling a field is working blind. */
+    chk('a director sees how many of the people asked actually joined',
+        (await page.locator('.trn-invited').innerText()).replace(/\s+/g, ' ')
+          .indexOf('12 of 40 invited people have joined (30%)') >= 0);
+
+    /* ── Inviting everybody ──────────────────────────────────────────────
+       Entrants could be added one at a time and no other way, so in practice
+       the field was whoever the director remembered. The button is on the
+       OPEN tournament, because you cannot invite people to a race already
+       run — and it puts a notification on other people's phones, which there
+       is no unsending, so the count comes back from a dry run FIRST and goes
+       into the dialog. "Invite 38 people?" is a decision; "invite everyone?"
+       is a leap. */
+    await page.evaluate(() => {
+      NGGApi.member.tournaments.standings = () => Promise.resolve(Object.assign({}, window.__ST, {
+        tournament: Object.assign({}, window.__ST.tournament, { status: 'open', round: 0 }),
+      }));
+      window.__render('CmTrnDetail', { tournamentId: 'TRN-OPEN', staff: true,
+                                       onBack: () => {}, onOpenMatch: () => {} });
+    });
+    await page.waitForSelector('.trn-director', { timeout: 8000 });
+    chk('an open tournament offers the director a way to fill the field at all',
+        (await page.locator('.trn-director').innerText()).indexOf('Invite everyone eligible') >= 0);
+
+    await page.locator('.trn-director button', { hasText: 'Invite' }).click();
+    await page.waitForTimeout(500);
+    chk('…which asks the server how many BEFORE it sends anything',
+        await page.evaluate(() => window.__invites.length) === 1
+        && await page.evaluate(() => window.__invites[0].dry) === true);
+
+    const dlg = await page.evaluate(() => {
+      const d = document.querySelector('.dialog-card[role="dialog"]');
+      return d ? d.innerText.replace(/\s+/g, ' ') : '';
+    });
+    chk('…and names the number in the dialog, so it is a decision not a leap ('
+        + dlg.slice(0, 60) + ')',
+        dlg.indexOf('38') >= 0);
+    /* The distinction the whole feature turns on: an invitation is not an
+       entry. A child signed up without being asked gets a bye, a forfeit and
+       a rating loss for a game they never agreed to play. */
+    chk('…and says plainly that it does not enter anybody',
+        /does not enter them/i.test(dlg));
+    chk('…and mentions the ones who were already asked, who will not be asked twice',
+        dlg.indexOf('2 already asked') >= 0);
+
+    /* Backing out must send nothing. A confirmation that fires anyway is
+       worse than no confirmation, because people stop reading them. */
+    await page.locator('.dialog-card button', { hasText: 'Not now' }).click();
+    await page.waitForTimeout(300);
+    chk('…and declining the dialog sends nothing at all',
+        await page.evaluate(() => window.__invites.filter(i => !i.dry).length) === 0);
+
+    await page.locator('.trn-director button', { hasText: 'Invite' }).click();
+    await page.waitForTimeout(400);
+    await page.locator('.dialog-card button', { hasText: 'Send 38' }).click();
+    await page.waitForTimeout(400);
+    chk('…while confirming sends exactly once, for real',
+        await page.evaluate(() => window.__invites.filter(i => !i.dry).length) === 1
+        && await page.evaluate(() => window.__invites.filter(i => !i.dry)[0].id) === 'TRN-OPEN');
+
+    /* Nobody can be invited to a race that is already run. The button reads
+       the same computed window the join gate does, so the two cannot
+       disagree about whether entries are open. */
+    await page.evaluate(() => {
+      NGGApi.member.tournaments.standings = () => Promise.resolve(Object.assign({}, window.__ST, {
+        tournament: Object.assign({}, window.__ST.tournament, {
+          status: 'open', round: 0,
+          window: { hasWindow: true, entriesClosed: true, started: true, overdue: false,
+                    startsAt: '2026-08-01T09:00:00Z', endsAt: '2026-08-08T09:00:00Z',
+                    secondsToStart: 0, secondsLeft: 3600, durationDays: 7 },
+        }),
+      }));
+      window.__render('CmTrnDetail', { tournamentId: 'TRN-OPEN', staff: true,
+                                       onBack: () => {}, onOpenMatch: () => {} });
+    });
+    await page.waitForSelector('.trn-director', { timeout: 8000 });
+    chk('an event whose start has passed offers no invite button at all',
+        (await page.locator('.trn-director').innerText()).indexOf('Invite') < 0);
+    /* innerText returns what is RENDERED, and the chip is uppercased by the
+       stylesheet — so this compares case-insensitively rather than against the
+       source string, which would pass or fail on a text-transform. */
+    chk('…and the chip says entries are closed, whatever the status column says',
+        /entries closed/i.test(await page.locator('.trn-chip').innerText()));
+
+    /* Past its end and still running is the thing a director needs to notice,
+       and it is said in words as well as in colour. */
+    await page.evaluate(() => {
+      NGGApi.member.tournaments.standings = () => Promise.resolve(Object.assign({}, window.__ST, {
+        tournament: Object.assign({}, window.__ST.tournament, {
+          status: 'running',
+          window: { hasWindow: true, entriesClosed: true, started: true, overdue: true,
+                    startsAt: '2026-08-01T09:00:00Z', endsAt: '2026-08-08T09:00:00Z',
+                    secondsToStart: 0, secondsLeft: -3600, durationDays: 7 },
+        }),
+      }));
+      window.__render('CmTrnDetail', { tournamentId: 'TRN-LIVE', staff: true,
+                                       onBack: () => {}, onOpenMatch: () => {} });
+    });
+    await page.waitForSelector('.trn-overdue', { timeout: 8000 });
+    chk('an overdue event says so in words, not only in a colour',
+        (await page.locator('.trn-overdue').innerText()).indexOf('Past its end date') >= 0);
 
     /* ── The wizard ──────────────────────────────────────────────────────── */
 
@@ -334,13 +472,53 @@ const ROUNDS = {
     await page.locator('.trn-in').first().fill('1200');
     await page.locator('.cmm-cta', { hasText: 'Next' }).click();
 
+    /* ── When it runs ────────────────────────────────────────────────────
+       startsAt and endsAt were columns from the beginning that the wizard
+       never asked about and nothing validated, so every tournament was
+       undated. The step asks for a START and a LENGTH, not two datetimes: a
+       director thinks "a Saturday afternoon", and a form that can only
+       express a valid window beats one that explains why yours is not. */
+    await page.waitForSelector('.trn-seg-b', { timeout: 5000 });
+    chk('the wizard asks when it runs, and defaults to the old behaviour',
+        (await page.locator('.trn-seg-b.is-on').innerText()).indexOf('until I draw') >= 0);
+    chk('…saying what that means rather than leaving it to be guessed',
+        (await page.locator('.trn-hint').first().innerText()).indexOf('until you draw the first round') >= 0);
+    chk('…and an undated event can go straight on, because most club nights are',
+        !(await page.locator('.cmm-cta', { hasText: 'Next' }).isDisabled()));
+
+    await page.locator('.trn-seg-b', { hasText: 'Set a start' }).click();
+    chk('choosing a schedule asks for a start and offers real lengths',
+        await page.locator('input[type=datetime-local]').count() === 1
+        && await page.locator('.trn-tc').count() === 6);
+    chk('…in the units a director thinks in, not in hours',
+        (await page.locator('.trn-tcs').innerText()).indexOf('An afternoon') >= 0);
+    chk('…and will not go on until a start is picked',
+        await page.locator('.cmm-cta', { hasText: 'Next' }).isDisabled()
+        && (await page.locator('.trn-hint.is-warn').innerText()).indexOf('Pick a start') >= 0);
+    /* A start in the past is refused by the server; the picker refuses to
+       offer it in the first place, which is the better of the two. */
+    chk('…and the picker will not offer a start in the past',
+        (await page.locator('input[type=datetime-local]').getAttribute('min') || '').length === 16);
+
+    const when = await page.evaluate(() => {
+      const d = new Date(Date.now() + 3 * 86400000 - new Date().getTimezoneOffset() * 60000);
+      return d.toISOString().slice(0, 16);
+    });
+    await page.locator('input[type=datetime-local]').fill(when);
+    await page.locator('.trn-tc', { hasText: 'A week' }).click();
+    chk('…then says when it will end, and that games are not cut off at that moment',
+        (await page.locator('.trn-hint').last().innerText()).indexOf('Ends ') >= 0
+        && (await page.locator('.trn-hint').last().innerText()).indexOf('games in progress finish') >= 0);
+    await page.locator('.cmm-cta', { hasText: 'Next' }).click();
+
     await page.waitForSelector('.trn-review', { timeout: 5000 });
     chk('the last step cannot be submitted without a name',
         await page.locator('.cmm-cta', { hasText: 'Create' }).isDisabled());
     await page.locator('.trn-in').first().fill('Egbeda Saturday Blitz');
     const review = await page.locator('.trn-review-b').innerText();
+    const reviewWhen = await page.locator('.trn-review-s').innerText();
     chk('…and the whole thing is said back as a sentence before it is real',
-        review.indexOf('Egbeda Saturday Blitz') >= 0 && review.indexOf('swiss') >= 0
+        review.indexOf('Egbeda Saturday Blitz') >= 0 && review.indexOf('Swiss') >= 0
         && review.indexOf('5+3') >= 0 && review.indexOf('rated') >= 0
         && review.indexOf('NGG Club') >= 0 && review.indexOf('1200') >= 0);
 
@@ -352,6 +530,16 @@ const ROUNDS = {
         && sent.programme === 'ngg' && sent.minRating === 1200
         && sent.kinds.length === 2 && sent.kinds.indexOf('member') >= 0 && sent.kinds.indexOf('volunteer') >= 0
         && sent.name === 'Egbeda Saturday Blitz');
+    /* The window travels as UTC. datetime-local hands back wall-clock time
+       with no zone; appending "Z" to it — which is what the promo form does —
+       silently shifts every tournament by the viewer's offset. */
+    chk('…including a window sent as UTC, and an end a week after the start',
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(sent.startsAt || '')
+        && /Z$/.test(sent.endsAt || '')
+        && Math.round((Date.parse(sent.endsAt) - Date.parse(sent.startsAt)) / 3600000) === 168);
+    chk('…and the review said so before the button was pressed',
+        reviewWhen.indexOf('runs for') >= 0 && reviewWhen.indexOf('7 days') >= 0
+        && reviewWhen.indexOf('Entries close when it starts') >= 0);
     chk('…and the director lands on the tournament they just made',
         await page.evaluate(() => window.__newId) === 'TRN-NEW');
 

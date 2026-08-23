@@ -169,6 +169,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.staff.performance'     => 'admin_staff_performance',
             'admin.engagement'            => 'admin_engagement',
             'admin.engagement.trends'     => 'admin_engagement_trends',
+            'admin.community.engagement'  => 'admin_community_engagement',
             'admin.ops.status'            => 'admin_ops_status',
             'admin.ops.clear'             => 'admin_ops_clear',
             'admin.ops.run'               => 'admin_ops_run_cron',
@@ -462,6 +463,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'tournament.bracket'      => 'tournament_bracket',
             'tournament.mine'         => 'tournament_mine',
             'tournament.create'       => 'admin_tournament_create',
+            'tournament.inviteAll'    => 'admin_tournament_invite_all',
             'tournament.enter'        => 'admin_tournament_enter',
             'tournament.browse'       => 'tournament_browse',
             // What is actually happening right now — see tournament_ladder().

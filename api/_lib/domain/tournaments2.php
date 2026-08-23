@@ -45,6 +45,10 @@ function trn_shape(array $t, string $viewer = ''): array {
         'totalRounds' => (int)($t['totalRounds'] ?? 0),
         'startsAt'    => (string)($t['startsAt'] ?? ''),
         'endsAt'      => (string)($t['endsAt'] ?? ''),
+        // What the dates MEAN, computed in one place, so the join gate, the
+        // member's card and the director's bar cannot disagree about whether
+        // entries are open.
+        'window'      => trn_window($t),
         'centres'     => trn_json_list($t['centres'] ?? ''),
         'eligibility' => trn_eligibility($t),
         'winnerId'    => (string)($t['winnerId'] ?? ''),
@@ -575,7 +579,11 @@ function tournament_standings(array $p): array {
             'photo' => function_exists('community_photo_for') ? community_photo_for((string)$r['playerId']) : '',
         ];
     }
-    return ['ok' => true, 'tournament' => trn_shape($t, $viewer), 'standings' => $table];
+    return ['ok' => true, 'tournament' => trn_shape($t, $viewer), 'standings' => $table,
+            // Asked, and said yes. The director's screen reads this; a member
+            // sees the same numbers and they are not private — how many people
+            // were invited to a club event is not a secret from the club.
+            'invites' => trn_invite_stats($tid)];
 }
 
 /** Every round's boards, newest first — the pairing sheet. */

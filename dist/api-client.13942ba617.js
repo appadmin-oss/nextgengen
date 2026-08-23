@@ -662,6 +662,9 @@
         create:    (data) => request('/member/match.php', { body: Object.assign({ action: 'trnCreate' }, data) }),
         draw:      (tournamentId) => request('/member/match.php', { body: { action: 'trnDraw', tournamentId } }),
         enter:     (tournamentId, playerId) => request('/member/match.php', { body: { action: 'trnEnter', tournamentId, playerId } }),
+        /* Ask everybody the tournament's own rules already allow. dryRun
+           returns the count without sending anything. */
+        inviteAll: (tournamentId, dryRun) => request('/member/match.php', { body: { action: 'trnInviteAll', tournamentId, dryRun: !!dryRun } }),
         directory: (opts) => request('/member/match.php', { body: Object.assign({ action: 'trnDirectory' }, opts || {}) }),
       },
       changeEmail:         (email) => request('/member/account.php', { body: { action: 'change_email', email } }),
@@ -1039,6 +1042,9 @@
         standings:(tournamentId) => request('/admin/tournaments.php' + qs({ view: 'standings', tournamentId })),
         rounds:   (tournamentId) => request('/admin/tournaments.php' + qs({ view: 'rounds', tournamentId })),
         directory:(opts) => request('/admin/tournaments.php', { body: Object.assign({ action: 'directory' }, opts || {}) }),
+        /* Ask everybody the tournament's own rules already allow. Pass
+           dryRun to get the count without sending anything. */
+        inviteAll:(tournamentId, dryRun) => request('/admin/tournaments.php', { body: { action: 'inviteAll', tournamentId, dryRun: !!dryRun } }),
         enter:    (tournamentId, playerId) => request('/admin/tournaments.php', { body: { action: 'enter', tournamentId, playerId } }),
         withdraw: (tournamentId, playerId) => request('/admin/tournaments.php', { body: { action: 'withdraw', tournamentId, playerId } }),
         advance:  (tournamentId) => request('/admin/tournaments.php', { body: { action: 'advance', tournamentId } }),

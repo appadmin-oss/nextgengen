@@ -45,6 +45,10 @@ function trn_shape(array $t, string $viewer = ''): array {
         'totalRounds' => (int)($t['totalRounds'] ?? 0),
         'startsAt'    => (string)($t['startsAt'] ?? ''),
         'endsAt'      => (string)($t['endsAt'] ?? ''),
+        // What the dates MEAN, computed in one place, so the join gate, the
+        // member's card and the director's bar cannot disagree about whether
+        // entries are open.
+        'window'      => trn_window($t),
         'centres'     => trn_json_list($t['centres'] ?? ''),
         'eligibility' => trn_eligibility($t),
         'winnerId'    => (string)($t['winnerId'] ?? ''),
@@ -90,6 +94,11 @@ function trn_eligibility(array $t): array {
  */
 function trn_can_join(array $t, string $playerId): array {
     if ((string)$t['status'] !== 'open') return ['ok' => false, 'why' => 'Entries are closed.'];
+    /* A start date is a real gate, not a label: joining a tournament that is
+     * already playing hands somebody a first-round bye they did not earn and
+     * an opponent who has already been paired against nobody. */
+    $w = trn_window($t);
+    if ($w['entriesClosed']) return ['ok' => false, 'why' => 'This one has already started.'];
     $person = match_person($playerId);
     if (!$person) return ['ok' => false, 'why' => 'You need a player account.'];
     if (db_row('SELECT id FROM tournament_entrants WHERE tournamentId = ? AND playerId = ?',
@@ -153,6 +162,10 @@ function tournament_join(array $p): array {
     if (!$can['ok']) return ['ok' => false, 'error' => 'cannot_join', 'message' => $can['why']];
     $r = trn_add_entrant($t, $viewer);
     if (empty($r['ok'])) return $r;
+    /* If they were asked, record that they said yes. Conversion is then a
+       fact, rather than an inference from two timestamps that happen to be
+       close together. */
+    trn_invite_mark_joined((string)$t['tournamentId'], $viewer);
     audit('tournament.join', $viewer, (string)$t['tournamentId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'tournamentId' => (string)$t['tournamentId']];
 }
@@ -566,7 +579,11 @@ function tournament_standings(array $p): array {
             'photo' => function_exists('community_photo_for') ? community_photo_for((string)$r['playerId']) : '',
         ];
     }
-    return ['ok' => true, 'tournament' => trn_shape($t, $viewer), 'standings' => $table];
+    return ['ok' => true, 'tournament' => trn_shape($t, $viewer), 'standings' => $table,
+            // Asked, and said yes. The director's screen reads this; a member
+            // sees the same numbers and they are not private — how many people
+            // were invited to a club event is not a secret from the club.
+            'invites' => trn_invite_stats($tid)];
 }
 
 /** Every round's boards, newest first — the pairing sheet. */
@@ -738,4 +755,244 @@ function tournament_ladder(array $p): array {
     $hot = array_values(array_filter($out, fn($x) => $x['heat']['score'] >= 20));
     return ['ok' => true, 'ladders' => array_slice($out, 0, 8),
             'hotCount' => count($hot), 'windowHours' => LADDER_HOT_WINDOW_HOURS];
+}
+
+/* ── Filling the field ────────────────────────────────────────────────────
+ *
+ * A director could add entrants one at a time and nothing else. For a club
+ * event with forty eligible children that is forty searches, so in practice
+ * the field was whoever the director happened to remember — which is exactly
+ * the bias a programme like this exists to work against.
+ *
+ * So: invite everybody the tournament's own rules already allow. Two things
+ * this deliberately does NOT do:
+ *
+ *   It does not enter them. A tournament somebody was signed up for without
+ *   being asked is not an invitation, it is a timetable — and for a child who
+ *   then does not turn up it becomes a bye, a forfeit and a rating loss for a
+ *   game they never agreed to play.
+ *
+ *   It does not have its own idea of who is eligible. Eligibility is asked of
+ *   trn_can_join, the same function the join button asks, so the invite list
+ *   and the door can never disagree. An invitation that leads to "you cannot
+ *   join this" is worse than no invitation.
+ */
+
+/** Everybody the directory can see, in the shape trn_can_join expects. */
+function trn_invitable(array $t): array {
+    $el = trn_eligibility($t);
+    $centres = trn_json_list($t['centres'] ?? '');
+    /* One directory search per centre when the event is centre-limited, so the
+       LIMIT applies per centre rather than truncating the last one out. */
+    $scopes = $centres ?: [''];
+    $seen = []; $out = [];
+    foreach ($scopes as $centre) {
+        $page = directory_search(['kinds' => $el['kinds'], 'centre' => $centre, 'limit' => 200]);
+        foreach (($page['people'] ?? []) as $r) {
+            $id = (string)$r['id'];
+            if (isset($seen[$id])) continue;
+            $seen[$id] = true;
+            $out[] = $r;
+        }
+    }
+    return $out;
+}
+
+/**
+ * admin.tournament.inviteAll — ask every eligible person to this tournament.
+ *
+ * Idempotent: re-running it invites only the people who were not invited last
+ * time, so a director who presses it twice does not send forty children a
+ * second copy of the same message.
+ *
+ * Params: tournamentId, and optionally dryRun (count without sending, so the
+ * screen can say "this will invite 38 people" BEFORE it does).
+ */
+function admin_tournament_invite_all(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $tid = (string)($p['tournamentId'] ?? '');
+    $t = db_row('SELECT * FROM tournaments WHERE tournamentId = ? LIMIT 1', [$tid]);
+    if (!$t) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$t['status'] !== 'open') return ['ok' => false, 'error' => 'entries_closed'];
+
+    $already = [];
+    foreach (db_all('SELECT playerId FROM tournament_invites WHERE tournamentId = ?', [$tid]) as $r) {
+        $already[(string)$r['playerId']] = true;
+    }
+
+    $eligible = []; $skipped = 0;
+    foreach (trn_invitable($t) as $person) {
+        $id = (string)$person['id'];
+        /* The same gate the join button uses. Somebody already entered fails
+           it with "you are already entered", which is the right answer: there
+           is nothing to invite them to. */
+        if (empty(trn_can_join($t, $id)['ok'])) { $skipped++; continue; }
+        $eligible[] = $person;
+    }
+
+    $fresh = array_values(array_filter($eligible, fn($x) => !isset($already[(string)$x['id']])));
+    if (!empty($p['dryRun'])) {
+        return ['ok' => true, 'dryRun' => true, 'eligible' => count($eligible),
+                'wouldInvite' => count($fresh), 'alreadyInvited' => count($eligible) - count($fresh),
+                'notEligible' => $skipped];
+    }
+
+    $now = now_iso();
+    $by = (string)$g['requester']['memberId'];
+    $name = (string)$t['name'];
+    $sent = 0;
+    foreach ($fresh as $person) {
+        db_insert('tournament_invites', [
+            'tournamentId' => $tid, 'playerId' => (string)$person['id'],
+            'playerName' => (string)$person['name'], 'centre' => (string)($person['centre'] ?? ''),
+            'invitedBy' => $by, 'invitedAt' => $now, 'joinedAt' => '', 'declinedAt' => '',
+        ]);
+        /* The notification carries the tournament, not just its name: a child
+           who taps it lands on the thing they can join, which is the whole
+           point of asking them. */
+        push_notification((string)$person['id'], [
+            'kind' => 'tournament',
+            'title' => 'You are invited: ' . $name,
+            'body'  => trn_invite_body($t),
+            'linkPage' => 'club',
+        ]);
+        $sent++;
+    }
+    audit('tournament.inviteAll', $by, $tid, ['sent' => $sent, 'eligible' => count($eligible)],
+          (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'invited' => $sent, 'eligible' => count($eligible),
+            'alreadyInvited' => count($eligible) - count($fresh), 'notEligible' => $skipped];
+}
+
+/** One line telling a child what they have been asked to. */
+function trn_invite_body(array $t): string {
+    $bits = [];
+    $fmt = (string)($t['format'] ?? 'centre');
+    $names = ['swiss' => 'Swiss', 'knockout' => 'Knockout', 'roundrobin' => 'Round robin',
+              'centre' => 'Centre cup', 'arena' => 'Arena'];
+    $bits[] = $names[$fmt] ?? $fmt;
+    $tc = (string)($t['timeControl'] ?? '');
+    if ($tc !== '') $bits[] = $tc === '1day' ? 'a day a move' : $tc;
+    if (!empty($t['rated'])) $bits[] = 'rated';
+    $when = trn_window_words($t);
+    if ($when !== '') $bits[] = $when;
+    return implode(' · ', $bits) . '. Open it to join.';
+}
+
+/**
+ * How many were asked, and how many said yes.
+ *
+ * The obvious question about any invitation, and nothing could answer it
+ * before, because nobody recorded who was asked.
+ */
+function trn_invite_stats(string $tid): array {
+    $r = db_row("SELECT COUNT(*) n,
+                        SUM(CASE WHEN joinedAt <> '' THEN 1 ELSE 0 END) joined
+                   FROM tournament_invites WHERE tournamentId = ?", [$tid]);
+    $n = (int)($r['n'] ?? 0); $j = (int)($r['joined'] ?? 0);
+    return ['invited' => $n, 'joined' => $j,
+            'acceptRate' => $n > 0 ? (int)round($j * 100 / $n) : 0];
+}
+
+/** Mark an invitation taken up. Called from every path that enters somebody,
+ *  so conversion is a fact rather than an inference from two close timestamps. */
+function trn_invite_mark_joined(string $tid, string $playerId): void {
+    db_exec("UPDATE tournament_invites SET joinedAt = ? WHERE tournamentId = ? AND playerId = ? AND joinedAt = ''",
+            [now_iso(), $tid, $playerId]);
+}
+
+/* ── When it runs ─────────────────────────────────────────────────────────
+ *
+ * startsAt and endsAt were columns from the beginning, written straight from
+ * the request with no validation and read by nothing. A director could set an
+ * event to end before it began and the only symptom would be a tournament that
+ * behaved exactly as if no dates existed — which is what they did.
+ *
+ * They now mean two things:
+ *   startsAt  entries close. Not "should close": trn_can_join refuses after
+ *             it, so a child cannot join a tournament that is already playing.
+ *   endsAt    the event is meant to be finished. Nothing is force-closed —
+ *             ending a live game by the clock on the wall would void real
+ *             play — but it is flagged as overdue, which is what a director
+ *             needs to see and had no way to.
+ */
+
+const TRN_MAX_DAYS = 180;          // beyond this it is a season, not a tournament
+
+/** Parse an ISO-ish instant, or null. Accepts what <input type="datetime-local">
+ *  sends once the client has appended a Z. */
+function trn_ts(?string $s): ?int {
+    $s = trim((string)$s);
+    if ($s === '') return null;
+    $t = strtotime($s);
+    return $t === false ? null : $t;
+}
+
+/**
+ * Check a window and hand back the pair to store.
+ *
+ * Returns ['ok'=>true,'startsAt'=>…,'endsAt'=>…] or ['ok'=>false,'error'=>…].
+ * Both ends are optional — plenty of club events are "starts when we say" —
+ * but a window that cannot happen is refused rather than stored.
+ */
+function trn_check_window(?string $startsAt, ?string $endsAt, ?int $nowTs = null): array {
+    $now = $nowTs ?? time();
+    $s = trn_ts($startsAt); $e = trn_ts($endsAt);
+    if ($startsAt !== null && trim((string)$startsAt) !== '' && $s === null) return ['ok' => false, 'error' => 'bad_start'];
+    if ($endsAt !== null && trim((string)$endsAt) !== '' && $e === null) return ['ok' => false, 'error' => 'bad_end'];
+    /* Ordered so the message names the field actually worth fixing. A start
+       300 days ago with an end next week is a mistyped year, not an
+       over-long window — reporting the length would send the director to
+       correct the wrong box. */
+    if ($s !== null && $e !== null && $e <= $s) return ['ok' => false, 'error' => 'ends_before_it_starts'];
+    /* A start in the past means entries are shut the moment it is created. An
+       hour of slack covers a director filling the form slowly. */
+    if ($s !== null && $s < $now - 3600) return ['ok' => false, 'error' => 'starts_in_the_past'];
+    if ($e !== null && $e < $now) return ['ok' => false, 'error' => 'ends_in_the_past'];
+    if ($s !== null && $e !== null && $e - $s > TRN_MAX_DAYS * 86400) {
+        return ['ok' => false, 'error' => 'window_too_long'];
+    }
+    return ['ok' => true,
+            'startsAt' => $s === null ? '' : gmdate('Y-m-d\TH:i:s\Z', $s),
+            'endsAt'   => $e === null ? '' : gmdate('Y-m-d\TH:i:s\Z', $e)];
+}
+
+/**
+ * What the window means right now.
+ *
+ * One place computes it, so the join gate, the member's tournament card and
+ * the director's list cannot disagree about whether entries are open.
+ */
+function trn_window(array $t, ?int $nowTs = null): array {
+    $now = $nowTs ?? time();
+    $s = trn_ts((string)($t['startsAt'] ?? ''));
+    $e = trn_ts((string)($t['endsAt'] ?? ''));
+    $status = (string)($t['status'] ?? '');
+    $done = in_array($status, ['complete', 'cancelled'], true);
+    return [
+        'startsAt' => $s === null ? '' : gmdate('Y-m-d\TH:i:s\Z', $s),
+        'endsAt'   => $e === null ? '' : gmdate('Y-m-d\TH:i:s\Z', $e),
+        'hasWindow' => $s !== null || $e !== null,
+        'notYetOpen' => false,
+        // Entries close when play starts. Without a start date they close when
+        // a director draws the first round, which is the old behaviour.
+        'entriesClosed' => $s !== null && $now >= $s,
+        'started'  => $s !== null && $now >= $s,
+        'overdue'  => !$done && $e !== null && $now > $e,
+        'secondsToStart' => $s === null ? null : max(0, $s - $now),
+        'secondsLeft'    => $e === null ? null : ($e - $now),
+        'durationDays'   => ($s !== null && $e !== null) ? (int)round(($e - $s) / 86400) : null,
+    ];
+}
+
+/** The window as a phrase, for a notification or a card. */
+function trn_window_words(array $t, ?int $nowTs = null): string {
+    $w = trn_window($t, $nowTs);
+    if (!$w['hasWindow']) return '';
+    $day = fn(string $iso) => $iso === '' ? '' : gmdate('j M', strtotime($iso));
+    if ($w['startsAt'] !== '' && $w['endsAt'] !== '') {
+        $a = $day($w['startsAt']); $b = $day($w['endsAt']);
+        return $a === $b ? $a : $a . ' – ' . $b;
+    }
+    return $w['startsAt'] !== '' ? 'from ' . $day($w['startsAt']) : 'until ' . $day($w['endsAt']);
 }

@@ -3483,10 +3483,36 @@ const TRN_KINDS = [
 ];
 
 function trnStatusChip(t) {
-  if (t.status === "open") return ["Entries open", "is-open"];
+  /* A tournament with a start date that has passed is not taking entries any
+     more, whatever its status column says. The chip has to agree with the
+     join button, and both read the same computed window. */
+  const w = t.window || {};
+  if (t.status === "open") {
+    return w.entriesClosed ? ["Entries closed", "is-live"] : ["Entries open", "is-open"];
+  }
   if (t.status === "running") return ["Round " + t.round + (t.totalRounds ? " of " + t.totalRounds : ""), "is-live"];
   if (t.status === "complete") return ["Finished", "is-done"];
   return [t.status, ""];
+}
+
+/* The window as a line a player can read. Rough units on purpose: "in 3 days"
+   is what somebody needs, and a second-accurate countdown to something four
+   days away is a spinning number that says nothing. */
+function trnWhenLine(t) {
+  const w = t && t.window;
+  if (!w || !w.hasWindow) return "";
+  const rough = (secs) => {
+    const s = Math.max(0, secs);
+    if (s < 3600) return Math.max(1, Math.round(s / 60)) + " min";
+    if (s < 86400) return Math.round(s / 3600) + (Math.round(s / 3600) === 1 ? " hour" : " hours");
+    const d = Math.round(s / 86400);
+    return d + (d === 1 ? " day" : " days");
+  };
+  if (w.overdue) return "Past its end date — " + fmtDate(w.endsAt);
+  if (!w.started && w.secondsToStart != null) return "Starts in " + rough(w.secondsToStart) + " · " + fmtDateTime(w.startsAt);
+  if (w.started && w.secondsLeft != null && w.secondsLeft > 0) return rough(w.secondsLeft) + " left";
+  if (w.startsAt) return "Started " + fmtDateTime(w.startsAt);
+  return "Ends " + fmtDateTime(w.endsAt);
 }
 
 /** mm:ss for a clock the server sent, ticked forward locally between polls. */
@@ -3770,6 +3796,37 @@ function CmTrnDetail({ tournamentId, staff, onBack, onOpenMatch }) {
     finally { setBusy(""); }
   };
 
+  /* Inviting is outward-facing: it puts a notification on other people's
+     phones, and there is no unsending it. So the count comes back from a dry
+     run FIRST and goes into the dialog — "invite 38 people?" is a decision,
+     "invite everyone?" is a leap. */
+  const inviteAll = async () => {
+    setBusy("invite");
+    try {
+      const pre = await NGGApi.member.tournaments.inviteAll(tournamentId, true);
+      if (!pre.wouldInvite) {
+        toast.info(pre.eligible
+          ? "Everyone eligible has already been asked."
+          : "Nobody is eligible for this one yet — check the centres and groups it is open to.",
+          "Nothing to send");
+        return;
+      }
+      const ok = await dialog.confirm({
+        title: "Invite " + pre.wouldInvite + (pre.wouldInvite === 1 ? " person?" : " people?"),
+        body: "They each get a notification about " + t.name + ". It does not enter them — "
+            + "they still choose whether to join."
+            + (pre.alreadyInvited ? " " + pre.alreadyInvited + " already asked, and will not be asked twice." : ""),
+        cta: "Send " + pre.wouldInvite + (pre.wouldInvite === 1 ? " invitation" : " invitations"),
+        cancel: "Not now",
+      });
+      if (!ok) return;
+      const r = await NGGApi.member.tournaments.inviteAll(tournamentId, false);
+      toast.success(r.invited + (r.invited === 1 ? " person has" : " people have") + " been asked.");
+      load();
+    } catch (e) { toast.error(e.detail || e.message || "Couldn't send the invitations."); }
+    finally { setBusy(""); }
+  };
+
   if (err && !st) return (
     <div className="cmm-screen">
       <header className="cmm-ch-head">
@@ -3791,7 +3848,10 @@ function CmTrnDetail({ tournamentId, staff, onBack, onOpenMatch }) {
         <button className="cmm-icon-btn" onClick={onBack} aria-label="Back to tournaments">{cmUiIcon("back", 22)}</button>
         <div className="cmm-head-txt">
           <h1 className="cmm-ch-title">{t.name}</h1>
-          <p className="cmm-sub">{t.formatName} · {cmTcName(t.timeControl)} · {t.entrants} players</p>
+          <p className="cmm-sub">
+            {t.formatName} · {cmTcName(t.timeControl)} · {t.entrants} players
+            {trnWhenLine(t) ? <> · <span className={(t.window || {}).overdue ? "trn-overdue" : ""}>{trnWhenLine(t)}</span></> : null}
+          </p>
         </div>
         <span className={"trn-chip " + cls}>{chip}</span>
       </header>
@@ -3823,10 +3883,27 @@ function CmTrnDetail({ tournamentId, staff, onBack, onOpenMatch }) {
       {staff && t.status !== "complete" && t.status !== "cancelled" && (
         <div className="trn-director">
           <span className="trn-director-l">Director</span>
+          {/* Filling the field came before drawing it, and the buttons are in
+              that order. Inviting is only possible while entries are open. */}
+          {t.status === "open" && !(t.window || {}).entriesClosed && (
+            <button className="cmm-cta is-sm is-ghost" disabled={busy === "invite"} onClick={inviteAll}>
+              {busy === "invite" ? "Checking…" : "Invite everyone eligible"}
+            </button>
+          )}
           <button className="cmm-cta is-sm" disabled={busy === "draw"} onClick={draw}>
             {busy === "draw" ? "Drawing…" : (t.round === 0 ? "Draw round one" : "Draw round " + (t.round + 1))}
           </button>
         </div>
+      )}
+
+      {/* Asked, and said yes. Without the first number the second is not a
+          rate, and a director filling a field is working blind. */}
+      {staff && (st.invites || {}).invited > 0 && (
+        <p className="trn-invited">
+          <b>{st.invites.joined} of {st.invites.invited}</b> invited{" "}
+          {st.invites.joined === 1 ? "person has" : "people have"} joined
+          {" "}({st.invites.acceptRate}%).
+        </p>
       )}
 
       <div className="trn-tabs" role="tablist" aria-label="Tournament views">
@@ -3994,7 +4071,37 @@ function TrnLiveClock({ clock }) {
    a word; "Everyone plays every round. Nobody is knocked out." is the decision
    somebody is actually making about a Saturday with thirty children in it.   */
 
-const TRN_STEPS = ["Format", "Clock", "Who plays", "Name it"];
+const TRN_STEPS = ["Format", "Clock", "Who plays", "When", "Name it"];
+
+/* Durations a club event actually runs for. A director thinks "a Saturday
+   afternoon" or "over the next week", not "endsAt = 2026-09-02T17:00:00Z", so
+   the form asks for a start and a length and computes the end. Two raw
+   datetime pickers would also let somebody set an end before a start, which
+   the server refuses — a form that can only express valid windows is better
+   than a form that explains why yours is invalid. */
+const TRN_DURATIONS = [
+  { id: 3,   label: "An afternoon", sub: "3 hours" },
+  { id: 6,   label: "A session",    sub: "6 hours" },
+  { id: 24,  label: "A day",        sub: "24 hours" },
+  { id: 168, label: "A week",       sub: "7 days" },
+  { id: 336, label: "A fortnight",  sub: "14 days" },
+  { id: 720, label: "A month",      sub: "30 days" },
+];
+
+/* <input type="datetime-local"> hands back wall-clock time with no zone. The
+   server stores UTC, so the offset has to come off here — appending "Z" to a
+   local string, which is what the promo form does, silently shifts every
+   tournament by the viewer's offset. */
+function trnLocalToUtc(local) {
+  if (!local) return "";
+  const d = new Date(local);
+  return isNaN(d.getTime()) ? "" : d.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+/* The soonest a start may be, as a datetime-local `min`: now, in local time. */
+function trnNowLocal() {
+  const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+  return d.toISOString().slice(0, 16);
+}
 
 function CmTrnCreate({ onBack, onCreated }) {
   const [step, setStep] = React.useState(0);
@@ -4004,6 +4111,10 @@ function CmTrnCreate({ onBack, onCreated }) {
     kinds: ["member", "student", "volunteer", "staff"],
     centres: [], minRating: 0, maxRating: 0,
     programme: "", name: "", description: "",
+    /* "open" is the default and the old behaviour: entries stay open until the
+       director draws the first round. A start date is a real gate, so it is
+       opted into rather than the shape everybody falls into by accident. */
+    when: "open", startsAt: "", durationHours: 24,
   });
   const set = (patch) => setF(v => Object.assign({}, v, patch));
   const [formats, setFormats] = React.useState(null);
@@ -4026,7 +4137,16 @@ function CmTrnCreate({ onBack, onCreated }) {
   const canNext = step === 0 ? !!f.format
                 : step === 1 ? !!f.timeControl
                 : step === 2 ? f.kinds.length > 0
+                : step === 3 ? (f.when === "open" || !!f.startsAt)
                 : f.name.trim().length >= 3;
+
+  /* The window, resolved once so the review sentence, the submit and the hint
+     under the picker all describe the same event. */
+  const startUtc = f.when === "scheduled" ? trnLocalToUtc(f.startsAt) : "";
+  const endUtc = startUtc
+    ? new Date(new Date(startUtc).getTime() + f.durationHours * 3600000)
+        .toISOString().replace(/\.\d{3}Z$/, "Z")
+    : "";
 
   const submit = async () => {
     setBusy(true);
@@ -4038,6 +4158,7 @@ function CmTrnCreate({ onBack, onCreated }) {
         totalRounds: f.totalRounds || 0, programme: f.programme,
         kinds: f.kinds, centres: f.centres,
         minRating: f.minRating || 0, maxRating: f.maxRating || 0,
+        startsAt: startUtc, endsAt: endUtc,
       });
       toast.success("Created. The club can see it now.");
       onCreated && onCreated(r.tournamentId);
@@ -4189,6 +4310,66 @@ function CmTrnCreate({ onBack, onCreated }) {
 
         {step === 3 && (
           <>
+            <fieldset className="trn-fs">
+              <legend className="trn-legend">When does it run?</legend>
+              <div className="trn-seg">
+                {[["open", "Open until I draw"], ["scheduled", "Set a start and a length"]].map(([v, l]) => (
+                  <button key={v} type="button" aria-pressed={f.when === v}
+                          className={"trn-seg-b" + (f.when === v ? " is-on" : "")}
+                          onClick={() => set({ when: v })}>{l}</button>
+                ))}
+              </div>
+              {f.when === "open"
+                ? <p className="trn-hint">
+                    Entries stay open until you draw the first round. Right for a
+                    club night where you do not know yet who is coming.
+                  </p>
+                : <p className="trn-hint">
+                    Entries close the moment it starts, so nobody joins a round
+                    that has already been paired.
+                  </p>}
+            </fieldset>
+
+            {f.when === "scheduled" && (
+              <>
+                <label className="trn-field">
+                  <span className="trn-field-l">Starts <span>your local time</span></span>
+                  <input className="trn-in" type="datetime-local" value={f.startsAt}
+                         min={trnNowLocal()}
+                         onChange={e => set({ startsAt: e.target.value })}/>
+                </label>
+                <fieldset className="trn-fs">
+                  <legend className="trn-legend">And runs for</legend>
+                  {/* A length rather than an end date: a director thinks "a
+                      Saturday afternoon", and a form that can only express a
+                      valid window beats one that explains why yours is not. */}
+                  <div className="trn-tcs">
+                    {TRN_DURATIONS.map(d => (
+                      <label key={d.id} className={"trn-tc" + (f.durationHours === d.id ? " is-on" : "")}>
+                        <input type="radio" name="trn-dur" className="sr-only"
+                               checked={f.durationHours === d.id}
+                               onChange={() => set({ durationHours: d.id })}/>
+                        <span className="trn-tc-n">{d.label}</span>
+                        <span className="trn-tc-s">{d.sub}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                {!f.startsAt && <p className="trn-hint is-warn">Pick a start, or choose "open until I draw".</p>}
+                {endUtc && (
+                  <p className="trn-hint">
+                    Ends {fmtDateTime(endUtc)}. Nothing is cut off at that
+                    moment — games in progress finish — but the event is
+                    flagged as overdue until you close it.
+                  </p>
+                )}
+              </>
+            )}
+          </>
+        )}
+
+        {step === 4 && (
+          <>
             <label className="trn-field">
               <span className="trn-field-l">Name it</span>
               <input className="trn-in" value={f.name} maxLength={160} autoComplete="off"
@@ -4197,7 +4378,7 @@ function CmTrnCreate({ onBack, onCreated }) {
             <label className="trn-field">
               <span className="trn-field-l">A line about it <span>optional</span></span>
               <textarea className="trn-in trn-ta" value={f.description} maxLength={600} rows={3}
-                        placeholder="Who it is for, when it starts, anything players should know."
+                        placeholder="Who it is for, what to bring, anything players should know."
                         onChange={e => set({ description: e.target.value })}/>
             </label>
 
@@ -4207,7 +4388,10 @@ function CmTrnCreate({ onBack, onCreated }) {
             <div className="trn-review">
               <div className="trn-review-h">You are about to host</div>
               <p className="trn-review-b">
-                <b>{f.name.trim() || "an unnamed tournament"}</b> — a {meta[f.format].name.toLowerCase()} at{" "}
+                {/* Not toLowerCase: "a swiss at 10+0" reads as a typo. Swiss is
+                    named after Switzerland, and Round robin and Centre cup are
+                    already sentence case, so the name is used as written. */}
+                <b>{f.name.trim() || "an unnamed tournament"}</b> — a {meta[f.format].name} at{" "}
                 {cmTcName(f.timeControl)}
                 {f.variant !== "standard" ? ", played as " + cmVariant(f.variant).name : ""},{" "}
                 {f.rated && cmVariant(f.variant).rated ? "rated" : "casual"}, open to{" "}
@@ -4215,7 +4399,13 @@ function CmTrnCreate({ onBack, onCreated }) {
                 {f.programme ? " in the " + (f.programme === "ngg" ? "NGG Club" : "Summer School") : ""}
                 {f.minRating || f.maxRating ? ", rated " + (f.minRating || "any") + "–" + (f.maxRating || "any") : ""}.
               </p>
-              <p className="trn-review-s">Entries open straight away. You draw the first round when everybody is here.</p>
+              <p className="trn-review-s">
+                {startUtc
+                  ? <>Starts {fmtDateTime(startUtc)} and runs for{" "}
+                      {(TRN_DURATIONS.find(d => d.id === f.durationHours) || {}).sub}. Entries
+                      close when it starts.</>
+                  : "Entries open straight away. You draw the first round when everybody is here."}
+              </p>
             </div>
           </>
         )}

@@ -2125,3 +2125,29 @@ ALTER TABLE promos ADD COLUMN shape VARCHAR(16) DEFAULT 'card';
 CREATE INDEX idx_promo_trn ON promos (tournamentId);
 
 INSERT INTO schema_version (version) VALUES (101) ON DUPLICATE KEY UPDATE version = version;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v102 — Who was ASKED to a tournament, as distinct from who entered it.
+--
+-- A director could add entrants one at a time and nothing else, so the only way
+-- to fill a field was to sign children up without asking, which is not an
+-- invitation. This table is the ask. It also makes the obvious question
+-- answerable — 40 invited, 11 joined — which nothing could answer before,
+-- because nobody recorded the 40.
+CREATE TABLE IF NOT EXISTS tournament_invites (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tournamentId VARCHAR(32) NOT NULL,
+  playerId VARCHAR(64) NOT NULL,
+  playerName VARCHAR(120) DEFAULT '',
+  centre VARCHAR(120) DEFAULT '',
+  invitedBy VARCHAR(64) DEFAULT '',
+  invitedAt VARCHAR(40) NOT NULL,
+  -- Written by the join path, so invite→entry conversion is a fact rather than
+  -- an inference from two timestamps that happen to be close together.
+  joinedAt VARCHAR(40) DEFAULT '',
+  declinedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_trn_invite_unique (tournamentId, playerId),
+  INDEX idx_trn_invite_player (playerId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (102) ON DUPLICATE KEY UPDATE version = version;
