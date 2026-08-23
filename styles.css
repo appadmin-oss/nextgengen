@@ -2330,8 +2330,14 @@ img { background-color: rgba(12,20,50,0.04); }
 .cmm-av-btn { width: 46px; height: 46px; flex: none; padding: 0; border: 0; background: none;
   border-radius: var(--c-r-pill); cursor: pointer; }
 .cmm-av-btn:focus-visible { outline: 2px solid var(--c-blue); outline-offset: 2px; }
-.cmm-av { width: 46px; height: 46px; font-size: 17px; }
-.cmm-av-lg { width: 62px; height: 62px; font-size: 24px; }
+/* Size modifiers for .cm-avatar, and they have to SAY so. As bare classes
+   they lost to .cm-avatar's own `width: 40px` — which is declared 470 lines
+   further down, at the same specificity — so the profile avatar has been 40px
+   rather than 46, and the profile header 40 rather than 62, for as long as
+   both rules have existed. Nothing caught it because 40px is a plausible
+   avatar and nobody had the two side by side. */
+.cm-avatar.cmm-av { width: 46px; height: 46px; font-size: 17px; }
+.cm-avatar.cmm-av-lg { width: 62px; height: 62px; font-size: 24px; }
 
 .cmm-icon-btn { position: relative; width: 46px; height: 46px; flex: none; display: grid;
   place-items: center; border-radius: var(--c-r-input); border: 1px solid var(--c-border-strong);
@@ -2444,9 +2450,17 @@ img { background-color: rgba(12,20,50,0.04); }
 /* ── Message ── */
 .cmm-msg { padding: 12px 0 6px; border-bottom: 1px solid var(--c-divider-soft); -webkit-touch-callout: none; }
 .cmm-msg.is-grouped { padding-top: 2px; }
-.cmm-msg-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 5px; }
+/* Wraps. The author block and the channel caption both want a whole line on a
+   360px phone, and forcing them to share one produced a name column 0px wide.
+   On anything wider they still sit side by side, because they fit. */
+.cmm-msg-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 5px;
+  flex-wrap: wrap; }
 .cmm-msg-av { width: 40px; height: 40px; flex: none; border-radius: var(--c-r-pill); font-size: 15px; }
-.cmm-msg-meta { min-width: 0; }
+/* flex: 1 so the author's name and centre take the room they need before the
+   channel caption beside them gets any. min-width: 0 alone does not do it —
+   it only PERMITS shrinking below the content size, and with a sibling that
+   refused to shrink at all, this was the only thing left that could. */
+.cmm-msg-meta { flex: 1 1 auto; min-width: 0; }
 .cmm-msg-name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
   font-family: var(--c-font-display); font-size: 14.5px; font-weight: 700; color: var(--c-ink); }
 .cmm-msg-time { display: block; font-family: var(--c-font-mono); font-size: 11px; color: var(--c-faint); }
@@ -2806,7 +2820,27 @@ img { background-color: rgba(12,20,50,0.04); }
   border-radius: var(--c-r-pill); color: #fff; font-family: var(--c-font-display);
   font-weight: 800; font-size: 15px; overflow: hidden; }
 .cm-avatar-sm { width: 30px; height: 30px; font-size: 12px; }
-.cm-avatar-photo { width: 100%; height: 100%; object-fit: cover; }
+/* The IMG inside the avatar, not the avatar itself.
+ *
+ * This rule was written for the image and applied to the <span> wrapping it.
+ * Being later in the file at equal specificity, its `width: 100%` beat
+ * .cm-avatar's `width: 40px`, so the span grew to the width of the row; the
+ * img inside had no rule at all and rendered at its natural size; and
+ * .cm-avatar's `overflow: hidden` + pill radius clipped the result into a
+ * giant oval. Measured on a 600×800 photo: the span came out 608×800 and the
+ * name-and-centre column beside it was squeezed to ZERO pixels, which is why
+ * "Egbe-Idimu" wrapped one character per line.
+ *
+ * It only ever happened to members who had uploaded a photo — an avatar drawn
+ * from initials has no img and was always correct — which is exactly why no
+ * fixture caught it. */
+/* display:block, not the grid .cm-avatar uses to centre an initial: inside an
+ * auto-sized grid row the img's `height: 100%` is indefinite and falls back to
+ * the intrinsic height, so a 3:4 photo came out 40×53 and was cropped by
+ * overflow rather than by object-fit. A block box has .cm-avatar's definite
+ * 40px to resolve against, so the crop is the one that was asked for. */
+.cm-avatar-photo { display: block; }
+.cm-avatar-photo > img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .cm-avatar-all { background: var(--c-ink-deep); }
 
 .cm-card { background: var(--c-card); border: 1px solid var(--c-border);
@@ -2824,7 +2858,18 @@ img { background-color: rgba(12,20,50,0.04); }
 /* Where a message came from is a caption, not a badge. Filled, it read as
    loud as the author's name; the feed is mostly one or two channels and this
    label is orientation, not news. */
-.cm-card-chan { flex: none; font-family: var(--c-font-mono); font-size: 10.5px; font-weight: 600;
+/* It SHRINKS. `flex: none` meant a channel called "AI Tools Application &
+ * Digital Problem Solving" claimed 330px of a 390px phone, took the header's
+ * whole width, squeezed the author's name and centre to ZERO — so "Egbe-Idimu"
+ * wrapped one character per line — and still ran 32px off the right edge with
+ * nothing to say it had been cut.
+ *
+ * The name is the more important of the two, so the meta column claims space
+ * first (below) and this truncates. A label that is orientation rather than
+ * news is the right thing to abbreviate; a child's name is not. */
+.cm-card-chan { flex: 0 1 auto; min-width: 0; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--c-font-mono); font-size: 10.5px; font-weight: 600;
   letter-spacing: .04em; color: var(--c-faint); background: none; padding: 0; border: 0; }
 /* The caption is also the way INTO the channel it names — the one place in the
    feed where "where is this from" and "take me there" are the same question.
