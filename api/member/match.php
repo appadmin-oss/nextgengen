@@ -101,7 +101,8 @@ if ($method === 'GET') {
         $res = gs_call('tournament.join', ['playerId' => $s['mid'], 'tournamentId' => (string)($b['tournamentId'] ?? ''), 'ip' => $ip]);
     } elseif ($action === 'trnLeave') {
         $res = gs_call('tournament.leave', ['playerId' => $s['mid'], 'tournamentId' => (string)($b['tournamentId'] ?? '')]);
-    } elseif ($action === 'trnCreate' || $action === 'trnDraw' || $action === 'trnEnter' || $action === 'trnDirectory') {
+    } elseif ($action === 'trnCreate' || $action === 'trnDraw' || $action === 'trnEnter'
+              || $action === 'trnDirectory' || $action === 'trnInviteAll') {
         /* Running a tournament FROM the chess screen.
          *
          * A director is a member with a role, sitting in the club with the
@@ -121,7 +122,12 @@ if ($method === 'GET') {
                 'description' => (string)($b['description'] ?? ''),
                 'kinds' => (array)($b['kinds'] ?? []), 'centres' => (array)($b['centres'] ?? []),
                 'minRating' => (int)($b['minRating'] ?? 0), 'maxRating' => (int)($b['maxRating'] ?? 0),
+                'startsAt' => (string)($b['startsAt'] ?? ''), 'endsAt' => (string)($b['endsAt'] ?? ''),
                 'ip' => $ip]);
+        } elseif ($action === 'trnInviteAll') {
+            $res = gs_call('tournament.inviteAll', ['requesterId' => $s['mid'],
+                'tournamentId' => (string)($b['tournamentId'] ?? ''),
+                'dryRun' => !empty($b['dryRun']), 'ip' => $ip]);
         } elseif ($action === 'trnDraw') {
             $res = gs_call('tournament.draw', ['requesterId' => $s['mid'], 'tournamentId' => (string)($b['tournamentId'] ?? ''), 'ip' => $ip]);
         } elseif ($action === 'trnEnter') {

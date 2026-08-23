@@ -40,6 +40,7 @@ if ($method === 'GET') {
             'rated' => $b['rated'] ?? null, 'totalRounds' => $b['totalRounds'] ?? null,
             'kinds' => $b['kinds'] ?? null, 'centres' => $b['centres'] ?? null,
             'minRating' => $b['minRating'] ?? null, 'maxRating' => $b['maxRating'] ?? null,
+            'startsAt' => $b['startsAt'] ?? null, 'endsAt' => $b['endsAt'] ?? null,
         ], fn($v) => $v !== null));
     } elseif ($action === 'draw') {
         $res = gs_call('tournament.draw', $base);
@@ -48,6 +49,11 @@ if ($method === 'GET') {
             'q' => (string)($b['q'] ?? ''), 'kinds' => (array)($b['kinds'] ?? []),
             'centre' => (string)($b['centre'] ?? ''), 'band' => (string)($b['band'] ?? ''),
             'exclude' => (array)($b['exclude'] ?? []), 'limit' => (int)($b['limit'] ?? 40)]);
+    } elseif ($action === 'inviteAll') {
+        /* dryRun lets the screen say "this will invite 38 people" BEFORE it
+           sends 38 notifications, which is the difference between a button
+           somebody presses and a button somebody is afraid of. */
+        $res = gs_call('tournament.inviteAll', $base + ['dryRun' => !empty($b['dryRun'])]);
     } elseif ($action === 'enter') {
         $res = gs_call('tournament.enter', $base + ['playerId' => (string)($b['playerId'] ?? '')]);
     } elseif ($action === 'withdraw') {

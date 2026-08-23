@@ -47,6 +47,10 @@ function tournament_public(array $t): array {
         'winnerName' => (string)($t['winnerName'] ?? ''),
         'createdAt' => (string)($t['createdAt'] ?? ''),
         'updatedAt' => (string)($t['updatedAt'] ?? ''),
+        // One place computes what the dates MEAN, so the join gate, the
+        // member's card and the director's list cannot disagree about whether
+        // entries are open.
+        'window'    => trn_window($t),
     ];
 }
 
@@ -86,6 +90,12 @@ function admin_tournament_create(array $p): array {
     // standard chess. See chess_variant_rateable().
     $rated = !empty($p['rated']) && chess_variant_rateable($variant);
 
+    /* When it runs. These were columns from the beginning, written straight
+     * from the request with no validation and read by nothing, so a director
+     * could set an event to end before it began and see no symptom at all. */
+    $win = trn_check_window((string)($p['startsAt'] ?? ''), (string)($p['endsAt'] ?? ''));
+    if (empty($win['ok'])) return ['ok' => false, 'error' => $win['error']];
+
     $kinds = array_values(array_intersect((array)($p['kinds'] ?? []), DIRECTORY_KINDS));
     $centres = array_values(array_filter(array_map('strval', (array)($p['centres'] ?? []))));
     $rounds = max(0, min(15, (int)($p['totalRounds'] ?? 0)));
@@ -105,12 +115,13 @@ function admin_tournament_create(array $p): array {
             'minRating' => max(0, (int)($p['minRating'] ?? 0)),
             'maxRating' => max(0, (int)($p['maxRating'] ?? 0)),
         ], JSON_UNESCAPED_SLASHES),
-        'startsAt' => (string)($p['startsAt'] ?? ''), 'endsAt' => (string)($p['endsAt'] ?? ''),
+        'startsAt' => $win['startsAt'], 'endsAt' => $win['endsAt'],
         'stage' => $format === 'centre' ? 'centre' : 'main', 'round' => 0,
         'createdBy' => (string)$g['requester']['memberId'], 'createdAt' => $now, 'updatedAt' => $now,
     ]);
     audit('tournament.create', (string)$g['requester']['memberId'], $id,
-          ['name' => $name, 'format' => $format, 'timeControl' => $tc], (string)($p['ip'] ?? ''));
+          ['name' => $name, 'format' => $format, 'timeControl' => $tc,
+           'startsAt' => $win['startsAt'], 'endsAt' => $win['endsAt']], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'tournamentId' => $id];
 }
 
@@ -143,6 +154,7 @@ function admin_tournament_enter(array $p): array {
      * field reseeded, which the old insert did neither of. */
     $r = trn_add_entrant($t, (string)$person['id']);
     if (empty($r['ok'])) return $r;
+    trn_invite_mark_joined((string)$t['tournamentId'], (string)$person['id']);
     return ['ok' => true, 'playerId' => (string)$person['id'], 'centre' => (string)$person['centre'],
             'rating' => (int)$r['rating']];
 }
@@ -487,7 +499,10 @@ function tournament_bracket(array $p): array {
         ];
     }
     return ['ok' => true, 'tournament' => tournament_public($t),
-            'centres' => $byCentre, 'rounds' => $rounds];
+            'centres' => $byCentre, 'rounds' => $rounds,
+            // Asked, and said yes. Without the first number the second is not
+            // a rate, and a director filling a field is working blind.
+            'invites' => trn_invite_stats($tid)];
 }
 
 /** A player's own view: the tournaments they are in and their next game. */
