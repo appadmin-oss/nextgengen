@@ -2686,8 +2686,20 @@ function CmArcade({ auth }) {
 }
 
 /* ── The Math Lab ─────────────────────────────────────────────────────────
-   Twelve levels that unlock in order, from JSS number work to the Further
-   Maths papers.
+   Twenty-one levels across six strands — Number, Algebra, Shape & space,
+   Data, Reasoning, Calculus — from JSS number work to A-level calculus.
+
+   It used to be one chain of twelve: level n opened when level n−1 was
+   cleared. That is the wrong shape for a curriculum. An SSS 3 student who
+   wanted to work on differentiation had first to clear JSS 1–2 fractions and
+   eight more levels of ground they covered years ago, and statistics and
+   probability were missing entirely, which is indefensible for a WAEC ladder.
+
+   So prerequisites are now a graph: three strands open on day one, and a level
+   opens when the levels it actually builds on are cleared. Trigonometry does
+   not wait on Sets. The screen is grouped by strand for the same reason — a
+   flat list of twenty-one cards is a scroll, six labelled strands of three or
+   four is a map, and a student can see which one is theirs.
 
    It is a LADDER, not a leaderboard, and it looks different from the Arcade on
    purpose. An arcade round is sixty seconds of reflex against a clock and a
@@ -2720,8 +2732,9 @@ function MathLabTeaser({ onOpen }) {
         <div className="arc-eyebrow">Not a race</div>
         <h2 className="ml-teaser-h">🧮 Math Lab</h2>
         <p className="ml-teaser-p">
-          Twelve levels that unlock one at a time — number and numeration up to Further Maths.
-          {next ? <> You are on <b>{next.name}</b>.</> : null}
+          Twenty-one levels across six strands — number, algebra, shape, data,
+          reasoning and calculus. Start wherever your year does.
+          {next ? <> Next up: <b>{next.name}</b>.</> : null}
         </p>
         <button className="arc-cta" onClick={onOpen}>
           {board ? (board.cleared > 0 ? "Continue the ladder" : "Open the Math Lab") : "Open the Math Lab"}
@@ -2743,6 +2756,7 @@ function MathLab({ onDone }) {
   const [marked, setMarked] = React.useState(null);
   const [busy, setBusy] = React.useState(0);
   const [err, setErr] = React.useState("");
+  const [strand, setStrand] = React.useState("");     // "" = every strand
 
   const load = React.useCallback(() => {
     NGGApi.member.mathlab.board()
@@ -2762,11 +2776,23 @@ function MathLab({ onDone }) {
       .then(() => setBusy(0));
   };
 
+  /* The strand list is derived from the levels themselves rather than read
+     from the board's own strand array. The two would have to agree, and when
+     they did not — a strand with no levels in it, a level whose strand was not
+     in the list — the screen would render an empty heading or silently drop a
+     level. One source, in first-appearance order, which is the order the
+     server uses too. */
+  const strands = board ? board.levels.reduce(
+    (acc, l) => (l.strand && acc.indexOf(l.strand) < 0 ? acc.concat([l.strand]) : acc), []) : [];
+  const shown = board ? board.levels.filter(l => !strand || l.strand === strand) : [];
+
   if (paper) return <MathPaper paper={paper} onQuit={() => setPaper(null)}
                               onMarked={(r) => { setPaper(null); setMarked({ ...r, level: paper.level, name: paper.name,
                                                                              questions: paper.questions }); load(); }}/>;
   if (marked) return <MathMarked result={marked} onRetry={() => play(marked.level)}
-                                onNext={() => play(marked.level + 1)} onDone={() => setMarked(null)}/>;
+                                onNext={() => play(marked.unlocked ? marked.unlocked.level
+                                                                   : marked.level + 1)}
+                                onDone={() => setMarked(null)}/>;
 
   return (
     <div className="ml" data-screen-label="Math Lab">
@@ -2774,11 +2800,15 @@ function MathLab({ onDone }) {
         <button className="arc-quit" onClick={onDone}>← Arcade</button>
         <div className="ml-hd-txt">
           <h1 className="ml-h">🧮 Math Lab</h1>
-          <p className="ml-sub">Twelve levels. Clear one to open the next.</p>
+          <p className="ml-sub">
+            Six strands. A level opens when the work it builds on is cleared —
+            so you can start where your year does.
+          </p>
         </div>
         {board && (
           <div className="ml-prog" role="img"
-               aria-label={board.cleared + " of " + board.total + " levels cleared"}>
+               aria-label={board.cleared + " of " + board.total + " levels cleared, "
+                           + board.open + " open now"}>
             <b>{board.cleared}</b><span>/{board.total}</span>
           </div>
         )}
@@ -2790,12 +2820,57 @@ function MathLab({ onDone }) {
         <div className="arc-skels">{[0, 1, 2, 3, 4, 5].map(i => <div key={i} className="arc-skel"/>)}</div>
       ) : (
         <>
-          <ol className="ml-ladder">
-            {board.levels.map(l => (
-              <MathLevelCard key={l.level} level={l} passPct={board.passPct}
-                             busy={busy === l.level} onPlay={() => play(l.level)}/>
-            ))}
-          </ol>
+          {/* Twenty-one cards is a scroll. The strand filter turns it into
+              three or four, and the counts on the chips mean choosing one is
+              an informed choice rather than a guess at what is behind it. */}
+          <div className="ml-strands" role="group" aria-label="Filter levels by strand">
+            <button className={"ml-strand" + (strand === "" ? " is-on" : "")}
+                    aria-pressed={strand === ""} onClick={() => setStrand("")}>
+              All <span className="ml-strand-n">{board.total}</span>
+            </button>
+            {strands.map(sName => {
+              const inIt = board.levels.filter(l => l.strand === sName);
+              const done = inIt.filter(l => l.cleared).length;
+              return (
+                <button key={sName}
+                        className={"ml-strand" + (strand === sName ? " is-on" : "")}
+                        aria-pressed={strand === sName} onClick={() => setStrand(sName)}>
+                  {sName} <span className="ml-strand-n">{done}/{inIt.length}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Announced, because filtering is a change the sighted user sees
+              instantly and a screen-reader user otherwise never hears. */}
+          <p className="ml-count" role="status">
+            {shown.length === board.total
+              ? board.open + (board.open === 1 ? " level is" : " levels are") + " open to you now"
+              : "Showing " + shown.length + " " + strand.toLowerCase() + " "
+                + (shown.length === 1 ? "level" : "levels")}
+          </p>
+
+          {strands.filter(sName => !strand || sName === strand).map(sName => {
+            const inIt = shown.filter(l => l.strand === sName);
+            if (!inIt.length) return null;
+            return (
+              <section className="ml-group" key={sName}>
+                <h2 className="ml-group-h">
+                  {sName}
+                  <span className="ml-group-band">{inIt[0].band}{inIt.length > 1
+                    && inIt[inIt.length - 1].band !== inIt[0].band
+                    ? " – " + inIt[inIt.length - 1].band : ""}</span>
+                </h2>
+                <ol className="ml-ladder">
+                  {inIt.map(l => (
+                    <MathLevelCard key={l.level} level={l} passPct={board.passPct}
+                                   busy={busy === l.level} onPlay={() => play(l.level)}/>
+                  ))}
+                </ol>
+              </section>
+            );
+          })}
+
           <p className="arc-fineprint">
             Questions are generated fresh every time, so there is no paper to memorise —
             and they are marked on the server, so the answers are never in the page.
@@ -2831,7 +2906,14 @@ function MathLevelCard({ level, passPct, onPlay, busy }) {
       </div>
       <div className="ml-lv-act">
         {state === "locked" ? (
-          <span className="ml-lv-lock">Clear level {level.level - 1} to open this</span>
+          /* Named, not numbered. "Clear level 12 to open this" makes a student
+             count rungs; "needs Coordinate Geometry" is a thing they can go
+             and do, and it is what the server actually checked. */
+          <span className="ml-lv-lock">
+            Needs {level.waitingOn && level.waitingOn.length
+              ? level.waitingOn.join(" and ")
+              : "earlier work"}
+          </span>
         ) : (
           <>
             {state === "cleared" && <span className="ml-lv-tick" aria-label="Cleared">✓ Cleared</span>}
@@ -2955,9 +3037,20 @@ function MathMarked({ result, onRetry, onNext, onDone }) {
         </div>
       </div>
 
-      {result.unlocked && (
+      {/* One clear can open more than one door now — Sets opens both Logic and
+          (once Statistics is done) Probability — so this lists them rather
+          than naming the next number up. */}
+      {result.opened && result.opened.length > 0 && (
         <div className="ml-unlock" role="status">
-          🔓 Level {result.unlocked.level} is open — <b>{result.unlocked.name}</b>
+          🔓 {result.opened.length === 1 ? "New level open"
+                                          : result.opened.length + " new levels open"}
+          {" — "}
+          {result.opened.map((o, i) => (
+            <React.Fragment key={o.level}>
+              {i > 0 && (i === result.opened.length - 1 ? " and " : ", ")}
+              <b>{o.name}</b>
+            </React.Fragment>
+          ))}
         </div>
       )}
 
@@ -3000,9 +3093,9 @@ function MathMarked({ result, onRetry, onNext, onDone }) {
       </ol>
 
       <footer className="ml-marked-ft">
-        <button className="arc-sec" onClick={onDone}>Back to the ladder</button>
+        <button className="arc-sec" onClick={onDone}>Back to the strands</button>
         {result.unlocked
-          ? <button className="arc-next" onClick={onNext}>Start level {result.unlocked.level} →</button>
+          ? <button className="arc-next" onClick={onNext}>Start {result.unlocked.name} →</button>
           : <button className="arc-next" onClick={onRetry}>{result.cleared ? "Play it again" : "Try again"}</button>}
       </footer>
     </div>

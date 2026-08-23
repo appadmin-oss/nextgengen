@@ -3470,6 +3470,38 @@ img { background-color: rgba(12,20,50,0.04); }
 .ml-teaser-n { margin-top: 8px; font-size: 12.5px; color: rgba(255, 255, 255, 0.7);
                font-variant-numeric: tabular-nums; }
 
+/* ── Strands ──
+ * Twenty-one levels do not fit on a screen, and a flat list of them is a
+ * scroll rather than a map. The chips filter; the group headings give the
+ * unfiltered view its structure. Both carry counts, so choosing a strand is
+ * an informed choice rather than a guess at what is behind it.
+ *
+ * The selected chip is marked by fill AND by weight, not by colour alone, and
+ * its border is --ink-500 (3.5:1 on white) rather than the cream card border
+ * (1.34:1) — a filter chip's outline is the only thing that says it is a
+ * control, so it has to clear WCAG 1.4.11. */
+.ml-strands { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.ml-strand { display: inline-flex; align-items: center; gap: 7px; min-height: 44px;
+             padding: 8px 14px; border-radius: 999px; cursor: pointer;
+             background: #fff; color: var(--ink-900); border: 1px solid var(--ink-500);
+             font: inherit; font-size: 13.5px; font-weight: 600; }
+.ml-strand:hover { background: var(--cream-100, #f3ecdb); }
+.ml-strand.is-on { background: var(--navy-900, #0c1432); color: #fff;
+                   border-color: var(--navy-900, #0c1432); font-weight: 800; }
+.ml-strand-n { font-size: 12px; font-variant-numeric: tabular-nums;
+               background: var(--cream-100, #f3ecdb); color: var(--ink-700);
+               border-radius: 999px; padding: 2px 7px; }
+.ml-strand.is-on .ml-strand-n { background: rgba(255, 255, 255, 0.18); color: #fff; }
+.ml-count { margin: 0 0 14px; font-size: 13px; color: var(--ink-700);
+            font-variant-numeric: tabular-nums; }
+
+.ml-group { margin: 0 0 18px; }
+.ml-group-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+              margin: 0 0 8px; font-size: 13px; font-weight: 800; letter-spacing: 0.08em;
+              text-transform: uppercase; color: var(--ink-700); }
+.ml-group-band { font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+                 text-transform: none; color: var(--ink-500); }
+
 /* ── The ladder ── */
 .ml-ladder { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .ml-lv { display: flex; gap: 14px; align-items: center; background: #fff;
@@ -3497,7 +3529,7 @@ img { background-color: rgba(12,20,50,0.04); }
               color: var(--ink-500); font-variant-numeric: tabular-nums; }
 .ml-lv-act { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .ml-lv-tick { font-size: 12px; font-weight: 700; color: #1d6b32; }
-.ml-lv-lock { font-size: 12px; color: var(--ink-500); max-width: 16ch; text-align: right; line-height: 1.4; }
+.ml-lv-lock { font-size: 12px; color: var(--ink-700); max-width: 20ch; text-align: right; line-height: 1.4; }
 .ml-go { background: var(--navy-900, #0c1432); color: #fff; border: none; border-radius: 999px;
          padding: 10px 18px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
          min-height: 44px; }

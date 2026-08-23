@@ -16040,7 +16040,10 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     /* Read a question, return the answer — or null if this parser does not
        recognise the form, which the caller treats as a failure. */
-    $solve = function (string $raw) use ($gcd, $lcm, $ncr, $npr, $logb, $isqrt, $num, $poly, $at, $vec): ?string {
+    /* "4i" is four, "i" is one. Textbooks never print the 1, so the parser
+       cannot assume a digit is there. */
+    $unit = fn(string $d): int => $d === '' ? 1 : (int)$d;
+    $solve = function (string $raw) use ($gcd, $lcm, $ncr, $npr, $logb, $isqrt, $num, $poly, $at, $vec, $unit): ?string {
         $q = str_replace('−', '-', $raw);
         $m = [];
 
@@ -16195,17 +16198,202 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         if (preg_match('/^Find the magnitude of the vector (\d+)i \+ (\d+)j\.$/', $q, $m))
             return (string)$isqrt((int)$m[1] ** 2 + (int)$m[2] ** 2);
 
+        /* ── The topics added when the ladder stopped being one rope ──────
+           Every arm below re-derives the answer from the PRINTED question, the
+           same as the ones above. That is the whole point of this solver: the
+           generator and the checker are written from the maths independently,
+           so a key that is wrong has to be wrong twice in the same way to get
+           through. It caught real errors while these were being written. */
+
+        /* Sets */
+        if (preg_match('/^In a class, (\d+) study Physics and (\d+) study Chemistry\. (\d+) study both\. How many study at least one of them\?$/', $q, $m))
+            return (string)((int)$m[1] + (int)$m[2] - (int)$m[3]);
+        if (preg_match('/^In a group of (\d+), (\d+) like rice and (\d+) like beans, and everybody likes at least one\. How many like both\?$/', $q, $m))
+            return (string)((int)$m[2] + (int)$m[3] - (int)$m[1]);
+        if (preg_match("/^The universal set has (\d+) members and set A has (\d+)\..*complement of A\)\?$/", $q, $m))
+            return (string)((int)$m[1] - (int)$m[2]);
+        if (preg_match('/^A set has (\d+) members\. How many subsets does it have\?$/', $q, $m))
+            return (string)(2 ** (int)$m[1]);
+
+        /* Statistics */
+        $nums = function (string $csv): array {
+            return array_map('intval', array_filter(array_map('trim', explode(',', $csv)), 'strlen'));
+        };
+        if (preg_match('/^Find the mean of: ([\d, ]+)\.$/', $q, $m)) {
+            $l = $nums($m[1]); return $l ? (string)(array_sum($l) / count($l)) : null;
+        }
+        if (preg_match('/^Find the median of: ([\d, ]+)\.$/', $q, $m)) {
+            $l = $nums($m[1]); sort($l); $k = count($l); $mid = intdiv($k, 2);
+            $med = $k % 2 === 1 ? $l[$mid] : ($l[$mid - 1] + $l[$mid]) / 2;
+            return (string)(abs($med - round($med)) < 1e-9 ? (int)round($med) : round($med, 2));
+        }
+        if (preg_match('/^Find the mode of: ([\d, ]+)\.$/', $q, $m)) {
+            $l = $nums($m[1]); $c = array_count_values($l); arsort($c);
+            return (string)array_key_first($c);
+        }
+        if (preg_match('/^Find the range of: ([\d, ]+)\.$/', $q, $m)) {
+            $l = $nums($m[1]); return (string)(max($l) - min($l));
+        }
+        if (preg_match('/^Find the standard deviation of: ([\d, ]+)\.$/', $q, $m)) {
+            $l = $nums($m[1]); $k = count($l); $mean = array_sum($l) / $k;
+            $var = 0.0; foreach ($l as $v) $var += ($v - $mean) ** 2;
+            $sd = sqrt($var / $k);
+            return (string)(abs($sd - round($sd)) < 1e-9 ? (int)round($sd) : round($sd, 2));
+        }
+
+        /* Probability — all answers are fractions in lowest terms, or 0. */
+        $frac = function (int $n, int $d) use ($gcd): string {
+            if ($n === 0) return '0';
+            $g = $gcd($n, $d);
+            return intdiv($n, $g) . '/' . intdiv($d, $g);
+        };
+        if (preg_match('/^A bag holds (\d+) red and (\d+) blue balls\..*probability it is red\?/', $q, $m))
+            return $frac((int)$m[1], (int)$m[1] + (int)$m[2]);
+        if (preg_match('/^A fair die is rolled once\..*greater than (\d+)\?/', $q, $m))
+            return $frac(max(0, 6 - (int)$m[1]), 6);
+        if (preg_match('/^Two independent events have probabilities (\d+)\/5 and (\d+)\/4\..*BOTH happen\?/', $q, $m))
+            return $frac((int)$m[1] * (int)$m[2], 20);
+        if (preg_match('/^A box holds (\d+) red and (\d+) green pens\..*both are red\?/', $q, $m)) {
+            $r = (int)$m[1]; $t = $r + (int)$m[2];
+            return $frac($r * ($r - 1), $t * ($t - 1));
+        }
+        if (preg_match("/^The probability that it rains is (\d+)\/10\..*does NOT rain\?/", $q, $m))
+            return $frac(10 - (int)$m[1], 10);
+
+        /* Polynomials */
+        if (preg_match('/^Find the remainder when (.+) is divided by \(x ([+-]) (\d+)\)\.$/', $q, $m)) {
+            $k = (int)$m[3] * ($m[2] === '-' ? 1 : -1);       // (x − k) ⇒ evaluate at k
+            return (string)$at($poly($m[1]), $k);
+        }
+        if (preg_match('/^\(x - (\d+)\) is a factor of (.+) \+ c\. Find c\.$/', $q, $m))
+            return (string)(-$at($poly($m[2]), (int)$m[1]));
+        /* Both terms are optional and a coefficient of 1 is written bare, so
+           this has to read "x³ + x + 5" and "x³ − 7" as well as the full form. */
+        if (preg_match('/^For f\(x\) = x³( ([+-]) (\d*)x)?( ([+-]) (\d+))?, find f\((-?\d+)\)\.$/', $q, $m)) {
+            $p = $m[1] === '' ? 0 : (($m[3] === '' ? 1 : (int)$m[3]) * ($m[2] === '-' ? -1 : 1));
+            $c = ($m[4] ?? '') === '' ? 0 : ((int)$m[6] * ($m[5] === '-' ? -1 : 1));
+            $r = (int)$m[7];
+            return (string)($r ** 3 + $p * $r + $c);
+        }
+        if (preg_match('/^Express (-?\d+) \/ \(\(x - (\d+)\)\(x - (\d+)\)\).*What is a\?$/', $q, $m))
+            return (string)((int)$m[1] / ((int)$m[2] - (int)$m[3]));
+
+        /* Complex numbers */
+        if (preg_match('/^Add \((-?\d+) \+ (\d*)i\) and \((-?\d+) \+ (\d*)i\)\. What is the REAL part/', $q, $m))
+            return (string)((int)$m[1] + (int)$m[3]);
+        if (preg_match('/^Multiply \((-?\d+) \+ (\d*)i\) by \((-?\d+) \+ (\d*)i\)\. What is the IMAGINARY part/', $q, $m))
+            // A bare "i" is a coefficient of 1, and (int)'' is 0.
+            return (string)((int)$m[1] * $unit($m[4]) + $unit($m[2]) * (int)$m[3]);
+        if (preg_match('/^Find the modulus of the complex number (\d+) \+ (\d+)i\.$/', $q, $m))
+            return (string)$isqrt((int)$m[1] ** 2 + (int)$m[2] ** 2);
+        if (preg_match('/^The conjugate of (-?\d+) \+ (\d*)i.*what do you get for (-?\d+) \+ (\d*)i\?$/', $q, $m))
+            return (string)((int)$m[3] ** 2 + $unit($m[4]) ** 2);
+        if (preg_match('/^Simplify i\^(\d+)\./', $q, $m))
+            return ['1', 'i', '-1', '-i'][(int)$m[1] % 4];
+
+        /* Binary operations */
+        if (preg_match('/^A binary operation is defined by a \* b = a \+ b \+ (\d+)\. Find (\d+) \* (\d+)\.$/', $q, $m))
+            return (string)((int)$m[2] + (int)$m[3] + (int)$m[1]);
+        if (preg_match('/^A binary operation is defined by a \* b = ab - a - b\. Find (\d+) \* (\d+)\.$/', $q, $m))
+            return (string)((int)$m[1] * (int)$m[2] - (int)$m[1] - (int)$m[2]);
+        if (preg_match('/^A binary operation is defined by a \* b = a \+ b \+ (\d+)\. Find the identity element\.$/', $q, $m))
+            return (string)(-(int)$m[1]);
+        if (preg_match('/^Under a \* b = a \+ b \+ (\d+), the identity is -?\d+\. Find the inverse of (\d+)\.$/', $q, $m))
+            return (string)(-(int)$m[2] - 2 * (int)$m[1]);
+
+        /* Logic */
+        if (preg_match('/^p is (true|false) and q is (true|false)\. .*"p implies q"/', $q, $m))
+            return ($m[1] === 'true' && $m[2] === 'false') ? 'F' : 'T';
+        if (preg_match('/^p is (true|false) and q is (true|false)\. .*"p AND q"/', $q, $m))
+            return ($m[1] === 'true' && $m[2] === 'true') ? 'T' : 'F';
+        if (preg_match('/^p is (true|false) and q is (true|false)\. .*"p OR q"/', $q, $m))
+            return ($m[1] === 'true' || $m[2] === 'true') ? 'T' : 'F';
+        if (preg_match('/^How many rows does a truth table for (\d+) simple statements? have\?$/', $q, $m))
+            return (string)(2 ** (int)$m[1]);
+
+        /* Vectors in three dimensions */
+        if (preg_match('/^Find the magnitude of the vector (\d*)i \+ (\d*)j \+ (\d*)k\.$/', $q, $m))
+            return (string)$isqrt($unit($m[1]) ** 2 + $unit($m[2]) ** 2 + $unit($m[3]) ** 2);
+        if (preg_match('/^Find the scalar product of \((-?\d+), (-?\d+), (-?\d+)\) and \((-?\d+), (-?\d+), (-?\d+)\)\.$/', $q, $m))
+            return (string)((int)$m[1] * (int)$m[4] + (int)$m[2] * (int)$m[5] + (int)$m[3] * (int)$m[6]);
+        if (strpos($q, 'perpendicular when their scalar product is') !== false) return '0';
+        if (preg_match('/^Multiply the vector \((-?\d+), (-?\d+), (-?\d+)\) by the scalar (\d+)\. What is the FIRST component\?$/', $q, $m))
+            return (string)((int)$m[1] * (int)$m[4]);
+
+        /* Calculus in motion. s = at² + bt, with a written bare when it is 1
+           and the bt term dropped when b is 0, so both are optional here. */
+        $motion = '/^A body moves so that s = (\d*)t²( ([+-]) (\d*)t)?/';
+        if (preg_match($motion, $q, $m) && preg_match('/velocity at t = (-?\d+) seconds/', $q, $t)) {
+            $a = $m[1] === '' ? 1 : (int)$m[1];
+            $b = ($m[2] ?? '') === '' ? 0 : (($m[4] === '' ? 1 : (int)$m[4]) * ($m[3] === '-' ? -1 : 1));
+            return (string)(2 * $a * (int)$t[1] + $b);
+        }
+        if (preg_match($motion, $q, $m) && strpos($q, 'Find the acceleration') !== false)
+            return (string)(2 * ($m[1] === '' ? 1 : (int)$m[1]));
+        if (preg_match($motion, $q, $m) && strpos($q, 'momentarily at rest') !== false) {
+            $a = $m[1] === '' ? 1 : (int)$m[1];
+            $b = ($m[2] ?? '') === '' ? 0 : (($m[4] === '' ? 1 : (int)$m[4]) * ($m[3] === '-' ? -1 : 1));
+            return (string)(-$b / (2 * $a));
+        }
+        if (preg_match('/^Find the area between y = (\d+) and y = x², from x = 0 to x = (\d+)\.$/', $q, $m))
+            return (string)(2 * (int)$m[2] ** 3 / 3);
+
         return null;
     };
 
     /* ── The ladder itself ─────────────────────────────────────────────── */
 
-    chk('math lab: the ladder runs from JSS number work to Further Maths',
-        count(mathlab_levels()) === 12
+    /* The ladder is a prerequisite GRAPH, not a queue. It used to be one chain
+       of twelve, so a Further Maths student who wanted differentiation had to
+       first clear JSS 1–2 fractions and eight levels of ground they covered
+       years ago. What is asserted here is the shape, not the count — adding a
+       level is meant to be easy; adding one that nothing can ever reach, or
+       that depends on itself, is meant to fail the build. */
+    $LEVELS = mathlab_levels();
+    chk('math lab: the ladder spans JSS number work to A-level calculus',
+        count($LEVELS) >= 20
         && mathlab_level(1)['name'] === 'Number & Numeration'
-        && mathlab_level(12)['band'] === 'Further Maths / A-level');
+        && count(array_filter($LEVELS, fn($l) => $l['band'] === 'Further Maths / A-level')) >= 3);
     chk('math lab: every level declares how many questions and how long',
-        count(array_filter(mathlab_levels(), fn($l) => (int)$l['questions'] > 0 && (int)$l['seconds'] > 0)) === 12);
+        count(array_filter($LEVELS, fn($l) => (int)$l['questions'] > 0 && (int)$l['seconds'] > 0))
+        === count($LEVELS));
+    chk('math lab: every level names a strand, and every strand has levels in it',
+        count(array_filter($LEVELS, fn($l) => trim((string)($l['strand'] ?? '')) !== ''))
+            === count($LEVELS)
+        && count(mathlab_strands()) >= 5
+        && count(array_diff(mathlab_strands(), array_column($LEVELS, 'strand'))) === 0);
+
+    /* Every prerequisite must exist and must sit BELOW the level that wants it.
+       A forward or circular edge would lock a level permanently, and the only
+       symptom a student would see is a door that never opens. */
+    $badEdge = [];
+    foreach ($LEVELS as $n => $lv) {
+        foreach ((array)($lv['needs'] ?? []) as $req) {
+            if (!isset($LEVELS[$req])) $badEdge[] = "L$n needs missing L$req";
+            elseif ($req >= $n) $badEdge[] = "L$n needs L$req, which is not below it";
+        }
+    }
+    chk('math lab: every prerequisite exists and points down the ladder'
+        . ($badEdge ? ' — ' . implode('; ', array_slice($badEdge, 0, 3)) : ''), $badEdge === []);
+
+    /* More than one way in. This is the whole point of the rewrite: an SSS 2
+       student can start on Algebra or on Data without grinding through JSS
+       number work first. */
+    $entry = array_keys(array_filter($LEVELS, fn($l) => (array)($l['needs'] ?? []) === []));
+    chk('math lab: several strands open on day one, so nobody grinds to reach their own year ('
+        . implode(', ', array_map(fn($n) => $LEVELS[$n]['name'], $entry)) . ')',
+        count($entry) >= 3
+        && count(array_unique(array_map(fn($n) => $LEVELS[$n]['strand'], $entry))) >= 3);
+
+    /* And no level is stranded: clearing everything below it must open it. */
+    $reach = []; $stranded = [];
+    foreach ($LEVELS as $n => $lv) {
+        $open = true;
+        foreach ((array)($lv['needs'] ?? []) as $req) if (empty($reach[$req])) $open = false;
+        if ($open) $reach[$n] = true; else $stranded[] = $n;
+    }
+    chk('math lab: every level is reachable by clearing its prerequisites'
+        . ($stranded ? ' — stranded: ' . implode(', ', $stranded) : ''), $stranded === []);
 
     /* ── Every generated answer, re-derived from the printed question ──── */
 
@@ -16238,7 +16426,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         for ($i = 0; $i < 120; $i++) {
             [$text] = mathlab_question($lv);
             // `(x)` only as a lone FACTOR — "f(x)" is how a function is written.
-            foreach (['+ -', '- -', '+ +', '(x)(', ')(x)', ' 1x', ' 1y', 'NAN', 'INF'] as $bad) {
+            foreach (['+ -', '- -', '+ +', '(x)(', ')(x)', ' 1x', ' 1y', '= 1t', ' 1t\u{b2}',
+                      ' 1i', ' 1j', ' 1k', 'NAN', 'INF'] as $bad) {
                 if (strpos($text, $bad) !== false) $ugly[] = "L$lv «{$text}» has «{$bad}»";
             }
         }
@@ -16268,10 +16457,21 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM arcade_rounds WHERE game = 'mathlab'");
 
     $b = backend_dispatch('mathlab.board', ['playerId' => $ML]);
-    chk('math lab: a new student sees the whole ladder', !empty($b['ok']) && count($b['levels']) === 12);
-    chk('math lab: …with level 1 open and everything above it shut',
-        $b['levels'][0]['unlocked'] === true
-        && count(array_filter($b['levels'], fn($l) => $l['unlocked'])) === 1);
+    chk('math lab: a new student sees the whole ladder',
+        !empty($b['ok']) && count($b['levels']) === count(mathlab_levels())
+        && $b['strands'] === mathlab_strands());
+    chk('math lab: …with each strand\'s entry level open and the rest shut',
+        count(array_filter($b['levels'], fn($l) => $l['unlocked'])) === count($entry)
+        && count(array_filter($b['levels'], fn($l) => $l['unlocked'] && $l['needs'] !== [])) === 0);
+    /* A shut level says what would open it, by NAME. "Locked" tells a student
+       nothing; "needs Quadratic Equations" is a thing they can go and do. */
+    $shut = array_values(array_filter($b['levels'], fn($l) => !$l['unlocked']));
+    chk('math lab: …and every shut level names the work that opens it',
+        count($shut) > 0
+        && count(array_filter($shut, fn($l) => count($l['waitingOn']) > 0
+            && count(array_filter($l['waitingOn'], fn($w) => is_string($w) && $w !== ''
+                && in_array($w, array_column(mathlab_levels(), 'name'), true))) === count($l['waitingOn'])))
+           === count($shut));
     chk('math lab: a nobody has no board', backend_dispatch('mathlab.board', ['playerId' => ''])['error'] === 'forbidden');
 
     chk('math lab: a locked level is REFUSED by the server, not merely hidden',
@@ -16291,7 +16491,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('math lab: a paper solved from the printed questions scores full marks',
         !empty($sub['ok']) && $sub['correct'] === 12 && $sub['score'] === 100);
     chk('math lab: …clears the level and says what it opened',
-        $sub['cleared'] === true && $sub['unlocked']['level'] === 2);
+        $sub['cleared'] === true && $sub['unlocked']['level'] === 2
+        && $sub['unlocked']['name'] === 'Sets & Venn Diagrams');
+    /* What it opened is asked of the GRAPH. Level 1 is a prerequisite of level
+       2 alone, so exactly one door opens — not "level 2" because 2 = 1 + 1,
+       and not level 3, which has been open all along. Announcing a level that
+       was already open is worse than announcing nothing. */
+    chk('math lab: …and names only doors this clear actually opened',
+        count($sub['opened']) === 1 && $sub['opened'][0]['level'] === 2
+        && $sub['opened'][0]['strand'] === 'Number');
     chk('math lab: the marking hands back the right answers, now the paper is in',
         count($sub['marks']) === 12 && $sub['marks'][0]['ok'] === true && $sub['marks'][0]['answer'] !== '');
     chk('math lab: elapsed time comes from the server, not the client', isset($sub['ms']) && $sub['ms'] >= 0);
@@ -16300,8 +16508,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         backend_dispatch('mathlab.submit', ['playerId' => $ML, 'roundId' => $r1['roundId'], 'answers' => $answers])['error'] === 'already_submitted');
 
     $b2 = backend_dispatch('mathlab.board', ['playerId' => $ML]);
-    chk('math lab: clearing level 1 opens level 2 and nothing beyond it',
-        $b2['levels'][1]['unlocked'] === true && $b2['levels'][2]['unlocked'] === false);
+    /* Level 2 (Sets) needs level 1. Level 4 (Indices) needs level 3, which is
+       untouched — clearing one level must not cascade sideways. */
+    chk('math lab: clearing level 1 opens level 2 and nothing that did not need it',
+        $b2['levels'][1]['unlocked'] === true && $b2['levels'][1]['waitingOn'] === []
+        && $b2['levels'][3]['unlocked'] === false);
     chk('math lab: …and the cleared level is recorded with its best score',
         $b2['levels'][0]['cleared'] === true && $b2['levels'][0]['bestScore'] === 100
         && $b2['levels'][0]['attempts'] === 1);
@@ -16312,8 +16523,9 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         'answers' => array_fill(0, 12, 'banana')]);
     chk('math lab: a blank-minded paper scores nothing', $bad['correct'] === 0 && $bad['score'] === 0);
     chk('math lab: …does not clear the level', $bad['cleared'] === false && $bad['unlocked'] === null);
-    chk('math lab: …and leaves level 3 shut',
-        backend_dispatch('mathlab.board', ['playerId' => $ML])['levels'][2]['unlocked'] === false);
+    /* Level 17 (Logic) needs level 2, which was just failed, so it stays shut. */
+    chk('math lab: …and leaves the level behind it shut',
+        backend_dispatch('mathlab.board', ['playerId' => $ML])['levels'][16]['unlocked'] === false);
 
     /* Clearing once is clearing for good — a later bad day must not re-lock
        work a student has already shown they can do. */
@@ -16325,6 +16537,26 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         $b3['levels'][0]['cleared'] === true && $b3['levels'][1]['unlocked'] === true);
     chk('math lab: …and does not lower the best score on record',
         $b3['levels'][0]['bestScore'] === 100 && $b3['levels'][0]['attempts'] === 2);
+
+    /* The fan-out, which the old linear ladder could not express at all.
+       Sets (2) is a prerequisite of BOTH Probability (15) and Logic (17).
+       Probability also needs Statistics (14), which is untouched, so clearing
+       Sets must open Logic and leave Probability waiting — and say so by
+       naming Statistics, not by going quiet. */
+    $r5 = backend_dispatch('mathlab.start', ['playerId' => $ML, 'level' => 2]);
+    $s5 = backend_dispatch('mathlab.submit', ['playerId' => $ML, 'roundId' => $r5['roundId'],
+        'answers' => array_map(fn($q) => (string)$solve($q['q']), $r5['questions'])]);
+    chk('math lab: a paper on level 2 solved from its text scores full marks',
+        $s5['correct'] === count($r5['questions']) && $s5['cleared'] === true);
+    chk('math lab: clearing one level can open a level in another strand',
+        count(array_filter($s5['opened'], fn($o) => $o['level'] === 17 && $o['strand'] === 'Reasoning')) === 1);
+    chk('math lab: …and does not open a level whose other prerequisite is unmet',
+        count(array_filter($s5['opened'], fn($o) => $o['level'] === 15)) === 0);
+    $b4 = backend_dispatch('mathlab.board', ['playerId' => $ML]);
+    chk('math lab: …which the board then explains by name, not by a padlock',
+        $b4['levels'][16]['unlocked'] === true
+        && $b4['levels'][14]['unlocked'] === false
+        && $b4['levels'][14]['waitingOn'] === ['Statistics']);
 
     /* Somebody else's paper is somebody else's. */
     $r4 = backend_dispatch('mathlab.start', ['playerId' => $ML, 'level' => 1]);

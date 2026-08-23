@@ -1427,30 +1427,41 @@ function unzipDocumentXml(buf) {
         return new Promise(function (r) { setTimeout(function () { r(body); }, 1200); });
       },
     };
-    /* The Math Lab hangs off the same screen. Two levels cleared, the third
-       open, the rest shut — the state that actually exercises the ladder. */
+    /* The Math Lab hangs off the same screen. Two strands, three cleared, and
+       one level shut behind a prerequisite in ANOTHER strand — the shape the
+       ladder actually has, so the grouped view and the "Needs …" line are
+       both exercised rather than merely rendered. */
     window.__mathStarts = [];
     window.__mathSubmits = [];
     var LV = [
       { level: 1, name: 'Number & Numeration', band: 'JSS 1\u20132', icon: '\u2460',
+        strand: 'Number', needs: [],
         blurb: 'Factors, multiples, fractions.', questions: 12, seconds: 300 },
       { level: 2, name: 'Algebraic Processes', band: 'JSS 3', icon: '\u2461',
+        strand: 'Algebra', needs: [],
         blurb: 'Expanding and factorising.', questions: 12, seconds: 330 },
       { level: 3, name: 'Indices & Logarithms', band: 'SSS 1', icon: '\u2462',
+        strand: 'Algebra', needs: [2],
         blurb: 'The laws of indices.', questions: 12, seconds: 330 },
       { level: 4, name: 'Surds', band: 'SSS 1\u20132', icon: '\u2463',
+        strand: 'Algebra', needs: [3],
         blurb: 'Rationalising a denominator.', questions: 10, seconds: 330 },
       { level: 5, name: 'Quadratic Equations', band: 'SSS 2', icon: '\u2464',
+        strand: 'Algebra', needs: [2],
         blurb: 'Roots and the discriminant.', questions: 12, seconds: 360 },
     ];
     window.NGGApi.member.mathlab = {
       board: function () {
         return Promise.resolve({
-          passPct: 70, cleared: 2, total: LV.length,
+          passPct: 70, cleared: 2, total: LV.length, open: 2,
+          strands: ['Number', 'Algebra'],
           levels: LV.map(function (l, i) {
+            var cleared = i <= 1;
+            var waiting = l.needs.filter(function (n) { return n > 2; })
+                                 .map(function (n) { return LV[n - 1].name; });
             return Object.assign({}, l, {
-              unlocked: i <= 2, cleared: i <= 1,
-              bestScore: i <= 1 ? 92 : 0, bestCorrect: i <= 1 ? 11 : 0, attempts: i <= 1 ? 1 : 0,
+              unlocked: waiting.length === 0, waitingOn: waiting, cleared: cleared,
+              bestScore: cleared ? 92 : 0, bestCorrect: cleared ? 11 : 0, attempts: cleared ? 1 : 0,
             });
           }),
         });
@@ -4372,19 +4383,62 @@ function unzipDocumentXml(buf) {
     await ml.waitForSelector('.ml-ladder', { timeout: 10000 });
     ok('opening it lists every level, locked ones included',
        await ml.evaluate(() => document.querySelectorAll('.ml-lv').length) === 5);
-    ok('…with the cleared ones marked and the next one open',
-       await ml.evaluate(() => document.querySelectorAll('.ml-lv.is-cleared').length) === 2
-       && await ml.evaluate(() => document.querySelectorAll('.ml-lv.is-open').length) === 1);
+    ok('…with the cleared ones marked',
+       await ml.evaluate(() => document.querySelectorAll('.ml-lv.is-cleared').length) === 2);
+
+    /* The whole point of the rewrite. Surds (4) is shut because Indices (3) is
+       not cleared, while Quadratics (5) — which needs only Algebraic Processes
+       — is open. On the old linear ladder that was impossible: a level was
+       open if and only if the one below it was cleared, so a student could not
+       reach anything past the first thing they were stuck on. */
+    ok('a level is open when ITS OWN prerequisites are cleared, not when the one below it is',
+       await ml.evaluate(() => {
+         const open = Array.from(document.querySelectorAll('.ml-lv.is-open'))
+           .map(l => l.querySelector('.ml-lv-h').textContent);
+         return open.length === 2
+             && open.indexOf('Quadratic Equations') >= 0
+             && open.indexOf('Surds') < 0;
+       }));
+
     /* A locked level must have NO control at all, not a disabled one: a
        disabled button is skipped by the keyboard and explains nothing, and the
-       reason is the entire message. */
-    ok('a locked level offers no button to press, and says what would open it',
+       reason is the entire message. And the reason is a NAME — "clear level 3"
+       makes a student count rungs to work out what level 3 was. */
+    ok('a locked level offers no button to press, and names the work that opens it',
        await ml.evaluate(() => {
          const shut = Array.from(document.querySelectorAll('.ml-lv.is-locked'));
-         return shut.length === 2
+         return shut.length === 1
              && shut.every(l => l.querySelector('button') === null)
-             && /Clear level 3 to open this/.test(shut[0].innerText);
+             && /Needs Indices & Logarithms/.test(shut[0].innerText);
        }));
+
+    /* Grouping, and the filter that makes twenty-one levels navigable. */
+    ok('the levels are grouped under their strand, in the order the server sends',
+       await ml.evaluate(() => {
+         const heads = Array.from(document.querySelectorAll('.ml-group-h'))
+           .map(h => h.firstChild.textContent.trim());
+         return heads.join('|') === 'Number|Algebra';
+       }));
+    /* Size is measured on the styled phone pass below — this fixture is
+       deliberately unstyled, so a box measured here would mean nothing. */
+    ok('…and every strand chip is a real button carrying its own pressed state',
+       await ml.evaluate(() => {
+         const chips = Array.from(document.querySelectorAll('.ml-strand'));
+         return chips.length === 3                       // All + two strands
+             && chips.every(c => c.tagName === 'BUTTON' && c.hasAttribute('aria-pressed'))
+             && chips.filter(c => c.getAttribute('aria-pressed') === 'true').length === 1;
+       }));
+    await ml.evaluate(() => Array.from(document.querySelectorAll('.ml-strand'))
+      .find(c => /^Number/.test(c.textContent)).click());
+    ok('…and picking one narrows the list to that strand and says so out loud',
+       await ml.evaluate(() => {
+         const live = document.querySelector('.ml-count');
+         return document.querySelectorAll('.ml-lv').length === 1
+             && document.querySelectorAll('.ml-group-h').length === 1
+             && live && live.getAttribute('role') === 'status'
+             && /1 number level/i.test(live.textContent);
+       }));
+    await ml.evaluate(() => document.querySelectorAll('.ml-strand')[0].click());   // back to All
 
     /* Start the third level — by its number, which is not its array index. */
     await ml.evaluate(() => document.querySelectorAll('.ml-lv')[2].querySelector('.ml-go').click());
@@ -4788,6 +4842,12 @@ function unzipDocumentXml(buf) {
           const r = b.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height));
         })) : 0,
         blurbWidth: Math.min(...cards.map(c => Math.round(c.querySelector('.ml-lv-p').getBoundingClientRect().width))),
+        smallestChip: (() => {
+          const cs = Array.from(document.querySelectorAll('.ml-strand'));
+          return cs.length ? Math.min(...cs.map(c => {
+            const r = c.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height));
+          })) : 0;
+        })(),
       };
     });
     ok('the ladder does not push the page sideways on a 360px phone ('
@@ -4800,6 +4860,11 @@ function unzipDocumentXml(buf) {
        ladderPhone.blurbWidth >= 150);
     ok('…with every Start button a thumb-sized target (' + ladderPhone.smallestBtn + 'px)',
        ladderPhone.smallestBtn >= 44);
+    /* WCAG 2.2 2.5.8 is 24×24; these sit in a wrapping row where the spacing
+       exception is easy to lose, so they are built to the 44px touch size and
+       measured at it. */
+    ok('…and every strand chip too (' + ladderPhone.smallestChip + 'px)',
+       ladderPhone.smallestChip >= 44);
 
     await mlPh.evaluate(() => document.querySelectorAll('.ml-lv')[2].querySelector('.ml-go').click());
     await mlPh.waitForSelector('.ml-qs', { timeout: 10000 });

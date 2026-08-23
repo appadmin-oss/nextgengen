@@ -35,51 +35,143 @@ const MATHLAB_PASS_PCT = 70;      // what clears a level and unlocks the next
 const MATHLAB_ROUND_TTL_DAYS = 7;
 
 /**
- * The ladder. `band` is what a student would call the stage they are at.
+ * The ladder — a MAP, not a rope.
  *
- * Levels are ordered by the curriculum, not by difficulty-as-guessed: a student
- * meets surds after indices because that is the order they are taught, and a
- * ladder that disagrees with the classroom is a ladder that feels arbitrary.
+ * It was one chain of twelve: level n opened when level n−1 was cleared, on
+ * the reasoning that "surds are not harder than indices, they are built on
+ * them". That reasoning is right about surds and indices and wrong about
+ * almost every other consecutive pair. Matrices are not built on
+ * trigonometry. Integration is not built on matrices. Yet a Further Maths
+ * student who wanted to work on differentiation had to first clear JSS 1–2
+ * fractions, JSS 3 algebra, indices, surds, quadratics, sequences,
+ * trigonometry, binomial counting and matrices — nine levels of ground they
+ * covered years ago — because the chain confused WHAT A TOPIC NEEDS with the
+ * order somebody happened to list the topics in.
+ *
+ * So each level now declares its real prerequisites and the strand it belongs
+ * to. Differentiation needs quadratics and sequences, because it needs
+ * function manipulation and limits; it does not need matrices, and no longer
+ * pretends to. A student can go down the calculus road, or the statistics
+ * road, without walking the other one first.
+ *
+ * `needs` is a list of level numbers, ALL of which must be cleared. An empty
+ * list means the level is open from the start — there are four of those, one
+ * per road in, rather than a single door everybody queues at.
+ *
+ * The advanced end is also no longer three topics wide. Statistics and
+ * probability were missing entirely, which is indefensible for a WAEC ladder —
+ * they are core paper-one material and they were nowhere. Complex numbers,
+ * polynomials, binary operations and logic were missing too, and the last two
+ * are distinctly Nigerian Further Maths topics that a generic ladder skips.
  */
 function mathlab_levels(): array {
     return [
+        /* ── Number ─────────────────────────────────────────────────────── */
         1  => ['level' => 1,  'name' => 'Number & Numeration', 'band' => 'JSS 1–2', 'icon' => '①',
+               'strand' => 'Number', 'needs' => [],
                'blurb' => 'Factors, multiples, fractions, percentages and sharing in a ratio.',
                'questions' => 12, 'seconds' => 300],
-        2  => ['level' => 2,  'name' => 'Algebraic Processes', 'band' => 'JSS 3', 'icon' => '②',
+        2  => ['level' => 2,  'name' => 'Sets & Venn Diagrams', 'band' => 'JSS 3 – SSS 1', 'icon' => '②',
+               'strand' => 'Number', 'needs' => [1],
+               'blurb' => 'Unions, intersections, complements and the two-set formula.',
+               'questions' => 10, 'seconds' => 300],
+
+        /* ── Algebra ────────────────────────────────────────────────────── */
+        3  => ['level' => 3,  'name' => 'Algebraic Processes', 'band' => 'JSS 3', 'icon' => '③',
+               'strand' => 'Algebra', 'needs' => [],
                'blurb' => 'Expanding, factorising, solving and changing the subject.',
                'questions' => 12, 'seconds' => 330],
-        3  => ['level' => 3,  'name' => 'Indices & Logarithms', 'band' => 'SSS 1', 'icon' => '③',
+        4  => ['level' => 4,  'name' => 'Indices & Logarithms', 'band' => 'SSS 1', 'icon' => '④',
+               'strand' => 'Algebra', 'needs' => [3],
                'blurb' => 'The laws of indices, and logarithms as their mirror.',
                'questions' => 12, 'seconds' => 330],
-        4  => ['level' => 4,  'name' => 'Surds', 'band' => 'SSS 1–2', 'icon' => '④',
+        5  => ['level' => 5,  'name' => 'Surds', 'band' => 'SSS 1–2', 'icon' => '⑤',
+               'strand' => 'Algebra', 'needs' => [4],
                'blurb' => 'Simplifying, and rationalising a denominator.',
                'questions' => 10, 'seconds' => 330],
-        5  => ['level' => 5,  'name' => 'Quadratic Equations', 'band' => 'SSS 2', 'icon' => '⑤',
+        6  => ['level' => 6,  'name' => 'Quadratic Equations', 'band' => 'SSS 2', 'icon' => '⑥',
+               'strand' => 'Algebra', 'needs' => [3],
                'blurb' => 'Roots, the discriminant, and the sum and product of roots.',
                'questions' => 12, 'seconds' => 360],
-        6  => ['level' => 6,  'name' => 'Sequences & Series', 'band' => 'SSS 2', 'icon' => '⑥',
+        7  => ['level' => 7,  'name' => 'Polynomials', 'band' => 'Further Maths', 'icon' => '⑦',
+               'strand' => 'Algebra', 'needs' => [6],
+               'blurb' => 'The remainder and factor theorems, and partial fractions.',
+               'questions' => 10, 'seconds' => 390],
+        8  => ['level' => 8,  'name' => 'Sequences & Series', 'band' => 'SSS 2', 'icon' => '⑧',
+               'strand' => 'Algebra', 'needs' => [3],
                'blurb' => 'A.P. and G.P. — nth terms, sums, and a sum to infinity.',
                'questions' => 12, 'seconds' => 360],
-        7  => ['level' => 7,  'name' => 'Trigonometry', 'band' => 'SSS 2–3', 'icon' => '⑦',
+        9  => ['level' => 9,  'name' => 'Binary Operations', 'band' => 'Further Maths', 'icon' => '⑨',
+               'strand' => 'Algebra', 'needs' => [3],
+               'blurb' => 'A rule you are handed: closure, identity and inverse.',
+               'questions' => 10, 'seconds' => 360],
+        10 => ['level' => 10, 'name' => 'Complex Numbers', 'band' => 'Further Maths', 'icon' => '⑩',
+               'strand' => 'Algebra', 'needs' => [5, 6],
+               'blurb' => 'i, the conjugate, the modulus, and arithmetic that keeps them apart.',
+               'questions' => 10, 'seconds' => 390],
+
+        /* ── Shape & space ──────────────────────────────────────────────── */
+        11 => ['level' => 11, 'name' => 'Trigonometry', 'band' => 'SSS 2–3', 'icon' => '⑪',
+               'strand' => 'Shape & space', 'needs' => [3],
                'blurb' => 'Exact ratios, the sine and cosine rules, and simple equations.',
                'questions' => 10, 'seconds' => 360],
-        8  => ['level' => 8,  'name' => 'Binomial & Counting', 'band' => 'Further Maths', 'icon' => '⑧',
+        12 => ['level' => 12, 'name' => 'Coordinate Geometry', 'band' => 'SSS 3', 'icon' => '⑫',
+               'strand' => 'Shape & space', 'needs' => [3, 11],
+               'blurb' => 'Lines, gradients, distances and midpoints.',
+               'questions' => 10, 'seconds' => 390],
+        13 => ['level' => 13, 'name' => 'Vectors in Three Dimensions', 'band' => 'Further Maths / A-level', 'icon' => '⑬',
+               'strand' => 'Shape & space', 'needs' => [12],
+               'blurb' => 'Magnitude, the scalar product, and the angle between two vectors.',
+               'questions' => 10, 'seconds' => 420],
+
+        /* ── Data ───────────────────────────────────────────────────────── */
+        14 => ['level' => 14, 'name' => 'Statistics', 'band' => 'SSS 1–3', 'icon' => '⑭',
+               'strand' => 'Data', 'needs' => [],
+               'blurb' => 'Mean, median, mode, range — and the spread around them.',
+               'questions' => 10, 'seconds' => 360],
+        15 => ['level' => 15, 'name' => 'Probability', 'band' => 'SSS 2–3', 'icon' => '⑮',
+               'strand' => 'Data', 'needs' => [2, 14],
+               'blurb' => 'One event, two events, and what changes when you do not replace.',
+               'questions' => 10, 'seconds' => 360],
+        16 => ['level' => 16, 'name' => 'Binomial & Counting', 'band' => 'Further Maths', 'icon' => '⑯',
+               'strand' => 'Data', 'needs' => [15],
                'blurb' => 'Permutations, combinations and the binomial expansion.',
                'questions' => 10, 'seconds' => 360],
-        9  => ['level' => 9,  'name' => 'Matrices', 'band' => 'Further Maths', 'icon' => '⑨',
+
+        /* ── Reasoning ──────────────────────────────────────────────────── */
+        17 => ['level' => 17, 'name' => 'Logic', 'band' => 'Further Maths', 'icon' => '⑰',
+               'strand' => 'Reasoning', 'needs' => [2],
+               'blurb' => 'Truth tables, implication, and whether an argument holds.',
+               'questions' => 10, 'seconds' => 330],
+        18 => ['level' => 18, 'name' => 'Matrices', 'band' => 'Further Maths', 'icon' => '⑱',
+               'strand' => 'Reasoning', 'needs' => [3],
                'blurb' => 'Determinants, inverses and multiplication.',
                'questions' => 10, 'seconds' => 360],
-        10 => ['level' => 10, 'name' => 'Differentiation', 'band' => 'Further Maths / A-level', 'icon' => '⑩',
+
+        /* ── Calculus ───────────────────────────────────────────────────── */
+        19 => ['level' => 19, 'name' => 'Differentiation', 'band' => 'Further Maths / A-level', 'icon' => '⑲',
+               'strand' => 'Calculus', 'needs' => [6, 8],
                'blurb' => 'Gradients, turning points, and the product and quotient rules.',
                'questions' => 10, 'seconds' => 420],
-        11 => ['level' => 11, 'name' => 'Integration', 'band' => 'Further Maths / A-level', 'icon' => '⑪',
+        20 => ['level' => 20, 'name' => 'Integration', 'band' => 'Further Maths / A-level', 'icon' => '⑳',
+               'strand' => 'Calculus', 'needs' => [19],
                'blurb' => 'Definite integrals and the area under a curve.',
                'questions' => 10, 'seconds' => 420],
-        12 => ['level' => 12, 'name' => 'Coordinate Geometry & Vectors', 'band' => 'Further Maths / A-level', 'icon' => '⑫',
-               'blurb' => 'Lines, distances, magnitudes and the scalar product.',
-               'questions' => 10, 'seconds' => 420],
+        21 => ['level' => 21, 'name' => 'Calculus in Motion', 'band' => 'Further Maths / A-level', 'icon' => '㉑',
+               'strand' => 'Calculus', 'needs' => [20],
+               'blurb' => 'Rates of change, velocity and acceleration, and area between curves.',
+               'questions' => 10, 'seconds' => 450],
     ];
+}
+
+/** The strands, in the order the map draws them. */
+function mathlab_strands(): array {
+    $out = [];
+    foreach (mathlab_levels() as $lv) {
+        $s = (string)$lv['strand'];
+        if (!in_array($s, $out, true)) $out[] = $s;
+    }
+    return $out;
 }
 
 function mathlab_level(int $n): ?array { return mathlab_levels()[$n] ?? null; }
@@ -99,6 +191,20 @@ function mathlab_term(int $c, string $var): string {
     $mag = abs($c);
     $body = $var === '' ? (string)$mag : (($mag === 1 ? '' : (string)$mag) . $var);
     return $sign . $body;
+}
+/** A signed integer with the TYPESET minus. Every expression in the Lab uses
+ *  U+2212, so a number dropped in with a plain hyphen puts two different
+ *  dashes on one paper — and the hyphen is the narrower of the two, which is
+ *  exactly the character a child is most likely to miss. */
+function mathlab_int(int $n): string { return $n < 0 ? '−' . abs($n) : (string)$n; }
+/** A unit-vector or imaginary component: "i", "−i", "4j", "−2k". A coefficient
+ *  of 1 is never printed — "1i" is not how anybody writes it, and a student who
+ *  has to wonder whether the 1 is significant has been handed a worse question
+ *  than the one intended. */
+function mathlab_unit(int $n, string $unit): string {
+    if ($n === 1) return $unit;
+    if ($n === -1) return '−' . $unit;
+    return mathlab_int($n) . $unit;
 }
 /** A non-zero integer in a range — for places where 0 would print a factor as
  *  a bare "(x)" and read like a typo rather than a question. */
@@ -391,21 +497,305 @@ function mathlab_q_coordinate(): array {
 }
 
 /** One question for a level. */
-function mathlab_question(int $level): array {
-    switch ($level) {
-        case 1:  return mathlab_q_numeration();
-        case 2:  return mathlab_q_algebra();
-        case 3:  return mathlab_q_indices();
-        case 4:  return mathlab_q_surds();
-        case 5:  return mathlab_q_quadratic();
-        case 6:  return mathlab_q_sequences();
-        case 7:  return mathlab_q_trig();
-        case 8:  return mathlab_q_binomial();
-        case 9:  return mathlab_q_matrices();
-        case 10: return mathlab_q_differentiation();
-        case 11: return mathlab_q_integration();
-        default: return mathlab_q_coordinate();
+/* ── The topics the ladder was missing ────────────────────────────────────
+ *
+ * Statistics and probability are core WAEC paper-one material and there was
+ * nothing at all. The other seven are the Further Maths end: polynomials,
+ * complex numbers, binary operations and logic among them — the last two
+ * distinctly Nigerian, and exactly the kind a generic ladder skips.
+ *
+ * Every answer stays exact. A generator that produces 0.333… produces an
+ * argument about how many threes to type, so anything that would divide
+ * awkwardly is built from numbers chosen to come out whole, and where a
+ * fraction is genuinely the answer the question asks for it in a stated form.
+ */
+
+function mathlab_q_sets(): array {
+    switch (random_int(1, 4)) {
+        case 1: { // n(A ∪ B) = n(A) + n(B) − n(A ∩ B)
+            $a = random_int(12, 40); $b = random_int(12, 40); $both = random_int(3, min($a, $b) - 1);
+            return ['In a class, ' . $a . ' study Physics and ' . $b . ' study Chemistry. '
+                . $both . ' study both. How many study at least one of them?',
+                (string)($a + $b - $both)]; }
+        case 2: { $a = random_int(15, 45); $b = random_int(15, 45); $tot = random_int(max($a, $b) + 2, $a + $b);
+            return ['In a group of ' . $tot . ', ' . $a . ' like rice and ' . $b . ' like beans, '
+                . 'and everybody likes at least one. How many like both?',
+                (string)($a + $b - $tot)]; }
+        case 3: { $u = random_int(40, 80); $a = random_int(10, 30);
+            return ['The universal set has ' . $u . ' members and set A has ' . $a . '. '
+                . "How many are in A' (the complement of A)?", (string)($u - $a)]; }
+        default: { $n = random_int(3, 6);
+            return ['A set has ' . $n . ' members. How many subsets does it have?', (string)(2 ** $n)]; }
     }
+}
+
+function mathlab_q_statistics(): array {
+    $list = [];
+    $k = random_int(5, 7);
+    for ($i = 0; $i < $k; $i++) $list[] = random_int(2, 30);
+    $shown = implode(', ', $list);
+    switch (random_int(1, 5)) {
+        case 1: { // Built to divide exactly: the last value absorbs the remainder.
+            $sum = array_sum($list);
+            $want = (int)round($sum / $k);
+            $list[$k - 1] += ($want * $k - $sum);
+            if ($list[$k - 1] < 1) { $list[$k - 1] += $k; $want++; }
+            return ['Find the mean of: ' . implode(', ', $list) . '.', (string)$want]; }
+        case 2: { sort($list);
+            $mid = intdiv($k, 2);
+            $median = $k % 2 === 1 ? $list[$mid] : ($list[$mid - 1] + $list[$mid]) / 2;
+            return ['Find the median of: ' . $shown . '.', mathlab_num($median)]; }
+        case 3: { // A mode planted, so there is exactly one.
+            $m = random_int(2, 30);
+            $list[0] = $m; $list[1] = $m; $list[2] = $m;
+            shuffle($list);
+            return ['Find the mode of: ' . implode(', ', $list) . '.', (string)$m]; }
+        case 4: return ['Find the range of: ' . $shown . '.', (string)(max($list) - min($list))];
+        default: { /* Standard deviation, from a set chosen so the variance is a
+                      perfect square: the deviations are ±d around the mean. */
+            $mean = random_int(10, 40); $d = random_int(2, 6);
+            $set = [$mean - $d, $mean - $d, $mean + $d, $mean + $d];
+            shuffle($set);
+            return ['Find the standard deviation of: ' . implode(', ', $set) . '.', (string)$d]; }
+    }
+}
+
+function mathlab_q_probability(): array {
+    switch (random_int(1, 5)) {
+        case 1: { $r = random_int(2, 8); $b = random_int(2, 8);
+            $g = mathlab_gcd($r, $r + $b);
+            return ['A bag holds ' . $r . ' red and ' . $b . ' blue balls. One is drawn. '
+                . 'What is the probability it is red? Give it as a fraction in its lowest terms, like 2/5.',
+                intdiv($r, $g) . '/' . intdiv($r + $b, $g)]; }
+        case 2: { $n = random_int(2, 6);
+            return ['A fair die is rolled once. What is the probability of getting a number '
+                . 'greater than ' . $n . '? Give it as a fraction in its lowest terms, or 0.',
+                (function () use ($n) {
+                    $f = 6 - $n; if ($f <= 0) return '0';
+                    $g = mathlab_gcd($f, 6);
+                    return intdiv($f, $g) . '/' . intdiv(6, $g);
+                })()]; }
+        case 3: { /* Independent events: the numbers are chosen so the product is
+                     clean, and b stops at 3 because 4/4 is a certainty written
+                     as a fraction — it reads as a misprint, and a child who
+                     spots it spends the question wondering rather than working. */
+            $a = random_int(1, 4); $b = random_int(1, 3);
+            return ['Two independent events have probabilities ' . $a . '/5 and ' . $b . '/4. '
+                . 'What is the probability that BOTH happen? Give a fraction in its lowest terms.',
+                (function () use ($a, $b) {
+                    $num = $a * $b; $den = 20; $g = mathlab_gcd($num, $den);
+                    return intdiv($num, $g) . '/' . intdiv($den, $g);
+                })()]; }
+        case 4: { // Without replacement — the classic WAEC shape.
+            $r = random_int(3, 6); $b = random_int(3, 6); $t = $r + $b;
+            $num = $r * ($r - 1); $den = $t * ($t - 1); $g = mathlab_gcd($num, $den);
+            return ['A box holds ' . $r . ' red and ' . $b . ' green pens. Two are taken WITHOUT '
+                . 'replacement. What is the probability that both are red? '
+                . 'Give a fraction in its lowest terms.',
+                intdiv($num, $g) . '/' . intdiv($den, $g)]; }
+        default: { $p = random_int(1, 9);
+            $g = mathlab_gcd(10 - $p, 10);
+            return ['The probability that it rains is ' . $p . '/10. What is the probability '
+                . 'that it does NOT rain? Give a fraction in its lowest terms, or 0.',
+                $p === 10 ? '0' : intdiv(10 - $p, $g) . '/' . intdiv(10, $g)]; }
+    }
+}
+
+function mathlab_q_polynomials(): array {
+    switch (random_int(1, 4)) {
+        case 1: { // Remainder theorem: f(a) is the remainder on division by (x − a).
+            $a = random_int(1, 4); $b = random_int(-6, 6); $c = random_int(-9, 9); $k = random_int(-3, 3);
+            $f = mathlab_poly([$a, $b, $c]);
+            $val = $a * $k * $k + $b * $k + $c;
+            return ['Find the remainder when ' . $f . ' is divided by (x ' . ($k >= 0 ? '− ' . $k : '+ ' . abs($k)) . ').',
+                (string)$val]; }
+        case 2: { // Factor theorem, backwards: choose the root, solve for the constant.
+            $k = random_int(1, 4); $a = random_int(1, 3); $b = random_int(-6, 6);
+            $c = -($a * $k * $k + $b * $k);
+            return ['(x − ' . $k . ') is a factor of ' . mathlab_poly([$a, $b, 0]) . ' + c. Find c.',
+                (string)$c]; }
+        case 3: { // A cubic with a planted root.
+            $r = random_int(1, 4); $p = random_int(-5, 5); $q = random_int(-9, 9);
+            $val = $r ** 3 + $p * $r + $q;
+            /* mathlab_term, not a hand-rolled sign: it drops a zero term and
+               writes a coefficient of 1 as a bare x, so no child is asked
+               about "x³ + 1x + 6". */
+            return ['For f(x) = x³' . mathlab_term($p, 'x') . mathlab_term($q, '')
+                . ', find f(' . $r . ').', (string)$val]; }
+        default: { /* Partial fractions: (Ax + B)/((x−p)(x−q)) splits so that the
+                      numerator over (x−p) is f(p)/(p−q). Numbers picked so it is
+                      a whole number. */
+            $p = random_int(1, 4); $q = $p + random_int(1, 3);
+            $A = random_int(1, 4);
+            $num = $A * ($p - $q);
+            return ['Express ' . $num . ' / ((x − ' . $p . ')(x − ' . $q . ')) in partial fractions '
+                . 'as a/(x − ' . $p . ') + b/(x − ' . $q . '). What is a?', (string)$A]; }
+    }
+}
+
+function mathlab_q_complex(): array {
+    switch (random_int(1, 5)) {
+        /* Real parts are non-zero: "0 + 8i" is a purely imaginary number written
+           the long way, and it turns an arithmetic question into a puzzle about
+           whether the 0 is a typo. */
+        case 1: { $a = mathlab_nz(-6, 8); $b = random_int(1, 8); $c = mathlab_nz(-6, 8); $d = random_int(1, 8);
+            return ['Add (' . mathlab_int($a) . ' + ' . mathlab_unit($b, 'i') . ') and ('
+                . mathlab_int($c) . ' + ' . mathlab_unit($d, 'i') . '). '
+                . 'What is the REAL part of the answer?', (string)($a + $c)]; }
+        case 2: { $a = mathlab_nz(-6, 8); $b = random_int(1, 8); $c = mathlab_nz(-6, 8); $d = random_int(1, 8);
+            // (a+bi)(c+di) = (ac − bd) + (ad + bc)i
+            return ['Multiply (' . mathlab_int($a) . ' + ' . mathlab_unit($b, 'i') . ') by ('
+                . mathlab_int($c) . ' + ' . mathlab_unit($d, 'i') . '). '
+                . 'What is the IMAGINARY part of the answer? Give the number only.',
+                (string)($a * $d + $b * $c)]; }
+        case 3: { // A Pythagorean pair, so the modulus is whole.
+            $t = [[3, 4, 5], [6, 8, 10], [5, 12, 13], [8, 15, 17], [7, 24, 25]][random_int(0, 4)];
+            return ['Find the modulus of the complex number ' . $t[0] . ' + ' . $t[1] . 'i.', (string)$t[2]]; }
+        case 4: { $a = mathlab_nz(-8, 8); $b = random_int(2, 9);
+            return ['The conjugate of ' . mathlab_int($a) . ' + ' . mathlab_unit($b, 'i') . ' is '
+                . mathlab_int($a) . ' − ' . mathlab_unit($b, 'i') . '. '
+                . 'Multiply a complex number by its own conjugate: what do you get for '
+                . mathlab_int($a) . ' + ' . mathlab_unit($b, 'i') . '?', (string)($a * $a + $b * $b)]; }
+        default: { $n = random_int(2, 20);
+            // i cycles with period 4: 1, i, −1, −i.
+            $cycle = ['1', 'i', '-1', '-i'];
+            // The ANSWER stays a plain hyphen: it is typed into a box, and
+            // mathlab_matches folds the two dashes together anyway.
+            return ['Simplify i^' . $n . '. Answer 1, −1, i or −i.', $cycle[$n % 4]]; }
+    }
+}
+
+function mathlab_q_binaryop(): array {
+    switch (random_int(1, 4)) {
+        case 1: { $k = random_int(1, 5); $a = random_int(1, 9); $b = random_int(1, 9);
+            return ['A binary operation is defined by a * b = a + b + ' . $k . '. Find ' . $a . ' * ' . $b . '.',
+                (string)($a + $b + $k)]; }
+        case 2: { $a = random_int(2, 7); $b = random_int(2, 7);
+            return ['A binary operation is defined by a * b = ab − a − b. Find ' . $a . ' * ' . $b . '.',
+                (string)($a * $b - $a - $b)]; }
+        case 3: { $k = random_int(1, 6);
+            // a * b = a + b + k has identity e where a + e + k = a, so e = −k.
+            return ['A binary operation is defined by a * b = a + b + ' . $k . '. '
+                . 'Find the identity element.', (string)(-$k)]; }
+        default: { $k = random_int(1, 5); $a = random_int(1, 8);
+            // Inverse of a under a * b = a + b + k is −a − 2k.
+            return ['Under a * b = a + b + ' . $k . ', the identity is ' . (-$k) . '. '
+                . 'Find the inverse of ' . $a . '.', (string)(-$a - 2 * $k)]; }
+    }
+}
+
+function mathlab_q_logic(): array {
+    switch (random_int(1, 4)) {
+        case 1: { $p = random_int(0, 1); $q = random_int(0, 1);
+            // Implication is false only when the antecedent is true and the consequent false.
+            $r = ($p === 1 && $q === 0) ? 'F' : 'T';
+            return ['p is ' . ($p ? 'true' : 'false') . ' and q is ' . ($q ? 'true' : 'false') . '. '
+                . 'What is the truth value of "p implies q"? Answer T or F.', $r]; }
+        case 2: { $p = random_int(0, 1); $q = random_int(0, 1);
+            return ['p is ' . ($p ? 'true' : 'false') . ' and q is ' . ($q ? 'true' : 'false') . '. '
+                . 'What is the truth value of "p AND q"? Answer T or F.', ($p && $q) ? 'T' : 'F']; }
+        case 3: { $p = random_int(0, 1); $q = random_int(0, 1);
+            return ['p is ' . ($p ? 'true' : 'false') . ' and q is ' . ($q ? 'true' : 'false') . '. '
+                . 'What is the truth value of "p OR q"? Answer T or F.', ($p || $q) ? 'T' : 'F']; }
+        default: { $n = random_int(1, 4);
+            // A truth table over n statements has 2^n rows.
+            return ['How many rows does a truth table for ' . $n . ' simple statement'
+                . ($n === 1 ? '' : 's') . ' have?', (string)(2 ** $n)]; }
+    }
+}
+
+function mathlab_q_vectors3d(): array {
+    switch (random_int(1, 4)) {
+        case 1: { // A Pythagorean quadruple, so the magnitude is whole.
+            $t = [[1, 2, 2, 3], [2, 3, 6, 7], [1, 4, 8, 9], [4, 4, 7, 9], [2, 6, 9, 11]][random_int(0, 4)];
+            return ['Find the magnitude of the vector ' . mathlab_unit($t[0], 'i') . ' + '
+                . mathlab_unit($t[1], 'j') . ' + ' . mathlab_unit($t[2], 'k') . '.',
+                (string)$t[3]]; }
+        case 2: { $a = [random_int(-5, 6), random_int(-5, 6), random_int(-5, 6)];
+            $b = [random_int(-5, 6), random_int(-5, 6), random_int(-5, 6)];
+            $dot = $a[0] * $b[0] + $a[1] * $b[1] + $a[2] * $b[2];
+            return ['Find the scalar product of (' . implode(', ', array_map('mathlab_int', $a)) . ') and ('
+                . implode(', ', array_map('mathlab_int', $b)) . ').',
+                (string)$dot]; }
+        case 3: { $a = [random_int(1, 6), random_int(1, 6), random_int(1, 6)];
+            // Perpendicular: the scalar product is zero, and that is the point.
+            return ['Two vectors are perpendicular when their scalar product is ___. '
+                . 'Give the number.', '0']; }
+        default: { /* The first component is the one asked about, so it is drawn
+                      non-zero: "multiply (0, 1, 8) by 2, what is the first
+                      component" is a question with nothing in it. */
+            $a = [mathlab_nz(-6, 8), random_int(-6, 8), random_int(-6, 8)];
+            $k = random_int(2, 5);
+            return ['Multiply the vector (' . implode(', ', array_map('mathlab_int', $a))
+                . ') by the scalar ' . $k . '. '
+                . 'What is the FIRST component?', (string)($a[0] * $k)]; }
+    }
+}
+
+function mathlab_q_motion(): array {
+    switch (random_int(1, 4)) {
+        case 1: { // s = at² + bt + c, so v = 2at + b
+            $a = random_int(1, 6); $b = random_int(-8, 9); $t = random_int(1, 6);
+            return ['A body moves so that s = ' . ($a === 1 ? '' : (string)$a) . 't²' . mathlab_term($b, 't')
+                . ' metres. Its velocity is ds/dt. Find the velocity at t = ' . $t . ' seconds.',
+                (string)(2 * $a * $t + $b)]; }
+        case 2: { $a = random_int(1, 6); $b = random_int(-8, 9);
+            return ['A body moves so that s = ' . ($a === 1 ? '' : (string)$a) . 't²' . mathlab_term($b, 't')
+                . ' metres. Acceleration is d²s/dt². Find the acceleration.', (string)(2 * $a)]; }
+        case 3: { // Where the velocity is zero: 2at + b = 0, built so t is whole.
+            $a = random_int(1, 5); $t = random_int(1, 5); $b = -2 * $a * $t;
+            return ['A body moves so that s = ' . ($a === 1 ? '' : (string)$a) . 't²' . mathlab_term($b, 't') . '. '
+                . 'At what time t is it momentarily at rest?', (string)$t]; }
+        default: { // Area between y = k and y = x² from 0 to a, with k = a² chosen whole.
+            $a = random_int(1, 4);
+            // ∫₀^a (a²  −  x²) dx = a³ − a³/3 = 2a³/3 — force a divisible by 3 for a whole answer.
+            $a = 3 * random_int(1, 2);
+            return ['Find the area between y = ' . ($a * $a) . ' and y = x², from x = 0 to x = ' . $a . '.',
+                (string)intdiv(2 * $a ** 3, 3)]; }
+    }
+}
+
+/** A number as a student would type it: 7, not 7.0; 3.5 stays 3.5. */
+function mathlab_num(float $v): string {
+    return (string)(abs($v - round($v)) < 1e-9 ? (int)round($v) : round($v, 2));
+}
+
+/* Which generator serves which level. A map rather than a switch, so a level
+ * without a generator is a loud failure at the one place that can see it —
+ * mathlab_generate — and not a silent fall through to coordinate geometry,
+ * which is what a `default:` arm gave every level number it did not know. */
+function mathlab_generators(): array {
+    return [
+        1  => 'mathlab_q_numeration',
+        2  => 'mathlab_q_sets',
+        3  => 'mathlab_q_algebra',
+        4  => 'mathlab_q_indices',
+        5  => 'mathlab_q_surds',
+        6  => 'mathlab_q_quadratic',
+        7  => 'mathlab_q_polynomials',
+        8  => 'mathlab_q_sequences',
+        9  => 'mathlab_q_binaryop',
+        10 => 'mathlab_q_complex',
+        11 => 'mathlab_q_trig',
+        12 => 'mathlab_q_coordinate',
+        13 => 'mathlab_q_vectors3d',
+        14 => 'mathlab_q_statistics',
+        15 => 'mathlab_q_probability',
+        16 => 'mathlab_q_binomial',
+        17 => 'mathlab_q_logic',
+        18 => 'mathlab_q_matrices',
+        19 => 'mathlab_q_differentiation',
+        20 => 'mathlab_q_integration',
+        21 => 'mathlab_q_motion',
+    ];
+}
+
+function mathlab_question(int $level): array {
+    $fn = mathlab_generators()[$level] ?? '';
+    if ($fn === '' || !function_exists($fn)) {
+        throw new RuntimeException('no question generator for level ' . $level);
+    }
+    return $fn();
 }
 
 /**
@@ -445,34 +835,56 @@ function mathlab_progress_rows(string $playerId): array {
 }
 
 /**
- * The ladder as this player sees it.
+ * The map as this player sees it.
  *
- * Level 1 is always open. Every other level opens when the one below it is
- * cleared — deliberately a chain rather than a total score, so a student cannot
- * skip the ground they need for what comes next. Surds are not harder than
- * indices because somebody decided so; they are built on them.
+ * A level opens when everything it NEEDS is cleared — all of it, not the one
+ * that happens to sit above it in a list. Four levels need nothing and are
+ * open from the start, one per road in: number, algebra, statistics, and
+ * whichever of those a student is actually ready for.
+ *
+ * This used to be `unlocked = the previous level is cleared`, which made the
+ * whole thing one rope: a Further Maths student who wanted differentiation had
+ * to clear JSS 1–2 fractions first, and nine levels after that, because the
+ * chain treated "listed earlier" as "needed". Differentiation needs quadratics
+ * and sequences. It has never needed matrices, and no longer claims to.
+ *
+ * Each level also says WHAT it is waiting for, by name, so a locked card can
+ * be honest instead of just shut.
  */
 function mathlab_board(array $p): array {
     $playerId = (string)($p['playerId'] ?? '');
     if ($playerId === '') return ['ok' => false, 'error' => 'forbidden'];
     $done = mathlab_progress_rows($playerId);
-    $levels = [];
-    $prevCleared = true;
-    foreach (mathlab_levels() as $n => $lv) {
+    $all = mathlab_levels();
+
+    $cleared = [];
+    foreach ($all as $n => $lv) {
         $row = $done[$n] ?? null;
-        $cleared = $row && trim((string)$row['clearedAt']) !== '';
+        $cleared[$n] = $row && trim((string)$row['clearedAt']) !== '';
+    }
+
+    $levels = [];
+    foreach ($all as $n => $lv) {
+        $needs = (array)($lv['needs'] ?? []);
+        $waiting = [];
+        foreach ($needs as $req) if (empty($cleared[$req])) $waiting[] = (string)$all[$req]['name'];
+        $row = $done[$n] ?? null;
         $levels[] = $lv + [
-            'unlocked' => $n === 1 ? true : $prevCleared,
-            'cleared' => (bool)$cleared,
+            'unlocked' => $waiting === [],
+            // Named rather than numbered: "needs Quadratic Equations" is a
+            // thing a student can go and do. "Locked" is not.
+            'waitingOn' => $waiting,
+            'cleared' => (bool)$cleared[$n],
             'bestScore' => (int)($row['bestScore'] ?? 0),
             'bestCorrect' => (int)($row['bestCorrect'] ?? 0),
             'attempts' => (int)($row['attempts'] ?? 0),
         ];
-        $prevCleared = (bool)$cleared;
     }
     $clearedCount = count(array_filter($levels, fn($l) => $l['cleared']));
-    return ['ok' => true, 'levels' => $levels, 'passPct' => MATHLAB_PASS_PCT,
-            'cleared' => $clearedCount, 'total' => count($levels)];
+    $openCount = count(array_filter($levels, fn($l) => $l['unlocked'] && !$l['cleared']));
+    return ['ok' => true, 'levels' => $levels, 'strands' => mathlab_strands(),
+            'passPct' => MATHLAB_PASS_PCT,
+            'cleared' => $clearedCount, 'open' => $openCount, 'total' => count($levels)];
 }
 
 /* ── Playing ──────────────────────────────────────────────────────────── */
@@ -488,7 +900,10 @@ function mathlab_start(array $p): array {
     $board = mathlab_board(['playerId' => $playerId]);
     $me = null;
     foreach ($board['levels'] as $l) if ((int)$l['level'] === $level) $me = $l;
-    if (!$me || empty($me['unlocked'])) return ['ok' => false, 'error' => 'locked'];
+    if (!$me || empty($me['unlocked'])) {
+        // Refused with the reason, so the client can say what to go and clear.
+        return ['ok' => false, 'error' => 'locked', 'waitingOn' => $me['waitingOn'] ?? []];
+    }
 
     [$qs, $keys] = mathlab_generate($level, (int)$lv['questions']);
     $roundId = 'ML-' . strtoupper(rand_hex(8));
@@ -552,11 +967,33 @@ function mathlab_submit(array $p): array {
             'clearedAt' => $cleared ? $now : '', 'updatedAt' => $now]);
     }
 
-    $next = mathlab_level($level + 1);
+    /* What this clear actually opened — asked of the graph, not assumed to be
+       the next number up. Clearing Sets opens Probability and Logic; clearing
+       Vectors opens nothing, because nothing is built on it yet. Announcing
+       "level 14 is open" when level 14 has been open since day one is worse
+       than announcing nothing. */
+    $opened = [];
+    if ($cleared) {
+        $done = mathlab_progress_rows($playerId);
+        $isDone = function (int $n) use ($done, $level): bool {
+            if ($n === $level) return true;                 // just cleared, row may lag
+            return isset($done[$n]) && trim((string)$done[$n]['clearedAt']) !== '';
+        };
+        foreach (mathlab_levels() as $n => $lv) {
+            $needs = (array)($lv['needs'] ?? []);
+            if (!in_array($level, $needs, true)) continue;  // this clear was not its blocker
+            if ($isDone($n)) continue;                      // already cleared it anyway
+            $open = true;
+            foreach ($needs as $req) if (!$isDone($req)) { $open = false; break; }
+            if ($open) $opened[] = ['level' => $n, 'name' => (string)$lv['name'],
+                                    'strand' => (string)$lv['strand']];
+        }
+    }
     return ['ok' => true, 'correct' => $correct, 'total' => $total, 'score' => $score,
             'ms' => $ms, 'passPct' => MATHLAB_PASS_PCT, 'cleared' => $cleared,
             'marks' => $marks,
-            'unlocked' => ($cleared && $next) ? ['level' => $level + 1, 'name' => (string)$next['name']] : null];
+            'opened' => $opened,
+            'unlocked' => $opened[0] ?? null];
 }
 
 /**
