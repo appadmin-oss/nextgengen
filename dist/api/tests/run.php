@@ -16401,8 +16401,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $wrong = [];         // keys that disagree with the independent derivation
     $checked = 0;
     foreach (array_keys(mathlab_levels()) as $lv) {
+        // Every tier, not just the default: the tiers select different FORMS,
+        // so sweeping one of them would leave two thirds of the generators
+        // unexercised while the count still looked reassuring.
         for ($i = 0; $i < 250; $i++) {
-            [$text, $key] = mathlab_question($lv);
+            [$text, $key] = mathlab_question($lv, ($i % 3) + 1);
             $mine = $solve($text);
             $checked++;
             if ($mine === null) { $unparsed[$lv][] = $text; continue; }
@@ -16424,7 +16427,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $ugly = [];
     foreach (array_keys(mathlab_levels()) as $lv) {
         for ($i = 0; $i < 120; $i++) {
-            [$text] = mathlab_question($lv);
+            [$text] = mathlab_question($lv, ($i % 3) + 1);
             // `(x)` only as a lone FACTOR — "f(x)" is how a function is written.
             foreach (['+ -', '- -', '+ +', '(x)(', ')(x)', ' 1x', ' 1y', '= 1t', ' 1t\u{b2}',
                       ' 1i', ' 1j', ' 1k', 'NAN', 'INF'] as $bad) {
@@ -16434,6 +16437,125 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     }
     chk('math lab: no question prints a doubled sign or an empty bracket', $ugly === []);
     if ($ugly) foreach (array_slice(array_unique($ugly), 0, 6) as $u) echo "      $u\n";
+
+    /* Degenerate questions: the ones that render perfectly, mark correctly and
+       teach nothing. "Find the L.C.M. of 17 and 26" is a multiplication drill,
+       "the H.C.F. of 31 and 65" always answers 1, "the L.C.M. of 54 and 54"
+       answers itself, and "3/6 of 90" asks a different question from the one
+       printed. None of these is catchable by re-deriving the answer, because
+       the answer is right. */
+    $duds = [];
+    for ($i = 0; $i < 3000; $i++) {
+        [$q, $a] = mathlab_question(1, ($i % 3) + 1);
+        if (preg_match('/L\.C\.M\. of (\d+) and (\d+)/', $q, $m)) {
+            $x = (int)$m[1]; $y = (int)$m[2];
+            if ($x === $y) $duds[] = "L.C.M. of the same number twice: $q";
+            if (mathlab_gcd($x, $y) === 1) $duds[] = "L.C.M. of a coprime pair: $q";
+        }
+        if (preg_match('/H\.C\.F\. of (\d+) and (\d+)/', $q, $m)) {
+            $x = (int)$m[1]; $y = (int)$m[2];
+            if ($x === $y) $duds[] = "H.C.F. of the same number twice: $q";
+            if ((int)$a === 1) $duds[] = "H.C.F. that is always 1: $q";
+        }
+        if (preg_match('#^(\d+)/(\d+) of #', $q, $m)
+            && mathlab_gcd((int)$m[1], (int)$m[2]) !== 1) {
+            $duds[] = "an unreduced fraction: $q";
+        }
+    }
+    chk('math lab: no question is technically correct and pedagogically empty'
+        . ($duds ? ' — ' . implode('; ', array_slice(array_unique($duds), 0, 3)) : ''),
+        $duds === []);
+
+    /* ── The paper ramps, and the ramp moves with the student ──────────── */
+
+    /* Every form must be reachable at exactly one tier. A form graded twice
+       shows up more often than the mix says; a form graded nowhere is dead
+       code that no student will ever see, and neither is visible on screen. */
+    $tierProblems = [];
+    foreach (mathlab_levels() as $n => $lv) {
+        $tiers = mathlab_form_tiers()[$n] ?? null;
+        if (!$tiers || count($tiers) !== 3) { $tierProblems[] = "L$n has no three tiers"; continue; }
+        $all = array_merge(...$tiers);
+        if (count($all) !== count(array_unique($all))) $tierProblems[] = "L$n grades a form twice";
+        if (min($all) !== 1 || max($all) !== count($all)) {
+            $tierProblems[] = "L$n grades forms " . implode(',', $all) . " — not 1.." . count($all);
+        }
+        if (count(array_filter($tiers)) < 2) $tierProblems[] = "L$n has only one populated tier";
+    }
+    chk('math lab: every question form is graded at exactly one tier, and none is orphaned'
+        . ($tierProblems ? ' — ' . implode('; ', array_slice($tierProblems, 0, 3)) : ''),
+        $tierProblems === []);
+
+    /* The tiers must actually select different questions. If a level graded
+       three tiers but they all produced the same forms, every assertion above
+       would still pass and nothing would have changed for the student. */
+    $flat = [];
+    foreach (mathlab_levels() as $n => $lv) {
+        $byTier = [];
+        foreach ([1, 2, 3] as $t) {
+            $seen = [];
+            for ($i = 0; $i < 60; $i++) { [$q] = mathlab_question($n, $t); $seen[$q] = true; }
+            $byTier[$t] = array_keys($seen);
+        }
+        // Foundation and stretch must not be the same set of questions.
+        $shared = array_intersect($byTier[1], $byTier[3]);
+        if (count($shared) === count($byTier[1])) $flat[] = "L$n";
+    }
+    chk('math lab: foundation and stretch really are different questions'
+        . ($flat ? ' — flat at ' . implode(', ', $flat) : ''), $flat === []);
+
+    /* A paper is built from the mix and comes out in tier order. Both matter:
+       the mix is the difficulty, the order is what stops a paper opening on
+       its hardest question. */
+    $orderBad = []; $sizeBad = [];
+    foreach (mathlab_levels() as $n => $lv) {
+        foreach ([1, 2, 3] as $stage) {
+            [$qs] = mathlab_generate($n, (int)$lv['questions'], $stage);
+            if (count($qs) !== (int)$lv['questions']) $sizeBad[] = "L$n s$stage";
+            $tiers = array_column($qs, 'tier');
+            $sorted = $tiers; sort($sorted);
+            if ($tiers !== $sorted) $orderBad[] = "L$n s$stage";
+        }
+    }
+    chk('math lab: a paper is always the full length it promises'
+        . ($sizeBad ? ' — ' . implode(', ', $sizeBad) : ''), $sizeBad === []);
+    chk('math lab: …and opens on its gentlest question, not its hardest'
+        . ($orderBad ? ' — ' . implode(', ', $orderBad) : ''), $orderBad === []);
+
+    /* The mix itself: a foundation paper must be mostly foundation, a stretch
+       paper mostly stretch. Asserted on the hardest half rather than on exact
+       counts, which would just restate the weights. */
+    $mixBad = [];
+    foreach (mathlab_levels() as $n => $lv) {
+        [$found] = mathlab_generate($n, (int)$lv['questions'], 1);
+        [$stretch] = mathlab_generate($n, (int)$lv['questions'], 3);
+        $hard = fn(array $qs) => count(array_filter($qs, fn($q) => $q['tier'] === 3));
+        if (!($hard($found) < $hard($stretch))) $mixBad[] = "L$n";
+    }
+    chk('math lab: a stretch paper carries more hard questions than a foundation one'
+        . ($mixBad ? ' — ' . implode(', ', $mixBad) : ''), $mixBad === []);
+
+    /* Every tier count sums to the paper length, across every paper size the
+       ladder actually sets. Largest remainder, so no paper is short a mark. */
+    $sumBad = [];
+    foreach ([10, 12] as $len) foreach (mathlab_stages() as $st) {
+        $c = mathlab_tier_counts($len, $st['mix']);
+        if (array_sum($c) !== $len) $sumBad[] = $st['key'] . '/' . $len . '=' . array_sum($c);
+    }
+    chk('math lab: the tier split always adds up to the paper length'
+        . ($sumBad ? ' — ' . implode(', ', $sumBad) : ''), $sumBad === []);
+
+    /* Who gets which paper. This is the progression: clearing a level does not
+       finish it, it promotes it. */
+    chk('math lab: a level never cleared sets the foundation paper',
+        mathlab_stage_for(null) === 1
+        && mathlab_stage_for(['clearedAt' => '', 'bestScore' => 60]) === 1);
+    chk('math lab: …clearing it promotes the paper to standard',
+        mathlab_stage_for(['clearedAt' => '2026-01-01T00:00:00Z', 'bestScore' => 70]) === 2
+        && mathlab_stage_for(['clearedAt' => '2026-01-01T00:00:00Z', 'bestScore' => 89]) === 2);
+    chk('math lab: …and clearing it at 90% or better promotes it to stretch',
+        mathlab_stage_for(['clearedAt' => '2026-01-01T00:00:00Z', 'bestScore' => 90]) === 3
+        && mathlab_stage_for(['clearedAt' => '2026-01-01T00:00:00Z', 'bestScore' => 100]) === 3);
 
     /* ── Papers ────────────────────────────────────────────────────────── */
 
@@ -16447,8 +16569,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     [$pq] = mathlab_generate(1, 12);
     chk('math lab: a paper does not repeat a question', count(array_unique(array_column($pq, 'q'))) === 12);
-    chk('math lab: …and carries the question only, never the answer',
-        !array_key_exists('a', $pq[0]) && !array_key_exists('answer', $pq[0]) && array_keys($pq[0]) === ['q']);
+    /* The tier travels with the question — it is what orders the paper and what
+       lets the marking say where a student stands. The ANSWER never does. */
+    chk('math lab: …and carries the question and its tier, and nothing else',
+        !array_key_exists('a', $pq[0]) && !array_key_exists('answer', $pq[0])
+        && array_keys($pq[0]) === ['q', 'tier']);
 
     /* ── Unlocking ─────────────────────────────────────────────────────── */
 
@@ -16483,7 +16608,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('math lab: level 1 starts and ships a paper', !empty($r1['ok']) && count($r1['questions']) === 12);
     chk('math lab: …and the payload never carries the key',
         strpos(json_encode($r1), 'answerKey') === false
-        && count(array_filter($r1['questions'], fn($q) => array_keys($q) !== ['q'])) === 0);
+        && count(array_filter($r1['questions'], fn($q) => array_keys($q) !== ['q', 'tier'])) === 0);
 
     /* Marked by solving the paper the way a student would — from the text. */
     $answers = array_map(fn($q) => (string)$solve($q['q']), $r1['questions']);
@@ -16503,6 +16628,22 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('math lab: the marking hands back the right answers, now the paper is in',
         count($sub['marks']) === 12 && $sub['marks'][0]['ok'] === true && $sub['marks'][0]['answer'] !== '');
     chk('math lab: elapsed time comes from the server, not the client', isset($sub['ms']) && $sub['ms'] >= 0);
+
+    /* The progression, end to end. Level 1 was just cleared at 100%, so the
+       next paper on it must be the stretch paper — not the same one again. */
+    $again = backend_dispatch('mathlab.start', ['playerId' => $ML, 'level' => 1]);
+    chk('math lab: clearing a level at 100% promotes its next paper to stretch',
+        $again['stage'] === 3 && $again['stageName'] === 'Stretch');
+    chk('math lab: …and that paper really is harder than the one just sat',
+        count(array_filter($again['questions'], fn($q) => $q['tier'] === 3))
+        > count(array_filter($r1['questions'], fn($q) => $q['tier'] === 3)));
+    chk('math lab: …while a level never touched still sets the foundation paper',
+        backend_dispatch('mathlab.start', ['playerId' => $ML, 'level' => 3])['stage'] === 1);
+    /* And the ladder says so before a student opens anything. */
+    $bs = backend_dispatch('mathlab.board', ['playerId' => $ML]);
+    chk('math lab: the ladder names the paper each level will set next',
+        $bs['levels'][0]['stage'] === 3 && $bs['levels'][0]['stageName'] === 'Stretch'
+        && $bs['levels'][2]['stage'] === 1 && $bs['levels'][2]['stageName'] === 'Foundation');
 
     chk('math lab: a paper cannot be handed in twice',
         backend_dispatch('mathlab.submit', ['playerId' => $ML, 'roundId' => $r1['roundId'], 'answers' => $answers])['error'] === 'already_submitted');

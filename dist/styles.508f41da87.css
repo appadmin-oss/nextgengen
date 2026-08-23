@@ -3538,6 +3538,51 @@ img { background-color: rgba(12,20,50,0.04); }
 .ml-go:hover:not(:disabled) { filter: brightness(1.1); }
 .ml-go:disabled { opacity: 0.6; cursor: wait; }
 
+/* ── Difficulty, made visible ──
+ * Three tiers, one colour ramp, used in three places: the paper each level
+ * will set next (on the ladder), the step-up marker inside a paper, and the
+ * breakdown on the marked screen. Each carries its NAME, never colour alone —
+ * "Foundation", "Standard", "Stretch" — because the whole point is telling a
+ * student which kind of question they lost the marks on, and a green bar next
+ * to an amber one does not say that to anybody who cannot tell them apart. */
+.ml-lv-stage { margin: 6px 0 0; font-size: 12.5px; color: var(--ink-700); line-height: 1.45; }
+.ml-lv-stage-t { font-weight: 700; border-radius: 999px; padding: 2px 8px; margin-right: 2px;
+                 background: var(--cream-100, #f3ecdb); color: var(--ink-900); }
+.ml-lv-stage.is-s2 .ml-lv-stage-t { background: #e4edff; color: #16306e; }   /* 8.9:1 */
+.ml-lv-stage.is-s3 .ml-lv-stage-t { background: #ffeccf; color: #5a3800; }   /* 8.3:1 */
+
+/* The step-up marker inside a paper. A rule with a word on it, sitting between
+ * two questions — a paper that simply got harder with no warning reads to a
+ * child as their own falling apart. */
+.ml-q-step { list-style: none; display: flex; align-items: center; gap: 10px;
+             margin: 16px 0 6px; font-size: 11.5px; font-weight: 800;
+             letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-700); }
+.ml-q-step::before, .ml-q-step::after { content: ""; flex: 1; height: 1px;
+                                        background: var(--cream-200, #e8dec6); }
+.ml-q-step span { flex: none; }
+
+.ml-paper-stage { margin: 0 0 14px; font-size: 13.5px; color: var(--ink-700); line-height: 1.5; }
+.ml-paper-stage b { color: var(--ink-900); }
+
+/* The breakdown on the marked screen. */
+.ml-tiers { margin: 16px 0 18px; }
+.ml-tier-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px;
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.ml-tier { background: #fff; border: 1px solid var(--cream-200, #e8dec6);
+           border-radius: 12px; padding: 10px 12px; }
+.ml-tier-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ml-tier-n { font-size: 12px; font-weight: 800; letter-spacing: 0.06em;
+             text-transform: uppercase; color: var(--ink-700); }
+.ml-tier-v { font-size: 15px; font-weight: 800; color: var(--ink-900);
+             font-variant-numeric: tabular-nums; }
+.ml-tier-bar { margin-top: 8px; height: 7px; border-radius: 999px;
+               background: var(--cream-100, #f3ecdb); overflow: hidden; }
+.ml-tier-bar > div { height: 100%; border-radius: 999px; background: #2f7a45; }
+.ml-tier.is-s2 .ml-tier-bar > div { background: #2b56b8; }
+.ml-tier.is-s3 .ml-tier-bar > div { background: #9a5b00; }
+.ml-tier-say { margin: 10px 0 0; font-size: 13.5px; color: var(--ink-700); }
+.ml-tier-say b { color: var(--ink-900); }
+
 /* ── The paper ── */
 .ml-paper-hd { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px;
                background: var(--cream-50, #fbf7ee); border-bottom: 1px solid var(--cream-200, #e8dec6);

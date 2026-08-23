@@ -1459,9 +1459,16 @@ function unzipDocumentXml(buf) {
             var cleared = i <= 1;
             var waiting = l.needs.filter(function (n) { return n > 2; })
                                  .map(function (n) { return LV[n - 1].name; });
+            // Same promotion rule the server applies: never cleared →
+            // Foundation, cleared → Standard, cleared at 90%+ → Stretch.
+            // Level 1 is cleared at 92 and level 2 at 74, so the stub carries
+            // one of each rather than two of the same.
+            var best = cleared ? (i === 0 ? 92 : 74) : 0;
+            var stage = !cleared ? 1 : (best >= 90 ? 3 : 2);
             return Object.assign({}, l, {
               unlocked: waiting.length === 0, waitingOn: waiting, cleared: cleared,
-              bestScore: cleared ? 92 : 0, bestCorrect: cleared ? 11 : 0, attempts: cleared ? 1 : 0,
+              stage: stage, stageName: ['Foundation', 'Standard', 'Stretch'][stage - 1],
+              bestScore: best, bestCorrect: cleared ? 11 : 0, attempts: cleared ? 1 : 0,
             });
           }),
         });
@@ -1471,10 +1478,15 @@ function unzipDocumentXml(buf) {
         return Promise.resolve({
           roundId: 'ML-TESTPAPER', level: level, name: 'Indices & Logarithms', band: 'SSS 1',
           seconds: fast ? 1 : 300,
+          stage: 1, stageName: 'Foundation',
+          stageBlurb: 'Mostly the gentler forms, with one to reach for.',
+          // Tiered and in tier order, the way the server ships a paper: two
+          // foundation questions then one stretch, so there is exactly one
+          // step-up marker to find.
           questions: [
-            { q: 'Simplify 2^3 \u00d7 2^4, giving your answer as a number.' },
-            { q: 'Evaluate log3 of 81.' },
-            { q: 'Evaluate 49^(1/2).' },
+            { q: 'Simplify 2^3 \u00d7 2^4, giving your answer as a number.', tier: 1 },
+            { q: 'Evaluate log3 of 81.', tier: 1 },
+            { q: 'Evaluate 49^(1/2).', tier: 3 },
           ],
         });
       },
@@ -1487,7 +1499,7 @@ function unzipDocumentXml(buf) {
             { ok: false, your: '3',   answer: '4' },
             { ok: true,  your: '7',   answer: '7' },
           ],
-          unlocked: null,
+          opened: [], unlocked: null,
         };
         if (!fast) return Promise.resolve(body);
         return new Promise(function (r) { setTimeout(function () { r(body); }, 1200); });
@@ -4440,11 +4452,54 @@ function unzipDocumentXml(buf) {
        }));
     await ml.evaluate(() => document.querySelectorAll('.ml-strand')[0].click());   // back to All
 
+    /* Difficulty progression on the ladder. Clearing a level does not finish
+       it — it promotes the paper — and the ladder is where a student decides
+       what to do next, so that has to be legible from here. Level 1 was
+       cleared at 92% and level 2 at 74%, so one shows Stretch and one
+       Standard: if the promotion rule were ignored they would read alike. */
+    ok('a cleared level says which paper it will set next, and the two differ',
+       await ml.evaluate(() => {
+         const said = Array.from(document.querySelectorAll('.ml-lv.is-cleared .ml-lv-stage'))
+           .map(p => p.textContent.replace(/\s+/g, ' ').trim());
+         return said.length === 2
+             && /^Stretch paper next/.test(said[0])
+             && /^Standard paper next/.test(said[1]);
+       }));
+    /* …and an untouched level does NOT, because "Foundation paper — gentler
+       forms first" on every one of them is the same sentence eleven times. */
+    ok('…and an untouched level does not repeat the boilerplate',
+       await ml.evaluate(() =>
+         document.querySelectorAll('.ml-lv.is-open .ml-lv-stage').length === 0));
+
     /* Start the third level — by its number, which is not its array index. */
     await ml.evaluate(() => document.querySelectorAll('.ml-lv')[2].querySelector('.ml-go').click());
     await ml.waitForSelector('.ml-qs', { timeout: 10000 });
     ok('starting a level asks the server for that level, not its position in the list',
        (await ml.evaluate(() => window.__mathStarts)).join() === '3');
+    /* The ramp inside a paper. The questions arrive in tier order, and the
+       point where they get harder is marked — a paper that simply gets harder
+       with no warning reads to a child as their own falling apart. The stub
+       paper is two foundation questions then one stretch, so there is exactly
+       one marker, it sits before question 3, and it names the tier. */
+    ok('the paper says which paper it is',
+       /Foundation paper/.test(await ml.evaluate(() =>
+         document.querySelector('.ml-paper-stage').textContent)));
+    ok('…and marks the point where the questions step up',
+       await ml.evaluate(() => {
+         const steps = Array.from(document.querySelectorAll('.ml-q-step'));
+         if (steps.length !== 1 || !/Stretch from here/.test(steps[0].textContent)) return false;
+         // Before the third question, and after the second.
+         const items = Array.from(document.querySelectorAll('.ml-qs > li'));
+         return items.indexOf(steps[0]) === 2;
+       }));
+    /* The marker is decoration around questions that are numbered anyway, so
+       it must not be announced as a list item a screen-reader user has to
+       step through. */
+    ok('…without putting a phantom question into the list for a screen reader',
+       await ml.evaluate(() =>
+         document.querySelector('.ml-q-step').getAttribute('aria-hidden') === 'true'
+         && document.querySelectorAll('.ml-q').length === 3));
+
     ok('the paper shows every question at once, the way a paper does',
        await ml.evaluate(() => document.querySelectorAll('.ml-q').length) === 3
        && await ml.evaluate(() => document.querySelectorAll('.ml-q .ml-q-in').length) === 3);
@@ -4488,6 +4543,35 @@ function unzipDocumentXml(buf) {
              && rows.filter(r => /✓/.test(r.innerText)).length === 2
              && rows.filter(r => /✗/.test(r.innerText)).length === 1;
        }));
+
+    /* The breakdown by difficulty. A single percentage tells a student
+       nothing they can act on; this is the part that says WHERE the marks
+       went, and it is computed by zipping the marks against the tiers that
+       came down with the paper — so it must survive the paper actually
+       spanning more than one tier, and must never claim a tier the paper did
+       not carry. The stub paper is two foundation questions (one right, one
+       wrong) and one stretch (right). */
+    ok('the marking breaks the score down by difficulty, not just a percentage',
+       await ml.evaluate(() => {
+         const bars = Array.from(document.querySelectorAll('.ml-tier'));
+         const read = b => ({
+           name: b.querySelector('.ml-tier-n').textContent.trim(),
+           val: b.querySelector('.ml-tier-v').textContent.trim(),
+         });
+         const got = bars.map(read);
+         return got.length === 2                     // only the tiers the paper carried
+             && got[0].name === 'Foundation' && got[0].val === '1/2'
+             && got[1].name === 'Stretch'    && got[1].val === '1/1';
+       }));
+    ok('…and names the tier the marks actually went on',
+       /foundation questions are where the marks went: 1 of 2 right/i.test(
+         await ml.evaluate(() => document.querySelector('.ml-tier-say').textContent)));
+    /* Every bar carries its own count in text. A bar alone is unreadable to a
+       screen reader and unreadable at a glance, and three coloured bars with
+       no numbers is exactly the chart that says nothing. */
+    ok('…with every bar carrying its number, never colour alone',
+       await ml.evaluate(() => Array.from(document.querySelectorAll('.ml-tier'))
+         .every(b => /^\d+\/\d+$/.test(b.querySelector('.ml-tier-v').textContent.trim()))));
     await ml.close();
 
     /* The clock running out hands the paper in — once. */

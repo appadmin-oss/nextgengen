@@ -2882,6 +2882,15 @@ function MathLab({ onDone }) {
   );
 }
 
+/* The three difficulty tiers, named once. The paper, the ladder and the
+   marking all speak about them, and three names that drifted apart would be
+   three different ideas as far as a student is concerned. */
+const ML_TIERS = {
+  1: { name: "Foundation", short: "Foundation" },
+  2: { name: "Standard",   short: "Standard" },
+  3: { name: "Stretch",    short: "Stretch" },
+};
+
 function MathLevelCard({ level, passPct, onPlay, busy }) {
   const state = level.cleared ? "cleared" : (level.unlocked ? "open" : "locked");
   /* A locked level is a real <li> with real text, not a greyed-out button:
@@ -2903,6 +2912,20 @@ function MathLevelCard({ level, passPct, onPlay, busy }) {
           {level.attempts > 0 && <><span aria-hidden="true">·</span>
             <span>best {level.bestScore}%</span></>}
         </div>
+        {/* Clearing a level does not finish it — it promotes the paper, and a
+            student deciding what to do next reads the ladder rather than the
+            paper. Only shown once a level HAS been promoted: "Foundation
+            paper — gentler forms first" on every untouched level is the same
+            sentence eleven times, and a student learns it from the top of the
+            first paper they open. */}
+        {state === "cleared" && level.stage > 1 && (
+          <p className={"ml-lv-stage is-s" + level.stage}>
+            <span className="ml-lv-stage-t">{level.stageName} paper next</span>
+            {level.stage === 2
+              ? " — cleared, so it has moved up."
+              : " — cleared above 90%, so it is the hard set now."}
+          </p>
+        )}
       </div>
       <div className="ml-lv-act">
         {state === "locked" ? (
@@ -2981,7 +3004,8 @@ function MathPaper({ paper, onMarked, onQuit }) {
       <header className="ml-paper-hd">
         <button className="arc-quit" onClick={onQuit} disabled={sending}>← Leave</button>
         <div className="ml-paper-ttl">
-          <b>{paper.name}</b><span>{paper.band}</span>
+          <b>{paper.name}</b>
+          <span>{paper.stageName ? paper.stageName + " · " + paper.band : paper.band}</span>
         </div>
         <div className={"arc-clock" + (urgent ? " is-urgent" : "")} role="timer" aria-live="off">
           {mm}:{ss}
@@ -2993,9 +3017,28 @@ function MathPaper({ paper, onMarked, onQuit }) {
 
       {err && <div className="arc-err" role="alert">{err}</div>}
 
+      {paper.stageBlurb && (
+        <p className="ml-paper-stage">
+          <b>{paper.stageName} paper.</b> {paper.stageBlurb}{" "}
+          The questions get harder as you go down.
+        </p>
+      )}
+
       <ol className="ml-qs">
-        {paper.questions.map((q, idx) => (
-          <li key={idx} className={"ml-q" + (String(answers[idx]).trim() !== "" ? " is-done" : "")}>
+        {paper.questions.map((q, idx) => {
+          /* The paper arrives in tier order, so the step up happens exactly
+             where the tier changes. Marking it is the difference between "the
+             end of this paper is hard" and a student quietly concluding they
+             have gone backwards. */
+          const stepUp = idx > 0 && q.tier > paper.questions[idx - 1].tier;
+          return (
+          <React.Fragment key={idx}>
+          {stepUp && (
+            <li className="ml-q-step" aria-hidden="true">
+              <span>{(ML_TIERS[q.tier] || {}).name || "Harder"} from here</span>
+            </li>
+          )}
+          <li className={"ml-q" + (String(answers[idx]).trim() !== "" ? " is-done" : "")}>
             <div className="ml-q-n" aria-hidden="true">{idx + 1}</div>
             <div className="ml-q-body">
               <p className="ml-q-t" id={"mlq" + idx}>{q.q}</p>
@@ -3008,7 +3051,9 @@ function MathPaper({ paper, onMarked, onQuit }) {
                      aria-labelledby={"mlq" + idx} placeholder="Your answer"/>
             </div>
           </li>
-        ))}
+          </React.Fragment>
+          );
+        })}
       </ol>
 
       <footer className="ml-paper-ft">
@@ -3025,6 +3070,25 @@ function MathPaper({ paper, onMarked, onQuit }) {
 
 function MathMarked({ result, onRetry, onNext, onDone }) {
   const wrong = result.marks.filter(m => !m.ok).length;
+
+  /* Where the marks actually went. "You scored 60%" tells a student nothing
+     they can act on; "you have the foundation and standard work, the stretch
+     questions are where the marks went" tells them what to practise. The
+     question tiers came down with the paper and the marks come back in the
+     same order, so this is a zip — nothing extra is asked of the server, and
+     no answer had to travel early to make it possible. */
+  const qs = result.questions || [];
+  const byTier = [1, 2, 3].map(t => {
+    const idx = result.marks.map((m, i) => i).filter(i => qs[i] && qs[i].tier === t);
+    return { tier: t, total: idx.length, right: idx.filter(i => result.marks[i].ok).length };
+  }).filter(b => b.total > 0);
+  /* Only worth drawing when the paper genuinely spanned more than one tier —
+     otherwise it is a one-bar chart restating the score. */
+  const showBreakdown = byTier.length > 1;
+  const weakest = showBreakdown
+    ? byTier.slice().sort((a, b) => (a.right / a.total) - (b.right / b.total))[0]
+    : null;
+
   return (
     <div className="ml ml-marked" data-screen-label="Math Lab result">
       <div className={"ml-score" + (result.cleared ? " is-pass" : "")}>
@@ -3052,6 +3116,41 @@ function MathMarked({ result, onRetry, onNext, onDone }) {
             </React.Fragment>
           ))}
         </div>
+      )}
+
+      {showBreakdown && (
+        <section className="ml-tiers" aria-label="How the paper went by difficulty">
+          <ol className="ml-tier-bars">
+            {byTier.map(b => {
+              const pct = Math.round((b.right / b.total) * 100);
+              const label = (ML_TIERS[b.tier] || {}).name || ("Tier " + b.tier);
+              return (
+                <li key={b.tier} className={"ml-tier is-s" + b.tier}>
+                  <div className="ml-tier-top">
+                    <span className="ml-tier-n">{label}</span>
+                    <span className="ml-tier-v">{b.right}/{b.total}</span>
+                  </div>
+                  {/* The bar is decoration; the fraction beside it is the
+                      answer. A bar alone is unreadable to a screen reader and
+                      unreadable at a glance on a phone. */}
+                  <div className="ml-tier-bar" aria-hidden="true">
+                    <div style={{ width: pct + "%" }}/>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+          <p className="ml-tier-say">
+            {/* "1 of 1" on its own reads as one RIGHT out of one. The count
+                that helps is how many were right, said as such. */}
+            {weakest && weakest.right === weakest.total
+              ? "Every question on this paper, at every level of it."
+              : weakest
+                ? <>The <b>{((ML_TIERS[weakest.tier] || {}).name || "").toLowerCase()}</b> questions
+                    are where the marks went: {weakest.right} of {weakest.total} right.</>
+                : null}
+          </p>
+        </section>
       )}
 
       {/* The worked answers come back only with the marking, never with the

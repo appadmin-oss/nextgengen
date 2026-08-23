@@ -206,6 +206,14 @@ function mathlab_unit(int $n, string $unit): string {
     if ($n === -1) return '−' . $unit;
     return mathlab_int($n) . $unit;
 }
+/** A common factor and two DIFFERENT multipliers, for L.C.M. and H.C.F. work.
+ *  Returns [g, m, n] so the pair is g·m and g·n. */
+function mathlab_factor_pair(int $glo, int $ghi, int $mlo, int $mhi): array {
+    $g = random_int($glo, $ghi);
+    $m = random_int($mlo, $mhi);
+    do { $n = random_int($mlo, $mhi); } while ($n === $m);
+    return [$g, $m, $n];
+}
 /** A non-zero integer in a range — for places where 0 would print a factor as
  *  a bare "(x)" and read like a typo rather than a question. */
 function mathlab_nz(int $lo, int $hi): int {
@@ -244,12 +252,24 @@ function mathlab_poly(array $coeffs, string $var = 'x'): string {
  * ambiguity about how a student chose to write an expression.
  */
 
-function mathlab_q_numeration(): array {
-    switch (random_int(1, 6)) {
-        case 1: { $a = random_int(6, 40); $b = random_int(6, 40);
-            return ['Find the L.C.M. of ' . $a . ' and ' . $b . '.', (string)mathlab_lcm($a, $b)]; }
-        case 2: { $a = random_int(12, 90); $b = random_int(12, 90);
-            return ['Find the H.C.F. of ' . $a . ' and ' . $b . '.', (string)mathlab_gcd($a, $b)]; }
+function mathlab_q_numeration(int $form): array {
+    switch ($form) {
+        /* Both pairs are built around a shared factor. Two coprime numbers make
+           "find the L.C.M. of 17 and 26" a multiplication drill with the answer
+           442, and "find the H.C.F. of 31 and 65" an exercise whose answer is
+           always 1 — neither teaches what the question is for. */
+        /* Both pairs are built around a shared factor, and the two multipliers
+           are forced apart. Two coprime numbers make "find the L.C.M. of 17 and
+           26" a multiplication drill with the answer 442, and "the H.C.F. of 31
+           and 65" an exercise whose answer is always 1; the same number twice
+           makes both answers the number itself. None of the three teaches what
+           the question is for. */
+        case 1: { [$g, $m, $n] = mathlab_factor_pair(2, 9, 2, 9);
+            return ['Find the L.C.M. of ' . ($g * $m) . ' and ' . ($g * $n) . '.',
+                (string)mathlab_lcm($g * $m, $g * $n)]; }
+        case 2: { [$g, $m, $n] = mathlab_factor_pair(3, 12, 2, 8);
+            return ['Find the H.C.F. of ' . ($g * $m) . ' and ' . ($g * $n) . '.',
+                (string)mathlab_gcd($g * $m, $g * $n)]; }
         case 3: { $pct = [5, 10, 12, 15, 20, 25, 40, 75][random_int(0, 7)]; $of = random_int(2, 40) * 100;
             return ['What is ' . $pct . '% of ₦' . number_format($of) . '?', (string)intdiv($of * $pct, 100)]; }
         case 4: { // Sharing in a ratio — the classic WAEC form.
@@ -257,9 +277,14 @@ function mathlab_q_numeration(): array {
             $unit = random_int(2, 30) * 100; $total = ($r1 + $r2 + $r3) * $unit;
             return ['₦' . number_format($total) . ' is shared among Ada, Bola and Chidi in the ratio '
                 . $r1 . ':' . $r2 . ':' . $r3 . '. How much does Bola get, in naira?', (string)($r2 * $unit)]; }
-        case 5: { // Fraction of a quantity.
-            $den = [2, 3, 4, 5, 6, 8][random_int(0, 5)]; $num = random_int(1, $den - 1);
-            $q = random_int(2, 30) * $den;
+        case 5: { /* Fraction of a quantity. The fraction is reduced — "3/6 of 90"
+                     is a question about noticing that 3/6 is a half, which is a
+                     different question from the one being asked — and the
+                     quantity starts high enough that the answer is worth
+                     working out rather than counting on fingers. */
+            $den = [2, 3, 4, 5, 6, 8][random_int(0, 5)];
+            do { $num = random_int(1, $den - 1); } while (mathlab_gcd($num, $den) !== 1);
+            $q = random_int(4, 30) * $den;
             return [$num . '/' . $den . ' of ' . $q . ' is what number?', (string)intdiv($q * $num, $den)]; }
         default: { // Simple interest — everywhere in the Nigerian syllabus.
             $p = random_int(2, 40) * 1000; $r = random_int(2, 12); $t = random_int(1, 5);
@@ -269,8 +294,8 @@ function mathlab_q_numeration(): array {
     }
 }
 
-function mathlab_q_algebra(): array {
-    switch (random_int(1, 5)) {
+function mathlab_q_algebra(int $form): array {
+    switch ($form) {
         case 1: { // Solve ax + b = c
             $a = random_int(2, 9); $x = random_int(-9, 9); $b = random_int(-20, 20);
             return ['Solve for x:  ' . $a . 'x' . mathlab_term($b, '') . ' = ' . ($a * $x + $b), (string)$x]; }
@@ -299,8 +324,8 @@ function mathlab_q_algebra(): array {
     }
 }
 
-function mathlab_q_indices(): array {
-    switch (random_int(1, 5)) {
+function mathlab_q_indices(int $form): array {
+    switch ($form) {
         case 1: { $b = [2, 3, 5][random_int(0, 2)]; $m = random_int(2, 6); $n = random_int(1, 4);
             return ['Simplify ' . $b . '^' . $m . ' × ' . $b . '^' . $n . ', giving your answer as a number.',
                 (string)($b ** ($m + $n))]; }
@@ -320,8 +345,8 @@ function mathlab_q_indices(): array {
     }
 }
 
-function mathlab_q_surds(): array {
-    switch (random_int(1, 4)) {
+function mathlab_q_surds(int $form): array {
+    switch ($form) {
         case 1: { $k = random_int(2, 9); $n = [2, 3, 5, 6, 7][random_int(0, 4)];
             return ['Simplify √' . ($k * $k * $n) . ' in the form a√' . $n . '. What is a?', (string)$k]; }
         case 2: { $a = random_int(2, 9); $b = random_int(2, 9); $n = [2, 3, 5][random_int(0, 2)];
@@ -334,9 +359,9 @@ function mathlab_q_surds(): array {
     }
 }
 
-function mathlab_q_quadratic(): array {
+function mathlab_q_quadratic(int $form): array {
     $p = random_int(-9, 9); $q = random_int(-9, 9);      // roots
-    switch (random_int(1, 4)) {
+    switch ($form) {
         case 1: return ['The roots of x² ' . mathlab_term(-($p + $q), 'x') . mathlab_term($p * $q, '')
             . ' = 0 are ' . $p . ' and k. What is k?', (string)$q];
         case 2: { $a = random_int(1, 4); $b = random_int(-12, 12); $c = random_int(-12, 12);
@@ -354,8 +379,8 @@ function mathlab_q_quadratic(): array {
     }
 }
 
-function mathlab_q_sequences(): array {
-    switch (random_int(1, 5)) {
+function mathlab_q_sequences(int $form): array {
+    switch ($form) {
         case 1: { $a = random_int(-10, 15); $d = random_int(2, 9); $n = random_int(5, 20);
             return ['The first term of an A.P. is ' . $a . ' and the common difference is ' . $d
                 . '. Find the ' . $n . 'th term.', (string)($a + ($n - 1) * $d)]; }
@@ -377,8 +402,8 @@ function mathlab_q_sequences(): array {
     }
 }
 
-function mathlab_q_trig(): array {
-    switch (random_int(1, 4)) {
+function mathlab_q_trig(int $form): array {
+    switch ($form) {
         case 1: { $vals = ['sin 30' => '0.5', 'cos 60' => '0.5', 'tan 45' => '1', 'sin 90' => '1',
                            'cos 0' => '1', 'sin 0' => '0', 'cos 90' => '0', 'tan 0' => '0'];
             $k = array_rand($vals);
@@ -397,8 +422,8 @@ function mathlab_q_trig(): array {
     }
 }
 
-function mathlab_q_binomial(): array {
-    switch (random_int(1, 4)) {
+function mathlab_q_binomial(int $form): array {
+    switch ($form) {
         case 1: { $n = random_int(4, 10); $r = random_int(1, min(4, $n - 1));
             return ['Evaluate ' . $n . 'C' . $r . '.', (string)mathlab_ncr($n, $r)]; }
         case 2: { $n = random_int(4, 8); $r = random_int(1, 3);
@@ -413,10 +438,10 @@ function mathlab_q_binomial(): array {
     }
 }
 
-function mathlab_q_matrices(): array {
+function mathlab_q_matrices(int $form): array {
     $a = random_int(-6, 9); $b = random_int(-6, 9); $c = random_int(-6, 9); $d = random_int(-6, 9);
     $m = '(' . $a . ' ' . $b . ' ; ' . $c . ' ' . $d . ')';
-    switch (random_int(1, 3)) {
+    switch ($form) {
         case 1: return ['Find the determinant of the 2×2 matrix ' . $m
             . ', where the rows are separated by a semicolon.', (string)($a * $d - $b * $c)];
         case 2: { $e = random_int(-5, 8); $f = random_int(-5, 8);
@@ -435,8 +460,8 @@ function mathlab_q_matrices(): array {
     }
 }
 
-function mathlab_q_differentiation(): array {
-    switch (random_int(1, 4)) {
+function mathlab_q_differentiation(int $form): array {
+    switch ($form) {
         case 1: { $a = random_int(1, 6); $b = random_int(-8, 8); $c = random_int(-9, 9); $x = random_int(-4, 5);
             // d/dx (ax² + bx + c) = 2ax + b
             return ['If y = ' . mathlab_poly([$a, $b, $c]) . ', find dy/dx at x = ' . $x . '.',
@@ -457,8 +482,8 @@ function mathlab_q_differentiation(): array {
     }
 }
 
-function mathlab_q_integration(): array {
-    switch (random_int(1, 3)) {
+function mathlab_q_integration(int $form): array {
+    switch ($form) {
         case 1: { // ∫ (ax + b) dx from 0 to n
             $a = random_int(1, 6) * 2; $b = random_int(-6, 8); $n = random_int(1, 5);
             return ['Evaluate the definite integral of (' . mathlab_poly([$a, $b]) . ') dx from 0 to ' . $n . '.',
@@ -474,8 +499,8 @@ function mathlab_q_integration(): array {
     }
 }
 
-function mathlab_q_coordinate(): array {
-    switch (random_int(1, 5)) {
+function mathlab_q_coordinate(int $form): array {
+    switch ($form) {
         case 1: { $t = [[3,4,5],[6,8,10],[5,12,13],[8,15,17],[9,12,15]][random_int(0, 4)];
             $x1 = random_int(-6, 6); $y1 = random_int(-6, 6);
             return ['Find the distance between (' . $x1 . ', ' . $y1 . ') and ('
@@ -510,8 +535,8 @@ function mathlab_q_coordinate(): array {
  * fraction is genuinely the answer the question asks for it in a stated form.
  */
 
-function mathlab_q_sets(): array {
-    switch (random_int(1, 4)) {
+function mathlab_q_sets(int $form): array {
+    switch ($form) {
         case 1: { // n(A ∪ B) = n(A) + n(B) − n(A ∩ B)
             $a = random_int(12, 40); $b = random_int(12, 40); $both = random_int(3, min($a, $b) - 1);
             return ['In a class, ' . $a . ' study Physics and ' . $b . ' study Chemistry. '
@@ -529,12 +554,12 @@ function mathlab_q_sets(): array {
     }
 }
 
-function mathlab_q_statistics(): array {
+function mathlab_q_statistics(int $form): array {
     $list = [];
     $k = random_int(5, 7);
     for ($i = 0; $i < $k; $i++) $list[] = random_int(2, 30);
     $shown = implode(', ', $list);
-    switch (random_int(1, 5)) {
+    switch ($form) {
         case 1: { // Built to divide exactly: the last value absorbs the remainder.
             $sum = array_sum($list);
             $want = (int)round($sum / $k);
@@ -560,8 +585,8 @@ function mathlab_q_statistics(): array {
     }
 }
 
-function mathlab_q_probability(): array {
-    switch (random_int(1, 5)) {
+function mathlab_q_probability(int $form): array {
+    switch ($form) {
         case 1: { $r = random_int(2, 8); $b = random_int(2, 8);
             $g = mathlab_gcd($r, $r + $b);
             return ['A bag holds ' . $r . ' red and ' . $b . ' blue balls. One is drawn. '
@@ -601,8 +626,8 @@ function mathlab_q_probability(): array {
     }
 }
 
-function mathlab_q_polynomials(): array {
-    switch (random_int(1, 4)) {
+function mathlab_q_polynomials(int $form): array {
+    switch ($form) {
         case 1: { // Remainder theorem: f(a) is the remainder on division by (x − a).
             $a = random_int(1, 4); $b = random_int(-6, 6); $c = random_int(-9, 9); $k = random_int(-3, 3);
             $f = mathlab_poly([$a, $b, $c]);
@@ -633,8 +658,8 @@ function mathlab_q_polynomials(): array {
     }
 }
 
-function mathlab_q_complex(): array {
-    switch (random_int(1, 5)) {
+function mathlab_q_complex(int $form): array {
+    switch ($form) {
         /* Real parts are non-zero: "0 + 8i" is a purely imaginary number written
            the long way, and it turns an arithmetic question into a puzzle about
            whether the 0 is a typo. */
@@ -665,8 +690,8 @@ function mathlab_q_complex(): array {
     }
 }
 
-function mathlab_q_binaryop(): array {
-    switch (random_int(1, 4)) {
+function mathlab_q_binaryop(int $form): array {
+    switch ($form) {
         case 1: { $k = random_int(1, 5); $a = random_int(1, 9); $b = random_int(1, 9);
             return ['A binary operation is defined by a * b = a + b + ' . $k . '. Find ' . $a . ' * ' . $b . '.',
                 (string)($a + $b + $k)]; }
@@ -684,8 +709,8 @@ function mathlab_q_binaryop(): array {
     }
 }
 
-function mathlab_q_logic(): array {
-    switch (random_int(1, 4)) {
+function mathlab_q_logic(int $form): array {
+    switch ($form) {
         case 1: { $p = random_int(0, 1); $q = random_int(0, 1);
             // Implication is false only when the antecedent is true and the consequent false.
             $r = ($p === 1 && $q === 0) ? 'F' : 'T';
@@ -704,8 +729,8 @@ function mathlab_q_logic(): array {
     }
 }
 
-function mathlab_q_vectors3d(): array {
-    switch (random_int(1, 4)) {
+function mathlab_q_vectors3d(int $form): array {
+    switch ($form) {
         case 1: { // A Pythagorean quadruple, so the magnitude is whole.
             $t = [[1, 2, 2, 3], [2, 3, 6, 7], [1, 4, 8, 9], [4, 4, 7, 9], [2, 6, 9, 11]][random_int(0, 4)];
             return ['Find the magnitude of the vector ' . mathlab_unit($t[0], 'i') . ' + '
@@ -732,8 +757,8 @@ function mathlab_q_vectors3d(): array {
     }
 }
 
-function mathlab_q_motion(): array {
-    switch (random_int(1, 4)) {
+function mathlab_q_motion(int $form): array {
+    switch ($form) {
         case 1: { // s = at² + bt + c, so v = 2at + b
             $a = random_int(1, 6); $b = random_int(-8, 9); $t = random_int(1, 6);
             return ['A body moves so that s = ' . ($a === 1 ? '' : (string)$a) . 't²' . mathlab_term($b, 't')
@@ -790,36 +815,180 @@ function mathlab_generators(): array {
     ];
 }
 
-function mathlab_question(int $level): array {
+/**
+ * Which forms are easy, which are standard, and which are the stretch.
+ *
+ * Every level had a handful of question FORMS and picked among them with a
+ * flat random_int. The consequence was that a level had one difficulty, and
+ * that difficulty never moved: question 1 of a paper was as hard as question
+ * 12, a student's fiftieth paper was as hard as their first, and there was
+ * nothing between "cannot do this level at all" and "cleared it". That is not
+ * how a maths paper is built and it is not how anybody learns — a real paper
+ * opens with something you can do, so you settle, and closes with something
+ * you have to reach for.
+ *
+ * So each form is graded 1 (foundation), 2 (standard) or 3 (stretch), and the
+ * paper is assembled from the mix rather than from the whole bag. The grading
+ * is by the WORK the form asks for, not by where it happens to sit in the
+ * switch: in quadratics the hardest arm is the discriminant, because b² − 4ac
+ * with two negatives is where the marks are actually lost, not the arm that
+ * happens to be listed last.
+ *
+ * A tier with no forms falls back to the nearest tier that has some, so a
+ * level with only three forms still produces a full paper.
+ */
+function mathlab_form_tiers(): array {
+    return [
+        //          T1: foundation      T2: standard        T3: stretch
+        1  => [[1, 5],            [2, 3],             [4, 6]],   // LCM/fraction | HCF/% | ratio, interest
+        2  => [[3, 4],            [1],                [2]],      // complement/subsets | union | union backwards
+        3  => [[1, 3],            [2, 5],             [4]],      // solve/evaluate | expand/subject | simultaneous
+        4  => [[1, 2],            [3, 5],             [4]],      // × ÷ indices | logs, fractional | log law
+        5  => [[2, 4],            [1],                [3]],      // add surds, square | simplify | rationalise
+        6  => [[1],               [3, 4],             [2]],      // other root | sum, product | discriminant
+        7  => [[3],               [1],                [2, 4]],   // evaluate | remainder | factor, partial fractions
+        8  => [[1, 3],            [2],                [4, 5]],   // nth terms | sum of an A.P. | G.P. sums
+        9  => [[1],               [2, 3],             [4]],      // evaluate | harder rule, identity | inverse
+        10 => [[1, 5],            [3, 4],             [2]],      // add, powers of i | modulus, conjugate | multiply
+        11 => [[1, 2],            [3],                [4]],      // exact ratios | hypotenuse | cosine rule
+        12 => [[2, 5],            [1, 3],             [4]],      // midpoint, magnitude | distance, gradient | a·b
+        13 => [[3, 4],            [1],                [2]],      // perpendicular, scalar × | magnitude | a·b
+        14 => [[3, 4],            [1, 2],             [5]],      // mode, range | mean, median | standard deviation
+        15 => [[2, 5],            [1, 3],             [4]],      // die, complement | bag, independent | no replacement
+        16 => [[1],               [2, 3],             [4]],      // nCr | nPr, (1+x)^n | (1+ax)^n
+        17 => [[2, 3],            [4],                [1]],      // AND, OR | table size | implication
+        18 => [[1],               [3],                [2]],      // determinant | determinant in context | M × v
+        19 => [[1],               [3, 4],             [2]],      // quadratic | turning point, gradient | cubic
+        20 => [[2],               [3],                [1]],      // ∫kx² | area under y = 2x | ∫(ax + b)
+        21 => [[2],               [1],                [3, 4]],   // acceleration | velocity at t | at rest, area
+    ];
+}
+
+/** The forms available at a tier, falling back outward when a tier is empty. */
+function mathlab_forms_at(int $level, int $tier): array {
+    $tiers = mathlab_form_tiers()[$level] ?? [];
+    if (!$tiers) throw new RuntimeException('no form tiers for level ' . $level);
+    $tier = max(1, min(3, $tier));
+    for ($step = 0; $step < 3; $step++) {
+        foreach ([$tier - $step, $tier + $step] as $t) {
+            if ($t >= 1 && $t <= 3 && !empty($tiers[$t - 1])) return $tiers[$t - 1];
+        }
+    }
+    throw new RuntimeException('every tier is empty for level ' . $level);
+}
+
+/**
+ * One question for a level at a difficulty tier.
+ *
+ * Returns [text, answer, tier] — the tier travels with the question so the
+ * paper can be ordered by it and the marking can report where a student
+ * actually stands, rather than a single percentage that says nothing about
+ * whether they lost the marks on the easy half or the hard one.
+ */
+function mathlab_question(int $level, int $tier = 2): array {
     $fn = mathlab_generators()[$level] ?? '';
     if ($fn === '' || !function_exists($fn)) {
         throw new RuntimeException('no question generator for level ' . $level);
     }
-    return $fn();
+    $forms = mathlab_forms_at($level, $tier);
+    [$text, $ans] = $fn($forms[random_int(0, count($forms) - 1)]);
+    return [$text, $ans, max(1, min(3, $tier))];
 }
 
 /**
- * A full paper for a level.
+ * The three papers a level can set, and who gets which.
+ *
+ * A level used to set one paper forever. A student who cleared Surds at 71%
+ * and a student who cleared it at 100% were handed the same questions on
+ * every subsequent visit, and neither was ever asked for more than they had
+ * already shown. So the paper moves with the student:
+ *
+ *   Foundation  — never cleared this level. Mostly the gentler forms, with
+ *                 one stretch question so the top of the level is visible
+ *                 rather than hidden until the day it arrives.
+ *   Standard    — cleared it. The middle of the syllabus, weighted to the
+ *                 forms an exam actually leans on.
+ *   Stretch     — cleared it at 90% or better. Mostly the hard forms.
+ *
+ * `mix` is the weighting across tiers 1, 2 and 3. It is a weighting and not a
+ * count because levels set papers of ten and of twelve.
+ */
+function mathlab_stages(): array {
+    return [
+        1 => ['stage' => 1, 'key' => 'foundation', 'name' => 'Foundation',
+              'blurb' => 'Mostly the gentler forms, with one to reach for.',  'mix' => [5, 4, 1]],
+        2 => ['stage' => 2, 'key' => 'standard',   'name' => 'Standard',
+              'blurb' => 'The middle of the syllabus, weighted the way an exam is.', 'mix' => [2, 5, 3]],
+        3 => ['stage' => 3, 'key' => 'stretch',    'name' => 'Stretch',
+              'blurb' => 'Mostly the hard forms. You have earned it.',        'mix' => [1, 3, 6]],
+    ];
+}
+
+/** Which paper this student has earned on this level. */
+function mathlab_stage_for(?array $row): int {
+    if (!$row || trim((string)($row['clearedAt'] ?? '')) === '') return 1;
+    return (int)($row['bestScore'] ?? 0) >= 90 ? 3 : 2;
+}
+
+/**
+ * How many questions at each tier, for a paper of n.
+ *
+ * Largest remainder, so the counts always sum to exactly n — a paper marked
+ * out of eleven when the student was promised twelve is a bug they would
+ * notice and could not explain.
+ */
+function mathlab_tier_counts(int $n, array $mix): array {
+    $total = array_sum($mix);
+    $exact = array_map(fn($w) => $n * $w / $total, $mix);
+    $counts = array_map('intval', $exact);
+    $left = $n - array_sum($counts);
+    // Hand the leftovers to the largest fractional parts, biggest first.
+    $rema = [];
+    foreach ($exact as $i => $e) $rema[$i] = $e - (int)$e;
+    arsort($rema);
+    foreach (array_keys($rema) as $i) {
+        if ($left <= 0) break;
+        $counts[$i]++; $left--;
+    }
+    return $counts;
+}
+
+/**
+ * A full paper for a level, at a stage.
+ *
+ * The questions come out in tier order — foundation first, stretch last — so
+ * the paper opens with something the student can do. That ordering is the
+ * whole point: a paper that leads with its hardest question loses the student
+ * who could have answered the other eleven.
  *
  * Duplicates are dropped rather than tolerated: the same question twice in a
  * twelve-question paper is a wasted question and reads as a bug.
  */
-function mathlab_generate(int $level, int $n): array {
+function mathlab_generate(int $level, int $n, int $stage = 1): array {
+    $mix = mathlab_stages()[$stage]['mix'] ?? mathlab_stages()[1]['mix'];
+    $counts = mathlab_tier_counts($n, $mix);
+
     $qs = []; $keys = []; $seen = [];
-    for ($guard = 0; count($qs) < $n && $guard < $n * 12; $guard++) {
-        [$text, $ans] = mathlab_question($level);
-        if (isset($seen[$text])) continue;
-        $seen[$text] = true;
-        $qs[] = ['q' => $text];
-        $keys[] = (string)$ans;
-    }
-    // A level with few distinct forms could in principle come up short. Short a
-    // question is worse than a repeat, because the paper would then be marked
-    // out of a different total than the one the student was promised.
-    while (count($qs) < $n) {
-        [$text, $ans] = mathlab_question($level);
-        $qs[] = ['q' => $text];
-        $keys[] = (string)$ans;
+    foreach ([1, 2, 3] as $tier) {
+        $want = $counts[$tier - 1];
+        $got = 0;
+        for ($guard = 0; $got < $want && $guard < $want * 14; $guard++) {
+            [$text, $ans] = mathlab_question($level, $tier);
+            if (isset($seen[$text])) continue;
+            $seen[$text] = true;
+            $qs[] = ['q' => $text, 'tier' => $tier];
+            $keys[] = (string)$ans;
+            $got++;
+        }
+        // A tier with few distinct forms can run dry. Short a question is worse
+        // than a repeat, because the paper would then be marked out of a
+        // different total than the one the student was promised.
+        while ($got < $want) {
+            [$text, $ans] = mathlab_question($level, $tier);
+            $qs[] = ['q' => $text, 'tier' => $tier];
+            $keys[] = (string)$ans;
+            $got++;
+        }
     }
     return [$qs, $keys];
 }
@@ -869,8 +1038,14 @@ function mathlab_board(array $p): array {
         $waiting = [];
         foreach ($needs as $req) if (empty($cleared[$req])) $waiting[] = (string)$all[$req]['name'];
         $row = $done[$n] ?? null;
+        $stage = mathlab_stage_for($row);
         $levels[] = $lv + [
             'unlocked' => $waiting === [],
+            // Which paper this level will set next. A cleared level is not
+            // finished — it has a harder paper waiting — and the ladder is
+            // where a student decides what to do next, so it says so here.
+            'stage' => $stage,
+            'stageName' => (string)mathlab_stages()[$stage]['name'],
             // Named rather than numbered: "needs Quadratic Equations" is a
             // thing a student can go and do. "Locked" is not.
             'waitingOn' => $waiting,
@@ -905,7 +1080,13 @@ function mathlab_start(array $p): array {
         return ['ok' => false, 'error' => 'locked', 'waitingOn' => $me['waitingOn'] ?? []];
     }
 
-    [$qs, $keys] = mathlab_generate($level, (int)$lv['questions']);
+    /* The paper this student has earned on this level, not the one paper the
+       level used to have. */
+    $rows = mathlab_progress_rows($playerId);
+    $stage = mathlab_stage_for($rows[$level] ?? null);
+    $st = mathlab_stages()[$stage];
+
+    [$qs, $keys] = mathlab_generate($level, (int)$lv['questions'], $stage);
     $roundId = 'ML-' . strtoupper(rand_hex(8));
     db_insert('arcade_rounds', [
         'roundId' => $roundId, 'playerId' => $playerId, 'game' => 'mathlab', 'tier' => $level,
@@ -914,7 +1095,9 @@ function mathlab_start(array $p): array {
         'startedMs' => (int)round(microtime(true) * 1000), 'submittedAt' => '',
     ]);
     return ['ok' => true, 'roundId' => $roundId, 'level' => $level, 'name' => (string)$lv['name'],
-            'band' => (string)$lv['band'], 'seconds' => (int)$lv['seconds'], 'questions' => $qs];
+            'band' => (string)$lv['band'], 'seconds' => (int)$lv['seconds'], 'questions' => $qs,
+            'stage' => $stage, 'stageName' => (string)$st['name'], 'stageBlurb' => (string)$st['blurb'],
+            'stages' => count(mathlab_stages())];
 }
 
 function mathlab_submit(array $p): array {

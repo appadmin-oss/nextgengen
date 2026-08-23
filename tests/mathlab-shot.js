@@ -50,8 +50,12 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
     const waitingOn=l.needs.filter(n=>CLEARED.indexOf(n)<0)
       .map(n=>LADDER.levels.find(x=>x.level===n).name);
     const best=cleared?[100,90,85,80,75,95][CLEARED.indexOf(l.level)]:0;
+    // Same rule the server applies: never cleared -> Foundation, cleared ->
+    // Standard, cleared at 90%+ -> Stretch.
+    const stage=!cleared?1:(best>=90?3:2);
     return Object.assign({},l,{unlocked:waitingOn.length===0,waitingOn:waitingOn,
-      cleared:cleared,bestScore:best,
+      cleared:cleared,bestScore:best,stage:stage,
+      stageName:['Foundation','Standard','Stretch'][stage-1],
       bestCorrect:cleared?Math.round(best*l.questions/100):0,
       attempts:cleared?(l.level===1?2:1):0});
   });
@@ -72,37 +76,40 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
 <script>
  var Q=new URLSearchParams(location.search);
  var BOARD=${JSON.stringify(BOARD)};
- var PAPER={ roundId:'ML-SHOT', level:5, name:'Surds', band:'SSS 1\\u20132', seconds:330, questions:[
-   {q:'Simplify \\u221a72 in the form a\\u221a2. What is a?'},
-   {q:'5\\u221a3 + 4\\u221a3 = k\\u221a3. What is k?'},
-   {q:'Rationalise 15/\\u221a5. The answer is a\\u221a5. What is a?'},
-   {q:'(\\u221a7)\\u00b2 = ?'},
-   {q:'Simplify \\u221a98 in the form a\\u221a2. What is a?'},
-   {q:'8\\u221a5 + 3\\u221a5 = k\\u221a5. What is k?'},
-   {q:'Rationalise 21/\\u221a7. The answer is a\\u221a7. What is a?'},
-   {q:'Simplify \\u221a45 in the form a\\u221a5. What is a?'},
-   {q:'(\\u221a3)\\u00b2 = ?'},
-   {q:'Rationalise 12/\\u221a3. The answer is a\\u221a3. What is a?'}
- ]};
- /* 8 right out of 10 is 80%, which clears a 70% pass mark. Complex Numbers
-    needs Surds AND Quadratic Equations; this student already had Quadratics,
-    so clearing Surds is what opens it — one door, which is what the graph
-    actually says, not a cascade invented for the screenshot.
-    Every "answer" below is the true answer to the question it sits under. */
- var MARKS=[
-   {ok:true, your:'6',  answer:'6'},
-   {ok:true, your:'9',  answer:'9'},
-   {ok:false,your:'5',  answer:'3'},
-   {ok:true, your:'7',  answer:'7'},
-   {ok:true, your:'7',  answer:'7'},
-   {ok:true, your:'11', answer:'11'},
-   {ok:true, your:'3',  answer:'3'},
-   {ok:true, your:'3',  answer:'3'},
-   {ok:false,your:'',   answer:'3'},
-   {ok:true, your:'4',  answer:'4'}
+ /* Ten questions on a Foundation mix of 5:4:1 — five tier 1, four tier 2, one
+    tier 3, in that order, exactly as mathlab_tier_counts apportions it. The
+    forms are tiered the way mathlab_form_tiers tiers surds: adding like surds
+    and squaring a root are the foundation, simplifying is standard, and
+    rationalising a denominator is the stretch. */
+ var QS=[
+   ['5\u221a3 + 4\u221a3 = k\u221a3. What is k?',                          1, '9'],
+   ['(\u221a7)\u00b2 = ?',                                                  1, '7'],
+   ['8\u221a5 + 3\u221a5 = k\u221a5. What is k?',                          1, '11'],
+   ['(\u221a3)\u00b2 = ?',                                                  1, '3'],
+   ['6\u221a2 + 5\u221a2 = k\u221a2. What is k?',                          1, '11'],
+   ['Simplify \u221a72 in the form a\u221a2. What is a?',                   2, '6'],
+   ['Simplify \u221a98 in the form a\u221a2. What is a?',                   2, '7'],
+   ['Simplify \u221a45 in the form a\u221a5. What is a?',                   2, '3'],
+   ['Simplify \u221a48 in the form a\u221a3. What is a?',                   2, '4'],
+   ['Rationalise 15/\u221a5. The answer is a\u221a5. What is a?',           3, '3']
  ];
- /* questions carried across from the paper — the marked view shows each
-    question beside its mark, because a mark alone teaches nothing. */
+ var PAPER={ roundId:'ML-SHOT', level:5, name:'Surds', band:'SSS 1\u20132', seconds:330,
+   stage:1, stageName:'Foundation',
+   stageBlurb:'Mostly the gentler forms, with one to reach for.',
+   questions:QS.map(function(r){ return {q:r[0], tier:r[1]}; })};
+ /* 8 of 10 is 80%, which clears a 70% pass mark. The two dropped are the last
+    standard question and the stretch one, so the breakdown tells a true story:
+    foundation 5/5, standard 3/4, stretch 0/1. Every "answer" below is the real
+    answer to the question it sits under, and every "your" that is marked right
+    equals it — a screenshot that contradicts itself is worse than none. */
+ var WRONG={8:'6', 9:''};
+ var MARKS=QS.map(function(r,i){
+   var mine = (i in WRONG) ? WRONG[i] : r[2];
+   return {ok: mine === r[2], your: mine, answer: r[2]};
+ });
+ /* Complex Numbers needs Surds AND Quadratic Equations; this student already
+    had Quadratics, so clearing Surds is what opens it — one door, which is
+    what the graph actually says, not a cascade invented for the screenshot. */
  var OPENED=[{level:10,name:'Complex Numbers',strand:'Algebra'}];
  var RESULT={ correct:8, total:10, score:80, ms:214600, passPct:70, cleared:true, marks:MARKS,
    opened:OPENED, unlocked:OPENED[0], level:5, name:'Surds', questions:PAPER.questions };
