@@ -1819,6 +1819,15 @@ body.no-scroll { overflow: hidden; }
   .brand-mark img, .brand-mark { width: 32px !important; height: 32px !important; }
   .brand-word b { font-size: 14px; }
   .brand-word span { display: none; }
+  /* The wordmark comes off entirely below this width. "Next Generation Genius"
+     needs ~90px for its longest word alone, and with the mark, the
+     accessibility button, the bell, the account pill and the menu all in one
+     72px-tall bar there is not that much room: it was wrapping to three lines
+     and its ink was running 42px OUTSIDE its own box, under the buttons beside
+     it. The mark is the brand, it still links home, and the anchor's
+     aria-label still reads "Next Generation Genius — Home", so nothing is lost
+     to a screen reader. */
+  .brand-word { display: none; }
 
   .section { padding: 44px 0 !important; }
   .marquee-track { font-size: 18px !important; }
@@ -2364,9 +2373,14 @@ img { background-color: rgba(12,20,50,0.04); }
 
 /* ── Chips. Bleed to the edge, never wrap: a chip row wrapping to two lines
    pushes the feed down by 40px on the screen with the least room. ── */
-.cmm-chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none;
+/* Wraps rather than scrolls sideways. Five chips measure 508px; a 390px phone
+ * showed four and a half of them, cut "Saved" mid-chip at the screen edge and
+ * put "Yours" entirely off it — with the scrollbar hidden, so nothing at all
+ * said there was more. A hidden scrollbar on a row that overflows is a filter
+ * nobody knows exists. Wrapping costs one row of height, once, and shows every
+ * option; where the row fits, it is still a row. */
+.cmm-chips { display: flex; flex-wrap: wrap; gap: 8px;
   margin: 0 0 12px; padding: 2px var(--c-gutter); }
-.cmm-chips::-webkit-scrollbar { display: none; }
 .cmm-chip { flex: none; display: inline-flex; align-items: center; gap: 7px; height: 40px;
   padding: 0 15px; border-radius: var(--c-r-pill); border: 1px solid var(--c-border-strong);
   background: var(--c-card); color: var(--c-ink); font-size: 13.5px; font-weight: 600;
@@ -3024,8 +3038,34 @@ img { background-color: rgba(12,20,50,0.04); }
   color: var(--c-muted); cursor: pointer; }
 
 /* Media */
+/* A photo is CAPPED, and tapping it opens the whole thing.
+ *
+ * `height: auto` with no ceiling meant the feed rendered every picture at its
+ * full aspect ratio. Children post from phone cameras, so the pictures are
+ * portrait: a 1200×1600 came out 892px tall on a 900px laptop — 99% of the
+ * viewport — and a 9:16 phone shot would have been 132% of it. One photo was
+ * the entire screen, with no post visible above or below it, which is not a
+ * feed. It is a slideshow nobody chose to start.
+ *
+ * Capped rather than letterboxed, because a letterbox spends the same vertical
+ * room on grey bars that the picture would have used. Cropping only works if
+ * the crop is recoverable, so the image is a button that opens the full
+ * picture — see CmBodyBlock. */
 .cm-msg-media { margin-top: 10px; border-radius: var(--c-r-btn); overflow: hidden; }
 .cm-msg-media img, .cm-msg-media video { display: block; width: 100%; height: auto; }
+.cm-msg-media video { max-height: 70vh; }
+
+.cm-msg-media-btn { display: block; position: relative; width: 100%; padding: 0; border: 0;
+  background: none; cursor: zoom-in; border-radius: inherit; overflow: hidden; }
+.cm-msg-media-btn > img { max-height: 60vh; object-fit: cover; object-position: center; }
+.cm-msg-media-btn:focus-visible { outline: 2px solid var(--c-blue); outline-offset: 2px; }
+/* Rendered only when the cap actually bit — CmBodyBlock measures the image on
+   load. A landscape photo fits untouched, and "tap to see it all" over a
+   picture with nothing hidden is a worse lie than the crop it is excusing. */
+.cm-msg-media-more { position: absolute; right: 8px; bottom: 8px;
+  font-family: var(--c-font-mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: .04em; color: #fff; background: rgba(10, 17, 48, 0.72);
+  border-radius: var(--c-r-pill); padding: 4px 9px; pointer-events: none; }
 .cm-media-preview { position: relative; margin-top: 10px; border-radius: var(--c-r-btn);
   overflow: hidden; border: 1px solid var(--c-border); }
 .cm-media-preview img, .cm-media-preview video { display: block; width: 100%; max-height: 260px; object-fit: cover; }

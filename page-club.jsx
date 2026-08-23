@@ -7721,8 +7721,25 @@ const CM_REACTIONS = ["👏", "❤️", "🔥", "💡", "🎉", "🙌"];
 
 /* ---- Message body (poll + media, shared by row + thread root) ---- */
 function CmBodyBlock({ post, onVote }) {
+  /* Tapping a photo opens it whole. The feed shows a capped crop — see
+     .cm-msg-media in the stylesheet for why — so there has to be a way back to
+     the picture somebody actually posted, or the cap quietly destroys it. */
+  const [zoom, setZoom] = React.useState("");
+  /* Whether the cap actually bit. A landscape photo fits inside it untouched,
+     and telling somebody there is more to see when there is not is a worse
+     lie than showing them a crop — so this is measured on load rather than
+     assumed, and the badge only appears when something really is hidden. */
+  const [cropped, setCropped] = React.useState(false);
+  const measureCrop = (e) => {
+    const i = e.target;
+    if (!i.naturalWidth || !i.clientWidth) return;
+    const full = i.naturalHeight / i.naturalWidth * i.clientWidth;
+    setCropped(full > i.clientHeight + 2);
+  };
   return (
     <>
+      {zoom && typeof ImageLightbox === "function"
+        && <ImageLightbox url={zoom} alt={post.altText || ""} onClose={() => setZoom("")}/>}
       {post.moderationNote && <div className="cm-modnote">{post.moderationNote}</div>}
       {post.body && <div className={"cm-msg-text" + (post.kind === "poll" ? " cm-poll-q" : "")}><NggMarkdown text={post.body}/></div>}
       {post.kind === "poll" && post.poll && (
@@ -7748,7 +7765,22 @@ function CmBodyBlock({ post, onVote }) {
           <div className="cm-poll-total">{post.poll.totalVotes} vote{post.poll.totalVotes === 1 ? "" : "s"}{post.poll.myVote < 0 ? " · tap to vote" : " · tap again to change your vote"}</div>
         </div>
       )}
-      {post.mediaType === "image" && post.mediaUrl && <div className="cm-msg-media"><img src={cmOpt(post.mediaUrl, 1000)} alt={post.altText || ""} loading="lazy"/></div>}
+      {post.mediaType === "image" && post.mediaUrl && (
+        /* A button, not a bare img with a click handler: it is a real control
+           that opens something, so it has to be reachable by keyboard and say
+           what it does. stopPropagation because the card underneath opens the
+           actions sheet on a long press. */
+        <div className="cm-msg-media">
+          <button type="button" className="cm-msg-media-btn"
+                  aria-label={(cropped ? "See the whole picture" : "Open the picture")
+                              + (post.altText ? ": " + post.altText : "")}
+                  onClick={(e) => { e.stopPropagation(); setZoom(post.mediaUrl); }}>
+            <img src={cmOpt(post.mediaUrl, 1000)} alt={post.altText || ""} loading="lazy"
+                 onLoad={measureCrop}/>
+            {cropped && <span className="cm-msg-media-more" aria-hidden="true">Tap to see it all</span>}
+          </button>
+        </div>
+      )}
       {post.mediaType === "video" && post.mediaUrl && <div className="cm-msg-media"><NggVideo src={cmOpt(post.mediaUrl, 1280)} poster={post.mediaPoster || cmPoster(post.mediaUrl)}/></div>}
       {/* A document either previews in place or is offered as a card — never
           both, and never neither. Which one is decided by the format the server
