@@ -329,18 +329,18 @@ function _dsnThumbPump() {
 /** One person's card, drawn for real. Renders nothing until it is asked for,
  *  and shows the frame it will occupy while it waits so the grid does not jump
  *  as forty of them land one after another. */
-function DsnThumb({ tpl, row, fabric, sig }) {
+function DsnThumb({ tpl, row, fabric, sig, onDrawn }) {
   const key = dsnThumbKey(sig, row.key);
   const [url, setUrl] = React.useState(() => _dsnThumbs.get(key) || "");
   React.useEffect(() => {
     const cached = _dsnThumbs.get(key);
-    if (cached) { setUrl(cached); return; }
+    if (cached) { setUrl(cached); if (onDrawn) onDrawn(key); return; }
     if (!fabric || !tpl) return;
     setUrl("");
     let live = true;
     _dsnThumbQ.push({ key, tpl, row, fabric, epoch: _dsnThumbEpoch,
                       dead: () => !live,
-                      done: (u) => { if (live) setUrl(u); } });
+                      done: (u) => { if (live) { setUrl(u); if (onDrawn) onDrawn(key); } } });
     _dsnThumbPump();
     return () => { live = false; };
   }, [key, fabric]);
@@ -409,6 +409,15 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
      thumbnails is the scroll this rebuild set out to remove. */
   const [view, setView] = React.useState("list");
   const sig = React.useMemo(() => dsnThumbSig(tpl), [tpl]);
+  /* How many of the cards on this page have actually drawn. A page of them
+     takes seconds and there was nothing to say how many were left — just
+     twelve frames pulsing, which is a spinner wearing a grid. Kept as a Set of
+     keys rather than a count so a re-render or a second callback for the same
+     card cannot inflate it. */
+  const [drawn, setDrawn] = React.useState(() => new Set());
+  const noteDrawn = React.useCallback((k) => {
+    setDrawn(d => (d.has(k) ? d : new Set(d).add(k)));
+  }, []);
   /* Every queued thumbnail is about a card that no longer exists the moment
      the design changes. Dropped rather than rendered and thrown away. */
   React.useEffect(() => { _dsnThumbEpoch++; }, [sig]);
@@ -459,11 +468,29 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
   const keys = shown.map(r => r.key);
   const pageKeys = slice.map(r => r.key);
   const pageAllOn = pageKeys.length > 0 && pageKeys.every(has);
+  const pageSomeOn = pageKeys.some(has);
+  const drawnHere = slice.filter(r => drawn.has(dsnThumbKey(sig, r.key))).length;
   const inRun = picked.length;
   const over = inRun > runMax;
 
+  /* The list keeps its own scroll offset, and nothing was putting it back.
+     Turn a page, change a sort, switch to Cards, and you landed wherever the
+     last scroll left you — most visibly as a first row of cards cut off above
+     the fold with its selection ticks out of sight, which reads as controls
+     that are missing rather than as a scroll position. A new page starts at
+     the top; that is what "page" means. */
+  const listRef = React.useRef(null);
+  const toTop = () => { if (listRef.current) listRef.current.scrollTop = 0; };
+  React.useEffect(toTop, [at, view, only, sort.col, sort.dir]);
+
   React.useEffect(() => { setPage(0); }, [only, sort.col, sort.dir, rows.length]);
-  React.useEffect(() => { setSize(view === "cards" ? 25 : 50); setPage(0); }, [view]);
+  /* Twelve, not twenty-five. Measured against a 1,200-row roster, a page of
+     twenty-five real card renders took between 4.6 and 6.9 seconds to fill and
+     left the panel about 900ms behind the pointer while it worked. Nielsen's
+     limits put both of those in the band that needs either progress or less
+     work; twelve is roughly three seconds, and the count below is the
+     progress. */
+  React.useEffect(() => { setSize(view === "cards" ? 12 : 50); setPage(0); }, [view]);
 
   return (
     <>
@@ -473,7 +500,13 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
             somebody prints fifty certificates believing they printed four
             hundred. */}
         <label className="dsn-merge-all">
+          {/* `indeterminate` is the third state, and it is not an attribute —
+              it can only be set on the node. Without it a page with three of
+              fifty ticked drew an EMPTY box, which says "nothing here is
+              selected" about a page where three things are. On a control that
+              feeds a print run, that is the wrong sentence. */}
           <input type="checkbox" checked={pageAllOn}
+                 ref={el => { if (el) el.indeterminate = pageSomeOn && !pageAllOn; }}
                  aria-label={pageAllOn ? "Untick this page" : "Tick this page"}
                  onChange={() => pageAllOn ? dropAll(pageKeys) : addAll(pageKeys)}/>
           <span>This page</span>
@@ -500,8 +533,10 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
         </span>
 
         <span className={"dsn-merge-note" + (over ? " is-over" : "")} role="status">
-          {fmtNum(inRun)} in the run
-          {over ? " — " + fmtNum(runMax) + " is the most one run can render" : ""}
+          {view === "cards" && drawnHere < slice.length
+            ? "Drawing " + drawnHere + " of " + slice.length + "…"
+            : <>{fmtNum(inRun)} in the run
+                {over ? " — " + fmtNum(runMax) + " is the most one run can render" : ""}</>}
         </span>
 
         <span className="dsn-chips dsn-view" role="group" aria-label="How to show them">
@@ -513,7 +548,7 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
       </div>
 
       {view === "cards" ? (
-        <div className="dsn-merge-list">
+        <div className="dsn-merge-list" ref={listRef}>
           <div className="dsn-cards">
             {slice.map(r => {
               const on = has(r.key);
@@ -522,7 +557,7 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
                 <div key={r.key} className={"dsn-card" + (on ? " is-on" : "")
                                           + (proofKey === r.key ? " is-proof" : "")}>
                   <div className="dsn-card-art">
-                    <DsnThumb tpl={tpl} row={r} fabric={fabric} sig={sig}/>
+                    <DsnThumb tpl={tpl} row={r} fabric={fabric} sig={sig} onDrawn={noteDrawn}/>
                     {/* The tick sits ON the artwork, the way every grid of
                         things you select from does it. In the footer it took
                         the width the name needed, so every name over about
@@ -552,7 +587,7 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
           </div>
         </div>
       ) : (
-      <div className="dsn-merge-list">
+      <div className="dsn-merge-list" ref={listRef}>
         <table className="dsn-tbl">
           <thead><tr>
             <th className="dsn-th-tick"><span className="sr-only">Include</span></th>
@@ -1644,8 +1679,14 @@ function DesignerPage() {
         <div className="dsn-merge">
           <div className="dsn-merge-head">
             <b>Batch — one {tpl.kind === "graphic" ? "piece" : "card"} per person</b>
-            <span className="dsn-merge-note">
-              {merge ? (merge.matched + " of " + merge.total + " match · " + picked.length + " in the run") : "reading the roster…"}
+            {/* role="status", because narrowing the filter is the main way a
+                run gets built and the only feedback was a number silently
+                changing. A screen-reader user picking a centre heard nothing
+                at all. */}
+            <span className="dsn-merge-note" role="status">
+              {merge ? (fmtNum(merge.matched) + " of " + fmtNum(merge.total) + " match · "
+                        + fmtNum(picked.length) + " in the run")
+                     : "reading the roster…"}
             </span>
             <button className="btn btn-ghost btn-sm" onClick={() => setMergeOpen(false)}>Close</button>
           </div>
@@ -1688,10 +1729,21 @@ function DesignerPage() {
               <select value={mf.issued} onChange={e => setFilter("issued", e.target.value)}>
                 <option value="">Either</option><option value="yes">Issued</option><option value="no">Not issued</option>
               </select></label>
+            {/* A native date input renders in the BROWSER's locale, not the
+                page's — so on a machine set to en-US these two read mm/dd/yyyy
+                in a product where every other date is day-first, and 08/09/2026
+                means two different days depending on which field you are
+                looking at. The control cannot be told otherwise without
+                replacing it, so the pair says which order it is in. */}
             <label className="dsn-prop"><span>Registered from</span>
-              <input type="date" value={mf.from} onChange={e => setFilter("from", e.target.value)}/></label>
+              <input type="date" value={mf.from} aria-describedby="dsn-date-fmt"
+                     onChange={e => setFilter("from", e.target.value)}/></label>
             <label className="dsn-prop"><span>to</span>
-              <input type="date" value={mf.to} onChange={e => setFilter("to", e.target.value)}/></label>
+              <input type="date" value={mf.to} aria-describedby="dsn-date-fmt"
+                     onChange={e => setFilter("to", e.target.value)}/></label>
+            <span className="dsn-date-fmt" id="dsn-date-fmt">
+              Dates follow your browser — check the order before you rely on a range.
+            </span>
             <label className="dsn-prop dsn-merge-q"><span>Find</span>
               <input value={mf.q} placeholder="name or ID" onChange={e => setFilter("q", e.target.value)}/></label>
           </div>

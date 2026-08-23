@@ -5156,6 +5156,12 @@ body.own-chrome .fab-top { display: none; }
 }
 .dsn-merge-filters .dsn-prop { margin-bottom: 0; }
 .dsn-merge-q { grid-column: span 2; }
+/* The caveat under the date pair. Its own grid cell rather than a title
+   attribute: a hint nobody can see until they hover is a hint for nobody. */
+.dsn-date-fmt {
+  grid-column: 1 / -1; align-self: center;
+  font: 400 11px var(--font-mono, monospace); color: rgba(230, 238, 255, 0.62);
+}
 .dsn-merge-picks { display: flex; align-items: center; gap: 6px; margin: 12px 0 8px; }
 /* A TABLE, not a wall of tick-boxes.
    It was a wrapping grid of cards in insertion order inside a 520px box, which
@@ -5237,13 +5243,23 @@ body.own-chrome .fab-top { display: none; }
   gap: 12px; padding: 4px 2px 8px;
 }
 .dsn-card-art { position: relative; }
-/* On the artwork, top-left, with a shadow so it reads against a white card
-   and a dark one alike. */
+/* On the artwork, top-left, on a ground of its own.
+   `accent-color` paints the CHECKED state only; unchecked, a browser draws a
+   white box with a hairline border, which on the white face of an ID card is
+   weak. The pad makes the control read on any artwork, light or dark.
+
+   Worth being honest about how this got here: I twice diagnosed "the first
+   row has no ticks" as a paint problem — first contrast, then a sticky
+   toolbar covering them — and was wrong both times. The list's own scroller
+   was simply offset, so row one was above its viewport. The pad is a real
+   improvement and it fixed nothing; see the scroll reset in DsnMergePicker
+   for what actually did. */
 .dsn-card-tick {
-  position: absolute; top: 7px; left: 7px; z-index: 1;
-  width: 18px; height: 18px; accent-color: var(--dsn-gold, #f5b026); cursor: pointer;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .45));
+  position: absolute; top: 6px; left: 6px; z-index: 1;
+  width: 20px; height: 20px; accent-color: var(--dsn-gold, #f5b026); cursor: pointer;
+  border-radius: 5px; box-shadow: 0 0 0 4px rgba(12, 18, 33, .82), 0 1px 3px rgba(0, 0, 0, .5);
 }
+.dsn-card-tick:focus-visible { outline: 2px solid var(--gold-500, #f5b026); outline-offset: 4px; }
 /* What is wrong with this one, in words, across the bottom of the artwork —
    the grid exists to be scanned, and a bare "!" makes you hover to find out. */
 .dsn-card-warn {
@@ -5879,10 +5895,34 @@ body.own-chrome .fab-top { display: none; }
   background: rgba(0,0,0,0.18); border: 1px solid var(--dsn-line); border-radius: 12px;
   padding: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
+/* Sticky, and OPAQUE. The translucency was the bug, not the stickiness: at
+   0.85 alpha the rows underneath showed through the toolbar. */
 .dsn-merge-picks {
   position: sticky; top: 0; z-index: 2; padding: 8px 2px; margin: 12px 0 0;
-  background: linear-gradient(180deg, rgba(16,24,43,0.98), rgba(16,24,43,0.85));
-  border-bottom: 1px solid var(--dsn-line); backdrop-filter: blur(6px);
+  background: #101a2b;
+  border-bottom: 1px solid var(--dsn-line);
+}
+/* Two rows before one row starts wrapping into a column.
+   As one flex line at every width, the chips broke onto two lines below about
+   1000px and "1,200 in the run — 600 is the most one run can render" collapsed
+   into a four-line column — the single most consequential number on the panel,
+   set as a paragraph one word wide. It does the same thing at 200% zoom on a
+   full-width window, which is where WCAG 1.4.4 cares.
+
+   Grid rather than more flex-wrap: wrapping decides where things break by
+   running out of room, and what breaks first is whatever happens to be last. */
+@media (max-width: 1040px) {
+  .dsn-merge-picks {
+    display: grid; gap: 8px 6px; align-items: center;
+    grid-template-columns: auto auto auto 1fr;
+    grid-template-areas: "tick all clear run" "chips chips chips view";
+  }
+  .dsn-merge-all { grid-area: tick; }
+  .dsn-merge-picks > .btn:nth-of-type(1) { grid-area: all; }
+  .dsn-merge-picks > .btn:nth-of-type(2) { grid-area: clear; }
+  .dsn-merge-picks > .dsn-chips:not(.dsn-view) { grid-area: chips; }
+  .dsn-merge-picks > .dsn-merge-note { grid-area: run; text-align: right; }
+  .dsn-merge-picks > .dsn-view { grid-area: view; justify-self: end; }
 }
 .dsn-merge-picks .dsn-merge-note { text-align: right; }
 /* Taller viewport so more of a big roster is visible at once. */
@@ -5890,8 +5930,13 @@ body.own-chrome .fab-top { display: none; }
 /* `.dsn-merge-row` was the card in the old wrapping grid. The picker is a
    table now, so what is left here is the row STATE and the checkbox, applied
    to <tr> and <td> instead. */
-.dsn-tbl tbody input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--dsn-gold); }
-.dsn-merge-all input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--dsn-gold); }
+/* 20px, not 16. Sixteen cleared WCAG 2.5.8 only through the spacing exception
+   — legal because the rows happen to be 34px apart, which is an argument that
+   stops being true the moment somebody tightens a row. Twenty is closer to the
+   24px floor on its own merits and still nowhere near the 44px a thumb wants,
+   which is fine: this is a desktop tool. */
+.dsn-tbl tbody input[type="checkbox"],
+.dsn-merge-all input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--dsn-gold); }
 .dsn-tbl .dsn-td-who { color: var(--dsn-ink); font-weight: 600; font-size: 12.5px; }
 .dsn-tbl thead th { background: #141c31; }
 /* Two badges on one row (no photo AND no card) sit side by side rather than
@@ -5901,9 +5946,15 @@ body.own-chrome .fab-top { display: none; }
 .dsn-merge-flag--ok    { color: var(--dsn-ok);   border-color: rgba(111,220,157,0.5);  background: rgba(111,220,157,0.12); }
 .dsn-merge-flag--photo { color: var(--dsn-warn); border-color: rgba(255,206,84,0.5);   background: rgba(255,206,84,0.12); }
 .dsn-merge-flag--card  { color: var(--dsn-bad);  border-color: rgba(255,143,143,0.5);  background: rgba(255,143,143,0.14); }
+/* OPAQUE. This was a gradient topping out at 0.8 alpha, and a sticky bar with
+   0.8 alpha has the rows scrolling behind it showing THROUGH — which reads as
+   a rendering fault, not as a bar. Not an edge case either: the panel is
+   taller than a 1000px viewport with any real roster, so the last two rows sat
+   behind it every time. A gradient buys nothing over content it is meant to
+   cover. */
 .dsn-merge-run {
   position: sticky; bottom: 0; margin: 12px -18px -14px; padding: 12px 18px;
-  background: linear-gradient(0deg, rgba(16,24,43,0.98), rgba(16,24,43,0.8));
+  background: #101a2b;
   border-top: 1px solid var(--dsn-line-2); border-radius: 0 0 16px 16px;
 }
 

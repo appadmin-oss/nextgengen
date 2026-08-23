@@ -685,6 +685,52 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
       };
     });
 
+    /* Fixes from the UX pass, asserted where they can be. Each was a real
+       defect a screenshot showed and no test caught. */
+    const fixed = await page.evaluate(() => {
+      const parse = (s) => (s.match(/[\d.]+/g) || []).map(Number);
+      const alpha = (el) => { const c = parse(getComputedStyle(el).backgroundColor);
+        return c.length > 3 ? c[3] : 1; };
+      return {
+        // A sticky bar with content scrolling behind it has to be opaque, or
+        // the rows show through and read as a rendering fault.
+        runBarAlpha: alpha(document.querySelector('.dsn-merge-run')),
+        picksAlpha: alpha(document.querySelector('.dsn-merge-picks')),
+        // The count that says how big the run is, announced rather than
+        // silently changing when a filter narrows it.
+        headNoteLive: document.querySelector('.dsn-merge-head .dsn-merge-note')
+                              .getAttribute('role'),
+        // The native date pair renders in the BROWSER's locale, so it says so.
+        dateHint: !!document.getElementById('dsn-date-fmt')
+                  && document.querySelectorAll('input[type=date][aria-describedby="dsn-date-fmt"]').length,
+      };
+    });
+    ok('the sticky bars are opaque, so nothing shows through them',
+      fixed.runBarAlpha === 1 && fixed.picksAlpha === 1);
+
+    ok('the match count is announced, not just silently changed',
+      fixed.headNoteLive === 'status');
+    ok('the date pair says whose date order it is using',
+      fixed.dateHint === 2);
+
+    /* The third state of a select-all. A page with some ticked drew an EMPTY
+       box — "nothing here is selected", about a page where things are. */
+    await page.click('.dsn-merge-picks button:has-text("Clear")');
+    await page.click('.dsn-tbl tbody tr:nth-child(1) input[type=checkbox]');
+    const tri = await page.evaluate(() => {
+      const t = document.querySelector('.dsn-merge-all input');
+      return { mixed: t.indeterminate, checked: t.checked };
+    });
+    ok('a partly-ticked page shows the mixed state rather than an empty box',
+      tri.mixed === true && tri.checked === false);
+    await page.click('.dsn-merge-picks button:has-text("Select all")');
+    const allOn = await page.evaluate(() => {
+      const t = document.querySelector('.dsn-merge-all input');
+      return { mixed: t.indeterminate, checked: t.checked };
+    });
+    ok('…and a fully-ticked one is checked, not mixed',
+      allOn.mixed === false && allOn.checked === true);
+
     const dim = Object.keys(seen.text).filter(k => seen.text[k].r < 4.5)
       .map(k => k + ' ' + seen.text[k].r + ':1');
     ok('every piece of small text in the batch panel clears 4.5:1 where it lands'
@@ -836,6 +882,46 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     await page.waitForTimeout(400);
     ok('clicking a name proofs that person on the canvas',
       /Proofing Chidi/.test(await page.evaluate(() => document.body.innerText)));
+
+    /* A page starts at the top of itself.
+       The list keeps its own scroll offset and nothing put it back, so turning
+       a page or switching view landed you wherever the last scroll left you —
+       most visibly as a first row of cards cut off above the fold with its
+       selection ticks out of sight. That reads as controls that are MISSING,
+       and it fooled me into calling it a contrast problem and then a stacking
+       problem before elementFromPoint gave the real answer. Asserted as the
+       thing it actually is: a scroll position.
+
+       Exercised in Cards view because that is the only one that overflows with
+       a three-row fixture. */
+    const scrolled = await page.evaluate(() => {
+      const list = document.querySelector('.dsn-merge-list');
+      /* Three cards do not overflow a 560px box, so the box is squeezed to
+         make one. How the list came to be scrolled is not what is under test
+         — that it gets put back is. */
+      list.style.maxHeight = '90px';
+      list.scrollTop = 40;
+      return list.scrollTop;
+    });
+    await page.click('.dsn-chip:has-text("Ready to print")');
+    await page.waitForTimeout(300);
+    const afterFilter = await page.evaluate(() => document.querySelector('.dsn-merge-list').scrollTop);
+    ok('changing what is shown puts the list back to the top (' + scrolled + ' → ' + afterFilter + ')',
+      scrolled > 0 && afterFilter === 0);
+    await page.evaluate(() => { document.querySelector('.dsn-merge-list').style.maxHeight = ''; });
+    await page.click('.dsn-chip:has-text("Everyone")');
+    await page.waitForTimeout(300);
+
+    /* And the consequence, measured rather than inferred: the first card's
+       selection control is the thing at its own coordinates. */
+    const reachable = await page.evaluate(() => {
+      const t = document.querySelector('.dsn-card-tick');
+      const r = t.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { isTick: top === t, over: top ? String(top.className).slice(0, 24) : null };
+    });
+    ok("…so the first card's tick is hittable, not under the toolbar"
+       + (reachable.isTick ? '' : ' — covered by ' + reachable.over), reachable.isTick);
     await page.click('.dsn-view .dsn-chip:has-text("List")');
     await page.waitForTimeout(200);
 
