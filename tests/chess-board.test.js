@@ -325,6 +325,7 @@ const GAMES = {
 
     if (errors.length) console.log('  page errors: ' + errors.join(' | '));
     chk('no page errors across the whole run', errors.length === 0);
+
   } finally {
     await browser.close();
     server.kill();

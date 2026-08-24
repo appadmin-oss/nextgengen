@@ -260,11 +260,42 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
       const text = await page.evaluate(() => document.body.innerText.trim());
       if (!text) problems.push(name + ': rendered nothing');
       if (errs.length) problems.push(name + ': ' + errs[0]);
+
+      /* ── Desktop board mode, 6A §4 ──
+         "the live game keeps the board at 560px". It did not. `.arc` caps the
+         arcade shell at 980px and the game screen lives inside it, so on a
+         1440px screen the dark room stopped at 980 with cream either side and
+         the board — the object the screen exists to show — rendered at 318px.
+         Checked here rather than in chess-board.test.js because only this
+         harness renders the whole game screen, and only at the design's own
+         canvas size did either number look wrong. */
+      if (name === 'desk-1440') {
+        const geo = await page.evaluate(() => {
+          const g = (s) => { const e = document.querySelector(s); return e ? e.getBoundingClientRect() : null; };
+          const shell = g('.mtg'), board = g('.mtg-board'), rail = g('.mtg-rail'), side = g('.mtg-side');
+          return { shell: shell && Math.round(shell.width), board: board && Math.round(board.width),
+                   sq: board && Math.abs(board.width - board.height) < 2,
+                   rail: rail && Math.round(rail.width), side: side && Math.round(side.width),
+                   gapL: board && rail ? Math.round(board.left - rail.right) : null,
+                   gapR: board && side ? Math.round(side.left - board.right) : null };
+        });
+        if (!(geo.shell >= 1400)) problems.push('desk-1440: the room stops at ' + geo.shell + 'px on a 1440px screen');
+        if (!(geo.board >= 552 && geo.board <= 568)) problems.push('desk-1440: board is ' + geo.board + 'px, 6A says 560');
+        if (geo.sq !== true) problems.push('desk-1440: the board is not square');
+        if (geo.rail !== 250 || geo.side !== 320) problems.push('desk-1440: rail/panel are ' + geo.rail + '/' + geo.side + ', not 250/320');
+        if (!(geo.gapL > 0 && geo.gapR > 0 && Math.abs(geo.gapL - geo.gapR) < 40)) {
+          problems.push('desk-1440: the board sits against one side (' + geo.gapL + ' / ' + geo.gapR + ')');
+        }
+        console.log('     board ' + geo.board + 'px in a ' + geo.shell + 'px room · rail ' + geo.rail
+                    + ' · panel ' + geo.side + ' · gaps ' + geo.gapL + '/' + geo.gapR);
+      }
       await page.screenshot({ path: path.join(OUT, 'chess-' + name + '.png'), fullPage: true });
       shots++;
       console.log('  📸 chess-' + name + '.png  (' + viewport.width + '×' + viewport.height + ')' + (errs.length ? '  ⚠ ' + errs[0] : ''));
       await page.close();
     };
+    /* The design's own canvas for the live game (6A §4 · 1440×780). */
+    await shoot('desk-1440',   'screen=game&id=MT-2',    { width: 1440, height: 780 });
     await shoot('lobby',       'screen=lobby',           { width: 1180, height: 900 });
     await shoot('lobby-phone', 'screen=lobby',           { width: 390,  height: 844 });
     await shoot('game',        'screen=game&id=MT-2',    { width: 1180, height: 980 });

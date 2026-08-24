@@ -7195,7 +7195,7 @@ function CmReviewResult({ m, isPlayer, onRematch, onShare, busy }) {
             {busy === "rematch" ? "Sending…" : "Rematch"}
           </button>
           <button className="rev-res-a" disabled={busy === "share"} onClick={onShare}>
-            {busy === "share" ? "Sharing…" : "Share to the club"}
+            {busy === "share" ? "Sharing…" : "Share to channel"}
           </button>
         </div>
       )}
@@ -7498,7 +7498,7 @@ function CmGameReview({ m, onBack }) {
       + " in " + Math.ceil((m.moves || []).length / 2) + " moves · " + cmTcName(m.timeControl)
       + (w.accuracy || b.accuracy ? " · accuracy " + w.accuracy + "% / " + b.accuracy + "%" : "");
     NGGApi.member.community.post({ channelSlug: m.channelSlug || "commons", body: line1 })
-      .then(() => toast.success("Posted to the club."))
+      .then(() => toast.success("Posted to the channel."))
       .catch(e => toast.error((e && (e.detail || e.message)) || "Couldn't post that."))
       .then(() => setAct(""));
   };
