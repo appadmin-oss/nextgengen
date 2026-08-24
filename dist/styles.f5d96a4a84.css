@@ -3159,8 +3159,14 @@ img { background-color: rgba(12,20,50,0.04); }
 .cm-thread { display: flex; flex-direction: column; min-height: 100%; background: var(--c-surface); }
 .cm-thread-head { display: flex; align-items: center; gap: 10px; flex: none;
   padding: 12px var(--c-gutter); border-bottom: 1px solid var(--c-border); }
-.cm-thread-title { flex: 1; margin: 0; font-family: var(--c-font-display); font-weight: 800; font-size: 17px; }
-.cm-thread-chan { font-family: var(--c-font-mono); font-size: 11px; color: var(--c-muted); }
+/* Two lines: the heading, then the channel it belongs to. `flex: 1` on the
+   title did nothing — it is not a flex child of .cm-thread-head, it is inside
+   a wrapper — so the two simply butted together, and in a 340px thread pane
+   the pair wrapped across the close button. */
+.cm-thread-head-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.cm-thread-title { margin: 0; font-family: var(--c-font-display); font-weight: 800; font-size: 17px; }
+.cm-thread-chan { font-family: var(--c-font-mono); font-size: 11px; color: var(--c-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cm-thread-x { width: var(--c-tap); height: var(--c-tap); flex: none; border: 0; background: none;
   color: var(--c-body-soft); font-size: 17px; cursor: pointer; }
 .cm-thread-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px var(--c-gutter); }
@@ -3264,8 +3270,29 @@ img { background-color: rgba(12,20,50,0.04); }
    no matter how much monitor is available.                                  */
 @media (min-width: 1024px) {
   .cm-page { background: var(--c-canvas); }
-  .cmm { min-height: calc(100dvh - var(--cm-nav, 64px)); padding: 12px;
-    display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; align-items: stretch; }
+  /* Handoff §11 (artboard 3A): rail · channel list · centre · thread, as
+     separate floating panes on the warm canvas.
+     
+     This was one pane. On a 1280px screen the feed sat in its 72ch reading
+     column with roughly 430px of empty canvas beside it, there was no way to
+     change channel without leaving what you were reading, and opening a thread
+     took the whole screen away to show four replies. The bundle is explicit
+     about why that is wrong: "destinations and conversations are separate
+     concerns, so switching one never hides the other", and "replying no longer
+     costs you the channel".
+     
+     The thread column is a real grid track rather than a floating overlay, so
+     the centre pane NARROWS to make room instead of being covered. */
+  /* A WORKSPACE, not a long page. height, not min-height: the bundle's desktop
+     is a fixed 900px window whose panes scroll inside themselves. With
+     min-height the body pane grew to the length of the feed — 1858px on a
+     1280×900 screen — and the whole page scrolled as one, so the rail, the
+     channel list and the thread all slid off the top together the moment
+     somebody read the second post. */
+  .cmm { height: calc(100dvh - var(--cm-nav, 64px)); padding: 12px;
+    display: grid; grid-template-columns: 76px 260px minmax(0, 1fr);
+    gap: 12px; align-items: stretch; overflow: hidden; }
+  .cmm.has-thread { grid-template-columns: 76px 260px minmax(0, 1fr) minmax(320px, 360px); }
 
   /* The tab bar becomes the icon rail: same four destinations, same order. */
   .cmm-tabs { position: static; grid-row: 1; grid-column: 1;
@@ -3276,8 +3303,33 @@ img { background-color: rgba(12,20,50,0.04); }
   .cmm-tab-l { font-family: var(--c-font-mono); font-size: 9px; letter-spacing: .06em; }
   .cmm-tab-dot { top: 10px; right: calc(50% - 18px); }
 
-  .cmm-body { grid-row: 1; grid-column: 2; padding: 0; border-radius: var(--c-r-card);
-    background: var(--c-surface); border: 1px solid var(--c-border); box-shadow: var(--c-sh-window); }
+  /* Each region reads as its own surface — the bundle's phrase. */
+  .cmm-side, .cmm-body, .cmm-thread { grid-row: 1; padding: 0;
+    border-radius: var(--c-r-card); background: var(--c-surface);
+    border: 1px solid var(--c-border); box-shadow: var(--c-sh-window);
+    min-height: 0; overflow: auto; }
+  .cmm-side { grid-column: 2; }
+  .cmm-body { grid-column: 3; }
+  .cmm-thread { grid-column: 4; background: var(--c-card); }
+
+  /* The channel list is a LIST, not a reading column: it is 260px wide, so the
+     72ch cap the centre pane wants would centre it inside itself and leave it
+     looking mis-aligned by a hair at every width. */
+  .cmm-side .cmm-head, .cmm-side .cmm-list { max-width: none; margin-inline: 0; }
+  .cmm-side .cmm-head { padding: 16px 14px 8px; }
+  .cmm-side .cmm-h1 { font-size: 17px; }
+  .cmm-side .cmm-ch-row { padding-inline: 14px; }
+  /* One line, ellipsised — the bundle's channel row. "AI Tools Application &
+     Digital Problem Solving" wrapped to FIVE lines in a 260px pane and turned
+     a 63px row into a 128px one, so four channels filled the pane. */
+  .cmm-side .cmm-ch-name, .cmm-side .cmm-ch-prev {
+    display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmm-side .cmm-ch-body { min-width: 0; }
+
+  /* The thread fills its pane rather than floating inside it as a dialog. */
+  .cmm-thread .cm-thread { position: static; width: auto; max-width: none;
+    height: auto; min-height: 100%; border: 0; border-radius: inherit;
+    box-shadow: none; animation: none; }
 
   /* Reading column. The rule the bundle is explicit about. */
   .cmm-feed, .cmm-list, .cmm-stream { max-width: 72ch; margin-inline: auto; }
@@ -3291,7 +3343,9 @@ img { background-color: rgba(12,20,50,0.04); }
 
   /* A FAB is a phone affordance; on a desktop the composer has room to be a
      button where the eye already is. */
+  /* Both sit over the CENTRE pane, not over the thread beside it. */
   .cmm-fab { position: absolute; right: 26px; bottom: 26px; }
+  .cmm.has-thread .cmm-fab { right: calc(360px + 38px); }
   .cmm-newpill { bottom: 26px; }
 
   /* Sheets become centred dialogs — a bottom sheet on a 1440px screen is a

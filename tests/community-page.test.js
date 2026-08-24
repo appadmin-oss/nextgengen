@@ -185,6 +185,96 @@ async function openPage(browser, width, height, media) {
       await page.close();
     }
 
+    /* ── The desktop layout the handoff actually specifies ────────────────
+       Handoff §11, artboard 3A: rail · 260px channel list · centre · thread,
+       as floating panes on the warm canvas, in a window that does not scroll
+       as one page.
+
+       What shipped was rail + ONE pane. On a 1280px screen the feed sat in its
+       72ch reading column with ~430px of empty canvas beside it, there was no
+       way to change channel without leaving what you were reading, and opening
+       a thread covered the whole screen to show four replies — the phone
+       pattern wearing a desktop's clothes, which is the exact thing the
+       bundle's 3A supersedes. */
+    console.log('\n── The desktop panes (handoff §11 / 3A) ──────────────────────');
+    {
+      const { page } = await openPage(browser, 1280, 900, WIDE);
+      const L = () => page.evaluate(() => {
+        const r = (sel) => { const e = document.querySelector(sel); if (!e) return null;
+          const b = e.getBoundingClientRect();
+          return { w: Math.round(b.width), h: Math.round(b.height), l: Math.round(b.left) }; };
+        return { rail: r('.cmm-tabs'), side: r('.cmm-side'), body: r('.cmm-body'),
+                 thread: r('.cmm-thread'), over: r('.cmm-over'),
+                 shell: r('.cmm'), vh: window.innerHeight,
+                 pageScroll: document.documentElement.scrollHeight - window.innerHeight };
+      });
+
+      let m = await L();
+      ok('the rail, the channel list and the centre are three separate panes',
+         !!m.rail && !!m.side && !!m.body);
+      ok('…laid out left to right in that order (' + m.rail.l + ' < ' + m.side.l + ' < ' + m.body.l + ')',
+         m.rail.l < m.side.l && m.side.l < m.body.l);
+      ok('…with the channel list at the 260px the bundle specifies (' + m.side.w + 'px)',
+         m.side.w === 260);
+      /* A workspace, not a long page: each pane scrolls inside itself. */
+      ok('the workspace fits the window rather than scrolling as one page ('
+         + m.shell.h + 'px in ' + m.vh + 'px)', m.shell.h <= m.vh);
+
+      /* The judgement call the bundle states outright: "destinations and
+         conversations are separate concerns, so switching one never hides the
+         other." Opening a thread must NARROW the centre, not cover it. */
+      const bodyBefore = m.body.w;
+      await page.locator('.cmm-msg-act', { hasText: 'replies' }).first().click();
+      await page.waitForTimeout(500);
+      m = await L();
+      ok('a thread opens as a fourth pane, not an overlay',
+         !!m.thread && !m.over);
+      ok('…so the channel list and the rail are still there',
+         !!m.rail && !!m.side);
+      ok('…and the centre narrows to make room rather than being covered ('
+         + bodyBefore + ' → ' + m.body.w + ')',
+         m.body.w < bodyBefore && m.body.w > 300);
+      ok('…and the thread pane does not overlap the centre ('
+         + (m.body.l + m.body.w) + ' ≤ ' + m.thread.l + ')',
+         m.body.l + m.body.w <= m.thread.l + 1);
+
+      /* A 260px list is not a reading column, and a long channel name must not
+         turn a 63px row into a 128px one. */
+      ok('a long channel name is one ellipsised line in the list',
+         await page.evaluate(() => {
+           const n = Array.from(document.querySelectorAll('.cmm-side .cmm-ch-name'))
+             .find(x => x.textContent.length > 20);
+           return !!n && n.getBoundingClientRect().height < 26 && n.scrollWidth > n.clientWidth;
+         }));
+      /* And the thread's own header stacks instead of running together. */
+      ok('the thread header keeps its title clear of the channel and the close button',
+         await page.evaluate(() => {
+           const t = document.querySelector('.cm-thread-title');
+           const c = document.querySelector('.cm-thread-chan');
+           const x = document.querySelector('.cm-thread-x');
+           if (!t || !c || !x) return false;
+           const tb = t.getBoundingClientRect(), cb = c.getBoundingClientRect(), xb = x.getBoundingClientRect();
+           return cb.top >= tb.bottom - 1 && cb.right <= xb.left + 1;
+         }));
+      await page.close();
+    }
+
+    /* A phone keeps every one of the phone behaviours. */
+    console.log('\n── …and the phone is untouched ───────────────────────────────');
+    {
+      const { page } = await openPage(browser, 390, 844, WIDE);
+      ok('no channel-list pane on a phone — it is a tab, as it has always been',
+         await page.evaluate(() => !document.querySelector('.cmm-side')));
+      await page.locator('.cmm-msg-act', { hasText: 'replies' }).first().click();
+      await page.waitForTimeout(500);
+      ok('…and a thread is still the full-screen overlay it has always been',
+         await page.evaluate(() =>
+           !!document.querySelector('.cmm-over') && !document.querySelector('.cmm-thread')));
+      ok('…with the tab bar hidden under it, as the bundle says',
+         await page.evaluate(() => !document.querySelector('.cmm-tabs')));
+      await page.close();
+    }
+
     /* The badge must tell the truth. It says "tap to see it all", so it may
        only appear when there IS more to see. */
     console.log('\n── Does the crop badge tell the truth? ───────────────────────');

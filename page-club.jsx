@@ -2295,6 +2295,24 @@ function CmMobileMessage({ post, prev, me, onPatch, onRemove, onOpenThread, onLo
    thread, the account surface, the composer, the jump sheet. Held here rather
    than inside each screen so Back has one meaning and the tab bar has one
    place that decides whether it is visible. */
+/* Wide enough for the bundle's desktop panes (handoff §11, artboard 3A).
+   matchMedia rather than a CSS-only rearrangement, for the reason the chess
+   board already gives: two of the panes do not exist on a phone at all, and
+   building them to hide them costs a member on a handset requests they never
+   needed. 1024 is where the stylesheet already switches. */
+function useCmWide(px) {
+  const [wide, setWide] = React.useState(false);
+  React.useEffect(() => {
+    if (!window.matchMedia) return;
+    const q = window.matchMedia("(min-width: " + (px || 1024) + "px)");
+    const on = () => setWide(q.matches);
+    on();
+    if (q.addEventListener) { q.addEventListener("change", on); return () => q.removeEventListener("change", on); }
+    q.addListener(on); return () => q.removeListener(on);
+  }, [px]);
+  return wide;
+}
+
 function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
   const [tab, setTab] = React.useState("today");
   const [channel, setChannel] = React.useState(null);   // open channel slug
@@ -2310,6 +2328,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
   const [a11y, setA11y] = React.useState(false);
   const [jumpScope, setJumpScope] = React.useState("all");
   const [offline, setOffline] = React.useState(() => typeof navigator !== "undefined" && navigator.onLine === false);
+  const wide = useCmWide(1024);
   const mem = auth.member || {};
 
   /* Two things that have to happen once, before anything else is drawn.
@@ -2398,9 +2417,14 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
     if (owned.current > 0) { selfPops.current += owned.current; history.go(-owned.current); owned.current = 0; }
   }, []);
 
-  // The tab bar hides wherever the bundle says it does: in a thread, and over
-  // any full-screen surface. A nav bar under a modal is a nav bar that lies.
-  const barHidden = !!thread || account || notifs || a11y || !!files;
+  /* The tab bar hides wherever the bundle says it does: in a thread, and over
+     any full-screen surface. A nav bar under a modal is a nav bar that lies.
+
+     A thread is only full-screen on a PHONE. On a desktop it is a pane beside
+     the channel (handoff §11), so the rail beside it must stay — hiding it
+     there left the whole left edge of a 1280px screen empty and took away
+     every destination in the product to show four replies. */
+  const barHidden = (!!thread && !wide) || account || notifs || a11y || !!files;
 
   const compose = {
     open: () => { setComposeSeed(null); setComposer(true); },
@@ -2430,7 +2454,16 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
   const openToday = (f) => { setChannel(null); setThread(null); setTab("today"); setTodayFilter(f); };
 
   return (
-    <div className="cmm" data-screen-label="Community">
+    <div className={"cmm" + (wide && thread ? " has-thread" : "")} data-screen-label="Community">
+      {/* The channel list is its OWN pane on a desktop, and stays put.
+          Handoff §11: "destinations and conversations are separate concerns,
+          so switching one never hides the other." On a phone it is a tab, as
+          it has always been — same component, given room. */}
+      {wide && (
+        <aside className="cmm-side" aria-label="Channels">
+          <CmChannels channels={channels} onOpen={openChannel} onCompose={compose}/>
+        </aside>
+      )}
       <div className={"cmm-body" + (barHidden ? " no-bar" : "")} onScroll={onBodyScroll}>
         {/* Base layer: whichever tab is selected. */}
         {!channel && tab === "today" && (
@@ -2440,7 +2473,10 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
                    onOpenThread={setThread} onCompose={compose}
                    onOpenChannel={openChannel} offline={offline}/>
         )}
-        {!channel && tab === "channels" && (
+        {/* Not on a desktop: the pane on the left is already the channel list,
+            and showing it twice is how a layout tells somebody it does not
+            know what it is. The rail's Chans button focuses that pane. */}
+        {!channel && tab === "channels" && !wide && (
           <CmChannels channels={channels} onOpen={openChannel} onCompose={compose}/>
         )}
         {tab === "arcade" && !channel && <div className="cmm-pad"><CmArcade auth={auth}/></div>}
@@ -2480,13 +2516,23 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
         </nav>
       )}
 
-      {/* Over-layers, outermost last. */}
+      {/* Over-layers, outermost last.
+          A thread is a PANE on a desktop and an overlay on a phone. Handoff
+          §11: "replying no longer costs you the channel" — taking the whole
+          1280px screen away to show four replies is the phone pattern wearing
+          a desktop's clothes. */}
       {thread && (
-        <div className="cmm-over">
-          <CmThread post={thread} me={mem.fullName} channels={channels}
-                    onClose={() => setThread(null)}
-                    onPatch={() => {}} onRemove={() => setThread(null)}/>
-        </div>
+        wide
+          ? <aside className="cmm-thread">
+              <CmThread post={thread} me={mem.fullName} channels={channels}
+                        onClose={() => setThread(null)}
+                        onPatch={() => {}} onRemove={() => setThread(null)}/>
+            </aside>
+          : <div className="cmm-over">
+              <CmThread post={thread} me={mem.fullName} channels={channels}
+                        onClose={() => setThread(null)}
+                        onPatch={() => {}} onRemove={() => setThread(null)}/>
+            </div>
       )}
       {account && (
         <div className="cmm-over">
@@ -7907,7 +7953,14 @@ function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
     <aside className="cm-thread" ref={paneRef} role="dialog" aria-label={"Thread in " + post.channel.name}>
       {crisis && <CmCrisisDialog message={crisis} onClose={() => setCrisis("")}/>}
       <div className="cm-thread-head">
-        <div><span className="cm-thread-title" role="heading" aria-level={2}>Thread</span><span className="cm-thread-chan" style={{ color: post.channel.color }}>{post.channel.icon} {post.channel.name}</span></div>
+        {/* Stacked, and the channel truncates. As one inline pair these two ran
+            together — "Thread🔬 AI Tools Application & Digital Problem
+            Solving" — and in the desktop thread PANE the whole thing wrapped
+            over the close button. */}
+        <div className="cm-thread-head-txt">
+          <span className="cm-thread-title" role="heading" aria-level={2}>Thread</span>
+          <span className="cm-thread-chan" style={{ color: post.channel.color }}>{post.channel.icon} {post.channel.name}</span>
+        </div>
         <button className="cm-thread-x" onClick={onClose} aria-label="Close thread">✕</button>
       </div>
       <div className="cm-thread-body">
