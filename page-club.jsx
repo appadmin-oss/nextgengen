@@ -909,6 +909,13 @@ function cmUiIcon(name, size) {
   if (name === "down")   return wrap(<path d="M12 5v14M6 13l6 6 6-6" {...P}/>);
   if (name === "chev")   return wrap(<path d="m9 6 6 6-6 6" {...P}/>);
   if (name === "files")  return wrap(<path d="M4 7a2 2 0 0 1 2-2h3l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" {...P}/>);
+  if (name === "bookmark") return wrap(<path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1z" {...P}/>);
+  if (name === "info")   return wrap(<><circle cx="12" cy="12" r="9" {...P}/><path d="M12 11v5" {...P}/><path d="M12 7.6v.6" {...P}/></>);
+  /* Two glyphs, not one rotated: "make this bigger" and "put it back" are
+     different promises, and a child should not have to remember which state
+     the same arrow means. */
+  if (name === "expand") return wrap(<><path d="M14 4h6v6" {...P}/><path d="M20 4l-7 7" {...P}/><path d="M10 20H4v-6" {...P}/><path d="M4 20l7-7" {...P}/></>);
+  if (name === "shrink") return wrap(<><path d="M20 4l-7 7" {...P}/><path d="M13 11h6M13 11V5" {...P}/><path d="M4 20l7-7" {...P}/><path d="M11 13H5m6 0v6" {...P}/></>);
   return null;
 }
 
@@ -1171,7 +1178,7 @@ function CmChannels({ channels, onOpen, onCompose }) {
       </span>
       <span className="cmm-ch-body">
         <span className="cmm-ch-name">{c.name}</span>
-        <span className="cmm-ch-prev">{c.lastMessage || c.purpose || "No messages yet"}</span>
+        <span className="cmm-ch-prev">{c.lastMessage || c.description || "No messages yet"}</span>
       </span>
       {c.unread > 0
         ? <span className="cmm-ch-badge">{c.unread > 99 ? "99+" : c.unread}</span>
@@ -2010,7 +2017,88 @@ function CmTextSize({ onClose }) {
    The full channel screen. Everything the desktop channel could do, in one
    column, with the two rules that matter on a phone held to: nothing
    auto-scrolls, and every action clears a thumb. */
-function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, counts, onCounts, onOpenFiles, dockComposer }) {
+/* The segmented control the bundle uses in four places: All/Unread/Mine in the
+ * channel pane, Newest/Hot in a channel header, Week/All-time on the arcade
+ * board, Mine/Programme in the journal. One implementation, one track colour,
+ * one set of keyboard semantics — a tablist, because that is what it is. */
+function CmSeg({ label, value, onChange, options, className }) {
+  return (
+    <div className={"cmd-seg" + (className ? " " + className : "")} role="tablist" aria-label={label}>
+      {options.map(([id, text]) => (
+        <button key={id} type="button" role="tab" aria-selected={value === id}
+                className={"cmd-seg-b" + (value === id ? " is-on" : "")}
+                onClick={() => onChange(id)}>{text}</button>
+      ))}
+    </div>
+  );
+}
+
+/* ⓘ — everything the header had to truncate, in full.
+ *
+ * A disclosure, not a modal: it hangs under the button that opened it and the
+ * channel stays live behind it, because "what is this room for" is a question
+ * you ask WHILE reading, not instead of reading. Escape closes it, and so does
+ * a click anywhere outside — a panel you can only dismiss with its own ✕ is a
+ * panel people leave open. */
+function CmChannelInfo({ ch, members, centres, onFiles, onClose }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    const onDown = (e) => {
+      const el = ref.current;
+      if (!el || el.contains(e.target)) return;
+      // The ⓘ button toggles itself; closing here too would re-open it.
+      if (e.target.closest && e.target.closest(".cmd-ch-btn")) return;
+      onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onDown); };
+  }, [onClose]);
+  const mentors = (members || []).filter(m => m.staff);
+  return (
+    <div className="cmd-chinfo" ref={ref} role="group" aria-label={"About " + ch.name}>
+      <div className="cmd-chinfo-top">
+        <h2 className="cmd-chinfo-h">{ch.name}</h2>
+        <button className="cmd-chinfo-x" onClick={onClose} aria-label="Close">✕</button>
+      </div>
+      {ch.description
+        ? <p className="cmd-chinfo-p">{ch.description}</p>
+        : <p className="cmd-chinfo-p cmd-chinfo-none">No one has written what this channel is for yet.</p>}
+      <dl className="cmd-chinfo-facts">
+        {centres && <><dt>Centres</dt><dd>{centres}</dd></>}
+        <dt>People</dt>
+        <dd>{members === null ? "…" : members.length + (members.length === 1 ? " has" : " have") + " posted here"}</dd>
+      </dl>
+      {/* The roster itself. Handoff §11: it moved out of a permanent rail and
+          in here, so this panel has to actually carry it — a count is not a
+          roster, and "who is in this room" is the question the rail answered. */}
+      {members && members.length > 0 && (
+        <ul className="cmd-chinfo-roster">
+          {members.map(m => (
+            <li key={m.name + m.centre}>
+              {cmAvatar(m.name, m.name + m.centre, m.photo, "cmd-chinfo-av", m.staff ? "mentor" : "")}
+              <span className="cmd-chinfo-name">{m.name}</span>
+              {m.staff && <span className="cmm-tag is-mentor">mentor</span>}
+              <span className="cmd-chinfo-centre">{m.centre}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {ch.rules && (
+        <div className="cmd-chinfo-rules">
+          <span className="cmd-chinfo-rules-h">House rules</span>
+          <p>{ch.rules}</p>
+        </div>
+      )}
+      <button className="cmd-chinfo-files" onClick={onFiles}>
+        {cmUiIcon("files", 17)} Everything shared here
+      </button>
+    </div>
+  );
+}
+
+function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, counts, onCounts, onOpenFiles, dockComposer, wide }) {
   const [posts, setPosts] = React.useState(null);
   const [members, setMembers] = React.useState(null);
   const [fresh, setFresh] = React.useState(null);
@@ -2018,6 +2106,18 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
   const [digest, setDigest] = React.useState(null);
   const [dismissedCatchup, setDismissed] = React.useState(false);
   const [sheetFor, setSheetFor] = React.useState(null);
+  /* The three header controls the artboard puts to the right of the channel
+     name. Each one changes what is on screen — none of them is decoration.
+       sort      Newest | Most replied. The feed already ranks both ways
+                 server-side; this is the same `sort` the API has always taken.
+       savedOnly Narrows to what THIS member bookmarked, over the messages
+                 loaded here. The empty state says so, and points at Saved,
+                 which holds every one of them.
+       info      Purpose, centres, mentors, files. Everything the header
+                 truncates, in full, in one place. */
+  const [sort, setSort] = React.useState("latest");
+  const [savedOnly, setSavedOnly] = React.useState(false);
+  const [info, setInfo] = React.useState(false);
   const streamRef = React.useRef(null);
   const atBottom = React.useRef(true);
   const postsRef = React.useRef([]);
@@ -2040,8 +2140,9 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
 
   React.useEffect(() => {
     setPosts(null); setFresh(null); setDismissed(false); setLoadErr(false);
+    setSavedOnly(false); setInfo(false);
     setUnreadMark(ch.unread || 0);
-    NGGApi.member.community.feed(slug, "latest", 0)
+    NGGApi.member.community.feed(slug, sort, 0)
       .then(r => { setPosts(r.posts || []); setLoadErr(false); })
       .catch(() => { setPosts([]); setLoadErr(true); });
     NGGApi.member.community.members(slug)
@@ -2050,7 +2151,11 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
       NGGApi.member.community.markRead(slug).then(() => onCounts()).catch(() => {});
     }, 1200);
     return () => clearTimeout(t);
-  }, [slug, reloadTick]); // eslint-disable-line
+    /* `sort` is deliberately NOT reset when the channel changes: a member who
+       asked for "Most replied" meant it about the community, not about one
+       room. savedOnly is, because a filter that survives a navigation is a
+       filter people forget is on. */
+  }, [slug, sort, reloadTick]); // eslint-disable-line
 
   /* Polling, and the rule the bundle is emphatic about: NEVER auto-scroll.
      A message arriving while somebody is reading three screens up should not
@@ -2058,7 +2163,7 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
   React.useEffect(() => {
     const tick = () => {
       if (document.hidden) return;
-      NGGApi.member.community.feed(slug, "latest", 0).then(r => {
+      NGGApi.member.community.feed(slug, sort, 0).then(r => {
         setLoadErr(false);
         const cur = postsRef.current;
         const have = new Set(cur.map(x => x.postId));
@@ -2071,7 +2176,7 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
     };
     const id = setInterval(tick, 20000);
     return () => clearInterval(id);
-  }, [slug]);
+  }, [slug, sort]);
 
   const onScroll = (e) => {
     const el = e.currentTarget;
@@ -2087,9 +2192,65 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
   const patch = (postId, p) => setPosts(ps => (ps || []).map(x => x.postId === postId ? { ...x, ...p } : x));
   const remove = (postId) => setPosts(ps => (ps || []).filter(x => x.postId !== postId));
 
-  const chrono = React.useMemo(() => (posts ? [...posts].reverse() : posts), [posts]);
-  const dividerAt = (chrono && unreadMark > 0) ? Math.max(0, chrono.length - unreadMark) : -1;
+  /* Chronological for "Newest" — oldest at the top, the way a conversation
+     reads. "Most replied" is a RANKING, so it is not reversed: turning a
+     ranking upside down puts the quietest post first and calls it sorted. */
+  const ordered = React.useMemo(() => {
+    if (!posts) return posts;
+    const base = sort === "latest" ? [...posts].reverse() : posts;
+    return savedOnly ? base.filter(p => p.bookmarked) : base;
+  }, [posts, sort, savedOnly]);
+  const chrono = ordered;
+  const savedCount = React.useMemo(() => (posts || []).filter(p => p.bookmarked).length, [posts]);
+  /* The NEW line counts back from the end of the chronological list. It means
+     nothing over a ranking or a filtered subset, so it is not drawn there. */
+  const dividerAt = (chrono && unreadMark > 0 && sort === "latest" && !savedOnly)
+    ? Math.max(0, chrono.length - unreadMark) : -1;
   const newCount = fresh ? fresh.filter(x => !(posts || []).some(p => p.postId === x.postId)).length : 0;
+
+  /* Which centres are in the room, most-represented first. Derived from who
+     has actually posted, so it cannot go stale the way a hand-set field does.
+     Two names fit the chip; beyond that it counts. */
+  const centres = React.useMemo(() => {
+    if (!members || !members.length) return "";
+    const tally = new Map();
+    for (const m of members) {
+      const c = (m.centre || "").trim();
+      if (c) tally.set(c, (tally.get(c) || 0) + 1);
+    }
+    const names = [...tally.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(x => x[0]);
+    if (!names.length) return "";
+    if (names.length <= 2) return names.join(" + ");
+    return names.slice(0, 2).join(" + ") + " +" + (names.length - 2);
+  }, [members]);
+
+  const mentors = members ? members.filter(m => m.staff) : [];
+  const memberLine = members === null
+    ? "…"
+    : members.length + (members.length === 1 ? " member" : " members")
+      + (mentors.length ? " · " + mentors.length + " mentor" + (mentors.length === 1 ? "" : "s") : "");
+  /* The stack shows three faces. What it MEANS — who, and how many more — has
+     to be readable too, so the same sentence is the tooltip and the
+     screen-reader text. "+21" alone is a number nobody can act on. */
+  const presenceTitle = members && members.length
+    ? members.slice(0, 3).map(m => m.name).join(", ")
+      + (members.length > 3 ? " and " + (members.length - 3) + " more" : "")
+      + " have posted here"
+    : "";
+
+  /* The digest's two named actions (handoff §11). Both are instant and free —
+     no model call — which is why they are the ones on the card by default and
+     "Catch me up", which does cost something, is the third. */
+  const jumpToUnread = () => {
+    const el = streamRef.current;
+    const line = el && el.querySelector(".cmm-newline");
+    if (line) line.scrollIntoView({ block: "center", behavior: "smooth" });
+    else if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
+  const markAllRead = () => {
+    setUnreadMark(0); setDismissed(true);
+    NGGApi.member.community.markRead(slug).then(() => onCounts && onCounts()).catch(() => {});
+  };
 
   const catchUp = () => {
     setDigest({ loading: true });
@@ -2101,41 +2262,109 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
   return (
     <div className="cmm-screen cmm-channel">
       <header className="cmm-ch-head">
-        <button className="cmm-icon-btn" onClick={onBack} aria-label="Back to channels">{cmUiIcon("back", 22)}</button>
+        {/* No back chevron on a desktop: the channel list is a permanent pane
+            eighteen pixels to the left, so "back" would go nowhere you are not
+            already looking. */}
+        {!wide && (
+          <button className="cmm-icon-btn" onClick={onBack} aria-label="Back to channels">{cmUiIcon("back", 22)}</button>
+        )}
         <span className="cmm-ch-av sm" aria-hidden="true">{ch.icon || "#"}</span>
         <div className="cmm-head-txt">
-          <h1 className="cmm-ch-title">{ch.name}</h1>
-          <p className="cmm-sub">
-            {members === null ? "…" : members.length + (members.length === 1 ? " member" : " members")}
-            {members && members.some(m => m.staff)
-              ? " · " + members.filter(m => m.staff).length + " mentor" + (members.filter(m => m.staff).length === 1 ? "" : "s")
-              : ""}
-          </p>
+          <div className="cmm-ch-titlerow">
+            <h1 className="cmm-ch-title">{ch.name}</h1>
+            {/* Which centres are actually in the room, from who has posted —
+                not from a field somebody set once and never revisited. */}
+            {wide && centres && <span className="cmm-ch-centres">{centres}</span>}
+          </div>
+          <p className="cmm-sub">{wide && ch.description ? ch.description : memberLine}</p>
         </div>
-        {/* Files live one tap from the conversation they were shared in — the
-            only place anybody looks for them. */}
-        <button className="cmm-icon-btn" onClick={() => onOpenFiles(slug)} aria-label="Files in this channel">
-          {cmUiIcon("files", 21)}
-        </button>
+
+        {wide ? (
+          <div className="cmd-ch-tools">
+            {/* Presence: who has actually posted here. No invented "online"
+                dots — a green light that does not mean anything is worse than
+                none. The overlap is the artboard's -8px. */}
+            {members && members.length > 0 && (
+              <span className="cmd-ch-stack" title={presenceTitle}>
+                {members.slice(0, 3).map(m => (
+                  <span key={m.name + m.centre} className="cmd-ch-face"
+                        style={{ background: cmColor(m.name, m.staff ? "mentor" : ""),
+                                 color: inkOn(cmColor(m.name, m.staff ? "mentor" : "")).ink }}
+                        aria-hidden="true">{cmInitial(m.name)}</span>
+                ))}
+                {members.length > 3 && <span className="cmd-ch-face more" aria-hidden="true">+{members.length - 3}</span>}
+                <span className="sr-only">{presenceTitle}</span>
+              </span>
+            )}
+            <CmSeg label="Sort messages" value={sort} onChange={setSort}
+                   options={[["latest", "Newest"], ["trending", "Hot"]]}/>
+            <button className={"cmd-ch-btn" + (savedOnly ? " is-on" : "")}
+                    onClick={() => setSavedOnly(v => !v)} aria-pressed={savedOnly}
+                    aria-label={"Only saved messages" + (savedCount ? " (" + savedCount + ")" : "")}
+                    title={"Only saved messages" + (savedCount ? " (" + savedCount + ")" : "")}>
+              {cmUiIcon("bookmark", 16)}
+            </button>
+            <button className={"cmd-ch-btn" + (info ? " is-on" : "")}
+                    onClick={() => setInfo(v => !v)} aria-expanded={info}
+                    aria-label="About this channel" title="About this channel">
+              {cmUiIcon("info", 17)}
+            </button>
+          </div>
+        ) : (
+          /* Files live one tap from the conversation they were shared in — the
+             only place anybody looks for them. On a desktop they moved into
+             the ⓘ panel, where the rest of the channel's facts already are. */
+          <button className="cmm-icon-btn" onClick={() => onOpenFiles(slug)} aria-label="Files in this channel">
+            {cmUiIcon("files", 21)}
+          </button>
+        )}
       </header>
 
-      {/* Presence: who has actually posted here. No invented "online" dots —
-          a green light that does not mean anything is worse than none. */}
-      {members && members.length > 0 && (
+      {wide && info && (
+        <CmChannelInfo ch={ch} members={members} centres={centres}
+                       onFiles={() => { setInfo(false); onOpenFiles(slug); }}
+                       onClose={() => setInfo(false)}/>
+      )}
+
+      {/* On a phone the header has no room for a presence stack, so it keeps
+          its own band underneath. */}
+      {!wide && members && members.length > 0 && (
         <div className="cmm-presence">
           <span className="cmm-stack" aria-hidden="true">
             {members.slice(0, 5).map(m => (
-              <span key={m.memberId || m.name} className="cmm-stack-av"
+              <span key={m.name + m.centre} className="cmm-stack-av"
                     style={{ background: cmColor(m.name, m.staff ? "mentor" : "") }}>{cmInitial(m.name)}</span>
             ))}
           </span>
-          {ch.purpose && <span className="cmm-purpose">{ch.purpose}</span>}
+          {ch.description && <span className="cmm-purpose">{ch.description}</span>}
+          <CmSeg label="Sort messages" value={sort} onChange={setSort} className="cmm-presence-seg"
+                 options={[["latest", "Newest"], ["trending", "Hot"]]}/>
         </div>
       )}
 
       {/* Catch me up — only when there IS something to catch up on, and
           dismissible. A permanent banner is furniture nobody reads. */}
-      {unreadMark > 0 && !dismissedCatchup && !digest && (
+      {wide && unreadMark > 0 && !dismissedCatchup && (
+        <div className="cmd-digest">
+          <div className="cmd-digest-eyebrow">
+            <span className="cmd-spark" aria-hidden="true">✦</span>
+            While you were away · {unreadMark} {unreadMark === 1 ? "message" : "messages"}
+          </div>
+          {digest && (
+            <p className="cmd-digest-body" role="status">
+              {digest.loading ? "Summarising…" : digest.text}
+            </p>
+          )}
+          <div className="cmd-digest-acts">
+            <button className="cmd-digest-go" onClick={jumpToUnread}>Jump to first unread</button>
+            <button className="cmd-digest-alt" onClick={markAllRead}>Mark all read</button>
+            {!digest && <button className="cmd-digest-alt" onClick={catchUp}>Catch me up</button>}
+          </div>
+          <button className="cmd-digest-x" onClick={() => setDismissed(true)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+
+      {!wide && unreadMark > 0 && !dismissedCatchup && !digest && (
         <div className="cmm-catchup">
           <div className="cmm-catchup-txt">
             <b>While you were away</b>
@@ -2145,7 +2374,7 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
           <button className="cmm-catchup-x" onClick={() => setDismissed(true)} aria-label="Dismiss">✕</button>
         </div>
       )}
-      {digest && (
+      {!wide && digest && (
         <div className="cmm-digest" role="status">
           {digest.loading ? "Summarising…" : digest.text}
           {!digest.loading && <button className="cmm-catchup-x" onClick={() => setDigest(null)} aria-label="Dismiss">✕</button>}
@@ -2159,7 +2388,15 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
                    body="The messages are still there — the connection dropped on the way. Try again."
                    action={<button className="cmm-cta" onClick={() => setReload(n => n + 1)}>Try again</button>}/>
         )}
-        {chrono && chrono.length === 0 && !loadErr && (
+        {/* A filter that finds nothing must say it is a filter. This used to
+            fall through to "Be the first to say something" in a channel with
+            two hundred messages in it. */}
+        {chrono && chrono.length === 0 && !loadErr && savedOnly && (
+          <CmEmpty icon="🔖" title="Nothing saved here yet"
+                   body={"None of the messages loaded in " + ch.name + " are saved. Saved, in the left rail, has every one you have kept."}
+                   action={<button className="cmm-cta" onClick={() => setSavedOnly(false)}>Show every message</button>}/>
+        )}
+        {chrono && chrono.length === 0 && !loadErr && !savedOnly && (
           <CmEmpty icon="#" title="Nothing here yet"
                    body={"Be the first to say something in " + ch.name + "."}
                    action={<button className="cmm-cta" onClick={onCompose.open}>Write a message</button>}/>
@@ -2403,7 +2640,7 @@ function CmDeskChannels({ channels, current, onOpen, onCompose }) {
       <span className="cmd-row-av" aria-hidden="true">{c.icon || (c.name || "#").slice(0, 1)}</span>
       <span className="cmd-row-txt">
         <span className="cmd-row-n">{c.name}</span>
-        <span className="cmd-row-p">{c.lastMessage || c.purpose || "No messages yet"}</span>
+        <span className="cmd-row-p">{c.lastMessage || c.description || "No messages yet"}</span>
       </span>
       {c.unread > 0
         ? <span className="cmd-row-badge">{c.unread > 99 ? "99+" : c.unread}</span>
@@ -2419,13 +2656,8 @@ function CmDeskChannels({ channels, current, onOpen, onCompose }) {
           {cmUiIcon("plus", 16)}
         </button>
       </div>
-      <div className="cmd-seg" role="tablist" aria-label="Filter channels">
-        {[["all", "All"], ["unread", "Unread" + (unreadTotal ? " " + unreadTotal : "")], ["mine", "Mine"]].map(([id, label]) => (
-          <button key={id} role="tab" aria-selected={tab === id}
-                  className={"cmd-seg-b" + (tab === id ? " is-on" : "")}
-                  onClick={() => setTab(id)}>{label}</button>
-        ))}
-      </div>
+      <CmSeg label="Filter channels" value={tab} onChange={setTab}
+             options={[["all", "All"], ["unread", "Unread" + (unreadTotal ? " " + unreadTotal : "")], ["mine", "Mine"]]}/>
       <div className="cmd-rows">
         {!channels.length && <CmSkeleton rows={4}/>}
         {shown.map(Row)}
@@ -2450,6 +2682,9 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
   const [tab, setTab] = React.useState("today");
   const [channel, setChannel] = React.useState(null);   // open channel slug
   const [thread, setThread] = React.useState(null);     // open post
+  /* Widened once, stays widened. Somebody who asked for a bigger thread asked
+     about how they read threads, not about this one post. */
+  const [threadWide, setThreadWide] = React.useState(false);
   const [account, setAccount] = React.useState(false);
   const [composer, setComposer] = React.useState(false);
   const [jump, setJump] = React.useState(false);
@@ -2609,7 +2844,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
   const openToday = (f) => { setChannel(null); setThread(null); setTab("today"); setTodayFilter(f); };
 
   return (
-    <div className={"cmm" + (wide && thread ? " has-thread" : "")} data-screen-label="Community">
+    <div className={"cmm" + (wide && thread ? " has-thread" : "") + (wide && thread && threadWide ? " thread-wide" : "")} data-screen-label="Community">
       {/* The workspace's own 54px bar. The community used to sit under the
           marketing site's nav — Home, Programs, My dashboard — which is a
           website with an app bolted underneath, not the workspace the artboard
@@ -2656,14 +2891,19 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
           <CmChannel slug={channel} channels={channels} auth={auth}
                      onBack={() => setChannel(null)} onOpenThread={setThread}
                      onCompose={compose} counts={counts} onCounts={refreshCounts}
-                     onOpenFiles={setFiles} dockComposer={wide}/>
+                     onOpenFiles={setFiles} dockComposer={wide} wide={wide}/>
         )}
       </div>
 
       {/* The FAB. Today and Channels only — there is nothing to compose into
           from the Arcade or the Journal, and a button that does nothing where
           it sits teaches people not to trust it. */}
-      {!barHidden && !thread && (tab === "today" || tab === "channels") && (
+      {/* No FAB where a composer is already docked. Two "write a post" controls
+          eighty pixels apart, one of them sitting over the send hint, is a
+          screen asking the same question twice — and the second one is not
+          just noise, it is a tab stop that goes somewhere the first already
+          goes. */}
+      {!barHidden && !thread && !(wide && channel) && (tab === "today" || tab === "channels") && (
         <button className={"cmm-fab" + (fabHidden ? " is-away" : "")}
                 onClick={() => { setComposeSeed(null); setComposer(true); }} aria-label="Write a post"
                 tabIndex={fabHidden ? -1 : 0}>
@@ -2700,9 +2940,10 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
           a desktop's clothes. */}
       {thread && (
         wide
-          ? <aside className="cmm-thread">
+          ? <aside className={"cmm-thread" + (threadWide ? " is-wide" : "")}>
               <CmThread post={thread} me={mem.fullName} channels={channels}
                         onClose={() => setThread(null)}
+                        expanded={threadWide} onExpand={() => setThreadWide(v => !v)}
                         onPatch={() => {}} onRemove={() => setThread(null)}/>
             </aside>
           : <div className="cmm-over">
@@ -7719,6 +7960,11 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
     if (enterToSend && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!busy && up === 0 && canPost) submit(); }
   };
   const chName = (channels.find(c => c.slug === ch) || {}).name || "the channel";
+  /* A textarea placeholder WRAPS — it does not ellipsise — so "Message #AI
+     Tools Application & Digital Problem Solving…" broke across two lines and
+     had its second line clipped by the box. The label and aria-label keep the
+     channel's full name; only the placeholder is trimmed. */
+  const chShort = chName.length > 26 ? chName.slice(0, 25).trimEnd() : chName;
   const iconBtn = (icon, label, onClick, extra) => (
     <button type="button" className={"cm-dock-ic" + (extra || "")} onClick={onClick} disabled={up > 0} aria-label={label} title={label} onMouseDown={e => e.preventDefault()}>{icon}</button>
   );
@@ -7812,7 +8058,7 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
             aria-activedescendant={activeOptId}
             aria-describedby="cm-input-hint"
             aria-label={"Message " + (active !== "all" ? "#" + chName : "the community")}
-            placeholder={poll ? "Ask the crew a question…" : ("Message " + (active !== "all" ? "#" + chName : "the crew") + "…")}/>
+            placeholder={poll ? "Ask the crew a question…" : ("Message " + (active !== "all" ? "#" + chShort : "the crew") + "…")}/>
           {slashOpen && (
             <div className="cm-mention-menu cm-slash-menu" id="cm-slash-list" role="listbox" aria-label="Commands">
               {slashItems.map((s, i) => (
@@ -8091,7 +8337,7 @@ function CmReactChips({ post, onReact }) {
 /* ---- Channel members rail (chat view) ---- */
 
 /* ---- Thread pane (root message + replies + reply composer) ---- */
-function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
+function CmThread({ post, me, channels, onClose, onPatch, onRemove, expanded, onExpand }) {
   const [comments, setComments] = React.useState(null);
   const [body, setBody] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -8108,7 +8354,17 @@ function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
   const paneRef = React.useRef(null);
   React.useEffect(() => {
     const el = paneRef.current; if (el) { const c = el.querySelector(".cm-thread-x"); if (c) try { c.focus(); } catch (_) {} }
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    /* On a desktop the thread is a PANE beside the channel, not a modal over
+       it. A modal owns Escape; a pane owns only its own. Without this, Escape
+       pressed anywhere — closing the ⓘ popover, clearing a search — also threw
+       away the thread somebody was midway through reading. On a phone it IS
+       the whole screen, so there Escape still closes it from anywhere. */
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      const pane = paneRef.current;
+      if (pane && pane.closest(".cmm-thread") && !pane.contains(document.activeElement)) return;
+      onClose();
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -8138,6 +8394,16 @@ function CmThread({ post, me, channels, onClose, onPatch, onRemove }) {
           <span className="cm-thread-title" role="heading" aria-level={2}>Thread</span>
           <span className="cm-thread-chan" style={{ color: post.channel.color }}>{post.channel.icon} {post.channel.name}</span>
         </div>
+        {/* ⤢ — handoff §11: "replying no longer costs you the channel; ⤢
+            expands it to full width." Desktop only; on a phone the thread is
+            already the whole screen, so the control would promise nothing. */}
+        {onExpand && (
+          <button className="cm-thread-wide" onClick={onExpand} aria-pressed={!!expanded}
+                  aria-label={expanded ? "Narrow the thread" : "Widen the thread"}
+                  title={expanded ? "Narrow the thread" : "Widen the thread"}>
+            {cmUiIcon(expanded ? "shrink" : "expand", 15)}
+          </button>
+        )}
         <button className="cm-thread-x" onClick={onClose} aria-label="Close thread">✕</button>
       </div>
       <div className="cm-thread-body">

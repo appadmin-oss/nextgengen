@@ -60,7 +60,17 @@ const FACE = img(600, 800, '#4a7fd4', '#f2c9a0');
 const CHANNELS = [
   { channelId: 'C1', slug: 'commons', name: 'The Commons', icon: '🏛️', color: '#3b5bdb', kind: 'club', unread: 3, description: '' },
   /* A real channel name from the product, and the one that broke the header. */
-  { channelId: 'C2', slug: 'ai-tools', name: 'AI Tools Application & Digital Problem Solving', icon: '🔬', color: '#7048e8', kind: 'course', unread: 12, description: '' },
+  { channelId: 'C2', slug: 'ai-tools', name: 'AI Tools Application & Digital Problem Solving', icon: '🔬', color: '#7048e8', kind: 'course', unread: 12,
+    description: 'Prompting, tooling and the week\u2019s build homework.', rules: 'Ask before you post someone else\u2019s work.' },
+];
+/* Two centres, one mentor, and more people than the stack shows — so the
+   "+N" and the centres chip both have something true to say. */
+const MEMBERS = [
+  { name: 'Coach Bisi Adeyemi', centre: 'Egbeda', posts: 9, staff: true,  photo: '' },
+  { name: 'Tunde A.',           centre: 'Ayobo',  posts: 6, staff: false, photo: '' },
+  { name: 'Zara I.',            centre: 'Egbeda', posts: 4, staff: false, photo: '' },
+  { name: 'Adaeze O.',          centre: 'Egbeda', posts: 3, staff: false, photo: '' },
+  { name: 'Ife B.',             centre: 'Ayobo',  posts: 1, staff: false, photo: '' },
 ];
 const author = (name, centre, photo, staff) => ({ name, centre, photo: photo || '', staff: !!staff, isMe: false, kind: 'member' });
 const post = (o) => Object.assign({
@@ -87,6 +97,7 @@ function routesFor(media) {
       if (v === 'today') return { ok: true, unread: 16, mentions: 2, saved: 1 };
       if (v === 'digest') return { ok: true, posts: POSTS, stars: [] };
       if (v === 'feed') return { ok: true, posts: POSTS, hasMore: false, channel: null };
+      if (v === 'members') return { ok: true, members: MEMBERS, count: MEMBERS.length };
       return { ok: true };
     },
   };
@@ -283,7 +294,10 @@ async function openPage(browser, width, height, media) {
       /* The channel pane's own furniture. */
       ok('the channel pane has All / Unread / Mine and a compose button',
          await page.evaluate(() => {
-           const seg = Array.from(document.querySelectorAll('.cmd-seg-b')).map(x => x.textContent.trim());
+           /* Scoped to the pane. The same segmented control now also sits in
+              the channel header (Newest / Hot), so an unscoped query counts
+              five buttons and this used to read that as a broken pane. */
+           const seg = Array.from(document.querySelectorAll('.cmm-side .cmd-seg-b')).map(x => x.textContent.trim());
            return seg.length === 3 && seg[0] === 'All' && /^Unread/.test(seg[1]) && seg[2] === 'Mine'
              && !!document.querySelector('.cmd-plus');
          }));
@@ -319,6 +333,126 @@ async function openPage(browser, width, height, media) {
            if (!h || !p) return false;
            return h.getBoundingClientRect().width >= p.getBoundingClientRect().width - 4;
          }));
+      /* ── The header controls, handoff §3 and §11 ── */
+      ok('the channel header carries the presence stack, the centres and the purpose',
+         await page.evaluate(() => {
+           const faces = document.querySelectorAll('.cmm-ch-head .cmd-ch-face');
+           const centres = document.querySelector('.cmm-ch-centres');
+           const sub = document.querySelector('.cmm-ch-head .cmm-sub');
+           if (!faces.length || !sub) return false;
+           /* Overlapped, not spaced: the artboard's -8px. */
+           const a = faces[0].getBoundingClientRect(), b = faces[1] && faces[1].getBoundingClientRect();
+           const overlapped = !b || b.left < a.right;
+           return overlapped && !!centres && sub.textContent.trim().length > 0;
+         }));
+      ok('…and Newest / Hot, in the bundle\'s own words', await page.evaluate(() => {
+        const seg = Array.from(document.querySelectorAll('.cmd-ch-tools .cmd-seg-b')).map(x => x.textContent.trim());
+        return seg.length === 2 && seg[0] === 'Newest' && seg[1] === 'Hot';
+      }));
+      /* Every control clears 24x24 (WCAG 2.2 2.5.8); the artboard draws 34. */
+      ok('…and every one of them is at least 34px, as the artboard draws them',
+         await page.evaluate(() =>
+           Array.from(document.querySelectorAll('.cmd-ch-tools .cmd-seg, .cmd-ch-tools .cmd-ch-btn'))
+             .every(el => { const r = el.getBoundingClientRect(); return r.height >= 33.5 && r.width >= 33.5; })));
+
+      /* ⓘ carries the roster the permanent rail used to hold (handoff §11) —
+         and it must NOT push the conversation down the screen. */
+      const streamTopBefore = await page.evaluate(() =>
+        document.querySelector('.cmm-stream').getBoundingClientRect().top);
+      await page.locator('.cmd-ch-tools .cmd-ch-btn').last().click();
+      await page.waitForTimeout(300);
+      ok('ⓘ opens channel info, carrying the member roster',
+         await page.evaluate(() => {
+           const p = document.querySelector('.cmd-chinfo');
+           return !!p && p.querySelectorAll('.cmd-chinfo-roster li').length > 0;
+         }));
+      const streamTopAfter = await page.evaluate(() =>
+        document.querySelector('.cmm-stream').getBoundingClientRect().top);
+      ok('…as a popover, so the conversation does not move under the reader',
+         Math.abs(streamTopAfter - streamTopBefore) < 2);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(250);
+      ok('…and Escape closes it', await page.evaluate(() => !document.querySelector('.cmd-chinfo')));
+      /* …and closing it did NOT take the thread with it. A thread is a pane
+         beside the channel here, not a modal over it: only a modal owns
+         Escape. This threw away an open thread every time. */
+      ok('…without throwing away the thread beside it',
+         await page.evaluate(() => !!document.querySelector('.cmm-thread')));
+
+      /* The chrome is pinned and only the stream scrolls — the artboard's
+         <main> is overflow:hidden. With the whole pane scrolling, the header
+         and composer slid away with the conversation. */
+      ok('the header and the composer stay put while the messages scroll',
+         await page.evaluate(async () => {
+           const head = document.querySelector('.cmm-ch-head');
+           const dock = document.querySelector('.cmd-composer');
+           const stream = document.querySelector('.cmm-stream');
+           const h0 = head.getBoundingClientRect().top, d0 = dock.getBoundingClientRect().top;
+           stream.scrollTop = stream.scrollHeight;
+           await new Promise(r => requestAnimationFrame(r));
+           return Math.abs(head.getBoundingClientRect().top - h0) < 1
+               && Math.abs(dock.getBoundingClientRect().top - d0) < 1;
+         }));
+
+      /* ⤢ — handoff §11: "replying no longer costs you the channel; ⤢ expands
+         it". Expanding must WIDEN the thread and must not take the channel
+         away, which would be the phone overlay again in a desktop's clothes. */
+      const widths = await page.evaluate(async () => {
+        const w = () => ({ t: document.querySelector('.cmm-thread').getBoundingClientRect().width,
+                           c: document.querySelector('.cmm-body').getBoundingClientRect().width });
+        const before = w();
+        document.querySelector('.cm-thread-wide').click();
+        await new Promise(r => setTimeout(r, 260));
+        const after = w();
+        document.querySelector('.cm-thread-wide').click();
+        await new Promise(r => setTimeout(r, 260));
+        return { before, after, back: w() };
+      });
+      ok('⤢ widens the thread', widths.after.t > widths.before.t + 40);
+      ok('…without taking the channel away', widths.after.c > 320);
+      ok('…and it goes back', Math.abs(widths.back.t - widths.before.t) < 2);
+      /* Widened, the channel pane loses ~340px. The header must give that up
+         from the controls, not from the channel's name: it rendered a single
+         letter — "A" — while the presence stack kept every pixel of its own. */
+      const narrowTitle = await page.evaluate(async () => {
+        document.querySelector('.cm-thread-wide').click();
+        await new Promise(r => setTimeout(r, 300));
+        const t = document.querySelector('.cmm-ch-title');
+        const w = t.getBoundingClientRect().width;
+        document.querySelector('.cm-thread-wide').click();
+        await new Promise(r => setTimeout(r, 300));
+        return w;
+      });
+      ok('…and the channel keeps a readable name while it is widened', narrowTitle >= 100);
+
+      /* Newest / Hot is a real sort, not a label: switching it must re-ask the
+         server, and the server takes `sort` on the feed. */
+      const sortAsk = new Promise(res => {
+        const h = (r) => { const u = new URL(r.url());
+          if (u.searchParams.get('view') === 'feed' && u.searchParams.get('sort') === 'trending') {
+            page.off('request', h); res(true); } };
+        page.on('request', h);
+        setTimeout(() => res(false), 4000);
+      });
+      await page.locator('.cmd-ch-tools .cmd-seg-b', { hasText: 'Hot' }).click();
+      ok('Hot asks the server for the trending ranking', await sortAsk);
+      await page.locator('.cmd-ch-tools .cmd-seg-b', { hasText: 'Newest' }).click();
+      await page.waitForTimeout(400);
+
+      /* The bookmark filter narrows to saved — and when nothing is saved it
+         says so, instead of the channel's "be the first to post" empty state
+         in a channel with messages in it. */
+      await page.locator('.cmd-ch-tools .cmd-ch-btn').first().click();
+      await page.waitForTimeout(300);
+      ok('the saved filter says it is a filter when it finds nothing',
+         await page.evaluate(() => {
+           const e = document.querySelector('.cmm-stream .cmm-empty, .cmm-stream [class*="empty"]');
+           const txt = document.querySelector('.cmm-stream').textContent;
+           return /saved/i.test(txt) && !/be the first/i.test(txt) && !!e;
+         }));
+      await page.locator('.cmd-ch-tools .cmd-ch-btn').first().click();
+      await page.waitForTimeout(300);
+
       /* And the thread's own header stacks instead of running together. */
       ok('the thread header keeps its title clear of the channel and the close button',
          await page.evaluate(() => {

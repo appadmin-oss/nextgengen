@@ -2277,6 +2277,15 @@ img { background-color: rgba(12,20,50,0.04); }
   --c-red:    #e4032b;  --c-red-tint:    #fde3e6;  --c-red-ink:   #a3111f;
   --c-purple: #6a3fc0;  --c-purple-tint: #efe6fb;
   --c-neutral-chip: #f2eee0;  --c-neutral-chip-2: #eceadf;
+  /* Three shades the 3A artboard draws that tokens.json does not name. They are
+     here, in the theme block, rather than inline in a rule — AGENTS.md forbids
+     a hex anywhere else — and they are flagged for the designer to rule on:
+     the nearest sanctioned pair (accent-tint / accent-border) is a visibly
+     louder amber than the artboard's active channel row, and there is no lime
+     anywhere in tokens.json to stand in for the digest spark. */
+  --c-row-on:       #fbf5e6;   /* 3A active channel row fill   (not in tokens.json) */
+  --c-row-on-edge:  #efe2c4;   /* 3A active channel row border (not in tokens.json) */
+  --c-spark:        #d0ff3a;   /* 3A "while you were away" ✦   (not in tokens.json) */
   --c-overlay: rgba(10,17,48,0.5);
 
   /* Type */
@@ -2423,6 +2432,10 @@ img { background-color: rgba(12,20,50,0.04); }
   padding: 10px var(--c-gutter); border-bottom: 1px solid var(--c-border); background: var(--c-surface); }
 .cmm-ch-title { margin: 0; font-family: var(--c-font-display); font-weight: 800; font-size: 17px;
   letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The title and the centres chip share a row. `min-width: 0` on both so the
+   name ellipsises instead of shoving the chip out of the header. */
+.cmm-ch-titlerow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cmm-ch-titlerow > .cmm-ch-title { min-width: 0; }
 .cmm-presence { display: flex; align-items: center; gap: 10px; flex: none;
   padding: 8px var(--c-gutter); border-bottom: 1px solid var(--c-divider-soft); }
 .cmm-stack { display: flex; }
@@ -2430,6 +2443,22 @@ img { background-color: rgba(12,20,50,0.04); }
   place-items: center; color: #fff; font-size: 11px; font-weight: 700;
   border: 2px solid var(--c-surface); margin-left: -8px; }
 .cmm-stack-av:first-child { margin-left: 0; }
+/* The presence row's other half: Newest / Hot. Handoff §3 puts a segmented
+   control here, and §11 puts the same one in the desktop channel header, so
+   the control is defined once at every width rather than twice. The `cmd-`
+   prefix is where it was first written — the channel pane — and it keeps that
+   name because renaming a shared component to say "desktop" would be a lie in
+   the other three places the bundle uses it. */
+.cmd-seg { display: flex; gap: 3px; background: var(--c-neutral-chip);
+  border-radius: 10px; padding: 3px; flex: none; }
+.cmd-seg-b { flex: 1; min-width: 0; padding: 6px 4px; border: 0; border-radius: 8px;
+  background: none; color: var(--c-muted); font: inherit; font-size: 12.5px; font-weight: 700;
+  cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmd-seg-b.is-on { background: var(--c-card); color: var(--c-ink); }
+/* The row is stack · purpose · control, and the control is pinned right. */
+.cmm-presence-seg { margin-left: auto; }
+.cmm-presence-seg .cmd-seg-b { padding: 6px 12px; }
+.cmm-purpose { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmm-purpose { flex: 1; min-width: 0; font-size: 12.5px; color: var(--c-muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -3169,6 +3198,14 @@ img { background-color: rgba(12,20,50,0.04); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cm-thread-x { width: var(--c-tap); height: var(--c-tap); flex: none; border: 0; background: none;
   color: var(--c-body-soft); font-size: 17px; cursor: pointer; }
+/* Only rendered on a desktop — a phone thread is already the whole screen —
+   but sized to the 24x24 minimum here anyway, because the day it does render
+   somewhere narrow it must still be hittable. */
+.cm-thread-wide { width: 32px; height: 32px; min-height: 32px; flex: none; display: grid;
+  place-items: center; border-radius: 10px; border: 1px solid var(--c-divider-soft);
+  background: none; color: var(--c-body-soft); cursor: pointer; }
+.cm-thread-wide:hover { background: var(--c-surface); color: var(--c-ink); }
+.cm-thread-wide[aria-pressed="true"] { background: var(--c-ink-deep); border-color: var(--c-ink-deep); color: #fff; }
 .cm-thread-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px var(--c-gutter); }
 .cm-thread-root { padding-bottom: 14px; border-bottom: 1px solid var(--c-border); }
 .cm-thread-count { font-family: var(--c-font-mono); font-size: 11px; font-weight: 700;
@@ -3321,7 +3358,7 @@ img { background-color: rgba(12,20,50,0.04); }
   .cmd-catch { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 13px;
     border: 0; border-radius: 10px; background: var(--c-ink-deep); color: #fff;
     font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
-  .cmd-spark { color: #d0ff3a; }
+  .cmd-spark { color: var(--c-spark); }
   .cmd-icon { width: 34px; height: 34px; border-radius: 10px; background: var(--c-card);
     border: 1px solid var(--c-border-strong); display: grid; place-items: center;
     position: relative; color: var(--c-body-soft); cursor: pointer; }
@@ -3344,17 +3381,12 @@ img { background-color: rgba(12,20,50,0.04); }
   .cmd-plus { width: 30px; height: 30px; border-radius: 9px; background: var(--c-surface);
     border: 1px solid var(--c-divider-soft); display: grid; place-items: center;
     color: var(--c-body-soft); cursor: pointer; }
-  .cmd-seg { display: flex; gap: 3px; background: #f4f0e4; border-radius: 10px; padding: 3px;
-    margin: 0 4px; flex: none; }
-  .cmd-seg-b { flex: 1; min-width: 0; padding: 6px 0; border: 0; border-radius: 8px;
-    background: none; color: var(--c-muted); font: inherit; font-size: 12.5px; font-weight: 700;
-    cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cmd-seg-b.is-on { background: var(--c-card); color: var(--c-ink); }
+  .cmd-chans-hd + .cmd-seg { margin: 0 4px; }
   .cmd-rows { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
   .cmd-row { display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 13px;
     border: 1px solid transparent; background: none; font: inherit; text-align: left; cursor: pointer; }
   .cmd-row:hover { background: var(--c-surface); }
-  .cmd-row.is-on { background: #fbf5e6; border-color: #efe2c4; }
+  .cmd-row.is-on { background: var(--c-row-on); border-color: var(--c-row-on-edge); }
   .cmd-row-av { width: 34px; height: 34px; flex: none; border-radius: 11px;
     background: var(--c-purple-tint); color: var(--c-purple); display: grid; place-items: center;
     font-family: var(--c-font-display); font-weight: 800; font-size: 13px; }
@@ -3382,12 +3414,119 @@ img { background-color: rgba(12,20,50,0.04); }
      undoes a click nobody needed to make. */
   .cmm-ch-head { max-width: none; margin-inline: 0; padding: 14px 20px;
     border-bottom: 1px solid var(--c-divider-soft); background: var(--c-card); gap: 13px; }
-  .cmm-ch-head > .cmm-icon-btn:first-child { display: none; }
   .cmm-ch-head .cmm-ch-av.sm { width: 38px; height: 38px; border-radius: 12px; font-size: 15px; }
   .cmm-ch-title { font-size: 18px; letter-spacing: -0.02em; }
   .cmm-ch-head .cmm-head-txt { flex: 1; min-width: 0; }
-  .cmm-ch-head > .cmm-icon-btn:last-child { width: 34px; height: 34px; min-height: 34px;
-    border-radius: 10px; border: 1px solid var(--c-divider-soft); }
+  .cmm-ch-head .cmm-sub { font-size: 12.5px; color: var(--c-muted); margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Which centres are in the room. A tally, so it stays true as people join. */
+  /* 10px, not the artboard's 9.5px: tokens.json sets a hard 10px floor for
+     uppercase mono eyebrows and that floor is a legibility rule, not a taste. */
+  .cmm-ch-centres { flex: 0 0 auto; font-family: var(--c-font-mono); font-weight: 700;
+    font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    background: var(--c-neutral-chip); color: var(--c-muted);
+    padding: 3px 7px; border-radius: var(--c-r-pill); white-space: nowrap; }
+
+  /* ── The three header controls ──
+     34px square, 10px radius, hairline border: the artboard's own geometry,
+     and above the 24x24 minimum by a comfortable margin. */
+  .cmd-ch-tools { margin-left: auto; display: flex; align-items: center; gap: 10px; flex: none; }
+  /* The header has a fixed-width toolbar and a title that must not be crushed
+     to nothing by it. With the thread widened, the channel pane loses ~340px
+     and the name vanished entirely while the presence stack kept every pixel
+     of its own. The stack is the first thing to go: it is the only control
+     here that says nothing you cannot get from ⓘ. */
+  .cmm-ch-head .cmm-head-txt { min-width: 130px; }
+  .cmm.thread-wide .cmd-ch-stack, .cmm.thread-wide .cmm-ch-centres { display: none; }
+  .cmd-ch-stack { display: flex; align-items: center; }
+  .cmd-ch-face { width: 26px; height: 26px; border-radius: var(--c-r-pill); display: grid;
+    place-items: center; font-family: var(--c-font-display); font-weight: 800; font-size: 10.5px;
+    border: 2px solid var(--c-card); margin-left: -8px; }
+  .cmd-ch-face:first-child { margin-left: 0; }
+  .cmd-ch-face.more { background: var(--c-neutral-chip); color: var(--c-muted);
+    font-family: var(--c-font-mono); font-weight: 700; font-size: 10px; }
+  .cmd-ch-btn { width: 34px; height: 34px; min-height: 34px; border-radius: 10px;
+    border: 1px solid var(--c-border-strong); background: var(--c-card);
+    color: var(--c-body-soft); cursor: pointer; display: grid; place-items: center; }
+  .cmd-ch-btn:hover { background: var(--c-surface); }
+  .cmd-ch-tools .cmd-seg { height: 34px; padding: 3px; }
+  .cmd-ch-tools .cmd-seg-b { padding: 0 12px; font-size: 13px; display: grid; place-items: center; }
+  /* On, not merely hovered: aria-pressed carries it for a screen reader, ink
+     fill carries it for everyone else. A tinted border alone was the state
+     nobody could see. */
+  .cmd-ch-btn.is-on { background: var(--c-ink-deep); border-color: var(--c-ink-deep); color: #fff; }
+
+  /* ── The ⓘ panel ── */
+  /* Absolutely placed, not in the flow: a disclosure that shoves two hundred
+     pixels of conversation down the screen is a disclosure people stop
+     opening. It hangs off the ⓘ that opened it and the channel stays put. */
+  .cmm-channel { position: relative; }
+  .cmd-chinfo { position: absolute; top: 63px; right: 20px; z-index: 4;
+    width: min(360px, calc(100% - 40px));
+    background: var(--c-card); border: 1px solid var(--c-border);
+    border-radius: var(--c-r-card); box-shadow: var(--c-sh-pop);
+    padding: 14px 16px 16px;
+    display: flex; flex-direction: column; gap: 10px; }
+  .cmd-chinfo-top { display: flex; align-items: flex-start; gap: 10px; }
+  .cmd-chinfo-h { margin: 0; flex: 1; min-width: 0; font-family: var(--c-font-display);
+    font-weight: 800; font-size: 15.5px; letter-spacing: -0.01em; }
+  .cmd-chinfo-x { width: 28px; height: 28px; min-height: 28px; flex: none; border: 0;
+    background: none; color: var(--c-body-soft); font-size: 15px; cursor: pointer;
+    border-radius: 9px; }
+  .cmd-chinfo-x:hover { background: var(--c-surface); }
+  .cmd-chinfo-p { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--c-body); }
+  .cmd-chinfo-none { color: var(--c-faint); font-style: italic; }
+  .cmd-chinfo-facts { margin: 0; display: grid; grid-template-columns: auto 1fr;
+    gap: 5px 12px; font-size: 12.5px; }
+  .cmd-chinfo-facts dt { font-family: var(--c-font-mono); font-weight: 700; font-size: 10px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--c-faint); padding-top: 2px; }
+  .cmd-chinfo-facts dd { margin: 0; color: var(--c-body); }
+  /* The roster the permanent rail used to hold. Capped and scrolled: sixty
+     names must not turn a popover into a page. */
+  .cmd-chinfo-roster { list-style: none; margin: 0; padding: 0; max-height: 216px;
+    overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .cmd-chinfo-roster li { display: flex; align-items: center; gap: 8px; min-height: 32px;
+    font-size: 13px; }
+  .cmd-chinfo-av { width: 24px; height: 24px; flex: none; font-size: 10.5px; }
+  .cmd-chinfo-name { font-weight: 600; color: var(--c-body);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmd-chinfo-centre { margin-left: auto; flex: none; font-family: var(--c-font-mono);
+    font-size: 10.5px; color: var(--c-faint); }
+  .cmd-chinfo-rules { background: var(--c-surface); border: 1px solid var(--c-divider-soft);
+    border-radius: var(--c-r-sm); padding: 9px 11px; }
+  .cmd-chinfo-rules-h { font-family: var(--c-font-mono); font-weight: 700; font-size: 10px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--c-faint); }
+  .cmd-chinfo-rules p { margin: 4px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--c-body); }
+  .cmd-chinfo-files { display: flex; align-items: center; justify-content: center; gap: 8px;
+    height: 38px; border-radius: var(--c-r-btn); border: 1px solid var(--c-border-strong);
+    background: var(--c-card); color: var(--c-ink); font: 700 13px var(--c-font-display);
+    cursor: pointer; }
+  .cmd-chinfo-files:hover { background: var(--c-surface); }
+
+  /* ── "While you were away" (§11) ──
+     A CARD inside the pane's padding, not a bar welded to its edges: the
+     artboard draws 16px corners with the conversation visible around it. */
+  .cmd-digest { position: relative; flex: none; margin: 14px 20px 0;
+    background: var(--c-ink-deep); color: #fff; border-radius: 16px;
+    padding: 15px 17px; display: flex; flex-direction: column; gap: 9px; }
+  .cmd-digest-eyebrow { display: flex; align-items: center; gap: 8px; padding-right: 30px;
+    font-family: var(--c-font-mono); font-weight: 700; font-size: 10.5px;
+    letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.6); }
+  .cmd-digest-body { margin: 0; font-size: 13.5px; line-height: 1.6; color: rgba(255,255,255,.88); }
+  .cmd-digest-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+  .cmd-digest-go, .cmd-digest-alt { min-height: 32px; padding: 0 13px; border-radius: 9px;
+    font: inherit; font-size: 12.5px; cursor: pointer; }
+  .cmd-digest-go { border: 0; background: var(--c-accent); color: var(--c-ink-deep); font-weight: 800; }
+  .cmd-digest-alt { border: 1px solid rgba(255,255,255,.25); background: none;
+    color: #fff; font-weight: 700; }
+  .cmd-digest-alt:hover { background: rgba(255,255,255,.08); }
+  /* 30px, not the 44px a phone needs: this is a pointer-only surface, and the
+     artboard has no dismiss here at all. Still well over the 24px floor. */
+  .cmd-digest-x { position: absolute; top: 8px; right: 10px; width: 30px; height: 30px;
+    min-height: 30px; border: 0; background: none; color: rgba(255,255,255,.7);
+    font-size: 14px; cursor: pointer; border-radius: 9px; }
+  .cmd-digest-x:hover { background: rgba(255,255,255,.12); color: #fff; }
+
   .cmm-presence { max-width: none; margin-inline: 0; padding: 9px 20px;
     border-bottom: 1px solid var(--c-divider-soft); background: var(--c-card); }
   .cmm-purpose { font-size: 12.5px; color: var(--c-muted); }
@@ -3408,6 +3547,11 @@ img { background-color: rgba(12,20,50,0.04); }
     grid-template-rows: 54px minmax(0, 1fr);
     gap: 12px; align-items: stretch; overflow: hidden; }
   .cmm.has-thread { grid-template-columns: 68px 268px minmax(0, 1fr) minmax(320px, 372px); }
+  /* ⤢ — the thread takes the larger share and the channel keeps a readable
+     column beside it. It is NOT given the whole width: the point of a side
+     panel is that the room you are replying to is still there, and a thread
+     that covers the channel is the phone overlay again with extra steps. */
+  .cmm.has-thread.thread-wide { grid-template-columns: 68px 268px minmax(0, 0.85fr) minmax(480px, 1.15fr); }
 
   /* The tab bar becomes the icon rail: same four destinations, same order. */
   .cmm-tabs { position: static; grid-row: 2; grid-column: 1;
@@ -3459,7 +3603,14 @@ img { background-color: rgba(12,20,50,0.04); }
      pill floating in a wide pane, which reads as a card come loose. */
   .cmm-head, .cmm-search, .cmm-chips { max-width: 72ch; margin-inline: auto; }
   .cmm-search { width: 100%; }
-  .cmm-channel { height: auto; min-height: calc(100dvh - var(--cm-nav, 64px) - 26px); }
+  /* The channel pane does not scroll — the MESSAGES do.
+     The artboard's <main> is `overflow: hidden` with a `flex: none` header and
+     a `flex: 1; min-height: 0` message area, and that is not decoration: with
+     the whole pane scrolling, the header, the catch-up card and the composer
+     all slid away with the conversation, and clicking any header control
+     scrolled it back into view — yanking the reader 143px up the thread they
+     were in the middle of. Pin the chrome, scroll the stream. */
+  .cmm-channel { height: 100%; min-height: 0; overflow: hidden; }
 
   /* A FAB is a phone affordance; on a desktop the composer has room to be a
      button where the eye already is. */
