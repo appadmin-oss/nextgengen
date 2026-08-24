@@ -462,6 +462,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'match.respond'           => 'match_respond',
             'match.move'              => 'match_move',
             'match.resign'            => 'match_resign',
+            'match.draw'              => 'match_draw',
             'match.react'             => 'match_react',
             'match.report'            => 'match_report',
             'match.staff.list'        => 'match_staff_list',

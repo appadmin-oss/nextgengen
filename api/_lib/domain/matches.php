@@ -147,6 +147,12 @@ function match_public(array $r, string $viewer, bool $staff = false): array {
         'winnerId'   => (string)($r['winnerId'] ?? ''),
         'reason'     => (string)($r['reason'] ?? ''),
         'flagged'    => (int)($r['flagged'] ?? 0) === 1,
+        /* A draw offer is two different facts depending on who is reading it.
+         * `drawOffered` is "yours is still with them"; `drawPending` is "they
+         * have offered and you owe an answer". Sent apart so the board never
+         * has to work out which side of an offer this viewer is on. */
+        'drawOffered' => $side !== '' && (string)($r['drawOfferBy'] ?? '') === $viewer && (string)$r['status'] === 'active',
+        'drawPending' => $side !== '' && function_exists('match_draw_pending') && match_draw_pending($r, $viewer),
         // The clock, computed rather than stored: the mover's number is wound
         // down by however long they have been thinking, so what the board
         // renders and what the server would act on cannot disagree.
@@ -330,7 +336,11 @@ function match_move(array $p): array {
     $other = (string)$r['playerA'] === $viewer ? (string)$r['playerB'] : (string)$r['playerA'];
     $status = $res['status'];
 
-    $patch = ['state' => (string)$res['fen'], 'ply' => $ply, 'updatedAt' => $now, 'lastMoveAt' => $now];
+    /* A move answers a draw offer. Nobody plays on and then accepts half a
+     * point for a position that no longer exists, so the offer dies with the
+     * position it was made in — and the offerer's own move retracts it. */
+    $patch = ['state' => (string)$res['fen'], 'ply' => $ply, 'updatedAt' => $now, 'lastMoveAt' => $now]
+             + match_draw_clear();
     if ($status['state'] === 'checkmate') {
         $patch += ['status' => 'complete', 'result' => 'win', 'winnerId' => $viewer, 'reason' => 'checkmate', 'turnPlayer' => ''];
     } elseif (in_array($status['state'], ['stalemate', 'draw'], true)) {
@@ -434,6 +444,106 @@ function match_resign(array $p): array {
     match_settle_chess((string)$r['matchId']);
     if (function_exists('match_tournament_report')) match_tournament_report((string)$r['matchId']);
     return ['ok' => true, 'status' => 'complete', 'winnerId' => $other];
+}
+
+/* ── Draw offers (6A §4) ───────────────────────────────────────────────────
+ *
+ * A draw by agreement is the one way a chess game ends that neither player can
+ * bring about alone, so all three of these are guarded on the server:
+ *
+ *   · Only a player in the game, only while it is live.
+ *   · One offer per turn. Repeatedly offering a draw is how a losing player
+ *     badgers a winning one into taking half a point, and telling a
+ *     twelve-year-old to "just ignore it" is not a design. A second offer is
+ *     refused until the opponent has actually moved on from the first.
+ *   · Moving answers an offer. That is the real chess rule — an offer stands
+ *     until the opponent replies or plays — and it means a child never has to
+ *     find a Decline button to get on with the game.
+ */
+
+/** Has a live offer, from the other player, that this viewer must answer?
+ *  The player check is INSIDE here rather than at each call site: a spectator
+ *  is not part of the conversation, and "somebody offered a draw and it is not
+ *  you" is true of every watcher in the room. */
+function match_draw_pending(array $r, string $viewer): bool {
+    if ($viewer === '' || ((string)$r['playerA'] !== $viewer && (string)$r['playerB'] !== $viewer)) return false;
+    $by = trim((string)($r['drawOfferBy'] ?? ''));
+    return $by !== '' && $by !== $viewer && (string)$r['status'] === 'active';
+}
+
+/** Clear the LIVE offer. Called on a move, and after any answer.
+ *  Deliberately leaves drawOfferLastBy/drawOfferPly alone: those record which
+ *  player offered in which position, and wiping them on a decline would make
+ *  offering again immediately free — which is the whole thing being prevented. */
+function match_draw_clear(): array {
+    return ['drawOfferBy' => '', 'drawOfferAt' => ''];
+}
+
+/**
+ * offer | accept | decline.
+ *
+ * Returns what happened rather than 'ok', because "I pressed Draw and nothing
+ * visible changed" is the common case — the offer is sent and now you wait —
+ * and the screen has to be able to say that.
+ */
+function match_draw(array $p): array {
+    $viewer = (string)($p['playerId'] ?? '');
+    /* Whitelisted here as well as at the endpoint. A verb this does not know
+       must not fall through to 'offer' — the default of an unrecognised
+       instruction should never be an action. */
+    $act    = (string)($p['do'] ?? 'offer');
+    if (!in_array($act, ['offer', 'accept', 'decline'], true)) return ['ok' => false, 'error' => 'bad_action'];
+    $r = db_row('SELECT * FROM match_games WHERE matchId = ? LIMIT 1', [(string)($p['matchId'] ?? '')]);
+    if (!$r) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)$r['playerA'] !== $viewer && (string)$r['playerB'] !== $viewer) return ['ok' => false, 'error' => 'not_yours'];
+    if ((string)$r['status'] !== 'active') return ['ok' => false, 'error' => 'not_active'];
+
+    $mid   = (string)$r['matchId'];
+    $other = (string)$r['playerA'] === $viewer ? (string)$r['playerB'] : (string)$r['playerA'];
+    $by    = trim((string)($r['drawOfferBy'] ?? ''));
+    $ply   = (int)($r['ply'] ?? 0);
+
+    if ($act === 'accept' || $act === 'decline') {
+        /* You can only answer an offer somebody else made. Answering your own
+           would be a way to force a draw single-handed. */
+        if ($by === '' || $by === $viewer) return ['ok' => false, 'error' => 'no_offer'];
+        if ($act === 'decline') {
+            db_update('match_games', match_draw_clear() + ['updatedAt' => now_iso()], ['matchId' => $mid]);
+            return ['ok' => true, 'outcome' => 'declined'];
+        }
+        $stop = function_exists('chess_clock_stop') ? chess_clock_stop() : [];
+        db_update('match_games', array_merge($stop, match_draw_clear(), [
+            'status' => 'complete', 'result' => 'draw', 'winnerId' => '',
+            'reason' => 'agreement', 'turnPlayer' => '', 'updatedAt' => now_iso(),
+        ]), ['matchId' => $mid]);
+        match_settle_chess($mid);
+        if (function_exists('match_tournament_report')) match_tournament_report($mid);
+        return ['ok' => true, 'outcome' => 'agreed', 'status' => 'complete', 'result' => 'draw'];
+    }
+
+    // ── offer ──
+    if ($by === $viewer) {
+        return ['ok' => true, 'outcome' => 'already', 'why' => 'Your offer is still with them.'];
+    }
+    if ($by === $other) {
+        /* They offered first and this player pressed Draw rather than Accept.
+           Reading that as an acceptance is the kind and correct answer: both
+           of them have now said they want a draw. */
+        return match_draw(['playerId' => $viewer, 'matchId' => $mid, 'do' => 'accept']);
+    }
+    /* The nuisance rule. THIS player offered at some ply and was declined;
+       they cannot offer again until the position has actually moved on. It is
+       keyed to the player, not just the ply: the opponent deciding a draw is a
+       good idea after all is not badgering, and refusing them would be. */
+    $lastPly = (int)($r['drawOfferPly'] ?? -1);
+    if ($lastPly >= 0 && $ply <= $lastPly && trim((string)($r['drawOfferLastBy'] ?? '')) === $viewer) {
+        return ['ok' => false, 'error' => 'too_soon',
+                'message' => 'You have already offered a draw in this position. Make a move first.'];
+    }
+    db_update('match_games', ['drawOfferBy' => $viewer, 'drawOfferAt' => now_iso(),
+                              'drawOfferLastBy' => $viewer, 'drawOfferPly' => $ply,
+                              'updatedAt' => now_iso()], ['matchId' => $mid]);
+    return ['ok' => true, 'outcome' => 'offered'];
 }
 
 /* ── Reactions — the entire messaging surface ─────────────────────────── */
@@ -601,6 +711,13 @@ function match_poll(array $p): array {
          * countdown drawn in the browser drifts, and the tab sleeps; this is
          * the number it re-syncs to, and it is a handful of bytes. */
         'clock' => function_exists('chess_clock_state') ? chess_clock_state($r) : null,
+        /* A draw offer changes nothing about the position, so the ply-based
+         * `changed` cannot see it. Without this the opponent's board would
+         * learn of the offer only when they moved — which is the one action
+         * that answers it. Two booleans on a poll that already runs. */
+        'drawPending' => match_draw_pending($r, $viewer),
+        'drawOffered' => $viewer !== '' && trim((string)($r['drawOfferBy'] ?? '')) === $viewer
+                         && (string)$r['status'] === 'active',
     ];
     /* The position rides along when it changed, which saves the client a second
      * round trip on the one poll in twenty that actually has news. Everything

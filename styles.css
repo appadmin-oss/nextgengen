@@ -4966,6 +4966,28 @@ img { background-color: rgba(12,20,50,0.04); }
   font: inherit; font-size: 12.5px; font-weight: 700; color: #1f4bc4; cursor: pointer; }
 .mtg-pre-x:focus-visible { outline: 2px solid var(--ink-900); outline-offset: 2px; }
 
+/* ── A draw offer ──────────────────────────────────────────────────────────
+   Above the board, in the same slot as the premove banner, because it is the
+   only thing on the screen asking the reader a question. The ½ is decorative
+   — the sentence beside it says the same thing in words, so the meaning does
+   not depend on recognising a glyph or on the border being gold.            */
+.mtg-draw { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 10px; padding: 9px 13px; border-radius: var(--c-r-sm);
+  background: var(--cream-50, #fdfaf3); border: 1px solid var(--cream-200); }
+/* The one that wants an answer is the one that is allowed to be loud. */
+.mtg-draw.is-ask { background: #fdf3dd; border-color: var(--gold-500); }
+.mtg-draw-l { font-size: 15px; font-weight: 800; line-height: 1; color: var(--ink-900); }
+.mtg-draw-b { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--ink-900); }
+.mtg-draw-acts { display: flex; gap: 6px; }
+.mtg-draw-no, .mtg-draw-yes, .mtg-draw-x {
+  min-height: var(--c-tap); padding: 0 14px; border-radius: var(--c-r-pill);
+  font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.mtg-draw-no, .mtg-draw-x { border: 1px solid var(--ink-900); background: #fff; color: var(--ink-900); }
+.mtg-draw-yes { border: 1px solid var(--navy-900); background: var(--navy-900); color: #fff; }
+.mtg-draw-no:disabled, .mtg-draw-yes:disabled { opacity: .55; cursor: default; }
+.mtg-draw-no:focus-visible, .mtg-draw-yes:focus-visible, .mtg-draw-x:focus-visible {
+  outline: 2px solid var(--ink-900); outline-offset: 2px; }
+
 /* ── The chess hub ─────────────────────────────────────────────────────────
    The screen used to be six sections of equal weight stacked in a fixed
    order, so a member with a game waiting scrolled past nothing and a member
@@ -5480,6 +5502,14 @@ img { background-color: rgba(12,20,50,0.04); }
 
 /* The premove banner and the review offer, restated dark. */
 .mtg-pre { background: var(--bd-panel-2); border-color: var(--bd-line); }
+/* The draw banner in the board's own room. */
+.mtg-draw { background: var(--bd-panel-2); border-color: var(--bd-line); }
+.mtg-draw.is-ask { background: var(--bd-panel-2); border-color: var(--bd-gold); }
+.mtg-draw-l, .mtg-draw-b { color: var(--bd-text); }
+.mtg-draw-no, .mtg-draw-x { background: var(--bd-panel); border-color: var(--bd-line); color: #fff; }
+.mtg-draw-yes { background: var(--bd-gold); border-color: var(--bd-gold); color: #0c1432; }
+.mtg-draw-no:focus-visible, .mtg-draw-yes:focus-visible, .mtg-draw-x:focus-visible {
+  outline: 2px solid #fff; outline-offset: 2px; }
 .mtg-pre-l { color: var(--bd-gold); }
 .mtg-pre-b { color: var(--bd-text); }
 .mtg-pre-x { background: var(--bd-panel-2); color: #fff; }

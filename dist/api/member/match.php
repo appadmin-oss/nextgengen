@@ -148,6 +148,12 @@ if ($method === 'GET') {
             'clientMoveId' => mb_substr((string)($b['clientMoveId'] ?? ''), 0, 40)]);
     } elseif ($action === 'resign') {
         $res = gs_call('match.resign', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? '')]);
+    } elseif ($action === 'draw') {
+        /* offer | accept | decline. Whitelisted rather than passed through, so
+           an unknown verb cannot fall into the domain's default of "offer". */
+        $do = (string)($b['do'] ?? 'offer');
+        if (!in_array($do, ['offer', 'accept', 'decline'], true)) json_error('bad_action', 400);
+        $res = gs_call('match.draw', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? ''), 'do' => $do]);
     } elseif ($action === 'react') {
         $res = gs_call('match.react', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? ''), 'reaction' => (string)($b['reaction'] ?? '')]);
     } elseif ($action === 'report') {

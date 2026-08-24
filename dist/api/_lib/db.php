@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 105;
+const NGG_SCHEMA_TARGET = 106;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2966,6 +2966,29 @@ function db_migrate(PDO $db): void {
             ALTER TABLE journal ADD COLUMN promptText TEXT DEFAULT '';
             ALTER TABLE journal ADD COLUMN updatedAt TEXT DEFAULT '';
             CREATE INDEX idx_journal_day ON journal(memberId, occurredOn);
+        ",
+        106 => "
+            /* Draw offers (6A §4 puts \"Offer draw\" beside Resign).
+               Columns on the game rather than a table: an offer is a fact
+               about the CURRENT position and there is only ever one live at a
+               time.
+
+               drawOfferBy / drawOfferAt are the LIVE offer, cleared the moment
+               it is answered — accepted, declined, or answered with a move.
+
+               drawOfferLastBy / drawOfferPly outlive that: they remember who
+               offered last and in which position, and they are the reason this
+               is not just a button. Repeatedly offering a draw is how a losing
+               player badgers a winning one, and in a service for children that
+               is not a quirk of etiquette. Held separately from the live offer
+               because a decline must not wipe the record of the offer that was
+               declined — that would make the badgering free. Held per PLAYER
+               because the opponent changing their mind in the same position is
+               not badgering, and refusing them would be a lie. */
+            ALTER TABLE match_games ADD COLUMN drawOfferBy TEXT DEFAULT '';
+            ALTER TABLE match_games ADD COLUMN drawOfferAt TEXT DEFAULT '';
+            ALTER TABLE match_games ADD COLUMN drawOfferLastBy TEXT DEFAULT '';
+            ALTER TABLE match_games ADD COLUMN drawOfferPly INTEGER DEFAULT -1;
         ",
     ];
 

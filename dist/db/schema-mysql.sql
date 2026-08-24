@@ -2254,3 +2254,21 @@ ALTER TABLE journal ADD COLUMN updatedAt VARCHAR(40) DEFAULT '';
 CREATE INDEX idx_journal_day ON journal (memberId, occurredOn);
 
 INSERT INTO schema_version (version) VALUES (105) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 106 · Draw offers ───────────────────────────────────────────────────────
+-- Columns on the game rather than a table: an offer is a fact about the CURRENT
+-- position and only one is ever live. drawOfferBy/At are the live offer and are
+-- cleared the moment it is answered — accepted, declined, or met with a move.
+--
+-- drawOfferLastBy/drawOfferPly outlive the answer: they remember who offered
+-- last and in which position, and they are the anti-nuisance rule. Repeatedly
+-- offering a draw is how a losing player badgers a winning one, and in a
+-- service for children that is not a quirk of etiquette. Kept apart from the
+-- live offer so a decline cannot wipe the record of what was declined, and kept
+-- per player so the opponent changing their mind is not treated as badgering.
+ALTER TABLE match_games ADD COLUMN drawOfferBy VARCHAR(64) DEFAULT '';
+ALTER TABLE match_games ADD COLUMN drawOfferAt VARCHAR(40) DEFAULT '';
+ALTER TABLE match_games ADD COLUMN drawOfferLastBy VARCHAR(64) DEFAULT '';
+ALTER TABLE match_games ADD COLUMN drawOfferPly INT DEFAULT -1;
+
+INSERT INTO schema_version (version) VALUES (106) ON DUPLICATE KEY UPDATE version = version;

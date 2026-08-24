@@ -13980,6 +13980,91 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('…but somebody who is not a member at all cannot',
         match_report(['playerId' => 'NOBODY-AT-ALL', 'matchId' => $mid])['error'] === 'not_a_player');
 
+    /* ── Draw offers (6A §4) ───────────────────────────────────────────────
+     * A draw is the one result two children have to agree on, so the rules
+     * that matter are about the conversation rather than the position: who may
+     * open it, what a second offer costs, and what a move means.
+     * ──────────────────────────────────────────────────────────────────── */
+    $dInv = match_invite(['playerId' => 'MPL-B', 'game' => 'chess', 'opponentId' => 'MPL-C']);
+    $dm = (string)$dInv['matchId'];
+    match_respond(['playerId' => 'MPL-C', 'matchId' => $dm, 'accept' => true]);   // MPL-B is white
+
+    chk('a spectator cannot offer a draw in somebody else\'s game',
+        match_draw(['playerId' => 'MPL-A', 'matchId' => $dm])['error'] === 'not_yours');
+    chk('a player offers a draw',
+        (match_draw(['playerId' => 'MPL-B', 'matchId' => $dm])['outcome'] ?? '') === 'offered');
+    chk('…and the opponent is the one asked to answer, not the offerer',
+        !empty(match_get(['playerId' => 'MPL-C', 'matchId' => $dm])['match']['drawPending'])
+        && empty(match_get(['playerId' => 'MPL-B', 'matchId' => $dm])['match']['drawPending']));
+    chk('…while the offerer is told their own offer is still out',
+        !empty(match_get(['playerId' => 'MPL-B', 'matchId' => $dm])['match']['drawOffered']));
+    /* A spectator is not part of the conversation and must not be shown a
+       prompt for a decision that is not theirs. */
+    chk('…and a watcher is shown neither side of it',
+        empty(match_get(['playerId' => 'MPL-A', 'matchId' => $dm])['match']['drawPending'])
+        && empty(match_get(['playerId' => 'MPL-A', 'matchId' => $dm])['match']['drawOffered']));
+    /* The board polls on the ply and only refetches when it moves. An offer
+       moves no piece, so without this the opponent would hear about it when
+       they made the move that answers it. */
+    chk('…and the offer reaches the opponent on the poll, which no move triggered',
+        !empty(match_poll(['playerId' => 'MPL-C', 'matchId' => $dm, 'since' => 0])['drawPending'])
+        && empty(match_poll(['playerId' => 'MPL-C', 'matchId' => $dm, 'since' => 0])['changed']));
+    chk('…and the poll does not put the prompt on a watcher\'s screen either',
+        empty(match_poll(['playerId' => 'MPL-A', 'matchId' => $dm, 'since' => 0])['drawPending']));
+    chk('pressing Draw again while it is still out says so rather than resending',
+        (match_draw(['playerId' => 'MPL-B', 'matchId' => $dm])['outcome'] ?? '') === 'already');
+    chk('you cannot accept your own offer',
+        match_draw(['playerId' => 'MPL-B', 'matchId' => $dm, 'do' => 'accept'])['error'] === 'no_offer');
+
+    chk('the opponent declines',
+        (match_draw(['playerId' => 'MPL-C', 'matchId' => $dm, 'do' => 'decline'])['outcome'] ?? '') === 'declined');
+    chk('…and the game carries on',
+        (string)(db_row('SELECT status FROM match_games WHERE matchId = ?', [$dm])['status'] ?? '') === 'active');
+    chk('…and the prompt is gone from the opponent\'s board',
+        empty(match_get(['playerId' => 'MPL-C', 'matchId' => $dm])['match']['drawPending']));
+    chk('…and there is nothing left to decline',
+        match_draw(['playerId' => 'MPL-C', 'matchId' => $dm, 'do' => 'decline'])['error'] === 'no_offer');
+
+    /* The nuisance rule: this is what stops a losing player asking again and
+       again until a twelve-year-old gives in to make it stop. */
+    chk('offering again in the same position is refused, in words a child can act on',
+        match_draw(['playerId' => 'MPL-B', 'matchId' => $dm])['message']
+        === 'You have already offered a draw in this position. Make a move first.');
+    /* …but the opponent is not the one being told off. Changing your mind
+       about a draw you just declined is not badgering. */
+    chk('…while the player who DECLINED may still change their mind',
+        (match_draw(['playerId' => 'MPL-C', 'matchId' => $dm])['outcome'] ?? '') === 'offered');
+    match_draw(['playerId' => 'MPL-B', 'matchId' => $dm, 'do' => 'decline']);
+
+    match_move(['playerId' => 'MPL-B', 'matchId' => $dm, 'move' => 'e2e4']);
+    chk('once the position has moved on, a second offer is allowed',
+        (match_draw(['playerId' => 'MPL-B', 'matchId' => $dm])['outcome'] ?? '') === 'offered');
+    chk('a move answers the offer — nobody agrees a draw in a position that is gone',
+        !empty(match_move(['playerId' => 'MPL-C', 'matchId' => $dm, 'move' => 'e7e5'])['ok'])
+        && (string)(db_row('SELECT drawOfferBy FROM match_games WHERE matchId = ?', [$dm])['drawOfferBy'] ?? 'x') === '');
+
+    /* Both players pressing Draw is an agreement, however they got there:
+       pressing Draw against a live offer is read as accepting it, because
+       hunting for the right button is not a skill this is testing. */
+    match_draw(['playerId' => 'MPL-B', 'matchId' => $dm]);
+    $agreed = match_draw(['playerId' => 'MPL-C', 'matchId' => $dm]);
+    chk('pressing Draw when they have already offered is taken as accepting',
+        ($agreed['outcome'] ?? '') === 'agreed' && ($agreed['result'] ?? '') === 'draw');
+    $dRow = db_row('SELECT * FROM match_games WHERE matchId = ?', [$dm]);
+    chk('…the game is over, drawn, and says why',
+        (string)$dRow['status'] === 'complete' && (string)$dRow['result'] === 'draw'
+        && (string)$dRow['reason'] === 'agreement' && (string)$dRow['winnerId'] === '');
+    chk('…neither of them can move afterwards',
+        match_move(['playerId' => 'MPL-B', 'matchId' => $dm, 'move' => 'd2d4'])['error'] === 'not_active');
+    chk('…and a finished game cannot be offered a draw',
+        match_draw(['playerId' => 'MPL-B', 'matchId' => $dm])['error'] === 'not_active');
+    chk('…and the draw is rated like any other result',
+        (string)($dRow['settledAt'] ?? '') !== '');
+    /* An instruction nobody recognises must not become an action. Checked
+       before the match is even loaded, so it holds on a live game too. */
+    chk('an unknown verb cannot fall through to "offer"',
+        match_draw(['playerId' => 'MPL-B', 'matchId' => $dm, 'do' => 'resign'])['error'] === 'bad_action');
+
     // Resignation, and what it does to the record.
     chk('resigning hands the win to the opponent',
         (match_resign(['playerId' => 'MPL-B', 'matchId' => $mid])['winnerId'] ?? '') === 'MPL-A');
@@ -17950,8 +18035,10 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('homework: …and a child not in the cohort is told, not silently recorded',
         empty(backend_dispatch('community.homeworkSubmit', ['memberId' => 'HW-LATE', 'homeworkId' => $hid])['ok']));
 
-    /* Due dates as a person says them. */
-    $t = time();
+    /* Due dates as a person says them. Pinned to a fixed midday instant rather
+       than time(): "an hour from now" is tomorrow between 23:00 and midnight,
+       and a test that fails for one hour a day is a test nobody trusts. */
+    $t = strtotime('2026-05-14T12:00:00Z');
     chk('homework: a due date reads the way somebody would say it',
         hw_due_words(gmdate('Y-m-d\TH:i:s\Z', $t + 3600), $t) === 'today ' . gmdate('ga', $t + 3600)
         && hw_due_words(gmdate('Y-m-d\TH:i:s\Z', $t + 86400), $t) === 'tomorrow ' . gmdate('ga', $t + 86400)

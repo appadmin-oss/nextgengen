@@ -637,6 +637,10 @@
            a move that already landed — or playing it twice. */
         move: (matchId, move, clientMoveId) => request('/member/match.php', { body: { action: 'move', matchId, move, clientMoveId: clientMoveId || '' } }),
         resign:  (matchId) => request('/member/match.php', { body: { action: 'resign', matchId } }),
+        /* offer | accept | decline. One verb, because the three are the same
+           conversation and the server decides what pressing Draw means when an
+           offer is already on the table. */
+        draw:    (matchId, act) => request('/member/match.php', { body: { action: 'draw', matchId, do: act || 'offer' } }),
         react:   (matchId, reaction) => request('/member/match.php', { body: { action: 'react', matchId, reaction } }),
         report:  (matchId) => request('/member/match.php', { body: { action: 'report', matchId } }),
 

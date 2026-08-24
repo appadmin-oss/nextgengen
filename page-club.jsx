@@ -7873,6 +7873,11 @@ function MatchGame({ matchId, onBack }) {
   const [preFrom, setPreFrom] = React.useState("");
   const [say, setSay] = React.useState("");        // the live-region announcement
   const lastAnnounced = React.useRef(-1);
+  /* The one thing the draw buttons need beyond the match itself: what the
+     server said when it refused. "Nothing happened" is the worst possible
+     answer to a button a child pressed twice. */
+  const [drawNote, setDrawNote] = React.useState("");
+  const [drawBusy, setDrawBusy] = React.useState(false);
 
   const load = React.useCallback(() => {
     NGGApi.member.match.get(matchId)
@@ -7908,6 +7913,10 @@ function MatchGame({ matchId, onBack }) {
           if (!alive) return;
           if (r.changed) load();                    // something happened — get the detail
           else if (r.status !== "active") load();   // resigned or ended between ticks
+          /* A draw offer moves no piece, so `changed` — which is the ply —
+             cannot see it. Without this the opponent would find out about the
+             offer by making the move that answers it. */
+          else if (!!r.drawPending !== !!m.drawPending || !!r.drawOffered !== !!m.drawOffered) load();
         })
         .catch(() => {})
         .then(() => { if (alive) timer = setTimeout(tick, m.yourTurn ? 6000 : 2500); });
@@ -7916,7 +7925,7 @@ function MatchGame({ matchId, onBack }) {
        your opponent resigning, and that can wait six seconds. */
     timer = setTimeout(tick, m.yourTurn ? 6000 : 2500);
     return () => { alive = false; if (timer) clearTimeout(timer); };
-  }, [m && m.status, m && m.yourTurn, m && m.ply, matchId, load]);
+  }, [m && m.status, m && m.yourTurn, m && m.ply, m && m.drawPending, m && m.drawOffered, matchId, load]);
 
   /* One id per move attempt, so a retry after a dropped response replays the
      original outcome instead of failing on a move that already landed. Kept in
@@ -8071,6 +8080,23 @@ function MatchGame({ matchId, onBack }) {
   const them = m.you === "A" ? m.players.B : m.players.A;
   const title = isPlayer ? "You vs " + them.name : m.players.A.name + " vs " + m.players.B.name;
 
+  /* Offer, accept, decline — one call, because they are one conversation and
+     the server is the thing that knows which of them pressing Draw means. The
+     board is reloaded either way: an offer changes what the other player's
+     screen has to say, and a decline changes what this one does. */
+  const answerDraw = (act) => {
+    if (drawBusy) return;
+    setDrawBusy(true);
+    setDrawNote("");
+    NGGApi.member.match.draw(matchId, act)
+      .then(r => {
+        if (r && r.outcome === "already") setDrawNote("Your offer is still with " + them.name + ".");
+        load();
+      })
+      .catch(e => setDrawNote((e && e.message) || "That did not go through. Try again."))
+      .then(() => setDrawBusy(false));
+  };
+
   const tap = (sq, piece) => {
     /* Not your turn, but the game is live and you are in it: this is a
        PREMOVE. Blitz is close to unplayable without one — at three minutes
@@ -8187,6 +8213,55 @@ function MatchGame({ matchId, onBack }) {
           </span>
           <button className="mtg-pre-x" onClick={() => { setPremove(null); setPreFrom(""); }}>
             Cancel<span className="sr-only"> premove</span>
+          </button>
+        </div>
+      )}
+
+      {/* A draw offer.
+       *
+       * Above the board rather than beside it, because it is the only thing on
+       * the screen asking the reader a question, and because the panel beside
+       * the board is behind a tab on a phone — a decision you have to go and
+       * find is a decision that gets made by accident.
+       *
+       * role="status" rather than "alert": it interrupts nothing, it is not an
+       * emergency, and a screen reader announcing it politely at the end of the
+       * current sentence is the right amount of noise for "they would like a
+       * draw". It carries the offerer's NAME because the same banner appears in
+       * a tournament where a child has several games open.
+       */}
+      {m.drawPending && (
+        <div className="mtg-draw is-ask" role="status">
+          <span className="mtg-draw-l" aria-hidden="true">½</span>
+          <span className="mtg-draw-b">{them.name} offers a draw</span>
+          <div className="mtg-draw-acts">
+            <button type="button" className="mtg-draw-no" disabled={drawBusy}
+                    onClick={() => answerDraw("decline")}>
+              Decline
+            </button>
+            <button type="button" className="mtg-draw-yes" disabled={drawBusy}
+                    onClick={() => answerDraw("accept")}>
+              Accept<span className="sr-only"> the draw — the game ends half a point each</span>
+            </button>
+          </div>
+        </div>
+      )}
+      {!m.drawPending && m.drawOffered && (
+        <div className="mtg-draw" role="status">
+          <span className="mtg-draw-l" aria-hidden="true">½</span>
+          <span className="mtg-draw-b">
+            Draw offered. Waiting for {them.name} — play on while you wait, a move takes it back.
+          </span>
+        </div>
+      )}
+      {/* Why the button did nothing. The server refuses a second offer in the
+          same position, and a button that refuses in silence is a broken one. */}
+      {drawNote && (
+        <div className="mtg-draw is-note" role="status">
+          <span className="mtg-draw-l" aria-hidden="true">½</span>
+          <span className="mtg-draw-b">{drawNote}</span>
+          <button type="button" className="mtg-draw-x" onClick={() => setDrawNote("")}>
+            OK<span className="sr-only">, hide this</span>
           </button>
         </div>
       )}
@@ -8322,15 +8397,28 @@ function MatchGame({ matchId, onBack }) {
               lives here rather than under the board: it is a control, and
               controls belong together, not between a player and their game. */}
           <div className="mtg-acts">
-            <button type="button" className="mtg-act mtg-flip" onClick={() => setManualFlip(v => !v)}>
-              <span aria-hidden="true">⇅</span> Flip
-            </button>
+            {/* 6A §4 draws this row as Offer draw · Resign · flip, in that
+                order. Draw comes first because it is the one a child reaches
+                for by choice; Resign is the one they reach for by mistake. */}
+            {m.status === "active" && !m.spectator && (
+              <button type="button" className="mtg-act" disabled={drawBusy}
+                onClick={() => answerDraw(m.drawPending ? "accept" : "offer")}>
+                <span aria-hidden="true">½</span>{" "}
+                {/* The label says what the press will DO. Pressing "Offer
+                    draw" against a live offer accepts it, and a button whose
+                    label does not admit that is a button that lies. */}
+                {m.drawPending ? "Accept draw" : "Offer draw"}
+              </button>
+            )}
             {m.status === "active" && !m.spectator && (
               <button className="mtg-act is-danger" disabled={busy}
                 onClick={() => NGGApi.member.match.resign(matchId).then(load)}>
                 <span aria-hidden="true">⚑</span> Resign
               </button>
             )}
+            <button type="button" className="mtg-act mtg-flip" onClick={() => setManualFlip(v => !v)}>
+              <span aria-hidden="true">⇅</span> Flip
+            </button>
           </div>
           <p className="mtg-hint">Tap a piece, then where it goes · ← → step through the moves</p>
         </aside>
