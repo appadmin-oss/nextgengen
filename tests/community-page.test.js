@@ -161,18 +161,33 @@ async function openPage(browser, width, height, media) {
   const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
   const errs = [];
   page.on('pageerror', e => errs.push(String(e.message)));
+  /* The channel now polls for who is typing every five seconds, so there is
+     almost always a request in flight. Closing a page mid-poll rejects that
+     fulfil — and an unhandled rejection takes the whole run down several
+     screens later, reported as "browser has been closed", which points at
+     nothing. Swallow it: a route that loses its page is the expected outcome
+     of teardown, not a failure. */
   await page.route('**/api/**', async (route) => {
     const u = new URL(route.request().url());
     const h = routes[u.pathname.replace(/^.*\/api\//, '')];
     const body = typeof h === 'function' ? h(u) : (h || { ok: true });
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    try {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    } catch (_) { /* page closed while this was in flight */ }
   });
   /* The router reads location.pathname, so the clean URL has to be served the
      app shell — which is what the real host does. */
-  await page.route('**/community', r => r.fulfill({
-    status: 200, contentType: 'text/html',
-    body: fs.readFileSync(path.join(ROOT, 'dist', 'index.html'), 'utf8') }));
-  await page.goto(BASE + '/community', { waitUntil: 'networkidle' });
+  await page.route('**/community', async (r) => {
+    try {
+      await r.fulfill({ status: 200, contentType: 'text/html',
+        body: fs.readFileSync(path.join(ROOT, 'dist', 'index.html'), 'utf8') });
+    } catch (_) {}
+  });
+  /* 'load', not 'networkidle'. With a five-second typing poll running there is
+     no such thing as an idle network on this page any more, so waiting for one
+     is waiting for something that will not happen; the selector below is the
+     real readiness signal and always was. */
+  await page.goto(BASE + '/community', { waitUntil: 'load' });
   await page.waitForSelector('.cmm-msg', { timeout: 10000 });
   await page.waitForTimeout(400);
   return { page, errs };
@@ -702,26 +717,23 @@ async function openPage(browser, width, height, media) {
        halves are the assertion: it appears, and it goes away again. */
     console.log('\n── Typing ────────────────────────────────────────────────────');
     {
+      /* Set BEFORE the page opens, so the channel's first poll already sees it
+         and the reader stays on the fast cadence. */
+      TYPING.names = ['Coach Bisi']; TYPING.says = 'Coach Bisi is typing…';
       const { page } = await openPage(browser, 1440, 900, WIDE);
       await page.locator('.cmd-row').nth(1).click();
-      await page.waitForTimeout(900);
+      await page.waitForTimeout(1200);
       const sub = () => page.evaluate(() => {
         const p = document.querySelector('.cmm-ch-head .cmm-sub');
         return { text: p.textContent.trim(), typing: p.classList.contains('is-typing'),
                  live: p.getAttribute('aria-live') };
       });
-      const before = await sub();
-      ok('with nobody typing the subtitle is the channel, not a blank space',
-         !before.typing && before.text.length > 0);
-
-      TYPING.names = ['Coach Bisi']; TYPING.says = 'Coach Bisi is typing…';
-      await page.waitForTimeout(5600);          // one poll interval
       const during = await sub();
-      ok('…and while somebody types it says who, by name',
+      ok('while somebody types the subtitle says who, by name',
          during.typing && during.text === 'Coach Bisi is typing…');
       ok('…announced once rather than on every poll', during.live === 'polite');
-      /* Colour is never the only signal, and the green has to be readable on
-         the card — 4.5:1 for body text (WCAG 1.4.3). */
+      /* Colour is never the only signal, and the green has to clear 4.5:1 for
+         body text (WCAG 1.4.3) on the card it sits on. */
       ok('…legible, and not carried by colour alone',
          await page.evaluate(() => {
            const p = document.querySelector('.cmm-ch-head .cmm-sub');
@@ -729,15 +741,32 @@ async function openPage(browser, width, height, media) {
            const rgb = cs.color.match(/\d+/g).map(Number);
            const L = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
            const lum = 0.2126 * L(rgb[0]) + 0.7152 * L(rgb[1]) + 0.0722 * L(rgb[2]);
-           const ratio = (1.05) / (lum + 0.05);          // on white card
-           return ratio >= 4.5 && cs.fontStyle === 'italic';
+           return (1.05) / (lum + 0.05) >= 4.5 && cs.fontStyle === 'italic';
          }));
 
       TYPING.names = []; TYPING.says = '';
-      await page.waitForTimeout(5600);
+      await page.waitForTimeout(6000);
       const after = await sub();
       ok('…and when they stop, the channel comes back — it lasts exactly as long as it is true',
-         !after.typing && after.text === before.text);
+         !after.typing && after.text.length > 0 && !/is typing/.test(after.text));
+      await page.close();
+    }
+    {
+      /* The poll backs off when nobody is typing. A fixed five-second poll is
+         720 requests an hour, forever, in an app whose Files screen is built
+         entirely around what a request costs a child on mobile data. */
+      TYPING.names = []; TYPING.says = '';
+      const { page } = await openPage(browser, 1440, 900, WIDE);
+      let polls = 0;
+      page.on('request', r => { if (/view=typing/.test(r.url())) polls++; });
+      await page.locator('.cmd-row').nth(1).click();
+      await page.waitForTimeout(400);
+      polls = 0;
+      await page.waitForTimeout(22000);
+      /* 5s flat would be four or five in twenty-two seconds; backing off
+         (5 → 10 → 20 → 30) is two or three. */
+      ok('a quiet channel eases off rather than polling every five seconds forever ('
+         + polls + ' in 22s)', polls > 0 && polls <= 3);
       await page.close();
     }
 
@@ -870,11 +899,17 @@ async function openPage(browser, width, height, media) {
         const u = new URL(route.request().url());
         const h = routesFor(WIDE)[u.pathname.replace(/^.*\/api\//, '')];
         const body = typeof h === 'function' ? h(u) : (h || { ok: true });
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+        try {
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+        } catch (_) {}
       });
-      await page.route('**/community', r => r.fulfill({ status: 200, contentType: 'text/html',
-        body: fs.readFileSync(path.join(ROOT, 'dist', 'index.html'), 'utf8') }));
-      await page.goto(BASE + '/community', { waitUntil: 'networkidle' });
+      await page.route('**/community', async (r) => {
+        try {
+          await r.fulfill({ status: 200, contentType: 'text/html',
+            body: fs.readFileSync(path.join(ROOT, 'dist', 'index.html'), 'utf8') });
+        } catch (_) {}
+      });
+      await page.goto(BASE + '/community', { waitUntil: 'load' });   // see openPage
       await page.waitForSelector('.cmm-msg', { timeout: 10000 });
       await page.locator('.cmd-row').nth(1).click();
       await page.waitForTimeout(700);

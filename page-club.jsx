@@ -2948,23 +2948,40 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
     return () => clearInterval(id);
   }, [slug, sort]);
 
-  /* Typing is read on its own, faster, timer. A 20-second poll cannot show a
-     five-second fact — by the time it arrived it would be a lie. It is a
-     separate request because it is a tiny one, it stops the moment the tab is
-     hidden, and it is the only thing on this screen that needs this cadence.
-     Nothing is written here: a reader who never types costs nothing but this
-     read. */
+  /* Typing is read on its own, faster, timer: a 20-second poll cannot show a
+     five-second fact — by the time it arrived it would be a lie.
+     
+     But a fixed 5s poll is 720 requests an hour, forever, in an app whose
+     Files screen is built entirely around what a request costs a child on
+     mobile data. So it backs off: 5s while the room is alive, doubling to a
+     30s ceiling once nobody has typed for a while, and back to 5s the instant
+     anybody does. A quiet channel left open all afternoon costs two requests a
+     minute instead of twelve, and a busy one is no slower than before. */
   React.useEffect(() => {
-    let dead = false;
+    let dead = false, timer = 0, gap = 5000;
+    const MIN = 5000, MAX = 30000;
     const tick = () => {
-      if (document.hidden) return;
+      if (dead) return;
+      if (document.hidden) { schedule(); return; }   // pay nothing in a background tab
       NGGApi.member.community.typingWho(slug)
-        .then(r => { if (!dead) setTyping(r.says || ""); })
-        .catch(() => {});
+        .then(r => {
+          if (dead) return;
+          const says = r.says || "";
+          setTyping(says);
+          // Somebody is typing → stay fast. Silence → ease off.
+          gap = says ? MIN : Math.min(MAX, gap * 2);
+        })
+        .catch(() => { if (!dead) gap = Math.min(MAX, gap * 2); })
+        .finally(schedule);
     };
+    function schedule() { if (!dead) timer = setTimeout(tick, gap); }
     tick();
-    const id = setInterval(tick, 5000);
-    return () => { dead = true; clearInterval(id); setTyping(""); };
+    /* Typing yourself means the room is alive, so the reader goes back to the
+       fast cadence — otherwise you send a message and watch a stale subtitle
+       for half a minute. */
+    const wake = () => { gap = MIN; };
+    window.addEventListener("ngg:typing", wake);
+    return () => { dead = true; clearTimeout(timer); window.removeEventListener("ngg:typing", wake); setTyping(""); };
   }, [slug]);
 
   const onScroll = (e) => {
@@ -8655,6 +8672,7 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
     if (now - lastPing.current < 3000) return;
     lastPing.current = now; typingFor.current = where;
     NGGApi.member.community.typingPing(where).catch(() => {});
+    try { window.dispatchEvent(new Event("ngg:typing")); } catch (_) {}
   }, [stopTyping]);
   /* Leaving the composer — sending, blurring, unmounting, closing the tab —
      ends it at once rather than leaving the room told a lie for eight seconds. */
