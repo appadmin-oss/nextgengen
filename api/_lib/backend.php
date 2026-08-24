@@ -437,6 +437,13 @@ function backend_dispatch(string $op, array $args = []): array {
             'community.typingPing'    => 'community_typing_ping',
             'community.typingStop'    => 'community_typing_stop',
             'community.typingWho'     => 'community_typing_who',
+            /* "Mine" — the personal journal (§8a/§8b). Every one of these
+               reads and writes the CALLER's own rows only; there is no
+               memberId parameter to forge. */
+            'journal.mine'            => 'journal_mine',
+            'journal.mine.save'       => 'journal_mine_save',
+            'journal.mine.mood'       => 'journal_mine_mood',
+            'journal.mine.delete'     => 'journal_mine_delete',
 
             // The Arcade — server-graded mini games. `start` mints a round and
             // ships questions only; the answer key never leaves the server.

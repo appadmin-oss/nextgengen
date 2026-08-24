@@ -18038,5 +18038,106 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'TY-%'");
 })();
 
+/* ── The personal journal, §8a/§8b ─────────────────────────────────────────
+ * The most private surface in the product, so the privacy rules are the tests
+ * that matter and the arithmetic (streak, words, the week strip) comes second.
+ * ─────────────────────────────────────────────────────────────────────────── */
+(function () {
+    db_exec("DELETE FROM journal WHERE memberId LIKE 'JM-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'JM-%'");
+    foreach ([['JM-KID', 'Journal Kid', 'member'], ['JM-COACH', 'Coach Nosy', 'mentor']] as [$id, $nm, $role]) {
+        db_insert('members', ['memberId' => $id, 'fullName' => $nm, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'centre' => 'Journton', 'role' => $role, 'status' => 'active',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+
+    /* Default visibility. This is the rule the whole surface rests on. */
+    $r = backend_dispatch('journal.mine.save', ['memberId' => 'JM-KID',
+        'data' => ['body' => 'A private thing I did today.']]);
+    chk('journal: an entry saved with no choice made is private',
+        !empty($r['ok'])
+        && (string)(db_row("SELECT visibility FROM journal WHERE entryId = ?", [$r['entryId']])['visibility']) === 'private');
+    chk('journal: …and isPrivate is kept in step, so the older flow cannot read it as shareable',
+        (int)(db_row("SELECT isPrivate FROM journal WHERE entryId = ?", [$r['entryId']])['isPrivate']) === 1);
+    /* A visibility this app does not have must not become one. */
+    backend_dispatch('journal.mine.save', ['memberId' => 'JM-KID',
+        'data' => ['entryId' => $r['entryId'], 'body' => 'still private', 'visibility' => 'everyone']]);
+    chk('journal: an unknown visibility falls back to private, never to open',
+        (string)(db_row("SELECT visibility FROM journal WHERE entryId = ?", [$r['entryId']])['visibility']) === 'private');
+
+    /* Own rows only. There is no memberId parameter on the read path to forge,
+       and a mentor asking for the journal gets their own, not the child's. */
+    $coach = backend_dispatch('journal.mine', ['memberId' => 'JM-COACH']);
+    chk('journal: a mentor reading "mine" gets their own journal, not a child\'s',
+        ($coach['stats']['entries'] ?? -1) === 0);
+    chk('journal: …and cannot delete a child\'s entry by knowing its id',
+        empty(backend_dispatch('journal.mine.delete', ['memberId' => 'JM-COACH', 'entryId' => $r['entryId']])['ok'])
+        && db_row("SELECT entryId FROM journal WHERE entryId = ?", [$r['entryId']]) !== null);
+
+    /* One day, one entry: the writer opens on today, and writing twice is
+       editing rather than creating a second Tuesday. */
+    backend_dispatch('journal.mine.save', ['memberId' => 'JM-KID', 'data' => ['body' => 'Rewritten.']]);
+    chk('journal: writing twice in a day edits the day rather than duplicating it',
+        (int)(db_row("SELECT COUNT(*) c FROM journal WHERE memberId = 'JM-KID'")['c'] ?? 0) === 1);
+
+    /* Words, tags, and the day an entry is ABOUT. */
+    $w = backend_dispatch('journal.mine.save', ['memberId' => 'JM-KID', 'data' => [
+        'title' => 'First time counting bars right',
+        'body' => 'Eight bars without losing my place. Tunde clapped, which was embarrassing and good.',
+        'tags' => '#Music, school #music', 'visibility' => 'programme', 'mood' => 5]]);
+    chk('journal: the word count is the one the writer\'s counter shows', ($w['words'] ?? 0) === 13);
+    chk('journal: tags are normalised and de-duplicated, # and case included',
+        (string)(db_row("SELECT tags FROM journal WHERE entryId = ?", [$w['entryId']])['tags']) === 'music school');
+
+    /* A journal is a record of days that have happened. */
+    chk('journal: an entry cannot be written for a day that has not happened',
+        empty(backend_dispatch('journal.mine.save', ['memberId' => 'JM-KID', 'data' =>
+            ['body' => 'tomorrow', 'occurredOn' => gmdate('Y-m-d', time() + 86400)]])['ok']));
+
+    /* The mood check-in on its own — the lowest-effort thing the screen asks
+       for, and the one most likely to be all a fourteen-year-old does today. */
+    $yesterday = gmdate('Y-m-d', time() - 86400);
+    db_exec("UPDATE journal SET occurredOn = ? WHERE memberId = 'JM-KID'", [$yesterday]);
+    $m = backend_dispatch('journal.mine.mood', ['memberId' => 'JM-KID', 'mood' => 1]);
+    chk('journal: a mood on its own makes the day count', !empty($m['ok']));
+    chk('journal: …and says the design\'s own words back',
+        ($m['note'] ?? '') === 'Rough day logged — nobody sees this but you.');
+    chk('journal: …privately, because that is what a mood log is',
+        (string)(db_row("SELECT visibility FROM journal WHERE memberId = 'JM-KID' AND occurredOn = ?",
+                        [jm_day()])['visibility']) === 'private');
+
+    $mine = backend_dispatch('journal.mine', ['memberId' => 'JM-KID']);
+    chk('journal: the week strip is seven days ending today',
+        count($mine['week'] ?? []) === 7 && ($mine['week'][6]['isToday'] ?? false) === true);
+    chk('journal: …a written day carries the mood that was logged, an unwritten one does not',
+        ($mine['week'][6]['written'] ?? false) === true && ($mine['week'][6]['mood'] ?? 0) === 1
+        && ($mine['week'][0]['written'] ?? true) === false);
+    chk('journal: today and yesterday running together is a streak of two',
+        ($mine['stats']['streak'] ?? 0) === 2);
+    chk('journal: the filters count what is actually there',
+        ($mine['filters']['all'] ?? 0) === 2 && ($mine['filters']['private'] ?? 0) === 1);
+    chk('journal: …and name the tags actually used',
+        in_array('music', array_column($mine['filters']['tags'] ?? [], 'tag'), true));
+
+    /* Yesterday's streak still counts before midnight has been survived. */
+    db_exec("DELETE FROM journal WHERE memberId = 'JM-KID' AND occurredOn = ?", [jm_day()]);
+    chk('journal: a streak does not break at one minute past midnight',
+        (backend_dispatch('journal.mine', ['memberId' => 'JM-KID'])['stats']['streak'] ?? 0) === 1);
+
+    /* The prompt is stable for a person and a day, and rerolls only on ask. */
+    $p1 = backend_dispatch('journal.mine', ['memberId' => 'JM-KID'])['prompt'];
+    chk('journal: the prompt does not reroll on a refresh',
+        $p1 === backend_dispatch('journal.mine', ['memberId' => 'JM-KID'])['prompt']);
+    chk('journal: …but Skip gives a different one',
+        $p1 !== backend_dispatch('journal.mine', ['memberId' => 'JM-KID', 'skip' => 1])['prompt']);
+
+    /* Nothing to save is refused, rather than writing an empty day. */
+    chk('journal: an empty entry is not a day',
+        empty(backend_dispatch('journal.mine.save', ['memberId' => 'JM-KID', 'data' => ['body' => '   ']])['ok']));
+
+    db_exec("DELETE FROM journal WHERE memberId LIKE 'JM-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'JM-%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

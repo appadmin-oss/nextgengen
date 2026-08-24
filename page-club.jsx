@@ -2083,6 +2083,433 @@ function CmSeg({ label, value, onChange, options, className }) {
   );
 }
 
+/* ── The journal · "Mine" (handoff §8a) ────────────────────────────────────
+ *
+ * The most private surface in the product. Everything here defaults to private
+ * and says so; the one line the design insists on — "Private unless you choose
+ * to share it." — sits on the card that invites the writing, not in a settings
+ * screen nobody opens.
+ *
+ * The numbers all come from the server in one request. Five round trips on a
+ * Nigerian mobile connection is the difference between a screen that opens and
+ * a screen somebody stops opening.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+const CM_MOODS = [
+  { n: 1, emoji: "😔", label: "Rough" },
+  { n: 2, emoji: "😕", label: "Low" },
+  { n: 3, emoji: "😐", label: "Fine" },
+  { n: 4, emoji: "🙂", label: "Good" },
+  { n: 5, emoji: "😄", label: "Great" },
+];
+const CM_MOOD_EMOJI = (n) => (CM_MOODS.find(m => m.n === n) || {}).emoji || "";
+
+function CmJournalMine({ auth, onWrite }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [skip, setSkip] = React.useState(0);
+  const [filter, setFilter] = React.useState("all");
+  const [moodBusy, setMoodBusy] = React.useState(false);
+  const [moodNote, setMoodNote] = React.useState("");
+
+  const load = React.useCallback((sk) => {
+    setErr("");
+    NGGApi.member.journalMine(sk === undefined ? skip : sk)
+      .then(setD)
+      .catch(() => { setD(null); setErr("Couldn't open your journal."); });
+  }, [skip]);
+  React.useEffect(() => { load(); }, []);   // eslint-disable-line
+
+  const pickMood = (n) => {
+    setMoodBusy(true);
+    NGGApi.member.journalMood(n)
+      .then(r => { setMoodNote(r.note || ""); load(); })
+      .catch(() => setMoodNote("That didn't save. Try again in a moment."))
+      .finally(() => setMoodBusy(false));
+  };
+
+  if (err) {
+    return <CmEmpty icon="⚠" title="That didn't load" body={err}
+                    action={<button className="cmm-cta" onClick={() => load()}>Try again</button>}/>;
+  }
+  if (!d) return <CmSkeleton rows={3}/>;
+
+  const todayMood = d.todayEntry && d.todayEntry.mood;
+  const entries = (d.entries || []).filter(e => {
+    if (filter === "all") return true;
+    if (filter === "private") return e.visibility === "private";
+    if (filter === "voice") return (e.media || []).some(m => m.kind === "audio");
+    return (e.tags || []).indexOf(filter) >= 0;
+  });
+
+  /* Grouped by day, with the design's relative headings. */
+  const groups = [];
+  entries.forEach(e => {
+    const head = cmDayHeading(e.occurredOn, d.today);
+    const last = groups[groups.length - 1];
+    if (last && last.head === head) last.rows.push(e); else groups.push({ head, rows: [e] });
+  });
+
+  return (
+    <div className="cm-jm">
+      {/* The week strip. A written day shows the mood that was logged; an
+          unwritten one is a dashed tile, which is a gap rather than a failure. */}
+      <div className="cm-jm-week">
+        {d.week.map(w => (
+          <div className="cm-jm-day" key={w.day}>
+            <span className={"cm-jm-dl" + (w.isToday ? " is-today" : "")}>{w.initial}</span>
+            <span className={"cm-jm-tile" + (w.isToday ? " is-today" : "") + (w.written ? "" : " is-empty")}
+                  title={w.written ? "Written" : "Nothing written"}>
+              {w.isToday && !w.written ? w.date : (w.written ? CM_MOOD_EMOJI(w.mood) || "✓" : "")}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <section className="cm-jm-prompt">
+        <span className="cm-jm-eyebrow">Today's prompt</span>
+        <p className="cm-jm-q">{d.prompt}</p>
+        <button className="cm-jm-write" onClick={() => onWrite({ prompt: d.prompt, entry: d.todayEntry })}>
+          {d.todayEntry && (d.todayEntry.body || d.todayEntry.title)
+            ? "Carry on today's entry" : "Write today's entry"}
+        </button>
+        <div className="cm-jm-alts">
+          <button className="cm-jm-alt" onClick={() => onWrite({ prompt: d.prompt, entry: d.todayEntry, attach: "audio" })}>🎙 Voice note</button>
+          <button className="cm-jm-alt" onClick={() => onWrite({ prompt: d.prompt, entry: d.todayEntry, attach: "image" })}>📷 Photo</button>
+          <button className="cm-jm-alt cm-jm-reroll" onClick={() => { const n = skip + 1; setSkip(n); load(n); }}
+                  aria-label="A different prompt">↻</button>
+        </div>
+        <p className="cm-jm-safe">Private unless you choose to share it.</p>
+      </section>
+
+      <section className="cm-jm-mood">
+        <h2 className="cm-jm-h">How is today going?</h2>
+        <div className="cm-jm-moods" role="radiogroup" aria-label="How is today going?">
+          {CM_MOODS.map(m => (
+            <button key={m.n} role="radio" aria-checked={todayMood === m.n}
+                    aria-label={m.label} title={m.label}
+                    className={"cm-jm-m" + (todayMood === m.n ? " is-on" : "")}
+                    disabled={moodBusy} onClick={() => pickMood(m.n)}>{m.emoji}</button>
+          ))}
+        </div>
+        <p className="cm-jm-note" role="status">
+          {moodNote || (todayMood ? cmMoodNote(todayMood) : "Tap one. It stays private.")}
+        </p>
+      </section>
+
+      <div className="cm-jm-stats">
+        <div><span>Streak</span><b>{d.stats.streak}</b></div>
+        <div><span>Entries</span><b>{d.stats.entries}</b></div>
+        <div><span>Words</span><b>{cmShortNum(d.stats.words)}</b></div>
+      </div>
+
+      <CmChips label="Filter your entries" value={filter} onPick={setFilter}
+               items={[{ id: "all", label: "All", count: d.filters.all },
+                       { id: "private", label: "🔒 Private", count: d.filters.private }]
+                 .concat((d.filters.tags || []).map(t => ({ id: t.tag, label: "#" + t.tag, count: t.count })))
+                 .concat(d.filters.voice ? [{ id: "voice", label: "🎙 Voice", count: d.filters.voice }] : [])}/>
+
+      {entries.length === 0 && (
+        <CmEmpty icon="✎"
+                 title={d.stats.entries === 0 ? "Nothing written yet" : "Nothing under that filter"}
+                 body={d.stats.entries === 0
+                   ? "Your journal is yours. Nobody sees an entry unless you choose to share it."
+                   : "Try another filter, or All."}
+                 action={d.stats.entries === 0
+                   ? <button className="cmm-cta" onClick={() => onWrite({ prompt: d.prompt, entry: null })}>Write the first one</button>
+                   : <button className="cmm-cta" onClick={() => setFilter("all")}>Show everything</button>}/>
+      )}
+
+      {groups.map(g => (
+        <React.Fragment key={g.head}>
+          <div className="cmm-list-h">{g.head.toUpperCase()}</div>
+          {g.rows.map(e => <CmJmEntry key={e.entryId} e={e} onOpen={() => onWrite({ prompt: e.prompt, entry: e })}/>)}
+        </React.Fragment>
+      ))}
+
+      {d.yearAgo && (
+        <div className="cm-jm-recall">
+          <span className="cm-jm-recall-ic" aria-hidden="true">🕰</span>
+          <div>
+            <span className="cm-jm-eyebrow dark">A year ago today</span>
+            <p>“{d.yearAgo.quote}”</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One entry: the 42px date rail beside the card, as the artboard draws it. */
+function CmJmEntry({ e, onOpen }) {
+  const t = new Date(e.occurredOn + "T00:00:00Z");
+  const vis = e.visibility === "private"
+    ? { cls: "is-private", text: "🔒" }
+    : e.visibility === "mentor" ? { cls: "is-mentor", text: "Mentor" } : { cls: "is-shared", text: "Shared" };
+  const meta = (e.tags || []).map(x => "#" + x).join(" ");
+  return (
+    <article className="cm-jm-e">
+      <div className="cm-jm-rail" aria-hidden="true">
+        <div className="cm-jm-rail-d">{t.getUTCDate()}</div>
+        <div className="cm-jm-rail-w">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][t.getUTCDay()]}</div>
+      </div>
+      <button className="cm-jm-card" onClick={onOpen}>
+        <span className="cm-jm-card-top">
+          {e.mood ? <span className="cm-jm-card-mood" aria-hidden="true">{CM_MOOD_EMOJI(e.mood)}</span> : null}
+          <span className="cm-jm-card-t">{e.title || "Untitled"}</span>
+          {/* The visibility marker is a WORD wherever it is not the padlock —
+              a coloured pill on its own does not say who can read this. */}
+          <span className={"cm-jm-vis " + vis.cls}>{vis.text}</span>
+        </span>
+        {e.excerpt && <span className="cm-jm-card-x">{e.excerpt}</span>}
+        <span className="cm-jm-card-meta">
+          {meta && <span className="cm-jm-tag">{meta}</span>}
+          <span className="cm-jm-words">
+            {meta ? " · " : ""}{e.words} {e.words === 1 ? "word" : "words"}
+            {(e.media || []).length ? " · " + (e.media || []).length + " attached" : ""}
+          </span>
+        </span>
+      </button>
+    </article>
+  );
+}
+
+/** "Today", "Yesterday", then the date. */
+function cmDayHeading(day, today) {
+  if (day === today) return "Today";
+  const t = new Date(today + "T00:00:00Z"), d = new Date(day + "T00:00:00Z");
+  const diff = Math.round((t - d) / 86400000);
+  if (diff === 1) return "Yesterday";
+  if (diff < 7) return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][d.getUTCDay()];
+  return d.getUTCDate() + " " + ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()];
+}
+/** The design's five captions, verbatim — the server says the same five. */
+function cmMoodNote(n) {
+  return ["Rough day logged — nobody sees this but you.",
+          "Logged. Want to write a line about it?",
+          "Steady. Logged for today.",
+          "Logged — 12 good days this month.",
+          "Great day logged. Worth a few words?"][Math.max(1, Math.min(5, n)) - 1];
+}
+/** "Tuesday 18 August" — the journal header's subtitle. */
+function cmTodayWords() {
+  const d = new Date();
+  return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][d.getDay()]
+    + " " + d.getDate() + " "
+    + ["January", "February", "March", "April", "May", "June", "July",
+       "August", "September", "October", "November", "December"][d.getMonth()];
+}
+/** 3.1k, not 3100 — the design's own figure, and it has to fit a 1/3 tile. */
+function cmShortNum(n) {
+  n = Number(n) || 0;
+  if (n < 1000) return String(n);
+  const k = n / 1000;
+  return (k < 10 ? k.toFixed(1).replace(/\.0$/, "") : Math.round(k)) + "k";
+}
+
+/* ── The journal writer (handoff §8b) ──────────────────────────────────────
+ *
+ * A full-screen overlay, because writing is the whole task and a keyboard on a
+ * 390px phone leaves room for nothing else.
+ *
+ * Two things here are not decoration:
+ *   · Autosave. "Returns to the journal (autosave implied — never lose a
+ *     draft)". A child writing about a bad day and losing it to a dropped
+ *     connection is the worst failure this screen has, so the draft is kept
+ *     locally the moment it is typed and only then sent.
+ *   · "Who can read this", with private preselected and the consequence
+ *     spelled out beside each choice. Three radios, not a toggle: "who can
+ *     read this" has three answers and a switch can only hold two.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/* The design fills these in for its fixture — "Me and Coach Bisi", "Visible to
+   Egbeda members." — so the strings are patterns, not literals, and the centre
+   is interpolated from the member rather than shipped as somebody else's.
+   Two deliberate deviations, both stated:
+     · "my mentor" rather than a name. The app does not know which mentor a
+       member is assigned to, and inventing one on a screen about who can read
+       your private writing is the wrong place to guess.
+     · "They can reply privately", not "He". A mentor's pronouns are not
+       something this app is told. */
+const cmJwVis = (centre) => [
+  { id: "private",   name: "Only me",              why: "Default. Nobody is notified.", glyph: "🔒" },
+  { id: "mentor",    name: "Me and my mentor",     why: "They can reply privately." },
+  { id: "programme", name: "The programme record",
+    why: "Visible to " + (centre ? centre + " members." : "everyone at your centre.") },
+];
+
+function CmJournalWriter({ seed, auth, onClose, onSaved }) {
+  const entry = (seed && seed.entry) || null;
+  const [title, setTitle] = React.useState(entry ? entry.title || "" : "");
+  const [body, setBody] = React.useState(entry ? entry.body || "" : "");
+  const [tags, setTags] = React.useState(entry ? (entry.tags || []).slice() : []);
+  const [vis, setVis] = React.useState(entry ? entry.visibility || "private" : "private");
+  const [prompt, setPrompt] = React.useState((seed && seed.prompt) || "");
+  /* "Saved" is a claim about the reader's words. An entry that exists only
+     because a mood was tapped has no words in it, and telling somebody their
+     blank page is saved is the kind of small lie that makes the whole autosave
+     indicator untrustworthy. */
+  const [saved, setSaved] = React.useState(
+    entry && ((entry.body || "").trim() || (entry.title || "").trim()) ? "Saved" : "");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const [addTag, setAddTag] = React.useState(false);
+  const [tagDraft, setTagDraft] = React.useState("");
+  const bodyRef = React.useRef(null);
+  const draftKey = "ngg.jw." + (entry ? entry.entryId : "today");
+
+  const words = React.useMemo(() => {
+    const t = body.replace(/\s+/g, " ").trim();
+    return t ? t.split(" ").length : 0;
+  }, [body]);
+
+  /* The local draft is written FIRST and cleared only once the server has the
+     entry. A dropped connection then costs nothing at all. */
+  React.useEffect(() => {
+    if (entry) return;                                  // an existing entry is already stored
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.title) setTitle(d.title);
+        if (d.body) setBody(d.body);
+        if (d.tags) setTags(d.tags);
+        if (d.vis) setVis(d.vis);
+        setSaved("Restored from this device");
+      }
+    } catch (_) {}
+  }, []);   // eslint-disable-line
+  React.useEffect(() => {
+    try { localStorage.setItem(draftKey, JSON.stringify({ title, body, tags, vis })); } catch (_) {}
+  }, [title, body, tags, vis, draftKey]);
+
+  const save = React.useCallback((quiet) => {
+    if (!title.trim() && !body.trim()) return Promise.resolve();
+    setBusy(true); setErr("");
+    return NGGApi.member.journalSave({
+      entryId: entry ? entry.entryId : "",
+      title: title.trim(), body, tags, visibility: vis, prompt,
+      occurredOn: entry ? entry.occurredOn : "",
+    }).then(() => {
+      setSaved("Autosaved just now");
+      try { localStorage.removeItem(draftKey); } catch (_) {}
+      if (!quiet) onSaved && onSaved();
+    }).catch(() => {
+      /* The draft stays exactly where it is. This is the one failure where
+         clearing the box would be unforgivable. */
+      setErr("Not saved yet — it is still on this device. Try again when you have signal.");
+    }).finally(() => setBusy(false));
+  }, [title, body, tags, vis, prompt, entry, draftKey, onSaved]);
+
+  // Autosave on a pause in typing, the way the design's "Autosaved just now" implies.
+  React.useEffect(() => {
+    if (!title.trim() && !body.trim()) return;
+    const t = setTimeout(() => save(true), 2500);
+    return () => clearTimeout(t);
+  }, [title, body, tags, vis]);   // eslint-disable-line
+
+  React.useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    document.addEventListener("keydown", onKey);
+    const t = setTimeout(() => { if (bodyRef.current) try { bodyRef.current.focus(); } catch (_) {} }, 60);
+    return () => { document.body.style.overflow = prev; document.removeEventListener("keydown", onKey); clearTimeout(t); };
+  }, [onClose]);
+
+  const done = () => { save(false).then(onClose); };
+  const addTheTag = () => {
+    const t = tagDraft.toLowerCase().replace(/[^a-z0-9-]/g, "");
+    if (t && tags.indexOf(t) < 0 && tags.length < 8) setTags(tags.concat(t));
+    setTagDraft(""); setAddTag(false);
+  };
+
+  const dayLabel = (() => {
+    const d = entry && entry.occurredOn ? new Date(entry.occurredOn + "T00:00:00Z") : new Date();
+    return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()] + " " + d.getUTCDate() + " "
+      + ["January", "February", "March", "April", "May", "June", "July",
+         "August", "September", "October", "November", "December"][d.getUTCMonth()];
+  })();
+
+  return ReactDOM.createPortal(
+    <div className="cm-jw" role="dialog" aria-modal="true" aria-label="Write a journal entry">
+      <header className="cm-jw-bar">
+        <button className="cm-jw-close" onClick={onClose}>Close</button>
+        <div className="cm-jw-when">
+          <div className="cm-jw-date">{dayLabel}</div>
+          <div className="cm-jw-saved" role="status">{err ? "" : (busy ? "Saving…" : saved)}</div>
+        </div>
+        <button className="cm-jw-done" onClick={done} disabled={busy}>Done</button>
+      </header>
+
+      <div className="cm-jw-body">
+        {err && <p className="cm-jw-err" role="alert">{err}</p>}
+
+        {prompt && (
+          <div className="cm-jw-prompt">
+            <span aria-hidden="true">✦</span>
+            <span className="cm-jw-prompt-t">{prompt}</span>
+            <button className="cm-jw-skip" onClick={() => setPrompt("")}>Skip</button>
+          </div>
+        )}
+
+        <input className="cm-jw-title" value={title} maxLength={140}
+               onChange={e => setTitle(e.target.value)}
+               placeholder="Give it a title…" aria-label="Title"/>
+
+        <textarea className="cm-jw-text" ref={bodyRef} value={body} maxLength={20000}
+                  onChange={e => setBody(e.target.value)}
+                  placeholder="Write whatever today was." aria-label="Your entry"/>
+
+        <div className="cm-jw-tags">
+          {tags.map(t => (
+            <button key={t} className="cm-jw-tag" onClick={() => setTags(tags.filter(x => x !== t))}
+                    aria-label={"Remove the tag " + t}>#{t} <span aria-hidden="true">×</span></button>
+          ))}
+          {addTag ? (
+            <input className="cm-jw-tagin" autoFocus value={tagDraft} maxLength={24}
+                   onChange={e => setTagDraft(e.target.value)}
+                   onBlur={addTheTag}
+                   onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTheTag(); }
+                                     if (e.key === "Escape") { setTagDraft(""); setAddTag(false); } }}
+                   placeholder="tag" aria-label="New tag"/>
+          ) : (
+            tags.length < 8 && <button className="cm-jw-addtag" onClick={() => setAddTag(true)}>+ tag</button>
+          )}
+        </div>
+
+        {/* Three answers, so three radios. The consequence is next to the
+            choice rather than in a help link, because the choice is the whole
+            point of the card. */}
+        <fieldset className="cm-jw-vis">
+          <legend className="cm-jm-eyebrow">Who can read this</legend>
+          {cmJwVis(((auth || {}).member || {}).centre).map(o => (
+            <label key={o.id} className={"cm-jw-vis-row" + (vis === o.id ? " is-on" : "")}>
+              <input type="radio" name="cm-jw-visibility" className="sr-only"
+                     checked={vis === o.id} onChange={() => setVis(o.id)}/>
+              <span className="cm-jw-radio" aria-hidden="true"/>
+              <span className="cm-jw-vis-txt">
+                <span className="cm-jw-vis-n">{o.name}</span>
+                <span className="cm-jw-vis-w">{o.why}</span>
+              </span>
+              {o.glyph && <span className="cm-jw-vis-g" aria-hidden="true">{o.glyph}</span>}
+            </label>
+          ))}
+        </fieldset>
+      </div>
+
+      <footer className="cm-jw-foot">
+        <button className="cm-jw-tool" aria-label="Add a voice note" title="Add a voice note">🎙</button>
+        <button className="cm-jw-tool" aria-label="Add a photo" title="Add a photo">📷</button>
+        <button className="cm-jw-tool" aria-label="Attach a file" title="Attach a file">📎</button>
+        <span className="cm-jw-spacer"/>
+        <span className="cm-jw-words">{words} {words === 1 ? "word" : "words"}</span>
+      </footer>
+    </div>,
+    document.body
+  );
+}
+
 /* ── Homework ──────────────────────────────────────────────────────────────
  *
  * Handoff §11 (the 250px desktop widget) and §12 (the phone tracker). One
@@ -3117,6 +3544,10 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
      about how they read threads, not about this one post. */
   const [threadWide, setThreadWide] = React.useState(false);
   const [homework, setHomework] = React.useState(null);   // open tracker, by id
+  /* §8: which journal, and the writer overlay over it. Scroll is preserved per
+     tab by keeping both mounted decisions here rather than remounting. */
+  const [jTab, setJTab] = React.useState("mine");
+  const [writing, setWriting] = React.useState(null);     // {prompt, entry, attach}
   const [account, setAccount] = React.useState(false);
   const [composer, setComposer] = React.useState(false);
   const [jump, setJump] = React.useState(false);
@@ -3224,7 +3655,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
      the channel (handoff §11), so the rail beside it must stay — hiding it
      there left the whole left edge of a 1280px screen empty and took away
      every destination in the product to show four replies. */
-  const barHidden = (!!thread && !wide) || account || notifs || a11y || !!files || !!homework;
+  const barHidden = (!!thread && !wide) || account || notifs || a11y || !!files || !!homework || !!writing;
 
   const compose = {
     open: () => { setComposeSeed(null); setComposer(true); },
@@ -3316,7 +3747,25 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
           <CmChannels channels={channels} onOpen={openChannel} onCompose={compose}/>
         )}
         {tab === "arcade" && !channel && <div className="cmm-pad"><CmArcade auth={auth}/></div>}
-        {tab === "journal" && !channel && <div className="cmm-pad"><CmProgramJournal auth={auth}/></div>}
+        {/* §8: one Journal, two tabs. "Mine" is the personal journal and the
+            default, because it is the one a member has a reason to open daily;
+            "Programme" is the shared record. The header carries the segmented
+            control the design puts there. */}
+        {tab === "journal" && !channel && (
+          <div className="cmm-pad">
+            <div className="cmm-head cm-j-head">
+              <div className="cmm-head-txt">
+                <h1 className="cmm-h1">Journal</h1>
+                <p className="cmm-sub">{cmTodayWords()}</p>
+              </div>
+            </div>
+            <CmSeg label="Which journal" value={jTab} onChange={setJTab} className="cm-j-seg"
+                   options={[["mine", "Mine"], ["programme", "Programme"]]}/>
+            {jTab === "mine"
+              ? <CmJournalMine auth={auth} onWrite={setWriting}/>
+              : <CmProgramJournal auth={auth}/>}
+          </div>
+        )}
 
         {/* A channel covers the tab it was opened from. */}
         {channel && (
@@ -3435,6 +3884,13 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
                    onBack={() => setFiles(null)}
                    onOpenThread={(p) => { setFiles(null); setThread(p); }}/>
         </div>
+      )}
+      {/* The writer is an overlay over everything, and the tab bar goes under
+          it — the design is explicit that it is hidden in the writer. */}
+      {writing && (
+        <CmJournalWriter seed={writing} auth={auth}
+                         onClose={() => setWriting(null)}
+                         onSaved={() => { /* the list reloads when it remounts */ }}/>
       )}
       {homework && (
         <div className="cmm-over">

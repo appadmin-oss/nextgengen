@@ -103,6 +103,35 @@ const HOMEWORK = {
 /* Mutable, so a test can turn typing on and off mid-run and watch the subtitle
    follow — the whole point of §12 is that it lasts exactly as long as it is true. */
 const TYPING = { names: [], says: '' };
+/* The journal at the artboard's own numbers: streak 21, entries 46, words 3.1k,
+   a week with gaps in it, and three entries at the three visibilities. */
+const jDay = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+const JMINE = {
+  today: jDay(0),
+  prompt: "What did you try today that you couldn't do last month?",
+  todayEntry: { entryId: 'E0', mood: 4, title: '', body: '', tags: [], words: 0, media: [],
+                visibility: 'private', occurredOn: jDay(0), excerpt: '', prompt: '' },
+  week: [0, 1, 2, 3, 4, 5, 6].map(i => {
+    const back = 6 - i, dd = jDay(back), t = new Date(dd + 'T00:00:00Z');
+    const written = [true, true, false, true, true, false, true][i];
+    return { day: dd, initial: 'SMTWTFS'[t.getUTCDay()], date: t.getUTCDate(),
+             mood: written ? [4, 3, null, 5, 1, null, 4][i] : null, written, isToday: back === 0 };
+  }),
+  stats: { streak: 21, entries: 46, words: 3100 },
+  filters: { all: 46, private: 31, voice: 4, tags: [{ tag: 'music', count: 9 }, { tag: 'school', count: 6 }] },
+  entries: [
+    { entryId: 'E1', title: 'First time counting bars right', mood: 5, visibility: 'programme',
+      tags: ['music'], words: 142, media: [], occurredOn: jDay(1), body: 'x', prompt: '',
+      excerpt: 'Eight bars without losing my place.' },
+    { entryId: 'E2', title: 'Missed the session', mood: 1, visibility: 'mentor',
+      tags: [], words: 88, media: [], occurredOn: jDay(3), body: 'x', prompt: '',
+      excerpt: 'Had to mind my sister.' },
+    { entryId: 'E3', title: 'Quiet one', mood: 3, visibility: 'private',
+      tags: ['school'], words: 40, media: [], occurredOn: jDay(9), body: 'x', prompt: '',
+      excerpt: 'Nothing much.' },
+  ],
+  yearAgo: { day: jDay(365), quote: "I don't think I'll last the twelve weeks." },
+};
 function routesFor(media) {
   const POSTS = [
     post({ postId: 'p1', body: 'Here is the model I trained today.',
@@ -112,6 +141,7 @@ function routesFor(media) {
   ];
   return {
     'auth/me.php': { ok: true, member: ME, adminOk: false, impersonating: null },
+    'member/journal.php': (u) => (u.searchParams.get('view') === 'mine' ? JMINE : { ok: true }),
     'member/community.php': (u) => {
       const v = u.searchParams.get('view');
       if (v === 'channels') return { ok: true, channels: CHANNELS };
@@ -708,6 +738,114 @@ async function openPage(browser, width, height, media) {
       const after = await sub();
       ok('…and when they stop, the channel comes back — it lasts exactly as long as it is true',
          !after.typing && after.text === before.text);
+      await page.close();
+    }
+
+    /* ── The journal (§8a Mine, §8b the writer) ───────────────────────────
+       The most private surface in the product. The assertions that matter are
+       the ones about who can read what, and about not losing a child's words. */
+    console.log('\n── Journal ───────────────────────────────────────────────────');
+    {
+      const { page } = await openPage(browser, 390, 844, WIDE);
+      await page.locator('.cmm-tab', { hasText: 'Journal' }).click();
+      await page.waitForTimeout(900);
+
+      ok('the journal has both tabs, and Mine is the one it opens on',
+         await page.evaluate(() => {
+           const seg = [...document.querySelectorAll('.cm-j-seg .cmd-seg-b')];
+           return seg.length === 2 && seg[0].textContent === 'Mine'
+                  && seg[0].getAttribute('aria-selected') === 'true'
+                  && seg[1].textContent === 'Programme';
+         }));
+      ok('the week strip is seven days, with gaps drawn as gaps rather than failures',
+         await page.evaluate(() => {
+           const t = [...document.querySelectorAll('.cm-jm-tile')];
+           if (t.length !== 7) return false;
+           const empty = t.filter(x => x.classList.contains('is-empty'));
+           return empty.length === 2
+                  && empty.every(x => getComputedStyle(x).borderStyle === 'dashed');
+         }));
+      ok('the prompt card carries the line the design insists on',
+         await page.evaluate(() =>
+           /Private unless you choose to share it\./.test(document.querySelector('.cm-jm-prompt').innerText)));
+      ok('…and its CTA is the 52px primary the design specifies',
+         await page.evaluate(() =>
+           document.querySelector('.cm-jm-write').getBoundingClientRect().height >= 52));
+
+      /* The mood row: five buttons, the selected one carrying more than colour. */
+      ok('the mood check-in is five 52px buttons with a real selected state',
+         await page.evaluate(() => {
+           const m = [...document.querySelectorAll('.cm-jm-m')];
+           if (m.length !== 5) return false;
+           if (!m.every(b => b.getBoundingClientRect().height >= 52)) return false;
+           const on = m.find(b => b.getAttribute('aria-checked') === 'true');
+           if (!on) return false;
+           // border width, not just a fill — colour is never the only signal
+           return parseFloat(getComputedStyle(on).borderTopWidth) >= 2;
+         }));
+      ok('…and the caption is the design\'s own words for that mood',
+         await page.evaluate(() =>
+           /Logged — 12 good days this month\./.test(document.querySelector('.cm-jm-note').textContent)));
+      ok('the three stats read 21 / 46 / 3.1k, tabular so they do not jitter',
+         await page.evaluate(() => {
+           const b = [...document.querySelectorAll('.cm-jm-stats b')].map(x => x.textContent);
+           const num = getComputedStyle(document.querySelector('.cm-jm-stats b')).fontVariantNumeric;
+           return b.join('/') === '21/46/3.1k' && /tabular-nums/.test(num);
+         }));
+
+      /* Visibility is on every card, and never as colour alone. */
+      ok('every entry says who can read it, in words rather than only a colour',
+         await page.evaluate(() => {
+           const v = [...document.querySelectorAll('.cm-jm-vis')].map(x => x.textContent.trim());
+           return v.length === 3 && v.indexOf('Mentor') >= 0 && v.indexOf('Shared') >= 0
+                  && v.indexOf('🔒') >= 0;
+         }));
+      ok('…and a year ago today quotes the member back to themselves',
+         await page.evaluate(() =>
+           /last the twelve weeks/.test(document.querySelector('.cm-jm-recall').innerText)));
+
+      /* ── The writer ── */
+      await page.locator('.cm-jm-write').click();
+      await page.waitForTimeout(700);
+      ok('the writer opens over everything, with the tab bar hidden under it',
+         await page.evaluate(() => !!document.querySelector('.cm-jw') && !document.querySelector('.cmm-tabs')));
+      /* The claim that matters: private is preselected, every time. */
+      ok('private is preselected — the default nobody would have chosen otherwise',
+         await page.evaluate(() => {
+           const on = document.querySelector('.cm-jw-vis-row.is-on');
+           return !!on && /Only me/.test(on.innerText) && /Nobody is notified/.test(on.innerText);
+         }));
+      ok('…and it is three radios, because "who can read this" has three answers',
+         await page.evaluate(() =>
+           document.querySelectorAll('.cm-jw-vis input[type=radio]').length === 3));
+      ok('…each with the consequence beside the choice, not behind a help link',
+         await page.evaluate(() => {
+           const t = document.querySelector('.cm-jw-vis').innerText;
+           return /reply privately/.test(t) && /Visible to/.test(t);
+         }));
+      /* "Saved" is a claim about the reader's words. */
+      ok('a blank page is not described as saved',
+         await page.evaluate(() => document.querySelector('.cm-jw-saved').textContent.trim() === ''));
+      ok('the word count is live and starts at zero',
+         await page.evaluate(() => /^0 words$/.test(document.querySelector('.cm-jw-words').textContent)));
+
+      /* Never lose a draft: the words are on the device before they are sent. */
+      await page.locator('.cm-jw-text').fill('Eight bars without losing my place.');
+      await page.waitForTimeout(300);
+      ok('…and it counts what was typed', await page.evaluate(() =>
+         /^6 words$/.test(document.querySelector('.cm-jw-words').textContent)));
+      ok('what was typed is on the device before it is sent anywhere',
+         await page.evaluate(() => {
+           const k = Object.keys(localStorage).find(x => /ngg\.jw\./.test(x));
+           return !!k && /Eight bars/.test(localStorage.getItem(k));
+         }));
+      /* Every control in the writer clears the floor. */
+      ok('every control in the writer is at least 44px',
+         await page.evaluate(() =>
+           [...document.querySelectorAll('.cm-jw button, .cm-jw input[type=radio] + *')]
+             .filter(b => b.getBoundingClientRect().height > 0)
+             .every(b => b.getBoundingClientRect().height >= 43.5
+                         || b.classList.contains('cm-jw-radio'))));
       await page.close();
     }
 

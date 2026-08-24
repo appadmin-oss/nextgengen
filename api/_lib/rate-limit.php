@@ -64,6 +64,11 @@ function rate_limit_default(string $op): ?array {
            this ceiling is triple that, so a real conversation never reaches it
            and a stuck client is stopped. */
         'community.typing'   => ['max' => 60, 'window' => 60],    // per member
+        /* Journal writes, including the writer's autosave. Sized for somebody
+           writing steadily for an hour with a save every few seconds, not for
+           one press — an autosave that starts refusing mid-sentence loses the
+           thing this screen exists to protect. */
+        'journal.write'      => ['max' => 120, 'window' => 300],  // per member
         /* Telemetry, not an action: the client reports once per page when a
            configured media cloud refused an upload. Sized so a whole centre on
            one WiFi during a broken deployment still gets its warnings recorded —

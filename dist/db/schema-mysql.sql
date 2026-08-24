@@ -2230,3 +2230,27 @@ CREATE TABLE IF NOT EXISTS community_typing (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (104) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 105 · The personal journal, widened to §8a/§8b ──────────────────────────
+-- Every column is ADDED rather than replaced: `journal` is also written by the
+-- anchor reflection flow, which knows about mood, body and isPrivate and
+-- nothing else, and must keep working untouched. `visibility` supersedes
+-- isPrivate for the new writer; isPrivate is kept in step on every write so
+-- there is one fact with two spellings rather than two that can disagree.
+ALTER TABLE journal ADD COLUMN title TEXT;
+-- private | mentor | programme. Defaulting to private is the design's rule and
+-- a safeguarding one: a child's journal is private unless they choose otherwise.
+ALTER TABLE journal ADD COLUMN visibility VARCHAR(16) DEFAULT 'private';
+-- Space-separated, lower-case, no leading #. Counted in PHP over one member's
+-- own entries — cheaper to keep correct than a join table nothing else needs.
+ALTER TABLE journal ADD COLUMN tags TEXT;
+ALTER TABLE journal ADD COLUMN wordCount INT DEFAULT 0;
+ALTER TABLE journal ADD COLUMN mediaJson TEXT;
+-- The DAY the entry is about, not when it was typed: somebody writing up
+-- Saturday on Sunday morning should see it on Saturday in the week strip.
+ALTER TABLE journal ADD COLUMN occurredOn VARCHAR(10) DEFAULT '';
+ALTER TABLE journal ADD COLUMN promptText TEXT;
+ALTER TABLE journal ADD COLUMN updatedAt VARCHAR(40) DEFAULT '';
+CREATE INDEX idx_journal_day ON journal (memberId, occurredOn);
+
+INSERT INTO schema_version (version) VALUES (105) ON DUPLICATE KEY UPDATE version = version;

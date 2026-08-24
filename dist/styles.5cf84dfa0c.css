@@ -2490,6 +2490,174 @@ img { background-color: rgba(12,20,50,0.04); }
 .cmm-catchup-txt { min-width: 0; display: flex; flex-direction: column; padding-right: 38px; }
 .cmm-catchup-txt b { font-family: var(--c-font-display); font-size: 14px; font-weight: 700; }
 .cmm-catchup-txt span { font-family: var(--c-font-mono); font-size: 11px; color: rgba(255,255,255,.7); }
+/* ── The journal · "Mine" (§8a) ──────────────────────────────────────────── */
+.cm-j-head { padding-bottom: 8px; }
+.cm-j-seg { margin: 0 0 12px; border-radius: var(--c-r-pill); }
+.cm-j-seg .cmd-seg-b { border-radius: var(--c-r-pill); }
+.cm-jm { display: flex; flex-direction: column; gap: 14px; }
+
+/* The week strip: seven columns, a 34px tile each. */
+.cm-jm-week { display: flex; justify-content: space-between; gap: 4px; }
+.cm-jm-day { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.cm-jm-dl { font-family: var(--c-font-mono); font-weight: 700; font-size: 10.5px; color: var(--c-faint); }
+.cm-jm-dl.is-today { font-weight: 800; color: var(--c-ink-deep); }
+.cm-jm-tile { width: 34px; height: 34px; border-radius: 12px; background: var(--c-card);
+  border: 1px solid var(--c-border); display: grid; place-items: center; font-size: 15px; }
+/* A day with nothing in it is a GAP, not a failure — dashed, not red. */
+.cm-jm-tile.is-empty { border-style: dashed; border-color: var(--c-border-strong); background: none; }
+.cm-jm-tile.is-today { border: 2px solid var(--c-ink-deep); background: var(--c-accent-tint);
+  font-family: var(--c-font-mono); font-weight: 700; font-size: 12px; color: var(--c-accent-ink); }
+
+/* The prompt card. */
+.cm-jm-prompt { background: var(--c-ink-deep); color: #fff; border-radius: var(--c-r-hero);
+  padding: 18px; display: flex; flex-direction: column; gap: 13px; }
+.cm-jm-eyebrow { font-family: var(--c-font-mono); font-weight: 700; font-size: 10.5px;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--c-accent); }
+.cm-jm-eyebrow.dark { color: var(--c-faint); letter-spacing: .12em; }
+.cm-jm-q { margin: 0; font-family: var(--c-font-display); font-weight: 800; font-size: 21px;
+  line-height: 1.3; letter-spacing: -0.02em; text-wrap: pretty; }
+.cm-jm-write { min-height: var(--c-cta); border-radius: var(--c-r-input); border: 0;
+  background: var(--c-accent); color: var(--c-ink-deep);
+  font-family: var(--c-font-display); font-weight: 800; font-size: 16px; cursor: pointer; }
+.cm-jm-alts { display: flex; gap: 8px; }
+.cm-jm-alt { flex: 1; min-height: 46px; border-radius: var(--c-r-btn);
+  border: 1px solid rgba(255,255,255,.22); background: none; color: #fff;
+  font: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+.cm-jm-alt:hover { background: rgba(255,255,255,.08); }
+.cm-jm-reroll { flex: none; width: 46px; font-size: 15px; }
+.cm-jm-safe { margin: 0; font-family: var(--c-font-mono); font-weight: 500; font-size: 11.5px;
+  color: rgba(255,255,255,.55); }
+
+/* The mood check-in. */
+.cm-jm-mood { background: var(--c-card); border: 1px solid var(--c-border);
+  border-radius: var(--c-r-card); padding: 15px; display: flex; flex-direction: column; gap: 12px; }
+.cm-jm-h { margin: 0; font-family: var(--c-font-display); font-weight: 700; font-size: 15.5px; }
+.cm-jm-moods { display: flex; gap: 7px; }
+/* 22px is the artboard's, and it sizes an EMOJI rather than type — the type
+   scale in tokens.json governs text, and emoji here are content. Same for the
+   🕰 recall glyph and the writer's three tools. */
+.cm-jm-m { flex: 1; min-height: 52px; border-radius: var(--c-r-btn); font-size: 22px;
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--c-surface); border: 1px solid var(--c-border); }
+/* Selected is a 2px amber border AND a tinted fill — an emoji cannot carry a
+   selected state on its own, and neither can colour by itself. */
+.cm-jm-m.is-on { background: var(--c-accent-tint); border: 2px solid var(--c-accent-border); }
+.cm-jm-m:disabled { opacity: .6; cursor: default; }
+.cm-jm-note { margin: 0; font-size: 13px; color: var(--c-muted); }
+
+/* Streak / Entries / Words. Tabular, because they change in place. */
+.cm-jm-stats { display: flex; gap: 10px; }
+.cm-jm-stats > div { flex: 1; background: var(--c-card); border: 1px solid var(--c-border);
+  border-radius: var(--c-r-input); padding: 12px 10px; text-align: center; }
+.cm-jm-stats span { display: block; font-family: var(--c-font-mono); font-weight: 700;
+  font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--c-muted); }
+.cm-jm-stats b { display: block; margin-top: 3px; font-family: var(--c-font-display);
+  font-weight: 800; font-size: 21px; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+/* The timeline: a 42px date rail beside the card. */
+.cm-jm-e { display: flex; gap: 12px; }
+.cm-jm-rail { flex: none; width: 42px; text-align: center; padding-top: 3px; }
+.cm-jm-rail-d { font-family: var(--c-font-display); font-weight: 800; font-size: 19px; line-height: 1; }
+.cm-jm-rail-w { margin-top: 2px; font-family: var(--c-font-mono); font-weight: 700; font-size: 10px;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--c-faint); }
+.cm-jm-card { flex: 1; min-width: 0; background: var(--c-card); border: 1px solid var(--c-border);
+  border-radius: var(--c-r-card); padding: 15px; display: flex; flex-direction: column; gap: 8px;
+  font: inherit; text-align: left; cursor: pointer; }
+.cm-jm-card:hover { border-color: var(--c-border-strong); }
+.cm-jm-card-top { display: flex; align-items: center; gap: 8px; }
+.cm-jm-card-mood { font-size: 16px; }
+.cm-jm-card-t { flex: 1; min-width: 0; font-family: var(--c-font-display); font-weight: 700;
+  font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-jm-vis { flex: none; font-family: var(--c-font-mono); font-weight: 700; font-size: 10px;
+  letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: var(--c-r-pill); }
+.cm-jm-vis.is-private { background: none; padding: 0; font-size: 14px; }
+.cm-jm-vis.is-mentor { background: var(--c-green-tint); color: var(--c-green-ink); }
+.cm-jm-vis.is-shared { background: var(--c-neutral-chip-2); color: var(--c-muted); }
+.cm-jm-card-x { font-size: 14.5px; line-height: 1.6; color: var(--c-body-soft);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.cm-jm-card-meta { display: flex; align-items: center; flex-wrap: wrap;
+  font-family: var(--c-font-mono); font-weight: 500; font-size: 11.5px; color: var(--c-faint); }
+.cm-jm-tag { color: var(--c-purple); font-weight: 700; }
+
+/* "A year ago today" — their own words, in a dashed recall card. */
+.cm-jm-recall { display: flex; align-items: center; gap: 12px; background: var(--c-card);
+  border: 1px dashed var(--c-border-strong); border-radius: var(--c-r-card); padding: 15px; }
+.cm-jm-recall-ic { font-size: 20px; }
+.cm-jm-recall p { margin: 4px 0 0; font-size: 14.5px; line-height: 1.55; color: var(--c-body-soft); }
+
+/* ── The journal writer (§8b) ─────────────────────────────────────────────── */
+.cm-jw { position: fixed; inset: 0; z-index: 60; background: var(--c-surface);
+  display: flex; flex-direction: column; }
+.cm-jw-bar { flex: none; display: flex; align-items: center; gap: 8px;
+  padding: calc(6px + env(safe-area-inset-top)) 10px 10px; }
+.cm-jw-close { min-height: var(--c-tap); padding: 0 12px; border: 0; background: none;
+  color: var(--c-blue); font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; }
+.cm-jw-when { flex: 1; text-align: center; min-width: 0; }
+.cm-jw-date { font-family: var(--c-font-display); font-weight: 800; font-size: 15.5px; }
+.cm-jw-saved { margin-top: 1px; font-family: var(--c-font-mono); font-weight: 500; font-size: 11px;
+  color: var(--c-faint); min-height: 14px; }
+.cm-jw-done { min-height: var(--c-tap); padding: 0 16px; border: 0; border-radius: 13px;
+  background: var(--c-ink-deep); color: #fff; font: inherit; font-weight: 700; font-size: 14.5px; cursor: pointer; }
+.cm-jw-done:disabled { opacity: .6; cursor: default; }
+.cm-jw-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 18px 20px;
+  display: flex; flex-direction: column; gap: 14px; }
+.cm-jw-err { margin: 0; background: var(--c-red-tint); border: 1px solid var(--c-red);
+  color: var(--c-red-ink); border-radius: var(--c-r-btn); padding: 10px 12px;
+  font-size: 13.5px; line-height: 1.5; }
+.cm-jw-prompt { display: flex; align-items: center; gap: 10px; background: var(--c-accent-tint);
+  border: 1px solid var(--c-accent-border); border-radius: var(--c-r-btn); padding: 11px 13px; }
+.cm-jw-prompt-t { flex: 1; min-width: 0; font-size: 13.5px; line-height: 1.45; color: var(--c-accent-ink); }
+.cm-jw-skip { flex: none; min-height: var(--c-tap); padding: 0 8px; border: 0; background: none;
+  font-family: var(--c-font-mono); font-weight: 700; font-size: 11px;
+  color: var(--c-accent-ink-2); cursor: pointer; }
+/* 22px, and a real input — the design draws a placeholder, not a heading. */
+.cm-jw-title { border: 0; background: none; padding: 0; width: 100%;
+  font-family: var(--c-font-display); font-weight: 800; font-size: 22px;
+  letter-spacing: -0.02em; color: var(--c-ink); }
+/* The artboard draws this placeholder at #b6b0a0, which measures 2.02:1 on
+   the surface — placeholder text is text, and WCAG 1.4.3 asks 4.5:1. --c-muted
+   measures 5.21:1 and is the nearest token that clears it. A deliberate
+   deviation on a threshold, flagged for the designer rather than silently
+   kept: an empty field is exactly where the label has to be readable. */
+.cm-jw-title::placeholder { color: var(--c-muted); }
+.cm-jw-title:focus-visible { outline: 2px solid var(--c-accent-border); outline-offset: 4px; border-radius: 4px; }
+.cm-jw-text { flex: 1; min-height: 40vh; border: 0; background: none; padding: 0; resize: none;
+  width: 100%; font: inherit; font-size: 17px; line-height: 1.65; color: var(--c-body);
+  caret-color: var(--c-accent); }
+/* Same reason: --c-faint is 3.52:1 here and does not clear 4.5:1 either. */
+.cm-jw-text::placeholder { color: var(--c-muted); }
+.cm-jw-text:focus-visible { outline: 2px solid var(--c-accent-border); outline-offset: 4px; border-radius: 4px; }
+.cm-jw-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+.cm-jw-tag, .cm-jw-addtag, .cm-jw-tagin { min-height: var(--c-tap); display: inline-flex;
+  align-items: center; padding: 0 13px; border-radius: var(--c-r-pill);
+  font-family: var(--c-font-mono); font-weight: 700; font-size: 12.5px; cursor: pointer; }
+.cm-jw-tag { background: var(--c-purple-tint); color: var(--c-purple); border: 0; }
+.cm-jw-addtag { border: 1px dashed var(--c-border-strong); background: none; color: var(--c-faint); }
+.cm-jw-tagin { border: 1px solid var(--c-border-strong); background: var(--c-card);
+  color: var(--c-ink); width: 120px; }
+.cm-jw-vis { background: var(--c-card); border: 1px solid var(--c-border);
+  border-radius: var(--c-r-input); padding: 14px; margin: 0;
+  display: flex; flex-direction: column; gap: 11px; }
+.cm-jw-vis legend { padding: 0; color: var(--c-faint); }
+.cm-jw-vis-row { display: flex; align-items: center; gap: 11px; min-height: 48px; cursor: pointer; }
+.cm-jw-radio { width: 20px; height: 20px; flex: none; border-radius: 50%;
+  border: 2px solid var(--c-border-strong); }
+.cm-jw-vis-row.is-on .cm-jw-radio { border: 6px solid var(--c-ink-deep); }
+.cm-jw-vis-row input:focus-visible + .cm-jw-radio { outline: 2px solid var(--c-accent-border); outline-offset: 3px; }
+.cm-jw-vis-txt { flex: 1; min-width: 0; }
+.cm-jw-vis-n { display: block; font-weight: 700; font-size: 15px; }
+.cm-jw-vis-w { display: block; margin-top: 1px; font-size: 12.5px; color: var(--c-muted); }
+.cm-jw-vis-g { font-size: 15px; }
+.cm-jw-foot { flex: none; border-top: 1px solid var(--c-border); background: var(--c-card);
+  padding: 10px 14px calc(18px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 8px; }
+.cm-jw-tool { width: 46px; height: 46px; min-height: 46px; border-radius: var(--c-r-btn);
+  border: 1px solid var(--c-border); background: var(--c-card); display: grid;
+  place-items: center; font-size: 18px; cursor: pointer; }
+.cm-jw-spacer { flex: 1; }
+.cm-jw-words { font-family: var(--c-font-mono); font-weight: 600; font-size: 12px;
+  color: var(--c-faint); font-variant-numeric: tabular-nums; }
+
 /* ── Homework (§11 widget, §12 strip and tracker) ────────────────────────── */
 
 /* Shared: the count and the bar, so the two surfaces cannot render the same

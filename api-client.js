@@ -533,6 +533,11 @@
       remarkAdd:    (subjectId, kind, body) => request('/member/teaching.php', { body: { action: 'remark', subjectId, kind, body } }),
       submitMission: (data) => request('/member/mission.php', { body: data }),
       journal:       () => request('/member/journal.php'),
+      /* "Mine" — §8a in one request, and the writer's three verbs. */
+      journalMine:   (skip) => request('/member/journal.php' + qs({ view: 'mine', skip: skip || 0 })),
+      journalSave:   (data) => request('/member/journal.php', { body: { action: 'save', data } }),
+      journalMood:   (mood) => request('/member/journal.php', { body: { action: 'mood', mood } }),
+      journalRemove: (entryId) => request('/member/journal.php', { body: { action: 'delete', entryId } }),
       journalCreate: (data) => request('/member/journal.php', { body: data }),
       rsvp:          (data) => request('/member/rsvp.php', { body: data }),
       notifications: () => request('/member/notifications.php'),

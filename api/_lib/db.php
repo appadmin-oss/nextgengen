@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 104;
+const NGG_SCHEMA_TARGET = 105;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2934,6 +2934,38 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX idx_typing_unique ON community_typing(channelId, memberId);
             CREATE INDEX idx_typing_at ON community_typing(channelId, atIso);
+        ",
+        105 => "
+            /* The personal journal, widened to what the design asks of it
+               (handoff §8a and §8b). Every column is added rather than
+               replaced: `journal` is also written by the anchor reflection
+               flow, which knows about mood, body and isPrivate and nothing
+               else, and must keep working untouched.
+
+               `visibility` supersedes isPrivate for anything written through
+               the new writer. isPrivate stays, is kept in step on every write,
+               and remains the only thing the old flow reads — one fact, two
+               spellings, rather than two facts that can disagree. */
+            ALTER TABLE journal ADD COLUMN title TEXT DEFAULT '';
+            /* private | mentor | programme. Defaulting to 'private' is the
+               design's rule and a safeguarding one: a child\'s journal is
+               private unless they choose otherwise, and a default that leaks
+               is a default nobody would have chosen deliberately. */
+            ALTER TABLE journal ADD COLUMN visibility TEXT DEFAULT 'private';
+            /* Space-separated, lower-case, no leading #. Counted in PHP over
+               one member\'s own entries — tens or hundreds of rows, not
+               millions — which is cheaper to keep correct than a join table
+               nothing else needs. */
+            ALTER TABLE journal ADD COLUMN tags TEXT DEFAULT '';
+            ALTER TABLE journal ADD COLUMN wordCount INTEGER DEFAULT 0;
+            ALTER TABLE journal ADD COLUMN mediaJson TEXT DEFAULT '';
+            /* The DAY the entry is about, which is not the same as when it was
+               typed: somebody writing up Saturday on Sunday morning should see
+               it on Saturday in the week strip. */
+            ALTER TABLE journal ADD COLUMN occurredOn TEXT DEFAULT '';
+            ALTER TABLE journal ADD COLUMN promptText TEXT DEFAULT '';
+            ALTER TABLE journal ADD COLUMN updatedAt TEXT DEFAULT '';
+            CREATE INDEX idx_journal_day ON journal(memberId, occurredOn);
         ",
     ];
 
