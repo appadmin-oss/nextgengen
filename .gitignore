@@ -45,3 +45,10 @@ dist/api/logs/*
 api/storage/*
 !api/storage/.htaccess
 !api/storage/.gitkeep
+
+# Test fixtures the suites write at runtime. ui-smoke.js builds these with
+# fs.writeFileSync on every run and unlinks most of them at the end — a run
+# that is interrupted, or one still in flight, leaves them behind. The
+# hand-authored fixtures under tests/_ are sources and stay tracked.
+tests/_*_fixture.html
+!tests/_bench_fixture.html
