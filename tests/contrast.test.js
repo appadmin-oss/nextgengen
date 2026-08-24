@@ -162,5 +162,36 @@ const noInk = ['#D64545', '#4C6FFF'].filter(h => Math.max(ratio(h, LIGHT), ratio
 ok('there really are colours no ink reads on, so the picker needs to say so ('
    + noInk.join(', ') + ')', noInk.length === 2);
 
+/* ── The community palette against its own grounds ────────────────────────
+   tokens.json names each of these by what it is FOR, and three of them are
+   named for text: body, muted and faint. A token documented as "Timestamps,
+   monospace meta" is text, so it owes 4.5:1 (WCAG 1.4.3) on every surface it
+   is printed on — and `faint` shipped at #7d8399, which owes it on none of
+   them (3.76 / 3.52 / 3.12). Every timestamp in the product was failing.
+
+   This is here so it cannot drift back. It is a palette test rather than a
+   rendered-page one because the palette is where the decision lives: one
+   token, thirty-eight rules. */
+console.log('\n── The community text tokens, on every ground they print on ──');
+const css = src('styles.css');
+const tok = (name) => {
+  const m = css.match(new RegExp('--c-' + name + ':\\s*(#[0-9a-fA-F]{6})'));
+  return m ? m[1].toLowerCase() : '';
+};
+const GROUNDS = [['card', tok('card')], ['surface', tok('surface')], ['canvas', tok('canvas')]];
+/* body and muted are for prose and labels; faint for timestamps and meta.
+   All three are text, and small text at that — the 3:1 large-text allowance
+   needs 18.66px bold or 24px, and none of these are used that way. */
+[['body', 4.5], ['muted', 4.5], ['faint', 4.5]].forEach(([name, need]) => {
+  const hex = tok(name);
+  const worst = GROUNDS.reduce((w, [, bg]) => Math.min(w, ratio(hex, bg)), 99);
+  const detail = GROUNDS.map(([nm, bg]) => nm + ' ' + ratio(hex, bg).toFixed(2)).join(' / ');
+  ok('--c-' + name + ' (' + hex + ') clears ' + need + ':1 as text — ' + detail,
+     !!hex && worst >= need);
+});
+/* The canvas is the worst ground, so it is the one that decides. */
+ok('…and the canvas is what the floor is measured against, not the card',
+   GROUNDS[2][1] && ratio(tok('faint'), GROUNDS[2][1]) <= ratio(tok('faint'), GROUNDS[0][1]));
+
 console.log('\n' + (fail === 0 ? '✅ PASS' : '❌ FAIL') + ': ' + pass + ' passed, ' + fail + ' failed (ink and contrast)');
 process.exit(fail === 0 ? 0 : 1);

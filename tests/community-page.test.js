@@ -77,7 +77,7 @@ const post = (o) => Object.assign({
   postId: 'p', kind: 'post', channel: CHANNELS[1], author: author('Elizabeth A.', 'Egbe-Idimu', FACE),
   body: '', mediaType: 'none', mediaUrl: '', createdAt: '2026-08-22T09:00:00Z',
   commentCount: 0, reactions: [], myReactions: [], bookmarked: false, stars: 0, starred: false,
-  status: 'published', moderationNote: '' }, o);
+  status: 'published', moderationNote: '', pinned: false }, o);
 
 const ME = { memberId: 'NGG-2025-0007', fullName: 'Amaka Obi', email: 'a@example.com',
              centre: 'Egbeda', role: 'member', type: 'NGG', status: 'active', photoUrl: FACE, track: 'Tech' };
@@ -137,7 +137,11 @@ function routesFor(media) {
     post({ postId: 'p1', body: 'Here is the model I trained today.',
            mediaType: 'image', mediaUrl: media, altText: 'A chart', commentCount: 4 }),
     post({ postId: 'p2', author: author('Coach Bisi Adeyemi', 'Egbeda', '', true), channel: CHANNELS[0],
-           body: 'Reminder: Saturday session moves to 10am.' }),
+           body: 'Homework due Thursday · bring your eight-bar notes', pinned: true }),
+  ];
+  /* A second page, so "Load earlier messages" has somewhere to go. */
+  const OLDER = [
+    post({ postId: 'p9', body: 'This one is on page two.', channel: CHANNELS[1] }),
   ];
   return {
     'auth/me.php': { ok: true, member: ME, adminOk: false, impersonating: null },
@@ -147,7 +151,11 @@ function routesFor(media) {
       if (v === 'channels') return { ok: true, channels: CHANNELS };
       if (v === 'today') return { ok: true, unread: 16, mentions: 2, saved: 1 };
       if (v === 'digest') return { ok: true, posts: POSTS, stars: [] };
-      if (v === 'feed') return { ok: true, posts: POSTS, hasMore: false, channel: null };
+      if (v === 'feed') {
+        return Number(u.searchParams.get('page') || 0) > 0
+          ? { ok: true, posts: OLDER, hasMore: false, channel: null }
+          : { ok: true, posts: POSTS, hasMore: true, channel: null };
+      }
       if (v === 'members') return { ok: true, members: MEMBERS, count: MEMBERS.length };
       if (v === 'homework') return { ok: true, homework: HOMEWORK };
       if (v === 'typing') return { ok: true, typing: TYPING.names, says: TYPING.says };
@@ -709,6 +717,49 @@ async function openPage(browser, width, height, media) {
          }));
       ok('…and no homework strip as well, which would be the same number twice',
          await page.evaluate(() => !document.querySelector('.cm-hw-strip')));
+      await page.close();
+    }
+
+    /* ── The rest of §3 (2A) ──────────────────────────────────────────────
+       The channel asked for page 0 and only ever page 0, so everything past
+       the first page of a busy channel was unreachable — not slow, not behind
+       a scroll, gone. */
+    console.log('\n── The channel, §3 ───────────────────────────────────────────');
+    {
+      const { page } = await openPage(browser, 1440, 900, WIDE);
+      await page.locator('.cmd-row').nth(1).click();
+      await page.waitForTimeout(900);
+
+      ok('a channel with more history offers "Load earlier messages"',
+         await page.evaluate(() => {
+           const b = document.querySelector('.cmm-earlier');
+           return !!b && /Load earlier messages/.test(b.textContent);
+         }));
+      ok('…as a real target, not a 20px link',
+         await page.evaluate(() => document.querySelector('.cmm-earlier').getBoundingClientRect().height >= 43.5));
+      const before = await page.evaluate(() => document.querySelectorAll('.cmm-msg').length);
+      await page.locator('.cmm-earlier').click();
+      await page.waitForTimeout(800);
+      ok('…and pressing it really brings back messages that were unreachable',
+         await page.evaluate((n) => document.querySelectorAll('.cmm-msg').length > n, before));
+      ok('…placed BEFORE the ones already on screen, because that is where earlier is',
+         await page.evaluate(() =>
+           /page two/.test(document.querySelector('.cmm-msg').innerText)));
+      ok('…and the pill goes when there is nothing older left',
+         await page.evaluate(() => !document.querySelector('.cmm-earlier')));
+
+      /* The pinned banner: real data that nothing surfaced. */
+      ok('a pinned message gets the banner §3 draws for it',
+         await page.evaluate(() => {
+           const b = document.querySelector('.cmm-pinban');
+           return !!b && /pinned/i.test(b.innerText) && /eight-bar notes/.test(b.innerText);
+         }));
+      ok('…and it can be put away, because a banner you cannot dismiss is one people look past',
+         await page.evaluate(async () => {
+           document.querySelector('.cmm-pinban-x').click();
+           await new Promise(r => setTimeout(r, 200));
+           return !document.querySelector('.cmm-pinban');
+         }));
       await page.close();
     }
 

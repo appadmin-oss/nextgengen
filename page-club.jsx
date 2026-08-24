@@ -463,6 +463,16 @@ function cmPoster(url) {
   if (!url || !/res\.cloudinary\.com/.test(url) || url.indexOf("/upload/") < 0) return "";
   return url.replace("/upload/", "/upload/so_0,f_jpg,q_auto,w_900,c_limit/").replace(/\.(mp4|mov|webm|m4v|avi)(\?.*)?$/i, ".jpg");
 }
+/* "8:12" — a wall clock, in the 24-hour form Nigeria writes. Built by hand
+   rather than through toLocaleTimeString, which would render this differently
+   on every device and make the divider disagree with itself between a phone
+   and the laptop beside it. */
+function cmClockTime(iso) {
+  if (!iso) return "";
+  const d = new Date(String(iso).replace(" ", "T") + (/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? "" : "Z"));
+  if (isNaN(d)) return "";
+  return d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0");
+}
 function cmAgo(iso) {
   if (!iso) return "";
   const s = Math.max(0, Math.floor((Date.now() - new Date(iso.replace(" ", "T") + (/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? "" : "Z")).getTime()) / 1000));
@@ -2883,6 +2893,14 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
   /* §12: who is typing, which replaces the member count in the subtitle for as
      long as it is true and never for longer. */
   const [typing, setTyping] = React.useState("");
+  /* §3's "Load earlier messages" pill. The channel asked for page 0 and only
+     ever page 0, so everything past the first page of a busy channel was
+     simply unreachable — not slow, not hidden behind a scroll, gone. */
+  const [older, setOlder] = React.useState([]);      // pages 1..n, oldest last
+  const [page, setPage] = React.useState(0);
+  const [more, setMore] = React.useState(false);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [dismissedPin, setDismissedPin] = React.useState(false);
   const [savedOnly, setSavedOnly] = React.useState(false);
   const [info, setInfo] = React.useState(false);
   const streamRef = React.useRef(null);
@@ -2907,10 +2925,11 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
 
   React.useEffect(() => {
     setPosts(null); setFresh(null); setDismissed(false); setLoadErr(false);
-    setSavedOnly(false); setInfo(false);
+    setSavedOnly(false); setInfo(false); setDismissedPin(false);
     setUnreadMark(ch.unread || 0);
+    setOlder([]); setPage(0); setMore(false);
     NGGApi.member.community.feed(slug, sort, 0)
-      .then(r => { setPosts(r.posts || []); setLoadErr(false); })
+      .then(r => { setPosts(r.posts || []); setLoadErr(false); setMore(!!r.hasMore); })
       .catch(() => { setPosts([]); setLoadErr(true); });
     NGGApi.member.community.members(slug)
       .then(r => setMembers(r.members || [])).catch(() => setMembers([]));
@@ -2995,19 +3014,50 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: cmScrollBehavior() });
   };
 
-  const patch = (postId, p) => setPosts(ps => (ps || []).map(x => x.postId === postId ? { ...x, ...p } : x));
-  const remove = (postId) => setPosts(ps => (ps || []).filter(x => x.postId !== postId));
+  /* Older pages are kept separately from the live page 0, because the poll
+     replaces page 0 wholesale every twenty seconds and would otherwise throw
+     away everything the reader had asked for. */
+  const loadOlder = () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    const next = page + 1;
+    NGGApi.member.community.feed(slug, sort, next)
+      .then(r => {
+        setOlder(o => o.concat(r.posts || []));
+        setPage(next);
+        setMore(!!r.hasMore);
+      })
+      .catch(() => setMore(true))      // leave the pill so it can be retried
+      .finally(() => setLoadingMore(false));
+  };
+
+  const inBoth = (fn) => { setPosts(ps => (ps || []).map(fn)); setOlder(os => os.map(fn)); };
+  const patch = (postId, p) => inBoth(x => x.postId === postId ? { ...x, ...p } : x);
+  const remove = (postId) => {
+    setPosts(ps => (ps || []).filter(x => x.postId !== postId));
+    setOlder(os => os.filter(x => x.postId !== postId));
+  };
 
   /* Chronological for "Newest" — oldest at the top, the way a conversation
      reads. "Most replied" is a RANKING, so it is not reversed: turning a
      ranking upside down puts the quietest post first and calls it sorted. */
   const ordered = React.useMemo(() => {
     if (!posts) return posts;
-    const base = sort === "latest" ? [...posts].reverse() : posts;
+    /* Older pages come back newest-first like page 0, so they sit BEFORE it
+       once everything is reversed into reading order. Deduped on postId: a
+       message posted while somebody was paging backwards would otherwise
+       appear in both. */
+    const seen = new Set();
+    const all = posts.concat(older).filter(p => !seen.has(p.postId) && seen.add(p.postId));
+    const base = sort === "latest" ? [...all].reverse() : all;
     return savedOnly ? base.filter(p => p.bookmarked) : base;
-  }, [posts, sort, savedOnly]);
+  }, [posts, older, sort, savedOnly]);
   const chrono = ordered;
   const savedCount = React.useMemo(() => (posts || []).filter(p => p.bookmarked).length, [posts]);
+  /* The newest pinned message, which is the one a banner should carry: pinning
+     a second one means the first has been superseded. */
+  const pinnedPost = React.useMemo(
+    () => (posts || []).filter(p => p.pinned)[0] || null, [posts]);
   /* The NEW line counts back from the end of the chronological list. It means
      nothing over a ranking or a filtered subset, so it is not drawn there. */
   const dividerAt = (chrono && unreadMark > 0 && sort === "latest" && !savedOnly)
@@ -3131,6 +3181,22 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
           </button>
         )}
       </header>
+
+      {/* §3's pinned banner. Real data — a mentor pins a post from the actions
+          sheet and it has always been on the payload; nothing surfaced it, so
+          the one message a channel most wants read scrolled away with the
+          rest. Dark, because it is the only thing on this screen that is not
+          part of the conversation. */}
+      {pinnedPost && !dismissedPin && (
+        <div className="cmm-pinban">
+          <span className="cmm-pinban-eye">Pinned</span>
+          <button className="cmm-pinban-t" onClick={() => onOpenThread(pinnedPost)}>
+            {(pinnedPost.body || "").trim().replace(/\s+/g, " ").slice(0, 120) || "A pinned message"}
+          </button>
+          <button className="cmm-pinban-x" onClick={() => setDismissedPin(true)}
+                  aria-label="Hide the pinned message">✕</button>
+        </div>
+      )}
 
       {/* §12: the homework strip, on the amber surface, leading to the tracker.
           Phone only — on a desktop the same task is the widget beside the
@@ -3284,11 +3350,21 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
             <button onClick={() => setReload(n => n + 1)}>Retry</button>
           </div>
         )}
+        {/* §3's pill. It sits above the oldest message on screen, which is where
+            "earlier" is, and it says how it is going rather than spinning. */}
+        {chrono && chrono.length > 0 && more && sort === "latest" && !savedOnly && (
+          <button className="cmm-earlier" onClick={loadOlder} disabled={loadingMore}>
+            {loadingMore ? "Loading…" : "Load earlier messages"}
+          </button>
+        )}
         {chrono && chrono.map((p, i) => (
           <React.Fragment key={p.postId}>
+            {/* "New since 8:12" — the design's own words. A bare "NEW" makes
+                somebody scroll up to work out how far back they have to read;
+                the time answers it where they are standing. */}
             {i === dividerAt && (
               <div className="cmm-newline" role="separator">
-                <span>NEW</span>
+                <span>{p.createdAt ? "New since " + cmClockTime(p.createdAt) : "New"}</span>
               </div>
             )}
             <CmMobileMessage post={p} prev={chrono[i - 1]} me={mem.fullName}

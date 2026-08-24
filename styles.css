@@ -2257,7 +2257,14 @@ img { background-color: rgba(12,20,50,0.04); }
   --c-body:          #16203d;
   --c-body-soft:     #46506a;
   --c-muted:         #5f6785;
-  --c-faint:         #7d8399;
+  /* #63697e, not the bundle's #7d8399.
+     tokens.json documents this as "Timestamps, monospace meta" — text — and
+     #7d8399 measures 3.76 / 3.52 / 3.12 against card / surface / canvas, all
+     under the 4.5:1 WCAG 1.4.3 asks of body text. Every timestamp in the
+     product was failing. This is the same hue and saturation with the
+     lightness reduced until it clears on all three grounds: 5.45 / 5.10 / 4.52.
+     Changed on the designer's instruction, not unilaterally. */
+  --c-faint:         #63697e;
 
   /* Lines */
   --c-border:        #e7e2d4;
@@ -2758,6 +2765,37 @@ img { background-color: rgba(12,20,50,0.04); }
    --c-fab-clear is defined once on .cmm; see the note there. */
 .cmm-stream { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 6px var(--c-gutter) var(--c-fab-clear); }
+/* §3's pinned banner. Dark, because it is the only thing on this screen that
+   is not part of the conversation, and dismissible, because a banner you
+   cannot put away is one people learn to look past. */
+.cmm-pinban { position: relative; display: flex; align-items: center; gap: 10px; flex: none;
+  margin: 10px var(--c-gutter) 0; padding: 4px 6px 4px 12px; border-radius: var(--c-r-btn);
+  background: var(--c-ink-deep); color: #fff; }
+.cmm-pinban-eye { flex: none; font-family: var(--c-font-mono); font-weight: 700; font-size: 10px;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--c-accent); }
+/* Both of these are real targets on a phone and owe the bundle's 44px. I had
+   reasoned that the row carried the height; the measurement said 239x16 and
+   30x30, which is why that check is a test and not a comment. */
+.cmm-pinban-t { flex: 1; min-width: 0; min-height: var(--c-tap); display: flex; align-items: center;
+  padding: 0; border: 0; background: none; color: #fff;
+  font: inherit; font-size: 13.5px; text-align: left; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmm-pinban-t:hover { text-decoration: underline; }
+.cmm-pinban-x { flex: none; width: var(--c-tap); height: var(--c-tap); min-height: var(--c-tap);
+  border: 0; background: none; color: rgba(255,255,255,.7); font-size: 13px; cursor: pointer;
+  border-radius: 12px; }
+.cmm-pinban-x:hover { background: rgba(255,255,255,.14); color: #fff; }
+
+/* §3's "Load earlier messages". A full-width row rather than a floating pill:
+   it is where the conversation runs out, and a control that says the list is
+   incomplete should be part of the list. */
+.cmm-earlier { align-self: center; min-height: var(--c-tap); margin: 2px 0 10px;
+  padding: 0 18px; border-radius: var(--c-r-pill); border: 1px solid var(--c-border-strong);
+  background: var(--c-card); color: var(--c-body-soft); font: inherit; font-size: 13px;
+  font-weight: 700; cursor: pointer; }
+.cmm-earlier:hover:not(:disabled) { background: var(--c-surface); color: var(--c-ink); }
+.cmm-earlier:disabled { color: var(--c-muted); cursor: default; }
+
 .cmm-newline { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px;
   font-family: var(--c-font-mono); font-size: 10px; font-weight: 700; letter-spacing: .16em; color: var(--c-red); }
 .cmm-newline::before, .cmm-newline::after { content: ""; flex: 1; height: 1px; background: var(--c-red); opacity: .5; }
