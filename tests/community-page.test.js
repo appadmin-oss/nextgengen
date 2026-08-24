@@ -199,6 +199,9 @@ async function openPage(browser, width, height, media) {
     console.log('\n── The desktop panes (handoff §11 / 3A) ──────────────────────');
     {
       const { page } = await openPage(browser, 1280, 900, WIDE);
+      /* The artboard's centre pane is a CHANNEL, so open one. */
+      await page.locator('.cmd-row').first().click();
+      await page.waitForTimeout(600);
       const L = () => page.evaluate(() => {
         const r = (sel) => { const e = document.querySelector(sel); if (!e) return null;
           const b = e.getBoundingClientRect();
@@ -214,8 +217,11 @@ async function openPage(browser, width, height, media) {
          !!m.rail && !!m.side && !!m.body);
       ok('…laid out left to right in that order (' + m.rail.l + ' < ' + m.side.l + ' < ' + m.body.l + ')',
          m.rail.l < m.side.l && m.side.l < m.body.l);
-      ok('…with the channel list at the 260px the bundle specifies (' + m.side.w + 'px)',
-         m.side.w === 260);
+      /* 268, measured off the artboard itself — the README's prose rounds it
+         to 260 and the artboard is the authority. */
+      ok('…with the channel list at the 268px the artboard draws (' + m.side.w + 'px)',
+         m.side.w === 268);
+      ok('…and the rail at 68px (' + m.rail.w + 'px)', m.rail.w === 68);
       /* A workspace, not a long page: each pane scrolls inside itself. */
       ok('the workspace fits the window rather than scrolling as one page ('
          + m.shell.h + 'px in ' + m.vh + 'px)', m.shell.h <= m.vh);
@@ -242,9 +248,76 @@ async function openPage(browser, width, height, media) {
          turn a 63px row into a 128px one. */
       ok('a long channel name is one ellipsised line in the list',
          await page.evaluate(() => {
-           const n = Array.from(document.querySelectorAll('.cmm-side .cmm-ch-name'))
+           const n = Array.from(document.querySelectorAll('.cmd-row-n'))
              .find(x => x.textContent.length > 20);
            return !!n && n.getBoundingClientRect().height < 26 && n.scrollWidth > n.clientWidth;
+         }));
+
+      /* ── The artboard's chrome ────────────────────────────────────────── */
+      ok('the workspace has its own global bar, and the marketing nav is gone',
+         await page.evaluate(() => {
+           const bar = document.querySelector('.cmd-bar');
+           const site = document.querySelector('.topnav');
+           return !!bar && Math.round(bar.getBoundingClientRect().height) === 54
+             && (!site || getComputedStyle(site).display === 'none');
+         }));
+      ok('…carrying the command bar the artboard specifies, as a real button',
+         await page.evaluate(() => {
+           const j = document.querySelector('.cmd-jump');
+           return !!j && j.tagName === 'BUTTON'
+             && /Jump to a channel, person, entry/.test(j.textContent)
+             && /⌘K/.test(j.textContent);
+         }));
+      ok('…and "Catch me up", the bell with its count, and the account avatar',
+         await page.evaluate(() =>
+           /Catch me up/.test(document.querySelector('.cmd-catch').textContent)
+           && !!document.querySelector('.cmd-badge') && !!document.querySelector('.cmd-me')));
+
+      /* Five destinations on the rail, not the phone's four. */
+      ok('the rail carries all five destinations including Saved',
+         await page.evaluate(() => {
+           const t = Array.from(document.querySelectorAll('.cmm-tab .cmm-tab-l')).map(x => x.textContent);
+           return t.length === 5 && t.join(',') === 'Today,Chans,Play,Journal,Saved';
+         }));
+
+      /* The channel pane's own furniture. */
+      ok('the channel pane has All / Unread / Mine and a compose button',
+         await page.evaluate(() => {
+           const seg = Array.from(document.querySelectorAll('.cmd-seg-b')).map(x => x.textContent.trim());
+           return seg.length === 3 && seg[0] === 'All' && /^Unread/.test(seg[1]) && seg[2] === 'Mine'
+             && !!document.querySelector('.cmd-plus');
+         }));
+      ok('…and the ⌥↑/↓ hint, which actually walks the unread channels',
+         await page.evaluate(() => /next unread/.test(document.querySelector('.cmd-foot').textContent)));
+
+      /* The hint has to be true. Alt+ArrowDown must move to an unread channel
+         — a printed shortcut that does nothing is worse than none. */
+      const before = await page.evaluate(() => {
+        const on = document.querySelector('.cmd-row.is-on'); return on ? on.textContent : ''; });
+      await page.keyboard.down('Alt'); await page.keyboard.press('ArrowDown'); await page.keyboard.up('Alt');
+      await page.waitForTimeout(500);
+      const after = await page.evaluate(() => {
+        const on = document.querySelector('.cmd-row.is-on'); return on ? on.textContent : ''; });
+      ok('…so ⌥↓ really moves to the next unread channel', !!after && after !== before);
+
+      /* A channel you cannot type into is one you are reading, not one you
+         are in. The artboard pins a composer to the pane. */
+      ok('the channel pane has a docked composer',
+         await page.evaluate(() => {
+           const c = document.querySelector('.cmd-composer .cm-composer');
+           if (!c) return false;
+           const pane = document.querySelector('.cmm-body').getBoundingClientRect();
+           const b = c.getBoundingClientRect();
+           return b.bottom <= pane.bottom + 2 && b.top > pane.top + 100;
+         }));
+      /* …and the header is the full-bleed bar the artboard draws, not the
+         narrow centred pill the reading-column cap made of it. */
+      ok('the channel header spans the pane rather than floating in it',
+         await page.evaluate(() => {
+           const h = document.querySelector('.cmm-ch-head');
+           const p = document.querySelector('.cmm-body');
+           if (!h || !p) return false;
+           return h.getBoundingClientRect().width >= p.getBoundingClientRect().width - 4;
          }));
       /* And the thread's own header stacks instead of running together. */
       ok('the thread header keeps its title clear of the channel and the close button',

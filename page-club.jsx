@@ -2010,7 +2010,7 @@ function CmTextSize({ onClose }) {
    The full channel screen. Everything the desktop channel could do, in one
    column, with the two rules that matter on a phone held to: nothing
    auto-scrolls, and every action clears a thumb. */
-function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, counts, onCounts, onOpenFiles }) {
+function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, counts, onCounts, onOpenFiles, dockComposer }) {
   const [posts, setPosts] = React.useState(null);
   const [members, setMembers] = React.useState(null);
   const [fresh, setFresh] = React.useState(null);
@@ -2193,6 +2193,19 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
         </button>
       )}
 
+      {/* Docked composer — the artboard pins one to the bottom of the channel
+          pane. On a phone the FAB opens it as a sheet, because a permanent
+          composer on a 390px screen eats a fifth of the messages. Here there
+          is room, and a channel you cannot type into is a channel you are
+          reading rather than one you are in. */}
+      {dockComposer && (
+        <div className="cmd-composer">
+          <CmComposer channels={channels} active={slug} me={(auth.member || {}).fullName}
+                      enterToSend
+                      onPosted={() => { setReload(t => t + 1); onCounts && onCounts(); }}/>
+        </div>
+      )}
+
       {sheetFor && (
         <CmActionsSheetHost post={sheetFor} staff={staff} onClose={() => setSheetFor(null)}
                             onPatch={patch} onRemove={remove} onOpenThread={onOpenThread}/>
@@ -2311,6 +2324,126 @@ function useCmWide(px) {
     q.addListener(on); return () => q.removeListener(on);
   }, [px]);
   return wide;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The desktop chrome — handoff §11, artboard 3A.
+
+   Everything here renders ONLY at ≥1024px and has no phone equivalent, which
+   is why it is its own set of components rather than a stylesheet trick: a
+   global command bar, a five-destination rail and a channel list with its own
+   filter tabs do not exist on a 390px screen at all, and building them to hide
+   them costs a member on a handset markup they never see.
+
+   Geometry is taken from the artboard rather than approximated: 54px bar,
+   68px rail with 46px items, 268px channel pane at radius 18, 34px channel
+   avatars at radius 11, 38px channel-header avatar at radius 12.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function cmRailIcon(name) {
+  const P = { fill: "none", stroke: "currentColor", strokeWidth: 1.9, strokeLinecap: "round", strokeLinejoin: "round" };
+  const wrap = (d) => <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">{d}</svg>;
+  if (name === "today")    return wrap(<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" {...P}/>);
+  if (name === "channels") return wrap(<path d="M9 4 7 20M17 4l-2 16M4 9h16M3 15h16" {...P}/>);
+  if (name === "arcade")   return wrap(<><circle cx="12" cy="12" r="9" {...P}/><path d="M10 8.5l6 3.5-6 3.5z" fill="currentColor" stroke="none"/></>);
+  if (name === "journal")  return wrap(<><rect x="5" y="4" width="14" height="16" rx="2" {...P}/><path d="M9 9h6M9 13h6" {...P}/></>);
+  if (name === "saved")    return wrap(<path d="M7 4h10v16l-5-3.5L7 20V4Z" {...P}/>);
+  return null;
+}
+
+/* The 54px global bar. The community had the marketing site's nav above it —
+   Home, Programs, My dashboard — which is a website with an app bolted
+   underneath, not the workspace the artboard draws. */
+function CmDeskBar({ auth, counts, onCommand, onCatchUp, onNotifs, onAccount }) {
+  const mem = (auth && auth.member) || {};
+  return (
+    <div className="cmd-bar">
+      <div className="cmd-brand">
+        <span className="cmd-mark" aria-hidden="true">N</span>
+        <span className="cmd-brand-n">The Community</span>
+        <span className="cmd-brand-tag">NGG</span>
+      </div>
+      {/* A real button, not a decorative box: it opens the jump sheet, which is
+          the same surface the phone reaches from its search field. */}
+      <button className="cmd-jump" onClick={onCommand}>
+        {cmUiIcon("search", 15)}
+        <span className="cmd-jump-t">Jump to a channel, person, entry — or type <b>/</b> for a command</span>
+        <span className="cmd-kbd" aria-hidden="true">⌘K</span>
+      </button>
+      <div className="cmd-right">
+        <button className="cmd-catch" onClick={onCatchUp}>
+          <span className="cmd-spark" aria-hidden="true">✦</span>Catch me up
+        </button>
+        <button className="cmd-icon" onClick={onNotifs}
+                aria-label={"Notifications" + (counts.mentions ? ", " + counts.mentions + " unread" : "")}>
+          {cmUiIcon("bell", 17)}
+          {counts.mentions > 0 && <span className="cmd-badge" aria-hidden="true">{counts.mentions}</span>}
+        </button>
+        <button className="cmd-me" onClick={onAccount} aria-label="Your account">
+          {cmAvatar(mem.fullName || "You", mem.memberId || "you", mem.photoUrl, "cmd-me-av", "you")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* The 268px channel pane. Not CmChannels with different padding: the artboard
+   gives it filter tabs, a compose button, a DIRECT section and a keyboard
+   hint, none of which the phone's channel TAB has. */
+function CmDeskChannels({ channels, current, onOpen, onCompose }) {
+  const [tab, setTab] = React.useState("all");
+  const joined = channels.filter(c => !c.discover);
+  const unread = joined.filter(c => c.unread > 0);
+  const shown = tab === "unread" ? unread : joined;
+  const unreadTotal = unread.length;
+
+  const Row = (c) => (
+    <button key={c.slug} className={"cmd-row" + (current === c.slug ? " is-on" : "")}
+            onClick={() => onOpen(c.slug)} aria-current={current === c.slug ? "page" : undefined}>
+      <span className="cmd-row-av" aria-hidden="true">{c.icon || (c.name || "#").slice(0, 1)}</span>
+      <span className="cmd-row-txt">
+        <span className="cmd-row-n">{c.name}</span>
+        <span className="cmd-row-p">{c.lastMessage || c.purpose || "No messages yet"}</span>
+      </span>
+      {c.unread > 0
+        ? <span className="cmd-row-badge">{c.unread > 99 ? "99+" : c.unread}</span>
+        : <span className="cmd-row-t">{c.lastAt ? cmAgo(c.lastAt) : ""}</span>}
+    </button>
+  );
+
+  return (
+    <div className="cmd-chans">
+      <div className="cmd-chans-hd">
+        <h2 className="cmd-chans-h">Channels</h2>
+        <button className="cmd-plus" onClick={onCompose} aria-label="Write a post">
+          {cmUiIcon("plus", 16)}
+        </button>
+      </div>
+      <div className="cmd-seg" role="tablist" aria-label="Filter channels">
+        {[["all", "All"], ["unread", "Unread" + (unreadTotal ? " " + unreadTotal : "")], ["mine", "Mine"]].map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={tab === id}
+                  className={"cmd-seg-b" + (tab === id ? " is-on" : "")}
+                  onClick={() => setTab(id)}>{label}</button>
+        ))}
+      </div>
+      <div className="cmd-rows">
+        {!channels.length && <CmSkeleton rows={4}/>}
+        {shown.map(Row)}
+        {tab === "unread" && !unread.length && (
+          <p className="cmd-none">Nothing unread. You are all caught up.</p>
+        )}
+        {tab === "mine" && (
+          <p className="cmd-none">Channels you post in will collect here.</p>
+        )}
+      </div>
+      {/* The artboard's footer. Stated as a hint rather than implemented as a
+          shortcut, because a hint for a key combination that does nothing is
+          worse than no hint — see the keydown handler in CmMobileApp. */}
+      <div className="cmd-foot">
+        <span className="cmd-kbd">⌥↑</span><span className="cmd-kbd">⌥↓</span> next unread
+      </div>
+    </div>
+  );
 }
 
 function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
@@ -2451,17 +2584,53 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
   }, []);
 
   const openChannel = (slug) => { setChannel(slug); setTab("channels"); };
+
+  /* ⌥↑ / ⌥↓ walks the unread channels — the artboard prints that hint in the
+     channel pane's footer, and a hint for a shortcut that does nothing is
+     worse than no hint at all. Desktop only: there is no Alt key on a phone
+     and no pane for it to move a selection in. */
+  React.useEffect(() => {
+    if (!wide) return;
+    const onKey = (e) => {
+      if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+      const list = channels.filter(c => !c.discover && c.unread > 0);
+      if (!list.length) return;
+      e.preventDefault();
+      const at = list.findIndex(c => c.slug === channel);
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      const next = at < 0
+        ? (step > 0 ? 0 : list.length - 1)
+        : (at + step + list.length) % list.length;
+      openChannel(list[next].slug);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [wide, channels, channel]);
   const openToday = (f) => { setChannel(null); setThread(null); setTab("today"); setTodayFilter(f); };
 
   return (
     <div className={"cmm" + (wide && thread ? " has-thread" : "")} data-screen-label="Community">
+      {/* The workspace's own 54px bar. The community used to sit under the
+          marketing site's nav — Home, Programs, My dashboard — which is a
+          website with an app bolted underneath, not the workspace the artboard
+          draws. Everything the site nav offered is still reachable: the avatar
+          opens the account surface, the bell opens notifications, and the
+          command bar covers search. */}
+      {wide && (
+        <CmDeskBar auth={auth} counts={counts}
+                   onCommand={() => { setJumpScope("all"); setJump(true); }}
+                   onCatchUp={() => openToday("unread")}
+                   onNotifs={() => setNotifs(true)}
+                   onAccount={() => setAccount(true)}/>
+      )}
       {/* The channel list is its OWN pane on a desktop, and stays put.
           Handoff §11: "destinations and conversations are separate concerns,
           so switching one never hides the other." On a phone it is a tab, as
-          it has always been — same component, given room. */}
+          it has always been. */}
       {wide && (
         <aside className="cmm-side" aria-label="Channels">
-          <CmChannels channels={channels} onOpen={openChannel} onCompose={compose}/>
+          <CmDeskChannels channels={channels} current={channel}
+                          onOpen={openChannel} onCompose={compose}/>
         </aside>
       )}
       <div className={"cmm-body" + (barHidden ? " no-bar" : "")} onScroll={onBodyScroll}>
@@ -2487,7 +2656,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
           <CmChannel slug={channel} channels={channels} auth={auth}
                      onBack={() => setChannel(null)} onOpenThread={setThread}
                      onCompose={compose} counts={counts} onCounts={refreshCounts}
-                     onOpenFiles={setFiles}/>
+                     onOpenFiles={setFiles} dockComposer={wide}/>
         )}
       </div>
 
@@ -2504,13 +2673,21 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
 
       {!barHidden && (
         <nav className="cmm-tabs" aria-label="Community">
-          {[["today", "Today"], ["channels", "Channels"], ["arcade", "Arcade"], ["journal", "Journal"]].map(([id, label]) => (
-            <button key={id} className={"cmm-tab" + (tab === id && !channel ? " is-on" : "")}
+          {/* Five destinations on a desktop, four on a phone. Saved is the
+              artboard's fifth; on a phone it is a filter chip on Today, and a
+              tab bar of five 56px items does not fit a 360px screen. */}
+          {[["today", "Today", "Today"], ["channels", "Channels", "Chans"],
+            ["arcade", "Arcade", "Play"], ["journal", "Journal", "Journal"]]
+            .concat(wide ? [["saved", "Saved", "Saved"]] : [])
+            .map(([id, label, railLabel]) => (
+            <button key={id} className={"cmm-tab" + ((id === "saved" ? (tab === "today" && todayFilter === "saved") : (tab === id && !channel)) ? " is-on" : "")}
                     aria-current={tab === id && !channel ? "page" : undefined}
-                    onClick={() => { setChannel(null); setTab(id); }}>
-              {cmTabIcon(id)}
-              <span className="cmm-tab-l">{label}</span>
+                    onClick={() => { if (id === "saved") { openToday("saved"); return; }
+                                     setChannel(null); setTab(id); }}>
+              {wide ? cmRailIcon(id === "arcade" ? "arcade" : id) : cmTabIcon(id)}
+              <span className="cmm-tab-l">{wide ? railLabel : label}</span>
               {id === "today" && counts.unread > 0 && <span className="cmm-tab-dot" aria-hidden="true"/>}
+              {id === "channels" && wide && counts.unread > 0 && <span className="cmm-tab-dot" aria-hidden="true"/>}
             </button>
           ))}
         </nav>
