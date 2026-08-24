@@ -422,6 +422,21 @@ function backend_dispatch(string $op, array $args = []): array {
             'community.channelMembers'=> 'community_channel_members',
             'community.star'          => 'community_star',
             'community.login'         => 'community_id_login',
+            /* Homework (handoff §11 widget, §12 screen). Nudging is mentor-only
+               and rate-limited daily inside the domain, not here — a permission
+               enforced in a router is a permission one new endpoint forgets. */
+            'community.homework'      => 'community_homework_view',
+            'community.homeworkList'  => 'community_homework_list',
+            'community.homeworkSet'   => 'community_homework_set',
+            'community.homeworkSeen'  => 'community_homework_seen',
+            'community.homeworkSubmit'=> 'community_homework_submit',
+            'community.homeworkReview'=> 'community_homework_review',
+            'community.homeworkNudge' => 'community_homework_nudge',
+            /* Typing. A poll, not a socket — shared hosting cannot hold a
+               connection open; the cost control is in the domain. */
+            'community.typingPing'    => 'community_typing_ping',
+            'community.typingStop'    => 'community_typing_stop',
+            'community.typingWho'     => 'community_typing_who',
 
             // The Arcade — server-graded mini games. `start` mints a round and
             // ships questions only; the answer key never leaves the server.

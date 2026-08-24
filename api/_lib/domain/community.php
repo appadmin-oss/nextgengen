@@ -1933,3 +1933,110 @@ function admin_community_moderate(array $p): array {
     audit('community.moderate.post', $by, $pid, ['action' => $act], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }
+
+/* ── Typing (handoff §12) ───────────────────────────────────────────────────
+ *
+ * "Presence & typing in the channel subtitle — 'Coach Bisi is typing…', green,
+ *  replacing the static member count only while someone types."
+ *
+ * The shape of this is decided by where it runs. Shared hosting cannot hold a
+ * websocket open, so there is no push; it is a poll, and a poll's whole cost is
+ * how often it runs. Hence:
+ *
+ *   · The client pings only while somebody is ACTUALLY typing — not while the
+ *     channel is merely open — and at most once every COMMUNITY_TYPING_PING
+ *     seconds, so a fast typist costs one small write every three seconds and a
+ *     reader costs none at all.
+ *   · A row is live for COMMUNITY_TYPING_TTL seconds. Nothing has to stop
+ *     typing; it simply stops being true.
+ *   · Reads sweep expired rows as they go, so there is no cron and no table
+ *     that grows. A keystroke by a child is never a record.
+ */
+const COMMUNITY_TYPING_TTL  = 8;    // a row means "typing" for this long
+const COMMUNITY_TYPING_PING = 3;    // the client may not write faster than this
+
+/** Say that this member is typing in this channel. Idempotent within the TTL. */
+function community_typing_ping(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    $slug   = (string)($p['channel'] ?? '');
+    if ($viewer === '' || $slug === '') return ['ok' => false, 'error' => 'forbidden'];
+    $ch = db_row("SELECT channelId FROM community_channels WHERE slug = ? AND status = 'active' LIMIT 1", [$slug]);
+    if (!$ch) return ['ok' => true];
+    $cid = (string)$ch['channelId'];
+    $now = now_iso();
+
+    $name = community_display_name($viewer);
+    $row = db_row("SELECT id, atIso FROM community_typing WHERE channelId = ? AND memberId = ?", [$cid, $viewer]);
+    if ($row) {
+        /* Rewriting the same second over and over is pure write load for no
+           information. One update per ping interval is enough to keep a row
+           alive, because the TTL is longer than the interval. */
+        $age = time() - (int)strtotime(str_replace(' ', 'T', (string)$row['atIso']));
+        if ($age < COMMUNITY_TYPING_PING) return ['ok' => true];
+        db_update('community_typing', ['atIso' => $now, 'memberName' => $name], ['channelId' => $cid, 'memberId' => $viewer]);
+    } else {
+        db_insert('community_typing', ['channelId' => $cid, 'memberId' => $viewer, 'memberName' => $name,
+                                       'staff' => community_actor_is_staff($viewer) ? 1 : 0, 'atIso' => $now]);
+    }
+    return ['ok' => true];
+}
+
+/** Stop immediately — on send, on blur, on leaving the channel. */
+function community_typing_stop(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    $slug   = (string)($p['channel'] ?? '');
+    if ($viewer === '' || $slug === '') return ['ok' => true];
+    $ch = db_row("SELECT channelId FROM community_channels WHERE slug = ? LIMIT 1", [$slug]);
+    if ($ch) db_exec("DELETE FROM community_typing WHERE channelId = ? AND memberId = ?", [(string)$ch['channelId'], $viewer]);
+    return ['ok' => true];
+}
+
+/**
+ * Who is typing in this channel, right now, excluding the reader.
+ *
+ * Returns the SENTENCE as well as the names, because "Coach Bisi is typing…"
+ * and "Bisi and Zara are typing…" and "3 people are typing…" are three
+ * different strings and the rule for picking between them belongs in one place
+ * rather than in every client that renders it.
+ */
+function community_typing_who(array $p): array {
+    $viewer = (string)($p['memberId'] ?? '');
+    $slug   = (string)($p['channel'] ?? '');
+    $ch = $slug !== '' ? db_row("SELECT channelId FROM community_channels WHERE slug = ? LIMIT 1", [$slug]) : null;
+    if (!$ch) return ['ok' => true, 'typing' => [], 'says' => ''];
+    $cid = (string)$ch['channelId'];
+
+    $cut = gmdate('Y-m-d\TH:i:s\Z', time() - COMMUNITY_TYPING_TTL);
+    // Sweep on the way past: no cron, and the table cannot grow.
+    db_exec("DELETE FROM community_typing WHERE channelId = ? AND atIso < ?", [$cid, $cut]);
+
+    $names = [];
+    foreach (db_all("SELECT memberId, memberName FROM community_typing
+                      WHERE channelId = ? AND atIso >= ? ORDER BY atIso ASC", [$cid, $cut]) as $r) {
+        if ((string)$r['memberId'] === $viewer) continue;    // you know that you are typing
+        $n = trim((string)$r['memberName']);
+        if ($n !== '') $names[] = $n;
+    }
+    return ['ok' => true, 'typing' => $names, 'says' => community_typing_says($names)];
+}
+
+/** The subtitle sentence. Two names, then a count — never a wall of names. */
+function community_typing_says(array $names): string {
+    $n = count($names);
+    if ($n === 0) return '';
+    if ($n === 1) return $names[0] . ' is typing…';
+    if ($n === 2) return $names[0] . ' and ' . $names[1] . ' are typing…';
+    return $n . ' people are typing…';
+}
+
+/** A person's name as the community shows it, for members and card-holders alike. */
+function community_display_name(string $id): string {
+    $m = db_row("SELECT fullName FROM members WHERE memberId = ? LIMIT 1", [$id]);
+    if ($m) return (string)$m['fullName'];
+    $s = db_row("SELECT fullName FROM summer_students WHERE studentId = ? LIMIT 1", [$id]);
+    if ($s) return (string)$s['fullName'];
+    /* Falls back to whatever they last posted under rather than to an id — a
+       subtitle that says "NGG-2025-0007 is typing…" is worse than silence. */
+    $p = db_row("SELECT authorName FROM community_posts WHERE authorId = ? ORDER BY createdAt DESC LIMIT 1", [$id]);
+    return (string)($p['authorName'] ?? '');
+}

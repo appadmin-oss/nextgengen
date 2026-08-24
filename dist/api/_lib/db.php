@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 102;
+const NGG_SCHEMA_TARGET = 104;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -2850,6 +2850,90 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX idx_trn_invite_unique ON tournament_invites(tournamentId, playerId);
             CREATE INDEX idx_trn_invite_player ON tournament_invites(playerId);
+        ",
+        103 => "
+            /* Homework: the task, who was asked, and who has been chased.
+               Three tables rather than a status column, because the three
+               questions have different lifetimes — the task outlives the term,
+               a submission is a fact about one child, and a nudge is an event
+               that has to be counted per day to be limited. */
+            CREATE TABLE community_homework (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              homeworkId TEXT NOT NULL,
+              channelId TEXT NOT NULL,
+              title TEXT NOT NULL,
+              detail TEXT DEFAULT '',
+              dueAt TEXT DEFAULT '',
+              createdBy TEXT DEFAULT '',
+              createdByName TEXT DEFAULT '',
+              createdAt TEXT NOT NULL,
+              /* active | archived. Never deleted: a child who submitted work
+                 should not find the task it belonged to has vanished. */
+              status TEXT NOT NULL DEFAULT 'active'
+            );
+            CREATE UNIQUE INDEX idx_hw_id ON community_homework(homeworkId);
+            CREATE INDEX idx_hw_channel ON community_homework(channelId, status);
+
+            /* The cohort is SNAPSHOT at creation — one row per child asked,
+               written when the task is set. The denominator in '14 of 24' is
+               then a fact about who was asked, not a live count of who happens
+               to be in the channel today. Somebody joining next week does not
+               retroactively become late. */
+            CREATE TABLE community_homework_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              homeworkId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              memberName TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              /* seenAt is 'has opened the task', which is what separates
+                 'has not got round to it' from 'does not know about it' —
+                 the only distinction that makes a nudge fair. */
+              seenAt TEXT DEFAULT '',
+              submittedAt TEXT DEFAULT '',
+              submittedRef TEXT DEFAULT '',
+              reviewedAt TEXT DEFAULT '',
+              reviewedBy TEXT DEFAULT '',
+              note TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_hws_unique ON community_homework_state(homeworkId, memberId);
+            CREATE INDEX idx_hws_member ON community_homework_state(memberId);
+
+            /* Every nudge, kept. The daily limit is enforced by reading this,
+               not by a counter that can drift, and it means a child can be
+               shown 'Nudged Tue' truthfully and a mentor can be held to it. */
+            CREATE TABLE community_homework_nudge (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              homeworkId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              nudgedBy TEXT DEFAULT '',
+              nudgedAt TEXT NOT NULL,
+              /* The UTC date of nudgedAt, so the one-per-day rule is an index
+                 lookup rather than a scan-and-parse. */
+              nudgedDay TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX idx_hwn_daily ON community_homework_nudge(homeworkId, memberId, nudgedDay);
+            CREATE INDEX idx_hwn_member ON community_homework_nudge(memberId, nudgedAt);
+        ",
+        104 => "
+            /* Who is typing, right now. One row per person per channel,
+               overwritten in place and read back only for the last few seconds.
+               A table rather than a socket because this runs on shared hosting,
+               which cannot hold a persistent connection open — see
+               community_typing_*() for the polling budget that follows from it.
+
+               Nothing here is history. The rows are ephemeral by construction:
+               a read ignores anything older than the TTL and deletes it on the
+               way past, so a keystroke by a child is never a record. */
+            CREATE TABLE community_typing (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              channelId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              memberName TEXT DEFAULT '',
+              staff INTEGER NOT NULL DEFAULT 0,
+              atIso TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX idx_typing_unique ON community_typing(channelId, memberId);
+            CREATE INDEX idx_typing_at ON community_typing(channelId, atIso);
         ",
     ];
 

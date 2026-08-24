@@ -82,6 +82,27 @@ const post = (o) => Object.assign({
 const ME = { memberId: 'NGG-2025-0007', fullName: 'Amaka Obi', email: 'a@example.com',
              centre: 'Egbeda', role: 'member', type: 'NGG', status: 'active', photoUrl: FACE, track: 'Tech' };
 
+/* A task at the artboard's own numbers, so the assertions below can be checked
+   on paper: 24 asked, 14 in, 9 reviewed → Reviewed 9 / Waiting 5 / Missing 10,
+   and a 58% bar. One row is already nudged today and must not be nudgeable. */
+const hwKid = (n, ctx, nudgeable) => ({ memberId: 'K' + n, name: 'Kid ' + n, centre: 'Egbeda',
+  photo: '', submittedAt: '', reviewedAt: '', context: ctx, nudgeable: nudgeable });
+const HOMEWORK = {
+  homeworkId: 'HW-1', title: 'Eight-bar drum notes', detail: '',
+  dueAt: new Date(Date.now() + 3 * 864e5).toISOString(),
+  channel: { slug: 'ai-tools', name: 'Studio \u00b7 Music' }, setBy: 'Coach Bisi',
+  counts: { asked: 24, submitted: 14, reviewed: 9, waiting: 5, missing: 10, percent: 58 },
+  canNudge: true, canReview: true, mine: { asked: false },
+  outstanding: [hwKid(20, 'Nudged Tue', true), hwKid(21, 'Not seen since Sun', true),
+                hwKid(22, 'Read the task 1h ago', true), hwKid(23, 'Nudged today', false),
+                hwKid(24, 'Not seen at all', true), hwKid(25, 'Read the task 3h ago', true),
+                hwKid(26, 'Nudged Mon', true), hwKid(27, 'Not seen since Fri', true),
+                hwKid(28, 'Read the task 2d ago', true), hwKid(29, 'Not seen at all', true)],
+  submitted: [], nudgeableNow: 9,
+};
+/* Mutable, so a test can turn typing on and off mid-run and watch the subtitle
+   follow — the whole point of §12 is that it lasts exactly as long as it is true. */
+const TYPING = { names: [], says: '' };
 function routesFor(media) {
   const POSTS = [
     post({ postId: 'p1', body: 'Here is the model I trained today.',
@@ -98,6 +119,8 @@ function routesFor(media) {
       if (v === 'digest') return { ok: true, posts: POSTS, stars: [] };
       if (v === 'feed') return { ok: true, posts: POSTS, hasMore: false, channel: null };
       if (v === 'members') return { ok: true, members: MEMBERS, count: MEMBERS.length };
+      if (v === 'homework') return { ok: true, homework: HOMEWORK };
+      if (v === 'typing') return { ok: true, typing: TYPING.names, says: TYPING.says };
       return { ok: true };
     },
   };
@@ -546,6 +569,145 @@ async function openPage(browser, width, height, media) {
            const l = last.getBoundingClientRect();
            return l.bottom <= f.top + 1 || l.right <= f.left + 1;
          }));
+      await page.close();
+    }
+
+    /* ── Homework (§11 widget, §12 strip and tracker) ─────────────────────
+       The number that must not disagree with itself: "14 of 24" appears on
+       three surfaces built from one payload. */
+    console.log('\n── Homework ──────────────────────────────────────────────────');
+    {
+      const { page } = await openPage(browser, 390, 844, WIDE);
+      await page.locator('.cmm-tab', { hasText: 'Channels' }).click();
+      await page.waitForTimeout(400);
+      await page.locator('.cmm-ch-row').nth(1).click();
+      await page.waitForTimeout(900);
+      ok('the channel carries the homework strip, with the count and the due date',
+         await page.evaluate(() => {
+           const st = document.querySelector('.cm-hw-strip');
+           if (!st) return false;
+           /* innerText applies text-transform, so the eyebrow comes back as
+              "HOMEWORK · DUE THU 2PM". Matched case-insensitively for that
+              reason — a case-sensitive match here has now failed three times
+              in this file for exactly this. */
+           const t = st.innerText;
+           return /homework/i.test(t) && /due/i.test(t) && /14/.test(t) && /of 24/.test(t);
+         }));
+      /* It is a control, so it has to clear the floor like every other one. */
+      ok('…and it is a real target, not a 30px banner',
+         await page.evaluate(() => document.querySelector('.cm-hw-strip').getBoundingClientRect().height >= 44));
+
+      await page.locator('.cm-hw-strip').click();
+      await page.waitForTimeout(800);
+      const tracker = await page.evaluate(() => {
+        const b = document.querySelector('.cm-hw-body');
+        if (!b) return null;
+        const tiles = [...b.querySelectorAll('.cm-hw-tile')].map(t => t.innerText.replace(/\n/g, ' '));
+        return {
+          count: b.querySelector('.cm-hw-count').innerText.replace(/\n/g, ' '),
+          bar: b.querySelector('.cm-hw-track > span').style.width,
+          tiles,
+          rows: b.querySelectorAll('.cm-hw-row').length,
+          rule: [...b.querySelectorAll('p')].map(p => p.textContent).join(' '),
+          allBtn: (b.querySelector('.cm-hw-allbtn') || {}).textContent || '',
+        };
+      });
+      ok('the tracker opens with the same 14 of 24 the strip showed',
+         !!tracker && /14/.test(tracker.count) && /of 24 submitted/.test(tracker.count));
+      ok('…and the bar is 58%, from the server rather than recomputed', tracker.bar === '58%');
+      ok('…with Reviewed 9 / Waiting 5 / Missing 10, in the design\'s words',
+         /9\s+REVIEWED/i.test(tracker.tiles[0]) && /5\s+WAITING/i.test(tracker.tiles[1])
+         && /10\s+MISSING/i.test(tracker.tiles[2]));
+      ok('…and every outstanding child gets a row', tracker.rows === 10);
+      /* The sentence the whole feature rests on, rendered where the mentor is
+         standing when they press the button. */
+      ok('…and the promise is printed on the screen that makes it',
+         /Nudges arrive as one notification, never a public message\./.test(tracker.rule));
+      ok('…and "Nudge all" says how many it will really reach, not how many are listed',
+         /Nudge all 9 outstanding/.test(tracker.allBtn));
+      /* A daily limit that the button does not show is a button that fails on
+         press. The already-nudged row is disabled and says why. */
+      ok('a child already nudged today has the button off, and it says so',
+         await page.evaluate(() => {
+           const row = [...document.querySelectorAll('.cm-hw-row')]
+             .find(r => /Nudged today/.test(r.innerText));
+           if (!row) return false;
+           const b = row.querySelector('.cm-hw-nudge');
+           return b.disabled && /Nudged/.test(b.textContent) && /already/i.test(b.title);
+         }));
+      /* Colour is never the only signal: Missing is red AND says "Missing". */
+      ok('…and Missing is not carried by colour alone',
+         await page.evaluate(() => /MISSING/i.test(document.querySelector('.cm-hw-tile.is-missing').innerText)));
+      await page.close();
+    }
+    {
+      const { page } = await openPage(browser, 1440, 900, WIDE);
+      await page.locator('.cmd-row').nth(1).click();
+      await page.waitForTimeout(900);
+      ok('on a desktop the same task is the §11 widget, beside the digest',
+         await page.evaluate(() => {
+           const w = document.querySelector('.cm-hw-widget');
+           const d = document.querySelector('.cmd-digest');
+           if (!w || !d) return false;
+           const wb = w.getBoundingClientRect(), db = d.getBoundingClientRect();
+           // side by side, not stacked, and not on top of the header
+           return wb.left > db.right - 1 && Math.abs(wb.top - db.top) < 4
+                  && wb.top > document.querySelector('.cmm-ch-head').getBoundingClientRect().bottom;
+         }));
+      ok('…at the artboard\'s 250px', await page.evaluate(() =>
+         Math.abs(document.querySelector('.cm-hw-widget').getBoundingClientRect().width - 250) < 2));
+      ok('…showing the same numbers as the phone, not a second calculation',
+         await page.evaluate(() => {
+           const w = document.querySelector('.cm-hw-widget');
+           return /14/.test(w.innerText) && /of 24 submitted/.test(w.innerText)
+                  && w.querySelector('.cm-hw-track > span').style.width === '58%';
+         }));
+      ok('…and no homework strip as well, which would be the same number twice',
+         await page.evaluate(() => !document.querySelector('.cm-hw-strip')));
+      await page.close();
+    }
+
+    /* ── Typing (§12) ──────────────────────────────────────────────────────
+       "…replacing the static member count only while someone types." Both
+       halves are the assertion: it appears, and it goes away again. */
+    console.log('\n── Typing ────────────────────────────────────────────────────');
+    {
+      const { page } = await openPage(browser, 1440, 900, WIDE);
+      await page.locator('.cmd-row').nth(1).click();
+      await page.waitForTimeout(900);
+      const sub = () => page.evaluate(() => {
+        const p = document.querySelector('.cmm-ch-head .cmm-sub');
+        return { text: p.textContent.trim(), typing: p.classList.contains('is-typing'),
+                 live: p.getAttribute('aria-live') };
+      });
+      const before = await sub();
+      ok('with nobody typing the subtitle is the channel, not a blank space',
+         !before.typing && before.text.length > 0);
+
+      TYPING.names = ['Coach Bisi']; TYPING.says = 'Coach Bisi is typing…';
+      await page.waitForTimeout(5600);          // one poll interval
+      const during = await sub();
+      ok('…and while somebody types it says who, by name',
+         during.typing && during.text === 'Coach Bisi is typing…');
+      ok('…announced once rather than on every poll', during.live === 'polite');
+      /* Colour is never the only signal, and the green has to be readable on
+         the card — 4.5:1 for body text (WCAG 1.4.3). */
+      ok('…legible, and not carried by colour alone',
+         await page.evaluate(() => {
+           const p = document.querySelector('.cmm-ch-head .cmm-sub');
+           const cs = getComputedStyle(p);
+           const rgb = cs.color.match(/\d+/g).map(Number);
+           const L = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+           const lum = 0.2126 * L(rgb[0]) + 0.7152 * L(rgb[1]) + 0.0722 * L(rgb[2]);
+           const ratio = (1.05) / (lum + 0.05);          // on white card
+           return ratio >= 4.5 && cs.fontStyle === 'italic';
+         }));
+
+      TYPING.names = []; TYPING.says = '';
+      await page.waitForTimeout(5600);
+      const after = await sub();
+      ok('…and when they stop, the channel comes back — it lasts exactly as long as it is true',
+         !after.typing && after.text === before.text);
       await page.close();
     }
 

@@ -54,6 +54,16 @@ function rate_limit_default(string $op): ?array {
            reaches it. */
         'community.post'     => ['max' => 12, 'window' => 60],    // per member
         'community.post.ip'  => ['max' => 240, 'window' => 60],   // per address — a whole centre
+        /* Nudging. The rule that matters is one per child per day, enforced in
+           community_homework_nudge(); this is only a ceiling on the endpoint so
+           a stuck client cannot spin on it. Sized for the real action — a
+           mentor pressing "Nudge all 10 outstanding" on two or three tasks in
+           a sitting — not for one press. */
+        'community.nudge'    => ['max' => 20, 'window' => 300],   // per mentor
+        /* A typing ping. One write per 3s while actually typing is 20/minute;
+           this ceiling is triple that, so a real conversation never reaches it
+           and a stuck client is stopped. */
+        'community.typing'   => ['max' => 60, 'window' => 60],    // per member
         /* Telemetry, not an action: the client reports once per page when a
            configured media cloud refused an upload. Sized so a whole centre on
            one WiFi during a broken deployment still gets its warnings recorded —

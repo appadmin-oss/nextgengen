@@ -191,6 +191,54 @@ const FILES = {
       return Math.round(r.width) === window.innerWidth && Math.round(r.height) === window.innerHeight;
     }));
 
+    /* ── Opening a photo ──
+       The one screen in this app built entirely around metered data, and the
+       likeliest outcome of a tap on it is "the network dropped". That was the
+       one outcome the viewer could not say: a black rectangle, a caption, and
+       a spinner that never resolved. */
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    await page.route('**/_fixture-photo.png', r => r.abort());
+    const photoRow = page.locator('.cmm-file', { hasText: 'IMG_2481' }).locator('.cmm-file-main');
+    await photoRow.click();
+    await page.waitForTimeout(1200);
+    const failText = await page.evaluate(() => {
+      const f = document.querySelector('.cmm-photo-fail');
+      return f ? f.innerText.replace(/\n+/g, ' ') : '';
+    });
+    chk('a photo that will not load says so, rather than showing black forever',
+        /didn.t load/i.test(failText));
+    chk('…says it cost nothing, which is the thing a metered reader needs',
+        /Nothing was used up/i.test(failText));
+    chk('…and offers a retry and a way out',
+        /Try again/.test(failText) && /Open it in the browser/.test(failText));
+    /* Primary-on-dark is amber. .cmm-cta is navy on white, and on this scrim
+       it rendered as a navy box on a navy field — under the 3:1 that WCAG
+       1.4.11 asks of a UI component. */
+    chk('…and the retry button is visible against the dark viewer',
+        await page.evaluate(() => {
+          const b = document.querySelector('.cmm-photo-fail-acts .cmm-cta');
+          if (!b) return false;
+          const bg = getComputedStyle(b).backgroundColor;
+          const m = bg.match(/\d+/g).map(Number);
+          // relative luminance, sRGB
+          const L = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+          const lum = 0.2126 * L(m[0]) + 0.7152 * L(m[1]) + 0.0722 * L(m[2]);
+          const scrim = 0.2126 * L(11) + 0.7152 * L(15) + 0.0722 * L(28);
+          const ratio = (Math.max(lum, scrim) + 0.05) / (Math.min(lum, scrim) + 0.05);
+          return ratio >= 3;
+        }));
+
+    await page.unroute('**/_fixture-photo.png');
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll('.cmm-photo-fail-acts button')]
+        .find(x => /Try again/.test(x.textContent));
+      if (b) b.click();
+    });
+    await page.waitForTimeout(1200);
+    chk('…and Try again really re-fetches it',
+        await page.evaluate(() => !document.querySelector('.cmm-photo-fail')));
+
     chk('no page errors across the whole run', errors.length === 0);
   } finally {
     await browser.close();

@@ -2151,3 +2151,82 @@ CREATE TABLE IF NOT EXISTS tournament_invites (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (102) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 103 · Homework ──────────────────────────────────────────────────────────
+-- Three tables rather than a status column: the task outlives the term, a
+-- submission is a fact about one child, and a nudge is an event that has to be
+-- counted per day to be limited.
+
+CREATE TABLE IF NOT EXISTS community_homework (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  homeworkId VARCHAR(32) NOT NULL,
+  channelId VARCHAR(32) NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  detail TEXT,
+  dueAt VARCHAR(40) DEFAULT '',
+  createdBy VARCHAR(64) DEFAULT '',
+  createdByName VARCHAR(120) DEFAULT '',
+  createdAt VARCHAR(40) NOT NULL,
+  -- active | archived. Never deleted: a child who submitted work should not
+  -- find the task it belonged to has vanished.
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  UNIQUE KEY idx_hw_id (homeworkId),
+  INDEX idx_hw_channel (channelId, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- The cohort is SNAPSHOT at creation — one row per child asked. The
+-- denominator in "14 of 24" is a fact about who was asked, not a live count of
+-- who happens to be in the channel today.
+CREATE TABLE IF NOT EXISTS community_homework_state (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  homeworkId VARCHAR(32) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  memberName VARCHAR(120) DEFAULT '',
+  centre VARCHAR(120) DEFAULT '',
+  -- "Has opened the task" — what separates "has not got round to it" from
+  -- "does not know about it", the only distinction that makes a nudge fair.
+  seenAt VARCHAR(40) DEFAULT '',
+  submittedAt VARCHAR(40) DEFAULT '',
+  submittedRef VARCHAR(64) DEFAULT '',
+  reviewedAt VARCHAR(40) DEFAULT '',
+  reviewedBy VARCHAR(64) DEFAULT '',
+  note VARCHAR(400) DEFAULT '',
+  UNIQUE KEY idx_hws_unique (homeworkId, memberId),
+  INDEX idx_hws_member (memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Every nudge, kept. The daily limit is enforced by reading this rather than by
+-- a counter that can drift, and it lets a child be shown "Nudged Tue" truthfully.
+CREATE TABLE IF NOT EXISTS community_homework_nudge (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  homeworkId VARCHAR(32) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  nudgedBy VARCHAR(64) DEFAULT '',
+  nudgedAt VARCHAR(40) NOT NULL,
+  -- The UTC date of nudgedAt, so one-per-day is an index lookup.
+  nudgedDay VARCHAR(10) NOT NULL,
+  UNIQUE KEY idx_hwn_daily (homeworkId, memberId, nudgedDay),
+  INDEX idx_hwn_member (memberId, nudgedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (103) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 104 · Typing ────────────────────────────────────────────────────────────
+-- One row per person per channel, overwritten in place and read back only for
+-- the last few seconds. A table rather than a socket because this runs on
+-- shared hosting, which cannot hold a persistent connection open.
+--
+-- Nothing here is history. A read ignores anything older than the TTL and
+-- deletes it on the way past, so a keystroke by a child is never a record.
+CREATE TABLE IF NOT EXISTS community_typing (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  channelId VARCHAR(32) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  memberName VARCHAR(120) DEFAULT '',
+  staff TINYINT NOT NULL DEFAULT 0,
+  atIso VARCHAR(40) NOT NULL,
+  UNIQUE KEY idx_typing_unique (channelId, memberId),
+  INDEX idx_typing_at (channelId, atIso)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (104) ON DUPLICATE KEY UPDATE version = version;

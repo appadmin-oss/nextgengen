@@ -2443,6 +2443,12 @@ img { background-color: rgba(12,20,50,0.04); }
   letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The title and the centres chip share a row. `min-width: 0` on both so the
    name ellipsises instead of shoving the chip out of the header. */
+/* §12: typing replaces the member count while it is true. Green is the
+   design's mentor/presence colour; --c-green on the card measures 3.9:1, which
+   clears large text but not 4.5:1 body, so this uses the darker green-ink the
+   bundle already reserves for text on light. Italic carries it as well, since
+   colour is never the only signal. */
+.cmm-sub.is-typing { color: var(--c-green-ink); font-style: italic; }
 .cmm-ch-titlerow { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .cmm-ch-titlerow > .cmm-ch-title { min-width: 0; }
 .cmm-presence { display: flex; align-items: center; gap: 10px; flex: none;
@@ -2484,6 +2490,89 @@ img { background-color: rgba(12,20,50,0.04); }
 .cmm-catchup-txt { min-width: 0; display: flex; flex-direction: column; padding-right: 38px; }
 .cmm-catchup-txt b { font-family: var(--c-font-display); font-size: 14px; font-weight: 700; }
 .cmm-catchup-txt span { font-family: var(--c-font-mono); font-size: 11px; color: rgba(255,255,255,.7); }
+/* ── Homework (§11 widget, §12 strip and tracker) ────────────────────────── */
+
+/* Shared: the count and the bar, so the two surfaces cannot render the same
+   task with different numbers. Tabular figures — this is a number that changes
+   in place, and proportional digits make it jitter as it counts up. */
+.cm-hw-count { display: flex; align-items: baseline; gap: 6px; }
+.cm-hw-n { font-family: var(--c-font-display); font-weight: 800; font-size: 26px;
+  letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.cm-hw-of { font-size: 13px; color: var(--c-muted); }
+.cm-hw-track { height: 8px; border-radius: var(--c-r-pill);
+  background: var(--c-neutral-chip-2); overflow: hidden; }
+.cm-hw-track > span { display: block; height: 100%; background: var(--c-accent);
+  border-radius: inherit; }
+
+/* §12 · the strip in the channel, on the amber surface. */
+.cm-hw-strip { position: relative; display: grid; gap: 3px; flex: none; width: auto;
+  margin: 10px var(--c-gutter) 0; padding: 11px 40px 12px 13px; text-align: left;
+  border-radius: var(--c-r-btn); border: 1px solid var(--c-accent-border);
+  background: var(--c-accent-tint); color: var(--c-accent-ink);
+  font: inherit; cursor: pointer; }
+.cm-hw-strip-eye { font-family: var(--c-font-mono); font-weight: 700; font-size: 10px;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--c-accent-ink-2); }
+.cm-hw-strip-t { font-family: var(--c-font-display); font-weight: 700; font-size: 14.5px;
+  color: var(--c-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-hw-strip-n { font-size: 12.5px; color: var(--c-accent-ink); font-variant-numeric: tabular-nums; }
+.cm-hw-strip-go { position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--c-accent-ink-2); display: grid; place-items: center; }
+
+/* §12 · the tracker screen. */
+.cm-hw-screen { background: var(--c-surface); }
+.cm-hw-body { flex: 1; min-height: 0; overflow-y: auto;
+  padding: 14px var(--c-gutter) calc(var(--c-home-ind) + 24px);
+  display: flex; flex-direction: column; gap: 14px; }
+.cm-hw-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cm-hw-tile { background: var(--c-card); border: 1px solid var(--c-border);
+  border-radius: var(--c-r-sm); padding: 11px 12px; display: flex; flex-direction: column; gap: 2px; }
+.cm-hw-tile b { font-family: var(--c-font-display); font-weight: 800; font-size: 21px;
+  letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.cm-hw-tile span { font-family: var(--c-font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--c-faint); }
+/* Missing is the number that needs doing something about — red ink, but the
+   word is there too, because colour is never the only signal. */
+.cm-hw-tile.is-missing b { color: var(--c-red-ink); }
+.cm-hw-detail { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--c-body); }
+.cm-hw-say { margin: 0; font-size: 13px; color: var(--c-body-soft);
+  background: var(--c-card); border: 1px solid var(--c-border);
+  border-radius: var(--c-r-sm); padding: 9px 11px; }
+
+/* A child's own state — the whole screen, for them. */
+.cm-hw-mine { display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+  background: var(--c-accent-tint); border: 1px solid var(--c-accent-border);
+  border-radius: var(--c-r-btn); padding: 13px 14px; color: var(--c-accent-ink); }
+.cm-hw-mine b { font-family: var(--c-font-display); font-size: 14.5px; color: var(--c-ink); }
+.cm-hw-mine span { font-size: 13px; }
+.cm-hw-mine.is-in { background: var(--c-green-tint); border-color: #bcd9c4; color: var(--c-green-ink); }
+.cm-hw-mine .cmm-cta { margin-top: 4px; }
+
+.cm-hw-row { display: flex; align-items: center; gap: 11px; min-height: 56px;
+  background: var(--c-card); border: 1px solid var(--c-border);
+  border-radius: var(--c-r-sm); padding: 8px 10px 8px 12px; }
+.cm-hw-av { width: 36px; height: 36px; flex: none; font-size: 14px; }
+.cm-hw-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.cm-hw-name { font-family: var(--c-font-display); font-weight: 700; font-size: 14.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-hw-ctx { font-family: var(--c-font-mono); font-size: 11px; color: var(--c-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-hw-nudge { flex: none; min-height: var(--c-tap); padding: 0 14px;
+  border-radius: var(--c-r-sm); border: 1px solid var(--c-border-strong);
+  background: var(--c-card); color: var(--c-ink); font: inherit; font-size: 13px;
+  font-weight: 700; cursor: pointer; }
+.cm-hw-nudge:hover:not(:disabled) { background: var(--c-surface); }
+/* Disabled means "already done today", and it has to LOOK unavailable while
+   staying legible — a 0.4-opacity ghost fails contrast and reads as broken. */
+.cm-hw-nudge:disabled { background: var(--c-neutral-chip); border-color: var(--c-border);
+  color: var(--c-muted); cursor: default; }
+
+.cm-hw-all { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+.cm-hw-allbtn { min-height: var(--c-cta); border: 0; border-radius: var(--c-r-btn);
+  background: var(--c-ink-deep); color: #fff; font: inherit; font-size: 14.5px;
+  font-weight: 700; cursor: pointer; }
+.cm-hw-allbtn:disabled { background: var(--c-neutral-chip); color: var(--c-muted); cursor: default; }
+.cm-hw-rule { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--c-muted); text-align: center; }
+
 .cmm-catchup-sum { margin: 0; font-size: 13.5px; line-height: 1.55; color: rgba(255,255,255,.88); }
 .cmm-catchup-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .cmm-catchup-go, .cmm-catchup-alt { min-height: var(--c-tap); padding: 0 14px;
@@ -2705,6 +2794,35 @@ img { background-color: rgba(12,20,50,0.04); }
      wrapper is always a worse version of a gesture the platform already does. */
   touch-action: pinch-zoom; }
 .cmm-photo-stage video, .cmm-photo-stage .nggv { width: 100%; max-height: 100%; }
+/* The two states the viewer could not say. Both sit in the stage, so the bar
+   and the caption stay put and the screen does not jump when a photo lands. */
+.cmm-photo-wait, .cmm-photo-fail { position: absolute; inset: 0; display: grid;
+  place-content: center; justify-items: center; gap: 12px; padding: 24px;
+  text-align: center; color: rgba(255,255,255,.86); }
+.cmm-photo-wait { font-family: var(--c-font-mono); font-size: 11.5px; letter-spacing: .06em; }
+.cmm-photo-spin { width: 26px; height: 26px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.22); border-top-color: var(--c-accent);
+  animation: cmm-photo-spin 720ms linear infinite; }
+@keyframes cmm-photo-spin { to { transform: rotate(360deg); } }
+/* The global reduced-motion rule collapses every duration to 0.01ms, which
+   turns a spinner into a strobe rather than stopping it. Stop it properly and
+   leave the ring, which still reads as "working". */
+@media (prefers-reduced-motion: reduce) { .cmm-photo-spin { animation: none; } }
+.cmm-photo-fail p { margin: 0; font-size: 14px; line-height: 1.55; max-width: 34ch; }
+.cmm-photo-fail p + p { color: rgba(255,255,255,.66); font-size: 13px; margin-top: 6px; }
+.cmm-photo-fail-acts { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+  align-items: center; margin-top: 6px; }
+/* Amber, not the light-theme ink button: .cmm-cta is navy on white, and on
+   this near-black scrim it rendered as a navy box on a navy field — under 3:1,
+   so the primary action was the least visible thing on the screen. Amber on
+   ink-deep is the design's own primary-on-dark, the same pair the catch-up
+   card uses. */
+.cmm-photo-fail-acts .cmm-cta { background: var(--c-accent); color: var(--c-ink-deep);
+  border: 0; font-weight: 700; }
+.cmm-photo-fail-alt { min-height: var(--c-tap); display: inline-flex; align-items: center;
+  padding: 0 14px; border-radius: var(--c-r-sm); border: 1px solid rgba(255,255,255,.3);
+  color: #fff; font-size: 13px; font-weight: 600; text-decoration: none; }
+.cmm-photo-stage { position: relative; }
 .cmm-photo-foot { padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); }
 .cmm-photo-cap { font-size: 14px; line-height: 1.5; }
 .cmm-photo-sub, .cmm-photo-hint { margin-top: 4px; font-family: var(--c-font-mono);
@@ -3554,6 +3672,45 @@ img { background-color: rgba(12,20,50,0.04); }
     min-height: 30px; border: 0; background: none; color: rgba(255,255,255,.7);
     font-size: 14px; cursor: pointer; border-radius: 9px; }
   .cmd-digest-x:hover { background: rgba(255,255,255,.12); color: #fff; }
+
+  /* §11 · the digest and the 250px tracker, side by side with the artboard's
+     12px gap. Both are optional and the row survives either being absent. */
+  /* flex-start, not stretch: the digest is short until somebody asks for the
+     summary, and stretching it to the tracker's height left a dark card that
+     was two thirds empty. */
+  .cmd-toprow { flex: none; display: flex; align-items: flex-start; gap: 12px;
+    margin: 14px 20px 0; }
+  .cmd-toprow > .cmd-digest { flex: 1; min-width: 0; margin: 0; }
+  .cmd-hw-slot { flex: none; width: 250px; display: flex; }
+  /* Below ~1180px the two side by side leave the digest too narrow to read, so
+     the tracker drops under it rather than squeezing the words it sits beside. */
+  @media (max-width: 1180px) {
+    .cmd-toprow { flex-wrap: wrap; }
+    .cmd-hw-slot { width: 100%; }
+  }
+
+  .cm-hw-widget { width: 100%; min-height: 168px; background: var(--c-surface);
+    border: 1px solid var(--c-border); border-radius: 16px; padding: 15px 16px;
+    display: flex; flex-direction: column; gap: 10px; }
+  .cm-hw-eyebrow { font-family: var(--c-font-mono); font-weight: 700; font-size: 10.5px;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--c-accent-ink-2); }
+  .cm-hw-title { padding: 0; border: 0; background: none; text-align: left; cursor: pointer;
+    font-family: var(--c-font-display); font-weight: 700; font-size: 14px; color: var(--c-ink);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .cm-hw-title:hover { text-decoration: underline; }
+  .cm-hw-faces { display: flex; align-items: center; gap: 6px; }
+  .cm-hw-face { width: 24px; height: 24px; border-radius: var(--c-r-pill); display: grid;
+    place-items: center; font-family: var(--c-font-display); font-weight: 800; font-size: 10px; }
+  .cm-hw-face.more { background: var(--c-neutral-chip-2); color: var(--c-muted);
+    font-family: var(--c-font-mono); font-weight: 700; }
+  .cm-hw-still { font-size: 12px; color: var(--c-muted); }
+  .cm-hw-go { margin-top: auto; height: 34px; min-height: 34px; border: 0; border-radius: 10px;
+    background: var(--c-ink-deep); color: #fff; font: inherit; font-size: 12.5px;
+    font-weight: 700; cursor: pointer; }
+  .cm-hw-go:disabled { background: var(--c-neutral-chip); color: var(--c-muted); cursor: default; }
+
+  /* The tracker opens as a pane on a desktop, not a full-screen takeover. */
+  .cm-hw-body { max-width: 72ch; margin-inline: auto; width: 100%; padding-bottom: 24px; }
 
   .cmm-presence { max-width: none; margin-inline: 0; padding: 9px 20px;
     border-bottom: 1px solid var(--c-divider-soft); background: var(--c-card); }

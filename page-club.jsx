@@ -439,6 +439,22 @@ function BadgePin({ badge }) {
    ================================================================ */
 
 // Cloudinary optimized delivery: auto format/quality + width cap.
+/* A feed post described as the Files screen describes a file, so one photo
+   viewer can serve both. The two shapes were never going to converge on their
+   own — one comes from community_feed(), the other from
+   community_channel_files() — and duplicating the viewer to bridge them is how
+   a product ends up with two answers to "what does tapping a photo do". */
+function cmPhotoOf(post) {
+  const a = post.author || {};
+  return {
+    postId: post.postId, kind: "image", url: post.mediaUrl,
+    name: post.altText || "Photo",
+    note: post.altText || "",
+    bytes: post.mediaBytes || 0,
+    createdAt: post.createdAt || "",
+    author: { name: a.name || "", centre: a.centre || "", isMe: !!a.isMe, photo: a.photo || "" },
+  };
+}
 function cmOpt(url, w) {
   if (!url || !/res\.cloudinary\.com/.test(url) || url.indexOf("/upload/") < 0) return url;
   return url.replace("/upload/", "/upload/f_auto,q_auto" + (w ? ",w_" + w + ",c_limit" : "") + "/");
@@ -1792,6 +1808,10 @@ function CmFileSheet({ entry, saved, files, onClose, onOpen, onSavedChange, onOp
 function CmPhotoViewer({ photos, index, onIndex, onClose }) {
   const f = photos[index];
   const touch = React.useRef(null);
+  const [state, setState] = React.useState("loading");   // loading | ready | failed
+  const [tries, setTry] = React.useState(0);
+  // Each photo is its own load. Swiping to the next one starts over.
+  React.useEffect(() => { setState("loading"); setTry(0); }, [index]);
   React.useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -1840,7 +1860,30 @@ function CmPhotoViewer({ photos, index, onIndex, onClose }) {
         <a className="cmm-photo-dl" href={f.url} target="_blank" rel="noopener noreferrer" aria-label="Open the original">↗</a>
       </header>
       <div className="cmm-photo-stage">
-        <img src={cmOpt(f.url, 1400)} alt={f.name}/>
+        {/* A photo that does not arrive used to leave a black rectangle with a
+            caption under it and nothing else — no spinner, no reason, no way
+            to try again. On the one screen in this app built entirely around
+            metered data, "the network dropped" is the likeliest outcome of a
+            tap, and it was the one outcome the viewer could not say. */}
+        {state === "loading" && (
+          <div className="cmm-photo-wait" role="status">
+            <span className="cmm-photo-spin" aria-hidden="true"/>
+            <span>Loading{f.bytes ? " · " + cmBytes(f.bytes) : ""}</span>
+          </div>
+        )}
+        {state === "failed" && (
+          <div className="cmm-photo-fail" role="alert">
+            <p><b>That photo didn't load.</b></p>
+            <p>It may be the connection rather than the photo. Nothing was used up.</p>
+            <div className="cmm-photo-fail-acts">
+              <button className="cmm-cta" onClick={() => { setTry(n => n + 1); setState("loading"); }}>Try again</button>
+              <a className="cmm-photo-fail-alt" href={f.url} target="_blank" rel="noopener noreferrer">Open it in the browser</a>
+            </div>
+          </div>
+        )}
+        <img key={f.url + "#" + tries} src={cmOpt(f.url, 1400)} alt={f.name}
+             style={state === "ready" ? null : { width: 1, height: 1, opacity: 0 }}
+             onLoad={() => setState("ready")} onError={() => setState("failed")}/>
       </div>
       <footer className="cmm-photo-foot">
         <div className="cmm-photo-cap">{f.note || f.name}</div>
@@ -2040,6 +2083,272 @@ function CmSeg({ label, value, onChange, options, className }) {
   );
 }
 
+/* ── Homework ──────────────────────────────────────────────────────────────
+ *
+ * Handoff §11 (the 250px desktop widget) and §12 (the phone tracker). One
+ * source of numbers, two shapes, because "14 of 24" appearing twice on one
+ * screen and disagreeing is the failure this feature is most likely to have.
+ *
+ * The rule the design prints under the buttons is enforced on the server —
+ * mentor-only, one private notification, once per child per day — and rendered
+ * here as a disabled button with a reason rather than a press that fails.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/** The numbers and the bar, shared by the widget and the screen. */
+function CmHwBar({ counts }) {
+  return (
+    <>
+      <div className="cm-hw-count">
+        <span className="cm-hw-n">{counts.submitted}</span>
+        <span className="cm-hw-of">of {counts.asked} submitted</span>
+      </div>
+      {/* The bar is decorative — the sentence above it carries the number — so
+          it is hidden from a screen reader rather than read out twice. */}
+      <div className="cm-hw-track" aria-hidden="true">
+        <span style={{ width: counts.percent + "%" }}/>
+      </div>
+    </>
+  );
+}
+
+/** The 250px card beside the digest on a desktop. */
+function CmHwWidget({ hw, onOpen, onNudgeAll, busy }) {
+  if (!hw) return null;
+  const c = hw.counts;
+  const out = hw.outstanding || [];
+  const canNudge = hw.canNudge && hw.nudgeableNow > 0;
+  return (
+    <aside className="cm-hw-widget" aria-label={"Homework: " + hw.title}>
+      <div className="cm-hw-eyebrow">
+        Homework{hw.dueAt ? " · due " + cmHwDue(hw.dueAt) : ""}
+      </div>
+      <button className="cm-hw-title" onClick={onOpen}>{hw.title}</button>
+      <CmHwBar counts={c}/>
+      {hw.canNudge && out.length > 0 && (
+        <div className="cm-hw-faces">
+          {out.slice(0, 2).map(p => (
+            <span key={p.memberId} className="cm-hw-face"
+                  style={{ background: cmColor(p.name), color: inkOn(cmColor(p.name)).ink }}
+                  aria-hidden="true">{cmInitial(p.name)}</span>
+          ))}
+          {out.length > 2 && <span className="cm-hw-face more" aria-hidden="true">+{out.length - 2}</span>}
+          <span className="cm-hw-still">still to post</span>
+        </div>
+      )}
+      {hw.canNudge ? (
+        <button className="cm-hw-go" onClick={onNudgeAll} disabled={!canNudge || busy}
+                title={canNudge ? "" : "Everyone outstanding has already been nudged today."}>
+          {busy ? "Sending…"
+                : canNudge ? "Nudge the " + hw.nudgeableNow
+                : "All nudged today"}
+        </button>
+      ) : (
+        <button className="cm-hw-go" onClick={onOpen}>
+          {hw.mine && hw.mine.submittedAt ? "You have handed this in" : "Open the task"}
+        </button>
+      )}
+    </aside>
+  );
+}
+
+/** "Thu 4pm" — the widget's eyebrow, from an ISO date. */
+function cmHwDue(iso) {
+  const t = new Date(String(iso).replace(" ", "T"));
+  if (isNaN(t)) return "";
+  const hour = t.getUTCHours();
+  const time = ((hour % 12) || 12) + (hour < 12 ? "am" : "pm");
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const now = new Date();
+  const dayMs = 86400000;
+  const dstamp = (d) => Math.floor(d.getTime() / dayMs);
+  if (dstamp(t) === dstamp(now)) return "today " + time;
+  if (dstamp(t) === dstamp(now) + 1) return "tomorrow " + time;
+  if (t < now) return "was " + days[t.getUTCDay()];
+  return days[t.getUTCDay()] + " " + time;
+}
+
+/** The §12 tracker screen: counts, the outstanding list, single or bulk nudge. */
+function CmHomework({ homeworkId, channel, auth, onBack, onCounts }) {
+  const [hw, setHw] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [tab, setTab] = React.useState("outstanding");
+  const [busy, setBusy] = React.useState("");
+  const [say, setSay] = React.useState("");
+
+  const load = React.useCallback(() => {
+    setErr("");
+    NGGApi.member.community.homework(channel, homeworkId)
+      .then(r => { setHw(r.homework || null); if (r.homework) NGGApi.member.community.homeworkSeen(r.homework.homeworkId).catch(() => {}); })
+      .catch(() => { setHw(null); setErr("Couldn't load this task."); });
+  }, [channel, homeworkId]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const nudge = (who) => {
+    setBusy(who || "all"); setSay("");
+    NGGApi.member.community.homeworkNudge(hw.homeworkId, who, !who)
+      .then(r => {
+        /* Say what happened, not "done". With a daily limit, "sent 9, 1 was
+           already nudged today" is the true answer and the one a mentor needs
+           in order to not go looking for a bug. */
+        setSay(r.sent === 0
+          ? (r.why || "Nobody to nudge right now.")
+          : r.sent + (r.sent === 1 ? " nudge sent" : " nudges sent")
+            + (r.skipped ? " · " + r.skipped + " already nudged today" : ""));
+        load();
+      })
+      .catch(() => setSay("That didn't send. Try again in a moment."))
+      .finally(() => setBusy(""));
+  };
+
+  const review = (who) => {
+    setBusy(who);
+    NGGApi.member.community.homeworkReview(hw.homeworkId, who)
+      .then(() => { setSay("Marked as looked at."); load(); })
+      .catch(() => setSay("That didn't save."))
+      .finally(() => setBusy(""));
+  };
+
+  const submit = () => {
+    setBusy("me");
+    NGGApi.member.community.homeworkSubmit(hw.homeworkId, "")
+      .then(() => { setSay("Handed in."); load(); onCounts && onCounts(); })
+      .catch(() => setSay("That didn't save. Your work is still here — try again."))
+      .finally(() => setBusy(""));
+  };
+
+  if (err) {
+    return (
+      <div className="cmm-screen">
+        <CmHwHead onBack={onBack} title="Homework" sub=""/>
+        <CmEmpty icon="⚠" title="That didn't load" body={err}
+                 action={<button className="cmm-cta" onClick={load}>Try again</button>}/>
+      </div>
+    );
+  }
+  if (hw === null) {
+    return (
+      <div className="cmm-screen">
+        <CmHwHead onBack={onBack} title="Homework" sub=""/>
+        <div className="cmm-pad"><CmSkeleton rows={3}/></div>
+      </div>
+    );
+  }
+
+  const c = hw.counts;
+  const list = tab === "outstanding" ? (hw.outstanding || []) : (hw.submitted || []);
+
+  return (
+    <div className="cmm-screen cm-hw-screen">
+      <CmHwHead onBack={onBack} title={hw.title}
+                sub={(hw.dueAt ? "Due " + cmHwDue(hw.dueAt) + " · " : "") + hw.channel.name}/>
+
+      <div className="cm-hw-body">
+        <CmHwBar counts={c}/>
+
+        <div className="cm-hw-tiles">
+          <div className="cm-hw-tile"><b>{c.reviewed}</b><span>Reviewed</span></div>
+          <div className="cm-hw-tile"><b>{c.waiting}</b><span>Waiting</span></div>
+          <div className="cm-hw-tile is-missing"><b>{c.missing}</b><span>Missing</span></div>
+        </div>
+
+        {hw.detail && <p className="cm-hw-detail">{hw.detail}</p>}
+
+        {/* A child's own state. This is the whole screen for them — the class
+            roster below is a mentor's view and they never see it. */}
+        {!hw.canNudge && hw.mine && hw.mine.asked && (
+          <div className={"cm-hw-mine" + (hw.mine.submittedAt ? " is-in" : "")}>
+            {hw.mine.submittedAt ? (
+              <>
+                <b>You handed this in {cmAgo(hw.mine.submittedAt)} ago.</b>
+                <span>{hw.mine.reviewedAt ? "A mentor has looked at it." : "Waiting for a mentor to look at it."}</span>
+              </>
+            ) : (
+              <>
+                <b>You have not handed this in yet.</b>
+                <span>Post your work in {hw.channel.name}, then mark it done here.</span>
+                <button className="cmm-cta" onClick={submit} disabled={busy === "me"}>
+                  {busy === "me" ? "Saving…" : "I have handed it in"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {!hw.canNudge && hw.mine && !hw.mine.asked && (
+          <p className="cm-hw-detail">This task was set before you joined, so it is not yours to hand in.</p>
+        )}
+
+        {/* Mentor only, and served mentor-only: who has not handed in their
+            homework is not a fact the rest of the class is entitled to. */}
+        {hw.canNudge && (
+          <>
+            <CmSeg label="Which list" value={tab} onChange={setTab}
+                   options={[["outstanding", "Outstanding"], ["submitted", "Submitted"]]}/>
+
+            {say && <p className="cm-hw-say" role="status">{say}</p>}
+
+            {list.length === 0 && (
+              <CmEmpty icon={tab === "outstanding" ? "✓" : "—"}
+                       title={tab === "outstanding" ? "Everybody has handed in" : "Nothing handed in yet"}
+                       body={tab === "outstanding"
+                         ? "All " + c.asked + " of them. Nothing to chase."
+                         : "The first hand-in will appear here."}/>
+            )}
+
+            {list.map(p => (
+              <div className="cm-hw-row" key={p.memberId}>
+                {cmAvatar(p.name, p.memberId, p.photo, "cm-hw-av")}
+                <div className="cm-hw-who">
+                  <span className="cm-hw-name">{p.name}</span>
+                  <span className="cm-hw-ctx">{p.context}</span>
+                </div>
+                {tab === "outstanding" ? (
+                  <button className="cm-hw-nudge" onClick={() => nudge(p.memberId)}
+                          disabled={!p.nudgeable || !!busy}
+                          title={p.nudgeable ? "" : "Already nudged today."}>
+                    {p.nudgeable ? "Nudge" : "Nudged"}
+                  </button>
+                ) : (
+                  <button className="cm-hw-nudge" onClick={() => review(p.memberId)}
+                          disabled={!!p.reviewedAt || !!busy}>
+                    {p.reviewedAt ? "Reviewed" : "Mark reviewed"}
+                  </button>
+                )}
+              </div>
+            ))}
+
+            {tab === "outstanding" && (hw.outstanding || []).length > 0 && (
+              <div className="cm-hw-all">
+                <button className="cm-hw-allbtn" onClick={() => nudge("")}
+                        disabled={hw.nudgeableNow === 0 || !!busy}>
+                  {busy === "all" ? "Sending…"
+                    : hw.nudgeableNow === 0 ? "Everyone has been nudged today"
+                    : "Nudge all " + hw.nudgeableNow + " outstanding"}
+                </button>
+                {/* The design prints this sentence on the screen. It is the
+                    promise the whole feature rests on, so it is rendered where
+                    the mentor is standing when they make it. */}
+                <p className="cm-hw-rule">Nudges arrive as one notification, never a public message.</p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CmHwHead({ onBack, title, sub }) {
+  return (
+    <header className="cmm-head cmm-head-back">
+      <button className="cmm-icon-btn" onClick={onBack} aria-label="Back">{cmUiIcon("back", 22)}</button>
+      <div className="cmm-head-txt">
+        <h1 className="cmm-h1">{title}</h1>
+        {sub && <p className="cmm-sub">{sub}</p>}
+      </div>
+    </header>
+  );
+}
+
 /* ⓘ — everything the header had to truncate, in full.
  *
  * A disclosure, not a modal: it hangs under the button that opened it and the
@@ -2121,7 +2430,7 @@ function CmChannelInfo({ ch, members, centres, onFiles, onClose }) {
   );
 }
 
-function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, counts, onCounts, onOpenFiles, dockComposer, wide }) {
+function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, counts, onCounts, onOpenFiles, onOpenHomework, dockComposer, wide }) {
   const [posts, setPosts] = React.useState(null);
   const [members, setMembers] = React.useState(null);
   const [fresh, setFresh] = React.useState(null);
@@ -2139,6 +2448,14 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
        info      Purpose, centres, mentors, files. Everything the header
                  truncates, in full, in one place. */
   const [sort, setSort] = React.useState("latest");
+  /* The channel's newest open task. Null means there is none, which is the
+     common case and renders nothing — a homework strip on a channel with no
+     homework is furniture. */
+  const [hw, setHw] = React.useState(null);
+  const [hwBusy, setHwBusy] = React.useState(false);
+  /* §12: who is typing, which replaces the member count in the subtitle for as
+     long as it is true and never for longer. */
+  const [typing, setTyping] = React.useState("");
   const [savedOnly, setSavedOnly] = React.useState(false);
   const [info, setInfo] = React.useState(false);
   const streamRef = React.useRef(null);
@@ -2170,6 +2487,9 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
       .catch(() => { setPosts([]); setLoadErr(true); });
     NGGApi.member.community.members(slug)
       .then(r => setMembers(r.members || [])).catch(() => setMembers([]));
+    setHw(null);
+    NGGApi.member.community.homework(slug, "")
+      .then(r => setHw(r.homework || null)).catch(() => setHw(null));
     const t = setTimeout(() => {
       NGGApi.member.community.markRead(slug).then(() => onCounts()).catch(() => {});
     }, 1200);
@@ -2200,6 +2520,25 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
     const id = setInterval(tick, 20000);
     return () => clearInterval(id);
   }, [slug, sort]);
+
+  /* Typing is read on its own, faster, timer. A 20-second poll cannot show a
+     five-second fact — by the time it arrived it would be a lie. It is a
+     separate request because it is a tiny one, it stops the moment the tab is
+     hidden, and it is the only thing on this screen that needs this cadence.
+     Nothing is written here: a reader who never types costs nothing but this
+     read. */
+  React.useEffect(() => {
+    let dead = false;
+    const tick = () => {
+      if (document.hidden) return;
+      NGGApi.member.community.typingWho(slug)
+        .then(r => { if (!dead) setTyping(r.says || ""); })
+        .catch(() => {});
+    };
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => { dead = true; clearInterval(id); setTyping(""); };
+  }, [slug]);
 
   const onScroll = (e) => {
     const el = e.currentTarget;
@@ -2299,7 +2638,13 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
                 not from a field somebody set once and never revisited. */}
             {wide && centres && <span className="cmm-ch-centres">{centres}</span>}
           </div>
-          <p className="cmm-sub">{wide && ch.description ? ch.description : memberLine}</p>
+          {/* "…replacing the static member count only while someone types."
+              Green, and it says the name — a bare "someone is typing" in a room
+              of twenty-four is not information. It is a live region so a
+              screen-reader user is told once rather than on every poll. */}
+          <p className={"cmm-sub" + (typing ? " is-typing" : "")} aria-live="polite">
+            {typing || (wide && ch.description ? ch.description : memberLine)}
+          </p>
         </div>
 
         {wide ? (
@@ -2343,6 +2688,22 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
         )}
       </header>
 
+      {/* §12: the homework strip, on the amber surface, leading to the tracker.
+          Phone only — on a desktop the same task is the widget beside the
+          digest, and showing both would be the same number twice. */}
+      {!wide && hw && (
+        <button className="cm-hw-strip" onClick={() => onOpenHomework(hw.homeworkId)}>
+          <span className="cm-hw-strip-eye">
+            Homework{hw.dueAt ? " · due " + cmHwDue(hw.dueAt) : ""}
+          </span>
+          <span className="cm-hw-strip-t">{hw.title}</span>
+          <span className="cm-hw-strip-n">
+            <b>{hw.counts.submitted}</b> of {hw.counts.asked} submitted
+          </span>
+          <span className="cm-hw-strip-go" aria-hidden="true">{cmUiIcon("chev", 18)}</span>
+        </button>
+      )}
+
       {wide && info && (
         <CmChannelInfo ch={ch} members={members} centres={centres}
                        onFiles={() => { setInfo(false); onOpenFiles(slug); }}
@@ -2376,6 +2737,12 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
 
       {/* Catch me up — only when there IS something to catch up on, and
           dismissible. A permanent banner is furniture nobody reads. */}
+      {/* §11 puts the digest and the tracker side by side in one row above the
+          conversation. As two absolutely-placed blocks the widget sat on top
+          of the channel header; as a flex row they simply share the width, and
+          either one can be absent without the other moving. */}
+      {wide && (unreadMark > 0 && !dismissedCatchup || hw) && (
+        <div className="cmd-toprow">
       {wide && unreadMark > 0 && !dismissedCatchup && (
         <div className="cmd-digest">
           <div className="cmd-digest-eyebrow">
@@ -2393,6 +2760,22 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
             {!digest && <button className="cmd-digest-alt" onClick={catchUp}>Catch me up</button>}
           </div>
           <button className="cmd-digest-x" onClick={() => setDismissed(true)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+
+      {wide && hw && (
+        <div className="cmd-hw-slot">
+          <CmHwWidget hw={hw} busy={hwBusy}
+                      onOpen={() => onOpenHomework(hw.homeworkId)}
+                      onNudgeAll={() => {
+                        setHwBusy(true);
+                        NGGApi.member.community.homeworkNudge(hw.homeworkId, "", true)
+                          .then(() => NGGApi.member.community.homework(slug, "").then(r => setHw(r.homework || null)))
+                          .catch(() => {})
+                          .finally(() => setHwBusy(false));
+                      }}/>
+        </div>
+      )}
         </div>
       )}
 
@@ -2733,6 +3116,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
   /* Widened once, stays widened. Somebody who asked for a bigger thread asked
      about how they read threads, not about this one post. */
   const [threadWide, setThreadWide] = React.useState(false);
+  const [homework, setHomework] = React.useState(null);   // open tracker, by id
   const [account, setAccount] = React.useState(false);
   const [composer, setComposer] = React.useState(false);
   const [jump, setJump] = React.useState(false);
@@ -2840,7 +3224,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
      the channel (handoff §11), so the rail beside it must stay — hiding it
      there left the whole left edge of a 1280px screen empty and took away
      every destination in the product to show four replies. */
-  const barHidden = (!!thread && !wide) || account || notifs || a11y || !!files;
+  const barHidden = (!!thread && !wide) || account || notifs || a11y || !!files || !!homework;
 
   const compose = {
     open: () => { setComposeSeed(null); setComposer(true); },
@@ -2939,7 +3323,8 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
           <CmChannel slug={channel} channels={channels} auth={auth}
                      onBack={() => setChannel(null)} onOpenThread={setThread}
                      onCompose={compose} counts={counts} onCounts={refreshCounts}
-                     onOpenFiles={setFiles} dockComposer={wide} wide={wide}/>
+                     onOpenFiles={setFiles} onOpenHomework={setHomework}
+                     dockComposer={wide} wide={wide}/>
         )}
       </div>
 
@@ -3049,6 +3434,12 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
           <CmFiles slug={files} channelName={(channels.find(c => c.slug === files) || {}).name || files}
                    onBack={() => setFiles(null)}
                    onOpenThread={(p) => { setFiles(null); setThread(p); }}/>
+        </div>
+      )}
+      {homework && (
+        <div className="cmm-over">
+          <CmHomework homeworkId={homework} channel={channel || ""} auth={auth}
+                      onBack={() => setHomework(null)} onCounts={refreshCounts}/>
         </div>
       )}
     </div>
@@ -7786,6 +8177,36 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
   const [up, setUp] = React.useState(0);
   const [ch, setCh] = React.useState(active !== "all" ? active : "commons");
   const [busy, setBusy] = React.useState(false);
+
+  /* §12's typing indicator, from this end.
+     Written only while somebody is REALLY typing, and at most once every three
+     seconds — the server keeps a row alive for eight, so one ping per three
+     covers a continuous typist with two thirds of the writes a naive
+     keystroke handler would make. A reader who never types never writes at
+     all, which is the whole cost argument for doing this by polling on shared
+     hosting rather than pretending a socket is available. */
+  const lastPing = React.useRef(0);
+  const typingFor = React.useRef("");
+  const stopTyping = React.useCallback(() => {
+    const where = typingFor.current;
+    typingFor.current = ""; lastPing.current = 0;
+    if (where) NGGApi.member.community.typingStop(where).catch(() => {});
+  }, []);
+  const pingTyping = React.useCallback((where) => {
+    if (!where || where === "all") return;
+    const now = Date.now();
+    if (typingFor.current && typingFor.current !== where) stopTyping();
+    if (now - lastPing.current < 3000) return;
+    lastPing.current = now; typingFor.current = where;
+    NGGApi.member.community.typingPing(where).catch(() => {});
+  }, [stopTyping]);
+  /* Leaving the composer — sending, blurring, unmounting, closing the tab —
+     ends it at once rather than leaving the room told a lie for eight seconds. */
+  React.useEffect(() => {
+    const bye = () => stopTyping();
+    window.addEventListener("pagehide", bye);
+    return () => { window.removeEventListener("pagehide", bye); stopTyping(); };
+  }, [stopTyping]);
   const [poll, setPoll] = React.useState(null); // null | [opt, opt, ...]
   const [ment, setMent] = React.useState(null); // {q, start, items}
   const [mentIdx, setMentIdx] = React.useState(0);
@@ -7888,6 +8309,9 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
   // @mention autocomplete: watch the token before the caret.
   const onBody = (e) => {
     const val = e.target.value; setBody(val);
+    /* Typing, not merely focused. An empty box is somebody who has changed
+       their mind, and telling the room they are typing would be false. */
+    if (val.trim()) pingTyping(ch); else stopTyping();
     const caret = e.target.selectionStart || val.length;
     const m = val.slice(0, caret).match(/@([a-z0-9._-]{0,20})$/i);
     if (mentTimer.current) clearTimeout(mentTimer.current);
@@ -7965,6 +8389,7 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
         : { channel: ch, body: body.trim(), altText: alt.trim(), mediaType: media ? media.type : "none", mediaUrl: media ? media.url : "", mediaPoster: media ? media.poster : "", mediaName: media && media.type === "doc" ? media.name : "", mediaFormat: media ? (media.format || "") : "", mediaPages: media ? (media.pages || 0) : 0, mediaBytes: media ? media.bytes : 0, mediaDuration: media ? media.duration : 0 };
       const r = await NGGApi.member.community.post(payload);
       setBody(""); setMedia(null); setPoll(null); setEmoji(false); setAlt("");
+      stopTyping();     // the message has arrived; nobody is typing it any more
       try { localStorage.removeItem(draftKey); } catch (_) {}
       if (r.queued) toast.success("Posted — a mentor will approve it shortly.");
       else toast.success("Posted ✓");
@@ -8106,6 +8531,7 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
             aria-activedescendant={activeOptId}
             aria-describedby="cm-input-hint"
             aria-label={"Message " + (active !== "all" ? "#" + chName : "the community")}
+            onBlur={stopTyping}
             placeholder={poll ? "Ask the crew a question…" : ("Message " + (active !== "all" ? "#" + chShort : "the crew") + "…")}/>
           {slashOpen && (
             <div className="cm-mention-menu cm-slash-menu" id="cm-slash-list" role="listbox" aria-label="Commands">
@@ -8241,7 +8667,7 @@ function CmBodyBlock({ post, onVote }) {
   /* Tapping a photo opens it whole. The feed shows a capped crop — see
      .cm-msg-media in the stylesheet for why — so there has to be a way back to
      the picture somebody actually posted, or the cap quietly destroys it. */
-  const [zoom, setZoom] = React.useState("");
+  const [zoom, setZoom] = React.useState(null);
   /* Whether the cap actually bit. A landscape photo fits inside it untouched,
      and telling somebody there is more to see when there is not is a worse
      lie than showing them a crop — so this is measured on load rather than
@@ -8255,8 +8681,14 @@ function CmBodyBlock({ post, onVote }) {
   };
   return (
     <>
-      {zoom && typeof ImageLightbox === "function"
-        && <ImageLightbox url={zoom} alt={post.altText || ""} onClose={() => setZoom("")}/>}
+      {/* The SAME viewer the Files screen opens. Tapping a photo used to give
+          two different products depending on where you tapped it: from Files
+          you got the caption, who posted it, its size, a counter and a swipe;
+          from the feed you got a dimmed rectangle capped at 620px with none of
+          that — and on a desktop, a photo smaller than the post it came from. */}
+      {zoom && (
+        <CmPhotoViewer photos={[zoom]} index={0} onIndex={() => {}} onClose={() => setZoom(null)}/>
+      )}
       {post.moderationNote && <div className="cm-modnote">{post.moderationNote}</div>}
       {post.body && <div className={"cm-msg-text" + (post.kind === "poll" ? " cm-poll-q" : "")}><NggMarkdown text={post.body}/></div>}
       {post.kind === "poll" && post.poll && (
@@ -8291,7 +8723,7 @@ function CmBodyBlock({ post, onVote }) {
           <button type="button" className="cm-msg-media-btn"
                   aria-label={(cropped ? "See the whole picture" : "Open the picture")
                               + (post.altText ? ": " + post.altText : "")}
-                  onClick={(e) => { e.stopPropagation(); setZoom(post.mediaUrl); }}>
+                  onClick={(e) => { e.stopPropagation(); setZoom(cmPhotoOf(post)); }}>
             <img src={cmOpt(post.mediaUrl, 1000)} alt={post.altText || ""} loading="lazy"
                  onLoad={measureCrop}/>
             {cropped && <span className="cm-msg-media-more" aria-hidden="true">Tap to see it all</span>}

@@ -17791,5 +17791,252 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'CE-%'");
 })();
 
+/* ── Homework: the rules the screen itself states ──────────────────────────
+ *
+ * The design prints one sentence under the nudge buttons:
+ *
+ *     "Nudges arrive as one notification, never a public message."
+ *
+ * Everything below tests that sentence and the arithmetic beside it. The
+ * fixture is built to the artboard's own numbers so the answer is checkable on
+ * paper: 24 asked, 14 submitted, 9 of those reviewed → Reviewed 9, Waiting 5,
+ * Missing 10.
+ * ─────────────────────────────────────────────────────────────────────────── */
+(function () {
+    foreach (['community_posts', 'community_channels', 'community_homework',
+              'community_homework_state', 'community_homework_nudge', 'notifications'] as $t) {
+        db_exec("DELETE FROM $t");
+    }
+    db_exec("DELETE FROM members WHERE memberId LIKE 'HW-%'");
+
+    db_insert('community_channels', ['channelId' => 'CH-HW', 'slug' => 'studio', 'name' => 'Studio · Music',
+        'kind' => 'club', 'status' => 'active', 'sortOrder' => 0, 'createdAt' => now_iso()]);
+
+    // One mentor and 24 children, all at a centre nothing else in this suite uses.
+    db_insert('members', ['memberId' => 'HW-COACH', 'fullName' => 'Coach Bisi', 'email' => 'bisi@example.com',
+        'type' => 'NGG', 'centre' => 'Hometon', 'role' => 'mentor', 'status' => 'active',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    for ($i = 1; $i <= 24; $i++) {
+        $id = sprintf('HW-K%02d', $i);
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Kid ' . $i, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'centre' => 'Hometon', 'role' => 'member', 'status' => 'active',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    // One child has posted, which is what puts the centre in the cohort net.
+    db_insert('community_posts', ['postId' => 'HWP1', 'channelId' => 'CH-HW', 'authorId' => 'HW-K01',
+        'authorName' => 'Kid 1', 'authorCentre' => 'Hometon', 'body' => 'here',
+        'status' => 'published', 'createdAt' => now_iso()]);
+
+    $due = gmdate('Y-m-d\TH:i:s\Z', time() + 3 * 86400);
+    $set = backend_dispatch('community.homeworkSet', ['memberId' => 'HW-COACH',
+        'data' => ['channel' => 'studio', 'title' => 'Eight-bar drum notes', 'dueAt' => $due]]);
+    chk('homework: a mentor can set a task', !empty($set['ok']));
+    $hid = (string)($set['homeworkId'] ?? '');
+    chk('homework: the cohort is snapshot, so "of 24" is who was ASKED', ($set['asked'] ?? 0) === 24);
+
+    /* A member cannot set homework. Checked server-side, because the button
+       being absent for them is a courtesy and this is the rule. */
+    chk('homework: a child cannot set homework for the class',
+        empty(backend_dispatch('community.homeworkSet', ['memberId' => 'HW-K01',
+            'data' => ['channel' => 'studio', 'title' => 'No homework ever']])['ok']));
+
+    /* Somebody joining later does not retroactively become late — the whole
+       reason the cohort is a snapshot rather than a live count. */
+    db_insert('members', ['memberId' => 'HW-LATE', 'fullName' => 'Late Arrival', 'email' => 'late@example.com',
+        'type' => 'NGG', 'centre' => 'Hometon', 'role' => 'member', 'status' => 'active',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('homework: somebody who joins afterwards is not counted late for work nobody set them',
+        (backend_dispatch('community.homework', ['memberId' => 'HW-COACH', 'homeworkId' => $hid])
+            ['homework']['counts']['asked'] ?? 0) === 24);
+
+    // 14 hand in; 9 of those get looked at.
+    for ($i = 1; $i <= 14; $i++) {
+        backend_dispatch('community.homeworkSubmit', ['memberId' => sprintf('HW-K%02d', $i), 'homeworkId' => $hid]);
+    }
+    for ($i = 1; $i <= 9; $i++) {
+        backend_dispatch('community.homeworkReview', ['memberId' => 'HW-COACH', 'homeworkId' => $hid,
+            'who' => sprintf('HW-K%02d', $i)]);
+    }
+    $view = backend_dispatch('community.homework', ['memberId' => 'HW-COACH', 'homeworkId' => $hid]);
+    $c = $view['homework']['counts'] ?? [];
+    chk('homework: the counts are the artboard\'s — 14 of 24, Reviewed 9, Waiting 5, Missing 10',
+        ($c['submitted'] ?? 0) === 14 && ($c['asked'] ?? 0) === 24 && ($c['reviewed'] ?? 0) === 9
+        && ($c['waiting'] ?? 0) === 5 && ($c['missing'] ?? 0) === 10);
+    chk('homework: …and the progress bar is 58%, not a division by zero',
+        ($c['percent'] ?? 0) === 58);
+
+    /* Who has not handed in their homework is not a fact the rest of the class
+       is entitled to. */
+    $kidView = backend_dispatch('community.homework', ['memberId' => 'HW-K20', 'homeworkId' => $hid]);
+    chk('homework: a child sees the task and their own state, never the class roster',
+        !isset($kidView['homework']['outstanding'])
+        && ($kidView['homework']['mine']['asked'] ?? false) === true
+        && ($kidView['homework']['canNudge'] ?? true) === false);
+    chk('homework: a mentor does get the outstanding list, because chasing is their job',
+        count($view['homework']['outstanding'] ?? []) === 10);
+
+    /* The row context, which is what makes a nudge fair. Asserted BEFORE any
+       nudge, because "Nudged today" deliberately outranks everything else —
+       the honest thing to tell a mentor about to press Nudge again is that
+       they already did. */
+    backend_dispatch('community.homeworkSeen', ['memberId' => 'HW-K21', 'homeworkId' => $hid]);
+    db_insert('community_reads', ['memberId' => 'HW-K23', 'channelId' => 'CH-HW',
+        'lastReadAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 3 * 86400), 'updatedAt' => now_iso()]);
+    $ctx = [];
+    foreach (backend_dispatch('community.homework', ['memberId' => 'HW-COACH', 'homeworkId' => $hid])
+                 ['homework']['outstanding'] as $r) { $ctx[$r['memberId']] = $r['context']; }
+    chk('homework: a child who has opened the task reads differently from one who has not',
+        strpos($ctx['HW-K21'] ?? '', 'Read the task') === 0);
+    chk('homework: …and one who has not been here at all says so, which is a different problem',
+        strpos($ctx['HW-K23'] ?? '', 'Not seen since ') === 0
+        && ($ctx['HW-K22'] ?? '') === 'Not seen at all');
+
+    /* Nudging. One notification, addressed to one child. */
+    db_exec("DELETE FROM notifications");
+    $n1 = backend_dispatch('community.homeworkNudge', ['memberId' => 'HW-COACH', 'homeworkId' => $hid, 'who' => 'HW-K20']);
+    chk('homework: a nudge sends exactly one notification', ($n1['sent'] ?? 0) === 1);
+    $rows = db_all("SELECT memberId, kind FROM notifications");
+    chk('homework: …addressed to that child alone',
+        count($rows) === 1 && $rows[0]['memberId'] === 'HW-K20' && $rows[0]['kind'] === 'community.homework');
+    /* "never a public message" — the load-bearing half of the sentence. */
+    chk('homework: …and it never becomes a post or a comment in the room',
+        (int)(db_row("SELECT COUNT(*) c FROM community_posts WHERE channelId = 'CH-HW'")['c'] ?? 0) === 1
+        && (int)(db_row("SELECT COUNT(*) c FROM community_comments")['c'] ?? 0) === 0);
+
+    /* Rate-limited daily. A tracker that can send a child six messages in an
+       afternoon is not a tracker. */
+    $n2 = backend_dispatch('community.homeworkNudge', ['memberId' => 'HW-COACH', 'homeworkId' => $hid, 'who' => 'HW-K20']);
+    chk('homework: the same child cannot be nudged twice in a day',
+        ($n2['sent'] ?? -1) === 0 && ($n2['skipped'] ?? 0) === 1);
+    chk('homework: …and the refusal says why, rather than pretending it sent',
+        ($n2['why'] ?? '') === 'Already nudged today');
+    chk('homework: …so only one notification exists, not two',
+        (int)(db_row("SELECT COUNT(*) c FROM notifications")['c'] ?? 0) === 1);
+
+    /* Nudge all: 10 outstanding, one already nudged today → 9 sent, 1 skipped.
+       The screen has to be able to say that, so the call has to return it. */
+    $all = backend_dispatch('community.homeworkNudge', ['memberId' => 'HW-COACH', 'homeworkId' => $hid, 'all' => true]);
+    chk('homework: "Nudge all" skips the one already nudged today and says so',
+        ($all['sent'] ?? 0) === 9 && ($all['skipped'] ?? 0) === 1);
+    chk('homework: …and nobody who handed in gets chased',
+        (int)(db_row("SELECT COUNT(*) c FROM community_homework_nudge WHERE homeworkId = ? AND memberId = 'HW-K01'",
+                     [$hid])['c'] ?? 0) === 0);
+
+    /* Mentor-only, on the nudge path too. */
+    chk('homework: a child cannot nudge their classmates',
+        empty(backend_dispatch('community.homeworkNudge',
+            ['memberId' => 'HW-K02', 'homeworkId' => $hid, 'all' => true])['ok']));
+
+    /* After the nudges: the chased row says so, and the button is off. */
+    $view2 = backend_dispatch('community.homework', ['memberId' => 'HW-COACH', 'homeworkId' => $hid]);
+    $byId = [];
+    foreach ($view2['homework']['outstanding'] as $r) $byId[$r['memberId']] = $r;
+    chk('homework: one already chased today says so, and cannot be chased again',
+        ($byId['HW-K20']['context'] ?? '') === 'Nudged today'
+        && ($byId['HW-K20']['nudgeable'] ?? true) === false);
+    chk('homework: …and the screen is told how many "Nudge all" would really reach',
+        ($view2['homework']['nudgeableNow'] ?? -1) === 0);
+
+    /* A due date that has already gone cannot be met. */
+    chk('homework: a task cannot be set with a due date in the past',
+        empty(backend_dispatch('community.homeworkSet', ['memberId' => 'HW-COACH',
+            'data' => ['channel' => 'studio', 'title' => 'Yesterday',
+                       'dueAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]])['ok']));
+
+    /* Submitting is idempotent — a double tap on a slow connection must not
+       count as two hand-ins or reset the timestamp. */
+    $s1 = backend_dispatch('community.homeworkSubmit', ['memberId' => 'HW-K01', 'homeworkId' => $hid]);
+    chk('homework: handing in twice is not two hand-ins', !empty($s1['already']));
+    chk('homework: …and a child not in the cohort is told, not silently recorded',
+        empty(backend_dispatch('community.homeworkSubmit', ['memberId' => 'HW-LATE', 'homeworkId' => $hid])['ok']));
+
+    /* Due dates as a person says them. */
+    $t = time();
+    chk('homework: a due date reads the way somebody would say it',
+        hw_due_words(gmdate('Y-m-d\TH:i:s\Z', $t + 3600), $t) === 'today ' . gmdate('ga', $t + 3600)
+        && hw_due_words(gmdate('Y-m-d\TH:i:s\Z', $t + 86400), $t) === 'tomorrow ' . gmdate('ga', $t + 86400)
+        && strpos(hw_due_words(gmdate('Y-m-d\TH:i:s\Z', $t - 86400), $t), 'was ') === 0);
+
+    foreach (['community_posts', 'community_channels', 'community_homework',
+              'community_homework_state', 'community_homework_nudge', 'notifications'] as $t2) {
+        db_exec("DELETE FROM $t2");
+    }
+    db_exec("DELETE FROM community_reads WHERE channelId = 'CH-HW'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'HW-%'");
+})();
+
+/* ── Typing (§12) ──────────────────────────────────────────────────────────
+ * This runs on shared hosting, so it is a poll and the interesting properties
+ * are all cost and honesty: a row is short-lived, a ping does not rewrite the
+ * same second, a reader never sees themselves, and nothing accumulates.
+ * ─────────────────────────────────────────────────────────────────────────── */
+(function () {
+    db_exec("DELETE FROM community_typing");
+    db_exec("DELETE FROM community_channels WHERE channelId = 'CH-TY'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'TY-%'");
+    db_insert('community_channels', ['channelId' => 'CH-TY', 'slug' => 'typeroom', 'name' => 'Type Room',
+        'kind' => 'club', 'status' => 'active', 'sortOrder' => 0, 'createdAt' => now_iso()]);
+    foreach ([['TY-BISI', 'Coach Bisi', 'mentor'], ['TY-ZARA', 'Zara I.', 'member'],
+              ['TY-KUN', 'Kunle B.', 'member'], ['TY-WATCH', 'Watcher', 'member']] as [$id, $nm, $role]) {
+        db_insert('members', ['memberId' => $id, 'fullName' => $nm, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'centre' => 'Typeton', 'role' => $role, 'status' => 'active',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+
+    backend_dispatch('community.typingPing', ['memberId' => 'TY-BISI', 'channel' => 'typeroom']);
+    $w = backend_dispatch('community.typingWho', ['memberId' => 'TY-WATCH', 'channel' => 'typeroom']);
+    chk('typing: the subtitle names the person, because "someone" is not information',
+        ($w['says'] ?? '') === 'Coach Bisi is typing…');
+    chk('typing: …and a reader who is not typing sees the room, not themselves',
+        count($w['typing'] ?? []) === 1);
+
+    /* You know that you are typing. */
+    chk('typing: you are never told that you are typing',
+        (backend_dispatch('community.typingWho', ['memberId' => 'TY-BISI', 'channel' => 'typeroom'])['says'] ?? 'x') === '');
+
+    backend_dispatch('community.typingPing', ['memberId' => 'TY-ZARA', 'channel' => 'typeroom']);
+    chk('typing: two people are named, not counted',
+        (backend_dispatch('community.typingWho', ['memberId' => 'TY-WATCH', 'channel' => 'typeroom'])['says'] ?? '')
+            === 'Coach Bisi and Zara I. are typing…');
+    backend_dispatch('community.typingPing', ['memberId' => 'TY-KUN', 'channel' => 'typeroom']);
+    chk('typing: …and three become a count, rather than a wall of names',
+        (backend_dispatch('community.typingWho', ['memberId' => 'TY-WATCH', 'channel' => 'typeroom'])['says'] ?? '')
+            === '3 people are typing…');
+
+    /* One row per person per channel — a fast typist pings repeatedly and must
+       not accumulate rows, and must not rewrite the same second either. */
+    $before = db_row("SELECT atIso FROM community_typing WHERE channelId = 'CH-TY' AND memberId = 'TY-BISI'")['atIso'];
+    for ($i = 0; $i < 20; $i++) backend_dispatch('community.typingPing', ['memberId' => 'TY-BISI', 'channel' => 'typeroom']);
+    chk('typing: twenty keystrokes are one row, not twenty',
+        (int)(db_row("SELECT COUNT(*) c FROM community_typing WHERE channelId = 'CH-TY'")['c'] ?? 0) === 3);
+    chk('typing: …and are not twenty writes either — the row is only refreshed once the ping interval has passed',
+        (string)(db_row("SELECT atIso FROM community_typing WHERE channelId = 'CH-TY' AND memberId = 'TY-BISI'")['atIso']) === (string)$before);
+
+    /* Nothing has to stop typing; it stops being true. And the read sweeps, so
+       there is no cron and the table cannot grow. */
+    db_exec("UPDATE community_typing SET atIso = ? WHERE channelId = 'CH-TY'",
+            [gmdate('Y-m-d\TH:i:s\Z', time() - COMMUNITY_TYPING_TTL - 5)]);
+    $stale = backend_dispatch('community.typingWho', ['memberId' => 'TY-WATCH', 'channel' => 'typeroom']);
+    chk('typing: a stale row is not "typing" any more', ($stale['says'] ?? 'x') === '');
+    chk('typing: …and reading swept it away, so nothing has to run on a timer',
+        (int)(db_row("SELECT COUNT(*) c FROM community_typing WHERE channelId = 'CH-TY'")['c'] ?? 0) === 0);
+
+    /* Sending, blurring, leaving — all end it at once rather than leaving the
+       room told a lie for the rest of the TTL. */
+    backend_dispatch('community.typingPing', ['memberId' => 'TY-ZARA', 'channel' => 'typeroom']);
+    backend_dispatch('community.typingStop', ['memberId' => 'TY-ZARA', 'channel' => 'typeroom']);
+    chk('typing: stopping is immediate, not "in eight seconds"',
+        (backend_dispatch('community.typingWho', ['memberId' => 'TY-WATCH', 'channel' => 'typeroom'])['says'] ?? 'x') === '');
+
+    /* A channel that does not exist must not create rows or throw. */
+    chk('typing: a ping at a channel that does not exist is quietly nothing',
+        !empty(backend_dispatch('community.typingPing', ['memberId' => 'TY-ZARA', 'channel' => 'nope'])['ok'])
+        && (int)(db_row("SELECT COUNT(*) c FROM community_typing")['c'] ?? 0) === 0);
+
+    db_exec("DELETE FROM community_typing");
+    db_exec("DELETE FROM community_channels WHERE channelId = 'CH-TY'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'TY-%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

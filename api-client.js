@@ -584,6 +584,20 @@
         members:  (channel) => request('/member/community.php' + qs({ view: 'members', channel })),
         files:    (channel, kind) => request('/member/community.php' + qs({ view: 'files', channel, kind: kind || 'all' })),
         markRead: (channel) => request('/member/community.php', { body: { action: 'markRead', channel } }),
+        /* Homework. `homework` reads one task — the newest in a channel, or a
+           named one; the per-child roster inside it is served only to mentors. */
+        homework:       (channel, homeworkId) => request('/member/community.php' + qs({ view: 'homework', channel: channel || '', homeworkId: homeworkId || '' })),
+        homeworkList:   (channel) => request('/member/community.php' + qs({ view: 'homeworkList', channel })),
+        homeworkSet:    (data) => request('/member/community.php', { body: { action: 'homework', data } }),
+        homeworkSeen:   (homeworkId) => request('/member/community.php', { body: { action: 'homeworkSeen', homeworkId } }),
+        homeworkSubmit: (homeworkId, note, postId) => request('/member/community.php', { body: { action: 'homeworkSubmit', homeworkId, note: note || '', postId: postId || '' } }),
+        homeworkReview: (homeworkId, who) => request('/member/community.php', { body: { action: 'homeworkReview', homeworkId, who } }),
+        homeworkNudge:  (homeworkId, who, all) => request('/member/community.php', { body: { action: 'homeworkNudge', homeworkId, who: who || '', all: !!all } }),
+        /* Typing. `typingPing` is sent only while somebody is really typing;
+           `typingStop` on send, blur, or leaving the channel. */
+        typingWho:  (channel) => request('/member/community.php' + qs({ view: 'typing', channel })),
+        typingPing: (channel) => request('/member/community.php', { body: { action: 'typing', channel } }),
+        typingStop: (channel) => request('/member/community.php', { body: { action: 'typing', channel, stop: true } }),
         // One post by id — what a shared link or a notification resolves to.
         post_get: (postId) => request('/member/community.php' + qs({ view: 'post', postId })),
         // Filter-chip counts for the Today screen (unread / mentions / saved).
