@@ -466,6 +466,126 @@ async function openPage(browser, width, height, media) {
       await page.close();
     }
 
+    /* ── The 44px rule, measured (handoff: "verify in devtools, don't assume") ──
+       The rule implementations break most often, and exactly the kind of thing
+       that is true the day it ships and false a month later — so a test, not a
+       one-off measurement. Scoped to `.cmm`, the community app's own root: the
+       marketing top nav and footer are a different design with their own
+       smaller chrome, and sweeping them in here would turn this into a silent
+       rewrite of something the bundle does not own. (They ARE under 44 — the
+       nav bell measures 38 — which is reported separately, not fixed here.) */
+    console.log('\n── Every community target clears 44px on a phone ──────────────');
+    {
+      const { page } = await openPage(browser, 390, 844, WIDE);
+      const scan = () => page.evaluate(() => {
+        const out = [];
+        document.querySelectorAll('.cmm button, .cmm a[href], .cmm input, .cmm select,'
+          + ' .cmm textarea, .cmm [role="tab"]').forEach(el => {
+          const r = el.getBoundingClientRect();
+          if (!r.width || !r.height) return;
+          if (getComputedStyle(el).visibility === 'hidden') return;
+          if (el.closest('.sr-only')) return;
+          /* The design sets filter chips at 40px explicitly (§1, "40px tall"),
+             which contradicts its own 44px floor. That conflict is the
+             designer's to settle, so this records the design's stated number
+             rather than quietly overriding either rule. */
+          const floor = el.classList.contains('cmm-chip') ? 39.5 : 43.5;
+          /* A caption can carry its tap area in a pseudo-element instead of
+             growing the label into a button — the feed's channel caption does
+             exactly that. getBoundingClientRect cannot see it, so ask. */
+          let h = r.height, w = r.width;
+          for (const which of ['::before', '::after']) {
+            const cs = getComputedStyle(el, which);
+            if (cs.content === 'none' || cs.position !== 'absolute') continue;
+            h = Math.max(h, parseFloat(cs.height) || 0);
+            w = Math.max(w, parseFloat(cs.width) || 0);
+          }
+          if (h < floor || w < floor) out.push((el.className || el.tagName) + ' ' + Math.round(w) + 'x' + Math.round(h));
+        });
+        return [...new Set(out)];
+      });
+      const onToday = await scan();
+      ok('Today: nothing under 44px' + (onToday.length ? ' — ' + onToday.join(', ') : ''), onToday.length === 0);
+      await page.locator('.cmm-tab', { hasText: 'Channels' }).click();
+      await page.waitForTimeout(400);
+      await page.locator('.cmm-ch-row').first().click();
+      await page.waitForTimeout(800);
+      const inChannel = await scan();
+      ok('Channel: nothing under 44px' + (inChannel.length ? ' — ' + inChannel.join(', ') : ''), inChannel.length === 0);
+
+      /* §12: the phone catch-me-up card carries Jump to unread / Mark read —
+         and those are the phone's strings, not the desktop digest's longer
+         ones. The difference is the design's, so both are checked verbatim. */
+      const card = await page.evaluate(() => {
+        const c = document.querySelector('.cmm-catchup');
+        if (!c) return null;
+        return {
+          acts: Array.from(c.querySelectorAll('.cmm-catchup-acts button')).map(b => b.textContent.trim()),
+          dismiss: !!c.querySelector('.cmm-catchup-x'),
+          /* One line each: the title wrapped across two lines when the actions
+             shared its row, which is what "looks broken" looked like. */
+          titleLines: Math.round(c.querySelector('b').getBoundingClientRect().height) < 24,
+        };
+      });
+      ok('the catch-me-up card offers Jump to unread and Mark read',
+         !!card && card.acts[0] === 'Jump to unread' && card.acts[1] === 'Mark read');
+      ok('…is dismissible, and its title fits on one line', !!card && card.dismiss && card.titleLines);
+
+      /* §1: "feed padding bottom 116px so FAB and tab bar never cover content."
+         The channel stream had 20px, and the FAB sat on the last photo. */
+      ok('the stream clears the FAB at the bottom of the scroll',
+         await page.evaluate(async () => {
+           const s = document.querySelector('.cmm-stream');
+           s.scrollTop = s.scrollHeight;
+           await new Promise(r => requestAnimationFrame(r));
+           const fab = document.querySelector('.cmm-fab');
+           if (!fab) return true;
+           const f = fab.getBoundingClientRect();
+           const last = [...s.querySelectorAll('.cmm-msg')].pop();
+           if (!last) return true;
+           const l = last.getBoundingClientRect();
+           return l.bottom <= f.top + 1 || l.right <= f.left + 1;
+         }));
+      await page.close();
+    }
+
+    /* ── Reduced motion ──
+       Smooth scrolling is animation, and the bundle collapses every duration
+       under prefers-reduced-motion. These are scrollTo/scrollIntoView
+       ARGUMENTS, which no CSS rule can reach — so the check has to be a real
+       call, not a stylesheet assertion. */
+    console.log('\n── Reduced motion ────────────────────────────────────────────');
+    for (const [mode, want] of [['reduce', 'auto'], ['no-preference', 'smooth']]) {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 },
+                                           deviceScaleFactor: 1, reducedMotion: mode });
+      await page.addInitScript(() => {
+        window.__beh = [];
+        const grab = (o) => { if (o && o.behavior) window.__beh.push(o.behavior); };
+        const si = Element.prototype.scrollIntoView;
+        Element.prototype.scrollIntoView = function (o) { grab(o); return si.call(this, o); };
+        const st = Element.prototype.scrollTo;
+        Element.prototype.scrollTo = function (o) { grab(o); return st.apply(this, arguments); };
+      });
+      await page.route('**/api/**', async (route) => {
+        const u = new URL(route.request().url());
+        const h = routesFor(WIDE)[u.pathname.replace(/^.*\/api\//, '')];
+        const body = typeof h === 'function' ? h(u) : (h || { ok: true });
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+      });
+      await page.route('**/community', r => r.fulfill({ status: 200, contentType: 'text/html',
+        body: fs.readFileSync(path.join(ROOT, 'dist', 'index.html'), 'utf8') }));
+      await page.goto(BASE + '/community', { waitUntil: 'networkidle' });
+      await page.waitForSelector('.cmm-msg', { timeout: 10000 });
+      await page.locator('.cmd-row').nth(1).click();
+      await page.waitForTimeout(700);
+      await page.locator('.cmd-digest-go').click();      // "Jump to first unread"
+      await page.waitForTimeout(400);
+      const seen = await page.evaluate(() => window.__beh);
+      ok('prefers-reduced-motion: ' + mode + ' → scrolls with "' + want + '"',
+         seen.length > 0 && seen.every(b => b === want));
+      await page.close();
+    }
+
     /* A phone keeps every one of the phone behaviours. */
     console.log('\n── …and the phone is untouched ───────────────────────────────');
     {

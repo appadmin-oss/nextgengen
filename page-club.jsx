@@ -492,6 +492,13 @@ function cmBody(text) {
   });
   return out;
 }
+/* Smooth scrolling is animation, and the bundle is explicit that every duration
+   collapses under prefers-reduced-motion. A CSS rule cannot reach these — the
+   behaviour is an argument to scrollTo — so the check lives here, using the
+   same media query the rest of the app already asks. */
+function cmScrollBehavior() {
+  return reducedMotion() ? "auto" : "smooth";
+}
 function cmInitial(name) { return (String(name || "•").trim()[0] || "•").toUpperCase(); }
 /* Avatar colour is STABLE and, for two roles, MEANINGFUL.
  *
@@ -2073,6 +2080,22 @@ function CmChannelInfo({ ch, members, centres, onFiles, onClose }) {
       {/* The roster itself. Handoff §11: it moved out of a permanent rail and
           in here, so this panel has to actually carry it — a count is not a
           roster, and "who is in this room" is the question the rail answered. */}
+      {/* Loading is a skeleton at the roster's own geometry, not a spinner and
+          not nothing: this panel IS the roster now, so an empty gap while it
+          arrives reads as "nobody is in this channel". */}
+      {members === null && (
+        <ul className="cmd-chinfo-roster" aria-live="polite" aria-label="Loading the members">
+          {[0, 1, 2].map(i => (
+            <li key={i} className="is-skel" aria-hidden="true">
+              <span className="cmd-chinfo-av cmm-skel-av"/>
+              <span className="cmm-skel-line" style={{ width: i === 1 ? "38%" : "52%" }}/>
+            </li>
+          ))}
+        </ul>
+      )}
+      {members && members.length === 0 && (
+        <p className="cmd-chinfo-p cmd-chinfo-none">Nobody has posted here yet.</p>
+      )}
       {members && members.length > 0 && (
         <ul className="cmd-chinfo-roster">
           {members.map(m => (
@@ -2186,7 +2209,7 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
   const jumpToNew = () => {
     if (fresh) { setPosts(fresh); setFresh(null); }
     const el = streamRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: cmScrollBehavior() });
   };
 
   const patch = (postId, p) => setPosts(ps => (ps || []).map(x => x.postId === postId ? { ...x, ...p } : x));
@@ -2244,8 +2267,8 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
   const jumpToUnread = () => {
     const el = streamRef.current;
     const line = el && el.querySelector(".cmm-newline");
-    if (line) line.scrollIntoView({ block: "center", behavior: "smooth" });
-    else if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (line) line.scrollIntoView({ block: "center", behavior: cmScrollBehavior() });
+    else if (el) el.scrollTo({ top: el.scrollHeight, behavior: cmScrollBehavior() });
   };
   const markAllRead = () => {
     setUnreadMark(0); setDismissed(true);
@@ -2330,11 +2353,20 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
           its own band underneath. */}
       {!wide && members && members.length > 0 && (
         <div className="cmm-presence">
-          <span className="cmm-stack" aria-hidden="true">
-            {members.slice(0, 5).map(m => (
-              <span key={m.name + m.centre} className="cmm-stack-av"
+          {/* Three faces and a count, as in the header on a desktop — not five.
+              §3 puts avatars, the purpose AND the control on one row, and at
+              390px five avatars left the purpose as "Prompting, too…", which
+              is a line of text doing no work at all. Three says the same thing
+              in 54px less, and the count is the honest total. */}
+          <span className="cmm-stack">
+            {members.slice(0, 3).map(m => (
+              <span key={m.name + m.centre} className="cmm-stack-av" aria-hidden="true"
                     style={{ background: cmColor(m.name, m.staff ? "mentor" : "") }}>{cmInitial(m.name)}</span>
             ))}
+            {members.length > 3 && (
+              <span className="cmm-stack-av is-more" aria-hidden="true">+{members.length - 3}</span>
+            )}
+            <span className="sr-only">{presenceTitle}</span>
           </span>
           {ch.description && <span className="cmm-purpose">{ch.description}</span>}
           <CmSeg label="Sort messages" value={sort} onChange={setSort} className="cmm-presence-seg"
@@ -2364,13 +2396,29 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
         </div>
       )}
 
-      {!wide && unreadMark > 0 && !dismissedCatchup && !digest && (
+      {/* §12: the catch-me-up card — dismissible, unreads only, with Jump to
+          unread / Mark read. Those are the bundle's phone strings; the desktop
+          digest says "Jump to first unread" / "Mark all read" and the
+          difference is deliberate in the design, so both are kept as written.
+          The actions moved onto their own row: at 390px, one title, a count
+          and three controls on a single line wrapped "While you were away"
+          across two lines and left the card looking broken. */}
+      {!wide && unreadMark > 0 && !dismissedCatchup && (
         <div className="cmm-catchup">
           <div className="cmm-catchup-txt">
             <b>While you were away</b>
             <span>{unreadMark} {unreadMark === 1 ? "message" : "messages"}</span>
           </div>
-          <button className="cmm-catchup-go" onClick={catchUp}>Catch me up</button>
+          {digest && (
+            <p className="cmm-catchup-sum" role="status">
+              {digest.loading ? "Summarising…" : digest.text}
+            </p>
+          )}
+          <div className="cmm-catchup-acts">
+            <button className="cmm-catchup-go" onClick={jumpToUnread}>Jump to unread</button>
+            <button className="cmm-catchup-alt" onClick={markAllRead}>Mark read</button>
+            {!digest && <button className="cmm-catchup-alt" onClick={catchUp}>Catch me up</button>}
+          </div>
           <button className="cmm-catchup-x" onClick={() => setDismissed(true)} aria-label="Dismiss">✕</button>
         </div>
       )}

@@ -2323,7 +2323,16 @@ img { background-color: rgba(12,20,50,0.04); }
    1 · SHELL
    ════════════════════════════════════════════════════════════════ */
 
-.cmm { position: relative; display: flex; flex-direction: column;
+.cmm {
+  /* How much room the bottom of a scroller must leave so the tab bar and the
+     FAB never cover the last card. §1 states it as a flat 116px; expressed
+     from the parts instead, it cannot drift when the bar or the home indicator
+     changes — and the two scrollers that need it cannot disagree, which they
+     did: the feed left 130px and the FAB needed 156, so the last card's bottom
+     26px sat underneath it.
+     tab bar + home indicator + the FAB's 26px gap + its 60px body + 12px air. */
+  --c-fab-clear: calc(var(--c-tabbar) + var(--c-home-ind) + 26px + 60px + 12px);
+  position: relative; display: flex; flex-direction: column;
   min-height: calc(100dvh - var(--cm-nav, 64px));
   background: var(--c-surface); color: var(--c-ink);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -2331,7 +2340,7 @@ img { background-color: rgba(12,20,50,0.04); }
 /* Bottom padding clears the tab bar AND the FAB, so the last card in a feed is
    never sitting underneath either of them. */
 .cmm-body { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  padding: 0 0 calc(var(--c-tabbar) + var(--c-home-ind) + 60px); }
+  padding: 0 0 var(--c-fab-clear); }
 .cmm-body.no-bar { padding-bottom: 0; }
 .cmm-pad { padding: 0 var(--c-gutter); }
 
@@ -2443,6 +2452,8 @@ img { background-color: rgba(12,20,50,0.04); }
   place-items: center; color: #fff; font-size: 11px; font-weight: 700;
   border: 2px solid var(--c-surface); margin-left: -8px; }
 .cmm-stack-av:first-child { margin-left: 0; }
+.cmm-stack-av.is-more { background: var(--c-neutral-chip); color: var(--c-muted);
+  font-family: var(--c-font-mono); font-size: 10px; }
 /* The presence row's other half: Newest / Hot. Handoff §3 puts a segmented
    control here, and §11 puts the same one in the desktop channel header, so
    the control is defined once at every width rather than twice. The `cmd-`
@@ -2451,33 +2462,45 @@ img { background-color: rgba(12,20,50,0.04); }
    the other three places the bundle uses it. */
 .cmd-seg { display: flex; gap: 3px; background: var(--c-neutral-chip);
   border-radius: 10px; padding: 3px; flex: none; }
-.cmd-seg-b { flex: 1; min-width: 0; padding: 6px 4px; border: 0; border-radius: 8px;
+/* 44px on a phone — the bundle's hard floor, and this is a thumb surface. The
+   two desktop homes for the same control are pointer surfaces at the
+   artboard's own 30px/28px, overridden below. */
+.cmd-seg-b { flex: 1; min-width: 0; min-height: 44px; padding: 6px 4px; border: 0; border-radius: 8px;
   background: none; color: var(--c-muted); font: inherit; font-size: 12.5px; font-weight: 700;
   cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cmd-seg-b.is-on { background: var(--c-card); color: var(--c-ink); }
 /* The row is stack · purpose · control, and the control is pinned right. */
 .cmm-presence-seg { margin-left: auto; }
-.cmm-presence-seg .cmd-seg-b { padding: 6px 12px; }
-.cmm-purpose { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmm-presence-seg .cmd-seg-b { flex: 0 0 auto; padding: 6px 12px; }
 .cmm-purpose { flex: 1; min-width: 0; font-size: 12.5px; color: var(--c-muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.cmm-catchup { display: flex; align-items: center; gap: 10px; flex: none; margin: 10px var(--c-gutter);
-  padding: 11px 12px; border-radius: var(--c-r-btn); background: var(--c-ink-deep); color: #fff; }
-.cmm-catchup-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* One title, a count and three controls on one line wrapped "While you were
+   away" across two lines at 390px and left the card looking broken. The
+   actions get their own row. */
+.cmm-catchup { position: relative; display: flex; flex-direction: column; gap: 9px; flex: none;
+  margin: 10px var(--c-gutter); padding: 11px 12px; border-radius: var(--c-r-btn);
+  background: var(--c-ink-deep); color: #fff; }
+.cmm-catchup-txt { min-width: 0; display: flex; flex-direction: column; padding-right: 38px; }
 .cmm-catchup-txt b { font-family: var(--c-font-display); font-size: 14px; font-weight: 700; }
 .cmm-catchup-txt span { font-family: var(--c-font-mono); font-size: 11px; color: rgba(255,255,255,.7); }
-.cmm-catchup-go { min-height: var(--c-tap); padding: 0 14px; border: 0; border-radius: var(--c-r-sm);
-  background: var(--c-accent); color: var(--c-ink-deep); font-size: 13px; font-weight: 700; cursor: pointer; }
-.cmm-catchup-x { width: var(--c-tap); height: var(--c-tap); flex: none; border: 0; background: none;
-  color: inherit; opacity: .75; font-size: 15px; cursor: pointer; }
+.cmm-catchup-sum { margin: 0; font-size: 13.5px; line-height: 1.55; color: rgba(255,255,255,.88); }
+.cmm-catchup-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.cmm-catchup-go, .cmm-catchup-alt { min-height: var(--c-tap); padding: 0 14px;
+  border-radius: var(--c-r-sm); font: inherit; font-size: 13px; cursor: pointer; }
+.cmm-catchup-go { border: 0; background: var(--c-accent); color: var(--c-ink-deep); font-weight: 700; }
+.cmm-catchup-alt { border: 1px solid rgba(255,255,255,.25); background: none; color: #fff; font-weight: 600; }
+.cmm-catchup-x { position: absolute; top: 4px; right: 4px; width: var(--c-tap); height: var(--c-tap);
+  flex: none; border: 0; background: none; color: inherit; opacity: .75; font-size: 15px; cursor: pointer; }
 .cmm-digest { position: relative; flex: none; margin: 10px var(--c-gutter); padding: 12px 40px 12px 14px;
   border-radius: var(--c-r-btn); background: var(--c-accent-tint); border: 1px solid var(--c-accent-border);
   color: var(--c-accent-ink); font-size: 13.5px; line-height: 1.55; }
 .cmm-digest .cmm-catchup-x { position: absolute; top: 0; right: 0; color: var(--c-accent-ink); }
 
+/* This was 20px, and the FAB sat squarely on the last photo in the channel.
+   --c-fab-clear is defined once on .cmm; see the note there. */
 .cmm-stream { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  padding: 6px var(--c-gutter) 20px; }
+  padding: 6px var(--c-gutter) var(--c-fab-clear); }
 .cmm-newline { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px;
   font-family: var(--c-font-mono); font-size: 10px; font-weight: 700; letter-spacing: .16em; color: var(--c-red); }
 .cmm-newline::before, .cmm-newline::after { content: ""; flex: 1; height: 1px; background: var(--c-red); opacity: .5; }
@@ -3382,6 +3405,7 @@ img { background-color: rgba(12,20,50,0.04); }
     border: 1px solid var(--c-divider-soft); display: grid; place-items: center;
     color: var(--c-body-soft); cursor: pointer; }
   .cmd-chans-hd + .cmd-seg { margin: 0 4px; }
+  .cmm-side .cmd-seg-b { min-height: 30px; }
   .cmd-rows { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
   .cmd-row { display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 13px;
     border: 1px solid transparent; background: none; font: inherit; text-align: left; cursor: pointer; }
@@ -3450,7 +3474,8 @@ img { background-color: rgba(12,20,50,0.04); }
     color: var(--c-body-soft); cursor: pointer; display: grid; place-items: center; }
   .cmd-ch-btn:hover { background: var(--c-surface); }
   .cmd-ch-tools .cmd-seg { height: 34px; padding: 3px; }
-  .cmd-ch-tools .cmd-seg-b { padding: 0 12px; font-size: 13px; display: grid; place-items: center; }
+  .cmd-ch-tools .cmd-seg-b { min-height: 28px; padding: 0 12px; font-size: 13px;
+    display: grid; place-items: center; }
   /* On, not merely hovered: aria-pressed carries it for a screen reader, ink
      fill carries it for everyone else. A tinted border alone was the state
      nobody could see. */
@@ -3490,6 +3515,9 @@ img { background-color: rgba(12,20,50,0.04); }
   .cmd-chinfo-av { width: 24px; height: 24px; flex: none; font-size: 10.5px; }
   .cmd-chinfo-name { font-weight: 600; color: var(--c-body);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmd-chinfo-roster li.is-skel { gap: 8px; }
+  .cmd-chinfo-roster .cmm-skel-av { width: 24px; height: 24px; flex: none; }
+  .cmd-chinfo-roster .cmm-skel-line { height: 11px; }
   .cmd-chinfo-centre { margin-left: auto; flex: none; font-family: var(--c-font-mono);
     font-size: 10.5px; color: var(--c-faint); }
   .cmd-chinfo-rules { background: var(--c-surface); border: 1px solid var(--c-divider-soft);
@@ -3594,6 +3622,9 @@ img { background-color: rgba(12,20,50,0.04); }
 
   /* Reading column. The rule the bundle is explicit about. */
   .cmm-feed, .cmm-list, .cmm-stream { max-width: 72ch; margin-inline: auto; }
+  /* No FAB here — the composer is docked — so the phone's 116px of FAB
+     clearance would be dead space at the foot of every channel. */
+  .cmm-stream { padding-bottom: 12px; }
   /* `.cmm-ch-head` belongs in this list too: it is the header ABOVE a
      `.cmm-stream`, and the stream was being centred into the reading column
      while its own header stayed hard left. On a wide screen the two then
