@@ -6276,6 +6276,12 @@ function cmArenaWhen(iso) {
 function cmOtherName(m) {
   return m.you === "A" ? m.players.B.name : m.players.A.name;
 }
+/** The other player's id. A spectator has no side, so this answers "" rather
+ *  than picking one of them, which would name the wrong person. */
+function cmOtherId(m) {
+  if (m.you !== "A" && m.you !== "B") return "";
+  return m.you === "A" ? m.players.B.id : m.players.A.id;
+}
 function cmTcName(id) {
   const t = CM_TIME_CONTROLS.filter(x => x.id === id)[0];
   return t ? t.name : id;
@@ -7788,6 +7794,8 @@ function MtgSay({ m, busy, onSay }) {
 function MtgRail({ matchId, onOpen }) {
   const [games, setGames] = React.useState(null);
   const [chal, setChal] = React.useState(null);
+  const [here, setHere] = React.useState(null);       // who is around, right now
+  const [challengeFor, setChallengeFor] = React.useState(null);
 
   React.useEffect(() => {
     let alive = true;
@@ -7802,11 +7810,60 @@ function MtgRail({ matchId, onOpen }) {
     return () => { alive = false; };
   }, [matchId]);
 
+  /* Who else is here.
+   *
+   * The presence is the directory's own — a player counts as online if they
+   * have moved or posted in the last fifteen minutes — so this invents no new
+   * notion of "around" and there is nothing extra to keep warm.
+   *
+   * Refreshed every two minutes rather than every few seconds. The underlying
+   * fact cannot change faster than a fifteen-minute window resolves, this runs
+   * on shared hosting, and a rail that nobody is looking at is not worth a
+   * request a second. It stops entirely while the tab is hidden, for the same
+   * reason the board's own poll does: that data is somebody's, and they did
+   * not agree to spend it on a screen they are not looking at. */
+  React.useEffect(() => {
+    let alive = true, timer = null;
+    const pull = () => {
+      if (!alive) return;
+      if (document.visibilityState === "hidden") { timer = setTimeout(pull, 30000); return; }
+      /* Guarded, like the fetch above it. This is a side card on a screen whose
+         job is the game: if the directory cannot be reached, the card says
+         nobody is about and the board carries on. An unguarded call here takes
+         the whole board down with it. */
+      try {
+        NGGApi.member.match.players({ online: 1, club: 1 })
+          .then(r => { if (alive) setHere((r.players || []).filter(p => p.online)); })
+          .catch(() => { if (alive) setHere([]); })
+          .then(() => { if (alive) timer = setTimeout(pull, 120000); });
+      } catch (_) { setHere([]); }
+    };
+    pull();
+    return () => { alive = false; if (timer) clearTimeout(timer); };
+  }, []);
+
   const yours = (games || []).filter(g => g.status === "active" || g.status === "invited");
   const open = ((chal && chal.open) || []).concat((chal && chal.toYou) || []);
+  /* Whoever you are already playing is not somebody to challenge — the rail
+     above this one is the game you have with them. */
+  const busyWith = {};
+  (games || []).forEach(g => {
+    if (g.status !== "active" && g.status !== "invited") return;
+    const other = cmOtherId(g);
+    if (other) busyWith[other] = 1;
+  });
+  const around = (here || []).filter(p => !busyWith[p.id]);
+  /* Five rows is what fits beside a board without pushing the open challenges
+     off the screen. The heading counts everybody, so the rest are SAID rather
+     than quietly dropped — a list that shows five under a heading reading 8 is
+     a list that has lost three people. */
+  const AROUND_ROWS = 5;
 
+  /* The rail's label is not "your other games" any more: it is your games, who
+     is about, and what is going spare. A label that names one of three sends a
+     screen-reader user straight past the other two. */
   return (
-    <aside className="mtg-rail" aria-label="Your other games">
+    <aside className="mtg-rail" aria-label="Your games, who is online, and open challenges">
       <section className="mtg-rail-card">
         <h3 className="mtg-rail-h">Your games{yours.length ? " · " + yours.length : ""}</h3>
         {games === null ? <div className="mtg-rail-skel"/>
@@ -7824,6 +7881,34 @@ function MtgRail({ matchId, onOpen }) {
           ))}
       </section>
 
+      {/* 6A §4 puts this between your games and the open challenges, and it is
+          in the right place: the question it answers — "is there anybody to
+          play right now" — only comes up once you have looked at the games you
+          already have. The green dot is decorative; the heading is what says
+          these people are online, so the meaning does not rest on a colour. */}
+      <section className="mtg-rail-card">
+        <h3 className="mtg-rail-h">Online in club{around.length ? " · " + around.length : ""}</h3>
+        {here === null ? <div className="mtg-rail-skel"/>
+          : around.length === 0
+            ? <p className="mtg-rail-none">Nobody has been on in the last 15 minutes.</p>
+            : around.slice(0, AROUND_ROWS).map(p => (
+              <button key={p.id} className="mtg-rail-row" onClick={() => setChallengeFor(p)}
+                      aria-label={"Challenge " + p.name + (p.mentor ? ", a mentor" : ", rated " + p.rating)}>
+                <span className="mtg-rail-dot" aria-hidden="true"/>
+                <span className="mtg-rail-who">
+                  {p.name}{" "}
+                  {/* A mentor's rating is not the thing you are choosing on, so
+                      the design puts what they are there instead. */}
+                  <span className="mtg-rail-sub">{p.mentor ? "mentor" : p.rating}</span>
+                </span>
+                <span className="mtg-rail-tag is-go" aria-hidden="true">Challenge</span>
+              </button>
+            ))}
+        {around.length > AROUND_ROWS && (
+          <p className="mtg-rail-none">…and {around.length - AROUND_ROWS} more. All games has the full club list.</p>
+        )}
+      </section>
+
       <section className="mtg-rail-card">
         <h3 className="mtg-rail-h">Open challenges</h3>
         {chal === null ? <div className="mtg-rail-skel"/>
@@ -7836,6 +7921,15 @@ function MtgRail({ matchId, onOpen }) {
             </div>
           ))}
       </section>
+
+      {/* The same sheet the search screen uses. Challenging somebody from here
+          is the same decision — pace, colour, variant, rated — and a second,
+          shorter version of it would be a different game agreed by accident. */}
+      {challengeFor && (
+        <CmChessChallengeSheet player={challengeFor} timeControl=""
+          onClose={() => setChallengeFor(null)}
+          onSent={() => setChallengeFor(null)}/>
+      )}
     </aside>
   );
 }
@@ -8416,8 +8510,13 @@ function MatchGame({ matchId, onBack }) {
                 <span aria-hidden="true">⚑</span> Resign
               </button>
             )}
-            <button type="button" className="mtg-act mtg-flip" onClick={() => setManualFlip(v => !v)}>
-              <span aria-hidden="true">⇅</span> Flip
+            {/* Icon only, at a fixed 44, exactly as 6A §4 draws it. It used to
+                carry its word too, and with a third button in the row that left
+                "Offer draw" wrapping onto two lines in a 320px panel. The name
+                is on the button for anybody who cannot see the arrows. */}
+            <button type="button" className="mtg-act mtg-flip" aria-label="Flip the board"
+                    onClick={() => setManualFlip(v => !v)}>
+              <span aria-hidden="true">⇅</span>
             </button>
           </div>
           <p className="mtg-hint">Tap a piece, then where it goes · ← → step through the moves</p>

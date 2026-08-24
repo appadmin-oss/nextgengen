@@ -5302,6 +5302,10 @@ img { background-color: rgba(12,20,50,0.04); }
   border: 1px solid var(--cream-200); background: #fff;
   font: inherit; font-size: 12.5px; font-weight: 700; color: var(--ink-900); cursor: pointer; }
 .mtg-act:hover { border-color: var(--ink-900); }
+/* The flip is an icon at a fixed width — declared AFTER .mtg-act, whose
+   `flex: 1` would otherwise win on order and stretch it. So the two labelled
+   buttons beside it keep their words on one line. */
+.mtg-act.mtg-flip { flex: none; width: var(--c-tap); padding: 0; font-size: 15px; }
 .mtg-hint { margin: 10px 0 0; text-align: center; font-family: var(--c-font-mono);
   font-size: 10.5px; line-height: 1.5; color: var(--ink-400); }
 
@@ -5336,6 +5340,12 @@ img { background-color: rgba(12,20,50,0.04); }
 .mtg-rail-tag { flex: none; font-family: var(--c-font-mono); font-size: 10px; font-weight: 700;
   color: var(--ink-400); }
 .mtg-rail-tag.is-turn { color: #1f4bc4; }
+/* "Online in club". The dot is decorative — the section heading is what says
+   these people are online — so it carries no meaning colour has to survive. */
+.mtg-rail-dot { width: 8px; height: 8px; flex: none; border-radius: var(--c-r-pill);
+  background: #2f9e44; }
+.mtg-rail-sub { font-weight: 600; color: var(--ink-400); font-variant-numeric: tabular-nums; }
+.mtg-rail-tag.is-go { color: #1f4bc4; }
 .mtg-rail-none { margin: 0; font-size: 12.5px; color: var(--ink-400); }
 .mtg-rail-skel { height: 44px; border-radius: var(--c-r-chip); background: var(--cream-100); }
 
@@ -5496,6 +5506,8 @@ img { background-color: rgba(12,20,50,0.04); }
 .mtg-rail-who { color: var(--bd-text); }
 .mtg-rail-tag { color: var(--bd-dim); }
 .mtg-rail-tag.is-turn { color: var(--bd-gold); }
+.mtg-rail-sub { color: var(--bd-dim); }
+.mtg-rail-tag.is-go { color: var(--bd-gold); }
 .mtg-rail-tc { background: var(--bd-panel-2); color: #fff; }
 .mtg-rail-none { color: var(--bd-dim); }
 .mtg-rail-skel { background: var(--bd-panel); }

@@ -190,6 +190,15 @@ const MATED = 'rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3';
     move: function () { return ok({ ok: true }); },
     react: function () { return ok({ ok: true }); },
     resign: function () { return ok({ ok: true }); },
+    /* The desktop rail asks who is online. Two of them, so the card in the
+       shot has something in it. */
+    players: function () { return ok({ ok: true, players: [
+      { id: 'X7', name: 'Bayo K.', rating: 1305, mentor: false, online: true,
+        centre: 'Egbeda', kind: 'member', headToHead: '' },
+      { id: 'X6', name: 'Coach Bisi', rating: 0, mentor: true, online: true,
+        centre: 'Egbeda', kind: 'volunteer', headToHead: '' } ] }); },
+    challenge: function () { return ok({ ok: true }); },
+    draw: function () { return ok({ ok: true, outcome: 'offered' }); },
     report: function () { return ok({ ok: true }); },
     invite: function () { return ok({ ok: true, matchId: 'MT-1' }); },
     respond: function () { return ok({ ok: true }); },

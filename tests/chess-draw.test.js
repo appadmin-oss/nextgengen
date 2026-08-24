@@ -145,9 +145,16 @@ const GAME = {
     await mount({ drawPending: false, drawOffered: false });
     chk('the board renders with no script error', errors.length === 0);
     chk('the design\'s three controls are there, in its order: draw, resign, flip',
-        (await page.locator('.mtg-acts .mtg-act').allInnerTexts())
-          .map(t => t.replace(/\s+/g, ' ').trim().toLowerCase()).join('|')
-          .replace(/[^a-z|]/g, '') === 'offerdraw|resign|flip');
+        (await page.locator('.mtg-acts .mtg-act').evaluateAll(
+          els => els.map(e => (e.getAttribute('aria-label') || e.innerText)
+            .replace(/\s+/g, ' ').trim().toLowerCase().replace(/[^a-z ]/g, '').trim())).then(a => a.join('|')))
+        === 'offer draw|resign|flip the board');
+    /* The two labelled buttons have to hold their words on one line. With the
+       flip carrying a word too, "Offer draw" wrapped in a 320px panel and the
+       row came out ragged. */
+    chk('…and no label wraps onto a second line',
+        await page.locator('.mtg-acts .mtg-act').evaluateAll(
+          els => els.every(e => e.getBoundingClientRect().height < 60)));
     chk('…and no banner, because nobody has offered anything',
         await page.locator('.mtg-draw').count() === 0);
     /* 2.5.8 asks for 24×24; the artboard draws these at 40 and they must at
@@ -245,9 +252,10 @@ const GAME = {
     await mount({ you: '', yourColour: '', yourTurn: false, spectator: true,
                   drawPending: false, drawOffered: false });
     chk('a watcher is offered no draw button — it is not their game',
-        !(await page.locator('.mtg-acts').innerText()).toLowerCase().includes('draw'));
+        !(await page.locator('.mtg-acts').innerText()).toLowerCase().includes('draw')
+        && await page.locator('.mtg-acts .mtg-act[aria-label*="raw"]').count() === 0);
     chk('…and only Flip is left, which is theirs to press',
-        (await page.locator('.mtg-acts .mtg-act').allInnerTexts()).join('').toLowerCase().includes('flip')
+        await page.locator('.mtg-acts .mtg-act[aria-label="Flip the board"]').count() === 1
         && await page.locator('.mtg-acts .mtg-act').count() === 1);
 
     chk('nothing threw across the whole run' + (errors.length ? ': ' + errors[0] : ''),
