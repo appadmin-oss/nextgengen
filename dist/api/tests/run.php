@@ -7039,6 +7039,61 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
     })());
     chk('community: staff can toggle the star back off', backend_dispatch('community.star', ['memberId' => 'NGG-2025-0099', 'postId' => $pid])['stars'] === 0);
 
+    /* ── The daily allowance (§4: "2 left today") ──────────────────────────
+     * A mentor with an unlimited supply of stars gives one to everything,
+     * which makes them mean nothing. The budget is what makes it recognition.
+     * ─────────────────────────────────────────────────────────────────── */
+    db_exec("DELETE FROM community_stars");
+    /* Written straight in rather than posted: community.post rate-limits one
+       member to a post every few seconds, which is correct for a child with a
+       keyboard and wrong for a fixture that needs four posts to star. */
+    $starChannel = (string)db_row("SELECT channelId FROM community_channels WHERE slug = 'commons' LIMIT 1")['channelId'];
+    $starPosts = [];
+    for ($i = 0; $i < COMMUNITY_STARS_PER_DAY + 1; $i++) {
+        $sp = 'CP-STAR-' . $i;
+        db_insert('community_posts', ['postId' => $sp, 'channelId' => $starChannel, 'authorId' => 'CM-B',
+            'authorName' => 'Star Author', 'authorCentre' => 'Egbeda', 'body' => 'Star target ' . $i,
+            'kind' => 'text', 'status' => 'published', 'createdAt' => now_iso()]);
+        $starPosts[] = $sp;
+    }
+    chk('stars: a mentor starts the day with the full allowance',
+        community_stars_left('NGG-2025-0099') === COMMUNITY_STARS_PER_DAY);
+    chk('stars: …and a plain member has none to give, allowance or not',
+        community_stars_left('CM-A') === 0);
+    for ($i = 0; $i < COMMUNITY_STARS_PER_DAY; $i++) {
+        $r = backend_dispatch('community.star', ['memberId' => 'NGG-2025-0099', 'postId' => $starPosts[$i]]);
+        chk('stars: award ' . ($i + 1) . ' leaves ' . (COMMUNITY_STARS_PER_DAY - $i - 1),
+            !empty($r['ok']) && $r['starsLeft'] === COMMUNITY_STARS_PER_DAY - $i - 1);
+    }
+    $over = backend_dispatch('community.star', ['memberId' => 'NGG-2025-0099', 'postId' => $starPosts[COMMUNITY_STARS_PER_DAY]]);
+    chk('stars: the one past the allowance is refused', empty($over['ok']) && $over['error'] === 'no_stars_left');
+    /* A refusal a mentor cannot act on is a refusal that reads as a bug. */
+    chk('stars: …in a sentence that says how many and when they come back',
+        strpos((string)($over['message'] ?? ''), (string)COMMUNITY_STARS_PER_DAY) !== false
+        && strpos((string)($over['message'] ?? ''), 'tomorrow') !== false);
+    chk('stars: …and it really did not land',
+        (int)(db_row("SELECT COUNT(*) c FROM community_stars WHERE postId = ?", [$starPosts[COMMUNITY_STARS_PER_DAY]])['c'] ?? 0) === 0);
+    /* Taking one back returns it. Otherwise a misplaced tap costs a mentor a
+       star for the rest of the day, and the safe move becomes never pressing. */
+    $back = backend_dispatch('community.star', ['memberId' => 'NGG-2025-0099', 'postId' => $starPosts[0]]);
+    chk('stars: taking one back gives it back', !empty($back['ok']) && $back['starsLeft'] === 1);
+    chk('stars: …so the refused post can now be starred after all',
+        !empty(backend_dispatch('community.star', ['memberId' => 'NGG-2025-0099', 'postId' => $starPosts[COMMUNITY_STARS_PER_DAY]])['ok']));
+    /* Yesterday's stars are not this morning's problem. */
+    db_exec("UPDATE community_stars SET createdAt = ? WHERE memberId = 'NGG-2025-0099'",
+            [gmdate('Y-m-d\TH:i:s\Z', time() - 3 * 86400)]);
+    chk('stars: the allowance is a DAY, so older stars do not hold it down',
+        community_stars_left('NGG-2025-0099') === COMMUNITY_STARS_PER_DAY);
+    /* The count is a fact about the viewer, sent with the other viewer facts. */
+    $tc = backend_dispatch('community.today', ['memberId' => 'NGG-2025-0099']);
+    chk('stars: the Today counts carry what is left, beside `staff`',
+        !empty($tc['staff']) && $tc['starsLeft'] === COMMUNITY_STARS_PER_DAY
+        && $tc['starsPerDay'] === COMMUNITY_STARS_PER_DAY);
+    chk('stars: …and a member who cannot give one is told 0, not the ceiling',
+        (backend_dispatch('community.today', ['memberId' => 'CM-A'])['starsLeft'] ?? -1) === 0);
+    db_exec("DELETE FROM community_stars");
+    foreach ($starPosts as $sp) db_exec("DELETE FROM community_posts WHERE postId = ?", [$sp]);
+
     /* ── The Mentions feed and the mention NOTIFIER agree ──────────────────
        They were two different rules: SQL matched space-delimited handles while
        community_mentions() (which decides who is told) matches a regex. So

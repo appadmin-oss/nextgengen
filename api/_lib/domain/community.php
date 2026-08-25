@@ -680,8 +680,14 @@ function community_today_counts(array $p): array {
     /* `staff` is the VIEWER's capability, sent once with the counts. The
      * client was inferring it from the first post in whatever list happened to
      * be on screen, so a mentor lost their mentor tools on an empty channel. */
+    $staff = community_actor_is_staff($viewer);
     return ['ok' => true, 'unread' => $unread, 'mentions' => $mentions, 'saved' => $saved,
-            'staff' => community_actor_is_staff($viewer), 'handle' => $handle];
+            'staff' => $staff, 'handle' => $handle,
+            /* Rides along with `staff` for the same reason it does: it is a
+               fact about the VIEWER, and the actions sheet was working it out
+               from whichever post happened to be under the long press. */
+            'starsLeft' => $staff ? community_stars_left($viewer) : 0,
+            'starsPerDay' => COMMUNITY_STARS_PER_DAY];
 }
 
 /* ── Posts ────────────────────────────────────────────────────────────── */
@@ -1432,6 +1438,33 @@ function community_react(array $p): array {
  * it's recognition the whole cohort can see (a gold star on the post), separate
  * from ordinary reactions. Awarding one notifies + emails the author.
  */
+/* ── Genius Stars ─────────────────────────────────────────────────────────
+ *
+ * §4 of the handoff prints "2 left today" beside the action, and that string is
+ * the whole design. A mentor with an unlimited supply of stars either gives one
+ * to everything, which makes them mean nothing, or gives them to the same two
+ * children every week, which is worse. A small daily budget makes the mentor
+ * choose, and choosing is what recognition IS.
+ *
+ * Three a day, per mentor. The handoff shows the count but never the ceiling,
+ * so the number is an assumption — it is one constant, and one line to change
+ * once somebody running a centre says what it should be.
+ *
+ * The budget is spent by GIVING and refunded by taking back, and it is counted
+ * from the rows rather than stored: a counter and a list of stars are two
+ * records of one fact, and they drift.
+ */
+const COMMUNITY_STARS_PER_DAY = 3;
+
+/** How many Genius Stars this mentor has left today. */
+function community_stars_left(string $mentorId): int {
+    if ($mentorId === '' || !community_actor_is_staff($mentorId)) return 0;
+    $used = (int)(db_row(
+        "SELECT COUNT(*) c FROM community_stars WHERE memberId = ? AND createdAt >= ?",
+        [$mentorId, gmdate('Y-m-d') . 'T00:00:00Z'])['c'] ?? 0);
+    return max(0, COMMUNITY_STARS_PER_DAY - $used);
+}
+
 function community_star(array $p): array {
     $viewer = (string)($p['memberId'] ?? '');
     if ($viewer === '') return ['ok' => false, 'error' => 'forbidden'];
@@ -1445,6 +1478,16 @@ function community_star(array $p): array {
     $ex = db_row("SELECT id FROM community_stars WHERE postId = ? AND memberId = ?", [$pid, $viewer]);
     if ($ex) { db_exec("DELETE FROM community_stars WHERE postId = ? AND memberId = ?", [$pid, $viewer]); $starred = false; }
     else {
+        /* Out of stars. Refused with the number and with when they come back,
+           because "you cannot do that" tells a mentor nothing they can act on
+           — and this is the one refusal in the product that is not a mistake
+           on their part. */
+        if (community_stars_left($viewer) < 1) {
+            return ['ok' => false, 'error' => 'no_stars_left',
+                    'message' => 'You have given all ' . COMMUNITY_STARS_PER_DAY
+                                 . ' Genius Stars today. They come back tomorrow.',
+                    'starsLeft' => 0];
+        }
         db_insert('community_stars', ['postId' => $pid, 'memberId' => $viewer, 'createdAt' => now_iso()]);
         $starred = true;
         $actor = community_author($viewer);
@@ -1452,7 +1495,10 @@ function community_star(array $p): array {
         audit('community.star', $viewer, $pid, [], (string)($p['ip'] ?? ''));
     }
     $stars = (int)(db_row("SELECT COUNT(*) c FROM community_stars WHERE postId = ?", [$pid])['c'] ?? 0);
-    return ['ok' => true, 'stars' => $stars, 'starred' => $starred];
+    /* Sent back with every award so the sheet can count down without a second
+       request — and so taking one back visibly gives it to them again. */
+    return ['ok' => true, 'stars' => $stars, 'starred' => $starred,
+            'starsLeft' => community_stars_left($viewer)];
 }
 
 function community_comments(array $p): array {

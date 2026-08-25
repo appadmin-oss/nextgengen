@@ -1189,6 +1189,7 @@ function CmToday({ auth, counts, onCounts, onOpenAccount, onOpenThread, onCompos
 
       {sheetFor && (
         <CmActionsSheetHost post={sheetFor} staff={!!counts.staff}
+                            starsLeft={counts.starsLeft || 0} onStars={() => onCounts && onCounts()}
                             onClose={() => setSheetFor(null)}
                             onPatch={patch} onRemove={remove} onOpenThread={onOpenThread}/>
       )}
@@ -1304,16 +1305,23 @@ function CmAccount({ auth, counts, onClose, onGo, setPage }) {
 
    Long-press, not a "…" button: the button would be a tenth control on the
    card, which is the problem it was meant to solve. */
-function CmActionsSheet({ post, act, staff, onClose, onOpenThread, onJournal }) {
+function CmActionsSheet({ post, act, staff, starsLeft, onClose, onOpenThread, onJournal }) {
   const REACTIONS = ["👏", "🔥", "💡", "❤️", "😂"];
-  const Row = ({ label, sub, chip, onClick, danger, top }) => (
+  const Row = ({ label, sub, chip, onClick, danger, top, off }) => (
     <button className={"cmm-act-row" + (danger ? " is-danger" : "") + (top ? " has-rule" : "")}
+            disabled={!!off}
             onClick={() => { onClick(); onClose(); }}>
       <span className="cmm-act-label">{label}</span>
       {sub && <span className="cmm-act-sub">{sub}</span>}
       {chip && <span className="cmm-act-chip">{chip}</span>}
     </button>
   );
+  /* The allowance, in the design's own words. Three a day, so a mentor has to
+     choose which piece of work is the one — which is what recognition is. The
+     row is off when there are none left rather than failing on the press, and
+     it says so, because a control that looks alive and does nothing is worse
+     than one that admits it is spent. */
+  const gone = staff && !post.starred && starsLeft === 0;
   return (
     <CmSheet title={null} onClose={onClose} labelledBy="cmm-act-h">
       <h2 className="sr-only" id="cmm-act-h">Actions for this message</h2>
@@ -1324,7 +1332,10 @@ function CmActionsSheet({ post, act, staff, onClose, onOpenThread, onJournal }) 
         ))}
       </div>
       <Row label="Reply in thread" onClick={() => onOpenThread(post)}/>
-      {staff && <Row label="Give a Genius Star" sub={post.starred ? "Given" : ""} onClick={act.star}/>}
+      {staff && (post.starred
+        ? <Row label="Take back the Genius Star" sub="Given" onClick={act.star}/>
+        : <Row label="Give a Genius Star" off={gone}
+               sub={gone ? "None left today" : starsLeft + " left today"} onClick={act.star}/>)}
       <Row label={post.bookmarked ? "Remove from your list" : "Save to your list"} onClick={act.bookmark}/>
       {staff && onJournal && <Row label="Record in the journal" chip="mentors" onClick={() => onJournal(post)}/>}
       <Row label="Copy link" onClick={() => {
@@ -3395,7 +3406,9 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
       )}
 
       {sheetFor && (
-        <CmActionsSheetHost post={sheetFor} staff={staff} onClose={() => setSheetFor(null)}
+        <CmActionsSheetHost post={sheetFor} staff={staff}
+                            starsLeft={counts.starsLeft || 0} onStars={() => onCounts && onCounts()}
+                            onClose={() => setSheetFor(null)}
                             onPatch={patch} onRemove={remove} onOpenThread={onOpenThread}/>
       )}
     </div>
@@ -3404,9 +3417,10 @@ function CmChannel({ slug, channels, auth, onBack, onOpenThread, onCompose, coun
 
 /** The actions sheet needs a post's action helpers, and useCmActions is a hook
  *  — so it is called here rather than conditionally inside the channel. */
-function CmActionsSheetHost({ post, staff, onClose, onPatch, onRemove, onOpenThread }) {
-  const act = useCmActions(post, onPatch, onRemove);
-  return <CmActionsSheet post={post} act={act} staff={staff} onClose={onClose} onOpenThread={onOpenThread}/>;
+function CmActionsSheetHost({ post, staff, starsLeft, onStars, onClose, onPatch, onRemove, onOpenThread }) {
+  const act = useCmActions(post, onPatch, onRemove, onStars);
+  return <CmActionsSheet post={post} act={act} staff={staff} starsLeft={starsLeft}
+                         onClose={onClose} onOpenThread={onOpenThread}/>;
 }
 
 /* ── A message on a phone ─────────────────────────────────────────────────
@@ -3646,7 +3660,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
   const [jump, setJump] = React.useState(false);
   const [files, setFiles] = React.useState(null);      // slug whose Files are open
   const [composeSeed, setComposeSeed] = React.useState(null);  // {cmd, body} from the jump sheet
-  const [counts, setCounts] = React.useState({ unread: 0, mentions: 0, saved: 0, staff: false });
+  const [counts, setCounts] = React.useState({ unread: 0, mentions: 0, saved: 0, staff: false, starsLeft: 0 });
   const [todayFilter, setTodayFilter] = React.useState("all");
   const [notifs, setNotifs] = React.useState(false);
   const [a11y, setA11y] = React.useState(false);
@@ -3680,7 +3694,8 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
 
   const refreshCounts = React.useCallback(() => {
     NGGApi.member.community.today()
-      .then(r => setCounts({ unread: r.unread || 0, mentions: r.mentions || 0, saved: r.saved || 0, staff: !!r.staff }))
+      .then(r => setCounts({ unread: r.unread || 0, mentions: r.mentions || 0, saved: r.saved || 0,
+                             staff: !!r.staff, starsLeft: r.starsLeft || 0 }))
       .catch(() => {});
   }, []);
   React.useEffect(() => { refreshCounts(); }, [refreshCounts]);
@@ -6305,8 +6320,17 @@ function cmChessError(e) {
     cannot_play_yourself: "You can't play yourself.",
     not_open: "That challenge has expired or been taken.",
     not_yours: "That challenge isn't yours to answer.",
+    /* Draw offers. `too_soon` is the one a child will actually meet, and the
+       server sends the sentence for it — this is the fallback for a client
+       that has an older copy of that string. */
+    too_soon: "You have already offered a draw in this position. Make a move first.",
+    no_offer: "There is no draw offer to answer.",
+    not_active: "That game has already finished.",
   };
-  return map[e && e.code] || (e && e.message) || "That didn't work.";
+  /* `detail` first, `code` second, and `message` LAST — because message is the
+     error CODE from the API layer, not a sentence. Printing it puts "too_soon"
+     in front of a twelve-year-old. */
+  return (e && e.detail) || map[e && e.code] || "That didn't work.";
 }
 
 /* ── Search a player (6A · 1) ─────────────────────────────────────────────
@@ -8187,7 +8211,7 @@ function MatchGame({ matchId, onBack }) {
         if (r && r.outcome === "already") setDrawNote("Your offer is still with " + them.name + ".");
         load();
       })
-      .catch(e => setDrawNote((e && e.message) || "That did not go through. Try again."))
+      .catch(e => setDrawNote(cmChessError(e)))
       .then(() => setDrawBusy(false));
   };
 
@@ -9348,7 +9372,7 @@ function CmComposer({ channels, active, me, onPosted, enterToSend, seed }) {
 }
 
 /* ---- Shared message actions (react / bookmark / vote / share / report / delete) ---- */
-function useCmActions(post, onPatch, onRemove) {
+function useCmActions(post, onPatch, onRemove, onStars) {
   const react = async (emoji) => {
     const prev = { reactions: post.reactions, myReaction: post.myReaction };
     const next = { ...(post.reactions || {}) };
@@ -9366,8 +9390,21 @@ function useCmActions(post, onPatch, onRemove) {
   };
   const star = async () => {
     const nv = !post.starred; onPatch(post.postId, { starred: nv, stars: Math.max(0, (post.stars || 0) + (nv ? 1 : -1)) });
-    try { const r = await NGGApi.member.community.star(post.postId); onPatch(post.postId, { starred: r.starred, stars: r.stars }); if (r.starred) toast.success("Genius Star awarded ⭐"); }
-    catch (e) { onPatch(post.postId, { starred: !nv, stars: post.stars || 0 }); toast.error(e.message === "forbidden" ? "Only mentors can give a Genius Star." : "Couldn't award the star."); }
+    try {
+      const r = await NGGApi.member.community.star(post.postId);
+      onPatch(post.postId, { starred: r.starred, stars: r.stars });
+      /* The allowance is a fact about the mentor, not about this post, so it
+         goes back to whoever is holding the counts rather than into the post. */
+      if (onStars && typeof r.starsLeft === "number") onStars(r.starsLeft);
+      if (r.starred) toast.success("Genius Star awarded ⭐");
+    } catch (e) {
+      onPatch(post.postId, { starred: !nv, stars: post.stars || 0 });
+      if (e && e.code === "no_stars_left" && onStars) onStars(0);
+      /* `detail` is the server's sentence; `message` is the CODE. Printing the
+         code puts "no_stars_left" in a toast, which is not a sentence. */
+      toast.error((e && e.detail)
+        || (e && e.code === "forbidden" ? "Only mentors can give a Genius Star." : "Couldn't award the star."));
+    }
   };
   const vote = async (i) => {
     try { const r = await NGGApi.member.community.vote(post.postId, i); onPatch(post.postId, { poll: r.poll }); } catch (_) { toast.error("Couldn't record your vote."); }

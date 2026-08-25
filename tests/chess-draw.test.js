@@ -100,8 +100,15 @@ const GAME = {
   NGGApi.member.match.draw = (id, act) => {
     window.__calls.push(act);
     if (window.__drawFails) {
-      const msg = window.__drawFails; window.__drawFails = null;
-      return Promise.reject(new Error(msg));
+      const f = window.__drawFails; window.__drawFails = null;
+      /* The REAL shape api-client throws: .message is the error CODE and the
+         sentence arrives as .detail. A fixture that rejects with the sentence
+         as .message would pass while the product printed "too_soon" at a
+         twelve-year-old. */
+      const err = new Error(f.code);
+      err.code = f.code;
+      err.detail = f.detail;
+      return Promise.reject(err);
     }
     return Promise.resolve({ ok: true, outcome: act === 'offer' ? 'offered' : act + 'd' });
   };
@@ -221,7 +228,8 @@ const GAME = {
 
     await mount({ drawPending: false, drawOffered: false });
     await page.evaluate(() => {
-      window.__drawFails = 'You have already offered a draw in this position. Make a move first.';
+      window.__drawFails = { code: 'too_soon',
+        detail: 'You have already offered a draw in this position. Make a move first.' };
     });
     await page.locator('.mtg-acts .mtg-act').first().click();
     await page.waitForSelector('.mtg-draw.is-note', { timeout: 4000 });
@@ -232,6 +240,15 @@ const GAME = {
     await page.waitForTimeout(100);
     chk('…and the reader can put it away',
         await page.locator('.mtg-draw.is-note').count() === 0);
+
+    /* A refusal whose sentence never arrived must still read as English. The
+       code is never what a child sees. */
+    await page.evaluate(() => { window.__drawFails = { code: 'no_offer', detail: '' }; });
+    await page.locator('.mtg-acts .mtg-act').first().click();
+    await page.waitForSelector('.mtg-draw.is-note', { timeout: 4000 });
+    const bare = await page.locator('.mtg-draw.is-note').innerText();
+    chk('…and a refusal with no sentence is still English, never the error code',
+        !/no_offer/.test(bare) && /draw offer to answer/i.test(bare));
 
     /* ── The poll is the only way this can arrive ────────────────────────── */
     console.log('\n── It has to arrive without a move ───────────────────────────');

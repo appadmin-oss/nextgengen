@@ -22,6 +22,7 @@
     "test:draw": "node tests/chess-draw.test.js",
     "test:rail": "node tests/chess-rail.test.js",
     "test:community": "node tests/community-page.test.js",
+    "test:stars": "node tests/community-stars.test.js",
     "test:contrast": "node tests/contrast.test.js",
     "shot:review": "node tests/review-shot.js",
     "bench:engine": "node tests/_engine-bench.js",
@@ -36,7 +37,7 @@
     "test:mathlab": "node tests/mathlab-shot.js",
     "test:mentor": "node tests/mentor-shot.js",
     "test:forms": "node tests/forms-submit.js && node tests/forms-offline.js && node tests/forms-selfreg-ui.js",
-    "test:all": "node build.js && node tests/build.test.js && php api/tests/run.php && node tests/card-export.test.js && node tests/community-doc.test.js && node tests/community-files.test.js && node tests/community-composer.test.js && node tests/tournament-ui.test.js && node tests/promo-ui.test.js && node tests/chess-board.test.js && node tests/review-ui.test.js && node tests/chess-draw.test.js && node tests/chess-rail.test.js && node tests/community-page.test.js && node tests/contrast.test.js && node tests/chess-engine.test.js && node tests/scanners.test.js && node tests/forms-submit.js && node tests/forms-offline.js && node tests/forms-selfreg-ui.js && node tests/kiosk-offline.js && node tests/ui-smoke.js && node tests/chess-shot.js && node tests/dashboard-shot.js && node tests/tournament-shot.js && node tests/review-shot.js && node tests/mathlab-shot.js && node tests/mentor-shot.js && node tests/journal-smoke.js",
+    "test:all": "node build.js && node tests/build.test.js && php api/tests/run.php && node tests/card-export.test.js && node tests/community-doc.test.js && node tests/community-files.test.js && node tests/community-composer.test.js && node tests/tournament-ui.test.js && node tests/promo-ui.test.js && node tests/chess-board.test.js && node tests/review-ui.test.js && node tests/chess-draw.test.js && node tests/chess-rail.test.js && node tests/community-page.test.js && node tests/community-stars.test.js && node tests/contrast.test.js && node tests/chess-engine.test.js && node tests/scanners.test.js && node tests/forms-submit.js && node tests/forms-offline.js && node tests/forms-selfreg-ui.js && node tests/kiosk-offline.js && node tests/ui-smoke.js && node tests/chess-shot.js && node tests/dashboard-shot.js && node tests/tournament-shot.js && node tests/review-shot.js && node tests/mathlab-shot.js && node tests/mentor-shot.js && node tests/journal-smoke.js",
     "test:build": "node tests/build.test.js",
     "vendor:tanstack": "esbuild tools/vendor-tanstack/entry.js --bundle --format=iife --minify --legal-comments=none --alias:react=./tools/vendor-tanstack/react-shim.js --alias:react-dom=./tools/vendor-tanstack/react-dom-shim.js --outfile=vendor/tanstack-table.min.js"
   },

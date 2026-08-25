@@ -2899,6 +2899,11 @@ img { background-color: rgba(12,20,50,0.04); }
   font-size: 15.5px; color: var(--c-ink); }
 .cmm-act-row.has-rule { border-top: 1px solid var(--c-border); margin-top: 6px; }
 .cmm-act-row.is-danger { color: var(--c-red-ink); }
+/* Spent, not broken. The label dims and the chip beside it says why, so the
+   row reads as "you have used these up" rather than as a dead control. Not
+   `opacity`, which would take the chip's own contrast down with it. */
+.cmm-act-row:disabled { cursor: default; }
+.cmm-act-row:disabled .cmm-act-label { color: var(--c-muted); }
 .cmm-act-label { flex: 1; }
 .cmm-act-sub, .cmm-act-chip { font-family: var(--c-font-mono); font-size: 10.5px; font-weight: 700;
   padding: 3px 7px; border-radius: var(--c-r-chip); background: var(--c-green-tint); color: var(--c-green-ink); }
