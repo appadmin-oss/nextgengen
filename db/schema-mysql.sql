@@ -2332,3 +2332,17 @@ CREATE TABLE IF NOT EXISTS program_journal_follows (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (107) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 108 · An application's reference stops being its row id ─────────────────
+-- NGG-A-00412 told anybody holding it how many applications the programme had
+-- received and — with a guessable email — let the status of a named person be
+-- found by walking the numbers. The lookup is throttled at 20 per 5 minutes,
+-- which is an afternoon.
+--
+-- Rows that already exist keep NO stored ref on purpose: their reference has
+-- been emailed to a family and printed on a success screen, so it goes on
+-- resolving by id. Only new applications get a random one.
+ALTER TABLE applications ADD COLUMN ref VARCHAR(24) DEFAULT '';
+CREATE INDEX idx_apps_ref ON applications(ref);
+
+INSERT INTO schema_version (version) VALUES (108) ON DUPLICATE KEY UPDATE version = version;

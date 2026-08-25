@@ -78,15 +78,28 @@ function circle_week_stats(string $memberId): array {
         if (is_array($v)) foreach ($v as $k => $val) { if ($k !== 'mood' && $val === true) $held++; }
         $byDay[$date] = $held;
     }
+    /* Out of however many systems there ARE.
+     *
+     * This used to divide by a hardcoded six while the journal scored against
+     * the live, admin-editable list (SYSTEMS.length || 6). Trim a centre's list
+     * to four and a child who held every one of them read 4/4 in their own
+     * journal while the report their guardian receives showed 67% — and the
+     * number that starts a conversation was the wrong one. The total travels
+     * with the bars so nobody has to assume it. */
+    $total = 6;
+    if (function_exists('anchor_content')) {
+        $c = anchor_content();
+        if (is_array($c['systems'] ?? null) && count($c['systems']) > 0) $total = count($c['systems']);
+    }
     $bars = []; $sum = 0; $cnt = 0;
     for ($i = 0; $i < 7; $i++) {
         $d = gmdate('Y-m-d', strtotime($mon) + $i * 86400);
         $held = $byDay[$d] ?? 0;
-        $bars[] = ['date' => $d, 'held' => $held, 'pct' => (int)round(min(1, $held / 6) * 100)];
+        $bars[] = ['date' => $d, 'held' => $held, 'pct' => (int)round(min(1, $held / $total) * 100)];
         if (isset($byDay[$d])) { $sum += $held; $cnt++; }
     }
     $avg = $cnt ? round($sum / $cnt, 1) : 0;
-    return ['bars' => $bars, 'avgSystems' => $avg];
+    return ['bars' => $bars, 'avgSystems' => $avg, 'systemsTotal' => $total];
 }
 
 function circle_streak(string $memberId): int {
@@ -111,7 +124,7 @@ function circle_student_stats(string $memberId): array {
     $m = momentum_signals($memberId);
     $atRisk = $m['streak'] === 0 || $m['consistency'] < 40 || $m['trend'] === 'dipping';
     return [
-        'avgSystems' => $ws['avgSystems'], 'weekBars' => $ws['bars'],
+        'avgSystems' => $ws['avgSystems'], 'systemsTotal' => $ws['systemsTotal'], 'weekBars' => $ws['bars'],
         'reflections' => $reflections, 'streak' => $m['streak'],
         'conduct' => (int)round($confirmed / 7 * 100),
         'consistency' => $m['consistency'], 'trend' => $m['trend'],

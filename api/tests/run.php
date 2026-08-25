@@ -690,7 +690,11 @@ chk('email carries a hidden preheader', str_contains($__tpl, 'mso-hide:all'));
 chk('email footer carries a reply path + contact', str_contains($__tpl, 'Reply to this email') && str_contains($__tpl, 'afrovanguard.org'));
 $GLOBALS['__mail_sink'] = [];
 $__ap = backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Male', 'role' => 'mentor', 'firstName' => 'Ada', 'lastName' => 'Ack', 'email' => 'ada-ack@example.com', 'phone' => '08031110020', 'dob' => '1990-01-01', 'centre' => 'Testville', 'faculty' => $vFac, 'why' => 'Glad to help']);
-chk('apply returns a traceable reference', isset($__ap['ref']) && preg_match('/^NGG-V-\d{5}$/', (string)$__ap['ref']) === 1 && $__ap['duplicate'] === false);
+/* Random, not the row id: the reference used to print how many applications
+   the programme had received on every one of them, and let a named person's
+   status be found by walking the numbers. */
+chk('apply returns a traceable reference that is not the row id',
+    isset($__ap['ref']) && preg_match('/^NGG-V-[A-F0-9]{8}$/', (string)$__ap['ref']) === 1 && $__ap['duplicate'] === false);
 $__ack = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'ada-ack@example.com'));
 chk('volunteer application acknowledges the applicant', count($__ack) === 1 && str_contains($__ack[0]['subject'], 'volunteer application'));
 chk('ack is on-brand + names role + carries the reference', str_contains($__ack[0]['html'], '#0c1432') && str_contains($__ack[0]['html'], 'Mentor') && str_contains($__ack[0]['html'], (string)$__ap['ref']));
@@ -18467,6 +18471,184 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     db_exec("DELETE FROM journal WHERE memberId LIKE 'JM-%'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'JM-%'");
+})();
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The audit fixes — admission, the dashboard payload, the systems denominator
+   ══════════════════════════════════════════════════════════════════════════
+   Six defects found by reading the member journey end to end. Each one below
+   failed before the fix and is asserted here so it cannot come back; the
+   guardian-email one had already been found and fixed once, on the Summer
+   path, and came back on the NGG path because nothing asserted it there.
+   ────────────────────────────────────────────────────────────────────────── */
+(function () {
+    db_exec("DELETE FROM applications WHERE email LIKE 'audit-%'");
+    db_exec("DELETE FROM members WHERE email LIKE 'audit-%'");
+
+    // ── Admission carries the intake across ───────────────────────────────
+    backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Female',
+        'firstName' => 'Zainab', 'otherName' => 'Ade', 'lastName' => 'Okoro',
+        'email' => 'audit-guardian@example.com', 'phone' => '08031119001',
+        'dob' => '2012-04-18', 'track' => 'Tech', 'centre' => 'Egbeda',
+        'program' => 'anchor', 'why' => 'I want to build things that work.']);
+    $app = db_row("SELECT * FROM applications WHERE email = 'audit-guardian@example.com' LIMIT 1");
+    chk('admission: the application is recorded', !empty($app));
+
+    $conv = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => (int)$app['id']]);
+    chk('admission: it converts to a member', !empty($conv['memberId']));
+    $mem = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$conv['memberId']]);
+
+    /* THE severity-4 one. The fortnightly dues reminder and the guardian
+       nudges both select on parentEmail; conversion never wrote it, so every
+       member admitted this way was counted into skipped.noEmail and never
+       written to. The address was in the application the whole time. */
+    chk('admission: the guardian\'s email reaches the field the reminders read',
+        (string)$mem['parentEmail'] === 'audit-guardian@example.com');
+    chk('admission: …and their phone number does too',
+        (string)$mem['parentPhone'] === (string)$app['phone'] && (string)$mem['parentPhone'] !== '');
+    /* A programme for ten- to seventeen-year-olds cannot reconstruct a date of
+       birth after the fact, and this was the moment the record became
+       permanent. */
+    chk('admission: the date of birth survives conversion',
+        (string)$mem['dob'] === '2012-04-18');
+    chk('admission: …and the member has a join date, which public_member publishes',
+        (string)$mem['joinDate'] !== '');
+    /* The intake asks for a parent's number and nothing of the young person's
+       own, so members.phone stays empty rather than holding somebody else's. */
+    chk('admission: …while the member\'s own phone is left empty, not filled with a parent\'s',
+        (string)($mem['phone'] ?? '') === '');
+
+    /* The reminder run is the thing that was silently skipping. Prove it now
+       finds this member rather than bucketing them. */
+    chk('admission: the dues reminder can now see a member admitted this way',
+        (function () use ($mem) {
+            if (!function_exists('fees_due_reminders')) return true;   // fees module absent
+            db_update('members', ['duesRemindOff' => 0], ['memberId' => (string)$mem['memberId']]);
+            $rows = db_all("SELECT parentEmail FROM members WHERE memberId = ?", [(string)$mem['memberId']]);
+            return trim((string)($rows[0]['parentEmail'] ?? '')) !== '';
+        })());
+
+    /* A way in that the member owns. Without it, every sign-in is a code
+       emailed to the guardian's inbox, forever. */
+    chk('admission: conversion mints a set-password link for the new member',
+        (int)(db_row("SELECT COUNT(*) c FROM auth_sessions WHERE memberId = ? AND purpose = 'reset'",
+                     [(string)$conv['memberId']])['c'] ?? 0) === 1);
+    chk('admission: …good for days rather than the thirty minutes a self-service reset gets',
+        (function () use ($conv) {
+            $r = db_row("SELECT createdAt, expiresAt FROM auth_sessions WHERE memberId = ? LIMIT 1", [(string)$conv['memberId']]);
+            return $r && (strtotime((string)$r['expiresAt']) - strtotime((string)$r['createdAt'])) > 24 * 3600;
+        })());
+
+    // ── The reference is no longer the row id ─────────────────────────────
+    $ref = intake_reference('teen', (int)$app['id']);
+    chk('admission: the reference is random, not a countable row id',
+        preg_match('/^NGG-A-[A-F0-9]{8}$/', $ref) === 1);
+    chk('admission: …and it is the same one the applicant was given',
+        $ref === (string)$app['ref']);
+    $st = backend_dispatch('public.application.status', ['ref' => $ref, 'email' => 'audit-guardian@example.com']);
+    chk('admission: the applicant can look their own reference up', !empty($st['ok']) && $st['type'] === 'application');
+    chk('admission: …and is told where it stands in words, not a status code',
+        ($st['label'] ?? '') === 'Accepted');
+    chk('admission: the wrong email does not open it',
+        backend_dispatch('public.application.status', ['ref' => $ref, 'email' => 'someone@else.com'])['error'] === 'not_found');
+    /* The old sequential form must not stay as a second, guessable key to a
+       row that now has a private one. */
+    chk('admission: the row id no longer resolves an application that has a real reference',
+        backend_dispatch('public.application.status',
+            ['ref' => 'NGG-A-' . str_pad((string)$app['id'], 5, '0', STR_PAD_LEFT),
+             'email' => 'audit-guardian@example.com'])['error'] === 'not_found');
+    /* …but a reference already in a family's inbox, issued before the change,
+       still has to work. */
+    chk('admission: a reference issued before the change still resolves', (function () {
+        $id = db_insert('applications', ['kind' => 'teen', 'name' => 'Legacy Kid', 'email' => 'audit-legacy@example.com',
+            'status' => 'new', 'ref' => '', 'createdAt' => now_iso(), 'ip' => '']);
+        $r = backend_dispatch('public.application.status',
+            ['ref' => 'NGG-A-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT), 'email' => 'audit-legacy@example.com']);
+        return !empty($r['ok']) && ($r['label'] ?? '') === 'Received';
+    })());
+    /* A contact message's reference is minted as MSG-XXXXXXXX and the lookup
+       only ever matched NGG-C-00123, a shape nothing writes — so every message
+       lookup answered not_found. */
+    chk('admission: a contact message can be looked up at all', (function () {
+        db_insert('contact_messages', ['ref' => 'MSG-AABBCCDD', 'purpose' => 'general', 'name' => 'Audit Asker',
+            'email' => 'audit-msg@example.com', 'phone' => '', 'subject' => 'Hello',
+            'message' => 'Just checking in on this.', 'status' => 'new', 'createdAt' => now_iso(), 'ip' => '']);
+        $r = backend_dispatch('public.application.status', ['ref' => 'MSG-AABBCCDD', 'email' => 'audit-msg@example.com']);
+        return !empty($r['ok']) && ($r['type'] ?? '') === 'message';
+    })());
+    chk('admission: nonsense is still refused as a bad reference',
+        backend_dispatch('public.application.status', ['ref' => 'HELLO', 'email' => 'audit-msg@example.com'])['error'] === 'bad_ref');
+
+    // ── The dashboard knows what you said yes to ──────────────────────────
+    $mid = (string)$conv['memberId'];
+    $evId = 'EV-AUDIT-1';
+    db_insert('events', ['eventId' => $evId, 'title' => 'Egbeda build night', 'kind' => 'session',
+        'startAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 3 * 86400), 'endAt' => gmdate('Y-m-d\TH:i:s\Z', time() + 3 * 86400 + 7200),
+        'centre' => 'Egbeda', 'location' => 'Ayobo hall', 'coverUrl' => '', 'body' => '',
+        'capacity' => 40, 'isPublic' => 1, 'status' => 'published', 'createdAt' => now_iso()]);
+    $findEv = function (string $memberId, string $eventId) {
+        foreach (backend_dispatch('member.dashboard', ['memberId' => $memberId])['events'] ?? [] as $e) {
+            if ($e['eventId'] === $eventId) return $e;
+        }
+        return null;
+    };
+    /* `?? 'x'` cannot tell a null value from a missing key, so the key is
+       checked and the value compared separately. */
+    $ev0 = $findEv($mid, $evId);
+    chk('dashboard: an event you have not answered says so',
+        is_array($ev0) && array_key_exists('myRsvp', $ev0) && $ev0['myRsvp'] === null);
+    backend_dispatch('event.rsvp', ['memberId' => $mid, 'eventId' => $evId, 'status' => 'going']);
+    /* Without this the button read "RSVP" however many times you had said yes,
+       and the cancel branch — guarded on myRsvp === 'going' — was unreachable
+       after any reload. */
+    chk('dashboard: …and once you say yes, the dashboard knows it',
+        ($findEv($mid, $evId)['myRsvp'] ?? '') === 'going');
+    backend_dispatch('event.rsvp', ['memberId' => $mid, 'eventId' => $evId, 'status' => 'cancelled']);
+    chk('dashboard: …so withdrawing is reachable, and shows',
+        ($findEv($mid, $evId)['myRsvp'] ?? '') === 'cancelled');
+    db_exec('DELETE FROM event_rsvps WHERE eventId = ?', [$evId]);
+    db_exec('DELETE FROM events WHERE eventId = ?', [$evId]);
+
+    // ── Systems are scored out of however many there are ──────────────────
+    /* The journal scores against the live list; the guardian's weekly report
+       divided by a hardcoded six. Trim a centre to four systems and a child who
+       held all four was reported at 67%. */
+    $savedContent = setting_get('anchor_content');
+    $four = ['systems' => [
+        ['key' => 'woke', 'label' => 'Woke up on time', 'icon' => 'ph-sun-horizon'],
+        ['key' => 'study', 'label' => 'Studied at my fixed time', 'icon' => 'ph-book-open-text'],
+        ['key' => 'clean', 'label' => 'Kept myself clean', 'icon' => 'ph-drop'],
+        ['key' => 'phone', 'label' => 'Controlled my phone', 'icon' => 'ph-device-mobile'],
+    ]];
+    setting_set('anchor_content', $four);
+    $mon = circle_monday();
+    db_exec("DELETE FROM member_state WHERE memberId = ? AND stateKey LIKE 'systems:%'", [$mid]);
+    db_insert('member_state', ['memberId' => $mid, 'stateKey' => 'systems:' . $mon,
+        'stateValue' => json_encode(['woke' => true, 'study' => true, 'clean' => true, 'phone' => true]),
+        'updatedAt' => now_iso()]);
+    $ws = circle_week_stats($mid);
+    chk('systems: the denominator is the list the centre actually configured',
+        ($ws['systemsTotal'] ?? 0) === 4);
+    chk('systems: …so a child who held every one of them reads as a full day, not two thirds',
+        (int)($ws['bars'][0]['pct'] ?? 0) === 100);
+    chk('systems: …and the total travels with the bars, so nobody has to assume six',
+        array_key_exists('systemsTotal', circle_student_stats($mid)));
+    setting_set('anchor_content', ['systems' => array_merge($four['systems'], [
+        ['key' => 'respect', 'label' => 'Respected authority', 'icon' => 'ph-handshake'],
+        ['key' => 'time', 'label' => 'Was time-conscious', 'icon' => 'ph-clock'],
+        ['key' => 'pray', 'label' => 'Kept the quiet hour', 'icon' => 'ph-moon'],
+    ])]);
+    $ws7 = circle_week_stats($mid);
+    chk('systems: adding a seventh moves the denominator, not the ceiling',
+        ($ws7['systemsTotal'] ?? 0) === 7 && (int)($ws7['bars'][0]['pct'] ?? 0) === 57);
+    if ($savedContent === null) { db_exec("DELETE FROM settings WHERE settingKey = 'anchor_content'"); }
+    else { setting_set('anchor_content', $savedContent); }
+
+    db_exec("DELETE FROM member_state WHERE memberId = ?", [$mid]);
+    db_exec("DELETE FROM contact_messages WHERE email LIKE 'audit-%'");
+    db_exec("DELETE FROM applications WHERE email LIKE 'audit-%'");
+    db_exec("DELETE FROM members WHERE email LIKE 'audit-%'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
