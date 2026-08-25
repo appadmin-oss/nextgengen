@@ -10895,6 +10895,194 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             && db_row('SELECT id FROM program_journal_tags WHERE entryId = ?', [$EID]) === null;
     })());
 
+
+    /* ── §8c · The Programme record ────────────────────────────────────────
+     * The three tiles at the top of §8c are counts, so what matters is that
+     * they count exactly the rows the reader can open, that the derived
+     * numbers stay derived, and that "a mentor reviews it before it appears
+     * here" is enforced where the sentence is printed rather than by a client
+     * filtering a list it was handed.
+     * ──────────────────────────────────────────────────────────────────── */
+    db_exec("DELETE FROM program_journal_tags");
+    db_exec("DELETE FROM program_journal");
+    db_exec("DELETE FROM program_journal_updates");
+    db_exec("DELETE FROM program_journal_follows");
+
+    $mk = function (array $f) {
+        $r = backend_dispatch('journal.save', array_merge(['requesterId' => 'NGG-2025-0099'], $f));
+        return (string)($r['entry']['entryId'] ?? '');
+    };
+    $thisYear = (int)gmdate('Y');
+    $ISSUE = $mk(['title' => 'Ayobo hall double-booked on Thursdays', 'kind' => 'issue', 'status' => 'open',
+                  'body' => 'The centre manager has us and the choir in the same room from 4pm.',
+                  'ownerName' => 'Mr Adewale',
+                  'occurredAt' => gmdate('Y-m-d\TH:i:s\Z', time() - 6 * 86400)]);
+    $DEC = $mk(['title' => 'Thursday sessions move to 5pm', 'kind' => 'decision', 'status' => 'resolved',
+                'parentEntryId' => $ISSUE, 'agreedWith' => 2, 'notified' => 18]);
+    $CON = $mk(['title' => 'Egbeda parents funded twenty ID cards', 'kind' => 'contribution',
+                'amountMinor' => 1200000, 'contributors' => 9, 'currency' => 'NGN',
+                'media' => [['url' => 'https://ex.co/r1.jpg', 'type' => 'image', 'alt' => 'Receipt one'],
+                            ['url' => 'https://ex.co/r2.jpg', 'type' => 'image', 'alt' => 'Receipt two']]]);
+    $ADV = $mk(['title' => 'Tell someone the week you start slipping', 'kind' => 'advice']);
+    $MIL = $mk(['title' => 'First cohort graduation', 'kind' => 'milestone',
+                'countValue' => 41, 'countTotal' => 46, 'countUnit' => 'finished twelve weeks',
+                'occurredAt' => gmdate('Y-m-d\TH:i:s\Z', strtotime('-1 year'))]);
+
+    /* Following, and reading it as a member, both need the entry to be one a
+       member may read. Widened deliberately and through the audited call, the
+       way a mentor would. */
+    backend_dispatch('journal.visibility', ['requesterId' => 'NGG-2025-0099', 'entryId' => $ISSUE, 'visibility' => 'community']);
+
+    $shape = function (string $id, string $who = 'NGG-2025-0099') {
+        $f = backend_dispatch('journal.feed', ['requesterId' => $who, 'signedIn' => true, 'per' => 50]);
+        foreach ($f['entries'] as $e) if ($e['entryId'] === $id) return $e;
+        return null;
+    };
+
+    // ── The tiles ──
+    $sum = backend_dispatch('journal.feed', ['requesterId' => 'NGG-2025-0099', 'signedIn' => true])['summary'];
+    chk('§8c: the Open issues tile counts the issues that are open', $sum['openIssues'] === 1);
+    chk('§8c: …and "Needs attention" is the SAME number as the tile above it',
+        $sum['needsAttention'] === $sum['openIssues']);
+    chk('§8c: the Raised tile sums this year\'s contributions', $sum['raisedMinor'] === 1200000);
+    chk('§8c: …and prints it the way the artboard does — ₦12k, not 1200000',
+        $sum['raised'] === '₦12k' && $sum['raisedYear'] === $thisYear);
+    chk('§8c: "This month" counts this month, and last year\'s milestone is not in it',
+        $sum['thisMonth'] === 4);
+    chk('§8c: Everything counts everything readable', $sum['everything'] === 5);
+
+    // ── The cards ──
+    $iss = $shape($ISSUE);
+    chk('§8c: an open issue says how long it has been open, in words',
+        ($iss['openFor'] ?? '') === '6 days');
+    chk('§8c: …and carries who owns it, not only who raised it',
+        ($iss['ownerName'] ?? '') === 'Mr Adewale');
+    chk('§8c: …with no updates yet, and nothing pretending to be the latest one',
+        ($iss['updates'] ?? -1) === 0
+        && array_key_exists('latestUpdate', $iss) && $iss['latestUpdate'] === null);
+
+    $con = $shape($CON);
+    chk('§8c: a contribution prints the amount as money', ($con['amount'] ?? '') === '₦12,000');
+    chk('§8c: …and how many families it came from', ($con['contributors'] ?? 0) === 9);
+    /* The design draws a full bar on a contribution with no stated goal. A bar
+       that read 0% because nobody set a target would say the opposite. */
+    chk('§8c: …and a contribution with no target reads as met, not as 0%',
+        ($con['progress'] ?? -1) === 100);
+    chk('§8c: …while one with a target reads as the fraction it actually is', (function () use ($mk, $shape) {
+        $id = $mk(['title' => 'Half way', 'kind' => 'contribution', 'amountMinor' => 500000, 'targetMinor' => 2000000]);
+        $e = $shape($id);
+        db_exec('DELETE FROM program_journal WHERE entryId = ?', [$id]);
+        return ($e['progress'] ?? -1) === 25;
+    })());
+    /* "receipts attached (2)" is the media already on the entry. A stored
+       tally beside the list it counts is two records of one fact. */
+    chk('§8c: …and the receipts are counted from the attachments themselves',
+        ($con['attachments'] ?? 0) === 2);
+
+    $dec = $shape($DEC);
+    chk('§8c: a decision carries the entry it follows from', ($dec['parentEntryId'] ?? '') === $ISSUE);
+    chk('§8c: …and its provenance, which cannot be reconstructed later',
+        ($dec['agreedWith'] ?? 0) === 2 && ($dec['notified'] ?? 0) === 18);
+    chk('§8c: an entry cannot follow itself',
+        backend_dispatch('journal.save', ['requesterId' => 'NGG-2025-0099', 'entryId' => $DEC,
+            'title' => 'Loop', 'parentEntryId' => $DEC])['error'] === 'bad_parent');
+
+    $mil = $shape($MIL);
+    chk('§8c: a milestone carries its headline number and what it is out of',
+        ($mil['countValue'] ?? 0) === 41 && ($mil['countTotal'] ?? 0) === 46
+        && ($mil['countUnit'] ?? '') === 'finished twelve weeks');
+
+    // ── Updates ──
+    chk('§8c: an update needs something in it',
+        backend_dispatch('journal.update.add', ['requesterId' => 'NGG-2025-0099', 'entryId' => $ISSUE, 'body' => '  '])['error'] === 'body_required');
+    chk('§8c: a member without the capability cannot write the record',
+        backend_dispatch('journal.update.add', ['requesterId' => 'NGG-2025-0001', 'entryId' => $ISSUE, 'body' => 'x'])['error'] === 'forbidden');
+    backend_dispatch('journal.update.add', ['requesterId' => 'NGG-2025-0099', 'entryId' => $ISSUE,
+        'body' => 'Mr Adewale met the manager.']);
+    backend_dispatch('journal.update.add', ['requesterId' => 'NGG-2025-0099', 'entryId' => $ISSUE,
+        'body' => 'Waiting on a written slot confirmation before we tell parents.']);
+    $iss = $shape($ISSUE);
+    chk('§8c: the card counts the updates', ($iss['updates'] ?? 0) === 2);
+    chk('§8c: …and the LATEST one is the one it shows, not the first',
+        strpos((string)($iss['latestUpdate']['body'] ?? ''), 'Waiting on a written') === 0);
+
+    // ── Following ──
+    chk('§8c: a member follows an issue',
+        !empty(backend_dispatch('journal.follow', ['memberId' => 'NGG-2025-0001', 'entryId' => $ISSUE])['following']));
+    chk('§8c: …and the count is a row count, so it agrees with the list',
+        ($shape($ISSUE)['followers'] ?? 0) === 1);
+    chk('§8c: …and the follower is told they are following, nobody else is',
+        !empty($shape($ISSUE, 'NGG-2025-0001')['following'])
+        && empty($shape($ISSUE, 'NGG-2025-0002')['following']));
+    /* An update nobody hears about makes the button a lie. */
+    chk('§8c: …and an update actually reaches them',
+        (function () use ($ISSUE) {
+            db_exec("DELETE FROM notifications WHERE memberId = 'NGG-2025-0001' AND kind = 'journal.update'");
+            backend_dispatch('journal.update.add', ['requesterId' => 'NGG-2025-0099', 'entryId' => $ISSUE, 'body' => 'Slot confirmed.']);
+            return (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-2025-0001' AND kind = 'journal.update'")['c'] ?? 0) === 1;
+        })());
+    chk('§8c: unfollowing is possible, which is the only thing that makes following safe',
+        empty(backend_dispatch('journal.follow', ['memberId' => 'NGG-2025-0001', 'entryId' => $ISSUE])['following'])
+        && ($shape($ISSUE)['followers'] ?? -1) === 0);
+    chk('§8c: you cannot follow an entry you cannot read — that would tell you it exists',
+        backend_dispatch('journal.follow', ['memberId' => 'NGG-2025-0001', 'entryId' => 'PJ-NOPE'])['error'] === 'not_found');
+
+    // ── Propose, and the promise on the card ──
+    $prop = backend_dispatch('journal.propose', ['memberId' => 'NGG-2025-0001',
+        'title' => 'The gate light has been out for a fortnight', 'kind' => 'issue']);
+    chk('§8c: anybody signed in may propose an entry', !empty($prop['ok']));
+    chk('§8c: …and is told what happens next, not just "saved"',
+        strpos((string)($prop['message'] ?? ''), 'mentors') !== false);
+    $PID = (string)$prop['entryId'];
+    chk('§8c: a proposal is staff-only, whatever it asked for',
+        (string)db_row('SELECT visibility FROM program_journal WHERE entryId = ?', [$PID])['visibility'] === 'staff');
+    /* This is the promise §8c prints on the card that makes it, so it is kept
+       on the server rather than by a client filtering its own list. */
+    chk('§8c: …and it does NOT appear on the record until a mentor publishes it',
+        $shape($PID, 'NGG-2025-0001') === null);
+    chk('§8c: …though a mentor sees it, marked as a proposal and by whom',
+        ($shape($PID)['proposed'] ?? false) === true
+        && ($shape($PID)['proposedName'] ?? '') !== '');
+    /* A member reads exactly the one entry that was widened for them. The
+       proposal must not push that number up — a tile that counts entries the
+       reader cannot open sends them looking for something that is not there. */
+    chk('§8c: …and it is not counted in the tiles a member reads',
+        backend_dispatch('journal.feed', ['requesterId' => 'NGG-2025-0001', 'signedIn' => true])['summary']['everything'] === 1);
+    chk('§8c: publishing is a mentor\'s act, not the proposer\'s',
+        backend_dispatch('journal.publish', ['requesterId' => 'NGG-2025-0001', 'entryId' => $PID])['error'] === 'forbidden');
+    chk('§8c: a mentor publishes it', !empty(backend_dispatch('journal.publish', ['requesterId' => 'NGG-2025-0099', 'entryId' => $PID])['ok']));
+    chk('§8c: …and takes authorship, because somebody has to be answerable for the record',
+        (string)db_row('SELECT authorName FROM program_journal WHERE entryId = ?', [$PID])['authorName'] !== '');
+    chk('§8c: …and the child who proposed it is told',
+        (int)(db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-2025-0001' AND kind = 'journal.published'")['c'] ?? 0) === 1);
+    chk('§8c: …and an ordinary entry cannot be "published", because it never was a proposal',
+        backend_dispatch('journal.publish', ['requesterId' => 'NGG-2025-0099', 'entryId' => $ADV])['error'] === 'not_a_proposal');
+
+    // ── The filter the chip actually asks for ──
+    $need = backend_dispatch('journal.feed', ['requesterId' => 'NGG-2025-0099', 'signedIn' => true, 'need' => 'attention']);
+    chk('§8c: "Needs attention" returns the open issues and nothing else',
+        count($need['entries']) === 2
+        && count(array_filter($need['entries'], fn($e) => $e['kind'] === 'issue' && $e['status'] === 'open')) === 2);
+
+    // ── Who may propose ──
+    chk('§8c: the footer card is offered to a member, who cannot publish',
+        backend_dispatch('journal.feed', ['requesterId' => 'NGG-2025-0001', 'signedIn' => true])['canPropose'] === true);
+    chk('§8c: …and not to a mentor, who writes the entry instead of proposing it',
+        backend_dispatch('journal.feed', ['requesterId' => 'NGG-2025-0099', 'signedIn' => true])['canPropose'] === false);
+
+    // ── Money, at the edges ──
+    chk('§8c: money is rounded the way a tile shows it, at every size',
+        pj_money(0) === '₦0' && pj_money(1200000) === '₦12,000'
+        && pj_money(4800000, 'NGN', true) === '₦48k'
+        && pj_money(150000000, 'NGN', true) === '₦1.5m'
+        && pj_money(99900, 'NGN', true) === '₦999');
+    chk('§8c: an issue open today does not read "0 days"',
+        pj_open_for(gmdate('c'), time()) === 'today'
+        && pj_open_for(gmdate('c', time() - 86400), time()) === '1 day'
+        && pj_open_for(gmdate('c', time() - 70 * 86400), time()) === '2 months');
+
+    db_exec("DELETE FROM program_journal_updates");
+    db_exec("DELETE FROM program_journal_follows");
     db_exec("DELETE FROM program_journal_tags");
     db_exec("DELETE FROM program_journal");
 })();

@@ -337,6 +337,12 @@ function backend_dispatch(string $op, array $args = []): array {
             'journal.visibility'       => 'journal_visibility_set',
             'journal.share'            => 'journal_share',
             'journal.delete'           => 'journal_delete',
+            // §8c — the Programme record.
+            'journal.follow'           => 'journal_follow',
+            'journal.updates'          => 'journal_updates',
+            'journal.update.add'       => 'journal_update_add',
+            'journal.propose'          => 'journal_propose',
+            'journal.publish'          => 'journal_publish',
             'analytics.activity.add'   => 'analytics_activity_add',
             'admin.member.detail'     => 'admin_member_detail',
             'admin.mentor.assign'     => 'admin_assign_mentor',

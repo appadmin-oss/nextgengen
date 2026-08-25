@@ -24,12 +24,17 @@ if ($method === 'GET') {
         $res = gs_call('journal.memories', $common);
     } elseif ($view === 'person') {
         $res = gs_call('journal.person', $common + ['personId' => (string)($_GET['personId'] ?? '')]);
+    } elseif ($view === 'updates') {
+        $res = gs_call('journal.updates', ['memberId' => $mid, 'entryId' => (string)($_GET['entryId'] ?? '')]);
     } else {
         $res = gs_call('journal.feed', $common + [
             'kind'     => (string)($_GET['kind'] ?? ''),
             'status'   => (string)($_GET['status'] ?? ''),
             'centreId' => (string)($_GET['centreId'] ?? ''),
             'q'        => (string)($_GET['q'] ?? ''),
+            // "Needs attention" — one word rather than two filters the client
+            // has to remember to combine the same way every time.
+            'need'     => (string)($_GET['need'] ?? ''),
             'page'     => (int)($_GET['page'] ?? 1),
             'per'      => (int)($_GET['per'] ?? 20),
         ]);
@@ -46,6 +51,17 @@ if ($method === 'GET') {
     } elseif ($action === 'share') {
         $res = gs_call('journal.share', ['requesterId' => $mid, 'entryId' => $b['entryId'] ?? '',
             'revoke' => !empty($b['revoke']), 'ip' => $ip]);
+    } elseif ($action === 'follow') {
+        $res = gs_call('journal.follow', ['memberId' => $mid, 'entryId' => $b['entryId'] ?? '']);
+    } elseif ($action === 'update') {
+        $res = gs_call('journal.update.add', ['requesterId' => $mid, 'entryId' => $b['entryId'] ?? '',
+            'body' => (string)($b['body'] ?? ''), 'ip' => $ip]);
+    } elseif ($action === 'propose') {
+        $res = gs_call('journal.propose', ['memberId' => $mid, 'title' => (string)($b['title'] ?? ''),
+            'body' => (string)($b['body'] ?? ''), 'kind' => (string)($b['kind'] ?? 'note'),
+            'centreId' => (string)($b['centreId'] ?? ''), 'ip' => $ip]);
+    } elseif ($action === 'publish') {
+        $res = gs_call('journal.publish', ['requesterId' => $mid, 'entryId' => $b['entryId'] ?? '', 'ip' => $ip]);
     } elseif ($action === 'delete') {
         $res = gs_call('journal.delete', ['requesterId' => $mid, 'entryId' => $b['entryId'] ?? '', 'ip' => $ip]);
     } else {

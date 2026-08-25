@@ -570,6 +570,14 @@
         visibility: (entryId, visibility) => request('/member/program-journal.php', { body: { action: 'visibility', entryId, visibility } }),
         share:    (entryId, revoke) => request('/member/program-journal.php', { body: { action: 'share', entryId, revoke: !!revoke } }),
         remove:   (entryId) => request('/member/program-journal.php', { body: { action: 'delete', entryId } }),
+        /* §8c — the Programme record. Following is a toggle; an update is
+           append-only; proposing is what a member without the capability does
+           instead of publishing. */
+        follow:   (entryId) => request('/member/program-journal.php', { body: { action: 'follow', entryId } }),
+        updates:  (entryId) => request('/member/program-journal.php' + qs({ view: 'updates', entryId })),
+        addUpdate: (entryId, body) => request('/member/program-journal.php', { body: { action: 'update', entryId, body } }),
+        propose:  (d) => request('/member/program-journal.php', { body: Object.assign({ action: 'propose' }, d || {}) }),
+        publish:  (entryId) => request('/member/program-journal.php', { body: { action: 'publish', entryId } }),
       },
       community: {
         channels: () => request('/member/community.php' + qs({ view: 'channels' })),
