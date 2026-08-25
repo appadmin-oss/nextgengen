@@ -34,13 +34,51 @@ function admin_club_promote(array $p): array {
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
     if (($s['status'] ?? '') === 'promoted') return ['ok' => false, 'error' => 'already_promoted'];
     $newId = new_id('NGG', 'members', 'memberId');
+    /* Carry the record across.
+     *
+     * This wrote `email => ''` — literally blank — so a child promoted out of
+     * Summer got a member row nobody could sign into: the only sign-in routes
+     * are a password they have never set and a code emailed to an address that
+     * is not there. Their guardian's email and phone were on the summer_students
+     * row the whole time, along with a date of birth, and the dues reminders and
+     * guardian nudges both select on parentEmail — so a promoted member was
+     * invisible to those too.
+     *
+     * The guardian's address becomes the member's contact, exactly as it does
+     * on the teen application path: it is the one address the programme holds
+     * for a ten- to seventeen-year-old, and having it in both places is what
+     * makes sign-in and the reminders work at once. */
+    $guardianEmail = trim((string)($s['parentEmail'] ?? ''));
+    $guardianPhone = trim((string)($s['guardianPhone'] ?? ''));
     db_insert('members', [
-        'memberId' => $newId, 'fullName' => $s['fullName'], 'email' => '', 'type' => 'NGG',
+        'memberId' => $newId, 'fullName' => $s['fullName'],
+        'email' => $guardianEmail, 'type' => 'NGG',
         'status' => 'active', 'role' => 'member', 'centre' => $s['centre'] ?: 'Egbeda',
         'track' => $s['track'] ?: '', 'photoUrl' => $s['photoUrl'] ?: '',
+        'dob' => (string)($s['dob'] ?? ''),
+        'parentName' => (string)($s['guardianName'] ?? ''),
+        'parentEmail' => $guardianEmail,
+        'parentPhone' => $guardianPhone,
+        'joinDate' => gmdate('Y-m-d'),
         'notes' => 'Promoted from Summer ' . $s['studentId'] . ' (' . $s['cohortId'] . ')',
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
+
+    /* And a way in, when there is an address to send it to. Same set-password
+       link the application path mints, for the same reason: otherwise every
+       sign-in is a code in a guardian's inbox. */
+    $welcome = ($guardianEmail !== '' && function_exists('auth_welcome_link')) ? auth_welcome_link($newId) : '';
+    if ($welcome !== '') {
+        @send_mail($guardianEmail, 'Welcome to the NGG club',
+            email_template([
+                'title' => explode(' ', (string)$s['fullName'])[0] . ' is in the club.',
+                'intro' => 'Promoted from Summer Students into Next Generation Genius.',
+                'bodyHtml' => 'The member ID is <b>' . esc_html($newId) . '</b>. Set a password with the button '
+                    . 'below — after that they can sign in with the member ID alone. The link is good for seven days.',
+                'ctaLabel' => 'Set a password', 'ctaUrl' => $welcome,
+                'footNote' => 'Welcome to the movement.',
+            ]));
+    }
     db_update('summer_students', ['status' => 'promoted', 'updatedAt' => now_iso()], ['studentId' => $sid]);
     audit('club.promote', $g['requester']['memberId'], $newId, ['fromSummer' => $sid], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'memberId' => $newId];

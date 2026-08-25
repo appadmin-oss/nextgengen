@@ -341,11 +341,11 @@ function fullFixture(manifest) {
       want.forEach(([label, okNow]) => { if (!okNow) problems.push(name + ': ' + label); });
       console.log('     ' + want.filter(w => w[1]).length + '/' + want.length + ' audit fixes hold on this render');
 
-      /* Touch targets, reported rather than asserted. WCAG 2.2 (2.5.8) asks
-         24×24 and every one of these clears it; the 44px line is the
-         convention the rest of the product holds, and the two controls the
-         screen exists for — submitting a mission, saving a journal line — are
-         under it. Printed so the number is visible rather than argued about. */
+      /* Touch targets, ASSERTED now that they all pass. WCAG 2.2 (2.5.8) asks
+         24×24 and every one of these always cleared it; 44px is the convention
+         the rest of the product holds, and this page was breaking it on twelve
+         controls including the two the screen exists for. Reporting a number
+         nobody reads is how it got to twelve. */
       if (viewport.width < 600) {
         const small = await page.evaluate(() => {
           const out = [];
@@ -359,6 +359,7 @@ function fullFixture(manifest) {
         });
         console.log('     ' + small.length + ' control(s) under 44px on a phone'
           + (small.length ? ': ' + small.slice(0, 3).join(', ') + (small.length > 3 ? ' …' : '') : ''));
+        if (small.length) problems.push(name + ': ' + small.length + ' control(s) under 44px — ' + small.join(', '));
       }
       await page.close();
     };

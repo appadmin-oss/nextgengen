@@ -1206,6 +1206,14 @@ $mApp = db_row("SELECT id FROM applications WHERE email='mentorada@example.com' 
 $mConv = backend_dispatch('admin.mentor.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => $mApp]);
 chk('mentor application converts to mentor', !empty($mConv['mentorId']));
 chk('converted mentor tagged source=afrovanguard', db_row('SELECT source FROM mentors WHERE mentorId=?', [$mConv['mentorId']])['source'] === 'afrovanguard');
+/* The third conversion path had the same hole as the teen one. The next thing
+   that happens to a new mentor is a safeguarding check, and the welcome email
+   promises exactly that — from a record that had no phone number on it. */
+chk('converted mentor keeps the phone number the check will need', (function () use ($mConv) {
+    $r = db_row('SELECT phone, joinedAt FROM mentors WHERE mentorId = ?', [$mConv['mentorId']]);
+    // Stored in E.164 the way intake normalised it, not as it was typed.
+    return (string)($r['phone'] ?? '') === '+2348031110040' && (string)($r['joinedAt'] ?? '') !== '';
+})());
 chk('mentorship overview carries Afrovanguard links', !empty(backend_dispatch('admin.mentorship.overview', ['requesterId' => 'NGG-2025-0099'])['overview']['afrovanguard']['volunteerUrl']));
 chk('mentorship roster returns mentors', is_array(backend_dispatch('admin.mentorship.roster', ['requesterId' => 'NGG-2025-0099'])['mentors']));
 chk('mentorship gated from non-staff', backend_dispatch('admin.mentorship.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
@@ -2520,7 +2528,16 @@ chk('club_admin is locked out of the Summer portal', backend_dispatch('admin.sum
 chk('club gated from non-staff', backend_dispatch('admin.club.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 
 // Summer → Club promotion (run by the club_admin, in their own portal).
-$stuId = $enr['studentId'];
+/* A student of this block's own, with a guardian and a date of birth the way a
+   real enrolment has them — promotion used to discard both and write a BLANK
+   email besides. Not the shared $enr student: other assertions read that one's
+   card and age, and moving its date of birth moves them. */
+$promoEnr = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099',
+    'data' => ['fullName' => 'Chidera Promoted', 'age' => 13, 'dob' => '2013-02-09',
+               'centre' => 'Egbeda', 'track' => 'Tech',
+               'parentEmail' => 'promo-guardian@example.com',
+               'guardianName' => 'Ngozi Guardian', 'guardianPhone' => '+2348031119100']]);
+$stuId = (string)$promoEnr['studentId'];
 chk('promotable list carries active summer students', count(backend_dispatch('admin.club.promotable', ['requesterId' => 'NGG-2025-0701'])['students']) >= 1);
 $pr = backend_dispatch('admin.club.promote', ['requesterId' => 'NGG-2025-0701', 'studentId' => $stuId]);
 chk('promote mints an NGG member', !empty($pr['memberId']));
@@ -2529,6 +2546,26 @@ chk('promoted member appears in the club roster', (function () use ($pr) {
     foreach (backend_dispatch('admin.club.members', ['requesterId' => 'NGG-2025-0701'])['members'] as $m) if ($m['memberId'] === $pr['memberId']) return true;
     return false;
 })());
+/* The worst of the four conversion paths: it wrote `email => ''`, so the
+   promoted child had a member row nobody could sign into — no password, and a
+   verification code with nowhere to go. */
+chk('promotion gives the member an address they can be reached at', (function () use ($pr) {
+    $m = db_row('SELECT email, parentEmail, parentPhone, parentName, dob, joinDate FROM members WHERE memberId = ?', [$pr['memberId']]);
+    return (string)$m['email'] === 'promo-guardian@example.com';
+})());
+chk('…and the guardian the reminders and nudges select on', (function () use ($pr) {
+    $m = db_row('SELECT parentEmail, parentPhone, parentName FROM members WHERE memberId = ?', [$pr['memberId']]);
+    return (string)$m['parentEmail'] === 'promo-guardian@example.com'
+        && (string)$m['parentPhone'] === '+2348031119100'
+        && (string)$m['parentName'] === 'Ngozi Guardian';
+})());
+chk('…and the date of birth the club will need for their age', (function () use ($pr) {
+    $m = db_row('SELECT dob, joinDate FROM members WHERE memberId = ?', [$pr['memberId']]);
+    return (string)$m['dob'] === '2013-02-09' && (string)$m['joinDate'] !== '';
+})());
+chk('…and a set-password link, so signing in is not a standing dependency on a guardian',
+    (int)(db_row("SELECT COUNT(*) c FROM auth_sessions WHERE memberId = ? AND purpose = 'reset'",
+                 [(string)$pr['memberId']])['c'] ?? 0) === 1);
 chk('re-promoting the same student is rejected', backend_dispatch('admin.club.promote', ['requesterId' => 'NGG-2025-0701', 'studentId' => $stuId])['error'] === 'already_promoted');
 
 // ── AI insights (rule-based fallback) + archival/compression (Phase 2 tail) ──

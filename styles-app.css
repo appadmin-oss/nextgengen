@@ -996,13 +996,19 @@ body.cm-app .fab-top { display: none; }
 
 .dash-main, .dash-rail { display: flex; flex-direction: column; gap: 20px; }
 
-/* The two things this screen is FOR — handing in a mission and saving a
-   journal line — were 32px tall on a phone. That clears WCAG 2.5.8's 24×24,
-   so it was never a conformance failure; it was under the 44px the rest of
-   the product holds, on the only two controls that matter. */
+/* Every control on this screen clears 44px on a phone.
+   They cleared WCAG 2.5.8's 24×24 already, so none of this was a conformance
+   failure — it was `btn-sm` at 32–34px on a page a member operates one-handed
+   on a bus, while the rest of the product holds 44. The primary two went
+   first; the rest followed, because "secondary" is not a reason for a control
+   to be harder to hit, only a reason for it to be quieter. */
 @media (max-width: 600px) {
+  .ngg-dash .btn-sm,
   .dash-mission-cta, .dash-journal-save, .dash-assign-start,
-  .dash-event-rsvp { min-height: 44px; padding-inline: 16px; }
+  .dash-event-rsvp, .dash-account-toggle, .ngg-side-toggle { min-height: 44px; padding-inline: 16px; }
+  /* The ID-card downloads sit two-up in a 280px card, so they take the height
+     without the extra inline padding that would wrap their labels. */
+  .dash-idcard-actions .btn-sm { padding-inline: 10px; }
 }
 
 .dash-card {

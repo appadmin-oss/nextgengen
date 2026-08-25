@@ -944,7 +944,7 @@ function MemberIDCard(props) {
   if (!downloadable) return card;
   return h("div", { style: { display: "inline-block" } }, [
     card,
-    h("div", { key: "act", style: { display: "flex", gap: 8, marginTop: 12 } }, [
+    h("div", { key: "act", className: "dash-idcard-actions", style: { display: "flex", gap: 8, marginTop: 12 } }, [
       h("button", { key: "png", className: "btn btn-sm", disabled: !!busy, onClick: downloadPng }, busy === "png" ? "Preparing…" : "Download PNG"),
       h("button", { key: "pdf", className: "btn btn-ghost btn-sm", disabled: !!busy, onClick: downloadPdf }, busy === "pdf" ? "Preparing…" : "Download PDF"),
     ]),
