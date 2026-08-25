@@ -188,15 +188,30 @@ function public_newsletter_unsubscribe(array $p): array {
 function public_application_status(array $p): array {
     $ref = strtoupper(trim((string)($p['ref'] ?? '')));
     $email = strtolower(trim((string)($p['email'] ?? '')));
-    if (!preg_match('/^NGG-([AMVC])-(\d{3,6})$/', $ref, $mm)) return ['ok' => false, 'error' => 'bad_ref'];
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'bad_email'];
     $labels = ['new' => 'Received', 'read' => 'Under review', 'reviewing' => 'Under review', 'accepted' => 'Accepted', 'converted' => 'Accepted', 'rejected' => 'Not selected this time', 'replied' => 'Replied', 'archived' => 'Closed', 'waitlist' => 'Waitlisted'];
-    if ($mm[1] === 'C') {
+
+    /* A contact message's reference has always been minted as MSG-XXXXXXXX,
+       and this only ever matched NGG-C-00123 — a shape nothing writes. Every
+       message lookup answered not_found. */
+    if (preg_match('/^MSG-[A-F0-9]{6,16}$/', $ref)) {
         $row = db_row('SELECT status, createdAt FROM contact_messages WHERE ref = ? AND lower(email) = ? LIMIT 1', [$ref, $email]);
         $type = 'message';
-    } else {
-        $row = db_row('SELECT status, createdAt FROM applications WHERE id = ? AND lower(email) = ? LIMIT 1', [(int)$mm[2], $email]);
+    } elseif (preg_match('/^NGG-[AMV]-[A-F0-9]{6,16}$/', $ref)) {
+        // A reference minted after migration 108: random, stored on the row.
+        $row = db_row('SELECT status, createdAt FROM applications WHERE ref = ? AND lower(email) = ? LIMIT 1', [$ref, $email]);
         $type = 'application';
+    } elseif (preg_match('/^NGG-[AMV]-(\d{3,6})$/', $ref, $mm)) {
+        /* A reference issued before 108, still in somebody's inbox. Answered
+           only for rows that have no random ref of their own — otherwise the
+           old id would be a second, guessable key to a row that now has a
+           private one, which is the hole this was closed to fix. */
+        $row = db_row("SELECT status, createdAt FROM applications
+                        WHERE id = ? AND lower(email) = ? AND (ref = '' OR ref IS NULL) LIMIT 1",
+                      [(int)$mm[1], $email]);
+        $type = 'application';
+    } else {
+        return ['ok' => false, 'error' => 'bad_ref'];
     }
     if (!$row) return ['ok' => false, 'error' => 'not_found'];
     $st = (string)$row['status'];
@@ -401,9 +416,29 @@ function intake_inbox(): string {
 }
 
 /** A human, traceable reference an applicant can quote and the admin can find. */
+function intake_tag(string $kind): string {
+    return ['teen' => 'A', 'anchor' => 'A', 'mentor' => 'M', 'volunteer' => 'V', 'contact' => 'C'][$kind] ?? 'A';
+}
+
+/** A fresh reference for a new application. Random, so the number of
+ *  applications the programme has received is not printed on every one of
+ *  them, and so a named person's status cannot be found by counting. */
+function intake_reference_new(string $kind): string {
+    return 'NGG-' . intake_tag($kind) . '-' . strtoupper(bin2hex(random_bytes(4)));
+}
+
+/**
+ * The reference for an application that already exists.
+ *
+ * A row written before migration 108 has no stored ref, and its OLD reference
+ * is on a family's success screen and in their inbox — so it keeps resolving
+ * by id rather than being silently reissued. Only new rows carry a random one.
+ */
 function intake_reference(string $kind, int $id): string {
-    $tag = ['teen' => 'A', 'anchor' => 'A', 'mentor' => 'M', 'volunteer' => 'V', 'contact' => 'C'][$kind] ?? 'A';
-    return 'NGG-' . $tag . '-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+    $row = $id > 0 ? db_row('SELECT ref FROM applications WHERE id = ? LIMIT 1', [$id]) : null;
+    $stored = trim((string)($row['ref'] ?? ''));
+    if ($stored !== '') return $stored;
+    return 'NGG-' . intake_tag($kind) . '-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
 }
 
 /** Best-effort alert to the admissions inbox (no-op when unconfigured). */
@@ -578,7 +613,9 @@ function public_apply(array $p): array {
         audit('apply.' . $kind, null, $email, ['name' => $name, 'duplicate' => true], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'ref' => intake_reference($kind, (int)$dupe['id']), 'duplicate' => true, 'whatsapp' => $whatsapp];
     }
+    $newRef = intake_reference_new($kind);
     $appId = db_insert('applications', [
+        'ref' => $newRef,
         'kind' => $kind, 'name' => $name,
         'firstName' => $first, 'lastName' => $last, 'otherName' => $other, 'dob' => $dob, 'sex' => $sex,
         'age' => $age ?: null, 'centre' => $centre, 'track' => $track, 'faculty' => $faculty,

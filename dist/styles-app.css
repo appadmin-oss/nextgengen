@@ -996,6 +996,15 @@ body.cm-app .fab-top { display: none; }
 
 .dash-main, .dash-rail { display: flex; flex-direction: column; gap: 20px; }
 
+/* The two things this screen is FOR — handing in a mission and saving a
+   journal line — were 32px tall on a phone. That clears WCAG 2.5.8's 24×24,
+   so it was never a conformance failure; it was under the 44px the rest of
+   the product holds, on the only two controls that matter. */
+@media (max-width: 600px) {
+  .dash-mission-cta, .dash-journal-save, .dash-assign-start,
+  .dash-event-rsvp { min-height: 44px; padding-inline: 16px; }
+}
+
 .dash-card {
   background: white;
   border-radius: 18px;
@@ -1080,9 +1089,13 @@ body.cm-app .fab-top { display: none; }
 .dash-empty-text { color: var(--ink-500); font-size: 15px; line-height: 1.5; }
 
 /* Stats card */
+/* Four fixed columns put "1860" in a 51px cell inside the rail, where it
+   overflowed into BADGES and the two numbers read as one — "1860 2" looked
+   like 18602. auto-fit reflows to 2×2 rather than colliding, and the number
+   is sized to fit the narrowest cell that still holds four across. */
 .dash-stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
   gap: 12px;
   margin: 4px 0 18px;
 }
@@ -1090,8 +1103,9 @@ body.cm-app .fab-top { display: none; }
 .dash-stat-l { font-size: 9px; letter-spacing: 0.2em; color: var(--ink-500); }
 .dash-stat-n {
   font-family: var(--font-display);
-  font-size: 32px; font-weight: 800;
+  font-size: 28px; font-weight: 800;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
   margin-top: 4px;
   color: var(--navy-900);
 }
@@ -5771,6 +5785,7 @@ body.own-chrome .fab-top { display: none; }
 
 /* ---- the existing card grid, now inside the shell ---- */
 .ngg-main .dash-grid { gap: 20px; }
+
 .ngg-anchor { display: block; scroll-margin-top: 96px; }
 .ngg-anchor > .dash-card { margin: 0; }
 

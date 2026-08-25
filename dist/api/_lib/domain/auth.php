@@ -289,6 +289,35 @@ function auth_reset_request(array $p): array {
 }
 
 /**
+ * A welcome link that lets a new member set their own password.
+ *
+ * Reuses the reset challenge exactly — same table, same purpose, same
+ * single-use consumption in auth_reset_confirm() — so there is one credential
+ * type to reason about rather than two. What differs is the expiry: a reset a
+ * member asked for two minutes ago can live for thirty minutes, but a welcome
+ * link is emailed to a guardian who may hand it over that evening, or at the
+ * weekend. Seven days.
+ *
+ * Why this exists at all: the apply form collects one email address and it is
+ * the guardian's, so a converted member signs in with a code sent to their
+ * parent's inbox, every single time. One password, set once, ends that.
+ */
+function auth_welcome_link(string $memberId, int $days = 7): string {
+    $m = db_row('SELECT memberId, email FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$m) return '';
+    $token = rand_hex(32);
+    $now = time();
+    db_insert('auth_sessions', [
+        'token' => $token, 'memberId' => (string)$m['memberId'], 'email' => (string)$m['email'],
+        'otp' => new_otp(), 'attempts' => 0, 'purpose' => 'reset',
+        'createdAt' => gmdate('Y-m-d\TH:i:s\Z', $now),
+        'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $now + max(1, $days) * 86400),
+        'verifiedAt' => '', 'ip' => '', 'userAgent' => 'welcome',
+    ]);
+    return rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/?reset=' . rawurlencode($token);
+}
+
+/**
  * Self-service password reset — step 2. Consumes a reset challenge (magic-link
  * token, or memberId + emailed code) and sets the new password. Single-use,
  * expiry- and attempt-guarded, and scoped to purpose='reset' so a reset

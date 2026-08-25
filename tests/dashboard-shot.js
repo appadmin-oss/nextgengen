@@ -85,10 +85,13 @@ function fullFixture(manifest) {
     events: [
       { eventId: 'E-1', title: 'Egbeda build night', kind: 'session', startAt: '2026-08-27T16:00:00Z',
         endAt: '2026-08-27T19:00:00Z', centre: 'Egbeda', location: 'Ayobo hall', coverUrl: '',
-        body: '', capacity: 40, isPublic: true },
+        body: '', capacity: 40, isPublic: true, myRsvp: null },
+      /* myRsvp is the whole point: member_dashboard() attaches the viewer's own
+         answer now, so the button can say "Going ✓" and can be pressed again to
+         withdraw. It used to read "RSVP" however many times you had said yes. */
       { eventId: 'E-2', title: 'Parents’ showcase', kind: 'showcase', startAt: '2026-09-05T14:00:00Z',
         endAt: '2026-09-05T16:00:00Z', centre: 'Both', location: 'Online', coverUrl: '',
-        body: '', capacity: 0, isPublic: true },
+        body: '', capacity: 0, isPublic: true, myRsvp: 'going' },
     ],
     notifications: [
       { notifId: 'N-1', kind: 'community', title: 'Coach Bisi gave your post a Genius Star',
@@ -138,6 +141,17 @@ function fullFixture(manifest) {
     entries: [] } });
   NGGApi.member.compliance = () => Promise.resolve({ state: 'clear', finesOwed: 0, fines: [], awaitingReview: false });
   NGGApi.member.activity = () => Promise.resolve({ items: [] });
+  /* The trail card has to have CONTENT, or the rail hides its item and the
+     label-collision check has nothing to collide with — which is exactly how
+     the first version of that check passed while the defect was still in. */
+  NGGApi.member.anchor = () => Promise.resolve({ ok: true, weeks: [
+    { week: 6, theme: 'Order', missions: [
+      { missionId: 'AM-W06b', title: 'Twenty minutes of deliberate practice', prompt: '',
+        xp: 60, type: 'Practice', proof: 'photo', bookPage: 47, estimatedMin: 20, status: 'verified' },
+      { missionId: 'AM-W05', title: 'Name the system that slipped', prompt: '',
+        xp: 40, type: 'Reflect', proof: 'text', bookPage: 41, estimatedMin: 10, status: 'submitted' },
+    ] },
+  ] });
   NGGApi.member.journal = () => Promise.resolve({ ok: true, entries: [] });
   NGGApi.member.rsvp = () => Promise.resolve({ ok: true });
   NGGApi.member.markRead = () => Promise.resolve({ ok: true });
@@ -268,6 +282,64 @@ function fullFixture(manifest) {
       await page.screenshot({ path: path.join(OUT, 'dashboard-' + name + '.png'), fullPage: true });
       shots++;
       console.log('  📸 dashboard-' + name + '.png  (' + viewport.width + '×' + viewport.height + ')' + (errs.length ? '  ⚠ ' + errs[0] : ''));
+
+      /* The audit fixes, checked on the rendered page rather than asserted
+         from the source. Each one is a defect that shipped. */
+      const seen = await page.evaluate(() => {
+        const txt = (sel) => { const e = document.querySelector(sel); return e ? e.innerText.trim() : ''; };
+        return {
+          // The dashboard now knows which events you have said yes to.
+          rsvpLabels: Array.from(document.querySelectorAll('.dash-event-rsvp')).map(b => b.innerText.trim()),
+          // "0 / 1 graded" read as a mark on work nobody had handed in.
+          assignTally: txt('.dash-assign .dash-today-tally'),
+          // The rail's labels are the headings of the cards they land on, and
+          // an item whose section rendered nothing is not offered at all.
+          /* For each rail item: does its label match the heading of some OTHER
+             card? That is the defect — "Activity" used to land on the card
+             headed "Your trail." while the card actually headed "Activity."
+             sat under a label reading "Notifications". A label that simply
+             reads differently from an evocative heading ("Journal" landing on
+             "A line for the record.") is not the same thing and is fine. */
+          misdirected: Array.from(document.querySelectorAll('.ngg-nav-link')).map(a => {
+            const label = a.textContent.replace(/[\d₦,]+$/, '').trim().toLowerCase();
+            const id = (a.getAttribute('href') || '').replace('#', '');
+            const owner = document.getElementById(id);
+            let hit = null;
+            document.querySelectorAll('.dash-card-h-sm, .dash-card-h').forEach(h => {
+              if (h.textContent.trim().replace(/\.$/, '').toLowerCase() !== label) return;
+              if (!owner || !owner.contains(h)) hit = label;
+            });
+            return hit;
+          }).filter(Boolean),
+          /* And no item may point at a section that rendered nothing. */
+          deadLinks: Array.from(document.querySelectorAll('.ngg-nav-link')).filter(a => {
+            const el = document.getElementById((a.getAttribute('href') || '').replace('#', ''));
+            return !el || el.textContent.trim() === '';
+          }).length,
+          // Four numbers in the tally, none of them running into the next.
+          tallyOverlap: (() => {
+            const cells = Array.from(document.querySelectorAll('.dash-stats .dash-stat'));
+            for (let i = 1; i < cells.length; i++) {
+              const a = cells[i - 1].querySelector('.dash-stat-n'), b = cells[i].querySelector('.dash-stat-n');
+              if (!a || !b) continue;
+              const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+              if (Math.abs(ra.top - rb.top) < 4 && ra.right > rb.left + 1) return true;
+            }
+            return false;
+          })(),
+        };
+      });
+      const want = [
+        ['an event you have not answered offers RSVP', seen.rsvpLabels.includes('RSVP')],
+        ['…and one you have says so, so you can withdraw', seen.rsvpLabels.some(t => /Going/.test(t))],
+        ['set work counts what was handed in, not a mark', /handed in/.test(seen.assignTally)],
+        ['no rail label is the heading of a different card'
+          + (seen.misdirected.length ? ' — ' + seen.misdirected.join(', ') : ''), seen.misdirected.length === 0],
+        ['no rail item points at a section that rendered nothing', seen.deadLinks === 0],
+        ['the tally numbers do not run into each other', !seen.tallyOverlap],
+      ];
+      want.forEach(([label, okNow]) => { if (!okNow) problems.push(name + ': ' + label); });
+      console.log('     ' + want.filter(w => w[1]).length + '/' + want.length + ' audit fixes hold on this render');
 
       /* Touch targets, reported rather than asserted. WCAG 2.2 (2.5.8) asks
          24×24 and every one of these clears it; the 44px line is the

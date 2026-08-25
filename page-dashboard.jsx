@@ -298,6 +298,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
             m={m} first={first} account={account} ngv={!!ngv}
             fines={showFines ? (compliance.finesOwed || 0) : null}
             counts={{ today: today.length, events: events.length, notes: unread }}
+            mentorNamed={!!mentor}
             onSignOut={onSignOut} onEditProfile={() => setEditProfile(true)}/>
 
           <div className="ngg-main">
@@ -330,15 +331,13 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                   <section id="sec-assignments" className="ngg-anchor"><DashboardAssignments assignments={data.assignments || []} onMutate={onMutate}/></section>
                   <section id="sec-activity" className="ngg-anchor"><DashboardActivityFeed memberId={m.memberId} session={session} reloadKey={mutateSeq}/></section>
                   <section id="sec-journal" className="ngg-anchor"><DashboardJournal onMutate={onMutate}/></section>
-                </div>
-
-                {/* RIGHT RAIL */}
-                <div className="dash-rail">
-                  <section id="sec-id" className="ngg-anchor"><DashboardIdCard m={m}/></section>
-                  {ngv && <section id="sec-ngv" className="ngg-anchor"><DashboardNgv ngv={ngv}/></section>}
-                  <section id="sec-stats" className="ngg-anchor"><DashboardStats stats={s} prog={prog}/></section>
-                  <section id="sec-momentum" className="ngg-anchor"><DashboardMomentum momentum={momentum}/></section>
-                  {mentor && <section id="sec-mentor" className="ngg-anchor"><DashboardMentor mentor={mentor}/></section>}
+                  {/* The account and what is coming up are not rail furniture.
+                      Ten of fourteen cards used to live in the rail, which made
+                      a 280px column running 900px past the bottom of this one —
+                      half the viewport empty on a 1440 screen and a page nearly
+                      three thousand pixels tall. These two are the ones a member
+                      acts on, so they get the width, and every card keeps a
+                      readable column rather than being squeezed two-up. */}
                   {(account || acctState === "disabled" || acctState === "error") && (
                     <section id="sec-account" className="ngg-anchor">
                       {account
@@ -358,6 +357,17 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                     <section id="sec-fines" className="ngg-anchor"><DashboardFines c={compliance}/></section>
                   )}
                   <section id="sec-events" className="ngg-anchor"><DashboardEvents events={events} onRsvp={onRsvp}/></section>
+                </div>
+
+                {/* RIGHT RAIL — who you are and how you are doing. Everything
+                    here is read, not acted on, which is what a narrow column
+                    is good for. */}
+                <div className="dash-rail">
+                  <section id="sec-id" className="ngg-anchor"><DashboardIdCard m={m}/></section>
+                  {ngv && <section id="sec-ngv" className="ngg-anchor"><DashboardNgv ngv={ngv}/></section>}
+                  <section id="sec-stats" className="ngg-anchor"><DashboardStats stats={s} prog={prog}/></section>
+                  <section id="sec-momentum" className="ngg-anchor"><DashboardMomentum momentum={momentum}/></section>
+                  {mentor && <section id="sec-mentor" className="ngg-anchor"><DashboardMentor mentor={mentor}/></section>}
                   <section id="sec-notifs" className="ngg-anchor"><DashboardNotifications notes={notes} onRead={onRead}/></section>
                   <section id="sec-shortcuts" className="ngg-anchor"><DashboardShortcuts setPage={setPage}/></section>
                 </div>
@@ -372,30 +382,53 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
 
 // The portal-style sidebar rail: member identity, in-page section nav (with a
 // scrollspy + a mobile collapse), and the sign-out/edit actions.
-function DashboardSidebar({ m, first, account, ngv, fines, counts, onSignOut, onEditProfile }) {
+function DashboardSidebar({ m, first, account, ngv, fines, counts, mentorNamed, onSignOut, onEditProfile }) {
   const [open, setOpen] = React.useState(false);
   const [active, setActive] = React.useState("sec-today");
   const owed = account ? account.payable : 0;
   const hasPhoto = m.photoUrl && /^https?:\/\//.test(m.photoUrl);
 
   const groups = [
+    /* Every label is the heading of the card it lands on. "Activity" used to
+       jump to a card headed "Your trail." and "Notifications" to one headed
+       "Activity." — and the rail is the navigation for a page two thousand
+       pixels tall. */
     { g: "Today", items: [
       { id: "sec-today", label: "Today's missions", badge: counts.today || null },
-      { id: "sec-assignments", label: "Assignments" },
-      { id: "sec-activity", label: "Activity" },
+      { id: "sec-assignments", label: "Set work" },
+      { id: "sec-activity", label: "Your trail" },
       { id: "sec-journal", label: "Journal" },
+      ...(account ? [{ id: "sec-account", label: "Your account", badge: owed > 0 ? naira(owed) : null }] : []),
+      ...(fines != null ? [{ id: "sec-fines", label: "Policy fines", badge: fines > 0 ? naira(fines) : null }] : []),
+      { id: "sec-events", label: "Coming up", badge: counts.events || null },
     ] },
     { g: "You", items: [
       { id: "sec-id", label: "Member ID" },
       ...(ngv ? [{ id: "sec-ngv", label: "Your NGV role" }] : []),
       { id: "sec-stats", label: "Your tally" },
       { id: "sec-momentum", label: "Momentum" },
-      ...(account ? [{ id: "sec-account", label: "Your account", badge: owed > 0 ? naira(owed) : null }] : []),
-      ...(fines != null ? [{ id: "sec-fines", label: "Policy fines", badge: fines > 0 ? naira(fines) : null }] : []),
-      { id: "sec-events", label: "Events", badge: counts.events || null },
-      { id: "sec-notifs", label: "Notifications", badge: counts.notes || null },
+      ...(mentorNamed ? [{ id: "sec-mentor", label: "Your mentor" }] : []),
+      { id: "sec-notifs", label: "Activity", badge: counts.notes || null },
     ] },
   ];
+
+  /* A rail item whose section rendered nothing is a destination that is not
+     there. The wrapping <section id> always exists — it is the CARD inside it
+     that returns null on an empty feed — so presence is measured by content,
+     not by getElementById. Re-measured whenever the counts move, which is what
+     changes when data arrives. */
+  const [empty, setEmpty] = React.useState({});
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      const next = {};
+      groups.forEach(grp => grp.items.forEach(i => {
+        const el = document.getElementById(i.id);
+        if (el && el.textContent.trim() === "") next[i.id] = true;
+      }));
+      setEmpty(next);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [counts.today, counts.events, counts.notes, !!account, fines]); // eslint-disable-line
 
   // Scrollspy — highlight the section currently in view. Runs once; observes
   // whatever section ids are present in the DOM.
@@ -431,7 +464,7 @@ function DashboardSidebar({ m, first, account, ngv, fines, counts, onSignOut, on
           {groups.map(grp => (
             <div className="ngg-nav-group" key={grp.g}>
               <div className="ngg-nav-title">{grp.g}</div>
-              {grp.items.map(it => (
+              {grp.items.filter(it => !empty[it.id]).map(it => (
                 <a key={it.id} href={"#" + it.id} onClick={go(it.id)}
                    className={"ngg-nav-link" + (active === it.id ? " is-active" : "")}>
                   <span className="ngg-nav-dot"/>
@@ -893,6 +926,11 @@ function DashboardMissionRow({ m, onSubmit, busy, done, disabled }) {
 function DashboardAssignments({ assignments, onMutate }) {
   if (!assignments || assignments.length === 0) return null;
   const open = assignments.filter(a => !a.submission || a.submission.status === "submitted");
+  /* Handed in over set, not graded over set. A member with one new, untouched
+     task read "0 / 1 graded", which sounds like a mark, and the mark sounds
+     bad. The missions card above counts done over total, which is the right
+     shape for a tally somebody reads about themselves. */
+  const handedIn = assignments.filter(a => a.submission);
   const graded = assignments.filter(a => a.submission && a.submission.status === "graded");
   return (
     <div className="dash-card dash-assign">
@@ -901,7 +939,7 @@ function DashboardAssignments({ assignments, onMutate }) {
           <div className="eyebrow" style={{color:"var(--gold-500)"}}>ASSIGNMENTS</div>
           <h2 className="dash-card-h">Set work.</h2>
         </div>
-        <div className="dash-today-tally"><span className="dash-today-tally-n">{graded.length}</span><span className="dash-today-tally-d">/ {assignments.length} graded</span></div>
+        <div className="dash-today-tally"><span className="dash-today-tally-n">{handedIn.length}</span><span className="dash-today-tally-d">/ {assignments.length} handed in</span></div>
       </div>
       {open.map(a => <AssignmentCard key={a.assignmentId} a={a} onMutate={onMutate}/>)}
       {graded.length > 0 && (
@@ -1454,7 +1492,7 @@ function DashboardEventRow({ e, onRsvp }) {
         <div className="dash-event-meta">CACENTRE {e.centre} · {fmtTime(d)}</div>
       </div>
       <button
-        className={"btn btn-sm " + (e.myRsvp === "going" ? "btn-gold" : "btn-ghost")}
+        className={"btn btn-sm dash-event-rsvp " + (e.myRsvp === "going" ? "btn-gold" : "btn-ghost")}
         onClick={() => onRsvp(e.eventId, e.myRsvp === "going" ? "cancelled" : "going")}
       >
         {e.myRsvp === "going" ? "Going ✓" : "RSVP"}
@@ -1617,7 +1655,7 @@ function DashboardJournal({ onMutate }) {
         />
         <div className="dash-journal-foot">
           <span className="mono" style={{color:"var(--ink-500)"}}>{saved ? "SAVED ✓" : (busy ? "SAVING…" : "")}</span>
-          <button className="btn btn-primary btn-sm" disabled={busy || !body.trim()}>Save entry</button>
+          <button className="btn btn-primary btn-sm dash-journal-save" disabled={busy || !body.trim()}>Save entry</button>
         </div>
       </form>
     </div>

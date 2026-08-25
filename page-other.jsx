@@ -745,6 +745,13 @@ function JoinPage({ setPage }) {
         bad_lastName: "Enter the applicant's last name.",
         bad_name: "Enter the applicant's full name.",
         upstream_unreachable: "We couldn't reach the server. Your draft is saved — try again in a moment.",
+        /* Three the server can refuse a teen application for, all of them
+           silent before: the generic fallback told a family to try again, and
+           trying again failed the same way, because the field that was too
+           long was still too long. */
+        bad_otherName: "That middle name is too long — keep it under 60 characters.",
+        email_too_long: "That email address is too long — check it for a typo.",
+        why_too_long: "That answer is too long — keep it under 2,000 characters.",
       };
       const text = map[code] || "Couldn't submit your application. Your draft is saved — try again.";
       setFieldErr(text);

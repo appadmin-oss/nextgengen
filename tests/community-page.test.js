@@ -963,6 +963,25 @@ async function openPage(browser, width, height, media) {
                 : (document.scrollingElement || document.documentElement);
         return s.scrollTop;
       });
+      /* Wait for the switch to SETTLE — two consecutive reads that agree —
+         rather than for a fixed delay or for the value being asserted. A fixed
+         delay is how a real assertion becomes a flake under load; waiting for
+         the expected value would make the assertion tautological. */
+      const settle = async () => {
+        let last = null;
+        for (let i = 0; i < 40; i++) {
+          const now = await page.evaluate(() => {
+            const el = document.querySelector('.cmm-body');
+            const s = el && el.scrollHeight > el.clientHeight + 1 ? el
+                    : (document.scrollingElement || document.documentElement);
+            return Math.round(s.scrollTop);
+          });
+          if (last !== null && now === last) return now;
+          last = now;
+          await page.waitForTimeout(60);
+        }
+        return last;
+      };
       const scrollTo = (y) => page.evaluate((n) => {
         const el = document.querySelector('.cmm-body');
         const s = el && el.scrollHeight > el.clientHeight + 1 ? el
@@ -972,7 +991,7 @@ async function openPage(browser, width, height, media) {
       const body = page.locator('.cmm-body');
 
       await page.locator('.cm-j-seg .cmd-seg-b', { hasText: 'Programme' }).click();
-      await page.waitForTimeout(800);
+      await settle();
       /* Card-shaped, because the handoff asks for skeletons matching the card
          geometry rather than a spinner or a line of text. */
       ok('the record loads as cards, not as the word "loading"',
@@ -997,7 +1016,7 @@ async function openPage(browser, width, height, media) {
          }));
 
       await page.locator('.cm-j-seg .cmd-seg-b', { hasText: 'Mine' }).click();
-      await page.waitForTimeout(500);
+      await settle();
       /* Mine has never been scrolled, so it opens at the top — and, crucially,
          does NOT inherit the record's position. A shared scroll offset is the
          bug this preserves-per-tab behaviour exists to prevent. */
@@ -1005,16 +1024,18 @@ async function openPage(browser, width, height, media) {
          await scrollTop() < 40);
 
       await page.locator('.cm-j-seg .cmd-seg-b', { hasText: 'Programme' }).click();
-      await page.waitForTimeout(500);
-      const backToProg = await scrollTop();
-      /* Not to the pixel. The browser's own scroll anchoring adjusts by a few
-         dozen pixels when the taller pane comes back, and fighting it would be
-         fighting the thing that keeps content stable everywhere else. What is
-         being asserted is what a reader would notice: they are back in the
-         same part of the record, not at the top of it. */
+      const backToProg = await settle();
+      /* Not to the pixel. The browser's own scroll anchoring adjusts when the
+         taller pane comes back — measured between 68 and 97px here — and
+         fighting it would be fighting the thing that keeps content stable
+         everywhere else. The bound is a third of a screen rather than a round
+         number, because what is being asserted is what a reader would notice:
+         they are back in the same part of the record, not at the top of it. A
+         tolerance pinned just above the drift observed once is a flake. */
+      const near = Math.round(844 / 3);
       ok('…and coming back to the record lands where it was left ('
-         + Math.round(backToProg) + ' vs ' + Math.round(progAt) + ')',
-         Math.abs(backToProg - progAt) < 100 && backToProg > 150);
+         + Math.round(backToProg) + ' vs ' + Math.round(progAt) + ', within ' + near + ')',
+         Math.abs(backToProg - progAt) < near && backToProg > 150);
 
       /* A tab that remembered a position longer than its own content would
          leave the reader at the bottom of nothing. */
