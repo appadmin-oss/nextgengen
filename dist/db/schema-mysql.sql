@@ -2272,3 +2272,63 @@ ALTER TABLE match_games ADD COLUMN drawOfferLastBy VARCHAR(64) DEFAULT '';
 ALTER TABLE match_games ADD COLUMN drawOfferPly INT DEFAULT -1;
 
 INSERT INTO schema_version (version) VALUES (106) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 107 · The Programme record (§8c) ────────────────────────────────────────
+-- The journal already held what happened; §8c is about what happened NEXT — an
+-- issue's updates, who is following it, what a decision follows from, what a
+-- contribution actually raised. All of it was being narrated in prose in the
+-- body, where nothing can count it and a summary tile cannot be honest.
+--
+-- Everything countable stays derivable: "receipts attached (2)" and "12 photos"
+-- are the media already on the entry, and "kept by 14 members" is a row count.
+-- A stored tally beside a list of the things it counts is two records of one
+-- fact, and they drift.
+ALTER TABLE program_journal ADD COLUMN ownerId VARCHAR(64) DEFAULT '';
+ALTER TABLE program_journal ADD COLUMN ownerName VARCHAR(120) DEFAULT '';
+-- The back-reference §8c draws as "↳ Follows the hall double-booking issue".
+ALTER TABLE program_journal ADD COLUMN parentEntryId VARCHAR(48) DEFAULT '';
+-- Money in the smallest unit. Naira has kobo, and a float here is how a funding
+-- total ends in .00000001.
+ALTER TABLE program_journal ADD COLUMN amountMinor BIGINT DEFAULT 0;
+ALTER TABLE program_journal ADD COLUMN targetMinor BIGINT DEFAULT 0;
+ALTER TABLE program_journal ADD COLUMN currency VARCHAR(8) DEFAULT 'NGN';
+ALTER TABLE program_journal ADD COLUMN contributors INT DEFAULT 0;
+-- A milestone's headline: "41" "of 46" "finished twelve weeks".
+ALTER TABLE program_journal ADD COLUMN countValue INT DEFAULT 0;
+ALTER TABLE program_journal ADD COLUMN countTotal INT DEFAULT 0;
+ALTER TABLE program_journal ADD COLUMN countUnit VARCHAR(80) DEFAULT '';
+-- "agreed with 2 mentors · 18 members notified". Provenance is the reason a
+-- decision is trusted a year later, and it cannot be reconstructed after.
+ALTER TABLE program_journal ADD COLUMN agreedWith INT DEFAULT 0;
+ALTER TABLE program_journal ADD COLUMN notified INT DEFAULT 0;
+-- Proposed by somebody without the journal capability, waiting for a mentor.
+-- §8c promises "a mentor reviews it before it appears here", and a promise
+-- printed on the screen that makes it has to be enforced by the screen behind.
+ALTER TABLE program_journal ADD COLUMN proposedBy VARCHAR(64) DEFAULT '';
+ALTER TABLE program_journal ADD COLUMN proposedName VARCHAR(120) DEFAULT '';
+ALTER TABLE program_journal ADD COLUMN publishedAt VARCHAR(40) DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS program_journal_updates (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  updateId VARCHAR(48) UNIQUE NOT NULL,
+  entryId VARCHAR(48) NOT NULL,
+  authorId VARCHAR(64) DEFAULT '',
+  authorName VARCHAR(120) DEFAULT '',
+  body TEXT,
+  createdAt VARCHAR(40) DEFAULT '',
+  INDEX idx_pju_entry (entryId, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- One table for two words. "Follow this" on an issue and the bookmark on a
+-- piece of advice are the same act — this member marked this entry — and two
+-- tables would be two answers to "how many people are holding on to this".
+CREATE TABLE IF NOT EXISTS program_journal_follows (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  entryId VARCHAR(48) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  createdAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_pjf_unique (entryId, memberId),
+  INDEX idx_pjf_member (memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (107) ON DUPLICATE KEY UPDATE version = version;

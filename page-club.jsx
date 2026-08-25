@@ -9808,13 +9808,40 @@ function CmJournalEditor({ entry, onClose, onSaved }) {
        the payload mentions them, and an editor that omitted the key was how
        "edit the title" used to mean "delete the photographs". */
     media: (entry && entry.media) || [],
+    /* The §8c fields. Each card kind has a headline the prose cannot carry —
+       an amount, a count, who agreed — and without somewhere to type them the
+       cards can only ever show zeroes. */
+    ownerName: (entry && entry.ownerName) || "",
+    parentEntryId: (entry && entry.parentEntryId) || "",
+    amountMinor: (entry && entry.amountMinor) || 0,
+    targetMinor: (entry && entry.targetMinor) || 0,
+    contributors: (entry && entry.contributors) || 0,
+    countValue: (entry && entry.countValue) || 0,
+    countTotal: (entry && entry.countTotal) || 0,
+    countUnit: (entry && entry.countUnit) || "",
+    agreedWith: (entry && entry.agreedWith) || 0,
+    notified: (entry && entry.notified) || 0,
   }));
+  /* Issues this entry could follow from, for the "↳ Follows…" back-reference.
+     Loaded once, and only when a decision is being written. */
+  const [parents, setParents] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState("");
   const [who, setWho] = React.useState("");
   const [up, setUp] = React.useState(0);
   const fileRef = React.useRef(null);
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  /* Money is typed in naira and stored in kobo. A float in the column is how a
+     funding total ends in .00000001. */
+  const naira = (minor) => (minor ? String(Math.round(minor / 100)) : "");
+  const setNaira = (k, v) => set(k, Math.max(0, Math.round(parseFloat(String(v).replace(/[^0-9.]/g, "")) || 0)) * 100);
+
+  React.useEffect(() => {
+    if (f.kind !== "decision" || parents.length) return;
+    NGGApi.member.programJournal.feed({ kind: "issue", per: 30 })
+      .then(r => setParents((r.entries || []).filter(e => e.entryId !== f.entryId)))
+      .catch(() => {});
+  }, [f.kind, f.entryId, parents.length]);
 
   /* Today, as the date input wants it. Used as `max`: the journal records what
      happened, and nothing has happened tomorrow yet. */
@@ -9911,6 +9938,67 @@ function CmJournalEditor({ entry, onClose, onSaved }) {
           Recorded {daysLate === 1 ? "a day" : daysLate + " days"} after the event — the entry will say so,
           so the record stays honest about when it was written.
         </p>}
+        {/* Only the fields this kind actually has. A form full of irrelevant
+            boxes does not get filled, and half-filled is how the record ends
+            up with a contribution that raised nothing. */}
+        {f.kind === "issue" && (
+          <label className="cm-pj-lab">Who owns it
+            <input className="cm-pj-in" value={f.ownerName} onChange={e => set("ownerName", e.target.value)}
+              placeholder="The person chasing it — not the person who raised it"/>
+          </label>
+        )}
+        {f.kind === "decision" && (
+          <>
+            <label className="cm-pj-lab">What it followed from
+              <select className="cm-pj-in" value={f.parentEntryId} onChange={e => set("parentEntryId", e.target.value)}>
+                <option value="">Nothing in particular</option>
+                {parents.map(p => <option key={p.entryId} value={p.entryId}>{p.title}</option>)}
+              </select>
+            </label>
+            <div className="cm-pj-row">
+              <label className="cm-pj-lab">Mentors who agreed
+                <input className="cm-pj-in" type="number" min="0" value={f.agreedWith || ""}
+                  onChange={e => set("agreedWith", Math.max(0, parseInt(e.target.value, 10) || 0))}/>
+              </label>
+              <label className="cm-pj-lab">Members notified
+                <input className="cm-pj-in" type="number" min="0" value={f.notified || ""}
+                  onChange={e => set("notified", Math.max(0, parseInt(e.target.value, 10) || 0))}/>
+              </label>
+            </div>
+          </>
+        )}
+        {f.kind === "contribution" && (
+          <div className="cm-pj-row">
+            <label className="cm-pj-lab">Amount (₦)
+              <input className="cm-pj-in" inputMode="numeric" value={naira(f.amountMinor)}
+                onChange={e => setNaira("amountMinor", e.target.value)} placeholder="12000"/>
+            </label>
+            <label className="cm-pj-lab">Goal (₦, optional)
+              <input className="cm-pj-in" inputMode="numeric" value={naira(f.targetMinor)}
+                onChange={e => setNaira("targetMinor", e.target.value)} placeholder="Leave blank if there was none"/>
+            </label>
+            <label className="cm-pj-lab">From how many
+              <input className="cm-pj-in" type="number" min="0" value={f.contributors || ""}
+                onChange={e => set("contributors", Math.max(0, parseInt(e.target.value, 10) || 0))} placeholder="9"/>
+            </label>
+          </div>
+        )}
+        {f.kind === "milestone" && (
+          <div className="cm-pj-row">
+            <label className="cm-pj-lab">The number
+              <input className="cm-pj-in" type="number" min="0" value={f.countValue || ""}
+                onChange={e => set("countValue", Math.max(0, parseInt(e.target.value, 10) || 0))} placeholder="41"/>
+            </label>
+            <label className="cm-pj-lab">Out of
+              <input className="cm-pj-in" type="number" min="0" value={f.countTotal || ""}
+                onChange={e => set("countTotal", Math.max(0, parseInt(e.target.value, 10) || 0))} placeholder="46"/>
+            </label>
+            <label className="cm-pj-lab">Of what
+              <input className="cm-pj-in" value={f.countUnit} maxLength={80}
+                onChange={e => set("countUnit", e.target.value)} placeholder="finished twelve weeks"/>
+            </label>
+          </div>
+        )}
         <label className="cm-pj-lab">Detail
           <textarea className="cm-pj-in" rows={5} value={f.body} onChange={e => set("body", e.target.value)}
             placeholder="What was said, what was decided, what changed as a result."/>
@@ -9971,23 +10059,287 @@ function CmJournalEditor({ entry, onClose, onSaved }) {
   );
 }
 
+/* ── §8c · The Programme record ───────────────────────────────────────────
+   The shared record for a centre: what was decided, fixed, funded and learned.
+
+   The screen used to be one card shape repeated for six kinds of entry, with
+   the interesting part — the amount, the number, the update, who agreed —
+   written into the prose. §8c gives each kind the shape its content actually
+   has, which is the difference between a list you scroll and a record you can
+   read a number off.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/** "AUGUST 2026" — the month divider, from the date the thing HAPPENED. */
+function pjMonthKey(iso) {
+  const d = new Date(String(iso || "").replace(" ", "T"));
+  return isNaN(d.getTime()) ? "" : d.getUTCFullYear() + "-" + (d.getUTCMonth() + 1);
+}
+function pjMonthLabel(iso) {
+  const d = new Date(String(iso || "").replace(" ", "T"));
+  if (isNaN(d.getTime())) return "Undated";
+  return d.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+/** "2 days ago". cmAgo is the compact form a message list wants — "2d" — and
+ *  the record is not a message list: it is read slowly, months later, and
+ *  "LATEST UPDATE · 2D" is not how the artboard writes it or how anybody says
+ *  it out loud. */
+function pjAgo(iso) {
+  if (!iso) return "";
+  const s = Math.max(0, Math.floor((Date.now() - new Date(String(iso).replace(" ", "T")).getTime()) / 1000));
+  if (s < 3600) return "just now";
+  const h = Math.floor(s / 3600);
+  if (h < 24) return h === 1 ? "1 hour ago" : h + " hours ago";
+  const d = Math.floor(s / 86400);
+  if (d < 31) return d === 1 ? "yesterday" : d + " days ago";
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return mo === 1 ? "last month" : mo + " months ago";
+  const y = Math.floor(d / 365);
+  return y === 1 ? "a year ago" : y + " years ago";
+}
+
+/** "12 Aug", and the year too once it is not this one — a record is read
+ *  years later, and "17 Aug" alone is the wrong answer in 2027. */
+function pjShortDate(iso) {
+  const d = new Date(String(iso || "").replace(" ", "T"));
+  if (isNaN(d.getTime())) return "";
+  const opts = { day: "numeric", month: "short", timeZone: "UTC" };
+  if (d.getUTCFullYear() !== new Date().getUTCFullYear()) opts.year = "numeric";
+  return d.toLocaleDateString("en-GB", opts);
+}
+
+const PJ_CHIP = {
+  issue: "is-issue", decision: "is-decision", contribution: "is-contribution",
+  advice: "is-advice", milestone: "is-milestone", note: "is-note",
+};
+
+function CmPjTiles({ s }) {
+  /* Three numbers, and the first is red because it is the only one that is a
+     question rather than an achievement. */
+  return (
+    <div className="cm-pjx-tiles">
+      <div className="cm-pjx-tile">
+        <div className="cm-pjx-n is-alarm">{s.openIssues}</div>
+        <div className="cm-pjx-k">Open issues</div>
+      </div>
+      <div className="cm-pjx-tile">
+        <div className="cm-pjx-n">{s.thisMonth}</div>
+        <div className="cm-pjx-k">This month</div>
+      </div>
+      <div className="cm-pjx-tile">
+        <div className="cm-pjx-n">{s.raised}</div>
+        <div className="cm-pjx-k">Raised {s.raisedYear}</div>
+      </div>
+    </div>
+  );
+}
+
+/** One entry, in the shape §8c gives its kind. */
+function CmPjCard({ e, parent, onFollow, onUpdates, canAuthor, onPublish, onEdit, onVisibility, onShare }) {
+  const k = e.kind;
+  const kindLabel = (PJ_KINDS[k] || PJ_KINDS.note).label;
+  const dark = k === "advice";
+  return (
+    <article className={"cm-pjx-card is-" + k + (k === "issue" && e.status !== "resolved" ? " is-live" : "")}>
+      <header className="cm-pjx-head">
+        <span className={"cm-pjx-chip " + (PJ_CHIP[k] || PJ_CHIP.note)}>{kindLabel}</span>
+        {k === "issue" && e.status !== "resolved" && e.openFor && (
+          <span className="cm-pjx-chip is-open">Open · {e.openFor}</span>
+        )}
+        {k === "issue" && e.status === "resolved" && <span className="cm-pjx-chip is-done">Resolved</span>}
+        {/* A proposal is on a mentor's screen and nobody else's, so it says so
+            there rather than looking like part of the record already. */}
+        {e.proposed && <span className="cm-pjx-chip is-proposed">Proposed{e.proposedName ? " by " + e.proposedName : ""}</span>}
+        <span className="cm-pjx-when">{pjShortDate(e.occurredAt)}</span>
+      </header>
+
+      <h3 className={"cm-pjx-title" + (dark ? " is-quote" : "")}>
+        {dark ? "“" + e.title + "”" : e.title}
+      </h3>
+
+      {!dark && e.body && <p className="cm-pjx-body">{e.body}</p>}
+
+      {/* A contribution's headline is the money. Tabular, because a column of
+          amounts that jitters is a column nobody scans. */}
+      {k === "contribution" && (
+        <>
+          <div className="cm-pjx-figure">
+            <span className="cm-pjx-big">{e.amount}</span>
+            {e.contributors > 0 && (
+              <span className="cm-pjx-of">from {e.contributors} {e.contributors === 1 ? "family" : "families"}</span>
+            )}
+          </div>
+          <div className="cm-pjx-bar" role="img"
+               aria-label={e.targetMinor > 0 ? e.progress + "% of the goal" : "The full amount asked for"}>
+            <span style={{ width: e.progress + "%" }}/>
+          </div>
+        </>
+      )}
+
+      {k === "milestone" && (e.countValue > 0 || e.countTotal > 0) && (
+        <div className="cm-pjx-figure">
+          <span className="cm-pjx-big">{e.countValue}</span>
+          <span className="cm-pjx-of">
+            {e.countTotal > 0 ? "of " + e.countTotal + " " : ""}{e.countUnit}
+          </span>
+        </div>
+      )}
+
+      {/* The latest update, inset. An issue with no update is an issue nobody
+          has touched, and the card should not pretend otherwise. */}
+      {k === "issue" && e.latestUpdate && (
+        <div className="cm-pjx-inset">
+          <div className="cm-pjx-inset-h">Latest update · {pjAgo(e.latestUpdate.createdAt)}</div>
+          <div className="cm-pjx-inset-b">{e.latestUpdate.body}</div>
+        </div>
+      )}
+
+      {/* What this decision came out of. Most of the value of keeping a record
+          is being able to see that one thing followed from another. */}
+      {k === "decision" && e.parentEntryId && (
+        <div className="cm-pjx-ref">
+          <span aria-hidden="true">↳</span>
+          {/* The title as written, not lower-cased. "Follows ayobo hall
+              double-booked" reads as a typo, because Ayobo is a place. */}
+          <span>Follows {parent ? "“" + parent.title + "”" : "an earlier entry"}</span>
+        </div>
+      )}
+
+      {(k === "issue" || dark) && (
+        <div className="cm-pjx-who">
+          <span className="cm-pjx-av" style={{ background: cmColor(e.authorName || "", "mentor"),
+                                               color: inkOn(cmColor(e.authorName || "", "mentor")).ink }}>
+            {cmInitial(e.authorName || "?")}
+          </span>
+          <span className="cm-pjx-whotxt">
+            {dark
+              ? (e.authorName || "A mentor") + (e.followers > 0 ? " · kept by " + e.followers + " " + (e.followers === 1 ? "member" : "members") : "")
+              : "Raised by " + (e.authorName || "a mentor") + (e.ownerName ? " · owned by " + e.ownerName : "")}
+          </span>
+          {dark && (
+            <button type="button" className={"cm-pjx-keep" + (e.following ? " is-on" : "")}
+                    aria-pressed={!!e.following} onClick={() => onFollow(e)}>
+              <span aria-hidden="true">🔖</span>
+              <span className="sr-only">{e.following ? "Stop keeping this" : "Keep this"}</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Provenance. The reason a decision is still trusted a year later. */}
+      {k === "decision" && (
+        <div className="cm-pjx-prov">
+          {(e.authorName || "A mentor")
+            + (e.agreedWith > 0 ? " · agreed with " + e.agreedWith + " " + (e.agreedWith === 1 ? "mentor" : "mentors") : "")
+            + (e.notified > 0 ? " · " + e.notified + " members notified" : "")}
+        </div>
+      )}
+      {k === "contribution" && (
+        <div className="cm-pjx-prov">
+          {"Logged by " + (e.authorName || "a mentor")
+            + (e.attachments > 0 ? " · receipts attached (" + e.attachments + ")" : " · no receipts attached")}
+        </div>
+      )}
+      {k === "milestone" && (
+        <div className="cm-pjx-prov">
+          {(e.authorName || "A mentor") + (e.attachments > 0 ? " · " + e.attachments + " photos" : "")}
+        </div>
+      )}
+
+      {k === "issue" && (
+        <div className="cm-pjx-acts">
+          <button type="button" className="cm-pjx-act" onClick={() => onUpdates(e)}>
+            {e.updates === 1 ? "1 update" : (e.updates || 0) + " updates"}
+          </button>
+          <button type="button" className={"cm-pjx-act is-go" + (e.following ? " is-on" : "")}
+                  aria-pressed={!!e.following} onClick={() => onFollow(e)}>
+            {e.following ? "Following" : "Follow this"}
+          </button>
+        </div>
+      )}
+
+      {canAuthor && e.proposed && (
+        <div className="cm-pjx-acts">
+          <button type="button" className="cm-pjx-act is-go" onClick={() => onPublish(e)}>
+            Publish to the record
+          </button>
+        </div>
+      )}
+
+      {/* The mentor's own row. §8c draws the card a member reads; these three
+          are the controls that keep the safeguarding model working, and losing
+          them to a redesign would mean no entry could ever be widened again.
+          Below the content, and only for somebody who can act on them. */}
+      {canAuthor && (
+        <div className="cm-pjx-staff">
+          <span className={"cm-pjx-vis is-" + e.visibility} title={(PJ_VIS[e.visibility] || PJ_VIS.staff).hint}>
+            {(PJ_VIS[e.visibility] || PJ_VIS.staff).icon} {(PJ_VIS[e.visibility] || PJ_VIS.staff).label}
+          </span>
+          <button type="button" className="cm-pjx-slink" onClick={() => onEdit(e)}>Edit</button>
+          <button type="button" className="cm-pjx-slink" onClick={() => onVisibility(e)}>Who can see it</button>
+          <button type="button" className="cm-pjx-slink" onClick={() => onShare(e)}>Share link</button>
+        </div>
+      )}
+    </article>
+  );
+}
+
 function CmProgramJournal({ auth }) {
   const [feed, setFeed] = React.useState(null);
   const [mem, setMem] = React.useState(null);
   const [err, setErr] = React.useState("");
-  const [kind, setKind] = React.useState("");
+  const [kind, setKind] = React.useState("");        // "" | a kind | "attention"
   const [q, setQ] = React.useState("");
   const [editing, setEditing] = React.useState(null);
+  const [updatesFor, setUpdatesFor] = React.useState(null);
+  const [proposing, setProposing] = React.useState(false);
 
   const load = React.useCallback(() => {
-    NGGApi.member.programJournal.feed({ kind, q })
+    const args = kind === "attention" ? { need: "attention", q } : { kind, q };
+    NGGApi.member.programJournal.feed(args)
       .then(r => { setFeed(r); setErr(""); })
-      .catch(e => setErr(e.code || e.message || "Couldn't load the journal."));
+      .catch(e => setErr(e.detail || "Couldn't load the record."));
     NGGApi.member.programJournal.memories().then(r => setMem(r.collections || [])).catch(() => setMem([]));
   }, [kind, q]);
   React.useEffect(() => { load(); }, [load]);
 
   const canAuthor = !!(feed && feed.canAuthor);
+  const summary = (feed && feed.summary) || { openIssues: 0, thisMonth: 0, raised: "₦0", raisedYear: new Date().getFullYear(), everything: 0, needsAttention: 0 };
+  const entries = (feed && feed.entries) || [];
+  /* The back-reference needs the entry it points at. Resolved from the page
+     already loaded rather than fetched per card — a decision and the issue it
+     followed are almost always on the same screen, and a card that cannot find
+     its parent says "an earlier entry" instead of inventing one. */
+  const byId = {};
+  entries.forEach(e => { byId[e.entryId] = e; });
+
+  const onFollow = async (e) => {
+    try {
+      const r = await NGGApi.member.programJournal.follow(e.entryId);
+      setFeed(f => !f ? f : Object.assign({}, f, {
+        entries: f.entries.map(x => x.entryId === e.entryId
+          ? Object.assign({}, x, { following: r.following, followers: r.followers }) : x),
+      }));
+    } catch (x) { toast.error(x.detail || "Couldn't change that."); }
+  };
+
+  const onPublish = async (e) => {
+    try {
+      await NGGApi.member.programJournal.publish(e.entryId);
+      toast.success("Published to the record.");
+      load();
+    } catch (x) { toast.error(x.detail || "Couldn't publish that."); }
+  };
+
+  const onShare = async (e) => {
+    try {
+      const r = await NGGApi.member.programJournal.share(e.entryId);
+      if (navigator.clipboard && r.url) navigator.clipboard.writeText(r.url);
+      /* Say plainly when the link will not open yet, rather than handing over
+         a URL that 404s for whoever it is sent to. */
+      toast[r.live ? "success" : "info"](r.live ? "Link copied." : (r.note || "Link created, but the entry is not public yet."));
+      load();
+    } catch (x) { toast.error(x.detail || "Couldn't make a link."); }
+  };
 
   const onVisibility = async (e) => {
     const order = ["staff", "community", "public"];
@@ -10004,41 +10356,60 @@ function CmProgramJournal({ auth }) {
       const r = await NGGApi.member.programJournal.visibility(e.entryId, v);
       toast.success("Now visible to: " + v + (r.shareLive ? " — share links are live." : " — share links will not open."));
       load();
-    } catch (x) { toast.error(x.code || x.message); }
+    } catch (x) { toast.error(x.detail || "Couldn't change that."); }
   };
 
-  const onShare = async (e) => {
-    try {
-      const r = await NGGApi.member.programJournal.share(e.entryId);
-      if (navigator.clipboard && r.url) navigator.clipboard.writeText(r.url);
-      // Say plainly when the link will not open yet, rather than handing over a URL that 404s.
-      toast[r.live ? "success" : "info"](r.live ? "Link copied." : (r.note || "Link created, but the entry is not public yet."));
-      load();
-    } catch (x) { toast.error(x.code || x.message); }
-  };
+  /* Month dividers, computed once over the list as it arrives. The server
+     already orders by when things happened, so this only has to notice when
+     the month changes. */
+  const rows = [];
+  let lastMonth = "";
+  entries.forEach(e => {
+    const mk = pjMonthKey(e.occurredAt);
+    if (mk !== lastMonth) { rows.push({ divider: pjMonthLabel(e.occurredAt), key: "m" + mk }); lastMonth = mk; }
+    rows.push({ entry: e, key: e.entryId });
+  });
+
+  const CHIPS = [["", "Everything", summary.everything],
+                 ["attention", "Needs attention", summary.needsAttention],
+                 ["decision", "Decisions", 0], ["advice", "Advice", 0],
+                 ["contribution", "Contribution", 0], ["milestone", "Milestone", 0]];
 
   return (
-    <div className="cm-pj">
-      <header className="cm-pj-intro">
-        <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Programme journal</h2>
-        <p className="cm-pj-hint" style={{ margin: 0 }}>
-          The record of what this programme actually did — advice given, contributions made, issues raised and how they
-          resolved, and who was involved. Channels are for talking; this is what remains.
-        </p>
-        {canAuthor && <button className="btn btn-primary btn-sm" style={{ marginTop: 10 }}
-          onClick={() => setEditing({})}>＋ New entry</button>}
-      </header>
+    <div className="cm-pjx">
+      <p className="cm-pjx-intro">
+        The shared record — what was decided, fixed, funded and learned.
+        Anyone can propose an entry; mentors publish it.
+      </p>
 
-      {err && <div role="alert" className="cm-pj-empty" style={{ color: "#c0341a" }}>{err}</div>}
+      <CmPjTiles s={summary}/>
 
-      {/* Memories first: a journal nobody re-reads is an archive. */}
+      <div className="cm-pjx-chips" role="group" aria-label="Narrow the record">
+        {CHIPS.map(([id, label, n]) => (
+          <button key={id || "all"} type="button" aria-pressed={kind === id}
+                  className={"cm-pjx-fchip" + (kind === id ? " is-on" : "") + (id === "attention" ? " is-attention" : "")}
+                  onClick={() => setKind(id)}>
+            {label}{n > 0 ? " " + n : ""}
+          </button>
+        ))}
+      </div>
+
+      {canAuthor && (
+        <div className="cm-pjx-tools">
+          <input className="cm-pjx-in" value={q} onChange={e => setQ(e.target.value)}
+                 placeholder="Search the record…" aria-label="Search the record"/>
+          <button className="cm-pjx-new" onClick={() => setEditing({})}>＋ New entry</button>
+        </div>
+      )}
+
+      {err && <div role="alert" className="cm-pjx-empty">{err}</div>}
+
+      {/* Memories: a record nobody re-reads is an archive. */}
       {mem && mem.length > 0 && (
         <section className="cm-pj-mem">
           {mem.map(c => (
             <div key={c.key} className="cm-pj-memrow">
-              <div className="cm-pj-memhead">
-                <b>{c.title}</b><span>{c.subtitle}</span>
-              </div>
+              <div className="cm-pj-memhead"><b>{c.title}</b><span>{c.subtitle}</span></div>
               <div className="cm-pj-memscroll">
                 {c.entries.map(e => <CmJournalCard key={e.entryId} e={e} compact canAuthor={false}
                   onEdit={() => {}} onVisibility={() => {}} onShare={() => {}}/>)}
@@ -10048,33 +10419,133 @@ function CmProgramJournal({ auth }) {
         </section>
       )}
 
-      <div className="cm-pj-filters">
-        <input className="cm-pj-in" value={q} onChange={e => setQ(e.target.value)} placeholder="Search the record…" style={{ maxWidth: 240 }}/>
-        <button className={"btn btn-sm " + (kind === "" ? "btn-primary" : "btn-ghost")} onClick={() => setKind("")}>Everything</button>
-        {Object.keys(PJ_KINDS).map(k => (
-          <button key={k} className={"btn btn-sm " + (kind === k ? "btn-primary" : "btn-ghost")}
-            onClick={() => setKind(kind === k ? "" : k)}>{PJ_KINDS[k].icon} {PJ_KINDS[k].label}</button>
-        ))}
-      </div>
-
-      {!feed ? <div className="cm-pj-empty">Loading the record…</div>
-        : feed.entries.length === 0
-          ? <div className="cm-pj-empty">
-              {q || kind ? "Nothing in the record matches that." :
-                canAuthor ? "Nothing written yet. The first entry is usually the decision somebody will ask about in three months."
-                          : "Nothing in the journal you can see yet."}
+      {!feed ? <div className="cm-pjx-empty">Loading the record…</div>
+        : entries.length === 0
+          ? <div className="cm-pjx-empty">
+              {q || kind ? "Nothing in the record matches that."
+                : canAuthor ? "Nothing written yet. The first entry is usually the decision somebody will ask about in three months."
+                            : "Nothing on the record you can see yet."}
             </div>
-          : <div className="cm-pj-list">
-              {feed.entries.map(e => (
-                <CmJournalCard key={e.entryId} e={e} canAuthor={canAuthor}
-                  onEdit={setEditing} onVisibility={onVisibility} onShare={onShare}/>
-              ))}
+          : <div className="cm-pjx-list">
+              {rows.map(r => r.divider
+                ? <div key={r.key} className="cm-pjx-div"><span>{r.divider}</span><i/></div>
+                : <CmPjCard key={r.key} e={r.entry} parent={byId[r.entry.parentEntryId]}
+                            canAuthor={canAuthor} onFollow={onFollow} onPublish={onPublish}
+                            onUpdates={setUpdatesFor} onEdit={setEditing}
+                            onVisibility={onVisibility} onShare={onShare}/>)}
             </div>}
+
+      {/* The footer card, and the promise printed on the screen that makes it. */}
+      {feed && feed.canPropose && (
+        <div className="cm-pjx-propose">
+          <span className="cm-pjx-propose-i" aria-hidden="true">✎</span>
+          <div className="cm-pjx-propose-t">
+            <div className="cm-pjx-propose-h">Something worth recording?</div>
+            <div className="cm-pjx-propose-b">Propose an entry — a mentor reviews it before it appears here.</div>
+          </div>
+          <button type="button" className="cm-pjx-propose-cta" onClick={() => setProposing(true)}>Propose</button>
+        </div>
+      )}
+
+      {updatesFor && <CmPjUpdates entry={updatesFor} canAuthor={canAuthor}
+        onClose={() => setUpdatesFor(null)} onAdded={() => { setUpdatesFor(null); load(); }}/>}
+
+      {proposing && <CmPjPropose onClose={() => setProposing(false)}
+        onSent={(msg) => { setProposing(false); toast.success(msg); }}/>}
 
       {editing && <CmJournalEditor entry={editing.entryId ? editing : null}
         onClose={() => setEditing(null)}
         onSaved={() => { setEditing(null); toast.success("Saved to the record."); load(); }}/>}
     </div>
+  );
+}
+
+/** The updates on one issue, and — for a mentor — the way to add the next one. */
+function CmPjUpdates({ entry, canAuthor, onClose, onAdded }) {
+  const [list, setList] = React.useState(null);
+  const [body, setBody] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => {
+    NGGApi.member.programJournal.updates(entry.entryId)
+      .then(r => setList(r.updates || [])).catch(() => setList([]));
+  }, [entry.entryId]);
+
+  const add = async () => {
+    if (!body.trim() || busy) return;
+    setBusy(true);
+    try { await NGGApi.member.programJournal.addUpdate(entry.entryId, body.trim()); onAdded(); }
+    catch (x) { toast.error(x.detail || "Couldn't add that."); setBusy(false); }
+  };
+
+  return (
+    <CmSheet title={entry.title} onClose={onClose}>
+      {list === null ? <p className="cm-pjx-empty">Loading…</p>
+        : list.length === 0
+          ? <p className="cm-pjx-empty">Nothing has been written on this yet.</p>
+          : <ol className="cm-pjx-ups">
+              {list.map(u => (
+                <li key={u.updateId} className="cm-pjx-up">
+                  <div className="cm-pjx-up-h">{u.authorName} · {pjAgo(u.createdAt)}</div>
+                  <div className="cm-pjx-up-b">{u.body}</div>
+                </li>
+              ))}
+            </ol>}
+      {canAuthor && (
+        <div className="cm-pjx-addup">
+          {/* Append-only, and it says so. An update is dated evidence of what
+              was known when, and a mentor should know that before writing. */}
+          <label className="cm-pjx-lab" htmlFor="pj-up">Add an update</label>
+          <textarea id="pj-up" className="cm-pjx-ta" rows={3} value={body}
+                    onChange={e => setBody(e.target.value)}
+                    placeholder="What has changed since the last one?"/>
+          <p className="cm-pjx-note">Updates are part of the record and cannot be edited afterwards.</p>
+          <button type="button" className="cm-pjx-cta" disabled={busy || !body.trim()} onClick={add}>
+            {busy ? "Adding…" : "Add update"}
+          </button>
+        </div>
+      )}
+    </CmSheet>
+  );
+}
+
+/** Propose an entry. The three things a mentor needs to review it, and nothing
+ *  that would let a proposal decide its own visibility. */
+function CmPjPropose({ onClose, onSent }) {
+  const [title, setTitle] = React.useState("");
+  const [body, setBody] = React.useState("");
+  const [kind, setKind] = React.useState("issue");
+  const [busy, setBusy] = React.useState(false);
+
+  const send = async () => {
+    if (!title.trim() || busy) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.programJournal.propose({ title: title.trim(), body: body.trim(), kind });
+      onSent(r.message || "Sent to the mentors.");
+    } catch (x) { toast.error(x.detail || "Couldn't send that."); setBusy(false); }
+  };
+
+  return (
+    <CmSheet title="Propose an entry" onClose={onClose}>
+      <p className="cm-pjx-note">A mentor reads it and decides whether it goes on the record. Until then only mentors can see it.</p>
+      <label className="cm-pjx-lab" htmlFor="pj-pk">What kind of thing is it?</label>
+      <div className="cm-pjx-kinds" id="pj-pk" role="group" aria-label="What kind of thing is it?">
+        {["issue", "decision", "contribution", "milestone", "advice", "note"].map(k => (
+          <button key={k} type="button" aria-pressed={kind === k}
+                  className={"cm-pjx-fchip" + (kind === k ? " is-on" : "")}
+                  onClick={() => setKind(k)}>{(PJ_KINDS[k] || PJ_KINDS.note).label}</button>
+        ))}
+      </div>
+      <label className="cm-pjx-lab" htmlFor="pj-pt">In one line</label>
+      <input id="pj-pt" className="cm-pjx-in" value={title} onChange={e => setTitle(e.target.value)}
+             maxLength={240} placeholder="The gate light has been out for a fortnight"/>
+      <label className="cm-pjx-lab" htmlFor="pj-pb">What happened?</label>
+      <textarea id="pj-pb" className="cm-pjx-ta" rows={4} value={body}
+                onChange={e => setBody(e.target.value)} placeholder="Anything a mentor would need to know."/>
+      <button type="button" className="cm-pjx-cta" disabled={busy || !title.trim()} onClick={send}>
+        {busy ? "Sending…" : "Send to the mentors"}
+      </button>
+    </CmSheet>
   );
 }
 

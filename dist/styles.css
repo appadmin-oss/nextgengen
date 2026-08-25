@@ -2254,6 +2254,11 @@ img { background-color: rgba(12,20,50,0.04); }
 
   /* Type colours, darkest to lightest */
   --c-ink:           #0a1130;
+  /* tokens.json "inkDeep". Named there, unnamed here until §8c needed it: it
+     is the ground of the Advice card and the fill of every dark CTA the
+     artboards draw, and those were reaching for the site-wide --navy-900,
+     which is the same hex by coincidence rather than by decision. */
+  --c-ink-deep:      #0c1432;
   --c-body:          #16203d;
   --c-body-soft:     #46506a;
   --c-muted:         #5f6785;
@@ -3648,6 +3653,197 @@ img { background-color: rgba(12,20,50,0.04); }
 .cm-pj-memrow { display: flex; align-items: center; gap: 10px; min-height: var(--c-tap);
   padding: 4px 0; border-bottom: 1px solid var(--c-divider-soft); }
 .cm-reply { align-items: flex-start; }
+
+/* ── §8c · The Programme record ───────────────────────────────────────────
+   Six kinds of entry, and the artboard gives each the shape its content
+   actually has: an amount is a headline, an update is an inset, a piece of
+   advice is a quote on a dark card. The old screen had one card repeated six
+   times with the interesting part written into the prose, which is the
+   difference between a list you scroll and a record you can read a number off.
+
+   Every colour here is a token. The kind chips reuse the semantic pairs the
+   rest of the product already assigns to the same meanings — red for the thing
+   that is wrong, blue for the decision, green for the money.                */
+.cm-pjx { display: flex; flex-direction: column; gap: 12px; }
+.cm-pjx-intro { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--c-muted); }
+
+.cm-pjx-tiles { display: flex; gap: 8px; }
+.cm-pjx-tile { flex: 1; min-width: 0; padding: 10px 8px; text-align: center;
+  background: var(--c-card); border: 1px solid var(--c-border); border-radius: 14px; }
+.cm-pjx-n { font-family: var(--c-font-display); font-weight: 800; font-size: 20px;
+  color: var(--c-ink); font-variant-numeric: tabular-nums; }
+/* The only red number on the screen, because it is the only one that is a
+   question rather than an achievement. */
+.cm-pjx-n.is-alarm { color: var(--c-red-ink); }
+.cm-pjx-k { margin-top: 2px; font-family: var(--c-font-mono); font-size: 9.5px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--c-muted); }
+
+.cm-pjx-chips { display: flex; gap: 8px; overflow-x: auto; margin: 0 calc(-1 * var(--c-gutter));
+  padding: 2px var(--c-gutter); }
+.cm-pjx-fchip { flex: none; min-height: 40px; padding: 0 15px; border-radius: var(--c-r-pill);
+  border: 1px solid var(--c-border-strong); background: var(--c-card);
+  font: inherit; font-weight: 700; font-size: 13.5px; color: var(--c-ink); cursor: pointer; }
+.cm-pjx-fchip.is-on { background: var(--c-ink-deep); border-color: var(--c-ink-deep); color: #fff; }
+/* "Needs attention" is amber whether or not it is the chip you are on, because
+   it is the one that is telling you something rather than offering a filter. */
+.cm-pjx-fchip.is-attention { border: 1.5px solid var(--c-accent-border);
+  background: var(--c-accent-tint); color: var(--c-accent-ink); }
+/* Selected, it takes the deep ink rather than the accent ink: accentInk on
+   accent measures 4.47:1, which is under 1.4.3 by a hair, and a hair is still
+   under. inkDeep on the same amber is 9.57:1. */
+.cm-pjx-fchip.is-attention.is-on { background: var(--c-accent); border-color: var(--c-accent);
+  color: var(--c-ink-deep); }
+.cm-pjx-fchip:focus-visible { outline: 2px solid var(--c-ink); outline-offset: 2px; }
+
+.cm-pjx-tools { display: flex; gap: 8px; align-items: center; }
+.cm-pjx-in { flex: 1; min-width: 0; min-height: var(--c-tap); padding: 0 12px;
+  border: 1px solid var(--c-border-strong); border-radius: var(--c-r-input);
+  background: var(--c-surface); font: inherit; font-size: 14.5px; color: var(--c-ink); }
+.cm-pjx-new { flex: none; min-height: var(--c-tap); padding: 0 14px; border: 0;
+  border-radius: var(--c-r-btn); background: var(--c-ink-deep); color: #fff;
+  font: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+
+.cm-pjx-list { display: flex; flex-direction: column; gap: 12px; }
+.cm-pjx-div { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.cm-pjx-div span { font-family: var(--c-font-mono); font-size: 11px; font-weight: 800;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--c-muted); }
+.cm-pjx-div i { flex: 1; height: 1px; background: var(--c-border); }
+
+.cm-pjx-card { display: flex; flex-direction: column; gap: 10px; padding: 16px;
+  background: var(--c-card); border: 1px solid var(--c-border); border-radius: 18px; }
+/* An issue still open is the one card allowed to shout. */
+.cm-pjx-card.is-issue.is-live { border-color: var(--c-accent-border); border-left: 4px solid var(--c-red); }
+.cm-pjx-card.is-advice { background: var(--c-ink-deep); border-color: var(--c-ink-deep); color: #fff; }
+
+.cm-pjx-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.cm-pjx-chip { font-family: var(--c-font-mono); font-size: 11.5px; font-weight: 700;
+  padding: 5px 10px; border-radius: var(--c-r-pill);
+  background: var(--c-neutral-chip); color: var(--c-body); }
+.cm-pjx-chip.is-issue { background: var(--c-red-tint); color: var(--c-red-ink); }
+.cm-pjx-chip.is-decision { background: var(--c-blue-tint); color: var(--c-blue); }
+.cm-pjx-chip.is-contribution { background: var(--c-green-tint); color: var(--c-green-ink); }
+.cm-pjx-chip.is-milestone { background: var(--c-ink-deep); color: #fff; }
+.cm-pjx-chip.is-advice { background: rgba(245,176,38,0.18); color: var(--c-accent); }
+.cm-pjx-chip.is-open { background: var(--c-accent-tint); color: var(--c-accent-ink); }
+.cm-pjx-chip.is-done { background: var(--c-green-tint); color: var(--c-green-ink); }
+.cm-pjx-chip.is-proposed { background: var(--c-purple-tint); color: var(--c-purple); }
+.cm-pjx-when { margin-left: auto; font-family: var(--c-font-mono); font-size: 11.5px;
+  font-weight: 600; color: var(--c-faint); }
+.cm-pjx-card.is-advice .cm-pjx-when { color: rgba(255,255,255,.6); }
+
+.cm-pjx-title { margin: 0; font-family: var(--c-font-display); font-weight: 700;
+  font-size: 16.5px; line-height: 1.35; color: var(--c-ink); text-wrap: pretty; }
+.cm-pjx-title.is-quote { font-size: 17px; line-height: 1.45; color: #fff; }
+.cm-pjx-body { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--c-body-soft); }
+
+/* The headline number — money or a count. Tabular, because a column of amounts
+   that jitters between rows is a column nobody scans. */
+.cm-pjx-figure { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cm-pjx-big { font-family: var(--c-font-display); font-weight: 800; font-size: 26px;
+  letter-spacing: -.02em; color: var(--c-ink); font-variant-numeric: tabular-nums; }
+.cm-pjx-of { font-size: 13.5px; color: var(--c-muted); }
+/* The fill has to be tellable from the track without reading the label:
+   1.4.11 asks 3:1 for a component that carries information, and the
+   artboard's #2f9e44 on #f2eee0 measures 2.97. greenInk on the same track is
+   5.65, and the bar keeps its own aria-label besides, so the number is never
+   only in the colour. */
+.cm-pjx-bar { height: 8px; border-radius: var(--c-r-pill); background: var(--c-neutral-chip);
+  overflow: hidden; display: flex; }
+.cm-pjx-bar span { background: var(--c-green-ink); }
+
+.cm-pjx-inset { display: flex; flex-direction: column; gap: 7px; padding: 11px 12px;
+  border-radius: 12px; background: var(--c-canvas); }
+.cm-pjx-inset-h { font-family: var(--c-font-mono); font-size: 10px; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--c-muted); }
+.cm-pjx-inset-b { font-size: 14px; line-height: 1.55; color: var(--c-body); }
+
+.cm-pjx-ref { display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border-radius: 12px; background: var(--c-canvas); font-size: 13px; color: var(--c-muted); }
+
+.cm-pjx-who { display: flex; align-items: center; gap: 9px; }
+.cm-pjx-av { width: 28px; height: 28px; flex: none; border-radius: 50%; display: grid;
+  place-items: center; font-family: var(--c-font-display); font-weight: 800; font-size: 11px; }
+.cm-pjx-whotxt { flex: 1; min-width: 0; font-size: 13px; color: var(--c-muted); }
+.cm-pjx-card.is-advice .cm-pjx-whotxt { color: rgba(255,255,255,.72); }
+.cm-pjx-keep { flex: none; min-width: var(--c-tap); min-height: var(--c-tap); border: 0;
+  background: none; font-size: 15px; cursor: pointer; opacity: .55; }
+.cm-pjx-keep.is-on { opacity: 1; }
+.cm-pjx-keep:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+.cm-pjx-prov { font-family: var(--c-font-mono); font-size: 11.5px; font-weight: 600;
+  color: var(--c-faint); }
+
+.cm-pjx-acts { display: flex; gap: 8px; }
+.cm-pjx-act { flex: 1; min-height: 46px; border-radius: 13px; border: 1px solid var(--c-border-strong);
+  background: var(--c-card); font: inherit; font-weight: 700; font-size: 14px;
+  color: var(--c-ink); cursor: pointer; }
+.cm-pjx-act.is-go { color: var(--c-blue); }
+/* Following is a state, so it looks like one rather than only changing its
+   word — the word alone is missed by anybody scanning the column. */
+.cm-pjx-act.is-go.is-on { background: var(--c-blue-tint); border-color: var(--c-blue); }
+.cm-pjx-act:focus-visible { outline: 2px solid var(--c-ink); outline-offset: 2px; }
+
+/* The mentor's row. §8c draws the card a member reads; these are the controls
+   that keep the safeguarding model working, and a redesign that dropped them
+   would mean no entry could ever be widened again. */
+.cm-pjx-staff { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding-top: 10px; border-top: 1px solid var(--c-divider-soft); }
+.cm-pjx-vis { font-family: var(--c-font-mono); font-size: 10.5px; font-weight: 700;
+  padding: 3px 8px; border-radius: var(--c-r-chip);
+  background: var(--c-neutral-chip); color: var(--c-muted); }
+.cm-pjx-vis.is-public { background: var(--c-accent-tint); color: var(--c-accent-ink); }
+.cm-pjx-vis.is-community { background: var(--c-blue-tint); color: var(--c-blue); }
+.cm-pjx-slink { min-height: var(--c-tap); padding: 0 8px; border: 0; background: none;
+  font: inherit; font-size: 12.5px; font-weight: 700; color: var(--c-blue); cursor: pointer; }
+.cm-pjx-slink:focus-visible { outline: 2px solid var(--c-ink); outline-offset: 2px; }
+
+.cm-pjx-empty { margin: 0; padding: 18px 4px; font-size: 14px; line-height: 1.5;
+  color: var(--c-muted); }
+
+/* The footer card, and the promise printed on the screen that makes it. */
+/* The icon aligns to the first line rather than to the middle of a block that
+   wraps to three: centred against a wrapped paragraph it reads as belonging to
+   the sentence under the heading. */
+.cm-pjx-propose { display: flex; align-items: flex-start; gap: 9px; padding: 15px 13px;
+  background: var(--c-card); border: 1px dashed var(--c-border-strong); border-radius: 18px; }
+.cm-pjx-propose-i { font-size: 20px; line-height: 1.2; }
+.cm-pjx-propose-t { flex: 1; min-width: 0; }
+/* The artboard fits this on one line; at 390px in the fonts that actually
+   ship it needs 212px against the 207 the row can spare. Held to one line it
+   would ellipsise, and a heading with its question mark cut off is worse than
+   a heading on two lines — so it wraps, balanced, and the icon aligns to the
+   first line rather than to the middle of the block. */
+.cm-pjx-propose-h { font-family: var(--c-font-display); font-weight: 700; font-size: 14.5px;
+  /* Not `balance`: it broke this particular string as "Something / worth
+     recording?", which puts the weakest word alone on the first line. Left to
+     wrap naturally it reads "Something worth / recording?". */
+  letter-spacing: -.01em; line-height: 1.3; color: var(--c-ink); }
+.cm-pjx-propose-b { margin-top: 3px; font-size: 13px; line-height: 1.45; color: var(--c-muted); }
+.cm-pjx-propose-cta { flex: none; min-height: var(--c-tap); padding: 0 13px; border: 0;
+  align-self: center;
+  border-radius: 12px; background: var(--c-ink-deep); color: #fff;
+  font: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+
+/* The updates sheet, and the propose sheet. */
+.cm-pjx-ups { list-style: none; margin: 0 0 12px; padding: 0; display: flex;
+  flex-direction: column; gap: 10px; }
+.cm-pjx-up { padding: 11px 12px; border-radius: 12px; background: var(--c-canvas); }
+.cm-pjx-up-h { font-family: var(--c-font-mono); font-size: 10.5px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--c-muted); }
+.cm-pjx-up-b { margin-top: 5px; font-size: 14px; line-height: 1.55; color: var(--c-body); }
+.cm-pjx-addup { display: flex; flex-direction: column; gap: 6px; padding-top: 10px;
+  border-top: 1px solid var(--c-divider-soft); }
+.cm-pjx-kinds { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.cm-pjx-lab { display: block; margin-top: 8px; font-family: var(--c-font-mono); font-size: 10.5px;
+  font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--c-muted); }
+.cm-pjx-ta { width: 100%; min-height: 84px; padding: 10px 12px; border-radius: var(--c-r-input);
+  border: 1px solid var(--c-border-strong); background: var(--c-surface);
+  font: inherit; font-size: 15px; line-height: 1.55; color: var(--c-ink); resize: vertical; }
+.cm-pjx-note { margin: 4px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--c-muted); }
+.cm-pjx-cta { margin-top: 10px; width: 100%; min-height: var(--c-cta); border: 0;
+  border-radius: var(--c-r-btn); background: var(--c-ink-deep); color: #fff;
+  font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; }
+.cm-pjx-cta:disabled { opacity: .5; cursor: default; }
 
 /* ════════════════════════════════════════════════════════════════
    3 · DESKTOP — the bundle's floating panes (3A)
