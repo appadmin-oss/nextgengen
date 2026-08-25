@@ -146,6 +146,22 @@ function routesFor(media) {
   return {
     'auth/me.php': { ok: true, member: ME, adminOk: false, impersonating: null },
     'member/journal.php': (u) => (u.searchParams.get('view') === 'mine' ? JMINE : { ok: true }),
+    /* §8c. Long enough that the Programme tab actually scrolls, which is what
+       "preserve scroll per tab" needs something to preserve. */
+    'member/program-journal.php': (u) => (u.searchParams.get('view') === 'memories'
+      ? { ok: true, collections: [] }
+      : { ok: true, canAuthor: false, canPropose: true, total: 14,
+          summary: { openIssues: 2, thisMonth: 6, raised: '₦48k', raisedYear: 2026,
+                     everything: 14, needsAttention: 2 },
+          entries: Array.from({ length: 14 }).map((_, i) => ({
+            entryId: 'PJ-' + i, kind: 'note', status: 'open', visibility: 'community',
+            title: 'Entry number ' + (i + 1),
+            body: 'Something the programme did, written down so it can be asked about later.',
+            authorName: 'Coach Bisi', occurredAt: '2026-08-' + String(20 - i).padStart(2, '0') + 'T09:00:00Z',
+            createdAt: '2026-08-' + String(20 - i).padStart(2, '0') + 'T09:00:00Z',
+            media: [], people: [], recordedAfterDays: 0, attachments: 0,
+            followers: 0, following: false, proposed: false,
+          })) }),
     'member/community.php': (u) => {
       const v = u.searchParams.get('view');
       if (v === 'channels') return { ok: true, channels: CHANNELS };
@@ -926,6 +942,89 @@ async function openPage(browser, width, height, media) {
              .filter(b => b.getBoundingClientRect().height > 0)
              .every(b => b.getBoundingClientRect().height >= 43.5
                          || b.classList.contains('cm-jw-radio'))));
+      await page.close();
+    }
+
+    /* ── The two behaviours the handoff lists in its Interactions table ────
+       Both are the kind of thing that looks like polish and is not: a reader
+       who loses their place in a year of their own entries every time they
+       glance at the record stops glancing at the record.                    */
+    console.log('\n── Switching journals ────────────────────────────────────────');
+    {
+      const { page } = await openPage(browser, 390, 844, WIDE);
+      await page.locator('.cmm-tab', { hasText: 'Journal' }).click();
+      await page.waitForTimeout(700);
+      /* Whichever element is actually scrolling. `.cmm` is min-height, not
+         height, so on a phone the DOCUMENT scrolls and `.cmm-body` never
+         clips; the app has to work with either, and so does this test. */
+      const scrollTop = () => page.evaluate(() => {
+        const el = document.querySelector('.cmm-body');
+        const s = el && el.scrollHeight > el.clientHeight + 1 ? el
+                : (document.scrollingElement || document.documentElement);
+        return s.scrollTop;
+      });
+      const scrollTo = (y) => page.evaluate((n) => {
+        const el = document.querySelector('.cmm-body');
+        const s = el && el.scrollHeight > el.clientHeight + 1 ? el
+                : (document.scrollingElement || document.documentElement);
+        s.scrollTop = n;
+      }, y);
+      const body = page.locator('.cmm-body');
+
+      await page.locator('.cm-j-seg .cmd-seg-b', { hasText: 'Programme' }).click();
+      await page.waitForTimeout(800);
+      /* Card-shaped, because the handoff asks for skeletons matching the card
+         geometry rather than a spinner or a line of text. */
+      ok('the record loads as cards, not as the word "loading"',
+         !(await body.innerText()).toLowerCase().includes('loading the record'));
+      ok('…and opens at the top, because it has not been read yet',
+         await scrollTop() < 40);
+
+      await scrollTo(500);
+      await page.waitForTimeout(250);
+      const progAt = await scrollTop();
+      ok('the record scrolls (' + Math.round(progAt) + 'px)', progAt > 100);
+      /* And the control is STILL on screen down there. With it scrolled away
+         the only way to switch is to scroll back to the top, which lands the
+         reader at the top of the tab they were leaving — and makes preserving
+         a position a promise about a position nobody can ever be in. */
+      ok('…and the Mine/Programme control is still reachable from down there',
+         await page.evaluate(() => {
+           const seg = document.querySelector('.cm-j-seg');
+           if (!seg) return false;
+           const r = seg.getBoundingClientRect();
+           return r.top >= 0 && r.bottom <= window.innerHeight;
+         }));
+
+      await page.locator('.cm-j-seg .cmd-seg-b', { hasText: 'Mine' }).click();
+      await page.waitForTimeout(500);
+      /* Mine has never been scrolled, so it opens at the top — and, crucially,
+         does NOT inherit the record's position. A shared scroll offset is the
+         bug this preserves-per-tab behaviour exists to prevent. */
+      ok('…and Mine opens at its own top rather than inheriting the record\'s place',
+         await scrollTop() < 40);
+
+      await page.locator('.cm-j-seg .cmd-seg-b', { hasText: 'Programme' }).click();
+      await page.waitForTimeout(500);
+      const backToProg = await scrollTop();
+      /* Not to the pixel. The browser's own scroll anchoring adjusts by a few
+         dozen pixels when the taller pane comes back, and fighting it would be
+         fighting the thing that keeps content stable everywhere else. What is
+         being asserted is what a reader would notice: they are back in the
+         same part of the record, not at the top of it. */
+      ok('…and coming back to the record lands where it was left ('
+         + Math.round(backToProg) + ' vs ' + Math.round(progAt) + ')',
+         Math.abs(backToProg - progAt) < 100 && backToProg > 150);
+
+      /* A tab that remembered a position longer than its own content would
+         leave the reader at the bottom of nothing. */
+      ok('…and neither tab is ever scrolled past its own content',
+         await page.evaluate(() => {
+           const el = document.querySelector('.cmm-body');
+           const s = el && el.scrollHeight > el.clientHeight + 1 ? el
+                   : (document.scrollingElement || document.documentElement);
+           return s.scrollTop <= s.scrollHeight - s.clientHeight + 1;
+         }));
       await page.close();
     }
 

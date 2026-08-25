@@ -2351,7 +2351,15 @@ img { background-color: rgba(12,20,50,0.04); }
 
 /* Bottom padding clears the tab bar AND the FAB, so the last card in a feed is
    never sitting underneath either of them. */
-.cmm-body { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+/* NOT a scroller on a phone.
+   `.cmm` is min-height there, so this box grows past the viewport and the
+   DOCUMENT scrolls — which is right, because it is what lets the browser's own
+   chrome retract. Declaring `overflow-y: auto` anyway cost more than it looked:
+   an overflow ancestor becomes the containing block for `position: sticky`, so
+   every pinned header inside it stuck to a scrollport that never moves. The
+   desktop rules below give `.cmm` a real height and hand this box the overflow
+   it needs there. */
+.cmm-body { flex: 1; min-height: 0; -webkit-overflow-scrolling: touch;
   padding: 0 0 var(--c-fab-clear); }
 .cmm-body.no-bar { padding-bottom: 0; }
 .cmm-pad { padding: 0 var(--c-gutter); }
@@ -3664,6 +3672,17 @@ img { background-color: rgba(12,20,50,0.04); }
    Every colour here is a token. The kind chips reuse the semantic pairs the
    rest of the product already assigns to the same meanings — red for the thing
    that is wrong, blue for the decision, green for the money.                */
+/* The journal's head and its Mine/Programme control, pinned.
+   The artboard draws them as a fixed block above a scrolling list. Sticky
+   rather than fixed so it participates in the layout and needs no spacer, and
+   with the surface behind it so entries do not show through as they pass. */
+.cm-j-stick { position: sticky; top: 0; z-index: 3; margin: 0 calc(-1 * var(--c-gutter));
+  padding: 0 var(--c-gutter) 8px; background: var(--c-surface); }
+
+/* The inactive journal tab. `hidden` alone is a display:none the flex parent
+   would otherwise override, which is how a hidden pane ends up visible. */
+.cm-j-pane[hidden] { display: none; }
+
 .cm-pjx { display: flex; flex-direction: column; gap: 12px; }
 .cm-pjx-intro { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--c-muted); }
 
@@ -4134,6 +4153,8 @@ img { background-color: rgba(12,20,50,0.04); }
      1280×900 screen — and the whole page scrolled as one, so the rail, the
      channel list and the thread all slid off the top together the moment
      somebody read the second post. */
+  /* Here the workspace is pinned to the window, so the body IS the scroller. */
+  .cmm-body { overflow-y: auto; }
   .cmm { height: calc(100dvh - var(--cm-nav, 64px)); padding: 0 12px 12px;
     display: grid; grid-template-columns: 68px 268px minmax(0, 1fr);
     grid-template-rows: 54px minmax(0, 1fr);

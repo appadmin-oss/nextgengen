@@ -3654,6 +3654,14 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
   /* §8: which journal, and the writer overlay over it. Scroll is preserved per
      tab by keeping both mounted decisions here rather than remounting. */
   const [jTab, setJTab] = React.useState("mine");
+  /* Read inside the scroll handler, which is memoised with no deps so that a
+     scroll does not rebuild it sixty times a second. Refs, because the handler
+     needs the CURRENT tab rather than the one it closed over. */
+  const jTabRef = React.useRef("mine");
+  /* Which journal tabs have been opened. Mounting the record before anybody
+     asks for it would fetch a page nobody is looking at. */
+  const [jSeen, setJSeen] = React.useState({ mine: true, programme: false });
+  const tabRef = React.useRef("today");
   const [writing, setWriting] = React.useState(null);     // {prompt, entry, attach}
   const [account, setAccount] = React.useState(false);
   const [composer, setComposer] = React.useState(false);
@@ -3781,13 +3789,79 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
    * jitter from flickering it. */
   const [fabHidden, setFabHidden] = React.useState(false);
   const lastY = React.useRef(0);
-  const onBodyScroll = React.useCallback((e) => {
-    const y = e.currentTarget.scrollTop;
+  const bodyRef = React.useRef(null);
+  /* WHICH element is actually scrolling.
+   *
+   * `.cmm` is min-height, not height, so on a phone the column grows past the
+   * viewport and the DOCUMENT scrolls — which is the right behaviour there,
+   * because it is what lets the browser's own chrome retract. On a desktop the
+   * workspace is pinned to the window and `.cmm-body` is the scroller instead.
+   * Asking the element whether it actually clips is the only way to know, and
+   * getting it wrong is why the FAB never hid on a phone: the handler was on a
+   * div that has never scrolled on one. */
+  const scroller = React.useCallback(() => {
+    const el = bodyRef.current;
+    if (el && el.scrollHeight > el.clientHeight + 1) return el;
+    return document.scrollingElement || document.documentElement;
+  }, []);
+
+  /* Where each journal tab was left. The handoff asks the segmented control to
+     preserve scroll per tab, and it is the difference between glancing at the
+     record and losing your place in a year of your own entries. A ref rather
+     than state: it is read on a switch, never rendered. */
+  const jScroll = React.useRef({ mine: 0, programme: 0 });
+  /* Deliberately NOT recorded from the scroll listener.
+   *
+   * Hiding a pane shortens the page and the browser answers by clamping
+   * scrollTop to 0 and firing a scroll event for it. That event is the layout
+   * moving, not the reader scrolling, and recording it overwrote the very
+   * position about to be restored. Saving on the way OUT of a tab — which is
+   * the only moment the position matters — has no race to lose. */
+  const noteScroll = React.useCallback((y) => {
     const dy = y - lastY.current;
     if (Math.abs(dy) < 12) return;
     setFabHidden(dy > 0 && y > 80);
     lastY.current = y;
   }, []);
+  const onBodyScroll = React.useCallback((e) => noteScroll(e.currentTarget.scrollTop), [noteScroll]);
+  /* The document's scroll does not bubble to the div, so it needs its own
+     listener. Passive: this only reads. */
+  React.useEffect(() => {
+    const on = () => noteScroll((document.scrollingElement || document.documentElement).scrollTop);
+    window.addEventListener("scroll", on, { passive: true });
+    return () => window.removeEventListener("scroll", on);
+  }, [noteScroll]);
+
+  React.useEffect(() => { jTabRef.current = jTab; }, [jTab]);
+  React.useEffect(() => { tabRef.current = tab; }, [tab]);
+
+  /* Switch journals and land where you left the other one.
+   *
+   * After paint, because the list it is scrolling into does not exist until
+   * the switch has rendered — and clamped by the browser to whatever the new
+   * content actually allows, so a long Programme record and a two-entry Mine
+   * do not leave the reader staring at the bottom of nothing. */
+  const switchJournal = (next) => {
+    const from = scroller();
+    if (from) jScroll.current[jTab] = from.scrollTop;
+    jTabRef.current = next;
+    if (!jSeen[next]) setJSeen(v => ({ ...v, [next]: true }));
+    setJTab(next);
+    const want = jScroll.current[next] || 0;
+    requestAnimationFrame(() => {
+      const to = scroller();
+      if (to) {
+        void to.scrollHeight;          // force layout with the new pane shown
+        to.scrollTop = want;
+      }
+      /* A second frame for the case where the pane it is scrolling into was
+         mounted by this very switch and has not been measured yet. */
+      requestAnimationFrame(() => {
+        const el = scroller();
+        if (el && Math.abs(el.scrollTop - want) > 2) el.scrollTop = want;
+      });
+    });
+  };
 
   const openChannel = (slug) => { setChannel(slug); setTab("channels"); };
 
@@ -3839,7 +3913,7 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
                           onOpen={openChannel} onCompose={compose}/>
         </aside>
       )}
-      <div className={"cmm-body" + (barHidden ? " no-bar" : "")} onScroll={onBodyScroll}>
+      <div className={"cmm-body" + (barHidden ? " no-bar" : "")} ref={bodyRef} onScroll={onBodyScroll}>
         {/* Base layer: whichever tab is selected. */}
         {!channel && tab === "today" && (
           <CmToday auth={auth} counts={counts} onCounts={refreshCounts}
@@ -3861,17 +3935,40 @@ function CmMobileApp({ auth, setPage, channels, reloadChannels }) {
             control the design puts there. */}
         {tab === "journal" && !channel && (
           <div className="cmm-pad">
-            <div className="cmm-head cm-j-head">
-              <div className="cmm-head-txt">
-                <h1 className="cmm-h1">Journal</h1>
-                <p className="cmm-sub">{cmTodayWords()}</p>
+            {/* The head and the control STICK.
+                The artboard draws them as a fixed block with the entries
+                scrolling underneath, and it is not decoration: with the
+                control scrolled away, the only way to switch journals is to
+                scroll all the way back up — which lands the reader at the top
+                of the tab they were leaving and makes "preserve the scroll
+                position" a promise about a position nobody can ever be in. */}
+            <div className="cm-j-stick">
+              <div className="cmm-head cm-j-head">
+                <div className="cmm-head-txt">
+                  <h1 className="cmm-h1">Journal</h1>
+                  <p className="cmm-sub">{cmTodayWords()}</p>
+                </div>
               </div>
+              <CmSeg label="Which journal" value={jTab} onChange={switchJournal} className="cm-j-seg"
+                     options={[["mine", "Mine"], ["programme", "Programme"]]}/>
             </div>
-            <CmSeg label="Which journal" value={jTab} onChange={setJTab} className="cm-j-seg"
-                   options={[["mine", "Mine"], ["programme", "Programme"]]}/>
-            {jTab === "mine"
-              ? <CmJournalMine auth={auth} onWrite={setWriting}/>
-              : <CmProgramJournal auth={auth}/>}
+            {/* Both stay mounted once opened, hidden rather than unmounted.
+                Two reasons, and the second is the one that matters: switching
+                back does not refetch a record that has not changed in the four
+                seconds you were away, and — because the content is still there
+                at its full height — the scroll position the handoff asks us to
+                preserve has something to be restored ONTO. Unmounted, the tab
+                comes back as a skeleton and any remembered offset is clamped
+                to zero before the data lands.
+                Lazy: the record is not fetched until somebody asks for it. */}
+            <div className="cm-j-pane" hidden={jTab !== "mine"}>
+              <CmJournalMine auth={auth} onWrite={setWriting}/>
+            </div>
+            {jSeen.programme && (
+              <div className="cm-j-pane" hidden={jTab !== "programme"}>
+                <CmProgramJournal auth={auth}/>
+              </div>
+            )}
           </div>
         )}
 
@@ -10419,7 +10516,11 @@ function CmProgramJournal({ auth }) {
         </section>
       )}
 
-      {!feed ? <div className="cm-pjx-empty">Loading the record…</div>
+      {/* Card-shaped, because the handoff asks for skeletons matching the card
+          geometry rather than spinners — and because a line of text saying
+          "loading" tells a reader nothing about what is coming. The same
+          component the feed and the channel list use. */}
+      {!feed ? <CmSkeleton rows={3}/>
         : entries.length === 0
           ? <div className="cm-pjx-empty">
               {q || kind ? "Nothing in the record matches that."
