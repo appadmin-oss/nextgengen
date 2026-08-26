@@ -18688,5 +18688,156 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE email LIKE 'audit-%'");
 })();
 
+/* ── Roster import (members-import.php) ──────────────────────────────────────
+ *
+ * The workbook this reads was maintained by hand for three intakes, so the
+ * import's job is less "load 136 rows" than "load them without overwriting what
+ * the Control Room already knows, without issuing a second memberId to somebody
+ * who has one, and without quietly dropping the rows it cannot place".
+ *
+ * The extraction side — which sheet wins, how two spellings of one name are
+ * reconciled — is tested in tests/roster-import.test.js against the workbook
+ * shapes. What is tested here is everything that touches the database.
+ */
+(function () {
+    $rowFor = fn(string $ref, array $over = []) => $over + [
+        'displayId' => $ref, 'fullName' => 'Import Test ' . $ref, 'type' => 'NGG',
+        'status' => 'active', 'centre' => 'Egbeda', 'cohort' => '2024',
+        'level' => 'A', 'track' => 'TECH', 'disciplines' => 'TECH,MEDIA',
+        'joinDate' => '2024-01-06', 'dob' => '2010-04-23',
+        'email' => '', 'phone' => '08160774973', 'school' => 'Test Secondary',
+        'parentName' => 'A Parent', 'parentPhone' => '08064803738',
+        'sex' => 'Female', 'grade' => 'SS2', 'lga' => 'Alimosho', 'address' => '1 Test Street',
+        'guardians' => [['relation' => 'Mother', 'name' => 'A Parent', 'phone' => '08064803738']],
+        'stateNote' => '', 'sources' => ['NGGC MEMBERS'],
+    ];
+    $wipe = function () { db_exec("DELETE FROM members WHERE displayId LIKE 'IMP-%'"); };
+    $get = fn(string $ref) => db_row('SELECT * FROM members WHERE displayId = ? LIMIT 1', [$ref]);
+    $wipe();
+
+    // ── A dry run is the default, and it means it ──
+    $dry = members_import_run([$rowFor('IMP-001')]);
+    chk('roster import: the default run reports a creation', $dry['created'] === 1 && $dry['applied'] === false);
+    chk('roster import: …and writes nothing at all', $get('IMP-001') === null);
+
+    // ── Applying ──
+    $run = members_import_run([$rowFor('IMP-001'), $rowFor('IMP-002')], ['apply' => true]);
+    $one = $get('IMP-001');
+    chk('roster import: --apply creates the members', $run['created'] === 2 && $one !== null);
+    chk('roster import: each gets a real memberId, not the printed one',
+        is_string($one['memberId']) && str_starts_with($one['memberId'], 'NGG-') && $one['memberId'] !== 'IMP-001');
+    chk('roster import: an imported member is a member, never staff', $one['role'] === 'member');
+    chk('roster import: the columns the ID card reads are filled',
+        $one['displayId'] === 'IMP-001' && $one['disciplines'] === 'TECH,MEDIA' && $one['track'] === 'TECH');
+    chk('roster import: the columns the desk reads are filled',
+        $one['school'] === 'Test Secondary' && $one['parentPhone'] === '08064803738'
+        && $one['dob'] === '2010-04-23' && $one['cohort'] === '2024');
+    chk('roster import: what members has no column for is kept in the notes',
+        str_contains($one['notes'], 'Level A') && str_contains($one['notes'], 'SS2')
+        && str_contains($one['notes'], '1 Test Street') && str_contains($one['notes'], 'Mother A Parent'));
+    chk('roster import: the notes name the sheet the facts came from',
+        str_contains($one['notes'], 'NGGC MEMBERS'));
+
+    // ── Idempotency: the property that makes it safe to fix four rows and re-run ──
+    $again = members_import_run([$rowFor('IMP-001'), $rowFor('IMP-002')], ['apply' => true]);
+    chk('roster import: a second run changes nothing',
+        $again['created'] === 0 && $again['updated'] === 0 && $again['unchanged'] === 2);
+    chk('roster import: …and does not issue a second memberId',
+        (int)db_row("SELECT COUNT(*) c FROM members WHERE displayId = 'IMP-001'")['c'] === 1);
+    chk('roster import: …nor a second copy of the notes block',
+        substr_count((string)$get('IMP-001')['notes'], MEMBER_IMPORT_NOTE_OPEN) === 1);
+
+    // ── The desk outranks the spreadsheet ──
+    db_update('members', ['school' => 'The School They Actually Attend', 'phone' => ''],
+              ['id' => $get('IMP-001')['id']]);
+    $fill = members_import_run([$rowFor('IMP-001', ['school' => 'Test Secondary', 'phone' => '08071340384'])],
+                               ['apply' => true]);
+    $after = $get('IMP-001');
+    chk('roster import: a correction made in the Control Room survives a re-import',
+        $after['school'] === 'The School They Actually Attend');
+    chk('roster import: …while a blank it left behind is filled from the sheet',
+        $after['phone'] === '08071340384' && $fill['updated'] === 1);
+
+    $over = members_import_run([$rowFor('IMP-001', ['school' => 'Test Secondary'])],
+                               ['apply' => true, 'overwrite' => true]);
+    chk('roster import: --overwrite is how you deliberately let the sheet win',
+        $get('IMP-001')['school'] === 'Test Secondary' && $over['updated'] === 1);
+
+    // ── Notes the desk typed are not a scratch pad for the importer ──
+    db_update('members', ['notes' => "Rides the bus with their cousin.\n\n" . $get('IMP-001')['notes']],
+              ['id' => $get('IMP-001')['id']]);
+    members_import_run([$rowFor('IMP-001', ['level' => 'B'])], ['apply' => true, 'overwrite' => true]);
+    $noted = $get('IMP-001');
+    chk('roster import: a line the desk typed above the block is still there afterwards',
+        str_contains($noted['notes'], 'Rides the bus with their cousin.'));
+    chk('roster import: …and the block itself is replaced, not appended to',
+        substr_count($noted['notes'], MEMBER_IMPORT_NOTE_OPEN) === 1 && str_contains($noted['notes'], 'Level B'));
+
+    // ── Someone who has since been given staff access ──
+    db_update('members', ['role' => 'editor', 'status' => 'active', 'fullName' => 'A Real Editor'],
+              ['id' => $get('IMP-002')['id']]);
+    $staff = members_import_run([$rowFor('IMP-002', ['status' => 'inactive', 'fullName' => 'Import Test IMP-002'])],
+                                ['apply' => true, 'overwrite' => true]);
+    $editor = $get('IMP-002');
+    chk('roster import: a spreadsheet cannot suspend someone who now holds a staff role',
+        $editor['status'] === 'active' && $editor['role'] === 'editor');
+    chk('roster import: …nor rename them', $editor['fullName'] === 'A Real Editor');
+    chk('roster import: …and the run says why it held back',
+        (bool)array_filter($staff['rows'], fn($r) => $r['ref'] === 'IMP-002'
+            && (bool)array_filter($r['warnings'] ?? [], fn($w) => str_contains($w, 'editor'))));
+
+    // ── Siblings ──
+    $sibs = members_import_run([
+        $rowFor('IMP-010', ['fullName' => 'Elder Sibling', 'email' => 'family@example.com', 'dob' => '2009-01-02']),
+        $rowFor('IMP-011', ['fullName' => 'Younger Sibling', 'email' => 'family@example.com', 'dob' => '2012-03-04']),
+    ], ['apply' => true]);
+    chk('roster import: two children on one family email address are two members',
+        $sibs['created'] === 2 && $get('IMP-010')['memberId'] !== $get('IMP-011')['memberId']);
+
+    // ── Rows that cannot be used ──
+    $bad = members_import_run([
+        $rowFor('', ['fullName' => 'No Identifier']),
+        ['displayId' => 'IMP-020', 'fullName' => ''],
+        $rowFor('IMP-021', ['status' => 'left the programme']),
+    ], ['apply' => true]);
+    chk('roster import: a row with no member ID is refused, not invented', $bad['failed'] === 2);
+    chk('roster import: …and the refusal says which row and why',
+        (bool)array_filter($bad['rows'], fn($r) => $r['action'] === 'failed' && in_array('no member ID', $r['reasons'], true)));
+    chk('roster import: a status the app cannot count lands as inactive, with a note',
+        $get('IMP-021')['status'] === 'inactive'
+        && (bool)array_filter($bad['rows'], fn($r) => $r['ref'] === 'IMP-021' && !empty($r['warnings'])));
+
+    // ── MySQL runs STRICT_ALL_TABLES: an over-long value is a failed insert ──
+    $long = members_import_run([$rowFor('IMP-030', ['school' => str_repeat('x', 400)])], ['apply' => true]);
+    chk('roster import: a value past its column width is cut rather than taking the run down',
+        mb_strlen((string)$get('IMP-030')['school']) === MEMBER_IMPORT_WIDTHS['school']);
+    chk('roster import: …and the trim is reported',
+        (bool)array_filter($long['rows'], fn($r) => $r['ref'] === 'IMP-030'
+            && (bool)array_filter($r['warnings'] ?? [], fn($w) => str_contains($w, 'school'))));
+
+    // ── An unusable email is dropped, not stored where sign-in will read it ──
+    members_import_run([$rowFor('IMP-031', ['email' => 'CACENTRE'])], ['apply' => true]);
+    chk('roster import: a cell that is not an email address never becomes one',
+        (string)$get('IMP-031')['email'] === '');
+
+    // ── The run is answerable afterwards ──
+    chk('roster import: every write leaves an audit trail',
+        (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'member.import.run'")['c'] > 0
+        && (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'member.import.create'")['c'] > 0);
+
+    // ── Reading the file the extractor writes ──
+    $parsed = members_import_parse(json_encode(['source' => 'book.xlsx', 'members' => [$rowFor('IMP-040')]]));
+    chk('roster import: the extract file parses, source and all',
+        !empty($parsed['ok']) && count($parsed['members']) === 1 && $parsed['source'] === 'book.xlsx');
+    chk('roster import: a bare array of members is accepted too',
+        !empty(members_import_parse(json_encode([$rowFor('IMP-040')]))['ok']));
+    chk('roster import: anything else is refused with a reason',
+        empty(members_import_parse('not json')['ok'])
+        && members_import_parse(json_encode(['members' => 'nope']))['error'] === 'no_members_array');
+
+    $wipe();
+    db_exec("DELETE FROM audit_log WHERE event LIKE 'member.import.%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

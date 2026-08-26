@@ -143,6 +143,23 @@ php api/tools/create-admin.php "Ada Admin" admin@yourdomain.com   # from the hos
 (No shell? Insert a row into `members` with `role = super_admin` via phpMyAdmin,
 or use the SQLite CLI on `api/storage/ngg.db`.)
 
+### Importing an existing roster
+
+If the members you want are still in the Google Sheet, bring them across before
+anything else — a fresh database with no roster makes every other screen look
+broken.
+
+```bash
+node tools/ngg-import/extract.js ~/NGG_Members.xlsx   # on a laptop: workbook → roster file
+php  api/tools/seed-members.php                       # on the server: read what it would do
+php  api/tools/seed-members.php --apply               # do it
+```
+
+Nothing is written without `--apply`, re-running is safe, and the roster file
+holds children's personal data — delete it from the server afterwards. Full
+detail, including where each column lands and what the importer refuses to
+guess at, is in **[ROSTER-IMPORT.md](ROSTER-IMPORT.md)**.
+
 ### Request body size
 
 One endpoint carries an image inside its JSON: `api/public/selfreg.php`, the
