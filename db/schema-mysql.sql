@@ -2346,3 +2346,21 @@ ALTER TABLE applications ADD COLUMN ref VARCHAR(24) DEFAULT '';
 CREATE INDEX idx_apps_ref ON applications(ref);
 
 INSERT INTO schema_version (version) VALUES (108) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 109 · A member's NGG level gets a column of its own ─────────────────────
+-- It is the first thing a centre lead asks about a child and the roster has
+-- always carried it, but until now the only place to put it on import was the
+-- free-text note — where nothing can filter, count or sort by it. Existing rows
+-- are backfilled from that note in the same breath, so the column is populated
+-- the moment it exists rather than whenever somebody next re-runs the import.
+--
+-- The pattern is the one members-import.php writes: a line reading "Level B" as
+-- the first segment of the fenced block. Anything that does not match is left
+-- blank rather than guessed at.
+ALTER TABLE members ADD COLUMN level VARCHAR(16) DEFAULT '';
+UPDATE members SET level = UPPER(SUBSTR(notes, INSTR(notes, 'Level ') + 6, 1))
+ WHERE (level IS NULL OR level = '')
+   AND INSTR(notes, '[roster-import]') > 0
+   AND INSTR(notes, 'Level ') > 0;
+
+INSERT INTO schema_version (version) VALUES (109) ON DUPLICATE KEY UPDATE version = version;

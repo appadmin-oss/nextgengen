@@ -77,6 +77,7 @@ function backend_dispatch(string $op, array $args = []): array {
             // Admin
             'admin.members.list'      => 'admin_members_list',
             'admin.members.upsert'    => 'admin_members_upsert',
+            'admin.members.import'    => 'admin_members_import',
             'admin.members.consent'   => 'admin_member_consent',
             'admin.members.promoteNgv' => 'admin_member_promote_ngv',
             'admin.members.demoteNgv' => 'admin_member_demote_ngv',

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 108;
+const NGG_SCHEMA_TARGET = 109;
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -3068,6 +3068,24 @@ function db_migrate(PDO $db): void {
                a random one. */
             ALTER TABLE applications ADD COLUMN ref TEXT DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_apps_ref ON applications(ref);
+        ",
+        /* A member's NGG level (A, B, C, O) gets a column of its own.
+           It is the first thing a centre lead asks about a child and the
+           roster has always carried it, but until now the only place to put
+           it on import was the free-text note — where nothing can filter,
+           count or sort by it. Existing rows are backfilled from that note
+           in the same breath, so the column is populated the moment it
+           exists rather than on whenever somebody next re-runs the import.
+
+           The pattern is the one members-import.php writes: a line reading
+           "Level B" as the first segment of the fenced block. Anything that
+           does not match is left blank rather than guessed at. */
+        109 => "
+            ALTER TABLE members ADD COLUMN level TEXT DEFAULT '';
+            UPDATE members SET level = UPPER(SUBSTR(notes, INSTR(notes, 'Level ') + 6, 1))
+             WHERE (level IS NULL OR level = '')
+               AND INSTR(notes, '[roster-import]') > 0
+               AND INSTR(notes, 'Level ') > 0;
         ",
     ];
 

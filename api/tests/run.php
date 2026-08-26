@@ -18815,6 +18815,32 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         (bool)array_filter($long['rows'], fn($r) => $r['ref'] === 'IMP-030'
             && (bool)array_filter($r['warnings'] ?? [], fn($w) => str_contains($w, 'school'))));
 
+    // ── Level (schema 109) ──
+    chk('roster import: a level lands in its own column, not only in the notes',
+        $get('IMP-001')['level'] === 'B');
+    chk('roster import: …and travels in the shape the app serialises',
+        (public_member($get('IMP-001'))['level'] ?? null) === 'B');
+    /* Migration 109 backfills the column from the note the earlier importer
+       wrote, so a site that seeded before the column existed is not left with
+       136 blanks until somebody thinks to re-run the import. */
+    chk('roster import: migration 109 recovers a level from an already-imported note',
+        (function () use ($get) {
+            $tmp = sys_get_temp_dir() . '/ngg-lvl-' . bin2hex(random_bytes(3)) . '.db';
+            $db = new PDO('sqlite:' . $tmp, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+            try {
+                db_migrate($db);
+                $db->exec("DELETE FROM schema_version WHERE version = 109");
+                $db->exec("INSERT INTO members (memberId, fullName, level, notes) VALUES ('M1', 'Before The Column', '',
+                    '[roster-import]\nImported from the members workbook on 2026-08-26.\nLevel B · Male · SS 3\n[/roster-import]')");
+                $db->exec("INSERT INTO members (memberId, fullName, level, notes) VALUES ('M2', 'Typed By Hand', '', 'Rides the bus with their cousin.')");
+                db_migrate($db);
+                $a = $db->query("SELECT level FROM members WHERE memberId = 'M1'")->fetchColumn();
+                $b = $db->query("SELECT level FROM members WHERE memberId = 'M2'")->fetchColumn();
+                return $a === 'B' && ($b === '' || $b === null);
+            } catch (Throwable $e) { return false; }
+            finally { $db = null; @unlink($tmp); }
+        })());
+
     // ── An unusable email is dropped, not stored where sign-in will read it ──
     members_import_run([$rowFor('IMP-031', ['email' => 'CACENTRE'])], ['apply' => true]);
     chk('roster import: a cell that is not an email address never becomes one',
@@ -18835,7 +18861,50 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         empty(members_import_parse('not json')['ok'])
         && members_import_parse(json_encode(['members' => 'nope']))['error'] === 'no_members_array');
 
+    /* ── The Control Room path, for a host with no shell ──
+     *
+     * The CLI and the browser must reach the same import, and the browser must
+     * not let a members-desk admin rewrite the whole roster on their own. */
     $wipe();
+    db_exec("DELETE FROM members WHERE memberId IN ('IMPADM-1','IMPADM-2')");
+    db_insert('members', ['memberId' => 'IMPADM-1', 'fullName' => 'Roster Super', 'email' => 'imp-super@example.com',
+        'role' => 'super_admin', 'status' => 'active', 'type' => 'NGG', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'IMPADM-2', 'fullName' => 'Roster Desk', 'email' => 'imp-desk@example.com',
+        'role' => 'admin', 'status' => 'active', 'type' => 'NGG', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    chk('roster import (web): a signed-out caller gets nothing',
+        empty(admin_members_import(['requesterId' => '', 'members' => [$rowFor('IMP-060')]])['ok']));
+    chk('roster import (web): an editor without people access gets nothing',
+        empty(admin_members_import(['requesterId' => 'IMPADM-3', 'members' => [$rowFor('IMP-060')]])['ok']));
+
+    $deskPreview = admin_members_import(['requesterId' => 'IMPADM-2', 'members' => [$rowFor('IMP-060')]]);
+    chk('roster import (web): the members desk may see what an import would do',
+        !empty($deskPreview['ok']) && $deskPreview['created'] === 1 && $get('IMP-060') === null);
+    $deskApply = admin_members_import(['requesterId' => 'IMPADM-2', 'members' => [$rowFor('IMP-060')], 'apply' => true]);
+    chk('roster import (web): …but may not run one — that is the super-admin tier',
+        empty($deskApply['ok']) && $deskApply['error'] === 'forbidden' && $get('IMP-060') === null);
+
+    $superApply = admin_members_import(['requesterId' => 'IMPADM-1', 'members' => [$rowFor('IMP-060')], 'apply' => true]);
+    chk('roster import (web): a super admin can, and it is the same import',
+        !empty($superApply['ok']) && $get('IMP-060')['level'] === 'A' && $get('IMP-060')['displayId'] === 'IMP-060');
+    chk('roster import (web): the reply carries only rows worth reading',
+        !(bool)array_filter($superApply['rows'], fn($r) => $r['action'] === 'unchanged' && empty($r['warnings'])));
+    chk('roster import (web): an empty or oversized file is refused before anything runs',
+        admin_members_import(['requesterId' => 'IMPADM-1', 'members' => []])['error'] === 'roster_empty'
+        && admin_members_import(['requesterId' => 'IMPADM-1', 'members' => null])['error'] === 'no_members_array'
+        && admin_members_import(['requesterId' => 'IMPADM-1', 'members' => array_fill(0, 2001, $rowFor('IMP-070'))])['error'] === 'too_many_rows');
+    chk('roster import (web): the level is editable by hand afterwards, like any column',
+        (function () {
+            $r = admin_members_upsert(['requesterId' => 'IMPADM-1', 'data' => ['fullName' => 'Level Editable', 'level' => 'C', 'displayId' => 'IMP-050']]);
+            return !empty($r['ok'])
+                && (string)db_row('SELECT level FROM members WHERE memberId = ?', [$r['memberId']])['level'] === 'C';
+        })());
+    chk('roster import (web): who ran it is on the record',
+        (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'member.import.web.apply' AND actorId = 'IMPADM-1'")['c'] === 1);
+
+    $wipe();
+    db_exec("DELETE FROM members WHERE memberId IN ('IMPADM-1','IMPADM-2')");
+    db_exec("DELETE FROM members WHERE fullName = 'Level Editable'");
     db_exec("DELETE FROM audit_log WHERE event LIKE 'member.import.%'");
 })();
 

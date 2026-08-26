@@ -802,6 +802,11 @@
         // Reverse an NGV promotion: deactivate the volunteer record + unlink the
         // member (non-destructive; a later promoteNgv re-activates the same record).
         demoteNgv: (memberId) => request('/admin/members.php', { body: { action: 'demoteNgv', memberId } }),
+        // Roster import from the members workbook (tools/ngg-import/extract.js).
+        // `apply` false is a dry run and returns exactly what would change.
+        importRoster: (file, opts) => request('/admin/members.php', { body: Object.assign(
+          { action: 'import', members: (file && file.members) || file, source: (file && file.source) || '' },
+          opts || {}) }),
         setCaps: (memberId, caps, centreScope) => request('/admin/members.php', { body: Object.assign({ action: 'setCaps', memberId, caps }, centreScope !== undefined ? { centreScope } : {}) }),
         impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),
         stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),

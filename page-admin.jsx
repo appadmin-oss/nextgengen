@@ -1223,6 +1223,7 @@ function AdminMembers() {
   const [editing, setEditing] = React.useState(null);
   const [viewing, setViewing] = React.useState(null);
   const [printing, setPrinting] = React.useState(false);
+  const [importing, setImporting] = React.useState(false);
   /* Ordering lives on the SERVER, not in the rendered page: this table is
      paged, so sorting the fifty rows in hand would order page three of the
      roster and call it the roster. The column allow-list is in
@@ -1241,7 +1242,7 @@ function AdminMembers() {
       // person exporting it was looking at.
       const r = await NGGApi.admin.members.list(Object.assign({}, filters, {
         all: 1, sort: sort.col, dir: sort.dir }));
-      downloadCsv("members", (r.members || []).map(m => ({ memberId: m.memberId, fullName: m.fullName, email: m.email, type: m.type, status: m.status, centre: m.centre, track: m.track || "" })));
+      downloadCsv("members", (r.members || []).map(m => ({ memberId: m.memberId, displayId: m.displayId || "", fullName: m.fullName, email: m.email, type: m.type, status: m.status, centre: m.centre, level: m.level || "", track: m.track || "" })));
     } catch (e) { toast.error(e.code || e.message, "Export failed"); } finally { setExporting(false); }
   };
   // A failed fetch must surface an error + retry, never leave the spinner
@@ -1267,6 +1268,7 @@ function AdminMembers() {
         <div className="admin-section-actions">
           <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={exporting || !meta.total} title="Exports all members matching the current filters">{exporting ? "Exporting…" : "Export CSV"}</button>
           <button className="btn btn-ghost btn-sm" onClick={() => setPrinting(true)} disabled={!meta.total} title="Print ID cards for every member matching the current filters">Print IDs</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setImporting(true)} title="Load the roster file produced from the members workbook">Import roster</button>
           <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New member</button>
         </div>
       </div>
@@ -1337,6 +1339,7 @@ function AdminMembers() {
       {editing && <AdminMemberEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
       {viewing && <AdminMemberDetail memberId={viewing} onClose={() => setViewing(null)} onEdit={(m) => { setViewing(null); setEditing(m); }} onChanged={load}/>}
       {printing && <AdminMemberIdBatch filters={filters} sort={sort} total={meta.total} onClose={() => setPrinting(false)}/>}
+      {importing && <AdminRosterImport onClose={() => setImporting(false)} onApplied={() => { setImporting(false); setPage(1); setList(null); load(1); }}/>}
     </div>
   );
 }
@@ -1352,6 +1355,147 @@ function AdminMembers() {
 // entirely in the browser (the host has no headless renderer), one card at a
 // time, cancellable, so the whole cohort neither locks the tab nor blows memory.
 // ============================================================================
+/* Roster import — the members workbook, without a shell.
+ *
+ * NGG runs on shared hosting: no SSH, no cron. api/tools/seed-members.php is
+ * the same import, but a CLI-only importer is one the person who actually keeps
+ * the roster cannot run. So the browser reads the file the extractor produced,
+ * posts it, and gets back the identical dry run the command line prints.
+ *
+ * Two steps on purpose, and the Apply button does not appear until the first
+ * one has been read. A roster file rewrites the membership table in one action;
+ * seeing what it would do first is the whole safety property.
+ */
+function AdminRosterImport({ onClose, onApplied }) {
+  const [file, setFile] = React.useState(null);        // { source, members[] }
+  const [overwrite, setOverwrite] = React.useState(false);
+  const [busy, setBusy] = React.useState("");
+  const [preview, setPreview] = React.useState(null);
+  const [done, setDone] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const panelRef = React.useRef(null);
+  const close = () => { if (!busy) onClose(); };
+
+  const read = async (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";                                // re-picking the same file must re-read it
+    if (!f) return;
+    setErr(""); setPreview(null); setDone(null);
+    try {
+      const parsed = JSON.parse(await f.text());
+      const members = Array.isArray(parsed) ? parsed : parsed.members;
+      if (!Array.isArray(members) || !members.length) throw new Error("no members in that file");
+      setFile({ source: parsed.source || f.name, members, warnings: parsed.warnings || [] });
+    } catch (ex) {
+      setFile(null);
+      setErr("That is not a roster file — run tools/ngg-import/extract.js on the workbook first. (" + (ex.message || "unreadable") + ")");
+    }
+  };
+
+  const run = async (apply) => {
+    if (!file) return;
+    if (apply && !(await dialog.confirm({
+      title: "Write " + (preview.created + preview.updated) + " member record(s)?",
+      body: preview.created + " new, " + preview.updated + " updated"
+        + (overwrite ? ". Overwrite is ON — values already in the Control Room will be replaced." : ". Existing values are kept; only blanks are filled."),
+      cta: "Import roster", danger: overwrite }))) return;
+    setBusy(apply ? "apply" : "preview"); setErr("");
+    try {
+      const r = await NGGApi.admin.members.importRoster(file, { apply, overwrite });
+      apply ? (setDone(r), toast.success(r.created + " new · " + r.updated + " updated", "Roster imported")) : setPreview(r);
+    } catch (ex) {
+      setErr(ex.detail || ex.code || ex.message || "The import failed");
+    } finally { setBusy(""); }
+  };
+
+  const res = done || preview;
+  const MARK = { create: "+", update: "~", failed: "!", unchanged: "=" };
+  return (
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+      <div className="admin-drawer-panel">
+        <div className="admin-drawer-head">
+          <h3>Import roster</h3>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
+        </div>
+        <div className="admin-fields">
+          <p className="admin-hint">
+            Loads the roster file produced from the members workbook by
+            <span className="mono"> node tools/ngg-import/extract.js</span>. Members are matched on
+            their printed ID, so running it twice updates the same people instead of duplicating them.
+            The file holds children&rsquo;s personal data — delete your copy once this has run.
+          </p>
+
+          <label className="admin-field"><span className="admin-label">Roster file</span>
+            <label className="btn btn-ghost btn-sm" style={{ cursor: "pointer", margin: 0, alignSelf: "flex-start" }}>
+              {file ? "Choose a different file" : "Choose file…"}
+              <input type="file" accept="application/json,.json" onChange={read} style={{ display: "none" }}/>
+            </label>
+          </label>
+
+          {file && (
+            <div className="mono" style={{ fontSize: 13 }}>
+              {file.source} · {fmtNum(file.members.length)} member{file.members.length === 1 ? "" : "s"}
+              {file.warnings.length ? " · " + file.warnings.length + " extractor warning" + (file.warnings.length === 1 ? "" : "s") : ""}
+            </div>
+          )}
+
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+            <input type="checkbox" checked={overwrite} disabled={!!busy || !!done}
+              onChange={(e) => { setOverwrite(e.target.checked); setPreview(null); }}/>
+            Replace values the record already has (default: fill blanks only)
+          </label>
+
+          {err && <div className="admin-hint" style={{ color: "var(--danger, #c0392b)" }}>{err}</div>}
+
+          {res && (
+            <div>
+              <div className="mono" style={{ marginBottom: 8 }}>
+                {done ? "Imported" : "Would import"} — new {res.created} · updated {res.updated}
+                {" "}· already current {res.unchanged} · unusable {res.failed}
+              </div>
+              {/* A list, not a table. Four columns in a drawer this narrow put
+                  "what changes" off the right-hand edge, which is the one
+                  column somebody reading a dry run is here for. */}
+              {res.rows.length > 0 && (
+                <div style={{ maxHeight: 360, overflowY: "auto", borderTop: "1px solid var(--admin-hair, #e6e8ec)" }}>
+                  {res.rows.map((r, i) => (
+                    <div key={i} style={{ display: "flex", gap: 10, padding: "8px 2px", borderBottom: "1px solid var(--admin-hair, #e6e8ec)" }}>
+                      <span className="mono" style={{ width: 12, flex: "none", opacity: .7 }}>{MARK[r.action] || "?"}</span>
+                      <span className="mono" style={{ width: 74, flex: "none", fontSize: 12 }}>{r.ref}</span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div>{r.name}</div>
+                        {r.detail && <div className="mono" style={{ fontSize: 12, opacity: .72, wordBreak: "break-word" }}>{r.detail}</div>}
+                        {(r.warnings || []).map((w, j) => (
+                          <div key={j} className="admin-hint" style={{ margin: "3px 0 0" }}>↳ {w}</div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="admin-drawer-foot">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={close} disabled={!!busy}>{done ? "Close" : "Cancel"}</button>
+          {!done && (
+            <button type="button" className="btn btn-ghost btn-sm" disabled={!file || !!busy} onClick={() => run(false)}>
+              {busy === "preview" ? "Checking…" : "Check what would change"}
+            </button>
+          )}
+          {!done && preview && (preview.created + preview.updated) > 0 && (
+            <button type="button" className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => run(true)}>
+              {busy === "apply" ? "Importing…" : "Import " + (preview.created + preview.updated) + " record(s)"}
+            </button>
+          )}
+          {done && <button type="button" className="btn btn-primary btn-sm" onClick={onApplied}>Back to the roster</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminMemberIdBatch({ filters, sort, total, onClose }) {
   const { panelRef, close } = useAdminDrawer(onClose, false);
   const [mode, setMode] = React.useState("zip");
@@ -1540,6 +1684,11 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
             <Field label="Printed ID" value={d.displayId||""} onChange={v => set("displayId", v)} placeholder="26-AM-135"/>
             <Field label="Disciplines (1–2)" value={d.disciplines||""} onChange={v => set("disciplines", v)} placeholder="TECH, MEDIA"/>
           </div>
+          {/* NGG level — the first thing a centre lead asks about a child, and
+              a column since schema 109. Free text rather than a fixed list:
+              the roster has used A, B, C and O so far and the programme has
+              renamed its levels before. */}
+          <Field label="NGG level" value={d.level||""} onChange={v => set("level", v.toUpperCase())} placeholder="A"/>
           <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>
           <Field label="Parent email" value={d.parentEmail||""} onChange={v => set("parentEmail", v)} type="email"/>
           <Field label="School" value={d.school||""} onChange={v => set("school", v)}/>

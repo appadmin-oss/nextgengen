@@ -825,6 +825,7 @@ function public_member(array $m): array {
         'track' => $m['track'],
         'displayId' => $m['displayId'] ?? '',
         'disciplines' => $m['disciplines'] ?? '',
+        'level' => $m['level'] ?? '',
         'cohort' => $m['cohort'],
         'bio' => $m['bio'],
         'socials' => safe_json($m['socials'] ?? null),

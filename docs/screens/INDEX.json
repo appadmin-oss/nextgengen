@@ -133,5 +133,15 @@
     "name": "20-cards-print-pick",
     "label": "A reprint of two — the rest stay visible to pick from, and off the sheet",
     "kb": 489
+  },
+  {
+    "name": "27-roster-import",
+    "label": "Importing the members workbook without a shell — the dry run, before anything is written",
+    "kb": 65
+  },
+  {
+    "name": "26-nggc-member-id",
+    "label": "NGGC member ID · both sizes, with and without a headshot on file",
+    "kb": 568
   }
 ]

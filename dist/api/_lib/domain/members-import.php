@@ -40,7 +40,7 @@ const MEMBER_IMPORT_WIDTHS = [
     'fullName' => 255, 'email' => 200, 'phone' => 40, 'type' => 32, 'status' => 32,
     'centre' => 32, 'track' => 64, 'cohort' => 64, 'joinDate' => 40, 'dob' => 40,
     'parentName' => 255, 'parentPhone' => 40, 'school' => 255,
-    'displayId' => 24, 'disciplines' => 120,
+    'displayId' => 24, 'disciplines' => 120, 'level' => 16,
 ];
 
 /* The imported block inside `notes` is fenced so a re-run can replace it
@@ -63,10 +63,14 @@ function members_import_parse(string $json): array
 /**
  * The facts `members` has no column for.
  *
- * A child's level, sex, class, local government, home address and second
- * guardian are all things the desk needs and the schema does not carry. They go
- * into `notes` as one fenced block rather than being dropped — losing them on
- * import would mean going back to the spreadsheet for every one of them.
+ * A child's sex, class, local government, home address and second guardian are
+ * all things the desk needs and the schema does not carry. They go into `notes`
+ * as one fenced block rather than being dropped — losing them on import would
+ * mean going back to the spreadsheet for every one of them.
+ *
+ * Level used to be in here too. It has had its own column since schema 109, so
+ * the line stays in the block only for the rows migration 109 backfilled from:
+ * removing it would make a re-import look like it had lost something.
  */
 function members_import_note(array $row, string $stampedOn): string
 {
@@ -146,6 +150,7 @@ function members_import_row(array $row, string $stampedOn): array
         'cohort'      => trim((string)($row['cohort'] ?? '')),
         'track'       => strtoupper(trim((string)($row['track'] ?? ''))),
         'disciplines' => strtoupper(trim((string)($row['disciplines'] ?? ''))),
+        'level'       => strtoupper(trim((string)($row['level'] ?? ''))),
         'joinDate'    => trim((string)($row['joinDate'] ?? '')),
         'dob'         => trim((string)($row['dob'] ?? '')),
         'email'       => $email,
@@ -305,5 +310,58 @@ function members_import_run(array $rows, array $opts = []): array
             'unchanged' => $report['unchanged'], 'failed' => $report['failed']], '');
         if (function_exists('cache_invalidate')) cache_invalidate('students');
     }
+    return $report;
+}
+
+/**
+ * The Control Room's way in — a roster import for a host with no shell.
+ *
+ * Most of NGG runs on shared hosting where there is no SSH and no cron, so a
+ * CLI-only importer is an importer the person who actually keeps the roster
+ * cannot run. This is the same import behind an admin session: the browser
+ * reads the roster file, posts it, and gets back the identical dry run the
+ * command line prints.
+ *
+ * Reading what an import WOULD do needs the 'people' capability. Applying it
+ * needs 'rbac' — the super-admin tier — because a roster file rewrites the
+ * membership table in one action, and that is a different kind of decision from
+ * editing one child's record.
+ */
+function admin_members_import(array $p): array
+{
+    $g = admin_cap_gate($p, 'people');
+    if (!$g['ok']) return $g;
+
+    $apply = !empty($p['apply']);
+    if ($apply && !role_has_cap((string)($g['requester']['role'] ?? ''), 'rbac')) {
+        return ['ok' => false, 'error' => 'forbidden',
+                'detail' => 'Applying a roster import needs super-admin access. The preview does not.'];
+    }
+
+    $rows = is_array($p['members'] ?? null) ? $p['members'] : null;
+    if ($rows === null) return ['ok' => false, 'error' => 'no_members_array'];
+    if (!$rows) return ['ok' => false, 'error' => 'roster_empty'];
+    /* A ceiling, not a capacity limit: NGG has had 136 members in three years,
+       so a file with thousands of rows in it is the wrong file. */
+    if (count($rows) > 2000) return ['ok' => false, 'error' => 'too_many_rows',
+                                     'detail' => count($rows) . ' rows — that is not this roster.'];
+
+    $report = members_import_run($rows, [
+        'apply' => $apply,
+        'overwrite' => !empty($p['overwrite']),
+        'emitEvents' => false,
+        'actor' => (string)($g['requester']['memberId'] ?? 'admin'),
+    ]);
+
+    audit($apply ? 'member.import.web.apply' : 'member.import.web.preview',
+          (string)($g['requester']['memberId'] ?? ''), '',
+          ['source' => (string)($p['source'] ?? ''), 'created' => $report['created'],
+           'updated' => $report['updated'], 'failed' => $report['failed']],
+          (string)($p['ip'] ?? ''));
+
+    /* The full row list for 136 members is a lot of JSON to render and most of
+       it says "nothing to do". Send back what the operator has to read. */
+    $report['rows'] = array_values(array_filter($report['rows'],
+        fn($r) => $r['action'] !== 'unchanged' || !empty($r['warnings'])));
     return $report;
 }

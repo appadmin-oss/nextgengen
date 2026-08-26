@@ -36,6 +36,13 @@ if ($method === 'POST') {
         $res = gs_call('admin.members.reset2fa', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'delete') {
         $res = gs_call('admin.members.delete', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
+    } elseif ($action === 'import') {
+        // Roster import from the members workbook, for hosts with no shell.
+        // Preview needs 'people'; applying needs super-admin (see the domain).
+        $res = gs_call('admin.members.import', ['requesterId' => $s['mid'],
+            'members' => $body['members'] ?? null, 'apply' => !empty($body['apply']),
+            'overwrite' => !empty($body['overwrite']), 'source' => $body['source'] ?? '',
+            'ip' => client_ip()]);
     } elseif ($action === 'setCaps') {
         $args = ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'caps' => $body['caps'] ?? [], 'ip' => client_ip()];
         if (array_key_exists('centreScope', $body)) $args['centreScope'] = $body['centreScope']; // only when explicitly set — avoids clobbering
