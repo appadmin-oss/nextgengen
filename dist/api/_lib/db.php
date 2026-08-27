@@ -17,6 +17,30 @@ declare(strict_types=1);
 
 const NGG_SCHEMA_TARGET = 109;
 
+/**
+ * Backfill for migration 109 — recover a member's level from the note the
+ * importer wrote before `level` was a column.
+ *
+ * It lives here, as a constant, rather than in db/schema-mysql.sql, because the
+ * MySQL mirror replay deliberately executes only CREATE / ALTER / INSERT: an
+ * UPDATE sitting in that file is read, skipped, and never runs. Shipping it
+ * there added the column on a no-SSH MySQL host and left every level blank.
+ *
+ * Both engines run it from code instead — the SQLite ladder at step 109, and
+ * db_apply_mysql_schema() after the mirror. The `level = ''` guard makes it a
+ * no-op on every run after the first, which is what lets the MySQL side call
+ * it on each deploy without keeping its own version bookkeeping.
+ *
+ * INSTR/SUBSTR/UPPER mean the same thing in SQLite and MySQL. The pattern is
+ * the one members-import.php writes: "Level B" opening the fenced block.
+ */
+const NGG_BACKFILL_MEMBER_LEVELS = "
+    UPDATE members SET level = UPPER(SUBSTR(notes, INSTR(notes, 'Level ') + 6, 1))
+     WHERE (level IS NULL OR level = '')
+       AND INSTR(notes, '[roster-import]') > 0
+       AND INSTR(notes, 'Level ') > 0
+";
+
 function db_conn(): PDO {
     static $pdo = null;
     if ($pdo !== null) return $pdo;
@@ -152,6 +176,20 @@ function db_apply_mysql_schema(PDO $db): void {
             }
         }
     }
+    /* Data fixups the mirror cannot carry.
+     *
+     * The loop above runs structural DDL and idempotent seed INSERTs only, so a
+     * migration that has to touch existing ROWS has nowhere to live in the .sql
+     * file — it would be read and skipped. Those run here instead, each one
+     * written to be a no-op once it has been applied. Reached only when the
+     * mirror's hash changed, i.e. once per deploy. */
+    try {
+        $db->exec(NGG_BACKFILL_MEMBER_LEVELS);
+    } catch (Throwable $e) {
+        $allOk = false;
+        error_log('[db] mysql post-schema backfill failed: ' . $e->getMessage());
+    }
+
     // Record the hash even on partial failure. The old "only on full success"
     // rule meant a single un-swallowed error (e.g. a missing ALTER privilege)
     // replayed the entire ~40-statement mirror on EVERY request forever — a
@@ -3082,11 +3120,7 @@ function db_migrate(PDO $db): void {
            does not match is left blank rather than guessed at. */
         109 => "
             ALTER TABLE members ADD COLUMN level TEXT DEFAULT '';
-            UPDATE members SET level = UPPER(SUBSTR(notes, INSTR(notes, 'Level ') + 6, 1))
-             WHERE (level IS NULL OR level = '')
-               AND INSTR(notes, '[roster-import]') > 0
-               AND INSTR(notes, 'Level ') > 0;
-        ",
+        " . NGG_BACKFILL_MEMBER_LEVELS . ";",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

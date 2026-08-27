@@ -2357,10 +2357,12 @@ INSERT INTO schema_version (version) VALUES (108) ON DUPLICATE KEY UPDATE versio
 -- The pattern is the one members-import.php writes: a line reading "Level B" as
 -- the first segment of the fenced block. Anything that does not match is left
 -- blank rather than guessed at.
+-- The backfill itself is NOT here. db_apply_mysql_schema() executes only
+-- CREATE / ALTER / INSERT from this file, so an UPDATE placed here is read and
+-- skipped — which is exactly how the first cut of this migration added the
+-- column on a no-SSH MySQL host and left every level blank. It lives in
+-- db.php as NGG_BACKFILL_MEMBER_LEVELS, run from both the SQLite ladder and
+-- the MySQL mirror replay.
 ALTER TABLE members ADD COLUMN level VARCHAR(16) DEFAULT '';
-UPDATE members SET level = UPPER(SUBSTR(notes, INSTR(notes, 'Level ') + 6, 1))
- WHERE (level IS NULL OR level = '')
-   AND INSTR(notes, '[roster-import]') > 0
-   AND INSTR(notes, 'Level ') > 0;
 
 INSERT INTO schema_version (version) VALUES (109) ON DUPLICATE KEY UPDATE version = version;

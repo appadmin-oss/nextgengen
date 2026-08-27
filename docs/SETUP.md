@@ -317,6 +317,22 @@ without either:
 
 - **Schema migrations** apply automatically on the first request after a deploy
   (`db_migrate` runs against the target version) — no CLI step.
+
+  One caveat on **MySQL**, verified against MariaDB 10.11 in August 2026:
+  `db_apply_mysql_schema()` replays `db/schema-mysql.sql` but executes only
+  `CREATE` / `ALTER` / `INSERT`. A migration that has to touch existing **rows**
+  is read from that file and skipped, while the same migration does run on
+  SQLite through the ladder. Row-touching migrations therefore belong in code —
+  see `NGG_BACKFILL_MEMBER_LEVELS` in `api/_lib/db.php` and the fixup block at
+  the end of `db_apply_mysql_schema()`. `php api/tests/run.php` fails if a new
+  one is added to the .sql file instead.
+
+  Six statements predating that rule have never run on a MySQL deployment and
+  are pinned in the suite rather than quietly fixed, because applying them
+  rewrites live rows: the `summer_students` `firstName` / `lastName` split, its
+  `sex = gender` copy, the `qr_codes.expiresAt` default, and `notifiedAt` on
+  `community_posts` and `community_comments`. On a MySQL host those columns are
+  blank where a SQLite host has them filled. Worth a decision; not urgent.
 - **The first admin sign-in** self-provisions the super-admin, so you never need
   a shell to bootstrap access.
 - **All transactional email is synchronous** — registration confirmations,

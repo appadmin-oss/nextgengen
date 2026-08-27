@@ -18820,25 +18820,79 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         $get('IMP-001')['level'] === 'B');
     chk('roster import: …and travels in the shape the app serialises',
         (public_member($get('IMP-001'))['level'] ?? null) === 'B');
-    /* Migration 109 backfills the column from the note the earlier importer
-       wrote, so a site that seeded before the column existed is not left with
-       136 blanks until somebody thinks to re-run the import. */
-    chk('roster import: migration 109 recovers a level from an already-imported note',
-        (function () use ($get) {
-            $tmp = sys_get_temp_dir() . '/ngg-lvl-' . bin2hex(random_bytes(3)) . '.db';
-            $db = new PDO('sqlite:' . $tmp, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
-            try {
-                db_migrate($db);
-                $db->exec("DELETE FROM schema_version WHERE version = 109");
-                $db->exec("INSERT INTO members (memberId, fullName, level, notes) VALUES ('M1', 'Before The Column', '',
-                    '[roster-import]\nImported from the members workbook on 2026-08-26.\nLevel B · Male · SS 3\n[/roster-import]')");
-                $db->exec("INSERT INTO members (memberId, fullName, level, notes) VALUES ('M2', 'Typed By Hand', '', 'Rides the bus with their cousin.')");
-                db_migrate($db);
-                $a = $db->query("SELECT level FROM members WHERE memberId = 'M1'")->fetchColumn();
-                $b = $db->query("SELECT level FROM members WHERE memberId = 'M2'")->fetchColumn();
-                return $a === 'B' && ($b === '' || $b === null);
-            } catch (Throwable $e) { return false; }
-            finally { $db = null; @unlink($tmp); }
+    /* Migration 109's backfill, run against whichever engine this suite is
+       pointed at.
+       
+       This used to spin up its own throwaway SQLite file, and that is how it
+       missed the bug it exists to catch: the backfill shipped as an UPDATE
+       inside db/schema-mysql.sql, where db_apply_mysql_schema() reads it and
+       skips it. On MySQL the column appeared and every level stayed blank.
+       Running the real statement on the real driver is the whole test. */
+    db_exec("DELETE FROM members WHERE memberId IN ('IMPLVL-1','IMPLVL-2','IMPLVL-3')");
+    db_insert('members', ['memberId' => 'IMPLVL-1', 'fullName' => 'Seeded Before The Column', 'level' => '',
+        'notes' => "[roster-import]\nImported from the members workbook on 2026-08-26.\nLevel B · Male · SS 3\n[/roster-import]"]);
+    db_insert('members', ['memberId' => 'IMPLVL-2', 'fullName' => 'Typed By Hand', 'level' => '',
+        'notes' => 'Rides the bus with their cousin.']);
+    db_insert('members', ['memberId' => 'IMPLVL-3', 'fullName' => 'Already Set', 'level' => 'C',
+        'notes' => "[roster-import]\nLevel A · Female\n[/roster-import]"]);
+    db_conn()->exec(NGG_BACKFILL_MEMBER_LEVELS);
+    $lvl = fn(string $id) => (string)(db_row('SELECT level FROM members WHERE memberId = ?', [$id])['level'] ?? '');
+    chk('level backfill: a level is recovered from an already-imported note', $lvl('IMPLVL-1') === 'B');
+    chk('level backfill: a note the desk typed is not mined for one', $lvl('IMPLVL-2') === '');
+    chk('level backfill: a level already on the record is not overwritten', $lvl('IMPLVL-3') === 'C');
+    db_conn()->exec(NGG_BACKFILL_MEMBER_LEVELS);
+    chk('level backfill: running it again changes nothing',
+        $lvl('IMPLVL-1') === 'B' && $lvl('IMPLVL-2') === '' && $lvl('IMPLVL-3') === 'C');
+    db_exec("DELETE FROM members WHERE memberId IN ('IMPLVL-1','IMPLVL-2','IMPLVL-3')");
+
+    /* And the guard for the whole class of bug.
+     *
+     * db_apply_mysql_schema() runs only CREATE / ALTER / INSERT out of the
+     * mirror. Anything else in that file is dead text on a MySQL host — read,
+     * skipped, silently not applied — while the same migration DOES run on
+     * SQLite through the ladder. That is how the level backfill shipped
+     * broken, and it is not the first time: the statements listed below have
+     * never run on any MySQL deployment either.
+     *
+     * They are pinned rather than fixed because making them run means
+     * executing name-splitting and date-arithmetic UPDATEs over live rows for
+     * the first time, which is a decision for whoever owns the data, not a
+     * side effect of a test. Anything NOT on this list fails the suite: a new
+     * row-touching migration belongs in code (see NGG_BACKFILL_MEMBER_LEVELS),
+     * not in the .sql file.
+     */
+    chk('mysql mirror: no NEW statement the replay would silently drop',
+        (function () {
+            /* Resolved from this file, not from an outer $ROOT: the enclosing
+               block is itself a closure, so a captured-by-mistake variable
+               reads as null, file_get_contents returns '', and the assertion
+               passes having examined nothing. */
+            $mirror = dirname(__DIR__, 2) . '/db/schema-mysql.sql';
+            $sql = (string)@file_get_contents($mirror);
+            if (!str_contains($sql, 'CREATE TABLE IF NOT EXISTS members')) {
+                fwrite(STDERR, "       could not read the mirror at {$mirror}\n");
+                return false;
+            }
+            // Known dead since long before the level column. Do not extend.
+            $known = [
+                'SET NAMES utf8mb4',                                    // harmless; the DSN sets the charset
+                'UPDATE summer_students SET firstName',                 // never split on MySQL
+                'UPDATE summer_students SET lastName',
+                'UPDATE summer_students SET sex = gender',
+                'UPDATE qr_codes SET expiresAt',
+                'UPDATE community_posts SET notifiedAt',
+                'UPDATE community_comments SET notifiedAt',
+            ];
+            $new = [];
+            foreach (db_split_sql($sql) as $stmt) {
+                if (preg_match('/^(CREATE TABLE|CREATE INDEX|CREATE UNIQUE INDEX|ALTER TABLE|INSERT)\b/i', $stmt)) continue;
+                $flat = trim(preg_replace('/\s+/', ' ', $stmt));
+                foreach ($known as $k) if (str_starts_with($flat, $k)) continue 2;
+                $new[] = substr($flat, 0, 90);
+            }
+            if ($new) fwrite(STDERR, "       these would never run on MySQL — move them into code:\n         - "
+                . implode("\n         - ", $new) . "\n");
+            return $new === [];
         })());
 
     // ── An unusable email is dropped, not stored where sign-in will read it ──
