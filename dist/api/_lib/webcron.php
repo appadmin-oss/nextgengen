@@ -17,9 +17,17 @@ declare(strict_types=1);
  *   reminders every 900s  — parent-verification re-nudge + stalled alerts
  *   maint     every 3600s — publish scheduled posts, expire promo, GC, trim,
  *                             roll due desk passwords
+ *   accrue    every 86400s — bring fee charges up to date (no-op when fees are
+ *                             switched off)
  *
  * Disable entirely with $CONFIG['webcron']['enabled'] = false (e.g. when a real
  * cron drives api/tools/*). CLI SAPI never schedules it.
+ *
+ * A host that HAS a scheduler can drive the same jobs from outside instead —
+ * api/public/cron.php, with $CONFIG['cron_key'] set. Same jobs, same lock, same
+ * heartbeats; see that file. Opportunistic web-cron and an external scheduler
+ * are safe to run together, which matters during a migration from one to the
+ * other.
  */
 
 function web_cron_cfg(string $key, int $default): int {
@@ -175,6 +183,14 @@ function web_cron_run(): void {
                 if (web_cron_due('deliver', web_cron_cfg('deliver', 60)))       web_cron_guard('deliveries_dispatch', fn() => deliveries_dispatch(8));
                 if (web_cron_due('reminders', web_cron_cfg('reminders', 900)))  web_cron_guard('reminders', 'web_cron_reminders');
                 if (web_cron_due('maint', web_cron_cfg('maint', 3600)))         web_cron_guard('maintenance', 'web_cron_maintenance');
+                /* Fee accrual. Its own slot rather than a ride on maintenance,
+                   because it is the one job an operator will want to reason
+                   about on its own — "has anybody been charged today" — and a
+                   shared heartbeat cannot answer that. Daily by default: dues
+                   are monthly and the day rate is per meeting day, so nothing
+                   here is more urgent than that, and every charge it posts is
+                   idempotent so a missed tick costs nothing. */
+                if (web_cron_due('accrue', web_cron_cfg('accrue', 86400)))       web_cron_guard('fees_accrue', 'web_cron_accrue');
                 /* Flag anybody whose clock ran out while nobody was watching.
                  * The board poll catches this the instant somebody looks; two
                  * players who both closed the tab leave a game open forever,
@@ -269,6 +285,27 @@ function web_cron_reminders(): void {
 }
 
 /** Daily maintenance (ported from api/tools/run-jobs.php, minus the heavy Sheets snapshot). */
+/**
+ * Bring fee charges up to date across the active membership.
+ *
+ * Bounded per tick. A roster of 136 clears in one pass; a much larger one
+ * catches up over successive ticks rather than walking the whole table inside
+ * somebody's page load. Every charge is idempotent (see fees_post), so a member
+ * missed this tick is simply charged on the next.
+ */
+function web_cron_accrue(): void {
+    if (!function_exists('fees_settings') || !function_exists('fees_accrue_member')) return;
+    $cfg = fees_settings();
+    if (empty($cfg['enabled'])) return;
+    $limit = max(1, min(FEES_SCAN_MAX, (int)web_cron_cfg('accrueBatch', FEES_ACCRUE_BATCH)));
+    $n = 0;
+    foreach (db_all("SELECT * FROM members WHERE status = 'active' ORDER BY id LIMIT " . $limit) as $m) {
+        fees_accrue_member($m, $cfg);
+        $n++;
+    }
+    if ($n && function_exists('ops_record')) ops_record('cron', 'fees_accrue', $n . ' member(s) brought up to date');
+}
+
 function web_cron_maintenance(): void {
     $now = now_iso();
     db_exec("UPDATE posts SET status='published', updatedAt=? WHERE status='draft' AND publishAt != '' AND publishAt IS NOT NULL AND publishAt <= ?", [$now, $now]);

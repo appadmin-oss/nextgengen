@@ -52,6 +52,12 @@ const ADMIN_SECTIONS = [
   { id: "mentorship",  group: "People",   label: "Mentorship",   title: "Mentorship",          icon: "◐", cap: "people" },
   { id: "behaviour",   group: "People",   label: "Behaviour",    title: "Behaviour monitor",   icon: "◔", cap: "people" },
   { id: "fees",        group: "People",   label: "Dues & fees",  title: "Dues & fees",         icon: "₦", cap: "fees" },
+  /* The conduct policy — thresholds, suspensions and the fine amounts —
+     was only reachable through Summer School, because the panel grew up
+     there. It governs NGG members too (its own `member` block, its own
+     on/off switch), so a year-round coordinator looking for "why is
+     nobody being fined" had nowhere to look. Same screen, second door. */
+  { id: "conduct",     group: "People",   label: "Conduct & fines", title: "Conduct policy & fines", icon: "⚖", cap: "people" },
   { id: "staff",       group: "People",   label: "Staff activity", title: "Staff activity",    icon: "◑", cap: "people" },
   { id: "engagement",  group: "People",   label: "Engagement",   title: "Engagement",          icon: "📈", cap: "audit" },
   { id: "registration",group: "People",   label: "Registration", title: "Registration",        icon: "❑", cap: "summer" },
@@ -281,6 +287,7 @@ function AdminPage({ setPage }) {
           {view === "forms" && <AdminForms/>}
           {view === "site" && <AdminSite/>}
           {view === "fees" && <AdminFees/>}
+          {view === "conduct" && <SummerPolicy/>}
           {view === "status-pages" && <AdminStatusPages/>}
           {view === "sessions" && <AdminSessions/>}
           {view === "missions" && <AdminMissions/>}
@@ -8746,10 +8753,38 @@ function AdminFees() {
             <input type="checkbox" checked={!!cfg.enabled} onChange={e => set("enabled", e.target.checked)}/>
             <b>Charge dues and fees</b>
           </label>
-          {num("membershipFee", "Membership fee", "Charged once, when a member joins.")}
+          {num("membershipFee", "Membership fee",
+            (cfg.membershipEveryMonths > 0
+              ? "Charged on the anniversary of joining, every " + (cfg.membershipEveryMonths === 12 ? "year" : cfg.membershipEveryMonths + " months") + "."
+              : "Charged once, when a member joins."))}
+          {/* The cycle, not a date. Anniversary-based, so a member who joined in
+              November renews in November — billing everyone on 1 January would
+              charge a November joiner twice in six weeks. 0 = the old one-off. */}
+          {num("membershipEveryMonths", "…how often, in months",
+            "12 is yearly. Set 0 to charge it once, on joining, and never again.",
+            null, { min: 0, max: 120 })}
           {num("monthlyDues", "Monthly dues", "Charged for each month a member has been active.")}
-          {num("trainingFee", "Training fee, per session",
-            "Charged for each programme session that has started since they joined.",
+          {/* What the training fee is PER. On 'day' the figure above is a day
+              rate off the meeting calendar in Conduct & fines, not a session
+              total — the label changes with it so the number on screen is never
+              ambiguous about which it is. */}
+          <label style={{ display: "block", marginBottom: 14 }}>
+            <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>Training fee is charged</span>
+            <select className="admin-select" style={{ maxWidth: 260, display: "block", marginTop: 6 }}
+              value={cfg.trainingBasis || "session"} onChange={e => set("trainingBasis", e.target.value)}>
+              <option value="session">Once per session</option>
+              <option value="day">For every day the programme meets</option>
+            </select>
+            <div data-fee-hint="1" style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 5, lineHeight: 1.5 }}>
+              {cfg.trainingBasis === "day"
+                ? "One charge for each meeting day inside a session's dates — using the weekdays, holidays and extra days set in Conduct & fines. A session already charged as a whole is never also charged by the day."
+                : "One charge for each programme session that started after they joined."}
+            </div>
+          </label>
+          {num("trainingFee", cfg.trainingBasis === "day" ? "Training fee, per meeting day" : "Training fee, per session",
+            cfg.trainingBasis === "day"
+              ? "Charged for each day the programme meets, while they are in the training half."
+              : "Charged for each programme session that has started since they joined.",
             /* THE MICROCOPY. Quiet, one line, no emphasis — and stating the
                condition rather than promising the outcome, because a member who
                leaves before the MOU is complete still owes it. */

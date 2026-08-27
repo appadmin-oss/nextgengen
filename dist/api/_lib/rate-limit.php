@@ -42,6 +42,12 @@ function rate_limit_default(string $op): ?array {
         'application.status' => ['max' => 20, 'window' => 300],   // (ref,email) brute-force lookup
         'summer.profile'     => ['max' => 12, 'window' => 300],   // a minor's name + photo + attendance, by guessable handle
         'student.login'      => ['max' => 8,  'window' => 300],   // ID-card credential check — brute-force ceiling
+        /* The external scheduler endpoint. A secret in a URL is a secret worth
+           a brute-force ceiling, and this bucket is checked BEFORE the key is
+           compared so it also caps how often anyone can make the box do work.
+           Generous enough for a per-minute cron, nowhere near enough to search
+           a random key. */
+        'cron.external'      => ['max' => 12, 'window' => 60],
         /* Scoped per MEMBER at the route (see api/member/community.php), not per
            IP alone. A centre is one address: thirty children in a computer room
            shared twelve posts a minute between them, and the thirteenth was

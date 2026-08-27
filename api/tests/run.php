@@ -12914,14 +12914,34 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             && $t['complete'] === false;
     })());
 
-    chk('fees: accrual charges the joining fee once and the dues once per month', (function () use ($ADM) {
+    chk('fees: accrual charges membership yearly and the dues once per month', (function () use ($ADM) {
         $a = db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-A'");
         fees_accrue_member($a);
         $acc = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A'])['account'];
         $k = $acc['balance']['byKind'];
-        // 20 months elapsed → 21 monthly keys from the join month to this one.
-        return ($k['membership'] ?? 0) === 5000 && ($k['dues'] ?? 0) === 21000;
+        /* 20 months elapsed → 21 monthly dues keys from the join month to this
+           one, and TWO membership years: the one they joined on and the
+           anniversary they have passed. */
+        return ($k['membership'] ?? 0) === 10000 && ($k['dues'] ?? 0) === 21000;
     })());
+
+    /* Membership renews on the ANNIVERSARY, not on 1 January. A member who
+       joined in November has paid for a year in November; billing them again
+       six weeks later because the calendar rolled is how a family concludes the
+       programme cannot count. */
+    chk('fees: the membership year runs from the join date, not the calendar', (function () {
+        $p = fees_membership_periods('2024-11-20', '2026-01-05', 12);
+        return count($p) === 2 && $p[0]['due'] === '2024-11-20' && $p[1]['due'] === '2025-11-20'
+            && $p[0]['key'] === 'y1' && $p[1]['key'] === 'y2';
+    })());
+    chk('fees: …a cycle of 0 months is the old one-off charge, still reachable',
+        fees_membership_periods('2024-11-20', '2026-01-05', 0) === [['key' => 'once', 'due' => '2024-11-20']]);
+    chk('fees: …and an admin cannot turn the cycle into a monthly charge by typing 0.5',
+        (function () use ($ADM) {
+            $f = backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM, 'data' => ['membershipEveryMonths' => 0.5]])['fees'];
+            $back = backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM, 'data' => ['membershipEveryMonths' => 12]])['fees'];
+            return (int)$f['membershipEveryMonths'] === 0 && (int)$back['membershipEveryMonths'] === 12;
+        })());
 
     /* THE ONE THAT MATTERS MOST. Accrual runs from a cron and from a button, so
        it will be run twice; a family charged twice for August finds out by being
@@ -12983,11 +13003,100 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         return ($again['error'] ?? '') === 'already_done' && (int)$r['writtenOff'] > 0;
     })());
 
+    /* ── The training fee charged per meeting day ─────────────────────────
+     *
+     * "It should add the money each day they come" — and the days they come are
+     * the admin's calendar, not the attendance register: the weekdays the
+     * programme meets, its holidays, its extra days, inside each session's own
+     * start and end dates. Charging off attendance instead would make missing a
+     * day cheaper than turning up, which is not what a training fee is for.
+     *
+     * The switch is per-deployment and non-destructive, so the three properties
+     * that matter are: it counts the calendar correctly, it does not re-bill a
+     * session already charged as a whole, and it charges nothing at all when
+     * there is no calendar to count. */
+    (function () use ($ADM) {
+        $keep = fees_settings();
+        $keepCal = setting_get('memberProgramme');
+        db_exec("DELETE FROM members WHERE memberId = 'NGG-FEE-DAY'");
+        db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-FEE-DAY'");
+        db_exec("DELETE FROM sessions WHERE sessionId LIKE 'S-DAY-%'");
+
+        // Two Saturdays a week apart, one of them declared a holiday.
+        setting_set('memberProgramme', ['enabled' => true, 'startDate' => '2026-01-01', 'endDate' => '2026-12-31',
+            'weekdays' => [6], 'holidays' => ['2026-01-10'], 'extraDays' => ['2026-01-14']], 'test');
+        db_insert('sessions', ['sessionId' => 'S-DAY-1', 'name' => 'Term one',
+            'startDate' => '2026-01-01', 'endDate' => '2026-01-20', 'isActive' => 0]);
+        db_insert('members', ['memberId' => 'NGG-FEE-DAY', 'fullName' => 'Day Rate', 'type' => 'NGG',
+            'status' => 'active', 'joinDate' => '2026-01-01', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+        backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM, 'data' => [
+            'enabled' => true, 'membershipFee' => 0, 'monthlyDues' => 0, 'trainingFee' => 500,
+            'trainingBasis' => 'day', 'balanceCap' => 0, 'remindEnabled' => false]]);
+
+        $m = db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-DAY'");
+        $r = fees_accrue_member($m, null, '2026-01-31');
+        /* Scoped to this fixture's own session: the suite's database carries
+           sessions from other blocks, and a member enrolled through them is
+           correctly charged for those too. */
+        $days = db_all("SELECT periodKey FROM member_ledger WHERE memberId = 'NGG-FEE-DAY' AND kind = 'training' AND periodKey LIKE 'S-DAY-1:%' ORDER BY periodKey");
+        $keys = array_map(fn($x) => (string)$x['periodKey'], $days);
+
+        /* Jan 2026: Saturdays fall on the 3rd, 10th, 17th and 24th. The 10th is
+           a holiday, the 24th is past the session's end, and the 14th is an
+           extra day the admin added. */
+        chk('fees (day rate): one charge per meeting day inside the session window',
+            $keys === ['S-DAY-1:2026-01-03', 'S-DAY-1:2026-01-14', 'S-DAY-1:2026-01-17']);
+        chk('fees (day rate): …a declared holiday is not charged for',
+            !in_array('S-DAY-1:2026-01-10', $keys, true));
+        chk('fees (day rate): …nor a day past the session end date',
+            !in_array('S-DAY-1:2026-01-24', $keys, true));
+        chk('fees (day rate): the amount is the day rate, once each',
+            count($keys) === 3
+            && (int)db_row("SELECT COALESCE(SUM(amount),0) t FROM member_ledger WHERE memberId = 'NGG-FEE-DAY' AND kind = 'training' AND periodKey LIKE 'S-DAY-1:%'")['t'] === 1500);
+
+        chk('fees (day rate): running it again charges nothing more',
+            (function () use ($m) {
+                $n = fn() => (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-FEE-DAY' AND kind = 'training'")['c'];
+                $before = $n();
+                fees_accrue_member($m, null, '2026-01-31');
+                return $n() === $before;
+            })());
+
+        /* Switching the basis mid-programme must not re-bill a family for a
+           session they were already invoiced for as a whole. */
+        chk('fees (day rate): a session already charged as a whole is not charged again by the day',
+            (function () use ($ADM, $m) {
+                db_insert('sessions', ['sessionId' => 'S-DAY-2', 'name' => 'Term two',
+                    'startDate' => '2026-02-01', 'endDate' => '2026-02-28', 'isActive' => 0]);
+                fees_post('NGG-FEE-DAY', 'training', 75000, ['periodKey' => 'S-DAY-2', 'by' => 'test']);
+                fees_accrue_member($m, null, '2026-02-28');
+                $n = (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-FEE-DAY' AND kind = 'training' AND periodKey LIKE 'S-DAY-2%'")['c'];
+                return $n === 1;
+            })());
+
+        chk('fees (day rate): with no meeting calendar set, nothing is charged and the run says why',
+            (function () use ($m) {
+                setting_set('memberProgramme', ['enabled' => false, 'startDate' => '', 'endDate' => '',
+                    'weekdays' => [6], 'holidays' => [], 'extraDays' => []], 'test');
+                db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-FEE-DAY'");
+                $r = fees_accrue_member($m, null, '2026-01-31');
+                return $r['training'] === 0 && $r['skipped'] === 'no_calendar';
+            })());
+
+        db_exec("DELETE FROM members WHERE memberId = 'NGG-FEE-DAY'");
+        db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-FEE-DAY'");
+        db_exec("DELETE FROM sessions WHERE sessionId LIKE 'S-DAY-%'");
+        if ($keepCal === null) db_exec("DELETE FROM settings WHERE settingKey = 'memberProgramme'");
+        else setting_set('memberProgramme', $keepCal, 'test');
+        setting_set('fees', $keep, 'test');
+    })();
+
     chk('fees: what is left owing after the MOU is the dues, not the training fee', (function () use ($ADM) {
         $acc = backend_dispatch('admin.fees.member', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A'])['account'];
         $b = $acc['balance'];
-        // membership 5000 + dues 21000 = 26000. The 75k training is gone.
-        return (int)$b['payable'] === 26000 && (int)$b['outstanding'] === 26000;
+        // membership 2 × 5000 + dues 21000 = 31000. The 75k training is gone.
+        return (int)$b['payable'] === 31000 && (int)$b['outstanding'] === 31000;
     })());
 
     chk('fees: a recorded payment reduces what is payable, and is not a gateway', (function () use ($ADM) {
@@ -12995,11 +13104,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             'amount' => 6000, 'method' => 'transfer', 'reference' => 'TRF-1']);
         if (empty($r['ok'])) return false;
         $b = $r['balance'];
-        if ((int)$b['payable'] !== 20000) return false;
+        if ((int)$b['payable'] !== 25000) return false;
         // Two payments in one month are two events, not a duplicate.
         backend_dispatch('admin.fees.payment', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A', 'amount' => 1000, 'method' => 'cash']);
         $after = fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-FEE-A'"));
-        return (int)$after['payable'] === 19000
+        return (int)$after['payable'] === 24000
             && (backend_dispatch('admin.fees.payment', ['requesterId' => $ADM, 'memberId' => 'NGG-FEE-A', 'amount' => 0])['error'] ?? '') === 'bad_amount';
     })());
 

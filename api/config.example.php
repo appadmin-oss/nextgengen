@@ -97,7 +97,32 @@ return [
         'deliver'   => 60,     // seconds between integration-bus drains
         'reminders' => 900,    // seconds between reminder sweeps
         'maint'     => 3600,   // seconds between maintenance passes
+        'accrue'    => 86400,  // seconds between fee-accrual passes (daily)
+        'accrueBatch' => 500,  // members brought up to date per pass
     ],
+
+    // -----------------------------------------------------------------------
+    // EXTERNAL SCHEDULER (optional, and better than web-cron when you have one)
+    //
+    // Web-cron above rides real page traffic, so a site with a quiet weekend
+    // does no background work until somebody visits. If your host CAN schedule
+    // — cPanel Cron Jobs, an uptime pinger, a GitHub Action — point it at
+    // api/public/cron.php instead and the work happens on the clock:
+    //
+    //   */15 * * * *  wget -q -O /dev/null "https://YOURDOMAIN/api/public/cron.php?key=THE_KEY"
+    //
+    // Add &job=accrue|reminders|deliver|maint to run one job rather than all.
+    //
+    // Set this to a long random string (e.g. `openssl rand -hex 24`). Leave it
+    // EMPTY and the endpoint answers 404 — it is off, and says nothing about
+    // itself to a scanner. Both paths use the same lock, so you can leave
+    // web-cron on while you set the schedule up, then switch it off.
+    //
+    // The key travels in a URL and so ends up in access logs and in the cron
+    // listing: rotate it like a password. It grants running maintenance that
+    // was going to run anyway, and nothing else.
+    // -----------------------------------------------------------------------
+    'cron_key' => '',
 
     // -----------------------------------------------------------------------
     // Google Sheets read-only mirror (OPTIONAL). If set, api/tools/export-sheets.php

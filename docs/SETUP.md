@@ -310,6 +310,26 @@ Add two cron entries (cPanel → Cron Jobs):
 30 * * * *  php /home/USER/public_html/api/tools/export-sheets.php >/dev/null 2>&1
 ```
 
+### An external scheduler (better than web-cron, if you have one)
+
+Web-cron below rides real page traffic, so a quiet weekend does no background
+work until somebody visits. If your host can schedule anything — cPanel Cron
+Jobs, an uptime pinger, a GitHub Action — point it at the endpoint instead and
+the work happens on the clock:
+
+```
+*/15 * * * *  wget -q -O /dev/null "https://YOURDOMAIN/api/public/cron.php?key=THE_KEY"
+```
+
+Set `$CONFIG['cron_key']` to a long random string (`openssl rand -hex 24`) to
+switch it on. Leave it empty and the endpoint answers **404** — off, and telling
+a scanner nothing. Add `&job=accrue|reminders|deliver|maint` to run one job.
+
+Both paths share the same lock and the same idempotent jobs, so you can leave
+web-cron on while you set the schedule up and switch it off afterwards. The key
+travels in a URL and so reaches access logs and the cron listing: rotate it like
+a password. It grants running maintenance that was going to run anyway.
+
 ### No SSH / no cron host
 
 Some shared hosts give you no shell and no scheduler. The app is built to run
@@ -369,6 +389,8 @@ without either:
   volunteer IDs, milestone certificates, and the **check-in state emails**
   (a nudge, or an award-focused note when the person is doing well) are sent
   in-request at the moment they're triggered. Nothing here waits on `run-jobs`.
+- **Fee accrual** rides web-cron too (daily), so charges keep up without a
+  shell. It is a no-op while dues are switched off.
 - **Built-in web-cron** — a normal request, at most once per interval, drains
   the integration bus (Google Chat / webhooks / Sheets rows and the wellbeing
   escalation), sends the parent-verification re-nudge + stalled-registration
