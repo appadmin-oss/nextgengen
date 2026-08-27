@@ -1536,16 +1536,37 @@ function AdminRosterImport({ onClose, onApplied }) {
   const titleProps = { "aria-labelledby": titleId }, headingProps = { id: titleId };
   const close = () => { if (!busy) onClose(); };
 
+  /* SHA-256 of the bytes as read, before parsing.
+   *
+   * This is the FILE's identity — the same number extract.js prints when it
+   * writes the file — so an operator can see that what the browser is holding
+   * is what the extractor made, and a recorded run can be traced back to a file
+   * on disk. It is not the same thing as the import digest the server returns:
+   * that one hashes what the roster would DO, and survives re-serialisation.
+   *
+   * crypto.subtle needs a secure context. On plain http (a LAN box, someone
+   * testing over an IP) it is simply absent, so this degrades to no file hash
+   * rather than to a broken importer — nothing downstream requires it. */
+  const sha256Hex = async (buf) => {
+    if (!(window.crypto && window.crypto.subtle)) return "";
+    try {
+      const d = await window.crypto.subtle.digest("SHA-256", buf);
+      return Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2, "0")).join("");
+    } catch (_) { return ""; }
+  };
+
   const read = async (e) => {
     const f = e.target.files && e.target.files[0];
     e.target.value = "";                                // re-picking the same file must re-read it
     if (!f) return;
     setErr(""); setPreview(null); setDone(null);
     try {
-      const parsed = JSON.parse(await f.text());
+      const bytes = await f.arrayBuffer();
+      const fileSha = await sha256Hex(bytes);
+      const parsed = JSON.parse(new TextDecoder().decode(bytes));
       const members = Array.isArray(parsed) ? parsed : parsed.members;
       if (!Array.isArray(members) || !members.length) throw new Error("no members in that file");
-      setFile({ source: parsed.source || f.name, members, warnings: parsed.warnings || [] });
+      setFile({ source: parsed.source || f.name, members, warnings: parsed.warnings || [], fileSha, bytes: f.size });
     } catch (ex) {
       setFile(null);
       setErr("That is not a roster file — run tools/ngg-import/extract.js on the workbook first. (" + (ex.message || "unreadable") + ")");
@@ -1557,13 +1578,22 @@ function AdminRosterImport({ onClose, onApplied }) {
     if (apply && !(await dialog.confirm({
       title: "Write " + (preview.created + preview.updated) + " member record(s)?",
       body: preview.created + " new, " + preview.updated + " updated"
-        + (overwrite ? ". Overwrite is ON — values already in the Control Room will be replaced." : ". Existing values are kept; only blanks are filled."),
+        + (overwrite ? ". Overwrite is ON — values already in the Control Room will be replaced." : ". Existing values are kept; only blanks are filled.")
+        + (preview.previous ? " This exact roster was already applied on " + String(preview.previous.at).slice(0, 10) + "." : ""),
       cta: "Import roster", danger: overwrite }))) return;
     setBusy(apply ? "apply" : "preview"); setErr("");
     try {
-      const r = await NGGApi.admin.members.importRoster(file, { apply, overwrite });
+      /* The apply names the import the dry run described. The server recomputes
+         it from what it receives and refuses a mismatch, so picking a different
+         file after reading the preview fails closed instead of writing a roster
+         nobody confirmed. */
+      const r = await NGGApi.admin.members.importRoster(file,
+        apply ? { apply, overwrite, expectDigest: (preview && preview.digest) || "" } : { apply, overwrite });
       apply ? (setDone(r), toast.success(r.created + " new · " + r.updated + " updated", "Roster imported")) : setPreview(r);
     } catch (ex) {
+      /* roster_changed is not a failure to retry — it means the file in hand is
+         not the one that was read, so the dry run has to happen again. */
+      if (ex.code === "roster_changed") { setPreview(null); setDone(null); }
       setErr(ex.detail || ex.code || ex.message || "The import failed");
     } finally { setBusy(""); }
   };
@@ -1597,6 +1627,35 @@ function AdminRosterImport({ onClose, onApplied }) {
             <div className="mono" style={{ fontSize: 13 }}>
               {file.source} · {fmtNum(file.members.length)} member{file.members.length === 1 ? "" : "s"}
               {file.warnings.length ? " · " + file.warnings.length + " extractor warning" + (file.warnings.length === 1 ? "" : "s") : ""}
+              {/* The file's own SHA-256, which extract.js prints when it writes
+                  the file. Twelve characters is what a person can actually
+                  compare against a terminal; the whole thing is on the title so
+                  it can still be copied. Absent on plain http, where
+                  crypto.subtle does not exist — the importer does not need it. */}
+              {file.fileSha
+                ? <div style={{ fontSize: 11, color: "var(--ink-400)", marginTop: 2 }}
+                    title={"sha256:" + file.fileSha}>sha256 {file.fileSha.slice(0, 12)}…</div>
+                : null}
+            </div>
+          )}
+
+          {/* Already loaded this exact roster? Said BEFORE the apply button,
+              because a half-remembered re-import is the mistake this catches —
+              and it is a heads-up, not a block: re-running after fixing four
+              rows in the sheet is the normal workflow. */}
+          {preview && preview.previous && (
+            <div className="admin-card admin-note-card">
+              <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 6 }}>
+                Already imported
+              </div>
+              <div style={{ fontSize: 13, lineHeight: 1.55 }}>
+                This exact roster was applied on <b>{String(preview.previous.at).slice(0, 10)}</b>
+                {preview.previous.actorId ? <> by <span className="mono">{preview.previous.actorId}</span></> : null}
+                {" — "}{fmtNum(preview.previous.created)} new, {fmtNum(preview.previous.updated)} updated then.
+              </div>
+              <p className="admin-hint" style={{ marginBottom: 0 }}>
+                Running it again is safe and usually a no-op — the dry run above says what it would do this time.
+              </p>
             </div>
           )}
 

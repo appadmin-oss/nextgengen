@@ -200,6 +200,92 @@ function members_import_match(array $patch): ?array
 }
 
 /**
+ * A digest of what a roster file would DO, independent of how it is written.
+ *
+ * Three jobs, and the first is the one that closes a real hole:
+ *
+ *  1. The drawer's whole safety property is "read the dry run, THEN apply".
+ *     But preview and apply are two separate posts, each carrying its own copy
+ *     of the payload from the browser — so nothing stopped an apply writing a
+ *     different file from the one whose numbers the operator just read and
+ *     confirmed. The preview returns this digest; the apply sends it back; the
+ *     server recomputes it from the payload actually received and refuses on a
+ *     mismatch. Re-picking a file mid-flow, two admins working at once, a stale
+ *     tab — all of them now fail closed instead of silently writing.
+ *  2. It says, afterwards, WHICH roster was loaded. `source` is a filename a
+ *     person can rename; this is not.
+ *  3. It recognises a file that has already been applied, so the second run of
+ *     the same roster can say so before it repeats the work.
+ *
+ * ── What it covers, and why ──────────────────────────────────────────────────
+ * The OUTCOME, not the bytes. The browser re-serialises the file before posting
+ * it, so byte equality is not available server-side and would not be the right
+ * question anyway: two files that differ only in key order, row order or
+ * whitespace produce exactly the same import.
+ *
+ *   · rows are sorted, because the importer matches on displayId — the order
+ *     the extractor happened to emit sheets in does not change the result
+ *   · keys within a row are sorted, because JSON object order is not meaningful
+ *   · blank values are dropped, so `"phone": ""` and an absent `phone` agree —
+ *     which is what fill-blanks does with them anyway
+ *   · non-scalars are flattened to comma-joined scalars (`sources`), the one
+ *     shape the extractor emits
+ *
+ * Unit separators (\x1f between fields, \x1e between key and value) rather than
+ * a printable delimiter: they cannot occur in a value read out of a workbook,
+ * so no combination of names and addresses can forge a collision by containing
+ * the separator.
+ *
+ * NOT a hash of the file on disk. That one is raw SHA-256 over the bytes, is
+ * printed by tools/ngg-import/extract.js, and is shown in the drawer for the
+ * file it just read — see members_import_file_sha_note() below. The two answer
+ * different questions: "is this the file the extractor made" versus "is this
+ * the import I previewed".
+ */
+function members_import_digest(array $rows): string
+{
+    $canon = [];
+    foreach ($rows as $row) {
+        if (!is_array($row)) continue;
+        $fields = [];
+        foreach ($row as $k => $v) {
+            if (is_array($v)) {
+                $flat = [];
+                foreach ($v as $x) { if (is_scalar($x)) $flat[] = (string)$x; }
+                $v = implode(',', $flat);
+            } elseif (is_bool($v)) {
+                $v = $v ? '1' : '0';
+            } elseif ($v === null) {
+                $v = '';
+            } elseif (!is_scalar($v)) {
+                continue;
+            }
+            $v = trim((string)$v);
+            if ($v === '') continue;
+            $fields[] = (string)$k . "\x1e" . $v;
+        }
+        sort($fields, SORT_STRING);
+        $canon[] = implode("\x1f", $fields);
+    }
+    sort($canon, SORT_STRING);
+    return hash('sha256', implode("\n", $canon));
+}
+
+/**
+ * Has this exact roster been applied before, and when?
+ *
+ * Returns the most recent applied run for the digest, or null. The drawer shows
+ * it BEFORE the apply button, because "you already loaded this file on the 3rd"
+ * is the thing that stops somebody re-running an import they half-remember.
+ */
+function members_import_previous(string $digest): ?array
+{
+    if ($digest === '') return null;
+    $r = db_row("SELECT * FROM member_import_runs WHERE digest = ? ORDER BY id DESC LIMIT 1", [$digest]);
+    return $r ?: null;
+}
+
+/**
  * Import a roster.
  *
  * @param array $rows  roster rows, as `members` in the extract file
@@ -221,8 +307,17 @@ function members_import_run(array $rows, array $opts = []): array
     $actor      = (string)($opts['actor'] ?? 'cli:seed-members');
     $stampedOn  = gmdate('Y-m-d');
 
+    /* Computed over the rows AS GIVEN, before any parsing or truncation — the
+       digest has to identify the file the operator is holding, not what this
+       function made of it. */
+    $digest = members_import_digest($rows);
     $report = ['ok' => true, 'applied' => $apply, 'created' => 0, 'updated' => 0,
-               'unchanged' => 0, 'failed' => 0, 'rows' => []];
+               'unchanged' => 0, 'failed' => 0, 'rows' => [],
+               'digest' => $digest, 'rowCount' => count($rows),
+               /* The last time this exact roster was applied, if ever. Read on
+                  a dry run too — especially on a dry run: "you already loaded
+                  this on the 3rd" is what stops a half-remembered re-import. */
+               'previous' => members_import_previous($digest)];
 
     foreach ($rows as $i => $row) {
         $label = trim((string)($row['displayId'] ?? '')) ?: ('row ' . ($i + 1));
@@ -306,8 +401,22 @@ function members_import_run(array $rows, array $opts = []): array
 
     if ($apply) {
         audit('member.import.run', $actor, '', [
+            'digest' => $digest,
             'created' => $report['created'], 'updated' => $report['updated'],
             'unchanged' => $report['unchanged'], 'failed' => $report['failed']], '');
+        /* The durable record, next to the audit row rather than instead of it:
+           audit logs get pruned, and "which roster is this site running" is a
+           question somebody asks about a site that has been live for years. */
+        db_insert('member_import_runs', [
+            'digest' => $digest,
+            'fileSha' => substr((string)($opts['fileSha'] ?? ''), 0, 64),
+            'source' => substr((string)($opts['source'] ?? ''), 0, 255),
+            'actorId' => substr($actor, 0, 64),
+            'overwrite' => $overwrite ? 1 : 0,
+            'created' => $report['created'], 'updated' => $report['updated'],
+            'unchanged' => $report['unchanged'], 'failed' => $report['failed'],
+            'rowCount' => count($rows), 'at' => now_iso(),
+        ]);
         if (function_exists('cache_invalidate')) cache_invalidate('students');
     }
     return $report;
@@ -346,16 +455,48 @@ function admin_members_import(array $p): array
     if (count($rows) > 2000) return ['ok' => false, 'error' => 'too_many_rows',
                                      'detail' => count($rows) . ' rows — that is not this roster.'];
 
+    /* ── The apply must apply the file that was previewed ────────────────────
+     *
+     * The drawer's safety property is "read the dry run, THEN apply", and the
+     * confirm dialog quotes the dry run's numbers back at the operator. But the
+     * two are separate posts, each carrying its own copy of the payload from
+     * the browser, so nothing tied the second to the first: re-pick a file
+     * after reading the preview and the confirmation describes one roster while
+     * the write performs another. It fails closed now.
+     *
+     * The client cannot forge its way past this by echoing whatever it likes —
+     * the digest is recomputed here, from the payload actually received, and
+     * the echo only has to MATCH. A wrong or absent echo is refused. */
+    $digest = members_import_digest($rows);
+    if ($apply) {
+        $expect = trim((string)($p['expectDigest'] ?? ''));
+        if ($expect === '') {
+            return ['ok' => false, 'error' => 'preview_required',
+                    'detail' => 'Read the dry run first — an apply has to name the import it is applying.'];
+        }
+        if (!hash_equals($digest, $expect)) {
+            return ['ok' => false, 'error' => 'roster_changed',
+                    'detail' => 'This is not the file you previewed. Read the dry run again before applying.',
+                    'digest' => $digest];
+        }
+    }
+
     $report = members_import_run($rows, [
         'apply' => $apply,
         'overwrite' => !empty($p['overwrite']),
         'emitEvents' => false,
         'actor' => (string)($g['requester']['memberId'] ?? 'admin'),
+        'source' => (string)($p['source'] ?? ''),
+        // Raw sha256 of the bytes the browser read, so the row can be matched
+        // against what extract.js printed. Never trusted for anything.
+        'fileSha' => (string)($p['fileSha'] ?? ''),
     ]);
 
     audit($apply ? 'member.import.web.apply' : 'member.import.web.preview',
           (string)($g['requester']['memberId'] ?? ''), '',
-          ['source' => (string)($p['source'] ?? ''), 'created' => $report['created'],
+          ['source' => (string)($p['source'] ?? ''), 'digest' => $report['digest'],
+           'fileSha' => substr((string)($p['fileSha'] ?? ''), 0, 64),
+           'created' => $report['created'],
            'updated' => $report['updated'], 'failed' => $report['failed']],
           (string)($p['ip'] ?? ''));
 

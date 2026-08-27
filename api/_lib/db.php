@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 110;
+const NGG_SCHEMA_TARGET = 111;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3246,6 +3246,43 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_mreq_member ON member_requests(memberId, createdAt);
             CREATE INDEX IF NOT EXISTS idx_mreq_open ON member_requests(status, kind);
+        ",
+
+        /* Which roster file was loaded, when, by whom — and what it did.
+         *
+         * A roster import rewrites the membership table in one action, and
+         * until now the only record it left was an audit row naming a FILENAME.
+         * A filename is a thing a person renames; it cannot answer "is this the
+         * same roster we loaded in March" or "did somebody already run this".
+         *
+         * `digest` is members_import_digest() — a hash of what the file would
+         * DO, so it survives re-serialisation, key order and row order. It is
+         * deliberately NOT unique: applying the same roster twice is legal (a
+         * re-run after fixing four rows elsewhere is the normal workflow), and
+         * the point of this table is to SAY so, not to prevent it.
+         *
+         * `fileSha` is the raw SHA-256 of the bytes on disk, computed by the
+         * browser (or printed by extract.js) and carried along. It answers a
+         * different question — "is this the file the extractor made" — and is
+         * blank when nobody supplied one, which is why it is not the key.
+         */
+        111 => "
+            CREATE TABLE IF NOT EXISTS member_import_runs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              digest TEXT NOT NULL,               -- members_import_digest(): what it would do
+              fileSha TEXT DEFAULT '',            -- raw sha256 of the file's bytes, if known
+              source TEXT DEFAULT '',             -- the filename, for humans only
+              actorId TEXT DEFAULT '',
+              overwrite INTEGER DEFAULT 0,
+              created INTEGER DEFAULT 0,
+              updated INTEGER DEFAULT 0,
+              unchanged INTEGER DEFAULT 0,
+              failed INTEGER DEFAULT 0,
+              rowCount INTEGER DEFAULT 0,
+              at TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mirun_digest ON member_import_runs(digest, id);
+            CREATE INDEX IF NOT EXISTS idx_mirun_at ON member_import_runs(at);
         ",
     ];
 

@@ -812,8 +812,12 @@
         demoteNgv: (memberId) => request('/admin/members.php', { body: { action: 'demoteNgv', memberId } }),
         // Roster import from the members workbook (tools/ngg-import/extract.js).
         // `apply` false is a dry run and returns exactly what would change.
+        // `fileSha` rides along from the reader so a recorded run can be traced
+        // back to a file on disk; `expectDigest` (in opts, on an apply) holds
+        // the write to the roster the dry run described.
         importRoster: (file, opts) => request('/admin/members.php', { body: Object.assign(
-          { action: 'import', members: (file && file.members) || file, source: (file && file.source) || '' },
+          { action: 'import', members: (file && file.members) || file,
+            source: (file && file.source) || '', fileSha: (file && file.fileSha) || '' },
           opts || {}) }),
         setCaps: (memberId, caps, centreScope) => request('/admin/members.php', { body: Object.assign({ action: 'setCaps', memberId, caps }, centreScope !== undefined ? { centreScope } : {}) }),
         impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),

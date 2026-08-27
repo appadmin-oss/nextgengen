@@ -11,6 +11,10 @@
  * trust. Run it, read the summary, then run it again with --apply.
  *
  *   --file PATH    roster file (default api/storage/seed/ngg-members.json)
+ *   --expect-sha H the file's sha256, as printed by extract.js. Refuses to run
+ *                  if the file on disk does not match — check it when the file
+ *                  has travelled (SFTP, a file manager, an email to yourself)
+ *                  and you are about to rewrite the membership table with it.
  *   --apply        write the changes instead of describing them
  *   --overwrite    replace values a member already has (default: fill blanks only)
  *   --emit-events  fan member.created/updated out to the outbox and any
@@ -35,16 +39,17 @@ if (!file_exists($root . '/config.php')) {
 }
 
 $opts = ['file' => $root . '/storage/seed/ngg-members.json', 'apply' => false,
-         'overwrite' => false, 'emitEvents' => false, 'verbose' => false];
+         'overwrite' => false, 'emitEvents' => false, 'verbose' => false, 'expectSha' => ''];
 for ($i = 1; $i < $argc; $i++) {
     $a = $argv[$i];
     if ($a === '--file' && isset($argv[$i + 1])) { $opts['file'] = $argv[++$i]; }
+    elseif ($a === '--expect-sha' && isset($argv[$i + 1])) { $opts['expectSha'] = strtolower(trim($argv[++$i])); }
     elseif ($a === '--apply')       $opts['apply'] = true;
     elseif ($a === '--overwrite')   $opts['overwrite'] = true;
     elseif ($a === '--emit-events') $opts['emitEvents'] = true;
     elseif ($a === '--verbose')     $opts['verbose'] = true;
     elseif ($a === '--help' || $a === '-h') {
-        fwrite(STDERR, "usage: php api/tools/seed-members.php [--file PATH] [--apply] [--overwrite] [--emit-events] [--verbose]\n");
+        fwrite(STDERR, "usage: php api/tools/seed-members.php [--file PATH] [--expect-sha HEX] [--apply] [--overwrite] [--emit-events] [--verbose]\n");
         exit(0);
     } else { fwrite(STDERR, "unknown option: {$a}\n"); exit(1); }
 }
@@ -52,6 +57,27 @@ for ($i = 1; $i < $argc; $i++) {
 if (!is_readable($opts['file'])) {
     fwrite(STDERR, "cannot read {$opts['file']}\n"
         . "Produce it first:  node tools/ngg-import/extract.js <workbook.xlsx>\n");
+    exit(1);
+}
+
+/* The file's own SHA-256, the number extract.js printed when it wrote it.
+ *
+ * A roster file travels from a laptop to a shared host by whatever route is to
+ * hand — SFTP, a file manager, an email to yourself. --expect-sha is how you
+ * check that what arrived is what left, before it rewrites the membership
+ * table. Without the flag it is reported and not enforced, because most runs
+ * are on a file that never moved.
+ *
+ * Checked HERE, ahead of the config load and the database connection: a file
+ * that is not the one you meant should stop the run before it opens anything,
+ * and "config_missing" is a poor way to learn your roster is wrong. */
+$raw = (string)file_get_contents($opts['file']);
+$fileSha = hash('sha256', $raw);
+if ($opts['expectSha'] !== '' && !hash_equals($fileSha, $opts['expectSha'])) {
+    fwrite(STDERR, "roster file does not match --expect-sha.\n"
+        . "  expected  {$opts['expectSha']}\n"
+        . "  on disk   {$fileSha}\n"
+        . "This is not the file the extractor made. Nothing was written.\n");
     exit(1);
 }
 
@@ -68,7 +94,7 @@ require $root . '/_lib/domain/members-import.php';
 
 db_conn();   // migrate before the first write
 
-$parsed = members_import_parse((string)file_get_contents($opts['file']));
+$parsed = members_import_parse($raw);
 if (empty($parsed['ok'])) {
     fwrite(STDERR, "{$opts['file']} is not a roster file ({$parsed['error']}).\n"
         . "Produce one with:  node tools/ngg-import/extract.js <workbook.xlsx>\n");
@@ -78,12 +104,20 @@ if (empty($parsed['ok'])) {
 $report = members_import_run($parsed['members'], [
     'apply' => $opts['apply'], 'overwrite' => $opts['overwrite'],
     'emitEvents' => $opts['emitEvents'], 'actor' => 'cli:seed-members',
+    'source' => $parsed['source'], 'fileSha' => $fileSha,
 ]);
 
 $line = str_repeat('-', 68);
 $mode = $opts['apply'] ? 'APPLIED' : 'DRY RUN — nothing written';
 echo "\n{$line}\n  NGG roster import — {$mode}\n{$line}\n";
 echo '  Roster file:  ' . $opts['file'] . "\n";
+echo '  sha256:       ' . $fileSha . ($opts['expectSha'] !== '' ? '  (matches --expect-sha)' : '') . "\n";
+echo '  Import id:    ' . substr($report['digest'], 0, 16) . "…  (what this roster would do)\n";
+if (!empty($report['previous'])) {
+    echo '  Already run:  this exact roster was applied on '
+       . substr((string)$report['previous']['at'], 0, 10)
+       . ' by ' . (string)$report['previous']['actorId'] . "\n";
+}
 if ($parsed['source'] !== '')      echo '  From:         ' . $parsed['source'] . "\n";
 if ($parsed['extractedAt'] !== '') echo '  Extracted:    ' . $parsed['extractedAt'] . "\n";
 echo '  Mode:         ' . ($opts['overwrite'] ? 'overwrite existing values' : 'fill blanks only')

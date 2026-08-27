@@ -2393,3 +2393,27 @@ CREATE TABLE IF NOT EXISTS member_requests (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (110) ON DUPLICATE KEY UPDATE version = version;
+
+-- Which roster file was loaded, when, by whom, and what it did. `digest` is
+-- members_import_digest() — a hash of the OUTCOME, so it survives key order,
+-- row order and re-serialisation. Not unique on purpose: re-applying a roster
+-- is legal and this table exists to say it happened, not to forbid it.
+-- CHAR(64), not VARCHAR: a sha256 hex string is always exactly 64.
+CREATE TABLE IF NOT EXISTS member_import_runs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  digest CHAR(64) NOT NULL,
+  fileSha VARCHAR(64) DEFAULT '',
+  source VARCHAR(255) DEFAULT '',
+  actorId VARCHAR(64) DEFAULT '',
+  overwrite TINYINT DEFAULT 0,
+  created INT DEFAULT 0,
+  updated INT DEFAULT 0,
+  unchanged INT DEFAULT 0,
+  failed INT DEFAULT 0,
+  rowCount INT DEFAULT 0,
+  at VARCHAR(40) DEFAULT '',
+  INDEX idx_mirun_digest (digest, id),
+  INDEX idx_mirun_at (at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (111) ON DUPLICATE KEY UPDATE version = version;

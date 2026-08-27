@@ -8,6 +8,8 @@ is the one-way door between the two.
 node tools/ngg-import/extract.js ~/NGG_Members.xlsx   # workbook → roster file
 ```
 
+It prints a **sha256** for the file it wrote. Keep it — the next section is why.
+
 Then load it, whichever way you have:
 
 | | |
@@ -40,6 +42,63 @@ nobody is protecting.
 `--apply` on the command line. The first pass reports every row it would create
 or change. Read it. A roster import that goes wrong against live records is not
 something you can quietly re-run your way out of.
+
+---
+
+## The two hashes
+
+A roster file carries children's names, birthdays, home addresses and
+guardians' phone numbers from a laptop to a shared host, usually by whatever
+route is to hand. And an import rewrites the membership table in one action.
+So two different things get hashed, answering two different questions.
+
+| | `fileSha` | `digest` |
+|---|---|---|
+| **Question** | Is this the file the extractor made? | Is this the import I previewed? |
+| **Over** | The raw bytes on disk | What the roster would *do* |
+| **Made by** | `extract.js`, and the browser as it reads | The server, from the payload it received |
+| **Changes when** | Anything in the file changes, including `extractedAt` | The outcome changes |
+
+**`fileSha`** is a plain SHA-256 of the bytes. Re-extracting the same workbook
+gives a different one, because the file records when it was made — which is the
+point: it identifies a *file*, not a roster.
+
+```bash
+node tools/ngg-import/extract.js book.xlsx        # prints  sha256  e89c753d…
+php api/tools/seed-members.php --expect-sha e89c753d…   # refuses if it differs
+```
+
+`--expect-sha` checks before the config loads and before the database is
+opened, so a file that is not the one you meant stops the run rather than
+half-completing it. Without the flag the hash is reported and not enforced,
+because most runs are on a file that never moved. In the Control Room the
+drawer shows the same number for the file it just read, so you can compare it
+against your terminal.
+
+**`digest`** is `members_import_digest()` — a hash of the *outcome*. It ignores
+row order, key order and blank values, because none of those change what the
+import does, and because the browser reparses and reposts the payload so byte
+equality is not available server-side anyway.
+
+It closes a real hole. Preview and apply are two separate posts, each carrying
+its own copy of the payload, and the confirmation dialog quotes the dry run's
+numbers back at you — so before this, picking a different file after reading
+the preview wrote a roster nobody had confirmed. The dry run now returns the
+digest, the apply sends it back, and the server recomputes it from what it
+actually received:
+
+```
+preview  →  digest 4f2a…            "2 new, 1 updated"
+apply    →  expectDigest 4f2a…      ✓ writes
+apply    →  expectDigest (absent)   ✗ preview_required
+apply    →  a different file        ✗ roster_changed — read the dry run again
+```
+
+Every applied run is recorded in `member_import_runs` with both hashes, who ran
+it and what it did. That is also how the drawer can tell you *"this exact
+roster was applied on the 3rd"* before you apply it again — a heads-up, not a
+block, since re-running after fixing four rows in the sheet is the normal
+workflow.
 
 ---
 
@@ -123,7 +182,7 @@ Safe, and expected. Members are matched on their printed ID first, so a second
 run updates the same people rather than issuing them second member IDs. Fix four
 rows in the sheet, re-extract, re-run: four updates.
 
-Two rules make that safe to do on a live site:
+Three things make that safe to do on a live site:
 
 - **The Control Room outranks the spreadsheet.** An existing value is never
   replaced. Only blanks are filled. Pass `--overwrite` when you have decided the
@@ -131,10 +190,14 @@ Two rules make that safe to do on a live site:
 - **A staff member is not a spreadsheet row.** Where someone has since been
   given a role, their status, name and email are left alone. Their profile can
   still be filled in.
+- **It tells you it has seen this roster before.** An identical file is
+  recognised by its `digest` and reported — on the command line and in the
+  drawer — before the apply, not after.
 
 | Flag | |
 |---|---|
 | `--file PATH` | Roster file (default `api/storage/seed/ngg-members.json`) |
+| `--expect-sha H` | The sha256 `extract.js` printed. Refuses to run if the file on disk differs — check it when the file has travelled |
 | `--apply` | Write the changes instead of describing them |
 | `--overwrite` | Replace values a member already has |
 | `--emit-events` | Fan `member.created`/`updated` out to the outbox and integrations. Off by default — a backfill of the whole roster is not news every subscriber needs at once |

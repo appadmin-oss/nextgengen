@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { readWorkbook } = require('./xlsx');
 const { extractMembers } = require('./members');
 
@@ -44,13 +45,27 @@ function main(argv) {
   const { members, warnings, stats } = extractMembers(wb);
 
   fs.mkdirSync(path.dirname(opts.out), { recursive: true });
-  fs.writeFileSync(opts.out, JSON.stringify({
+  const body = JSON.stringify({
     source: path.basename(opts.workbook),
     extractedAt: new Date().toISOString(),
     stats,
     warnings,
     members,
-  }, null, 2) + '\n');
+  }, null, 2) + '\n';
+  fs.writeFileSync(opts.out, body);
+
+  /* The file's SHA-256, over the bytes as written.
+   *
+   * A roster file carries children's home addresses and guardians' phone
+   * numbers from a laptop to a server, usually by whatever route is to hand.
+   * This is what makes "the file I made" and "the file the Control Room is
+   * about to import" the same checkable claim: the drawer shows the same
+   * number for the file it reads, and every applied run records it.
+   *
+   * It cannot be embedded in the file — a file cannot contain its own hash —
+   * so it is printed, and printed even under --quiet, because a hash nobody
+   * sees is a hash nobody can compare. */
+  const fileSha = crypto.createHash('sha256').update(body).digest('hex');
 
   if (!opts.quiet) {
     const line = '─'.repeat(64);
@@ -68,8 +83,12 @@ function main(argv) {
       process.stderr.write(`${line}\n`);
     }
     process.stderr.write(`  Written to ${opts.out}\n`);
+    process.stderr.write(`  sha256             ${fileSha}\n`);
     process.stderr.write(`  Contains personal data about children — do NOT commit it.\n`);
     process.stderr.write(`  Next: php api/tools/seed-members.php --file ${opts.out}\n${line}\n\n`);
+  } else {
+    // Even quiet, the hash goes out — on stdout, so it can be captured.
+    process.stdout.write(fileSha + '\n');
   }
   return 0;
 }

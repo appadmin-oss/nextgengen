@@ -373,6 +373,78 @@ console.log('\na re-tabbed workbook');
   chk('a missing sheet fails loudly instead of importing less', threw);
 }
 
+// ── The file's hash ─────────────────────────────────────────────────────────
+/* A roster file carries children's home addresses and guardians' phone numbers
+   from a laptop to a shared host, usually by whatever route is to hand. The
+   sha256 the extractor prints is what makes "the file I made" and "the file the
+   Control Room is importing" one checkable claim — so it has to be the hash of
+   the bytes actually on disk, and it has to come out even under --quiet, since
+   a hash nobody sees is a hash nobody compares. */
+console.log('\nthe file hash');
+{
+  const { main } = require(path.join(ROOT, 'tools/ngg-import/extract'));
+
+  /* book() returns already-parsed sheets; main() needs a real .xlsx, so write
+     one. Inline strings rather than a shared-string table — the reader handles
+     both and this is about the hash, not the parser. */
+  const asXlsx = (sheets) => {
+    const names = Object.keys(sheets);
+    const cell = (v, i) => `<c r="${String.fromCharCode(65 + i)}1" t="inlineStr"><is><t>${
+      String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</t></is></c>`;
+    const files = [
+      ['[Content_Types].xml', '<?xml version="1.0"?><Types/>'],
+      ['xl/_rels/workbook.xml.rels', '<?xml version="1.0"?><Relationships>'
+        + names.map((_, i) => `<Relationship Id="rId${i + 1}" Target="worksheets/sheet${i + 1}.xml"/>`).join('')
+        + '</Relationships>'],
+      ['xl/workbook.xml', '<?xml version="1.0"?><workbook><sheets>'
+        + names.map((n, i) => `<sheet name="${n}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')
+        + '</sheets></workbook>'],
+    ];
+    names.forEach((n, i) => {
+      const rows = sheets[n].map((r, ri) =>
+        `<row r="${ri + 1}">` + r.map((v, ci) => cell(v, ci).replace(/r="([A-Z])1"/, `r="$1${ri + 1}"`)).join('') + '</row>').join('');
+      files.push([`xl/worksheets/sheet${i + 1}.xml`, `<?xml version="1.0"?><worksheet><sheetData>${rows}</sheetData></worksheet>`]);
+    });
+    return writeZip(files);
+  };
+
+  const bookFile = path.join(os.tmpdir(), `ngg-sha-book-${process.pid}.xlsx`);
+  const out = path.join(os.tmpdir(), `ngg-sha-out-${process.pid}.json`);
+  fs.writeFileSync(bookFile, asXlsx(book({
+    master: [['023-001', 'A', 'Eleyinmi Josiah']],
+    registry: [['', '45195', 'A', 'Eleyinmi', 'Josiah', '', 'TECH']],
+  })));
+
+  /* --quiet puts the hash on stdout so a script can capture it; capture it the
+     same way rather than reading it back out of the module. */
+  const realWrite = process.stdout.write.bind(process.stdout);
+  let out1 = '';
+  process.stdout.write = (c) => { out1 += c; return true; };
+  let code;
+  try { code = main([bookFile, '--out', out, '--quiet']); } finally { process.stdout.write = realWrite; }
+
+  const printed = out1.trim();
+  const onDisk = require('crypto').createHash('sha256').update(fs.readFileSync(out)).digest('hex');
+  chk('the extractor prints a sha256 even under --quiet', code === 0 && /^[0-9a-f]{64}$/.test(printed));
+  chk('…and it is the hash of the bytes it actually wrote', printed === onDisk);
+
+  /* Re-extracting the same workbook must NOT give the same file hash, because
+     the file carries extractedAt. That is exactly why the import digest exists
+     separately — the file hash answers "is this the same file", not "is this
+     the same roster". */
+  const out2 = path.join(os.tmpdir(), `ngg-sha-out2-${process.pid}.json`);
+  let cap2 = '';
+  process.stdout.write = (c) => { cap2 += c; return true; };
+  try { main([bookFile, '--out', out2, '--quiet']); } finally { process.stdout.write = realWrite; }
+  const a = JSON.parse(fs.readFileSync(out, 'utf8')), b = JSON.parse(fs.readFileSync(out2, 'utf8'));
+  chk('two extracts of one workbook hold the same members…',
+    JSON.stringify(a.members) === JSON.stringify(b.members));
+  chk('…and are still different FILES, which is the file hash doing its job',
+    cap2.trim() !== printed && a.extractedAt !== b.extractedAt);
+
+  for (const f of [bookFile, out, out2]) { try { fs.unlinkSync(f); } catch (_) {} }
+}
+
 console.log('\n' + (failed === 0 ? '✅ PASS' : '❌ FAIL') + ': '
   + passed + ' passed, ' + failed + ' failed (roster extractor)');
 process.exit(failed === 0 ? 0 : 1);

@@ -76,10 +76,11 @@ const ROSTER = {
 window.__calls = [];
 window.NGGApi = { admin: { members: {
   importRoster: function (file, opts) {
-    window.__calls.push({ members: file.members.length, source: file.source, opts: opts });
+    window.__calls.push({ members: file.members.length, source: file.source,
+      fileSha: file.fileSha, opts: opts });
     var created = 2, updated = 0;
     return Promise.resolve({ applied: !!(opts && opts.apply), created: created, updated: updated,
-      unchanged: 1, failed: 0, rows: [
+      unchanged: 1, failed: 0, digest: 'd'.repeat(64), previous: window.__previous || null, rows: [
         { ref: '024-000', action: 'create', name: 'Example Member', detail: 'active · Egbeda', warnings: [] },
         { ref: '024-001', action: 'create', name: 'Second Example', detail: 'inactive · Ayobo',
           warnings: ['status "left" is not one the app counts — imported as inactive'] },
@@ -199,6 +200,37 @@ setTimeout(function () { document.body.setAttribute('data-ready', '1'); }, 250);
 
     const calls = await page.evaluate(() => window.__calls);
     chk('applying posts apply:true', calls.some((c) => c.opts && c.opts.apply === true));
+
+    /* ── Hashing ────────────────────────────────────────────────────────────
+       Two hashes, two jobs. fileSha identifies the FILE — the same number
+       extract.js prints — and rides along on every post so an applied run can
+       be traced back to a file on disk. expectDigest identifies the IMPORT and
+       holds the apply to the roster the dry run described: without it, picking
+       a different file after reading the preview writes something nobody
+       confirmed, and the server has no way to notice. */
+    const sha = calls[0] && calls[0].fileSha;
+    chk('the file is hashed as it is read, before anything is posted',
+      typeof sha === 'string' && /^[0-9a-f]{64}$/.test(sha));
+    chk('…and every post carries the same hash for the same file',
+      calls.every((c) => c.fileSha === sha));
+    /* Independently computed: the fixture writes the roster file itself, so the
+       expected digest is known here and the browser must arrive at it too. */
+    const want = require('crypto').createHash('sha256').update(fs.readFileSync(rosterFile)).digest('hex');
+    chk('…and it is the sha256 of the bytes on disk, not of something reserialised',
+      sha === want);
+
+    const applyCall = calls.filter((c) => c.opts && c.opts.apply === true)[0];
+    chk('the apply names the import its dry run returned',
+      applyCall && applyCall.opts.expectDigest === 'd'.repeat(64));
+    chk('…and the dry run does not — there is nothing yet to be held to',
+      calls[0].opts.expectDigest === undefined);
+
+    // The shown hash is what a person can compare against the terminal.
+    const shown = await panel();
+    chk('the drawer shows the file hash, short enough to read against a terminal',
+      shown.includes('sha256 ' + sha.slice(0, 12)));
+    chk('…with the whole of it recoverable, not just the stub',
+      (await page.getAttribute('.admin-drawer-panel [title^="sha256:"]', 'title')) === 'sha256:' + sha);
     const after = await panel();
     chk('…and the result reads as done, not as a forecast',
       after.includes('Imported') && !after.includes('Would import'));

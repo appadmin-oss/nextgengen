@@ -19001,6 +19001,113 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         && (bool)array_filter($bad['rows'], fn($r) => $r['ref'] === 'IMP-021' && !empty($r['warnings'])));
 
     // ── MySQL runs STRICT_ALL_TABLES: an over-long value is a failed insert ──
+    /* ── Hashing the roster ────────────────────────────────────────────────
+     *
+     * Two different hashes doing two different jobs, and conflating them is the
+     * easy mistake:
+     *
+     *   fileSha — raw sha256 of the bytes on disk. Identifies the FILE. Printed
+     *             by extract.js, computed by the browser on read, checkable
+     *             with --expect-sha. Recorded, never trusted.
+     *   digest  — members_import_digest(). Identifies the IMPORT: what the
+     *             roster would DO. Survives re-serialisation, because the
+     *             browser reparses and reposts the payload and byte equality is
+     *             simply not available server-side.
+     *
+     * The digest is what holds an apply to the file its dry run described.
+     */
+    /* Scoped to its own IMP-04x rows: this block sits inside a sequence that
+       shares members with the tests around it, so a broad wipe here deletes
+       what the level and notes tests below are standing on. */
+    db_exec("DELETE FROM members WHERE displayId LIKE 'IMP-04%'");
+    db_exec("DELETE FROM member_import_runs WHERE source LIKE 'digest-test%'");
+
+    chk('import digest ignores row order, key order and blank values', (function () use ($rowFor) {
+        $a = [$rowFor('IMP-040'), $rowFor('IMP-041')];
+        $b = [array_reverse($rowFor('IMP-041'), true), array_reverse($rowFor('IMP-040'), true)];
+        // a blank the other side simply omits
+        $c = [$rowFor('IMP-040', ['nickname' => '']), $rowFor('IMP-041')];
+        return members_import_digest($a) === members_import_digest($b)
+            && members_import_digest($a) === members_import_digest($c);
+    })());
+    chk('…and changes when a real value changes', (function () use ($rowFor) {
+        return members_import_digest([$rowFor('IMP-040')])
+            !== members_import_digest([$rowFor('IMP-040', ['school' => 'Somewhere Else'])]);
+    })());
+    chk('…and a separator cannot be forged out of a name', (function () use ($rowFor) {
+        /* Fields join on \x1f and key/value on \x1e precisely so that no value
+           read out of a workbook can produce the same string as two fields. */
+        $x = members_import_digest([$rowFor('IMP-040', ['fullName' => "A\x1fschool\x1eB"])]);
+        $y = members_import_digest([$rowFor('IMP-040', ['fullName' => 'A', 'school' => 'B'])]);
+        return $x !== $y;
+    })());
+
+    // ── The preview→apply handshake ──
+    /* The drawer's safety property is "read the dry run, THEN apply", and the
+       confirm dialog quotes the dry run's numbers. Preview and apply are
+       separate posts, each carrying its own payload, so without this the apply
+       could write a roster nobody had read. */
+    $prev = backend_dispatch('admin.members.import', ['requesterId' => 'NGG-2025-0099',
+        'members' => [$rowFor('IMP-042')], 'source' => 'digest-test.json']);
+    chk('a dry run returns the digest of what it would do',
+        !empty($prev['ok']) && strlen((string)($prev['digest'] ?? '')) === 64 && $prev['applied'] === false);
+    chk('…and nothing was written', db_row("SELECT * FROM members WHERE displayId = 'IMP-042'") === null);
+
+    $noEcho = backend_dispatch('admin.members.import', ['requesterId' => 'NGG-2025-0099',
+        'members' => [$rowFor('IMP-042')], 'apply' => true, 'source' => 'digest-test.json']);
+    chk('an apply that names no import is refused', ($noEcho['error'] ?? '') === 'preview_required');
+    chk('…and still nothing was written', db_row("SELECT * FROM members WHERE displayId = 'IMP-042'") === null);
+
+    /* The case this exists for: read the dry run for one file, then apply a
+       different one. The numbers the operator confirmed describe neither. */
+    $swapped = backend_dispatch('admin.members.import', ['requesterId' => 'NGG-2025-0099',
+        'members' => [$rowFor('IMP-043')], 'apply' => true,
+        'expectDigest' => $prev['digest'], 'source' => 'digest-test.json']);
+    chk('applying a DIFFERENT roster than the one previewed is refused',
+        ($swapped['error'] ?? '') === 'roster_changed');
+    chk('…and that roster was not written either', db_row("SELECT * FROM members WHERE displayId = 'IMP-043'") === null);
+
+    $applied = backend_dispatch('admin.members.import', ['requesterId' => 'NGG-2025-0099',
+        'members' => [$rowFor('IMP-042')], 'apply' => true, 'expectDigest' => $prev['digest'],
+        'source' => 'digest-test.json', 'fileSha' => str_repeat('a', 64)]);
+    chk('the apply that names its own dry run goes through',
+        !empty($applied['ok']) && $applied['created'] === 1
+        && db_row("SELECT * FROM members WHERE displayId = 'IMP-042'") !== null);
+
+    // ── The record it leaves ──
+    chk('an applied run is recorded, with both hashes', (function () use ($prev) {
+        $r = db_row("SELECT * FROM member_import_runs WHERE digest = ? ORDER BY id DESC LIMIT 1", [$prev['digest']]);
+        return $r && $r['fileSha'] === str_repeat('a', 64) && $r['source'] === 'digest-test.json'
+            && (int)$r['created'] === 1 && (int)$r['rowCount'] === 1 && (string)$r['actorId'] !== '';
+    })());
+    chk('a DRY run leaves no record — only applies are history', (function () use ($rowFor) {
+        $before = (int)db_row("SELECT COUNT(*) c FROM member_import_runs")['c'];
+        backend_dispatch('admin.members.import', ['requesterId' => 'NGG-2025-0099',
+            'members' => [$rowFor('IMP-044')], 'source' => 'digest-test-dry.json']);
+        return (int)db_row("SELECT COUNT(*) c FROM member_import_runs")['c'] === $before;
+    })());
+    chk('a roster already applied says so, before it is applied again', (function () use ($rowFor) {
+        $again = backend_dispatch('admin.members.import', ['requesterId' => 'NGG-2025-0099',
+            'members' => [$rowFor('IMP-042')], 'source' => 'digest-test.json']);
+        return !empty($again['previous']) && (int)$again['previous']['created'] === 1
+            && (string)$again['previous']['at'] !== '';
+    })());
+    chk('…and a roster never seen before does not', (function () use ($rowFor) {
+        $fresh = backend_dispatch('admin.members.import', ['requesterId' => 'NGG-2025-0099',
+            'members' => [$rowFor('IMP-045')], 'source' => 'digest-test.json']);
+        return ($fresh['previous'] ?? null) === null;
+    })());
+    /* Re-applying is legal — a re-run after fixing four rows in the sheet is the
+       normal workflow — so the notice must not become a block. */
+    chk('…and saying so does not prevent it', (function () use ($rowFor) {
+        $d = members_import_digest([$rowFor('IMP-042')]);
+        $r = backend_dispatch('admin.members.import', ['requesterId' => 'NGG-2025-0099',
+            'members' => [$rowFor('IMP-042')], 'apply' => true, 'expectDigest' => $d,
+            'source' => 'digest-test.json']);
+        return !empty($r['ok']) && $r['unchanged'] === 1;
+    })());
+    db_exec("DELETE FROM members WHERE displayId LIKE 'IMP-04%'");
+
     $long = members_import_run([$rowFor('IMP-030', ['school' => str_repeat('x', 400)])], ['apply' => true]);
     chk('roster import: a value past its column width is cut rather than taking the run down',
         mb_strlen((string)$get('IMP-030')['school']) === MEMBER_IMPORT_WIDTHS['school']);
@@ -19221,7 +19328,10 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('roster import (web): …but may not run one — that is the super-admin tier',
         empty($deskApply['ok']) && $deskApply['error'] === 'forbidden' && $get('IMP-060') === null);
 
-    $superApply = admin_members_import(['requesterId' => 'IMPADM-1', 'members' => [$rowFor('IMP-060')], 'apply' => true]);
+    /* Echoes the digest the dry run above returned, as the drawer does — an
+       apply has to name the import it is applying. */
+    $superApply = admin_members_import(['requesterId' => 'IMPADM-1', 'members' => [$rowFor('IMP-060')],
+        'apply' => true, 'expectDigest' => $deskPreview['digest']]);
     chk('roster import (web): a super admin can, and it is the same import',
         !empty($superApply['ok']) && $get('IMP-060')['level'] === 'A' && $get('IMP-060')['displayId'] === 'IMP-060');
     chk('roster import (web): the reply carries only rows worth reading',

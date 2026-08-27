@@ -45,6 +45,11 @@ if ($method === 'POST') {
         $res = gs_call('admin.members.import', ['requesterId' => $s['mid'],
             'members' => $body['members'] ?? null, 'apply' => !empty($body['apply']),
             'overwrite' => !empty($body['overwrite']), 'source' => $body['source'] ?? '',
+            // The digest the dry run returned, echoed back so the apply can be
+            // held to the file it previewed; and the raw sha256 of the bytes the
+            // browser read, recorded so a run can be traced to a file on disk.
+            'expectDigest' => $body['expectDigest'] ?? '',
+            'fileSha' => $body['fileSha'] ?? '',
             'ip' => client_ip()]);
     } elseif ($action === 'setCaps') {
         $args = ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'caps' => $body['caps'] ?? [], 'ip' => client_ip()];
