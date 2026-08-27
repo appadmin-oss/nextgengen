@@ -12,6 +12,12 @@
 function useAdminDrawer(onClose, guard = true) {
   const panelRef = React.useRef(null);
   const touched = React.useRef(false);
+  /* Every drawer is role="dialog" aria-modal="true" and, until now, none of
+     them had a NAME — a screen reader announced "dialog" and stopped, with the
+     heading sitting right there in the head. Minted here so a drawer cannot
+     forget it: spread `titleProps` onto the dialog and `headingProps` onto the
+     <h3>. */
+  const titleId = React.useId();
   const close = React.useCallback(() => {
     if (guard && touched.current && typeof dialog !== "undefined" && dialog.confirm) {
       dialog.confirm({ title: "Discard changes?", body: "You have edits that haven't been saved yet.", cta: "Discard", cancel: "Keep editing", danger: true })
@@ -35,7 +41,11 @@ function useAdminDrawer(onClose, guard = true) {
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("keydown", onKey); if (prev && prev.focus) { try { prev.focus(); } catch (_) {} } };
   }, [close]);
-  return { panelRef, close, onInput: () => { touched.current = true; } };
+  return {
+    panelRef, close, onInput: () => { touched.current = true; },
+    titleProps: { "aria-labelledby": titleId },
+    headingProps: { id: titleId },
+  };
 }
 
 // ── Single source of truth for every Control Room section ──────────────────
@@ -1226,7 +1236,7 @@ function AdminMembers() {
   const [list, setList] = React.useState(null);
   const [err, setErr] = React.useState("");
   const centreOpts = useCentreOptions();
-  const [filters, setFilters] = React.useState({ q: "", centre: "", status: "", type: "" });
+  const [filters, setFilters] = React.useState({ q: "", centre: "", status: "", type: "", missing: "" });
   const [page, setPage] = React.useState(1);
   const [meta, setMeta] = React.useState({ total: 0, pageSize: 50 });
   const [editing, setEditing] = React.useState(null);
@@ -1262,7 +1272,7 @@ function AdminMembers() {
      to be and which looks exactly like data going missing. */
   const onSort = (col, dir) => { const so = { col, dir }; setSort(so); setPage(1); setList(null); load(1, so); };
   // Filter changes reset to page 1; the debounced search does too.
-  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [filters.centre, filters.status, filters.type]);
+  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [filters.centre, filters.status, filters.type, filters.missing]);
   React.useEffect(() => {
     const t = setTimeout(() => { setPage(1); load(1); }, 250);
     return () => clearTimeout(t);
@@ -1281,13 +1291,25 @@ function AdminMembers() {
           <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New member</button>
         </div>
       </div>
-      <div className="admin-filters">
+      <div className="admin-filters admin-filters-5">
         <input className="admin-input" placeholder="Search name, ID, email…" value={filters.q} onChange={(e) => setFilters(f => ({...f, q: e.target.value}))}/>
         <select className="admin-select" value={filters.centre} onChange={(e) => setFilters(f => ({...f, centre: e.target.value}))}>
           <option value="">All centres</option>{centreOpts.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <select className="admin-select" value={filters.type} onChange={(e) => setFilters(f => ({...f, type: e.target.value}))}>
           <option value="">All types</option><option value="NGG">NGG</option><option value="Summer">Summer</option>
+        </select>
+        {/* Rows with something missing. Exists because the print preflight
+            counts these three and, until it did, there was no way in the
+            product to get from "90 have no photograph" to those ninety. The
+            values match $missingSql in admin_members_list. */}
+        <select className="admin-select" value={filters.missing} onChange={(e) => setFilters(f => ({...f, missing: e.target.value}))}
+          aria-label="Filter by what is missing from a member's ID card"
+          title="Members with something missing from their ID card">
+          <option value="">Complete or not</option>
+          <option value="photo">No photograph</option>
+          <option value="printedId">No printed ID</option>
+          <option value="discipline">No discipline</option>
         </select>
         <select className="admin-select" value={filters.status} onChange={(e) => setFilters(f => ({...f, status: e.target.value}))}>
           <option value="">All statuses</option>
@@ -1347,7 +1369,8 @@ function AdminMembers() {
       }
       {editing && <AdminMemberEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
       {viewing && <AdminMemberDetail memberId={viewing} onClose={() => setViewing(null)} onEdit={(m) => { setViewing(null); setEditing(m); }} onChanged={load}/>}
-      {printing && <AdminMemberIdBatch filters={filters} sort={sort} total={meta.total} onClose={() => setPrinting(false)}/>}
+      {printing && <AdminMemberIdBatch filters={filters} sort={sort} onClose={() => setPrinting(false)}
+        onFilter={(missing) => { setFilters(f => ({ ...f, missing })); setPrinting(false); }}/>}
       {importing && <AdminRosterImport onClose={() => setImporting(false)} onApplied={() => { setImporting(false); setPage(1); setList(null); load(1); }}/>}
     </div>
   );
@@ -1395,6 +1418,7 @@ function AdminRequests() {
   const [reason, setReason] = React.useState("");
   const [amount, setAmount] = React.useState("");
   const [busy, setBusy] = React.useState("");
+  const decideId = React.useId();
 
   const load = () => { setErr(""); return NGGApi.admin.requests.list(f).then(setD).catch(e => setErr(e.code || e.message)); };
   React.useEffect(() => { setD(null); load(); /* eslint-disable-next-line */ }, [f.status, f.kind]);
@@ -1464,10 +1488,11 @@ function AdminRequests() {
         ))}
 
       {open && (
-        <div className="admin-drawer" role="dialog" aria-modal="true" onMouseDown={e => { if (e.target === e.currentTarget && !busy) setOpen(null); }}>
+        <div className="admin-drawer" role="dialog" aria-modal="true" aria-labelledby={decideId}
+          onMouseDown={e => { if (e.target === e.currentTarget && !busy) setOpen(null); }}>
           <div className="admin-drawer-panel">
             <div className="admin-drawer-head">
-              <h3>{open.kindLabel}</h3>
+              <h3 id={decideId}>{open.kindLabel}</h3>
               <button type="button" className="admin-drawer-close" onClick={() => !busy && setOpen(null)}>✕</button>
             </div>
             <div className="admin-fields">
@@ -1505,6 +1530,10 @@ function AdminRosterImport({ onClose, onApplied }) {
   const [done, setDone] = React.useState(null);
   const [err, setErr] = React.useState("");
   const panelRef = React.useRef(null);
+  /* This drawer keeps its own close guard (a run in flight must not be
+     dismissed) rather than useAdminDrawer's, so it mints its own heading id. */
+  const titleId = React.useId();
+  const titleProps = { "aria-labelledby": titleId }, headingProps = { id: titleId };
   const close = () => { if (!busy) onClose(); };
 
   const read = async (e) => {
@@ -1542,11 +1571,11 @@ function AdminRosterImport({ onClose, onApplied }) {
   const res = done || preview;
   const MARK = { create: "+", update: "~", failed: "!", unchanged: "=" };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true"
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps}
       onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="admin-drawer-panel">
         <div className="admin-drawer-head">
-          <h3>Import roster</h3>
+          <h3 {...headingProps}>Import roster</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -1627,8 +1656,8 @@ function AdminRosterImport({ onClose, onApplied }) {
   );
 }
 
-function AdminMemberIdBatch({ filters, sort, total, onClose }) {
-  const { panelRef, close } = useAdminDrawer(onClose, false);
+function AdminMemberIdBatch({ filters, sort, onFilter, onClose }) {
+  const { panelRef, close, titleProps, headingProps } = useAdminDrawer(onClose, false);
   const [mode, setMode] = React.useState("zip");
   const [dpi, setDpi] = React.useState(300);
   const [design, setDesign] = React.useState("classic"); // classic | a5 | a5-wallet
@@ -1657,16 +1686,43 @@ function AdminMemberIdBatch({ filters, sort, total, onClose }) {
   }, []);
 
   /* What is missing across the selection. Each of these makes a card that is
-     printable but wrong in a way nobody notices until it is in a hand. */
+     printable but wrong in a way nobody notices until it is in a hand.
+   *
+   * `key` is the server-side predicate that finds the same rows — see
+   * $missingSql in admin_members_list. The two MUST agree: a count that sends
+   * you to a roster showing a different number is worse than no link at all.
+   * tests/id-batch-ui.test.js and api/tests/run.php pin both ends. */
   const gaps = React.useMemo(() => {
     const r = roster || [];
+    const miss = {
+      photo: m => !/^https?:\/\//.test(String(m.photoUrl || "")),
+      printedId: m => !String(m.displayId || "").trim(),
+      discipline: m => !String(m.disciplines || m.track || "").trim(),
+    };
     return {
       n: r.length,
-      noPhoto: r.filter(m => !/^https?:\/\//.test(String(m.photoUrl || ""))).length,
-      noPrintedId: r.filter(m => !String(m.displayId || "").trim()).length,
-      noDiscipline: r.filter(m => !String(m.disciplines || m.track || "").trim()).length,
+      rows: [
+        { key: "photo", n: r.filter(miss.photo).length,
+          thing: "a photograph", so: "the card prints with an empty box" },
+        { key: "printedId", n: r.filter(miss.printedId).length,
+          thing: "a printed ID", so: "the card falls back to the raw member id" },
+        { key: "discipline", n: r.filter(miss.discipline).length,
+          thing: "a discipline", so: "that line is left off the card" },
+      ],
     };
   }, [roster]);
+  const gapTotal = gaps.rows.reduce((a, x) => a + x.n, 0);
+
+  /* The failure list is something to act on, and the action is almost always
+     "go and find these people". Reading thirty names six at a time out of a
+     scrolling box and retyping them is not that. */
+  const [copied, setCopied] = React.useState(false);
+  const copyFailed = async () => {
+    try {
+      await navigator.clipboard.writeText(failed.join("\n"));
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
+    } catch (_) { toast.error("The browser would not give us the clipboard — select and copy by hand."); }
+  };
 
   const MODES = [
     { value: "zip", label: "ZIP of images", hint: "A PNG per member, named for them — for emailing or a print merge." },
@@ -1714,26 +1770,37 @@ function AdminMemberIdBatch({ filters, sort, total, onClose }) {
 
   const hintFor = (MODES.find(x => x.value === mode) || {}).hint || "";
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true"
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps}
       onMouseDown={(e) => { if (e.target === e.currentTarget && !run) close(); }}>
       <div className="admin-drawer-panel">
         <div className="admin-drawer-head">
-          <h3>Print member ID cards</h3>
+          <h3 {...headingProps}>Print member ID cards</h3>
           <button type="button" className="admin-drawer-close" onClick={() => { if (!run) close(); }}>✕</button>
         </div>
         <div className="admin-fields">
+          {/* Nothing renders until the roster lands.
+              The alternative — a preflight that pops in ABOVE the three selects
+              — shifted them down ~50px under a cursor already on its way to
+              one, and reserving the space instead only works if you know how
+              tall three gap rows will be. Every control here depends on the
+              roster regardless, so there is nothing to usefully show first. */}
+          {loadErr ? <ErrorState code={loadErr}/> : !roster ? <div className="dash-spinner"/> : (
+          <React.Fragment>
           <p className="admin-hint">
-            One card for every member the current filters match — <b>{fmtNum(roster ? roster.length : (total || 0))}</b> in all,
+            One card for every member the current filters match — <b>{fmtNum(roster.length)}</b> in all,
             in the order the table is sorted. Narrow the list first (centre, type, status) to print a subset.
           </p>
 
           {/* ── What is missing, BEFORE the run ────────────────────────────
               A card with an empty photo box prints perfectly well and is wrong
               in the hand. Saying so here costs a glance; finding out costs a
-              print run. */}
-          {loadErr ? <ErrorState code={loadErr}/> : !roster ? <div className="dash-spinner"/> : (
+              print run.
+
+              The height is reserved while the roster loads, because this block
+              sits ABOVE the three selects — letting it pop in shifts everything
+              under it down by ~50px, under a cursor already on its way. */}
             <div className="admin-card admin-note-card" style={{ marginBottom: 4 }}>
-              {gaps.noPhoto + gaps.noPrintedId + gaps.noDiscipline === 0 ? (
+              {gapTotal === 0 ? (
                 <div className="mono" style={{ fontSize: 12 }}>
                   All {fmtNum(gaps.n)} have a photograph, a printed ID and a discipline.
                 </div>
@@ -1742,21 +1809,30 @@ function AdminMemberIdBatch({ filters, sort, total, onClose }) {
                   <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 8 }}>
                     Before you print
                   </div>
-                  {[[gaps.noPhoto, "have no photograph — the card prints with an empty box"],
-                    [gaps.noPrintedId, "have no printed ID — the card falls back to the raw member id"],
-                    [gaps.noDiscipline, "have no discipline — that line is left off the card"]]
-                    .filter(([n]) => n > 0).map(([n, what], i) => (
-                      <div key={i} style={{ fontSize: 13, marginBottom: 3 }}>
-                        <b>{fmtNum(n)}</b> of {fmtNum(gaps.n)} {what}.
-                      </div>
-                    ))}
+                  {gaps.rows.filter(r => r.n > 0).map(r => (
+                    <div key={r.key} style={{ fontSize: 13, lineHeight: 1.55, marginBottom: 6 }}>
+                      {/* "40 of 40" is a thing a person has to decode. */}
+                      {r.n === gaps.n
+                        ? <><b>Nobody</b> has {r.thing}</>
+                        : <><b>{fmtNum(r.n)}</b> of {fmtNum(gaps.n)} have no {r.thing.replace(/^an? /, "")}</>}
+                      {" — " + r.so + "."}
+                      {/* A count nobody can act on is an accusation, not a tool.
+                          The roster has no "no photograph" filter to reach for,
+                          so this link IS the route to those members. */}
+                      {onFilter && (
+                        <button type="button" className="admin-inline-link" style={{ marginLeft: 6 }}
+                          onClick={() => onFilter(r.key)}>
+                          Show {r.n === gaps.n ? "them" : "these " + fmtNum(r.n)}
+                        </button>
+                      )}
+                    </div>
+                  ))}
                   <p className="admin-hint" style={{ marginBottom: 0 }}>
                     Printable either way — this is a heads-up, not a block.
                   </p>
                 </React.Fragment>
               )}
             </div>
-          )}
           <label className="admin-field"><span className="admin-label">Card design</span>
             <select className="admin-select" value={design} onChange={e => setDesign(e.target.value)} disabled={!!run}>
               <option value="classic">Classic · 54×85mm</option>
@@ -1779,10 +1855,22 @@ function AdminMemberIdBatch({ filters, sort, total, onClose }) {
           </label>
           {failed.length > 0 && (
             <div className="admin-card admin-note-card" style={{ marginTop: 4 }}>
-              <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "#b03535", marginBottom: 6 }}>
-                {fmtNum(failed.length)} could not be rendered
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "#b03535" }}>
+                  {fmtNum(failed.length)} could not be rendered
+                </div>
+                {/* Reading thirty names six at a time and retyping them is not
+                    acting on a list. */}
+                <button type="button" className="admin-inline-link" onClick={copyFailed}>
+                  {copied ? "Copied" : "Copy names"}
+                </button>
               </div>
-              <div style={{ maxHeight: 160, overflowY: "auto", fontSize: 13, lineHeight: 1.7 }}>
+              {/* tabIndex: Chrome 127+ makes an overflowing region focusable on
+                  its own, Firefox and Safari do not — without it the names past
+                  the sixth are unreachable by keyboard. Named, because an
+                  unlabelled focus stop is just "group". */}
+              <div tabIndex={0} role="group" aria-label={fmtNum(failed.length) + " members that could not be rendered"}
+                style={{ maxHeight: 160, overflowY: "auto", fontSize: 13, lineHeight: 1.7 }}>
                 {failed.map((n, i) => <div key={i}>{n}</div>)}
               </div>
             </div>
@@ -1794,13 +1882,19 @@ function AdminMemberIdBatch({ filters, sort, total, onClose }) {
                 : "Rendering " + Math.min(run.i + 1, run.n) + " of " + run.n + (run.note ? " — " + run.note : "")}
             </p>
           )}
+          </React.Fragment>
+          )}
         </div>
         <div className="admin-drawer-foot">
           {run
             ? <button type="button" className="btn btn-ghost" onClick={() => { cancelRef.current = true; }}>Stop</button>
             : <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>}
+          {/* Never falls back to the table's `total`: that is the PAGE count,
+              and a button reading "Print 999" for the length of the fetch —
+              then correcting itself to "Print 40" — is the exact lie reading
+              the roster on open was meant to stop telling. */}
           <button type="button" className="btn btn-primary" onClick={start} disabled={!!run || !roster || !roster.length}>
-            {run ? "Working…" : "Print " + fmtNum(roster ? roster.length : (total || 0))}
+            {run ? "Working…" : !roster ? "Print…" : "Print " + fmtNum(roster.length)}
           </button>
         </div>
       </div>
@@ -1828,7 +1922,7 @@ const ELEVATED_ROLES = ["admin", "super_admin"];
 function memberStatusLabel(v) { const o = MEMBER_STATUS_OPTS.find(x => x.value === v); return o ? o.label : (v || "—"); }
 
 function AdminMemberEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const { hasCap, member: me } = useAuth();
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
@@ -1859,10 +1953,10 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.memberId ? "Edit member" : "New member"}</h3>
+          <h3 {...headingProps}>{d.memberId ? "Edit member" : "New member"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -2092,13 +2186,13 @@ function MentorPromote({ centres, onClose, onDone }) {
       onDone();
     } catch (e) { toast.error(e.code || e.message); setBusy(false); }
   };
-  const { panelRef, close } = useAdminDrawer(onClose, false);
+  const { panelRef, close, titleProps, headingProps } = useAdminDrawer(onClose, false);
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true"
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps}
       onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="admin-drawer-panel">
         <div className="admin-drawer-head">
-          <h3>Make someone a mentor</h3>
+          <h3 {...headingProps}>Make someone a mentor</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -2202,7 +2296,7 @@ function AdminMentors() {
 }
 
 function AdminMentorEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({}, data, { tracks: Array.isArray(data.tracks) ? data.tracks.join(", ") : (data.tracks || "") }));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -2213,10 +2307,10 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.mentorId ? "Edit mentor" : "New mentor"}</h3>
+          <h3 {...headingProps}>{d.mentorId ? "Edit mentor" : "New mentor"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -2748,6 +2842,7 @@ function SummerGates() {
   // A generated password exists in the clear exactly once — in this response.
   // Only its hash is stored, so it is shown until dismissed and never again.
   const [reveal, setReveal] = React.useState(null);   // {gateId, name, password}
+  const revealId = React.useId();
   const load = () => NGGApi.admin.registration.gates().then(r => { setGates(r.gates || []); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   const create = async (e) => {
@@ -2891,9 +2986,9 @@ function SummerGates() {
         <button className="btn btn-primary btn-sm" disabled={busy}>{busy ? "…" : "+ Create " + GATE_KINDS[kind].label.toLowerCase()}</button>
       </form>
       {reveal && (
-        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(6,10,24,.6)", display: "grid", placeItems: "center", padding: 18 }}>
+        <div role="dialog" aria-modal="true" aria-labelledby={revealId} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(6,10,24,.6)", display: "grid", placeItems: "center", padding: 18 }}>
           <div style={{ background: "#fff", borderRadius: 16, padding: 22, maxWidth: 460, width: "100%" }}>
-            <h3 style={{ margin: "0 0 6px", fontSize: 18 }}>Desk password for {reveal.name}</h3>
+            <h3 id={revealId} style={{ margin: "0 0 6px", fontSize: 18 }}>Desk password for {reveal.name}</h3>
             <p style={{ color: "#555", fontSize: 13, lineHeight: 1.55, margin: "0 0 14px" }}>
               Copy it now {"\u2014"} only its hash is stored, so this is the one and only time it can be shown.
             </p>
@@ -3465,14 +3560,15 @@ function ConsentRecorder({ rows, scope, scopeCount, scopeCentre, onClose, onDone
   };
 
   const Row = ({ children }) => <div style={{ marginBottom: 14 }}>{children}</div>;
+  const consentId = React.useId();
 
   return (
-    <div role="dialog" aria-modal="true" onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    <div role="dialog" aria-modal="true" aria-labelledby={consentId} onClick={e => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(6,10,24,.6)", display: "grid",
                placeItems: "center", padding: 18, overflowY: "auto" }}>
       <div style={{ background: "#fff", borderRadius: 16, padding: 22, maxWidth: 560, width: "100%",
                     maxHeight: "92vh", overflowY: "auto" }}>
-        <h3 style={{ margin: "0 0 4px", fontSize: 19 }}>
+        <h3 id={consentId} style={{ margin: "0 0 4px", fontSize: 19 }}>
           {sweep ? "Record consent for everyone waiting"
             : many ? "Record consent for " + count + " children" : "Record consent"}
         </h3>
@@ -4221,7 +4317,7 @@ function ConsentDocEditor({ doc, onSaved }) {
 }
 
 function ConsentRecord({ studentId, name, onClose }) {
-  const { panelRef, close } = useAdminDrawer(onClose, false);
+  const { panelRef, close, titleProps, headingProps } = useAdminDrawer(onClose, false);
   const [c, setC] = React.useState(null);
   const [err, setErr] = React.useState("");
   const load = () => NGGApi.admin.summer.consent(studentId).then(r => { setC(r.consent); setErr(""); })
@@ -4248,10 +4344,10 @@ function ConsentRecord({ studentId, name, onClose }) {
   const doBlankForm = () => save(consentFormHtml(c, { blank: true }), "consent-form-blank.html");
 
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-drawer-head">
-          <h3>Consent record · {name}</h3>
+          <h3 {...headingProps}>Consent record · {name}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         {err ? <ErrorState title="Couldn't load the consent record" code={err} onRetry={load}/> : !c ? <div className="dash-spinner"/> : (
@@ -4949,7 +5045,7 @@ function AdminSessions() {
 }
 
 function AdminSessionEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -4960,10 +5056,10 @@ function AdminSessionEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.sessionId} · {d.year}</h3>
+          <h3 {...headingProps}>{d.sessionId} · {d.year}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -5080,7 +5176,7 @@ function AdminMissions() {
 }
 
 function AdminMissionEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -5091,10 +5187,10 @@ function AdminMissionEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.missionId ? "Edit mission" : "New mission"}</h3>
+          <h3 {...headingProps}>{d.missionId ? "Edit mission" : "New mission"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -5165,7 +5261,7 @@ function AdminEvents() {
 }
 
 function AdminEventEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({ status:"draft", kind:"session", centre:"Egbeda", isPublic: false }, data));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -5176,10 +5272,10 @@ function AdminEventEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.eventId ? "Edit event" : "New event"}</h3>
+          <h3 {...headingProps}>{d.eventId ? "Edit event" : "New event"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -5254,7 +5350,7 @@ function AdminPosts() {
 }
 
 function AdminPostEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({ kind:"blog", status:"draft" }, data));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -5265,10 +5361,10 @@ function AdminPostEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.postId ? "Edit post" : "New post"}</h3>
+          <h3 {...headingProps}>{d.postId ? "Edit post" : "New post"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -7972,7 +8068,7 @@ function AdminAssignments() {
 }
 
 function AdminAssignmentEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({ status:"draft", proof:"text", points:10, centre:"", track:"" }, data));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -7983,10 +8079,10 @@ function AdminAssignmentEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.assignmentId ? "Edit assignment" : "New assignment"}</h3>
+          <h3 {...headingProps}>{d.assignmentId ? "Edit assignment" : "New assignment"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -8018,17 +8114,17 @@ function AdminAssignmentEditor({ data, onClose, onSaved }) {
 }
 
 function AdminSubmissions({ assignment, onClose }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose, false);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose, false);
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const load = () => { setErr(""); return NGGApi.admin.assignments.submissions(assignment.assignmentId)
     .then(setData).catch(e => { setErr(e.code || e.message || "load_failed"); }); };
   React.useEffect(() => { load(); }, []);
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-drawer-head">
-          <h3>Submissions · {assignment.title}</h3>
+          <h3 {...headingProps}>Submissions · {assignment.title}</h3>
           <button type="button" className="admin-drawer-close" onClick={close} aria-label="Close">✕</button>
         </div>
         {err ? <div className="admin-empty">Couldn't load submissions. <button className="btn btn-ghost btn-sm" onClick={() => { setData(null); load(); }}>Retry</button></div> :
@@ -8099,7 +8195,7 @@ function SubmissionRow({ s, maxPoints, onGraded }) {
 // ============================================================================
 
 function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose, false);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose, false);
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [mentors, setMentors] = React.useState([]);
@@ -8144,10 +8240,10 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
 
   const m = d && d.member;
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-drawer-head">
-          <h3>{m ? m.fullName : "Member"}</h3>
+          <h3 {...headingProps}>{m ? m.fullName : "Member"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close} aria-label="Close">✕</button>
         </div>
         {err ? <div className="admin-empty">Couldn't load this member. <button className="btn btn-ghost btn-sm" onClick={() => { setD(null); load(); }}>Retry</button></div> :
@@ -8547,13 +8643,13 @@ const ENTRY_TITLE = {
  * click-outside that come with `useAdminDrawer`.
  */
 function FeeModal({ title, onClose, children }) {
-  const { panelRef, close } = useAdminDrawer(onClose, false);
+  const { panelRef, close, titleProps, headingProps } = useAdminDrawer(onClose, false);
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true"
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps}
       onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="admin-drawer-panel admin-drawer-wide">
         <div className="admin-drawer-head">
-          <h3>{title}</h3>
+          <h3 {...headingProps}>{title}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div style={{ padding: "16px 20px 20px" }}>{children}</div>
@@ -11740,7 +11836,7 @@ function SummerPolicy() {
    an admin actually needs: void a wrong fact, and close out a sanction. */
 function PolicyPersonModal({ data, onClose, onChange }) {
   // No unsaved-edit guard: every action here commits immediately.
-  const { panelRef, close } = useAdminDrawer(onClose, false);
+  const { panelRef, close, titleProps, headingProps } = useAdminDrawer(onClose, false);
   const [busy, setBusy] = React.useState("");
   const st = data.state || {};
   const reload = () => NGGApi.admin.policy.person(data.personId, data.personType).then(onChange).catch(() => {});
@@ -11789,10 +11885,10 @@ function PolicyPersonModal({ data, onClose, onChange }) {
   };
 
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
       <div className="admin-drawer-head">
-        <h3>Compliance record · {data.personId}</h3>
+        <h3 {...headingProps}>Compliance record · {data.personId}</h3>
         <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>

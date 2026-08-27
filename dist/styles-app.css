@@ -1720,7 +1720,12 @@ body.cm-app .fab-top { display: none; }
   gap: 8px;
   margin-bottom: 18px;
 }
-@media (max-width: 820px) { .admin-filters { grid-template-columns: 1fr 1fr; } }
+/* The members roster carries a fifth control (rows with something missing).
+   Its own modifier rather than a wider default, because the other filter rows
+   — requests, submissions — have fewer and would grow a dead column. */
+.admin-filters-5 { grid-template-columns: 2fr repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .admin-filters-5 { grid-template-columns: 2fr repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 820px) { .admin-filters, .admin-filters-5 { grid-template-columns: 1fr 1fr; } }
 
 .admin-table-wrap { overflow-x: auto; }
 /* Pagination + count chip (shared by paged admin tables). */
@@ -6288,3 +6293,17 @@ body.own-chrome .fab-top { display: none; }
    prose you read before pressing the button. Same surface, plain behaviour. */
 .admin-note-card { text-align: left; cursor: default; }
 .admin-note-card:hover { transform: none; }
+
+/* An action that belongs inside a sentence — "…have no photograph. Show these
+   12." A button, because it acts rather than navigates, styled as the link it
+   reads as. WCAG 2.5.8's inline exception covers a target sized by the
+   line-height of the text around it, but the rows it sits in are spaced to
+   clear 24px anyway; leaning on an exception is not the same as being
+   comfortable to hit. */
+.admin-inline-link {
+  display: inline; padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; color: var(--navy-700, #1c2a5e); text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.admin-inline-link:hover { text-decoration-thickness: 2px; }
+.admin-inline-link:focus-visible { outline: 2px solid var(--navy-700, #1c2a5e); outline-offset: 2px; border-radius: 3px; }

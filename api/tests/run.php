@@ -6300,6 +6300,90 @@ chk('members export returns all rows, unpaged', (function () {
     $all = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'all' => 1]);
     return count($paged['members']) === 2 && count($all['members']) === $all['total'] && $all['total'] > 2;
 })());
+/* ── Rows with something MISSING ───────────────────────────────────────────
+   The print preflight counts how many of a selection have no photograph, no
+   printed ID and no discipline. Until this filter existed the count was a dead
+   end: nothing in the product could turn "90 have no photograph" into those
+   ninety, so the number was an accusation rather than a tool.
+
+   What is pinned here is the AGREEMENT between the two ends. The drawer counts
+   client-side over the roster it holds; the roster link asks the server for the
+   same rows. A count that sends you to a page showing a different number is
+   worse than no link at all — so each case below re-derives the expected set in
+   PHP using the client's own rule and demands the server return exactly it. */
+chk('missing=photo finds every member whose photoUrl is not an http(s) URL', (function () {
+    $seed = [
+        ['fullName' => 'Gap Photo Blank',  'photoUrl' => '',                          'displayId' => 'G-001', 'disciplines' => 'TECH'],
+        ['fullName' => 'Gap Photo Bare',   'photoUrl' => 'uploads/kid.png',           'displayId' => 'G-002', 'disciplines' => 'TECH'],
+        ['fullName' => 'Gap Photo Ok',     'photoUrl' => 'https://cdn.example/a.png', 'displayId' => 'G-003', 'disciplines' => 'TECH'],
+        ['fullName' => 'Gap No Printed',   'photoUrl' => 'https://cdn.example/b.png', 'displayId' => '',      'disciplines' => 'ART'],
+        ['fullName' => 'Gap No Track',     'photoUrl' => 'https://cdn.example/c.png', 'displayId' => 'G-005', 'disciplines' => '', 'track' => ''],
+        ['fullName' => 'Gap Track Only',   'photoUrl' => 'https://cdn.example/d.png', 'displayId' => 'G-006', 'disciplines' => '', 'track' => 'MEDIA'],
+    ];
+    foreach ($seed as $d) {
+        backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+            'data' => array_merge(['type' => 'NGG', 'centre' => 'Egbeda', 'status' => 'active'], $d)]);
+    }
+    $all = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'all' => 1])['members'];
+    /* The client's rule, transcribed: /^https?:\/\// on photoUrl. */
+    $want = [];
+    foreach ($all as $m) {
+        if (!preg_match('~^https?://~', (string)($m['photoUrl'] ?? ''))) $want[] = $m['memberId'];
+    }
+    $got = array_map(fn($m) => $m['memberId'],
+        backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'all' => 1, 'missing' => 'photo'])['members']);
+    sort($want); sort($got);
+    // A rule that matched nothing would pass a set comparison vacuously.
+    return $got === $want && count(array_intersect($got, ['__none__'])) === 0 && count($want) >= 2;
+})());
+chk('…and it really does exclude the ones that have a photograph', (function () {
+    $got = backend_dispatch('admin.members.list',
+        ['requesterId' => 'NGG-2025-0099', 'all' => 1, 'missing' => 'photo'])['members'];
+    foreach ($got as $m) if (preg_match('~^https?://~', (string)($m['photoUrl'] ?? ''))) return false;
+    return count($got) > 0;
+})());
+chk('missing=printedId finds every member with a blank displayId', (function () {
+    $all = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'all' => 1])['members'];
+    $want = [];
+    foreach ($all as $m) if (trim((string)($m['displayId'] ?? '')) === '') $want[] = $m['memberId'];
+    $got = array_map(fn($m) => $m['memberId'],
+        backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'all' => 1, 'missing' => 'printedId'])['members']);
+    sort($want); sort($got);
+    return $got === $want && count($want) >= 1;
+})());
+chk('missing=discipline needs BOTH disciplines and track blank, as the card does', (function () {
+    $all = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'all' => 1])['members'];
+    /* The card shows `disciplines` and falls back to `track`, so a member with
+       only a track is NOT missing one. */
+    $want = [];
+    foreach ($all as $m) {
+        if (trim((string)($m['disciplines'] ?? '')) === '' && trim((string)($m['track'] ?? '')) === '') $want[] = $m['memberId'];
+    }
+    $got = array_map(fn($m) => $m['memberId'],
+        backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'all' => 1, 'missing' => 'discipline'])['members']);
+    sort($want); sort($got);
+    $trackOnly = null;
+    foreach ($all as $m) if (($m['fullName'] ?? '') === 'Gap Track Only') $trackOnly = $m['memberId'];
+    return $got === $want && $trackOnly && !in_array($trackOnly, $got, true);
+})());
+chk('an unknown missing= is ignored, like a stale sort key — never an error', (function () {
+    $plain = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'all' => 1]);
+    $junk  = backend_dispatch('admin.members.list',
+        ['requesterId' => 'NGG-2025-0099', 'all' => 1, 'missing' => "photo' OR 1=1 --"]);
+    return !empty($junk['ok']) && $junk['total'] === $plain['total'];
+})());
+chk('missing= composes with the other filters rather than replacing them', (function () {
+    backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['fullName' => 'Gap Other Centre', 'type' => 'NGG', 'centre' => 'Ayobo',
+                   'status' => 'active', 'photoUrl' => '', 'displayId' => 'G-007', 'disciplines' => 'TECH']]);
+    $r = backend_dispatch('admin.members.list',
+        ['requesterId' => 'NGG-2025-0099', 'all' => 1, 'missing' => 'photo', 'centre' => 'Egbeda']);
+    foreach ($r['members'] as $m) if (($m['centre'] ?? '') !== 'Egbeda') return false;
+    // and the Ayobo one really is excluded, so this is not vacuous
+    $wide = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'all' => 1, 'missing' => 'photo']);
+    return count($wide['members']) > count($r['members']);
+})());
+
 /* ── Ordering the roster ──────────────────────────────────────────────────
    The list was ORDER BY createdAt DESC with no way to ask for anything else,
    so a coordinator holding four hundred children could not put them in name

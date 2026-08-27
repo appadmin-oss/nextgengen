@@ -193,9 +193,18 @@ member id), no discipline (that line is left off). It is a heads-up, not a
 block — an ID with an empty photo box is still an ID, and a cohort whose
 photographs are still being collected still needs cards.
 
-Anything the renderer could not draw is listed in the drawer and stays there.
-It used to be a toast truncated to three names, which left a run with eleven
-gaps with nobody able to say which eleven.
+**Each count is a link to those members.** The roster grew a *rows with
+something missing* filter for it (`missing=photo|printedId|discipline`), because
+a number nobody can act on is an accusation rather than a tool — before it,
+nothing in the product could turn "90 have no photograph" into those ninety.
+The client-side counts and the server-side predicates are the same rule written
+twice, so `api/tests/run.php` re-derives each expected set in PHP and demands
+the server return exactly it; a count that led to a page showing a different
+number would be worse than no link.
+
+Anything the renderer could not draw is listed in the drawer, stays there, and
+can be lifted out with **Copy names**. It used to be a toast truncated to three
+names, which left a run with eleven gaps with nobody able to say which eleven.
 
 Collecting the photographs is still the right end state — the card is designed
 around one, the guardian retake link already exists, and a member ID with no

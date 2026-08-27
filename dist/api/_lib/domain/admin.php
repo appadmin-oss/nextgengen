@@ -58,6 +58,32 @@ function admin_members_list(array $p): array {
     }
     // Staff-only view powers the Access & roles roster.
     if (!empty($p['staff'])) { $where[] = "role IN ('editor','summer_admin','club_admin','audit','admin','super_admin')"; }
+
+    /* Rows with something MISSING, for the print preflight.
+     *
+     * The ID batch drawer counts how many of a selection have no photograph,
+     * no printed ID and no discipline, because each makes a card that prints
+     * perfectly well and is wrong in the hand. A count nobody can act on is an
+     * accusation rather than a tool — so the same three predicates are
+     * available as a filter, and the drawer's counts link to the roster
+     * showing exactly those members.
+     *
+     * These MUST agree with the client-side counts in AdminMemberIdBatch. An
+     * allow-list keyed by name, like $sortable below: the caller never
+     * contributes SQL text. */
+    $missingSql = [
+        // Matches /^https?:\/\// on the client. Anything else — blank, a bare
+        // filename, a leftover data: URI — is not a photograph the card can draw.
+        'photo'      => "(COALESCE(photoUrl,'') NOT LIKE 'http://%' AND COALESCE(photoUrl,'') NOT LIKE 'https://%')",
+        'printedId'  => "TRIM(COALESCE(displayId,'')) = ''",
+        // The card shows `disciplines` and falls back to `track`, so a member is
+        // only missing one when BOTH are blank.
+        'discipline' => "(TRIM(COALESCE(disciplines,'')) = '' AND TRIM(COALESCE(track,'')) = '')",
+    ];
+    $missing = (string)($p['missing'] ?? '');
+    // Unknown value ⇒ no filter, same as a stale sort key: a bookmark that has
+    // gone out of date should show the roster, not an error.
+    if (isset($missingSql[$missing])) $where[] = $missingSql[$missing];
     // Scoped admins only see members in their centres (unscoped ⇒ all).
     $scopeNames = admin_centre_names_in_scope($g['requester']);
     if ($scopeNames !== null) {

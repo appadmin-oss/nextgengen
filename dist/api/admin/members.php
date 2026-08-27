@@ -10,6 +10,9 @@ if ($method === 'GET') {
         'centre' => $_GET['centre'] ?? '',
         'status' => $_GET['status'] ?? '',
         'type'   => $_GET['type']   ?? '',
+        // Rows with something missing (photo / printedId / discipline), for the
+        // print preflight. Allow-listed in the domain, same as sort.
+        'missing' => $_GET['missing'] ?? '',
         // Forward pagination + scope the domain layer (and the UI) rely on.
         // Dropping these silently broke the pager, truncated "export all" to
         // the first page, and turned the staff roster into "first 50 members".
