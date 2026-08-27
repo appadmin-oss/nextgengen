@@ -48,6 +48,9 @@ function rate_limit_default(string $op): ?array {
            Generous enough for a per-minute cron, nowhere near enough to search
            a random key. */
         'cron.external'      => ['max' => 12, 'window' => 60],
+        /* Raising a request reaches a human and can attach a receipt. Twelve an
+           hour is more than anybody needs and far less than a flood. */
+        'member.request'     => ['max' => 12, 'window' => 3600],
         /* Scoped per MEMBER at the route (see api/member/community.php), not per
            IP alone. A centre is one address: thirty children in a computer room
            shared twelve posts a minute between them, and the thirteenth was

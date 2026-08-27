@@ -78,6 +78,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.members.list'      => 'admin_members_list',
             'admin.members.upsert'    => 'admin_members_upsert',
             'admin.members.import'    => 'admin_members_import',
+            'admin.requests.list'     => 'admin_requests_list',
+            'admin.requests.decide'   => 'admin_request_decide',
             'admin.members.consent'   => 'admin_member_consent',
             'admin.members.promoteNgv' => 'admin_member_promote_ngv',
             'admin.members.demoteNgv' => 'admin_member_demote_ngv',
@@ -274,6 +276,13 @@ function backend_dispatch(string $op, array $args = []): array {
             /* A member's own obligations, read-only. There is deliberately no
                member-side op that posts, pays or voids anything. */
             'member.fees'                 => 'member_fees_account',
+            /* Self-service. Every one of these takes its memberId from the
+               SESSION, never the body — see member-self.php. */
+            'member.statement'            => 'member_statement',
+            'member.records'              => 'member_records',
+            'member.requests'             => 'member_requests_list',
+            'member.request.create'       => 'member_request_create',
+            'member.request.withdraw'     => 'member_request_withdraw',
             'member.compliance'           => 'member_compliance',
             'member.coach'                => 'member_coach',
             'member.circle'               => 'member_circle',

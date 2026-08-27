@@ -3,6 +3,429 @@
    This is the page members land on after sign-in. Live data, actionable.
    ================================================================ */
 
+/* ══ SELF-SERVICE ═══════════════════════════════════════════════════════════
+ *
+ * Three sections a member can reach on their own, and the shared plumbing under
+ * them. What ties them together is that each answers a question a member would
+ * otherwise have to ask a human, at a time when no human is there: what do I
+ * owe and how did it get there, can I prove I attend, and how do I tell you
+ * something.
+ *
+ * The one thing none of them does is move money. A payment a member reports is
+ * a CLAIM — the desk goes and looks, and posts it if it is there. See
+ * api/_lib/domain/member-self.php.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Async section state in one place: every one of these loads once, can fail,
+ *  and must be retryable without a page refresh. */
+function useSelfService(fetcher, deps) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [seq, setSeq] = React.useState(0);
+  React.useEffect(() => {
+    let alive = true;
+    setErr("");
+    fetcher().then((r) => { if (alive) setD(r); })
+      .catch((e) => { if (alive) setErr(e.code || e.message || "load_failed"); });
+    return () => { alive = false; };
+    // eslint-disable-next-line
+  }, (deps || []).concat([seq]));
+  return [d, err, () => setSeq((n) => n + 1)];
+}
+
+function DashMoneyText({ n, currency }) {
+  const sym = currency === "NGN" || !currency ? "\u20a6" : currency + " ";
+  return <span className="mono">{sym}{Number(n || 0).toLocaleString("en-NG")}</span>;
+}
+
+function DashSectionShell({ title, sub, children, err, onRetry, loading }) {
+  return (
+    <section className="ngg-anchor" style={{ maxWidth: 860 }}>
+      <header style={{ marginBottom: 16 }}>
+        <h2 className="ngg-head-name" style={{ fontSize: 26, margin: 0 }}>{title}</h2>
+        {sub && <p className="ngg-head-sub" style={{ margin: "6px 0 0" }}>{sub}</p>}
+      </header>
+      {err ? <ErrorState code={err} onRetry={onRetry}/> : loading ? <div className="dash-spinner"/> : children}
+    </section>
+  );
+}
+
+/* ── Money & account ─────────────────────────────────────────────────────────
+ * The statement is the point: a list of charges with no running total cannot
+ * answer "how did it get to this number", which is the first thing anybody
+ * querying a balance actually wants.
+ *
+ * Two totals, deliberately. `payable` is real money — membership, dues, fines.
+ * `total` is the whole account including the training fee, which is the cost of
+ * a place the child has been given, not a bill. One number for both would tell
+ * a family they owe ₦225,000 for something free. */
+function DashAccount({ onRaise }) {
+  const [d, err, retry] = useSelfService(() => NGGApi.member.statement());
+  const [showAll, setShowAll] = React.useState(false);
+  const cur = (d && d.currency) || "NGN";
+  const lines = (d && d.lines) || [];
+  const shown = showAll ? lines : lines.slice(-25);
+
+  return (
+    <DashSectionShell title="Money & account" err={err} onRetry={retry} loading={!d}
+      sub="Every line on your account, oldest first, with the running total after each one.">
+      {d && !d.enabled ? (
+        <div className="dash-card"><div className="admin-empty">
+          Nothing is being charged on this account.
+        </div></div>
+      ) : d && (
+        <React.Fragment>
+          <div className="dash-card" style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+              <div>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>To pay</div>
+                <div style={{ fontSize: 26, fontWeight: 700 }}><DashMoneyText n={d.closingPayable} currency={cur}/></div>
+                <div style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 2 }}>Membership, dues and any fines.</div>
+              </div>
+              <div>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>Whole account</div>
+                <div style={{ fontSize: 26, fontWeight: 300 }}><DashMoneyText n={d.closingTotal} currency={cur}/></div>
+                {/* Quiet, and stating the condition rather than promising the
+                    outcome — a member who leaves before the MOU still owes it. */}
+                <div style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 2 }}>Includes the training fee, which service writes off.</div>
+              </div>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => onRaise("payment")}>I&rsquo;ve made a payment</button>
+            </div>
+          </div>
+
+          {!lines.length ? (
+            <div className="dash-card"><div className="admin-empty">Nothing has been charged yet.</div></div>
+          ) : (
+            <div className="dash-card">
+              {lines.length > shown.length && (
+                <button className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }} onClick={() => setShowAll(true)}>
+                  Show all {lines.length} lines
+                </button>
+              )}
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead><tr><th>Date</th><th>What</th><th style={{ textAlign: "right" }}>Charge</th><th style={{ textAlign: "right" }}>Paid</th><th style={{ textAlign: "right" }}>To pay</th></tr></thead>
+                  <tbody>
+                    {shown.map((l, i) => (
+                      <tr key={i} style={l.void ? { opacity: .5, textDecoration: "line-through" } : null}>
+                        <td className="mono" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{l.date}</td>
+                        <td>{l.note || l.kind}
+                          {!l.real && <span className="mono" style={{ fontSize: 10, marginLeft: 6, color: "var(--ink-400)" }}>PROGRAMME COST</span>}
+                          {l.void && l.voidReason && <div style={{ fontSize: 11, color: "var(--ink-500)", textDecoration: "none" }}>Cancelled — {l.voidReason}</div>}
+                        </td>
+                        <td style={{ textAlign: "right" }}>{l.charge ? <DashMoneyText n={l.charge} currency={cur}/> : ""}</td>
+                        <td style={{ textAlign: "right" }}>{l.credit ? <DashMoneyText n={l.credit} currency={cur}/> : ""}</td>
+                        <td style={{ textAlign: "right" }} className="mono"><DashMoneyText n={l.runningPayable} currency={cur}/></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* window.print() rather than a generated PDF: the browser's own
+                  print-to-PDF is on every device a family has, needs no library
+                  in the bundle, and produces something they can actually keep. */}
+              <div style={{ marginTop: 12 }}>
+                <button className="btn btn-ghost btn-sm noprint" onClick={() => window.print()}>Print / save as PDF</button>
+              </div>
+            </div>
+          )}
+        </React.Fragment>
+      )}
+    </DashSectionShell>
+  );
+}
+
+/* ── Records ─────────────────────────────────────────────────────────────────
+ * What a member might be asked to evidence to somebody outside the programme.
+ * The attendance rate is withheld rather than invented when the calendar has no
+ * term dates — a percentage over an unknown denominator is a number somebody
+ * will put in a school application. */
+function DashRecords({ onRaise }) {
+  const [d, err, retry] = useSelfService(() => NGGApi.member.records());
+  const att = (d && d.attendance) || {};
+  const [showAll, setShowAll] = React.useState(false);
+  const days = att.days || [];
+
+  return (
+    <DashSectionShell title="Records" err={err} onRetry={retry} loading={!d}
+      sub="Your attendance and anything the programme has issued you.">
+      {d && (
+        <React.Fragment>
+          <div className="dash-card" style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>Days attended</div>
+                <div style={{ fontSize: 26, fontWeight: 700 }}>{att.present || 0}</div>
+              </div>
+              {att.rateKnown ? (
+                <div>
+                  <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>Of days the programme ran</div>
+                  <div style={{ fontSize: 26, fontWeight: 300 }}>{att.rate}%<span style={{ fontSize: 13, color: "var(--ink-500)", marginLeft: 8 }}>of {att.daysRan}</span></div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: "var(--ink-500)", maxWidth: 320 }}>
+                  A rate needs the days the programme ran, and no term calendar is set — so it is not shown rather than guessed.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="dash-card" style={{ marginBottom: 16 }}>
+            <div className="dash-card-head"><h3 className="dash-card-h-sm">Certificates</h3></div>
+            {!(d.certificates || []).length ? (
+              <div className="admin-empty">Nothing issued yet.</div>
+            ) : (d.certificates.map((c) => (
+              <div key={c.certId} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 0", borderBottom: "1px solid var(--ink-100,#e6e8ec)" }}>
+                <div>
+                  <div className="mono" style={{ fontSize: 13 }}>{c.certId}</div>
+                  <div style={{ fontSize: 12, color: "var(--ink-500)" }}>
+                    {c.daysPresent} days · {c.attendanceRate}% · issued {String(c.issuedAt).slice(0, 10)}
+                  </div>
+                </div>
+                {c.revoked
+                  ? <span className="mono" style={{ fontSize: 11, color: "#b03535" }}>REVOKED</span>
+                  : <a className="btn btn-ghost btn-sm" href={"/cert/" + c.certId}>View</a>}
+              </div>
+            )))}
+          </div>
+
+          <div className="dash-card">
+            <div className="dash-card-head"><h3 className="dash-card-h-sm">Attendance</h3></div>
+            {!days.length ? <div className="admin-empty">No days recorded yet.</div> : (
+              <React.Fragment>
+                <div className="admin-table-wrap" style={{ maxHeight: showAll ? "none" : 320, overflowY: "auto" }}>
+                  <table className="admin-table">
+                    <thead><tr><th>Date</th><th>In</th><th>Out</th></tr></thead>
+                    <tbody>{days.map((x, i) => (
+                      <tr key={i}><td className="mono" style={{ fontSize: 12 }}>{x.date}</td>
+                        <td className="mono" style={{ fontSize: 12 }}>{x.in || "—"}</td>
+                        <td className="mono" style={{ fontSize: 12 }}>{x.out || "—"}</td></tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+                {!showAll && days.length > 10 && (
+                  <button className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={() => setShowAll(true)}>Show every day</button>
+                )}
+              </React.Fragment>
+            )}
+            <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button className="btn btn-ghost btn-sm noprint" onClick={() => window.print()}>Print / save as PDF</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => onRaise("idcard")}>Ask for a replacement ID</button>
+            </div>
+          </div>
+        </React.Fragment>
+      )}
+    </DashSectionShell>
+  );
+}
+
+/* ── Requests ────────────────────────────────────────────────────────────────
+ * The one place a member can say something to the desk and see what happened to
+ * it. Four kinds, one shape.
+ *
+ * The status of an old request is as much the point as raising a new one: a
+ * member who cannot see that their appeal was read will raise it again, which
+ * is how a queue becomes unworkable for everybody. */
+const DASH_REQUEST_STATUS = {
+  open:      { label: "Waiting for a reply", tone: "var(--gold-700, #7d5a00)" },
+  approved:  { label: "Approved",            tone: "var(--lime-ink, #4b7a00)" },
+  declined:  { label: "Declined",            tone: "#b03535" },
+  withdrawn: { label: "Withdrawn",           tone: "var(--ink-400, #9aa0ac)" },
+};
+
+function DashRequests({ openKind, onKindHandled, onCountChange }) {
+  const [d, err, retry] = useSelfService(() => NGGApi.member.requests());
+  const [draft, setDraft] = React.useState(null);   // { kind, ... } while composing
+  const [busy, setBusy] = React.useState(false);
+  const rows = (d && d.requests) || [];
+  const kinds = (d && d.kinds) || {};
+
+  /* Another section asked for a form — "I've made a payment" on the account
+     page, "replacement ID" on records. Opening it here keeps one composer. */
+  React.useEffect(() => {
+    if (openKind) { setDraft({ kind: openKind, body: "", amount: "", reference: "", paidAt: "", fromDate: "", toDate: "" }); onKindHandled(); }
+  }, [openKind]); // eslint-disable-line
+  React.useEffect(() => { if (onCountChange) onCountChange(rows.filter((r) => r.status === "open").length); }, [rows]); // eslint-disable-line
+
+  const send = async () => {
+    setBusy(true);
+    try {
+      await NGGApi.member.raiseRequest(Object.assign({}, draft, { amount: draft.amount === "" ? null : Number(draft.amount) }));
+      toast.success("Sent. You'll see the reply here.", "Request raised");
+      setDraft(null); retry();
+    } catch (e) { toast.error(e.detail || e.code || e.message); } finally { setBusy(false); }
+  };
+  const withdraw = async (r) => {
+    if (!(await dialog.confirm({ title: "Withdraw this request?", body: "The desk will stop looking at it. You can raise another.", cta: "Withdraw" }))) return;
+    try { await NGGApi.member.withdrawRequest(r.requestId); retry(); }
+    catch (e) { toast.error(e.detail || e.code || e.message); }
+  };
+
+  const field = (k, label, attrs) => (
+    <label style={{ display: "block", marginBottom: 12 }}>
+      <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>{label}</span>
+      <input className="admin-input" style={{ display: "block", marginTop: 5, maxWidth: 320 }}
+        value={draft[k] || ""} onChange={(e) => setDraft((o) => Object.assign({}, o, { [k]: e.target.value }))} {...(attrs || {})}/>
+    </label>
+  );
+
+  return (
+    <DashSectionShell title="Requests" err={err} onRetry={retry} loading={!d}
+      sub="Tell the desk something, and see what came back.">
+      {d && (
+        <React.Fragment>
+          {!draft ? (
+            <div className="dash-card" style={{ marginBottom: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {Object.keys(kinds).map((k) => (
+                <button key={k} className="btn btn-ghost btn-sm"
+                  onClick={() => setDraft({ kind: k, body: "", amount: "", reference: "", paidAt: "", fromDate: "", toDate: "" })}>
+                  {kinds[k]}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="dash-card" style={{ marginBottom: 16 }}>
+              <div className="dash-card-head"><h3 className="dash-card-h-sm">{kinds[draft.kind] || draft.kind}</h3></div>
+              {draft.kind === "payment" && (
+                <React.Fragment>
+                  {/* Said plainly, because the alternative is a member believing
+                      the balance updates the moment they press send. */}
+                  <p className="admin-hint" style={{ marginTop: 0 }}>
+                    This tells the desk to look for your payment. Your balance changes when they find it, not when you send this.
+                  </p>
+                  {field("amount", "How much", { type: "number", min: 1, inputMode: "numeric" })}
+                  {field("reference", "Transfer reference, if you have one")}
+                  {field("paidAt", "When you paid", { type: "date" })}
+                </React.Fragment>
+              )}
+              {draft.kind === "leave" && (
+                <React.Fragment>
+                  {field("fromDate", "From", { type: "date" })}
+                  {field("toDate", "Until (leave blank if you do not know)", { type: "date" })}
+                </React.Fragment>
+              )}
+              <label style={{ display: "block", marginBottom: 12 }}>
+                <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>
+                  {draft.kind === "payment" ? "Anything else the desk should know" : "Say why"}
+                </span>
+                <textarea className="admin-input" rows={4} style={{ display: "block", marginTop: 5 }}
+                  value={draft.body} onChange={(e) => setDraft((o) => Object.assign({}, o, { body: e.target.value }))}/>
+              </label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn btn-primary btn-sm" disabled={busy} onClick={send}>{busy ? "Sending…" : "Send"}</button>
+                <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setDraft(null)}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {!rows.length ? (
+            <div className="dash-card"><div className="admin-empty">You have not raised anything yet.</div></div>
+          ) : rows.map((r) => {
+            const st = DASH_REQUEST_STATUS[r.status] || { label: r.status, tone: "var(--ink-500)" };
+            return (
+              <div key={r.requestId} className="dash-card" style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600 }}>{r.subject || r.kindLabel}</div>
+                    <div className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>
+                      {r.kindLabel} · {String(r.createdAt).slice(0, 10)} · {r.requestId}
+                    </div>
+                  </div>
+                  <span className="mono" style={{ fontSize: 11, color: st.tone, whiteSpace: "nowrap" }}>{st.label.toUpperCase()}</span>
+                </div>
+                {r.body && <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--ink-600)" }}>{r.body}</p>}
+                {r.decision && (
+                  <div style={{ marginTop: 10, padding: "9px 11px", background: "var(--ink-050, #f5f6f8)", borderRadius: 6 }}>
+                    <div className="mono" style={{ fontSize: 10, letterSpacing: ".1em", color: "var(--ink-400)" }}>THE DESK REPLIED</div>
+                    <div style={{ fontSize: 13, marginTop: 3 }}>{r.decision}</div>
+                  </div>
+                )}
+                {r.status === "open" && (
+                  <button className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={() => withdraw(r)}>Withdraw</button>
+                )}
+              </div>
+            );
+          })}
+        </React.Fragment>
+      )}
+    </DashSectionShell>
+  );
+}
+
+/* ── The dashboard's own URL subtree ──────────────────────────────────────────
+ *
+ * /dashboard, /dashboard/account, /dashboard/records, /dashboard/requests.
+ *
+ * The overview stays one scroll of cards, because that is what it is for and
+ * splitting it would cost a member the glance that answers "what do I owe, what
+ * is due today". What DID need addresses is the self-service work: a member
+ * emailing the desk about a payment wants to send "here is my statement", and a
+ * back button that leaves the page is not a back button.
+ *
+ * app.jsx knows not to rewrite this subtree (see `inDashSubtree`); everything
+ * else about routing is here, next to the thing it routes.
+ */
+var DASH_SECTIONS = [
+  { id: "overview", path: "", label: "Overview" },
+  { id: "account",  path: "account",  label: "Money & account" },
+  { id: "records",  path: "records",  label: "Records" },
+  { id: "requests", path: "requests", label: "Requests" },
+];
+
+function dashSectionFromPath() {
+  var seg = (window.location.pathname || "").replace(/^\/+|\/+$/g, "").split("/");
+  if (seg[0] !== "dashboard") return "overview";
+  var hit = DASH_SECTIONS.find(function (x) { return x.path && x.path === seg[1]; });
+  return hit ? hit.id : "overview";
+}
+
+/** Section state that IS the URL: pushState on change, popstate to go back. */
+function useDashSection() {
+  const [section, setSection] = React.useState(dashSectionFromPath);
+  React.useEffect(() => {
+    const onPop = () => setSection(dashSectionFromPath());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  const go = React.useCallback((id) => {
+    const hit = DASH_SECTIONS.find((x) => x.id === id) || DASH_SECTIONS[0];
+    const path = "/dashboard" + (hit.path ? "/" + hit.path : "");
+    if (window.location.pathname !== path) history.pushState({ page: "dashboard", section: id }, "", path);
+    setSection(hit.id);
+    /* A section change is a page change: start it at the top, and tell a screen
+       reader that something happened — neither is implied by a re-render. */
+    try { window.scrollTo({ top: 0, behavior: "instant" }); } catch (e) { window.scrollTo(0, 0); }
+  }, []);
+  return [section, go];
+}
+
+function DashSectionTabs({ section, go, openRequests }) {
+  return (
+    <nav className="dash-tabs" aria-label="Dashboard sections"
+      style={{ display: "flex", gap: 4, flexWrap: "wrap", margin: "0 0 18px", borderBottom: "1px solid var(--ink-100, #e6e8ec)" }}>
+      {DASH_SECTIONS.map((sx) => {
+        const on = sx.id === section;
+        return (
+          <button key={sx.id} type="button" onClick={() => go(sx.id)}
+            aria-current={on ? "page" : undefined}
+            style={{ appearance: "none", background: "none", cursor: "pointer",
+              border: 0, borderBottom: "2px solid " + (on ? "var(--gold-600, #a07400)" : "transparent"),
+              padding: "9px 13px", marginBottom: -1, font: "inherit", fontSize: 14,
+              fontWeight: on ? 650 : 450, color: on ? "var(--ink-900, #16223e)" : "var(--ink-500, #5b6478)" }}>
+            {sx.label}
+            {sx.id === "requests" && openRequests > 0 && (
+              <span className="mono" style={{ marginLeft: 6, fontSize: 11, padding: "1px 6px", borderRadius: 999,
+                background: "var(--gold-100, #fdf3d8)", color: "var(--gold-700, #7d5a00)" }}>{openRequests}</span>
+            )}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 function DashboardPage({ setPage }) {
   const { member, isSignedIn, loading, openSignIn, signOut } = useAuth();
   const [data, setData] = React.useState(null);
@@ -212,6 +635,13 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
   // Canonical reflection-economy progression — fetched once here and shared by
   // the Stats and Momentum cards so the dashboard never shows two different
   // levels for the same member (and matches the Anchor Journal exactly).
+  /* Which self-service section is showing — and it IS the URL, so a member can
+     send somebody /dashboard/account and land them there. */
+  const [section, goSection] = useDashSection();
+  const [raiseKind, setRaiseKind] = React.useState("");
+  const [openRequests, setOpenRequests] = React.useState(0);
+  const askFor = React.useCallback((kind) => { setRaiseKind(kind); goSection("requests"); }, [goSection]);
+
   const [momentum, setMomentum] = React.useState(null);
   React.useEffect(() => {
     let alive = true;
@@ -322,6 +752,13 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                 <p className="ngg-head-sub">Your Anchor 12 room — today's missions, your tally, your mentor and your account, all in one place.</p>
               </header>
 
+              <DashSectionTabs section={section} go={goSection} openRequests={openRequests}/>
+
+              {section === "account"  && <DashAccount onRaise={askFor}/>}
+              {section === "records"  && <DashRecords onRaise={askFor}/>}
+              {section === "requests" && <DashRequests openKind={raiseKind} onKindHandled={() => setRaiseKind("")} onCountChange={setOpenRequests}/>}
+
+              {section === "overview" && <React.Fragment>
               <DashboardKpis session={session} prog={prog} stats={s} account={account} acctState={acctState}/>
 
               <div className="dash-grid">
@@ -372,6 +809,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                   <section id="sec-shortcuts" className="ngg-anchor"><DashboardShortcuts setPage={setPage}/></section>
                 </div>
               </div>
+              </React.Fragment>}
             </div>
           </div>
         </div>
@@ -1168,7 +1606,14 @@ function DashboardMomentum({ momentum }) {
  * Read-only, structurally: there is no member-side op that posts, pays or voids
  * anything, so there is nothing here to press.
  */
-// The member's own NGG ID card — rendered + downloadable straight from the rail.
+// The member's own NGG ID card — rendered on the rail, and only rendered.
+/* The card is shown, not handed over.
+ *
+ * `downloadable` used to put a "save this" button under it, and a member ID is
+ * the wrong thing to make a file of: the image is the credential the gate
+ * scans, and a PNG of it travels to places a lanyard does not. Issuing and
+ * reissuing is the desk's job — Records has a button to ask for one — and the
+ * printed cards come out of the Control Room's own run. */
 function DashboardIdCard({ m }) {
   const Card = window.MemberIDCard;
   if (!Card || !m) return null;
@@ -1176,7 +1621,7 @@ function DashboardIdCard({ m }) {
     <div className="dash-card">
       <div className="dash-card-head"><h3 className="dash-card-h-sm">Your ID card.</h3></div>
       <div style={{ display: "flex", justifyContent: "center", padding: "6px 0 4px" }}>
-        <Card member={m} downloadable/>
+        <Card member={m}/>
       </div>
     </div>
   );

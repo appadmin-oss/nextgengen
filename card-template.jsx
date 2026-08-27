@@ -796,7 +796,7 @@ function MemberIDCardBatch(members, opts) {
         mount.style.cssText = "display:inline-block;";
         host.appendChild(mount);
         var root = RD.createRoot(mount);
-        root.render(h(MemberIDCard, { member: m, downloadable: false, qrUrl: qr }));
+        root.render(h(MemberIDCard, { member: m, qrUrl: qr }));
         // Let React commit and the browser lay the card out, then wait on the
         // photograph before we freeze the pixels.
         await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
@@ -868,10 +868,8 @@ function MemberIDCardBatch(members, opts) {
 function MemberIDCard(props) {
   var React = window.React, h = React.createElement;
   var m = props.member || {};
-  var downloadable = props.downloadable !== false;
   var cardRef = React.useRef(null);
   var qs = React.useState(props.qrUrl || ""); var qrUrl = qs[0], setQr = qs[1];
-  var bs = React.useState(""); var busy = bs[0], setBusy = bs[1];
 
   var name = String(m.fullName || "").trim() || "NGG Member";
   var initials = name.split(/\s+/).map(function (w) { return w[0]; }).join("").slice(0, 2).toUpperCase();
@@ -887,24 +885,6 @@ function MemberIDCard(props) {
     _ngQrDataUrl(payload).then(function (u) { if (alive) setQr(u); });
     return function () { alive = false; };
   }, [payload, props.qrUrl]);
-
-  function exportNode() { return loadVendor("cardExport").then(function (CE) { return CE.nodeToImage(cardRef.current, { scale: 3, bg: "#ffffff" }).then(function (img) { return { CE: CE, img: img }; }); }); }
-  function downloadPng() {
-    if (!cardRef.current || busy) return; setBusy("png");
-    exportNode().then(function (r) { r.CE.download(r.img.bytes, "ngg-id-" + (m.memberId || "card") + ".png", "image/png"); })
-      .catch(function () { if (window.toast) toast.error("Couldn't export the card"); })
-      .then(function () { setBusy(""); });
-  }
-  function downloadPdf() {
-    if (!cardRef.current || busy) return; setBusy("pdf");
-    Promise.all([loadVendor("cardExport"), loadVendor("jspdf")]).then(function (libs) {
-      return libs[0].nodeToImage(cardRef.current, { scale: 4, bg: "#ffffff" }).then(function (img) {
-        var JsPDF = libs[1].jsPDF; var doc = new JsPDF({ unit: "mm", format: [54, 85], orientation: "portrait" });
-        doc.addImage(img.dataUrl, "PNG", 0, 0, 54, 85); doc.save("ngg-id-" + (m.memberId || "card") + ".pdf");
-      });
-    }).catch(function () { if (window.toast) toast.error("Couldn't export the PDF"); })
-      .then(function () { setBusy(""); });
-  }
 
   var NAVY = "#0a2a4d", NAVY2 = "#0e3f68", GOLD = "#f5b301", INK = "#12233a", MUT = "#5f6874", LINE = "#e7e9ee";
   var chip = function (txt, key) { return h("span", { key: key, style: { display: "inline-block", background: "#eef2f7", color: INK, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700, marginRight: 6, marginTop: 6 } }, txt); };
@@ -941,14 +921,12 @@ function MemberIDCard(props) {
     ]),
   ]);
 
-  if (!downloadable) return card;
-  return h("div", { style: { display: "inline-block" } }, [
-    card,
-    h("div", { key: "act", className: "dash-idcard-actions", style: { display: "flex", gap: 8, marginTop: 12 } }, [
-      h("button", { key: "png", className: "btn btn-sm", disabled: !!busy, onClick: downloadPng }, busy === "png" ? "Preparing…" : "Download PNG"),
-      h("button", { key: "pdf", className: "btn btn-ghost btn-sm", disabled: !!busy, onClick: downloadPdf }, busy === "pdf" ? "Preparing…" : "Download PDF"),
-    ]),
-  ]);
+  /* No download. A member ID is the credential the gate scans, and a PNG of it
+     travels to places a lanyard does not — so the card is SHOWN here and issued
+     by the desk. The Control Room still exports and prints the real run
+     (MemberIDCardBatch / NggcMemberCardExport), and a member who needs a new
+     one asks for it from Records. */
+  return card;
 }
 
 /* ============================================================================

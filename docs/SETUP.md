@@ -143,6 +143,26 @@ php api/tools/create-admin.php "Ada Admin" admin@yourdomain.com   # from the hos
 (No shell? Insert a row into `members` with `role = super_admin` via phpMyAdmin,
 or use the SQLite CLI on `api/storage/ngg.db`.)
 
+### The member dashboard
+
+`/dashboard` is the overview — one scroll of cards. Three self-service sections
+have their own addresses, so a member can be sent straight to one:
+
+| | |
+|---|---|
+| `/dashboard/account` | The statement: every line with a running total, and "I've made a payment" |
+| `/dashboard/records` | Attendance, the rate (withheld if no term calendar is set), certificates |
+| `/dashboard/requests` | Payment claims, appeals, leave, replacement ID — and what the desk replied |
+
+What a member raises lands in **Control Room → People → Member requests**.
+Approving a payment claim posts it through the ordinary ledger path, so money
+still enters an account by exactly one route — a claim is evidence for a
+decision, never an entry in itself. Declining requires a reason, because the
+member reads it.
+
+Members cannot download their ID card. It is shown on the dashboard and issued
+by the desk; the printed run comes out of the Control Room.
+
 ### Importing an existing roster
 
 If the members you want are still in the Google Sheet, bring them across before

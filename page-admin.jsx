@@ -58,6 +58,7 @@ const ADMIN_SECTIONS = [
      on/off switch), so a year-round coordinator looking for "why is
      nobody being fined" had nowhere to look. Same screen, second door. */
   { id: "conduct",     group: "People",   label: "Conduct & fines", title: "Conduct policy & fines", icon: "⚖", cap: "people" },
+  { id: "requests",    group: "People",   label: "Member requests", title: "Member requests", icon: "✋", cap: "people" },
   { id: "staff",       group: "People",   label: "Staff activity", title: "Staff activity",    icon: "◑", cap: "people" },
   { id: "engagement",  group: "People",   label: "Engagement",   title: "Engagement",          icon: "📈", cap: "audit" },
   { id: "registration",group: "People",   label: "Registration", title: "Registration",        icon: "❑", cap: "summer" },
@@ -288,6 +289,7 @@ function AdminPage({ setPage }) {
           {view === "site" && <AdminSite/>}
           {view === "fees" && <AdminFees/>}
           {view === "conduct" && <SummerPolicy/>}
+          {view === "requests" && <AdminRequests/>}
           {view === "status-pages" && <AdminStatusPages/>}
           {view === "sessions" && <AdminSessions/>}
           {view === "missions" && <AdminMissions/>}
@@ -1373,6 +1375,128 @@ function AdminMembers() {
  * one has been read. A roster file rewrites the membership table in one action;
  * seeing what it would do first is the whole safety property.
  */
+/* The desk's side of member self-service.
+ *
+ * A queue, not an inbox: every row is something a member is waiting on, and the
+ * only two things to do with one are approve it or say why not. Declining
+ * without words is refused by the server, because a bare refusal is how a
+ * decision becomes a grievance — the form here says so rather than letting
+ * somebody discover it by pressing the button.
+ *
+ * Approving a payment claim posts through the ordinary ledger path. The amount
+ * is editable at the point of approval: when ₦1,000 arrived against a ₦6,000
+ * claim, posting ₦1,000 and saying so beats arguing with the member first.
+ */
+function AdminRequests() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [f, setF] = React.useState({ status: "open", kind: "" });
+  const [open, setOpen] = React.useState(null);      // the row being decided
+  const [reason, setReason] = React.useState("");
+  const [amount, setAmount] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+
+  const load = () => { setErr(""); return NGGApi.admin.requests.list(f).then(setD).catch(e => setErr(e.code || e.message)); };
+  React.useEffect(() => { setD(null); load(); /* eslint-disable-next-line */ }, [f.status, f.kind]);
+
+  const start = (r) => { setOpen(r); setReason(""); setAmount(r.kind === "payment" ? String(r.amount || "") : ""); };
+  const decide = async (approve) => {
+    if (!approve && !reason.trim()) { toast.error("Say why — the member sees this."); return; }
+    setBusy(approve ? "yes" : "no");
+    try {
+      await NGGApi.admin.requests.decide(open.requestId, approve, reason.trim(),
+        open.kind === "payment" && approve && amount !== "" ? Number(amount) : undefined);
+      toast.success(approve ? "Approved." : "Declined, with your reason.", open.requestId);
+      setOpen(null); load();
+    } catch (e) { toast.error(e.detail || e.code || e.message); } finally { setBusy(""); }
+  };
+
+  const kinds = (d && d.kinds) || {};
+  const tally = (d && d.openByKind) || {};
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Member requests
+          {Object.values(tally).reduce((a, b) => a + b, 0) > 0 &&
+            <span className="admin-count mono">{Object.values(tally).reduce((a, b) => a + b, 0)} open</span>}
+        </h2>
+      </div>
+      <p className="admin-hint">
+        What members have asked for from their own dashboard. Approving a payment posts it to the
+        ledger exactly as the Dues &amp; fees screen would — a claim is evidence, not an entry.
+      </p>
+      <div className="admin-filters">
+        <select className="admin-select" value={f.status} onChange={e => setF(o => ({ ...o, status: e.target.value }))}>
+          <option value="open">Waiting</option><option value="approved">Approved</option>
+          <option value="declined">Declined</option><option value="withdrawn">Withdrawn</option>
+        </select>
+        <select className="admin-select" value={f.kind} onChange={e => setF(o => ({ ...o, kind: e.target.value }))}>
+          <option value="">Every kind</option>
+          {Object.keys(kinds).map(k => <option key={k} value={k}>{kinds[k]}{tally[k] ? " (" + tally[k] + ")" : ""}</option>)}
+        </select>
+      </div>
+
+      {d === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner"/>) :
+        !d.requests.length ? <div className="admin-empty">Nothing here.</div> :
+        d.requests.map(r => (
+          <div key={r.requestId} className="admin-card" style={{ marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600 }}>{r.subject || r.kindLabel}</div>
+                <div className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>
+                  {r.fullName || r.displayId} · {r.centre} · {r.kindLabel} · {String(r.createdAt).slice(0, 10)}
+                </div>
+              </div>
+              {r.status === "open"
+                ? <button className="btn btn-primary btn-sm" onClick={() => start(r)}>Decide</button>
+                : <span className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>{r.status.toUpperCase()}</span>}
+            </div>
+            {r.body && <p style={{ margin: "8px 0 0", fontSize: 13 }}>{r.body}</p>}
+            {r.kind === "payment" && (
+              <div className="mono" style={{ fontSize: 12, marginTop: 6 }}>
+                Claims ₦{Number(r.amount || 0).toLocaleString("en-NG")}
+                {r.reference ? " · ref " + r.reference : ""}{r.paidAt ? " · paid " + r.paidAt : ""}
+              </div>
+            )}
+            {r.kind === "leave" && <div className="mono" style={{ fontSize: 12, marginTop: 6 }}>{r.fromDate} → {r.toDate || "open-ended"}</div>}
+            {r.decision && <div className="admin-hint" style={{ marginTop: 8 }}>Replied: {r.decision}</div>}
+          </div>
+        ))}
+
+      {open && (
+        <div className="admin-drawer" role="dialog" aria-modal="true" onMouseDown={e => { if (e.target === e.currentTarget && !busy) setOpen(null); }}>
+          <div className="admin-drawer-panel">
+            <div className="admin-drawer-head">
+              <h3>{open.kindLabel}</h3>
+              <button type="button" className="admin-drawer-close" onClick={() => !busy && setOpen(null)}>✕</button>
+            </div>
+            <div className="admin-fields">
+              <p className="admin-hint" style={{ marginTop: 0 }}>
+                {open.fullName || open.displayId} · {open.requestId}
+              </p>
+              {open.body && <p style={{ fontSize: 13 }}>{open.body}</p>}
+              {open.kind === "payment" && (
+                <Field label="Amount to post (what actually arrived)" value={amount} onChange={setAmount}
+                  placeholder={String(open.amount || 0)}/>
+              )}
+              <label className="admin-field"><span className="admin-label">Your reply — the member reads this</span>
+                <textarea className="admin-input" rows={4} value={reason} onChange={e => setReason(e.target.value)}
+                  placeholder={open.kind === "payment" ? "Found it on the 3rd, thank you." : "Why, in a sentence."}/>
+              </label>
+            </div>
+            <div className="admin-drawer-foot">
+              <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => setOpen(null)}>Cancel</button>
+              <button className="btn btn-ghost btn-sm" disabled={!!busy || !reason.trim()} onClick={() => decide(false)}
+                title={reason.trim() ? "" : "A decline needs a reason"}>{busy === "no" ? "…" : "Decline"}</button>
+              <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => decide(true)}>{busy === "yes" ? "…" : "Approve"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminRosterImport({ onClose, onApplied }) {
   const [file, setFile] = React.useState(null);        // { source, members[] }
   const [overwrite, setOverwrite] = React.useState(false);

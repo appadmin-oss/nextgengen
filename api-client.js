@@ -550,6 +550,14 @@
       momentum:     () => request('/member/momentum.php'),
       /* Read-only. There is no member-side write to the ledger. */
       fees:         () => request('/member/fees.php'),
+      /* Self-service. No memberId travels in any of these — the server reads it
+         from the session, which is what keeps them from being an enumeration
+         endpoint over children. */
+      statement:    () => request('/member/self.php?view=statement'),
+      records:      () => request('/member/self.php?view=records'),
+      requests:     () => request('/member/self.php?view=requests'),
+      raiseRequest: (data) => request('/member/self.php', { body: data }),
+      withdrawRequest: (requestId) => request('/member/self.php', { body: { action: 'withdraw', requestId } }),
       compliance:   () => request('/member/compliance.php'),
       coach:        (messages) => request('/member/coach.php', { body: { messages } }),
       circle:       () => request('/member/circle.php'),
@@ -810,6 +818,11 @@
         setCaps: (memberId, caps, centreScope) => request('/admin/members.php', { body: Object.assign({ action: 'setCaps', memberId, caps }, centreScope !== undefined ? { centreScope } : {}) }),
         impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),
         stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),
+      },
+      requests: {
+        list:   (q) => request('/admin/requests.php' + qs(q || {})),
+        decide: (requestId, approve, decision, amount) => request('/admin/requests.php',
+          { body: Object.assign({ requestId, approve, decision }, amount !== undefined ? { amount } : {}) }),
       },
       mentors: {
         list:   () => request('/admin/mentors.php'),

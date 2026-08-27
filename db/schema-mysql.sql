@@ -2355,3 +2355,41 @@ INSERT INTO schema_version (version) VALUES (108) ON DUPLICATE KEY UPDATE versio
 ALTER TABLE members ADD COLUMN level VARCHAR(16) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (109) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 110 · Member self-service requests ──────────────────────────────────────
+-- One table for everything a member ASKS the desk for. Four kinds today — a
+-- payment they say they have made, an appeal against a fine, a leave of
+-- absence, a replacement ID — sharing a shape because they share a life:
+-- raised by the member, read by an admin, decided once, decision kept.
+--
+-- A payment claim is deliberately NOT a ledger row. fees.php is explicit that
+-- "a member confirming their own payment is not a thing this ledger will ever
+-- accept", and that is right: the ledger records money the desk has seen. A
+-- claim is the member telling the desk to go and look. Approving one posts the
+-- payment through the ordinary admin path, so money enters the account one way.
+CREATE TABLE IF NOT EXISTS member_requests (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  requestId VARCHAR(48) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL,
+  kind VARCHAR(24) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'open',
+  subject VARCHAR(200) DEFAULT '',
+  body TEXT,
+  amount INT DEFAULT 0,
+  reference VARCHAR(120) DEFAULT '',
+  proofUrl TEXT,
+  paidAt VARCHAR(40) DEFAULT '',
+  fromDate VARCHAR(40) DEFAULT '',
+  toDate VARCHAR(40) DEFAULT '',
+  refEntryId VARCHAR(48) DEFAULT '',
+  decision TEXT,
+  decidedBy VARCHAR(64) DEFAULT '',
+  decidedAt VARCHAR(40) DEFAULT '',
+  ledgerEntryId VARCHAR(48) DEFAULT '',
+  createdAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_mreq_member (memberId, createdAt),
+  INDEX idx_mreq_open (status, kind)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (110) ON DUPLICATE KEY UPDATE version = version;

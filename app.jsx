@@ -197,7 +197,12 @@ function App() {
     // The centres page owns a URL subtree (/centres and /centres/<slug>); don't
     // clobber a deep-linked slug by rewriting it back to the index path.
     const inCentresSubtree = page === "centres" && (window.location.pathname || "").replace(/\/+$/, "").startsWith("/centres");
-    if (page !== "_notfound" && page !== "summerprofile" && page !== "certificate" && !inCentresSubtree && window.location.pathname !== pathForPage(page)) {
+    /* The dashboard owns a subtree too — /dashboard/account, /dashboard/records,
+       /dashboard/requests. Its own router (see page-dashboard.jsx) pushes those,
+       and rewriting them back to /dashboard here would undo a deep link the
+       moment the page mounted, which reads as "the tab does not work". */
+    const inDashSubtree = page === "dashboard" && (window.location.pathname || "").replace(/\/+$/, "").startsWith("/dashboard");
+    if (page !== "_notfound" && page !== "summerprofile" && page !== "certificate" && !inCentresSubtree && !inDashSubtree && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
     }
     // Expose for the sign-in modal / magic link consumer.

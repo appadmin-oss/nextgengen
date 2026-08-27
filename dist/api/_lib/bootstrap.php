@@ -136,7 +136,7 @@ require_once __DIR__ . '/anchor-content.php';
 require_once __DIR__ . '/ai.php';
 require_once __DIR__ . '/bus.php';
 require_once __DIR__ . '/sms.php';
-foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'mentoring', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'analytics-depth', 'growth', 'insight', 'insight-chat', 'journal', 'profiles', 'community', 'arcade', 'chess', 'chess-variants', 'chess-clock', 'matches', 'match-review', 'chess-social', 'tournament-pairing', 'tournaments', 'tournaments2', 'promos', 'mathlab', 'card-templates', 'design-assets', 'merge', 'assessment', 'fees', 'engagement', 'community-engagement', 'community-homework', 'journal-mine', 'members-import'] as $__d) {
+foreach (['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'mentoring', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'analytics-depth', 'growth', 'insight', 'insight-chat', 'journal', 'profiles', 'community', 'arcade', 'chess', 'chess-variants', 'chess-clock', 'matches', 'match-review', 'chess-social', 'tournament-pairing', 'tournaments', 'tournaments2', 'promos', 'mathlab', 'card-templates', 'design-assets', 'merge', 'assessment', 'fees', 'engagement', 'community-engagement', 'community-homework', 'journal-mine', 'members-import', 'member-self'] as $__d) {
     require_once __DIR__ . '/domain/' . $__d . '.php';
 }
 require_once __DIR__ . '/backend.php';

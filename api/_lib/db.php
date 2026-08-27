@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 109;
+const NGG_SCHEMA_TARGET = 110;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3207,6 +3207,46 @@ function db_migrate(PDO $db): void {
         109 => "
             ALTER TABLE members ADD COLUMN level TEXT DEFAULT '';
         " . NGG_BACKFILL_MEMBER_LEVELS . ";",
+
+        /* Member self-service: one table for everything a member ASKS the desk
+         * for. Four kinds today — a payment they say they have made, an appeal
+         * against a fine, a leave of absence, a replacement ID — and they share
+         * a shape because they share a life: raised by the member, read by an
+         * admin, decided once, with the decision and the reason kept.
+         *
+         * A payment claim is deliberately NOT a ledger row. fees.php is explicit
+         * that "a member confirming their own payment is not a thing this ledger
+         * will ever accept", and that is right: the ledger records money the
+         * desk has seen. A claim is the member telling the desk to go and look.
+         * Approving one posts the payment through the ordinary admin path, so
+         * there is exactly one way money enters the account.
+         */
+        110 => "
+            CREATE TABLE IF NOT EXISTS member_requests (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              requestId TEXT NOT NULL UNIQUE,
+              memberId TEXT NOT NULL,
+              kind TEXT NOT NULL,                 -- payment | appeal | leave | idcard
+              status TEXT NOT NULL DEFAULT 'open',-- open | approved | declined | withdrawn
+              subject TEXT DEFAULT '',
+              body TEXT DEFAULT '',
+              amount INTEGER DEFAULT 0,           -- payment claims only
+              reference TEXT DEFAULT '',          -- their bank/transfer reference
+              proofUrl TEXT DEFAULT '',
+              paidAt TEXT DEFAULT '',
+              fromDate TEXT DEFAULT '',           -- leave requests
+              toDate TEXT DEFAULT '',
+              refEntryId TEXT DEFAULT '',         -- the fine an appeal is against
+              decision TEXT DEFAULT '',
+              decidedBy TEXT DEFAULT '',
+              decidedAt TEXT DEFAULT '',
+              ledgerEntryId TEXT DEFAULT '',      -- what approving it posted, if anything
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mreq_member ON member_requests(memberId, createdAt);
+            CREATE INDEX IF NOT EXISTS idx_mreq_open ON member_requests(status, kind);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

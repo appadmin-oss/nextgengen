@@ -19161,5 +19161,192 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM audit_log WHERE event LIKE 'member.import.%'");
 })();
 
+
+/* ── Member self-service (member-self.php) ───────────────────────────────────
+ *
+ * Three sections a member reaches on their own. Two properties carry the
+ * weight, and both are the kind that fail silently:
+ *
+ *   · The memberId comes from the SESSION. Not one function here takes it from
+ *     a request body, because that parameter is the difference between a
+ *     self-service page and an enumeration endpoint over children.
+ *   · Money moves ONE way. fees.php says "a member confirming their own payment
+ *     is not a thing this ledger will ever accept" and that stays true: a
+ *     payment claim is evidence for a decision, and approving one posts through
+ *     fees_post exactly as the admin payment screen does.
+ */
+(function () {
+    $ADMIN = 'SELF-ADM';
+    $MEM   = 'SELF-M1';
+    $OTHER = 'SELF-M2';
+    $wipe = function () use ($MEM, $OTHER, $ADMIN) {
+        db_exec("DELETE FROM member_requests WHERE memberId LIKE 'SELF-%'");
+        db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'SELF-%'");
+        db_exec("DELETE FROM members WHERE memberId LIKE 'SELF-%'");
+        db_exec("DELETE FROM attendance WHERE studentId LIKE 'SELF-%'");
+    };
+    $wipe();
+    $keepFees = fees_settings();
+    db_insert('members', ['memberId' => $ADMIN, 'fullName' => 'Self Admin', 'email' => 'self-adm@example.com',
+        'role' => 'super_admin', 'status' => 'active', 'type' => 'NGG', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    foreach ([$MEM => 'Self Member', $OTHER => 'Other Member'] as $id => $name) {
+        db_insert('members', ['memberId' => $id, 'fullName' => $name, 'type' => 'NGG', 'status' => 'active',
+            'joinDate' => '2025-01-06', 'centre' => 'Egbeda', 'displayId' => $id,
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADMIN, 'data' => [
+        'enabled' => true, 'membershipFee' => 5000, 'membershipEveryMonths' => 12, 'monthlyDues' => 1000,
+        'trainingFee' => 0, 'balanceCap' => 0, 'remindEnabled' => false]]);
+
+    // ── The statement ──
+    fees_accrue_member(db_row('SELECT * FROM members WHERE memberId = ?', [$MEM]), null, '2025-04-10');
+    fees_post($MEM, 'payment', 2000, ['note' => 'Cash at the desk', 'by' => $ADMIN]);
+    fees_post($MEM, 'training', 75000, ['periodKey' => 'S-X', 'note' => 'Training', 'by' => 'accrual']);
+    $st = member_statement(['memberId' => $MEM]);
+    chk('self-service: the statement lists every line with a running total',
+        !empty($st['ok']) && count($st['lines']) >= 3
+        && array_key_exists('runningPayable', $st['lines'][0]));
+    chk('self-service: …the running total is the real money, not the programme cost',
+        (function () use ($st) {
+            $last = end($st['lines']);
+            // membership 5000 + 4 months dues 4000 − 2000 paid = 7000. The 75k
+            // training is a programme cost and stays out of what is payable.
+            return (int)$st['closingPayable'] === 7000 && (int)$last['runningPayable'] === 7000;
+        })());
+    chk('self-service: …while the whole-account total does include it',
+        (int)$st['closingTotal'] === 82000);
+    chk('self-service: …and a training line is marked as a programme cost, not a bill',
+        (bool)array_filter($st['lines'], fn($l) => $l['kind'] === 'training' && $l['real'] === false));
+    chk('self-service: with fees switched off the statement says so rather than erroring',
+        (function () use ($MEM, $ADMIN) {
+            backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADMIN, 'data' => ['enabled' => false]]);
+            $r = member_statement(['memberId' => $MEM]);
+            backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADMIN, 'data' => ['enabled' => true]]);
+            return !empty($r['ok']) && $r['enabled'] === false && $r['lines'] === [];
+        })());
+
+    // ── The record ──
+    db_insert('attendance', ['studentId' => $MEM, 'date' => '2025-01-11', 'checkInAt' => '2025-01-11T09:02:00Z', 'createdAt' => now_iso()]);
+    db_insert('attendance', ['studentId' => $MEM, 'date' => '2025-01-18', 'checkInAt' => '2025-01-18T09:00:00Z', 'createdAt' => now_iso()]);
+    $rec = member_records(['memberId' => $MEM]);
+    chk('self-service: the record counts the days actually attended',
+        !empty($rec['ok']) && (int)$rec['attendance']['present'] === 2);
+    /* A percentage over an unknown denominator is a number somebody will put in
+       a school application, so it is withheld rather than guessed. */
+    chk('self-service: …and withholds the rate when no term calendar says what the denominator is',
+        $rec['attendance']['rateKnown'] === false && $rec['attendance']['rate'] === null);
+    chk('self-service: …but gives it once the calendar does',
+        (function () use ($MEM) {
+            $keep = setting_get('memberProgramme');
+            setting_set('memberProgramme', ['enabled' => true, 'startDate' => '2025-01-04', 'endDate' => '2025-01-25',
+                'weekdays' => [6], 'holidays' => [], 'extraDays' => []], 'test');
+            $r = member_records(['memberId' => $MEM]);
+            if ($keep === null) db_exec("DELETE FROM settings WHERE settingKey = 'memberProgramme'");
+            else setting_set('memberProgramme', $keep, 'test');
+            // Saturdays 11, 18, 25 fall on/after the join date → 3 days ran, 2 attended.
+            return $r['attendance']['rateKnown'] === true && (int)$r['attendance']['daysRan'] === 3
+                && (int)$r['attendance']['rate'] === 67;
+        })());
+
+    // ── Requests ──
+    $mk = fn(array $o) => member_request_create($o + ['memberId' => $MEM]);
+    chk('self-service: a payment claim needs an amount', ($mk(['kind' => 'payment'])['error'] ?? '') === 'bad_amount');
+    chk('self-service: a leave request needs a start date', ($mk(['kind' => 'leave', 'body' => 'ill'])['error'] ?? '') === 'bad_dates');
+    chk('self-service: …and a reason, so the desk can answer without asking',
+        ($mk(['kind' => 'leave', 'fromDate' => '2026-02-02'])['error'] ?? '') === 'need_reason');
+    chk('self-service: an appeal needs the reason it is being appealed',
+        ($mk(['kind' => 'appeal'])['error'] ?? '') === 'need_reason');
+    chk('self-service: a kind nobody defined is refused', ($mk(['kind' => 'refund'])['error'] ?? '') === 'unknown_kind');
+
+    $claim = $mk(['kind' => 'payment', 'amount' => 3000, 'reference' => 'TRF-99', 'paidAt' => '2026-02-01']);
+    chk('self-service: a valid claim is raised and titled for the desk',
+        !empty($claim['ok']) && $claim['request']['status'] === 'open'
+        && str_contains($claim['request']['subject'], '3,000'));
+    /* THE ONE THAT MATTERS. The claim is the member telling the desk to look —
+       it must not have moved a single naira on its own. */
+    chk('self-service: raising a claim does NOT touch the ledger',
+        (int)member_statement(['memberId' => $MEM])['closingPayable'] === 7000
+        && !db_row("SELECT id FROM member_ledger WHERE memberId = ? AND reference = 'TRF-99'", [$MEM]));
+
+    chk('self-service: a member sees their own requests and nobody else\'s',
+        (function () use ($MEM, $OTHER) {
+            member_request_create(['memberId' => $OTHER, 'kind' => 'idcard']);
+            $mine = member_requests_list(['memberId' => $MEM])['requests'];
+            $theirs = member_requests_list(['memberId' => $OTHER])['requests'];
+            return count($mine) === 1 && count($theirs) === 1
+                && $mine[0]['requestId'] !== $theirs[0]['requestId'];
+        })());
+    chk('self-service: an appeal can only cite a charge on the member\'s OWN account',
+        (function () use ($MEM, $OTHER) {
+            $e = fees_post($OTHER, 'fine', 5000, ['note' => 'theirs', 'by' => 'test']);
+            $r = member_request_create(['memberId' => $MEM, 'kind' => 'appeal', 'body' => 'not mine',
+                                        'refEntryId' => (string)$e['entryId']]);
+            $row = db_row('SELECT refEntryId FROM member_requests WHERE requestId = ?', [$r['request']['requestId']]);
+            return !empty($r['ok']) && (string)$row['refEntryId'] === '';
+        })());
+    chk('self-service: a member cannot bury the queue with the same request',
+        (function () use ($MEM) {
+            for ($i = 0; $i < 4; $i++) $last = member_request_create(['memberId' => $MEM, 'kind' => 'idcard']);
+            return ($last['error'] ?? '') === 'too_many_open';
+        })());
+    chk('self-service: withdrawing is only ever your own, and only while it is open',
+        (function () use ($MEM, $OTHER) {
+            $theirs = member_requests_list(['memberId' => $OTHER])['requests'][0]['requestId'];
+            $stolen = member_request_withdraw(['memberId' => $MEM, 'requestId' => $theirs]);
+            $mine = member_requests_list(['memberId' => $MEM])['requests'][0]['requestId'];
+            $ok = member_request_withdraw(['memberId' => $MEM, 'requestId' => $mine]);
+            $again = member_request_withdraw(['memberId' => $MEM, 'requestId' => $mine]);
+            return ($stolen['error'] ?? '') === 'not_found' && !empty($ok['ok'])
+                && ($again['error'] ?? '') === 'already_decided';
+        })());
+
+    // ── The desk ──
+    chk('self-service (desk): the queue is admin-only',
+        empty(admin_requests_list(['requesterId' => $MEM])['ok'])
+        && !empty(admin_requests_list(['requesterId' => $ADMIN])['ok']));
+    chk('self-service (desk): declining without a reason is refused',
+        (function () use ($ADMIN, $claim) {
+            $r = admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $claim['request']['requestId'], 'approve' => false]);
+            return ($r['error'] ?? '') === 'need_reason';
+        })());
+    chk('self-service (desk): approving a claim posts the payment through the ledger\'s own door',
+        (function () use ($ADMIN, $MEM, $claim) {
+            $r = admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $claim['request']['requestId'],
+                                       'approve' => true, 'decision' => 'Found it on the statement.']);
+            $row = db_row('SELECT ledgerEntryId, status FROM member_requests WHERE requestId = ?', [$claim['request']['requestId']]);
+            $entry = db_row('SELECT * FROM member_ledger WHERE entryId = ?', [(string)$row['ledgerEntryId']]);
+            return !empty($r['ok']) && (string)$row['status'] === 'approved'
+                && $entry && (int)$entry['amount'] === 3000 && (string)$entry['kind'] === 'payment'
+                && (int)member_statement(['memberId' => $MEM])['closingPayable'] === 4000;
+        })());
+    chk('self-service (desk): …and the member is told, without being told who decided it',
+        (function () use ($MEM, $claim) {
+            $n = db_row("SELECT title FROM notifications WHERE memberId = ? ORDER BY id DESC LIMIT 1", [$MEM]);
+            $pub = member_requests_list(['memberId' => $MEM])['requests'];
+            $one = null; foreach ($pub as $x) if ($x['requestId'] === $claim['request']['requestId']) $one = $x;
+            return $n && str_contains((string)$n['title'], 'approved')
+                && $one && $one['decision'] === 'Found it on the statement.'
+                && !array_key_exists('decidedBy', $one);
+        })());
+    chk('self-service (desk): the desk may post what actually arrived, not what was claimed',
+        (function () use ($ADMIN, $MEM) {
+            $c = member_request_create(['memberId' => $MEM, 'kind' => 'payment', 'amount' => 9000]);
+            admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $c['request']['requestId'],
+                                  'approve' => true, 'decision' => 'Only 1,000 arrived.', 'amount' => 1000]);
+            return (int)member_statement(['memberId' => $MEM])['closingPayable'] === 3000;
+        })());
+    chk('self-service (desk): a decided request cannot be decided twice',
+        (function () use ($ADMIN, $claim) {
+            $r = admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $claim['request']['requestId'],
+                                       'approve' => true, 'decision' => 'again']);
+            return ($r['error'] ?? '') === 'already_decided';
+        })());
+
+    $wipe();
+    db_exec("DELETE FROM notifications WHERE memberId LIKE 'SELF-%'");
+    db_exec("DELETE FROM audit_log WHERE event LIKE 'member.request.%'");
+    setting_set('fees', $keepFees, 'test');
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
