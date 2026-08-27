@@ -166,28 +166,40 @@ has to settle. From the August 2026 workbook, the ones that recur:
 ## After the import: nobody has a headshot
 
 The workbook's `Image` column is empty for every member, so every imported
-record has a blank `photoUrl`. That matters for the printed ID, because
-`NggcMemberCard` sizes its empty photo box at 1.12 × its own width — taller than
-any portrait — and the card then overflows its own physical height:
+record has a blank `photoUrl`. The card handles that now, and the print drawer
+says so before a run.
 
-| Card | Content height | Card height | Overrun |
-|---|---|---|---|
-| A5, no headshot | 223.2mm | 148×210mm | **13.2mm** — eats the 12mm bottom margin, putting the QR in the trim |
-| Wallet, no headshot | 96.1mm | 54×85mm | **11.1mm** — no margin to absorb it, so the footer row is cut in half |
-| Either size, with a headshot | exactly the card | | none |
+**The card composes either way.** The photo area used to be sized at 1.12 × the
+card's own width — taller than any portrait — so a card with no headshot pushed
+itself past its own trim: 13.2mm over on A5 (eating the 12mm bottom margin and
+putting the QR in the trim) and 11.1mm over on the wallet size (no margin to
+absorb it, so the footer row was cut in half). The photo box is now a fixed
+height per size — 102.3mm on A5, 37.8mm on the wallet — bled symmetrically to
+the card edges. Content height is exactly the card height in all three cases:
+with a portrait, with a square crop, and with nothing.
 
 ![The same member with and without a headshot](screens/26-nggc-member-id.png)
 
-So the cards are printable as soon as the headshots are, and not before. Two
-ways out, in the order they are worth trying:
+**The print drawer counts the gaps first.** Control Room → Members → Print IDs
+reads the filtered roster when it opens rather than when Print is pressed, so
+the button carries the real number and the selection can be checked before any
+paper is committed:
 
-1. **Collect the photographs.** The card is designed around one, the guardian
-   retake link already exists, and a member ID with no face on it is weak
-   identification anyway.
-2. **Make the card compose without one** — give the photo area a fixed box
-   rather than a width multiple, so the layout is the same with a portrait, with
-   a square crop, or with nothing. That is a change to a spec'd print design
-   (consultation REV 1 · Aug 2026), so it wants a decision, not a patch.
+![What is missing across the selection, before the run](screens/28-id-preflight.png)
+
+It counts three things, each of which prints perfectly well and is wrong in the
+hand: no photograph (empty box), no printed ID (the card falls back to the raw
+member id), no discipline (that line is left off). It is a heads-up, not a
+block — an ID with an empty photo box is still an ID, and a cohort whose
+photographs are still being collected still needs cards.
+
+Anything the renderer could not draw is listed in the drawer and stays there.
+It used to be a toast truncated to three names, which left a run with eleven
+gaps with nobody able to say which eleven.
+
+Collecting the photographs is still the right end state — the card is designed
+around one, the guardian retake link already exists, and a member ID with no
+face on it is weak identification. It is no longer a blocker on printing.
 
 ## Tests
 
@@ -195,5 +207,6 @@ ways out, in the order they are worth trying:
 npm run test:roster      # the extractor: which sheet wins, and what it refuses
 npm run test:rosterui    # the drawer: you cannot apply what you have not read
 npm run test:api         # the import: idempotency, staff guards, notes fencing
+npm run test:idbatch     # the print drawer: the preflight counts, and the run order
 npm run shot:memberid    # re-render docs/screens/26-nggc-member-id.png
 ```

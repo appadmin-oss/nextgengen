@@ -995,8 +995,8 @@ function NggcMemberCard(props) {
   var NAVY = "#0B1F51", AMBER = "#FCB316", SEC = "#5C6474", CAP = "#9AA0AC", HAIR = "#E6E8EC", DIV = "#C9CCD4";
   var wallet = size === "wallet";
   var S = wallet
-    ? { W: 54, H: 85, padX: 5, padB: 5, photoW: 48, pillPt: 5.4, namePt: 11, discPt: 5.6, gap: 2.4, hair: 0.3, footTop: 3, qr: 13, logoW: 12, rolePt: 4.8, capPt: 4.2, divH: 2.6, mark: 34, gapD: 2, pillPad: "1.3mm 3.4mm", pillTrk: ".2em" }
-    : { W: 148, H: 210, padX: 14, padB: 12, photoW: 130, pillPt: 8.5, namePt: 23, discPt: 10.5, gap: 4.5, hair: 0.5, footTop: 7, qr: 20, logoW: 22, rolePt: 7, capPt: 7, divH: 4.5, mark: 95, gapD: 3.5, pillPad: "2.4mm 6.5mm", pillTrk: ".3em" };
+    ? { W: 54, H: 85, padX: 5, padB: 5, photoW: 48, photoH: 37.8, pillPt: 5.4, namePt: 11, discPt: 5.6, gap: 2.4, hair: 0.3, footTop: 3, qr: 13, logoW: 12, rolePt: 4.8, capPt: 4.2, divH: 2.6, mark: 34, gapD: 2, pillPad: "1.3mm 3.4mm", pillTrk: ".2em" }
+    : { W: 148, H: 210, padX: 14, padB: 12, photoW: 130, photoH: 102.3, pillPt: 8.5, namePt: 23, discPt: 10.5, gap: 4.5, hair: 0.5, footTop: 7, qr: 20, logoW: 22, rolePt: 7, capPt: 7, divH: 4.5, mark: 95, gapD: 3.5, pillPad: "2.4mm 6.5mm", pillTrk: ".3em" };
   var mm = function (v) { return v + "mm"; }, pt = function (v) { return v + "pt"; };
 
   // Name fit (§4): one line by default; ≥22 chars steps to 20pt; ≥28 breaks
@@ -1009,19 +1009,48 @@ function NggcMemberCard(props) {
     : [h("span", { key: "g", style: { fontWeight: 700 } }, nm.given), nm.family ? " " : "",
        nm.family ? h("span", { key: "f", style: { fontWeight: 300 } }, nm.family) : null];
 
-  var amber = h("svg", { key: "mark", viewBox: "0 0 200 150", width: mm(S.mark), height: "auto", "aria-hidden": "true",
+  /* height comes from the viewBox ratio (200×150). `height="auto"` is not a
+     valid SVG length: Chrome logs it and falls back, and a rasteriser that
+     does not fall back the same way puts the mark somewhere else on the
+     printed card than it sits on screen. */
+  var amber = h("svg", { key: "mark", viewBox: "0 0 200 150", width: mm(S.mark), height: mm(S.mark * 0.75), "aria-hidden": "true",
       style: { position: "absolute", top: mm(wallet ? -5 : -13), right: mm(wallet ? -3 : -8), zIndex: 0 } },
     h("path", { d: "M18 118 C18 44 66 22 106 40 C150 60 150 108 108 118 C82 124 62 100 92 82",
       fill: "none", stroke: AMBER, strokeWidth: 32, strokeLinecap: "round", strokeLinejoin: "round" }));
 
-  var photoWrap = h("div", { key: "pw", style: { width: mm(S.photoW), margin: "0 auto", flex: "none", position: "relative" } }, [
+  /* ── The photo area is a FIXED box ────────────────────────────────────────
+   *
+   * It used to be sized by the image: a photograph rendered at its own aspect,
+   * and an empty slot at 1.12 × its own width. So the card composed differently
+   * for every member, and for a member with no headshot it did not compose at
+   * all — content measured 223.2mm inside a 210mm A5 and 96.1mm inside an 85mm
+   * wallet card, and since the card clips, the wallet size lost its whole
+   * footer: no QR, no role line, no mark. Nobody imported from the members
+   * workbook has a photograph, so that was every one of them.
+   *
+   * A fixed box with object-fit means the layout is identical with a portrait,
+   * a square crop, a landscape snap or nothing at all — which is the property
+   * a printed card needs, because the trim is the same for everybody.
+   *
+   * The crop sits high (22%) rather than centred: passport-style photographs
+   * put the face in the upper half, and a centred crop takes the top off it. */
+  /* Centred by hand, not by `margin: 0 auto`. The photo is deliberately WIDER
+     than the padded column so it bleeds to the card edge — and auto margins do
+     not centre a child wider than its container, they pin it left. So the bleed
+     was landing entirely on the right: 10mm on the A5, 4mm on the wallet. */
+  var bleed = (S.photoW - (S.W - 2 * S.padX)) / 2;
+  var photoWrap = h("div", { key: "pw", style: { width: mm(S.photoW), height: mm(S.photoH),
+      marginLeft: mm(-bleed), flex: "none", position: "relative" } }, [
     amber,
-    photo
-      ? h("div", { key: "pi", style: { position: "relative", zIndex: 1, WebkitMaskImage: "linear-gradient(#000 84%,transparent)", maskImage: "linear-gradient(#000 84%,transparent)" } }, [
-          h("img", { key: "im", src: photo, crossOrigin: "anonymous", alt: "", style: { width: "100%", display: "block", filter: "grayscale(1) contrast(1.03)" } }),
-          h("div", { key: "tint", style: { position: "absolute", inset: 0, background: NAVY, opacity: 0.34, mixBlendMode: "multiply" } }),
-        ])
-      : h("div", { key: "ph", style: { position: "relative", zIndex: 1, width: "100%", height: mm(S.photoW * 1.12), background: "#eef0f4" } }),
+    h("div", { key: "pi", style: { position: "absolute", inset: 0, zIndex: 1, overflow: "hidden",
+        background: photo ? "transparent" : "#eef0f4",
+        WebkitMaskImage: "linear-gradient(#000 84%,transparent)", maskImage: "linear-gradient(#000 84%,transparent)" } },
+      photo ? [
+        h("img", { key: "im", src: photo, crossOrigin: "anonymous", alt: "",
+          style: { width: "100%", height: "100%", objectFit: "cover", objectPosition: "center 22%",
+                   display: "block", filter: "grayscale(1) contrast(1.03)" } }),
+        h("div", { key: "tint", style: { position: "absolute", inset: 0, background: NAVY, opacity: 0.34, mixBlendMode: "multiply" } }),
+      ] : null),
   ]);
 
   var pill = h("span", { key: "pill", style: { fontFamily: "'IBM Plex Mono',monospace", fontWeight: 500, fontSize: pt(S.pillPt), letterSpacing: S.pillTrk, color: "#fff", background: NAVY, borderRadius: "999px", padding: S.pillPad, whiteSpace: "nowrap" } }, did || "—");

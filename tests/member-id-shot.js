@@ -93,7 +93,9 @@ function loadChromium() {
   h1 + p { margin: 0 0 26px; color: #5b6478; font-size: 13px; max-width: 860px; line-height: 1.6; }
   .row { display: flex; gap: 40px; align-items: flex-start; }
   .lane { display: flex; flex-direction: column; }
-  .idcard { box-shadow: 0 18px 44px rgba(22,34,62,.20); border-radius: 4px; }
+  /* width:max-content, or the flex column stretches the card's own wrapper to
+     the caption's width and the wallet card sits in a white slab. */
+  .idcard { box-shadow: 0 18px 44px rgba(22,34,62,.20); border-radius: 4px; width: max-content; align-self: flex-start; }
   .cap { font-size: 12.5px; line-height: 1.5; color: #5b6478; margin-top: 12px; max-width: 360px; }
   .cap b { color: #16223e; display: block; font-size: 13.5px; margin-bottom: 2px; }
   .facts { margin-top: 10px; font-size: 12px; line-height: 1.7; color: #16223e; }
@@ -140,14 +142,15 @@ function View() {
     e('h1', null, 'NGGC member ID — ' + (m.displayId || '') + ' · ' + (m.fullName || '')),
     e('p', null, 'The same member row at both physical sizes, and with and without a headshot. '
       + 'The printed ID is the band under the photograph; the disciplines sit under the name with a hairline between them. '
-      + 'Nobody imported from the workbook has a photograph on file, so the middle card is what prints today.'),
+      + 'The photo area is a fixed box, so the card composes the same way whether or not a member has a headshot on file — '
+      + 'which matters here, because nobody imported from the members workbook has one.'),
     e('div', { className: 'row' },
       e(Lane, { member: withPhoto, size: 'a5', title: 'A5 · with a headshot',
-        note: 'How the design composes when there is a photograph: content measures exactly 210mm, and the footer keeps its 12mm bottom margin.' }),
+        note: 'A portrait is cropped to the box, high rather than centred, because a passport-style photograph puts the face in the upper half.' }),
       e(Lane, { member: m, size: 'a5', title: 'A5 · no headshot — as imported', facts: true,
-        note: 'The empty photo box is 1.12 × its own width — taller than any portrait. Content measures 223mm inside a 210mm card, so the 13.2mm the footer overruns comes off the bottom margin and the QR ends up in the trim.' }),
+        note: 'The same layout with an empty box. Content measures exactly 210mm either way; it used to measure 223mm here and lose the footer off the bottom of the trim.' }),
       e(Lane, { member: m, size: 'wallet', title: 'Wallet · 54×85mm, no headshot',
-        note: 'The same overflow at lanyard size: 11.1mm past 85mm. There is no margin to absorb it here, so the footer row itself is cut in half.' })));
+        note: 'Lanyard size, where it mattered most: the footer used to overrun 85mm by 11.1mm with no margin to absorb it, and the QR was cut in half.' })));
 }
 
 window.nggcEnsureFonts()
@@ -213,7 +216,7 @@ window.nggcEnsureFonts()
   } finally {
     await browser.close();
     server.kill();
-    for (const f of [FIX, FACE]) { try { fs.unlinkSync(f); } catch (_) {} }
+    if (!process.env.KEEP_FIXTURE) for (const f of [FIX, FACE]) { try { fs.unlinkSync(f); } catch (_) {} }
   }
   console.log('\n✅ PASS: member ID card rendered');
 })().catch((e) => { console.error('❌ FAIL: ' + e.message); process.exit(1); });

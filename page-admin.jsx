@@ -1633,8 +1633,40 @@ function AdminMemberIdBatch({ filters, sort, total, onClose }) {
   const [dpi, setDpi] = React.useState(300);
   const [design, setDesign] = React.useState("classic"); // classic | a5 | a5-wallet
   const [run, setRun] = React.useState(null);        // { i, n, note } while rendering
+  const [roster, setRoster] = React.useState(null);  // the members this run covers
+  const [loadErr, setLoadErr] = React.useState("");
+  const [failed, setFailed] = React.useState([]);
   const cancelRef = React.useRef(false);
   const doneRef = React.useRef(false);
+
+  /* ── Read the roster when the drawer opens, not when Print is pressed ──────
+   *
+   * Two reasons, and the second is the one that matters. The count on the
+   * button becomes the real number rather than the table's `total`; and the
+   * cards can be CHECKED before a run instead of after it. A print run is
+   * paper, a print shop and a day — finding out afterwards that ninety of the
+   * hundred cards have an empty photo box is the expensive way to learn it. */
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.admin.members.list(Object.assign({}, filters, {
+      all: 1, sort: (sort && sort.col) || "", dir: (sort && sort.dir) || "" }))
+      .then(r => { if (alive) setRoster(r.members || []); })
+      .catch(e => { if (alive) setLoadErr(e.code || e.message || "load_failed"); });
+    return () => { alive = false; };
+    // eslint-disable-next-line
+  }, []);
+
+  /* What is missing across the selection. Each of these makes a card that is
+     printable but wrong in a way nobody notices until it is in a hand. */
+  const gaps = React.useMemo(() => {
+    const r = roster || [];
+    return {
+      n: r.length,
+      noPhoto: r.filter(m => !/^https?:\/\//.test(String(m.photoUrl || ""))).length,
+      noPrintedId: r.filter(m => !String(m.displayId || "").trim()).length,
+      noDiscipline: r.filter(m => !String(m.disciplines || m.track || "").trim()).length,
+    };
+  }, [roster]);
 
   const MODES = [
     { value: "zip", label: "ZIP of images", hint: "A PNG per member, named for them — for emailing or a print merge." },
@@ -1647,20 +1679,12 @@ function AdminMemberIdBatch({ filters, sort, total, onClose }) {
     const exportFn = design === "classic" ? window.MemberIDCardBatch : window.NggcMemberCardExport;
     if (!exportFn) { toast.error("The card renderer isn't loaded — reload and try again."); return; }
     cancelRef.current = false;
-    setRun({ i: 0, n: total || 0, note: "reading the roster…" });
-    let members = [];
-    try {
-      /* The order on SCREEN, carried into the print.
-         This read passed the filters and dropped the sort, so a coordinator
-         who put the roster in name order and pressed Print IDs got a stack in
-         createdAt order — a different sequence from the list they were looking
-         at, with nothing to say so. A print run's order is the whole reason
-         somebody sorted the table. */
-      const r = await NGGApi.admin.members.list(Object.assign({}, filters, {
-        all: 1, sort: (sort && sort.col) || "", dir: (sort && sort.dir) || "" }));
-      members = r.members || [];
-    } catch (e) { toast.error(e.code || e.message || "Couldn't read the roster", "Print failed"); setRun(null); return; }
-    if (!members.length) { toast.error("Nobody matches these filters."); setRun(null); return; }
+    setFailed([]);
+    /* Already read, in the order the table was showing — the sort is carried
+       into the print because a run's order is the whole reason somebody sorted
+       the table. */
+    const members = roster || [];
+    if (!members.length) { toast.error("Nobody matches these filters."); return; }
     setRun({ i: 0, n: members.length, note: "" });
     try {
       const out = await exportFn(members, {
@@ -1670,11 +1694,15 @@ function AdminMemberIdBatch({ filters, sort, total, onClose }) {
         onProgress: (i, n, m) => setRun({ i, n, note: (m && m.fullName) || "" }),
       });
       doneRef.current = true;
+      /* Kept in the drawer, not only in a toast. A toast truncated the list to
+         three names and then vanished, so a run with eleven gaps left nobody
+         able to say which eleven. */
+      setFailed(out.failed || []);
       if (out.made > 0) {
         const msg = out.made + " card" + (out.made === 1 ? "" : "s")
-          + (out.failed.length ? " · " + out.failed.length + " could not be rendered (" + out.failed.slice(0, 3).join(", ") + (out.failed.length > 3 ? ", …" : "") + ")" : "");
+          + (out.failed.length ? " · " + out.failed.length + " could not be rendered" : "");
         out.failed.length ? toast.error(msg, "Printed with gaps") : toast.success(msg, "Printed");
-        if (!cancelRef.current) { close(); return; }
+        if (!cancelRef.current && !out.failed.length) { close(); return; }
       } else {
         toast.error(cancelRef.current ? "Cancelled before anything was written." : "Nothing could be rendered.");
       }
@@ -1695,9 +1723,40 @@ function AdminMemberIdBatch({ filters, sort, total, onClose }) {
         </div>
         <div className="admin-fields">
           <p className="admin-hint">
-            One card for every member the current filters match — <b>{fmtNum(total || 0)}</b> in all.
-            Narrow the list first (centre, type, status) to print a subset.
+            One card for every member the current filters match — <b>{fmtNum(roster ? roster.length : (total || 0))}</b> in all,
+            in the order the table is sorted. Narrow the list first (centre, type, status) to print a subset.
           </p>
+
+          {/* ── What is missing, BEFORE the run ────────────────────────────
+              A card with an empty photo box prints perfectly well and is wrong
+              in the hand. Saying so here costs a glance; finding out costs a
+              print run. */}
+          {loadErr ? <ErrorState code={loadErr}/> : !roster ? <div className="dash-spinner"/> : (
+            <div className="admin-card admin-note-card" style={{ marginBottom: 4 }}>
+              {gaps.noPhoto + gaps.noPrintedId + gaps.noDiscipline === 0 ? (
+                <div className="mono" style={{ fontSize: 12 }}>
+                  All {fmtNum(gaps.n)} have a photograph, a printed ID and a discipline.
+                </div>
+              ) : (
+                <React.Fragment>
+                  <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 8 }}>
+                    Before you print
+                  </div>
+                  {[[gaps.noPhoto, "have no photograph — the card prints with an empty box"],
+                    [gaps.noPrintedId, "have no printed ID — the card falls back to the raw member id"],
+                    [gaps.noDiscipline, "have no discipline — that line is left off the card"]]
+                    .filter(([n]) => n > 0).map(([n, what], i) => (
+                      <div key={i} style={{ fontSize: 13, marginBottom: 3 }}>
+                        <b>{fmtNum(n)}</b> of {fmtNum(gaps.n)} {what}.
+                      </div>
+                    ))}
+                  <p className="admin-hint" style={{ marginBottom: 0 }}>
+                    Printable either way — this is a heads-up, not a block.
+                  </p>
+                </React.Fragment>
+              )}
+            </div>
+          )}
           <label className="admin-field"><span className="admin-label">Card design</span>
             <select className="admin-select" value={design} onChange={e => setDesign(e.target.value)} disabled={!!run}>
               <option value="classic">Classic · 54×85mm</option>
@@ -1718,6 +1777,16 @@ function AdminMemberIdBatch({ filters, sort, total, onClose }) {
               <option value={600}>600dpi · fine</option>
             </select>
           </label>
+          {failed.length > 0 && (
+            <div className="admin-card admin-note-card" style={{ marginTop: 4 }}>
+              <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "#b03535", marginBottom: 6 }}>
+                {fmtNum(failed.length)} could not be rendered
+              </div>
+              <div style={{ maxHeight: 160, overflowY: "auto", fontSize: 13, lineHeight: 1.7 }}>
+                {failed.map((n, i) => <div key={i}>{n}</div>)}
+              </div>
+            </div>
+          )}
           {run && (
             <p className="admin-hint" role="status" style={{ marginTop: 4 }}>
               {run.note === "reading the roster…" || run.note === "writing the file…"
@@ -1730,8 +1799,8 @@ function AdminMemberIdBatch({ filters, sort, total, onClose }) {
           {run
             ? <button type="button" className="btn btn-ghost" onClick={() => { cancelRef.current = true; }}>Stop</button>
             : <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>}
-          <button type="button" className="btn btn-primary" onClick={start} disabled={!!run || !total}>
-            {run ? "Working…" : "Print " + fmtNum(total || 0)}
+          <button type="button" className="btn btn-primary" onClick={start} disabled={!!run || !roster || !roster.length}>
+            {run ? "Working…" : "Print " + fmtNum(roster ? roster.length : (total || 0))}
           </button>
         </div>
       </div>

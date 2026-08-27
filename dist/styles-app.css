@@ -6281,3 +6281,10 @@ body.own-chrome .fab-top { display: none; }
    wizard, so it is set left like the prose above it. */
 .trn-host-card { text-align: left; }
 .trn-host-card .admin-hint { max-width: 62ch; margin-left: 0; }
+
+/* Reading panels inside a drawer. `.admin-card` is the console's clickable
+   tile — centred text, a pointer cursor, a hover lift — and the print
+   drawer's preflight and failure list are none of those things: they are
+   prose you read before pressing the button. Same surface, plain behaviour. */
+.admin-note-card { text-align: left; cursor: default; }
+.admin-note-card:hover { transform: none; }
