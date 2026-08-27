@@ -318,21 +318,51 @@ without either:
 - **Schema migrations** apply automatically on the first request after a deploy
   (`db_migrate` runs against the target version) — no CLI step.
 
-  One caveat on **MySQL**, verified against MariaDB 10.11 in August 2026:
+  One rule on **MySQL**, verified against MariaDB 10.11 in August 2026:
   `db_apply_mysql_schema()` replays `db/schema-mysql.sql` but executes only
   `CREATE` / `ALTER` / `INSERT`. A migration that has to touch existing **rows**
   is read from that file and skipped, while the same migration does run on
-  SQLite through the ladder. Row-touching migrations therefore belong in code —
-  see `NGG_BACKFILL_MEMBER_LEVELS` in `api/_lib/db.php` and the fixup block at
-  the end of `db_apply_mysql_schema()`. `php api/tests/run.php` fails if a new
-  one is added to the .sql file instead.
+  SQLite through the ladder. Row-touching migrations therefore live in
+  `NGG_MYSQL_ROW_FIXUPS` in `api/_lib/db.php`, which the replay runs once per
+  deploy; each statement is guarded so later runs match nothing, and one that
+  does change rows logs its count. `php api/tests/run.php` fails if a new one is
+  added to the .sql file instead.
 
-  Six statements predating that rule have never run on a MySQL deployment and
-  are pinned in the suite rather than quietly fixed, because applying them
-  rewrites live rows: the `summer_students` `firstName` / `lastName` split, its
-  `sex = gender` copy, the `qr_codes.expiresAt` default, and `notifiedAt` on
-  `community_posts` and `community_comments`. On a MySQL host those columns are
-  blank where a SQLite host has them filled. Worth a decision; not urgent.
+  **Seven backfills had been dead that way** and apply on the first deploy after
+  this: the `summer_students` `firstName` / `lastName` split, its `sex = gender`
+  copy, `qr_codes.expiresAt`, `notifiedAt` on `community_posts` and
+  `community_comments`, and `members.level`. Six were merely skipped; the
+  `qr_codes` one was also **wrong** — it passed an ISO-8601 string
+  (`2026-08-27T08:56:44Z`) straight to `DATE_ADD`, which MySQL cannot parse and,
+  under `STRICT_ALL_TABLES`, raises error 1292. It would have thrown on its
+  first row had it ever run. It now takes the date part first and skips a
+  timestamp it cannot read.
+
+  One of them changes behaviour rather than filling a blank. `qr_codes.expiresAt`
+  gives every assigned card an expiry 90 days after it was issued, so a card
+  issued more than 90 days ago becomes **expired**, and `summer_scan_checkin()`
+  refuses it with `id_expired`. That is migration 62 doing what it always said,
+  but on a host where it never ran it lands as a change. Count the blast radius
+  before deploying:
+
+  ```sql
+  SELECT COUNT(*) FROM qr_codes
+   WHERE expiresAt = '' AND status = 'assigned'
+     AND DATE_ADD(SUBSTR(COALESCE(NULLIF(assignedAt,''), createdAt), 1, 10), INTERVAL 90 DAY) < CURDATE();
+  ```
+
+  The 90 days is hard-coded, matching the SQLite ladder — a backfill has to
+  land both engines in the same state, so it does not read the configurable
+  `idcard.validityDays` (that governs newly *issued* cards and would not change
+  what this writes). If the count is uncomfortable, give those rows a date
+  before you deploy: the fixup only fills a **blank** `expiresAt`, so anything
+  already dated is left alone.
+
+  ```sql
+  UPDATE qr_codes SET expiresAt = '2027-06-30'
+   WHERE expiresAt = '' AND status = 'assigned';
+  ```
+
 - **The first admin sign-in** self-provisions the super-admin, so you never need
   a shell to bootstrap access.
 - **All transactional email is synchronous** — registration confirmations,

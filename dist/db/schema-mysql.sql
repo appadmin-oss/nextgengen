@@ -1027,14 +1027,9 @@ INSERT INTO schema_version (version) VALUES (59) ON DUPLICATE KEY UPDATE version
 -- split the card was already using.
 ALTER TABLE summer_students ADD COLUMN firstName VARCHAR(120) DEFAULT '';
 ALTER TABLE summer_students ADD COLUMN lastName VARCHAR(120) DEFAULT '';
-UPDATE summer_students
-   SET firstName = CASE WHEN LOCATE(' ', TRIM(fullName)) > 0
-                        THEN SUBSTRING(TRIM(fullName), 1, LOCATE(' ', TRIM(fullName)) - 1)
-                        ELSE TRIM(fullName) END
- WHERE firstName = '' AND TRIM(COALESCE(fullName, '')) != '';
-UPDATE summer_students
-   SET lastName = TRIM(REPLACE(TRIM(fullName), firstName, ''))
- WHERE lastName = '' AND firstName != '' AND TRIM(fullName) != firstName;
+-- The split itself runs from NGG_MYSQL_ROW_FIXUPS in api/_lib/db.php: this
+-- file's replay executes only CREATE / ALTER / INSERT, so an UPDATE here is
+-- read and skipped.
 INSERT INTO schema_version (version) VALUES (60) ON DUPLICATE KEY UPDATE version = version;
 
 -- 61: the parent's actual signature. A consent record with no signature is a
@@ -1047,9 +1042,7 @@ INSERT INTO schema_version (version) VALUES (61) ON DUPLICATE KEY UPDATE version
 
 -- 62: ID cards expire. A summer card is a season pass, not a life membership.
 ALTER TABLE qr_codes ADD COLUMN expiresAt VARCHAR(20) DEFAULT '';
-UPDATE qr_codes
-   SET expiresAt = DATE_FORMAT(DATE_ADD(COALESCE(NULLIF(assignedAt,''), createdAt), INTERVAL 90 DAY), '%Y-%m-%d')
- WHERE expiresAt = '' AND status = 'assigned';
+-- The expiry backfill runs from NGG_MYSQL_ROW_FIXUPS in api/_lib/db.php.
 INSERT INTO schema_version (version) VALUES (62) ON DUPLICATE KEY UPDATE version = version;
 
 -- 63: which programme a mentor serves. `source` means where they came from,
@@ -1421,8 +1414,7 @@ INSERT INTO schema_version (version) VALUES (77) ON DUPLICATE KEY UPDATE version
 -- analytics workspace read `gender` and reported every child as "Not recorded".
 -- `sex` is now the single fact; `gender` stays in place (dropping a column on a
 -- live host is the larger risk) and is copied across where `sex` is empty.
-UPDATE summer_students SET sex = gender
- WHERE (sex IS NULL OR sex = '') AND gender IS NOT NULL AND gender != '';
+-- The gender → sex copy runs from NGG_MYSQL_ROW_FIXUPS in api/_lib/db.php.
 CREATE INDEX idx_sstu_sex ON summer_students(sex);
 CREATE INDEX idx_vol_sex ON volunteers(sex);
 
@@ -1875,8 +1867,7 @@ ALTER TABLE community_comments ADD COLUMN notifiedAt VARCHAR(40) DEFAULT '';
 -- Everything already live has had whatever notifications it was going to get.
 -- Backfilled so a hide-and-reapprove on an old post cannot suddenly notify
 -- people about a conversation from months ago.
-UPDATE community_posts SET notifiedAt = createdAt WHERE status = 'published' AND (notifiedAt IS NULL OR notifiedAt = '');
-UPDATE community_comments SET notifiedAt = createdAt WHERE status = 'published' AND (notifiedAt IS NULL OR notifiedAt = '');
+-- Both stamps run from NGG_MYSQL_ROW_FIXUPS in api/_lib/db.php.
 
 -- The feed's main ordering (pinned first, then newest) had no index that could
 -- serve it — every page was a filesort over the whole table.
@@ -2359,10 +2350,8 @@ INSERT INTO schema_version (version) VALUES (108) ON DUPLICATE KEY UPDATE versio
 -- blank rather than guessed at.
 -- The backfill itself is NOT here. db_apply_mysql_schema() executes only
 -- CREATE / ALTER / INSERT from this file, so an UPDATE placed here is read and
--- skipped — which is exactly how the first cut of this migration added the
--- column on a no-SSH MySQL host and left every level blank. It lives in
--- db.php as NGG_BACKFILL_MEMBER_LEVELS, run from both the SQLite ladder and
--- the MySQL mirror replay.
+-- skipped. It lives in api/_lib/db.php as NGG_BACKFILL_MEMBER_LEVELS, run from
+-- both the SQLite ladder and NGG_MYSQL_ROW_FIXUPS.
 ALTER TABLE members ADD COLUMN level VARCHAR(16) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (109) ON DUPLICATE KEY UPDATE version = version;

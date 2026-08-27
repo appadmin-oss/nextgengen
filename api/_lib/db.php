@@ -21,15 +21,9 @@ const NGG_SCHEMA_TARGET = 109;
  * Backfill for migration 109 — recover a member's level from the note the
  * importer wrote before `level` was a column.
  *
- * It lives here, as a constant, rather than in db/schema-mysql.sql, because the
- * MySQL mirror replay deliberately executes only CREATE / ALTER / INSERT: an
- * UPDATE sitting in that file is read, skipped, and never runs. Shipping it
- * there added the column on a no-SSH MySQL host and left every level blank.
- *
- * Both engines run it from code instead — the SQLite ladder at step 109, and
- * db_apply_mysql_schema() after the mirror. The `level = ''` guard makes it a
- * no-op on every run after the first, which is what lets the MySQL side call
- * it on each deploy without keeping its own version bookkeeping.
+ * Named separately from the fixup table below because the SQLite ladder needs
+ * it too (step 109); everything else in that table is MySQL-only, because
+ * SQLite already ran the equivalent through its own versioned migration.
  *
  * INSTR/SUBSTR/UPPER mean the same thing in SQLite and MySQL. The pattern is
  * the one members-import.php writes: "Level B" opening the fenced block.
@@ -40,6 +34,95 @@ const NGG_BACKFILL_MEMBER_LEVELS = "
        AND INSTR(notes, '[roster-import]') > 0
        AND INSTR(notes, 'Level ') > 0
 ";
+
+/**
+ * Migrations that have to touch existing ROWS, for MySQL.
+ *
+ * db_apply_mysql_schema() replays db/schema-mysql.sql but executes only
+ * CREATE / ALTER / INSERT. An UPDATE placed in that file is therefore read,
+ * skipped and silently never applied — while the SAME migration does run on
+ * SQLite through the versioned ladder. Seven had accumulated there, so on
+ * every MySQL deployment these columns were added and left empty:
+ *
+ *   60  the summer_students name split          → firstName / lastName blank
+ *   62  the ID-card 90-day expiry               → expiresAt blank (never expires)
+ *   78  sex, unified from the older `gender`    → sex blank, analytics "Not recorded"
+ *   93  notifiedAt on published community rows  → blank
+ *   109 the member level backfill               → level blank
+ *
+ * They live here instead, where the replay cannot drop them. Three rules for
+ * anything added to this table:
+ *
+ *  1. **Guarded.** Every one matches only rows that have not had it applied,
+ *     because this runs once per deploy (whenever the mirror's hash changes)
+ *     rather than once ever. There is no version bookkeeping to lean on.
+ *  2. **Ordered.** They run top to bottom; the lastName split reads the
+ *     firstName the statement above it wrote.
+ *  3. **Additive.** Filling a blank, never rewriting a value somebody set.
+ *
+ * The key is what it touches, and is used in the log line when a statement
+ * changes rows — so a deploy that finally applies a years-old backfill says so
+ * rather than doing it silently.
+ */
+const NGG_MYSQL_ROW_FIXUPS = [
+    /* 60 — one "Full name" box, split into the parts the ID card needs. */
+    'summer_students.firstName' => "
+        UPDATE summer_students
+           SET firstName = CASE WHEN LOCATE(' ', TRIM(fullName)) > 0
+                                THEN SUBSTRING(TRIM(fullName), 1, LOCATE(' ', TRIM(fullName)) - 1)
+                                ELSE TRIM(fullName) END
+         WHERE firstName = '' AND TRIM(COALESCE(fullName, '')) != ''
+    ",
+    'summer_students.lastName' => "
+        UPDATE summer_students
+           SET lastName = TRIM(REPLACE(TRIM(fullName), firstName, ''))
+         WHERE lastName = '' AND firstName != '' AND TRIM(fullName) != firstName
+    ",
+    /* 62 — a summer card is a season pass, not a life membership.
+     *
+     * The date is taken with SUBSTR before the arithmetic, and the shape is
+     * checked in the WHERE. This project stores timestamps as ISO-8601 text in
+     * VARCHAR columns ("2026-08-27T08:56:44Z" — see now_iso()). SQLite's
+     * datetime() parses that; MySQL's DATE_ADD does not, and under
+     * STRICT_ALL_TABLES it raises 1292 rather than returning NULL. The version
+     * of this statement that sat in the mirror passed the whole string
+     * straight to DATE_ADD, so it would have thrown on the first row had it
+     * ever run — being skipped is the only reason nobody found out.
+     *
+     * The REGEXP guard is not belt-and-braces either: one unparseable
+     * timestamp must not abort the fixup pass for every other table.
+     *
+     * Note what applying this late means: a card assigned more than 90 days
+     * ago gets an expiry date in the past, and summer_scan_checkin() then
+     * refuses it with `id_expired`. That is the migration doing what it says,
+     * but on a host where it has never run it lands as a change in behaviour
+     * rather than as a no-op. The log line below is how you see it happen. */
+    'qr_codes.expiresAt' => "
+        UPDATE qr_codes
+           SET expiresAt = DATE_FORMAT(
+                 DATE_ADD(SUBSTR(COALESCE(NULLIF(assignedAt,''), createdAt), 1, 10), INTERVAL 90 DAY), '%Y-%m-%d')
+         WHERE expiresAt = '' AND status = 'assigned'
+           AND SUBSTR(COALESCE(NULLIF(assignedAt,''), createdAt), 1, 10) REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+    ",
+    /* 78 — `sex` is the single fact; `gender` stays but is copied across. */
+    'summer_students.sex' => "
+        UPDATE summer_students SET sex = gender
+         WHERE (sex IS NULL OR sex = '') AND gender IS NOT NULL AND gender != ''
+    ",
+    /* 93 — everything already live has had whatever notifications it was going
+       to get. Stamping them is what stops a hide-and-reapprove on an old post
+       notifying people about a conversation from months ago. */
+    'community_posts.notifiedAt' => "
+        UPDATE community_posts SET notifiedAt = createdAt
+         WHERE status = 'published' AND (notifiedAt IS NULL OR notifiedAt = '')
+    ",
+    'community_comments.notifiedAt' => "
+        UPDATE community_comments SET notifiedAt = createdAt
+         WHERE status = 'published' AND (notifiedAt IS NULL OR notifiedAt = '')
+    ",
+    /* 109 — the member level, out of the importer's note. */
+    'members.level' => NGG_BACKFILL_MEMBER_LEVELS,
+];
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -176,18 +259,21 @@ function db_apply_mysql_schema(PDO $db): void {
             }
         }
     }
-    /* Data fixups the mirror cannot carry.
+    /* Data fixups the mirror cannot carry — see NGG_MYSQL_ROW_FIXUPS.
      *
-     * The loop above runs structural DDL and idempotent seed INSERTs only, so a
-     * migration that has to touch existing ROWS has nowhere to live in the .sql
-     * file — it would be read and skipped. Those run here instead, each one
-     * written to be a no-op once it has been applied. Reached only when the
-     * mirror's hash changed, i.e. once per deploy. */
-    try {
-        $db->exec(NGG_BACKFILL_MEMBER_LEVELS);
-    } catch (Throwable $e) {
-        $allOk = false;
-        error_log('[db] mysql post-schema backfill failed: ' . $e->getMessage());
+     * Reached only when the mirror's hash changed, i.e. once per deploy, and
+     * every statement is guarded so the runs after the first match nothing.
+     * A statement that DID change rows is logged with its count: several of
+     * these are years old and have never run on a MySQL host, so the first
+     * deploy after this lands is the one where they finally apply. */
+    foreach (NGG_MYSQL_ROW_FIXUPS as $what => $stmt) {
+        try {
+            $n = $db->exec($stmt);
+            if ($n) error_log("[db] mysql row fixup {$what}: {$n} row(s) backfilled");
+        } catch (Throwable $e) {
+            $allOk = false;
+            error_log("[db] mysql row fixup {$what} failed: " . $e->getMessage());
+        }
     }
 
     // Record the hash even on partial failure. The old "only on full success"

@@ -18851,17 +18851,12 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
      * mirror. Anything else in that file is dead text on a MySQL host — read,
      * skipped, silently not applied — while the same migration DOES run on
      * SQLite through the ladder. That is how the level backfill shipped
-     * broken, and it is not the first time: the statements listed below have
-     * never run on any MySQL deployment either.
+     * broken, and six older ones had been dead the same way for as long.
      *
-     * They are pinned rather than fixed because making them run means
-     * executing name-splitting and date-arithmetic UPDATEs over live rows for
-     * the first time, which is a decision for whoever owns the data, not a
-     * side effect of a test. Anything NOT on this list fails the suite: a new
-     * row-touching migration belongs in code (see NGG_BACKFILL_MEMBER_LEVELS),
-     * not in the .sql file.
+     * They now all live in NGG_MYSQL_ROW_FIXUPS. Nothing but the charset
+     * pragma is allowed to be a statement the replay drops.
      */
-    chk('mysql mirror: no NEW statement the replay would silently drop',
+    chk('mysql mirror: nothing in it is a statement the replay silently drops',
         (function () {
             /* Resolved from this file, not from an outer $ROOT: the enclosing
                block is itself a closure, so a captured-by-mistake variable
@@ -18873,27 +18868,122 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
                 fwrite(STDERR, "       could not read the mirror at {$mirror}\n");
                 return false;
             }
-            // Known dead since long before the level column. Do not extend.
-            $known = [
-                'SET NAMES utf8mb4',                                    // harmless; the DSN sets the charset
-                'UPDATE summer_students SET firstName',                 // never split on MySQL
-                'UPDATE summer_students SET lastName',
-                'UPDATE summer_students SET sex = gender',
-                'UPDATE qr_codes SET expiresAt',
-                'UPDATE community_posts SET notifiedAt',
-                'UPDATE community_comments SET notifiedAt',
-            ];
-            $new = [];
+            $dropped = [];
             foreach (db_split_sql($sql) as $stmt) {
                 if (preg_match('/^(CREATE TABLE|CREATE INDEX|CREATE UNIQUE INDEX|ALTER TABLE|INSERT)\b/i', $stmt)) continue;
                 $flat = trim(preg_replace('/\s+/', ' ', $stmt));
-                foreach ($known as $k) if (str_starts_with($flat, $k)) continue 2;
-                $new[] = substr($flat, 0, 90);
+                if ($flat === 'SET NAMES utf8mb4') continue;   // the DSN sets the charset anyway
+                $dropped[] = substr($flat, 0, 90);
             }
-            if ($new) fwrite(STDERR, "       these would never run on MySQL — move them into code:\n         - "
-                . implode("\n         - ", $new) . "\n");
-            return $new === [];
+            if ($dropped) fwrite(STDERR, "       these would never run on MySQL — move them to NGG_MYSQL_ROW_FIXUPS:\n         - "
+                . implode("\n         - ", $dropped) . "\n");
+            return $dropped === [];
         })());
+
+    /* Every fixup must be guarded, on both drivers, because the MySQL side
+       re-runs the whole table on each deploy with no version bookkeeping. An
+       unguarded UPDATE there would rewrite the same rows every release. */
+    chk('row fixups: every one is guarded, so re-running it matches nothing',
+        (function () {
+            foreach (NGG_MYSQL_ROW_FIXUPS as $what => $stmt) {
+                if (!preg_match('/\bWHERE\b/i', $stmt)) { fwrite(STDERR, "       {$what} has no WHERE\n"); return false; }
+            }
+            return count(NGG_MYSQL_ROW_FIXUPS) >= 7;
+        })());
+
+    /* And what they actually do, on the real engine.
+     *
+     * MySQL only: the statements are MySQL-flavoured (LOCATE, DATE_ADD) by
+     * design, because SQLite got the same migrations through the ladder years
+     * ago. Under SQLite this reports itself as skipped rather than passing
+     * quietly, so a green run never implies coverage it did not have. */
+    if (db_driver() !== 'mysql') {
+        echo "  · row fixups: behaviour not exercised (SQLite run; set NGG_TEST_DSN to cover them)\n";
+    } else {
+        $fix = function () { foreach (NGG_MYSQL_ROW_FIXUPS as $stmt) db_conn()->exec($stmt); };
+        db_exec("DELETE FROM summer_students WHERE studentId LIKE 'FIXUP-%'");
+        db_exec("DELETE FROM qr_codes WHERE token LIKE 'FIXUP-%'");
+        db_exec("DELETE FROM community_posts WHERE postId LIKE 'FIXUP-%'");
+        db_exec("DELETE FROM community_comments WHERE commentId LIKE 'FIXUP-%'");
+
+        // 60 — the name split, including the double-barrelled case it was written for.
+        db_insert('summer_students', ['studentId' => 'FIXUP-1', 'fullName' => 'Ada Grace Obi',
+            'firstName' => '', 'lastName' => '', 'gender' => 'Female', 'sex' => '']);
+        db_insert('summer_students', ['studentId' => 'FIXUP-2', 'fullName' => 'Tunde',
+            'firstName' => '', 'lastName' => '', 'gender' => '', 'sex' => 'Male']);
+        db_insert('summer_students', ['studentId' => 'FIXUP-3', 'fullName' => 'Ngozi Eze',
+            'firstName' => 'Set', 'lastName' => 'ByHand', 'gender' => 'Female', 'sex' => 'Male']);
+
+        // 62 — a card assigned long enough ago that the 90 days have passed.
+        $old = gmdate('Y-m-d\TH:i:s\Z', time() - 200 * 86400);
+        db_insert('qr_codes', ['token' => 'FIXUP-QR1', 'status' => 'assigned', 'assignedAt' => $old,
+            'createdAt' => $old, 'expiresAt' => '']);
+        db_insert('qr_codes', ['token' => 'FIXUP-QR2', 'status' => 'blank', 'assignedAt' => '',
+            'createdAt' => $old, 'expiresAt' => '']);
+        db_insert('qr_codes', ['token' => 'FIXUP-QR3', 'status' => 'assigned', 'assignedAt' => 'not a date',
+            'createdAt' => 'also not', 'expiresAt' => '']);
+        db_insert('qr_codes', ['token' => 'FIXUP-QR4', 'status' => 'assigned', 'assignedAt' => $old,
+            'createdAt' => $old, 'expiresAt' => '2099-01-01']);
+
+        // 93 — a published row that never got its stamp, and a held one that must not.
+        /* channelId/authorId/memberId/body are NOT NULL with no default —
+           omitting them is a silent insert on SQLite and error 1364 here. */
+        db_insert('community_posts', ['postId' => 'FIXUP-P1', 'channelId' => 'commons', 'authorId' => 'FIXUP-A',
+            'status' => 'published', 'createdAt' => '2026-01-02T03:04:05Z', 'notifiedAt' => '']);
+        db_insert('community_posts', ['postId' => 'FIXUP-P2', 'channelId' => 'commons', 'authorId' => 'FIXUP-A',
+            'status' => 'held', 'createdAt' => '2026-01-02T03:04:05Z', 'notifiedAt' => '']);
+        db_insert('community_comments', ['commentId' => 'FIXUP-C1', 'postId' => 'FIXUP-P1',
+            'memberId' => 'FIXUP-A', 'body' => 'Nice one.',
+            'status' => 'published', 'createdAt' => '2026-01-02T03:04:05Z', 'notifiedAt' => '']);
+
+        $fix();
+        $stu = fn(string $id) => db_row('SELECT * FROM summer_students WHERE studentId = ?', [$id]);
+        $qr  = fn(string $t) => db_row('SELECT * FROM qr_codes WHERE token = ?', [$t]);
+
+        chk('fixup 60: a full name is split into the parts the ID card prints',
+            $stu('FIXUP-1')['firstName'] === 'Ada' && $stu('FIXUP-1')['lastName'] === 'Grace Obi');
+        chk('fixup 60: …a one-word name keeps the surname empty rather than duplicating it',
+            $stu('FIXUP-2')['firstName'] === 'Tunde' && $stu('FIXUP-2')['lastName'] === '');
+        chk('fixup 60: …and a name somebody split by hand is left alone',
+            $stu('FIXUP-3')['firstName'] === 'Set' && $stu('FIXUP-3')['lastName'] === 'ByHand');
+
+        chk('fixup 78: sex is copied from the older gender column where it is blank',
+            $stu('FIXUP-1')['sex'] === 'Female');
+        chk('fixup 78: …and never over a sex already recorded',
+            $stu('FIXUP-3')['sex'] === 'Male');
+
+        chk('fixup 62: an assigned card gets its 90-day expiry',
+            $qr('FIXUP-QR1')['expiresAt'] === gmdate('Y-m-d', strtotime($old) + 90 * 86400));
+        chk('fixup 62: …and applying it late really does expire an old card',
+            idcard_expired($qr('FIXUP-QR1')['expiresAt']));
+        chk('fixup 62: …while an unassigned card is not given one',
+            $qr('FIXUP-QR2')['expiresAt'] === '');
+        /* One unreadable timestamp must not abort the pass for every other
+           table — which is what the un-guarded version of this statement did
+           under STRICT_ALL_TABLES (error 1292 on DATE_ADD). */
+        chk('fixup 62: …a timestamp it cannot read is skipped, not thrown on',
+            $qr('FIXUP-QR3')['expiresAt'] === '');
+        chk('fixup 62: …and a card someone already dated keeps that date',
+            $qr('FIXUP-QR4')['expiresAt'] === '2099-01-01');
+
+        chk('fixup 93: a published post is stamped with its own creation time',
+            db_row("SELECT notifiedAt FROM community_posts WHERE postId = 'FIXUP-P1'")['notifiedAt'] === '2026-01-02T03:04:05Z');
+        chk('fixup 93: …a held post is not, so approving it still notifies',
+            db_row("SELECT notifiedAt FROM community_posts WHERE postId = 'FIXUP-P2'")['notifiedAt'] === '');
+        chk('fixup 93: …and comments are stamped the same way',
+            db_row("SELECT notifiedAt FROM community_comments WHERE commentId = 'FIXUP-C1'")['notifiedAt'] === '2026-01-02T03:04:05Z');
+
+        // The property the whole table depends on: once per deploy, not once ever.
+        $before = [$stu('FIXUP-1'), $stu('FIXUP-3'), $qr('FIXUP-QR1')];
+        $fix();
+        chk('row fixups: a second deploy changes nothing',
+            [$stu('FIXUP-1'), $stu('FIXUP-3'), $qr('FIXUP-QR1')] == $before);
+
+        db_exec("DELETE FROM summer_students WHERE studentId LIKE 'FIXUP-%'");
+        db_exec("DELETE FROM qr_codes WHERE token LIKE 'FIXUP-%'");
+        db_exec("DELETE FROM community_posts WHERE postId LIKE 'FIXUP-%'");
+        db_exec("DELETE FROM community_comments WHERE commentId LIKE 'FIXUP-%'");
+    }
 
     // ── An unusable email is dropped, not stored where sign-in will read it ──
     members_import_run([$rowFor('IMP-031', ['email' => 'CACENTRE'])], ['apply' => true]);
