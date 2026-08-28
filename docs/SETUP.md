@@ -203,6 +203,15 @@ Raising a limit is the fallback, not the fix — a 413 here more likely means th
 client-side resampler failed to load, so check that `/vendor/image-tools.js`
 is being served and is not blocked by a CSP or a stale cache.
 
+**A 406 is a different animal.** `406 Not Acceptable` on a POST is not something
+this application ever sends — grep for it. It is mod_security, which is on by
+default on cPanel, refusing the request before PHP is reached; on cPanel a
+rejection is answered as 406. The usual trigger is a request body over
+`SecRequestBodyNoFilesLimit` (131072 bytes), which applies only to bodies with
+no file upload in them. The roster import used to post the whole roster that way
+and hit exactly this; it sends the file as an upload now. See
+[ROSTER-IMPORT.md](ROSTER-IMPORT.md#how-the-file-reaches-the-server--and-the-406).
+
 ### Photos without Cloudinary
 
 Cloudinary needs three keys, and until they are set there is nowhere to upload

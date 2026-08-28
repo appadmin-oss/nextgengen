@@ -1566,7 +1566,13 @@ function AdminRosterImport({ onClose, onApplied }) {
       const parsed = JSON.parse(new TextDecoder().decode(bytes));
       const members = Array.isArray(parsed) ? parsed : parsed.members;
       if (!Array.isArray(members) || !members.length) throw new Error("no members in that file");
-      setFile({ source: parsed.source || f.name, members, warnings: parsed.warnings || [], fileSha, bytes: f.size });
+      /* `raw` is what is posted — the bytes exactly as they were on disk, sent
+         as a file part rather than as a re-serialised JSON body, which is what
+         a shared host's firewall refuses with a 406 (see rosterUpload in
+         api-client.js). `members` stays for the counts shown here and for the
+         fallback body. */
+      setFile({ source: parsed.source || f.name, members, warnings: parsed.warnings || [],
+                fileSha, raw: bytes, bytes: f.size });
     } catch (ex) {
       setFile(null);
       setErr("That is not a roster file — run tools/ngg-import/extract.js on the workbook first. (" + (ex.message || "unreadable") + ")");

@@ -209,6 +209,59 @@ notices. Every write is in `audit_log` under `member.import.create`,
 
 ---
 
+## How the file reaches the server — and the 406
+
+The drawer sends the roster as a **file upload**, not inside the JSON request
+body. That is not a detail: it is the difference between an import that works on
+this host and one that does not.
+
+A 136-member roster is about **110KB** as a JSON body — roughly 820 bytes a row,
+because each row carries a home address and two guardians — and the importer's
+own ceiling is 2000 rows, about 1.6MB. mod_security, which is on by default on
+cPanel hosts, will inspect a request body up to `SecRequestBodyNoFilesLimit`
+bytes and **reject** anything longer. That limit is **131072 bytes**, and on
+cPanel the rejection is answered as **`406 Not Acceptable`**.
+
+So the roster spent its whole life a few kilobytes under a wall it was always
+going to hit, and the request was refused *in front of PHP*: nothing reached the
+application, nothing was logged by it, and the only thing the drawer could
+report about it was `http_406`.
+
+The limit applies to bodies with **no upload in them**. A multipart file part is
+bounded by `SecRequestBodyLimit` instead (13MB by default) and is not folded
+into the request arguments the rule set inspects — which also means a child's
+home address is no longer read as a possible injection attempt. So the bytes
+now travel as a file part, exactly as they sat on disk.
+
+Three things follow from that, all of them improvements on their own:
+
+- **The server hashes what it received.** `fileSha` used to be the browser's
+  claim about bytes the server never saw, and was absent altogether on plain
+  http where `crypto.subtle` does not exist. It is now computed from the
+  uploaded bytes, so the number recorded in `member_import_runs` is an answer
+  rather than a report.
+- **The file names its own workbook.** `source` is read from inside the roster
+  file, falling back to the filename the browser had — so a run recorded as
+  `download (3).json` becomes one recorded as `NGG_Members.xlsx`.
+- **The dry run still binds the apply.** The digest is computed from the rows,
+  not the bytes, and both posts send the same file, so `expectDigest` works
+  exactly as before. Nothing about the safety property changed.
+
+The JSON body is still accepted by the endpoint, and the drawer falls back to it
+if the upload is refused — on a host with `file_uploads` off, or one that objects
+to multipart rather than to size.
+
+**If it is still refused,** the drawer now says so in words instead of showing a
+status code: which HTTP status refused it, that a firewall and not the importer
+is refusing, and the two ways past it. In order:
+
+1. Ask the host to allow POSTs to `/api/admin/members.php` — on cPanel this is
+   *Security → ModSecurity*, disabled per-domain or per-rule.
+2. Import from a shell instead: `php api/tools/seed-members.php --file <roster>`.
+   This is the reason `--expect-sha` exists — the file has travelled.
+
+---
+
 ## What it will not do for you
 
 The extractor reports rather than guesses, so expect a list of things a human
@@ -278,6 +331,7 @@ face on it is weak identification. It is no longer a blocker on printing.
 ```bash
 npm run test:roster      # the extractor: which sheet wins, and what it refuses
 npm run test:rosterui    # the drawer: you cannot apply what you have not read
+npm run test:rostersend  # the transport: the file goes as a file, and the 406 fallback
 npm run test:api         # the import: idempotency, staff guards, notes fencing
 npm run test:idbatch     # the print drawer: the preflight counts, and the run order
 npm run shot:memberid    # re-render docs/screens/26-nggc-member-id.png

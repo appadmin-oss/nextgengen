@@ -33,6 +33,47 @@ if ($method === 'GET') {
 }
 
 if ($method === 'POST') {
+    /* ── The roster import arrives as a file part ────────────────────────────
+     *
+     * Not as a JSON body: a roster is 110KB–1.6MB of children's records, which
+     * is over the 128KB a stock mod_security allows in a body with no upload in
+     * it, and the firewall refuses the request with 406 before PHP is reached.
+     * The reasoning is with the parser, in _lib/domain/members-import.php.
+     *
+     * php://input is empty for a multipart request, so the fields are in $_POST
+     * and nothing below this would find an action at all — hence the branch
+     * here, ahead of read_json_body(). */
+    /* A request body over post_max_size leaves $_POST AND $_FILES empty, with
+       nothing but a warning in the log — so a multipart request that arrives
+       carrying nothing is this host's limit, not a caller error. Said plainly
+       here, because the alternative is falling through to the upsert branch
+       below with an empty payload and reporting something unrelated. */
+    if (stripos((string)($_SERVER['CONTENT_TYPE'] ?? ''), 'multipart/form-data') === 0 && !$_POST && !$_FILES) {
+        json_error('roster_too_large', 400,
+            'The request was larger than this host accepts (post_max_size). Raise it, or import from a shell.');
+    }
+
+    if ((string)($_POST['action'] ?? '') === 'import') {
+        $f = is_array($_FILES['roster'] ?? null) ? $_FILES['roster'] : ['error' => UPLOAD_ERR_NO_FILE];
+        $bad = members_import_upload_error((int)($f['error'] ?? UPLOAD_ERR_NO_FILE));
+        // A tmp_name that is not an upload is either a misconfigured host or an
+        // attempt to have us read a path of somebody else's choosing.
+        if (!$bad && !is_uploaded_file((string)($f['tmp_name'] ?? ''))) {
+            $bad = ['error' => 'no_roster_file', 'detail' => 'No roster file arrived with the request.'];
+        }
+        if ($bad) json_error((string)$bad['error'], 400, $bad['detail'] ?? null);
+
+        $raw = (string)@file_get_contents((string)$f['tmp_name']);
+        $up = members_import_upload_args($_POST, $raw);
+        if (empty($up['ok'])) json_error((string)$up['error'], 400);
+
+        $res = gs_call('admin.members.import',
+            $up['args'] + ['requesterId' => $s['mid'], 'ip' => client_ip()]);
+        if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400, $res['detail'] ?? null);
+        unset($res['ok']);
+        json_ok($res);
+    }
+
     $body = read_json_body();
     $action = (string)($body['action'] ?? '');
     if ($action === 'reset2fa') {
@@ -72,7 +113,11 @@ if ($method === 'POST') {
     } else {
         $res = gs_call('admin.members.upsert', ['requesterId' => $s['mid'], 'data' => $body, 'ip' => client_ip()]);
     }
-    if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+    /* Forward `detail` as well as the code. The domain writes a sentence for
+       every refusal the operator has to act on — "read the dry run again before
+       applying", "applying needs super-admin access" — and dropping it left the
+       drawer showing a bare `roster_changed` for a thing it could have explained. */
+    if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400, $res['detail'] ?? null);
     unset($res['ok']);
     json_ok($res);
 }

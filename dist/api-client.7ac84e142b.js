@@ -476,6 +476,84 @@
     } catch (_) { /* never let telemetry break an upload */ }
   }
 
+  /* ── Roster import: the file goes as a file ────────────────────────────────
+   *
+   * A 136-member roster is ~110KB of JSON, and the importer's ceiling is 2000
+   * rows — ~1.6MB. Sent as a JSON request BODY that is past what a stock
+   * mod_security allows in a body with no upload in it (131072 bytes), so on a
+   * shared cPanel host the firewall answers 406 Not Acceptable and PHP never
+   * sees the request: the import stopped working as the roster grew, and all
+   * the drawer could say about it was `http_406`.
+   *
+   * A multipart file part is bounded by a far larger limit and is not scanned
+   * as a request argument, so the bytes get through. It is also the truthful
+   * shape — somebody is uploading a file — and it lets the server hash the
+   * bytes it actually received instead of trusting the browser's claim.
+   *
+   * The JSON body stays as the fallback, for a host where uploads are off or
+   * where something objects to multipart instead. Which door was used changes
+   * nothing about the result: preview and apply both send the same bytes, so
+   * the digest that holds an apply to its dry run is unaffected.
+   */
+  function rosterUpload(file, opts) {
+    const fd = new FormData();
+    const name = (file && file.source) || 'roster.json';
+    fd.append('action', 'import');
+    // Text, both of them: the server reads "0" and "false" as no.
+    fd.append('apply', opts.apply ? '1' : '0');
+    fd.append('overwrite', opts.overwrite ? '1' : '0');
+    if (opts.expectDigest) fd.append('expectDigest', opts.expectDigest);
+    fd.append('source', name);
+    fd.append('roster', new Blob([file.raw], { type: 'application/json' }), name);
+    return fd;
+  }
+
+  function rosterJsonBody(file, opts) {
+    return Object.assign({ action: 'import', members: (file && file.members) || file,
+      source: (file && file.source) || '', fileSha: (file && file.fileSha) || '' }, opts);
+  }
+
+  /* Refused by something that is not this application: the reply carried no
+     error code of ours, so nothing in PHP answered. `no_roster_file` is the
+     one app code that belongs here too — it is what a host with file uploads
+     switched off looks like from the outside. */
+  function rosterOtherDoor(e) {
+    return !!e && e.status >= 400 && (!e.code || e.code === 'no_roster_file');
+  }
+
+  function rosterBlocked(e) {
+    const err = new Error('blocked_upstream');
+    err.code = 'blocked_upstream';
+    err.status = e.status;
+    err.detail = e.status === 413
+      ? 'The roster is bigger than this host accepts in one request (HTTP 413). Raise post_max_size and '
+        + 'upload_max_filesize, or run the import from a shell: php api/tools/seed-members.php --file <roster>.'
+      : 'The host refused the request with HTTP ' + e.status + ' before it reached the site — that is a '
+        + 'web application firewall (mod_security answers 406), not the importer. Ask the host to allow '
+        + 'POSTs to /api/admin/members.php, or run the import from a shell: '
+        + 'php api/tools/seed-members.php --file <roster>.';
+    return err;
+  }
+
+  async function importRoster(file, opts) {
+    opts = opts || {};
+    // No raw bytes (an older caller, or a roster handed over as a plain array)
+    // — there is nothing to upload, so the body is the only route.
+    if (!file || !file.raw) return await request('/admin/members.php', { body: rosterJsonBody(file, opts) });
+    try {
+      return await request('/admin/members.php', { body: rosterUpload(file, opts) });
+    } catch (e) {
+      if (!rosterOtherDoor(e)) throw e;
+      try {
+        return await request('/admin/members.php', { body: rosterJsonBody(file, opts) });
+      } catch (e2) {
+        // Both doors shut by something in front of PHP. Say so, in terms the
+        // person can act on — the alternative is a red toast reading http_406.
+        throw e2.code ? e2 : rosterBlocked(e2);
+      }
+    }
+  }
+
   const API = {
     config: getConfig,
     // Lazily loads /vendor/image-tools.js (pica + Cropper.js) and resolves to
@@ -812,13 +890,10 @@
         demoteNgv: (memberId) => request('/admin/members.php', { body: { action: 'demoteNgv', memberId } }),
         // Roster import from the members workbook (tools/ngg-import/extract.js).
         // `apply` false is a dry run and returns exactly what would change.
-        // `fileSha` rides along from the reader so a recorded run can be traced
-        // back to a file on disk; `expectDigest` (in opts, on an apply) holds
-        // the write to the roster the dry run described.
-        importRoster: (file, opts) => request('/admin/members.php', { body: Object.assign(
-          { action: 'import', members: (file && file.members) || file,
-            source: (file && file.source) || '', fileSha: (file && file.fileSha) || '' },
-          opts || {}) }),
+        // `file.raw` is the bytes as read, which is what actually travels (see
+        // rosterUpload above); `expectDigest` (in opts, on an apply) holds the
+        // write to the roster the dry run described.
+        importRoster: (file, opts) => importRoster(file, opts),
         setCaps: (memberId, caps, centreScope) => request('/admin/members.php', { body: Object.assign({ action: 'setCaps', memberId, caps }, centreScope !== undefined ? { centreScope } : {}) }),
         impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),
         stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),
