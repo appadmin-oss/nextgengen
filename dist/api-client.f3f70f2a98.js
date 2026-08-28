@@ -476,78 +476,71 @@
     } catch (_) { /* never let telemetry break an upload */ }
   }
 
-  /* ── Roster import: the file goes as a file ────────────────────────────────
+  /* ── Roster import: the roster is ONE value on the wire ───────────────────
    *
-   * A 136-member roster is ~110KB of JSON, and the importer's ceiling is 2000
-   * rows — ~1.6MB. Sent as a JSON request BODY that is past what a stock
-   * mod_security allows in a body with no upload in it (131072 bytes), so on a
-   * shared cPanel host the firewall answers 406 Not Acceptable and PHP never
-   * sees the request: the import stopped working as the roster grew, and all
-   * the drawer could say about it was `http_406`.
+   * The import was refused with 406, by the host's firewall rather than by this
+   * application — measured against the live site, which counts the values in a
+   * JSON body and rejects a request carrying a few thousand of them. A
+   * 136-member roster posted as an array of objects is about 3000 values, so it
+   * was always going to hit that wall and did as the roster grew. Size is not
+   * the problem: 322KB in 161 values goes through, 55KB in 3201 values does
+   * not. File uploads are refused outright on the same host, so posting the
+   * file as an upload is not the way out either.
    *
-   * A multipart file part is bounded by a far larger limit and is not scanned
-   * as a request argument, so the bytes get through. It is also the truthful
-   * shape — somebody is uploading a file — and it lets the server hash the
-   * bytes it actually received instead of trusting the browser's claim.
+   * So the roster travels as `rosterJson` — the file's own text, one value
+   * however many members it holds. That also hands the server the file instead
+   * of the browser's summary of it: the server parses it, hashes it, and takes
+   * the workbook name from inside it, none of which it could do before.
    *
-   * The JSON body stays as the fallback, for a host where uploads are off or
-   * where something objects to multipart instead. Which door was used changes
-   * nothing about the result: preview and apply both send the same bytes, so
-   * the digest that holds an apply to its dry run is unaffected.
+   * The older shape stays as the fallback, for a server that predates this and
+   * for a host with nothing in the way. Both send the same file, so the digest
+   * that holds an apply to its dry run is unaffected either way.
    */
-  function rosterUpload(file, opts) {
-    const fd = new FormData();
-    const name = (file && file.source) || 'roster.json';
-    fd.append('action', 'import');
-    // Text, both of them: the server reads "0" and "false" as no.
-    fd.append('apply', opts.apply ? '1' : '0');
-    fd.append('overwrite', opts.overwrite ? '1' : '0');
-    if (opts.expectDigest) fd.append('expectDigest', opts.expectDigest);
-    fd.append('source', name);
-    fd.append('roster', new Blob([file.raw], { type: 'application/json' }), name);
-    return fd;
+  function rosterOneValueBody(file, opts) {
+    return { action: 'import', rosterJson: file.text,
+      // Only a fallback for the workbook name: the file names itself inside.
+      source: (file && file.source) || '',
+      apply: !!opts.apply, overwrite: !!opts.overwrite,
+      expectDigest: opts.expectDigest || '' };
   }
 
-  function rosterJsonBody(file, opts) {
+  function rosterRowsBody(file, opts) {
     return Object.assign({ action: 'import', members: (file && file.members) || file,
       source: (file && file.source) || '', fileSha: (file && file.fileSha) || '' }, opts);
   }
 
-  /* Refused by something that is not this application: the reply carried no
-     error code of ours, so nothing in PHP answered. `no_roster_file` is the
-     one app code that belongs here too — it is what a host with file uploads
-     switched off looks like from the outside. */
+  /* Refused by something that is not this application — the reply carried no
+     error code of ours, so nothing in PHP answered. `no_members_array` is the
+     one app code that belongs here too: it is what a server too old to know
+     about `rosterJson` says about a body that only carries one. */
   function rosterOtherDoor(e) {
-    return !!e && e.status >= 400 && (!e.code || e.code === 'no_roster_file');
+    return !!e && e.status >= 400 && (!e.code || e.code === 'no_members_array');
   }
 
   function rosterBlocked(e) {
     const err = new Error('blocked_upstream');
     err.code = 'blocked_upstream';
     err.status = e.status;
-    err.detail = e.status === 413
-      ? 'The roster is bigger than this host accepts in one request (HTTP 413). Raise post_max_size and '
-        + 'upload_max_filesize, or run the import from a shell: php api/tools/seed-members.php --file <roster>.'
-      : 'The host refused the request with HTTP ' + e.status + ' before it reached the site — that is a '
-        + 'web application firewall (mod_security answers 406), not the importer. Ask the host to allow '
-        + 'POSTs to /api/admin/members.php, or run the import from a shell: '
-        + 'php api/tools/seed-members.php --file <roster>.';
+    err.detail = 'The host refused the request with HTTP ' + e.status + ' before it reached the site, so '
+      + 'this is its web application firewall and not the importer — a 406 is what mod_security answers '
+      + 'with on cPanel. Ask the host to allow POSTs to /api/admin/members.php, or run the import from a '
+      + 'shell: php api/tools/seed-members.php --file <roster>.';
     return err;
   }
 
   async function importRoster(file, opts) {
     opts = opts || {};
-    // No raw bytes (an older caller, or a roster handed over as a plain array)
-    // — there is nothing to upload, so the body is the only route.
-    if (!file || !file.raw) return await request('/admin/members.php', { body: rosterJsonBody(file, opts) });
+    // No file text (an older caller, or a roster handed over as a bare array):
+    // there is nothing to send as one value, so the rows are the only route.
+    if (!file || !file.text) return await request('/admin/members.php', { body: rosterRowsBody(file, opts) });
     try {
-      return await request('/admin/members.php', { body: rosterUpload(file, opts) });
+      return await request('/admin/members.php', { body: rosterOneValueBody(file, opts) });
     } catch (e) {
       if (!rosterOtherDoor(e)) throw e;
       try {
-        return await request('/admin/members.php', { body: rosterJsonBody(file, opts) });
+        return await request('/admin/members.php', { body: rosterRowsBody(file, opts) });
       } catch (e2) {
-        // Both doors shut by something in front of PHP. Say so, in terms the
+        // Both shapes refused by something in front of PHP. Say so in terms the
         // person can act on — the alternative is a red toast reading http_406.
         throw e2.code ? e2 : rosterBlocked(e2);
       }
@@ -890,9 +883,9 @@
         demoteNgv: (memberId) => request('/admin/members.php', { body: { action: 'demoteNgv', memberId } }),
         // Roster import from the members workbook (tools/ngg-import/extract.js).
         // `apply` false is a dry run and returns exactly what would change.
-        // `file.raw` is the bytes as read, which is what actually travels (see
-        // rosterUpload above); `expectDigest` (in opts, on an apply) holds the
-        // write to the roster the dry run described.
+        // `file.text` is the file as read, and travels as one value (see
+        // rosterOneValueBody above); `expectDigest` (in opts, on an apply)
+        // holds the write to the roster the dry run described.
         importRoster: (file, opts) => importRoster(file, opts),
         setCaps: (memberId, caps, centreScope) => request('/admin/members.php', { body: Object.assign({ action: 'setCaps', memberId, caps }, centreScope !== undefined ? { centreScope } : {}) }),
         impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),

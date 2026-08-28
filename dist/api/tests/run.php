@@ -19107,92 +19107,77 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         return !empty($r['ok']) && $r['unchanged'] === 1;
     })());
 
-    /* ── The transport: the roster goes as a FILE, not as a JSON body ────────
+    /* ── The transport: the roster is ONE value on the wire ─────────────────
      *
-     * The import posts 110KB–1.6MB of children's records. As a JSON request
-     * body that is past mod_security's SecRequestBodyNoFilesLimit (131072
-     * bytes), so a stock cPanel host answers 406 Not Acceptable before PHP is
-     * reached — the drawer, which exists precisely because that host has no
-     * shell, could not run an import at all. The bytes ride in a multipart file
-     * part now. These are the rules that door needs, tested at the point the
-     * endpoint hands its bytes in.
+     * The import was refused with 406 by the host's firewall, which counts the
+     * values in a JSON body: 55KB in 3201 values is refused where 322KB in 161
+     * values goes through, and a 136-member roster posted as an array of
+     * objects is around 3000 values. It travels as `rosterJson` — the file's
+     * own text, one value — and these are the rules that shape needs, tested
+     * where the endpoint hands the text in. (Measured against the live host;
+     * the numbers are in _lib/domain/members-import.php.)
      */
-    $rosterBytes = fn(array $rows, string $src = 'NGG_Members.xlsx') => (string)json_encode(
+    $rosterText = fn(array $rows, string $src = 'NGG_Members.xlsx') => (string)json_encode(
         ['source' => $src, 'extractedAt' => '2026-08-01T00:00:00Z', 'members' => $rows], JSON_PRETTY_PRINT);
 
-    chk('an uploaded roster file yields the rows the JSON body used to carry',
-        (function () use ($rowFor, $rosterBytes) {
-            $up = members_import_upload_args(['action' => 'import'],
-                $rosterBytes([$rowFor('IMP-046'), $rowFor('IMP-047')]));
+    chk('a roster sent as one value yields the rows the array shape carried',
+        (function () use ($rowFor, $rosterText) {
+            $up = members_import_args([], $rosterText([$rowFor('IMP-046'), $rowFor('IMP-047')]));
             return !empty($up['ok']) && count($up['args']['members']) === 2
                 && ($up['args']['members'][1]['displayId'] ?? '') === 'IMP-047';
         })());
-    /* The property that matters for the preview→apply handshake: which door the
-       payload came through cannot change the digest, or a dry run read over one
-       transport could never be applied over the other. */
+    /* The property that matters for the preview→apply handshake: which shape
+       the payload arrived in cannot change the digest, or a dry run read one way
+       could never be applied the other. */
     chk('…and the same digest, so a dry run read one way applies the other way',
-        (function () use ($rowFor, $rosterBytes) {
+        (function () use ($rowFor, $rosterText) {
             $rows = [$rowFor('IMP-046'), $rowFor('IMP-047')];
-            $up = members_import_upload_args([], $rosterBytes($rows));
+            $up = members_import_args([], $rosterText($rows));
             return members_import_digest($up['args']['members']) === members_import_digest($rows);
         })());
     chk('…the workbook the file names outranks the filename the browser had',
-        (function () use ($rowFor, $rosterBytes) {
-            $up = members_import_upload_args(['source' => 'download (3).json'],
-                $rosterBytes([$rowFor('IMP-046')], 'NGG_Members.xlsx'));
+        (function () use ($rowFor, $rosterText) {
+            $up = members_import_args(['source' => 'download (3).json'],
+                $rosterText([$rowFor('IMP-046')], 'NGG_Members.xlsx'));
             return $up['args']['source'] === 'NGG_Members.xlsx';
         })());
     chk('…and a file that names no workbook falls back to it',
-        (function () use ($rowFor, $rosterBytes) {
-            $up = members_import_upload_args(['source' => 'roster.json'],
-                $rosterBytes([$rowFor('IMP-046')], ''));
+        (function () use ($rowFor, $rosterText) {
+            $up = members_import_args(['source' => 'roster.json'], $rosterText([$rowFor('IMP-046')], ''));
             return $up['args']['source'] === 'roster.json';
         })());
-    /* fileSha used to be the browser's claim about bytes the server never saw,
-       and was simply absent on plain http where crypto.subtle does not exist.
-       With the file itself in hand it is an answer, not a claim. */
-    chk('the file hash is taken from the bytes received, not claimed by the client',
-        (function () use ($rowFor, $rosterBytes) {
-            $raw = $rosterBytes([$rowFor('IMP-046')]);
-            $up = members_import_upload_args(['fileSha' => str_repeat('b', 64)], $raw);
+    /* fileSha used to be the browser's claim about a file the server never saw,
+       and was absent altogether on plain http where crypto.subtle does not
+       exist. With the file's own text in hand it is an answer, not a claim. */
+    chk('the file hash is taken from the text received, not claimed by the client',
+        (function () use ($rowFor, $rosterText) {
+            $raw = $rosterText([$rowFor('IMP-046')]);
+            $up = members_import_args(['fileSha' => str_repeat('b', 64)], $raw);
             return $up['args']['fileSha'] === hash('sha256', $raw);
         })());
-    /* Every form field arrives as text and !empty('false') is true, so a dry
-       run spelled the obvious way would have written the roster. */
-    chk('a flag posted as text reads "false", "0" and "" as no',
+    /* A flag that decides whether 136 records are written must not be able to
+       arrive as the string "false" and read as yes — !empty('false') is true. */
+    chk('a flag reads "false", "0" and "" as no',
         !members_import_flag('false') && !members_import_flag('0')
         && !members_import_flag('') && !members_import_flag(null));
-    chk('…and "1" and "true" as yes',
-        members_import_flag('1') && members_import_flag('true') && members_import_flag(true));
-    chk('an uploaded dry run stays a dry run',
-        (function () use ($rowFor, $rosterBytes) {
-            $up = members_import_upload_args(['apply' => 'false', 'overwrite' => '0'],
-                $rosterBytes([$rowFor('IMP-046')]));
+    chk('…and true, "1" and "true" as yes',
+        members_import_flag(true) && members_import_flag('1') && members_import_flag('true'));
+    chk('a dry run stays a dry run',
+        (function () use ($rowFor, $rosterText) {
+            $up = members_import_args(['apply' => 'false', 'overwrite' => '0'],
+                $rosterText([$rowFor('IMP-046')]));
             return $up['args']['apply'] === false && $up['args']['overwrite'] === false;
         })());
     chk('…and an apply carries its digest and its overwrite through unchanged',
-        (function () use ($rowFor, $rosterBytes) {
-            $up = members_import_upload_args(['apply' => '1', 'overwrite' => '1',
-                'expectDigest' => str_repeat('c', 64)], $rosterBytes([$rowFor('IMP-046')]));
+        (function () use ($rowFor, $rosterText) {
+            $up = members_import_args(['apply' => true, 'overwrite' => true,
+                'expectDigest' => str_repeat('c', 64)], $rosterText([$rowFor('IMP-046')]));
             return $up['args']['apply'] === true && $up['args']['overwrite'] === true
                 && $up['args']['expectDigest'] === str_repeat('c', 64);
         })());
     chk('a file that is not a roster is refused by name, before any row is read',
-        (members_import_upload_args([], '{"totally":"not a roster"}')['error'] ?? '') === 'no_members_array'
-        && (members_import_upload_args([], 'not json at all')['error'] ?? '') === 'not_json');
-
-    /* An upload PHP itself rejected must not read as "the roster was empty":
-       one is a host limit to raise, the other is a file to fix. */
-    chk('an upload past the host\'s limit says so', (function () {
-        $e = members_import_upload_error(UPLOAD_ERR_INI_SIZE);
-        return ($e['error'] ?? '') === 'roster_too_large' && str_contains($e['detail'] ?? '', 'upload_max_filesize');
-    })());
-    chk('…a part that never arrived is the code the browser retries on',
-        (members_import_upload_error(UPLOAD_ERR_NO_FILE)['error'] ?? '') === 'no_roster_file');
-    chk('…a host that could not store it is neither of those',
-        (members_import_upload_error(UPLOAD_ERR_CANT_WRITE)['error'] ?? '') === 'roster_upload_failed');
-    chk('…and an upload that arrived is not an error at all',
-        members_import_upload_error(UPLOAD_ERR_OK) === null);
+        (members_import_args([], '{"totally":"not a roster"}')['error'] ?? '') === 'no_members_array'
+        && (members_import_args([], 'not json at all')['error'] ?? '') === 'not_json');
 
     db_exec("DELETE FROM members WHERE displayId LIKE 'IMP-04%'");
 

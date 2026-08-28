@@ -2,26 +2,31 @@
 /* ============================================================================
    How the roster gets to the server.
 
-   The import posts the whole roster — 136 members is ~110KB of names, dates of
-   birth, home addresses and guardians' phone numbers, and the importer's own
-   ceiling is 2000 rows, ~1.6MB. Sent as a JSON request BODY that is past
-   mod_security's SecRequestBodyNoFilesLimit (131072 bytes, Reject by default),
-   so a stock cPanel host answers **406 Not Acceptable** itself and PHP never
-   sees the request. On the shared host this drawer exists for — no SSH, so the
-   drawer is the only way in — the import simply stopped working as the roster
-   grew, and all the UI could say about it was `http_406`.
+   The import was refused with **406 Not Acceptable** — by the host's firewall,
+   not by this application, which sends no 406 anywhere. Measured against the
+   live site with unauthenticated posts (PHP answers those at the CSRF gate, so
+   `csrf_failed` means the request got through):
 
-   So the bytes travel as a multipart file part, which is bounded by a far
-   larger limit and is not scanned as a request argument. This suite is that
-   decision, pinned:
+     6.5KB of roster JSON, ~90 values          →  reached PHP
+      55KB of roster JSON, 3201 values         →  406
+     322KB in 161 values                       →  reached PHP
+     multipart, any file part, even ~200 bytes  →  406
+     whole roster as ONE string value, 736KB    →  reached PHP
 
-     · the file goes as a file, and the bytes on the wire are the bytes on disk
+   It counts the VALUES in a JSON body. A 136-member roster posted as an array
+   of objects is around 3000 of them, so it was always going to hit that wall
+   and did as the roster grew; and posting the file as an upload instead — the
+   obvious fix — is refused outright on the same host. So the roster travels as
+   one value: `rosterJson`, the text of the file. This suite is that decision,
+   pinned:
+
+     · the roster goes as ONE value, carrying the file's text unaltered
      · a refusal from something that is not this application falls back to the
-       old JSON body, so a host where multipart is the problem still works
+       old array-of-objects shape, so a server that predates this still works
      · a refusal that IS this application (roster_changed, forbidden) is never
        retried — retrying an apply the server just refused is the one thing
        this must not do
-     · when both doors are shut, the operator is told what shut them
+     · when both shapes are refused, the operator is told what refused them
 
    No browser and no server: the real api-client.js runs against a stub fetch,
    which is what makes the request itself assertable.
@@ -85,16 +90,16 @@ const ROSTER = {
     { displayId: '024-001', fullName: 'Second Example', status: 'inactive', centre: 'Ayobo' },
   ],
 };
-const BYTES = Buffer.from(JSON.stringify(ROSTER, null, 2) + '\n', 'utf8');
-/* What the drawer holds after reading the file: the parsed roster for the
-   counts it shows, and the raw bytes, which are what actually travel. */
+const TEXT = JSON.stringify(ROSTER, null, 2) + '\n';
+/* What the drawer holds after reading the file: the parsed roster for the counts
+   it shows, and the file's text, which is what actually travels. */
 const fileState = () => ({
   source: ROSTER.source,
   members: ROSTER.members,
   warnings: [],
   fileSha: 'a'.repeat(64),
-  raw: BYTES.buffer.slice(BYTES.byteOffset, BYTES.byteOffset + BYTES.byteLength),
-  bytes: BYTES.length,
+  text: TEXT,
+  bytes: Buffer.byteLength(TEXT),
 });
 
 const OK = { applied: false, created: 2, updated: 0, unchanged: 0, failed: 0,
@@ -108,29 +113,25 @@ const OK = { applied: false, created: 2, updated: 0, unchanged: 0, failed: 0,
     const res = await api.admin.members.importRoster(fileState(), { apply: false, overwrite: false });
 
     const call = fetchImpl.calls[0];
+    const sent = JSON.parse(call.body);
     chk('the dry run is one request, to the members endpoint',
       fetchImpl.calls.length === 1 && /\/api\/admin\/members\.php$/.test(call.url));
-    chk('…carrying a multipart form, not a JSON body',
-      call.body instanceof FormData);
-    chk('…with no Content-Type of ours, so fetch can set the boundary',
-      !call.headers['Content-Type']);
     chk('…and the CSRF header the write gate requires',
       call.headers['X-NGG-CSRF'] === 'csrf-token-123');
-    chk('the server is told which action this is, since a form body has no JSON',
-      call.body.get('action') === 'import');
-
-    const part = call.body.get('roster');
-    chk('the roster is a file part, named after the workbook',
-      part && typeof part.text === 'function' && part.name === 'NGG_Members.xlsx');
-    /* The bytes must be the bytes on disk. Re-serialising them here would break
-       the file hash the server now computes from what it received — and the
-       whole point of a file part is that it is the file. */
-    chk('…and the bytes on the wire are the bytes that were on disk',
-      Buffer.from(await part.arrayBuffer()).equals(BYTES));
-    chk('a dry run says so in a way text cannot fumble',
-      call.body.get('apply') === '0' && call.body.get('overwrite') === '0');
-    chk('…and nothing pretends to a digest it has not been given',
-      call.body.get('expectDigest') === null);
+    /* The whole point. Counting the values the way the firewall does: an object
+       per member is thousands of them, the file as one string is one. */
+    chk('the roster is ONE value, not one object per member',
+      typeof sent.rosterJson === 'string' && sent.members === undefined);
+    chk('…and it is the file\'s own text, unaltered',
+      sent.rosterJson === TEXT);
+    /* Re-serialising the roster here would break the file hash the server now
+       computes from what it received, and lose whatever the extractor wrote. */
+    chk('…so what the server parses is what the extractor produced',
+      JSON.parse(sent.rosterJson).members.length === 2
+      && JSON.parse(sent.rosterJson).source === 'NGG_Members.xlsx');
+    chk('a dry run says so, as a real boolean rather than a string',
+      sent.apply === false && sent.overwrite === false);
+    chk('…and nothing pretends to a digest it has not been given', !sent.expectDigest);
     chk('the report comes back to the caller unchanged', res.created === 2 && res.digest === OK.digest);
   }
 
@@ -140,9 +141,11 @@ const OK = { applied: false, created: 2, updated: 0, unchanged: 0, failed: 0,
     const api = loadClient(fetchImpl);
     await api.admin.members.importRoster(fileState(),
       { apply: true, overwrite: true, expectDigest: 'd'.repeat(64) });
-    const fd = fetchImpl.calls[0].body;
+    const sent = JSON.parse(fetchImpl.calls[0].body);
     chk('an apply carries apply, overwrite and the digest of its own dry run',
-      fd.get('apply') === '1' && fd.get('overwrite') === '1' && fd.get('expectDigest') === 'd'.repeat(64));
+      sent.apply === true && sent.overwrite === true && sent.expectDigest === 'd'.repeat(64));
+    chk('…and the same one value, so it is the same file the dry run read',
+      sent.rosterJson === TEXT);
   }
 
   // ── The 406 this suite exists for, on the other door ──
@@ -153,12 +156,11 @@ const OK = { applied: false, created: 2, updated: 0, unchanged: 0, failed: 0,
 
     chk('a 406 from something that is not this application is retried, not surfaced',
       fetchImpl.calls.length === 2 && res.created === 2);
-    const second = fetchImpl.calls[1];
-    chk('…over the JSON body, which is the only other door',
-      typeof second.body === 'string' && second.headers['Content-Type'] === 'application/json');
+    const second = JSON.parse(fetchImpl.calls[1].body);
+    chk('…over the older array-of-objects shape, which is the only other door',
+      Array.isArray(second.members) && second.rosterJson === undefined);
     chk('…carrying the same roster, so the retry is the same import',
-      JSON.parse(second.body).members.length === 2
-      && JSON.parse(second.body).action === 'import');
+      second.members.length === 2 && second.action === 'import');
   }
 
   // ── Both doors shut ──
@@ -178,13 +180,16 @@ const OK = { applied: false, created: 2, updated: 0, unchanged: 0, failed: 0,
       && /mod_security/.test(caught.detail) && /seed-members\.php/.test(caught.detail));
   }
 
-  // ── A host with file uploads switched off ──
+  // ── A server that predates this shape ──
   {
-    const fetchImpl = stubFetch([reply(400, { ok: false, error: 'no_roster_file' }),
+    /* An older PHP finds no `members` in a body that only carries `rosterJson`,
+       and says so. That is a signal to use the shape it does understand, not a
+       failure to report. */
+    const fetchImpl = stubFetch([reply(400, { ok: false, error: 'no_members_array' }),
                                  reply(200, Object.assign({ ok: true }, OK))]);
     const api = loadClient(fetchImpl);
     const res = await api.admin.members.importRoster(fileState(), { apply: false });
-    chk('a host that accepts no uploads at all falls back too',
+    chk('a server too old to know the one-value shape falls back too',
       fetchImpl.calls.length === 2 && res.created === 2);
   }
 
@@ -228,14 +233,13 @@ const OK = { applied: false, created: 2, updated: 0, unchanged: 0, failed: 0,
       fetchImpl.calls.length === 1 && caught && caught.status === 0);
   }
 
-  // ── An older caller with no bytes ──
+  // ── An older caller with no file text ──
   {
     const fetchImpl = stubFetch([reply(200, Object.assign({ ok: true }, OK))]);
     const api = loadClient(fetchImpl);
     await api.admin.members.importRoster({ source: 'x.json', members: ROSTER.members }, { apply: false });
-    chk('a caller holding no raw bytes still imports, over the body',
-      typeof fetchImpl.calls[0].body === 'string'
-      && JSON.parse(fetchImpl.calls[0].body).members.length === 2);
+    chk('a caller holding no file text still imports, over the older shape',
+      Array.isArray(JSON.parse(fetchImpl.calls[0].body).members));
   }
 
   console.log('\n' + (failed === 0 ? '✅ PASS' : '❌ FAIL') + ': '

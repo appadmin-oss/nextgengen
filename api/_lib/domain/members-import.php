@@ -60,36 +60,54 @@ function members_import_parse(string $json): array
             'extractedAt' => (string)($data['extractedAt'] ?? '')];
 }
 
-/* ── The roster travels as a FILE, not inside a JSON body ────────────────────
+/* ── The roster travels as ONE value, not as 136 objects ─────────────────────
  *
- * A 136-row roster is ~110KB of JSON (~820 bytes a row, and rows carry an
- * address and two guardians), and the ceiling below is 2000 rows — ~1.6MB.
- * Posted as a JSON request BODY that is over mod_security's
- * SecRequestBodyNoFilesLimit — 131072 bytes by default, with Reject as the
- * default action — so on a stock cPanel host the request never reaches PHP.
- * The firewall answers 406 Not Acceptable itself, which is why the drawer could
- * only report `http_406` about a request this application never saw, and why
- * the import broke as the roster grew without anything here changing.
+ * The import was refused with 406 Not Acceptable and nothing in this
+ * application sends a 406 — the request was being rejected in front of PHP, by
+ * the host's mod_security. What it objects to was measured against the live
+ * host rather than guessed, with unauthenticated posts that PHP answers at the
+ * CSRF gate, so a reply of `csrf_failed` means the request got through:
  *
- * The bytes go as a multipart file part instead. That limit is for bodies with
- * no upload in them; a file part is bounded by SecRequestBodyLimit (13MB) and
- * is not folded into ARGS, so the argument-scanning rules never read a child's
- * home address as an injection attempt either.
+ *     6.5KB of roster JSON     (  ~90 values)   →  reached PHP
+ *      55KB of roster JSON     ( 3201 values)   →  406
+ *     322KB in 161 values                       →  reached PHP
+ *     131KB in 2 values                         →  reached PHP
+ *     multipart, any file part, even ~200 bytes  →  406
+ *     multipart, form fields only                →  reached PHP
+ *     whole roster as ONE string value, 736KB    →  reached PHP
+ *     the same, 2.45MB                           →  413 (a real body limit)
  *
- * It is the honest shape for the request as well. The operator is uploading a
- * file. The browser was reading it, re-serialising the whole roster into a
- * body, and sending its own claim about the hash of bytes the server never
- * received; now the server holds the bytes and hashes them itself.
+ * So it is the NUMBER OF VALUES in the body, not its size: the rule set parses
+ * a JSON body into arguments and refuses a request with too many of them. A
+ * 136-member roster is around 3000 values and was always going to hit it; it
+ * broke as the roster grew, with nothing here changing. File uploads are
+ * refused outright on this host, so posting the roster as an upload — the
+ * obvious fix, and the first one tried — does not work either.
  *
- * The JSON body is still accepted: an older cached bundle uses it, and on a
- * host with nothing in the way it always worked.
+ * What does work is sending the roster as a single string: `rosterJson`, the
+ * text of the file exactly as the extractor wrote it, one value however many
+ * members are in it. It is also the honest shape, and it hands the server the
+ * file rather than the browser's summary of it:
+ *
+ *  - `fileSha` is hashed from the text received rather than taken on trust. For
+ *    the UTF-8 the extractor writes that is the file's own sha256 — the number
+ *    extract.js prints — and it used to be absent altogether on plain http,
+ *    where crypto.subtle does not exist.
+ *  - `source` is read from inside the file, so a run is recorded against
+ *    NGG_Members.xlsx rather than against `download (3).json`.
+ *  - The digest still binds the apply to its dry run: it is computed over the
+ *    parsed rows, and both posts send the same text.
+ *
+ * The old shape — `members` as an array of objects — is still accepted, for a
+ * browser running a cached bundle and for a host with nothing in the way.
  */
 
 /**
- * A multipart form field carrying a boolean.
+ * A flag that may arrive as text.
  *
- * Every field in a form arrives as text, and `!empty('false')` is true — a
- * client that spells its dry run `apply=false` must not write the roster.
+ * A JSON body carries real booleans, but `!empty('false')` is true and this
+ * value decides whether 136 records are written — so a client that ever spells
+ * its dry run `apply=false` must not write the roster.
  */
 function members_import_flag($value): bool
 {
@@ -99,35 +117,13 @@ function members_import_flag($value): bool
 }
 
 /**
- * PHP's upload error codes, in the words of somebody importing a roster.
+ * A roster file's text + the fields beside it → the arguments
+ * admin_members_import() takes.
  *
- * @return array|null  The refusal to send back, or null when the part arrived.
+ * Pure on purpose: the endpoint reads the request and hands the text in, so the
+ * transport can be tested without a web server in front of it.
  */
-function members_import_upload_error(int $code): ?array
-{
-    if ($code === UPLOAD_ERR_OK) return null;
-    if ($code === UPLOAD_ERR_INI_SIZE || $code === UPLOAD_ERR_FORM_SIZE) {
-        return ['error' => 'roster_too_large',
-                'detail' => 'The file is larger than this host accepts as an upload. Raise upload_max_filesize and post_max_size, or import it from a shell.'];
-    }
-    /* NO_FILE is also what a host with file_uploads=Off looks like, since
-       nothing is populated at all. The browser answers this particular code by
-       retrying over the JSON body, so it reads as "try the other door". */
-    if ($code === UPLOAD_ERR_NO_FILE || $code === UPLOAD_ERR_PARTIAL) {
-        return ['error' => 'no_roster_file',
-                'detail' => 'No roster file arrived with the request.'];
-    }
-    return ['error' => 'roster_upload_failed',
-            'detail' => 'The host could not store the uploaded file (PHP upload error ' . $code . ').'];
-}
-
-/**
- * A multipart import request → the arguments admin_members_import() takes.
- *
- * Pure on purpose: the endpoint does the superglobals and hands the bytes in,
- * so the transport can be tested without a web server in front of it.
- */
-function members_import_upload_args(array $post, string $raw): array
+function members_import_args(array $fields, string $raw): array
 {
     $parsed = members_import_parse($raw);
     if (empty($parsed['ok'])) return ['ok' => false, 'error' => (string)$parsed['error']];
@@ -135,16 +131,12 @@ function members_import_upload_args(array $post, string $raw): array
     $source = trim((string)$parsed['source']);
     return ['ok' => true, 'args' => [
         'members'      => $parsed['members'],
-        'apply'        => members_import_flag($post['apply'] ?? null),
-        'overwrite'    => members_import_flag($post['overwrite'] ?? null),
-        // The file names the workbook it came from; the form field is only the
+        'apply'        => members_import_flag($fields['apply'] ?? null),
+        'overwrite'    => members_import_flag($fields['overwrite'] ?? null),
+        // The file names the workbook it came from; the posted value is only the
         // filename the browser had, which is the fallback for a hand-made file.
-        'source'       => $source !== '' ? $source : trim((string)($post['source'] ?? '')),
-        'expectDigest' => trim((string)($post['expectDigest'] ?? '')),
-        /* Hashed from the bytes actually received rather than taken on trust.
-           On the JSON path this could only ever be the browser's word about a
-           file the server never saw — and it was absent altogether on plain
-           http, where crypto.subtle does not exist. */
+        'source'       => $source !== '' ? $source : trim((string)($fields['source'] ?? '')),
+        'expectDigest' => trim((string)($fields['expectDigest'] ?? '')),
         'fileSha'      => hash('sha256', $raw),
     ]];
 }

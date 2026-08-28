@@ -211,52 +211,71 @@ notices. Every write is in `audit_log` under `member.import.create`,
 
 ## How the file reaches the server — and the 406
 
-The drawer sends the roster as a **file upload**, not inside the JSON request
-body. That is not a detail: it is the difference between an import that works on
-this host and one that does not.
+The drawer sends the roster as **one value**: `rosterJson`, the text of the file
+exactly as `extract.js` wrote it. Not as an array of member objects, and not as
+a file upload. That is not a detail — it is the difference between an import
+that works on this host and one that does not.
 
-A 136-member roster is about **110KB** as a JSON body — roughly 820 bytes a row,
-because each row carries a home address and two guardians — and the importer's
-own ceiling is 2000 rows, about 1.6MB. mod_security, which is on by default on
-cPanel hosts, will inspect a request body up to `SecRequestBodyNoFilesLimit`
-bytes and **reject** anything longer. That limit is **131072 bytes**, and on
-cPanel the rejection is answered as **`406 Not Acceptable`**.
+The import was being refused with **`406 Not Acceptable`**. Nothing in this
+application sends a 406 (grep for it), so the request was being rejected in
+front of PHP, by the host's mod_security. What it objects to was **measured**
+against the live site rather than guessed, using unauthenticated posts — PHP
+answers those at the CSRF gate, so a reply of `csrf_failed` means the request
+got through:
 
-So the roster spent its whole life a few kilobytes under a wall it was always
-going to hit, and the request was refused *in front of PHP*: nothing reached the
-application, nothing was logged by it, and the only thing the drawer could
-report about it was `http_406`.
+| Request to `/api/admin/members.php` | |
+|---|---|
+| 6.5KB of roster JSON, ~90 values | reached PHP |
+| 55KB of roster JSON, **3201 values** | **406** |
+| 322KB in 161 values | reached PHP |
+| 131KB in 2 values | reached PHP |
+| multipart, **any file part**, even ~200 bytes | **406** |
+| multipart, form fields only | reached PHP |
+| whole roster as **one** string value, 172KB and 736KB | reached PHP |
+| the same, 2.45MB | 413 — a real body limit |
 
-The limit applies to bodies with **no upload in them**. A multipart file part is
-bounded by `SecRequestBodyLimit` instead (13MB by default) and is not folded
-into the request arguments the rule set inspects — which also means a child's
-home address is no longer read as a possible injection attempt. So the bytes
-now travel as a file part, exactly as they sat on disk.
+So it counts the **number of values** in a JSON body and refuses a request
+carrying a few thousand of them. **Size is not the problem**: 322KB in 161
+values goes through where 55KB in 3201 values does not. A 136-member roster
+posted as an array of objects is around 3000 values, so it was always going to
+hit that wall, and it hit it as the roster grew — with nothing in this codebase
+changing. All the drawer could report about a request the application never
+received was `http_406`.
 
-Three things follow from that, all of them improvements on their own:
+File uploads are refused outright on the same host, so sending the roster as an
+upload — the obvious fix, and the first one tried — does not work either.
 
-- **The server hashes what it received.** `fileSha` used to be the browser's
-  claim about bytes the server never saw, and was absent altogether on plain
-  http where `crypto.subtle` does not exist. It is now computed from the
-  uploaded bytes, so the number recorded in `member_import_runs` is an answer
-  rather than a report.
+Sending the file as a single string does. It is also the honest shape, and it
+hands the server the file instead of the browser's summary of it:
+
+- **The server hashes what it received.** `fileSha` was the browser's claim
+  about a file the server never saw, and was absent altogether on plain http
+  where `crypto.subtle` does not exist. It is hashed from the received text now,
+  which for the UTF-8 the extractor writes is the file's own sha256 — the number
+  `extract.js` prints. (A file saved with a byte-order mark would differ by
+  those three bytes; the extractor never writes one.)
 - **The file names its own workbook.** `source` is read from inside the roster
   file, falling back to the filename the browser had — so a run recorded as
   `download (3).json` becomes one recorded as `NGG_Members.xlsx`.
-- **The dry run still binds the apply.** The digest is computed from the rows,
-  not the bytes, and both posts send the same file, so `expectDigest` works
-  exactly as before. Nothing about the safety property changed.
+- **The dry run still binds the apply.** The digest is computed over the parsed
+  rows, and both posts send the same text, so `expectDigest` works exactly as
+  before. Nothing about the safety property changed.
 
-The JSON body is still accepted by the endpoint, and the drawer falls back to it
-if the upload is refused — on a host with `file_uploads` off, or one that objects
-to multipart rather than to size.
+The older shape — `members` as an array of objects — is still accepted by the
+endpoint, and the drawer falls back to it if the one-value post is refused by
+something that is not this application. Measured headroom on this host is
+comfortable: 736KB of roster text went through, which is around 600 members. At
+2.45MB the host answers 413, which is a limit on the request rather than a rule
+about it; the importer's own 2000-row ceiling is past what this transport
+carries, and 2000 rows was never this roster.
 
 **If it is still refused,** the drawer now says so in words instead of showing a
 status code: which HTTP status refused it, that a firewall and not the importer
 is refusing, and the two ways past it. In order:
 
 1. Ask the host to allow POSTs to `/api/admin/members.php` — on cPanel this is
-   *Security → ModSecurity*, disabled per-domain or per-rule.
+   *Security → ModSecurity*, disabled per-domain or per-rule. Worth doing
+   anyway: the same rule will refuse the next bulk write the product grows.
 2. Import from a shell instead: `php api/tools/seed-members.php --file <roster>`.
    This is the reason `--expect-sha` exists — the file has travelled.
 

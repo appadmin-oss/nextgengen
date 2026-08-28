@@ -205,12 +205,14 @@ is being served and is not blocked by a CSP or a stale cache.
 
 **A 406 is a different animal.** `406 Not Acceptable` on a POST is not something
 this application ever sends — grep for it. It is mod_security, which is on by
-default on cPanel, refusing the request before PHP is reached; on cPanel a
-rejection is answered as 406. The usual trigger is a request body over
-`SecRequestBodyNoFilesLimit` (131072 bytes), which applies only to bodies with
-no file upload in them. The roster import used to post the whole roster that way
-and hit exactly this; it sends the file as an upload now. See
-[ROSTER-IMPORT.md](ROSTER-IMPORT.md#how-the-file-reaches-the-server--and-the-406).
+default on cPanel, refusing the request before PHP is reached; a rejection is
+answered as 406 there. On this host, measured, the trigger is the **number of
+values in a JSON body**, not its size — 322KB in 161 values goes through where
+55KB in 3201 values does not — and **any multipart file part is refused
+outright**. So a bulk write posts its payload as one string value; the roster
+import used to post an array of 136 objects and hit exactly this. See
+[ROSTER-IMPORT.md](ROSTER-IMPORT.md#how-the-file-reaches-the-server--and-the-406)
+for the measurements and how to reproduce them with `curl`.
 
 ### Photos without Cloudinary
 
