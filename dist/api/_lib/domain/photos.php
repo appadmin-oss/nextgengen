@@ -511,6 +511,168 @@ function photo_store_relativise(string $url): string {
 }
 
 /**
+ * Every column that could be holding one of these URLs, asked of the database
+ * rather than written out here.
+ *
+ * This list used to be six columns in the sweep below, under a comment saying
+ * that a column missed was a photo deleted while something still showed it.
+ * Several were missed, and the store is used by more of the product every
+ * release:
+ *
+ *   · `design_assets.url` — everything uploaded to the ID designer. It reuses
+ *     this store on purpose (see dasset_upload), and a card template embeds the
+ *     URL in its schemaJson, which is not a column anybody would have listed.
+ *   · `member_progress.proofUrl` — a mission proof photographed on a phone.
+ *     member_self_progress explicitly serves a `/api/public/photo.php` value
+ *     from that column, so it is unambiguously one of ours.
+ *   · `member_requests.proofUrl`, `mentors.photoUrl`, `promos.imageUrl`,
+ *     `profile_projects.imageUrl` — the same shape, reached from other screens.
+ *
+ * Each of those was a file the sweep deleted seven days after it was stored,
+ * from under a record that still pointed at it: the image 404s from then on and
+ * nothing in the product says why.
+ *
+ * So every text-ish column in the schema is read. That is broader than
+ * necessary — an audit row quoting a URL now counts as a reference and keeps a
+ * file alive — and that is the right direction to be wrong in: the cost is a
+ * stale file on disk, against a child's only photograph. A column added next
+ * year is covered on the day it is added.
+ *
+ * Returns [] when the schema cannot be enumerated, which the sweep treats the
+ * same as a failed read: do nothing.
+ */
+function photo_store_ref_columns(): array
+{
+    static $cols = null;
+    if ($cols !== null) return $cols;
+
+    $ident = fn(string $s) => (bool)preg_match('/^[A-Za-z0-9_]+$/', $s);
+    $out = [];
+    try {
+        // The MySQL side is the same question db_has_column() already asks of
+        // information_schema on every migration, so it is not a new dependency.
+        if (db_driver() === 'mysql') {
+            /* Base tables only. A view this connection cannot select from would
+               abort the whole scan — the sweep fails closed, which is right, but
+               it would then never collect anything again. */
+            $rows = db_all("SELECT c.TABLE_NAME t, c.COLUMN_NAME c FROM information_schema.COLUMNS c
+                            JOIN information_schema.TABLES tb
+                              ON tb.TABLE_SCHEMA = c.TABLE_SCHEMA AND tb.TABLE_NAME = c.TABLE_NAME
+                            WHERE c.TABLE_SCHEMA = DATABASE() AND tb.TABLE_TYPE = 'BASE TABLE'
+                              AND c.DATA_TYPE IN ('varchar','char','text','tinytext','mediumtext','longtext')");
+            foreach ($rows as $r) {
+                if ($ident((string)$r['t']) && $ident((string)$r['c'])) $out[] = [(string)$r['t'], (string)$r['c']];
+            }
+        } else {
+            foreach (db_all("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'") as $t) {
+                $table = (string)$t['name'];
+                if (!$ident($table)) continue;
+                foreach (db_all('PRAGMA table_info(' . $table . ')') as $c) {
+                    $col = (string)($c['name'] ?? '');
+                    // SQLite types are advisory and often blank; anything that is
+                    // not declared numeric can hold text, so include those too.
+                    $type = strtolower((string)($c['type'] ?? ''));
+                    $numeric = (bool)preg_match('/int|real|floa|doub|num|dec|bool|date/', $type);
+                    if ($ident($col) && !$numeric) $out[] = [$table, $col];
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('[photo_store_ref_columns] cannot enumerate the schema: ' . $e->getMessage());
+        return $cols = [];
+    }
+    return $cols = $out;
+}
+
+/**
+ * Every store id something in the database still points at.
+ *
+ * Returns null — not an empty array — when the scan could not be completed, so
+ * a caller can tell "nothing references anything" from "I do not know". The
+ * sweep must never read the second as the first.
+ */
+function photo_store_referenced(): ?array
+{
+    // Reachable in the suite, because "the scan failed" is the branch that
+    // decides whether a failure deletes the store or leaves it alone, and a
+    // branch that cannot be tested is a branch nobody has checked.
+    if (!empty($GLOBALS['__photo_ref_force_fail'])) return null;
+
+    $columns = photo_store_ref_columns();
+    if (!$columns) return null;
+
+    /* One query per TABLE, not per column: this schema has over a thousand text
+       columns, and a round trip each was the difference between a scan worth
+       running daily and one nobody would leave switched on. */
+    $q = db_driver() === 'mysql' ? '`' : '"';
+    $byTable = [];
+    foreach ($columns as [$table, $col]) $byTable[$table][] = $col;
+
+    $referenced = [];
+    foreach ($byTable as $table => $cols) {
+        $sel = implode(', ', array_map(fn($c) => $q . $c . $q, $cols));
+        $where = implode(' OR ', array_map(
+            fn($c) => $q . $c . $q . " LIKE '%/api/public/photo.php?p=%'", $cols));
+        try {
+            foreach (db_all("SELECT $sel FROM " . $q . $table . $q . " WHERE $where") as $row) {
+                foreach ($row as $col => $v) {
+                    if (!is_string($v) || strpos($v, '/api/public/photo.php?p=') === false) continue;
+                    if (!preg_match_all('/p=([0-9a-f]{32}\.(?:jpg|png|webp))/', $v, $m)) continue;
+                    foreach ($m[1] as $id) $referenced[$id] = $table . '.' . $col;
+                }
+            }
+        } catch (Throwable $e) {
+            /* A dropped column, a view we cannot select from, a broken
+               connection: we no longer know what is referenced. Say so rather
+               than guess — deleting a child's only photograph because a query
+               failed is not a tradeoff worth making. */
+            error_log('[photo_store_referenced] aborted, cannot read ' . $table . ': ' . $e->getMessage());
+            return null;
+        }
+    }
+    return $referenced;
+}
+
+/**
+ * Ids something still points at whose bytes are gone — the 404 in a browser
+ * console, counted.
+ *
+ * Nothing in the product could see this. The self-test answers "can this host
+ * keep a photograph", the record check answers "did one arrive", and neither
+ * notices a URL on a row whose file is no longer on disk: the card shows an
+ * empty frame, the console shows a 404, and the two are never connected. It has
+ * a cause worth naming — the sweep used to delete files it could not see a
+ * reference to — and a remedy that needs knowing which children are affected.
+ *
+ * `scanned` is false when the reference scan could not be completed at all —
+ * reported separately from "nothing is broken", because a check that cannot run
+ * must not show up as a clean bill of health OR as a red light claiming zero
+ * broken links out of zero.
+ *
+ * @return array{scanned: bool, ok: bool, checked: int, missing: int, where: array, ids: array}
+ */
+function photo_store_broken_refs(int $limit = 400): array
+{
+    $referenced = photo_store_referenced();
+    if ($referenced === null) {
+        return ['scanned' => false, 'ok' => false, 'checked' => 0, 'missing' => 0, 'where' => [], 'ids' => []];
+    }
+
+    $missing = 0; $where = []; $ids = []; $checked = 0;
+    foreach ($referenced as $id => $place) {
+        if ($checked >= $limit) break;
+        $checked++;
+        $path = photo_store_find($id);
+        if ($path !== '' && is_file($path)) continue;
+        $missing++;
+        $where[$place] = (int)($where[$place] ?? 0) + 1;
+        if (count($ids) < 10) $ids[] = $id;
+    }
+    return ['scanned' => true, 'ok' => $missing === 0, 'checked' => $checked,
+            'missing' => $missing, 'where' => $where, 'ids' => $ids];
+}
+
+/**
  * Delete stored images nothing points at any more.
  *
  * The store is write-on-intake, and an intake can be refused after the bytes
@@ -524,9 +686,12 @@ function photo_store_relativise(string $url): string {
  *  - A file must be older than $days before it is even a candidate, so a photo
  *    mid-flight between being stored and being written to its row is never
  *    swept out from under the request that is creating it.
- *  - Every column that can hold one of these URLs is consulted, and if ANY of
- *    those reads throws, the sweep does nothing at all. Deleting a child's only
- *    photograph because a query failed is not a tradeoff worth making.
+ *  - Every column that can hold one of these URLs is consulted — every text
+ *    column in the schema, asked of the database rather than listed by hand —
+ *    and if ANY of those reads throws, the sweep does nothing at all. Deleting
+ *    a child's only photograph because a query failed is not a tradeoff worth
+ *    making, and neither is deleting one because nobody remembered that the ID
+ *    designer stores its uploads here too.
  *  - Bounded per run, because this is driven by ordinary web traffic.
  */
 function photo_store_sweep(int $days = 7, int $limit = 200): int {
@@ -544,30 +709,13 @@ function photo_store_sweep(int $days = 7, int $limit = 200): int {
     }
     if (!$files) return 0;
 
-    /* Everywhere a stored URL can legitimately live. A column missed here is a
-     * photo deleted while something still shows it, so this list is the whole
-     * safety of the sweep — hence the all-or-nothing failure below. */
-    $sources = [
-        ['summer_students', 'photoUrl'],
-        ['volunteers', 'photoUrl'],
-        ['applications', 'photoUrl'],
-        ['photo_assets', 'sourceUrl'],
-        ['photo_assets', 'editedUrl'],
-        ['members', 'photoUrl'],
-    ];
-    $referenced = [];
-    foreach ($sources as [$table, $col]) {
-        try {
-            foreach (db_all("SELECT $col v FROM $table WHERE $col LIKE '%/api/public/photo.php?p=%'") as $r) {
-                if (preg_match('/p=([0-9a-f]{32}\.(?:jpg|png|webp))/', (string)$r['v'], $m)) $referenced[$m[1]] = true;
-            }
-        } catch (Throwable $e) {
-            // A missing column or a broken connection means we do not know what
-            // is referenced. Do nothing rather than guess.
-            error_log('[photo_store_sweep] aborted, cannot read ' . $table . '.' . $col . ': ' . $e->getMessage());
-            return 0;
-        }
-    }
+    /* Everywhere a stored URL can legitimately live — discovered from the
+     * schema, not listed here. A column missed is a photo deleted while
+     * something still shows it, and several were missed while this was a list
+     * (see photo_store_ref_columns). A null answer means the scan could not be
+     * completed, which must never read as "nothing is referenced". */
+    $referenced = photo_store_referenced();
+    if ($referenced === null) return 0;
 
     $gone = 0;
     foreach ($files as $f) {

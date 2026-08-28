@@ -6119,11 +6119,119 @@ chk('…and the self-test passes again the moment it is writable', (function () 
         && !empty($m[1]) && !is_file(photo_store_path($m[1]));
 })());
 
+/* ── The columns the sweep did not know about ────────────────────────────────
+ *
+ * The sweep's reference list was six columns written out by hand, under a
+ * comment saying that a column missed was a photo deleted while something still
+ * showed it. Columns were missed. The ID designer stores every upload in this
+ * same store (deliberately — dasset_upload says why) and keeps the URL in
+ * `design_assets.url`; a mission proof photographed on a phone lands in
+ * `member_progress.proofUrl`, which member_self_progress serves straight back.
+ * Neither was on the list, so seven days after they were stored the sweep
+ * deleted them from under records that still pointed at them — an empty frame
+ * on screen, a 404 in the console, and nothing anywhere saying why.
+ *
+ * These are that bug, in the two places it was reachable. They are written
+ * against columns the old list did not contain on purpose: if the reference
+ * scan ever goes back to being a list, they fail.
+ */
+chk('the sweep keeps a photo referenced from the ID designer, not just from a roster', (function () use ($png) {
+    $a = photo_store_put($png(620, 780));
+    if (empty($a['ok'])) return false;
+    db_insert('design_assets', [
+        'assetId' => 'ast-sweep-1', 'name' => 'sweep probe', 'url' => (string)$a['url'],
+        'storeId' => (string)$a['id'], 'sha' => hash('sha256', 'sweep-1'),
+        'bytes' => 100, 'width' => 620, 'height' => 780, 'mime' => 'image/png',
+        'folder' => '', 'uploadedById' => 'test', 'archivedAt' => '', 'createdAt' => now_iso(),
+    ]);
+    @touch(photo_store_path((string)$a['id']), time() - 30 * 86400);
+    photo_store_sweep(7, 100);
+    return is_file(photo_store_path((string)$a['id']));
+})());
+chk('…and one referenced from a mission proof', (function () use ($png) {
+    $b = photo_store_put($png(624, 784));
+    if (empty($b['ok'])) return false;
+    $mid = (string)(db_row("SELECT memberId FROM members ORDER BY id LIMIT 1")['memberId'] ?? '');
+    if ($mid === '') return false;
+    db_insert('member_progress', ['memberId' => $mid, 'missionId' => 'sweep-probe', 'sessionId' => 'sweep',
+        'status' => 'submitted', 'proofUrl' => (string)$b['url'], 'note' => '', 'submittedAt' => now_iso(),
+        'xpAwarded' => 0, 'verifiedAt' => '', 'verifiedBy' => '']);
+    @touch(photo_store_path((string)$b['id']), time() - 30 * 86400);
+    photo_store_sweep(7, 100);
+    return is_file(photo_store_path((string)$b['id']));
+})());
+/* The scan has to stay all-or-nothing. "I could not read the schema" must never
+   be read as "nothing references anything", which would delete the store. */
+/* A check that cannot run must say so rather than reporting a clean bill of
+   health, or a red light about nothing. */
+chk('a scan that cannot run reports itself as not scanned, not as zero broken', (function () {
+    $GLOBALS['__photo_ref_force_fail'] = true;
+    $br = photo_store_broken_refs(10);
+    unset($GLOBALS['__photo_ref_force_fail']);
+    return isset($br['scanned']) && $br['scanned'] === false && (int)$br['missing'] === 0;
+})());
+chk('a reference scan that cannot complete deletes nothing at all', (function () use ($png) {
+    $c = photo_store_put($png(628, 788));
+    if (empty($c['ok'])) return false;
+    @touch(photo_store_path((string)$c['id']), time() - 30 * 86400);
+    // photo_store_referenced() returns null on a failure; the sweep must stop.
+    $GLOBALS['__photo_ref_force_fail'] = true;
+    $n = photo_store_sweep(7, 100);
+    unset($GLOBALS['__photo_ref_force_fail']);
+    $kept = is_file(photo_store_path((string)$c['id']));
+    // Clean up the orphan the test just made, now that the scan works again.
+    photo_store_sweep(7, 100);
+    return $n === 0 && $kept;
+})());
+/* Every text column, and it must find one wherever it is — including a URL
+   embedded in JSON rather than sitting alone in a column, which is how a card
+   template holds its background. */
+chk('the reference scan reads every text column, JSON included', (function () use ($png) {
+    $d = photo_store_put($png(632, 792));
+    if (empty($d['ok'])) return false;
+    $refs = photo_store_referenced();
+    $before = is_array($refs) && !isset($refs[(string)$d['id']]);
+    db_insert('design_assets', [
+        'assetId' => 'ast-sweep-2',
+        // The URL inside JSON rather than alone in a column, which is how a card
+        // template carries its background image.
+        'name' => '{"bg":"' . (string)$d['url'] . '","kept":true}',
+        'url' => 'x', 'storeId' => '', 'sha' => hash('sha256', 'sweep-2'),
+        'bytes' => 1, 'width' => 1, 'height' => 1, 'mime' => 'image/png',
+        'folder' => '', 'uploadedById' => 'test', 'archivedAt' => '', 'createdAt' => now_iso(),
+    ]);
+    $after = photo_store_referenced();
+    return $before && is_array($after) && isset($after[(string)$d['id']]);
+})());
+/* The 404 nobody could see. A record pointing at bytes that are gone renders an
+   empty frame and fills a console with 404s from photo.php, and no screen in the
+   product connected the two until this existed. */
+chk('a record pointing at a file that is gone is reported, with where it is', (function () use ($png) {
+    $e = photo_store_put($png(636, 796));
+    if (empty($e['ok'])) return false;
+    $sid = (string)(db_row("SELECT studentId FROM summer_students ORDER BY id LIMIT 1")['studentId'] ?? '');
+    if ($sid === '') return false;
+    db_update('summer_students', ['photoUrl' => (string)$e['url']], ['studentId' => $sid]);
+    $healthy = photo_store_broken_refs(400);
+    // Now lose the bytes the way a sweep or a re-upload of the site would.
+    @unlink(photo_store_path((string)$e['id']));
+    $broken = photo_store_broken_refs(400);
+    db_update('summer_students', ['photoUrl' => ''], ['studentId' => $sid]);
+    return !empty($healthy['ok']) && !empty($healthy['scanned'])
+        && empty($broken['ok']) && !empty($broken['scanned']) && $broken['missing'] >= 1
+        && in_array((string)$e['id'], $broken['ids'], true)
+        && ($broken['where']['summer_students.photoUrl'] ?? 0) >= 1;
+})());
+
 chk('…and a file younger than the window is never a candidate', (function () use ($png) {
     $fresh = photo_store_put($png(680, 800));
     photo_store_sweep(7, 100);
     return is_file(photo_store_path((string)$fresh['id']));
 })());
+
+
+
+
 
 // ── Centre capacity → waitlist, and bulk import (run last: they add centres/students) ──
 chk('centre capacity waitlists once full', (function () {

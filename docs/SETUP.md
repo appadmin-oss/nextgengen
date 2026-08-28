@@ -214,6 +214,33 @@ import used to post an array of 136 objects and hit exactly this. See
 [ROSTER-IMPORT.md](ROSTER-IMPORT.md#how-the-file-reaches-the-server--and-the-406)
 for the measurements and how to reproduce them with `curl`.
 
+### An image 404s from photo.php
+
+A `/api/public/photo.php?p=…` that answers **404** means a record points at
+bytes that are no longer on disk. The endpoint answers a bad id and a missing
+file identically on purpose — distinguishing them would make it an oracle for
+which photographs exist — so the count is reported where it can be acted on
+instead: **Control Room → Ops → Photo storage → "Images on record"**, which says
+how many references are broken and which table they are in.
+
+One cause has been fixed rather than documented: the garbage sweep that deletes
+unreferenced originals consulted a hand-written list of six columns, and the
+store had since grown more users than that — the ID designer's uploads
+(`design_assets.url`, and a card template's `schemaJson`), a mission proof
+(`member_progress.proofUrl`), and others. Each was deleted seven days after it
+was stored, from under a record still showing it. The sweep now asks the schema
+for every text column instead, so a column added later is covered on the day it
+is added.
+
+**The bytes cannot be recovered.** Send those members a retake link — Admin →
+Registrations → the child → Photo. Cards and rosters print without a headshot in
+the meantime, and the print preflight counts who is missing one.
+
+The other way to lose them is a deploy: `api/storage/photos` holds the only copy
+of every locally-stored image, and an FTP sync set to mirror-and-delete will
+remove it because it is not in the repository. Exclude `api/storage` from
+deployment, and back it up with the database.
+
 ### Photos without Cloudinary
 
 Cloudinary needs three keys, and until they are set there is nowhere to upload

@@ -7287,6 +7287,11 @@ function AdminOps() {
                 : "")}
               {c.photosOnRecord && light(!!c.photosOnRecord.ok, "Recent sign-ups",
                 c.photosOnRecord.missing + " of the last " + c.photosOnRecord.checked + " arrived with no photo")}
+              {/* A URL on a record whose file is gone. Renders as an empty frame
+                  and a 404 in the console, and until this light existed the two
+                  could not be connected by anyone looking at the product. */}
+              {c.photoLinks && light(!!c.photoLinks.ok, "Images on record",
+                c.photoLinks.missing + " of " + c.photoLinks.checked + " point at a file that is no longer on disk")}
             </div>
             <p className="admin-cell-sub" style={{ marginTop: 6 }}>
               {c.photos.dir ? <>Directory <code>{c.photos.dir}</code> · </> : null}
@@ -7294,6 +7299,20 @@ function AdminOps() {
               {c.photos.bytes ? " · " + (c.photos.bytes / 1048576).toFixed(1) + " MB" : ""}
               {c.photos.where === "storage" ? " · checked by writing and reading back a test image just now" : ""}
             </p>
+            {/* Named where it can be acted on: which table lost them says which
+                screen to go and fix, and the count says how big the job is. */}
+            {c.photoLinks && !c.photoLinks.ok && (
+              <p className="admin-hint" style={{ marginTop: 4 }}>
+                {c.photoLinks.missing} image{c.photoLinks.missing === 1 ? "" : "s"} referenced by a record
+                {" "}{c.photoLinks.missing === 1 ? "is" : "are"} no longer on disk
+                {Object.keys(c.photoLinks.where || {}).length
+                  ? " — " + Object.keys(c.photoLinks.where).map(k => c.photoLinks.where[k] + " in " + k).join(", ")
+                  : ""}.
+                {" "}The bytes cannot be recovered: send those members a retake link
+                (Admin {"→"} Registrations {"→"} the child {"→"} Photo). Cards and rosters print
+                without a headshot in the meantime.
+              </p>
+            )}
             {!c.photos.ok && (
               <p className="admin-hint" style={{ marginTop: 4 }}>
                 Make <code>api/storage</code> writable by the web user (<code>chmod 775</code>, or 755 if PHP runs as
