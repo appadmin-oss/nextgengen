@@ -1144,9 +1144,22 @@
       },
       club: {
         overview:   () => request('/admin/club.php?view=overview'),
-        promotable: () => request('/admin/club.php?view=promotable'),
-        members:    (q) => request('/admin/club.php' + qs({ view: 'members', q })),
+        /* Both lists are searched, filtered and PAGED server-side now. The
+           promotable list used to arrive whole — a 400-child edition as one
+           payload, each row costing an attendance query and a profile lookup. */
+        promotable: (opts) => request('/admin/club.php' + qs(Object.assign({ view: 'promotable' }, opts || {}))),
+        /* `opts` rather than a bare `q`: the roster takes status, centre, sort
+           and paging. Omitting `status` means active — the domain's default and
+           what this screen has always shown; pass 'all' for every status. */
+        members:    (opts) => request('/admin/club.php' + qs(Object.assign({ view: 'members' },
+                      typeof opts === 'string' ? { q: opts } : (opts || {})))),
         promote:    (studentId) => request('/admin/club.php', { body: { action: 'promote', studentId } }),
+        /* Bulk, and PARTIAL: read `results` for the per-row verdicts, not just
+           `ok`. Each promotion goes through the single promote path, so the
+           bulk cannot drift from it. */
+        promoteBulk: (studentIds) => request('/admin/club.php', { body: { action: 'promoteBulk', studentIds }, timeout: 180000 }),
+        bulk:       (op, memberIds, payload) => request('/admin/club.php', {
+                      body: Object.assign({ action: 'bulk', op, memberIds }, payload || {}), timeout: 120000 }),
       },
       contact: {
         list:   (q) => request('/admin/contact.php' + qs(q || {})),

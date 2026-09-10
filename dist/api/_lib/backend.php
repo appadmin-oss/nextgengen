@@ -183,6 +183,12 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.club.promotable'       => 'admin_club_promotable',
             'admin.club.promote'          => 'admin_club_promote',
             'admin.club.members'          => 'admin_club_members',
+            /* A club coordinator's own bulk actions. Deliberately narrower
+               than the member desk's — see domain/club.php: `club` manages
+               participation, and must not become a quiet superset of
+               `people`. */
+            'admin.club.promote.bulk'     => 'admin_club_promote_bulk',
+            'admin.club.members.bulk'     => 'admin_club_members_bulk',
             // Anchor Circle — student side (member) + portal side (guardian)
             'auth.gateway'                => 'auth_gateway',
             'hooks.attendance'            => 'hooks_attendance',

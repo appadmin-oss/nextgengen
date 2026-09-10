@@ -4974,6 +4974,134 @@ chk('ids: a scoped admin only ever sees their own centres', (function () {
 })());
 chk('ids: gated on the people cap', backend_dispatch('admin.members.ids', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   NGG Club desk — bulk promotion, and the roster a coordinator can finally see
+   ═══════════════════════════════════════════════════════════════════════════
+   The club screens were read-only lists with one exception, and three of their
+   behaviours were wrong in ways nobody would notice:
+
+     · promotion was one child at a time, so a graduating edition of four
+       hundred was four hundred confirmations and in practice did not happen;
+     · the roster was hard-wired to status='active', so the two groups a roster
+       exists to track (who went quiet, who graduated) could not be seen at all;
+     · the promotable list ran an attendance query AND a profile lookup PER
+       STUDENT — 800+ queries to render four columns.
+
+   And the club capability must stay NARROWER than the member desk's: a club
+   coordinator manages participation, not suspension, not membership type, not
+   levels and not the dues switch. Otherwise `club` is a quiet superset of
+   `people`, which is not what granting it says.
+*/
+db_insert('members', ['memberId' => 'NGG-CLUBADM', 'fullName' => 'Cleo Club', 'email' => 'clubadm@example.com',
+    'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'centre' => 'Ijaiye', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+$CLUBADM = 'NGG-CLUBADM';
+db_insert('summer_cohorts', ['cohortId' => 'SUM-CLUB', 'name' => 'Club Bridge Edition', 'year' => 2029, 'status' => 'closed', 'createdAt' => now_iso()]);
+foreach ([['CB-1', 'Club Kid One', 'cb1@example.com'], ['CB-2', 'Club Kid Two', ''], ['CB-3', 'Club Kid Three', 'cb3@example.com']] as $i => $row) {
+    db_insert('summer_students', ['studentId' => $row[0], 'cohortId' => 'SUM-CLUB', 'token' => 'SUMQR-CB' . $i,
+        'handle' => 'cb' . $i, 'fullName' => $row[1], 'age' => 14, 'centre' => 'Ijaiye', 'track' => 'Piano',
+        'parentEmail' => $row[2], 'status' => 'graduated', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+}
+
+chk('club: the promotable list is paged and totalled, not returned whole', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.promotable', ['requesterId' => $CLUBADM, 'pageSize' => 2]);
+    return !empty($r['ok']) && count($r['students']) === 2 && $r['total'] >= 3 && $r['pageSize'] === 2;
+})());
+chk('club: …and searchable', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.promotable', ['requesterId' => $CLUBADM, 'q' => 'kid two']);
+    return count($r['students']) === 1 && $r['students'][0]['studentId'] === 'CB-2';
+})());
+chk('club: a child with no guardian email is FLAGGED, not hidden', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.promotable', ['requesterId' => $CLUBADM, 'q' => 'kid two']);
+    return $r['students'][0]['noContact'] === true;
+})());
+chk('club: …and one with an email is not', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.promotable', ['requesterId' => $CLUBADM, 'q' => 'kid one']);
+    return $r['students'][0]['noContact'] === false;
+})());
+chk('club: bulk promotion refuses an empty selection', backend_dispatch('admin.club.promote.bulk',
+    ['requesterId' => $CLUBADM, 'studentIds' => []])['error'] === 'nothing_selected');
+chk('club: …and is bounded', (function () use ($CLUBADM) {
+    $many = array_map(fn($i) => 'CB-GHOST-' . $i, range(1, CLUB_PROMOTE_MAX + 1));
+    return backend_dispatch('admin.club.promote.bulk', ['requesterId' => $CLUBADM, 'studentIds' => $many])['error'] === 'too_many';
+})());
+$CBULK = backend_dispatch('admin.club.promote.bulk', ['requesterId' => $CLUBADM,
+    'studentIds' => ['CB-1', 'CB-2', 'CB-GONE']]);
+chk('club: a graduating group is promoted in one action, partially', (function () use ($CBULK) {
+    return !empty($CBULK['ok']) && $CBULK['promoted'] === 2 && $CBULK['refused'] === 1;
+})());
+chk('club: …and the one that could not be is NAMED', (function () use ($CBULK) {
+    foreach ($CBULK['results'] as $x) if ($x['id'] === 'CB-GONE') return $x['ok'] === false && $x['error'] === 'not_found';
+    return false;
+})());
+chk('club: …the Summer School records are marked promoted', (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE studentId IN ('CB-1','CB-2') AND status='promoted'")['c'] ?? 0) === 2);
+chk('club: …each got a real member row carrying the guardian email',
+    (string)(db_row("SELECT email FROM members WHERE notes LIKE '%CB-1%' LIMIT 1")['email'] ?? '') === 'cb1@example.com');
+chk('club: re-promoting the same child is refused, not duplicated', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.promote.bulk', ['requesterId' => $CLUBADM, 'studentIds' => ['CB-1']]);
+    return $r['promoted'] === 0 && $r['results'][0]['error'] === 'already_promoted';
+})());
+chk('club: bulk promotion is gated on the club cap', backend_dispatch('admin.club.promote.bulk',
+    ['requesterId' => 'NGG-2025-0001', 'studentIds' => ['CB-3']])['error'] === 'forbidden');
+
+/* The roster. Absent `status` still means active — the default this screen has
+   always had — and 'all' is how you ask for everybody. */
+chk('club: the roster defaults to active, as it always did', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.members', ['requesterId' => $CLUBADM]);
+    if (empty($r['ok'])) return false;
+    foreach ($r['members'] as $m) if ((string)$m['status'] !== 'active') return false;
+    return true;
+})());
+chk('club: …but the inactive and graduated can finally be SEEN', (function () use ($CLUBADM) {
+    $mid = (string)db_row("SELECT memberId FROM members WHERE notes LIKE '%CB-1%' LIMIT 1")['memberId'];
+    db_update('members', ['status' => 'inactive'], ['memberId' => $mid]);
+    $act = backend_dispatch('admin.club.members', ['requesterId' => $CLUBADM]);
+    $ina = backend_dispatch('admin.club.members', ['requesterId' => $CLUBADM, 'status' => 'inactive']);
+    $all = backend_dispatch('admin.club.members', ['requesterId' => $CLUBADM, 'status' => 'all']);
+    $inActive = false; foreach ($act['members'] as $m) if ($m['memberId'] === $mid) $inActive = true;
+    $inInactive = false; foreach ($ina['members'] as $m) if ($m['memberId'] === $mid) $inInactive = true;
+    $inAll = false; foreach ($all['members'] as $m) if ($m['memberId'] === $mid) $inAll = true;
+    db_update('members', ['status' => 'active'], ['memberId' => $mid]);
+    return !$inActive && $inInactive && $inAll;
+})());
+chk('club: …and it is paged and totalled', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.members', ['requesterId' => $CLUBADM, 'pageSize' => 1]);
+    return $r['pageSize'] === 1 && $r['total'] >= 1 && count($r['members']) <= 1;
+})());
+
+/* The club desk's own bulk, and the ceiling on it. */
+$CBM = (string)db_row("SELECT memberId FROM members WHERE notes LIKE '%CB-2%' LIMIT 1")['memberId'];
+chk('club bulk: participation can be set', (function () use ($CLUBADM, $CBM) {
+    $r = backend_dispatch('admin.club.members.bulk', ['requesterId' => $CLUBADM, 'action' => 'status',
+        'status' => 'graduated-ngg', 'memberIds' => [$CBM]]);
+    return !empty($r['ok']) && $r['applied'] === 1
+        && (string)db_row('SELECT status FROM members WHERE memberId = ?', [$CBM])['status'] === 'graduated-ngg';
+})());
+chk('club bulk: SUSPENSION is refused — that is the member desk, with a record of why',
+    backend_dispatch('admin.club.members.bulk', ['requesterId' => $CLUBADM, 'action' => 'status',
+        'status' => 'suspended', 'memberIds' => [$CBM]])['error'] === 'bad_status');
+chk('club bulk: membership type is not a club action at all',
+    backend_dispatch('admin.club.members.bulk', ['requesterId' => $CLUBADM, 'action' => 'type',
+        'type' => 'Summer', 'memberIds' => [$CBM]])['error'] === 'unknown_action');
+chk('club bulk: a staff account is refused', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.members.bulk', ['requesterId' => $CLUBADM, 'action' => 'status',
+        'status' => 'inactive', 'memberIds' => ['NGG-2025-0099']]);
+    return $r['refused'] === 1 && $r['results'][0]['error'] === 'staff_account';
+})());
+chk('club bulk: the coordinator cannot include their own account', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.members.bulk', ['requesterId' => $CLUBADM, 'action' => 'status',
+        'status' => 'inactive', 'memberIds' => [$CLUBADM]]);
+    return $r['refused'] === 1 && $r['results'][0]['error'] === 'own_account';
+})());
+chk('club bulk: an unknown centre is refused', backend_dispatch('admin.club.members.bulk',
+    ['requesterId' => $CLUBADM, 'action' => 'centre', 'centre' => 'Narnia', 'memberIds' => [$CBM]])['error'] === 'centre_not_found');
+chk('club bulk: gated on the club cap', backend_dispatch('admin.club.members.bulk',
+    ['requesterId' => 'NGG-2025-0730', 'action' => 'status', 'status' => 'active', 'memberIds' => [$CBM]])['error'] === 'forbidden');
+chk('club bulk: bounded', (function () use ($CLUBADM) {
+    $many = array_map(fn($i) => 'NGG-GH-' . $i, range(1, CLUB_BULK_MAX + 1));
+    return backend_dispatch('admin.club.members.bulk', ['requesterId' => $CLUBADM, 'action' => 'status',
+        'status' => 'active', 'memberIds' => $many])['error'] === 'too_many';
+})());
+
 // ── AI profiles (offline resolution only — no network in tests) ──
 chk('ai disabled with no keys', ai_enabled() === false && ai_enabled('coach') === false && ai_complete('s', 'u')['error'] === 'ai_disabled');
 chk('ai profile chain: profile → fallback → default, deduped', (function () {

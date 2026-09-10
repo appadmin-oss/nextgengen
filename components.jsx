@@ -1427,6 +1427,10 @@ async function runAdminAction(action, ids, opts) {
         catch (e) { results.push({ id, ok: false, error: (e && (e.code || e.message)) || "failed" }); failed++; }
       }
     } else {
+      /* Declaring neither `run` nor `runOne` nor `open` is a programming
+         mistake, not a user-facing outcome. Reported rather than shown as a
+         success over zero rows. */
+      console.error("[admin] action has no runner", action && action.id);
       return { ran: false, ok: 0, failed: 0, results: [], reason: "no_runner" };
     }
   } catch (e) {
@@ -1494,6 +1498,12 @@ function AdminBulkBar({ selection, actions, total, selectAllMatching, hasCap, no
   const n = selection.size;
   const label = (noun || "record") + (n === 1 ? "" : "s");
   const go = async (a) => {
+    /* An action that needs a VALUE ("which status?", "which centre?") cannot
+       be a button — it has to ask first. Those declare `open(ids)` instead of
+       `run(ids)`: the bar hands over the ids and steps out of the way, and
+       crucially does NOT clear the selection, because whatever it opened is
+       about to act on it. */
+    if (typeof a.open === "function") { a.open(selection.ids); return; }
     setRunning(a.id);
     try { await runAdminAction(a, selection.ids, { noun: noun || "record", pastTense: a.pastTense, reload: a.reload }); }
     finally { setRunning(""); }
@@ -1551,7 +1561,9 @@ function AdminRowActions({ id, actions, hasCap, noun, reload, label }) {
   }, [open]);
   if (!usable.length) return null;
   const go = async (a) => {
-    setRunning(a.id); setOpen(false);
+    setOpen(false);
+    if (typeof a.open === "function") { a.open([id]); return; }
+    setRunning(a.id);
     try { await runAdminAction(a, [id], { noun: noun || "record", pastTense: a.pastTense, reload }); }
     finally { setRunning(""); }
   };

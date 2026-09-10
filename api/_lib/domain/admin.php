@@ -74,7 +74,11 @@ function admin_members_list(array $p): array {
     $where = []; $params = [];
     $q = strtolower((string)($p['q'] ?? ''));
     if ($q !== '') { $where[] = '(lower(fullName) LIKE ? OR lower(memberId) LIKE ? OR lower(email) LIKE ?)'; $like = '%' . $q . '%'; array_push($params, $like, $like, $like); }
-    foreach (['centre', 'status', 'type'] as $f) {
+    /* `level` joins the exact-match facets. The roster workbook files every
+       member at a level and the column has existed since migration 109, but
+       nothing could filter by it — so "show me everyone at level C" meant
+       exporting the whole roster and opening a spreadsheet. */
+    foreach (['centre', 'status', 'type', 'level'] as $f) {
         if (!empty($p[$f])) { $where[] = "$f = ?"; $params[] = $p[$f]; }
     }
     // Staff-only view powers the Access & roles roster.
