@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 112;
+const NGG_SCHEMA_TARGET = 113;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3358,6 +3358,85 @@ function db_migrate(PDO $db): void {
             ALTER TABLE summer_cohorts ADD COLUMN notes TEXT DEFAULT '';
             ALTER TABLE summer_cohorts ADD COLUMN updatedAt TEXT DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_scoh_status ON summer_cohorts(status, id);
+        ",
+
+        /* ── ID cards: two faces, and a record of what was printed ──────────
+         *
+         * The design system could express the student and volunteer cards but
+         * not the NGG MEMBER card, which is the one every year-round member
+         * carries. That card was hand-coded JSX (MemberIDCard / NggcMemberCard)
+         * and printed by a batch drawer, so moving a line two millimetres on
+         * the credential the organisation issues most was a deploy — the exact
+         * problem the template system was built to end, left in place for the
+         * one card it mattered most for.
+         *
+         * `face` + `pairId` are what let a design have a BACK. A card has two
+         * sides; a template was one document, so a back either did not exist
+         * or was a second unrelated design nobody could tell was the pair. A
+         * front names its back and the batch renders both per person, in
+         * order, so a duplex run cannot come out mismatched.
+         *
+         * `card_runs` / `card_issues` are the issuance record. card-templates
+         * already froze a published version and bumped it on republish, and
+         * its own docblock promised that "a print run stores the version it
+         * used, so 'reprint card 147 exactly as it was in July' is answerable
+         * a year later" — except nothing stored it. Print runs left an audit
+         * line and no rows, so:
+         *
+         *   · nobody could tell a FIRST issue from a reprint, or count either;
+         *   · "which design is the card in this member's hand" had no answer,
+         *     so a reprint silently used whatever the current version is;
+         *   · a batch that half-printed left nothing to resume from.
+         *
+         * The template version is denormalised onto both tables on purpose: it
+         * is the fact being preserved, and it must survive the template being
+         * republished, renamed or deleted afterwards.
+         */
+        113 => "
+            ALTER TABLE card_templates ADD COLUMN face TEXT DEFAULT 'single';   -- front | back | single
+            ALTER TABLE card_templates ADD COLUMN pairId TEXT DEFAULT '';       -- the other face's templateId
+            CREATE INDEX IF NOT EXISTS idx_ctpl_pair ON card_templates(pairId);
+
+            CREATE TABLE IF NOT EXISTS card_runs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              runId TEXT NOT NULL UNIQUE,
+              kind TEXT NOT NULL DEFAULT 'member',      -- member | student | volunteer | graphic
+              mode TEXT NOT NULL DEFAULT 'print',       -- print | reprint | proof
+              templateId TEXT DEFAULT '',               -- '' = the built-in hand-coded card
+              templateName TEXT DEFAULT '',             -- as it was called at the time
+              templateVersion INTEGER DEFAULT 0,        -- the FROZEN version this run used
+              backTemplateId TEXT DEFAULT '',
+              backTemplateVersion INTEGER DEFAULT 0,
+              output TEXT DEFAULT '',                   -- pdf | png | zip | sheet
+              dpi INTEGER DEFAULT 0,
+              sheet TEXT DEFAULT '',                    -- e.g. 'A4' for an imposed sheet
+              requested INTEGER DEFAULT 0,
+              issued INTEGER DEFAULT 0,
+              failed INTEGER DEFAULT 0,
+              reprintOf TEXT DEFAULT '',                -- the runId being reprinted, if any
+              reason TEXT DEFAULT '',                   -- why a reprint (creased, lost, name change)
+              actorId TEXT DEFAULT '',
+              startedAt TEXT DEFAULT '',
+              finishedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_crun_at ON card_runs(startedAt);
+            CREATE INDEX IF NOT EXISTS idx_crun_kind ON card_runs(kind, startedAt);
+
+            CREATE TABLE IF NOT EXISTS card_issues (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              runId TEXT NOT NULL,
+              subjectType TEXT NOT NULL,                -- member | student | volunteer
+              subjectId TEXT NOT NULL,
+              displayId TEXT DEFAULT '',                -- what was printed on it
+              templateId TEXT DEFAULT '',
+              templateVersion INTEGER DEFAULT 0,
+              reprint INTEGER DEFAULT 0,                -- 1 = this person had one before
+              ok INTEGER DEFAULT 1,
+              note TEXT DEFAULT '',
+              at TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_ciss_run ON card_issues(runId);
+            CREATE INDEX IF NOT EXISTS idx_ciss_subject ON card_issues(subjectType, subjectId, at);
         ",
     ];
 

@@ -1309,6 +1309,18 @@
            ran in the browser is one a crafted request skips, and what it guards
            is three hundred pieces of card. */
         templates:       (kind) => request('/admin/registration.php' + qs({ view: 'templates', kind: kind || '' })),
+        /* ── The print log ──────────────────────────────────────────────────
+           Recorded after the browser has produced the file. The template
+           VERSION comes from the server's template row, not from this body:
+           the client reporting a number about itself is not a record. */
+        cardRun:     (data) => request('/admin/registration.php', { body: Object.assign({ action: 'card_run' }, data || {}) }),
+        cardRuns:    (opts) => request('/admin/registration.php' + qs(Object.assign({ view: 'card-runs' }, opts || {}))),
+        cardRunGet:  (runId) => request('/admin/registration.php' + qs({ view: 'card-run', runId })),
+        /* One person's card history, and whether the published design has
+           moved on since the card in their hand was printed — the difference
+           between "reprint it" and "it's fine". */
+        cardHistory: (subjectId, subjectType) => request('/admin/registration.php'
+                       + qs({ view: 'card-history', subjectId, subjectType: subjectType || 'member' })),
         template:        (templateId) => request('/admin/registration.php' + qs({ view: 'template', templateId })),
         templateSave:    (templateId, template) => request('/admin/registration.php', { body: { action: 'template_save', templateId: templateId || '', template } }),
         templatePublish: (templateId) => request('/admin/registration.php', { body: { action: 'template_publish', templateId } }),

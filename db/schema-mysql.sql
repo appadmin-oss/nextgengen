@@ -2479,3 +2479,68 @@ ALTER TABLE summer_cohorts ADD COLUMN updatedAt VARCHAR(40) DEFAULT '';
 CREATE INDEX idx_scoh_status ON summer_cohorts(status, id);
 
 INSERT INTO schema_version (version) VALUES (112) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── ID cards: two faces, and a record of what was printed ───────────────────
+--
+-- `face` + `pairId` are what let a design have a BACK. A card has two sides; a
+-- template was one document, so a back either did not exist or was a second
+-- unrelated design nobody could tell was the pair. A front names its back and
+-- the batch renders both per person, in order, so a duplex run cannot come out
+-- mismatched.
+--
+-- card_runs / card_issues are the issuance record. The template system already
+-- froze a published version and bumped it on republish, and promised that "a
+-- print run stores the version it used" — except nothing stored it. Print runs
+-- left an audit line and no rows, so a first issue could not be told from a
+-- reprint, "which design is the card in this member's hand" had no answer, and
+-- a half-printed batch left nothing to resume from.
+--
+-- The template version is denormalised onto both tables on purpose: it is the
+-- fact being preserved, and it must survive the template being republished,
+-- renamed or deleted afterwards.
+ALTER TABLE card_templates ADD COLUMN face VARCHAR(16) DEFAULT 'single';
+ALTER TABLE card_templates ADD COLUMN pairId VARCHAR(64) DEFAULT '';
+CREATE INDEX idx_ctpl_pair ON card_templates(pairId);
+
+CREATE TABLE IF NOT EXISTS card_runs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  runId VARCHAR(48) NOT NULL UNIQUE,
+  kind VARCHAR(24) NOT NULL DEFAULT 'member',
+  mode VARCHAR(16) NOT NULL DEFAULT 'print',
+  templateId VARCHAR(64) DEFAULT '',
+  templateName VARCHAR(160) DEFAULT '',
+  templateVersion INT DEFAULT 0,
+  backTemplateId VARCHAR(64) DEFAULT '',
+  backTemplateVersion INT DEFAULT 0,
+  output VARCHAR(16) DEFAULT '',
+  dpi INT DEFAULT 0,
+  sheet VARCHAR(16) DEFAULT '',
+  requested INT DEFAULT 0,
+  issued INT DEFAULT 0,
+  failed INT DEFAULT 0,
+  reprintOf VARCHAR(48) DEFAULT '',
+  reason VARCHAR(255) DEFAULT '',
+  actorId VARCHAR(64) DEFAULT '',
+  startedAt VARCHAR(40) DEFAULT '',
+  finishedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_crun_at (startedAt),
+  INDEX idx_crun_kind (kind, startedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS card_issues (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  runId VARCHAR(48) NOT NULL,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  displayId VARCHAR(48) DEFAULT '',
+  templateId VARCHAR(64) DEFAULT '',
+  templateVersion INT DEFAULT 0,
+  reprint TINYINT DEFAULT 0,
+  ok TINYINT DEFAULT 1,
+  note VARCHAR(255) DEFAULT '',
+  at VARCHAR(40) DEFAULT '',
+  INDEX idx_ciss_run (runId),
+  INDEX idx_ciss_subject (subjectType, subjectId, at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (113) ON DUPLICATE KEY UPDATE version = version;

@@ -5102,6 +5102,202 @@ chk('club bulk: bounded', (function () use ($CLUBADM) {
         'status' => 'active', 'memberIds' => $many])['error'] === 'too_many';
 })());
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   ID cards — the member kind, two faces, and a record of what was printed
+   ═══════════════════════════════════════════════════════════════════════════
+   The design system could express the student and volunteer cards but not the
+   NGG MEMBER card — the credential every year-round member carries. That one
+   stayed hand-coded JSX, so moving a line on the card the organisation issues
+   most meant a deploy: the exact problem templates exist to end, left in place
+   for the card where it mattered most.
+
+   And the template system's own docblock promised that "a print run stores the
+   version it used, so 'reprint card 147 exactly as it was in July' is
+   answerable a year later" — while nothing stored it. Print runs wrote an
+   audit line and no rows, so a first issue could not be told from a reprint,
+   "which design is the card in this member's hand" had no answer, and a
+   half-printed batch left nothing to resume from.
+*/
+$CARDADM = 'NGG-2025-0099';   // super_admin: holds `people`, which gates cards
+
+chk('cards: `member` is a design kind now', in_array('member', CTPL_KINDS, true));
+chk('cards: …and a card has two faces', CTPL_FACES === ['single', 'front', 'back']);
+
+/* What a MEMBER card must show is not what a summer card must show. A member's
+   QR resolves their profile rather than a gate token, and the roster holds ONE
+   fullName — so demanding a split surname would refuse every member design. */
+chk('cards: a member design showing a name and an ID passes preflight', (function () use ($CARDADM) {
+    $t = ['id' => 'tmp', 'name' => 'Member front', 'kind' => 'member', 'face' => 'front',
+          'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => [
+        ['id' => 'n', 'type' => 'text', 'x' => 40, 'y' => 500, 'w' => 500, 'h' => 50, 'text' => '{{fullName}}', 'size' => 40, 'color' => '#0B1F51'],
+        ['id' => 'i', 'type' => 'text', 'x' => 40, 'y' => 700, 'w' => 300, 'h' => 30, 'text' => '{{displayId}}', 'size' => 20, 'color' => '#0B1F51'],
+        ['id' => 'q', 'type' => 'qr', 'x' => 60, 'y' => 750, 'w' => 118, 'h' => 118, 'token' => '{{token}}'],
+    ]];
+    $r = backend_dispatch('admin.card.template.check', ['requesterId' => $CARDADM, 'template' => $t]);
+    $errs = array_values(array_filter($r['problems'] ?? [], fn($x) => $x['level'] === 'error'));
+    return empty($errs);
+})());
+chk('cards: …and one with no name at all is refused', (function () use ($CARDADM) {
+    $t = ['id' => 'tmp', 'name' => 'Nameless', 'kind' => 'member', 'face' => 'front',
+          'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => [
+        ['id' => 'i', 'type' => 'text', 'x' => 40, 'y' => 700, 'w' => 300, 'h' => 30, 'text' => '{{displayId}}', 'size' => 20, 'color' => '#0B1F51'],
+        ['id' => 'q', 'type' => 'qr', 'x' => 60, 'y' => 750, 'w' => 118, 'h' => 118, 'token' => '{{token}}'],
+    ]];
+    $r = backend_dispatch('admin.card.template.check', ['requesterId' => $CARDADM, 'template' => $t]);
+    foreach ($r['problems'] ?? [] as $x) if ($x['level'] === 'error' && stripos($x['message'], 'name') !== false) return true;
+    return false;
+})());
+/* A BACK carries terms and a signature strip — not the identity. Running the
+   front's rules over it would refuse every back for want of a QR, which is how
+   a tool teaches people to bypass the checks that matter. */
+chk('cards: a card BACK is exempt from the credential rules', (function () use ($CARDADM) {
+    $t = ['id' => 'tmp', 'name' => 'Member back', 'kind' => 'member', 'face' => 'back',
+          'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => [
+        ['id' => 't', 'type' => 'text', 'x' => 60, 'y' => 120, 'w' => 460, 'h' => 200,
+         'text' => 'Not transferable. Property of the programme.', 'size' => 17, 'color' => '#5C6474'],
+    ]];
+    $r = backend_dispatch('admin.card.template.check', ['requesterId' => $CARDADM, 'template' => $t]);
+    $errs = array_values(array_filter($r['problems'] ?? [], fn($x) => $x['level'] === 'error'));
+    return empty($errs);
+})());
+chk('cards: …but the FRONT still is, so a card cannot lose its name to the back', (function () use ($CARDADM) {
+    $t = ['id' => 'tmp', 'name' => 'Front with nothing on it', 'kind' => 'member', 'face' => 'front',
+          'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => [
+        ['id' => 'r', 'type' => 'rect', 'x' => 0, 'y' => 0, 'w' => 590, 'h' => 929, 'fill' => '#ffffff'],
+    ]];
+    $r = backend_dispatch('admin.card.template.check', ['requesterId' => $CARDADM, 'template' => $t]);
+    $errs = array_values(array_filter($r['problems'] ?? [], fn($x) => $x['level'] === 'error'));
+    return count($errs) >= 2;   // no name, no id, no QR
+})());
+chk('cards: an unknown face is refused rather than stored', (function () use ($CARDADM) {
+    $t = ['id' => 'tmp', 'name' => 'Sideways', 'kind' => 'member', 'face' => 'inside',
+          'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => []];
+    $r = backend_dispatch('admin.card.template.save', ['requesterId' => $CARDADM, 'template' => $t]);
+    return ($r['error'] ?? '') === 'invalid' && in_array('face', $r['fields'] ?? [], true);
+})());
+
+/* The member roster, in card-row shape — built by the SAME function the batch
+   reads, so a merged card and a printed one cannot disagree about a name. */
+chk('cards: the merge can finally cover MEMBERS', in_array('members', MERGE_AUDIENCES, true));
+chk('cards: …gated on the member desk, not the summer desk', (function () {
+    // A summer-only coordinator may run the summer audience and not the member one.
+    $mem = backend_dispatch('admin.merge.rows', ['requesterId' => 'NGG-2025-0700', 'audience' => 'members']);
+    $stu = backend_dispatch('admin.merge.rows', ['requesterId' => 'NGG-2025-0700', 'audience' => 'students']);
+    return ($mem['error'] ?? '') === 'forbidden' && !empty($stu['ok']);
+})());
+chk('cards: a member row carries what a member card prints', (function () use ($CARDADM) {
+    $ctr = backend_dispatch('admin.centres.upsert', ['requesterId' => $CARDADM,
+        'data' => ['name' => 'Cardville', 'code' => 'CDV', 'color' => '#0B1F51']]);
+    db_insert('members', ['memberId' => 'NGG-CARD-1', 'fullName' => 'Amina Bello', 'email' => 'card1@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Cardville', 'level' => 'B',
+        'disciplines' => 'Piano, Coding', 'joinDate' => '2025-03-04', 'photoUrl' => 'https://example.com/a.jpg',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.merge.rows', ['requesterId' => $CARDADM, 'audience' => 'members', 'q' => 'Amina']);
+    if (empty($r['ok']) || !count($r['rows'])) return false;
+    $row = $r['rows'][0];
+    return $row['fullName'] === 'Amina Bello'
+        && $row['level'] === 'B'
+        && $row['disciplines'] === ['Piano', 'Coding']
+        // The colour and the printed prefix come from the DIRECTORY, not from
+        // the free-text name on the member's row — the only way a colour change
+        // at a centre reaches the next card printed there.
+        && $row['centre']['code'] === 'CDV' && $row['centre']['color'] === '#0B1F51';
+})());
+chk('cards: a member card carries no invented expiry', (function () use ($CARDADM) {
+    $r = backend_dispatch('admin.merge.rows', ['requesterId' => $CARDADM, 'audience' => 'members', 'q' => 'Amina']);
+    return $r['rows'][0]['expiresAt'] === '';
+})());
+
+/* ── The issuance record ────────────────────────────────────────────────── */
+$MTPL = backend_dispatch('admin.card.template.save', ['requesterId' => $CARDADM, 'template' => [
+    'id' => '', 'name' => 'House member card', 'kind' => 'member', 'face' => 'front',
+    'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => [
+        ['id' => 'n', 'type' => 'text', 'x' => 40, 'y' => 500, 'w' => 500, 'h' => 50, 'text' => '{{fullName}}', 'size' => 40, 'color' => '#0B1F51'],
+        ['id' => 'i', 'type' => 'text', 'x' => 40, 'y' => 700, 'w' => 300, 'h' => 30, 'text' => '{{displayId}}', 'size' => 20, 'color' => '#0B1F51'],
+        ['id' => 'q', 'type' => 'qr', 'x' => 60, 'y' => 750, 'w' => 118, 'h' => 118, 'token' => '{{token}}'],
+    ],
+]]);
+chk('runs: a member design saves', !empty($MTPL['ok']) && $MTPL['templateId'] !== '');
+backend_dispatch('admin.card.template.publish', ['requesterId' => $CARDADM, 'templateId' => $MTPL['templateId']]);
+$TID = $MTPL['templateId'];
+
+$RUN1 = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM,
+    'kind' => 'member', 'subjectType' => 'member', 'templateId' => $TID, 'output' => 'pdf', 'dpi' => 300,
+    'items' => [['subjectId' => 'NGG-CARD-1', 'displayId' => 'CDV-26-001']]]);
+chk('runs: a batch is recorded, with the version the SERVER says was published',
+    !empty($RUN1['ok']) && $RUN1['issued'] === 1 && $RUN1['templateVersion'] >= 1);
+chk('runs: …as a first issue, not a reprint', $RUN1['mode'] === 'print' && $RUN1['reprints'] === 0);
+chk('runs: the version is taken from the template row, never from the request', (function () use ($CARDADM, $TID) {
+    $r = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'templateId' => $TID, 'templateVersion' => 999, 'items' => [['subjectId' => 'NGG-CARD-1']]]);
+    return $r['templateVersion'] !== 999;
+})());
+chk('runs: a second card for the same person is a REPRINT, whichever button was pressed', (function () use ($CARDADM, $TID) {
+    $r = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'mode' => 'print', 'templateId' => $TID, 'reason' => 'damaged',
+        'items' => [['subjectId' => 'NGG-CARD-1', 'displayId' => 'CDV-26-001']]]);
+    return !empty($r['ok']) && $r['mode'] === 'reprint' && $r['reprints'] === 1;
+})());
+chk('runs: a mixed batch stays a print run', (function () use ($CARDADM, $TID) {
+    db_insert('members', ['memberId' => 'NGG-CARD-2', 'fullName' => 'Bode New', 'email' => 'card2@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Cardville',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'templateId' => $TID, 'items' => [['subjectId' => 'NGG-CARD-1'], ['subjectId' => 'NGG-CARD-2']]]);
+    return $r['mode'] === 'print' && $r['issued'] === 2 && $r['reprints'] === 1;
+})());
+chk('runs: a card the browser failed to draw is recorded as failed, not issued', (function () use ($CARDADM, $TID) {
+    $r = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'templateId' => $TID, 'items' => [
+            ['subjectId' => 'NGG-CARD-2', 'ok' => true],
+            ['subjectId' => 'NGG-CARD-1', 'ok' => false, 'note' => 'no photograph'],
+        ]]);
+    return $r['issued'] === 1 && $r['failed'] === 1;
+})());
+chk('runs: an unknown design is refused rather than recorded against nothing',
+    backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'templateId' => 'ctpl-nope', 'items' => [['subjectId' => 'NGG-CARD-1']]])['error'] === 'template_not_found');
+chk('runs: a reprint pointing at a run that never happened is refused',
+    backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'templateId' => $TID, 'reprintOf' => 'CRUN-GHOST', 'items' => [['subjectId' => 'NGG-CARD-1']]])['error'] === 'run_not_found');
+chk('runs: a batch bigger than the renderer can produce is refused', (function () use ($CARDADM, $TID) {
+    $many = array_map(fn($i) => ['subjectId' => 'NGG-GHOST-' . $i], range(1, CRUN_MAX_ISSUES + 1));
+    return backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'templateId' => $TID, 'items' => $many])['error'] === 'too_many';
+})());
+chk('runs: the print log lists them, newest first', (function () use ($CARDADM) {
+    $r = backend_dispatch('admin.card.runs', ['requesterId' => $CARDADM, 'kind' => 'member']);
+    return !empty($r['ok']) && $r['total'] >= 4 && $r['runs'][0]['startedAt'] !== ''
+        && $r['runs'][0]['actorName'] !== '';
+})());
+chk('runs: one run can be opened and says who was in it', (function () use ($CARDADM, $RUN1) {
+    $r = backend_dispatch('admin.card.run.get', ['requesterId' => $CARDADM, 'runId' => $RUN1['runId']]);
+    return !empty($r['ok']) && count($r['issues']) === 1 && $r['issues'][0]['subjectId'] === 'NGG-CARD-1'
+        && $r['issues'][0]['displayId'] === 'CDV-26-001';
+})());
+
+/* The question asked at a desk, out loud: is the card in their hand the
+   current design? */
+$HIST = backend_dispatch('admin.card.history', ['requesterId' => $CARDADM, 'subjectId' => 'NGG-CARD-1']);
+chk('history: one member\'s cards, newest first, with the design each used',
+    !empty($HIST['ok']) && $HIST['count'] >= 3 && $HIST['latest']['templateName'] === 'House member card');
+chk('history: …and how many were replacements', $HIST['reprints'] >= 1);
+chk('history: the design has NOT moved on yet', $HIST['designMovedOn'] === false);
+chk('history: …and once it is republished, it says so', (function () use ($CARDADM, $TID) {
+    backend_dispatch('admin.card.template.publish', ['requesterId' => $CARDADM, 'templateId' => $TID]);
+    $h = backend_dispatch('admin.card.history', ['requesterId' => $CARDADM, 'subjectId' => 'NGG-CARD-1']);
+    return $h['designMovedOn'] === true;
+})());
+chk('history: a member with no card says so rather than erroring', (function () use ($CARDADM) {
+    $h = backend_dispatch('admin.card.history', ['requesterId' => $CARDADM, 'subjectId' => 'NGG-CARD-NOBODY']);
+    return !empty($h['ok']) && $h['count'] === 0 && $h['latest'] === null && $h['designMovedOn'] === null;
+})());
+chk('runs: every card op is gated on the member desk', (function () {
+    return backend_dispatch('admin.card.runs', ['requesterId' => 'NGG-2025-0700'])['error'] === 'forbidden'
+        && backend_dispatch('admin.card.history', ['requesterId' => 'NGG-2025-0700', 'subjectId' => 'x'])['error'] === 'forbidden'
+        && backend_dispatch('admin.card.run.record', ['requesterId' => 'NGG-2025-0700', 'items' => []])['error'] === 'forbidden';
+})());
+
 // ── AI profiles (offline resolution only — no network in tests) ──
 chk('ai disabled with no keys', ai_enabled() === false && ai_enabled('coach') === false && ai_complete('s', 'u')['error'] === 'ai_disabled');
 chk('ai profile chain: profile → fallback → default, deduped', (function () {

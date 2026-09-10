@@ -35,7 +35,13 @@ const CTPL_MAX_ELEMENTS = 200;
 /* 'graphic' is everything that is not a credential — a poster, a certificate, a
    social post, a letterhead. It exists because this organisation is not only a
    summer programme, and a design tool that can only make ID cards says it is. */
-const CTPL_KINDS = ['student', 'volunteer', 'graphic'];
+/* 'member' is the NGG member card — the credential every year-round member
+   carries. It was the ONE card this system could not express, so it stayed
+   hand-coded JSX and moving a line on it meant a deploy: exactly the problem
+   templates exist to end, left in place for the card it mattered most for. */
+const CTPL_KINDS = ['member', 'student', 'volunteer', 'graphic'];
+/** A card has two sides. 'single' is a design with no counterpart. */
+const CTPL_FACES = ['single', 'front', 'back'];
 const CTPL_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'text', 'image', 'qr', 'path', 'group'];
 
 /** Which capability may change what a credential looks like.
@@ -60,6 +66,7 @@ function ctpl_validate(array $t): array {
     $name = trim((string)($t['name'] ?? ''));
     if ($name === '' || mb_strlen($name) > 120) $errors[] = 'name';
     if (!in_array((string)($t['kind'] ?? ''), CTPL_KINDS, true)) $errors[] = 'kind';
+    if (isset($t['face']) && !in_array((string)$t['face'], CTPL_FACES, true)) $errors[] = 'face';
     $w = (int)($t['w'] ?? 0); $h = (int)($t['h'] ?? 0);
     if ($w < 100 || $w > 8000 || $h < 100 || $h > 8000) $errors[] = 'size';
     /* The real-world size, which decides export resolution and every millimetre
@@ -112,6 +119,8 @@ function ctpl_row_public(array $r, bool $withSchema = true): array {
         'kind' => (string)$r['kind'],
         'status' => (string)$r['status'],
         'version' => (int)$r['version'],
+        'face' => (string)($r['face'] ?? 'single'),
+        'pairId' => (string)($r['pairId'] ?? ''),
         'system' => strpos((string)$r['templateId'], 'sys-') === 0,
         'updatedAt' => (string)($r['updatedAt'] ?? ''),
         'publishedAt' => (string)($r['publishedAt'] ?? ''),
@@ -173,6 +182,12 @@ function admin_card_template_save(array $p): array {
         db_insert('card_templates', [
             'templateId' => $id, 'name' => (string)$t['name'], 'kind' => (string)$t['kind'],
             'status' => 'draft', 'version' => 1,
+            'face' => in_array((string)($t['face'] ?? 'single'), CTPL_FACES, true) ? (string)$t['face'] : 'single',
+            /* A fork does NOT inherit the pairing. Two designs claiming the
+               same back is how a duplex run comes out with one member's front
+               and another's back — the pairing has to be re-stated on the copy
+               deliberately. */
+            'pairId' => $forked ? '' : (string)($t['pairId'] ?? ''),
             'schemaJson' => json_encode($t, JSON_UNESCAPED_SLASHES), 'publishedJson' => '',
             'createdById' => $me, 'updatedById' => $me,
             'createdAt' => now_iso(), 'updatedAt' => now_iso(), 'publishedAt' => '',
@@ -181,6 +196,8 @@ function admin_card_template_save(array $p): array {
         $t['id'] = $id;
         db_update('card_templates', [
             'name' => (string)$t['name'], 'kind' => (string)$t['kind'],
+            'face' => in_array((string)($t['face'] ?? ($existing['face'] ?? 'single')), CTPL_FACES, true)
+                      ? (string)($t['face'] ?? ($existing['face'] ?? 'single')) : 'single',
             'schemaJson' => json_encode($t, JSON_UNESCAPED_SLASHES),
             'updatedById' => $me, 'updatedAt' => now_iso(),
         ], ['templateId' => $id]);
@@ -391,12 +408,30 @@ function ctpl_preflight(array $t): array {
         }
     }
     $kind = (string)($t['kind'] ?? 'student');
-    $required = $kind === 'graphic' ? []
+    $face = (string)($t['face'] ?? 'single');
+    /* What a card of this kind must show, per kind. Mirrors TPL_REQUIRED in
+       card-template.jsx.
+     *
+     * The BACK of a card is exempt. A back carries terms, an emergency
+     * number, a signature strip — it is not where the name and the code live,
+     * and running the front's rules over it would refuse every back for want
+     * of a QR, which teaches people to route around the checks that matter
+     * (the same reasoning that exempts a poster). The FRONT still has to
+     * satisfy them, so a two-sided card cannot lose its identity by moving
+     * everything to the back. */
+    $required = ($kind === 'graphic' || $face === 'back') ? []
         : ($kind === 'volunteer' ? ['surname', 'token', 'displayId', 'role']
-                                 : ['surname', 'token', 'displayId']);
+        : ($kind === 'member'    ? ['name', 'displayId']
+                                 : ['surname', 'token', 'displayId']));
     foreach ($required as $f) {
         // `role` is satisfied by either field that prints it.
         if ($f === 'role' && (isset($bound['role']) || isset($bound['roleFaculty']))) continue;
+        /* A member card may carry either the split name or the full one — the
+           roster holds a single `fullName` for members, unlike the summer
+           intake which asks for the parts separately. */
+        if ($f === 'name' && (isset($bound['fullName']) || isset($bound['surname']) || isset($bound['firstName'])
+            // The two-weight member lockup counts as showing a name.
+            || isset($bound['member.given']) || isset($bound['member.family']))) continue;
         if (empty($bound[$f])) $add('error', 'Nothing on this card shows ' . $f);
     }
 
@@ -404,7 +439,10 @@ function ctpl_preflight(array $t): array {
     // A poster is not a credential. Running the credential rules on one would
     // refuse every poster for want of a QR, which teaches people to route around
     // the checks that matter.
-    if (!$qr && $kind !== 'graphic') $add('error', 'No QR — the card cannot be scanned at a gate');
+    /* A back with no QR is fine; a FRONT without one is a card nobody can
+       scan. A member card's QR points at their profile rather than a gate
+       token, so it is required for the same reason and refused the same way. */
+    if (!$qr && $kind !== 'graphic' && $face !== 'back') $add('error', 'No QR — the card cannot be scanned at a gate');
     if (count($qr) > 1) $add('error', 'Two QR codes — a scanner reads whichever it sees first');
     /* Ask our own encoder how many modules a real payload needs, rather than
        assuming a version — it is the same function that produces the printed

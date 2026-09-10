@@ -243,6 +243,17 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.card.template.publish'       => 'admin_card_template_publish',
             'admin.card.template.check'         => 'admin_card_template_check',
             'admin.card.template.delete'        => 'admin_card_template_delete',
+            /* ID card ISSUANCE. The template system froze a published version
+               and promised print runs would record it; nothing did. These do —
+               one row per batch and one per person, each carrying the frozen
+               version, so "what is in this member's hand" and "reprint it
+               exactly as it was in July" are answerable. Same `people` gate as
+               the templates: deciding what a credential looks like and issuing
+               one are the same trust boundary. See domain/card-runs.php. */
+            'admin.card.run.record'             => 'admin_card_run_record',
+            'admin.card.runs'                   => 'admin_card_runs',
+            'admin.card.run.get'                => 'admin_card_run_get',
+            'admin.card.history'                => 'admin_card_history',
             /* The design asset library. Images placed in a design used to be
                data: URLs inside the design itself, which capped a poster at one
                small photograph — see api/_lib/domain/design-assets.php. */

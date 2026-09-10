@@ -135,11 +135,6 @@
     "kb": 489
   },
   {
-    "name": "26-nggc-member-id",
-    "label": "NGGC member ID · both sizes, with and without a headshot on file",
-    "kb": 564
-  },
-  {
     "name": "27-roster-import",
     "label": "Importing the members workbook without a shell — the dry run, before anything is written",
     "kb": 67
@@ -148,5 +143,10 @@
     "name": "28-id-preflight",
     "label": "Printing member IDs — what is missing across the selection, before the run",
     "kb": 64
+  },
+  {
+    "name": "26-nggc-member-id",
+    "label": "NGGC member ID · both sizes, with and without a headshot on file",
+    "kb": 565
   }
 ]

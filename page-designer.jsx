@@ -26,10 +26,70 @@ const DSN_GOLD = "#F5B026";
 /* A blank card, so "New design" is a card and not an empty rectangle: the frame,
    the panel and a QR that already passes preflight. Somebody who presses New and
    gets a white void has to know the schema to make progress. */
-function dsnBlank(kind) {
-  const vol = kind === "volunteer";
+/**
+ * A blank design of one kind, already carrying the fields that kind must show.
+ *
+ * A truly empty canvas is the wrong start for a credential: the operator then
+ * discovers at publish time that nothing on the card shows a name. So a blank
+ * starts as a valid card of its kind and is edited down.
+ *
+ * `face` gives a card a BACK. A back is exempt from the credential rules (it
+ * carries terms and a signature strip, not the identity), so its blank is a
+ * panel and a heading rather than a name and a QR.
+ */
+function dsnBlank(kind, face) {
+  const k = kind === "volunteer" ? "volunteer" : kind === "member" ? "member" : "student";
+  const back = face === "back";
+
+  if (k === "member") {
+    /* 54 × 85mm — ISO/IEC 7810 ID-1, the size of every bank card and therefore
+       of every wallet slot. The summer card is 54 × 75 because it hangs from a
+       lanyard; a member card that does not fit a wallet gets left at home. */
+    const base = { id: "", kind: "member", face: back ? "back" : "front",
+      w: 590, h: 929, wMm: 54, hMm: 85, safe: 30, bleedMm: 3 };
+    if (back) return Object.assign(base, {
+      name: "New member card — back", background: "#0B1F51",
+      elements: [
+        { id: "panel", type: "rect", x: 30, y: 30, w: 530, h: 869, radius: 18, fill: "#ffffff" },
+        { id: "h", type: "text", x: 66, y: 74, w: 460, h: 34, text: "THIS CARD", size: 20, weight: 800,
+          color: "#0B1F51", letterSpacing: 3 },
+        { id: "terms", type: "text", x: 66, y: 122, w: 460, h: 240,
+          text: "Identifies the holder as a member of Next Generation Genius. Not transferable.",
+          size: 17, weight: 400, color: "#5C6474", lineHeight: 1.5 },
+        { id: "idlabel", type: "text", x: 66, y: 780, w: 200, text: "MEMBER ID", size: 13, weight: 700,
+          color: "#6B7280", letterSpacing: 2.6 },
+        { id: "idvalue", type: "text", x: 66, y: 802, w: 300, text: "{{displayId}}", size: 18, weight: 500,
+          color: "#0B1F51", font: "monospace" },
+      ],
+    });
+    return Object.assign(base, {
+      name: "New member card", background: "#ffffff",
+      elements: [
+        { id: "topband", type: "rect", x: 0, y: 0, w: 590, h: 92, fill: "#0B1F51", role: "background" },
+        { id: "wordmark", type: "text", x: 34, y: 26, w: 480, h: 40, text: "NEXT GENERATION GENIUS",
+          size: 21, weight: 800, color: "#ffffff", letterSpacing: 3.4, vAlign: "middle" },
+        { id: "photo", type: "image", x: 60, y: 128, w: 470, h: 370, radius: 18, fit: "cover", src: "{{photo}}", fill: "#eef0f4" },
+        { id: "given", type: "text", x: 60, y: 528, w: 470, h: 40, text: "{{member.given}}", size: 30, weight: 300,
+          color: "#5C6474", letterSpacing: 0.6, transform: "upper", fit: true },
+        { id: "family", type: "text", x: 58, y: 566, w: 474, h: 58, text: "{{member.family}}", size: 52, weight: 800,
+          color: "#0B1F51", letterSpacing: -1.4, transform: "upper", fit: true },
+        { id: "disciplines", type: "text", x: 60, y: 640, w: 470, h: 30, text: "{{disciplines}}", size: 19, weight: 600,
+          color: "#5C6474", letterSpacing: 2.4, transform: "upper", fit: true },
+        { id: "qr", type: "qr", x: 60, y: 700, w: 118, h: 118, token: "{{token}}" },
+        { id: "idvalue", type: "text", x: 200, y: 730, w: 330, text: "{{displayId}}", size: 24, weight: 500,
+          color: "#0B1F51", font: "monospace" },
+        { id: "centreband", type: "rect", x: 0, y: 872, w: 590, h: 57, fill: "{{centre.color}}", role: "background" },
+        { id: "centrename", type: "text", x: 30, y: 872, w: 530, h: 57, text: "{{centre.code}}  ·  {{centre.name}}",
+          size: 24, weight: 700, color: "{{ink.centre}}", align: "center", letterSpacing: 4.4,
+          transform: "upper", vAlign: "middle", fit: true, minSize: 20, role: "background" },
+      ],
+    });
+  }
+
+  const vol = k === "volunteer";
   return {
     id: "", name: vol ? "New volunteer card" : "New student card", kind: vol ? "volunteer" : "student",
+    face: "single",
     w: 590, h: 972, safe: 30, bleedMm: 3,
     background: vol ? "{{centre.color}}" : "#ffffff",
     elements: [
@@ -82,10 +142,14 @@ function dsnQrUrl(token) {
    something they can edit rather than a blank they have to know the schema to
    fill. Credential presets keep the card starter, which already carries the
    bindings and a QR that passes preflight. */
+/* A preset carries a `face` for the card sizes that have one, so choosing
+   "Member card — back" starts a BACK rather than a front the operator then has
+   to remember to re-label. */
 function dsnFromPreset(preset) {
   if (preset.kind !== "graphic") {
-    const t = dsnBlank(preset.kind);
-    return { ...t, name: preset.name, w: preset.w, h: preset.h, wMm: preset.wMm, hMm: preset.hMm,
+    const t = dsnBlank(preset.kind, preset.face);
+    return { ...t, name: preset.name, face: preset.face || t.face || "single",
+             w: preset.w, h: preset.h, wMm: preset.wMm, hMm: preset.hMm,
              safe: preset.safe, bleedMm: preset.bleedMm };
   }
   const W = preset.w, H = preset.h, pad = preset.safe;
@@ -178,8 +242,35 @@ const DSN_MERGE_BUDGET = 350 * 1024 * 1024;
    counts is MERGE_RUN_MAX in merge.php. */
 const MERGE_RUN_FALLBACK = 600;
 
+/** What to CALL a layer out loud. The rail showed the element's type and its
+ *  raw id ("rect · panel"), which is what a designer sees; an accessible name
+ *  has to be the same thing in words, and a bound text element is best
+ *  identified by the field it shows rather than by its id. */
+function dsnLayerLabel(el) {
+  if (!el) return "element";
+  const t = String(el.type || "element");
+  if (t === "text") {
+    const raw = String(el.text || "").trim();
+    const bind = raw.match(/^\{\{\s*([\w.]+)\s*\}\}$/);
+    if (bind) {
+      const f = (window.TPL_FIELDS || {})[bind[1]];
+      return "text: " + (f ? f.label : bind[1]);
+    }
+    if (raw) return "text: " + raw.slice(0, 28);
+  }
+  if (t === "qr") return "QR code";
+  if (t === "image") return "image" + (el.src && String(el.src).indexOf("{{") === 0 ? ": photograph" : "");
+  return t + " " + String(el.id || "");
+}
+
 function dsnRowName(r) {
-  return [r.firstName, r.surname].filter(Boolean).join(" ").trim() || r.displayId || r.key || "unnamed";
+  /* `fullName` is the fallback before the id, not after it. A MEMBER row holds
+     one name and no split parts (the summer intake asks for the parts
+     separately), so every member in the batch picker read as its own member id
+     — a list of forty identical-looking codes to choose forty people from. */
+  return [r.firstName, r.surname].filter(Boolean).join(" ").trim()
+    || String(r.fullName || "").trim()
+    || r.displayId || r.key || "unnamed";
 }
 
 /**
@@ -744,6 +835,32 @@ function DesignerPage() {
     return () => { dead = true; };
   }, []);
 
+  /* Arrive from the print log with a design named, and open it.
+   *
+   * A "Reprint" button that drops the operator on an empty studio and asks
+   * them to remember which of forty designs the July batch used is not a
+   * reprint button. `reprintOf` is carried in the address so the run this one
+   * replaces is recorded, and so a refresh does not lose it. */
+  const [reprintOf] = React.useState(() => {
+    try { return new URLSearchParams(window.location.search).get("reprintOf") || ""; } catch (_) { return ""; }
+  });
+  const wantedTemplate = React.useRef(null);
+  if (wantedTemplate.current === null) {
+    try { wantedTemplate.current = new URLSearchParams(window.location.search).get("template") || ""; }
+    catch (_) { wantedTemplate.current = ""; }
+  }
+  React.useEffect(() => {
+    if (!isSignedIn || !wantedTemplate.current) return;
+    const want = wantedTemplate.current;
+    wantedTemplate.current = "";      // once
+    open(want);
+    if (reprintOf) {
+      setMergeOpen(true);
+      toast.info("Opened for a reprint of " + reprintOf + ". Pick the people whose cards are being replaced.", "Reprint");
+    }
+    // eslint-disable-next-line
+  }, [isSignedIn]);
+
   React.useEffect(() => {
     if (!isSignedIn) return;
     NGGApi.admin.registration.templates().then(r => setList(r.templates || [])).catch(() => setList([]));
@@ -1167,6 +1284,8 @@ function DesignerPage() {
     histRef.current = { past: [], future: [], last: "" };
     if (templateId === "__new_student") return setTpl(dsnBlank("student"));
     if (templateId === "__new_volunteer") return setTpl(dsnBlank("volunteer"));
+    if (templateId === "__new_member") return setTpl(dsnBlank("member"));
+    if (templateId === "__new_member_back") return setTpl(dsnBlank("member", "back"));
     // A size, from the preset list. The reason this tool is not only an ID card
     // designer: NGG has posters, certificates and a WhatsApp status to make.
     const preset = window.TPL_PRESETS.find(x => "__preset-" + x.id === templateId);
@@ -1493,6 +1612,48 @@ function DesignerPage() {
         }
       }
 
+      /* ── Record what was printed ──────────────────────────────────────────
+         AFTER the file exists, with what actually came out — never before, and
+         never with the requested count. The host has no renderer, so the
+         server cannot know what the browser managed; a record written up front
+         would claim cards that a cancelled or failed run never produced.
+         `mode` and the frozen template version are decided server-side.
+
+         A credential run is recorded; a poster run is not. There is nothing to
+         reprint about a poster and no holder to answer "is the one in their
+         hand current" for. */
+      if (made > 0 && tpl.kind !== "graphic") {
+        const failedSet = new Set(failed);
+        try {
+          await NGGApi.admin.registration.cardRun({
+            kind: tpl.kind,
+            subjectType: tpl.kind,
+            templateId: String(tpl.id || "").indexOf("ctpl-") === 0 ? tpl.id : "",
+            backTemplateId: tpl.pairId || "",
+            output: mode === "sheet" ? "sheet" : mode,
+            dpi: mdpi, sheet: mode === "sheet" ? "A4" : "",
+            /* Which run this one replaces, when the operator arrived here from
+               the print log's Reprint button. `mode` is still decided
+               server-side from whether these people already had a card. */
+            reprintOf: reprintOf || "",
+            startedAt: new Date(startedAt).toISOString(),
+            items: rows.map(r => ({
+              subjectId: r.key || r.displayId || "",
+              displayId: r.displayId || "",
+              ok: !failedSet.has(dsnRowName(r)),
+              note: failedSet.has(dsnRowName(r)) ? "render failed" : "",
+            })),
+          });
+        } catch (e) {
+          /* The file is already in the operator's hands. A failed RECORD must
+             not read as a failed run — it is a gap in the log, and saying so
+             is more useful than either silence or an alarming error. */
+          toast.warn("The cards are in the file, but the print log could not be updated ("
+            + ((e && (e.code || e.message)) || "failed") + "). Note the run by hand if it matters.",
+            "Print log not updated");
+        }
+      }
+
       /* Say exactly what came out, and name what did not. A batch that is
          quietly three short is three children without a certificate, and the
          only person who could notice is the one holding the file. */
@@ -1571,7 +1732,11 @@ function DesignerPage() {
           onChange={e => open(e.target.value)}>
           <option value="">Open a design…</option>
           <optgroup label="Start from">
-            <option value="__new_student">New student card</option>
+            {/* The member card first — it is the credential every year-round
+                member carries, and the one this tool could not make. */}
+            <option value="__new_member">New NGG member card (front)</option>
+            <option value="__new_member_back">New NGG member card (back)</option>
+            <option value="__new_student">New Summer School card</option>
             <option value="__new_volunteer">New volunteer card</option>
           </optgroup>
           {/* Grouped by what it is FOR, not by pixel size. Somebody making a
@@ -1590,6 +1755,31 @@ function DesignerPage() {
             {(list || []).map(t => <option key={t.templateId} value={t.templateId}>{t.name}{t.status === "published" ? " · v" + t.version : " · draft"}</option>)}
           </optgroup>}
         </select>
+        {tpl && tpl.kind !== "graphic" && (
+          /* Which SIDE this is. A card has two, and a template was one
+             document — so a back either did not exist or was a second
+             unrelated design nobody could tell was the pair. Naming the pair
+             is what lets a duplex run render both faces per person in order,
+             instead of coming out mismatched. */
+          <label className="dsn-prop"><span>Side</span>
+            <select value={tpl.face || "single"} aria-label="Which side of the card this design is"
+              onChange={e => { pushHistory(); setTpl(t => ({ ...t, face: e.target.value })); }}>
+              <option value="single">One-sided</option>
+              <option value="front">Front</option>
+              <option value="back">Back</option>
+            </select></label>
+        )}
+        {tpl && tpl.face === "front" && (
+          <label className="dsn-prop"><span>Its back</span>
+            <select value={tpl.pairId || ""} aria-label="Which design is the back of this card"
+              onChange={e => { pushHistory(); setTpl(t => ({ ...t, pairId: e.target.value })); }}>
+              <option value="">— none —</option>
+              {(window.TPL_SYSTEM || []).filter(t => t.face === "back" && t.kind === tpl.kind)
+                .map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {(list || []).filter(t => t.face === "back" && t.kind === tpl.kind && t.templateId !== tpl.id)
+                .map(t => <option key={t.templateId} value={t.templateId}>{t.name}</option>)}
+            </select></label>
+        )}
         {tpl && <>
           <input className="admin-input" value={tpl.name} aria-label="Design name" style={{ maxWidth: 240 }}
             onChange={e => setTpl(p => ({ ...p, name: e.target.value }))}/>
@@ -1638,22 +1828,37 @@ function DesignerPage() {
           questions — "what am I working on" and "what am I doing to it". */}
       {tpl && (
         <div className="dsn-tools">
-          <div className="dsn-tool-grp">
-            <button className="dsn-tool" onClick={undo} disabled={!histRef.current.past.length} title="Undo (Ctrl+Z)">↶</button>
-            <button className="dsn-tool" onClick={redo} disabled={!histRef.current.future.length} title="Redo (Ctrl+Shift+Z)">↷</button>
+          {/* Every control on these rows is an arrow glyph, and a `title` alone
+              is not an accessible name: a screen reader reads "button" and a
+              keyboard user gets nothing at all until they hover, which they
+              cannot. The glyph is marked decorative and the button carries the
+              name — so "Align left edges" is what is announced, and the
+              tooltip stays for the mouse. */}
+          <div className="dsn-tool-grp" role="group" aria-label="History">
+            <button className="dsn-tool" onClick={undo} disabled={!histRef.current.past.length}
+              aria-label="Undo" title="Undo (Ctrl+Z)"><span aria-hidden="true">↶</span></button>
+            <button className="dsn-tool" onClick={redo} disabled={!histRef.current.future.length}
+              aria-label="Redo" title="Redo (Ctrl+Shift+Z)"><span aria-hidden="true">↷</span></button>
           </div>
-          <div className="dsn-tool-grp">
-            {[["left", "⇤"], ["hcenter", "⇔"], ["right", "⇥"], ["top", "⇡"], ["vcenter", "⇕"], ["bottom", "⇣"]].map(([k, g]) => (
+          <div className="dsn-tool-grp" role="group" aria-label="Align and distribute">
+            {[["left", "⇤", "left edges"], ["hcenter", "⇔", "horizontal centres"], ["right", "⇥", "right edges"],
+              ["top", "⇡", "top edges"], ["vcenter", "⇕", "vertical centres"], ["bottom", "⇣", "bottom edges"]].map(([k, g, what]) => (
               <button key={k} className="dsn-tool" onClick={() => alignSel(k)} disabled={!selId && !selIds.length}
-                title={"Align " + k + (selIds.length > 1 ? " (to the selection)" : " (to the card)")}>{g}</button>
+                aria-label={"Align " + what + (selIds.length > 1 ? " to the selection" : " to the card")}
+                title={"Align " + what + (selIds.length > 1 ? " (to the selection)" : " (to the card)")}>
+                <span aria-hidden="true">{g}</span></button>
             ))}
-            <button className="dsn-tool" onClick={() => distribute("h")} disabled={selIds.length < 3} title="Space evenly across">⋯</button>
-            <button className="dsn-tool" onClick={() => distribute("v")} disabled={selIds.length < 3} title="Space evenly down">⋮</button>
+            <button className="dsn-tool" onClick={() => distribute("h")} disabled={selIds.length < 3}
+              aria-label="Space evenly across" title="Space evenly across"><span aria-hidden="true">⋯</span></button>
+            <button className="dsn-tool" onClick={() => distribute("v")} disabled={selIds.length < 3}
+              aria-label="Space evenly down" title="Space evenly down"><span aria-hidden="true">⋮</span></button>
           </div>
           <div className="dsn-tool-grp">
             <button className={"dsn-tool" + (drawing ? " is-on" : "")} onClick={() => setDrawing(d => !d)}
-              title="Draw freehand — Esc to stop">✎</button>
-            <button className="dsn-tool" onClick={() => fileRef.current && fileRef.current.click()} title="Place an image">🖼</button>
+              aria-pressed={drawing} aria-label="Draw freehand"
+              title="Draw freehand — Esc to stop"><span aria-hidden="true">✎</span></button>
+            <button className="dsn-tool" onClick={() => fileRef.current && fileRef.current.click()}
+              aria-label="Place an image" title="Place an image"><span aria-hidden="true">🖼</span></button>
             <button className="dsn-tool" onClick={duplicate} disabled={!selId && !selIds.length} title="Duplicate (Ctrl+D)">⧉</button>
           </div>
           <div className="dsn-tool-grp">
@@ -1694,7 +1899,12 @@ function DesignerPage() {
           <div className="dsn-merge-filters">
             <label className="dsn-prop"><span>Who</span>
               <select value={mf.audience} onChange={e => setFilter("audience", e.target.value)}>
-                <option value="students">Children</option>
+                {/* NGG members lead the list: the member card is the credential
+                    this organisation issues most, and until now the merge could
+                    not cover them at all — only summer participants and
+                    volunteers. */}
+                <option value="members">NGG members</option>
+                <option value="students">Summer School participants</option>
                 <option value="volunteers">Volunteers</option>
               </select></label>
             <label className="dsn-prop"><span>Centre</span>
@@ -1829,7 +2039,10 @@ function DesignerPage() {
             <div className="dsn-rail-head">Layers</div>
             {tpl.elements.slice().reverse().map(el => (
               <div key={el.id} className={"dsn-layer" + (selIds.indexOf(el.id) !== -1 || el.id === selId ? " is-on" : "")}>
-                <button className="dsn-layer-hit" onClick={e => {
+                <button className="dsn-layer-hit"
+                  aria-pressed={selIds.indexOf(el.id) !== -1 || el.id === selId}
+                  aria-label={"Select " + dsnLayerLabel(el)}
+                  onClick={e => {
                   // Shift-click adds to the selection, the way it does on the canvas.
                   if (e.shiftKey) {
                     setSelIds(prev => prev.indexOf(el.id) !== -1 ? prev.filter(x => x !== el.id) : prev.concat([el.id]));
@@ -1843,10 +2056,16 @@ function DesignerPage() {
                 {/* Lock and hide. A locked layer still prints — it just cannot be
                     dragged by accident, which is what stops somebody nudging the
                     QR while moving the headline above it. */}
-                <button className="dsn-layer-ic" title={el.locked ? "Unlock" : "Lock"}
-                  onClick={() => patch(el.id, { locked: !el.locked })}>{el.locked ? "🔒" : "🔓"}</button>
-                <button className="dsn-layer-ic" title={el.hidden ? "Show" : "Hide"}
-                  onClick={() => patch(el.id, { hidden: !el.hidden })}>{el.hidden ? "🙈" : "👁"}</button>
+                <button className="dsn-layer-ic" aria-pressed={!!el.locked}
+                  aria-label={(el.locked ? "Unlock" : "Lock") + " " + dsnLayerLabel(el)}
+                  title={el.locked ? "Unlock" : "Lock"}
+                  onClick={() => patch(el.id, { locked: !el.locked })}>
+                  <span aria-hidden="true">{el.locked ? "🔒" : "🔓"}</span></button>
+                <button className="dsn-layer-ic" aria-pressed={!!el.hidden}
+                  aria-label={(el.hidden ? "Show" : "Hide") + " " + dsnLayerLabel(el)}
+                  title={el.hidden ? "Show" : "Hide"}
+                  onClick={() => patch(el.id, { hidden: !el.hidden })}>
+                  <span aria-hidden="true">{el.hidden ? "🙈" : "👁"}</span></button>
               </div>
             ))}
             <div className="dsn-rail-head" style={{ marginTop: 14 }}>Add</div>
@@ -1913,10 +2132,36 @@ function DesignerPage() {
 
           {/* ── Canvas ─────────────────────────────────────────────────── */}
           <div className="dsn-stage">
-            <div ref={hostRef} className="dsn-canvas-host" aria-label="Card design canvas"/>
+            {/* The canvas is a Fabric surface: it can be pointed at and it
+                cannot be tabbed into or read. Calling it a labelled region was
+                a claim it does not meet, so it is marked decorative and the
+                Layers rail beside it is the keyboard route to every element —
+                a real list of real buttons, with the numeric position fields
+                in the properties rail as the non-drag way to move things.
+
+                What was missing is the FEEDBACK: selecting a layer changed the
+                canvas and announced nothing. This region says what is selected
+                and where it is, so a keyboard user nudging with the arrow keys
+                can hear the result. */}
+            <div ref={hostRef} className="dsn-canvas-host" role="presentation"/>
+            <p className="sr-only" aria-live="polite">
+              {sel
+                ? dsnLayerLabel(sel) + " selected, at x " + Math.round(sel.x || 0) + ", y " + Math.round(sel.y || 0)
+                  + (sel.w ? ", " + Math.round(sel.w) + " by " + Math.round(sel.h || 0) + " units" : "")
+                  + (sel.locked ? ", locked" : "")
+                : "Nothing selected"}
+            </p>
             <div className="dsn-stage-note">
               {tpl.w} × {tpl.h} design units · {tpl.safe}-unit safe area · {tpl.bleedMm}mm bleed
+              {tpl.face && tpl.face !== "single" ? " · " + tpl.face : ""}
             </div>
+            {/* The keyboard contract, written down where it is used rather than
+                left as folklore. */}
+            <p className="dsn-stage-note dsn-keys">
+              Arrow keys nudge the selection by one unit, Shift+Arrow by ten.
+              Ctrl+Z undoes, Ctrl+D duplicates, Delete removes. Positions can
+              also be typed in the panel on the right.
+            </p>
           </div>
 
           {/* ── Properties + bind ──────────────────────────────────────── */}

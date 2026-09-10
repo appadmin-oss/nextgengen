@@ -3230,6 +3230,66 @@ function card_row_student(array $s, ?array $ctr, string $expiry): array {
 }
 
 /**
+ * One NGG MEMBER, in the shape every card renderer reads.
+ *
+ * The counterpart of card_row_student() / card_row_volunteer(), and it did not
+ * exist — which is why the member card could not be driven by a design. The
+ * member card was hand-coded JSX reading the raw member row directly, so the
+ * design system had no member-shaped row to bind to and the batch could not be
+ * cut by a filter the way the summer runs are.
+ *
+ * `centre` resolves through centre_index() so the card's accent band and its
+ * printed prefix come from the CENTRE DIRECTORY rather than from the free-text
+ * name on the member's row — which is the only way a colour change at a centre
+ * reaches the next card printed there.
+ *
+ * The name is NOT split here. The member roster holds a single `fullName`
+ * (unlike the summer intake, which asks for the parts separately), and any
+ * split is a guess about surname order; the template's `member.given` /
+ * `member.family` bindings make that guess where it is visible and
+ * overridable, not silently in the data layer.
+ */
+function card_row_member(array $m, array $centres): array {
+    $name = trim((string)($m['fullName'] ?? ''));
+    $centreName = trim((string)($m['centre'] ?? ''));
+    $ctr = $centres[strtolower($centreName)] ?? null;
+    /* Disciplines: the card shows up to two, and falls back to the single
+       `track` — the same rule the hand-coded renderer uses, kept here so the
+       two cannot disagree. */
+    $raw = trim((string)($m['disciplines'] ?? ''));
+    $list = $raw !== '' ? preg_split('/[,\/|]+/', $raw) : [];
+    $list = array_values(array_filter(array_map('trim', $list ?: [])));
+    if (!$list && trim((string)($m['track'] ?? '')) !== '') $list = [trim((string)$m['track'])];
+    return [
+        'memberId'  => (string)($m['memberId'] ?? ''),
+        'fullName'  => $name,
+        'firstName' => '', 'surname' => '',
+        'displayId' => (string)($m['displayId'] ?? '') !== '' ? (string)$m['displayId'] : (string)($m['memberId'] ?? ''),
+        'level'     => (string)($m['level'] ?? ''),
+        'type'      => (string)($m['type'] ?? ''),
+        'status'    => (string)($m['status'] ?? ''),
+        'track'     => (string)($m['track'] ?? ''),
+        'disciplines' => array_slice($list, 0, 2),
+        'centre'    => [
+            'name'  => $ctr['name'] ?? $centreName,
+            'code'  => $ctr['code'] ?? 'NG',
+            'color' => $ctr['color'] ?? '#1B2B6B',
+        ],
+        /* A member's QR resolves their PROFILE, not a gate check-in — they have
+           no summer token. The renderer turns this into the profile URL. */
+        'token'     => (string)($m['memberId'] ?? ''),
+        'photoUrl'  => normalize_image_url((string)($m['photoUrl'] ?? '')),
+        'joinDate'  => (string)($m['joinDate'] ?? ''),
+        'createdAt' => (string)($m['createdAt'] ?? ''),
+        /* A member card is not a season pass, so it carries no hard expiry by
+           default. A design that prints "VALID TO" gets a blank rather than a
+           date the programme never set — which is honest, and visible in the
+           proof before three hundred are cut. */
+        'expiresAt' => '',
+    ];
+}
+
+/**
  * Every centre, indexed by lower-cased name AND code, for the callers that have
  * to resolve a free-text centre against the table once per person. One read
  * instead of one query per row: the volunteer card payload used to do the

@@ -1748,6 +1748,17 @@ body.cm-app .fab-top { display: none; }
 .admin-table tbody tr.is-selected { background: rgba(208,255,58,0.14); }
 @media (max-width: 600px) { .admin-chip-x { min-height: 40px; } }
 
+/* The result of a bulk run, kept on screen. A toast tells you it happened; a
+   run where twelve of forty were refused needs the twelve NAMED, and needs to
+   stay put until the operator dismisses it. */
+.admin-callout {
+  margin: 0 0 14px; padding: 12px 14px; border-radius: 12px;
+  background: rgba(12,20,50,0.04); border: 1px solid rgba(12,20,50,0.10);
+  font-size: 13.5px; line-height: 1.55; color: var(--ink-700);
+}
+.admin-callout-list { margin: 8px 0 10px; padding-left: 18px; }
+.admin-callout-list li { margin: 2px 0; }
+
 .admin-table-wrap { overflow-x: auto; }
 /* Pagination + count chip (shared by paged admin tables). */
 .admin-pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 2px 2px; flex-wrap: wrap; }

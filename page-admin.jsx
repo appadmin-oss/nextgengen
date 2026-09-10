@@ -81,6 +81,10 @@ const ADMIN_SECTIONS = [
   /* ONE Summer School door. `registration` and `qr` were separate sections
      that mounted a partial, divergent subset of the same panels the
      coordinator portal had — see the note above AdminSummer. */
+  /* ID cards: the print log, one member's card history, and the way into the
+     Design Studio. The studio and the batch drawer both existed; what did not
+     was any record of what had been printed — see domain/card-runs.php. */
+  { id: "idcards",     group: "People",   label: "ID cards",     title: "ID cards",            icon: "▣", cap: "people" },
   { id: "summer",      group: "Summer School", label: "Summer School", title: "Summer School",  icon: "☀", cap: "summer" },
   { id: "attendance",  group: "Summer School", label: "Duty rota",  title: "Attendance duty rota", icon: "🗓", cap: "summer" },
   { id: "assessment",  group: "Summer School", label: "Assessments", title: "Baseline & endline",  icon: "◑", cap: "summer" },
@@ -375,6 +379,7 @@ function AdminPage({ setPage }) {
           {view === "applications" && <AdminApplications/>}
           {view === "volunteers" && <AdminVolunteers/>}
           {view === "centres" && <AdminCentres/>}
+          {view === "idcards" && <AdminIdCards/>}
           {view === "summer" && <AdminSummer/>}
           {view === "mentors" && <AdminMentors/>}
           {view === "mentorship" && <AdminMentorship/>}
@@ -8901,6 +8906,14 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
               </div>
             )}
 
+            {/* Their ID card, and whether it is the current design. This is
+                the question a desk asks with the person standing there, and
+                the member record was the one place it could not be asked —
+                the print log lived in another section and had to be searched
+                by id. Loaded lazily: most visits to this drawer are not about
+                a card, and the history is a second read. */}
+            <MemberCardHistorySection memberId={m.memberId}/>
+
             <div className="admin-detail-section">
               <div className="admin-detail-h">Recent journal</div>
               {d.journal.length === 0 ? <div className="admin-empty" style={{ padding: 14 }}>No entries yet.</div> :
@@ -8911,6 +8924,34 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* One member's card history, inside their record.
+ *
+ * The same block the ID cards section shows, so there is one rendering of
+ * "their card is / is not the current design" rather than two that can come to
+ * disagree. Collapsed by default and fetched on open: the drawer already makes
+ * two reads, and most visits to it are not about a card. */
+function MemberCardHistorySection({ memberId }) {
+  const [open, setOpen] = React.useState(false);
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  React.useEffect(() => {
+    if (!open || d || err) return;
+    NGGApi.admin.registration.cardHistory(memberId, "member")
+      .then(setD).catch(e => setErr(e.code || e.message || "load_failed"));
+  }, [open, memberId, d, err]);
+  return (
+    <div className="admin-detail-section">
+      <div className="admin-detail-h">ID card</div>
+      {!open
+        ? <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}
+            aria-expanded="false">Show their card history</button>
+        : err ? <ErrorState title="Couldn't read the card history" code={err} onRetry={() => { setErr(""); setD(null); }}/>
+        : !d ? <div className="dash-spinner"/>
+        : <AdminCardHistory data={d}/>}
     </div>
   );
 }
@@ -11857,6 +11898,307 @@ function SummerGroupReport() {
                 )}
               </tbody>
             </table></div>}
+    </div>
+  );
+}
+
+/* ============================================================================
+   ID CARDS — the print log, and "is the card in their hand the current one?"
+
+   The design studio could draw a card and the batch drawer could print three
+   hundred, and NOTHING recorded that it had happened. A run left an audit line
+   and no rows, so three questions an ID desk asks out loud had no answer:
+
+     · has this member ever been issued a card, and how many times?
+     · which DESIGN is the one in their hand — the current published version,
+       or a version from before the centre changed colour?
+     · what did we send to the printer in July, and can we do exactly that
+       again for the eleven that came back creased?
+
+   Now every credential run writes one row for the batch and one per person,
+   each carrying the FROZEN template version (see api/_lib/domain/card-runs.php).
+   This screen is where those rows are read. It deliberately does not print
+   anything: rendering happens in the Design Studio, on the canvas that drew the
+   proof, because that is where the renderer is.
+   ============================================================================ */
+const CARD_RUN_MODE_META = {
+  print:   { label: "New issue", chip: "chip-lime" },
+  reprint: { label: "Reprint",   chip: "chip-gold" },
+  proof:   { label: "Proof",     chip: "" },
+};
+
+function AdminIdCards() {
+  const [tab, setTab] = useAdminTab("log", React.useCallback(t => t === "log" || t === "history", []));
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">ID cards</h2>
+        <div className="admin-section-actions">
+          {/* The studio renders; this screen records. Both doors, side by side,
+              because an operator arriving here to check a card usually wants to
+              reprint it, and the studio had no nav of its own for years. */}
+          <a className="btn btn-ghost btn-sm" href="/designer" target="_blank" rel="noreferrer">Open the Design Studio ↗</a>
+          <a className="btn btn-ghost btn-sm" href="/cards" target="_blank" rel="noreferrer">Open the Card Studio ↗</a>
+        </div>
+      </div>
+      <p className="admin-hint">
+        Every credential run is recorded with the design and the exact published <b>version</b> it used, so
+        “reprint that batch as it was in July” and “is the card in their hand current?” are both answerable.
+        Cards are designed and rendered in the <b>Design Studio</b>; member cards can also be printed straight
+        from <b>Members → Print IDs</b>.
+      </p>
+      <div className="admin-anchor-tabs" role="tablist" aria-label="ID card sections">
+        {[["log", "Print log"], ["history", "One person's cards"]].map(([id, lbl]) => (
+          <button key={id} role="tab" id={"idctab-" + id} aria-selected={tab === id} aria-controls="idcpanel"
+            tabIndex={tab === id ? 0 : -1}
+            className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
+        ))}
+      </div>
+      <div id="idcpanel" role="tabpanel" aria-labelledby={"idctab-" + tab} tabIndex={-1}>
+        {tab === "log" && <AdminCardRuns/>}
+        {tab === "history" && <AdminCardHistoryLookup/>}
+      </div>
+    </div>
+  );
+}
+
+function AdminCardRuns() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [f, setF] = React.useState({ kind: "", mode: "" });
+  const [page, setPage] = React.useState(1);
+  const [openRun, setOpenRun] = React.useState(null);
+
+  const load = React.useCallback((p) => {
+    setErr("");
+    return NGGApi.admin.registration.cardRuns(Object.assign({}, f, { page: p || page, pageSize: 25 }))
+      .then(setD).catch(e => setErr(e.code || e.message || "load_failed"));
+    // eslint-disable-next-line
+  }, [f, page]);
+  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [f.kind, f.mode]);
+
+  if (err) return <ErrorState title="Couldn't load the print log" code={err} onRetry={() => load()}/>;
+  if (!d) return <div className="dash-spinner"/>;
+  const runs = d.runs || [];
+
+  return (
+    <div>
+      <div className="admin-filters">
+        <select className="admin-select" value={f.kind} onChange={e => setF(x => ({ ...x, kind: e.target.value }))}
+          aria-label="Filter the print log by card kind">
+          <option value="">Every card</option>
+          <option value="member">NGG member cards</option>
+          <option value="student">Summer School cards</option>
+          <option value="volunteer">Volunteer cards</option>
+        </select>
+        <select className="admin-select" value={f.mode} onChange={e => setF(x => ({ ...x, mode: e.target.value }))}
+          aria-label="Filter the print log by run type">
+          <option value="">New issues and reprints</option>
+          <option value="print">New issues only</option>
+          <option value="reprint">Reprints only</option>
+          <option value="proof">Proofs</option>
+        </select>
+      </div>
+      {runs.length === 0
+        ? <EmptyState icon="▣" title="Nothing has been printed yet"
+            message="A run appears here the moment the Design Studio finishes writing a file. Runs made before this log existed are not in it — the record starts now."/>
+        : <div className="admin-table-wrap">
+            <table className="admin-table">
+              <caption className="sr-only">Card print runs, newest first</caption>
+              <thead><tr>
+                <th scope="col">When</th>
+                <th scope="col">Design</th>
+                <th scope="col">Type</th>
+                <th scope="col" className="admin-num">Cards</th>
+                <th scope="col">Output</th>
+                <th scope="col">Run by</th>
+                <th scope="col"><span className="sr-only">Actions</span></th>
+              </tr></thead>
+              <tbody>{runs.map(r => {
+                const m = CARD_RUN_MODE_META[r.mode] || { label: r.mode, chip: "" };
+                return (
+                  <tr key={r.runId}>
+                    <td className="admin-cell-sub">{fmtDateTime(r.finishedAt || r.startedAt)}<div className="mono admin-cell-sub">{r.runId}</div></td>
+                    <td>
+                      <b>{r.templateName || <span className="admin-cell-sub">built-in card</span>}</b>
+                      {/* The version is the whole point of the record. */}
+                      <div className="mono admin-cell-sub">
+                        {r.templateVersion ? "v" + r.templateVersion : "no version — hand-coded card"}
+                        {r.backTemplateId ? " · with a back" : ""}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={"chip " + m.chip}>{m.label}</span>
+                      {r.reason ? <div className="admin-cell-sub">{r.reason}</div> : null}
+                    </td>
+                    <td className="admin-num">
+                      {fmtNum(r.issued)}
+                      {r.failed ? <div className="admin-cell-sub" style={{ color: "#b03535" }}>{r.failed} failed</div> : null}
+                    </td>
+                    <td className="admin-cell-sub">{(r.output || "—").toUpperCase()}{r.dpi ? " · " + r.dpi + "dpi" : ""}{r.sheet ? " · " + r.sheet : ""}</td>
+                    <td className="admin-cell-sub">{r.actorName || r.actorId || "—"}</td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setOpenRun(r)}>Who was in it</button>
+                      {/* A reprint is a rendering job, so it happens in the
+                          studio. The link carries the design so the operator
+                          does not have to remember which of forty it was. */}
+                      {r.templateId
+                        ? <a className="btn btn-ghost btn-sm" href={"/designer?template=" + encodeURIComponent(r.templateId) + "&reprintOf=" + encodeURIComponent(r.runId)}
+                             target="_blank" rel="noreferrer">Reprint ↗</a>
+                        : null}
+                    </td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+            <Pager page={page} pageSize={d.pageSize || 25} total={d.total || 0} onPage={(p) => { setPage(p); load(p); }}/>
+          </div>}
+      {openRun && <AdminCardRunDetail run={openRun} onClose={() => setOpenRun(null)}/>}
+    </div>
+  );
+}
+
+function AdminCardRunDetail({ run, onClose }) {
+  const drawer = useAdminDrawer(onClose, false);
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  React.useEffect(() => {
+    NGGApi.admin.registration.cardRunGet(run.runId).then(setD).catch(e => setErr(e.code || e.message));
+  }, [run.runId]);
+  const m = CARD_RUN_MODE_META[run.mode] || { label: run.mode, chip: "" };
+  return (
+    <div className="admin-drawer" onMouseDown={drawer.close}>
+      <div className="admin-drawer-panel admin-drawer-wide" role="dialog" aria-modal="true" {...drawer.titleProps}
+        ref={drawer.panelRef} onMouseDown={e => e.stopPropagation()}>
+        <div className="admin-drawer-head">
+          <h3 {...drawer.headingProps}>{run.templateName || "Built-in card"} · {m.label}</h3>
+          <button className="admin-drawer-close" onClick={drawer.close} aria-label="Close">✕</button>
+        </div>
+        <div className="admin-drawer-scroll">
+          <div className="admin-fields">
+            <p className="admin-hint" style={{ margin: 0 }}>
+              <b>{fmtNum(run.issued)}</b> card{run.issued === 1 ? "" : "s"} on {fmtDateTime(run.finishedAt || run.startedAt)}
+              {run.templateVersion ? <> from <b>version {run.templateVersion}</b></> : <> from the built-in card, which carries no version</>}.
+              {run.failed ? <> {run.failed} could not be rendered and are not in the file.</> : null}
+            </p>
+            {err ? <ErrorState title="Couldn't load the run" code={err}/> :
+             !d ? <div className="dash-spinner"/> :
+             <div className="admin-table-wrap"><table className="admin-table">
+               <caption className="sr-only">People in run {run.runId}</caption>
+               <thead><tr>
+                 <th scope="col">Printed ID</th><th scope="col">Record</th>
+                 <th scope="col">First or repeat</th><th scope="col">Result</th>
+               </tr></thead>
+               <tbody>{(d.issues || []).map((i, k) => (
+                 <tr key={i.subjectId + ":" + k}>
+                   <td className="mono">{i.displayId || <span className="admin-cell-sub">—</span>}</td>
+                   <td className="mono admin-cell-sub">{i.subjectId}</td>
+                   <td>{i.reprint ? <span className="chip chip-gold">repeat</span> : <span className="chip chip-lime">first</span>}</td>
+                   <td>{i.ok ? <span className="admin-cell-sub">printed</span>
+                            : <span className="chip chip-crimson" title={i.note || ""}>not printed</span>}</td>
+                 </tr>
+               ))}</tbody>
+             </table></div>}
+          </div>
+        </div>
+        <div className="admin-drawer-foot">
+          <button className="btn btn-ghost btn-sm" onClick={drawer.close}>Close</button>
+          {run.templateId && (
+            <a className="btn btn-primary btn-sm" href={"/designer?template=" + encodeURIComponent(run.templateId) + "&reprintOf=" + encodeURIComponent(run.runId)}
+               target="_blank" rel="noreferrer">Reprint in the Design Studio ↗</a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* "Is the card in their hand the current design?"
+ *
+ * Asked at a desk, out loud, with the person standing there — so the answer
+ * leads with the latest issue and whether the published design has moved on
+ * since, which is the difference between "reprint it" and "it's fine". */
+function AdminCardHistoryLookup() {
+  const [type, setType] = React.useState("member");
+  const [id, setId] = React.useState("");
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const look = async (e) => {
+    e && e.preventDefault();
+    if (!id.trim()) return;
+    setBusy(true); setErr(""); setD(null);
+    try { setD(await NGGApi.admin.registration.cardHistory(id.trim(), type)); }
+    catch (e2) { setErr(e2.code || e2.message || "load_failed"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div>
+      <form className="admin-filters" onSubmit={look}>
+        <select className="admin-select" value={type} onChange={e => setType(e.target.value)} aria-label="Whose card">
+          <option value="member">NGG member</option>
+          <option value="student">Summer School participant</option>
+          <option value="volunteer">Volunteer</option>
+        </select>
+        <input className="admin-input" value={id} onChange={e => setId(e.target.value)}
+          placeholder="Member ID, e.g. NGG-2026-0141" aria-label="The record's id"/>
+        <button className="btn btn-primary btn-sm" disabled={busy || !id.trim()}>{busy ? "Looking…" : "Look it up"}</button>
+      </form>
+      {err && <ErrorState title="Couldn't read the card history" code={err} onRetry={look}/>}
+      {d && <AdminCardHistory data={d}/>}
+    </div>
+  );
+}
+
+/** The history block itself, so the member detail drawer can show the same
+ *  thing without a second implementation of it. */
+function AdminCardHistory({ data }) {
+  if (!data) return null;
+  if (!data.count) {
+    return <EmptyState icon="▣" title="No card has been issued to them"
+      message="Either they have never been printed, or their card predates the print log — the record starts from when it was added."/>;
+  }
+  const l = data.latest || {};
+  return (
+    <div>
+      <div className="admin-callout" role="status">
+        {data.designMovedOn === true && (
+          <p style={{ margin: "0 0 8px", color: "#8a6d00" }}>
+            <b>The design has moved on.</b> Their card was printed from version {l.templateVersion} of
+            “{l.templateName}”, which has been republished since. A reprint would look different.
+          </p>
+        )}
+        {data.designMovedOn === false && (
+          <p style={{ margin: "0 0 8px" }}>
+            <b>Their card is the current design</b> — version {l.templateVersion} of “{l.templateName}”.
+          </p>
+        )}
+        {data.designMovedOn === null && (
+          <p style={{ margin: "0 0 8px" }}>
+            Their card came from the <b>built-in card</b>, which carries no version — so whether it matches
+            today's cannot be answered from the record.
+          </p>
+        )}
+        {fmtNum(data.count)} card{data.count === 1 ? "" : "s"} issued
+        {data.reprints ? <> · {fmtNum(data.reprints)} of them replacements</> : null}
+      </div>
+      <div className="admin-table-wrap"><table className="admin-table">
+        <caption className="sr-only">Cards issued, newest first</caption>
+        <thead><tr>
+          <th scope="col">When</th><th scope="col">Printed ID</th>
+          <th scope="col">Design</th><th scope="col">Type</th><th scope="col">Result</th>
+        </tr></thead>
+        <tbody>{(data.issues || []).map((i, k) => (
+          <tr key={i.runId + ":" + k}>
+            <td className="admin-cell-sub">{fmtDateTime(i.at)}<div className="mono admin-cell-sub">{i.runId}</div></td>
+            <td className="mono">{i.displayId || <span className="admin-cell-sub">—</span>}</td>
+            <td>{i.templateName || <span className="admin-cell-sub">built-in</span>}
+              <div className="mono admin-cell-sub">{i.templateVersion ? "v" + i.templateVersion : "no version"}</div></td>
+            <td>{i.reprint ? <span className="chip chip-gold">reprint</span> : <span className="chip chip-lime">first</span>}</td>
+            <td>{i.ok ? <span className="admin-cell-sub">printed</span> : <span className="chip chip-crimson">not printed</span>}</td>
+          </tr>
+        ))}</tbody>
+      </table></div>
     </div>
   );
 }

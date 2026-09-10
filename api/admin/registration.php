@@ -32,6 +32,16 @@ if ($method === 'GET') {
         'folder' => (string)($_GET['folder'] ?? ''), 'q' => (string)($_GET['q'] ?? '')]);
     elseif ($view === 'assetUsage')  $res = gs_call('admin.design.asset.usage', ['requesterId' => $s['mid'],
         'assetId' => (string)($_GET['assetId'] ?? '')]);
+    /* The print log, and one person's card history — see
+       api/_lib/domain/card-runs.php. "What did we send to the printer in July"
+       and "is the card in their hand the current design". */
+    elseif ($view === 'card-runs')   $res = gs_call('admin.card.runs', ['requesterId' => $s['mid'],
+        'kind' => (string)($_GET['kind'] ?? ''), 'mode' => (string)($_GET['mode'] ?? ''),
+        'page' => $_GET['page'] ?? null, 'pageSize' => $_GET['pageSize'] ?? null]);
+    elseif ($view === 'card-run')    $res = gs_call('admin.card.run.get', ['requesterId' => $s['mid'],
+        'runId' => (string)($_GET['runId'] ?? '')]);
+    elseif ($view === 'card-history') $res = gs_call('admin.card.history', ['requesterId' => $s['mid'],
+        'subjectType' => (string)($_GET['subjectType'] ?? 'member'), 'subjectId' => (string)($_GET['subjectId'] ?? '')]);
     // Who a design run covers — see api/_lib/domain/merge.php.
     elseif ($view === 'merge')       $res = gs_call('admin.merge.rows', ['requesterId' => $s['mid'],
         'audience' => (string)($_GET['audience'] ?? 'students'),
@@ -70,6 +80,12 @@ if ($method === 'GET') {
         'templateId' => $b['templateId'] ?? '', 'template' => $b['template'] ?? null, 'ip' => $ip]);
     elseif ($action === 'template_delete')  $res = gs_call('admin.card.template.delete', ['requesterId' => $s['mid'],
         'templateId' => $b['templateId'] ?? '', 'ip' => $ip]);
+    /* Recorded AFTER the browser has produced the file, with what it actually
+       managed — the host has no renderer, so `issued` is what the client
+       reports and `requested` is not trusted as the same number. The template
+       version is read from the template row here, not taken from the body. */
+    elseif ($action === 'card_run')         $res = gs_call('admin.card.run.record', array_merge(
+        is_array($b) ? $b : [], ['requesterId' => $s['mid'], 'ip' => $ip]));
     elseif ($action === 'asset_upload')     $res = gs_call('admin.design.asset.upload', ['requesterId' => $s['mid'],
         'name' => $b['name'] ?? '', 'folder' => $b['folder'] ?? 'general', 'dataUrl' => $b['dataUrl'] ?? '',
         'url' => $b['url'] ?? '', 'bytes' => $b['bytes'] ?? 0, 'width' => $b['width'] ?? 0,
