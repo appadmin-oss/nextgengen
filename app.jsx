@@ -70,7 +70,7 @@ const ROUTES = [
   // ── Member-facing, signed in ─────────────────────────────────────────────
   { id: "profile",     title: "Member profile · NGG",                      desc: "An NGG member's public profile — work, badges, mentor notes.", index: false },
   { id: "dashboard",   title: "My dashboard · NGG",                        desc: "Your missions, mentor, streak and journal — the member dashboard.", index: false },
-  { id: "summerprofile", title: "Summer student · NGG",                    desc: "A Summer School student's standard profile.", addressable: false },
+  { id: "summerprofile", title: "Summer School participant · NGG",         desc: "A Summer School participant's standard profile.", addressable: false },
 
   // ── Staff & operational surfaces (own chrome, never indexed) ─────────────
   { id: "admin",        title: "Control Room · NGG",                       desc: "", chrome: "own", index: false },
@@ -227,7 +227,7 @@ function pageFromPath() {
   // /login and /signin are conventional entry points — resolve to home; the
   // auth provider opens the sign-in modal (or redirects signed-in users).
   if (seg === "login" || seg === "signin") return "home";
-  // Summer student profiles: /q/<qr-token> or /s/<handle>.
+  // Summer School participant profiles: /q/<qr-token> or /s/<handle>.
   if (seg === "q" || seg === "s") return "summerprofile";
   // Volunteer service certificates: /cert/<certId> — public + printable.
   if (seg === "cert") return "certificate";

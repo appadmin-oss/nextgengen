@@ -2718,7 +2718,7 @@ function AdminMentors() {
                   is not something anyone should have to open twenty drawers
                   to audit. */}
               <div className="mono admin-card-meta">
-                {{ ngg: "NGG Club", both: "Both cohorts" }[m.programme] || "Summer School"}
+                {{ ngg: "NGG Club", both: "Both programmes" }[m.programme] || "Summer School"}
                 {m.centre ? " · " + m.centre : ""}
               </div>
               <div className="mono admin-card-meta">{(m.tracks || []).join(", ")}</div>
@@ -2763,7 +2763,7 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
               which is exactly what every mentor could see before the field
               existed. */}
           <FieldSelect label="Supervises" value={d.programme||"summer"} onChange={v => set("programme", v)}
-            options={[{ value: "summer", label: "Summer School" }, { value: "ngg", label: "NGG Club" }, { value: "both", label: "Both cohorts" }]}/>
+            options={[{ value: "summer", label: "Summer School" }, { value: "ngg", label: "NGG Club" }, { value: "both", label: "Both programmes" }]}/>
           <FieldSelect label="Status" value={d.status||"pending-checks"} onChange={v => set("status", v)} options={["active","pending-checks","on-break","retired"]}/>
           <Field label="Max mentees" value={d.maxMentees||"8"} onChange={v => set("maxMentees", v)} type="number"/>
           <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>
@@ -5107,7 +5107,7 @@ function SummerRoster({ cohortId }) {
           which question was asked, not just how many answered it. */}
       {activeCount > 0 && (
         <div style={{ marginBottom: 12, fontSize: 13, lineHeight: 1.55, color: "var(--ink-600,#3c4460)" }}>
-          <b>{meta.matched}</b> of {meta.total} {meta.total === 1 ? "child" : "children"} in this cohort match
+          <b>{meta.matched}</b> of {meta.total} {meta.total === 1 ? "child" : "children"} in this edition match
           {" "}{[
             facets.centre && (facets.centre === "unknown" ? "no centre recorded" : "centre " + facets.centre),
             facets.track && (facets.track === "unknown" ? "no faculty recorded" : facets.track),
@@ -6290,7 +6290,7 @@ function AdminAssessment() {
                   ? (g.pairedBaselinePct === null ? "—" : g.pairedBaselinePct + "%")
                   : (g.pairedBaselineMean === null ? "—" : g.pairedBaselineMean)}</div>
                 <div className="mono admin-tile-l">Their baseline</div>
-                <div className="admin-hint" style={{ margin: 0 }}>whole cohort {g.pctMeaningful
+                <div className="admin-hint" style={{ margin: 0 }}>whole edition {g.pctMeaningful
                   ? (g.baselineMeanPct === null ? "—" : g.baselineMeanPct + "%")
                   : (g.baselineMean === null ? "—" : g.baselineMean)}</div>
               </div>
@@ -13296,9 +13296,9 @@ function SummerPolicy() {
           </label>
         </div>
         <p className="admin-hint">
-          Which days the summer students are expected. Absence, attendance rates and guardian
+          Which days participants are expected. Absence, attendance rates and guardian
           alerts all read this — with no calendar set, every calendar day counts, so a Sunday
-          marks the whole cohort absent. Set the term window and the weekdays that run, then
+          marks every participant absent. Set the term window and the weekdays that run, then
           cancel or add individual dates below.
         </p>
 
@@ -14203,7 +14203,7 @@ function SummerAttendance() {
         </>
         )
       ) : !roster.length ? (
-        <div className="admin-empty">{(a.rosterTotal || 0) > 0 ? "No child matches that filter." : "Nobody is enrolled in this cohort yet."}</div>
+        <div className="admin-empty">{(a.rosterTotal || 0) > 0 ? "No child matches that filter." : "Nobody is enrolled in this edition yet."}</div>
       ) : (
       <div className="admin-table-wrap" style={{ marginTop: 8 }}><table className="admin-table att-table">
         {/* The headers carry their own units. "Present" and "Rate" against an
@@ -14257,7 +14257,7 @@ function SummerAttendance() {
       <div className="summer-archive">
         <div>
           <div className="eyebrow" style={{ marginBottom: 4 }}>END OF SUMMER</div>
-          <div className="admin-hint" style={{ margin: 0 }}>Archive the cohort when summer ends. Compressing rolls each student's attendance into a summary (kept for NGG Club promotion) and clears the individual check-ins.</div>
+          <div className="admin-hint" style={{ margin: 0 }}>Archive the edition when summer ends. Compressing rolls each participant's attendance into a summary (kept for NGG Club promotion) and clears the individual check-ins.</div>
         </div>
         <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
           <button className="btn btn-ghost btn-sm" onClick={() => archive(false)}>Archive</button>

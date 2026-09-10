@@ -6722,7 +6722,7 @@ function unzipDocumentXml(buf) {
          negative number ends up read as a loss. */
       /\+8\.4/.test(asTxt) && /Mean change, per child/i.test(asTxt) && /6\.2 to 10\.6/.test(asTxt));
     ok('…beside the paired baseline AND the whole-cohort baseline, distinguished',
-      /Their baseline/i.test(asTxt) && /38%/.test(asTxt) && /whole cohort 41\.5%/.test(asTxt));
+      /Their baseline/i.test(asTxt) && /38%/.test(asTxt) && /whole edition 41\.5%/.test(asTxt));
 
     /* The caveats have to be ABOVE the breakdown. A reader who has absorbed
        the split by sex will not go back and re-read the number with the

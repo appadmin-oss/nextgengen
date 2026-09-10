@@ -1371,7 +1371,7 @@ function SummerProfilePage({ setPage }) {
      the attendance and milestones on it are not personally identifying. */
   const shownName = m.fullName || (m.handle ? "@" + m.handle : "Student");
   const initials = (m.fullName || m.handle || "?").trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
-  const title = isVol ? (m.role ? m.role.charAt(0).toUpperCase() + m.role.slice(1) : "Volunteer") : (m.track ? m.track : "Summer student");
+  const title = isVol ? (m.role ? m.role.charAt(0).toUpperCase() + m.role.slice(1) : "Volunteer") : (m.track ? m.track : "Participant");
   const chips = [];
   if (!isVol && m.track) chips.push(m.track);
   if (isVol && m.faculty) chips.push(m.faculty);
@@ -6169,7 +6169,7 @@ function CardStudio() {
     </p>
 
     <div className="no-print" style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-      {tab("students", "Summer students")}
+      {tab("students", "Participants")}
       {tab("volunteers", "Volunteers")}
       <span style={{ width: 1, height: 26, background: "rgba(255,255,255,.16)", margin: "0 4px" }}/>
       {/* Print one site's batch at a time — that is how the cards are handed
@@ -7891,7 +7891,7 @@ function LegalPage({ setPage }) {
       <P>Next Generation Genius (“NGG”, “we”), a programme of Street‑To‑Stardom under the Afrovanguard initiative, collects and processes personal data in line with the Nigeria Data Protection Act 2023 (NDPA) and the NDPR. This notice explains what we hold, why, and for how long. Because most of the people we serve are children, we treat this as a duty, not a formality.</P>
       <H>What we collect</H>
       <UL>
-        <LI><b>Summer students &amp; members (children):</b> name, age, school, course/centre, a website headshot, and program work (attendance, missions, journal reflections).</LI>
+        <LI><b>Summer School participants &amp; members (children):</b> name, age, school, course/centre, a website headshot, and program work (attendance, missions, journal reflections).</LI>
         <LI><b>Parents/guardians:</b> name and at least one contact channel (phone or email), plus the consents you grant.</LI>
         <LI><b>Volunteers:</b> name, email, phone, role, courses you can teach, and — for roles working with children — safeguarding-screening status.</LI>
         <LI><b>Everyone:</b> minimal technical data (IP, coarse device info) used only for security and rate-limiting.</LI>

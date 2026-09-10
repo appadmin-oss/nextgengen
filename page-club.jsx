@@ -457,7 +457,7 @@ function SummerPage({ setPage }) {
                           letting it set the card's width is what made four
                           identical cards come out four different sizes. */}
                       <span className="member-card-name" title={shown}>{shown}</span>
-                      <span className="member-card-fac-t">{m.faculty || "Summer student"}</span>
+                      <span className="member-card-fac-t">{m.faculty || "Participant"}</span>
                     </span>
                   </>
                 );
@@ -5360,7 +5360,7 @@ const TRN_TC = [
 
 const TRN_KINDS = [
   { id: "member",    label: "NGG members" },
-  { id: "student",   label: "Summer students" },
+  { id: "student",   label: "Summer School participants" },
   { id: "volunteer", label: "Volunteers" },
   { id: "staff",     label: "Staff & admins" },
 ];

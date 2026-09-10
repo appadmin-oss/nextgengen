@@ -411,8 +411,13 @@ one reintroduces the failure.
 - **A forked card renderer** for a new preview or export surface.
 - **A cached public op with no invalidation topic.**
 - **Inline style grids** where a class belongs.
-- **"Cohort" in user-facing copy**, and "student" for a Summer School
-  participant.
+- **The entity called a cohort in user-facing copy**, and **"student" for a
+  Summer School participant**. This is not a ban on the English word: "Reflect,
+  privately or with the cohort" and "Cohort completion rate" describe a group
+  of learners and are fine. What must never appear is *the edition* called a
+  cohort ("Archive the cohort when summer ends") or *a participant* called a
+  Summer student — those are the two that send an operator to the wrong
+  screen.
 
 ## 11. Where the documentation is
 
