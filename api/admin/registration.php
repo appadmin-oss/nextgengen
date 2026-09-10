@@ -25,6 +25,7 @@ if ($method === 'GET') {
     elseif ($view === 'consents')    $res = gs_call('admin.registration.consents', ['requesterId' => $s['mid'], 'studentId' => (string)($_GET['studentId'] ?? '')]);
     elseif ($view === 'hierarchy')   $res = gs_call('admin.hierarchy.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'vcards')      $res = gs_call('admin.vcards.data', ['requesterId' => $s['mid'], 'volunteerId' => (string)($_GET['volunteerId'] ?? '')]);
+    elseif ($view === 'mcards')      $res = gs_call('admin.mcards.data', ['requesterId' => $s['mid'], 'memberId' => (string)($_GET['memberId'] ?? '')]);
     // ID card designs — see api/_lib/domain/card-templates.php.
     elseif ($view === 'templates')   $res = gs_call('admin.card.templates', ['requesterId' => $s['mid'], 'kind' => (string)($_GET['kind'] ?? '')]);
     elseif ($view === 'template')    $res = gs_call('admin.card.template.get', ['requesterId' => $s['mid'], 'templateId' => (string)($_GET['templateId'] ?? '')]);

@@ -1308,6 +1308,9 @@
         hierarchyUpsert: (data) => request('/admin/registration.php', { body: { action: 'hierarchy_upsert', data } }),
         hierarchyDelete: (tierId) => request('/admin/registration.php', { body: { action: 'hierarchy_delete', tierId } }),
         volunteerCards:  (volunteerId) => request('/admin/registration.php' + qs({ view: 'vcards', volunteerId })),
+        /* NGG member card rows, in the same shape as cards()/volunteerCards()
+           so the Card Studio can hold three modes and one renderer path. */
+        memberCards:     (memberId) => request('/admin/registration.php' + qs({ view: 'mcards', memberId })),
         /* ID card designs. `save` writes a draft; `publish` freezes the copy a
            print run reads, and refuses on a preflight error — a check that only
            ran in the browser is one a crafted request skips, and what it guards

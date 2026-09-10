@@ -5298,6 +5298,60 @@ chk('runs: every card op is gated on the member desk', (function () {
         && backend_dispatch('admin.card.run.record', ['requesterId' => 'NGG-2025-0700', 'items' => []])['error'] === 'forbidden';
 })());
 
+/* ── NGG member card rows: the studio's third subject ──────────────────────
+   The Card Studio printed participants and volunteers and left members to a
+   drawer in the member roster. admin.mcards.data gives members the same
+   payload the other two already return, which is what makes a third MODE
+   possible instead of a third implementation. */
+chk('mcards: members come back in the same shape as students and volunteers', (function () use ($CARDADM) {
+    $r = backend_dispatch('admin.mcards.data', ['requesterId' => $CARDADM]);
+    if (empty($r['ok']) || !isset($r['cards']) || !isset($r['program'])) return false;
+    $s = backend_dispatch('admin.cards.data', ['requesterId' => $CARDADM]);
+    $v = backend_dispatch('admin.vcards.data', ['requesterId' => $CARDADM]);
+    // The three payloads must agree on their top-level keys, or the studio
+    // needs a branch per subject and the point is lost.
+    $keys = function ($x) { $k = array_keys($x); sort($k); return $k; };
+    return $keys($r) === $keys($s) && $keys($r) === $keys($v);
+})());
+chk('mcards: a member with no printed ID is INCLUDED, so the run can flag it', (function () use ($CARDADM) {
+    db_insert('members', ['memberId' => 'NGG-2025-0740', 'fullName' => 'Blank Card', 'email' => 'blank740@example.com',
+        'type' => 'NGG', 'status' => 'active', 'centre' => 'Egbeda', 'displayId' => '',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.mcards.data', ['requesterId' => $CARDADM, 'memberId' => 'NGG-2025-0740']);
+    if (empty($r['ok']) || count($r['cards']) !== 1) return false;
+    $c = $r['cards'][0];
+    /* The card falls back to the internal id rather than printing a blank
+       identifier, AND says the printed one is missing. Both halves matter: the
+       fallback alone hid the problem from the studio while the member roster
+       was filtering and counting exactly these people. */
+    return $c['displayId'] === 'NGG-2025-0740' && $c['displayIdMissing'] === true;
+})());
+chk('mcards: a member WITH a printed id is not flagged as missing one', (function () use ($CARDADM) {
+    db_insert('members', ['memberId' => 'NGG-2025-0743', 'fullName' => 'Has Card', 'email' => 'has743@example.com',
+        'type' => 'NGG', 'status' => 'active', 'centre' => 'Egbeda', 'displayId' => 'NGG/EG/0743',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.mcards.data', ['requesterId' => $CARDADM, 'memberId' => 'NGG-2025-0743']);
+    $c = $r['cards'][0] ?? [];
+    return ($c['displayId'] ?? '') === 'NGG/EG/0743' && ($c['displayIdMissing'] ?? null) === false;
+})());
+chk('mcards: gated on the member desk, not on Summer School', (function () {
+    // A Summer School coordinator holds `summer` and prints participant cards;
+    // member credentials are not theirs to produce.
+    return backend_dispatch('admin.mcards.data', ['requesterId' => 'NGG-2025-0700'])['error'] === 'forbidden';
+})());
+chk('mcards: a centre-scoped admin gets their own centre and only their own', (function () {
+    /* NGG-SCOPED-ADM is scoped to Scopeville and holds `people` (role admin);
+       NGG-INSCOPE is the member in it. Both are fixtures from the bulk block
+       above. A positive AND a negative, because a scope check that only
+       asserts an absence also passes when the op returns nothing at all. */
+    $r = backend_dispatch('admin.mcards.data', ['requesterId' => 'NGG-SCOPED-ADM']);
+    if (empty($r['ok']) || !$r['cards']) return false;
+    $names = array_map(fn($c) => (string)($c['centre']['name'] ?? ''), $r['cards']);
+    $ids   = array_map(fn($c) => (string)($c['token'] ?? ''), $r['cards']);
+    return in_array('NGG-INSCOPE', $ids, true)
+        && array_unique($names) === ['Scopeville'];
+})());
+
 // ── AI profiles (offline resolution only — no network in tests) ──
 chk('ai disabled with no keys', ai_enabled() === false && ai_enabled('coach') === false && ai_complete('s', 'u')['error'] === 'ai_disabled');
 chk('ai profile chain: profile → fallback → default, deduped', (function () {

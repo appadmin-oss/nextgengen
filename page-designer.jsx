@@ -722,6 +722,12 @@ function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMa
                       : <>
                           {!r.photoUrl && <span className="dsn-merge-flag dsn-merge-flag--photo">no photo</span>}
                           {!r.token && <span className="dsn-merge-flag dsn-merge-flag--card">no card</span>}
+                          {/* A member with no printed ID assigned. The card
+                              still renders — it falls back to the internal id
+                              rather than printing a blank — but that is a
+                              record to finish, not a card to laminate, and
+                              the roster already counts these. */}
+                          {r.displayIdMissing && <span className="dsn-merge-flag dsn-merge-flag--card">no printed ID</span>}
                         </>}
                   </td>
                 </tr>

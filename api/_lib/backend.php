@@ -417,6 +417,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.hierarchy.upsert'    => 'admin_hierarchy_upsert',
             'admin.hierarchy.delete'    => 'admin_hierarchy_delete',
             'admin.vcards.data'         => 'admin_volunteer_cards_data',
+            'admin.mcards.data'         => 'admin_mcards_data',
             'admin.id.resend'           => 'admin_id_resend',
             'admin.photo.queue'         => 'admin_photo_queue',
             'admin.photo.claim'         => 'photo_claim',

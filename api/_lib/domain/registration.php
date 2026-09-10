@@ -3249,6 +3249,46 @@ function card_row_student(array $s, ?array $ctr, string $expiry): array {
  * `member.family` bindings make that guess where it is visible and
  * overridable, not silently in the data layer.
  */
+/**
+ * NGG MEMBER card rows — the third subject, and the one with no studio.
+ *
+ * The Card Studio printed Summer School participants and volunteers; members
+ * were printed from a drawer inside the member roster instead — the same job,
+ * in a different place, through different code. Three subjects, three
+ * production paths, two of them in one studio and the third somewhere else.
+ *
+ * The payload is deliberately IDENTICAL to admin_cards_data and
+ * admin_volunteer_cards_data: { ok, cards[], program }. That is what lets the
+ * studio gain a third MODE rather than a third implementation.
+ *
+ * Gated on `people`, not `summer`: a member belongs to the member desk, and a
+ * Summer School coordinator has no business printing member credentials.
+ * Centre scope is applied to the QUERY, so a scoped admin's run cannot reach
+ * past their centres however the studio asks.
+ */
+function admin_mcards_data(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $where = ["COALESCE(status,'') <> 'inactive'"];
+    $params = [];
+    if (!empty($p['memberId'])) { $where[] = 'memberId = ?'; $params[] = (string)$p['memberId']; }
+    $scopeNames = admin_centre_names_in_scope($g['requester']);
+    if ($scopeNames !== null) {
+        if (!$scopeNames) return ['ok' => true, 'cards' => [], 'program' => idcard_program()];
+        $where[] = 'centre IN (' . implode(',', array_fill(0, count($scopeNames), '?')) . ')';
+        foreach ($scopeNames as $nm) $params[] = $nm;
+    }
+    /* Members with no printed ID are INCLUDED, not filtered out. The studio's
+       value at this step is showing what will come off the printer wrong
+       before it does; a run that silently omits the incomplete records is how
+       they stay incomplete. The row carries the blank and the studio flags it. */
+    $rows = db_all('SELECT * FROM members WHERE ' . implode(' AND ', $where)
+        . ' ORDER BY centre ASC, fullName ASC LIMIT 500', $params);
+    $centres = centre_index();
+    $cards = [];
+    foreach ($rows as $m) $cards[] = card_row_member($m, $centres);
+    return ['ok' => true, 'cards' => $cards, 'program' => idcard_program()];
+}
+
 function card_row_member(array $m, array $centres): array {
     $name = trim((string)($m['fullName'] ?? ''));
     $centreName = trim((string)($m['centre'] ?? ''));
@@ -3264,7 +3304,15 @@ function card_row_member(array $m, array $centres): array {
         'memberId'  => (string)($m['memberId'] ?? ''),
         'fullName'  => $name,
         'firstName' => '', 'surname' => '',
+        /* The PRINTED id, falling back to the internal one — a card must not
+           print a blank where its identifier goes. But the fallback also HID
+           the problem: the member roster treats a blank displayId as a
+           missing printed ID, filters for it and counts it in the print
+           preflight, while the card row silently substituted the internal id
+           so nothing downstream could tell the two apart. The card renders
+           something valid AND says which it is. */
         'displayId' => (string)($m['displayId'] ?? '') !== '' ? (string)$m['displayId'] : (string)($m['memberId'] ?? ''),
+        'displayIdMissing' => (string)($m['displayId'] ?? '') === '',
         'level'     => (string)($m['level'] ?? ''),
         'type'      => (string)($m['type'] ?? ''),
         'status'    => (string)($m['status'] ?? ''),
