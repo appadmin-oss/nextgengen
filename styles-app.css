@@ -1960,6 +1960,54 @@ body.cm-app .fab-top { display: none; }
   animation: drawer-in 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .admin-drawer-wide { width: min(800px, 100%); }
+/* A drawer whose body scrolls independently of its sticky head and foot. The
+   editions/groups editors need it: they carry a fieldset of weekdays and four
+   dates, and a drawer that scrolls as one unit puts Save off-screen. */
+.admin-drawer-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+/* A sub-heading inside a section — one level below .admin-h3. */
+.admin-h4 {
+  font-family: var(--font-display); font-size: 15px; font-weight: 700;
+  margin: 0 0 10px; color: var(--ink-900);
+}
+/* An inline form error. role="alert" on the element, so it is announced when it
+   appears rather than only turning red. */
+.admin-form-err {
+  margin: 12px 28px 0; padding: 10px 12px; border-radius: 10px;
+  background: rgba(179,38,30,0.08); border: 1px solid rgba(179,38,30,0.25);
+  color: #8c1d18; font-size: 13px; line-height: 1.5;
+}
+/* A real <fieldset>/<legend>, because a group of checkboxes needs a name a
+   screen reader can read out before the boxes. */
+.admin-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.admin-legend {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em;
+  color: var(--ink-500); padding: 0; margin-bottom: 8px;
+}
+/* Weekday picker. Each day is a real checkbox with a visible label — a row of
+   toggle buttons would be prettier and unreachable by keyboard without extra
+   work that adds nothing here. */
+.admin-daypick { display: flex; flex-wrap: wrap; gap: 6px; }
+.admin-daypick-day {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 8px 11px; min-height: 40px; border-radius: 999px;
+  border: 1px solid rgba(12,20,50,0.16); background: #fff;
+  font-size: 13px; font-weight: 600; color: var(--ink-700);
+}
+.admin-daypick-day.is-on { background: var(--navy-900); border-color: var(--navy-900); color: #fff; }
+.admin-daypick-day:focus-within { outline: 2px solid var(--navy-900); outline-offset: 2px; }
+.admin-daypick-day input { width: 16px; height: 16px; margin: 0; }
+
+/* Grouped panel navigation, for a workspace with more panels than fit in one
+   readable strip. Fifteen tabs in a row is a wall; four named groups is a map
+   of the job. */
+.admin-panelnav { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 4px 0 18px; }
+.admin-panelnav-group { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.admin-panelnav-label {
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--ink-500);
+}
+@media (max-width: 900px) { .admin-panelnav { gap: 10px 0; flex-direction: column; } }
+@media (max-width: 600px) { .admin-daypick-day { min-height: 44px; } }
 @keyframes drawer-in { from { transform: translateX(100%); } to { transform: none; } }
 .admin-drawer-head {
   display: flex; justify-content: space-between; align-items: center;
