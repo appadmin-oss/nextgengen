@@ -184,7 +184,13 @@ function buildItems(auth) {
     { id: "nav.media",      section: "Pages", icon: "▶", label: "Media room",      hint: "Films · podcast · reels",  run: nav("media") },
     { id: "nav.parents",    section: "Pages", icon: "♡", label: "For parents",     hint: "Safeguarding · FAQ",       run: nav("parents") },
     { id: "nav.volunteers", section: "Pages", icon: "✚", label: "Become a mentor", hint: "Volunteer with NGG",       run: nav("volunteers") },
-    { id: "nav.join",       section: "Pages", icon: "→", label: "Apply for a session", hint: "Open applications",    run: nav("join"),    keywords: ["apply","join"] },
+    /* Two distinct programmes, two entries. One "Apply" that opened whichever
+       programme a stale global happened to be holding is how somebody applies
+       to Anchor 12 believing they applied to Summer School. */
+    { id: "nav.join.summer", section: "Pages", icon: "→", label: "Apply · Summer School", hint: "The six-week on-ramp",
+      run: () => goApply(window.__navigate, "summer"), keywords: ["apply", "join", "summer", "school"] },
+    { id: "nav.join.anchor", section: "Pages", icon: "⚓", label: "Apply · Anchor 12", hint: "The twelve-week flagship",
+      run: () => goApply(window.__navigate, "anchor"), keywords: ["apply", "join", "anchor"] },
   ];
 
   if (auth.isSignedIn) {

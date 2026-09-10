@@ -271,7 +271,7 @@ function CentreDetail({ slug, go, setPage }) {
               <span>{c.name}</span>
             </div>
             <div className="centre-hero-actions">
-              <button className="btn btn-lg centre-btn-ink" onClick={() => setPage("join")}>Apply to this centre →</button>
+              <button className="btn btn-lg centre-btn-ink" onClick={() => goApply(setPage, "summer", { centre: c.name })}>Apply to this centre →</button>
               {hasWa && <a className="btn btn-lg centre-btn-outline-ink" href={c.whatsappUrl} target="_blank" rel="noopener noreferrer">Join the group</a>}
             </div>
           </div>
@@ -281,7 +281,7 @@ function CentreDetail({ slug, go, setPage }) {
 
       {/* ---- Mobile CTA band (navy, below the hero — matches the mobile design) ---- */}
       <section className="centre-hero-cta">
-        <button className="btn btn-lg centre-btn-accent" onClick={() => setPage("join")}>Apply to this centre →</button>
+        <button className="btn btn-lg centre-btn-accent" onClick={() => goApply(setPage, "summer", { centre: c.name })}>Apply to this centre →</button>
         {hasWa && <a className="btn btn-lg centre-btn-outline-light" href={c.whatsappUrl} target="_blank" rel="noopener noreferrer">Join the group</a>}
       </section>
 
@@ -434,7 +434,7 @@ function CentreDetail({ slug, go, setPage }) {
           <div className="centre-find-cta">
             <h2 className="display centre-find-h">The room is open.<br/>Are you in?</h2>
             <div className="centre-find-actions">
-              <button className="btn btn-lg centre-btn-accent" onClick={() => setPage("join")}>Apply for a session →</button>
+              <button className="btn btn-lg centre-btn-accent" onClick={() => goApply(setPage, "summer", { centre: c.name })}>Apply for a session →</button>
               {hasWa && <a className="btn btn-lg centre-btn-outline-light" href={c.whatsappUrl} target="_blank" rel="noopener noreferrer">Join the WhatsApp group</a>}
               <button className="btn btn-lg centre-btn-outline-light" onClick={() => go(CENTRES_BASE)}>See other centres</button>
             </div>

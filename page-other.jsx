@@ -635,23 +635,60 @@ function JoinPage({ setPage }) {
   const [step, setStep] = useState(0);
   const [appRef, setAppRef] = useState("");
   const [appWa, setAppWa] = useState("");
-  // Which program the applicant chose (set by the Summer page before it routes
-  // here). 'summer' = 6-week on-ramp, 'anchor' = flagship 12-week NGG. Captured
-  // once on mount so navigating away and back via the generic Apply link resets.
+  /* Which programme the applicant is applying to. 'summer' = the Summer School
+     on-ramp, 'anchor' = the flagship 12-week NGG journey.
+   *
+   * It comes from the URL (`/join?program=summer`), not from a global. It used
+   * to be handed over as `window.__nggProgram`, set by the Summer page one tick
+   * before it routed here — which meant the one thing this form must get right
+   * was the one thing it lost on a refresh. A family that reloaded the page (or
+   * shared the link, or came back to a restored tab, or was bounced through
+   * sign-in) silently switched from Summer School to Anchor 12 and submitted an
+   * application to the wrong programme, with no visible change on screen.
+   *
+   * The global is still read once as a fallback so an in-app click from an older
+   * cached bundle keeps working, and it is normalised into the address bar below
+   * so the choice survives everything a URL survives. */
   const [program] = useState(() => {
-    const p = (typeof window !== "undefined" && window.__nggProgram === "summer") ? "summer" : "anchor";
+    let q = "";
+    try { q = (new URLSearchParams(window.location.search).get("program") || "").toLowerCase(); } catch (_) {}
+    const legacy = (typeof window !== "undefined" && window.__nggProgram === "summer") ? "summer" : "";
     if (typeof window !== "undefined") window.__nggProgram = null;
-    return p;
+    return (q === "summer" || legacy === "summer") ? "summer" : "anchor";
   });
+  /* Put the programme in the address bar so a refresh, a bookmark and a shared
+     link all reopen the same form. replaceState, not push: this is the same
+     step, spelled correctly — it must not add a history entry the Back button
+     has to walk through. */
+  React.useEffect(() => {
+    try {
+      const u = new URL(window.location.href);
+      if ((u.searchParams.get("program") || "") === program) return;
+      u.searchParams.set("program", program);
+      window.history.replaceState(window.history.state, "", u.pathname + "?" + u.searchParams.toString() + u.hash);
+    } catch (_) {}
+  }, [program]);
   const isSummer = program === "summer";
   const [restored, setRestored] = useState(false);
   const [data, setData] = useState(() => {
     const base = { firstName: "", lastName: "", otherName: "", sex: "", dob: "", city: "Egbeda", track: "Music", why: "", parentEmail: "", parentPhone: "", photoUrl: "" };
+    /* "Apply to THIS centre" has to arrive at a form with that centre already
+       chosen, or the button is decoration. Same for a course picked off the
+       Summer School page. A saved draft still wins — somebody halfway through
+       typing must not have their answers overwritten by a link. */
+    let seed = {};
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const centre = (q.get("centre") || "").trim();
+      const track = (q.get("track") || "").trim();
+      if (centre) seed.city = centre;
+      if (track) seed.track = track;
+    } catch (_) {}
     try {
       const saved = JSON.parse(localStorage.getItem(JOIN_DRAFT_KEY) || "null");
-      if (saved && typeof saved === "object") return Object.assign(base, saved);
+      if (saved && typeof saved === "object") return Object.assign(base, seed, saved);
     } catch (_) {}
-    return base;
+    return Object.assign(base, seed);
   });
   // Announce (once, on mount) that we restored a non-empty saved draft, so the
   // "save as you go" promise is visible rather than silent.

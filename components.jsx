@@ -763,7 +763,7 @@ function TopNav({ page, setPage }) {
             <Magnetic strength={6}>
               {isSignedIn
                 ? <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("dashboard")}>My dashboard →</button>
-                : <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("join")}>Apply →</button>}
+                : <button className="btn btn-primary btn-sm nav-apply" onClick={() => goApply(setPage, "anchor")}>Apply →</button>}
             </Magnetic>
             <button
               ref={burgerRef}

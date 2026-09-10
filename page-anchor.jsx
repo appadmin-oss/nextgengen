@@ -446,7 +446,7 @@ function AnchorCta({ setPage, auth }) {
         </p>
         <div className="anch-cta-actions">
           <Magnetic strength={14}>
-            <button className="btn btn-gold btn-lg" onClick={() => setPage("join")}>Apply now →</button>
+            <button className="btn btn-gold btn-lg" onClick={() => goApply(setPage, "anchor")}>Apply now →</button>
           </Magnetic>
           {auth && auth.isSignedIn ? (
             <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setPage("dashboard")}>Open my dashboard</button>
