@@ -1967,7 +1967,14 @@ function unzipDocumentXml(buf) {
     await rg.waitForTimeout(200);
     const cardGeom = await rg.evaluate(() => {
       const cards = Array.from(document.querySelectorAll('.roster-grid > .member-card'));
-      const tiles = cards.map(c => c.querySelector('div[style*="aspect-ratio"], div[style*="aspectRatio"]') || c.firstElementChild);
+      /* The photo tile, by CLASS. It used to be found by matching an inline
+         `aspect-ratio` style, which stopped meaning anything the moment the
+         card's geometry moved into a stylesheet — and then silently measured
+         the card's first child instead, so the assertion still passed while
+         measuring the wrong box. */
+      const tiles = cards.map(c => c.querySelector('.member-card-fig')
+        || c.querySelector('div[style*="aspect-ratio"], div[style*="aspectRatio"]')
+        || c.firstElementChild);
       const r = (el) => el.getBoundingClientRect();
       return {
         n: cards.length,
@@ -2005,7 +2012,10 @@ function unzipDocumentXml(buf) {
         await c2.goto(BASE + '/tests/_boards_fixture.html?board=summer&mode=ok&css=1', { waitUntil: 'networkidle' });
         await c2.waitForTimeout(600);
         const clipped = await c2.evaluate(() => {
-          const el = Array.from(document.querySelectorAll('.roster-grid .member-card div[title]'))
+          /* Any element carrying the full name as a title — the card is a
+             link now and the name is a <span> inside it, so pinning the tag
+             was pinning the markup rather than the behaviour. */
+          const el = Array.from(document.querySelectorAll('.roster-grid .member-card [title]'))
             .find(d => /egbusor-chiemerie-benedict/.test(d.getAttribute('title') || ''));
           if (!el) return false;
           const cs = getComputedStyle(el);

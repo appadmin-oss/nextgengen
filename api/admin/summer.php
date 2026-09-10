@@ -74,6 +74,12 @@ if ($method === 'GET') {
 } else {
     json_error('method_not_allowed', 405);
 }
+/* The public promotion page publishes the edition's dates, its application
+   window and the courses running at each centre. Changing any of those has to
+   reach it, or /summer advertises last month's answer for five minutes. */
+if (in_array((string)($action ?? ''), ['editionSave', 'editionStatus', 'groupSave', 'groupDelete', 'cohort'], true)) {
+    cache_invalidate('summer');
+}
 if (empty($res['ok'])) {
     // A policy refusal is not a bare error code: it carries who was refused and
     // why, and the kiosk needs both to tell the desk something useful instead

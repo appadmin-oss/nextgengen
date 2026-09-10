@@ -2,10 +2,85 @@
    NGG — Summer Students + NGGC Members + Member Profile
    ================================================================ */
 
-/* =================== SUMMER STUDENTS =================== */
+/* =================== SUMMER SCHOOL =================== */
+/* ============================================================================
+   THE SUMMER SCHOOL PROMOTION PAGE
+
+   The page a poster, a WhatsApp forward or a radio mention sends people to. It
+   had one job — get a family from "I heard about this" to an application — and
+   it answered none of the three questions they actually arrive with:
+
+     · WHERE is my nearest centre? The centre directory was on another page,
+       reachable only from the top nav, and this page never mentioned it.
+     · WHAT does it teach? The academy catalogue — the real list of courses
+       this programme runs — was admin-only. Nowhere on the public site.
+     · IS IT OPEN, and when does it start? The edition's dates and its
+       application window existed in the database and were never published, so
+       the page said "six weeks" and "summer" and nothing a parent could plan
+       around.
+
+   What it showed instead was a hard-coded six-week grid, a gallery of this
+   year's children filterable by faculty, and one Apply button. Three smaller
+   things were wrong with that:
+
+     · a failed roster read was rendered as "the summer class has not been
+       enrolled yet" — a broken page reporting itself as an empty programme;
+     · the child cards were divs with a click handler that opened the GENERIC
+       profile page rather than that child's, so they were both unreachable by
+       keyboard and wrong when they worked;
+     · every grid was inline `repeat(6, 1fr)` / `repeat(3, 1fr)`, so on a
+       phone the schedule was six columns wide.
+
+   So the page now leads with one SEARCH that answers all three questions at
+   once — type "Ijaiye" and get the centre, type "piano" and get the course and
+   the centres teaching it — and the discovery data comes from one cacheable
+   public read (public.summer). No child's data is in it.
+   ============================================================================ */
+
+/** Does a haystack contain the needle? Case- and accent-insensitive, because
+ *  "Ijaiye" is typed "ijaiye" and Yorùbá diacritics are typed without them. */
+function summerMatch(hay, needle) {
+  if (!needle) return true;
+  const norm = (v) => String(v || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  return norm(hay).indexOf(norm(needle)) !== -1;
+}
+
+/** "6 July – 14 August 2026", or as much of it as the edition actually has. */
+function summerDates(ed) {
+  if (!ed) return "";
+  const one = (iso) => {
+    if (!iso) return "";
+    try { return fmtDayMonth(iso); } catch (_) { return String(iso).slice(0, 10); }
+  };
+  const a = one(ed.startDate), b = one(ed.endDate);
+  if (a && b) return a + " – " + b + (ed.year ? " " + ed.year : "");
+  if (a) return "from " + a + (ed.year ? " " + ed.year : "");
+  return ed.year ? String(ed.year) : "";
+}
+
+/* What the page says about whether you can apply. Three states, not two: an
+   edition whose window nobody filled in must not read as CLOSED — a page that
+   turns families away because a field is blank is worse than one that says
+   nothing. */
+const SUMMER_APPLY_COPY = {
+  open:    { chip: "chip-lime", label: "Applications open", cta: "Start your application →" },
+  not_yet: { chip: "chip-gold", label: "Applications open soon", cta: "Start your application →" },
+  closed:  { chip: "",          label: "Online applications closed", cta: "Start your application →" },
+  unset:   { chip: "",          label: "",                   cta: "Start your application →" },
+};
+
 function SummerPage({ setPage }) {
-  const [track, setTrack] = useState("all");
-  const [showAll, setShowAll] = useState(false);
+  /* ONE search box, three answers. A parent does not know whether "piano" is a
+     course, a centre or a child — and does not need to. */
+  const [q, setQ] = React.useState("");
+  const [track, setTrack] = React.useState("all");
+  const [showAll, setShowAll] = React.useState(false);
+
+  /* The discovery data: the live edition, the academies and their courses, and
+     the centres with what runs at each. One cacheable read, no PII. */
+  const [disc, setDisc] = React.useState(null);      // null = loading
+  const [discErr, setDiscErr] = React.useState("");
+
   /* The real cohort.
    *
    * This gallery was twelve invented teenagers from data.js, captioned "not
@@ -16,185 +91,429 @@ function SummerPage({ setPage }) {
    * Comes from the public status board, which is already consent-gated — a
    * name and photograph appear only where a guardian agreed to it, and
    * everyone else is here under their handle exactly as on /s-status. */
-  const [cohort, setCohort] = useState(null);   // null = still loading
-  useEffect(() => {
-    let alive = true;
-    NGGApi.public.status()
-      .then(r => { if (alive) setCohort(((r && r.status && r.status.members) || [])); })
-      .catch(() => { if (alive) setCohort([]); });
-    return () => { alive = false; };
-  }, []);
+  const [cohort, setCohort] = React.useState(null);   // null = still loading
+  const [cohortErr, setCohortErr] = React.useState("");
 
+  const loadDiscovery = React.useCallback(() => {
+    setDiscErr("");
+    return NGGApi.public.summer()
+      .then(r => setDisc(r || {}))
+      /* An error is an error. Reporting a failed read as "no centres" is how a
+         page tells a parent the programme does not run near them because a
+         request timed out. */
+      .catch(e => setDiscErr((e && (e.code || e.message)) || "unavailable"));
+  }, []);
+  const loadCohort = React.useCallback(() => {
+    setCohortErr("");
+    return NGGApi.public.status()
+      .then(r => setCohort(((r && r.status && r.status.members) || [])))
+      .catch(e => setCohortErr((e && (e.code || e.message)) || "unavailable"));
+  }, []);
+  React.useEffect(() => { loadDiscovery(); loadCohort(); }, [loadDiscovery, loadCohort]);
+
+  const ed = (disc && disc.edition) || null;
+  const applyState = (ed && ed.applyState) || "unset";
+  const applyCopy = SUMMER_APPLY_COPY[applyState] || SUMMER_APPLY_COPY.unset;
+
+  // ── Discovery: what matches the search ──────────────────────────────────
+  const centres = (disc && disc.centres) || [];
+  const academies = (disc && disc.academies) || [];
+  const centreHits = React.useMemo(() => centres.filter(c =>
+    summerMatch(c.name, q) || summerMatch(c.area, q) || summerMatch(c.code, q)
+    || summerMatch(c.tagline, q) || (c.courses || []).some(x => summerMatch(x, q))
+  ), [centres, q]);
+  const academyHits = React.useMemo(() => academies
+    .map(a => ({
+      name: a.name,
+      // Keep an academy when its NAME matches (all its courses are relevant)
+      // or when only some courses do (show just those).
+      courses: summerMatch(a.name, q) ? a.courses : (a.courses || []).filter(c => summerMatch(c, q)),
+    }))
+    .filter(a => a.courses.length > 0), [academies, q]);
+  /* Where a course is taught. The answer to "can my child learn piano near
+     us", which is the whole reason the course list and the centre list are on
+     one page rather than two. */
+  const centresTeaching = React.useCallback((course) =>
+    centres.filter(c => (c.courses || []).some(x => summerMatch(x, course) && summerMatch(course, x))), [centres]);
+
+  // ── The cohort gallery ──────────────────────────────────────────────────
   const roster = cohort || [];
   const faculties = Array.from(new Set(roster.map(m => m.faculty).filter(Boolean)));
-  const pool = track === "all" ? roster : roster.filter(m => m.faculty === track);
-  const filtered = (track === "all" && !showAll) ? pool.slice(0, 8) : pool;
+  const pool = roster
+    .filter(m => track === "all" || m.faculty === track)
+    .filter(m => summerMatch(m.name || m.handle, q) || summerMatch(m.faculty, q) || summerMatch(m.centre, q));
+  const filtered = (track === "all" && !q && !showAll) ? pool.slice(0, 8) : pool;
   const hiddenCount = pool.length - filtered.length;
   const maxStars = Math.max(1, ...roster.map(m => m.stars || 0));
 
+  const searching = q.trim() !== "";
+  const totalHits = centreHits.length + academyHits.reduce((n, a) => n + a.courses.length, 0) + pool.length;
+
   return (
-    <div className="page" data-screen-label="02 Summer Students">
-      {/* Header band */}
-      <section className="page-hero page-hero-light" style={{background:"var(--cream-100)", padding:"72px 0 56px"}}>
+    <div className="page" data-screen-label="02 Summer School">
+      {/* ── Header band ──────────────────────────────────────────────── */}
+      <section className="page-hero page-hero-light summer-hero">
         <div className="container">
-          <div style={{display:"grid", gridTemplateColumns:"1.4fr 1fr", gap:48, alignItems:"end"}}>
+          <div className="summer-hero-grid">
             <div>
               <span className="chip chip-navy"><span className="dot dot-gold"/> STAGE 01 · DISCOVERY</span>
-              <h1 className="display" style={{fontSize:"clamp(60px, 8vw, 120px)", margin:"18px 0 16px"}}>
+              <h1 className="display summer-hero-h">
                 Summer<br/>
-                <em style={{fontStyle:"normal", color:"var(--coral)"}}>Students.</em>
+                <em style={{fontStyle:"normal", color:"var(--coral)"}}>School.</em>
               </h1>
-              <p style={{fontSize:19, lineHeight:1.5, color:"var(--ink-700)", maxWidth:560, margin:0}}>
-                Six weeks. Eight tracks. One bold move. Our summer program is the front door — built for teenagers 10–17 who suspect they have something but have not yet been asked to show it.
+              {/* The dates and the application state, published at last. They
+                  were in the database the whole time and the page said
+                  "summer". */}
+              <p className="summer-hero-meta">
+                {ed
+                  ? <>
+                      <b>{ed.name || "Summer School"}</b>
+                      {summerDates(ed) ? <> · {summerDates(ed)}</> : null}
+                      {applyCopy.label ? <> <span className={"chip " + applyCopy.chip}>{applyCopy.label}</span></> : null}
+                    </>
+                  : discErr
+                    ? <span className="summer-hero-meta-quiet">Dates are on their way — the page couldn't reach the server.</span>
+                    : <span className="dash-skel summer-hero-skel" aria-hidden="true"/>}
               </p>
-              <div style={{display:"flex", gap:12, marginTop:32, flexWrap:"wrap"}}>
-                <button className="btn btn-primary btn-lg" onClick={() => goApply(setPage, "summer")}>Start application →</button>
-                <button className="btn btn-ghost btn-lg" onClick={() => setPage("parents")}>For parents & guardians</button>
+              <p className="summer-hero-p">
+                Six weeks. Eight academies. One bold move. Our summer programme is the front door — built for
+                teenagers 10–17 who suspect they have something but have not yet been asked to show it.
+              </p>
+              {applyState === "not_yet" && ed.applyOpensAt && (
+                <p className="summer-hero-note" role="status">
+                  Applications open on {summerDates({ startDate: ed.applyOpensAt, year: 0 }) || ed.applyOpensAt}.
+                  You can still register in person at your nearest centre.
+                </p>
+              )}
+              {applyState === "closed" && (
+                <p className="summer-hero-note" role="status">
+                  Online applications have closed for this edition — but every centre still registers children at
+                  the door. Find yours below.
+                </p>
+              )}
+              <div className="summer-hero-actions">
+                <button className="btn btn-primary btn-lg" onClick={() => goApply(setPage, "summer")}>{applyCopy.cta}</button>
+                <button className="btn btn-ghost btn-lg" onClick={() => setPage("parents")}>For parents &amp; guardians</button>
               </div>
             </div>
-            <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
-              <Photo name="graduation" style={{height:210}}/>
-              <Photo name="techLab" style={{height:210}}/>
-              <Photo name="dance" style={{height:170}}/>
-              <Photo name="mentor" style={{height:170}}/>
+            <div className="summer-hero-figs">
+              <Photo name="graduation"/>
+              <Photo name="techLab"/>
+              <Photo name="dance"/>
+              <Photo name="mentor"/>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Six-week schedule */}
+      {/* ── ONE search, three answers ─────────────────────────────────── */}
+      <section className="section summer-find" id="find">
+        <div className="container">
+          <SectionHead eyebrow="FIND YOUR WAY IN"
+            title="Where, and what."
+            sub="One box. Type a place to find your centre, or a craft to find the course and everywhere it is taught." />
+          <form className="summer-search" role="search" onSubmit={e => e.preventDefault()}>
+            <label className="sr-only" htmlFor="summer-q">Search centres, courses and this summer's class</label>
+            <span className="summer-search-ic" aria-hidden="true">⌕</span>
+            <input id="summer-q" className="summer-search-in" type="search" value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Try “Ijaiye”, “piano”, “coding”…"
+              autoComplete="off"
+              aria-describedby="summer-q-count"/>
+            {q && (
+              <button type="button" className="summer-search-x" onClick={() => setQ("")}>
+                Clear<span className="sr-only"> the search</span>
+              </button>
+            )}
+          </form>
+          {/* The count, in a live region: a search that silently returns
+              nothing is indistinguishable from a search that did not run. */}
+          <p id="summer-q-count" className="summer-search-count" role="status">
+            {!searching
+              ? (disc
+                  ? centres.length + " centre" + (centres.length === 1 ? "" : "s") + " · "
+                    + academies.reduce((n, a) => n + a.courses.length, 0) + " courses"
+                  : discErr ? "" : "loading…")
+              : totalHits === 0
+                ? "Nothing matches “" + q + "”."
+                : totalHits + " match" + (totalHits === 1 ? "" : "es") + " for “" + q + "”"}
+          </p>
+
+          {discErr ? (
+            <ErrorState title="We couldn't load the centres and courses"
+              message="Nothing is wrong with your application — this is our end. Try again, or come back shortly."
+              code={discErr} onRetry={loadDiscovery}/>
+          ) : !disc ? (
+            <div className="summer-cards" aria-hidden="true">
+              {[0, 1, 2].map(i => <div key={i} className="summer-card summer-card-skel"><span className="dash-skel"/></div>)}
+            </div>
+          ) : (
+            <>
+              {/* ── Centres ─────────────────────────────────────────── */}
+              <h3 className="summer-sub">
+                {searching ? "Centres" : "Every centre"}
+                <span className="summer-sub-n mono">{centreHits.length}</span>
+              </h3>
+              {centres.length === 0 ? (
+                <p className="summer-empty">
+                  Centre pages are being written. In the meantime, <button className="link-btn" onClick={() => setPage("contact")}>ask us where your nearest one is</button>.
+                </p>
+              ) : centreHits.length === 0 ? (
+                <p className="summer-empty">
+                  No centre matches “{q}”. <button className="link-btn" onClick={() => setQ("")}>Show all {centres.length}</button>
+                </p>
+              ) : (
+                <ul className="summer-cards summer-cards-centres">
+                  {centreHits.map(c => (
+                    <li key={c.slug} className="summer-card" style={{ "--summer-accent": c.color || "var(--navy-900)" }}>
+                      <div className="summer-card-top">
+                        <span className="summer-card-code mono" aria-hidden="true">{c.code}</span>
+                        <h4 className="summer-card-h">{c.name}</h4>
+                        {c.area && <p className="summer-card-area">{c.area}</p>}
+                      </div>
+                      {c.tagline && <p className="summer-card-tag">{c.tagline}</p>}
+                      {(c.courses || []).length > 0 && (
+                        <p className="summer-card-courses">
+                          <span className="summer-card-label">Running here</span>
+                          {c.courses.join(" · ")}
+                        </p>
+                      )}
+                      {/* Places, not headcounts. "3 places left" is useful to a
+                          parent; "37 children attend here" is a number about
+                          children on a public page. */}
+                      {c.full
+                        ? <p className="summer-card-full">This centre is full for this edition.</p>
+                        : c.seatsLeft != null && c.seatsLeft <= 10
+                          ? <p className="summer-card-left">{c.seatsLeft} place{c.seatsLeft === 1 ? "" : "s"} left</p>
+                          : null}
+                      <div className="summer-card-actions">
+                        {/* A real link, so it can be opened in a new tab,
+                            copied and shared — which is what people do with a
+                            centre they are about to visit. */}
+                        <a className="btn btn-sm btn-ghost" href={"/centres/" + c.slug}>See this centre</a>
+                        {!c.full && (
+                          <button className="btn btn-sm btn-primary" onClick={() => goApply(setPage, "summer", { centre: c.name })}>
+                            Apply here
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* ── Academies and courses ───────────────────────────── */}
+              <h3 className="summer-sub">
+                {searching ? "Courses" : "What you can learn"}
+                <span className="summer-sub-n mono">{academyHits.reduce((n, a) => n + a.courses.length, 0)}</span>
+              </h3>
+              {academyHits.length === 0 ? (
+                <p className="summer-empty">
+                  {searching
+                    ? <>No course matches “{q}”. <button className="link-btn" onClick={() => setQ("")}>Show all of them</button></>
+                    : "The course list is being set up."}
+                </p>
+              ) : (
+                <div className="summer-academies">
+                  {academyHits.map(a => (
+                    <section key={a.name} className="summer-academy" aria-labelledby={"acad-" + a.name.replace(/\W+/g, "-")}>
+                      <h4 className="summer-academy-h" id={"acad-" + a.name.replace(/\W+/g, "-")}>{a.name}</h4>
+                      <ul className="summer-courses">
+                        {a.courses.map(c => {
+                          const where = centresTeaching(c);
+                          return (
+                            <li key={c} className="summer-course">
+                              <span className="summer-course-n">{c}</span>
+                              {/* Where it is actually taught — the answer to
+                                  "can my child learn this NEAR US", which is
+                                  the only reason the two lists share a page. */}
+                              {where.length > 0 ? (
+                                <span className="summer-course-where">
+                                  at {where.slice(0, 3).map(x => x.name).join(", ")}
+                                  {where.length > 3 ? " and " + (where.length - 3) + " more" : ""}
+                                </span>
+                              ) : (
+                                <span className="summer-course-where summer-course-where-quiet">centres to be confirmed</span>
+                              )}
+                              <button className="btn btn-sm btn-ghost summer-course-cta"
+                                onClick={() => goApply(setPage, "summer", { track: c, centre: where[0] ? where[0].name : "" })}>
+                                Apply for this<span className="sr-only"> course, {c}</span>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* ── The six weeks ────────────────────────────────────────────── */}
       <section className="section">
         <div className="container">
           <SectionHead eyebrow="SUMMER SCHEDULE · 6 WEEKS" title="A rhythm, not a timetable." sub="Mornings are craft. Afternoons are character. Saturdays are showcase. Sundays are rest." />
-          <div className="card" style={{padding:0, overflow:"hidden"}}>
-            <div style={{display:"grid", gridTemplateColumns:"repeat(6, 1fr)"}}>
-              {[
-                { w: 1, t: "Welcome & Identity",   v: "Who am I bringing into this room?" },
-                { w: 2, t: "Craft Immersion",      v: "Pick your track. Build your first thing." },
-                { w: 3, t: "Voice & Stage",        v: "Speak in front of the cohort." },
-                { w: 4, t: "Community Field Trip", v: "Take the work outside the building." },
-                { w: 5, t: "Make Week",            v: "Five days to finish your showcase piece." },
-                { w: 6, t: "Graduation Showcase",  v: "Family, mentors, judges, recommendations." },
-              ].map((row, i, arr) => (
-                <div key={row.w} style={{padding:"28px 24px", borderRight: i < arr.length-1 ? "1px solid rgba(12,20,50,0.08)" : "none", display:"flex", flexDirection:"column", gap:12, minHeight:200}}>
-                  <div className="display" style={{fontSize:48, color:"var(--gold-500)"}}>0{row.w}</div>
-                  <div style={{fontWeight:700, fontSize:15}}>{row.t}</div>
-                  <div style={{fontSize:13, color:"var(--ink-500)", lineHeight:1.4}}>{row.v}</div>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* Was `repeat(6, 1fr)` inline, so on a phone it was six columns of
+              one word each. Wraps now, and each week is a real list item. */}
+          <ol className="card summer-weeks">
+            {[
+              { w: 1, t: "Welcome & Identity",   v: "Who am I bringing into this room?" },
+              { w: 2, t: "Craft Immersion",      v: "Pick your track. Build your first thing." },
+              { w: 3, t: "Voice & Stage",        v: "Speak in front of the cohort." },
+              { w: 4, t: "Community Field Trip", v: "Take the work outside the building." },
+              { w: 5, t: "Make Week",            v: "Five days to finish your showcase piece." },
+              { w: 6, t: "Graduation Showcase",  v: "Family, mentors, judges, recommendations." },
+            ].map(row => (
+              <li key={row.w} className="summer-week">
+                <span className="display summer-week-n" aria-hidden="true">0{row.w}</span>
+                <span className="sr-only">Week {row.w}. </span>
+                <span className="summer-week-t">{row.t}</span>
+                <span className="summer-week-v">{row.v}</span>
+              </li>
+            ))}
+          </ol>
         </div>
       </section>
 
-      {/* Track filter + cohort gallery */}
+      {/* ── This cohort ──────────────────────────────────────────────── */}
       <section className="section" style={{background:"var(--cream-50)"}}>
         <div className="container">
-          <div style={{display:"flex", justifyContent:"space-between", alignItems:"end", marginBottom:32, flexWrap:"wrap", gap:24}}>
-            <div style={{maxWidth:560}}>
-              <span className="eyebrow" style={{color:"var(--navy-900)"}}>THIS COHORT</span>
-              <h2 className="display" style={{fontSize:"clamp(36px, 4.5vw, 60px)", margin:"6px 0 0"}}>The summer class.</h2>
-              <p style={{fontSize:13.5, color:"var(--ink-500)", margin:"8px 0 0"}}>
-                Live from the register. A student is named and pictured only where their parent or guardian has consented; everyone else appears under their handle.
+          <div className="summer-class-head">
+            <div>
+              <span className="eyebrow" style={{color:"var(--navy-900)"}}>THIS EDITION</span>
+              <h2 className="display summer-class-h">The summer class.</h2>
+              <p className="summer-class-p">
+                Live from the register. A student is named and pictured only where their parent or guardian has
+                consented; everyone else appears under their handle.
               </p>
             </div>
-            <div style={{display:"flex", flexWrap:"wrap", gap:8}}>
-              <button onClick={() => setTrack("all")} className={"chip " + (track === "all" ? "chip-navy" : "")} style={{cursor:"pointer", fontSize:13, padding:"8px 14px"}}>All faculties · {roster.length}</button>
-              {faculties.slice(0, 6).map(f => (
-                <button key={f} onClick={() => setTrack(f)} className={"chip " + (track === f ? "chip-navy" : "")} style={{cursor:"pointer", fontSize:13, padding:"8px 14px"}}>
-                  {f} · {roster.filter(m => m.faculty === f).length}
+            {/* Real toggles: aria-pressed, in a named group, so a screen-reader
+                user knows which filter is on. They were unlabelled buttons
+                whose only state was a background colour. */}
+            {faculties.length > 0 && (
+              <div className="summer-facs" role="group" aria-label="Filter the class by academy">
+                <button onClick={() => setTrack("all")} aria-pressed={track === "all"}
+                  className={"chip summer-fac" + (track === "all" ? " chip-navy" : "")}>
+                  All academies · {roster.length}
                 </button>
-              ))}
-            </div>
+                {faculties.slice(0, 8).map(f => (
+                  <button key={f} onClick={() => setTrack(f)} aria-pressed={track === f}
+                    className={"chip summer-fac" + (track === f ? " chip-navy" : "")}>
+                    {f} · {roster.filter(m => m.faculty === f).length}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {cohort === null && (
-            <div style={{textAlign:"center", padding:"48px 0"}}><div className="dash-spinner" style={{margin:"0 auto"}}/></div>
-          )}
-          {cohort !== null && roster.length === 0 && (
-            <div style={{textAlign:"center", padding:"48px 0", color:"var(--ink-700)"}}>
-              The summer class has not been enrolled yet. Real students appear here as they register — we do not fill this space with examples.
+          {cohortErr ? (
+            <ErrorState title="We couldn't load this summer's class"
+              message="The programme is running — this is our end of the wire."
+              code={cohortErr} onRetry={loadCohort}/>
+          ) : cohort === null ? (
+            <div className="roster-grid" aria-hidden="true">
+              {[0, 1, 2, 3].map(i => <div key={i} className="member-card summer-card-skel"><span className="dash-skel"/></div>)}
             </div>
+          ) : roster.length === 0 ? (
+            <p className="summer-empty summer-empty-mid">
+              The summer class has not been enrolled yet. Real students appear here as they register — we do not
+              fill this space with examples.
+            </p>
+          ) : filtered.length === 0 ? (
+            <p className="summer-empty summer-empty-mid">
+              {searching ? <>Nobody in the class matches “{q}”.</> : <>Nobody in this academy yet this edition.</>}
+              <span className="summer-empty-act">
+                <button className="btn btn-ghost btn-sm" onClick={() => { setTrack("all"); setQ(""); }}>Show the whole class</button>
+              </span>
+            </p>
+          ) : (
+            <ul className="roster-grid">
+              {filtered.map((m, i) => {
+                // Named and pictured only where the backend said so; everyone
+                // else keeps the handle and the initial tile they already have
+                // on /s-status. The card must not invent a face.
+                const shown = m.name || ("@" + m.handle);
+                /* A real link to THEIR profile. This was a div with a click
+                   handler that opened the generic /profile page — unreachable
+                   by keyboard, and wrong when it worked. */
+                const href = m.handle ? "/s/" + m.handle : "";
+                const Inner = (
+                  <>
+                    <span className="member-card-fig" style={{ background: m.color || "var(--navy-900)" }}>
+                      {m.photo
+                        ? <img src={m.photo} alt="" loading="lazy" onError={e => { e.target.style.display = "none"; }}/>
+                        : <span className="member-card-initial" aria-hidden="true">{(shown.replace("@","")[0] || "?").toUpperCase()}</span>}
+                      <span className="member-card-scrim" aria-hidden="true"/>
+                      {m.faculty && <span className="chip chip-on-dark member-card-fac">{m.faculty}</span>}
+                      <span className="mono member-card-stars">★ {m.stars || 0}</span>
+                    </span>
+                    <span className="member-card-body">
+                      {/* A generated handle can be forty characters long. It gets
+                          ONE line and an ellipsis, with the whole thing on hover —
+                          a name is an identifier here, not the content, and
+                          letting it set the card's width is what made four
+                          identical cards come out four different sizes. */}
+                      <span className="member-card-name" title={shown}>{shown}</span>
+                      <span className="member-card-fac-t">{m.faculty || "Summer student"}</span>
+                    </span>
+                  </>
+                );
+                return (
+                  <li key={m.handle || i} className="member-card reveal" data-reveal style={{"--reveal-delay": (i * 50) + "ms"}}>
+                    {href
+                      ? <a className="member-card-hit" href={href}>{Inner}</a>
+                      : <span className="member-card-hit">{Inner}</span>}
+                    {/* Stars, relative to the busiest star-earner in the cohort —
+                        a bar against a fixed target would read as failure for
+                        everyone in a programme that has only just started. */}
+                    <Progress value={Math.min(100, ((m.stars || 0) / maxStars) * 100)} label={(m.stars || 0) + " star" + ((m.stars || 0) === 1 ? "" : "s") + " earned"} variant="gold" />
+                    <span className="member-card-foot mono">
+                      <span className="member-card-centre">{(m.centre || "NO CENTRE").toUpperCase()}</span>
+                      <span>{m.attendance || 0}% ATTENDANCE</span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
           )}
-          {cohort !== null && roster.length > 0 && filtered.length === 0 && (
-            <div style={{textAlign:"center", padding:"48px 0", color:"var(--ink-700)"}}>
-              Nobody in this faculty yet this cohort.
-              <div style={{marginTop:14}}>
-                <button className="btn btn-ghost btn-sm" onClick={() => setTrack("all")}>Show all faculties</button>
-              </div>
-            </div>
-          )}
-          <div className="roster-grid">
-            {filtered.map((m, i) => {
-              // Named and pictured only where the backend said so; everyone
-              // else keeps the handle and the initial tile they already have
-              // on /s-status. The card must not invent a face.
-              const shown = m.name || ("@" + m.handle);
-              return (
-              <div key={m.handle} className="member-card reveal" data-reveal style={{"--reveal-delay": (i * 50) + "ms"}} onClick={() => setPage("profile")}>
-                <div style={{position:"relative", borderRadius:14, overflow:"hidden", aspectRatio:"1/1", background: m.color || "var(--navy-900)", display:"grid", placeItems:"center"}}>
-                  {m.photo
-                    ? <img src={m.photo} alt="" loading="lazy" style={{position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover"}} onError={e => { e.target.style.display = "none"; }}/>
-                    : <span style={{fontFamily:"var(--font-display)", fontWeight:800, fontSize:52, color:"rgba(255,255,255,0.9)"}}>{(shown.replace("@","")[0] || "?").toUpperCase()}</span>}
-                  <div style={{position:"absolute", inset:0, background:"linear-gradient(180deg, rgba(12,20,50,0) 40%, rgba(12,20,50,0.55) 100%)"}}/>
-                  {m.faculty && <div style={{position:"absolute", top:10, left:10}}>
-                    <span className="chip chip-on-dark" style={{background:"rgba(12,20,50,0.55)", color:"white"}}>{m.faculty}</span>
-                  </div>}
-                  <div style={{position:"absolute", bottom:10, right:10, fontFamily:"var(--font-mono)", fontSize:10, letterSpacing:"0.15em", color:"rgba(255,255,255,0.95)", background:"rgba(12,20,50,0.6)", padding:"3px 8px", borderRadius:4}}>
-                    ★ {m.stars || 0}
-                  </div>
-                </div>
-                <div style={{minWidth:0}}>
-                  {/* A generated handle can be forty characters long. It gets
-                      ONE line and an ellipsis, with the whole thing on hover —
-                      a name is an identifier here, not the content, and
-                      letting it set the card's width is what made four
-                      identical cards come out four different sizes. */}
-                  <div title={shown} style={{fontFamily:"var(--font-display)", fontWeight:700, fontSize:20, letterSpacing:"-0.02em", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{shown}</div>
-                  <div style={{fontSize:12, color:"var(--coral)", fontWeight:600, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{m.faculty || "Summer student"}</div>
-                </div>
-                {/* Stars, relative to the busiest star-earner in the cohort —
-                    a bar against a fixed target would read as failure for
-                    everyone in a programme that has only just started. */}
-                <Progress value={Math.min(100, ((m.stars || 0) / maxStars) * 100)} label={(m.stars || 0) + " star" + ((m.stars || 0) === 1 ? "" : "s") + " earned"} variant="gold" />
-                <div className="member-card-foot" style={{display:"flex", justifyContent:"space-between", gap:8, fontSize:11, color:"var(--ink-500)", fontFamily:"var(--font-mono)"}}>
-                  <span style={{overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{(m.centre || "NO CENTRE").toUpperCase()}</span>
-                  <span style={{flex:"none"}}>{m.attendance || 0}% ATTENDANCE</span>
-                </div>
-              </div>
-            );})}
-          </div>
           {hiddenCount > 0 && (
-            <div style={{textAlign:"center", marginTop:32}}>
+            <div className="summer-more">
               <button className="btn btn-ghost" onClick={() => setShowAll(true)}>
                 Show {hiddenCount} more student{hiddenCount === 1 ? "" : "s"} →
               </button>
             </div>
           )}
-          {showAll && track === "all" && (
-            <div style={{textAlign:"center", marginTop:32}}>
+          {showAll && track === "all" && !searching && (
+            <div className="summer-more">
               <button className="btn btn-ghost btn-sm" onClick={() => setShowAll(false)}>Show fewer</button>
             </div>
           )}
         </div>
       </section>
 
-      {/* Pathway forward */}
+      {/* ── What comes after ─────────────────────────────────────────── */}
       <section className="section dark-surface">
         <div className="container">
           <SectionHead eyebrow="WHAT COMES AFTER SUMMER" title="The graduation is the beginning." />
-          <div style={{display:"grid", gridTemplateColumns:"repeat(3, 1fr)", gap:24}}>
+          <div className="summer-after">
             {[
               { code: "01", h: "Showcase Day",   d: "A live, public performance of your track. Family, mentors, judges, press. Real stakes, real applause." },
               { code: "02", h: "Profile Badge",  d: "Your first NGG digital badge — minted to your member profile, visible to mentors across the network." },
               { code: "03", h: "NGGC Invite",    d: "Top performers receive a recommendation into the Next Generation Genius Club — and Anchor 12." },
             ].map(s => (
-              <div key={s.code} className="card-dark">
-                <div className="display" style={{fontSize:88, color:"var(--gold-500)", lineHeight:1}}>{s.code}</div>
-                <div style={{fontFamily:"var(--font-display)", fontWeight:800, fontSize:24, marginTop:10}}>{s.h}</div>
-                <p style={{color:"rgba(255,255,255,0.7)", lineHeight:1.5, marginTop:10, fontSize:14}}>{s.d}</p>
+              <div key={s.code} className="card-dark summer-after-card">
+                <div className="display summer-after-n" aria-hidden="true">{s.code}</div>
+                <div className="summer-after-h">{s.h}</div>
+                <p className="summer-after-p">{s.d}</p>
               </div>
             ))}
+          </div>
+          <div className="summer-after-cta">
+            <button className="btn btn-primary btn-lg" onClick={() => goApply(setPage, "summer")}>{applyCopy.cta}</button>
+            <a className="btn btn-on-dark-ghost btn-lg" href="#find">Find a centre first</a>
           </div>
         </div>
       </section>

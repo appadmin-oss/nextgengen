@@ -291,6 +291,10 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.profile.note.upsert'   => 'admin_profile_note_upsert',
             'admin.profile.note.delete'   => 'admin_profile_note_delete',
             'admin.cards.data'            => 'admin_cards_data',
+            /* The public Summer School page: the live edition, the academies
+               and the centres with what runs at each, in one cacheable read.
+               See domain/summer-editions.php. */
+            'public.summer'               => 'public_summer_page',
             'gate.context'                => 'gate_context',
             'gate.register'               => 'gate_register',
             'parent.verify.context'       => 'parent_verify_context',

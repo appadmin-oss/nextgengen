@@ -540,3 +540,103 @@ function admin_summer_group_report(array $p): array {
     return ['ok' => true, 'editionId' => $editionId, 'edition' => summer_edition_row($edition),
             'groups' => $out, 'ungrouped' => $ungrouped];
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The public Summer School page
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Everything /summer needs to let somebody FIND their way in, in one read.
+ *
+ * The promotion page had no discovery at all. It showed a hard-coded six-week
+ * schedule, a filterable gallery of this year's children, and one Apply
+ * button — while the three questions a parent actually arrives with went
+ * unanswered on it:
+ *
+ *   · WHERE is my nearest centre? (the centre directory was on another page)
+ *   · WHAT does it teach? (the academy catalogue was admin-only, so the
+ *     courses this programme runs were nowhere on the public site)
+ *   · IS IT OPEN, and when does it start? (the edition's dates and its
+ *     application window existed and were never published)
+ *
+ * One request rather than three, because it is one page and three sequential
+ * fetches is three chances to half-render. Cacheable: every field here is
+ * either configuration or an aggregate, and none of it is a child's data.
+ *
+ * PII: none. The centre payload is the same PII-safe projection
+ * public_centres_list() serves, and the counts are aggregates. Meeting DAYS
+ * are deliberately not included — the centre pages do not publish when
+ * children are in a building, and this page must not become the way round
+ * that.
+ */
+function public_summer_page(): array {
+    $e = summer_ensure_cohort();
+    $today = gmdate('Y-m-d');
+    $opensAt  = (string)($e['applyOpensAt'] ?? '');
+    $closesAt = (string)($e['applyClosesAt'] ?? '');
+    /* Whether applications are open is a THREE-state answer, not a boolean.
+       "Not set" is the honest answer for an edition whose window nobody has
+       filled in, and it must not read as "closed" — a page that says closed
+       when nobody decided is a page that turns families away by accident. */
+    $applyState = 'unset';
+    if ($opensAt !== '' || $closesAt !== '') {
+        if ($opensAt !== '' && $today < $opensAt)       $applyState = 'not_yet';
+        elseif ($closesAt !== '' && $today > $closesAt) $applyState = 'closed';
+        else                                            $applyState = 'open';
+    }
+
+    $centres = [];
+    $rows = db_all("SELECT centreId, name, code, color, slug, tagline, area, capacity
+                      FROM centres
+                     WHERE status = 'active' AND pageStatus = 'published' AND slug <> ''
+                     ORDER BY name");
+    foreach ($rows as $r) {
+        $enrolled = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'",
+            [$e['cohortId'], (string)$r['name']])['c'] ?? 0);
+        $cap = (int)($r['capacity'] ?? 0);
+        /* Which courses actually run HERE this edition, from the groups —
+           which is the difference between "the programme teaches Piano" and
+           "you can learn Piano at Ijaiye". Only from groups that are running:
+           a planning group is not a promise. */
+        $courses = [];
+        foreach (db_all("SELECT DISTINCT track FROM summer_groups
+                          WHERE cohortId = ? AND centreId = ? AND status = 'active' AND track <> ''
+                          ORDER BY track", [$e['cohortId'], (string)$r['centreId']]) as $g) {
+            $courses[] = (string)$g['track'];
+        }
+        $centres[] = [
+            'slug'    => (string)$r['slug'],
+            'name'    => (string)$r['name'],
+            'code'    => (string)$r['code'],
+            'color'   => (string)$r['color'],
+            'tagline' => (string)$r['tagline'],
+            'area'    => (string)($r['area'] ?? ''),
+            'courses' => $courses,
+            /* Aggregates only, and `full` rather than a headcount when there
+               is a cap: "3 places left" is useful; "37 children attend here"
+               is a number about children. */
+            'capacity' => $cap,
+            'seatsLeft' => $cap > 0 ? max(0, $cap - $enrolled) : null,
+            'full'      => $cap > 0 && $enrolled >= $cap,
+        ];
+    }
+
+    $academies = [];
+    foreach (academy_catalogue() as $faculty => $courses) {
+        $academies[] = ['name' => (string)$faculty, 'courses' => array_values(array_map('strval', $courses))];
+    }
+
+    return ['ok' => true,
+        'edition' => [
+            'name'      => (string)($e['name'] ?? ''),
+            'year'      => (int)($e['year'] ?? 0),
+            'startDate' => (string)($e['startDate'] ?? ''),
+            'endDate'   => (string)($e['endDate'] ?? ''),
+            'applyOpensAt'  => $opensAt,
+            'applyClosesAt' => $closesAt,
+            'applyState'    => $applyState,
+        ],
+        'centres'   => $centres,
+        'academies' => $academies,
+    ];
+}

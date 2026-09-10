@@ -800,6 +800,10 @@
       mentors:    () => request('/public/mentors.php'),
       summerProfile: (q) => request('/public/summer-profile.php' + qs(q || {})),
       centres:    () => request('/public/centres.php'),
+      /* Everything /summer needs to let somebody find their way in — the live
+         edition and its dates, the academies and their courses, and the
+         centres with what actually runs at each. One read, cacheable, no PII. */
+      summer:     () => request('/public/summer.php'),
       centre:     (slug) => request('/public/centre.php' + qs({ slug })),
       communityChannels: () => request('/public/community.php'),
       communityShowcase: () => request('/public/community.php' + qs({ view: 'showcase' })),
