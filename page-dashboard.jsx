@@ -410,8 +410,14 @@ function DashSectionTabs({ section, go, openRequests }) {
         return (
           <button key={sx.id} type="button" onClick={() => go(sx.id)}
             aria-current={on ? "page" : undefined}
+            /* minHeight 44 is the product's touch-target convention (see the
+               same value throughout page-other.jsx). These tabs were added
+               after tests/dashboard-shot.js started asserting it and were the
+               only four controls on the phone render breaking it — inline-flex
+               so the label still centres once the box is taller than its text. */
             style={{ appearance: "none", background: "none", cursor: "pointer",
               border: 0, borderBottom: "2px solid " + (on ? "var(--gold-600, #a07400)" : "transparent"),
+              display: "inline-flex", alignItems: "center", minHeight: 44,
               padding: "9px 13px", marginBottom: -1, font: "inherit", fontSize: 14,
               fontWeight: on ? 650 : 450, color: on ? "var(--ink-900, #16223e)" : "var(--ink-500, #5b6478)" }}>
             {sx.label}
