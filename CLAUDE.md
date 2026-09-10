@@ -1,0 +1,429 @@
+# CLAUDE.md — working in this repository
+
+Next Generation Genius (NGG) is Afrovanguard's youth programme. This repo is
+the whole product: a React 18 single-page app, a PHP 8.4 + SQLite backend, and
+a staff Control Room, deployed to **shared hosting** (Apache, no shell, no
+Node, no headless browser, no build step on the server).
+
+That last sentence is the source of most of the architecture below. Read the
+constraints before proposing a change; a suggestion that assumes a bundler, a
+worker queue or a server-side renderer is not implementable here.
+
+---
+
+## 1. Build and run
+
+```bash
+npm install
+node build.js          # or: npm run build / npm run check
+npm run dev            # http-server on :8123  (needs a real PHP host for /api)
+php -S 127.0.0.1:8777  # backend, from the repo root
+```
+
+**There is no dev bundler and no framework.** In development `index.html`
+loads each `.jsx` file with `<script type="text/babel">` and
+`vendor/babel.min.js` compiles it **in the browser**. In production
+`build.js` (esbuild) transforms each file's JSX, **concatenates them in
+`ORDER`**, and minifies once.
+
+Consequences you must respect:
+
+- **No module closures.** Every top-level `function` hoists across all
+  twenty-one files; every top-level `const` is effectively a global. A name
+  collision between two files is a real bug and the build will not catch it.
+- **`ORDER` in `build.js` must equal the `<script type="text/babel">` tags in
+  `index.html`, in the same order.** `validateOrderAgainstIndex()` exits the
+  build if they diverge. Adding a file means editing both.
+- **Load order is dependency order** for anything evaluated at module scope
+  (constant tables, registries). Function calls at runtime are fine in any
+  order because of hoisting.
+- Vendors (Fabric, jsPDF, TanStack Table, Babel) live in `vendor/` and are
+  loaded on demand by `loadVendor`. Do not add an npm runtime dependency.
+- **First paint in dev is slow** — Babel compiles ~21 files. Browser tests
+  need a generous boot budget; use `waitForBoot` from `tests/_serve.js`
+  (60s), never a fixed sleep.
+
+## 2. Frontend layout
+
+| File | Holds |
+|---|---|
+| `app.jsx` | The router and the page registry. Loaded **last**. |
+| `components.jsx` | Shared UI, including the admin action layer. |
+| `page-admin.jsx` | The whole Control Room. |
+| `page-designer.jsx` | The ID card Design Studio. |
+| `card-template.jsx` | Template model, field binder, presets, preflight. |
+| `page-*.jsx` | One public area each. |
+| `api-client.js`, `data.js`, `outbox.js`, `photos.js` | Plain JS, not JSX. |
+
+### Routing
+
+Path-based, no router library. **One registry, `ROUTES` in `app.jsx`**, is the
+single source of truth for a page's id, `<title>`, meta description, whether
+it carries its own chrome, and whether it is indexable.
+
+```js
+const ROUTES = [ { id: "apply", title: "…", chrome: "own", index: false }, … ];
+```
+
+Derived from it: `PAGE_IDS`, `PAGE_META`, `OWN_CHROME_PAGES`, `NOINDEX_PAGES`.
+`pageFromPath()` / `pathForPage()` do the URL mapping; `.htaccess` provides
+the SPA fallback so deep links and refreshes work.
+
+**Never reintroduce a second list of pages.** Four hand-maintained lists
+(ids, titles, chrome, noindex) drifted until a page existed in some and not
+others, and the symptom was a working link that rendered as a 404.
+`routeAudit(renderKeys)` compares the registry against what actually renders
+and publishes the result to `window.__routeAudit`; `tests/route-registry.test.js`
+fails the build if a route, a renderer or a title is missing.
+
+Navigation to the application flow goes through **`goApply(setPage, program, opts)`**,
+which pushes `/join?program=anchor|summer` (plus optional `centre` / `track`).
+`JoinPage` reads the programme **from the URL**, not from a global. A global
+that is set before navigation and read after it is a race; the URL is the
+state, and it survives a refresh and a shared link.
+
+- Staff Control Room: `/nextadmin`. `/hq` and `/admin` are kept aliases.
+- Card Studio: `/cards`. Design Studio: `/designer`.
+
+## 3. Backend layout
+
+```
+api/{auth,member,admin,public,hooks,tools}/*.php   thin HTTP routes
+  → gs_call($op, $args, $useCache)                 api/_lib/sheets.php
+    → backend_dispatch($op, $args)                 api/_lib/backend.php  (op registry)
+      → domain function                            api/_lib/domain/*.php
+```
+
+- **A route file does no work.** It reads input, calls one op, prints the
+  result. Business logic lives in a domain file so the PHP test suite can call
+  it directly.
+- **Every op is registered in `backend_dispatch()`'s `$map`.** An unmapped op
+  is `unknown_op`, and a mapped op whose function is not loaded is a fatal —
+  which is why domains load from **one explicit list in
+  `api/_lib/bootstrap.php`**. A new `domain/x.php` that is not in that list
+  does not exist. Scripts and tests must bootstrap, not `require` a domain
+  directly.
+- `api/config.php` holds secrets and is **not** in the repo. `bootstrap.php`
+  refuses to serve when `cookie_secret` is missing, short or a placeholder —
+  that is deliberate; do not soften it. Several test suites refuse to run when
+  `api/config.php` exists, so move a local dev config aside before running
+  them.
+
+### Database
+
+SQLite, **auto-migrated at runtime** from a contiguous ladder in
+`api/_lib/db.php`. MySQL is applied by hand from `db/schema-mysql.sql`.
+
+Adding a migration is three edits, all required:
+
+1. Append `N => "…"` to `$migrations` — contiguous, never renumbered.
+2. Bump `NGG_SCHEMA_TARGET` to `N` (currently **113**).
+3. Mirror the DDL into `db/schema-mysql.sql`, ending with
+   `INSERT INTO schema_version (version) VALUES (N) ON DUPLICATE KEY UPDATE version = version;`
+
+`db_assert_migration_ladder()` catches the two classic mistakes (a gap, and a
+top migration that does not equal the target).
+
+**Column names are the camelCase the SPA uses.** There is no translation
+layer between database and JSON, on purpose. Do not add one, and do not
+rename a column to snake_case "for consistency" — every consumer would have
+to change with it.
+
+Destructive DDL is a last resort. SQLite cannot drop a column on older
+builds; prefer adding a column and leaving the old one unread. `cohortId`
+stays in payloads even where the concept is now called an edition, because it
+is the join column every other summer table carries.
+
+### Sessions and CSRF
+
+Stateless **HMAC-signed cookies** — `session_issue($row, $adminOk)`. There is
+no server-side session store (shared hosting). Admin TOTP re-issues the cookie
+with `adminOk = true`; a stale cookie cannot grant admin. CSRF is
+double-submit. Do not weaken any of this to make a feature easier.
+
+### Public read cache
+
+`gs_call($op, $args, true)` caches by op + args for `$CONFIG['cache_ttl'][$op]`.
+Writes purge by **topic** — `cache_invalidate('centres')` — and
+`gs_cache_topics()` maps a topic to the ops it invalidates. When you add a
+public op that reads something already cached, add it to the topics that
+change it; a public page serving a renamed or retired record is the failure
+mode.
+
+## 4. Permissions
+
+Capability-based, not role-based, at the point of use.
+
+`admin_role_caps()` in `api/_lib/util.php` bundles capabilities into roles;
+`capsExtra` on a member row grants extras per person. Capabilities:
+`content, people, inbox, settings, rbac, summer, club, audit, journal, fees`.
+
+- `fees` and `journal` are **deliberately not** in the `admin` or `editor`
+  bundles. Money and the institutional record are separate trusts, granted
+  per person. Do not bundle them in to simplify a screen.
+- Gates: `admin_gate()` (staff), `admin_cap_gate($p, $cap)` (one capability),
+  `admin_cap_gate_any($p, [$caps])` (any of several — **reads only; never
+  widen a write with it**).
+- **Centre scoping**: `centreScope` on a staff row, resolved by
+  `admin_centre_names_in_scope()` / `admin_centre_allowed()`. Enforced on the
+  way **in**, per row, never by trusting the list the client had on screen —
+  a scoped admin's export, count, select-all and bulk run are all scoped.
+
+**Ownership follows the data, not the screen it grew up on.** The centre
+directory gates on `people` (members depend on centres; their printed card
+prefix is a centre code) even though it used to live inside Summer School. A
+Summer School coordinator must not be able to rename or delete a centre. Ask
+"who owns this record" before "which portal is this button in".
+
+## 5. Domain vocabulary — the part that keeps breaking
+
+Five words, fixed meanings. Use them in code, in UI copy, in tests, in docs.
+
+| Term | Is | Is not | Stored in |
+|---|---|---|---|
+| **Member** | An NGG member, year-round | a Summer School participant | `members` |
+| **Centre** | A **place**, owned by NGG | a class; a Summer School entity | `centres` |
+| **Edition** | One **season** of Summer School | a class | `summer_cohorts` |
+| **Group** | One **class within an edition** | a centre | `summer_groups` |
+| **Participant** | A child in an edition | a member | `summer_students` |
+
+- The column `cohortId` means **edition**, everywhere, with no exceptions.
+- The word **cohort** is not shown to users. When a coordinator says
+  "cohort" they mean a **group**.
+- "Student" belongs to the Club. Summer School has **participants**.
+
+### Enforced invariants
+
+Summer School (`api/_lib/domain/summer-editions.php`, each with a test in
+`api/tests/run.php`):
+
+1. At most **one** edition is `active`; activating another demotes the
+   previous to `closed` — never `archived` (archiving is a roll-up, its own
+   op, and `admin_summer_edition_status` refuses it with `use_archive_op`).
+2. A group's `code` is unique **within its edition**, not globally.
+3. A participant belongs to at most one group, and only to a group in **their
+   own** edition. Cross-edition assignment is refused, never coerced.
+4. Capacity is a **refusal**, not a warning: the rows that do not fit fail and
+   are named; the rest go through.
+5. Deleting a group with participants is refused unless the caller says where
+   they go (`reassignTo`, or an explicit unassign).
+
+Centres (`api/_lib/domain/registration.php`):
+
+6. A centre in use cannot be deleted silently. `admin_centres_delete` reports
+   `uses` and refuses with `centre_in_use` unless `retire` (checked **first** —
+   retiring is the answer to the refusal) or `force`. Retire keeps every
+   record resolving; that is the intended path.
+
+## 6. Control Room conventions
+
+### Sections
+
+**One registry, `ADMIN_SECTIONS` in `page-admin.jsx`**: id, nav group, nav
+label, page title, icon, required capability. `ADMIN_NAV_GROUPS` fixes group
+order. The sidebar, the command palette (`command.jsx`) and the deep-link
+resolver are all generated from it — never hand-list sections anywhere else.
+
+- **A retired section id is not a dead route.** It is in bookmarks and in
+  links. `ADMIN_SECTION_ALIASES` + `resolveAdminSection()` forward it to the
+  section and sub-tab that replaced it (`registration → summer/gates`,
+  `qr → summer/qr`). Retire by aliasing, not by deleting.
+- Cross-section jumps go through `window.__adminSection(section, tab)`, and
+  the sub-tab travels through the **pending-tab store**
+  (`setPendingAdminTab` / `takePendingAdminTab` / `useAdminTab`), which
+  publishes to subscribers. A jump to an already-open section must still
+  change its tab, and a pending tab must always be consumed — a leaked one
+  reopens the wrong panel later, which is exactly how it broke before.
+
+### Bulk and individual actions
+
+`components.jsx` holds the layer; use it, do not write a bespoke one.
+
+`useAdminSelection(rows, key)` · `AdminSelectAll` · `AdminRowCheck` ·
+`AdminBulkBar` · `AdminRowActions` · `runAdminAction(action, ids, opts)` ·
+`adminFailSummary(results)`
+
+**One declaration per action** feeds both the bulk bar and the row menu, so an
+action and its bulk equivalent cannot drift into doing different things,
+asking differently, or being permitted differently. An action that needs a
+value declares `open(ids)` (it opens a form and the selection is kept); one
+that acts declares `run`/`runOne`. `bulkHidden` / `rowHidden` keep an action
+out of one surface — resetting two hundred people's 2FA in one press is not a
+feature.
+
+Non-negotiables, client and server:
+
+- The **count is read before the confirm**, so a list refreshing underneath
+  cannot change what the operator agreed to.
+- **Per-row verdicts win over a top-level `ok`.** A run where 28 of 40 were
+  refused is reported as partial, never as success. `runAdminAction` never
+  throws and returns `{ran, ok, failed, results}`.
+- Every batch is **capped** and the cap is named in the refusal:
+  `MEMBERS_BULK_MAX`/`CLUB_BULK_MAX` 500, `SUMMER_ASSIGN_MAX` 500,
+  `CLUB_PROMOTE_MAX` 200, `CRUN_MAX_ISSUES` 600.
+- The whole payload is **validated before any write**.
+- **Self-protection**: an operator's own account is refused (`own_account`).
+- **Tier-protection**: a staff account cannot be suspended, deactivated or
+  deleted through the member roster (`staff_account`). Staff lifecycle lives
+  in Access & roles, where the last-super-admin rule is.
+- **Scope** is refused per row (`out_of_scope`), not silently skipped.
+- **`unchanged` is reported**, distinct from applied.
+- **One audit event per run**, with action, count and refusals — not one per
+  row. "Who suspended forty people on Tuesday" must have a readable answer.
+- A bulk op **delegates to the single-row implementation** where one exists
+  (`admin_club_promote_bulk` → `admin_club_promote`), so there is one
+  promotion, not two.
+
+Deliberate asymmetry: the Club desk's bulk actions are **narrower** than the
+member desk's (status and centre only). The Club roster is not where member
+lifecycle is administered. Do not "complete" it.
+
+### Lists
+
+Server-side search, facets, sort and paging. **Sort columns and facet fields
+are allow-listed by name** — the caller never contributes SQL text — and an
+unknown value **falls back to the default rather than erroring**, so a stale
+bookmark shows the roster, not a failure. Return the true `total` for the
+filter, and expose an ids op (`admin_members_ids`) so "select all N matching"
+is one request rather than paging. Filter above the page cap, never below it:
+a filter applied to the drawn page filters the page.
+
+Watch for N+1s in roster code. `admin_club_promotable` did one attendance
+query **per student** (800+ queries for a normal list); it is one grouped
+query now. New list code that loops queries is a defect, not a slow path.
+
+## 7. ID cards
+
+Two studios, one record. Say which is which in any UI that mentions them.
+
+- **Card Studio** (`/cards`) prints the **standard** Summer School and
+  volunteer cards; their layout is hand-coded.
+- **Design Studio** (`/designer`) draws, binds, publishes and prints
+  templates, including **member** cards and card **backs**.
+- **People → ID cards** is the print log and one person's card history for
+  both.
+
+Architecture:
+
+- **One renderer, `tplToFabric()`.** The designer canvas, the roster preview
+  and the 300-DPI export are the same function at three scales. Geometry is in
+  design units on a 590-wide grid. Never fork the renderer for a new surface —
+  what you see would stop being what prints.
+- Rendering happens **in the browser** (Fabric + jsPDF via `loadVendor`)
+  because the host has no headless renderer. Not a shortcut; a constraint.
+- `TPL_FIELDS` in `card-template.jsx` is the binder — `{{field}}` substitution
+  against a real row. `card_row_member` / `card_row_student` /
+  `card_row_volunteer` are the server-side row shapes. Member rows carry one
+  `fullName` and no split parts; anything that assumes `firstName`/`surname`
+  must fall back (see `tplNameParts`, `merge_sort`, `dsnRowName`).
+- **Draft (`schemaJson`) vs published (`publishedJson`) with a recorded
+  `version`.** Editing a draft changes nothing anyone prints. Publishing does.
+- `CTPL_KINDS` = member | student | volunteer; `CTPL_FACES` = single | front |
+  back (the default is `single`, "One-sided"); a front may name a back via
+  `pairId`. A fork does **not** inherit `pairId`.
+- **Preflight runs client-side (`tplPreflight`) and again on the server**, so a
+  stale page cannot skip it: required fields per kind (backs exempt), WCAG
+  contrast (3:1 error, 4.5:1 warn), QR module size checked **in millimetres**.
+- **Every run is recorded** (`domain/card-runs.php`) with the template and the
+  **version read from the template row, not from the request** — that is what
+  makes "reprint that batch as it was in July" answerable. A run whose every
+  card was issued before is derived as a `reprint`. `admin_card_history` leads
+  with `latest` and a `designMovedOn` tri-state so "is the card in their hand
+  current?" has an answer.
+
+## 8. UX and accessibility standards
+
+These are requirements in this codebase, not aspirations. `tests/contrast.test.js`
+and `tests/designer.test.js` enforce parts of them.
+
+- **4.5:1 minimum** for body and caption text, on screen and on printed cards.
+  Print is not exempt — a caption nobody can read on a card is a defect.
+- Every icon-only control needs an `aria-label`; every toggle needs
+  `aria-pressed`.
+- **Nothing may require a drag.** The Design Studio's every operation has a
+  keyboard route and the studio prints its keyboard contract on screen.
+- Live regions for counts and selection announcements (`aria-live="polite"`);
+  `role="search"` on search forms with a `role="status"` result count.
+- Drawers and menus: Escape closes, focus is restored to the trigger.
+- Tables: `<th scope="col">`, real checkbox labels, imperative
+  `indeterminate` on the select-all.
+- **Three states are not optional**: loading, empty, and an **honest error
+  with a retry**. A silent empty table is the bug that hides an outage.
+- **Layout belongs in CSS**, not in inline `style` grids — `styles.css` for
+  the public site, `styles-app.css` for the Control Room. Tests that pin
+  inline markup rot; tests that pin a class survive.
+- `.chip` is `text-transform: uppercase`, and `innerText` reflects that —
+  assert chip text case-insensitively.
+
+## 9. Testing and verification
+
+```bash
+php api/tests/run.php     # the PHP suite: one file, chk(label, cond)
+npm run test:all          # build + build test + PHP suite + every node suite
+npm run test:routes       # route registry      npm run test:admbulk   # bulk actions
+npm run test:summered     # editions & groups   npm run test:sumpage   # /summer page
+npm run test:designer     # card studio         npm run test:ui        # ui smoke
+```
+
+- Node E2E tests spawn `php -S`, write a **throwaway `api/config.php`**, and
+  **refuse to run if one already exists**. Move a local dev config aside.
+- `tests/_serve.js` gives `waitForServer` / `waitForBoot`. Chromium is at
+  `/opt/pw-browsers/`, driven by `playwright-core`.
+- **Add a new suite to `test:all` and to `package.json` scripts.** A test file
+  nothing runs is not a test.
+
+Expectations for any change here:
+
+- **Record the baseline before you start.** Pre-existing failures are facts to
+  report, not yours to hide.
+- **Never claim a test passed without running it.** Say which command, and
+  what it printed.
+- **Compiling is not working.** Verify the behaviour end to end — the op
+  through the route through the screen — before calling something done.
+- Let the existing suites do their job. `designer.test.js` has caught real
+  defects in new card presets (a card with no name field; six labels at
+  2.63:1); `ui-smoke.js` catches assertions that pinned markup instead of
+  behaviour.
+- Prefer a test that pins the **promise** ("meeting days are deduped, sorted
+  and range-checked") over one that pins an incidental string.
+
+## 10. Structures that must not come back
+
+Each of these was removed because it caused a specific failure. Reintroducing
+one reintroduces the failure.
+
+- **A second list of pages, sections, titles or capabilities.** One registry,
+  everything derived. Drifting parallel lists produced a working link that
+  rendered as a 404.
+- **A global set before navigation and read after it** (`window.__nggProgram`).
+  Put the state in the URL.
+- **Two sections mounting divergent subsets of the same panels** (the old
+  `registration` and `qr` screens). One workspace, panels grouped by task,
+  aliases for the old ids.
+- **A bespoke bulk implementation per screen.** The guards are the feature;
+  duplicating the surface duplicates the places a guard can be forgotten.
+- **A bulk endpoint per verb.** One op, many declared actions, each with its
+  own capability.
+- **Summer School owning centres**, or any portal owning a record it does not
+  own.
+- **A per-row query inside a list serialiser.**
+- **A filter applied to the drawn page** rather than above the page cap.
+- **A forked card renderer** for a new preview or export surface.
+- **A cached public op with no invalidation topic.**
+- **Inline style grids** where a class belongs.
+- **"Cohort" in user-facing copy**, and "student" for a Summer School
+  participant.
+
+## 11. Where the documentation is
+
+- `docs/ADMIN-GUIDE.md` — for the people who run the programme. Terminology,
+  the portal map, workflows, error meanings, the warnings list. Update it when
+  a workflow or a label changes.
+- `docs/SETUP.md` — installing and configuring a deployment.
+- `docs/SCHEMAS.md` — table shapes.
+- `docs/ROSTER-IMPORT.md` — the members workbook and its import.
+- `docs/PRINT-SPEC.md` — what the studios hand a print shop.
+- `docs/POLICY.md` — programme policy: conduct thresholds, fines, attendance.
+- `docs/FORMS.md` — the intake form builder's cascade and conditional logic.
+- `docs/HANDOFF.md` — a historical change record. **Append, never rewrite**;
+  it is the log of why things are the way they are.

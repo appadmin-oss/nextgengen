@@ -485,8 +485,8 @@ A run covers up to **600** cards.
 In the Design Studio:
 
 1. Pick a **kind** — member, student (Summer School) or volunteer — and a
-   **face**: front or back. A front can be paired with a back so the two
-   print together.
+   **side**: *One-sided*, *Front* or *Back*. A front can be paired with a
+   back so the two print together.
 2. Draw. Every tool has a keyboard route; the studio prints its keyboard
    contract on screen, and nothing needs a mouse drag to be reachable.
 3. **Bind** fields. `{{name}}`, `{{displayId}}` and the rest are filled from
