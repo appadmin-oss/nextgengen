@@ -88,9 +88,12 @@ function dsnBlank(kind, face) {
 
   const vol = k === "volunteer";
   return {
-    id: "", name: vol ? "New volunteer card" : "New student card", kind: vol ? "volunteer" : "student",
+    id: "", name: vol ? "New volunteer card" : "New Summer School card", kind: vol ? "volunteer" : "student",
     face: "single",
-    w: 590, h: 972, safe: 30, bleedMm: 3,
+    /* 54 × 89mm — the `id-card-tall` preset these 590 × 972 units are. Stated,
+       not left to the export defaults: the member blank above states its size
+       and this one did not, so the studio header read "× mm". */
+    w: 590, h: 972, wMm: 54, hMm: 89, safe: 30, bleedMm: 3,
     background: vol ? "{{centre.color}}" : "#ffffff",
     elements: [
       { id: "panel", type: "rect", x: 30, y: 30, w: 530, h: 830, radius: 22, fill: "#ffffff" },
@@ -1683,7 +1686,7 @@ function DesignerPage() {
         <h1 style={{ fontSize: 24, margin: "4px 0 14px", fontWeight: 800 }}>
           {tpl ? tpl.name : "Make something"}
           {tpl ? <span style={{ fontSize: 13, fontWeight: 500, color: "rgba(230,238,255,.55)", marginLeft: 10 }}>
-            {tpl.kind === "graphic" ? "graphic" : tpl.kind + " card"} · {tpl.wMm} × {tpl.hMm}mm
+            {tplKindLabel(tpl.kind)} · {tplSizeMm(tpl).wMm} × {tplSizeMm(tpl).hMm}mm
           </span> : null}
         </h1>
         {ch}
@@ -1867,7 +1870,7 @@ function DesignerPage() {
             <button className="dsn-tool" onClick={() => setZoom(z => Math.min(3, (z || 460 / (tpl.w || 590)) + 0.1))} title="Zoom in">+</button>
           </div>
           <span className="dsn-size-note">
-            {tpl.wMm} × {tpl.hMm}mm{selIds.length > 1 ? " · " + selIds.length + " selected" : ""}
+            {tplSizeMm(tpl).wMm} × {tplSizeMm(tpl).hMm}mm{selIds.length > 1 ? " · " + selIds.length + " selected" : ""}
           </span>
           <input ref={fileRef} type="file" accept="image/*" hidden
             onChange={e => { addImageFile(e.target.files && e.target.files[0]); e.target.value = ""; }}/>
@@ -1897,7 +1900,7 @@ function DesignerPage() {
           </div>
 
           <div className="dsn-merge-filters">
-            <label className="dsn-prop"><span>Who</span>
+            <label className="dsn-prop dsn-merge-who"><span>Who</span>
               <select value={mf.audience} onChange={e => setFilter("audience", e.target.value)}>
                 {/* NGG members lead the list: the member card is the credential
                     this organisation issues most, and until now the merge could

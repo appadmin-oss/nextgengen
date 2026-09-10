@@ -102,10 +102,40 @@ function tplBindValue(value, row) {
   });
 }
 
+/** How big a template is in the real world, in millimetres.
+ *
+ *  ONE rule, because there were two: tplResolve derived a missing `hMm` from
+ *  the aspect ratio, and every export path defaulted `wMm` to 54 — but the
+ *  studio's own header and size note read `tpl.wMm` raw off a template that
+ *  had not been through either, so a blank summer card announced itself as
+ *  "× mm" while printing at the size the defaults picked. A display that
+ *  disagrees with the export is worse than no display.
+ */
+function tplSizeMm(t) {
+  const tt = t || {};
+  const wMm = Number(tt.wMm) || 54;
+  const hMm = Number(tt.hMm)
+    || Math.round(wMm * (Number(tt.h) || 972) / (Number(tt.w) || 590) * 10) / 10;
+  return { wMm, hMm };
+}
+
+/** What to call a template's kind in front of an operator.
+ *
+ *  `kind` is a data value — "student" is the column the Summer School roster
+ *  joins on — and printing it raw put the word this product does not use for a
+ *  participant into the studio's own heading. */
+function tplKindLabel(kind) {
+  if (kind === "graphic") return "graphic";
+  if (kind === "member") return "member card";
+  if (kind === "volunteer") return "volunteer card";
+  return "Summer School card";
+}
+
 /** A template with every binding resolved against one card row — the input to
  *  the renderer, and a plain object a test can assert on without a canvas. */
 function tplResolve(template, row) {
   const t = template || {};
+  const mm = tplSizeMm(t);
   const out = {
     id: t.id || "", name: t.name || "", kind: t.kind || "student",
     w: Number(t.w) || 590, h: Number(t.h) || 972,
@@ -113,12 +143,11 @@ function tplResolve(template, row) {
        calculation divided by 54/590, the width of an ID card — which is fine
        while the only thing this renders is an ID card and wrong the moment it
        renders an A4 poster, where the same 98 units is 15mm rather than 9. */
-    wMm: Number(t.wMm) || 54, hMm: Number(t.hMm) || 0,
+    wMm: mm.wMm, hMm: mm.hMm,
     bleedMm: Number(t.bleedMm) || 0, safe: Number(t.safe) || 30,
     background: tplBindValue(t.background || "#ffffff", row),
     elements: [],
   };
-  if (!out.hMm) out.hMm = Math.round(out.wMm * out.h / out.w * 10) / 10;
   (t.elements || []).forEach((el, i) => {
     const e = {};
     Object.keys(el).forEach(k => { e[k] = tplBindValue(el[k], row); });
@@ -1326,7 +1355,7 @@ function NggcMemberCardExport(members, opts) {
 Object.assign(window, {
   TPL_FIELDS, TPL_SYSTEM, TPL_REQUIRED, TPL_PRESETS, TPL_BRAND, TPL_FONTS,
   TPL_FACES, TPL_NAME_FIELDS, tplNameParts,
-  tplMmPerUnit, tplQrModules,
+  tplMmPerUnit, tplQrModules, tplSizeMm, tplKindLabel,
   TPL_QR_GOOD_MODULE_MM, TPL_QR_MIN_MODULE_MM,
   tplBindValue, tplResolve, tplFitSize, tplToFabric, tplPreflight,
   tplPaintUnder, tplInkProblems, TPL_INK_ERROR_RATIO, TPL_INK_WARN_RATIO,

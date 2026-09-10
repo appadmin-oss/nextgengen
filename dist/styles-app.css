@@ -5300,6 +5300,10 @@ body.own-chrome .fab-top { display: none; }
 }
 .dsn-merge-filters .dsn-prop { margin-bottom: 0; }
 .dsn-merge-q { grid-column: span 2; }
+/* "Summer School participants" is 24 characters against a 150px auto-fit
+   column, and a native select clips rather than wraps — so the widest option
+   in the set decides the cell, not the cell the option. */
+.dsn-merge-who { grid-column: span 2; }
 /* The caveat under the date pair. Its own grid cell rather than a title
    attribute: a hint nobody can see until they hover is a hint for nobody. */
 .dsn-date-fmt {
