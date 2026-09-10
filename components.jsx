@@ -1297,7 +1297,10 @@ function humanizeError(message, code) {
    a single-row menu — which is what keeps the two consistent by construction
    rather than by everyone remembering:
 
-     { id, label, cap, danger, confirm({count, ids}), run(ids) → result, done }
+     { id, label, rowLabel, cap, danger, hint,
+       confirm: ({count, ids}) => ({title, body, cta, danger}),
+       run: (ids) => result,  runOne: (id) => result,  open: (ids) => void,
+       pastTense, reload, bulkHidden, rowHidden, keepSelection }
    ============================================================================ */
 
 /** Row selection for a paged admin table.
