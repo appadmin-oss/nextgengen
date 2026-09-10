@@ -869,6 +869,19 @@
       members: {
         list:   (q) => request('/admin/members.php' + qs(q || {})),
         upsert: (data) => request('/admin/members.php', { body: data }),
+        /* One action over many members. PARTIAL by design: the reply carries a
+           per-row verdict in `results` alongside applied/refused, and a caller
+           that reads only `ok` will report a run where most rows were refused
+           as a success. The guards (own account, staff accounts, centre scope,
+           batch bound) are in api/_lib/domain/members-bulk.php. */
+        bulk:   (op, memberIds, payload) => request('/admin/members.php', {
+                  body: Object.assign({ action: 'bulk', op, memberIds }, payload || {}),
+                  timeout: 120000 }),
+        /* Every id matching the current filters, so "apply to all N matching"
+           can name them. Resolved server-side from the same filters the page
+           was built with — a client-side union of the pages it happens to have
+           loaded is a different set. */
+        ids:    (q) => request('/admin/members.php' + qs(Object.assign({ view: 'ids' }, q || {}))),
         reset2fa: (memberId) => request('/admin/members.php', { body: { action: 'reset2fa', memberId } }),
         resetPassword: (memberId) => request('/admin/members.php', { body: { action: 'resetPassword', memberId } }),
         // Record a guardian's publication decision. `method` is how it was
@@ -1046,7 +1059,23 @@
         qrReassign:   (token, studentId) => request('/admin/summer.php', { body: { action: 'qr_reassign', token, studentId } }),
         mint:         (count) => request('/admin/summer.php', { body: { action: 'mint', count } }),
         enroll:       (data) => request('/admin/summer.php', { body: { action: 'enroll', data } }),
+        /* An EDITION is one season of Summer School (its id is the `cohortId`
+           every other summer table carries); a GROUP is a class within an
+           edition — a centre, a course, a lead, its own dates and its own
+           capacity. `cohort` is the pre-edition name for the same save and is
+           kept so an older cached bundle keeps working. */
         cohort:       (data) => request('/admin/summer.php', { body: { action: 'cohort', data } }),
+        editions:     () => request('/admin/summer.php?view=editions'),
+        editionSave:  (data) => request('/admin/summer.php', { body: { action: 'editionSave', data } }),
+        editionStatus:(editionId, status) => request('/admin/summer.php', { body: { action: 'editionStatus', editionId, status } }),
+        groups:       (editionId) => request('/admin/summer.php' + qs({ view: 'groups', editionId: editionId || '' })),
+        groupSave:    (data) => request('/admin/summer.php', { body: { action: 'groupSave', data } }),
+        groupDelete:  (groupId, opts) => request('/admin/summer.php', { body: Object.assign({ action: 'groupDelete', groupId }, opts || {}) }),
+        /* Bulk, and PARTIAL by design: forty children into a group with twelve
+           seats places twelve and NAMES the twenty-eight. The caller must read
+           `results`, not just `ok`. */
+        groupAssign:  (groupId, studentIds) => request('/admin/summer.php', { body: { action: 'groupAssign', groupId: groupId || '', studentIds }, timeout: 120000 }),
+        groupReport:  (editionId) => request('/admin/summer.php' + qs({ view: 'group-report', editionId: editionId || '' })),
         studentStatus:(studentId, status) => request('/admin/summer.php', { body: { action: 'studentStatus', studentId, status } }),
         studentUpdate:(studentId, data) => request('/admin/summer.php', { body: { action: 'studentUpdate', studentId, data } }),
         studentDelete:(studentId) => request('/admin/summer.php', { body: { action: 'studentDelete', studentId } }),
@@ -1249,7 +1278,11 @@
         remindBulk: (opts) => request('/admin/registration.php', { body: Object.assign({ action: 'remind_bulk' }, opts || {}) }),
         centres:      () => request('/admin/registration.php' + qs({ view: 'centres' })),
         centreUpsert: (data) => request('/admin/registration.php', { body: { action: 'centre_upsert', data } }),
-        centreDelete: (centreId) => request('/admin/registration.php', { body: { action: 'centre_delete', centreId } }),
+        /* Refused while member records, summer participants, groups or
+           volunteers still point at the centre, and the refusal says how many
+           of each. `{ retire: true }` keeps the row (records still resolve, the
+           centre stops being offered); `{ force: true }` really removes it. */
+        centreDelete: (centreId, opts) => request('/admin/registration.php', { body: Object.assign({ action: 'centre_delete', centreId }, opts || {}) }),
         catalogue:    () => request('/admin/registration.php' + qs({ view: 'catalogue' })),
         catalogueSet: (catalogue) => request('/admin/registration.php', { body: { action: 'catalogue_set', catalogue } }),
         catalogueReset: () => request('/admin/registration.php', { body: { action: 'catalogue_set', reset: true } }),

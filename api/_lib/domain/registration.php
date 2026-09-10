@@ -2642,8 +2642,29 @@ function geo_match_centre(float $lat, float $lng): ?array {
     return $best;
 }
 
+/**
+ * The NGG CENTRE DIRECTORY.
+ *
+ * A centre is a PLACE, and it belongs to NGG the organisation — not to Summer
+ * School. An NGG member is posted to one all year round, `members.centre`
+ * points at its name, and `centres.code` is the printed ID prefix and the band
+ * colour on that member's card. Summer School RUNS AT centres, and so do
+ * volunteers, attendance, the public centre pages and the status boards.
+ *
+ * That is why READING is open to the member desk and the Summer School desk
+ * alike (both need the list to do their jobs) while WRITING is `people` only:
+ * this whole file used to gate the directory on `summer`, so a Summer School
+ * coordinator could rename or delete the centre every NGG member's record and
+ * ID card depended on, and a year-round member administrator could not add
+ * one at all. See admin_centres_upsert / admin_centres_delete.
+ *
+ * The counts are reported per programme rather than as one number: "enrolled"
+ * on a centre row used to mean Summer School participants in the active
+ * edition, which is not what a member administrator reads it as.
+ */
 function admin_centres_list(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
+    $canWrite = in_array('people', member_effective_caps($g['requester']), true);
     $c = summer_ensure_cohort();
     $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt FROM centres ORDER BY name");
     // Volunteers available to lead a centre — active only, labelled for the picker.
@@ -2657,9 +2678,18 @@ function admin_centres_list(array $p): array {
         $leadOptions[] = ['volunteerId' => $vid, 'name' => $nm, 'role' => (string)$v['role'], 'centre' => (string)$v['centre']];
     }
     foreach ($rows as &$r) {
-        $r['enrolled'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
-        $r['waitlisted'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'waitlisted'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
-        $r['full'] = ((int)$r['capacity'] > 0 && $r['enrolled'] >= (int)$r['capacity']);
+        /* Two programmes, two numbers. `enrolled`/`waitlisted` keep their
+           meaning — Summer School participants in the ACTIVE edition — and are
+           aliased under summer* names so a reader cannot mistake them for the
+           year-round membership. `members` is the NGG side: who is posted here
+           all year, which is what capacity on an NGG centre is about. */
+        $r['summerEnrolled'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
+        $r['summerWaitlisted'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'waitlisted'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
+        $r['enrolled'] = $r['summerEnrolled'];
+        $r['waitlisted'] = $r['summerWaitlisted'];
+        $r['members'] = (int)(db_row("SELECT COUNT(*) c FROM members WHERE centre = ? AND status = 'active'", [(string)$r['name']])['c'] ?? 0);
+        $r['groups'] = (int)(db_row("SELECT COUNT(*) c FROM summer_groups WHERE centreId = ? AND cohortId = ?", [(string)$r['centreId'], $c['cohortId']])['c'] ?? 0);
+        $r['full'] = ((int)$r['capacity'] > 0 && $r['summerEnrolled'] >= (int)$r['capacity']);
         $lid = (string)($r['leadVolunteerId'] ?? '');
         $r['leadName'] = $lid !== '' ? ($volById[$lid] ?? db_row('SELECT fullName FROM volunteers WHERE volunteerId = ?', [$lid])['fullName'] ?? '') : '';
         // gallery is stored as a JSON array of image URLs — hand the editor an array.
@@ -2668,7 +2698,12 @@ function admin_centres_list(array $p): array {
         if (($r['slug'] ?? '') === '') $r['slug'] = centre_slugify((string)$r['name']);
     }
     unset($r);
-    return ['ok' => true, 'centres' => $rows, 'leadOptions' => $leadOptions, 'geofenceEnabled' => geofence_enabled()];
+    return ['ok' => true, 'centres' => $rows, 'leadOptions' => $leadOptions,
+            'geofenceEnabled' => geofence_enabled(),
+            // So the screen can show a read-only directory rather than buttons
+            // that 403. The server still refuses either way.
+            'canWrite' => $canWrite,
+            'summerEditionId' => (string)$c['cohortId']];
 }
 
 /**
@@ -2715,8 +2750,12 @@ function centre_is_full(string $centreName, string $cohortId): bool {
     return $active >= $cap;
 }
 
+/* Writing the directory is `people`, not `summer` — see admin_centres_list for
+   why. A Summer School coordinator who needs a new centre asks the member desk;
+   what a coordinator owns is the EDITION and its GROUPS
+   (_lib/domain/summer-editions.php), which is their structure, not NGG's. */
 function admin_centres_upsert(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $d = is_array($p['data'] ?? null) ? $p['data'] : [];
     $name = substr(trim((string)($d['name'] ?? '')), 0, 80);
     $code = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($d['code'] ?? '')));
@@ -2847,12 +2886,45 @@ function admin_centres_upsert(array $p): array {
     return ['ok' => true, 'centreId' => $id];
 }
 
+/**
+ * Remove a centre from the directory.
+ *
+ * Refused while anything still points at it, unless the caller says so
+ * explicitly. Deleting a centre used to be an unconditional DELETE on a row
+ * that NGG member records reference by NAME, that summer participants
+ * reference by name, that summer GROUPS reference by id, and whose code is the
+ * prefix already printed on physical cards. Nothing broke loudly; the records
+ * simply started pointing at a centre that no longer existed, and the pickers
+ * that offer centres stopped offering theirs.
+ */
 function admin_centres_delete(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
-    $n = db_exec('DELETE FROM centres WHERE centreId = ?', [(string)($p['centreId'] ?? '')]);
-    if (!$n) return ['ok' => false, 'error' => 'not_found'];
-    audit('centre.delete', $g['requester']['memberId'], (string)$p['centreId'], [], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $id = (string)($p['centreId'] ?? '');
+    $c = $id !== '' ? db_row('SELECT * FROM centres WHERE centreId = ?', [$id]) : null;
+    if (!$c) return ['ok' => false, 'error' => 'not_found'];
+    $name = (string)$c['name'];
+    $uses = [
+        'members'       => (int)(db_row("SELECT COUNT(*) c FROM members WHERE centre = ?", [$name])['c'] ?? 0),
+        'participants'  => (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE centre = ?", [$name])['c'] ?? 0),
+        'summerGroups'  => (int)(db_row("SELECT COUNT(*) c FROM summer_groups WHERE centreId = ?", [$id])['c'] ?? 0),
+        'volunteers'    => (int)(db_row("SELECT COUNT(*) c FROM volunteers WHERE centre = ?", [$name])['c'] ?? 0),
+    ];
+    /* Retiring, not deleting, is almost always what is meant, and it is the
+       ANSWER to the refusal below rather than something it should block: the
+       records keep a name that still resolves and the centre stops being
+       offered anywhere. So it is checked first. */
+    if (!empty($p['retire'])) {
+        db_update('centres', ['status' => 'retired', 'updatedAt' => now_iso()], ['centreId' => $id]);
+        audit('centre.retire', $g['requester']['memberId'], $id, ['name' => $name, 'uses' => $uses], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'retired' => true, 'uses' => $uses];
+    }
+    $total = array_sum($uses);
+    if ($total > 0 && empty($p['force'])) {
+        return ['ok' => false, 'error' => 'centre_in_use', 'uses' => $uses, 'name' => $name];
+    }
+    db_exec('DELETE FROM centres WHERE centreId = ?', [$id]);
+    audit('centre.delete', $g['requester']['memberId'], $id, ['name' => $name, 'uses' => $uses, 'forced' => !empty($p['force'])], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'uses' => $uses];
 }
 
 /** URL-safe slug from a centre name: lowercase, accents stripped, spaces → "-". */

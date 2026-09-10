@@ -76,6 +76,13 @@ function backend_dispatch(string $op, array $args = []): array {
             'session.ensureYear'      => 'session_ensure_year',
             // Admin
             'admin.members.list'      => 'admin_members_list',
+            /* Bulk over the member roster, plus the id list that makes
+               "apply to all N matching the filter" possible. Each bulk action
+               declares its own capability and every row comes back with its
+               own verdict — see _lib/domain/members-bulk.php for the guards
+               (self, staff tier, centre scope, bounds). */
+            'admin.members.bulk'      => 'admin_members_bulk',
+            'admin.members.ids'       => 'admin_members_ids',
             'admin.members.upsert'    => 'admin_members_upsert',
             'admin.members.import'    => 'admin_members_import',
             'admin.requests.list'     => 'admin_requests_list',
@@ -96,6 +103,21 @@ function backend_dispatch(string $op, array $args = []): array {
             // Summer School (QR attendance + enrollment)
             'admin.summer.overview'       => 'admin_summer_overview',
             'admin.summer.cohort.upsert'  => 'admin_summer_cohort_upsert',
+            /* Summer School structure. An EDITION is one season
+               (`summer_cohorts`, whose id is the `cohortId` every summer table
+               carries); a GROUP is a class within it (`summer_groups`). Both
+               gate on `summer`. The centre DIRECTORY is deliberately not here:
+               a centre is an NGG-wide place whose code is the printed ID prefix
+               on every member card, so writing it gates on `people`. See
+               _lib/domain/summer-editions.php. */
+            'admin.summer.editions'       => 'admin_summer_editions',
+            'admin.summer.edition.save'   => 'admin_summer_edition_save',
+            'admin.summer.edition.status' => 'admin_summer_edition_status',
+            'admin.summer.groups'         => 'admin_summer_groups',
+            'admin.summer.group.save'     => 'admin_summer_group_save',
+            'admin.summer.group.delete'   => 'admin_summer_group_delete',
+            'admin.summer.group.assign'   => 'admin_summer_group_assign',
+            'admin.summer.group.report'   => 'admin_summer_group_report',
             'admin.summer.qr.mint'        => 'admin_summer_qr_mint',
             'admin.summer.qr.list'        => 'admin_summer_qr_list',
             'admin.summer.qr.void'        => 'admin_summer_qr_void',

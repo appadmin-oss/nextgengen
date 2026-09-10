@@ -28,6 +28,14 @@ if ($method === 'GET') {
     elseif ($view === 'attendance-day') $res = gs_call('admin.summer.attendance.day', ['requesterId' => $mid,
         'cohortId' => $_GET['cohortId'] ?? '', 'date' => $_GET['date'] ?? '', 'centre' => $_GET['centre'] ?? '']);
     elseif ($view === 'insights')   $res = gs_call('admin.summer.insights', ['requesterId' => $mid, 'cohortId' => $_GET['cohortId'] ?? '']);
+    /* Editions and groups. `editionId` is the parameter name the product uses
+       now; `cohortId` is still accepted because it is the same identifier and
+       an older client bundle sends it. */
+    elseif ($view === 'editions')   $res = gs_call('admin.summer.editions', ['requesterId' => $mid]);
+    elseif ($view === 'groups')     $res = gs_call('admin.summer.groups', ['requesterId' => $mid,
+        'editionId' => $_GET['editionId'] ?? ($_GET['cohortId'] ?? '')]);
+    elseif ($view === 'group-report') $res = gs_call('admin.summer.group.report', ['requesterId' => $mid,
+        'editionId' => $_GET['editionId'] ?? ($_GET['cohortId'] ?? '')]);
     elseif ($view === 'consent')    $res = gs_call('admin.summer.consent', ['requesterId' => $mid, 'studentId' => $_GET['studentId'] ?? '']);
     else                          $res = gs_call('admin.summer.overview', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {
@@ -40,6 +48,11 @@ if ($method === 'GET') {
         'qr_reassign'  => 'admin.summer.qr.reassign',
         'enroll'       => 'admin.summer.enroll',
         'cohort'       => 'admin.summer.cohort.upsert',
+        'editionSave'  => 'admin.summer.edition.save',
+        'editionStatus'=> 'admin.summer.edition.status',
+        'groupSave'    => 'admin.summer.group.save',
+        'groupDelete'  => 'admin.summer.group.delete',
+        'groupAssign'  => 'admin.summer.group.assign',
         'studentStatus'=> 'admin.summer.student.status',
         'studentUpdate'=> 'admin.summer.student.update',
         'studentDelete'=> 'admin.summer.student.delete',

@@ -1739,6 +1739,45 @@ body.cm-app .fab-top { display: none; }
 .admin-bulk-all { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink-700); cursor: pointer; }
 .admin-bulk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .admin-bulk-label { font-size: 11px; color: var(--ink-500); text-transform: uppercase; letter-spacing: 0.1em; }
+/* The shared bulk bar (see the admin action layer in components.jsx). The
+   count is a live region, so the selection size is announced and not only
+   drawn — the hand-rolled bars it replaces were unlabelled divs. */
+.admin-bulk-count { margin: 0; font-size: 13px; color: var(--ink-700); }
+.admin-bulk-count b { font-variant-numeric: tabular-nums; }
+/* "Select all N matching the filter" — the escape hatch a paged table needs.
+   A real button, because it makes a decision, styled as a link because it sits
+   inside a sentence. */
+.admin-bulk-link {
+  border: 0; background: none; padding: 0; font: inherit; color: var(--navy-900);
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.admin-bulk-link:hover { color: var(--coral); }
+.admin-bulk-link:focus-visible { outline: 2px solid var(--navy-900); outline-offset: 2px; border-radius: 3px; }
+
+/* One row's action menu. Same declarations as the bulk bar drive it, so an
+   individual action cannot drift from its bulk equivalent. */
+.admin-rowmenu { position: relative; display: inline-block; }
+.admin-rowmenu-pop {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 40; min-width: 210px;
+  display: flex; flex-direction: column; padding: 6px; border-radius: 12px;
+  background: #fff; border: 1px solid rgba(12,20,50,0.12);
+  box-shadow: 0 12px 32px rgba(12,20,50,0.16);
+}
+.admin-rowmenu-item {
+  appearance: none; border: 0; background: none; text-align: left; cursor: pointer;
+  font: inherit; font-size: 13.5px; color: var(--ink-700);
+  padding: 9px 10px; border-radius: 8px; min-height: 40px;
+}
+.admin-rowmenu-item:hover { background: rgba(12,20,50,0.06); }
+.admin-rowmenu-item:focus-visible { outline: 2px solid var(--navy-900); outline-offset: -2px; }
+.admin-rowmenu-item.is-danger { color: #b3261e; }
+.admin-rowmenu-item.is-danger:hover { background: rgba(179,38,30,0.08); }
+/* A checkbox in a table cell is a target as well as a control. */
+.admin-table td input[type="checkbox"], .admin-bulk-all input[type="checkbox"] { width: 18px; height: 18px; }
+@media (max-width: 720px) {
+  .admin-bulkbar { position: sticky; bottom: 0; z-index: 30; background: #fff; box-shadow: 0 -6px 20px rgba(12,20,50,0.1); }
+  .admin-rowmenu-item { min-height: 44px; }
+}
 .admin-app.is-selected { outline: 2px solid var(--gold-500); outline-offset: 1px; }
 .admin-table { width: 100%; border-collapse: collapse; }
 .admin-table th, .admin-table td { padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(12,20,50,0.06); font-size: 14px; }

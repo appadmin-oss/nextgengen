@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 111;
+const NGG_SCHEMA_TARGET = 112;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3283,6 +3283,81 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_mirun_digest ON member_import_runs(digest, id);
             CREATE INDEX IF NOT EXISTS idx_mirun_at ON member_import_runs(at);
+        ",
+
+        /* ── Summer School: editions, and groups within an edition ───────────
+         *
+         * THE VOCABULARY, because it was the problem. Three different things
+         * were all called a \"cohort\" somewhere in this product:
+         *
+         *   EDITION   one season of Summer School — \"Summer School 2026\".
+         *             Stored in `summer_cohorts`; its id is the `cohortId`
+         *             that `summer_students`, `attendance` and `qr_codes`
+         *             already carry. That column means EDITION, everywhere,
+         *             with no exceptions. The table keeps its historical name
+         *             rather than gaining a translation layer over it — this
+         *             schema deliberately has none (see the file header).
+         *   GROUP     a class WITHIN an edition — \"Egbeda · Music · Morning\".
+         *             This table. New concept, new name, its own id. When a
+         *             coordinator says \"cohort\" out loud, this is what they
+         *             mean, so the UI calls it a group and never a cohort.
+         *   CENTRE    a PLACE. `centres`. Belongs to NGG the organisation, not
+         *             to Summer School: NGG members are posted to one all year
+         *             and its code is the printed ID prefix on their cards.
+         *             Summer School RUNS AT centres; it does not own them.
+         *
+         * A group is the unit an edition is actually run in: it has a place, a
+         * course, a lead, a capacity, its own dates and its own lifecycle, and
+         * a participant belongs to at most one of them. Before this, an
+         * edition's 300 children were one undifferentiated list filtered by
+         * centre and track — which cannot express two Music classes at one
+         * centre, cannot be handed to a lead, and cannot be reported on.
+         *
+         * `cohortId` here is the EDITION the group belongs to, named to match
+         * the column it points at. Codes are unique within an edition, never
+         * globally: \"EG-MUS-AM\" is free to mean this year's class next year.
+         */
+        112 => "
+            CREATE TABLE IF NOT EXISTS summer_groups (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              groupId TEXT NOT NULL UNIQUE,
+              cohortId TEXT NOT NULL,             -- the EDITION (summer_cohorts.cohortId)
+              name TEXT NOT NULL,
+              code TEXT NOT NULL,                 -- unique within the edition
+              centreId TEXT DEFAULT '',           -- centres.centreId — where it meets
+              faculty TEXT DEFAULT '',            -- academy, from the catalogue
+              track TEXT DEFAULT '',              -- course, from the catalogue
+              leadId TEXT DEFAULT '',             -- volunteers.volunteerId of the lead
+              capacity INTEGER DEFAULT 0,         -- 0 = uncapped
+              meetDays TEXT DEFAULT '',           -- '1,3,6' — operational, never public
+              meetTime TEXT DEFAULT '',
+              startDate TEXT DEFAULT '',
+              endDate TEXT DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'active', -- planning|active|closed|archived
+              notes TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '', createdBy TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT '', updatedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sgrp_code ON summer_groups(cohortId, code);
+            CREATE INDEX IF NOT EXISTS idx_sgrp_edition ON summer_groups(cohortId, status);
+            CREATE INDEX IF NOT EXISTS idx_sgrp_centre ON summer_groups(centreId);
+
+            ALTER TABLE summer_students ADD COLUMN groupId TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_sstu_group ON summer_students(groupId);
+
+            /* Edition lifecycle. `status` already held 'active' | 'archived'
+               and those keep their meaning — 'active' is the one edition being
+               run, and only one may be active at a time. 'planning' (being set
+               up, not yet taking anyone) and 'closed' (finished, still being
+               reported on, not yet archived) are the two states a coordinator
+               previously had to fake by archiving early or leaving an old
+               edition active. */
+            ALTER TABLE summer_cohorts ADD COLUMN code TEXT DEFAULT '';
+            ALTER TABLE summer_cohorts ADD COLUMN applyOpensAt TEXT DEFAULT '';
+            ALTER TABLE summer_cohorts ADD COLUMN applyClosesAt TEXT DEFAULT '';
+            ALTER TABLE summer_cohorts ADD COLUMN notes TEXT DEFAULT '';
+            ALTER TABLE summer_cohorts ADD COLUMN updatedAt TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_scoh_status ON summer_cohorts(status, id);
         ",
     ];
 

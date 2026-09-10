@@ -32,6 +32,27 @@ function admin_cap_gate(array $p, string $cap): array {
     return $g;
 }
 
+/**
+ * Admin gate requiring ANY ONE of several capabilities.
+ *
+ * For shared reference data that several desks legitimately need to READ while
+ * only one of them owns WRITING it. The centre directory is the case that
+ * needed it: a Summer School coordinator has to be able to see the list of
+ * centres to run classes in them, but must not be able to rename or delete
+ * one, because a centre's code is the printed ID prefix on every NGG member's
+ * card and its name is what their record points at.
+ *
+ * Read with admin_cap_gate_any($p, ['people','summer']); write with
+ * admin_cap_gate($p, 'people'). Never widen a WRITE with this.
+ */
+function admin_cap_gate_any(array $p, array $caps): array {
+    $g = admin_gate($p);
+    if (!$g['ok']) return $g;
+    $have = member_effective_caps($g['requester']);
+    foreach ($caps as $c) if (in_array($c, $have, true)) return $g;
+    return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:' . implode('|', $caps)];
+}
+
 /** Keep only known columns; cast declared booleans to 0/1 and ints. */
 function db_pick(array $data, array $cols, array $bools = [], array $ints = []): array {
     $out = [];
