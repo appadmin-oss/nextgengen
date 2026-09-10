@@ -821,12 +821,22 @@ function DesignerPage() {
   const row = proofRow || (rowIdx >= 0 && rows[rowIdx] ? rows[rowIdx] : DSN_SAMPLE);
   const proofOne = React.useCallback((r) => {
     setProofRow(r);
-    // The canvas is above the batch panel and a long roster pushes it off
-    // screen — proofing somebody you then cannot see is not proofing.
-    if (hostRef.current && hostRef.current.scrollIntoView) {
-      hostRef.current.scrollIntoView({ block: "center",
-        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-    }
+    /* Scroll to the proof ONLY when the proof is not already there.
+       This used to be unconditional, because the batch panel sat above the
+       workspace and a long roster always pushed the canvas off screen. Print
+       mode puts the two side by side (see .dsn-work.is-printing), so on a
+       desktop the card is already in view and scrolling to "centre" it would
+       yank the page under the hand that just clicked. Below the workspace
+       breakpoint the columns stack and the scroll is still the right thing —
+       so ask, rather than assume either way. */
+    const host = hostRef.current;
+    if (!host || !host.scrollIntoView) return;
+    const r0 = host.getBoundingClientRect();
+    const vh = window.innerHeight || 0;
+    const mostlyVisible = r0.top < vh * 0.9 && r0.bottom > vh * 0.1;
+    if (mostlyVisible) return;
+    host.scrollIntoView({ block: "center",
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   }, []);
 
   /* Fabric is fetched when this screen opens and never before — it is 292KB for
@@ -1879,10 +1889,30 @@ function DesignerPage() {
 
       {!tpl && <div className="admin-empty">Pick a design to open, or start a new one.</div>}
 
-      {/* ── Data merge ───────────────────────────────────────────────────────
-          One design, one piece per person. Above the canvas rather than in a
-          modal because the point of a run is that you can still SEE what is
-          being run — the proof is a few centimetres below the tick list. */}
+      {/* ── The workspace: DESIGN MODE and PRINT MODE ───────────────────────
+          Two modes, because that is what this tool actually does and what
+          every comparable tool separates: you design, then you print.
+          cardPresso and Zebra CardStudio both put the card and the record
+          list side by side for the print step; Canva's bulk create previews
+          each row IN the design before it will generate; Figma's panels
+          collapse and expand but never displace the canvas.
+
+          This studio had the intent and not the layout. The batch panel was a
+          full-width block ABOVE the workspace, so opening it pushed the canvas
+          — the thing being proofed — some nine hundred pixels down and off
+          screen. proofOne then scrolled it back into view, and its comment
+          admitted what that was for: "proofing somebody you then cannot see is
+          not proofing." A scroll is not a fix for a layout.
+
+          So: DESIGN MODE is layers | canvas | properties, unchanged. PRINT
+          MODE is canvas | records — the editing rails step aside because you
+          are not editing, the canvas holds its place and becomes the proof of
+          whoever is picked, and Close returns to design mode with the run
+          intact. One wrapper and a modifier class; the panel's own markup is
+          untouched, which is why every check that reads it still holds. */}
+      <div className={"dsn-work" + (mergeOpen ? " is-printing" : "")}>
+
+      {/* ── Data merge · one design, one piece per person ─────────────────── */}
       {tpl && mergeOpen && (
         <div className="dsn-merge">
           <div className="dsn-merge-head">
@@ -2317,6 +2347,8 @@ function DesignerPage() {
           </div>
         </div>
       )}
+
+      </div>{/* /.dsn-work */}
 
       {/* ── Preflight ──────────────────────────────────────────────────────
           Live, not a gate at the end. Errors block publish here AND on the

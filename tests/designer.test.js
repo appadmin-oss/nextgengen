@@ -756,6 +756,61 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
        + overflowPx + 'px)', overflowPx <= 1);
     await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
 
+    /* ── PRINT MODE: the canvas holds its ground ─────────────────────────
+       The defect this pins: the batch panel used to be a full-width block
+       above the workspace, so opening it pushed the canvas — the thing being
+       proofed — off screen, and proofOne scrolled it back. A studio where you
+       cannot see what you are about to print three hundred times is the whole
+       failure, so it is asserted rather than left to a screenshot nobody
+       diffs. Batch is open at this point in the run. */
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.waitForTimeout(400);
+    const printMode = await page.evaluate(() => {
+      const stage = document.querySelector('.dsn-stage');
+      const merge = document.querySelector('.dsn-merge');
+      const work = document.querySelector('.dsn-work');
+      if (!stage || !merge || !work) return null;
+      const a = stage.getBoundingClientRect(), b = merge.getBoundingClientRect();
+      const cv = document.querySelector('.dsn-canvas-host canvas');
+      const c = cv ? cv.getBoundingClientRect() : null;
+      return {
+        printing: work.classList.contains('is-printing'),
+        // Side by side, not stacked: the panels overlap vertically and not
+        // horizontally. That is the geometric statement of "beside".
+        sideBySide: a.right <= b.left + 1 && a.top < b.bottom && b.top < a.bottom,
+        // The proof is reachable without scrolling.
+        canvasTop: Math.round(a.top),
+        canvasVisible: a.top < 1000 && a.bottom > 0,
+        // The card must not escape its panel — it did at a 420px column.
+        canvasFits: !!c && c.left >= a.left - 1 && c.right <= a.right + 1,
+        /* Editing rails step aside; the canvas is not a rail and must remain.
+           Counted over EVERY .dsn-rail on the page, not over a
+           .is-printing-scoped selector — scoping it to the modifier made the
+           check vacuous, because breaking the modifier also empties the
+           selector and an empty set satisfies "all hidden". */
+        railsOnPage: document.querySelectorAll('.dsn-rail').length,
+        railsVisible: Array.from(document.querySelectorAll('.dsn-rail'))
+          .filter(e => e.getBoundingClientRect().width > 0).length,
+        // The picks bar reflows on the PANEL's width, not the window's: at
+        // 1440 the window is roomy and the panel is not.
+        picksRows: (() => {
+          const p = document.querySelector('.dsn-merge-picks');
+          return p ? Math.round(p.getBoundingClientRect().height) : 0;
+        })(),
+      };
+    });
+    ok('print mode puts the run beside the proof rather than below it',
+      !!printMode && printMode.printing && printMode.sideBySide);
+    ok('…so the canvas is on screen without scrolling (top ' + (printMode && printMode.canvasTop) + 'px)',
+      !!printMode && printMode.canvasVisible && printMode.canvasTop < 700);
+    ok('…the card stays inside its panel at this column width',
+      !!printMode && printMode.canvasFits);
+    ok('…and the editing rails step aside while printing (' + (printMode && printMode.railsOnPage)
+       + ' on the page, ' + (printMode && printMode.railsVisible) + ' visible)',
+      !!printMode && printMode.railsOnPage >= 2 && printMode.railsVisible === 0);
+    ok('…with the picks bar reflowed to two rows on the panel width, not one squeezed row',
+      !!printMode && printMode.picksRows > 60);
+
     /* The review screens. Off by default — they are for looking at, not for
        asserting, and rendering them on every run costs seconds for nobody. */
     if (process.env.DSN_SHOTS) {

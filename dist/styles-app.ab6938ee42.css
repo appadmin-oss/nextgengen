@@ -6007,6 +6007,35 @@ body.own-chrome .fab-top { display: none; }
 
 /* ---- editor workspace: canvas floats on a real backdrop, not a flat panel ---- */
 .dsn-grid { grid-template-columns: 232px minmax(0,1fr) 300px; gap: 16px; }
+
+/* ---- PRINT MODE: the canvas keeps its place and becomes the proof ----------
+   Design mode leaves .dsn-work alone, so the workspace is the normal
+   layers | canvas | properties grid. Print mode turns the wrapper into two
+   columns — canvas first, records beside it — and steps the editing rails
+   aside, because nothing here edits the design.
+
+   Why the canvas gets the smaller column: a card is 54mm wide and the record
+   list is a six-column table. Giving the table the free space is what lets it
+   keep its columns readable without a horizontal scroll at 1440.
+
+   align-items: start so a long roster does not stretch the canvas panel, and
+   the canvas panel is sticky so scrolling the list keeps the proof in sight —
+   which is the whole point, and what a scrollIntoView was standing in for. */
+.dsn-work.is-printing {
+  display: grid; grid-template-columns: minmax(0, 500px) minmax(0, 1fr);
+  gap: 16px; align-items: start;
+}
+.dsn-work.is-printing .dsn-grid { order: 1; grid-template-columns: minmax(0, 1fr); }
+.dsn-work.is-printing .dsn-merge { order: 2; margin: 0; }
+/* The editing rails, not the canvas. Both use .dsn-rail; the stage does not. */
+.dsn-work.is-printing .dsn-rail { display: none; }
+.dsn-work.is-printing .dsn-grid > .dsn-stage { position: sticky; top: 12px; }
+/* One column below the workspace breakpoint, canvas first — the same place
+   .dsn-grid already collapses, so the two never disagree. */
+@media (max-width: 1080px) {
+  .dsn-work.is-printing { grid-template-columns: minmax(0, 1fr); }
+  .dsn-work.is-printing .dsn-grid > .dsn-stage { position: static; }
+}
 .dsn-rail {
   background: var(--dsn-panel); border: 1px solid var(--dsn-line); border-radius: 14px;
   max-height: min(72vh, 760px);
@@ -6038,6 +6067,9 @@ body.own-chrome .fab-top { display: none; }
   border: 1px solid var(--dsn-line-2); border-radius: 16px; padding: 16px 18px 14px;
   background: linear-gradient(180deg, rgba(245,176,38,0.05), rgba(255,255,255,0.03));
   box-shadow: 0 16px 40px -26px rgba(0,0,0,0.8);
+  /* Named so the run bars inside can ask THIS panel how wide it is. See the
+     @container rule on .dsn-merge-picks. */
+  container: dsnrun / inline-size;
 }
 .dsn-merge-head b { font-size: 15px; letter-spacing: -0.01em; }
 .dsn-merge-filters {
@@ -6059,8 +6091,15 @@ body.own-chrome .fab-top { display: none; }
    full-width window, which is where WCAG 1.4.4 cares.
 
    Grid rather than more flex-wrap: wrapping decides where things break by
-   running out of room, and what breaks first is whatever happens to be last. */
-@media (max-width: 1040px) {
+   running out of room, and what breaks first is whatever happens to be last.
+
+   A CONTAINER query, not a viewport one. This was `@media (max-width: 1040px)`,
+   which is a stand-in for "the panel is narrow" and stops being true the moment
+   the panel stops being the width of the window — print mode puts it in a
+   column beside the canvas, so at 1440 the window said roomy and the panel had
+   890px, and the chips squeezed text inside the buttons instead of reflowing.
+   Asking the panel about its own width is the actual question. */
+@container dsnrun (max-width: 1000px) {
   .dsn-merge-picks {
     display: grid; gap: 8px 6px; align-items: center;
     grid-template-columns: auto auto auto 1fr;
