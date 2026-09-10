@@ -1676,7 +1676,7 @@ function DesignerPage() {
   const shell = (ch) => (
     <div style={{ minHeight: "100vh", background: "#0b1327", color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 20px 80px" }}>
       <div style={{ maxWidth: 1240, margin: "0 auto" }}>
-        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: DSN_GOLD }}>NGG DESIGN STUDIO</div>
+        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: DSN_GOLD }}>NGG DESIGN STUDIO · DRAW · BIND · PUBLISH · PRINT</div>
         {/* Not "Design an ID card". This started as an ID tool because the whole
             product started as a summer-programme tool, and the organisation makes
             posters, certificates and social posts the other eleven months. */}

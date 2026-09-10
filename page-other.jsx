@@ -6107,11 +6107,25 @@ function CardStudio() {
     `}</style>
     <div className="no-print" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 18, marginBottom: 18 }}>
       <div>
-        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>ID CARD STUDIO · {String(program.program || "")} {String(program.year || "")}</div>
+        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>CARD STUDIO · PRINT RUNS · {String(program.program || "")} {String(program.year || "")}</div>
         {/* "1 of 30 verified student ready" — the noun agrees with the TOTAL
             once there is a total in the sentence, not with the filtered count. */}
         <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{cards.length}{cards.length !== allCards.length ? " of " + allCards.length : ""} {isVol ? "volunteer" : "verified student"}{(cards.length !== allCards.length ? allCards.length : cards.length) === 1 ? "" : "s"} ready</h1>
         <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0", maxWidth: 520 }}>{isVol ? "Cards render for active volunteers — the ID and QR bind at approval. Colour + code come from the hierarchy tier." : "Cards render for verified students only — the ID and QR bind at parent consent. Print uses a true " + cardW + "×" + cardH + "mm per card."}</p>
+        {/* WHICH STUDIO AM I IN.
+            There are two, and for years neither said so — so which one an
+            operator used depended on which link they happened to click. This
+            one PRINTS the standard cards, laid out in code; the Design Studio
+            is where a layout is drawn, bound to fields and published, and it
+            is the only one that can make an NGG member card or a card back.
+            Said here rather than left as folklore. */}
+        <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12.5, margin: "8px 0 0", maxWidth: 520, lineHeight: 1.5 }}>
+          This studio prints the <b style={{ color: "rgba(230,238,255,.8)" }}>standard</b> Summer School and volunteer
+          cards, whose layout lives in code. To draw a layout, bind it to fields, or make an{" "}
+          <b style={{ color: "rgba(230,238,255,.8)" }}>NGG member card</b> or a card back, use the{" "}
+          <a href="/designer" style={{ color: gold }}>Design Studio</a>. Every run from either is recorded in{" "}
+          <b style={{ color: "rgba(230,238,255,.8)" }}>Control Room → People → ID cards</b>.
+        </p>
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         {notice && <span className="mono" style={{ fontSize: 12, color: "#6fdc9d" }}>{notice}</span>}

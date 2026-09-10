@@ -54,7 +54,10 @@ function useAdminDrawer(onClose, guard = true) {
 // Add a new module by adding ONE row.
 const ADMIN_SECTIONS = [
   { id: "home",        group: null,       label: "Overview",     title: "Overview",            icon: "◎", cap: null },
-  { id: "dashboard",   group: null,       label: "Analytics",    title: "Summer School Analytics", icon: "◫", cap: null },
+  /* Not "Summer School Analytics": the workspace reports on NGG members, on
+     volunteers and on Summer School alike, and the old title sent anybody
+     looking for year-round numbers to the wrong place. */
+  { id: "dashboard",   group: null,       label: "Analytics",    title: "Analytics & M&E",     icon: "◫", cap: null },
   { id: "members",     group: "People",   label: "Members",      title: "Members",             icon: "◯", cap: "people" },
   { id: "applications",group: "People",   label: "Applications", title: "Applications",        icon: "✉", cap: "people" },
   { id: "volunteers",  group: "People",   label: "Volunteers",   title: "Volunteers",          icon: "◈", cap: "people" },
@@ -694,7 +697,7 @@ function AdminHome({ setSection, hasCap, member }) {
       <div className="admin-tiles">
         {can("people") && <AdminTile n={fmt(m.active)} l="Active members" onClick={() => setSection("members")}/>}
         {can("people") && <AdminTile n={fmt(m.ngg)} l="NGG members" onClick={() => setSection("members")}/>}
-        {can("people") && <AdminTile n={fmt(m.summer)} l="Summer students" onClick={() => setSection("members")}/>}
+        {can("people") && <AdminTile n={fmt(m.summer)} l="Summer School participants" onClick={() => setSection("members")}/>}
         {can("people") && <AdminTile n={fmt(m.graduates)} l="Graduates" onClick={() => setSection("members")}/>}
         {can("people") && <AdminTile n={"+" + fmt(m.new30)} l="New · 30 days" onClick={() => setSection("members")}/>}
         {can("people") && <AdminTile n={fmt((o.mentors || {}).active)} l="Active mentors" onClick={() => setSection("mentors")}/>}
@@ -749,70 +752,19 @@ function AdminHome({ setSection, hasCap, member }) {
 
 /* General dashboard — the Summer School 2026 board: live attendance + per-centre
    analytics. Read-only; any console admin (incl. the M&E audit role) sees it. */
-function AdminDashboard() {
-  const [d, setD] = React.useState(null);
-  const [err, setErr] = React.useState("");
-  const load = () => NGGApi.admin.dashboard().then(r => { setD(r.dashboard); setErr(""); }).catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); const id = setInterval(() => { if (!document.hidden) load(); }, 30000); return () => clearInterval(id); }, []);
-  if (err) return <div className="admin-section"><ErrorState title="Couldn't load the dashboard" code={err} onRetry={load}/></div>;
-  if (!d) return <div className="admin-section"><div className="dash-spinner"/></div>;
-  const k = d.kpis || {};
-  const maxTrend = Math.max(1, ...(d.trend || []).map(t => (t.present || 0)));
-  const kpi = (n, l, sub) => (
-    <div className="admin-tile" style={{ cursor: "default", alignItems: "flex-start" }}>
-      <div className="admin-tile-n">{n}</div>
-      <div className="mono admin-tile-l">{l}</div>
-      {sub ? <div className="mono" style={{ fontSize: 10, color: "var(--ink-500)", marginTop: 2 }}>{sub}</div> : null}
-    </div>
-  );
-  const rateColor = (r) => r >= 85 ? "#2f9e44" : r >= 60 ? "#f08c00" : "#e03131";
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Summer School Dashboard</h2>
-        <span className="mono" style={{ color: "var(--ink-500)", fontSize: 12 }}>Live · {d.today} · updates every 30s</span>
-      </div>
-      <div className="admin-grid-cards" style={{ marginBottom: 22 }}>
-        {kpi(k.centres || 0, "Centres")}
-        {kpi(k.enrolled || 0, "Enrolled students")}
-        {kpi(k.presentToday || 0, "Present today")}
-        {kpi((k.attendanceRate || 0) + "%", "Attendance rate")}
-        {kpi(k.lateToday || 0, "Late today")}
-        {kpi(k.activeVolunteers || 0, "Active volunteers", (k.presentVolToday || 0) + " in today")}
-      </div>
-
-      <h3 className="admin-h3" style={{ margin: "0 0 10px" }}>Centre performance</h3>
-      {!(d.byCentre || []).length ? <div className="admin-empty">No active centres yet — add them under <b>People → Centres</b>.</div> :
-        <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Centre</th><th className="admin-num">Enrolled</th><th className="admin-num">Present today</th><th className="admin-num">Late</th><th className="admin-num">Attendance</th></tr></thead>
-          <tbody>
-            {(d.byCentre || []).map(c => (
-              <tr key={c.centreId || c.name}>
-                <td><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: c.color || "#76B043", marginRight: 8 }}/><b>{c.name}</b> <span className="mono admin-cell-sub">{c.code}</span></td>
-                <td className="mono admin-num">{c.enrolled}</td>
-                <td className="mono admin-num">{c.present}</td>
-                <td className="mono admin-num">{c.late ? <span style={{ color: "#e03131" }}>{c.late}</span> : "—"}</td>
-                <td className="admin-num"><span style={{ fontWeight: 700, color: rateColor(c.rate) }}>{c.rate}%</span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div>}
-
-      <h3 className="admin-h3" style={{ margin: "24px 0 10px" }}>Attendance — last 14 days</h3>
-      {!(d.trend || []).length ? <div className="admin-empty">No check-ins recorded yet.</div> :
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 120, padding: "0 2px", overflowX: "auto" }}>
-          {(d.trend || []).map(t => (
-            <div key={t.date} title={t.date + " · " + t.present + " present" + (t.late ? " · " + t.late + " late" : "")} style={{ flex: "1 0 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-              <div style={{ width: "100%", maxWidth: 26, height: Math.max(2, Math.round((t.present || 0) / maxTrend * 96)), background: "linear-gradient(180deg,#4c6ef5,#3b5bdb)", borderRadius: "4px 4px 0 0" }}/>
-              <span className="mono" style={{ fontSize: 9, color: "var(--ink-500)", whiteSpace: "nowrap" }}>{String(t.date).slice(5)}</span>
-            </div>
-          ))}
-        </div>}
-      <p className="admin-hint" style={{ marginTop: 16 }}>Per-centre scoping, stars/behaviour, recognition and academic analytics land in the next phases (see the implementation plan). Late is measured against the resumption times in Settings → Attendance.</p>
-    </div>
-  );
-}
-
+/* `AdminDashboard` used to live here — an at-a-glance attendance and
+ * per-centre board reading `admin.dashboard.overview`. Nothing rendered it:
+ * the `dashboard` section mounts the M&E AnalyticsWorkspace, and the Overview
+ * covers the membership counts, so it had been unreachable code for as long as
+ * both of those have existed.
+ *
+ * THE OP IS DELIBERATELY KEPT. `admin.dashboard.overview` is read-only,
+ * admin-gated, centre-scope aware and covered by four tests including the
+ * scoping one — deleting tested behaviour to tidy away an orphan trades a real
+ * guarantee for a cosmetic one. It currently has no UI consumer, which is
+ * recorded here and in CLAUDE.md so the next reader does not "fix" it by
+ * rebuilding a third overview screen beside the two that already exist.
+ */
 function AdminTile({ n, l, onClick, loading }) {
   return (
     <button className="admin-tile" onClick={onClick}>
@@ -2703,7 +2655,7 @@ function MentorPromote({ centres, onClose, onDone }) {
         <div className="admin-fields-row">
           <FieldSelect label="Rank" value={rank} onChange={setRank}
             options={[{ value: "mentor", label: "Mentor — their class" }, { value: "lead", label: "Lead mentor — the whole centre" }]}/>
-          <FieldSelect label="Cohort" value={programme} onChange={setProgramme}
+          <FieldSelect label="Programme" value={programme} onChange={setProgramme}
             options={[{ value: "summer", label: "Summer School" }, { value: "ngg", label: "NGG Club" }, { value: "both", label: "Both" }]}/>
         </div>
         <div className="admin-fields-row">
@@ -5963,7 +5915,7 @@ function AdminBroadcast() {
   React.useEffect(() => { loadHistory(); }, []);
   const audienceLabel = {
     all: "every active member", Egbeda: "members at Egbeda", Ayobo: "members at Ayobo",
-    Summer: "Summer students", NGG: "NGG members",
+    Summer: "Summer School participant", NGG: "NGG member",
   }[d.audience] || "every active member";
   const send = async (e) => {
     e.preventDefault();
@@ -10800,7 +10752,7 @@ function AdminSettings() {
           const setA = (k, v) => setS(o => ({ ...o, attendance: { ...(o.attendance || {}), [k]: v } }));
           const rbt = a.resumptionByType || {};
           const setR = (type, v) => setS(o => ({ ...o, attendance: { ...(o.attendance || {}), resumptionByType: { ...((o.attendance || {}).resumptionByType || {}), [type]: v } } }));
-          const TYPES = [["student", "Summer students"], ["volunteer", "Volunteers"], ["default", "Everyone else (default)"]];
+          const TYPES = [["student", "Summer School participants"], ["volunteer", "Volunteers"], ["default", "Everyone else (default)"]];
           return (
             <React.Fragment>
               <FieldCheckbox label="Flag lateness at check-in" value={a.enabled !== false} onChange={v => setA("enabled", v)}/>
