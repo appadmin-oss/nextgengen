@@ -5570,11 +5570,118 @@ function CardDrawFailed({ id }) {
   );
 }
 
+/* The member card, in the Card Studio's contract.
+ *
+ * Two renderers meet here and neither should bend to the other. The studio's
+ * fronts are absolutely-positioned design pixels scaled by S against a design
+ * height H; NggcMemberCard is laid out in MILLIMETRES at a real 54 × 85mm,
+ * because it is a credential and its geometry is the specification (see
+ * docs/PRINT-SPEC.md). Redrawing it in this file's idiom would fork a shipped
+ * design — the card a member downloads from their dashboard, and the one
+ * NggcMemberCardExport prints — and the fork would drift within a season.
+ *
+ * So this is an ADAPTER, not a second card: the real renderer inside a box
+ * that reports the size the studio expects, with a CSS transform doing the
+ * scaling. 96dpi CSS gives 1mm = 96/25.4 px, which is how a millimetre design
+ * gets a pixel height to scale against. transform-origin at the top left so
+ * the scaled card sits where the unscaled one would have.
+ */
+const MM_PX = 96 / 25.4;
+function MemberCardStudioFront({ card, S, H }) {
+  const wMm = 54, hMm = 85;
+  const pxH = hMm * MM_PX;
+  // Fill the height the studio has allotted, exactly as its own fronts do.
+  const k = (H * (S || 1)) / pxH;
+  return (
+    <div style={{ width: wMm * MM_PX * k, height: pxH * k, overflow: "hidden", position: "relative" }}>
+      <div style={{ transform: "scale(" + k + ")", transformOrigin: "top left",
+        width: wMm * MM_PX, height: pxH }}>
+        {window.NggcMemberCard
+          ? <window.NggcMemberCard member={card} size="wallet" qrUrl={card && card.token
+              ? (window.location.origin || "") + "/q/" + card.token : ""}/>
+          : null}
+      </div>
+    </div>
+  );
+}
+
+/* ── The Card Studio's SUBJECTS ──────────────────────────────────────────────
+ *
+ * This was a boolean. `const isVol = mode === "volunteers"` was threaded
+ * through some twenty-five sites, each re-deciding what a volunteer is and
+ * what a student is: the noun, the id field, the rows source, the units they
+ * colour by, the renderer, the file name, the example id printed in the range
+ * hint, who the resend email goes to. A boolean can hold two subjects and NGG
+ * has three — members were printed from a drawer in the member roster instead,
+ * which is the same job in a different place through different code.
+ *
+ * So: one declaration per subject, and every site reads a field off it. Adding
+ * a fourth means adding a row, not finding twenty-five branches.
+ *
+ *   noun/nouns  what to call one and many of them
+ *   idOf        the row's own id — the three tables do not share a key name
+ *   load        the rows op; all three return { ok, cards[], program }
+ *   units       which vocabulary colours the card: centres, or volunteer tiers
+ *   resendKind  the `kind` the resend op takes, or "" where there is no resend
+ *   idEg        a real id from that subject, for the print-range hint
+ *   ready       the sentence under the count, which differs per subject
+ *               because what makes a card printable differs per subject
+ */
+const CARD_SUBJECTS = {
+  students: {
+    /* "Participants", not "Summer School": the other two tabs name PEOPLE, and
+       a tab row reading Summer School | NGG members | Volunteers mixes a
+       programme with two audiences. It is also the label this tab already had. */
+    id: "students", label: "Participants", noun: "verified participant", nouns: "verified participants",
+    ready: (w, h) => "Cards render for verified participants only — the ID and QR bind at parent consent. Print uses a true " + w + "\u00d7" + h + "mm per card.",
+    empty: "No verified participants yet — cards appear here the moment a parent consents.",
+    idOf: (c) => c.studentId, units: "centres", resendKind: "student", resendTo: "parent",
+    file: "participant-id-cards", idEg: "NGG/26/00", unitNoun: "centre",
+    load: () => NGGApi.admin.registration.cards(),
+    fixHint: "the participant's record",
+  },
+  volunteers: {
+    id: "volunteers", label: "Volunteers", noun: "volunteer", nouns: "volunteers",
+    ready: () => "Cards render for active volunteers — the ID and QR bind at approval. Colour + code come from the hierarchy tier.",
+    empty: "No active volunteers yet — cards appear here the moment one is approved.",
+    idOf: (c) => c.volunteerId, units: "tiers", resendKind: "volunteer", resendTo: "volunteer",
+    file: "volunteer-id-cards", idEg: "VOL-MEN-26-0", unitNoun: "tier",
+    load: () => NGGApi.admin.registration.volunteerCards(),
+    fixHint: "the tier on the volunteer's record",
+  },
+  /* NGG MEMBERS — the third subject, and the reason this table exists.
+   * `resendKind` is empty because there is no member resend op: the member
+   * dashboard issues its own card. An empty string rather than a lie, and the
+   * button reads the field rather than assuming every subject has one. */
+  members: {
+    id: "members", label: "NGG members", noun: "member", nouns: "members",
+    /* A member card is ID-1 (54 \u00d7 85mm, a wallet slot) and its geometry
+       lives in the renderer, not in the programme's trim setting — so this
+       subject declares its size fixed and the trim control says so rather
+       than implying it applies. */
+    fixedSize: true, trimMm: [54, 85],
+    ready: () => "Cards render for every member on the roster \u2014 the QR carries their member id, and the printed ID comes from their record. Fixed at 54\u00d785mm (ID-1), the size of a wallet slot.",
+    empty: "No members on the roster yet — cards appear here as members are enrolled.",
+    idOf: (c) => c.memberId, units: "centres", resendKind: "", resendTo: "",
+    file: "member-id-cards", idEg: "NGG/EG/00", unitNoun: "centre",
+    load: () => NGGApi.admin.registration.memberCards(),
+    fixHint: "the centre on the member's record",
+  },
+};
+/* Tab order, and the first entry is the studio's default — the two must not
+   disagree, or the tab that opens is not the tab that looks selected. */
+const CARD_SUBJECT_ORDER = ["students", "members", "volunteers"];
+
 function CardStudio() {
   const auth = (window.useAuth || (() => null))();
-  const [mode, setMode] = React.useState("students"); // students | volunteers
-  const [data, setData] = React.useState(null);       // student cards + program
-  const [vdata, setVdata] = React.useState(null);      // volunteer cards + program
+  /* Participants stay the front door. Members are an ADDITION to this studio,
+     and changing which tab opens first is a behaviour change for everybody who
+     already uses it — a separate decision from giving members a tab at all. */
+  const [mode, setMode] = React.useState("students"); // see CARD_SUBJECTS
+  /* Cards keyed by subject, not one useState per subject. Two states meant
+     every read site branched to pick one; a third would have meant a third
+     branch at every one of them. */
+  const [subjectData, setSubjectData] = React.useState({});
   const [centres, setCentres] = React.useState([]);
   const [tiers, setTiers] = React.useState([]);
   const [state, setState] = React.useState("loading");
@@ -5607,20 +5714,31 @@ function CardStudio() {
 
   const load = React.useCallback(() => {
     setState("loading");
+    /* Every subject's rows come from its own declaration, so a new subject
+       needs no new call here. A subject the operator cannot read (members are
+       gated on `people`, participants on `summer`) resolves to empty rather
+       than failing the whole studio: a Summer School coordinator should get
+       their own tab working, not an error page. */
+    const subjects = CARD_SUBJECT_ORDER.map(k => CARD_SUBJECTS[k]);
     Promise.all([
-      NGGApi.admin.registration.cards(), NGGApi.admin.registration.centres(),
-      NGGApi.admin.registration.volunteerCards(), NGGApi.admin.registration.hierarchy(),
+      Promise.all(subjects.map(sub => sub.load().catch(() => ({ cards: [], program: null })))),
+      NGGApi.admin.registration.centres(), NGGApi.admin.registration.hierarchy(),
     ])
-      .then(([c, ct, vc, h]) => { setData(c); setCentres(ct.centres || []); setVdata(vc); setTiers(h.tiers || []); setState("ready"); })
+      .then(([rows, ct, h]) => {
+        const next = {};
+        subjects.forEach((sub, i) => { next[sub.id] = rows[i] || { cards: [] }; });
+        setSubjectData(next);
+        setCentres(ct.centres || []); setTiers(h.tiers || []); setState("ready");
+      })
       .catch(e => setState((e.code || e.message) === "unauthorized" ? "need-auth" : "error"));
   }, []);
   React.useEffect(() => { load(); }, [load]);
   React.useEffect(() => { if (state === "need-auth" && auth && auth.isSignedIn) load(); }, [auth && auth.isSignedIn]);
   // Seed the size inputs from whichever dataset has loaded.
   React.useEffect(() => {
-    const pr = (data && data.program) || (vdata && vdata.program);
+    const pr = CARD_SUBJECT_ORDER.map(k => (subjectData[k] || {}).program).filter(Boolean)[0];
     if (pr) { setSizeW(Number(pr.widthMm) || 54); setSizeH(Number(pr.heightMm) || 75); }
-  }, [data, vdata]);
+  }, [subjectData]);
   const saveSize = async () => {
     setSizeMsg("");
     const w = Math.max(50, Math.min(60, Number(sizeW) || 54));
@@ -5644,7 +5762,8 @@ function CardStudio() {
   const warmedQr = React.useRef(false);
   React.useEffect(() => {
     if (warmedQr.current || state !== "ready") return;
-    const tokens = [...((data && data.cards) || []), ...((vdata && vdata.cards) || [])]
+    const tokens = CARD_SUBJECT_ORDER
+      .reduce((all, k) => all.concat((subjectData[k] || {}).cards || []), [])
       .map(c => String(c.token || "")).filter(Boolean);
     if (!tokens.length) return;
     warmedQr.current = true;
@@ -5676,9 +5795,14 @@ function CardStudio() {
       } catch (_) {}
     }, 1200);
     return () => clearTimeout(t);
-  }, [state, data, vdata]);
+  }, [state, subjectData]);
 
-  const isVol = mode === "volunteers";
+  /* One lookup, not a boolean. See CARD_SUBJECTS above: `isVol` could only
+     ever express two of three subjects, and every site re-decided what each
+     one meant. `S` is the subject; isVol survives only where the difference
+     really is "volunteers versus everyone else" — the units vocabulary. */
+  const S = CARD_SUBJECTS[mode] || CARD_SUBJECTS.students;
+  const isVol = S.units === "tiers";
   const resetInputs = () => { setMName(""); setMCode(""); setMColor(isVol ? "#00225F" : "#76B043"); };
   const clearRange = () => { setRmode(""); setDFrom(""); setDTo(""); setNFrom(""); setNTo(""); setChosen(new Set()); setPaste(""); setPasteMsg(""); };
   /* Same reason the centre filter clears: a range carried across rosters hides
@@ -5750,12 +5874,13 @@ function CardStudio() {
   };
 
   const resendId = async (card) => {
-    const kind = isVol ? "volunteer" : "student";
-    const id = isVol ? card.volunteerId : card.studentId;
-    if (!id || resending) return;
+    const kind = S.resendKind;
+    const id = S.idOf(card);
+    // No resend for members: they issue their own card from their dashboard.
+    if (!kind || !id || resending) return;
     const who = card.firstName || "this person";
     if (!(await dialog.confirm({ title: "Resend " + who + "'s ID?",
-      body: "Emails the digital ID and the scannable QR to the " + (isVol ? "volunteer" : "parent")
+      body: "Emails the digital ID and the scannable QR to the " + S.resendTo
             + ", and texts a link by SMS if a number is on file.",
       cta: "Send it again" }))) return;
     setResending(id); setNotice(""); setMsg("");
@@ -5826,8 +5951,8 @@ function CardStudio() {
   const hostFaces = () => Array.from(hostRef.current ? hostRef.current.querySelectorAll(".idcard") : []);
   // One slow card must not strand the run.
   const withBudget = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("face_timeout")), ms))]);
-  const cardName = (card) => (card.displayId || card.studentId || card.volunteerId || "card").replace(/[^\w.-]+/g, "-");
-  const setName = () => (isVol ? "volunteer" : "student") + "-id-cards";
+  const cardName = (card) => (card.displayId || S.idOf(card) || "card").replace(/[^\w.-]+/g, "-");
+  const setName = () => S.file;
 
   /* Takes the CARD, not an index. The preview list and the print list are no
      longer the same array — in pick mode you are looking at every candidate and
@@ -5990,7 +6115,7 @@ function CardStudio() {
         backs, duplex,
         sheet: "A4", trimW_mm: cardW, trimH_mm: cardH,
         bleed_mm: BLEED_MM, safe_mm: 3, marks: true, layers: true, intent: "FOGRA39",
-        jobName: [program.program, program.year, isVol ? "volunteers" : "students"].filter(Boolean).join(" "),
+        jobName: [program.program, program.year, S.id].filter(Boolean).join(" "),
         date: new Date().toISOString().slice(0, 10),
       });
       CE.download(pdf, setName() + "-print-cmyk.pdf", "application/pdf");
@@ -6028,7 +6153,7 @@ function CardStudio() {
   if (state === "need-auth") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 22 }}>Staff sign-in required</h1><button onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Sign in →</button></div>);
   if (state === "error") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load the studio</h1><button onClick={load} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
 
-  const allCards = (isVol ? (vdata && vdata.cards) : (data && data.cards)) || [];
+  const allCards = ((subjectData[mode] || {}).cards) || [];
   /* Everything downstream reads `cards` — the header count, the ZIP, the
      imposed PDF and the print zone. Filtering here rather than only in the
      preview is the point: a batch you can see is a batch you can print. */
@@ -6042,7 +6167,13 @@ function CardStudio() {
     : allCards;
   /* Range, applied AFTER the centre filter, because that is the order a
      coordinator says it in: "Egbeda, the ones from last week". */
-  const cardId = (c) => String(c.studentId || c.volunteerId || "");
+  /* The row's own id, per subject. This read `c.studentId || c.volunteerId`,
+     which is empty for a member — so every member card got the SAME React key
+     (""), and the pick set and the paste-a-list matcher keyed off it too: one
+     tick would have selected the whole roster, and switching subjects leaked
+     stale cards because React had no way to tell three identical keys apart.
+     S.idOf is the subject's declared id field. */
+  const cardId = (c) => String(S.idOf(c) || c.displayId || "");
   /* The number a human means by "cards 40 to 80" is the sequence in the printed
      ID — NGG/26/0041 — not a row id and not a position in this list, which
      shifts every time somebody else registers. Last run of digits, so both
@@ -6075,12 +6206,18 @@ function CardStudio() {
     if (rmode === "pick") return inCentre.filter(c => chosen.has(cardId(c)));
     return inCentre;
   })();
-  const program = ((isVol ? vdata : data) && (isVol ? vdata : data).program) || {};
+  const program = ((subjectData[mode] || {}).program) || {};
   // Physical card proportion (admin-set). The artwork's design canvas is 590×1004
   // (≈54×92mm); we keep the 590px width and derive the canvas height from the
   // configured aspect, so the whole studio + export + print reflect the size.
-  const cardW = Number(program.widthMm) || 54;
-  const cardH = Number(program.heightMm) || 75;
+  /* The card's real-world size. The SUBJECT gets first say: a member card is
+     ID-1 (54 × 85mm, a wallet slot) and its geometry lives in its renderer,
+     not in the Summer School programme's trim setting — reading the programme
+     for every subject had the export blurb promising a 54×75 trim for a card
+     that prints at 54×85, and the preview scaling was derived from the same
+     wrong ratio. Programme setting still governs the subjects it belongs to. */
+  const cardW = (S.trimMm && S.trimMm[0]) || Number(program.widthMm) || 54;
+  const cardH = (S.trimMm && S.trimMm[1]) || Number(program.heightMm) || 75;
   const CANVAS_H = Math.round(590 * cardH / cardW);
   const units = isVol ? tiers : centres;
   const tab = (m, label) => (
@@ -6110,8 +6247,12 @@ function CardStudio() {
         <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>CARD STUDIO · PRINT RUNS · {String(program.program || "")} {String(program.year || "")}</div>
         {/* "1 of 30 verified student ready" — the noun agrees with the TOTAL
             once there is a total in the sentence, not with the filtered count. */}
-        <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{cards.length}{cards.length !== allCards.length ? " of " + allCards.length : ""} {isVol ? "volunteer" : "verified student"}{(cards.length !== allCards.length ? allCards.length : cards.length) === 1 ? "" : "s"} ready</h1>
-        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0", maxWidth: 520 }}>{isVol ? "Cards render for active volunteers — the ID and QR bind at approval. Colour + code come from the hierarchy tier." : "Cards render for verified students only — the ID and QR bind at parent consent. Print uses a true " + cardW + "×" + cardH + "mm per card."}</p>
+        <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{cards.length}{cards.length !== allCards.length ? " of " + allCards.length : ""} {(cards.length !== allCards.length ? allCards.length : cards.length) === 1 ? S.noun : S.nouns} ready</h1>
+        {/* The subject's own sentence. This was a two-way branch and showed
+            the participants' one on the members tab — telling an operator
+            printing member cards that they "bind at parent consent" and print
+            at 54×75, neither of which is true of a member card. */}
+        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0", maxWidth: 520 }}>{S.ready(cardW, cardH)}</p>
         {/* WHICH STUDIO AM I IN.
             There are two, and for years neither said so — so which one an
             operator used depended on which link they happened to click. This
@@ -6120,9 +6261,10 @@ function CardStudio() {
             is the only one that can make an NGG member card or a card back.
             Said here rather than left as folklore. */}
         <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12.5, margin: "8px 0 0", maxWidth: 520, lineHeight: 1.5 }}>
-          This studio prints the <b style={{ color: "rgba(230,238,255,.8)" }}>standard</b> Summer School and volunteer
-          cards, whose layout lives in code. To draw a layout, bind it to fields, or make an{" "}
-          <b style={{ color: "rgba(230,238,255,.8)" }}>NGG member card</b> or a card back, use the{" "}
+          This studio prints the <b style={{ color: "rgba(230,238,255,.8)" }}>standard</b> cards for all three
+          subjects — Summer School participants, NGG members and volunteers — whose layouts live in
+          code. To <i>draw</i> a layout, bind it to your own fields, or make a card{" "}
+          <b style={{ color: "rgba(230,238,255,.8)" }}>back</b>, use the{" "}
           <a href="/designer" style={{ color: gold }}>Design Studio</a>. Every run from either is recorded in{" "}
           <b style={{ color: "rgba(230,238,255,.8)" }}>Control Room → People → ID cards</b>.
         </p>
@@ -6169,8 +6311,9 @@ function CardStudio() {
     </p>
 
     <div className="no-print" style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-      {tab("students", "Participants")}
-      {tab("volunteers", "Volunteers")}
+      {/* Generated, so a subject cannot exist in the table and be missing
+          here — the drift that left members with no tab at all. */}
+      {CARD_SUBJECT_ORDER.map(k => <React.Fragment key={k}>{tab(k, CARD_SUBJECTS[k].label)}</React.Fragment>)}
       <span style={{ width: 1, height: 26, background: "rgba(255,255,255,.16)", margin: "0 4px" }}/>
       {/* Print one site's batch at a time — that is how the cards are handed
           out — and, the reason this exists, find the records with no centre on
@@ -6264,7 +6407,7 @@ function CardStudio() {
                   return undated ? <><b>{undated}</b> {undated === 1 ? "card has" : "cards have"} no registration date on file and {undated === 1 ? "is" : "are"} left out of any date range — print those with{" "}<em>Whole batch</em> or by picking them.</> : null;
                 })()}</>
             : rmode === "number" && (nFrom || nTo)
-            ? <>ID numbers {nFrom || "the start"} to {nTo || "the end"} — read off the number printed on the card ({isVol ? "VOL-MEN-26-0" : "NGG/26/00"}<b>42</b>), not the position in this list, which moves every time somebody registers.</>
+            ? <>ID numbers {nFrom || "the start"} to {nTo || "the end"} — read off the number printed on the card ({S.idEg}<b>42</b>), not the position in this list, which moves every time somebody registers.</>
             : rmode === "pick"
             ? <>Tick the cards you want below. Useful for a reprint: the eleven that came back creased, not the whole run again.</>
             : <>Choose the dates, numbers or cards on the right. Until then this is the whole batch.</>}
@@ -6369,20 +6512,26 @@ function CardStudio() {
     </div>
 
     <div className="no-print" style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14, padding: 16, marginBottom: 30 }}>
-      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)", marginBottom: 10 }}>CARD PROPORTION — PRINT SIZE (MM)</div>
+      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)", marginBottom: 10 }}>CARD PROPORTION — PRINT SIZE (MM){S.fixedSize ? " · NOT USED BY THIS CARD" : ""}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>Width
-          <input type="number" min={50} max={60} step={1} value={sizeW} onChange={e => setSizeW(e.target.value)} style={{ width: 74, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
+          <input type="number" min={50} max={60} step={1} disabled={!!S.fixedSize} value={sizeW} onChange={e => setSizeW(e.target.value)} style={{ width: 74, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
         </label>
         <span style={{ color: "rgba(230,238,255,.5)" }}>×</span>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>Height
-          <input type="number" min={64} max={100} step={1} value={sizeH} onChange={e => setSizeH(e.target.value)} style={{ width: 74, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
+          <input type="number" min={64} max={100} step={1} disabled={!!S.fixedSize} value={sizeH} onChange={e => setSizeH(e.target.value)} style={{ width: 74, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
         </label>
         <span style={{ fontSize: 12, color: "rgba(230,238,255,.5)" }}>mm</span>
-        <button onClick={saveSize} style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>Save size</button>
+        {/* Disabled, not merely labelled: a control that cannot affect the
+            card in front of you should not accept input. It stays VISIBLE with
+            its reason, because an operator who cannot find the size box is
+            worse off than one who can see why it is inert. */}
+        <button onClick={saveSize} disabled={!!S.fixedSize} style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: S.fixedSize ? "rgba(255,255,255,.12)" : gold, color: S.fixedSize ? "rgba(230,238,255,.5)" : "#2b2100", fontWeight: 800, cursor: S.fixedSize ? "not-allowed" : "pointer" }}>Save size</button>
         {sizeMsg && <span role="alert" className="mono" style={{ fontSize: 12, color: sizeMsg[0] === "S" ? "#6fdc9d" : "#ff9a9a" }}>{sizeMsg}</span>}
       </div>
-      <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "10px 0 0" }}>Default is 54 × 75&nbsp;mm. Width 50–60, height 64–100. The card reflows to any proportion without distortion — preview, PNG/PDF export and print all follow.</p>
+      <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "10px 0 0" }}>{S.fixedSize
+        ? "The " + S.noun + " card is fixed at " + cardW + " × " + cardH + "\u00a0mm (ID-1, a wallet slot) and does not follow this setting. It governs the Summer School and volunteer cards."
+        : "Default is 54 × 75\u00a0mm. Width 50–60, height 64–100. The card reflows to any proportion without distortion — preview, PNG/PDF export and print all follow."}</p>
     </div>
 
     {/* Off-screen staging area — one card, only while a run is going. Placed
@@ -6393,9 +6542,19 @@ function CardStudio() {
       {hostCard && (
         <SafeBlock>
           <div className="card-pair">
-            {isVol ? <VolunteerCardFront card={hostCard} program={program} S={0.5} H={CANVAS_H}/>
-                   : <CardFront card={hostCard} program={program} S={0.5} H={CANVAS_H}/>}
-            <CardBack card={hostCard} program={program} S={0.5} H={CANVAS_H}/>
+            {/* One design per subject, and for members that design already
+                exists: NggcMemberCard is what the member downloads from their
+                own dashboard and what NggcMemberCardExport prints. Drawing a
+                second member card in this file's scaled-pixel idiom would be
+                a fork of a shipped design, and the two would drift — so the
+                member card is ADAPTED to this contract, not redrawn. */}
+            {mode === "members"
+              ? <MemberCardStudioFront card={hostCard} S={0.5} H={CANVAS_H}/>
+              : <>
+                  {isVol ? <VolunteerCardFront card={hostCard} program={program} S={0.5} H={CANVAS_H}/>
+                         : <CardFront card={hostCard} program={program} S={0.5} H={CANVAS_H}/>}
+                  <CardBack card={hostCard} program={program} S={0.5} H={CANVAS_H}/>
+                </>}
           </div>
         </SafeBlock>
       )}
@@ -6433,23 +6592,35 @@ function CardStudio() {
           <div className="no-print" style={{ position: "absolute", top: -12, right: -8, zIndex: 2, display: "flex", gap: 6 }}>
             <button onClick={() => setEditPhoto(card)} title="Re-crop, adjust or replace this photo"
               style={{ height: 30, padding: "0 12px", borderRadius: 15, border: "none", background: "#2f3f6b", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>Edit photo</button>
-            <button onClick={() => resendId(card)} disabled={!!resending} title="Resend this ID to the parent / volunteer (email + SMS)"
+            {/* Only where the subject has somewhere to send it. There is no
+                member resend op — a member issues their own card from their
+                dashboard — and a button that cannot do anything is worse than
+                a missing one, because it claims the feature exists. */}
+            {S.resendKind && <button onClick={() => resendId(card)} disabled={!!resending} title={"Resend this ID to the " + S.resendTo + " (email + SMS)"}
               style={{ height: 30, padding: "0 12px", borderRadius: 15, border: "none", background: "#2f3f6b", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>
-              {resending === (isVol ? card.volunteerId : card.studentId) ? "Sending…" : "Resend ID"}
-            </button>
+              {resending === S.idOf(card) ? "Sending…" : "Resend ID"}
+            </button>}
             <button onClick={() => exportPairPng(card)} disabled={!!exp} title="Download this card as PNG (front + back)"
               style={{ width: 30, height: 30, borderRadius: "50%", border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 13, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>↓</button>
           </div>
           <SafeBlock fallback={<CardDrawFailed id={card.displayId || card.studentId || card.volunteerId}/>}>
-            <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{isVol ? <VolunteerCardFront card={card} program={program} S={0.5} H={CANVAS_H}/> : <CardFront card={card} program={program} S={0.5} H={CANVAS_H}/>}</div>
+            <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{mode === "members"
+              ? <MemberCardStudioFront card={card} S={0.5} H={CANVAS_H}/>
+              : isVol ? <VolunteerCardFront card={card} program={program} S={0.5} H={CANVAS_H}/>
+                      : <CardFront card={card} program={program} S={0.5} H={CANVAS_H}/>}</div>
           </SafeBlock>
           <SafeBlock fallback={<CardDrawFailed id={card.displayId || card.studentId || card.volunteerId}/>}>
-            <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5} H={CANVAS_H}/></div>
+            {/* No back for members. The member card's reverse is a
+                published template (sys-member-back, in the Design Studio),
+                not a face this studio draws — and drawing the participant
+                back beside a member front would be a plain lie about what
+                comes off the printer. */}
+            {mode !== "members" && <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5} H={CANVAS_H}/></div>}
           </SafeBlock>
         </div>
         );
       })}
-      {!cards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>{isVol ? "No active volunteers yet — cards appear here the moment one is approved." : "No verified students yet — cards appear here the moment a parent consents."}</p>}
+      {!cards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>{S.empty}</p>}
     </div>
     {editPhoto && (
       <PhotoEditor

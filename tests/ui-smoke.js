@@ -318,6 +318,28 @@ function unzipDocumentXml(buf) {
   /* Volunteers get the same centre identity as students. VOL-3 is the legacy
      shape — a record filed before centres were captured — and must still draw
      a card rather than a hole. */
+  /* NGG MEMBERS — the studio's third subject. Two with a printed ID and one
+     without, because the point of the third tab is that the run shows you what
+     will come off the printer wrong. */
+  /* NOT named MEMBERS: data.js declares a global const MEMBERS, and the bundle
+     has no module closures, so a fixture var of that name is a redeclaration
+     that kills the whole page before it mounts. See CLAUDE.md on
+     concatenation. (No backticks in this comment either — it lives inside the
+     template literal that builds the fixture.) */
+  var MEMBER_CARDS = { program: PROGRAM, cards: [
+    { memberId: 'NGG-2026-0001', fullName: 'Adaeze Okafor', displayId: 'NGG/EG/0001',
+      displayIdMissing: false, level: 'B', type: 'NGG', status: 'active', track: 'Music',
+      disciplines: ['Music'], centre: { name: 'Egbeda', code: 'EG', color: '#76B043' },
+      token: 'NGG-2026-0001', photoUrl: '', joinDate: '2026-01-04', expiresAt: '' },
+    { memberId: 'NGG-2026-0002', fullName: 'Tunde Bakare', displayId: 'NGG/IJ/0002',
+      displayIdMissing: false, level: 'C', type: 'NGG', status: 'active', track: 'Coding',
+      disciplines: ['Coding'], centre: { name: 'Ijaiye', code: 'IJ', color: '#00225F' },
+      token: 'NGG-2026-0002', photoUrl: '', joinDate: '2026-02-11', expiresAt: '' },
+    { memberId: 'NGG-2026-0003', fullName: 'Ngozi Eze', displayId: 'NGG-2026-0003',
+      displayIdMissing: true, level: '', type: 'NGG', status: 'active', track: '',
+      disciplines: [], centre: { name: 'Egbeda', code: 'EG', color: '#76B043' },
+      token: 'NGG-2026-0003', photoUrl: '', joinDate: '', expiresAt: '' },
+  ] };
   var VOLS = { program: PROGRAM, cards: [
     { volunteerId: 'VOL-MEN-26-001', displayId: 'VOL-MEN-26-001', firstName: 'TUNDE', surname: 'BAKARE',
       role: 'Lead Mentor', tier: { name: 'Lead Mentor', code: 'LED', color: '#8A1538' }, token: 'V1', photoUrl: '',
@@ -361,6 +383,7 @@ function unzipDocumentXml(buf) {
     admin: deep({ registration: deep({
       cards: function () { return window.__fail === 'all' ? offline() : Promise.resolve(ROSTER); },
       volunteerCards: function () { return window.__fail === 'all' ? offline() : Promise.resolve(VOLS); },
+      memberCards: function () { return window.__fail === 'all' ? offline() : Promise.resolve(MEMBER_CARDS); },
       centres: function () { return Promise.resolve({ centres: [] }); },
       /* The roster's own read: how many children have no ID, split by what would
          actually fix it. Two ready, one held on a photo, one awaiting consent. */
@@ -2170,7 +2193,7 @@ function unzipDocumentXml(buf) {
     const faces = await studio.locator('.idcard').count();
     ok('/cards survives a record with no centre (' + faces + ' faces drawn)', faces >= 58);
     const body = await studio.evaluate(() => document.body.innerText);
-    ok('/cards is not blank', body.trim().length > 200 && /verified student/.test(body));
+    ok('/cards is not blank', body.trim().length > 200 && /verified participant/.test(body));
     ok('/cards offers the bulk exports', /PNG \(all, \.zip\)/.test(body) && /Print-ready PDF/.test(body));
 
     /* ── Centre identity on the printed card ────────────────────────────────
@@ -2321,7 +2344,7 @@ function unzipDocumentXml(buf) {
        it has to say it is a subset — "14 students ready" next to a 30-strong
        roster is how a partial run gets sent to a printer. */
     ok('…and the header says it is a subset, not the whole roster',
-      /15 of 30 verified students ready/.test(await studio.evaluate(() => document.body.innerText)));
+      /15 of 30 verified participants ready/.test(await studio.evaluate(() => document.body.innerText)));
 
     await batch.selectOption({ label: '⚠ No centre on file · 1' });
     await studio.waitForTimeout(500);
@@ -2334,7 +2357,62 @@ function unzipDocumentXml(buf) {
        you hit when a batch is nearly clean — the moment somebody is most
        likely to be reading the screen for reassurance. */
     ok('…in a sentence that survives a count of one',
-      /1 of 30 verified students ready/.test(noneText) && /This card prints without a centre/.test(noneText));
+      /1 of 30 verified participants ready/.test(noneText) && /This card prints without a centre/.test(noneText));
+
+    /* ── The studio's THIRD subject: NGG members ─────────────────────────────
+       Members had no studio. They were printed from a drawer inside the member
+       roster — the same job, in a different place, through different code —
+       while participants and volunteers shared this screen. What made a third
+       subject impossible was `isVol`, a boolean threaded through some
+       twenty-five sites, each re-deciding what a volunteer is and what a
+       student is. It is a subject table now (CARD_SUBJECTS), and these checks
+       are what say the third row of it actually renders rather than merely
+       existing. */
+    await studio.click('button:has-text("NGG members")');
+    await studio.waitForTimeout(700);
+    const memText = await studio.evaluate(() => document.body.innerText);
+    const memCards = await studio.locator('.card-pair').count();
+    ok('the studio has a third tab and it draws member cards (' + memCards + ' of 3)', memCards === 3);
+    ok('…counted as members, not as participants',
+      /3 members ready/.test(memText) && !/participants ready/.test(memText));
+    /* "SCAN TO VERIFY" appears in exactly one place in the codebase —
+       NggcMemberCard, the card a member downloads from their own dashboard and
+       the one NggcMemberCardExport prints. Its presence here is the proof that
+       the studio ADAPTED that renderer rather than growing a second drawing of
+       the member card in this file's own idiom, which would have drifted from
+       the shipped one within a season. */
+    ok('…rendering the SHIPPED member card, not a second drawing of it',
+      /SCAN TO VERIFY/i.test(memText));
+    /* The blank this whole subject exposed: card_row_member falls back to the
+       internal memberId when no printed ID is assigned, which keeps the card
+       from printing blank and hid the problem — the member roster filters and
+       counts exactly these people. The row carries displayIdMissing now. */
+    ok('…and a member with no printed ID assigned is named as such, not silently printed',
+      memText.indexOf('NGG-2026-0003') !== -1);
+    /* The member card is ID-1 and its trim is NOT the Summer School
+       programme's setting. Reading the programme for every subject had the
+       export blurb promising an exact 54×75 trim for a card that prints at
+       54×85, and the preview was scaled from the same wrong ratio — so the
+       studio described a card it was not producing. */
+    ok('…the member card states its own ID-1 trim, not the programme trim',
+      /54\s*[×x]\s*85/.test(memText) && !/exact 54×75 mm trim/.test(memText));
+    ok('…and the trim control says it does not govern this card, and is inert',
+      /NOT USED BY THIS CARD/i.test(memText)
+      && (await studio.locator('button:has-text("Save size")').isDisabled()));
+    /* No resend for members — they issue their own card from the member
+       dashboard — so the button must be absent rather than dead. */
+    ok('…with no dead Resend ID control on a subject that has no resend op',
+      (await studio.locator('button:has-text("Resend ID")').count()) === 0);
+
+    /* Switching back must restore the participant view intact: the subject
+       table swap replaced two useState objects with one keyed store, and a
+       stale key there would show one subject's cards under another's heading. */
+    await studio.click('button:has-text("Participants")');
+    await studio.waitForTimeout(700);
+    const backText = await studio.evaluate(() => document.body.innerText);
+    ok('…and going back to Participants restores that subject, not a mixture',
+      /30 verified participants ready/.test(backText)
+      && (await studio.locator('.card-pair').count()) === 30);
 
     /* ── Printing a RANGE, not the roster ────────────────────────────────────
      * "Everybody" is the rarest print run there is. The real ones are: the
@@ -2356,7 +2434,7 @@ function unzipDocumentXml(buf) {
       (await studio.locator('.card-pair').count()) === 7);
     const dateText = await studio.evaluate(() => document.body.innerText);
     ok('…and the header counts the slice against the batch, not the roster',
-      /Printing 7 of 30/.test(dateText) && /7 of 30 verified students ready/.test(dateText));
+      /Printing 7 of 30/.test(dateText) && /7 of 30 verified participants ready/.test(dateText));
     /* The card with no date is left OUT of a date range and SAID so. Sweeping it
        in would make "print this week's intake" quietly reprint the oldest record
        in the system; dropping it silently would lose a child a card. */
