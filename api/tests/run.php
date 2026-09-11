@@ -5298,6 +5298,92 @@ chk('runs: every card op is gated on the member desk', (function () {
         && backend_dispatch('admin.card.run.record', ['requesterId' => 'NGG-2025-0700', 'items' => []])['error'] === 'forbidden';
 })());
 
+/* ── The member's PRINTED ID ───────────────────────────────────────────────
+   Summer School minted participant IDs from the start; members got nothing,
+   so every imported member carried a blank and the card fell back to the
+   internal memberId — "NGG-2025-0740" where "026-014" belonged. */
+chk('member ids: minted in the workbook shape, from the intake year', (function () {
+    $id = member_mint_display_id(['cohort' => '2024', 'memberId' => 'X']);
+    // YYY-NNN: the intake year's last three digits, then a serial.
+    return (bool)preg_match('/^024-\d{3}$/', $id);
+})());
+chk('member ids: the intake year is read from cohort, then joinDate, then now', (function () {
+    $now = (int)gmdate('Y');
+    return member_intake_year(['cohort' => '2023']) === 2023
+        && member_intake_year(['cohort' => '023-014']) === 2023
+        && member_intake_year(['joinDate' => '2022-04-01']) === 2022
+        && member_intake_year([]) === $now
+        // A nonsense cohort must not produce a nonsense year.
+        && member_intake_year(['cohort' => 'Cohort A']) === $now;
+})());
+chk('member ids: never the Summer School shape', (function () {
+    // A participant is CODE-YY-NNN (centre-prefixed, one season); a member is
+    // YYY-NNN (year-prefixed, an intake). They must not be confusable.
+    $id = member_mint_display_id(['cohort' => '2026']);
+    return !preg_match('/^[A-Z]{2,4}-\d{2}-/', $id);
+})());
+chk('member ids: issued once and never reissued', (function () {
+    db_insert('members', ['memberId' => 'NGG-2025-0750', 'fullName' => 'Mint Once', 'email' => 'mint750@example.com',
+        'type' => 'NGG', 'status' => 'active', 'cohort' => '2026', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $row = db_row('SELECT * FROM members WHERE memberId = ?', ['NGG-2025-0750']);
+    $first = member_ensure_display_id($row);
+    $again = member_ensure_display_id(db_row('SELECT * FROM members WHERE memberId = ?', ['NGG-2025-0750']));
+    // A printed card is in somebody's wallet; editing the record must not
+    // invalidate it by handing out a new number.
+    return $first !== '' && $first === $again
+        && db_row('SELECT displayId FROM members WHERE memberId = ?', ['NGG-2025-0750'])['displayId'] === $first;
+})());
+chk('member ids: a gap in the numbering is NOT reused', (function () {
+    /* The reason the old importer refused to invent an id: a card printed as
+       019-002 whose workbook row never reached this database leaves 002 free
+       by a COUNT, and minting it hands a second person a number already
+       laminated onto somebody's card. Minting takes the HIGHEST serial plus
+       one, so the gap stays a gap. */
+    db_insert('members', ['memberId' => 'NGG-GAP-A', 'fullName' => 'Gap A', 'email' => 'gapa@example.com',
+        'type' => 'NGG', 'status' => 'active', 'displayId' => '019-001', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'NGG-GAP-C', 'fullName' => 'Gap C', 'email' => 'gapc@example.com',
+        'type' => 'NGG', 'status' => 'active', 'displayId' => '019-005', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    /* Two rows, highest serial 005. COUNT+1 would be 003 — free, below the
+       max, and possibly already on a printed card. MAX+1 is 006. */
+    $next = member_mint_display_id(['cohort' => '2019']);
+    return $next === '019-006';
+})());
+chk('member ids: a serial past 9 still sorts as a number, not as text', (function () {
+    for ($i = 8; $i <= 11; $i++) {
+        db_insert('members', ['memberId' => 'NGG-SEQ-' . $i, 'fullName' => 'Seq ' . $i,
+            'email' => 'seq' . $i . '@example.com', 'type' => 'NGG', 'status' => 'active',
+            'displayId' => '021-' . str_pad((string)$i, 3, '0', STR_PAD_LEFT),
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    // A text MAX() would answer "009" here and mint a duplicate.
+    return member_mint_display_id(['cohort' => '2021']) === '021-012';
+})());
+chk('member ids: two members minted in the same year do not collide', (function () {
+    $a = member_mint_display_id(['cohort' => '2027']);
+    db_insert('members', ['memberId' => 'NGG-2025-0751', 'fullName' => 'Serial A', 'email' => 'sa751@example.com',
+        'type' => 'NGG', 'status' => 'active', 'displayId' => $a, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $b = member_mint_display_id(['cohort' => '2027']);
+    return $a !== $b && str_starts_with($a, '027-') && str_starts_with($b, '027-');
+})());
+chk('member ids: the admin desk issues one at creation', (function () use ($CARDADM) {
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => $CARDADM,
+        'data' => ['fullName' => 'Desk Created', 'email' => 'desk752@example.com', 'type' => 'NGG', 'centre' => 'Egbeda']]);
+    if (empty($r['ok'])) return false;
+    $row = db_row('SELECT displayId FROM members WHERE email = ?', ['desk752@example.com']);
+    return $row && preg_match('/^\d{3}-\d{3}$/', (string)$row['displayId']);
+})());
+chk('member ids: the backlog can be issued in bounded passes', (function () use ($CARDADM) {
+    db_insert('members', ['memberId' => 'NGG-2025-0760', 'fullName' => 'Backlog One', 'email' => 'bk760@example.com',
+        'type' => 'NGG', 'status' => 'active', 'displayId' => '', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.members.issueIds', ['requesterId' => $CARDADM, 'limit' => 500]);
+    if (empty($r['ok'])) return false;
+    $after = db_row("SELECT COUNT(*) c FROM members WHERE COALESCE(displayId,'') = ''")['c'];
+    return (int)$after === 0 && (int)$r['remaining'] === 0 && $r['count'] >= 1;
+})());
+chk('member ids: issuing the backlog is gated on the member desk', (function () {
+    return backend_dispatch('admin.members.issueIds', ['requesterId' => 'NGG-2025-0700'])['error'] === 'forbidden';
+})());
+
 /* ── NGG member card rows: the studio's third subject ──────────────────────
    The Card Studio printed participants and volunteers and left members to a
    drawer in the member roster. admin.mcards.data gives members the same
@@ -19900,9 +19986,29 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         ['displayId' => 'IMP-020', 'fullName' => ''],
         $rowFor('IMP-021', ['status' => 'left the programme']),
     ], ['apply' => true]);
-    chk('roster import: a row with no member ID is refused, not invented', $bad['failed'] === 2);
-    chk('roster import: …and the refusal says which row and why',
-        (bool)array_filter($bad['rows'], fn($r) => $r['action'] === 'failed' && in_array('no member ID', $r['reasons'], true)));
+    /* THIS REVERSES A DELIBERATE EARLIER DECISION, and the old test's name
+       said so: "refused, not invented". The reasoning was sound — inventing an
+       id risks colliding with a card already printed but whose workbook row
+       never reached this database.
+       
+       It is reversed because the workbook is filled in by hand at a centre and
+       the ID column is the one most often left for later, so the rows most
+       needing to be in the system were the ones being refused, and the remedy
+       was to type an id into a spreadsheet. The original risk is answered
+       rather than ignored: member_mint_display_id takes the HIGHEST known
+       serial plus one, never a gap, so a minted id can only collide with a
+       card that is both unknown to this database and numbered above the entire
+       known roster. The import also says which ids it issued, so an operator
+       can reconcile. A row with no NAME is still refused — nothing can mint
+       that. */
+    chk('roster import: a row with no member ID is imported, and issued one', $bad['failed'] === 1);
+    /* The promise is unchanged — a refusal names the row and the reason — but
+       the reason that survives is the one nothing can mint. */
+    chk('roster import: …and a refusal still says which row and why',
+        (bool)array_filter($bad['rows'], fn($r) => $r['action'] === 'failed' && in_array('no name', $r['reasons'], true)));
+    chk('roster import: …and an issued member ID is reported, not silently applied',
+        (bool)array_filter($bad['rows'], fn($r) => $r['action'] !== 'failed'
+            && (bool)array_filter($r['warnings'] ?? [], fn($w) => str_contains((string)$w, 'issued member ID'))));
     chk('roster import: a status the app cannot count lands as inactive, with a note',
         $get('IMP-021')['status'] === 'inactive'
         && (bool)array_filter($bad['rows'], fn($r) => $r['ref'] === 'IMP-021' && !empty($r['warnings'])));

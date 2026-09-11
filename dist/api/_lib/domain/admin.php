@@ -322,6 +322,12 @@ function admin_members_upsert(array $p): array {
     $insert['role'] = $insert['role'] ?? ($data['role'] ?? 'member');
     $insert['createdAt'] = now_iso();
     $insert['updatedAt'] = now_iso();
+    /* A member gets their printed ID at creation, as a participant always
+       has. Left blank it falls back to the internal memberId on the card —
+       see domain/member-id.php. */
+    if (trim((string)($insert['displayId'] ?? '')) === '') {
+        $insert['displayId'] = member_mint_display_id($insert);
+    }
     db_insert('members', $insert);
     if (is_admin_role((string)$insert['role'])) staff_invite_email($newId, (string)$insert['role']);
     audit('admin.member.create', $g['requester']['memberId'], $newId, [], (string)($p['ip'] ?? ''));

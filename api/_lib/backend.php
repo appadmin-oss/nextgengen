@@ -81,6 +81,7 @@ function backend_dispatch(string $op, array $args = []): array {
                declares its own capability and every row comes back with its
                own verdict — see _lib/domain/members-bulk.php for the guards
                (self, staff tier, centre scope, bounds). */
+            'admin.members.issueIds'    => 'admin_members_issue_ids',
             'admin.members.bulk'      => 'admin_members_bulk',
             'admin.members.ids'       => 'admin_members_ids',
             'admin.members.upsert'    => 'admin_members_upsert',

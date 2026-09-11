@@ -219,7 +219,10 @@ function admin_club_promote(array $p): array {
      * makes sign-in and the reminders work at once. */
     $guardianEmail = trim((string)($s['parentEmail'] ?? ''));
     $guardianPhone = trim((string)($s['guardianPhone'] ?? ''));
-    db_insert('members', [
+    /* The promoted participant becomes a MEMBER, so they get a member's
+       printed ID — year-prefixed, not the centre-prefixed participant one
+       they carried through the summer. */
+    $__m = [
         'memberId' => $newId, 'fullName' => $s['fullName'],
         'email' => $guardianEmail, 'type' => 'NGG',
         'status' => 'active', 'role' => 'member', 'centre' => $s['centre'] ?: 'Egbeda',
@@ -231,7 +234,9 @@ function admin_club_promote(array $p): array {
         'joinDate' => gmdate('Y-m-d'),
         'notes' => 'Promoted from Summer ' . $s['studentId'] . ' (' . $s['cohortId'] . ')',
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
-    ]);
+    ];
+    if (trim((string)($__m['displayId'] ?? '')) === '') $__m['displayId'] = member_mint_display_id($__m);
+    db_insert('members', $__m);
 
     /* And a way in, when there is an address to send it to. Same set-password
        link the application path mints, for the same reason: otherwise every
