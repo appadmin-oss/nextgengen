@@ -296,19 +296,37 @@ query now. New list code that loops queries is a defect, not a slow path.
 
 Two studios, one record. Say which is which in any UI that mentions them.
 
-- **Card Studio** (`/cards`) prints the **standard** Summer School and
-  volunteer cards; their layout is hand-coded.
+- **Card Studio** (`/cards`) prints the **standard** cards, hand-coded, for
+  all three subjects — a tab each for participants, NGG members and
+  volunteers, declared once in **`CARD_SUBJECTS`** (`page-other.jsx`). Adding
+  a subject is a row in that table. It replaced an `isVol` boolean threaded
+  through ~25 sites, which could hold two subjects and no more; do not
+  reintroduce a per-subject branch anywhere that table can answer.
 - **Design Studio** (`/designer`) draws, binds, publishes and prints
-  templates, including **member** cards and card **backs**.
+  templates, including card **backs**. Its workspace has two modes:
+  **design** (layers | canvas | properties) and **print**
+  (canvas | records, editing rails hidden), so the canvas is never displaced
+  by the batch panel — see `.dsn-work.is-printing`.
 - **People → ID cards** is the print log and one person's card history for
-  both.
+  all of them.
 
 Architecture:
 
-- **One renderer, `tplToFabric()`.** The designer canvas, the roster preview
-  and the 300-DPI export are the same function at three scales. Geometry is in
-  design units on a 590-wide grid. Never fork the renderer for a new surface —
-  what you see would stop being what prints.
+- **One renderer per card, never two.** `tplToFabric()` serves the designer
+  canvas, the roster preview and the 300-DPI export at three scales; geometry
+  is in design units on a 590-wide grid. The hand-coded cards have the same
+  rule: `NggcMemberCard` is the member card everywhere it appears, and where a
+  surface needs a different contract it gets an **adapter**
+  (`MemberCardStudioFront` wraps the millimetre-based renderer for the Card
+  Studio's scaled-pixel contract). Never fork a card into a second drawing —
+  what you see would stop being what prints, and the two would drift within a
+  season. `tests/ui-smoke.js` guards this by asserting a string that exists in
+  exactly one renderer.
+- **A card's real-world size comes from its subject first**, the programme
+  setting second (`S.trimMm || program.widthMm`). A member card is ID-1
+  (54 × 85mm) and its geometry is its renderer's, not a programme setting;
+  reading the programme for every subject had the studio describing a trim it
+  was not printing.
 - Rendering happens **in the browser** (Fabric + jsPDF via `loadVendor`)
   because the host has no headless renderer. Not a shortcut; a constraint.
 - `TPL_FIELDS` in `card-template.jsx` is the binder — `{{field}}` substitution
@@ -408,7 +426,16 @@ one reintroduces the failure.
   own.
 - **A per-row query inside a list serialiser.**
 - **A filter applied to the drawn page** rather than above the page cap.
-- **A forked card renderer** for a new preview or export surface.
+- **A forked card renderer** for a new preview or export surface. Adapt at the
+  boundary instead.
+- **A boolean where a domain has three cases.** `isVol` is the worked example:
+  it was cheap at two subjects and blocked the third outright.
+- **A control that cannot act, left visible and enabled.** Disable it and say
+  why (the trim box on a fixed-size card), or don't render it (a resend button
+  for a subject with no resend op).
+- **A media query standing in for a panel's own width.** Container queries
+  exist; `@media (max-width: N)` silently lies the moment the panel stops
+  being the width of the window.
 - **A cached public op with no invalidation topic.**
 - **Inline style grids** where a class belongs.
 - **The entity called a cohort in user-facing copy**, and **"student" for a

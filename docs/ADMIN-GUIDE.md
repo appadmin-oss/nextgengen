@@ -455,9 +455,23 @@ on screen, so you do not have to remember which is which.
 
 | | **Card Studio** (`/cards`) | **Design Studio** (`/designer`) |
 |---|---|---|
-| What it is | Prints the **standard** Summer School and volunteer cards | Draws layouts, binds them to member data, publishes them, prints them |
+| What it is | Prints the **standard** cards for all three subjects | Draws layouts, binds them to your own fields, publishes them, prints them |
 | Layout lives | in code — fixed | in a template you edit |
-| Use it when | you want the standard card, in quantity | you want a **member** card, a card **back**, or a layout change |
+| Use it when | you want the standard card, in quantity | you want a card **back**, or a layout change |
+
+The Card Studio has a tab per subject: **Participants**, **NGG members** and
+**Volunteers**. Each one prints that subject's own standard card, and each
+says what is true of it — a member card is fixed at 54 × 85 mm (ID-1, a
+wallet slot), so the trim setting on that screen is switched off with a note
+saying so; it governs the Summer School and volunteer cards only. Members
+have no *Resend ID* button because a member issues their own card from their
+dashboard.
+
+A member with no printed ID assigned still prints, falling back to their
+internal member id rather than a blank — but the studio and the Design
+Studio's batch list both **flag** it, and the member roster's **Missing:
+printed ID** filter is the list of exactly those people. Fix the record
+before laminating.
 
 **People → ID cards** is the record of both. Two tabs:
 
