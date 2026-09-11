@@ -6850,3 +6850,80 @@ body.own-chrome .fab-top { display: none; }
 }
 /* The segment that is hovered lifts above its neighbours' shared edge. */
 .dsn-exports .btn:nth-child(-n+3):hover:not(:disabled) { position: relative; z-index: 1; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CARD STUDIO (/cards) — the same system, applied
+   ═══════════════════════════════════════════════════════════════════════════
+   This screen was built with 102 inline style objects and 21 classes, which
+   is why it read as rough: thirteen buttons carried FOUR corner radii and
+   EIGHT different paddings, fourteen fields were near-copies of each other,
+   and nine font sizes appeared where the scale has five. Not one bad
+   decision — a hundred un-made ones, each reasonable where it was written.
+
+   Inline styles beat a stylesheet, so consistency here is not something CSS
+   could impose from outside: the chrome has to come out of the markup. These
+   classes are the same tokens the Design Studio uses, so the two studios are
+   now one product rather than two that share a colour.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.cs-btn {
+  height: var(--dsn-ctl); min-height: var(--dsn-ctl);
+  padding: 0 var(--dsn-sp-4);
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--dsn-sp-2);
+  border-radius: var(--dsn-r-control);
+  border: 1px solid var(--dsn-line);
+  background: var(--dsn-s2); color: var(--dsn-ink);
+  font: 600 var(--dsn-t-ctl)/1 var(--font-sans, system-ui, sans-serif);
+  cursor: pointer; white-space: nowrap;
+  transition: background .12s ease, border-color .12s ease;
+}
+.cs-btn:hover:not(:disabled) { background: var(--dsn-s3); border-color: var(--dsn-line-2); }
+.cs-btn:disabled { opacity: .38; cursor: not-allowed; }
+.cs-btn:focus-visible { outline: 2px solid var(--dsn-gold); outline-offset: 2px; }
+/* The accent, spent once per surface on the act the screen exists for. */
+.cs-btn.is-primary {
+  background: var(--dsn-gold); border-color: var(--dsn-gold);
+  color: var(--dsn-gold-ink); font-weight: 700;
+}
+.cs-btn.is-primary:hover:not(:disabled) { background: #ffbe3d; border-color: #ffbe3d; }
+/* A selected tab is a state, not the live action — dim accent, as in the
+   Design Studio's tool row. */
+.cs-btn.is-on { background: var(--dsn-gold-dim); border-color: rgba(245,176,38,0.55); color: #ffd98a; }
+.cs-btn-pill { border-radius: var(--dsn-r-pill); padding: 0 var(--dsn-sp-4); }
+.cs-btn-lg { height: 44px; min-height: 44px; padding: 0 var(--dsn-sp-5); font-size: var(--dsn-t-body); }
+
+.cs-field {
+  height: var(--dsn-ctl); box-sizing: border-box;
+  padding: 0 var(--dsn-sp-3);
+  border-radius: var(--dsn-r-control);
+  border: 1px solid var(--dsn-line);
+  background: var(--dsn-s2); color: var(--dsn-ink);
+  font: 500 var(--dsn-t-ctl)/1 var(--font-sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+}
+.cs-field:hover { background: var(--dsn-s3); border-color: var(--dsn-line-2); }
+.cs-field:focus-visible { outline: 2px solid var(--dsn-gold); outline-offset: 2px; }
+select.cs-field {
+  appearance: none; -webkit-appearance: none; padding-right: 30px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238d9ab8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 11px center;
+}
+select.cs-field option { background: var(--dsn-s1); color: var(--dsn-ink); }
+.cs-field::placeholder { color: var(--dsn-ink-4); }
+
+.cs-box {
+  background: var(--dsn-s1);
+  border: 1px solid var(--dsn-line);
+  border-radius: var(--dsn-r-surface);
+  padding: var(--dsn-sp-4);
+}
+.cs-box-cap {
+  font: 700 var(--dsn-t-meta)/1 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .16em; text-transform: uppercase; color: var(--dsn-ink-3);
+  display: block; margin-bottom: var(--dsn-sp-3);
+}
+.cs-div { width: 1px; align-self: stretch; background: var(--dsn-line); margin: 0 var(--dsn-sp-2); }
+.cs-meta {
+  font: 500 var(--dsn-t-meta)/1.5 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .08em; color: var(--dsn-ink-3);
+}
+.cs-hint { font-size: var(--dsn-t-body); line-height: 1.6; color: var(--dsn-ink-2); max-width: 68ch; }

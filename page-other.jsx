@@ -6221,7 +6221,8 @@ function CardStudio() {
   const CANVAS_H = Math.round(590 * cardH / cardW);
   const units = isVol ? tiers : centres;
   const tab = (m, label) => (
-    <button onClick={() => switchMode(m)} style={{ padding: "9px 18px", borderRadius: 99, border: "1px solid " + (mode === m ? gold : "rgba(255,255,255,.18)"), background: mode === m ? gold : "transparent", color: mode === m ? "#2b2100" : "#eef2fb", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>{label}</button>
+    <button onClick={() => switchMode(m)} aria-pressed={mode === m}
+      className={"cs-btn cs-btn-pill" + (mode === m ? " is-on" : "")}>{label}</button>
   );
   return shell(<>
     <style>{`
@@ -6277,9 +6278,9 @@ function CardStudio() {
           ↓ PNG (all, .zip)
         </button>
         <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Resolution
-          <select value={dpi} onChange={e => setDpi(Number(e.target.value))} disabled={!!exp}
+          <select value={dpi} onChange={e => setDpi(Number(e.target.value))} disabled={!!exp} className="cs-field"
             title="Raster resolution of the card artwork inside the PDF. 350 DPI is the offset standard; 300 is the digital-press floor; 600 is for line art and is slow and large."
-            style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}>
+            >
             <option value={300}>300 DPI — digital press</option>
             <option value={350}>350 DPI — offset standard</option>
             <option value={600}>600 DPI — line art (slow)</option>
@@ -6292,9 +6293,9 @@ function CardStudio() {
           Verify QR codes
         </label>
         <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Front/back flip
-          <select value={duplex} onChange={e => setDuplex(e.target.value)} disabled={!!exp}
+          <select value={duplex} onChange={e => setDuplex(e.target.value)} disabled={!!exp} className="cs-field"
             title="How the press turns the sheet between sides — ask your printer. The wrong axis puts every back on the wrong front."
-            style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}>
+            >
             <option value="long-edge">Long edge — work-and-turn</option>
             <option value="short-edge">Short edge — work-and-tumble</option>
             <option value="none">No flip — align by hand</option>
@@ -6331,7 +6332,7 @@ function CardStudio() {
           have already gone looking for the problem is not a warning. */}
       {noCentreCount > 0 && pick !== NO_CENTRE && (
         <button onClick={() => setPick(NO_CENTRE)}
-          style={{ minHeight: 40, padding: "9px 14px", borderRadius: 10, border: "1px solid rgba(245,176,38,.5)", background: "rgba(245,176,38,.14)", color: "#ffce54", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+          className="cs-btn is-on">
           ⚠ {noCentreCount} with no centre
         </button>
       )}
@@ -6352,33 +6353,33 @@ function CardStudio() {
       {rmode === "date" && (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "rgba(230,238,255,.7)" }}>
           <input type="date" value={dFrom} onChange={e => setDFrom(e.target.value)} aria-label="Registered from"
-            style={{ minHeight: 40, padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}/>
+            />
           to
           <input type="date" value={dTo} onChange={e => setDTo(e.target.value)} aria-label="Registered to"
-            style={{ minHeight: 40, padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}/>
+            />
           {/* The run people actually want, one click instead of two date pickers. */}
           {[["Last 7 days", 7], ["Last 30 days", 30]].map(([label, days]) => (
             <button key={days} onClick={() => {
               const t = new Date(); const f = new Date(t.getTime() - (days - 1) * 86400000);
               setDFrom(f.toISOString().slice(0, 10)); setDTo(t.toISOString().slice(0, 10));
-            }} style={{ minHeight: 34, padding: "6px 11px", borderRadius: 99, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#cdd6ea", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
+            }} className="cs-btn cs-btn-pill">{label}</button>
           ))}
         </span>
       )}
       {rmode === "number" && (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "rgba(230,238,255,.7)" }}>
           <input type="number" min={1} value={nFrom} onChange={e => setNFrom(e.target.value)} placeholder="from" aria-label="ID number from"
-            style={{ width: 92, minHeight: 40, padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13, fontFamily: "var(--font-mono, monospace)" }}/>
+            className="cs-field" style={{ width: 92, fontFamily: "var(--font-mono, monospace)" }}/>
           to
           <input type="number" min={1} value={nTo} onChange={e => setNTo(e.target.value)} placeholder="to" aria-label="ID number to"
-            style={{ width: 92, minHeight: 40, padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13, fontFamily: "var(--font-mono, monospace)" }}/>
+            className="cs-field" style={{ width: 92, fontFamily: "var(--font-mono, monospace)" }}/>
         </span>
       )}
       {rmode === "pick" && (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "rgba(230,238,255,.7)" }}>
           <b className="mono" style={{ color: chosen.size ? "#6fdc9d" : "rgba(230,238,255,.55)" }}>{chosen.size} picked</b>
           <button onClick={() => setChosen(new Set(chosen.size === inCentre.length ? [] : inCentre.map(cardId)))}
-            style={{ minHeight: 34, padding: "6px 11px", borderRadius: 99, border: "1px solid rgba(255,255,255,.22)", background: "transparent", color: "#cdd6ea", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+            className="cs-btn cs-btn-pill">
             {chosen.size === inCentre.length ? "Clear all" : "Select all " + inCentre.length}
           </button>
         </span>
@@ -6418,7 +6419,7 @@ function CardStudio() {
                 mental note — pasting it beats hunting 200 previews for twelve. */}
             <input value={paste} onChange={e => setPaste(e.target.value)} placeholder="…or paste IDs: NGG/26/0041, NGG/26/0043"
               aria-label="Paste card IDs"
-              style={{ flex: "1 1 260px", minWidth: 200, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13 }}/>
+              style={{ flex: "1 1 260px", minWidth: 200 }}/>
             <button onClick={() => {
               /* Matched on the ID or the printed display ID, case- and
                  separator-insensitive, because the list is copied out of a
@@ -6437,7 +6438,7 @@ function CardStudio() {
               setPasteMsg(miss.length
                 ? (wanted.length - miss.length) + " matched · not in this batch: " + miss.slice(0, 6).join(", ") + (miss.length > 6 ? " +" + (miss.length - 6) : "")
                 : wanted.length + " matched.");
-            }} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid " + gold, background: "transparent", color: gold, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Add these</button>
+            }} className="cs-btn">Add these</button>
             {pasteMsg && <span role="alert" className="mono" style={{ fontSize: 12, color: /not in this batch|Nothing/.test(pasteMsg) ? "#ffce54" : "#6fdc9d" }}>{pasteMsg}</span>}
           </div>
         )}
@@ -6465,10 +6466,12 @@ function CardStudio() {
         {!units.length && <span style={{ fontSize: 13, color: "rgba(230,238,255,.55)" }}>{isVol ? "No tiers yet — add the first below. Volunteer cards colour by tier." : "No centres yet — add the first below. New registrations then pick from this list."}</span>}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        <input value={mName} onChange={e => setMName(e.target.value)} placeholder={isVol ? "Tier name (Team Lead)" : "Centre name (Ijaiye)"} style={{ flex: "1 1 180px", padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14 }}/>
-        <input value={mCode} onChange={e => setMCode(e.target.value.toUpperCase())} placeholder={isVol ? "CODE (LED)" : "CODE (IJ)"} maxLength={4} style={{ width: 110, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
+        <input value={mName} onChange={e => setMName(e.target.value)} className="cs-field" style={{ flex: "1 1 180px" }}
+          placeholder={isVol ? "Tier name (Team Lead)" : "Centre name (Ijaiye)"}/>
+        <input value={mCode} onChange={e => setMCode(e.target.value.toUpperCase())} className="cs-field" maxLength={4}
+          placeholder={isVol ? "CODE (LED)" : "CODE (IJ)"} style={{ width: 110, fontFamily: "var(--font-mono, monospace)" }}/>
         <input type="color" value={mColor} onChange={e => setMColor(e.target.value)} style={{ width: 46, height: 40, border: "none", borderRadius: 10, background: "none", cursor: "pointer" }} aria-label="Card colour"/>
-        <button onClick={addUnit} disabled={mName.trim().length < 2 || !mCode.trim()} style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: gold, color: "#2b2100", fontWeight: 800, cursor: "pointer" }}>{isVol ? "Add tier" : "Add centre"}</button>
+        <button onClick={addUnit} disabled={mName.trim().length < 2 || !mCode.trim()} className="cs-btn is-primary">{isVol ? "Add tier" : "Add centre"}</button>
       </div>
       {/* Say it here, where it is still free to change.
           The card does everything it can with a bad pair — ink chosen from the
@@ -6515,18 +6518,20 @@ function CardStudio() {
       <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)", marginBottom: 10 }}>CARD PROPORTION — PRINT SIZE (MM){S.fixedSize ? " · NOT USED BY THIS CARD" : ""}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>Width
-          <input type="number" min={50} max={60} step={1} disabled={!!S.fixedSize} value={sizeW} onChange={e => setSizeW(e.target.value)} style={{ width: 74, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
+          <input type="number" min={50} max={60} step={1} disabled={!!S.fixedSize} value={sizeW} onChange={e => setSizeW(e.target.value)}
+            className="cs-field" style={{ width: 74, fontFamily: "var(--font-mono, monospace)" }}/>
         </label>
         <span style={{ color: "rgba(230,238,255,.5)" }}>×</span>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>Height
-          <input type="number" min={64} max={100} step={1} disabled={!!S.fixedSize} value={sizeH} onChange={e => setSizeH(e.target.value)} style={{ width: 74, padding: "10px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 14, fontFamily: "var(--font-mono, monospace)" }}/>
+          <input type="number" min={64} max={100} step={1} disabled={!!S.fixedSize} value={sizeH} onChange={e => setSizeH(e.target.value)}
+            className="cs-field" style={{ width: 74, fontFamily: "var(--font-mono, monospace)" }}/>
         </label>
         <span style={{ fontSize: 12, color: "rgba(230,238,255,.5)" }}>mm</span>
         {/* Disabled, not merely labelled: a control that cannot affect the
             card in front of you should not accept input. It stays VISIBLE with
             its reason, because an operator who cannot find the size box is
             worse off than one who can see why it is inert. */}
-        <button onClick={saveSize} disabled={!!S.fixedSize} style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: S.fixedSize ? "rgba(255,255,255,.12)" : gold, color: S.fixedSize ? "rgba(230,238,255,.5)" : "#2b2100", fontWeight: 800, cursor: S.fixedSize ? "not-allowed" : "pointer" }}>Save size</button>
+        <button onClick={saveSize} disabled={!!S.fixedSize} className={"cs-btn" + (S.fixedSize ? "" : " is-primary")}>Save size</button>
         {sizeMsg && <span role="alert" className="mono" style={{ fontSize: 12, color: sizeMsg[0] === "S" ? "#6fdc9d" : "#ff9a9a" }}>{sizeMsg}</span>}
       </div>
       <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "10px 0 0" }}>{S.fixedSize
@@ -6591,13 +6596,13 @@ function CardStudio() {
           )}
           <div className="no-print" style={{ position: "absolute", top: -12, right: -8, zIndex: 2, display: "flex", gap: 6 }}>
             <button onClick={() => setEditPhoto(card)} title="Re-crop, adjust or replace this photo"
-              style={{ height: 30, padding: "0 12px", borderRadius: 15, border: "none", background: "#2f3f6b", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>Edit photo</button>
+              className="cs-btn cs-btn-pill">Edit photo</button>
             {/* Only where the subject has somewhere to send it. There is no
                 member resend op — a member issues their own card from their
                 dashboard — and a button that cannot do anything is worse than
                 a missing one, because it claims the feature exists. */}
             {S.resendKind && <button onClick={() => resendId(card)} disabled={!!resending} title={"Resend this ID to the " + S.resendTo + " (email + SMS)"}
-              style={{ height: 30, padding: "0 12px", borderRadius: 15, border: "none", background: "#2f3f6b", color: "#eef2fb", fontWeight: 700, fontSize: 12, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>
+              className="cs-btn cs-btn-pill">
               {resending === S.idOf(card) ? "Sending…" : "Resend ID"}
             </button>}
             <button onClick={() => exportPairPng(card)} disabled={!!exp} title="Download this card as PNG (front + back)"
