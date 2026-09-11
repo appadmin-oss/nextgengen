@@ -5825,6 +5825,42 @@ function __ichat_mock(array $opts = []): callable {
     };
 }
 
+/* ── The pane must be able to say it cannot answer, BEFORE it is asked ──────
+   Without an AI provider the Analyst is a composer, a thread list, a report
+   builder and a keyboard shortcut that can do exactly nothing — and the only
+   way to discover that was to write a question, wait, and be refused. The
+   thread read now carries the same fact the ask gates on. It must be the SAME
+   fact: a status computed from a different condition than the gate tells the
+   operator the analyst is ready and then refuses them. */
+chk('threads: the analyst reports whether it can answer at all', (function () {
+    $cfg = __ichat_config_on();
+    $on = backend_dispatch('analytics.insight.threads', ['requesterId' => 'NGG-2025-0099']);
+    __ichat_config_off($cfg);
+    $off = backend_dispatch('analytics.insight.threads', ['requesterId' => 'NGG-2025-0099']);
+    return ($on['aiReady'] ?? null) === true && ($off['aiReady'] ?? null) === false
+        // The listing itself keeps working with no provider: the threads are
+        // rows in our own database, not something the model owns.
+        && !empty($off['ok']) && isset($off['threads']);
+})());
+chk('threads: that flag and the ask agree, in both directions', (function () {
+    // Off: the flag says no and the ask refuses.
+    $off = backend_dispatch('analytics.insight.threads', ['requesterId' => 'NGG-2025-0099']);
+    $askOff = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'How is attendance trending this term?']);
+    $agreeOff = ($off['aiReady'] === false) && (($askOff['error'] ?? '') === 'ai_disabled');
+    // On: the flag says yes and the ask gets past the provider check — it may
+    // still fail further down, but NOT with ai_disabled.
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = __ichat_mock();
+    $on = backend_dispatch('analytics.insight.threads', ['requesterId' => 'NGG-2025-0099']);
+    $askOn = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'How is attendance trending this term?']);
+    unset($GLOBALS['__ai_mock']);
+    __ichat_config_off($cfg);
+    $agreeOn = ($on['aiReady'] === true) && (($askOn['error'] ?? '') !== 'ai_disabled');
+    return $agreeOff && $agreeOn;
+})());
+
 chk('the chat routes to the lenses the question needs, and no more', (function () {
     $seen = [];
     $cfg = __ichat_config_on();

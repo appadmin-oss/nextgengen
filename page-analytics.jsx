@@ -2152,6 +2152,10 @@ function AnalystPane({ onClose }) {
   const scope = useNggScope();
   const [threads, setThreads] = React.useState([]);
   const [archivedCount, setArchivedCount] = React.useState(0);
+  /* null until the first read answers. Three states, not two: "asking is
+     possible", "no provider is configured", and "we do not know yet" — which
+     must not render as either of the others. */
+  const [aiReady, setAiReady] = React.useState(null);
   const [archView, setArchView] = React.useState(false); // listing the put-away ones
   const [thread, setThread] = React.useState(null);   // { threadId, turns: [] }
   const [q, setQ] = React.useState("");
@@ -2176,6 +2180,7 @@ function AnalystPane({ onClose }) {
     const arch = archived != null ? archived : archView;
     NGGApi.admin.insightChatThreads(arch).then(r => {
       setThreads(r.threads || []);
+      if (typeof r.aiReady === "boolean") setAiReady(r.aiReady);
       // The active read reports how many are archived, so the affordance to see
       // them only appears when there is something behind it.
       if (!arch && r.archivedCount != null) setArchivedCount(r.archivedCount);
@@ -2950,7 +2955,10 @@ function AnalystPane({ onClose }) {
             {!liveChips.length && <span className="anp-chip is-all">everything on file</span>}
           </div>
           <textarea ref={boxRef} value={q} onChange={e => setQ(e.target.value)} rows={2} maxLength={600}
-            placeholder="Ask about the current view…"
+            disabled={aiReady === false}
+            placeholder={aiReady === false
+              ? "No AI provider is configured — see the note below"
+              : "Ask about the current view…"}
             aria-label="Ask the analysts a question"
             onKeyDown={e => {
               if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); }
@@ -2966,11 +2974,28 @@ function AnalystPane({ onClose }) {
             <span style={{ flex: 1 }}/>
             {q.length > 450 && <span className="anp-count">{600 - q.length}</span>}
             <span className="anp-send-hint">⏎ send</span>
-            <button className="anp-send" onClick={() => ask()} disabled={busy || q.trim().length < 6}
+            <button className="anp-send" onClick={() => ask()}
+              disabled={busy || aiReady === false || q.trim().length < 6}
               aria-label="Ask">➤</button>
           </div>
         </div>
 
+        {/* THE EMPTY CASE THIS PANE NEVER HAD. Without a provider key the
+            analyst is a composer, a thread list, a report builder and a
+            keyboard shortcut that can do exactly nothing — and the only way to
+            find that out was to write a question, wait, and be refused. It is
+            said on open now, in the place it matters, with the fix named.
+            Everything else on this screen is computed locally and unaffected,
+            which is the part an operator needs to hear first. */}
+        {aiReady === false && (
+          <p className="anp-note" role="status">
+            <b>No AI provider is configured</b>, so there is nothing here to ask.
+            The figures, levels and tables on the page behind this pane are
+            computed on your own data and are unaffected.
+            To switch it on, set <code>ai.provider</code> and its API key in{" "}
+            <code>api/config.php</code> — see <b>docs/SETUP.md</b>.
+          </p>
+        )}
         {/* At the point of use, not in a settings page nobody opens. */}
         <p className="anp-oath">Advisory only — it never edits a record, sends a message, or sees a name.</p>
       </div>
