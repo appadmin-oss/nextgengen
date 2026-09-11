@@ -203,6 +203,32 @@ window.nggcEnsureFonts()
     fs.mkdirSync(path.dirname(opts.out), { recursive: true });
     await sheet.screenshot({ path: opts.out });
     const kb = Math.round(fs.statSync(opts.out).size / 1024);
+
+    /* THE PHOTOGRAPH IS FULL BLEED, measured rather than eyeballed.
+       It was 130mm wide on a 148mm card and 48mm on a 54mm one, leaving 9mm
+       and 3mm of white down each side. A photo inset from the trim shows the
+       cut, and 0.5mm of drift at the guillotine shows it unevenly — so this is
+       a print defect, not a taste. Measured on both physical sizes, because
+       they carry different padding and only one of them was ever checked. */
+    const bleed = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('.idcard')).map((card) => {
+        const el = card.querySelector('img[alt=""], img[src^="data:image"]')
+          || card.querySelector('div[style*="position: absolute"]');
+        const c = card.getBoundingClientRect();
+        const wrap = el && el.closest('div[style*="width"]');
+        const r = (wrap || el || card).getBoundingClientRect();
+        return { cardW: Math.round(c.width), left: Math.round(r.left - c.left),
+                 right: Math.round(c.right - r.right) };
+      });
+    });
+    const inset = bleed.filter((b) => b.left > 1 || b.right > 1);
+    if (inset.length) {
+      throw new Error('the photograph is inset from the card edge on ' + inset.length
+        + ' of ' + bleed.length + ' card(s): ' + JSON.stringify(inset)
+        + ' — it must bleed to the trim, with no white margin');
+    }
+    console.log('  ✓ the photograph bleeds to the trim on all '
+      + bleed.length + ' card(s) — no white edge');
     console.log('  ✓ ' + path.basename(opts.out) + '  (' + kb + ' KB) — ' + members[0].displayId
       + (opts.file ? ' from ' + path.basename(opts.file) : ' (fixture)'));
 

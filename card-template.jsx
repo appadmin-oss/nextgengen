@@ -1194,8 +1194,8 @@ function NggcMemberCard(props) {
   var NAVY = "#0B1F51", AMBER = "#FCB316", SEC = "#5C6474", CAP = "#6B7280", HAIR = "#E6E8EC", DIV = "#C9CCD4";
   var wallet = size === "wallet";
   var S = wallet
-    ? { W: 54, H: 85, padX: 5, padB: 5, photoW: 48, photoH: 37.8, pillPt: 5.4, namePt: 11, discPt: 5.6, gap: 2.4, hair: 0.3, footTop: 3, qr: 13, logoW: 12, rolePt: 4.8, capPt: 4.2, divH: 2.6, mark: 34, gapD: 2, pillPad: "1.3mm 3.4mm", pillTrk: ".2em" }
-    : { W: 148, H: 210, padX: 14, padB: 12, photoW: 130, photoH: 102.3, pillPt: 8.5, namePt: 23, discPt: 10.5, gap: 4.5, hair: 0.5, footTop: 7, qr: 20, logoW: 22, rolePt: 7, capPt: 7, divH: 4.5, mark: 95, gapD: 3.5, pillPad: "2.4mm 6.5mm", pillTrk: ".3em" };
+    ? { W: 54, H: 85, padX: 5, padB: 5, photoW: 54, photoH: 37.8, pillPt: 5.4, namePt: 11, discPt: 5.6, gap: 2.4, hair: 0.3, footTop: 3, qr: 13, logoW: 12, rolePt: 4.8, capPt: 4.2, divH: 2.6, mark: 34, gapD: 2, pillPad: "1.3mm 3.4mm", pillTrk: ".2em" }
+    : { W: 148, H: 210, padX: 14, padB: 12, photoW: 148, photoH: 102.3, pillPt: 8.5, namePt: 23, discPt: 10.5, gap: 4.5, hair: 0.5, footTop: 7, qr: 20, logoW: 22, rolePt: 7, capPt: 7, divH: 4.5, mark: 95, gapD: 3.5, pillPad: "2.4mm 6.5mm", pillTrk: ".3em" };
   var mm = function (v) { return v + "mm"; }, pt = function (v) { return v + "pt"; };
 
   // Name fit (§4): one line by default; ≥22 chars steps to 20pt; ≥28 breaks
@@ -1233,10 +1233,22 @@ function NggcMemberCard(props) {
    *
    * The crop sits high (22%) rather than centred: passport-style photographs
    * put the face in the upper half, and a centred crop takes the top off it. */
-  /* Centred by hand, not by `margin: 0 auto`. The photo is deliberately WIDER
-     than the padded column so it bleeds to the card edge — and auto margins do
-     not centre a child wider than its container, they pin it left. So the bleed
-     was landing entirely on the right: 10mm on the A5, 4mm on the wallet. */
+  /* FULL BLEED. `photoW` is the card's full width, so the photograph runs
+     edge to edge — no white margin down either side, which is what a printed
+     credential looks like and what a trimmed card demands: a photo inset from
+     the trim shows the cut, and 0.5mm of drift at the guillotine shows it
+     unevenly.
+
+     It was 130mm on a 148mm card and 48mm on a 54mm one, leaving 9mm and 3mm
+     of white respectively. The card's top padding is already 0, so the photo
+     reached the top edge and stopped short at the sides — which read as a
+     mistake rather than a margin.
+
+     Centred by hand, not by `margin: 0 auto`: auto margins do not centre a
+     child wider than its container, they pin it left, so the bleed landed
+     entirely on the right. With photoW === W this resolves to exactly -padX,
+     cancelling the container's own padding and putting the photo's left edge
+     on the card's left edge. */
   var bleed = (S.photoW - (S.W - 2 * S.padX)) / 2;
   var photoWrap = h("div", { key: "pw", style: { width: mm(S.photoW), height: mm(S.photoH),
       marginLeft: mm(-bleed), flex: "none", position: "relative" } }, [
