@@ -6922,9 +6922,72 @@ select.cs-field option { background: var(--dsn-s1); color: var(--dsn-ink); }
   letter-spacing: .16em; text-transform: uppercase; color: var(--dsn-ink-3);
   display: block; margin-bottom: var(--dsn-sp-3);
 }
-.cs-div { width: 1px; align-self: stretch; background: var(--dsn-line); margin: 0 var(--dsn-sp-2); }
+/* A hairline between two control groups in a row. Fixed height rather than
+   stretch: it divides the CONTROLS, not the row's padding. */
+.cs-div { width: 1px; height: 26px; flex: none; background: var(--dsn-line-2); margin: 0 var(--dsn-sp-1); }
+/* A row of controls: the studio's toolbars, all of them. */
+.cs-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dsn-sp-3); }
+/* A control with its word beside it — "Batch [select]", "Range [select]".
+   The label is part of the control, so they travel together and wrap together. */
+.cs-lbl {
+  display: inline-flex; align-items: center; gap: var(--dsn-sp-2);
+  font-size: var(--dsn-t-small); color: var(--dsn-ink-3); white-space: nowrap;
+}
+.cs-lbl-tight { gap: var(--dsn-sp-1); }
+/* Secondary prose under a control group. Capped so it stays readable rather
+   than running the width of a 1440 window. */
+.cs-note {
+  font-size: var(--dsn-t-small); line-height: 1.55; color: var(--dsn-ink-3);
+  max-width: 68ch; margin: var(--dsn-sp-2) 0 0;
+}
+.cs-strong { color: var(--dsn-ink); }
 .cs-meta {
   font: 500 var(--dsn-t-meta)/1.5 var(--font-mono, ui-monospace, monospace);
   letter-spacing: .08em; color: var(--dsn-ink-3);
 }
 .cs-hint { font-size: var(--dsn-t-body); line-height: 1.6; color: var(--dsn-ink-2); max-width: 68ch; }
+
+/* The studio's unhappy states — signed out, and could-not-load. One shape for
+   both, because they are the same event to a reader: the studio is not here
+   yet and this is what to do about it. */
+.cs-state { text-align: center; padding: 80px 0; }
+.cs-state-h { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 var(--dsn-sp-3); }
+.cs-state .cs-btn { margin-top: var(--dsn-sp-3); }
+
+/* A filter that is NOT at its default lights its border — the one visual cue
+   that says "this list is narrowed" without spending the accent on a fill. */
+.cs-field.is-set { border-color: var(--dsn-gold); }
+/* A centre or tier, as a removable chip. */
+.cs-chip {
+  display: inline-flex; align-items: center; gap: var(--dsn-sp-2);
+  height: 32px; padding: 0 var(--dsn-sp-3);
+  border-radius: var(--dsn-r-pill);
+  background: var(--dsn-s2); border: 1px solid var(--dsn-line);
+  font-size: var(--dsn-t-ctl); font-weight: 600; color: var(--dsn-ink);
+}
+.cs-chip-x {
+  background: none; border: 0; padding: 0; cursor: pointer; line-height: 1;
+  color: var(--dsn-ink-3); font-size: var(--dsn-t-body);
+}
+.cs-chip-x:hover { color: var(--dsn-bad); }
+.cs-chip-x:focus-visible { outline: 2px solid var(--dsn-gold); outline-offset: 2px; border-radius: 4px; }
+/* A printed card on the dark ground: the one object allowed to be bright. */
+.cs-cardface { border-radius: 6px; overflow: hidden; box-shadow: 0 18px 40px -14px rgba(0,0,0,0.55); }
+
+/* The Card Studio's page ground. */
+.cs-page {
+  min-height: 100vh; background: var(--dsn-bg); color: var(--dsn-ink);
+  font-family: var(--font-body, system-ui, sans-serif);
+  padding: var(--dsn-sp-5) var(--dsn-sp-4) 80px;
+}
+/* A round icon button — one glyph, no label, so it states its purpose through
+   title/aria and meets the touch floor on a coarse pointer. */
+.cs-iconbtn {
+  width: 30px; height: 30px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: var(--dsn-r-pill);
+  background: var(--dsn-gold); color: var(--dsn-gold-ink);
+  font-weight: 800; font-size: var(--dsn-t-ctl); cursor: pointer;
+}
+.cs-iconbtn:focus-visible { outline: 2px solid var(--dsn-gold); outline-offset: 2px; }
+@media (pointer: coarse) { .cs-iconbtn { width: 44px; height: 44px; } }

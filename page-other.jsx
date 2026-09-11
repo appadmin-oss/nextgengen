@@ -3641,7 +3641,7 @@ function ReviewOne({ r, g, gold, onPrev, onNext, onDone }) {
       <div style={{ position: "sticky", bottom: 0, marginTop: 16, padding: "12px 0 calc(4px + env(safe-area-inset-bottom,0px))",
                     background: "linear-gradient(180deg, rgba(16,26,51,0) 0%, #101a33 26%)" }}>
         {err && <div role="alert" style={{ color: "#ff9a9a", fontSize: 13.5, marginBottom: 8 }}>{err}</div>}
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div className="cs-row">
           <button disabled={!!busy} onClick={approve}
             style={{ minHeight: 50, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15.5, cursor: "pointer" }}>
             {busy === "approve" ? "Approving…" : "Approve & confirm place"}
@@ -6145,13 +6145,13 @@ function CardStudio() {
   };
 
   const shell = (ch) => (
-    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 20px 80px" }}>
+    <div className="cs-page">
       <div style={{ maxWidth: 1120, margin: "0 auto" }}>{ch}</div>
     </div>
   );
   if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
-  if (state === "need-auth") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 22 }}>Staff sign-in required</h1><button onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Sign in →</button></div>);
-  if (state === "error") return shell(<div style={{ textAlign: "center", padding: "80px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load the studio</h1><button onClick={load} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
+  if (state === "need-auth") return shell(<div className="cs-state"><h1 className="cs-state-h">Staff sign-in required</h1><button onClick={() => auth && auth.openSignIn()} className="cs-btn cs-btn-lg is-primary">Sign in →</button></div>);
+  if (state === "error") return shell(<div className="cs-state"><h1 className="cs-state-h">Couldn't load the studio</h1><button onClick={load} className="cs-btn">Retry</button></div>);
 
   const allCards = ((subjectData[mode] || {}).cards) || [];
   /* Everything downstream reads `cards` — the header count, the ZIP, the
@@ -6261,23 +6261,23 @@ function CardStudio() {
             is where a layout is drawn, bound to fields and published, and it
             is the only one that can make an NGG member card or a card back.
             Said here rather than left as folklore. */}
-        <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "8px 0 0", maxWidth: 520, lineHeight: 1.5 }}>
-          This studio prints the <b style={{ color: "rgba(230,238,255,.8)" }}>standard</b> cards for all three
+        <p className="cs-note">
+          This studio prints the <b className="cs-strong">standard</b> cards for all three
           subjects — Summer School participants, NGG members and volunteers — whose layouts live in
           code. To <i>draw</i> a layout, bind it to your own fields, or make a card{" "}
-          <b style={{ color: "rgba(230,238,255,.8)" }}>back</b>, use the{" "}
+          <b className="cs-strong">back</b>, use the{" "}
           <a href="/designer" style={{ color: gold }}>Design Studio</a>. Every run from either is recorded in{" "}
-          <b style={{ color: "rgba(230,238,255,.8)" }}>Control Room → People → ID cards</b>.
+          <b className="cs-strong">Control Room → People → ID cards</b>.
         </p>
       </div>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+      <div className="cs-row">
         {notice && <span className="mono" style={{ fontSize: 12, color: "#6fdc9d" }}>{notice}</span>}
         {exp && <span className="mono" style={{ fontSize: 12, color: gold }}>{exp}</span>}
         <button onClick={exportZip} disabled={!cards.length || !!exp} title="High-resolution PNG of every card face, zipped"
-          style={{ padding: "13px 20px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#eef2fb", fontWeight: 800, fontSize: 13.5, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
+          className="cs-btn cs-btn-lg" style={{ cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
           ↓ PNG (all, .zip)
         </button>
-        <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Resolution
+        <label className="cs-lbl">Resolution
           <select value={dpi} onChange={e => setDpi(Number(e.target.value))} disabled={!!exp} className="cs-field"
             title="Raster resolution of the card artwork inside the PDF. 350 DPI is the offset standard; 300 is the digital-press floor; 600 is for line art and is slow and large."
             >
@@ -6292,7 +6292,7 @@ function CardStudio() {
             style={{ width: 16, height: 16, accentColor: "#ffce54" }}/>
           Verify QR codes
         </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Front/back flip
+        <label className="cs-lbl">Front/back flip
           <select value={duplex} onChange={e => setDuplex(e.target.value)} disabled={!!exp} className="cs-field"
             title="How the press turns the sheet between sides — ask your printer. The wrong axis puts every back on the wrong front."
             >
@@ -6302,27 +6302,27 @@ function CardStudio() {
           </select>
         </label>
         <button onClick={exportPdf} disabled={!cards.length || !!exp} title="Print-ready, imposed, CMYK — hand this to a printer"
-          style={{ padding: "13px 24px", borderRadius: 12, border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 15, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
+          className="cs-btn cs-btn-lg is-primary" style={{ cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
           ⎙ Print-ready PDF (CMYK)
         </button>
       </div>
     </div>
-    <p className="no-print" style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "-8px 0 18px", maxWidth: 640 }}>
+    <p className="no-print cs-note" style={{ margin: "-8px 0 18px" }}>
       The PDF imposes cards {"—"} auto-laid out N-up on A4 at an exact {cardW}{"×"}{cardH}&nbsp;mm trim with 3&nbsp;mm bleed, crop &amp; registration marks and a CMYK (FOGRA39) output intent, front and back sheets interleaved for duplex. Card artwork is embedded at {dpi}&nbsp;DPI; the press RIP separates it to CMYK against the intent. Everything renders in your browser {"—"} nothing is uploaded.
     </p>
 
-    <div className="no-print" style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+    <div className="no-print" className="cs-row" style={{ marginBottom: 16 }}>
       {/* Generated, so a subject cannot exist in the table and be missing
           here — the drift that left members with no tab at all. */}
       {CARD_SUBJECT_ORDER.map(k => <React.Fragment key={k}>{tab(k, CARD_SUBJECTS[k].label)}</React.Fragment>)}
-      <span style={{ width: 1, height: 26, background: "rgba(255,255,255,.16)", margin: "0 4px" }}/>
+      <span className="cs-div"/>
       {/* Print one site's batch at a time — that is how the cards are handed
           out — and, the reason this exists, find the records with no centre on
           file before they are printed rather than after. */}
-      <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "rgba(230,238,255,.7)" }}>
+      <label className="cs-lbl">
         Batch
         <select value={pick} onChange={e => setPick(e.target.value)} aria-label="Filter cards by centre"
-          style={{ minHeight: 40, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (pick === NO_CENTRE ? "#f5b026" : "rgba(255,255,255,.18)"), background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13, fontWeight: 700 }}>
+          className={"cs-field" + (pick === NO_CENTRE ? " is-set" : "")}>
           <option value="">All centres · {allCards.length}</option>
           {Object.keys(centreCounts).sort().map(n => <option key={n} value={n}>{n} · {centreCounts[n]}</option>)}
           {noCentreCount > 0 && <option value={NO_CENTRE}>⚠ No centre on file · {noCentreCount}</option>}
@@ -6336,14 +6336,14 @@ function CardStudio() {
           ⚠ {noCentreCount} with no centre
         </button>
       )}
-      <span style={{ width: 1, height: 26, background: "rgba(255,255,255,.16)", margin: "0 4px" }}/>
+      <span className="cs-div"/>
       {/* Range. Three ways of saying "not everybody", because coordinators say
           it three ways: by when they registered, by the ID block they were
           given, and by pointing at the ones that came back creased. */}
-      <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "rgba(230,238,255,.7)" }}>
+      <label className="cs-lbl">
         Range
         <select value={rmode} onChange={e => { const v = e.target.value; clearRange(); setRmode(v); }} aria-label="Print a range of cards"
-          style={{ minHeight: 40, padding: "9px 12px", borderRadius: 10, border: "1px solid " + (rmode ? gold : "rgba(255,255,255,.18)"), background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 13, fontWeight: 700 }}>
+          className={"cs-field" + (rmode ? " is-set" : "")}>
           <option value="">Whole batch</option>
           <option value="date">By date registered</option>
           <option value="number">By ID number</option>
@@ -6351,7 +6351,7 @@ function CardStudio() {
         </select>
       </label>
       {rmode === "date" && (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "rgba(230,238,255,.7)" }}>
+        <span className="cs-lbl cs-lbl-tight">
           <input type="date" value={dFrom} onChange={e => setDFrom(e.target.value)} aria-label="Registered from"
             />
           to
@@ -6367,7 +6367,7 @@ function CardStudio() {
         </span>
       )}
       {rmode === "number" && (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "rgba(230,238,255,.7)" }}>
+        <span className="cs-lbl cs-lbl-tight">
           <input type="number" min={1} value={nFrom} onChange={e => setNFrom(e.target.value)} placeholder="from" aria-label="ID number from"
             className="cs-field" style={{ width: 92, fontFamily: "var(--font-mono, monospace)" }}/>
           to
@@ -6376,7 +6376,7 @@ function CardStudio() {
         </span>
       )}
       {rmode === "pick" && (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, color: "rgba(230,238,255,.7)" }}>
+        <span className="cs-lbl">
           <b className="mono" style={{ color: chosen.size ? "#6fdc9d" : "rgba(230,238,255,.55)" }}>{chosen.size} picked</b>
           <button onClick={() => setChosen(new Set(chosen.size === inCentre.length ? [] : inCentre.map(cardId)))}
             className="cs-btn cs-btn-pill">
@@ -6457,10 +6457,12 @@ function CardStudio() {
       <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)", marginBottom: 10 }}>{isVol ? "HIERARCHY — CODE + CARD COLOUR" : "CENTRES — CODE + CARD COLOUR"}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
         {units.map(u => (
-          <span key={isVol ? u.tierId : u.centreId} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 12px", borderRadius: 99, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.15)", fontSize: 13, fontWeight: 600 }}>
-            <span style={{ width: 14, height: 14, borderRadius: "50%", background: u.color, flex: "none" }}/>
+          <span key={isVol ? u.tierId : u.centreId} className="cs-chip" style={{ border: "1px solid rgba(255,255,255,.15)", fontSize: 13, fontWeight: 600 }}>
+            <span /* Inline on purpose: the background IS the centre's colour — data, not a
+                 design decision, and the one thing a stylesheet cannot know. */
+              style={{ width: 14, height: 14, borderRadius: "50%", background: u.color, flex: "none" }}/>
             {u.name} · <span style={{ fontFamily: "var(--font-mono, monospace)" }}>{u.code}</span>
-            <button onClick={() => delUnit(u)} style={{ background: "none", border: "none", color: "rgba(230,238,255,.5)", cursor: "pointer", fontSize: 13.5, padding: 0 }}>✕</button>
+            <button onClick={() => delUnit(u)} className="cs-chip-x">✕</button>
           </span>
         ))}
         {!units.length && <span style={{ fontSize: 13, color: "rgba(230,238,255,.55)" }}>{isVol ? "No tiers yet — add the first below. Volunteer cards colour by tier." : "No centres yet — add the first below. New registrations then pick from this list."}</span>}
@@ -6606,10 +6608,10 @@ function CardStudio() {
               {resending === S.idOf(card) ? "Sending…" : "Resend ID"}
             </button>}
             <button onClick={() => exportPairPng(card)} disabled={!!exp} title="Download this card as PNG (front + back)"
-              style={{ width: 30, height: 30, borderRadius: "50%", border: "none", background: gold, color: "#2b2100", fontWeight: 800, fontSize: 13, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,0,0,.3)" }}>↓</button>
+              className="cs-iconbtn">↓</button>
           </div>
           <SafeBlock fallback={<CardDrawFailed id={card.displayId || card.studentId || card.volunteerId}/>}>
-            <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}>{mode === "members"
+            <div className="cs-cardface">{mode === "members"
               ? <MemberCardStudioFront card={card} S={0.5} H={CANVAS_H}/>
               : isVol ? <VolunteerCardFront card={card} program={program} S={0.5} H={CANVAS_H}/>
                       : <CardFront card={card} program={program} S={0.5} H={CANVAS_H}/>}</div>
@@ -6620,7 +6622,7 @@ function CardStudio() {
                 not a face this studio draws — and drawing the participant
                 back beside a member front would be a plain lie about what
                 comes off the printer. */}
-            {mode !== "members" && <div style={{ boxShadow: "0 14px 34px rgba(0,0,0,.35)", borderRadius: 6, overflow: "hidden" }}><CardBack card={card} program={program} S={0.5} H={CANVAS_H}/></div>}
+            {mode !== "members" && <div className="cs-cardface"><CardBack card={card} program={program} S={0.5} H={CANVAS_H}/></div>}
           </SafeBlock>
         </div>
         );

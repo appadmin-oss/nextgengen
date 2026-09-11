@@ -373,11 +373,17 @@ not on them:
 | Control height | `--dsn-ctl` — **one value**, 36px, 44px on coarse pointers |
 | Type | `--dsn-t-display` / `-head` / `-body` / `-ctl` / `-small` / `-meta` |
 
-Classes, not inline styles: `.cs-btn` (`.is-primary`, `.is-on`, `.cs-btn-pill`),
-`.cs-field`, `.cs-box`, `.cs-meta` for the Card Studio; `.dsn-*` for the Design
-Studio. **Inline styles beat a stylesheet**, so consistency cannot be imposed
-from outside — chrome belongs in CSS or it will drift. Layout-only inline
-styles (flex, gap) still exist in `CardStudio` and are the remaining debt.
+Classes, not inline styles. The Card Studio's vocabulary: `.cs-page`,
+`.cs-btn` (`.is-primary`, `.is-on`, `.cs-btn-lg`, `.cs-btn-pill`), `.cs-field`
+(`.is-set` for a filter off its default), `.cs-box` + `.cs-box-cap`, `.cs-row`,
+`.cs-lbl`, `.cs-chip` + `.cs-chip-x`, `.cs-div`, `.cs-note`, `.cs-meta`,
+`.cs-cardface`, `.cs-iconbtn`, `.cs-state`. The Design Studio uses `.dsn-*`.
+
+**Inline styles beat a stylesheet**, so consistency cannot be imposed from
+outside: chrome belongs in CSS or it will drift. What legitimately stays
+inline is per-element geometry (a width, a one-off margin) and — the one real
+exception — a value that IS data, such as the swatch whose background is
+the centre's own colour. A stylesheet cannot know that one.
 
 Two rules that are easy to break and were broken:
 
