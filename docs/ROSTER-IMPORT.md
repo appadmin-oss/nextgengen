@@ -122,7 +122,7 @@ current roster from everyone who has left.
 
 | Workbook | `members` column | Note |
 |---|---|---|
-| Members ID (`023-001`) | `displayId` | The printed ID. `memberId` is issued by the app |
+| Members ID (`023-001`) | `displayId` | The printed ID. `memberId` is issued by the app. **Leave it blank and the app mints one** (`YYY-NNN`, above the highest serial for that year) rather than refusing the row — it reports every ID it issued so you can write them back. |
 | First\_Name + Last\_Name | `fullName` | |
 | First\_Faculty | `track` | What the app calls a faculty elsewhere |
 | First + Second\_Faculty | `disciplines` | The one or two shown on the ID card |
@@ -132,7 +132,7 @@ current roster from everyone who has left.
 | Name of school | `school` | |
 | Father's / Mother's name + number | `parentName`, `parentPhone` | Father first where both are on file; both are kept in the notes |
 | Level (A, B, C, O) | `level` | Its own column since schema 109 |
-| ID prefix (`023-`) | `cohort` | The intake year |
+| ID prefix (`023-`) | `cohort` | The **intake year** — not a Summer School edition, which is what "cohort" means everywhere else in this product. Left blank, the app issues an ID from the join year. |
 | Sheet the member came from | `centre` | Ayobo for that sheet's own members, Egbeda otherwise |
 | `State of NGG` | `status` | See below |
 

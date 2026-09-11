@@ -715,7 +715,7 @@ function admin_application_convert(array $p): array {
         'joinDate' => gmdate('Y-m-d'),
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ];
-    if (trim((string)($__m['displayId'] ?? '')) === '') $__m['displayId'] = member_mint_display_id($__m);
+    if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_display_id($__m);
     db_insert('members', $__m);
     db_update('applications', ['status' => 'accepted'], ['id' => $id]);
 

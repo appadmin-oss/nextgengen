@@ -235,7 +235,7 @@ function admin_club_promote(array $p): array {
         'notes' => 'Promoted from Summer ' . $s['studentId'] . ' (' . $s['cohortId'] . ')',
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ];
-    if (trim((string)($__m['displayId'] ?? '')) === '') $__m['displayId'] = member_mint_display_id($__m);
+    if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_display_id($__m);
     db_insert('members', $__m);
 
     /* And a way in, when there is an address to send it to. Same set-password

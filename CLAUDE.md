@@ -188,9 +188,44 @@ Five words, fixed meanings. Use them in code, in UI copy, in tests, in docs.
 | **Participant** | A child in an edition | a member | `summer_students` |
 
 - The column `cohortId` means **edition**, everywhere, with no exceptions.
+- **`members.cohort` is the exception, and it is a different word.** On a
+  member row it is the **intake year** — the source of the printed ID's prefix
+  (`023-` ⇒ 2023) — and has nothing to do with a Summer School edition. One
+  word, two meanings, one database: `member_intake_year()` in
+  `domain/member-id.php` pins the member's, and no UI shows the word "cohort"
+  for it.
 - The word **cohort** is not shown to users. When a coordinator says
   "cohort" they mean a **group**.
 - "Student" belongs to the Club. Summer School has **participants**.
+
+### The two programmes are separate, and NGG is the one that lasts
+
+Summer School is a **phase**: one season, a lanyard card that expires with it,
+a centre-prefixed number. NGG is the programme somebody belongs to for years:
+an ID-1 card in a wallet that does not expire on a season's clock, and a
+year-prefixed number. Three places enforce that, and all three were once one
+thing:
+
+| | Summer School | NGG members |
+|---|---|---|
+| Printed ID | `CODE-YY-NNN` (`EG-26-001`), centre-prefixed | `YYY-NNN` (`026-014`), intake-year-prefixed |
+| Minted by | `card_display_id()` (registration.php) | `member_mint_display_id()` (member-id.php) |
+| Card config | `idcard_program()` | `idcard_program('member')` |
+| Card size | 54 × 75mm, lanyard | 54 × 85mm, ID-1 wallet |
+| Validity | the season | does not expire (`validityDays` 0) |
+
+- **`members.type` is `NGG` or `Summer`** — the table holds both populations,
+  and a Summer account carries a `SUM-` memberId. `member_is_ngg()` is the
+  test; everything that issues a MEMBER credential refuses anyone else, or one
+  person ends up with two printed identities.
+- **One settings blob, two programmes' configs.** `idcard_program($subject)`
+  layers an `ngg` block over the shared organisation fields (website, phone,
+  logos — one organisation, changed once). The stored root IS the Summer
+  config, unchanged, so no deployment needs a migration.
+- **A printed ID is never reissued.** It is in somebody's wallet; editing a
+  record must not invalidate a card that is physically correct.
+- **Mint from the highest serial, never a count.** Counting reuses gaps, and a
+  gap is where a card printed but never recorded here lives.
 
 ### Enforced invariants
 

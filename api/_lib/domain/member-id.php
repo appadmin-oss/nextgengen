@@ -34,6 +34,25 @@ declare(strict_types=1);
 const MEMBER_ID_MAX_BUMP = 500;
 
 /**
+ * Is this row an NGG MEMBER, as opposed to a Summer School account?
+ *
+ * The `members` table holds both populations: `type` is 'NGG' or 'Summer',
+ * and a Summer account even carries a SUM- prefixed memberId. They are not
+ * the same people in the same programme, and they must not be issued the same
+ * kind of credential — a participant's printed id is the centre-prefixed
+ * CODE-YY-NNN minted by card_display_id() against their summer_students row,
+ * and giving them a year-prefixed member id as well would put two different
+ * printed identities on one person.
+ *
+ * So everything in this file refuses anyone who is not an NGG member. Summer
+ * School is a phase with its own numbering; this is the programme's.
+ */
+function member_is_ngg(array $m): bool {
+    $type = strtolower(trim((string)($m['type'] ?? 'NGG')));
+    return $type !== 'summer';
+}
+
+/**
  * The intake year a member's printed ID belongs to.
  *
  * `cohort` on a MEMBER row is the intake year — not a Summer School edition,
@@ -115,6 +134,8 @@ function member_mint_display_id(array $m): string {
 function member_ensure_display_id(array $m): string {
     $have = trim((string)($m['displayId'] ?? ''));
     if ($have !== '') return $have;
+    // A Summer School account is numbered by Summer School. See member_is_ngg.
+    if (!member_is_ngg($m)) return '';
     $memberId = trim((string)($m['memberId'] ?? ''));
     if ($memberId === '') return '';
     $id = member_mint_display_id($m);
@@ -132,14 +153,19 @@ function member_ensure_display_id(array $m): string {
 function admin_members_issue_ids(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $limit = max(1, min(500, (int)($p['limit'] ?? 200)));
-    $rows = db_all("SELECT * FROM members WHERE COALESCE(displayId,'') = '' ORDER BY createdAt ASC LIMIT ?", [$limit]);
+    /* NGG members only — a Summer School account is numbered by Summer
+       School, and sweeping them in here would print two different identities
+       for one person. */
+    $rows = db_all("SELECT * FROM members WHERE COALESCE(displayId,'') = ''
+                    AND COALESCE(type,'NGG') <> 'Summer' ORDER BY createdAt ASC LIMIT ?", [$limit]);
     $issued = [];
     foreach ($rows as $m) {
         $id = member_ensure_display_id($m);
         if ($id !== '') $issued[] = ['memberId' => (string)$m['memberId'], 'displayId' => $id,
                                      'fullName' => (string)($m['fullName'] ?? '')];
     }
-    $remaining = (int)(db_row("SELECT COUNT(*) c FROM members WHERE COALESCE(displayId,'') = ''")['c'] ?? 0);
+    $remaining = (int)(db_row("SELECT COUNT(*) c FROM members WHERE COALESCE(displayId,'') = ''
+                               AND COALESCE(type,'NGG') <> 'Summer'")['c'] ?? 0);
     if ($issued) {
         audit('admin.members.issueIds', (string)($g['requester']['memberId'] ?? ''), '',
             ['count' => count($issued), 'remaining' => $remaining], (string)($p['ip'] ?? ''));

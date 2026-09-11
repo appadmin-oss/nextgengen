@@ -131,7 +131,13 @@ function Lane(p) {
     e('div', { className: 'cap' }, e('b', null, p.title), p.note),
     p.facts ? e('div', { className: 'facts' }, [
       ['Printed ID', m.displayId], ['Level', m.level || '—'], ['Disciplines', m.disciplines || m.track || '—'],
-      ['Centre', m.centre || '—'], ['Cohort', m.cohort || '—'],
+      /* "Intake year", not "Cohort". On a MEMBER row the cohort field is the
+         year they joined — where the printed ID's prefix comes from — while
+         "cohort" everywhere else in this product means a Summer School
+         EDITION. Same word, two meanings; the card spec uses the member's.
+         (No backticks in this comment: it lives inside the template literal
+         that builds the fixture page.) */
+      ['Centre', m.centre || '—'], ['Intake year', m.cohort || '—'],
     ].map(function (r, i) { return e('div', { key: i }, e('span', null, r[0]), r[1]); })) : null);
 }
 

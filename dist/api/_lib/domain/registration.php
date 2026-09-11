@@ -3273,7 +3273,7 @@ function admin_mcards_data(array $p): array {
     if (!empty($p['memberId'])) { $where[] = 'memberId = ?'; $params[] = (string)$p['memberId']; }
     $scopeNames = admin_centre_names_in_scope($g['requester']);
     if ($scopeNames !== null) {
-        if (!$scopeNames) return ['ok' => true, 'cards' => [], 'program' => idcard_program()];
+        if (!$scopeNames) return ['ok' => true, 'cards' => [], 'program' => idcard_program('member')];
         $where[] = 'centre IN (' . implode(',', array_fill(0, count($scopeNames), '?')) . ')';
         foreach ($scopeNames as $nm) $params[] = $nm;
     }
@@ -3286,7 +3286,7 @@ function admin_mcards_data(array $p): array {
     $centres = centre_index();
     $cards = [];
     foreach ($rows as $m) $cards[] = card_row_member($m, $centres);
-    return ['ok' => true, 'cards' => $cards, 'program' => idcard_program()];
+    return ['ok' => true, 'cards' => $cards, 'program' => idcard_program('member')];
 }
 
 function card_row_member(array $m, array $centres): array {
@@ -3606,9 +3606,47 @@ function idcard_expired(?string $expiresAt, ?string $on = null): bool {
     return substr($e, 0, 10) < ($on ?? gmdate('Y-m-d'));
 }
 
-function idcard_program(): array {
+/**
+ * The ID-card configuration for ONE subject.
+ *
+ * This was a single blob serving both programmes, so an NGG member's card and
+ * a Summer School participant's card were issued under the same programme
+ * name, the same motto, the same validity clock and the same trim. They are
+ * not the same thing: Summer School is a PHASE — one season, a card that
+ * expires with it, a lanyard — and NGG is the programme somebody belongs to
+ * for years, on an ID-1 card that lives in a wallet and does not expire on a
+ * ninety-day timer.
+ *
+ * What is genuinely SHARED stays shared: the organisation's website, phone
+ * and logos are the same organisation whichever card is printed, and keeping
+ * them in one place is why a phone-number change does not have to be made
+ * twice. What is per-programme is per-programme.
+ *
+ * Backwards compatible on purpose: the stored blob IS the Summer School
+ * config, unchanged and still edited by the same screens, so no deployment
+ * needs a migration or a re-save. NGG's overrides live under `ngg` beside it.
+ */
+function idcard_program(string $subject = 'student'): array {
     $cfg = setting_get('idcard');
     $p = is_array($cfg) ? $cfg : [];
+    $isMember = ($subject === 'member');
+    /* NGG's own block, layered over the shared organisation fields. Absent on
+       an existing deployment, which is why every key below has a default. */
+    if ($isMember) {
+        $ngg = is_array($p['ngg'] ?? null) ? $p['ngg'] : [];
+        // Only the SHARED organisation identity carries over; everything that
+        // describes the programme or the card is NGG's own.
+        $shared = array_intersect_key($p, array_flip(['website', 'phone', 'logoLockup', 'logoOkun']));
+        $p = $ngg + $shared + [
+            'program'      => 'NGG',
+            'motto'        => 'EMPOWERED 360°',
+            // ID-1, the size of a wallet slot. See docs/PRINT-SPEC.md.
+            'widthMm'      => 54, 'heightMm' => 85,
+            // A membership is not a season. 0 = does not expire, which is a
+            // stated choice rather than an empty box meaning it by accident.
+            'validityDays' => 0,
+        ];
+    }
     // Default the printed website to NGG (the main site, where every /q/<token>
     // profile resolves) — not the not-yet-live STS domain. Admin-overridable.
     $siteHost = preg_replace('#^https?://#', '', rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? 'next.afrovanguard.org.ng'), '/')) ?: 'next.afrovanguard.org.ng';
@@ -3623,7 +3661,8 @@ function idcard_program(): array {
     // Physical print size (mm). The card artwork reflows to any proportion in
     // this range without distortion; the bounds just keep it legible.
     $p['widthMm']  = idcard_clamp_mm($p['widthMm'], 50, 60, 54);
-    $p['heightMm'] = idcard_clamp_mm($p['heightMm'], 64, 100, 75);
+    $p['heightMm'] = idcard_clamp_mm($p['heightMm'], 64, 100, $isMember ? 85 : 75);
+    $p['subject']  = $isMember ? 'member' : 'student';
     return $p;
 }
 
@@ -3634,11 +3673,17 @@ function idcard_clamp_mm($v, float $min, float $max, float $def): float {
 }
 
 // Validate + persist the ID-card branding block (called from admin.settings.set).
-function idcard_program_save(array $in, string $by): void {
+function idcard_program_save(array $in, string $by, string $subject = 'student'): void {
     // Merge onto the stored blob so a partial update (e.g. just the card size
     // from the ID studio) never wipes the branding fields, and vice-versa.
     $cur = setting_get('idcard');
-    $clean = is_array($cur) ? $cur : [];
+    $root = is_array($cur) ? $cur : [];
+    $isMember = ($subject === 'member');
+    /* A member's settings are written into their own block, so saving one
+       programme's card can never move the other's. The organisation fields
+       are the exception and stay at the root, because they describe the
+       organisation rather than either programme. */
+    $clean = $isMember ? (is_array($root['ngg'] ?? null) ? $root['ngg'] : []) : $root;
     foreach (['program', 'year', 'motto', 'website', 'phone', 'logoLockup', 'logoOkun'] as $k) {
         if (array_key_exists($k, $in)) $clean[$k] = substr(trim((string)$in[$k]), 0, 512);
     }
@@ -3653,6 +3698,14 @@ function idcard_program_save(array $in, string $by): void {
     if (array_key_exists('validityDays', $in)) {
         $d = (int)$in['validityDays'];
         $clean['validityDays'] = $d <= 0 ? 0 : max(1, min(3650, $d));
+    }
+    if ($isMember) {
+        foreach (['website', 'phone', 'logoLockup', 'logoOkun'] as $k) {
+            if (array_key_exists($k, $clean)) { $root[$k] = $clean[$k]; unset($clean[$k]); }
+        }
+        $root['ngg'] = $clean;
+        setting_set('idcard', $root, $by);
+        return;
     }
     setting_set('idcard', $clean, $by);
 }

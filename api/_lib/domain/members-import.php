@@ -235,6 +235,10 @@ function members_import_row(array $row, string $stampedOn): array
         'type'        => trim((string)($row['type'] ?? 'NGG')) ?: 'NGG',
         'status'      => $status,
         'centre'      => trim((string)($row['centre'] ?? '')),
+        /* THE INTAKE YEAR, not a Summer School edition. `cohort` on a member
+           row is where the printed ID's prefix comes from (023- ⇒ 2023);
+           `cohortId` on every summer table means an edition. One word, two
+           meanings — see domain/member-id.php, which pins the member's. */
         'cohort'      => trim((string)($row['cohort'] ?? '')),
         'track'       => strtoupper(trim((string)($row['track'] ?? ''))),
         'disciplines' => strtoupper(trim((string)($row['disciplines'] ?? ''))),
@@ -434,7 +438,7 @@ function members_import_run(array $rows, array $opts = []): array
                YYY-NNN shape, from the intake year the row carries. Minted only
                on APPLY: a dry run must not consume serials, or previewing an
                import twice would leave gaps in the roster's numbering. */
-            if (trim((string)($insert['displayId'] ?? '')) === '' && $apply) {
+            if (trim((string)($insert['displayId'] ?? '')) === '' && $apply && member_is_ngg($insert)) {
                 $insert['displayId'] = member_mint_display_id($insert);
                 $notes[] = 'issued member ID ' . $insert['displayId'];
             }

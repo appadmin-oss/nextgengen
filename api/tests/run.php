@@ -5298,6 +5298,57 @@ chk('runs: every card op is gated on the member desk', (function () {
         && backend_dispatch('admin.card.run.record', ['requesterId' => 'NGG-2025-0700', 'items' => []])['error'] === 'forbidden';
 })());
 
+/* ── NGG and Summer School are configured SEPARATELY ───────────────────────
+   One settings blob served both, so a member's card and a participant's card
+   were issued under the same programme name, motto, validity clock and trim.
+   Summer School is a phase — one season, a lanyard, a card that expires with
+   it. NGG is the programme somebody belongs to for years, on an ID-1 card in
+   a wallet that does not expire on a ninety-day timer. */
+chk('idcard: the two programmes have different cards by default', (function () {
+    /* From a clean blob: earlier blocks in this file save card settings, and a
+       defaults test that reads whatever they left is testing them, not the
+       defaults. */
+    $keep = setting_get('idcard');
+    setting_set('idcard', [], 'tester');
+    $stu = idcard_program();
+    $mem = idcard_program('member');
+    setting_set('idcard', is_array($keep) ? $keep : [], 'tester');
+    return (float)$stu['heightMm'] === 75.0 && (float)$mem['heightMm'] === 85.0
+        && (float)$mem['widthMm'] === 54.0
+        && (int)$mem['validityDays'] === 0
+        && $stu['subject'] === 'student' && $mem['subject'] === 'member';
+})());
+chk('idcard: saving one programme does not move the other', (function () {
+    idcard_program_save(['program' => 'SUMMER-X', 'heightMm' => 70], 'tester');
+    idcard_program_save(['program' => 'NGG-X', 'heightMm' => 90], 'tester', 'member');
+    $stu = idcard_program(); $mem = idcard_program('member');
+    return $stu['program'] === 'SUMMER-X' && (float)$stu['heightMm'] === 70.0
+        && $mem['program'] === 'NGG-X' && (float)$mem['heightMm'] === 90.0;
+})());
+chk('idcard: the organisation is shared, not duplicated', (function () {
+    // A phone number belongs to the organisation, not to either programme —
+    // changing it once must reach both cards, or one of them prints a number
+    // nobody answers.
+    idcard_program_save(['phone' => '+234 000 000 0000'], 'tester');
+    $stu = idcard_program(); $mem = idcard_program('member');
+    return $stu['phone'] === '+234 000 000 0000' && $mem['phone'] === '+234 000 000 0000';
+})());
+chk('idcard: an existing deployment keeps its settings without a migration', (function () {
+    // The stored blob IS the Summer config, untouched. A deployment that has
+    // never saved an NGG block still gets a sane member card.
+    setting_set('idcard', ['program' => 'LEGACY', 'heightMm' => 72, 'phone' => '+234 111'], 'tester');
+    $stu = idcard_program(); $mem = idcard_program('member');
+    return $stu['program'] === 'LEGACY' && (float)$stu['heightMm'] === 72.0
+        && $mem['program'] === 'NGG' && (float)$mem['heightMm'] === 85.0
+        && $mem['phone'] === '+234 111';
+})());
+chk('idcard: the member card op serves the member configuration', (function () use ($CARDADM) {
+    $r = backend_dispatch('admin.mcards.data', ['requesterId' => $CARDADM]);
+    $s = backend_dispatch('admin.cards.data', ['requesterId' => $CARDADM]);
+    return ($r['program']['subject'] ?? '') === 'member'
+        && ($s['program']['subject'] ?? '') === 'student';
+})());
+
 /* ── The member's PRINTED ID ───────────────────────────────────────────────
    Summer School minted participant IDs from the start; members got nothing,
    so every imported member carried a blank and the card fell back to the
@@ -5377,8 +5428,30 @@ chk('member ids: the backlog can be issued in bounded passes', (function () use 
         'type' => 'NGG', 'status' => 'active', 'displayId' => '', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     $r = backend_dispatch('admin.members.issueIds', ['requesterId' => $CARDADM, 'limit' => 500]);
     if (empty($r['ok'])) return false;
-    $after = db_row("SELECT COUNT(*) c FROM members WHERE COALESCE(displayId,'') = ''")['c'];
+    /* NGG members only. Summer School accounts legitimately keep no member id
+       — they are numbered by Summer School — so counting every row here would
+       assert the opposite of the rule above. */
+    $after = db_row("SELECT COUNT(*) c FROM members WHERE COALESCE(displayId,'') = ''
+                     AND COALESCE(type,'NGG') <> 'Summer'")['c'];
     return (int)$after === 0 && (int)$r['remaining'] === 0 && $r['count'] >= 1;
+})());
+chk('member ids: a Summer School account is NOT given a member id', (function () use ($CARDADM) {
+    /* The members table holds both populations — `type` is NGG or Summer, and
+       a Summer account even carries a SUM- memberId. A participant is numbered
+       by Summer School (CODE-YY-NNN, against their summer_students row);
+       issuing them a member id as well would put two different printed
+       identities on one person. */
+    db_insert('members', ['memberId' => 'SUM-2025-0770', 'fullName' => 'Phase Only', 'email' => 'phase770@example.com',
+        'type' => 'Summer', 'status' => 'active', 'cohort' => '2026',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $row = db_row('SELECT * FROM members WHERE memberId = ?', ['SUM-2025-0770']);
+    $minted = member_ensure_display_id($row);
+    $after = db_row('SELECT displayId FROM members WHERE memberId = ?', ['SUM-2025-0770'])['displayId'];
+    if ($minted !== '' || trim((string)$after) !== '') return false;
+    // …and the backlog sweep leaves them alone too.
+    backend_dispatch('admin.members.issueIds', ['requesterId' => $CARDADM, 'limit' => 500]);
+    $still = db_row('SELECT displayId FROM members WHERE memberId = ?', ['SUM-2025-0770'])['displayId'];
+    return trim((string)$still) === '';
 })());
 chk('member ids: issuing the backlog is gated on the member desk', (function () {
     return backend_dispatch('admin.members.issueIds', ['requesterId' => 'NGG-2025-0700'])['error'] === 'forbidden';

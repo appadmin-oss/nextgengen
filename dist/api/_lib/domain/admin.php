@@ -325,7 +325,7 @@ function admin_members_upsert(array $p): array {
     /* A member gets their printed ID at creation, as a participant always
        has. Left blank it falls back to the internal memberId on the card —
        see domain/member-id.php. */
-    if (trim((string)($insert['displayId'] ?? '')) === '') {
+    if (trim((string)($insert['displayId'] ?? '')) === '' && member_is_ngg($insert)) {
         $insert['displayId'] = member_mint_display_id($insert);
     }
     db_insert('members', $insert);
