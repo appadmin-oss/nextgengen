@@ -6596,6 +6596,7 @@ body.own-chrome .fab-top { display: none; }
   --dsn-t-head:    15px;   /* panel headings                     */
   --dsn-t-body:    13.5px; /* prose, hints                       */
   --dsn-t-ctl:     13px;   /* control text                       */
+  --dsn-t-small:   12px;   /* dense secondary rows               */
   --dsn-t-meta:    10px;   /* mono eyebrows and captions         */
 }
 @media (pointer: coarse) { :root { --dsn-ctl: 44px; } }

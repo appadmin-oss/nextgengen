@@ -6261,7 +6261,7 @@ function CardStudio() {
             is where a layout is drawn, bound to fields and published, and it
             is the only one that can make an NGG member card or a card back.
             Said here rather than left as folklore. */}
-        <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12.5, margin: "8px 0 0", maxWidth: 520, lineHeight: 1.5 }}>
+        <p style={{ color: "rgba(230,238,255,.5)", fontSize: 12, margin: "8px 0 0", maxWidth: 520, lineHeight: 1.5 }}>
           This studio prints the <b style={{ color: "rgba(230,238,255,.8)" }}>standard</b> cards for all three
           subjects — Summer School participants, NGG members and volunteers — whose layouts live in
           code. To <i>draw</i> a layout, bind it to your own fields, or make a card{" "}
@@ -6274,7 +6274,7 @@ function CardStudio() {
         {notice && <span className="mono" style={{ fontSize: 12, color: "#6fdc9d" }}>{notice}</span>}
         {exp && <span className="mono" style={{ fontSize: 12, color: gold }}>{exp}</span>}
         <button onClick={exportZip} disabled={!cards.length || !!exp} title="High-resolution PNG of every card face, zipped"
-          style={{ padding: "13px 20px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#eef2fb", fontWeight: 800, fontSize: 14, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
+          style={{ padding: "13px 20px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#eef2fb", fontWeight: 800, fontSize: 13.5, cursor: cards.length ? "pointer" : "not-allowed", opacity: exp ? .6 : 1 }}>
           ↓ PNG (all, .zip)
         </button>
         <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "rgba(230,238,255,.72)" }}>Resolution
@@ -6351,7 +6351,7 @@ function CardStudio() {
         </select>
       </label>
       {rmode === "date" && (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "rgba(230,238,255,.7)" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "rgba(230,238,255,.7)" }}>
           <input type="date" value={dFrom} onChange={e => setDFrom(e.target.value)} aria-label="Registered from"
             />
           to
@@ -6367,7 +6367,7 @@ function CardStudio() {
         </span>
       )}
       {rmode === "number" && (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "rgba(230,238,255,.7)" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "rgba(230,238,255,.7)" }}>
           <input type="number" min={1} value={nFrom} onChange={e => setNFrom(e.target.value)} placeholder="from" aria-label="ID number from"
             className="cs-field" style={{ width: 92, fontFamily: "var(--font-mono, monospace)" }}/>
           to
@@ -6376,7 +6376,7 @@ function CardStudio() {
         </span>
       )}
       {rmode === "pick" && (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "rgba(230,238,255,.7)" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, color: "rgba(230,238,255,.7)" }}>
           <b className="mono" style={{ color: chosen.size ? "#6fdc9d" : "rgba(230,238,255,.55)" }}>{chosen.size} picked</b>
           <button onClick={() => setChosen(new Set(chosen.size === inCentre.length ? [] : inCentre.map(cardId)))}
             className="cs-btn cs-btn-pill">
@@ -6398,7 +6398,7 @@ function CardStudio() {
             ? "Printing " + cards.length + " of " + inCentre.length + (pick ? " in this batch" : "")
             : "Nothing matches this range"}
         </div>
-        <p style={{ margin: "5px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "rgba(230,238,255,.72)" }}>
+        <p style={{ margin: "5px 0 0", fontSize: 12, lineHeight: 1.6, color: "rgba(230,238,255,.72)" }}>
           {rmode === "date" && (dFrom || dTo)
             ? <>Registered {dFrom ? <>from <b>{dFrom}</b></> : "up to"} {dTo ? <>to <b>{dTo}</b></> : dFrom ? "onwards" : ""}.{" "}
                 {(() => {
@@ -6445,22 +6445,22 @@ function CardStudio() {
       </div>
     )}
     {pick === NO_CENTRE && (
-      <div className="no-print" style={{ background: "rgba(245,176,38,.12)", border: "1px solid rgba(245,176,38,.4)", borderRadius: 12, padding: "12px 14px", marginBottom: 22, maxWidth: 720 }}>
+      <div className="no-print" style={{ background: "var(--dsn-gold-dim)", border: "1px solid rgba(245,176,38,.4)", borderRadius: "var(--dsn-r-control)", padding: "12px 14px", marginBottom: 22, maxWidth: 720 }}>
         <div style={{ fontWeight: 800, fontSize: 13.5, color: "#ffce54" }}>{noCentreCount === 1 ? "This card prints" : "These " + noCentreCount + " cards print"} without a centre</div>
-        <p style={{ margin: "5px 0 0", fontSize: 12.5, lineHeight: 1.6, color: "rgba(230,238,255,.72)" }}>
+        <p style={{ margin: "5px 0 0", fontSize: 12, lineHeight: 1.6, color: "rgba(230,238,255,.72)" }}>
           No coloured ring, no code, no band {"—"} nothing on the card says which site the {isVol ? "volunteer belongs to" : "child attends"}. Set the centre in {isVol ? <>Admin {"→"} Volunteers {"→"} Roster {"→"} Edit</> : <>Admin {"→"} Summer {"→"} the child{"'"}s record</>}, then come back and reprint. Printing them as they are is fine if you mean to; it is only a problem when nobody noticed.
         </p>
       </div>
     )}
 
-    <div className="no-print" style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14, padding: 16, marginBottom: 30 }}>
+    <div className="no-print" className="cs-box" style={{ marginBottom: 30 }}>
       <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)", marginBottom: 10 }}>{isVol ? "HIERARCHY — CODE + CARD COLOUR" : "CENTRES — CODE + CARD COLOUR"}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
         {units.map(u => (
           <span key={isVol ? u.tierId : u.centreId} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 12px", borderRadius: 99, background: "rgba(255,255,255,.07)", border: "1px solid rgba(255,255,255,.15)", fontSize: 13, fontWeight: 600 }}>
             <span style={{ width: 14, height: 14, borderRadius: "50%", background: u.color, flex: "none" }}/>
             {u.name} · <span style={{ fontFamily: "var(--font-mono, monospace)" }}>{u.code}</span>
-            <button onClick={() => delUnit(u)} style={{ background: "none", border: "none", color: "rgba(230,238,255,.5)", cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
+            <button onClick={() => delUnit(u)} style={{ background: "none", border: "none", color: "rgba(230,238,255,.5)", cursor: "pointer", fontSize: 13.5, padding: 0 }}>✕</button>
           </span>
         ))}
         {!units.length && <span style={{ fontSize: 13, color: "rgba(230,238,255,.55)" }}>{isVol ? "No tiers yet — add the first below. Volunteer cards colour by tier." : "No centres yet — add the first below. New registrations then pick from this list."}</span>}
@@ -6484,7 +6484,7 @@ function CardStudio() {
         const near = colourNeighbours(mColor, units);
         if (!near.length) return null;
         return (
-          <p role="status" style={{ fontSize: 12.5, lineHeight: 1.55, margin: "10px 0 0", color: "#ffd48a" }}>
+          <p role="status" style={{ fontSize: 12, lineHeight: 1.55, margin: "10px 0 0", color: "#ffd48a" }}>
             <b>That colour is close to {near.map(n => n.name).join(", ")}.</b>{" "}
             {"Two " + (isVol ? "tiers" : "centres") + " that look alike defeat the point of colouring by " + (isVol ? "tier" : "centre") + " — nobody can tell the cards apart across a room. "}
             Pick something further away if you can.
@@ -6504,7 +6504,7 @@ function CardStudio() {
         if (!/^#[0-9a-fA-F]{6}$/.test(mColor) || inkIsLegible(mColor, 4.5)) return null;
         const best = Math.max(inkContrast(mColor, "#ffffff") || 0, inkContrast(mColor, "#10131a") || 0);
         return (
-          <p role="status" style={{ fontSize: 12.5, lineHeight: 1.55, margin: "8px 0 0", color: "#ffd48a" }}>
+          <p role="status" style={{ fontSize: 12, lineHeight: 1.55, margin: "8px 0 0", color: "#ffd48a" }}>
             <b>Nothing reads well on that colour.</b>{" "}
             The best either black or white manages is {best.toFixed(1)}:1, and text needs 4.5:1 to be
             read at arm's length. Nudge it darker or lighter — a small move is usually enough.
@@ -6514,7 +6514,7 @@ function CardStudio() {
       {msg && <p role="alert" style={{ color: "#ff9a9a", fontSize: 13, margin: "10px 0 0" }}>{msg}</p>}
     </div>
 
-    <div className="no-print" style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14, padding: 16, marginBottom: 30 }}>
+    <div className="no-print" className="cs-box" style={{ marginBottom: 30 }}>
       <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".16em", color: "rgba(230,238,255,.6)", marginBottom: 10 }}>CARD PROPORTION — PRINT SIZE (MM){S.fixedSize ? " · NOT USED BY THIS CARD" : ""}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>Width
@@ -6565,7 +6565,7 @@ function CardStudio() {
       )}
     </div>
     {exp && (
-      <div className="no-print" style={{ background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14, padding: 20, textAlign: "center" }}>
+      <div className="no-print" className="cs-box" style={{ textAlign: "center" }}>
         <div style={{ font: "700 11px var(--font-mono, monospace)", letterSpacing: ".18em", color: gold }}>{exp.toUpperCase()}</div>
         <p style={{ fontSize: 12, color: "rgba(230,238,255,.5)", maxWidth: 520, margin: "10px auto 0" }}>
           Keep this tab open and in front {"—"} browsers throttle background tabs, which stalls the render.
@@ -6625,7 +6625,7 @@ function CardStudio() {
         </div>
         );
       })}
-      {!cards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>{S.empty}</p>}
+      {!cards.length && <p className="no-print" style={{ color: "rgba(230,238,255,.55)", fontSize: 13.5 }}>{S.empty}</p>}
     </div>
     {editPhoto && (
       <PhotoEditor

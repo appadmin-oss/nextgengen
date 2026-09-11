@@ -349,7 +349,46 @@ Architecture:
   with `latest` and a `designMovedOn` tri-state so "is the card in their hand
   current?" has an answer.
 
-## 8. UX and accessibility standards
+## 8. The studios' design system
+
+Both studios (`/designer` and `/cards`) render from **one set of tokens**,
+declared once in `styles-app.css`. The direction, so a change can be checked
+against it rather than argued about:
+
+> A dark press room — ink-blue surfaces, ONE amber accent earned only by the
+> live action, geometric sans for structure over monospace for every number
+> and label. An instrument, not an app. The card being designed is the only
+> bright object on the screen; everything else is housing and recedes.
+
+The scales are **closed**. Nothing in either studio may use a value that is
+not on them:
+
+| | Tokens |
+|---|---|
+| Surface | `--dsn-bg`, `--dsn-s1`, `--dsn-s2`, `--dsn-s3`, `--dsn-sink` — depth by **elevation, not outline** |
+| Ink | `--dsn-ink`, `-2`, `-3`, `-4` (`-4` is disabled only, never for reading) |
+| Accent | `--dsn-gold` + `--dsn-gold-dim` + `--dsn-gold-ink` |
+| Radius | `--dsn-r-surface` / `-control` / `-inner` / `-pill` — four, not seven |
+| Space | `--dsn-sp-1`…`-6` |
+| Control height | `--dsn-ctl` — **one value**, 36px, 44px on coarse pointers |
+| Type | `--dsn-t-display` / `-head` / `-body` / `-ctl` / `-small` / `-meta` |
+
+Classes, not inline styles: `.cs-btn` (`.is-primary`, `.is-on`, `.cs-btn-pill`),
+`.cs-field`, `.cs-box`, `.cs-meta` for the Card Studio; `.dsn-*` for the Design
+Studio. **Inline styles beat a stylesheet**, so consistency cannot be imposed
+from outside — chrome belongs in CSS or it will drift. Layout-only inline
+styles (flex, gap) still exist in `CardStudio` and are the remaining debt.
+
+Two rules that are easy to break and were broken:
+
+- **One solid accent on screen at a time**, on the live action. A selected tab,
+  an open panel and a live warning are **states** and take `.is-on`
+  (dim accent), not the fill. Publish / Print-ready PDF is the fill.
+- **Native `<select>` chrome is not acceptable on a dark surface** — the OS
+  draws its own light-mode arrow. Both studios draw one caret as a background
+  image and keep the field on the studio's own surface.
+
+## 9. UX and accessibility standards
 
 These are requirements in this codebase, not aspirations. `tests/contrast.test.js`
 and `tests/designer.test.js` enforce parts of them.
@@ -373,7 +412,7 @@ and `tests/designer.test.js` enforce parts of them.
 - `.chip` is `text-transform: uppercase`, and `innerText` reflects that —
   assert chip text case-insensitively.
 
-## 9. Testing and verification
+## 10. Testing and verification
 
 ```bash
 php api/tests/run.php     # the PHP suite: one file, chk(label, cond)
@@ -405,7 +444,7 @@ Expectations for any change here:
 - Prefer a test that pins the **promise** ("meeting days are deduped, sorted
   and range-checked") over one that pins an incidental string.
 
-## 10. Structures that must not come back
+## 11. Structures that must not come back
 
 Each of these was removed because it caused a specific failure. Reintroducing
 one reintroduces the failure.
@@ -436,6 +475,12 @@ one reintroduces the failure.
 - **A media query standing in for a panel's own width.** Container queries
   exist; `@media (max-width: N)` silently lies the moment the panel stops
   being the width of the window.
+- **A value off the studios' scales** — a fifth radius, a second control
+  height, a font size between two steps. Thirteen buttons once carried four
+  radii and eight paddings on one screen; that, and not any single choice, is
+  what made it read as unfinished.
+- **Chrome in an inline `style` object.** It cannot be corrected from a
+  stylesheet, so it is where drift goes to hide.
 - **A cached public op with no invalidation topic.**
 - **Inline style grids** where a class belongs.
 - **The entity called a cohort in user-facing copy**, and **"student" for a
@@ -446,7 +491,7 @@ one reintroduces the failure.
   Summer student — those are the two that send an operator to the wrong
   screen.
 
-## 11. Where the documentation is
+## 12. Where the documentation is
 
 - `docs/ADMIN-GUIDE.md` — for the people who run the programme. Terminology,
   the portal map, workflows, error meanings, the warnings list. Update it when
