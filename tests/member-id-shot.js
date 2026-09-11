@@ -25,7 +25,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { waitForServer } = require('./_serve');
+const { waitForServer, writeScreenIndex } = require('./_serve');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = process.env.MEMBER_ID_PORT || 8251;
@@ -204,13 +204,10 @@ window.nggcEnsureFonts()
        fixture run. A capture of a real child does not belong in the repo, so
        it is not indexed and --out is expected to point outside it. */
     if (!opts.file && path.dirname(opts.out) === path.join(ROOT, 'docs', 'screens')) {
-      const idxFile = path.join(ROOT, 'docs', 'screens', 'INDEX.json');
       const name = path.basename(opts.out, '.png');
-      let idx = [];
-      try { idx = JSON.parse(fs.readFileSync(idxFile, 'utf8')); } catch (_) {}
-      const keep = Array.isArray(idx) ? idx.filter((s) => s.name !== name) : [];
-      keep.push({ name, label: 'NGGC member ID · both sizes, with and without a headshot on file', kb });
-      fs.writeFileSync(idxFile, JSON.stringify(keep, null, 2) + '\n');
+      writeScreenIndex(path.join(ROOT, 'docs', 'screens'), [
+        { name, label: 'NGGC member ID · both sizes, with and without a headshot on file', kb },
+      ]);
     }
     await page.close();
   } finally {

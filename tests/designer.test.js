@@ -674,6 +674,11 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
       const text = {};
       [['idCell', '.dsn-td-mono'], ['runNote', '.dsn-merge-note'],
        ['chip', '.dsn-chip:not(.is-on)'], ['filterLabel', '.dsn-merge-filters .dsn-prop span'],
+       /* The top bar's zone captions (DESIGN / PROOF / SAVE / OUTPUT). They
+          are the smallest text in the studio and the thing that makes the bar
+          scannable, so they are exactly the text that must not be decorative:
+          a caption nobody can read groups nothing. */
+       ['zoneCap', '.dsn-zone-cap'], ['barFieldLabel', '.dsn-zone .dsn-prop span'],
        ['colHeader', '.dsn-th:not(.is-on) button']].forEach(([k, sel]) => {
         const e = document.querySelector(sel);
         if (e) text[k] = { r: ratio(e), px: parseFloat(getComputedStyle(e).fontSize) };
@@ -733,7 +738,7 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
 
     const dim = Object.keys(seen.text).filter(k => seen.text[k].r < 4.5)
       .map(k => k + ' ' + seen.text[k].r + ':1');
-    ok('every piece of small text in the batch panel clears 4.5:1 where it lands'
+    ok('every piece of small text in the bar and batch panel clears 4.5:1 where it lands'
        + (dim.length ? ' — ' + dim.join(', ') : ''), dim.length === 0);
     ok('nothing in the panel is taken out of the tab order ('
        + seen.stops + ' stops)', seen.stops > 20 && seen.offTab === 0);
@@ -755,6 +760,60 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     ok('at 200% text zoom on a 700px window the page does not scroll sideways ('
        + overflowPx + 'px)', overflowPx <= 1);
     await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+
+    /* ── THE BAR'S ZONES ─────────────────────────────────────────────────
+       Nine controls in one undifferentiated row became four captioned groups:
+       DESIGN, PROOF, SAVE, OUTPUT. The grouping has to be REAL (a labelled
+       role="group", so it exists for a screen reader and is not merely a
+       drawn divider) and it has to hold its shape — a zone that wraps inside
+       itself puts the seam in the wrong place, which is what "SIDE on its own
+       line under NAME while the bar still had room" looked like. */
+    /* Set the width explicitly: the check above leaves the window at 700px for
+       the 200% zoom case, and a bar measured there is four rows — correctly. A
+       layout assertion that does not state its viewport is measuring whatever
+       the previous test left behind. */
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.waitForTimeout(350);
+    const bar = await page.evaluate(() => {
+      const zones = Array.from(document.querySelectorAll('.dsn-zone'));
+      const rects = zones.map(z => z.getBoundingClientRect());
+      return {
+        n: zones.length,
+        labelled: zones.filter(z => z.getAttribute('role') === 'group'
+          && (z.getAttribute('aria-label') || '').trim().length > 2).length,
+        captions: zones.filter(z => z.querySelector('.dsn-zone-cap')).length,
+        caps: zones.map(z => (z.querySelector('.dsn-zone-cap') || {}).textContent || ''),
+        rows: Array.from(new Set(rects.map(r => Math.round(r.top)))).length,
+        // A zone holding one control row is ~1 line tall; one that wrapped
+        // internally is roughly double.
+        tallest: Math.round(Math.max.apply(null, rects.map(r => r.height))),
+        /* When the bar wraps, the zone on the last row must be OUTPUT and it
+           must be pushed to the end of it. */
+        lastIsOutput: (function () {
+          const maxTop = Math.max.apply(null, rects.map(r => Math.round(r.top)));
+          const onLast = zones.filter((z, i) => Math.round(rects[i].top) === maxTop);
+          if (onLast.length !== 1) return zones.length === onLast.length; // single row
+          const z = onLast[0], r = z.getBoundingClientRect();
+          const bar = z.closest('.dsn-bar');
+          const br = bar.getBoundingClientRect();
+          const pad = parseFloat(getComputedStyle(bar).paddingRight);
+          return (z.getAttribute('aria-label') || '').indexOf('Export') === 0
+            && Math.abs((br.right - pad) - r.right) < 3;
+        })(),
+      };
+    });
+    ok('the bar is four labelled zones, not one row of nine controls ('
+       + bar.caps.join('/') + ')', bar.n === 4 && bar.labelled === 4 && bar.captions === 4);
+    /* NOT a row count. How many rows the bar takes depends on which design is
+       open — a two-sided card adds an "Its back" field and a long name pushes
+       further — so pinning a number would pin the fixture, not the design.
+       What must hold whenever it DOES wrap is that OUTPUT is the zone that
+       goes last and sits at the row's end, so the extra line reads as decided
+       rather than as something that fell off. */
+    ok('…and when the bar wraps, OUTPUT is what wraps, to the row\'s end ('
+       + bar.rows + ' row(s))', bar.lastIsOutput);
+    ok('…each breaking as a unit rather than wrapping inside itself ('
+       + bar.tallest + 'px tall)', bar.tallest > 0 && bar.tallest < 70);
 
     /* ── PRINT MODE: the canvas holds its ground ─────────────────────────
        The defect this pins: the batch panel used to be a full-width block

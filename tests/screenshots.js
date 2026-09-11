@@ -17,7 +17,7 @@
    Env:  SHOT_PORT (default 8210), CHROMIUM_PATH, PLAYWRIGHT_MODULE
    ============================================================================ */
 const { execSync, spawn } = require('child_process');
-const { waitForServer, waitForBoot } = require('./_serve');
+const { waitForServer, waitForBoot, writeScreenIndex } = require('./_serve');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -634,6 +634,6 @@ function seed() {
     cleanup();
   }
 
-  fs.writeFileSync(path.join(OUT, 'INDEX.json'), JSON.stringify(shots, null, 2));
+  writeScreenIndex(OUT, shots);
   console.log(`\n${shots.length} screenshot(s) in docs/screens/`);
 })().catch((e) => { cleanup(); console.error(e); process.exit(1); });

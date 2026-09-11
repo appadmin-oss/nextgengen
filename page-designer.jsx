@@ -1695,7 +1695,10 @@ function DesignerPage() {
   const shell = (ch) => (
     <div style={{ minHeight: "100vh", background: "#0b1327", color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 20px 80px" }}>
       <div style={{ maxWidth: 1240, margin: "0 auto" }}>
-        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: DSN_GOLD }}>NGG DESIGN STUDIO · DRAW · BIND · PUBLISH · PRINT</div>
+        {/* "· DRAW · BIND · PUBLISH · PRINT" was four words of decoration in
+            the accent colour, above the only thing anyone came here to read.
+            The verbs are the buttons; they do not need announcing. */}
+        <div className="dsn-eyebrow">NGG Design Studio</div>
         {/* Not "Design an ID card". This started as an ID tool because the whole
             product started as a summer-programme tool, and the organisation makes
             posters, certificates and social posts the other eleven months. */}
@@ -1747,98 +1750,147 @@ function DesignerPage() {
       {libErr && <ErrorState title="The design library did not load" message={libErr} onRetry={() => location.reload()}/>}
 
       <div className="dsn-bar">
-        <select className="admin-select" value={tpl && tpl.id ? tpl.id : ""} aria-label="Open a design"
-          onChange={e => open(e.target.value)}>
-          <option value="">Open a design…</option>
-          <optgroup label="Start from">
-            {/* The member card first — it is the credential every year-round
-                member carries, and the one this tool could not make. */}
-            <option value="__new_member">New NGG member card (front)</option>
-            <option value="__new_member_back">New NGG member card (back)</option>
-            <option value="__new_student">New Summer School card</option>
-            <option value="__new_volunteer">New volunteer card</option>
-          </optgroup>
-          {/* Grouped by what it is FOR, not by pixel size. Somebody making a
-              centre-opening poster is not thinking "877 × 1240". */}
-          {["Credentials", "Print", "Social", "Documents"].map(g => (
-            <optgroup key={g} label={g}>
-              {window.TPL_PRESETS.filter(x => x.group === g).map(x => (
-                <option key={x.id} value={"__preset-" + x.id}>{x.name}</option>
+        
+        {/* ── THE BAR'S ZONES ──────────────────────────────────────────────
+            Nine controls sat in one undifferentiated row: which side this is,
+            what it is called, who it is previewing, Save, Publish, three
+            export formats and the batch switch. Five different concerns with
+            no seam between them, so finding Publish meant reading the whole
+            row — and the Steering Law says a long narrow tunnel of small
+            targets is exactly the expensive shape. Fitts's Law pays off most
+            on high-frequency expert controls like these, and its scale
+            independence is empirically violated: distance costs on its own,
+            not merely distance relative to target size.
+
+            Four zones with captions, so the eye lands on a REGION and then on
+            a control: DESIGN (what this document is), PROOF (what the canvas
+            is showing), SAVE (its state) and OUTPUT (what leaves the studio).
+            Each is a real role="group" with a label, so the grouping exists
+            for a screen reader too and is not merely drawn. OUTPUT sits at
+            the end: it is the terminal step, and the batch switch should not
+            be under the hand that is editing. */}
+        {/* ALWAYS rendered, even with nothing open — this zone holds the only
+            way to OPEN a design, and gating it on `tpl` left an empty studio
+            with no door into it. Its other fields describe a document, so
+            they wait for one. */}
+        <div className="dsn-zone" role="group" aria-label="Design">
+            <span className="dsn-zone-cap">Design</span>
+            {/* The document picker. It was a full-width select on its own line
+                above everything — the largest object in the bar, for the
+                control you touch least. It is a control like the others now,
+                first in the zone that says what this document IS. */}
+            <label className="dsn-prop dsn-bar-open"><span>Open</span>
+              <select className="admin-select" value={tpl && tpl.id ? tpl.id : ""} aria-label="Open a design"
+              onChange={e => open(e.target.value)}>
+              <option value="">Open a design…</option>
+              <optgroup label="Start from">
+                {/* The member card first — it is the credential every year-round
+                    member carries, and the one this tool could not make. */}
+                <option value="__new_member">New NGG member card (front)</option>
+                <option value="__new_member_back">New NGG member card (back)</option>
+                <option value="__new_student">New Summer School card</option>
+                <option value="__new_volunteer">New volunteer card</option>
+              </optgroup>
+              {/* Grouped by what it is FOR, not by pixel size. Somebody making a
+                  centre-opening poster is not thinking "877 × 1240". */}
+              {["Credentials", "Print", "Social", "Documents"].map(g => (
+                <optgroup key={g} label={g}>
+                  {window.TPL_PRESETS.filter(x => x.group === g).map(x => (
+                    <option key={x.id} value={"__preset-" + x.id}>{x.name}</option>
+                  ))}
+                </optgroup>
               ))}
-            </optgroup>
-          ))}
-          <optgroup label="Standard designs (duplicate to edit)">
-            {window.TPL_SYSTEM.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </optgroup>
-          {(list || []).length > 0 && <optgroup label="Your designs">
-            {(list || []).map(t => <option key={t.templateId} value={t.templateId}>{t.name}{t.status === "published" ? " · v" + t.version : " · draft"}</option>)}
-          </optgroup>}
-        </select>
-        {tpl && tpl.kind !== "graphic" && (
-          /* Which SIDE this is. A card has two, and a template was one
-             document — so a back either did not exist or was a second
-             unrelated design nobody could tell was the pair. Naming the pair
-             is what lets a duplex run render both faces per person in order,
-             instead of coming out mismatched. */
-          <label className="dsn-prop"><span>Side</span>
-            <select value={tpl.face || "single"} aria-label="Which side of the card this design is"
-              onChange={e => { pushHistory(); setTpl(t => ({ ...t, face: e.target.value })); }}>
-              <option value="single">One-sided</option>
-              <option value="front">Front</option>
-              <option value="back">Back</option>
-            </select></label>
-        )}
-        {tpl && tpl.face === "front" && (
-          <label className="dsn-prop"><span>Its back</span>
-            <select value={tpl.pairId || ""} aria-label="Which design is the back of this card"
-              onChange={e => { pushHistory(); setTpl(t => ({ ...t, pairId: e.target.value })); }}>
-              <option value="">— none —</option>
-              {(window.TPL_SYSTEM || []).filter(t => t.face === "back" && t.kind === tpl.kind)
-                .map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-              {(list || []).filter(t => t.face === "back" && t.kind === tpl.kind && t.templateId !== tpl.id)
-                .map(t => <option key={t.templateId} value={t.templateId}>{t.name}</option>)}
-            </select></label>
-        )}
-        {tpl && <>
-          <input className="admin-input" value={tpl.name} aria-label="Design name" style={{ maxWidth: 240 }}
-            onChange={e => setTpl(p => ({ ...p, name: e.target.value }))}/>
-          {/* Proof against a REAL child, not only the sample. This is the control
-              that turns "it looks right" into "it is right for this cohort". */}
-          <select className="admin-select" value={proofRow ? -1 : rowIdx} aria-label="Preview with"
-            /* Clears a proof taken from the batch picker. Two controls setting
-               the same thing must not disagree — a select still reading
-               "Sample data" while the canvas shows Chidi is a screen lying
-               about what is on it. */
-            onChange={e => { setProofRow(null); setRowIdx(Number(e.target.value)); }}
-            style={{ maxWidth: 240 }}>
-            <option value={-1}>Sample data</option>
-            {rows.slice(0, 300).map((r, i) => (
-              <option key={i} value={i}>{[r.firstName, r.surname].filter(Boolean).join(" ") || r.displayId}</option>
-            ))}
-          </select>
-          {proofRow && (
-            <button className="btn btn-ghost btn-sm" onClick={() => setProofRow(null)}
-                    title="Back to the preview picker">
-              Proofing {dsnRowName(proofRow)} ✕
-            </button>
-          )}
-          <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={save}>{busy === "save" ? "…" : "Save"}</button>
-          <button className="btn btn-primary btn-sm" disabled={!!busy || errs.length > 0} onClick={publish}
-            title={errs.length ? "Fix the errors first" : "Freeze this design for print runs"}>
-            {busy === "publish" ? "…" : "Publish"}
-          </button>
-          <div className="dsn-exports">
-            <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => exportPng(300)}>PNG</button>
-            <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => exportPdf(300)}>PDF</button>
-            {/* Vector, for a printer that wants type as type rather than pixels. */}
-            <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={exportSvg}>SVG</button>
-            {/* The one that makes this worth having in November: the same three
-                exports, but once per child on a filtered roster. */}
-            <button className={"btn btn-sm " + (mergeOpen ? "btn-primary" : "btn-ghost")} disabled={!!busy}
-              aria-expanded={mergeOpen} onClick={() => setMergeOpen(o => { if (!o) pickedTouched.current = false; return !o; })}
-              title="One design, one per person, from the roster">Batch…</button>
+              <optgroup label="Standard designs (duplicate to edit)">
+                {window.TPL_SYSTEM.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </optgroup>
+              {(list || []).length > 0 && <optgroup label="Your designs">
+                {(list || []).map(t => <option key={t.templateId} value={t.templateId}>{t.name}{t.status === "published" ? " · v" + t.version : " · draft"}</option>)}
+              </optgroup>}
+        </select></label>
+            {tpl && <label className="dsn-prop dsn-bar-name"><span>Name</span>
+              <input className="admin-input" value={tpl.name} aria-label="Design name"
+                onChange={e => setTpl(p => ({ ...p, name: e.target.value }))}/></label>}
+            {tpl && tpl.kind !== "graphic" && (
+              /* Which SIDE this is. A card has two, and a template was one
+                 document — so a back either did not exist or was a second
+                 unrelated design nobody could tell was the pair. Naming the
+                 pair is what lets a duplex run render both faces per person
+                 in order, instead of coming out mismatched. */
+              <label className="dsn-prop"><span>Side</span>
+                <select value={tpl.face || "single"} aria-label="Which side of the card this design is"
+                  onChange={e => { pushHistory(); setTpl(t => ({ ...t, face: e.target.value })); }}>
+                  <option value="single">One-sided</option>
+                  <option value="front">Front</option>
+                  <option value="back">Back</option>
+                </select></label>
+            )}
+            {tpl && tpl.face === "front" && (
+              <label className="dsn-prop"><span>Its back</span>
+                <select value={tpl.pairId || ""} aria-label="Which design is the back of this card"
+                  onChange={e => { pushHistory(); setTpl(t => ({ ...t, pairId: e.target.value })); }}>
+                  <option value="">— none —</option>
+                  {(window.TPL_SYSTEM || []).filter(t => t.face === "back" && t.kind === tpl.kind)
+                    .map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  {(list || []).filter(t => t.face === "back" && t.kind === tpl.kind && t.templateId !== tpl.id)
+                    .map(t => <option key={t.templateId} value={t.templateId}>{t.name}</option>)}
+                </select></label>
+            )}
+        </div>
+
+        {tpl && (
+          <div className="dsn-zone" role="group" aria-label="Proof">
+            <span className="dsn-zone-cap">Proof</span>
+            {/* Proof against a REAL child, not only the sample. This is the
+                control that turns "it looks right" into "it is right for this
+                edition". */}
+            <label className="dsn-prop"><span>Preview with</span>
+              <select className="admin-select" value={proofRow ? -1 : rowIdx} aria-label="Preview with"
+                /* Clears a proof taken from the batch picker. Two controls
+                   setting the same thing must not disagree — a select still
+                   reading "Sample data" while the canvas shows Chidi is a
+                   screen lying about what is on it. */
+                onChange={e => { setProofRow(null); setRowIdx(Number(e.target.value)); }}>
+                <option value={-1}>Sample data</option>
+                {rows.slice(0, 300).map((r, i) => (
+                  <option key={i} value={i}>{[r.firstName, r.surname].filter(Boolean).join(" ") || r.displayId}</option>
+                ))}
+              </select></label>
+            {proofRow && (
+              <button className="btn btn-ghost btn-sm" onClick={() => setProofRow(null)}
+                      title="Back to the preview picker">
+                Proofing {dsnRowName(proofRow)} ✕
+              </button>
+            )}
           </div>
-        </>}
+        )}
+
+        {tpl && (
+          <div className="dsn-zone" role="group" aria-label="Save and publish">
+            <span className="dsn-zone-cap">Save</span>
+            <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={save}>{busy === "save" ? "…" : "Save"}</button>
+            <button className="btn btn-primary btn-sm" disabled={!!busy || errs.length > 0} onClick={publish}
+              title={errs.length ? "Fix the errors first" : "Freeze this design for print runs"}>
+              {busy === "publish" ? "…" : "Publish"}
+            </button>
+          </div>
+        )}
+
+        {tpl && (
+          <div className="dsn-zone dsn-zone-end" role="group" aria-label="Export and batch">
+            <span className="dsn-zone-cap">Output</span>
+            <div className="dsn-exports">
+              <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => exportPng(300)}>PNG</button>
+              <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => exportPdf(300)}>PDF</button>
+              {/* Vector, for a printer that wants type as type rather than pixels. */}
+              <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={exportSvg}>SVG</button>
+              {/* The one that makes this worth having in November: the same
+                  three exports, but once per child on a filtered roster. */}
+              <button className={"btn btn-sm btn-ghost" + (mergeOpen ? " is-on" : "")} disabled={!!busy}
+                aria-expanded={mergeOpen} onClick={() => setMergeOpen(o => { if (!o) pickedTouched.current = false; return !o; })}
+                title="One design, one per person, from the roster">Batch…</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── The tool row ────────────────────────────────────────────────────
