@@ -626,7 +626,8 @@ function TopNav({ page, setPage }) {
       { id: "club",    label: "NGGC",             desc: "Identity society",         icon: "◐" },
       { id: "book",    label: "The Anchor book", desc: "Field manual",              icon: "▢" },
     ]},
-    { id: "stay", kind: "mega", label: "The room", match: ["community","blog","media","volunteers","parents","contact"], items: [
+    { id: "stay", kind: "mega", label: "The room", match: ["about","community","blog","media","volunteers","parents","contact"], items: [
+      { id: "about",      label: "About NGGC",      desc: "The 2040 formation brief", icon: "◆", badge: "2040" },
       { id: "community",  label: "Community",        desc: "The movement, live",      icon: "◈" },
       { id: "blog",       label: "The Journal",     desc: "Stories + essays",        icon: "✎" },
       { id: "media",      label: "Media room",      desc: "Films · podcast · reels", icon: "▶" },
@@ -1030,6 +1031,7 @@ function Footer({ setPage, page }) {
     {
       h: "Stay in motion",
       links: [
+        { label: "About NGGC", page: "about" },
         { label: "The Anchor book", page: "book" },
         { label: "The Journal", page: "blog" },
         { label: "Media room", page: "media" },

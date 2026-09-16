@@ -9,7 +9,7 @@ header('Content-Type: application/xml; charset=utf-8');
 
 $base = 'https://next.afrovanguard.org.ng';
 $pages = [
-    ['/', 'weekly', '1.0'],   ['/summer', 'monthly', '0.9'], ['/club', 'monthly', '0.8'],
+    ['/', 'weekly', '1.0'],   ['/about', 'monthly', '0.9'], ['/summer', 'monthly', '0.9'], ['/club', 'monthly', '0.8'],
     ['/anchor', 'monthly', '0.9'], ['/book', 'monthly', '0.7'], ['/media', 'weekly', '0.7'],
     ['/parents', 'monthly', '0.8'], ['/volunteers', 'monthly', '0.7'], ['/volunteer', 'monthly', '0.8'], ['/legal', 'yearly', '0.4'], ['/join', 'monthly', '0.9'],
     ['/centres', 'weekly', '0.8'],

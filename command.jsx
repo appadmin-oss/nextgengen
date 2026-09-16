@@ -176,6 +176,7 @@ function buildItems(auth) {
   const nav = (id) => () => window.__navigate && window.__navigate(id);
   const list = [
     { id: "nav.home",       section: "Pages", icon: "◉", label: "Home",          hint: "Hero, programs, the room", run: nav("home"),    keywords: ["start","intro"] },
+    { id: "nav.about",      section: "Pages", icon: "◆", label: "About NGGC",      hint: "The 2040 formation brief", run: nav("about"),   keywords: ["about","2040","divisions","courage","formation","brief","vision"] },
     { id: "nav.summer",     section: "Pages", icon: "☀", label: "Summer Students",hint: "The on-ramp",              run: nav("summer") },
     { id: "nav.club",       section: "Pages", icon: "◐", label: "NGGC",            hint: "The identity society",     run: nav("club"),    keywords: ["club","identity"] },
     { id: "nav.anchor",     section: "Pages", icon: "✦", label: "Anchor 12",       hint: "The 12-week flagship",     run: nav("anchor") },

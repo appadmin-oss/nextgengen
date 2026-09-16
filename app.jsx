@@ -7,12 +7,13 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","centres","club","community","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","s-status","v-status","admin","summer-admin","club-admin","circle","gate","apply","review","verify","reshoot","cards","designer","certificate","legal","journal-entry"];
+const PAGE_IDS = ["home","about","summer","centres","club","community","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","s-status","v-status","admin","summer-admin","club-admin","circle","gate","apply","review","verify","reshoot","cards","designer","certificate","legal","journal-entry"];
 
 // Page metadata — drives <title>, meta description and the screen-reader
 // route announcement when navigating between pages.
 const PAGE_META = {
   home:       { title: "Next Generation Genius · Afrovanguard",      desc: "A twelve-week growth journey for African teenagers, 10–17. From summer student to vanguard leader." },
+  about:      { title: "About NGGC · The 2040 formation brief",     desc: "The Next Generation Genius Club is a formation system: four divisions, six goals, a courage index and a mentor for every member — raising 1,000,000 incorruptible African leaders by 2040." },
   summer:     { title: "Summer Students · NGG",                       desc: "Six weeks, eight tracks, one bold move. The on-ramp into the Next Generation Genius movement." },
   centres:    { title: "Summer School centres · NGG",                 desc: "Every LCASP 2026 Summer School centre — find yours, meet the crew, see what's next." },
   club:       { title: "NGGC · The Genius Club",                      desc: "A teen society with Genius IDs, weekly missions, public skill badges and a leaderboard." },
@@ -264,6 +265,7 @@ function App() {
 
   const pages = {
     home:      <HomePage      setPage={setPage}/>,
+    about:     <AboutPage     setPage={setPage}/>,
     summer:    <SummerPage    setPage={setPage}/>,
     centres:   <CentresPage   setPage={setPage}/>,
     club:      <ClubPage      setPage={setPage}/>,
