@@ -1042,8 +1042,11 @@ function CommunityPublic({ setPage, auth }) {
   const tabBtn = (k, label, icon) => (
     // aria-pressed, because which tab is current was signalled by colour and a
     // gold underline alone — neither of which reaches a screen reader.
+    /* Chrome in the stylesheet (`.cm-tab`), not inline: it carries a touch
+       floor that an inline style would out-rank, and this row sat at 42px on a
+       phone for exactly that reason. What stays here is the live state. */
     <button key={k} onClick={() => { setView(k); setPanel(null); }} aria-pressed={view === k}
-      style={{ fontFamily: "var(--font-body)", fontSize: 13.5, fontWeight: 600, padding: "12px 6px", border: "none", background: "none", cursor: "pointer", borderBottom: "2.5px solid " + (view === k ? "var(--gold-500)" : "transparent"), color: view === k ? "#fff" : "rgba(255,255,255,0.72)", display: "inline-flex", alignItems: "center", gap: 7 }}>
+      className={"cm-tab" + (view === k ? " is-on" : "")}>
       <i className={"ph " + icon} aria-hidden="true"/>{label}
     </button>
   );

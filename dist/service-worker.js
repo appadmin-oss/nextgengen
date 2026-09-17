@@ -18,7 +18,7 @@
      deploy shows up without anybody hunting for a hard refresh.
    ================================================================ */
 
-const CACHE_VERSION = 'ngg-183a5e80f2';
+const CACHE_VERSION = 'ngg-945a329850';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 
@@ -36,13 +36,13 @@ const FINGERPRINTED = /\.[0-9a-f]{10}\.(?:min\.)?(?:js|css)$/;
 const PRECACHE = [
   '/',
   '/index.html',
-  '/styles.ca615257cf.css',
+  '/styles.9c908ab019.css',
   '/styles-app.189354ea04.css',
   '/data.29d3739700.js',
   '/photos.fffb7d55bb.js',
   '/api-client.a367192e65.js',
   '/outbox.042a8c9122.js',
-  '/app.648573bb3c.min.js',
+  '/app.9bec0d5b4a.min.js',
   '/vendor/react.production.min.js',
   '/vendor/react-dom.production.min.js',
   '/assets/logo.png',

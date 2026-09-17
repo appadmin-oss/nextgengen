@@ -834,7 +834,9 @@ function JoinPage({ setPage }) {
                     aria-label={done ? ("Go back to step " + (i + 1) + ": " + s) : ("Step " + (i + 1) + ": " + s + (i === step ? " (current)" : ""))}
                     aria-current={i === step ? "step" : undefined}
                     style={{
-                    width:42, height:42, borderRadius:"50%", padding:0,
+                    /* 44, not 42: these navigate, and a phone is how most of
+                       this form is filled in. */
+                    width:44, height:44, borderRadius:"50%", padding:0,
                     background: done ? "var(--navy-900)" : i === step ? "var(--gold-500)" : "var(--cream-100)",
                     color: i <= step ? (i === step ? "var(--navy-900)" : "white") : "var(--ink-400)",
                     display:"grid", placeItems:"center", fontWeight:700, fontFamily:"var(--font-display)", fontSize:18,
@@ -1118,8 +1120,12 @@ function ContactPage({ setPage }) {
             <div style={{display:"flex", flexDirection:"column", gap:16}}>
               <div className="card" style={{padding:24}}>
                 <div className="eyebrow" style={{color:"var(--gold-500)"}}>DIRECT</div>
-                <a href={"mailto:" + CONTACT.email} style={{display:"block", marginTop:12, fontWeight:600, color:"var(--ink-900)", textDecoration:"none"}}>✉ {CONTACT.email}</a>
-                <a href={"tel:" + CONTACT.phone} style={{display:"block", marginTop:8, fontWeight:600, color:"var(--ink-900)", textDecoration:"none"}}>☎ {CONTACT.phoneDisplay}</a>
+                {/* The two actions this page exists for. Class rather than an
+                    inline style object so the touch floor in styles.css can
+                    reach them — inline would out-rank it, which is why they
+                    sat at 20px. */}
+                <a className="contact-line" href={"mailto:" + CONTACT.email}>✉ {CONTACT.email}</a>
+                <a className="contact-line" href={"tel:" + CONTACT.phone}>☎ {CONTACT.phoneDisplay}</a>
               </div>
               <div className="card" style={{padding:24}}>
                 <div className="eyebrow" style={{color:"var(--gold-500)"}}>FIND US</div>

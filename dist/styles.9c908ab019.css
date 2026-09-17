@@ -6280,3 +6280,101 @@ img { background-color: rgba(12,20,50,0.04); }
   .ab-card, .ab-card-pad { padding: 22px; }
   .ab-panel { padding: 20px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOUCH TARGETS — the public site, on a finger
+   ═══════════════════════════════════════════════════════════════════════════
+
+   The Control Room and the two studios have held a 44px floor on coarse
+   pointers for a while (`--dsn-ctl`, and tests/dashboard-shot.js asserts it).
+   The public site never had the equivalent, which is how its topnav sat at
+   38px, the footer's link columns at 17px and a chapter link on /book at 19px
+   without anybody noticing — and the public site is the half a parent opens on
+   a phone from a WhatsApp message.
+
+   SCOPED TO `(pointer: coarse)` rather than to a width, for two reasons. A
+   mouse is precise and does not need 44px, so a desktop layout should not be
+   loosened to satisfy a rule that is about fingers; and width is the wrong
+   proxy — a 1280px touch laptop needs the floor and a 700px desktop window
+   does not. It is also the query the studios already use, so the product has
+   one rule about this rather than two.
+
+   `min-height` plus centring rather than padding: padding on a control whose
+   height comes from its line-height pushes the text off-centre, and several of
+   these are in flex rows where the extra height had to be shared.
+
+   tests/responsive.test.js measures this on every public route at 360, 390 and
+   768, with touch emulated so the query actually matches.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (pointer: coarse) {
+  /* Buttons and button-shaped links, every variant. `.btn-sm` is included
+     deliberately: "small" is a visual density, not permission to be unhittable. */
+  .btn, a.btn, button.btn { min-height: 44px; }
+
+  /* The top bar. These are the controls the original audit named. */
+  .nav-link, .nav-link-mega { min-height: 44px; display: inline-flex; align-items: center; }
+  .a11y-nav-btn { min-width: 44px; min-height: 44px; }
+  .brand { min-height: 44px; }
+  .nav-burger { min-width: 44px; min-height: 44px; }
+
+  /* The skip link is the first control a keyboard or screen-reader user meets,
+     and it is a real target the moment it is focused. */
+  .skip-link { min-height: 44px; display: inline-flex; align-items: center; }
+
+  /* Footer navigation. A column of 17px links with an 11px gap is a column of
+     near-misses; the gap comes down as the targets come up, so the footer grows
+     but its rhythm does not change. */
+  .footer-col ul { gap: 2px; }
+  .footer-link { min-height: 44px; }
+  .footer-contact-line { min-height: 44px; display: inline-flex; align-items: center; }
+  .footer-status-pill { min-height: 44px; }
+  .footer-bottom .legal-links { gap: 10px 18px; }
+  .footer-bottom button.legal { min-height: 44px; display: inline-flex; align-items: center; }
+
+  /* Chips are filters on /media and /club — they select something, so they are
+     controls, not labels. Only the interactive ones: a chip rendered as a span
+     is a badge and is left alone. */
+  button.chip, a.chip { min-height: 44px; }
+
+  /* Form fields. A 35px input is a 35px tap target AND a cramped one to type
+     in; both improve with the same line. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]),
+  select, textarea { min-height: 44px; }
+
+  /* The floating helper, and the two page-specific offenders the sweep found:
+     /book's chapter links (19px) and /legal's document nav (37px). */
+  .fab-top { min-width: 44px; min-height: 44px; }
+  .book-chapter-cta { min-height: 44px; }
+  .legal-nav-item { min-height: 44px; }
+}
+
+/* The Community view switcher. Was an inline style object, which beat every
+   stylesheet rule and so could not be given a touch floor from here — it
+   measured 42px on a phone. Class now; the live state stays in the markup. */
+.cm-tab {
+  font-family: var(--font-body); font-size: 13.5px; font-weight: 600;
+  padding: 12px 6px; border: none; background: none; cursor: pointer;
+  border-bottom: 2.5px solid transparent;
+  color: rgba(255,255,255,0.72);
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.cm-tab.is-on { border-bottom-color: var(--gold-500); color: #fff; }
+
+@media (pointer: coarse) {
+  .cm-tab { min-height: 44px; }
+  /* The newsletter submit, which the footer draws on every page. */
+  .newsletter-form button { min-height: 44px; }
+}
+
+/* The contact page's mail and phone links — the two actions it exists for.
+   Were inline-styled and so unreachable from here; they measured 20px. */
+.contact-line {
+  display: flex; align-items: center;
+  margin-top: 8px; font-weight: 600;
+  color: var(--ink-900); text-decoration: none;
+}
+.contact-line:first-of-type { margin-top: 12px; }
+.contact-line:hover { text-decoration: underline; }
+
+@media (pointer: coarse) { .contact-line { min-height: 44px; } }
