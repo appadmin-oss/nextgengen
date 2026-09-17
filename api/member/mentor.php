@@ -42,6 +42,19 @@ if ($method === 'GET') {
             'note'        => $b['note'] ?? '',
             'ip'          => client_ip(),
         ]);
+    } elseif ((string)($b['action'] ?? '') === 'courage') {
+        // One observed instance on the 1-5 courage ladder (brief §14). The
+        // domain requires the evidence; this only carries it.
+        rate_limit_check('mentor.courage');
+        $res = gs_call('member.mentor.courage.mark', [
+            'requesterId' => $s['mid'],
+            'subjectId'   => $b['subjectId'] ?? '',
+            'score'       => $b['score'] ?? 0,
+            'prompt'      => $b['prompt'] ?? '',
+            'evidence'    => $b['evidence'] ?? '',
+            'observedOn'  => $b['observedOn'] ?? '',
+            'ip'          => client_ip(),
+        ]);
     } elseif ((string)($b['action'] ?? '') === 'v3') {
         $res = gs_call('member.mentor.v3.rate', [
             'requesterId' => $s['mid'],

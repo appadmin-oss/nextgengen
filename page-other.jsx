@@ -6491,7 +6491,9 @@ function MentorChildSheet({ student, onClose, onChanged }) {
           <McV3 weeks={d.v3}/>
 
           <div role="tablist" style={{ display: "flex", gap: 4, margin: "22px 0 14px", borderBottom: "1px solid rgba(255,255,255,.12)" }}>
-            {[["record", "Conversations (" + d.meetings.length + ")"], ["goals", "Goals (" + d.goals.filter(g => g.status === "open").length + ")"]].map(([k, label]) => (
+            {[["record", "Conversations (" + d.meetings.length + ")"],
+              ["goals", "Goals (" + d.goals.filter(g => g.status === "open").length + ")"],
+              ["courage", "Courage (" + ((d.courage && d.courage.inWindow) || 0) + ")"]].map(([k, label]) => (
               <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
                 style={{ padding: "11px 14px", minHeight: 44, background: "none", border: "none", cursor: "pointer",
                          borderBottom: "2px solid " + (tab === k ? MC_GOLD : "transparent"), marginBottom: -1,
@@ -6503,7 +6505,9 @@ function MentorChildSheet({ student, onClose, onChanged }) {
 
           {tab === "record"
             ? <McMeetings d={d} subjectId={student.studentId} busy={busy} setBusy={setBusy} onDone={after} setErr={setErr}/>
-            : <McGoals d={d} subjectId={student.studentId} busy={busy} setBusy={setBusy} onDone={after} setErr={setErr}/>}
+            : tab === "goals"
+            ? <McGoals d={d} subjectId={student.studentId} busy={busy} setBusy={setBusy} onDone={after} setErr={setErr}/>
+            : <McCourage d={d} subjectId={student.studentId} onDone={after} setErr={setErr}/>}
         </>}
       </div>
     </div>
@@ -6771,6 +6775,170 @@ function McMeetingForm({ subjectId, kinds, entry, onCancel, onSaved, setErr }) {
 }
 
 /* ── Goals ────────────────────────────────────────────────────────────── */
+
+/* ── The Courage Index ─────────────────────────────────────────────────────
+   NGGC 2040 brief §14, and the one instrument in it that had nothing behind
+   it until now.
+
+   The form asks for the instance BEFORE the score, in reading order, because
+   that is the order the brief puts them in: a mark is recorded against
+   something the mentor watched happen, not against an impression of a child.
+   The server enforces it too (an evidence-less mark is refused) — this is the
+   half that stops a mentor reaching the refusal in the first place.
+
+   Deliberately no comparison to any other child anywhere on this panel. The
+   brief's whole warning about the index is that courage is not loudness and
+   the objective is not reckless children; a courage leaderboard is how a
+   ladder quietly becomes a competition.
+   ═════════════════════════════════════════════════════════════════════════ */
+function McCourage({ d, subjectId, onDone, setErr }) {
+  const c = d.courage || { marks: [], inWindow: 0, current: null, rung: null, direction: null };
+  const ladder = d.courageLadder || [];
+  const prompts = d.couragePrompts || [];
+  const [score, setScore] = React.useState(0);
+  const [prompt, setPrompt] = React.useState("");
+  const [evidence, setEvidence] = React.useState("");
+  const [observedOn, setObservedOn] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+
+  const field = { padding: "11px 13px", borderRadius: 11, fontSize: 16, background: "rgba(255,255,255,.07)",
+                  border: "1px solid rgba(255,255,255,.2)", color: "#eef2fb", fontFamily: "inherit",
+                  minHeight: 44, boxSizing: "border-box", width: "100%" };
+  // Mirrors COURAGE_EVIDENCE_MIN. Kept as a named floor rather than a bare 8 so
+  // the button and the server disagree in one obvious place if either moves.
+  const EVIDENCE_MIN = 8;
+  const ready = score >= 1 && evidence.trim().length >= EVIDENCE_MIN;
+
+  const save = (e) => {
+    e.preventDefault();
+    if (!ready) return;
+    setSaving(true); setErr("");
+    NGGApi.member.courageMark(subjectId, { score, prompt, evidence, observedOn })
+      .then(() => { setScore(0); setPrompt(""); setEvidence(""); setObservedOn(""); onDone(); })
+      .catch(er => setErr((er && er.message) || "Could not record that."))
+      .then(() => setSaving(false));
+  };
+
+  const dirWord = { rising: "↑ rising", falling: "↓ falling", steady: "→ steady" }[c.direction] || "";
+
+  return (
+    <>
+      {/* Where the child is now. Unscored is shown as unscored — a 1 would be
+          a judgement nobody made. */}
+      <div style={{ background: MC_CARD, border: "1px solid rgba(255,255,255,.12)", borderRadius: 14,
+                    padding: "14px 16px", marginBottom: 16 }}>
+        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".14em",
+                      color: "rgba(230,238,255,.55)", textTransform: "uppercase" }}>
+          Courage Index · last {c.windowDays || 120} days
+        </div>
+        {c.current === null ? (
+          <p style={{ fontSize: 13.5, color: "rgba(230,238,255,.6)", margin: "8px 0 0" }}>
+            Not yet scored. The index starts the first time you record something you watched happen.
+          </p>
+        ) : (
+          <>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 30, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{c.current}</span>
+              <span style={{ fontSize: 13, color: "rgba(230,238,255,.55)" }}>of 5</span>
+              {dirWord ? <span style={{ fontSize: 12.5, color: MC_GOLD, fontWeight: 700 }}>{dirWord}</span> : null}
+            </div>
+            {c.rung ? <div style={{ fontSize: 14.5, fontWeight: 600, marginTop: 2 }}>{c.rung.label}</div> : null}
+            <div style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+              {c.inWindow} observation{c.inWindow === 1 ? "" : "s"} in the window · {c.total} all time
+              {/* Said in words, because "no trend yet" and "flat" look identical
+                  as a blank and mean opposite things to a mentor. */}
+              {!dirWord && c.inWindow < 4 ? " · too few for a trend" : ""}
+            </div>
+          </>
+        )}
+      </div>
+
+      <form onSubmit={save} style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
+        <label style={{ fontSize: 13, color: "rgba(230,238,255,.7)" }}>
+          What did you see?
+          <textarea value={evidence} onChange={e => setEvidence(e.target.value)} maxLength={1200} rows={2}
+            placeholder="The thing that actually happened — not how they generally are."
+            style={{ ...field, marginTop: 6, minHeight: 66, resize: "vertical" }}/>
+        </label>
+
+        <label style={{ fontSize: 13, color: "rgba(230,238,255,.7)" }}>
+          Which question does it answer? <span style={{ opacity: .6 }}>(optional)</span>
+          <select value={prompt} onChange={e => setPrompt(e.target.value)} style={{ ...field, marginTop: 6 }}>
+            <option value="">—</option>
+            {prompts.map(q => <option key={q} value={q}>{q}</option>)}
+          </select>
+        </label>
+
+        <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
+          <legend style={{ fontSize: 13, color: "rgba(230,238,255,.7)", padding: 0, marginBottom: 6 }}>Where does that put them?</legend>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {ladder.map(r => (
+              <button key={r.score} type="button" onClick={() => setScore(r.score)}
+                aria-pressed={score === r.score}
+                style={{ display: "flex", alignItems: "center", gap: 12, textAlign: "left", cursor: "pointer",
+                         padding: "10px 12px", minHeight: 44, borderRadius: 11, fontFamily: "inherit",
+                         background: score === r.score ? "rgba(255,206,84,.16)" : "rgba(255,255,255,.05)",
+                         border: "1px solid " + (score === r.score ? MC_GOLD : "rgba(255,255,255,.14)"),
+                         color: "#eef2fb" }}>
+                <span style={{ width: 26, height: 26, borderRadius: 8, flexShrink: 0, display: "grid",
+                               placeItems: "center", fontWeight: 800, fontSize: 13,
+                               fontVariantNumeric: "tabular-nums",
+                               background: score === r.score ? MC_GOLD : "rgba(255,255,255,.1)",
+                               color: score === r.score ? "#2b2100" : "rgba(230,238,255,.8)" }}>{r.score}</span>
+                <span style={{ fontSize: 14 }}>{r.label}</span>
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <label style={{ fontSize: 12.5, color: "rgba(230,238,255,.6)", flex: "0 1 200px" }}>
+            When <span style={{ opacity: .7 }}>(defaults to today)</span>
+            <input type="date" value={observedOn} onChange={e => setObservedOn(e.target.value)}
+              style={{ ...field, marginTop: 4 }}/>
+          </label>
+          <button type="submit" disabled={saving || !ready}
+            style={{ padding: "11px 20px", minHeight: 44, borderRadius: 11, border: "none", background: MC_GOLD,
+                     color: "#2b2100", fontWeight: 800, cursor: "pointer", marginLeft: "auto",
+                     opacity: (saving || !ready) ? .55 : 1 }}>
+            {saving ? "Recording…" : "Record"}
+          </button>
+        </div>
+        {/* Says which half is missing rather than leaving a dead button. */}
+        {!ready && (score >= 1 || evidence) ? (
+          <p style={{ fontSize: 12, color: "rgba(230,238,255,.55)", margin: 0 }}>
+            {evidence.trim().length < EVIDENCE_MIN ? "Write what you saw first — a score on its own is an impression." : "Pick a rung."}
+          </p>
+        ) : null}
+      </form>
+
+      {!c.marks.length && (
+        <p style={{ color: "rgba(230,238,255,.5)", fontSize: 13.5 }}>
+          Nothing recorded yet. Courage is the willingness to do what is right despite fear — not loudness.
+        </p>
+      )}
+
+      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+        {c.marks.map(m => (
+          <li key={m.id} style={{ background: MC_CARD, border: "1px solid rgba(255,255,255,.12)",
+                borderRadius: 13, padding: "11px 14px", display: "flex", gap: 12 }}>
+            <span style={{ width: 28, height: 28, borderRadius: 8, flexShrink: 0, display: "grid",
+                           placeItems: "center", fontWeight: 800, fontSize: 13, fontVariantNumeric: "tabular-nums",
+                           background: m.score >= 4 ? MC_GOLD : "rgba(255,255,255,.1)",
+                           color: m.score >= 4 ? "#2b2100" : "rgba(230,238,255,.85)" }}>{m.score}</span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14.5, lineHeight: 1.45 }}>{m.evidence}</div>
+              {m.prompt ? <div style={{ fontSize: 12, color: MC_GOLD, marginTop: 3 }}>{m.prompt}</div> : null}
+              <div style={{ fontSize: 11.5, color: "rgba(230,238,255,.5)", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>
+                {m.observedOn}{m.markedByName ? " · " + m.markedByName : ""}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
 
 function McGoals({ d, subjectId, busy, setBusy, onDone, setErr }) {
   const [goal, setGoal] = React.useState("");

@@ -129,6 +129,11 @@ function mentor_child(array $p): array {
     }
     unset($gl);
 
+    /* The Courage Index, on the same call as everything else. This screen is
+       opened with the child in front of the mentor, and the brief puts courage
+       beside the meetings and the goals rather than behind another tap. */
+    $courage = courage_index($id, 40);
+
     // Who this child's assigned mentor is — the pairing an admin made.
     $sc = session_current();
     $sessionId = (string)($sc['current']['sessionId'] ?? '');
@@ -147,6 +152,9 @@ function mentor_child(array $p): array {
         'attendance' => ['total' => $att, 'last90' => $attRecent, 'lastSeen' => $lastSeen],
         'meetings' => $meetings,
         'goals' => $goals,
+        'courage' => $courage,
+        'courageLadder' => courage_ladder(),
+        'couragePrompts' => courage_prompts(),
         'kinds' => MENTOR_MEETING_KINDS,
         'canWrite' => true,
         'role' => (string)($g['role'] ?? 'mentor'),
@@ -357,4 +365,222 @@ function mentor_attention(array $p): array {
 
     return ['ok' => true, 'concerns' => $concerns, 'overdue' => $overdue,
             'centres' => $centres, 'centre' => $want, 'rank' => (string)($g['rank'] ?? 'mentor')];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE COURAGE INDEX — NGGC 2040 brief §14
+
+   "One of the most important things NGGC should measure." It was the only
+   instrument in the brief with nothing behind it: musing lives in the journal,
+   dues and fines in the fees ledger, the NGV rung on members.level. Courage
+   was recorded nowhere, which meant the programme's own answer to "is this
+   child becoming braver" was whatever the mentor remembered.
+
+   Three constraints come straight out of the brief and shape everything here.
+
+   1. COURAGE IS NOT LOUDNESS. The ladder is defined by what a child does with
+      responsibility, not by how forward they are, and its top rung is
+      other-directed ("acts courageously for the good of others"). The ladder
+      is stored once, in formation.jsx, and mirrored here as the range check.
+
+   2. A MARK NEEDS AN INSTANCE. The brief scores against ten specific observed
+      things ("did they apologize when wrong?"), not against an impression. So
+      evidence is required, not optional — a 4 with an empty box is rejected
+      rather than stored, because a column that is usually empty is a column
+      nobody reads.
+
+   3. IT IS NOT A LEAGUE TABLE. "The objective is not to create reckless
+      children." Nothing here ranks one child against another, and there is
+      deliberately no centre-wide or cohort-wide courage board to build one
+      from. The record belongs to the child's formation, and the child can see
+      their own — unlike meetings and goals above, which are staff notes.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const COURAGE_MIN = 1;
+const COURAGE_MAX = 5;
+const COURAGE_EVIDENCE_MIN = 8;      // shorter than this is "yes" or "good", not an instance
+const COURAGE_EVIDENCE_MAX = 1200;
+const COURAGE_WINDOW_DAYS = 120;     // what "currently" means when the index is computed
+const COURAGE_PER_DAY_MAX = 4;       // a bound on volume, since the calendar is not the key
+
+/** The five rungs, mirroring NGGC_COURAGE_LADDER in formation.jsx. Returned to
+ *  the client so a portal renders the same words the About page publishes. */
+function courage_ladder(): array {
+    return [
+        ['score' => 1, 'label' => 'Avoids responsibility'],
+        ['score' => 2, 'label' => 'Acts only when instructed'],
+        ['score' => 3, 'label' => 'Attempts difficult things'],
+        ['score' => 4, 'label' => 'Takes responsibility voluntarily'],
+        ['score' => 5, 'label' => 'Acts courageously for the good of others'],
+    ];
+}
+
+/** The ten observations from the brief, in its order. A mentor may name one or
+ *  leave it blank; anything else is dropped rather than stored, so the field
+ *  stays a closed set that can be counted across a cohort later. */
+function courage_prompts(): array {
+    return [
+        'Did they speak the truth when lying would have been easier?',
+        'Did they apologize when wrong?',
+        'Did they attempt something difficult?',
+        'Did they defend someone being treated unfairly?',
+        'Did they ask questions when confused?',
+        'Did they accept correction?',
+        'Did they admit failure?',
+        'Did they volunteer for responsibility?',
+        'Did they challenge an idea respectfully?',
+        'Did they continue after failure?',
+    ];
+}
+
+/**
+ * The index for one child, computed from the marks rather than stored.
+ *
+ * `current` is the mean over COURAGE_WINDOW_DAYS, to one decimal. A mean and
+ * not the latest mark: a single brave afternoon is not a courage level, and a
+ * single bad one is not either. `rung` rounds that mean onto the ladder so a
+ * surface can print a word instead of a number.
+ *
+ * `direction` compares the newer half of the window against the older half,
+ * and is null until there are marks on both sides of it — which is most of the
+ * first term for most children. Withheld rather than guessed, because "improving"
+ * inferred from two entries is the kind of number that ends up in a report.
+ */
+function courage_index(string $subjectId, int $limit = 60): array {
+    $since = gmdate('Y-m-d', time() - COURAGE_WINDOW_DAYS * 86400);
+    $rows = db_all("SELECT id, score, prompt, evidence, markedById, markedByName, observedOn, createdAt
+                    FROM courage_marks WHERE subjectId = ? AND observedOn >= ?
+                    ORDER BY observedOn DESC, id DESC LIMIT " . max(1, min(200, $limit)),
+                   [$subjectId, $since]);
+    $total = (int)(db_row("SELECT COUNT(*) c FROM courage_marks WHERE subjectId = ?", [$subjectId])['c'] ?? 0);
+
+    $marks = [];
+    foreach ($rows as $r) {
+        $marks[] = [
+            'id' => (int)$r['id'], 'score' => (int)$r['score'],
+            'prompt' => (string)$r['prompt'], 'evidence' => (string)$r['evidence'],
+            'markedById' => (string)$r['markedById'], 'markedByName' => (string)$r['markedByName'],
+            'observedOn' => (string)$r['observedOn'],
+        ];
+    }
+
+    $scores = array_map(static fn($m) => $m['score'], $marks);
+    $n = count($scores);
+    $current = $n ? round(array_sum($scores) / $n, 1) : null;
+
+    /* Halves of the window, oldest-first so "newer" is unambiguous. Needs at
+     * least two marks on each side: one against one is noise wearing a trend's
+     * clothes. */
+    $direction = null;
+    if ($n >= 4) {
+        $chron = array_reverse($scores);
+        $half = intdiv($n, 2);
+        $older = array_slice($chron, 0, $half);
+        $newer = array_slice($chron, $n - $half);
+        $delta = (array_sum($newer) / count($newer)) - (array_sum($older) / count($older));
+        $direction = $delta >= 0.5 ? 'rising' : ($delta <= -0.5 ? 'falling' : 'steady');
+    }
+
+    $rung = null;
+    if ($current !== null) {
+        $i = max(COURAGE_MIN, min(COURAGE_MAX, (int)round($current)));
+        $rung = courage_ladder()[$i - 1];
+    }
+
+    return [
+        'current' => $current, 'rung' => $rung, 'direction' => $direction,
+        'inWindow' => $n, 'total' => $total, 'windowDays' => COURAGE_WINDOW_DAYS,
+        'marks' => $marks,
+    ];
+}
+
+/**
+ * A mentor records one observation.
+ *
+ * Gated by mentoring_open — the same two checks (is this person a mentor, is
+ * this child inside their centre and cohort) that govern starring and the
+ * meeting record. A courage mark is at least as sensitive as either, so it is
+ * not gated more loosely.
+ */
+function courage_mark_save(array $p): array {
+    $o = mentoring_open($p);
+    if (empty($o['ok'])) return $o;
+    $g = $o['g']; $s = $o['subject'];
+    $id = (string)$s['id'];
+
+    $score = (int)($p['score'] ?? 0);
+    if ($score < COURAGE_MIN || $score > COURAGE_MAX) return ['ok' => false, 'error' => 'bad_score'];
+
+    /* The brief's rule, enforced rather than encouraged: a mark is recorded
+     * against something observed. An empty or one-word box is not an instance,
+     * and a score stored without one is exactly the impression-of-a-child this
+     * index exists to replace. */
+    $evidence = trim((string)($p['evidence'] ?? ''));
+    if (mb_strlen($evidence) < COURAGE_EVIDENCE_MIN) return ['ok' => false, 'error' => 'evidence_required'];
+    $evidence = mb_substr($evidence, 0, COURAGE_EVIDENCE_MAX);
+
+    // A closed set: an unrecognised prompt is dropped, not stored, so the
+    // column stays countable across a cohort.
+    $prompt = trim((string)($p['prompt'] ?? ''));
+    if ($prompt !== '' && !in_array($prompt, courage_prompts(), true)) $prompt = '';
+
+    /* `observedOn` is the day it happened, which is not always today — a
+     * mentor writing up Saturday's session on Sunday evening is the normal
+     * case. Bounded to the last 30 days and never the future, so a typo cannot
+     * park an entry outside every window that would ever show it. */
+    $today = gmdate('Y-m-d');
+    $observedOn = trim((string)($p['observedOn'] ?? '')) ?: $today;
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $observedOn)) return ['ok' => false, 'error' => 'bad_date'];
+    if ($observedOn > $today || $observedOn < gmdate('Y-m-d', time() - 30 * 86400)) {
+        return ['ok' => false, 'error' => 'date_out_of_range'];
+    }
+
+    /* Volume bound. There is no one-per-day key here on purpose (two separate
+     * acts of courage in an afternoon are two observations), so the ceiling is
+     * per marker per child per day — enough for a real session, not enough to
+     * manufacture a trend. */
+    $mine = (int)(db_row("SELECT COUNT(*) c FROM courage_marks
+                          WHERE subjectId = ? AND markedById = ? AND observedOn = ?",
+                         [$id, (string)$g['member']['memberId'], $observedOn])['c'] ?? 0);
+    if ($mine >= COURAGE_PER_DAY_MAX) return ['ok' => false, 'error' => 'too_many_today'];
+
+    db_insert('courage_marks', [
+        'subjectId' => $id,
+        'subjectType' => (string)$s['kind'],
+        'score' => $score,
+        'prompt' => $prompt,
+        'evidence' => $evidence,
+        'markedById' => (string)$g['member']['memberId'],
+        'markedByName' => (string)($g['mentor']['fullName'] ?? $g['member']['fullName'] ?? ''),
+        'centre' => (string)($s['centre'] ?? ''),
+        'observedOn' => $observedOn,
+        'createdAt' => now_iso(),
+    ]);
+
+    /* The evidence is NOT mirrored into the audit meta. It is a sentence about
+     * a named child's conduct, and the audit log has a wider readership than
+     * the mentoring record does. The score and the day are enough to answer
+     * "who marked what, when". */
+    audit('courage.mark', (string)$g['member']['memberId'], $id,
+          ['score' => $score, 'observedOn' => $observedOn], (string)($p['ip'] ?? ''));
+
+    return ['ok' => true, 'courage' => courage_index($id)];
+}
+
+/**
+ * A member's own courage record.
+ *
+ * Unlike meetings and goals, this one IS the child's to see — the brief has the
+ * index sitting on the member's own dashboard under Formation, and a ladder a
+ * child is climbing without being told where they are is not formation, it is
+ * assessment. The mentor's identity comes along (a child should know who is
+ * watching); nothing about any other child does.
+ */
+function member_courage(array $p): array {
+    $id = trim((string)($p['memberId'] ?? ''));
+    if ($id === '') return ['ok' => false, 'error' => 'no_member'];
+    if (!db_row('SELECT memberId FROM members WHERE memberId = ? LIMIT 1', [$id])) {
+        return ['ok' => false, 'error' => 'not_found'];
+    }
+    return ['ok' => true, 'courage' => courage_index($id), 'ladder' => courage_ladder()] ;
 }

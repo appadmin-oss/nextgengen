@@ -19,6 +19,10 @@ if ($method === 'GET') {
     if ($view === 'statement')     $res = gs_call('member.statement', ['memberId' => $s['mid']]);
     elseif ($view === 'records')   $res = gs_call('member.records', ['memberId' => $s['mid']]);
     elseif ($view === 'requests')  $res = gs_call('member.requests', ['memberId' => $s['mid']]);
+    /* The child's own Courage Index (brief §14). Unlike the mentoring
+       record, this one is theirs to read — a ladder somebody is climbing
+       without being told where they are is assessment, not formation. */
+    elseif ($view === 'courage')   $res = gs_call('member.courage', ['memberId' => $s['mid']]);
     else json_error('unknown_view', 400);
 } elseif ($method === 'POST') {
     $b = read_json_body();

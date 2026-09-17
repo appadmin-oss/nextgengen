@@ -2417,3 +2417,39 @@ CREATE TABLE IF NOT EXISTS member_import_runs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (111) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 112 · The Courage Index (NGGC 2040 brief §14) ───────────────────────────
+-- The one instrument in the brief with nothing behind it: musing lives in the
+-- journal, dues and fines in the fees ledger, the NGV rung on members.level —
+-- courage was recorded nowhere.
+--
+-- `evidence` carries what the mentor actually watched happen. The domain
+-- rejects an empty one, because the brief's constraint is that a score is
+-- given for an observed instance and not for an impression of a child; storing
+-- the instance beside the number is what makes that enforceable rather than
+-- aspirational.
+--
+-- No UNIQUE on (subjectId, observedOn) on purpose. A star is one per child per
+-- day to stop inflation; two genuinely separate acts of courage in one
+-- afternoon are two observations, and the evidence requirement is what bounds
+-- this rather than the calendar.
+--
+-- No aggregate column: the index is computed on read, so correcting one entry
+-- cannot leave a stale total on a child's record.
+CREATE TABLE IF NOT EXISTS courage_marks (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  subjectId VARCHAR(64) NOT NULL,
+  subjectType VARCHAR(24) NOT NULL DEFAULT 'member',
+  score INT NOT NULL,
+  prompt VARCHAR(160) DEFAULT '',
+  evidence TEXT NOT NULL,
+  markedById VARCHAR(64) NOT NULL,
+  markedByName VARCHAR(190) DEFAULT '',
+  centre VARCHAR(80) DEFAULT '',
+  observedOn VARCHAR(16) NOT NULL,
+  createdAt VARCHAR(40) DEFAULT '',
+  INDEX idx_courage_subject (subjectId, observedOn),
+  INDEX idx_courage_marker (markedById, observedOn)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (112) ON DUPLICATE KEY UPDATE version = version;

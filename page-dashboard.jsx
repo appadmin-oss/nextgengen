@@ -142,6 +142,93 @@ function DashAccount({ onRaise }) {
  * The attendance rate is withheld rather than invented when the calendar has no
  * term dates — a percentage over an unknown denominator is a number somebody
  * will put in a school application. */
+/* ── The Courage Index, as the member sees it ────────────────────────────────
+ * NGGC 2040 brief §14. This is the one part of the mentoring record that is
+ * the child's to read: meetings and goals are staff notes and the server never
+ * serves them here, but a ladder somebody is being moved along without being
+ * told where they are is assessment, not formation.
+ *
+ * Two things it deliberately does not do. It shows no other member — courage
+ * is not a competition and the brief is explicit that the objective is not
+ * reckless children. And it never renders an unscored member as a 1: a child
+ * nobody has observed yet has no score, which is a different statement from
+ * "avoids responsibility" and a much better one to read about yourself.
+ *
+ * Fetched separately from records() rather than folded into it, so a member
+ * with no marks still gets their attendance if this call fails. */
+function DashCourage() {
+  const [d, err] = useSelfService(() => NGGApi.member.courage());
+  const c = (d && d.courage) || null;
+  const ladder = (d && d.ladder) || [];
+  // A failed fetch hides the card rather than printing an error over somebody's
+  // own conduct record — the rest of the page is still useful.
+  if (err || !d || !c) return null;
+
+  const dirWord = { rising: "going up", falling: "going down", steady: "holding steady" }[c.direction] || "";
+  const here = c.rung ? c.rung.score : 0;
+
+  return (
+    <div className="dash-card" style={{ marginBottom: 16 }}>
+      <div className="dash-card-head"><h3 className="dash-card-h-sm">Courage</h3></div>
+      {c.current === null ? (
+        <div style={{ fontSize: 13.5, color: "var(--ink-500)", lineHeight: 1.55, maxWidth: "62ch" }}>
+          Nothing recorded yet. Your mentor adds to this when they see you do something
+          difficult, own a mistake, ask the question nobody else will, or stand up for
+          someone. It is not a measure of how loud you are.
+        </div>
+      ) : (
+        <React.Fragment>
+          <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
+            <div>
+              <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>Where you are</div>
+              <div style={{ fontSize: 26, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                {c.current}<span style={{ fontSize: 13, color: "var(--ink-500)", marginLeft: 6 }}>of 5</span>
+              </div>
+            </div>
+            <div style={{ maxWidth: "34ch" }}>
+              <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>What that means</div>
+              <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.35 }}>{c.rung ? c.rung.label : "—"}</div>
+            </div>
+            {dirWord ? (
+              <div>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>Lately</div>
+                <div style={{ fontSize: 15, fontWeight: 600 }}>{dirWord}</div>
+              </div>
+            ) : null}
+          </div>
+
+          {/* The whole ladder, with the rung they are on marked — so the number
+              means something without a mentor sitting beside them to explain it. */}
+          <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+            {ladder.map(r => (
+              <li key={r.score} style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "8px 11px", borderRadius: 10,
+                background: r.score === here ? "var(--cream-100)" : "transparent",
+                border: "1px solid " + (r.score === here ? "var(--cream-200)" : "transparent"),
+              }}>
+                <span aria-hidden="true" className="mono" style={{
+                  width: 22, height: 22, borderRadius: 6, flexShrink: 0, display: "grid", placeItems: "center",
+                  fontSize: 12, fontWeight: 700, fontVariantNumeric: "tabular-nums",
+                  background: r.score === here ? "var(--navy-900)" : "var(--cream-100)",
+                  color: r.score === here ? "white" : "var(--ink-500)",
+                }}>{r.score}</span>
+                <span style={{ fontSize: 14, color: r.score === here ? "var(--ink-900)" : "var(--ink-500)",
+                               fontWeight: r.score === here ? 600 : 400 }}>{r.label}</span>
+                {r.score === here ? <span className="sr-only">— where you are now</span> : null}
+              </li>
+            ))}
+          </ol>
+
+          <div style={{ marginTop: 12, fontSize: 12, color: "var(--ink-500)", fontVariantNumeric: "tabular-nums" }}>
+            From {c.inWindow} thing{c.inWindow === 1 ? "" : "s"} your mentor recorded in the last {c.windowDays} days.
+            {c.inWindow < 4 ? " Too few yet to say which way it is moving." : ""}
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
 function DashRecords({ onRaise }) {
   const [d, err, retry] = useSelfService(() => NGGApi.member.records());
   const att = (d && d.attendance) || {};
@@ -171,6 +258,8 @@ function DashRecords({ onRaise }) {
               )}
             </div>
           </div>
+
+          <DashCourage/>
 
           <div className="dash-card" style={{ marginBottom: 16 }}>
             <div className="dash-card-head"><h3 className="dash-card-h-sm">Certificates</h3></div>

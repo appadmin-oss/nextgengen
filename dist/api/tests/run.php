@@ -6954,6 +6954,148 @@ chk('champions mint is idempotent per period', (function () use ($v3p) {
     return $before === $after && $before > 0;
 })());
 
+// ── The Courage Index (NGGC 2040 brief §14) ─────────────────────────────────
+// The instrument the brief calls "one of the most important things NGGC should
+// measure", and the one that had nothing behind it. Three rules carry the
+// weight and each is asserted rather than assumed: the ladder is 1-5, a mark
+// needs an observed instance, and the whole thing is gated exactly like a star.
+chk('mentor records a courage mark with the evidence for it', (function () {
+    $r = backend_dispatch('member.mentor.courage.mark', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'SUM-R-1', 'score' => 4,
+        'prompt' => 'Did they admit failure?',
+        'evidence' => 'Owned the missed rehearsal in front of the whole group.']);
+    if (empty($r['ok'])) return false;
+    $row = db_row("SELECT score, prompt, evidence, markedById FROM courage_marks WHERE subjectId='SUM-R-1' ORDER BY id DESC LIMIT 1");
+    return $row && (int)$row['score'] === 4 && (string)$row['markedById'] === 'NGG-2025-0500'
+        && str_contains((string)$row['evidence'], 'missed rehearsal');
+})());
+chk('a courage score without an observed instance is refused',
+    backend_dispatch('member.mentor.courage.mark', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'SUM-R-1', 'score' => 5, 'evidence' => 'good'])['error'] === 'evidence_required');
+chk('the courage ladder stops at 5', backend_dispatch('member.mentor.courage.mark',
+    ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-1', 'score' => 6,
+     'evidence' => 'Volunteered to lead the pack-down.'])['error'] === 'bad_score');
+chk('the courage ladder starts at 1', backend_dispatch('member.mentor.courage.mark',
+    ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-1', 'score' => 0,
+     'evidence' => 'Volunteered to lead the pack-down.'])['error'] === 'bad_score');
+chk('a mentor cannot mark a child in another centre', backend_dispatch('member.mentor.courage.mark',
+    ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-AY-1', 'score' => 3,
+     'evidence' => 'Asked a question nobody else would ask.'])['error'] === 'not_your_centre');
+chk('a non-mentor cannot mark anybody', backend_dispatch('member.mentor.courage.mark',
+    ['requesterId' => 'NGG-2025-0001', 'subjectId' => 'SUM-R-1', 'score' => 3,
+     'evidence' => 'Asked a question nobody else would ask.'])['error'] === 'not_a_mentor');
+// An unrecognised prompt is dropped rather than stored, so the column stays a
+// closed set that can be counted across a cohort later.
+chk('an off-list prompt is dropped, not stored', (function () {
+    backend_dispatch('member.mentor.courage.mark', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'SUM-R-2', 'score' => 3, 'prompt' => 'Was the child nice today?',
+        'evidence' => 'Stayed behind to reset the chairs without being asked.']);
+    $row = db_row("SELECT prompt FROM courage_marks WHERE subjectId='SUM-R-2' ORDER BY id DESC LIMIT 1");
+    return $row && (string)$row['prompt'] === '';
+})());
+// The day it happened, not the day it was typed — but bounded, so a typo
+// cannot park an entry outside every window that would ever show it.
+chk('a future observation date is refused', backend_dispatch('member.mentor.courage.mark',
+    ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-1', 'score' => 3,
+     'observedOn' => gmdate('Y-m-d', time() + 86400),
+     'evidence' => 'Spoke up when the group had it wrong.'])['error'] === 'date_out_of_range');
+chk('writing up an earlier session is allowed', (function () {
+    $when = gmdate('Y-m-d', time() - 3 * 86400);
+    $r = backend_dispatch('member.mentor.courage.mark', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'SUM-R-1', 'score' => 3, 'observedOn' => $when,
+        'evidence' => 'Tried the harder variation after failing it twice.']);
+    return !empty($r['ok']) && db_row("SELECT id FROM courage_marks WHERE subjectId='SUM-R-1' AND observedOn=?", [$when]);
+})());
+/* The index is a MEAN over the window, not the latest mark — a single brave
+   afternoon is not a courage level and a single bad one is not either. */
+chk('the index averages the window rather than taking the latest', (function () {
+    $r = backend_dispatch('member.mentor.courage.mark', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'SUM-R-1', 'score' => 5,
+        'evidence' => 'Stood with the younger boy the others were laughing at.']);
+    $c = $r['courage'];
+    // 4, 3 and 5 recorded above → mean 4.0, and the rung is the ladder's word.
+    return abs((float)$c['current'] - 4.0) < 0.001
+        && $c['rung']['label'] === 'Takes responsibility voluntarily'
+        && (int)$c['inWindow'] === 3;
+})());
+/* Withheld rather than guessed: a direction inferred from two entries is the
+   kind of number that ends up in a report about a child. */
+chk('a trend is withheld until there are marks on both sides of the window', (function () {
+    $c = backend_dispatch('member.mentor.courage.mark', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'SUM-R-2', 'score' => 2,
+        'evidence' => 'Waited to be told before joining the clean-up.'])['courage'];
+    return (int)$c['inWindow'] === 2 && $c['direction'] === null;
+})());
+chk('the volume ceiling stops a marker manufacturing a trend', (function () {
+    $when = gmdate('Y-m-d', time() - 10 * 86400);
+    $last = null;
+    for ($i = 0; $i < 5; $i++) {
+        $last = backend_dispatch('member.mentor.courage.mark', ['requesterId' => 'NGG-2025-0500',
+            'subjectId' => 'SUM-R-2', 'score' => 5, 'observedOn' => $when,
+            'evidence' => 'Observation number ' . $i . ' on the same afternoon.']);
+    }
+    return ($last['error'] ?? '') === 'too_many_today'
+        && (int)db_row("SELECT COUNT(*) c FROM courage_marks WHERE subjectId='SUM-R-2' AND observedOn=?", [$when])['c'] === 4;
+})());
+chk('the mentor child screen carries the index, the ladder and the prompts', (function () {
+    $r = backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-1']);
+    return !empty($r['ok']) && isset($r['courage']['current'])
+        && count($r['courageLadder']) === 5 && count($r['couragePrompts']) === 10
+        && $r['courageLadder'][4]['label'] === 'Acts courageously for the good of others';
+})());
+/* The evidence is a sentence about a named child's conduct and the audit log
+   has a wider readership than the mentoring record does, so it stays out. */
+chk('the audit line records the score but never the evidence', (function () {
+    $a = db_row("SELECT meta FROM audit_log WHERE event='courage.mark' ORDER BY id DESC LIMIT 1");
+    if (!$a) return false;
+    $meta = (string)$a['meta'];
+    return str_contains($meta, 'score') && !str_contains($meta, 'younger boy') && !str_contains($meta, 'rehearsal');
+})());
+/* Unlike meetings and goals, which are staff notes, the child reads this one —
+   a ladder somebody is climbing without being told where they are is
+   assessment, not formation. */
+/* The cohort gate, not just the centre one: a summer-only mentor and an NGG
+   child are in the same building and still not each other's business. */
+db_insert('members', ['memberId' => 'NGG-2025-0510', 'fullName' => 'Courage Child', 'email' => 'cc@example.com',
+    'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+    'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+chk('a summer-only mentor cannot mark an NGG member in the same centre',
+    backend_dispatch('member.mentor.courage.mark', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'NGG-2025-0510', 'score' => 4,
+        'evidence' => 'Apologised to the group without being prompted.'])['error'] === 'not_your_cohort');
+chk('a member can read their own courage record', (function () {
+    db_insert('members', ['memberId' => 'NGG-2025-0511', 'fullName' => 'Nia NGG-Mentor', 'email' => 'couragementor@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('mentors', ['mentorId' => 'MEN-COURAGE', 'fullName' => 'Nia NGG-Mentor', 'email' => 'couragementor@example.com',
+        'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'createdAt' => now_iso()]);
+    $mk = backend_dispatch('member.mentor.courage.mark', ['requesterId' => 'NGG-2025-0511',
+        'subjectId' => 'NGG-2025-0510', 'score' => 4,
+        'evidence' => 'Apologised to the group without being prompted.']);
+    if (empty($mk['ok'])) return false;
+    $r = backend_dispatch('member.courage', ['memberId' => 'NGG-2025-0510']);
+    return !empty($r['ok']) && (int)$r['courage']['inWindow'] === 1
+        && count($r['ladder']) === 5 && $r['courage']['marks'][0]['score'] === 4
+        && $r['courage']['marks'][0]['markedByName'] === 'Nia NGG-Mentor';
+})());
+/* The empty state is a real state: a child with no marks yet gets a valid
+   record with nothing in it, not an error and not a zero pretending to be a
+   score. Most children are here for most of their first term. */
+chk('an unmarked member reads as unscored, not as a 1', (function () {
+    db_insert('members', ['memberId' => 'NGG-2025-0512', 'fullName' => 'Unmarked Child', 'email' => 'um@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('member.courage', ['memberId' => 'NGG-2025-0512']);
+    return !empty($r['ok']) && $r['courage']['current'] === null && $r['courage']['rung'] === null
+        && (int)$r['courage']['inWindow'] === 0 && $r['courage']['marks'] === [];
+})());
+chk('member.courage refuses an unknown member',
+    backend_dispatch('member.courage', ['memberId' => 'NGG-NOPE'])['error'] === 'not_found');
+/* No cross-child aggregate anywhere: "the objective is not to create reckless
+   children", and a courage board is how a ladder becomes a competition. */
+chk('there is no cohort-wide courage board to rank children with',
+    !function_exists('courage_leaderboard') && !function_exists('courage_board'));
+
 // ── Public status board (no auth, PII-free) ─────────────────────────────────
 chk('public status: no-auth, aggregates present, no PII', (function () {
     $r = backend_dispatch('public.status', []); // no requester at all

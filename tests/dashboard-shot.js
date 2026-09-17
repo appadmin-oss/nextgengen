@@ -34,6 +34,7 @@ const PORT = process.env.DASH_PORT || 8213;
 const BASE = 'http://127.0.0.1:' + PORT;
 const FIX = path.join(ROOT, 'tests', '_dash_fixture.html');
 const FULLFIX = path.join(ROOT, 'tests', '_dashfull_fixture.html');
+const CRGFIX = path.join(ROOT, 'tests', '_dashcourage_fixture.html');
 const OUT = path.join(ROOT, 'tests', 'screens');
 
 function loadChromium() {
@@ -161,6 +162,14 @@ function fullFixture(manifest) {
 </script>
 </body></html>`;
 }
+
+const LADDER = [
+  { score: 1, label: 'Avoids responsibility' },
+  { score: 2, label: 'Acts only when instructed' },
+  { score: 3, label: 'Attempts difficult things' },
+  { score: 4, label: 'Takes responsibility voluntarily' },
+  { score: 5, label: 'Acts courageously for the good of others' },
+];
 
 (async () => {
   const chromium = loadChromium();
@@ -365,11 +374,92 @@ function fullFixture(manifest) {
     };
     await shootFull('full-desktop', { width: 1440, height: 1000 });
     await shootFull('full-phone',   { width: 390,  height: 844 });
+
+    /* ── The Courage Index card (NGGC 2040 brief §14) ─────────────────────
+       Three passes because the card has three genuinely different states and
+       two of them are the common ones. UNSCORED is what almost every member
+       sees for most of their first term, and it must never render as a 1 — a
+       child reading "avoids responsibility" because nobody has watched them
+       yet is the worst failure this card has available. FAILED hides the card
+       rather than printing an error across somebody's own conduct record. */
+    const courageStates = {
+      scored: { ok: true, ladder: LADDER, courage: {
+        current: 3.8, rung: { score: 4, label: 'Takes responsibility voluntarily' },
+        direction: 'rising', inWindow: 4, total: 9, windowDays: 120, marks: [] } },
+      unscored: { ok: true, ladder: LADDER, courage: {
+        current: null, rung: null, direction: null, inWindow: 0, total: 0, windowDays: 120, marks: [] } },
+      early: { ok: true, ladder: LADDER, courage: {
+        current: 3, rung: { score: 3, label: 'Attempts difficult things' },
+        direction: null, inWindow: 2, total: 2, windowDays: 120, marks: [] } },
+    };
+    for (const [state, payload] of Object.entries(courageStates).concat([['failed', null]])) {
+      /* Mounted into its own node, NOT #root. Loading the bundle also runs
+         app.jsx's own createRoot(#root) render, and with only one method
+         stubbed the whole App throws into its error boundary — which fills
+         document.body with "Hold on." and makes a body-level assertion pass
+         while the card under test is absent. It did, the first time. */
+      fs.writeFileSync(CRGFIX, `<!doctype html><html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css">
+<style>body{margin:0;background:var(--cream-50,#fdf9f0);padding:22px;}#root{display:none}</style>
+</head><body><div id="root"></div><div id="probe"></div>
+<script src="/dist/vendor/react.production.min.js"></script>
+<script src="/dist/vendor/react-dom.production.min.js"></script>
+<script src="/dist/vendor/tanstack-table.min.js"></script>
+<script src="/dist/data.js"></script><script src="/dist/photos.js"></script>
+<script src="/dist/${manifest.bundle.file}"></script>
+<script>
+  window.NGGApi = { member: { courage: function () { return ${payload
+      ? 'Promise.resolve(' + JSON.stringify(payload) + ')'
+      : 'Promise.reject(new Error("offline"))'}; } } };
+  ReactDOM.createRoot(document.getElementById('probe')).render(React.createElement(DashCourage, null));
+</script></body></html>`);
+      const page = await browser.newPage({ viewport: { width: 560, height: 700 }, deviceScaleFactor: 2 });
+      const errs = []; page.on('pageerror', e => errs.push(String(e && e.message)));
+      await page.goto(BASE + '/tests/_dashcourage_fixture.html', { waitUntil: 'networkidle' });
+      await page.waitForTimeout(500);
+      const txt = await page.evaluate(() => (document.getElementById('probe').innerText || '').trim());
+      if (state === 'failed') {
+        // Hidden, not broken, and never an error message over a conduct record.
+        if (txt) problems.push('courage-failed: rendered "' + txt.slice(0, 40) + '" instead of hiding');
+      } else {
+        // Asserted against the card's OWN text, and against content specific to
+        // each state — "rendered something" is what let a crash through before.
+        if (!/Courage/.test(txt)) problems.push('courage-' + state + ': the card did not render');
+        if (state === 'scored') {
+          if (!/3\.8/.test(txt)) problems.push('courage-scored: no index value');
+          if (!/Takes responsibility voluntarily/.test(txt)) problems.push('courage-scored: no rung label');
+          if (!/going up/.test(txt)) problems.push('courage-scored: no direction');
+          // The whole ladder, so the number means something unaided.
+          for (const r of LADDER) if (!txt.includes(r.label)) problems.push('courage-scored: ladder missing "' + r.label + '"');
+        }
+        if (state === 'unscored') {
+          if (/Avoids responsibility/.test(txt)) problems.push('courage-unscored: showed a ladder rung for a child nobody has scored');
+          if (!/Nothing recorded yet/.test(txt)) problems.push('courage-unscored: did not explain the empty state');
+          if (!/not a measure of how loud/.test(txt)) problems.push('courage-unscored: did not say what courage is not');
+        }
+        if (state === 'early' && !/Too few yet/.test(txt)) {
+          problems.push('courage-early: did not say why there is no trend');
+        }
+      }
+      if (errs.length) problems.push('courage-' + state + ': ' + errs[0]);
+      /* Nothing to photograph in the failed state — the card renders null, and
+         that emptiness is the assertion above rather than a screenshot. */
+      if (state !== 'failed') {
+        await page.locator('#probe').screenshot({ path: path.join(OUT, 'dashboard-courage-' + state + '.png') });
+        shots++;
+        console.log('  📸 dashboard-courage-' + state + '.png' + (errs.length ? '  ⚠ ' + errs[0] : ''));
+      } else {
+        console.log('  ✓ dashboard-courage-failed: card hides itself rather than erroring over a conduct record');
+      }
+      await page.close();
+    }
   } finally {
     await browser.close();
     srv.kill();
     try { fs.unlinkSync(FIX); } catch (_) {}
     try { fs.unlinkSync(FULLFIX); } catch (_) {}
+    try { fs.unlinkSync(CRGFIX); } catch (_) {}
   }
   if (problems.length) { problems.forEach(p => console.log('  ✗ ' + p)); console.log('\n❌ DASHBOARD SHOTS: ' + problems.length + ' problem(s)'); process.exit(1); }
   console.log('\n✅ DASHBOARD SHOTS: ' + shots + ' screens rendered clean into tests/screens/');

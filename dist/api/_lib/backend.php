@@ -48,6 +48,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.mentor.goal.save'      => 'mentor_goal_save',
             'member.mentor.goal.status'    => 'mentor_goal_status',
             'member.mentor.attention'      => 'mentor_attention',
+            'member.mentor.courage.mark'   => 'courage_mark_save',
+
             'behaviour.star.give'     => 'mentor_star_give',
             'behaviour.bulk.award'    => 'mentor_bulk_award',
             'admin.behaviour.presets' => 'admin_behaviour_presets_save',
@@ -280,6 +282,7 @@ function backend_dispatch(string $op, array $args = []): array {
                SESSION, never the body — see member-self.php. */
             'member.statement'            => 'member_statement',
             'member.records'              => 'member_records',
+            'member.courage'              => 'member_courage',
             'member.requests'             => 'member_requests_list',
             'member.request.create'       => 'member_request_create',
             'member.request.withdraw'     => 'member_request_withdraw',

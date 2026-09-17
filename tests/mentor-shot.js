@@ -62,6 +62,26 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
      {id:3,goal:'Join the Tuesday coding club.',dueOn:'2026-06-30',status:'done',closedOn:'2026-06-24',setById:'NGG-MENT-1',setByName:'Nkechi Mentor',overdue:false,createdAt:''}
    ],
    kinds:['one-to-one','group','call','guardian','check-in'],
+   /* The Courage Index (brief §14). Four marks so the trend is allowed to
+      appear at all — under four the server withholds the direction, and a
+      fixture that skipped that would photograph a state the product never
+      shows. The current value is the mean of the four, as the server
+      computes it. (No backticks in here: this whole fixture lives inside a
+      template literal.) */
+   courage:{ current:3.8, rung:{score:4,label:'Takes responsibility voluntarily'}, direction:'rising',
+     inWindow:4, total:4, windowDays:120, marks:[
+       {id:4,score:5,prompt:'Did they defend someone being treated unfairly?',evidence:'Told the older boys to stop mocking the new JSS1 boy, in front of everyone.',markedById:'NGG-MENT-1',markedByName:'Nkechi Mentor',observedOn:'2026-08-15'},
+       {id:3,score:4,prompt:'Did they admit failure?',evidence:'Said out loud that the demo failed because she had not practised the wiring.',markedById:'NGG-MENT-1',markedByName:'Nkechi Mentor',observedOn:'2026-08-08'},
+       {id:2,score:3,prompt:'Did they attempt something difficult?',evidence:'Tried the harder build after the first one collapsed twice.',markedById:'NGG-MENT-1',markedByName:'Nkechi Mentor',observedOn:'2026-07-30'},
+       {id:1,score:3,prompt:'',evidence:'Asked the question the whole room clearly had and nobody else would ask.',markedById:'NGG-MENT-1',markedByName:'Nkechi Mentor',observedOn:'2026-07-21'}
+     ] },
+   courageLadder:[{score:1,label:'Avoids responsibility'},{score:2,label:'Acts only when instructed'},
+     {score:3,label:'Attempts difficult things'},{score:4,label:'Takes responsibility voluntarily'},
+     {score:5,label:'Acts courageously for the good of others'}],
+   couragePrompts:['Did they speak the truth when lying would have been easier?','Did they apologize when wrong?',
+     'Did they attempt something difficult?','Did they defend someone being treated unfairly?',
+     'Did they ask questions when confused?','Did they accept correction?','Did they admit failure?',
+     'Did they volunteer for responsibility?','Did they challenge an idea respectfully?','Did they continue after failure?'],
    canWrite:true, role:'mentor', rank:'mentor', sessionId:'S-2026' };
  window.NGGApi={ member:{
    mentorRoster:function(centre,scope){ var mine=(scope||'mine')==='mine';
@@ -75,6 +95,7 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
    mentorMeetingDelete:function(){ return Promise.resolve({}); },
    mentorGoal:function(){ return Promise.resolve({id:4}); },
    mentorGoalStatus:function(){ return Promise.resolve({}); },
+   courageMark:function(){ return Promise.resolve({ok:true,courage:MTR_CHILD.courage}); },
    mentorAttention:function(){ return Promise.resolve({concerns:[],overdue:[],centres:['Egbeda'],centre:''}); }
  } };
  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(MentorPortal,null));
@@ -117,8 +138,10 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
     await shoot('roster','',{width:900,height:800},false);
     await shoot('record','',{width:900,height:1100},true);
     await shoot('goals','',{width:900,height:900},true,'Goals');
+    await shoot('courage','',{width:900,height:1400},true,'Courage');
     await shoot('roster-phone','',{width:390,height:844},false);
     await shoot('record-phone','',{width:390,height:844},true);
+    await shoot('courage-phone','',{width:390,height:844},true,'Courage');
   } finally { await browser.close(); srv.kill(); try{fs.unlinkSync(FIX);}catch(_){} }
   if(problems.length){problems.forEach(p=>console.log('  ✗ '+p));console.log('\n❌ MENTOR SHOTS: '+problems.length+' problem(s)');process.exit(1);}
   console.log('\n✅ MENTOR SHOTS: '+shots+' screens rendered clean into tests/screens/');

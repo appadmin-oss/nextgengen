@@ -593,6 +593,12 @@
       mentorGoalStatus: (subjectId, id, status) => request('/member/mentor.php', { body: { action: 'goalStatus', subjectId, id, status } }),
       starGive:      (subjectId, stars, category, note) => request('/member/mentor.php', { body: { action: 'star', subjectId, stars, category, note } }),
       v3Rate:        (subjectId, verbal, vocal, visual, note) => request('/member/mentor.php', { body: { action: 'v3', subjectId, verbal, vocal, visual, note } }),
+      /* One observed instance on the 1-5 courage ladder (NGGC brief §14).
+         `evidence` is what the mentor watched happen and the server rejects
+         the mark without it — a score with no instance behind it is the
+         impression-of-a-child this index replaces. `observedOn` defaults to
+         today server-side; pass it when writing up an earlier session. */
+      courageMark:   (subjectId, m) => request('/member/mentor.php', { body: Object.assign({ action: 'courage', subjectId }, m || {}) }),
       bulkAward: (subjectIds, opts) => request('/member/mentor.php', { body: Object.assign({ action: 'bulk', subjectIds }, opts || {}) }),
       /* The teaching record. One endpoint, three views — an instructor's day
          is one screen that switches between the class, a child and the grid. */
@@ -626,6 +632,10 @@
          endpoint over children. */
       statement:    () => request('/member/self.php?view=statement'),
       records:      () => request('/member/self.php?view=records'),
+      /* A member's own Courage Index — theirs to read, unlike the mentoring
+         record (meetings, goals) which is staff notes and never leaves the
+         portal. */
+      courage:      () => request('/member/self.php?view=courage'),
       requests:     () => request('/member/self.php?view=requests'),
       raiseRequest: (data) => request('/member/self.php', { body: data }),
       withdrawRequest: (requestId) => request('/member/self.php', { body: { action: 'withdraw', requestId } }),
