@@ -7912,6 +7912,93 @@ chk('champions mint is idempotent per period', (function () use ($v3p) {
     return $before === $after && $before > 0;
 })());
 
+// ── The four professional divisions (NGGC 2040 brief §5) ───────────────────
+// The brief assigns every member to one of four, each with a mandate. The
+// programme had no column for it, so none of these questions had an answer.
+chk('the four divisions are the brief\'s, in its order',
+    array_map(fn($d) => $d['id'], nggc_divisions()) === ['arts', 'media', 'tech', 'business']);
+chk('chess is in all four course lists (§6 makes it compulsory)',
+    count(array_filter(nggc_divisions(), fn($d) => in_array('Chess', $d['courses'], true))) === 4);
+chk('a division resolves by id and by full name',
+    nggc_division('tech')['code'] === '03'
+    && nggc_division('Media & Content Strategy')['id'] === 'media'
+    && nggc_division('  TECH  ')['id'] === 'tech');
+chk('an unknown division resolves to null, never to the first one',
+    nggc_division('xxx') === null && nggc_division('') === null && nggc_division(null) === null);
+/* The track backfill is deliberately partial. Leadership and Community
+   Intelligence belong to no single division, and a wrong placement is worse
+   than an empty one because nobody thinks to check it. */
+chk('a track maps to its division where that is unambiguous',
+    nggc_division_for_track('Music') === 'arts' && nggc_division_for_track('robotics') === 'tech'
+    && nggc_division_for_track('Graphics') === 'media' && nggc_division_for_track('Finance') === 'business');
+chk('an ambiguous track is left unplaced rather than guessed',
+    nggc_division_for_track('Leadership') === '' && nggc_division_for_track('Community Intel.') === ''
+    && nggc_division_for_track('') === '');
+chk('a track that is already a division id or name maps to itself',
+    nggc_division_for_track('business') === 'business'
+    && nggc_division_for_track('Creative & Performing Arts') === 'arts');
+
+chk('an admin can place a member in a division', (function () {
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => [
+        'fullName' => 'Division Child', 'email' => 'div1@example.com', 'type' => 'NGG',
+        'centre' => 'Egbeda', 'division' => 'tech']]);
+    if (empty($r['ok'])) return false;
+    return (string) db_row("SELECT division FROM members WHERE email='div1@example.com'")['division'] === 'tech';
+})());
+chk('…by its full name as well as its id', (function () {
+    $m = db_row("SELECT memberId FROM members WHERE email='div1@example.com'");
+    backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['memberId' => $m['memberId'], 'division' => 'Creative & Performing Arts']]);
+    return (string) db_row("SELECT division FROM members WHERE email='div1@example.com'")['division'] === 'arts';
+})());
+/* Refused, not coerced. A fifth division is a typo, and accepting it puts a
+   child somewhere no report counts and no mandate covers. */
+chk('a division outside the four is refused, not stored', (function () {
+    $m = db_row("SELECT memberId FROM members WHERE email='div1@example.com'");
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['memberId' => $m['memberId'], 'division' => 'Quidditch']]);
+    return ($r['error'] ?? '') === 'bad_division'
+        && (string) db_row("SELECT division FROM members WHERE email='div1@example.com'")['division'] === 'arts';
+})());
+chk('blank stays a legitimate division — unplaced is a real state', (function () {
+    $m = db_row("SELECT memberId FROM members WHERE email='div1@example.com'");
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['memberId' => $m['memberId'], 'division' => '']]);
+    return !empty($r['ok'])
+        && (string) db_row("SELECT division FROM members WHERE email='div1@example.com'")['division'] === '';
+})());
+
+chk('the roster importer places a member from their track', (function () {
+    $row = members_import_row(['displayId' => '026-901', 'fullName' => 'Imported Builder', 'track' => 'Robotics'], '2026-09-17');
+    return ($row['patch']['division'] ?? null) === 'tech';
+})());
+chk('…and a division named in the workbook wins over the track', (function () {
+    $row = members_import_row(['displayId' => '026-902', 'fullName' => 'Imported Designer',
+                               'track' => 'Robotics', 'division' => 'Media & Content Strategy'], '2026-09-17');
+    return ($row['patch']['division'] ?? null) === 'media';
+})());
+
+chk('the division roll-up counts members and names the unplaced', (function () {
+    $r = backend_dispatch('admin.divisions.overview', ['requesterId' => 'NGG-2025-0099']);
+    if (empty($r['ok']) || count($r['divisions']) !== 4) return false;
+    $byId = [];
+    foreach ($r['divisions'] as $d) $byId[$d['id']] = $d;
+    // Every row carries the mandate, so a report can say what a division is for.
+    foreach ($byId as $d) if (trim((string)$d['mandate']) === '') return false;
+    return $byId['business']['courses'] === 11 && $byId['tech']['courses'] === 10
+        && array_key_exists('unplaced', $r) && $r['unplaced'] >= 0;
+})());
+/* The unplaced are a first-class number, not the difference between a total
+   and four counts — a roll-up that omits the children nobody has assigned
+   reads as a complete picture and is the omission most needing attention. */
+chk('a member in no division is counted as unplaced, not dropped', (function () {
+    $before = backend_dispatch('admin.divisions.overview', ['requesterId' => 'NGG-2025-0099'])['unplaced'];
+    backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => [
+        'fullName' => 'Unplaced Child', 'email' => 'div2@example.com', 'type' => 'NGG', 'centre' => 'Egbeda']]);
+    $after = backend_dispatch('admin.divisions.overview', ['requesterId' => 'NGG-2025-0099'])['unplaced'];
+    return $after === $before + 1;
+})());
+
 // ── The Courage Index (NGGC 2040 brief §14) ─────────────────────────────────
 // The instrument the brief calls "one of the most important things NGGC should
 // measure", and the one that had nothing behind it. Three rules carry the

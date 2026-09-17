@@ -7023,3 +7023,27 @@ select.cs-field option { background: var(--dsn-s1); color: var(--dsn-ink); }
   font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px;
   background: rgba(0, 0, 0, 0.28); padding: 1px 5px; border-radius: 4px;
 }
+
+/* ── A member's division (NGGC 2040 brief §5) ───────────────────────────────
+   Identity, not a setting — the brief lists Division beside a member's name
+   and mentor as one of the six things they should be able to say about
+   themselves. Chrome here rather than inline, per CLAUDE.md §11; the only
+   thing the component sets is the accent bar, whose colour is the division's
+   own and which a stylesheet cannot know. */
+.dash-division-bar { height: 4px; border-radius: 2px; margin-bottom: 12px; }
+.dash-division-code { font-size: 11px; letter-spacing: .14em; color: var(--ink-400); }
+.dash-division-name { font-family: var(--font-display); font-size: 21px; line-height: 1.15;
+  letter-spacing: -0.01em; color: var(--ink-900); margin-top: 2px; }
+.dash-division-mandate { font-size: 14.5px; line-height: 1.55; color: var(--ink-700);
+  margin: 8px 0 12px; max-width: 58ch; }
+.dash-division-courses { list-style: none; margin: 0; padding: 0; display: flex;
+  flex-wrap: wrap; gap: 6px; }
+.dash-division-courses li { font-size: 12.5px; line-height: 1.3; padding: 4px 10px;
+  border-radius: 999px; background: var(--cream-100); color: var(--ink-700); }
+/* The one course in all four lists. Inverted so it reads as the exception it
+   is, without needing a caption to explain the highlight. */
+.dash-division-courses li.is-chess { background: var(--navy-900); color: #fff; font-weight: 600; }
+.dash-division-note { font-size: 12.5px; line-height: 1.5; color: var(--ink-500);
+  margin: 12px 0 0; max-width: 58ch; }
+.dash-division-empty { font-size: 14px; line-height: 1.55; color: var(--ink-500);
+  margin: 0; max-width: 58ch; }

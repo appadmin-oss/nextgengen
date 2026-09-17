@@ -327,6 +327,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.statement'            => 'member_statement',
             'member.records'              => 'member_records',
             'member.courage'              => 'member_courage',
+            'admin.divisions.overview'    => 'admin_divisions_overview',
             'member.requests'             => 'member_requests_list',
             'member.request.create'       => 'member_request_create',
             'member.request.withdraw'     => 'member_request_withdraw',

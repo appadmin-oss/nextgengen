@@ -38,7 +38,7 @@ const MEMBER_IMPORT_STATUSES = ['active', 'inactive', 'suspended', 'graduated-ng
  */
 const MEMBER_IMPORT_WIDTHS = [
     'fullName' => 255, 'email' => 200, 'phone' => 40, 'type' => 32, 'status' => 32,
-    'centre' => 32, 'track' => 64, 'cohort' => 64, 'joinDate' => 40, 'dob' => 40,
+    'centre' => 32, 'track' => 64, 'cohort' => 64, 'joinDate' => 40, 'dob' => 40, 'division' => 24,
     'parentName' => 255, 'parentPhone' => 40, 'school' => 255,
     'displayId' => 24, 'disciplines' => 120, 'level' => 16,
 ];
@@ -243,6 +243,17 @@ function members_import_row(array $row, string $stampedOn): array
         'track'       => strtoupper(trim((string)($row['track'] ?? ''))),
         'disciplines' => strtoupper(trim((string)($row['disciplines'] ?? ''))),
         'level'       => strtoupper(trim((string)($row['level'] ?? ''))),
+        /* The division (brief §5). A workbook may name it directly, and where
+           it does not, the member's track decides — the same mapping the 115
+           backfill uses, so an import and a migration cannot disagree about
+           where a child sits. An unrecognised value becomes blank rather than
+           a guess: unplaced is a question a lead will ask, misplaced is a
+           wrong answer nobody thinks to check. */
+        'division'    => (function () use ($row) {
+            $named = nggc_division((string)($row['division'] ?? ''));
+            if ($named) return $named['id'];
+            return nggc_division_for_track((string)($row['track'] ?? ''));
+        })(),
         'joinDate'    => trim((string)($row['joinDate'] ?? '')),
         'dob'         => trim((string)($row['dob'] ?? '')),
         'email'       => $email,

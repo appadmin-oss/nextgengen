@@ -276,7 +276,22 @@ function admin_members_upsert(array $p): array {
         elseif (!in_array($data['role'], ['member', 'editor', 'summer_admin', 'club_admin', 'audit', 'admin', 'super_admin'], true)) unset($data['role']);
     }
 
-    $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes','displayId','disciplines','level'];
+    $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes','displayId','disciplines','level','division'];
+    /* A closed set, refused rather than coerced. The four divisions are the
+     * brief's (domain/formation.php) and a fifth is a typo, not a new
+     * division — accepting it would put a member somewhere no report counts
+     * and no mandate covers. Blank stays legitimate: unplaced is a real
+     * state and the honest one for a member nobody has assigned. The name
+     * is accepted as well as the id, because that is what a person types. */
+    if (array_key_exists('division', $data)) {
+        $raw = trim((string)$data['division']);
+        if ($raw === '') { $data['division'] = ''; }
+        else {
+            $d = nggc_division($raw);
+            if (!$d) return ['ok' => false, 'error' => 'bad_division'];
+            $data['division'] = $d['id'];
+        }
+    }
     $existing = $memberId ? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]) : null;
 
     if ($existing) {

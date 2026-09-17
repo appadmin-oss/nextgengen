@@ -403,35 +403,11 @@ const COURAGE_EVIDENCE_MAX = 1200;
 const COURAGE_WINDOW_DAYS = 120;     // what "currently" means when the index is computed
 const COURAGE_PER_DAY_MAX = 4;       // a bound on volume, since the calendar is not the key
 
-/** The five rungs, mirroring NGGC_COURAGE_LADDER in formation.jsx. Returned to
- *  the client so a portal renders the same words the About page publishes. */
-function courage_ladder(): array {
-    return [
-        ['score' => 1, 'label' => 'Avoids responsibility'],
-        ['score' => 2, 'label' => 'Acts only when instructed'],
-        ['score' => 3, 'label' => 'Attempts difficult things'],
-        ['score' => 4, 'label' => 'Takes responsibility voluntarily'],
-        ['score' => 5, 'label' => 'Acts courageously for the good of others'],
-    ];
-}
-
-/** The ten observations from the brief, in its order. A mentor may name one or
- *  leave it blank; anything else is dropped rather than stored, so the field
- *  stays a closed set that can be counted across a cohort later. */
-function courage_prompts(): array {
-    return [
-        'Did they speak the truth when lying would have been easier?',
-        'Did they apologize when wrong?',
-        'Did they attempt something difficult?',
-        'Did they defend someone being treated unfairly?',
-        'Did they ask questions when confused?',
-        'Did they accept correction?',
-        'Did they admit failure?',
-        'Did they volunteer for responsibility?',
-        'Did they challenge an idea respectfully?',
-        'Did they continue after failure?',
-    ];
-}
+/* courage_ladder() and courage_prompts() used to live here. They are the
+ * brief, not this child's record, so they moved to domain/formation.php
+ * alongside the divisions and the weekly review — one file per language
+ * holding the doctrine, pinned to formation.jsx by a parity test. The callers
+ * below are unchanged. */
 
 /**
  * The index for one child, computed from the marks rather than stored.

@@ -2580,3 +2580,28 @@ CREATE TABLE IF NOT EXISTS courage_marks (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (114) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 115 · A member belongs to a division (NGGC 2040 brief §5) ───────────────
+-- The brief assigns every member to one of four professional divisions, each
+-- with a mandate, and the programme had no column for it — so it could not
+-- answer "how many members are in Technology & Applied Engineering", could not
+-- report per division, and could not see that chess is taken across all four,
+-- which is §6's whole point.
+--
+-- NOT the academy catalogue's `faculty`, and the two must not be merged. A
+-- faculty is what a Summer School edition happens to teach this season and an
+-- admin edits it; a division is what an NGG member belongs to for years and the
+-- brief fixes it. Same shape, different owners, different lifetimes.
+--
+-- Stored as the id ('arts'|'media'|'tech'|'business'), not the display name, so
+-- renaming a division does not rewrite every row. Blank is legitimate: a member
+-- nobody has placed yet.
+--
+-- The backfill from `track` is NOT here. db_apply_mysql_schema() executes only
+-- CREATE / ALTER / INSERT, so an UPDATE in this file is read and skipped; it
+-- lives in api/_lib/db.php as NGG_BACKFILL_MEMBER_DIVISION and runs from both
+-- the SQLite ladder and NGG_MYSQL_ROW_FIXUPS.
+ALTER TABLE members ADD COLUMN division VARCHAR(24) DEFAULT '';
+CREATE INDEX idx_members_division ON members(division);
+
+INSERT INTO schema_version (version) VALUES (115) ON DUPLICATE KEY UPDATE version = version;

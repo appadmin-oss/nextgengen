@@ -895,6 +895,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                     here is read, not acted on, which is what a narrow column
                     is good for. */}
                 <div className="dash-rail">
+                  <section id="sec-division" className="ngg-anchor"><DashboardDivision m={m}/></section>
                   <section id="sec-id" className="ngg-anchor"><DashboardIdCard m={m}/></section>
                   {ngv && <section id="sec-ngv" className="ngg-anchor"><DashboardNgv ngv={ngv}/></section>}
                   <section id="sec-stats" className="ngg-anchor"><DashboardStats stats={s} prog={prog}/></section>
@@ -936,6 +937,7 @@ function DashboardSidebar({ m, first, account, ngv, fines, counts, mentorNamed, 
       { id: "sec-events", label: "Coming up", badge: counts.events || null },
     ] },
     { g: "You", items: [
+      { id: "sec-division", label: "Your division" },
       { id: "sec-id", label: "Member ID" },
       ...(ngv ? [{ id: "sec-ngv", label: "Your NGV role" }] : []),
       { id: "sec-stats", label: "Your tally" },
@@ -1709,6 +1711,51 @@ function DashboardMomentum({ momentum }) {
  * scans, and a PNG of it travels to places a lanyard does not. Issuing and
  * reissuing is the desk's job — Records has a button to ask for one — and the
  * printed cards come out of the Control Room's own run. */
+/* The member's division (NGGC 2040 brief §5).
+ *
+ * The brief puts Division under Identity on the member's own record, beside
+ * their name and their mentor — it is one of the six things a member is
+ * supposed to be able to say about themselves. So it reads as identity here,
+ * not as a setting: the mandate in the division's own words, and the courses
+ * that belong to it.
+ *
+ * Unplaced says so. A member nobody has assigned yet is a real and common
+ * state, and hiding the card would leave them with no way to discover the
+ * question exists — the empty state names their centre lead as the person who
+ * answers it. */
+function DashboardDivision({ m }) {
+  const d = (typeof nggcDivision === "function") ? nggcDivision((m && m.division) || "") : null;
+  if (!m) return null;
+  return (
+    <div className="dash-card dash-division">
+      <div className="dash-card-head"><h3 className="dash-card-h-sm">Your division.</h3></div>
+      {!d ? (
+        <p className="dash-division-empty">
+          You have not been placed in a division yet. There are four, and every member
+          belongs to one — ask your centre lead which is yours.
+        </p>
+      ) : (
+        <React.Fragment>
+          {/* The bar carries the division's own colour: data, not chrome. */}
+          <div className="dash-division-bar" style={{ background: d.accent }} aria-hidden="true"/>
+          <div className="mono dash-division-code">DIVISION {d.code}</div>
+          <div className="dash-division-name">{d.name}</div>
+          <p className="dash-division-mandate">{d.mandate}</p>
+          <ul className="dash-division-courses">
+            {d.courses.map(c => (
+              <li key={c} className={c === "Chess" ? "is-chess" : ""}>{c}</li>
+            ))}
+          </ul>
+          <p className="dash-division-note">
+            Chess is in every division's list, including yours. It is compulsory — the
+            programme treats it as a leadership laboratory, not an extra class.
+          </p>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
 function DashboardIdCard({ m }) {
   const Card = window.MemberIDCard;
   if (!Card || !m) return null;

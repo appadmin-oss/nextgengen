@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 114;
+const NGG_SCHEMA_TARGET = 115;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -28,6 +28,25 @@ const NGG_SCHEMA_TARGET = 114;
  * INSTR/SUBSTR/UPPER mean the same thing in SQLite and MySQL. The pattern is
  * the one members-import.php writes: "Level B" opening the fenced block.
  */
+/* 115 — a member's division, derived from the free-text `track` they already
+ * carry. Only the unambiguous ones: "Leadership", "Community Intelligence" and
+ * "Public Speaking" belong to no single division and are left blank, because a
+ * member in NO division is a question a centre lead will ask, and a member in
+ * the WRONG one is a wrong answer nobody thinks to check. The full mapping,
+ * including the synonyms, is nggc_division_for_track() in
+ * domain/formation.php; this is the SQL subset that can run as one statement.
+ *
+ * LOWER() on both sides: rosters have arrived with "Tech", "tech" and "TECH". */
+const NGG_BACKFILL_MEMBER_DIVISION = "
+    UPDATE members SET division = CASE
+        WHEN LOWER(track) IN ('music','arts','art','creative','drama','dance','fashion','craft') THEN 'arts'
+        WHEN LOWER(track) IN ('media','film','photography','design','graphics','content') THEN 'media'
+        WHEN LOWER(track) IN ('tech','technology','coding','code','robotics','ai','engineering','builder') THEN 'tech'
+        WHEN LOWER(track) IN ('business','admin','operations','finance','strategy') THEN 'business'
+        ELSE division END
+     WHERE (division IS NULL OR division = '') AND track IS NOT NULL AND track <> ''
+";
+
 const NGG_BACKFILL_MEMBER_LEVELS = "
     UPDATE members SET level = UPPER(SUBSTR(notes, INSTR(notes, 'Level ') + 6, 1))
      WHERE (level IS NULL OR level = '')
@@ -122,6 +141,8 @@ const NGG_MYSQL_ROW_FIXUPS = [
     ",
     /* 109 — the member level, out of the importer's note. */
     'members.level' => NGG_BACKFILL_MEMBER_LEVELS,
+    /* 115 — the member's division, out of their track. */
+    'members.division' => NGG_BACKFILL_MEMBER_DIVISION,
 ];
 
 function db_conn(): PDO {
@@ -3479,6 +3500,29 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_courage_subject ON courage_marks(subjectId, observedOn);
             CREATE INDEX IF NOT EXISTS idx_courage_marker ON courage_marks(markedById, observedOn);
         ",
+
+        /* 115 — a member belongs to a division (NGGC 2040 brief §5).
+         *
+         * The brief assigns every member to one of four professional
+         * divisions, each with a mandate, and the programme had no column for
+         * it — so it could not answer "how many members are in Technology &
+         * Applied Engineering", could not report per division, and could not
+         * see that chess is taken across all four, which is §6's whole point.
+         *
+         * NOT the same thing as the academy catalogue's `faculty`, and the two
+         * must not be merged. A faculty is what a Summer School edition
+         * happens to teach this season and an admin edits it; a division is
+         * what an NGG member belongs to for years and the brief fixes it. Same
+         * shape, different owners, different lifetimes — see CLAUDE.md §5 on
+         * the two programmes being separate.
+         *
+         * Stored as the id ('arts'|'media'|'tech'|'business'), not the display
+         * name, so renaming a division in the brief does not rewrite every row.
+         * Blank is a legitimate value: a member nobody has placed yet. */
+        115 => "
+            ALTER TABLE members ADD COLUMN division TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_members_division ON members(division);
+        " . NGG_BACKFILL_MEMBER_DIVISION . ";",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

@@ -2420,6 +2420,15 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
               the roster has used A, B, C and O so far and the programme has
               renamed its levels before. */}
           <Field label="NGG level" value={d.level||""} onChange={v => set("level", v.toUpperCase())} placeholder="A"/>
+          {/* Division — the brief's four (§5), and a fixed list where NGG level
+              above is free text, for the opposite reason: the levels have been
+              renamed before, the divisions are a commitment with a mandate
+              attached. "Not placed yet" is an option rather than an empty
+              first entry, because unplaced is a real answer a lead gives on
+              purpose and it should be possible to say it deliberately. */}
+          <FieldSelect label="Division" value={d.division||""} onChange={v => set("division", v)}
+            options={[{ value: "", label: "— Not placed yet —" }].concat(
+              (window.NGGC_DIVISIONS || []).map(x => ({ value: x.id, label: x.code + " · " + x.name })))}/>
           <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>
           <Field label="Parent email" value={d.parentEmail||""} onChange={v => set("parentEmail", v)} type="email"/>
           <Field label="School" value={d.school||""} onChange={v => set("school", v)}/>

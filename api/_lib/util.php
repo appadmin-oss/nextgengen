@@ -826,6 +826,11 @@ function public_member(array $m): array {
         'displayId' => $m['displayId'] ?? '',
         'disciplines' => $m['disciplines'] ?? '',
         'level' => $m['level'] ?? '',
+        /* The division id (brief §5). The id, not the name: every surface
+           that shows it resolves the mandate and the colour from the
+           doctrine, so the wording lives in one place and a rename does
+           not have to travel through the API. */
+        'division' => $m['division'] ?? '',
         'cohort' => $m['cohort'],
         'bio' => $m['bio'],
         'socials' => safe_json($m['socials'] ?? null),
