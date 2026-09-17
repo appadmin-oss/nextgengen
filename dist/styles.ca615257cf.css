@@ -6115,3 +6115,168 @@ img { background-color: rgba(12,20,50,0.04); }
   .cmc-col.is-rail .cmc-train-go { grid-column: 1 / -1; justify-content: center; }
   .cmc-head { max-width: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   /about — the NGGC 2040 formation brief
+   ═══════════════════════════════════════════════════════════════════════════
+
+   One vocabulary for one page, in the stylesheet rather than in the markup,
+   because CLAUDE.md §11 is right about where drift hides: an inline style
+   cannot be corrected from here, so chrome written inline is chrome that will
+   diverge the first time somebody edits one of eleven sections and not the
+   other ten. What stays inline in page-about.jsx is per-element geometry and
+   values that ARE data — a division's own brand colour, for instance, which a
+   stylesheet cannot know.
+
+   The page alternates cream and navy by section, so nearly every unit needs a
+   version for each. That is `.on-dark`, set once on the section, rather than a
+   second class per element.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ab-sec-dark { background: var(--navy-900); color: #fff; }
+.ab-sec-cream { background: var(--cream-50); }
+
+/* A section whose two halves are read side by side on a desktop and stacked on
+   a phone. auto-fit with a min() floor, never a bare two-column template: a
+   fixed `minmax(280px, 1fr) minmax(280px, 1fr)` is 608px at a 48px gap and
+   pushed four of these off the side of a 390px screen. */
+.ab-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 48px; align-items: start; }
+
+/* The card grids, by how wide their contents need to be. The min() is load-
+   bearing on every one of them for the reason above. */
+.ab-grid { display: grid; gap: 18px; }
+.ab-grid-sm { grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 16px; }
+.ab-grid-md { grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
+.ab-grid-lg { grid-template-columns: repeat(auto-fit, minmax(min(440px, 100%), 1fr)); align-items: start; }
+.ab-grid-tile { grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 14px; }
+.ab-grid-wide { grid-template-columns: repeat(auto-fit, minmax(min(290px, 100%), 1fr)); gap: 12px; }
+
+/* ── Pills: the page's most repeated unit by a wide margin ──────────────── */
+.ab-pills { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 7px; }
+.ab-pills-tight { gap: 6px; }
+.ab-pill { font-size: 13px; line-height: 1.3; padding: 5px 11px; border-radius: 999px;
+  background: var(--cream-100); color: var(--ink-700); }
+.ab-pill-lg { font-size: 14px; padding: 7px 13px; }
+.on-dark .ab-pill { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.13);
+  color: rgba(255,255,255,0.88); }
+/* An outlined pill inside a card that is already cream. */
+.ab-pill-outline { background: #fff; border: 1px solid var(--cream-200); }
+
+/* A thing the programme is NOT. Struck through in coral, because the sentence
+   only works if the reader can see the word being refused. */
+.ab-pill-no { color: var(--ink-500); text-decoration: line-through;
+  text-decoration-color: var(--coral); text-decoration-thickness: 2px; }
+.on-dark .ab-pill-no { color: rgba(255,255,255,0.68); }
+
+/* Chess, which is compulsory in all four divisions and is the only course that
+   appears in every list — so it is the only pill that inverts. */
+.ab-pill-chess { background: var(--navy-900); color: #fff; font-weight: 600; }
+
+/* ── Headings and cards ────────────────────────────────────────────────── */
+.ab-h { font-family: var(--font-display); letter-spacing: -0.02em; margin: 0; color: var(--ink-900); }
+.on-dark .ab-h { color: #fff; }
+.ab-h-card { font-size: 22px; line-height: 1.15; }
+.ab-h-panel { font-size: 24px; line-height: 1.1; }
+.ab-h-lead { font-size: 30px; line-height: 1.05; margin: 0 0 12px; }
+.ab-h-sec { font-size: clamp(34px, 4.4vw, 62px); line-height: 1; letter-spacing: -0.03em;
+  margin: 10px 0 16px; }
+
+.ab-card { padding: 28px; display: flex; flex-direction: column; gap: 12px; height: 100%; }
+.ab-card-pad { padding: 30px; }
+.ab-label { font-size: 12px; letter-spacing: 0.14em; color: var(--gold-700); }
+.on-dark .ab-label { color: var(--gold-400); }
+.ab-label-ink { color: var(--ink-500); }
+.ab-label-warn { color: var(--coral); }
+.ab-body { font-size: 15px; line-height: 1.55; color: var(--ink-500); margin: 0; }
+.on-dark .ab-body { color: rgba(255,255,255,0.78); }
+.ab-body-lg { font-size: 16px; line-height: 1.6; color: var(--ink-700); }
+.ab-measure { max-width: 62ch; }
+/* Pushed to the foot of a flex card and ruled off, so a note reads as a note
+   however tall the card above it grew. */
+.ab-note { font-size: 13.5px; line-height: 1.5; color: var(--ink-500); margin: auto 0 0;
+  padding-top: 10px; border-top: 1px solid rgba(12,20,50,0.08); }
+.on-dark .ab-note { color: rgba(255,255,255,0.72); border-top-color: rgba(255,255,255,0.12); }
+
+/* A panel on a dark section — the dark-side equivalent of .card. */
+.ab-panel { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 16px; padding: 26px; }
+
+/* ── The five-rung courage ladder ───────────────────────────────────────── */
+.ab-rungs { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.ab-rung { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 12px;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.11);
+  font-size: 15px; line-height: 1.4; color: rgba(255,255,255,0.85); }
+.ab-rung-n { width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; display: grid;
+  place-items: center; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.8); }
+/* 4 and 5 are where the ladder stops being passive; the accent marks that,
+   and the top rung is the only one that carries weight as well. */
+.ab-rung-n.is-high { background: var(--gold-500); color: var(--navy-900); }
+.ab-rung.is-top { color: #fff; font-weight: 700; }
+
+/* ── A list of questions, ruled left ────────────────────────────────────── */
+.ab-asks { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 9px; }
+.ab-ask { font-size: 15px; line-height: 1.5; padding-left: 16px; max-width: 52ch;
+  border-left: 2px solid rgba(255,255,255,0.18); color: rgba(255,255,255,0.86); }
+.ab-ask-strong { font-size: 16px; color: #fff; border-left: 3px solid var(--gold-500); }
+
+.ab-quote { margin: 0; padding: 14px 18px; background: #fff; border-radius: 12px;
+  border-left: 3px solid var(--gold-500); font-size: 15px; line-height: 1.55;
+  color: var(--ink-700); font-style: italic; }
+
+/* ── Disclosures ────────────────────────────────────────────────────────── */
+/* 44px is a floor, not a target — this page is read on a phone more than not,
+   and tests/about-page.test.js measures every one of these. */
+.ab-disc { border: 1px solid rgba(12,20,50,0.1); border-radius: 16px; overflow: hidden; background: #fff; }
+.ab-disc-btn { width: 100%; min-height: 44px; padding: 18px 22px; background: none; border: none;
+  cursor: pointer; font-family: inherit; text-align: left; display: flex; align-items: center;
+  justify-content: space-between; gap: 16px; color: var(--ink-900); }
+.ab-disc-h { font-family: var(--font-display); font-size: 18px; letter-spacing: -0.01em; }
+.ab-disc-n { font-size: 12px; letter-spacing: 0.12em; color: var(--ink-500); white-space: nowrap; }
+.ab-disc-list { margin: 0; padding: 0 22px 20px; display: flex; flex-direction: column; gap: 10px;
+  list-style: none; }
+.ab-disc-list.is-numbered { list-style: decimal; padding-left: 44px; }
+.ab-disc-list li { font-size: 15px; line-height: 1.55; color: var(--ink-700); max-width: 64ch; }
+
+/* ── A division panel ───────────────────────────────────────────────────── */
+.ab-div { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.ab-div-bar { height: 4px; }                     /* colour is the division's own, inline */
+.ab-div-body { padding: 24px 26px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+.ab-div-icon { width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0; display: grid;
+  place-items: center; background: var(--cream-100); color: var(--ink-900); font-size: 16px;
+  font-weight: 700; }
+.ab-div-more { align-self: flex-start; margin-top: auto; min-height: 44px; }
+
+/* ── Small repeated pieces ──────────────────────────────────────────────── */
+.ab-step { padding-top: 14px; border-top: 3px solid var(--cream-200); display: flex;
+  flex-direction: column; gap: 6px; }
+.ab-step.is-last { border-top-color: var(--gold-500); }
+.ab-step-h { font-family: var(--font-display); font-size: 20px; letter-spacing: -0.01em;
+  color: var(--ink-900); }
+
+.ab-chain { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 10px;
+  align-items: center; }
+.ab-chain li { font-size: 15px; padding: 9px 15px; border-radius: 999px;
+  background: var(--cream-100); color: var(--ink-700); }
+.ab-chain li.is-end { background: var(--navy-900); color: #fff; font-weight: 700; }
+.ab-chain li.is-arrow { background: none; padding: 0; color: var(--gold-700); font-size: 16px; }
+
+.ab-icon-sq { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center;
+  background: var(--navy-900); color: var(--gold-500); font-size: 14px; flex-shrink: 0; }
+
+.ab-num { font-variant-numeric: tabular-nums; }
+
+/* The standard, §23: fourteen lines, the last five of which are the ones that
+   are hard. They carry the weight so the shift is visible without a heading. */
+.ab-standard { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.ab-standard li { font-size: 16.5px; line-height: 1.5; padding: 10px 0; color: var(--ink-700);
+  border-top: 1px solid rgba(12,20,50,0.06); }
+.ab-standard li:first-child { border-top: none; }
+.ab-standard li.is-hard { color: var(--ink-900); font-weight: 600; }
+
+@media (max-width: 720px) {
+  .ab-split { gap: 32px; }
+  .ab-card, .ab-card-pad { padding: 22px; }
+  .ab-panel { padding: 20px; }
+}

@@ -133,21 +133,31 @@ function doctrineSuite() {
 
 /* ── 2 · Registration ──────────────────────────────────────────────────── */
 function registrationSuite() {
-  console.log('\nRegistration — the eight places a page has to appear');
+  console.log('\nRegistration — the places a page has to appear');
   const app = read('app.jsx');
   const build = read('build.js');
   const index = read('index.html');
   const comp = read('components.jsx');
   const cmd = read('command.jsx');
 
-  ok('app.jsx PAGE_IDS contains "about" (without it the route 404s)', /PAGE_IDS = \[[^\]]*"about"/.test(app));
-  ok('app.jsx PAGE_META has an about title + description (tab, share card, SEO)',
-     /\n\s*about:\s*\{\s*title: "[^"]+", *desc: "[^"]{60,}"/.test(app));
+  /* One ROUTES row, per CLAUDE.md §2 — PAGE_IDS, PAGE_META, OWN_CHROME_PAGES
+     and NOINDEX_PAGES are all derived from it, and a second list of pages is
+     named in §11 as a structure that must not come back. So the row is what is
+     asserted, and its absent flags are asserted as absent: a public page is
+     one that says nothing about chrome or indexing. tests/route-registry.test.js
+     separately guarantees every row has a renderer and vice versa. */
+  const aboutRow = (app.match(/^\s*\{ id: "about",.*$/m) || [''])[0];
+  ok('app.jsx ROUTES has an about row (without it the route 404s)', !!aboutRow);
+  ok('the about row carries a title (tab, og:title, route announcement)',
+     /title: "[^"]+"/.test(aboutRow));
+  ok('the about row carries a real meta description (share card, SEO)',
+     /desc: "[^"]{60,}"/.test(aboutRow));
   ok('app.jsx renders <AboutPage> for the about route', /about:\s*<AboutPage\s/.test(app));
-  ok('about is NOT in the noindex list — it is a public page',
-     !/noindexPages = \[[^\]]*"about"/.test(app));
+  ok('about is indexable — it is the programme\'s public statement of itself',
+     !/index:\s*false/.test(aboutRow));
   ok('about does not claim its own chrome — it keeps the topnav and footer',
-     !/OWN_CHROME_PAGES = \[[^\]]*"about"/.test(app));
+     !/chrome:/.test(aboutRow));
+  ok('about is addressable at /about', !/addressable:\s*false/.test(aboutRow));
 
   ok('build.js bundles formation.jsx before the pages that read it',
      build.indexOf("'formation.jsx'") > -1 &&

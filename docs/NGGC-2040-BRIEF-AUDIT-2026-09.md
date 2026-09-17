@@ -1,7 +1,11 @@
 # NGG — The NGGC 2040 brief, audited against the branch (2026-09-17)
 
 Branch audited: `claude/community-audit-1aqug7`, at `d61fceb` before this
-session's work.
+session's work — then re-checked against `52e6a06` after merging the
+thirty-seven commits the branch had gained in parallel (the route registry,
+the Summer School edition/group split, the two card studios, `CLAUDE.md`).
+Findings below are stated against the merged tree; where the merge changed a
+finding, it says so.
 Subject: the **NGGC 2040 Human Capital Formation & Leadership Development
 Brief** — twenty-four sections defining what the Next Generation Genius Club
 is for — read clause by clause against what the codebase actually does.
@@ -32,8 +36,8 @@ shipped and tested. The gaps were concentrated in three places:
 | Mentor's weekly review (§18) | **Nothing at all** | Doctrine only — see G2 |
 | NGG → NGV progression (§20) | Free-text column | Unchanged — see G3 |
 
-The three remaining gaps are written up below with what each would take. They
-are **not** implemented, and this document does not claim otherwise.
+The remaining gaps are written up below with what each would take. They are
+**not** implemented, and this document does not claim otherwise.
 
 ---
 
@@ -120,6 +124,12 @@ eight places a page has to be registered to be reachable.
 
 ## Gaps that remain
 
+Each was re-checked against the merged tree, not just the tree they were found
+in: `grep -c division db/schema-mysql.sql` is still 0, `mentors.email` still
+carries no `UNIQUE`, nothing in `api/_lib/domain/` mentions a weekly review,
+and `members.level` still has no closed set.
+
+
 ### G1. The four professional divisions have no data model — High
 
 `§5` defines four divisions and assigns every member to one. The schema has no
@@ -183,19 +193,22 @@ it means a uniqueness constraint, a de-duplication pass over existing rows
 upsert. **Not fixed here** — it needs a data migration decision about existing
 duplicates that is the programme's to make, not mine.
 
-### G5. Pre-existing: four dashboard tabs are 36px against a 44px floor — Medium
+### G5. ~~Four dashboard tabs are 36px against a 44px floor~~ — fixed upstream
 
-`tests/dashboard-shot.js` **already failed at `d61fceb`**, before this
-session's work, on "Overview", "Money & account", "Records" and "Requests"
-measuring 100×36, 148×36, 82×36 and 90×36 on a phone. Verified by stashing
-this session's changes and re-running. The member dashboard is a phone-first
-surface for children; the suite has been red on it and the red has been
-absorbed. The topnav's own mega-menu triggers measure 38px with the same
-problem.
+Recorded because it was found and then closed while this was being written,
+and the sequence is worth keeping. `tests/dashboard-shot.js` failed at
+`d61fceb` on "Overview", "Money & account", "Records" and "Requests"
+measuring 100×36, 148×36, 82×36 and 90×36 on a phone — verified by stashing
+this session's changes and re-running, so it was never this work's doing.
 
-Left alone deliberately — it is not this work's scope and the fix touches the
-layout of four sections — but it should not stay red, because a suite that is
-expected to fail stops being read.
+`8cff328` on the parallel line of work fixed exactly this, and the suite is
+green on the merged tree: *0 control(s) under 44px on a phone*, 10 screens
+clean including the four new Courage Index states.
+
+**Still open, same class:** the topnav's own mega-menu triggers measure 38px,
+and the accessibility button 38×38. Nothing asserts the public site's touch
+targets the way `dashboard-shot.js` asserts the dashboard's — which is why
+this one was caught and that one was not.
 
 ---
 

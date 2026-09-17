@@ -15,11 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-<<<<<<< HEAD
-const NGG_SCHEMA_TARGET = 112;
-=======
-const NGG_SCHEMA_TARGET = 113;
->>>>>>> origin/claude/community-audit-1aqug7
+const NGG_SCHEMA_TARGET = 114;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3288,47 +3284,6 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_mirun_digest ON member_import_runs(digest, id);
             CREATE INDEX IF NOT EXISTS idx_mirun_at ON member_import_runs(at);
         ",
-<<<<<<< HEAD
-        /* 112 — the Courage Index (NGGC 2040 brief §14).
-         *
-         * The brief names courage as "one of the most important things NGGC
-         * should measure" and gives it a 1–5 ladder, and it was the one
-         * instrument in the whole brief with nothing behind it: musing lives
-         * in the journal, dues and fines in the fees ledger, the NGV rung on
-         * members.level, but courage was recorded nowhere.
-         *
-         * `evidence` is NOT NULL-ish by contract (the domain rejects an empty
-         * one) because of the brief's own constraint: courage is scored
-         * against something a mentor watched happen, not against an
-         * impression of a child. A score with no instance behind it is the
-         * failure this table exists to prevent, so the instance is stored
-         * beside the number rather than in a note somebody may or may not fill.
-         *
-         * No UNIQUE on (subjectId, observedOn), deliberately — unlike a star,
-         * which is one per child per day to stop inflation, two genuinely
-         * separate acts of courage in one afternoon are two observations. The
-         * evidence requirement is what bounds this, not the calendar.
-         *
-         * There is no aggregate column. The index is computed on read from the
-         * marks in the window, so a correction to one entry cannot leave a
-         * stale total sitting on the child's record. */
-        112 => "
-            CREATE TABLE IF NOT EXISTS courage_marks (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              subjectId TEXT NOT NULL,
-              subjectType TEXT NOT NULL DEFAULT 'member',
-              score INTEGER NOT NULL,             -- 1..5, the ladder in the brief
-              prompt TEXT DEFAULT '',             -- which of the ten observations, if named
-              evidence TEXT NOT NULL DEFAULT '',  -- what the mentor actually saw
-              markedById TEXT NOT NULL,
-              markedByName TEXT DEFAULT '',
-              centre TEXT DEFAULT '',
-              observedOn TEXT NOT NULL,           -- YYYY-MM-DD, the day it happened
-              createdAt TEXT DEFAULT ''
-            );
-            CREATE INDEX IF NOT EXISTS idx_courage_subject ON courage_marks(subjectId, observedOn);
-            CREATE INDEX IF NOT EXISTS idx_courage_marker ON courage_marks(markedById, observedOn);
-=======
 
         /* ── Summer School: editions, and groups within an edition ───────────
          *
@@ -3482,7 +3437,47 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_ciss_run ON card_issues(runId);
             CREATE INDEX IF NOT EXISTS idx_ciss_subject ON card_issues(subjectType, subjectId, at);
->>>>>>> origin/claude/community-audit-1aqug7
+        ",
+
+        /* 114 — the Courage Index (NGGC 2040 brief §14).
+         *
+         * The brief names courage as "one of the most important things NGGC
+         * should measure" and gives it a 1–5 ladder, and it was the one
+         * instrument in the whole brief with nothing behind it: musing lives
+         * in the journal, dues and fines in the fees ledger, the NGV rung on
+         * members.level, but courage was recorded nowhere.
+         *
+         * `evidence` is NOT NULL-ish by contract (the domain rejects an empty
+         * one) because of the brief's own constraint: courage is scored
+         * against something a mentor watched happen, not against an
+         * impression of a child. A score with no instance behind it is the
+         * failure this table exists to prevent, so the instance is stored
+         * beside the number rather than in a note somebody may or may not fill.
+         *
+         * No UNIQUE on (subjectId, observedOn), deliberately — unlike a star,
+         * which is one per child per day to stop inflation, two genuinely
+         * separate acts of courage in one afternoon are two observations. The
+         * evidence requirement is what bounds this, not the calendar.
+         *
+         * There is no aggregate column. The index is computed on read from the
+         * marks in the window, so a correction to one entry cannot leave a
+         * stale total sitting on the child's record. */
+        114 => "
+            CREATE TABLE IF NOT EXISTS courage_marks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectId TEXT NOT NULL,
+              subjectType TEXT NOT NULL DEFAULT 'member',
+              score INTEGER NOT NULL,             -- 1..5, the ladder in the brief
+              prompt TEXT DEFAULT '',             -- which of the ten observations, if named
+              evidence TEXT NOT NULL DEFAULT '',  -- what the mentor actually saw
+              markedById TEXT NOT NULL,
+              markedByName TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              observedOn TEXT NOT NULL,           -- YYYY-MM-DD, the day it happened
+              createdAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_courage_subject ON courage_marks(subjectId, observedOn);
+            CREATE INDEX IF NOT EXISTS idx_courage_marker ON courage_marks(markedById, observedOn);
         ",
     ];
 

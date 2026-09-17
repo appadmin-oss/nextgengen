@@ -18,11 +18,7 @@
      deploy shows up without anybody hunting for a hard refresh.
    ================================================================ */
 
-<<<<<<< HEAD
-const CACHE_VERSION = 'ngg-0c40985672';
-=======
-const CACHE_VERSION = 'ngg-a6891fbf32';
->>>>>>> origin/claude/community-audit-1aqug7
+const CACHE_VERSION = 'ngg-5c636d89b1';
 const STATIC_CACHE  = CACHE_VERSION + '-static';
 const RUNTIME_CACHE = CACHE_VERSION + '-runtime';
 
@@ -40,19 +36,13 @@ const FINGERPRINTED = /\.[0-9a-f]{10}\.(?:min\.)?(?:js|css)$/;
 const PRECACHE = [
   '/',
   '/index.html',
-  '/styles.cf929cb202.css',
+  '/styles.ca615257cf.css',
   '/styles-app.b195904a87.css',
   '/data.29d3739700.js',
   '/photos.fffb7d55bb.js',
-<<<<<<< HEAD
-  '/api-client.46bb6b4a35.js',
+  '/api-client.1f8b0913ba.js',
   '/outbox.042a8c9122.js',
-  '/app.55a0037f49.min.js',
-=======
-  '/api-client.ac22e6cd2e.js',
-  '/outbox.042a8c9122.js',
-  '/app.d6ca4df59f.min.js',
->>>>>>> origin/claude/community-audit-1aqug7
+  '/app.d45bf5929f.min.js',
   '/vendor/react.production.min.js',
   '/vendor/react-dom.production.min.js',
   '/assets/logo.png',
