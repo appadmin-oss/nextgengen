@@ -2263,7 +2263,16 @@ chk('the sweep does not run without a calendar', (function () use ($SU) {
         'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
         'joinDate' => gmdate('Y-m-d'), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 
-    $r1 = backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-NGV-1']);
+    /* §20: a NEW promotion carries the evidence of formation it was made on.
+       The idempotent re-press and the resend path below deliberately do not —
+       they return before the check, which is what keeps "Resend ID" from
+       demanding a justification for a promotion that already happened. */
+    chk('a promotion with no evidence of formation is refused (§20)',
+        backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-NGV-1'])['error'] === 'evidence_required');
+    chk('…and "ok" is not evidence',
+        backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-NGV-1', 'evidence' => 'ok'])['error'] === 'evidence_required');
+    $r1 = backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-NGV-1',
+        'evidence' => 'Ran the Saturday circle for six weeks and mentored two JSS1 members through their first showcase.']);
     chk('promote to NGV creates a volunteer record', !empty($r1['ok']) && !empty($r1['created']) && !empty($r1['volunteerId']));
     $vid = (string)($r1['volunteerId'] ?? '');
     chk('the NGV volunteer is linked back to the member',
@@ -2315,6 +2324,54 @@ chk('the sweep does not run without a calendar', (function () use ($SU) {
         && (string)(db_row("SELECT status FROM volunteers WHERE volunteerId = ?", [$vid])['status'] ?? '') === 'active'
         && (int)db_row("SELECT COUNT(*) c FROM volunteers WHERE memberId = 'NGG-NGV-1'")['c'] === 1);
 
+    /* The record §20 asks the programme to be able to produce: why, by whom,
+       and what the formation record looked like when the decision was made. */
+    chk('the promotion is recorded with its evidence and its promoter', (function () use ($ADM, $vid) {
+        $r = db_row("SELECT * FROM member_promotions WHERE memberId = 'NGG-NGV-1' ORDER BY id ASC LIMIT 1");
+        return $r && (string)$r['fromStage'] === 'NGG' && (string)$r['toStage'] === 'NGV'
+            && (string)$r['byId'] === $ADM && (string)$r['volunteerId'] === $vid
+            && str_contains((string)$r['evidence'], 'Saturday circle');
+    })());
+    /* Snapshotted, not recomputed on read. The question is what they knew when
+       they decided; a figure recomputed in March answers a different one. */
+    chk('…alongside the formation record as it stood at the time', (function () {
+        $r = db_row("SELECT readiness FROM member_promotions WHERE memberId = 'NGG-NGV-1' ORDER BY id ASC LIMIT 1");
+        $snap = json_decode((string)$r['readiness'], true);
+        return is_array($snap) && isset($snap['review']['weeksReviewed']) && isset($snap['attendance']['total'])
+            && array_key_exists('courage', $snap) && array_key_exists('tenure', $snap);
+    })());
+    /* Tenure is present and labelled as not being evidence. Leaving it out
+       would be dishonest — it is the first thing anybody looks at — and
+       including it unlabelled would be worse. Naming it is §20's point. */
+    chk('the readiness view names tenure as NOT evidence of formation', (function () {
+        $r = backend_dispatch('admin.members.readiness', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-NGV-1']);
+        return !empty($r['ok']) && isset($r['readiness']['tenure']['months'])
+            && str_contains((string)$r['readiness']['tenure']['note'], 'not evidence');
+    })());
+    chk('the readiness view gathers the formation record rather than scoring it', (function () {
+        $r = backend_dispatch('admin.members.readiness', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-NGV-1'])['readiness'];
+        // No single number that could stand in for the judgement §20 asks for.
+        return array_key_exists('courage', $r) && array_key_exists('review', $r)
+            && array_key_exists('attendance', $r) && array_key_exists('stars', $r)
+            && !array_key_exists('score', $r) && !array_key_exists('readyPercent', $r)
+            && (int)$r['review']['ofWeeks'] === 8;
+    })());
+    chk('readiness is gated on people, like the promotion it informs',
+        backend_dispatch('admin.members.readiness', ['requesterId' => 'NGG-2025-0001', 'memberId' => 'NGG-NGV-1'])['error'] === 'forbidden');
+    /* Append-only: promoted, revoked, re-promoted is a history, and the
+       history is the formation record the brief is asking for. */
+    chk('the history keeps every transition rather than the latest one', (function () {
+        $r = backend_dispatch('admin.members.promotions', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-NGV-1']);
+        return !empty($r['ok']) && count($r['promotions']) >= 1
+            && str_contains((string)$r['promotions'][0]['evidence'], 'Saturday circle');
+    })());
+    chk('the audit line records that a promotion was evidenced, never the sentence', (function () {
+        $a = db_row("SELECT meta FROM audit_log WHERE event='member.promote.ngv' ORDER BY id DESC LIMIT 1");
+        return $a && str_contains((string)$a['meta'], 'evidenced')
+            && !str_contains((string)$a['meta'], 'Saturday circle');
+    })());
+
+    db_exec("DELETE FROM member_promotions WHERE memberId = 'NGG-NGV-1'");
     db_exec("DELETE FROM qr_codes WHERE studentId = ?", [$vid]);
     db_exec("DELETE FROM volunteers WHERE memberId = 'NGG-NGV-1'");
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-NGV-1','SUM-NGV-X')");

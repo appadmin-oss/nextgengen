@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 116;
+const NGG_SCHEMA_TARGET = 117;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3568,6 +3568,48 @@ function db_migrate(PDO $db): void {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_mrev_one ON mentor_reviews(subjectId, period);
             CREATE INDEX IF NOT EXISTS idx_mrev_period ON mentor_reviews(period, centre);
             CREATE INDEX IF NOT EXISTS idx_mrev_mentor ON mentor_reviews(mentorId, period);
+        ",
+
+        /* 117 — why a member was promoted (NGGC 2040 brief §20).
+         *
+         * "A member should not become an NGV merely because they have been
+         * around for a certain amount of time. Progression should be based on
+         * evidence of formation."
+         *
+         * The promotion itself already existed and is thorough —
+         * admin_member_promote_ngv provisions the volunteer record, the ID and
+         * the two-way link, idempotently. What it recorded was that a
+         * promotion happened and who pressed the button. Not why. So the one
+         * question §20 cares about — was this child promoted on evidence or on
+         * tenure — had no answer six months later, and the audit line could
+         * not supply one.
+         *
+         * `evidence` is the promoter's own sentence and is required by the
+         * domain. `readiness` is a JSON snapshot of the formation record AS IT
+         * STOOD at the moment of promotion: the courage index, how many of the
+         * last eight weeks carried a mentor review, attendance, stars, dues
+         * standing. Snapshotted rather than recomputed on read, because the
+         * question is "what did they know when they decided", and a figure
+         * recomputed in March answers a different question.
+         *
+         * Append-only. A demotion writes its own row rather than deleting
+         * this one: a member promoted, revoked and re-promoted has a history,
+         * and that history is the formation record §20 is asking for. */
+        117 => "
+            CREATE TABLE IF NOT EXISTS member_promotions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              fromStage TEXT NOT NULL DEFAULT 'NGG',
+              toStage TEXT NOT NULL DEFAULT 'NGV',
+              evidence TEXT NOT NULL DEFAULT '',
+              readiness TEXT,
+              volunteerId TEXT DEFAULT '',
+              byId TEXT NOT NULL,
+              byName TEXT DEFAULT '',
+              at TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mprom_member ON member_promotions(memberId, id);
+            CREATE INDEX IF NOT EXISTS idx_mprom_at ON member_promotions(at);
         ",
     ];
 

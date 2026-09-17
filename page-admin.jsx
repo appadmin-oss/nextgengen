@@ -8748,12 +8748,51 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
     setBusy(true); try { await NGGApi.admin.members.upsert({ memberId, status }); toast.success("Status → " + status); await load(); onChanged && onChanged(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
   const assign = async (mentorId) => { setBusy(true); try { await NGGApi.admin.assignMentor({ memberId, mentorId }); toast.success(mentorId ? "Mentor assigned" : "Mentor cleared"); await load(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
+  /* §20: progression is evidence of formation, never time served.
+   *
+   * So the promotion asks for the evidence rather than a Yes/No — and puts the
+   * formation record in the question, because an admin who has to scroll away
+   * to find out how a child is actually doing will promote on the name they
+   * recognise. Tenure is shown and labelled as not being evidence, which is
+   * the brief's own argument and the reason it is not left out.
+   *
+   * The readiness read is best-effort: it informs the decision and must never
+   * block it, so a failed fetch asks the question without the summary rather
+   * than refusing to open. */
   const promoteNgv = async () => {
-    const ok = await dialog.confirm({ title: "Promote to NGV?", body: "This advances " + ((m && m.fullName) || "this member") + " into the volunteer tier as a " + ngvRole + ", auto-provisions their NGV record + ID card, and emails them their digital ID. It's idempotent and reversible — you can revoke the NGV standing here later.", cta: "Promote", cancel: "Cancel" });
-    if (!ok) return;
+    let summary = "";
+    try {
+      const rr = await NGGApi.admin.members.readiness(memberId);
+      const f = rr && rr.readiness;
+      if (f) {
+        const bits = [];
+        bits.push(f.courage && f.courage.current !== null
+          ? "Courage " + f.courage.current + "/5 (" + f.courage.marks + " observed)"
+          : "Courage: nothing recorded");
+        bits.push("Reviewed " + f.review.weeksReviewed + " of the last " + f.review.ofWeeks + " weeks"
+          + (f.review.concerns ? " · " + f.review.concerns + " concern(s) raised" : ""));
+        bits.push("Attendance " + f.attendance.total + " sessions, " + f.attendance.last90 + " in 90 days");
+        bits.push("Stars " + f.stars);
+        if (f.dues) bits.push(f.dues.owes ? "Dues: owing" : "Dues: clear");
+        if (f.tenure && f.tenure.months !== null) bits.push("In the programme " + f.tenure.months + " months — time served is not evidence of formation.");
+        summary = bits.join("\n");
+      }
+    } catch (e) { /* informs, never blocks */ }
+
+    const evidence = await dialog.prompt({
+      title: "Promote to NGV?",
+      body: (summary ? summary + "\n\n" : "")
+        + "This advances " + ((m && m.fullName) || "this member")
+        + " into the volunteer tier as a " + ngvRole
+        + ", provisions their NGV record + ID card, and emails them their digital ID. Reversible.",
+      label: "What is the evidence of formation?",
+      placeholder: "What they have carried, led or changed — not how long they have been here.",
+      multiline: true, required: true, cta: "Promote", cancel: "Cancel",
+    });
+    if (!evidence) return;
     setBusy(true);
     try {
-      const r = await NGGApi.admin.members.promoteNgv(memberId, ngvRole);
+      const r = await NGGApi.admin.members.promoteNgv(memberId, ngvRole, { evidence });
       const via = Array.isArray(r.sent) && r.sent.length ? " · ID sent by " + r.sent.join(" + ") : "";
       toast.success((r.already ? "Already an NGV · " : "Promoted to NGV · ") + r.volunteerId + via);
       await load(); onChanged && onChanged();

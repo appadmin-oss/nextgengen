@@ -910,7 +910,17 @@
         remove: (memberId) => request('/admin/members.php', { body: { action: 'delete', memberId } }),
         // Promote an NGG member into the NGV / volunteer tier — auto-provisions
         // their volunteer record + ID card (idempotent).
-        promoteNgv: (memberId, role, opts) => request('/admin/members.php', { body: Object.assign({ action: 'promoteNgv', memberId, role }, (opts && opts.sendId !== undefined) ? { sendId: opts.sendId } : {}) }),
+        /* §20: a NEW promotion carries the evidence of formation it was made
+           on. Re-sending an ID for somebody already NGV does not — that path
+           returns before the check, which is why `opts.sendId` alone still
+           works with no evidence. */
+        promoteNgv: (memberId, role, opts) => request('/admin/members.php', { body: Object.assign({ action: 'promoteNgv', memberId, role },
+          (opts && opts.evidence) ? { evidence: opts.evidence } : {},
+          (opts && opts.sendId !== undefined) ? { sendId: opts.sendId } : {}) }),
+        /* The formation record behind the decision, and the history of every
+           transition this member has made. */
+        readiness:  (memberId) => request('/admin/members.php', { body: { action: 'readiness', memberId } }),
+        promotions: (memberId) => request('/admin/members.php', { body: { action: 'promotions', memberId } }),
         // Reverse an NGV promotion: deactivate the volunteer record + unlink the
         // member (non-destructive; a later promoteNgv re-activates the same record).
         demoteNgv: (memberId) => request('/admin/members.php', { body: { action: 'demoteNgv', memberId } }),

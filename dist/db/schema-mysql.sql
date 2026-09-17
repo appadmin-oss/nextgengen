@@ -2640,3 +2640,38 @@ CREATE TABLE IF NOT EXISTS mentor_reviews (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (116) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 117 · Why a member was promoted (NGGC 2040 brief §20) ──────────────────
+-- "A member should not become an NGV merely because they have been around for a
+-- certain amount of time. Progression should be based on evidence of formation."
+--
+-- The promotion already existed and is thorough: admin_member_promote_ngv
+-- provisions the volunteer record, the ID and the two-way link, idempotently.
+-- What it recorded was that a promotion happened and who pressed the button —
+-- not why. So the one question §20 cares about, whether a child was promoted on
+-- evidence or on tenure, had no answer six months later.
+--
+-- `evidence` is the promoter's own sentence and the domain requires it.
+-- `readiness` is a JSON snapshot of the formation record AS IT STOOD at the
+-- moment of promotion — courage index, weeks reviewed out of the last eight,
+-- attendance, stars, dues standing. Snapshotted rather than recomputed on read:
+-- the question is what they knew when they decided, and a figure recomputed in
+-- March answers a different one.
+--
+-- Append-only. A demotion writes its own row rather than deleting this one.
+CREATE TABLE IF NOT EXISTS member_promotions (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  memberId VARCHAR(64) NOT NULL,
+  fromStage VARCHAR(24) NOT NULL DEFAULT 'NGG',
+  toStage VARCHAR(24) NOT NULL DEFAULT 'NGV',
+  evidence TEXT NOT NULL,
+  readiness TEXT,
+  volunteerId VARCHAR(40) DEFAULT '',
+  byId VARCHAR(64) NOT NULL,
+  byName VARCHAR(190) DEFAULT '',
+  at VARCHAR(40) DEFAULT '',
+  INDEX idx_mprom_member (memberId, id),
+  INDEX idx_mprom_at (at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (117) ON DUPLICATE KEY UPDATE version = version;

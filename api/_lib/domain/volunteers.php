@@ -774,6 +774,22 @@ function admin_member_promote_ngv(array $p): array {
         return $out;
     }
 
+    /* §20: progression is evidence of formation, never time served. A new
+     * promotion has to say why, in the promoter's own words — and the check is
+     * here rather than above so that the already-promoted branch (which is how
+     * "Resend ID" reaches this function) is untouched. Re-sending somebody's
+     * card is not a promotion and must not demand a justification for one.
+     *
+     * Eight characters is a floor against "ok", not a quality bar. The bar is
+     * that the sentence is stored, attributed and readable six months later
+     * beside what the promoter could see at the time. */
+    $evidence = trim((string)($p['evidence'] ?? ''));
+    if (mb_strlen($evidence) < 8) return ['ok' => false, 'error' => 'evidence_required'];
+    $evidence = mb_substr($evidence, 0, 2000);
+    /* Snapshotted BEFORE the promotion, so it is what the decision was made
+     * against rather than what the promotion itself changed. */
+    $readiness = function_exists('member_formation_readiness') ? member_formation_readiness($memberId) : null;
+
     $role = in_array((string)($p['role'] ?? ''), ['volunteer', 'instructor', 'mentor'], true) ? (string)$p['role'] : 'volunteer';
     $tier = vol_tier_for($role);
     $volunteerId = volunteer_display_id((string)$tier['code']);
@@ -793,7 +809,24 @@ function admin_member_promote_ngv(array $p): array {
         'assignedAt' => now_iso(), 'expiresAt' => idcard_expiry_for()]);
     db_update('members', ['ngvVolunteerId' => $volunteerId, 'ngvAt' => now_iso(), 'updatedAt' => now_iso()], ['memberId' => $memberId]);
 
-    audit('member.promote.ngv', (string)$g['requester']['memberId'], $memberId, ['volunteerId' => $volunteerId, 'role' => $role], (string)($p['ip'] ?? ''));
+    /* The record §20 asks for: why, by whom, and what the formation record
+       looked like at the time. Append-only — a later revoke writes its own row
+       rather than erasing this one, because a member promoted, revoked and
+       re-promoted has a history and the history is the point. */
+    db_insert('member_promotions', [
+        'memberId' => $memberId, 'fromStage' => 'NGG', 'toStage' => 'NGV',
+        'evidence' => $evidence,
+        'readiness' => $readiness ? json_encode($readiness, JSON_UNESCAPED_UNICODE) : null,
+        'volunteerId' => $volunteerId,
+        'byId' => (string)$g['requester']['memberId'],
+        'byName' => (string)($g['requester']['fullName'] ?? ''),
+        'at' => now_iso(),
+    ]);
+    /* The evidence sentence stays out of the audit meta, as the courage
+       evidence and the weekly review's answers do: it is a judgement about a
+       named child and the audit log has a wider readership than the formation
+       record. That it exists is recorded; what it says lives with the child. */
+    audit('member.promote.ngv', (string)$g['requester']['memberId'], $memberId, ['volunteerId' => $volunteerId, 'role' => $role, 'evidenced' => true], (string)($p['ip'] ?? ''));
     event_emit('member.promoted.ngv', ['memberId' => $memberId, 'volunteerId' => $volunteerId, 'name' => (string)$m['fullName']]);
     // Deliver the digital ID by default so the new volunteer receives their
     // QR + welcome; suppressible with sendId:false.

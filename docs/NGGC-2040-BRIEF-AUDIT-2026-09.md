@@ -32,12 +32,19 @@ shipped and tested. The gaps were concentrated in three places:
 | The brief as a public statement | Nowhere on the site | `/about` |
 | The brief as data the code shares | Retyped per surface, or absent | `formation.jsx` |
 | Courage Index (§14) | **Nothing at all** | Implemented end to end |
-| The four divisions (§5) | **No data model** | Doctrine only — see G1 |
-| Mentor's weekly review (§18) | **Nothing at all** | Doctrine only — see G2 |
-| NGG → NGV progression (§20) | Free-text column | Unchanged — see G3 |
+| The four divisions (§5) | **No data model** | `members.division`, closed set — see G1 |
+| Mentor's weekly review (§18) | **Nothing at all** | Recorded weekly, with a due list — see G2 |
+| NGG → NGV progression (§20) | Promotion real, but unevidenced | Evidence + readiness recorded — see G3 |
 
-The remaining gaps are written up below with what each would take. They are
-**not** implemented, and this document does not claim otherwise.
+All three gaps this audit named have since been implemented, in the commits
+that follow it — G1 as `members.division`, G2 as `mentor_reviews`, and G3 as
+the evidence record described below. **G3's original finding was wrong**, and
+the entry says so in full rather than quietly reading as though it had always
+said the right thing. G4 and G5 are not this work's: G5 was fixed upstream,
+and G4 is left for the programme to decide.
+
+Each was re-checked against the merged tree before being worked, which is how
+G3's error surfaced.
 
 ---
 
@@ -122,12 +129,11 @@ eight places a page has to be registered to be reachable.
 
 ---
 
-## Gaps that remain
+## The gaps this audit found
 
-Each was re-checked against the merged tree, not just the tree they were found
-in: `grep -c division db/schema-mysql.sql` is still 0, `mentors.email` still
-carries no `UNIQUE`, nothing in `api/_lib/domain/` mentions a weekly review,
-and `members.level` still has no closed set.
+Stated as they were found, with what happened to each. G1 and G2 were
+confirmed against the merged tree before being implemented; G3 did not
+survive that check and is corrected in place.
 
 
 ### G1. The four professional divisions have no data model — High
@@ -142,12 +148,15 @@ Consequence: the programme cannot answer "how many members are in Technology &
 Applied Engineering", cannot report per-division, and cannot enforce that
 chess is taken across all four — which is §6's entire point.
 
-What it would take: a `division` column on `members` (closed set of the four
-ids already in `NGGC_DIVISIONS`), a backfill mapping the existing `track`
-values onto it, the admin member form and the roster importer teaching it, and
-per-division reporting in `analytics.php`. The doctrine half is done —
-`nggcDivision()` resolves by id or name and returns the mandate, courses and
-brand colour — so this is a schema and UI change, not a content one.
+**Implemented.** Migration 115 adds `members.division`, holding the id rather
+than the display name, backfilled from `track` where that is unambiguous and
+left blank where it is not. `admin.members.upsert` refuses a fifth division
+rather than coercing it, the roster importer takes a Division column and falls
+back to the same mapping the migration uses, and `admin.divisions.overview` is
+the roll-up — with `unplaced` as a first-class number, because a division
+report that omits the children nobody has assigned reads as complete. The
+doctrine now exists in PHP too (`domain/formation.php`), pinned to
+`formation.jsx` by `tests/formation-parity.test.js`.
 
 ### G2. The mentor's weekly review is not a surface — Medium
 
@@ -158,24 +167,49 @@ and nothing shows a lead which members went a week without being reviewed.
 it surfaces flagged concerns and overdue goals, which is a queue of exceptions
 rather than a review cadence.
 
-The questions now exist as `NGGC_WEEKLY_REVIEW` and are published on `/about`,
-so a mentor can at least read what is expected of them. Turning that into a
-weekly review record would reuse the `mentor_meetings` shape almost exactly.
+**Implemented.** Migration 116 adds `mentor_reviews`, one row per (subject,
+ISO week) so a review amends rather than appends. The surface that matters is
+not the form but `mentor_reviews_due` — who has not been reviewed this week,
+by name, on the roster screen a mentor already opens. An empty review is
+refused, because allowing one would let a mentor clear the flag without
+anybody having looked.
 
-### G3. `members.level` is unvalidated free text — Medium
+### G3. ~~`members.level` is unvalidated free text~~ — **this finding was wrong**
 
-`§20` is emphatic that NGG → NGV is evidence of formation and never time
-served. The column that carries it (`db/schema-mysql.sql:2355`,
-`ALTER TABLE members ADD COLUMN level VARCHAR(16) DEFAULT ''`) accepts any
-string: the admin upsert lists `level` among the free columns
-(`api/_lib/domain/admin.php:254`) with no enum, and the importer merely
-uppercases and truncates it (`members-import.php:234`). There is no promotion
-event, no record of who promoted whom or on what evidence, and no constraint
-stopping two spellings of the same rung coexisting.
+Recorded rather than deleted, because a corrected audit is worth more than a
+tidy one and the mistake is instructive.
 
-`NGGC_PROGRESSION` now states what each rung means. Enforcing it needs a closed
-set plus a promotion record — which is the same shape as the awards ledger
-already in the schema.
+**What it claimed:** that `members.level` carries the NGG → NGV rung, that it
+accepts any string, and that there is no promotion event or record of who
+promoted whom.
+
+**What is actually true:** `members.level` is the roster's CLASS level — A, B,
+C or O — documented at `docs/ROSTER-IMPORT.md:134` and described by its own
+migration (`db/schema-mysql.sql:2341`, "the first thing a centre lead asks
+about a child"). The Control Room field is labelled "NGG level" with the
+placeholder `A`. It has nothing to do with §20. And NGG → NGV promotion was
+already implemented, thoroughly: `admin_member_promote_ngv()`
+(`api/_lib/domain/volunteers.php`) provisions the volunteer record, mints the
+ID and check-in token, links both ways, is idempotent across a re-press and a
+revoke, emits an event and writes an audit line.
+
+**How it happened:** the finding was inferred from a column's name and type
+without opening the doc that describes it or grepping for the promotion. Two
+minutes of either would have killed it. The lesson is the one this repo's own
+CLAUDE.md states — investigate rather than guess — and it is here because an
+audit that is confidently wrong about one section invites doubt about the
+other twenty-three.
+
+**The real §20 gap, once the wrong one was cleared:** the promotion recorded
+that it happened and who pressed the button, never why. So "was this child
+promoted on evidence of formation or because they had been around long
+enough" — the one question the section is about — had no answer six months
+later. That is now implemented: `member_formation_readiness()` gathers the
+formation record for the screen that decides, the promotion requires the
+promoter's own sentence, and `member_promotions` keeps both alongside a
+snapshot of what was known at the time. Tenure is shown on that screen and
+labelled as not being evidence, which is §20's argument rather than a
+decoration.
 
 ### G4. `mentors.email` has no uniqueness constraint — Medium
 

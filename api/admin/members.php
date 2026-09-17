@@ -118,9 +118,17 @@ if ($method === 'POST') {
     } elseif ($action === 'resetPassword') {
         $res = gs_call('admin.members.resetPassword', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'promoteNgv') {
-        $args = ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'role' => $body['role'] ?? '', 'ip' => client_ip()];
+        $args = ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'role' => $body['role'] ?? '',
+                 // §20: a new promotion says why. Ignored on the already-promoted
+                 // path, which is how "Resend ID" reaches the same op.
+                 'evidence' => $body['evidence'] ?? '', 'ip' => client_ip()];
         if (array_key_exists('sendId', $body)) $args['sendId'] = $body['sendId']; // only forward when the client set it (domain defaults to send on create)
         $res = gs_call('admin.members.promoteNgv', $args);
+    } elseif ($action === 'readiness') {
+        // The formation record, for the screen that decides a promotion.
+        $res = gs_call('admin.members.readiness', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '']);
+    } elseif ($action === 'promotions') {
+        $res = gs_call('admin.members.promotions', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '']);
     } elseif ($action === 'demoteNgv') {
         $res = gs_call('admin.members.demoteNgv', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
     } else {

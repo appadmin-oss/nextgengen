@@ -227,3 +227,111 @@ function admin_divisions_overview(array $p): array {
        predates the closed set. It cannot go negative and it cannot hide. */
     return ['ok' => true, 'divisions' => $out, 'unplaced' => max(0, $total - $placed), 'total' => $total];
 }
+
+/* ── §20 · Progression is evidence of formation, never time served ─────────
+ *
+ * "A member should not become an NGV merely because they have been around for
+ * a certain amount of time."
+ *
+ * So the promotion screen needs the formation record in front of it. This
+ * gathers what the programme already knows about a member — and gathers it
+ * from the tables that hold it rather than inventing a score, because a single
+ * "readiness: 73%" would be exactly the kind of number that replaces the
+ * judgement the brief is asking somebody to make.
+ *
+ * Tenure IS included, and is labelled as not being evidence. Leaving it out
+ * would be dishonest (it is the first thing anybody looks at) and including it
+ * unlabelled would be worse. Naming it is the point of §20.
+ */
+function member_formation_readiness(string $memberId): array {
+    $m = db_row('SELECT memberId, fullName, joinDate, centre, division, type FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+
+    // Courage (§14) — the index as the mentoring record computes it.
+    $courage = function_exists('courage_index') ? courage_index($memberId, 1) : null;
+
+    /* The weekly review (§18) — how many of the last eight weeks anybody
+       looked at all. A member nobody has reviewed is not a member anybody can
+       vouch for, whatever their attendance says. */
+    $weeks = [];
+    for ($i = 0; $i < 8; $i++) $weeks[] = iso_week_period(time() - $i * 7 * 86400);
+    $in = '(' . implode(',', array_fill(0, count($weeks), '?')) . ')';
+    $reviewed = (int)(db_row("SELECT COUNT(*) c FROM mentor_reviews WHERE subjectId = ? AND period IN $in",
+                             array_merge([$memberId], $weeks))['c'] ?? 0);
+    $concerns = (int)(db_row("SELECT COUNT(*) c FROM mentor_reviews WHERE subjectId = ? AND concern = 1 AND period IN $in",
+                             array_merge([$memberId], $weeks))['c'] ?? 0);
+
+    // Discipline and community, from the ledgers that already hold them.
+    $since = gmdate('Y-m-d', time() - 90 * 86400);
+    $attendTotal = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$memberId])['c'] ?? 0);
+    $attend90 = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ? AND date >= ?', [$memberId, $since])['c'] ?? 0);
+    $stars = (int)(db_row('SELECT COALESCE(SUM(stars), 0) s FROM member_stars WHERE subjectId = ?', [$memberId])['s'] ?? 0);
+
+    /* Money (§13). Reported as a standing rather than a figure: whether a
+       family owes is relevant to readiness, how much they owe is their
+       business and does not belong on a promotion screen. */
+    $payable = null;
+    if (function_exists('fees_balance')) {
+        try {
+            $full = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+            $b = $full ? fees_balance($full) : null;
+            $payable = $b ? (int)($b['payable'] ?? 0) : null;
+        } catch (Throwable $e) { $payable = null; }
+    }
+
+    /* Tenure, named for what it is not. §20's whole argument is that this
+       number is the one that must NOT carry the decision. */
+    $months = null;
+    $joined = substr((string)($m['joinDate'] ?? ''), 0, 10);
+    if ($joined !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $joined)) {
+        $months = max(0, (int)floor((time() - strtotime($joined . ' 00:00:00 UTC')) / (30.44 * 86400)));
+    }
+
+    return [
+        'ok' => true,
+        'memberId' => (string)$m['memberId'],
+        'fullName' => (string)$m['fullName'],
+        'division' => (string)($m['division'] ?? ''),
+        'courage' => $courage ? [
+            'current' => $courage['current'], 'rung' => $courage['rung'],
+            'marks' => (int)$courage['total'], 'inWindow' => (int)$courage['inWindow'],
+        ] : null,
+        'review' => ['weeksReviewed' => $reviewed, 'ofWeeks' => 8, 'concerns' => $concerns],
+        'attendance' => ['total' => $attendTotal, 'last90' => $attend90],
+        'stars' => $stars,
+        'dues' => $payable === null ? null : ['owes' => $payable > 0],
+        'tenure' => ['months' => $months,
+                     'note' => 'Time served is not evidence of formation (§20).'],
+    ];
+}
+
+/** The readiness view as an op, so a promotion screen can show the formation
+ *  record before the decision rather than after it. */
+function admin_member_readiness(array $p): array {
+    $g = admin_cap_gate($p, 'people');
+    if (!$g['ok']) return $g;
+    $r = member_formation_readiness(trim((string)($p['memberId'] ?? '')));
+    if (empty($r['ok'])) return $r;
+    return ['ok' => true, 'readiness' => $r];
+}
+
+/** A member's promotion history — every transition, with the reason given and
+ *  what was known at the time. Append-only, so this is the record §20 asks
+ *  the programme to be able to produce. */
+function admin_member_promotions(array $p): array {
+    $g = admin_cap_gate($p, 'people');
+    if (!$g['ok']) return $g;
+    $id = trim((string)($p['memberId'] ?? ''));
+    $out = [];
+    foreach (db_all("SELECT * FROM member_promotions WHERE memberId = ? ORDER BY id DESC LIMIT 50", [$id]) as $r) {
+        $out[] = [
+            'id' => (int)$r['id'],
+            'fromStage' => (string)$r['fromStage'], 'toStage' => (string)$r['toStage'],
+            'evidence' => (string)$r['evidence'],
+            'readiness' => json_decode((string)($r['readiness'] ?? ''), true) ?: null,
+            'volunteerId' => (string)($r['volunteerId'] ?? ''),
+            'byName' => (string)($r['byName'] ?? ''), 'at' => (string)($r['at'] ?? ''),
+        ];
+    }
+    return ['ok' => true, 'promotions' => $out];
+}
