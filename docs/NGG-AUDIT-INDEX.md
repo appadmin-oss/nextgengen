@@ -306,7 +306,7 @@ storage, and cache dirs (7 per-dir `.htaccess` present).
 ## Appendix — Feature-gap remediation (2026-07)
 
 A five-agent feature-gap audit produced a prioritised inventory; all items were
-implemented (see git history on `claude/product-design-audit-r89fjb`).
+implemented (see git history on `product-design-audit-r89fjb`).
 Highlights:
 
 - **No-cron cliff → built-in web-cron** (`api/_lib/webcron.php`): drains the

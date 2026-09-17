@@ -1,6 +1,6 @@
 # Plan — an ID card designer an admin can use
 
-Status: **research + proposal, nothing built** · Branch: `claude/gate-links-staff-desk-4g73f9`
+Status: **research + proposal, nothing built** · Branch: `gate-links-staff-desk-4g73f9`
 Researched August 2026.
 
 The ask: *"the best libraries for professional graphics design so that the admin

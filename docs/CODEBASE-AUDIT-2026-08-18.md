@@ -2,7 +2,7 @@
 
 _Date:_ 2026-08-18 · _Scope:_ full repository (~56k LOC PHP, ~40k LOC JSX,
 398 dispatcher ops, 2,105 backend tests) · _Schema:_ `schema_version` **92**
-· _Branch:_ `claude/codebase-audit-analysis-eu8x7a`
+· _Branch:_ `codebase-audit-analysis-eu8x7a`
 
 > **STATUS: all findings below are FIXED** (same branch, second commit). Schema
 > is now **94**; the backend suite is **2,137 assertions, 0 failed**, plus a new

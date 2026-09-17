@@ -23,10 +23,10 @@ The user's email (the intended super-admin identity): `mamcareer@afrovanguard.or
 
 ### Repos & branches — IMPORTANT
 - **Afrovanguard** (`appadmin-oss/afrovanguard-site`): develop on
-  **`claude/vigilant-knuth-kuhk7c`** — this is the "vigilant" branch the user
+  **`vigilant-knuth-kuhk7c`** — this is the "vigilant" branch the user
   meant. Do NOT use the audit-sync branch for Afrovanguard.
 - **NGG** (`appadmin-oss/nextgengen`): develop on
-  **`claude/ngg-afrovanguard-audit-sync-becs2k`**.
+  **`ngg-afrovanguard-audit-sync-becs2k`**.
 - **mam-academy**: in scope but untouched — nothing was required there.
 - No PRs have been opened yet (user was asked; hasn't answered). Don't open PRs
   unless asked.
@@ -101,7 +101,7 @@ Room visit.
 
 ## 3. Anchor Journal — ALL PHASES DELIVERED (this session)
 
-Everything below is pushed to `claude/ngg-afrovanguard-audit-sync-becs2k`,
+Everything below is pushed to `ngg-afrovanguard-audit-sync-becs2k`,
 each increment verified with `node build.js` (+ `php api/tests/run.php`,
 148/148, where the backend changed). Details in
 `docs/anchor-journal-v2-gap-analysis.md` §G.
@@ -138,7 +138,7 @@ Nothing from the Anchor design comps remains open.
 
 ## 3b. Platform build wave (post-blueprint) — DONE, verified, pushed
 
-All on `claude/ngg-afrovanguard-audit-sync-becs2k`; suite now 182/182 +
+All on `ngg-afrovanguard-audit-sync-becs2k`; suite now 182/182 +
 browser E2E. UX blueprint (locked v2): https://claude.ai/code/artifact/6744d694-868b-4f14-b547-7c2edcc52aaf
 
 | Piece | Where | Verified |

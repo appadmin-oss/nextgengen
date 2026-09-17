@@ -1,6 +1,6 @@
 # NGG — The NGGC 2040 brief, audited against the branch (2026-09-17)
 
-Branch audited: `claude/community-audit-1aqug7`, at `d61fceb` before this
+Branch audited: `community-audit-1aqug7`, at `d61fceb` before this
 session's work — then re-checked against `52e6a06` after merging the
 thirty-seven commits the branch had gained in parallel (the route registry,
 the Summer School edition/group split, the two card studios, `CLAUDE.md`).
