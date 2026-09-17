@@ -133,6 +133,9 @@ function mentor_child(array $p): array {
        opened with the child in front of the mentor, and the brief puts courage
        beside the meetings and the goals rather than behind another tap. */
     $courage = courage_index($id, 40);
+    /* Eight weeks of the weekly review, gaps kept as gaps — the weeks nobody
+       reviewed are the finding, exactly as they are in the V3 trend above. */
+    $reviews = mentoring_review_history($id, 8);
 
     // Who this child's assigned mentor is — the pairing an admin made.
     $sc = session_current();
@@ -155,6 +158,9 @@ function mentor_child(array $p): array {
         'courage' => $courage,
         'courageLadder' => courage_ladder(),
         'couragePrompts' => courage_prompts(),
+        'reviews' => $reviews,
+        'reviewQuestions' => nggc_weekly_review(),
+        'period' => iso_week_period(),
         'kinds' => MENTOR_MEETING_KINDS,
         'canWrite' => true,
         'role' => (string)($g['role'] ?? 'mentor'),
@@ -559,4 +565,196 @@ function member_courage(array $p): array {
         return ['ok' => false, 'error' => 'not_found'];
     }
     return ['ok' => true, 'courage' => courage_index($id), 'ladder' => courage_ladder()] ;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE MENTOR'S WEEKLY REVIEW — NGGC 2040 brief §18
+
+   Twelve questions a mentor should be able to answer for every assigned
+   member, every week. Before this, a mentor's whole trace on a child was a
+   star for today, a V3 rating for this week and whatever conversations they
+   chose to write up — all of which record what happened, none of which record
+   that somebody LOOKED.
+
+   That distinction is the section. A child whose mentor has not reviewed them
+   for three weeks is the finding the brief is asking the programme to surface,
+   and it was not merely unsurfaced, it was unrecorded: there was nothing in
+   the database that could have answered the question.
+
+   So the review is stored per week, one row per (subject, period), and the
+   read that matters is not any single review — it is `mentor_reviews_due`,
+   the list of children nobody has reviewed. Everything else here exists to
+   make that list trustworthy.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const MENTOR_REVIEW_ANSWER_MAX = 2000;
+
+/** The answers map for a stored row, keys guaranteed to be the brief's twelve
+ *  and every one present (a missing key and an empty answer are the same thing
+ *  to a reader, and a partial map makes every consumer write a fallback). */
+function mentoring_review_answers($json): array {
+    $raw = is_array($json) ? $json : (json_decode((string)$json, true) ?: []);
+    $out = [];
+    foreach (nggc_weekly_review_keys() as $k) {
+        $out[$k] = is_string($raw[$k] ?? null) ? $raw[$k] : '';
+    }
+    return $out;
+}
+
+/** A stored review row as the client sees it. */
+function mentoring_review_public(?array $r): ?array {
+    if (!$r) return null;
+    return [
+        'period' => (string)$r['period'],
+        'answers' => mentoring_review_answers($r['answers'] ?? ''),
+        'answered' => (int)($r['answered'] ?? 0),
+        'concern' => (int)($r['concern'] ?? 0) === 1,
+        'mentorId' => (string)($r['mentorId'] ?? ''),
+        'mentorName' => (string)($r['mentorName'] ?? ''),
+        'updatedAt' => (string)($r['updatedAt'] ?? ''),
+    ];
+}
+
+/**
+ * Write (or amend) this week's review for one child.
+ *
+ * Gated by mentoring_open — the same centre-and-cohort pair that governs a
+ * star, a meeting and a courage mark.
+ *
+ * AMENDS RATHER THAN APPENDS. A mentor who answers four questions on Saturday
+ * and the rest on Sunday has written one review, not two, and the unique key
+ * on (subjectId, period) is what makes "reviewed this week" answerable without
+ * deciding which of several rows counts. A later mentor editing an earlier
+ * one's review takes ownership of it — mentoring is a shared duty and the row
+ * records who last looked, which is the fact the lead needs.
+ */
+function mentor_review_save(array $p): array {
+    $o = mentoring_open($p);
+    if (empty($o['ok'])) return $o;
+    $g = $o['g']; $s = $o['subject'];
+    $id = (string)$s['id'];
+
+    $period = trim((string)($p['period'] ?? '')) ?: iso_week_period();
+    if (!preg_match('/^\d{4}-W\d{2}$/', $period)) return ['ok' => false, 'error' => 'bad_period'];
+    /* Not the future. A review written against next week is either a typo or
+       somebody pre-filling a cadence they have not performed, and both make
+       the "not reviewed" list lie in the direction that matters. */
+    if ($period > iso_week_period()) return ['ok' => false, 'error' => 'period_ahead'];
+
+    /* Only the brief's keys are stored. Anything else is dropped rather than
+       kept, so the JSON column cannot quietly become a second, wider schema
+       that no question in formation.php corresponds to. */
+    $in = is_array($p['answers'] ?? null) ? $p['answers'] : [];
+    $answers = [];
+    $answered = 0;
+    foreach (nggc_weekly_review_keys() as $k) {
+        $v = trim((string)($in[$k] ?? ''));
+        if ($v !== '') { $v = mb_substr($v, 0, MENTOR_REVIEW_ANSWER_MAX); $answered++; }
+        $answers[$k] = $v;
+    }
+    /* An empty review is not a review. Saving one would let a mentor clear the
+       "not reviewed" flag without answering anything, which is the one way
+       this record could become worse than nothing. */
+    if ($answered === 0) return ['ok' => false, 'error' => 'no_answers'];
+
+    $now = now_iso();
+    $row = [
+        'answers' => json_encode($answers, JSON_UNESCAPED_UNICODE),
+        'answered' => $answered,
+        'concern' => !empty($p['concern']) ? 1 : 0,
+        'mentorId' => (string)$g['member']['memberId'],
+        'mentorName' => (string)($g['mentor']['fullName'] ?? $g['member']['fullName'] ?? ''),
+        'centre' => (string)($s['centre'] ?? ''),
+        'updatedAt' => $now,
+    ];
+    $existing = db_row("SELECT id FROM mentor_reviews WHERE subjectId = ? AND period = ? LIMIT 1", [$id, $period]);
+    if ($existing) {
+        db_update('mentor_reviews', $row, ['id' => (int)$existing['id']]);
+    } else {
+        db_insert('mentor_reviews', $row + [
+            'subjectId' => $id, 'subjectType' => (string)$s['kind'], 'period' => $period, 'createdAt' => $now,
+        ]);
+    }
+
+    /* The answers stay out of the audit meta, as the courage evidence does:
+       they are twelve sentences about a named child and the audit log has a
+       wider readership than the mentoring record. */
+    audit('mentor.review', (string)$g['member']['memberId'], $id,
+          ['period' => $period, 'answered' => $answered, 'concern' => $row['concern']],
+          (string)($p['ip'] ?? ''));
+
+    return ['ok' => true, 'review' => mentoring_review_public(
+        db_row("SELECT * FROM mentor_reviews WHERE subjectId = ? AND period = ? LIMIT 1", [$id, $period]))];
+}
+
+/** The last `n` weeks of review for one child, newest first, gaps included as
+ *  gaps — an unreviewed week is the information, exactly as the V3 trend keeps
+ *  its unrated weeks rather than closing them up. */
+function mentoring_review_history(string $subjectId, int $weeks = 8): array {
+    $rows = [];
+    foreach (db_all("SELECT * FROM mentor_reviews WHERE subjectId = ? ORDER BY period DESC LIMIT ?",
+                    [$subjectId, max(1, min(52, $weeks))]) as $r) {
+        $rows[(string)$r['period']] = $r;
+    }
+    $out = [];
+    for ($i = 0; $i < max(1, min(52, $weeks)); $i++) {
+        $per = iso_week_period(time() - $i * 7 * 86400);
+        $r = $rows[$per] ?? null;
+        $out[] = $r ? ['period' => $per, 'reviewed' => true] + mentoring_review_public($r)
+                    : ['period' => $per, 'reviewed' => false, 'answered' => 0, 'concern' => false];
+    }
+    return $out;
+}
+
+/**
+ * Who has NOT been reviewed this week.
+ *
+ * The point of §18. Scoped exactly like the roster, so a mentor gets their own
+ * class and a lead gets their centre, and it reuses mentor_roster rather than
+ * re-deriving who is in reach — two answers to "whose children are these"
+ * would drift, and the one that drifts silently is the one that decides
+ * whether a child appears on a list nobody is watching.
+ */
+function mentor_reviews_due(array $p): array {
+    $g = mentor_gate($p);
+    if (empty($g['ok'])) return $g;
+
+    $period = trim((string)($p['period'] ?? '')) ?: iso_week_period();
+    if (!preg_match('/^\d{4}-W\d{2}$/', $period)) return ['ok' => false, 'error' => 'bad_period'];
+
+    $roster = mentor_roster($p);
+    if (empty($roster['ok'])) return $roster;
+    $students = $roster['students'] ?? [];
+    if (!$students) {
+        return ['ok' => true, 'period' => $period, 'due' => [], 'done' => [],
+                'total' => 0, 'reviewed' => 0, 'questions' => nggc_weekly_review()];
+    }
+
+    // One query for the whole class, not one per child.
+    $ids = array_values(array_unique(array_map(static fn($s) => (string)$s['studentId'], $students)));
+    $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
+    $have = [];
+    foreach (db_all("SELECT subjectId, answered, concern, mentorName, updatedAt
+                     FROM mentor_reviews WHERE period = ? AND subjectId IN $in",
+                    array_merge([$period], $ids)) as $r) {
+        $have[(string)$r['subjectId']] = $r;
+    }
+
+    $due = []; $done = [];
+    foreach ($students as $s) {
+        $sid = (string)$s['studentId'];
+        $base = ['subjectId' => $sid, 'fullName' => (string)($s['fullName'] ?? ''),
+                 'centre' => (string)($s['centre'] ?? ''), 'kind' => (string)($s['kind'] ?? 'member')];
+        if (isset($have[$sid])) {
+            $r = $have[$sid];
+            $done[] = $base + ['answered' => (int)$r['answered'], 'concern' => (int)$r['concern'] === 1,
+                               'mentorName' => (string)$r['mentorName'], 'updatedAt' => (string)$r['updatedAt']];
+        } else {
+            $due[] = $base;
+        }
+    }
+
+    return ['ok' => true, 'period' => $period, 'due' => $due, 'done' => $done,
+            'total' => count($students), 'reviewed' => count($done),
+            'questions' => nggc_weekly_review()];
 }

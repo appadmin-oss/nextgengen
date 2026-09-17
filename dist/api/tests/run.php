@@ -7912,6 +7912,111 @@ chk('champions mint is idempotent per period', (function () use ($v3p) {
     return $before === $after && $before > 0;
 })());
 
+// ── The mentor's weekly review (NGGC 2040 brief §18) ───────────────────────
+// Twelve questions, every assigned member, every week. The point is the
+// CADENCE — a child nobody reviewed for three weeks is the finding — so the
+// assertions below are as much about the "not reviewed" list as about the row.
+chk('the review is the brief\'s twelve questions with stable keys',
+    count(nggc_weekly_review()) === 12 && count(array_unique(nggc_weekly_review_keys())) === 12);
+chk('a mentor records a weekly review', (function () {
+    $r = backend_dispatch('member.mentor.review.save', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'SUM-R-1',
+        'answers' => ['learned' => 'How to solder without the joint going cold.',
+                      'produced' => 'A working buzzer circuit.',
+                      'challenge' => 'To let somebody else hold the iron.']]);
+    if (empty($r['ok'])) return false;
+    $row = db_row("SELECT answered, answers, mentorId FROM mentor_reviews WHERE subjectId='SUM-R-1' AND period=?",
+                  [iso_week_period()]);
+    $a = json_decode((string)$row['answers'], true);
+    return (int)$row['answered'] === 3 && (string)$row['mentorId'] === 'NGG-2025-0500'
+        && str_contains((string)$a['learned'], 'solder') && ($a['fear'] ?? null) === '';
+})());
+/* One row per (subject, week): four answers on Saturday and the rest on
+   Sunday is ONE review, and that is what makes "reviewed this week"
+   answerable without deciding which of several rows counts. */
+chk('a second save in the same week amends rather than appends', (function () {
+    $r = backend_dispatch('member.mentor.review.save', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'SUM-R-1',
+        'answers' => ['learned' => 'How to solder without the joint going cold.',
+                      'produced' => 'A working buzzer circuit.',
+                      'challenge' => 'To let somebody else hold the iron.',
+                      'fear' => 'Asked the question in front of the whole group.']]);
+    $n = (int) db_row("SELECT COUNT(*) c FROM mentor_reviews WHERE subjectId='SUM-R-1'")['c'];
+    return !empty($r['ok']) && $n === 1 && (int)$r['review']['answered'] === 4;
+})());
+/* An empty review is not a review. Allowing one would let a mentor clear the
+   "not reviewed" flag without answering anything — the single way this record
+   could become worse than having none. */
+chk('a review with no answers is refused',
+    backend_dispatch('member.mentor.review.save', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'SUM-R-2', 'answers' => ['learned' => '   ']])['error'] === 'no_answers');
+// Only the brief's keys survive, so the JSON cannot become a second, wider
+// schema that no question in formation.php corresponds to.
+chk('an off-list answer key is dropped, not stored', (function () {
+    backend_dispatch('member.mentor.review.save', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'SUM-R-2', 'answers' => ['learned' => 'Kept.', 'favouriteColour' => 'Dropped.']]);
+    $a = json_decode((string) db_row("SELECT answers FROM mentor_reviews WHERE subjectId='SUM-R-2'")['answers'], true);
+    return ($a['learned'] ?? '') === 'Kept.' && !array_key_exists('favouriteColour', $a)
+        && count($a) === 12;
+})());
+chk('a review cannot be written against a future week',
+    backend_dispatch('member.mentor.review.save', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'SUM-R-1', 'period' => gmdate('o', time() + 14 * 86400) . '-W' . gmdate('W', time() + 14 * 86400),
+        'answers' => ['learned' => 'Not yet, it has not happened.']])['error'] === 'period_ahead');
+chk('a mentor cannot review a child in another centre',
+    backend_dispatch('member.mentor.review.save', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'SUM-AY-1', 'answers' => ['learned' => 'Anything.']])['error'] === 'not_your_centre');
+chk('a non-mentor cannot review anybody',
+    backend_dispatch('member.mentor.review.save', ['requesterId' => 'NGG-2025-0001',
+        'subjectId' => 'SUM-R-1', 'answers' => ['learned' => 'Anything.']])['error'] === 'not_a_mentor');
+
+/* The read §18 exists for. SUM-R-1 and SUM-R-2 have reviews this week; every
+   other child in the class does not, and must appear. */
+chk('the due list names the children nobody has reviewed this week', (function () {
+    $r = backend_dispatch('member.mentor.reviews.due', ['requesterId' => 'NGG-2025-0500', 'scope' => 'centre']);
+    if (empty($r['ok'])) return false;
+    $done = array_column($r['done'], 'subjectId');
+    $due  = array_column($r['due'], 'subjectId');
+    return in_array('SUM-R-1', $done, true) && in_array('SUM-R-2', $done, true)
+        && !in_array('SUM-R-1', $due, true)
+        && $r['total'] === count($due) + count($done)
+        && $r['reviewed'] === count($done)
+        && count($r['questions']) === 12;
+})());
+chk('the due list is scoped like the roster — never another centre\'s children', (function () {
+    $r = backend_dispatch('member.mentor.reviews.due', ['requesterId' => 'NGG-2025-0500', 'scope' => 'centre']);
+    $all = array_merge(array_column($r['due'], 'subjectId'), array_column($r['done'], 'subjectId'));
+    return !in_array('SUM-AY-1', $all, true);
+})());
+chk('a child reviewed in an earlier week still shows as due this one', (function () {
+    $last = iso_week_period(time() - 7 * 86400);
+    backend_dispatch('member.mentor.review.save', ['requesterId' => 'NGG-2025-0500',
+        'subjectId' => 'SUM-R-3', 'period' => $last, 'answers' => ['learned' => 'Last week.']]);
+    $r = backend_dispatch('member.mentor.reviews.due', ['requesterId' => 'NGG-2025-0500', 'scope' => 'centre']);
+    $due = array_column($r['due'], 'subjectId');
+    // Present in the roster at all? If not, this assertion is vacuous.
+    $roster = array_column(backend_dispatch('member.mentor.roster',
+        ['requesterId' => 'NGG-2025-0500', 'scope' => 'centre'])['students'], 'studentId');
+    return !in_array('SUM-R-3', $roster, true) || in_array('SUM-R-3', $due, true);
+})());
+/* Gaps kept as gaps. A history that closed up the unreviewed weeks would read
+   as eight weeks of steady attention when it might be two. */
+chk('the child screen carries eight weeks with the unreviewed ones marked', (function () {
+    $r = backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-2025-0500', 'subjectId' => 'SUM-R-1']);
+    if (empty($r['ok']) || count($r['reviews']) !== 8) return false;
+    $thisWeek = $r['reviews'][0];
+    $unreviewed = array_filter($r['reviews'], fn($w) => $w['reviewed'] === false);
+    return $thisWeek['reviewed'] === true && $thisWeek['period'] === iso_week_period()
+        && count($unreviewed) === 7 && count($r['reviewQuestions']) === 12;
+})());
+chk('the audit line records that a review happened, never its twelve answers', (function () {
+    $a = db_row("SELECT meta FROM audit_log WHERE event='mentor.review' ORDER BY id DESC LIMIT 1");
+    if (!$a) return false;
+    $meta = (string)$a['meta'];
+    return str_contains($meta, 'answered') && str_contains($meta, 'period')
+        && !str_contains($meta, 'solder') && !str_contains($meta, 'buzzer');
+})());
+
 // ── The four professional divisions (NGGC 2040 brief §5) ───────────────────
 // The brief assigns every member to one of four, each with a mandate. The
 // programme had no column for it, so none of these questions had an answer.

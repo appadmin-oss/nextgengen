@@ -599,6 +599,12 @@
          impression-of-a-child this index replaces. `observedOn` defaults to
          today server-side; pass it when writing up an earlier session. */
       courageMark:   (subjectId, m) => request('/member/mentor.php', { body: Object.assign({ action: 'courage', subjectId }, m || {}) }),
+      /* The mentor's weekly review (brief §18) — twelve questions for one
+         child for one week. Amends in place: answering four on Saturday and
+         the rest on Sunday is one review, not two. */
+      mentorReview:  (subjectId, r) => request('/member/mentor.php', { body: Object.assign({ action: 'review', subjectId }, r || {}) }),
+      /* Who nobody has reviewed this week — the question §18 exists to ask. */
+      mentorReviewsDue: (opts) => request('/member/mentor.php' + qs(Object.assign({ view: 'due' }, opts || {}))),
       bulkAward: (subjectIds, opts) => request('/member/mentor.php', { body: Object.assign({ action: 'bulk', subjectIds }, opts || {}) }),
       /* The teaching record. One endpoint, three views — an instructor's day
          is one screen that switches between the class, a child and the grid. */

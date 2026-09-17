@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 115;
+const NGG_SCHEMA_TARGET = 116;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3523,6 +3523,52 @@ function db_migrate(PDO $db): void {
             ALTER TABLE members ADD COLUMN division TEXT DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_members_division ON members(division);
         " . NGG_BACKFILL_MEMBER_DIVISION . ";",
+
+        /* 116 — the mentor's weekly review (NGGC 2040 brief §18).
+         *
+         * Twelve questions a mentor should be able to answer for every
+         * assigned member, every week. Nothing prompted them and nothing
+         * recorded the answers, so the only trace a mentor left was a star for
+         * today, a V3 for this week, and whatever meetings they happened to
+         * write up. The brief's point is the CADENCE: a child nobody reviewed
+         * for three weeks is the finding, and it was invisible.
+         *
+         * ONE ROW PER (subject, period), like v3_scores — a review is a weekly
+         * artefact, and a second one for the same week is an edit of the first,
+         * not a new review. That is what makes 'who has not been reviewed this
+         * week' a single query instead of a scan.
+         *
+         * `answers` is JSON keyed by nggc_weekly_review_keys(), not twelve
+         * columns. The twelve are the brief's and the brief can be amended;
+         * twelve columns would make a thirteenth question a migration and a
+         * deploy, and would leave the twelve column names as a second list of
+         * the questions that could drift from formation.php. The keys are
+         * validated on the way in, so the flexibility does not cost the closed
+         * set.
+         *
+         * `concern` mirrors mentor_meetings: the one flag that puts a child in
+         * front of a lead. It is stored rather than derived from the text,
+         * because a mentor deciding to raise something is a different act from
+         * a mentor writing a worried sentence. */
+        116 => "
+            CREATE TABLE IF NOT EXISTS mentor_reviews (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectId TEXT NOT NULL,
+              subjectType TEXT NOT NULL DEFAULT 'member',
+              period TEXT NOT NULL,              -- ISO week, e.g. 2026-W38
+              answers TEXT,                      -- JSON, keys from nggc_weekly_review_keys()
+              answered INTEGER DEFAULT 0,        -- how many of the twelve carry text
+              concern INTEGER DEFAULT 0,
+              mentorId TEXT NOT NULL,
+              mentorName TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_mrev_one ON mentor_reviews(subjectId, period);
+            CREATE INDEX IF NOT EXISTS idx_mrev_period ON mentor_reviews(period, centre);
+            CREATE INDEX IF NOT EXISTS idx_mrev_mentor ON mentor_reviews(mentorId, period);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

@@ -6722,7 +6722,8 @@ function MentorChildSheet({ student, onClose, onChanged }) {
           <div role="tablist" style={{ display: "flex", gap: 4, margin: "22px 0 14px", borderBottom: "1px solid rgba(255,255,255,.12)" }}>
             {[["record", "Conversations (" + d.meetings.length + ")"],
               ["goals", "Goals (" + d.goals.filter(g => g.status === "open").length + ")"],
-              ["courage", "Courage (" + ((d.courage && d.courage.inWindow) || 0) + ")"]].map(([k, label]) => (
+              ["courage", "Courage (" + ((d.courage && d.courage.inWindow) || 0) + ")"],
+              ["review", "This week" + (((d.reviews || [])[0] || {}).reviewed ? " ✓" : "")]].map(([k, label]) => (
               <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
                 style={{ padding: "11px 14px", minHeight: 44, background: "none", border: "none", cursor: "pointer",
                          borderBottom: "2px solid " + (tab === k ? MC_GOLD : "transparent"), marginBottom: -1,
@@ -6736,7 +6737,9 @@ function MentorChildSheet({ student, onClose, onChanged }) {
             ? <McMeetings d={d} subjectId={student.studentId} busy={busy} setBusy={setBusy} onDone={after} setErr={setErr}/>
             : tab === "goals"
             ? <McGoals d={d} subjectId={student.studentId} busy={busy} setBusy={setBusy} onDone={after} setErr={setErr}/>
-            : <McCourage d={d} subjectId={student.studentId} onDone={after} setErr={setErr}/>}
+            : tab === "courage"
+            ? <McCourage d={d} subjectId={student.studentId} onDone={after} setErr={setErr}/>
+            : <McReview d={d} subjectId={student.studentId} onDone={after} setErr={setErr}/>}
         </>}
       </div>
     </div>
@@ -7169,6 +7172,146 @@ function McCourage({ d, subjectId, onDone, setErr }) {
   );
 }
 
+/* ── The mentor's weekly review ────────────────────────────────────────────
+   NGGC 2040 brief §18: twelve questions a mentor should be able to answer for
+   every assigned member, every week.
+
+   Pre-filled from this week's saved answers, because the brief's cadence is a
+   week and a mentor who answered four questions on Saturday should see those
+   four on Sunday rather than a blank form — the server amends in place for the
+   same reason.
+
+   The eight-week strip above the form is the part that matters to a lead. It
+   keeps unreviewed weeks as gaps rather than closing them up: eight filled
+   squares and eight squares of which two are filled look nothing alike, and
+   the difference is exactly the finding §18 is asking the programme to see.
+   ═════════════════════════════════════════════════════════════════════════ */
+function McReview({ d, subjectId, onDone, setErr }) {
+  const questions = d.reviewQuestions || [];
+  const weeks = d.reviews || [];
+  const thisWeek = weeks[0] || { reviewed: false, answers: {}, concern: false };
+  const [answers, setAnswers] = React.useState(() => {
+    const seed = {};
+    questions.forEach(q => { seed[q.key] = (thisWeek.answers && thisWeek.answers[q.key]) || ""; });
+    return seed;
+  });
+  const [concern, setConcern] = React.useState(!!thisWeek.concern);
+  const [saving, setSaving] = React.useState(false);
+
+  const answered = questions.filter(q => (answers[q.key] || "").trim()).length;
+  const set = (k, v) => setAnswers(a => Object.assign({}, a, { [k]: v }));
+
+  const save = (e) => {
+    e.preventDefault();
+    if (!answered) return;
+    setSaving(true); setErr("");
+    NGGApi.member.mentorReview(subjectId, { answers, concern })
+      .then(() => onDone())
+      .catch(er => setErr((er && er.message) || "Could not save that."))
+      .then(() => setSaving(false));
+  };
+
+  return (
+    <form onSubmit={save}>
+      <div className="mrv-head">
+        <span className="mrv-count">
+          {d.period} · {answered} of {questions.length} answered
+        </span>
+        {thisWeek.reviewed && thisWeek.mentorName
+          ? <span className="mrv-count">last by {thisWeek.mentorName}</span> : null}
+      </div>
+
+      {/* Eight weeks, newest last so it reads left to right as time. */}
+      <ol className="mrv-weeks" aria-label="The last eight weeks of review">
+        {weeks.slice().reverse().map(w => (
+          <li key={w.period}
+            className={"mrv-week" + (w.reviewed ? " is-done" : "") + (w.concern ? " is-concern" : "")}
+            title={w.period + (w.reviewed ? " · reviewed" : " · not reviewed") + (w.concern ? " · concern raised" : "")}>
+            {w.period.slice(-2)}
+            {/* The word as well as the colour, for anybody not reading squares. */}
+            <span className="sr-only">{w.period + (w.reviewed ? " reviewed" : " not reviewed")}</span>
+          </li>
+        ))}
+      </ol>
+
+      {questions.map(q => {
+        const done = !!(answers[q.key] || "").trim();
+        return (
+          <label key={q.key} className={"mrv-q" + (done ? " is-done" : "")}>
+            <span className="mrv-q-lbl"><span className="mrv-q-n">{q.n}</span>{q.q}</span>
+            <textarea rows={2} value={answers[q.key] || ""} maxLength={2000}
+              onChange={e => set(q.key, e.target.value)}/>
+          </label>
+        );
+      })}
+
+      <label style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 12px",
+                      fontSize: 14, minHeight: 44, cursor: "pointer" }}>
+        <input type="checkbox" checked={concern} onChange={e => setConcern(e.target.checked)}
+          style={{ width: 20, height: 20 }}/>
+        {/* Stored, not inferred from the text: deciding to raise something is a
+            different act from writing a worried sentence. */}
+        <span>Put this in front of a lead this week.</span>
+      </label>
+
+      <button type="submit" disabled={saving || !answered}
+        style={{ padding: "11px 20px", minHeight: 44, borderRadius: 11, border: "none", background: MC_GOLD,
+                 color: "#2b2100", fontWeight: 800, cursor: "pointer", opacity: (saving || !answered) ? .55 : 1 }}>
+        {saving ? "Saving…" : thisWeek.reviewed ? "Update this week's review" : "Save this week's review"}
+      </button>
+      {!answered ? (
+        <p style={{ fontSize: 12, color: "rgba(230,238,255,.55)", margin: "8px 0 0" }}>
+          Answer at least one. An empty review would clear the flag without anybody having looked.
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
+/* ── Who nobody has reviewed this week ─────────────────────────────────────
+   The question §18 exists to ask, on the screen a mentor already opens. A
+   count alone would be a number to feel bad about; the names are what make it
+   an action, so each one opens that child's record at the review tab. */
+function MentorReviewsDue({ centre, scope, onOpenChild }) {
+  const [d, setD] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.member.mentorReviewsDue({ centre: centre || "", scope: scope || "" })
+      .then(r => { if (alive) setD(r); })
+      .catch(() => { if (alive) setD(null); });
+    return () => { alive = false; };
+  }, [centre, scope]);
+
+  // Nothing to say until it is known, and nothing to say for an empty class.
+  if (!d || !d.total) return null;
+  const clear = !d.due.length;
+
+  return (
+    <div className={"mrv-due" + (clear ? " is-clear" : "")}>
+      <div className="mrv-due-h">
+        <span className="mrv-due-t">
+          {clear
+            ? "Everybody has been reviewed this week."
+            : d.due.length + " of " + d.total + " not reviewed this week."}
+        </span>
+        <span className="mrv-count">{d.period} · {d.reviewed}/{d.total}</span>
+      </div>
+      {!clear && (
+        <ul className="mrv-due-names">
+          {d.due.map(c => (
+            <li key={c.subjectId}>
+              <button type="button"
+                onClick={() => onOpenChild && onOpenChild({ studentId: c.subjectId, fullName: c.fullName })}>
+                {c.fullName || c.subjectId}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function McGoals({ d, subjectId, busy, setBusy, onDone, setErr }) {
   const [goal, setGoal] = React.useState("");
   const [dueOn, setDueOn] = React.useState("");
@@ -7578,6 +7721,10 @@ function MentorPortal() {
     {centrePicker}
     {scopePicker}
     {tabs}
+    {/* §18's question on the screen a mentor already opens. Above the search,
+        because a list of who has been missed is worth more than a list of
+        everybody, and below the tabs because it belongs to this class. */}
+    <MentorReviewsDue centre={data.centre || m.centre || ""} scope={scope} onOpenChild={setChildOn}/>
     {!students.length && <p style={{ color: "rgba(230,238,255,.55)", fontSize: 14 }}>No {roleMeta.they} here yet.</p>}
 
     {students.length > 0 && (

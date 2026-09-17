@@ -2605,3 +2605,38 @@ ALTER TABLE members ADD COLUMN division VARCHAR(24) DEFAULT '';
 CREATE INDEX idx_members_division ON members(division);
 
 INSERT INTO schema_version (version) VALUES (115) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 116 · The mentor's weekly review (NGGC 2040 brief §18) ──────────────────
+-- Twelve questions a mentor should be able to answer for every assigned member,
+-- every week. Nothing prompted them and nothing recorded the answers, so a
+-- mentor's only trace was a star for today, a V3 for this week and whatever
+-- meetings they happened to write up. The brief's point is the CADENCE: a child
+-- nobody reviewed for three weeks is the finding, and it was invisible.
+--
+-- One row per (subjectId, period), like v3_scores — a review is a weekly
+-- artefact and a second one for the same week is an edit of the first. That is
+-- what makes "who has not been reviewed this week" one query instead of a scan.
+--
+-- `answers` is JSON keyed by nggc_weekly_review_keys() rather than twelve
+-- columns: a thirteenth question would otherwise be a migration and a deploy,
+-- and twelve column names would be a second list of the questions, free to
+-- drift from domain/formation.php. The keys are validated on the way in.
+CREATE TABLE IF NOT EXISTS mentor_reviews (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  subjectId VARCHAR(64) NOT NULL,
+  subjectType VARCHAR(24) NOT NULL DEFAULT 'member',
+  period VARCHAR(16) NOT NULL,
+  answers TEXT,
+  answered INT DEFAULT 0,
+  concern TINYINT DEFAULT 0,
+  mentorId VARCHAR(64) NOT NULL,
+  mentorName VARCHAR(190) DEFAULT '',
+  centre VARCHAR(80) DEFAULT '',
+  createdAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_mrev_one (subjectId, period),
+  INDEX idx_mrev_period (period, centre),
+  INDEX idx_mrev_mentor (mentorId, period)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (116) ON DUPLICATE KEY UPDATE version = version;

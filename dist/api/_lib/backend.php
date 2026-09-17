@@ -49,6 +49,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.mentor.goal.status'    => 'mentor_goal_status',
             'member.mentor.attention'      => 'mentor_attention',
             'member.mentor.courage.mark'   => 'courage_mark_save',
+            'member.mentor.review.save'    => 'mentor_review_save',
+            'member.mentor.reviews.due'    => 'mentor_reviews_due',
 
             'behaviour.star.give'     => 'mentor_star_give',
             'behaviour.bulk.award'    => 'mentor_bulk_award',
