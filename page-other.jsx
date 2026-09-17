@@ -3196,7 +3196,7 @@ function ReviewDeskPage() {
     <p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>It has been closed or revoked. Ask an admin for a fresh one.</p></div>);
   if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}>
     <h1 style={{ fontSize: 21 }}>Couldn't load the queue</h1>
-    <button onClick={() => { setState("loading"); load(); }} style={{ marginTop: 12, minHeight: 44, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
+    <button onClick={() => { setState("loading"); load(); }} className="shell-retry">Retry</button></div>);
 
   if (state === "locked") return shell(
     <form onSubmit={doUnlock} style={{ maxWidth: 380, margin: "60px auto 0", textAlign: "center" }}>
@@ -3865,7 +3865,7 @@ function GatePage() {
     </form>
   </div>);
   }
-  if (state === "error") return shell(<div style={{ ...card, padding: 24, marginTop: 60 }}><h1 style={{ fontSize: 20, margin: "0 0 8px" }}>Gate unavailable</h1><p style={{ color: "rgba(230,238,255,.66)", fontSize: 14 }}>{err}</p><button onClick={load} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
+  if (state === "error") return shell(<div style={{ ...card, padding: 24, marginTop: 60 }}><h1 style={{ fontSize: 20, margin: "0 0 8px" }}>Gate unavailable</h1><p style={{ color: "rgba(230,238,255,.66)", fontSize: 14 }}>{err}</p><button onClick={load} className="shell-retry">Retry</button></div>);
 
   return shell(<>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -7585,7 +7585,7 @@ function MentorPortal() {
     </p>
   </div>);
   if (state === "not-mentor") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 22 }}>This account has no class</h1><p style={{ color: "rgba(230,238,255,.6)", marginTop: 8 }}>The portal opens for mentors, instructors and admin staff. If that's you, make sure you're signed in with the email on your mentor record, or with the ID card issued for your instructor or volunteer role.</p></div>);
-  if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load your class</h1><button onClick={() => load(centre, scope)} style={{ marginTop: 12, padding: "10px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Retry</button></div>);
+  if (state === "error") return shell(<div style={{ textAlign: "center", padding: "70px 0" }}><h1 style={{ fontSize: 20 }}>Couldn't load your class</h1><button onClick={() => load(centre, scope)} className="shell-retry">Retry</button></div>);
 
   const m = data.mentor || {}, students = data.students || [];
   const done = students.filter(s => s.starredToday).length;
@@ -7844,7 +7844,7 @@ function SessionPanel({ courses, centre, onRemarks }) {
 
   if (!courses.length) return <p style={{ color: "rgba(230,238,255,.6)", fontSize: 14 }}>No courses are assigned to you yet — ask an admin to add them to your record.</p>;
   if (state === "loading") return <div style={{ textAlign: "center", padding: "50px 0" }}><div className="dash-spinner"/></div>;
-  if (state === "error") return <p style={{ color: "#ff9a9a", fontSize: 14 }}>Couldn't load the class ({err}). <button onClick={load} style={{ background: "none", border: "none", color: gold, textDecoration: "underline", cursor: "pointer", font: "inherit" }}>Retry</button></p>;
+  if (state === "error") return <p style={{ color: "#ff9a9a", fontSize: 14 }}>Couldn't load the class ({err}). <button onClick={load} className="shell-retry-inline">Retry</button></p>;
 
   const kids = (d && d.students) || [];
   const isHere = (s) => (s.studentId in flip) ? flip[s.studentId] : s.present;
@@ -7957,7 +7957,6 @@ function SkillsPanel({ courses, centre }) {
   const [state, setState] = React.useState("loading");
   const [open, setOpen] = React.useState("");   // studentId whose card is expanded
   const [busy, setBusy] = React.useState("");
-  const gold = "#ffce54";
   const LEVEL_COLOR = { 1: "rgba(255,255,255,.16)", 2: "rgba(245,176,38,.35)", 3: "rgba(127,209,166,.4)", 4: "rgba(127,209,166,.75)" };
 
   const load = React.useCallback(() => {
@@ -7969,7 +7968,7 @@ function SkillsPanel({ courses, centre }) {
 
   if (!courses.length) return <p style={{ color: "rgba(230,238,255,.6)", fontSize: 14 }}>No courses are assigned to you yet.</p>;
   if (state === "loading") return <div style={{ textAlign: "center", padding: "50px 0" }}><div className="dash-spinner"/></div>;
-  if (state === "error") return <p style={{ color: "#ff9a9a", fontSize: 14 }}>Couldn't load the skills grid. <button onClick={load} style={{ background: "none", border: "none", color: gold, textDecoration: "underline", cursor: "pointer", font: "inherit" }}>Retry</button></p>;
+  if (state === "error") return <p style={{ color: "#ff9a9a", fontSize: 14 }}>Couldn't load the skills grid. <button onClick={load} className="shell-retry-inline">Retry</button></p>;
 
   const skills = (d && d.skills) || [];
   const levels = (d && d.levels) || {};

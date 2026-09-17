@@ -4851,6 +4851,41 @@ section p[style*="var(--ink-500)"] {
      where 44px would push every row apart; 40px still clears a fingertip. */
   .admin-main .btn-sm,
   .admin-main .btn { min-height: 40px; }
+  /* The topbar is NOT a dense list, so the 40px concession above does not
+     reach it: its controls sit on one uncrowded row and there is nothing for
+     44px to push apart. The Analyst toggle paints 32px and the four ghost
+     buttons beside it are .btn-sm, so without this the whole strip a tablet
+     operator reaches for first is under the floor. */
+  .admin-topbar-r .btn,
+  .admin-topbar-r .btn-sm,
+  .admin-analyst-btn { min-height: 44px; }
+
+  /* A second tab vocabulary. `.admin-tab` was raised above and
+     `.admin-anchor-tab` — the strip on ID cards, the Anchor Journal and the
+     Club desk — was not, which is what a parallel vocabulary costs. A tab
+     strip is not a dense list, so it takes the full 44 like its twin. */
+  .admin-anchor-tab { min-height: 44px; }
+
+  /* Rows in the mission planner: four per week, not forty, so the dense-list
+     concession does not apply and they take the full floor. */
+  .admin-mission-row { min-height: 44px; }
+
+  /* A checkbox is only as tappable as the label wrapping it, and these labels
+     were 28px. The classed form first. */
+  .admin-field-check { min-height: 44px; }
+  /* Then the ones written inline. `:has()` reaches what a stylesheet otherwise
+     cannot — CLAUDE.md §11 is exactly right that inline chrome is where drift
+     hides, and these labels are ~30 copies of `display:flex; align-items:center`
+     across the console. A net, not an excuse: new checkbox rows should use
+     `.admin-field-check`. Browsers without `:has()` keep today's behaviour
+     rather than breaking, which is the correct failure for a reach floor. */
+  .admin-main label:has(input[type="checkbox"]) { min-height: 44px; }
+
+  /* Two controls styled as text because they sit inside a sentence. They stay
+     looking like text and take their reach from padding, so the sentence does
+     not grow a button in the middle of it. */
+  .admin-guide-toggle,
+  .admin-bulk-link { min-height: 44px; padding-top: 12px; padding-bottom: 12px; }
 }
 
 /* ============================================================
@@ -7114,3 +7149,36 @@ select.cs-field option { background: var(--dsn-s1); color: var(--dsn-ink); }
 .admin-clash-rows button:hover { border-color: rgba(255,120,90,.6); }
 .admin-clash-name { font-size: 14px; font-weight: 600; }
 .admin-clash-meta { font-size: 11.5px; color: var(--ink-500); }
+
+/* ============================================================
+   THE DARK-SHELL RETRY
+   The Mentor Portal, the Gate desk and the Review desk each drew
+   this button themselves, from the same inline style object copied
+   three times. Two sat at 37px; the third had `minHeight: 44` added
+   by hand — which is the whole argument of CLAUDE.md §11 in one
+   control. An inline style beats the stylesheet, so the fix applied
+   to one could not reach the other two, and nothing could tell they
+   had drifted. Two more copies, in the Club class and skills panels,
+   are the inline variant below.
+   ============================================================ */
+.shell-retry {
+  margin-top: 12px; min-height: 44px; padding: 10px 20px;
+  border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent; color: #fff;
+  font: inherit; font-weight: 700; cursor: pointer;
+}
+.shell-retry:hover { border-color: rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.06); }
+.shell-retry:focus-visible { outline: 2px solid #ffce54; outline-offset: 2px; }
+
+/* The inline variant — a retry inside a sentence, not a block. It stays a
+   link visually, and takes its reach from padding instead of a box, so the
+   sentence does not grow a button in the middle of it. */
+.shell-retry-inline {
+  /* #ffce54, the literal the dark shells all declare as their local `gold`
+     — NOT --gold-400 (#f5b026), which is the lighter site's gold and would
+     change how this reads on navy. */
+  background: none; border: none; color: #ffce54;
+  text-decoration: underline; cursor: pointer; font: inherit;
+  padding: 12px 4px; min-height: 44px;
+}
+.shell-retry-inline:focus-visible { outline: 2px solid #ffce54; outline-offset: 2px; }

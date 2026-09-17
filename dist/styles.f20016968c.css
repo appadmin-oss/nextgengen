@@ -1136,12 +1136,28 @@ summary:focus-visible,
 .a11y-tip { font-size: 12px; color: var(--ink-500); margin: 8px 0 2px; }
 .a11y-tip kbd { font-family: var(--font-mono); font-size: 11px; background: rgba(12,20,50,0.07); border-radius: 4px; padding: 1px 5px; }
 .a11y-toggle { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid rgba(12,20,50,0.08); }
-.a11y-switch { flex: none; width: 46px; height: 28px; border-radius: 999px; border: none; background: rgba(12,20,50,0.2); cursor: pointer; position: relative; transition: background 0.18s ease; }
-.a11y-switch.is-on { background: var(--lime); }
+/* The button is the hit area; `.a11y-switch-track` is the thing that looks
+   like a switch. Splitting them is what lets the reach grow on a touch screen
+   (below) without the switch growing with it — a 46×44 lozenge is not a
+   switch. Named in docs/PRODUCT-DESIGN-AUDIT.md §11 as a sub-44px target. */
+.a11y-switch { flex: none; display: grid; place-items: center; width: 46px; min-height: 28px;
+  padding: 0; border: none; background: none; cursor: pointer; }
+.a11y-switch-track { display: block; width: 46px; height: 28px; border-radius: 999px;
+  background: rgba(12,20,50,0.2); position: relative; transition: background 0.18s ease; }
+.a11y-switch.is-on .a11y-switch-track { background: var(--lime); }
+.a11y-switch:focus-visible { outline: none; }
+.a11y-switch:focus-visible .a11y-switch-track { outline: 2px solid var(--navy-900, #0c1432); outline-offset: 3px; }
 .a11y-switch-knob { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform 0.18s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
 .a11y-switch.is-on .a11y-switch-knob { transform: translateX(18px); }
 .a11y-reset { margin-top: 14px; width: 100%; padding: 10px; border-radius: 10px; border: 1px solid rgba(12,20,50,0.16); background: #fff; cursor: pointer; font-weight: 600; }
 .a11y-reset:disabled { opacity: 0.5; cursor: default; }
+/* The whole panel's reach, in one place and AFTER the declarations it raises —
+   the accessibility settings were themselves the least reachable thing on the
+   screen. */
+@media (pointer: coarse) {
+  .a11y-switch, .a11y-reset { min-height: 44px; }
+  .a11y-panel-close { width: 44px; height: 44px; }
+}
 
 
 /* Pulsing live dot */

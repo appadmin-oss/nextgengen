@@ -942,6 +942,14 @@
       mentors: {
         list:   () => request('/admin/mentors.php'),
         upsert: (data) => request('/admin/mentors.php', { body: data }),
+        /* Active mentor records sharing an email. The portal gate refuses to
+           resolve an ambiguous address, so everybody in a pair is locked out
+           until the desk separates them — and cannot report it themselves.
+           On `mentors`, beside the roster reads it belongs with: it was first
+           written onto `mentor` (singular, the promote/demote object), where
+           the caller could never find it and the Mentors section threw on
+           every visit. */
+        duplicates: () => request('/admin/mentors.php' + qs({ view: 'duplicates' })),
       },
       mentorship: {
         overview: () => request('/admin/mentorship.php?view=overview'),
@@ -1221,10 +1229,6 @@
         candidates: (q) => request('/admin/mentors.php?view=candidates&q=' + encodeURIComponent(q || '')),
         promote:    (personId, opts) => request('/admin/mentors.php', { body: Object.assign({ action: 'promote', personId }, opts || {}) }),
         demote:     (mentorId) => request('/admin/mentors.php', { body: { action: 'demote', mentorId } }),
-        /* Active mentor records sharing an email. The portal gate refuses to
-           resolve an ambiguous address, so everybody in a pair is locked out
-           until the desk separates them — and cannot report it themselves. */
-        duplicates: () => request('/admin/mentors.php' + qs({ view: 'duplicates' })),
       },
       // Tournaments. Centre rounds, then the centre champions meet.
       tournaments: {

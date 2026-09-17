@@ -12359,8 +12359,11 @@ function AdminCentres() {
 
   const geoLabel = (c) => c.lat == null ? <span className="chip status-archived">— unmapped</span> : c.geofence ? <span className="chip chip-lime">🟢 fence on · {c.radiusM || 150}m</span> : <span className="chip">mapped · off</span>;
   const toggle = (c, mode) => setOpenId(openId === c.centreId + ":" + mode ? "" : c.centreId + ":" + mode);
-  if (err) return <ErrorState title="Couldn't load the centre directory" code={err} onRetry={load}/>;
-
+  /* Every hook runs before any early return. This useMemo used to sit BELOW
+     the error branch, so the first render called ten hooks and the re-render
+     after a failed load called nine — React threw "Rendered fewer hooks than
+     expected" and the section died exactly when it was meant to be showing
+     its honest error with a retry (CLAUDE.md §9). */
   const rows = React.useMemo(() => {
     const needle = q.trim().toLowerCase();
     const all = centres || [];
@@ -12370,6 +12373,8 @@ function AdminCentres() {
       || (c.area || "").toLowerCase().indexOf(needle) !== -1
       || (c.address || "").toLowerCase().indexOf(needle) !== -1);
   }, [centres, q]);
+
+  if (err) return <ErrorState title="Couldn't load the centre directory" code={err} onRetry={load}/>;
 
   return (
     <div className="admin-section">

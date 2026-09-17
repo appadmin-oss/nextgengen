@@ -448,10 +448,21 @@ preferences** on first visit.
 - **Text-size control missing (Medium).** The a11y panel *tells users to use browser
   zoom* rather than offering a font-scale toggle. The panel is also
   `aria-modal="false"` yet traps focus — contradictory.
-- **Sub-44px touch targets (Medium).** `.nav-link` (~34px tall), `.a11y-switch`
-  (28px), `.btn-sm` (~31px), and the journal's Yes/No chips, system chips and
-  steppers (~34–36px) fall short of WCAG 2.5.5/2.5.8 — notably the daily form a
-  child taps most.
+- **Sub-44px touch targets (Medium).** ~~`.nav-link` (~34px tall), `.a11y-switch`
+  (28px), `.btn-sm` (~31px)~~ — **closed** on the public site and every staff
+  surface, and now held closed by two suites that measure rather than assert:
+  `tests/responsive.test.js` (19 public routes) and
+  `tests/responsive-staff.test.js` (41 Control Room sections, 9 portals, the
+  member dashboard), both at 360/390/768px with touch emulation on so
+  `(pointer: coarse)` actually matches. The floor is 44px, except inside
+  `.admin-main` where the console's own documented 40px for dense list rows
+  applies. Fixing `.a11y-switch` needed markup, not CSS: the button now wraps a
+  `.a11y-switch-track`, so the hit box reaches 44px while the switch still
+  looks like a 46×28 switch.
+  **Still open:** the journal's Yes/No chips, system chips and steppers
+  (~34–36px) — the daily form a child taps most. `journal/` is a separate PWA
+  with its own `app.jsx` and `app.css`, outside both sweeps' bundle, so it needs
+  its own pass.
 
 ---
 

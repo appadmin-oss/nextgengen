@@ -632,6 +632,12 @@ function AnTip({ tip }) {
 }
 
 function AnArea({ data, height }) {
+  /* The crosshair state is declared before the empty branch, not after it.
+     These charts are fed by a range picker, so `data` goes from empty to
+     populated and back within one mount — a hook below the early return
+     changes the hook count between those renders and React tears the panel
+     down with "Rendered fewer hooks than expected". */
+  const [hi, setHi] = React.useState(-1);
   const h = height || 150, w = 640, pad = 6;
   if (!data || !data.length) return <div className="an-empty">No attendance in this range yet.</div>;
   const max = Math.max(1, ...data.map(d => d.present));
@@ -641,7 +647,6 @@ function AnArea({ data, height }) {
   const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   const area = line + ` L${pad + (data.length - 1) * step} ${h - pad} L${pad} ${h - pad} Z`;
   const tone = AN_SERIES[0];
-  const [hi, setHi] = React.useState(-1);
   /* Nearest-point crosshair rather than per-mark hit targets: on a 90-day trend
      the marks are 6px apart and hitting one is luck, so the whole plot answers
      and the answer is whichever day is closest. */
@@ -673,6 +678,7 @@ function AnArea({ data, height }) {
 }
 
 function AnLine({ data, xKey, yKey, label, color }) {
+  const [hi, setHi] = React.useState(-1);   // before the early return — see AnArea
   const h = 150, w = 560, pad = 10;
   if (!data || data.length < 2) return <div className="an-empty">Not enough data for a trend yet.</div>;
   const ys = data.map(d => d[yKey]);
@@ -682,7 +688,6 @@ function AnLine({ data, xKey, yKey, label, color }) {
   const pts = data.map((d, i) => [pad + i * step, y(d[yKey])]);
   const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   const tone = color || AN_SERIES[2];
-  const [hi, setHi] = React.useState(-1);
   const onMove = (e) => {
     const r = e.currentTarget.getBoundingClientRect();
     const x = ((e.clientX - r.left) / r.width) * w;

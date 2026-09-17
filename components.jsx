@@ -2539,8 +2539,13 @@ function A11yToggle({ label, desc, on, onChange }) {
         <span className="a11y-label">{label}</span>
         <span className="a11y-desc">{desc}</span>
       </span>
+      {/* The painted track is its own element so the BUTTON can be 44px tall
+          on a touch screen while the switch still looks like a 46×28 switch.
+          A pseudo-element hit area would not have worked: it does not enlarge
+          the element's own box, so the control would measure as reachable to
+          a human and as 28px to every tool. */}
       <button type="button" role="switch" aria-checked={on} aria-label={label} className={"a11y-switch" + (on ? " is-on" : "")} onClick={() => onChange(!on)}>
-        <span className="a11y-switch-knob"/>
+        <span className="a11y-switch-track"><span className="a11y-switch-knob"/></span>
       </button>
     </label>
   );
