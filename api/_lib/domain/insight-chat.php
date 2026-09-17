@@ -563,6 +563,21 @@ function ichat_budget_ok(string $memberId): bool {
  * them and restore one. The active list always reports how many are archived, so
  * the affordance only appears when there is something behind it.
  */
+/**
+ * Is there an AI provider that could actually answer?
+ *
+ * Extracted because it now has TWO callers and they must not drift: the ask
+ * refuses with `ai_disabled`, and the thread list reports the same fact so the
+ * pane can say so BEFORE somebody writes a question. A status flag computed
+ * from a different condition than the gate is worse than no flag — it tells
+ * the operator the analyst is ready and then refuses them.
+ */
+function ichat_ai_ready(): bool {
+    return ai_enabled(ICHAT_ANSWER_PROFILE)
+        || ai_enabled(INSIGHT_ANALYSTS[0]['profile'])
+        || ai_enabled('default');
+}
+
 function insight_chat_threads(array $p): array {
     $g = analyst_gate($p);
     if (!$g['ok']) return $g;
@@ -579,6 +594,12 @@ function insight_chat_threads(array $p): array {
         'centre' => (string)$r['centre'], 'rangeLabel' => (string)$r['rangeLabel'],
         'turns' => (int)$r['turns'], 'updatedAt' => (string)$r['updatedAt'],
     ], $rows)];
+    /* Whether asking anything is possible at all. The pane opens on this
+       read, so this is the earliest honest moment to say "no provider is
+       configured" — before an operator composes a question, waits, and is
+       refused. `aiProvider` is named for the settings screen and the docs. */
+    $out['aiReady'] = ichat_ai_ready();
+    $out['aiProvider'] = $out['aiReady'] ? ai_provider(ICHAT_ANSWER_PROFILE) : '';
     if (!$wantArchived) {
         $out['archivedCount'] = (int)(db_row("SELECT COUNT(*) n FROM insight_threads
             WHERE ownerId = ? AND archivedAt IS NOT NULL AND archivedAt != ''", [$me])['n'] ?? 0);
@@ -689,7 +710,7 @@ function insight_chat_ask(array $p): array {
                 . $resetsInMin . ' minute' . ($resetsInMin === 1 ? '' : 's') . '. The panel above is still free to read; it is already paid for.'];
     }
 
-    if (!ai_enabled(ICHAT_ANSWER_PROFILE) && !ai_enabled(INSIGHT_ANALYSTS[0]['profile']) && !ai_enabled('default')) {
+    if (!ichat_ai_ready()) {
         return ['ok' => false, 'error' => 'ai_disabled'];
     }
 

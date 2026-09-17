@@ -25,6 +25,7 @@ if ($method === 'GET') {
     elseif ($view === 'consents')    $res = gs_call('admin.registration.consents', ['requesterId' => $s['mid'], 'studentId' => (string)($_GET['studentId'] ?? '')]);
     elseif ($view === 'hierarchy')   $res = gs_call('admin.hierarchy.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'vcards')      $res = gs_call('admin.vcards.data', ['requesterId' => $s['mid'], 'volunteerId' => (string)($_GET['volunteerId'] ?? '')]);
+    elseif ($view === 'mcards')      $res = gs_call('admin.mcards.data', ['requesterId' => $s['mid'], 'memberId' => (string)($_GET['memberId'] ?? '')]);
     // ID card designs — see api/_lib/domain/card-templates.php.
     elseif ($view === 'templates')   $res = gs_call('admin.card.templates', ['requesterId' => $s['mid'], 'kind' => (string)($_GET['kind'] ?? '')]);
     elseif ($view === 'template')    $res = gs_call('admin.card.template.get', ['requesterId' => $s['mid'], 'templateId' => (string)($_GET['templateId'] ?? '')]);
@@ -32,6 +33,16 @@ if ($method === 'GET') {
         'folder' => (string)($_GET['folder'] ?? ''), 'q' => (string)($_GET['q'] ?? '')]);
     elseif ($view === 'assetUsage')  $res = gs_call('admin.design.asset.usage', ['requesterId' => $s['mid'],
         'assetId' => (string)($_GET['assetId'] ?? '')]);
+    /* The print log, and one person's card history — see
+       api/_lib/domain/card-runs.php. "What did we send to the printer in July"
+       and "is the card in their hand the current design". */
+    elseif ($view === 'card-runs')   $res = gs_call('admin.card.runs', ['requesterId' => $s['mid'],
+        'kind' => (string)($_GET['kind'] ?? ''), 'mode' => (string)($_GET['mode'] ?? ''),
+        'page' => $_GET['page'] ?? null, 'pageSize' => $_GET['pageSize'] ?? null]);
+    elseif ($view === 'card-run')    $res = gs_call('admin.card.run.get', ['requesterId' => $s['mid'],
+        'runId' => (string)($_GET['runId'] ?? '')]);
+    elseif ($view === 'card-history') $res = gs_call('admin.card.history', ['requesterId' => $s['mid'],
+        'subjectType' => (string)($_GET['subjectType'] ?? 'member'), 'subjectId' => (string)($_GET['subjectId'] ?? '')]);
     // Who a design run covers — see api/_lib/domain/merge.php.
     elseif ($view === 'merge')       $res = gs_call('admin.merge.rows', ['requesterId' => $s['mid'],
         'audience' => (string)($_GET['audience'] ?? 'students'),
@@ -70,6 +81,12 @@ if ($method === 'GET') {
         'templateId' => $b['templateId'] ?? '', 'template' => $b['template'] ?? null, 'ip' => $ip]);
     elseif ($action === 'template_delete')  $res = gs_call('admin.card.template.delete', ['requesterId' => $s['mid'],
         'templateId' => $b['templateId'] ?? '', 'ip' => $ip]);
+    /* Recorded AFTER the browser has produced the file, with what it actually
+       managed — the host has no renderer, so `issued` is what the client
+       reports and `requested` is not trusted as the same number. The template
+       version is read from the template row here, not taken from the body. */
+    elseif ($action === 'card_run')         $res = gs_call('admin.card.run.record', array_merge(
+        is_array($b) ? $b : [], ['requesterId' => $s['mid'], 'ip' => $ip]));
     elseif ($action === 'asset_upload')     $res = gs_call('admin.design.asset.upload', ['requesterId' => $s['mid'],
         'name' => $b['name'] ?? '', 'folder' => $b['folder'] ?? 'general', 'dataUrl' => $b['dataUrl'] ?? '',
         'url' => $b['url'] ?? '', 'bytes' => $b['bytes'] ?? 0, 'width' => $b['width'] ?? 0,
@@ -90,7 +107,11 @@ if ($method === 'GET') {
     elseif ($action === 'qr_warm')     $res = gs_call('admin.qr.warm', ['requesterId' => $s['mid'], 'items' => $b['items'] ?? [], 'ip' => $ip]);
     elseif ($action === 'resend_id')   { rate_limit_check('id.resend'); $res = gs_call('admin.id.resend', ['requesterId' => $s['mid'], 'kind' => $b['kind'] ?? 'student', 'id' => $b['id'] ?? '', 'qrPng' => $b['qrPng'] ?? '', 'ip' => $ip]); }
     elseif ($action === 'centre_upsert') $res = gs_call('admin.centres.upsert', ['requesterId' => $s['mid'], 'data' => $b['data'] ?? [], 'ip' => $ip]);
-    elseif ($action === 'centre_delete') $res = gs_call('admin.centres.delete', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'ip' => $ip]);
+    elseif ($action === 'centre_delete') $res = gs_call('admin.centres.delete', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '',
+        // Deleting a centre that member records, participants, groups or
+        // volunteers still point at is refused unless the caller says which it
+        // meant: retire it (keeps the row, stops offering it) or force it.
+        'retire' => !empty($b['retire']), 'force' => !empty($b['force']), 'ip' => $ip]);
     elseif ($action === 'catalogue_set') $res = gs_call('admin.academy.catalogue.set', ['requesterId' => $s['mid'], 'catalogue' => $b['catalogue'] ?? null, 'reset' => !empty($b['reset']), 'ip' => $ip]);
     elseif ($action === 'hierarchy_upsert') $res = gs_call('admin.hierarchy.upsert', ['requesterId' => $s['mid'], 'data' => $b['data'] ?? [], 'ip' => $ip]);
     elseif ($action === 'hierarchy_delete') $res = gs_call('admin.hierarchy.delete', ['requesterId' => $s['mid'], 'tierId' => $b['tierId'] ?? '', 'ip' => $ip]);

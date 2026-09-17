@@ -412,6 +412,12 @@ return [
         'public.session'   => 300,
         'public.anchorContent' => 300,
         'public.centres'   => 300,  // centre list; purged on centre_upsert/delete
+        /* The /summer page's one read: the live edition, the academies and the
+           centres with what runs at each. All configuration and aggregates, so
+           a five-minute window is generous rather than risky — and it is the
+           page a promotion drives traffic to, which is exactly when a cache
+           earns its keep. Purged alongside public.centres on a centre write. */
+        'public.summer'    => 300,
         'community.showcase' => 180, // admin-featured posts; purged on feature/hide
         'post.get'         => 120,  // a single post by slug; purged with public.posts
         'default'          => 0,    // 0 = no cache

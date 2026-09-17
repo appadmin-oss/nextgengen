@@ -1227,6 +1227,208 @@ summary:focus-visible,
 }
 .member-card:hover img { transform: scale(1.06); }
 
+/* ============================================================================
+   THE SUMMER SCHOOL PROMOTION PAGE
+
+   Every grid on this page used to be an inline `repeat(6, 1fr)` /
+   `repeat(3, 1fr)` / `1.4fr 1fr`, so on a phone the six-week schedule was six
+   columns of one word each and the hero was a 1.4fr column beside a 1fr
+   column at 390px. They are classes now, and each one wraps.
+   ============================================================================ */
+.summer-hero { background: var(--cream-100); padding: 72px 0 56px; }
+.summer-hero-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 48px; align-items: end; }
+.summer-hero-h { font-size: clamp(48px, 8vw, 120px); margin: 18px 0 12px; }
+.summer-hero-meta { font-size: 15px; color: var(--ink-700); margin: 0 0 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.summer-hero-meta-quiet { color: var(--ink-500); }
+.summer-hero-skel { display: inline-block; width: 220px; height: 18px; border-radius: 6px; }
+.summer-hero-p { font-size: 19px; line-height: 1.5; color: var(--ink-700); max-width: 560px; margin: 0; }
+.summer-hero-note {
+  margin: 16px 0 0; padding: 12px 14px; max-width: 560px;
+  background: rgba(245,176,38,0.12); border: 1px solid rgba(245,176,38,0.45);
+  border-radius: 12px; font-size: 14.5px; line-height: 1.55; color: var(--ink-900);
+}
+.summer-hero-actions { display: flex; gap: 12px; margin-top: 28px; flex-wrap: wrap; }
+.summer-hero-figs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.summer-hero-figs > * { height: 210px; }
+.summer-hero-figs > *:nth-child(n+3) { height: 170px; }
+@media (max-width: 900px) {
+  .summer-hero { padding: 48px 0 40px; }
+  .summer-hero-grid { grid-template-columns: 1fr; gap: 28px; }
+  /* The photographs come second on a phone: the headline, the dates and the
+     Apply button are what the page is for, and 420px of collage above them is
+     a scroll before the point. */
+  .summer-hero-figs > * { height: 132px; }
+  .summer-hero-figs > *:nth-child(n+3) { height: 132px; }
+}
+
+/* ── The one search ─────────────────────────────────────────────────────── */
+.summer-find { scroll-margin-top: 90px; }
+.summer-search {
+  display: flex; align-items: center; gap: 10px;
+  background: #fff; border: 1px solid rgba(12,20,50,0.14); border-radius: 999px;
+  padding: 6px 8px 6px 18px; max-width: 620px;
+  box-shadow: 0 1px 0 rgba(12,20,50,0.04);
+}
+.summer-search:focus-within { border-color: var(--navy-900); box-shadow: 0 0 0 3px rgba(12,20,50,0.12); }
+.summer-search-ic { font-size: 18px; color: var(--ink-500); flex: 0 0 auto; }
+.summer-search-in {
+  flex: 1; min-width: 0; border: 0; background: none; font: inherit; font-size: 16px;
+  padding: 12px 0; color: var(--ink-900); min-height: 44px;
+}
+.summer-search-in:focus { outline: none; }
+.summer-search-in::-webkit-search-cancel-button { display: none; }
+.summer-search-x {
+  flex: 0 0 auto; border: 0; background: rgba(12,20,50,0.06); cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--ink-700);
+  padding: 10px 16px; min-height: 40px; border-radius: 999px;
+}
+.summer-search-x:hover { background: rgba(12,20,50,0.12); }
+.summer-search-count { margin: 10px 0 26px; font-size: 13.5px; color: var(--ink-500); min-height: 20px; }
+
+.summer-sub {
+  display: flex; align-items: baseline; gap: 10px;
+  font-family: var(--font-display); font-size: 22px; font-weight: 700;
+  margin: 34px 0 16px; color: var(--ink-900);
+}
+.summer-sub-n {
+  font-size: 12px; font-weight: 600; color: var(--ink-500);
+  background: rgba(12,20,50,0.06); border-radius: 999px; padding: 3px 10px;
+}
+.summer-empty { color: var(--ink-700); font-size: 15px; line-height: 1.6; margin: 0 0 8px; }
+.summer-empty-mid { text-align: center; padding: 40px 0; }
+.summer-empty-act { display: block; margin-top: 14px; }
+/* A button that reads as a link because it sits inside a sentence — but it is
+   a button, because it makes something happen rather than going somewhere. */
+.link-btn {
+  border: 0; background: none; padding: 0; font: inherit; cursor: pointer;
+  color: var(--navy-900); text-decoration: underline; text-underline-offset: 2px;
+}
+.link-btn:hover { color: var(--coral); }
+.link-btn:focus-visible { outline: 2px solid var(--navy-900); outline-offset: 2px; border-radius: 3px; }
+
+/* ── Centre cards ──────────────────────────────────────────────────────── */
+.summer-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
+.summer-cards-centres { grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); }
+.summer-card {
+  background: #fff; border: 1px solid rgba(12,20,50,0.08); border-radius: var(--r-lg);
+  padding: 20px; display: flex; flex-direction: column; gap: 10px;
+  border-top: 4px solid var(--summer-accent, var(--navy-900));
+}
+.summer-card-skel { min-height: 190px; display: grid; place-items: stretch; }
+.summer-card-skel .dash-skel { display: block; width: 100%; height: 100%; border-radius: 10px; }
+.summer-card-top { display: flex; flex-direction: column; gap: 4px; }
+.summer-card-code {
+  align-self: flex-start; font-size: 10.5px; letter-spacing: 0.18em; font-weight: 700;
+  color: var(--summer-accent, var(--navy-900));
+}
+.summer-card-h { font-family: var(--font-display); font-size: 22px; font-weight: 700; margin: 0; }
+.summer-card-area { margin: 0; font-size: 13.5px; color: var(--ink-500); }
+.summer-card-tag { margin: 0; font-size: 14px; line-height: 1.5; color: var(--ink-700); }
+.summer-card-courses { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--ink-700); }
+.summer-card-label {
+  display: block; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--ink-500); margin-bottom: 3px;
+}
+.summer-card-full { margin: 0; font-size: 13.5px; font-weight: 600; color: #8c1d18; }
+.summer-card-left { margin: 0; font-size: 13.5px; font-weight: 600; color: #8a6d00; }
+.summer-card-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 6px; }
+
+/* ── Academies ─────────────────────────────────────────────────────────── */
+.summer-academies { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 22px; }
+.summer-academy {
+  background: #fff; border: 1px solid rgba(12,20,50,0.08);
+  border-radius: var(--r-lg); padding: 20px;
+}
+.summer-academy-h { font-family: var(--font-display); font-size: 18px; font-weight: 700; margin: 0 0 12px; }
+.summer-courses { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.summer-course {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center;
+  padding-bottom: 12px; border-bottom: 1px solid rgba(12,20,50,0.06);
+}
+.summer-course:last-child { border-bottom: 0; padding-bottom: 0; }
+.summer-course-n { font-size: 15px; font-weight: 600; color: var(--ink-900); }
+.summer-course-where { grid-column: 1; font-size: 12.5px; color: var(--ink-500); line-height: 1.4; }
+.summer-course-where-quiet { font-style: italic; }
+.summer-course-cta { grid-column: 2; grid-row: 1 / span 2; white-space: nowrap; }
+@media (max-width: 460px) {
+  .summer-course { grid-template-columns: 1fr; }
+  .summer-course-cta { grid-column: 1; grid-row: auto; justify-self: start; }
+}
+
+/* ── The six weeks ─────────────────────────────────────────────────────── */
+.summer-weeks {
+  list-style: none; margin: 0; padding: 0; overflow: hidden;
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.summer-week {
+  padding: 26px 22px; display: flex; flex-direction: column; gap: 10px; min-height: 190px;
+  border-right: 1px solid rgba(12,20,50,0.08);
+}
+.summer-week:last-child { border-right: 0; }
+.summer-week-n { font-size: 44px; color: var(--gold-500); line-height: 1; }
+.summer-week-t { font-weight: 700; font-size: 15px; }
+.summer-week-v { font-size: 13px; color: var(--ink-500); line-height: 1.45; }
+@media (max-width: 1100px) { .summer-weeks { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .summer-week:nth-child(3n) { border-right: 0; }
+  .summer-week:nth-child(-n+3) { border-bottom: 1px solid rgba(12,20,50,0.08); } }
+@media (max-width: 640px) { .summer-weeks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .summer-week { min-height: 0; padding: 20px 16px; }
+  .summer-week:nth-child(2n) { border-right: 0; }
+  .summer-week:nth-child(3n) { border-right: 1px solid rgba(12,20,50,0.08); }
+  .summer-week:nth-child(2n) { border-right: 0; }
+  .summer-week:not(:nth-last-child(-n+2)) { border-bottom: 1px solid rgba(12,20,50,0.08); } }
+
+/* ── This edition's class ──────────────────────────────────────────────── */
+.summer-class-head { display: flex; justify-content: space-between; align-items: end; margin-bottom: 30px; flex-wrap: wrap; gap: 22px; }
+.summer-class-h { font-size: clamp(32px, 4.5vw, 60px); margin: 6px 0 0; }
+.summer-class-p { font-size: 13.5px; color: var(--ink-500); margin: 8px 0 0; max-width: 560px; }
+.summer-facs { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Real toggles. They were unlabelled buttons whose only state was a background
+   colour, so which filter was on was unavailable to anyone not looking at it. */
+.summer-fac { cursor: pointer; font-size: 13px; padding: 9px 14px; min-height: 40px; border: 0; }
+.summer-fac[aria-pressed="true"] { font-weight: 700; }
+.summer-fac:focus-visible { outline: 2px solid var(--navy-900); outline-offset: 2px; }
+.summer-more { text-align: center; margin-top: 30px; }
+
+/* The member card as a real link. It was a div with a click handler, so it was
+   unreachable by keyboard — and it opened the generic profile page rather than
+   the student's own. */
+.member-card-hit {
+  display: flex; flex-direction: column; gap: 12px; text-decoration: none; color: inherit;
+  border-radius: var(--r-md);
+}
+a.member-card-hit:focus-visible { outline: 2px solid var(--navy-900); outline-offset: 3px; }
+.member-card-fig {
+  position: relative; display: grid; place-items: center; overflow: hidden;
+  border-radius: 14px; aspect-ratio: 1 / 1;
+}
+.member-card-fig img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.member-card-initial { font-family: var(--font-display); font-weight: 800; font-size: 52px; color: rgba(255,255,255,0.9); }
+.member-card-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(12,20,50,0) 40%, rgba(12,20,50,0.55) 100%); }
+.member-card-fac { position: absolute; top: 10px; left: 10px; background: rgba(12,20,50,0.55); color: #fff; }
+.member-card-stars {
+  position: absolute; bottom: 10px; right: 10px; font-size: 10px; letter-spacing: 0.15em;
+  color: rgba(255,255,255,0.95); background: rgba(12,20,50,0.6); padding: 3px 8px; border-radius: 4px;
+}
+.member-card-body { display: block; min-width: 0; }
+.member-card-name {
+  display: block; font-family: var(--font-display); font-weight: 700; font-size: 20px;
+  letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.member-card-fac-t {
+  display: block; font-size: 12px; color: var(--coral); font-weight: 600; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.member-card-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--ink-500); }
+.member-card-centre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── What comes after ──────────────────────────────────────────────────── */
+.summer-after { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; }
+.summer-after-n { font-size: clamp(56px, 7vw, 88px); color: var(--gold-500); line-height: 1; }
+.summer-after-h { font-family: var(--font-display); font-weight: 800; font-size: 24px; margin-top: 10px; }
+.summer-after-p { color: rgba(255,255,255,0.7); line-height: 1.5; margin-top: 10px; font-size: 14px; }
+.summer-after-cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 34px; }
+
 /* Track card */
 .track-card {
   padding: 26px;

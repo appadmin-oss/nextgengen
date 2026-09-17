@@ -1724,8 +1724,40 @@ body.cm-app .fab-top { display: none; }
    Its own modifier rather than a wider default, because the other filter rows
    — requests, submissions — have fewer and would grow a dead column. */
 .admin-filters-5 { grid-template-columns: 2fr repeat(4, minmax(0, 1fr)); }
-@media (max-width: 1100px) { .admin-filters-5 { grid-template-columns: 2fr repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 820px) { .admin-filters, .admin-filters-5 { grid-template-columns: 1fr 1fr; } }
+.admin-filters-6 { grid-template-columns: 2fr repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1300px) { .admin-filters-6 { grid-template-columns: 2fr repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .admin-filters-5, .admin-filters-6 { grid-template-columns: 2fr repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 820px) { .admin-filters, .admin-filters-5, .admin-filters-6 { grid-template-columns: 1fr 1fr; } }
+
+/* Active-filter chips. Five dropdowns can be left in a state that explains an
+   empty table, and reading five controls to work out why is worse than being
+   told — so what is filtered is stated, and each piece is removable on its own. */
+.admin-chipbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+.admin-chip-x {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  padding: 6px 11px; min-height: 32px; border-radius: 999px;
+  border: 1px solid rgba(12,20,50,0.16); background: rgba(12,20,50,0.04);
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-700);
+}
+.admin-chip-x:hover { background: rgba(12,20,50,0.09); }
+.admin-chip-x:focus-visible { outline: 2px solid var(--navy-900); outline-offset: 2px; }
+/* A table being refreshed keeps its rows — dropping them to a spinner on every
+   page turn reads as the data going missing. It dims instead, and carries
+   aria-busy so it is announced rather than only faded. */
+.admin-table-wrap.is-refreshing { opacity: 0.55; transition: opacity 0.12s ease; pointer-events: none; }
+.admin-table tbody tr.is-selected { background: rgba(208,255,58,0.14); }
+@media (max-width: 600px) { .admin-chip-x { min-height: 40px; } }
+
+/* The result of a bulk run, kept on screen. A toast tells you it happened; a
+   run where twelve of forty were refused needs the twelve NAMED, and needs to
+   stay put until the operator dismisses it. */
+.admin-callout {
+  margin: 0 0 14px; padding: 12px 14px; border-radius: 12px;
+  background: rgba(12,20,50,0.04); border: 1px solid rgba(12,20,50,0.10);
+  font-size: 13.5px; line-height: 1.55; color: var(--ink-700);
+}
+.admin-callout-list { margin: 8px 0 10px; padding-left: 18px; }
+.admin-callout-list li { margin: 2px 0; }
 
 .admin-table-wrap { overflow-x: auto; }
 /* Pagination + count chip (shared by paged admin tables). */
@@ -1739,6 +1771,45 @@ body.cm-app .fab-top { display: none; }
 .admin-bulk-all { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink-700); cursor: pointer; }
 .admin-bulk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .admin-bulk-label { font-size: 11px; color: var(--ink-500); text-transform: uppercase; letter-spacing: 0.1em; }
+/* The shared bulk bar (see the admin action layer in components.jsx). The
+   count is a live region, so the selection size is announced and not only
+   drawn — the hand-rolled bars it replaces were unlabelled divs. */
+.admin-bulk-count { margin: 0; font-size: 13px; color: var(--ink-700); }
+.admin-bulk-count b { font-variant-numeric: tabular-nums; }
+/* "Select all N matching the filter" — the escape hatch a paged table needs.
+   A real button, because it makes a decision, styled as a link because it sits
+   inside a sentence. */
+.admin-bulk-link {
+  border: 0; background: none; padding: 0; font: inherit; color: var(--navy-900);
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.admin-bulk-link:hover { color: var(--coral); }
+.admin-bulk-link:focus-visible { outline: 2px solid var(--navy-900); outline-offset: 2px; border-radius: 3px; }
+
+/* One row's action menu. Same declarations as the bulk bar drive it, so an
+   individual action cannot drift from its bulk equivalent. */
+.admin-rowmenu { position: relative; display: inline-block; }
+.admin-rowmenu-pop {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 40; min-width: 210px;
+  display: flex; flex-direction: column; padding: 6px; border-radius: 12px;
+  background: #fff; border: 1px solid rgba(12,20,50,0.12);
+  box-shadow: 0 12px 32px rgba(12,20,50,0.16);
+}
+.admin-rowmenu-item {
+  appearance: none; border: 0; background: none; text-align: left; cursor: pointer;
+  font: inherit; font-size: 13.5px; color: var(--ink-700);
+  padding: 9px 10px; border-radius: 8px; min-height: 40px;
+}
+.admin-rowmenu-item:hover { background: rgba(12,20,50,0.06); }
+.admin-rowmenu-item:focus-visible { outline: 2px solid var(--navy-900); outline-offset: -2px; }
+.admin-rowmenu-item.is-danger { color: #b3261e; }
+.admin-rowmenu-item.is-danger:hover { background: rgba(179,38,30,0.08); }
+/* A checkbox in a table cell is a target as well as a control. */
+.admin-table td input[type="checkbox"], .admin-bulk-all input[type="checkbox"] { width: 18px; height: 18px; }
+@media (max-width: 720px) {
+  .admin-bulkbar { position: sticky; bottom: 0; z-index: 30; background: #fff; box-shadow: 0 -6px 20px rgba(12,20,50,0.1); }
+  .admin-rowmenu-item { min-height: 44px; }
+}
 .admin-app.is-selected { outline: 2px solid var(--gold-500); outline-offset: 1px; }
 .admin-table { width: 100%; border-collapse: collapse; }
 .admin-table th, .admin-table td { padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(12,20,50,0.06); font-size: 14px; }
@@ -1921,6 +1992,54 @@ body.cm-app .fab-top { display: none; }
   animation: drawer-in 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .admin-drawer-wide { width: min(800px, 100%); }
+/* A drawer whose body scrolls independently of its sticky head and foot. The
+   editions/groups editors need it: they carry a fieldset of weekdays and four
+   dates, and a drawer that scrolls as one unit puts Save off-screen. */
+.admin-drawer-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+/* A sub-heading inside a section — one level below .admin-h3. */
+.admin-h4 {
+  font-family: var(--font-display); font-size: 15px; font-weight: 700;
+  margin: 0 0 10px; color: var(--ink-900);
+}
+/* An inline form error. role="alert" on the element, so it is announced when it
+   appears rather than only turning red. */
+.admin-form-err {
+  margin: 12px 28px 0; padding: 10px 12px; border-radius: 10px;
+  background: rgba(179,38,30,0.08); border: 1px solid rgba(179,38,30,0.25);
+  color: #8c1d18; font-size: 13px; line-height: 1.5;
+}
+/* A real <fieldset>/<legend>, because a group of checkboxes needs a name a
+   screen reader can read out before the boxes. */
+.admin-fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.admin-legend {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.18em;
+  color: var(--ink-500); padding: 0; margin-bottom: 8px;
+}
+/* Weekday picker. Each day is a real checkbox with a visible label — a row of
+   toggle buttons would be prettier and unreachable by keyboard without extra
+   work that adds nothing here. */
+.admin-daypick { display: flex; flex-wrap: wrap; gap: 6px; }
+.admin-daypick-day {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 8px 11px; min-height: 40px; border-radius: 999px;
+  border: 1px solid rgba(12,20,50,0.16); background: #fff;
+  font-size: 13px; font-weight: 600; color: var(--ink-700);
+}
+.admin-daypick-day.is-on { background: var(--navy-900); border-color: var(--navy-900); color: #fff; }
+.admin-daypick-day:focus-within { outline: 2px solid var(--navy-900); outline-offset: 2px; }
+.admin-daypick-day input { width: 16px; height: 16px; margin: 0; }
+
+/* Grouped panel navigation, for a workspace with more panels than fit in one
+   readable strip. Fifteen tabs in a row is a wall; four named groups is a map
+   of the job. */
+.admin-panelnav { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 4px 0 18px; }
+.admin-panelnav-group { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.admin-panelnav-label {
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--ink-500);
+}
+@media (max-width: 900px) { .admin-panelnav { gap: 10px 0; flex-direction: column; } }
+@media (max-width: 600px) { .admin-daypick-day { min-height: 44px; } }
 @keyframes drawer-in { from { transform: translateX(100%); } to { transform: none; } }
 .admin-drawer-head {
   display: flex; justify-content: space-between; align-items: center;
@@ -5181,6 +5300,10 @@ body.own-chrome .fab-top { display: none; }
 }
 .dsn-merge-filters .dsn-prop { margin-bottom: 0; }
 .dsn-merge-q { grid-column: span 2; }
+/* "Summer School participants" is 24 characters against a 150px auto-fit
+   column, and a native select clips rather than wraps — so the widest option
+   in the set decides the cell, not the cell the option. */
+.dsn-merge-who { grid-column: span 2; }
 /* The caveat under the date pair. Its own grid cell rather than a title
    attribute: a hint nobody can see until they hover is a hint for nobody. */
 .dsn-date-fmt {
@@ -5364,18 +5487,18 @@ body.own-chrome .fab-top { display: none; }
   flex: none; display: flex; align-items: center; gap: 8px;
   background: #fff; border-bottom: 1px solid #e8ebf1; padding: 12px 12px 12px 16px;
 }
-.anp-title { font-family: var(--font-display, Sora, sans-serif); font-size: 15.5px; font-weight: 800; letter-spacing: -0.01em; }
+.anp-title { font-family: var(--font-display, Sora, sans-serif); font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
 .anp-level {
-  font-family: var(--font-mono, monospace); font-size: 10px;
+  font-family: var(--font-mono, monospace); font-size: 10.5px;
   letter-spacing: 0.16em; text-transform: uppercase; color: #7a5600;
 }
 .anp-new {
   display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px;
-  border: 0; border-radius: 8px; background: var(--navy-900, #0c1432); color: #fff;
-  font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  border: 0; border-radius: 10px; background: var(--navy-900, #0c1432); color: #fff;
+  font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap;
 }
 .anp-ic {
-  width: 28px; height: 28px; border-radius: 8px; flex: none;
+  width: 28px; height: 28px; border-radius: 10px; flex: none;
   background: #f7f8fb; border: 1px solid #e5e8ee; color: #3d4761;
   display: grid; place-items: center; cursor: pointer; font-size: 12px;
 }
@@ -5388,7 +5511,7 @@ body.own-chrome .fab-top { display: none; }
 }
 .anp-dot { width: 6px; height: 6px; border-radius: 50%; background: #16a34a; flex: none; }
 .anp-follow-t {
-  font-size: 11.5px; color: var(--ink-500, #5a6488);
+  font-size: 12px; color: var(--ink-500, #5a6488);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -5400,7 +5523,7 @@ body.own-chrome .fab-top { display: none; }
 }
 .anp-link { border: 0; background: transparent; padding: 0; cursor: pointer; font: 700 11px inherit; color: #7a5600; }
 .anp-thread {
-  display: flex; align-items: stretch; border-radius: 8px; overflow: hidden;
+  display: flex; align-items: stretch; border-radius: 10px; overflow: hidden;
   border: 1px solid transparent; margin-bottom: 3px;
 }
 .anp-thread:hover { background: #f7f8fb; border-color: #eef0f4; }
@@ -5417,13 +5540,13 @@ body.own-chrome .fab-top { display: none; }
 .anp-thread-n { font-family: var(--font-mono, monospace); font-size: 10.5px; color: var(--ink-500, #5a6488); flex: none; }
 .anp-thread-ic {
   width: 24px; flex: none; border: 0; background: transparent; cursor: pointer;
-  font-size: 10px; color: #97a0b8;
+  font-size: 10.5px; color: #97a0b8;
 }
 .anp-thread-ic:hover { color: var(--ink-900, #0a1130); }
 
 .anp-scroll { flex: 1; overflow-y: auto; min-height: 0; padding: 16px 16px 6px; display: flex; flex-direction: column; gap: 16px; }
 .anp-starters { display: flex; flex-direction: column; gap: 8px; }
-.anp-lead { margin: 0 0 4px; font-size: 12.5px; line-height: 1.6; color: var(--ink-500, #5a6488); }
+.anp-lead { margin: 0 0 4px; font-size: 13px; line-height: 1.6; color: var(--ink-500, #5a6488); }
 .anp-starter {
   text-align: left; padding: 10px 12px; border-radius: 10px; cursor: pointer;
   border: 1px solid #e5e8ee; background: #fff; font: 500 13px inherit;
@@ -5441,7 +5564,7 @@ body.own-chrome .fab-top { display: none; }
   font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 700;
   letter-spacing: 0.1em; color: #7a5600; flex: none;
 }
-.anp-edit { border: 0; background: transparent; cursor: pointer; color: #97a0b8; font-size: 11px; flex: none; padding: 0 2px; }
+.anp-edit { border: 0; background: transparent; cursor: pointer; color: #97a0b8; font-size: 12px; flex: none; padding: 0 2px; }
 .anp-edit:hover { color: var(--ink-900); }
 
 .anp-ans { background: #fff; border: 1px solid #e5e8ee; border-radius: 14px 14px 14px 4px; padding: 13px 14px 11px; }
@@ -5450,7 +5573,7 @@ body.own-chrome .fab-top { display: none; }
 
 .anp-trace {
   width: 100%; display: flex; align-items: center; gap: 8px; margin-bottom: 11px;
-  padding: 6px 9px; background: #f7f8fb; border: 1px solid #eef0f4; border-radius: 8px;
+  padding: 6px 9px; background: #f7f8fb; border: 1px solid #eef0f4; border-radius: 10px;
   cursor: pointer; font-family: var(--font-mono, monospace); font-size: 10.5px; text-align: left;
 }
 .anp-trace b { color: #3d4761; flex: none; font-weight: 700; }
@@ -5470,17 +5593,17 @@ body.own-chrome .fab-top { display: none; }
 .anp-trace-why { padding-top: 5px; }
 .anp-trace-fp { padding-top: 5px; color: #97a0b8; word-break: break-all; }
 
-.anp-ungrounded { margin: 0 0 9px; font-size: 12.5px; line-height: 1.5; color: #b91c1c; font-weight: 600; }
+.anp-ungrounded { margin: 0 0 9px; font-size: 13px; line-height: 1.5; color: #b91c1c; font-weight: 600; }
 .anp-unans { margin: 0 0 7px; font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #b45309; }
 .anp-body { font-size: 13.5px; line-height: 1.62; color: var(--ink-800, #25304a); white-space: pre-wrap; }
 
 .anp-claims { display: grid; gap: 10px; margin-top: 12px; }
-.anp-claim { padding-left: 11px; border-left: 2px solid #eef0f4; }
+.anp-claim { padding-left: 11px; border-left: 2px solid #e2e6ee; }
 .anp-claim.is-bad { border-left-color: #ef4444; }
 .anp-claim-t { font-size: 13px; line-height: 1.5; }
 .anp-claim-m {
   display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; margin-top: 3px;
-  font-size: 11px; color: var(--ink-500, #5a6488);
+  font-size: 12px; color: var(--ink-500, #5a6488);
 }
 .anp-claim-m b { color: #b91c1c; }
 
@@ -5495,7 +5618,7 @@ body.own-chrome .fab-top { display: none; }
 .anp-action:disabled { opacity: 0.5; cursor: default; }
 .anp-action i {
   width: 22px; height: 22px; border-radius: 50%; background: #f3ecdb; color: #7a5600;
-  display: grid; place-items: center; flex: none; font-style: normal; font-size: 11px; font-weight: 700;
+  display: grid; place-items: center; flex: none; font-style: normal; font-size: 12px; font-weight: 700;
 }
 .anp-action span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .anp-action em { color: #8891a6; font-style: normal; flex: none; }
@@ -5505,7 +5628,7 @@ body.own-chrome .fab-top { display: none; }
   display: inline-flex; align-items: center; gap: 6px; flex: none;
   background: #f3ecdb; border-radius: 6px; padding: 3px 7px;
 }
-.anp-meter i { width: 5px; height: 7px; border-radius: 1.5px; background: #dfd6bd; display: block; }
+.anp-meter i { width: 5px; height: 7px; border-radius: 6px; background: #dfd6bd; display: block; }
 .anp-meter i.on { background: var(--navy-900, #0c1432); }
 .anp-meter b { font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 700; color: var(--navy-900); }
 .anp-sources {
@@ -5516,17 +5639,17 @@ body.own-chrome .fab-top { display: none; }
 .anp-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid #f4f5f8; }
 .anp-tool {
   display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px;
-  border: 1px solid #e5e8ee; border-radius: 7px; background: #fff;
+  border: 1px solid #e5e8ee; border-radius: 10px; background: #fff;
   font: 600 11.5px inherit; color: #3d4761; cursor: pointer; white-space: nowrap;
 }
 .anp-tool:hover { border-color: #cbd2e2; }
 .anp-tool:disabled { opacity: 0.45; cursor: default; }
 .anp-tool.is-on, .anp-tool.is-solid { background: var(--navy-900, #0c1432); border-color: var(--navy-900); color: #fff; }
 
-.anp-working { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-500, #5a6488); padding: 2px 0 8px; }
+.anp-working { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-500, #5a6488); padding: 2px 0 8px; }
 .anp-stop {
   display: inline-flex; align-items: center; gap: 5px; flex: none;
-  border: 1px solid #f0d5d5; border-radius: 7px; background: #fff; color: #b91c1c;
+  border: 1px solid #f0d5d5; border-radius: 10px; background: #fff; color: #b91c1c;
   font: 700 11.5px inherit; padding: 4px 9px; cursor: pointer;
 }
 .anp-dots { display: flex; gap: 3px; flex: none; }
@@ -5536,7 +5659,7 @@ body.own-chrome .fab-top { display: none; }
 @keyframes anpwork { 0%, 100% { opacity: 0.25; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) { .anp-dots i { animation: none; opacity: 0.7; } }
 
-.anp-err { border-left: 3px solid #f59e0b; background: #fffaf0; border-radius: 0 8px 8px 0; padding: 10px 12px; font-size: 12.5px; line-height: 1.55; }
+.anp-err { border-left: 3px solid #f59e0b; background: #fffaf0; border-radius: 0 8px 8px 0; padding: 10px 12px; font-size: 13px; line-height: 1.55; }
 .anp-err.is-bad { border-left-color: #ef4444; background: #fff5f5; }
 
 .anp-foot { flex: none; background: #fff; border-top: 1px solid #e8ebf1; padding: 10px 12px 12px; }
@@ -5545,13 +5668,13 @@ body.own-chrome .fab-top { display: none; }
   border: 1px solid #e8dec6; border-radius: 10px; background: #fbf7ed;
   font: 700 12.5px inherit; color: var(--navy-900, #0c1432); cursor: pointer;
 }
-.anp-report-n { font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 700; color: #7a5600; background: #f0e6cf; border-radius: 5px; padding: 2px 6px; }
+.anp-report-n { font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 700; color: #7a5600; background: #f0e6cf; border-radius: 6px; padding: 2px 6px; }
 .anp-reportbody { border: 1px solid #e8dec6; border-top: none; border-radius: 0 0 10px 10px; background: #fdfbf6; padding: 8px 11px 10px; }
-.anp-report-empty { margin: 0; font-size: 11.5px; line-height: 1.5; color: #6b6350; }
+.anp-report-empty { margin: 0; font-size: 12px; line-height: 1.5; color: #6b6350; }
 .anp-pin { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid #f2ece0; }
 .anp-pin-n { font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 700; color: #7a5600; flex: none; }
 .anp-pin-t { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.anp-pin-ic { border: 0; background: transparent; cursor: pointer; color: #8a8069; font-size: 11px; flex: none; }
+.anp-pin-ic { border: 0; background: transparent; cursor: pointer; color: #8a8069; font-size: 12px; flex: none; }
 .anp-pin-ic:disabled { opacity: 0.3; cursor: default; }
 .anp-report-out { display: flex; align-items: center; gap: 7px; margin-top: 9px; flex-wrap: wrap; }
 
@@ -5559,7 +5682,7 @@ body.own-chrome .fab-top { display: none; }
    On screen as well as in the file. A warning that only exists in the exported
    document arrives after the decision it was meant to inform. */
 .anp-synth { margin-top: 10px; padding-top: 9px; border-top: 1px dashed #e8dec6; }
-.anp-synth-sum { margin: 0 0 8px; font-size: 12.5px; line-height: 1.55; color: var(--navy-900, #0c1432); }
+.anp-synth-sum { margin: 0 0 8px; font-size: 13px; line-height: 1.55; color: var(--navy-900, #0c1432); }
 .anp-synth-h { font: 700 9.5px var(--font-mono, monospace); letter-spacing: .14em; text-transform: uppercase; color: #7a5600; margin: 10px 0 4px; }
 .anp-synth-list { margin: 0 0 8px; padding-left: 16px; }
 .anp-synth-list li { font-size: 12px; line-height: 1.5; color: #3a4260; margin-bottom: 3px; }
@@ -5568,14 +5691,14 @@ body.own-chrome .fab-top { display: none; }
 /* Colour by how much it matters, because these are not all the same kind of
    thing: a figure that is not in the evidence is a defect, a mixed date range
    is a caution, and a withheld block is a note on method. */
-.anp-synth-note { margin: 0 0 6px; font-size: 11.5px; line-height: 1.5; padding-left: 8px; border-left: 2px solid #e5e8ee; color: #6b6350; }
+.anp-synth-note { margin: 0 0 6px; font-size: 12px; line-height: 1.5; padding-left: 8px; border-left: 2px solid #e5e8ee; color: #6b6350; }
 .anp-synth-note[data-level="error"] { border-left-color: #b91c1c; color: #b91c1c; font-weight: 600; }
 .anp-synth-note[data-level="warn"] { border-left-color: #d19a2a; color: #7a5600; }
 .anp-report-note { font-size: 10.5px; color: #6b6350; }
 
-.anp-drift { margin: 9px 0 0; font-size: 11.5px; line-height: 1.5; color: #7a5600; }
+.anp-drift { margin: 9px 0 0; font-size: 12px; line-height: 1.5; color: #7a5600; }
 
-.anp-menu { border: 1px solid #e5e8ee; border-radius: 11px; background: #fff; box-shadow: 0 8px 20px -12px rgba(12, 20, 50, 0.3); margin-top: 10px; overflow: hidden; }
+.anp-menu { border: 1px solid #e5e8ee; border-radius: 10px; background: #fff; box-shadow: 0 8px 20px -12px rgba(12, 20, 50, 0.3); margin-top: 10px; overflow: hidden; }
 .anp-menu-h {
   font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 700;
   letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-500, #5a6488);
@@ -5588,8 +5711,8 @@ body.own-chrome .fab-top { display: none; }
 }
 .anp-menu-it:hover { background: #f7f8fb; }
 .anp-menu-it.is-on { background: #fbf7ed; }
-.anp-menu-it b { font-size: 12.5px; }
-.anp-menu-it span { font-size: 11px; line-height: 1.4; color: var(--ink-500, #5a6488); }
+.anp-menu-it b { font-size: 13px; }
+.anp-menu-it span { font-size: 12px; line-height: 1.4; color: var(--ink-500, #5a6488); }
 
 .anp-composer { border: 1px solid #cfd5e0; border-radius: 14px; background: #fff; margin-top: 10px; }
 .anp-scope { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #f0f2f6; flex-wrap: wrap; }
@@ -5602,7 +5725,7 @@ body.own-chrome .fab-top { display: none; }
   background: #f3ecdb; border: 1px solid #e8dec6; color: var(--navy-900, #0c1432);
   font: 600 11px inherit; white-space: nowrap;
 }
-.anp-chip button { border: 0; background: transparent; padding: 0; cursor: pointer; color: #8891a6; font-size: 10px; }
+.anp-chip button { border: 0; background: transparent; padding: 0; cursor: pointer; color: #8891a6; font-size: 10.5px; }
 .anp-chip button:hover { color: var(--ink-900); }
 .anp-chip.is-off { background: #fff; border-style: dashed; border-color: #d9dfea; color: var(--ink-500, #5a6488); cursor: pointer; }
 .anp-chip.is-all { background: #f4f5f8; border-color: #e5e8ee; color: var(--ink-500, #5a6488); font-weight: 500; }
@@ -5613,10 +5736,10 @@ body.own-chrome .fab-top { display: none; }
 }
 .anp-composer-bar { display: flex; align-items: center; gap: 5px; padding: 0 9px 9px; }
 .anp-cbtn {
-  width: 29px; height: 29px; border-radius: 8px; border: 1px solid #e5e8ee; background: #fff;
+  width: 29px; height: 29px; border-radius: 10px; border: 1px solid #e5e8ee; background: #fff;
   color: #3d4761; display: grid; place-items: center; cursor: pointer; font: 700 12px inherit; flex: none;
 }
-.anp-cbtn.is-wide { width: auto; padding: 0 10px; font-size: 11.5px; }
+.anp-cbtn.is-wide { width: auto; padding: 0 10px; font-size: 12px; }
 .anp-cbtn:hover { border-color: #cbd2e2; }
 .anp-cbtn.is-on { background: var(--navy-900, #0c1432); border-color: var(--navy-900); color: #fff; }
 .anp-count, .anp-send-hint { font-family: var(--font-mono, monospace); font-size: 10.5px; color: var(--ink-500, #5a6488); flex: none; }
@@ -5627,7 +5750,7 @@ body.own-chrome .fab-top { display: none; }
 .anp-send:disabled { background: #dfe3ec; color: #97a0b8; cursor: default; }
 .anp-oath { margin: 9px 0 0; font-size: 10.5px; line-height: 1.55; color: var(--ink-500, #5a6488); }
 .anp-eyebrow {
-  font-family: var(--font-mono, monospace); font-size: 10px; font-weight: 700;
+  font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 700;
   letter-spacing: 0.18em; text-transform: uppercase; color: #7a5600; margin-bottom: 5px;
 }
 .anp-lead-line {
@@ -5644,29 +5767,29 @@ body.own-chrome .fab-top { display: none; }
 .anp-tiles { display: flex; gap: 8px; margin-top: 12px; }
 .anp-tile {
   flex: 1; min-width: 0; position: relative; overflow: hidden;
-  background: #f7f8fb; border-radius: 9px; padding: 9px 10px;
+  background: #f7f8fb; border-radius: 10px; padding: 9px 10px;
 }
 .anp-tile i { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
 .anp-tile b {
   font-family: var(--font-display, Sora, sans-serif); font-weight: 800;
-  font-size: 18px; line-height: 1; letter-spacing: -0.02em; color: var(--ink-900, #0a1130);
+  font-size: 19px; line-height: 1; letter-spacing: -0.02em; color: var(--ink-900, #0a1130);
 }
 .anp-tile em { font-style: normal; font-size: 10.5px; font-weight: 700; margin-left: 5px; }
 .anp-tile span {
-  display: block; margin-top: 5px; font-size: 9.5px; font-weight: 700;
+  display: block; margin-top: 5px; font-size: 10.5px; font-weight: 700;
   letter-spacing: 0.06em; text-transform: uppercase;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.anp-tbl-wrap { margin-top: 12px; border: 1px solid #eef0f4; border-radius: 10px; overflow: hidden; }
+.anp-tbl-wrap { margin-top: 12px; border: 1px solid #e2e6ee; border-radius: 10px; overflow: hidden; background: #fcfcfd; }
 .anp-tbl-t {
-  font-family: var(--font-mono, monospace); font-size: 10px; font-weight: 700;
+  font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 700;
   letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-500, #5a6488);
   padding: 8px 10px 0;
 }
 .anp-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
 .anp-tbl th {
-  text-align: left; font-family: var(--font-mono, monospace); font-weight: 600; font-size: 10px;
+  text-align: left; font-family: var(--font-mono, monospace); font-weight: 600; font-size: 10.5px;
   letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-500, #5a6488);
   padding: 8px 10px; background: #f7f8fb; border-bottom: 1px solid #eef0f4;
 }
@@ -5683,23 +5806,39 @@ body.own-chrome .fab-top { display: none; }
 .anp-tbl-bar i b { display: block; height: 100%; border-radius: 999px; background: var(--navy-700, #1c2a5e); }
 .anp-tbl-bar em { font-style: normal; font-family: var(--font-mono, monospace); color: var(--ink-800, #25304a); }
 
-.anp-chart { margin-top: 12px; border: 1px solid #eef0f4; border-radius: 10px; padding: 10px 12px 8px; background: #fcfcfd; }
+.anp-chart { margin-top: 12px; border: 1px solid #e2e6ee; border-radius: 10px; padding: 10px 12px 8px; background: #fcfcfd; }
 .anp-chart-h {
   display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 7px;
-  font-family: var(--font-mono, monospace); font-size: 10px; letter-spacing: 0.1em;
+  font-family: var(--font-mono, monospace); font-size: 10.5px; letter-spacing: 0.1em;
   text-transform: uppercase; color: var(--ink-500, #5a6488);
 }
 .anp-chart-h span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.anp-chart-h b { font-size: 11px; flex: none; }
+.anp-chart-h b { font-size: 12px; flex: none; }
 
 /* Cream rule, not a red box: "this would be wrong if…" is a condition on the
    answer, not a fault in it. */
+/* ── ONE annotation shape ───────────────────────────────────────────────────
+   An answer stacked four different block treatments in a row: a bordered
+   chart, a bordered table, a beige left rule, an orange mono line with no
+   treatment at all, and a grey left rule that looked like the beige one and
+   meant something else. Five shapes for two ideas.
+
+   Two shapes now, and they are legible on sight:
+     a BORDERED CARD is data — a chart, a table, something measured;
+     a LEFT RULE is commentary about that data, and the rule's COLOUR is the
+     only thing that varies, because severity is the only thing that differs.
+   Neutral for a claim, amber for a caveat, red for a figure that was refused.
+   Same padding, same size, same rhythm, so a reader learns it once. */
 .anp-caveat {
-  margin-top: 12px; padding: 8px 0 8px 11px; border-left: 2px solid #e8dec6;
-  font-size: 11.5px; line-height: 1.55; color: #5a5443;
+  margin-top: 12px; padding: 8px 0 8px 11px; border-left: 2px solid #d9a441;
+  font-size: 12px; line-height: 1.55; color: #5a5443;
 }
+/* A figure the answer cited that was NOT in the evidence. This is the panel
+   catching itself, so it is the loudest annotation, not the quietest — it was
+   an orange mono line floating with no shape at all. */
 .anp-dropped {
-  margin: 10px 0 0; font-size: 11px; line-height: 1.5; color: #b45309;
+  margin-top: 12px; padding: 8px 0 8px 11px; border-left: 2px solid #ef4444;
+  font-size: 12px; line-height: 1.55; color: #9f1239;
   font-family: var(--font-mono, monospace);
 }
 
@@ -5708,7 +5847,7 @@ body.own-chrome .fab-top { display: none; }
    span was the main reason this table was hard to read: 62% of the term and 62%
    of last week look identical and are different findings. */
 .att-table th { vertical-align: top; }
-.att-th-sub { display: block; font-family: var(--font-mono, monospace); font-size: 9.5px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink-500); margin-top: 2px; }
+.att-th-sub { display: block; font-family: var(--font-mono, monospace); font-size: 10.5px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--ink-500); margin-top: 2px; }
 /* A row that needs attention is visible while scanning, not only once read. */
 .att-table tbody tr[data-risk="1"] td:first-child { box-shadow: inset 3px 0 0 var(--coral, #d0663c); }
 .att-chip.is-empty { opacity: .45; cursor: not-allowed; }
@@ -5718,7 +5857,7 @@ body.own-chrome .fab-top { display: none; }
    A rate cannot tell a child who comes three days a week from one who came
    every day and then stopped: both land on 60% and need opposite responses. */
 .att-pat { display: inline-flex; gap: 2px; align-items: center; }
-.att-pat i { width: 6px; height: 14px; border-radius: 2px; background: #e3e6ee; display: block; }
+.att-pat i { width: 6px; height: 14px; border-radius: 6px; background: #e3e6ee; display: block; }
 .att-pat i[data-d="in"]   { background: var(--lime-ink, #6e9c1d); }
 .att-pat i[data-d="late"] { background: var(--gold-500, #f5b026); }
 .att-pat i[data-d="half"] { background: var(--gold-500, #f5b026); opacity: .5; }
@@ -5740,7 +5879,7 @@ body.own-chrome .fab-top { display: none; }
 .ngg-side { width: 244px; flex: none; position: sticky; top: 84px; align-self: flex-start; }
 .ngg-side-toggle { display: none; }
 .ngg-side-inner {
-  background: #fff; border: 1px solid rgba(12,20,50,0.07); border-radius: 18px;
+  background: #fff; border: 1px solid rgba(12,20,50,0.07); border-radius: 14px;
   padding: 14px 12px; display: flex; flex-direction: column; gap: 14px;
   box-shadow: 0 1px 2px rgba(12,20,50,0.04);
 }
@@ -5751,11 +5890,11 @@ body.own-chrome .fab-top { display: none; }
 }
 .ngg-side-avatar-img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid var(--gold-500); flex: none; }
 .ngg-side-brand-text { line-height: 1.2; min-width: 0; }
-.ngg-side-brand-text b { display: block; font-family: var(--font-display); font-size: 16px; color: var(--ink-900); letter-spacing: -0.01em; }
+.ngg-side-brand-text b { display: block; font-family: var(--font-display); font-size: 15px; color: var(--ink-900); letter-spacing: -0.01em; }
 .ngg-side-brand-text .mono { display: block; font-size: 10.5px; color: var(--ink-500); letter-spacing: 0.12em; }
 .ngg-nav { display: flex; flex-direction: column; gap: 14px; }
 .ngg-nav-group { display: flex; flex-direction: column; gap: 1px; }
-.ngg-nav-title { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-400); padding: 0 10px 6px; font-weight: 600; }
+.ngg-nav-title { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-400); padding: 0 10px 6px; font-weight: 600; }
 .ngg-nav-link {
   display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px;
   font-size: 13.5px; font-weight: 600; color: var(--ink-700); text-decoration: none; cursor: pointer;
@@ -5763,7 +5902,7 @@ body.own-chrome .fab-top { display: none; }
 }
 .ngg-nav-link:hover { background: var(--cream-100); color: var(--ink-900); }
 .ngg-nav-link.is-active { background: rgba(245,176,38,0.14); color: var(--ink-900); }
-.ngg-nav-dot { width: 6px; height: 6px; border-radius: 2px; background: rgba(12,20,50,0.18); flex: none; }
+.ngg-nav-dot { width: 6px; height: 6px; border-radius: 6px; background: rgba(12,20,50,0.18); flex: none; }
 .ngg-nav-link.is-active .ngg-nav-dot { background: var(--gold-500); }
 .ngg-nav-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ngg-nav-badge { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; color: var(--ink-500); background: var(--cream-100); padding: 1px 7px; border-radius: 999px; }
@@ -5780,17 +5919,17 @@ body.own-chrome .fab-top { display: none; }
 .ngg-top-actions { margin-left: auto; display: flex; gap: 8px; }
 
 .ngg-head { margin-bottom: 20px; }
-.ngg-head-eyebrow { font-size: 10px; letter-spacing: 0.2em; color: var(--ink-400); margin-bottom: 6px; }
+.ngg-head-eyebrow { font-size: 10.5px; letter-spacing: 0.2em; color: var(--ink-400); margin-bottom: 6px; }
 .ngg-head-name { font-family: var(--font-display); font-size: clamp(30px, 5vw, 44px); font-weight: 700; letter-spacing: -0.02em; line-height: 1; margin: 0 0 8px; color: var(--ink-900); }
 .ngg-head-sub { color: var(--ink-500); font-size: 15px; max-width: 62ch; margin: 0; }
 
 /* ---- KPI row ---- */
 .ngg-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
-.ngg-kpi { background: #fff; border: 1px solid rgba(12,20,50,0.06); border-radius: 16px; padding: 16px; box-shadow: 0 1px 2px rgba(12,20,50,0.04); }
+.ngg-kpi { background: #fff; border: 1px solid rgba(12,20,50,0.06); border-radius: 14px; padding: 16px; box-shadow: 0 1px 2px rgba(12,20,50,0.04); }
 .ngg-kpi-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-height: 22px; }
-.ngg-kpi-l { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-500); font-weight: 600; }
+.ngg-kpi-l { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-500); font-weight: 600; }
 .ngg-kpi-n { font-family: var(--font-display); font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; margin-top: 12px; color: var(--ink-900); }
-.ngg-kpi-n.is-clear { color: #1c7a44; font-size: 24px; }
+.ngg-kpi-n.is-clear { color: #1c7a44; font-size: 22px; }
 .ngg-kpi-u { font-size: 15px; color: var(--ink-500); font-weight: 500; margin-left: 2px; }
 .ngg-kpi-s { font-size: 12px; color: var(--ink-400); margin-top: 6px; }
 
@@ -5828,7 +5967,7 @@ body.own-chrome .fab-top { display: none; }
   box-shadow: inset 4px 0 0 var(--gold-500, #f5b026);
 }
 .admin-health-banner .ahb-ico {
-  flex: none; font-size: 18px; line-height: 1.4; color: var(--gold-400, #ffc34d);
+  flex: none; font-size: 19px; line-height: 1.4; color: var(--gold-400, #ffc34d);
 }
 .admin-health-banner .ahb-text { flex: 1; min-width: 0; }
 .admin-health-banner .ahb-title {
@@ -5868,13 +6007,73 @@ body.own-chrome .fab-top { display: none; }
 }
 .dsn-bar .btn-primary { box-shadow: 0 1px 0 rgba(0,0,0,0.15); font-weight: 700; }
 
+/* ---- the bar's four zones ------------------------------------------------
+   DESIGN | PROOF | SAVE | OUTPUT. A hairline between them and a caption above
+   each, so the row reads as four things rather than nine. The caption is the
+   cheap part and the one that does the work: a group you can name is a group
+   you can aim at, and the alternative was reading every control to find one.
+
+   The divider is a left border rather than a separate element — an empty
+   element between groups is one more thing for a screen reader to step over,
+   and these are already role="group" with labels. */
+.dsn-zone {
+  /* nowrap: a zone breaks as a UNIT. Wrapping inside one put SIDE on a second
+     line under NAME while the bar still had room, which is the wrong seam —
+     the whole point of the zones is that they are the units. The BAR wraps
+     between them when the row runs out. */
+  display: flex; flex-wrap: nowrap; align-items: flex-end; gap: 8px;
+  padding-left: 14px; margin-left: 2px;
+  border-left: 1px solid var(--dsn-line);
+  position: relative;
+}
+/* The first zone opens the row, so it carries no divider. */
+.dsn-zone:first-of-type { border-left: 0; padding-left: 0; margin-left: 0; }
+/* OUTPUT is LAST, not pushed. `margin-left: auto` absorbed the row's free
+   space and tipped the zone onto a second line at 1440 — buying a visual
+   separation the caption and the divider already provide, at the cost of a
+   whole extra row and a gap beside Publish. Order is enough. */
+.dsn-zone-end { margin-left: 0; }
+.dsn-zone-cap {
+  align-self: center;
+  font: 700 9.5px var(--font-mono, monospace); letter-spacing: .18em;
+  /* 0.42 alpha measured 3.67:1 on the bar — under the 4.5:1 this codebase
+     requires of caption text, and caught by designer.test.js rather than by
+     me. A caption nobody can read groups nothing. */
+  text-transform: uppercase; color: rgba(230, 238, 255, 0.62);
+  white-space: nowrap;
+}
+/* The name field is the document's identity — give it room, but let it give
+   that room back before the row wraps. */
+/* The document's name. It is the one field here holding free text, and at a
+   fixed width it clipped its own value ("New Summer School car") while three
+   selects beside it sat half empty — so it grows into the bar's spare room
+   and gives that room back before the row wraps. */
+/* Basis, not growth. `flex: 1 1` let it eat the bar's spare room and pushed
+   SIDE onto a second line and OUTPUT onto a third — a one-row bar became
+   three, which costs more than the clipping it fixed. 240px holds a real
+   design name; it shrinks before the row wraps and never grows past it. */
+/* 180px, measured: at 200 the four zones came to about nine pixels more than
+   the bar's inner width at 1440 and OUTPUT dropped to a second row. The field
+   still shows a real design name and shrinks before the row wraps. */
+.dsn-bar-name { flex: 0 1 180px; min-width: 0; }
+.dsn-bar-name input { width: 100%; min-width: 0; }
+.dsn-zone .dsn-prop { margin-bottom: 0; }
+
+/* Narrow: the dividers and the auto-margin stop helping once the zones wrap
+   onto their own lines — a vertical hairline against the line above reads as
+   a stray mark, and pushing OUTPUT right leaves a gap rather than an edge. */
+@media (max-width: 900px) {
+  .dsn-zone { border-left: 0; padding-left: 0; margin-left: 0; }
+  .dsn-zone-end { margin-left: 0; }
+}
+
 /* ---- tool row: a floating Canva-style pill of icon buttons ---- */
-.dsn-tools { border-radius: 12px; padding: 7px 10px; }
+.dsn-tools { border-radius: 10px; padding: 7px 10px; }
 .dsn-tool-grp { border-right: 1px solid var(--dsn-line); }
 .dsn-tool-grp:last-of-type { border-right: 0; }
 .dsn-tool {
   width: 34px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--dsn-ink);
+  border-radius: 10px; border: 1px solid transparent; background: transparent; color: var(--dsn-ink);
   font-size: 15px; cursor: pointer; transition: background .12s, border-color .12s, transform .06s;
 }
 .dsn-tool:hover:not(:disabled) { background: rgba(255,255,255,0.1); border-color: var(--dsn-line-2); }
@@ -5884,6 +6083,35 @@ body.own-chrome .fab-top { display: none; }
 
 /* ---- editor workspace: canvas floats on a real backdrop, not a flat panel ---- */
 .dsn-grid { grid-template-columns: 232px minmax(0,1fr) 300px; gap: 16px; }
+
+/* ---- PRINT MODE: the canvas keeps its place and becomes the proof ----------
+   Design mode leaves .dsn-work alone, so the workspace is the normal
+   layers | canvas | properties grid. Print mode turns the wrapper into two
+   columns — canvas first, records beside it — and steps the editing rails
+   aside, because nothing here edits the design.
+
+   Why the canvas gets the smaller column: a card is 54mm wide and the record
+   list is a six-column table. Giving the table the free space is what lets it
+   keep its columns readable without a horizontal scroll at 1440.
+
+   align-items: start so a long roster does not stretch the canvas panel, and
+   the canvas panel is sticky so scrolling the list keeps the proof in sight —
+   which is the whole point, and what a scrollIntoView was standing in for. */
+.dsn-work.is-printing {
+  display: grid; grid-template-columns: minmax(0, 500px) minmax(0, 1fr);
+  gap: 16px; align-items: start;
+}
+.dsn-work.is-printing .dsn-grid { order: 1; grid-template-columns: minmax(0, 1fr); }
+.dsn-work.is-printing .dsn-merge { order: 2; margin: 0; }
+/* The editing rails, not the canvas. Both use .dsn-rail; the stage does not. */
+.dsn-work.is-printing .dsn-rail { display: none; }
+.dsn-work.is-printing .dsn-grid > .dsn-stage { position: sticky; top: 12px; }
+/* One column below the workspace breakpoint, canvas first — the same place
+   .dsn-grid already collapses, so the two never disagree. */
+@media (max-width: 1080px) {
+  .dsn-work.is-printing { grid-template-columns: minmax(0, 1fr); }
+  .dsn-work.is-printing .dsn-grid > .dsn-stage { position: static; }
+}
 .dsn-rail {
   background: var(--dsn-panel); border: 1px solid var(--dsn-line); border-radius: 14px;
   max-height: min(72vh, 760px);
@@ -5898,7 +6126,7 @@ body.own-chrome .fab-top { display: none; }
     radial-gradient(1200px 500px at 50% -10%, rgba(245,176,38,0.06), transparent 60%),
     repeating-linear-gradient(45deg, rgba(255,255,255,0.02) 0 10px, transparent 10px 20px),
     #10182b;
-  border: 1px solid var(--dsn-line); border-radius: 16px; padding: 28px 18px;
+  border: 1px solid var(--dsn-line); border-radius: 14px; padding: 28px 18px;
   min-height: 480px; justify-content: center;
 }
 .dsn-canvas-host { box-shadow: 0 24px 60px -20px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05); }
@@ -5912,13 +6140,16 @@ body.own-chrome .fab-top { display: none; }
    list scrolls; rows align into columns and carry a coloured status so a
    coordinator can sweep hundreds and spot the ones that need a photo. */
 .dsn-merge {
-  border: 1px solid var(--dsn-line-2); border-radius: 16px; padding: 16px 18px 14px;
+  border: 1px solid var(--dsn-line-2); border-radius: 14px; padding: 16px 18px 14px;
   background: linear-gradient(180deg, rgba(245,176,38,0.05), rgba(255,255,255,0.03));
   box-shadow: 0 16px 40px -26px rgba(0,0,0,0.8);
+  /* Named so the run bars inside can ask THIS panel how wide it is. See the
+     @container rule on .dsn-merge-picks. */
+  container: dsnrun / inline-size;
 }
 .dsn-merge-head b { font-size: 15px; letter-spacing: -0.01em; }
 .dsn-merge-filters {
-  background: rgba(0,0,0,0.18); border: 1px solid var(--dsn-line); border-radius: 12px;
+  background: rgba(0,0,0,0.18); border: 1px solid var(--dsn-line); border-radius: 10px;
   padding: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 /* Sticky, and OPAQUE. The translucency was the bug, not the stickiness: at
@@ -5936,8 +6167,15 @@ body.own-chrome .fab-top { display: none; }
    full-width window, which is where WCAG 1.4.4 cares.
 
    Grid rather than more flex-wrap: wrapping decides where things break by
-   running out of room, and what breaks first is whatever happens to be last. */
-@media (max-width: 1040px) {
+   running out of room, and what breaks first is whatever happens to be last.
+
+   A CONTAINER query, not a viewport one. This was `@media (max-width: 1040px)`,
+   which is a stand-in for "the panel is narrow" and stops being true the moment
+   the panel stops being the width of the window — print mode puts it in a
+   column beside the canvas, so at 1440 the window said roomy and the panel had
+   890px, and the chips squeezed text inside the buttons instead of reflowing.
+   Asking the panel about its own width is the actual question. */
+@container dsnrun (max-width: 1000px) {
   .dsn-merge-picks {
     display: grid; gap: 8px 6px; align-items: center;
     grid-template-columns: auto auto auto 1fr;
@@ -5963,12 +6201,12 @@ body.own-chrome .fab-top { display: none; }
    which is fine: this is a desktop tool. */
 .dsn-tbl tbody input[type="checkbox"],
 .dsn-merge-all input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--dsn-gold); }
-.dsn-tbl .dsn-td-who { color: var(--dsn-ink); font-weight: 600; font-size: 12.5px; }
+.dsn-tbl .dsn-td-who { color: var(--dsn-ink); font-weight: 600; font-size: 13px; }
 .dsn-tbl thead th { background: #141c31; }
 /* Two badges on one row (no photo AND no card) sit side by side rather than
    stacking the cell taller than every other row in the table. */
 .dsn-tbl td .dsn-merge-flag + .dsn-merge-flag { margin-left: 5px; }
-.dsn-merge-flag { border-radius: 999px; padding: 3px 9px; font-size: 9px; }
+.dsn-merge-flag { border-radius: 999px; padding: 3px 9px; font-size: 10.5px; }
 .dsn-merge-flag--ok    { color: var(--dsn-ok);   border-color: rgba(111,220,157,0.5);  background: rgba(111,220,157,0.12); }
 .dsn-merge-flag--photo { color: var(--dsn-warn); border-color: rgba(255,206,84,0.5);   background: rgba(255,206,84,0.12); }
 .dsn-merge-flag--card  { color: var(--dsn-bad);  border-color: rgba(255,143,143,0.5);  background: rgba(255,143,143,0.14); }
@@ -6005,9 +6243,9 @@ body.own-chrome .fab-top { display: none; }
 .cm-pj-media { display: grid; gap: 10px; margin: 8px 0 10px; }
 .cm-pj-mitem { position: relative; display: grid; gap: 6px;
   grid-template-columns: 96px minmax(0, 1fr); align-items: start;
-  border: 1px solid rgba(0,0,0,.1); border-radius: 12px; padding: 8px 34px 8px 8px; background: #fff; }
+  border: 1px solid rgba(0,0,0,.1); border-radius: 10px; padding: 8px 34px 8px 8px; background: #fff; }
 .cm-pj-mitem img, .cm-pj-mitem video { grid-row: 1 / span 2; width: 96px; height: 96px;
-  object-fit: cover; border-radius: 8px; background: #eee; }
+  object-fit: cover; border-radius: 10px; background: #eee; }
 .cm-pj-mx { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; min-height: 26px;
   border: 1px solid rgba(0,0,0,.12); border-radius: 50%; background: #fff; cursor: pointer;
   font-size: 13px; line-height: 1; color: var(--ink-700, #333); display: grid; place-items: center; }
@@ -6023,11 +6261,11 @@ body.own-chrome .fab-top { display: none; }
 .admin-modmode { margin: 0 0 16px; }
 .admin-modmode-row { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
 .admin-modmode-opt { display: grid; gap: 3px; text-align: left; padding: 12px 14px; min-height: 44px;
-  border: 1px solid rgba(12,20,50,.14); border-radius: 12px; background: #fff; font: inherit; cursor: pointer; }
+  border: 1px solid rgba(12,20,50,.14); border-radius: 10px; background: #fff; font: inherit; cursor: pointer; }
 .admin-modmode-opt:hover:not(:disabled) { border-color: var(--gold-500, #f5b026); }
 .admin-modmode-opt.is-on { border-color: var(--navy-900, #16223e); box-shadow: inset 0 0 0 1px var(--navy-900, #16223e); }
-.admin-modmode-opt b { font-size: 14px; color: var(--ink-900, #16223e); }
-.admin-modmode-opt span { font-size: 12.5px; color: var(--ink-500, #5b6478); line-height: 1.4; }
+.admin-modmode-opt b { font-size: 13.5px; color: var(--ink-900, #16223e); }
+.admin-modmode-opt span { font-size: 13px; color: var(--ink-500, #5b6478); line-height: 1.4; }
 
 /* ── Markdown blocks ──────────────────────────────────────────────────────
    Headings start at h4 because these render inside a feed card that already
@@ -6042,27 +6280,27 @@ body.own-chrome .fab-top { display: none; }
 .md-quote { margin: 8px 0; padding: 2px 0 2px 12px; border-left: 3px solid rgba(12,20,50,.18); color: var(--ink-700, #3b4459); }
 .md-quote p { margin: 0 0 4px; }
 .md-pre { margin: 8px 0; padding: 10px 12px; border-radius: 10px; overflow-x: auto;
-  background: #16223e; color: #eef2fb; font-size: 12.5px; line-height: 1.5; }
+  background: #16223e; color: #eef2fb; font-size: 13px; line-height: 1.5; }
 .md-pre code { font-family: var(--font-mono, ui-monospace, monospace); white-space: pre; }
 .md-hr { border: 0; border-top: 1px solid rgba(12,20,50,.14); margin: 12px 0; }
 .md a { color: var(--link, #1b4fd8); text-decoration: underline; overflow-wrap: anywhere; }
 
 /* Composer preview */
 .cm-fmt-prev.is-on { background: var(--navy-900, #16223e); color: #fff; }
-.cm-preview { margin: 8px 0; padding: 10px 12px; border: 1px dashed rgba(12,20,50,.22); border-radius: 12px; background: rgba(12,20,50,.02); }
+.cm-preview { margin: 8px 0; padding: 10px 12px; border: 1px dashed rgba(12,20,50,.22); border-radius: 10px; background: rgba(12,20,50,.02); }
 .cm-preview-lab { font: 700 10px var(--font-mono, monospace); letter-spacing: .14em; text-transform: uppercase;
   color: var(--ink-500, #5b6478); margin-bottom: 6px; }
 .cm-preview-empty { margin: 0; font-size: 13px; color: var(--ink-500, #5b6478); }
 
 /* ── Video player ── */
-.vp { position: relative; margin: 0; background: #000; border-radius: 12px; overflow: hidden; }
+.vp { position: relative; margin: 0; background: #000; border-radius: 10px; overflow: hidden; }
 .vp:focus-visible { outline: 3px solid #1b6ef3; outline-offset: 2px; }
 .vp video { display: block; width: 100%; max-height: 70vh; background: #000; }
 .vp-big { position: absolute; inset: 0; margin: auto; width: 66px; height: 66px; border-radius: 50%;
-  border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 24px; cursor: pointer; }
+  border: 0; background: rgba(0,0,0,.55); color: #fff; font-size: 22px; cursor: pointer; }
 .vp-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #10131c; color: #eef2fb; flex-wrap: wrap; }
-.vp-btn { min-width: 36px; min-height: 36px; border: 0; border-radius: 8px; background: transparent;
-  color: #eef2fb; font: inherit; font-size: 14px; cursor: pointer; }
+.vp-btn { min-width: 36px; min-height: 36px; border: 0; border-radius: 10px; background: transparent;
+  color: #eef2fb; font: inherit; font-size: 13.5px; cursor: pointer; }
 .vp-btn:hover { background: rgba(255,255,255,.12); }
 .vp-seek { flex: 1 1 120px; min-width: 90px; accent-color: var(--gold-500, #f5b026); }
 .vp-vol { width: 74px; accent-color: var(--gold-500, #f5b026); }
@@ -6073,7 +6311,7 @@ body.own-chrome .fab-top { display: none; }
 .vp-rate-menu button { min-width: 62px; min-height: 34px; border: 0; background: transparent; color: #eef2fb;
   font: inherit; font-size: 13px; border-radius: 6px; cursor: pointer; }
 .vp-rate-menu button[aria-checked="true"] { background: var(--gold-500, #f5b026); color: #10131c; font-weight: 700; }
-.vp-cap { padding: 6px 10px; font-size: 12.5px; color: #cfd6e6; background: #10131c; }
+.vp-cap { padding: 6px 10px; font-size: 13px; color: #cfd6e6; background: #10131c; }
 @media (max-width: 420px) { .vp-vol { display: none; } }
 
 /* ── Document viewer ──────────────────────────────────────────────────────
@@ -6095,11 +6333,11 @@ body.own-chrome .fab-top { display: none; }
 .pdfv-open-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .pdfv-open-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 15px; font-weight: 700; color: var(--ink-900, #0a1130); }
-.pdfv-open-meta { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px;
+.pdfv-open-meta { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12px;
   letter-spacing: .04em; color: var(--ink-500, #5f6785); }
 .pdfv-open-cta { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 36px;
   padding: 0 14px; border-radius: var(--c-r-pill, 999px); background: var(--c-ink-deep, #0c1432);
-  color: #fff; font-size: 12.5px; font-weight: 700; }
+  color: #fff; font-size: 13px; font-weight: 700; }
 
 /* ── Open: the full-screen reader ────────────────────────────────────────
    Above everything including the tab bar. A document is read, not glanced at,
@@ -6126,9 +6364,9 @@ body.own-chrome .fab-top { display: none; }
 .pdfv-page { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch;
   display: flex; justify-content: center; align-items: flex-start;
   padding: 14px 10px; background: #11182f; }
-.pdfv-canvas { display: block; max-width: none; border-radius: 3px; background: #fff;
+.pdfv-canvas { display: block; max-width: none; border-radius: 6px; background: #fff;
   box-shadow: 0 10px 30px -12px rgba(0,0,0,.6); }
-.pdfv-pageerr { padding: 40px 20px; text-align: center; font-size: 14px; color: rgba(255,255,255,.7); }
+.pdfv-pageerr { padding: 40px 20px; text-align: center; font-size: 13.5px; color: rgba(255,255,255,.7); }
 
 .pdfv-foot { flex: none; display: flex; align-items: center; justify-content: space-between;
   gap: 14px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
@@ -6146,15 +6384,15 @@ body.own-chrome .fab-top { display: none; }
 /* Waiting for half a megabyte of library on a slow connection. A page-shaped
    skeleton says what is coming; a spinner says only that something is busy. */
 .pdfv-skel { width: 100%; max-width: 420px; min-height: 240px; padding: 22px 20px;
-  background: #fff; border-radius: 3px; display: flex; flex-direction: column; gap: 13px; }
-.pdfv-skel-line { height: 11px; border-radius: 3px;
+  background: #fff; border-radius: 6px; display: flex; flex-direction: column; gap: 13px; }
+.pdfv-skel-line { height: 11px; border-radius: 6px;
   background: linear-gradient(90deg, #eceadf 25%, #f7f5ee 50%, #eceadf 75%);
   background-size: 200% 100%; animation: pdfvShimmer 1.4s linear infinite; }
 @keyframes pdfvShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .pdfv-skel-line { animation: none; } }
 
 .pdfv-fallback { margin: auto; padding: 30px 20px; text-align: center; max-width: 34ch; }
-.pdfv-fallback p { margin: 0 0 14px; color: rgba(255,255,255,.78); font-size: 14.5px; line-height: 1.55; }
+.pdfv-fallback p { margin: 0 0 14px; color: rgba(255,255,255,.78); font-size: 13.5px; line-height: 1.55; }
 
 @media (min-width: 1024px) {
   /* A document on a desktop is still the whole task, but a full-bleed page is
@@ -6167,7 +6405,7 @@ body.own-chrome .fab-top { display: none; }
    Reserves the 16:9 box up front so the feed does not jump when the poster
    arrives or when the iframe replaces it. */
 .yt { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9;
-  border: 0; padding: 0; border-radius: 12px; overflow: hidden; background: #000; }
+  border: 0; padding: 0; border-radius: 10px; overflow: hidden; background: #000; }
 .yt iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .yt-cover { cursor: pointer; }
 .yt-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -6176,7 +6414,7 @@ body.own-chrome .fab-top { display: none; }
 .yt-cover:hover .yt-play { background: #e4032b; }
 .yt-badge { position: absolute; bottom: 8px; right: 10px; font: 700 10px var(--font-mono, monospace);
   letter-spacing: .1em; text-transform: uppercase; color: #fff; background: rgba(0,0,0,.6);
-  padding: 3px 7px; border-radius: 5px; }
+  padding: 3px 7px; border-radius: 6px; }
 .yt-cover:focus-visible { outline: 3px solid #1b6ef3; outline-offset: 2px; }
 
 /* ── Dashboard: the training-fee schedule ─────────────────────────────────
@@ -6190,13 +6428,13 @@ body.own-chrome .fab-top { display: none; }
   grid-template-columns: minmax(0, 1fr) auto auto; padding: 6px 0;
   border-bottom: 1px solid rgba(12,20,50,.06); font-size: 13px; }
 .dash-sched-name { font-weight: 600; color: var(--ink-900, #16223e); min-width: 0; }
-.dash-sched-when { font-size: 11.5px; color: var(--ink-500, #5b6478); }
+.dash-sched-when { font-size: 12px; color: var(--ink-500, #5b6478); }
 .dash-sched-amt { font-variant-numeric: tabular-nums; font-weight: 700; }
-.dash-sched-tag { grid-column: 1 / -1; font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+.dash-sched-tag { grid-column: 1 / -1; font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
   color: var(--ink-500, #5b6478); }
 .dash-sched-row.is-charged .dash-sched-tag { color: #2f7a3f; }
 .dash-sched-row.is-upcoming { opacity: .62; }
-.dash-sched-foot { margin: 10px 0 0; font-size: 12.5px; color: var(--ink-500, #5b6478); line-height: 1.45; }
+.dash-sched-foot { margin: 10px 0 0; font-size: 13px; color: var(--ink-500, #5b6478); line-height: 1.45; }
 .dash-account-halt { margin-top: 10px; padding: 9px 12px; border-radius: 10px; font-size: 13px; line-height: 1.45;
   background: #fdeaee; border: 1px solid #e4032b; color: #8c0119; }
 .dash-account-halt.is-paused { background: #fff6e2; border-color: #d99400; color: #6b4600; }
@@ -6209,26 +6447,26 @@ body.own-chrome .fab-top { display: none; }
   background: rgba(12,20,50,.035); border: 1px solid rgba(12,20,50,.09); }
 .dash-cost-head { font-size: 13.5px; color: var(--ink-700, #3b4459); }
 .dash-cost-head b { font-size: 15px; color: var(--ink-900, #16223e); font-variant-numeric: tabular-nums; }
-.dash-cost-note { margin-top: 3px; font-size: 12.5px; color: #2f7a3f; font-weight: 600; }
-.dash-cost-earned { margin-top: 6px; font-size: 12.5px; color: var(--ink-500, #5b6478); line-height: 1.45; }
+.dash-cost-note { margin-top: 3px; font-size: 13px; color: #2f7a3f; font-weight: 600; }
+.dash-cost-earned { margin-top: 6px; font-size: 13px; color: var(--ink-500, #5b6478); line-height: 1.45; }
 
 /* ── Tournaments console ──────────────────────────────────────────────────
    The advance control is one button, and the reason it is refused is stated
    beside it rather than fired as an error after a click. */
 
 .trn-advance { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
-  padding: 12px 14px; border-radius: 12px; margin-bottom: 14px;
+  padding: 12px 14px; border-radius: 10px; margin-bottom: 14px;
   background: rgba(12,20,50,.035); border: 1px solid rgba(12,20,50,.1); }
 
 /* A drawn knockout game blocks the round until somebody decides, so it is
    surfaced rather than left for staff to find. */
-.trn-draws { padding: 12px 14px; border-radius: 12px; margin-bottom: 14px;
+.trn-draws { padding: 12px 14px; border-radius: 10px; margin-bottom: 14px;
   background: #fff6e2; border: 1px solid #d99400; }
 .trn-draw-row { display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 6px 0; border-top: 1px solid rgba(0,0,0,.08); font-size: 13.5px; }
 
 .trn-centres { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
-.trn-centre { border: 1px solid rgba(12,20,50,.12); border-radius: 12px; padding: 10px 12px; background: #fff; }
+.trn-centre { border: 1px solid rgba(12,20,50,.12); border-radius: 10px; padding: 10px 12px; background: #fff; }
 .trn-centre-h { font-weight: 800; font-size: 13.5px; margin-bottom: 6px; color: var(--ink-900, #16223e); }
 .trn-player { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 13.5px;
   border-top: 1px solid rgba(12,20,50,.06); }
@@ -6251,7 +6489,7 @@ body.own-chrome .fab-top { display: none; }
 .trn-side { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .trn-side.is-win { font-weight: 800; color: var(--ink-900, #16223e); }
 .trn-side.is-lose { opacity: .55; }
-.trn-v { color: var(--ink-500, #5b6478); font-size: 11.5px; }
+.trn-v { color: var(--ink-500, #5b6478); font-size: 12px; }
 .trn-game-meta { grid-column: 1 / -1; }
 
 /* ── Admin helpers that were being used without existing ──────────────────
@@ -6261,12 +6499,12 @@ body.own-chrome .fab-top { display: none; }
    middle of a page. Defined once here, both spellings, because renaming live
    markup is a bigger change than honouring it. */
 .admin-err, .admin-error { background: #fdeaee; border: 1px solid #e4032b; color: #8c0119;
-  padding: 10px 14px; border-radius: 10px; margin: 0 0 14px; font-size: 14px; }
-.admin-field-label { font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  padding: 10px 14px; border-radius: 10px; margin: 0 0 14px; font-size: 13.5px; }
+.admin-field-label { font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
   color: var(--ink-500, #5b6478); margin-bottom: 6px; }
 /* A loading placeholder, not a spinner: the console lists tables, and a block
    the shape of the table it is about to become moves less than a spinner does. */
-.admin-skel { height: 132px; border-radius: 12px; margin: 6px 0 14px;
+.admin-skel { height: 132px; border-radius: 10px; margin: 6px 0 14px;
   background: linear-gradient(100deg, rgba(12,20,50,.05) 30%, rgba(12,20,50,.10) 50%, rgba(12,20,50,.05) 70%);
   background-size: 300% 100%; animation: adminSkel 1.3s ease-in-out infinite; }
 @keyframes adminSkel { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
@@ -6306,4 +6544,482 @@ body.own-chrome .fab-top { display: none; }
   text-underline-offset: 2px;
 }
 .admin-inline-link:hover { text-decoration-thickness: 2px; }
-.admin-inline-link:focus-visible { outline: 2px solid var(--navy-700, #1c2a5e); outline-offset: 2px; border-radius: 3px; }
+.admin-inline-link:focus-visible { outline: 2px solid var(--navy-700, #1c2a5e); outline-offset: 2px; border-radius: 6px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN STUDIO — THE SYSTEM
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Direction, in one sentence, so every choice below can be checked against it:
+   A DARK PRESS ROOM — ink-blue surfaces, ONE amber accent earned only by the
+   live action, geometric sans for structure over monospace for every number
+   and label. An instrument, not an app.
+
+   The studio had tokens for colour and nothing else, so it grew SEVEN corner
+   radii and FIVE control heights on one screen, borders around every surface,
+   and type at whatever size each line was written. That is what "rough" is:
+   not one bad decision, a hundred un-made ones. Closed scales below; nothing
+   in the studio may use a value that is not on them.
+
+   The card being designed is the only bright object on the screen. Everything
+   else is instrument housing and recedes on purpose — which is also why the
+   accent is rationed to exactly one live control at a time.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* Surfaces — three levels, by elevation, NOT by outline. The old studio drew
+     a 1px border around everything; depth now comes from the surface stepping
+     lighter, and lines are kept for true divisions. */
+  --dsn-bg:        #0d1424;
+  --dsn-s1:        #141c30;   /* panels, bar, rails                */
+  --dsn-s2:        #1b2440;   /* controls, raised rows             */
+  --dsn-s3:        #232e4f;   /* hover / active control            */
+  --dsn-sink:      #0a1020;   /* inset wells: canvas ground, lists */
+
+  /* Ink — four steps, and they are the only text colours. */
+  --dsn-ink:       #eaf0ff;
+  --dsn-ink-2:     #b8c4de;   /* secondary body                    */
+  --dsn-ink-3:     #8d9ab8;   /* labels, captions — 4.5:1 on s1    */
+  --dsn-ink-4:     #66738f;   /* disabled only, never for reading  */
+
+  --dsn-line:      rgba(255,255,255,0.09);
+  --dsn-line-2:    rgba(255,255,255,0.17);
+
+  --dsn-gold:      #f5b026;
+  --dsn-gold-ink:  #2a1d00;   /* text ON gold                      */
+  --dsn-gold-dim:  rgba(245,176,38,0.14);
+
+  --dsn-ok:  #6fdc9d;  --dsn-warn: #ffce54;  --dsn-bad: #ff8f8f;
+
+  /* Radius language — three, and a pill. Not seven. */
+  --dsn-r-surface: 16px;
+  --dsn-r-control: 10px;
+  --dsn-r-inner:   8px;
+  --dsn-r-pill:    999px;
+
+  /* Space — a closed scale. Layout uses gap, never per-element margins. */
+  --dsn-sp-1: 4px;  --dsn-sp-2: 8px;  --dsn-sp-3: 12px;
+  --dsn-sp-4: 16px; --dsn-sp-5: 24px; --dsn-sp-6: 32px;
+
+  /* ONE control height for the chrome. Everything that can be clicked in the
+     bar, the tool row and the rails is exactly this tall, which is the single
+     biggest reason the old bar read as unfinished — a 40px input beside a
+     30px button beside a 34px tool. 36px is the expert-tool density; coarse
+     pointers get 44 below. */
+  --dsn-ctl: 36px;
+
+  /* Type — a closed scale with roles. */
+  --dsn-t-display: 24px;   /* the design's name, once per screen */
+  --dsn-t-head:    15px;   /* panel headings                     */
+  --dsn-t-body:    13.5px; /* prose, hints                       */
+  --dsn-t-ctl:     13px;   /* control text                       */
+  --dsn-t-small:   12px;   /* dense secondary rows               */
+  --dsn-t-meta:    10px;   /* mono eyebrows and captions         */
+}
+@media (pointer: coarse) { :root { --dsn-ctl: 44px; } }
+
+/* ── Ground ─────────────────────────────────────────────────────────────── */
+.dsn-wrap, .dsn-page { background: var(--dsn-bg); }
+
+/* ── Every control in the studio chrome is the same object ──────────────── */
+.dsn-bar .admin-input,
+.dsn-bar .admin-select,
+.dsn-bar select,
+.dsn-bar input,
+.dsn-zone select,
+.dsn-zone input,
+.dsn-merge-filters select,
+.dsn-merge-filters input,
+.dsn-merge-run select,
+.dsn-merge-size select {
+  height: var(--dsn-ctl);
+  box-sizing: border-box;
+  padding: 0 var(--dsn-sp-3);
+  border-radius: var(--dsn-r-control);
+  border: 1px solid var(--dsn-line);
+  background: var(--dsn-s2);
+  color: var(--dsn-ink);
+  font: 500 var(--dsn-t-ctl)/1 var(--font-sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  transition: border-color .12s ease, background .12s ease;
+}
+.dsn-bar input:hover, .dsn-zone input:hover,
+.dsn-bar select:hover, .dsn-zone select:hover,
+.dsn-merge-filters select:hover, .dsn-merge-filters input:hover {
+  background: var(--dsn-s3); border-color: var(--dsn-line-2);
+}
+
+/* Native select chrome is the loudest "unfinished" tell on a dark UI: the OS
+   draws its own light-mode arrow in its own light-mode box. One caret, drawn
+   as a background image, and the field keeps the studio's surface. */
+.dsn-bar select, .dsn-zone select,
+.dsn-merge-filters select, .dsn-merge-run select, .dsn-merge-size select {
+  appearance: none; -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238d9ab8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+}
+/* The options list is drawn by the OS; give it a surface it can actually use. */
+.dsn-bar select option, .dsn-zone select option, .dsn-merge-filters select option {
+  background: var(--dsn-s1); color: var(--dsn-ink);
+}
+
+/* One focus ring, everywhere, in the accent. Visible is the requirement; this
+   is also the only other place the gold is spent. */
+.dsn-bar :is(input, select, button):focus-visible,
+.dsn-zone :is(input, select, button):focus-visible,
+.dsn-merge :is(input, select, button):focus-visible,
+.dsn-tool:focus-visible, .dsn-layer-hit:focus-visible {
+  outline: 2px solid var(--dsn-gold);
+  outline-offset: 2px;
+  border-radius: var(--dsn-r-control);
+}
+
+/* ── Buttons: one shape, three weights ──────────────────────────────────── */
+.dsn-bar .btn, .dsn-zone .btn, .dsn-merge .btn, .dsn-exports .btn {
+  height: var(--dsn-ctl);
+  min-height: var(--dsn-ctl);
+  padding: 0 var(--dsn-sp-4);
+  border-radius: var(--dsn-r-control);
+  font: 600 var(--dsn-t-ctl)/1 var(--font-sans, system-ui, sans-serif);
+  display: inline-flex; align-items: center; justify-content: center;
+  white-space: nowrap;
+  transition: background .12s ease, border-color .12s ease;
+}
+.dsn-bar .btn-ghost, .dsn-zone .btn-ghost, .dsn-merge .btn-ghost, .dsn-exports .btn-ghost {
+  background: var(--dsn-s2); border: 1px solid var(--dsn-line); color: var(--dsn-ink);
+}
+.dsn-bar .btn-ghost:hover:not(:disabled), .dsn-zone .btn-ghost:hover:not(:disabled),
+.dsn-merge .btn-ghost:hover:not(:disabled), .dsn-exports .btn-ghost:hover:not(:disabled) {
+  background: var(--dsn-s3); border-color: var(--dsn-line-2);
+}
+.dsn-bar .btn-primary, .dsn-zone .btn-primary, .dsn-merge .btn-primary, .dsn-exports .btn-primary {
+  background: var(--dsn-gold); border: 1px solid var(--dsn-gold);
+  color: var(--dsn-gold-ink); font-weight: 700;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.18);
+}
+.dsn-bar .btn:disabled, .dsn-zone .btn:disabled, .dsn-merge .btn:disabled { opacity: .38; }
+
+/* ── The bar ────────────────────────────────────────────────────────────── */
+.dsn-bar {
+  background: var(--dsn-s1);
+  border: 1px solid var(--dsn-line);
+  border-radius: var(--dsn-r-surface);
+  padding: var(--dsn-sp-3) var(--dsn-sp-4);
+  gap: var(--dsn-sp-3);
+  margin: 0 0 var(--dsn-sp-4);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+  backdrop-filter: none;
+}
+.dsn-zone { gap: var(--dsn-sp-2); padding-left: var(--dsn-sp-4); margin-left: 0; }
+.dsn-zone-cap {
+  font: 700 var(--dsn-t-meta)/1 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .16em; text-transform: uppercase;
+  color: var(--dsn-ink-3);
+}
+/* The field captions inside a zone: same voice as the zone caption, one step
+   quieter, stacked over their control rather than beside it. */
+.dsn-zone .dsn-prop > span {
+  font: 600 var(--dsn-t-meta)/1 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--dsn-ink-3);
+  margin-bottom: var(--dsn-sp-1);
+}
+
+/* ── The tool row: an instrument strip, not a row of loose glyphs ───────── */
+.dsn-tools {
+  background: var(--dsn-s1);
+  border: 1px solid var(--dsn-line);
+  border-radius: var(--dsn-r-control);
+  padding: var(--dsn-sp-2);
+  gap: var(--dsn-sp-1);
+}
+.dsn-tool {
+  width: var(--dsn-ctl); height: var(--dsn-ctl);
+  border-radius: var(--dsn-r-inner);
+  color: var(--dsn-ink-2);
+}
+.dsn-tool:hover:not(:disabled) { background: var(--dsn-s3); color: var(--dsn-ink); border-color: transparent; }
+.dsn-tool.is-on { background: var(--dsn-gold-dim); color: #ffd98a; border-color: transparent; }
+.dsn-tool-grp { border-right: 1px solid var(--dsn-line); padding-right: var(--dsn-sp-2); margin-right: var(--dsn-sp-1); }
+.dsn-size-note {
+  font: 500 var(--dsn-t-meta)/1 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .1em; color: var(--dsn-ink-3); font-variant-numeric: tabular-nums;
+}
+
+/* ── Stage: the canvas sits in a WELL, so the card is the lit object ────── */
+.dsn-stage {
+  background: var(--dsn-sink);
+  border: 1px solid var(--dsn-line);
+  border-radius: var(--dsn-r-surface);
+  padding: var(--dsn-sp-5) var(--dsn-sp-4);
+  gap: var(--dsn-sp-3);
+}
+.dsn-canvas-host { border-radius: var(--dsn-r-inner); box-shadow: 0 24px 60px -24px rgba(0,0,0,0.85); }
+.dsn-stage-note { font: 500 var(--dsn-t-meta)/1.5 var(--font-mono, ui-monospace, monospace); color: var(--dsn-ink-3); letter-spacing: .08em; }
+
+/* ── Rails ──────────────────────────────────────────────────────────────── */
+.dsn-rail {
+  background: var(--dsn-s1);
+  border: 1px solid var(--dsn-line);
+  border-radius: var(--dsn-r-surface);
+  padding: var(--dsn-sp-3);
+}
+.dsn-rail-head {
+  font: 700 var(--dsn-t-meta)/1 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .16em; text-transform: uppercase; color: var(--dsn-ink-3);
+  background: var(--dsn-s1);
+  border-bottom: 1px solid var(--dsn-line);
+  margin: calc(var(--dsn-sp-3) * -1) calc(var(--dsn-sp-3) * -1) var(--dsn-sp-2);
+  padding: var(--dsn-sp-3);
+}
+
+/* ── The batch panel ────────────────────────────────────────────────────── */
+.dsn-merge {
+  background: var(--dsn-s1);
+  border: 1px solid var(--dsn-line);
+  border-radius: var(--dsn-r-surface);
+  padding: var(--dsn-sp-4);
+  box-shadow: none;
+}
+.dsn-merge-head b { font: 700 var(--dsn-t-head)/1.3 var(--font-sans, system-ui, sans-serif); letter-spacing: -0.01em; }
+.dsn-merge-filters {
+  background: var(--dsn-sink);
+  border: 1px solid var(--dsn-line);
+  border-radius: var(--dsn-r-control);
+  padding: var(--dsn-sp-3);
+  gap: var(--dsn-sp-3);
+}
+.dsn-merge-filters .dsn-prop > span,
+.dsn-merge-run .dsn-prop > span,
+.dsn-merge-size > span {
+  font: 600 var(--dsn-t-meta)/1 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .14em; text-transform: uppercase; color: var(--dsn-ink-3);
+}
+.dsn-merge-note { font: 500 var(--dsn-t-meta)/1.4 var(--font-mono, ui-monospace, monospace); color: var(--dsn-ink-3); letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.dsn-merge-picks { background: var(--dsn-s1); border-bottom: 1px solid var(--dsn-line); padding: var(--dsn-sp-2) 0; }
+.dsn-merge-list { border-radius: var(--dsn-r-control); background: var(--dsn-sink); border: 1px solid var(--dsn-line); }
+.dsn-tbl { font-size: var(--dsn-t-ctl); font-variant-numeric: tabular-nums; }
+.dsn-tbl thead th { background: var(--dsn-s1); }
+.dsn-tbl tbody tr:hover { background: rgba(255,255,255,0.035); }
+.dsn-merge-flag {
+  border-radius: var(--dsn-r-pill);
+  font: 600 var(--dsn-t-meta)/1 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .1em; padding: 5px 9px;
+}
+.dsn-chip { border-radius: var(--dsn-r-pill); height: 30px; padding: 0 var(--dsn-sp-3); font-size: var(--dsn-t-ctl); }
+
+/* ── Motion, and the promise to switch it off ───────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .dsn-bar *, .dsn-tools *, .dsn-merge * { transition: none !important; animation: none !important; }
+}
+
+/* The document picker, now a control rather than a banner. It holds the
+   longest strings in the bar (a design name plus "· v3"), so it gets the most
+   room of the three Design fields and truncates rather than stretching. */
+.dsn-bar-open { flex: 0 1 210px; min-width: 0; }
+.dsn-bar-open select { width: 100%; min-width: 0; text-overflow: ellipsis; }
+
+/* The page's one eyebrow. Sentence case, secondary ink: it names the room,
+   it does not advertise it. */
+.dsn-eyebrow {
+  font: 600 var(--dsn-t-meta)/1 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .22em; text-transform: uppercase;
+  color: var(--dsn-ink-3);
+}
+/* An OPEN toggle is a state, not the live action. The solid accent stays with
+   Publish — one gold button on screen at a time — and a held-down control
+   reads the way the tool row's held-down controls already read. */
+.dsn-bar .btn-ghost.is-on, .dsn-zone .btn-ghost.is-on, .dsn-exports .btn-ghost.is-on {
+  background: var(--dsn-gold-dim);
+  border-color: rgba(245,176,38,0.55);
+  color: #ffd98a;
+}
+/* OUTPUT to the row's end. It wraps to a second line at this density whatever
+   is done — four buttons will not fit beside everything else — so the choice
+   is whether the second line looks decided or accidental. Right-aligned, the
+   bar reads document-left / output-right; left-aligned it read as a stray. */
+.dsn-zone-end { margin-left: auto; }
+
+/* ── The bar, tightened ─────────────────────────────────────────────────── */
+.dsn-bar { padding: var(--dsn-sp-2) var(--dsn-sp-4); row-gap: var(--dsn-sp-2); }
+/* A zone's caption and its fields share a baseline; the caption no longer
+   needs the field's full height beneath it. */
+.dsn-zone { align-items: flex-end; }
+
+/* ── Export formats: one object, not three buttons ──────────────────────────
+   PNG / PDF / SVG are three routes to the same act, so they read as one
+   segmented control — shared outline, hairline dividers, no gaps — and Batch,
+   which is a different act entirely, keeps its own shape beside them. Three
+   equally-weighted standalone buttons said "three decisions" for what is
+   really one decision with three answers. */
+.dsn-exports { gap: var(--dsn-sp-2); align-items: center; }
+.dsn-exports .btn:nth-child(-n+3) { border-radius: 0; margin: 0; border-left-width: 0; }
+.dsn-exports .btn:nth-child(1) {
+  border-top-left-radius: var(--dsn-r-control);
+  border-bottom-left-radius: var(--dsn-r-control);
+  border-left-width: 1px;
+}
+.dsn-exports .btn:nth-child(3) {
+  border-top-right-radius: var(--dsn-r-control);
+  border-bottom-right-radius: var(--dsn-r-control);
+  margin-right: var(--dsn-sp-2);
+}
+/* The segment that is hovered lifts above its neighbours' shared edge. */
+.dsn-exports .btn:nth-child(-n+3):hover:not(:disabled) { position: relative; z-index: 1; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CARD STUDIO (/cards) — the same system, applied
+   ═══════════════════════════════════════════════════════════════════════════
+   This screen was built with 102 inline style objects and 21 classes, which
+   is why it read as rough: thirteen buttons carried FOUR corner radii and
+   EIGHT different paddings, fourteen fields were near-copies of each other,
+   and nine font sizes appeared where the scale has five. Not one bad
+   decision — a hundred un-made ones, each reasonable where it was written.
+
+   Inline styles beat a stylesheet, so consistency here is not something CSS
+   could impose from outside: the chrome has to come out of the markup. These
+   classes are the same tokens the Design Studio uses, so the two studios are
+   now one product rather than two that share a colour.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.cs-btn {
+  height: var(--dsn-ctl); min-height: var(--dsn-ctl);
+  padding: 0 var(--dsn-sp-4);
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--dsn-sp-2);
+  border-radius: var(--dsn-r-control);
+  border: 1px solid var(--dsn-line);
+  background: var(--dsn-s2); color: var(--dsn-ink);
+  font: 600 var(--dsn-t-ctl)/1 var(--font-sans, system-ui, sans-serif);
+  cursor: pointer; white-space: nowrap;
+  transition: background .12s ease, border-color .12s ease;
+}
+.cs-btn:hover:not(:disabled) { background: var(--dsn-s3); border-color: var(--dsn-line-2); }
+.cs-btn:disabled { opacity: .38; cursor: not-allowed; }
+.cs-btn:focus-visible { outline: 2px solid var(--dsn-gold); outline-offset: 2px; }
+/* The accent, spent once per surface on the act the screen exists for. */
+.cs-btn.is-primary {
+  background: var(--dsn-gold); border-color: var(--dsn-gold);
+  color: var(--dsn-gold-ink); font-weight: 700;
+}
+.cs-btn.is-primary:hover:not(:disabled) { background: #ffbe3d; border-color: #ffbe3d; }
+/* A selected tab is a state, not the live action — dim accent, as in the
+   Design Studio's tool row. */
+.cs-btn.is-on { background: var(--dsn-gold-dim); border-color: rgba(245,176,38,0.55); color: #ffd98a; }
+.cs-btn-pill { border-radius: var(--dsn-r-pill); padding: 0 var(--dsn-sp-4); }
+.cs-btn-lg { height: 44px; min-height: 44px; padding: 0 var(--dsn-sp-5); font-size: var(--dsn-t-body); }
+
+.cs-field {
+  height: var(--dsn-ctl); box-sizing: border-box;
+  padding: 0 var(--dsn-sp-3);
+  border-radius: var(--dsn-r-control);
+  border: 1px solid var(--dsn-line);
+  background: var(--dsn-s2); color: var(--dsn-ink);
+  font: 500 var(--dsn-t-ctl)/1 var(--font-sans, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+}
+.cs-field:hover { background: var(--dsn-s3); border-color: var(--dsn-line-2); }
+.cs-field:focus-visible { outline: 2px solid var(--dsn-gold); outline-offset: 2px; }
+select.cs-field {
+  appearance: none; -webkit-appearance: none; padding-right: 30px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238d9ab8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 11px center;
+}
+select.cs-field option { background: var(--dsn-s1); color: var(--dsn-ink); }
+.cs-field::placeholder { color: var(--dsn-ink-4); }
+
+.cs-box {
+  background: var(--dsn-s1);
+  border: 1px solid var(--dsn-line);
+  border-radius: var(--dsn-r-surface);
+  padding: var(--dsn-sp-4);
+}
+.cs-box-cap {
+  font: 700 var(--dsn-t-meta)/1 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .16em; text-transform: uppercase; color: var(--dsn-ink-3);
+  display: block; margin-bottom: var(--dsn-sp-3);
+}
+/* A hairline between two control groups in a row. Fixed height rather than
+   stretch: it divides the CONTROLS, not the row's padding. */
+.cs-div { width: 1px; height: 26px; flex: none; background: var(--dsn-line-2); margin: 0 var(--dsn-sp-1); }
+/* A row of controls: the studio's toolbars, all of them. */
+.cs-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dsn-sp-3); }
+/* A control with its word beside it — "Batch [select]", "Range [select]".
+   The label is part of the control, so they travel together and wrap together. */
+.cs-lbl {
+  display: inline-flex; align-items: center; gap: var(--dsn-sp-2);
+  font-size: var(--dsn-t-small); color: var(--dsn-ink-3); white-space: nowrap;
+}
+.cs-lbl-tight { gap: var(--dsn-sp-1); }
+/* Secondary prose under a control group. Capped so it stays readable rather
+   than running the width of a 1440 window. */
+.cs-note {
+  font-size: var(--dsn-t-small); line-height: 1.55; color: var(--dsn-ink-3);
+  max-width: 68ch; margin: var(--dsn-sp-2) 0 0;
+}
+.cs-strong { color: var(--dsn-ink); }
+.cs-meta {
+  font: 500 var(--dsn-t-meta)/1.5 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: .08em; color: var(--dsn-ink-3);
+}
+.cs-hint { font-size: var(--dsn-t-body); line-height: 1.6; color: var(--dsn-ink-2); max-width: 68ch; }
+
+/* The studio's unhappy states — signed out, and could-not-load. One shape for
+   both, because they are the same event to a reader: the studio is not here
+   yet and this is what to do about it. */
+.cs-state { text-align: center; padding: 80px 0; }
+.cs-state-h { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 var(--dsn-sp-3); }
+.cs-state .cs-btn { margin-top: var(--dsn-sp-3); }
+
+/* A filter that is NOT at its default lights its border — the one visual cue
+   that says "this list is narrowed" without spending the accent on a fill. */
+.cs-field.is-set { border-color: var(--dsn-gold); }
+/* A centre or tier, as a removable chip. */
+.cs-chip {
+  display: inline-flex; align-items: center; gap: var(--dsn-sp-2);
+  height: 32px; padding: 0 var(--dsn-sp-3);
+  border-radius: var(--dsn-r-pill);
+  background: var(--dsn-s2); border: 1px solid var(--dsn-line);
+  font-size: var(--dsn-t-ctl); font-weight: 600; color: var(--dsn-ink);
+}
+.cs-chip-x {
+  background: none; border: 0; padding: 0; cursor: pointer; line-height: 1;
+  color: var(--dsn-ink-3); font-size: var(--dsn-t-body);
+}
+.cs-chip-x:hover { color: var(--dsn-bad); }
+.cs-chip-x:focus-visible { outline: 2px solid var(--dsn-gold); outline-offset: 2px; border-radius: 4px; }
+/* A printed card on the dark ground: the one object allowed to be bright. */
+.cs-cardface { border-radius: 6px; overflow: hidden; box-shadow: 0 18px 40px -14px rgba(0,0,0,0.55); }
+
+/* The Card Studio's page ground. */
+.cs-page {
+  min-height: 100vh; background: var(--dsn-bg); color: var(--dsn-ink);
+  font-family: var(--font-body, system-ui, sans-serif);
+  padding: var(--dsn-sp-5) var(--dsn-sp-4) 80px;
+}
+/* A round icon button — one glyph, no label, so it states its purpose through
+   title/aria and meets the touch floor on a coarse pointer. */
+.cs-iconbtn {
+  width: 30px; height: 30px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: var(--dsn-r-pill);
+  background: var(--dsn-gold); color: var(--dsn-gold-ink);
+  font-weight: 800; font-size: var(--dsn-t-ctl); cursor: pointer;
+}
+.cs-iconbtn:focus-visible { outline: 2px solid var(--dsn-gold); outline-offset: 2px; }
+@media (pointer: coarse) { .cs-iconbtn { width: 44px; height: 44px; } }
+
+/* The Analyst's unconfigured state. Not an error colour: nothing has gone
+   wrong, a thing has not been switched on — and the figures behind the pane
+   are fine, which is what the operator needs to hear before anything else. */
+.anp-note {
+  margin: 10px 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--dsn-line-2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12.5px; line-height: 1.55; color: rgba(230, 238, 255, 0.82);
+}
+.anp-note code {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px;
+  background: rgba(0, 0, 0, 0.28); padding: 1px 5px; border-radius: 4px;
+}

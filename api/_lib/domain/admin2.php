@@ -700,7 +700,9 @@ function admin_application_convert(array $p): array {
      */
     $intakeEmail = (string)$a['email'];
     $intakePhone = trim((string)($a['phone'] ?? ''));
-    db_insert('members', [
+    /* An approved applicant becomes a MEMBER, so they are issued a member's
+       printed ID at the same moment — see domain/member-id.php. */
+    $__m = [
         'memberId' => $newId, 'fullName' => $a['name'], 'email' => $intakeEmail,
         'type' => $type, 'status' => 'active', 'role' => 'member',
         'centre' => $a['centre'] ?: 'Egbeda', 'track' => $a['track'] ?: '',
@@ -712,7 +714,9 @@ function admin_application_convert(array $p): array {
         // prints. It was left empty on every member who arrived this way.
         'joinDate' => gmdate('Y-m-d'),
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
-    ]);
+    ];
+    if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_display_id($__m);
+    db_insert('members', $__m);
     db_update('applications', ['status' => 'accepted'], ['id' => $id]);
 
     /* A way in that the member owns.

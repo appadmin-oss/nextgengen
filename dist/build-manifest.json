@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
   "buildId": "0c40985672",
   "builtAt": "2026-09-17T00:03:46.535Z",
   "bundle": {
@@ -14,6 +15,23 @@
     "data.js": "data.29d3739700.js",
     "photos.js": "photos.fffb7d55bb.js",
     "api-client.js": "api-client.46bb6b4a35.js",
+=======
+  "buildId": "a6891fbf32",
+  "builtAt": "2026-09-11T14:17:07.657Z",
+  "bundle": {
+    "file": "app.d6ca4df59f.min.js",
+    "bytes": 2188343,
+    "gzipBytes": 551007,
+    "files": 21
+  },
+  "assets": {
+    "app.min.js": "app.d6ca4df59f.min.js",
+    "styles.css": "styles.cf929cb202.css",
+    "styles-app.css": "styles-app.b195904a87.css",
+    "data.js": "data.29d3739700.js",
+    "photos.js": "photos.fffb7d55bb.js",
+    "api-client.js": "api-client.ac22e6cd2e.js",
+>>>>>>> origin/claude/community-audit-1aqug7
     "outbox.js": "outbox.042a8c9122.js"
   },
   "node": "v22.22.2"

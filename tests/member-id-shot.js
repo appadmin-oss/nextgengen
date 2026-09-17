@@ -25,7 +25,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { waitForServer } = require('./_serve');
+const { waitForServer, writeScreenIndex } = require('./_serve');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = process.env.MEMBER_ID_PORT || 8251;
@@ -131,7 +131,13 @@ function Lane(p) {
     e('div', { className: 'cap' }, e('b', null, p.title), p.note),
     p.facts ? e('div', { className: 'facts' }, [
       ['Printed ID', m.displayId], ['Level', m.level || '—'], ['Disciplines', m.disciplines || m.track || '—'],
-      ['Centre', m.centre || '—'], ['Cohort', m.cohort || '—'],
+      /* "Intake year", not "Cohort". On a MEMBER row the cohort field is the
+         year they joined — where the printed ID's prefix comes from — while
+         "cohort" everywhere else in this product means a Summer School
+         EDITION. Same word, two meanings; the card spec uses the member's.
+         (No backticks in this comment: it lives inside the template literal
+         that builds the fixture page.) */
+      ['Centre', m.centre || '—'], ['Intake year', m.cohort || '—'],
     ].map(function (r, i) { return e('div', { key: i }, e('span', null, r[0]), r[1]); })) : null);
 }
 
@@ -197,6 +203,32 @@ window.nggcEnsureFonts()
     fs.mkdirSync(path.dirname(opts.out), { recursive: true });
     await sheet.screenshot({ path: opts.out });
     const kb = Math.round(fs.statSync(opts.out).size / 1024);
+
+    /* THE PHOTOGRAPH IS FULL BLEED, measured rather than eyeballed.
+       It was 130mm wide on a 148mm card and 48mm on a 54mm one, leaving 9mm
+       and 3mm of white down each side. A photo inset from the trim shows the
+       cut, and 0.5mm of drift at the guillotine shows it unevenly — so this is
+       a print defect, not a taste. Measured on both physical sizes, because
+       they carry different padding and only one of them was ever checked. */
+    const bleed = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('.idcard')).map((card) => {
+        const el = card.querySelector('img[alt=""], img[src^="data:image"]')
+          || card.querySelector('div[style*="position: absolute"]');
+        const c = card.getBoundingClientRect();
+        const wrap = el && el.closest('div[style*="width"]');
+        const r = (wrap || el || card).getBoundingClientRect();
+        return { cardW: Math.round(c.width), left: Math.round(r.left - c.left),
+                 right: Math.round(c.right - r.right) };
+      });
+    });
+    const inset = bleed.filter((b) => b.left > 1 || b.right > 1);
+    if (inset.length) {
+      throw new Error('the photograph is inset from the card edge on ' + inset.length
+        + ' of ' + bleed.length + ' card(s): ' + JSON.stringify(inset)
+        + ' — it must bleed to the trim, with no white margin');
+    }
+    console.log('  ✓ the photograph bleeds to the trim on all '
+      + bleed.length + ' card(s) — no white edge');
     console.log('  ✓ ' + path.basename(opts.out) + '  (' + kb + ' KB) — ' + members[0].displayId
       + (opts.file ? ' from ' + path.basename(opts.file) : ' (fixture)'));
 
@@ -204,13 +236,10 @@ window.nggcEnsureFonts()
        fixture run. A capture of a real child does not belong in the repo, so
        it is not indexed and --out is expected to point outside it. */
     if (!opts.file && path.dirname(opts.out) === path.join(ROOT, 'docs', 'screens')) {
-      const idxFile = path.join(ROOT, 'docs', 'screens', 'INDEX.json');
       const name = path.basename(opts.out, '.png');
-      let idx = [];
-      try { idx = JSON.parse(fs.readFileSync(idxFile, 'utf8')); } catch (_) {}
-      const keep = Array.isArray(idx) ? idx.filter((s) => s.name !== name) : [];
-      keep.push({ name, label: 'NGGC member ID · both sizes, with and without a headshot on file', kb });
-      fs.writeFileSync(idxFile, JSON.stringify(keep, null, 2) + '\n');
+      writeScreenIndex(path.join(ROOT, 'docs', 'screens'), [
+        { name, label: 'NGGC member ID · both sizes, with and without a headshot on file', kb },
+      ]);
     }
     await page.close();
   } finally {

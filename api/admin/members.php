@@ -4,6 +4,23 @@ $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
+    /* Every id matching the current filters, for "apply to all N matching".
+       Same filters, resolved by the SERVER, so the page and the bulk cannot
+       disagree about who matched. */
+    if ((string)($_GET['view'] ?? '') === 'ids') {
+        $res = gs_call('admin.members.ids', [
+            'requesterId' => $s['mid'],
+            'q' => $_GET['q'] ?? '', 'centre' => $_GET['centre'] ?? '',
+            'status' => $_GET['status'] ?? '', 'type' => $_GET['type'] ?? '',
+            'missing' => $_GET['missing'] ?? '', 'level' => $_GET['level'] ?? '',
+            'staff' => $_GET['staff'] ?? null,
+            'sort' => $_GET['sort'] ?? '', 'dir' => $_GET['dir'] ?? '',
+            'ip' => client_ip(),
+        ]);
+        if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+        unset($res['ok']);
+        json_ok($res);
+    }
     $res = gs_call('admin.members.list', [
         'requesterId' => $s['mid'],
         'q'      => $_GET['q']      ?? '',
@@ -13,6 +30,7 @@ if ($method === 'GET') {
         // Rows with something missing (photo / printedId / discipline), for the
         // print preflight. Allow-listed in the domain, same as sort.
         'missing' => $_GET['missing'] ?? '',
+        'level'  => $_GET['level']  ?? '',
         // Forward pagination + scope the domain layer (and the UI) rely on.
         // Dropping these silently broke the pager, truncated "export all" to
         // the first page, and turned the staff roster into "first 50 members".
@@ -45,7 +63,18 @@ if ($method === 'POST') {
             'The request was larger than this host accepts (post_max_size). Import from a shell, or split the roster.');
     }
     $action = (string)($body['action'] ?? '');
-    if ($action === 'reset2fa') {
+    if ($action === 'bulk') {
+        /* One action over many members. The action name, its payload and the
+           per-row verdicts all live in the domain — this route only forwards,
+           and deliberately does NOT forward `requesterId` from the body: the
+           operator is the verified session, never a field the caller sets. */
+        $res = gs_call('admin.members.bulk', array_merge(
+            is_array($body) ? $body : [],
+            // `action` on the wire selects the ROUTE branch; `op` names the
+            // bulk action. Two meanings for one key is how a caller ends up
+            // asking for "bulk" and getting "unknown_action" back.
+            ['action' => (string)($body['op'] ?? ''), 'requesterId' => $s['mid'], 'ip' => client_ip()]));
+    } elseif ($action === 'reset2fa') {
         $res = gs_call('admin.members.reset2fa', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'delete') {
         $res = gs_call('admin.members.delete', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);

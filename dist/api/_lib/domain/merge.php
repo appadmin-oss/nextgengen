@@ -57,7 +57,12 @@ const MERGE_MAX_ROWS = MERGE_RUN_MAX;
  * ceiling on the PROGRAMME rather than on the run — set where admin.php
  * already sets its export ceiling. */
 const MERGE_SCAN_MAX = 5000;
-const MERGE_AUDIENCES = ['students', 'volunteers'];
+/* 'members' is the NGG year-round roster — the population the MEMBER card is
+   for. It was missing, so the studio could drive a design over summer
+   participants and volunteers but not over the members this organisation
+   exists for: the card they carry could not be batch-produced from a design at
+   all, only from the hand-coded renderer. */
+const MERGE_AUDIENCES = ['members', 'students', 'volunteers'];
 
 /* How a print run may be ordered.
  *
@@ -82,7 +87,11 @@ const MERGE_SORTS = ['name', 'surname', 'displayId', 'centre', 'attended', 'read
  * one that has to hold here too, exactly as it does for the card studio.
  */
 function merge_gate(array $p, string $audience) {
-    return admin_cap_gate($p, $audience === 'volunteers' ? 'people' : 'summer');
+    /* The member roster and the volunteer register are the member desk's
+       (`people`); the summer roster is the Summer School desk's (`summer`).
+       Each audience is gated by whoever is allowed to READ that population,
+       because a merge exports it. */
+    return admin_cap_gate($p, $audience === 'students' ? 'summer' : 'people');
 }
 
 function merge_audience(array $p): string {
@@ -110,7 +119,8 @@ function admin_merge_rows(array $p): array {
     $audience = merge_audience($p);
     $g = merge_gate($p, $audience); if (!$g['ok']) return $g;
 
-    $rows = $audience === 'volunteers' ? merge_volunteer_rows() : merge_student_rows();
+    $rows = $audience === 'members' ? merge_member_rows()
+          : ($audience === 'volunteers' ? merge_volunteer_rows() : merge_student_rows());
 
     /* Facets first, from everything, then filter. */
     $facets = ['centres' => [], 'tracks' => [], 'roles' => [], 'maxAttended' => 0];
@@ -173,13 +183,29 @@ function merge_sort(array &$rows, string $sort, string $dir): void {
     if (!in_array($sort, MERGE_SORTS, true)) $sort = 'name';
     $desc = strtolower($dir) === 'desc';
     $txt = fn($v) => mb_strtolower(trim((string)$v));
-    $key = function (array $r) use ($sort, $txt) {
+    /* The name to sort by, whichever shape the row holds it in. A member row
+       carries `fullName` and no split parts, so every name sort put the whole
+       member audience in one undifferentiated block at the top. */
+    $nm = function (array $r) use ($txt) {
+        $split = trim(((string)($r['firstName'] ?? '')) . ' ' . ((string)($r['surname'] ?? '')));
+        return $txt($split !== '' ? $split : (string)($r['fullName'] ?? ''));
+    };
+    /* And the family name, which is what a register is filed by. For a member
+       row it is the last word of the one name we hold — a guess, and the same
+       guess the card's own binding makes, rather than a blank. */
+    $fam = function (array $r) use ($txt) {
+        $sn = trim((string)($r['surname'] ?? ''));
+        if ($sn !== '') return $txt($sn);
+        $parts = preg_split('/\s+/', trim((string)($r['fullName'] ?? ''))) ?: [];
+        return $txt(count($parts) > 1 ? end($parts) : ($parts[0] ?? ''));
+    };
+    $key = function (array $r) use ($sort, $txt, $nm, $fam) {
         switch ($sort) {
             // Surname first is how a register is filed and how a stack of
             // certificates gets handed out; "name" is how a person reads it.
-            case 'surname':   return [$txt($r['surname'] ?? ''), $txt($r['firstName'] ?? '')];
+            case 'surname':   return [$fam($r), $nm($r)];
             case 'displayId': return [$txt($r['displayId'] ?? '')];
-            case 'centre':    return [$txt($r['centre']['name'] ?? ''), $txt($r['surname'] ?? '')];
+            case 'centre':    return [$txt($r['centre']['name'] ?? ''), $fam($r)];
             case 'attended':  return [(int)($r['attended'] ?? 0)];
             /* "Ready" is the one an operator sorts by before a print run: it
                puts everything that will come out wrong at one end of the list
@@ -187,7 +213,7 @@ function merge_sort(array &$rows, string $sort, string $dir): void {
                with a hole in it, 1 = fine. */
             case 'ready':     return [(trim((string)($r['photoUrl'] ?? '')) !== ''
                                        && trim((string)($r['token'] ?? '')) !== '') ? 1 : 0];
-            default:          return [$txt($r['firstName'] ?? ''), $txt($r['surname'] ?? '')];
+            default:          return [$nm($r)];
         }
     };
     usort($rows, function ($a, $b) use ($key, $desc) {
@@ -215,7 +241,13 @@ function merge_keep(array $r, array $p): bool {
 
     $q = trim((string)($p['q'] ?? ''));
     if ($q !== '') {
-        $hay = mb_strtolower(trim(($r['firstName'] ?? '') . ' ' . ($r['surname'] ?? '') . ' ' . ($r['displayId'] ?? '')));
+        /* `fullName` belongs in the haystack, not only the split parts. The
+           member roster holds ONE name (the summer intake asks for the parts
+           separately), so searching a member audience by name matched nothing
+           at all — the search box looked broken on the roster it was added
+           for. All three are included because a row carries whichever it has. */
+        $hay = mb_strtolower(trim(($r['firstName'] ?? '') . ' ' . ($r['surname'] ?? '')
+            . ' ' . ($r['fullName'] ?? '') . ' ' . ($r['displayId'] ?? '')));
         if (mb_strpos($hay, mb_strtolower($q)) === false) return false;
     }
 
@@ -283,6 +315,35 @@ function merge_student_rows(): array {
 }
 
 /** Every active volunteer — again with or without a card. */
+/**
+ * The NGG member roster, in card-row shape.
+ *
+ * Built by card_row_member() — the same function the member card batch reads —
+ * so a merged member card and one printed from the roster screen cannot
+ * disagree about a name, a level or a centre colour. That is the same rule the
+ * student and volunteer audiences follow, and the reason they follow it.
+ *
+ * Active members only. A merge is a print run: a card for somebody who has
+ * left is card stock spent on a credential that should not be in circulation,
+ * and the roster screen is where a lapsed member's status is put right.
+ */
+function merge_member_rows(): array {
+    $rows = db_all("SELECT * FROM members WHERE type = 'NGG' AND status = 'active' ORDER BY id ASC LIMIT " . MERGE_SCAN_MAX);
+    $centres = centre_index();
+    $out = [];
+    foreach ($rows as $m) {
+        $row = card_row_member($m, $centres);
+        $row['key'] = (string)$m['memberId'];
+        /* A member has no per-day attendance in this table — theirs is the
+           twelve-week Anchor record, which is a different thing with different
+           units. Left at zero rather than filled with a number that would read
+           as "days attended" and not be. */
+        $row['attended'] = 0;
+        $out[] = $row;
+    }
+    return $out;
+}
+
 function merge_volunteer_rows(): array {
     $rows = db_all("SELECT * FROM volunteers WHERE status = 'active' ORDER BY id ASC LIMIT " . MERGE_SCAN_MAX);
     $expiryOf = [];

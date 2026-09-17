@@ -88,13 +88,22 @@ function gs_cache_topics(): array {
         'posts'    => ['public.posts', 'post.get'],
         'events'   => ['public.events'],
         'anchor'   => ['public.anchorContent'],
-        // A centre's name, code and colour drive the public centre list AND the
-        // stats block that counts them.
-        'centres'  => ['public.centres', 'public.stats'],
+        /* A centre's name, code and colour drive the public centre list, the
+           stats block that counts them, AND the /summer page — which lists the
+           centres and the courses running at each, so a centre change that did
+           not purge it left the promotion page advertising a centre that had
+           been renamed or retired. */
+        'centres'  => ['public.centres', 'public.stats', 'public.summer'],
         // Featuring or hiding a post changes the public Showcase.
         'community' => ['community.showcase'],
-        // Enrolment counts feed the public stats block.
-        'students' => ['public.stats'],
+        /* Enrolment counts feed the public stats block, and the /summer page's
+           "places left" per centre. A centre filling up while the promotion is
+           running is exactly the fact that must not be five minutes stale. */
+        'students' => ['public.stats', 'public.summer'],
+        /* The edition's dates and its application window are on the promotion
+           page, so changing them has to reach it. Groups too: the page lists
+           the courses actually running at each centre, which comes from them. */
+        'summer'   => ['public.summer'],
     ];
 }
 

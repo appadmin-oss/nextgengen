@@ -78,6 +78,14 @@ function backend_dispatch(string $op, array $args = []): array {
             'session.ensureYear'      => 'session_ensure_year',
             // Admin
             'admin.members.list'      => 'admin_members_list',
+            /* Bulk over the member roster, plus the id list that makes
+               "apply to all N matching the filter" possible. Each bulk action
+               declares its own capability and every row comes back with its
+               own verdict — see _lib/domain/members-bulk.php for the guards
+               (self, staff tier, centre scope, bounds). */
+            'admin.members.issueIds'    => 'admin_members_issue_ids',
+            'admin.members.bulk'      => 'admin_members_bulk',
+            'admin.members.ids'       => 'admin_members_ids',
             'admin.members.upsert'    => 'admin_members_upsert',
             'admin.members.import'    => 'admin_members_import',
             'admin.requests.list'     => 'admin_requests_list',
@@ -98,6 +106,21 @@ function backend_dispatch(string $op, array $args = []): array {
             // Summer School (QR attendance + enrollment)
             'admin.summer.overview'       => 'admin_summer_overview',
             'admin.summer.cohort.upsert'  => 'admin_summer_cohort_upsert',
+            /* Summer School structure. An EDITION is one season
+               (`summer_cohorts`, whose id is the `cohortId` every summer table
+               carries); a GROUP is a class within it (`summer_groups`). Both
+               gate on `summer`. The centre DIRECTORY is deliberately not here:
+               a centre is an NGG-wide place whose code is the printed ID prefix
+               on every member card, so writing it gates on `people`. See
+               _lib/domain/summer-editions.php. */
+            'admin.summer.editions'       => 'admin_summer_editions',
+            'admin.summer.edition.save'   => 'admin_summer_edition_save',
+            'admin.summer.edition.status' => 'admin_summer_edition_status',
+            'admin.summer.groups'         => 'admin_summer_groups',
+            'admin.summer.group.save'     => 'admin_summer_group_save',
+            'admin.summer.group.delete'   => 'admin_summer_group_delete',
+            'admin.summer.group.assign'   => 'admin_summer_group_assign',
+            'admin.summer.group.report'   => 'admin_summer_group_report',
             'admin.summer.qr.mint'        => 'admin_summer_qr_mint',
             'admin.summer.qr.list'        => 'admin_summer_qr_list',
             'admin.summer.qr.void'        => 'admin_summer_qr_void',
@@ -163,6 +186,12 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.club.promotable'       => 'admin_club_promotable',
             'admin.club.promote'          => 'admin_club_promote',
             'admin.club.members'          => 'admin_club_members',
+            /* A club coordinator's own bulk actions. Deliberately narrower
+               than the member desk's — see domain/club.php: `club` manages
+               participation, and must not become a quiet superset of
+               `people`. */
+            'admin.club.promote.bulk'     => 'admin_club_promote_bulk',
+            'admin.club.members.bulk'     => 'admin_club_members_bulk',
             // Anchor Circle — student side (member) + portal side (guardian)
             'auth.gateway'                => 'auth_gateway',
             'hooks.attendance'            => 'hooks_attendance',
@@ -217,6 +246,17 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.card.template.publish'       => 'admin_card_template_publish',
             'admin.card.template.check'         => 'admin_card_template_check',
             'admin.card.template.delete'        => 'admin_card_template_delete',
+            /* ID card ISSUANCE. The template system froze a published version
+               and promised print runs would record it; nothing did. These do —
+               one row per batch and one per person, each carrying the frozen
+               version, so "what is in this member's hand" and "reprint it
+               exactly as it was in July" are answerable. Same `people` gate as
+               the templates: deciding what a credential looks like and issuing
+               one are the same trust boundary. See domain/card-runs.php. */
+            'admin.card.run.record'             => 'admin_card_run_record',
+            'admin.card.runs'                   => 'admin_card_runs',
+            'admin.card.run.get'                => 'admin_card_run_get',
+            'admin.card.history'                => 'admin_card_history',
             /* The design asset library. Images placed in a design used to be
                data: URLs inside the design itself, which capped a poster at one
                small photograph — see api/_lib/domain/design-assets.php. */
@@ -254,6 +294,10 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.profile.note.upsert'   => 'admin_profile_note_upsert',
             'admin.profile.note.delete'   => 'admin_profile_note_delete',
             'admin.cards.data'            => 'admin_cards_data',
+            /* The public Summer School page: the live edition, the academies
+               and the centres with what runs at each, in one cacheable read.
+               See domain/summer-editions.php. */
+            'public.summer'               => 'public_summer_page',
             'gate.context'                => 'gate_context',
             'gate.register'               => 'gate_register',
             'parent.verify.context'       => 'parent_verify_context',
@@ -377,6 +421,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.hierarchy.upsert'    => 'admin_hierarchy_upsert',
             'admin.hierarchy.delete'    => 'admin_hierarchy_delete',
             'admin.vcards.data'         => 'admin_volunteer_cards_data',
+            'admin.mcards.data'         => 'admin_mcards_data',
             'admin.id.resend'           => 'admin_id_resend',
             'admin.photo.queue'         => 'admin_photo_queue',
             'admin.photo.claim'         => 'photo_claim',

@@ -4589,6 +4589,928 @@ chk('cards: gate context serves centre options for the centre field', (function 
     return true; // no centre field in the form — acceptable
 })());
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Summer School vs NGG centres — WHO OWNS WHAT
+   ═══════════════════════════════════════════════════════════════════════════
+
+   A centre is a PLACE and it belongs to NGG the organisation: an NGG member is
+   posted to one all year round, `members.centre` points at its name, and
+   `centres.code` is the printed ID prefix and band colour on that member's
+   card. The whole directory used to gate on the `summer` capability, so:
+
+     · a Summer School coordinator could rename or delete the centre every NGG
+       member's record and printed card depended on, and
+     · a year-round member administrator (`people`, no `summer`) could not add
+       a centre at all.
+
+   READ is open to both desks — each needs the list to do its job. WRITE is
+   `people`. What a coordinator owns instead is their own structure: the
+   EDITION and its GROUPS, below.
+*/
+$SUMONLY = 'NGG-2025-0700';   // summer_admin — caps: ['summer']
+db_insert('members', ['memberId' => 'NGG-2025-0730', 'fullName' => 'Pam People', 'email' => 'people-only@example.com',
+    'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+$PEOPLEONLY = 'NGG-2025-0730'; // admin — caps: content, people, inbox (no summer)
+
+chk('centres: the Summer School desk can READ the directory', (function () use ($SUMONLY) {
+    $l = backend_dispatch('admin.centres.list', ['requesterId' => $SUMONLY]);
+    return !empty($l['ok']) && is_array($l['centres']);
+})());
+chk('…and is told it may not write it', (function () use ($SUMONLY) {
+    return backend_dispatch('admin.centres.list', ['requesterId' => $SUMONLY])['canWrite'] === false;
+})());
+chk('centres: the Summer School desk CANNOT create one', (function () use ($SUMONLY) {
+    $r = backend_dispatch('admin.centres.upsert', ['requesterId' => $SUMONLY, 'data' => ['name' => 'Coordinator Centre', 'code' => 'CCX', 'color' => '#123456']]);
+    return ($r['error'] ?? '') === 'forbidden' && ($r['detail'] ?? '') === 'missing_cap:people';
+})());
+chk('centres: …nor delete one', (function () use ($SUMONLY) {
+    return backend_dispatch('admin.centres.delete', ['requesterId' => $SUMONLY, 'centreId' => 'CTR-NOPE'])['error'] === 'forbidden';
+})());
+chk('centres: the member desk CAN, without holding the summer cap', (function () use ($PEOPLEONLY) {
+    $r = backend_dispatch('admin.centres.upsert', ['requesterId' => $PEOPLEONLY, 'data' => ['name' => 'Member Desk Centre', 'code' => 'MDC', 'color' => '#123456']]);
+    return !empty($r['ok']) && backend_dispatch('admin.centres.list', ['requesterId' => $PEOPLEONLY])['canWrite'] === true;
+})());
+chk('centres: the row reports the two programmes separately', (function () {
+    $l = backend_dispatch('admin.centres.list', ['requesterId' => 'NGG-2025-0099']);
+    foreach ($l['centres'] as $c) {
+        if ((string)$c['code'] !== 'IJ') continue;
+        // Ijaiye carries the verified summer students seeded above AND is the
+        // centre of no NGG member, so the two numbers must differ in kind
+        // rather than being one figure read two ways.
+        return array_key_exists('summerEnrolled', $c) && array_key_exists('members', $c)
+            && $c['enrolled'] === $c['summerEnrolled'];
+    }
+    return false;
+})());
+
+/* Deleting a centre used to be an unconditional DELETE on a row that member
+   records point at BY NAME, that summer participants point at by name, that
+   summer groups point at by id, and whose code is already printed on physical
+   cards. Nothing broke loudly — the records simply started pointing at a
+   centre that did not exist. */
+chk('centres: deleting one that records point at is refused, and says what points at it', (function () {
+    $c = backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Doomed Centre', 'code' => 'DMC', 'color' => '#222222']]);
+    db_insert('members', ['memberId' => 'NGG-2025-0731', 'fullName' => 'Posted Here', 'email' => 'posted@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Doomed Centre', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.centres.delete', ['requesterId' => 'NGG-2025-0099', 'centreId' => $c['centreId']]);
+    $GLOBALS['__doomed'] = $c['centreId'];
+    return ($r['error'] ?? '') === 'centre_in_use' && (int)($r['uses']['members'] ?? 0) === 1;
+})());
+chk('centres: retiring keeps the row, so those records still resolve', (function () {
+    $id = $GLOBALS['__doomed'];
+    $r = backend_dispatch('admin.centres.delete', ['requesterId' => 'NGG-2025-0099', 'centreId' => $id, 'retire' => true]);
+    return !empty($r['retired']) && (string)db_row('SELECT status FROM centres WHERE centreId = ?', [$id])['status'] === 'retired';
+})());
+chk('centres: force really removes it', (function () {
+    $id = $GLOBALS['__doomed'];
+    $r = backend_dispatch('admin.centres.delete', ['requesterId' => 'NGG-2025-0099', 'centreId' => $id, 'force' => true]);
+    return !empty($r['ok']) && db_row('SELECT id FROM centres WHERE centreId = ?', [$id]) === null;
+})());
+chk('centres: an unknown id is not_found, not a silent success', backend_dispatch('admin.centres.delete', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CTR-GHOST'])['error'] === 'not_found');
+
+/* ── Summer School EDITIONS ────────────────────────────────────────────────
+   `summer_cohorts` is the edition table; its id is the `cohortId` every other
+   summer table carries. The old writer validated nothing and demoted the
+   outgoing edition to 'archived' — a status that in this system means
+   "attendance rolled up and possibly purged", which nothing had done. */
+chk('editions: the list always has at least one, and names the current', (function () {
+    $r = backend_dispatch('admin.summer.editions', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($r['ok']) && count($r['editions']) >= 1 && $r['currentId'] !== ''
+        && in_array('planning', $r['states'], true);
+})());
+chk('editions: a nonsense year is refused', backend_dispatch('admin.summer.edition.save',
+    ['requesterId' => 'NGG-2025-0099', 'data' => ['year' => 12, 'name' => 'Nope']])['error'] === 'bad_year');
+chk('editions: a malformed date is refused rather than stored', backend_dispatch('admin.summer.edition.save',
+    ['requesterId' => 'NGG-2025-0099', 'data' => ['year' => 2031, 'startDate' => '31/07/2031']])['error'] === 'bad_date');
+chk('editions: an impossible date is refused', backend_dispatch('admin.summer.edition.save',
+    ['requesterId' => 'NGG-2025-0099', 'data' => ['year' => 2031, 'startDate' => '2031-02-30']])['error'] === 'bad_date');
+chk('editions: an end before the start is refused', backend_dispatch('admin.summer.edition.save',
+    ['requesterId' => 'NGG-2025-0099', 'data' => ['year' => 2031, 'startDate' => '2031-08-01', 'endDate' => '2031-07-01']])['error'] === 'end_before_start');
+chk('editions: an inverted application window is refused', backend_dispatch('admin.summer.edition.save',
+    ['requesterId' => 'NGG-2025-0099', 'data' => ['year' => 2031, 'applyOpensAt' => '2031-06-01', 'applyClosesAt' => '2031-05-01']])['error'] === 'apply_window_inverted');
+chk('editions: an unknown status is refused', backend_dispatch('admin.summer.edition.save',
+    ['requesterId' => 'NGG-2025-0099', 'data' => ['year' => 2031, 'status' => 'whenever']])['error'] === 'bad_status');
+$ED31 = backend_dispatch('admin.summer.edition.save', ['requesterId' => 'NGG-2025-0099',
+    'data' => ['year' => 2031, 'name' => 'Summer School 2031', 'status' => 'planning',
+               'startDate' => '2031-07-06', 'endDate' => '2031-08-15',
+               'applyOpensAt' => '2031-05-01', 'applyClosesAt' => '2031-06-20']]);
+chk('editions: a new one is created with a year-derived id', !empty($ED31['ok']) && $ED31['editionId'] === 'SUM-2031');
+chk('editions: it defaults a code from the year', (string)db_row('SELECT code FROM summer_cohorts WHERE cohortId = ?', ['SUM-2031'])['code'] === 'SS31');
+chk('editions: a second edition in the same year gets a suffix, not a collision', (function () {
+    $r = backend_dispatch('admin.summer.edition.save', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['year' => 2031, 'name' => 'Summer School 2031 · December']]);
+    return !empty($r['ok']) && $r['editionId'] === 'SUM-2031-2';
+})());
+chk('editions: activating one demotes the other to CLOSED, never to archived', (function () {
+    db_exec("UPDATE summer_cohorts SET status = 'active' WHERE cohortId = 'SUM-2031-2'");
+    $r = backend_dispatch('admin.summer.edition.status', ['requesterId' => 'NGG-2025-0099', 'editionId' => 'SUM-2031', 'status' => 'active']);
+    if (empty($r['ok'])) return false;
+    return (string)db_row('SELECT status FROM summer_cohorts WHERE cohortId = ?', ['SUM-2031-2'])['status'] === 'closed'
+        && (string)db_row('SELECT status FROM summer_cohorts WHERE cohortId = ?', ['SUM-2031'])['status'] === 'active';
+})());
+chk('editions: exactly one is active', (int)(db_row("SELECT COUNT(*) c FROM summer_cohorts WHERE status = 'active'")['c'] ?? 0) === 1);
+chk('editions: the status dropdown cannot fake an archive', backend_dispatch('admin.summer.edition.status',
+    ['requesterId' => 'NGG-2025-0099', 'editionId' => 'SUM-2031', 'status' => 'archived'])['error'] === 'use_archive_op');
+chk('editions: the pre-edition `cohort` action still works, through the same writer', (function () {
+    $r = backend_dispatch('admin.summer.cohort.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['cohortId' => 'SUM-2031', 'name' => 'Renamed by an old client']]);
+    return !empty($r['ok']) && (string)$r['cohortId'] === 'SUM-2031'
+        && (string)db_row('SELECT name FROM summer_cohorts WHERE cohortId = ?', ['SUM-2031'])['name'] === 'Renamed by an old client';
+})());
+chk('editions: gated on the summer cap', backend_dispatch('admin.summer.editions', ['requesterId' => $PEOPLEONLY])['error'] === 'forbidden');
+
+/* ── Summer School GROUPS (the thing a coordinator means by "cohort") ──────
+   An edition's participants were one flat list filtered by centre and track,
+   which cannot express two Music classes at one centre, cannot be handed to a
+   named lead, and cannot be reported on. */
+$CTRG = backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Grouptown', 'code' => 'GTN', 'color' => '#334455']])['centreId'];
+chk('groups: a one-character name is refused', backend_dispatch('admin.summer.group.save',
+    ['requesterId' => 'NGG-2025-0099', 'data' => ['editionId' => 'SUM-2031', 'name' => 'x']])['error'] === 'bad_name');
+chk('groups: an unknown centre is refused', backend_dispatch('admin.summer.group.save',
+    ['requesterId' => 'NGG-2025-0099', 'data' => ['editionId' => 'SUM-2031', 'name' => 'Nowhere class', 'centreId' => 'CTR-GHOST']])['error'] === 'centre_not_found');
+chk('groups: an unknown edition is refused', backend_dispatch('admin.summer.group.save',
+    ['requesterId' => 'NGG-2025-0099', 'data' => ['editionId' => 'SUM-1999', 'name' => 'Time travel']])['error'] === 'edition_not_found');
+chk('groups: a negative capacity is refused', backend_dispatch('admin.summer.group.save',
+    ['requesterId' => 'NGG-2025-0099', 'data' => ['editionId' => 'SUM-2031', 'name' => 'Bad cap', 'capacity' => -4]])['error'] === 'bad_capacity');
+$GA = backend_dispatch('admin.summer.group.save', ['requesterId' => 'NGG-2025-0099',
+    'data' => ['editionId' => 'SUM-2031', 'name' => 'Grouptown · Music · Morning', 'centreId' => $CTRG,
+               'faculty' => 'Music', 'track' => 'Music', 'capacity' => 2, 'meetDays' => '6, 3, 1, 3, 9, 0', 'meetTime' => '09:00']]);
+chk('groups: created, with a code derived from the centre and course', !empty($GA['ok']) && $GA['code'] === 'GTN-MUS');
+chk('groups: meeting days are deduped, sorted and range-checked', (string)db_row('SELECT meetDays FROM summer_groups WHERE groupId = ?', [$GA['groupId']])['meetDays'] === '1,3,6');
+$GB = backend_dispatch('admin.summer.group.save', ['requesterId' => 'NGG-2025-0099',
+    'data' => ['editionId' => 'SUM-2031', 'name' => 'Grouptown · Music · Afternoon', 'centreId' => $CTRG, 'track' => 'Music', 'capacity' => 0]]);
+chk('groups: a second class at the same centre and course is allowed, with its own code',
+    !empty($GB['ok']) && $GB['code'] === 'GTN-MUS-2' && $GB['groupId'] !== $GA['groupId']);
+chk('groups: the same code is free in a DIFFERENT edition', (function () {
+    $r = backend_dispatch('admin.summer.group.save', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['editionId' => 'SUM-2031-2', 'name' => 'Next season, same room', 'code' => 'GTN-MUS']]);
+    return !empty($r['ok']) && $r['code'] === 'GTN-MUS';
+})());
+chk('groups: a group cannot be moved to another edition', (function () use ($GA) {
+    return backend_dispatch('admin.summer.group.save', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['groupId' => $GA['groupId'], 'editionId' => 'SUM-2031-2', 'name' => 'Grouptown · Music · Morning']])['error'] === 'edition_immutable';
+})());
+
+// Three participants in the 2031 edition, and one in another, to prove the
+// edition boundary is enforced rather than assumed.
+foreach ([['SG-P1', 'Ada Group'], ['SG-P2', 'Bode Group'], ['SG-P3', 'Chidi Group']] as $i => $pr) {
+    db_insert('summer_students', ['studentId' => $pr[0], 'cohortId' => 'SUM-2031', 'token' => 'TKG' . $i,
+        'handle' => 'grp' . $i, 'fullName' => $pr[1], 'age' => 13, 'centre' => 'Grouptown', 'track' => 'Music',
+        'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+}
+db_insert('summer_students', ['studentId' => 'SG-OTHER', 'cohortId' => 'SUM-2031-2', 'token' => 'TKGO',
+    'handle' => 'grpo', 'fullName' => 'Other Edition', 'age' => 13, 'centre' => 'Grouptown', 'track' => 'Music',
+    'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+chk('assign: nothing selected is a refusal, not a no-op success', backend_dispatch('admin.summer.group.assign',
+    ['requesterId' => 'NGG-2025-0099', 'groupId' => $GA['groupId'], 'studentIds' => []])['error'] === 'nothing_selected');
+$ASG = backend_dispatch('admin.summer.group.assign', ['requesterId' => 'NGG-2025-0099',
+    'groupId' => $GA['groupId'], 'studentIds' => ['SG-P1', 'SG-P2', 'SG-P3', 'SG-OTHER', 'SG-GHOST']]);
+chk('assign: a capacity of 2 places two and refuses the rest — partial, not all-or-nothing',
+    !empty($ASG['ok']) && $ASG['assigned'] === 2 && $ASG['skipped'] === 3);
+chk('assign: …and NAMES what did not fit, so the coordinator can act on it', (function () use ($ASG) {
+    $errs = [];
+    foreach ($ASG['results'] as $r) if (empty($r['ok'])) $errs[] = $r['error'];
+    sort($errs);
+    return $errs === ['group_full', 'not_found', 'other_edition'];
+})());
+chk('assign: a participant from another edition is refused, not moved', (string)db_row('SELECT groupId FROM summer_students WHERE studentId = ?', ['SG-OTHER'])['groupId'] === '');
+chk('assign: re-running is idempotent, and says so rather than double-counting', (function () use ($GA) {
+    $r = backend_dispatch('admin.summer.group.assign', ['requesterId' => 'NGG-2025-0099',
+        'groupId' => $GA['groupId'], 'studentIds' => ['SG-P1']]);
+    return !empty($r['ok']) && $r['assigned'] === 0 && !empty($r['results'][0]['unchanged']);
+})());
+chk('groups: shrinking capacity below the children already in the room is refused', (function () use ($GA) {
+    $r = backend_dispatch('admin.summer.group.save', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['groupId' => $GA['groupId'], 'name' => 'Grouptown · Music · Morning', 'capacity' => 1]]);
+    return ($r['error'] ?? '') === 'capacity_below_enrolled' && (int)$r['enrolled'] === 2;
+})());
+chk('groups: the edition reports how many participants are not yet grouped', (function () {
+    $r = backend_dispatch('admin.summer.editions', ['requesterId' => 'NGG-2025-0099']);
+    foreach ($r['editions'] as $e) if ($e['editionId'] === 'SUM-2031') return $e['participants'] === 3 && $e['ungrouped'] === 1;
+    return false;
+})());
+chk('groups: deleting one with children in it is refused', (function () use ($GA) {
+    $r = backend_dispatch('admin.summer.group.delete', ['requesterId' => 'NGG-2025-0099', 'groupId' => $GA['groupId']]);
+    return ($r['error'] ?? '') === 'group_not_empty' && (int)$r['participants'] === 2;
+})());
+chk('groups: reassigning to a group in another edition is refused', (function () use ($GA) {
+    $other = db_row("SELECT groupId FROM summer_groups WHERE cohortId = 'SUM-2031-2' LIMIT 1")['groupId'];
+    return backend_dispatch('admin.summer.group.delete', ['requesterId' => 'NGG-2025-0099',
+        'groupId' => $GA['groupId'], 'reassignTo' => $other])['error'] === 'cross_edition';
+})());
+chk('groups: deleting WITH a destination moves everybody across', (function () use ($GA, $GB) {
+    $r = backend_dispatch('admin.summer.group.delete', ['requesterId' => 'NGG-2025-0099',
+        'groupId' => $GA['groupId'], 'reassignTo' => $GB['groupId']]);
+    if (empty($r['ok']) || (int)$r['moved'] !== 2) return false;
+    return (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE groupId = ?", [$GB['groupId']])['c'] ?? 0) === 2
+        && db_row('SELECT id FROM summer_groups WHERE groupId = ?', [$GA['groupId']]) === null;
+})());
+chk('groups: a capped destination that cannot hold them all is refused before anybody moves', (function () use ($GB, $CTRG) {
+    $tiny = backend_dispatch('admin.summer.group.save', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['editionId' => 'SUM-2031', 'name' => 'Tiny room', 'centreId' => $CTRG, 'capacity' => 1]]);
+    $r = backend_dispatch('admin.summer.group.delete', ['requesterId' => 'NGG-2025-0099',
+        'groupId' => $GB['groupId'], 'reassignTo' => $tiny['groupId']]);
+    return ($r['error'] ?? '') === 'destination_full' && (int)$r['incoming'] === 2
+        && (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE groupId = ?", [$GB['groupId']])['c'] ?? 0) === 2;
+})());
+chk('groups: unassigning returns them to the edition pool rather than losing them', (function () use ($GB) {
+    $r = backend_dispatch('admin.summer.group.delete', ['requesterId' => 'NGG-2025-0099', 'groupId' => $GB['groupId'], 'unassign' => true]);
+    if (empty($r['ok']) || (int)$r['moved'] !== 2) return false;
+    return (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = 'SUM-2031' AND status = 'active' AND (groupId IS NULL OR groupId = '')")['c'] ?? 0) === 3;
+})());
+chk('groups: a group that has never met reports NO attendance rate, not 0%', (function () use ($CTRG) {
+    $g = backend_dispatch('admin.summer.group.save', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['editionId' => 'SUM-2031', 'name' => 'Not started yet', 'centreId' => $CTRG]]);
+    backend_dispatch('admin.summer.group.assign', ['requesterId' => 'NGG-2025-0099', 'groupId' => $g['groupId'], 'studentIds' => ['SG-P1']]);
+    $rep = backend_dispatch('admin.summer.group.report', ['requesterId' => 'NGG-2025-0099', 'editionId' => 'SUM-2031']);
+    foreach ($rep['groups'] as $row) if ($row['groupId'] === $g['groupId']) return $row['attendanceRate'] === null && $row['enrolled'] === 1;
+    return false;
+})());
+chk('groups: gated on the summer cap', backend_dispatch('admin.summer.groups', ['requesterId' => $PEOPLEONLY])['error'] === 'forbidden');
+chk('groups: a bulk assignment is bounded', (function () use ($GB) {
+    $many = array_map(fn($i) => 'SG-BULK-' . $i, range(1, SUMMER_ASSIGN_MAX + 1));
+    return backend_dispatch('admin.summer.group.assign', ['requesterId' => 'NGG-2025-0099', 'groupId' => '', 'studentIds' => $many])['error'] === 'too_many';
+})());
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Member desk — BULK ACTIONS, and every guard that makes them safe
+   ═══════════════════════════════════════════════════════════════════════════
+   The member roster and the Club roster — the two screens where bulk mattered
+   most — had no bulk actions at all, so a four-hundred-member roster was
+   maintained one drawer at a time or not at all. What matters is not that the
+   loop exists but that it refuses the right rows: the operator's own account,
+   staff accounts, members outside a scoped admin's centres, and anything over
+   the batch bound. Each of those is a lockout or a privilege problem, and each
+   is silent if it is not tested.
+*/
+db_insert('members', ['memberId' => 'NGG-BULK-1', 'fullName' => 'Bulk One', 'email' => 'b1@example.com',
+    'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('members', ['memberId' => 'NGG-BULK-2', 'fullName' => 'Bulk Two', 'email' => 'b2@example.com',
+    'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('members', ['memberId' => 'NGG-BULK-STAFF', 'fullName' => 'Bulk Staffer', 'email' => 'bstaff@example.com',
+    'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+chk('bulk: an unknown action is refused before anything is gated', backend_dispatch('admin.members.bulk',
+    ['requesterId' => 'NGG-2025-0099', 'action' => 'drop_everything', 'memberIds' => ['NGG-BULK-1']])['error'] === 'unknown_action');
+chk('bulk: an empty selection is a refusal, not a silent success', backend_dispatch('admin.members.bulk',
+    ['requesterId' => 'NGG-2025-0099', 'action' => 'status', 'status' => 'active', 'memberIds' => []])['error'] === 'nothing_selected');
+chk('bulk: the batch is bounded', (function () {
+    $many = array_map(fn($i) => 'NGG-GHOST-' . $i, range(1, MEMBERS_BULK_MAX + 1));
+    return backend_dispatch('admin.members.bulk', ['requesterId' => 'NGG-2025-0099', 'action' => 'status',
+        'status' => 'active', 'memberIds' => $many])['error'] === 'too_many';
+})());
+chk('bulk: a status not on the list is refused rather than stored', backend_dispatch('admin.members.bulk',
+    ['requesterId' => 'NGG-2025-0099', 'action' => 'status', 'status' => 'deleted', 'memberIds' => ['NGG-BULK-1']])['error'] === 'bad_status');
+chk('bulk: the payload is validated BEFORE any row is written', (function () {
+    backend_dispatch('admin.members.bulk', ['requesterId' => 'NGG-2025-0099', 'action' => 'status',
+        'status' => 'nonsense', 'memberIds' => ['NGG-BULK-1', 'NGG-BULK-2']]);
+    return (string)db_row('SELECT status FROM members WHERE memberId = ?', ['NGG-BULK-1'])['status'] === 'active';
+})());
+chk('bulk: a centre that does not exist is refused — the column stores a NAME', backend_dispatch('admin.members.bulk',
+    ['requesterId' => 'NGG-2025-0099', 'action' => 'centre', 'centre' => 'Atlantis', 'memberIds' => ['NGG-BULK-1']])['error'] === 'centre_not_found');
+chk('bulk: clearing the centre IS allowed — the roster has a filter for those', (function () {
+    $r = backend_dispatch('admin.members.bulk', ['requesterId' => 'NGG-2025-0099', 'action' => 'centre',
+        'centre' => '', 'memberIds' => ['NGG-BULK-2']]);
+    return !empty($r['ok']) && $r['applied'] === 1 && (string)db_row('SELECT centre FROM members WHERE memberId = ?', ['NGG-BULK-2'])['centre'] === '';
+})());
+chk('bulk: a status change applies, and is audited as ONE event naming the run', (function () {
+    $before = (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'admin.members.bulk'")['c'] ?? 0);
+    $r = backend_dispatch('admin.members.bulk', ['requesterId' => 'NGG-2025-0099', 'action' => 'status',
+        'status' => 'inactive', 'memberIds' => ['NGG-BULK-1', 'NGG-BULK-2']]);
+    $after = (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'admin.members.bulk'")['c'] ?? 0);
+    return !empty($r['ok']) && $r['applied'] === 2 && ($after - $before) === 1
+        && (string)db_row('SELECT status FROM members WHERE memberId = ?', ['NGG-BULK-1'])['status'] === 'inactive';
+})());
+chk('bulk: a row already in that state is reported unchanged, not counted as a change', (function () {
+    $r = backend_dispatch('admin.members.bulk', ['requesterId' => 'NGG-2025-0099', 'action' => 'status',
+        'status' => 'inactive', 'memberIds' => ['NGG-BULK-1']]);
+    return !empty($r['ok']) && $r['applied'] === 0 && !empty($r['results'][0]['unchanged']);
+})());
+
+/* The three guards that turn a convenience into a lockout if they are missing. */
+chk('bulk: the operator CANNOT include their own account', (function () {
+    $r = backend_dispatch('admin.members.bulk', ['requesterId' => 'NGG-2025-0099', 'action' => 'status',
+        'status' => 'suspended', 'memberIds' => ['NGG-2025-0099', 'NGG-BULK-1']]);
+    $own = null;
+    foreach ($r['results'] as $x) if ($x['id'] === 'NGG-2025-0099') $own = $x;
+    return $own && $own['ok'] === false && $own['error'] === 'own_account'
+        && (string)db_row('SELECT status FROM members WHERE memberId = ?', ['NGG-2025-0099'])['status'] === 'active';
+})());
+chk('bulk: a STAFF account cannot be status-changed from the member roster', (function () {
+    $r = backend_dispatch('admin.members.bulk', ['requesterId' => 'NGG-2025-0099', 'action' => 'status',
+        'status' => 'suspended', 'memberIds' => ['NGG-BULK-STAFF']]);
+    return $r['refused'] === 1 && $r['results'][0]['error'] === 'staff_account'
+        && (string)db_row('SELECT status FROM members WHERE memberId = ?', ['NGG-BULK-STAFF'])['status'] === 'active';
+})());
+chk('bulk: …but a harmless field on a staff account is fine (they have a centre too)', (function () {
+    $r = backend_dispatch('admin.members.bulk', ['requesterId' => 'NGG-2025-0099', 'action' => 'level',
+        'level' => 'C', 'memberIds' => ['NGG-BULK-STAFF']]);
+    return !empty($r['ok']) && $r['applied'] === 1;
+})());
+chk('bulk: a centre-scoped admin cannot reach outside their centres', (function () {
+    $ctr = backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['name' => 'Scopeville', 'code' => 'SCV', 'color' => '#445566']]);
+    db_insert('members', ['memberId' => 'NGG-SCOPED-ADM', 'fullName' => 'Scoped Admin', 'email' => 'scoped@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Scopeville',
+        'centreScope' => json_encode([$ctr['centreId']]), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'NGG-INSCOPE', 'fullName' => 'In Scope', 'email' => 'inscope@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Scopeville', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.members.bulk', ['requesterId' => 'NGG-SCOPED-ADM', 'action' => 'level',
+        'level' => 'D', 'memberIds' => ['NGG-INSCOPE', 'NGG-BULK-1']]);
+    $by = [];
+    foreach ($r['results'] as $x) $by[$x['id']] = $x;
+    return !empty($r['ok']) && $by['NGG-INSCOPE']['ok'] === true
+        && $by['NGG-BULK-1']['ok'] === false && $by['NGG-BULK-1']['error'] === 'out_of_scope'
+        && (string)db_row('SELECT level FROM members WHERE memberId = ?', ['NGG-BULK-1'])['level'] !== 'D';
+})());
+/* Grouptown, not Egbeda: Egbeda is a NAME on member rows that was never added
+   to the centre directory, so naming it gets `centre_not_found` first — which
+   is the right answer to a different question. This has to be a centre that
+   exists and is simply not theirs. */
+chk('bulk: …and cannot POST somebody to a centre outside their scope', backend_dispatch('admin.members.bulk',
+    ['requesterId' => 'NGG-SCOPED-ADM', 'action' => 'centre', 'centre' => 'Grouptown',
+     'memberIds' => ['NGG-INSCOPE']])['error'] === 'centre_out_of_scope');
+chk('bulk: an unknown member is named, and the rest still run', (function () {
+    $r = backend_dispatch('admin.members.bulk', ['requesterId' => 'NGG-2025-0099', 'action' => 'type',
+        'type' => 'Summer', 'memberIds' => ['NGG-BULK-1', 'NGG-NOBODY']]);
+    $by = [];
+    foreach ($r['results'] as $x) $by[$x['id']] = $x;
+    return $r['applied'] === 1 && $r['refused'] === 1 && $by['NGG-NOBODY']['error'] === 'not_found';
+})());
+chk('bulk: each action carries its OWN capability — the reminder switch is `fees`', (function () {
+    // A people-only admin (no fees cap) may set a status but not the dues
+    // reminder switch, which was split out of `people` on purpose.
+    $st = backend_dispatch('admin.members.bulk', ['requesterId' => 'NGG-2025-0730', 'action' => 'level',
+        'level' => 'B', 'memberIds' => ['NGG-BULK-1']]);
+    $fe = backend_dispatch('admin.members.bulk', ['requesterId' => 'NGG-2025-0730', 'action' => 'remindersOff',
+        'off' => 1, 'memberIds' => ['NGG-BULK-1']]);
+    return !empty($st['ok']) && ($fe['error'] ?? '') === 'forbidden' && ($fe['detail'] ?? '') === 'missing_cap:fees';
+})());
+chk('bulk: a plain member cannot run one at all', backend_dispatch('admin.members.bulk',
+    ['requesterId' => 'NGG-2025-0001', 'action' => 'status', 'status' => 'active', 'memberIds' => ['NGG-BULK-1']])['error'] === 'forbidden');
+
+/* "Apply to all N matching the filter" — the ids come from the SERVER, resolved
+   from the same filters the page was built with. A client-side union of the
+   pages it happens to have loaded is a different set. */
+chk('ids: the filter resolves to ids, not to a second roster read', (function () {
+    $r = backend_dispatch('admin.members.ids', ['requesterId' => 'NGG-2025-0099', 'status' => 'inactive']);
+    if (empty($r['ok']) || !is_array($r['memberIds'])) return false;
+    foreach ($r['memberIds'] as $id) {
+        if ((string)db_row('SELECT status FROM members WHERE memberId = ?', [$id])['status'] !== 'inactive') return false;
+    }
+    return count($r['memberIds']) === $r['total'];
+})());
+chk('ids: says when it capped, rather than truncating in silence', (function () {
+    $r = backend_dispatch('admin.members.ids', ['requesterId' => 'NGG-2025-0099']);
+    return array_key_exists('capped', $r) && $r['max'] === MEMBERS_BULK_MAX;
+})());
+chk('ids: a scoped admin only ever sees their own centres', (function () {
+    $r = backend_dispatch('admin.members.ids', ['requesterId' => 'NGG-SCOPED-ADM']);
+    foreach ($r['memberIds'] as $id) {
+        if ((string)db_row('SELECT centre FROM members WHERE memberId = ?', [$id])['centre'] !== 'Scopeville') return false;
+    }
+    return true;
+})());
+chk('ids: gated on the people cap', backend_dispatch('admin.members.ids', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NGG Club desk — bulk promotion, and the roster a coordinator can finally see
+   ═══════════════════════════════════════════════════════════════════════════
+   The club screens were read-only lists with one exception, and three of their
+   behaviours were wrong in ways nobody would notice:
+
+     · promotion was one child at a time, so a graduating edition of four
+       hundred was four hundred confirmations and in practice did not happen;
+     · the roster was hard-wired to status='active', so the two groups a roster
+       exists to track (who went quiet, who graduated) could not be seen at all;
+     · the promotable list ran an attendance query AND a profile lookup PER
+       STUDENT — 800+ queries to render four columns.
+
+   And the club capability must stay NARROWER than the member desk's: a club
+   coordinator manages participation, not suspension, not membership type, not
+   levels and not the dues switch. Otherwise `club` is a quiet superset of
+   `people`, which is not what granting it says.
+*/
+db_insert('members', ['memberId' => 'NGG-CLUBADM', 'fullName' => 'Cleo Club', 'email' => 'clubadm@example.com',
+    'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'centre' => 'Ijaiye', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+$CLUBADM = 'NGG-CLUBADM';
+db_insert('summer_cohorts', ['cohortId' => 'SUM-CLUB', 'name' => 'Club Bridge Edition', 'year' => 2029, 'status' => 'closed', 'createdAt' => now_iso()]);
+foreach ([['CB-1', 'Club Kid One', 'cb1@example.com'], ['CB-2', 'Club Kid Two', ''], ['CB-3', 'Club Kid Three', 'cb3@example.com']] as $i => $row) {
+    db_insert('summer_students', ['studentId' => $row[0], 'cohortId' => 'SUM-CLUB', 'token' => 'SUMQR-CB' . $i,
+        'handle' => 'cb' . $i, 'fullName' => $row[1], 'age' => 14, 'centre' => 'Ijaiye', 'track' => 'Piano',
+        'parentEmail' => $row[2], 'status' => 'graduated', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+}
+
+chk('club: the promotable list is paged and totalled, not returned whole', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.promotable', ['requesterId' => $CLUBADM, 'pageSize' => 2]);
+    return !empty($r['ok']) && count($r['students']) === 2 && $r['total'] >= 3 && $r['pageSize'] === 2;
+})());
+chk('club: …and searchable', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.promotable', ['requesterId' => $CLUBADM, 'q' => 'kid two']);
+    return count($r['students']) === 1 && $r['students'][0]['studentId'] === 'CB-2';
+})());
+chk('club: a child with no guardian email is FLAGGED, not hidden', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.promotable', ['requesterId' => $CLUBADM, 'q' => 'kid two']);
+    return $r['students'][0]['noContact'] === true;
+})());
+chk('club: …and one with an email is not', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.promotable', ['requesterId' => $CLUBADM, 'q' => 'kid one']);
+    return $r['students'][0]['noContact'] === false;
+})());
+chk('club: bulk promotion refuses an empty selection', backend_dispatch('admin.club.promote.bulk',
+    ['requesterId' => $CLUBADM, 'studentIds' => []])['error'] === 'nothing_selected');
+chk('club: …and is bounded', (function () use ($CLUBADM) {
+    $many = array_map(fn($i) => 'CB-GHOST-' . $i, range(1, CLUB_PROMOTE_MAX + 1));
+    return backend_dispatch('admin.club.promote.bulk', ['requesterId' => $CLUBADM, 'studentIds' => $many])['error'] === 'too_many';
+})());
+$CBULK = backend_dispatch('admin.club.promote.bulk', ['requesterId' => $CLUBADM,
+    'studentIds' => ['CB-1', 'CB-2', 'CB-GONE']]);
+chk('club: a graduating group is promoted in one action, partially', (function () use ($CBULK) {
+    return !empty($CBULK['ok']) && $CBULK['promoted'] === 2 && $CBULK['refused'] === 1;
+})());
+chk('club: …and the one that could not be is NAMED', (function () use ($CBULK) {
+    foreach ($CBULK['results'] as $x) if ($x['id'] === 'CB-GONE') return $x['ok'] === false && $x['error'] === 'not_found';
+    return false;
+})());
+chk('club: …the Summer School records are marked promoted', (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE studentId IN ('CB-1','CB-2') AND status='promoted'")['c'] ?? 0) === 2);
+chk('club: …each got a real member row carrying the guardian email',
+    (string)(db_row("SELECT email FROM members WHERE notes LIKE '%CB-1%' LIMIT 1")['email'] ?? '') === 'cb1@example.com');
+chk('club: re-promoting the same child is refused, not duplicated', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.promote.bulk', ['requesterId' => $CLUBADM, 'studentIds' => ['CB-1']]);
+    return $r['promoted'] === 0 && $r['results'][0]['error'] === 'already_promoted';
+})());
+chk('club: bulk promotion is gated on the club cap', backend_dispatch('admin.club.promote.bulk',
+    ['requesterId' => 'NGG-2025-0001', 'studentIds' => ['CB-3']])['error'] === 'forbidden');
+
+/* The roster. Absent `status` still means active — the default this screen has
+   always had — and 'all' is how you ask for everybody. */
+chk('club: the roster defaults to active, as it always did', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.members', ['requesterId' => $CLUBADM]);
+    if (empty($r['ok'])) return false;
+    foreach ($r['members'] as $m) if ((string)$m['status'] !== 'active') return false;
+    return true;
+})());
+chk('club: …but the inactive and graduated can finally be SEEN', (function () use ($CLUBADM) {
+    $mid = (string)db_row("SELECT memberId FROM members WHERE notes LIKE '%CB-1%' LIMIT 1")['memberId'];
+    db_update('members', ['status' => 'inactive'], ['memberId' => $mid]);
+    $act = backend_dispatch('admin.club.members', ['requesterId' => $CLUBADM]);
+    $ina = backend_dispatch('admin.club.members', ['requesterId' => $CLUBADM, 'status' => 'inactive']);
+    $all = backend_dispatch('admin.club.members', ['requesterId' => $CLUBADM, 'status' => 'all']);
+    $inActive = false; foreach ($act['members'] as $m) if ($m['memberId'] === $mid) $inActive = true;
+    $inInactive = false; foreach ($ina['members'] as $m) if ($m['memberId'] === $mid) $inInactive = true;
+    $inAll = false; foreach ($all['members'] as $m) if ($m['memberId'] === $mid) $inAll = true;
+    db_update('members', ['status' => 'active'], ['memberId' => $mid]);
+    return !$inActive && $inInactive && $inAll;
+})());
+chk('club: …and it is paged and totalled', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.members', ['requesterId' => $CLUBADM, 'pageSize' => 1]);
+    return $r['pageSize'] === 1 && $r['total'] >= 1 && count($r['members']) <= 1;
+})());
+
+/* The club desk's own bulk, and the ceiling on it. */
+$CBM = (string)db_row("SELECT memberId FROM members WHERE notes LIKE '%CB-2%' LIMIT 1")['memberId'];
+chk('club bulk: participation can be set', (function () use ($CLUBADM, $CBM) {
+    $r = backend_dispatch('admin.club.members.bulk', ['requesterId' => $CLUBADM, 'action' => 'status',
+        'status' => 'graduated-ngg', 'memberIds' => [$CBM]]);
+    return !empty($r['ok']) && $r['applied'] === 1
+        && (string)db_row('SELECT status FROM members WHERE memberId = ?', [$CBM])['status'] === 'graduated-ngg';
+})());
+chk('club bulk: SUSPENSION is refused — that is the member desk, with a record of why',
+    backend_dispatch('admin.club.members.bulk', ['requesterId' => $CLUBADM, 'action' => 'status',
+        'status' => 'suspended', 'memberIds' => [$CBM]])['error'] === 'bad_status');
+chk('club bulk: membership type is not a club action at all',
+    backend_dispatch('admin.club.members.bulk', ['requesterId' => $CLUBADM, 'action' => 'type',
+        'type' => 'Summer', 'memberIds' => [$CBM]])['error'] === 'unknown_action');
+chk('club bulk: a staff account is refused', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.members.bulk', ['requesterId' => $CLUBADM, 'action' => 'status',
+        'status' => 'inactive', 'memberIds' => ['NGG-2025-0099']]);
+    return $r['refused'] === 1 && $r['results'][0]['error'] === 'staff_account';
+})());
+chk('club bulk: the coordinator cannot include their own account', (function () use ($CLUBADM) {
+    $r = backend_dispatch('admin.club.members.bulk', ['requesterId' => $CLUBADM, 'action' => 'status',
+        'status' => 'inactive', 'memberIds' => [$CLUBADM]]);
+    return $r['refused'] === 1 && $r['results'][0]['error'] === 'own_account';
+})());
+chk('club bulk: an unknown centre is refused', backend_dispatch('admin.club.members.bulk',
+    ['requesterId' => $CLUBADM, 'action' => 'centre', 'centre' => 'Narnia', 'memberIds' => [$CBM]])['error'] === 'centre_not_found');
+chk('club bulk: gated on the club cap', backend_dispatch('admin.club.members.bulk',
+    ['requesterId' => 'NGG-2025-0730', 'action' => 'status', 'status' => 'active', 'memberIds' => [$CBM]])['error'] === 'forbidden');
+chk('club bulk: bounded', (function () use ($CLUBADM) {
+    $many = array_map(fn($i) => 'NGG-GH-' . $i, range(1, CLUB_BULK_MAX + 1));
+    return backend_dispatch('admin.club.members.bulk', ['requesterId' => $CLUBADM, 'action' => 'status',
+        'status' => 'active', 'memberIds' => $many])['error'] === 'too_many';
+})());
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ID cards — the member kind, two faces, and a record of what was printed
+   ═══════════════════════════════════════════════════════════════════════════
+   The design system could express the student and volunteer cards but not the
+   NGG MEMBER card — the credential every year-round member carries. That one
+   stayed hand-coded JSX, so moving a line on the card the organisation issues
+   most meant a deploy: the exact problem templates exist to end, left in place
+   for the card where it mattered most.
+
+   And the template system's own docblock promised that "a print run stores the
+   version it used, so 'reprint card 147 exactly as it was in July' is
+   answerable a year later" — while nothing stored it. Print runs wrote an
+   audit line and no rows, so a first issue could not be told from a reprint,
+   "which design is the card in this member's hand" had no answer, and a
+   half-printed batch left nothing to resume from.
+*/
+$CARDADM = 'NGG-2025-0099';   // super_admin: holds `people`, which gates cards
+
+chk('cards: `member` is a design kind now', in_array('member', CTPL_KINDS, true));
+chk('cards: …and a card has two faces', CTPL_FACES === ['single', 'front', 'back']);
+
+/* What a MEMBER card must show is not what a summer card must show. A member's
+   QR resolves their profile rather than a gate token, and the roster holds ONE
+   fullName — so demanding a split surname would refuse every member design. */
+chk('cards: a member design showing a name and an ID passes preflight', (function () use ($CARDADM) {
+    $t = ['id' => 'tmp', 'name' => 'Member front', 'kind' => 'member', 'face' => 'front',
+          'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => [
+        ['id' => 'n', 'type' => 'text', 'x' => 40, 'y' => 500, 'w' => 500, 'h' => 50, 'text' => '{{fullName}}', 'size' => 40, 'color' => '#0B1F51'],
+        ['id' => 'i', 'type' => 'text', 'x' => 40, 'y' => 700, 'w' => 300, 'h' => 30, 'text' => '{{displayId}}', 'size' => 20, 'color' => '#0B1F51'],
+        ['id' => 'q', 'type' => 'qr', 'x' => 60, 'y' => 750, 'w' => 118, 'h' => 118, 'token' => '{{token}}'],
+    ]];
+    $r = backend_dispatch('admin.card.template.check', ['requesterId' => $CARDADM, 'template' => $t]);
+    $errs = array_values(array_filter($r['problems'] ?? [], fn($x) => $x['level'] === 'error'));
+    return empty($errs);
+})());
+chk('cards: …and one with no name at all is refused', (function () use ($CARDADM) {
+    $t = ['id' => 'tmp', 'name' => 'Nameless', 'kind' => 'member', 'face' => 'front',
+          'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => [
+        ['id' => 'i', 'type' => 'text', 'x' => 40, 'y' => 700, 'w' => 300, 'h' => 30, 'text' => '{{displayId}}', 'size' => 20, 'color' => '#0B1F51'],
+        ['id' => 'q', 'type' => 'qr', 'x' => 60, 'y' => 750, 'w' => 118, 'h' => 118, 'token' => '{{token}}'],
+    ]];
+    $r = backend_dispatch('admin.card.template.check', ['requesterId' => $CARDADM, 'template' => $t]);
+    foreach ($r['problems'] ?? [] as $x) if ($x['level'] === 'error' && stripos($x['message'], 'name') !== false) return true;
+    return false;
+})());
+/* A BACK carries terms and a signature strip — not the identity. Running the
+   front's rules over it would refuse every back for want of a QR, which is how
+   a tool teaches people to bypass the checks that matter. */
+chk('cards: a card BACK is exempt from the credential rules', (function () use ($CARDADM) {
+    $t = ['id' => 'tmp', 'name' => 'Member back', 'kind' => 'member', 'face' => 'back',
+          'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => [
+        ['id' => 't', 'type' => 'text', 'x' => 60, 'y' => 120, 'w' => 460, 'h' => 200,
+         'text' => 'Not transferable. Property of the programme.', 'size' => 17, 'color' => '#5C6474'],
+    ]];
+    $r = backend_dispatch('admin.card.template.check', ['requesterId' => $CARDADM, 'template' => $t]);
+    $errs = array_values(array_filter($r['problems'] ?? [], fn($x) => $x['level'] === 'error'));
+    return empty($errs);
+})());
+chk('cards: …but the FRONT still is, so a card cannot lose its name to the back', (function () use ($CARDADM) {
+    $t = ['id' => 'tmp', 'name' => 'Front with nothing on it', 'kind' => 'member', 'face' => 'front',
+          'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => [
+        ['id' => 'r', 'type' => 'rect', 'x' => 0, 'y' => 0, 'w' => 590, 'h' => 929, 'fill' => '#ffffff'],
+    ]];
+    $r = backend_dispatch('admin.card.template.check', ['requesterId' => $CARDADM, 'template' => $t]);
+    $errs = array_values(array_filter($r['problems'] ?? [], fn($x) => $x['level'] === 'error'));
+    return count($errs) >= 2;   // no name, no id, no QR
+})());
+chk('cards: an unknown face is refused rather than stored', (function () use ($CARDADM) {
+    $t = ['id' => 'tmp', 'name' => 'Sideways', 'kind' => 'member', 'face' => 'inside',
+          'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => []];
+    $r = backend_dispatch('admin.card.template.save', ['requesterId' => $CARDADM, 'template' => $t]);
+    return ($r['error'] ?? '') === 'invalid' && in_array('face', $r['fields'] ?? [], true);
+})());
+
+/* The member roster, in card-row shape — built by the SAME function the batch
+   reads, so a merged card and a printed one cannot disagree about a name. */
+chk('cards: the merge can finally cover MEMBERS', in_array('members', MERGE_AUDIENCES, true));
+chk('cards: …gated on the member desk, not the summer desk', (function () {
+    // A summer-only coordinator may run the summer audience and not the member one.
+    $mem = backend_dispatch('admin.merge.rows', ['requesterId' => 'NGG-2025-0700', 'audience' => 'members']);
+    $stu = backend_dispatch('admin.merge.rows', ['requesterId' => 'NGG-2025-0700', 'audience' => 'students']);
+    return ($mem['error'] ?? '') === 'forbidden' && !empty($stu['ok']);
+})());
+chk('cards: a member row carries what a member card prints', (function () use ($CARDADM) {
+    $ctr = backend_dispatch('admin.centres.upsert', ['requesterId' => $CARDADM,
+        'data' => ['name' => 'Cardville', 'code' => 'CDV', 'color' => '#0B1F51']]);
+    db_insert('members', ['memberId' => 'NGG-CARD-1', 'fullName' => 'Amina Bello', 'email' => 'card1@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Cardville', 'level' => 'B',
+        'disciplines' => 'Piano, Coding', 'joinDate' => '2025-03-04', 'photoUrl' => 'https://example.com/a.jpg',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.merge.rows', ['requesterId' => $CARDADM, 'audience' => 'members', 'q' => 'Amina']);
+    if (empty($r['ok']) || !count($r['rows'])) return false;
+    $row = $r['rows'][0];
+    return $row['fullName'] === 'Amina Bello'
+        && $row['level'] === 'B'
+        && $row['disciplines'] === ['Piano', 'Coding']
+        // The colour and the printed prefix come from the DIRECTORY, not from
+        // the free-text name on the member's row — the only way a colour change
+        // at a centre reaches the next card printed there.
+        && $row['centre']['code'] === 'CDV' && $row['centre']['color'] === '#0B1F51';
+})());
+chk('cards: a member card carries no invented expiry', (function () use ($CARDADM) {
+    $r = backend_dispatch('admin.merge.rows', ['requesterId' => $CARDADM, 'audience' => 'members', 'q' => 'Amina']);
+    return $r['rows'][0]['expiresAt'] === '';
+})());
+
+/* ── The issuance record ────────────────────────────────────────────────── */
+$MTPL = backend_dispatch('admin.card.template.save', ['requesterId' => $CARDADM, 'template' => [
+    'id' => '', 'name' => 'House member card', 'kind' => 'member', 'face' => 'front',
+    'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => [
+        ['id' => 'n', 'type' => 'text', 'x' => 40, 'y' => 500, 'w' => 500, 'h' => 50, 'text' => '{{fullName}}', 'size' => 40, 'color' => '#0B1F51'],
+        ['id' => 'i', 'type' => 'text', 'x' => 40, 'y' => 700, 'w' => 300, 'h' => 30, 'text' => '{{displayId}}', 'size' => 20, 'color' => '#0B1F51'],
+        ['id' => 'q', 'type' => 'qr', 'x' => 60, 'y' => 750, 'w' => 118, 'h' => 118, 'token' => '{{token}}'],
+    ],
+]]);
+chk('runs: a member design saves', !empty($MTPL['ok']) && $MTPL['templateId'] !== '');
+backend_dispatch('admin.card.template.publish', ['requesterId' => $CARDADM, 'templateId' => $MTPL['templateId']]);
+$TID = $MTPL['templateId'];
+
+$RUN1 = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM,
+    'kind' => 'member', 'subjectType' => 'member', 'templateId' => $TID, 'output' => 'pdf', 'dpi' => 300,
+    'items' => [['subjectId' => 'NGG-CARD-1', 'displayId' => 'CDV-26-001']]]);
+chk('runs: a batch is recorded, with the version the SERVER says was published',
+    !empty($RUN1['ok']) && $RUN1['issued'] === 1 && $RUN1['templateVersion'] >= 1);
+chk('runs: …as a first issue, not a reprint', $RUN1['mode'] === 'print' && $RUN1['reprints'] === 0);
+chk('runs: the version is taken from the template row, never from the request', (function () use ($CARDADM, $TID) {
+    $r = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'templateId' => $TID, 'templateVersion' => 999, 'items' => [['subjectId' => 'NGG-CARD-1']]]);
+    return $r['templateVersion'] !== 999;
+})());
+chk('runs: a second card for the same person is a REPRINT, whichever button was pressed', (function () use ($CARDADM, $TID) {
+    $r = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'mode' => 'print', 'templateId' => $TID, 'reason' => 'damaged',
+        'items' => [['subjectId' => 'NGG-CARD-1', 'displayId' => 'CDV-26-001']]]);
+    return !empty($r['ok']) && $r['mode'] === 'reprint' && $r['reprints'] === 1;
+})());
+chk('runs: a mixed batch stays a print run', (function () use ($CARDADM, $TID) {
+    db_insert('members', ['memberId' => 'NGG-CARD-2', 'fullName' => 'Bode New', 'email' => 'card2@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Cardville',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'templateId' => $TID, 'items' => [['subjectId' => 'NGG-CARD-1'], ['subjectId' => 'NGG-CARD-2']]]);
+    return $r['mode'] === 'print' && $r['issued'] === 2 && $r['reprints'] === 1;
+})());
+chk('runs: a card the browser failed to draw is recorded as failed, not issued', (function () use ($CARDADM, $TID) {
+    $r = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'templateId' => $TID, 'items' => [
+            ['subjectId' => 'NGG-CARD-2', 'ok' => true],
+            ['subjectId' => 'NGG-CARD-1', 'ok' => false, 'note' => 'no photograph'],
+        ]]);
+    return $r['issued'] === 1 && $r['failed'] === 1;
+})());
+chk('runs: an unknown design is refused rather than recorded against nothing',
+    backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'templateId' => 'ctpl-nope', 'items' => [['subjectId' => 'NGG-CARD-1']]])['error'] === 'template_not_found');
+chk('runs: a reprint pointing at a run that never happened is refused',
+    backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'templateId' => $TID, 'reprintOf' => 'CRUN-GHOST', 'items' => [['subjectId' => 'NGG-CARD-1']]])['error'] === 'run_not_found');
+chk('runs: a batch bigger than the renderer can produce is refused', (function () use ($CARDADM, $TID) {
+    $many = array_map(fn($i) => ['subjectId' => 'NGG-GHOST-' . $i], range(1, CRUN_MAX_ISSUES + 1));
+    return backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member',
+        'templateId' => $TID, 'items' => $many])['error'] === 'too_many';
+})());
+chk('runs: the print log lists them, newest first', (function () use ($CARDADM) {
+    $r = backend_dispatch('admin.card.runs', ['requesterId' => $CARDADM, 'kind' => 'member']);
+    return !empty($r['ok']) && $r['total'] >= 4 && $r['runs'][0]['startedAt'] !== ''
+        && $r['runs'][0]['actorName'] !== '';
+})());
+chk('runs: one run can be opened and says who was in it', (function () use ($CARDADM, $RUN1) {
+    $r = backend_dispatch('admin.card.run.get', ['requesterId' => $CARDADM, 'runId' => $RUN1['runId']]);
+    return !empty($r['ok']) && count($r['issues']) === 1 && $r['issues'][0]['subjectId'] === 'NGG-CARD-1'
+        && $r['issues'][0]['displayId'] === 'CDV-26-001';
+})());
+
+/* The question asked at a desk, out loud: is the card in their hand the
+   current design? */
+$HIST = backend_dispatch('admin.card.history', ['requesterId' => $CARDADM, 'subjectId' => 'NGG-CARD-1']);
+chk('history: one member\'s cards, newest first, with the design each used',
+    !empty($HIST['ok']) && $HIST['count'] >= 3 && $HIST['latest']['templateName'] === 'House member card');
+chk('history: …and how many were replacements', $HIST['reprints'] >= 1);
+chk('history: the design has NOT moved on yet', $HIST['designMovedOn'] === false);
+chk('history: …and once it is republished, it says so', (function () use ($CARDADM, $TID) {
+    backend_dispatch('admin.card.template.publish', ['requesterId' => $CARDADM, 'templateId' => $TID]);
+    $h = backend_dispatch('admin.card.history', ['requesterId' => $CARDADM, 'subjectId' => 'NGG-CARD-1']);
+    return $h['designMovedOn'] === true;
+})());
+chk('history: a member with no card says so rather than erroring', (function () use ($CARDADM) {
+    $h = backend_dispatch('admin.card.history', ['requesterId' => $CARDADM, 'subjectId' => 'NGG-CARD-NOBODY']);
+    return !empty($h['ok']) && $h['count'] === 0 && $h['latest'] === null && $h['designMovedOn'] === null;
+})());
+chk('runs: every card op is gated on the member desk', (function () {
+    return backend_dispatch('admin.card.runs', ['requesterId' => 'NGG-2025-0700'])['error'] === 'forbidden'
+        && backend_dispatch('admin.card.history', ['requesterId' => 'NGG-2025-0700', 'subjectId' => 'x'])['error'] === 'forbidden'
+        && backend_dispatch('admin.card.run.record', ['requesterId' => 'NGG-2025-0700', 'items' => []])['error'] === 'forbidden';
+})());
+
+/* ── NGG and Summer School are configured SEPARATELY ───────────────────────
+   One settings blob served both, so a member's card and a participant's card
+   were issued under the same programme name, motto, validity clock and trim.
+   Summer School is a phase — one season, a lanyard, a card that expires with
+   it. NGG is the programme somebody belongs to for years, on an ID-1 card in
+   a wallet that does not expire on a ninety-day timer. */
+chk('idcard: the two programmes have different cards by default', (function () {
+    /* From a clean blob: earlier blocks in this file save card settings, and a
+       defaults test that reads whatever they left is testing them, not the
+       defaults. */
+    $keep = setting_get('idcard');
+    setting_set('idcard', [], 'tester');
+    $stu = idcard_program();
+    $mem = idcard_program('member');
+    setting_set('idcard', is_array($keep) ? $keep : [], 'tester');
+    return (float)$stu['heightMm'] === 75.0 && (float)$mem['heightMm'] === 85.0
+        && (float)$mem['widthMm'] === 54.0
+        && (int)$mem['validityDays'] === 0
+        && $stu['subject'] === 'student' && $mem['subject'] === 'member';
+})());
+chk('idcard: saving one programme does not move the other', (function () {
+    idcard_program_save(['program' => 'SUMMER-X', 'heightMm' => 70], 'tester');
+    idcard_program_save(['program' => 'NGG-X', 'heightMm' => 90], 'tester', 'member');
+    $stu = idcard_program(); $mem = idcard_program('member');
+    return $stu['program'] === 'SUMMER-X' && (float)$stu['heightMm'] === 70.0
+        && $mem['program'] === 'NGG-X' && (float)$mem['heightMm'] === 90.0;
+})());
+chk('idcard: the organisation is shared, not duplicated', (function () {
+    // A phone number belongs to the organisation, not to either programme —
+    // changing it once must reach both cards, or one of them prints a number
+    // nobody answers.
+    idcard_program_save(['phone' => '+234 000 000 0000'], 'tester');
+    $stu = idcard_program(); $mem = idcard_program('member');
+    return $stu['phone'] === '+234 000 000 0000' && $mem['phone'] === '+234 000 000 0000';
+})());
+chk('idcard: an existing deployment keeps its settings without a migration', (function () {
+    // The stored blob IS the Summer config, untouched. A deployment that has
+    // never saved an NGG block still gets a sane member card.
+    setting_set('idcard', ['program' => 'LEGACY', 'heightMm' => 72, 'phone' => '+234 111'], 'tester');
+    $stu = idcard_program(); $mem = idcard_program('member');
+    return $stu['program'] === 'LEGACY' && (float)$stu['heightMm'] === 72.0
+        && $mem['program'] === 'NGG' && (float)$mem['heightMm'] === 85.0
+        && $mem['phone'] === '+234 111';
+})());
+chk('idcard: the member card op serves the member configuration', (function () use ($CARDADM) {
+    $r = backend_dispatch('admin.mcards.data', ['requesterId' => $CARDADM]);
+    $s = backend_dispatch('admin.cards.data', ['requesterId' => $CARDADM]);
+    return ($r['program']['subject'] ?? '') === 'member'
+        && ($s['program']['subject'] ?? '') === 'student';
+})());
+
+/* ── The member's PRINTED ID ───────────────────────────────────────────────
+   Summer School minted participant IDs from the start; members got nothing,
+   so every imported member carried a blank and the card fell back to the
+   internal memberId — "NGG-2025-0740" where "026-014" belonged. */
+chk('member ids: minted in the workbook shape, from the intake year', (function () {
+    $id = member_mint_display_id(['cohort' => '2024', 'memberId' => 'X']);
+    // YYY-NNN: the intake year's last three digits, then a serial.
+    return (bool)preg_match('/^024-\d{3}$/', $id);
+})());
+chk('member ids: the intake year is read from cohort, then joinDate, then now', (function () {
+    $now = (int)gmdate('Y');
+    return member_intake_year(['cohort' => '2023']) === 2023
+        && member_intake_year(['cohort' => '023-014']) === 2023
+        && member_intake_year(['joinDate' => '2022-04-01']) === 2022
+        && member_intake_year([]) === $now
+        // A nonsense cohort must not produce a nonsense year.
+        && member_intake_year(['cohort' => 'Cohort A']) === $now;
+})());
+chk('member ids: never the Summer School shape', (function () {
+    // A participant is CODE-YY-NNN (centre-prefixed, one season); a member is
+    // YYY-NNN (year-prefixed, an intake). They must not be confusable.
+    $id = member_mint_display_id(['cohort' => '2026']);
+    return !preg_match('/^[A-Z]{2,4}-\d{2}-/', $id);
+})());
+chk('member ids: issued once and never reissued', (function () {
+    db_insert('members', ['memberId' => 'NGG-2025-0750', 'fullName' => 'Mint Once', 'email' => 'mint750@example.com',
+        'type' => 'NGG', 'status' => 'active', 'cohort' => '2026', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $row = db_row('SELECT * FROM members WHERE memberId = ?', ['NGG-2025-0750']);
+    $first = member_ensure_display_id($row);
+    $again = member_ensure_display_id(db_row('SELECT * FROM members WHERE memberId = ?', ['NGG-2025-0750']));
+    // A printed card is in somebody's wallet; editing the record must not
+    // invalidate it by handing out a new number.
+    return $first !== '' && $first === $again
+        && db_row('SELECT displayId FROM members WHERE memberId = ?', ['NGG-2025-0750'])['displayId'] === $first;
+})());
+chk('member ids: a gap in the numbering is NOT reused', (function () {
+    /* The reason the old importer refused to invent an id: a card printed as
+       019-002 whose workbook row never reached this database leaves 002 free
+       by a COUNT, and minting it hands a second person a number already
+       laminated onto somebody's card. Minting takes the HIGHEST serial plus
+       one, so the gap stays a gap. */
+    db_insert('members', ['memberId' => 'NGG-GAP-A', 'fullName' => 'Gap A', 'email' => 'gapa@example.com',
+        'type' => 'NGG', 'status' => 'active', 'displayId' => '019-001', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'NGG-GAP-C', 'fullName' => 'Gap C', 'email' => 'gapc@example.com',
+        'type' => 'NGG', 'status' => 'active', 'displayId' => '019-005', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    /* Two rows, highest serial 005. COUNT+1 would be 003 — free, below the
+       max, and possibly already on a printed card. MAX+1 is 006. */
+    $next = member_mint_display_id(['cohort' => '2019']);
+    return $next === '019-006';
+})());
+chk('member ids: a serial past 9 still sorts as a number, not as text', (function () {
+    for ($i = 8; $i <= 11; $i++) {
+        db_insert('members', ['memberId' => 'NGG-SEQ-' . $i, 'fullName' => 'Seq ' . $i,
+            'email' => 'seq' . $i . '@example.com', 'type' => 'NGG', 'status' => 'active',
+            'displayId' => '021-' . str_pad((string)$i, 3, '0', STR_PAD_LEFT),
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    // A text MAX() would answer "009" here and mint a duplicate.
+    return member_mint_display_id(['cohort' => '2021']) === '021-012';
+})());
+chk('member ids: two members minted in the same year do not collide', (function () {
+    $a = member_mint_display_id(['cohort' => '2027']);
+    db_insert('members', ['memberId' => 'NGG-2025-0751', 'fullName' => 'Serial A', 'email' => 'sa751@example.com',
+        'type' => 'NGG', 'status' => 'active', 'displayId' => $a, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $b = member_mint_display_id(['cohort' => '2027']);
+    return $a !== $b && str_starts_with($a, '027-') && str_starts_with($b, '027-');
+})());
+chk('member ids: the admin desk issues one at creation', (function () use ($CARDADM) {
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => $CARDADM,
+        'data' => ['fullName' => 'Desk Created', 'email' => 'desk752@example.com', 'type' => 'NGG', 'centre' => 'Egbeda']]);
+    if (empty($r['ok'])) return false;
+    $row = db_row('SELECT displayId FROM members WHERE email = ?', ['desk752@example.com']);
+    return $row && preg_match('/^\d{3}-\d{3}$/', (string)$row['displayId']);
+})());
+chk('member ids: the backlog can be issued in bounded passes', (function () use ($CARDADM) {
+    db_insert('members', ['memberId' => 'NGG-2025-0760', 'fullName' => 'Backlog One', 'email' => 'bk760@example.com',
+        'type' => 'NGG', 'status' => 'active', 'displayId' => '', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.members.issueIds', ['requesterId' => $CARDADM, 'limit' => 500]);
+    if (empty($r['ok'])) return false;
+    /* NGG members only. Summer School accounts legitimately keep no member id
+       — they are numbered by Summer School — so counting every row here would
+       assert the opposite of the rule above. */
+    $after = db_row("SELECT COUNT(*) c FROM members WHERE COALESCE(displayId,'') = ''
+                     AND COALESCE(type,'NGG') <> 'Summer'")['c'];
+    return (int)$after === 0 && (int)$r['remaining'] === 0 && $r['count'] >= 1;
+})());
+chk('member ids: a Summer School account is NOT given a member id', (function () use ($CARDADM) {
+    /* The members table holds both populations — `type` is NGG or Summer, and
+       a Summer account even carries a SUM- memberId. A participant is numbered
+       by Summer School (CODE-YY-NNN, against their summer_students row);
+       issuing them a member id as well would put two different printed
+       identities on one person. */
+    db_insert('members', ['memberId' => 'SUM-2025-0770', 'fullName' => 'Phase Only', 'email' => 'phase770@example.com',
+        'type' => 'Summer', 'status' => 'active', 'cohort' => '2026',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $row = db_row('SELECT * FROM members WHERE memberId = ?', ['SUM-2025-0770']);
+    $minted = member_ensure_display_id($row);
+    $after = db_row('SELECT displayId FROM members WHERE memberId = ?', ['SUM-2025-0770'])['displayId'];
+    if ($minted !== '' || trim((string)$after) !== '') return false;
+    // …and the backlog sweep leaves them alone too.
+    backend_dispatch('admin.members.issueIds', ['requesterId' => $CARDADM, 'limit' => 500]);
+    $still = db_row('SELECT displayId FROM members WHERE memberId = ?', ['SUM-2025-0770'])['displayId'];
+    return trim((string)$still) === '';
+})());
+chk('member ids: issuing the backlog is gated on the member desk', (function () {
+    return backend_dispatch('admin.members.issueIds', ['requesterId' => 'NGG-2025-0700'])['error'] === 'forbidden';
+})());
+
+/* ── NGG member card rows: the studio's third subject ──────────────────────
+   The Card Studio printed participants and volunteers and left members to a
+   drawer in the member roster. admin.mcards.data gives members the same
+   payload the other two already return, which is what makes a third MODE
+   possible instead of a third implementation. */
+chk('mcards: members come back in the same shape as students and volunteers', (function () use ($CARDADM) {
+    $r = backend_dispatch('admin.mcards.data', ['requesterId' => $CARDADM]);
+    if (empty($r['ok']) || !isset($r['cards']) || !isset($r['program'])) return false;
+    $s = backend_dispatch('admin.cards.data', ['requesterId' => $CARDADM]);
+    $v = backend_dispatch('admin.vcards.data', ['requesterId' => $CARDADM]);
+    // The three payloads must agree on their top-level keys, or the studio
+    // needs a branch per subject and the point is lost.
+    $keys = function ($x) { $k = array_keys($x); sort($k); return $k; };
+    return $keys($r) === $keys($s) && $keys($r) === $keys($v);
+})());
+chk('mcards: a member with no printed ID is INCLUDED, so the run can flag it', (function () use ($CARDADM) {
+    db_insert('members', ['memberId' => 'NGG-2025-0740', 'fullName' => 'Blank Card', 'email' => 'blank740@example.com',
+        'type' => 'NGG', 'status' => 'active', 'centre' => 'Egbeda', 'displayId' => '',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.mcards.data', ['requesterId' => $CARDADM, 'memberId' => 'NGG-2025-0740']);
+    if (empty($r['ok']) || count($r['cards']) !== 1) return false;
+    $c = $r['cards'][0];
+    /* The card falls back to the internal id rather than printing a blank
+       identifier, AND says the printed one is missing. Both halves matter: the
+       fallback alone hid the problem from the studio while the member roster
+       was filtering and counting exactly these people. */
+    return $c['displayId'] === 'NGG-2025-0740' && $c['displayIdMissing'] === true;
+})());
+chk('mcards: a member WITH a printed id is not flagged as missing one', (function () use ($CARDADM) {
+    db_insert('members', ['memberId' => 'NGG-2025-0743', 'fullName' => 'Has Card', 'email' => 'has743@example.com',
+        'type' => 'NGG', 'status' => 'active', 'centre' => 'Egbeda', 'displayId' => 'NGG/EG/0743',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.mcards.data', ['requesterId' => $CARDADM, 'memberId' => 'NGG-2025-0743']);
+    $c = $r['cards'][0] ?? [];
+    return ($c['displayId'] ?? '') === 'NGG/EG/0743' && ($c['displayIdMissing'] ?? null) === false;
+})());
+chk('mcards: gated on the member desk, not on Summer School', (function () {
+    // A Summer School coordinator holds `summer` and prints participant cards;
+    // member credentials are not theirs to produce.
+    return backend_dispatch('admin.mcards.data', ['requesterId' => 'NGG-2025-0700'])['error'] === 'forbidden';
+})());
+chk('mcards: a centre-scoped admin gets their own centre and only their own', (function () {
+    /* NGG-SCOPED-ADM is scoped to Scopeville and holds `people` (role admin);
+       NGG-INSCOPE is the member in it. Both are fixtures from the bulk block
+       above. A positive AND a negative, because a scope check that only
+       asserts an absence also passes when the op returns nothing at all. */
+    $r = backend_dispatch('admin.mcards.data', ['requesterId' => 'NGG-SCOPED-ADM']);
+    if (empty($r['ok']) || !$r['cards']) return false;
+    $names = array_map(fn($c) => (string)($c['centre']['name'] ?? ''), $r['cards']);
+    $ids   = array_map(fn($c) => (string)($c['token'] ?? ''), $r['cards']);
+    return in_array('NGG-INSCOPE', $ids, true)
+        && array_unique($names) === ['Scopeville'];
+})());
+
 // ── AI profiles (offline resolution only — no network in tests) ──
 chk('ai disabled with no keys', ai_enabled() === false && ai_enabled('coach') === false && ai_complete('s', 'u')['error'] === 'ai_disabled');
 chk('ai profile chain: profile → fallback → default, deduped', (function () {
@@ -5061,6 +5983,42 @@ function __ichat_mock(array $opts = []): callable {
         ]])];
     };
 }
+
+/* ── The pane must be able to say it cannot answer, BEFORE it is asked ──────
+   Without an AI provider the Analyst is a composer, a thread list, a report
+   builder and a keyboard shortcut that can do exactly nothing — and the only
+   way to discover that was to write a question, wait, and be refused. The
+   thread read now carries the same fact the ask gates on. It must be the SAME
+   fact: a status computed from a different condition than the gate tells the
+   operator the analyst is ready and then refuses them. */
+chk('threads: the analyst reports whether it can answer at all', (function () {
+    $cfg = __ichat_config_on();
+    $on = backend_dispatch('analytics.insight.threads', ['requesterId' => 'NGG-2025-0099']);
+    __ichat_config_off($cfg);
+    $off = backend_dispatch('analytics.insight.threads', ['requesterId' => 'NGG-2025-0099']);
+    return ($on['aiReady'] ?? null) === true && ($off['aiReady'] ?? null) === false
+        // The listing itself keeps working with no provider: the threads are
+        // rows in our own database, not something the model owns.
+        && !empty($off['ok']) && isset($off['threads']);
+})());
+chk('threads: that flag and the ask agree, in both directions', (function () {
+    // Off: the flag says no and the ask refuses.
+    $off = backend_dispatch('analytics.insight.threads', ['requesterId' => 'NGG-2025-0099']);
+    $askOff = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'How is attendance trending this term?']);
+    $agreeOff = ($off['aiReady'] === false) && (($askOff['error'] ?? '') === 'ai_disabled');
+    // On: the flag says yes and the ask gets past the provider check — it may
+    // still fail further down, but NOT with ai_disabled.
+    $cfg = __ichat_config_on();
+    $GLOBALS['__ai_mock'] = __ichat_mock();
+    $on = backend_dispatch('analytics.insight.threads', ['requesterId' => 'NGG-2025-0099']);
+    $askOn = backend_dispatch('analytics.insight.ask', ['requesterId' => 'NGG-2025-0099',
+        'question' => 'How is attendance trending this term?']);
+    unset($GLOBALS['__ai_mock']);
+    __ichat_config_off($cfg);
+    $agreeOn = ($on['aiReady'] === true) && (($askOn['error'] ?? '') !== 'ai_disabled');
+    return $agreeOff && $agreeOn;
+})());
 
 chk('the chat routes to the lenses the question needs, and no more', (function () {
     $seen = [];
@@ -19243,9 +20201,29 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         ['displayId' => 'IMP-020', 'fullName' => ''],
         $rowFor('IMP-021', ['status' => 'left the programme']),
     ], ['apply' => true]);
-    chk('roster import: a row with no member ID is refused, not invented', $bad['failed'] === 2);
-    chk('roster import: …and the refusal says which row and why',
-        (bool)array_filter($bad['rows'], fn($r) => $r['action'] === 'failed' && in_array('no member ID', $r['reasons'], true)));
+    /* THIS REVERSES A DELIBERATE EARLIER DECISION, and the old test's name
+       said so: "refused, not invented". The reasoning was sound — inventing an
+       id risks colliding with a card already printed but whose workbook row
+       never reached this database.
+       
+       It is reversed because the workbook is filled in by hand at a centre and
+       the ID column is the one most often left for later, so the rows most
+       needing to be in the system were the ones being refused, and the remedy
+       was to type an id into a spreadsheet. The original risk is answered
+       rather than ignored: member_mint_display_id takes the HIGHEST known
+       serial plus one, never a gap, so a minted id can only collide with a
+       card that is both unknown to this database and numbered above the entire
+       known roster. The import also says which ids it issued, so an operator
+       can reconcile. A row with no NAME is still refused — nothing can mint
+       that. */
+    chk('roster import: a row with no member ID is imported, and issued one', $bad['failed'] === 1);
+    /* The promise is unchanged — a refusal names the row and the reason — but
+       the reason that survives is the one nothing can mint. */
+    chk('roster import: …and a refusal still says which row and why',
+        (bool)array_filter($bad['rows'], fn($r) => $r['action'] === 'failed' && in_array('no name', $r['reasons'], true)));
+    chk('roster import: …and an issued member ID is reported, not silently applied',
+        (bool)array_filter($bad['rows'], fn($r) => $r['action'] !== 'failed'
+            && (bool)array_filter($r['warnings'] ?? [], fn($w) => str_contains((string)$w, 'issued member ID'))));
     chk('roster import: a status the app cannot count lands as inactive, with a note',
         $get('IMP-021')['status'] === 'inactive'
         && (bool)array_filter($bad['rows'], fn($r) => $r['ref'] === 'IMP-021' && !empty($r['warnings'])));

@@ -2418,6 +2418,7 @@ CREATE TABLE IF NOT EXISTS member_import_runs (
 
 INSERT INTO schema_version (version) VALUES (111) ON DUPLICATE KEY UPDATE version = version;
 
+<<<<<<< HEAD
 -- ── 112 · The Courage Index (NGGC 2040 brief §14) ───────────────────────────
 -- The one instrument in the brief with nothing behind it: musing lives in the
 -- journal, dues and fines in the fees ledger, the NGV rung on members.level —
@@ -2453,3 +2454,131 @@ CREATE TABLE IF NOT EXISTS courage_marks (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (112) ON DUPLICATE KEY UPDATE version = version;
+=======
+-- ── Summer School: editions, and groups within an edition ───────────────────
+--
+-- THE VOCABULARY, because it was the problem. Three different things were all
+-- called a "cohort" somewhere in this product:
+--
+--   EDITION  one season of Summer School — "Summer School 2026". Stored in
+--            `summer_cohorts`; its id is the `cohortId` that summer_students,
+--            attendance and qr_codes already carry. That column means EDITION,
+--            everywhere, with no exceptions. The table keeps its historical
+--            name rather than gaining a translation layer over it — this
+--            schema deliberately has none.
+--   GROUP    a class WITHIN an edition — "Egbeda · Music · Morning". This
+--            table. New concept, new name, its own id. When a coordinator says
+--            "cohort" out loud, this is what they mean, so the UI calls it a
+--            group and never a cohort.
+--   CENTRE   a PLACE. `centres`. Belongs to NGG the organisation, not to
+--            Summer School: NGG members are posted to one all year and its
+--            code is the printed ID prefix on their cards. Summer School RUNS
+--            AT centres; it does not own them.
+--
+-- `cohortId` below is the EDITION a group belongs to, named to match the
+-- column it points at. Codes are unique within an edition, never globally.
+CREATE TABLE IF NOT EXISTS summer_groups (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  groupId VARCHAR(48) NOT NULL UNIQUE,
+  cohortId VARCHAR(48) NOT NULL,
+  name VARCHAR(160) NOT NULL,
+  code VARCHAR(32) NOT NULL,
+  centreId VARCHAR(48) DEFAULT '',
+  faculty VARCHAR(80) DEFAULT '',
+  track VARCHAR(80) DEFAULT '',
+  leadId VARCHAR(48) DEFAULT '',
+  capacity INT DEFAULT 0,
+  meetDays VARCHAR(32) DEFAULT '',
+  meetTime VARCHAR(32) DEFAULT '',
+  startDate VARCHAR(40) DEFAULT '',
+  endDate VARCHAR(40) DEFAULT '',
+  status VARCHAR(24) NOT NULL DEFAULT 'active',
+  notes TEXT,
+  createdAt VARCHAR(40) DEFAULT '', createdBy VARCHAR(64) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '', updatedBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY idx_sgrp_code (cohortId, code),
+  INDEX idx_sgrp_edition (cohortId, status),
+  INDEX idx_sgrp_centre (centreId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE summer_students ADD COLUMN groupId VARCHAR(48) DEFAULT '';
+CREATE INDEX idx_sstu_group ON summer_students(groupId);
+
+-- Edition lifecycle. `status` already held 'active' | 'archived' and those keep
+-- their meaning — 'active' is the one edition being run, and only one may be
+-- active at a time. 'planning' and 'closed' are the two states a coordinator
+-- previously had to fake by archiving early or leaving an old edition active.
+ALTER TABLE summer_cohorts ADD COLUMN code VARCHAR(24) DEFAULT '';
+ALTER TABLE summer_cohorts ADD COLUMN applyOpensAt VARCHAR(40) DEFAULT '';
+ALTER TABLE summer_cohorts ADD COLUMN applyClosesAt VARCHAR(40) DEFAULT '';
+ALTER TABLE summer_cohorts ADD COLUMN notes TEXT;
+ALTER TABLE summer_cohorts ADD COLUMN updatedAt VARCHAR(40) DEFAULT '';
+CREATE INDEX idx_scoh_status ON summer_cohorts(status, id);
+
+INSERT INTO schema_version (version) VALUES (112) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── ID cards: two faces, and a record of what was printed ───────────────────
+--
+-- `face` + `pairId` are what let a design have a BACK. A card has two sides; a
+-- template was one document, so a back either did not exist or was a second
+-- unrelated design nobody could tell was the pair. A front names its back and
+-- the batch renders both per person, in order, so a duplex run cannot come out
+-- mismatched.
+--
+-- card_runs / card_issues are the issuance record. The template system already
+-- froze a published version and bumped it on republish, and promised that "a
+-- print run stores the version it used" — except nothing stored it. Print runs
+-- left an audit line and no rows, so a first issue could not be told from a
+-- reprint, "which design is the card in this member's hand" had no answer, and
+-- a half-printed batch left nothing to resume from.
+--
+-- The template version is denormalised onto both tables on purpose: it is the
+-- fact being preserved, and it must survive the template being republished,
+-- renamed or deleted afterwards.
+ALTER TABLE card_templates ADD COLUMN face VARCHAR(16) DEFAULT 'single';
+ALTER TABLE card_templates ADD COLUMN pairId VARCHAR(64) DEFAULT '';
+CREATE INDEX idx_ctpl_pair ON card_templates(pairId);
+
+CREATE TABLE IF NOT EXISTS card_runs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  runId VARCHAR(48) NOT NULL UNIQUE,
+  kind VARCHAR(24) NOT NULL DEFAULT 'member',
+  mode VARCHAR(16) NOT NULL DEFAULT 'print',
+  templateId VARCHAR(64) DEFAULT '',
+  templateName VARCHAR(160) DEFAULT '',
+  templateVersion INT DEFAULT 0,
+  backTemplateId VARCHAR(64) DEFAULT '',
+  backTemplateVersion INT DEFAULT 0,
+  output VARCHAR(16) DEFAULT '',
+  dpi INT DEFAULT 0,
+  sheet VARCHAR(16) DEFAULT '',
+  requested INT DEFAULT 0,
+  issued INT DEFAULT 0,
+  failed INT DEFAULT 0,
+  reprintOf VARCHAR(48) DEFAULT '',
+  reason VARCHAR(255) DEFAULT '',
+  actorId VARCHAR(64) DEFAULT '',
+  startedAt VARCHAR(40) DEFAULT '',
+  finishedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_crun_at (startedAt),
+  INDEX idx_crun_kind (kind, startedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS card_issues (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  runId VARCHAR(48) NOT NULL,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  displayId VARCHAR(48) DEFAULT '',
+  templateId VARCHAR(64) DEFAULT '',
+  templateVersion INT DEFAULT 0,
+  reprint TINYINT DEFAULT 0,
+  ok TINYINT DEFAULT 1,
+  note VARCHAR(255) DEFAULT '',
+  at VARCHAR(40) DEFAULT '',
+  INDEX idx_ciss_run (runId),
+  INDEX idx_ciss_subject (subjectType, subjectId, at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (113) ON DUPLICATE KEY UPDATE version = version;
+>>>>>>> origin/claude/community-audit-1aqug7

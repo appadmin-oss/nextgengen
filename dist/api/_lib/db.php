@@ -15,7 +15,11 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
+<<<<<<< HEAD
 const NGG_SCHEMA_TARGET = 112;
+=======
+const NGG_SCHEMA_TARGET = 113;
+>>>>>>> origin/claude/community-audit-1aqug7
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3284,6 +3288,7 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_mirun_digest ON member_import_runs(digest, id);
             CREATE INDEX IF NOT EXISTS idx_mirun_at ON member_import_runs(at);
         ",
+<<<<<<< HEAD
         /* 112 — the Courage Index (NGGC 2040 brief §14).
          *
          * The brief names courage as "one of the most important things NGGC
@@ -3323,6 +3328,161 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_courage_subject ON courage_marks(subjectId, observedOn);
             CREATE INDEX IF NOT EXISTS idx_courage_marker ON courage_marks(markedById, observedOn);
+=======
+
+        /* ── Summer School: editions, and groups within an edition ───────────
+         *
+         * THE VOCABULARY, because it was the problem. Three different things
+         * were all called a \"cohort\" somewhere in this product:
+         *
+         *   EDITION   one season of Summer School — \"Summer School 2026\".
+         *             Stored in `summer_cohorts`; its id is the `cohortId`
+         *             that `summer_students`, `attendance` and `qr_codes`
+         *             already carry. That column means EDITION, everywhere,
+         *             with no exceptions. The table keeps its historical name
+         *             rather than gaining a translation layer over it — this
+         *             schema deliberately has none (see the file header).
+         *   GROUP     a class WITHIN an edition — \"Egbeda · Music · Morning\".
+         *             This table. New concept, new name, its own id. When a
+         *             coordinator says \"cohort\" out loud, this is what they
+         *             mean, so the UI calls it a group and never a cohort.
+         *   CENTRE    a PLACE. `centres`. Belongs to NGG the organisation, not
+         *             to Summer School: NGG members are posted to one all year
+         *             and its code is the printed ID prefix on their cards.
+         *             Summer School RUNS AT centres; it does not own them.
+         *
+         * A group is the unit an edition is actually run in: it has a place, a
+         * course, a lead, a capacity, its own dates and its own lifecycle, and
+         * a participant belongs to at most one of them. Before this, an
+         * edition's 300 children were one undifferentiated list filtered by
+         * centre and track — which cannot express two Music classes at one
+         * centre, cannot be handed to a lead, and cannot be reported on.
+         *
+         * `cohortId` here is the EDITION the group belongs to, named to match
+         * the column it points at. Codes are unique within an edition, never
+         * globally: \"EG-MUS-AM\" is free to mean this year's class next year.
+         */
+        112 => "
+            CREATE TABLE IF NOT EXISTS summer_groups (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              groupId TEXT NOT NULL UNIQUE,
+              cohortId TEXT NOT NULL,             -- the EDITION (summer_cohorts.cohortId)
+              name TEXT NOT NULL,
+              code TEXT NOT NULL,                 -- unique within the edition
+              centreId TEXT DEFAULT '',           -- centres.centreId — where it meets
+              faculty TEXT DEFAULT '',            -- academy, from the catalogue
+              track TEXT DEFAULT '',              -- course, from the catalogue
+              leadId TEXT DEFAULT '',             -- volunteers.volunteerId of the lead
+              capacity INTEGER DEFAULT 0,         -- 0 = uncapped
+              meetDays TEXT DEFAULT '',           -- '1,3,6' — operational, never public
+              meetTime TEXT DEFAULT '',
+              startDate TEXT DEFAULT '',
+              endDate TEXT DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'active', -- planning|active|closed|archived
+              notes TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '', createdBy TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT '', updatedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sgrp_code ON summer_groups(cohortId, code);
+            CREATE INDEX IF NOT EXISTS idx_sgrp_edition ON summer_groups(cohortId, status);
+            CREATE INDEX IF NOT EXISTS idx_sgrp_centre ON summer_groups(centreId);
+
+            ALTER TABLE summer_students ADD COLUMN groupId TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_sstu_group ON summer_students(groupId);
+
+            /* Edition lifecycle. `status` already held 'active' | 'archived'
+               and those keep their meaning — 'active' is the one edition being
+               run, and only one may be active at a time. 'planning' (being set
+               up, not yet taking anyone) and 'closed' (finished, still being
+               reported on, not yet archived) are the two states a coordinator
+               previously had to fake by archiving early or leaving an old
+               edition active. */
+            ALTER TABLE summer_cohorts ADD COLUMN code TEXT DEFAULT '';
+            ALTER TABLE summer_cohorts ADD COLUMN applyOpensAt TEXT DEFAULT '';
+            ALTER TABLE summer_cohorts ADD COLUMN applyClosesAt TEXT DEFAULT '';
+            ALTER TABLE summer_cohorts ADD COLUMN notes TEXT DEFAULT '';
+            ALTER TABLE summer_cohorts ADD COLUMN updatedAt TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_scoh_status ON summer_cohorts(status, id);
+        ",
+
+        /* ── ID cards: two faces, and a record of what was printed ──────────
+         *
+         * The design system could express the student and volunteer cards but
+         * not the NGG MEMBER card, which is the one every year-round member
+         * carries. That card was hand-coded JSX (MemberIDCard / NggcMemberCard)
+         * and printed by a batch drawer, so moving a line two millimetres on
+         * the credential the organisation issues most was a deploy — the exact
+         * problem the template system was built to end, left in place for the
+         * one card it mattered most for.
+         *
+         * `face` + `pairId` are what let a design have a BACK. A card has two
+         * sides; a template was one document, so a back either did not exist
+         * or was a second unrelated design nobody could tell was the pair. A
+         * front names its back and the batch renders both per person, in
+         * order, so a duplex run cannot come out mismatched.
+         *
+         * `card_runs` / `card_issues` are the issuance record. card-templates
+         * already froze a published version and bumped it on republish, and
+         * its own docblock promised that "a print run stores the version it
+         * used, so 'reprint card 147 exactly as it was in July' is answerable
+         * a year later" — except nothing stored it. Print runs left an audit
+         * line and no rows, so:
+         *
+         *   · nobody could tell a FIRST issue from a reprint, or count either;
+         *   · "which design is the card in this member's hand" had no answer,
+         *     so a reprint silently used whatever the current version is;
+         *   · a batch that half-printed left nothing to resume from.
+         *
+         * The template version is denormalised onto both tables on purpose: it
+         * is the fact being preserved, and it must survive the template being
+         * republished, renamed or deleted afterwards.
+         */
+        113 => "
+            ALTER TABLE card_templates ADD COLUMN face TEXT DEFAULT 'single';   -- front | back | single
+            ALTER TABLE card_templates ADD COLUMN pairId TEXT DEFAULT '';       -- the other face's templateId
+            CREATE INDEX IF NOT EXISTS idx_ctpl_pair ON card_templates(pairId);
+
+            CREATE TABLE IF NOT EXISTS card_runs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              runId TEXT NOT NULL UNIQUE,
+              kind TEXT NOT NULL DEFAULT 'member',      -- member | student | volunteer | graphic
+              mode TEXT NOT NULL DEFAULT 'print',       -- print | reprint | proof
+              templateId TEXT DEFAULT '',               -- '' = the built-in hand-coded card
+              templateName TEXT DEFAULT '',             -- as it was called at the time
+              templateVersion INTEGER DEFAULT 0,        -- the FROZEN version this run used
+              backTemplateId TEXT DEFAULT '',
+              backTemplateVersion INTEGER DEFAULT 0,
+              output TEXT DEFAULT '',                   -- pdf | png | zip | sheet
+              dpi INTEGER DEFAULT 0,
+              sheet TEXT DEFAULT '',                    -- e.g. 'A4' for an imposed sheet
+              requested INTEGER DEFAULT 0,
+              issued INTEGER DEFAULT 0,
+              failed INTEGER DEFAULT 0,
+              reprintOf TEXT DEFAULT '',                -- the runId being reprinted, if any
+              reason TEXT DEFAULT '',                   -- why a reprint (creased, lost, name change)
+              actorId TEXT DEFAULT '',
+              startedAt TEXT DEFAULT '',
+              finishedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_crun_at ON card_runs(startedAt);
+            CREATE INDEX IF NOT EXISTS idx_crun_kind ON card_runs(kind, startedAt);
+
+            CREATE TABLE IF NOT EXISTS card_issues (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              runId TEXT NOT NULL,
+              subjectType TEXT NOT NULL,                -- member | student | volunteer
+              subjectId TEXT NOT NULL,
+              displayId TEXT DEFAULT '',                -- what was printed on it
+              templateId TEXT DEFAULT '',
+              templateVersion INTEGER DEFAULT 0,
+              reprint INTEGER DEFAULT 0,                -- 1 = this person had one before
+              ok INTEGER DEFAULT 1,
+              note TEXT DEFAULT '',
+              at TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_ciss_run ON card_issues(runId);
+            CREATE INDEX IF NOT EXISTS idx_ciss_subject ON card_issues(subjectType, subjectId, at);
+>>>>>>> origin/claude/community-audit-1aqug7
         ",
     ];
 

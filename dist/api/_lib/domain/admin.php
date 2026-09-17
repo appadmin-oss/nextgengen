@@ -32,6 +32,27 @@ function admin_cap_gate(array $p, string $cap): array {
     return $g;
 }
 
+/**
+ * Admin gate requiring ANY ONE of several capabilities.
+ *
+ * For shared reference data that several desks legitimately need to READ while
+ * only one of them owns WRITING it. The centre directory is the case that
+ * needed it: a Summer School coordinator has to be able to see the list of
+ * centres to run classes in them, but must not be able to rename or delete
+ * one, because a centre's code is the printed ID prefix on every NGG member's
+ * card and its name is what their record points at.
+ *
+ * Read with admin_cap_gate_any($p, ['people','summer']); write with
+ * admin_cap_gate($p, 'people'). Never widen a WRITE with this.
+ */
+function admin_cap_gate_any(array $p, array $caps): array {
+    $g = admin_gate($p);
+    if (!$g['ok']) return $g;
+    $have = member_effective_caps($g['requester']);
+    foreach ($caps as $c) if (in_array($c, $have, true)) return $g;
+    return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:' . implode('|', $caps)];
+}
+
 /** Keep only known columns; cast declared booleans to 0/1 and ints. */
 function db_pick(array $data, array $cols, array $bools = [], array $ints = []): array {
     $out = [];
@@ -53,7 +74,11 @@ function admin_members_list(array $p): array {
     $where = []; $params = [];
     $q = strtolower((string)($p['q'] ?? ''));
     if ($q !== '') { $where[] = '(lower(fullName) LIKE ? OR lower(memberId) LIKE ? OR lower(email) LIKE ?)'; $like = '%' . $q . '%'; array_push($params, $like, $like, $like); }
-    foreach (['centre', 'status', 'type'] as $f) {
+    /* `level` joins the exact-match facets. The roster workbook files every
+       member at a level and the column has existed since migration 109, but
+       nothing could filter by it — so "show me everyone at level C" meant
+       exporting the whole roster and opening a spreadsheet. */
+    foreach (['centre', 'status', 'type', 'level'] as $f) {
         if (!empty($p[$f])) { $where[] = "$f = ?"; $params[] = $p[$f]; }
     }
     // Staff-only view powers the Access & roles roster.
@@ -297,6 +322,12 @@ function admin_members_upsert(array $p): array {
     $insert['role'] = $insert['role'] ?? ($data['role'] ?? 'member');
     $insert['createdAt'] = now_iso();
     $insert['updatedAt'] = now_iso();
+    /* A member gets their printed ID at creation, as a participant always
+       has. Left blank it falls back to the internal memberId on the card —
+       see domain/member-id.php. */
+    if (trim((string)($insert['displayId'] ?? '')) === '' && member_is_ngg($insert)) {
+        $insert['displayId'] = member_mint_display_id($insert);
+    }
     db_insert('members', $insert);
     if (is_admin_role((string)$insert['role'])) staff_invite_email($newId, (string)$insert['role']);
     audit('admin.member.create', $g['requester']['memberId'], $newId, [], (string)($p['ip'] ?? ''));

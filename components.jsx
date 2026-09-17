@@ -764,7 +764,7 @@ function TopNav({ page, setPage }) {
             <Magnetic strength={6}>
               {isSignedIn
                 ? <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("dashboard")}>My dashboard →</button>
-                : <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("join")}>Apply →</button>}
+                : <button className="btn btn-primary btn-sm nav-apply" onClick={() => goApply(setPage, "anchor")}>Apply →</button>}
             </Magnetic>
             <button
               ref={burgerRef}
@@ -1255,6 +1255,341 @@ function humanizeError(message, code) {
   if (map[c]) return map[c];
   if (/network|fetch|Failed to fetch|offline/i.test(c)) return "Network trouble — check your connection and try again.";
   return "Something went wrong. Please try again — if it persists, contact support.";
+}
+
+/* ============================================================================
+   THE ADMIN ACTION LAYER — one selection primitive, one bulk bar, one runner.
+
+   Every screen in this console had rolled its own. There were at least six
+   variants of "tick some rows and do a thing to them": AdminApplications kept a
+   Set and awaited a loop, SummerPending kept a Set called `ticked` with its own
+   bar, the review desk kept `picked` and passed an `onBulk` up, the assessment
+   screen kept an object map, the mentor sheet took an array of ids, and the two
+   screens where bulk mattered most — Members and the Club roster — had none at
+   all. They disagreed about the things that actually matter:
+
+     · WHETHER THE COUNT IS TRUE. Some confirms interpolated the selection size
+       at press time and some at render time, so a confirm could say 12 and act
+       on 40 after a background refresh landed in between. The count is read
+       ONCE here, before the confirm, and is the count acted on.
+     · WHETHER A HALF-DONE BULK IS REPORTED. Several looped `await` inside a
+       try and reported success if the last row worked. A bulk that half-worked
+       is the case worth designing for, so a partial result is a distinct
+       outcome with its own message naming how many failed and why.
+     · WHETHER SELECTION SURVIVES A FILTER CHANGE. Most did. Changing the filter
+       and pressing a bulk action then acted on rows that were no longer on
+       screen. Selection is keyed to the list here and clears itself.
+     · WHETHER THE OPERATOR MAY DO IT. Bulk buttons were rendered
+       unconditionally and the server 403'd, so the feedback for "you may not"
+       was an error toast after the confirm. An action declares its capability
+       and is not rendered without it. (The server still enforces; this is the
+       UI being honest, never the check itself.)
+     · WHETHER IT IS KEYBOARD-REACHABLE AND ANNOUNCED. The bars were divs. This
+       one is a labelled region with a live count, so a screen-reader user knows
+       the selection changed without hunting for it.
+
+   Use it as three pieces:
+
+     const sel = useAdminSelection(rows, r => r.memberId);
+     <AdminBulkBar selection={sel} total={meta.total} actions={[...]}/>
+     // and, for one row's own menu, the same runner:
+     runAdminAction(action, [id], { reload })
+
+   An action is a plain object so the same declaration drives the bulk bar and
+   a single-row menu — which is what keeps the two consistent by construction
+   rather than by everyone remembering:
+
+     { id, label, rowLabel, cap, danger, hint,
+       confirm: ({count, ids}) => ({title, body, cta, danger}),
+       run: (ids) => result,  runOne: (id) => result,  open: (ids) => void,
+       pastTense, reload, bulkHidden, rowHidden, keepSelection }
+   ============================================================================ */
+
+/** Row selection for a paged admin table.
+ *
+ * `rows` is the page in hand and `key` reads a row's stable id. The selection
+ * clears whenever the identity of the list changes, so a filter or a page turn
+ * can never leave rows selected that the operator can no longer see.
+ */
+function useAdminSelection(rows, key) {
+  const list = rows || [];
+  const getKey = key || ((r) => r && (r.id || r.memberId || r.studentId));
+  const ids = React.useMemo(() => list.map(getKey).filter(Boolean).map(String), [list]);
+  const sig = ids.join("|");
+  const [picked, setPicked] = React.useState(() => new Set());
+  // Drop anything no longer on screen rather than clearing outright: turning a
+  // page and coming back should not silently discard a careful selection, but
+  // acting on an off-screen row must be impossible.
+  React.useEffect(() => {
+    setPicked(prev => {
+      if (!prev.size) return prev;
+      const keep = new Set();
+      prev.forEach(id => { if (ids.indexOf(id) !== -1) keep.add(id); });
+      return keep.size === prev.size ? prev : keep;
+    });
+    // eslint-disable-next-line
+  }, [sig]);
+
+  const has = React.useCallback((id) => picked.has(String(id)), [picked]);
+  const toggle = React.useCallback((id) => setPicked(p => {
+    const n = new Set(p); const k = String(id);
+    if (n.has(k)) n.delete(k); else n.add(k);
+    return n;
+  }), []);
+  const clear = React.useCallback(() => setPicked(new Set()), []);
+  const allOnPage = ids.length > 0 && ids.every(id => picked.has(id));
+  const someOnPage = ids.some(id => picked.has(id)) && !allOnPage;
+  const togglePage = React.useCallback(() => {
+    setPicked(p => (ids.length && ids.every(id => p.has(id))) ? new Set() : new Set(ids));
+    // eslint-disable-next-line
+  }, [sig]);
+  return {
+    ids: Array.from(picked), size: picked.size, has, toggle, clear, togglePage,
+    allOnPage, someOnPage, pageIds: ids,
+    /* Replace the selection outright — for "select all N matching the filter",
+       where the ids come from the server rather than from the page in hand. */
+    replace: (next) => setPicked(new Set((next || []).map(String))),
+  };
+}
+
+/** A tri-state select-all checkbox. Indeterminate has to be set imperatively;
+ *  React has no prop for it, which is why every hand-rolled version was a
+ *  two-state box that lied about a partial selection. */
+function AdminSelectAll({ selection, label }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (ref.current) ref.current.indeterminate = !!selection.someOnPage;
+  }, [selection.someOnPage, selection.allOnPage]);
+  return (
+    <label className="admin-bulk-all">
+      <input ref={ref} type="checkbox" checked={selection.allOnPage} onChange={selection.togglePage}
+        aria-label={label || "Select all rows on this page"}/>
+      <span>{selection.size ? selection.size + " selected" : (label || "Select all")}</span>
+    </label>
+  );
+}
+
+/** One row's checkbox. Stops the click from also opening the row. */
+function AdminRowCheck({ selection, id, label }) {
+  return (
+    <input type="checkbox" checked={selection.has(id)} aria-label={label || ("Select " + id)}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => { e.stopPropagation(); selection.toggle(id); }}/>
+  );
+}
+
+/**
+ * Run one declared action over a set of ids.
+ *
+ * Returns { ran, ok, failed, results } and never throws — a caller that only
+ * wants "did it work" reads `ok`, and one that wants to show the operator which
+ * rows failed reads `results`. `ran: false` means the operator cancelled, which
+ * is not a failure and must not be reported as one.
+ *
+ * `action.run(ids)` may either do the whole set in ONE server call (preferred —
+ * one request, one audit event, and the server decides the partial outcome) or
+ * be omitted in favour of `action.runOne(id)`, which is looped here. Looping is
+ * the fallback because it is N requests and cannot be atomic, not because it is
+ * equivalent.
+ */
+async function runAdminAction(action, ids, opts) {
+  const o = opts || {};
+  const list = (ids || []).map(String).filter(Boolean);
+  const count = list.length;   // read ONCE, before the confirm, and used throughout
+  if (!count) return { ran: false, ok: 0, failed: 0, results: [], reason: "empty" };
+
+  if (action.confirm !== false && typeof dialog !== "undefined" && dialog.confirm) {
+    const c = typeof action.confirm === "function" ? action.confirm({ count, ids: list }) : (action.confirm || {});
+    const ok = await dialog.confirm({
+      title: c.title || ((action.label || "Apply") + " · " + count + " selected"),
+      body: c.body || ("This applies to " + count + " record" + (count === 1 ? "" : "s") + "."),
+      cta: c.cta || (action.label || "Apply"),
+      cancel: c.cancel,
+      danger: c.danger !== undefined ? c.danger : !!action.danger,
+    });
+    if (!ok) return { ran: false, ok: 0, failed: 0, results: [], reason: "cancelled" };
+  }
+
+  let results = [];
+  let failed = 0, okCount = 0;
+  try {
+    if (typeof action.run === "function") {
+      const r = await action.run(list);
+      /* A server that reports per-row outcomes is believed over its own
+         top-level ok — a bulk endpoint returning ok:true with 28 refusals in
+         `results` is the exact case a caller must not read as success. */
+      if (r && Array.isArray(r.results)) {
+        results = r.results;
+        results.forEach(x => { if (x && x.ok === false) failed++; else okCount++; });
+      } else {
+        okCount = typeof (r && r.applied) === "number" ? r.applied
+                : typeof (r && r.assigned) === "number" ? r.assigned : count;
+        failed = Math.max(0, count - okCount);
+      }
+    } else if (typeof action.runOne === "function") {
+      for (const id of list) {
+        try { await action.runOne(id); results.push({ id, ok: true }); okCount++; }
+        catch (e) { results.push({ id, ok: false, error: (e && (e.code || e.message)) || "failed" }); failed++; }
+      }
+    } else {
+      /* Declaring neither `run` nor `runOne` nor `open` is a programming
+         mistake, not a user-facing outcome. Reported rather than shown as a
+         success over zero rows. */
+      console.error("[admin] action has no runner", action && action.id);
+      return { ran: false, ok: 0, failed: 0, results: [], reason: "no_runner" };
+    }
+  } catch (e) {
+    const msg = (e && (e.code || e.message)) || "failed";
+    if (typeof toast !== "undefined") {
+      toast.error(msg === "forbidden" ? "You don't have permission to do that." : humanizeError(msg, msg),
+        action.label || "Action failed");
+    }
+    return { ran: true, ok: 0, failed: count, results: [], error: msg };
+  }
+
+  if (typeof toast !== "undefined") {
+    const noun = (o.noun || "record") + (okCount === 1 ? "" : "s");
+    if (failed && okCount) {
+      /* The half-done case, said plainly and with the reason attached. The
+         previous behaviour was a success toast for a run where most rows were
+         refused. */
+      const why = adminFailSummary(results);
+      toast.warn
+        ? toast.warn(okCount + " of " + count + " done — " + failed + " refused" + (why ? " (" + why + ")" : "") + ".", action.label)
+        : toast.error(okCount + " of " + count + " done — " + failed + " refused" + (why ? " (" + why + ")" : "") + ".", action.label);
+    } else if (failed) {
+      const why = adminFailSummary(results);
+      toast.error("Nothing was changed — all " + failed + " refused" + (why ? " (" + why + ")" : "") + ".", action.label);
+    } else {
+      toast.success(okCount + " " + noun + " " + (o.pastTense || "updated") + ".", action.label);
+    }
+  }
+  if (typeof action.done === "function") { try { await action.done(results); } catch (_) {} }
+  if (typeof o.reload === "function") { try { await o.reload(); } catch (_) {} }
+  return { ran: true, ok: okCount, failed, results };
+}
+
+/** The distinct reasons rows were refused, most common first — so a partial
+ *  result says "12 already verified" rather than "12 refused". */
+function adminFailSummary(results) {
+  const counts = {};
+  (results || []).forEach(r => {
+    if (!r || r.ok !== false) return;
+    const k = String(r.error || "refused").replace(/_/g, " ");
+    counts[k] = (counts[k] || 0) + 1;
+  });
+  const keys = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  if (!keys.length) return "";
+  return keys.slice(0, 2).map(k => counts[k] + " " + k).join(", ");
+}
+
+/**
+ * The bulk bar.
+ *
+ * Shown only once something is selected, because a permanent bar of disabled
+ * buttons is noise. A labelled region with a polite live count, so the
+ * selection size is announced rather than only drawn; every action is a real
+ * button; nothing is rendered that the operator's capabilities do not allow.
+ *
+ * `total` + `selectAllMatching` provide the escape hatch the paged tables
+ * needed: a filter matching 340 rows can only ever tick the 50 in hand, and
+ * "apply to all 340" has to be an explicit, separate decision.
+ */
+function AdminBulkBar({ selection, actions, total, selectAllMatching, hasCap, noun, busy, children }) {
+  const [running, setRunning] = React.useState("");
+  const can = (a) => !a.cap || !hasCap || hasCap(a.cap);
+  const usable = (actions || []).filter(a => a && can(a));
+  if (!selection.size) return null;
+  const n = selection.size;
+  const label = (noun || "record") + (n === 1 ? "" : "s");
+  const go = async (a) => {
+    /* An action that needs a VALUE ("which status?", "which centre?") cannot
+       be a button — it has to ask first. Those declare `open(ids)` instead of
+       `run(ids)`: the bar hands over the ids and steps out of the way, and
+       crucially does NOT clear the selection, because whatever it opened is
+       about to act on it. */
+    if (typeof a.open === "function") { a.open(selection.ids); return; }
+    setRunning(a.id);
+    try { await runAdminAction(a, selection.ids, { noun: noun || "record", pastTense: a.pastTense, reload: a.reload }); }
+    finally { setRunning(""); }
+    if (a.keepSelection !== true) selection.clear();
+  };
+  return (
+    <div className="admin-bulkbar" role="region" aria-label="Actions for the selected rows">
+      <p className="admin-bulk-count" aria-live="polite">
+        <b>{n}</b> {label} selected
+        {typeof total === "number" && total > selection.pageIds.length && selectAllMatching && n < total && (
+          <> · <button type="button" className="admin-bulk-link" onClick={selectAllMatching}>
+            Select all {fmtNum(total)} matching the filter
+          </button></>
+        )}
+      </p>
+      <div className="admin-bulk-actions">
+        {usable.map(a => (
+          <button key={a.id} type="button"
+            className={"btn btn-sm " + (a.danger ? "btn-danger" : "btn-ghost")}
+            disabled={!!running || !!busy}
+            aria-busy={running === a.id ? "true" : undefined}
+            title={a.hint || undefined}
+            onClick={() => go(a)}>
+            {running === a.id ? "Working…" : a.label}
+          </button>
+        ))}
+        {children}
+        <button type="button" className="btn btn-ghost btn-sm" disabled={!!running} onClick={selection.clear}>Clear</button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One row's action menu, built from the SAME action declarations as the bulk
+ * bar. That is the point: an individual action and its bulk equivalent cannot
+ * drift into doing different things, asking differently, or being permitted
+ * differently, because there is one declaration for both.
+ */
+function AdminRowActions({ id, actions, hasCap, noun, reload, label }) {
+  const [open, setOpen] = React.useState(false);
+  const [running, setRunning] = React.useState("");
+  const ref = React.useRef(null);
+  const btnRef = React.useRef(null);
+  const usable = (actions || []).filter(a => a && (!a.cap || !hasCap || hasCap(a.cap)) && a.rowHidden !== true);
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); setOpen(false); if (btnRef.current) btnRef.current.focus(); }
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+  if (!usable.length) return null;
+  const go = async (a) => {
+    setOpen(false);
+    if (typeof a.open === "function") { a.open([id]); return; }
+    setRunning(a.id);
+    try { await runAdminAction(a, [id], { noun: noun || "record", pastTense: a.pastTense, reload }); }
+    finally { setRunning(""); }
+  };
+  return (
+    <div className="admin-rowmenu" ref={ref} onClick={(e) => e.stopPropagation()}>
+      <button ref={btnRef} type="button" className="btn btn-ghost btn-sm admin-rowmenu-btn"
+        aria-haspopup="menu" aria-expanded={open} disabled={!!running}
+        onClick={() => setOpen(o => !o)}>
+        {running ? "…" : (label || "Actions")} <span aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="admin-rowmenu-pop" role="menu">
+          {usable.map(a => (
+            <button key={a.id} type="button" role="menuitem"
+              className={"admin-rowmenu-item" + (a.danger ? " is-danger" : "")}
+              onClick={() => go(a)}>{a.rowLabel || a.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function OfflineBanner() {
@@ -3022,6 +3357,13 @@ Object.assign(window, {
   inkOn, inkLum, inkContrast, inkIsLegible, INK_CROSSOVER_L,
   loadVendor, VENDOR_LIBS, nggPublishScope, useNggScope,
   Uploader, A11ySettingsPanel, A11yNavButton, PhotoEditor, PhotoCapture, ImageLightbox, SignaturePad,
+  /* The admin action layer. Exported so a test can drive the runner and the
+     bulk bar without mounting the whole console — the partial-failure and
+     stale-count behaviours are exactly what cannot be asserted from a
+     screenshot. */
+  useAdminSelection, AdminSelectAll, AdminRowCheck, AdminBulkBar, AdminRowActions,
+  runAdminAction, adminFailSummary,
+  ErrorState, EmptyState, humanizeError,
   // Exported for the browser tests: both decide whether a family's photo is
   // accepted, and neither is reachable through a rendered component alone.
   validateHeadshot, photoFormatHelp, HEADSHOT_MIN_PX,

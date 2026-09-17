@@ -204,7 +204,13 @@ function members_import_row(array $row, string $stampedOn): array
     $ref = trim((string)($row['displayId'] ?? ''));
     $name = trim((string)($row['fullName'] ?? ''));
 
-    if ($ref === '') $errors[] = 'no member ID';
+    /* A missing member ID USED TO REJECT THE ROW. The workbook is filled in
+       by hand at a centre, and the ID column is the one most often left for
+       later — so the rows most needing to be in the system were the ones the
+       importer refused, and the fix was to type an ID into a spreadsheet.
+       The app issues IDs now (domain/member-id.php): the row imports, and the
+       ID is minted on the way in. A missing NAME is still fatal, because
+       nothing can mint that. */
     if ($name === '') $errors[] = 'no name';
     if ($errors) return ['patch' => [], 'errors' => $errors, 'notes' => $notes];
 
@@ -223,11 +229,16 @@ function members_import_row(array $row, string $stampedOn): array
     }
 
     $patch = [
+        // '' here means "mint one on insert" — see members_import_apply.
         'displayId'   => $ref,
         'fullName'    => $name,
         'type'        => trim((string)($row['type'] ?? 'NGG')) ?: 'NGG',
         'status'      => $status,
         'centre'      => trim((string)($row['centre'] ?? '')),
+        /* THE INTAKE YEAR, not a Summer School edition. `cohort` on a member
+           row is where the printed ID's prefix comes from (023- ⇒ 2023);
+           `cohortId` on every summer table means an edition. One word, two
+           meanings — see domain/member-id.php, which pins the member's. */
         'cohort'      => trim((string)($row['cohort'] ?? '')),
         'track'       => strtoupper(trim((string)($row['track'] ?? ''))),
         'disciplines' => strtoupper(trim((string)($row['disciplines'] ?? ''))),
@@ -423,6 +434,14 @@ function members_import_run(array $rows, array $opts = []): array
             $insert['role']      = 'member';
             $insert['createdAt'] = now_iso();
             $insert['updatedAt'] = now_iso();
+            /* No printed ID in the sheet ⇒ issue one, in the workbook's own
+               YYY-NNN shape, from the intake year the row carries. Minted only
+               on APPLY: a dry run must not consume serials, or previewing an
+               import twice would leave gaps in the roster's numbering. */
+            if (trim((string)($insert['displayId'] ?? '')) === '' && $apply && member_is_ngg($insert)) {
+                $insert['displayId'] = member_mint_display_id($insert);
+                $notes[] = 'issued member ID ' . $insert['displayId'];
+            }
             if ($apply) {
                 db_insert('members', $insert);
                 audit('member.import.create', $actor, $insert['memberId'], ['displayId' => $patch['displayId']], '');

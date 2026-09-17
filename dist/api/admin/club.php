@@ -7,13 +7,36 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'overview');
-    if ($view === 'promotable')  $res = gs_call('admin.club.promotable', ['requesterId' => $mid]);
-    elseif ($view === 'members') $res = gs_call('admin.club.members', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '']);
+    if ($view === 'promotable') {
+        $res = gs_call('admin.club.promotable', ['requesterId' => $mid,
+            'q' => $_GET['q'] ?? '', 'centre' => $_GET['centre'] ?? '', 'track' => $_GET['track'] ?? '',
+            'editionId' => $_GET['editionId'] ?? '', 'groupId' => $_GET['groupId'] ?? '',
+            'page' => $_GET['page'] ?? null, 'pageSize' => $_GET['pageSize'] ?? null]);
+    } elseif ($view === 'members') {
+        /* `status` is forwarded only when the caller SENT it, so the domain's
+           "absent means active" default survives — forwarding '' would turn
+           every request into "every status" and quietly change what the roster
+           shows. */
+        $args = ['requesterId' => $mid, 'q' => $_GET['q'] ?? '', 'centre' => $_GET['centre'] ?? '',
+                 'sort' => $_GET['sort'] ?? '', 'dir' => $_GET['dir'] ?? '',
+                 'page' => $_GET['page'] ?? null, 'pageSize' => $_GET['pageSize'] ?? null,
+                 'all' => $_GET['all'] ?? null];
+        if (array_key_exists('status', $_GET)) $args['status'] = (string)$_GET['status'];
+        $res = gs_call('admin.club.members', $args);
+    }
     else                         $res = gs_call('admin.club.overview', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
-    if (($b['action'] ?? '') === 'promote') {
+    $action = (string)($b['action'] ?? '');
+    if ($action === 'promote') {
         $res = gs_call('admin.club.promote', ['requesterId' => $mid, 'studentId' => $b['studentId'] ?? '', 'ip' => client_ip()]);
+    } elseif ($action === 'promoteBulk') {
+        $res = gs_call('admin.club.promote.bulk', ['requesterId' => $mid, 'studentIds' => $b['studentIds'] ?? [], 'ip' => client_ip()]);
+    } elseif ($action === 'bulk') {
+        // `action` on the wire picks the route branch; `op` names the bulk
+        // action, so one key never has to mean two things.
+        $res = gs_call('admin.club.members.bulk', array_merge(is_array($b) ? $b : [],
+            ['action' => (string)($b['op'] ?? ''), 'requesterId' => $mid, 'ip' => client_ip()]));
     } else {
         json_error('unknown_action', 400);
     }

@@ -25,7 +25,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
-const { waitForServer } = require('./_serve');
+const { waitForServer, writeScreenIndex } = require('./_serve');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = process.env.ROSTER_UI_PORT || 8253;
@@ -170,12 +170,9 @@ setTimeout(function () { document.body.setAttribute('data-ready', '1'); }, 250);
     fs.mkdirSync(path.dirname(shotFile), { recursive: true });
     await page.locator('.admin-drawer-panel').screenshot({ path: shotFile });
     const kb = Math.round(fs.statSync(shotFile).size / 1024);
-    const idxFile = path.join(ROOT, 'docs', 'screens', 'INDEX.json');
-    let idx = [];
-    try { idx = JSON.parse(fs.readFileSync(idxFile, 'utf8')); } catch (_) {}
-    const keep = Array.isArray(idx) ? idx.filter((x) => x.name !== '27-roster-import') : [];
-    keep.push({ name: '27-roster-import', label: 'Importing the members workbook without a shell — the dry run, before anything is written', kb });
-    fs.writeFileSync(idxFile, JSON.stringify(keep, null, 2) + '\n');
+    writeScreenIndex(path.join(ROOT, 'docs', 'screens'), [
+      { name: '27-roster-import', label: 'Importing the members workbook without a shell — the dry run, before anything is written', kb },
+    ]);
     console.log('  ✓ docs/screens/27-roster-import.png  (' + kb + ' KB)');
 
     // ── Overwrite is a decision that invalidates the preview ──

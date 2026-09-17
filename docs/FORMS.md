@@ -1,8 +1,9 @@
 # Form builder — faculty cascade and conditional logic
 
 The public forms (summer registration, volunteer, contact) are built in
-**Control Room → Summer School → Form builder**. This page covers the two
-things that are not self-evident from the UI.
+**Control Room → Summer School → Intake form** (the panel used to be called
+"Form builder"). This page covers the two things that are not self-evident
+from the UI.
 
 Implementation: `api/_lib/domain/registration.php` (the authority),
 `page-other.jsx` (`GateRegister`, the live form), `page-admin.jsx`

@@ -54,7 +54,37 @@ const TPL_FIELDS = {
      first time somebody adds a centre. Same rule as the rest of the app. */
   "ink.centre":   { label: "Ink on centre colour", get: r => inkOn((r.centre && r.centre.color) || "#76B043").ink, isColor: true },
   "ink.tier":     { label: "Ink on tier colour",   get: r => inkOn((r.tier && r.tier.color) || "#00225F").ink, isColor: true },
+
+  /* ── The NGG member card ──────────────────────────────────────────────────
+     The credential every year-round member carries, and the one card this
+     system could not express — so it stayed hand-coded and moving a line on it
+     meant a deploy. These are the member roster's OWN field names, so a design
+     cannot bind to something the member payload does not hold.
+
+     `given` / `family` exist because the member roster stores ONE `fullName`
+     (the summer intake asks for the parts separately) and the card sets the two
+     at different weights. Splitting on the last space is a guess and is
+     documented as one: it is right for "Amina Bello" and wrong for a
+     double-barrelled surname, which is why `fullName` is also bindable for a
+     design that would rather set the whole thing on one line. */
+  "member.id":     { label: "Member ID",        get: r => String(r.memberId || "") },
+  "member.level":  { label: "Level",            get: r => String(r.level || "").toUpperCase() },
+  "member.given":  { label: "Given name",       get: r => tplNameParts(r).given },
+  "member.family": { label: "Family name",      get: r => tplNameParts(r).family },
+  "member.joined": { label: "Member since",     get: r => String(r.joinDate || r.createdAt || "").slice(0, 7) },
+  "member.type":   { label: "Membership type",  get: r => String(r.type || "") },
+  "member.status": { label: "Status",           get: r => String(r.status || "") },
 };
+
+/** A member's name split for a two-weight lockup. Documented as a guess: the
+ *  roster holds one `fullName`, so the last space is the only seam available. */
+function tplNameParts(r) {
+  const full = String((r && (r.fullName || [r.firstName, r.surname].filter(Boolean).join(" "))) || "").trim().replace(/\s+/g, " ");
+  if (!full) return { given: "", family: "" };
+  const parts = full.split(" ");
+  if (parts.length === 1) return { given: parts[0], family: "" };
+  return { given: parts[0], family: parts.slice(1).join(" ") };
+}
 
 /** Substitute {{field}} tokens in a string against a card row.
  *  A value that is ENTIRELY one token returns that field's value with its own
@@ -72,10 +102,40 @@ function tplBindValue(value, row) {
   });
 }
 
+/** How big a template is in the real world, in millimetres.
+ *
+ *  ONE rule, because there were two: tplResolve derived a missing `hMm` from
+ *  the aspect ratio, and every export path defaulted `wMm` to 54 — but the
+ *  studio's own header and size note read `tpl.wMm` raw off a template that
+ *  had not been through either, so a blank summer card announced itself as
+ *  "× mm" while printing at the size the defaults picked. A display that
+ *  disagrees with the export is worse than no display.
+ */
+function tplSizeMm(t) {
+  const tt = t || {};
+  const wMm = Number(tt.wMm) || 54;
+  const hMm = Number(tt.hMm)
+    || Math.round(wMm * (Number(tt.h) || 972) / (Number(tt.w) || 590) * 10) / 10;
+  return { wMm, hMm };
+}
+
+/** What to call a template's kind in front of an operator.
+ *
+ *  `kind` is a data value — "student" is the column the Summer School roster
+ *  joins on — and printing it raw put the word this product does not use for a
+ *  participant into the studio's own heading. */
+function tplKindLabel(kind) {
+  if (kind === "graphic") return "graphic";
+  if (kind === "member") return "member card";
+  if (kind === "volunteer") return "volunteer card";
+  return "Summer School card";
+}
+
 /** A template with every binding resolved against one card row — the input to
  *  the renderer, and a plain object a test can assert on without a canvas. */
 function tplResolve(template, row) {
   const t = template || {};
+  const mm = tplSizeMm(t);
   const out = {
     id: t.id || "", name: t.name || "", kind: t.kind || "student",
     w: Number(t.w) || 590, h: Number(t.h) || 972,
@@ -83,12 +143,11 @@ function tplResolve(template, row) {
        calculation divided by 54/590, the width of an ID card — which is fine
        while the only thing this renders is an ID card and wrong the moment it
        renders an A4 poster, where the same 98 units is 15mm rather than 9. */
-    wMm: Number(t.wMm) || 54, hMm: Number(t.hMm) || 0,
+    wMm: mm.wMm, hMm: mm.hMm,
     bleedMm: Number(t.bleedMm) || 0, safe: Number(t.safe) || 30,
     background: tplBindValue(t.background || "#ffffff", row),
     elements: [],
   };
-  if (!out.hMm) out.hMm = Math.round(out.wMm * out.h / out.w * 10) / 10;
   (t.elements || []).forEach((el, i) => {
     const e = {};
     Object.keys(el).forEach(k => { e[k] = tplBindValue(el[k], row); });
@@ -486,17 +545,28 @@ function tplPreflight(template, rows, requiredFields) {
     });
   });
 
-  (requiredFields || []).forEach(f => {
+  /* The BACK of a card is exempt from the credential rules. A back carries
+     terms, an emergency number, a signature strip — not the identity — and
+     running the front's rules over it would refuse every back for want of a
+     QR, which is how a tool teaches people to bypass its own checks. The FRONT
+     still has to satisfy them, so a two-sided card cannot lose its name and
+     its code by moving everything to the back. */
+  const isBack = String(t.face || "single") === "back";
+  (isBack ? [] : (requiredFields || [])).forEach(f => {
     // `role` is satisfied by either field that prints it — a card showing
     // "INSTRUCTOR · MUSIC" is not missing the role.
     if (f === "role" && (bound.role || bound.roleFaculty)) return;
+    // "name" is satisfied by whichever name binding the design uses: the member
+    // roster holds one fullName, the summer intake holds the parts separately.
+    if (f === "name" && TPL_NAME_FIELDS.some(k => bound[k])) return;
     if (!bound[f]) add("error", "Nothing on this card shows " + (TPL_FIELDS[f] ? TPL_FIELDS[f].label : f));
   });
 
   const qr = els.filter(e => e.type === "qr");
-  // Only a credential needs one. A poster with a QR is welcome to have one and
-  // it is still checked for size; a poster without one is simply a poster.
-  if (!qr.length && t.kind !== "graphic") add("error", "No QR — the card cannot be scanned at a gate");
+  // Only a credential needs one, and only on its front. A poster with a QR is
+  // welcome to have one and it is still checked for size; a poster without one
+  // is simply a poster, and a card back without one is simply a card back.
+  if (!qr.length && t.kind !== "graphic" && !isBack) add("error", "No QR — the card cannot be scanned at a gate");
   if (qr.length > 1) add("error", "Two QR codes — a scanner reads whichever it sees first");
   const origin = (typeof window !== "undefined" && window.location) ? window.location.origin : "";
   qr.forEach(q => {
@@ -610,6 +680,103 @@ const TPL_SYSTEM = [
         color: "{{ink.centre}}", align: "center", letterSpacing: 2.2, transform: "upper", vAlign: "middle", fit: true, role: "background" },
     ],
   },
+  /* ── The NGG member card, as a template at last ───────────────────────────
+   *
+   * This is the credential every year-round member carries, and it was the one
+   * card the design system could not express: it lived in hand-coded JSX
+   * (NggcMemberCard), so moving the QR two millimetres on the card the
+   * organisation issues MOST meant a deploy. The hand-coded renderer stays as
+   * the fallback — it is what a member downloads from their own dashboard
+   * without an admin having designed anything — and this is the same document
+   * with the layout moved into the row.
+   *
+   * Deliberately paired with a BACK. Every other design in this system is one
+   * face, because a summer QR card is printed one-up on a lanyard insert. A
+   * member card is a wallet credential: it has a reverse, and the reverse is
+   * where the terms, the emergency number and the "if found" line go. A front
+   * NAMES its back (`pairId`), so a duplex run cannot come out mismatched.
+   *
+   * 54 × 85mm — the ISO/IEC 7810 ID-1 size, i.e. the size of every bank card
+   * and therefore of every wallet slot. The summer card is 54 × 75 because it
+   * hangs from a lanyard and never goes in a wallet; a member card that does
+   * not fit a wallet is a member card that gets left at home.
+   */
+  {
+    id: "sys-member-front", name: "NGG member ID — front", kind: "member", face: "front",
+    pairId: "sys-member-back", system: true,
+    w: 590, h: 929, wMm: 54, hMm: 85, safe: 30, bleedMm: 3,
+    background: "#ffffff",
+    elements: [
+      { id: "topband", type: "rect", x: 0, y: 0, w: 590, h: 92, fill: "#0B1F51", role: "background" },
+      { id: "wordmark", type: "text", x: 34, y: 26, w: 420, h: 40, text: "NEXT GENERATION GENIUS",
+        size: 21, weight: 800, color: "#ffffff", letterSpacing: 3.4, vAlign: "middle" },
+      { id: "levelpill", type: "rect", x: 470, y: 28, w: 88, h: 36, radius: 18, fill: "#FCB316" },
+      { id: "level", type: "text", x: 470, y: 28, w: 88, h: 36, text: "{{member.level}}", size: 18, weight: 800,
+        color: "#0B1F51", align: "center", letterSpacing: 2, transform: "upper", vAlign: "middle", fit: true },
+      { id: "photo", type: "image", x: 60, y: 128, w: 470, h: 370, radius: 18, fit: "cover",
+        src: "{{photo}}", fill: "#eef0f4" },
+      /* Two weights, one lockup. The given name is light and the family name
+         carries the card, which is how a name reads at arm's length across a
+         room — and why `member.given` / `member.family` exist as separate
+         bindings rather than one full-name line. */
+      { id: "given", type: "text", x: 60, y: 528, w: 470, h: 40, text: "{{member.given}}", size: 30, weight: 300,
+        color: "#5C6474", letterSpacing: 0.6, transform: "upper", fit: true },
+      { id: "family", type: "text", x: 58, y: 566, w: 474, h: 58, text: "{{member.family}}", size: 52, weight: 800,
+        color: "#0B1F51", letterSpacing: -1.4, transform: "upper", fit: true },
+      { id: "rule", type: "rect", x: 60, y: 640, w: 470, h: 2, fill: "#E6E8EC" },
+      { id: "disciplines", type: "text", x: 60, y: 656, w: 470, h: 30, text: "{{disciplines}}", size: 19, weight: 600,
+        color: "#5C6474", letterSpacing: 2.4, transform: "upper", fit: true },
+      { id: "qr", type: "qr", x: 60, y: 712, w: 118, h: 118, token: "{{token}}" },
+      { id: "idlabel", type: "text", x: 200, y: 716, w: 260, text: "MEMBER ID", size: 12, weight: 600,
+        color: "#6B7280", letterSpacing: 2.6 },
+      { id: "idvalue", type: "text", x: 200, y: 734, w: 330, text: "{{displayId}}", size: 24, weight: 500,
+        color: "#0B1F51", font: "monospace" },
+      { id: "sincelabel", type: "text", x: 200, y: 776, w: 260, text: "MEMBER SINCE", size: 12, weight: 600,
+        color: "#6B7280", letterSpacing: 2.6 },
+      { id: "sincevalue", type: "text", x: 200, y: 794, w: 330, text: "{{member.joined}}", size: 17, weight: 500,
+        color: "#5C6474", font: "monospace" },
+      { id: "centreband", type: "rect", x: 0, y: 872, w: 590, h: 57, fill: "{{centre.color}}", role: "background" },
+      { id: "centrename", type: "text", x: 30, y: 872, w: 530, h: 57, text: "{{centre.code}}  ·  {{centre.name}}",
+        size: 24, weight: 700, color: "{{ink.centre}}", align: "center", letterSpacing: 4.4,
+        transform: "upper", vAlign: "middle", fit: true, minSize: 20, role: "background" },
+    ],
+  },
+  {
+    id: "sys-member-back", name: "NGG member ID — back", kind: "member", face: "back",
+    pairId: "sys-member-front", system: true,
+    w: 590, h: 929, wMm: 54, hMm: 85, safe: 30, bleedMm: 3,
+    background: "#0B1F51",
+    elements: [
+      { id: "panel", type: "rect", x: 30, y: 30, w: 530, h: 869, radius: 18, fill: "#ffffff" },
+      { id: "h", type: "text", x: 66, y: 74, w: 460, h: 34, text: "THIS CARD", size: 20, weight: 800,
+        color: "#0B1F51", letterSpacing: 3 },
+      { id: "terms", type: "text", x: 66, y: 122, w: 460, h: 300,
+        text: "Identifies the holder as a member of Next Generation Genius. It is not transferable and remains the property of the programme. Present it at your centre and at NGG events.",
+        size: 17, weight: 400, color: "#5C6474", lineHeight: 1.5 },
+      { id: "rule1", type: "rect", x: 66, y: 452, w: 460, h: 2, fill: "#E6E8EC" },
+      { id: "foundh", type: "text", x: 66, y: 476, w: 460, h: 26, text: "IF FOUND", size: 13, weight: 700,
+        color: "#6B7280", letterSpacing: 2.6 },
+      { id: "found", type: "text", x: 66, y: 502, w: 460, h: 90,
+        text: "Please return it to any NGG centre, or contact next@afrovanguard.org.ng",
+        size: 16, weight: 400, color: "#5C6474", lineHeight: 1.5 },
+      { id: "rule2", type: "rect", x: 66, y: 612, w: 460, h: 2, fill: "#E6E8EC" },
+      /* A signature strip, because a credential a desk checks by eye needs
+         something a desk can check. Drawn, not bound — nothing in the roster
+         holds a signature. */
+      { id: "sigh", type: "text", x: 66, y: 636, w: 460, h: 26, text: "HOLDER'S SIGNATURE", size: 13, weight: 700,
+        color: "#6B7280", letterSpacing: 2.6 },
+      { id: "sigstrip", type: "rect", x: 66, y: 666, w: 460, h: 72, radius: 6, fill: "#F4F5F7" },
+      { id: "validlabel", type: "text", x: 66, y: 764, w: 220, text: "VALID TO", size: 13, weight: 700,
+        color: "#6B7280", letterSpacing: 2.6 },
+      { id: "validvalue", type: "text", x: 66, y: 786, w: 220, text: "{{expiresAt}}", size: 18, weight: 500,
+        color: "#0B1F51", font: "monospace" },
+      { id: "idlabel", type: "text", x: 320, y: 764, w: 206, text: "MEMBER ID", size: 13, weight: 700,
+        color: "#6B7280", letterSpacing: 2.6 },
+      { id: "idvalue", type: "text", x: 320, y: 786, w: 206, text: "{{displayId}}", size: 18, weight: 500,
+        color: "#0B1F51", font: "monospace" },
+      { id: "mark", type: "image", x: 66, y: 832, w: 120, h: 40, fit: "contain", src: "/assets/logo.png" },
+    ],
+  },
 ];
 
 /* ── What NGG actually needs to make ─────────────────────────────────────────
@@ -627,6 +794,13 @@ const TPL_SYSTEM = [
  * readable — all of which were previously hard-coded to the width of an ID card.
  */
 const TPL_PRESETS = [
+  /* 54 × 85mm is ISO/IEC 7810 ID-1 — the size of every bank card, and
+     therefore of every wallet slot. It leads the list because the member card
+     is the credential this organisation issues most, and a member card that
+     does not fit a wallet is one that gets left at home. The summer sizes are
+     54 × 75 / 54 × 89 because those hang from a lanyard. */
+  { id: "member-card", group: "Credentials", name: "Member card (54 × 85mm · wallet)", kind: "member", face: "front", w: 590, h: 929, wMm: 54, hMm: 85, safe: 30, bleedMm: 3 },
+  { id: "member-back", group: "Credentials", name: "Member card — back (54 × 85mm)",   kind: "member", face: "back",  w: 590, h: 929, wMm: 54, hMm: 85, safe: 30, bleedMm: 3 },
   { id: "id-card",     group: "Credentials", name: "ID card (54 × 75mm)", kind: "student",   w: 590, h: 819,  wMm: 54,  hMm: 75,  safe: 30, bleedMm: 3 },
   { id: "id-card-tall",group: "Credentials", name: "ID card (54 × 89mm)", kind: "student",   w: 590, h: 972,  wMm: 54,  hMm: 89,  safe: 30, bleedMm: 3 },
   { id: "certificate", group: "Print",       name: "Certificate (A4 landscape)", kind: "graphic", w: 1240, h: 877, wMm: 297, hMm: 210, safe: 60, bleedMm: 3 },
@@ -676,11 +850,31 @@ const TPL_FONTS = [
 const TPL_REQUIRED = {
   student: ["surname", "token", "displayId"],
   volunteer: ["surname", "token", "displayId", "role"],
+  /* The NGG member card. The roster holds ONE `fullName` for a member — unlike
+     the summer intake, which asks for the given name and the surname separately
+     — so "name" here is satisfied by whichever of the three name bindings the
+     design uses, and no token is demanded: a member's QR resolves their profile
+     rather than a gate check-in. */
+  member: ["name", "displayId"],
   /* A poster has no child to identify, so none of the credential rules apply to
      it. Running them anyway would mean every poster refused to publish for want
      of a QR — which is how a tool teaches people to bypass its own checks. */
   graphic: [],
 };
+
+/** Which name bindings satisfy TPL_REQUIRED's "name".
+ *
+ *  The two-weight member lockup (`member.given` + `member.family`) counts: a
+ *  card setting the given name light and the family name heavy IS showing a
+ *  name, and the first draft of this list left them out — so the standard
+ *  member card failed its own rule at publish time. The preflight test caught
+ *  it, which is what that test is for. */
+const TPL_NAME_FIELDS = ["fullName", "surname", "firstName", "member.given", "member.family"];
+/** A card has two sides. The BACK is exempt from the credential rules: it
+ *  carries terms, an emergency number, a signature strip — not the identity.
+ *  The FRONT still has to satisfy them, so a two-sided card cannot lose its
+ *  name and its code by moving everything to the back. */
+const TPL_FACES = ["single", "front", "back"];
 
 /* ============================================================================
    MemberIDCard — the member-facing NGG ID card.
@@ -992,11 +1186,16 @@ function NggcMemberCard(props) {
   var role = String(m.role || (m.tier && m.tier.name) || "MEMBER").toUpperCase();
   var photo = (m.photoUrl && /^https?:\/\//.test(String(m.photoUrl))) ? m.photoUrl : "";
 
-  var NAVY = "#0B1F51", AMBER = "#FCB316", SEC = "#5C6474", CAP = "#9AA0AC", HAIR = "#E6E8EC", DIV = "#C9CCD4";
+  /* CAP was #9AA0AC, which measures 2.63:1 on white — the same failure the
+     template preflight refuses, shipped on the card a member downloads from
+     their own dashboard. The caption labels ("MEMBER ID", "MEMBER SINCE") were
+     the least readable thing on a credential a desk reads at arm's length.
+     #6B7280 is 4.83:1 and keeps the tonal step down from SEC. */
+  var NAVY = "#0B1F51", AMBER = "#FCB316", SEC = "#5C6474", CAP = "#6B7280", HAIR = "#E6E8EC", DIV = "#C9CCD4";
   var wallet = size === "wallet";
   var S = wallet
-    ? { W: 54, H: 85, padX: 5, padB: 5, photoW: 48, photoH: 37.8, pillPt: 5.4, namePt: 11, discPt: 5.6, gap: 2.4, hair: 0.3, footTop: 3, qr: 13, logoW: 12, rolePt: 4.8, capPt: 4.2, divH: 2.6, mark: 34, gapD: 2, pillPad: "1.3mm 3.4mm", pillTrk: ".2em" }
-    : { W: 148, H: 210, padX: 14, padB: 12, photoW: 130, photoH: 102.3, pillPt: 8.5, namePt: 23, discPt: 10.5, gap: 4.5, hair: 0.5, footTop: 7, qr: 20, logoW: 22, rolePt: 7, capPt: 7, divH: 4.5, mark: 95, gapD: 3.5, pillPad: "2.4mm 6.5mm", pillTrk: ".3em" };
+    ? { W: 54, H: 85, padX: 5, padB: 5, photoW: 54, photoH: 37.8, pillPt: 5.4, namePt: 11, discPt: 5.6, gap: 2.4, hair: 0.3, footTop: 3, qr: 13, logoW: 12, rolePt: 4.8, capPt: 4.2, divH: 2.6, mark: 34, gapD: 2, pillPad: "1.3mm 3.4mm", pillTrk: ".2em" }
+    : { W: 148, H: 210, padX: 14, padB: 12, photoW: 148, photoH: 102.3, pillPt: 8.5, namePt: 23, discPt: 10.5, gap: 4.5, hair: 0.5, footTop: 7, qr: 20, logoW: 22, rolePt: 7, capPt: 7, divH: 4.5, mark: 95, gapD: 3.5, pillPad: "2.4mm 6.5mm", pillTrk: ".3em" };
   var mm = function (v) { return v + "mm"; }, pt = function (v) { return v + "pt"; };
 
   // Name fit (§4): one line by default; ≥22 chars steps to 20pt; ≥28 breaks
@@ -1034,10 +1233,22 @@ function NggcMemberCard(props) {
    *
    * The crop sits high (22%) rather than centred: passport-style photographs
    * put the face in the upper half, and a centred crop takes the top off it. */
-  /* Centred by hand, not by `margin: 0 auto`. The photo is deliberately WIDER
-     than the padded column so it bleeds to the card edge — and auto margins do
-     not centre a child wider than its container, they pin it left. So the bleed
-     was landing entirely on the right: 10mm on the A5, 4mm on the wallet. */
+  /* FULL BLEED. `photoW` is the card's full width, so the photograph runs
+     edge to edge — no white margin down either side, which is what a printed
+     credential looks like and what a trimmed card demands: a photo inset from
+     the trim shows the cut, and 0.5mm of drift at the guillotine shows it
+     unevenly.
+
+     It was 130mm on a 148mm card and 48mm on a 54mm one, leaving 9mm and 3mm
+     of white respectively. The card's top padding is already 0, so the photo
+     reached the top edge and stopped short at the sides — which read as a
+     mistake rather than a margin.
+
+     Centred by hand, not by `margin: 0 auto`: auto margins do not centre a
+     child wider than its container, they pin it left, so the bleed landed
+     entirely on the right. With photoW === W this resolves to exactly -padX,
+     cancelling the container's own padding and putting the photo's left edge
+     on the card's left edge. */
   var bleed = (S.photoW - (S.W - 2 * S.padX)) / 2;
   var photoWrap = h("div", { key: "pw", style: { width: mm(S.photoW), height: mm(S.photoH),
       marginLeft: mm(-bleed), flex: "none", position: "relative" } }, [
@@ -1155,7 +1366,8 @@ function NggcMemberCardExport(members, opts) {
 
 Object.assign(window, {
   TPL_FIELDS, TPL_SYSTEM, TPL_REQUIRED, TPL_PRESETS, TPL_BRAND, TPL_FONTS,
-  tplMmPerUnit, tplQrModules,
+  TPL_FACES, TPL_NAME_FIELDS, tplNameParts,
+  tplMmPerUnit, tplQrModules, tplSizeMm, tplKindLabel,
   TPL_QR_GOOD_MODULE_MM, TPL_QR_MIN_MODULE_MM,
   tplBindValue, tplResolve, tplFitSize, tplToFabric, tplPreflight,
   tplPaintUnder, tplInkProblems, TPL_INK_ERROR_RATIO, TPL_INK_WARN_RATIO,

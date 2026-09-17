@@ -22,7 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { waitForServer } = require('./_serve');
+const { waitForServer, writeScreenIndex } = require('./_serve');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = process.env.ID_BATCH_PORT || 8261;
@@ -210,11 +210,9 @@ setTimeout(function () { document.body.setAttribute('data-ready', '1'); }, 900);
       await page.locator('.admin-note-card button', { hasText: 'Copied' }).count() === 1);
 
     const kb = Math.round(fs.statSync(path.join(ROOT, 'docs', 'screens', '28-id-preflight.png')).size / 1024);
-    const idxFile = path.join(ROOT, 'docs', 'screens', 'INDEX.json');
-    let idx = []; try { idx = JSON.parse(fs.readFileSync(idxFile, 'utf8')); } catch (_) {}
-    const keep = Array.isArray(idx) ? idx.filter((x) => x.name !== '28-id-preflight') : [];
-    keep.push({ name: '28-id-preflight', label: 'Printing member IDs — what is missing across the selection, before the run', kb });
-    fs.writeFileSync(idxFile, JSON.stringify(keep, null, 2) + '\n');
+    writeScreenIndex(path.join(ROOT, 'docs', 'screens'), [
+      { name: '28-id-preflight', label: 'Printing member IDs — what is missing across the selection, before the run', kb },
+    ]);
     console.log('  ✓ docs/screens/28-id-preflight.png  (' + kb + ' KB)');
 
     // ── When it is everybody ──
