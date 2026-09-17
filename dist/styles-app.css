@@ -7093,3 +7093,24 @@ select.cs-field option { background: var(--dsn-s1); color: var(--dsn-ink); }
   cursor: pointer; font-family: inherit; }
 .mrv-due-names button:hover { background: rgba(255,255,255,.14); }
 @media (pointer: coarse) { .mrv-due-names button { min-height: 44px; } }
+
+/* ── Two mentor records, one email ──────────────────────────────────────────
+   Everybody in a pair is locked out of the Mentor Portal until the desk
+   separates them, and they cannot report it — the thing that is broken is
+   their way in. So this is a warning that names people, not a badge count. */
+.admin-clash { background: rgba(255,120,90,.08); border: 1px solid rgba(255,120,90,.45);
+  border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; }
+.admin-clash-h { font-size: 15px; font-weight: 700; color: var(--ink-900); }
+.admin-clash-p { font-size: 13.5px; line-height: 1.55; color: var(--ink-700);
+  margin: 6px 0 12px; max-width: 70ch; }
+.admin-clash-group + .admin-clash-group { margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid rgba(255,120,90,.28); }
+.admin-clash-email { font-size: 12px; letter-spacing: .04em; color: var(--ink-500); }
+.admin-clash-rows { list-style: none; margin: 6px 0 0; padding: 0; display: flex;
+  flex-wrap: wrap; gap: 8px; }
+.admin-clash-rows button { display: flex; flex-direction: column; gap: 2px; text-align: left;
+  padding: 9px 13px; min-height: 44px; border-radius: 11px; cursor: pointer; font-family: inherit;
+  background: #fff; border: 1px solid var(--cream-200); color: var(--ink-900); }
+.admin-clash-rows button:hover { border-color: rgba(255,120,90,.6); }
+.admin-clash-name { font-size: 14px; font-weight: 600; }
+.admin-clash-meta { font-size: 11.5px; color: var(--ink-500); }

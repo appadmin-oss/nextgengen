@@ -31,6 +31,19 @@ CREATE TABLE IF NOT EXISTS members (
   UNIQUE KEY idx_members_anchorcode (anchorCode)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+/* `email` carries no UNIQUE constraint, and that is a decision rather than an
+   omission. The invariant IS enforced — one active mentor per address, refused
+   at every write path (admin_mentors_upsert, the application accept, the
+   Afrovanguard sync) and failed closed at the portal gate, which will not
+   resolve an ambiguous address rather than pick between two people's classes.
+   What is not done is adding the index, because adding it means first deciding
+   what to do with any pair already in the data, and that decision cannot be
+   made by a machine: two rows on one address may be one person with a
+   duplicate record or two people on a shared family mailbox — a distinction
+   mentor_gate's own comment has named for longer than this note has existed.
+   Choosing wrong hands an adult another adult's children.
+   admin_mentors_duplicates() puts each pair in front of the desk instead, and
+   a UNIQUE index becomes safe to add once that list is empty. */
 CREATE TABLE IF NOT EXISTS mentors (
   id INT AUTO_INCREMENT PRIMARY KEY,
   mentorId VARCHAR(64) UNIQUE NOT NULL,

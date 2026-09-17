@@ -66,6 +66,39 @@ function mentor_admin_programmes(array $caps): array {
     return $out;
 }
 
+/* ── One email, one mentor ─────────────────────────────────────────────────
+ *
+ * `mentors.email` carries no UNIQUE constraint and deliberately still does not
+ * — see the note in db/schema-mysql.sql. What it does have is this pair of
+ * functions, because the column decides something that matters: the gate falls
+ * back to email when a mentor holds no member or volunteer link, and two rows
+ * answering to one address means the gate is choosing between two different
+ * people's classes with no way to tell them apart.
+ *
+ * The obvious fix — ORDER BY something and take the first — is the wrong one.
+ * Ordering makes the choice repeatable, not correct: it would still hand
+ * somebody another adult's children, just consistently. This codebase already
+ * knows the reason, in mentor_gate's own comment: two different people can
+ * share a mailbox. So the resolution fails closed instead.
+ */
+
+/** Active mentor rows answering to an email, optionally excluding one record.
+ *  Lowercased on both sides, because rosters have arrived in every casing. */
+function mentor_rows_for_email(string $email, string $exceptMentorId = ''): array {
+    $e = mb_strtolower(trim($email));
+    if ($e === '') return [];
+    $sql = "SELECT * FROM mentors WHERE lower(email) = ? AND status = 'active'";
+    $args = [$e];
+    if ($exceptMentorId !== '') { $sql .= " AND mentorId <> ?"; $args[] = $exceptMentorId; }
+    return db_all($sql . " ORDER BY id", $args);
+}
+
+/** Does this email already belong to a DIFFERENT active mentor? The one check
+ *  every write path runs before it creates or re-points a record. */
+function mentor_email_taken(string $email, string $exceptMentorId = ''): bool {
+    return count(mentor_rows_for_email($email, $exceptMentorId)) > 0;
+}
+
 function mentor_gate(array $p): array {
     $m = mentor_requester((string)($p['requesterId'] ?? ''));
     if (!$m) return ['ok' => false, 'error' => 'no_requester'];
@@ -110,7 +143,26 @@ function mentor_gate(array $p): array {
     $mid = (string)$m['memberId'];
     $mentor = db_row("SELECT * FROM mentors WHERE status = 'active' AND (memberId = ? OR volunteerId = ?) LIMIT 1", [$mid, $mid]);
     if (!$mentor && $email !== '') {
-        $mentor = db_row("SELECT * FROM mentors WHERE lower(email) = ? AND status = 'active' LIMIT 1", [$email]);
+        /* FAILS CLOSED. `LIMIT 1` over an unconstrained column was picking
+         * whichever row the engine happened to return, so two active mentors
+         * sharing a mailbox got each other's reach at random — a different
+         * class on a different request, with nothing on screen to say so.
+         *
+         * When the address is ambiguous the honest answer is that the system
+         * does not know which of them this is, and the safe one is to say so.
+         * An adult locked out of the portal with a named cause is a support
+         * ticket; an adult handed another adult's children is a safeguarding
+         * incident. The ops event is what turns the first into something
+         * somebody actually fixes. */
+        $rows = mentor_rows_for_email($email);
+        if (count($rows) > 1) {
+            if (function_exists('ops_record')) {
+                ops_record('warn', 'mentor.gate', 'Two active mentor records share one email',
+                           'requester=' . $mid . ' matches=' . count($rows));
+            }
+            return ['ok' => false, 'error' => 'mentor_record_ambiguous'];
+        }
+        $mentor = $rows[0] ?? null;
     }
     if ($mentor) {
         $centre = trim((string)($mentor['centre'] ?? ''));
@@ -625,4 +677,75 @@ function mentor_bulk_award(array $p): array {
     audit('mentor.bulk.award', (string)$g['member']['memberId'], '',
         ['count' => count($ids), 'awarded' => $awarded, 'logged' => $logged, 'skipped' => $skipped, 'preset' => $presetId], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'awarded' => $awarded, 'logged' => $logged, 'skipped' => $skipped, 'results' => $results];
+}
+
+/**
+ * Active mentor records that share an email with another.
+ *
+ * The half the machine cannot do. New collisions are refused at every write
+ * path and the gate refuses to resolve an old one — but resolving it means
+ * deciding whether two rows are one person with a duplicate record or two
+ * people on a shared mailbox, and only somebody who knows them can say. This
+ * puts the question in front of them.
+ *
+ * Deliberately not a merge op. `merge.php` exists for members and the
+ * temptation is to point it at this; the difference is that a member merge is
+ * reconciling two records of one person established by other means, whereas
+ * here the premise itself is what is in doubt. Getting it wrong hands an adult
+ * another adult's children, which is the failure the whole change exists to
+ * prevent — so the desk picks, edits one of the addresses, and the collision
+ * is gone.
+ *
+ * Every affected adult is locked out of the portal until this is done, so the
+ * count is worth showing even when it is zero-shaped: they cannot report it
+ * themselves, because the thing that is broken is their way in.
+ */
+function admin_mentors_duplicates(array $p): array {
+    $g = admin_cap_gate($p, 'people');
+    if (!$g['ok']) return $g;
+
+    /* One grouped query, then one read for the rows — not a query per group.
+       Blank emails are excluded: a mentor with no address never reaches the
+       gate's email fallback, so two of them are not a collision. */
+    $groups = db_all("SELECT lower(email) e, COUNT(*) c FROM mentors
+                      WHERE status = 'active' AND email IS NOT NULL AND email <> ''
+                      GROUP BY lower(email) HAVING COUNT(*) > 1
+                      ORDER BY c DESC, e LIMIT 100");
+    if (!$groups) return ['ok' => true, 'duplicates' => [], 'mentors' => 0];
+
+    $emails = array_map(static fn($r) => (string)$r['e'], $groups);
+    $in = '(' . implode(',', array_fill(0, count($emails), '?')) . ')';
+    $rows = db_all("SELECT mentorId, fullName, email, centre, department, rank, programme,
+                           memberId, volunteerId, source, createdAt
+                    FROM mentors WHERE status = 'active' AND lower(email) IN $in ORDER BY lower(email), id", $emails);
+
+    $byEmail = [];
+    foreach ($rows as $r) {
+        $e = mb_strtolower((string)$r['email']);
+        $byEmail[$e][] = [
+            'mentorId' => (string)$r['mentorId'], 'fullName' => (string)$r['fullName'],
+            'centre' => (string)($r['centre'] ?? ''), 'department' => (string)($r['department'] ?? ''),
+            'rank' => (string)($r['rank'] ?? 'mentor'), 'programme' => (string)($r['programme'] ?? 'summer'),
+            /* Whether the record is LINKED is the fact that resolves most of
+               these: a row carrying a memberId or volunteerId is reached by
+               that id and never by the email fallback, so it is usually the
+               one to keep. */
+            'linked' => trim((string)($r['memberId'] ?? '')) !== '' || trim((string)($r['volunteerId'] ?? '')) !== '',
+            'source' => (string)($r['source'] ?? ''), 'createdAt' => (string)($r['createdAt'] ?? ''),
+        ];
+    }
+
+    $out = [];
+    $affected = 0;
+    foreach ($emails as $e) {
+        $set = $byEmail[$e] ?? [];
+        if (count($set) < 2) continue;
+        $affected += count($set);
+        /* The consequence, said per group rather than left to be inferred:
+           these people cannot open the Mentor Portal at all unless their row
+           carries a member or volunteer link. */
+        $lockedOut = count(array_filter($set, static fn($m) => !$m['linked']));
+        $out[] = ['email' => $e, 'count' => count($set), 'lockedOut' => $lockedOut, 'records' => $set];
+    }
+    return ['ok' => true, 'duplicates' => $out, 'mentors' => $affected];
 }

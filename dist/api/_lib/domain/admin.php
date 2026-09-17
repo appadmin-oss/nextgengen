@@ -420,6 +420,20 @@ function admin_mentors_upsert(array $p): array {
     if (isset($data['programme']) && !in_array((string)$data['programme'], ['summer', 'ngg', 'both'], true)) $data['programme'] = 'summer';
     $existing = $mentorId ? db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [$mentorId]) : null;
 
+    /* One active mentor per email. The gate falls back to email when a record
+     * carries no member or volunteer link, and two rows answering to one
+     * address leave it choosing between two people's classes — so the
+     * collision is refused where it is created rather than resolved later
+     * where it cannot be. Checked on the edit branch too: pointing an existing
+     * record at somebody else's address is the same collision through a
+     * different door. */
+    if (array_key_exists('email', $data)) {
+        $wantEmail = trim((string)$data['email']);
+        if ($wantEmail !== '' && mentor_email_taken($wantEmail, $mentorId)) {
+            return ['ok' => false, 'error' => 'email_taken'];
+        }
+    }
+
     if ($existing) {
         $patch = db_pick($data, $cols, [], ['maxMentees']);
         $patch['updatedAt'] = now_iso();

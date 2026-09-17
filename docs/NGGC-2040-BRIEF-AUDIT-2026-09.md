@@ -40,8 +40,8 @@ All three gaps this audit named have since been implemented, in the commits
 that follow it — G1 as `members.division`, G2 as `mentor_reviews`, and G3 as
 the evidence record described below. **G3's original finding was wrong**, and
 the entry says so in full rather than quietly reading as though it had always
-said the right thing. G4 and G5 are not this work's: G5 was fixed upstream,
-and G4 is left for the programme to decide.
+said the right thing. G5 was fixed upstream. G4 is closed too,
+though not the way this document first proposed — see the entry.
 
 Each was re-checked against the merged tree before being worked, which is how
 G3's error surfaced.
@@ -211,7 +211,7 @@ snapshot of what was known at the time. Tenure is shown on that screen and
 labelled as not being evidence, which is §20's argument rather than a
 decoration.
 
-### G4. `mentors.email` has no uniqueness constraint — Medium
+### G4. `mentors.email` has no uniqueness constraint — Medium · **closed**
 
 Found by accident: a test fixture of mine reused an email another fixture
 already used, and the second mentor row silently took over the first one's
@@ -221,11 +221,46 @@ with two rows it takes whichever comes back first, so a duplicate record
 has no `UNIQUE` on `mentors.email`, and `admin_mentors_upsert` does not check
 for one.
 
-This is a safeguarding-adjacent access-control issue, not just hygiene. Fixing
-it means a uniqueness constraint, a de-duplication pass over existing rows
-(`merge.php` already exists for members and is the model), and a check in the
-upsert. **Not fixed here** — it needs a data migration decision about existing
-duplicates that is the programme's to make, not mine.
+This is a safeguarding-adjacent access-control issue, not just hygiene.
+
+**Closed — but not with the `UNIQUE` index this entry first proposed.** The
+index turned out to be the wrong instrument, and the reason is in
+`mentor_gate`'s own comment, which predates this audit: *two different people
+can share a mailbox*. Adding the constraint means first deciding what to do
+with any pair already in the data, and that decision — one person with a
+duplicate record, or two people on one family address — cannot be made by a
+machine. Auto-merging the wrong pair does exactly the thing the constraint
+exists to prevent. A conditional index (unique only among `status='active'`)
+would sidestep it, but partial indexes are not portable to MySQL, and a
+migration that throws on a duplicate would 500 every request on SQLite, where
+the ladder runs at runtime.
+
+So the invariant is enforced where it can be enforced correctly:
+
+- **The gate fails closed.** `LIMIT 1` over an unconstrained column was
+  returning whichever row the engine happened to hand back, so two mentors
+  sharing an address got each other's reach at random — a different class on a
+  different request, with nothing on screen to say so. It now refuses with
+  `mentor_record_ambiguous` and records an ops event. An adult locked out with
+  a named cause is a support ticket; an adult handed another adult's children
+  is a safeguarding incident.
+- **No new pair can be created.** `admin_mentors_upsert` refuses `email_taken`
+  on create *and* on edit (pointing an existing record at somebody else's
+  address is the same collision through a different door), the application
+  accept refuses it, and the Afrovanguard sync — which runs unattended — skips
+  the row and names it in its output and the ops log rather than either
+  merging or failing the whole run. `admin_mentor_promote` already adopted by
+  email and needed no change.
+- **The pairs already in the data are put in front of a human.**
+  `admin_mentors_duplicates()` and a banner on People → Mentors, listing each
+  record with the fact that resolves most of them: whether it carries a member
+  or volunteer link, because a linked record is reached by that id and never by
+  the email fallback. Deliberately no merge button.
+
+A `UNIQUE` index becomes safe to add once that list is empty, and the schema
+comment at `db/schema-mysql.sql:34` says so. 16 assertions cover it, including
+one asserting the *test suite's own* fixtures leave no shared address — which
+is how the finding surfaced in the first place.
 
 ### G5. ~~Four dashboard tabs are 36px against a 44px floor~~ — fixed upstream
 

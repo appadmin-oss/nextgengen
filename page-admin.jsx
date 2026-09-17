@@ -2691,6 +2691,66 @@ function MentorPromote({ centres, onClose, onDone }) {
   );
 }
 
+/* Two active mentor records answering to one email.
+ *
+ * The portal gate refuses to resolve an ambiguous address rather than pick
+ * between two people's classes, which means everybody in a pair is locked out
+ * of the Mentor Portal until somebody separates them. They cannot report it:
+ * the thing that is broken is their way in. So it is surfaced here, on the
+ * screen where it gets fixed, rather than waiting in a log.
+ *
+ * No "merge" button on purpose. Resolving a pair means deciding whether it is
+ * one person with a duplicate record or two people on a shared family mailbox,
+ * and getting that wrong hands an adult another adult's children. Each record
+ * opens for editing; the desk decides which address changes. */
+function MentorEmailClashes({ onOpen }) {
+  const [d, setD] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.admin.mentors.duplicates()
+      .then(r => { if (alive) setD(r); })
+      .catch(() => { if (alive) setD(null); });
+    return () => { alive = false; };
+  }, []);
+  if (!d || !d.duplicates || !d.duplicates.length) return null;
+  return (
+    <div className="admin-clash" role="alert">
+      <div className="admin-clash-h">
+        {d.duplicates.length === 1 ? "One email is claimed by two mentor records."
+          : d.duplicates.length + " emails are each claimed by more than one mentor record."}
+      </div>
+      <p className="admin-clash-p">
+        The Mentor Portal cannot tell these records apart, so it lets none of them in.
+        Give each person their own address — or retire the record that is not theirs —
+        and they are back in immediately.
+      </p>
+      {d.duplicates.map(g => (
+        <div key={g.email} className="admin-clash-group">
+          <div className="mono admin-clash-email">{g.email}</div>
+          <ul className="admin-clash-rows">
+            {g.records.map(r => (
+              <li key={r.mentorId}>
+                <button type="button" onClick={() => onOpen && onOpen(r.mentorId)}>
+                  <span className="admin-clash-name">{r.fullName || r.mentorId}</span>
+                  <span className="mono admin-clash-meta">
+                    {r.centre || "no centre"}
+                    {r.source ? " · " + r.source : ""}
+                    {/* A linked record is reached by its member/volunteer id and
+                        never by the email fallback — so it still works, and it
+                        is usually the one to keep. Worth saying, because it is
+                        the fact that decides most of these. */}
+                    {r.linked ? " · linked — still signs in" : " · locked out"}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AdminMentors() {
   const [list, setList] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -2716,6 +2776,10 @@ function AdminMentors() {
         </div>
       </div>
       {promoting && <MentorPromote centres={centres} onClose={() => setPromoting(false)} onDone={() => { setPromoting(false); load(); }}/>}
+      <MentorEmailClashes onOpen={(mentorId) => {
+        const row = (list || []).find(x => x.mentorId === mentorId);
+        setEditing(row || { mentorId });
+      }}/>
       {list === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner"/>) :
         <div className="admin-grid-cards">
           {list.map(m => (

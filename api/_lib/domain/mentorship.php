@@ -273,6 +273,14 @@ function admin_mentor_application_convert(array $p): array {
     $existing = db_row('SELECT mentorId FROM mentors WHERE lower(email) = ? LIMIT 1', [strtolower((string)$a['email'])]);
     if ($existing) { db_update('applications', ['status' => 'accepted'], ['id' => $id]); return ['ok' => true, 'mentorId' => $existing['mentorId'], 'existed' => true]; }
 
+    /* Already on the roster under this address? Then accepting again mints
+     * the twin the gate cannot tell apart. Refused rather than merged: the
+     * applicant may genuinely be a second person on a shared family mailbox,
+     * which is a judgement for the desk and not for this function. */
+    if (trim((string)($a['email'] ?? '')) !== '' && mentor_email_taken((string)$a['email'])) {
+        return ['ok' => false, 'error' => 'email_taken'];
+    }
+
     $links = mentorship_links();
     $newId = new_id('MEN', 'mentors', 'mentorId');
     /* Carry the intake across — the same fix the teen path needed.

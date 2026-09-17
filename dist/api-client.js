@@ -1221,6 +1221,10 @@
         candidates: (q) => request('/admin/mentors.php?view=candidates&q=' + encodeURIComponent(q || '')),
         promote:    (personId, opts) => request('/admin/mentors.php', { body: Object.assign({ action: 'promote', personId }, opts || {}) }),
         demote:     (mentorId) => request('/admin/mentors.php', { body: { action: 'demote', mentorId } }),
+        /* Active mentor records sharing an email. The portal gate refuses to
+           resolve an ambiguous address, so everybody in a pair is locked out
+           until the desk separates them — and cannot report it themselves. */
+        duplicates: () => request('/admin/mentors.php' + qs({ view: 'duplicates' })),
       },
       // Tournaments. Centre rounds, then the centre champions meet.
       tournaments: {

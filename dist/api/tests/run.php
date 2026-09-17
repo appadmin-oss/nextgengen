@@ -7969,6 +7969,134 @@ chk('champions mint is idempotent per period', (function () use ($v3p) {
     return $before === $after && $before > 0;
 })());
 
+// ── One email, one mentor ──────────────────────────────────────────────────
+// `mentors.email` has no UNIQUE constraint and deliberately still does not —
+// the invariant is enforced in the domain instead, because resolving a pair
+// already in the data means deciding whether it is one person with two records
+// or two people on a shared mailbox, which a machine cannot do.
+(function () {
+    $ADM = 'NGG-2025-0099';
+    db_exec("DELETE FROM mentors WHERE email = 'shared@example.com'");
+
+    $a = backend_dispatch('admin.mentors.upsert', ['requesterId' => $ADM, 'data' => [
+        'fullName' => 'First Claimant', 'email' => 'shared@example.com', 'status' => 'active', 'centre' => 'Egbeda']]);
+    chk('a mentor can be created with an unused email', !empty($a['ok']));
+
+    /* Refused where it is created, because it cannot be resolved later where
+       it matters — the gate has no way to tell the two apart. */
+    chk('a second active mentor cannot take the same email',
+        backend_dispatch('admin.mentors.upsert', ['requesterId' => $ADM, 'data' => [
+            'fullName' => 'Second Claimant', 'email' => 'shared@example.com',
+            'status' => 'active', 'centre' => 'Ayobo']])['error'] === 'email_taken');
+    chk('…and the second record was not written',
+        (int) db_row("SELECT COUNT(*) c FROM mentors WHERE lower(email) = 'shared@example.com'")['c'] === 1);
+
+    // The same collision arriving through the edit door.
+    $b = backend_dispatch('admin.mentors.upsert', ['requesterId' => $ADM, 'data' => [
+        'fullName' => 'Somebody Else', 'email' => 'notshared@example.com', 'status' => 'active', 'centre' => 'Egbeda']]);
+    chk('an existing mentor cannot be edited onto another mentor\'s email',
+        backend_dispatch('admin.mentors.upsert', ['requesterId' => $ADM, 'data' => [
+            'mentorId' => $b['mentorId'], 'email' => 'shared@example.com']])['error'] === 'email_taken');
+    chk('…but a mentor can be saved with the email they already hold', (function () use ($ADM, $b) {
+        $r = backend_dispatch('admin.mentors.upsert', ['requesterId' => $ADM, 'data' => [
+            'mentorId' => $b['mentorId'], 'email' => 'notshared@example.com', 'centre' => 'Ayobo']]);
+        return !empty($r['ok'])
+            && (string) db_row("SELECT centre FROM mentors WHERE mentorId = ?", [$b['mentorId']])['centre'] === 'Ayobo';
+    })());
+    // An inactive record is not reachable by the gate, so it is not a collision.
+    chk('a retired mentor\'s email is free again', (function () use ($ADM) {
+        db_exec("UPDATE mentors SET status = 'inactive' WHERE lower(email) = 'shared@example.com'");
+        $r = backend_dispatch('admin.mentors.upsert', ['requesterId' => $ADM, 'data' => [
+            'fullName' => 'Successor', 'email' => 'shared@example.com', 'status' => 'active', 'centre' => 'Egbeda']]);
+        db_exec("DELETE FROM mentors WHERE lower(email) = 'shared@example.com' AND status = 'inactive'");
+        return !empty($r['ok']);
+    })());
+
+    /* THE SECURITY FIX. Two active rows on one address and a signed-in member
+       linked to neither: the gate used to take whichever row came back first,
+       so the same person got a different class on a different request. It now
+       refuses, because an adult locked out with a named cause is a support
+       ticket and an adult handed another adult's children is not. */
+    db_exec("DELETE FROM mentors WHERE lower(email) = 'twins@example.com'");
+    db_exec("DELETE FROM members WHERE email = 'twins@example.com'");
+    db_insert('members', ['memberId' => 'NGG-TWIN-1', 'fullName' => 'Shared Mailbox', 'email' => 'twins@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('mentors', ['mentorId' => 'MEN-TWIN-A', 'fullName' => 'Twin A', 'email' => 'twins@example.com',
+        'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'createdAt' => now_iso()]);
+    chk('one active record on that email resolves normally',
+        !empty(backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-TWIN-1'])['ok']));
+    db_insert('mentors', ['mentorId' => 'MEN-TWIN-B', 'fullName' => 'Twin B', 'email' => 'twins@example.com',
+        'status' => 'active', 'centre' => 'Ayobo', 'programme' => 'ngg', 'createdAt' => now_iso()]);
+    chk('two active records on one email fail the gate closed, never picking one',
+        backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-TWIN-1'])['error'] === 'mentor_record_ambiguous');
+    chk('…and every mentor op behind that gate refuses too, not just the roster',
+        backend_dispatch('member.mentor.reviews.due', ['requesterId' => 'NGG-TWIN-1'])['error'] === 'mentor_record_ambiguous'
+        && backend_dispatch('behaviour.star.give', ['requesterId' => 'NGG-TWIN-1', 'subjectId' => 'SUM-R-1', 'stars' => 3])['error'] === 'mentor_record_ambiguous');
+    /* The lockout has to be findable: the people it affects cannot report it,
+       because the thing that is broken is their way in. */
+    chk('the ambiguity is logged where an operator will see it',
+        (int) db_row("SELECT COUNT(*) c FROM ops_events WHERE source = 'mentor.gate'")['c'] > 0);
+
+    /* A record carrying a member or volunteer link is reached by that id and
+       never by the email fallback — which is both why it still works and why
+       it is the row the desk usually keeps. */
+    chk('a linked record still resolves despite the shared address', (function () {
+        db_update('mentors', ['memberId' => 'NGG-TWIN-1'], ['mentorId' => 'MEN-TWIN-A']);
+        $r = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-TWIN-1']);
+        db_update('mentors', ['memberId' => ''], ['mentorId' => 'MEN-TWIN-A']);
+        return !empty($r['ok']);
+    })());
+
+    // The half a machine cannot do: put the pair in front of somebody.
+    chk('the duplicates report names the pair, the count and who is locked out', (function () use ($ADM) {
+        $r = backend_dispatch('admin.mentors.duplicates', ['requesterId' => $ADM]);
+        if (empty($r['ok'])) return false;
+        $g = null;
+        foreach ($r['duplicates'] as $d) if ($d['email'] === 'twins@example.com') $g = $d;
+        return $g && $g['count'] === 2 && $g['lockedOut'] === 2 && count($g['records']) === 2
+            && $g['records'][0]['linked'] === false;
+    })());
+    chk('the duplicates report is gated on people',
+        backend_dispatch('admin.mentors.duplicates', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+    chk('a resolved pair drops off the report', (function () use ($ADM) {
+        db_update('mentors', ['email' => 'twin-b@example.com'], ['mentorId' => 'MEN-TWIN-B']);
+        $r = backend_dispatch('admin.mentors.duplicates', ['requesterId' => $ADM]);
+        foreach ($r['duplicates'] as $d) if ($d['email'] === 'twins@example.com') return false;
+        // …and the gate lets them back in.
+        return !empty(backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-TWIN-1'])['ok']);
+    })());
+    /* Two mentors with NO address are not a collision: a blank email never
+       reaches the fallback, so grouping on it would invent a problem. */
+    chk('mentors with no email are not reported as duplicates', (function () use ($ADM) {
+        db_insert('mentors', ['mentorId' => 'MEN-NOMAIL-1', 'fullName' => 'No Mail One', 'email' => '',
+            'status' => 'active', 'centre' => 'Egbeda', 'createdAt' => now_iso()]);
+        db_insert('mentors', ['mentorId' => 'MEN-NOMAIL-2', 'fullName' => 'No Mail Two', 'email' => '',
+            'status' => 'active', 'centre' => 'Egbeda', 'createdAt' => now_iso()]);
+        $r = backend_dispatch('admin.mentors.duplicates', ['requesterId' => $ADM]);
+        foreach ($r['duplicates'] as $d) if (trim((string)$d['email']) === '') return false;
+        db_exec("DELETE FROM mentors WHERE mentorId IN ('MEN-NOMAIL-1','MEN-NOMAIL-2')");
+        return true;
+    })());
+
+    /* Fixture hygiene, asserted rather than assumed. A duplicate pair left
+       lying in the suite's own data is a gate lockout waiting for whichever
+       test next signs in as that person — which is exactly how this whole
+       finding surfaced, from a fixture of mine reusing another's address. */
+    chk('the suite leaves no two active mentors sharing an address', (function () {
+        $rows = db_all("SELECT lower(email) e, COUNT(*) c FROM mentors
+                        WHERE status = 'active' AND email IS NOT NULL AND email <> ''
+                        GROUP BY lower(email) HAVING COUNT(*) > 1");
+        if ($rows) fwrite(STDERR, "[fixtures] shared mentor emails: " . json_encode($rows) . "\n");
+        return !$rows;
+    })());
+
+    db_exec("DELETE FROM mentors WHERE mentorId IN ('MEN-TWIN-A','MEN-TWIN-B')");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-TWIN-1'");
+    db_exec("DELETE FROM mentors WHERE lower(email) IN ('shared@example.com','notshared@example.com')");
+    db_exec("DELETE FROM ops_events WHERE source = 'mentor.gate'");
+})();
+
 // ── The mentor's weekly review (NGGC 2040 brief §18) ───────────────────────
 // Twelve questions, every assigned member, every week. The point is the
 // CADENCE — a child nobody reviewed for three weeks is the finding — so the
