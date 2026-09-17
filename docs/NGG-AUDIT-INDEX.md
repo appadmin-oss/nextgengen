@@ -8,7 +8,9 @@ _Schema:_ `schema_version` **83**.
 
 > Companion docs: `afrovanguard-sync.md` (NGG ↔ Afrovanguard),
 > `anchor-journal-v2-gap-analysis.md` (Journal roadmap), `SETUP.md`, `SCHEMAS.md`,
-> `OPERATIONAL-AUDIT.md`, `PRODUCT-DESIGN-AUDIT.md`.
+> `OPERATIONAL-AUDIT.md`, `PRODUCT-DESIGN-AUDIT.md`,
+> `NGGC-2040-BRIEF-AUDIT-2026-09.md` (the 2040 formation brief, clause by
+> clause, against the code — and the three gaps that remain open).
 
 ## 1. Tech stack & build
 - **React 18, no framework, no dev bundler.** JSX is compiled in-browser by
