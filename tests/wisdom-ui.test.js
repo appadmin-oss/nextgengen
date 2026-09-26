@@ -183,7 +183,11 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
         (await ap.$$('.wis-voice button:has-text("Generate")')).length === 0 && /spitch_key/.test(main));
     chk('the schedule numbers each language’s turn', /Hausa\s*#1/.test(main) && /Igbo\s*#1/.test(main) && /Hausa\s*#2/.test(main));
     await ap.click('.wis-tab:has-text("Igbo")');
-    chk('the Igbo tab lists the three proverbs', (await ap.$$('.wis-item')).length === 3);
+    chk('the Igbo tab lists the four proverbs', (await ap.$$('.wis-item')).length === 4);
+    await ap.click('.wis-tab:has-text("Yorùbá")');
+    chk('the Yorùbá tab lists the four proverbs, tone marks intact',
+        (await ap.$$('.wis-item')).length === 4 && (await ap.$eval('.admin-main', el => el.innerText)).includes('A kì í fi orí wé orí Mọkírè'));
+    chk('the schedule has Yorùbá in the third week', /Yorùbá\s*#1/.test(await ap.$eval('.wis-sched', el => el.innerText)));
     await ap.screenshot({ path: path.join(SHOTS, 'admin.png'), fullPage: false });
     chk('no page errors', errs.length === 0 || (console.error(errs), false));
   } catch (e) {

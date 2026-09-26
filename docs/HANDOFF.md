@@ -348,3 +348,12 @@ per week, editable in Control Room → Content → Quote of the week.
   diacritizes Yorùbá itself. `spokenText` lets staff give a fully marked
   reading for Igbo/Hausa without changing the displayed saying.
 - Speed back to 1.0 (0.9 read as slowed, not fluent).
+
+### Quote of the week — full seed (2026-09-26)
+
+Seed v2: 4 Hausa riddles, 4 Igbo, 4 Yorùbá proverbs, with the programme's
+revised wording. `wisdom.seeded.version` gates it; a v1 deployment is upgraded
+in place — untouched rows take the new wording (compared against
+`wisdom_seed_rows_v1()`), edited rows are left alone, deleted v1 rows stay
+deleted, new sayings are appended. Hausa riddle 3's answer is seeded as
+"Tsintsiya" (broom): the supplied "Tsutsa ko Tsintsiya" reads "worm or broom".

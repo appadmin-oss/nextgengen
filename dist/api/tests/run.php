@@ -21230,10 +21230,38 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM settings WHERE settingKey = 'wisdom.seeded'");
 
     $pub = backend_dispatch('public.wisdom.week', []);
-    chk('wisdom: first read seeds the sayings (4 Hausa riddles, 3 Igbo proverbs)',
+    $cnt = fn($l) => (int)db_row("SELECT COUNT(*) c FROM wisdom_sayings WHERE language = ?", [$l])['c'];
+    chk('wisdom: first read seeds the sayings (4 Hausa riddles, 4 Igbo, 4 Yoruba proverbs)',
         (int)db_row("SELECT COUNT(*) c FROM wisdom_sayings WHERE language='hausa' AND kind='riddle'")['c'] === 4
-        && (int)db_row("SELECT COUNT(*) c FROM wisdom_sayings WHERE language='igbo'")['c'] === 3
-        && !empty($pub['saying']));
+        && $cnt('igbo') === 4 && $cnt('yoruba') === 4 && !empty($pub['saying']));
+    $by0 = wisdom_live_by_lang();
+    chk('wisdom: the seeded rotation opens Hausa 1, Igbo 1, Yoruba 1, Hausa 2',
+        array_map(fn($w) => wisdom_pick($by0, $w)['text'], [0, 1, 2, 3]) === [
+            'Na tura yaron da bai da ƙafa, ya dawo mini da saƙo.', "A ma ka mmiri si were baa n'opi ugboguru?",
+            'A kì í fi orí wé orí Mọkírè; bí Mọkírè kú lárọ̀ọ̀, a jí lálẹ́.',
+            'Tsoho a daji, yana ci gaba da cin abinci amma ba ya ƙoshi; idan aka ba shi ruwa, sai ya mutu.']);
+
+    // Upgrading a deployment that seeded version 1: untouched rows take the
+    // new wording, an edited row keeps its edit, a deleted one stays deleted.
+    db_exec('DELETE FROM wisdom_sayings');
+    $pos = 0;
+    foreach (wisdom_seed_rows_v1() as $t => [$tr, $an, $anTr, $me]) {
+        db_insert('wisdom_sayings', ['wisdomId' => 'WS-V1' . (++$pos), 'language' => $pos <= 4 ? 'hausa' : 'igbo',
+            'kind' => $pos <= 4 ? 'riddle' : 'proverb', 'text' => $t, 'translation' => $tr, 'answer' => $an,
+            'answerTranslation' => $anTr, 'meaning' => $me, 'position' => $pos <= 4 ? $pos : $pos - 4, 'status' => 'live']);
+    }
+    db_update('wisdom_sayings', ['meaning' => 'Our own reading of it.'], ['wisdomId' => 'WS-V12']);
+    db_exec("DELETE FROM wisdom_sayings WHERE wisdomId = 'WS-V14'");
+    setting_set('wisdom.seeded', ['at' => now_iso()], 'test');
+    wisdom_ensure_seeded();
+    $r1 = db_row("SELECT * FROM wisdom_sayings WHERE wisdomId = 'WS-V11'");
+    chk('wisdom seed upgrade: an untouched v1 row takes the new wording',
+        $r1['translation'] === 'I sent a servant who has no legs, and he brought back a message.');
+    chk('wisdom seed upgrade: a row staff edited keeps their edit',
+        db_row("SELECT meaning FROM wisdom_sayings WHERE wisdomId = 'WS-V12'")['meaning'] === 'Our own reading of it.');
+    chk('wisdom seed upgrade: a v1 saying staff deleted stays deleted, new sayings arrive',
+        $cnt('hausa') === 3 && $cnt('igbo') === 4 && $cnt('yoruba') === 4);
+    chk('wisdom seed upgrade: runs once', (function () use ($cnt) { wisdom_ensure_seeded(); return $cnt('yoruba') === 4; })());
     db_exec('DELETE FROM wisdom_sayings');
     backend_dispatch('public.wisdom.week', []);
     chk('wisdom: the seed runs once — deleting everything does not bring it back',

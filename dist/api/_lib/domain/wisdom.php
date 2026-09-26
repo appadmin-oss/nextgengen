@@ -70,52 +70,121 @@ const WISDOM_TTS_TRIES = 4;
 
 /* ── Seed ─────────────────────────────────────────────────────────────── */
 
+/* The seed has versions. Version 1 was the first set (4 Hausa, 3 Igbo);
+ * version 2 is the full set the programme supplied (4 of each, reworded).
+ * A deployment that already seeded v1 is brought up to v2 in place — see
+ * wisdom_ensure_seeded — without touching anything staff have changed. */
+const WISDOM_SEED_VERSION = 2;
+
+/** [language, kind, text, translation, answer, answerTranslation, meaning] */
 function wisdom_seed_rows(): array {
     return [
         ['hausa', 'riddle', 'Na tura yaron da bai da ƙafa, ya dawo mini da saƙo.',
-         'I sent a servant who has no legs, and he returned with a message.',
-         'Muryar mutum / Iska', 'A person’s voice / Wind',
-         'This riddle tests the understanding of intangible forces. Sound and wind can travel across distances and deliver something without having a physical body or legs.'],
+         'I sent a servant who has no legs, and he brought back a message.',
+         'Muryar mutum / Iska', 'A person’s voice or Wind',
+         'It tests the listener’s understanding of intangible forces. Sound and wind travel across distances to deliver results without physical bodies.'],
         ['hausa', 'riddle', 'Tsoho a daji, yana ci gaba da cin abinci amma ba ya ƙoshi; idan aka ba shi ruwa, sai ya mutu.',
-         'An old man in the forest keeps eating but never gets full; if you give him water, he dies.',
+         'An old man in the forest who keeps eating without getting full, but if you give him water, he dies.',
          'Wuta', 'Fire',
-         'Fire continuously consumes fuel without becoming satisfied, yet water can extinguish it. The riddle highlights the contrast between strength and vulnerability.'],
+         'A conceptual challenge highlighting contrast — elemental fire consumes everything in its path to grow, yet its ultimate vulnerability is water.'],
         ['hausa', 'riddle', 'Shanuna dubu, amma madaurinsu ɗaya ne.',
          'My cattle are a thousand, but they share a single tethering rope.',
          'Tsintsiya', 'A broom',
-         'It demonstrates unity and collective strength. Individual strands may be weak on their own, but when bound together, they can accomplish a greater purpose.'],
+         'Demonstrates unity and collective strength. Individual strands are weak alone, but bound by a single tie, they accomplish a shared purpose.'],
         ['hausa', 'riddle', 'Na gani guda ɗaya, amma kowa na ganin kansa a ciki.',
          'I see only one thing, yet everyone sees themselves inside it.',
          'Madubi', 'A mirror',
-         'It encourages self-reflection. The mirror is one object, but everyone who looks into it sees their own image and reality.'],
+         'Encourages self-reflection. Truth is singular, but everyone who looks into it sees their own unique reality reflected back.'],
+
         ['igbo', 'proverb', 'A ma ka mmiri si were baa n\'opi ugboguru?',
-         'Who knows how water managed to enter the stem of the pumpkin?', '', '',
-         'Life contains mysteries that human beings cannot always explain. Some processes remain beyond human understanding, reminding us of the limits of human knowledge.'],
+         'Who knows how water managed to enter into the stem of the pumpkin?', '', '',
+         'Life contains deep, unexplainable mysteries. Some processes are known only to nature or God, reminding us of human limitations in knowledge.'],
         ['igbo', 'proverb', 'Onye buru ozu enyi anaghi eji ukwu akpa mpuzu.',
          'A person carrying the carcass of an elephant does not search for crickets with their feet.', '', '',
-         'Focus on your major responsibility or goal. Do not allow small details or trivial distractions to divert your attention from something much more important.'],
+         'Focus on your primary, high-value goal. Do not allow minor details or trivial distractions to divert your attention when handling major responsibilities.'],
         ['igbo', 'proverb', 'Ọkụko na-arọgọrọ ite ọnụ, chetekwe mma gburu ya.',
-         'The chicken complains about the cooking pot while forgetting the knife that killed it.', '', '',
-         'People sometimes blame the visible or immediate manifestation of a problem while ignoring its root cause.'],
+         'The chicken frowns at the cooking pot, ignoring the knife that actually killed it.', '', '',
+         'Misplacing blame. People often focus their anger on the final vessel or manifestation of their trouble rather than identifying the root cause.'],
+        ['igbo', 'proverb', 'Ukpana na-ere n\'ọkụ si na ya na-aṣa mmanụ.',
+         'A grasshopper roasting over a fire claims it is merely producing oil.', '', '',
+         'Self-delusion and false pride. Refers to someone who tries to disguise their suffering, defeat, or embarrassment as a deliberate, stylish choice.'],
+
+        ['yoruba', 'proverb', 'A kì í fi orí wé orí Mọkírè; bí Mọkírè kú lárọ̀ọ̀, a jí lálẹ́.',
+         'One does not compare one’s destiny to Mokire’s; if Mokire dies in the morning, he resurrects at night.', '', '',
+         'Never blindly imitate someone else’s risky actions or lifestyle unless you understand their hidden backup plans, secrets, or resilience.'],
+        ['yoruba', 'proverb', 'A kì í pẹ́ni lẹ́ran kọ́, kí á tún pẹ́ni lẹ́ran jẹ.',
+         'A person cannot be named meat and at the same time be eaten as meat.', '', '',
+         'You cannot assign someone a title or role of honour and then strip away their respect or destroy them. Leadership comes with inviolable dignity.'],
+        ['yoruba', 'proverb', 'Bi ojú bá rí, ẹnu a dákẹ́; ṣùgbọ́n ohun tí ó mú ẹnìkan sọ̀rọ̀, ó mú ẹnìkejì dákẹ́.',
+         'When the eye sees, the mouth may fall silent; but what prompts one person to speak is the exact same thing that forces another to stay quiet.', '', '',
+         'Context shapes reaction. What drives one person to blow the whistle or react emotionally may be the precise reason another person exercises tactical silence.'],
+        ['yoruba', 'proverb', 'Ẹni tí ó ń jẹ àpọ́n gbé, kì í bẹ̀rù ẹni tí ó ń gun àgbọnná.',
+         'The one eating already-fallen fruits does not fear the person climbing the tall palm tree to harvest fresh ones.', '', '',
+         'True contentment protects you from envy. If you are satisfied with what you have acquired legitimately, you won’t be intimidated by another person’s high-risk pursuits.'],
     ];
 }
 
-/** Seed once per deployment. A flag, not "is the table empty", so staff who
- *  delete every saying are not handed the seed back. */
+/** Version 1's wording, kept only to recognise a row nobody has edited. */
+function wisdom_seed_rows_v1(): array {
+    return [
+        'Na tura yaron da bai da ƙafa, ya dawo mini da saƙo.' => ['I sent a servant who has no legs, and he returned with a message.', 'Muryar mutum / Iska', 'A person’s voice / Wind',
+            'This riddle tests the understanding of intangible forces. Sound and wind can travel across distances and deliver something without having a physical body or legs.'],
+        'Tsoho a daji, yana ci gaba da cin abinci amma ba ya ƙoshi; idan aka ba shi ruwa, sai ya mutu.' => ['An old man in the forest keeps eating but never gets full; if you give him water, he dies.', 'Wuta', 'Fire',
+            'Fire continuously consumes fuel without becoming satisfied, yet water can extinguish it. The riddle highlights the contrast between strength and vulnerability.'],
+        'Shanuna dubu, amma madaurinsu ɗaya ne.' => ['My cattle are a thousand, but they share a single tethering rope.', 'Tsintsiya', 'A broom',
+            'It demonstrates unity and collective strength. Individual strands may be weak on their own, but when bound together, they can accomplish a greater purpose.'],
+        'Na gani guda ɗaya, amma kowa na ganin kansa a ciki.' => ['I see only one thing, yet everyone sees themselves inside it.', 'Madubi', 'A mirror',
+            'It encourages self-reflection. The mirror is one object, but everyone who looks into it sees their own image and reality.'],
+        'A ma ka mmiri si were baa n\'opi ugboguru?' => ['Who knows how water managed to enter the stem of the pumpkin?', '', '',
+            'Life contains mysteries that human beings cannot always explain. Some processes remain beyond human understanding, reminding us of the limits of human knowledge.'],
+        'Onye buru ozu enyi anaghi eji ukwu akpa mpuzu.' => ['A person carrying the carcass of an elephant does not search for crickets with their feet.', '', '',
+            'Focus on your major responsibility or goal. Do not allow small details or trivial distractions to divert your attention from something much more important.'],
+        'Ọkụko na-arọgọrọ ite ọnụ, chetekwe mma gburu ya.' => ['The chicken complains about the cooking pot while forgetting the knife that killed it.', '', '',
+            'People sometimes blame the visible or immediate manifestation of a problem while ignoring its root cause.'],
+    ];
+}
+
+/**
+ * Seed once per deployment, and upgrade the seed in place.
+ *
+ * A version flag, not "is the table empty", so staff who delete every saying
+ * are not handed the seed back. Upgrading from v1:
+ *   · a v1 row whose words are still exactly as seeded takes the new wording;
+ *     one staff have edited is left alone — their edit wins;
+ *   · sayings that are new in v2 are added at the end of their language;
+ *   · a v1 saying staff deleted stays deleted.
+ * Changing a translation this way drops its generated English clip (it read
+ * the old words); the saved-clip store means that costs one clip, once.
+ */
 function wisdom_ensure_seeded(): void {
-    if (setting_get('wisdom.seeded')) return;
-    $pos = [];
+    $st = setting_get('wisdom.seeded');
+    $ver = is_array($st) ? (int)($st['version'] ?? 1) : 0;
+    if ($ver >= WISDOM_SEED_VERSION) return;
     $now = now_iso();
+    $v1 = wisdom_seed_rows_v1();
     foreach (wisdom_seed_rows() as [$lang, $kind, $text, $tr, $ans, $ansTr, $meaning]) {
-        $pos[$lang] = ($pos[$lang] ?? 0) + 1;
+        $have = db_row('SELECT * FROM wisdom_sayings WHERE language = ? AND text = ? LIMIT 1', [$lang, $text]);
+        if ($have) {
+            $was = $v1[$text] ?? null;
+            $untouched = $was && [(string)$have['translation'], (string)$have['answer'], (string)$have['answerTranslation'], (string)$have['meaning']] === $was;
+            if ($untouched) {
+                $patch = ['translation' => $tr, 'answer' => $ans, 'answerTranslation' => $ansTr, 'meaning' => $meaning, 'updatedAt' => $now];
+                if ((string)$have['translation'] !== $tr) $patch += ['audioFileEn' => '', 'voiceEn' => '', 'ttsScoreEn' => null];
+                db_update('wisdom_sayings', $patch, ['wisdomId' => $have['wisdomId']]);
+                if (isset($patch['audioFileEn'])) wisdom_audio_release((string)($have['audioFileEn'] ?? ''));
+            }
+            continue;
+        }
+        // Upgrading, a v1 saying that is gone was deleted on purpose.
+        if ($ver === 1 && isset($v1[$text])) continue;
         db_insert('wisdom_sayings', [
             'wisdomId' => 'WS-' . strtoupper(rand_hex(5)), 'language' => $lang, 'kind' => $kind,
             'text' => $text, 'translation' => $tr, 'answer' => $ans, 'answerTranslation' => $ansTr,
-            'meaning' => $meaning, 'position' => $pos[$lang], 'status' => 'live',
+            'meaning' => $meaning, 'position' => wisdom_next_position($lang), 'status' => 'live',
             'createdAt' => $now, 'updatedAt' => $now,
         ]);
     }
-    setting_set('wisdom.seeded', ['at' => $now], 'system');
+    setting_set('wisdom.seeded', ['at' => $now, 'version' => WISDOM_SEED_VERSION], 'system');
 }
 
 /* ── Shape + rotation ─────────────────────────────────────────────────── */
