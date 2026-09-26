@@ -21280,13 +21280,113 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('wisdom: a non-audio upload is refused',
         (backend_dispatch('admin.wisdom.voice.upload', ['requesterId' => $ADMIN, 'wisdomId' => $i3,
             'audio' => 'data:audio/mpeg;base64,' . base64_encode('<?php echo 1;')])['error'] ?? '') === 'bad_audio');
+    $GLOBALS['__wisdom_http'] = fn($m, $path, $b) => ['code' => 200, 'body' => 'ID3fake-mp3'];
     chk('wisdom: generating over a staff voice-over is refused unless told to',
         (backend_dispatch('admin.wisdom.voice.generate', ['requesterId' => $ADMIN, 'wisdomId' => $i3])['error'] ?? '') === 'has_custom_voice');
+    unset($GLOBALS['__wisdom_http']);
     $file = $row['audioFile'];
     backend_dispatch('admin.wisdom.delete', ['requesterId' => $ADMIN, 'wisdomId' => $i3]);
     chk('wisdom: deleting a saying removes its unreferenced clip', !is_file(wisdom_audio_path($file)));
     chk('wisdom: the audio path refuses traversal', wisdom_audio_path('../../config.php') === '');
 
+    // ── The rotation, stated the way the programme states it ──
+    db_exec('DELETE FROM wisdom_sayings');
+    foreach (['hausa' => 'Ha', 'igbo' => 'Ig', 'yoruba' => 'Yo'] as $lang => $p3) {
+        foreach ([1, 2, 3] as $n) $add($lang, $p3 . '-' . $n);
+    }
+    $by = wisdom_live_by_lang();
+    $seq = []; for ($w = 0; $w < 10; $w++) $seq[] = wisdom_pick($by, $w)['text'];
+    chk('wisdom: one per language in turn — Hausa 1, Igbo 1, Yoruba 1, then Hausa 2 …',
+        $seq === ['Ha-1', 'Ig-1', 'Yo-1', 'Ha-2', 'Ig-2', 'Yo-2', 'Ha-3', 'Ig-3', 'Yo-3', 'Ha-1']);
+    $same = true; for ($w = 0; $w < 30; $w++) if (wisdom_pick($by, $w)['language'] === wisdom_pick($by, $w + 1)['language']) $same = false;
+    chk('wisdom: the same language never runs two weeks in a row', $same);
+
+    // ── TTS, through a fake transport: nothing here touches the network ──
+    $calls = [];
+    $GLOBALS['__wisdom_http'] = function ($m, $path, $b) use (&$calls) {
+        $calls[] = [$m, $path, $b];
+        if ($path === '/v1/diacritics') return ['code' => 200, 'body' => json_encode(['text' => 'Ọmọ ọlọ́gbọ́n.'])];
+        if ($path === '/v1/voices') return ['code' => 201, 'body' => json_encode(['voice_id' => 'voice_abc123', 'status' => 'ready'])];
+        if ($path === '/v1/speech') return ['code' => 200, 'body' => 'ID3' . md5(json_encode($b))];
+        return ['code' => 200, 'body' => '{}'];
+    };
+    chk('wisdom tts: the script is cleaned — straight apostrophe, one space, a full stop to end on',
+        wisdom_tts_script("A ma  ka mmiri n\u{2019}opi", 'igbo') === "A ma ka mmiri n'opi.");
+    $calls = [];
+    $yo = wisdom_tts_script('Omo ologbon', 'yoruba');
+    chk('wisdom tts: unmarked Yoruba is tone-marked before it is read',
+        $yo === 'Ọmọ ọlọ́gbọ́n.' && ($calls[0][1] ?? '') === '/v1/diacritics');
+    $calls = [];
+    wisdom_tts_script('Ọmọ ọlọ́gbọ́n ni.', 'yoruba');
+    chk('wisdom tts: already-marked Yoruba is left as written', $calls === []);
+
+    $GLOBALS['CONFIG']['tts']['spitch_key'] = 'test-key';
+    $calls = [];
+    $sv = backend_dispatch('admin.wisdom.upsert', ['requesterId' => $ADMIN, 'data' => ['language' => 'hausa', 'kind' => 'riddle',
+        'text' => 'Shanuna dubu, amma madaurinsu ɗaya ne', 'translation' => 'My cattle are a thousand, but they share one rope.']]);
+    $row = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [$sv['wisdomId']]);
+    $speech = array_values(array_filter($calls, fn($c) => $c[1] === '/v1/speech'));
+    chk('wisdom tts: saving voices the saying automatically — native, then English',
+        ($sv['voice']['made'] ?? []) === ['native', 'english'] && $row['audioFile'] !== '' && $row['audioFileEn'] !== ''
+        && $row['audioSource'] === 'tts');
+    chk('wisdom tts: native in the language’s default voice, English in a Nigerian-English one',
+        ($speech[0][2]['language'] ?? '') === 'ha' && ($speech[0][2]['voice'] ?? '') === 'amina'
+        && ($speech[1][2]['language'] ?? '') === 'en' && ($speech[1][2]['voice'] ?? '') === 'lucy');
+
+    $calls = [];
+    backend_dispatch('admin.wisdom.upsert', ['requesterId' => $ADMIN, 'data' => ['wisdomId' => $sv['wisdomId'], 'language' => 'hausa',
+        'kind' => 'riddle', 'text' => $row['text'], 'translation' => 'A thousand cattle, one tethering rope.']]);
+    $row2 = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [$sv['wisdomId']]);
+    $langs = array_map(fn($c) => $c[2]['language'], array_values(array_filter($calls, fn($c) => $c[1] === '/v1/speech')));
+    chk('wisdom tts: changing only the translation remakes only the English clip',
+        $langs === ['en'] && $row2['audioFile'] === $row['audioFile'] && $row2['audioFileEn'] !== $row['audioFileEn']);
+
+    // Visitor backstop: one call, then backoff.
+    db_update('wisdom_sayings', ['audioFile' => '', 'audioSource' => '', 'audioFileEn' => '', 'ttsTriedAt' => ''], ['wisdomId' => $sv['wisdomId']]);
+    $cur = wisdom_pick(wisdom_live_by_lang(), wisdom_week_index());
+    db_update('wisdom_sayings', ['audioFile' => '', 'audioSource' => '', 'audioFileEn' => '', 'ttsTriedAt' => ''], ['wisdomId' => $cur['wisdomId']]);
+    $calls = [];
+    $pub = backend_dispatch('public.wisdom.week', []);
+    $first = count($calls);
+    db_update('wisdom_sayings', ['audioFile' => '', 'audioFileEn' => ''], ['wisdomId' => $cur['wisdomId']]);
+    backend_dispatch('public.wisdom.week', []);
+    chk('wisdom tts: this week’s saying is voiced on first read if it has no clip',
+        $first >= 1 && ($pub['saying']['audioUrl'] ?? '') !== '');
+    chk('wisdom tts: a second read inside the backoff makes no call', count($calls) === $first);
+
+    // A voice-over is never overwritten by automatic voicing.
+    $wav = 'RIFF' . pack('V', 36) . 'WAVEfmt ' . str_repeat("\1", 24);
+    backend_dispatch('admin.wisdom.voice.upload', ['requesterId' => $ADMIN, 'wisdomId' => $sv['wisdomId'],
+        'audio' => 'data:audio/wav;base64,' . base64_encode($wav)]);
+    $before = db_row('SELECT audioFile FROM wisdom_sayings WHERE wisdomId = ?', [$sv['wisdomId']])['audioFile'];
+    $all = backend_dispatch('admin.wisdom.voice.all', ['requesterId' => $ADMIN]);
+    $after = db_row('SELECT audioFile, audioSource FROM wisdom_sayings WHERE wisdomId = ?', [$sv['wisdomId']]);
+    chk('wisdom tts: "voice everything" fills gaps and leaves a staff voice-over alone',
+        !empty($all['ok']) && $after['audioFile'] === $before && $after['audioSource'] === 'custom');
+    chk('wisdom tts: after "voice everything" nothing live is missing a clip',
+        count(array_filter(db_all("SELECT * FROM wisdom_sayings WHERE status='live'"), 'wisdom_tts_missing')) === 0);
+
+    // Cloned voices.
+    $sample = 'data:audio/wav;base64,' . base64_encode($wav);
+    chk('wisdom clone: refused without the speaker’s consent',
+        (backend_dispatch('admin.wisdom.voice.clone', ['requesterId' => $ADMIN, 'audio' => $sample, 'name' => 'Mrs A',
+            'transcript' => 'Bawo ni', 'language' => 'yoruba'])['error'] ?? '') === 'consent_required');
+    $cl = backend_dispatch('admin.wisdom.voice.clone', ['requesterId' => $ADMIN, 'audio' => $sample, 'name' => 'Mrs A',
+        'transcript' => 'Bawo ni', 'language' => 'yoruba', 'consent' => true]);
+    $sent = end($calls);
+    chk('wisdom clone: with consent it is created, sent with consent=true, and listed',
+        ($cl['voiceId'] ?? '') === 'voice_abc123' && ($sent[2]['consent'] ?? '') === 'true'
+        && ($sent[2]['audio'] ?? null) instanceof CURLFile && wisdom_voice_valid('voice_abc123'));
+    $df = backend_dispatch('admin.wisdom.voice.defaults', ['requesterId' => $ADMIN, 'defaults' => ['yoruba' => 'voice_abc123']]);
+    chk('wisdom clone: a cloned voice can be a language default', ($df['voiceDefaults']['yoruba'] ?? '') === 'voice_abc123');
+    chk('wisdom voices: an unknown voice is refused as a default',
+        (backend_dispatch('admin.wisdom.voice.defaults', ['requesterId' => $ADMIN, 'defaults' => ['igbo' => 'nobody']])['error'] ?? '') === 'bad_voice');
+    backend_dispatch('admin.wisdom.voice.clone.delete', ['requesterId' => $ADMIN, 'voiceId' => 'voice_abc123']);
+    chk('wisdom clone: deleting it drops it from the defaults too',
+        wisdom_voice_defaults()['yoruba'] === 'sade' && !wisdom_voice_valid('voice_abc123'));
+
+    unset($GLOBALS['__wisdom_http'], $GLOBALS['CONFIG']['tts']);
+    db_exec("DELETE FROM settings WHERE settingKey IN ('wisdom.customVoices','wisdom.voiceDefaults')");
     db_exec('DELETE FROM wisdom_sayings');
     db_exec("DELETE FROM members WHERE memberId IN ('WIS-ADM','WIS-NOBODY')");
 })();

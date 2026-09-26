@@ -14,9 +14,16 @@ if ($method === 'GET') {
         case 'save':      $res = gs_call('admin.wisdom.upsert', $base + ['data' => $b['data'] ?? []]); break;
         case 'delete':    $res = gs_call('admin.wisdom.delete', $base); break;
         case 'move':      $res = gs_call('admin.wisdom.move', $base + ['dir' => (string)($b['dir'] ?? '')]); break;
-        case 'generate':  $res = gs_call('admin.wisdom.voice.generate', $base + ['voice' => (string)($b['voice'] ?? ''), 'replace' => !empty($b['replace'])]); break;
+        case 'generate':  $res = gs_call('admin.wisdom.voice.generate', $base + ['voice' => (string)($b['voice'] ?? ''),
+                              'voiceEn' => (string)($b['voiceEn'] ?? ''), 'which' => (string)($b['which'] ?? 'both'), 'replace' => !empty($b['replace'])]); break;
         case 'upload':    $res = gs_call('admin.wisdom.voice.upload', $base + ['audio' => (string)($b['audio'] ?? '')]); break;
-        case 'clearVoice':$res = gs_call('admin.wisdom.voice.clear', $base); break;
+        case 'clearVoice':$res = gs_call('admin.wisdom.voice.clear', $base + ['which' => (string)($b['which'] ?? 'both')]); break;
+        case 'voiceAll':  $res = gs_call('admin.wisdom.voice.all', $base); break;
+        case 'voiceDefaults': $res = gs_call('admin.wisdom.voice.defaults', $base + ['defaults' => $b['defaults'] ?? []]); break;
+        case 'cloneVoice': $res = gs_call('admin.wisdom.voice.clone', $base + ['audio' => (string)($b['audio'] ?? ''),
+                              'name' => (string)($b['name'] ?? ''), 'transcript' => (string)($b['transcript'] ?? ''),
+                              'language' => (string)($b['language'] ?? ''), 'consent' => !empty($b['consent'])]); break;
+        case 'deleteVoice': $res = gs_call('admin.wisdom.voice.clone.delete', $base + ['voiceId' => (string)($b['voiceId'] ?? '')]); break;
         default: json_error('unknown_action', 400);
     }
 } else {

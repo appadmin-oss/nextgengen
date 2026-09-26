@@ -6934,11 +6934,47 @@ const WISDOM_ERR = {
   tts_failed: "The voice service didn't answer. Try again in a minute.",
   tts_bad_audio: "The voice service sent something that isn't audio.",
   bad_audio: "That file isn't an audio format we can play (MP3, M4A, WAV, OGG or WebM).",
-  audio_too_big: "That clip is over 4 MB — trim it or export it as MP3.",
+  audio_too_big: "That clip is too big — trim it or export it as MP3.",
   text_required: "Write the saying first.",
+  consent_required: "Tick the consent box — a voice is only cloned with the speaker's permission.",
+  transcript_required: "Type exactly what the speaker says in the recording.",
+  name_required: "Give the voice a name.",
+  too_many_voices: "Twenty cloned voices is the limit here. Delete one first.",
+  clone_failed: "The voice service couldn't make a voice from that recording.",
 };
 const wisdomErr = (e) => WISDOM_ERR[e && e.code] || (e && (e.detail || e.code || e.message)) || "Something went wrong.";
 const wisdomFmtWeek = (iso) => fmtDayMonth(iso + "T12:00:00");
+const wisdomCap = (v) => v ? v[0].toUpperCase() + v.slice(1) : "";
+
+/* Voice options for a language: its own system voices first, then the
+   programme's cloned voices (any voice can speak any language). */
+function wisdomVoiceOptions(d, lang) {
+  const own = ((d.voices || {})[lang] || []).map(v => ({ value: v, label: wisdomCap(v) }));
+  const cloned = (d.customVoices || []).map(c => ({ value: c.voiceId, label: c.name + " (cloned)" }));
+  return own.concat(cloned);
+}
+
+/* Record from the microphone, or pick a file. Hands back a Blob. */
+function useWisdomRecorder(onBlob) {
+  const [rec, setRec] = React.useState(null);
+  const [secs, setSecs] = React.useState(0);
+  const can = typeof window !== "undefined" && !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  const start = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const mr = new MediaRecorder(stream);
+      const parts = [];
+      mr.ondataavailable = e => { if (e.data && e.data.size) parts.push(e.data); };
+      mr.onstop = () => { stream.getTracks().forEach(t => t.stop()); clearInterval(mr._t); setRec(null); onBlob(new Blob(parts, { type: mr.mimeType || "audio/webm" })); };
+      mr.start();
+      setSecs(0); mr._t = setInterval(() => setSecs(x => x + 1), 1000);
+      setRec(mr);
+    } catch (_) { toast.error("The microphone isn't available — allow it in the browser, or upload a file instead."); }
+  };
+  React.useEffect(() => () => { if (rec && rec.state !== "inactive") rec.stop(); }, [rec]);
+  return { can, rec, secs, start, stop: () => rec && rec.stop() };
+}
+const wisdomBlobToDataUrl = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(blob); });
 
 function AdminWisdom() {
   const [d, setD] = React.useState(null);
@@ -6955,13 +6991,17 @@ function AdminWisdom() {
 
   const act = async (key, fn, ok) => {
     setBusy(key);
-    try { await fn(); if (ok) toast.success(ok); load(); return true; }
+    try { const r = await fn(); if (ok) toast.success(typeof ok === "function" ? ok(r) : ok); load(); return r || true; }
     catch (e) { toast.error(wisdomErr(e)); return false; }
     finally { setBusy(""); }
   };
-  const save = async (data) => { if (await act("save", () => NGGApi.admin.wisdom.save(data), "Saved.")) setEditing(null); };
+  const save = async (data) => {
+    const r = await act("save", () => NGGApi.admin.wisdom.save(data), (r) =>
+      r && r.voice && r.voice.made && r.voice.made.length ? "Saved and voiced." : r && r.voice && r.voice.ok === false ? "Saved. The voice couldn't be made — try Generate." : "Saved.");
+    if (r) setEditing(null);
+  };
   const remove = async (w) => {
-    if (!(await dialog.confirm({ title: "Delete this saying?", body: "“" + w.text + "” and its voice clip go. The rotation closes the gap.", confirmLabel: "Delete" }))) return;
+    if (!(await dialog.confirm({ title: "Delete this saying?", body: "“" + w.text + "” and its voice clips go. The rotation closes the gap.", confirmLabel: "Delete" }))) return;
     act("del" + w.wisdomId, () => NGGApi.admin.wisdom.remove(w.wisdomId), "Deleted.");
   };
 
@@ -6970,7 +7010,7 @@ function AdminWisdom() {
   );
   if (!d) return <div className="admin-section"><div className="admin-skel"/></div>;
 
-  if (editing) return <AdminWisdomEdit w={editing} kinds={d.kinds} busy={busy === "save"} onCancel={() => setEditing(null)} onSave={save}/>;
+  if (editing) return <AdminWisdomEdit w={editing} kinds={d.kinds} busy={busy === "save"} ttsReady={d.ttsReady} onCancel={() => setEditing(null)} onSave={save}/>;
 
   const rows = d.sayings.filter(w => w.language === lang);
   const nowId = d.schedule[0] && d.schedule[0].wisdomId;
@@ -6981,20 +7021,22 @@ function AdminWisdom() {
         <button className="btn btn-primary" onClick={() => setEditing({ language: lang, kind: lang === "hausa" ? "riddle" : "proverb", status: "live" })}>Add a saying</button>
       </div>
       <p className="admin-hint">
-        The home page shows one saying a week, cycling <b>Hausa → Igbo → Yorùbá</b>. Each language plays its own list from the top,
-        so the order below is the order they appear. A language with nothing live is skipped until it has one.
+        One saying a week, taking turns by language: <b>Hausa 1, Igbo 1, Yorùbá 1, then Hausa 2, Igbo 2, Yorùbá 2</b>, and so on.
+        The number in each language's list below is its turn. A language with nothing live sits out until it has one.
       </p>
 
       <div className="wis-sched" aria-label="The next nine weeks">
         {d.schedule.map((s, i) => (
           <div key={s.week} className={"wis-sched-cell wis-" + s.language + (i === 0 ? " is-now" : "")}>
             <span className="wis-sched-wk">{i === 0 ? "This week" : wisdomFmtWeek(s.week)}</span>
-            <span className="wis-sched-lang">{WISDOM_LANG_LABEL[s.language]}</span>
+            <span className="wis-sched-lang">{WISDOM_LANG_LABEL[s.language]} <span className="wis-sched-n">#{s.number}</span></span>
             <span className="wis-sched-tx" title={s.text}>{s.text}</span>
           </div>
         ))}
         {d.schedule.length === 0 && <div className="admin-hint">Nothing is live, so the home page hides the section.</div>}
       </div>
+
+      <WisdomVoiceSettings d={d} busy={busy} act={act}/>
 
       <div className="wis-tabs" role="tablist" aria-label="Language">
         {d.languages.map(l => {
@@ -7002,8 +7044,6 @@ function AdminWisdom() {
           return <button key={l} role="tab" aria-selected={lang === l} className={"wis-tab" + (lang === l ? " is-on" : "")} onClick={() => setLang(l)}>{WISDOM_LANG_LABEL[l]} <span className="wis-count">{n}</span></button>;
         })}
       </div>
-
-      {!d.ttsReady && <p className="admin-hint wis-note">Generated voices are off: add a Spitch key under <code>'tts' → 'spitch_key'</code> in api/config.php. Uploading or recording a voice-over works now.</p>}
 
       {rows.length === 0 ? (
         <div className="admin-card wis-empty">No {WISDOM_LANG_LABEL[lang]} sayings yet. <button className="btn btn-ghost btn-sm" onClick={() => setEditing({ language: lang, kind: "proverb", status: "live" })}>Add the first</button></div>
@@ -7013,7 +7053,7 @@ function AdminWisdom() {
             <li key={w.wisdomId} className={"admin-card wis-item" + (w.status === "hidden" ? " is-hidden" : "")}>
               <div className="wis-item-main">
                 <div className="wis-item-meta">
-                  <span className="wis-pos">{i + 1}</span>
+                  <span className="wis-pos" aria-label={"Turn " + (i + 1)}>{i + 1}</span>
                   <span className="chip">{w.kind}</span>
                   {w.status === "hidden" && <span className="chip">hidden</span>}
                   {w.wisdomId === nowId && <span className="chip wis-live">on the site now</span>}
@@ -7027,9 +7067,9 @@ function AdminWisdom() {
                   <button className="btn btn-ghost btn-sm" aria-label="Move up" disabled={i === 0 || !!busy} onClick={() => act("mv", () => NGGApi.admin.wisdom.move(w.wisdomId, "up"))}>↑</button>
                   <button className="btn btn-ghost btn-sm" aria-label="Move down" disabled={i === rows.length - 1 || !!busy} onClick={() => act("mv", () => NGGApi.admin.wisdom.move(w.wisdomId, "down"))}>↓</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => setEditing(w)}>Edit</button>
-                  <button className="btn btn-ghost btn-sm" aria-label="Delete" disabled={busy === "del" + w.wisdomId} onClick={() => remove(w)}>Delete</button>
+                  <button className="btn btn-ghost btn-sm" disabled={busy === "del" + w.wisdomId} onClick={() => remove(w)}>Delete</button>
                 </div>
-                <WisdomVoice w={w} voices={(d.voices || {})[w.language] || []} ttsReady={d.ttsReady} audioMax={d.audioMax} busy={busy} act={act}/>
+                <WisdomVoice w={w} d={d} busy={busy} act={act}/>
               </div>
             </li>
           ))}
@@ -7039,70 +7079,194 @@ function AdminWisdom() {
   );
 }
 
-/* One saying's audio: preview, generate (TTS), upload, record, remove.
-   A staff voice-over outranks a generated one and is never silently replaced. */
-function WisdomVoice({ w, voices, ttsReady, audioMax, busy, act }) {
-  const [voice, setVoice] = React.useState(w.voice || voices[0] || "");
-  const [rec, setRec] = React.useState(null);
-  const [secs, setSecs] = React.useState(0);
-  const fileRef = React.useRef(null);
-  const canRecord = typeof window !== "undefined" && !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
-  const key = "v" + w.wisdomId;
+/* The voices the sayings are read in: a default per language, "voice
+   everything", and voices cloned from a real speaker. */
+function WisdomVoiceSettings({ d, busy, act }) {
+  const [defs, setDefs] = React.useState(d.voiceDefaults || {});
+  const [cloning, setCloning] = React.useState(false);
+  React.useEffect(() => { setDefs(d.voiceDefaults || {}); }, [d.voiceDefaults]);
+  const dirty = JSON.stringify(defs) !== JSON.stringify(d.voiceDefaults || {});
+  const langs = d.languages.concat(["english"]);
+  const label = (l) => l === "english" ? "English (translation)" : WISDOM_LANG_LABEL[l];
 
-  const sendBlob = (blob) => {
-    if (blob.size > audioMax) { toast.error(WISDOM_ERR.audio_too_big); return; }
-    const r = new FileReader();
-    r.onload = () => act(key, () => NGGApi.admin.wisdom.upload(w.wisdomId, String(r.result)), "Voice-over saved.");
-    r.readAsDataURL(blob);
+  const voiceAll = () => act("all", () => NGGApi.admin.wisdom.voiceAll(), (r) =>
+    (r.voiced ? r.voiced + " voiced" : "Nothing voiced") + (r.failed && r.failed.length ? ", " + r.failed.length + " failed" : "")
+    + (r.remaining ? " — " + r.remaining + " left, press again." : "."));
+  const delVoice = async (c) => {
+    if (!(await dialog.confirm({ title: "Delete the voice “" + c.name + "”?", body: "Clips already made keep playing. New ones can't use it.", confirmLabel: "Delete voice" }))) return;
+    act("dv", () => NGGApi.admin.wisdom.deleteVoice(c.voiceId), "Voice deleted.");
   };
-  const startRec = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream);
-      const parts = [];
-      mr.ondataavailable = e => { if (e.data && e.data.size) parts.push(e.data); };
-      mr.onstop = () => { stream.getTracks().forEach(t => t.stop()); clearInterval(mr._t); setRec(null); sendBlob(new Blob(parts, { type: mr.mimeType || "audio/webm" })); };
-      mr.start();
-      setSecs(0); mr._t = setInterval(() => setSecs(s => s + 1), 1000);
-      setRec(mr);
-    } catch (_) { toast.error("The microphone isn't available — allow it in the browser, or upload a file instead."); }
-  };
-  React.useEffect(() => () => { if (rec && rec.state !== "inactive") rec.stop(); }, [rec]);
-
-  const generate = async () => {
-    if (w.audioSource === "custom" && !(await dialog.confirm({ title: "Replace the voice-over?", body: "A staff recording is on this saying. The generated voice will replace it.", confirmLabel: "Replace" }))) return;
-    act(key, () => NGGApi.admin.wisdom.generate(w.wisdomId, voice, true), "Voice generated.");
-  };
-  const working = busy === key;
 
   return (
-    <div className="wis-voice">
-      <div className="wis-voice-head">
-        <span className="admin-field-label">Voice</span>
-        <span className="wis-voice-src">{w.audioSource === "custom" ? "Staff voice-over" : w.audioSource === "tts" ? "Generated · " + (w.voice || "") : "None yet"}</span>
+    <section className="admin-card wis-vs" aria-labelledby="wis-vs-h">
+      <div className="wis-vs-head">
+        <h3 className="admin-field-label" id="wis-vs-h">Voices</h3>
+        {d.ttsReady
+          ? <button className="btn btn-primary btn-sm" disabled={!!busy || !d.missingVoice} onClick={voiceAll}>
+              {busy === "all" ? "Voicing…" : d.missingVoice ? "Voice everything missing (" + d.missingVoice + ")" : "Everything is voiced"}
+            </button>
+          : null}
       </div>
-      {w.audioUrl && <audio className="wis-audio" controls preload="none" src={w.audioUrl}/>}
-      <div className="wis-voice-row">
-        <select className="admin-select wis-voice-sel" aria-label="Generated voice" value={voice} onChange={e => setVoice(e.target.value)} disabled={!ttsReady}>
-          {voices.map(v => <option key={v} value={v}>{v[0].toUpperCase() + v.slice(1)}</option>)}
-        </select>
-        <button className="btn btn-ghost btn-sm" disabled={!ttsReady || working || !!rec} title={ttsReady ? "" : "Needs a Spitch key in api/config.php"} onClick={generate}>
-          {working ? "Working…" : "Generate"}
-        </button>
+      {!d.ttsReady ? (
+        <p className="admin-hint wis-note">Generated voices are off: add a Spitch key under <code>'tts' → 'spitch_key'</code> in api/config.php.
+          Once it's there, every saying is voiced automatically — in its own language and then in English. Uploading or recording a voice-over works now.</p>
+      ) : (
+        <p className="admin-hint wis-note">Sayings are voiced automatically when saved: first in their own language, then the English translation in a Nigerian-English voice.
+          Unmarked Yorùbá is tone-marked before it's read. A recorded voice-over always wins over a generated one.</p>
+      )}
+      {d.ttsReady && <div className="wis-vs-grid">
+        {langs.map(l => (
+          <label key={l} className="admin-field">
+            <span>{label(l)}</span>
+            <select className="admin-select" value={defs[l] || ""} onChange={e => setDefs(Object.assign({}, defs, { [l]: e.target.value }))}>
+              {wisdomVoiceOptions(d, l).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+        ))}
+      </div>}
+      {d.ttsReady && dirty && (
+        <div className="wis-form-actions">
+          <button className="btn btn-ghost btn-sm" onClick={() => setDefs(d.voiceDefaults || {})}>Undo</button>
+          <button className="btn btn-primary btn-sm" disabled={busy === "defs"} onClick={() => act("defs", () => NGGApi.admin.wisdom.voiceDefaults(defs), "Default voices saved. Regenerate a saying to hear the new voice.")}>Save default voices</button>
+        </div>
+      )}
+      {d.ttsReady && (
+        <div className="wis-clones">
+          <div className="wis-vs-head">
+            <span className="admin-field-label">Cloned voices</span>
+            {!cloning && <button className="btn btn-ghost btn-sm" onClick={() => setCloning(true)}>Clone a voice from a recording</button>}
+          </div>
+          {(d.customVoices || []).length === 0 && !cloning && (
+            <p className="admin-hint wis-note">A native speaker you know — a teacher, a parent — records 10 to 30 seconds. Every saying can then be read in their voice.</p>
+          )}
+          {(d.customVoices || []).map(c => (
+            <div key={c.voiceId} className="wis-clone-row">
+              <span className="wis-clone-name">{c.name}</span>
+              <span className="wis-clone-meta">{label(c.language) || c.language} · {fmtDate(c.createdAt)}</span>
+              <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => delVoice(c)}>Delete</button>
+            </div>
+          ))}
+          {cloning && <WisdomCloneForm d={d} busy={busy} act={act} onDone={() => setCloning(false)}/>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WisdomCloneForm({ d, busy, act, onDone }) {
+  const [f, setF] = React.useState({ name: "", language: "yoruba", transcript: "", consent: false });
+  const [blob, setBlob] = React.useState(null);
+  const [url, setUrl] = React.useState("");
+  const fileRef = React.useRef(null);
+  const take = (b) => { if (b.size > 8 * 1024 * 1024) { toast.error("That recording is over 8 MB. Thirty seconds is plenty."); return; } setBlob(b); setUrl(u => { if (u) URL.revokeObjectURL(u); return URL.createObjectURL(b); }); };
+  const r = useWisdomRecorder(take);
+  React.useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  const set = (k, v) => setF(x => Object.assign({}, x, { [k]: v }));
+  const ready = blob && f.name.trim() && f.transcript.trim() && f.consent;
+  const submit = async () => {
+    const audio = await wisdomBlobToDataUrl(blob);
+    const ok = await act("clone", () => NGGApi.admin.wisdom.cloneVoice(Object.assign({ audio }, f)), "Voice created. Choose it as a default or on any saying.");
+    if (ok) onDone();
+  };
+  return (
+    <div className="wis-clone-form">
+      <p className="admin-hint wis-note">One speaker, a quiet room, 10–30 seconds of natural speech — reading one of the sayings aloud works well. Type exactly what they say.</p>
+      <div className="wis-form-row">
+        <Field label="Voice name" value={f.name} onChange={v => set("name", v)} placeholder="e.g. Mrs Adebayo"/>
+        <FieldSelect label="Language they speak" value={f.language} onChange={v => set("language", v)}
+          options={d.languages.concat(["english"]).map(l => ({ value: l, label: l === "english" ? "English" : WISDOM_LANG_LABEL[l] }))}/>
       </div>
       <div className="wis-voice-row">
-        <button className="btn btn-ghost btn-sm" disabled={working || !!rec} onClick={() => fileRef.current && fileRef.current.click()}>Upload voice-over</button>
-        <input ref={fileRef} type="file" accept="audio/*" hidden onChange={e => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) sendBlob(f); }}/>
-        {canRecord && (rec
-          ? <button className="btn btn-primary btn-sm" aria-pressed="true" onClick={() => rec.stop()}>■ Stop · {secs}s</button>
-          : <button className="btn btn-ghost btn-sm" aria-pressed="false" disabled={working} onClick={startRec}>● Record</button>)}
-        {w.audioUrl && <button className="btn btn-ghost btn-sm" disabled={working || !!rec} onClick={() => act(key, () => NGGApi.admin.wisdom.clearVoice(w.wisdomId), "Voice removed.")}>Remove</button>}
+        {r.can && (r.rec
+          ? <button className="btn btn-primary btn-sm" aria-pressed="true" onClick={r.stop}>■ Stop · {r.secs}s</button>
+          : <button className="btn btn-ghost btn-sm" aria-pressed="false" onClick={r.start}>● Record</button>)}
+        <button className="btn btn-ghost btn-sm" disabled={!!r.rec} onClick={() => fileRef.current && fileRef.current.click()}>Upload a recording</button>
+        <input ref={fileRef} type="file" accept="audio/*" hidden onChange={e => { const x = e.target.files && e.target.files[0]; e.target.value = ""; if (x) take(x); }}/>
+        {r.rec && r.secs >= 30 && <span className="wis-warn" role="status">30 seconds is the most the voice service uses — stop now.</span>}
+      </div>
+      {url && <audio className="wis-audio" controls src={url}/>}
+      <FieldTextarea label="Exactly what is said in the recording" rows={3} value={f.transcript} onChange={v => set("transcript", v)}/>
+      <FieldCheckbox label="The speaker has agreed to their voice being cloned and used to read these sayings on the NGG site." value={f.consent} onChange={v => set("consent", v)}/>
+      <div className="wis-form-actions">
+        <button className="btn btn-ghost btn-sm" onClick={onDone}>Cancel</button>
+        <button className="btn btn-primary btn-sm" disabled={!ready || busy === "clone"} onClick={submit}>{busy === "clone" ? "Creating…" : "Create the voice"}</button>
       </div>
     </div>
   );
 }
 
-function AdminWisdomEdit({ w, kinds, busy, onCancel, onSave }) {
+/* One saying's audio: both clips, the voice each is read in, and a staff
+   voice-over. A voice-over outranks a generated clip and is never silently
+   replaced. */
+function WisdomVoice({ w, d, busy, act }) {
+  const defs = d.voiceDefaults || {};
+  const [voice, setVoice] = React.useState(w.voice && w.audioSource === "tts" ? w.voice : (defs[w.language] || ""));
+  const [voiceEn, setVoiceEn] = React.useState(w.voiceEn || defs.english || "");
+  const fileRef = React.useRef(null);
+  const key = "v" + w.wisdomId;
+  const working = busy === key;
+
+  const sendBlob = async (blob) => {
+    if (blob.size > d.audioMax) { toast.error(WISDOM_ERR.audio_too_big); return; }
+    const audio = await wisdomBlobToDataUrl(blob);
+    act(key, () => NGGApi.admin.wisdom.upload(w.wisdomId, audio), "Voice-over saved.");
+  };
+  const r = useWisdomRecorder(sendBlob);
+  const gen = async (which) => {
+    const replace = which !== "english" && w.audioSource === "custom";
+    if (replace && !(await dialog.confirm({ title: "Replace the voice-over?", body: "A staff recording is on this saying. The generated voice will replace it.", confirmLabel: "Replace" }))) return;
+    act(key, () => NGGApi.admin.wisdom.generate(w.wisdomId, { which, voice, voiceEn, replace }), (res) =>
+      res && res.partial ? "Partly voiced — one clip failed. Try again." : "Voice generated.");
+  };
+  const nameOf = (v) => { const c = (d.customVoices || []).find(x => x.voiceId === v); return c ? c.name : wisdomCap(v); };
+
+  return (
+    <div className="wis-voice">
+      <div className="wis-voice-head">
+        <span className="admin-field-label">{WISDOM_LANG_LABEL[w.language]}</span>
+        <span className="wis-voice-src">{w.audioSource === "custom" ? "Staff voice-over" : w.audioSource === "tts" ? "Generated · " + nameOf(w.voice) : "No voice yet"}</span>
+      </div>
+      {w.audioUrl && <audio className="wis-audio" controls preload="none" src={w.audioUrl} aria-label={"The saying in " + WISDOM_LANG_LABEL[w.language]}/>}
+      {d.ttsReady && (
+        <div className="wis-voice-row">
+          <select className="admin-select wis-voice-sel" aria-label={WISDOM_LANG_LABEL[w.language] + " voice"} value={voice} onChange={e => setVoice(e.target.value)}>
+            {wisdomVoiceOptions(d, w.language).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <button className="btn btn-ghost btn-sm" disabled={working || !!r.rec} onClick={() => gen("native")}>{working ? "Working…" : w.audioUrl ? "Regenerate" : "Generate"}</button>
+        </div>
+      )}
+      <div className="wis-voice-row">
+        {r.can && (r.rec
+          ? <button className="btn btn-primary btn-sm" aria-pressed="true" onClick={r.stop}>■ Stop · {r.secs}s</button>
+          : <button className="btn btn-ghost btn-sm" aria-pressed="false" disabled={working} onClick={r.start}>● Record</button>)}
+        <button className="btn btn-ghost btn-sm" disabled={working || !!r.rec} onClick={() => fileRef.current && fileRef.current.click()}>Upload</button>
+        <input ref={fileRef} type="file" accept="audio/*" hidden onChange={e => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) sendBlob(f); }}/>
+        {w.audioUrl && <button className="btn btn-ghost btn-sm" disabled={working || !!r.rec} onClick={() => act(key, () => NGGApi.admin.wisdom.clearVoice(w.wisdomId, "native"), "Voice removed.")}>Remove</button>}
+      </div>
+
+      {w.translation && (
+        <>
+          <div className="wis-voice-head wis-voice-en">
+            <span className="admin-field-label">English</span>
+            <span className="wis-voice-src">{w.audioUrlEn ? "Generated · " + nameOf(w.voiceEn) : "No voice yet"}</span>
+          </div>
+          {w.audioUrlEn && <audio className="wis-audio" controls preload="none" src={w.audioUrlEn} aria-label="The English translation"/>}
+          {d.ttsReady ? (
+            <div className="wis-voice-row">
+              <select className="admin-select wis-voice-sel" aria-label="English voice" value={voiceEn} onChange={e => setVoiceEn(e.target.value)}>
+                {wisdomVoiceOptions(d, "english").map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <button className="btn btn-ghost btn-sm" disabled={working} onClick={() => gen("english")}>{w.audioUrlEn ? "Regenerate" : "Generate"}</button>
+              {w.audioUrlEn && <button className="btn btn-ghost btn-sm" disabled={working} onClick={() => act(key, () => NGGApi.admin.wisdom.clearVoice(w.wisdomId, "english"), "English clip removed.")}>Remove</button>}
+            </div>
+          ) : !w.audioUrlEn && <p className="admin-hint wis-note">Read automatically once a Spitch key is set.</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+function AdminWisdomEdit({ w, kinds, busy, ttsReady, onCancel, onSave }) {
   const [f, setF] = React.useState({
     wisdomId: w.wisdomId || "", language: w.language || "hausa", kind: w.kind || "proverb",
     text: w.text || "", translation: w.translation || "", answer: w.answer || "",
@@ -7130,7 +7294,8 @@ function AdminWisdomEdit({ w, kinds, busy, onCancel, onSave }) {
           </div>
         )}
         <FieldTextarea label="Deeper meaning" rows={4} value={f.meaning} onChange={v => set("meaning", v)}/>
-        {f.wisdomId && <p className="admin-hint">Changing the words removes a generated voice (it would read the old words). A staff voice-over is kept — re-record it if the wording changed.</p>}
+        <p className="admin-hint">{ttsReady ? "Saving voices it automatically — the saying, then the English translation. " : ""}
+          {f.wisdomId ? "Changing the words remakes a generated voice (the old one would read the old words). A staff voice-over is kept — re-record it if the wording changed." : ""}</p>
         <div className="wis-form-actions">
           <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
           <button className="btn btn-primary" disabled={busy || f.text.trim().length < 3} onClick={() => onSave(f)}>{busy ? "Saving…" : "Save"}</button>

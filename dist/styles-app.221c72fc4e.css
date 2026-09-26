@@ -7218,3 +7218,15 @@ select.cs-field option { background: var(--dsn-s1); color: var(--dsn-ink); }
 .wis-form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .wis-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
 @container (max-width: 700px) { .wis-item { grid-template-columns: 1fr; } }
+.wis-sched-n { font-family: var(--font-mono); font-weight: 400; font-size: 12px; opacity: .8; }
+.wis-vs { text-align: left; display: grid; gap: 12px; margin-bottom: 18px; }
+.wis-vs-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wis-vs-head .admin-field-label { margin: 0; }
+.wis-vs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.wis-clones { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid rgba(12,20,50,0.08); }
+.wis-clone-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-radius: 10px; background: rgba(12,20,50,0.035); }
+.wis-clone-name { font-weight: 700; }
+.wis-clone-meta { font-size: 13px; color: var(--ink-700); flex: 1 1 auto; }
+.wis-clone-form { display: grid; gap: 10px; padding: 14px; border-radius: 12px; background: rgba(12,20,50,0.035); }
+.wis-warn { font-size: 13px; color: #9a3412; }
+.wis-voice-en { padding-top: 8px; border-top: 1px solid rgba(12,20,50,0.08); }

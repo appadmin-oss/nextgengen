@@ -2713,3 +2713,10 @@ CREATE TABLE IF NOT EXISTS wisdom_sayings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (118) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 119 · Quote of the week: English clip + TTS retry stamp ──────────────
+ALTER TABLE wisdom_sayings ADD COLUMN audioFileEn VARCHAR(80) DEFAULT '';
+ALTER TABLE wisdom_sayings ADD COLUMN voiceEn VARCHAR(80) DEFAULT '';
+ALTER TABLE wisdom_sayings ADD COLUMN ttsTriedAt VARCHAR(40) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (119) ON DUPLICATE KEY UPDATE version = version;

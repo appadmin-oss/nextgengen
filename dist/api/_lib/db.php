@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 118;
+const NGG_SCHEMA_TARGET = 119;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3639,6 +3639,15 @@ function db_migrate(PDO $db): void {
               updatedAt TEXT DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_wisdom_lang ON wisdom_sayings(language, status, position);
+        ",
+
+        /* Quote of the week, second clip: the English translation read after
+         * the saying, and the stamp that stops a failing automatic voice from
+         * being retried on every visit. */
+        119 => "
+            ALTER TABLE wisdom_sayings ADD COLUMN audioFileEn TEXT DEFAULT '';
+            ALTER TABLE wisdom_sayings ADD COLUMN voiceEn TEXT DEFAULT '';
+            ALTER TABLE wisdom_sayings ADD COLUMN ttsTriedAt TEXT DEFAULT '';
         ",
     ];
 

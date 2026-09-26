@@ -14,15 +14,26 @@ declare(strict_types=1);
  * shared hosting to "advance" it, and a derived week cannot get stuck: every
  * request computes the same answer for the same Monday.
  *
- * Audio. Each saying may carry ONE stored clip:
- *   · `custom` — a staff voice-over, uploaded or recorded in the browser. A
- *     native speaker reading it is the gold standard and always wins.
- *   · `tts`    — generated ONCE by the TTS provider when staff press Generate,
- *     then stored. Visitors never trigger a provider call: that would put the
- *     API key's bill in the hands of anyone with a refresh button.
+ * Audio. Each saying carries up to TWO stored clips, played one after the
+ * other on the home page: the saying in its own language (`audioFile`), then
+ * its English translation (`audioFileEn`), so a child who does not speak Hausa
+ * still hears what the riddle says.
+ *   · The native clip is either a staff voice-over (`custom`) — a person
+ *     reading it is the gold standard and is never replaced without asking —
+ *     or a TTS rendering (`tts`).
+ *   · TTS clips are made automatically once a Spitch key is configured: when a
+ *     saying is saved, from the Control Room's "Voice everything", and, as a
+ *     backstop, the first time this week's saying is read without one. Each is
+ *     made ONCE and stored; a visitor's refresh never becomes a provider call.
  * The provider is Spitch (spitch.app), a Nigerian speech company whose voices
- * are trained on native Hausa, Igbo and Yoruba speech, including tone marks —
- * the generic cloud voices either lack these languages or read them as English.
+ * are trained on native Hausa, Igbo, Yorùbá and Nigerian-English speech. Two
+ * things make it read well rather than merely correctly:
+ *   · unmarked Yorùbá is tone-marked first (Spitch /v1/diacritics) — without
+ *     tone marks a Yorùbá sentence is ambiguous and the voice guesses;
+ *   · the script is cleaned: curly quotes, stray spaces and a missing full
+ *     stop are what make a TTS voice run on or stop dead.
+ * Staff can also clone a native speaker's voice from a short recording (with
+ * their consent) and use it for every saying.
  */
 
 const WISDOM_LANGS = ['hausa', 'igbo', 'yoruba'];
@@ -30,13 +41,21 @@ const WISDOM_KINDS = ['riddle', 'proverb', 'quote'];
 /* The Monday the rotation counts from (Lagos time). Week 0 is Hausa's first. */
 const WISDOM_ANCHOR = '2026-09-21T00:00:00+01:00';
 const WISDOM_AUDIO_MAX = 4 * 1024 * 1024;
-const WISDOM_LANG_CODE = ['hausa' => 'ha', 'igbo' => 'ig', 'yoruba' => 'yo'];
-/* Spitch's voices per language, female first. The first is the default. */
+const WISDOM_LANG_CODE = ['hausa' => 'ha', 'igbo' => 'ig', 'yoruba' => 'yo', 'english' => 'en'];
+/* Spitch's system voices, by the language each was designed around. Any voice
+ * can speak any language, but a voice reads best in its own. First = default. */
 const WISDOM_VOICES = [
-    'hausa'  => ['amina', 'zainab', 'aliyu', 'hasan'],
-    'igbo'   => ['ngozi', 'amara', 'obinna', 'ebuka'],
-    'yoruba' => ['sade', 'funmi', 'segun', 'femi'],
+    'hausa'   => ['amina', 'zainab', 'aliyu', 'hasan'],
+    'igbo'    => ['ngozi', 'amara', 'obinna', 'ebuka'],
+    'yoruba'  => ['sade', 'funmi', 'segun', 'femi'],
+    'english' => ['lucy', 'kingsley', 'remi', 'john', 'kani', 'jude', 'henry', 'lina'],
 ];
+/* How many sayings one "Voice everything" press may voice. Each is up to two
+ * provider calls of a few seconds; forty keeps one press inside a shared
+ * host's request limit. Press again for the rest. */
+const WISDOM_VOICE_ALL_MAX = 40;
+/* A failed automatic attempt is not retried by visitors for this long. */
+const WISDOM_TTS_BACKOFF = 3600;
 
 /* ── Seed ─────────────────────────────────────────────────────────────── */
 
@@ -102,11 +121,13 @@ function wisdom_shape(array $r, bool $admin = false): array {
         'meaning' => (string)($r['meaning'] ?? ''),
         'audioUrl' => wisdom_audio_url((string)($r['audioFile'] ?? '')),
         'audioSource' => (string)($r['audioSource'] ?? ''),
+        'audioUrlEn' => wisdom_audio_url((string)($r['audioFileEn'] ?? '')),
         'langCode' => WISDOM_LANG_CODE[(string)$r['language']] ?? '',
     ];
     if ($admin) {
         $out += ['position' => (int)($r['position'] ?? 0), 'status' => (string)($r['status'] ?? 'live'),
-                 'voice' => (string)($r['voice'] ?? ''), 'updatedAt' => (string)($r['updatedAt'] ?? '')];
+                 'voice' => (string)($r['voice'] ?? ''), 'voiceEn' => (string)($r['voiceEn'] ?? ''),
+                 'updatedAt' => (string)($r['updatedAt'] ?? '')];
     }
     return $out;
 }
@@ -151,6 +172,14 @@ function public_wisdom_week(array $p): array {
     wisdom_ensure_seeded();
     $w = wisdom_week_index();
     $row = wisdom_pick(wisdom_live_by_lang(), $w);
+    if ($row && wisdom_tts_missing($row) && wisdom_tts_key() !== ''
+        && (int)strtotime((string)($row['ttsTriedAt'] ?? '')) < time() - WISDOM_TTS_BACKOFF) {
+        /* The claim is the lock: stamping first means a burst of visitors
+         * produces one provider call, not one each. */
+        db_update('wisdom_sayings', ['ttsTriedAt' => now_iso()], ['wisdomId' => $row['wisdomId']]);
+        wisdom_tts_fill($row);
+        $row = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [$row['wisdomId']]);
+    }
     return ['ok' => true, 'week' => wisdom_week_monday($w),
             'saying' => $row ? wisdom_shape($row) : null];
 }
@@ -203,7 +232,7 @@ function wisdom_audio_put(string $bytes): string {
 /** Drop a clip no saying points at any more. */
 function wisdom_audio_release(string $name): void {
     if ($name === '') return;
-    if (db_row('SELECT id FROM wisdom_sayings WHERE audioFile = ? LIMIT 1', [$name])) return;
+    if (db_row('SELECT id FROM wisdom_sayings WHERE audioFile = ? OR audioFileEn = ? LIMIT 1', [$name, $name])) return;
     $path = wisdom_audio_path($name);
     if ($path !== '' && is_file($path)) @unlink($path);
 }
@@ -216,28 +245,139 @@ function wisdom_tts_key(): string {
     return trim($k);
 }
 
-/** Call the provider. Returns ['ok'=>true,'bytes'=>…] or an error. */
-function wisdom_tts_synth(string $text, string $lang, string $voice): array {
+/** One request to Spitch. JSON in; audio bytes or JSON out. Tests replace the
+ *  transport through $GLOBALS['__wisdom_http'] so no suite talks to the network. */
+function wisdom_spitch(string $method, string $path, $body, bool $multipart = false): array {
+    if (isset($GLOBALS['__wisdom_http']) && is_callable($GLOBALS['__wisdom_http'])) {
+        return ($GLOBALS['__wisdom_http'])($method, $path, $body);
+    }
     $key = wisdom_tts_key();
-    if ($key === '') return ['ok' => false, 'error' => 'tts_not_configured'];
-    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'no_curl'];
-    $ch = curl_init('https://api.spitch.app/v1/speech');
-    curl_setopt_array($ch, [
-        CURLOPT_POST => true,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 60,
-        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $key, 'Content-Type: application/json'],
-        CURLOPT_POSTFIELDS => json_encode(['language' => WISDOM_LANG_CODE[$lang] ?? 'yo',
-            'text' => $text, 'voice' => $voice, 'speed' => 0.9, 'format' => 'mp3'], JSON_UNESCAPED_UNICODE),
-    ]);
-    $body = curl_exec($ch);
+    if ($key === '') return ['code' => 0, 'body' => '', 'error' => 'tts_not_configured'];
+    if (!function_exists('curl_init')) return ['code' => 0, 'body' => '', 'error' => 'no_curl'];
+    $ch = curl_init('https://api.spitch.app' . $path);
+    $headers = ['Authorization: Bearer ' . $key];
+    $opts = [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 60, CURLOPT_CUSTOMREQUEST => $method];
+    if ($body !== null) {
+        if ($multipart) { $opts[CURLOPT_POSTFIELDS] = $body; }
+        else { $headers[] = 'Content-Type: application/json'; $opts[CURLOPT_POSTFIELDS] = json_encode($body, JSON_UNESCAPED_UNICODE); }
+    }
+    $opts[CURLOPT_HTTPHEADER] = $headers;
+    curl_setopt_array($ch, $opts);
+    $out = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    if ($body === false || $code !== 200) {
-        error_log('[wisdom] tts http ' . $code . ' ' . substr((string)$body, 0, 200));
-        return ['ok' => false, 'error' => 'tts_failed', 'message' => 'The voice service answered ' . $code . '.'];
+    return ['code' => $code, 'body' => $out === false ? '' : (string)$out];
+}
+
+/** Does this text already carry Yorùbá tone marks (acute/grave, or a dot below)? */
+function wisdom_has_tone_marks(string $t): bool {
+    $d = class_exists('Normalizer') ? (string)Normalizer::normalize($t, Normalizer::FORM_D) : $t;
+    return (bool)preg_match('/[\x{0300}\x{0301}\x{0323}]|[ẹọṣẸỌṢ]/u', $d);
+}
+
+/**
+ * The words the voice is actually given. Clean punctuation is most of what
+ * separates a natural read from a robotic one: a curly apostrophe or a double
+ * space can be read as a hitch, and a sentence without a full stop runs into
+ * silence without the falling tone that ends it.
+ */
+function wisdom_tts_script(string $text, string $lang): string {
+    $t = str_replace(["\u{2019}", "\u{2018}", "\u{201C}", "\u{201D}", "\u{2026}"], ["'", "'", '"', '"', '...'], $text);
+    $t = trim(preg_replace('/\s+/u', ' ', $t));
+    if ($t !== '' && !preg_match('/[.!?…]["\']?$/u', $t)) $t .= '.';
+    /* Unmarked Yorùbá is ambiguous — ọkọ is a husband, a hoe, a vehicle or a
+     * spear depending on tone — so the voice would be guessing. Mark it first.
+     * If the service can't, the unmarked text is still better than nothing. */
+    if ($lang === 'yoruba' && !wisdom_has_tone_marks($t)) {
+        $r = wisdom_spitch('POST', '/v1/diacritics', ['language' => 'yo', 'text' => $t]);
+        $j = $r['code'] === 200 ? json_decode($r['body'], true) : null;
+        if (is_array($j) && trim((string)($j['text'] ?? '')) !== '') $t = trim((string)$j['text']);
     }
-    return ['ok' => true, 'bytes' => (string)$body];
+    return $t;
+}
+
+/** Synthesize one clip. $lang is a WISDOM_LANG_CODE key (incl. 'english'). */
+function wisdom_tts_synth(string $text, string $lang, string $voice): array {
+    if (wisdom_tts_key() === '' && !isset($GLOBALS['__wisdom_http'])) return ['ok' => false, 'error' => 'tts_not_configured'];
+    $script = wisdom_tts_script($text, $lang);
+    if ($script === '') return ['ok' => false, 'error' => 'nothing_to_say'];
+    $r = wisdom_spitch('POST', '/v1/speech', ['language' => WISDOM_LANG_CODE[$lang] ?? 'en', 'text' => $script,
+        'voice' => $voice, 'speed' => 0.92, 'format' => 'mp3']);
+    if ($r['code'] !== 200 || $r['body'] === '') {
+        error_log('[wisdom] tts http ' . $r['code'] . ' ' . substr($r['body'], 0, 200));
+        return ['ok' => false, 'error' => $r['error'] ?? 'tts_failed',
+                'message' => 'The voice service answered ' . $r['code'] . '.'];
+    }
+    return ['ok' => true, 'bytes' => $r['body'], 'script' => $script];
+}
+
+/* ── Voices: defaults and cloned voices ───────────────────────────────── */
+
+/** Staff-cloned voices: [{voiceId, name, language, createdAt}]. */
+function wisdom_custom_voices(): array {
+    $v = setting_get('wisdom.customVoices');
+    return is_array($v) ? array_values(array_filter($v, 'is_array')) : [];
+}
+
+function wisdom_voice_valid(string $voice): bool {
+    foreach (WISDOM_VOICES as $list) if (in_array($voice, $list, true)) return true;
+    foreach (wisdom_custom_voices() as $c) if (($c['voiceId'] ?? '') === $voice) return true;
+    return false;
+}
+
+/** The voice each language is read in unless a saying names its own. */
+function wisdom_voice_defaults(): array {
+    $saved = setting_get('wisdom.voiceDefaults');
+    $out = [];
+    foreach (WISDOM_VOICES as $lang => $list) {
+        $v = is_array($saved) ? (string)($saved[$lang] ?? '') : '';
+        $out[$lang] = ($v !== '' && wisdom_voice_valid($v)) ? $v : $list[0];
+    }
+    return $out;
+}
+
+/** Is a clip this saying should have not there yet? A staff voice-over counts. */
+function wisdom_tts_missing(array $row): bool {
+    if ((string)($row['audioFile'] ?? '') === '') return true;
+    return trim((string)($row['translation'] ?? '')) !== '' && (string)($row['audioFileEn'] ?? '') === '';
+}
+
+/**
+ * Make the clips a saying is missing (or, with $which, remake those named).
+ * Never overwrites a staff voice-over unless $replaceCustom. Returns what it
+ * made and the first error, so a partial success is reported as one.
+ */
+function wisdom_tts_fill(array $row, array $which = [], string $voice = '', string $voiceEn = '', bool $replaceCustom = false): array {
+    $defaults = wisdom_voice_defaults();
+    $made = []; $err = null; $patch = [];
+    $wantNative = in_array('native', $which, true) || ($which === [] && (string)$row['audioFile'] === '');
+    if ($wantNative && $row['audioSource'] === 'custom' && !$replaceCustom) $wantNative = false;
+    $hasTr = trim((string)($row['translation'] ?? '')) !== '';
+    $wantEn = $hasTr && (in_array('english', $which, true) || ($which === [] && (string)($row['audioFileEn'] ?? '') === ''));
+
+    if ($wantNative) {
+        $v = wisdom_voice_valid($voice) ? $voice
+           : (wisdom_voice_valid((string)$row['voice']) ? (string)$row['voice'] : $defaults[$row['language']]);
+        $r = wisdom_tts_synth((string)$row['text'], (string)$row['language'], $v);
+        $name = $r['ok'] ? wisdom_audio_put($r['bytes']) : '';
+        if ($name !== '') { $patch += ['audioFile' => $name, 'audioSource' => 'tts', 'voice' => $v]; $made[] = 'native'; }
+        else $err = $err ?? ($r['ok'] ? ['ok' => false, 'error' => 'tts_bad_audio'] : $r);
+    }
+    if ($wantEn) {
+        $v = wisdom_voice_valid($voiceEn) ? $voiceEn
+           : (wisdom_voice_valid((string)($row['voiceEn'] ?? '')) ? (string)$row['voiceEn'] : $defaults['english']);
+        $r = wisdom_tts_synth((string)$row['translation'], 'english', $v);
+        $name = $r['ok'] ? wisdom_audio_put($r['bytes']) : '';
+        if ($name !== '') { $patch += ['audioFileEn' => $name, 'voiceEn' => $v]; $made[] = 'english'; }
+        else $err = $err ?? ($r['ok'] ? ['ok' => false, 'error' => 'tts_bad_audio'] : $r);
+    }
+    if ($patch) {
+        db_update('wisdom_sayings', $patch + ['updatedAt' => now_iso()], ['wisdomId' => $row['wisdomId']]);
+        foreach (['audioFile', 'audioFileEn'] as $col) {
+            if (isset($patch[$col]) && (string)($row[$col] ?? '') !== $patch[$col]) wisdom_audio_release((string)($row[$col] ?? ''));
+        }
+    }
+    return $err && !$made ? $err : ['ok' => true, 'made' => $made, 'partial' => $err ? ($err['error'] ?? 'failed') : null];
 }
 
 function wisdom_next_position(string $lang): int {
@@ -253,16 +393,24 @@ function admin_wisdom_list(array $p): array {
     $rows = db_all('SELECT * FROM wisdom_sayings ORDER BY position, id');
     $by = wisdom_live_by_lang();
     $w = wisdom_week_index();
+    // The number each saying holds in its own language's list, for the strip.
+    $num = [];
+    foreach ($by as $list) foreach ($list as $k => $r) $num[$r['wisdomId']] = $k + 1;
     $schedule = [];
     for ($i = 0; $i < 9; $i++) {
         $r = wisdom_pick($by, $w + $i);
         if ($r) $schedule[] = ['week' => wisdom_week_monday($w + $i), 'wisdomId' => (string)$r['wisdomId'],
-                               'language' => (string)$r['language'], 'text' => (string)$r['text']];
+                               'language' => (string)$r['language'], 'number' => $num[$r['wisdomId']] ?? 0,
+                               'text' => (string)$r['text']];
     }
+    $missing = 0;
+    foreach ($rows as $r) if ($r['status'] === 'live' && wisdom_tts_missing($r)) $missing++;
     return ['ok' => true, 'sayings' => array_map(fn($r) => wisdom_shape($r, true), $rows),
             'schedule' => $schedule, 'languages' => WISDOM_LANGS, 'kinds' => WISDOM_KINDS,
-            'voices' => WISDOM_VOICES, 'ttsReady' => wisdom_tts_key() !== '',
-            'audioMax' => WISDOM_AUDIO_MAX];
+            'voices' => WISDOM_VOICES, 'customVoices' => wisdom_custom_voices(),
+            'voiceDefaults' => wisdom_voice_defaults(), 'missingVoice' => $missing,
+            'voiceAllMax' => WISDOM_VOICE_ALL_MAX,
+            'ttsReady' => wisdom_tts_key() !== '', 'audioMax' => WISDOM_AUDIO_MAX];
 }
 
 function admin_wisdom_upsert(array $p): array {
@@ -285,22 +433,33 @@ function admin_wisdom_upsert(array $p): array {
     ];
     $id = (string)($d['wisdomId'] ?? '');
     $old = $id !== '' ? db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [$id]) : null;
+    $release = [];
     if ($old) {
         // A generated clip reads the old words; once the words change it is wrong.
-        $stale = $old['audioSource'] === 'tts' && $old['text'] !== $text;
-        if ($stale) $row += ['audioFile' => '', 'audioSource' => ''];
-        if ($old['language'] !== $lang) {
-            $row['position'] = wisdom_next_position($lang);
+        if ($old['audioSource'] === 'tts' && ($old['text'] !== $text || $old['language'] !== $lang)) {
+            $row += ['audioFile' => '', 'audioSource' => '']; $release[] = (string)$old['audioFile'];
         }
+        if ((string)$old['translation'] !== $row['translation']) {
+            $row += ['audioFileEn' => '']; $release[] = (string)($old['audioFileEn'] ?? '');
+        }
+        if ($old['language'] !== $lang) $row['position'] = wisdom_next_position($lang);
         db_update('wisdom_sayings', $row, ['wisdomId' => $id]);
-        if ($stale) wisdom_audio_release((string)$old['audioFile']);
+        foreach ($release as $f) wisdom_audio_release($f);
     } else {
         $id = 'WS-' . strtoupper(rand_hex(5));
         $row['position'] = wisdom_next_position($lang);
         db_insert('wisdom_sayings', $row + ['wisdomId' => $id, 'createdAt' => now_iso()]);
     }
     audit('wisdom.upsert', (string)($g['requester']['memberId'] ?? ''), $id, ['language' => $lang], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'wisdomId' => $id];
+    /* Voice it now, while staff are looking, so a fault is seen on this
+     * screen rather than discovered on the home page. A failure never fails
+     * the save — the words are what matter; the clip can be made again. */
+    $voice = null;
+    if (wisdom_tts_key() !== '') {
+        $fresh = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [$id]);
+        if ($fresh && wisdom_tts_missing($fresh)) $voice = wisdom_tts_fill($fresh);
+    }
+    return ['ok' => true, 'wisdomId' => $id, 'voice' => $voice];
 }
 
 function admin_wisdom_delete(array $p): array {
@@ -309,6 +468,7 @@ function admin_wisdom_delete(array $p): array {
     if (!$row) return ['ok' => false, 'error' => 'not_found'];
     db_exec('DELETE FROM wisdom_sayings WHERE wisdomId = ?', [$row['wisdomId']]);
     wisdom_audio_release((string)$row['audioFile']);
+    wisdom_audio_release((string)($row['audioFileEn'] ?? ''));
     audit('wisdom.delete', (string)($g['requester']['memberId'] ?? ''), (string)$row['wisdomId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }
@@ -328,24 +488,60 @@ function admin_wisdom_move(array $p): array {
     return ['ok' => true];
 }
 
-/** Generate the saying's clip with the TTS provider and store it. Refuses to
- *  overwrite a staff voice-over unless told to: a person's reading is better. */
+/** Remake one saying's clips in the voices chosen. `which` = native|english|both. */
 function admin_wisdom_voice_generate(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    if (wisdom_tts_key() === '' && !isset($GLOBALS['__wisdom_http'])) return ['ok' => false, 'error' => 'tts_not_configured'];
     $row = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [(string)($p['wisdomId'] ?? '')]);
     if (!$row) return ['ok' => false, 'error' => 'not_found'];
-    if ($row['audioSource'] === 'custom' && empty($p['replace'])) return ['ok' => false, 'error' => 'has_custom_voice'];
-    $voices = WISDOM_VOICES[$row['language']] ?? [];
-    $voice = in_array((string)($p['voice'] ?? ''), $voices, true) ? (string)$p['voice'] : ($voices[0] ?? '');
-    $res = wisdom_tts_synth((string)$row['text'], (string)$row['language'], $voice);
-    if (!$res['ok']) return $res;
-    $name = wisdom_audio_put($res['bytes']);
-    if ($name === '') return ['ok' => false, 'error' => 'tts_bad_audio'];
-    db_update('wisdom_sayings', ['audioFile' => $name, 'audioSource' => 'tts', 'voice' => $voice, 'updatedAt' => now_iso()],
-              ['wisdomId' => $row['wisdomId']]);
-    if ($row['audioFile'] !== $name) wisdom_audio_release((string)$row['audioFile']);
-    audit('wisdom.voice', (string)($g['requester']['memberId'] ?? ''), (string)$row['wisdomId'], ['source' => 'tts', 'voice' => $voice], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'audioUrl' => wisdom_audio_url($name)];
+    $which = ['native' => ['native'], 'english' => ['english']][(string)($p['which'] ?? '')] ?? ['native', 'english'];
+    if (in_array('native', $which, true) && $row['audioSource'] === 'custom' && empty($p['replace'])) {
+        return ['ok' => false, 'error' => 'has_custom_voice'];
+    }
+    $res = wisdom_tts_fill($row, $which, (string)($p['voice'] ?? ''), (string)($p['voiceEn'] ?? ''), !empty($p['replace']));
+    if (!empty($res['ok'])) {
+        audit('wisdom.voice', (string)($g['requester']['memberId'] ?? ''), (string)$row['wisdomId'],
+              ['source' => 'tts', 'made' => $res['made']], (string)($p['ip'] ?? ''));
+    }
+    return $res;
+}
+
+/** Voice every live saying that is missing a clip, up to the cap per press. */
+function admin_wisdom_voice_all(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    if (wisdom_tts_key() === '' && !isset($GLOBALS['__wisdom_http'])) return ['ok' => false, 'error' => 'tts_not_configured'];
+    $todo = array_values(array_filter(db_all("SELECT * FROM wisdom_sayings WHERE status = 'live' ORDER BY position, id"), 'wisdom_tts_missing'));
+    $done = 0; $failed = [];
+    foreach (array_slice($todo, 0, WISDOM_VOICE_ALL_MAX) as $row) {
+        $r = wisdom_tts_fill($row);
+        if (!empty($r['ok']) && empty($r['partial'])) $done++;
+        else $failed[] = ['wisdomId' => $row['wisdomId'], 'error' => $r['partial'] ?? ($r['error'] ?? 'failed')];
+    }
+    audit('wisdom.voice.all', (string)($g['requester']['memberId'] ?? ''), '',
+          ['voiced' => $done, 'failed' => count($failed)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'voiced' => $done, 'failed' => $failed,
+            'remaining' => max(0, count($todo) - WISDOM_VOICE_ALL_MAX), 'cap' => WISDOM_VOICE_ALL_MAX];
+}
+
+function admin_wisdom_voice_defaults_set(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $in = is_array($p['defaults'] ?? null) ? $p['defaults'] : [];
+    $out = [];
+    foreach (array_keys(WISDOM_VOICES) as $lang) {
+        $v = (string)($in[$lang] ?? '');
+        if ($v !== '' && !wisdom_voice_valid($v)) return ['ok' => false, 'error' => 'bad_voice', 'message' => $lang];
+        if ($v !== '') $out[$lang] = $v;
+    }
+    setting_set('wisdom.voiceDefaults', $out, (string)($g['requester']['memberId'] ?? ''));
+    return ['ok' => true, 'voiceDefaults' => wisdom_voice_defaults()];
+}
+
+/** Decode a data: URL to audio bytes, sniffed; null if it isn't audio. */
+function wisdom_audio_from_data_url(string $data): ?string {
+    if (!preg_match('#^data:[a-z0-9/.+-]*(;[a-z0-9=.-]+)*;base64,#i', $data, $m)) return null;
+    $bytes = base64_decode(substr($data, strlen($m[0])), true);
+    if ($bytes === false || $bytes === '' || wisdom_audio_ext($bytes) === '') return null;
+    return $bytes;
 }
 
 /** A staff voice-over: a data: URL from an upload or an in-browser recording. */
@@ -353,10 +549,8 @@ function admin_wisdom_voice_upload(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
     $row = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [(string)($p['wisdomId'] ?? '')]);
     if (!$row) return ['ok' => false, 'error' => 'not_found'];
-    $data = (string)($p['audio'] ?? '');
-    if (!preg_match('#^data:[a-z0-9/.+-]*(;[a-z0-9=.-]+)*;base64,#i', $data, $m)) return ['ok' => false, 'error' => 'bad_audio'];
-    $bytes = base64_decode(substr($data, strlen($m[0])), true);
-    if ($bytes === false || $bytes === '') return ['ok' => false, 'error' => 'bad_audio'];
+    $bytes = wisdom_audio_from_data_url((string)($p['audio'] ?? ''));
+    if ($bytes === null) return ['ok' => false, 'error' => 'bad_audio'];
     if (strlen($bytes) > WISDOM_AUDIO_MAX) return ['ok' => false, 'error' => 'audio_too_big'];
     $name = wisdom_audio_put($bytes);
     if ($name === '') return ['ok' => false, 'error' => 'bad_audio'];
@@ -371,8 +565,76 @@ function admin_wisdom_voice_clear(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
     $row = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [(string)($p['wisdomId'] ?? '')]);
     if (!$row) return ['ok' => false, 'error' => 'not_found'];
-    db_update('wisdom_sayings', ['audioFile' => '', 'audioSource' => '', 'voice' => '', 'updatedAt' => now_iso()],
-              ['wisdomId' => $row['wisdomId']]);
-    wisdom_audio_release((string)$row['audioFile']);
+    $which = (string)($p['which'] ?? 'both');
+    $patch = ['updatedAt' => now_iso()]; $drop = [];
+    if ($which !== 'english') { $patch += ['audioFile' => '', 'audioSource' => '', 'voice' => '']; $drop[] = (string)$row['audioFile']; }
+    if ($which !== 'native')  { $patch += ['audioFileEn' => '', 'voiceEn' => '']; $drop[] = (string)($row['audioFileEn'] ?? ''); }
+    /* Cleared on purpose: don't let the visitor backstop regenerate it at once. */
+    $patch['ttsTriedAt'] = now_iso();
+    db_update('wisdom_sayings', $patch, ['wisdomId' => $row['wisdomId']]);
+    foreach ($drop as $f) wisdom_audio_release($f);
+    return ['ok' => true];
+}
+
+/**
+ * Clone a voice from a short recording of a real person, so every saying can
+ * be read by — in effect — a native speaker the programme knows. Spitch asks
+ * for 2–30 seconds of one speaker, the exact transcript, and explicit consent;
+ * so does this. Consent is recorded in the audit log with who pressed it.
+ */
+function admin_wisdom_voice_clone(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    if (wisdom_tts_key() === '' && !isset($GLOBALS['__wisdom_http'])) return ['ok' => false, 'error' => 'tts_not_configured'];
+    if (empty($p['consent'])) return ['ok' => false, 'error' => 'consent_required'];
+    $name = mb_substr(trim((string)($p['name'] ?? '')), 0, 120);
+    $transcript = mb_substr(trim((string)($p['transcript'] ?? '')), 0, 2000);
+    $lang = (string)($p['language'] ?? '');
+    if ($name === '') return ['ok' => false, 'error' => 'name_required'];
+    if ($transcript === '') return ['ok' => false, 'error' => 'transcript_required'];
+    if (!isset(WISDOM_LANG_CODE[$lang])) return ['ok' => false, 'error' => 'bad_language'];
+    if (count(wisdom_custom_voices()) >= 20) return ['ok' => false, 'error' => 'too_many_voices'];
+    $bytes = wisdom_audio_from_data_url((string)($p['audio'] ?? ''));
+    if ($bytes === null) return ['ok' => false, 'error' => 'bad_audio'];
+    if (strlen($bytes) > 10 * 1024 * 1024) return ['ok' => false, 'error' => 'audio_too_big'];
+
+    if (!class_exists('CURLFile')) return ['ok' => false, 'error' => 'no_curl'];
+    $ext = wisdom_audio_ext($bytes);
+    $tmp = tempnam(sys_get_temp_dir(), 'wvc');
+    file_put_contents($tmp, $bytes);
+    try {
+        $mime = ['mp3' => 'audio/mpeg', 'm4a' => 'audio/mp4', 'wav' => 'audio/wav', 'ogg' => 'audio/ogg', 'webm' => 'audio/webm'][$ext];
+        $r = wisdom_spitch('POST', '/v1/voices', [
+            'audio' => new CURLFile($tmp, $mime, 'reference.' . $ext),
+            'transcript' => $transcript, 'name' => $name, 'consent' => 'true',
+            'language' => WISDOM_LANG_CODE[$lang],
+        ], true);
+    } finally { @unlink($tmp); }
+    $j = json_decode($r['body'], true);
+    $vid = is_array($j) ? (string)($j['voice_id'] ?? '') : '';
+    if (!in_array($r['code'], [200, 201], true) || !preg_match('/^[A-Za-z0-9_-]{3,80}$/', $vid)) {
+        error_log('[wisdom] clone http ' . $r['code'] . ' ' . substr($r['body'], 0, 200));
+        $detail = is_array($j) ? (string)($j['detail'] ?? $j['message'] ?? '') : '';
+        return ['ok' => false, 'error' => 'clone_failed', 'message' => $detail !== '' ? $detail : ('The voice service answered ' . $r['code'] . '.')];
+    }
+    $list = wisdom_custom_voices();
+    $list[] = ['voiceId' => $vid, 'name' => $name, 'language' => $lang, 'createdAt' => now_iso()];
+    setting_set('wisdom.customVoices', $list, (string)($g['requester']['memberId'] ?? ''));
+    audit('wisdom.voice.clone', (string)($g['requester']['memberId'] ?? ''), $vid,
+          ['name' => $name, 'language' => $lang, 'consent' => true], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'voiceId' => $vid];
+}
+
+function admin_wisdom_voice_clone_delete(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $vid = (string)($p['voiceId'] ?? '');
+    $list = wisdom_custom_voices();
+    $keep = array_values(array_filter($list, fn($c) => ($c['voiceId'] ?? '') !== $vid));
+    if (count($keep) === count($list)) return ['ok' => false, 'error' => 'not_found'];
+    // Best effort at the provider; the local list is the source of truth here.
+    wisdom_spitch('DELETE', '/v1/voices/' . rawurlencode($vid), null);
+    setting_set('wisdom.customVoices', $keep, (string)($g['requester']['memberId'] ?? ''));
+    $defs = setting_get('wisdom.voiceDefaults');
+    if (is_array($defs)) setting_set('wisdom.voiceDefaults', array_filter($defs, fn($v) => $v !== $vid), (string)($g['requester']['memberId'] ?? ''));
+    audit('wisdom.voice.clone.delete', (string)($g['requester']['memberId'] ?? ''), $vid, [], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }

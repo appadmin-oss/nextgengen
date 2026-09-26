@@ -415,19 +415,25 @@ function qowBrowserVoice(code) {
   } catch (_) { return null; }
 }
 
+function qowPref() { try { return localStorage.getItem("ngg_qow_en") !== "0"; } catch (_) { return true; } }
+
 function QuoteOfWeek() {
   const [d, setD] = React.useState(null);
   const [reveal, setReveal] = React.useState(false);
   const [open, setOpen] = React.useState(false);
-  const [playing, setPlaying] = React.useState(false);
+  // "" (idle) | "native" | "gap" | "english" — which part of the reading is on.
+  const [phase, setPhase] = React.useState("");
   const [progress, setProgress] = React.useState(0);
+  const [withEn, setWithEn] = React.useState(qowPref);
   const [bVoice, setBVoice] = React.useState(null);
-  const audioRef = React.useRef(null);
+  const nativeRef = React.useRef(null);
+  const enRef = React.useRef(null);
+  const gapRef = React.useRef(0);
 
   React.useEffect(() => {
     let alive = true;
     NGGApi.public.wisdomWeek().then(r => { if (alive && r && r.saying) setD(r); }).catch(() => {});
-    return () => { alive = false; };
+    return () => { alive = false; clearTimeout(gapRef.current); };
   }, []);
   const s = d && d.saying;
   React.useEffect(() => {
@@ -439,22 +445,41 @@ function QuoteOfWeek() {
   }, [s]);
   if (!s) return null;
 
+  const hasEn = !!(s.audioUrl && s.audioUrlEn);
   const canListen = !!(s.audioUrl || bVoice);
+  const playing = phase !== "";
+  const stop = () => {
+    clearTimeout(gapRef.current);
+    [nativeRef.current, enRef.current].forEach(a => { if (a) { a.pause(); a.currentTime = 0; } });
+    try { window.speechSynthesis && speechSynthesis.cancel(); } catch (_) {}
+    setPhase(""); setProgress(0);
+  };
+  const play = (a, p) => { if (!a) return stop(); setPhase(p); setProgress(0); a.currentTime = 0; a.play().catch(stop); };
   const toggle = () => {
-    if (s.audioUrl) {
-      const a = audioRef.current; if (!a) return;
-      if (a.paused) a.play().catch(() => setPlaying(false)); else a.pause();
-      return;
-    }
-    if (playing) { speechSynthesis.cancel(); setPlaying(false); return; }
+    if (playing) return stop();
+    if (s.audioUrl) return play(nativeRef.current, "native");
     const u = new SpeechSynthesisUtterance(s.text);
     u.voice = bVoice; u.lang = bVoice.lang; u.rate = 0.9;
-    u.onend = u.onerror = () => setPlaying(false);
-    setPlaying(true); speechSynthesis.speak(u);
+    u.onend = u.onerror = () => setPhase("");
+    setPhase("native"); speechSynthesis.speak(u);
   };
+  // After the saying, a breath, then its meaning in English — how a person
+  // would teach it, rather than two recordings pressed together.
+  const nativeEnded = () => {
+    if (hasEn && withEn) { setPhase("gap"); setProgress(1); gapRef.current = setTimeout(() => play(enRef.current, "english"), 700); }
+    else stop();
+  };
+  const setEnPref = () => {
+    const v = !withEn; setWithEn(v);
+    try { localStorage.setItem("ngg_qow_en", v ? "1" : "0"); } catch (_) {}
+    if (!v && (phase === "english" || phase === "gap")) stop();
+  };
+  const onTime = (e) => { const a = e.currentTarget; setProgress(a.duration ? a.currentTime / a.duration : 0); };
   const native = (QOW_NATIVE[s.language] || {})[s.kind];
   const week = d.week ? fmtDayMonth(d.week + "T12:00:00") : "";
   const R = 26, C = 2 * Math.PI * R;
+  const status = phase === "english" ? "In English…" : phase === "gap" ? "…" : phase === "native" ? "In " + QOW_LANG[s.language] + "…"
+    : "Hear it in " + QOW_LANG[s.language] + (hasEn && withEn ? ", then English" : "");
 
   return (
     <section className={"qow qow-" + s.language} aria-labelledby="qow-h">
@@ -464,21 +489,30 @@ function QuoteOfWeek() {
           <span className="qow-tag">{QOW_LANG[s.language]}{native ? " · " + native : ""} <span className="qow-tag-en">{QOW_KIND[s.kind] || ""}</span></span>
         </div>
         <blockquote className="qow-quote" lang={s.langCode}>
-          <p className="qow-text">{s.text}</p>
-          {s.translation && <p className="qow-tr" lang="en">{s.translation}</p>}
+          <p className={"qow-text" + (phase === "native" ? " is-speaking" : "")}>{s.text}</p>
+          {s.translation && <p className={"qow-tr" + (phase === "english" ? " is-speaking" : "")} lang="en">{s.translation}</p>}
         </blockquote>
         <div className="qow-actions">
           {canListen && (
             <button type="button" className={"qow-play" + (playing ? " is-on" : "")} onClick={toggle}
-                    aria-pressed={playing} aria-label={(playing ? "Pause" : "Listen to") + " the " + QOW_LANG[s.language]}>
+                    aria-pressed={playing} aria-label={(playing ? "Stop" : "Listen to") + " the " + QOW_LANG[s.language]}>
               <svg viewBox="0 0 60 60" aria-hidden="true" className="qow-ring">
                 <circle cx="30" cy="30" r={R} className="qow-ring-bg"/>
                 <circle cx="30" cy="30" r={R} className="qow-ring-fg" strokeDasharray={C} strokeDashoffset={C * (1 - progress)}/>
               </svg>
-              <span className="qow-play-ico" aria-hidden="true">{playing ? "❚❚" : "▶"}</span>
+              <span className="qow-play-ico" aria-hidden="true">{playing ? "■" : "▶"}</span>
             </button>
           )}
-          {canListen && <span className="qow-listen" aria-hidden="true">{playing ? "Playing…" : "Hear it in " + QOW_LANG[s.language]}</span>}
+          {canListen && (
+            <span className="qow-listen-wrap">
+              <span className="qow-listen" aria-live="polite">{status}</span>
+              {hasEn && (
+                <button type="button" className={"qow-entoggle" + (withEn ? " is-on" : "")} aria-pressed={withEn} onClick={setEnPref}>
+                  English too
+                </button>
+              )}
+            </span>
+          )}
           <span className="qow-spacer"/>
           {s.kind === "riddle" && s.answer && (
             <button type="button" className={"qow-btn" + (reveal ? " is-on" : "")} aria-pressed={reveal} onClick={() => setReveal(v => !v)}>
@@ -501,12 +535,8 @@ function QuoteOfWeek() {
           )}
           {open && <p className="qow-meaning" id="qow-meaning"><span className="qow-k">Deeper meaning</span>{s.meaning}</p>}
         </div>
-        {s.audioUrl && (
-          <audio ref={audioRef} src={s.audioUrl} preload="none"
-                 onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
-                 onEnded={() => { setPlaying(false); setProgress(0); }}
-                 onTimeUpdate={e => { const a = e.currentTarget; setProgress(a.duration ? a.currentTime / a.duration : 0); }}/>
-        )}
+        {s.audioUrl && <audio ref={nativeRef} src={s.audioUrl} preload="none" onEnded={nativeEnded} onTimeUpdate={e => phase === "native" && onTime(e)}/>}
+        {hasEn && <audio ref={enRef} src={s.audioUrlEn} preload="none" onEnded={stop} onTimeUpdate={e => phase === "english" && onTime(e)}/>}
       </div>
     </section>
   );

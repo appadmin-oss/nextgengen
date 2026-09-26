@@ -138,7 +138,11 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     const dir = path.join(TMP, 'wisdom'); fs.mkdirSync(dir, { recursive: true });
     const name = require('crypto').createHash('sha256').update(bytes).digest('hex').slice(0, 32) + '.wav';
     fs.writeFileSync(path.join(dir, name), bytes);
-    php(`db_exec("UPDATE wisdom_sayings SET audioFile = ?, audioSource = 'custom' WHERE wisdomId = ?", ['${name}', '${s.wisdomId}']);`);
+    // A second, different clip for the English translation.
+    const bytesEn = Buffer.concat([wav(), Buffer.from('en')]);
+    const nameEn = require('crypto').createHash('sha256').update(bytesEn).digest('hex').slice(0, 32) + '.wav';
+    fs.writeFileSync(path.join(dir, nameEn), bytesEn);
+    php(`db_exec("UPDATE wisdom_sayings SET audioFile = ?, audioSource = 'custom', audioFileEn = ? WHERE wisdomId = ?", ['${name}', '${nameEn}', '${s.wisdomId}']);`);
     const full = await get(BASE + '/api/public/wisdom-audio.php?a=' + name);
     const part = await get(BASE + '/api/public/wisdom-audio.php?a=' + name, { Range: 'bytes=0-99' });
     chk('the clip serves as audio', full.status === 200 && full.headers['content-type'] === 'audio/wav' && full.body.length === bytes.length);
@@ -151,7 +155,14 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await waitForBoot(mp);
     await mp.waitForSelector('.qow .qow-play', { timeout: 30000 });
     chk('with a clip, the listen button renders and is labelled', /Listen to the/.test(await mp.$eval('.qow-play', b => b.getAttribute('aria-label'))));
-    chk('the card fits a phone with no sideways scroll', await mp.evaluate(() => document.querySelector('.qow').scrollWidth <= window.innerWidth));
+    chk('the listen label promises the English after the saying', /then English/.test(await mp.$eval('.qow-listen', el => el.textContent)));
+    chk('“English too” is a pressed toggle, on by default', await mp.$eval('.qow-entoggle', b => b.getAttribute('aria-pressed') === 'true'));
+    await mp.click('.qow-play');
+    chk('playing reads the saying, then moves on to the English',
+        await mp.waitForFunction(() => document.querySelector('.qow-tr.is-speaking'), null, { timeout: 15000 }).then(() => true, () => false));
+    await mp.click('.qow-entoggle');
+    chk('turning English off updates the promise', !/then English/.test(await mp.$eval('.qow-listen', el => el.textContent)));
+        chk('the card fits a phone with no sideways scroll', await mp.evaluate(() => document.querySelector('.qow').scrollWidth <= window.innerWidth));
     await (await mp.$('.qow')).screenshot({ path: path.join(SHOTS, 'home-phone.png') });
 
     // The Control Room screen.
@@ -168,7 +179,9 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     const main = await ap.$eval('.admin-main', el => el.innerText);
     chk('admin lists the four Hausa riddles', (await ap.$$('.wis-item')).length === 4 && main.includes('Na tura yaron'));
     chk('admin shows nine weeks of schedule, this week first', (await ap.$$('.wis-sched-cell')).length === 9 && /This week/i.test(main));
-    chk('generate is disabled without a TTS key, and says why', await ap.$eval('.wis-voice button[title]', b => b.disabled && /Spitch/.test(b.title)));
+    chk('without a TTS key there is no Generate button, and the page says what to set',
+        (await ap.$$('.wis-voice button:has-text("Generate")')).length === 0 && /spitch_key/.test(main));
+    chk('the schedule numbers each language’s turn', /Hausa\s*#1/.test(main) && /Igbo\s*#1/.test(main) && /Hausa\s*#2/.test(main));
     await ap.click('.wis-tab:has-text("Igbo")');
     chk('the Igbo tab lists the three proverbs', (await ap.$$('.wis-item')).length === 3);
     await ap.screenshot({ path: path.join(SHOTS, 'admin.png'), fullPage: false });

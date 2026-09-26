@@ -311,3 +311,22 @@ per week, editable in Control Room → Content → Quote of the week.
 - Migration 118 (`wisdom_sayings`). Files: `api/_lib/domain/wisdom.php`,
   `api/{public,admin}/wisdom.php`, `api/public/wisdom-audio.php`,
   `QuoteOfWeek` (page-home.jsx), `AdminWisdom` (page-admin.jsx).
+
+### Quote of the week — voice, second pass (2026-09-26)
+
+- Rotation unchanged (it already interleaved one per language); the admin strip
+  now numbers each turn ("Hausa #1, Igbo #1…") so the order is legible, and a
+  test pins "never the same language two weeks running".
+- Two clips per saying: native + English translation (Nigerian-English voice),
+  played in sequence with a pause. Migration 119 adds `audioFileEn`, `voiceEn`,
+  `ttsTriedAt`.
+- Voicing is automatic with a key: on save, via "Voice everything missing", and
+  a visitor backstop for this week's saying guarded by `ttsTriedAt` (claim-first
+  lock + one-hour backoff) so a burst of visitors is one provider call.
+- `wisdom_tts_script` cleans punctuation and tone-marks unmarked Yorùbá through
+  Spitch `/v1/diacritics` before synthesis.
+- Voice cloning through Spitch `/v1/voices` with recorded consent (audit log).
+  Defaults per language live in the `wisdom.voiceDefaults` setting; cloned
+  voices in `wisdom.customVoices`.
+- All Spitch traffic goes through `wisdom_spitch()`; tests swap the transport
+  with `$GLOBALS['__wisdom_http']`.
