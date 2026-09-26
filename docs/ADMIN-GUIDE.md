@@ -561,10 +561,22 @@ Each saying is read aloud on the home page in two parts: **the saying in its
 own language, a short pause, then the English translation**. Visitors can turn
 the English part off ("English too").
 
-- **Automatic** — with a Spitch key set (`'tts' → 'spitch_key'` in
-  `api/config.php`), saving a saying voices it straight away. **Voice
-  everything missing** fills in any gaps (40 per press). As a backstop, this
-  week's saying is voiced the first time the home page asks for it.
+- **Generated once, then saved.** With a Spitch key set (`'tts' → 'spitch_key'`
+  in `api/config.php`), saving a saying voices it. Each clip is made **once**
+  and kept: pressing Generate again, re-saving, or even deleting and re-adding
+  the same words in the same voice reuses the saved clip and costs nothing.
+  **Voice everything missing** fills gaps (40 per press). If this week's saying
+  has no clip when the home page first asks, it is voiced then — once; if that
+  fails it is not retried by visitors, press Generate.
+- **Pronunciation check.** Every new clip is played back to the voice service's
+  own speech recogniser in the same language and compared with the words. The
+  score shows beside the clip. If a voice stumbles, the next native voice for
+  that language is tried automatically and the best is kept. A red score means
+  listen to it — record a voice-over if it is wrong.
+- **How it should be read** (in the edit form) — the same words with their full
+  tone marks, when the saying is written without them. Only the voice uses it;
+  the page shows the saying as written. This is the biggest single help to Igbo
+  and Yorùbá pronunciation.
 - **Default voices** — pick the voice for each language and for the English
   part. Regenerate a saying to hear a new choice.
 - **A person's voice-over** — **Record** or **Upload** on a saying. It always
@@ -572,8 +584,8 @@ the English part off ("English too").
 - **Cloned voices** — *Clone a voice from a recording*: a native speaker
   records 10–30 seconds and you type exactly what they said. You must tick that
   they agreed. Their voice then appears in every voice list.
-- Yorùbá written without tone marks is tone-marked before it is read, so it is
-  pronounced correctly. Write sayings with their marks where you can.
+- Yorùbá is tone-marked by the voice service before it is read. Igbo and
+  Hausa are not — give them a "How it should be read" spelling if needed.
 - Changing a saying's words remakes its generated voice; changing only the
   translation remakes only the English part.
 

@@ -7230,3 +7230,7 @@ select.cs-field option { background: var(--dsn-s1); color: var(--dsn-ink); }
 .wis-clone-form { display: grid; gap: 10px; padding: 14px; border-radius: 12px; background: rgba(12,20,50,0.035); }
 .wis-warn { font-size: 13px; color: #9a3412; }
 .wis-voice-en { padding-top: 8px; border-top: 1px solid rgba(12,20,50,0.08); }
+.wis-score { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; justify-self: start; }
+.wis-score.is-good { background: rgba(47,158,68,0.12); color: #1d6b2f; }
+.wis-score.is-low { background: rgba(224,49,49,0.1); color: #a02020; }
+.wis-saved { font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-700); }

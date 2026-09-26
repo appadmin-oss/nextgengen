@@ -21302,57 +21302,97 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('wisdom: the same language never runs two weeks in a row', $same);
 
     // ── TTS, through a fake transport: nothing here touches the network ──
-    $calls = [];
-    $GLOBALS['__wisdom_http'] = function ($m, $path, $b) use (&$calls) {
+    $calls = []; $lastVoice = ''; $lastScript = ''; $garble = [];
+    $GLOBALS['__wisdom_http'] = function ($m, $path, $b) use (&$calls, &$lastVoice, &$lastScript, &$garble) {
         $calls[] = [$m, $path, $b];
-        if ($path === '/v1/diacritics') return ['code' => 200, 'body' => json_encode(['text' => 'Ọmọ ọlọ́gbọ́n.'])];
         if ($path === '/v1/voices') return ['code' => 201, 'body' => json_encode(['voice_id' => 'voice_abc123', 'status' => 'ready'])];
-        if ($path === '/v1/speech') return ['code' => 200, 'body' => 'ID3' . md5(json_encode($b))];
+        if ($path === '/v1/speech') { $lastVoice = $b['voice']; $lastScript = $b['text']; return ['code' => 200, 'body' => 'ID3' . md5(json_encode($b))]; }
+        // Listen-back: a voice in $garble "mispronounces" — its clip is heard as other words.
+        if ($path === '/v1/transcriptions') return ['code' => 200, 'body' => json_encode(['text' => in_array($lastVoice, $garble, true) ? 'something else entirely' : $lastScript])];
         return ['code' => 200, 'body' => '{}'];
     };
+    $speechCalls = function () use (&$calls) { return array_values(array_filter($calls, fn($c) => $c[1] === '/v1/speech')); };
     chk('wisdom tts: the script is cleaned — straight apostrophe, one space, a full stop to end on',
         wisdom_tts_script("A ma  ka mmiri n\u{2019}opi", 'igbo') === "A ma ka mmiri n'opi.");
-    $calls = [];
-    $yo = wisdom_tts_script('Omo ologbon', 'yoruba');
-    chk('wisdom tts: unmarked Yoruba is tone-marked before it is read',
-        $yo === 'Ọmọ ọlọ́gbọ́n.' && ($calls[0][1] ?? '') === '/v1/diacritics');
-    $calls = [];
-    wisdom_tts_script('Ọmọ ọlọ́gbọ́n ni.', 'yoruba');
-    chk('wisdom tts: already-marked Yoruba is left as written', $calls === []);
+    chk('wisdom tts: the match score ignores tone marks, case and punctuation, and catches different words',
+        wisdom_match_score('Ọmọ ọlọ́gbọ́n ni.', 'omo ologbon ni') === 1.0 && wisdom_match_score('Shanuna dubu', 'something else') < 0.5);
 
     $GLOBALS['CONFIG']['tts']['spitch_key'] = 'test-key';
     $calls = [];
     $sv = backend_dispatch('admin.wisdom.upsert', ['requesterId' => $ADMIN, 'data' => ['language' => 'hausa', 'kind' => 'riddle',
         'text' => 'Shanuna dubu, amma madaurinsu ɗaya ne', 'translation' => 'My cattle are a thousand, but they share one rope.']]);
     $row = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [$sv['wisdomId']]);
-    $speech = array_values(array_filter($calls, fn($c) => $c[1] === '/v1/speech'));
+    $speech = $speechCalls();
     chk('wisdom tts: saving voices the saying automatically — native, then English',
         ($sv['voice']['made'] ?? []) === ['native', 'english'] && $row['audioFile'] !== '' && $row['audioFileEn'] !== ''
         && $row['audioSource'] === 'tts');
-    chk('wisdom tts: native in the language’s default voice, English in a Nigerian-English one',
-        ($speech[0][2]['language'] ?? '') === 'ha' && ($speech[0][2]['voice'] ?? '') === 'amina'
+    chk('wisdom tts: native in the language’s default voice at natural pace, English in a Nigerian-English one',
+        ($speech[0][2]['language'] ?? '') === 'ha' && ($speech[0][2]['voice'] ?? '') === 'amina' && ($speech[0][2]['speed'] ?? 0) == 1.0
         && ($speech[1][2]['language'] ?? '') === 'en' && ($speech[1][2]['voice'] ?? '') === 'lucy');
+    chk('wisdom tts: every new clip is listened back to in its own language and scored',
+        count(array_filter($calls, fn($c) => $c[1] === '/v1/transcriptions')) === 2 && (float)$row['ttsScore'] === 1.0);
+
+    // Generated ONCE: the same words in the same voice never call the provider again.
+    $calls = [];
+    backend_dispatch('admin.wisdom.voice.generate', ['requesterId' => $ADMIN, 'wisdomId' => $sv['wisdomId'], 'voice' => 'amina']);
+    backend_dispatch('admin.wisdom.voice.generate', ['requesterId' => $ADMIN, 'wisdomId' => $sv['wisdomId'], 'voice' => 'amina']);
+    backend_dispatch('admin.wisdom.upsert', ['requesterId' => $ADMIN, 'data' => ['wisdomId' => $sv['wisdomId'], 'language' => 'hausa',
+        'kind' => 'riddle', 'text' => $row['text'], 'translation' => $row['translation']]]);
+    chk('wisdom tts: generating again, or re-saving unchanged, makes no new clip', $speechCalls() === []);
+    backend_dispatch('admin.wisdom.delete', ['requesterId' => $ADMIN, 'wisdomId' => $sv['wisdomId']]);
+    $sv = backend_dispatch('admin.wisdom.upsert', ['requesterId' => $ADMIN, 'data' => ['language' => 'hausa', 'kind' => 'riddle',
+        'text' => $row['text'], 'translation' => $row['translation']]]);
+    $again = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [$sv['wisdomId']]);
+    chk('wisdom tts: even deleted and re-added, the saved clip is reused — and its file was kept',
+        $speechCalls() === [] && $again['audioFile'] === $row['audioFile'] && is_file(wisdom_audio_path($again['audioFile'])));
 
     $calls = [];
     backend_dispatch('admin.wisdom.upsert', ['requesterId' => $ADMIN, 'data' => ['wisdomId' => $sv['wisdomId'], 'language' => 'hausa',
         'kind' => 'riddle', 'text' => $row['text'], 'translation' => 'A thousand cattle, one tethering rope.']]);
     $row2 = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [$sv['wisdomId']]);
-    $langs = array_map(fn($c) => $c[2]['language'], array_values(array_filter($calls, fn($c) => $c[1] === '/v1/speech')));
-    chk('wisdom tts: changing only the translation remakes only the English clip',
-        $langs === ['en'] && $row2['audioFile'] === $row['audioFile'] && $row2['audioFileEn'] !== $row['audioFileEn']);
+    chk('wisdom tts: changing only the translation makes only the English clip',
+        array_map(fn($c) => $c[2]['language'], $speechCalls()) === ['en'] && $row2['audioFile'] === $row['audioFile']);
 
-    // Visitor backstop: one call, then backoff.
-    db_update('wisdom_sayings', ['audioFile' => '', 'audioSource' => '', 'audioFileEn' => '', 'ttsTriedAt' => ''], ['wisdomId' => $sv['wisdomId']]);
-    $cur = wisdom_pick(wisdom_live_by_lang(), wisdom_week_index());
-    db_update('wisdom_sayings', ['audioFile' => '', 'audioSource' => '', 'audioFileEn' => '', 'ttsTriedAt' => ''], ['wisdomId' => $cur['wisdomId']]);
+    // "How it should be read" goes to the voice, not the page.
+    $calls = [];
+    $sp = backend_dispatch('admin.wisdom.upsert', ['requesterId' => $ADMIN, 'data' => ['language' => 'yoruba', 'kind' => 'proverb',
+        'text' => 'Omo ologbon', 'spokenText' => 'Ọmọ ọlọ́gbọ́n']]);
+    chk('wisdom tts: the spoken spelling is what the voice reads',
+        ($speechCalls()[0][2]['text'] ?? '') === 'Ọmọ ọlọ́gbọ́n.'
+        && db_row('SELECT text FROM wisdom_sayings WHERE wisdomId = ?', [$sp['wisdomId']])['text'] === 'Omo ologbon');
+
+    // A voice that stumbles is replaced by the language's next native voice.
+    $garble = ['ngozi'];
+    $calls = [];
+    $ig = backend_dispatch('admin.wisdom.upsert', ['requesterId' => $ADMIN, 'data' => ['language' => 'igbo', 'kind' => 'proverb',
+        'text' => 'Onye buru ozu enyi anaghi eji ukwu akpa mpuzu']]);
+    $igRow = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [$ig['wisdomId']]);
+    chk('wisdom tts: a stumbling voice fails the listen-back and the next native voice is kept',
+        array_map(fn($c) => $c[2]['voice'], $speechCalls()) === ['ngozi', 'amara'] && $igRow['voice'] === 'amara' && (float)$igRow['ttsScore'] === 1.0);
+    $garble = ['ngozi', 'amara', 'obinna', 'ebuka'];
+    $calls = [];
+    $ig2 = backend_dispatch('admin.wisdom.upsert', ['requesterId' => $ADMIN, 'data' => ['language' => 'igbo', 'kind' => 'proverb',
+        'text' => 'Ọkụko na-arọgọrọ ite ọnụ']]);
+    $ig2Row = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [$ig2['wisdomId']]);
+    chk('wisdom tts: tries are capped, the best is kept, and a low score is shown to staff',
+        count($speechCalls()) === WISDOM_TTS_TRIES && $ig2Row['audioFile'] !== '' && (float)$ig2Row['ttsScore'] < WISDOM_TTS_GOOD
+        && wisdom_shape($ig2Row, true)['ttsScore'] < WISDOM_TTS_GOOD);
+    $garble = [];
+
+    // Visitor backstop: once per saying, ever — even when it fails.
+    db_exec("UPDATE wisdom_sayings SET status = 'hidden'");
+    db_update('wisdom_sayings', ['status' => 'live', 'audioFile' => '', 'audioSource' => '', 'audioFileEn' => '', 'ttsTriedAt' => ''],
+              ['wisdomId' => $sv['wisdomId']]);
     $calls = [];
     $pub = backend_dispatch('public.wisdom.week', []);
-    $first = count($calls);
-    db_update('wisdom_sayings', ['audioFile' => '', 'audioFileEn' => ''], ['wisdomId' => $cur['wisdomId']]);
-    backend_dispatch('public.wisdom.week', []);
-    chk('wisdom tts: this week’s saying is voiced on first read if it has no clip',
-        $first >= 1 && ($pub['saying']['audioUrl'] ?? '') !== '');
-    chk('wisdom tts: a second read inside the backoff makes no call', count($calls) === $first);
+    chk('wisdom tts: this week’s saying is voiced on first read if it has no clip — from the saved clip, no new call',
+        ($pub['saying']['audioUrl'] ?? '') !== '' && $speechCalls() === []);
+    db_update('wisdom_sayings', ['audioFile' => '', 'audioSource' => '', 'audioFileEn' => ''], ['wisdomId' => $sv['wisdomId']]);
+    $calls = [];
+    for ($k = 0; $k < 5; $k++) backend_dispatch('public.wisdom.week', []);
+    chk('wisdom tts: after one attempt, visitors never trigger another', $calls === []);
+    db_exec("UPDATE wisdom_sayings SET status = 'live'");
+    backend_dispatch('admin.wisdom.voice.generate', ['requesterId' => $ADMIN, 'wisdomId' => $sv['wisdomId']]);
 
     // A voice-over is never overwritten by automatic voicing.
     $wav = 'RIFF' . pack('V', 36) . 'WAVEfmt ' . str_repeat("\1", 24);
@@ -21388,6 +21428,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     unset($GLOBALS['__wisdom_http'], $GLOBALS['CONFIG']['tts']);
     db_exec("DELETE FROM settings WHERE settingKey IN ('wisdom.customVoices','wisdom.voiceDefaults')");
     db_exec('DELETE FROM wisdom_sayings');
+    db_exec('DELETE FROM wisdom_tts_clips');
     db_exec("DELETE FROM members WHERE memberId IN ('WIS-ADM','WIS-NOBODY')");
 })();
 

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 119;
+const NGG_SCHEMA_TARGET = 120;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3648,6 +3648,28 @@ function db_migrate(PDO $db): void {
             ALTER TABLE wisdom_sayings ADD COLUMN audioFileEn TEXT DEFAULT '';
             ALTER TABLE wisdom_sayings ADD COLUMN voiceEn TEXT DEFAULT '';
             ALTER TABLE wisdom_sayings ADD COLUMN ttsTriedAt TEXT DEFAULT '';
+        ",
+
+        /* Quote of the week, generate-once: every TTS clip ever made, keyed by
+         * what determines it (language|voice|speed|script), so the same audio
+         * is never paid for twice. `score`/`heard` are the listen-back — the
+         * provider's own transcript of the clip and how well it matched.
+         * `spokenText` is staff's "how it should be read" spelling. */
+        120 => "
+            CREATE TABLE IF NOT EXISTS wisdom_tts_clips (
+              cacheKey TEXT PRIMARY KEY,
+              file TEXT NOT NULL,
+              language TEXT NOT NULL,
+              voice TEXT NOT NULL,
+              script TEXT NOT NULL,
+              score REAL,
+              heard TEXT DEFAULT '',
+              createdAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wtts_file ON wisdom_tts_clips(file);
+            ALTER TABLE wisdom_sayings ADD COLUMN spokenText TEXT DEFAULT '';
+            ALTER TABLE wisdom_sayings ADD COLUMN ttsScore REAL;
+            ALTER TABLE wisdom_sayings ADD COLUMN ttsScoreEn REAL;
         ",
     ];
 

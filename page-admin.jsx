@@ -6945,6 +6945,18 @@ const WISDOM_ERR = {
 const wisdomErr = (e) => WISDOM_ERR[e && e.code] || (e && (e.detail || e.code || e.message)) || "Something went wrong.";
 const wisdomFmtWeek = (iso) => fmtDayMonth(iso + "T12:00:00");
 const wisdomCap = (v) => v ? v[0].toUpperCase() + v.slice(1) : "";
+/* The listen-back: Spitch's own speech-to-text heard the clip and this is how
+   closely it matched the words. Shown so a stumble is caught here, not by a
+   parent on the home page. */
+function WisdomScore({ score }) {
+  if (score == null) return null;
+  const pct = Math.round(score * 100);
+  const good = score >= 0.85;
+  return <span className={"wis-score" + (good ? " is-good" : " is-low")}
+               title="The voice service transcribed this clip and compared it with the words.">
+    {good ? "Pronunciation check " + pct + "%" : pct + "% match — listen before it goes live"}
+  </span>;
+}
 
 /* Voice options for a language: its own system voices first, then the
    programme's cloned voices (any voice can speak any language). */
@@ -7111,8 +7123,9 @@ function WisdomVoiceSettings({ d, busy, act }) {
         <p className="admin-hint wis-note">Generated voices are off: add a Spitch key under <code>'tts' → 'spitch_key'</code> in api/config.php.
           Once it's there, every saying is voiced automatically — in its own language and then in English. Uploading or recording a voice-over works now.</p>
       ) : (
-        <p className="admin-hint wis-note">Sayings are voiced automatically when saved: first in their own language, then the English translation in a Nigerian-English voice.
-          Unmarked Yorùbá is tone-marked before it's read. A recorded voice-over always wins over a generated one.</p>
+        <p className="admin-hint wis-note">Each clip is generated <b>once</b> when a saying is saved and kept — it is never made again for the same words and voice.
+          Every new clip is listened back to by the voice service in the same language; if a voice stumbles, the next native voice is tried and the best is kept.
+          A recorded voice-over always wins over a generated one.</p>
       )}
       {d.ttsReady && <div className="wis-vs-grid">
         {langs.map(l => (
@@ -7216,7 +7229,7 @@ function WisdomVoice({ w, d, busy, act }) {
     const replace = which !== "english" && w.audioSource === "custom";
     if (replace && !(await dialog.confirm({ title: "Replace the voice-over?", body: "A staff recording is on this saying. The generated voice will replace it.", confirmLabel: "Replace" }))) return;
     act(key, () => NGGApi.admin.wisdom.generate(w.wisdomId, { which, voice, voiceEn, replace }), (res) =>
-      res && res.partial ? "Partly voiced — one clip failed. Try again." : "Voice generated.");
+      res && res.partial ? "Partly voiced — one clip failed. Try again." : "Voice saved.");
   };
   const nameOf = (v) => { const c = (d.customVoices || []).find(x => x.voiceId === v); return c ? c.name : wisdomCap(v); };
 
@@ -7227,12 +7240,17 @@ function WisdomVoice({ w, d, busy, act }) {
         <span className="wis-voice-src">{w.audioSource === "custom" ? "Staff voice-over" : w.audioSource === "tts" ? "Generated · " + nameOf(w.voice) : "No voice yet"}</span>
       </div>
       {w.audioUrl && <audio className="wis-audio" controls preload="none" src={w.audioUrl} aria-label={"The saying in " + WISDOM_LANG_LABEL[w.language]}/>}
+      {w.audioSource === "tts" && <WisdomScore score={w.ttsScore}/>}
       {d.ttsReady && (
         <div className="wis-voice-row">
           <select className="admin-select wis-voice-sel" aria-label={WISDOM_LANG_LABEL[w.language] + " voice"} value={voice} onChange={e => setVoice(e.target.value)}>
             {wisdomVoiceOptions(d, w.language).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <button className="btn btn-ghost btn-sm" disabled={working || !!r.rec} onClick={() => gen("native")}>{working ? "Working…" : w.audioUrl ? "Regenerate" : "Generate"}</button>
+          {/* Generated once and saved: nothing to press for the voice it already has. */}
+          {!w.audioUrl || w.audioSource !== "tts" || voice !== w.voice
+            ? <button className="btn btn-ghost btn-sm" disabled={working || !!r.rec} onClick={() => gen("native")}>
+                {working ? "Working…" : !w.audioUrl ? "Generate" : "Use this voice"}</button>
+            : <span className="wis-saved">Saved</span>}
         </div>
       )}
       <div className="wis-voice-row">
@@ -7251,12 +7269,15 @@ function WisdomVoice({ w, d, busy, act }) {
             <span className="wis-voice-src">{w.audioUrlEn ? "Generated · " + nameOf(w.voiceEn) : "No voice yet"}</span>
           </div>
           {w.audioUrlEn && <audio className="wis-audio" controls preload="none" src={w.audioUrlEn} aria-label="The English translation"/>}
+          {w.audioUrlEn && <WisdomScore score={w.ttsScoreEn}/>}
           {d.ttsReady ? (
             <div className="wis-voice-row">
               <select className="admin-select wis-voice-sel" aria-label="English voice" value={voiceEn} onChange={e => setVoiceEn(e.target.value)}>
                 {wisdomVoiceOptions(d, "english").map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
-              <button className="btn btn-ghost btn-sm" disabled={working} onClick={() => gen("english")}>{w.audioUrlEn ? "Regenerate" : "Generate"}</button>
+              {!w.audioUrlEn || voiceEn !== w.voiceEn
+                ? <button className="btn btn-ghost btn-sm" disabled={working} onClick={() => gen("english")}>{!w.audioUrlEn ? "Generate" : "Use this voice"}</button>
+                : <span className="wis-saved">Saved</span>}
               {w.audioUrlEn && <button className="btn btn-ghost btn-sm" disabled={working} onClick={() => act(key, () => NGGApi.admin.wisdom.clearVoice(w.wisdomId, "english"), "English clip removed.")}>Remove</button>}
             </div>
           ) : !w.audioUrlEn && <p className="admin-hint wis-note">Read automatically once a Spitch key is set.</p>}
@@ -7271,6 +7292,7 @@ function AdminWisdomEdit({ w, kinds, busy, ttsReady, onCancel, onSave }) {
     wisdomId: w.wisdomId || "", language: w.language || "hausa", kind: w.kind || "proverb",
     text: w.text || "", translation: w.translation || "", answer: w.answer || "",
     answerTranslation: w.answerTranslation || "", meaning: w.meaning || "", status: w.status || "live",
+    spokenText: w.spokenText || "",
   });
   const set = (k, v) => setF(x => Object.assign({}, x, { [k]: v }));
   return (
@@ -7287,6 +7309,7 @@ function AdminWisdomEdit({ w, kinds, busy, ttsReady, onCancel, onSave }) {
         </div>
         <FieldTextarea label={"The saying, in " + WISDOM_LANG_LABEL[f.language]} rows={2} value={f.text} onChange={v => set("text", v)}/>
         <FieldTextarea label="English translation" rows={2} value={f.translation} onChange={v => set("translation", v)}/>
+        <FieldTextarea label="How it should be read (optional) — the same words with full tone marks, if the saying above is written without them. Only the voice uses this." rows={2} value={f.spokenText} onChange={v => set("spokenText", v)}/>
         {f.kind === "riddle" && (
           <div className="wis-form-row">
             <Field label="Answer" value={f.answer} onChange={v => set("answer", v)}/>

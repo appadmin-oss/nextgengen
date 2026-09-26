@@ -2720,3 +2720,21 @@ ALTER TABLE wisdom_sayings ADD COLUMN voiceEn VARCHAR(80) DEFAULT '';
 ALTER TABLE wisdom_sayings ADD COLUMN ttsTriedAt VARCHAR(40) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (119) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 120 · Quote of the week: generate-once clip store + listen-back ──────
+CREATE TABLE IF NOT EXISTS wisdom_tts_clips (
+  cacheKey CHAR(64) PRIMARY KEY,
+  file VARCHAR(80) NOT NULL,
+  language VARCHAR(16) NOT NULL,
+  voice VARCHAR(80) NOT NULL,
+  script TEXT NOT NULL,
+  score DOUBLE NULL,
+  heard TEXT,
+  createdAt VARCHAR(40) DEFAULT '',
+  INDEX idx_wtts_file (file)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE wisdom_sayings ADD COLUMN spokenText TEXT;
+ALTER TABLE wisdom_sayings ADD COLUMN ttsScore DOUBLE NULL;
+ALTER TABLE wisdom_sayings ADD COLUMN ttsScoreEn DOUBLE NULL;
+
+INSERT INTO schema_version (version) VALUES (120) ON DUPLICATE KEY UPDATE version = version;

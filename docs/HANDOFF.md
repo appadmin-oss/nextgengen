@@ -330,3 +330,21 @@ per week, editable in Control Room → Content → Quote of the week.
   voices in `wisdom.customVoices`.
 - All Spitch traffic goes through `wisdom_spitch()`; tests swap the transport
   with `$GLOBALS['__wisdom_http']`.
+
+### Quote of the week — generate once, listen back (2026-09-26)
+
+- `wisdom_tts_clips` (migration 120) records every clip ever generated, keyed by
+  sha256(language|voice|speed|script). `wisdom_tts_clip()` answers from it
+  before calling Spitch, and `wisdom_audio_release()` never deletes a file it
+  lists — so the same audio is never paid for twice, whatever staff press.
+- The visitor backstop runs once per saying, ever (`ttsTriedAt` non-empty ⇒
+  never again, success or failure). The hourly retry is gone.
+- Listen-back: each new clip goes to Spitch `/v1/transcriptions` in its own
+  language; `wisdom_match_score()` (character edit distance on tone-stripped,
+  lower-cased letters) scores it. With no voice named, up to four native
+  voices are tried until one scores ≥ 0.85; the best is kept and its score is
+  shown to staff.
+- Our `/v1/diacritics` call was removed: Spitch's OpenAPI states `/v1/speech`
+  diacritizes Yorùbá itself. `spokenText` lets staff give a fully marked
+  reading for Igbo/Hausa without changing the displayed saying.
+- Speed back to 1.0 (0.9 read as slowed, not fluent).

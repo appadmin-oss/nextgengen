@@ -21,17 +21,23 @@ declare(strict_types=1);
  *   · The native clip is either a staff voice-over (`custom`) — a person
  *     reading it is the gold standard and is never replaced without asking —
  *     or a TTS rendering (`tts`).
- *   · TTS clips are made automatically once a Spitch key is configured: when a
- *     saying is saved, from the Control Room's "Voice everything", and, as a
- *     backstop, the first time this week's saying is read without one. Each is
- *     made ONCE and stored; a visitor's refresh never becomes a provider call.
+ *   · TTS clips are generated ONCE and saved. wisdom_tts_clip() keys every
+ *     clip by exactly what determines it (language, voice, speed, script) in
+ *     wisdom_tts_clips; the same request is answered from disk forever after.
+ *     Generation happens when a saying is saved, from "Voice everything
+ *     missing", and at most once per saying as a backstop when this week's
+ *     saying is first read without a clip. A visitor never causes a second
+ *     call, and a failed backstop is not retried — staff press Generate.
  * The provider is Spitch (spitch.app), a Nigerian speech company whose voices
- * are trained on native Hausa, Igbo, Yorùbá and Nigerian-English speech. Two
- * things make it read well rather than merely correctly:
- *   · unmarked Yorùbá is tone-marked first (Spitch /v1/diacritics) — without
- *     tone marks a Yorùbá sentence is ambiguous and the voice guesses;
- *   · the script is cleaned: curly quotes, stray spaces and a missing full
- *     stop are what make a TTS voice run on or stop dead.
+ * are trained on native Hausa, Igbo, Yorùbá and Nigerian-English speech.
+ * Three things make it read fluently rather than merely audibly:
+ *   · natural pace and a cleaned script (punctuation is prosody);
+ *   · a "how it should be read" spelling staff can give — tone marks and
+ *     all — without changing what the page shows (`spokenText`);
+ *   · a listen-back: each new clip is transcribed by Spitch's own
+ *     speech-to-text in the same language and scored against the script.
+ *     A stumble tries the language's next native voice, the best is kept,
+ *     and the score is shown to staff. Spitch diacritizes Yorùbá itself.
  * Staff can also clone a native speaker's voice from a short recording (with
  * their consent) and use it for every saying.
  */
@@ -54,8 +60,13 @@ const WISDOM_VOICES = [
  * provider calls of a few seconds; forty keeps one press inside a shared
  * host's request limit. Press again for the rest. */
 const WISDOM_VOICE_ALL_MAX = 40;
-/* A failed automatic attempt is not retried by visitors for this long. */
-const WISDOM_TTS_BACKOFF = 3600;
+/* Normal speaking pace. Slowed speech is what makes a TTS voice sound read
+ * rather than spoken. */
+const WISDOM_TTS_SPEED = 1.0;
+/* Listen-back: a clip whose transcript matches the script this closely is a
+ * fluent read; below it the next native voice is tried, at most this many. */
+const WISDOM_TTS_GOOD = 0.85;
+const WISDOM_TTS_TRIES = 4;
 
 /* ── Seed ─────────────────────────────────────────────────────────────── */
 
@@ -127,6 +138,9 @@ function wisdom_shape(array $r, bool $admin = false): array {
     if ($admin) {
         $out += ['position' => (int)($r['position'] ?? 0), 'status' => (string)($r['status'] ?? 'live'),
                  'voice' => (string)($r['voice'] ?? ''), 'voiceEn' => (string)($r['voiceEn'] ?? ''),
+                 'spokenText' => (string)($r['spokenText'] ?? ''),
+                 'ttsScore' => isset($r['ttsScore']) && $r['ttsScore'] !== null && $r['audioSource'] === 'tts' ? (float)$r['ttsScore'] : null,
+                 'ttsScoreEn' => isset($r['ttsScoreEn']) && $r['ttsScoreEn'] !== null && ($r['audioFileEn'] ?? '') !== '' ? (float)$r['ttsScoreEn'] : null,
                  'updatedAt' => (string)($r['updatedAt'] ?? '')];
     }
     return $out;
@@ -172,10 +186,10 @@ function public_wisdom_week(array $p): array {
     wisdom_ensure_seeded();
     $w = wisdom_week_index();
     $row = wisdom_pick(wisdom_live_by_lang(), $w);
-    if ($row && wisdom_tts_missing($row) && wisdom_tts_key() !== ''
-        && (int)strtotime((string)($row['ttsTriedAt'] ?? '')) < time() - WISDOM_TTS_BACKOFF) {
-        /* The claim is the lock: stamping first means a burst of visitors
-         * produces one provider call, not one each. */
+    if ($row && wisdom_tts_missing($row) && wisdom_tts_key() !== '' && (string)($row['ttsTriedAt'] ?? '') === '') {
+        /* Once per saying, ever. The stamp is written first and is the lock: a
+         * burst of visitors produces one attempt, not one each, and a failed
+         * attempt is not retried by visitors at all — staff press Generate. */
         db_update('wisdom_sayings', ['ttsTriedAt' => now_iso()], ['wisdomId' => $row['wisdomId']]);
         wisdom_tts_fill($row);
         $row = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [$row['wisdomId']]);
@@ -233,6 +247,8 @@ function wisdom_audio_put(string $bytes): string {
 function wisdom_audio_release(string $name): void {
     if ($name === '') return;
     if (db_row('SELECT id FROM wisdom_sayings WHERE audioFile = ? OR audioFileEn = ? LIMIT 1', [$name, $name])) return;
+    // A generated clip is saved for good: throwing it away would mean paying to make it again.
+    if (db_row('SELECT cacheKey FROM wisdom_tts_clips WHERE file = ? LIMIT 1', [$name])) return;
     $path = wisdom_audio_path($name);
     if ($path !== '' && is_file($path)) @unlink($path);
 }
@@ -269,46 +285,105 @@ function wisdom_spitch(string $method, string $path, $body, bool $multipart = fa
     return ['code' => $code, 'body' => $out === false ? '' : (string)$out];
 }
 
-/** Does this text already carry Yorùbá tone marks (acute/grave, or a dot below)? */
-function wisdom_has_tone_marks(string $t): bool {
-    $d = class_exists('Normalizer') ? (string)Normalizer::normalize($t, Normalizer::FORM_D) : $t;
-    return (bool)preg_match('/[\x{0300}\x{0301}\x{0323}]|[ẹọṣẸỌṢ]/u', $d);
-}
-
 /**
- * The words the voice is actually given. Clean punctuation is most of what
- * separates a natural read from a robotic one: a curly apostrophe or a double
- * space can be read as a hitch, and a sentence without a full stop runs into
- * silence without the falling tone that ends it.
+ * The words the voice is actually given: the staff's "how it should be read"
+ * spelling if there is one, else the saying. Clean punctuation is much of what
+ * separates a fluent read from a halting one — a curly apostrophe or a double
+ * space can be read as a hitch, and a sentence with no full stop runs into
+ * silence without the falling tone that ends it. (Spitch diacritizes Yorùbá
+ * itself before synthesis, so unmarked Yorùbá needs no call of ours.)
  */
 function wisdom_tts_script(string $text, string $lang): string {
     $t = str_replace(["\u{2019}", "\u{2018}", "\u{201C}", "\u{201D}", "\u{2026}"], ["'", "'", '"', '"', '...'], $text);
     $t = trim(preg_replace('/\s+/u', ' ', $t));
-    if ($t !== '' && !preg_match('/[.!?…]["\']?$/u', $t)) $t .= '.';
-    /* Unmarked Yorùbá is ambiguous — ọkọ is a husband, a hoe, a vehicle or a
-     * spear depending on tone — so the voice would be guessing. Mark it first.
-     * If the service can't, the unmarked text is still better than nothing. */
-    if ($lang === 'yoruba' && !wisdom_has_tone_marks($t)) {
-        $r = wisdom_spitch('POST', '/v1/diacritics', ['language' => 'yo', 'text' => $t]);
-        $j = $r['code'] === 200 ? json_decode($r['body'], true) : null;
-        if (is_array($j) && trim((string)($j['text'] ?? '')) !== '') $t = trim((string)$j['text']);
-    }
+    if ($t !== '' && !preg_match('/[.!?]["\']?$/u', $t)) $t .= '.';
     return $t;
 }
 
-/** Synthesize one clip. $lang is a WISDOM_LANG_CODE key (incl. 'english'). */
-function wisdom_tts_synth(string $text, string $lang, string $voice): array {
-    if (wisdom_tts_key() === '' && !isset($GLOBALS['__wisdom_http'])) return ['ok' => false, 'error' => 'tts_not_configured'];
+/** Letters only, no tone marks or case: what a listener would hear as "the same words". */
+function wisdom_norm_words(string $t): string {
+    $t = mb_strtolower($t);
+    $t = strtr($t, ['ɗ' => 'd', 'ƙ' => 'k', 'ɓ' => 'b', 'ƴ' => 'y', "'" => '']);
+    if (class_exists('Normalizer')) $t = (string)Normalizer::normalize($t, Normalizer::FORM_D);
+    $t = preg_replace('/\p{Mn}+/u', '', $t);
+    $t = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $t);
+    return trim($t);
+}
+
+/** 0..1 — how closely a transcript matches the script, by character edit distance. */
+function wisdom_match_score(string $script, string $heard): float {
+    $a = preg_split('//u', str_replace(' ', '', wisdom_norm_words($script)), -1, PREG_SPLIT_NO_EMPTY);
+    $b = preg_split('//u', str_replace(' ', '', wisdom_norm_words($heard)), -1, PREG_SPLIT_NO_EMPTY);
+    $n = count($a); $m = count($b);
+    if ($n === 0) return 0.0;
+    $prev = range(0, $m);
+    for ($i = 1; $i <= $n; $i++) {
+        $cur = [$i];
+        for ($j = 1; $j <= $m; $j++) {
+            $cur[$j] = min($prev[$j] + 1, $cur[$j - 1] + 1, $prev[$j - 1] + ($a[$i - 1] === $b[$j - 1] ? 0 : 1));
+        }
+        $prev = $cur;
+    }
+    return round(max(0.0, 1 - $prev[$m] / max($n, $m)), 3);
+}
+
+/**
+ * Listen back: transcribe a clip with Spitch's speech-to-text in the same
+ * language and compare it with what the voice was asked to say. A voice that
+ * mispronounces a word is heard as a different word, so a low match is how a
+ * clumsy reading is caught BEFORE it reaches the home page — not after a
+ * parent points it out. Null if the check could not run.
+ */
+function wisdom_tts_check(string $bytes, string $lang, string $script): ?array {
+    if (!class_exists('CURLFile') && !isset($GLOBALS['__wisdom_http'])) return null;
+    $tmp = tempnam(sys_get_temp_dir(), 'wck');
+    file_put_contents($tmp, $bytes);
+    try {
+        $r = wisdom_spitch('POST', '/v1/transcriptions', [
+            'content' => class_exists('CURLFile') ? new CURLFile($tmp, 'audio/mpeg', 'clip.mp3') : $tmp,
+            'language' => WISDOM_LANG_CODE[$lang] ?? 'en',
+        ], true);
+    } finally { @unlink($tmp); }
+    $j = $r['code'] === 200 ? json_decode($r['body'], true) : null;
+    if (!is_array($j) || !isset($j['text'])) return null;
+    return ['score' => wisdom_match_score($script, (string)$j['text']), 'heard' => mb_substr((string)$j['text'], 0, 600)];
+}
+
+/**
+ * One clip for one script in one voice — generated ONCE, ever.
+ *
+ * Every generated clip is recorded in wisdom_tts_clips under a key made of
+ * exactly what determines the audio (language, voice, speed, script). Asking
+ * again for the same thing returns the saved file without calling the
+ * provider: pressing Generate twice, re-saving an unchanged saying, deleting
+ * and re-adding it, or switching back to a voice already tried costs nothing.
+ * The files are kept for the same reason — a saved clip is never thrown away
+ * and made again.
+ */
+function wisdom_tts_clip(string $text, string $lang, string $voice): array {
     $script = wisdom_tts_script($text, $lang);
     if ($script === '') return ['ok' => false, 'error' => 'nothing_to_say'];
+    $key = hash('sha256', implode("\x1F", [WISDOM_LANG_CODE[$lang] ?? 'en', $voice, (string)WISDOM_TTS_SPEED, $script]));
+    $hit = db_row('SELECT * FROM wisdom_tts_clips WHERE cacheKey = ?', [$key]);
+    if ($hit && is_file(wisdom_audio_path((string)$hit['file']))) {
+        return ['ok' => true, 'file' => (string)$hit['file'], 'score' => $hit['score'] === null ? null : (float)$hit['score'],
+                'heard' => (string)$hit['heard'], 'cached' => true, 'voice' => $voice];
+    }
+    if (wisdom_tts_key() === '' && !isset($GLOBALS['__wisdom_http'])) return ['ok' => false, 'error' => 'tts_not_configured'];
     $r = wisdom_spitch('POST', '/v1/speech', ['language' => WISDOM_LANG_CODE[$lang] ?? 'en', 'text' => $script,
-        'voice' => $voice, 'speed' => 0.92, 'format' => 'mp3']);
+        'voice' => $voice, 'speed' => WISDOM_TTS_SPEED, 'format' => 'mp3', 'bitrate' => '128k']);
     if ($r['code'] !== 200 || $r['body'] === '') {
         error_log('[wisdom] tts http ' . $r['code'] . ' ' . substr($r['body'], 0, 200));
-        return ['ok' => false, 'error' => $r['error'] ?? 'tts_failed',
-                'message' => 'The voice service answered ' . $r['code'] . '.'];
+        return ['ok' => false, 'error' => $r['error'] ?? 'tts_failed', 'message' => 'The voice service answered ' . $r['code'] . '.'];
     }
-    return ['ok' => true, 'bytes' => $r['body'], 'script' => $script];
+    $file = wisdom_audio_put($r['body']);
+    if ($file === '') return ['ok' => false, 'error' => 'tts_bad_audio'];
+    $chk = wisdom_tts_check($r['body'], $lang, $script);
+    db_exec('DELETE FROM wisdom_tts_clips WHERE cacheKey = ?', [$key]);
+    db_insert('wisdom_tts_clips', ['cacheKey' => $key, 'file' => $file, 'language' => $lang, 'voice' => $voice,
+        'script' => $script, 'score' => $chk ? $chk['score'] : null, 'heard' => $chk ? $chk['heard'] : '', 'createdAt' => now_iso()]);
+    return ['ok' => true, 'file' => $file, 'score' => $chk ? $chk['score'] : null, 'heard' => $chk ? $chk['heard'] : '',
+            'cached' => false, 'voice' => $voice];
 }
 
 /* ── Voices: defaults and cloned voices ───────────────────────────────── */
@@ -343,33 +418,53 @@ function wisdom_tts_missing(array $row): bool {
 }
 
 /**
- * Make the clips a saying is missing (or, with $which, remake those named).
+ * The best native reading, chosen once. With no voice named, the language's
+ * default is tried first and, if the listen-back says it stumbled, the other
+ * native voices of that language after it — each clip made once and kept —
+ * and the closest match wins. With a voice named, that voice, and only it.
+ */
+function wisdom_tts_best(string $text, string $lang, string $voice): array {
+    if ($voice !== '') return wisdom_tts_clip($text, $lang, $voice);
+    $first = wisdom_voice_defaults()[$lang];
+    $order = array_values(array_unique(array_merge([$first], WISDOM_VOICES[$lang] ?? [])));
+    $best = null; $err = null;
+    foreach (array_slice($order, 0, WISDOM_TTS_TRIES) as $v) {
+        $r = wisdom_tts_clip($text, $lang, $v);
+        if (!$r['ok']) { $err = $err ?? $r; if (($r['error'] ?? '') === 'tts_not_configured') break; continue; }
+        if ($best === null || ($r['score'] ?? -1) > ($best['score'] ?? -1)) $best = $r;
+        // No listen-back available, or it read well: stop spending.
+        if ($r['score'] === null || $r['score'] >= WISDOM_TTS_GOOD) break;
+    }
+    return $best ?? $err ?? ['ok' => false, 'error' => 'tts_failed'];
+}
+
+/**
+ * Give a saying the clips it is missing (or, with $which, those named).
  * Never overwrites a staff voice-over unless $replaceCustom. Returns what it
  * made and the first error, so a partial success is reported as one.
  */
 function wisdom_tts_fill(array $row, array $which = [], string $voice = '', string $voiceEn = '', bool $replaceCustom = false): array {
-    $defaults = wisdom_voice_defaults();
     $made = []; $err = null; $patch = [];
     $wantNative = in_array('native', $which, true) || ($which === [] && (string)$row['audioFile'] === '');
     if ($wantNative && $row['audioSource'] === 'custom' && !$replaceCustom) $wantNative = false;
     $hasTr = trim((string)($row['translation'] ?? '')) !== '';
     $wantEn = $hasTr && (in_array('english', $which, true) || ($which === [] && (string)($row['audioFileEn'] ?? '') === ''));
+    $spoken = trim((string)($row['spokenText'] ?? '')) !== '' ? (string)$row['spokenText'] : (string)$row['text'];
 
     if ($wantNative) {
-        $v = wisdom_voice_valid($voice) ? $voice
-           : (wisdom_voice_valid((string)$row['voice']) ? (string)$row['voice'] : $defaults[$row['language']]);
-        $r = wisdom_tts_synth((string)$row['text'], (string)$row['language'], $v);
-        $name = $r['ok'] ? wisdom_audio_put($r['bytes']) : '';
-        if ($name !== '') { $patch += ['audioFile' => $name, 'audioSource' => 'tts', 'voice' => $v]; $made[] = 'native'; }
-        else $err = $err ?? ($r['ok'] ? ['ok' => false, 'error' => 'tts_bad_audio'] : $r);
+        $v = wisdom_voice_valid($voice) ? $voice : (wisdom_voice_valid((string)$row['voice']) ? (string)$row['voice'] : '');
+        $r = wisdom_tts_best($spoken, (string)$row['language'], $v);
+        if ($r['ok']) {
+            $patch += ['audioFile' => $r['file'], 'audioSource' => 'tts', 'voice' => $r['voice'], 'ttsScore' => $r['score']];
+            $made[] = 'native';
+        } else $err = $r;
     }
     if ($wantEn) {
         $v = wisdom_voice_valid($voiceEn) ? $voiceEn
-           : (wisdom_voice_valid((string)($row['voiceEn'] ?? '')) ? (string)$row['voiceEn'] : $defaults['english']);
-        $r = wisdom_tts_synth((string)$row['translation'], 'english', $v);
-        $name = $r['ok'] ? wisdom_audio_put($r['bytes']) : '';
-        if ($name !== '') { $patch += ['audioFileEn' => $name, 'voiceEn' => $v]; $made[] = 'english'; }
-        else $err = $err ?? ($r['ok'] ? ['ok' => false, 'error' => 'tts_bad_audio'] : $r);
+           : (wisdom_voice_valid((string)($row['voiceEn'] ?? '')) ? (string)$row['voiceEn'] : wisdom_voice_defaults()['english']);
+        $r = wisdom_tts_clip((string)$row['translation'], 'english', $v);
+        if ($r['ok']) { $patch += ['audioFileEn' => $r['file'], 'voiceEn' => $v, 'ttsScoreEn' => $r['score']]; $made[] = 'english'; }
+        else $err = $err ?? $r;
     }
     if ($patch) {
         db_update('wisdom_sayings', $patch + ['updatedAt' => now_iso()], ['wisdomId' => $row['wisdomId']]);
@@ -428,6 +523,7 @@ function admin_wisdom_upsert(array $p): array {
         'answer' => mb_substr(trim((string)($d['answer'] ?? '')), 0, 200),
         'answerTranslation' => mb_substr(trim((string)($d['answerTranslation'] ?? '')), 0, 200),
         'meaning' => mb_substr(trim((string)($d['meaning'] ?? '')), 0, 1200),
+        'spokenText' => mb_substr(trim((string)($d['spokenText'] ?? '')), 0, 600),
         'status' => ($d['status'] ?? 'live') === 'hidden' ? 'hidden' : 'live',
         'updatedAt' => now_iso(),
     ];
@@ -436,7 +532,8 @@ function admin_wisdom_upsert(array $p): array {
     $release = [];
     if ($old) {
         // A generated clip reads the old words; once the words change it is wrong.
-        if ($old['audioSource'] === 'tts' && ($old['text'] !== $text || $old['language'] !== $lang)) {
+        if ($old['audioSource'] === 'tts' && ($old['text'] !== $text || $old['language'] !== $lang
+                || (string)($old['spokenText'] ?? '') !== $row['spokenText'])) {
             $row += ['audioFile' => '', 'audioSource' => '']; $release[] = (string)$old['audioFile'];
         }
         if ((string)$old['translation'] !== $row['translation']) {
