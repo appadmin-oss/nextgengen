@@ -189,6 +189,36 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
         (await ap.$$('.wis-item')).length === 4 && (await ap.$eval('.admin-main', el => el.innerText)).includes('A kì í fi orí wé orí Mọkírè'));
     chk('the schedule has Yorùbá in the third week', /Yorùbá\s*#1/.test(await ap.$eval('.wis-sched', el => el.innerText)));
     await ap.screenshot({ path: path.join(SHOTS, 'admin.png'), fullPage: false });
+
+    /* ── With a Spitch key. Every saying already has its saved clips and its
+       one automatic attempt stamped, so nothing on this screen can reach the
+       network: the point is what staff see once voicing is on. ── */
+    fs.writeFileSync(CFG, fs.readFileSync(CFG, 'utf8').replace("'debug' => false,", "'debug' => false, 'tts' => ['spitch_key' => 'e2e-never-called'],"));
+    php(`db_exec("UPDATE wisdom_sayings SET audioFile = ?, audioFileEn = ?, audioSource = 'tts', voiceEn = 'lucy', ttsScore = 0.96, ttsScoreEn = 0.98, ttsTriedAt = ?", ['${name}', '${nameEn}', now_iso()]);`
+      + `db_exec("UPDATE wisdom_sayings SET voice = CASE language WHEN 'hausa' THEN 'amina' WHEN 'igbo' THEN 'ngozi' ELSE 'sade' END");`
+      + `db_exec("UPDATE wisdom_sayings SET ttsScore = 0.62 WHERE wisdomId = ?", ['${s.wisdomId}']);`);
+    await ap.reload({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(ap);
+    await ap.waitForFunction(() => !!window.__adminSection, null, { timeout: 60000 });
+    await ap.evaluate(() => window.__adminSection('wisdom'));
+    await ap.waitForSelector('.wis-vs-grid', { timeout: 30000 });
+    chk('with a key: a default voice per language, and English', (await ap.$$('.wis-vs-grid select')).length === 4);
+    chk('with a key: nothing missing, so "voice everything" says so and cannot be pressed',
+        await ap.$eval('.wis-vs-head button', b => b.disabled && /Everything is voiced/.test(b.textContent)));
+    const badges = await ap.$$eval('.wis-score', els => els.map(e => e.textContent));
+    chk('with a key: each clip shows its pronunciation check, and the weak one says to listen',
+        badges.some(t => /Pronunciation check 96%/.test(t)) && badges.some(t => /62% match — listen before it goes live/.test(t)));
+    chk('with a key: a voice already saved offers nothing to press — "Saved", not "Regenerate"',
+        (await ap.$$('.wis-saved')).length >= 8 && (await ap.$$('.wis-voice button:has-text("Regenerate")')).length === 0
+        && (await ap.$$('.wis-voice button:has-text("Use this voice")')).length === 0);
+    await ap.selectOption('.wis-item:first-child .wis-voice-sel >> nth=0', 'zainab');
+    chk('with a key: picking a different voice is what offers "Use this voice"',
+        (await ap.$$('.wis-item:first-child button:has-text("Use this voice")')).length === 1);
+    await ap.click('button:has-text("Clone a voice from a recording")');
+    chk('with a key: cloning asks for a recording, the exact words and consent, and waits for all three',
+        (await ap.$$('.wis-clone-form input[type=checkbox]')).length === 1
+        && await ap.$eval('.wis-clone-form button:has-text("Create the voice")', b => b.disabled));
+    await ap.screenshot({ path: path.join(SHOTS, 'admin-tts.png'), fullPage: false });
     chk('no page errors', errs.length === 0 || (console.error(errs), false));
   } catch (e) {
     failed++; console.error('  ✗ harness error: ' + (e && e.stack || e));
