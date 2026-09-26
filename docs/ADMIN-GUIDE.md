@@ -541,6 +541,30 @@ before printing.
 
 ---
 
+## Quote of the week
+
+**Content → Quote of the week** (needs the `content` capability). The home page
+shows one saying a week, always in the order **Hausa → Igbo → Yorùbá**, then
+round again. Each language plays its own list from the top, so the order you
+see under each language tab is the order they appear. The strip at the top
+shows the next nine weeks.
+
+- **Add / edit** — the saying in its language, the English translation, the
+  answer (riddles only) and the deeper meaning. *Hidden* keeps a saying but
+  takes it out of the rotation.
+- **↑ / ↓** — reorder within a language. It never changes the other languages.
+- A language with nothing live is **skipped** — the rotation carries on with the
+  others rather than showing a blank week.
+- **Voice** — each saying can carry one clip:
+  - **Record** or **Upload voice-over** — a person reading it. This is the best
+    option and is never replaced without asking. Up to 4 MB (MP3, M4A, WAV,
+    OGG, WebM).
+  - **Generate** — a natural Hausa/Igbo/Yorùbá voice from Spitch, made once and
+    stored. Pick a voice first. Needs a Spitch key (`'tts' → 'spitch_key'` in
+    `api/config.php`); without one the button is disabled.
+  - Changing a saying's words removes a *generated* clip, because it would read
+    the old words. A recorded voice-over is kept — re-record it if needed.
+
 ## How bulk actions behave
 
 Every bulk action in the Control Room goes through the same machinery, so

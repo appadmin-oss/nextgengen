@@ -831,6 +831,7 @@
       // narrowing it revokes every link already sent.
       journalEntry: (t) => request('/public/journal-entry.php' + qs({ t })),
       siteContent: () => request('/public/site.php'),
+      wisdomWeek: () => request('/public/wisdom.php'),
       instructorRoster: (token, email) => request('/public/instructor.php', { body: { token, email } }),
       contact:    (data) => request('/public/contact.php', { body: data }),
       gate: {
@@ -1067,6 +1068,15 @@
         list:   () => request('/admin/promos.php'),
         save:   (data) => request('/admin/promos.php', { body: { action: 'save', data } }),
         remove: (promoId) => request('/admin/promos.php', { body: { action: 'delete', promoId } }),
+      },
+      wisdom: {
+        list:     () => request('/admin/wisdom.php'),
+        save:     (data) => request('/admin/wisdom.php', { body: { action: 'save', data } }),
+        remove:   (wisdomId) => request('/admin/wisdom.php', { body: { action: 'delete', wisdomId } }),
+        move:     (wisdomId, dir) => request('/admin/wisdom.php', { body: { action: 'move', wisdomId, dir } }),
+        generate: (wisdomId, voice, replace) => request('/admin/wisdom.php', { body: { action: 'generate', wisdomId, voice, replace: !!replace } }),
+        upload:   (wisdomId, audio) => request('/admin/wisdom.php', { body: { action: 'upload', wisdomId, audio } }),
+        clearVoice: (wisdomId) => request('/admin/wisdom.php', { body: { action: 'clearVoice', wisdomId } }),
       },
       community: {
         overview:      () => request('/admin/community.php' + qs({ view: 'overview' })),

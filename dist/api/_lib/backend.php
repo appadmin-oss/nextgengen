@@ -577,6 +577,15 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.promos.list'       => 'admin_promos_list',
             'admin.promo.upsert'      => 'admin_promo_upsert',
             'admin.promo.delete'      => 'admin_promo_delete',
+            // Quote of the week (domain/wisdom.php).
+            'public.wisdom.week'      => 'public_wisdom_week',
+            'admin.wisdom.list'       => 'admin_wisdom_list',
+            'admin.wisdom.upsert'     => 'admin_wisdom_upsert',
+            'admin.wisdom.delete'     => 'admin_wisdom_delete',
+            'admin.wisdom.move'       => 'admin_wisdom_move',
+            'admin.wisdom.voice.generate' => 'admin_wisdom_voice_generate',
+            'admin.wisdom.voice.upload'   => 'admin_wisdom_voice_upload',
+            'admin.wisdom.voice.clear'    => 'admin_wisdom_voice_clear',
             'student.communityLogin'  => 'community_id_login',   // legacy alias
             'admin.community.overview'      => 'admin_community_overview',
             'admin.community.channel.upsert'=> 'admin_community_channel_upsert',

@@ -154,6 +154,16 @@ return [
     ],
 
     // -----------------------------------------------------------------------
+    // Voice for the Quote of the week (OPTIONAL). Spitch (https://spitch.app)
+    // reads Hausa, Igbo and Yoruba natively. Used only when staff press
+    // "Generate voice" in Control Room → Quote of the week; the clip is stored,
+    // so visitors never trigger a call. Staff voice-overs need no key at all.
+    // -----------------------------------------------------------------------
+    'tts' => [
+        'spitch_key' => '',
+    ],
+
+    // -----------------------------------------------------------------------
     // AI layer (OPTIONAL) — Summer School coordinator insights. Entirely opt-in:
     // with no key set the dashboard shows a deterministic rule-based summary and
     // makes no external call. Add a free-tier key to enable AI narratives.

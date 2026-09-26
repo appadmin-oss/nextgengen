@@ -12,6 +12,7 @@ function HomePage({ setPage }) {
       <ProgressionSystem setPage={setPage} />
       <FlagshipCallout setPage={setPage} />
       <ManifestoMarquee />
+      <QuoteOfWeek />
       <TracksRibbon setPage={setPage} />
       <CommunityCollage />
       <Testimonials />
@@ -391,6 +392,123 @@ function ManifestoMarquee() {
         ))}
       </div>
     </div>
+  );
+}
+
+/* =========== Quote of the week — Hausa → Igbo → Yoruba, one a week ===========
+   The rotation and the audio live in api/_lib/domain/wisdom.php. A stored clip
+   (a staff voice-over, or a native-language TTS rendering made once) plays
+   first; failing that, the browser's own voice is used ONLY if it has one for
+   the language — reading Yoruba with an English voice is worse than silence. */
+const QOW_LANG = { hausa: "Hausa", igbo: "Igbo", yoruba: "Yorùbá" };
+const QOW_NATIVE = {
+  hausa:  { riddle: "Kacici-kacici", proverb: "Karin magana" },
+  igbo:   { riddle: "Gwam gwam gwam", proverb: "Ilụ" },
+  yoruba: { riddle: "Àlọ́", proverb: "Òwe" },
+};
+const QOW_KIND = { riddle: "Riddle", proverb: "Proverb", quote: "Quote" };
+
+function qowBrowserVoice(code) {
+  try {
+    if (!code || !window.speechSynthesis) return null;
+    return speechSynthesis.getVoices().find(v => (v.lang || "").toLowerCase().split(/[-_]/)[0] === code) || null;
+  } catch (_) { return null; }
+}
+
+function QuoteOfWeek() {
+  const [d, setD] = React.useState(null);
+  const [reveal, setReveal] = React.useState(false);
+  const [open, setOpen] = React.useState(false);
+  const [playing, setPlaying] = React.useState(false);
+  const [progress, setProgress] = React.useState(0);
+  const [bVoice, setBVoice] = React.useState(null);
+  const audioRef = React.useRef(null);
+
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.public.wisdomWeek().then(r => { if (alive && r && r.saying) setD(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const s = d && d.saying;
+  React.useEffect(() => {
+    if (!s || s.audioUrl || !window.speechSynthesis) return;
+    const pick = () => setBVoice(qowBrowserVoice(s.langCode));
+    pick();
+    speechSynthesis.addEventListener("voiceschanged", pick);
+    return () => { speechSynthesis.removeEventListener("voiceschanged", pick); try { speechSynthesis.cancel(); } catch (_) {} };
+  }, [s]);
+  if (!s) return null;
+
+  const canListen = !!(s.audioUrl || bVoice);
+  const toggle = () => {
+    if (s.audioUrl) {
+      const a = audioRef.current; if (!a) return;
+      if (a.paused) a.play().catch(() => setPlaying(false)); else a.pause();
+      return;
+    }
+    if (playing) { speechSynthesis.cancel(); setPlaying(false); return; }
+    const u = new SpeechSynthesisUtterance(s.text);
+    u.voice = bVoice; u.lang = bVoice.lang; u.rate = 0.9;
+    u.onend = u.onerror = () => setPlaying(false);
+    setPlaying(true); speechSynthesis.speak(u);
+  };
+  const native = (QOW_NATIVE[s.language] || {})[s.kind];
+  const week = d.week ? fmtDayMonth(d.week + "T12:00:00") : "";
+  const R = 26, C = 2 * Math.PI * R;
+
+  return (
+    <section className={"qow qow-" + s.language} aria-labelledby="qow-h">
+      <div className="qow-inner">
+        <div className="qow-head">
+          <span className="qow-eyebrow" id="qow-h">Quote of the week{week ? " · from " + week : ""}</span>
+          <span className="qow-tag">{QOW_LANG[s.language]}{native ? " · " + native : ""} <span className="qow-tag-en">{QOW_KIND[s.kind] || ""}</span></span>
+        </div>
+        <blockquote className="qow-quote" lang={s.langCode}>
+          <p className="qow-text">{s.text}</p>
+          {s.translation && <p className="qow-tr" lang="en">{s.translation}</p>}
+        </blockquote>
+        <div className="qow-actions">
+          {canListen && (
+            <button type="button" className={"qow-play" + (playing ? " is-on" : "")} onClick={toggle}
+                    aria-pressed={playing} aria-label={(playing ? "Pause" : "Listen to") + " the " + QOW_LANG[s.language]}>
+              <svg viewBox="0 0 60 60" aria-hidden="true" className="qow-ring">
+                <circle cx="30" cy="30" r={R} className="qow-ring-bg"/>
+                <circle cx="30" cy="30" r={R} className="qow-ring-fg" strokeDasharray={C} strokeDashoffset={C * (1 - progress)}/>
+              </svg>
+              <span className="qow-play-ico" aria-hidden="true">{playing ? "❚❚" : "▶"}</span>
+            </button>
+          )}
+          {canListen && <span className="qow-listen" aria-hidden="true">{playing ? "Playing…" : "Hear it in " + QOW_LANG[s.language]}</span>}
+          <span className="qow-spacer"/>
+          {s.kind === "riddle" && s.answer && (
+            <button type="button" className={"qow-btn" + (reveal ? " is-on" : "")} aria-pressed={reveal} onClick={() => setReveal(v => !v)}>
+              {reveal ? "Hide answer" : "Reveal the answer"}
+            </button>
+          )}
+          {s.meaning && (
+            <button type="button" className={"qow-btn" + (open ? " is-on" : "")} aria-expanded={open} aria-controls="qow-meaning" onClick={() => setOpen(v => !v)}>
+              {open ? "Close" : "What it means"}
+            </button>
+          )}
+        </div>
+        <div className="qow-reveals" aria-live="polite">
+          {reveal && s.answer && (
+            <div className="qow-answer">
+              <span className="qow-k">Answer</span>
+              <span className="qow-a" lang={s.langCode}>{s.answer}</span>
+              {s.answerTranslation && <span className="qow-a-en">{s.answerTranslation}</span>}
+            </div>
+          )}
+          {open && <p className="qow-meaning" id="qow-meaning"><span className="qow-k">Deeper meaning</span>{s.meaning}</p>}
+        </div>
+        {s.audioUrl && (
+          <audio ref={audioRef} src={s.audioUrl} preload="none"
+                 onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
+                 onEnded={() => { setPlaying(false); setProgress(0); }}
+                 onTimeUpdate={e => { const a = e.currentTarget; setProgress(a.duration ? a.currentTime / a.duration : 0); }}/>
+        )}
+      </div>
+    </section>
   );
 }
 

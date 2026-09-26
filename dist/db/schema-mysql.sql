@@ -2688,3 +2688,28 @@ CREATE TABLE IF NOT EXISTS member_promotions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (117) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 118 · Quote of the week ─────────────────────────────────────────────
+-- Hausa riddles, Igbo and Yoruba proverbs rotated weekly on the home page.
+-- Rows are seeded by api/_lib/domain/wisdom.php on first read.
+CREATE TABLE IF NOT EXISTS wisdom_sayings (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  wisdomId VARCHAR(40) NOT NULL UNIQUE,
+  language VARCHAR(16) NOT NULL,
+  kind VARCHAR(16) NOT NULL DEFAULT 'proverb',
+  text TEXT NOT NULL,
+  translation TEXT,
+  answer TEXT,
+  answerTranslation TEXT,
+  meaning TEXT,
+  position INT DEFAULT 0,
+  status VARCHAR(16) DEFAULT 'live',
+  audioFile VARCHAR(80) DEFAULT '',
+  audioSource VARCHAR(16) DEFAULT '',
+  voice VARCHAR(40) DEFAULT '',
+  createdAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_wisdom_lang (language, status, position)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (118) ON DUPLICATE KEY UPDATE version = version;

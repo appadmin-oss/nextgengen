@@ -21220,5 +21220,76 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     setting_set('fees', $keepFees, 'test');
 })();
 
+// ── Quote of the week (domain/wisdom.php) ─────────────────────────────────
+(function () {
+    $ADMIN = 'WIS-ADM';
+    db_exec("DELETE FROM members WHERE memberId = ?", [$ADMIN]);
+    db_insert('members', ['memberId' => $ADMIN, 'fullName' => 'Wis Admin', 'email' => 'wis-adm@example.com',
+        'role' => 'super_admin', 'status' => 'active', 'type' => 'NGG', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_exec('DELETE FROM wisdom_sayings');
+    db_exec("DELETE FROM settings WHERE settingKey = 'wisdom.seeded'");
+
+    $pub = backend_dispatch('public.wisdom.week', []);
+    chk('wisdom: first read seeds the sayings (4 Hausa riddles, 3 Igbo proverbs)',
+        (int)db_row("SELECT COUNT(*) c FROM wisdom_sayings WHERE language='hausa' AND kind='riddle'")['c'] === 4
+        && (int)db_row("SELECT COUNT(*) c FROM wisdom_sayings WHERE language='igbo'")['c'] === 3
+        && !empty($pub['saying']));
+    db_exec('DELETE FROM wisdom_sayings');
+    backend_dispatch('public.wisdom.week', []);
+    chk('wisdom: the seed runs once — deleting everything does not bring it back',
+        (int)db_row('SELECT COUNT(*) c FROM wisdom_sayings')['c'] === 0);
+
+    $add = function ($lang, $text) use ($ADMIN) {
+        return backend_dispatch('admin.wisdom.upsert', ['requesterId' => $ADMIN,
+            'data' => ['language' => $lang, 'kind' => 'proverb', 'text' => $text]])['wisdomId'] ?? '';
+    };
+    foreach (['Hx1', 'Hx2'] as $t) $add('hausa', $t);
+    foreach (['Ix1', 'Ix2', 'Ix3'] as $t) $add('igbo', $t);
+    foreach (['Yx1'] as $t) $add('yoruba', $t);
+    $by = wisdom_live_by_lang();
+    $seq = []; for ($w = 0; $w < 9; $w++) $seq[] = wisdom_pick($by, $w)['text'];
+    chk('wisdom: weeks cycle Hausa → Igbo → Yoruba, each language walking its own list',
+        $seq === ['Hx1', 'Ix1', 'Yx1', 'Hx2', 'Ix2', 'Yx1', 'Hx1', 'Ix3', 'Yx1']);
+    chk('wisdom: a week before the anchor still resolves (no negative index)',
+        wisdom_pick($by, -1)['text'] === 'Yx1' && wisdom_pick($by, -3)['text'] === 'Hx2');
+
+    db_exec("UPDATE wisdom_sayings SET status = 'hidden' WHERE language = 'yoruba'");
+    $by = wisdom_live_by_lang();
+    chk('wisdom: a language with nothing live is skipped, not a blank week',
+        wisdom_pick($by, 0)['text'] === 'Hx1' && wisdom_pick($by, 1)['text'] === 'Ix1' && wisdom_pick($by, 2)['text'] === 'Hx2');
+
+    $i3 = db_row("SELECT wisdomId FROM wisdom_sayings WHERE text = 'Ix3'")['wisdomId'];
+    backend_dispatch('admin.wisdom.move', ['requesterId' => $ADMIN, 'wisdomId' => $i3, 'dir' => 'up']);
+    $ig = array_column(db_all("SELECT text FROM wisdom_sayings WHERE language='igbo' ORDER BY position"), 'text');
+    chk('wisdom: move reorders within the language only', $ig === ['Ix1', 'Ix3', 'Ix2']);
+
+    chk('wisdom: an unknown language is refused',
+        (backend_dispatch('admin.wisdom.upsert', ['requesterId' => $ADMIN, 'data' => ['language' => 'latin', 'text' => 'abc']])['error'] ?? '') === 'bad_language');
+    db_insert('members', ['memberId' => 'WIS-NOBODY', 'fullName' => 'No Caps', 'role' => 'member', 'status' => 'active',
+        'type' => 'NGG', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('wisdom: editing needs the content capability',
+        empty(backend_dispatch('admin.wisdom.upsert', ['requesterId' => 'WIS-NOBODY', 'data' => ['language' => 'igbo', 'text' => 'abc']])['ok']));
+
+    $wav = 'RIFF' . pack('V', 36) . 'WAVEfmt ' . str_repeat("\0", 24);
+    $up = backend_dispatch('admin.wisdom.voice.upload', ['requesterId' => $ADMIN, 'wisdomId' => $i3,
+        'audio' => 'data:audio/wav;base64,' . base64_encode($wav)]);
+    $row = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [$i3]);
+    chk('wisdom: a voice-over is stored, sniffed by its bytes, and served by URL',
+        !empty($up['ok']) && $row['audioSource'] === 'custom' && str_ends_with($row['audioFile'], '.wav')
+        && is_file(wisdom_audio_path($row['audioFile'])));
+    chk('wisdom: a non-audio upload is refused',
+        (backend_dispatch('admin.wisdom.voice.upload', ['requesterId' => $ADMIN, 'wisdomId' => $i3,
+            'audio' => 'data:audio/mpeg;base64,' . base64_encode('<?php echo 1;')])['error'] ?? '') === 'bad_audio');
+    chk('wisdom: generating over a staff voice-over is refused unless told to',
+        (backend_dispatch('admin.wisdom.voice.generate', ['requesterId' => $ADMIN, 'wisdomId' => $i3])['error'] ?? '') === 'has_custom_voice');
+    $file = $row['audioFile'];
+    backend_dispatch('admin.wisdom.delete', ['requesterId' => $ADMIN, 'wisdomId' => $i3]);
+    chk('wisdom: deleting a saying removes its unreferenced clip', !is_file(wisdom_audio_path($file)));
+    chk('wisdom: the audio path refuses traversal', wisdom_audio_path('../../config.php') === '');
+
+    db_exec('DELETE FROM wisdom_sayings');
+    db_exec("DELETE FROM members WHERE memberId IN ('WIS-ADM','WIS-NOBODY')");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

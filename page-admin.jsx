@@ -102,6 +102,7 @@ const ADMIN_SECTIONS = [
   { id: "community",   group: "Content",  label: "Community",    title: "Community",           icon: "❖", cap: "content" },
   { id: "tournaments", group: "Content",  label: "Tournaments",  title: "Tournaments",         icon: "♟", cap: "people" },
   { id: "promos",      group: "Content",  label: "Promotions",   title: "Promotions",          icon: "◈", cap: "content" },
+  { id: "wisdom",      group: "Content",  label: "Quote of the week", title: "Quote of the week", icon: "❝", cap: "content" },
   { id: "broadcast",   group: "Content",  label: "Announce",     title: "Announcements",       icon: "📣", cap: "content" },
   { id: "forms",       group: "Content",  label: "Forms",        title: "Forms",               icon: "▤", cap: "content" },
   { id: "site",        group: "Content",  label: "Site content", title: "Site content",        icon: "◧", cap: "settings" },
@@ -415,6 +416,7 @@ function AdminPage({ setPage }) {
           {view === "community" && <AdminCommunity/>}
           {view === "tournaments" && <AdminTournaments/>}
           {view === "promos" && <AdminPromos/>}
+          {view === "wisdom" && <AdminWisdom/>}
           {view === "assessment" && <AdminAssessment/>}
           {view === "donations" && <AdminDonations/>}
         </main>
@@ -6914,6 +6916,224 @@ function AdminPromoImage({ value, max, onChange }) {
               : "On the image cloud, so it costs members almost nothing to load."}
           </p>
           {err && <div className="admin-err" role="alert">{err}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   Quote of the week — Hausa riddles, Igbo and Yoruba proverbs.
+   The home page cycles Hausa → Igbo → Yoruba one week at a time; each
+   language walks its own list top to bottom. See api/_lib/domain/wisdom.php.
+   ========================================================================== */
+const WISDOM_LANG_LABEL = { hausa: "Hausa", igbo: "Igbo", yoruba: "Yorùbá" };
+const WISDOM_ERR = {
+  tts_not_configured: "Voice generation needs a Spitch key in api/config.php ('tts' → 'spitch_key'). A voice-over works without one.",
+  has_custom_voice: "This saying has a staff voice-over. Remove it first if you want a generated one instead.",
+  tts_failed: "The voice service didn't answer. Try again in a minute.",
+  tts_bad_audio: "The voice service sent something that isn't audio.",
+  bad_audio: "That file isn't an audio format we can play (MP3, M4A, WAV, OGG or WebM).",
+  audio_too_big: "That clip is over 4 MB — trim it or export it as MP3.",
+  text_required: "Write the saying first.",
+};
+const wisdomErr = (e) => WISDOM_ERR[e && e.code] || (e && (e.detail || e.code || e.message)) || "Something went wrong.";
+const wisdomFmtWeek = (iso) => fmtDayMonth(iso + "T12:00:00");
+
+function AdminWisdom() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [lang, setLang] = React.useState("hausa");
+  const [editing, setEditing] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+
+  const load = React.useCallback(() => {
+    NGGApi.admin.wisdom.list().then(r => { setD(r); setErr(""); })
+      .catch(e => setErr(wisdomErr(e)));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const act = async (key, fn, ok) => {
+    setBusy(key);
+    try { await fn(); if (ok) toast.success(ok); load(); return true; }
+    catch (e) { toast.error(wisdomErr(e)); return false; }
+    finally { setBusy(""); }
+  };
+  const save = async (data) => { if (await act("save", () => NGGApi.admin.wisdom.save(data), "Saved.")) setEditing(null); };
+  const remove = async (w) => {
+    if (!(await dialog.confirm({ title: "Delete this saying?", body: "“" + w.text + "” and its voice clip go. The rotation closes the gap.", confirmLabel: "Delete" }))) return;
+    act("del" + w.wisdomId, () => NGGApi.admin.wisdom.remove(w.wisdomId), "Deleted.");
+  };
+
+  if (err && !d) return (
+    <div className="admin-section"><div className="admin-err" role="alert">{err} <button className="btn btn-ghost btn-sm" onClick={load}>Retry</button></div></div>
+  );
+  if (!d) return <div className="admin-section"><div className="admin-skel"/></div>;
+
+  if (editing) return <AdminWisdomEdit w={editing} kinds={d.kinds} busy={busy === "save"} onCancel={() => setEditing(null)} onSave={save}/>;
+
+  const rows = d.sayings.filter(w => w.language === lang);
+  const nowId = d.schedule[0] && d.schedule[0].wisdomId;
+  return (
+    <div className="admin-section wis">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Quote of the week</h2>
+        <button className="btn btn-primary" onClick={() => setEditing({ language: lang, kind: lang === "hausa" ? "riddle" : "proverb", status: "live" })}>Add a saying</button>
+      </div>
+      <p className="admin-hint">
+        The home page shows one saying a week, cycling <b>Hausa → Igbo → Yorùbá</b>. Each language plays its own list from the top,
+        so the order below is the order they appear. A language with nothing live is skipped until it has one.
+      </p>
+
+      <div className="wis-sched" aria-label="The next nine weeks">
+        {d.schedule.map((s, i) => (
+          <div key={s.week} className={"wis-sched-cell wis-" + s.language + (i === 0 ? " is-now" : "")}>
+            <span className="wis-sched-wk">{i === 0 ? "This week" : wisdomFmtWeek(s.week)}</span>
+            <span className="wis-sched-lang">{WISDOM_LANG_LABEL[s.language]}</span>
+            <span className="wis-sched-tx" title={s.text}>{s.text}</span>
+          </div>
+        ))}
+        {d.schedule.length === 0 && <div className="admin-hint">Nothing is live, so the home page hides the section.</div>}
+      </div>
+
+      <div className="wis-tabs" role="tablist" aria-label="Language">
+        {d.languages.map(l => {
+          const n = d.sayings.filter(w => w.language === l).length;
+          return <button key={l} role="tab" aria-selected={lang === l} className={"wis-tab" + (lang === l ? " is-on" : "")} onClick={() => setLang(l)}>{WISDOM_LANG_LABEL[l]} <span className="wis-count">{n}</span></button>;
+        })}
+      </div>
+
+      {!d.ttsReady && <p className="admin-hint wis-note">Generated voices are off: add a Spitch key under <code>'tts' → 'spitch_key'</code> in api/config.php. Uploading or recording a voice-over works now.</p>}
+
+      {rows.length === 0 ? (
+        <div className="admin-card wis-empty">No {WISDOM_LANG_LABEL[lang]} sayings yet. <button className="btn btn-ghost btn-sm" onClick={() => setEditing({ language: lang, kind: "proverb", status: "live" })}>Add the first</button></div>
+      ) : (
+        <ol className="wis-list">
+          {rows.map((w, i) => (
+            <li key={w.wisdomId} className={"admin-card wis-item" + (w.status === "hidden" ? " is-hidden" : "")}>
+              <div className="wis-item-main">
+                <div className="wis-item-meta">
+                  <span className="wis-pos">{i + 1}</span>
+                  <span className="chip">{w.kind}</span>
+                  {w.status === "hidden" && <span className="chip">hidden</span>}
+                  {w.wisdomId === nowId && <span className="chip wis-live">on the site now</span>}
+                </div>
+                <p className="wis-text" lang={w.langCode}>{w.text}</p>
+                {w.translation && <p className="wis-tr">{w.translation}</p>}
+                {w.answer && <p className="wis-ans"><b>Answer:</b> {w.answer}{w.answerTranslation ? " — " + w.answerTranslation : ""}</p>}
+              </div>
+              <div className="wis-item-side">
+                <div className="wis-order">
+                  <button className="btn btn-ghost btn-sm" aria-label="Move up" disabled={i === 0 || !!busy} onClick={() => act("mv", () => NGGApi.admin.wisdom.move(w.wisdomId, "up"))}>↑</button>
+                  <button className="btn btn-ghost btn-sm" aria-label="Move down" disabled={i === rows.length - 1 || !!busy} onClick={() => act("mv", () => NGGApi.admin.wisdom.move(w.wisdomId, "down"))}>↓</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEditing(w)}>Edit</button>
+                  <button className="btn btn-ghost btn-sm" aria-label="Delete" disabled={busy === "del" + w.wisdomId} onClick={() => remove(w)}>Delete</button>
+                </div>
+                <WisdomVoice w={w} voices={(d.voices || {})[w.language] || []} ttsReady={d.ttsReady} audioMax={d.audioMax} busy={busy} act={act}/>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+/* One saying's audio: preview, generate (TTS), upload, record, remove.
+   A staff voice-over outranks a generated one and is never silently replaced. */
+function WisdomVoice({ w, voices, ttsReady, audioMax, busy, act }) {
+  const [voice, setVoice] = React.useState(w.voice || voices[0] || "");
+  const [rec, setRec] = React.useState(null);
+  const [secs, setSecs] = React.useState(0);
+  const fileRef = React.useRef(null);
+  const canRecord = typeof window !== "undefined" && !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  const key = "v" + w.wisdomId;
+
+  const sendBlob = (blob) => {
+    if (blob.size > audioMax) { toast.error(WISDOM_ERR.audio_too_big); return; }
+    const r = new FileReader();
+    r.onload = () => act(key, () => NGGApi.admin.wisdom.upload(w.wisdomId, String(r.result)), "Voice-over saved.");
+    r.readAsDataURL(blob);
+  };
+  const startRec = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      const parts = [];
+      mr.ondataavailable = e => { if (e.data && e.data.size) parts.push(e.data); };
+      mr.onstop = () => { stream.getTracks().forEach(t => t.stop()); clearInterval(mr._t); setRec(null); sendBlob(new Blob(parts, { type: mr.mimeType || "audio/webm" })); };
+      mr.start();
+      setSecs(0); mr._t = setInterval(() => setSecs(s => s + 1), 1000);
+      setRec(mr);
+    } catch (_) { toast.error("The microphone isn't available — allow it in the browser, or upload a file instead."); }
+  };
+  React.useEffect(() => () => { if (rec && rec.state !== "inactive") rec.stop(); }, [rec]);
+
+  const generate = async () => {
+    if (w.audioSource === "custom" && !(await dialog.confirm({ title: "Replace the voice-over?", body: "A staff recording is on this saying. The generated voice will replace it.", confirmLabel: "Replace" }))) return;
+    act(key, () => NGGApi.admin.wisdom.generate(w.wisdomId, voice, true), "Voice generated.");
+  };
+  const working = busy === key;
+
+  return (
+    <div className="wis-voice">
+      <div className="wis-voice-head">
+        <span className="admin-field-label">Voice</span>
+        <span className="wis-voice-src">{w.audioSource === "custom" ? "Staff voice-over" : w.audioSource === "tts" ? "Generated · " + (w.voice || "") : "None yet"}</span>
+      </div>
+      {w.audioUrl && <audio className="wis-audio" controls preload="none" src={w.audioUrl}/>}
+      <div className="wis-voice-row">
+        <select className="admin-select wis-voice-sel" aria-label="Generated voice" value={voice} onChange={e => setVoice(e.target.value)} disabled={!ttsReady}>
+          {voices.map(v => <option key={v} value={v}>{v[0].toUpperCase() + v.slice(1)}</option>)}
+        </select>
+        <button className="btn btn-ghost btn-sm" disabled={!ttsReady || working || !!rec} title={ttsReady ? "" : "Needs a Spitch key in api/config.php"} onClick={generate}>
+          {working ? "Working…" : "Generate"}
+        </button>
+      </div>
+      <div className="wis-voice-row">
+        <button className="btn btn-ghost btn-sm" disabled={working || !!rec} onClick={() => fileRef.current && fileRef.current.click()}>Upload voice-over</button>
+        <input ref={fileRef} type="file" accept="audio/*" hidden onChange={e => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) sendBlob(f); }}/>
+        {canRecord && (rec
+          ? <button className="btn btn-primary btn-sm" aria-pressed="true" onClick={() => rec.stop()}>■ Stop · {secs}s</button>
+          : <button className="btn btn-ghost btn-sm" aria-pressed="false" disabled={working} onClick={startRec}>● Record</button>)}
+        {w.audioUrl && <button className="btn btn-ghost btn-sm" disabled={working || !!rec} onClick={() => act(key, () => NGGApi.admin.wisdom.clearVoice(w.wisdomId), "Voice removed.")}>Remove</button>}
+      </div>
+    </div>
+  );
+}
+
+function AdminWisdomEdit({ w, kinds, busy, onCancel, onSave }) {
+  const [f, setF] = React.useState({
+    wisdomId: w.wisdomId || "", language: w.language || "hausa", kind: w.kind || "proverb",
+    text: w.text || "", translation: w.translation || "", answer: w.answer || "",
+    answerTranslation: w.answerTranslation || "", meaning: w.meaning || "", status: w.status || "live",
+  });
+  const set = (k, v) => setF(x => Object.assign({}, x, { [k]: v }));
+  return (
+    <div className="admin-section">
+      <button className="btn btn-ghost btn-sm" onClick={onCancel}>← All sayings</button>
+      <div className="admin-section-head" style={{ marginTop: 10 }}>
+        <h2 className="admin-h2">{f.wisdomId ? "Edit saying" : "New saying"}</h2>
+      </div>
+      <div className="admin-card wis-form">
+        <div className="wis-form-row">
+          <FieldSelect label="Language" value={f.language} onChange={v => set("language", v)} options={Object.keys(WISDOM_LANG_LABEL).map(k => ({ value: k, label: WISDOM_LANG_LABEL[k] }))}/>
+          <FieldSelect label="Kind" value={f.kind} onChange={v => set("kind", v)} options={(kinds || ["riddle", "proverb", "quote"]).map(k => ({ value: k, label: k[0].toUpperCase() + k.slice(1) }))}/>
+          <FieldSelect label="On the site" value={f.status} onChange={v => set("status", v)} options={[{ value: "live", label: "In the rotation" }, { value: "hidden", label: "Hidden" }]}/>
+        </div>
+        <FieldTextarea label={"The saying, in " + WISDOM_LANG_LABEL[f.language]} rows={2} value={f.text} onChange={v => set("text", v)}/>
+        <FieldTextarea label="English translation" rows={2} value={f.translation} onChange={v => set("translation", v)}/>
+        {f.kind === "riddle" && (
+          <div className="wis-form-row">
+            <Field label="Answer" value={f.answer} onChange={v => set("answer", v)}/>
+            <Field label="Answer in English" value={f.answerTranslation} onChange={v => set("answerTranslation", v)}/>
+          </div>
+        )}
+        <FieldTextarea label="Deeper meaning" rows={4} value={f.meaning} onChange={v => set("meaning", v)}/>
+        {f.wisdomId && <p className="admin-hint">Changing the words removes a generated voice (it would read the old words). A staff voice-over is kept — re-record it if the wording changed.</p>}
+        <div className="wis-form-actions">
+          <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy || f.text.trim().length < 3} onClick={() => onSave(f)}>{busy ? "Saving…" : "Save"}</button>
         </div>
       </div>
     </div>

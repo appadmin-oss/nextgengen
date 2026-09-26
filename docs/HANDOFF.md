@@ -289,3 +289,25 @@ NEVER commit api/config.php; camera Permissions-Policy is camera=(self) in
 · `api/auth/{login,request,verify}.php` · `api/config.example.php` ·
 `journal/app.jsx` + `journal/app.css` · `docs/NGG-AUDIT-INDEX.md` ·
 `docs/afrovanguard-sync.md` · `docs/anchor-journal-v2-gap-analysis.md`.
+
+
+---
+
+## Quote of the week (2026-09-26)
+
+Home-page section cycling Hausa riddles, Igbo proverbs and Yoruba proverbs one
+per week, editable in Control Room → Content → Quote of the week.
+
+- **Rotation is derived, not stored** (`wisdom_pick`, anchor Monday
+  2026-09-21 Lagos). Languages alternate in fixed order; each walks its own
+  `position` list, so adding to one language never shifts another's sequence.
+  Empty languages are skipped.
+- **Seeded in PHP, once**, behind the `wisdom.seeded` setting — not in the
+  migration, because the sayings contain `;` and `db_split_sql` cuts on it.
+- **Audio is a stored clip**, never a per-visitor provider call: staff
+  voice-over (upload or in-browser recording) or a Spitch TTS rendering made
+  on demand. Served by `api/public/wisdom-audio.php` with byte ranges (Safari).
+  The browser's own speech voice is used only if it has one for the language.
+- Migration 118 (`wisdom_sayings`). Files: `api/_lib/domain/wisdom.php`,
+  `api/{public,admin}/wisdom.php`, `api/public/wisdom-audio.php`,
+  `QuoteOfWeek` (page-home.jsx), `AdminWisdom` (page-admin.jsx).

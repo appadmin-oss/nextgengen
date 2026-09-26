@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 117;
+const NGG_SCHEMA_TARGET = 118;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3610,6 +3610,35 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_mprom_member ON member_promotions(memberId, id);
             CREATE INDEX IF NOT EXISTS idx_mprom_at ON member_promotions(at);
+        ",
+
+        /* Quote of the week — Hausa riddles, Igbo and Yoruba proverbs, shown on
+         * the home page one a week in a fixed language rotation. The rows are
+         * seeded by domain/wisdom.php (not here: the sayings contain `;`,
+         * which the migration splitter would cut on). `position` orders a
+         * language's own list; the rotation interleaves the languages.
+         * audioFile is a stored clip — a staff voice-over (`custom`) or one
+         * generated once by the TTS provider (`tts`) — never a per-play call. */
+        118 => "
+            CREATE TABLE IF NOT EXISTS wisdom_sayings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              wisdomId TEXT UNIQUE NOT NULL,
+              language TEXT NOT NULL,
+              kind TEXT NOT NULL DEFAULT 'proverb',
+              text TEXT NOT NULL,
+              translation TEXT DEFAULT '',
+              answer TEXT DEFAULT '',
+              answerTranslation TEXT DEFAULT '',
+              meaning TEXT DEFAULT '',
+              position INTEGER DEFAULT 0,
+              status TEXT DEFAULT 'live',
+              audioFile TEXT DEFAULT '',
+              audioSource TEXT DEFAULT '',
+              voice TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wisdom_lang ON wisdom_sayings(language, status, position);
         ",
     ];
 
