@@ -6401,7 +6401,7 @@ img { background-color: rgba(12,20,50,0.04); }
 .qow { --qow-accent: var(--gold-500); background: var(--navy-900); color: #fff; padding: clamp(56px, 8vw, 104px) 16px; position: relative; overflow: hidden; container-type: inline-size; }
 .qow-igbo   { --qow-accent: #5fd08a; }
 .qow-yoruba { --qow-accent: #ff9b73; }
-.qow::before { content: "\201C"; position: absolute; top: -0.18em; left: 50%; transform: translateX(-50%); font-family: Georgia, "Times New Roman", serif; font-size: clamp(260px, 38vw, 520px); line-height: 1; color: rgba(255,255,255,0.04); pointer-events: none; }
+.qow::before { content: "\201C"; position: absolute; top: clamp(8px, 2vw, 24px); right: clamp(8px, 4vw, 64px); font-family: Georgia, "Times New Roman", serif; font-size: clamp(180px, 26vw, 360px); line-height: 1; color: rgba(255,255,255,0.04); pointer-events: none; }
 .qow-inner { max-width: 880px; margin: 0 auto; position: relative; }
 .qow-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding-bottom: 18px; margin-bottom: clamp(24px, 4vw, 40px); border-bottom: 1px solid rgba(255,255,255,0.12); position: relative; }
 .qow-head::after { content: ""; position: absolute; left: 0; bottom: -1px; width: 64px; height: 2px; background: var(--qow-accent); }
