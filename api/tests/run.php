@@ -4598,6 +4598,55 @@ chk('hook: batch marks summer student (by QR + ref) and member; idempotent; unkn
         && (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'attendance.marked'")['c'] >= 2;
 })());
 
+// ── The CACENTRE gate asking about NGG cards ──
+chk('gate: a student card resolves to the least a desk needs — no guardian, no phone', (function () {
+    $st = db_row("SELECT studentId, token, fullName FROM summer_students WHERE regStatus = 'verified' AND token != '' ORDER BY id DESC LIMIT 1");
+    $r = backend_dispatch('hooks.gate.resolve', ['token' => strtolower($st['token'])]);
+    if (empty($r['ok']) || $r['person']['ref'] !== $st['studentId'] || $r['person']['name'] !== $st['fullName'] || $r['person']['kind'] !== 'student') return false;
+    return array_keys($r['person']) === ['ref', 'name', 'kind', 'status', 'detail', 'expires_on'];
+})());
+chk('gate: a withdrawn student is resolved with the reason, not as active', (function () {
+    $st = db_row("SELECT studentId, token FROM summer_students WHERE regStatus = 'verified' AND token != '' ORDER BY id DESC LIMIT 1");
+    db_update('summer_students', ['status' => 'withdrawn'], ['studentId' => $st['studentId']]);
+    $r = backend_dispatch('hooks.gate.resolve', ['token' => $st['token']]);
+    db_update('summer_students', ['status' => 'active'], ['studentId' => $st['studentId']]);
+    return !empty($r['ok']) && $r['person']['status'] === 'marked withdrawn';
+})());
+chk('gate: unknown, blank and void cards are refused with a sentence', (function () {
+    if (backend_dispatch('hooks.gate.resolve', ['token' => 'SUMQR-NOPE0000'])['code'] !== 'unknown') return false;
+    $blank = db_row("SELECT token FROM qr_codes WHERE status = 'blank' LIMIT 1");
+    if ($blank && backend_dispatch('hooks.gate.resolve', ['token' => $blank['token']])['code'] !== 'blank_card') return false;
+    $r = backend_dispatch('hooks.gate.resolve', []);
+    return $r['code'] === 'bad_request' && $r['error'] !== '';
+})());
+chk('gate: a volunteer resolves by card and by ref, and the attendance hook now marks one', (function () {
+    db_insert('volunteers', ['volunteerId' => 'VOL-GATE-1', 'fullName' => 'Gate Volunteer', 'role' => 'mentor', 'status' => 'active',
+                             'safeguarding' => 'cleared', 'token' => '', 'createdAt' => now_iso()]);
+    db_insert('qr_codes', ['token' => 'VOLQR-GATE0001', 'status' => 'assigned', 'studentId' => 'VOL-GATE-1', 'createdAt' => now_iso()]);
+    $a = backend_dispatch('hooks.gate.resolve', ['token' => 'VOLQR-GATE0001']);
+    $b = backend_dispatch('hooks.gate.resolve', ['ref' => 'VOL-GATE-1']);
+    if (empty($a['ok']) || $a['person']['kind'] !== 'volunteer' || $b['person']['ref'] !== 'VOL-GATE-1') return false;
+    $h = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-1', 'scannedAt' => gmdate('Y-m-d\TH:i:s\Z')]]]);
+    return $h['marked'] === 1 && $h['unknown'] === 0
+        && (int)db_row("SELECT COUNT(*) c FROM attendance WHERE studentId = 'VOL-GATE-1'")['c'] === 1;
+})());
+chk('gate: search finds active people by name and nobody withdrawn', (function () {
+    $st = db_row("SELECT studentId, fullName FROM summer_students WHERE regStatus = 'verified' ORDER BY id DESC LIMIT 1");
+    $q = substr((string)$st['fullName'], 0, 4);
+    $r = backend_dispatch('hooks.gate.search', ['q' => $q]);
+    if (!in_array($st['studentId'], array_column($r['people'], 'ref'), true)) return false;
+    db_update('summer_students', ['status' => 'withdrawn'], ['studentId' => $st['studentId']]);
+    $r2 = backend_dispatch('hooks.gate.search', ['q' => $q]);
+    db_update('summer_students', ['status' => 'active'], ['studentId' => $st['studentId']]);
+    return !in_array($st['studentId'], array_column($r2['people'], 'ref'), true)
+        && backend_dispatch('hooks.gate.search', ['q' => 'x'])['people'] === [];
+})());
+chk('gate: the route is signed like the attendance hook and says why when it refuses', (function () {
+    $src = (string)file_get_contents(__DIR__ . '/../hooks/gate.php');
+    return str_contains($src, "hook_verify_signature(\$secret") && str_contains($src, "\$CONFIG['hooks']['attendance_secret']")
+        && str_contains($src, "json_send(['ok' => false, 'code' =>");
+})());
+
 // ── Behaviour monitor (AI off → deterministic rules) ──
 chk('behaviour: log auto-classifies, wellbeing flags emit, review closes', (function () {
     $flagsBefore = (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'behaviour.flagged'")['c'];
