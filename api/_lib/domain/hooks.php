@@ -73,6 +73,23 @@ function hooks_attendance(array $p): array {
         if ($student) { $sid = (string)$student['studentId']; $cohortId = (string)$student['cohortId']; $name = (string)$student['fullName']; }
         if ($sid === '') { $results[] = ['ref' => $ref ?: $token, 'status' => 'unknown']; $unknown++; continue; }
 
+        /* A check-out, from the CACENTRE gate (or any sender that says so).
+         * Stamped on the day's row and nothing else: it never creates one,
+         * because a departure is not an arrival. Without these, a policy with
+         * checkoutRequired logs everybody who came in through the gate as
+         * "checked in but never scanned out" and counts them absent.
+         * not_checked_in is answered rather than swallowed: the arrival may
+         * still be in flight, and the sender retries. */
+        if (strtolower((string)($e['action'] ?? 'in')) === 'out') {
+            $row = db_row('SELECT id, checkOutAt FROM attendance WHERE studentId = ? AND date = ?', [$sid, $date]);
+            if (!$row) { $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'not_checked_in']; continue; }
+            if (!empty($row['checkOutAt'])) { $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'already']; $already++; continue; }
+            db_update('attendance', ['checkOutAt' => $scanIso], ['id' => $row['id']]);
+            $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'marked', 'action' => 'out'];
+            $marked++;
+            continue;
+        }
+
         $dupe = db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$sid, $date]);
         if ($dupe) { $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'already']; $already++; continue; }
         /* NGG members are enforced on their own switch and their own weekly

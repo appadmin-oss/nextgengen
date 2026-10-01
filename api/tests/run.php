@@ -4630,6 +4630,19 @@ chk('gate: a volunteer resolves by card and by ref, and the attendance hook now 
     return $h['marked'] === 1 && $h['unknown'] === 0
         && (int)db_row("SELECT COUNT(*) c FROM attendance WHERE studentId = 'VOL-GATE-1'")['c'] === 1;
 })());
+chk('gate: a check-out stamps the day\'s row, once, and never creates one', (function () {
+    $d = gmdate('Y-m-d');
+    $at = gmdate('Y-m-d\\TH:i:s\\Z');
+    $none = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'NGG-NOBODY-IN', 'action' => 'out', 'date' => $d, 'scannedAt' => $at]]]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-GATE-2', 'fullName' => 'Out Volunteer', 'role' => 'mentor', 'status' => 'active', 'safeguarding' => 'cleared', 'token' => '', 'createdAt' => now_iso()]);
+    $early = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'action' => 'out', 'date' => $d, 'scannedAt' => $at]]]);
+    if ($early['results'][0]['status'] !== 'not_checked_in' || (int)db_row("SELECT COUNT(*) c FROM attendance WHERE studentId = 'VOL-GATE-2'")['c'] !== 0) return false;
+    backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'date' => $d, 'scannedAt' => $at]]]);
+    $out = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'action' => 'out', 'date' => $d, 'scannedAt' => $at]]]);
+    $again = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'action' => 'out', 'date' => $d, 'scannedAt' => $at]]]);
+    return $none['results'][0]['status'] === 'unknown' && $out['results'][0]['status'] === 'marked' && $again['results'][0]['status'] === 'already'
+        && (string)db_row("SELECT checkOutAt FROM attendance WHERE studentId = 'VOL-GATE-2'")['checkOutAt'] !== '';
+})());
 chk('gate: search finds active people by name and nobody withdrawn', (function () {
     $st = db_row("SELECT studentId, fullName FROM summer_students WHERE regStatus = 'verified' ORDER BY id DESC LIMIT 1");
     $q = substr((string)$st['fullName'], 0, 4);
@@ -12706,8 +12719,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('§8c: the Raised tile sums this year\'s contributions', $sum['raisedMinor'] === 1200000);
     chk('§8c: …and prints it the way the artboard does — ₦12k, not 1200000',
         $sum['raised'] === '₦12k' && $sum['raisedYear'] === $thisYear);
+    /* The open issue is six days old, which is LAST month for the first six
+       days of every month — so what "this month" holds depends on the date. */
+    $issueThisMonth = gmdate('Y-m', time() - 6 * 86400) === gmdate('Y-m') ? 1 : 0;
     chk('§8c: "This month" counts this month, and last year\'s milestone is not in it',
-        $sum['thisMonth'] === 4);
+        $sum['thisMonth'] === 3 + $issueThisMonth);
     chk('§8c: Everything counts everything readable', $sum['everything'] === 5);
 
     // ── The cards ──
