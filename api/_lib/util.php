@@ -158,6 +158,19 @@ function person_grade(array $row): array {
             'yearsStale' => $asAt !== '' ? max(0, (int)floor((time() - strtotime($asAt . ' UTC')) / (365.25 * 86400))) : 0];
 }
 
+/**
+ * A date of birth as an admin records it: YYYY-MM-DD, a real date, not in the
+ * future and not before 1900. '' is a valid answer (clear it). Returns the
+ * normalised date, '' for blank, or null when it is not a date of birth.
+ */
+function dob_clean(string $raw): ?string {
+    $raw = trim($raw);
+    if ($raw === '') return '';
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $raw, $m) || !checkdate((int)$m[2], (int)$m[3], (int)$m[1])) return null;
+    if ((int)$m[1] < 1900 || $raw > gmdate('Y-m-d')) return null;
+    return $raw;
+}
+
 function dob_age(string $iso): int {
     $iso = trim($iso);
     $t = strtotime($iso . ' 00:00:00 UTC');

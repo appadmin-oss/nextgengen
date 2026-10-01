@@ -4643,6 +4643,23 @@ chk('gate: a check-out stamps the day\'s row, once, and never creates one', (fun
     return $none['results'][0]['status'] === 'unknown' && $out['results'][0]['status'] === 'marked' && $again['results'][0]['status'] === 'already'
         && (string)db_row("SELECT checkOutAt FROM attendance WHERE studentId = 'VOL-GATE-2'")['checkOutAt'] !== '';
 })());
+chk('dob: an admin records a student\'s date of birth, and the age follows from it', (function () {
+    $st = db_row("SELECT studentId FROM summer_students WHERE regStatus = 'verified' ORDER BY id DESC LIMIT 1");
+    $dob = (string)((int)gmdate('Y') - 12) . '-01-15';
+    $r = backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $st['studentId'], 'data' => ['dob' => $dob]]);
+    $row = db_row('SELECT dob, age FROM summer_students WHERE studentId = ?', [$st['studentId']]);
+    $bad = backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $st['studentId'], 'data' => ['dob' => '2099-01-01']]);
+    $nope = backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $st['studentId'], 'data' => ['dob' => '2012-02-30']]);
+    return !empty($r['ok']) && $row['dob'] === $dob && (int)$row['age'] === dob_age($dob)
+        && ($bad['error'] ?? '') === 'bad_dob' && ($nope['error'] ?? '') === 'bad_dob';
+})());
+chk('dob: an admin records a volunteer\'s date of birth, and the roster shows it', (function () {
+    $v = db_row("SELECT volunteerId FROM volunteers ORDER BY id DESC LIMIT 1");
+    $r = backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => $v['volunteerId'], 'data' => ['dob' => '1995-07-14']]);
+    $list = backend_dispatch('admin.volunteers.list', ['requesterId' => 'NGG-2025-0099']);
+    $mine = array_values(array_filter($list['volunteers'] ?? [], fn($x) => $x['volunteerId'] === $v['volunteerId']));
+    return !empty($r['ok']) && $mine && $mine[0]['dob'] === '1995-07-14';
+})());
 chk('gate: search finds active people by name and nobody withdrawn', (function () {
     $st = db_row("SELECT studentId, fullName FROM summer_students WHERE regStatus = 'verified' ORDER BY id DESC LIMIT 1");
     $q = substr((string)$st['fullName'], 0, 4);

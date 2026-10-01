@@ -4598,6 +4598,85 @@ chk('hook: batch marks summer student (by QR + ref) and member; idempotent; unkn
         && (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'attendance.marked'")['c'] >= 2;
 })());
 
+// ── The CACENTRE gate asking about NGG cards ──
+chk('gate: a student card resolves to the least a desk needs — no guardian, no phone', (function () {
+    $st = db_row("SELECT studentId, token, fullName FROM summer_students WHERE regStatus = 'verified' AND token != '' ORDER BY id DESC LIMIT 1");
+    $r = backend_dispatch('hooks.gate.resolve', ['token' => strtolower($st['token'])]);
+    if (empty($r['ok']) || $r['person']['ref'] !== $st['studentId'] || $r['person']['name'] !== $st['fullName'] || $r['person']['kind'] !== 'student') return false;
+    return array_keys($r['person']) === ['ref', 'name', 'kind', 'status', 'detail', 'expires_on'];
+})());
+chk('gate: a withdrawn student is resolved with the reason, not as active', (function () {
+    $st = db_row("SELECT studentId, token FROM summer_students WHERE regStatus = 'verified' AND token != '' ORDER BY id DESC LIMIT 1");
+    db_update('summer_students', ['status' => 'withdrawn'], ['studentId' => $st['studentId']]);
+    $r = backend_dispatch('hooks.gate.resolve', ['token' => $st['token']]);
+    db_update('summer_students', ['status' => 'active'], ['studentId' => $st['studentId']]);
+    return !empty($r['ok']) && $r['person']['status'] === 'marked withdrawn';
+})());
+chk('gate: unknown, blank and void cards are refused with a sentence', (function () {
+    if (backend_dispatch('hooks.gate.resolve', ['token' => 'SUMQR-NOPE0000'])['code'] !== 'unknown') return false;
+    $blank = db_row("SELECT token FROM qr_codes WHERE status = 'blank' LIMIT 1");
+    if ($blank && backend_dispatch('hooks.gate.resolve', ['token' => $blank['token']])['code'] !== 'blank_card') return false;
+    $r = backend_dispatch('hooks.gate.resolve', []);
+    return $r['code'] === 'bad_request' && $r['error'] !== '';
+})());
+chk('gate: a volunteer resolves by card and by ref, and the attendance hook now marks one', (function () {
+    db_insert('volunteers', ['volunteerId' => 'VOL-GATE-1', 'fullName' => 'Gate Volunteer', 'role' => 'mentor', 'status' => 'active',
+                             'safeguarding' => 'cleared', 'token' => '', 'createdAt' => now_iso()]);
+    db_insert('qr_codes', ['token' => 'VOLQR-GATE0001', 'status' => 'assigned', 'studentId' => 'VOL-GATE-1', 'createdAt' => now_iso()]);
+    $a = backend_dispatch('hooks.gate.resolve', ['token' => 'VOLQR-GATE0001']);
+    $b = backend_dispatch('hooks.gate.resolve', ['ref' => 'VOL-GATE-1']);
+    if (empty($a['ok']) || $a['person']['kind'] !== 'volunteer' || $b['person']['ref'] !== 'VOL-GATE-1') return false;
+    $h = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-1', 'scannedAt' => gmdate('Y-m-d\TH:i:s\Z')]]]);
+    return $h['marked'] === 1 && $h['unknown'] === 0
+        && (int)db_row("SELECT COUNT(*) c FROM attendance WHERE studentId = 'VOL-GATE-1'")['c'] === 1;
+})());
+chk('gate: a check-out stamps the day\'s row, once, and never creates one', (function () {
+    $d = gmdate('Y-m-d');
+    $at = gmdate('Y-m-d\\TH:i:s\\Z');
+    $none = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'NGG-NOBODY-IN', 'action' => 'out', 'date' => $d, 'scannedAt' => $at]]]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-GATE-2', 'fullName' => 'Out Volunteer', 'role' => 'mentor', 'status' => 'active', 'safeguarding' => 'cleared', 'token' => '', 'createdAt' => now_iso()]);
+    $early = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'action' => 'out', 'date' => $d, 'scannedAt' => $at]]]);
+    if ($early['results'][0]['status'] !== 'not_checked_in' || (int)db_row("SELECT COUNT(*) c FROM attendance WHERE studentId = 'VOL-GATE-2'")['c'] !== 0) return false;
+    backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'date' => $d, 'scannedAt' => $at]]]);
+    $out = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'action' => 'out', 'date' => $d, 'scannedAt' => $at]]]);
+    $again = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'action' => 'out', 'date' => $d, 'scannedAt' => $at]]]);
+    return $none['results'][0]['status'] === 'unknown' && $out['results'][0]['status'] === 'marked' && $again['results'][0]['status'] === 'already'
+        && (string)db_row("SELECT checkOutAt FROM attendance WHERE studentId = 'VOL-GATE-2'")['checkOutAt'] !== '';
+})());
+chk('dob: an admin records a student\'s date of birth, and the age follows from it', (function () {
+    $st = db_row("SELECT studentId FROM summer_students WHERE regStatus = 'verified' ORDER BY id DESC LIMIT 1");
+    $dob = (string)((int)gmdate('Y') - 12) . '-01-15';
+    $r = backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $st['studentId'], 'data' => ['dob' => $dob]]);
+    $row = db_row('SELECT dob, age FROM summer_students WHERE studentId = ?', [$st['studentId']]);
+    $bad = backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $st['studentId'], 'data' => ['dob' => '2099-01-01']]);
+    $nope = backend_dispatch('admin.summer.student.update', ['requesterId' => 'NGG-2025-0099', 'studentId' => $st['studentId'], 'data' => ['dob' => '2012-02-30']]);
+    return !empty($r['ok']) && $row['dob'] === $dob && (int)$row['age'] === dob_age($dob)
+        && ($bad['error'] ?? '') === 'bad_dob' && ($nope['error'] ?? '') === 'bad_dob';
+})());
+chk('dob: an admin records a volunteer\'s date of birth, and the roster shows it', (function () {
+    $v = db_row("SELECT volunteerId FROM volunteers ORDER BY id DESC LIMIT 1");
+    $r = backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-2025-0099', 'volunteerId' => $v['volunteerId'], 'data' => ['dob' => '1995-07-14']]);
+    $list = backend_dispatch('admin.volunteers.list', ['requesterId' => 'NGG-2025-0099']);
+    $mine = array_values(array_filter($list['volunteers'] ?? [], fn($x) => $x['volunteerId'] === $v['volunteerId']));
+    return !empty($r['ok']) && $mine && $mine[0]['dob'] === '1995-07-14';
+})());
+chk('gate: search finds active people by name and nobody withdrawn', (function () {
+    $st = db_row("SELECT studentId, fullName FROM summer_students WHERE regStatus = 'verified' ORDER BY id DESC LIMIT 1");
+    $q = substr((string)$st['fullName'], 0, 4);
+    $r = backend_dispatch('hooks.gate.search', ['q' => $q]);
+    if (!in_array($st['studentId'], array_column($r['people'], 'ref'), true)) return false;
+    db_update('summer_students', ['status' => 'withdrawn'], ['studentId' => $st['studentId']]);
+    $r2 = backend_dispatch('hooks.gate.search', ['q' => $q]);
+    db_update('summer_students', ['status' => 'active'], ['studentId' => $st['studentId']]);
+    return !in_array($st['studentId'], array_column($r2['people'], 'ref'), true)
+        && backend_dispatch('hooks.gate.search', ['q' => 'x'])['people'] === [];
+})());
+chk('gate: the route is signed like the attendance hook and says why when it refuses', (function () {
+    $src = (string)file_get_contents(__DIR__ . '/../hooks/gate.php');
+    return str_contains($src, "hook_verify_signature(\$secret") && str_contains($src, "\$CONFIG['hooks']['attendance_secret']")
+        && str_contains($src, "json_send(['ok' => false, 'code' =>");
+})());
+
 // ── Behaviour monitor (AI off → deterministic rules) ──
 chk('behaviour: log auto-classifies, wellbeing flags emit, review closes', (function () {
     $flagsBefore = (int)db_row("SELECT COUNT(*) c FROM outbox WHERE kind = 'behaviour.flagged'")['c'];
@@ -12657,8 +12736,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('§8c: the Raised tile sums this year\'s contributions', $sum['raisedMinor'] === 1200000);
     chk('§8c: …and prints it the way the artboard does — ₦12k, not 1200000',
         $sum['raised'] === '₦12k' && $sum['raisedYear'] === $thisYear);
+    /* The open issue is six days old, which is LAST month for the first six
+       days of every month — so what "this month" holds depends on the date. */
+    $issueThisMonth = gmdate('Y-m', time() - 6 * 86400) === gmdate('Y-m') ? 1 : 0;
     chk('§8c: "This month" counts this month, and last year\'s milestone is not in it',
-        $sum['thisMonth'] === 4);
+        $sum['thisMonth'] === 3 + $issueThisMonth);
     chk('§8c: Everything counts everything readable', $sum['everything'] === 5);
 
     // ── The cards ──

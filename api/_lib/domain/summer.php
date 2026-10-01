@@ -272,6 +272,7 @@ function summer_student_admin(array $s, ?string $idExpiry = null): array {
     $out = summer_student_public($s, true);
     $out += [
         'age' => $s['age'] === null || $s['age'] === '' ? null : (int)$s['age'],
+        'dob' => (string)($s['dob'] ?? ''),
         'firstName' => (string)($s['firstName'] ?? ''),
         'lastName' => (string)($s['lastName'] ?? ''),
         'guardianName' => (string)($s['guardianName'] ?? ''),
@@ -606,6 +607,14 @@ function admin_summer_student_update(array $p): array {
         $row['fullName'] = substr($name, 0, 120);
     }
     if (array_key_exists('age', $d)) { $age = (int)$d['age']; if ($age < 5 || $age > 19) return ['ok' => false, 'error' => 'bad_age']; $row['age'] = $age; }
+    /* Date of birth, recorded by an admin. When it is given, the age follows
+       from it rather than from the age box, so the two cannot disagree. */
+    if (array_key_exists('dob', $d)) {
+        $dob = dob_clean((string)$d['dob']);
+        if ($dob === null) return ['ok' => false, 'error' => 'bad_dob'];
+        $row['dob'] = $dob;
+        if ($dob !== '') { $age = dob_age($dob); if ($age < 5 || $age > 19) return ['ok' => false, 'error' => 'bad_age']; $row['age'] = $age; }
+    }
     foreach (['centre' => 48, 'track' => 64, 'guardianName' => 255, 'guardianPhone' => 48, 'photoUrl' => 512, 'notes' => 2000] as $f => $max) {
         if (array_key_exists($f, $d)) $row[$f] = substr(trim((string)$d[$f]), 0, $max);
     }

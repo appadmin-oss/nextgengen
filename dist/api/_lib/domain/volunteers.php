@@ -614,7 +614,7 @@ function admin_volunteers_list(array $p): array {
         $a['dobAge'] = !empty($a['dob']) && function_exists('dob_age') ? dob_age((string)$a['dob']) : null;
     }
     unset($a);
-    $roster = db_all('SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, visibilityConsent, token, status, safeguarding, capsExtra, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
+    $roster = db_all('SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, visibilityConsent, token, status, safeguarding, capsExtra, dob, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
     foreach ($roster as &$v) {
         $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
         // Portal access granted to this person. Always an array so the console
@@ -661,6 +661,11 @@ function admin_volunteer_update(array $p): array {
         $row['courses'] = json_encode(array_slice($courses, 0, 20));
     }
     if (array_key_exists('visibilityConsent', $d)) $row['visibilityConsent'] = !empty($d['visibilityConsent']) ? 1 : 0;
+    if (array_key_exists('dob', $d)) {
+        $dob = dob_clean((string)$d['dob']);
+        if ($dob === null) return ['ok' => false, 'error' => 'bad_dob'];
+        $row['dob'] = $dob;
+    }
     if (array_key_exists('status', $d)) {
         if (!in_array((string)$d['status'], ['active', 'inactive', 'archived'], true)) return ['ok' => false, 'error' => 'bad_status'];
         $row['status'] = (string)$d['status'];

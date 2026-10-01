@@ -5504,7 +5504,7 @@ function StudentEditor({ s, onSaved, onDelete }) {
   })();
   const [f, setF] = React.useState({
     firstName: seedName.firstName, lastName: seedName.lastName,
-    age: s.age != null ? String(s.age) : "", handle: s.handle || "", sex: s.sex || "",
+    age: s.age != null ? String(s.age) : "", dob: s.dob || "", handle: s.handle || "", sex: s.sex || "",
     grade: (s.grade && s.grade.label) || "",
     centre: s.centre || "", track: s.track || "", guardianName: s.guardianName || "",
     guardianPhone: s.guardianPhone || "", parentEmail: s.parentEmail || "", photoUrl: s.photoUrl || "", notes: s.notes || "",
@@ -5517,7 +5517,7 @@ function StudentEditor({ s, onSaved, onDelete }) {
     try {
       await NGGApi.admin.summer.studentUpdate(s.studentId, { ...f, age: f.age === "" ? s.age : parseInt(f.age, 10) || 0 });
       toast.success("Student saved."); onSaved();
-    } catch (e) { toast.error(e.code === "bad_age" ? "Age must be 5–19." : e.code === "bad_email" ? "That parent email isn't valid." : e.code === "handle_taken" ? "That handle is already used." : (e.code || e.message)); }
+    } catch (e) { toast.error(e.code === "bad_age" ? "Age must be 5–19." : e.code === "bad_dob" ? "That date of birth isn't a real date in the past." : e.code === "bad_email" ? "That parent email isn't valid." : e.code === "handle_taken" ? "That handle is already used." : (e.code || e.message)); }
     finally { setBusy(false); }
   };
   const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
@@ -5534,6 +5534,9 @@ function StudentEditor({ s, onSaved, onDelete }) {
         <div style={{ flex: 1, minWidth: 260, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
           {fld("firstName", "First name", { min: 150 })}
           {fld("lastName", "Last name", { min: 150 })}
+          {/* Recorded by an admin. When set, the server works the age out from
+              it, so the age box below follows the date rather than the other way. */}
+          {fld("dob", "Date of birth", { type: "date", min: 160 })}
           {fld("age", "Age", { type: "number" })}
           {/* Editable here because a whole cohort was registered before the form
               asked, and filling it in one child at a time from the roster is the
@@ -10750,6 +10753,7 @@ function VolunteerEditor({ v, onSaved, onDelete }) {
     email: v.email || "", phone: v.phone || "", role: v.role || "mentor",
     centre: v.centre || "", faculty: v.faculty || "", courses: (v.courses || []).join(", "),
     visibilityConsent: !!v.visibilityConsent, status: v.status || "active", photoUrl: v.photoUrl || "",
+    dob: v.dob || "",
   });
   const [busy, setBusy] = React.useState(false);
   const set = (k, val) => setF(x => ({ ...x, [k]: val }));
@@ -10761,7 +10765,7 @@ function VolunteerEditor({ v, onSaved, onDelete }) {
         ...f, courses: f.courses.split(",").map(c => c.trim()).filter(Boolean), visibilityConsent: f.visibilityConsent ? 1 : 0,
       });
       toast.success("Volunteer saved."); onSaved();
-    } catch (e) { toast.error(e.code === "bad_email" ? "That email isn't valid." : e.code === "bad_role" ? "Pick a valid role." : (e.code || e.message)); }
+    } catch (e) { toast.error(e.code === "bad_email" ? "That email isn't valid." : e.code === "bad_role" ? "Pick a valid role." : e.code === "bad_dob" ? "That date of birth isn't a real date in the past." : (e.code || e.message)); }
     finally { setBusy(false); }
   };
   const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
@@ -10793,6 +10797,7 @@ function VolunteerEditor({ v, onSaved, onDelete }) {
           </select>
         </div>
         {fld("faculty", "Faculty")}
+        {fld("dob", "Date of birth", { type: "date", min: 160 })}
         {fld("courses", "Courses (comma-separated)", { min: 220 })}
       </div>
       <label style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: 13.5, fontWeight: 600 }}>
