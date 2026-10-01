@@ -15075,5 +15075,209 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM volunteers WHERE volunteerId IN ('VOL-OPS-C','VOL-OPS-M')");
 })();
 
+/* ══ Member management: segments, bulk, merge, timeline ═══════════════════
+ *
+ * The dashboard reports "N members with no email" and "7 possible
+ * duplicates". Without these four, both are posters — no way to get the
+ * list, no way to act on more than one person at a time, no way to resolve
+ * a duplicate once found.
+ *
+ * Everything here was written and sat in the tree with ZERO callers: not
+ * required by the bootstrap, not in the dispatch table, not reachable from
+ * any URL. In review that reads as done. These tests go through
+ * backend_dispatch for that reason — a unit test calling the function
+ * directly would have passed against code nothing could reach. */
+(function () use ($SCOPED) {
+    $ADMIN = 'NGG-2025-0099';
+
+    db_insert('centres', ['centreId' => 'CEN-MM', 'name' => 'Mergeville', 'code' => 'MM',
+        'color' => '#334455', 'status' => 'active', 'createdAt' => now_iso()]);
+
+    $mk = function (string $id, array $over = []) {
+        db_insert('members', array_merge([
+            'memberId' => $id, 'fullName' => 'MM ' . $id, 'email' => strtolower($id) . '@example.com',
+            'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Mergeville',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso(),
+        ], $over));
+    };
+
+    /* ── Segments ─────────────────────────────────────────────────────── */
+
+    $mk('NGG-MM-0001', ['email' => '']);
+    $mk('NGG-MM-0002', ['phone' => '']);
+    $mk('NGG-MM-0003', ['centre' => 'Atlantis']);   // a centre that does not exist
+
+    $seg = backend_dispatch('admin.members.segments', ['requesterId' => $ADMIN]);
+    chk('segments are reachable through the dispatcher at all', !empty($seg['ok']));
+
+    $byKey = [];
+    foreach ($seg['segments'] ?? [] as $row) $byKey[$row['key']] = $row;
+    chk('every segment is returned, including the ones at zero — "nobody is missing an '
+        . 'email" and "nobody checked" are different facts',
+        count($byKey) === count(member_segments()));
+    chk('a segment with nothing in it still reports a count',
+        array_key_exists('count', $byKey['no_dob'] ?? []));
+    chk('the no-email segment counts the member with no email', ($byKey['no_email']['count'] ?? 0) >= 1);
+    chk('the unknown-centre segment finds a member filed under a centre that does not exist',
+        ($byKey['unknown_centre']['count'] ?? 0) >= 1);
+
+    /* The count and the list must agree. A segment that selects something
+       other than what the dashboard counted is worse than no segment,
+       because the headline becomes evidence the list is wrong. */
+    $listed = backend_dispatch('admin.members.list',
+        ['requesterId' => $ADMIN, 'segment' => 'unknown_centre', 'all' => 1]);
+    chk('…and the roster filtered to that segment returns the same number',
+        count($listed['members'] ?? []) === ($byKey['unknown_centre']['count'] ?? -1));
+    chk('…and it is the right member',
+        in_array('NGG-MM-0003', array_column($listed['members'] ?? [], 'memberId'), true));
+
+    chk('an unknown segment is refused by name rather than returning everybody',
+        (backend_dispatch('admin.members.list', ['requesterId' => $ADMIN, 'segment' => 'nonsense'])['error'] ?? '')
+            === 'unknown_segment');
+
+    chk('segments need the people capability',
+        (backend_dispatch('admin.members.segments', ['requesterId' => 'NGG-2025-0001'])['error'] ?? '') === 'forbidden');
+
+    /* ── Bulk ─────────────────────────────────────────────────────────── */
+
+    $bulk = backend_dispatch('admin.members.bulk', ['requesterId' => $ADMIN,
+        'memberIds' => ['NGG-MM-0001', 'NGG-MM-0002'], 'action' => 'setStatus', 'value' => 'inactive']);
+    chk('a bulk status change reports how many it changed', ($bulk['changed'] ?? 0) === 2);
+    chk('…and actually changed them',
+        db_row("SELECT status FROM members WHERE memberId = 'NGG-MM-0001'")['status'] === 'inactive');
+
+    $again = backend_dispatch('admin.members.bulk', ['requesterId' => $ADMIN,
+        'memberIds' => ['NGG-MM-0001'], 'action' => 'setStatus', 'value' => 'inactive']);
+    chk('a no-op is SKIPPED and said so, not counted as a change — a "423 updated" that '
+        . 'silently did nothing is how people stop trusting the button',
+        ($again['changed'] ?? -1) === 0 && ($again['skipped']['NGG-MM-0001'] ?? '') === 'already_set');
+
+    chk('an invented status is refused against the real list',
+        (backend_dispatch('admin.members.bulk', ['requesterId' => $ADMIN,
+            'memberIds' => ['NGG-MM-0001'], 'action' => 'setStatus', 'value' => 'alumni'])['error'] ?? '')
+            === 'status_invalid');
+
+    chk('an action nobody allowed is refused and the allowed ones are named',
+        (backend_dispatch('admin.members.bulk', ['requesterId' => $ADMIN,
+            'memberIds' => ['NGG-MM-0001'], 'action' => 'setRole', 'value' => 'admin'])['error'] ?? '')
+            === 'unknown_action');
+
+    chk('a bulk move into a centre that does not exist is refused — unlike a single edit, '
+        . 'a bulk move is CHOOSING the destination now, and choosing one nobody can see '
+        . 'files everybody nowhere',
+        (backend_dispatch('admin.members.bulk', ['requesterId' => $ADMIN,
+            'memberIds' => ['NGG-MM-0001'], 'action' => 'setCentre', 'value' => 'Atlantis'])['error'] ?? '')
+            === 'centre_unknown');
+
+    chk('an empty selection is refused rather than treated as "everybody"',
+        (backend_dispatch('admin.members.bulk', ['requesterId' => $ADMIN,
+            'memberIds' => [], 'action' => 'setStatus', 'value' => 'active'])['error'] ?? '') === 'no_members');
+
+    chk('a selection past the cap is refused, because past it nobody has reviewed the list',
+        (backend_dispatch('admin.members.bulk', ['requesterId' => $ADMIN,
+            'memberIds' => array_map(fn($i) => 'X-' . $i, range(1, MEMBER_BULK_MAX + 1)),
+            'action' => 'setStatus', 'value' => 'active'])['error'] ?? '') === 'too_many');
+
+    /* A bulk action is not a way around the boundary that guards a single
+       one. Each id is gated individually, and an out-of-scope member is
+       skipped with a reason rather than quietly dropped. */
+    $cross = backend_dispatch('admin.members.bulk', ['requesterId' => $SCOPED,
+        'memberIds' => ['NGG-2025-0AY1'], 'action' => 'setStatus', 'value' => 'inactive']);
+    chk('a scoped admin cannot reach outside their centres through a bulk action',
+        ($cross['changed'] ?? -1) === 0 && !empty($cross['skipped']['NGG-2025-0AY1']));
+    chk('…and the member really was not touched',
+        db_row("SELECT status FROM members WHERE memberId = 'NGG-2025-0AY1'")['status'] === 'active');
+
+    chk('a bulk suspend cannot lock the actor out of their own account',
+        !empty(backend_dispatch('admin.members.bulk', ['requesterId' => $ADMIN,
+            'memberIds' => [$ADMIN], 'action' => 'setStatus', 'value' => 'suspended'])['skipped'][$ADMIN]));
+
+    /* ── Timeline ─────────────────────────────────────────────────────── */
+
+    $tl = backend_dispatch('admin.member.timeline', ['requesterId' => $ADMIN, 'memberId' => 'NGG-MM-0001']);
+    chk('a member has a timeline', !empty($tl['ok']) && is_array($tl['events'] ?? null));
+    chk('the bulk change left a line on it, so "why is this person inactive, and since '
+        . 'when" is answerable without reading the audit log as JSON',
+        (bool) array_filter($tl['events'], fn($e) => str_contains($e['what'], 'Status changed from active to inactive')));
+    chk('every line says who did it', !array_filter($tl['events'], fn($e) => ($e['by'] ?? '') === ''));
+    chk('a timeline is scope-checked like everything else',
+        !empty(backend_dispatch('admin.member.timeline',
+            ['requesterId' => $SCOPED, 'memberId' => 'NGG-2025-0AY1'])['error']));
+
+    /* ── Merge ────────────────────────────────────────────────────────── */
+
+    $mk('NGG-MM-KEEP', ['fullName' => 'Ada Keeper', 'phone' => '', 'email' => 'ada@example.com']);
+    $mk('NGG-MM-GONE', ['fullName' => 'Ada Keeper', 'phone' => '08099999999',
+                        'email' => 'ada2@example.com', 'notes' => 'Came through the fair']);
+
+    $pre = backend_dispatch('admin.members.merge',
+        ['requesterId' => $ADMIN, 'keepId' => 'NGG-MM-KEEP', 'mergeId' => 'NGG-MM-GONE']);
+    chk('a merge PREVIEWS by default — it is irreversible, so the person doing it sees '
+        . 'what moves before it moves', !empty($pre['dryRun']));
+    chk('…and the preview says which empty fields would be filled',
+        array_key_exists('phone', $pre['preview']['fieldsFilled'] ?? []));
+    chk('…and nothing has actually happened yet',
+        db_row("SELECT status FROM members WHERE memberId = 'NGG-MM-GONE'")['status'] === 'active');
+
+    chk('a record cannot be merged with itself',
+        (backend_dispatch('admin.members.merge', ['requesterId' => $ADMIN,
+            'keepId' => 'NGG-MM-KEEP', 'mergeId' => 'NGG-MM-KEEP'])['error'] ?? '') === 'same_member');
+
+    chk('a merge involving a staff record is refused — a merge must not move staff access',
+        (backend_dispatch('admin.members.merge', ['requesterId' => $ADMIN,
+            'keepId' => 'NGG-MM-KEEP', 'mergeId' => $SCOPED])['error'] ?? '') === 'staff_record');
+
+    /* Money blocks. member_ledger is unique on (memberId, kind, periodKey),
+       so a collision means both records were charged the same period, and
+       combining that automatically is inventing an account. */
+    if (member_table_exists('member_ledger')) {
+        foreach (['NGG-MM-KEEP', 'NGG-MM-GONE'] as $who) {
+            db_insert('member_ledger', ['entryId' => 'MLG-' . $who . '-01', 'memberId' => $who,
+                'kind' => 'dues', 'periodKey' => '2026-01', 'amount' => 5000, 'createdAt' => now_iso()]);
+        }
+        $blocked = backend_dispatch('admin.members.merge', ['requesterId' => $ADMIN,
+            'keepId' => 'NGG-MM-KEEP', 'mergeId' => 'NGG-MM-GONE', 'confirm' => 1]);
+        chk('two charges for the same dues period BLOCK the merge rather than combining them',
+            ($blocked['error'] ?? '') === 'merge_blocked');
+        chk('…and the refusal names the table it blocked on, so somebody can go and void one',
+            !empty($blocked['preview']['blocked']['member_ledger']));
+        chk('…and nothing moved', db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-MM-GONE'")['c'] == 1);
+
+        db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-MM-GONE'");
+        db_insert('member_ledger', ['entryId' => 'MLG-GONE-02', 'memberId' => 'NGG-MM-GONE',
+            'kind' => 'dues', 'periodKey' => '2026-02', 'amount' => 5000, 'createdAt' => now_iso()]);
+    }
+
+    $done = backend_dispatch('admin.members.merge', ['requesterId' => $ADMIN,
+        'keepId' => 'NGG-MM-KEEP', 'mergeId' => 'NGG-MM-GONE', 'confirm' => 1]);
+    chk('with no money clash the merge goes through', !empty($done['merged']));
+
+    $keep = db_row("SELECT * FROM members WHERE memberId = 'NGG-MM-KEEP'");
+    chk('the survivor takes the field it was MISSING', (string)$keep['phone'] === '08099999999');
+    chk('…and keeps the one it already had — a merge never overwrites what somebody '
+        . 'entered on the record they chose to keep', (string)$keep['email'] === 'ada@example.com');
+    chk('…and the loser\'s notes are appended rather than replacing anything',
+        str_contains((string)$keep['notes'], 'Came through the fair'));
+
+    $gone = db_row("SELECT * FROM members WHERE memberId = 'NGG-MM-GONE'");
+    chk('the absorbed record is RETIRED, not deleted: its id was printed on cards and '
+        . 'typed into spreadsheets, and somebody looking it up should find where it went',
+        $gone && (string)$gone['status'] === 'merged');
+    chk('…and it says where', str_contains((string)$gone['notes'], 'NGG-MM-KEEP'));
+
+    if (member_table_exists('member_ledger')) {
+        chk('the non-colliding ledger row moved with the person',
+            (int) db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-MM-KEEP'")['c'] === 2);
+    }
+
+    $tl2 = backend_dispatch('admin.member.timeline', ['requesterId' => $ADMIN, 'memberId' => 'NGG-MM-KEEP']);
+    chk('and the merge is on both timelines rather than only in the log',
+        (bool) array_filter($tl2['events'], fn($e) => str_contains($e['what'], 'Merged with')));
+
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-MM-%'");
+    db_exec("DELETE FROM centres WHERE centreId = 'CEN-MM'");
+})();
+
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

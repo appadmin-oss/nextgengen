@@ -1165,7 +1165,7 @@ function MembersDashboard({ onFilter }) {
 /* Shown, never merged. Two records with one email is refused on save; two
  * with a shared phone is a judgement somebody has to make, and merging
  * automatically would eventually join two real siblings. */
-function MembersDuplicates({ onOpen }) {
+function MembersDuplicates({ onOpen, onMerge }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
   const load = () => { setErr(""); return NGGApi.admin.membersDuplicates().then(r => setD(r.groups || [])).catch(e => setErr(e.code || e.message || "load_failed")); };
@@ -1183,7 +1183,18 @@ function MembersDuplicates({ onOpen }) {
       </p>
       {d.map((g, i) => (
         <section className="admin-panel" key={g.on + ":" + g.value + ":" + i}>
-          <h3 className="admin-h3">{g.count} records share {g.why}{g.on !== "name" ? <span className="mono"> · {g.value}</span> : null}</h3>
+          <div className="mem-dupe-head">
+            <h3 className="admin-h3">{g.count} records share {g.why}{g.on !== "name" ? <span className="mono"> · {g.value}</span> : null}</h3>
+            {/* Only offered for a pair. Three records sharing a parent's
+                phone are usually three siblings, and a "merge these" button
+                over them is an invitation to destroy a family. */}
+            {g.members.length === 2 && onMerge && (
+              <button className="btn btn-ghost btn-sm"
+                      onClick={() => onMerge(g.members[0].memberId, g.members[1].memberId)}>
+                Same person?
+              </button>
+            )}
+          </div>
           <div className="admin-table-wrap">
             <table className="admin-table">
               <thead><tr><th>Member</th><th>Centre</th><th>Status</th><th>Added</th></tr></thead>
@@ -1208,11 +1219,307 @@ function MembersDuplicates({ onOpen }) {
   );
 }
 
+
+/* ── Data quality: a finding, and the records behind it ───────────────────
+ *
+ * The dashboard says "214 with no email". This is the list. They are one
+ * screen because a count nobody can act on is a poster, and the only
+ * reason the dashboard's figures were trustworthy enough to act on is
+ * that the segment that filters the roster is defined beside the figure
+ * that counts it. */
+function MembersSegments({ onFilter }) {
+  const [rows, setRows] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => { setErr(""); return NGGApi.admin.membersSegments().then(r => setRows(r.segments || [])).catch(e => setErr(e.code || e.message || "load_failed")); };
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  if (err) return <ErrorState code={err} onRetry={load}/>;
+  if (!rows) return <div className="dash-spinner"/>;
+
+  const outstanding = rows.filter(r => r.count > 0);
+
+  return (
+    <div>
+      <p className="mem-scope-note">
+        Each of these is a list, not a statistic. Open one and the roster shows exactly
+        the records it counted.
+      </p>
+      {!outstanding.length && (
+        <div className="admin-empty">Nothing is missing. Every record has the contact
+          details, centre and consent the register expects.</div>
+      )}
+      <div className="mem-seg-grid">
+        {rows.map(r => (
+          <button key={r.key} className={"mem-seg" + (r.count ? "" : " is-clear")}
+                  disabled={!r.count}
+                  onClick={() => onFilter({ segment: r.key })}>
+            <span className="mem-seg-n mono">{r.count.toLocaleString()}</span>
+            <span className="mem-seg-l">{r.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Merging two records for one person ───────────────────────────────────
+ *
+ * The preview is not a confirmation dialog with the word "sure" in it. It
+ * is the actual list of what moves, what is discarded and what the
+ * survivor would gain — because a merge cannot be undone and "are you
+ * sure" is a question nobody can answer without that list. */
+function AdminMemberMerge({ keepId, mergeId, onClose, onDone }) {
+  const { panelRef, close } = useAdminDrawer(onClose, false);
+  const [keep, setKeep] = React.useState(keepId);
+  const [preview, setPreview] = React.useState(null);
+  const [problem, setProblem] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+
+  const loser = keep === keepId ? mergeId : keepId;
+
+  const look = React.useCallback(() => {
+    setPreview(null); setProblem(null);
+    return NGGApi.admin.membersMerge(keep, loser, false)
+      .then(r => setPreview(r.preview || null))
+      .catch(e => setProblem({ code: e.code || e.message, detail: e.detail, preview: (e.data || {}).preview }));
+  }, [keep, loser]);
+
+  React.useEffect(() => { look(); }, [look]);
+
+  const go = async () => {
+    setBusy(true);
+    try {
+      await NGGApi.admin.membersMerge(keep, loser, true);
+      toast.ok("Merged. " + loser + " now points at " + keep + ".");
+      onDone && onDone();
+      close();
+    } catch (e) {
+      setProblem({ code: e.code || e.message, detail: e.detail });
+    } finally { setBusy(false); }
+  };
+
+  const moves = preview ? Object.entries(preview.moves || {}) : [];
+  const filled = preview ? Object.keys(preview.fieldsFilled || {}) : [];
+  const dropped = preview ? Object.entries(preview.discarded || {}) : [];
+
+  /* The console's drawer is a BACKDROP (.admin-drawer) wrapping a panel
+     (.admin-drawer-panel). Built the other way round once, the heading and
+     the buttons rendered on the grey scrim outside the white panel and the
+     whole thing read as broken — caught by rendering it, not by reading
+     it. */
+  return (
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true"
+         aria-label="Merge two member records"
+         onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+      <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
+        <div className="admin-drawer-head">
+          <h3>Merge two records</h3>
+          <button type="button" className="admin-drawer-close" onClick={close} aria-label="Close">✕</button>
+        </div>
+
+        <div className="admin-fields">
+          <p className="mem-scope-note">
+            One of these survives and keeps its member ID. The other is retired, not
+            deleted — its ID has been printed on cards and typed into spreadsheets, and
+            somebody looking it up should find out where it went.
+          </p>
+
+          <div className="mem-merge-pick">
+            {[keepId, mergeId].map(id => (
+              <label key={id} className={"mem-merge-opt" + (keep === id ? " is-on" : "")}>
+                <input type="radio" name="keep" checked={keep === id} onChange={() => setKeep(id)}/>
+                <span className="mono">{id}</span>
+                <span className="mem-merge-role">{keep === id ? "survives" : "is absorbed"}</span>
+              </label>
+            ))}
+          </div>
+
+          {problem && (
+            <div className="mem-issue mem-issue-bad">
+              <strong>{problem.code === "merge_blocked" ? "This merge is blocked." : "Refused."}</strong>
+              <p>{problem.detail || problem.code}</p>
+              {problem.preview && problem.preview.blocked && Object.entries(problem.preview.blocked).map(([t, b]) => (
+                <p key={t} className="mono">{t}: {(b.examples || []).join(", ") || b.rows.length + " rows"}</p>
+              ))}
+            </div>
+          )}
+
+          {!preview && !problem && <div className="dash-spinner"/>}
+
+          {preview && (
+            <>
+              <section className="admin-panel">
+                <h4 className="admin-h4">What moves</h4>
+                {moves.length ? (
+                  <ul className="mem-merge-list">
+                    {moves.map(([t, n]) => (
+                      <li key={t}><span className="mono">{t}</span> — {n.move} row(s)
+                        {n.collide ? <em> ({n.collide} already recorded on the survivor, so dropped)</em> : null}</li>
+                    ))}
+                  </ul>
+                ) : <p className="admin-empty">Nothing is attached to the absorbed record.</p>}
+              </section>
+
+              <section className="admin-panel">
+                <h4 className="admin-h4">What the survivor gains</h4>
+                {filled.length
+                  ? <p>Fills in: {filled.join(", ")}. Nothing already entered is overwritten.</p>
+                  : <p className="admin-empty">Nothing — the surviving record already has every field.</p>}
+                {preview.notesAppended && <p>Notes are appended, not replaced.</p>}
+              </section>
+
+              {dropped.length > 0 && (
+                <section className="admin-panel">
+                  <h4 className="admin-h4">What is discarded</h4>
+                  <ul className="mem-merge-list">
+                    {dropped.map(([t, n]) => <li key={t}><span className="mono">{t}</span> — {n} row(s)</li>)}
+                  </ul>
+                  <p className="mem-scope-note">Sign-in state and non-additive counters.
+                     The figures are recorded in the audit entry, so nothing goes silently.</p>
+                </section>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="admin-drawer-foot">
+          <button className="btn btn-ghost" onClick={close}>Cancel</button>
+          <button className="btn btn-primary" disabled={!preview || busy} onClick={go}>
+            {busy ? "Merging…" : "Merge — this cannot be undone"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* The labels the roster uses when a segment is in force. Mirrors
+   member_segments() on the server; the server is the authority and sends
+   the list, but the roster has to name the one it is filtered by before
+   that list has loaded. */
+const SEGMENT_LABELS = {
+  no_email: "members with no email address",
+  no_phone: "members with no phone number",
+  no_centre: "members not in any centre",
+  unknown_centre: "members filed under a centre that no longer exists",
+  no_dob: "members with no date of birth",
+  minor_no_guardian: "members under 18 with no guardian contact",
+  dormant: "active members with nothing recorded for 60 days",
+  no_consent: "members with no publication consent recorded",
+};
+
+/* ── One action across a reviewed selection ───────────────────────────────
+ *
+ * Status, centre, track, cohort and type. Deliberately NOT roles, consent
+ * or deletion: those are one at a time, because each is a decision about a
+ * person rather than a correction to a field.
+ *
+ * Partial success is shown, never rounded up. A "423 updated" that quietly
+ * skipped twelve is how people stop trusting the button. */
+function MembersBulkBar({ picked, centreOpts, onClear, onDone }) {
+  const [action, setAction] = React.useState("setStatus");
+  const [value, setValue] = React.useState("active");
+  const [busy, setBusy] = React.useState(false);
+  const [result, setResult] = React.useState(null);
+
+  const ACTIONS = [
+    ["setStatus", "Set status"],
+    ["setCentre", "Move to centre"],
+    ["setType", "Set type"],
+    ["setTrack", "Set track"],
+    ["setCohort", "Set cohort"],
+  ];
+
+  const pick = (a) => {
+    setAction(a);
+    setValue(a === "setStatus" ? "active" : a === "setType" ? "NGG" : a === "setCentre" ? (centreOpts[0] || "") : "");
+    setResult(null);
+  };
+
+  const go = async () => {
+    setBusy(true); setResult(null);
+    try {
+      const r = await NGGApi.admin.membersBulk(picked, action, value);
+      setResult(r);
+      if (!Object.keys(r.skipped || {}).length) { toast.ok(r.changed + " updated."); onDone(); }
+    } catch (e) {
+      setResult({ changed: 0, skipped: {}, error: e.detail || e.code || e.message });
+    } finally { setBusy(false); }
+  };
+
+  const skipped = result ? Object.entries(result.skipped || {}) : [];
+
+  return (
+    <div className="mem-bulk" role="region" aria-label="Act on the selected members">
+      <div className="mem-bulk-row">
+        <strong>{picked.length} selected</strong>
+        <select className="admin-select" value={action} onChange={(e) => pick(e.target.value)}>
+          {ACTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+
+        {action === "setStatus" && (
+          <select className="admin-select" value={value} onChange={(e) => setValue(e.target.value)}>
+            <option value="active">Active</option>
+            <option value="graduated-ngg">Graduated NGG</option>
+            <option value="graduated-vanguard">Graduated Vanguard</option>
+            <option value="suspended">Suspended</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        )}
+        {action === "setCentre" && (
+          <select className="admin-select" value={value} onChange={(e) => setValue(e.target.value)}>
+            {centreOpts.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+        {action === "setType" && (
+          <select className="admin-select" value={value} onChange={(e) => setValue(e.target.value)}>
+            <option value="NGG">NGG</option><option value="Summer">Summer</option>
+          </select>
+        )}
+        {(action === "setTrack" || action === "setCohort") && (
+          <input className="admin-input" value={value} onChange={(e) => setValue(e.target.value)}
+                 placeholder={action === "setTrack" ? "Track" : "Cohort"}/>
+        )}
+
+        <button className="btn btn-primary btn-sm" disabled={busy || !String(value).trim()} onClick={go}>
+          {busy ? "Working…" : "Apply to " + picked.length}
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={onClear}>Clear</button>
+      </div>
+
+      {result && (
+        <div className={"mem-bulk-out" + (skipped.length || result.error ? " has-skips" : "")}>
+          {result.error
+            ? <p>{result.error}</p>
+            : <p><strong>{result.changed} changed.</strong>{skipped.length ? " " + skipped.length + " were not:" : ""}</p>}
+          {skipped.length > 0 && (
+            <ul className="mem-bulk-skips">
+              {skipped.map(([id, why]) => (
+                <li key={id}><span className="mono">{id}</span> — {BULK_SKIP_WHY[why] || why}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* A skip reason is a sentence or it is noise. */
+const BULK_SKIP_WHY = {
+  already_set: "already set to that",
+  cannot_suspend_self: "that is your own account",
+  last_super_admin: "the last active super admin",
+  forbidden: "outside the centres you administer",
+  not_found: "no such member",
+};
+
 function AdminMembers() {
   const [list, setList] = React.useState(null);
   const [err, setErr] = React.useState("");
   const centreOpts = useCentreOptions();
-  const [filters, setFilters] = React.useState({ q: "", centre: "", status: "", type: "" });
+  const [filters, setFilters] = React.useState({ q: "", centre: "", status: "", type: "", segment: "" });
   const [page, setPage] = React.useState(1);
   const [meta, setMeta] = React.useState({ total: 0, pageSize: 50 });
   const [editing, setEditing] = React.useState(null);
@@ -1221,6 +1528,13 @@ function AdminMembers() {
   /* Dashboard first. Opening the section on a 50-row page of a roster
      answers no question anybody arrived with. */
   const [tab, setTab] = React.useState("dashboard");
+  /* The selection is a list of ids the person can see on screen, and that
+     list is what the server acts on. Never a filter for the server to
+     re-expand: the roster somebody reviewed and the rows a filter would
+     select are two different things the moment anybody else saves a
+     record. */
+  const [picked, setPicked] = React.useState([]);
+  const [merging, setMerging] = React.useState(null);
 
   const [exporting, setExporting] = React.useState(false);
   const exportCsv = async () => {
@@ -1234,7 +1548,7 @@ function AdminMembers() {
   // hanging forever (previously there was no .catch here). Server-paged.
   const load = (p = page) => { setErr(""); return NGGApi.admin.members.list(Object.assign({}, filters, { page: p, pageSize: meta.pageSize })).then(r => { setList(r.members || []); setMeta({ total: r.total || 0, pageSize: r.pageSize || 50 }); }).catch(e => setErr(e.code || e.message || "load_failed")); };
   // Filter changes reset to page 1; the debounced search does too.
-  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [filters.centre, filters.status, filters.type]);
+  React.useEffect(() => { setPage(1); setPicked([]); load(1); /* eslint-disable-next-line */ }, [filters.centre, filters.status, filters.type, filters.segment]);
   React.useEffect(() => {
     const t = setTimeout(() => { setPage(1); load(1); }, 250);
     return () => clearTimeout(t);
@@ -1254,15 +1568,22 @@ function AdminMembers() {
         </div>
       </div>
       <div className="admin-tabs" role="tablist">
-        {[["dashboard", "Dashboard"], ["roster", "Roster"], ["duplicates", "Duplicates"]].map(([id, label]) => (
+        {[["dashboard", "Dashboard"], ["roster", "Roster"], ["quality", "Data quality"], ["duplicates", "Duplicates"]].map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id}
                   className={"admin-tab" + (tab === id ? " is-active" : "")}
                   onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
       {tab === "dashboard" && <MembersDashboard onFilter={showRoster}/>}
-      {tab === "duplicates" && <MembersDuplicates onOpen={setViewing}/>}
+      {tab === "quality" && <MembersSegments onFilter={showRoster}/>}
+      {tab === "duplicates" && <MembersDuplicates onOpen={setViewing} onMerge={(a, b) => setMerging({ keepId: a, mergeId: b })}/>}
       {tab === "roster" && <>
+      {filters.segment && (
+        <div className="mem-seg-on">
+          Showing <strong>{(SEGMENT_LABELS[filters.segment] || filters.segment).toLowerCase()}</strong>.
+          <button className="btn btn-ghost btn-sm" onClick={() => setFilters(f => ({...f, segment: ""}))}>Show everybody</button>
+        </div>
+      )}
       <div className="admin-filters">
         <input className="admin-input" placeholder="Search name, ID, email…" value={filters.q} onChange={(e) => setFilters(f => ({...f, q: e.target.value}))}/>
         <select className="admin-select" value={filters.centre} onChange={(e) => setFilters(f => ({...f, centre: e.target.value}))}>
@@ -1280,15 +1601,33 @@ function AdminMembers() {
           <option value="inactive">Inactive</option>
         </select>
       </div>
+      {picked.length > 0 && (
+        <MembersBulkBar picked={picked} centreOpts={centreOpts}
+                        onClear={() => setPicked([])}
+                        onDone={() => { setPicked([]); load(); }}/>
+      )}
       {list === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner"/>) :
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead><tr>
+              <th className="mem-pick-col">
+                {/* Selects this PAGE, and says so. A box that silently means
+                    "all 1,400 matching" is how somebody suspends a cohort
+                    they never saw. */}
+                <input type="checkbox" aria-label={"Select all " + list.length + " on this page"}
+                       checked={list.length > 0 && picked.length === list.length}
+                       onChange={(e) => setPicked(e.target.checked ? list.map(m => m.memberId) : [])}/>
+              </th>
               <th>Member</th><th>Type</th><th>Centre</th><th>Status</th><th>Track</th><th></th>
             </tr></thead>
             <tbody>
               {list.map(m => (
-                <tr key={m.memberId} className="admin-row-click" onClick={() => setViewing(m.memberId)}>
+                <tr key={m.memberId} className={"admin-row-click" + (picked.includes(m.memberId) ? " is-picked" : "")} onClick={() => setViewing(m.memberId)}>
+                  <td className="mem-pick-col" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" aria-label={"Select " + m.fullName}
+                           checked={picked.includes(m.memberId)}
+                           onChange={(e) => setPicked(p => e.target.checked ? p.concat(m.memberId) : p.filter(x => x !== m.memberId))}/>
+                  </td>
                   <td>
                     <div className="admin-cell-name">{m.fullName}</div>
                     <div className="mono admin-cell-sub">{m.memberId} · {m.email}</div>
@@ -1300,7 +1639,7 @@ function AdminMembers() {
                   <td onClick={(e) => e.stopPropagation()}><button className="btn btn-ghost btn-sm" onClick={() => setEditing(m)}>Edit</button></td>
                 </tr>
               ))}
-              {list.length === 0 && <tr><td colSpan="6" className="admin-empty">No members match.</td></tr>}
+              {list.length === 0 && <tr><td colSpan="7" className="admin-empty">No members match.</td></tr>}
             </tbody>
           </table>
           <Pager page={page} pageSize={meta.pageSize} total={meta.total} onPage={goPage}/>
@@ -1310,6 +1649,9 @@ function AdminMembers() {
       {editing && <AdminMemberEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
       {viewing && <AdminMemberDetail memberId={viewing} onClose={() => setViewing(null)} onEdit={(m) => { setViewing(null); setEditing(m); }} onChanged={load}/>}
       {printing && <AdminMemberIdBatch filters={filters} total={meta.total} onClose={() => setPrinting(false)}/>}
+      {merging && <AdminMemberMerge keepId={merging.keepId} mergeId={merging.mergeId}
+                                    onClose={() => setMerging(null)}
+                                    onDone={() => { setMerging(null); load(); }}/>}
     </div>
   );
 }
@@ -7188,6 +7530,44 @@ function SubmissionRow({ s, maxPoints, onGraded }) {
 // Member 360° detail — profile, mentor, progress, journal, submissions, status
 // ============================================================================
 
+
+/* ── What has happened to this member ─────────────────────────────────────
+ *
+ * Status, centre, type and role are columns that get OVERWRITTEN. "Why is
+ * this person inactive, and since when" was unanswerable without reading
+ * the audit log as JSON.
+ *
+ * Derived from the audit log rather than a second history table, so it
+ * cannot disagree with the record of who did what — and so it covers
+ * changes made before this screen existed. */
+function MemberTimeline({ memberId }) {
+  const [tl, setTl] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => { setErr(""); return NGGApi.admin.memberTimeline(memberId).then(setTl).catch(e => setErr(e.code || e.message || "load_failed")); };
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [memberId]);
+
+  if (err) return <div className="admin-empty">Couldn't load the history. <button className="btn btn-ghost btn-sm" onClick={load}>Retry</button></div>;
+  if (!tl) return <div className="dash-spinner"/>;
+  if (!(tl.events || []).length) {
+    return <div className="admin-empty">
+      Nothing has been recorded against this member yet. Not "nothing happened" —
+      nothing that was audited.
+    </div>;
+  }
+
+  return (
+    <ol className="mem-tl">
+      {tl.events.map((e, i) => (
+        <li key={e.at + ":" + i}>
+          <span className="mem-tl-when mono">{String(e.at).slice(0, 16).replace("T", " ")}</span>
+          <span className="mem-tl-what">{e.what}</span>
+          <span className="mem-tl-who">{e.by}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
   const { panelRef, close, onInput } = useAdminDrawer(onClose, false);
   const [d, setD] = React.useState(null);
@@ -7263,6 +7643,11 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
               <div><b>{(d.stats || {}).xp ?? "—"}</b><span>XP</span></div>
               <div><b>{(d.progress || {}).verified ?? 0}/{(d.progress || {}).total ?? 0}</b><span>Missions</span></div>
               <div><b>{(d.journal || []).length}</b><span>Journals</span></div>
+            </div>
+
+            <div className="admin-detail-section">
+              <div className="admin-detail-h">History</div>
+              <MemberTimeline memberId={memberId}/>
             </div>
 
             <div className="admin-detail-section">

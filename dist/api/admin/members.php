@@ -17,6 +17,10 @@ if ($method === 'GET') {
         'pageSize' => $_GET['pageSize'] ?? null,
         'all'      => $_GET['all']      ?? null,
         'staff'    => $_GET['staff']    ?? null,
+        /* The roster filtered to exactly what a dashboard figure counted.
+           Dropped here once already, which turned "214 with no email" into
+           a number with no list behind it. */
+        'segment'  => $_GET['segment']  ?? null,
         'ip'     => client_ip(),
     ]);
     if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);

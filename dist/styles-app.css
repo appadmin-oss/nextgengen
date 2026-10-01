@@ -5925,9 +5925,80 @@ body.own-chrome .fab-top { display: none; }
 .mem-scope-note { margin-top: 14px; font-size: 12.5px; color: var(--ink-400, #5f6874); }
 .mem-dupes > section { margin-top: 14px; }
 
+/* ── Data quality: the findings, as buttons ──────────────────────────────
+ * Each tile is the list, not the statistic. A tile at zero is drawn and
+ * disabled rather than hidden: "nobody is missing an email" and "nobody
+ * checked" are different facts, and hiding the first makes the panel
+ * shorter on exactly the days it should be reassuring. */
+.mem-seg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-top: 14px; }
+.mem-seg { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; text-align: left;
+           padding: 12px 14px; min-height: 44px; border: 1px solid var(--line-200, #e7e9ee);
+           border-radius: 12px; background: transparent; cursor: pointer; font: inherit; color: inherit; }
+.mem-seg:hover:not(:disabled) { border-color: var(--gold-700, #8a6d1f); background: rgba(138, 109, 31, 0.06); }
+.mem-seg-n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--gold-700, #8a6d1f); }
+.mem-seg-l { font-size: 12.5px; color: var(--ink-700, #3c434f); }
+.mem-seg.is-clear { opacity: .5; cursor: default; }
+.mem-seg.is-clear .mem-seg-n { color: var(--ink-400, #5f6874); }
+
+.mem-seg-on { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 0;
+              padding: 10px 12px; border-radius: 10px; background: rgba(138, 109, 31, 0.08);
+              font-size: 13px; color: var(--ink-800, #272c35); }
+
+/* ── Bulk ────────────────────────────────────────────────────────────────
+ * Sticky, because the selection is made by scrolling and the thing that
+ * acts on it must not be above the fold somebody has left. */
+.mem-bulk { position: sticky; top: 0; z-index: 4; margin: 12px 0; padding: 10px 12px;
+            border: 1px solid var(--gold-700, #8a6d1f); border-radius: 12px;
+            background: var(--paper, #fff); }
+.mem-bulk-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* The controls are narrow on purpose. Left to grow, a two-word select
+   stretched the width of the bar and the row read as a form rather than a
+   toolbar. */
+.mem-bulk-row .admin-select, .mem-bulk-row .admin-input { flex: 0 1 15rem; min-width: 9rem; }
+.mem-bulk-out { margin-top: 10px; font-size: 13px; color: var(--ink-700, #3c434f); }
+.mem-bulk-out.has-skips { color: var(--ink-800, #272c35); }
+.mem-bulk-skips { list-style: none; margin: 6px 0 0; padding: 0; font-size: 12.5px; }
+.mem-bulk-skips li { padding: 3px 0; color: var(--ink-400, #5f6874); }
+
+.mem-pick-col { width: 36px; text-align: center; }
+.mem-pick-col input { width: 18px; height: 18px; }
+tr.is-picked { background: rgba(138, 109, 31, 0.07); }
+
+/* ── Merge ───────────────────────────────────────────────────────────── */
+.mem-dupe-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.mem-merge-pick { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.mem-merge-opt { display: flex; gap: 8px; align-items: center; padding: 10px 12px; min-height: 44px;
+                 border: 1px solid var(--line-200, #e7e9ee); border-radius: 10px; cursor: pointer; font-size: 13px; }
+.mem-merge-opt.is-on { border-color: var(--gold-700, #8a6d1f); background: rgba(138, 109, 31, 0.07); }
+.mem-merge-role { color: var(--ink-400, #5f6874); font-size: 12px; }
+.mem-merge-list { list-style: none; margin: 6px 0 0; padding: 0; font-size: 13px; }
+.mem-merge-list li { padding: 4px 0; border-top: 1px solid var(--line-200, #e7e9ee); }
+.mem-merge-list li:first-child { border-top: 0; }
+.mem-merge-list em { color: var(--ink-400, #5f6874); font-style: normal; }
+.mem-issue-bad { display: block; padding: 10px 12px; border-radius: 10px;
+                 border: 1px solid #b03535; color: #8c2626; font-size: 13px; }
+.mem-issue-bad p { margin: 6px 0 0; }
+
+/* ── Timeline ────────────────────────────────────────────────────────── */
+.mem-tl { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
+.mem-tl li { display: grid; grid-template-columns: 11rem 1fr auto; gap: 10px; align-items: baseline;
+             padding: 7px 0; border-top: 1px solid var(--line-200, #e7e9ee); font-size: 13px; }
+.mem-tl li:first-child { border-top: 0; }
+.mem-tl-when { color: var(--ink-400, #5f6874); font-size: 12px; }
+.mem-tl-what { color: var(--ink-800, #272c35); }
+.mem-tl-who { color: var(--ink-400, #5f6874); font-size: 12px; white-space: nowrap; }
+@media (max-width: 640px) {
+  .mem-tl li { grid-template-columns: 1fr; gap: 2px; }
+  .mem-tl-who { white-space: normal; }
+}
+
 @media (prefers-color-scheme: dark) {
   .mem-bar-track { background: rgba(255, 255, 255, 0.12); }
   .mem-bar-fill { background: rgba(255, 255, 255, 0.78); }
   .mem-issue { border-top-color: rgba(255, 255, 255, 0.12); }
   .mem-consent { border-top-color: rgba(255, 255, 255, 0.12); }
+  .mem-seg { border-color: rgba(255, 255, 255, 0.12); }
+  .mem-merge-opt, .mem-merge-list li, .mem-tl li { border-color: rgba(255, 255, 255, 0.12); border-top-color: rgba(255, 255, 255, 0.12); }
+  .mem-bulk { background: rgba(255, 255, 255, 0.04); }
+  .mem-issue-bad { color: #ff9f9a; border-color: #ff9f9a; }
 }

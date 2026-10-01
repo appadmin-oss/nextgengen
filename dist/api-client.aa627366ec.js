@@ -787,6 +787,19 @@
       // records. Separate from `dashboard`, which is summer attendance.
       membersOverview:   () => request('/admin/members-overview.php'),
       membersDuplicates: () => request('/admin/members-duplicates.php'),
+      // The segments the dashboard counts, each with a live total, so a
+      // finding leads to the records behind it rather than to a poster.
+      membersSegments:   () => request('/admin/members-segments.php'),
+      memberTimeline:    (memberId) => request('/admin/member-timeline.php' + qs({ memberId })),
+      // An explicit list of ids, never a filter: the roster somebody
+      // reviewed and the rows a filter would select are two different
+      // things the moment anybody else saves a record.
+      membersBulk:       (memberIds, action, value) =>
+        request('/admin/members-bulk.php', { body: { memberIds, action, value } }),
+      // Preview by default — a merge is irreversible, so confirm is a
+      // second deliberate call with the same arguments.
+      membersMerge:      (keepId, mergeId, confirm) =>
+        request('/admin/members-merge.php', { body: { keepId, mergeId, confirm: !!confirm } }),
       assignMentor: (data) => request('/admin/assign-mentor.php', { body: data }),
       applications: {
         list:    (q) => request('/admin/applications.php' + qs(q || {})),

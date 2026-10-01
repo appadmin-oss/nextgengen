@@ -63,6 +63,18 @@ function admin_members_list(array $p): array {
     }
     // Staff-only view powers the Access & roles roster.
     if (!empty($p['staff'])) { $where[] = "role IN ('editor','summer_admin','club_admin','audit','admin','super_admin')"; }
+    /* A dashboard figure leads to the records behind it. The fragment comes
+       from member_segment_sql(), which lives beside the figures it mirrors
+       so a segment cannot quietly select something the dashboard did not
+       count — a list that disagrees with its own headline is worse than no
+       list, because the count becomes evidence the list is wrong. */
+    if (!empty($p['segment'])) {
+        $seg = member_segment_sql((string)$p['segment']);
+        if (!$seg) return ['ok' => false, 'error' => 'unknown_segment',
+                           'detail' => 'Known segments: ' . implode(', ', array_keys(member_segments())) . '.'];
+        $where[] = '(' . $seg[0] . ')';
+        foreach ($seg[1] as $sp) $params[] = $sp;
+    }
     // Scoped admins only see members in their centres (unscoped ⇒ all).
     $scopeNames = admin_centre_names_in_scope($g['requester']);
     if ($scopeNames !== null) {
