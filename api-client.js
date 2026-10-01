@@ -783,6 +783,10 @@
       activityAdd:  (data) => request('/admin/analytics.php', { body: { action: 'activity.add', ...data } }),
       championsMint: (period) => request('/admin/analytics.php', { body: { action: 'champions.mint', period: period || '' } }),
       memberDetail: (memberId) => request('/admin/member-detail.php' + qs({ memberId })),
+      // The member dashboard — totals, growth, and what is wrong with the
+      // records. Separate from `dashboard`, which is summer attendance.
+      membersOverview:   () => request('/admin/members-overview.php'),
+      membersDuplicates: () => request('/admin/members-duplicates.php'),
       assignMentor: (data) => request('/admin/assign-mentor.php', { body: data }),
       applications: {
         list:    (q) => request('/admin/applications.php' + qs(q || {})),

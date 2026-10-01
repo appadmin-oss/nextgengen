@@ -754,8 +754,11 @@ function admin_member_promote_ngv(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $memberId = trim((string)($p['memberId'] ?? ''));
     if ($memberId === '') return ['ok' => false, 'error' => 'no_member'];
-    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
-    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    /* Scope: promoting somebody else's member to volunteer is not this
+       admin's call, and it grants them standing the admin cannot revoke. */
+    $sg = admin_member_scope_gate($g['requester'], $memberId);
+    if (!$sg['ok']) return $sg;
+    $m = $sg['member'];
     if ((string)($m['type'] ?? '') !== 'NGG') return ['ok' => false, 'error' => 'not_ngg'];
 
     // Already promoted? Keep the one record — re-activate + re-link, never mint
@@ -816,8 +819,9 @@ function admin_member_demote_ngv(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $memberId = trim((string)($p['memberId'] ?? ''));
     if ($memberId === '') return ['ok' => false, 'error' => 'no_member'];
-    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
-    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $sg = admin_member_scope_gate($g['requester'], $memberId);
+    if (!$sg['ok']) return $sg;
+    $m = $sg['member'];
     $vid = (string)($m['ngvVolunteerId'] ?? '');
     $v = $vid !== '' ? db_row("SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1", [$vid]) : null;
     if (!$v) $v = db_row("SELECT * FROM volunteers WHERE memberId = ? LIMIT 1", [$memberId]);

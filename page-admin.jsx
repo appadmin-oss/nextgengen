@@ -971,6 +971,243 @@ function EngagementPanel() {
 // Members
 // ============================================================================
 
+/* ── The member dashboard ──────────────────────────────────────────────────
+ *
+ * There was no such thing. "Analytics" is a SUMMER ATTENDANCE board, and
+ * Members was a filterable table with a pager. Between them nobody could
+ * answer how many members there are, where they are, how fast the roll is
+ * growing, or what is wrong with the records.
+ *
+ * Every figure comes from admin.members.overview, scoped exactly as the
+ * roster is scoped, so a centre coordinator's dashboard and their roster
+ * cannot disagree.
+ */
+
+// Monthly joins. One series, so no legend — the heading names it. Bars
+// rather than a line because twelve monthly counts are discrete events,
+// not a continuous quantity sampled over time.
+function MemberJoinsChart({ series }) {
+  if (!series || !series.length) return <div className="admin-empty">No joins recorded yet.</div>;
+  const W = 720, H = 170, padL = 34, padR = 10, padT = 14, padB = 26;
+  const n = series.length;
+  const max = Math.max(1, ...series.map(s => s.joined));
+  const band = (W - padL - padR) / n;
+  const bw = Math.max(6, band - 6);                 // 6px of surface between bars
+  const y = v => padT + (1 - v / max) * (H - padT - padB);
+  const base = H - padB;
+  // Ticks a person reads, not an arbitrary 5 divisions.
+  const step = max <= 4 ? 1 : max <= 20 ? 5 : Math.ceil(max / 4 / 10) * 10;
+  const ticks = []; for (let v = 0; v <= max; v += step) ticks.push(v);
+  const peak = series.reduce((a, b) => (b.joined > a.joined ? b : a), series[0]);
+
+  return (
+    /* No minWidth, unlike the engagement line chart beside it. That one
+       needs the room for four overlapping series; twelve bars scale down
+       to a phone perfectly well, and a horizontally-scrolled chart with no
+       affordance just reads as cut off. */
+    <div>
+      <svg viewBox={"0 0 " + W + " " + H} style={{ width: "100%", height: "auto" }}
+           role="img" aria-label={"Members joined per month over " + n + " months"}>
+        {ticks.map(v => (
+          <g key={v}>
+            <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="var(--line-200,#e7e9ee)"/>
+            <text x={padL - 6} y={y(v) + 3} textAnchor="end" fontSize="10" fill="var(--ink-400,#5f6874)">{v}</text>
+          </g>
+        ))}
+        {series.map((s, i) => {
+          const h = Math.max(s.joined > 0 ? 2 : 0, base - y(s.joined));
+          const x = padL + i * band + (band - bw) / 2;
+          return (
+            <g key={s.month}>
+              {/* Hit target spans the whole band so a 2px bar is still hoverable. */}
+              <rect x={padL + i * band} y={padT} width={band} height={base - padT} fill="transparent">
+                <title>{s.month} — {s.joined} {s.joined === 1 ? "member" : "members"}</title>
+              </rect>
+              <rect x={x} y={base - h} width={bw} height={h} rx="4" ry="4"
+                    fill={s === peak ? "#111827" : "#9aa3b2"} pointerEvents="none"/>
+            </g>
+          );
+        })}
+        {/* Direct-label the peak only — a number on every bar is noise. */}
+        {peak.joined > 0 && (
+          <text x={padL + series.indexOf(peak) * band + band / 2} y={y(peak.joined) - 5}
+                textAnchor="middle" fontSize="10" fontWeight="600" fill="var(--ink-600,#3c434f)">{peak.joined}</text>
+        )}
+        {series.map((s, i) => (
+          <text key={s.month} x={padL + i * band + band / 2} y={H - 8} textAnchor="middle"
+                fontSize="9" fill="var(--ink-400,#5f6874)">{s.month.slice(5)}</text>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function MemberBar({ label, value, max, sub }) {
+  const pct = max > 0 ? Math.round(value / max * 100) : 0;
+  return (
+    <div className="mem-bar-row">
+      <div className="mem-bar-label">{label}{sub ? <span className="mem-bar-sub"> {sub}</span> : null}</div>
+      <div className="mem-bar-track"><div className="mem-bar-fill" style={{ width: Math.max(pct, value > 0 ? 2 : 0) + "%" }}/></div>
+      <div className="mono mem-bar-n">{value.toLocaleString()}</div>
+    </div>
+  );
+}
+
+function MembersDashboard({ onFilter }) {
+  const [o, setO] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => { setErr(""); return NGGApi.admin.membersOverview().then(r => setO(r.overview)).catch(e => setErr(e.code || e.message || "load_failed")); };
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  if (err) return <ErrorState code={err} onRetry={load}/>;
+  if (!o) return <div className="dash-spinner"/>;
+  if (o.empty) return <div className="admin-empty">Your account is scoped to centres that no longer exist, so there is nothing to show. Ask a super admin to set your centres.</div>;
+
+  const h = o.headline;
+  const q = o.quality || {};
+  const maxCentre = Math.max(1, ...(o.byCentre || []).map(c => c.total));
+  const fmtN = (v) => (v || 0).toLocaleString();
+  // Only the problems that exist. A panel of zeroes trains people to skip it.
+  const issues = [
+    { k: "duplicate_groups",  n: q.duplicate_groups,  label: "possible duplicate records", hint: "The same person entered twice. Sign-in resolves an email to one member, so a shared address locks one of them out." },
+    { k: "minor_no_guardian", n: q.minor_no_guardian, label: "children with no guardian contact", hint: "No parent phone or email on a member under 18." },
+    { k: "no_email",          n: q.no_email,          label: "members with no email", hint: "They cannot sign in or be sent anything." },
+    { k: "no_centre",         n: q.no_centre,         label: "members in no centre", hint: "Invisible to every centre-scoped coordinator." },
+    { k: "unknown_centre",    n: q.unknown_centre,    label: "members in a centre that no longer exists", hint: "Usually a renamed or closed centre. They still appear, filtered by a name nothing matches." },
+    { k: "no_phone",          n: q.no_phone,          label: "members with no phone" },
+    { k: "no_dob",            n: q.no_dob,            label: "members with no date of birth", hint: "Age-based safeguarding checks skip them." },
+  ].filter(x => (x.n || 0) > 0);
+
+  return (
+    <div className="mem-dash">
+      <div className="admin-tiles">
+        <AdminTile n={fmtN(h.total)} l="Members"/>
+        <AdminTile n={fmtN(h.active)} l="Active" onClick={() => onFilter({ status: "active" })}/>
+        <AdminTile n={fmtN(h.inactive)} l="Not active"/>
+        <AdminTile n={"+" + fmtN(h.new30)} l="Joined · 30 days"/>
+        <AdminTile n={"+" + fmtN(h.new365)} l="Joined · 12 months"/>
+        {/* Active on paper, nothing recorded for 60 days. The number that
+            says whether a membership is real. */}
+        <AdminTile n={fmtN(h.dormant)} l="Active but dormant"/>
+      </div>
+
+      <div className="mem-dash-grid">
+        <section className="admin-panel">
+          <h3 className="admin-h3">Joining, month by month</h3>
+          <MemberJoinsChart series={o.growth}/>
+        </section>
+
+        <section className="admin-panel">
+          <h3 className="admin-h3">By centre</h3>
+          {(o.byCentre || []).length
+            ? o.byCentre.map(c => <MemberBar key={c.name} label={c.name} value={c.total} max={maxCentre} sub={"· " + c.active + " active"}/>)
+            : <div className="admin-empty">No centres yet.</div>}
+        </section>
+
+        <section className="admin-panel">
+          <h3 className="admin-h3">By status</h3>
+          {Object.entries(o.byStatus || {}).map(([k, v]) =>
+            <MemberBar key={k} label={memberStatusLabel(k)} value={v} max={Math.max(1, h.total)}/>)}
+          <h3 className="admin-h3" style={{ marginTop: 18 }}>By type</h3>
+          {Object.entries(o.byType || {}).map(([k, v]) =>
+            <MemberBar key={k} label={k} value={v} max={Math.max(1, h.total)}/>)}
+        </section>
+
+        <section className="admin-panel">
+          <h3 className="admin-h3">Records needing attention</h3>
+          {issues.length === 0
+            ? <div className="admin-empty">Nothing outstanding — every record has a name, a way to reach someone, and a centre.</div>
+            : <ul className="mem-issues">
+                {issues.map(x => (
+                  <li key={x.k} className="mem-issue">
+                    <span className="mono mem-issue-n">{fmtN(x.n)}</span>
+                    <span className="mem-issue-text">
+                      {x.label}
+                      {x.hint ? <span className="mem-issue-hint">{x.hint}</span> : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>}
+          {o.consent && o.consent.participants > 0 && (
+            <div className="mem-consent">
+              <strong>{fmtN(o.consent.unrecorded)}</strong> of {fmtN(o.consent.participants)} participants have no
+              publication consent recorded. They are not named publicly until one is.
+            </div>
+          )}
+        </section>
+
+        {o.dues && (
+          <section className="admin-panel">
+            <h3 className="admin-h3">Dues</h3>
+            <MemberBar label="People with a balance" value={o.dues.people} max={Math.max(1, h.total)}/>
+            <div className="mem-consent">Outstanding: <strong>₦{fmtN(o.dues.outstanding)}</strong></div>
+          </section>
+        )}
+
+        {Object.keys(o.staff || {}).length > 0 && (
+          <section className="admin-panel">
+            <h3 className="admin-h3">Staff</h3>
+            {/* ROLE_OPTS labels carry a parenthetical for the editor's
+                select ("Super admin (full access)") that truncates to
+                nothing useful in a 9rem bar label. */}
+            {Object.entries(o.staff).map(([k, v]) =>
+              <MemberBar key={k} label={((ROLE_OPTS.find(r => r.value === k) || {}).label || k).replace(/\s*[(·].*$/, "")}
+                         value={v} max={Math.max(1, ...Object.values(o.staff))}/>)}
+          </section>
+        )}
+      </div>
+
+      {o.scoped && <p className="mem-scope-note">These figures cover only the centres you administer.</p>}
+    </div>
+  );
+}
+
+/* Shown, never merged. Two records with one email is refused on save; two
+ * with a shared phone is a judgement somebody has to make, and merging
+ * automatically would eventually join two real siblings. */
+function MembersDuplicates({ onOpen }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => { setErr(""); return NGGApi.admin.membersDuplicates().then(r => setD(r.groups || [])).catch(e => setErr(e.code || e.message || "load_failed")); };
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  if (err) return <ErrorState code={err} onRetry={load}/>;
+  if (!d) return <div className="dash-spinner"/>;
+  if (!d.length) return <div className="admin-empty">No two records look like the same person.</div>;
+
+  return (
+    <div className="mem-dupes">
+      <p className="mem-scope-note">
+        These are shown, not merged. Joining two records automatically would eventually
+        join two real people — siblings sharing a parent's phone, or a common name.
+      </p>
+      {d.map((g, i) => (
+        <section className="admin-panel" key={g.on + ":" + g.value + ":" + i}>
+          <h3 className="admin-h3">{g.count} records share {g.why}{g.on !== "name" ? <span className="mono"> · {g.value}</span> : null}</h3>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Member</th><th>Centre</th><th>Status</th><th>Added</th></tr></thead>
+              <tbody>
+                {g.members.map(m => (
+                  <tr key={m.memberId} className="admin-row-click" onClick={() => onOpen(m.memberId)}>
+                    <td>
+                      <div className="admin-cell-name">{m.fullName}</div>
+                      <div className="mono admin-cell-sub">{m.memberId}{m.email ? " · " + m.email : ""}{m.phone ? " · " + m.phone : ""}</div>
+                    </td>
+                    <td>{m.centre || "—"}</td>
+                    <td><span className={"chip status-" + m.status}>{memberStatusLabel(m.status)}</span></td>
+                    <td className="mono">{String(m.createdAt || "").slice(0, 10)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 function AdminMembers() {
   const [list, setList] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -981,6 +1218,9 @@ function AdminMembers() {
   const [editing, setEditing] = React.useState(null);
   const [viewing, setViewing] = React.useState(null);
   const [printing, setPrinting] = React.useState(false);
+  /* Dashboard first. Opening the section on a 50-row page of a roster
+     answers no question anybody arrived with. */
+  const [tab, setTab] = React.useState("dashboard");
 
   const [exporting, setExporting] = React.useState(false);
   const exportCsv = async () => {
@@ -1001,17 +1241,28 @@ function AdminMembers() {
     // eslint-disable-next-line
   }, [filters.q]);
   const goPage = (p) => { setPage(p); setList(null); load(p); };
+  const showRoster = (patch) => { setFilters(f => Object.assign({}, f, patch || {})); setTab("roster"); };
 
   return (
     <div className="admin-section">
       <div className="admin-section-head">
         <h2 className="admin-h2">Members {meta.total ? <span className="admin-count mono">{meta.total.toLocaleString()}</span> : null}</h2>
         <div className="admin-section-actions">
-          <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={exporting || !meta.total} title="Exports all members matching the current filters">{exporting ? "Exporting…" : "Export CSV"}</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setPrinting(true)} disabled={!meta.total} title="Print ID cards for every member matching the current filters">Print IDs</button>
+          {tab === "roster" && <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={exporting || !meta.total} title="Exports all members matching the current filters">{exporting ? "Exporting…" : "Export CSV"}</button>}
+          {tab === "roster" && <button className="btn btn-ghost btn-sm" onClick={() => setPrinting(true)} disabled={!meta.total} title="Print ID cards for every member matching the current filters">Print IDs</button>}
           <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New member</button>
         </div>
       </div>
+      <div className="admin-tabs" role="tablist">
+        {[["dashboard", "Dashboard"], ["roster", "Roster"], ["duplicates", "Duplicates"]].map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={tab === id}
+                  className={"admin-tab" + (tab === id ? " is-active" : "")}
+                  onClick={() => setTab(id)}>{label}</button>
+        ))}
+      </div>
+      {tab === "dashboard" && <MembersDashboard onFilter={showRoster}/>}
+      {tab === "duplicates" && <MembersDuplicates onOpen={setViewing}/>}
+      {tab === "roster" && <>
       <div className="admin-filters">
         <input className="admin-input" placeholder="Search name, ID, email…" value={filters.q} onChange={(e) => setFilters(f => ({...f, q: e.target.value}))}/>
         <select className="admin-select" value={filters.centre} onChange={(e) => setFilters(f => ({...f, centre: e.target.value}))}>
@@ -1055,6 +1306,7 @@ function AdminMembers() {
           <Pager page={page} pageSize={meta.pageSize} total={meta.total} onPage={goPage}/>
         </div>
       }
+      </>}
       {editing && <AdminMemberEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
       {viewing && <AdminMemberDetail memberId={viewing} onClose={() => setViewing(null)} onEdit={(m) => { setViewing(null); setEditing(m); }} onChanged={load}/>}
       {printing && <AdminMemberIdBatch filters={filters} total={meta.total} onClose={() => setPrinting(false)}/>}
