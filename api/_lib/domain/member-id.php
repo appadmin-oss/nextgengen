@@ -153,11 +153,21 @@ function member_ensure_display_id(array $m): string {
 function admin_members_issue_ids(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $limit = max(1, min(500, (int)($p['limit'] ?? 200)));
+    /* A scoped admin issues IDs to their own centres' members only — this
+       writes to every row it reaches, and a sweep that reached past the scope
+       would number somebody else's intake. */
+    $scopeNames = admin_centre_names_in_scope($g['requester']);
+    $scopeSql = ''; $scopeArgs = [];
+    if ($scopeNames !== null) {
+        if (!$scopeNames) return ['ok' => true, 'issued' => [], 'count' => 0, 'remaining' => 0];
+        $scopeSql = ' AND centre IN (' . implode(',', array_fill(0, count($scopeNames), '?')) . ')';
+        $scopeArgs = $scopeNames;
+    }
     /* NGG members only — a Summer School account is numbered by Summer
        School, and sweeping them in here would print two different identities
        for one person. */
     $rows = db_all("SELECT * FROM members WHERE COALESCE(displayId,'') = ''
-                    AND COALESCE(type,'NGG') <> 'Summer' ORDER BY createdAt ASC LIMIT ?", [$limit]);
+                    AND COALESCE(type,'NGG') <> 'Summer'" . $scopeSql . " ORDER BY createdAt ASC LIMIT ?", array_merge($scopeArgs, [$limit]));
     $issued = [];
     foreach ($rows as $m) {
         $id = member_ensure_display_id($m);
@@ -165,7 +175,7 @@ function admin_members_issue_ids(array $p): array {
                                      'fullName' => (string)($m['fullName'] ?? '')];
     }
     $remaining = (int)(db_row("SELECT COUNT(*) c FROM members WHERE COALESCE(displayId,'') = ''
-                               AND COALESCE(type,'NGG') <> 'Summer'")['c'] ?? 0);
+                               AND COALESCE(type,'NGG') <> 'Summer'" . $scopeSql, $scopeArgs)['c'] ?? 0);
     if ($issued) {
         audit('admin.members.issueIds', (string)($g['requester']['memberId'] ?? ''), '',
             ['count' => count($issued), 'remaining' => $remaining], (string)($p['ip'] ?? ''));

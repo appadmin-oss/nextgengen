@@ -63,8 +63,18 @@ function admin_dashboard_overview(array $p): array {
             'presentToday'     => $presentToday,
             'attendanceRate'   => $enrolledTotal ? (int)round($presentToday / $enrolledTotal * 100) : 0,
             'lateToday'        => $lateToday,
-            'activeVolunteers' => $one("SELECT COUNT(*) c FROM volunteers WHERE status = 'active'"),
-            'presentVolToday'  => $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN volunteers v ON v.volunteerId = a.studentId WHERE a.date = ?", [$today]),
+            /* Scoped like everything else on this board. These two were
+               not, so a centre-scoped coordinator saw their own centre's
+               attendance beside the organisation's whole volunteer count —
+               two numbers on one row that do not describe the same thing. */
+            'activeVolunteers' => $scopeNames !== null
+                ? $one("SELECT COUNT(*) c FROM volunteers WHERE status = 'active' AND centre IN ("
+                       . implode(',', array_fill(0, count($scopeNames), '?')) . ')', $scopeNames)
+                : $one("SELECT COUNT(*) c FROM volunteers WHERE status = 'active'"),
+            'presentVolToday'  => $scopeNames !== null
+                ? $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN volunteers v ON v.volunteerId = a.studentId WHERE a.date = ? AND v.centre IN ("
+                       . implode(',', array_fill(0, count($scopeNames), '?')) . ')', array_merge([$today], $scopeNames))
+                : $one("SELECT COUNT(DISTINCT a.studentId) c FROM attendance a JOIN volunteers v ON v.volunteerId = a.studentId WHERE a.date = ?", [$today]),
         ],
         'byCentre' => $byCentre,
         'trend'    => $trend,
@@ -585,9 +595,14 @@ function admin_overview(array $p): array {
 function admin_member_detail(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $id = (string)($p['memberId'] ?? '');
-    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
-    if (!$m) return ['ok' => false, 'error' => 'not_found'];
-    unset($m['totpSecret']);
+    /* Scope. This returns the whole record — journal entries with mood and
+       body, date of birth, parent contacts, school — for a child. The
+       roster was filtered and this was not, so every child in the
+       organisation was readable by any admin who knew or guessed an id. */
+    $sg = admin_member_scope_gate($g['requester'], $id);
+    if (!$sg['ok']) return $sg;
+    $m = $sg['member'];
+    unset($m['totpSecret'], $m['totpBackup'], $m['passwordHash']);
     $m['socials'] = safe_json($m['socials'] ?? null);
 
     $stats = db_row('SELECT * FROM member_stats WHERE memberId = ? LIMIT 1', [$id]) ?: [];

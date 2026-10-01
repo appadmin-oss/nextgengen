@@ -310,6 +310,10 @@ function member_formation_readiness(string $memberId): array {
 function admin_member_readiness(array $p): array {
     $g = admin_cap_gate($p, 'people');
     if (!$g['ok']) return $g;
+    /* Scoped like every other per-member read: readiness is built from a
+       child's attendance, journal and record. */
+    $sg = admin_member_scope_gate($g['requester'], trim((string)($p['memberId'] ?? '')));
+    if (!$sg['ok']) return $sg;
     $r = member_formation_readiness(trim((string)($p['memberId'] ?? '')));
     if (empty($r['ok'])) return $r;
     return ['ok' => true, 'readiness' => $r];
@@ -322,6 +326,9 @@ function admin_member_promotions(array $p): array {
     $g = admin_cap_gate($p, 'people');
     if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
+    /* The evidence a promotion was made on is about the child; scoped. */
+    $sg = admin_member_scope_gate($g['requester'], $id);
+    if (!$sg['ok']) return $sg;
     $out = [];
     foreach (db_all("SELECT * FROM member_promotions WHERE memberId = ? ORDER BY id DESC LIMIT 50", [$id]) as $r) {
         $out[] = [

@@ -69,6 +69,11 @@ function db_pick(array $data, array $cols, array $bools = [], array $ints = []):
 
 // ── Members ──────────────────────────────────────────────────────────────
 
+/* Kept beside the validator that enforces them, and matching
+   MEMBER_STATUS_OPTS in page-admin.jsx one for one. */
+const MEMBER_STATUSES = ['active', 'graduated-ngg', 'graduated-vanguard', 'suspended', 'inactive'];
+const MEMBER_TYPES = ['NGG', 'Summer'];
+
 function admin_members_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $where = []; $params = [];
@@ -254,8 +259,11 @@ function admin_members_consent_summary(array $where, array $params): array {
 function admin_member_consent(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $mid = trim((string)($p['memberId'] ?? ''));
-    $m = db_row('SELECT memberId, role FROM members WHERE memberId = ? LIMIT 1', [$mid]);
-    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    /* Scope: a guardian's consent decision for a child in another centre is
+       not this admin's to record. */
+    $sg = admin_member_scope_gate($g['requester'], $mid);
+    if (!$sg['ok']) return $sg;
+    $m = $sg['member'];
     $r = consent_record($mid, (string)($p['type'] ?? ''), (string)($p['status'] ?? ''),
                         (string)($p['method'] ?? ''), (string)($g['requester']['fullName'] ?? 'Staff'));
     if (empty($r['ok'])) return $r;
@@ -263,6 +271,288 @@ function admin_member_consent(array $p): array {
           ['type' => (string)($p['type'] ?? ''), 'status' => (string)($p['status'] ?? ''),
            'method' => (string)($p['method'] ?? '')], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'consent' => consent_state($mid), 'mayName' => consent_may_publish($mid)['mayName']];
+}
+
+/**
+ * What a member record must look like before it is written.
+ *
+ * None of this existed. A member could be created with no name, an email
+ * that is not an email, a status nobody recognises, and a centre that does
+ * not exist — and every one of those is invisible until somebody tries to
+ * use the record, by which time it is one row among thousands.
+ *
+ * THE DUPLICATE CHECK IS THE IMPORTANT ONE. `email` is indexed but not
+ * unique, and sign-in resolves an identifier with
+ * `WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1`. Two members
+ * sharing an address therefore means one of them can never sign in, and
+ * which one is whichever the database returns first — it can change when
+ * rows move. A duplicate is refused rather than merged, because merging two
+ * people's records automatically is a worse mistake than refusing one
+ * entry.
+ *
+ * @return array{ok: bool, error?: string, detail?: string, data?: array}
+ */
+function admin_member_validate(array $data, ?array $existing): array {
+    $id = $existing['memberId'] ?? null;
+
+    foreach (['fullName', 'email', 'phone', 'parentEmail', 'parentPhone', 'centre', 'school'] as $f) {
+        if (isset($data[$f]) && is_string($data[$f])) $data[$f] = trim($data[$f]);
+    }
+
+    $name = $data['fullName'] ?? ($existing['fullName'] ?? '');
+    if (trim((string)$name) === '') {
+        return ['ok' => false, 'error' => 'name_required',
+                'detail' => 'A member needs a name. A nameless row cannot be found again by the person who created it.'];
+    }
+
+    $email = (string)($data['email'] ?? '');
+    if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['ok' => false, 'error' => 'email_invalid',
+                'detail' => '"' . $email . '" is not an email address. This is the address they sign in with.'];
+    }
+    if (isset($data['parentEmail']) && $data['parentEmail'] !== ''
+        && !filter_var((string)$data['parentEmail'], FILTER_VALIDATE_EMAIL)) {
+        return ['ok' => false, 'error' => 'parent_email_invalid',
+                'detail' => '"' . $data['parentEmail'] . '" is not an email address.'];
+    }
+
+    if ($email !== '') {
+        $clash = $id
+            ? db_row('SELECT memberId, fullName FROM members WHERE lower(email) = ? AND memberId <> ? LIMIT 1', [strtolower($email), $id])
+            : db_row('SELECT memberId, fullName FROM members WHERE lower(email) = ? LIMIT 1', [strtolower($email)]);
+        if ($clash) {
+            return ['ok' => false, 'error' => 'email_taken',
+                    'detail' => $email . ' is already on ' . (string)$clash['fullName'] . "'s record ("
+                        . (string)$clash['memberId'] . '). Sign-in resolves an address to one member, so two '
+                        . 'records sharing one would leave whichever the database returned second unable to sign in.'];
+        }
+    }
+
+    /*
+     * The vocabularies the rest of the system actually uses, not a plausible
+     * set. An earlier draft of this allowed 'alumni' and 'pending' and left
+     * out 'graduated-ngg' and 'graduated-vanguard' — which are what the
+     * staff select offers, what the editor's Graduate buttons write, and
+     * what the public graduate count reads. Validation against an invented
+     * vocabulary does not tighten anything; it breaks the paths that were
+     * working and leaves the ones that were not.
+     */
+    foreach (['status' => MEMBER_STATUSES, 'type' => MEMBER_TYPES] as $field => $allowed) {
+        if (isset($data[$field]) && (string)$data[$field] !== ''
+            && !in_array((string)$data[$field], $allowed, true)) {
+            return ['ok' => false, 'error' => $field . '_invalid',
+                    'detail' => ucfirst($field) . ' must be one of: ' . implode(', ', $allowed) . '.'];
+        }
+    }
+
+    /*
+     * A centre that does not match any row in `centres` is NOT refused here,
+     * and that is deliberate.
+     *
+     * `members.centre` stores a centre NAME rather than an id, so renaming a
+     * centre orphans every member referencing the old one. Validating
+     * against the table would then make those members uneditable — somebody
+     * trying to correct a phone number is refused because of a field they
+     * are not touching, which is the kind of rule people route around by
+     * creating a second record.
+     *
+     * Intake paths (gate.register and the rest) also legitimately write a
+     * centre before anybody has created it.
+     *
+     * An unrecognised centre is a cleanup task, not a reason to block an
+     * edit, so it is reported on the member dashboard's data-quality panel
+     * where somebody can work through the list.
+     */
+
+    return ['ok' => true, 'data' => $data];
+}
+
+/**
+ * The member dashboard (admin.members.overview).
+ *
+ * There was no such thing. `admin.dashboard.overview` is a SUMMER
+ * ATTENDANCE board — enrolment and present-today per centre — and the
+ * member roster was a filterable table with a pager. Between them nobody
+ * could answer "how many members do we have, where are they, how fast are
+ * we growing, and what is wrong with the records", which is the whole job
+ * of member management.
+ *
+ * Every figure is derived at read time from the same rows the roster shows,
+ * scoped exactly as the roster is scoped, so a centre coordinator's
+ * dashboard and their roster cannot disagree.
+ *
+ * THE DATA-QUALITY PANEL IS THE POINT. Totals look healthy regardless;
+ * what actually degrades a membership database is the slow accumulation of
+ * records with no email, no guardian contact for a child, a centre nobody
+ * recognises, and the same person entered twice. None of that shows up in
+ * a count of members, and none of it gets fixed unless somebody is handed
+ * the list.
+ */
+function admin_members_overview(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+
+    // Scope, applied the same way the roster applies it.
+    $names = admin_centre_names_in_scope($g['requester']);
+    $scope = ''; $args = [];
+    if ($names !== null) {
+        if (!$names) {
+            return ['ok' => true, 'overview' => ['empty' => true, 'reason' => 'no_centres_in_scope']];
+        }
+        $scope = ' AND centre IN (' . implode(',', array_fill(0, count($names), '?')) . ')';
+        $args = $names;
+    }
+    $one = fn(string $sql, array $a = []) => (int)(db_row($sql, $a)['c'] ?? 0);
+    $base = "FROM members WHERE 1=1$scope";
+    $today = gmdate('Y-m-d');
+
+    $total  = $one("SELECT COUNT(*) c $base", $args);
+    $active = $one("SELECT COUNT(*) c $base AND status = 'active'", $args);
+
+    $group = function (string $col) use ($base, $args): array {
+        $out = [];
+        foreach (db_all("SELECT COALESCE(NULLIF($col, ''), '(not set)') k, COUNT(*) c $base GROUP BY k ORDER BY c DESC", $args) as $r) {
+            $out[(string)$r['k']] = (int)$r['c'];
+        }
+        return $out;
+    };
+
+    /* Growth: joins per month for a year. createdAt is an ISO string, so the
+       month is its first seven characters — no date function, which keeps
+       this identical on SQLite and MySQL. */
+    $since = gmdate('Y-m', strtotime('-11 months')) . '-01';
+    $growth = [];
+    foreach (db_all("SELECT SUBSTR(createdAt, 1, 7) m, COUNT(*) c $base AND createdAt >= ? GROUP BY m ORDER BY m",
+                    array_merge($args, [$since])) as $r) {
+        $growth[(string)$r['m']] = (int)$r['c'];
+    }
+    // Months with no joins are zeros, not gaps — a line chart with holes in
+    // it reads as missing data rather than as a quiet month.
+    $series = [];
+    for ($i = 11; $i >= 0; $i--) {
+        $m = gmdate('Y-m', strtotime("-$i months"));
+        $series[] = ['month' => $m, 'joined' => $growth[$m] ?? 0];
+    }
+
+    $byCentre = [];
+    foreach (db_all("SELECT COALESCE(NULLIF(centre, ''), '(no centre)') name, COUNT(*) total,
+                            SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) active
+                     $base GROUP BY name ORDER BY total DESC", $args) as $r) {
+        $byCentre[] = ['name' => (string)$r['name'], 'total' => (int)$r['total'],
+                       'active' => (int)$r['active']];
+    }
+
+    /* Dormant: active on paper, nothing recorded for 60 days. The number
+       that tells you whether a membership is real. */
+    $cut60 = gmdate('Y-m-d', strtotime('-60 days'));
+    $dormant = $one("SELECT COUNT(*) c FROM members m LEFT JOIN member_stats s ON s.memberId = m.memberId
+                     WHERE m.status = 'active'" . str_replace('centre', 'm.centre', $scope) . "
+                       AND (s.lastActiveAt IS NULL OR s.lastActiveAt < ?)", array_merge($args, [$cut60]));
+
+    // ── Data quality ───────────────────────────────────────────────────
+    $realCentres = array_map(fn($r) => (string)$r['name'], db_all('SELECT name FROM centres'));
+    $unknownCentre = 0;
+    foreach ($byCentre as $c) {
+        if ($c['name'] !== '(no centre)' && !in_array($c['name'], $realCentres, true)) {
+            $unknownCentre += $c['total'];
+        }
+    }
+
+    /* A child with no way to reach a guardian. Age from dob where we have
+       one; a blank dob is not assumed to be an adult, because assuming the
+       safer-sounding answer here means the ones we know least about are the
+       ones nobody chases. */
+    $minorCut = gmdate('Y-m-d', strtotime('-18 years'));
+    $noGuardian = $one("SELECT COUNT(*) c $base
+                        AND dob <> '' AND dob > ?
+                        AND COALESCE(NULLIF(parentPhone, ''), NULLIF(parentEmail, '')) IS NULL",
+                       array_merge($args, [$minorCut]));
+
+    $quality = [
+        'no_email'        => $one("SELECT COUNT(*) c $base AND COALESCE(NULLIF(email, ''), NULL) IS NULL", $args),
+        'no_phone'        => $one("SELECT COUNT(*) c $base AND COALESCE(NULLIF(phone, ''), NULL) IS NULL", $args),
+        'no_centre'       => $one("SELECT COUNT(*) c $base AND COALESCE(NULLIF(centre, ''), NULL) IS NULL", $args),
+        'unknown_centre'  => $unknownCentre,
+        'no_dob'          => $one("SELECT COUNT(*) c $base AND COALESCE(NULLIF(dob, ''), NULL) IS NULL", $args),
+        'minor_no_guardian' => $noGuardian,
+        'duplicate_groups'  => count(admin_members_duplicates($p)['groups'] ?? []),
+    ];
+
+    // ── Dues, where the ledger is in use ───────────────────────────────
+    $dues = null;
+    if (in_array('fees', member_effective_caps($g['requester']), true)) {
+        $owing = db_row("SELECT COUNT(DISTINCT l.memberId) people,
+                                SUM(CASE WHEN l.direction = 'charge' THEN l.amount ELSE -l.amount END) balance
+                         FROM member_ledger l JOIN members m ON m.memberId = l.memberId
+                         WHERE l.voidedAt = ''" . str_replace('centre', 'm.centre', $scope), $args);
+        $dues = ['people' => (int)($owing['people'] ?? 0), 'outstanding' => (int)($owing['balance'] ?? 0)];
+    }
+
+    $staff = [];
+    foreach (db_all("SELECT role, COUNT(*) c $base AND role <> 'member' GROUP BY role ORDER BY c DESC", $args) as $r) {
+        $staff[(string)$r['role']] = (int)$r['c'];
+    }
+
+    $where = []; $wargs = [];
+    if ($names !== null) { $where[] = 'centre IN (' . implode(',', array_fill(0, count($names), '?')) . ')'; $wargs = $names; }
+
+    return ['ok' => true, 'overview' => [
+        'asAt' => $today,
+        'scoped' => $names !== null,
+        'headline' => [
+            'total'    => $total,
+            'active'   => $active,
+            'inactive' => $total - $active,
+            'new30'    => $one("SELECT COUNT(*) c $base AND createdAt >= ?", array_merge($args, [gmdate('Y-m-d', strtotime('-30 days'))])),
+            'new365'   => $one("SELECT COUNT(*) c $base AND createdAt >= ?", array_merge($args, [gmdate('Y-m-d', strtotime('-365 days'))])),
+            'dormant'  => $dormant,
+        ],
+        'byStatus' => $group('status'),
+        'byType'   => $group('type'),
+        'byCentre' => $byCentre,
+        'growth'   => $series,
+        'staff'    => $staff,
+        'consent'  => admin_members_consent_summary($where, $wargs),
+        'quality'  => $quality,
+        'dues'     => $dues,
+    ]];
+}
+
+/**
+ * Members who look like the same person.
+ *
+ * Shown rather than merged. Two records with one email is a refusal; two
+ * records with the same name and phone is a judgement somebody has to make,
+ * and automatic merging would eventually join two real siblings who share a
+ * parent's phone number.
+ */
+function admin_members_duplicates(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $names = admin_centre_names_in_scope($g['requester']);
+    $scopeSql = ''; $scopeArgs = [];
+    if ($names !== null) {
+        if (!$names) return ['ok' => true, 'groups' => []];
+        $scopeSql = ' AND centre IN (' . implode(',', array_fill(0, count($names), '?')) . ')';
+        $scopeArgs = $names;
+    }
+
+    $groups = [];
+    foreach ([
+        ['email', "lower(email)", 'the same email address'],
+        ['phone', "replace(replace(phone,' ',''),'-','')", 'the same phone number'],
+        ['name',  "lower(fullName)", 'the same name'],
+    ] as [$key, $expr, $why]) {
+        $rows = db_all("SELECT $expr k, COUNT(*) c FROM members
+                        WHERE $expr <> '' AND $expr IS NOT NULL$scopeSql
+                        GROUP BY k HAVING c > 1 ORDER BY c DESC LIMIT 50", $scopeArgs);
+        foreach ($rows as $r) {
+            $members = db_all("SELECT memberId, fullName, email, phone, centre, status, type, createdAt
+                               FROM members WHERE $expr = ?$scopeSql ORDER BY createdAt", array_merge([$r['k']], $scopeArgs));
+            $groups[] = ['on' => $key, 'why' => $why, 'value' => (string)$r['k'],
+                         'count' => (int)$r['c'], 'members' => $members];
+        }
+    }
+
+    return ['ok' => true, 'groups' => $groups];
 }
 
 function admin_members_upsert(array $p): array {
@@ -293,6 +583,30 @@ function admin_members_upsert(array $p): array {
         }
     }
     $existing = $memberId ? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]) : null;
+
+    // ── Scope ──────────────────────────────────────────────────────────
+    // The roster is filtered by centre; these operations were not. A scoped
+    // admin could edit, re-centre or re-type any member in the organisation
+    // by passing their id.
+    if ($existing) {
+        $sg = admin_member_scope_gate($g['requester'], $memberId, $existing);
+        if (!$sg['ok']) return $sg;
+        // And may not move them out of their own reach, or into somebody
+        // else's centre.
+        if (array_key_exists('centre', $data)
+            && !admin_centre_write_allowed($g['requester'], (string)$data['centre'])) {
+            return ['ok' => false, 'error' => 'centre_out_of_scope',
+                    'detail' => 'You can only move a member between centres you administer.'];
+        }
+    } elseif (!admin_centre_write_allowed($g['requester'], (string)($data['centre'] ?? ''))) {
+        return ['ok' => false, 'error' => 'centre_out_of_scope',
+                'detail' => 'Choose one of the centres you administer for this member.'];
+    }
+
+    // ── Validation ─────────────────────────────────────────────────────
+    $v = admin_member_validate($data, $existing);
+    if (!$v['ok']) return $v;
+    $data = $v['data'];
 
     if ($existing) {
         // ── Lockout guards ─────────────────────────────────────────────
@@ -376,6 +690,22 @@ function admin_member_caps_set(array $p): array {
             $ph = implode(',', array_fill(0, count($want), '?'));
             $real = array_map(fn($r) => (string)$r['centreId'], db_all("SELECT centreId FROM centres WHERE centreId IN ($ph)", $want));
             $scopeOut = array_values(array_intersect($want, $real));
+            /*
+             * An empty centreScope means UNSCOPED — see below. So a request
+             * to narrow somebody to centres that all turn out to be bogus
+             * (mistyped ids, or a centre deleted since) would resolve to []
+             * and silently hand them the whole organisation. A narrowing
+             * mistake must not become a widening: refuse it.
+             *
+             * Explicitly sending [] is still "unscoped", because that is
+             * somebody deliberately removing a restriction rather than
+             * failing to apply one.
+             */
+            if (!$scopeOut) {
+                return ['ok' => false, 'error' => 'centre_scope_unknown',
+                        'detail' => 'None of those centres exist, and saving an empty scope would '
+                            . 'give this admin every centre instead of the ones you meant.'];
+            }
         } else { $scopeOut = []; }
         $patch['centreScope'] = json_encode($scopeOut, JSON_UNESCAPED_SLASHES);
     }

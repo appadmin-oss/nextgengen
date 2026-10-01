@@ -7992,6 +7992,259 @@ chk('scoped admin members list is centre-limited', (function () use ($SCOPED) {
     return true;
 })());
 
+/* ── Scope on the OPERATIONS, not just the list ──────────────────────────
+ *
+ * The roster was filtered and every per-member operation behind it was not.
+ * A filtered list over unfiltered operations is worse than no scoping,
+ * because it looks like containment and nobody audits a boundary they
+ * believe is already there. */
+db_insert('members', ['memberId' => 'NGG-2025-0AY1', 'fullName' => 'Ayo Child', 'email' => 'ayochild@example.com',
+    'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Ayobo',
+    'dob' => '2012-05-04', 'parentName' => 'Mrs Ayo', 'parentPhone' => '08030000001',
+    'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('journal', ['entryId' => 'JRN-AY1-1', 'memberId' => 'NGG-2025-0AY1', 'week' => 1, 'mood' => 'low',
+    'body' => 'Private reflection that belongs to this child', 'createdAt' => now_iso()]);
+
+chk('scoped admin cannot read a member outside their centres', (function () use ($SCOPED) {
+    /* The worst of the holes: this returns the whole record — journal mood
+       and body, date of birth, parent name and phone, school. */
+    $r = backend_dispatch('admin.member.detail', ['requesterId' => $SCOPED, 'memberId' => 'NGG-2025-0AY1']);
+    // No member payload comes back — only the refusal and its explanation.
+    return ($r['error'] ?? '') === 'out_of_scope' && !isset($r['detail']['member']) && empty($r['ok']);
+})());
+chk('…and can read one inside them', (function () use ($SCOPED) {
+    $r = backend_dispatch('admin.member.detail', ['requesterId' => $SCOPED, 'memberId' => 'NGG-2025-0002']);
+    return !empty($r['ok']) && ($r['detail']['member']['centre'] ?? '') === 'Egbeda';
+})());
+chk('a member detail never carries secrets even for an unscoped admin', (function () {
+    $r = backend_dispatch('admin.member.detail', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0AY1']);
+    $m = $r['detail']['member'] ?? [];
+    return !empty($r['ok']) && !isset($m['totpSecret']) && !isset($m['totpBackup']) && !isset($m['passwordHash']);
+})());
+chk('scoped admin cannot edit a member outside their centres', (function () use ($SCOPED) {
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => $SCOPED,
+        'data' => ['memberId' => 'NGG-2025-0AY1', 'fullName' => 'Renamed By Outsider']]);
+    return ($r['error'] ?? '') === 'out_of_scope'
+        && db_row("SELECT fullName FROM members WHERE memberId='NGG-2025-0AY1'")['fullName'] === 'Ayo Child';
+})());
+chk('scoped admin cannot move a member into a centre they do not administer', (function () use ($SCOPED) {
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => $SCOPED,
+        'data' => ['memberId' => 'NGG-2025-0002', 'centre' => 'Ayobo']]);
+    return ($r['error'] ?? '') === 'centre_out_of_scope'
+        && db_row("SELECT centre FROM members WHERE memberId='NGG-2025-0002'")['centre'] === 'Egbeda';
+})());
+chk('scoped admin cannot create a member outside their centres', (function () use ($SCOPED) {
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => $SCOPED,
+        'data' => ['fullName' => 'Smuggled In', 'centre' => 'Ayobo', 'type' => 'NGG']]);
+    return ($r['error'] ?? '') === 'centre_out_of_scope'
+        && !db_row("SELECT id FROM members WHERE fullName='Smuggled In'");
+})());
+chk('…nor with no centre at all, which would put them beyond their own reach', (function () use ($SCOPED) {
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => $SCOPED,
+        'data' => ['fullName' => 'Unassigned', 'type' => 'NGG']]);
+    return ($r['error'] ?? '') === 'centre_out_of_scope';
+})());
+chk('scoped admin cannot record a consent decision for another centre\'s child', (function () use ($SCOPED) {
+    $r = backend_dispatch('admin.members.consent', ['requesterId' => $SCOPED, 'memberId' => 'NGG-2025-0AY1',
+        'type' => 'site_visibility', 'status' => 'granted', 'method' => 'paper']);
+    return ($r['error'] ?? '') === 'out_of_scope';
+})());
+chk('scoped admin cannot promote another centre\'s member to volunteer', (function () use ($SCOPED) {
+    $r = backend_dispatch('admin.members.promoteNgv', ['requesterId' => $SCOPED, 'memberId' => 'NGG-2025-0AY1', 'role' => 'helper']);
+    return ($r['error'] ?? '') === 'out_of_scope';
+})());
+chk('a scoped admin learns nothing from probing ids: an id that does not exist reads like one out of scope', (function () use ($SCOPED) {
+    $none = backend_dispatch('admin.member.detail', ['requesterId' => $SCOPED, 'memberId' => 'NGG-NO-SUCH-1']);
+    $else = backend_dispatch('admin.member.detail', ['requesterId' => $SCOPED, 'memberId' => 'NGG-2025-0AY1']);
+    $central = backend_dispatch('admin.member.detail', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-NO-SUCH-1']);
+    return ($none['error'] ?? '') === 'out_of_scope' && $none == $else && ($central['error'] ?? '') === 'not_found';
+})());
+chk('scoped admin cannot read another centre\'s child\'s formation readiness or promotion evidence', (function () use ($SCOPED) {
+    $a = backend_dispatch('admin.members.readiness', ['requesterId' => $SCOPED, 'memberId' => 'NGG-2025-0AY1']);
+    $b = backend_dispatch('admin.members.promotions', ['requesterId' => $SCOPED, 'memberId' => 'NGG-2025-0AY1']);
+    return ($a['error'] ?? '') === 'out_of_scope' && ($b['error'] ?? '') === 'out_of_scope';
+})());
+chk('a scoped admin\'s ID sweep numbers only their own centres\' members', (function () use ($SCOPED) {
+    db_update('members', ['displayId' => ''], ['memberId' => 'NGG-2025-0AY1']);
+    $r = backend_dispatch('admin.members.issueIds', ['requesterId' => $SCOPED]);
+    $ay = db_row("SELECT displayId FROM members WHERE memberId = 'NGG-2025-0AY1'");
+    $ids = array_column($r['issued'] ?? [], 'memberId');
+    return !empty($r['ok']) && !in_array('NGG-2025-0AY1', $ids, true) && (string)($ay['displayId'] ?? '') === '';
+})());
+chk('an unscoped admin is unaffected by any of it', (function () {
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['memberId' => 'NGG-2025-0AY1', 'notes' => 'Reviewed centrally']]);
+    return !empty($r['ok']);
+})());
+
+/* ── Validation ─────────────────────────────────────────────────────── */
+chk('a member cannot be created without a name', (function () {
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['email' => 'nameless@example.com', 'centre' => 'Egbeda']]);
+    return ($r['error'] ?? '') === 'name_required';
+})());
+chk('an email that is not an email is refused', (function () {
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['fullName' => 'Bad Email', 'email' => 'not-an-address', 'centre' => 'Egbeda']]);
+    return ($r['error'] ?? '') === 'email_invalid';
+})());
+chk('a duplicate email is refused, because sign-in resolves one address to one member', (function () {
+    /* email is indexed but not unique, and auth does
+       WHERE lower(memberId) = ? OR lower(email) = ? LIMIT 1 — so two records
+       sharing an address leave whichever the database returns second unable
+       to sign in, and which one that is can change when rows move. */
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['fullName' => 'Impostor', 'email' => 'ayochild@example.com', 'centre' => 'Egbeda']]);
+    return ($r['error'] ?? '') === 'email_taken'
+        && strpos((string)($r['detail'] ?? ''), 'Ayo Child') !== false
+        && (int)db_row("SELECT COUNT(*) c FROM members WHERE lower(email)='ayochild@example.com'")['c'] === 1;
+})());
+chk('…but a member keeping their own email is not a duplicate of themselves', (function () {
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['memberId' => 'NGG-2025-0AY1', 'email' => 'ayochild@example.com', 'phone' => '08039999999']]);
+    return !empty($r['ok']);
+})());
+chk('the statuses the staff select offers are all accepted', (function () {
+    /* An earlier draft of this validator allowed 'alumni' and 'pending' and
+       left out 'graduated-ngg' and 'graduated-vanguard' — which are what
+       the editor's Graduate buttons write and what the public graduate
+       count reads. Validating against an invented vocabulary breaks the
+       paths that were working. */
+    foreach (['active', 'graduated-ngg', 'graduated-vanguard', 'suspended', 'inactive'] as $st) {
+        $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+            'data' => ['memberId' => 'NGG-2025-0AY1', 'status' => $st]]);
+        if (empty($r['ok'])) return false;
+    }
+    backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['memberId' => 'NGG-2025-0AY1', 'status' => 'active']]);
+    return true;
+})());
+chk('an unrecognised status is refused rather than stored', (function () {
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['fullName' => 'Odd Status', 'status' => 'kind-of-active', 'centre' => 'Egbeda']]);
+    return ($r['error'] ?? '') === 'status_invalid';
+})());
+chk('an unrecognised centre is NOT refused — it is a cleanup task, not a blocked edit', (function () {
+    /* members.centre stores a NAME, so renaming a centre orphans every
+       member referencing the old one. Refusing here would make those
+       members uneditable: somebody correcting a phone number is stopped by
+       a field they are not touching, which is how people end up creating a
+       second record instead. It surfaces on the dashboard instead. */
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['fullName' => 'Legacy Centre', 'email' => 'legacy@example.com', 'centre' => 'Closed Centre 2019']]);
+    return !empty($r['ok']);
+})());
+
+/* ── Duplicate detection ────────────────────────────────────────────── */
+chk('members who look like the same person are shown, not merged', (function () {
+    db_insert('members', ['memberId' => 'NGG-2025-0DUP', 'fullName' => 'Ayo Child', 'email' => '',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Ayobo',
+        'phone' => '08039999999', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.members.duplicates', ['requesterId' => 'NGG-2025-0099']);
+    if (empty($r['ok'])) return false;
+    $byName = array_values(array_filter($r['groups'], fn($x) => $x['on'] === 'name' && $x['value'] === 'ayo child'));
+    $byPhone = array_values(array_filter($r['groups'], fn($x) => $x['on'] === 'phone'));
+    /* Shown rather than merged: two records with one email is a refusal,
+       two with a shared phone is a judgement somebody has to make — merging
+       automatically would eventually join two real siblings. */
+    return count($byName) === 1 && $byName[0]['count'] === 2 && count($byPhone) >= 1;
+})());
+chk('duplicates are scoped like everything else', (function () use ($SCOPED) {
+    $r = backend_dispatch('admin.members.duplicates', ['requesterId' => $SCOPED]);
+    foreach ($r['groups'] as $gp) foreach ($gp['members'] as $m) {
+        if (($m['centre'] ?? '') !== 'Egbeda') return false;
+    }
+    return true;
+})());
+
+/* ── The member dashboard ───────────────────────────────────────────── */
+chk('the member overview answers how many, where, and growing how fast', (function () {
+    $r = backend_dispatch('admin.members.overview', ['requesterId' => 'NGG-2025-0099']);
+    if (empty($r['ok'])) return false;
+    $o = $r['overview'];
+    return $o['headline']['total'] > 0
+        && $o['headline']['active'] <= $o['headline']['total']
+        && $o['headline']['inactive'] === $o['headline']['total'] - $o['headline']['active']
+        && count($o['growth']) === 12
+        && $o['growth'][11]['month'] === gmdate('Y-m')
+        && is_array($o['byCentre']) && is_array($o['byStatus']) && is_array($o['byType']);
+})());
+chk('…with no gaps in the growth series, so a quiet month reads as zero not missing', (function () {
+    $r = backend_dispatch('admin.members.overview', ['requesterId' => 'NGG-2025-0099']);
+    foreach ($r['overview']['growth'] as $pt) {
+        if (!isset($pt['joined']) || !is_int($pt['joined'])) return false;
+    }
+    return true;
+})());
+chk('the overview names what is wrong with the records, not just how many there are', (function () {
+    $q = backend_dispatch('admin.members.overview', ['requesterId' => 'NGG-2025-0099'])['overview']['quality'];
+    /* 'Legacy Centre' sits in a centre that does not exist; NGG-2025-0DUP
+       has no email; a duplicate group exists. Totals look healthy whatever
+       these are, which is exactly why they need their own panel. */
+    return $q['unknown_centre'] >= 1 && $q['no_email'] >= 1 && $q['duplicate_groups'] >= 1
+        && array_key_exists('minor_no_guardian', $q);
+})());
+chk('a child with no way to reach a guardian is counted', (function () {
+    db_insert('members', ['memberId' => 'NGG-2025-0ORP', 'fullName' => 'No Guardian', 'type' => 'NGG',
+        'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+        'dob' => gmdate('Y-m-d', strtotime('-11 years')), 'parentPhone' => '', 'parentEmail' => '',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $q = backend_dispatch('admin.members.overview', ['requesterId' => 'NGG-2025-0099'])['overview']['quality'];
+    return $q['minor_no_guardian'] >= 1;
+})());
+chk('the overview is scoped, so a coordinator and their roster cannot disagree', (function () use ($SCOPED) {
+    $o = backend_dispatch('admin.members.overview', ['requesterId' => $SCOPED])['overview'];
+    $roster = backend_dispatch('admin.members.list', ['requesterId' => $SCOPED, 'all' => 1]);
+    $names = array_map(fn($c) => $c['name'], $o['byCentre']);
+    return $o['scoped'] === true
+        && $o['headline']['total'] === (int)$roster['total']
+        && !in_array('Ayobo', $names, true);
+})());
+chk('scoping an admin to centres that do not exist is refused, not silently widened', (function () {
+    /* An empty centreScope means UNSCOPED. So narrowing somebody to ids
+       that all turn out to be bogus — mistyped, or a centre deleted since —
+       resolved to [] and handed them the whole organisation. A narrowing
+       mistake became a disclosure, and the screen showed it had worked. */
+    $before = db_row("SELECT centreScope FROM members WHERE memberId='NGG-2025-0002'")['centreScope'];
+    $r = backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0002',
+        'caps' => ['people'], 'centreScope' => ['BOGUS-ONLY', 'ALSO-BOGUS']]);
+    $after = db_row("SELECT centreScope FROM members WHERE memberId='NGG-2025-0002'")['centreScope'];
+    return ($r['error'] ?? '') === 'centre_scope_unknown' && $after === $before;
+})());
+chk('…while deliberately clearing a scope still works', (function () {
+    $r = backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0002',
+        'caps' => ['people'], 'centreScope' => []]);
+    return !empty($r['ok']) && $r['centreScope'] === [];
+})());
+chk('an admin whose centres have all been deleted sees nothing, not everything', (function () {
+    /* The same hazard arriving by a different road: the scope was valid
+       when it was set and the centres went away afterwards. */
+    db_insert('centres', ['centreId' => 'CEN-GONE', 'name' => 'Vanishing', 'code' => 'VAN',
+        'color' => '#999999', 'status' => 'active', 'createdAt' => now_iso()]);
+    backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0099', 'memberId' => 'NGG-2025-0002',
+        'caps' => ['people'], 'centreScope' => ['CEN-GONE']]);
+    db_exec("DELETE FROM centres WHERE centreId = 'CEN-GONE'");
+    $r = backend_dispatch('admin.members.overview', ['requesterId' => 'NGG-2025-0002']);
+    $list = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0002']);
+    return !empty($r['ok']) && !empty($r['overview']['empty'])
+        && (int)$list['total'] === 0 && $list['members'] === [];
+})());
+
+/* ── The attendance dashboard's volunteer KPIs were never scoped ──────── */
+chk('scoped dashboard volunteer counts are scoped too', (function () use ($SCOPED) {
+    db_insert('volunteers', ['volunteerId' => 'VOL-AY-9', 'fullName' => 'Ayobo Volunteer', 'status' => 'active',
+        'centre' => 'Ayobo', 'createdAt' => now_iso()]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-EG-9', 'fullName' => 'Egbeda Volunteer', 'status' => 'active',
+        'centre' => 'Egbeda', 'createdAt' => now_iso()]);
+    $scoped = backend_dispatch('admin.dashboard.overview', ['requesterId' => $SCOPED])['dashboard']['kpis'];
+    $all = backend_dispatch('admin.dashboard.overview', ['requesterId' => 'NGG-2025-0099'])['dashboard']['kpis'];
+    /* Everything else on this board was scoped and these two were not, so a
+       coordinator saw their own centre's attendance beside the whole
+       organisation's volunteer count — two numbers on one row that do not
+       describe the same thing. */
+    return $scoped['activeVolunteers'] < $all['activeVolunteers'];
+})());
+
 // ── Mentor Portal + stars ───────────────────────────────────────────────────
 db_insert('members', ['memberId' => 'NGG-2025-0500', 'fullName' => 'Mia Mentor', 'email' => 'mentor@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 db_insert('mentors', ['mentorId' => 'MEN-1', 'fullName' => 'Mia Mentor', 'email' => 'mentor@example.com', 'status' => 'active', 'centre' => 'Egbeda', 'createdAt' => now_iso()]);

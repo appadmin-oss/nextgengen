@@ -7234,3 +7234,39 @@ select.cs-field option { background: var(--dsn-s1); color: var(--dsn-ink); }
 .wis-score.is-good { background: rgba(47,158,68,0.12); color: #1d6b2f; }
 .wis-score.is-low { background: rgba(224,49,49,0.1); color: #a02020; }
 .wis-saved { font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-700); }
+/* ── Member dashboard ──────────────────────────────────────────────────────
+   The Members section opens on a dashboard rather than page one of a roster,
+   because a page of fifty rows answers no question anybody arrived with. */
+/* align-items: start, so a short panel keeps its own height instead of
+   being stretched to match a tall neighbour and trailing a half-screen of
+   empty card. */
+.mem-dash-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 18px; align-items: start; }
+.mem-dash-grid > section { min-width: 0; }
+@media (max-width: 900px) { .mem-dash-grid { grid-template-columns: 1fr; } }
+
+.mem-bar-row { display: grid; grid-template-columns: minmax(96px, 9rem) 1fr auto; align-items: center; gap: 10px; margin-top: 9px; font-size: 13px; }
+.mem-bar-label { color: var(--ink-700, #3c434f); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mem-bar-sub { color: var(--ink-400, #5f6874); font-size: 12px; }
+.mem-bar-track { background: var(--line-200, #e7e9ee); border-radius: 999px; height: 8px; overflow: hidden; }
+.mem-bar-fill { background: var(--navy-900, #111827); height: 100%; border-radius: 999px; min-width: 2px; }
+.mem-bar-n { color: var(--ink-700, #3c434f); font-variant-numeric: tabular-nums; }
+
+/* Only problems that exist are listed. A panel of zeroes trains people to
+   skip the panel, including on the day it is not zero. */
+.mem-issues { list-style: none; margin: 4px 0 0; padding: 0; }
+.mem-issue { display: flex; gap: 12px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--line-200, #e7e9ee); }
+.mem-issue:first-child { border-top: 0; }
+.mem-issue-n { font-size: 20px; font-weight: 700; color: var(--gold-700, #8a6d1f); min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums; }
+.mem-issue-text { font-size: 13.5px; color: var(--ink-800, #272c35); }
+.mem-issue-hint { display: block; color: var(--ink-400, #5f6874); font-size: 12.5px; margin-top: 2px; }
+
+.mem-consent { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-200, #e7e9ee); font-size: 13px; color: var(--ink-700, #3c434f); }
+.mem-scope-note { margin-top: 14px; font-size: 12.5px; color: var(--ink-400, #5f6874); }
+.mem-dupes > section { margin-top: 14px; }
+
+@media (prefers-color-scheme: dark) {
+  .mem-bar-track { background: rgba(255, 255, 255, 0.12); }
+  .mem-bar-fill { background: rgba(255, 255, 255, 0.78); }
+  .mem-issue { border-top-color: rgba(255, 255, 255, 0.12); }
+  .mem-consent { border-top-color: rgba(255, 255, 255, 0.12); }
+}

@@ -357,6 +357,70 @@ function admin_centre_allowed(array $requester, ?string $centreName): bool {
     return $centreName !== null && $centreName !== '' && in_array($centreName, $names, true);
 }
 
+/**
+ * May this admin act on this particular member?
+ *
+ * THE HOLE THIS CLOSES. `admin_members_list` filters the roster by the
+ * requester's centre scope, so a club admin scoped to one centre sees only
+ * their own people and the screen looks contained. Every per-member
+ * operation behind that screen took a memberId and checked nothing: the
+ * full 360° record — journal entries with mood and body, date of birth,
+ * parent name, email and phone, school — was readable for any child in the
+ * organisation by anyone holding the `people` capability, and the same
+ * applied to editing them, recording a guardian's consent decision, and
+ * promoting them to volunteer.
+ *
+ * A filtered list over unfiltered operations is worse than no scoping at
+ * all, because it looks like containment. Nobody audits a boundary they
+ * believe is already there.
+ *
+ * Unscoped admins (super_admin, admin) are unaffected — scope is null for
+ * them and everything returns true, as before.
+ *
+ * A member with no centre is OUT of a scoped admin's reach. Treating blank
+ * as "everybody's" would make every unassigned record a way around the
+ * boundary, and new members are created unassigned.
+ *
+ * @return array{ok: bool, error?: string, detail?: string, member?: array}
+ */
+function admin_member_scope_gate(array $requester, string $memberId, ?array $member = null): array {
+    $names = admin_centre_names_in_scope($requester);
+    $member = $member ?? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    /* A scoped admin is told the same thing for an id that does not exist as
+       for one outside their centres. Answering not_found for one and
+       out_of_scope for the other would confirm, id by id, which members
+       exist elsewhere in the organisation. */
+    if (!$member) return $names === null ? ['ok' => false, 'error' => 'not_found']
+        : ['ok' => false, 'error' => 'out_of_scope', 'detail' => 'That member is not in a centre you administer.'];
+    if ($names === null) return ['ok' => true, 'member' => $member];
+
+    $centre = trim((string)($member['centre'] ?? ''));
+    if ($centre === '' || !in_array($centre, $names, true)) {
+        /* Deliberately the same shape as not_found would give, so the
+           refusal does not confirm that a member with this id exists —
+           an admin probing ids should learn nothing from the difference. */
+        return ['ok' => false, 'error' => 'out_of_scope',
+                'detail' => 'That member is not in a centre you administer.'];
+    }
+
+    return ['ok' => true, 'member' => $member];
+}
+
+/**
+ * May this admin file a member INTO this centre?
+ *
+ * The create-side of the same boundary: without it a scoped admin could add
+ * a member to somebody else's centre, or leave the centre blank and put
+ * them beyond their own reach a moment later.
+ */
+function admin_centre_write_allowed(array $requester, ?string $centreName): bool {
+    $names = admin_centre_names_in_scope($requester);
+    if ($names === null) return true;
+    $centreName = trim((string)$centreName);
+
+    return $centreName !== '' && in_array($centreName, $names, true);
+}
+
 /** ISO-week period tag, e.g. '2026-W29' — the cadence for V3 ratings/champions. */
 function iso_week_period(?int $t = null): string {
     $t = $t ?? time();
