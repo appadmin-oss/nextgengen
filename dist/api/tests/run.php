@@ -4638,9 +4638,12 @@ chk('gate: a check-out stamps the day\'s row, once, and never creates one', (fun
     $early = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'action' => 'out', 'date' => $d, 'scannedAt' => $at]]]);
     if ($early['results'][0]['status'] !== 'not_checked_in' || (int)db_row("SELECT COUNT(*) c FROM attendance WHERE studentId = 'VOL-GATE-2'")['c'] !== 0) return false;
     backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'date' => $d, 'scannedAt' => $at]]]);
-    $out = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'action' => 'out', 'date' => $d, 'scannedAt' => $at]]]);
-    $again = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'action' => 'out', 'date' => $d, 'scannedAt' => $at]]]);
+    $first = gmdate('Y-m-d\\TH:i:s\\Z', time() - 600);
+    $out = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'action' => 'out', 'date' => $d, 'scannedAt' => $first]]]);
+    $again = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'action' => 'out', 'date' => $d, 'scannedAt' => $first]]]);
+    $later = backend_dispatch('hooks.attendance', ['source' => 'cacentre-gate', 'events' => [['ref' => 'VOL-GATE-2', 'action' => 'out', 'date' => $d, 'scannedAt' => gmdate('Y-m-d\\TH:i:s\\Z', time() - 60)]]]);
     return $none['results'][0]['status'] === 'unknown' && $out['results'][0]['status'] === 'marked' && $again['results'][0]['status'] === 'already'
+        && $later['results'][0]['status'] === 'marked'
         && (string)db_row("SELECT checkOutAt FROM attendance WHERE studentId = 'VOL-GATE-2'")['checkOutAt'] !== '';
 })());
 chk('dob: an admin records a student\'s date of birth, and the age follows from it', (function () {

@@ -83,7 +83,9 @@ function hooks_attendance(array $p): array {
         if (strtolower((string)($e['action'] ?? 'in')) === 'out') {
             $row = db_row('SELECT id, checkOutAt FROM attendance WHERE studentId = ? AND date = ?', [$sid, $date]);
             if (!$row) { $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'not_checked_in']; continue; }
-            if (!empty($row['checkOutAt'])) { $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'already']; $already++; continue; }
+            /* A LATER departure moves it: at a CACENTRE terminal the check-out
+               is the last punch of the day, and the gate re-sends it as it moves. */
+            if (!empty($row['checkOutAt']) && strtotime($scanIso) <= strtotime((string)$row['checkOutAt'])) { $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'already']; $already++; continue; }
             db_update('attendance', ['checkOutAt' => $scanIso], ['id' => $row['id']]);
             $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'marked', 'action' => 'out'];
             $marked++;
