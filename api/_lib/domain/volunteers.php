@@ -777,7 +777,10 @@ function admin_member_promote_ngv(array $p): array {
         if ((string)($existing['memberId'] ?? '') === '') db_update('volunteers', ['memberId' => $memberId, 'updatedAt' => now_iso()], ['id' => (int)$existing['id']]);
         db_update('members', ['ngvVolunteerId' => (string)$existing['volunteerId'], 'ngvAt' => (string)($m['ngvAt'] ?? '') ?: now_iso(), 'updatedAt' => now_iso()], ['memberId' => $memberId]);
         $resent = !empty($p['sendId']) ? volunteer_send_id((string)$existing['volunteerId']) : null;
-        $out = ['ok' => true, 'already' => true, 'volunteerId' => (string)$existing['volunteerId'], 'volunteer' => volunteer_public($existing)];
+        /* Re-promoted, or a card resent: make sure the NGV account exists too
+           (Afrovanguard answers "already" when it does). */
+        $portal = function_exists('ngv_portal_announce') ? ngv_portal_announce($m, (string)$existing['volunteerId']) : ['status' => 'not_configured'];
+        $out = ['ok' => true, 'already' => true, 'volunteerId' => (string)$existing['volunteerId'], 'volunteer' => volunteer_public($existing), 'ngvPortal' => $portal['status']];
         if ($resent !== null) $out['sent'] = $resent;
         return $out;
     }
@@ -836,12 +839,14 @@ function admin_member_promote_ngv(array $p): array {
        record. That it exists is recorded; what it says lives with the child. */
     audit('member.promote.ngv', (string)$g['requester']['memberId'], $memberId, ['volunteerId' => $volunteerId, 'role' => $role, 'evidenced' => true], (string)($p['ip'] ?? ''));
     event_emit('member.promoted.ngv', ['memberId' => $memberId, 'volunteerId' => $volunteerId, 'name' => (string)$m['fullName']]);
+    /* And their NGV account on Afrovanguard, where the programme runs. */
+    $portal = function_exists('ngv_portal_announce') ? ngv_portal_announce($m, $volunteerId) : ['status' => 'not_configured'];
     // Deliver the digital ID by default so the new volunteer receives their
     // QR + welcome; suppressible with sendId:false.
     $send = array_key_exists('sendId', $p) ? !empty($p['sendId']) : true;
     $sent = $send ? volunteer_send_id($volunteerId) : [];
     $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ?', [$volunteerId]);
-    return ['ok' => true, 'created' => true, 'volunteerId' => $volunteerId, 'sent' => $sent, 'volunteer' => volunteer_public($v) + ['token' => $token]];
+    return ['ok' => true, 'created' => true, 'volunteerId' => $volunteerId, 'sent' => $sent, 'volunteer' => volunteer_public($v) + ['token' => $token], 'ngvPortal' => $portal['status']];
 }
 
 /**

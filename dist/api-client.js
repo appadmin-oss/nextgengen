@@ -914,6 +914,8 @@
           reissue:   (memberId, voidPrinted) => request('/admin/member-cards.php', { body: { action: 'reissue', memberId, voidPrinted: !!voidPrinted } }),
           backfill:  (format) => request('/admin/member-cards.php', { body: { action: 'backfill', format: format === undefined ? 'member-number' : format }, timeout: 120000 }),
         },
+        // Everybody already promoted to NGV → their NGV account on Afrovanguard.
+        ngvPortalSync: () => request('/admin/members.php', { body: { action: 'ngvPortalSync' }, timeout: 120000 }),
         reset2fa: (memberId) => request('/admin/members.php', { body: { action: 'reset2fa', memberId } }),
         resetPassword: (memberId) => request('/admin/members.php', { body: { action: 'resetPassword', memberId } }),
         // Record a guardian's publication decision. `method` is how it was

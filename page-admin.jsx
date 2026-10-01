@@ -1564,6 +1564,18 @@ function AdminMembers() {
   /* Cards for everybody who came in before cards existed — the imported roll
      above all. Bounded per call on the server; repeated until none remain. */
   const [issuing, setIssuing] = React.useState(false);
+  /* New promotions reach Afrovanguard on their own; this is for the vanguards
+     promoted before that, and is safe to repeat — Afrovanguard keys on the
+     NGG member id and creates nothing twice. */
+  const [syncingNgv, setSyncingNgv] = React.useState(false);
+  const syncNgv = async () => {
+    setSyncingNgv(true);
+    try {
+      const r = await NGGApi.admin.members.ngvPortalSync();
+      toast.success(r.delivered + " of " + r.announced + " sent now; any others are queued and retried.", "NGVs sent to Afrovanguard");
+    } catch (e) { toast.error(e.detail || e.code || e.message, "Couldn't send them"); }
+    finally { setSyncingNgv(false); }
+  };
   const issueCards = async () => {
     const ok = await dialog.confirm({ title: "Give every member a gate card?",
       body: "Members with no card get a new secure card for the CACENTRE gate. The member number on the card they already hold is recorded too, so it keeps working until they are reprinted. Nobody's existing card is replaced.",
@@ -1705,6 +1717,7 @@ function AdminMembers() {
           {tab === "roster" && <button className="btn btn-ghost btn-sm" onClick={() => exportCsv(false)} disabled={exporting || !meta.total} title="Exports every member matching the current filters">{exporting ? "Exporting…" : "Export CSV"}</button>}
           {tab === "roster" && <button className="btn btn-ghost btn-sm" onClick={() => setPrinting(true)} disabled={!meta.total} title="Print ID cards for every member matching the current filters">Print IDs</button>}
           <button className="btn btn-ghost btn-sm" onClick={() => setImporting(true)} title="Load the roster file produced from the members workbook">Import roster</button>
+          <button className="btn btn-ghost btn-sm" onClick={syncNgv} disabled={syncingNgv} title="Make sure everybody promoted to NGV has their NGV account on Afrovanguard">{syncingNgv ? "Sending…" : "Send NGVs to Afrovanguard"}</button>
           <button className="btn btn-ghost btn-sm" onClick={issueCards} disabled={issuing} title="Give every member with no card a secure card for the CACENTRE gate, and record the member number on the card they already hold">{issuing ? "Issuing…" : "Issue cards"}</button>
           <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New member</button>
         </div>

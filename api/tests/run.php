@@ -21911,5 +21911,65 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM settings WHERE settingKey = 'gate.cardFormats'");
 })();
 
+/* ── Promoted to NGV ⇒ an NGV account on Afrovanguard (domain/ngv-portal.php) ── */
+(function () {
+    global $CONFIG;
+    $ADM = 'NGG-2025-0099';
+    $keep = $CONFIG['afrovanguard'] ?? [];
+    db_exec("DELETE FROM volunteers WHERE memberId = 'NGG-PORT-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-PORT-1'");
+    db_exec("DELETE FROM integrations WHERE integrationId IN ('INT-AV-NGV','INT-CHAT-ALL')");
+    db_insert('members', ['memberId' => 'NGG-PORT-1', 'fullName' => 'Port Vanguard', 'email' => 'Port.V@Example.com', 'phone' => '08031112222',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'dob' => '2005-03-09', 'track' => 'TECH',
+        'parentName' => 'A Guardian', 'school' => 'A School', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    /* A Google Chat room subscribed to everything — it must not receive this. */
+    db_insert('integrations', ['integrationId' => 'INT-CHAT-ALL', 'kind' => 'gchat', 'name' => 'Room', 'config' => '{"url":"https://chat.googleapis.com/x"}',
+        'events' => '["*"]', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    $CONFIG['afrovanguard'] = ['org_url' => 'https://afrovanguard.org.ng', 'ngv_webhook_secret' => ''];
+    $calls = [];
+    $GLOBALS['__bus_http_mock'] = function ($url, $body, $headers) use (&$calls) { $calls[] = [$url, $body, $headers]; return ['ok' => true, 'body' => '{"ok":true,"status":"created"}']; };
+    chk('ngv portal: with no secret configured nothing is sent, and the sync says how to switch it on',
+        ngv_portal_integration() === '' && (backend_dispatch('admin.members.ngvPortalSync', ['requesterId' => $ADM])['error'] ?? '') === 'not_configured');
+
+    $CONFIG['afrovanguard']['ngv_webhook_secret'] = 'av-ngv-secret';
+    $r = backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-PORT-1', 'sendId' => false,
+        'evidence' => 'Led the robotics circle for a term and coached two juniors to the showcase.']);
+    $av = array_values(array_filter($calls, fn($c) => $c[0] === 'https://afrovanguard.org.ng/integrations/ngg.php'));
+    chk('ngv portal: a promotion to NGV is sent to Afrovanguard at once', !empty($r['ok']) && ($r['ngvPortal'] ?? '') === 'delivered' && count($av) === 1);
+    $body = json_decode($av[0][1] ?? '{}', true);
+    $hdr = implode("\n", $av[0][2] ?? []);
+    preg_match('/X-NGG-Timestamp: (\d+)/', $hdr, $ts);
+    chk('ngv portal: signed the way Afrovanguard checks it', (bool)preg_match('/X-NGG-Signature: sha256=' . hash_hmac('sha256', ($ts[1] ?? '') . '.' . ($av[0][1] ?? ''), 'av-ngv-secret') . '/', $hdr));
+    chk('ngv portal: with what an account needs — email, name, phone, centre, birthday, track',
+        ($body['event'] ?? '') === 'private.ngv.account' && ($body['data']['nggMemberId'] ?? '') === 'NGG-PORT-1' && ($body['data']['email'] ?? '') === 'port.v@example.com'
+        && ($body['data']['dob'] ?? '') === '2005-03-09' && ($body['data']['volunteerId'] ?? '') === ($r['volunteerId'] ?? '-'));
+    chk('ngv portal: …and nothing about guardians or school', !isset($body['data']['parentName']) && !isset($body['data']['school']));
+    chk('ngv portal: a room subscribed to everything is not handed somebody\'s email and birthday',
+        !db_row("SELECT d.id FROM deliveries d JOIN outbox o ON o.eventId = d.eventId WHERE d.integrationId = 'INT-CHAT-ALL' AND o.kind = 'private.ngv.account'")
+        && bus_subscribed('["*"]', 'member.promoted.ngv') && !bus_subscribed('["*"]', 'private.ngv.account') && !bus_subscribed('["private.*"]', 'private.ngv.account'));
+
+    $calls = [];
+    $GLOBALS['__bus_http_mock'] = fn($u, $b, $h) => ['ok' => false, 'error' => 'http_503'];
+    db_update('volunteers', ['status' => 'inactive'], ['memberId' => 'NGG-PORT-1']);
+    $again = backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-PORT-1']);
+    $left = db_row("SELECT d.status FROM deliveries d JOIN outbox o ON o.eventId = d.eventId WHERE d.integrationId = 'INT-AV-NGV' ORDER BY d.id DESC LIMIT 1");
+    chk('ngv portal: re-promoted, they are sent again; Afrovanguard down, it waits for the dispatcher to retry',
+        !empty($again['already']) && ($again['ngvPortal'] ?? '') === 'queued' && ($left['status'] ?? '') === 'failed');
+
+    $GLOBALS['__bus_http_mock'] = fn($u, $b, $h) => ['ok' => true, 'body' => '{}'];
+    $sync = backend_dispatch('admin.members.ngvPortalSync', ['requesterId' => $ADM]);
+    chk('ngv portal: "Send NGVs to Afrovanguard" sends everybody already promoted', !empty($sync['ok']) && $sync['announced'] >= 1 && $sync['delivered'] === $sync['announced']);
+
+    unset($GLOBALS['__bus_http_mock']);
+    $CONFIG['afrovanguard'] = $keep;
+    db_exec("DELETE FROM deliveries WHERE integrationId IN ('INT-AV-NGV','INT-CHAT-ALL')");
+    db_exec("DELETE FROM integrations WHERE integrationId IN ('INT-AV-NGV','INT-CHAT-ALL')");
+    db_exec("DELETE FROM qr_codes WHERE studentId IN (SELECT volunteerId FROM volunteers WHERE memberId = 'NGG-PORT-1')");
+    db_exec("DELETE FROM volunteers WHERE memberId = 'NGG-PORT-1'");
+    db_exec("DELETE FROM member_promotions WHERE memberId = 'NGG-PORT-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-PORT-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

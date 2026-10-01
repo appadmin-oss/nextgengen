@@ -382,6 +382,11 @@ return [
         // Webhooks → API tokens with the `mentors:read` scope.
         'api_base'  => 'https://afrovanguard.org.ng/integrations/api.php',
         'api_token' => '',   // av_int_… (scope: mentors:read)
+        // A member promoted to NGV gets their NGV account on Afrovanguard
+        // (domain/ngv-portal.php). The secret is the same value as
+        // NGG_WEBHOOK_SECRET in Afrovanguard's environment; empty ⇒ off.
+        'ngv_webhook_secret' => '',
+        'ngv_webhook_url'    => '',   // empty ⇒ {org_url}/integrations/ngg.php
     ],
 
     // Per-IP rate limits — sliding window inside the configured period.

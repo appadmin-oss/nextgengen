@@ -38,9 +38,16 @@ function event_emit(string $kind, array $payload): string {
 function bus_subscribed(string $eventsJson, string $kind): bool {
     $list = json_decode($eventsJson, true);
     if (!is_array($list) || !$list) return false;
+    /* A `private.` event carries personal details meant for one destination:
+       it reaches only an integration that names it exactly, never '*' or a
+       prefix pattern — a Google Chat room subscribed to everything must not
+       be handed somebody's email and date of birth. */
+    $private = strpos($kind, 'private.') === 0;
     foreach ($list as $pat) {
         $pat = (string)$pat;
-        if ($pat === '*' || $pat === $kind) return true;
+        if ($pat === $kind) return true;
+        if ($private) continue;
+        if ($pat === '*') return true;
         if (substr($pat, -2) === '.*' && strpos($kind, substr($pat, 0, -1)) === 0) return true;
     }
     return false;
@@ -176,23 +183,30 @@ function deliveries_dispatch(int $limit = 25): array {
             db_update('deliveries', ['status' => 'dead', 'lastError' => 'destination_gone'], ['id' => $d['id']]);
             continue;
         }
-        $r = bus_deliver_one($integration, $event);
-        if (!empty($r['ok'])) {
-            db_update('deliveries', ['status' => 'ok', 'deliveredAt' => now_iso(), 'lastError' => ''], ['id' => $d['id']]);
-            $done++;
-        } else {
-            $attempts = (int)$d['attempts'] + 1;
-            $dead = $attempts >= BUS_MAX_ATTEMPTS;
-            db_update('deliveries', [
-                'status' => $dead ? 'dead' : 'failed',
-                'attempts' => $attempts,
-                'lastError' => substr((string)($r['error'] ?? 'failed') . ' ' . (string)($r['detail'] ?? ''), 0, 300),
-                'nextAttemptAt' => gmdate('Y-m-d\TH:i:s\Z', time() + min(3600, (2 ** $attempts) * 30)),
-            ], ['id' => $d['id']]);
-            $failed++;
-        }
+        $r = bus_attempt($d, $integration, $event);
+        if (!empty($r['ok'])) $done++; else $failed++;
     }
     return ['ok' => true, 'attempted' => count($due), 'delivered' => $done, 'failed' => $failed];
+}
+
+/** One attempt at one delivery, recorded the way the dispatcher records it. */
+function bus_attempt(array $d, ?array $integration = null, ?array $event = null): array {
+    $integration = $integration ?? db_row('SELECT * FROM integrations WHERE integrationId = ? LIMIT 1', [$d['integrationId']]);
+    $event = $event ?? db_row('SELECT * FROM outbox WHERE eventId = ? LIMIT 1', [$d['eventId']]);
+    if (!$integration || !$event) return ['ok' => false, 'error' => 'destination_gone'];
+    $r = bus_deliver_one($integration, $event);
+    if (!empty($r['ok'])) {
+        db_update('deliveries', ['status' => 'ok', 'deliveredAt' => now_iso(), 'lastError' => ''], ['id' => $d['id']]);
+        return $r;
+    }
+    $attempts = (int)$d['attempts'] + 1;
+    db_update('deliveries', [
+        'status' => $attempts >= BUS_MAX_ATTEMPTS ? 'dead' : 'failed',
+        'attempts' => $attempts,
+        'lastError' => substr((string)($r['error'] ?? 'failed') . ' ' . (string)($r['detail'] ?? ''), 0, 300),
+        'nextAttemptAt' => gmdate('Y-m-d\TH:i:s\Z', time() + min(3600, (2 ** $attempts) * 30)),
+    ], ['id' => $d['id']]);
+    return $r;
 }
 
 /** Admin "Send test" — fires a synthetic event at ONE destination, now. */
