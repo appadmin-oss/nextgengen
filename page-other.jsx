@@ -1390,6 +1390,12 @@ function SummerProfilePage({ setPage }) {
         { label: "Level", value: m.game ? m.game.level : "—", hint: m.game ? m.game.levelName : "Standing" },
         { label: "Streak", value: m.game ? m.game.streak + "d" : "—", hint: "Daily" },
       ]
+    : m.kind === "member" ? [
+        { label: "Days present", value: m.attendanceCount || 0, hint: "At the centre" },
+        { label: "Track", value: m.track || "—", hint: "Craft" },
+        { label: "Centre", value: m.centre || "—", hint: "Home base" },
+        { label: "Member ID", value: m.displayId || "—", hint: "NGG" },
+      ]
     : [
         { label: "Days present", value: m.attendanceCount || 0, hint: "This cohort" },
         { label: "Track", value: m.track || "—", hint: "Craft" },

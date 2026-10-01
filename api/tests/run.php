@@ -21798,5 +21798,118 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId IN ('WIS-ADM','WIS-NOBODY')");
 })();
 
+/* ── Member cards: what the CACENTRE gate reads ───────────────────────────────
+ * Imported members used to arrive with no card the gate could read, and an NGG
+ * member at the gate could only be found by name. domain/member-cards.php. */
+(function () {
+    $A = 'NGG-2025-0099';
+    db_exec("DELETE FROM member_cards");
+    db_exec("DELETE FROM members WHERE displayId LIKE 'CRD-%' OR displayId IN ('031-001','031-002','031-003') OR email LIKE 'card%@example.com'");
+    db_exec("DELETE FROM settings WHERE settingKey = 'gate.cardFormats'");
+
+    // ── Formats ──
+    $mn = member_card_format('member-number');
+    chk('cards: the member number on a card is a built-in format', $mn && member_card_format_decode($mn, '023-001') === '023-001');
+    chk('cards: …which does not read a name or a stray number', member_card_format_decode($mn, 'Tobi') === null && member_card_format_decode($mn, '0230011') === null);
+    $app = member_card_format('app-card');
+    chk('cards: a card printed from the Control Room reads on any host, with a tracking query',
+        member_card_format_decode($app, 'https://elsewhere.example/q/NGG-2025-0740?src=card') === 'NGG-2025-0740');
+    chk('cards: a format that would match almost anything is refused, in words',
+        str_contains((string)(member_card_format_compile(['id' => 'x', 'template' => '{id}', 'mask' => '*', 'field' => 'code'])['error'] ?? ''), 'almost anything'));
+    $d = member_card_format_from_example('https://old.nggc.org/member/031-002', '031-002');
+    chk('cards: an importer describes a format by an example card, and the host is let vary',
+        $d['ok'] && $d['template'] === '{any}/member/{id}' && $d['mask'] === '999-999');
+    $save = backend_dispatch('admin.members.cardFormatSave', ['requesterId' => $A, 'id' => 'old-site', 'label' => 'Old site cards',
+        'template' => $d['template'], 'mask' => $d['mask'], 'field' => 'displayId', 'example' => 'https://old.nggc.org/member/031-002']);
+    chk('cards: a super admin saves it, and it is one of the formats', !empty($save['ok']) && member_card_format('old-site') !== null);
+    $bad = backend_dispatch('admin.members.cardFormatSave', ['requesterId' => $A, 'id' => 'wrong', 'template' => '{id}', 'mask' => '999-999', 'field' => 'displayId', 'example' => 'nope']);
+    chk('cards: a format whose own example does not read is refused', ($bad['error'] ?? '') === 'bad_format');
+    $plain = db_row("SELECT memberId FROM members WHERE email='pa@example.com'")['memberId'] ?? '';
+    chk('cards: only a super admin may add one — a format decides what opens the door',
+        $plain !== '' && (backend_dispatch('admin.members.cardFormatSave', ['requesterId' => $plain, 'id' => 'p', 'template' => '{id}', 'mask' => '999-999'])['error'] ?? '') === 'forbidden');
+    $gf = member_card_gate_formats();
+    chk('cards: the gate is given every format, and no field names', count($gf) === 3 && !isset($gf[0]['field']) && !isset($gf[0]['builtin']));
+
+    // ── A member created here gets a secure card ──
+    $c = backend_dispatch('admin.members.upsert', ['requesterId' => $A, 'data' => ['fullName' => 'Card New', 'email' => 'cardnew@example.com', 'type' => 'NGG', 'centre' => 'Egbeda']]);
+    $sec = member_card_secure((string)($c['memberId'] ?? ''));
+    chk('cards: a member created in the Control Room has a secure card at once',
+        $sec !== null && (bool)preg_match('/^MEMQR-[0-9A-HJKMNP-TV-Z]{16}$/', $sec));
+
+    // ── The import gives cards, and records the card they already hold ──
+    $row = fn(string $ref, string $name) => ['displayId' => $ref, 'fullName' => $name, 'type' => 'NGG', 'status' => 'active',
+        'centre' => 'Egbeda', 'cohort' => '2031', 'joinDate' => '2031-01-06', 'sources' => ['NGGC MEMBERS']];
+    $dry = members_import_run([$row('031-001', 'Card Imported'), $row('031-002', 'Card Old Site')]);
+    chk('cards: a dry run counts the cards it would issue, and issues none',
+        ($dry['cards']['wouldIssue'] ?? 0) === 2 && (int)db_row('SELECT COUNT(*) c FROM member_cards')['c'] === 1);
+    $run = members_import_run([$row('031-001', 'Card Imported'), $row('031-002', 'Card Old Site')], ['apply' => true, 'actor' => $A]);
+    $imp = db_row("SELECT * FROM members WHERE displayId = '031-001'");
+    chk('cards: every imported member gets a secure card', $run['cards']['issued'] === 2 && member_card_secure((string)$imp['memberId']) !== null);
+    chk('cards: …and the number on the card they already hold is recorded', $run['cards']['printed'] === 2
+        && db_row("SELECT memberId FROM member_cards WHERE kind='printed' AND format='member-number' AND code='031-001'")['memberId'] === $imp['memberId']);
+    $again = members_import_run([$row('031-001', 'Card Imported')], ['apply' => true, 'actor' => $A]);
+    chk('cards: importing again issues nothing twice', $again['cards']['issued'] === 0 && $again['cards']['printed'] === 0);
+    chk('cards: an unknown card format stops the import before anything is written',
+        (members_import_run([$row('031-003', 'X')], ['apply' => true, 'cardFormat' => 'nope'])['error'] ?? '') === 'unknown_card_format'
+        && db_row("SELECT id FROM members WHERE displayId = '031-003'") === null);
+
+    // ── Members who were on the roll before cards existed ──
+    db_insert('members', ['memberId' => 'NGG-CRD-OLD', 'fullName' => 'Card Before', 'type' => 'NGG', 'status' => 'active', 'centre' => 'Egbeda',
+        'displayId' => 'CRD-001', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'SUM-CRD-1', 'fullName' => 'Summer Account', 'type' => 'Summer', 'status' => 'active', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $bf = backend_dispatch('admin.members.cardsBackfill', ['requesterId' => $A]);
+    chk('cards: the backfill gives everybody already on the roll a secure card', !empty($bf['ok']) && member_card_secure('NGG-CRD-OLD') !== null && $bf['remaining'] === 0);
+    chk('cards: …but not a Summer School account, which Summer School cards', member_card_secure('SUM-CRD-1') === null);
+
+    // ── At the gate ──
+    $old = member_card_secure('NGG-CRD-OLD');
+    $r = backend_dispatch('hooks.gate.resolve', ['token' => $old]);
+    chk('gate: a secure member card resolves to the member', !empty($r['ok']) && $r['person']['ref'] === 'NGG-CRD-OLD' && $r['person']['kind'] === 'member');
+    $r = backend_dispatch('hooks.gate.resolve', ['format' => 'member-number', 'value' => '031-001']);
+    chk('gate: an imported member\'s old card resolves by the number printed on it, and the desk is told it is an old card',
+        !empty($r['ok']) && $r['person']['ref'] === $imp['memberId'] && str_contains($r['person']['detail'], 'old printed card'));
+    $r = backend_dispatch('hooks.gate.resolve', ['format' => 'old-site', 'value' => '031-002']);
+    chk('gate: …and by a format an importer described', !empty($r['ok']) && $r['person']['name'] === 'Card Old Site');
+    $r = backend_dispatch('hooks.gate.resolve', ['format' => 'app-card', 'value' => 'NGG-CRD-OLD']);
+    chk('gate: a card printed from the Control Room before secure cards still opens the door', !empty($r['ok']) && $r['person']['name'] === 'Card Before');
+    $r = backend_dispatch('hooks.gate.resolve', ['format' => 'member-number', 'value' => '099-999']);
+    chk('gate: a number nobody holds is unknown, in words', ($r['code'] ?? '') === 'unknown' && str_contains($r['error'], '099-999'));
+    $re = backend_dispatch('admin.members.cardReissue', ['requesterId' => $A, 'memberId' => 'NGG-CRD-OLD']);
+    $r = backend_dispatch('hooks.gate.resolve', ['token' => $old]);
+    chk('gate: a reissued card stops the old one at once', !empty($re['ok']) && ($r['code'] ?? '') === 'void_card'
+        && !empty(backend_dispatch('hooks.gate.resolve', ['token' => $re['code']])['ok']));
+    backend_dispatch('admin.members.cardReissue', ['requesterId' => $A, 'memberId' => $imp['memberId'], 'voidPrinted' => true]);
+    chk('gate: "reprinted — retire the old card" stops the printed card too',
+        (backend_dispatch('hooks.gate.resolve', ['format' => 'member-number', 'value' => '031-001'])['code'] ?? '') === 'void_card');
+    chk('gate: a member picked from search resolves by ref', !empty(backend_dispatch('hooks.gate.resolve', ['ref' => 'NGG-CRD-OLD'])['ok']));
+    $found = backend_dispatch('hooks.gate.search', ['q' => 'Card Bef']);
+    chk('gate: members are found by name too', in_array('NGG-CRD-OLD', array_column($found['people'] ?? [], 'ref'), true));
+    db_update('members', ['status' => 'suspended'], ['memberId' => 'NGG-CRD-OLD']);
+    $r = backend_dispatch('hooks.gate.resolve', ['token' => $re['code']]);
+    chk('gate: a suspended member\'s card says so', !empty($r['ok']) && $r['person']['status'] === 'marked suspended');
+    db_update('members', ['status' => 'active'], ['memberId' => 'NGG-CRD-OLD']);
+
+    // ── The card itself ──
+    $row = card_row_member(db_row("SELECT * FROM members WHERE memberId = 'NGG-CRD-OLD'"), centre_index());
+    chk('cards: a member\'s ID card prints the secure code', $row['token'] === $re['code'] && $row['cardSecure'] === true);
+    $pp = public_summer_profile(['token' => $re['code']]);
+    chk('cards: the card\'s QR opens the member\'s page', !empty($pp['ok']) && $pp['profile']['kind'] === 'member' && $pp['profile']['fullName'] === 'Card Before');
+    chk('cards: a replaced card\'s QR opens nothing', empty(public_summer_profile(['token' => $old])['ok']));
+
+    // ── Scope ──
+    $SC = db_row("SELECT memberId FROM members WHERE email='sc@example.com'")['memberId'] ?? '';
+    db_insert('members', ['memberId' => 'NGG-CRD-AY', 'fullName' => 'Card Ayobo', 'type' => 'NGG', 'status' => 'active', 'centre' => 'Ayobo', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('cards: a scoped admin cannot read or reissue another centre\'s member\'s card',
+        $SC !== '' && (backend_dispatch('admin.members.cards', ['requesterId' => $SC, 'memberId' => 'NGG-CRD-AY'])['error'] ?? '') === 'out_of_scope'
+        && (backend_dispatch('admin.members.cardReissue', ['requesterId' => $SC, 'memberId' => 'NGG-CRD-AY'])['error'] ?? '') === 'out_of_scope');
+    backend_dispatch('admin.members.cardsBackfill', ['requesterId' => $SC]);
+    chk('cards: …and a scoped backfill reaches only their centres', member_card_secure('NGG-CRD-AY') === null);
+
+    db_exec("DELETE FROM member_cards");
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-CRD-OLD','SUM-CRD-1','NGG-CRD-AY') OR displayId IN ('031-001','031-002') OR email = 'cardnew@example.com'");
+    db_exec("DELETE FROM settings WHERE settingKey = 'gate.cardFormats'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

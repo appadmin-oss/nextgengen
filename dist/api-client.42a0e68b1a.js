@@ -903,6 +903,17 @@
            was built with — a client-side union of the pages it happens to have
            loaded is a different set. */
         ids:    (q) => request('/admin/members.php' + qs(Object.assign({ view: 'ids' }, q || {}))),
+        /* Cards the CACENTRE gate reads: the secure MEMQR- card, and the
+           printed formats older cards are decoded by (domain/member-cards.php). */
+        cards: {
+          formats:   () => request('/admin/member-cards.php'),
+          of:        (memberId) => request('/admin/member-cards.php' + qs({ memberId })),
+          derive:    (example, number) => request('/admin/member-cards.php', { body: { action: 'derive', example, number } }),
+          test:      (template, mask, sample) => request('/admin/member-cards.php', { body: { action: 'test', template, mask, sample } }),
+          saveFormat:(f) => request('/admin/member-cards.php', { body: Object.assign({ action: 'saveFormat' }, f) }),
+          reissue:   (memberId, voidPrinted) => request('/admin/member-cards.php', { body: { action: 'reissue', memberId, voidPrinted: !!voidPrinted } }),
+          backfill:  (format) => request('/admin/member-cards.php', { body: { action: 'backfill', format: format === undefined ? 'member-number' : format }, timeout: 120000 }),
+        },
         reset2fa: (memberId) => request('/admin/members.php', { body: { action: 'reset2fa', memberId } }),
         resetPassword: (memberId) => request('/admin/members.php', { body: { action: 'resetPassword', memberId } }),
         // Record a guardian's publication decision. `method` is how it was

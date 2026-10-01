@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 120;
+const NGG_SCHEMA_TARGET = 121;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3670,6 +3670,26 @@ function db_migrate(PDO $db): void {
             ALTER TABLE wisdom_sayings ADD COLUMN spokenText TEXT DEFAULT '';
             ALTER TABLE wisdom_sayings ADD COLUMN ttsScore REAL;
             ALTER TABLE wisdom_sayings ADD COLUMN ttsScoreEn REAL;
+        ",
+
+        /* Member cards — what the CACENTRE gate reads (domain/member-cards.php).
+         * A secure MEMQR- card per NGG member, and the printed cards members
+         * already hold, by the format that reads them. */
+        121 => "
+            CREATE TABLE IF NOT EXISTS member_cards (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              kind TEXT NOT NULL DEFAULT 'secure',
+              code TEXT NOT NULL,
+              format TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'active',
+              source TEXT DEFAULT '',
+              issuedBy TEXT DEFAULT '',
+              issuedAt TEXT DEFAULT '',
+              voidedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_member_cards_code ON member_cards(kind, format, code);
+            CREATE INDEX IF NOT EXISTS idx_member_cards_member ON member_cards(memberId, status);
         ",
     ];
 

@@ -138,6 +138,8 @@ function members_import_args(array $fields, string $raw): array
         'source'       => $source !== '' ? $source : trim((string)($fields['source'] ?? '')),
         'expectDigest' => trim((string)($fields['expectDigest'] ?? '')),
         'fileSha'      => hash('sha256', $raw),
+        // How the cards these members already hold read; '' records none.
+        'cardFormat'   => array_key_exists('cardFormat', $fields) ? trim((string)$fields['cardFormat']) : 'member-number',
     ]];
 }
 
@@ -422,6 +424,30 @@ function members_import_run(array $rows, array $opts = []): array
                   this on the 3rd" is what stops a half-remembered re-import. */
                'previous' => members_import_previous($digest)];
 
+    /* Cards. An imported member used to arrive with no card the gate could
+       read. Every NGG member the import touches — created, updated or left
+       unchanged — gets a secure card if they have none, and the card they
+       already hold is recorded by the format the importer names (by default
+       the member number printed on it). A row's own `cardCode` is the code on
+       an old card that matches no field. On a dry run this is counted, not
+       done. */
+    $cardFormat = array_key_exists('cardFormat', $opts) ? (string)$opts['cardFormat'] : 'member-number';
+    if ($cardFormat !== '' && !member_card_format($cardFormat)) {
+        return ['ok' => false, 'error' => 'unknown_card_format', 'detail' => 'No card format "' . $cardFormat . '". Add it first, or pick one of the formats listed.'];
+    }
+    $report['cards'] = ['format' => $cardFormat, 'issued' => 0, 'printed' => 0, 'taken' => 0, 'wouldIssue' => 0];
+    $card = static function (array $member, array $row) use (&$report, $apply, $cardFormat, $actor): void {
+        if (!member_is_ngg($member)) return;
+        if (!$apply) {
+            if (empty($member['memberId']) || member_card_secure((string)$member['memberId']) === null) $report['cards']['wouldIssue']++;
+            return;
+        }
+        $r = member_cards_ensure($member, $actor, 'import', $cardFormat !== '' ? [$cardFormat, (string)($row['cardCode'] ?? '')] : null);
+        if ($r['issued']) $report['cards']['issued']++;
+        if ($r['printed'] === 'recorded') $report['cards']['printed']++;
+        if ($r['printed'] === 'taken') $report['cards']['taken']++;
+    };
+
     foreach ($rows as $i => $row) {
         $label = trim((string)($row['displayId'] ?? '')) ?: ('row ' . ($i + 1));
         $parsed = members_import_row(is_array($row) ? $row : [], $stampedOn);
@@ -453,8 +479,10 @@ function members_import_run(array $rows, array $opts = []): array
                 $insert['displayId'] = member_mint_display_id($insert);
                 $notes[] = 'issued member ID ' . $insert['displayId'];
             }
+            if (!$apply) $card($insert + ['memberId' => ''], is_array($row) ? $row : []);
             if ($apply) {
                 db_insert('members', $insert);
+                $card($insert, is_array($row) ? $row : []);
                 audit('member.import.create', $actor, $insert['memberId'], ['displayId' => $patch['displayId']], '');
                 if ($emitEvents) event_emit('member.created', [
                     'memberId' => $insert['memberId'], 'fullName' => $patch['fullName'],
@@ -488,6 +516,7 @@ function members_import_run(array $rows, array $opts = []): array
             $changes[$col] = $value;
         }
 
+        $card($existing, is_array($row) ? $row : []);
         if (!$changes) {
             $report['unchanged']++;
             $report['rows'][] = ['ref' => $label, 'action' => 'unchanged', 'name' => $patch['fullName'],
@@ -601,7 +630,10 @@ function admin_members_import(array $p): array
         // Raw sha256 of the bytes the browser read, so the row can be matched
         // against what extract.js printed. Never trusted for anything.
         'fileSha' => (string)($p['fileSha'] ?? ''),
+        // The format the cards these members already hold are read by.
+        'cardFormat' => array_key_exists('cardFormat', $p) ? (string)$p['cardFormat'] : 'member-number',
     ]);
+    if (empty($report['ok'])) return $report;
 
     audit($apply ? 'member.import.web.apply' : 'member.import.web.preview',
           (string)($g['requester']['memberId'] ?? ''), '',

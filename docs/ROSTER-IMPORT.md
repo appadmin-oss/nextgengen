@@ -298,6 +298,36 @@ has to settle. From the August 2026 workbook, the ones that recur:
   a near match is always reported so someone can confirm it. A sibling whose
   birthday disagrees never inherits the other one's school and address.
 
+## Cards: every imported member can be checked in at the gate
+
+An imported member used to arrive with **no card the CACENTRE gate could read**,
+so at the door they could only be found by name. Now the import gives every NGG
+member it touches — created, updated or already current — two things:
+
+- **A secure card** (`MEMQR-` and sixteen random characters), if they have none.
+  It is what new cards are printed with, it cannot be guessed, and reissuing it
+  voids the old one at once. Members created in the Control Room, through an
+  application or by promotion out of the Club get one too.
+- **The card already in their wallet, recorded.** Those cards were printed before
+  this system and carry whatever the old process put on them. The drawer asks
+  *"Cards these members already hold"*: by default the member number printed on
+  them (`023-001`). If the old cards read differently — a URL, an old code — pick
+  **Describe another kind of card…**, paste what one scans as and point at the
+  number in it. The format is worked out for you (`{any}/member/{id}`, number
+  shaped `999-999`), you can try a real card against it before saving, and the
+  gate picks it up within a quarter of an hour. A roster column `cardCode` carries
+  a code that matches no field.
+
+An old printed card is weaker than a secure one — a member number is not a
+secret — so the desk says *old printed card* when it reads one. Reprinting a
+member moves them onto their secure card; **Reprinted — retire the old card** on
+their record stops the old one.
+
+Members already on the roll before cards existed: **Members → Issue cards** gives
+everybody with no card a secure one and records the number on the card they hold.
+From a shell, `seed-members.php --card-format ID` names the format (`''` records
+none).
+
 ## After the import: nobody has a headshot
 
 The workbook's `Image` column is empty for every member, so every imported

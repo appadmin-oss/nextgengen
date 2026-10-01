@@ -237,6 +237,7 @@ function admin_club_promote(array $p): array {
     ];
     if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_display_id($__m);
     db_insert('members', $__m);
+    member_cards_ensure($__m, 'promotion', 'created');
 
     /* And a way in, when there is an address to send it to. Same set-password
        link the application path mints, for the same reason: otherwise every

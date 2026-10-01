@@ -658,6 +658,8 @@ function admin_members_upsert(array $p): array {
         $insert['displayId'] = member_mint_display_id($insert);
     }
     db_insert('members', $insert);
+    /* And a card the gate can read, printed new — the secure kind. */
+    member_cards_ensure($insert, (string)($g['requester']['memberId'] ?? ''), 'created');
     if (is_admin_role((string)$insert['role'])) staff_invite_email($newId, (string)$insert['role']);
     audit('admin.member.create', $g['requester']['memberId'], $newId, [], (string)($p['ip'] ?? ''));
     event_emit('member.created', ['memberId' => $newId, 'fullName' => (string)($insert['fullName'] ?? ''), 'type' => (string)($insert['type'] ?? ''), 'centre' => (string)($insert['centre'] ?? '')]);

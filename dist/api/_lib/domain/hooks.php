@@ -172,10 +172,39 @@ function gate_person_volunteer(array $v, ?array $qr = null): array {
             'status' => $status, 'detail' => $detail, 'expires_on' => $exp !== '' ? $exp : null];
 }
 
+/** What the gate is told about an NGG member. $how: how the card was read. */
+function gate_person_member(array $m, string $how = ''): array {
+    $s = strtolower((string)($m['status'] ?? 'active'));
+    $status = $s === 'active' ? 'active' : 'marked ' . ($s ?: 'inactive');
+    if ($status === 'active' && function_exists('policy_gate_checkin')) {
+        $g = policy_gate_checkin((string)$m['memberId'], 'member');
+        if (empty($g['ok'])) $status = ($g['error'] ?? '') === 'policy_evicted' ? 'evicted under the programme policy' : 'suspended under the programme policy';
+    }
+    $detail = trim(implode(' · ', array_filter([
+        'NGG member' . ((string)($m['displayId'] ?? '') !== '' ? ' ' . $m['displayId'] : ''),
+        (string)($m['track'] ?? ''), (string)($m['centre'] ?? ''),
+        /* An old printed card is a number anybody could write down; the desk
+           says so, so somebody glances at the face. */
+        $how === 'printed' ? 'old printed card' : '',
+    ])));
+    return ['ref' => (string)$m['memberId'], 'name' => (string)$m['fullName'], 'kind' => 'member',
+            'status' => $status, 'detail' => $detail, 'expires_on' => null];
+}
+
 /** A card token or a reference, to the person the gate may show. */
 function hooks_gate_resolve(array $p): array {
     $token = strtoupper(trim((string)($p['token'] ?? '')));
     $ref = trim((string)($p['ref'] ?? ''));
+    $format = trim((string)($p['format'] ?? ''));
+    /* A member's card: secure (MEMQR-), or an older printed one the gate
+       decoded by one of NGG's formats. */
+    if (strpos($token, 'MEMQR-') === 0 || $format !== '') {
+        $hit = $format !== '' ? member_card_lookup(null, $format, (string)($p['value'] ?? '')) : member_card_lookup($token);
+        if (!$hit) return ['ok' => false, 'code' => 'unknown', 'error' => $format !== ''
+            ? 'NGG has no member with card ' . strtoupper(trim((string)($p['value'] ?? ''))) . '.' : 'NGG does not know card ' . $token . '.'];
+        if ($hit['void']) return ['ok' => false, 'code' => 'void_card', 'error' => 'This NGG card has been replaced. Ask for the new one, or search the name.'];
+        return ['ok' => true, 'person' => gate_person_member($hit['member'], $hit['kind'])];
+    }
     if ($token !== '') {
         $qr = db_row('SELECT * FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
         if (!$qr) {
@@ -197,6 +226,8 @@ function hooks_gate_resolve(array $p): array {
         if ($s) return ['ok' => true, 'person' => gate_person_student($s, $s['token'] ? db_row('SELECT * FROM qr_codes WHERE token = ?', [$s['token']]) : null)];
         $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$ref]);
         if ($v) return ['ok' => true, 'person' => gate_person_volunteer($v)];
+        $m = db_row("SELECT * FROM members WHERE memberId = ? AND COALESCE(type,'NGG') <> 'Summer' LIMIT 1", [$ref]);
+        if ($m) return ['ok' => true, 'person' => gate_person_member($m)];
         return ['ok' => false, 'code' => 'unknown', 'error' => 'NGG does not know ' . $ref . '.'];
     }
     return ['ok' => false, 'code' => 'bad_request', 'error' => 'A token or a ref is needed.'];
@@ -214,5 +245,9 @@ function hooks_gate_search(array $p): array {
     $out = [];
     foreach (db_all($sql . ' ORDER BY fullName LIMIT 8', $args) as $s) $out[] = gate_person_student($s);
     foreach (db_all("SELECT * FROM volunteers WHERE status = 'active' AND fullName LIKE ? ORDER BY fullName LIMIT 4", [$like]) as $v) $out[] = gate_person_volunteer($v);
+    $margs = [$like];
+    $msql = "SELECT * FROM members WHERE status = 'active' AND COALESCE(type,'NGG') <> 'Summer' AND COALESCE(role,'member') = 'member' AND fullName LIKE ?";
+    if ($centre !== '') { $msql .= " AND (centre = ? OR centre = '' OR centre IS NULL)"; $margs[] = $centre; }
+    foreach (db_all($msql . ' ORDER BY fullName LIMIT 6', $margs) as $m) $out[] = gate_person_member($m);
     return ['ok' => true, 'people' => array_slice($out, 0, 10)];
 }

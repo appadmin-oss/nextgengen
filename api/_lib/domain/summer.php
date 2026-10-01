@@ -1675,6 +1675,22 @@ function public_summer_profile(array $p): array {
     $token = trim((string)($p['token'] ?? ''));
     $handle = trim((string)($p['handle'] ?? ''));
     $s = null;
+    /* An NGG member's card. Like a participant's, the code is a bearer
+       credential — holding the card is what opens the page — so it is not
+       consent-gated; it shows only what the card itself carries. */
+    if ($token !== '' && stripos($token, 'MEMQR-') === 0 && function_exists('member_card_lookup')) {
+        $hit = member_card_lookup($token);
+        if (!$hit || $hit['void']) return ['ok' => false, 'error' => 'not_found'];
+        $mm = $hit['member'];
+        $days = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [(string)$mm['memberId']])['c'] ?? 0);
+        return ['ok' => true, 'profile' => [
+            'kind' => 'member', 'studentId' => (string)$mm['memberId'], 'fullName' => (string)$mm['fullName'],
+            'track' => (string)($mm['track'] ?? ''), 'centre' => (string)($mm['centre'] ?? ''),
+            'cohortId' => (string)($mm['displayId'] ?? ''), 'displayId' => (string)($mm['displayId'] ?? ''),
+            'photoUrl' => normalize_image_url((string)($mm['photoUrl'] ?? '')), 'status' => (string)($mm['status'] ?? ''),
+            'attendanceCount' => $days, 'attendance' => [],
+        ]];
+    }
     if ($token !== '') {
         $qr = db_row('SELECT studentId FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
         if ($qr && !empty($qr['studentId'])) {

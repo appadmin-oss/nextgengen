@@ -1561,6 +1561,26 @@ function AdminMembers() {
   const [viewing, setViewing] = React.useState(null);
   const [printing, setPrinting] = React.useState(false);
   const [importing, setImporting] = React.useState(false);
+  /* Cards for everybody who came in before cards existed — the imported roll
+     above all. Bounded per call on the server; repeated until none remain. */
+  const [issuing, setIssuing] = React.useState(false);
+  const issueCards = async () => {
+    const ok = await dialog.confirm({ title: "Give every member a gate card?",
+      body: "Members with no card get a new secure card for the CACENTRE gate. The member number on the card they already hold is recorded too, so it keeps working until they are reprinted. Nobody's existing card is replaced.",
+      cta: "Issue cards" });
+    if (!ok) return;
+    setIssuing(true);
+    let issued = 0, printed = 0;
+    try {
+      for (let i = 0; i < 20; i++) {
+        const r = await NGGApi.admin.members.cards.backfill();
+        issued += r.issued || 0; printed += r.printed || 0;
+        if (!r.remaining || !r.issued) break;
+      }
+      toast.success(issued + " secure card" + (issued === 1 ? "" : "s") + " · " + printed + " printed card" + (printed === 1 ? "" : "s") + " recorded", "Cards issued");
+    } catch (e) { toast.error(e.detail || e.code || e.message, "Couldn't issue cards"); }
+    finally { setIssuing(false); }
+  };
   const [bulkForm, setBulkForm] = React.useState(null);   // which bulk action is asking for a value
   /* Ordering lives on the SERVER, not in the rendered page: this table is
      paged, so sorting the fifty rows in hand would order page three of the
@@ -1685,6 +1705,7 @@ function AdminMembers() {
           {tab === "roster" && <button className="btn btn-ghost btn-sm" onClick={() => exportCsv(false)} disabled={exporting || !meta.total} title="Exports every member matching the current filters">{exporting ? "Exporting…" : "Export CSV"}</button>}
           {tab === "roster" && <button className="btn btn-ghost btn-sm" onClick={() => setPrinting(true)} disabled={!meta.total} title="Print ID cards for every member matching the current filters">Print IDs</button>}
           <button className="btn btn-ghost btn-sm" onClick={() => setImporting(true)} title="Load the roster file produced from the members workbook">Import roster</button>
+          <button className="btn btn-ghost btn-sm" onClick={issueCards} disabled={issuing} title="Give every member with no card a secure card for the CACENTRE gate, and record the member number on the card they already hold">{issuing ? "Issuing…" : "Issue cards"}</button>
           <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New member</button>
         </div>
       </div>
@@ -2148,7 +2169,106 @@ function AdminRequests() {
   );
 }
 
+/* ── How the cards members already hold read ─────────────────────────────────
+ *
+ * An imported member used to arrive with no card the CACENTRE gate could read.
+ * Now every member gets a secure MEMQR- card, and the card already in their
+ * wallet keeps working: the importer says what it looks like. Not a regular
+ * expression — "paste what an old card scans as, and point at the number in
+ * it" — and the gate decodes by the same rules (domain/member-cards.php,
+ * gate/src/cards.ts). A format can be tried against a real card before it is
+ * saved, because a format that reads nothing fails silently at the door.
+ */
+function MemberCardFormatPicker({ value, onChange, disabled }) {
+  const { hasCap } = useAuth();
+  const [formats, setFormats] = React.useState(null);
+  const [adding, setAdding] = React.useState(false);
+  const [ex, setEx] = React.useState({ example: "", number: "", label: "", field: "code" });
+  const [derived, setDerived] = React.useState(null);
+  const [tryText, setTryText] = React.useState("");
+  const [tryRes, setTryRes] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => NGGApi.admin.members.cards.formats().then(r => setFormats(r.formats || [])).catch(() => setFormats([]));
+  React.useEffect(() => { load(); }, []);
+  const current = (formats || []).find(f => f.id === value);
+
+  const derive = async () => {
+    setErr(""); setDerived(null);
+    try {
+      const r = await NGGApi.admin.members.cards.derive(ex.example, ex.number);
+      if (!r.derived || !r.derived.ok) { setErr((r.derived && r.derived.error) || "That did not describe a card."); return; }
+      setDerived({ template: r.derived.template, mask: r.derived.mask });
+    } catch (e) { setErr(e.detail || e.code || e.message); }
+  };
+  const save = async () => {
+    setErr("");
+    const id = (ex.label || "printed").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "printed";
+    try {
+      const r = await NGGApi.admin.members.cards.saveFormat({ id, label: ex.label || "Printed cards", template: derived.template, mask: derived.mask, field: ex.field, example: ex.example });
+      setFormats(r.formats || []); onChange(r.format.id); setAdding(false); setDerived(null);
+      toast.success("The gate picks it up within a quarter of an hour.", "Card format saved");
+    } catch (e) { setErr(e.detail || e.code || e.message); }
+  };
+  const tryCard = async () => {
+    const f = derived || current;
+    if (!f) return;
+    try { const r = await NGGApi.admin.members.cards.test(f.template, f.mask, tryText); setTryRes(r.test); }
+    catch (e) { setTryRes({ ok: false, error: e.detail || e.code || e.message }); }
+  };
+
+  return (
+    <div className="admin-field">
+      <span className="admin-label">Cards these members already hold</span>
+      <select className="admin-select" value={value} disabled={disabled || formats === null}
+        onChange={(e) => { if (e.target.value === "__add") { setAdding(true); return; } onChange(e.target.value); setTryRes(null); }}>
+        {(formats || []).map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+        <option value="">None — they hold no card yet</option>
+        {hasCap("rbac") && <option value="__add">Describe another kind of card…</option>}
+      </select>
+      <p className="admin-hint" style={{ margin: "4px 0 0" }}>
+        Everybody imported gets a new secure card for the gate either way. This says how the card already in their
+        wallet reads, so it keeps opening the door until they are reprinted.
+        {current && <> Reads <span className="mono">{current.template.replace("{id}", "[" + current.mask + "]")}</span>.</>}
+      </p>
+      {adding && (
+        <div className="admin-card admin-note-card" style={{ marginTop: 8 }}>
+          <label className="admin-field"><span className="admin-label">What one of the old cards scans as</span>
+            <input className="admin-input mono" value={ex.example} placeholder="https://old.example.org/member/023-001"
+              onChange={(e) => setEx(x => ({ ...x, example: e.target.value }))}/></label>
+          <label className="admin-field"><span className="admin-label">The member's number in it</span>
+            <input className="admin-input mono" value={ex.number} placeholder="023-001"
+              onChange={(e) => setEx(x => ({ ...x, number: e.target.value }))}/></label>
+          <label className="admin-field"><span className="admin-label">That number is</span>
+            <select className="admin-select" value={ex.field} onChange={(e) => setEx(x => ({ ...x, field: e.target.value }))}>
+              <option value="displayId">The member number printed on the card</option>
+              <option value="memberId">The member id (NGG-…)</option>
+              <option value="code">Neither — a code recorded at import (the roster's cardCode column)</option>
+            </select></label>
+          <label className="admin-field"><span className="admin-label">A name for these cards</span>
+            <input className="admin-input" value={ex.label} placeholder="2023 laminated cards"
+              onChange={(e) => setEx(x => ({ ...x, label: e.target.value }))}/></label>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={derive} disabled={!ex.example || !ex.number}>Work out the format</button>
+          {derived && <p className="admin-hint">Reads <span className="mono">{derived.template}</span> where the number looks like <span className="mono">{derived.mask}</span> (9 a digit).</p>}
+          {derived && <button type="button" className="btn btn-primary btn-sm" onClick={save}>Save this format</button>}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setAdding(false); setDerived(null); }}>Cancel</button>
+        </div>
+      )}
+      {(current || derived) && (
+        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+          <input className="admin-input mono" value={tryText} placeholder="Try a card: scan or paste one" aria-label="Try a card against this format"
+            onChange={(e) => { setTryText(e.target.value); setTryRes(null); }} onKeyDown={(e) => { if (e.key === "Enter") tryCard(); }}/>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={tryCard} disabled={!tryText}>Try</button>
+        </div>
+      )}
+      {tryRes && <div className="admin-hint" style={{ color: tryRes.ok && tryRes.decodes ? "var(--ok, #2f9e44)" : "var(--danger, #c0392b)" }}>
+        {tryRes.ok ? (tryRes.decodes ? "Reads as " + tryRes.decodes + "." : "That card does not read under this format.") : tryRes.error}</div>}
+      {err && <div className="admin-hint" style={{ color: "var(--danger, #c0392b)" }}>{err}</div>}
+    </div>
+  );
+}
+
 function AdminRosterImport({ onClose, onApplied }) {
+  const [cardFormat, setCardFormat] = React.useState("member-number");
   const [file, setFile] = React.useState(null);        // { source, members[] }
   const [overwrite, setOverwrite] = React.useState(false);
   const [busy, setBusy] = React.useState("");
@@ -2209,7 +2329,7 @@ function AdminRosterImport({ onClose, onApplied }) {
   const run = async (apply) => {
     if (!file) return;
     if (apply && !(await dialog.confirm({
-      title: "Write " + (preview.created + preview.updated) + " member record(s)?",
+      title: (preview.created + preview.updated) > 0 ? "Write " + (preview.created + preview.updated) + " member record(s)?" : "Issue " + ((preview.cards && preview.cards.wouldIssue) || 0) + " card(s)?",
       body: preview.created + " new, " + preview.updated + " updated"
         + (overwrite ? ". Overwrite is ON — values already in the Control Room will be replaced." : ". Existing values are kept; only blanks are filled.")
         + (preview.previous ? " This exact roster was already applied on " + String(preview.previous.at).slice(0, 10) + "." : ""),
@@ -2221,8 +2341,8 @@ function AdminRosterImport({ onClose, onApplied }) {
          file after reading the preview fails closed instead of writing a roster
          nobody confirmed. */
       const r = await NGGApi.admin.members.importRoster(file,
-        apply ? { apply, overwrite, expectDigest: (preview && preview.digest) || "" } : { apply, overwrite });
-      apply ? (setDone(r), toast.success(r.created + " new · " + r.updated + " updated", "Roster imported")) : setPreview(r);
+        apply ? { apply, overwrite, cardFormat, expectDigest: (preview && preview.digest) || "" } : { apply, overwrite, cardFormat });
+      apply ? (setDone(r), toast.success(r.created + " new · " + r.updated + " updated" + (r.cards ? " · " + r.cards.issued + " cards issued" : ""), "Roster imported")) : setPreview(r);
     } catch (ex) {
       /* roster_changed is not a failure to retry — it means the file in hand is
          not the one that was read, so the dry run has to happen again. */
@@ -2292,6 +2412,9 @@ function AdminRosterImport({ onClose, onApplied }) {
             </div>
           )}
 
+          <MemberCardFormatPicker value={cardFormat} disabled={!!busy || !!done}
+            onChange={(v) => { setCardFormat(v); setPreview(null); }}/>
+
           <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13 }}>
             <input type="checkbox" checked={overwrite} disabled={!!busy || !!done}
               onChange={(e) => { setOverwrite(e.target.checked); setPreview(null); }}/>
@@ -2306,6 +2429,13 @@ function AdminRosterImport({ onClose, onApplied }) {
                 {done ? "Imported" : "Would import"} — new {res.created} · updated {res.updated}
                 {" "}· already current {res.unchanged} · unusable {res.failed}
               </div>
+              {res.cards && (
+                <div className="mono" style={{ marginBottom: 8, fontSize: 13 }}>
+                  {done
+                    ? <>Cards — {res.cards.issued} secure card{res.cards.issued === 1 ? "" : "s"} issued · {res.cards.printed} printed card{res.cards.printed === 1 ? "" : "s"} recorded{res.cards.taken ? " · " + res.cards.taken + " printed codes already someone else's" : ""}</>
+                    : <>Cards — {res.cards.wouldIssue} member{res.cards.wouldIssue === 1 ? "" : "s"} would get a secure card{res.cards.format ? "; old cards read as “" + res.cards.format + "”" : ""}</>}
+                </div>
+              )}
               {/* A list, not a table. Four columns in a drawer this narrow put
                   "what changes" off the right-hand edge, which is the one
                   column somebody reading a dry run is here for. */}
@@ -2336,9 +2466,10 @@ function AdminRosterImport({ onClose, onApplied }) {
               {busy === "preview" ? "Checking…" : "Check what would change"}
             </button>
           )}
-          {!done && preview && (preview.created + preview.updated) > 0 && (
+          {!done && preview && ((preview.created + preview.updated) > 0 || (preview.cards && preview.cards.wouldIssue > 0)) && (
             <button type="button" className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => run(true)}>
-              {busy === "apply" ? "Importing…" : "Import " + (preview.created + preview.updated) + " record(s)"}
+              {busy === "apply" ? "Importing…" : (preview.created + preview.updated) > 0
+                ? "Import " + (preview.created + preview.updated) + " record(s)" : "Issue " + preview.cards.wouldIssue + " card(s)"}
             </button>
           )}
           {done && <button type="button" className="btn btn-primary btn-sm" onClick={onApplied}>Back to the roster</button>}
@@ -9456,6 +9587,48 @@ function SubmissionRow({ s, maxPoints, onGraded }) {
 // Member 360° detail — profile, mentor, progress, journal, submissions, status
 // ============================================================================
 
+/* A member's cards, as the CACENTRE gate reads them: the secure one, and any
+   older printed card recorded at import. Reissuing voids the secure card at
+   once — a lost card stops at the door — and can retire the printed ones too. */
+function MemberCardsSection({ memberId }) {
+  const [cards, setCards] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const load = () => NGGApi.admin.members.cards.of(memberId).then(r => setCards(r.cards || [])).catch(() => setCards([]));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [memberId]);
+  const reissue = async (voidPrinted) => {
+    const ok = await dialog.confirm({ title: voidPrinted ? "Replace every card?" : "Issue a new card?",
+      body: voidPrinted ? "The current card and any old printed card stop working at the gate now. Print the new one before they next come in."
+                        : "The current secure card stops working at the gate now. Their old printed card, if any, keeps working.",
+      cta: "Issue new card", danger: true });
+    if (!ok) return;
+    setBusy(true);
+    try { const r = await NGGApi.admin.members.cards.reissue(memberId, voidPrinted); setCards(r.cards || []); toast.success(r.code, "New card issued"); }
+    catch (e) { toast.error(e.detail || e.code || e.message); } finally { setBusy(false); }
+  };
+  const active = (cards || []).filter(c => c.status === "active");
+  return (
+    <div className="admin-detail-section">
+      <div className="admin-detail-h">Cards at the gate</div>
+      {cards === null ? <div className="admin-hint">Loading…</div> : (
+        <>
+          {!active.length && <div className="admin-hint">No card yet — the gate can only find them by name. Issue one below, or use “Issue cards” on the roster.</div>}
+          {active.map((c, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 13, padding: "2px 0" }}>
+              <span className="chip" style={{ flex: "none" }}>{c.kind === "secure" ? "Secure" : "Printed"}</span>
+              <span className="mono">{c.code}</span>
+              <span className="admin-hint" style={{ margin: 0 }}>{c.kind === "printed" ? "read as “" + c.format + "”" : ""}{c.issuedAt ? " · " + String(c.issuedAt).slice(0, 10) : ""}</span>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => reissue(false)}>{active.some(c => c.kind === "secure") ? "Lost card — issue a new one" : "Issue a card"}</button>
+            {active.some(c => c.kind === "printed") && <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => reissue(true)}>Reprinted — retire the old card</button>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
   const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose, false);
   const [d, setD] = React.useState(null);
@@ -9571,6 +9744,8 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
               <div><b>{(d.progress || {}).verified ?? 0}/{(d.progress || {}).total ?? 0}</b><span>Missions</span></div>
               <div><b>{(d.journal || []).length}</b><span>Journals</span></div>
             </div>
+
+            <MemberCardsSection memberId={memberId}/>
 
             <div className="admin-detail-section">
               <div className="admin-detail-h">Mentor</div>

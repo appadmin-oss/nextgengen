@@ -6,9 +6,11 @@
  * people. When a SUMQR-/VOLQR- card is scanned there it asks here; the
  * check-in itself comes back through hooks/attendance.php, by ref.
  *
- *   POST {op:"resolve", token}      a card
- *   POST {op:"resolve", ref}        a person picked from search
- *   POST {op:"search", q, centre}   find by name, active people only
+ *   POST {op:"resolve", token}          a card this system printed (SUMQR-/VOLQR-/MEMQR-)
+ *   POST {op:"resolve", format, value}  an older printed member card, decoded by the gate
+ *   POST {op:"resolve", ref}            a person picked from search
+ *   POST {op:"search", q, centre}       find by name, active people only
+ *   POST {op:"formats"}                 the shapes NGG's printed member cards come in
  *
  * Signed exactly like hooks/attendance.php, with the same secret:
  *   X-NGG-Timestamp: unix seconds (±300 s)
@@ -32,7 +34,10 @@ if (!is_array($body)) json_error('bad_json', 422);
 
 $op = (string)($body['op'] ?? '');
 if ($op === 'resolve') {
-    $res = gs_call('hooks.gate.resolve', ['token' => (string)($body['token'] ?? ''), 'ref' => (string)($body['ref'] ?? '')]);
+    $res = gs_call('hooks.gate.resolve', ['token' => (string)($body['token'] ?? ''), 'ref' => (string)($body['ref'] ?? ''),
+        'format' => (string)($body['format'] ?? ''), 'value' => (string)($body['value'] ?? '')]);
+} elseif ($op === 'formats') {
+    $res = ['ok' => true, 'formats' => member_card_gate_formats()];
 } elseif ($op === 'search') {
     $res = gs_call('hooks.gate.search', ['q' => (string)($body['q'] ?? ''), 'centre' => (string)($body['centre'] ?? '')]);
 } else {

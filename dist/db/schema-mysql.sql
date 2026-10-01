@@ -2737,4 +2737,20 @@ ALTER TABLE wisdom_sayings ADD COLUMN spokenText TEXT;
 ALTER TABLE wisdom_sayings ADD COLUMN ttsScore DOUBLE NULL;
 ALTER TABLE wisdom_sayings ADD COLUMN ttsScoreEn DOUBLE NULL;
 
-INSERT INTO schema_version (version) VALUES (120) ON DUPLICATE KEY UPDATE version = version;
+-- ── 121 · Member cards: secure MEMQR- cards and printed formats, for the gate ──
+CREATE TABLE IF NOT EXISTS member_cards (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  kind VARCHAR(16) NOT NULL DEFAULT 'secure',
+  code VARCHAR(120) NOT NULL,
+  format VARCHAR(40) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  source VARCHAR(24) DEFAULT '',
+  issuedBy VARCHAR(64) DEFAULT '',
+  issuedAt VARCHAR(40) DEFAULT '',
+  voidedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY uq_member_cards_code (kind, format, code),
+  INDEX idx_member_cards_member (memberId, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (121) ON DUPLICATE KEY UPDATE version = version;

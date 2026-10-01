@@ -86,6 +86,13 @@ function backend_dispatch(string $op, array $args = []): array {
                own verdict — see _lib/domain/members-bulk.php for the guards
                (self, staff tier, centre scope, bounds). */
             'admin.members.issueIds'    => 'admin_members_issue_ids',
+            /* Member cards: secure MEMQR- cards, printed formats, backfill —
+               see domain/member-cards.php. */
+            'admin.members.cardFormats'    => 'admin_member_card_formats',
+            'admin.members.cardFormatSave' => 'admin_member_card_format_save',
+            'admin.members.cards'          => 'admin_member_cards',
+            'admin.members.cardReissue'    => 'admin_member_card_reissue',
+            'admin.members.cardsBackfill'  => 'admin_member_cards_backfill',
             'admin.members.bulk'      => 'admin_members_bulk',
             'admin.members.ids'       => 'admin_members_ids',
             'admin.members.upsert'    => 'admin_members_upsert',

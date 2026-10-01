@@ -3323,9 +3323,12 @@ function card_row_member(array $m, array $centres): array {
             'code'  => $ctr['code'] ?? 'NG',
             'color' => $ctr['color'] ?? '#1B2B6B',
         ],
-        /* A member's QR resolves their PROFILE, not a gate check-in — they have
-           no summer token. The renderer turns this into the profile URL. */
-        'token'     => (string)($m['memberId'] ?? ''),
+        /* The member's SECURE card (MEMQR-…, domain/member-cards.php): what the
+           CACENTRE gate reads and what /q/ opens. A member with none yet falls
+           back to the member id, which the gate still reads by NGG's
+           "app-card" format — the shape every card printed before this has. */
+        'token'     => (function_exists('member_card_secure') ? member_card_secure((string)($m['memberId'] ?? '')) : null) ?? (string)($m['memberId'] ?? ''),
+        'cardSecure' => function_exists('member_card_secure') && member_card_secure((string)($m['memberId'] ?? '')) !== null,
         'photoUrl'  => normalize_image_url((string)($m['photoUrl'] ?? '')),
         'joinDate'  => (string)($m['joinDate'] ?? ''),
         'createdAt' => (string)($m['createdAt'] ?? ''),

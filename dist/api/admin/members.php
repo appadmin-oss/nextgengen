@@ -103,6 +103,7 @@ if ($method === 'POST') {
                 // be held to the file it previewed.
                 'expectDigest' => $body['expectDigest'] ?? '',
                 'fileSha' => $body['fileSha'] ?? '',
+                'cardFormat' => array_key_exists('cardFormat', $body) ? (string)$body['cardFormat'] : 'member-number',
                 'ip' => client_ip()]);
         }
     } elseif ($action === 'setCaps') {

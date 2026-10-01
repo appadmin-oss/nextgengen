@@ -17,6 +17,9 @@
  *                  and you are about to rewrite the membership table with it.
  *   --apply        write the changes instead of describing them
  *   --overwrite    replace values a member already has (default: fill blanks only)
+ *   --card-format ID  how the cards these members already hold read (default member-number:
+ *                  the number printed on them); '' records none. Every member gets a
+ *                  secure MEMQR- card either way.
  *   --emit-events  fan member.created/updated out to the outbox and any
  *                  integrations. Off by default: a backfill of the whole roster
  *                  is not news every webhook subscriber needs at once.
@@ -39,17 +42,18 @@ if (!file_exists($root . '/config.php')) {
 }
 
 $opts = ['file' => $root . '/storage/seed/ngg-members.json', 'apply' => false,
-         'overwrite' => false, 'emitEvents' => false, 'verbose' => false, 'expectSha' => ''];
+         'overwrite' => false, 'emitEvents' => false, 'verbose' => false, 'expectSha' => '', 'cardFormat' => 'member-number'];
 for ($i = 1; $i < $argc; $i++) {
     $a = $argv[$i];
     if ($a === '--file' && isset($argv[$i + 1])) { $opts['file'] = $argv[++$i]; }
     elseif ($a === '--expect-sha' && isset($argv[$i + 1])) { $opts['expectSha'] = strtolower(trim($argv[++$i])); }
     elseif ($a === '--apply')       $opts['apply'] = true;
     elseif ($a === '--overwrite')   $opts['overwrite'] = true;
+    elseif ($a === '--card-format' && isset($argv[$i + 1])) { $opts['cardFormat'] = trim($argv[++$i]); }
     elseif ($a === '--emit-events') $opts['emitEvents'] = true;
     elseif ($a === '--verbose')     $opts['verbose'] = true;
     elseif ($a === '--help' || $a === '-h') {
-        fwrite(STDERR, "usage: php api/tools/seed-members.php [--file PATH] [--expect-sha HEX] [--apply] [--overwrite] [--emit-events] [--verbose]\n");
+        fwrite(STDERR, "usage: php api/tools/seed-members.php [--file PATH] [--expect-sha HEX] [--apply] [--overwrite] [--card-format ID|''] [--emit-events] [--verbose]\n");
         exit(0);
     } else { fwrite(STDERR, "unknown option: {$a}\n"); exit(1); }
 }
@@ -104,8 +108,9 @@ if (empty($parsed['ok'])) {
 $report = members_import_run($parsed['members'], [
     'apply' => $opts['apply'], 'overwrite' => $opts['overwrite'],
     'emitEvents' => $opts['emitEvents'], 'actor' => 'cli:seed-members',
-    'source' => $parsed['source'], 'fileSha' => $fileSha,
+    'source' => $parsed['source'], 'fileSha' => $fileSha, 'cardFormat' => $opts['cardFormat'],
 ]);
+if (empty($report['ok'])) { fwrite(STDERR, ($report['detail'] ?? $report['error'] ?? 'failed') . "\n"); exit(1); }
 
 $line = str_repeat('-', 68);
 $mode = $opts['apply'] ? 'APPLIED' : 'DRY RUN — nothing written';
@@ -125,6 +130,10 @@ echo '  Mode:         ' . ($opts['overwrite'] ? 'overwrite existing values' : 'f
 echo "{$line}\n";
 printf("  new %d · updated %d · already current %d · unusable %d\n",
     $report['created'], $report['updated'], $report['unchanged'], $report['failed']);
+$c = $report['cards'];
+if ($opts['apply']) printf("  cards: %d secure cards issued · %d printed cards recorded (%s)%s\n", $c['issued'], $c['printed'], $c['format'] ?: 'none',
+    $c['taken'] ? ' · ' . $c['taken'] . ' printed codes already belong to somebody else' : '');
+else printf("  cards: %d members would be given a secure card · printed cards read as %s\n", $c['wouldIssue'], $c['format'] ?: '(none)');
 echo "{$line}\n";
 
 foreach ($report['rows'] as $r) {

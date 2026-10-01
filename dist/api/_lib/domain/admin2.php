@@ -732,6 +732,7 @@ function admin_application_convert(array $p): array {
     ];
     if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_display_id($__m);
     db_insert('members', $__m);
+    member_cards_ensure($__m, 'intake', 'created');
     db_update('applications', ['status' => 'accepted'], ['id' => $id]);
 
     /* A way in that the member owns.
