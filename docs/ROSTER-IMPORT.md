@@ -122,7 +122,7 @@ current roster from everyone who has left.
 
 | Workbook | `members` column | Note |
 |---|---|---|
-| Members ID (`023-001`) | `displayId` | The printed ID. `memberId` is issued by the app. **Leave it blank and the app mints one** (`YYY-NNN`, above the highest serial for that year) rather than refusing the row — it reports every ID it issued so you can write them back. |
+| Members ID (`023-001`) | `displayId` | The printed ID. `memberId` is issued by the app. **Leave it blank and the app issues one** (`YYY-NNN`, above the highest serial for that year *and* above every ID in the file) — the dry run names the ID each new member will get, so you can write them back. A registry member with no ID anywhere is imported without one and numbered, rather than dropped. Older ID shapes (`NGG/23/042`) are kept as printed; see *Member IDs and their formats*. |
 | First\_Name + Last\_Name | `fullName` | |
 | First\_Faculty | `track` | What the app calls a faculty elsewhere |
 | First + Second\_Faculty | `disciplines` | The one or two shown on the ID card |
@@ -385,3 +385,45 @@ npm run test:api         # the import: idempotency, staff guards, notes fencing
 npm run test:idbatch     # the print drawer: the preflight counts, and the run order
 npm run shot:memberid    # re-render docs/screens/26-nggc-member-id.png
 ```
+
+
+---
+
+## Member IDs and their formats
+
+Every NGG member gets a printed ID, and no ID is two people. The importer
+reads every ID in the file **before** writing anything, so:
+
+- **A member with no ID is given one** — new members, *and* members already in
+  the Control Room who have none (created on the desk, or imported before IDs
+  were issued). The dry run says which ID each will get; the apply issues
+  exactly those.
+- **Issued IDs skip every ID the file carries.** A blank row is never given an
+  ID that a later row of the same sheet already holds.
+- **An ID on two rows** is refused on the second, naming the first.
+- **An ID that belongs to someone else here** is refused, naming who holds it.
+  The same person is recognised by name (in any word order), date of birth or
+  email.
+- **A printed ID is never changed by an import**, overwrite or not. If the sheet
+  and the record disagree, the record's ID stands and the dry run says so.
+- **A year that lost its zero** to a spreadsheet (`23-001`, `23/001`) is read as
+  `023-001`, and the dry run says it was. The serial is kept as typed —
+  `024-16` and `024-016` stay distinct, because the card says which.
+
+### Declaring an older ID format
+
+Today's shape is `YYY-NNN`. Cards printed earlier may carry another one. The
+dry run lists every shape in the sheet that no format declares — `NGG/23/042`
+is shape `AAA/99/999` — with **Declare this format**. Declaring (a super admin,
+like any card format) does two things: the importer accepts those IDs as
+printed, and the CACENTRE gate reads the cards that carry them, because their
+QR is the ID.
+
+**Refuse member IDs that fit no declared ID format** is on by default in the
+drawer: an ID in an undeclared shape — usually a typo, `O24-016` with a letter
+O — is refused rather than filed as an ID nobody can scan. Off, it imports with
+a warning. Declaring a format changes what a dry run would do, so an apply must
+follow a fresh dry run.
+
+In a shape, `9` is a digit, `A` a letter, `X` either; everything else is as
+printed. A literal `A` or `X` in an example therefore matches any letter there.

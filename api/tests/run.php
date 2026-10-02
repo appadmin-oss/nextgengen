@@ -19898,6 +19898,95 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 })();
 
 
+/* ── Imports and member IDs: every NGG member gets one, and no ID is two people ──
+ *
+ * The importer used to (1) give an ID only to members it CREATED, so anybody
+ * already on the desk without one stayed without one; (2) mint from the
+ * database alone, so a minted ID could be one a later row of the same sheet
+ * carried — and that row then matched the new record and was written over it;
+ * (3) match on an ID and update whoever held it, whatever their name; and (4)
+ * accept any string as an ID. These pin the fixes.
+ */
+(function () {
+    $A = 'NGG-2025-0099';
+    $imp = fn(array $rows, array $o = []) => backend_dispatch('admin.members.import', ['requesterId' => $A, 'members' => $rows] + $o);
+    $apply = function (array $rows, array $o = []) use ($imp) {
+        $dry = $imp($rows, $o);
+        return $imp($rows, $o + ['apply' => true, 'expectDigest' => $dry['digest'] ?? '']) + ['dry' => $dry];
+    };
+    $row = fn(string $name, string $id = '', array $x = []) => ['displayId' => $id, 'fullName' => $name, 'type' => 'NGG', 'status' => 'active', 'cohort' => '2019'] + $x;
+    $byName = fn(string $n) => db_row('SELECT * FROM members WHERE fullName = ? LIMIT 1', [$n]);
+    db_exec("DELETE FROM members WHERE fullName LIKE 'Idt %'");
+    db_exec("DELETE FROM members WHERE displayId LIKE '019-%' OR displayId LIKE 'OLD/%'");   // a past intake year nobody else uses here
+
+    // (1) Somebody already on the desk with no ID is given one by the import.
+    db_insert('members', ['memberId' => 'NGG-IDT-0001', 'fullName' => 'Idt Desk Made', 'dob' => '2012-01-02', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'cohort' => '2019', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = $apply([$row('Idt Desk Made', '', ['dob' => '2012-01-02'])]);
+    chk('import: a member already on the desk with no ID is given one — matching them used to skip it',
+        preg_match('/^019-\d{3}$/', (string)$byName('Idt Desk Made')['displayId']) === 1 && ($r['ids']['issued'] ?? 0) === 1);
+
+    // (2) The dry run says which ID will be issued, and the apply issues that one.
+    $rows = [$row('Idt New One'), $row('Idt Carries Next', '019-' . str_pad((string)((int)substr((string)$byName('Idt Desk Made')['displayId'], 4) + 1), 3, '0', STR_PAD_LEFT))];
+    $dry = $imp($rows);
+    $promised = (string)($dry['rows'][0]['displayId'] ?? '');
+    $done = $imp($rows, ['apply' => true, 'expectDigest' => $dry['digest']]);
+    chk('import: the dry run names the ID it will issue, and the apply issues exactly that one',
+        $promised !== '' && (string)$byName('Idt New One')['displayId'] === $promised);
+    chk('import: …which skips an ID a later row of the same sheet carries — no two children on one record',
+        $promised !== $rows[1]['displayId'] && (string)$byName('Idt Carries Next')['displayId'] === $rows[1]['displayId']
+        && (int)db_row("SELECT COUNT(*) c FROM members WHERE fullName IN ('Idt New One','Idt Carries Next')")['c'] === 2);
+
+    // (3) One ID on two rows of the file.
+    $d = $imp([$row('Idt Twin A', '019-900'), $row('Idt Twin B', '019-900')]);
+    chk('import: an ID on two rows is refused on the second, naming the first', $d['failed'] === 1
+        && (bool) array_filter($d['rows'], fn($x) => $x['action'] === 'failed' && str_contains($x['detail'], 'also on row 1') && str_contains($x['detail'], 'Idt Twin A')));
+
+    // (4) An ID that belongs to somebody else here.
+    $holder = $byName('Idt Carries Next');
+    $c = $apply([$row('Idt Stranger', (string)$holder['displayId'], ['school' => 'Elsewhere'])]);
+    chk('import: an ID that belongs to a different person here is refused, naming who holds it — not written over them',
+        $c['failed'] === 1 && str_contains($c['rows'][0]['detail'], 'belongs to Idt Carries Next')
+        && (string)$byName('Idt Carries Next')['school'] === (string)$holder['school'] && $byName('Idt Stranger') === null);
+    $same = $apply([$row('Carries Next Idt', (string)$holder['displayId'], ['school' => 'Their School'])]);
+    chk('import: …the same person with their name in another order is still them', $same['failed'] === 0 && $same['updated'] === 1);
+
+    // (5) Matched on the person, carrying a different ID: the record's stands.
+    $was = (string)$byName('Idt Desk Made')['displayId'];
+    $m = $apply([$row('Idt Desk Made', '019-777', ['dob' => '2012-01-02', 'phone' => '08030000001'])], ['overwrite' => true]);
+    chk('import: a printed ID is never changed by an import, overwrite or not — and it says so',
+        (string)$byName('Idt Desk Made')['displayId'] === $was
+        && (bool) array_filter($m['rows'], fn($x) => str_contains(implode(' ', $x['warnings'] ?? []), 'never changed by an import')));
+
+    // (6) Shapes.
+    $n = $apply([$row('Idt Lost Zero', '19-950')]);
+    chk('import: a year that lost its zero ("19-950") is read as 019-950, and says so',
+        (string)$byName('Idt Lost Zero')['displayId'] === '019-950' && $n['ids']['normalized'] === 1);
+    $lenient = $imp([$row('Idt Old Card', 'OLD/19/042')]);
+    chk('import: an ID in no declared format is imported with a warning, and its shape is reported for declaring',
+        $lenient['failed'] === 0 && isset($lenient['ids']['undeclared']['AAA/99/999']) && $lenient['ids']['undeclared']['AAA/99/999']['examples'] === ['OLD/19/042']);
+    $strict = $imp([$row('Idt Old Card', 'OLD/19/042')], ['idStrict' => true]);
+    chk('import: …strict, it is refused — a typo is not filed as an ID', $strict['failed'] === 1 && str_contains($strict['rows'][0]['detail'], 'fits no declared ID format'));
+    chk('import: declaring a shape needs a super admin', !empty(backend_dispatch('admin.members.idFormatDeclare', ['requesterId' => 'NGG-2025-0001', 'example' => 'OLD/19/042'])['error']));
+    $dec = backend_dispatch('admin.members.idFormatDeclare', ['requesterId' => $A, 'example' => 'OLD/19/042', 'label' => 'Pre-2020 cards']);
+    chk('import: an ID format is declared from one example', !empty($dec['ok']) && $dec['format']['mask'] === 'OLD/99/999' && $dec['format']['field'] === 'displayId');
+    chk('import: …and declaring it changes what a dry run promised, so an old dry run cannot be applied',
+        $imp([$row('Idt Old Card', 'OLD/19/042')], ['idStrict' => true])['digest'] !== $strict['digest']);
+    $ok = $apply([$row('Idt Old Card', 'OLD/19/042')], ['idStrict' => true]);
+    chk('import: …after which the old ID imports, as printed', $ok['failed'] === 0 && (string)$byName('Idt Old Card')['displayId'] === 'OLD/19/042');
+    $hit = member_card_lookup(null, (string)$dec['format']['id'], 'OLD/19/042');
+    chk('import: …and the gate reads that old card, its QR being the ID', ($hit['member']['fullName'] ?? '') === 'Idt Old Card');
+    chk('import: …while today\'s shape needs no declaring', member_id_format_of('019-950') === 'member-number');
+
+    // (7) Summer School is numbered by Summer School.
+    $sum = $apply([['displayId' => '', 'fullName' => 'Idt Summer Kid', 'type' => 'Summer', 'status' => 'active']]);
+    chk('import: a Summer account is not given a member ID', (string)($byName('Idt Summer Kid')['displayId'] ?? '') === '');
+
+    $fm = setting_get('gate.cardFormats');
+    setting_set('gate.cardFormats', array_values(array_filter(is_array($fm) ? $fm : [], fn($f) => ($f['id'] ?? '') !== $dec['format']['id'])));
+    db_exec("DELETE FROM members WHERE fullName LIKE 'Idt %' OR fullName = 'Carries Next Idt'");
+})();
+
+
 /* ── House promotions: the gates, the schedule, and the accounting ─────────
  *
  * Complements the promotion block in the chess suite above, which covers
@@ -21316,7 +21405,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     /* Re-applying is legal — a re-run after fixing four rows in the sheet is the
        normal workflow — so the notice must not become a block. */
     chk('…and saying so does not prevent it', (function () use ($rowFor) {
-        $d = members_import_digest([$rowFor('IMP-042')]);
+        // The digest the server computes: the rows, and the declared id shapes that decide the outcome.
+        $d = members_import_digest([$rowFor('IMP-042')], members_import_digest_extra(false));
         $r = backend_dispatch('admin.members.import', ['requesterId' => 'NGG-2025-0099',
             'members' => [$rowFor('IMP-042')], 'apply' => true, 'expectDigest' => $d,
             'source' => 'digest-test.json']);

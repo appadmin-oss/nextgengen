@@ -501,7 +501,11 @@
       // Only a fallback for the workbook name: the file names itself inside.
       source: (file && file.source) || '',
       apply: !!opts.apply, overwrite: !!opts.overwrite,
-      expectDigest: opts.expectDigest || '' };
+      expectDigest: opts.expectDigest || '',
+      /* These two were missing, so the drawer's card-format picker was ignored
+         on the main route and the server always used its default. */
+      cardFormat: opts.cardFormat === undefined ? 'member-number' : opts.cardFormat,
+      idStrict: !!opts.idStrict };
   }
 
   function rosterRowsBody(file, opts) {
@@ -911,6 +915,9 @@
           derive:    (example, number) => request('/admin/member-cards.php', { body: { action: 'derive', example, number } }),
           test:      (template, mask, sample) => request('/admin/member-cards.php', { body: { action: 'test', template, mask, sample } }),
           saveFormat:(f) => request('/admin/member-cards.php', { body: Object.assign({ action: 'saveFormat' }, f) }),
+          /* Declare an ID shape from one example ("NGG/23/042"), so an import
+             accepts members carrying it and the gate reads their cards. */
+          declareIdFormat: (example, label, lettersVary) => request('/admin/member-cards.php', { body: { action: 'declareIdFormat', example, label: label || '', lettersVary: !!lettersVary } }),
           reissue:   (memberId, voidPrinted) => request('/admin/member-cards.php', { body: { action: 'reissue', memberId, voidPrinted: !!voidPrinted } }),
           backfill:  (format) => request('/admin/member-cards.php', { body: { action: 'backfill', format: format === undefined ? 'member-number' : format }, timeout: 120000 }),
         },

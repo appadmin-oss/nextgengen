@@ -93,8 +93,16 @@ function member_id_prefix(int $year): string {
  * minter uses: count what exists, then step forward until the id is free.
  * There is no sequence table and no transaction to lean on here.
  */
-function member_mint_display_id(array $m): string {
+function member_mint_display_id(array $m, array $reserved = []): string {
     $prefix = member_id_prefix(member_intake_year($m));
+    /* $reserved: ids that are spoken for but not yet in the table — every id
+       in the file being imported, and every id this run has already minted.
+       Without it, a row with no id could be minted 024-018 when a later row of
+       the same sheet carries 024-018, and that later row would then MATCH the
+       newly minted member and be written on top of them: two children, one
+       record. They count towards the highest serial and are never handed out. */
+    $taken = [];
+    foreach ($reserved as $r) $taken[strtoupper((string)$r)] = true;
     $like = $prefix . '-%';
     /* HIGHEST SERIAL + 1, not COUNT + 1.
      *
@@ -110,13 +118,15 @@ function member_mint_display_id(array $m): string {
      * to an integer first — done in PHP rather than in SQL because SQLite and
      * MySQL disagree about how to cast a substring. */
     $n = 0;
-    foreach (db_all('SELECT displayId FROM members WHERE displayId LIKE ?', [$like]) as $r) {
-        $tail = substr((string)$r['displayId'], strlen($prefix) + 1);
+    $known = array_column(db_all('SELECT displayId FROM members WHERE displayId LIKE ?', [$like]), 'displayId');
+    foreach (array_merge($known, array_keys($taken)) as $d) {
+        if (strpos((string)$d, $prefix . '-') !== 0) continue;
+        $tail = substr((string)$d, strlen($prefix) + 1);
         if (ctype_digit($tail)) $n = max($n, (int)$tail);
     }
     $n++;
     $id = $prefix . '-' . str_pad((string)$n, 3, '0', STR_PAD_LEFT);
-    for ($i = 0; $i < MEMBER_ID_MAX_BUMP && db_row('SELECT id FROM members WHERE displayId = ?', [$id]); $i++) {
+    for ($i = 0; $i < MEMBER_ID_MAX_BUMP && (isset($taken[$id]) || db_row('SELECT id FROM members WHERE displayId = ?', [$id])); $i++) {
         $n++;
         $id = $prefix . '-' . str_pad((string)$n, 3, '0', STR_PAD_LEFT);
     }
@@ -181,4 +191,77 @@ function admin_members_issue_ids(array $p): array {
             ['count' => count($issued), 'remaining' => $remaining], (string)($p['ip'] ?? ''));
     }
     return ['ok' => true, 'issued' => $issued, 'count' => count($issued), 'remaining' => $remaining];
+}
+
+
+/* ── The SHAPES a printed ID may take ─────────────────────────────────────────
+ *
+ * Today's shape is YYY-NNN. It was not always: cards printed before the
+ * workbook settled carry other ones, and an import that refused them — or
+ * quietly dropped the members carrying them — lost exactly the people whose
+ * cards are oldest. So the shapes are DECLARED: each is a card format whose
+ * template is the bare id and whose field is the printed number (the gate
+ * reads the QR, which encodes the id, by that format), defined from one
+ * example. The built-in "member-number" is today's.
+ */
+
+/**
+ * An id as the sheet spells it, tidied without changing what it says: trimmed,
+ * inner spaces gone, upper case — and a YYY-NNN whose year lost its leading
+ * zero to a spreadsheet ("23-001", "23/001") given it back. The serial is
+ * kept as typed: "024-16" and "024-016" are left distinct, because an import
+ * that silently renumbered one would stop matching the card it was printed on.
+ */
+function member_id_canonical(string $raw): string {
+    $s = strtoupper(preg_replace('/\s+/', '', trim($raw)) ?? '');
+    if (preg_match('~^(\d{2,3})[-/.](\d{1,4})$~', $s, $m)) return str_pad($m[1], 3, '0', STR_PAD_LEFT) . '-' . $m[2];
+    return $s;
+}
+
+/** The shape of an id: digits 9, letters A, the rest as printed. "NGG/23/042" → "AAA/99/999". */
+function member_id_shape(string $id): string {
+    return preg_replace(['/\d/', '/[A-Z]/i'], ['9', 'A'], $id) ?? '';
+}
+
+/** The declared id shapes: every format that reads the bare printed number. */
+function member_id_formats(): array {
+    return array_values(array_filter(member_card_formats(), static fn($f) =>
+        (string)($f['field'] ?? '') === 'displayId' && trim((string)($f['template'] ?? '')) === '{id}'));
+}
+
+/** Which declared shape an id fits, or null. A 1–4 digit serial counts as today's shape, as the workbook writes it. */
+function member_id_format_of(string $id): ?string {
+    if (preg_match('/^\d{3}-\d{1,4}$/', $id)) return 'member-number';
+    foreach (member_id_formats() as $f) {
+        if (member_card_format_decode($f, $id) === strtoupper($id)) return (string)$f['id'];
+    }
+    return null;
+}
+
+/**
+ * Declare an id shape from one example, the way an importer knows it: "our
+ * old cards say NGG/23/042". Digits vary; letters may be told to vary too
+ * (`lettersVary`) for shapes like AB-042 where the letters are initials.
+ * Super admin, like any card format: a format decides what the gate opens to.
+ */
+function admin_member_id_format_declare(array $p): array {
+    $g = admin_cap_gate($p, 'rbac'); if (!$g['ok']) return $g;
+    $example = member_id_canonical((string)($p['example'] ?? ''));
+    if ($example === '' || strlen($example) > 24) return ['ok' => false, 'error' => 'bad_example', 'detail' => 'Give one member ID exactly as it is printed, up to 24 characters.'];
+    if (!preg_match('/\d/', $example)) return ['ok' => false, 'error' => 'bad_example', 'detail' => 'A member ID has a number in it.'];
+    $mask = strtoupper(trim((string)($p['mask'] ?? '')));
+    if ($mask === '') $mask = !empty($p['lettersVary']) ? member_id_shape($example) : preg_replace('/\d/', '9', $example);
+    $label = trim((string)($p['label'] ?? '')) ?: 'Member IDs like ' . $example;
+    $id = substr('id-' . trim((string)preg_replace('/[^a-z0-9]+/', '-', strtolower($mask)), '-'), 0, 40);
+    $f = ['id' => $id, 'label' => mb_substr($label, 0, 80), 'template' => '{id}', 'mask' => $mask, 'field' => 'displayId', 'example' => $example];
+    $c = member_card_format_compile($f);
+    if (!$c['ok']) return ['ok' => false, 'error' => 'bad_format', 'detail' => $c['error']];
+    if (member_card_format_decode($f, $example) === null) return ['ok' => false, 'error' => 'bad_format', 'detail' => 'The example does not fit that shape.'];
+    $custom = setting_get('gate.cardFormats');
+    $list = array_values(array_filter(is_array($custom) ? $custom : [], static fn($x) => is_array($x) && ($x['id'] ?? '') !== $id));
+    if (count($list) >= 12) return ['ok' => false, 'error' => 'too_many', 'detail' => 'Twelve formats is the most the gate will try.'];
+    $list[] = $f;
+    setting_set('gate.cardFormats', $list, (string)($g['requester']['memberId'] ?? ''));
+    audit('admin.members.idFormat', (string)($g['requester']['memberId'] ?? ''), $id, ['mask' => $mask, 'example' => $example], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'format' => $f, 'formats' => member_id_formats()];
 }

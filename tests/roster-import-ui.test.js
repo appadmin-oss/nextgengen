@@ -66,14 +66,17 @@ const ROSTER = {
 <link rel="stylesheet" href="/dist/styles.css">
 <link rel="stylesheet" href="/dist/styles-app.css">
 <style>body{margin:0;background:#0b1327}</style>
-</head><body><div id="shot"></div>
+</head><body><div id="root"></div>
 <script src="/dist/vendor/react.production.min.js"></script>
 <script src="/dist/vendor/react-dom.production.min.js"></script>
+<script src="/dist/vendor/tanstack-table.min.js"></script>
 <script src="/dist/data.js"></script><script src="/dist/photos.js"></script>
+<script src="/dist/app.min.js"></script>
 <script>
 /* Record every call so the test can assert WHAT was posted, not only that
    something happened — "apply" arriving as false is the whole bug class. */
 window.__calls = [];
+/* After the bundle, which sets up its own NGGApi when it loads. */
 window.NGGApi = { admin: { members: {
   importRoster: function (file, opts) {
     window.__calls.push({ members: file.members.length, source: file.source,
@@ -84,21 +87,45 @@ window.NGGApi = { admin: { members: {
         { ref: '024-000', action: 'create', name: 'Example Member', detail: 'active · Egbeda', warnings: [] },
         { ref: '024-001', action: 'create', name: 'Second Example', detail: 'inactive · Ayobo',
           warnings: ['status "left" is not one the app counts — imported as inactive'] },
-      ] });
+        { ref: 'row 3', action: 'create', name: 'No Id Yet', displayId: '026-019', detail: 'active · Egbeda',
+          warnings: ['will be issued member ID 026-019'] },
+      ],
+      ids: { kept: 2, issued: 1, normalized: 0, refused: window.__declared ? 0 : 1, strict: !!(opts && opts.idStrict),
+             undeclared: window.__declared ? {} : { 'AAA/99/999': { shape: 'AAA/99/999', count: 1, examples: ['OLD/19/042'] } } } });
   },
-} }, public: {} };
+  cards: {
+    formats: function () { return Promise.resolve({ formats: [{ id: 'member-number', label: 'The member number printed on the card (023-001)', template: '{id}', mask: '999-999', field: 'displayId', builtin: true }] }); },
+    declareIdFormat: function (example) { window.__declaredWith = example; window.__declared = true; return Promise.resolve({ format: { id: 'id-old-99-999', mask: 'OLD/99/999' } }); },
+  },
+} }, public: {
+  /* The bundle's shared hooks (useSession, useSiteContent) call these on mount;
+     with an empty object they threw before the drawer rendered — which is why
+     this suite timed out on its first assertion. Same stubs as members-manage-shot. */
+  session: function () { return Promise.resolve({ current: null, next: null }); },
+  stats: function () { return Promise.resolve({}); },
+  centres: function () { return Promise.resolve({ centres: [] }); },
+  content: function () { return Promise.resolve({}); },
+  siteContent: function () { return Promise.resolve({ content: {} }); },
+} };
 </script>
-<script src="/dist/app.min.js"></script>
 <script>
+/* In a function: the bundle is one concatenated script in global scope, and a
+   bare top-level "var e" here replaced the minified bundle function called e —
+   "r is not a function", and the drawer never rendered. */
+(function () {
 var e = React.createElement;
 window.__applied = 0;
 /* DialogHost is normally mounted by App. The confirm before an apply is part
    of what is being tested, so it has to be here too. */
-ReactDOM.createRoot(document.getElementById('shot')).render(
+/* Into #root, as the other component fixtures do: the bundle mounts its own
+   App there when it loads, and with no #root that mount threw (React #299)
+   and left the page with no working root for this one. */
+ReactDOM.createRoot(document.getElementById('root')).render(
   e(React.Fragment, null,
     e(window.AdminRosterImport, { onClose: function () {}, onApplied: function () { window.__applied++; } }),
     e(window.DialogHost)));
 setTimeout(function () { document.body.setAttribute('data-ready', '1'); }, 250);
+})();
 </script></body></html>`);
 
   const rosterFile = path.join(os.tmpdir(), `ngg-roster-ui-${process.pid}.json`);
@@ -163,6 +190,21 @@ setTimeout(function () { document.body.setAttribute('data-ready', '1'); }, 250);
       previewText.includes('is not one the app counts'));
     chk('only now does an Import button exist', await btn(/^Import 2 record/).count() === 1);
 
+    // ── Member IDs: strict by default, issued ones shown, undeclared shapes offered for declaring ──
+    chk('the check asks for strict ID checking by default', first.opts.idStrict === true);
+    chk('the preview counts the member IDs kept, to be issued, and refused',
+      /Member IDs — 2 kept · 1 to be issued · 1 refused/.test(previewText));
+    chk('…and names the ID a new member will be given', previewText.includes('No Id Yet') && previewText.includes('→ 026-019'));
+    chk('an ID shape the sheet uses that is not declared is shown, with its example',
+      /not declared/i.test(previewText) && previewText.includes('OLD/19/042') && previewText.includes('AAA/99/999'));
+    const callsBefore = await page.evaluate(() => window.__calls.length);
+    await btn('Declare this format').click();
+    await page.waitForFunction(() => window.__declared === true);
+    await page.waitForTimeout(250);
+    chk('declaring it sends the example', await page.evaluate(() => window.__declaredWith) === 'OLD/19/042');
+    chk('…and reads the file again, because the old dry run promised the old answer',
+      await page.evaluate(() => window.__calls.length) === callsBefore + 1 && !/not declared/i.test(await panel()));
+
     /* The drawer is the only way in on a host with no shell, so it is worth a
        picture in docs/screens. Fixture data only — a capture of the real
        roster would put children's names in the repository. */
@@ -176,11 +218,12 @@ setTimeout(function () { document.body.setAttribute('data-ready', '1'); }, 250);
     console.log('  ✓ docs/screens/27-roster-import.png  (' + kb + ' KB)');
 
     // ── Overwrite is a decision that invalidates the preview ──
-    await page.locator('input[type=checkbox]').check();
+    const overwriteBox = page.getByRole('checkbox', { name: /Replace values the record/ });
+    await overwriteBox.check();
     await page.waitForTimeout(120);
     chk('turning on overwrite withdraws the preview, because it is no longer the same import',
       await btn(/^Import 2 record/).count() === 0);
-    await page.locator('input[type=checkbox]').uncheck();
+    await overwriteBox.uncheck();
 
     await btn('Check what would change').click();
     await page.waitForTimeout(200);

@@ -7343,3 +7343,6 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
   .mem-bulk { background: rgba(255, 255, 255, 0.04); }
   .mem-issue-bad { color: #ff9f9a; border-color: #ff9f9a; }
 }
+
+/* Import drawer: ID shapes the sheet uses that no format declares */
+.imp-shape { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 6px 0; font-size: 13px; }

@@ -2437,7 +2437,10 @@ function AdminRequests() {
  * saved, because a format that reads nothing fails silently at the door.
  */
 function MemberCardFormatPicker({ value, onChange, disabled }) {
-  const { hasCap } = useAuth();
+  /* Outside the auth provider (a mounted fixture) there is no session: offer
+     nothing that needs a capability, rather than crash the drawer around it. */
+  const auth = useAuth() || {};
+  const hasCap = typeof auth.hasCap === "function" ? auth.hasCap : () => false;
   const [formats, setFormats] = React.useState(null);
   const [adding, setAdding] = React.useState(false);
   const [ex, setEx] = React.useState({ example: "", number: "", label: "", field: "code" });
@@ -2528,6 +2531,10 @@ function AdminRosterImport({ onClose, onApplied }) {
   const [cardFormat, setCardFormat] = React.useState("member-number");
   const [file, setFile] = React.useState(null);        // { source, members[] }
   const [overwrite, setOverwrite] = React.useState(false);
+  /* Refuse IDs that fit no declared ID format. On by default here: a typo
+     ("O24-016" with a letter O) filed as an ID is a card nobody can scan. */
+  const [idStrict, setIdStrict] = React.useState(true);
+  const [declaring, setDeclaring] = React.useState("");
   const [busy, setBusy] = React.useState("");
   const [preview, setPreview] = React.useState(null);
   const [done, setDone] = React.useState(null);
@@ -2598,7 +2605,7 @@ function AdminRosterImport({ onClose, onApplied }) {
          file after reading the preview fails closed instead of writing a roster
          nobody confirmed. */
       const r = await NGGApi.admin.members.importRoster(file,
-        apply ? { apply, overwrite, cardFormat, expectDigest: (preview && preview.digest) || "" } : { apply, overwrite, cardFormat });
+        apply ? { apply, overwrite, cardFormat, idStrict, expectDigest: (preview && preview.digest) || "" } : { apply, overwrite, cardFormat, idStrict });
       apply ? (setDone(r), toast.success(r.created + " new · " + r.updated + " updated" + (r.cards ? " · " + r.cards.issued + " cards issued" : ""), "Roster imported")) : setPreview(r);
     } catch (ex) {
       /* roster_changed is not a failure to retry — it means the file in hand is
@@ -2606,6 +2613,20 @@ function AdminRosterImport({ onClose, onApplied }) {
       if (ex.code === "roster_changed") { setPreview(null); setDone(null); }
       setErr(ex.detail || ex.code || ex.message || "The import failed");
     } finally { setBusy(""); }
+  };
+
+  /* Declare an ID shape the dry run found in the sheet, from its first example,
+     then read the file again — the dry run it replaces promised the old answer. */
+  const declare = async (u) => {
+    setDeclaring(u.shape); setErr("");
+    try {
+      await NGGApi.admin.members.cards.declareIdFormat(u.examples[0], "Member IDs like " + u.examples[0], false);
+      toast.success("IDs shaped like " + u.examples[0] + " are accepted now, and the gate reads their cards.", "ID format declared");
+      setPreview(null);
+      const r = await NGGApi.admin.members.importRoster(file, { apply: false, overwrite, cardFormat, idStrict });
+      setPreview(r);
+    } catch (ex) { setErr(ex.detail || ex.code || ex.message || "Could not declare that format"); }
+    finally { setDeclaring(""); }
   };
 
   const res = done || preview;
@@ -2673,6 +2694,12 @@ function AdminRosterImport({ onClose, onApplied }) {
             onChange={(v) => { setCardFormat(v); setPreview(null); }}/>
 
           <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+            <input type="checkbox" checked={idStrict} disabled={!!busy || !!done}
+              onChange={(e) => { setIdStrict(e.target.checked); setPreview(null); }}/>
+            Refuse member IDs that fit no declared ID format (today&rsquo;s is 023-001)
+          </label>
+
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13 }}>
             <input type="checkbox" checked={overwrite} disabled={!!busy || !!done}
               onChange={(e) => { setOverwrite(e.target.checked); setPreview(null); }}/>
             Replace values the record already has (default: fill blanks only)
@@ -2693,6 +2720,36 @@ function AdminRosterImport({ onClose, onApplied }) {
                     : <>Cards — {res.cards.wouldIssue} member{res.cards.wouldIssue === 1 ? "" : "s"} would get a secure card{res.cards.format ? "; old cards read as “" + res.cards.format + "”" : ""}</>}
                 </div>
               )}
+              {res.ids && (
+                <div className="mono imp-ids" style={{ marginBottom: 8, fontSize: 13 }}>
+                  Member IDs — {res.ids.kept} kept · {res.ids.issued} {done ? "issued" : "to be issued"}
+                  {res.ids.normalized ? " · " + res.ids.normalized + " read differently" : ""}
+                  {res.ids.refused ? " · " + res.ids.refused + " refused" : ""}
+                </div>
+              )}
+              {/* Shapes the sheet's IDs take that no format declares. Each is
+                  offered for declaring from its first example: old cards keep
+                  their IDs, and the gate reads them. */}
+              {res.ids && Object.values(res.ids.undeclared || {}).length > 0 && !done && (
+                <div className="admin-card admin-note-card">
+                  <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 6 }}>
+                    ID formats this sheet uses that are not declared
+                  </div>
+                  {Object.values(res.ids.undeclared).map(u => (
+                    <div key={u.shape} className="imp-shape">
+                      <span><b className="mono">{u.examples.join(", ")}</b>{u.count > u.examples.length ? " and " + (u.count - u.examples.length) + " more" : ""}
+                        {" "}<span className="admin-hint">({u.count} ID{u.count === 1 ? "" : "s"}, shape {u.shape})</span></span>
+                      <button type="button" className="btn btn-ghost btn-sm" disabled={!!declaring || !!busy} onClick={() => declare(u)}>
+                        {declaring === u.shape ? "Declaring…" : "Declare this format"}
+                      </button>
+                    </div>
+                  ))}
+                  <p className="admin-hint" style={{ marginBottom: 0 }}>
+                    Declaring tells the importer these are real member IDs and the gate how to read the cards
+                    that carry them. Only a super admin can. If one is a typo, correct the sheet instead.
+                  </p>
+                </div>
+              )}
               {/* A list, not a table. Four columns in a drawer this narrow put
                   "what changes" off the right-hand edge, which is the one
                   column somebody reading a dry run is here for. */}
@@ -2703,7 +2760,7 @@ function AdminRosterImport({ onClose, onApplied }) {
                       <span className="mono" style={{ width: 12, flex: "none", opacity: .7 }}>{MARK[r.action] || "?"}</span>
                       <span className="mono" style={{ width: 74, flex: "none", fontSize: 12 }}>{r.ref}</span>
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <div>{r.name}</div>
+                        <div>{r.name}{r.displayId && r.displayId !== r.ref ? <span className="mono" style={{ fontSize: 12, marginLeft: 6 }}>→ {r.displayId}</span> : null}</div>
                         {r.detail && <div className="mono" style={{ fontSize: 12, opacity: .72, wordBreak: "break-word" }}>{r.detail}</div>}
                         {(r.warnings || []).map((w, j) => (
                           <div key={j} className="admin-hint" style={{ margin: "3px 0 0" }}>↳ {w}</div>

@@ -108,6 +108,7 @@ if ($method === 'POST') {
                 'expectDigest' => $body['expectDigest'] ?? '',
                 'fileSha' => $body['fileSha'] ?? '',
                 'cardFormat' => array_key_exists('cardFormat', $body) ? (string)$body['cardFormat'] : 'member-number',
+                'idStrict' => !empty($body['idStrict']),
                 'ip' => client_ip()]);
         }
     } elseif ($action === 'ngvPortalSync') {

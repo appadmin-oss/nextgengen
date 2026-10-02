@@ -277,7 +277,11 @@ without paging through them.
 - **Print IDs** opens the batch drawer for everything matching your filters.
   See [ID cards](#id-cards).
 - **Import roster** loads the file produced from the members workbook. See
-  `docs/ROSTER-IMPORT.md` if you maintain that workbook.
+  `docs/ROSTER-IMPORT.md` if you maintain that workbook. Every member it
+  touches gets a printed ID if they have none — the dry run names each one.
+  An ID in an older format is listed with **Declare this format** (super
+  admin); an ID that is somebody else's here, or on two rows, is refused by
+  name, and an import never changes an ID a member already carries.
 - **+ New member** creates one by hand.
 
 ### History

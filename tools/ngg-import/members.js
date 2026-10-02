@@ -79,14 +79,23 @@ function properName(v) {
     .join(' ');
 }
 
-/** A member ID as the sheets spell it, variously: "024-016", "025- 107". */
+/** A member ID as the sheets spell it, variously: "024-016", "025- 107",
+ *  "23-001" (a spreadsheet ate the year's zero), or an older card's shape
+ *  altogether ("NGG/23/042"). Anything else that is ID-like — a digit in it,
+ *  no spaces, short — is kept AS PRINTED rather than treated as no ID: the
+ *  importer checks it against the ID formats the desk has declared, and an
+ *  extractor that threw it away lost exactly the members with the oldest
+ *  cards. "N/A", "-" and "TBD" are not IDs. */
 function memberRef(v) {
-  const s = clean(v).replace(/\s+/g, '');
-  return /^\d{3}-\d{1,4}$/.test(s) ? s : '';
+  const s = clean(v).replace(/\s+/g, '').toUpperCase();
+  if (!s) return '';
+  const today = s.match(/^(\d{2,3})[-/.](\d{1,4})$/);
+  if (today) return today[1].padStart(3, '0') + '-' + today[2];
+  return /\d/.test(s) && s.length <= 24 && /^[A-Z0-9][A-Z0-9/._-]*$/.test(s) ? s : '';
 }
 
-/** The intake year an ID encodes: "023-001" was issued in 2023. */
-const cohortOf = (ref) => String(2000 + Number(ref.slice(0, 3)));
+/** The intake year an ID encodes: "023-001" was issued in 2023. An older shape says nothing about it. */
+const cohortOf = (ref) => (/^\d{3}-/.test(ref) ? String(2000 + Number(ref.slice(0, 3))) : '');
 
 /** Match people across sheets that share no ID — order-insensitive, because
  *  "Eleyinmi Josiah" and "Josiah Eleyinmi" are one child. */
@@ -365,7 +374,17 @@ function extractMembers(wb) {
   for (const { row, rec } of [...registry.unidentified, ...ayobo.unidentified]) {
     const hit = lookupName(nameKey(rec.fullName), masterByName);
     if (!hit) {
-      warn(`${rec.source} row ${row}: "${rec.fullName}" has no member ID and no match on the master list — not imported`);
+      /* A member on the registry with no ID anywhere. They used to be dropped
+         here — "not imported" — so the app's ID minter never saw them, and the
+         newest members were the ones who never got an ID. They come through
+         with a blank ID now; the importer issues one (YYY-NNN, from their
+         intake year) and reports it so it can be written back. The copies of
+         one person in two registry sheets are one member, by name. */
+      const key = '~' + nameKey(rec.fullName);
+      const had = byRef.has(key);
+      upsert(key, { ...rec, centre: rec.source === SHEET_AYOBO ? CENTRE_AYOBO : CENTRE_DEFAULT });
+      byRef.get(key).displayId = '';
+      if (!had) warn(`${rec.source} row ${row}: "${rec.fullName}" has no member ID and no match on the master list — imported without one; the app issues one on import`);
       continue;
     }
     const ref = hit.value;
@@ -434,7 +453,8 @@ function extractMembers(wb) {
   }
 
   const members = [...byRef.values()]
-    .sort((a, b) => a.displayId.localeCompare(b.displayId))
+    // Members with an ID in ID order; the ones the app will number, after them by name.
+    .sort((a, b) => (!a.displayId - !b.displayId) || (a.displayId || a.fullName).localeCompare(b.displayId || b.fullName))
     .map((m) => ({
       displayId: m.displayId,
       fullName: m.fullName,
@@ -466,8 +486,8 @@ function extractMembers(wb) {
   const seenEmail = new Map();
   for (const m of members) {
     if (!m.email) continue;
-    if (seenEmail.has(m.email)) warn(`${m.displayId} (${m.fullName}) shares the email ${m.email} with ${seenEmail.get(m.email)} — only one of them can sign in with it`);
-    else seenEmail.set(m.email, m.displayId);
+    if (seenEmail.has(m.email)) warn(`${m.displayId || 'no ID yet'} (${m.fullName}) shares the email ${m.email} with ${seenEmail.get(m.email)} — only one of them can sign in with it`);
+    else seenEmail.set(m.email, m.displayId || m.fullName);
   }
 
   const tally = (fn) => members.filter(fn).length;

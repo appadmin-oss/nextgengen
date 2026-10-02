@@ -267,8 +267,31 @@ console.log('\nrows the desk never gave an ID');
     master: [['023-018', 'O', 'Abodunrin Adenike Deborah']],
     registry: [reg('', 'O', 'Chidinma', 'Anyanwu')],
   }));
-  chk('a registry row with no ID and no match is reported, not invented',
-    res.members.length === 1 && warned(res, 'not imported'));
+  /* It used to be dropped ("not imported"), so the app never numbered the
+     newest members. It comes through with no ID now, for the importer to issue. */
+  const nid = res.members.find((m) => m.fullName === 'Chidinma Anyanwu');
+  chk('a registry row with no ID and no match is imported without one, for the app to number',
+    res.members.length === 2 && nid && nid.displayId === '' && nid.cohort === '' && warned(res, 'the app issues one'));
+  chk('…and it is listed after the members who have IDs', res.members[1] === nid);
+}
+{
+  const res = extractMembers(book({
+    master: [['023-018', 'O', 'Abodunrin Adenike Deborah']],
+    registry: [reg('', 'O', 'Chidinma', 'Anyanwu')],
+    ayobo: [reg('', 'O', 'Chidinma', 'Anyanwu')],
+  }));
+  chk('…once, though both registry sheets list them', res.members.filter((m) => m.fullName === 'Chidinma Anyanwu').length === 1);
+}
+
+console.log('\nID shapes');
+{
+  const res = extractMembers(book({
+    master: [['23-007', 'O', 'Kunle Ade'], ['NGG/22/042', 'A', 'Ola Bisi'], ['N/A', 'O', 'Not Anid']],
+    registry: [reg('23-007', 'O', 'Kunle', 'Ade'), reg('NGG/22/042', 'A', 'Ola', 'Bisi')],
+  }));
+  chk('a year that lost its zero to a spreadsheet gets it back', !!find(res, '023-007') && find(res, '023-007').cohort === '2023');
+  chk('an older card\'s ID shape is kept as printed, for the importer to check', !!find(res, 'NGG/22/042') && find(res, 'NGG/22/042').cohort === '');
+  chk('"N/A" is not an ID', !res.members.some((m) => m.displayId === 'N/A'));
 }
 
 console.log('\nthe registration form');

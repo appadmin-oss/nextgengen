@@ -90,6 +90,7 @@ function backend_dispatch(string $op, array $args = []): array {
                see domain/member-cards.php. */
             'admin.members.cardFormats'    => 'admin_member_card_formats',
             'admin.members.cardFormatSave' => 'admin_member_card_format_save',
+            'admin.members.idFormatDeclare' => 'admin_member_id_format_declare',
             'admin.members.cards'          => 'admin_member_cards',
             'admin.members.cardReissue'    => 'admin_member_card_reissue',
             'admin.members.cardsBackfill'  => 'admin_member_cards_backfill',
