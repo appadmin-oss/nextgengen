@@ -35,8 +35,10 @@ const DIST = path.join(ROOT, 'dist');
 // into a single file — globals each script attaches to `window` stay
 // available to later scripts.
 const ORDER = [
+  'chess-engine.jsx',
   'motion.jsx',
   'safety.jsx',
+  'formation.jsx',
   'auth.jsx',
   'command.jsx',
   'tweaks-panel.jsx',
@@ -44,6 +46,7 @@ const ORDER = [
   'table.jsx',
   'card-template.jsx',
   'page-home.jsx',
+  'page-about.jsx',
   'page-club.jsx',
   'page-anchor.jsx',
   'page-other.jsx',

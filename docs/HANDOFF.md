@@ -23,10 +23,10 @@ The user's email (the intended super-admin identity): `mamcareer@afrovanguard.or
 
 ### Repos & branches — IMPORTANT
 - **Afrovanguard** (`appadmin-oss/afrovanguard-site`): develop on
-  **`claude/vigilant-knuth-kuhk7c`** — this is the "vigilant" branch the user
+  **`vigilant-knuth-kuhk7c`** — this is the "vigilant" branch the user
   meant. Do NOT use the audit-sync branch for Afrovanguard.
 - **NGG** (`appadmin-oss/nextgengen`): develop on
-  **`claude/ngg-afrovanguard-audit-sync-becs2k`**.
+  **`ngg-afrovanguard-audit-sync-becs2k`**.
 - **mam-academy**: in scope but untouched — nothing was required there.
 - No PRs have been opened yet (user was asked; hasn't answered). Don't open PRs
   unless asked.
@@ -101,7 +101,7 @@ Room visit.
 
 ## 3. Anchor Journal — ALL PHASES DELIVERED (this session)
 
-Everything below is pushed to `claude/ngg-afrovanguard-audit-sync-becs2k`,
+Everything below is pushed to `ngg-afrovanguard-audit-sync-becs2k`,
 each increment verified with `node build.js` (+ `php api/tests/run.php`,
 148/148, where the backend changed). Details in
 `docs/anchor-journal-v2-gap-analysis.md` §G.
@@ -138,7 +138,7 @@ Nothing from the Anchor design comps remains open.
 
 ## 3b. Platform build wave (post-blueprint) — DONE, verified, pushed
 
-All on `claude/ngg-afrovanguard-audit-sync-becs2k`; suite now 182/182 +
+All on `ngg-afrovanguard-audit-sync-becs2k`; suite now 182/182 +
 browser E2E. UX blueprint (locked v2): https://claude.ai/code/artifact/6744d694-868b-4f14-b547-7c2edcc52aaf
 
 | Piece | Where | Verified |
@@ -289,3 +289,71 @@ NEVER commit api/config.php; camera Permissions-Policy is camera=(self) in
 · `api/auth/{login,request,verify}.php` · `api/config.example.php` ·
 `journal/app.jsx` + `journal/app.css` · `docs/NGG-AUDIT-INDEX.md` ·
 `docs/afrovanguard-sync.md` · `docs/anchor-journal-v2-gap-analysis.md`.
+
+
+---
+
+## Quote of the week (2026-09-26)
+
+Home-page section cycling Hausa riddles, Igbo proverbs and Yoruba proverbs one
+per week, editable in Control Room → Content → Quote of the week.
+
+- **Rotation is derived, not stored** (`wisdom_pick`, anchor Monday
+  2026-09-21 Lagos). Languages alternate in fixed order; each walks its own
+  `position` list, so adding to one language never shifts another's sequence.
+  Empty languages are skipped.
+- **Seeded in PHP, once**, behind the `wisdom.seeded` setting — not in the
+  migration, because the sayings contain `;` and `db_split_sql` cuts on it.
+- **Audio is a stored clip**, never a per-visitor provider call: staff
+  voice-over (upload or in-browser recording) or a Spitch TTS rendering made
+  on demand. Served by `api/public/wisdom-audio.php` with byte ranges (Safari).
+  The browser's own speech voice is used only if it has one for the language.
+- Migration 118 (`wisdom_sayings`). Files: `api/_lib/domain/wisdom.php`,
+  `api/{public,admin}/wisdom.php`, `api/public/wisdom-audio.php`,
+  `QuoteOfWeek` (page-home.jsx), `AdminWisdom` (page-admin.jsx).
+
+### Quote of the week — voice, second pass (2026-09-26)
+
+- Rotation unchanged (it already interleaved one per language); the admin strip
+  now numbers each turn ("Hausa #1, Igbo #1…") so the order is legible, and a
+  test pins "never the same language two weeks running".
+- Two clips per saying: native + English translation (Nigerian-English voice),
+  played in sequence with a pause. Migration 119 adds `audioFileEn`, `voiceEn`,
+  `ttsTriedAt`.
+- Voicing is automatic with a key: on save, via "Voice everything missing", and
+  a visitor backstop for this week's saying guarded by `ttsTriedAt` (claim-first
+  lock + one-hour backoff) so a burst of visitors is one provider call.
+- `wisdom_tts_script` cleans punctuation and tone-marks unmarked Yorùbá through
+  Spitch `/v1/diacritics` before synthesis.
+- Voice cloning through Spitch `/v1/voices` with recorded consent (audit log).
+  Defaults per language live in the `wisdom.voiceDefaults` setting; cloned
+  voices in `wisdom.customVoices`.
+- All Spitch traffic goes through `wisdom_spitch()`; tests swap the transport
+  with `$GLOBALS['__wisdom_http']`.
+
+### Quote of the week — generate once, listen back (2026-09-26)
+
+- `wisdom_tts_clips` (migration 120) records every clip ever generated, keyed by
+  sha256(language|voice|speed|script). `wisdom_tts_clip()` answers from it
+  before calling Spitch, and `wisdom_audio_release()` never deletes a file it
+  lists — so the same audio is never paid for twice, whatever staff press.
+- The visitor backstop runs once per saying, ever (`ttsTriedAt` non-empty ⇒
+  never again, success or failure). The hourly retry is gone.
+- Listen-back: each new clip goes to Spitch `/v1/transcriptions` in its own
+  language; `wisdom_match_score()` (character edit distance on tone-stripped,
+  lower-cased letters) scores it. With no voice named, up to four native
+  voices are tried until one scores ≥ 0.85; the best is kept and its score is
+  shown to staff.
+- Our `/v1/diacritics` call was removed: Spitch's OpenAPI states `/v1/speech`
+  diacritizes Yorùbá itself. `spokenText` lets staff give a fully marked
+  reading for Igbo/Hausa without changing the displayed saying.
+- Speed back to 1.0 (0.9 read as slowed, not fluent).
+
+### Quote of the week — full seed (2026-09-26)
+
+Seed v2: 4 Hausa riddles, 4 Igbo, 4 Yorùbá proverbs, with the programme's
+revised wording. `wisdom.seeded.version` gates it; a v1 deployment is upgraded
+in place — untouched rows take the new wording (compared against
+`wisdom_seed_rows_v1()`), edited rows are left alone, deleted v1 rows stay
+deleted, new sayings are appended. Hausa riddle 3's answer is seeded as
+"Tsintsiya" (broom): the supplied "Tsutsa ko Tsintsiya" reads "worm or broom".

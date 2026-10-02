@@ -62,6 +62,65 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
      {id:3,goal:'Join the Tuesday coding club.',dueOn:'2026-06-30',status:'done',closedOn:'2026-06-24',setById:'NGG-MENT-1',setByName:'Nkechi Mentor',overdue:false,createdAt:''}
    ],
    kinds:['one-to-one','group','call','guardian','check-in'],
+   /* The Courage Index (brief §14). Four marks so the trend is allowed to
+      appear at all — under four the server withholds the direction, and a
+      fixture that skipped that would photograph a state the product never
+      shows. The current value is the mean of the four, as the server
+      computes it. (No backticks in here: this whole fixture lives inside a
+      template literal.) */
+   courage:{ current:3.8, rung:{score:4,label:'Takes responsibility voluntarily'}, direction:'rising',
+     inWindow:4, total:4, windowDays:120, marks:[
+       {id:4,score:5,prompt:'Did they defend someone being treated unfairly?',evidence:'Told the older boys to stop mocking the new JSS1 boy, in front of everyone.',markedById:'NGG-MENT-1',markedByName:'Nkechi Mentor',observedOn:'2026-08-15'},
+       {id:3,score:4,prompt:'Did they admit failure?',evidence:'Said out loud that the demo failed because she had not practised the wiring.',markedById:'NGG-MENT-1',markedByName:'Nkechi Mentor',observedOn:'2026-08-08'},
+       {id:2,score:3,prompt:'Did they attempt something difficult?',evidence:'Tried the harder build after the first one collapsed twice.',markedById:'NGG-MENT-1',markedByName:'Nkechi Mentor',observedOn:'2026-07-30'},
+       {id:1,score:3,prompt:'',evidence:'Asked the question the whole room clearly had and nobody else would ask.',markedById:'NGG-MENT-1',markedByName:'Nkechi Mentor',observedOn:'2026-07-21'}
+     ] },
+   courageLadder:[{score:1,label:'Avoids responsibility'},{score:2,label:'Acts only when instructed'},
+     {score:3,label:'Attempts difficult things'},{score:4,label:'Takes responsibility voluntarily'},
+     {score:5,label:'Acts courageously for the good of others'}],
+   couragePrompts:['Did they speak the truth when lying would have been easier?','Did they apologize when wrong?',
+     'Did they attempt something difficult?','Did they defend someone being treated unfairly?',
+     'Did they ask questions when confused?','Did they accept correction?','Did they admit failure?',
+     'Did they volunteer for responsibility?','Did they challenge an idea respectfully?','Did they continue after failure?'],
+   /* Eight weeks of the weekly review (brief §18), three of them done. The
+      gaps are the point: a strip of eight filled squares and a strip of three
+      look nothing alike, and the difference is the finding the section asks
+      the programme to see. Newest FIRST here, as the server returns it. */
+   reviews:[
+     {period:'2026-W34',reviewed:true,answered:9,concern:false,mentorName:'Nkechi Mentor',updatedAt:'2026-08-18',
+      answers:{learned:'That the wiring fails when the board moves, not when the code is wrong.',
+               produced:'A rebuilt chassis that survives being carried.',
+               responsibility:'Ran the pack-down without being asked.',
+               struggled:'Letting a younger boy take the soldering iron.',
+               fear:'Presented first instead of last.',
+               journal:'Writing about the demo failure rather than around it.',
+               timetable:'Kept, except Thursday practice.',
+               community:'Yes — stayed to help the JSS1 group.',
+               chess:'Stopped resigning after losing a piece.',
+               dues:'', leadership:'', challenge:''}},
+     {period:'2026-W33',reviewed:false,answered:0,concern:false},
+     {period:'2026-W32',reviewed:true,answered:12,concern:true,mentorName:'Nkechi Mentor',updatedAt:'2026-08-04',answers:{}},
+     {period:'2026-W31',reviewed:false,answered:0,concern:false},
+     {period:'2026-W30',reviewed:true,answered:6,concern:false,mentorName:'Nkechi Mentor',updatedAt:'2026-07-21',answers:{}},
+     {period:'2026-W29',reviewed:false,answered:0,concern:false},
+     {period:'2026-W28',reviewed:false,answered:0,concern:false},
+     {period:'2026-W27',reviewed:false,answered:0,concern:false}
+   ],
+   reviewQuestions:[
+     {key:'learned',n:1,q:'What did this child learn this week?'},
+     {key:'produced',n:2,q:'What did this child produce?'},
+     {key:'responsibility',n:3,q:'What responsibility did this child carry?'},
+     {key:'struggled',n:4,q:'What did this child struggle with?'},
+     {key:'fear',n:5,q:'What fear did this child confront?'},
+     {key:'journal',n:6,q:'What does the Anchor Journal reveal?'},
+     {key:'timetable',n:7,q:"Is the child's timetable being respected?"},
+     {key:'community',n:8,q:'Is the child participating in community?'},
+     {key:'chess',n:9,q:'What is happening with chess development?'},
+     {key:'dues',n:10,q:'Are dues, fines and accountability obligations up to date?'},
+     {key:'leadership',n:11,q:'What leadership behaviour did I observe?'},
+     {key:'challenge',n:12,q:'What should I challenge this child about next week?'}
+   ],
+   period:'2026-W34',
    canWrite:true, role:'mentor', rank:'mentor', sessionId:'S-2026' };
  window.NGGApi={ member:{
    mentorRoster:function(centre,scope){ var mine=(scope||'mine')==='mine';
@@ -75,6 +134,14 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
    mentorMeetingDelete:function(){ return Promise.resolve({}); },
    mentorGoal:function(){ return Promise.resolve({id:4}); },
    mentorGoalStatus:function(){ return Promise.resolve({}); },
+   courageMark:function(){ return Promise.resolve({ok:true,courage:MTR_CHILD.courage}); },
+   mentorReview:function(){ return Promise.resolve({ok:true}); },
+   /* Two of the five in the roster reviewed, so the strip shows the
+      names rather than the all-clear — the state worth photographing. */
+   mentorReviewsDue:function(){ return Promise.resolve({ok:true,period:'2026-W34',total:5,reviewed:2,
+     done:[{subjectId:'NGG-KID-1',fullName:'Adaeze Okonkwo'},{subjectId:'NGG-KID-2',fullName:'Tunde Bello'}],
+     due:[{subjectId:'NGG-KID-4',fullName:'Damilola Bakare'},{subjectId:'NGG-KID-6',fullName:'Emeka Obi'},
+          {subjectId:'NGG-KID-3',fullName:'Zainab Yusuf'}],questions:MTR_CHILD.reviewQuestions}); },
    mentorAttention:function(){ return Promise.resolve({concerns:[],overdue:[],centres:['Egbeda'],centre:''}); }
  } };
  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(MentorPortal,null));
@@ -117,8 +184,12 @@ function loadChromium(){for(const m of [process.env.PLAYWRIGHT_MODULE,'playwrigh
     await shoot('roster','',{width:900,height:800},false);
     await shoot('record','',{width:900,height:1100},true);
     await shoot('goals','',{width:900,height:900},true,'Goals');
+    await shoot('courage','',{width:900,height:1400},true,'Courage');
+    await shoot('review','',{width:900,height:2000},true,'This week');
     await shoot('roster-phone','',{width:390,height:844},false);
     await shoot('record-phone','',{width:390,height:844},true);
+    await shoot('courage-phone','',{width:390,height:844},true,'Courage');
+    await shoot('review-phone','',{width:390,height:844},true,'This week');
   } finally { await browser.close(); srv.kill(); try{fs.unlinkSync(FIX);}catch(_){} }
   if(problems.length){problems.forEach(p=>console.log('  ✗ '+p));console.log('\n❌ MENTOR SHOTS: '+problems.length+' problem(s)');process.exit(1);}
   console.log('\n✅ MENTOR SHOTS: '+shots+' screens rendered clean into tests/screens/');

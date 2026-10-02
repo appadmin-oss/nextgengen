@@ -1,6 +1,6 @@
 # Plan — Growth Potential analytics · Program Journal · Form reliability & caching
 
-Status: **delivered** · Branch: `claude/gate-links-staff-desk-4g73f9`
+Status: **delivered** · Branch: `gate-links-staff-desk-4g73f9`
 
 > All four workstreams shipped. Two things changed from the plan during
 > implementation, both because reality disagreed with it:

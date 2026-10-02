@@ -1,6 +1,6 @@
 # Audit — what this system thinks NGG is, and a plan for what it actually is
 
-Status: **audit + proposal, nothing built** · Branch: `claude/gate-links-staff-desk-4g73f9`
+Status: **audit + proposal, nothing built** · Branch: `gate-links-staff-desk-4g73f9`
 Written August 2026, after the observation that "the entire site has been focused
 mainly on the summer students and not even NGG themselves."
 

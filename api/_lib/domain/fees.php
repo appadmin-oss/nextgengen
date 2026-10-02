@@ -62,10 +62,29 @@ const FEES_DEFAULTS = [
     'enabled'      => false,
     'currency'     => 'NGN',
     'membershipFee' => 0,
+    /* How often the membership fee comes round, in months. 12 = yearly, on the
+       anniversary of joining, which is what the programme charges. Admin-set,
+       because a programme that switches to a calendar year or a two-year
+       membership should not need a deploy. 0 would mean "once, ever" — the old
+       behaviour — and is still reachable by setting it there. */
+    'membershipEveryMonths' => 12,
     'monthlyDues'   => 0,
-    /* Per programme session. The figure the programme uses today; an admin can
-       change it, and changing it does not touch charges already posted. */
+    /* The training figure. What it is PER depends on `trainingBasis`. */
     'trainingFee'   => 75000,
+    /* What the training fee is charged per.
+     *
+     *   'session'  one charge per programme session the member is enrolled
+     *              through — the original behaviour, and the default so that
+     *              switching this on is always a deliberate act.
+     *   'day'      one charge per day the programme actually meets, off the
+     *              admin's own calendar: the weekdays it runs, its holidays and
+     *              its extra days, inside each session's start/end window.
+     *
+     * On 'day' the amount is a DAY RATE, not a session total. Changing the
+     * basis does not touch charges already posted, and a session that already
+     * carries a session-level charge is never also charged by the day — see
+     * fees_training_days(). */
+    'trainingBasis' => 'session',
     /* Three years, split. Training accrues the fee; service earns it off. */
     'trainingMonths' => 18,
     'serviceMonths'  => 18,
@@ -190,6 +209,14 @@ const FEES_CREDIT_KINDS = ['payment', 'writeoff', 'waiver'];
  */
 const FEES_MANUAL_CHARGE_KINDS = ['fine', 'adjustment'];
 
+/** What the training fee may be charged per. See FEES_DEFAULTS['trainingBasis']. */
+const FEES_TRAINING_BASES = ['session', 'day'];
+
+/** A ceiling on how many day-charges one member can pick up in a single accrual
+ *  run. Three years of a five-day week is about 780, so this is generous — it
+ *  exists so a mistyped session window cannot post ten thousand rows. */
+const FEES_TRAINING_DAYS_MAX = 1200;
+
 /** Why a fine was issued. A fixed vocabulary rather than free text, because a
  *  fine is the one charge a family will dispute, and "late three times in
  *  August" is answerable where "misconduct" is not. `other` exists so nobody
@@ -230,12 +257,18 @@ function fees_settings_save(array $in, string $by): array {
     $cur = fees_settings();
     $bool = fn(string $k) => array_key_exists($k, $in) ? !empty($in[$k]) : !empty($cur[$k]);
     $phase = fn($v, int $fb) => max(FEES_PHASE_MIN, min(FEES_PHASE_MAX, (int)($v ?? $fb) ?: $fb));
+    /* The membership cycle allows 0 — "once, ever" — which $phase's floor would
+       silently turn into 1 month, i.e. a monthly membership fee. */
+    $cycle = fn($v, int $fb) => $v === null ? $fb : max(0, min(FEES_PHASE_MAX, (int)$v));
     $clean = [
         'enabled'        => $bool('enabled'),
         'currency'       => 'NGN',
         'membershipFee'  => fees_money($in['membershipFee'] ?? null, (int)$cur['membershipFee']),
+        'membershipEveryMonths' => $cycle($in['membershipEveryMonths'] ?? null, (int)$cur['membershipEveryMonths']),
         'monthlyDues'    => fees_money($in['monthlyDues'] ?? null, (int)$cur['monthlyDues']),
         'trainingFee'    => fees_money($in['trainingFee'] ?? null, (int)$cur['trainingFee']),
+        'trainingBasis'  => in_array($in['trainingBasis'] ?? null, FEES_TRAINING_BASES, true)
+            ? (string)$in['trainingBasis'] : (string)$cur['trainingBasis'],
         'trainingMonths' => $phase($in['trainingMonths'] ?? null, (int)$cur['trainingMonths']),
         'serviceMonths'  => $phase($in['serviceMonths'] ?? null, (int)$cur['serviceMonths']),
         'balanceCap'     => fees_money($in['balanceCap'] ?? null, (int)$cur['balanceCap']),
@@ -261,6 +294,8 @@ function fees_settings_save(array $in, string $by): array {
     audit('fees.settings.save', $by, 'fees', [
         'enabled' => $clean['enabled'], 'monthlyDues' => $clean['monthlyDues'],
         'trainingFee' => $clean['trainingFee'], 'membershipFee' => $clean['membershipFee'],
+        'trainingBasis' => $clean['trainingBasis'],
+        'membershipEveryMonths' => $clean['membershipEveryMonths'],
     ], '');
     return $clean;
 }
@@ -496,6 +531,83 @@ function fees_due_months(string $start, string $upto, int $max = FEES_DUE_MONTHS
 }
 
 /**
+ * The membership periods a member has reached, as ['key' => …, 'due' => …].
+ *
+ * Membership renews on the ANNIVERSARY of joining, not on 1 January: a child
+ * who joins in November has paid for a year in November, and billing them again
+ * six weeks later because the calendar rolled is the kind of thing that ends a
+ * family's patience with a programme.
+ *
+ * `everyMonths` of 0 means the old behaviour — one charge, ever — and is kept
+ * reachable because a programme with a joining fee rather than a subscription
+ * is a legitimate shape.
+ *
+ * The key is the period ORDINAL ("y1", "y2"), not the year, so that a change to
+ * the cycle length cannot make a period a member has already been charged for
+ * look like one they have not.
+ */
+function fees_membership_periods(string $start, string $upto, int $everyMonths): array {
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start)) return [];
+    if ($everyMonths <= 0) return [['key' => 'once', 'due' => $start]];
+    $out = [];
+    for ($n = 0; $n < FEES_DUE_MONTHS_MAX; $n++) {
+        $due = gmdate('Y-m-d', (int)strtotime($start . ' 00:00:00 UTC +' . ($n * $everyMonths) . ' months'));
+        if ($due > $upto) break;
+        $out[] = ['key' => 'y' . ($n + 1), 'due' => $due];
+    }
+    return $out;
+}
+
+/**
+ * The days a member is charged the training fee for, when the basis is 'day'.
+ *
+ * "Each day they come" is the admin's calendar, not the attendance register:
+ * `memberProgramme` holds the weekdays the programme meets, its holidays and
+ * its extra days, and each session holds the window. Charging off attendance
+ * instead would make missing a day cheaper than turning up, which is not what
+ * a training fee is for.
+ *
+ * Bounded on three sides — the member joined, the training half ends, and the
+ * day has actually happened — so nothing is charged for a session on next
+ * year's calendar or for a member who left in the middle of one.
+ *
+ * @return array<string,string> periodKey => the date, for fees_post
+ */
+function fees_training_days(string $memberId, array $ten, ?string $asOf = null): array {
+    if (!function_exists('programme_days_between')) return [];
+    $today = $asOf ?? gmdate('Y-m-d');
+    $cal = function_exists('member_programme_settings') ? member_programme_settings() : null;
+    /* An unconfigured calendar answers TRUE for every date, which would charge
+       for Sundays and public holidays alike. A day rate needs a real calendar,
+       so with none set nothing is charged and the accrual says why. */
+    if (!$cal || empty($cal['enabled'])) return [];
+
+    $trainingEnds = (string)($ten['trainingEndsAt'] ?? '');
+    $out = [];
+    foreach (db_all('SELECT sessionId, startDate, endDate FROM sessions ORDER BY startDate') as $sess) {
+        $sid = (string)$sess['sessionId'];
+        $from = substr((string)($sess['startDate'] ?? ''), 0, 10);
+        $to   = substr((string)($sess['endDate'] ?? ''), 0, 10);
+        if ($from === '') continue;
+        if ($to === '' || $to > $today) $to = $today;                       // not yet happened
+        if ($trainingEnds !== '' && $to >= $trainingEnds) $to = gmdate('Y-m-d', (int)strtotime($trainingEnds . ' -1 day'));
+        if ($from < $ten['start']) $from = $ten['start'];                    // before they joined
+        if ($from > $to) continue;
+
+        /* A session already charged as a whole is never also charged by the
+           day. Switching the basis mid-programme must not re-bill a family for
+           a session they have already been invoiced for. */
+        if (db_row("SELECT id FROM member_ledger WHERE memberId = ? AND kind = 'training' AND periodKey = ? LIMIT 1", [$memberId, $sid])) continue;
+
+        foreach (programme_days_between($from, $to, $cal) as $day) {
+            $out[$sid . ':' . $day] = $day;
+            if (count($out) >= FEES_TRAINING_DAYS_MAX) return $out;
+        }
+    }
+    return $out;
+}
+
+/**
  * Post one ledger entry, or return the existing one.
  *
  * Idempotent on (memberId, kind, periodKey) via the unique index, so an accrual
@@ -660,10 +772,18 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     $bal = fees_balance($member, $cfg, $asOf);
     if (!empty($bal['atCap'])) { $out['skipped'] = 'at_cap'; return $out; }
 
-    if ((int)$cfg['membershipFee'] > 0
-        && fees_post($memberId, 'membership', (int)$cfg['membershipFee'],
-                     ['periodKey' => 'once', 'note' => 'Membership fee', 'by' => 'accrual'])) {
-        $out['membership'] = 1;
+    /* Membership renews on the anniversary of joining. The 'once' key from the
+       one-off era is still what a 0-month cycle posts, so a deployment that
+       never wanted a subscription keeps exactly the row it already has. */
+    if ((int)$cfg['membershipFee'] > 0) {
+        foreach (fees_membership_periods($ten['start'], $asOf ?? gmdate('Y-m-d'), (int)$cfg['membershipEveryMonths']) as $per) {
+            $label = $per['key'] === 'once' ? 'Membership fee'
+                : 'Membership fee — year ' . substr($per['key'], 1) . ' from ' . $per['due'];
+            if (fees_post($memberId, 'membership', (int)$cfg['membershipFee'],
+                          ['periodKey' => $per['key'], 'note' => $label, 'by' => 'accrual'])) {
+                $out['membership']++;
+            }
+        }
     }
     if ((int)$cfg['monthlyDues'] > 0) {
         foreach (fees_due_months($ten['start'], $asOf ?? gmdate('Y-m-d')) as $mk) {
@@ -676,7 +796,18 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     /* Training charges attach to a programme SESSION, not to a month — and only
        to sessions that had started, so a session on next year's calendar does
        not appear on an account today. */
-    if ((int)$cfg['trainingFee'] > 0) {
+    if ((int)$cfg['trainingFee'] > 0 && (string)$cfg['trainingBasis'] === 'day') {
+        /* A day rate, off the admin's own meeting calendar. */
+        $days = fees_training_days($memberId, $ten, $asOf);
+        if (!$days && empty(member_programme_settings()['enabled'])) $out['skipped'] = 'no_calendar';
+        foreach ($days as $key => $day) {
+            if (fees_post($memberId, 'training', (int)$cfg['trainingFee'],
+                          ['periodKey' => $key, 'sessionId' => explode(':', $key)[0],
+                           'note' => 'Training — ' . $day, 'by' => 'accrual'])) {
+                $out['training']++;
+            }
+        }
+    } elseif ((int)$cfg['trainingFee'] > 0) {
         $today = $asOf ?? gmdate('Y-m-d');
         foreach (db_all('SELECT sessionId, name, startDate FROM sessions ORDER BY startDate') as $s) {
             $sd = substr((string)($s['startDate'] ?? ''), 0, 10);

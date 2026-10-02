@@ -53,18 +53,44 @@ function hooks_attendance(array $p): array {
 
         // Resolve who this is: QR token → summer student → member → handle.
         $student = null; $cohortId = ''; $name = ''; $sid = ''; $isMember = false;
+        /* Volunteers too: a volunteer's card and id are in the same key space as
+           a student's, and a hook that only looked up students answered
+           "unknown" for every volunteer an app or the CACENTRE gate reported. */
+        $volunteer = null;
         if ($token !== '') {
             $qr = db_row("SELECT studentId FROM qr_codes WHERE token = ? AND studentId != '' LIMIT 1", [$token]);
             if ($qr) $student = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$qr['studentId']]);
+            if ($qr && !$student) $volunteer = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$qr['studentId']]);
         } elseif ($ref !== '') {
             $student = db_row('SELECT * FROM summer_students WHERE studentId = ? OR handle = ? LIMIT 1', [$ref, strtolower($ref)]);
-            if (!$student) {
+            if (!$student) $volunteer = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$ref]);
+            if (!$student && !$volunteer) {
                 $m = db_row('SELECT memberId, fullName, type FROM members WHERE memberId = ? LIMIT 1', [$ref]);
                 if ($m) { $sid = (string)$m['memberId']; $name = (string)$m['fullName']; $isMember = ((string)$m['type'] === 'NGG'); }
             }
         }
+        if ($volunteer) { $sid = (string)$volunteer['volunteerId']; $name = (string)$volunteer['fullName']; }
         if ($student) { $sid = (string)$student['studentId']; $cohortId = (string)$student['cohortId']; $name = (string)$student['fullName']; }
         if ($sid === '') { $results[] = ['ref' => $ref ?: $token, 'status' => 'unknown']; $unknown++; continue; }
+
+        /* A check-out, from the CACENTRE gate (or any sender that says so).
+         * Stamped on the day's row and nothing else: it never creates one,
+         * because a departure is not an arrival. Without these, a policy with
+         * checkoutRequired logs everybody who came in through the gate as
+         * "checked in but never scanned out" and counts them absent.
+         * not_checked_in is answered rather than swallowed: the arrival may
+         * still be in flight, and the sender retries. */
+        if (strtolower((string)($e['action'] ?? 'in')) === 'out') {
+            $row = db_row('SELECT id, checkOutAt FROM attendance WHERE studentId = ? AND date = ?', [$sid, $date]);
+            if (!$row) { $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'not_checked_in']; continue; }
+            /* A LATER departure moves it: at a CACENTRE terminal the check-out
+               is the last punch of the day, and the gate re-sends it as it moves. */
+            if (!empty($row['checkOutAt']) && strtotime($scanIso) <= strtotime((string)$row['checkOutAt'])) { $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'already']; $already++; continue; }
+            db_update('attendance', ['checkOutAt' => $scanIso], ['id' => $row['id']]);
+            $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'marked', 'action' => 'out'];
+            $marked++;
+            continue;
+        }
 
         $dupe = db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$sid, $date]);
         if ($dupe) { $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'already']; $already++; continue; }
@@ -107,4 +133,121 @@ function hooks_attendance(array $p): array {
     }
     audit('hook.attendance', null, $source, ['marked' => $marked, 'already' => $already, 'unknown' => $unknown], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'marked' => $marked, 'already' => $already, 'unknown' => $unknown, 'results' => $results];
+}
+
+/* ══ The CACENTRE gate ══════════════════════════════════════════════════════
+ *
+ * CACENTRE's front door is a gate (a Cloudflare Worker) that checks NGG cards
+ * with NGG rather than keeping a copy of NGG's people. These two ops are what
+ * it asks, over api/hooks/gate.php, signed exactly like the attendance hook
+ * and with the same secret. The check-ins themselves come back through
+ * hooks.attendance, by ref.
+ *
+ * The gate is told the least that lets a desk say who is at the door and
+ * whether they may come in: a reference, the name, what they are, and — if
+ * they may not — why in words. No guardian, no phone, no photo.
+ */
+
+/** What the gate is told about a summer student. */
+function gate_person_student(array $s, ?array $qr = null): array {
+    $status = 'active';
+    if ((string)($s['status'] ?? 'active') !== 'active') $status = 'marked ' . (string)$s['status'];
+    elseif (function_exists('policy_gate_checkin')) {
+        $g = policy_gate_checkin((string)$s['studentId'], 'student');
+        if (empty($g['ok'])) $status = $g['error'] === 'policy_evicted' ? 'evicted under the programme policy' : 'suspended under the programme policy';
+    }
+    $detail = trim(implode(' · ', array_filter([(string)($s['track'] ?? ''), (string)($s['centre'] ?? '')])));
+    $exp = $qr ? substr((string)($qr['expiresAt'] ?? ''), 0, 10) : '';
+    return ['ref' => (string)$s['studentId'], 'name' => (string)$s['fullName'], 'kind' => 'student',
+            'status' => $status, 'detail' => $detail ?: 'Summer School', 'expires_on' => $exp !== '' ? $exp : null];
+}
+
+/** What the gate is told about a volunteer. */
+function gate_person_volunteer(array $v, ?array $qr = null): array {
+    $status = (string)($v['status'] ?? 'active') === 'active' ? 'active' : 'marked ' . (string)$v['status'];
+    $detail = 'Volunteer' . ((string)($v['role'] ?? '') !== '' ? ' · ' . $v['role'] : '')
+            . ((string)($v['safeguarding'] ?? '') !== 'cleared' ? ' · safeguarding not yet cleared' : '');
+    $exp = $qr ? substr((string)($qr['expiresAt'] ?? ''), 0, 10) : '';
+    return ['ref' => (string)$v['volunteerId'], 'name' => (string)$v['fullName'], 'kind' => 'volunteer',
+            'status' => $status, 'detail' => $detail, 'expires_on' => $exp !== '' ? $exp : null];
+}
+
+/** What the gate is told about an NGG member. $how: how the card was read. */
+function gate_person_member(array $m, string $how = ''): array {
+    $s = strtolower((string)($m['status'] ?? 'active'));
+    $status = $s === 'active' ? 'active' : 'marked ' . ($s ?: 'inactive');
+    if ($status === 'active' && function_exists('policy_gate_checkin')) {
+        $g = policy_gate_checkin((string)$m['memberId'], 'member');
+        if (empty($g['ok'])) $status = ($g['error'] ?? '') === 'policy_evicted' ? 'evicted under the programme policy' : 'suspended under the programme policy';
+    }
+    $detail = trim(implode(' · ', array_filter([
+        'NGG member' . ((string)($m['displayId'] ?? '') !== '' ? ' ' . $m['displayId'] : ''),
+        (string)($m['track'] ?? ''), (string)($m['centre'] ?? ''),
+        /* An old printed card is a number anybody could write down; the desk
+           says so, so somebody glances at the face. */
+        $how === 'printed' ? 'old printed card' : '',
+    ])));
+    return ['ref' => (string)$m['memberId'], 'name' => (string)$m['fullName'], 'kind' => 'member',
+            'status' => $status, 'detail' => $detail, 'expires_on' => null];
+}
+
+/** A card token or a reference, to the person the gate may show. */
+function hooks_gate_resolve(array $p): array {
+    $token = strtoupper(trim((string)($p['token'] ?? '')));
+    $ref = trim((string)($p['ref'] ?? ''));
+    $format = trim((string)($p['format'] ?? ''));
+    /* A member's card: secure (MEMQR-), or an older printed one the gate
+       decoded by one of NGG's formats. */
+    if (strpos($token, 'MEMQR-') === 0 || $format !== '') {
+        $hit = $format !== '' ? member_card_lookup(null, $format, (string)($p['value'] ?? '')) : member_card_lookup($token);
+        if (!$hit) return ['ok' => false, 'code' => 'unknown', 'error' => $format !== ''
+            ? 'NGG has no member with card ' . strtoupper(trim((string)($p['value'] ?? ''))) . '.' : 'NGG does not know card ' . $token . '.'];
+        if ($hit['void']) return ['ok' => false, 'code' => 'void_card', 'error' => 'This NGG card has been replaced. Ask for the new one, or search the name.'];
+        return ['ok' => true, 'person' => gate_person_member($hit['member'], $hit['kind'])];
+    }
+    if ($token !== '') {
+        $qr = db_row('SELECT * FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
+        if (!$qr) {
+            /* A volunteer's card lives on the volunteer row in older data. */
+            $v = db_row('SELECT * FROM volunteers WHERE token = ? LIMIT 1', [$token]);
+            return $v ? ['ok' => true, 'person' => gate_person_volunteer($v)]
+                      : ['ok' => false, 'code' => 'unknown', 'error' => 'NGG does not know card ' . $token . '.'];
+        }
+        if ((string)$qr['status'] === 'void') return ['ok' => false, 'code' => 'void_card', 'error' => 'This NGG card has been retired. Search the name instead.'];
+        if ((string)($qr['studentId'] ?? '') === '') return ['ok' => false, 'code' => 'blank_card', 'error' => 'This NGG card has not been given to anyone yet.'];
+        $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$qr['studentId']]);
+        if ($s) return ['ok' => true, 'person' => gate_person_student($s, $qr)];
+        $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$qr['studentId']]);
+        if ($v) return ['ok' => true, 'person' => gate_person_volunteer($v, $qr)];
+        return ['ok' => false, 'code' => 'unknown', 'error' => 'This NGG card’s holder has been removed.'];
+    }
+    if ($ref !== '') {
+        $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$ref]);
+        if ($s) return ['ok' => true, 'person' => gate_person_student($s, $s['token'] ? db_row('SELECT * FROM qr_codes WHERE token = ?', [$s['token']]) : null)];
+        $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$ref]);
+        if ($v) return ['ok' => true, 'person' => gate_person_volunteer($v)];
+        $m = db_row("SELECT * FROM members WHERE memberId = ? AND COALESCE(type,'NGG') <> 'Summer' LIMIT 1", [$ref]);
+        if ($m) return ['ok' => true, 'person' => gate_person_member($m)];
+        return ['ok' => false, 'code' => 'unknown', 'error' => 'NGG does not know ' . $ref . '.'];
+    }
+    return ['ok' => false, 'code' => 'bad_request', 'error' => 'A token or a ref is needed.'];
+}
+
+/** Find by name, for a child at the door without their card. Active people only; eight at most. */
+function hooks_gate_search(array $p): array {
+    $q = trim((string)($p['q'] ?? ''));
+    if (mb_strlen($q) < 2) return ['ok' => true, 'people' => []];
+    $like = '%' . $q . '%';
+    $centre = trim((string)($p['centre'] ?? ''));
+    $args = [$like];
+    $sql = "SELECT * FROM summer_students WHERE status = 'active' AND fullName LIKE ?";
+    if ($centre !== '') { $sql .= ' AND (centre = ? OR centre = \'\' OR centre IS NULL)'; $args[] = $centre; }
+    $out = [];
+    foreach (db_all($sql . ' ORDER BY fullName LIMIT 8', $args) as $s) $out[] = gate_person_student($s);
+    foreach (db_all("SELECT * FROM volunteers WHERE status = 'active' AND fullName LIKE ? ORDER BY fullName LIMIT 4", [$like]) as $v) $out[] = gate_person_volunteer($v);
+    $margs = [$like];
+    $msql = "SELECT * FROM members WHERE status = 'active' AND COALESCE(type,'NGG') <> 'Summer' AND COALESCE(role,'member') = 'member' AND fullName LIKE ?";
+    if ($centre !== '') { $msql .= " AND (centre = ? OR centre = '' OR centre IS NULL)"; $margs[] = $centre; }
+    foreach (db_all($msql . ' ORDER BY fullName LIMIT 6', $margs) as $m) $out[] = gate_person_member($m);
+    return ['ok' => true, 'people' => array_slice($out, 0, 10)];
 }

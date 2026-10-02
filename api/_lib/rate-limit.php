@@ -15,6 +15,26 @@ declare(strict_types=1);
  */
 function rate_limit_default(string $op): ?array {
     static $d = [
+        /* THE CREDENTIAL BUCKETS COME FIRST, because they are the ones this
+         * function exists for and the ones it used to leave out.
+         *
+         * Every bucket below this group had a floor; `auth.verify`,
+         * `auth.request`, `gate.unlock` and the two circle buckets did not —
+         * they lived only in config.example.php. So a deployment whose
+         * config.php predated them (the exact case the docblock above
+         * describes) silently ran password sign-in, OTP delivery, TOTP
+         * verification and the kiosk password at the loose 60/minute default.
+         * The module was applying its own stated principle to the second-tier
+         * buckets and not to the first-tier ones. */
+        'auth.gateway'       => ['max' => 30, 'window' => 60],    // identifier lookup only; sends nothing
+        'auth.request'       => ['max' => 5,  'window' => 60],    // EMAILS a sign-in code — mail-amplification
+        'auth.verify'        => ['max' => 10, 'window' => 60],    // password / OTP / TOTP checks
+        'gate.unlock'        => ['max' => 8,  'window' => 300],   // kiosk desk password
+        'circle.lookup'      => ['max' => 6,  'window' => 300],   // 6-digit code → a child's name
+        'circle.connect'     => ['max' => 5,  'window' => 600],   // consumes a code; tighter still
+        'upload.sign'        => ['max' => 30, 'window' => 60],    // mints a cloud upload signature
+        'hook'               => ['max' => 120, 'window' => 60],   // inbound webhook bursts
+
         'apply'              => ['max' => 6,  'window' => 60],    // sends an acknowledgement email to a client-supplied address
         'apply.hour'         => ['max' => 30, 'window' => 3600],  // mail-amplification ceiling per IP
         'contact'            => ['max' => 5,  'window' => 60],    // notifies admins on every send
@@ -22,7 +42,42 @@ function rate_limit_default(string $op): ?array {
         'application.status' => ['max' => 20, 'window' => 300],   // (ref,email) brute-force lookup
         'summer.profile'     => ['max' => 12, 'window' => 300],   // a minor's name + photo + attendance, by guessable handle
         'student.login'      => ['max' => 8,  'window' => 300],   // ID-card credential check — brute-force ceiling
-        'community.post'     => ['max' => 12, 'window' => 60],    // feed post/comment write rate
+        /* The external scheduler endpoint. A secret in a URL is a secret worth
+           a brute-force ceiling, and this bucket is checked BEFORE the key is
+           compared so it also caps how often anyone can make the box do work.
+           Generous enough for a per-minute cron, nowhere near enough to search
+           a random key. */
+        'cron.external'      => ['max' => 12, 'window' => 60],
+        /* Raising a request reaches a human and can attach a receipt. Twelve an
+           hour is more than anybody needs and far less than a flood. */
+        'member.request'     => ['max' => 12, 'window' => 3600],
+        /* Scoped per MEMBER at the route (see api/member/community.php), not per
+           IP alone. A centre is one address: thirty children in a computer room
+           shared twelve posts a minute between them, and the thirteenth was
+           told to slow down. The same reasoning is written out for
+           'summer.register' below and was never applied here.
+
+           The real per-author control is community_spam_check(), which throttles
+           on behaviour (15s between posts, duplicate detection, 15/hour). This
+           stays a runaway-script ceiling, sized so a busy classroom never
+           reaches it. */
+        'community.post'     => ['max' => 12, 'window' => 60],    // per member
+        'community.post.ip'  => ['max' => 240, 'window' => 60],   // per address — a whole centre
+        /* Nudging. The rule that matters is one per child per day, enforced in
+           community_homework_nudge(); this is only a ceiling on the endpoint so
+           a stuck client cannot spin on it. Sized for the real action — a
+           mentor pressing "Nudge all 10 outstanding" on two or three tasks in
+           a sitting — not for one press. */
+        'community.nudge'    => ['max' => 20, 'window' => 300],   // per mentor
+        /* A typing ping. One write per 3s while actually typing is 20/minute;
+           this ceiling is triple that, so a real conversation never reaches it
+           and a stuck client is stopped. */
+        'community.typing'   => ['max' => 60, 'window' => 60],    // per member
+        /* Journal writes, including the writer's autosave. Sized for somebody
+           writing steadily for an hour with a save every few seconds, not for
+           one press — an autosave that starts refusing mid-sentence loses the
+           thing this screen exists to protect. */
+        'journal.write'      => ['max' => 120, 'window' => 300],  // per member
         /* Telemetry, not an action: the client reports once per page when a
            configured media cloud refused an upload. Sized so a whole centre on
            one WiFi during a broken deployment still gets its warnings recorded —

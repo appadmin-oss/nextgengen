@@ -289,6 +289,35 @@ function auth_reset_request(array $p): array {
 }
 
 /**
+ * A welcome link that lets a new member set their own password.
+ *
+ * Reuses the reset challenge exactly — same table, same purpose, same
+ * single-use consumption in auth_reset_confirm() — so there is one credential
+ * type to reason about rather than two. What differs is the expiry: a reset a
+ * member asked for two minutes ago can live for thirty minutes, but a welcome
+ * link is emailed to a guardian who may hand it over that evening, or at the
+ * weekend. Seven days.
+ *
+ * Why this exists at all: the apply form collects one email address and it is
+ * the guardian's, so a converted member signs in with a code sent to their
+ * parent's inbox, every single time. One password, set once, ends that.
+ */
+function auth_welcome_link(string $memberId, int $days = 7): string {
+    $m = db_row('SELECT memberId, email FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$m) return '';
+    $token = rand_hex(32);
+    $now = time();
+    db_insert('auth_sessions', [
+        'token' => $token, 'memberId' => (string)$m['memberId'], 'email' => (string)$m['email'],
+        'otp' => new_otp(), 'attempts' => 0, 'purpose' => 'reset',
+        'createdAt' => gmdate('Y-m-d\TH:i:s\Z', $now),
+        'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $now + max(1, $days) * 86400),
+        'verifiedAt' => '', 'ip' => '', 'userAgent' => 'welcome',
+    ]);
+    return rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/?reset=' . rawurlencode($token);
+}
+
+/**
  * Self-service password reset — step 2. Consumes a reset challenge (magic-link
  * token, or memberId + emailed code) and sets the new password. Single-use,
  * expiry- and attempt-guarded, and scoped to purpose='reset' so a reset
@@ -419,6 +448,34 @@ function auth_totp_setup(array $p): array {
     if (!$member) return ['ok' => false, 'error' => 'not_found'];
     if (!is_admin_role($member['role'])) return ['ok' => false, 'error' => 'forbidden'];
 
+    /* ENROLMENT IS ONCE. Re-enrolment is a recovery, and recovery is not
+     * self-service.
+     *
+     * This wrote a fresh secret over whatever was already there, and the
+     * endpoint in front of it (auth/admin-totp-setup.php) runs on a session
+     * that has NOT yet passed 2FA — because a first-time enrolling admin has no
+     * second factor to pass. Those two facts together made the second factor
+     * optional: sign in with the password alone, call setup, receive a secret
+     * you chose the moment of, then satisfy the 2FA gate with it. The real
+     * admin's authenticator stopped working at the same time, which is the only
+     * reason anyone would have noticed.
+     *
+     * The rest of the system already assumed this could not happen. `needsTotp`
+     * (util.php) is `is_admin_role && empty(totpSecret)`, and the admin client
+     * only offers the setup panel when that is true — so a signed-in admin was
+     * never MEANT to be able to reach this twice.
+     *
+     * A lost authenticator has its own door: admin_member_reset_2fa(), which is
+     * super-admin-only, clears the secret, and lets the next sign-in enrol
+     * afresh. That door has a human on the other side of it. This one does not,
+     * so it only opens when there is nothing behind it.
+     */
+    if (!empty($member['totpSecret'])) {
+        audit('admin.totp.setup_refused', (string)$member['memberId'], (string)$member['memberId'],
+              ['reason' => 'already_enrolled'], (string)($p['ip'] ?? ''));
+        return ['ok' => false, 'error' => 'already_enrolled'];
+    }
+
     $secret = rand_base32(20);
     // Mint 8 one-time backup codes (shown once, stored hashed) so a lost
     // authenticator is recoverable without an admin.
@@ -439,8 +496,20 @@ function auth_totp_verify(array $p): array {
     if (!$member || empty($member['totpSecret'])) return ['ok' => false, 'error' => 'no_totp'];
     if (!is_admin_role($member['role'])) return ['ok' => false, 'error' => 'forbidden'];
 
+    /* Six digits, and a ±1 window, is a small enough space that the only thing
+     * standing between it and a script is a ceiling on attempts. There was no
+     * ceiling here — only the IP rate limit in front of the endpoint, which a
+     * forwarded header could shed. Counted against the ADMIN, so rotating
+     * addresses does not buy another eight guesses. */
+    $mid = (string)$member['memberId'];
+    if (attempt_locked('totp', $mid)) {
+        audit('admin.totp.locked', $mid, $mid, [], (string)($p['ip'] ?? ''));
+        return ['ok' => false, 'error' => 'too_many_attempts'];
+    }
+
     $code = (string)($p['code'] ?? '');
     if (totp_verify((string)$member['totpSecret'], $code, 1)) {
+        attempt_reset('totp', $mid);
         audit('admin.totp.ok', $member['memberId'], (string)$member['memberId'], [], (string)($p['ip'] ?? ''));
         return ['ok' => true];
     }
@@ -452,13 +521,18 @@ function auth_totp_verify(array $p): array {
             if (is_string($h) && password_verify($norm, $h)) {
                 unset($hashes[$i]);
                 db_update('members', ['totpBackup' => json_encode(array_values($hashes), JSON_UNESCAPED_SLASHES), 'updatedAt' => now_iso()], ['id' => $member['id']]);
+                attempt_reset('totp', $mid);
                 audit('admin.totp.backup_used', $member['memberId'], (string)$member['memberId'], ['remaining' => count($hashes)], (string)($p['ip'] ?? ''));
                 return ['ok' => true, 'backupUsed' => true, 'backupRemaining' => count($hashes)];
             }
         }
     }
-    audit('admin.totp.fail', $member['memberId'], (string)$member['memberId'], [], (string)($p['ip'] ?? ''));
-    return ['ok' => false, 'error' => 'invalid_code'];
+    // Eight wrong codes buys a fifteen-minute pause — the same shape as the
+    // password lockout, so the two factors are guarded to the same standard.
+    $locked = attempt_fail('totp', $mid, AUTH_LOCK_AFTER, AUTH_LOCK_MINUTES * 60);
+    audit($locked ? 'admin.totp.lockout' : 'admin.totp.fail',
+          $member['memberId'], (string)$member['memberId'], [], (string)($p['ip'] ?? ''));
+    return ['ok' => false, 'error' => $locked ? 'too_many_attempts' : 'invalid_code'];
 }
 
 /** Super-admin recovery: clear a member's TOTP + backup codes so they re-enrol

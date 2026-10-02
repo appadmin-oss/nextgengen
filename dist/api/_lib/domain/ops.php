@@ -144,6 +144,36 @@ function ops_health(): array {
         if ($n > 0) $checks['photosOnRecord'] = ['ok' => $blank === 0, 'checked' => $n, 'missing' => $blank];
     } catch (Throwable $e) { /* not worth a failed health check */ }
 
+    /* And whether the images the records point at are still THERE.
+     *
+     * Nothing in the product could see this. The self-test above answers "can
+     * this host keep a photograph", the count before it answers "did one
+     * arrive", and between them sits the case that was actually happening: a
+     * URL on a row whose file is no longer on disk. The card renders an empty
+     * frame, the browser console fills with 404s from photo.php, and nobody can
+     * get from one to the other. It had a cause in this file's neighbour — the
+     * sweep deleted files it could not see a reference to — and it needs naming
+     * even now that is fixed, because the files it already deleted are gone and
+     * those children need a retake. */
+    if (function_exists('photo_store_broken_refs')) {
+        try {
+            /* Cached for ten minutes. The scan reads every text column in the
+               schema, which is right for a daily sweep and wrong to re-run each
+               time somebody opens this page — and the answer does not change
+               minute to minute. Refresh reflects it within the window. */
+            $br = cache_get('ops.photoLinks', 600);
+            if (!is_array($br)) { $br = photo_store_broken_refs(400); cache_put('ops.photoLinks', $br); }
+            /* Only when the scan actually ran. A scan that could not enumerate
+               the schema knows nothing, and reporting that as "0 of 0 broken"
+               would be a red light about nothing — the sweep logs the real
+               reason, and it fails closed by deleting nothing. */
+            if (!empty($br['scanned'])) {
+                $checks['photoLinks'] = ['ok' => !empty($br['ok']), 'checked' => (int)$br['checked'],
+                                         'missing' => (int)$br['missing'], 'where' => (array)$br['where']];
+            }
+        } catch (Throwable $e) { /* a diagnostic must never be the outage */ }
+    }
+
     /* Is the media cloud actually connected?
      *
      * Nothing checked this, and the client is built to survive it being gone:

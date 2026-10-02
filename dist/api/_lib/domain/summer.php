@@ -77,23 +77,25 @@ function admin_summer_overview(array $p): array {
     ]];
 }
 
-// ── Cohorts ──────────────────────────────────────────────────────────────────
+/* ── Editions ─────────────────────────────────────────────────────────────────
+ *
+ * `summer_cohorts` is the EDITION table — one row per season of Summer School,
+ * and its id is the `cohortId` that summer_students, attendance and qr_codes
+ * all carry. A "cohort" in the product's vocabulary is now a GROUP within an
+ * edition, which has its own table; see _lib/domain/summer-editions.php for the
+ * whole vocabulary and for the ops that own this concept.
+ *
+ * This is the pre-edition entry point, kept because an older cached client
+ * bundle still posts `action: cohort`. It DELEGATES rather than keeping a
+ * second, subtly different writer: the version that lived here validated
+ * nothing, stored whatever status arrived, and demoted the outgoing edition to
+ * 'archived' — a status that in this system means "attendance rolled up and
+ * possibly purged" (see admin_summer_cohort_archive), which nothing had
+ * actually done. Two writers for one row is how those two facts came to
+ * disagree.
+ */
 function admin_summer_cohort_upsert(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
-    $d = $p['data'] ?? [];
-    $cohortId = trim((string)($d['cohortId'] ?? ''));
-    $cols = ['name', 'year', 'startDate', 'endDate', 'status'];
-    if ($cohortId && db_row('SELECT id FROM summer_cohorts WHERE cohortId = ?', [$cohortId])) {
-        db_update('summer_cohorts', db_pick($d, $cols, [], ['year']), ['cohortId' => $cohortId]);
-    } else {
-        $year = (int)($d['year'] ?? gmdate('Y'));
-        $cohortId = $cohortId ?: ('SUM-' . $year);
-        db_insert('summer_cohorts', ['cohortId' => $cohortId, 'year' => $year, 'name' => (string)($d['name'] ?? ('Summer ' . $year)), 'startDate' => (string)($d['startDate'] ?? ''), 'endDate' => (string)($d['endDate'] ?? ''), 'status' => (string)($d['status'] ?? 'active'), 'createdAt' => now_iso()]);
-    }
-    // Only one active cohort at a time.
-    if (($d['status'] ?? '') === 'active') db_exec("UPDATE summer_cohorts SET status='archived' WHERE cohortId != ? AND status='active'", [$cohortId]);
-    audit('summer.cohort.upsert', $g['requester']['memberId'], $cohortId, [], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'cohortId' => $cohortId];
+    return admin_summer_edition_save($p);
 }
 
 // ── QR minting (batch of blank tokens, printed before enrollment) ────────────
@@ -270,6 +272,7 @@ function summer_student_admin(array $s, ?string $idExpiry = null): array {
     $out = summer_student_public($s, true);
     $out += [
         'age' => $s['age'] === null || $s['age'] === '' ? null : (int)$s['age'],
+        'dob' => (string)($s['dob'] ?? ''),
         'firstName' => (string)($s['firstName'] ?? ''),
         'lastName' => (string)($s['lastName'] ?? ''),
         'guardianName' => (string)($s['guardianName'] ?? ''),
@@ -604,6 +607,14 @@ function admin_summer_student_update(array $p): array {
         $row['fullName'] = substr($name, 0, 120);
     }
     if (array_key_exists('age', $d)) { $age = (int)$d['age']; if ($age < 5 || $age > 19) return ['ok' => false, 'error' => 'bad_age']; $row['age'] = $age; }
+    /* Date of birth, recorded by an admin. When it is given, the age follows
+       from it rather than from the age box, so the two cannot disagree. */
+    if (array_key_exists('dob', $d)) {
+        $dob = dob_clean((string)$d['dob']);
+        if ($dob === null) return ['ok' => false, 'error' => 'bad_dob'];
+        $row['dob'] = $dob;
+        if ($dob !== '') { $age = dob_age($dob); if ($age < 5 || $age > 19) return ['ok' => false, 'error' => 'bad_age']; $row['age'] = $age; }
+    }
     foreach (['centre' => 48, 'track' => 64, 'guardianName' => 255, 'guardianPhone' => 48, 'photoUrl' => 512, 'notes' => 2000] as $f => $max) {
         if (array_key_exists($f, $d)) $row[$f] = substr(trim((string)$d[$f]), 0, $max);
     }
@@ -1664,6 +1675,22 @@ function public_summer_profile(array $p): array {
     $token = trim((string)($p['token'] ?? ''));
     $handle = trim((string)($p['handle'] ?? ''));
     $s = null;
+    /* An NGG member's card. Like a participant's, the code is a bearer
+       credential — holding the card is what opens the page — so it is not
+       consent-gated; it shows only what the card itself carries. */
+    if ($token !== '' && stripos($token, 'MEMQR-') === 0 && function_exists('member_card_lookup')) {
+        $hit = member_card_lookup($token);
+        if (!$hit || $hit['void']) return ['ok' => false, 'error' => 'not_found'];
+        $mm = $hit['member'];
+        $days = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [(string)$mm['memberId']])['c'] ?? 0);
+        return ['ok' => true, 'profile' => [
+            'kind' => 'member', 'studentId' => (string)$mm['memberId'], 'fullName' => (string)$mm['fullName'],
+            'track' => (string)($mm['track'] ?? ''), 'centre' => (string)($mm['centre'] ?? ''),
+            'cohortId' => (string)($mm['displayId'] ?? ''), 'displayId' => (string)($mm['displayId'] ?? ''),
+            'photoUrl' => normalize_image_url((string)($mm['photoUrl'] ?? '')), 'status' => (string)($mm['status'] ?? ''),
+            'attendanceCount' => $days, 'attendance' => [],
+        ]];
+    }
     if ($token !== '') {
         $qr = db_row('SELECT studentId FROM qr_codes WHERE token = ? LIMIT 1', [$token]);
         if ($qr && !empty($qr['studentId'])) {

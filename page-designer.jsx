@@ -26,11 +26,74 @@ const DSN_GOLD = "#F5B026";
 /* A blank card, so "New design" is a card and not an empty rectangle: the frame,
    the panel and a QR that already passes preflight. Somebody who presses New and
    gets a white void has to know the schema to make progress. */
-function dsnBlank(kind) {
-  const vol = kind === "volunteer";
+/**
+ * A blank design of one kind, already carrying the fields that kind must show.
+ *
+ * A truly empty canvas is the wrong start for a credential: the operator then
+ * discovers at publish time that nothing on the card shows a name. So a blank
+ * starts as a valid card of its kind and is edited down.
+ *
+ * `face` gives a card a BACK. A back is exempt from the credential rules (it
+ * carries terms and a signature strip, not the identity), so its blank is a
+ * panel and a heading rather than a name and a QR.
+ */
+function dsnBlank(kind, face) {
+  const k = kind === "volunteer" ? "volunteer" : kind === "member" ? "member" : "student";
+  const back = face === "back";
+
+  if (k === "member") {
+    /* 54 × 85mm — ISO/IEC 7810 ID-1, the size of every bank card and therefore
+       of every wallet slot. The summer card is 54 × 75 because it hangs from a
+       lanyard; a member card that does not fit a wallet gets left at home. */
+    const base = { id: "", kind: "member", face: back ? "back" : "front",
+      w: 590, h: 929, wMm: 54, hMm: 85, safe: 30, bleedMm: 3 };
+    if (back) return Object.assign(base, {
+      name: "New member card — back", background: "#0B1F51",
+      elements: [
+        { id: "panel", type: "rect", x: 30, y: 30, w: 530, h: 869, radius: 18, fill: "#ffffff" },
+        { id: "h", type: "text", x: 66, y: 74, w: 460, h: 34, text: "THIS CARD", size: 20, weight: 800,
+          color: "#0B1F51", letterSpacing: 3 },
+        { id: "terms", type: "text", x: 66, y: 122, w: 460, h: 240,
+          text: "Identifies the holder as a member of Next Generation Genius. Not transferable.",
+          size: 17, weight: 400, color: "#5C6474", lineHeight: 1.5 },
+        { id: "idlabel", type: "text", x: 66, y: 780, w: 200, text: "MEMBER ID", size: 13, weight: 700,
+          color: "#6B7280", letterSpacing: 2.6 },
+        { id: "idvalue", type: "text", x: 66, y: 802, w: 300, text: "{{displayId}}", size: 18, weight: 500,
+          color: "#0B1F51", font: "monospace" },
+      ],
+    });
+    return Object.assign(base, {
+      name: "New member card", background: "#ffffff",
+      elements: [
+        { id: "topband", type: "rect", x: 0, y: 0, w: 590, h: 92, fill: "#0B1F51", role: "background" },
+        { id: "wordmark", type: "text", x: 34, y: 26, w: 480, h: 40, text: "NEXT GENERATION GENIUS",
+          size: 21, weight: 800, color: "#ffffff", letterSpacing: 3.4, vAlign: "middle" },
+        { id: "photo", type: "image", x: 60, y: 128, w: 470, h: 370, radius: 18, fit: "cover", src: "{{photo}}", fill: "#eef0f4" },
+        { id: "given", type: "text", x: 60, y: 528, w: 470, h: 40, text: "{{member.given}}", size: 30, weight: 300,
+          color: "#5C6474", letterSpacing: 0.6, transform: "upper", fit: true },
+        { id: "family", type: "text", x: 58, y: 566, w: 474, h: 58, text: "{{member.family}}", size: 52, weight: 800,
+          color: "#0B1F51", letterSpacing: -1.4, transform: "upper", fit: true },
+        { id: "disciplines", type: "text", x: 60, y: 640, w: 470, h: 30, text: "{{disciplines}}", size: 19, weight: 600,
+          color: "#5C6474", letterSpacing: 2.4, transform: "upper", fit: true },
+        { id: "qr", type: "qr", x: 60, y: 700, w: 118, h: 118, token: "{{token}}" },
+        { id: "idvalue", type: "text", x: 200, y: 730, w: 330, text: "{{displayId}}", size: 24, weight: 500,
+          color: "#0B1F51", font: "monospace" },
+        { id: "centreband", type: "rect", x: 0, y: 872, w: 590, h: 57, fill: "{{centre.color}}", role: "background" },
+        { id: "centrename", type: "text", x: 30, y: 872, w: 530, h: 57, text: "{{centre.code}}  ·  {{centre.name}}",
+          size: 24, weight: 700, color: "{{ink.centre}}", align: "center", letterSpacing: 4.4,
+          transform: "upper", vAlign: "middle", fit: true, minSize: 20, role: "background" },
+      ],
+    });
+  }
+
+  const vol = k === "volunteer";
   return {
-    id: "", name: vol ? "New volunteer card" : "New student card", kind: vol ? "volunteer" : "student",
-    w: 590, h: 972, safe: 30, bleedMm: 3,
+    id: "", name: vol ? "New volunteer card" : "New Summer School card", kind: vol ? "volunteer" : "student",
+    face: "single",
+    /* 54 × 89mm — the `id-card-tall` preset these 590 × 972 units are. Stated,
+       not left to the export defaults: the member blank above states its size
+       and this one did not, so the studio header read "× mm". */
+    w: 590, h: 972, wMm: 54, hMm: 89, safe: 30, bleedMm: 3,
     background: vol ? "{{centre.color}}" : "#ffffff",
     elements: [
       { id: "panel", type: "rect", x: 30, y: 30, w: 530, h: 830, radius: 22, fill: "#ffffff" },
@@ -82,10 +145,14 @@ function dsnQrUrl(token) {
    something they can edit rather than a blank they have to know the schema to
    fill. Credential presets keep the card starter, which already carries the
    bindings and a QR that passes preflight. */
+/* A preset carries a `face` for the card sizes that have one, so choosing
+   "Member card — back" starts a BACK rather than a front the operator then has
+   to remember to re-label. */
 function dsnFromPreset(preset) {
   if (preset.kind !== "graphic") {
-    const t = dsnBlank(preset.kind);
-    return { ...t, name: preset.name, w: preset.w, h: preset.h, wMm: preset.wMm, hMm: preset.hMm,
+    const t = dsnBlank(preset.kind, preset.face);
+    return { ...t, name: preset.name, face: preset.face || t.face || "single",
+             w: preset.w, h: preset.h, wMm: preset.wMm, hMm: preset.hMm,
              safe: preset.safe, bleedMm: preset.bleedMm };
   }
   const W = preset.w, H = preset.h, pad = preset.safe;
@@ -173,8 +240,40 @@ function dsnDownload(blob, name) {
    real number instead of at page ninety with a crash. */
 const DSN_MERGE_BUDGET = 350 * 1024 * 1024;
 
+/* What the server says one run may render, if the server did not say. Only
+   reached when an old response is in flight during a deploy; the number that
+   counts is MERGE_RUN_MAX in merge.php. */
+const MERGE_RUN_FALLBACK = 600;
+
+/** What to CALL a layer out loud. The rail showed the element's type and its
+ *  raw id ("rect · panel"), which is what a designer sees; an accessible name
+ *  has to be the same thing in words, and a bound text element is best
+ *  identified by the field it shows rather than by its id. */
+function dsnLayerLabel(el) {
+  if (!el) return "element";
+  const t = String(el.type || "element");
+  if (t === "text") {
+    const raw = String(el.text || "").trim();
+    const bind = raw.match(/^\{\{\s*([\w.]+)\s*\}\}$/);
+    if (bind) {
+      const f = (window.TPL_FIELDS || {})[bind[1]];
+      return "text: " + (f ? f.label : bind[1]);
+    }
+    if (raw) return "text: " + raw.slice(0, 28);
+  }
+  if (t === "qr") return "QR code";
+  if (t === "image") return "image" + (el.src && String(el.src).indexOf("{{") === 0 ? ": photograph" : "");
+  return t + " " + String(el.id || "");
+}
+
 function dsnRowName(r) {
-  return [r.firstName, r.surname].filter(Boolean).join(" ").trim() || r.displayId || r.key || "unnamed";
+  /* `fullName` is the fallback before the id, not after it. A MEMBER row holds
+     one name and no split parts (the summer intake asks for the parts
+     separately), so every member in the batch picker read as its own member id
+     — a list of forty identical-looking codes to choose forty people from. */
+  return [r.firstName, r.surname].filter(Boolean).join(" ").trim()
+    || String(r.fullName || "").trim()
+    || r.displayId || r.key || "unnamed";
 }
 
 /**
@@ -196,6 +295,19 @@ function dsnPerSheet(tpl, sheetW, sheetH) {
   const fit = (pw, ph) => Math.max(0, Math.floor((pw - 2 * margin + gutter) / (w + gutter)))
                         * Math.max(0, Math.floor((ph - 2 * margin + gutter) / (h + gutter)));
   return Math.max(fit(sheetW || 210, sheetH || 297), fit(sheetH || 297, sheetW || 210));
+}
+
+/** "40 seconds", "3 minutes", "1 hour 10 minutes" — how much longer, said the
+ *  way somebody deciding whether to wait would say it. Deliberately coarse: an
+ *  estimate accurate to the second is an estimate pretending to be a fact. */
+function dsnEta(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 15) return "a few seconds";
+  if (s < 90) return Math.round(s / 10) * 10 + " seconds";
+  const m = Math.round(s / 60);
+  if (m < 60) return m + " minute" + (m === 1 ? "" : "s");
+  const h = Math.floor(m / 60), r = m % 60;
+  return h + " hour" + (h === 1 ? "" : "s") + (r ? " " + r + " minute" + (r === 1 ? "" : "s") : "");
 }
 
 /** A filename per person that a coordinator can match to a child by eye. */
@@ -237,6 +349,418 @@ function dsnMergeAudit(tpl, rows) {
   return out;
 }
 
+/* ── Seeing the actual card ──────────────────────────────────────────────────
+ *
+ * A table tells you Chidi Gamma has no photograph. It does not tell you what
+ * that LOOKS like, and "what does it look like" is the only question that
+ * matters before four hundred of them go to a printer. So the picker can show
+ * the real thing: each person's card, drawn by the same renderer that draws the
+ * proof and writes the print file, at about two hundred pixels wide.
+ *
+ * The same renderer, not a cheaper approximation of it. That is the rule this
+ * whole file is built on and it is worth more here than anywhere: a thumbnail
+ * grid that renders cards a second way is a grid that can disagree with the
+ * print, which is worse than having no grid at all.
+ *
+ * Rendering four hundred cards on the main thread would lock the tab, so:
+ *
+ *   · only what is on the page is ever asked for;
+ *   · one at a time, through a queue, yielding between each;
+ *   · cached by design AND person, so paging back is instant;
+ *   · and every pending job is dropped the moment the design changes, because
+ *     its answer is about a card that no longer exists.
+ */
+
+const DSN_THUMB_PX = 210;          // the long-ish edge, in device pixels
+const DSN_THUMB_CACHE_MAX = 400;   // ~200 people, both orientations, before eviction
+
+const _dsnThumbs = new Map();      // key → data URL
+let _dsnThumbEpoch = 0;            // bumped when the design changes
+const _dsnThumbQ = [];
+let _dsnThumbBusy = false;
+
+/** Everything about a design that changes what a card LOOKS like. A cache key
+ *  built from the id alone would serve yesterday's artwork after an edit. */
+function dsnThumbSig(tpl) {
+  try { return JSON.stringify(tpl); } catch (_) { return String(Math.random()); }
+}
+
+function dsnThumbKey(sig, rowKey) { return rowKey + "|" + sig.length + "|" + sig.slice(0, 400); }
+
+function _dsnThumbPump() {
+  if (_dsnThumbBusy) return;
+  const job = _dsnThumbQ.shift();
+  if (!job) return;
+  /* Two ways a job stops being worth doing, and both have to be checked HERE
+     rather than after the render: the design changed, or the card scrolled off
+     the page. Without the second, paging forward leaves the previous page's
+     twenty-five renders queued IN FRONT of the ones you are looking at, so the
+     grid you are staring at fills last. */
+  if (job.epoch !== _dsnThumbEpoch || job.dead()) return _dsnThumbPump();
+  _dsnThumbBusy = true;
+  const dpi = DSN_THUMB_PX / ((Number(job.tpl.wMm) || 54) / 25.4);
+  dsnRaster(job.tpl, job.row, job.fabric, dpi)
+    .then(px => {
+      if (job.epoch !== _dsnThumbEpoch) return;
+      if (_dsnThumbs.size >= DSN_THUMB_CACHE_MAX) {
+        // Oldest first. A Map iterates in insertion order, so this is FIFO.
+        const oldest = _dsnThumbs.keys().next().value;
+        if (oldest !== undefined) _dsnThumbs.delete(oldest);
+      }
+      _dsnThumbs.set(job.key, px.url);
+      job.done(px.url);
+    })
+    .catch(() => job.done(""))
+    .then(() => {
+      _dsnThumbBusy = false;
+      /* Yield to the browser between cards. Without this the queue is a
+         synchronous loop wearing a promise, and a page of fifty freezes the
+         tab for as long as it takes — including the Stop button. */
+      setTimeout(_dsnThumbPump, 0);
+    });
+}
+
+/** One person's card, drawn for real. Renders nothing until it is asked for,
+ *  and shows the frame it will occupy while it waits so the grid does not jump
+ *  as forty of them land one after another. */
+function DsnThumb({ tpl, row, fabric, sig, onDrawn }) {
+  const key = dsnThumbKey(sig, row.key);
+  const [url, setUrl] = React.useState(() => _dsnThumbs.get(key) || "");
+  React.useEffect(() => {
+    const cached = _dsnThumbs.get(key);
+    if (cached) { setUrl(cached); if (onDrawn) onDrawn(key); return; }
+    if (!fabric || !tpl) return;
+    setUrl("");
+    let live = true;
+    _dsnThumbQ.push({ key, tpl, row, fabric, epoch: _dsnThumbEpoch,
+                      dead: () => !live,
+                      done: (u) => { if (live) { setUrl(u); if (onDrawn) onDrawn(key); } } });
+    _dsnThumbPump();
+    return () => { live = false; };
+  }, [key, fabric]);
+
+  const ratio = ((Number(tpl.h) || 972) / (Number(tpl.w) || 590)) * 100;
+  return (
+    <span className="dsn-thumb" style={{ paddingTop: ratio + "%" }}>
+      {url
+        ? <img src={url} alt="" loading="lazy"/>
+        : <span className="dsn-thumb-wait" aria-hidden="true"/>}
+    </span>
+  );
+}
+
+/* ── The people picker ───────────────────────────────────────────────────────
+ *
+ * This was a wall of tick-boxes: every matched person as a card in a wrapping
+ * grid, in the order the rows happened to be inserted, inside a 520px box. At
+ * two hundred that is tolerable. At a thousand — which is what a real cohort
+ * is — it is a scroll with no landmarks, no way to bring the ones you want to
+ * the top, and no way to answer "which of these will print with a hole in it"
+ * short of reading every row.
+ *
+ * It is a table now, the way every tool that does this for a living draws it:
+ * columns you can order by, a page at a time, and the two filters an operator
+ * actually reaches for as chips rather than buried in a select.
+ *
+ * Paged rather than virtualised, deliberately. A windowed list keeps the
+ * scrollbar and drops every off-screen row out of the DOM, which is exactly
+ * the set a keyboard cannot then tab to and a screen reader cannot count. Pages
+ * keep the whole visible set real, and "go to page 12" beats scrolling to it.
+ */
+
+const DSN_PAGE_SIZES = [25, 50, 100, 250];
+
+/** Is this row going to print correctly? The one question the list is scanned
+ *  for, in one place so the chip, the column and the badge cannot disagree. */
+function dsnRowReady(r) {
+  return !!(r && r.photoUrl && r.token);
+}
+
+/** A column header you can order by. Same contract as the admin tables: a real
+ *  button, aria-sort on the cell, and the arrow hidden from the accessibility
+ *  tree because aria-sort already says it. */
+function DsnSortTh({ label, col, sort, onSort, numeric, defaultDir }) {
+  const active = sort.col === col;
+  const next = active ? (sort.dir === "asc" ? "desc" : "asc") : (defaultDir || (numeric ? "desc" : "asc"));
+  return (
+    <th className={"dsn-th" + (numeric ? " is-num" : "") + (active ? " is-on" : "")}
+        aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" onClick={() => onSort(col, next)}>
+        <span>{label}</span>
+        <span className="dsn-th-ind" aria-hidden="true">{active ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
+      </button>
+    </th>
+  );
+}
+
+function DsnMergePicker({ rows, audience, picked, setPicked, sort, onSort, runMax,
+                         tpl, fabric, onProof, proofKey }) {
+  const [page, setPage] = React.useState(0);
+  const [size, setSize] = React.useState(50);
+  /* "list" | "cards". Cards is the answer to "let me see them": the table says
+     Chidi has no photograph, the card SHOWS the grey rectangle where a face
+     goes. Twenty-five to a page rather than fifty, because a wall of a hundred
+     thumbnails is the scroll this rebuild set out to remove. */
+  const [view, setView] = React.useState("list");
+  const sig = React.useMemo(() => dsnThumbSig(tpl), [tpl]);
+  /* How many of the cards on this page have actually drawn. A page of them
+     takes seconds and there was nothing to say how many were left — just
+     twelve frames pulsing, which is a spinner wearing a grid. Kept as a Set of
+     keys rather than a count so a re-render or a second callback for the same
+     card cannot inflate it. */
+  const [drawn, setDrawn] = React.useState(() => new Set());
+  const noteDrawn = React.useCallback((k) => {
+    setDrawn(d => (d.has(k) ? d : new Set(d).add(k)));
+  }, []);
+  /* Every queued thumbnail is about a card that no longer exists the moment
+     the design changes. Dropped rather than rendered and thrown away. */
+  React.useEffect(() => { _dsnThumbEpoch++; }, [sig]);
+  /* "" | "ready" | "problem" — the readiness chip. Applied on the client
+     rather than sent to the server because it is derived from two fields the
+     rows already carry, and a round trip to hide half a list you are holding
+     is a round trip for nothing. */
+  const [only, setOnly] = React.useState("");
+
+  const readyCount = React.useMemo(() => rows.filter(dsnRowReady).length, [rows]);
+  const shown = React.useMemo(
+    () => only === "" ? rows : rows.filter(r => (only === "ready") === dsnRowReady(r)),
+    [rows, only]);
+  const pages = Math.max(1, Math.ceil(shown.length / size));
+  const at = Math.min(page, pages - 1);
+  const slice = shown.slice(at * size, at * size + size);
+
+  /* Selection is a Set and lives OUTSIDE this component, so it survives a
+     filter, a sort and a page turn. It used to be reset to "everything that
+     just came back" on every read, which meant unticking five children and
+     then typing one letter in the search box silently re-ticked them — and
+     made a run spanning two filters impossible to build. */
+  const has = (k) => picked.indexOf(k) !== -1;
+  const addAll = (list) => setPicked(p => p.concat(list.filter(k => p.indexOf(k) === -1)));
+  const dropAll = (list) => setPicked(p => p.filter(k => list.indexOf(k) === -1));
+
+  /* Shift-click a range, the way every list of things anybody has ever had to
+     select from works. Picking two hundred out of a thousand one tick at a
+     time is not a workflow, and "select all" plus two hundred unticks is not
+     either. Anchored on the last row TOUCHED rather than the last row ticked,
+     so shift-clicking after an untick extends from where your hand was. */
+  const anchor = React.useRef("");
+  const toggle = (row, ev) => {
+    const list = shown;                       // the range spans the filter, not the page
+    const iTo = list.findIndex(x => x.key === row.key);
+    const iFrom = anchor.current ? list.findIndex(x => x.key === anchor.current) : -1;
+    if (ev && ev.shiftKey && iFrom >= 0 && iTo >= 0 && iFrom !== iTo) {
+      const lo = Math.min(iFrom, iTo), hi = Math.max(iFrom, iTo);
+      const span = list.slice(lo, hi + 1).map(x => x.key);
+      // The anchor's own state decides which way the range goes, so a
+      // shift-click never flips half a range on and half a range off.
+      has(anchor.current) ? addAll(span) : dropAll(span);
+    } else {
+      has(row.key) ? dropAll([row.key]) : addAll([row.key]);
+    }
+    anchor.current = row.key;
+  };
+  const keys = shown.map(r => r.key);
+  const pageKeys = slice.map(r => r.key);
+  const pageAllOn = pageKeys.length > 0 && pageKeys.every(has);
+  const pageSomeOn = pageKeys.some(has);
+  const drawnHere = slice.filter(r => drawn.has(dsnThumbKey(sig, r.key))).length;
+  const inRun = picked.length;
+  const over = inRun > runMax;
+
+  /* The list keeps its own scroll offset, and nothing was putting it back.
+     Turn a page, change a sort, switch to Cards, and you landed wherever the
+     last scroll left you — most visibly as a first row of cards cut off above
+     the fold with its selection ticks out of sight, which reads as controls
+     that are missing rather than as a scroll position. A new page starts at
+     the top; that is what "page" means. */
+  const listRef = React.useRef(null);
+  const toTop = () => { if (listRef.current) listRef.current.scrollTop = 0; };
+  React.useEffect(toTop, [at, view, only, sort.col, sort.dir]);
+
+  React.useEffect(() => { setPage(0); }, [only, sort.col, sort.dir, rows.length]);
+  /* Twelve, not twenty-five. Measured against a 1,200-row roster, a page of
+     twenty-five real card renders took between 4.6 and 6.9 seconds to fill and
+     left the panel about 900ms behind the pointer while it worked. Nielsen's
+     limits put both of those in the band that needs either progress or less
+     work; twelve is roughly three seconds, and the count below is the
+     progress. */
+  React.useEffect(() => { setSize(view === "cards" ? 12 : 50); setPage(0); }, [view]);
+
+  return (
+    <>
+      <div className="dsn-merge-picks">
+        {/* Gmail's rule: the tick on the header selects what you can SEE, and
+            the sentence underneath offers the rest. Conflating the two is how
+            somebody prints fifty certificates believing they printed four
+            hundred. */}
+        <label className="dsn-merge-all">
+          {/* `indeterminate` is the third state, and it is not an attribute —
+              it can only be set on the node. Without it a page with three of
+              fifty ticked drew an EMPTY box, which says "nothing here is
+              selected" about a page where three things are. On a control that
+              feeds a print run, that is the wrong sentence. */}
+          <input type="checkbox" checked={pageAllOn}
+                 ref={el => { if (el) el.indeterminate = pageSomeOn && !pageAllOn; }}
+                 aria-label={pageAllOn ? "Untick this page" : "Tick this page"}
+                 onChange={() => pageAllOn ? dropAll(pageKeys) : addAll(pageKeys)}/>
+          <span>This page</span>
+        </label>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => addAll(keys)}
+                disabled={keys.every(has)}>Select all {fmtNum(shown.length)}</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPicked([])}
+                disabled={!inRun}>Clear</button>
+
+        {/* The COUNT is the reason anybody clicks these. "Needs attention"
+            makes you click to find out whether it is two or two hundred;
+            "Needs attention · 12" has already answered the question, and
+            answered it before a run rather than during one. */}
+        <span className="dsn-chips" role="group" aria-label="Show only">
+          {[["", "Everyone", rows.length],
+            ["ready", "Ready to print", readyCount],
+            ["problem", "Needs attention", rows.length - readyCount]].map(([v, l, n]) => (
+            <button key={v} type="button" className={"dsn-chip" + (only === v ? " is-on" : "")
+                                                   + (v === "problem" && n > 0 ? " is-warn" : "")}
+                    aria-pressed={only === v} onClick={() => setOnly(v)}>
+              {l} <span className="dsn-chip-n">{fmtNum(n)}</span>
+            </button>
+          ))}
+        </span>
+
+        <span className={"dsn-merge-note" + (over ? " is-over" : "")} role="status">
+          {view === "cards" && drawnHere < slice.length
+            ? "Drawing " + drawnHere + " of " + slice.length + "…"
+            : <>{fmtNum(inRun)} in the run
+                {over ? " — " + fmtNum(runMax) + " is the most one run can render" : ""}</>}
+        </span>
+
+        <span className="dsn-chips dsn-view" role="group" aria-label="How to show them">
+          {[["list", "List"], ["cards", "Cards"]].map(([v, l]) => (
+            <button key={v} type="button" className={"dsn-chip" + (view === v ? " is-on" : "")}
+                    aria-pressed={view === v} onClick={() => setView(v)}>{l}</button>
+          ))}
+        </span>
+      </div>
+
+      {view === "cards" ? (
+        <div className="dsn-merge-list" ref={listRef}>
+          <div className="dsn-cards">
+            {slice.map(r => {
+              const on = has(r.key);
+              const ready = dsnRowReady(r);
+              return (
+                <div key={r.key} className={"dsn-card" + (on ? " is-on" : "")
+                                          + (proofKey === r.key ? " is-proof" : "")}>
+                  <div className="dsn-card-art">
+                    <DsnThumb tpl={tpl} row={r} fabric={fabric} sig={sig} onDrawn={noteDrawn}/>
+                    {/* The tick sits ON the artwork, the way every grid of
+                        things you select from does it. In the footer it took
+                        the width the name needed, so every name over about
+                        nine characters ellipsised — on a grid whose entire
+                        purpose is telling people apart. */}
+                    <input type="checkbox" className="dsn-card-tick" checked={on}
+                           aria-label={"Include " + dsnRowName(r)}
+                           onClick={e => toggle(r, e)} onChange={() => {}}/>
+                    {!ready && (
+                      <span className="dsn-card-warn"
+                            title={[!r.photoUrl && "no photograph", !r.token && "no ID card"].filter(Boolean).join(" · ")}>
+                        {!r.photoUrl && !r.token ? "no photo · no card" : !r.photoUrl ? "no photo" : "no card"}
+                      </span>
+                    )}
+                  </div>
+                  {/* The name opens the proof rather than toggling the tick:
+                      two different intentions, and a control that did both
+                      would do the wrong one half the time. */}
+                  <button type="button" className="dsn-card-name" onClick={() => onProof(r)}
+                          title="Proof this one on the canvas">
+                    <b>{dsnRowName(r)}</b>
+                    <span>{r.displayId || "—"}</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+      <div className="dsn-merge-list" ref={listRef}>
+        <table className="dsn-tbl">
+          <thead><tr>
+            <th className="dsn-th-tick"><span className="sr-only">Include</span></th>
+            <DsnSortTh label="Name" col="name" sort={sort} onSort={onSort}/>
+            <DsnSortTh label="Surname" col="surname" sort={sort} onSort={onSort}/>
+            <DsnSortTh label="ID" col="displayId" sort={sort} onSort={onSort}/>
+            <DsnSortTh label="Centre" col="centre" sort={sort} onSort={onSort}/>
+            {audience === "students" && <DsnSortTh label="Days" col="attended" sort={sort} onSort={onSort} numeric/>}
+            <DsnSortTh label="Status" col="ready" sort={sort} onSort={onSort} defaultDir="asc"/>
+          </tr></thead>
+          <tbody>
+            {slice.map(r => {
+              const on = has(r.key);
+              return (
+                <tr key={r.key} className={(on ? "is-on" : "") + (proofKey === r.key ? " is-proof" : "")}>
+                  <td className="dsn-th-tick">
+                    <input type="checkbox" checked={on} aria-label={"Include " + dsnRowName(r)}
+                           onClick={e => toggle(r, e)} onChange={() => {}}/>
+                  </td>
+                  <td className="dsn-td-who">
+                    {/* Clicking a name proofs that person on the canvas. The
+                        preview picker in the toolbar only ever knew the card
+                        payload; this list is a bigger population, so somebody
+                        the merge can see and the card read cannot had no way
+                        to be looked at before printing four hundred of them. */}
+                    <button type="button" className="dsn-proof" onClick={() => onProof(r)}
+                            title="Proof this one on the canvas">
+                      {r.firstName || dsnRowName(r)}
+                    </button>
+                  </td>
+                  <td className="dsn-td-who">{r.surname || "—"}</td>
+                  <td className="dsn-td-mono">{r.displayId || "—"}</td>
+                  <td className="dsn-td-mono">{(r.centre && r.centre.name) || "—"}</td>
+                  {audience === "students" && <td className="dsn-td-mono is-num">{r.attended}</td>}
+                  <td>
+                    {dsnRowReady(r)
+                      ? <span className="dsn-merge-flag dsn-merge-flag--ok">ready</span>
+                      : <>
+                          {!r.photoUrl && <span className="dsn-merge-flag dsn-merge-flag--photo">no photo</span>}
+                          {!r.token && <span className="dsn-merge-flag dsn-merge-flag--card">no card</span>}
+                          {/* A member with no printed ID assigned. The card
+                              still renders — it falls back to the internal id
+                              rather than printing a blank — but that is a
+                              record to finish, not a card to laminate, and
+                              the roster already counts these. */}
+                          {r.displayIdMissing && <span className="dsn-merge-flag dsn-merge-flag--card">no printed ID</span>}
+                        </>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      )}
+      {shown.length === 0 && (
+        <p className="dsn-hint" style={{ padding: "14px 4px" }}>
+          Nobody here {only === "ready" ? "is ready to print" : "needs attention"} — try “Everyone”.
+        </p>
+      )}
+
+      <div className="dsn-merge-pager">
+        <button type="button" className="btn btn-ghost btn-sm" disabled={at <= 0}
+                onClick={() => setPage(at - 1)}>← Prev</button>
+        <span className="dsn-merge-note" role="status">
+          {shown.length ? fmtNum(at * size + 1) + "–" + fmtNum(Math.min(shown.length, (at + 1) * size))
+            + " of " + fmtNum(shown.length) : "none"}
+        </span>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={at >= pages - 1}
+                onClick={() => setPage(at + 1)}>Next →</button>
+        <label className="dsn-prop dsn-merge-size"><span>Per page</span>
+          <select value={size} onChange={e => { setSize(Number(e.target.value)); setPage(0); }}>
+            {DSN_PAGE_SIZES.map(n => <option key={n} value={n}>{n}</option>)}
+          </select></label>
+      </div>
+    </>
+  );
+}
+
 function DesignerPage() {
   /* Read through window, the way CardStudio does. `useAuth` is a top-level
      binding in the bundle, so a test fixture that stubs window.useAuth would be
@@ -266,8 +790,16 @@ function DesignerPage() {
   const [mergeOpen, setMergeOpen] = React.useState(false);
   const [merge, setMerge] = React.useState(null);
   const [mf, setMf] = React.useState({ audience: "students", centre: "", track: "", role: "",
-                                       q: "", from: "", to: "", attendedMin: 0, photo: "", issued: "" });
+                                       q: "", from: "", to: "", attendedMin: 0, photo: "", issued: "",
+                                       // How the run is ordered. Part of the filter state because
+                                       // the server does the ordering — sorting the page in hand
+                                       // would order one page of the roster and call it the roster.
+                                       sort: "name", dir: "asc" });
   const [picked, setPicked] = React.useState([]);      // the keys actually in the run
+  /* Whether the operator has made a choice yet. Without this the "start with
+     everybody ticked" default cannot be told apart from "they cleared it", and
+     one of those has to survive the next read. */
+  const pickedTouched = React.useRef(false);
   const [mdpi, setMdpi] = React.useState(300);
   const [run, setRun] = React.useState(null);          // { i, n, note } while a batch is rendering
   const runCancel = React.useRef(false);
@@ -285,7 +817,33 @@ function DesignerPage() {
   const histRef = React.useRef({ past: [], future: [], last: "" });
   const [histTick, setHistTick] = React.useState(0);
 
-  const row = rowIdx >= 0 && rows[rowIdx] ? rows[rowIdx] : DSN_SAMPLE;
+  /* Whoever the batch picker was last asked to proof. It takes precedence over
+     the toolbar's preview picker, because it is the more specific request: the
+     toolbar knows the card payload and the picker knows the merge roster, and
+     the merge roster is bigger. Somebody the merge can see and the card read
+     cannot — a child whose photograph was rejected — had no way to be LOOKED
+     at before four hundred pieces went to the printer. */
+  const [proofRow, setProofRow] = React.useState(null);
+  const row = proofRow || (rowIdx >= 0 && rows[rowIdx] ? rows[rowIdx] : DSN_SAMPLE);
+  const proofOne = React.useCallback((r) => {
+    setProofRow(r);
+    /* Scroll to the proof ONLY when the proof is not already there.
+       This used to be unconditional, because the batch panel sat above the
+       workspace and a long roster always pushed the canvas off screen. Print
+       mode puts the two side by side (see .dsn-work.is-printing), so on a
+       desktop the card is already in view and scrolling to "centre" it would
+       yank the page under the hand that just clicked. Below the workspace
+       breakpoint the columns stack and the scroll is still the right thing —
+       so ask, rather than assume either way. */
+    const host = hostRef.current;
+    if (!host || !host.scrollIntoView) return;
+    const r0 = host.getBoundingClientRect();
+    const vh = window.innerHeight || 0;
+    const mostlyVisible = r0.top < vh * 0.9 && r0.bottom > vh * 0.1;
+    if (mostlyVisible) return;
+    host.scrollIntoView({ block: "center",
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }, []);
 
   /* Fabric is fetched when this screen opens and never before — it is 292KB for
      a page most admins never visit. */
@@ -295,6 +853,32 @@ function DesignerPage() {
       .catch(e => { if (!dead) setLibErr(e.message || "could not load the design library"); });
     return () => { dead = true; };
   }, []);
+
+  /* Arrive from the print log with a design named, and open it.
+   *
+   * A "Reprint" button that drops the operator on an empty studio and asks
+   * them to remember which of forty designs the July batch used is not a
+   * reprint button. `reprintOf` is carried in the address so the run this one
+   * replaces is recorded, and so a refresh does not lose it. */
+  const [reprintOf] = React.useState(() => {
+    try { return new URLSearchParams(window.location.search).get("reprintOf") || ""; } catch (_) { return ""; }
+  });
+  const wantedTemplate = React.useRef(null);
+  if (wantedTemplate.current === null) {
+    try { wantedTemplate.current = new URLSearchParams(window.location.search).get("template") || ""; }
+    catch (_) { wantedTemplate.current = ""; }
+  }
+  React.useEffect(() => {
+    if (!isSignedIn || !wantedTemplate.current) return;
+    const want = wantedTemplate.current;
+    wantedTemplate.current = "";      // once
+    open(want);
+    if (reprintOf) {
+      setMergeOpen(true);
+      toast.info("Opened for a reprint of " + reprintOf + ". Pick the people whose cards are being replaced.", "Reprint");
+    }
+    // eslint-disable-next-line
+  }, [isSignedIn]);
 
   React.useEffect(() => {
     if (!isSignedIn) return;
@@ -321,11 +905,35 @@ function DesignerPage() {
     const t = setTimeout(() => {
       NGGApi.admin.registration.mergeRows(mf).then(r => {
         if (dead) return;
-        setMerge({ rows: r.rows || [], facets: r.facets || {}, total: r.total || 0,
-                   matched: r.matched || 0, truncated: !!r.truncated, limit: r.limit || 0, error: "" });
-        setPicked((r.rows || []).map(x => x.key));
+        const rows = r.rows || [];
+        setMerge({ rows, facets: r.facets || {}, total: r.total || 0,
+                   matched: r.matched || 0, truncated: !!r.truncated, limit: r.limit || 0,
+                   runMax: r.runMax || MERGE_RUN_FALLBACK, sort: r.sort || "name", dir: r.dir || "asc",
+                   error: "" });
+        /* The selection SURVIVES the read.
+           It used to be replaced by "everything that just came back", which
+           meant unticking five children and then typing one letter in the
+           search box silently re-ticked all five — and made a run spanning two
+           filters impossible to build at all, because narrowing to Egbeda
+           threw away everyone from Ayobo you had already chosen.
+
+           Two rules instead. Anybody already chosen stays chosen, whether or
+           not the current filter shows them. And the FIRST read of a freshly
+           opened panel starts with everything ticked, because "print this
+           whole cohort" is the common case and unticking a few beats ticking
+           four hundred. */
+        /* Decided HERE, not inside the updater. React defers a functional
+           setState to the render phase, so `pickedTouched.current` would
+           already have been flipped by the line below it by the time the
+           updater ran — and the first read would keep an empty selection
+           instead of ticking everybody. */
+        const firstRead = !pickedTouched.current;
+        pickedTouched.current = true;
+        if (firstRead) setPicked(rows.map(x => x.key));
       }).catch(e => {
-        if (!dead) { setMerge({ rows: [], facets: {}, total: 0, matched: 0, error: e.code || e.message || "could not read the roster" }); setPicked([]); }
+        if (!dead) setMerge({ rows: [], facets: {}, total: 0, matched: 0,
+                              runMax: MERGE_RUN_FALLBACK, sort: "name", dir: "asc",
+                              error: e.code || e.message || "could not read the roster" });
       });
     }, 220);
     return () => { dead = true; clearTimeout(t); };
@@ -695,6 +1303,8 @@ function DesignerPage() {
     histRef.current = { past: [], future: [], last: "" };
     if (templateId === "__new_student") return setTpl(dsnBlank("student"));
     if (templateId === "__new_volunteer") return setTpl(dsnBlank("volunteer"));
+    if (templateId === "__new_member") return setTpl(dsnBlank("member"));
+    if (templateId === "__new_member_back") return setTpl(dsnBlank("member", "back"));
     // A size, from the preset list. The reason this tool is not only an ID card
     // designer: NGG has posters, certificates and a WhatsApp status to make.
     const preset = window.TPL_PRESETS.find(x => "__preset-" + x.id === templateId);
@@ -889,6 +1499,21 @@ function DesignerPage() {
     const rows = mergeRows();
     if (!tpl || !libs || !rows.length || run) return;
 
+    /* The renderer's ceiling, enforced BEFORE anything is rendered.
+       The picker can now hold two thousand people — browsing is cheap and the
+       roster is the roster — but the browser still holds every rendered page
+       in memory until the file is written, so a run is capped where it always
+       was. Said here, with the number and the arithmetic, rather than
+       discovered at page 601 when the tab dies. */
+    const runMax = (merge && merge.runMax) || MERGE_RUN_FALLBACK;
+    if (rows.length > runMax) {
+      const parts = Math.ceil(rows.length / runMax);
+      toast.error(fmtNum(rows.length) + " are ticked and one run can render " + fmtNum(runMax)
+        + ". Sort by centre and do it in " + parts + " runs, or narrow the filters.",
+        "Too many for one run");
+      return;
+    }
+
     /* The same rule that guards publishing, re-run against THESE people: the
        QR module size depends on the longest token in the batch, so a design
        that passed against the sample can still be unscannable for this run. */
@@ -908,9 +1533,16 @@ function DesignerPage() {
     }
 
     runCancel.current = false;
-    setRun({ i: 0, n: rows.length, note: "" });
+    setRun({ i: 0, n: rows.length, note: "", left: "" });
     const failed = [];
     let stopped = "";
+    /* When the run started, so it can say how much longer it has.
+       Nielsen's third limit: past ten seconds people stop attending to a task
+       unless they are told when it ends, and a 240-card run at 300dpi is
+       minutes. "Rendering 12 of 240" answers where it is and not how long,
+       which is the question somebody deciding whether to go and do something
+       else is actually asking. */
+    const startedAt = Date.now();
     try {
       const bleedMm = Number(tpl.bleedMm) || 0;
       const wMm = Number(tpl.wMm) || 54, hMm = Number(tpl.hMm) || 89;
@@ -921,7 +1553,12 @@ function DesignerPage() {
 
       for (let i = 0; i < rows.length; i++) {
         if (runCancel.current) { stopped = "cancelled"; break; }
-        setRun({ i, n: rows.length, note: dsnRowName(rows[i]) });
+        /* Measured, not guessed, and only once there is something to measure:
+           an estimate from a single sample swings wildly and reads as broken.
+           Rounded up to the next half-minute past two minutes, because false
+           precision on a long wait is its own kind of lie. */
+        setRun({ i, n: rows.length, note: dsnRowName(rows[i]),
+                 left: i >= 2 ? dsnEta((Date.now() - startedAt) / i * (rows.length - i)) : "" });
         let px = null;
         try { px = await dsnRaster(tpl, rows[i], libs.fabric, mdpi); }
         catch (e) { failed.push(dsnRowName(rows[i])); }
@@ -976,7 +1613,7 @@ function DesignerPage() {
       // number would tell an operator the file holds people it does not.
       const made = mode === "pdf" ? pages : mode === "sheet" ? faces.length : files.length;
       if (stopped !== "too_big" && made > 0) {
-        setRun({ i: rows.length, n: rows.length, note: "writing the file…" });
+        setRun({ i: rows.length, n: rows.length, note: "writing the file…", left: "" });
         await new Promise(r => setTimeout(r, 0));
         const stem = dsnFileName(tpl) + "-" + made;
         if (mode === "pdf") {
@@ -991,6 +1628,48 @@ function DesignerPage() {
         } else {
           const zip = await CE.zipStore(files);
           CE.download(zip, stem + ".zip", "application/zip");
+        }
+      }
+
+      /* ── Record what was printed ──────────────────────────────────────────
+         AFTER the file exists, with what actually came out — never before, and
+         never with the requested count. The host has no renderer, so the
+         server cannot know what the browser managed; a record written up front
+         would claim cards that a cancelled or failed run never produced.
+         `mode` and the frozen template version are decided server-side.
+
+         A credential run is recorded; a poster run is not. There is nothing to
+         reprint about a poster and no holder to answer "is the one in their
+         hand current" for. */
+      if (made > 0 && tpl.kind !== "graphic") {
+        const failedSet = new Set(failed);
+        try {
+          await NGGApi.admin.registration.cardRun({
+            kind: tpl.kind,
+            subjectType: tpl.kind,
+            templateId: String(tpl.id || "").indexOf("ctpl-") === 0 ? tpl.id : "",
+            backTemplateId: tpl.pairId || "",
+            output: mode === "sheet" ? "sheet" : mode,
+            dpi: mdpi, sheet: mode === "sheet" ? "A4" : "",
+            /* Which run this one replaces, when the operator arrived here from
+               the print log's Reprint button. `mode` is still decided
+               server-side from whether these people already had a card. */
+            reprintOf: reprintOf || "",
+            startedAt: new Date(startedAt).toISOString(),
+            items: rows.map(r => ({
+              subjectId: r.key || r.displayId || "",
+              displayId: r.displayId || "",
+              ok: !failedSet.has(dsnRowName(r)),
+              note: failedSet.has(dsnRowName(r)) ? "render failed" : "",
+            })),
+          });
+        } catch (e) {
+          /* The file is already in the operator's hands. A failed RECORD must
+             not read as a failed run — it is a gap in the log, and saying so
+             is more useful than either silence or an alarming error. */
+          toast.warn("The cards are in the file, but the print log could not be updated ("
+            + ((e && (e.code || e.message)) || "failed") + "). Note the run by hand if it matters.",
+            "Print log not updated");
         }
       }
 
@@ -1016,14 +1695,17 @@ function DesignerPage() {
   const shell = (ch) => (
     <div style={{ minHeight: "100vh", background: "#0b1327", color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)", padding: "26px 20px 80px" }}>
       <div style={{ maxWidth: 1240, margin: "0 auto" }}>
-        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: DSN_GOLD }}>NGG DESIGN STUDIO</div>
+        {/* "· DRAW · BIND · PUBLISH · PRINT" was four words of decoration in
+            the accent colour, above the only thing anyone came here to read.
+            The verbs are the buttons; they do not need announcing. */}
+        <div className="dsn-eyebrow">NGG Design Studio</div>
         {/* Not "Design an ID card". This started as an ID tool because the whole
             product started as a summer-programme tool, and the organisation makes
             posters, certificates and social posts the other eleven months. */}
         <h1 style={{ fontSize: 24, margin: "4px 0 14px", fontWeight: 800 }}>
           {tpl ? tpl.name : "Make something"}
           {tpl ? <span style={{ fontSize: 13, fontWeight: 500, color: "rgba(230,238,255,.55)", marginLeft: 10 }}>
-            {tpl.kind === "graphic" ? "graphic" : tpl.kind + " card"} · {tpl.wMm} × {tpl.hMm}mm
+            {tplKindLabel(tpl.kind)} · {tplSizeMm(tpl).wMm} × {tplSizeMm(tpl).hMm}mm
           </span> : null}
         </h1>
         {ch}
@@ -1068,58 +1750,147 @@ function DesignerPage() {
       {libErr && <ErrorState title="The design library did not load" message={libErr} onRetry={() => location.reload()}/>}
 
       <div className="dsn-bar">
-        <select className="admin-select" value={tpl && tpl.id ? tpl.id : ""} aria-label="Open a design"
-          onChange={e => open(e.target.value)}>
-          <option value="">Open a design…</option>
-          <optgroup label="Start from">
-            <option value="__new_student">New student card</option>
-            <option value="__new_volunteer">New volunteer card</option>
-          </optgroup>
-          {/* Grouped by what it is FOR, not by pixel size. Somebody making a
-              centre-opening poster is not thinking "877 × 1240". */}
-          {["Credentials", "Print", "Social", "Documents"].map(g => (
-            <optgroup key={g} label={g}>
-              {window.TPL_PRESETS.filter(x => x.group === g).map(x => (
-                <option key={x.id} value={"__preset-" + x.id}>{x.name}</option>
+        
+        {/* ── THE BAR'S ZONES ──────────────────────────────────────────────
+            Nine controls sat in one undifferentiated row: which side this is,
+            what it is called, who it is previewing, Save, Publish, three
+            export formats and the batch switch. Five different concerns with
+            no seam between them, so finding Publish meant reading the whole
+            row — and the Steering Law says a long narrow tunnel of small
+            targets is exactly the expensive shape. Fitts's Law pays off most
+            on high-frequency expert controls like these, and its scale
+            independence is empirically violated: distance costs on its own,
+            not merely distance relative to target size.
+
+            Four zones with captions, so the eye lands on a REGION and then on
+            a control: DESIGN (what this document is), PROOF (what the canvas
+            is showing), SAVE (its state) and OUTPUT (what leaves the studio).
+            Each is a real role="group" with a label, so the grouping exists
+            for a screen reader too and is not merely drawn. OUTPUT sits at
+            the end: it is the terminal step, and the batch switch should not
+            be under the hand that is editing. */}
+        {/* ALWAYS rendered, even with nothing open — this zone holds the only
+            way to OPEN a design, and gating it on `tpl` left an empty studio
+            with no door into it. Its other fields describe a document, so
+            they wait for one. */}
+        <div className="dsn-zone" role="group" aria-label="Design">
+            <span className="dsn-zone-cap">Design</span>
+            {/* The document picker. It was a full-width select on its own line
+                above everything — the largest object in the bar, for the
+                control you touch least. It is a control like the others now,
+                first in the zone that says what this document IS. */}
+            <label className="dsn-prop dsn-bar-open"><span>Open</span>
+              <select className="admin-select" value={tpl && tpl.id ? tpl.id : ""} aria-label="Open a design"
+              onChange={e => open(e.target.value)}>
+              <option value="">Open a design…</option>
+              <optgroup label="Start from">
+                {/* The member card first — it is the credential every year-round
+                    member carries, and the one this tool could not make. */}
+                <option value="__new_member">New NGG member card (front)</option>
+                <option value="__new_member_back">New NGG member card (back)</option>
+                <option value="__new_student">New Summer School card</option>
+                <option value="__new_volunteer">New volunteer card</option>
+              </optgroup>
+              {/* Grouped by what it is FOR, not by pixel size. Somebody making a
+                  centre-opening poster is not thinking "877 × 1240". */}
+              {["Credentials", "Print", "Social", "Documents"].map(g => (
+                <optgroup key={g} label={g}>
+                  {window.TPL_PRESETS.filter(x => x.group === g).map(x => (
+                    <option key={x.id} value={"__preset-" + x.id}>{x.name}</option>
+                  ))}
+                </optgroup>
               ))}
-            </optgroup>
-          ))}
-          <optgroup label="Standard designs (duplicate to edit)">
-            {window.TPL_SYSTEM.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-          </optgroup>
-          {(list || []).length > 0 && <optgroup label="Your designs">
-            {(list || []).map(t => <option key={t.templateId} value={t.templateId}>{t.name}{t.status === "published" ? " · v" + t.version : " · draft"}</option>)}
-          </optgroup>}
-        </select>
-        {tpl && <>
-          <input className="admin-input" value={tpl.name} aria-label="Design name" style={{ maxWidth: 240 }}
-            onChange={e => setTpl(p => ({ ...p, name: e.target.value }))}/>
-          {/* Proof against a REAL child, not only the sample. This is the control
-              that turns "it looks right" into "it is right for this cohort". */}
-          <select className="admin-select" value={rowIdx} aria-label="Preview with"
-            onChange={e => setRowIdx(Number(e.target.value))} style={{ maxWidth: 240 }}>
-            <option value={-1}>Sample data</option>
-            {rows.slice(0, 300).map((r, i) => (
-              <option key={i} value={i}>{[r.firstName, r.surname].filter(Boolean).join(" ") || r.displayId}</option>
-            ))}
-          </select>
-          <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={save}>{busy === "save" ? "…" : "Save"}</button>
-          <button className="btn btn-primary btn-sm" disabled={!!busy || errs.length > 0} onClick={publish}
-            title={errs.length ? "Fix the errors first" : "Freeze this design for print runs"}>
-            {busy === "publish" ? "…" : "Publish"}
-          </button>
-          <div className="dsn-exports">
-            <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => exportPng(300)}>PNG</button>
-            <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => exportPdf(300)}>PDF</button>
-            {/* Vector, for a printer that wants type as type rather than pixels. */}
-            <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={exportSvg}>SVG</button>
-            {/* The one that makes this worth having in November: the same three
-                exports, but once per child on a filtered roster. */}
-            <button className={"btn btn-sm " + (mergeOpen ? "btn-primary" : "btn-ghost")} disabled={!!busy}
-              aria-expanded={mergeOpen} onClick={() => setMergeOpen(o => !o)}
-              title="One design, one per person, from the roster">Batch…</button>
+              <optgroup label="Standard designs (duplicate to edit)">
+                {window.TPL_SYSTEM.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </optgroup>
+              {(list || []).length > 0 && <optgroup label="Your designs">
+                {(list || []).map(t => <option key={t.templateId} value={t.templateId}>{t.name}{t.status === "published" ? " · v" + t.version : " · draft"}</option>)}
+              </optgroup>}
+        </select></label>
+            {tpl && <label className="dsn-prop dsn-bar-name"><span>Name</span>
+              <input className="admin-input" value={tpl.name} aria-label="Design name"
+                onChange={e => setTpl(p => ({ ...p, name: e.target.value }))}/></label>}
+            {tpl && tpl.kind !== "graphic" && (
+              /* Which SIDE this is. A card has two, and a template was one
+                 document — so a back either did not exist or was a second
+                 unrelated design nobody could tell was the pair. Naming the
+                 pair is what lets a duplex run render both faces per person
+                 in order, instead of coming out mismatched. */
+              <label className="dsn-prop"><span>Side</span>
+                <select value={tpl.face || "single"} aria-label="Which side of the card this design is"
+                  onChange={e => { pushHistory(); setTpl(t => ({ ...t, face: e.target.value })); }}>
+                  <option value="single">One-sided</option>
+                  <option value="front">Front</option>
+                  <option value="back">Back</option>
+                </select></label>
+            )}
+            {tpl && tpl.face === "front" && (
+              <label className="dsn-prop"><span>Its back</span>
+                <select value={tpl.pairId || ""} aria-label="Which design is the back of this card"
+                  onChange={e => { pushHistory(); setTpl(t => ({ ...t, pairId: e.target.value })); }}>
+                  <option value="">— none —</option>
+                  {(window.TPL_SYSTEM || []).filter(t => t.face === "back" && t.kind === tpl.kind)
+                    .map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  {(list || []).filter(t => t.face === "back" && t.kind === tpl.kind && t.templateId !== tpl.id)
+                    .map(t => <option key={t.templateId} value={t.templateId}>{t.name}</option>)}
+                </select></label>
+            )}
+        </div>
+
+        {tpl && (
+          <div className="dsn-zone" role="group" aria-label="Proof">
+            <span className="dsn-zone-cap">Proof</span>
+            {/* Proof against a REAL child, not only the sample. This is the
+                control that turns "it looks right" into "it is right for this
+                edition". */}
+            <label className="dsn-prop"><span>Preview with</span>
+              <select className="admin-select" value={proofRow ? -1 : rowIdx} aria-label="Preview with"
+                /* Clears a proof taken from the batch picker. Two controls
+                   setting the same thing must not disagree — a select still
+                   reading "Sample data" while the canvas shows Chidi is a
+                   screen lying about what is on it. */
+                onChange={e => { setProofRow(null); setRowIdx(Number(e.target.value)); }}>
+                <option value={-1}>Sample data</option>
+                {rows.slice(0, 300).map((r, i) => (
+                  <option key={i} value={i}>{[r.firstName, r.surname].filter(Boolean).join(" ") || r.displayId}</option>
+                ))}
+              </select></label>
+            {proofRow && (
+              <button className="btn btn-ghost btn-sm" onClick={() => setProofRow(null)}
+                      title="Back to the preview picker">
+                Proofing {dsnRowName(proofRow)} ✕
+              </button>
+            )}
           </div>
-        </>}
+        )}
+
+        {tpl && (
+          <div className="dsn-zone" role="group" aria-label="Save and publish">
+            <span className="dsn-zone-cap">Save</span>
+            <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={save}>{busy === "save" ? "…" : "Save"}</button>
+            <button className="btn btn-primary btn-sm" disabled={!!busy || errs.length > 0} onClick={publish}
+              title={errs.length ? "Fix the errors first" : "Freeze this design for print runs"}>
+              {busy === "publish" ? "…" : "Publish"}
+            </button>
+          </div>
+        )}
+
+        {tpl && (
+          <div className="dsn-zone dsn-zone-end" role="group" aria-label="Export and batch">
+            <span className="dsn-zone-cap">Output</span>
+            <div className="dsn-exports">
+              <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => exportPng(300)}>PNG</button>
+              <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => exportPdf(300)}>PDF</button>
+              {/* Vector, for a printer that wants type as type rather than pixels. */}
+              <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={exportSvg}>SVG</button>
+              {/* The one that makes this worth having in November: the same
+                  three exports, but once per child on a filtered roster. */}
+              <button className={"btn btn-sm btn-ghost" + (mergeOpen ? " is-on" : "")} disabled={!!busy}
+                aria-expanded={mergeOpen} onClick={() => setMergeOpen(o => { if (!o) pickedTouched.current = false; return !o; })}
+                title="One design, one per person, from the roster">Batch…</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── The tool row ────────────────────────────────────────────────────
@@ -1128,22 +1899,37 @@ function DesignerPage() {
           questions — "what am I working on" and "what am I doing to it". */}
       {tpl && (
         <div className="dsn-tools">
-          <div className="dsn-tool-grp">
-            <button className="dsn-tool" onClick={undo} disabled={!histRef.current.past.length} title="Undo (Ctrl+Z)">↶</button>
-            <button className="dsn-tool" onClick={redo} disabled={!histRef.current.future.length} title="Redo (Ctrl+Shift+Z)">↷</button>
+          {/* Every control on these rows is an arrow glyph, and a `title` alone
+              is not an accessible name: a screen reader reads "button" and a
+              keyboard user gets nothing at all until they hover, which they
+              cannot. The glyph is marked decorative and the button carries the
+              name — so "Align left edges" is what is announced, and the
+              tooltip stays for the mouse. */}
+          <div className="dsn-tool-grp" role="group" aria-label="History">
+            <button className="dsn-tool" onClick={undo} disabled={!histRef.current.past.length}
+              aria-label="Undo" title="Undo (Ctrl+Z)"><span aria-hidden="true">↶</span></button>
+            <button className="dsn-tool" onClick={redo} disabled={!histRef.current.future.length}
+              aria-label="Redo" title="Redo (Ctrl+Shift+Z)"><span aria-hidden="true">↷</span></button>
           </div>
-          <div className="dsn-tool-grp">
-            {[["left", "⇤"], ["hcenter", "⇔"], ["right", "⇥"], ["top", "⇡"], ["vcenter", "⇕"], ["bottom", "⇣"]].map(([k, g]) => (
+          <div className="dsn-tool-grp" role="group" aria-label="Align and distribute">
+            {[["left", "⇤", "left edges"], ["hcenter", "⇔", "horizontal centres"], ["right", "⇥", "right edges"],
+              ["top", "⇡", "top edges"], ["vcenter", "⇕", "vertical centres"], ["bottom", "⇣", "bottom edges"]].map(([k, g, what]) => (
               <button key={k} className="dsn-tool" onClick={() => alignSel(k)} disabled={!selId && !selIds.length}
-                title={"Align " + k + (selIds.length > 1 ? " (to the selection)" : " (to the card)")}>{g}</button>
+                aria-label={"Align " + what + (selIds.length > 1 ? " to the selection" : " to the card")}
+                title={"Align " + what + (selIds.length > 1 ? " (to the selection)" : " (to the card)")}>
+                <span aria-hidden="true">{g}</span></button>
             ))}
-            <button className="dsn-tool" onClick={() => distribute("h")} disabled={selIds.length < 3} title="Space evenly across">⋯</button>
-            <button className="dsn-tool" onClick={() => distribute("v")} disabled={selIds.length < 3} title="Space evenly down">⋮</button>
+            <button className="dsn-tool" onClick={() => distribute("h")} disabled={selIds.length < 3}
+              aria-label="Space evenly across" title="Space evenly across"><span aria-hidden="true">⋯</span></button>
+            <button className="dsn-tool" onClick={() => distribute("v")} disabled={selIds.length < 3}
+              aria-label="Space evenly down" title="Space evenly down"><span aria-hidden="true">⋮</span></button>
           </div>
           <div className="dsn-tool-grp">
             <button className={"dsn-tool" + (drawing ? " is-on" : "")} onClick={() => setDrawing(d => !d)}
-              title="Draw freehand — Esc to stop">✎</button>
-            <button className="dsn-tool" onClick={() => fileRef.current && fileRef.current.click()} title="Place an image">🖼</button>
+              aria-pressed={drawing} aria-label="Draw freehand"
+              title="Draw freehand — Esc to stop"><span aria-hidden="true">✎</span></button>
+            <button className="dsn-tool" onClick={() => fileRef.current && fileRef.current.click()}
+              aria-label="Place an image" title="Place an image"><span aria-hidden="true">🖼</span></button>
             <button className="dsn-tool" onClick={duplicate} disabled={!selId && !selIds.length} title="Duplicate (Ctrl+D)">⧉</button>
           </div>
           <div className="dsn-tool-grp">
@@ -1152,7 +1938,7 @@ function DesignerPage() {
             <button className="dsn-tool" onClick={() => setZoom(z => Math.min(3, (z || 460 / (tpl.w || 590)) + 0.1))} title="Zoom in">+</button>
           </div>
           <span className="dsn-size-note">
-            {tpl.wMm} × {tpl.hMm}mm{selIds.length > 1 ? " · " + selIds.length + " selected" : ""}
+            {tplSizeMm(tpl).wMm} × {tplSizeMm(tpl).hMm}mm{selIds.length > 1 ? " · " + selIds.length + " selected" : ""}
           </span>
           <input ref={fileRef} type="file" accept="image/*" hidden
             onChange={e => { addImageFile(e.target.files && e.target.files[0]); e.target.value = ""; }}/>
@@ -1161,24 +1947,55 @@ function DesignerPage() {
 
       {!tpl && <div className="admin-empty">Pick a design to open, or start a new one.</div>}
 
-      {/* ── Data merge ───────────────────────────────────────────────────────
-          One design, one piece per person. Above the canvas rather than in a
-          modal because the point of a run is that you can still SEE what is
-          being run — the proof is a few centimetres below the tick list. */}
+      {/* ── The workspace: DESIGN MODE and PRINT MODE ───────────────────────
+          Two modes, because that is what this tool actually does and what
+          every comparable tool separates: you design, then you print.
+          cardPresso and Zebra CardStudio both put the card and the record
+          list side by side for the print step; Canva's bulk create previews
+          each row IN the design before it will generate; Figma's panels
+          collapse and expand but never displace the canvas.
+
+          This studio had the intent and not the layout. The batch panel was a
+          full-width block ABOVE the workspace, so opening it pushed the canvas
+          — the thing being proofed — some nine hundred pixels down and off
+          screen. proofOne then scrolled it back into view, and its comment
+          admitted what that was for: "proofing somebody you then cannot see is
+          not proofing." A scroll is not a fix for a layout.
+
+          So: DESIGN MODE is layers | canvas | properties, unchanged. PRINT
+          MODE is canvas | records — the editing rails step aside because you
+          are not editing, the canvas holds its place and becomes the proof of
+          whoever is picked, and Close returns to design mode with the run
+          intact. One wrapper and a modifier class; the panel's own markup is
+          untouched, which is why every check that reads it still holds. */}
+      <div className={"dsn-work" + (mergeOpen ? " is-printing" : "")}>
+
+      {/* ── Data merge · one design, one piece per person ─────────────────── */}
       {tpl && mergeOpen && (
         <div className="dsn-merge">
           <div className="dsn-merge-head">
             <b>Batch — one {tpl.kind === "graphic" ? "piece" : "card"} per person</b>
-            <span className="dsn-merge-note">
-              {merge ? (merge.matched + " of " + merge.total + " match · " + picked.length + " in the run") : "reading the roster…"}
+            {/* role="status", because narrowing the filter is the main way a
+                run gets built and the only feedback was a number silently
+                changing. A screen-reader user picking a centre heard nothing
+                at all. */}
+            <span className="dsn-merge-note" role="status">
+              {merge ? (fmtNum(merge.matched) + " of " + fmtNum(merge.total) + " match · "
+                        + fmtNum(picked.length) + " in the run")
+                     : "reading the roster…"}
             </span>
             <button className="btn btn-ghost btn-sm" onClick={() => setMergeOpen(false)}>Close</button>
           </div>
 
           <div className="dsn-merge-filters">
-            <label className="dsn-prop"><span>Who</span>
+            <label className="dsn-prop dsn-merge-who"><span>Who</span>
               <select value={mf.audience} onChange={e => setFilter("audience", e.target.value)}>
-                <option value="students">Children</option>
+                {/* NGG members lead the list: the member card is the credential
+                    this organisation issues most, and until now the merge could
+                    not cover them at all — only summer participants and
+                    volunteers. */}
+                <option value="members">NGG members</option>
+                <option value="students">Summer School participants</option>
                 <option value="volunteers">Volunteers</option>
               </select></label>
             <label className="dsn-prop"><span>Centre</span>
@@ -1213,52 +2030,58 @@ function DesignerPage() {
               <select value={mf.issued} onChange={e => setFilter("issued", e.target.value)}>
                 <option value="">Either</option><option value="yes">Issued</option><option value="no">Not issued</option>
               </select></label>
+            {/* A native date input renders in the BROWSER's locale, not the
+                page's — so on a machine set to en-US these two read mm/dd/yyyy
+                in a product where every other date is day-first, and 08/09/2026
+                means two different days depending on which field you are
+                looking at. The control cannot be told otherwise without
+                replacing it, so the pair says which order it is in. */}
             <label className="dsn-prop"><span>Registered from</span>
-              <input type="date" value={mf.from} onChange={e => setFilter("from", e.target.value)}/></label>
+              <input type="date" value={mf.from} aria-describedby="dsn-date-fmt"
+                     onChange={e => setFilter("from", e.target.value)}/></label>
             <label className="dsn-prop"><span>to</span>
-              <input type="date" value={mf.to} onChange={e => setFilter("to", e.target.value)}/></label>
+              <input type="date" value={mf.to} aria-describedby="dsn-date-fmt"
+                     onChange={e => setFilter("to", e.target.value)}/></label>
+            <span className="dsn-date-fmt" id="dsn-date-fmt">
+              Dates follow your browser — check the order before you rely on a range.
+            </span>
             <label className="dsn-prop dsn-merge-q"><span>Find</span>
               <input value={mf.q} placeholder="name or ID" onChange={e => setFilter("q", e.target.value)}/></label>
           </div>
 
-          {merge && merge.error && <p className="dsn-hint" style={{ color: "#ff9a9a" }}>{merge.error}</p>}
+          {/* role="alert" and a word, not a colour.
+              These were a plain <p> whose only signal was that it turned red,
+              so an operator setting up a 240-person run whose roster read had
+              failed got a silent colour change — nothing announced, and nothing
+              at all for anyone who cannot see the difference between #ff9a9a
+              and #e6eeff on a dark panel. Colour alone is never the signal. */}
+          {merge && merge.error && (
+            <p className="dsn-hint dsn-hint-bad" role="alert">
+              <b>Could not read the roster.</b> {merge.error}
+            </p>
+          )}
           {merge && merge.truncated && (
-            <p className="dsn-hint" style={{ color: "#ffce54" }}>
-              {merge.matched} people match but only the first {merge.limit} are listed. Narrow the filters and run it in two.
+            <p className="dsn-hint dsn-hint-warn" role="status">
+              <b>Only the first {merge.limit} are listed.</b> {merge.matched} people match.
+              Narrow the filters and run it in two.
             </p>
           )}
 
-          {merge && merge.rows.length > 0 && <>
-            <div className="dsn-merge-picks">
-              <button className="btn btn-ghost btn-sm" onClick={() => setPicked(merge.rows.map(r => r.key))}>All</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setPicked([])}>None</button>
-              <button className="btn btn-ghost btn-sm"
-                onClick={() => setPicked(merge.rows.filter(r => picked.indexOf(r.key) === -1).map(r => r.key))}>Invert</button>
-              <span className="dsn-merge-note">{picked.length} of {merge.rows.length} ticked</span>
-            </div>
-            <div className="dsn-merge-list">
-              {merge.rows.map(r => {
-                const on = picked.indexOf(r.key) !== -1;
-                return (
-                  <label key={r.key} className={"dsn-merge-row" + (on ? " is-on" : "")}>
-                    <input type="checkbox" checked={on} aria-label={"Include " + dsnRowName(r)}
-                      onChange={() => setPicked(p => on ? p.filter(x => x !== r.key) : p.concat([r.key]))}/>
-                    <span className="dsn-merge-who">{dsnRowName(r)}</span>
-                    <span className="dsn-merge-meta">{r.displayId}</span>
-                    <span className="dsn-merge-meta">{(r.centre && r.centre.name) || "—"}</span>
-                    {mf.audience === "students" && <span className="dsn-merge-meta">{r.attended} day{r.attended === 1 ? "" : "s"}</span>}
-                    {/* Said on the row rather than only in the summary: this is
-                        the thing an operator scans the list for. A green "ready"
-                        badge makes a clean row scannable at a glance across
-                        hundreds; the problems keep their own colours. */}
-                    {r.photoUrl && r.token && <span className="dsn-merge-flag dsn-merge-flag--ok">ready</span>}
-                    {!r.photoUrl && <span className="dsn-merge-flag dsn-merge-flag--photo">no photo</span>}
-                    {!r.token && <span className="dsn-merge-flag dsn-merge-flag--card">no card</span>}
-                  </label>
-                );
-              })}
-            </div>
-          </>}
+          {merge && merge.rows.length > 0 && (
+            <DsnMergePicker rows={merge.rows} audience={mf.audience}
+                            tpl={tpl} fabric={libs && libs.fabric}
+                            onProof={proofOne} proofKey={proofRow ? proofRow.key : ""}
+                            picked={picked} setPicked={setPicked}
+                            /* The REQUESTED order, not the echoed one. The
+                               server confirms what it applied and that matters
+                               for correctness, but driving the arrow off the
+                               response means the header does not move until
+                               the round trip lands — and does not move at all
+                               against a server that does not echo. */
+                            sort={{ col: mf.sort || "name", dir: mf.dir || "asc" }}
+                            onSort={(col, dir) => setMf(f => ({ ...f, sort: col, dir }))}
+                            runMax={merge.runMax || 600}/>
+          )}
           {merge && merge.rows.length === 0 && !merge.error &&
             <p className="dsn-hint">Nobody matches these filters.</p>}
 
@@ -1280,8 +2103,19 @@ function DesignerPage() {
             <button className="btn btn-ghost btn-sm" disabled={!!run || !picked.length} onClick={() => runMerge("zip")}
               title="A PNG per person, named for them">ZIP of images</button>
             {run && <>
+              {/* A bar as well as a count. The count says where it is; the bar
+                  says how far through, which is the thing an eye reads without
+                  arithmetic. aria-live is off on the bar — the same fact is in
+                  the status line beside it, and a progress bar that announces
+                  itself 240 times is unusable with a screen reader. */}
+              <div className="dsn-run" role="progressbar" aria-hidden="true"
+                   aria-valuemin={0} aria-valuemax={run.n} aria-valuenow={run.i}>
+                <span style={{ width: Math.round(run.i / Math.max(1, run.n) * 100) + "%" }}/>
+              </div>
               <span className="dsn-merge-note" role="status">
-                {run.note === "writing the file…" ? run.note : "Rendering " + (run.i + 1) + " of " + run.n + " — " + run.note}
+                {run.note === "writing the file…" ? run.note
+                  : "Rendering " + (run.i + 1) + " of " + run.n + " — " + run.note
+                    + (run.left ? " · about " + run.left + " left" : "")}
               </span>
               <button className="btn btn-ghost btn-sm" onClick={() => { runCancel.current = true; }}>Stop</button>
             </>}
@@ -1296,7 +2130,10 @@ function DesignerPage() {
             <div className="dsn-rail-head">Layers</div>
             {tpl.elements.slice().reverse().map(el => (
               <div key={el.id} className={"dsn-layer" + (selIds.indexOf(el.id) !== -1 || el.id === selId ? " is-on" : "")}>
-                <button className="dsn-layer-hit" onClick={e => {
+                <button className="dsn-layer-hit"
+                  aria-pressed={selIds.indexOf(el.id) !== -1 || el.id === selId}
+                  aria-label={"Select " + dsnLayerLabel(el)}
+                  onClick={e => {
                   // Shift-click adds to the selection, the way it does on the canvas.
                   if (e.shiftKey) {
                     setSelIds(prev => prev.indexOf(el.id) !== -1 ? prev.filter(x => x !== el.id) : prev.concat([el.id]));
@@ -1310,10 +2147,16 @@ function DesignerPage() {
                 {/* Lock and hide. A locked layer still prints — it just cannot be
                     dragged by accident, which is what stops somebody nudging the
                     QR while moving the headline above it. */}
-                <button className="dsn-layer-ic" title={el.locked ? "Unlock" : "Lock"}
-                  onClick={() => patch(el.id, { locked: !el.locked })}>{el.locked ? "🔒" : "🔓"}</button>
-                <button className="dsn-layer-ic" title={el.hidden ? "Show" : "Hide"}
-                  onClick={() => patch(el.id, { hidden: !el.hidden })}>{el.hidden ? "🙈" : "👁"}</button>
+                <button className="dsn-layer-ic" aria-pressed={!!el.locked}
+                  aria-label={(el.locked ? "Unlock" : "Lock") + " " + dsnLayerLabel(el)}
+                  title={el.locked ? "Unlock" : "Lock"}
+                  onClick={() => patch(el.id, { locked: !el.locked })}>
+                  <span aria-hidden="true">{el.locked ? "🔒" : "🔓"}</span></button>
+                <button className="dsn-layer-ic" aria-pressed={!!el.hidden}
+                  aria-label={(el.hidden ? "Show" : "Hide") + " " + dsnLayerLabel(el)}
+                  title={el.hidden ? "Show" : "Hide"}
+                  onClick={() => patch(el.id, { hidden: !el.hidden })}>
+                  <span aria-hidden="true">{el.hidden ? "🙈" : "👁"}</span></button>
               </div>
             ))}
             <div className="dsn-rail-head" style={{ marginTop: 14 }}>Add</div>
@@ -1380,10 +2223,36 @@ function DesignerPage() {
 
           {/* ── Canvas ─────────────────────────────────────────────────── */}
           <div className="dsn-stage">
-            <div ref={hostRef} className="dsn-canvas-host" aria-label="Card design canvas"/>
+            {/* The canvas is a Fabric surface: it can be pointed at and it
+                cannot be tabbed into or read. Calling it a labelled region was
+                a claim it does not meet, so it is marked decorative and the
+                Layers rail beside it is the keyboard route to every element —
+                a real list of real buttons, with the numeric position fields
+                in the properties rail as the non-drag way to move things.
+
+                What was missing is the FEEDBACK: selecting a layer changed the
+                canvas and announced nothing. This region says what is selected
+                and where it is, so a keyboard user nudging with the arrow keys
+                can hear the result. */}
+            <div ref={hostRef} className="dsn-canvas-host" role="presentation"/>
+            <p className="sr-only" aria-live="polite">
+              {sel
+                ? dsnLayerLabel(sel) + " selected, at x " + Math.round(sel.x || 0) + ", y " + Math.round(sel.y || 0)
+                  + (sel.w ? ", " + Math.round(sel.w) + " by " + Math.round(sel.h || 0) + " units" : "")
+                  + (sel.locked ? ", locked" : "")
+                : "Nothing selected"}
+            </p>
             <div className="dsn-stage-note">
               {tpl.w} × {tpl.h} design units · {tpl.safe}-unit safe area · {tpl.bleedMm}mm bleed
+              {tpl.face && tpl.face !== "single" ? " · " + tpl.face : ""}
             </div>
+            {/* The keyboard contract, written down where it is used rather than
+                left as folklore. */}
+            <p className="dsn-stage-note dsn-keys">
+              Arrow keys nudge the selection by one unit, Shift+Arrow by ten.
+              Ctrl+Z undoes, Ctrl+D duplicates, Delete removes. Positions can
+              also be typed in the panel on the right.
+            </p>
           </div>
 
           {/* ── Properties + bind ──────────────────────────────────────── */}
@@ -1536,6 +2405,8 @@ function DesignerPage() {
           </div>
         </div>
       )}
+
+      </div>{/* /.dsn-work */}
 
       {/* ── Preflight ──────────────────────────────────────────────────────
           Live, not a gate at the end. Errors block publish here AND on the

@@ -17,7 +17,7 @@
    Env:  SHOT_PORT (default 8210), CHROMIUM_PATH, PLAYWRIGHT_MODULE
    ============================================================================ */
 const { execSync, spawn } = require('child_process');
-const { waitForServer, waitForBoot } = require('./_serve');
+const { waitForServer, waitForBoot, writeScreenIndex } = require('./_serve');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -178,7 +178,7 @@ function seed() {
     'db' => ['dsn' => '', 'sqlite_path' => ${JSON.stringify(DB)}],
     'mail' => ['from_name' => 'NGG', 'from_email' => 'no-reply@example.org', 'reply_to' => 'r@example.org', 'smtp' => ['host' => '']],
     'app_origin' => ${JSON.stringify(BASE)},
-    'cookie_secret' => 'shots_secret_0123456789abcdefgh',
+    'cookie_secret' => 'shots_secret_0123456789abcdefghi',
     'cookie_secure' => false, 'cookie_name' => 'ngg_sess', 'cookie_domain' => '', 'cookie_samesite' => 'Lax',
     'cache_dir' => ${JSON.stringify(CACHE)},
     'rate_limits' => ['default' => ['max' => 100000, 'window' => 60]],
@@ -337,14 +337,14 @@ function seed() {
         console.log('  ✓ 21-volunteer-ids-real.png  (' + shots[shots.length - 1].kb + ' KB) — volunteer IDs, real rows');
       }
       // The children's cards from the same rows, for the side-by-side.
-      const stuTab = await page.$('button:has-text("Summer students")');
+      const stuTab = await page.$('button:has-text("Participants")');
       if (stuTab) { await stuTab.click(); await page.waitForTimeout(2200); }
       await hideChrome();
       const zone2 = await page.$('.print-zone');
       if (zone2) {
         const file = path.join(OUT, '22-student-ids-real.png');
         await zone2.screenshot({ path: file });
-        shots.push({ name: '22-student-ids-real', label: 'Summer student IDs from the same database, for comparison', kb: Math.round(fs.statSync(file).size / 1024) });
+        shots.push({ name: '22-student-ids-real', label: 'Summer School participant IDs from the same database, for comparison', kb: Math.round(fs.statSync(file).size / 1024) });
         console.log('  ✓ 22-student-ids-real.png  (' + shots[shots.length - 1].kb + ' KB) — student IDs, real rows');
       }
       await ctx.close();
@@ -634,6 +634,6 @@ function seed() {
     cleanup();
   }
 
-  fs.writeFileSync(path.join(OUT, 'INDEX.json'), JSON.stringify(shots, null, 2));
+  writeScreenIndex(OUT, shots);
   console.log(`\n${shots.length} screenshot(s) in docs/screens/`);
 })().catch((e) => { cleanup(); console.error(e); process.exit(1); });

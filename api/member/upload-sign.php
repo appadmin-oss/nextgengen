@@ -39,10 +39,28 @@ $kinds = $cfg['kinds'] ?? [];
 if (isset($kinds[$kind])) {
     $spec = $kinds[$kind];
 } elseif ($kind === 'post') {
-    // Community feed media — image OR video. The client tells us which so we can
-    // pick the right resource type + storage strategy (below).
-    $mk = (string)($body['mediaKind'] ?? 'image');
-    $spec = ['resource_type' => $mk === 'video' ? 'video' : 'image', 'folder' => 'community'];
+    /* Community feed media. FOUR kinds, not two.
+     *
+     * This used to be image-or-video, and everything that was not a video was
+     * signed as an image — which is how a shared PDF came back a PNG. Cloudinary
+     * accepts a PDF on the image endpoint (it treats one as a multi-page image),
+     * and the `f_auto` incoming transformation below then rasterised page 1 and
+     * stored THAT. The original document was never kept, the delivered URL ended
+     * `.png`, and the community's PDF viewer — which keys on the extension —
+     * correctly concluded there was no PDF to show. One cause, both symptoms.
+     *
+     *  · pdf   → the image pipeline (so `pg_n` page thumbnails stay available)
+     *            but with NO incoming transformation, so the stored asset is the
+     *            document the member chose and the URL still ends `.pdf`.
+     *  · raw   → everything else a member may attach (docx, xlsx, zip, txt…).
+     *            Cloudinary cannot process these at all; `raw` stores the bytes
+     *            verbatim, which is exactly what a document attachment wants.
+     *  · video → unchanged.
+     *  · image → unchanged.
+     */
+    $mk = upload_media_kind((string)($body['mediaKind'] ?? 'image'));
+    $spec = ['resource_type' => $mk === 'raw' ? 'raw' : ($mk === 'video' ? 'video' : 'image'),
+             'folder' => 'community'];
 } elseif (preg_match('/^[a-z][a-z0-9_-]{1,30}$/', $kind)) {
     $spec = ['resource_type' => 'image', 'folder' => $kind];
 } else {
@@ -78,12 +96,22 @@ $signParams = [
 //    — capped to 1600px at q_auto:good. Genuine at-rest storage savings.
 //  · Video: an eager, async 720p web-optimized derivative for smooth playback;
 //    delivery-time f_auto/q_auto keeps bytes down until the eager job lands.
-$eager = ''; $incoming = '';
+//  · Documents: NOTHING. A document is not something to re-encode — the point
+//    of attaching one is that the person who opens it gets the file that was
+//    sent. `use_filename` keeps the member's own filename (and, crucially, its
+//    extension) on the delivered URL, so a `.pdf` stays recognisably a `.pdf`
+//    to the viewer, the browser and the person downloading it.
+$eager = ''; $incoming = ''; $useFilename = false;
 if ($kind === 'post') {
-    if (($body['mediaKind'] ?? 'image') === 'video') {
+    $mk = upload_media_kind((string)($body['mediaKind'] ?? 'image'));
+    if ($mk === 'video') {
         $eager = 'f_auto,q_auto:eco,w_1280,c_limit';
         $signParams['eager'] = $eager;
         $signParams['eager_async'] = 'true';
+    } elseif ($mk === 'pdf' || $mk === 'raw') {
+        $useFilename = true;
+        $signParams['use_filename'] = 'true';
+        $signParams['unique_filename'] = 'true';
     } else {
         $incoming = 'c_limit,w_1600,q_auto:good,f_auto';
         $signParams['transformation'] = $incoming;
@@ -107,6 +135,7 @@ json_ok([
     'eager'        => $eager,
     'eagerAsync'   => $eager !== '',
     'transformation' => $incoming,
+    'useFilename'  => $useFilename,
     'uploadUrl'    => 'https://api.cloudinary.com/v1_1/' . $cfg['cloud_name'] . '/' . $resourceType . '/upload',
     'maxBytes'     => (int)($cfg['max_bytes'] ?? (25 * 1024 * 1024)),
 ]);

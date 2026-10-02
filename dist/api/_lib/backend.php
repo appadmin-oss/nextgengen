@@ -48,6 +48,10 @@ function backend_dispatch(string $op, array $args = []): array {
             'member.mentor.goal.save'      => 'mentor_goal_save',
             'member.mentor.goal.status'    => 'mentor_goal_status',
             'member.mentor.attention'      => 'mentor_attention',
+            'member.mentor.courage.mark'   => 'courage_mark_save',
+            'member.mentor.review.save'    => 'mentor_review_save',
+            'member.mentor.reviews.due'    => 'mentor_reviews_due',
+
             'behaviour.star.give'     => 'mentor_star_give',
             'behaviour.bulk.award'    => 'mentor_bulk_award',
             'admin.behaviour.presets' => 'admin_behaviour_presets_save',
@@ -76,7 +80,26 @@ function backend_dispatch(string $op, array $args = []): array {
             'session.ensureYear'      => 'session_ensure_year',
             // Admin
             'admin.members.list'      => 'admin_members_list',
+            /* Bulk over the member roster, plus the id list that makes
+               "apply to all N matching the filter" possible. Each bulk action
+               declares its own capability and every row comes back with its
+               own verdict — see _lib/domain/members-bulk.php for the guards
+               (self, staff tier, centre scope, bounds). */
+            'admin.members.issueIds'    => 'admin_members_issue_ids',
+            /* Member cards: secure MEMQR- cards, printed formats, backfill —
+               see domain/member-cards.php. */
+            'admin.members.cardFormats'    => 'admin_member_card_formats',
+            'admin.members.cardFormatSave' => 'admin_member_card_format_save',
+            'admin.members.cards'          => 'admin_member_cards',
+            'admin.members.cardReissue'    => 'admin_member_card_reissue',
+            'admin.members.cardsBackfill'  => 'admin_member_cards_backfill',
+            // Send everybody already promoted to NGV to Afrovanguard (domain/ngv-portal.php).
+            'admin.members.ngvPortalSync'  => 'admin_members_ngv_portal_sync',
+            'admin.members.ids'       => 'admin_members_ids',
             'admin.members.upsert'    => 'admin_members_upsert',
+            'admin.members.import'    => 'admin_members_import',
+            'admin.requests.list'     => 'admin_requests_list',
+            'admin.requests.decide'   => 'admin_request_decide',
             'admin.members.consent'   => 'admin_member_consent',
             'admin.members.duplicates' => 'admin_members_duplicates',
             'admin.members.overview'  => 'admin_members_overview',
@@ -85,6 +108,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.members.merge'     => 'admin_members_merge',
             'admin.member.timeline'   => 'admin_member_timeline',
             'admin.members.promoteNgv' => 'admin_member_promote_ngv',
+            'admin.members.readiness'  => 'admin_member_readiness',
+            'admin.members.promotions' => 'admin_member_promotions',
             'admin.members.demoteNgv' => 'admin_member_demote_ngv',
             'admin.members.reset2fa'  => 'admin_member_reset_2fa',
             'admin.members.resetPassword' => 'admin_member_reset_password',
@@ -99,6 +124,21 @@ function backend_dispatch(string $op, array $args = []): array {
             // Summer School (QR attendance + enrollment)
             'admin.summer.overview'       => 'admin_summer_overview',
             'admin.summer.cohort.upsert'  => 'admin_summer_cohort_upsert',
+            /* Summer School structure. An EDITION is one season
+               (`summer_cohorts`, whose id is the `cohortId` every summer table
+               carries); a GROUP is a class within it (`summer_groups`). Both
+               gate on `summer`. The centre DIRECTORY is deliberately not here:
+               a centre is an NGG-wide place whose code is the printed ID prefix
+               on every member card, so writing it gates on `people`. See
+               _lib/domain/summer-editions.php. */
+            'admin.summer.editions'       => 'admin_summer_editions',
+            'admin.summer.edition.save'   => 'admin_summer_edition_save',
+            'admin.summer.edition.status' => 'admin_summer_edition_status',
+            'admin.summer.groups'         => 'admin_summer_groups',
+            'admin.summer.group.save'     => 'admin_summer_group_save',
+            'admin.summer.group.delete'   => 'admin_summer_group_delete',
+            'admin.summer.group.assign'   => 'admin_summer_group_assign',
+            'admin.summer.group.report'   => 'admin_summer_group_report',
             'admin.summer.qr.mint'        => 'admin_summer_qr_mint',
             'admin.summer.qr.list'        => 'admin_summer_qr_list',
             'admin.summer.qr.void'        => 'admin_summer_qr_void',
@@ -164,9 +204,17 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.club.promotable'       => 'admin_club_promotable',
             'admin.club.promote'          => 'admin_club_promote',
             'admin.club.members'          => 'admin_club_members',
+            /* A club coordinator's own bulk actions. Deliberately narrower
+               than the member desk's — see domain/club.php: `club` manages
+               participation, and must not become a quiet superset of
+               `people`. */
+            'admin.club.promote.bulk'     => 'admin_club_promote_bulk',
+            'admin.club.members.bulk'     => 'admin_club_members_bulk',
             // Anchor Circle — student side (member) + portal side (guardian)
             'auth.gateway'                => 'auth_gateway',
             'hooks.attendance'            => 'hooks_attendance',
+            'hooks.gate.resolve'          => 'hooks_gate_resolve',
+            'hooks.gate.search'           => 'hooks_gate_search',
             'admin.behaviour.log'         => 'admin_behaviour_log',
             'admin.behaviour.list'        => 'admin_behaviour_list',
             'admin.behaviour.review'      => 'admin_behaviour_review',
@@ -175,6 +223,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.staff.performance'     => 'admin_staff_performance',
             'admin.engagement'            => 'admin_engagement',
             'admin.engagement.trends'     => 'admin_engagement_trends',
+            'admin.community.engagement'  => 'admin_community_engagement',
             'admin.ops.status'            => 'admin_ops_status',
             'admin.ops.clear'             => 'admin_ops_clear',
             'admin.ops.run'               => 'admin_ops_run_cron',
@@ -217,6 +266,17 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.card.template.publish'       => 'admin_card_template_publish',
             'admin.card.template.check'         => 'admin_card_template_check',
             'admin.card.template.delete'        => 'admin_card_template_delete',
+            /* ID card ISSUANCE. The template system froze a published version
+               and promised print runs would record it; nothing did. These do —
+               one row per batch and one per person, each carrying the frozen
+               version, so "what is in this member's hand" and "reprint it
+               exactly as it was in July" are answerable. Same `people` gate as
+               the templates: deciding what a credential looks like and issuing
+               one are the same trust boundary. See domain/card-runs.php. */
+            'admin.card.run.record'             => 'admin_card_run_record',
+            'admin.card.runs'                   => 'admin_card_runs',
+            'admin.card.run.get'                => 'admin_card_run_get',
+            'admin.card.history'                => 'admin_card_history',
             /* The design asset library. Images placed in a design used to be
                data: URLs inside the design itself, which capped a poster at one
                small photograph — see api/_lib/domain/design-assets.php. */
@@ -254,6 +314,10 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.profile.note.upsert'   => 'admin_profile_note_upsert',
             'admin.profile.note.delete'   => 'admin_profile_note_delete',
             'admin.cards.data'            => 'admin_cards_data',
+            /* The public Summer School page: the live edition, the academies
+               and the centres with what runs at each, in one cacheable read.
+               See domain/summer-editions.php. */
+            'public.summer'               => 'public_summer_page',
             'gate.context'                => 'gate_context',
             'gate.register'               => 'gate_register',
             'parent.verify.context'       => 'parent_verify_context',
@@ -278,6 +342,16 @@ function backend_dispatch(string $op, array $args = []): array {
             /* A member's own obligations, read-only. There is deliberately no
                member-side op that posts, pays or voids anything. */
             'member.fees'                 => 'member_fees_account',
+            /* Self-service. Every one of these takes its memberId from the
+               SESSION, never the body — see member-self.php. */
+            'member.statement'            => 'member_statement',
+            'member.records'              => 'member_records',
+            'member.courage'              => 'member_courage',
+            'admin.divisions.overview'    => 'admin_divisions_overview',
+            'admin.mentors.duplicates'    => 'admin_mentors_duplicates',
+            'member.requests'             => 'member_requests_list',
+            'member.request.create'       => 'member_request_create',
+            'member.request.withdraw'     => 'member_request_withdraw',
             'member.compliance'           => 'member_compliance',
             'member.coach'                => 'member_coach',
             'member.circle'               => 'member_circle',
@@ -342,6 +416,12 @@ function backend_dispatch(string $op, array $args = []): array {
             'journal.visibility'       => 'journal_visibility_set',
             'journal.share'            => 'journal_share',
             'journal.delete'           => 'journal_delete',
+            // §8c — the Programme record.
+            'journal.follow'           => 'journal_follow',
+            'journal.updates'          => 'journal_updates',
+            'journal.update.add'       => 'journal_update_add',
+            'journal.propose'          => 'journal_propose',
+            'journal.publish'          => 'journal_publish',
             'analytics.activity.add'   => 'analytics_activity_add',
             'admin.member.detail'     => 'admin_member_detail',
             'admin.mentor.assign'     => 'admin_assign_mentor',
@@ -363,6 +443,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.hierarchy.upsert'    => 'admin_hierarchy_upsert',
             'admin.hierarchy.delete'    => 'admin_hierarchy_delete',
             'admin.vcards.data'         => 'admin_volunteer_cards_data',
+            'admin.mcards.data'         => 'admin_mcards_data',
             'admin.id.resend'           => 'admin_id_resend',
             'admin.photo.queue'         => 'admin_photo_queue',
             'admin.photo.claim'         => 'photo_claim',
@@ -408,6 +489,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.centre'           => 'public_centre_page',
             'community.channels'      => 'community_channels',
             'community.feed'          => 'community_feed',
+            'community.post.get'      => 'community_post_get',
+            'community.files'         => 'community_channel_files',
             'community.post'          => 'community_post_create',
             'community.react'         => 'community_react',
             'community.comments'      => 'community_comments',
@@ -420,10 +503,33 @@ function backend_dispatch(string $op, array $args = []): array {
             'community.pollVote'      => 'community_poll_vote',
             'community.mentionSearch' => 'community_mention_search',
             'community.markRead'      => 'community_mark_read',
+            'community.today'         => 'community_today_counts',
             'community.search'        => 'community_search',
             'community.channelMembers'=> 'community_channel_members',
             'community.star'          => 'community_star',
             'community.login'         => 'community_id_login',
+            /* Homework (handoff §11 widget, §12 screen). Nudging is mentor-only
+               and rate-limited daily inside the domain, not here — a permission
+               enforced in a router is a permission one new endpoint forgets. */
+            'community.homework'      => 'community_homework_view',
+            'community.homeworkList'  => 'community_homework_list',
+            'community.homeworkSet'   => 'community_homework_set',
+            'community.homeworkSeen'  => 'community_homework_seen',
+            'community.homeworkSubmit'=> 'community_homework_submit',
+            'community.homeworkReview'=> 'community_homework_review',
+            'community.homeworkNudge' => 'community_homework_nudge',
+            /* Typing. A poll, not a socket — shared hosting cannot hold a
+               connection open; the cost control is in the domain. */
+            'community.typingPing'    => 'community_typing_ping',
+            'community.typingStop'    => 'community_typing_stop',
+            'community.typingWho'     => 'community_typing_who',
+            /* "Mine" — the personal journal (§8a/§8b). Every one of these
+               reads and writes the CALLER's own rows only; there is no
+               memberId parameter to forge. */
+            'journal.mine'            => 'journal_mine',
+            'journal.mine.save'       => 'journal_mine_save',
+            'journal.mine.mood'       => 'journal_mine_mood',
+            'journal.mine.delete'     => 'journal_mine_delete',
 
             // The Arcade — server-graded mini games. `start` mints a round and
             // ships questions only; the answer key never leaves the server.
@@ -442,27 +548,72 @@ function backend_dispatch(string $op, array $args = []): array {
             'match.respond'           => 'match_respond',
             'match.move'              => 'match_move',
             'match.resign'            => 'match_resign',
+            'match.draw'              => 'match_draw',
             'match.react'             => 'match_react',
             'match.report'            => 'match_report',
             'match.staff.list'        => 'match_staff_list',
             'match.poll'              => 'match_poll',
             'match.watch'             => 'match_live_list',
+            // After-game review. The analysis runs in the browser; these two
+            // only keep the result. See _lib/domain/match-review.php.
+            'match.review.get'        => 'match_review_get',
+            'match.review.put'        => 'match_review_put',
+            'match.review.history'    => 'match_review_history',
+
+            /* Finding a game — design turn 6A. The match ops above PLAY chess;
+             * these are the part that comes before a board exists. */
+            'chess.players'           => 'chess_players',
+            'chess.profile'           => 'chess_profile',
+            'chess.challenges'        => 'chess_challenges_list',
+            'chess.challenge'         => 'chess_challenge_create',
+            'chess.respond'           => 'chess_challenge_respond',
             // Tournaments: centre rounds through to a final.
             'tournament.list'         => 'admin_tournaments_list',
             'tournament.bracket'      => 'tournament_bracket',
             'tournament.mine'         => 'tournament_mine',
             'tournament.create'       => 'admin_tournament_create',
+            'tournament.inviteAll'    => 'admin_tournament_invite_all',
             'tournament.enter'        => 'admin_tournament_enter',
+            'tournament.browse'       => 'tournament_browse',
+            // What is actually happening right now — see tournament_ladder().
+            'tournament.ladder'       => 'tournament_ladder',
+            'tournament.join'         => 'tournament_join',
+            'tournament.leave'        => 'tournament_leave',
+            'tournament.standings'    => 'tournament_standings',
+            'tournament.rounds'       => 'tournament_rounds',
+            'tournament.draw'         => 'tournament_draw_round',
+            'tournament.directory'    => 'directory_search',
             'tournament.withdraw'     => 'admin_tournament_withdraw',
             'tournament.advance'      => 'admin_tournament_advance',
             'tournament.replay'       => 'admin_tournament_replay',
             'tournament.cancel'       => 'admin_tournament_cancel',
+            'chess.lobby'             => 'chess_lobby_poll',
+            'promo.for'               => 'promo_for',
+            'promo.track'             => 'promo_track',
+            'admin.promos.list'       => 'admin_promos_list',
+            'admin.promo.upsert'      => 'admin_promo_upsert',
+            'admin.promo.delete'      => 'admin_promo_delete',
+            // Quote of the week (domain/wisdom.php).
+            'public.wisdom.week'      => 'public_wisdom_week',
+            'admin.wisdom.list'       => 'admin_wisdom_list',
+            'admin.wisdom.upsert'     => 'admin_wisdom_upsert',
+            'admin.wisdom.delete'     => 'admin_wisdom_delete',
+            'admin.wisdom.move'       => 'admin_wisdom_move',
+            'admin.wisdom.voice.generate' => 'admin_wisdom_voice_generate',
+            'admin.wisdom.voice.upload'   => 'admin_wisdom_voice_upload',
+            'admin.wisdom.voice.clear'    => 'admin_wisdom_voice_clear',
+            'admin.wisdom.voice.all'      => 'admin_wisdom_voice_all',
+            'admin.wisdom.voice.defaults' => 'admin_wisdom_voice_defaults_set',
+            'admin.wisdom.voice.clone'    => 'admin_wisdom_voice_clone',
+            'admin.wisdom.voice.clone.delete' => 'admin_wisdom_voice_clone_delete',
             'student.communityLogin'  => 'community_id_login',   // legacy alias
             'admin.community.overview'      => 'admin_community_overview',
             'admin.community.channel.upsert'=> 'admin_community_channel_upsert',
             'admin.community.queue'         => 'admin_community_queue',
             'admin.community.moderation' => 'admin_community_moderation_set',
             'admin.community.moderate'      => 'admin_community_moderate',
+            'admin.community.safeguarding'     => 'admin_community_safeguarding',
+            'admin.community.safeguarding.ack' => 'admin_community_safeguarding_ack',
             'public.newsletter'       => 'public_newsletter',
             'public.newsletter.unsubscribe' => 'public_newsletter_unsubscribe',
             'public.application.status' => 'public_application_status',

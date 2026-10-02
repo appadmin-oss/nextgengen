@@ -111,17 +111,58 @@ function inkRgb(hex) {
   if (!/^[0-9a-fA-F]{6}$/.test(s)) return null;
   return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
 }
-function inkOn(hex) {
+/** WCAG 2.1 relative luminance. The one place this arithmetic lives. */
+function inkLum(hex) {
   const rgb = inkRgb(hex);
+  if (!rgb) return null;
+  const lin = rgb.map(v => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
+  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+}
+
+/** The WCAG 2.1 contrast ratio between two colours, 1–21. Null if either is
+ *  not a hex we can read — a caller deciding whether to warn must be able to
+ *  tell "these clash" from "I could not measure this". */
+function inkContrast(a, b) {
+  const x = inkLum(a), y = inkLum(b);
+  if (x == null || y == null) return null;
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+
+/* The luminance at which #10131a and #fff are equally legible on a background.
+   Solving 1.05/(L+0.05) = (L+0.05)/(L_dark+0.05) for L_dark = L("#10131a")
+   gives L = sqrt(1.05 × 0.0565) − 0.05 = 0.1936, where both inks measure
+   4.31:1. Picking the ink by this number is the best either can do.
+
+   It used to be 0.42, which is more than twice the crossover, so every
+   background between the two got white text when black was the better choice.
+   That is not a rounding difference. #76B043 — the DEFAULT centre colour, the
+   one a new centre gets before anybody picks one — measured 2.60:1 with white
+   and measures 7.13:1 with black. Six of the eight roster avatar colours and
+   four of the five community ones were on the wrong side of it, two of them
+   below 3:1, and the same function inks printed ID cards, where nobody finds
+   out until a box of them arrives. */
+const INK_CROSSOVER_L = 0.1936;
+
+function inkOn(hex) {
+  const L = inkLum(hex);
   // Unparseable (a CSS keyword, an rgba() string, a missing value) keeps the old
   // behaviour rather than guessing: white with a shadow, which is what every
   // caller did unconditionally before.
-  if (!rgb) return { ink: "#fff", shadow: "0 1px 2px rgba(0,0,0,.4)", hairline: "rgba(255,255,255,.55)", light: false };
-  const lin = rgb.map(v => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
-  const L = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
-  return L > 0.42
+  if (L == null) return { ink: "#fff", shadow: "0 1px 2px rgba(0,0,0,.4)", hairline: "rgba(255,255,255,.55)", light: false };
+  return L > INK_CROSSOVER_L
     ? { ink: "#10131a", shadow: "none", hairline: "rgba(0,0,0,.35)", light: true }
     : { ink: "#fff", shadow: "0 1px 2px rgba(0,0,0,.4)", hairline: "rgba(255,255,255,.55)", light: false };
+}
+
+/** Is there ANY ink that reads on this colour? Some colours are legible with
+ *  neither: they sit in the band where white has gone too dark and black has
+ *  not yet gone light enough. Worth saying at the moment somebody picks one,
+ *  because by the time it is a centre colour it is on every card that centre
+ *  prints. `min` is the ratio to clear — 4.5 for body text, 3 for the large
+ *  type a card band is set in. */
+function inkIsLegible(hex, min) {
+  const best = Math.max(inkContrast(hex, "#ffffff") || 0, inkContrast(hex, "#10131a") || 0);
+  return best >= (min || 4.5);
 }
 
 /* ── Heavy design libraries, fetched only when a screen actually opens ───────
@@ -178,6 +219,19 @@ const VENDOR_LIBS = {
      vendor-build.js because the package is ESM/CJS with no UMD. 414KB, so it is
      fetched by the Export button and never by the page. */
   docx: { js: ["/vendor/docx.min.js"], global: "docx" },
+  /* PDF.js 5.4.624, legacy build — the community's document reader.
+   *
+   * 486KB (151KB gzipped) for the library, and the worker it starts is another
+   * 1MB on top. That is a real cost on a Nigerian mobile connection and it was
+   * refused once for exactly that reason. It is affordable now only because it
+   * is loaded from HERE: nothing fetches it until a member opens a document,
+   * and it is fetched once per browser and then cached. A reader who never
+   * taps a PDF never pays for any of it.
+   *
+   * `needs` is not used — pdf.js has no dependency on the page — but the
+   * worker path has to be set before the first getDocument(), which the viewer
+   * does on the resolved global. */
+  pdfjs: { js: ["/vendor/pdfjs.min.js"], global: "pdfjsLib" },
 };
 const _vendorLoads = {};
 function loadVendorAsset(url, kind) {
@@ -572,7 +626,8 @@ function TopNav({ page, setPage }) {
       { id: "club",    label: "NGGC",             desc: "Identity society",         icon: "◐" },
       { id: "book",    label: "The Anchor book", desc: "Field manual",              icon: "▢" },
     ]},
-    { id: "stay", kind: "mega", label: "The room", match: ["community","blog","media","volunteers","parents","contact"], items: [
+    { id: "stay", kind: "mega", label: "The room", match: ["about","community","blog","media","volunteers","parents","contact"], items: [
+      { id: "about",      label: "About NGGC",      desc: "The 2040 formation brief", icon: "◆", badge: "2040" },
       { id: "community",  label: "Community",        desc: "The movement, live",      icon: "◈" },
       { id: "blog",       label: "The Journal",     desc: "Stories + essays",        icon: "✎" },
       { id: "media",      label: "Media room",      desc: "Films · podcast · reels", icon: "▶" },
@@ -709,7 +764,7 @@ function TopNav({ page, setPage }) {
             <Magnetic strength={6}>
               {isSignedIn
                 ? <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("dashboard")}>My dashboard →</button>
-                : <button className="btn btn-primary btn-sm nav-apply" onClick={() => setPage("join")}>Apply →</button>}
+                : <button className="btn btn-primary btn-sm nav-apply" onClick={() => goApply(setPage, "anchor")}>Apply →</button>}
             </Magnetic>
             <button
               ref={burgerRef}
@@ -976,6 +1031,7 @@ function Footer({ setPage, page }) {
     {
       h: "Stay in motion",
       links: [
+        { label: "About NGGC", page: "about" },
         { label: "The Anchor book", page: "book" },
         { label: "The Journal", page: "blog" },
         { label: "Media room", page: "media" },
@@ -1199,6 +1255,341 @@ function humanizeError(message, code) {
   if (map[c]) return map[c];
   if (/network|fetch|Failed to fetch|offline/i.test(c)) return "Network trouble — check your connection and try again.";
   return "Something went wrong. Please try again — if it persists, contact support.";
+}
+
+/* ============================================================================
+   THE ADMIN ACTION LAYER — one selection primitive, one bulk bar, one runner.
+
+   Every screen in this console had rolled its own. There were at least six
+   variants of "tick some rows and do a thing to them": AdminApplications kept a
+   Set and awaited a loop, SummerPending kept a Set called `ticked` with its own
+   bar, the review desk kept `picked` and passed an `onBulk` up, the assessment
+   screen kept an object map, the mentor sheet took an array of ids, and the two
+   screens where bulk mattered most — Members and the Club roster — had none at
+   all. They disagreed about the things that actually matter:
+
+     · WHETHER THE COUNT IS TRUE. Some confirms interpolated the selection size
+       at press time and some at render time, so a confirm could say 12 and act
+       on 40 after a background refresh landed in between. The count is read
+       ONCE here, before the confirm, and is the count acted on.
+     · WHETHER A HALF-DONE BULK IS REPORTED. Several looped `await` inside a
+       try and reported success if the last row worked. A bulk that half-worked
+       is the case worth designing for, so a partial result is a distinct
+       outcome with its own message naming how many failed and why.
+     · WHETHER SELECTION SURVIVES A FILTER CHANGE. Most did. Changing the filter
+       and pressing a bulk action then acted on rows that were no longer on
+       screen. Selection is keyed to the list here and clears itself.
+     · WHETHER THE OPERATOR MAY DO IT. Bulk buttons were rendered
+       unconditionally and the server 403'd, so the feedback for "you may not"
+       was an error toast after the confirm. An action declares its capability
+       and is not rendered without it. (The server still enforces; this is the
+       UI being honest, never the check itself.)
+     · WHETHER IT IS KEYBOARD-REACHABLE AND ANNOUNCED. The bars were divs. This
+       one is a labelled region with a live count, so a screen-reader user knows
+       the selection changed without hunting for it.
+
+   Use it as three pieces:
+
+     const sel = useAdminSelection(rows, r => r.memberId);
+     <AdminBulkBar selection={sel} total={meta.total} actions={[...]}/>
+     // and, for one row's own menu, the same runner:
+     runAdminAction(action, [id], { reload })
+
+   An action is a plain object so the same declaration drives the bulk bar and
+   a single-row menu — which is what keeps the two consistent by construction
+   rather than by everyone remembering:
+
+     { id, label, rowLabel, cap, danger, hint,
+       confirm: ({count, ids}) => ({title, body, cta, danger}),
+       run: (ids) => result,  runOne: (id) => result,  open: (ids) => void,
+       pastTense, reload, bulkHidden, rowHidden, keepSelection }
+   ============================================================================ */
+
+/** Row selection for a paged admin table.
+ *
+ * `rows` is the page in hand and `key` reads a row's stable id. The selection
+ * clears whenever the identity of the list changes, so a filter or a page turn
+ * can never leave rows selected that the operator can no longer see.
+ */
+function useAdminSelection(rows, key) {
+  const list = rows || [];
+  const getKey = key || ((r) => r && (r.id || r.memberId || r.studentId));
+  const ids = React.useMemo(() => list.map(getKey).filter(Boolean).map(String), [list]);
+  const sig = ids.join("|");
+  const [picked, setPicked] = React.useState(() => new Set());
+  // Drop anything no longer on screen rather than clearing outright: turning a
+  // page and coming back should not silently discard a careful selection, but
+  // acting on an off-screen row must be impossible.
+  React.useEffect(() => {
+    setPicked(prev => {
+      if (!prev.size) return prev;
+      const keep = new Set();
+      prev.forEach(id => { if (ids.indexOf(id) !== -1) keep.add(id); });
+      return keep.size === prev.size ? prev : keep;
+    });
+    // eslint-disable-next-line
+  }, [sig]);
+
+  const has = React.useCallback((id) => picked.has(String(id)), [picked]);
+  const toggle = React.useCallback((id) => setPicked(p => {
+    const n = new Set(p); const k = String(id);
+    if (n.has(k)) n.delete(k); else n.add(k);
+    return n;
+  }), []);
+  const clear = React.useCallback(() => setPicked(new Set()), []);
+  const allOnPage = ids.length > 0 && ids.every(id => picked.has(id));
+  const someOnPage = ids.some(id => picked.has(id)) && !allOnPage;
+  const togglePage = React.useCallback(() => {
+    setPicked(p => (ids.length && ids.every(id => p.has(id))) ? new Set() : new Set(ids));
+    // eslint-disable-next-line
+  }, [sig]);
+  return {
+    ids: Array.from(picked), size: picked.size, has, toggle, clear, togglePage,
+    allOnPage, someOnPage, pageIds: ids,
+    /* Replace the selection outright — for "select all N matching the filter",
+       where the ids come from the server rather than from the page in hand. */
+    replace: (next) => setPicked(new Set((next || []).map(String))),
+  };
+}
+
+/** A tri-state select-all checkbox. Indeterminate has to be set imperatively;
+ *  React has no prop for it, which is why every hand-rolled version was a
+ *  two-state box that lied about a partial selection. */
+function AdminSelectAll({ selection, label }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (ref.current) ref.current.indeterminate = !!selection.someOnPage;
+  }, [selection.someOnPage, selection.allOnPage]);
+  return (
+    <label className="admin-bulk-all">
+      <input ref={ref} type="checkbox" checked={selection.allOnPage} onChange={selection.togglePage}
+        aria-label={label || "Select all rows on this page"}/>
+      <span>{selection.size ? selection.size + " selected" : (label || "Select all")}</span>
+    </label>
+  );
+}
+
+/** One row's checkbox. Stops the click from also opening the row. */
+function AdminRowCheck({ selection, id, label }) {
+  return (
+    <input type="checkbox" checked={selection.has(id)} aria-label={label || ("Select " + id)}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => { e.stopPropagation(); selection.toggle(id); }}/>
+  );
+}
+
+/**
+ * Run one declared action over a set of ids.
+ *
+ * Returns { ran, ok, failed, results } and never throws — a caller that only
+ * wants "did it work" reads `ok`, and one that wants to show the operator which
+ * rows failed reads `results`. `ran: false` means the operator cancelled, which
+ * is not a failure and must not be reported as one.
+ *
+ * `action.run(ids)` may either do the whole set in ONE server call (preferred —
+ * one request, one audit event, and the server decides the partial outcome) or
+ * be omitted in favour of `action.runOne(id)`, which is looped here. Looping is
+ * the fallback because it is N requests and cannot be atomic, not because it is
+ * equivalent.
+ */
+async function runAdminAction(action, ids, opts) {
+  const o = opts || {};
+  const list = (ids || []).map(String).filter(Boolean);
+  const count = list.length;   // read ONCE, before the confirm, and used throughout
+  if (!count) return { ran: false, ok: 0, failed: 0, results: [], reason: "empty" };
+
+  if (action.confirm !== false && typeof dialog !== "undefined" && dialog.confirm) {
+    const c = typeof action.confirm === "function" ? action.confirm({ count, ids: list }) : (action.confirm || {});
+    const ok = await dialog.confirm({
+      title: c.title || ((action.label || "Apply") + " · " + count + " selected"),
+      body: c.body || ("This applies to " + count + " record" + (count === 1 ? "" : "s") + "."),
+      cta: c.cta || (action.label || "Apply"),
+      cancel: c.cancel,
+      danger: c.danger !== undefined ? c.danger : !!action.danger,
+    });
+    if (!ok) return { ran: false, ok: 0, failed: 0, results: [], reason: "cancelled" };
+  }
+
+  let results = [];
+  let failed = 0, okCount = 0;
+  try {
+    if (typeof action.run === "function") {
+      const r = await action.run(list);
+      /* A server that reports per-row outcomes is believed over its own
+         top-level ok — a bulk endpoint returning ok:true with 28 refusals in
+         `results` is the exact case a caller must not read as success. */
+      if (r && Array.isArray(r.results)) {
+        results = r.results;
+        results.forEach(x => { if (x && x.ok === false) failed++; else okCount++; });
+      } else {
+        okCount = typeof (r && r.applied) === "number" ? r.applied
+                : typeof (r && r.assigned) === "number" ? r.assigned : count;
+        failed = Math.max(0, count - okCount);
+      }
+    } else if (typeof action.runOne === "function") {
+      for (const id of list) {
+        try { await action.runOne(id); results.push({ id, ok: true }); okCount++; }
+        catch (e) { results.push({ id, ok: false, error: (e && (e.code || e.message)) || "failed" }); failed++; }
+      }
+    } else {
+      /* Declaring neither `run` nor `runOne` nor `open` is a programming
+         mistake, not a user-facing outcome. Reported rather than shown as a
+         success over zero rows. */
+      console.error("[admin] action has no runner", action && action.id);
+      return { ran: false, ok: 0, failed: 0, results: [], reason: "no_runner" };
+    }
+  } catch (e) {
+    const msg = (e && (e.code || e.message)) || "failed";
+    if (typeof toast !== "undefined") {
+      toast.error(msg === "forbidden" ? "You don't have permission to do that." : humanizeError(msg, msg),
+        action.label || "Action failed");
+    }
+    return { ran: true, ok: 0, failed: count, results: [], error: msg };
+  }
+
+  if (typeof toast !== "undefined") {
+    const noun = (o.noun || "record") + (okCount === 1 ? "" : "s");
+    if (failed && okCount) {
+      /* The half-done case, said plainly and with the reason attached. The
+         previous behaviour was a success toast for a run where most rows were
+         refused. */
+      const why = adminFailSummary(results);
+      toast.warn
+        ? toast.warn(okCount + " of " + count + " done — " + failed + " refused" + (why ? " (" + why + ")" : "") + ".", action.label)
+        : toast.error(okCount + " of " + count + " done — " + failed + " refused" + (why ? " (" + why + ")" : "") + ".", action.label);
+    } else if (failed) {
+      const why = adminFailSummary(results);
+      toast.error("Nothing was changed — all " + failed + " refused" + (why ? " (" + why + ")" : "") + ".", action.label);
+    } else {
+      toast.success(okCount + " " + noun + " " + (o.pastTense || "updated") + ".", action.label);
+    }
+  }
+  if (typeof action.done === "function") { try { await action.done(results); } catch (_) {} }
+  if (typeof o.reload === "function") { try { await o.reload(); } catch (_) {} }
+  return { ran: true, ok: okCount, failed, results };
+}
+
+/** The distinct reasons rows were refused, most common first — so a partial
+ *  result says "12 already verified" rather than "12 refused". */
+function adminFailSummary(results) {
+  const counts = {};
+  (results || []).forEach(r => {
+    if (!r || r.ok !== false) return;
+    const k = String(r.error || "refused").replace(/_/g, " ");
+    counts[k] = (counts[k] || 0) + 1;
+  });
+  const keys = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  if (!keys.length) return "";
+  return keys.slice(0, 2).map(k => counts[k] + " " + k).join(", ");
+}
+
+/**
+ * The bulk bar.
+ *
+ * Shown only once something is selected, because a permanent bar of disabled
+ * buttons is noise. A labelled region with a polite live count, so the
+ * selection size is announced rather than only drawn; every action is a real
+ * button; nothing is rendered that the operator's capabilities do not allow.
+ *
+ * `total` + `selectAllMatching` provide the escape hatch the paged tables
+ * needed: a filter matching 340 rows can only ever tick the 50 in hand, and
+ * "apply to all 340" has to be an explicit, separate decision.
+ */
+function AdminBulkBar({ selection, actions, total, selectAllMatching, hasCap, noun, busy, children }) {
+  const [running, setRunning] = React.useState("");
+  const can = (a) => !a.cap || !hasCap || hasCap(a.cap);
+  const usable = (actions || []).filter(a => a && can(a));
+  if (!selection.size) return null;
+  const n = selection.size;
+  const label = (noun || "record") + (n === 1 ? "" : "s");
+  const go = async (a) => {
+    /* An action that needs a VALUE ("which status?", "which centre?") cannot
+       be a button — it has to ask first. Those declare `open(ids)` instead of
+       `run(ids)`: the bar hands over the ids and steps out of the way, and
+       crucially does NOT clear the selection, because whatever it opened is
+       about to act on it. */
+    if (typeof a.open === "function") { a.open(selection.ids); return; }
+    setRunning(a.id);
+    try { await runAdminAction(a, selection.ids, { noun: noun || "record", pastTense: a.pastTense, reload: a.reload }); }
+    finally { setRunning(""); }
+    if (a.keepSelection !== true) selection.clear();
+  };
+  return (
+    <div className="admin-bulkbar" role="region" aria-label="Actions for the selected rows">
+      <p className="admin-bulk-count" aria-live="polite">
+        <b>{n}</b> {label} selected
+        {typeof total === "number" && total > selection.pageIds.length && selectAllMatching && n < total && (
+          <> · <button type="button" className="admin-bulk-link" onClick={selectAllMatching}>
+            Select all {fmtNum(total)} matching the filter
+          </button></>
+        )}
+      </p>
+      <div className="admin-bulk-actions">
+        {usable.map(a => (
+          <button key={a.id} type="button"
+            className={"btn btn-sm " + (a.danger ? "btn-danger" : "btn-ghost")}
+            disabled={!!running || !!busy}
+            aria-busy={running === a.id ? "true" : undefined}
+            title={a.hint || undefined}
+            onClick={() => go(a)}>
+            {running === a.id ? "Working…" : a.label}
+          </button>
+        ))}
+        {children}
+        <button type="button" className="btn btn-ghost btn-sm" disabled={!!running} onClick={selection.clear}>Clear</button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One row's action menu, built from the SAME action declarations as the bulk
+ * bar. That is the point: an individual action and its bulk equivalent cannot
+ * drift into doing different things, asking differently, or being permitted
+ * differently, because there is one declaration for both.
+ */
+function AdminRowActions({ id, actions, hasCap, noun, reload, label }) {
+  const [open, setOpen] = React.useState(false);
+  const [running, setRunning] = React.useState("");
+  const ref = React.useRef(null);
+  const btnRef = React.useRef(null);
+  const usable = (actions || []).filter(a => a && (!a.cap || !hasCap || hasCap(a.cap)) && a.rowHidden !== true);
+  React.useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); setOpen(false); if (btnRef.current) btnRef.current.focus(); }
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+  if (!usable.length) return null;
+  const go = async (a) => {
+    setOpen(false);
+    if (typeof a.open === "function") { a.open([id]); return; }
+    setRunning(a.id);
+    try { await runAdminAction(a, [id], { noun: noun || "record", pastTense: a.pastTense, reload }); }
+    finally { setRunning(""); }
+  };
+  return (
+    <div className="admin-rowmenu" ref={ref} onClick={(e) => e.stopPropagation()}>
+      <button ref={btnRef} type="button" className="btn btn-ghost btn-sm admin-rowmenu-btn"
+        aria-haspopup="menu" aria-expanded={open} disabled={!!running}
+        onClick={() => setOpen(o => !o)}>
+        {running ? "…" : (label || "Actions")} <span aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="admin-rowmenu-pop" role="menu">
+          {usable.map(a => (
+            <button key={a.id} type="button" role="menuitem"
+              className={"admin-rowmenu-item" + (a.danger ? " is-danger" : "")}
+              onClick={() => go(a)}>{a.rowLabel || a.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function OfflineBanner() {
@@ -1609,7 +2000,7 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
           {!shot && <div aria-hidden="true" style={{ position: "absolute", left: "50%", top: "43%", transform: "translate(-50%,-50%)", width: "62%", height: "72%", border: "2px dashed rgba(255,255,255,0.65)", borderRadius: "50%" }}/>}
           {!shot && <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: 12, fontSize: 12.5, color: "#fff", background: "linear-gradient(transparent, rgba(0,0,0,0.65))", textAlign: "center" }}>Line your face up with the oval, then press Capture.</div>}
         </div>
-        {err && <div style={{ fontSize: 13, color: "#ffb0b0", maxWidth: 360, textAlign: "center", lineHeight: 1.4 }}>{err}</div>}
+        {err && <div role="alert" style={{ fontSize: 13, color: "#ffb0b0", maxWidth: 360, textAlign: "center", lineHeight: 1.4 }}>{err}</div>}
         {/* Advice, in a colour that is not a rejection. The photo stays and
             "Use photo" still works — that is the whole point. */}
         {advice && !err && <div style={{ fontSize: 13, color: "#ffe0ad", maxWidth: 360, textAlign: "center", lineHeight: 1.45, padding: "9px 12px", borderRadius: 10, background: "rgba(245,176,38,0.14)", border: "1px solid rgba(245,176,38,0.34)" }}>{advice.text}</div>}
@@ -1900,7 +2291,7 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
             <p className="mono" style={{ fontSize: 11, color: "#99a", marginTop: 10 }}>
               Runs entirely on this device {"—"} nothing is sent until you apply, and the tone sliders bake into the {OUT_W}{"×"}{OUT_H} frame that gets uploaded. Reframing only; never generative.
             </p>
-            {err && <p style={{ color: "var(--coral, #ff5a3c)", fontSize: 13, margin: "12px 0 0" }}>{err}</p>}
+            {err && <p role="alert" style={{ color: "var(--coral, #ff5a3c)", fontSize: 13, margin: "12px 0 0" }}>{err}</p>}
             <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
               <button className="btn btn-primary btn-sm" disabled={!!busy || !ready || !target.subjectId} onClick={applyStudio}>{busy === "studio" ? "Applying…" : "Apply & save"}</button>
               <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => onClose && onClose()}>Cancel</button>
@@ -1941,7 +2332,7 @@ function PhotoEditor({ target, currentUrl, title, onSaved, onClose }) {
             </div>
           </div>
         </div>
-        {err && <p style={{ color: "var(--coral, #ff5a3c)", fontSize: 13, margin: "12px 0 0" }}>{err}</p>}
+        {err && <p role="alert" style={{ color: "var(--coral, #ff5a3c)", fontSize: 13, margin: "12px 0 0" }}>{err}</p>}
         <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
           <button className="btn btn-primary btn-sm" disabled={!!busy || !base} onClick={save}>{busy === "save" ? "Saving…" : "Save edit"}</button>
           {target.subjectId && <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => fileRef.current && fileRef.current.click()}>{busy === "replace" ? "Uploading…" : "Replace photo"}</button>}
@@ -2148,8 +2539,13 @@ function A11yToggle({ label, desc, on, onChange }) {
         <span className="a11y-label">{label}</span>
         <span className="a11y-desc">{desc}</span>
       </span>
+      {/* The painted track is its own element so the BUTTON can be 44px tall
+          on a touch screen while the switch still looks like a 46×28 switch.
+          A pseudo-element hit area would not have worked: it does not enlarge
+          the element's own box, so the control would measure as reachable to
+          a human and as 28px to every tool. */}
       <button type="button" role="switch" aria-checked={on} aria-label={label} className={"a11y-switch" + (on ? " is-on" : "")} onClick={() => onChange(!on)}>
-        <span className="a11y-switch-knob"/>
+        <span className="a11y-switch-track"><span className="a11y-switch-knob"/></span>
       </button>
     </label>
   );
@@ -2401,6 +2797,92 @@ function NggMarkdown({ text, className }) {
   return <div className={"md " + (className || "")}>{blocks}</div>;
 }
 
+/* ── One way to write a date, and one way to write a number ──────────────────
+ *
+ * This product used to have three. Counted across the sources: 25 bare
+ * `toLocaleString()` calls, 13 more passing `undefined` as the locale, 7
+ * pinned to en-GB and 3 to en-US. The bare and undefined ones render in
+ * whatever locale the DEVICE is set to, so two coordinators looking at the
+ * same record saw different strings; the pinned ones disagreed with each
+ * other outright. 08/09/2026 is the 8th of September on one screen in this app
+ * and the 9th of August on another, and nothing on either screen says which.
+ *
+ * Two of those calls outlived their screen: a generated analytics PDF stamped
+ * with the exporter's device locale, and an events table with US month names.
+ *
+ * So: one locale, chosen and stated. en-GB, because the programme is Nigerian
+ * and Nigeria writes dates day-first — and because a fixed wrong-ish locale is
+ * still better than a variable one, since a report has to mean the same thing
+ * to the person who exports it and the person who reads it a month later.
+ *
+ * Every one of these takes anything — a Date, an ISO string, a number, null,
+ * a string that is not a date — and returns "" for what it cannot read. A
+ * formatter that throws on bad input is a formatter that takes a screen down
+ * because one row had an empty column.                                       */
+
+const NGG_LOCALE = "en-GB";
+
+/** Anything → a Date, or null. Accepts the "YYYY-MM-DD HH:MM:SS" the API
+ *  sometimes returns, which Safari refuses to parse without the T. */
+function nggDate(v) {
+  if (v == null || v === "") return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+  if (typeof v === "number") { const d = new Date(v); return isNaN(d.getTime()) ? null : d; }
+  const s = String(v).trim();
+  if (!s) return null;
+  let d = new Date(s);
+  if (isNaN(d.getTime()) && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) d = new Date(s.replace(" ", "T") + "Z");
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/** "22 Aug 2026". The default for anything a person reads and might act on. */
+function fmtDate(v) {
+  const d = nggDate(v);
+  return d ? d.toLocaleDateString(NGG_LOCALE, { day: "numeric", month: "short", year: "numeric" }) : "";
+}
+/** "22 Aug" — for a list where the year is obvious from context. */
+function fmtDayMonth(v) {
+  const d = nggDate(v);
+  return d ? d.toLocaleDateString(NGG_LOCALE, { day: "numeric", month: "short" }) : "";
+}
+/** "Saturday 22 August 2026" — for a single date that is the subject of a page. */
+function fmtDateLong(v) {
+  const d = nggDate(v);
+  return d ? d.toLocaleDateString(NGG_LOCALE, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "";
+}
+/** "14:30". Twenty-four hour, because a record is read later by somebody who
+ *  was not there and "2:30" without a suffix has cost people a session. */
+function fmtTime(v) {
+  const d = nggDate(v);
+  return d ? d.toLocaleTimeString(NGG_LOCALE, { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+}
+/** "4pm", "4:30pm" — how you tell a child when to turn up. Member-facing
+ *  surfaces only; anything that is a RECORD uses fmtTime. */
+function fmtTimeFriendly(v) {
+  const d = nggDate(v);
+  if (!d) return "";
+  return d.toLocaleTimeString(NGG_LOCALE, { hour: "numeric", minute: "2-digit", hour12: true })
+          .replace(":00", "").replace(/\s/g, "").toLowerCase();
+}
+/** "22 Aug 2026, 14:30". */
+function fmtDateTime(v) {
+  const d = nggDate(v);
+  return d ? fmtDate(d) + ", " + fmtTime(d) : "";
+}
+/** "1,234". Integers keep their grouping; a fraction keeps up to `dp` places
+ *  and drops trailing zeros, so 2.50 reads 2.5 and 2.00 reads 2. */
+function fmtNum(n, dp) {
+  const v = typeof n === "number" ? n : Number(n);
+  if (v == null || !isFinite(v)) return "";
+  return v.toLocaleString(NGG_LOCALE, { maximumFractionDigits: dp == null ? 0 : dp });
+}
+/** "₦1,234". The symbol is not part of the locale — this programme prices in
+ *  naira wherever it is read from. */
+function fmtMoney(n) {
+  const v = typeof n === "number" ? n : Number(n);
+  return "₦" + (isFinite(v) ? v.toLocaleString(NGG_LOCALE, { maximumFractionDigits: 0 }) : "0");
+}
+
 function nggFmtTime(s) {
   if (!isFinite(s) || s < 0) s = 0;
   const m = Math.floor(s / 60), sec = Math.floor(s % 60);
@@ -2478,39 +2960,348 @@ function NggVideo({ src, poster, caption }) {
   );
 }
 
-/**
- * PDF viewer.
+/* ── The document reader ──────────────────────────────────────────────────
  *
- * Rendering PDF pages in JavaScript means shipping PDF.js — roughly a megabyte
- * before a single page is drawn, on a site whose whole bundle is 400KB gzipped
- * and whose readers are on mobile data. Every browser these members use already
- * has a PDF renderer built in, so this frames that one and supplies the chrome
- * around it: a titled toolbar, open-in-new-tab, download, and an honest
- * fallback for the browsers that decline to render inline.
+ * PDF.js, rendering real pages to a canvas, loaded only when a member opens a
+ * document.
  *
- * The frame is sandboxed. A PDF is an active document format, and these files
- * are uploaded by members.
+ * The cost is not small and is worth naming: 486KB of library and a 1MB worker,
+ * roughly 450KB gzipped between them, on connections where that is a real
+ * expense. It buys three things the page-image approach could not:
+ *
+ *   · ANY pdf renders — one stored locally when no media cloud is configured,
+ *     one attached from an older post, one a member downloaded and re-shared.
+ *     Page images only ever worked for PDFs that happened to live on Cloudinary
+ *     as image-type assets, which is a property of our upload plumbing rather
+ *     than a property of the document.
+ *   · The text is TEXT. It can be selected, copied, read by a screen reader and
+ *     found with the browser's own find-in-page. A picture of a page is a
+ *     picture: a homework sheet a member cannot copy a question out of, and a
+ *     document a blind member cannot read at all.
+ *   · Zoom is real. Pinching a JPEG enlarges its pixels; re-rendering at a
+ *     higher scale enlarges the type.
+ *
+ * The expense is contained rather than argued away. Nothing here is fetched
+ * until somebody taps Preview, one page renders at a time, and the worker keeps
+ * parsing off the main thread — on the phones this is read on, rasterising a
+ * page on the main thread locks the interface for seconds.
  */
-function NggPdf({ src, name }) {
-  const [failed, setFailed] = React.useState(false);
+
+/** Point pdf.js at its worker and its fonts. Idempotent; call before use. */
+function nggPdfConfigure(lib) {
+  if (lib && lib.GlobalWorkerOptions && !lib.GlobalWorkerOptions.workerSrc) {
+    lib.GlobalWorkerOptions.workerSrc = "/vendor/pdfjs.worker.min.js";
+  }
+  return lib;
+}
+
+/* Documents are opened over the network, and the network is the thing that
+   fails here. Loading options in one place so the failure modes are one set. */
+const NGG_PDF_OPTS = {
+  // Base-14 fonts for documents that reference one without embedding it —
+  // most things exported by older Word, and by phone scanner apps.
+  standardFontDataUrl: "/vendor/pdfjs-standard-fonts/",
+  // cmaps are NOT shipped (1.7MB, CJK only). A document that needs them fails
+  // with a clear message rather than everybody paying for them.
+  isEvalSupported: false,   // the CSP forbids eval; pdf.js has a slower path
+};
+
+/** One rendered page. Owns its canvas and cancels cleanly on change. */
+function NggPdfPage({ doc, page, scale, onSize }) {
+  const canvasRef = React.useRef(null);
+  const [err, setErr] = React.useState("");
+
+  React.useEffect(() => {
+    if (!doc) return;
+    let cancelled = false;
+    let task = null;
+    (async () => {
+      try {
+        const pg = await doc.getPage(page);
+        if (cancelled) return;
+        /* Render at the device's real pixel density, then let CSS scale it
+           back down. Rendering at CSS pixels on a 3x phone screen produces
+           type that looks like a fax. */
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const vp = pg.getViewport({ scale: scale * dpr });
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        canvas.width = Math.floor(vp.width);
+        canvas.height = Math.floor(vp.height);
+        canvas.style.width = Math.floor(vp.width / dpr) + "px";
+        canvas.style.height = Math.floor(vp.height / dpr) + "px";
+        if (onSize) onSize(Math.floor(vp.width / dpr), Math.floor(vp.height / dpr));
+        task = pg.render({ canvasContext: canvas.getContext("2d"), viewport: vp });
+        await task.promise;
+      } catch (e) {
+        // A cancelled render is the expected outcome of turning the page
+        // quickly; it is not a failure and must not be reported as one.
+        if (!cancelled && !/cancell?ed/i.test(String(e && e.message))) {
+          setErr("This page could not be drawn.");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (task && task.cancel) { try { task.cancel(); } catch (_) {} }
+    };
+  }, [doc, page, scale]); // eslint-disable-line
+
+  if (err) return <div className="pdfv-pageerr">{err}</div>;
+  return <canvas className="pdfv-canvas" ref={canvasRef} role="img"
+                 aria-label={"Page " + page}/>;
+}
+
+/**
+ * The document viewer.
+ *
+ * Closed by default. A feed can carry several documents and none of them should
+ * spend a reader's data before the reader asks — the same rule the YouTube
+ * embed already follows, and it matters far more now that opening one costs
+ * half a megabyte of library.
+ */
+/**
+ * The document reader.
+ *
+ * Two ways in, one reader. Left alone it renders its own card and opens when
+ * that card is tapped — how a document arrives in a message. Given `open` and
+ * `onClose` it renders no card at all and is driven from outside — how the
+ * Files screen opens the same document from a list. A second reader for the
+ * second entry point is how the two would drift apart.
+ */
+function NggPdf({ src, name, pages, bytes, open: openProp, onClose }) {
+  const controlled = typeof openProp === "boolean";
+  const [openState, setOpenState] = React.useState(false);
+  const open = controlled ? openProp : openState;
+  const setOpen = React.useCallback((v) => {
+    if (controlled) { if (!v && onClose) onClose(); return; }
+    setOpenState(v);
+  }, [controlled, onClose]);
+  const [doc, setDoc] = React.useState(null);
+  const [total, setTotal] = React.useState(Math.max(0, pages | 0));
+  const [page, setPage] = React.useState(1);
+  const [zoom, setZoom] = React.useState(1);
+  const [status, setStatus] = React.useState("idle"); // idle|loading|ready|failed
+  const [failure, setFailure] = React.useState("");
+  const [width, setWidth] = React.useState(0);
+  const hostRef = React.useRef(null);
+  const shellRef = React.useRef(null);
   const label = name || "Document";
-  return (
-    <div className="pdfv">
-      <div className="pdfv-bar">
-        <span className="pdfv-ic" aria-hidden="true">📄</span>
-        <span className="pdfv-name" title={label}>{label}</span>
-        <a className="pdfv-btn" href={src} target="_blank" rel="noopener noreferrer">Open</a>
-        <a className="pdfv-btn" href={src} download>Download</a>
+
+  const close = React.useCallback(() => setOpen(false), []);
+
+  /* Full-screen means the page underneath must stop being interactive: lock
+     its scroll, take focus into the viewer, and answer the phone's own Back
+     — on Android that is the button people press to leave, and a viewer that
+     ignores it navigates the whole app away instead of closing a document. */
+  React.useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const t = setTimeout(() => { if (shellRef.current) shellRef.current.focus(); }, 30);
+    history.pushState({ pdfv: 1 }, "");
+    const onPop = () => setOpen(false);
+    window.addEventListener("popstate", onPop);
+    return () => {
+      document.body.style.overflow = prev;
+      clearTimeout(t);
+      window.removeEventListener("popstate", onPop);
+    };
+  }, [open]);
+
+  /* Fit the page to the column it is being read in. A PDF is authored at a
+     fixed size and a phone is 390px wide, so "scale 1" is the wrong default
+     everywhere — the useful default is "as wide as there is room for". */
+  const fitScale = React.useCallback((pdfPage) => {
+    const host = hostRef.current;
+    const avail = host ? Math.max(240, host.clientWidth - 20) : 340;
+    const natural = pdfPage.getViewport({ scale: 1 }).width || 612;
+    return avail / natural;
+  }, []);
+  const [base, setBase] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!open || doc || status === "loading") return;
+    let dead = false;
+    setStatus("loading"); setFailure("");
+    (async () => {
+      try {
+        const lib = nggPdfConfigure(await loadVendor("pdfjs"));
+        const task = lib.getDocument(Object.assign({ url: src }, NGG_PDF_OPTS));
+        const d = await task.promise;
+        if (dead) { d.destroy(); return; }
+        setDoc(d);
+        setTotal(d.numPages);
+        const first = await d.getPage(1);
+        if (!dead) { setBase(fitScale(first)); setStatus("ready"); }
+      } catch (e) {
+        if (dead) return;
+        const msg = String((e && e.message) || e);
+        /* Say which failure it was. "Could not open" covers a missing file, a
+           password, a CORS refusal and a browser that ran out of memory, and
+           a reader can act on exactly one of those. */
+        setFailure(
+          /password/i.test(msg) ? "This document is password-protected."
+          : /Missing PDF|404|Unexpected server response/i.test(msg) ? "This document could not be found on the server."
+          : /Invalid PDF|corrupt/i.test(msg) ? "This file is not a readable PDF."
+          : "This document could not be opened here.");
+        setStatus("failed");
+      }
+    })();
+    return () => { dead = true; };
+  }, [open, src]); // eslint-disable-line
+
+  // Release the worker's memory when the reader closes the document.
+  React.useEffect(() => () => { if (doc) { try { doc.destroy(); } catch (_) {} } }, [doc]);
+
+  // Re-fit when the column changes width (rotation, expand, desktop resize).
+  React.useEffect(() => {
+    if (!doc || !open) return;
+    const host = hostRef.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      doc.getPage(1).then(p => setBase(fitScale(p))).catch(() => {});
+    });
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, [doc, open, fitScale]);
+
+  const at = total ? Math.min(Math.max(1, page), total) : page;
+  const turn = React.useCallback((d) => setPage(p => {
+    const n = p + d;
+    return n < 1 ? 1 : (total && n > total ? total : n);
+  }), [total]);
+
+  // Arrow keys page the document while the viewer has focus. Expected of
+  // anything that shows a page number, and the only route for a keyboard user.
+  const onKey = (e) => {
+    if (e.key === "ArrowRight" || e.key === "PageDown") { e.preventDefault(); turn(1); }
+    else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); turn(-1); }
+    else if (e.key === "Escape") { e.preventDefault(); close(); }
+  };
+
+  const meta = [
+    "PDF",
+    total ? total + (total === 1 ? " page" : " pages") : "",
+    bytes ? nggFmtBytes(bytes) : "",
+  ].filter(Boolean).join(" · ");
+
+  if (!open) {
+    if (controlled) return null;   // the list that owns it draws its own row
+    return (
+      <div className="pdfv pdfv-closed">
+        <button type="button" className="pdfv-open" onClick={() => setOpen(true)}
+                aria-label={"Preview " + label}>
+          <span className="pdfv-open-ic" aria-hidden="true">📄</span>
+          <span className="pdfv-open-body">
+            <span className="pdfv-open-name">{label}</span>
+            <span className="pdfv-open-meta">{meta}</span>
+          </span>
+          <span className="pdfv-open-cta">Preview</span>
+        </button>
       </div>
-      {!failed
-        ? <iframe className="pdfv-frame" src={src + "#view=FitH"} title={label}
-            sandbox="allow-same-origin" onError={() => setFailed(true)}/>
-        : <div className="pdfv-fallback">
-            <p>This browser won’t show the document inline.</p>
-            <a className="btn btn-primary btn-sm" href={src} target="_blank" rel="noopener noreferrer">Open it in a new tab</a>
-          </div>}
-    </div>
+    );
+  }
+
+  /* FULL SCREEN. A document is a thing you read, not a thing you glance at
+   * inside a feed, and a page rendered into a 300px-tall well between two
+   * other people's messages is neither. Opening one takes the whole screen —
+   * the reader is doing one thing now — and closing gives the feed back
+   * exactly as it was.
+   *
+   * It also removes the worst of the small-screen arithmetic: no competing
+   * with the tab bar for the bottom of the phone, no inner scroll area inside
+   * an outer scroll area, and pinch-zoom that works on the page rather than
+   * on a box containing the page.
+   */
+  /* PORTALLED to <body>, not rendered where it sits.
+   *
+   * `position: fixed` is measured against the nearest ancestor that has a
+   * transform, filter or containment — and this viewer opens from inside a
+   * message card, under a global `article:hover { transform: translateY(-3px) }`.
+   * A hover three levels up was enough to turn a full-screen reader into a
+   * 356x157 box wedged into the feed. Any future animation anywhere above it
+   * would do the same. A full-screen layer must not be able to be captured by
+   * its ancestors, so it does not live among them. */
+  return ReactDOM.createPortal(
+    <div className="pdfv-full" role="dialog" aria-modal="true" aria-label={label}
+         onKeyDown={onKey} tabIndex={-1} ref={shellRef}>
+      <header className="pdfv-bar">
+        <button type="button" className="pdfv-x" onClick={close} aria-label="Close the document">
+          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor"
+                  strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </button>
+        <span className="pdfv-name" title={label}>{label}</span>
+        <a className="pdfv-act" href={src} download={label} aria-label="Download this document">
+          <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14" fill="none" stroke="currentColor"
+                  strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </a>
+      </header>
+
+      <div className="pdfv-page" ref={hostRef}>
+        {status === "loading" && (
+          /* A skeleton the shape of a page, not a spinner. The wait here is
+             the library downloading, which on a slow connection is long
+             enough that a reader needs to see the shape of what is coming. */
+          <div className="pdfv-skel" aria-live="polite" aria-label="Opening the document">
+            <span className="pdfv-skel-line" style={{ width: "72%" }}/>
+            <span className="pdfv-skel-line" style={{ width: "95%" }}/>
+            <span className="pdfv-skel-line" style={{ width: "88%" }}/>
+            <span className="pdfv-skel-line" style={{ width: "94%" }}/>
+            <span className="pdfv-skel-line" style={{ width: "61%" }}/>
+          </div>
+        )}
+        {status === "failed" && (
+          <div className="pdfv-fallback">
+            <p>{failure}</p>
+            <a className="btn btn-primary btn-sm" href={src} target="_blank" rel="noopener noreferrer">
+              Open it in a new tab
+            </a>
+          </div>
+        )}
+        {status === "ready" && doc && base > 0 && (
+          <NggPdfPage doc={doc} page={at} scale={base * zoom} onSize={(w) => setWidth(w)}/>
+        )}
+      </div>
+
+      {status === "ready" && (
+        <footer className="pdfv-foot">
+          <span className="pdfv-zoom" role="group" aria-label="Zoom">
+            <button type="button" className="pdfv-round"
+                    onClick={() => setZoom(z => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}
+                    disabled={zoom <= 0.5} aria-label="Zoom out">−</button>
+            <span className="pdfv-zoomv" aria-live="polite">{Math.round(zoom * 100)}%</span>
+            <button type="button" className="pdfv-round"
+                    onClick={() => setZoom(z => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
+                    disabled={zoom >= 3} aria-label="Zoom in">+</button>
+          </span>
+          {total > 1 && (
+            <span className="pdfv-pager">
+              <button type="button" className="pdfv-round" onClick={() => turn(-1)}
+                      disabled={at <= 1} aria-label="Previous page">‹</button>
+              <span className="pdfv-count" aria-live="polite">{at} / {total}</span>
+              <button type="button" className="pdfv-round" onClick={() => turn(1)}
+                      disabled={at >= total} aria-label="Next page">›</button>
+            </span>
+          )}
+        </footer>
+      )}
+    </div>,
+    document.body
   );
+}
+
+/** Human file size. Used by the document card and the viewer toolbar. */
+function nggFmtBytes(n) {
+  const b = Number(n) || 0;
+  if (b <= 0) return "";
+  if (b < 1024) return b + " B";
+  if (b < 1024 * 1024) return Math.round(b / 1024) + " KB";
+  return (b / 1024 / 1024).toFixed(b < 10 * 1024 * 1024 ? 1 : 0) + " MB";
 }
 
 
@@ -2559,12 +3350,25 @@ function NggYouTube({ id, thumb, title }) {
 
 Object.assign(window, {
   nggCsvCell,
-  NggMarkdown, NggVideo, NggPdf, NggYouTube, nggMdInline, nggFmtTime,
+  NggMarkdown, NggVideo, NggPdf, NggYouTube, nggMdInline, nggFmtTime, nggFmtBytes,
+  // One date, one number, one locale. See the block above nggDate.
+  NGG_LOCALE, nggDate, fmtDate, fmtDayMonth, fmtDateLong, fmtTime, fmtTimeFriendly,
+  fmtDateTime, fmtNum, fmtMoney,
   BrandLogo, Avatar, Photo, PhotoSlot,
   CountUp, Tag, SectionHead, Progress, TopNav, Footer, Sparkline,
-  usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart, inkOn,
+  usePublicData, useSession, useStats, sessionLabel, sessionDaysToStart,
+  // The contrast arithmetic, exported so preflight and the colour pickers use
+  // the SAME numbers the renderer inks with rather than a second copy of it.
+  inkOn, inkLum, inkContrast, inkIsLegible, INK_CROSSOVER_L,
   loadVendor, VENDOR_LIBS, nggPublishScope, useNggScope,
   Uploader, A11ySettingsPanel, A11yNavButton, PhotoEditor, PhotoCapture, ImageLightbox, SignaturePad,
+  /* The admin action layer. Exported so a test can drive the runner and the
+     bulk bar without mounting the whole console — the partial-failure and
+     stale-count behaviours are exactly what cannot be asserted from a
+     screenshot. */
+  useAdminSelection, AdminSelectAll, AdminRowCheck, AdminBulkBar, AdminRowActions,
+  runAdminAction, adminFailSummary,
+  ErrorState, EmptyState, humanizeError,
   // Exported for the browser tests: both decide whether a family's photo is
   // accepted, and neither is reachable through a rendered component alone.
   validateHeadshot, photoFormatHelp, HEADSHOT_MIN_PX,

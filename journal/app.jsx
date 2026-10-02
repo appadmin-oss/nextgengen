@@ -16,6 +16,40 @@
 
 const { useState, useEffect, useRef, useCallback } = React;
 
+/* ── One locale, chosen and stated ───────────────────────────────────────────
+   The journal is its own bundle — it does not get components.jsx — so the
+   family lives here too, deliberately duplicated rather than shared through a
+   third file nobody would find. Keep the two in step.
+
+   Everything here used to pass `undefined` as the locale, which means the
+   DEVICE's locale: the same entry exported on two phones came out with two
+   different dates on it, and an export is the one artefact that outlives the
+   app. en-GB, because the programme is Nigerian and Nigeria writes dates
+   day-first. See the matching block in components.jsx. */
+const NGG_LOCALE = "en-GB";
+function ajDate(v) {
+  if (v == null || v === "") return null;
+  const d = v instanceof Date ? v : new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+const ajFmt = (v, o) => { const d = ajDate(v); return d ? d.toLocaleDateString(NGG_LOCALE, o) : ""; };
+/** "22 Aug 2026" */
+const fmtDate = (v) => ajFmt(v, { day: "numeric", month: "short", year: "numeric" });
+/** "22 Aug" */
+const fmtDayMonth = (v) => ajFmt(v, { day: "numeric", month: "short" });
+/** "Saturday 22 August 2026" */
+const fmtDateLong = (v) => ajFmt(v, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+/** "Saturday 22 August" — the journal's own heading style, no year. */
+const fmtDayLong = (v) => ajFmt(v, { weekday: "long", month: "long", day: "numeric" });
+/** "Saturday" */
+const fmtWeekday = (v) => ajFmt(v, { weekday: "long" });
+/** "Sat 22 Aug" — the compact stamp on a strip of days. */
+const fmtWeekdayShort = (v) => ajFmt(v, { weekday: "short", day: "numeric", month: "short" });
+/** "August 2026" */
+const fmtMonthYear = (v) => ajFmt(v, { month: "long", year: "numeric" });
+/** "1,234" */
+const fmtNum = (n) => (isFinite(Number(n)) ? Number(n).toLocaleString(NGG_LOCALE, { maximumFractionDigits: 0 }) : "");
+
 /* ---- Static content (from the Anchor design) ---------------------------- */
 let QUOTES = [
   "The purpose of life is not to be happy — it is to be useful, honorable and compassionate.",
@@ -671,7 +705,7 @@ function Reflect({ ctx }) {
   const quote = QUOTES[(Math.floor(Date.now() / 864e5)) % QUOTES.length];
   const theme = (WEEK_TITLES[currentWeek - 1] || "Identity").split(" · ")[0];
   const weekPrompt = (WEEK_DATA[currentWeek - 1] || {}).journal || "";
-  const dateStr = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }).toUpperCase();
+  const dateStr = fmtDayLong(new Date()).toUpperCase();
 
   const sysKey = "systems:" + dayKey(Date.now());
   const sys = pstate[sysKey] || {};
@@ -837,7 +871,7 @@ function Notepad({ ctx }) {
           <button className="aj-note-card" key={n.id || i} onClick={() => setOpen({ i, title: n.title, body: n.body })}>
             <div className="aj-note-card-t">{n.title || "Untitled"}</div>
             {n.body ? <div className="aj-note-card-p">{n.body.slice(0, 90)}</div> : null}
-            <div className="aj-note-card-d">{n.date ? new Date(n.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""}</div>
+            <div className="aj-note-card-d">{fmtDayMonth(n.date)}</div>
           </button>
         ))}
       </div>
@@ -1122,7 +1156,7 @@ function Timeline({ ctx }) {
                 <div className="aj-entry-top">
                   <div className="aj-entry-l">
                     <div className="aj-entry-ic"><i className={"ph-fill " + (MOOD_ICON[e.mood] || "ph-feather")}/></div>
-                    <div><div className="aj-entry-day">{d.toLocaleDateString(undefined, { weekday: "long" })}</div><div className="aj-entry-date mono">{d.toLocaleDateString(undefined, { month: "short", day: "numeric" }).toUpperCase()}</div></div>
+                    <div><div className="aj-entry-day">{fmtWeekday(d)}</div><div className="aj-entry-date mono">{fmtDayMonth(d).toUpperCase()}</div></div>
                   </div>
                   {e._pending ? <span className="aj-entry-sys"><i className="ph-fill ph-cloud-arrow-up"/>SYNC</span> : <i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)", fontSize: 15 }}/>}
                 </div>
@@ -1163,7 +1197,7 @@ function EntryDetail({ ctx }) {
         <button className="icon-btn" aria-label="Back" onClick={back}><i className="ph-bold ph-arrow-left"/></button>
         <div>
           <div className="mono" style={{ fontSize: 11, letterSpacing: ".16em", color: "var(--gold)", fontWeight: 700 }}>WK {String(e.week || 1).padStart(2, "0")}{e._pending ? " · SAVING" : ""}</div>
-          <h2 style={{ fontSize: 22 }}>{d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</h2>
+          <h2 style={{ fontSize: 22 }}>{fmtDayLong(d)}</h2>
         </div>
       </div>
       {mood && (
@@ -1220,7 +1254,7 @@ function Calendar({ ctx }) {
   const [ym, setYm] = useState({ y: curY, m: curM });
   const { y, m } = ym;
   const isCurMonth = y === curY && m === curM;
-  const monthLabel = new Date(y, m, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const monthLabel = fmtMonthYear(new Date(y, m, 1));
   const first = new Date(y, m, 1).getDay();
   const daysIn = new Date(y, m + 1, 0).getDate();
   const [sel, setSel] = useState(isCurMonth ? todayD : 1);
@@ -1282,7 +1316,7 @@ function Calendar({ ctx }) {
       ) : <div key={i}/>)}</div>
       <div className="pad aj-callegend"><span><i className="dot done"/>Done</span><span><i className="dot missed"/>Missed</span><span><i className="dot up"/>Upcoming</span></div>
       <div className="pad" style={{ marginTop: 18 }}>{React.createElement(selEntry ? "button" : "div", { className: "card", onClick: selEntry ? (() => openEntry(selEntry)) : undefined, style: selEntry ? { textAlign: "left", width: "100%", cursor: "pointer" } : undefined },
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><div className="mono" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700 }}>{new Date(y, m, sel).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }).toUpperCase()}</div><span className="aj-entry-sys"><i className="ph-fill ph-check-circle"/>{selSys}</span></div>,
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><div className="mono" style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700 }}>{fmtWeekdayShort(new Date(y, m, sel)).toUpperCase()}</div><span className="aj-entry-sys"><i className="ph-fill ph-check-circle"/>{selSys}</span></div>,
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 14 }}><i className={"ph-fill " + (selEntry ? (MOOD_ICON[selEntry.mood] || "ph-feather") : "ph-moon-stars")} style={{ fontSize: 28, color: "var(--violet-l)" }}/><p style={{ flex: 1, fontSize: 14, lineHeight: 1.45, color: "var(--tx-70)", margin: 0 }}>{selEntry ? (selEntry.body || "").split("\n")[0] : "No reflection logged this day."}</p>{selEntry && <i className="ph-bold ph-arrow-right" style={{ color: "var(--tx-30)", fontSize: 15 }}/>}</div>
       )}</div>
     </div>
@@ -1546,7 +1580,7 @@ function Review({ ctx }) {
                 <div className="aj-remark" key={i}>
                   <div className="aj-remark-top">
                     <div className="aj-remark-ic" style={{ background: m.tint }}><i className={"ph-fill " + m.icon} style={{ color: m.ic }}/></div>
-                    <div className="aj-remark-role">{m.label}{r.weekStart ? " · wk of " + new Date(r.weekStart + "T00:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""}</div>
+                    <div className="aj-remark-role">{m.label}{r.weekStart ? " · wk of " + fmtDayMonth(r.weekStart + "T00:00:00Z") : ""}</div>
                   </div>
                   <p>{r.text}</p>
                 </div>
@@ -1600,10 +1634,10 @@ function You({ ctx }) {
   const exportJournal = () => {
     const list = entries || [];
     if (!list.length) { toast.info("No reflections to export yet."); return; }
-    const out = ["# " + (member.fullName || "My") + " — Anchor Journal", "", "Exported " + new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) + " · " + list.length + " reflections", ""];
+    const out = ["# " + (member.fullName || "My") + " — Anchor Journal", "", "Exported " + fmtDateLong(new Date()) + " · " + list.length + " reflections", ""];
     [...list].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)).forEach(e => {
       const d = new Date(e.createdAt); const p = parseEntry(e.body);
-      out.push("## " + d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" }) + (e.week ? "  ·  Week " + String(e.week).padStart(2, "0") : ""));
+      out.push("## " + fmtDateLong(d) + (e.week ? "  ·  Week " + String(e.week).padStart(2, "0") : ""));
       const mood = MOODS.find(m => m.key === e.mood); if (mood) out.push("_Felt " + mood.label.toLowerCase() + "._");
       if (p.musing) out.push("", p.musing);
       if (p.school || p.home || p.peer) { out.push(""); if (p.school) out.push("- **School:** " + p.school); if (p.home) out.push("- **Home:** " + p.home); if (p.peer) out.push("- **Peers:** " + p.peer); }
@@ -1673,7 +1707,7 @@ function You({ ctx }) {
                 <div className="aj-circle-row" key={l.linkId} style={{ padding: "11px 14px" }}>
                   <div className="aj-circle-t">
                     <b style={{ fontSize: 14 }}>{l.guardianName || (l.role === "parent" ? "Parent / Guardian" : l.role === "teacher" ? "Teacher" : "Mentor")}</b>
-                    <small>{l.role.toUpperCase()} · since {l.createdAt ? new Date(l.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—"}</small>
+                    <small>{l.role.toUpperCase()} · since {l.createdAt ? fmtDayMonth(l.createdAt) : "—"}</small>
                   </div>
                   <button className="aj-code-btn danger" onClick={() => revokeLink(l)}><i className="ph-bold ph-link-break"/> Unlink</button>
                 </div>
@@ -1755,7 +1789,7 @@ function LevelUp({ info, onDone }) {
         <div className="aj-lvl-badge"><i className={"ph-fill " + (info.icon || "ph-crown-simple")}/></div>
         <div className="aj-lvl-tag">LEVEL {info.level}</div>
         <h2>{info.name || "Level up"}!</h2>
-        <p>You crossed {((info.level - 1) * XP_PER_LEVEL).toLocaleString()} XP — a new rank is yours.</p>
+        <p>You crossed {fmtNum((info.level - 1) * XP_PER_LEVEL)} XP — a new rank is yours.</p>
         <button className="btn-a" style={{ marginTop: 22, width: "auto", padding: "13px 26px" }} onClick={onDone}>Keep going <i className="ph-bold ph-arrow-right"/></button>
       </div>
     </div>

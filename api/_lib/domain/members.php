@@ -37,7 +37,22 @@ function member_dashboard(array $p): array {
         "SELECT * FROM events WHERE status='published' AND (centre IN ('Both','Online') OR centre = ?) AND startAt >= ? AND startAt <= ? ORDER BY startAt LIMIT 5",
         [$member['centre'], $now, $horizon]
     );
-    $events = array_map('public_event', $events);
+    /* The viewer's OWN answer rides along.
+     *
+     * public_event() carries no myRsvp — event_list() attaches it separately,
+     * and the dashboard did not. So the button always read "RSVP" however many
+     * times you had said yes, the optimistic flip to "Going ✓" was undone by
+     * the next sixty-second poll, and because the cancel branch is guarded on
+     * myRsvp === "going", a member who reloaded could never withdraw. */
+    $myRsvp = [];
+    foreach (db_all('SELECT eventId, status FROM event_rsvps WHERE memberId = ?', [$memberId]) as $r) {
+        $myRsvp[(string)$r['eventId']] = (string)$r['status'];
+    }
+    $events = array_map(function ($e) use ($myRsvp) {
+        $out = public_event($e);
+        $out['myRsvp'] = $myRsvp[(string)$e['eventId']] ?? null;
+        return $out;
+    }, $events);
 
     // Unread notifications (this member, or a broadcast whose audience matches).
     [$bc, $bcp] = notif_broadcast_clause($member);

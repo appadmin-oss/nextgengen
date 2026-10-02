@@ -7,12 +7,18 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'overview');
     if ($view === 'queue') $res = gs_call('admin.community.queue', ['requesterId' => $s['mid'], 'status' => $_GET['status'] ?? 'pending']);
+    // Safeguarding cases are their own screen, never folded into the moderation
+    // queue: "four things to review" and "a child said something about hurting
+    // themselves" must not read as one number.
+    elseif ($view === 'safeguarding') $res = gs_call('admin.community.safeguarding', ['requesterId' => $s['mid'], 'status' => $_GET['status'] ?? 'open']);
     else                   $res = gs_call('admin.community.overview', ['requesterId' => $s['mid']]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
     if ($action === 'channel') {
         $res = gs_call('admin.community.channel.upsert', ['requesterId' => $s['mid'], 'data' => $b['data'] ?? [], 'ip' => client_ip()]);
+    } elseif ($action === 'safeguardingAck') {
+        $res = gs_call('admin.community.safeguarding.ack', ['requesterId' => $s['mid'], 'caseId' => $b['caseId'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'moderate') {
         $res = gs_call('admin.community.moderate', ['requesterId' => $s['mid'], 'kind' => $b['kind'] ?? 'post', 'id' => $b['id'] ?? '', 'action' => $b['do'] ?? '', 'ip' => client_ip()]);
     } elseif (($b['action'] ?? '') === 'moderation') {

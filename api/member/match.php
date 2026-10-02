@@ -24,6 +24,41 @@ if ($method === 'GET') {
         $res = gs_call('match.watch', ['playerId' => $s['mid']]);
     } elseif ($view === 'tournaments') {
         $res = gs_call('tournament.mine', ['playerId' => $s['mid']]);
+    } elseif ($view === 'trnBrowse') {
+        // Every tournament a member can see — the endpoint that did not exist,
+        // which is why a created tournament reflected nowhere.
+        $res = gs_call('tournament.browse', ['playerId' => $s['mid']]);
+    } elseif ($view === 'trnLadder') {
+        // What has a pulse right now. See tournament_ladder().
+        $res = gs_call('tournament.ladder', ['playerId' => $s['mid']]);
+    } elseif ($view === 'trnStandings') {
+        $res = gs_call('tournament.standings', ['playerId' => $s['mid'], 'tournamentId' => (string)($_GET['tournamentId'] ?? '')]);
+    } elseif ($view === 'trnRounds') {
+        $res = gs_call('tournament.rounds', ['playerId' => $s['mid'], 'tournamentId' => (string)($_GET['tournamentId'] ?? '')]);
+    } elseif ($view === 'players') {
+        // Design turn 6A — the search screen. Names, centres, ratings and a
+        // head-to-head line; nothing that could be used to contact anybody.
+        $res = gs_call('chess.players', ['playerId' => $s['mid'], 'q' => (string)($_GET['q'] ?? ''),
+            'club' => !empty($_GET['club']), 'online' => !empty($_GET['online']),
+            'band' => (string)($_GET['band'] ?? ''), 'mentors' => !empty($_GET['mentors'])]);
+    } elseif ($view === 'challenges') {
+        $res = gs_call('chess.challenges', ['playerId' => $s['mid']]);
+    } elseif ($view === 'promo') {
+        // A house promotion for this placement, or none. See promos.php on why
+        // this is deliberately first-party only.
+        $res = gs_call('promo.for', ['memberId' => $s['mid'],
+            'placement' => (string)($_GET['placement'] ?? 'chess'),
+            'shape' => (string)($_GET['shape'] ?? 'card')]);
+    } elseif ($view === 'review') {
+        // The stored review for one game, or null if nobody has run one yet.
+        $res = gs_call('match.review.get', ['playerId' => $s['mid'], 'matchId' => (string)($_GET['matchId'] ?? '')]);
+    } elseif ($view === 'reviewHistory') {
+        $res = gs_call('match.review.history', ['playerId' => $s['mid']]);
+    } elseif ($view === 'lobby') {
+        // The cheap tick behind the chess screen — see chess_lobby_poll.
+        $res = gs_call('chess.lobby', ['playerId' => $s['mid']]);
+    } elseif ($view === 'chess') {
+        $res = gs_call('chess.profile', ['playerId' => $s['mid']]);
     } elseif ($view === 'staff') {
         // A mentor or admin reviewing the matches at their centre.
         $res = gs_call('match.staff.list', ['requesterId' => $s['mid'], 'flagged' => (string)($_GET['flagged'] ?? '')]);
@@ -36,13 +71,89 @@ if ($method === 'GET') {
     $ip = client_ip();
     if ($action === 'invite') {
         rate_limit_check('match.invite');
-        $res = gs_call('match.invite', ['playerId' => $s['mid'], 'game' => (string)($b['game'] ?? ''), 'opponentId' => (string)($b['opponentId'] ?? '')]);
+        $res = gs_call('match.invite', ['playerId' => $s['mid'], 'game' => (string)($b['game'] ?? ''),
+            'opponentId' => (string)($b['opponentId'] ?? ''),
+            'timeControl' => (string)($b['timeControl'] ?? '1day'),
+            'variant' => (string)($b['variant'] ?? 'standard'),
+            'rated' => !empty($b['rated'])]);
+    } elseif ($action === 'challenge') {
+        rate_limit_check('match.invite');
+        $res = gs_call('chess.challenge', ['playerId' => $s['mid'],
+            'opponentId' => (string)($b['opponentId'] ?? ''),
+            'timeControl' => (string)($b['timeControl'] ?? '1day'),
+            'colourPref' => (string)($b['colourPref'] ?? 'random'),
+            'variant' => (string)($b['variant'] ?? 'standard'),
+            'rated' => !empty($b['rated']),
+            'channelSlug' => (string)($b['channelSlug'] ?? '')]);
+    } elseif ($action === 'challengeRespond') {
+        $res = gs_call('chess.respond', ['playerId' => $s['mid'],
+            'challengeId' => (string)($b['challengeId'] ?? ''),
+            'action' => (string)($b['answer'] ?? 'accept')]);
+    } elseif ($action === 'reviewSave') {
+        // The browser did the analysing; this only keeps the result, and only
+        // the first one for a game. See _lib/domain/match-review.php.
+        $res = gs_call('match.review.put', ['playerId' => $s['mid'],
+            'matchId' => (string)($b['matchId'] ?? ''), 'data' => $b['data'] ?? []]);
+    } elseif ($action === 'promoTrack') {
+        $res = gs_call('promo.track', ['memberId' => $s['mid'], 'promoId' => (string)($b['promoId'] ?? ''),
+                                       'event' => (string)($b['event'] ?? '')]);
+    } elseif ($action === 'trnJoin') {
+        $res = gs_call('tournament.join', ['playerId' => $s['mid'], 'tournamentId' => (string)($b['tournamentId'] ?? ''), 'ip' => $ip]);
+    } elseif ($action === 'trnLeave') {
+        $res = gs_call('tournament.leave', ['playerId' => $s['mid'], 'tournamentId' => (string)($b['tournamentId'] ?? '')]);
+    } elseif ($action === 'trnCreate' || $action === 'trnDraw' || $action === 'trnEnter'
+              || $action === 'trnDirectory' || $action === 'trnInviteAll') {
+        /* Running a tournament FROM the chess screen.
+         *
+         * A director is a member with a role, sitting in the club with the
+         * players in front of them — asking them to leave the app, open the
+         * admin console and come back is how a Saturday event gets set up
+         * badly or not at all. The capability check is the same one the console
+         * uses (admin_cap_gate on 'people' inside each op); this route only
+         * decides WHERE the button lives, never who may press it. */
+        if ($action === 'trnCreate') {
+            $res = gs_call('tournament.create', [
+                'requesterId' => $s['mid'], 'name' => (string)($b['name'] ?? ''),
+                'game' => 'chess', 'programme' => (string)($b['programme'] ?? ''),
+                'format' => (string)($b['format'] ?? 'swiss'),
+                'timeControl' => (string)($b['timeControl'] ?? '10+0'),
+                'variant' => (string)($b['variant'] ?? 'standard'),
+                'rated' => !empty($b['rated']), 'totalRounds' => (int)($b['totalRounds'] ?? 0),
+                'description' => (string)($b['description'] ?? ''),
+                'kinds' => (array)($b['kinds'] ?? []), 'centres' => (array)($b['centres'] ?? []),
+                'minRating' => (int)($b['minRating'] ?? 0), 'maxRating' => (int)($b['maxRating'] ?? 0),
+                'startsAt' => (string)($b['startsAt'] ?? ''), 'endsAt' => (string)($b['endsAt'] ?? ''),
+                'ip' => $ip]);
+        } elseif ($action === 'trnInviteAll') {
+            $res = gs_call('tournament.inviteAll', ['requesterId' => $s['mid'],
+                'tournamentId' => (string)($b['tournamentId'] ?? ''),
+                'dryRun' => !empty($b['dryRun']), 'ip' => $ip]);
+        } elseif ($action === 'trnDraw') {
+            $res = gs_call('tournament.draw', ['requesterId' => $s['mid'], 'tournamentId' => (string)($b['tournamentId'] ?? ''), 'ip' => $ip]);
+        } elseif ($action === 'trnEnter') {
+            $res = gs_call('tournament.enter', ['requesterId' => $s['mid'], 'tournamentId' => (string)($b['tournamentId'] ?? ''), 'playerId' => (string)($b['playerId'] ?? ''), 'ip' => $ip]);
+        } else {
+            $res = gs_call('tournament.directory', [
+                'q' => (string)($b['q'] ?? ''), 'kinds' => (array)($b['kinds'] ?? []),
+                'centre' => (string)($b['centre'] ?? ''), 'band' => (string)($b['band'] ?? ''),
+                'exclude' => (array)($b['exclude'] ?? []), 'limit' => (int)($b['limit'] ?? 40)]);
+        }
     } elseif ($action === 'respond') {
         $res = gs_call('match.respond', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? ''), 'accept' => !empty($b['accept'])]);
     } elseif ($action === 'move') {
-        $res = gs_call('match.move', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? ''), 'move' => (string)($b['move'] ?? '')]);
+        $res = gs_call('match.move', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? ''),
+            'move' => (string)($b['move'] ?? ''),
+            // Names this move once, so a retry after a lost response replays
+            // the original outcome instead of failing or moving twice.
+            'clientMoveId' => mb_substr((string)($b['clientMoveId'] ?? ''), 0, 40)]);
     } elseif ($action === 'resign') {
         $res = gs_call('match.resign', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? '')]);
+    } elseif ($action === 'draw') {
+        /* offer | accept | decline. Whitelisted rather than passed through, so
+           an unknown verb cannot fall into the domain's default of "offer". */
+        $do = (string)($b['do'] ?? 'offer');
+        if (!in_array($do, ['offer', 'accept', 'decline'], true)) json_error('bad_action', 400);
+        $res = gs_call('match.draw', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? ''), 'do' => $do]);
     } elseif ($action === 'react') {
         $res = gs_call('match.react', ['playerId' => $s['mid'], 'matchId' => (string)($b['matchId'] ?? ''), 'reaction' => (string)($b['reaction'] ?? '')]);
     } elseif ($action === 'report') {

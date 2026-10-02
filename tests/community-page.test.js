@@ -1,0 +1,1131 @@
+#!/usr/bin/env node
+/* ============================================================================
+   The community, as a PAGE.
+
+   Every other test in this repo mounts one community component into a bare
+   fixture. That is why a screenshot of the real thing was full of defects
+   while the whole suite was green: a component rendered on its own never has
+   a site nav above it, never has a viewport it can overflow, and is never
+   handed the kind of picture a child's phone actually takes.
+
+   So this one boots the REAL page — real bundle, real stylesheet, real
+   AuthProvider, real router — and stubs only the network. The three things it
+   caught, all measured rather than eyeballed:
+
+     · A post photo had no height ceiling. Children post from phone cameras,
+       so the pictures are portrait: a 1200×1600 rendered 892px tall on a
+       900px laptop — 99% of the viewport — and a 9:16 phone shot would have
+       been 132% of it. One photo was the whole screen.
+
+     · The filter row measured 508px against a 390px phone, hid its scrollbar,
+       cut "Saved" off at the edge and put "Yours" past it. A hidden scrollbar
+       on a row that overflows is a filter nobody knows exists.
+
+     · The wordmark's ink ran 42px OUTSIDE its own box on a phone, under the
+       buttons beside it, while every box measurement said it fitted.
+
+   Run:  node tests/community-page.test.js
+   ========================================================================== */
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
+const { waitForServer } = require('./_serve');
+
+const ROOT = path.resolve(__dirname, '..');
+const PORT = process.env.CMPAGE_PORT || 8493;
+const BASE = 'http://127.0.0.1:' + PORT;
+
+function loadChromium() {
+  for (const m of [process.env.PLAYWRIGHT_MODULE, 'playwright', 'playwright-core'].filter(Boolean)) {
+    try { return require(m).chromium; } catch (_) {}
+  }
+  return null;
+}
+
+let pass = 0, fail = 0;
+const ok = (l, c) => { c ? (pass++, console.log('  ✓ ' + l)) : (fail++, console.error('  ✗ FAIL: ' + l)); };
+
+const img = (w, h, bg, fg) => 'data:image/svg+xml;base64,' + Buffer.from(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">`
+  + `<rect width="${w}" height="${h}" fill="${bg}"/>`
+  + `<circle cx="${w / 2}" cy="${h * 0.35}" r="${w * 0.22}" fill="${fg}"/></svg>`).toString('base64');
+/* 3:4 — what a phone camera produces, and what made the feed a slideshow. */
+const TALL = img(1200, 1600, '#2f7a45', '#e8f5ec');
+/* 16:9 — fits inside the cap untouched, so nothing may claim it is cropped. */
+const WIDE = img(1600, 900, '#2f7a45', '#e8f5ec');
+const FACE = img(600, 800, '#4a7fd4', '#f2c9a0');
+
+const CHANNELS = [
+  { channelId: 'C1', slug: 'commons', name: 'The Commons', icon: '🏛️', color: '#3b5bdb', kind: 'club', unread: 3, description: '' },
+  /* A real channel name from the product, and the one that broke the header. */
+  { channelId: 'C2', slug: 'ai-tools', name: 'AI Tools Application & Digital Problem Solving', icon: '🔬', color: '#7048e8', kind: 'course', unread: 12,
+    description: 'Prompting, tooling and the week\u2019s build homework.', rules: 'Ask before you post someone else\u2019s work.' },
+];
+/* Two centres, one mentor, and more people than the stack shows — so the
+   "+N" and the centres chip both have something true to say. */
+const MEMBERS = [
+  { name: 'Coach Bisi Adeyemi', centre: 'Egbeda', posts: 9, staff: true,  photo: '' },
+  { name: 'Tunde A.',           centre: 'Ayobo',  posts: 6, staff: false, photo: '' },
+  { name: 'Zara I.',            centre: 'Egbeda', posts: 4, staff: false, photo: '' },
+  { name: 'Adaeze O.',          centre: 'Egbeda', posts: 3, staff: false, photo: '' },
+  { name: 'Ife B.',             centre: 'Ayobo',  posts: 1, staff: false, photo: '' },
+];
+const author = (name, centre, photo, staff) => ({ name, centre, photo: photo || '', staff: !!staff, isMe: false, kind: 'member' });
+const post = (o) => Object.assign({
+  postId: 'p', kind: 'post', channel: CHANNELS[1], author: author('Elizabeth A.', 'Egbe-Idimu', FACE),
+  body: '', mediaType: 'none', mediaUrl: '', createdAt: '2026-08-22T09:00:00Z',
+  commentCount: 0, reactions: [], myReactions: [], bookmarked: false, stars: 0, starred: false,
+  status: 'published', moderationNote: '', pinned: false }, o);
+
+const ME = { memberId: 'NGG-2025-0007', fullName: 'Amaka Obi', email: 'a@example.com',
+             centre: 'Egbeda', role: 'member', type: 'NGG', status: 'active', photoUrl: FACE, track: 'Tech' };
+
+/* A task at the artboard's own numbers, so the assertions below can be checked
+   on paper: 24 asked, 14 in, 9 reviewed → Reviewed 9 / Waiting 5 / Missing 10,
+   and a 58% bar. One row is already nudged today and must not be nudgeable. */
+const hwKid = (n, ctx, nudgeable) => ({ memberId: 'K' + n, name: 'Kid ' + n, centre: 'Egbeda',
+  photo: '', submittedAt: '', reviewedAt: '', context: ctx, nudgeable: nudgeable });
+const HOMEWORK = {
+  homeworkId: 'HW-1', title: 'Eight-bar drum notes', detail: '',
+  dueAt: new Date(Date.now() + 3 * 864e5).toISOString(),
+  channel: { slug: 'ai-tools', name: 'Studio \u00b7 Music' }, setBy: 'Coach Bisi',
+  counts: { asked: 24, submitted: 14, reviewed: 9, waiting: 5, missing: 10, percent: 58 },
+  canNudge: true, canReview: true, mine: { asked: false },
+  outstanding: [hwKid(20, 'Nudged Tue', true), hwKid(21, 'Not seen since Sun', true),
+                hwKid(22, 'Read the task 1h ago', true), hwKid(23, 'Nudged today', false),
+                hwKid(24, 'Not seen at all', true), hwKid(25, 'Read the task 3h ago', true),
+                hwKid(26, 'Nudged Mon', true), hwKid(27, 'Not seen since Fri', true),
+                hwKid(28, 'Read the task 2d ago', true), hwKid(29, 'Not seen at all', true)],
+  submitted: [], nudgeableNow: 9,
+};
+/* Mutable, so a test can turn typing on and off mid-run and watch the subtitle
+   follow — the whole point of §12 is that it lasts exactly as long as it is true. */
+const TYPING = { names: [], says: '' };
+/* The journal at the artboard's own numbers: streak 21, entries 46, words 3.1k,
+   a week with gaps in it, and three entries at the three visibilities. */
+const jDay = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+const JMINE = {
+  today: jDay(0),
+  prompt: "What did you try today that you couldn't do last month?",
+  todayEntry: { entryId: 'E0', mood: 4, title: '', body: '', tags: [], words: 0, media: [],
+                visibility: 'private', occurredOn: jDay(0), excerpt: '', prompt: '' },
+  week: [0, 1, 2, 3, 4, 5, 6].map(i => {
+    const back = 6 - i, dd = jDay(back), t = new Date(dd + 'T00:00:00Z');
+    const written = [true, true, false, true, true, false, true][i];
+    return { day: dd, initial: 'SMTWTFS'[t.getUTCDay()], date: t.getUTCDate(),
+             mood: written ? [4, 3, null, 5, 1, null, 4][i] : null, written, isToday: back === 0 };
+  }),
+  stats: { streak: 21, entries: 46, words: 3100 },
+  filters: { all: 46, private: 31, voice: 4, tags: [{ tag: 'music', count: 9 }, { tag: 'school', count: 6 }] },
+  entries: [
+    { entryId: 'E1', title: 'First time counting bars right', mood: 5, visibility: 'programme',
+      tags: ['music'], words: 142, media: [], occurredOn: jDay(1), body: 'x', prompt: '',
+      excerpt: 'Eight bars without losing my place.' },
+    { entryId: 'E2', title: 'Missed the session', mood: 1, visibility: 'mentor',
+      tags: [], words: 88, media: [], occurredOn: jDay(3), body: 'x', prompt: '',
+      excerpt: 'Had to mind my sister.' },
+    { entryId: 'E3', title: 'Quiet one', mood: 3, visibility: 'private',
+      tags: ['school'], words: 40, media: [], occurredOn: jDay(9), body: 'x', prompt: '',
+      excerpt: 'Nothing much.' },
+  ],
+  yearAgo: { day: jDay(365), quote: "I don't think I'll last the twelve weeks." },
+};
+function routesFor(media) {
+  const POSTS = [
+    post({ postId: 'p1', body: 'Here is the model I trained today.',
+           mediaType: 'image', mediaUrl: media, altText: 'A chart', commentCount: 4 }),
+    post({ postId: 'p2', author: author('Coach Bisi Adeyemi', 'Egbeda', '', true), channel: CHANNELS[0],
+           body: 'Homework due Thursday · bring your eight-bar notes', pinned: true }),
+  ];
+  /* A second page, so "Load earlier messages" has somewhere to go. */
+  const OLDER = [
+    post({ postId: 'p9', body: 'This one is on page two.', channel: CHANNELS[1] }),
+  ];
+  return {
+    'auth/me.php': { ok: true, member: ME, adminOk: false, impersonating: null },
+    'member/journal.php': (u) => (u.searchParams.get('view') === 'mine' ? JMINE : { ok: true }),
+    /* §8c. Long enough that the Programme tab actually scrolls, which is what
+       "preserve scroll per tab" needs something to preserve. */
+    'member/program-journal.php': (u) => (u.searchParams.get('view') === 'memories'
+      ? { ok: true, collections: [] }
+      : { ok: true, canAuthor: false, canPropose: true, total: 14,
+          summary: { openIssues: 2, thisMonth: 6, raised: '₦48k', raisedYear: 2026,
+                     everything: 14, needsAttention: 2 },
+          entries: Array.from({ length: 14 }).map((_, i) => ({
+            entryId: 'PJ-' + i, kind: 'note', status: 'open', visibility: 'community',
+            title: 'Entry number ' + (i + 1),
+            body: 'Something the programme did, written down so it can be asked about later.',
+            authorName: 'Coach Bisi', occurredAt: '2026-08-' + String(20 - i).padStart(2, '0') + 'T09:00:00Z',
+            createdAt: '2026-08-' + String(20 - i).padStart(2, '0') + 'T09:00:00Z',
+            media: [], people: [], recordedAfterDays: 0, attachments: 0,
+            followers: 0, following: false, proposed: false,
+          })) }),
+    'member/community.php': (u) => {
+      const v = u.searchParams.get('view');
+      if (v === 'channels') return { ok: true, channels: CHANNELS };
+      if (v === 'today') return { ok: true, unread: 16, mentions: 2, saved: 1 };
+      if (v === 'digest') return { ok: true, posts: POSTS, stars: [] };
+      if (v === 'feed') {
+        return Number(u.searchParams.get('page') || 0) > 0
+          ? { ok: true, posts: OLDER, hasMore: false, channel: null }
+          : { ok: true, posts: POSTS, hasMore: true, channel: null };
+      }
+      if (v === 'members') return { ok: true, members: MEMBERS, count: MEMBERS.length };
+      if (v === 'homework') return { ok: true, homework: HOMEWORK };
+      if (v === 'typing') return { ok: true, typing: TYPING.names, says: TYPING.says };
+      return { ok: true };
+    },
+  };
+}
+
+async function openPage(browser, width, height, media) {
+  const routes = routesFor(media);
+  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+  const errs = [];
+  page.on('pageerror', e => errs.push(String(e.message)));
+  /* The channel now polls for who is typing every five seconds, so there is
+     almost always a request in flight. Closing a page mid-poll rejects that
+     fulfil — and an unhandled rejection takes the whole run down several
+     screens later, reported as "browser has been closed", which points at
+     nothing. Swallow it: a route that loses its page is the expected outcome
+     of teardown, not a failure. */
+  await page.route('**/api/**', async (route) => {
+    const u = new URL(route.request().url());
+    const h = routes[u.pathname.replace(/^.*\/api\//, '')];
+    const body = typeof h === 'function' ? h(u) : (h || { ok: true });
+    try {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    } catch (_) { /* page closed while this was in flight */ }
+  });
+  /* The router reads location.pathname, so the clean URL has to be served the
+     app shell — which is what the real host does. */
+  await page.route('**/community', async (r) => {
+    try {
+      await r.fulfill({ status: 200, contentType: 'text/html',
+        body: fs.readFileSync(path.join(ROOT, 'dist', 'index.html'), 'utf8') });
+    } catch (_) {}
+  });
+  /* 'load', not 'networkidle'. With a five-second typing poll running there is
+     no such thing as an idle network on this page any more, so waiting for one
+     is waiting for something that will not happen; the selector below is the
+     real readiness signal and always was. */
+  await page.goto(BASE + '/community', { waitUntil: 'load' });
+  await page.waitForSelector('.cmm-msg', { timeout: 10000 });
+  await page.waitForTimeout(400);
+  return { page, errs };
+}
+
+(async () => {
+  const chromium = loadChromium();
+  const exe = process.env.PLAYWRIGHT_CHROMIUM || '/opt/pw-browsers/chromium';
+  if (!chromium || !fs.existsSync(exe)) { console.log('… skipped: no chromium available'); process.exit(0); }
+
+  /* dist/ IS the site root — index.html resolves every asset from '/'. */
+  const srv = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', path.join(ROOT, 'dist')], { cwd: ROOT, stdio: 'ignore' });
+  const browser = await chromium.launch({ executablePath: exe });
+  try {
+    await waitForServer(BASE + '/index.html');
+
+    for (const [label, W, H] of [['phone 390×844', 390, 844], ['laptop 1280×900', 1280, 900]]) {
+      console.log('\n── ' + label + ' ─────────────────────────────────────────');
+      const { page, errs } = await openPage(browser, W, H, TALL);
+
+      ok('the community page renders with no script error', errs.length === 0);
+      if (errs.length) console.log('    ' + errs.slice(0, 2).join(' | '));
+
+      const m = await page.evaluate(() => {
+        const r = (e) => { if (!e) return null; const b = e.getBoundingClientRect();
+          return { w: Math.round(b.width), h: Math.round(b.height), right: Math.round(b.right) }; };
+        const media = document.querySelector('.cm-msg-media img');
+        const chips = document.querySelector('.cmm-chips');
+        const brand = document.querySelector('.topnav .brand');
+        let ink = 0;
+        if (brand) {
+          const rng = document.createRange(); rng.selectNodeContents(brand);
+          Array.from(rng.getClientRects()).forEach(x => { if (x.right > ink) ink = x.right; });
+          brand.querySelectorAll('*').forEach(e => { const x = e.getBoundingClientRect().right; if (x > ink) ink = x; });
+        }
+        return {
+          vh: window.innerHeight,
+          media: r(media),
+          chipCount: document.querySelectorAll('.cmm-chip').length,
+          chipsOver: chips ? chips.scrollWidth - chips.clientWidth : -1,
+          chipsRight: chips ? Math.max(...Array.from(document.querySelectorAll('.cmm-chip'))
+            .map(c => Math.round(c.getBoundingClientRect().right))) : -1,
+          brand: r(brand), brandInk: Math.round(ink),
+          docOver: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          badge: !!document.querySelector('.cm-msg-media-more'),
+        };
+      });
+
+      /* A feed shows more than one thing. 60% is the ceiling the stylesheet
+         sets; the assertion is deliberately looser so a tweak to the cap does
+         not fail it, but 99% never passes. */
+      const pct = Math.round(m.media.h / m.vh * 100);
+      ok('a portrait photo cannot take the whole screen (' + m.media.h + 'px = ' + pct + '% of the viewport)',
+         pct <= 70);
+
+      /* And the crop is recoverable, or it is just destruction. */
+      ok('the photo is a real control that opens it whole',
+         await page.evaluate(() => {
+           const b = document.querySelector('.cm-msg-media-btn');
+           return !!b && b.tagName === 'BUTTON' && (b.getAttribute('aria-label') || '').length > 8;
+         }));
+
+      /* Every filter is reachable. "Yours" was off the screen entirely. */
+      ok('every filter chip is on the screen (' + m.chipCount + ' chips, ' + m.chipsOver + 'px hidden)',
+         m.chipCount === 5 && m.chipsOver <= 0);
+      ok('…and none of them is cut off at the edge (' + m.chipsRight + ' ≤ ' + W + ')',
+         m.chipsRight <= W);
+
+      /* The wordmark ran outside its own box, under the buttons beside it. */
+      ok('the wordmark stays inside its own box (ink ' + m.brandInk + ' ≤ box ' + m.brand.right + ')',
+         m.brandInk <= m.brand.right + 1);
+      ok('…and the page never scrolls sideways (' + m.docOver + 'px over)', m.docOver <= 0);
+
+      await page.close();
+    }
+
+    /* ── The desktop layout the handoff actually specifies ────────────────
+       Handoff §11, artboard 3A: rail · 260px channel list · centre · thread,
+       as floating panes on the warm canvas, in a window that does not scroll
+       as one page.
+
+       What shipped was rail + ONE pane. On a 1280px screen the feed sat in its
+       72ch reading column with ~430px of empty canvas beside it, there was no
+       way to change channel without leaving what you were reading, and opening
+       a thread covered the whole screen to show four replies — the phone
+       pattern wearing a desktop's clothes, which is the exact thing the
+       bundle's 3A supersedes. */
+    console.log('\n── The desktop panes (handoff §11 / 3A) ──────────────────────');
+    {
+      const { page } = await openPage(browser, 1280, 900, WIDE);
+      /* The artboard's centre pane is a CHANNEL, so open one. */
+      await page.locator('.cmd-row').first().click();
+      await page.waitForTimeout(600);
+      const L = () => page.evaluate(() => {
+        const r = (sel) => { const e = document.querySelector(sel); if (!e) return null;
+          const b = e.getBoundingClientRect();
+          return { w: Math.round(b.width), h: Math.round(b.height), l: Math.round(b.left) }; };
+        return { rail: r('.cmm-tabs'), side: r('.cmm-side'), body: r('.cmm-body'),
+                 thread: r('.cmm-thread'), over: r('.cmm-over'),
+                 shell: r('.cmm'), vh: window.innerHeight,
+                 pageScroll: document.documentElement.scrollHeight - window.innerHeight };
+      });
+
+      let m = await L();
+      ok('the rail, the channel list and the centre are three separate panes',
+         !!m.rail && !!m.side && !!m.body);
+      ok('…laid out left to right in that order (' + m.rail.l + ' < ' + m.side.l + ' < ' + m.body.l + ')',
+         m.rail.l < m.side.l && m.side.l < m.body.l);
+      /* 268, measured off the artboard itself — the README's prose rounds it
+         to 260 and the artboard is the authority. */
+      ok('…with the channel list at the 268px the artboard draws (' + m.side.w + 'px)',
+         m.side.w === 268);
+      ok('…and the rail at 68px (' + m.rail.w + 'px)', m.rail.w === 68);
+      /* A workspace, not a long page: each pane scrolls inside itself. */
+      ok('the workspace fits the window rather than scrolling as one page ('
+         + m.shell.h + 'px in ' + m.vh + 'px)', m.shell.h <= m.vh);
+
+      /* The judgement call the bundle states outright: "destinations and
+         conversations are separate concerns, so switching one never hides the
+         other." Opening a thread must NARROW the centre, not cover it. */
+      const bodyBefore = m.body.w;
+      await page.locator('.cmm-msg-act', { hasText: 'replies' }).first().click();
+      await page.waitForTimeout(500);
+      m = await L();
+      ok('a thread opens as a fourth pane, not an overlay',
+         !!m.thread && !m.over);
+      ok('…so the channel list and the rail are still there',
+         !!m.rail && !!m.side);
+      ok('…and the centre narrows to make room rather than being covered ('
+         + bodyBefore + ' → ' + m.body.w + ')',
+         m.body.w < bodyBefore && m.body.w > 300);
+      ok('…and the thread pane does not overlap the centre ('
+         + (m.body.l + m.body.w) + ' ≤ ' + m.thread.l + ')',
+         m.body.l + m.body.w <= m.thread.l + 1);
+
+      /* A 260px list is not a reading column, and a long channel name must not
+         turn a 63px row into a 128px one. */
+      ok('a long channel name is one ellipsised line in the list',
+         await page.evaluate(() => {
+           const n = Array.from(document.querySelectorAll('.cmd-row-n'))
+             .find(x => x.textContent.length > 20);
+           return !!n && n.getBoundingClientRect().height < 26 && n.scrollWidth > n.clientWidth;
+         }));
+
+      /* ── The artboard's chrome ────────────────────────────────────────── */
+      ok('the workspace has its own global bar, and the marketing nav is gone',
+         await page.evaluate(() => {
+           const bar = document.querySelector('.cmd-bar');
+           const site = document.querySelector('.topnav');
+           return !!bar && Math.round(bar.getBoundingClientRect().height) === 54
+             && (!site || getComputedStyle(site).display === 'none');
+         }));
+      ok('…carrying the command bar the artboard specifies, as a real button',
+         await page.evaluate(() => {
+           const j = document.querySelector('.cmd-jump');
+           return !!j && j.tagName === 'BUTTON'
+             && /Jump to a channel, person, entry/.test(j.textContent)
+             && /⌘K/.test(j.textContent);
+         }));
+      ok('…and "Catch me up", the bell with its count, and the account avatar',
+         await page.evaluate(() =>
+           /Catch me up/.test(document.querySelector('.cmd-catch').textContent)
+           && !!document.querySelector('.cmd-badge') && !!document.querySelector('.cmd-me')));
+
+      /* Five destinations on the rail, not the phone's four. */
+      ok('the rail carries all five destinations including Saved',
+         await page.evaluate(() => {
+           const t = Array.from(document.querySelectorAll('.cmm-tab .cmm-tab-l')).map(x => x.textContent);
+           return t.length === 5 && t.join(',') === 'Today,Chans,Play,Journal,Saved';
+         }));
+
+      /* The channel pane's own furniture. */
+      ok('the channel pane has All / Unread / Mine and a compose button',
+         await page.evaluate(() => {
+           /* Scoped to the pane. The same segmented control now also sits in
+              the channel header (Newest / Hot), so an unscoped query counts
+              five buttons and this used to read that as a broken pane. */
+           const seg = Array.from(document.querySelectorAll('.cmm-side .cmd-seg-b')).map(x => x.textContent.trim());
+           return seg.length === 3 && seg[0] === 'All' && /^Unread/.test(seg[1]) && seg[2] === 'Mine'
+             && !!document.querySelector('.cmd-plus');
+         }));
+      ok('…and the ⌥↑/↓ hint, which actually walks the unread channels',
+         await page.evaluate(() => /next unread/.test(document.querySelector('.cmd-foot').textContent)));
+
+      /* The hint has to be true. Alt+ArrowDown must move to an unread channel
+         — a printed shortcut that does nothing is worse than none. */
+      const before = await page.evaluate(() => {
+        const on = document.querySelector('.cmd-row.is-on'); return on ? on.textContent : ''; });
+      await page.keyboard.down('Alt'); await page.keyboard.press('ArrowDown'); await page.keyboard.up('Alt');
+      await page.waitForTimeout(500);
+      const after = await page.evaluate(() => {
+        const on = document.querySelector('.cmd-row.is-on'); return on ? on.textContent : ''; });
+      ok('…so ⌥↓ really moves to the next unread channel', !!after && after !== before);
+
+      /* A channel you cannot type into is one you are reading, not one you
+         are in. The artboard pins a composer to the pane. */
+      ok('the channel pane has a docked composer',
+         await page.evaluate(() => {
+           const c = document.querySelector('.cmd-composer .cm-composer');
+           if (!c) return false;
+           const pane = document.querySelector('.cmm-body').getBoundingClientRect();
+           const b = c.getBoundingClientRect();
+           return b.bottom <= pane.bottom + 2 && b.top > pane.top + 100;
+         }));
+      /* …and the header is the full-bleed bar the artboard draws, not the
+         narrow centred pill the reading-column cap made of it. */
+      ok('the channel header spans the pane rather than floating in it',
+         await page.evaluate(() => {
+           const h = document.querySelector('.cmm-ch-head');
+           const p = document.querySelector('.cmm-body');
+           if (!h || !p) return false;
+           return h.getBoundingClientRect().width >= p.getBoundingClientRect().width - 4;
+         }));
+      /* ── The header controls, handoff §3 and §11 ── */
+      ok('the channel header carries the presence stack, the centres and the purpose',
+         await page.evaluate(() => {
+           const faces = document.querySelectorAll('.cmm-ch-head .cmd-ch-face');
+           const centres = document.querySelector('.cmm-ch-centres');
+           const sub = document.querySelector('.cmm-ch-head .cmm-sub');
+           if (!faces.length || !sub) return false;
+           /* Overlapped, not spaced: the artboard's -8px. */
+           const a = faces[0].getBoundingClientRect(), b = faces[1] && faces[1].getBoundingClientRect();
+           const overlapped = !b || b.left < a.right;
+           return overlapped && !!centres && sub.textContent.trim().length > 0;
+         }));
+      ok('…and Newest / Hot, in the bundle\'s own words', await page.evaluate(() => {
+        const seg = Array.from(document.querySelectorAll('.cmd-ch-tools .cmd-seg-b')).map(x => x.textContent.trim());
+        return seg.length === 2 && seg[0] === 'Newest' && seg[1] === 'Hot';
+      }));
+      /* Every control clears 24x24 (WCAG 2.2 2.5.8); the artboard draws 34. */
+      ok('…and every one of them is at least 34px, as the artboard draws them',
+         await page.evaluate(() =>
+           Array.from(document.querySelectorAll('.cmd-ch-tools .cmd-seg, .cmd-ch-tools .cmd-ch-btn'))
+             .every(el => { const r = el.getBoundingClientRect(); return r.height >= 33.5 && r.width >= 33.5; })));
+
+      /* ⓘ carries the roster the permanent rail used to hold (handoff §11) —
+         and it must NOT push the conversation down the screen. */
+      const streamTopBefore = await page.evaluate(() =>
+        document.querySelector('.cmm-stream').getBoundingClientRect().top);
+      await page.locator('.cmd-ch-tools .cmd-ch-btn').last().click();
+      await page.waitForTimeout(300);
+      ok('ⓘ opens channel info, carrying the member roster',
+         await page.evaluate(() => {
+           const p = document.querySelector('.cmd-chinfo');
+           return !!p && p.querySelectorAll('.cmd-chinfo-roster li').length > 0;
+         }));
+      const streamTopAfter = await page.evaluate(() =>
+        document.querySelector('.cmm-stream').getBoundingClientRect().top);
+      ok('…as a popover, so the conversation does not move under the reader',
+         Math.abs(streamTopAfter - streamTopBefore) < 2);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(250);
+      ok('…and Escape closes it', await page.evaluate(() => !document.querySelector('.cmd-chinfo')));
+      /* …and closing it did NOT take the thread with it. A thread is a pane
+         beside the channel here, not a modal over it: only a modal owns
+         Escape. This threw away an open thread every time. */
+      ok('…without throwing away the thread beside it',
+         await page.evaluate(() => !!document.querySelector('.cmm-thread')));
+
+      /* The chrome is pinned and only the stream scrolls — the artboard's
+         <main> is overflow:hidden. With the whole pane scrolling, the header
+         and composer slid away with the conversation. */
+      ok('the header and the composer stay put while the messages scroll',
+         await page.evaluate(async () => {
+           const head = document.querySelector('.cmm-ch-head');
+           const dock = document.querySelector('.cmd-composer');
+           const stream = document.querySelector('.cmm-stream');
+           const h0 = head.getBoundingClientRect().top, d0 = dock.getBoundingClientRect().top;
+           stream.scrollTop = stream.scrollHeight;
+           await new Promise(r => requestAnimationFrame(r));
+           return Math.abs(head.getBoundingClientRect().top - h0) < 1
+               && Math.abs(dock.getBoundingClientRect().top - d0) < 1;
+         }));
+
+      /* ⤢ — handoff §11: "replying no longer costs you the channel; ⤢ expands
+         it". Expanding must WIDEN the thread and must not take the channel
+         away, which would be the phone overlay again in a desktop's clothes. */
+      const widths = await page.evaluate(async () => {
+        const w = () => ({ t: document.querySelector('.cmm-thread').getBoundingClientRect().width,
+                           c: document.querySelector('.cmm-body').getBoundingClientRect().width });
+        const before = w();
+        document.querySelector('.cm-thread-wide').click();
+        await new Promise(r => setTimeout(r, 260));
+        const after = w();
+        document.querySelector('.cm-thread-wide').click();
+        await new Promise(r => setTimeout(r, 260));
+        return { before, after, back: w() };
+      });
+      ok('⤢ widens the thread', widths.after.t > widths.before.t + 40);
+      ok('…without taking the channel away', widths.after.c > 320);
+      ok('…and it goes back', Math.abs(widths.back.t - widths.before.t) < 2);
+      /* Widened, the channel pane loses ~340px. The header must give that up
+         from the controls, not from the channel's name: it rendered a single
+         letter — "A" — while the presence stack kept every pixel of its own. */
+      const narrowTitle = await page.evaluate(async () => {
+        document.querySelector('.cm-thread-wide').click();
+        await new Promise(r => setTimeout(r, 300));
+        const t = document.querySelector('.cmm-ch-title');
+        const w = t.getBoundingClientRect().width;
+        document.querySelector('.cm-thread-wide').click();
+        await new Promise(r => setTimeout(r, 300));
+        return w;
+      });
+      ok('…and the channel keeps a readable name while it is widened', narrowTitle >= 100);
+
+      /* Newest / Hot is a real sort, not a label: switching it must re-ask the
+         server, and the server takes `sort` on the feed. */
+      const sortAsk = new Promise(res => {
+        const h = (r) => { const u = new URL(r.url());
+          if (u.searchParams.get('view') === 'feed' && u.searchParams.get('sort') === 'trending') {
+            page.off('request', h); res(true); } };
+        page.on('request', h);
+        setTimeout(() => res(false), 4000);
+      });
+      await page.locator('.cmd-ch-tools .cmd-seg-b', { hasText: 'Hot' }).click();
+      ok('Hot asks the server for the trending ranking', await sortAsk);
+      await page.locator('.cmd-ch-tools .cmd-seg-b', { hasText: 'Newest' }).click();
+      await page.waitForTimeout(400);
+
+      /* The bookmark filter narrows to saved — and when nothing is saved it
+         says so, instead of the channel's "be the first to post" empty state
+         in a channel with messages in it. */
+      await page.locator('.cmd-ch-tools .cmd-ch-btn').first().click();
+      await page.waitForTimeout(300);
+      ok('the saved filter says it is a filter when it finds nothing',
+         await page.evaluate(() => {
+           const e = document.querySelector('.cmm-stream .cmm-empty, .cmm-stream [class*="empty"]');
+           const txt = document.querySelector('.cmm-stream').textContent;
+           return /saved/i.test(txt) && !/be the first/i.test(txt) && !!e;
+         }));
+      await page.locator('.cmd-ch-tools .cmd-ch-btn').first().click();
+      await page.waitForTimeout(300);
+
+      /* And the thread's own header stacks instead of running together. */
+      ok('the thread header keeps its title clear of the channel and the close button',
+         await page.evaluate(() => {
+           const t = document.querySelector('.cm-thread-title');
+           const c = document.querySelector('.cm-thread-chan');
+           const x = document.querySelector('.cm-thread-x');
+           if (!t || !c || !x) return false;
+           const tb = t.getBoundingClientRect(), cb = c.getBoundingClientRect(), xb = x.getBoundingClientRect();
+           return cb.top >= tb.bottom - 1 && cb.right <= xb.left + 1;
+         }));
+      await page.close();
+    }
+
+    /* ── The 44px rule, measured (handoff: "verify in devtools, don't assume") ──
+       The rule implementations break most often, and exactly the kind of thing
+       that is true the day it ships and false a month later — so a test, not a
+       one-off measurement. Scoped to `.cmm`, the community app's own root: the
+       marketing top nav and footer are a different design with their own
+       smaller chrome, and sweeping them in here would turn this into a silent
+       rewrite of something the bundle does not own. (They ARE under 44 — the
+       nav bell measures 38 — which is reported separately, not fixed here.) */
+    console.log('\n── Every community target clears 44px on a phone ──────────────');
+    {
+      const { page } = await openPage(browser, 390, 844, WIDE);
+      const scan = () => page.evaluate(() => {
+        const out = [];
+        document.querySelectorAll('.cmm button, .cmm a[href], .cmm input, .cmm select,'
+          + ' .cmm textarea, .cmm [role="tab"]').forEach(el => {
+          const r = el.getBoundingClientRect();
+          if (!r.width || !r.height) return;
+          if (getComputedStyle(el).visibility === 'hidden') return;
+          if (el.closest('.sr-only')) return;
+          /* The design sets filter chips at 40px explicitly (§1, "40px tall"),
+             which contradicts its own 44px floor. That conflict is the
+             designer's to settle, so this records the design's stated number
+             rather than quietly overriding either rule. */
+          const floor = el.classList.contains('cmm-chip') ? 39.5 : 43.5;
+          /* A caption can carry its tap area in a pseudo-element instead of
+             growing the label into a button — the feed's channel caption does
+             exactly that. getBoundingClientRect cannot see it, so ask. */
+          let h = r.height, w = r.width;
+          for (const which of ['::before', '::after']) {
+            const cs = getComputedStyle(el, which);
+            if (cs.content === 'none' || cs.position !== 'absolute') continue;
+            h = Math.max(h, parseFloat(cs.height) || 0);
+            w = Math.max(w, parseFloat(cs.width) || 0);
+          }
+          if (h < floor || w < floor) out.push((el.className || el.tagName) + ' ' + Math.round(w) + 'x' + Math.round(h));
+        });
+        return [...new Set(out)];
+      });
+      const onToday = await scan();
+      ok('Today: nothing under 44px' + (onToday.length ? ' — ' + onToday.join(', ') : ''), onToday.length === 0);
+      await page.locator('.cmm-tab', { hasText: 'Channels' }).click();
+      await page.waitForTimeout(400);
+      await page.locator('.cmm-ch-row').first().click();
+      await page.waitForTimeout(800);
+      const inChannel = await scan();
+      ok('Channel: nothing under 44px' + (inChannel.length ? ' — ' + inChannel.join(', ') : ''), inChannel.length === 0);
+
+      /* §12: the phone catch-me-up card carries Jump to unread / Mark read —
+         and those are the phone's strings, not the desktop digest's longer
+         ones. The difference is the design's, so both are checked verbatim. */
+      const card = await page.evaluate(() => {
+        const c = document.querySelector('.cmm-catchup');
+        if (!c) return null;
+        return {
+          acts: Array.from(c.querySelectorAll('.cmm-catchup-acts button')).map(b => b.textContent.trim()),
+          dismiss: !!c.querySelector('.cmm-catchup-x'),
+          /* One line each: the title wrapped across two lines when the actions
+             shared its row, which is what "looks broken" looked like. */
+          titleLines: Math.round(c.querySelector('b').getBoundingClientRect().height) < 24,
+        };
+      });
+      ok('the catch-me-up card offers Jump to unread and Mark read',
+         !!card && card.acts[0] === 'Jump to unread' && card.acts[1] === 'Mark read');
+      ok('…is dismissible, and its title fits on one line', !!card && card.dismiss && card.titleLines);
+
+      /* §1: "feed padding bottom 116px so FAB and tab bar never cover content."
+         The channel stream had 20px, and the FAB sat on the last photo. */
+      ok('the stream clears the FAB at the bottom of the scroll',
+         await page.evaluate(async () => {
+           const s = document.querySelector('.cmm-stream');
+           s.scrollTop = s.scrollHeight;
+           await new Promise(r => requestAnimationFrame(r));
+           const fab = document.querySelector('.cmm-fab');
+           if (!fab) return true;
+           const f = fab.getBoundingClientRect();
+           const last = [...s.querySelectorAll('.cmm-msg')].pop();
+           if (!last) return true;
+           const l = last.getBoundingClientRect();
+           return l.bottom <= f.top + 1 || l.right <= f.left + 1;
+         }));
+      await page.close();
+    }
+
+    /* ── Homework (§11 widget, §12 strip and tracker) ─────────────────────
+       The number that must not disagree with itself: "14 of 24" appears on
+       three surfaces built from one payload. */
+    console.log('\n── Homework ──────────────────────────────────────────────────');
+    {
+      const { page } = await openPage(browser, 390, 844, WIDE);
+      await page.locator('.cmm-tab', { hasText: 'Channels' }).click();
+      await page.waitForTimeout(400);
+      await page.locator('.cmm-ch-row').nth(1).click();
+      await page.waitForTimeout(900);
+      ok('the channel carries the homework strip, with the count and the due date',
+         await page.evaluate(() => {
+           const st = document.querySelector('.cm-hw-strip');
+           if (!st) return false;
+           /* innerText applies text-transform, so the eyebrow comes back as
+              "HOMEWORK · DUE THU 2PM". Matched case-insensitively for that
+              reason — a case-sensitive match here has now failed three times
+              in this file for exactly this. */
+           const t = st.innerText;
+           return /homework/i.test(t) && /due/i.test(t) && /14/.test(t) && /of 24/.test(t);
+         }));
+      /* It is a control, so it has to clear the floor like every other one. */
+      ok('…and it is a real target, not a 30px banner',
+         await page.evaluate(() => document.querySelector('.cm-hw-strip').getBoundingClientRect().height >= 44));
+
+      await page.locator('.cm-hw-strip').click();
+      await page.waitForTimeout(800);
+      const tracker = await page.evaluate(() => {
+        const b = document.querySelector('.cm-hw-body');
+        if (!b) return null;
+        const tiles = [...b.querySelectorAll('.cm-hw-tile')].map(t => t.innerText.replace(/\n/g, ' '));
+        return {
+          count: b.querySelector('.cm-hw-count').innerText.replace(/\n/g, ' '),
+          bar: b.querySelector('.cm-hw-track > span').style.width,
+          tiles,
+          rows: b.querySelectorAll('.cm-hw-row').length,
+          rule: [...b.querySelectorAll('p')].map(p => p.textContent).join(' '),
+          allBtn: (b.querySelector('.cm-hw-allbtn') || {}).textContent || '',
+        };
+      });
+      ok('the tracker opens with the same 14 of 24 the strip showed',
+         !!tracker && /14/.test(tracker.count) && /of 24 submitted/.test(tracker.count));
+      ok('…and the bar is 58%, from the server rather than recomputed', tracker.bar === '58%');
+      ok('…with Reviewed 9 / Waiting 5 / Missing 10, in the design\'s words',
+         /9\s+REVIEWED/i.test(tracker.tiles[0]) && /5\s+WAITING/i.test(tracker.tiles[1])
+         && /10\s+MISSING/i.test(tracker.tiles[2]));
+      ok('…and every outstanding child gets a row', tracker.rows === 10);
+      /* The sentence the whole feature rests on, rendered where the mentor is
+         standing when they press the button. */
+      ok('…and the promise is printed on the screen that makes it',
+         /Nudges arrive as one notification, never a public message\./.test(tracker.rule));
+      ok('…and "Nudge all" says how many it will really reach, not how many are listed',
+         /Nudge all 9 outstanding/.test(tracker.allBtn));
+      /* A daily limit that the button does not show is a button that fails on
+         press. The already-nudged row is disabled and says why. */
+      ok('a child already nudged today has the button off, and it says so',
+         await page.evaluate(() => {
+           const row = [...document.querySelectorAll('.cm-hw-row')]
+             .find(r => /Nudged today/.test(r.innerText));
+           if (!row) return false;
+           const b = row.querySelector('.cm-hw-nudge');
+           return b.disabled && /Nudged/.test(b.textContent) && /already/i.test(b.title);
+         }));
+      /* Colour is never the only signal: Missing is red AND says "Missing". */
+      ok('…and Missing is not carried by colour alone',
+         await page.evaluate(() => /MISSING/i.test(document.querySelector('.cm-hw-tile.is-missing').innerText)));
+      await page.close();
+    }
+    {
+      const { page } = await openPage(browser, 1440, 900, WIDE);
+      await page.locator('.cmd-row').nth(1).click();
+      await page.waitForTimeout(900);
+      ok('on a desktop the same task is the §11 widget, beside the digest',
+         await page.evaluate(() => {
+           const w = document.querySelector('.cm-hw-widget');
+           const d = document.querySelector('.cmd-digest');
+           if (!w || !d) return false;
+           const wb = w.getBoundingClientRect(), db = d.getBoundingClientRect();
+           // side by side, not stacked, and not on top of the header
+           return wb.left > db.right - 1 && Math.abs(wb.top - db.top) < 4
+                  && wb.top > document.querySelector('.cmm-ch-head').getBoundingClientRect().bottom;
+         }));
+      ok('…at the artboard\'s 250px', await page.evaluate(() =>
+         Math.abs(document.querySelector('.cm-hw-widget').getBoundingClientRect().width - 250) < 2));
+      ok('…showing the same numbers as the phone, not a second calculation',
+         await page.evaluate(() => {
+           const w = document.querySelector('.cm-hw-widget');
+           return /14/.test(w.innerText) && /of 24 submitted/.test(w.innerText)
+                  && w.querySelector('.cm-hw-track > span').style.width === '58%';
+         }));
+      ok('…and no homework strip as well, which would be the same number twice',
+         await page.evaluate(() => !document.querySelector('.cm-hw-strip')));
+      await page.close();
+    }
+
+    /* ── The rest of §3 (2A) ──────────────────────────────────────────────
+       The channel asked for page 0 and only ever page 0, so everything past
+       the first page of a busy channel was unreachable — not slow, not behind
+       a scroll, gone. */
+    console.log('\n── The channel, §3 ───────────────────────────────────────────');
+    {
+      const { page } = await openPage(browser, 1440, 900, WIDE);
+      await page.locator('.cmd-row').nth(1).click();
+      await page.waitForTimeout(900);
+
+      ok('a channel with more history offers "Load earlier messages"',
+         await page.evaluate(() => {
+           const b = document.querySelector('.cmm-earlier');
+           return !!b && /Load earlier messages/.test(b.textContent);
+         }));
+      ok('…as a real target, not a 20px link',
+         await page.evaluate(() => document.querySelector('.cmm-earlier').getBoundingClientRect().height >= 43.5));
+      const before = await page.evaluate(() => document.querySelectorAll('.cmm-msg').length);
+      await page.locator('.cmm-earlier').click();
+      await page.waitForTimeout(800);
+      ok('…and pressing it really brings back messages that were unreachable',
+         await page.evaluate((n) => document.querySelectorAll('.cmm-msg').length > n, before));
+      ok('…placed BEFORE the ones already on screen, because that is where earlier is',
+         await page.evaluate(() =>
+           /page two/.test(document.querySelector('.cmm-msg').innerText)));
+      ok('…and the pill goes when there is nothing older left',
+         await page.evaluate(() => !document.querySelector('.cmm-earlier')));
+
+      /* The pinned banner: real data that nothing surfaced. */
+      ok('a pinned message gets the banner §3 draws for it',
+         await page.evaluate(() => {
+           const b = document.querySelector('.cmm-pinban');
+           return !!b && /pinned/i.test(b.innerText) && /eight-bar notes/.test(b.innerText);
+         }));
+      ok('…and it can be put away, because a banner you cannot dismiss is one people look past',
+         await page.evaluate(async () => {
+           document.querySelector('.cmm-pinban-x').click();
+           await new Promise(r => setTimeout(r, 200));
+           return !document.querySelector('.cmm-pinban');
+         }));
+      await page.close();
+    }
+
+    /* ── Typing (§12) ──────────────────────────────────────────────────────
+       "…replacing the static member count only while someone types." Both
+       halves are the assertion: it appears, and it goes away again. */
+    console.log('\n── Typing ────────────────────────────────────────────────────');
+    {
+      /* Set BEFORE the page opens, so the channel's first poll already sees it
+         and the reader stays on the fast cadence. */
+      TYPING.names = ['Coach Bisi']; TYPING.says = 'Coach Bisi is typing…';
+      const { page } = await openPage(browser, 1440, 900, WIDE);
+      await page.locator('.cmd-row').nth(1).click();
+      await page.waitForTimeout(1200);
+      const sub = () => page.evaluate(() => {
+        const p = document.querySelector('.cmm-ch-head .cmm-sub');
+        return { text: p.textContent.trim(), typing: p.classList.contains('is-typing'),
+                 live: p.getAttribute('aria-live') };
+      });
+      const during = await sub();
+      ok('while somebody types the subtitle says who, by name',
+         during.typing && during.text === 'Coach Bisi is typing…');
+      ok('…announced once rather than on every poll', during.live === 'polite');
+      /* Colour is never the only signal, and the green has to clear 4.5:1 for
+         body text (WCAG 1.4.3) on the card it sits on. */
+      ok('…legible, and not carried by colour alone',
+         await page.evaluate(() => {
+           const p = document.querySelector('.cmm-ch-head .cmm-sub');
+           const cs = getComputedStyle(p);
+           const rgb = cs.color.match(/\d+/g).map(Number);
+           const L = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+           const lum = 0.2126 * L(rgb[0]) + 0.7152 * L(rgb[1]) + 0.0722 * L(rgb[2]);
+           return (1.05) / (lum + 0.05) >= 4.5 && cs.fontStyle === 'italic';
+         }));
+
+      TYPING.names = []; TYPING.says = '';
+      await page.waitForTimeout(6000);
+      const after = await sub();
+      ok('…and when they stop, the channel comes back — it lasts exactly as long as it is true',
+         !after.typing && after.text.length > 0 && !/is typing/.test(after.text));
+      await page.close();
+    }
+    {
+      /* The poll backs off when nobody is typing. A fixed five-second poll is
+         720 requests an hour, forever, in an app whose Files screen is built
+         entirely around what a request costs a child on mobile data. */
+      TYPING.names = []; TYPING.says = '';
+      const { page } = await openPage(browser, 1440, 900, WIDE);
+      let polls = 0;
+      page.on('request', r => { if (/view=typing/.test(r.url())) polls++; });
+      await page.locator('.cmd-row').nth(1).click();
+      await page.waitForTimeout(400);
+      polls = 0;
+      await page.waitForTimeout(22000);
+      /* 5s flat would be four or five in twenty-two seconds; backing off
+         (5 → 10 → 20 → 30) is two or three. */
+      ok('a quiet channel eases off rather than polling every five seconds forever ('
+         + polls + ' in 22s)', polls > 0 && polls <= 3);
+      await page.close();
+    }
+
+    /* ── The journal (§8a Mine, §8b the writer) ───────────────────────────
+       The most private surface in the product. The assertions that matter are
+       the ones about who can read what, and about not losing a child's words. */
+    console.log('\n── Journal ───────────────────────────────────────────────────');
+    {
+      const { page } = await openPage(browser, 390, 844, WIDE);
+      await page.locator('.cmm-tab', { hasText: 'Journal' }).click();
+      await page.waitForTimeout(900);
+
+      ok('the journal has both tabs, and Mine is the one it opens on',
+         await page.evaluate(() => {
+           const seg = [...document.querySelectorAll('.cm-j-seg .cmd-seg-b')];
+           return seg.length === 2 && seg[0].textContent === 'Mine'
+                  && seg[0].getAttribute('aria-selected') === 'true'
+                  && seg[1].textContent === 'Programme';
+         }));
+      ok('the week strip is seven days, with gaps drawn as gaps rather than failures',
+         await page.evaluate(() => {
+           const t = [...document.querySelectorAll('.cm-jm-tile')];
+           if (t.length !== 7) return false;
+           const empty = t.filter(x => x.classList.contains('is-empty'));
+           return empty.length === 2
+                  && empty.every(x => getComputedStyle(x).borderStyle === 'dashed');
+         }));
+      ok('the prompt card carries the line the design insists on',
+         await page.evaluate(() =>
+           /Private unless you choose to share it\./.test(document.querySelector('.cm-jm-prompt').innerText)));
+      ok('…and its CTA is the 52px primary the design specifies',
+         await page.evaluate(() =>
+           document.querySelector('.cm-jm-write').getBoundingClientRect().height >= 52));
+
+      /* The mood row: five buttons, the selected one carrying more than colour. */
+      ok('the mood check-in is five 52px buttons with a real selected state',
+         await page.evaluate(() => {
+           const m = [...document.querySelectorAll('.cm-jm-m')];
+           if (m.length !== 5) return false;
+           if (!m.every(b => b.getBoundingClientRect().height >= 52)) return false;
+           const on = m.find(b => b.getAttribute('aria-checked') === 'true');
+           if (!on) return false;
+           // border width, not just a fill — colour is never the only signal
+           return parseFloat(getComputedStyle(on).borderTopWidth) >= 2;
+         }));
+      ok('…and the caption is the design\'s own words for that mood',
+         await page.evaluate(() =>
+           /Logged — 12 good days this month\./.test(document.querySelector('.cm-jm-note').textContent)));
+      ok('the three stats read 21 / 46 / 3.1k, tabular so they do not jitter',
+         await page.evaluate(() => {
+           const b = [...document.querySelectorAll('.cm-jm-stats b')].map(x => x.textContent);
+           const num = getComputedStyle(document.querySelector('.cm-jm-stats b')).fontVariantNumeric;
+           return b.join('/') === '21/46/3.1k' && /tabular-nums/.test(num);
+         }));
+
+      /* Visibility is on every card, and never as colour alone. */
+      ok('every entry says who can read it, in words rather than only a colour',
+         await page.evaluate(() => {
+           const v = [...document.querySelectorAll('.cm-jm-vis')].map(x => x.textContent.trim());
+           return v.length === 3 && v.indexOf('Mentor') >= 0 && v.indexOf('Shared') >= 0
+                  && v.indexOf('🔒') >= 0;
+         }));
+      ok('…and a year ago today quotes the member back to themselves',
+         await page.evaluate(() =>
+           /last the twelve weeks/.test(document.querySelector('.cm-jm-recall').innerText)));
+
+      /* ── The writer ── */
+      await page.locator('.cm-jm-write').click();
+      await page.waitForTimeout(700);
+      ok('the writer opens over everything, with the tab bar hidden under it',
+         await page.evaluate(() => !!document.querySelector('.cm-jw') && !document.querySelector('.cmm-tabs')));
+      /* The claim that matters: private is preselected, every time. */
+      ok('private is preselected — the default nobody would have chosen otherwise',
+         await page.evaluate(() => {
+           const on = document.querySelector('.cm-jw-vis-row.is-on');
+           return !!on && /Only me/.test(on.innerText) && /Nobody is notified/.test(on.innerText);
+         }));
+      ok('…and it is three radios, because "who can read this" has three answers',
+         await page.evaluate(() =>
+           document.querySelectorAll('.cm-jw-vis input[type=radio]').length === 3));
+      ok('…each with the consequence beside the choice, not behind a help link',
+         await page.evaluate(() => {
+           const t = document.querySelector('.cm-jw-vis').innerText;
+           return /reply privately/.test(t) && /Visible to/.test(t);
+         }));
+      /* "Saved" is a claim about the reader's words. */
+      ok('a blank page is not described as saved',
+         await page.evaluate(() => document.querySelector('.cm-jw-saved').textContent.trim() === ''));
+      ok('the word count is live and starts at zero',
+         await page.evaluate(() => /^0 words$/.test(document.querySelector('.cm-jw-words').textContent)));
+
+      /* Never lose a draft: the words are on the device before they are sent. */
+      await page.locator('.cm-jw-text').fill('Eight bars without losing my place.');
+      await page.waitForTimeout(300);
+      ok('…and it counts what was typed', await page.evaluate(() =>
+         /^6 words$/.test(document.querySelector('.cm-jw-words').textContent)));
+      ok('what was typed is on the device before it is sent anywhere',
+         await page.evaluate(() => {
+           const k = Object.keys(localStorage).find(x => /ngg\.jw\./.test(x));
+           return !!k && /Eight bars/.test(localStorage.getItem(k));
+         }));
+      /* Every control in the writer clears the floor. */
+      ok('every control in the writer is at least 44px',
+         await page.evaluate(() =>
+           [...document.querySelectorAll('.cm-jw button, .cm-jw input[type=radio] + *')]
+             .filter(b => b.getBoundingClientRect().height > 0)
+             .every(b => b.getBoundingClientRect().height >= 43.5
+                         || b.classList.contains('cm-jw-radio'))));
+      await page.close();
+    }
+
+    /* ── The two behaviours the handoff lists in its Interactions table ────
+       Both are the kind of thing that looks like polish and is not: a reader
+       who loses their place in a year of their own entries every time they
+       glance at the record stops glancing at the record.                    */
+    console.log('\n── Switching journals ────────────────────────────────────────');
+    {
+      const { page } = await openPage(browser, 390, 844, WIDE);
+      await page.locator('.cmm-tab', { hasText: 'Journal' }).click();
+      await page.waitForTimeout(700);
+      /* Whichever element is actually scrolling. `.cmm` is min-height, not
+         height, so on a phone the DOCUMENT scrolls and `.cmm-body` never
+         clips; the app has to work with either, and so does this test. */
+      const scrollTop = () => page.evaluate(() => {
+        const el = document.querySelector('.cmm-body');
+        const s = el && el.scrollHeight > el.clientHeight + 1 ? el
+                : (document.scrollingElement || document.documentElement);
+        return s.scrollTop;
+      });
+      /* Wait for the switch to SETTLE — two consecutive reads that agree —
+         rather than for a fixed delay or for the value being asserted. A fixed
+         delay is how a real assertion becomes a flake under load; waiting for
+         the expected value would make the assertion tautological. */
+      const settle = async () => {
+        let last = null;
+        for (let i = 0; i < 40; i++) {
+          const now = await page.evaluate(() => {
+            const el = document.querySelector('.cmm-body');
+            const s = el && el.scrollHeight > el.clientHeight + 1 ? el
+                    : (document.scrollingElement || document.documentElement);
+            return Math.round(s.scrollTop);
+          });
+          if (last !== null && now === last) return now;
+          last = now;
+          await page.waitForTimeout(60);
+        }
+        return last;
+      };
+      const scrollTo = (y) => page.evaluate((n) => {
+        const el = document.querySelector('.cmm-body');
+        const s = el && el.scrollHeight > el.clientHeight + 1 ? el
+                : (document.scrollingElement || document.documentElement);
+        s.scrollTop = n;
+      }, y);
+      const body = page.locator('.cmm-body');
+
+      await page.locator('.cm-j-seg .cmd-seg-b', { hasText: 'Programme' }).click();
+      await settle();
+      /* Card-shaped, because the handoff asks for skeletons matching the card
+         geometry rather than a spinner or a line of text. */
+      ok('the record loads as cards, not as the word "loading"',
+         !(await body.innerText()).toLowerCase().includes('loading the record'));
+      ok('…and opens at the top, because it has not been read yet',
+         await scrollTop() < 40);
+
+      await scrollTo(500);
+      await page.waitForTimeout(250);
+      const progAt = await scrollTop();
+      ok('the record scrolls (' + Math.round(progAt) + 'px)', progAt > 100);
+      /* And the control is STILL on screen down there. With it scrolled away
+         the only way to switch is to scroll back to the top, which lands the
+         reader at the top of the tab they were leaving — and makes preserving
+         a position a promise about a position nobody can ever be in. */
+      ok('…and the Mine/Programme control is still reachable from down there',
+         await page.evaluate(() => {
+           const seg = document.querySelector('.cm-j-seg');
+           if (!seg) return false;
+           const r = seg.getBoundingClientRect();
+           return r.top >= 0 && r.bottom <= window.innerHeight;
+         }));
+
+      await page.locator('.cm-j-seg .cmd-seg-b', { hasText: 'Mine' }).click();
+      await settle();
+      /* Mine has never been scrolled, so it opens at the top — and, crucially,
+         does NOT inherit the record's position. A shared scroll offset is the
+         bug this preserves-per-tab behaviour exists to prevent. */
+      ok('…and Mine opens at its own top rather than inheriting the record\'s place',
+         await scrollTop() < 40);
+
+      await page.locator('.cm-j-seg .cmd-seg-b', { hasText: 'Programme' }).click();
+      const backToProg = await settle();
+      /* Not to the pixel. The browser's own scroll anchoring adjusts when the
+         taller pane comes back — measured between 68 and 97px here — and
+         fighting it would be fighting the thing that keeps content stable
+         everywhere else. The bound is a third of a screen rather than a round
+         number, because what is being asserted is what a reader would notice:
+         they are back in the same part of the record, not at the top of it. A
+         tolerance pinned just above the drift observed once is a flake. */
+      const near = Math.round(844 / 3);
+      ok('…and coming back to the record lands where it was left ('
+         + Math.round(backToProg) + ' vs ' + Math.round(progAt) + ', within ' + near + ')',
+         Math.abs(backToProg - progAt) < near && backToProg > 150);
+
+      /* A tab that remembered a position longer than its own content would
+         leave the reader at the bottom of nothing. */
+      ok('…and neither tab is ever scrolled past its own content',
+         await page.evaluate(() => {
+           const el = document.querySelector('.cmm-body');
+           const s = el && el.scrollHeight > el.clientHeight + 1 ? el
+                   : (document.scrollingElement || document.documentElement);
+           return s.scrollTop <= s.scrollHeight - s.clientHeight + 1;
+         }));
+      await page.close();
+    }
+
+    /* ── Reduced motion ──
+       Smooth scrolling is animation, and the bundle collapses every duration
+       under prefers-reduced-motion. These are scrollTo/scrollIntoView
+       ARGUMENTS, which no CSS rule can reach — so the check has to be a real
+       call, not a stylesheet assertion. */
+    console.log('\n── Reduced motion ────────────────────────────────────────────');
+    for (const [mode, want] of [['reduce', 'auto'], ['no-preference', 'smooth']]) {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 900 },
+                                           deviceScaleFactor: 1, reducedMotion: mode });
+      await page.addInitScript(() => {
+        window.__beh = [];
+        const grab = (o) => { if (o && o.behavior) window.__beh.push(o.behavior); };
+        const si = Element.prototype.scrollIntoView;
+        Element.prototype.scrollIntoView = function (o) { grab(o); return si.call(this, o); };
+        const st = Element.prototype.scrollTo;
+        Element.prototype.scrollTo = function (o) { grab(o); return st.apply(this, arguments); };
+      });
+      await page.route('**/api/**', async (route) => {
+        const u = new URL(route.request().url());
+        const h = routesFor(WIDE)[u.pathname.replace(/^.*\/api\//, '')];
+        const body = typeof h === 'function' ? h(u) : (h || { ok: true });
+        try {
+          await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+        } catch (_) {}
+      });
+      await page.route('**/community', async (r) => {
+        try {
+          await r.fulfill({ status: 200, contentType: 'text/html',
+            body: fs.readFileSync(path.join(ROOT, 'dist', 'index.html'), 'utf8') });
+        } catch (_) {}
+      });
+      await page.goto(BASE + '/community', { waitUntil: 'load' });   // see openPage
+      await page.waitForSelector('.cmm-msg', { timeout: 10000 });
+      await page.locator('.cmd-row').nth(1).click();
+      await page.waitForTimeout(700);
+      await page.locator('.cmd-digest-go').click();      // "Jump to first unread"
+      await page.waitForTimeout(400);
+      const seen = await page.evaluate(() => window.__beh);
+      ok('prefers-reduced-motion: ' + mode + ' → scrolls with "' + want + '"',
+         seen.length > 0 && seen.every(b => b === want));
+      await page.close();
+    }
+
+    /* A phone keeps every one of the phone behaviours. */
+    console.log('\n── …and the phone is untouched ───────────────────────────────');
+    {
+      const { page } = await openPage(browser, 390, 844, WIDE);
+      ok('no channel-list pane on a phone — it is a tab, as it has always been',
+         await page.evaluate(() => !document.querySelector('.cmm-side')));
+      await page.locator('.cmm-msg-act', { hasText: 'replies' }).first().click();
+      await page.waitForTimeout(500);
+      ok('…and a thread is still the full-screen overlay it has always been',
+         await page.evaluate(() =>
+           !!document.querySelector('.cmm-over') && !document.querySelector('.cmm-thread')));
+      ok('…with the tab bar hidden under it, as the bundle says',
+         await page.evaluate(() => !document.querySelector('.cmm-tabs')));
+      await page.close();
+    }
+
+    /* The badge must tell the truth. It says "tap to see it all", so it may
+       only appear when there IS more to see. */
+    console.log('\n── Does the crop badge tell the truth? ───────────────────────');
+    for (const [label, W, H, media, expect] of [
+      ['a portrait photo on a laptop is cropped', 1280, 900, TALL, true],
+      ['a landscape photo is not', 1280, 900, WIDE, false],
+      ['…nor is one that fits on a phone', 390, 844, WIDE, false],
+    ]) {
+      const { page } = await openPage(browser, W, H, media);
+      const badge = await page.evaluate(() => !!document.querySelector('.cm-msg-media-more'));
+      ok(label + ' — badge ' + (badge ? 'shown' : 'hidden'), badge === expect);
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+    srv.kill();
+  }
+
+  console.log('\n' + (fail === 0 ? '✅ PASS' : '❌ FAIL') + ': ' + pass + ' passed, ' + fail + ' failed (community page)');
+  process.exit(fail === 0 ? 0 : 1);
+})();

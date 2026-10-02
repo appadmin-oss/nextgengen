@@ -143,6 +143,45 @@ php api/tools/create-admin.php "Ada Admin" admin@yourdomain.com   # from the hos
 (No shell? Insert a row into `members` with `role = super_admin` via phpMyAdmin,
 or use the SQLite CLI on `api/storage/ngg.db`.)
 
+### The member dashboard
+
+`/dashboard` is the overview — one scroll of cards. Three self-service sections
+have their own addresses, so a member can be sent straight to one:
+
+| | |
+|---|---|
+| `/dashboard/account` | The statement: every line with a running total, and "I've made a payment" |
+| `/dashboard/records` | Attendance, the rate (withheld if no term calendar is set), certificates |
+| `/dashboard/requests` | Payment claims, appeals, leave, replacement ID — and what the desk replied |
+
+What a member raises lands in **Control Room → People → Member requests**.
+Approving a payment claim posts it through the ordinary ledger path, so money
+still enters an account by exactly one route — a claim is evidence for a
+decision, never an entry in itself. Declining requires a reason, because the
+member reads it.
+
+Members cannot download their ID card. It is shown on the dashboard and issued
+by the desk; the printed run comes out of the Control Room.
+
+### Importing an existing roster
+
+If the members you want are still in the Google Sheet, bring them across before
+anything else — a fresh database with no roster makes every other screen look
+broken.
+
+```bash
+node tools/ngg-import/extract.js ~/NGG_Members.xlsx   # on a laptop: workbook → roster file
+```
+
+Then load it in **Control Room → Members → Import roster** — no shell needed.
+Choose the file, read what it says it would do, then press Import. With a shell
+you can do the same from `php api/tools/seed-members.php` (`--apply` to write).
+
+Nothing is written until you ask for it, re-running is safe, and the roster file
+holds children's personal data — delete your copy afterwards. Full detail,
+including where each column lands and what the importer refuses to guess at, is
+in **[ROSTER-IMPORT.md](ROSTER-IMPORT.md)**.
+
 ### Request body size
 
 One endpoint carries an image inside its JSON: `api/public/selfreg.php`, the
@@ -163,6 +202,44 @@ likelihood:
 Raising a limit is the fallback, not the fix — a 413 here more likely means the
 client-side resampler failed to load, so check that `/vendor/image-tools.js`
 is being served and is not blocked by a CSP or a stale cache.
+
+**A 406 is a different animal.** `406 Not Acceptable` on a POST is not something
+this application ever sends — grep for it. It is mod_security, which is on by
+default on cPanel, refusing the request before PHP is reached; a rejection is
+answered as 406 there. On this host, measured, the trigger is the **number of
+values in a JSON body**, not its size — 322KB in 161 values goes through where
+55KB in 3201 values does not — and **any multipart file part is refused
+outright**. So a bulk write posts its payload as one string value; the roster
+import used to post an array of 136 objects and hit exactly this. See
+[ROSTER-IMPORT.md](ROSTER-IMPORT.md#how-the-file-reaches-the-server--and-the-406)
+for the measurements and how to reproduce them with `curl`.
+
+### An image 404s from photo.php
+
+A `/api/public/photo.php?p=…` that answers **404** means a record points at
+bytes that are no longer on disk. The endpoint answers a bad id and a missing
+file identically on purpose — distinguishing them would make it an oracle for
+which photographs exist — so the count is reported where it can be acted on
+instead: **Control Room → Ops → Photo storage → "Images on record"**, which says
+how many references are broken and which table they are in.
+
+One cause has been fixed rather than documented: the garbage sweep that deletes
+unreferenced originals consulted a hand-written list of six columns, and the
+store had since grown more users than that — the ID designer's uploads
+(`design_assets.url`, and a card template's `schemaJson`), a mission proof
+(`member_progress.proofUrl`), and others. Each was deleted seven days after it
+was stored, from under a record still showing it. The sweep now asks the schema
+for every text column instead, so a column added later is covered on the day it
+is added.
+
+**The bytes cannot be recovered.** Send those members a retake link — Admin →
+Registrations → the child → Photo. Cards and rosters print without a headshot in
+the meantime, and the print preflight counts who is missing one.
+
+The other way to lose them is a deploy: `api/storage/photos` holds the only copy
+of every locally-stored image, and an FTP sync set to mirror-and-delete will
+remove it because it is not in the repository. Exclude `api/storage` from
+deployment, and back it up with the database.
 
 ### Photos without Cloudinary
 
@@ -291,6 +368,26 @@ Add two cron entries (cPanel → Cron Jobs):
 30 * * * *  php /home/USER/public_html/api/tools/export-sheets.php >/dev/null 2>&1
 ```
 
+### An external scheduler (better than web-cron, if you have one)
+
+Web-cron below rides real page traffic, so a quiet weekend does no background
+work until somebody visits. If your host can schedule anything — cPanel Cron
+Jobs, an uptime pinger, a GitHub Action — point it at the endpoint instead and
+the work happens on the clock:
+
+```
+*/15 * * * *  wget -q -O /dev/null "https://YOURDOMAIN/api/public/cron.php?key=THE_KEY"
+```
+
+Set `$CONFIG['cron_key']` to a long random string (`openssl rand -hex 24`) to
+switch it on. Leave it empty and the endpoint answers **404** — off, and telling
+a scanner nothing. Add `&job=accrue|reminders|deliver|maint` to run one job.
+
+Both paths share the same lock and the same idempotent jobs, so you can leave
+web-cron on while you set the schedule up and switch it off afterwards. The key
+travels in a URL and so reaches access logs and the cron listing: rotate it like
+a password. It grants running maintenance that was going to run anyway.
+
 ### No SSH / no cron host
 
 Some shared hosts give you no shell and no scheduler. The app is built to run
@@ -298,12 +395,60 @@ without either:
 
 - **Schema migrations** apply automatically on the first request after a deploy
   (`db_migrate` runs against the target version) — no CLI step.
+
+  One rule on **MySQL**, verified against MariaDB 10.11 in August 2026:
+  `db_apply_mysql_schema()` replays `db/schema-mysql.sql` but executes only
+  `CREATE` / `ALTER` / `INSERT`. A migration that has to touch existing **rows**
+  is read from that file and skipped, while the same migration does run on
+  SQLite through the ladder. Row-touching migrations therefore live in
+  `NGG_MYSQL_ROW_FIXUPS` in `api/_lib/db.php`, which the replay runs once per
+  deploy; each statement is guarded so later runs match nothing, and one that
+  does change rows logs its count. `php api/tests/run.php` fails if a new one is
+  added to the .sql file instead.
+
+  **Seven backfills had been dead that way** and apply on the first deploy after
+  this: the `summer_students` `firstName` / `lastName` split, its `sex = gender`
+  copy, `qr_codes.expiresAt`, `notifiedAt` on `community_posts` and
+  `community_comments`, and `members.level`. Six were merely skipped; the
+  `qr_codes` one was also **wrong** — it passed an ISO-8601 string
+  (`2026-08-27T08:56:44Z`) straight to `DATE_ADD`, which MySQL cannot parse and,
+  under `STRICT_ALL_TABLES`, raises error 1292. It would have thrown on its
+  first row had it ever run. It now takes the date part first and skips a
+  timestamp it cannot read.
+
+  One of them changes behaviour rather than filling a blank. `qr_codes.expiresAt`
+  gives every assigned card an expiry 90 days after it was issued, so a card
+  issued more than 90 days ago becomes **expired**, and `summer_scan_checkin()`
+  refuses it with `id_expired`. That is migration 62 doing what it always said,
+  but on a host where it never ran it lands as a change. Count the blast radius
+  before deploying:
+
+  ```sql
+  SELECT COUNT(*) FROM qr_codes
+   WHERE expiresAt = '' AND status = 'assigned'
+     AND DATE_ADD(SUBSTR(COALESCE(NULLIF(assignedAt,''), createdAt), 1, 10), INTERVAL 90 DAY) < CURDATE();
+  ```
+
+  The 90 days is hard-coded, matching the SQLite ladder — a backfill has to
+  land both engines in the same state, so it does not read the configurable
+  `idcard.validityDays` (that governs newly *issued* cards and would not change
+  what this writes). If the count is uncomfortable, give those rows a date
+  before you deploy: the fixup only fills a **blank** `expiresAt`, so anything
+  already dated is left alone.
+
+  ```sql
+  UPDATE qr_codes SET expiresAt = '2027-06-30'
+   WHERE expiresAt = '' AND status = 'assigned';
+  ```
+
 - **The first admin sign-in** self-provisions the super-admin, so you never need
   a shell to bootstrap access.
 - **All transactional email is synchronous** — registration confirmations,
   volunteer IDs, milestone certificates, and the **check-in state emails**
   (a nudge, or an award-focused note when the person is doing well) are sent
   in-request at the moment they're triggered. Nothing here waits on `run-jobs`.
+- **Fee accrual** rides web-cron too (daily), so charges keep up without a
+  shell. It is a no-op while dues are switched off.
 - **Built-in web-cron** — a normal request, at most once per interval, drains
   the integration bus (Google Chat / webhooks / Sheets rows and the wellbeing
   escalation), sends the parent-verification re-nudge + stalled-registration

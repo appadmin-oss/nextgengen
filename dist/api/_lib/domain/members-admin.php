@@ -96,110 +96,6 @@ function admin_members_segments(array $p): array {
     return ['ok' => true, 'segments' => $out, 'scoped' => $scope !== null];
 }
 
-/* ── Bulk ─────────────────────────────────────────────────────────────────
- *
- * Fixing 214 records one at a time is not member management, it is data
- * entry. But a bulk action is also the easiest way to damage a membership
- * database, so three rules:
- *
- * AN EXPLICIT LIST, NEVER A FILTER. The caller sends memberIds. The server
- * never re-runs a filter and acts on whatever it returns now — the roster
- * the person reviewed and the rows the server would select are two
- * different things the moment anybody else saves a record.
- *
- * EVERY MEMBER IS SCOPE-CHECKED INDIVIDUALLY. A bulk action is not a way
- * around the boundary that guards single ones.
- *
- * PARTIAL SUCCESS IS REPORTED, NOT HIDDEN. Each id gets an outcome. A
- * "423 updated" that silently skipped 12 is how people stop trusting the
- * button.
- */
-const MEMBER_BULK_MAX = 500;
-
-function admin_members_bulk(array $p): array {
-    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
-
-    $ids = is_array($p['memberIds'] ?? null) ? array_values(array_unique(array_filter(array_map('strval', $p['memberIds'])))) : [];
-    $action = (string)($p['action'] ?? '');
-    $value = $p['value'] ?? null;
-
-    if (!$ids) return ['ok' => false, 'error' => 'no_members', 'detail' => 'Select the members first.'];
-    if (count($ids) > MEMBER_BULK_MAX) {
-        return ['ok' => false, 'error' => 'too_many',
-                'detail' => 'A single action covers at most ' . MEMBER_BULK_MAX . ' members. '
-                    . 'Beyond that nobody has reviewed the list they are changing.'];
-    }
-
-    $allowed = ['setStatus', 'setCentre', 'setTrack', 'setCohort', 'setType'];
-    if (!in_array($action, $allowed, true)) {
-        return ['ok' => false, 'error' => 'unknown_action',
-                'detail' => 'Bulk actions are limited to: ' . implode(', ', $allowed) . '. '
-                    . 'Roles, consent and deletion are deliberately one at a time.'];
-    }
-
-    $field = ['setStatus' => 'status', 'setCentre' => 'centre', 'setTrack' => 'track',
-              'setCohort' => 'cohort', 'setType' => 'type'][$action];
-    $value = is_string($value) ? trim($value) : $value;
-
-    if ($field === 'status' && !in_array((string)$value, MEMBER_STATUSES, true)) {
-        return ['ok' => false, 'error' => 'status_invalid',
-                'detail' => 'Status must be one of: ' . implode(', ', MEMBER_STATUSES) . '.'];
-    }
-    if ($field === 'type' && !in_array((string)$value, MEMBER_TYPES, true)) {
-        return ['ok' => false, 'error' => 'type_invalid'];
-    }
-    if ($field === 'centre') {
-        if ((string)$value === '') return ['ok' => false, 'error' => 'centre_required'];
-        if (!admin_centre_write_allowed($g['requester'], (string)$value)) {
-            return ['ok' => false, 'error' => 'centre_out_of_scope',
-                    'detail' => 'You can only move members into centres you administer.'];
-        }
-        if (!db_row('SELECT centreId FROM centres WHERE name = ? LIMIT 1', [(string)$value])) {
-            /* Unlike a single edit, which tolerates a legacy centre name on
-               a record it is not touching, a bulk MOVE is choosing the
-               destination now. Choosing one that does not exist files
-               everybody somewhere nobody can see them. */
-            return ['ok' => false, 'error' => 'centre_unknown',
-                    'detail' => 'There is no centre called "' . $value . '".'];
-        }
-    }
-
-    $me = (string)$g['requester']['memberId'];
-    $changed = []; $skipped = [];
-
-    foreach ($ids as $mid) {
-        $sg = admin_member_scope_gate($g['requester'], $mid);
-        if (!$sg['ok']) { $skipped[$mid] = $sg['error']; continue; }
-        $m = $sg['member'];
-
-        /* The same lock-out guards a single edit applies. A bulk suspend
-           that happens to include yourself, or the last super admin, is
-           still a lock-out. */
-        if ($field === 'status' && (string)$value !== 'active') {
-            if (strtolower($mid) === strtolower($me)) { $skipped[$mid] = 'cannot_suspend_self'; continue; }
-            if (strtolower((string)$m['role']) === 'super_admin') {
-                $supers = (int) db_row("SELECT COUNT(*) c FROM members WHERE lower(role) = 'super_admin' AND status = 'active'")['c'];
-                if ($supers <= 1) { $skipped[$mid] = 'last_super_admin'; continue; }
-            }
-        }
-
-        if ((string)($m[$field] ?? '') === (string)$value) { $skipped[$mid] = 'already_set'; continue; }
-
-        db_update('members', [$field => $value, 'updatedAt' => now_iso()], ['id' => (int)$m['id']]);
-        $changed[] = $mid;
-        member_lifecycle_note($mid, $field, (string)($m[$field] ?? ''), (string)$value, $me);
-    }
-
-    audit('admin.members.bulk', $me, '', [
-        'action' => $action, 'value' => (string)$value,
-        'requested' => count($ids), 'changed' => count($changed), 'skipped' => count($skipped),
-        'skippedWhy' => array_count_values($skipped),
-    ], (string)($p['ip'] ?? ''));
-
-    return ['ok' => true, 'action' => $action, 'value' => $value,
-            'changed' => count($changed), 'changedIds' => $changed,
-            'skipped' => $skipped];
-}
 
 /**
  * One line of a member's history.
@@ -276,6 +172,13 @@ function member_event_sentence(string $event, array $meta): string {
         case 'member.centre.changed': return $move('centre');
         case 'member.type.changed':   return $move('type');
         case 'member.role.changed':   return $move('role');
+        /* The rest of what a bulk run can change. Without these the line is
+           still there, but reads as a slug rather than a sentence. */
+        case 'member.level.changed':  return $move('level');
+        case 'member.track.changed':  return $move('track');
+        case 'member.duesRemindOff.changed':
+            return ((string)($meta['to'] ?? '') === '1' || ($meta['to'] ?? null) === true)
+                ? 'Fee reminders switched off' : 'Fee reminders switched back on';
         case 'admin.member.create':   return 'Record created';
         case 'admin.member.update':
             $keys = array_values(array_filter((array)($meta['keys'] ?? []), fn($k) => $k !== 'updatedAt'));

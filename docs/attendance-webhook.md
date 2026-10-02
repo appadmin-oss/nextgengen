@@ -38,6 +38,11 @@ over the exact raw body bytes, constant-time compare. 401 on any mismatch.
 - `ref` — a summer student ID (`SUM-…`), an NGG member ID (`NGG-…`), or a
   student handle. OR `token` — the QR token from an ID card.
 - `date` — optional `YYYY-MM-DD` (UTC); defaults to today.
+- `scannedAt` — optional ISO time of the scan; lateness is judged at it.
+- `action` — optional, `"out"` for a departure. It stamps `checkOutAt` on the
+  day's row and never creates one; without an arrival it answers
+  `not_checked_in`, which a sender should retry (the arrival may still be on
+  its way). A sender that predates this field only ever sends arrivals.
 - Max 200 events per request; send multiple requests for more.
 
 ## Response
@@ -54,7 +59,8 @@ over the exact raw body bytes, constant-time compare. 401 on any mismatch.
 
 Statuses per item: `marked` · `already` (idempotent duplicate — success,
 not an error) · `unknown` (we don't recognise the ref — fix your mapping)
-· `bad_date` / `bad_event`.
+· `bad_date` / `bad_event` · `not_checked_in` (a departure with no arrival
+yet — retry).
 
 ## Retry policy (yours)
 

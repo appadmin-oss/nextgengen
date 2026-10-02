@@ -172,10 +172,34 @@ function CommandHint() {
   );
 }
 
+/* Open the Control Room at a named section.
+ *
+ * The console publishes `window.__adminSection` from an effect, so it does not
+ * exist until AdminPage has mounted. Every call site used to guess at that with
+ * a 60ms setTimeout, which is a race that mostly wins — and when it loses, the
+ * palette navigates to the Overview and the section the operator asked for is
+ * silently dropped. This polls briefly instead, and gives up rather than
+ * hanging, so the failure is "you are on the Overview" and not a wedged tab.
+ *
+ * Section ids are resolved through ADMIN_SECTION_ALIASES by the console itself,
+ * so a retired id still lands where the work moved.
+ */
+function adminGo(sectionId) {
+  if (window.__navigate) window.__navigate("admin");
+  let tries = 0;
+  const go = () => {
+    if (window.__adminSection) { window.__adminSection(sectionId); return; }
+    if (++tries > 40) return;      // ~2s, then leave them on the Overview
+    setTimeout(go, 50);
+  };
+  go();
+}
+
 function buildItems(auth) {
   const nav = (id) => () => window.__navigate && window.__navigate(id);
   const list = [
     { id: "nav.home",       section: "Pages", icon: "◉", label: "Home",          hint: "Hero, programs, the room", run: nav("home"),    keywords: ["start","intro"] },
+    { id: "nav.about",      section: "Pages", icon: "◆", label: "About NGGC",      hint: "The 2040 formation brief", run: nav("about"),   keywords: ["about","2040","divisions","courage","formation","brief","vision"] },
     { id: "nav.summer",     section: "Pages", icon: "☀", label: "Summer Students",hint: "The on-ramp",              run: nav("summer") },
     { id: "nav.club",       section: "Pages", icon: "◐", label: "NGGC",            hint: "The identity society",     run: nav("club"),    keywords: ["club","identity"] },
     { id: "nav.anchor",     section: "Pages", icon: "✦", label: "Anchor 12",       hint: "The 12-week flagship",     run: nav("anchor") },
@@ -184,7 +208,13 @@ function buildItems(auth) {
     { id: "nav.media",      section: "Pages", icon: "▶", label: "Media room",      hint: "Films · podcast · reels",  run: nav("media") },
     { id: "nav.parents",    section: "Pages", icon: "♡", label: "For parents",     hint: "Safeguarding · FAQ",       run: nav("parents") },
     { id: "nav.volunteers", section: "Pages", icon: "✚", label: "Become a mentor", hint: "Volunteer with NGG",       run: nav("volunteers") },
-    { id: "nav.join",       section: "Pages", icon: "→", label: "Apply for a session", hint: "Open applications",    run: nav("join"),    keywords: ["apply","join"] },
+    /* Two distinct programmes, two entries. One "Apply" that opened whichever
+       programme a stale global happened to be holding is how somebody applies
+       to Anchor 12 believing they applied to Summer School. */
+    { id: "nav.join.summer", section: "Pages", icon: "→", label: "Apply · Summer School", hint: "The six-week on-ramp",
+      run: () => goApply(window.__navigate, "summer"), keywords: ["apply", "join", "summer", "school"] },
+    { id: "nav.join.anchor", section: "Pages", icon: "⚓", label: "Apply · Anchor 12", hint: "The twelve-week flagship",
+      run: () => goApply(window.__navigate, "anchor"), keywords: ["apply", "join", "anchor"] },
   ];
 
   if (auth.isSignedIn) {
@@ -200,12 +230,35 @@ function buildItems(auth) {
   }
 
   if (auth.isAdmin) {
+    /* EVERY admin section, generated from ADMIN_SECTIONS.
+     *
+     * There used to be five hand-written entries — members, posts, events,
+     * broadcast and "the console" — out of some forty sections, each repeating
+     * the same navigate-then-setSection dance with a magic 60ms timeout. So
+     * ⌘K, the fastest way to reach anything in the product, could not reach
+     * thirty-five of the places an administrator works, and the console's
+     * sidebar was the only route to them.
+     *
+     * Generated from the section table means it cannot go stale: a section
+     * added there is searchable here, gated by the same capability, with the
+     * same label. */
+    list.push({ id: "adm.console", section: "Admin", icon: "⚙", label: "Control Room",
+      hint: "The staff console", run: nav("admin") });
+    (typeof ADMIN_SECTIONS !== "undefined" ? ADMIN_SECTIONS : [])
+      .filter(sec => sec.id !== "home")
+      .filter(sec => !sec.cap || (auth.hasCap && auth.hasCap(sec.cap)))
+      .forEach(sec => list.push({
+        id: "adm." + sec.id, section: "Admin", icon: sec.icon || "›",
+        label: sec.label,
+        hint: (sec.group ? sec.group + " · " : "") + (sec.title || sec.label),
+        keywords: [sec.id, sec.group || ""].filter(Boolean),
+        run: () => adminGo(sec.id),
+      }));
+    // Two shortcuts that are an ACTION rather than a place, so they read as
+    // verbs beside the sections.
     list.push(
-      { id: "adm.console",  section: "Admin", icon: "⚙", label: "Admin console",  hint: "All admin sections",      run: nav("admin") },
-      { id: "adm.members",  section: "Admin", icon: "◯", label: "Members",         hint: "Browse + edit",            run: () => { window.__navigate && window.__navigate("admin"); setTimeout(() => window.__adminSection && window.__adminSection("members"), 60); } },
-      { id: "adm.posts",    section: "Admin", icon: "✎", label: "New post",        hint: "Blog · news · update",     run: () => { window.__navigate && window.__navigate("admin"); setTimeout(() => window.__adminSection && window.__adminSection("posts"), 60); } },
-      { id: "adm.events",   section: "Admin", icon: "▶", label: "New event",       hint: "Showcase · parent meet",   run: () => { window.__navigate && window.__navigate("admin"); setTimeout(() => window.__adminSection && window.__adminSection("events"), 60); } },
-      { id: "adm.broadcast",section: "Admin", icon: "✉", label: "Broadcast",       hint: "Notify every member",      run: () => { window.__navigate && window.__navigate("admin"); setTimeout(() => window.__adminSection && window.__adminSection("broadcast"), 60); } },
+      { id: "adm.new.post",  section: "Admin", icon: "✎", label: "New post", hint: "Blog · news · update", keywords: ["write", "publish"], run: () => adminGo("posts") },
+      { id: "adm.new.event", section: "Admin", icon: "▶", label: "New event", hint: "Showcase · parent meet", keywords: ["schedule"], run: () => adminGo("events") },
     );
   }
 

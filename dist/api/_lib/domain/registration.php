@@ -1110,11 +1110,25 @@ function gate_unlock(array $p): array {
         audit('gate.unlock_expired', 'kiosk', (string)$gate['gateId'], [], (string)($p['ip'] ?? ''));
         return ['ok' => false, 'error' => 'password_expired'];
     }
+    /* A ceiling counted against THIS GATE, not against whoever is knocking.
+     * The IP bucket in front of this endpoint (gate.unlock, 8 per 5 minutes) is
+     * the only thing that used to stand between a kiosk password and a script,
+     * and an IP bucket can be shed by rotating a forwarded header. A centre's
+     * check-in desk is worth more than that. */
+    $gid = (string)$gate['gateId'];
+    if (attempt_locked('gate.unlock', $gid)) {
+        audit('gate.unlock_locked', 'kiosk', $gid, [], (string)($p['ip'] ?? ''));
+        return ['ok' => false, 'error' => 'too_many_attempts'];
+    }
     $pw = (string)($p['password'] ?? '');
     if ($pw === '' || !password_verify($pw, (string)$gate['passHash'])) {
-        audit('gate.unlock_fail', 'kiosk', (string)$gate['gateId'], [], (string)($p['ip'] ?? ''));
-        return ['ok' => false, 'error' => 'bad_password'];
+        // Ten, not eight: a busy desk mistypes, and locking a centre out of
+        // its own check-in is itself a harm. Fifteen minutes either way.
+        $locked = attempt_fail('gate.unlock', $gid, 10, 900);
+        audit($locked ? 'gate.unlock_lockout' : 'gate.unlock_fail', 'kiosk', $gid, [], (string)($p['ip'] ?? ''));
+        return ['ok' => false, 'error' => $locked ? 'too_many_attempts' : 'bad_password'];
     }
+    attempt_reset('gate.unlock', $gid);
     audit('gate.unlock', 'kiosk:' . $gate['gateId'], (string)$gate['gateId'], [], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'gate' => [
         'gateId' => (string)$gate['gateId'], 'name' => (string)$gate['name'],
@@ -2628,8 +2642,29 @@ function geo_match_centre(float $lat, float $lng): ?array {
     return $best;
 }
 
+/**
+ * The NGG CENTRE DIRECTORY.
+ *
+ * A centre is a PLACE, and it belongs to NGG the organisation — not to Summer
+ * School. An NGG member is posted to one all year round, `members.centre`
+ * points at its name, and `centres.code` is the printed ID prefix and the band
+ * colour on that member's card. Summer School RUNS AT centres, and so do
+ * volunteers, attendance, the public centre pages and the status boards.
+ *
+ * That is why READING is open to the member desk and the Summer School desk
+ * alike (both need the list to do their jobs) while WRITING is `people` only:
+ * this whole file used to gate the directory on `summer`, so a Summer School
+ * coordinator could rename or delete the centre every NGG member's record and
+ * ID card depended on, and a year-round member administrator could not add
+ * one at all. See admin_centres_upsert / admin_centres_delete.
+ *
+ * The counts are reported per programme rather than as one number: "enrolled"
+ * on a centre row used to mean Summer School participants in the active
+ * edition, which is not what a member administrator reads it as.
+ */
 function admin_centres_list(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
+    $canWrite = in_array('people', member_effective_caps($g['requester']), true);
     $c = summer_ensure_cohort();
     $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt FROM centres ORDER BY name");
     // Volunteers available to lead a centre — active only, labelled for the picker.
@@ -2643,9 +2678,18 @@ function admin_centres_list(array $p): array {
         $leadOptions[] = ['volunteerId' => $vid, 'name' => $nm, 'role' => (string)$v['role'], 'centre' => (string)$v['centre']];
     }
     foreach ($rows as &$r) {
-        $r['enrolled'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
-        $r['waitlisted'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'waitlisted'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
-        $r['full'] = ((int)$r['capacity'] > 0 && $r['enrolled'] >= (int)$r['capacity']);
+        /* Two programmes, two numbers. `enrolled`/`waitlisted` keep their
+           meaning — Summer School participants in the ACTIVE edition — and are
+           aliased under summer* names so a reader cannot mistake them for the
+           year-round membership. `members` is the NGG side: who is posted here
+           all year, which is what capacity on an NGG centre is about. */
+        $r['summerEnrolled'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
+        $r['summerWaitlisted'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'waitlisted'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
+        $r['enrolled'] = $r['summerEnrolled'];
+        $r['waitlisted'] = $r['summerWaitlisted'];
+        $r['members'] = (int)(db_row("SELECT COUNT(*) c FROM members WHERE centre = ? AND status = 'active'", [(string)$r['name']])['c'] ?? 0);
+        $r['groups'] = (int)(db_row("SELECT COUNT(*) c FROM summer_groups WHERE centreId = ? AND cohortId = ?", [(string)$r['centreId'], $c['cohortId']])['c'] ?? 0);
+        $r['full'] = ((int)$r['capacity'] > 0 && $r['summerEnrolled'] >= (int)$r['capacity']);
         $lid = (string)($r['leadVolunteerId'] ?? '');
         $r['leadName'] = $lid !== '' ? ($volById[$lid] ?? db_row('SELECT fullName FROM volunteers WHERE volunteerId = ?', [$lid])['fullName'] ?? '') : '';
         // gallery is stored as a JSON array of image URLs — hand the editor an array.
@@ -2654,7 +2698,12 @@ function admin_centres_list(array $p): array {
         if (($r['slug'] ?? '') === '') $r['slug'] = centre_slugify((string)$r['name']);
     }
     unset($r);
-    return ['ok' => true, 'centres' => $rows, 'leadOptions' => $leadOptions, 'geofenceEnabled' => geofence_enabled()];
+    return ['ok' => true, 'centres' => $rows, 'leadOptions' => $leadOptions,
+            'geofenceEnabled' => geofence_enabled(),
+            // So the screen can show a read-only directory rather than buttons
+            // that 403. The server still refuses either way.
+            'canWrite' => $canWrite,
+            'summerEditionId' => (string)$c['cohortId']];
 }
 
 /**
@@ -2701,8 +2750,12 @@ function centre_is_full(string $centreName, string $cohortId): bool {
     return $active >= $cap;
 }
 
+/* Writing the directory is `people`, not `summer` — see admin_centres_list for
+   why. A Summer School coordinator who needs a new centre asks the member desk;
+   what a coordinator owns is the EDITION and its GROUPS
+   (_lib/domain/summer-editions.php), which is their structure, not NGG's. */
 function admin_centres_upsert(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $d = is_array($p['data'] ?? null) ? $p['data'] : [];
     $name = substr(trim((string)($d['name'] ?? '')), 0, 80);
     $code = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($d['code'] ?? '')));
@@ -2833,12 +2886,45 @@ function admin_centres_upsert(array $p): array {
     return ['ok' => true, 'centreId' => $id];
 }
 
+/**
+ * Remove a centre from the directory.
+ *
+ * Refused while anything still points at it, unless the caller says so
+ * explicitly. Deleting a centre used to be an unconditional DELETE on a row
+ * that NGG member records reference by NAME, that summer participants
+ * reference by name, that summer GROUPS reference by id, and whose code is the
+ * prefix already printed on physical cards. Nothing broke loudly; the records
+ * simply started pointing at a centre that no longer existed, and the pickers
+ * that offer centres stopped offering theirs.
+ */
 function admin_centres_delete(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
-    $n = db_exec('DELETE FROM centres WHERE centreId = ?', [(string)($p['centreId'] ?? '')]);
-    if (!$n) return ['ok' => false, 'error' => 'not_found'];
-    audit('centre.delete', $g['requester']['memberId'], (string)$p['centreId'], [], (string)($p['ip'] ?? ''));
-    return ['ok' => true];
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $id = (string)($p['centreId'] ?? '');
+    $c = $id !== '' ? db_row('SELECT * FROM centres WHERE centreId = ?', [$id]) : null;
+    if (!$c) return ['ok' => false, 'error' => 'not_found'];
+    $name = (string)$c['name'];
+    $uses = [
+        'members'       => (int)(db_row("SELECT COUNT(*) c FROM members WHERE centre = ?", [$name])['c'] ?? 0),
+        'participants'  => (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE centre = ?", [$name])['c'] ?? 0),
+        'summerGroups'  => (int)(db_row("SELECT COUNT(*) c FROM summer_groups WHERE centreId = ?", [$id])['c'] ?? 0),
+        'volunteers'    => (int)(db_row("SELECT COUNT(*) c FROM volunteers WHERE centre = ?", [$name])['c'] ?? 0),
+    ];
+    /* Retiring, not deleting, is almost always what is meant, and it is the
+       ANSWER to the refusal below rather than something it should block: the
+       records keep a name that still resolves and the centre stops being
+       offered anywhere. So it is checked first. */
+    if (!empty($p['retire'])) {
+        db_update('centres', ['status' => 'retired', 'updatedAt' => now_iso()], ['centreId' => $id]);
+        audit('centre.retire', $g['requester']['memberId'], $id, ['name' => $name, 'uses' => $uses], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'retired' => true, 'uses' => $uses];
+    }
+    $total = array_sum($uses);
+    if ($total > 0 && empty($p['force'])) {
+        return ['ok' => false, 'error' => 'centre_in_use', 'uses' => $uses, 'name' => $name];
+    }
+    db_exec('DELETE FROM centres WHERE centreId = ?', [$id]);
+    audit('centre.delete', $g['requester']['memberId'], $id, ['name' => $name, 'uses' => $uses, 'forced' => !empty($p['force'])], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'uses' => $uses];
 }
 
 /** URL-safe slug from a centre name: lowercase, accents stripped, spaces → "-". */
@@ -3144,6 +3230,117 @@ function card_row_student(array $s, ?array $ctr, string $expiry): array {
 }
 
 /**
+ * One NGG MEMBER, in the shape every card renderer reads.
+ *
+ * The counterpart of card_row_student() / card_row_volunteer(), and it did not
+ * exist — which is why the member card could not be driven by a design. The
+ * member card was hand-coded JSX reading the raw member row directly, so the
+ * design system had no member-shaped row to bind to and the batch could not be
+ * cut by a filter the way the summer runs are.
+ *
+ * `centre` resolves through centre_index() so the card's accent band and its
+ * printed prefix come from the CENTRE DIRECTORY rather than from the free-text
+ * name on the member's row — which is the only way a colour change at a centre
+ * reaches the next card printed there.
+ *
+ * The name is NOT split here. The member roster holds a single `fullName`
+ * (unlike the summer intake, which asks for the parts separately), and any
+ * split is a guess about surname order; the template's `member.given` /
+ * `member.family` bindings make that guess where it is visible and
+ * overridable, not silently in the data layer.
+ */
+/**
+ * NGG MEMBER card rows — the third subject, and the one with no studio.
+ *
+ * The Card Studio printed Summer School participants and volunteers; members
+ * were printed from a drawer inside the member roster instead — the same job,
+ * in a different place, through different code. Three subjects, three
+ * production paths, two of them in one studio and the third somewhere else.
+ *
+ * The payload is deliberately IDENTICAL to admin_cards_data and
+ * admin_volunteer_cards_data: { ok, cards[], program }. That is what lets the
+ * studio gain a third MODE rather than a third implementation.
+ *
+ * Gated on `people`, not `summer`: a member belongs to the member desk, and a
+ * Summer School coordinator has no business printing member credentials.
+ * Centre scope is applied to the QUERY, so a scoped admin's run cannot reach
+ * past their centres however the studio asks.
+ */
+function admin_mcards_data(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $where = ["COALESCE(status,'') <> 'inactive'"];
+    $params = [];
+    if (!empty($p['memberId'])) { $where[] = 'memberId = ?'; $params[] = (string)$p['memberId']; }
+    $scopeNames = admin_centre_names_in_scope($g['requester']);
+    if ($scopeNames !== null) {
+        if (!$scopeNames) return ['ok' => true, 'cards' => [], 'program' => idcard_program('member')];
+        $where[] = 'centre IN (' . implode(',', array_fill(0, count($scopeNames), '?')) . ')';
+        foreach ($scopeNames as $nm) $params[] = $nm;
+    }
+    /* Members with no printed ID are INCLUDED, not filtered out. The studio's
+       value at this step is showing what will come off the printer wrong
+       before it does; a run that silently omits the incomplete records is how
+       they stay incomplete. The row carries the blank and the studio flags it. */
+    $rows = db_all('SELECT * FROM members WHERE ' . implode(' AND ', $where)
+        . ' ORDER BY centre ASC, fullName ASC LIMIT 500', $params);
+    $centres = centre_index();
+    $cards = [];
+    foreach ($rows as $m) $cards[] = card_row_member($m, $centres);
+    return ['ok' => true, 'cards' => $cards, 'program' => idcard_program('member')];
+}
+
+function card_row_member(array $m, array $centres): array {
+    $name = trim((string)($m['fullName'] ?? ''));
+    $centreName = trim((string)($m['centre'] ?? ''));
+    $ctr = $centres[strtolower($centreName)] ?? null;
+    /* Disciplines: the card shows up to two, and falls back to the single
+       `track` — the same rule the hand-coded renderer uses, kept here so the
+       two cannot disagree. */
+    $raw = trim((string)($m['disciplines'] ?? ''));
+    $list = $raw !== '' ? preg_split('/[,\/|]+/', $raw) : [];
+    $list = array_values(array_filter(array_map('trim', $list ?: [])));
+    if (!$list && trim((string)($m['track'] ?? '')) !== '') $list = [trim((string)$m['track'])];
+    return [
+        'memberId'  => (string)($m['memberId'] ?? ''),
+        'fullName'  => $name,
+        'firstName' => '', 'surname' => '',
+        /* The PRINTED id, falling back to the internal one — a card must not
+           print a blank where its identifier goes. But the fallback also HID
+           the problem: the member roster treats a blank displayId as a
+           missing printed ID, filters for it and counts it in the print
+           preflight, while the card row silently substituted the internal id
+           so nothing downstream could tell the two apart. The card renders
+           something valid AND says which it is. */
+        'displayId' => (string)($m['displayId'] ?? '') !== '' ? (string)$m['displayId'] : (string)($m['memberId'] ?? ''),
+        'displayIdMissing' => (string)($m['displayId'] ?? '') === '',
+        'level'     => (string)($m['level'] ?? ''),
+        'type'      => (string)($m['type'] ?? ''),
+        'status'    => (string)($m['status'] ?? ''),
+        'track'     => (string)($m['track'] ?? ''),
+        'disciplines' => array_slice($list, 0, 2),
+        'centre'    => [
+            'name'  => $ctr['name'] ?? $centreName,
+            'code'  => $ctr['code'] ?? 'NG',
+            'color' => $ctr['color'] ?? '#1B2B6B',
+        ],
+        /* The member's SECURE card (MEMQR-…, domain/member-cards.php): what the
+           CACENTRE gate reads and what /q/ opens. A member with none yet falls
+           back to the member id, which the gate still reads by NGG's
+           "app-card" format — the shape every card printed before this has. */
+        'token'     => (function_exists('member_card_secure') ? member_card_secure((string)($m['memberId'] ?? '')) : null) ?? (string)($m['memberId'] ?? ''),
+        'cardSecure' => function_exists('member_card_secure') && member_card_secure((string)($m['memberId'] ?? '')) !== null,
+        'photoUrl'  => normalize_image_url((string)($m['photoUrl'] ?? '')),
+        'joinDate'  => (string)($m['joinDate'] ?? ''),
+        'createdAt' => (string)($m['createdAt'] ?? ''),
+        /* A member card is not a season pass, so it carries no hard expiry by
+           default. A design that prints "VALID TO" gets a blank rather than a
+           date the programme never set — which is honest, and visible in the
+           proof before three hundred are cut. */
+        'expiresAt' => '',
+    ];
+}
+
+/**
  * Every centre, indexed by lower-cased name AND code, for the callers that have
  * to resolve a free-text centre against the table once per person. One read
  * instead of one query per row: the volunteer card payload used to do the
@@ -3412,9 +3609,47 @@ function idcard_expired(?string $expiresAt, ?string $on = null): bool {
     return substr($e, 0, 10) < ($on ?? gmdate('Y-m-d'));
 }
 
-function idcard_program(): array {
+/**
+ * The ID-card configuration for ONE subject.
+ *
+ * This was a single blob serving both programmes, so an NGG member's card and
+ * a Summer School participant's card were issued under the same programme
+ * name, the same motto, the same validity clock and the same trim. They are
+ * not the same thing: Summer School is a PHASE — one season, a card that
+ * expires with it, a lanyard — and NGG is the programme somebody belongs to
+ * for years, on an ID-1 card that lives in a wallet and does not expire on a
+ * ninety-day timer.
+ *
+ * What is genuinely SHARED stays shared: the organisation's website, phone
+ * and logos are the same organisation whichever card is printed, and keeping
+ * them in one place is why a phone-number change does not have to be made
+ * twice. What is per-programme is per-programme.
+ *
+ * Backwards compatible on purpose: the stored blob IS the Summer School
+ * config, unchanged and still edited by the same screens, so no deployment
+ * needs a migration or a re-save. NGG's overrides live under `ngg` beside it.
+ */
+function idcard_program(string $subject = 'student'): array {
     $cfg = setting_get('idcard');
     $p = is_array($cfg) ? $cfg : [];
+    $isMember = ($subject === 'member');
+    /* NGG's own block, layered over the shared organisation fields. Absent on
+       an existing deployment, which is why every key below has a default. */
+    if ($isMember) {
+        $ngg = is_array($p['ngg'] ?? null) ? $p['ngg'] : [];
+        // Only the SHARED organisation identity carries over; everything that
+        // describes the programme or the card is NGG's own.
+        $shared = array_intersect_key($p, array_flip(['website', 'phone', 'logoLockup', 'logoOkun']));
+        $p = $ngg + $shared + [
+            'program'      => 'NGG',
+            'motto'        => 'EMPOWERED 360°',
+            // ID-1, the size of a wallet slot. See docs/PRINT-SPEC.md.
+            'widthMm'      => 54, 'heightMm' => 85,
+            // A membership is not a season. 0 = does not expire, which is a
+            // stated choice rather than an empty box meaning it by accident.
+            'validityDays' => 0,
+        ];
+    }
     // Default the printed website to NGG (the main site, where every /q/<token>
     // profile resolves) — not the not-yet-live STS domain. Admin-overridable.
     $siteHost = preg_replace('#^https?://#', '', rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? 'next.afrovanguard.org.ng'), '/')) ?: 'next.afrovanguard.org.ng';
@@ -3429,7 +3664,8 @@ function idcard_program(): array {
     // Physical print size (mm). The card artwork reflows to any proportion in
     // this range without distortion; the bounds just keep it legible.
     $p['widthMm']  = idcard_clamp_mm($p['widthMm'], 50, 60, 54);
-    $p['heightMm'] = idcard_clamp_mm($p['heightMm'], 64, 100, 75);
+    $p['heightMm'] = idcard_clamp_mm($p['heightMm'], 64, 100, $isMember ? 85 : 75);
+    $p['subject']  = $isMember ? 'member' : 'student';
     return $p;
 }
 
@@ -3440,11 +3676,17 @@ function idcard_clamp_mm($v, float $min, float $max, float $def): float {
 }
 
 // Validate + persist the ID-card branding block (called from admin.settings.set).
-function idcard_program_save(array $in, string $by): void {
+function idcard_program_save(array $in, string $by, string $subject = 'student'): void {
     // Merge onto the stored blob so a partial update (e.g. just the card size
     // from the ID studio) never wipes the branding fields, and vice-versa.
     $cur = setting_get('idcard');
-    $clean = is_array($cur) ? $cur : [];
+    $root = is_array($cur) ? $cur : [];
+    $isMember = ($subject === 'member');
+    /* A member's settings are written into their own block, so saving one
+       programme's card can never move the other's. The organisation fields
+       are the exception and stay at the root, because they describe the
+       organisation rather than either programme. */
+    $clean = $isMember ? (is_array($root['ngg'] ?? null) ? $root['ngg'] : []) : $root;
     foreach (['program', 'year', 'motto', 'website', 'phone', 'logoLockup', 'logoOkun'] as $k) {
         if (array_key_exists($k, $in)) $clean[$k] = substr(trim((string)$in[$k]), 0, 512);
     }
@@ -3459,6 +3701,14 @@ function idcard_program_save(array $in, string $by): void {
     if (array_key_exists('validityDays', $in)) {
         $d = (int)$in['validityDays'];
         $clean['validityDays'] = $d <= 0 ? 0 : max(1, min(3650, $d));
+    }
+    if ($isMember) {
+        foreach (['website', 'phone', 'logoLockup', 'logoOkun'] as $k) {
+            if (array_key_exists($k, $clean)) { $root[$k] = $clean[$k]; unset($clean[$k]); }
+        }
+        $root['ngg'] = $clean;
+        setting_set('idcard', $root, $by);
+        return;
     }
     setting_set('idcard', $clean, $by);
 }

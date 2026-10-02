@@ -1,6 +1,6 @@
 # NGG — Latest-Branch UX & Architecture Audit (2026-07-16)
 
-Branch audited: `claude/nextgengen-latest-audit-wzccku` (HEAD `d9f47b3`).
+Branch audited: `nextgengen-latest-audit-wzccku` (HEAD `d9f47b3`).
 Scope: the whole product as it stands — the marketing/portal SPA, the member
 dashboard, the Anchor Journal PWA, the staff Control Room + portals, the field
 kiosks, and the PHP API behind all of them.
@@ -442,7 +442,7 @@ and High tiers.*
 
 ## Remediation status (2026-07-16, same branch)
 
-Fixes were made in four verified batches on `claude/nextgengen-latest-audit-wzccku`.
+Fixes were made in four verified batches on `nextgengen-latest-audit-wzccku`.
 Backend: 451 API tests pass; the kiosk offline E2E passes. New: 17 card-export
 builder tests + a Chromium end-to-end check of the rasteriser. `node build.js`
 rebuilds `dist/` clean each batch.

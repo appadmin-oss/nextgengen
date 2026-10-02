@@ -31,7 +31,7 @@ const AN_SERIES = ["#3B5BDB", "#C2410C", "#0E9F6E", "#A21CAF", "#4D7C0F", "#0369
 const AN_RATE_TONE = (r) => (r >= 80 ? AN_TONE.good : r >= 55 ? AN_TONE.warn : AN_TONE.bad);
 const AN_RATE_LABEL = (r) => (r >= 80 ? "On track" : r >= 55 ? "Watch" : "Needs attention");
 
-function anFmt(n) { return (n === null || n === undefined || n !== n) ? "—" : Number(n).toLocaleString(); }
+function anFmt(n) { return (n === null || n === undefined || n !== n) ? "—" : fmtNum(n); }
 /* Always quoted, and always formula-guarded. The old version quoted only when
    the value contained a comma or a quote, which left `=cmd|...` unquoted AND
    unescaped — the exact shape of a CSV-injection payload. */
@@ -632,6 +632,12 @@ function AnTip({ tip }) {
 }
 
 function AnArea({ data, height }) {
+  /* The crosshair state is declared before the empty branch, not after it.
+     These charts are fed by a range picker, so `data` goes from empty to
+     populated and back within one mount — a hook below the early return
+     changes the hook count between those renders and React tears the panel
+     down with "Rendered fewer hooks than expected". */
+  const [hi, setHi] = React.useState(-1);
   const h = height || 150, w = 640, pad = 6;
   if (!data || !data.length) return <div className="an-empty">No attendance in this range yet.</div>;
   const max = Math.max(1, ...data.map(d => d.present));
@@ -641,7 +647,6 @@ function AnArea({ data, height }) {
   const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   const area = line + ` L${pad + (data.length - 1) * step} ${h - pad} L${pad} ${h - pad} Z`;
   const tone = AN_SERIES[0];
-  const [hi, setHi] = React.useState(-1);
   /* Nearest-point crosshair rather than per-mark hit targets: on a 90-day trend
      the marks are 6px apart and hitting one is luck, so the whole plot answers
      and the answer is whichever day is closest. */
@@ -673,6 +678,7 @@ function AnArea({ data, height }) {
 }
 
 function AnLine({ data, xKey, yKey, label, color }) {
+  const [hi, setHi] = React.useState(-1);   // before the early return — see AnArea
   const h = 150, w = 560, pad = 10;
   if (!data || data.length < 2) return <div className="an-empty">Not enough data for a trend yet.</div>;
   const ys = data.map(d => d[yKey]);
@@ -682,7 +688,6 @@ function AnLine({ data, xKey, yKey, label, color }) {
   const pts = data.map((d, i) => [pad + i * step, y(d[yKey])]);
   const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   const tone = color || AN_SERIES[2];
-  const [hi, setHi] = React.useState(-1);
   const onMove = (e) => {
     const r = e.currentTarget.getBoundingClientRect();
     const x = ((e.clientX - r.left) / r.width) * w;
@@ -973,7 +978,7 @@ function AnActivityDrawer({ opts, defaults, onClose, onSaved }) {
           </div>
         </div>
 
-        {err && <p style={{ color: AN_TONE.bad, fontSize: 13, margin: 0 }}>{err}</p>}
+        {err && <p role="alert" style={{ color: AN_TONE.bad, fontSize: 13, margin: 0 }}>{err}</p>}
         <div style={{ display: "flex", gap: 10 }}>
           <button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? "Saving…" : "Save activity"}</button>
           <button className="an-chip" onClick={onClose}>Cancel</button>
@@ -1102,7 +1107,7 @@ function AnalyticsWorkspace() {
       <span className="an-live"><i/>Live analytics</span>
       <h1 className="display" style={{ fontSize: "clamp(30px,4.5vw,46px)", margin: "14px 0 4px", lineHeight: 1.02 }}>Summer School Analytics</h1>
       <p style={{ color: "rgba(255,255,255,.7)", margin: 0, fontSize: 14 }}>
-        {ws.filters.rangeLabel} · Week {ex.program ? ex.program.week : ""} · Updated {new Date(ws.generatedAt).toLocaleTimeString()} · Scoped to your centres
+        {ws.filters.rangeLabel} · Week {ex.program ? ex.program.week : ""} · Updated {fmtTime(ws.generatedAt)} · Scoped to your centres
       </p>
       <div className="an-herostats">
         <div className="an-herostat"><div className="v">{anFmt(ex.totalStudents)}</div><div className="l">Students</div></div>
@@ -1565,7 +1570,7 @@ function AnGrowth({ centre, onDrill }) {
       produced them, and are never shown to a student or guardian.
     </p>
 
-    {err && <div className="an-card"><div className="an-empty" style={{ color: AN_TONE.bad }}>{err}</div></div>}
+    {err && <div role="alert" className="an-card"><div className="an-empty" style={{ color: AN_TONE.bad }}>{err}</div></div>}
     {loading && !g && <div className="an-card"><div className="an-empty">Scoring the cohort…</div></div>}
 
     {g && <>
@@ -2152,6 +2157,10 @@ function AnalystPane({ onClose }) {
   const scope = useNggScope();
   const [threads, setThreads] = React.useState([]);
   const [archivedCount, setArchivedCount] = React.useState(0);
+  /* null until the first read answers. Three states, not two: "asking is
+     possible", "no provider is configured", and "we do not know yet" — which
+     must not render as either of the others. */
+  const [aiReady, setAiReady] = React.useState(null);
   const [archView, setArchView] = React.useState(false); // listing the put-away ones
   const [thread, setThread] = React.useState(null);   // { threadId, turns: [] }
   const [q, setQ] = React.useState("");
@@ -2176,6 +2185,7 @@ function AnalystPane({ onClose }) {
     const arch = archived != null ? archived : archView;
     NGGApi.admin.insightChatThreads(arch).then(r => {
       setThreads(r.threads || []);
+      if (typeof r.aiReady === "boolean") setAiReady(r.aiReady);
       // The active read reports how many are archived, so the affordance to see
       // them only appears when there is something behind it.
       if (!arch && r.archivedCount != null) setArchivedCount(r.archivedCount);
@@ -2791,7 +2801,7 @@ function AnalystPane({ onClose }) {
           </div>
         )}
 
-        {err && <div className={"anp-err" + (err.code === "question_identifies_someone" ? " is-bad" : "")}>{err.text}</div>}
+        {err && <div role="alert" className={"anp-err" + (err.code === "question_identifies_someone" ? " is-bad" : "")}>{err.text}</div>}
         <div ref={endRef}/>
       </div>
 
@@ -2883,7 +2893,7 @@ function AnalystPane({ onClose }) {
                         )}
                       </>
                     )}
-                    {repErr && <p className="anp-synth-note" data-level="error">Couldn't read the set: {repErr}</p>}
+                    {repErr && <p role="alert" className="anp-synth-note" data-level="error">Couldn't read the set: {repErr}</p>}
                   </div>
                 )}
                 <div className="anp-report-out">
@@ -2950,7 +2960,10 @@ function AnalystPane({ onClose }) {
             {!liveChips.length && <span className="anp-chip is-all">everything on file</span>}
           </div>
           <textarea ref={boxRef} value={q} onChange={e => setQ(e.target.value)} rows={2} maxLength={600}
-            placeholder="Ask about the current view…"
+            disabled={aiReady === false}
+            placeholder={aiReady === false
+              ? "No AI provider is configured — see the note below"
+              : "Ask about the current view…"}
             aria-label="Ask the analysts a question"
             onKeyDown={e => {
               if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); }
@@ -2966,11 +2979,28 @@ function AnalystPane({ onClose }) {
             <span style={{ flex: 1 }}/>
             {q.length > 450 && <span className="anp-count">{600 - q.length}</span>}
             <span className="anp-send-hint">⏎ send</span>
-            <button className="anp-send" onClick={() => ask()} disabled={busy || q.trim().length < 6}
+            <button className="anp-send" onClick={() => ask()}
+              disabled={busy || aiReady === false || q.trim().length < 6}
               aria-label="Ask">➤</button>
           </div>
         </div>
 
+        {/* THE EMPTY CASE THIS PANE NEVER HAD. Without a provider key the
+            analyst is a composer, a thread list, a report builder and a
+            keyboard shortcut that can do exactly nothing — and the only way to
+            find that out was to write a question, wait, and be refused. It is
+            said on open now, in the place it matters, with the fix named.
+            Everything else on this screen is computed locally and unaffected,
+            which is the part an operator needs to hear first. */}
+        {aiReady === false && (
+          <p className="anp-note" role="status">
+            <b>No AI provider is configured</b>, so there is nothing here to ask.
+            The figures, levels and tables on the page behind this pane are
+            computed on your own data and are unaffected.
+            To switch it on, set <code>ai.provider</code> and its API key in{" "}
+            <code>api/config.php</code> — see <b>docs/SETUP.md</b>.
+          </p>
+        )}
         {/* At the point of use, not in a settings page nobody opens. */}
         <p className="anp-oath">Advisory only — it never edits a record, sends a message, or sees a name.</p>
       </div>
@@ -3342,7 +3372,7 @@ async function exportPdf(ws) {
     const ex = ws.executive, re = ws.research; let y = 56;
     doc.setFont("helvetica", "bold"); doc.setFontSize(20); doc.text("Summer School Analytics", 40, y);
     doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(120);
-    y += 18; doc.text(`${ws.filters.rangeLabel} · generated ${new Date(ws.generatedAt).toLocaleString()}`, 40, y);
+    y += 18; doc.text(`${ws.filters.rangeLabel} · generated ${fmtDateTime(ws.generatedAt)}`, 40, y);
     doc.setTextColor(20); y += 26; doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text("Executive summary", 40, y);
     doc.setFont("helvetica", "normal"); doc.setFontSize(10); y += 16;
     const kv = [

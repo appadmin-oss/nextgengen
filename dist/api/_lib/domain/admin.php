@@ -32,6 +32,27 @@ function admin_cap_gate(array $p, string $cap): array {
     return $g;
 }
 
+/**
+ * Admin gate requiring ANY ONE of several capabilities.
+ *
+ * For shared reference data that several desks legitimately need to READ while
+ * only one of them owns WRITING it. The centre directory is the case that
+ * needed it: a Summer School coordinator has to be able to see the list of
+ * centres to run classes in them, but must not be able to rename or delete
+ * one, because a centre's code is the printed ID prefix on every NGG member's
+ * card and its name is what their record points at.
+ *
+ * Read with admin_cap_gate_any($p, ['people','summer']); write with
+ * admin_cap_gate($p, 'people'). Never widen a WRITE with this.
+ */
+function admin_cap_gate_any(array $p, array $caps): array {
+    $g = admin_gate($p);
+    if (!$g['ok']) return $g;
+    $have = member_effective_caps($g['requester']);
+    foreach ($caps as $c) if (in_array($c, $have, true)) return $g;
+    return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:' . implode('|', $caps)];
+}
+
 /** Keep only known columns; cast declared booleans to 0/1 and ints. */
 function db_pick(array $data, array $cols, array $bools = [], array $ints = []): array {
     $out = [];
@@ -58,7 +79,11 @@ function admin_members_list(array $p): array {
     $where = []; $params = [];
     $q = strtolower((string)($p['q'] ?? ''));
     if ($q !== '') { $where[] = '(lower(fullName) LIKE ? OR lower(memberId) LIKE ? OR lower(email) LIKE ?)'; $like = '%' . $q . '%'; array_push($params, $like, $like, $like); }
-    foreach (['centre', 'status', 'type'] as $f) {
+    /* `level` joins the exact-match facets. The roster workbook files every
+       member at a level and the column has existed since migration 109, but
+       nothing could filter by it — so "show me everyone at level C" meant
+       exporting the whole roster and opening a spreadsheet. */
+    foreach (['centre', 'status', 'type', 'level'] as $f) {
         if (!empty($p[$f])) { $where[] = "$f = ?"; $params[] = $p[$f]; }
     }
     // Staff-only view powers the Access & roles roster.
@@ -75,6 +100,32 @@ function admin_members_list(array $p): array {
         $where[] = '(' . $seg[0] . ')';
         foreach ($seg[1] as $sp) $params[] = $sp;
     }
+
+    /* Rows with something MISSING, for the print preflight.
+     *
+     * The ID batch drawer counts how many of a selection have no photograph,
+     * no printed ID and no discipline, because each makes a card that prints
+     * perfectly well and is wrong in the hand. A count nobody can act on is an
+     * accusation rather than a tool — so the same three predicates are
+     * available as a filter, and the drawer's counts link to the roster
+     * showing exactly those members.
+     *
+     * These MUST agree with the client-side counts in AdminMemberIdBatch. An
+     * allow-list keyed by name, like $sortable below: the caller never
+     * contributes SQL text. */
+    $missingSql = [
+        // Matches /^https?:\/\// on the client. Anything else — blank, a bare
+        // filename, a leftover data: URI — is not a photograph the card can draw.
+        'photo'      => "(COALESCE(photoUrl,'') NOT LIKE 'http://%' AND COALESCE(photoUrl,'') NOT LIKE 'https://%')",
+        'printedId'  => "TRIM(COALESCE(displayId,'')) = ''",
+        // The card shows `disciplines` and falls back to `track`, so a member is
+        // only missing one when BOTH are blank.
+        'discipline' => "(TRIM(COALESCE(disciplines,'')) = '' AND TRIM(COALESCE(track,'')) = '')",
+    ];
+    $missing = (string)($p['missing'] ?? '');
+    // Unknown value ⇒ no filter, same as a stale sort key: a bookmark that has
+    // gone out of date should show the roster, not an error.
+    if (isset($missingSql[$missing])) $where[] = $missingSql[$missing];
     // Scoped admins only see members in their centres (unscoped ⇒ all).
     $scopeNames = admin_centre_names_in_scope($g['requester']);
     if ($scopeNames !== null) {
@@ -83,6 +134,31 @@ function admin_members_list(array $p): array {
         foreach ($scopeNames as $nm) $params[] = $nm;
     }
     $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+
+    /* How the page is ordered.
+     *
+     * It was ORDER BY createdAt DESC, full stop, with no way to ask for
+     * anything else — so a coordinator holding four hundred children could not
+     * put them in name order, or find the ones with no centre set, or group
+     * the roster the way the register in their hand is grouped. Newest-first
+     * is a reasonable DEFAULT and a poor only-option.
+     *
+     * An allow-list, not a passthrough: the column name goes into the SQL
+     * text, so a caller must not be able to choose it freely. Anything not on
+     * this list falls back to the default rather than erroring — a stale
+     * bookmark should show the roster, not a failure. */
+    $sortable = ['createdAt' => 'createdAt', 'fullName' => 'fullName', 'memberId' => 'memberId',
+                 'centre' => 'centre', 'status' => 'status', 'type' => 'type', 'role' => 'role'];
+    $sortKey = (string)($p['sort'] ?? '');
+    $sortCol = $sortable[$sortKey] ?? 'createdAt';
+    $dir = strtolower((string)($p['dir'] ?? '')) === 'asc' ? 'ASC' : 'DESC';
+    if ($sortKey === '') $dir = 'DESC';                     // the default is newest first
+    /* Text sorts case-insensitively, because "amina" filed after "Zainab" is
+     * not a sort order anybody asked for, and ties break on the id so paging
+     * cannot show the same person twice or skip one. */
+    $textCols = ['fullName', 'centre', 'status', 'type', 'role'];
+    $orderExpr = in_array($sortCol, $textCols, true) ? "lower($sortCol)" : $sortCol;
+    $orderSql = " ORDER BY $orderExpr $dir, memberId ASC";
     // Accurate total for the filtered set, computed before paging so the client
     // can render "N–M of T" and page controls without loading every row.
     $total = (int) db_row('SELECT COUNT(*) c FROM members' . $whereSql, $params)['c'];
@@ -90,16 +166,23 @@ function admin_members_list(array $p): array {
     // still cap the result so an unbounded table can't be requested by default.
     // Export mode: every matching row (bounded), no paging — for a full CSV.
     if (!empty($p['all'])) {
-        $rows = db_all('SELECT * FROM members' . $whereSql . ' ORDER BY createdAt DESC LIMIT 5000', $params);
+        $rows = db_all('SELECT * FROM members' . $whereSql . $orderSql . ' LIMIT 5000', $params);
         audit('admin.members.export', $g['requester']['memberId'], '', ['count' => count($rows)], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'total' => $total, 'members' => admin_members_with_consent($rows)];
     }
     $pageSize = min(200, max(1, (int)($p['pageSize'] ?? 50)));
     $page = max(1, (int)($p['page'] ?? 1));
     $offset = ($page - 1) * $pageSize;
-    $sql = 'SELECT * FROM members' . $whereSql . ' ORDER BY createdAt DESC LIMIT ? OFFSET ?';
+    $sql = 'SELECT * FROM members' . $whereSql . $orderSql . ' LIMIT ? OFFSET ?';
     $rows = db_all($sql, array_merge($params, [$pageSize, $offset]));
     return ['ok' => true, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize,
+            /* Echoed back so the header can show which column it is on and
+             * which way. The RESOLVED key, not the requested one: a request
+             * for a column that does not exist is served in the default order,
+             * and saying otherwise would have the header draw an arrow beside a
+             * column the rows are not actually sorted by. */
+            'sort' => array_search($sortCol, $sortable, true) ?: 'createdAt',
+            'dir' => strtolower($dir),
             'members' => admin_members_with_consent($rows),
             // How much of the roster is still unrecorded, for the whole filtered
             // set rather than this page. Without it an admin paging through 400
@@ -495,7 +578,22 @@ function admin_members_upsert(array $p): array {
         elseif (!in_array($data['role'], ['member', 'editor', 'summer_admin', 'club_admin', 'audit', 'admin', 'super_admin'], true)) unset($data['role']);
     }
 
-    $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes','displayId','disciplines'];
+    $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes','displayId','disciplines','level','division'];
+    /* A closed set, refused rather than coerced. The four divisions are the
+     * brief's (domain/formation.php) and a fifth is a typo, not a new
+     * division — accepting it would put a member somewhere no report counts
+     * and no mandate covers. Blank stays legitimate: unplaced is a real
+     * state and the honest one for a member nobody has assigned. The name
+     * is accepted as well as the id, because that is what a person types. */
+    if (array_key_exists('division', $data)) {
+        $raw = trim((string)$data['division']);
+        if ($raw === '') { $data['division'] = ''; }
+        else {
+            $d = nggc_division($raw);
+            if (!$d) return ['ok' => false, 'error' => 'bad_division'];
+            $data['division'] = $d['id'];
+        }
+    }
     $existing = $memberId ? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]) : null;
 
     // ── Scope ──────────────────────────────────────────────────────────
@@ -565,7 +663,15 @@ function admin_members_upsert(array $p): array {
     $insert['role'] = $insert['role'] ?? ($data['role'] ?? 'member');
     $insert['createdAt'] = now_iso();
     $insert['updatedAt'] = now_iso();
+    /* A member gets their printed ID at creation, as a participant always
+       has. Left blank it falls back to the internal memberId on the card —
+       see domain/member-id.php. */
+    if (trim((string)($insert['displayId'] ?? '')) === '' && member_is_ngg($insert)) {
+        $insert['displayId'] = member_mint_display_id($insert);
+    }
     db_insert('members', $insert);
+    /* And a card the gate can read, printed new — the secure kind. */
+    member_cards_ensure($insert, (string)($g['requester']['memberId'] ?? ''), 'created');
     if (is_admin_role((string)$insert['role'])) staff_invite_email($newId, (string)$insert['role']);
     audit('admin.member.create', $g['requester']['memberId'], $newId, [], (string)($p['ip'] ?? ''));
     event_emit('member.created', ['memberId' => $newId, 'fullName' => (string)($insert['fullName'] ?? ''), 'type' => (string)($insert['type'] ?? ''), 'centre' => (string)($insert['centre'] ?? '')]);
@@ -657,6 +763,20 @@ function admin_mentors_upsert(array $p): array {
     // both cohorts.
     if (isset($data['programme']) && !in_array((string)$data['programme'], ['summer', 'ngg', 'both'], true)) $data['programme'] = 'summer';
     $existing = $mentorId ? db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [$mentorId]) : null;
+
+    /* One active mentor per email. The gate falls back to email when a record
+     * carries no member or volunteer link, and two rows answering to one
+     * address leave it choosing between two people's classes — so the
+     * collision is refused where it is created rather than resolved later
+     * where it cannot be. Checked on the edit branch too: pointing an existing
+     * record at somebody else's address is the same collision through a
+     * different door. */
+    if (array_key_exists('email', $data)) {
+        $wantEmail = trim((string)$data['email']);
+        if ($wantEmail !== '' && mentor_email_taken($wantEmail, $mentorId)) {
+            return ['ok' => false, 'error' => 'email_taken'];
+        }
+    }
 
     if ($existing) {
         $patch = db_pick($data, $cols, [], ['maxMentees']);

@@ -31,6 +31,19 @@ CREATE TABLE IF NOT EXISTS members (
   UNIQUE KEY idx_members_anchorcode (anchorCode)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+/* `email` carries no UNIQUE constraint, and that is a decision rather than an
+   omission. The invariant IS enforced — one active mentor per address, refused
+   at every write path (admin_mentors_upsert, the application accept, the
+   Afrovanguard sync) and failed closed at the portal gate, which will not
+   resolve an ambiguous address rather than pick between two people's classes.
+   What is not done is adding the index, because adding it means first deciding
+   what to do with any pair already in the data, and that decision cannot be
+   made by a machine: two rows on one address may be one person with a
+   duplicate record or two people on a shared family mailbox — a distinction
+   mentor_gate's own comment has named for longer than this note has existed.
+   Choosing wrong hands an adult another adult's children.
+   admin_mentors_duplicates() puts each pair in front of the desk instead, and
+   a UNIQUE index becomes safe to add once that list is empty. */
 CREATE TABLE IF NOT EXISTS mentors (
   id INT AUTO_INCREMENT PRIMARY KEY,
   mentorId VARCHAR(64) UNIQUE NOT NULL,
@@ -851,6 +864,9 @@ CREATE TABLE IF NOT EXISTS community_posts (
   mediaType VARCHAR(16) DEFAULT 'none',
   mediaUrl VARCHAR(512) DEFAULT '',
   mediaPoster VARCHAR(512) DEFAULT '',
+  mediaFormat VARCHAR(16) DEFAULT '',
+  mediaBytes BIGINT DEFAULT 0,
+  mediaPages INT DEFAULT 0,
   altText VARCHAR(400) DEFAULT '',
   status VARCHAR(16) DEFAULT 'published',
   pinned TINYINT DEFAULT 0,
@@ -1024,14 +1040,9 @@ INSERT INTO schema_version (version) VALUES (59) ON DUPLICATE KEY UPDATE version
 -- split the card was already using.
 ALTER TABLE summer_students ADD COLUMN firstName VARCHAR(120) DEFAULT '';
 ALTER TABLE summer_students ADD COLUMN lastName VARCHAR(120) DEFAULT '';
-UPDATE summer_students
-   SET firstName = CASE WHEN LOCATE(' ', TRIM(fullName)) > 0
-                        THEN SUBSTRING(TRIM(fullName), 1, LOCATE(' ', TRIM(fullName)) - 1)
-                        ELSE TRIM(fullName) END
- WHERE firstName = '' AND TRIM(COALESCE(fullName, '')) != '';
-UPDATE summer_students
-   SET lastName = TRIM(REPLACE(TRIM(fullName), firstName, ''))
- WHERE lastName = '' AND firstName != '' AND TRIM(fullName) != firstName;
+-- The split itself runs from NGG_MYSQL_ROW_FIXUPS in api/_lib/db.php: this
+-- file's replay executes only CREATE / ALTER / INSERT, so an UPDATE here is
+-- read and skipped.
 INSERT INTO schema_version (version) VALUES (60) ON DUPLICATE KEY UPDATE version = version;
 
 -- 61: the parent's actual signature. A consent record with no signature is a
@@ -1044,9 +1055,7 @@ INSERT INTO schema_version (version) VALUES (61) ON DUPLICATE KEY UPDATE version
 
 -- 62: ID cards expire. A summer card is a season pass, not a life membership.
 ALTER TABLE qr_codes ADD COLUMN expiresAt VARCHAR(20) DEFAULT '';
-UPDATE qr_codes
-   SET expiresAt = DATE_FORMAT(DATE_ADD(COALESCE(NULLIF(assignedAt,''), createdAt), INTERVAL 90 DAY), '%Y-%m-%d')
- WHERE expiresAt = '' AND status = 'assigned';
+-- The expiry backfill runs from NGG_MYSQL_ROW_FIXUPS in api/_lib/db.php.
 INSERT INTO schema_version (version) VALUES (62) ON DUPLICATE KEY UPDATE version = version;
 
 -- 63: which programme a mentor serves. `source` means where they came from,
@@ -1418,8 +1427,7 @@ INSERT INTO schema_version (version) VALUES (77) ON DUPLICATE KEY UPDATE version
 -- analytics workspace read `gender` and reported every child as "Not recorded".
 -- `sex` is now the single fact; `gender` stays in place (dropping a column on a
 -- live host is the larger risk) and is copied across where `sex` is empty.
-UPDATE summer_students SET sex = gender
- WHERE (sex IS NULL OR sex = '') AND gender IS NOT NULL AND gender != '';
+-- The gender → sex copy runs from NGG_MYSQL_ROW_FIXUPS in api/_lib/db.php.
 CREATE INDEX idx_sstu_sex ON summer_students(sex);
 CREATE INDEX idx_vol_sex ON volunteers(sex);
 
@@ -1748,3 +1756,1001 @@ CREATE TABLE IF NOT EXISTS mentor_goals (
   INDEX idx_mg_due (status, dueOn)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (92) ON DUPLICATE KEY UPDATE version = version;
+
+-- v93 — what a shared document actually is, recorded rather than guessed from
+-- its url. See the migration note in api/_lib/db.php.
+ALTER TABLE community_posts ADD COLUMN mediaFormat VARCHAR(16) DEFAULT '';
+ALTER TABLE community_posts ADD COLUMN mediaBytes BIGINT DEFAULT 0;
+ALTER TABLE community_posts ADD COLUMN mediaPages INT DEFAULT 0;
+
+INSERT INTO schema_version (version) VALUES (93) ON DUPLICATE KEY UPDATE version = version;
+
+-- v94 — a brute-force ceiling keyed on the SUBJECT under attack rather than on
+-- the attacker's self-declared IP. See the migration note in api/_lib/db.php.
+CREATE TABLE IF NOT EXISTS attempt_guard (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  scope VARCHAR(40) NOT NULL,
+  subject VARCHAR(190) NOT NULL,
+  fails INT NOT NULL DEFAULT 0,
+  lockedUntil VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_attempt_key (scope, subject),
+  INDEX idx_attempt_stale (updatedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (94) ON DUPLICATE KEY UPDATE version = version;
+
+-- v95 — a notification that can be FOLLOWED: the id of the thing it is about.
+-- See the migration note in api/_lib/db.php.
+ALTER TABLE notifications ADD COLUMN linkRef VARCHAR(64) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (95) ON DUPLICATE KEY UPDATE version = version;
+
+-- v96 — how long a clip runs, kept rather than only validated.
+-- See the migration note in api/_lib/db.php.
+ALTER TABLE community_posts ADD COLUMN mediaDuration INT DEFAULT 0;
+
+INSERT INTO schema_version (version) VALUES (96) ON DUPLICATE KEY UPDATE version = version;
+
+-- v97 — chess as a club fixture: ratings, challenges that are not yet games,
+-- and a head-to-head counter. See the migration note in api/_lib/db.php.
+CREATE TABLE IF NOT EXISTS chess_ratings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  playerId VARCHAR(64) NOT NULL,
+  rating INT NOT NULL DEFAULT 1200,
+  games INT NOT NULL DEFAULT 0,
+  wins INT NOT NULL DEFAULT 0,
+  losses INT NOT NULL DEFAULT 0,
+  draws INT NOT NULL DEFAULT 0,
+  peak INT NOT NULL DEFAULT 1200,
+  lastPlayedAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_chess_rating_player (playerId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS chess_challenges (
+  challengeId VARCHAR(64) PRIMARY KEY,
+  fromId VARCHAR(64) NOT NULL, fromName VARCHAR(190) DEFAULT '',
+  toId VARCHAR(64) DEFAULT '', toName VARCHAR(190) DEFAULT '',
+  timeControl VARCHAR(16) DEFAULT '1day',
+  colourPref VARCHAR(8) DEFAULT 'random',
+  rated TINYINT DEFAULT 1,
+  channelSlug VARCHAR(64) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'open',
+  matchId VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40) NOT NULL,
+  expiresAt VARCHAR(40) DEFAULT '',
+  INDEX idx_chess_ch_to (toId, status),
+  INDEX idx_chess_ch_open (status, expiresAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS chess_head2head (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  pairKey VARCHAR(140) NOT NULL,
+  playerId VARCHAR(64) NOT NULL,
+  opponentId VARCHAR(64) NOT NULL,
+  wins INT NOT NULL DEFAULT 0,
+  losses INT NOT NULL DEFAULT 0,
+  draws INT NOT NULL DEFAULT 0,
+  updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_chess_h2h (playerId, opponentId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE match_games ADD COLUMN timeControl VARCHAR(16) DEFAULT '1day';
+ALTER TABLE match_games ADD COLUMN rated TINYINT DEFAULT 1;
+ALTER TABLE match_games ADD COLUMN channelSlug VARCHAR(64) DEFAULT '';
+ALTER TABLE match_games ADD COLUMN ratingDelta INT DEFAULT 0;
+ALTER TABLE match_games ADD COLUMN settledAt VARCHAR(40) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (97) ON DUPLICATE KEY UPDATE version = version;
+
+-- 98: the community audit — safeguarding records, comment reports, and the
+-- indexes the feed's own ORDER BY needs.
+--
+-- `community_safeguarding` exists because the crisis gate used to decide
+-- correctly and then throw the decision away: a child writing about self-harm
+-- had their post refused, was shown a helpline, and no adult was ever told.
+-- The refusal is the moment the disclosure becomes something to act on, not
+-- the moment it stops mattering — so it is kept here, and an event is raised.
+CREATE TABLE IF NOT EXISTS community_safeguarding (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  caseId VARCHAR(48) UNIQUE NOT NULL,
+  authorId VARCHAR(48) NOT NULL,
+  authorName VARCHAR(120) DEFAULT '',
+  surface VARCHAR(16) DEFAULT 'post',      -- post | comment
+  channelSlug VARCHAR(64) DEFAULT '',
+  body TEXT,                               -- what the child actually wrote
+  status VARCHAR(16) DEFAULT 'open',       -- open | acknowledged
+  acknowledgedBy VARCHAR(48) DEFAULT '',
+  acknowledgedAt VARCHAR(40) DEFAULT '',
+  createdAt VARCHAR(40),
+  INDEX idx_csafe_status (status, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Reported comments had nowhere to surface: the queue selected them by
+-- `status = 'reported'`, which the moderation map never writes, so a child
+-- reporting a bullying reply reached no human at all.
+ALTER TABLE community_comments ADD COLUMN reportCount INT DEFAULT 0;
+
+-- Stamped the first time a post goes live, so approving a held post fires its
+-- @mentions exactly once — approve used to fire them never, and a re-approval
+-- after a hide would otherwise fire them twice.
+ALTER TABLE community_posts ADD COLUMN notifiedAt VARCHAR(40) DEFAULT '';
+ALTER TABLE community_comments ADD COLUMN notifiedAt VARCHAR(40) DEFAULT '';
+-- Everything already live has had whatever notifications it was going to get.
+-- Backfilled so a hide-and-reapprove on an old post cannot suddenly notify
+-- people about a conversation from months ago.
+-- Both stamps run from NGG_MYSQL_ROW_FIXUPS in api/_lib/db.php.
+
+-- The feed's main ordering (pinned first, then newest) had no index that could
+-- serve it — every page was a filesort over the whole table.
+CREATE INDEX idx_cpost_feed ON community_posts (status, pinned, createdAt);
+CREATE INDEX idx_cpost_featured ON community_posts (featured, status);
+-- `WHERE memberId = ?` for the Saved count; the unique key leads with postId.
+CREATE INDEX idx_cbook_member ON community_bookmarks (memberId);
+CREATE INDEX idx_creport_reporter ON community_reports (memberId);
+
+INSERT INTO schema_version (version) VALUES (98) ON DUPLICATE KEY UPDATE version = version;
+
+-- 99: Tournaments 2.0 — real formats, real clocks, real ratings.
+--
+-- The old shape was one format (centre knockout → final), no clock, and
+-- alphabetical pairing. This adds the three things a chess club actually
+-- needs: a choice of format, time that really runs out, and a rating the
+-- pairing is built from.
+ALTER TABLE tournaments ADD COLUMN format VARCHAR(16) DEFAULT 'centre';
+  -- centre | knockout | swiss | roundrobin | arena
+ALTER TABLE tournaments ADD COLUMN timeControl VARCHAR(16) DEFAULT '10+0';
+ALTER TABLE tournaments ADD COLUMN rated TINYINT DEFAULT 1;
+ALTER TABLE tournaments ADD COLUMN totalRounds INT DEFAULT 0;
+  -- Swiss/round-robin: how many rounds are planned. 0 = derive from entrants.
+ALTER TABLE tournaments ADD COLUMN description VARCHAR(600) DEFAULT '';
+ALTER TABLE tournaments ADD COLUMN centres TEXT;
+  -- JSON array. Empty/absent = every centre.
+ALTER TABLE tournaments ADD COLUMN eligibility TEXT;
+  -- JSON: which kinds of person may enter (member/student/volunteer/staff),
+  -- plus optional rating floor/ceiling and age band.
+ALTER TABLE tournaments ADD COLUMN startsAt VARCHAR(40) DEFAULT '';
+ALTER TABLE tournaments ADD COLUMN endsAt VARCHAR(40) DEFAULT '';
+  -- Arena only: the window the arena runs for.
+ALTER TABLE tournaments ADD COLUMN settings TEXT;
+  -- JSON, format-specific knobs kept out of the column list.
+
+-- Standings live on the entrant: one row per player per tournament, which is
+-- what every format needs and what the old knockout-only shape had no room for.
+ALTER TABLE tournament_entrants ADD COLUMN seed INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN ratingAtEntry INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN score DECIMAL(5,1) DEFAULT 0;
+  -- Win 1, draw 0.5, loss 0. Decimal because half points are the whole point.
+ALTER TABLE tournament_entrants ADD COLUMN played INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN wins INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN draws INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN losses INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN byes INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN whiteCount INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN blackCount INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN lastColour VARCHAR(1) DEFAULT '';
+  -- Swiss colour balance: alternate, and never give three of one colour.
+ALTER TABLE tournament_entrants ADD COLUMN opponents TEXT;
+  -- JSON array of playerIds already faced — Swiss must not repeat a pairing.
+ALTER TABLE tournament_entrants ADD COLUMN tiebreak1 DECIMAL(7,2) DEFAULT 0;
+  -- Buchholz (sum of opponents' scores).
+ALTER TABLE tournament_entrants ADD COLUMN tiebreak2 DECIMAL(7,2) DEFAULT 0;
+  -- Sonneborn-Berger.
+ALTER TABLE tournament_entrants ADD COLUMN performance INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN ratingDelta INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN withdrawn TINYINT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN arenaStreak INT DEFAULT 0;
+ALTER TABLE tournament_entrants ADD COLUMN arenaPoints INT DEFAULT 0;
+
+-- One row per round, so a round has a state of its own rather than being
+-- inferred from "are any games still open".
+CREATE TABLE IF NOT EXISTS tournament_rounds (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tournamentId VARCHAR(32) NOT NULL,
+  round INT NOT NULL,
+  stage VARCHAR(16) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'pending',   -- pending | live | complete
+  pairedAt VARCHAR(40) DEFAULT '',
+  closedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_trn_round (tournamentId, stage, round)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- A pairing is not a match. A bye has no match, and a pairing exists the
+-- moment the round is drawn — before anybody has moved a piece.
+CREATE TABLE IF NOT EXISTS tournament_pairings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tournamentId VARCHAR(32) NOT NULL,
+  round INT NOT NULL,
+  stage VARCHAR(16) DEFAULT '',
+  board INT DEFAULT 0,
+  centre VARCHAR(120) DEFAULT '',
+  whiteId VARCHAR(64) DEFAULT '',
+  whiteName VARCHAR(120) DEFAULT '',
+  blackId VARCHAR(64) DEFAULT '',
+  blackName VARCHAR(120) DEFAULT '',
+  matchId VARCHAR(32) DEFAULT '',
+  isBye TINYINT DEFAULT 0,
+  result VARCHAR(8) DEFAULT '',           -- '' | '1-0' | '0-1' | '0.5-0.5' | 'bye'
+  scoredAt VARCHAR(40) DEFAULT '',
+  createdAt VARCHAR(40) NOT NULL,
+  INDEX idx_trn_pair (tournamentId, stage, round, board),
+  INDEX idx_trn_pair_match (matchId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Real clocks. A time control was a LABEL — '3+2' was stored and nothing ever
+-- counted down. The server now holds the remaining time, applies the increment
+-- on each move, and is the only thing allowed to decide that somebody flagged.
+-- timeControl / rated / ratingDelta / settledAt already exist (migration 97);
+-- what was missing is the time itself.
+ALTER TABLE match_games ADD COLUMN initialMs INT DEFAULT 0;
+ALTER TABLE match_games ADD COLUMN incrementMs INT DEFAULT 0;
+ALTER TABLE match_games ADD COLUMN whiteMs INT DEFAULT 0;
+ALTER TABLE match_games ADD COLUMN blackMs INT DEFAULT 0;
+ALTER TABLE match_games ADD COLUMN clockRunning TINYINT DEFAULT 0;
+ALTER TABLE match_games ADD COLUMN turnStartedAt VARCHAR(40) DEFAULT '';
+  -- When the clock for the player to move started. Elapsed = now - this.
+ALTER TABLE match_games ADD COLUMN board INT DEFAULT 0;
+CREATE INDEX idx_match_clock ON match_games (status, clockRunning);
+
+INSERT INTO schema_version (version) VALUES (99) ON DUPLICATE KEY UPDATE version = version;
+
+-- 100: the board — idempotent moves, variants, and programme promotions.
+--
+-- IDEMPOTENCY. A move was identified only by its ply, so a client that sent a
+-- move, lost the response and retried had two outcomes and no way to tell them
+-- apart: the retry either collided with UNIQUE(matchId, ply) and surfaced as a
+-- failure for a move that HAD landed, or — if the opponent had replied in the
+-- meantime — applied a second time at a new ply. On a 3G handset at a centre
+-- that is not a rare case. The client now names each move once.
+-- NULL, not ''. Both MySQL and SQLite treat NULLs in a UNIQUE index as
+-- distinct, so a move with no client id (an old row, or a caller that does not
+-- send one) does not collide with the next one — while two arrivals carrying
+-- the SAME id collide exactly as intended.
+ALTER TABLE match_moves ADD COLUMN clientMoveId VARCHAR(40) DEFAULT NULL;
+CREATE UNIQUE INDEX idx_match_move_client ON match_moves (matchId, clientMoveId);
+ALTER TABLE match_moves ADD COLUMN msSpent INT DEFAULT 0;
+  -- How long the mover actually thought. The clock already knows; keeping it
+  -- per move is what makes a time graph and "you spent 4 minutes on move 12"
+  -- possible without replaying the whole game.
+
+-- VARIANTS. The rules engine now answers to more than one set of rules.
+ALTER TABLE match_games ADD COLUMN variant VARCHAR(24) DEFAULT 'standard';
+  -- standard | chess960 | kingofthehill | threecheck
+ALTER TABLE match_games ADD COLUMN variantData TEXT;
+  -- JSON. Chess960 keeps its start position id; three-check keeps the counts.
+ALTER TABLE match_games ADD COLUMN startFen VARCHAR(120) DEFAULT '';
+  -- Chess960 does not start from the standard position, so a game can no
+  -- longer be replayed from a constant.
+ALTER TABLE tournaments ADD COLUMN variant VARCHAR(24) DEFAULT 'standard';
+ALTER TABLE chess_challenges ADD COLUMN variant VARCHAR(24) DEFAULT 'standard';
+
+-- PROMOTIONS. First-party only: NGG promoting NGG's own programmes to its own
+-- members. There is no third-party ad network here and there must not be one —
+-- these are children, and behavioural advertising to minors is a different
+-- product with a different legal footing.
+CREATE TABLE IF NOT EXISTS promos (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  promoId VARCHAR(32) UNIQUE NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  body VARCHAR(400) DEFAULT '',
+  kind VARCHAR(24) DEFAULT 'programme',   -- programme | event | tournament | notice
+  placement VARCHAR(32) DEFAULT 'chess',  -- chess | community | dashboard | arcade
+  ctaLabel VARCHAR(48) DEFAULT '',
+  ctaPage VARCHAR(64) DEFAULT '',         -- an in-app page id, never a raw url
+  ctaRef VARCHAR(64) DEFAULT '',
+  imageUrl VARCHAR(512) DEFAULT '',
+  accent VARCHAR(16) DEFAULT '',
+  priority INT DEFAULT 0,
+  status VARCHAR(16) DEFAULT 'draft',     -- draft | live | ended
+  startsAt VARCHAR(40) DEFAULT '',
+  endsAt VARCHAR(40) DEFAULT '',
+  audience TEXT,                          -- JSON: kinds, centres, programme
+  impressions INT DEFAULT 0,
+  clicks INT DEFAULT 0,
+  dismissals INT DEFAULT 0,
+  createdBy VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40) NOT NULL,
+  updatedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_promo_live (status, placement, priority)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- One row per person per promo, so a dismissal sticks and an impression is not
+-- counted forty times by one member refreshing a screen.
+CREATE TABLE IF NOT EXISTS promo_seen (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  promoId VARCHAR(32) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  seenAt VARCHAR(40) DEFAULT '',
+  clickedAt VARCHAR(40) DEFAULT '',
+  dismissedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_promo_seen (promoId, memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (100) ON DUPLICATE KEY UPDATE version = version;
+
+-- ---------------------------------------------------------------------------
+-- 101: game review, the tournament ladder, and promotions that carry a picture
+--      and can belong to one event.
+-- ---------------------------------------------------------------------------
+
+-- One review per game, not one per viewer.
+--
+-- The analysis runs in the browser — there is no engine on shared hosting and
+-- there is not going to be one — so this is a cache of a client's work rather
+-- than a server's own finding. Two things follow, and both are enforced below:
+-- the row records WHAT computed it (engine depth and budget), and the first
+-- writer wins. A second player opening the same game reads the review the
+-- first one produced rather than replacing it, so the numbers two children
+-- discuss are the same numbers.
+--
+-- Deliberately not used for anything competitive. It is a coaching record: a
+-- client could lie about it, and nothing that matters is downstream of it.
+CREATE TABLE IF NOT EXISTS match_reviews (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  matchId VARCHAR(32) NOT NULL,
+  -- Per side, from the review that produced them.
+  whiteAccuracy INT DEFAULT 0,
+  blackAccuracy INT DEFAULT 0,
+  whiteAvgLoss INT DEFAULT 0,
+  blackAvgLoss INT DEFAULT 0,
+  whiteBlunders INT DEFAULT 0,
+  blackBlunders INT DEFAULT 0,
+  whiteMistakes INT DEFAULT 0,
+  blackMistakes INT DEFAULT 0,
+  whiteInaccuracies INT DEFAULT 0,
+  blackInaccuracies INT DEFAULT 0,
+  -- The move where the game turned, and what was available instead.
+  turningPly INT DEFAULT 0,
+  turningSan VARCHAR(16) DEFAULT '',
+  turningBest VARCHAR(16) DEFAULT '',
+  turningLoss INT DEFAULT 0,
+  -- The evaluation after every ply, from White's side, as a compact JSON list.
+  -- Read by the graph; small enough to store whole (200 plies of small ints).
+  evals TEXT,
+  -- What produced it, so a review computed by a phone that managed depth 6 is
+  -- not silently compared with one computed by a laptop at depth 14.
+  engineDepth INT DEFAULT 0,
+  engineMs INT DEFAULT 0,
+  byId VARCHAR(64) DEFAULT '',
+  createdAt VARCHAR(40) NOT NULL,
+  UNIQUE KEY idx_review_match (matchId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Where each entrant stood before the current round was paired. The ladder's
+-- movement arrows compare against this rather than against a guess.
+ALTER TABLE tournament_entrants ADD COLUMN lastRank INT DEFAULT 0;
+
+-- A promotion can belong to one tournament, and can carry a picture.
+ALTER TABLE promos ADD COLUMN tournamentId VARCHAR(32) DEFAULT '';
+-- 'card' is the strip already in use; 'popup' is the one that appears once
+-- before or after a game and then not again.
+ALTER TABLE promos ADD COLUMN shape VARCHAR(16) DEFAULT 'card';
+CREATE INDEX idx_promo_trn ON promos (tournamentId);
+
+INSERT INTO schema_version (version) VALUES (101) ON DUPLICATE KEY UPDATE version = version;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- v102 — Who was ASKED to a tournament, as distinct from who entered it.
+--
+-- A director could add entrants one at a time and nothing else, so the only way
+-- to fill a field was to sign children up without asking, which is not an
+-- invitation. This table is the ask. It also makes the obvious question
+-- answerable — 40 invited, 11 joined — which nothing could answer before,
+-- because nobody recorded the 40.
+CREATE TABLE IF NOT EXISTS tournament_invites (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tournamentId VARCHAR(32) NOT NULL,
+  playerId VARCHAR(64) NOT NULL,
+  playerName VARCHAR(120) DEFAULT '',
+  centre VARCHAR(120) DEFAULT '',
+  invitedBy VARCHAR(64) DEFAULT '',
+  invitedAt VARCHAR(40) NOT NULL,
+  -- Written by the join path, so invite→entry conversion is a fact rather than
+  -- an inference from two timestamps that happen to be close together.
+  joinedAt VARCHAR(40) DEFAULT '',
+  declinedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_trn_invite_unique (tournamentId, playerId),
+  INDEX idx_trn_invite_player (playerId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (102) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 103 · Homework ──────────────────────────────────────────────────────────
+-- Three tables rather than a status column: the task outlives the term, a
+-- submission is a fact about one child, and a nudge is an event that has to be
+-- counted per day to be limited.
+
+CREATE TABLE IF NOT EXISTS community_homework (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  homeworkId VARCHAR(32) NOT NULL,
+  channelId VARCHAR(32) NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  detail TEXT,
+  dueAt VARCHAR(40) DEFAULT '',
+  createdBy VARCHAR(64) DEFAULT '',
+  createdByName VARCHAR(120) DEFAULT '',
+  createdAt VARCHAR(40) NOT NULL,
+  -- active | archived. Never deleted: a child who submitted work should not
+  -- find the task it belonged to has vanished.
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  UNIQUE KEY idx_hw_id (homeworkId),
+  INDEX idx_hw_channel (channelId, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- The cohort is SNAPSHOT at creation — one row per child asked. The
+-- denominator in "14 of 24" is a fact about who was asked, not a live count of
+-- who happens to be in the channel today.
+CREATE TABLE IF NOT EXISTS community_homework_state (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  homeworkId VARCHAR(32) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  memberName VARCHAR(120) DEFAULT '',
+  centre VARCHAR(120) DEFAULT '',
+  -- "Has opened the task" — what separates "has not got round to it" from
+  -- "does not know about it", the only distinction that makes a nudge fair.
+  seenAt VARCHAR(40) DEFAULT '',
+  submittedAt VARCHAR(40) DEFAULT '',
+  submittedRef VARCHAR(64) DEFAULT '',
+  reviewedAt VARCHAR(40) DEFAULT '',
+  reviewedBy VARCHAR(64) DEFAULT '',
+  note VARCHAR(400) DEFAULT '',
+  UNIQUE KEY idx_hws_unique (homeworkId, memberId),
+  INDEX idx_hws_member (memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Every nudge, kept. The daily limit is enforced by reading this rather than by
+-- a counter that can drift, and it lets a child be shown "Nudged Tue" truthfully.
+CREATE TABLE IF NOT EXISTS community_homework_nudge (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  homeworkId VARCHAR(32) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  nudgedBy VARCHAR(64) DEFAULT '',
+  nudgedAt VARCHAR(40) NOT NULL,
+  -- The UTC date of nudgedAt, so one-per-day is an index lookup.
+  nudgedDay VARCHAR(10) NOT NULL,
+  UNIQUE KEY idx_hwn_daily (homeworkId, memberId, nudgedDay),
+  INDEX idx_hwn_member (memberId, nudgedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (103) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 104 · Typing ────────────────────────────────────────────────────────────
+-- One row per person per channel, overwritten in place and read back only for
+-- the last few seconds. A table rather than a socket because this runs on
+-- shared hosting, which cannot hold a persistent connection open.
+--
+-- Nothing here is history. A read ignores anything older than the TTL and
+-- deletes it on the way past, so a keystroke by a child is never a record.
+CREATE TABLE IF NOT EXISTS community_typing (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  channelId VARCHAR(32) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  memberName VARCHAR(120) DEFAULT '',
+  staff TINYINT NOT NULL DEFAULT 0,
+  atIso VARCHAR(40) NOT NULL,
+  UNIQUE KEY idx_typing_unique (channelId, memberId),
+  INDEX idx_typing_at (channelId, atIso)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (104) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 105 · The personal journal, widened to §8a/§8b ──────────────────────────
+-- Every column is ADDED rather than replaced: `journal` is also written by the
+-- anchor reflection flow, which knows about mood, body and isPrivate and
+-- nothing else, and must keep working untouched. `visibility` supersedes
+-- isPrivate for the new writer; isPrivate is kept in step on every write so
+-- there is one fact with two spellings rather than two that can disagree.
+ALTER TABLE journal ADD COLUMN title TEXT;
+-- private | mentor | programme. Defaulting to private is the design's rule and
+-- a safeguarding one: a child's journal is private unless they choose otherwise.
+ALTER TABLE journal ADD COLUMN visibility VARCHAR(16) DEFAULT 'private';
+-- Space-separated, lower-case, no leading #. Counted in PHP over one member's
+-- own entries — cheaper to keep correct than a join table nothing else needs.
+ALTER TABLE journal ADD COLUMN tags TEXT;
+ALTER TABLE journal ADD COLUMN wordCount INT DEFAULT 0;
+ALTER TABLE journal ADD COLUMN mediaJson TEXT;
+-- The DAY the entry is about, not when it was typed: somebody writing up
+-- Saturday on Sunday morning should see it on Saturday in the week strip.
+ALTER TABLE journal ADD COLUMN occurredOn VARCHAR(10) DEFAULT '';
+ALTER TABLE journal ADD COLUMN promptText TEXT;
+ALTER TABLE journal ADD COLUMN updatedAt VARCHAR(40) DEFAULT '';
+CREATE INDEX idx_journal_day ON journal (memberId, occurredOn);
+
+INSERT INTO schema_version (version) VALUES (105) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 106 · Draw offers ───────────────────────────────────────────────────────
+-- Columns on the game rather than a table: an offer is a fact about the CURRENT
+-- position and only one is ever live. drawOfferBy/At are the live offer and are
+-- cleared the moment it is answered — accepted, declined, or met with a move.
+--
+-- drawOfferLastBy/drawOfferPly outlive the answer: they remember who offered
+-- last and in which position, and they are the anti-nuisance rule. Repeatedly
+-- offering a draw is how a losing player badgers a winning one, and in a
+-- service for children that is not a quirk of etiquette. Kept apart from the
+-- live offer so a decline cannot wipe the record of what was declined, and kept
+-- per player so the opponent changing their mind is not treated as badgering.
+ALTER TABLE match_games ADD COLUMN drawOfferBy VARCHAR(64) DEFAULT '';
+ALTER TABLE match_games ADD COLUMN drawOfferAt VARCHAR(40) DEFAULT '';
+ALTER TABLE match_games ADD COLUMN drawOfferLastBy VARCHAR(64) DEFAULT '';
+ALTER TABLE match_games ADD COLUMN drawOfferPly INT DEFAULT -1;
+
+INSERT INTO schema_version (version) VALUES (106) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 107 · The Programme record (§8c) ────────────────────────────────────────
+-- The journal already held what happened; §8c is about what happened NEXT — an
+-- issue's updates, who is following it, what a decision follows from, what a
+-- contribution actually raised. All of it was being narrated in prose in the
+-- body, where nothing can count it and a summary tile cannot be honest.
+--
+-- Everything countable stays derivable: "receipts attached (2)" and "12 photos"
+-- are the media already on the entry, and "kept by 14 members" is a row count.
+-- A stored tally beside a list of the things it counts is two records of one
+-- fact, and they drift.
+ALTER TABLE program_journal ADD COLUMN ownerId VARCHAR(64) DEFAULT '';
+ALTER TABLE program_journal ADD COLUMN ownerName VARCHAR(120) DEFAULT '';
+-- The back-reference §8c draws as "↳ Follows the hall double-booking issue".
+ALTER TABLE program_journal ADD COLUMN parentEntryId VARCHAR(48) DEFAULT '';
+-- Money in the smallest unit. Naira has kobo, and a float here is how a funding
+-- total ends in .00000001.
+ALTER TABLE program_journal ADD COLUMN amountMinor BIGINT DEFAULT 0;
+ALTER TABLE program_journal ADD COLUMN targetMinor BIGINT DEFAULT 0;
+ALTER TABLE program_journal ADD COLUMN currency VARCHAR(8) DEFAULT 'NGN';
+ALTER TABLE program_journal ADD COLUMN contributors INT DEFAULT 0;
+-- A milestone's headline: "41" "of 46" "finished twelve weeks".
+ALTER TABLE program_journal ADD COLUMN countValue INT DEFAULT 0;
+ALTER TABLE program_journal ADD COLUMN countTotal INT DEFAULT 0;
+ALTER TABLE program_journal ADD COLUMN countUnit VARCHAR(80) DEFAULT '';
+-- "agreed with 2 mentors · 18 members notified". Provenance is the reason a
+-- decision is trusted a year later, and it cannot be reconstructed after.
+ALTER TABLE program_journal ADD COLUMN agreedWith INT DEFAULT 0;
+ALTER TABLE program_journal ADD COLUMN notified INT DEFAULT 0;
+-- Proposed by somebody without the journal capability, waiting for a mentor.
+-- §8c promises "a mentor reviews it before it appears here", and a promise
+-- printed on the screen that makes it has to be enforced by the screen behind.
+ALTER TABLE program_journal ADD COLUMN proposedBy VARCHAR(64) DEFAULT '';
+ALTER TABLE program_journal ADD COLUMN proposedName VARCHAR(120) DEFAULT '';
+ALTER TABLE program_journal ADD COLUMN publishedAt VARCHAR(40) DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS program_journal_updates (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  updateId VARCHAR(48) UNIQUE NOT NULL,
+  entryId VARCHAR(48) NOT NULL,
+  authorId VARCHAR(64) DEFAULT '',
+  authorName VARCHAR(120) DEFAULT '',
+  body TEXT,
+  createdAt VARCHAR(40) DEFAULT '',
+  INDEX idx_pju_entry (entryId, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- One table for two words. "Follow this" on an issue and the bookmark on a
+-- piece of advice are the same act — this member marked this entry — and two
+-- tables would be two answers to "how many people are holding on to this".
+CREATE TABLE IF NOT EXISTS program_journal_follows (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  entryId VARCHAR(48) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  createdAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_pjf_unique (entryId, memberId),
+  INDEX idx_pjf_member (memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (107) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 108 · An application's reference stops being its row id ─────────────────
+-- NGG-A-00412 told anybody holding it how many applications the programme had
+-- received and — with a guessable email — let the status of a named person be
+-- found by walking the numbers. The lookup is throttled at 20 per 5 minutes,
+-- which is an afternoon.
+--
+-- Rows that already exist keep NO stored ref on purpose: their reference has
+-- been emailed to a family and printed on a success screen, so it goes on
+-- resolving by id. Only new applications get a random one.
+ALTER TABLE applications ADD COLUMN ref VARCHAR(24) DEFAULT '';
+CREATE INDEX idx_apps_ref ON applications(ref);
+
+INSERT INTO schema_version (version) VALUES (108) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 109 · A member's NGG level gets a column of its own ─────────────────────
+-- It is the first thing a centre lead asks about a child and the roster has
+-- always carried it, but until now the only place to put it on import was the
+-- free-text note — where nothing can filter, count or sort by it. Existing rows
+-- are backfilled from that note in the same breath, so the column is populated
+-- the moment it exists rather than whenever somebody next re-runs the import.
+--
+-- The pattern is the one members-import.php writes: a line reading "Level B" as
+-- the first segment of the fenced block. Anything that does not match is left
+-- blank rather than guessed at.
+-- The backfill itself is NOT here. db_apply_mysql_schema() executes only
+-- CREATE / ALTER / INSERT from this file, so an UPDATE placed here is read and
+-- skipped. It lives in api/_lib/db.php as NGG_BACKFILL_MEMBER_LEVELS, run from
+-- both the SQLite ladder and NGG_MYSQL_ROW_FIXUPS.
+ALTER TABLE members ADD COLUMN level VARCHAR(16) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (109) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 110 · Member self-service requests ──────────────────────────────────────
+-- One table for everything a member ASKS the desk for. Four kinds today — a
+-- payment they say they have made, an appeal against a fine, a leave of
+-- absence, a replacement ID — sharing a shape because they share a life:
+-- raised by the member, read by an admin, decided once, decision kept.
+--
+-- A payment claim is deliberately NOT a ledger row. fees.php is explicit that
+-- "a member confirming their own payment is not a thing this ledger will ever
+-- accept", and that is right: the ledger records money the desk has seen. A
+-- claim is the member telling the desk to go and look. Approving one posts the
+-- payment through the ordinary admin path, so money enters the account one way.
+CREATE TABLE IF NOT EXISTS member_requests (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  requestId VARCHAR(48) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL,
+  kind VARCHAR(24) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'open',
+  subject VARCHAR(200) DEFAULT '',
+  body TEXT,
+  amount INT DEFAULT 0,
+  reference VARCHAR(120) DEFAULT '',
+  proofUrl TEXT,
+  paidAt VARCHAR(40) DEFAULT '',
+  fromDate VARCHAR(40) DEFAULT '',
+  toDate VARCHAR(40) DEFAULT '',
+  refEntryId VARCHAR(48) DEFAULT '',
+  decision TEXT,
+  decidedBy VARCHAR(64) DEFAULT '',
+  decidedAt VARCHAR(40) DEFAULT '',
+  ledgerEntryId VARCHAR(48) DEFAULT '',
+  createdAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_mreq_member (memberId, createdAt),
+  INDEX idx_mreq_open (status, kind)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (110) ON DUPLICATE KEY UPDATE version = version;
+
+-- Which roster file was loaded, when, by whom, and what it did. `digest` is
+-- members_import_digest() — a hash of the OUTCOME, so it survives key order,
+-- row order and re-serialisation. Not unique on purpose: re-applying a roster
+-- is legal and this table exists to say it happened, not to forbid it.
+-- CHAR(64), not VARCHAR: a sha256 hex string is always exactly 64.
+CREATE TABLE IF NOT EXISTS member_import_runs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  digest CHAR(64) NOT NULL,
+  fileSha VARCHAR(64) DEFAULT '',
+  source VARCHAR(255) DEFAULT '',
+  actorId VARCHAR(64) DEFAULT '',
+  overwrite TINYINT DEFAULT 0,
+  created INT DEFAULT 0,
+  updated INT DEFAULT 0,
+  unchanged INT DEFAULT 0,
+  failed INT DEFAULT 0,
+  rowCount INT DEFAULT 0,
+  at VARCHAR(40) DEFAULT '',
+  INDEX idx_mirun_digest (digest, id),
+  INDEX idx_mirun_at (at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (111) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── Summer School: editions, and groups within an edition ───────────────────
+--
+-- THE VOCABULARY, because it was the problem. Three different things were all
+-- called a "cohort" somewhere in this product:
+--
+--   EDITION  one season of Summer School — "Summer School 2026". Stored in
+--            `summer_cohorts`; its id is the `cohortId` that summer_students,
+--            attendance and qr_codes already carry. That column means EDITION,
+--            everywhere, with no exceptions. The table keeps its historical
+--            name rather than gaining a translation layer over it — this
+--            schema deliberately has none.
+--   GROUP    a class WITHIN an edition — "Egbeda · Music · Morning". This
+--            table. New concept, new name, its own id. When a coordinator says
+--            "cohort" out loud, this is what they mean, so the UI calls it a
+--            group and never a cohort.
+--   CENTRE   a PLACE. `centres`. Belongs to NGG the organisation, not to
+--            Summer School: NGG members are posted to one all year and its
+--            code is the printed ID prefix on their cards. Summer School RUNS
+--            AT centres; it does not own them.
+--
+-- `cohortId` below is the EDITION a group belongs to, named to match the
+-- column it points at. Codes are unique within an edition, never globally.
+CREATE TABLE IF NOT EXISTS summer_groups (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  groupId VARCHAR(48) NOT NULL UNIQUE,
+  cohortId VARCHAR(48) NOT NULL,
+  name VARCHAR(160) NOT NULL,
+  code VARCHAR(32) NOT NULL,
+  centreId VARCHAR(48) DEFAULT '',
+  faculty VARCHAR(80) DEFAULT '',
+  track VARCHAR(80) DEFAULT '',
+  leadId VARCHAR(48) DEFAULT '',
+  capacity INT DEFAULT 0,
+  meetDays VARCHAR(32) DEFAULT '',
+  meetTime VARCHAR(32) DEFAULT '',
+  startDate VARCHAR(40) DEFAULT '',
+  endDate VARCHAR(40) DEFAULT '',
+  status VARCHAR(24) NOT NULL DEFAULT 'active',
+  notes TEXT,
+  createdAt VARCHAR(40) DEFAULT '', createdBy VARCHAR(64) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '', updatedBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY idx_sgrp_code (cohortId, code),
+  INDEX idx_sgrp_edition (cohortId, status),
+  INDEX idx_sgrp_centre (centreId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE summer_students ADD COLUMN groupId VARCHAR(48) DEFAULT '';
+CREATE INDEX idx_sstu_group ON summer_students(groupId);
+
+-- Edition lifecycle. `status` already held 'active' | 'archived' and those keep
+-- their meaning — 'active' is the one edition being run, and only one may be
+-- active at a time. 'planning' and 'closed' are the two states a coordinator
+-- previously had to fake by archiving early or leaving an old edition active.
+ALTER TABLE summer_cohorts ADD COLUMN code VARCHAR(24) DEFAULT '';
+ALTER TABLE summer_cohorts ADD COLUMN applyOpensAt VARCHAR(40) DEFAULT '';
+ALTER TABLE summer_cohorts ADD COLUMN applyClosesAt VARCHAR(40) DEFAULT '';
+ALTER TABLE summer_cohorts ADD COLUMN notes TEXT;
+ALTER TABLE summer_cohorts ADD COLUMN updatedAt VARCHAR(40) DEFAULT '';
+CREATE INDEX idx_scoh_status ON summer_cohorts(status, id);
+
+INSERT INTO schema_version (version) VALUES (112) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── ID cards: two faces, and a record of what was printed ───────────────────
+--
+-- `face` + `pairId` are what let a design have a BACK. A card has two sides; a
+-- template was one document, so a back either did not exist or was a second
+-- unrelated design nobody could tell was the pair. A front names its back and
+-- the batch renders both per person, in order, so a duplex run cannot come out
+-- mismatched.
+--
+-- card_runs / card_issues are the issuance record. The template system already
+-- froze a published version and bumped it on republish, and promised that "a
+-- print run stores the version it used" — except nothing stored it. Print runs
+-- left an audit line and no rows, so a first issue could not be told from a
+-- reprint, "which design is the card in this member's hand" had no answer, and
+-- a half-printed batch left nothing to resume from.
+--
+-- The template version is denormalised onto both tables on purpose: it is the
+-- fact being preserved, and it must survive the template being republished,
+-- renamed or deleted afterwards.
+ALTER TABLE card_templates ADD COLUMN face VARCHAR(16) DEFAULT 'single';
+ALTER TABLE card_templates ADD COLUMN pairId VARCHAR(64) DEFAULT '';
+CREATE INDEX idx_ctpl_pair ON card_templates(pairId);
+
+CREATE TABLE IF NOT EXISTS card_runs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  runId VARCHAR(48) NOT NULL UNIQUE,
+  kind VARCHAR(24) NOT NULL DEFAULT 'member',
+  mode VARCHAR(16) NOT NULL DEFAULT 'print',
+  templateId VARCHAR(64) DEFAULT '',
+  templateName VARCHAR(160) DEFAULT '',
+  templateVersion INT DEFAULT 0,
+  backTemplateId VARCHAR(64) DEFAULT '',
+  backTemplateVersion INT DEFAULT 0,
+  output VARCHAR(16) DEFAULT '',
+  dpi INT DEFAULT 0,
+  sheet VARCHAR(16) DEFAULT '',
+  requested INT DEFAULT 0,
+  issued INT DEFAULT 0,
+  failed INT DEFAULT 0,
+  reprintOf VARCHAR(48) DEFAULT '',
+  reason VARCHAR(255) DEFAULT '',
+  actorId VARCHAR(64) DEFAULT '',
+  startedAt VARCHAR(40) DEFAULT '',
+  finishedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_crun_at (startedAt),
+  INDEX idx_crun_kind (kind, startedAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS card_issues (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  runId VARCHAR(48) NOT NULL,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  displayId VARCHAR(48) DEFAULT '',
+  templateId VARCHAR(64) DEFAULT '',
+  templateVersion INT DEFAULT 0,
+  reprint TINYINT DEFAULT 0,
+  ok TINYINT DEFAULT 1,
+  note VARCHAR(255) DEFAULT '',
+  at VARCHAR(40) DEFAULT '',
+  INDEX idx_ciss_run (runId),
+  INDEX idx_ciss_subject (subjectType, subjectId, at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (113) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 114 · The Courage Index (NGGC 2040 brief §14) ───────────────────────────
+-- The one instrument in the brief with nothing behind it: musing lives in the
+-- journal, dues and fines in the fees ledger, the NGV rung on members.level —
+-- courage was recorded nowhere.
+--
+-- `evidence` carries what the mentor actually watched happen. The domain
+-- rejects an empty one, because the brief's constraint is that a score is
+-- given for an observed instance and not for an impression of a child; storing
+-- the instance beside the number is what makes that enforceable rather than
+-- aspirational.
+--
+-- No UNIQUE on (subjectId, observedOn) on purpose. A star is one per child per
+-- day to stop inflation; two genuinely separate acts of courage in one
+-- afternoon are two observations, and the evidence requirement is what bounds
+-- this rather than the calendar.
+--
+-- No aggregate column: the index is computed on read, so correcting one entry
+-- cannot leave a stale total on a child's record.
+CREATE TABLE IF NOT EXISTS courage_marks (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  subjectId VARCHAR(64) NOT NULL,
+  subjectType VARCHAR(24) NOT NULL DEFAULT 'member',
+  score INT NOT NULL,
+  prompt VARCHAR(160) DEFAULT '',
+  evidence TEXT NOT NULL,
+  markedById VARCHAR(64) NOT NULL,
+  markedByName VARCHAR(190) DEFAULT '',
+  centre VARCHAR(80) DEFAULT '',
+  observedOn VARCHAR(16) NOT NULL,
+  createdAt VARCHAR(40) DEFAULT '',
+  INDEX idx_courage_subject (subjectId, observedOn),
+  INDEX idx_courage_marker (markedById, observedOn)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (114) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 115 · A member belongs to a division (NGGC 2040 brief §5) ───────────────
+-- The brief assigns every member to one of four professional divisions, each
+-- with a mandate, and the programme had no column for it — so it could not
+-- answer "how many members are in Technology & Applied Engineering", could not
+-- report per division, and could not see that chess is taken across all four,
+-- which is §6's whole point.
+--
+-- NOT the academy catalogue's `faculty`, and the two must not be merged. A
+-- faculty is what a Summer School edition happens to teach this season and an
+-- admin edits it; a division is what an NGG member belongs to for years and the
+-- brief fixes it. Same shape, different owners, different lifetimes.
+--
+-- Stored as the id ('arts'|'media'|'tech'|'business'), not the display name, so
+-- renaming a division does not rewrite every row. Blank is legitimate: a member
+-- nobody has placed yet.
+--
+-- The backfill from `track` is NOT here. db_apply_mysql_schema() executes only
+-- CREATE / ALTER / INSERT, so an UPDATE in this file is read and skipped; it
+-- lives in api/_lib/db.php as NGG_BACKFILL_MEMBER_DIVISION and runs from both
+-- the SQLite ladder and NGG_MYSQL_ROW_FIXUPS.
+ALTER TABLE members ADD COLUMN division VARCHAR(24) DEFAULT '';
+CREATE INDEX idx_members_division ON members(division);
+
+INSERT INTO schema_version (version) VALUES (115) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 116 · The mentor's weekly review (NGGC 2040 brief §18) ──────────────────
+-- Twelve questions a mentor should be able to answer for every assigned member,
+-- every week. Nothing prompted them and nothing recorded the answers, so a
+-- mentor's only trace was a star for today, a V3 for this week and whatever
+-- meetings they happened to write up. The brief's point is the CADENCE: a child
+-- nobody reviewed for three weeks is the finding, and it was invisible.
+--
+-- One row per (subjectId, period), like v3_scores — a review is a weekly
+-- artefact and a second one for the same week is an edit of the first. That is
+-- what makes "who has not been reviewed this week" one query instead of a scan.
+--
+-- `answers` is JSON keyed by nggc_weekly_review_keys() rather than twelve
+-- columns: a thirteenth question would otherwise be a migration and a deploy,
+-- and twelve column names would be a second list of the questions, free to
+-- drift from domain/formation.php. The keys are validated on the way in.
+CREATE TABLE IF NOT EXISTS mentor_reviews (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  subjectId VARCHAR(64) NOT NULL,
+  subjectType VARCHAR(24) NOT NULL DEFAULT 'member',
+  period VARCHAR(16) NOT NULL,
+  answers TEXT,
+  answered INT DEFAULT 0,
+  concern TINYINT DEFAULT 0,
+  mentorId VARCHAR(64) NOT NULL,
+  mentorName VARCHAR(190) DEFAULT '',
+  centre VARCHAR(80) DEFAULT '',
+  createdAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_mrev_one (subjectId, period),
+  INDEX idx_mrev_period (period, centre),
+  INDEX idx_mrev_mentor (mentorId, period)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (116) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 117 · Why a member was promoted (NGGC 2040 brief §20) ──────────────────
+-- "A member should not become an NGV merely because they have been around for a
+-- certain amount of time. Progression should be based on evidence of formation."
+--
+-- The promotion already existed and is thorough: admin_member_promote_ngv
+-- provisions the volunteer record, the ID and the two-way link, idempotently.
+-- What it recorded was that a promotion happened and who pressed the button —
+-- not why. So the one question §20 cares about, whether a child was promoted on
+-- evidence or on tenure, had no answer six months later.
+--
+-- `evidence` is the promoter's own sentence and the domain requires it.
+-- `readiness` is a JSON snapshot of the formation record AS IT STOOD at the
+-- moment of promotion — courage index, weeks reviewed out of the last eight,
+-- attendance, stars, dues standing. Snapshotted rather than recomputed on read:
+-- the question is what they knew when they decided, and a figure recomputed in
+-- March answers a different one.
+--
+-- Append-only. A demotion writes its own row rather than deleting this one.
+CREATE TABLE IF NOT EXISTS member_promotions (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  memberId VARCHAR(64) NOT NULL,
+  fromStage VARCHAR(24) NOT NULL DEFAULT 'NGG',
+  toStage VARCHAR(24) NOT NULL DEFAULT 'NGV',
+  evidence TEXT NOT NULL,
+  readiness TEXT,
+  volunteerId VARCHAR(40) DEFAULT '',
+  byId VARCHAR(64) NOT NULL,
+  byName VARCHAR(190) DEFAULT '',
+  at VARCHAR(40) DEFAULT '',
+  INDEX idx_mprom_member (memberId, id),
+  INDEX idx_mprom_at (at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (117) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 118 · Quote of the week ─────────────────────────────────────────────
+-- Hausa riddles, Igbo and Yoruba proverbs rotated weekly on the home page.
+-- Rows are seeded by api/_lib/domain/wisdom.php on first read.
+CREATE TABLE IF NOT EXISTS wisdom_sayings (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  wisdomId VARCHAR(40) NOT NULL UNIQUE,
+  language VARCHAR(16) NOT NULL,
+  kind VARCHAR(16) NOT NULL DEFAULT 'proverb',
+  text TEXT NOT NULL,
+  translation TEXT,
+  answer TEXT,
+  answerTranslation TEXT,
+  meaning TEXT,
+  position INT DEFAULT 0,
+  status VARCHAR(16) DEFAULT 'live',
+  audioFile VARCHAR(80) DEFAULT '',
+  audioSource VARCHAR(16) DEFAULT '',
+  voice VARCHAR(40) DEFAULT '',
+  createdAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_wisdom_lang (language, status, position)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (118) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 119 · Quote of the week: English clip + TTS retry stamp ──────────────
+ALTER TABLE wisdom_sayings ADD COLUMN audioFileEn VARCHAR(80) DEFAULT '';
+ALTER TABLE wisdom_sayings ADD COLUMN voiceEn VARCHAR(80) DEFAULT '';
+ALTER TABLE wisdom_sayings ADD COLUMN ttsTriedAt VARCHAR(40) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (119) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 120 · Quote of the week: generate-once clip store + listen-back ──────
+CREATE TABLE IF NOT EXISTS wisdom_tts_clips (
+  cacheKey CHAR(64) PRIMARY KEY,
+  file VARCHAR(80) NOT NULL,
+  language VARCHAR(16) NOT NULL,
+  voice VARCHAR(80) NOT NULL,
+  script TEXT NOT NULL,
+  score DOUBLE NULL,
+  heard TEXT,
+  createdAt VARCHAR(40) DEFAULT '',
+  INDEX idx_wtts_file (file)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE wisdom_sayings ADD COLUMN spokenText TEXT;
+ALTER TABLE wisdom_sayings ADD COLUMN ttsScore DOUBLE NULL;
+ALTER TABLE wisdom_sayings ADD COLUMN ttsScoreEn DOUBLE NULL;
+
+-- ── 121 · Member cards: secure MEMQR- cards and printed formats, for the gate ──
+CREATE TABLE IF NOT EXISTS member_cards (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  kind VARCHAR(16) NOT NULL DEFAULT 'secure',
+  code VARCHAR(120) NOT NULL,
+  format VARCHAR(40) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'active',
+  source VARCHAR(24) DEFAULT '',
+  issuedBy VARCHAR(64) DEFAULT '',
+  issuedAt VARCHAR(40) DEFAULT '',
+  voidedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY uq_member_cards_code (kind, format, code),
+  INDEX idx_member_cards_member (memberId, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (121) ON DUPLICATE KEY UPDATE version = version;

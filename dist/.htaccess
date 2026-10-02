@@ -181,17 +181,41 @@ object-src 'none'"
 </IfModule>
 
 # ---------------------------------------------------------------
-# Block hidden files & sources
+# Block hidden files & sources.
+#
+# Doubled syntax throughout: `Require` is Apache 2.4 and 500s a 2.2 host;
+# `Order`/`Deny` is 2.2 and is ignored by 2.4 without mod_access_compat. A
+# shared host can be either, and these blocks are what keep .git, the schema
+# mirror, backups and a stray config.php off the web — a deny that is silently
+# ignored is the same as no deny at all.
 # ---------------------------------------------------------------
 <FilesMatch "^\.">
+<IfModule mod_authz_core.c>
   Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
 </FilesMatch>
 <FilesMatch "\.(md|log|sh|zip|gz|sql|bak|swp|inc|tpl|env)$">
+<IfModule mod_authz_core.c>
   Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
 </FilesMatch>
 # Block any accidental upload of config.php at the document root.
 <FilesMatch "^config\.php$">
+<IfModule mod_authz_core.c>
   Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
 </FilesMatch>
 
 # ---------------------------------------------------------------

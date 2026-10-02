@@ -158,6 +158,19 @@ function person_grade(array $row): array {
             'yearsStale' => $asAt !== '' ? max(0, (int)floor((time() - strtotime($asAt . ' UTC')) / (365.25 * 86400))) : 0];
 }
 
+/**
+ * A date of birth as an admin records it: YYYY-MM-DD, a real date, not in the
+ * future and not before 1900. '' is a valid answer (clear it). Returns the
+ * normalised date, '' for blank, or null when it is not a date of birth.
+ */
+function dob_clean(string $raw): ?string {
+    $raw = trim($raw);
+    if ($raw === '') return '';
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $raw, $m) || !checkdate((int)$m[2], (int)$m[3], (int)$m[1])) return null;
+    if ((int)$m[1] < 1900 || $raw > gmdate('Y-m-d')) return null;
+    return $raw;
+}
+
 function dob_age(string $iso): int {
     $iso = trim($iso);
     $t = strtotime($iso . ' 00:00:00 UTC');
@@ -373,7 +386,12 @@ function admin_centre_allowed(array $requester, ?string $centreName): bool {
 function admin_member_scope_gate(array $requester, string $memberId, ?array $member = null): array {
     $names = admin_centre_names_in_scope($requester);
     $member = $member ?? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
-    if (!$member) return ['ok' => false, 'error' => 'not_found'];
+    /* A scoped admin is told the same thing for an id that does not exist as
+       for one outside their centres. Answering not_found for one and
+       out_of_scope for the other would confirm, id by id, which members
+       exist elsewhere in the organisation. */
+    if (!$member) return $names === null ? ['ok' => false, 'error' => 'not_found']
+        : ['ok' => false, 'error' => 'out_of_scope', 'detail' => 'That member is not in a centre you administer.'];
     if ($names === null) return ['ok' => true, 'member' => $member];
 
     $centre = trim((string)($member['centre'] ?? ''));
@@ -884,6 +902,12 @@ function public_member(array $m): array {
         'track' => $m['track'],
         'displayId' => $m['displayId'] ?? '',
         'disciplines' => $m['disciplines'] ?? '',
+        'level' => $m['level'] ?? '',
+        /* The division id (brief §5). The id, not the name: every surface
+           that shows it resolves the mandate and the colour from the
+           doctrine, so the wording lives in one place and a rename does
+           not have to travel through the API. */
+        'division' => $m['division'] ?? '',
         'cohort' => $m['cohort'],
         'bio' => $m['bio'],
         'socials' => safe_json($m['socials'] ?? null),
@@ -933,6 +957,9 @@ function public_notification(array $n): array {
         'title' => $n['title'],
         'body' => $n['body'],
         'linkPage' => $n['linkPage'],
+        // The id of the thing this notification is about (a post, today), so
+        // the client can open it instead of dropping the member in a feed.
+        'linkRef' => (string)($n['linkRef'] ?? ''),
         'readAt' => $n['readAt'] ?: '',
         'createdAt' => $n['createdAt'],
     ];
@@ -992,4 +1019,145 @@ function b64url_decode(string $s): string {
     $pad = strlen($s) % 4;
     if ($pad) $s .= str_repeat('=', 4 - $pad);
     return (string)base64_decode(strtr($s, '-_', '+/'));
+}
+
+/* ── What kind of thing did a member just attach? ──────────────────────────
+ *
+ * One definition, shared by the upload signer (which has to pick a Cloudinary
+ * resource type before the bytes move) and the post validator (which has to
+ * agree, after the fact, that what arrived is something we allow). Two
+ * independent opinions about "is this a document" is how a PDF ends up stored
+ * as a PNG in the first place, so there is deliberately only one.
+ */
+
+/** Document extensions a member may attach to a community post. */
+const UPLOAD_DOC_EXTS = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx',
+                         'txt', 'csv', 'rtf', 'odt', 'ods', 'odp', 'zip'];
+
+/**
+ * Normalise a client-declared media kind to one this server will sign.
+ * Anything unrecognised is treated as an image — the old behaviour, and the
+ * safest of the four, because it is the most transformed.
+ */
+function upload_media_kind(string $kind): string {
+    $k = strtolower(trim($kind));
+    return in_array($k, ['image', 'video', 'pdf', 'raw'], true) ? $k : 'image';
+}
+
+/** The lowercase extension of a URL or filename, without the dot ('' if none). */
+function upload_ext(string $urlOrName): string {
+    $path = (string)(parse_url(trim($urlOrName), PHP_URL_PATH) ?: trim($urlOrName));
+    return preg_match('/\.([a-z0-9]{1,5})$/i', $path, $m) ? strtolower($m[1]) : '';
+}
+
+/** Is this a document we accept as an attachment? */
+function upload_is_doc_ext(string $ext): bool {
+    return in_array(strtolower($ext), UPLOAD_DOC_EXTS, true);
+}
+
+/* ── Subject-keyed attempt guard ───────────────────────────────────────────
+ *
+ * The limiter above keys on the client IP, which is the right shape for "one
+ * caller must not flood us" and the wrong shape for "this secret must not be
+ * guessable". An IP is a claim (see client_ip()), and even an honest one is
+ * shared by a whole centre's WiFi — so it is simultaneously spoofable by an
+ * attacker and unfair to a classroom.
+ *
+ * This guards the other way round: it counts failures against the THING BEING
+ * GUESSED — an admin's second factor, a gate's password, a guardian invite
+ * code. Whoever is guessing and from wherever, the code itself stops answering.
+ * That is the property that survives a forged header.
+ *
+ * It lives here rather than beside rate_limit_check() because that file is
+ * loaded by the endpoint layer, and these ceilings belong to the domain logic
+ * that enforces them — a guard the test harness cannot see is a guard nobody
+ * can prove works.
+ *
+ * Deliberately not merged into rate_limit_check(): the two answer different
+ * questions and the failure modes differ. Exhausting an IP bucket should back
+ * a busy centre off for a minute; exhausting a subject guard should lock one
+ * account for fifteen and say so in the audit log.
+ */
+
+/** Is this subject currently locked out? */
+function attempt_locked(string $scope, string $subject): bool {
+    if ($subject === '') return false;
+    $r = db_row('SELECT lockedUntil FROM attempt_guard WHERE scope = ? AND subject = ? LIMIT 1',
+                [$scope, $subject]);
+    $until = (string)($r['lockedUntil'] ?? '');
+    return $until !== '' && strtotime($until) > time();
+}
+
+/**
+ * Record one failed attempt. Returns true if that failure tripped the lock.
+ *
+ * The counter resets on lock rather than continuing to climb, so the lock is a
+ * fixed cost per $max guesses rather than an ever-growing one — long enough to
+ * make guessing hopeless, short enough that a member who fat-fingered their
+ * code three times is not shut out for the evening.
+ */
+function attempt_fail(string $scope, string $subject, int $max = 8, int $lockSeconds = 900): bool {
+    if ($subject === '') return false;
+    $now = now_iso();
+    $r = db_row('SELECT id, fails FROM attempt_guard WHERE scope = ? AND subject = ? LIMIT 1',
+                [$scope, $subject]);
+    $n = (int)($r['fails'] ?? 0) + 1;
+    $tripped = $n >= max(1, $max);
+    $patch = ['fails' => $tripped ? 0 : $n, 'updatedAt' => $now,
+              'lockedUntil' => $tripped ? gmdate('Y-m-d\TH:i:s\Z', time() + $lockSeconds) : ''];
+    if ($r) db_update('attempt_guard', $patch, ['id' => (int)$r['id']]);
+    else    db_insert('attempt_guard', $patch + ['scope' => $scope, 'subject' => $subject]);
+    return $tripped;
+}
+
+/** Clear the count after a success — a correct answer ends the suspicion. */
+function attempt_reset(string $scope, string $subject): void {
+    if ($subject === '') return;
+    db_exec('DELETE FROM attempt_guard WHERE scope = ? AND subject = ?', [$scope, $subject]);
+}
+
+/** Drop rows nobody has touched in a day. Called from the daily GC. */
+function attempt_guard_gc(): void {
+    db_exec('DELETE FROM attempt_guard WHERE updatedAt < ?',
+            [gmdate('Y-m-d\TH:i:s\Z', time() - 86400)]);
+}
+
+/* ── Trusted-proxy CIDR maths ──────────────────────────────────────────────
+ * Pure functions over strings, so they live here rather than in bootstrap.php
+ * (which emits headers on load and therefore cannot be required by the test
+ * harness) — the same reasoning that moved b64url here. client_ip() stays in
+ * bootstrap.php because it reads request state; the ARITHMETIC it depends on
+ * is testable in isolation, and a CIDR check nobody can test is a CIDR check
+ * nobody should rely on.
+ */
+
+/** Is $ip inside any of these CIDR ranges (or an exact address)? */
+function ip_is_trusted_proxy(string $ip, array $ranges): bool {
+    if ($ip === '' || !$ranges || !filter_var($ip, FILTER_VALIDATE_IP)) return false;
+    foreach ($ranges as $range) {
+        if (ip_in_cidr($ip, (string)$range)) return true;
+    }
+    return false;
+}
+
+/** IPv4/IPv6 CIDR membership. A bare address is treated as a /32 or /128. */
+function ip_in_cidr(string $ip, string $cidr): bool {
+    $cidr = trim($cidr);
+    if ($cidr === '') return false;
+    $bits = null;
+    if (strpos($cidr, '/') !== false) [$cidr, $bits] = explode('/', $cidr, 2);
+    $net = @inet_pton(trim($cidr));
+    $addr = @inet_pton($ip);
+    if ($net === false || $addr === false || strlen($net) !== strlen($addr)) return false;
+
+    $maxBits = strlen($net) * 8;
+    $bits = ($bits === null || $bits === '') ? $maxBits : (int)$bits;
+    if ($bits < 0 || $bits > $maxBits) return false;
+
+    $whole = intdiv($bits, 8);
+    if ($whole > 0 && strncmp($net, $addr, $whole) !== 0) return false;
+    $rem = $bits % 8;
+    if ($rem === 0) return true;
+    $mask = chr(0xFF << (8 - $rem) & 0xFF);
+    return (($net[$whole] & $mask) === ($addr[$whole] & $mask));
 }

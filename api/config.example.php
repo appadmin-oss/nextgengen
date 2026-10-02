@@ -97,7 +97,32 @@ return [
         'deliver'   => 60,     // seconds between integration-bus drains
         'reminders' => 900,    // seconds between reminder sweeps
         'maint'     => 3600,   // seconds between maintenance passes
+        'accrue'    => 86400,  // seconds between fee-accrual passes (daily)
+        'accrueBatch' => 500,  // members brought up to date per pass
     ],
+
+    // -----------------------------------------------------------------------
+    // EXTERNAL SCHEDULER (optional, and better than web-cron when you have one)
+    //
+    // Web-cron above rides real page traffic, so a site with a quiet weekend
+    // does no background work until somebody visits. If your host CAN schedule
+    // — cPanel Cron Jobs, an uptime pinger, a GitHub Action — point it at
+    // api/public/cron.php instead and the work happens on the clock:
+    //
+    //   */15 * * * *  wget -q -O /dev/null "https://YOURDOMAIN/api/public/cron.php?key=THE_KEY"
+    //
+    // Add &job=accrue|reminders|deliver|maint to run one job rather than all.
+    //
+    // Set this to a long random string (e.g. `openssl rand -hex 24`). Leave it
+    // EMPTY and the endpoint answers 404 — it is off, and says nothing about
+    // itself to a scanner. Both paths use the same lock, so you can leave
+    // web-cron on while you set the schedule up, then switch it off.
+    //
+    // The key travels in a URL and so ends up in access logs and in the cron
+    // listing: rotate it like a password. It grants running maintenance that
+    // was going to run anyway, and nothing else.
+    // -----------------------------------------------------------------------
+    'cron_key' => '',
 
     // -----------------------------------------------------------------------
     // Google Sheets read-only mirror (OPTIONAL). If set, api/tools/export-sheets.php
@@ -126,6 +151,16 @@ return [
     'paystack' => [
         'secret' => '',   // sk_live_… (or sk_test_…)
         'public' => '',   // pk_live_… (shown to the browser; safe)
+    ],
+
+    // -----------------------------------------------------------------------
+    // Voice for the Quote of the week (OPTIONAL). Spitch (https://spitch.app)
+    // reads Hausa, Igbo and Yoruba natively. Used only when staff press
+    // "Generate voice" in Control Room → Quote of the week; the clip is stored,
+    // so visitors never trigger a call. Staff voice-overs need no key at all.
+    // -----------------------------------------------------------------------
+    'tts' => [
+        'spitch_key' => '',
     ],
 
     // -----------------------------------------------------------------------
@@ -276,6 +311,59 @@ return [
     // Public origin (no trailing slash). Used in CORS + redirects.
     'app_origin'      => 'https://yourdomain.com',
 
+    /* ---------------------------------------------------------------------
+     * Whose word to take for "who is calling".
+     *
+     * `CF-Connecting-IP` and `X-Forwarded-For` are claims. They are worth
+     * believing only when they arrive through something that would have
+     * overwritten a forged one — otherwise a caller simply picks their own
+     * address, and since EVERY rate limit is keyed on the answer, picking a
+     * fresh one per request means no rate limit at all. That is the difference
+     * between an eight-guess ceiling on the kiosk password and none.
+     *
+     * List the CIDRs your traffic genuinely arrives from. Only when Apache's
+     * REMOTE_ADDR is inside one of them is a forwarded header believed.
+     *
+     * EMPTY (the default) = trust nothing, use REMOTE_ADDR. Correct for a
+     * direct-to-Apache shared host. If you are behind Cloudflare and leave this
+     * empty, every visitor looks like the same edge address: throttles get
+     * stricter, never looser, which is the right way round to be wrong.
+     *
+     * Cloudflare publishes its ranges at https://www.cloudflare.com/ips/ —
+     * paste the current v4 + v6 lists here if you sit behind it.
+     * ------------------------------------------------------------------- */
+    'trusted_proxies' => [
+        // '173.245.48.0/20', '103.21.244.0/22', …   // Cloudflare IPv4
+        // '2400:cb00::/32', '2606:4700::/32', …     // Cloudflare IPv6
+        // '127.0.0.1',                              // local reverse proxy
+    ],
+
+    /* Browser origins allowed to call the PUBLIC api cross-origin. Sister sites
+     * embed the volunteer form headlessly. No credentials cross the boundary;
+     * an origin not on this list simply gets no CORS headers. Omit the key to
+     * accept the built-in Afrovanguard defaults. */
+    'cors_origins' => [
+        'https://sts.afrovanguard.org.ng',
+        'https://afrovanguard.org.ng',
+        'https://www.afrovanguard.org.ng',
+    ],
+
+    /* Where application logs and PHP warnings are written. The folder ships
+     * with a deny-all .htaccess; move it outside the web root if your host
+     * allows. */
+    'log_dir' => __DIR__ . '/logs',
+
+    /* The MySQL schema mirror, replayed additively when its hash changes.
+     * Only set this if the repo layout differs from the default. */
+    'mysql_schema_path' => __DIR__ . '/../db/schema-mysql.sql',
+
+    /* Organisation identity, used in emails, certificates and printed cards. */
+    'org' => [
+        'name'  => 'Next Generation Genius',
+        'short' => 'NGG',
+        'email' => 'hello@yourdomain.com',
+    ],
+
     // -----------------------------------------------------------------------
     // Afrovanguard mentorship connection. NGG ("Next Gen") is a program inside
     // Afrovanguard's Street-To-Stardom (STS) — but NGG is the MAIN, live site.
@@ -294,6 +382,11 @@ return [
         // Webhooks → API tokens with the `mentors:read` scope.
         'api_base'  => 'https://afrovanguard.org.ng/integrations/api.php',
         'api_token' => '',   // av_int_… (scope: mentors:read)
+        // A member promoted to NGV gets their NGV account on Afrovanguard
+        // (domain/ngv-portal.php). The secret is the same value as
+        // NGG_WEBHOOK_SECRET in Afrovanguard's environment; empty ⇒ off.
+        'ngv_webhook_secret' => '',
+        'ngv_webhook_url'    => '',   // empty ⇒ {org_url}/integrations/ngg.php
     ],
 
     // Per-IP rate limits — sliding window inside the configured period.
@@ -334,6 +427,12 @@ return [
         'public.session'   => 300,
         'public.anchorContent' => 300,
         'public.centres'   => 300,  // centre list; purged on centre_upsert/delete
+        /* The /summer page's one read: the live edition, the academies and the
+           centres with what runs at each. All configuration and aggregates, so
+           a five-minute window is generous rather than risky — and it is the
+           page a promotion drives traffic to, which is exactly when a cache
+           earns its keep. Purged alongside public.centres on a centre write. */
+        'public.summer'    => 300,
         'community.showcase' => 180, // admin-featured posts; purged on feature/hide
         'post.get'         => 120,  // a single post by slug; purged with public.posts
         'default'          => 0,    // 0 = no cache

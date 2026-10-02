@@ -15,7 +15,135 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 92;
+const NGG_SCHEMA_TARGET = 121;
+
+/**
+ * Backfill for migration 109 — recover a member's level from the note the
+ * importer wrote before `level` was a column.
+ *
+ * Named separately from the fixup table below because the SQLite ladder needs
+ * it too (step 109); everything else in that table is MySQL-only, because
+ * SQLite already ran the equivalent through its own versioned migration.
+ *
+ * INSTR/SUBSTR/UPPER mean the same thing in SQLite and MySQL. The pattern is
+ * the one members-import.php writes: "Level B" opening the fenced block.
+ */
+/* 115 — a member's division, derived from the free-text `track` they already
+ * carry. Only the unambiguous ones: "Leadership", "Community Intelligence" and
+ * "Public Speaking" belong to no single division and are left blank, because a
+ * member in NO division is a question a centre lead will ask, and a member in
+ * the WRONG one is a wrong answer nobody thinks to check. The full mapping,
+ * including the synonyms, is nggc_division_for_track() in
+ * domain/formation.php; this is the SQL subset that can run as one statement.
+ *
+ * LOWER() on both sides: rosters have arrived with "Tech", "tech" and "TECH". */
+const NGG_BACKFILL_MEMBER_DIVISION = "
+    UPDATE members SET division = CASE
+        WHEN LOWER(track) IN ('music','arts','art','creative','drama','dance','fashion','craft') THEN 'arts'
+        WHEN LOWER(track) IN ('media','film','photography','design','graphics','content') THEN 'media'
+        WHEN LOWER(track) IN ('tech','technology','coding','code','robotics','ai','engineering','builder') THEN 'tech'
+        WHEN LOWER(track) IN ('business','admin','operations','finance','strategy') THEN 'business'
+        ELSE division END
+     WHERE (division IS NULL OR division = '') AND track IS NOT NULL AND track <> ''
+";
+
+const NGG_BACKFILL_MEMBER_LEVELS = "
+    UPDATE members SET level = UPPER(SUBSTR(notes, INSTR(notes, 'Level ') + 6, 1))
+     WHERE (level IS NULL OR level = '')
+       AND INSTR(notes, '[roster-import]') > 0
+       AND INSTR(notes, 'Level ') > 0
+";
+
+/**
+ * Migrations that have to touch existing ROWS, for MySQL.
+ *
+ * db_apply_mysql_schema() replays db/schema-mysql.sql but executes only
+ * CREATE / ALTER / INSERT. An UPDATE placed in that file is therefore read,
+ * skipped and silently never applied — while the SAME migration does run on
+ * SQLite through the versioned ladder. Seven had accumulated there, so on
+ * every MySQL deployment these columns were added and left empty:
+ *
+ *   60  the summer_students name split          → firstName / lastName blank
+ *   62  the ID-card 90-day expiry               → expiresAt blank (never expires)
+ *   78  sex, unified from the older `gender`    → sex blank, analytics "Not recorded"
+ *   93  notifiedAt on published community rows  → blank
+ *   109 the member level backfill               → level blank
+ *
+ * They live here instead, where the replay cannot drop them. Three rules for
+ * anything added to this table:
+ *
+ *  1. **Guarded.** Every one matches only rows that have not had it applied,
+ *     because this runs once per deploy (whenever the mirror's hash changes)
+ *     rather than once ever. There is no version bookkeeping to lean on.
+ *  2. **Ordered.** They run top to bottom; the lastName split reads the
+ *     firstName the statement above it wrote.
+ *  3. **Additive.** Filling a blank, never rewriting a value somebody set.
+ *
+ * The key is what it touches, and is used in the log line when a statement
+ * changes rows — so a deploy that finally applies a years-old backfill says so
+ * rather than doing it silently.
+ */
+const NGG_MYSQL_ROW_FIXUPS = [
+    /* 60 — one "Full name" box, split into the parts the ID card needs. */
+    'summer_students.firstName' => "
+        UPDATE summer_students
+           SET firstName = CASE WHEN LOCATE(' ', TRIM(fullName)) > 0
+                                THEN SUBSTRING(TRIM(fullName), 1, LOCATE(' ', TRIM(fullName)) - 1)
+                                ELSE TRIM(fullName) END
+         WHERE firstName = '' AND TRIM(COALESCE(fullName, '')) != ''
+    ",
+    'summer_students.lastName' => "
+        UPDATE summer_students
+           SET lastName = TRIM(REPLACE(TRIM(fullName), firstName, ''))
+         WHERE lastName = '' AND firstName != '' AND TRIM(fullName) != firstName
+    ",
+    /* 62 — a summer card is a season pass, not a life membership.
+     *
+     * The date is taken with SUBSTR before the arithmetic, and the shape is
+     * checked in the WHERE. This project stores timestamps as ISO-8601 text in
+     * VARCHAR columns ("2026-08-27T08:56:44Z" — see now_iso()). SQLite's
+     * datetime() parses that; MySQL's DATE_ADD does not, and under
+     * STRICT_ALL_TABLES it raises 1292 rather than returning NULL. The version
+     * of this statement that sat in the mirror passed the whole string
+     * straight to DATE_ADD, so it would have thrown on the first row had it
+     * ever run — being skipped is the only reason nobody found out.
+     *
+     * The REGEXP guard is not belt-and-braces either: one unparseable
+     * timestamp must not abort the fixup pass for every other table.
+     *
+     * Note what applying this late means: a card assigned more than 90 days
+     * ago gets an expiry date in the past, and summer_scan_checkin() then
+     * refuses it with `id_expired`. That is the migration doing what it says,
+     * but on a host where it has never run it lands as a change in behaviour
+     * rather than as a no-op. The log line below is how you see it happen. */
+    'qr_codes.expiresAt' => "
+        UPDATE qr_codes
+           SET expiresAt = DATE_FORMAT(
+                 DATE_ADD(SUBSTR(COALESCE(NULLIF(assignedAt,''), createdAt), 1, 10), INTERVAL 90 DAY), '%Y-%m-%d')
+         WHERE expiresAt = '' AND status = 'assigned'
+           AND SUBSTR(COALESCE(NULLIF(assignedAt,''), createdAt), 1, 10) REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+    ",
+    /* 78 — `sex` is the single fact; `gender` stays but is copied across. */
+    'summer_students.sex' => "
+        UPDATE summer_students SET sex = gender
+         WHERE (sex IS NULL OR sex = '') AND gender IS NOT NULL AND gender != ''
+    ",
+    /* 93 — everything already live has had whatever notifications it was going
+       to get. Stamping them is what stops a hide-and-reapprove on an old post
+       notifying people about a conversation from months ago. */
+    'community_posts.notifiedAt' => "
+        UPDATE community_posts SET notifiedAt = createdAt
+         WHERE status = 'published' AND (notifiedAt IS NULL OR notifiedAt = '')
+    ",
+    'community_comments.notifiedAt' => "
+        UPDATE community_comments SET notifiedAt = createdAt
+         WHERE status = 'published' AND (notifiedAt IS NULL OR notifiedAt = '')
+    ",
+    /* 109 — the member level, out of the importer's note. */
+    'members.level' => NGG_BACKFILL_MEMBER_LEVELS,
+    /* 115 — the member's division, out of their track. */
+    'members.division' => NGG_BACKFILL_MEMBER_DIVISION,
+];
 
 function db_conn(): PDO {
     static $pdo = null;
@@ -152,6 +280,23 @@ function db_apply_mysql_schema(PDO $db): void {
             }
         }
     }
+    /* Data fixups the mirror cannot carry — see NGG_MYSQL_ROW_FIXUPS.
+     *
+     * Reached only when the mirror's hash changed, i.e. once per deploy, and
+     * every statement is guarded so the runs after the first match nothing.
+     * A statement that DID change rows is logged with its count: several of
+     * these are years old and have never run on a MySQL host, so the first
+     * deploy after this lands is the one where they finally apply. */
+    foreach (NGG_MYSQL_ROW_FIXUPS as $what => $stmt) {
+        try {
+            $n = $db->exec($stmt);
+            if ($n) error_log("[db] mysql row fixup {$what}: {$n} row(s) backfilled");
+        } catch (Throwable $e) {
+            $allOk = false;
+            error_log("[db] mysql row fixup {$what} failed: " . $e->getMessage());
+        }
+    }
+
     // Record the hash even on partial failure. The old "only on full success"
     // rule meant a single un-swallowed error (e.g. a missing ALTER privilege)
     // replayed the entire ~40-statement mirror on EVERY request forever — a
@@ -2488,6 +2633,1064 @@ function db_migrate(PDO $db): void {
             CREATE INDEX idx_mg_subject ON mentor_goals(subjectId, status);
             CREATE INDEX idx_mg_due ON mentor_goals(status, dueOn);
         ",
+
+        /* What a shared document ACTUALLY is, recorded rather than guessed.
+         *
+         * The community stored a media url and nothing else about the file, so
+         * everything downstream — the viewer, the doc card's type label, the
+         * Drive mirror — re-derived the format by pattern-matching the url. That
+         * is a question about a filename, not about a file, and it answered
+         * wrongly for every document the upload path had re-encoded on the way
+         * in (a PDF signed as an image came back a PNG, and the viewer that
+         * keyed on `.pdf` therefore never appeared). The upload path is fixed;
+         * this makes the answer a stored fact so nothing has to guess again.
+         */
+        93 => "
+            ALTER TABLE community_posts ADD COLUMN mediaFormat TEXT DEFAULT '';
+            ALTER TABLE community_posts ADD COLUMN mediaBytes INTEGER DEFAULT 0;
+            ALTER TABLE community_posts ADD COLUMN mediaPages INTEGER DEFAULT 0;
+        ",
+
+        /* A brute-force ceiling that does not depend on the caller being honest
+         * about who they are.
+         *
+         * The rate limiter keys on the client IP, and an IP is a claim from a
+         * header until a trusted proxy vouches for it. Password sign-in and OTP
+         * always had an account-level lockout underneath (members.failedLogins),
+         * so they survived a spoofed header — but admin TOTP, the kiosk gate
+         * password and the guardian invite-code lookup had nothing but the IP
+         * bucket. Those three guard, respectively, the admin console's second
+         * factor, a centre's check-in desk, and a six-digit code that resolves
+         * to a child's name.
+         *
+         * Keyed on the SUBJECT being attacked (the admin, the gate, the code)
+         * rather than on the attacker, because the subject is the thing we can
+         * actually identify. */
+        94 => "
+            CREATE TABLE attempt_guard (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              scope TEXT NOT NULL,
+              subject TEXT NOT NULL,
+              fails INTEGER NOT NULL DEFAULT 0,
+              lockedUntil TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_attempt_key ON attempt_guard(scope, subject);
+            CREATE INDEX idx_attempt_stale ON attempt_guard(updatedAt);
+        ",
+
+        /* A notification that can be FOLLOWED.
+         *
+         * Notifications carried a `linkPage` ("community") and nothing else, so
+         * "Ada mentioned you" could tell a member that something had happened
+         * and then drop them at the top of a feed to hunt for it. The one
+         * notification whose entire purpose is "somebody is talking to you,
+         * here" was the one that could not say where. `linkRef` is the id of
+         * the thing the notification is about — a post, today; anything with an
+         * id, later. */
+        95 => "
+            ALTER TABLE notifications ADD COLUMN linkRef TEXT DEFAULT '';
+        ",
+
+        /* How long a clip runs.
+         *
+         * The post handler has always CHECKED the duration — a clip over three
+         * minutes is refused — and then thrown the number away. So the Files
+         * list could say how big a video is but not how long, which is the
+         * figure a member on metered data actually decides on: "18 MB" and
+         * "4:12" answer different questions and they need both. */
+        96 => "
+            ALTER TABLE community_posts ADD COLUMN mediaDuration INTEGER DEFAULT 0;
+        ",
+
+        /* Chess as a club fixture rather than a novelty (design turn 6A).
+         *
+         * Three things the match tables could not express:
+         *
+         *   A RATING. Without one, "find an opponent" is a list of names and a
+         *   child has no way to tell whether they are about to be crushed. Elo,
+         *   not Glicko — a club needs a number members recognise from every
+         *   other chess app they have used, and the deviation term Glicko adds
+         *   buys accuracy nobody here is going to read.
+         *
+         *   A CHALLENGE that is not yet a game. An invite created a match row
+         *   immediately, so its terms (time control, colour, rated) had nowhere
+         *   to live before it was accepted, an OPEN challenge — one anybody may
+         *   take — had no representation at all, and nothing expired: an
+         *   unanswered invite sat in a child's list forever.
+         *
+         *   HEAD-TO-HEAD. "You lead 3-2" is the single most useful thing on
+         *   the search row, and counting it from match_games on every keystroke
+         *   is a table scan per result.
+         */
+        97 => "
+            CREATE TABLE chess_ratings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              playerId TEXT NOT NULL,
+              rating INTEGER NOT NULL DEFAULT 1200,
+              games INTEGER NOT NULL DEFAULT 0,
+              wins INTEGER NOT NULL DEFAULT 0,
+              losses INTEGER NOT NULL DEFAULT 0,
+              draws INTEGER NOT NULL DEFAULT 0,
+              peak INTEGER NOT NULL DEFAULT 1200,
+              lastPlayedAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_chess_rating_player ON chess_ratings(playerId);
+
+            CREATE TABLE chess_challenges (
+              challengeId TEXT PRIMARY KEY,
+              fromId TEXT NOT NULL, fromName TEXT DEFAULT '',
+              toId TEXT DEFAULT '', toName TEXT DEFAULT '',
+              timeControl TEXT DEFAULT '1day',
+              colourPref TEXT DEFAULT 'random',
+              rated INTEGER DEFAULT 1,
+              channelSlug TEXT DEFAULT '',
+              status TEXT DEFAULT 'open',
+              matchId TEXT DEFAULT '',
+              createdAt TEXT NOT NULL,
+              expiresAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_chess_ch_to ON chess_challenges(toId, status);
+            CREATE INDEX idx_chess_ch_open ON chess_challenges(status, expiresAt);
+
+            CREATE TABLE chess_head2head (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              pairKey TEXT NOT NULL,
+              playerId TEXT NOT NULL,
+              opponentId TEXT NOT NULL,
+              wins INTEGER NOT NULL DEFAULT 0,
+              losses INTEGER NOT NULL DEFAULT 0,
+              draws INTEGER NOT NULL DEFAULT 0,
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_chess_h2h ON chess_head2head(playerId, opponentId);
+
+            ALTER TABLE match_games ADD COLUMN timeControl TEXT DEFAULT '1day';
+            ALTER TABLE match_games ADD COLUMN rated INTEGER DEFAULT 1;
+            ALTER TABLE match_games ADD COLUMN channelSlug TEXT DEFAULT '';
+            ALTER TABLE match_games ADD COLUMN ratingDelta INTEGER DEFAULT 0;
+            ALTER TABLE match_games ADD COLUMN settledAt TEXT DEFAULT '';
+        ",
+
+        /* 98 — the community audit.
+         *
+         *   SAFEGUARDING. The crisis gate used to decide correctly and then
+         *   throw the decision away: a child writing about self-harm had the
+         *   post refused, saw a helpline, and no adult was ever told. The
+         *   refusal is the moment a disclosure becomes something to act on,
+         *   not the moment it stops mattering — so it is kept, and raised.
+         *
+         *   COMMENT REPORTS. `reportCount` existed on posts only, and the
+         *   queue looked for comments with status 'reported' — a status the
+         *   moderation map never writes. Reporting a bullying reply reached
+         *   nobody. Comments now carry the same counter posts do.
+         *
+         *   INDEXES. Nothing could serve the feed's own ORDER BY, so every
+         *   page was a filesort over the whole table.
+         */
+        98 => "
+            CREATE TABLE community_safeguarding (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              caseId TEXT NOT NULL UNIQUE,
+              authorId TEXT NOT NULL,
+              authorName TEXT DEFAULT '',
+              surface TEXT DEFAULT 'post',
+              channelSlug TEXT DEFAULT '',
+              body TEXT,
+              status TEXT DEFAULT 'open',
+              acknowledgedBy TEXT DEFAULT '',
+              acknowledgedAt TEXT DEFAULT '',
+              createdAt TEXT
+            );
+            CREATE INDEX idx_csafe_status ON community_safeguarding(status, createdAt);
+
+            ALTER TABLE community_comments ADD COLUMN reportCount INTEGER DEFAULT 0;
+            ALTER TABLE community_posts ADD COLUMN notifiedAt TEXT DEFAULT '';
+            ALTER TABLE community_comments ADD COLUMN notifiedAt TEXT DEFAULT '';
+            UPDATE community_posts SET notifiedAt = createdAt WHERE status = 'published' AND (notifiedAt IS NULL OR notifiedAt = '');
+            UPDATE community_comments SET notifiedAt = createdAt WHERE status = 'published' AND (notifiedAt IS NULL OR notifiedAt = '');
+
+            CREATE INDEX idx_cpost_feed ON community_posts(status, pinned, createdAt);
+            CREATE INDEX idx_cpost_featured ON community_posts(featured, status);
+            CREATE INDEX idx_cbook_member ON community_bookmarks(memberId);
+            CREATE INDEX idx_creport_reporter ON community_reports(memberId);
+        ",
+
+        /* 99 — Tournaments 2.0.
+         *
+         *   FORMATS. One shape (centre knockout → final) became five. Swiss is
+         *   what a chess club actually runs: everybody plays every round,
+         *   nobody is out after one loss, and pairing is by score then rating.
+         *
+         *   STANDINGS on the entrant row, because every format except knockout
+         *   needs a running score, colour balance and an opponent history, and
+         *   the knockout-only shape had nowhere to keep any of it.
+         *
+         *   CLOCKS. `timeControl` was a LABEL: '3+2' was stored and nothing
+         *   ever counted down. The server now holds the remaining milliseconds,
+         *   applies the Fischer increment on each move, and is the only thing
+         *   allowed to decide somebody flagged.
+         */
+        99 => "
+            ALTER TABLE tournaments ADD COLUMN format TEXT DEFAULT 'centre';
+            ALTER TABLE tournaments ADD COLUMN timeControl TEXT DEFAULT '10+0';
+            ALTER TABLE tournaments ADD COLUMN rated INTEGER DEFAULT 1;
+            ALTER TABLE tournaments ADD COLUMN totalRounds INTEGER DEFAULT 0;
+            ALTER TABLE tournaments ADD COLUMN description TEXT DEFAULT '';
+            ALTER TABLE tournaments ADD COLUMN centres TEXT;
+            ALTER TABLE tournaments ADD COLUMN eligibility TEXT;
+            ALTER TABLE tournaments ADD COLUMN startsAt TEXT DEFAULT '';
+            ALTER TABLE tournaments ADD COLUMN endsAt TEXT DEFAULT '';
+            ALTER TABLE tournaments ADD COLUMN settings TEXT;
+
+            ALTER TABLE tournament_entrants ADD COLUMN seed INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN ratingAtEntry INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN score REAL DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN played INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN wins INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN draws INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN losses INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN byes INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN whiteCount INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN blackCount INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN lastColour TEXT DEFAULT '';
+            ALTER TABLE tournament_entrants ADD COLUMN opponents TEXT;
+            ALTER TABLE tournament_entrants ADD COLUMN tiebreak1 REAL DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN tiebreak2 REAL DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN performance INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN ratingDelta INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN withdrawn INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN arenaStreak INTEGER DEFAULT 0;
+            ALTER TABLE tournament_entrants ADD COLUMN arenaPoints INTEGER DEFAULT 0;
+
+            CREATE TABLE tournament_rounds (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              tournamentId TEXT NOT NULL,
+              round INTEGER NOT NULL,
+              stage TEXT DEFAULT '',
+              status TEXT DEFAULT 'pending',
+              pairedAt TEXT DEFAULT '',
+              closedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_trn_round ON tournament_rounds(tournamentId, stage, round);
+
+            CREATE TABLE tournament_pairings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              tournamentId TEXT NOT NULL,
+              round INTEGER NOT NULL,
+              stage TEXT DEFAULT '',
+              board INTEGER DEFAULT 0,
+              centre TEXT DEFAULT '',
+              whiteId TEXT DEFAULT '', whiteName TEXT DEFAULT '',
+              blackId TEXT DEFAULT '', blackName TEXT DEFAULT '',
+              matchId TEXT DEFAULT '',
+              isBye INTEGER DEFAULT 0,
+              result TEXT DEFAULT '',
+              scoredAt TEXT DEFAULT '',
+              createdAt TEXT NOT NULL
+            );
+            CREATE INDEX idx_trn_pair ON tournament_pairings(tournamentId, stage, round, board);
+            CREATE INDEX idx_trn_pair_match ON tournament_pairings(matchId);
+
+            ALTER TABLE match_games ADD COLUMN initialMs INTEGER DEFAULT 0;
+            ALTER TABLE match_games ADD COLUMN incrementMs INTEGER DEFAULT 0;
+            ALTER TABLE match_games ADD COLUMN whiteMs INTEGER DEFAULT 0;
+            ALTER TABLE match_games ADD COLUMN blackMs INTEGER DEFAULT 0;
+            ALTER TABLE match_games ADD COLUMN clockRunning INTEGER DEFAULT 0;
+            ALTER TABLE match_games ADD COLUMN turnStartedAt TEXT DEFAULT '';
+            ALTER TABLE match_games ADD COLUMN board INTEGER DEFAULT 0;
+            CREATE INDEX idx_match_clock ON match_games(status, clockRunning);
+        ",
+
+        /* 100 — the board.
+         *
+         *   IDEMPOTENCY. A move was identified only by its ply. A client that
+         *   sent a move, lost the response and retried either collided with
+         *   UNIQUE(matchId, ply) — surfacing as a failure for a move that HAD
+         *   landed — or, if the opponent had replied meanwhile, applied a
+         *   second time at a new ply. On a 3G handset at a centre that is not
+         *   rare. The client names each move once now.
+         *
+         *   VARIANTS. Chess960 does not start from a constant, so the start
+         *   position has to be stored rather than assumed.
+         *
+         *   PROMOTIONS. First-party only — NGG promoting its own programmes to
+         *   its own members. No third-party ad network, deliberately.
+         */
+        100 => "
+            ALTER TABLE match_moves ADD COLUMN clientMoveId TEXT DEFAULT NULL;
+            CREATE UNIQUE INDEX idx_match_move_client ON match_moves(matchId, clientMoveId);
+            ALTER TABLE match_moves ADD COLUMN msSpent INTEGER DEFAULT 0;
+
+            ALTER TABLE match_games ADD COLUMN variant TEXT DEFAULT 'standard';
+            ALTER TABLE match_games ADD COLUMN variantData TEXT;
+            ALTER TABLE match_games ADD COLUMN startFen TEXT DEFAULT '';
+            ALTER TABLE tournaments ADD COLUMN variant TEXT DEFAULT 'standard';
+            ALTER TABLE chess_challenges ADD COLUMN variant TEXT DEFAULT 'standard';
+
+            CREATE TABLE promos (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              promoId TEXT UNIQUE NOT NULL,
+              title TEXT NOT NULL, body TEXT DEFAULT '',
+              kind TEXT DEFAULT 'programme', placement TEXT DEFAULT 'chess',
+              ctaLabel TEXT DEFAULT '', ctaPage TEXT DEFAULT '', ctaRef TEXT DEFAULT '',
+              imageUrl TEXT DEFAULT '', accent TEXT DEFAULT '',
+              priority INTEGER DEFAULT 0, status TEXT DEFAULT 'draft',
+              startsAt TEXT DEFAULT '', endsAt TEXT DEFAULT '', audience TEXT,
+              impressions INTEGER DEFAULT 0, clicks INTEGER DEFAULT 0, dismissals INTEGER DEFAULT 0,
+              createdBy TEXT DEFAULT '', createdAt TEXT NOT NULL, updatedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX idx_promo_live ON promos(status, placement, priority);
+
+            CREATE TABLE promo_seen (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              promoId TEXT NOT NULL, memberId TEXT NOT NULL,
+              seenAt TEXT DEFAULT '', clickedAt TEXT DEFAULT '', dismissedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_promo_seen ON promo_seen(promoId, memberId);
+        ",
+        101 => "
+            CREATE TABLE match_reviews (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              matchId TEXT UNIQUE NOT NULL,
+              whiteAccuracy INTEGER DEFAULT 0, blackAccuracy INTEGER DEFAULT 0,
+              whiteAvgLoss INTEGER DEFAULT 0,  blackAvgLoss INTEGER DEFAULT 0,
+              whiteBlunders INTEGER DEFAULT 0, blackBlunders INTEGER DEFAULT 0,
+              whiteMistakes INTEGER DEFAULT 0, blackMistakes INTEGER DEFAULT 0,
+              whiteInaccuracies INTEGER DEFAULT 0, blackInaccuracies INTEGER DEFAULT 0,
+              turningPly INTEGER DEFAULT 0, turningSan TEXT DEFAULT '',
+              turningBest TEXT DEFAULT '', turningLoss INTEGER DEFAULT 0,
+              evals TEXT,
+              engineDepth INTEGER DEFAULT 0, engineMs INTEGER DEFAULT 0,
+              byId TEXT DEFAULT '', createdAt TEXT NOT NULL
+            );
+
+            ALTER TABLE tournament_entrants ADD COLUMN lastRank INTEGER DEFAULT 0;
+
+            ALTER TABLE promos ADD COLUMN tournamentId TEXT DEFAULT '';
+            ALTER TABLE promos ADD COLUMN shape TEXT DEFAULT 'card';
+            CREATE INDEX idx_promo_trn ON promos(tournamentId);
+        ",
+        102 => "
+            /* Who was ASKED to a tournament, as distinct from who entered it.
+               A director could add entrants one at a time and nothing else; the
+               only way to fill a field was to sign children up without asking,
+               which is not an invitation. This table is the ask. It also makes
+               the obvious question answerable — 40 invited, 11 joined — which
+               nothing could answer before, because nobody recorded the 40. */
+            CREATE TABLE tournament_invites (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              tournamentId TEXT NOT NULL,
+              playerId TEXT NOT NULL,
+              playerName TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              invitedBy TEXT DEFAULT '',
+              invitedAt TEXT NOT NULL,
+              /* Set when they act on it. joinedAt is written by the join path,
+                 so invite→entry conversion is a fact rather than an inference
+                 from timestamps that happen to be close together. */
+              joinedAt TEXT DEFAULT '',
+              declinedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_trn_invite_unique ON tournament_invites(tournamentId, playerId);
+            CREATE INDEX idx_trn_invite_player ON tournament_invites(playerId);
+        ",
+        103 => "
+            /* Homework: the task, who was asked, and who has been chased.
+               Three tables rather than a status column, because the three
+               questions have different lifetimes — the task outlives the term,
+               a submission is a fact about one child, and a nudge is an event
+               that has to be counted per day to be limited. */
+            CREATE TABLE community_homework (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              homeworkId TEXT NOT NULL,
+              channelId TEXT NOT NULL,
+              title TEXT NOT NULL,
+              detail TEXT DEFAULT '',
+              dueAt TEXT DEFAULT '',
+              createdBy TEXT DEFAULT '',
+              createdByName TEXT DEFAULT '',
+              createdAt TEXT NOT NULL,
+              /* active | archived. Never deleted: a child who submitted work
+                 should not find the task it belonged to has vanished. */
+              status TEXT NOT NULL DEFAULT 'active'
+            );
+            CREATE UNIQUE INDEX idx_hw_id ON community_homework(homeworkId);
+            CREATE INDEX idx_hw_channel ON community_homework(channelId, status);
+
+            /* The cohort is SNAPSHOT at creation — one row per child asked,
+               written when the task is set. The denominator in '14 of 24' is
+               then a fact about who was asked, not a live count of who happens
+               to be in the channel today. Somebody joining next week does not
+               retroactively become late. */
+            CREATE TABLE community_homework_state (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              homeworkId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              memberName TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              /* seenAt is 'has opened the task', which is what separates
+                 'has not got round to it' from 'does not know about it' —
+                 the only distinction that makes a nudge fair. */
+              seenAt TEXT DEFAULT '',
+              submittedAt TEXT DEFAULT '',
+              submittedRef TEXT DEFAULT '',
+              reviewedAt TEXT DEFAULT '',
+              reviewedBy TEXT DEFAULT '',
+              note TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX idx_hws_unique ON community_homework_state(homeworkId, memberId);
+            CREATE INDEX idx_hws_member ON community_homework_state(memberId);
+
+            /* Every nudge, kept. The daily limit is enforced by reading this,
+               not by a counter that can drift, and it means a child can be
+               shown 'Nudged Tue' truthfully and a mentor can be held to it. */
+            CREATE TABLE community_homework_nudge (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              homeworkId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              nudgedBy TEXT DEFAULT '',
+              nudgedAt TEXT NOT NULL,
+              /* The UTC date of nudgedAt, so the one-per-day rule is an index
+                 lookup rather than a scan-and-parse. */
+              nudgedDay TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX idx_hwn_daily ON community_homework_nudge(homeworkId, memberId, nudgedDay);
+            CREATE INDEX idx_hwn_member ON community_homework_nudge(memberId, nudgedAt);
+        ",
+        104 => "
+            /* Who is typing, right now. One row per person per channel,
+               overwritten in place and read back only for the last few seconds.
+               A table rather than a socket because this runs on shared hosting,
+               which cannot hold a persistent connection open — see
+               community_typing_*() for the polling budget that follows from it.
+
+               Nothing here is history. The rows are ephemeral by construction:
+               a read ignores anything older than the TTL and deletes it on the
+               way past, so a keystroke by a child is never a record. */
+            CREATE TABLE community_typing (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              channelId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              memberName TEXT DEFAULT '',
+              staff INTEGER NOT NULL DEFAULT 0,
+              atIso TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX idx_typing_unique ON community_typing(channelId, memberId);
+            CREATE INDEX idx_typing_at ON community_typing(channelId, atIso);
+        ",
+        105 => "
+            /* The personal journal, widened to what the design asks of it
+               (handoff §8a and §8b). Every column is added rather than
+               replaced: `journal` is also written by the anchor reflection
+               flow, which knows about mood, body and isPrivate and nothing
+               else, and must keep working untouched.
+
+               `visibility` supersedes isPrivate for anything written through
+               the new writer. isPrivate stays, is kept in step on every write,
+               and remains the only thing the old flow reads — one fact, two
+               spellings, rather than two facts that can disagree. */
+            ALTER TABLE journal ADD COLUMN title TEXT DEFAULT '';
+            /* private | mentor | programme. Defaulting to 'private' is the
+               design's rule and a safeguarding one: a child\'s journal is
+               private unless they choose otherwise, and a default that leaks
+               is a default nobody would have chosen deliberately. */
+            ALTER TABLE journal ADD COLUMN visibility TEXT DEFAULT 'private';
+            /* Space-separated, lower-case, no leading #. Counted in PHP over
+               one member\'s own entries — tens or hundreds of rows, not
+               millions — which is cheaper to keep correct than a join table
+               nothing else needs. */
+            ALTER TABLE journal ADD COLUMN tags TEXT DEFAULT '';
+            ALTER TABLE journal ADD COLUMN wordCount INTEGER DEFAULT 0;
+            ALTER TABLE journal ADD COLUMN mediaJson TEXT DEFAULT '';
+            /* The DAY the entry is about, which is not the same as when it was
+               typed: somebody writing up Saturday on Sunday morning should see
+               it on Saturday in the week strip. */
+            ALTER TABLE journal ADD COLUMN occurredOn TEXT DEFAULT '';
+            ALTER TABLE journal ADD COLUMN promptText TEXT DEFAULT '';
+            ALTER TABLE journal ADD COLUMN updatedAt TEXT DEFAULT '';
+            CREATE INDEX idx_journal_day ON journal(memberId, occurredOn);
+        ",
+        106 => "
+            /* Draw offers (6A §4 puts \"Offer draw\" beside Resign).
+               Columns on the game rather than a table: an offer is a fact
+               about the CURRENT position and there is only ever one live at a
+               time.
+
+               drawOfferBy / drawOfferAt are the LIVE offer, cleared the moment
+               it is answered — accepted, declined, or answered with a move.
+
+               drawOfferLastBy / drawOfferPly outlive that: they remember who
+               offered last and in which position, and they are the reason this
+               is not just a button. Repeatedly offering a draw is how a losing
+               player badgers a winning one, and in a service for children that
+               is not a quirk of etiquette. Held separately from the live offer
+               because a decline must not wipe the record of the offer that was
+               declined — that would make the badgering free. Held per PLAYER
+               because the opponent changing their mind in the same position is
+               not badgering, and refusing them would be a lie. */
+            ALTER TABLE match_games ADD COLUMN drawOfferBy TEXT DEFAULT '';
+            ALTER TABLE match_games ADD COLUMN drawOfferAt TEXT DEFAULT '';
+            ALTER TABLE match_games ADD COLUMN drawOfferLastBy TEXT DEFAULT '';
+            ALTER TABLE match_games ADD COLUMN drawOfferPly INTEGER DEFAULT -1;
+        ",
+        107 => "
+            /* The Programme record (handoff §8c).
+               The journal already held what happened; §8c is about what
+               happened NEXT — an issue's updates, who is following it, what a
+               decision follows from, what a contribution actually raised. All
+               of it was being narrated in prose in the body, where nothing can
+               count it and a summary tile cannot be honest.
+
+               Everything countable stays derivable: 'receipts attached (2)'
+               and '12 photos' are the media already on the entry, and 'kept by
+               14 members' is a row count. A stored tally beside a list of the
+               things it counts is two records of one fact, and they drift. */
+            ALTER TABLE program_journal ADD COLUMN ownerId TEXT DEFAULT '';
+            ALTER TABLE program_journal ADD COLUMN ownerName TEXT DEFAULT '';
+            /* The back-reference §8c draws as '↳ Follows the hall
+               double-booking issue'. A decision that came out of an issue is
+               most of the value of keeping the record at all. */
+            ALTER TABLE program_journal ADD COLUMN parentEntryId TEXT DEFAULT '';
+            /* Money in the smallest unit. Naira has kobo, and a float here is
+               how a funding total ends in .00000001. */
+            ALTER TABLE program_journal ADD COLUMN amountMinor INTEGER DEFAULT 0;
+            ALTER TABLE program_journal ADD COLUMN targetMinor INTEGER DEFAULT 0;
+            ALTER TABLE program_journal ADD COLUMN currency TEXT DEFAULT 'NGN';
+            ALTER TABLE program_journal ADD COLUMN contributors INTEGER DEFAULT 0;
+            /* A milestone's headline: '41' 'of 46' 'finished twelve weeks'. */
+            ALTER TABLE program_journal ADD COLUMN countValue INTEGER DEFAULT 0;
+            ALTER TABLE program_journal ADD COLUMN countTotal INTEGER DEFAULT 0;
+            ALTER TABLE program_journal ADD COLUMN countUnit TEXT DEFAULT '';
+            /* 'agreed with 2 mentors · 18 members notified'. Provenance is the
+               reason a decision is trusted a year later, and it cannot be
+               reconstructed after the fact. */
+            ALTER TABLE program_journal ADD COLUMN agreedWith INTEGER DEFAULT 0;
+            ALTER TABLE program_journal ADD COLUMN notified INTEGER DEFAULT 0;
+            /* Proposed by somebody without the journal capability, waiting for
+               a mentor. §8c promises 'a mentor reviews it before it appears
+               here', and a promise printed on the screen that makes it has to
+               be enforced by the screen behind it. */
+            ALTER TABLE program_journal ADD COLUMN proposedBy TEXT DEFAULT '';
+            ALTER TABLE program_journal ADD COLUMN proposedName TEXT DEFAULT '';
+            ALTER TABLE program_journal ADD COLUMN publishedAt TEXT DEFAULT '';
+
+            CREATE TABLE IF NOT EXISTS program_journal_updates (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              updateId TEXT UNIQUE NOT NULL,
+              entryId TEXT NOT NULL,
+              authorId TEXT DEFAULT '',
+              authorName TEXT DEFAULT '',
+              body TEXT DEFAULT '',
+              createdAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_pju_entry ON program_journal_updates(entryId, createdAt);
+
+            /* One table for two words. 'Follow this' on an issue and the
+               bookmark on a piece of advice are the same act — this member
+               marked this entry — and two tables would be two answers to
+               'how many people are holding on to this'. */
+            CREATE TABLE IF NOT EXISTS program_journal_follows (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              entryId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              createdAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_pjf_unique ON program_journal_follows(entryId, memberId);
+            CREATE INDEX IF NOT EXISTS idx_pjf_member ON program_journal_follows(memberId);
+        ",
+        108 => "
+            /* An application's reference stops being its row id.
+               NGG-A-00412 told anybody holding it how many applications the
+               programme had received and — with a guessable email — let the
+               status of a named person be found by walking the numbers. The
+               lookup is throttled at 20 per 5 minutes, which is an afternoon.
+
+               Rows that already exist keep NO stored ref on purpose: their
+               reference has been emailed to a family and printed on a success
+               screen, so it goes on resolving by id. Only new applications get
+               a random one. */
+            ALTER TABLE applications ADD COLUMN ref TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_apps_ref ON applications(ref);
+        ",
+        /* A member's NGG level (A, B, C, O) gets a column of its own.
+           It is the first thing a centre lead asks about a child and the
+           roster has always carried it, but until now the only place to put
+           it on import was the free-text note — where nothing can filter,
+           count or sort by it. Existing rows are backfilled from that note
+           in the same breath, so the column is populated the moment it
+           exists rather than on whenever somebody next re-runs the import.
+
+           The pattern is the one members-import.php writes: a line reading
+           "Level B" as the first segment of the fenced block. Anything that
+           does not match is left blank rather than guessed at. */
+        109 => "
+            ALTER TABLE members ADD COLUMN level TEXT DEFAULT '';
+        " . NGG_BACKFILL_MEMBER_LEVELS . ";",
+
+        /* Member self-service: one table for everything a member ASKS the desk
+         * for. Four kinds today — a payment they say they have made, an appeal
+         * against a fine, a leave of absence, a replacement ID — and they share
+         * a shape because they share a life: raised by the member, read by an
+         * admin, decided once, with the decision and the reason kept.
+         *
+         * A payment claim is deliberately NOT a ledger row. fees.php is explicit
+         * that "a member confirming their own payment is not a thing this ledger
+         * will ever accept", and that is right: the ledger records money the
+         * desk has seen. A claim is the member telling the desk to go and look.
+         * Approving one posts the payment through the ordinary admin path, so
+         * there is exactly one way money enters the account.
+         */
+        110 => "
+            CREATE TABLE IF NOT EXISTS member_requests (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              requestId TEXT NOT NULL UNIQUE,
+              memberId TEXT NOT NULL,
+              kind TEXT NOT NULL,                 -- payment | appeal | leave | idcard
+              status TEXT NOT NULL DEFAULT 'open',-- open | approved | declined | withdrawn
+              subject TEXT DEFAULT '',
+              body TEXT DEFAULT '',
+              amount INTEGER DEFAULT 0,           -- payment claims only
+              reference TEXT DEFAULT '',          -- their bank/transfer reference
+              proofUrl TEXT DEFAULT '',
+              paidAt TEXT DEFAULT '',
+              fromDate TEXT DEFAULT '',           -- leave requests
+              toDate TEXT DEFAULT '',
+              refEntryId TEXT DEFAULT '',         -- the fine an appeal is against
+              decision TEXT DEFAULT '',
+              decidedBy TEXT DEFAULT '',
+              decidedAt TEXT DEFAULT '',
+              ledgerEntryId TEXT DEFAULT '',      -- what approving it posted, if anything
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mreq_member ON member_requests(memberId, createdAt);
+            CREATE INDEX IF NOT EXISTS idx_mreq_open ON member_requests(status, kind);
+        ",
+
+        /* Which roster file was loaded, when, by whom — and what it did.
+         *
+         * A roster import rewrites the membership table in one action, and
+         * until now the only record it left was an audit row naming a FILENAME.
+         * A filename is a thing a person renames; it cannot answer "is this the
+         * same roster we loaded in March" or "did somebody already run this".
+         *
+         * `digest` is members_import_digest() — a hash of what the file would
+         * DO, so it survives re-serialisation, key order and row order. It is
+         * deliberately NOT unique: applying the same roster twice is legal (a
+         * re-run after fixing four rows elsewhere is the normal workflow), and
+         * the point of this table is to SAY so, not to prevent it.
+         *
+         * `fileSha` is the raw SHA-256 of the bytes on disk, computed by the
+         * browser (or printed by extract.js) and carried along. It answers a
+         * different question — "is this the file the extractor made" — and is
+         * blank when nobody supplied one, which is why it is not the key.
+         */
+        111 => "
+            CREATE TABLE IF NOT EXISTS member_import_runs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              digest TEXT NOT NULL,               -- members_import_digest(): what it would do
+              fileSha TEXT DEFAULT '',            -- raw sha256 of the file's bytes, if known
+              source TEXT DEFAULT '',             -- the filename, for humans only
+              actorId TEXT DEFAULT '',
+              overwrite INTEGER DEFAULT 0,
+              created INTEGER DEFAULT 0,
+              updated INTEGER DEFAULT 0,
+              unchanged INTEGER DEFAULT 0,
+              failed INTEGER DEFAULT 0,
+              rowCount INTEGER DEFAULT 0,
+              at TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mirun_digest ON member_import_runs(digest, id);
+            CREATE INDEX IF NOT EXISTS idx_mirun_at ON member_import_runs(at);
+        ",
+
+        /* ── Summer School: editions, and groups within an edition ───────────
+         *
+         * THE VOCABULARY, because it was the problem. Three different things
+         * were all called a \"cohort\" somewhere in this product:
+         *
+         *   EDITION   one season of Summer School — \"Summer School 2026\".
+         *             Stored in `summer_cohorts`; its id is the `cohortId`
+         *             that `summer_students`, `attendance` and `qr_codes`
+         *             already carry. That column means EDITION, everywhere,
+         *             with no exceptions. The table keeps its historical name
+         *             rather than gaining a translation layer over it — this
+         *             schema deliberately has none (see the file header).
+         *   GROUP     a class WITHIN an edition — \"Egbeda · Music · Morning\".
+         *             This table. New concept, new name, its own id. When a
+         *             coordinator says \"cohort\" out loud, this is what they
+         *             mean, so the UI calls it a group and never a cohort.
+         *   CENTRE    a PLACE. `centres`. Belongs to NGG the organisation, not
+         *             to Summer School: NGG members are posted to one all year
+         *             and its code is the printed ID prefix on their cards.
+         *             Summer School RUNS AT centres; it does not own them.
+         *
+         * A group is the unit an edition is actually run in: it has a place, a
+         * course, a lead, a capacity, its own dates and its own lifecycle, and
+         * a participant belongs to at most one of them. Before this, an
+         * edition's 300 children were one undifferentiated list filtered by
+         * centre and track — which cannot express two Music classes at one
+         * centre, cannot be handed to a lead, and cannot be reported on.
+         *
+         * `cohortId` here is the EDITION the group belongs to, named to match
+         * the column it points at. Codes are unique within an edition, never
+         * globally: \"EG-MUS-AM\" is free to mean this year's class next year.
+         */
+        112 => "
+            CREATE TABLE IF NOT EXISTS summer_groups (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              groupId TEXT NOT NULL UNIQUE,
+              cohortId TEXT NOT NULL,             -- the EDITION (summer_cohorts.cohortId)
+              name TEXT NOT NULL,
+              code TEXT NOT NULL,                 -- unique within the edition
+              centreId TEXT DEFAULT '',           -- centres.centreId — where it meets
+              faculty TEXT DEFAULT '',            -- academy, from the catalogue
+              track TEXT DEFAULT '',              -- course, from the catalogue
+              leadId TEXT DEFAULT '',             -- volunteers.volunteerId of the lead
+              capacity INTEGER DEFAULT 0,         -- 0 = uncapped
+              meetDays TEXT DEFAULT '',           -- '1,3,6' — operational, never public
+              meetTime TEXT DEFAULT '',
+              startDate TEXT DEFAULT '',
+              endDate TEXT DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'active', -- planning|active|closed|archived
+              notes TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '', createdBy TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT '', updatedBy TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sgrp_code ON summer_groups(cohortId, code);
+            CREATE INDEX IF NOT EXISTS idx_sgrp_edition ON summer_groups(cohortId, status);
+            CREATE INDEX IF NOT EXISTS idx_sgrp_centre ON summer_groups(centreId);
+
+            ALTER TABLE summer_students ADD COLUMN groupId TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_sstu_group ON summer_students(groupId);
+
+            /* Edition lifecycle. `status` already held 'active' | 'archived'
+               and those keep their meaning — 'active' is the one edition being
+               run, and only one may be active at a time. 'planning' (being set
+               up, not yet taking anyone) and 'closed' (finished, still being
+               reported on, not yet archived) are the two states a coordinator
+               previously had to fake by archiving early or leaving an old
+               edition active. */
+            ALTER TABLE summer_cohorts ADD COLUMN code TEXT DEFAULT '';
+            ALTER TABLE summer_cohorts ADD COLUMN applyOpensAt TEXT DEFAULT '';
+            ALTER TABLE summer_cohorts ADD COLUMN applyClosesAt TEXT DEFAULT '';
+            ALTER TABLE summer_cohorts ADD COLUMN notes TEXT DEFAULT '';
+            ALTER TABLE summer_cohorts ADD COLUMN updatedAt TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_scoh_status ON summer_cohorts(status, id);
+        ",
+
+        /* ── ID cards: two faces, and a record of what was printed ──────────
+         *
+         * The design system could express the student and volunteer cards but
+         * not the NGG MEMBER card, which is the one every year-round member
+         * carries. That card was hand-coded JSX (MemberIDCard / NggcMemberCard)
+         * and printed by a batch drawer, so moving a line two millimetres on
+         * the credential the organisation issues most was a deploy — the exact
+         * problem the template system was built to end, left in place for the
+         * one card it mattered most for.
+         *
+         * `face` + `pairId` are what let a design have a BACK. A card has two
+         * sides; a template was one document, so a back either did not exist
+         * or was a second unrelated design nobody could tell was the pair. A
+         * front names its back and the batch renders both per person, in
+         * order, so a duplex run cannot come out mismatched.
+         *
+         * `card_runs` / `card_issues` are the issuance record. card-templates
+         * already froze a published version and bumped it on republish, and
+         * its own docblock promised that "a print run stores the version it
+         * used, so 'reprint card 147 exactly as it was in July' is answerable
+         * a year later" — except nothing stored it. Print runs left an audit
+         * line and no rows, so:
+         *
+         *   · nobody could tell a FIRST issue from a reprint, or count either;
+         *   · "which design is the card in this member's hand" had no answer,
+         *     so a reprint silently used whatever the current version is;
+         *   · a batch that half-printed left nothing to resume from.
+         *
+         * The template version is denormalised onto both tables on purpose: it
+         * is the fact being preserved, and it must survive the template being
+         * republished, renamed or deleted afterwards.
+         */
+        113 => "
+            ALTER TABLE card_templates ADD COLUMN face TEXT DEFAULT 'single';   -- front | back | single
+            ALTER TABLE card_templates ADD COLUMN pairId TEXT DEFAULT '';       -- the other face's templateId
+            CREATE INDEX IF NOT EXISTS idx_ctpl_pair ON card_templates(pairId);
+
+            CREATE TABLE IF NOT EXISTS card_runs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              runId TEXT NOT NULL UNIQUE,
+              kind TEXT NOT NULL DEFAULT 'member',      -- member | student | volunteer | graphic
+              mode TEXT NOT NULL DEFAULT 'print',       -- print | reprint | proof
+              templateId TEXT DEFAULT '',               -- '' = the built-in hand-coded card
+              templateName TEXT DEFAULT '',             -- as it was called at the time
+              templateVersion INTEGER DEFAULT 0,        -- the FROZEN version this run used
+              backTemplateId TEXT DEFAULT '',
+              backTemplateVersion INTEGER DEFAULT 0,
+              output TEXT DEFAULT '',                   -- pdf | png | zip | sheet
+              dpi INTEGER DEFAULT 0,
+              sheet TEXT DEFAULT '',                    -- e.g. 'A4' for an imposed sheet
+              requested INTEGER DEFAULT 0,
+              issued INTEGER DEFAULT 0,
+              failed INTEGER DEFAULT 0,
+              reprintOf TEXT DEFAULT '',                -- the runId being reprinted, if any
+              reason TEXT DEFAULT '',                   -- why a reprint (creased, lost, name change)
+              actorId TEXT DEFAULT '',
+              startedAt TEXT DEFAULT '',
+              finishedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_crun_at ON card_runs(startedAt);
+            CREATE INDEX IF NOT EXISTS idx_crun_kind ON card_runs(kind, startedAt);
+
+            CREATE TABLE IF NOT EXISTS card_issues (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              runId TEXT NOT NULL,
+              subjectType TEXT NOT NULL,                -- member | student | volunteer
+              subjectId TEXT NOT NULL,
+              displayId TEXT DEFAULT '',                -- what was printed on it
+              templateId TEXT DEFAULT '',
+              templateVersion INTEGER DEFAULT 0,
+              reprint INTEGER DEFAULT 0,                -- 1 = this person had one before
+              ok INTEGER DEFAULT 1,
+              note TEXT DEFAULT '',
+              at TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_ciss_run ON card_issues(runId);
+            CREATE INDEX IF NOT EXISTS idx_ciss_subject ON card_issues(subjectType, subjectId, at);
+        ",
+
+        /* 114 — the Courage Index (NGGC 2040 brief §14).
+         *
+         * The brief names courage as "one of the most important things NGGC
+         * should measure" and gives it a 1–5 ladder, and it was the one
+         * instrument in the whole brief with nothing behind it: musing lives
+         * in the journal, dues and fines in the fees ledger, the NGV rung on
+         * members.level, but courage was recorded nowhere.
+         *
+         * `evidence` is NOT NULL-ish by contract (the domain rejects an empty
+         * one) because of the brief's own constraint: courage is scored
+         * against something a mentor watched happen, not against an
+         * impression of a child. A score with no instance behind it is the
+         * failure this table exists to prevent, so the instance is stored
+         * beside the number rather than in a note somebody may or may not fill.
+         *
+         * No UNIQUE on (subjectId, observedOn), deliberately — unlike a star,
+         * which is one per child per day to stop inflation, two genuinely
+         * separate acts of courage in one afternoon are two observations. The
+         * evidence requirement is what bounds this, not the calendar.
+         *
+         * There is no aggregate column. The index is computed on read from the
+         * marks in the window, so a correction to one entry cannot leave a
+         * stale total sitting on the child's record. */
+        114 => "
+            CREATE TABLE IF NOT EXISTS courage_marks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectId TEXT NOT NULL,
+              subjectType TEXT NOT NULL DEFAULT 'member',
+              score INTEGER NOT NULL,             -- 1..5, the ladder in the brief
+              prompt TEXT DEFAULT '',             -- which of the ten observations, if named
+              evidence TEXT NOT NULL DEFAULT '',  -- what the mentor actually saw
+              markedById TEXT NOT NULL,
+              markedByName TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              observedOn TEXT NOT NULL,           -- YYYY-MM-DD, the day it happened
+              createdAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_courage_subject ON courage_marks(subjectId, observedOn);
+            CREATE INDEX IF NOT EXISTS idx_courage_marker ON courage_marks(markedById, observedOn);
+        ",
+
+        /* 115 — a member belongs to a division (NGGC 2040 brief §5).
+         *
+         * The brief assigns every member to one of four professional
+         * divisions, each with a mandate, and the programme had no column for
+         * it — so it could not answer "how many members are in Technology &
+         * Applied Engineering", could not report per division, and could not
+         * see that chess is taken across all four, which is §6's whole point.
+         *
+         * NOT the same thing as the academy catalogue's `faculty`, and the two
+         * must not be merged. A faculty is what a Summer School edition
+         * happens to teach this season and an admin edits it; a division is
+         * what an NGG member belongs to for years and the brief fixes it. Same
+         * shape, different owners, different lifetimes — see CLAUDE.md §5 on
+         * the two programmes being separate.
+         *
+         * Stored as the id ('arts'|'media'|'tech'|'business'), not the display
+         * name, so renaming a division in the brief does not rewrite every row.
+         * Blank is a legitimate value: a member nobody has placed yet. */
+        115 => "
+            ALTER TABLE members ADD COLUMN division TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_members_division ON members(division);
+        " . NGG_BACKFILL_MEMBER_DIVISION . ";",
+
+        /* 116 — the mentor's weekly review (NGGC 2040 brief §18).
+         *
+         * Twelve questions a mentor should be able to answer for every
+         * assigned member, every week. Nothing prompted them and nothing
+         * recorded the answers, so the only trace a mentor left was a star for
+         * today, a V3 for this week, and whatever meetings they happened to
+         * write up. The brief's point is the CADENCE: a child nobody reviewed
+         * for three weeks is the finding, and it was invisible.
+         *
+         * ONE ROW PER (subject, period), like v3_scores — a review is a weekly
+         * artefact, and a second one for the same week is an edit of the first,
+         * not a new review. That is what makes 'who has not been reviewed this
+         * week' a single query instead of a scan.
+         *
+         * `answers` is JSON keyed by nggc_weekly_review_keys(), not twelve
+         * columns. The twelve are the brief's and the brief can be amended;
+         * twelve columns would make a thirteenth question a migration and a
+         * deploy, and would leave the twelve column names as a second list of
+         * the questions that could drift from formation.php. The keys are
+         * validated on the way in, so the flexibility does not cost the closed
+         * set.
+         *
+         * `concern` mirrors mentor_meetings: the one flag that puts a child in
+         * front of a lead. It is stored rather than derived from the text,
+         * because a mentor deciding to raise something is a different act from
+         * a mentor writing a worried sentence. */
+        116 => "
+            CREATE TABLE IF NOT EXISTS mentor_reviews (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectId TEXT NOT NULL,
+              subjectType TEXT NOT NULL DEFAULT 'member',
+              period TEXT NOT NULL,              -- ISO week, e.g. 2026-W38
+              answers TEXT,                      -- JSON, keys from nggc_weekly_review_keys()
+              answered INTEGER DEFAULT 0,        -- how many of the twelve carry text
+              concern INTEGER DEFAULT 0,
+              mentorId TEXT NOT NULL,
+              mentorName TEXT DEFAULT '',
+              centre TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_mrev_one ON mentor_reviews(subjectId, period);
+            CREATE INDEX IF NOT EXISTS idx_mrev_period ON mentor_reviews(period, centre);
+            CREATE INDEX IF NOT EXISTS idx_mrev_mentor ON mentor_reviews(mentorId, period);
+        ",
+
+        /* 117 — why a member was promoted (NGGC 2040 brief §20).
+         *
+         * "A member should not become an NGV merely because they have been
+         * around for a certain amount of time. Progression should be based on
+         * evidence of formation."
+         *
+         * The promotion itself already existed and is thorough —
+         * admin_member_promote_ngv provisions the volunteer record, the ID and
+         * the two-way link, idempotently. What it recorded was that a
+         * promotion happened and who pressed the button. Not why. So the one
+         * question §20 cares about — was this child promoted on evidence or on
+         * tenure — had no answer six months later, and the audit line could
+         * not supply one.
+         *
+         * `evidence` is the promoter's own sentence and is required by the
+         * domain. `readiness` is a JSON snapshot of the formation record AS IT
+         * STOOD at the moment of promotion: the courage index, how many of the
+         * last eight weeks carried a mentor review, attendance, stars, dues
+         * standing. Snapshotted rather than recomputed on read, because the
+         * question is "what did they know when they decided", and a figure
+         * recomputed in March answers a different question.
+         *
+         * Append-only. A demotion writes its own row rather than deleting
+         * this one: a member promoted, revoked and re-promoted has a history,
+         * and that history is the formation record §20 is asking for. */
+        117 => "
+            CREATE TABLE IF NOT EXISTS member_promotions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              fromStage TEXT NOT NULL DEFAULT 'NGG',
+              toStage TEXT NOT NULL DEFAULT 'NGV',
+              evidence TEXT NOT NULL DEFAULT '',
+              readiness TEXT,
+              volunteerId TEXT DEFAULT '',
+              byId TEXT NOT NULL,
+              byName TEXT DEFAULT '',
+              at TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mprom_member ON member_promotions(memberId, id);
+            CREATE INDEX IF NOT EXISTS idx_mprom_at ON member_promotions(at);
+        ",
+
+        /* Quote of the week — Hausa riddles, Igbo and Yoruba proverbs, shown on
+         * the home page one a week in a fixed language rotation. The rows are
+         * seeded by domain/wisdom.php (not here: the sayings contain `;`,
+         * which the migration splitter would cut on). `position` orders a
+         * language's own list; the rotation interleaves the languages.
+         * audioFile is a stored clip — a staff voice-over (`custom`) or one
+         * generated once by the TTS provider (`tts`) — never a per-play call. */
+        118 => "
+            CREATE TABLE IF NOT EXISTS wisdom_sayings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              wisdomId TEXT UNIQUE NOT NULL,
+              language TEXT NOT NULL,
+              kind TEXT NOT NULL DEFAULT 'proverb',
+              text TEXT NOT NULL,
+              translation TEXT DEFAULT '',
+              answer TEXT DEFAULT '',
+              answerTranslation TEXT DEFAULT '',
+              meaning TEXT DEFAULT '',
+              position INTEGER DEFAULT 0,
+              status TEXT DEFAULT 'live',
+              audioFile TEXT DEFAULT '',
+              audioSource TEXT DEFAULT '',
+              voice TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wisdom_lang ON wisdom_sayings(language, status, position);
+        ",
+
+        /* Quote of the week, second clip: the English translation read after
+         * the saying, and the stamp that stops a failing automatic voice from
+         * being retried on every visit. */
+        119 => "
+            ALTER TABLE wisdom_sayings ADD COLUMN audioFileEn TEXT DEFAULT '';
+            ALTER TABLE wisdom_sayings ADD COLUMN voiceEn TEXT DEFAULT '';
+            ALTER TABLE wisdom_sayings ADD COLUMN ttsTriedAt TEXT DEFAULT '';
+        ",
+
+        /* Quote of the week, generate-once: every TTS clip ever made, keyed by
+         * what determines it (language|voice|speed|script), so the same audio
+         * is never paid for twice. `score`/`heard` are the listen-back — the
+         * provider's own transcript of the clip and how well it matched.
+         * `spokenText` is staff's "how it should be read" spelling. */
+        120 => "
+            CREATE TABLE IF NOT EXISTS wisdom_tts_clips (
+              cacheKey TEXT PRIMARY KEY,
+              file TEXT NOT NULL,
+              language TEXT NOT NULL,
+              voice TEXT NOT NULL,
+              script TEXT NOT NULL,
+              score REAL,
+              heard TEXT DEFAULT '',
+              createdAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_wtts_file ON wisdom_tts_clips(file);
+            ALTER TABLE wisdom_sayings ADD COLUMN spokenText TEXT DEFAULT '';
+            ALTER TABLE wisdom_sayings ADD COLUMN ttsScore REAL;
+            ALTER TABLE wisdom_sayings ADD COLUMN ttsScoreEn REAL;
+        ",
+
+        /* Member cards — what the CACENTRE gate reads (domain/member-cards.php).
+         * A secure MEMQR- card per NGG member, and the printed cards members
+         * already hold, by the format that reads them. */
+        121 => "
+            CREATE TABLE IF NOT EXISTS member_cards (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              kind TEXT NOT NULL DEFAULT 'secure',
+              code TEXT NOT NULL,
+              format TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'active',
+              source TEXT DEFAULT '',
+              issuedBy TEXT DEFAULT '',
+              issuedAt TEXT DEFAULT '',
+              voidedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_member_cards_code ON member_cards(kind, format, code);
+            CREATE INDEX IF NOT EXISTS idx_member_cards_member ON member_cards(memberId, status);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
@@ -2584,4 +3787,41 @@ function db_exec(string $sql, array $params = []): int {
     $stmt = db_conn()->prepare($sql);
     $stmt->execute($params);
     return $stmt->rowCount();
+}
+
+/**
+ * Run $fn inside a transaction. Commits on return, rolls back on throw.
+ *
+ * Until this existed the only transaction in the codebase wrapped schema
+ * migrations, and every multi-row business write was a sequence of independent
+ * statements: a chess move inserted into `match_moves` and then updated
+ * `match_games`, a fee posted a ledger row and then touched the member. Each
+ * pair is one fact recorded in two places, and anything that interrupts the
+ * gap — a fatal, a timeout, a killed worker — leaves the halves disagreeing.
+ * That is not a hypothetical on shared hosting, where PHP-FPM will happily
+ * reap a request mid-write.
+ *
+ * Nested calls join the outer transaction rather than opening a second one
+ * (PDO would throw), so a helper that wraps itself is safe to call from inside
+ * another wrapped operation. Only the outermost frame commits.
+ *
+ * The return value of $fn is passed through, so this reads as an expression:
+ *     $post = db_tx(fn() => community_write($d));
+ */
+function db_tx(callable $fn) {
+    $db = db_conn();
+    if ($db->inTransaction()) return $fn();   // already inside one — just run
+
+    $db->beginTransaction();
+    try {
+        $out = $fn();
+        $db->commit();
+        return $out;
+    } catch (Throwable $e) {
+        // rollBack() itself throws if the driver already unwound the
+        // transaction (a MySQL deadlock does this), and losing the original
+        // exception to that would hide the actual fault.
+        if ($db->inTransaction()) { try { $db->rollBack(); } catch (Throwable $_) {} }
+        throw $e;
+    }
 }

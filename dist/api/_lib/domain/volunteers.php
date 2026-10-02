@@ -614,7 +614,7 @@ function admin_volunteers_list(array $p): array {
         $a['dobAge'] = !empty($a['dob']) && function_exists('dob_age') ? dob_age((string)$a['dob']) : null;
     }
     unset($a);
-    $roster = db_all('SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, visibilityConsent, token, status, safeguarding, capsExtra, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
+    $roster = db_all('SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, visibilityConsent, token, status, safeguarding, capsExtra, dob, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
     foreach ($roster as &$v) {
         $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
         // Portal access granted to this person. Always an array so the console
@@ -661,6 +661,11 @@ function admin_volunteer_update(array $p): array {
         $row['courses'] = json_encode(array_slice($courses, 0, 20));
     }
     if (array_key_exists('visibilityConsent', $d)) $row['visibilityConsent'] = !empty($d['visibilityConsent']) ? 1 : 0;
+    if (array_key_exists('dob', $d)) {
+        $dob = dob_clean((string)$d['dob']);
+        if ($dob === null) return ['ok' => false, 'error' => 'bad_dob'];
+        $row['dob'] = $dob;
+    }
     if (array_key_exists('status', $d)) {
         if (!in_array((string)$d['status'], ['active', 'inactive', 'archived'], true)) return ['ok' => false, 'error' => 'bad_status'];
         $row['status'] = (string)$d['status'];
@@ -772,10 +777,29 @@ function admin_member_promote_ngv(array $p): array {
         if ((string)($existing['memberId'] ?? '') === '') db_update('volunteers', ['memberId' => $memberId, 'updatedAt' => now_iso()], ['id' => (int)$existing['id']]);
         db_update('members', ['ngvVolunteerId' => (string)$existing['volunteerId'], 'ngvAt' => (string)($m['ngvAt'] ?? '') ?: now_iso(), 'updatedAt' => now_iso()], ['memberId' => $memberId]);
         $resent = !empty($p['sendId']) ? volunteer_send_id((string)$existing['volunteerId']) : null;
-        $out = ['ok' => true, 'already' => true, 'volunteerId' => (string)$existing['volunteerId'], 'volunteer' => volunteer_public($existing)];
+        /* Re-promoted, or a card resent: make sure the NGV account exists too
+           (Afrovanguard answers "already" when it does). */
+        $portal = function_exists('ngv_portal_announce') ? ngv_portal_announce($m, (string)$existing['volunteerId']) : ['status' => 'not_configured'];
+        $out = ['ok' => true, 'already' => true, 'volunteerId' => (string)$existing['volunteerId'], 'volunteer' => volunteer_public($existing), 'ngvPortal' => $portal['status']];
         if ($resent !== null) $out['sent'] = $resent;
         return $out;
     }
+
+    /* §20: progression is evidence of formation, never time served. A new
+     * promotion has to say why, in the promoter's own words — and the check is
+     * here rather than above so that the already-promoted branch (which is how
+     * "Resend ID" reaches this function) is untouched. Re-sending somebody's
+     * card is not a promotion and must not demand a justification for one.
+     *
+     * Eight characters is a floor against "ok", not a quality bar. The bar is
+     * that the sentence is stored, attributed and readable six months later
+     * beside what the promoter could see at the time. */
+    $evidence = trim((string)($p['evidence'] ?? ''));
+    if (mb_strlen($evidence) < 8) return ['ok' => false, 'error' => 'evidence_required'];
+    $evidence = mb_substr($evidence, 0, 2000);
+    /* Snapshotted BEFORE the promotion, so it is what the decision was made
+     * against rather than what the promotion itself changed. */
+    $readiness = function_exists('member_formation_readiness') ? member_formation_readiness($memberId) : null;
 
     $role = in_array((string)($p['role'] ?? ''), ['volunteer', 'instructor', 'mentor'], true) ? (string)$p['role'] : 'volunteer';
     $tier = vol_tier_for($role);
@@ -796,14 +820,33 @@ function admin_member_promote_ngv(array $p): array {
         'assignedAt' => now_iso(), 'expiresAt' => idcard_expiry_for()]);
     db_update('members', ['ngvVolunteerId' => $volunteerId, 'ngvAt' => now_iso(), 'updatedAt' => now_iso()], ['memberId' => $memberId]);
 
-    audit('member.promote.ngv', (string)$g['requester']['memberId'], $memberId, ['volunteerId' => $volunteerId, 'role' => $role], (string)($p['ip'] ?? ''));
+    /* The record §20 asks for: why, by whom, and what the formation record
+       looked like at the time. Append-only — a later revoke writes its own row
+       rather than erasing this one, because a member promoted, revoked and
+       re-promoted has a history and the history is the point. */
+    db_insert('member_promotions', [
+        'memberId' => $memberId, 'fromStage' => 'NGG', 'toStage' => 'NGV',
+        'evidence' => $evidence,
+        'readiness' => $readiness ? json_encode($readiness, JSON_UNESCAPED_UNICODE) : null,
+        'volunteerId' => $volunteerId,
+        'byId' => (string)$g['requester']['memberId'],
+        'byName' => (string)($g['requester']['fullName'] ?? ''),
+        'at' => now_iso(),
+    ]);
+    /* The evidence sentence stays out of the audit meta, as the courage
+       evidence and the weekly review's answers do: it is a judgement about a
+       named child and the audit log has a wider readership than the formation
+       record. That it exists is recorded; what it says lives with the child. */
+    audit('member.promote.ngv', (string)$g['requester']['memberId'], $memberId, ['volunteerId' => $volunteerId, 'role' => $role, 'evidenced' => true], (string)($p['ip'] ?? ''));
     event_emit('member.promoted.ngv', ['memberId' => $memberId, 'volunteerId' => $volunteerId, 'name' => (string)$m['fullName']]);
+    /* And their NGV account on Afrovanguard, where the programme runs. */
+    $portal = function_exists('ngv_portal_announce') ? ngv_portal_announce($m, $volunteerId) : ['status' => 'not_configured'];
     // Deliver the digital ID by default so the new volunteer receives their
     // QR + welcome; suppressible with sendId:false.
     $send = array_key_exists('sendId', $p) ? !empty($p['sendId']) : true;
     $sent = $send ? volunteer_send_id($volunteerId) : [];
     $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ?', [$volunteerId]);
-    return ['ok' => true, 'created' => true, 'volunteerId' => $volunteerId, 'sent' => $sent, 'volunteer' => volunteer_public($v) + ['token' => $token]];
+    return ['ok' => true, 'created' => true, 'volunteerId' => $volunteerId, 'sent' => $sent, 'volunteer' => volunteer_public($v) + ['token' => $token], 'ngvPortal' => $portal['status']];
 }
 
 /**

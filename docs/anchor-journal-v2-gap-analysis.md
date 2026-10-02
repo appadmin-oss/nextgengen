@@ -165,7 +165,7 @@ A separate surface (the "linking" the user flagged). Flow:
 
 ## G. Status update (audit-sync session)
 
-Delivered in this branch (`claude/ngg-afrovanguard-audit-sync-becs2k`), each
+Delivered in this branch (`ngg-afrovanguard-audit-sync-becs2k`), each
 verified with `node build.js`:
 
 - ✅ **Phase 2 — Focus / Notepad / Goals + Quick Tools grid + 4-tab nav.**

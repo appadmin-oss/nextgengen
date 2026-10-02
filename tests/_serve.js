@@ -66,4 +66,32 @@ async function waitForBoot(page, timeoutMs) {
   }
 }
 
-module.exports = { waitForServer, waitForBoot, BOOT_TIMEOUT };
+/* ── docs/screens/INDEX.json ────────────────────────────────────────────────
+ *
+ * Four suites write this file, and each did the same three lines by hand:
+ * read it, drop the entries it owns, append its own at the END. Which meant
+ * an entry's POSITION depended on which suite ran last, so the file churned
+ * on every run with no content change at all — a tracked file that dirties
+ * itself, hands every contributor a spurious diff, and trains people to
+ * `git checkout` it without looking.
+ *
+ * One writer, and it SORTS. The names carry their own order ("01-", "20-",
+ * "28-"), so sorting by name is both stable and the order a reader wants.
+ * One of the four also omitted the trailing newline the other three added,
+ * which is its own perpetual one-line diff; there is one answer now.
+ */
+function writeScreenIndex(outDir, entries) {
+  const fs = require('fs');
+  const path = require('path');
+  const file = path.join(outDir, 'INDEX.json');
+  let prev = [];
+  try { prev = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) {}
+  if (!Array.isArray(prev)) prev = [];
+  const mine = new Set((entries || []).map(e => e.name));
+  const merged = prev.filter(e => e && !mine.has(e.name)).concat(entries || []);
+  merged.sort((a, b) => String(a.name).localeCompare(String(b.name), 'en'));
+  fs.writeFileSync(file, JSON.stringify(merged, null, 2) + '\n');
+  return merged.length;
+}
+
+module.exports = { waitForServer, waitForBoot, BOOT_TIMEOUT, writeScreenIndex };

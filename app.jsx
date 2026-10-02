@@ -7,56 +7,119 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "showLiveBadges": true
 }/*EDITMODE-END*/;
 
-const PAGE_IDS = ["home","summer","centres","club","community","anchor","profile","dashboard","book","media","parents","volunteers","volunteer","mentors","mentor","join","blog","contact","s-status","v-status","admin","summer-admin","club-admin","circle","gate","apply","review","verify","reshoot","cards","designer","certificate","legal","journal-entry"];
-
-// Page metadata — drives <title>, meta description and the screen-reader
-// route announcement when navigating between pages.
-const PAGE_META = {
-  home:       { title: "Next Generation Genius · Afrovanguard",      desc: "A twelve-week growth journey for African teenagers, 10–17. From summer student to vanguard leader." },
-  summer:     { title: "Summer Students · NGG",                       desc: "Six weeks, eight tracks, one bold move. The on-ramp into the Next Generation Genius movement." },
-  centres:    { title: "Summer School centres · NGG",                 desc: "Every LCASP 2026 Summer School centre — find yours, meet the crew, see what's next." },
-  club:       { title: "NGGC · The Genius Club",                      desc: "A teen society with Genius IDs, weekly missions, public skill badges and a leaderboard." },
-  community:  { title: "Community · NGG",                             desc: "Every centre, every track, one movement — the Next Generation Genius community." },
-  anchor:     { title: "Anchor 12 · The Flagship · NGG",              desc: "Twelve weeks. Fifty missions. One identity, rebuilt in public." },
-  profile:    { title: "Member profile · NGG",                        desc: "An NGG member's public profile — work, badges, mentor notes." },
-  dashboard:  { title: "My dashboard · NGG",                          desc: "Your missions, mentor, streak and journal — the member dashboard." },
-  book:       { title: "The Anchor · The book · NGG",                 desc: "The field manual every NGG teenager works through during Anchor 12." },
-  media:      { title: "Media room · NGG",                            desc: "Reels, documentaries, performances, podcasts. The movement on camera." },
-  parents:    { title: "For parents · Safe room with high ceilings",  desc: "Safeguarding, philosophy, FAQ. A program built to protect while it builds." },
-  volunteers: { title: "Become a mentor · NGG",                       desc: "Three ways to be useful. Pick the shape of your time." },
-  volunteer:  { title: "Volunteer registration · NGG",                desc: "Register to volunteer — as an admin, a mentor, or an instructor teaching a course." },
-  certificate:{ title: "Service certificate · NGG",                   desc: "A verifiable Next Generation Genius volunteer service certificate." },
-  legal:      { title: "Legal & data protection · NGG",               desc: "Privacy, terms, safeguarding, parental consent, cookies and your data rights under the NDPA/NDPR." },
-  mentors:    { title: "The mentors · NGG",                           desc: "The Afrovanguard Street-To-Stardom volunteers who show up every Saturday." },
-  mentor:     { title: "Mentor Portal · NGG",                         desc: "" },
-  join:       { title: "Apply · Summer 2026 · NGG",                   desc: "Four short steps. About six minutes. Pause and come back — we save as you go." },
-  blog:       { title: "The Journal · NGG",                           desc: "Long-form writing from mentors, members and the editorial team." },
-  contact:    { title: "Contact · NGG",                               desc: "Questions about a session, mentoring, partnerships or press — a human replies within two working days." },
-  "s-status": { title: "Live status · Summer School · NGG",           desc: "A live, public view of attendance and participation across every NGG Summer School centre — aggregate numbers only." },
-  "v-status": { title: "Volunteer status · Next Generation Genius",    desc: "A live, public view of volunteer needs and fulfilment across every NGG centre — aggregate counts only, never a volunteer's name." },
-  summerprofile: { title: "Summer student · NGG",                     desc: "A Summer School student's standard profile." },
-  admin:      { title: "Control Room · NGG",                          desc: "" },
-  "summer-admin": { title: "Summer School · Staff Portal · NGG",      desc: "" },
-  "club-admin":   { title: "NGG Club · Staff Portal · NGG",           desc: "" },
-  circle:     { title: "Anchor Circle · Guardian & Mentor Portal",    desc: "Support your child's twelve-week Anchor journey — confirm conduct, encourage, and track growth without reading their private words." },
-  gate:       { title: "The Gate · NGG",                              desc: "" },
-  verify:     { title: "Confirm your child's registration · NGG",     desc: "" },
-  reshoot:    { title: "A new photo · NGG",                           desc: "" },
-  cards:      { title: "ID Card Studio · NGG",                        desc: "" },
-  designer:   { title: "Design Studio · NGG",                         desc: "" },
-  "journal-entry": { title: "From the programme journal · NGG",       desc: "" },
-};
-
-/* Pages that draw their OWN full-screen chrome — no topnav, no footer.
+/* ── THE ROUTE REGISTRY — one row per addressable page ───────────────────────
  *
- * One list, because it is needed in three places that had drifted apart: the
- * render branch below, and (via the `own-chrome` body class it sets) both the
- * CSS that suppresses the floating helpers and CommandHint's own check. That
- * check used to be a regex matching only /community and /admin, so the ⌘K hint
- * floated over every one of these surfaces — most visibly over the public
- * registration form, where it sat on top of a field's help text on a phone. */
-const OWN_CHROME_PAGES = ["admin", "summer-admin", "club-admin", "circle", "mentor",
-  "apply", "review", "gate", "verify", "reshoot", "cards", "designer", "certificate", "journal-entry"];
+ * A route used to be described by FOUR hand-maintained lists (`PAGE_IDS`, a
+ * `PAGE_META` map, `OWN_CHROME_PAGES` and a `noindexPages` array buried in an
+ * effect), and nothing checked that they agreed. They drifted, and the drift
+ * was not cosmetic:
+ *
+ *   · `apply` and `review` were added to PAGE_IDS and to the render map but
+ *     never to PAGE_META. So the public Direct Apply form — a page that loads
+ *     and works — titled its own browser tab, its `og:title` (every shared
+ *     link preview) and its polite route announcement **"Page not found ·
+ *     NGG"**. To anybody handed the link, the page 404s.
+ *   · `apply` was missing from the noindex list too, so a child-intake form
+ *     asking for a name, a date of birth, a photograph and a guardian's email
+ *     shipped `robots: index, follow` and a canonical URL, while the desk
+ *     version of the same form (`gate`) was correctly noindexed.
+ *
+ * So a route is now ONE row and everything below is derived from it. There is
+ * no second list to forget. `tests/route-registry.test.js` fails if a page in
+ * the render map has no row, or a row has no page — the same drift guard
+ * `validateOrderAgainstIndex()` gives the build.
+ *
+ *   id           first path segment (`home` → "/") AND the render-map key
+ *   title        <title>, og:title and the route announcement — REQUIRED
+ *   desc         meta description + og:description. "" = leave the previous
+ *                one in place (a surface with nothing public to say)
+ *   chrome:"own" full-screen surface: no topnav, no footer, no ⌘K hint
+ *   index:false  <meta name="robots" content="noindex, nofollow"> and no
+ *                canonical — personal, operational or token-scoped surfaces
+ *   addressable  false = reachable only through a prefix route (/q, /s, /cert),
+ *                so the router must not rewrite the address bar to `/<id>`
+ */
+const ROUTES = [
+  // ── Public site ──────────────────────────────────────────────────────────
+  { id: "home",        title: "Next Generation Genius · Afrovanguard",     desc: "A twelve-week growth journey for African teenagers, 10–17. From summer student to vanguard leader." },
+  { id: "about",       title: "About NGGC · The 2040 formation brief",    desc: "The Next Generation Genius Club is a formation system: four divisions, six goals, a courage index and a mentor for every member — raising 1,000,000 incorruptible African leaders by 2040." },
+  { id: "summer",      title: "Summer School · NGG",                       desc: "Six weeks, eight academies, one bold move. Search every NGG Summer School centre, course and edition — and apply." },
+  { id: "centres",     title: "NGG member centres · NGG",                  desc: "Every Next Generation Genius member centre — find yours, meet the crew, see what's next." },
+  { id: "club",        title: "NGGC · The Genius Club",                    desc: "A teen society with Genius IDs, weekly missions, public skill badges and a leaderboard." },
+  { id: "community",   title: "Community · NGG",                           desc: "Every centre, every track, one movement — the Next Generation Genius community." },
+  { id: "anchor",      title: "Anchor 12 · The Flagship · NGG",            desc: "Twelve weeks. Fifty missions. One identity, rebuilt in public." },
+  { id: "book",        title: "The Anchor · The book · NGG",               desc: "The field manual every NGG teenager works through during Anchor 12." },
+  { id: "media",       title: "Media room · NGG",                          desc: "Reels, documentaries, performances, podcasts. The movement on camera." },
+  { id: "parents",     title: "For parents · Safe room with high ceilings", desc: "Safeguarding, philosophy, FAQ. A program built to protect while it builds." },
+  { id: "volunteers",  title: "Become a mentor · NGG",                     desc: "Three ways to be useful. Pick the shape of your time." },
+  { id: "mentors",     title: "The mentors · NGG",                         desc: "The Afrovanguard Street-To-Stardom volunteers who show up every Saturday." },
+  { id: "blog",        title: "The Journal · NGG",                         desc: "Long-form writing from mentors, members and the editorial team." },
+  { id: "contact",     title: "Contact · NGG",                             desc: "Questions about a session, mentoring, partnerships or press — a human replies within two working days." },
+  { id: "legal",       title: "Legal & data protection · NGG",             desc: "Privacy, terms, safeguarding, parental consent, cookies and your data rights under the NDPA/NDPR." },
+  { id: "s-status",    title: "Live status · Summer School · NGG",         desc: "A live, public view of attendance and participation across every NGG Summer School centre — aggregate numbers only." },
+  { id: "v-status",    title: "Volunteer status · Next Generation Genius",  desc: "A live, public view of volunteer needs and fulfilment across every NGG centre — aggregate counts only, never a volunteer's name." },
+
+  // ── Intake ───────────────────────────────────────────────────────────────
+  { id: "join",        title: "Apply · Summer School · NGG",               desc: "Four short steps. About six minutes. Pause and come back — we save as you go." },
+  { id: "volunteer",   title: "Volunteer registration · NGG",              desc: "Register to volunteer — as an admin, a mentor, or an instructor teaching a course." },
+  /* Direct Apply: the public, gate-scoped sign-up a centre hands to a family
+     (`/apply?g=…`). A real page with a real title — and noindexed, because it
+     collects a child's identity and the address is meant to be given out, not
+     found. */
+  { id: "apply",       title: "Direct Apply · Summer School · NGG",        desc: "", chrome: "own", index: false },
+
+  // ── Member-facing, signed in ─────────────────────────────────────────────
+  { id: "profile",     title: "Member profile · NGG",                      desc: "An NGG member's public profile — work, badges, mentor notes.", index: false },
+  { id: "dashboard",   title: "My dashboard · NGG",                        desc: "Your missions, mentor, streak and journal — the member dashboard.", index: false },
+  { id: "summerprofile", title: "Summer School participant · NGG",         desc: "A Summer School participant's standard profile.", addressable: false },
+
+  // ── Staff & operational surfaces (own chrome, never indexed) ─────────────
+  { id: "admin",        title: "Control Room · NGG",                       desc: "", chrome: "own", index: false },
+  { id: "summer-admin", title: "Summer School · Staff Portal · NGG",       desc: "", chrome: "own", index: false },
+  { id: "club-admin",   title: "NGG Club · Staff Portal · NGG",            desc: "", chrome: "own", index: false },
+  { id: "mentor",       title: "Mentor Portal · NGG",                      desc: "", chrome: "own", index: false },
+  { id: "circle",       title: "Anchor Circle · Guardian & Mentor Portal", desc: "Support your child's twelve-week Anchor journey — confirm conduct, encourage, and track growth without reading their private words.", chrome: "own", index: false },
+  { id: "gate",         title: "The Gate · NGG",                           desc: "", chrome: "own", index: false },
+  { id: "review",       title: "Review desk · NGG",                        desc: "", chrome: "own", index: false },
+  { id: "verify",       title: "Confirm your child's registration · NGG",  desc: "", chrome: "own", index: false },
+  { id: "reshoot",      title: "A new photo · NGG",                        desc: "", chrome: "own", index: false },
+  { id: "cards",        title: "ID Card Studio · NGG",                     desc: "", chrome: "own", index: false },
+  { id: "designer",     title: "Design Studio · NGG",                      desc: "", chrome: "own", index: false },
+  { id: "certificate",  title: "Service certificate · NGG",                desc: "A verifiable Next Generation Genius volunteer service certificate.", chrome: "own", index: false },
+  { id: "journal-entry",title: "From the programme journal · NGG",         desc: "", chrome: "own", index: false },
+];
+
+/* Everything below is DERIVED. Add a page by adding one row above. */
+const PAGE_IDS = ROUTES.filter(r => r.addressable !== false).map(r => r.id);
+const PAGE_META = ROUTES.reduce((m, r) => { m[r.id] = { title: r.title, desc: r.desc || "" }; return m; }, {});
+/* Pages that draw their OWN full-screen chrome — no topnav, no footer. Needed
+   in three places that had drifted apart: the render branch below, and (via
+   the `own-chrome` body class it sets) both the CSS that suppresses the
+   floating helpers and CommandHint's own check. */
+const OWN_CHROME_PAGES = ROUTES.filter(r => r.chrome === "own").map(r => r.id);
+/* Personal, operational and token-scoped surfaces stay out of the index.
+   "certificate" belongs here: a completion certificate carries a child's full
+   name, centre and course, the URL is shareable, and without this a parent
+   forwarding it to one person put it in a search index for everyone. The
+   document is theirs to show — that is not the same as publishing it. */
+const NOINDEX_PAGES = ROUTES.filter(r => r.index === false).map(r => r.id);
+
+/** Compare the registry against the render map. Returns the two ways they can
+ *  disagree, plus the rows that are missing a title — the failure that shipped
+ *  the Direct Apply page as "Page not found". Pure, so a test can call it. */
+function routeAudit(renderKeys) {
+  const keys = renderKeys || [];
+  const ids = ROUTES.map(r => r.id);
+  const missingRoute = keys.filter(k => ids.indexOf(k) === -1).sort();   // rendered, no row
+  const missingPage = ids.filter(id => keys.indexOf(id) === -1).sort();  // row, nothing renders
+  const missingTitle = ROUTES.filter(r => !r.title).map(r => r.id).sort();
+  const duplicateIds = ids.filter((id, i) => ids.indexOf(id) !== i).sort();
+  return {
+    ok: !missingRoute.length && !missingPage.length && !missingTitle.length && !duplicateIds.length,
+    missingRoute, missingPage, missingTitle, duplicateIds,
+    routes: ids.length,
+  };
+}
 
 /* ---- 404 fallback — when a hash doesn't match any registered page ---- */
 function NotFound({ setPage }) {
@@ -165,7 +228,7 @@ function pageFromPath() {
   // /login and /signin are conventional entry points — resolve to home; the
   // auth provider opens the sign-in modal (or redirects signed-in users).
   if (seg === "login" || seg === "signin") return "home";
-  // Summer student profiles: /q/<qr-token> or /s/<handle>.
+  // Summer School participant profiles: /q/<qr-token> or /s/<handle>.
   if (seg === "q" || seg === "s") return "summerprofile";
   // Volunteer service certificates: /cert/<certId> — public + printable.
   if (seg === "cert") return "certificate";
@@ -183,6 +246,33 @@ function pathForPage(page) {
   return page === "home" ? "/" : "/" + page;
 }
 
+/* Open the application form, carrying what the applicant already told us.
+ *
+ * Every "Apply" CTAs in the product used to be `setPage("join")` and nothing
+ * else, with the chosen programme smuggled across as `window.__nggProgram` one
+ * tick before the route changed. Two things followed: a refresh of the form
+ * silently switched the applicant from Summer School to Anchor 12, and "Apply
+ * to THIS centre" opened a form with a different centre preselected.
+ *
+ * Both facts are now URL parameters, which is what makes them survive a
+ * refresh, a bookmark, a shared link and a bounce through sign-in. The address
+ * is pushed BEFORE the page switches so the router's own effect sees the path
+ * it already wants and leaves the query string alone.
+ *
+ *   goApply(setPage, "summer")                    → /join?program=summer
+ *   goApply(setPage, "summer", { centre: "Ijaiye" }) → …&centre=Ijaiye
+ */
+function goApply(setPage, program, opts) {
+  const p = program === "summer" ? "summer" : "anchor";
+  const q = new URLSearchParams({ program: p });
+  const centre = (opts && opts.centre) ? String(opts.centre).trim() : "";
+  if (centre) q.set("centre", centre);
+  const track = (opts && opts.track) ? String(opts.track).trim() : "";
+  if (track) q.set("track", track);
+  try { history.pushState({ page: "join" }, "", "/join?" + q.toString()); } catch (_) {}
+  setPage("join");
+}
+
 function App() {
   const [page, setPage] = React.useState(pageFromPath);
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
@@ -197,7 +287,12 @@ function App() {
     // The centres page owns a URL subtree (/centres and /centres/<slug>); don't
     // clobber a deep-linked slug by rewriting it back to the index path.
     const inCentresSubtree = page === "centres" && (window.location.pathname || "").replace(/\/+$/, "").startsWith("/centres");
-    if (page !== "_notfound" && page !== "summerprofile" && page !== "certificate" && !inCentresSubtree && window.location.pathname !== pathForPage(page)) {
+    /* The dashboard owns a subtree too — /dashboard/account, /dashboard/records,
+       /dashboard/requests. Its own router (see page-dashboard.jsx) pushes those,
+       and rewriting them back to /dashboard here would undo a deep link the
+       moment the page mounted, which reads as "the tab does not work". */
+    const inDashSubtree = page === "dashboard" && (window.location.pathname || "").replace(/\/+$/, "").startsWith("/dashboard");
+    if (page !== "_notfound" && page !== "summerprofile" && page !== "certificate" && !inCentresSubtree && !inDashSubtree && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
     }
     // Expose for the sign-in modal / magic link consumer.
@@ -212,22 +307,18 @@ function App() {
     if (og) og.setAttribute("content", meta.title);
     const ogd = document.querySelector('meta[property="og:description"]');
     if (ogd && meta.desc) ogd.setAttribute("content", meta.desc);
-    // Canonical + og:url must follow the route — a canonical pinned to "/"
-    // tells crawlers every deep page is a duplicate of the homepage.
+    /* Canonical + og:url must follow the route — a canonical pinned to "/"
+       tells crawlers every deep page is a duplicate of the homepage. Only for
+       pages we actually want indexed: a canonical on a noindexed surface
+       advertises the address it is trying not to publish. */
+    const indexable = PAGE_IDS.includes(page) && NOINDEX_PAGES.indexOf(page) === -1;
     const canonicalUrl = "https://next.afrovanguard.org.ng" + (page === "home" ? "/" : "/" + page);
     const can = document.querySelector('link[rel="canonical"]');
-    if (can && PAGE_IDS.includes(page)) can.setAttribute("href", canonicalUrl);
+    if (can && indexable) can.setAttribute("href", canonicalUrl);
     const ogu = document.querySelector('meta[property="og:url"]');
-    if (ogu && PAGE_IDS.includes(page)) ogu.setAttribute("content", canonicalUrl);
-    // Deep pages that are personal/operational surfaces stay out of the index.
-    /* "certificate" belongs here: a completion certificate carries a child's
-       full name, centre and course, the URL is shareable, and without this a
-       parent forwarding it to one person put it in a search index for
-       everyone. The document is theirs to show — that is not the same as
-       publishing it. */
-    const noindexPages = ["dashboard", "profile", "admin", "summer-admin", "club-admin", "gate", "verify", "circle", "mentor", "certificate", "review", "journal-entry"];
+    if (ogu && indexable) ogu.setAttribute("content", canonicalUrl);
     let rob = document.querySelector('meta[name="robots"]');
-    if (rob) rob.setAttribute("content", noindexPages.includes(page) ? "noindex, nofollow" : "index, follow, max-image-preview:large");
+    if (rob) rob.setAttribute("content", NOINDEX_PAGES.includes(page) ? "noindex, nofollow" : "index, follow, max-image-preview:large");
     // Announce route change for assistive tech via a polite live region.
     const live = document.getElementById("ngg-route-live");
     if (live) live.textContent = "Navigated to " + meta.title;
@@ -259,6 +350,7 @@ function App() {
 
   const pages = {
     home:      <HomePage      setPage={setPage}/>,
+    about:     <AboutPage     setPage={setPage}/>,
     summer:    <SummerPage    setPage={setPage}/>,
     centres:   <CentresPage   setPage={setPage}/>,
     club:      <ClubPage      setPage={setPage}/>,
@@ -294,6 +386,22 @@ function App() {
     "journal-entry": <JournalEntryPage/>,
     legal:      <LegalPage setPage={setPage}/>,
   };
+
+  /* ── The drift guard ──────────────────────────────────────────────────────
+     The registry and the render map must name the same pages. This is exactly
+     the check that was missing when /apply and /review shipped rendering fine
+     and titling themselves "Page not found · NGG" for two releases.
+
+     Published on `window` so `tests/route-registry.test.js` can assert it
+     against the real production bundle rather than re-parsing the source, and
+     logged rather than thrown, because one forgotten row must degrade a title
+     — not blank the site. */
+  React.useEffect(() => {
+    const audit = routeAudit(Object.keys(pages));
+    window.__routeAudit = audit;
+    if (audit.ok === false) console.error("[router] route registry drift", audit);
+    // eslint-disable-next-line
+  }, []);
 
   // The staff console/portals, the guardian Circle portal, the gate desk and
   // the parent verification page use their own chrome — no topnav/footer.

@@ -12,6 +12,12 @@
 function useAdminDrawer(onClose, guard = true) {
   const panelRef = React.useRef(null);
   const touched = React.useRef(false);
+  /* Every drawer is role="dialog" aria-modal="true" and, until now, none of
+     them had a NAME — a screen reader announced "dialog" and stopped, with the
+     heading sitting right there in the head. Minted here so a drawer cannot
+     forget it: spread `titleProps` onto the dialog and `headingProps` onto the
+     <h3>. */
+  const titleId = React.useId();
   const close = React.useCallback(() => {
     if (guard && touched.current && typeof dialog !== "undefined" && dialog.confirm) {
       dialog.confirm({ title: "Discard changes?", body: "You have edits that haven't been saved yet.", cta: "Discard", cancel: "Keep editing", danger: true })
@@ -35,7 +41,11 @@ function useAdminDrawer(onClose, guard = true) {
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("keydown", onKey); if (prev && prev.focus) { try { prev.focus(); } catch (_) {} } };
   }, [close]);
-  return { panelRef, close, onInput: () => { touched.current = true; } };
+  return {
+    panelRef, close, onInput: () => { touched.current = true; },
+    titleProps: { "aria-labelledby": titleId },
+    headingProps: { id: titleId },
+  };
 }
 
 // ── Single source of truth for every Control Room section ──────────────────
@@ -44,7 +54,10 @@ function useAdminDrawer(onClose, guard = true) {
 // Add a new module by adding ONE row.
 const ADMIN_SECTIONS = [
   { id: "home",        group: null,       label: "Overview",     title: "Overview",            icon: "◎", cap: null },
-  { id: "dashboard",   group: null,       label: "Analytics",    title: "Summer School Analytics", icon: "◫", cap: null },
+  /* Not "Summer School Analytics": the workspace reports on NGG members, on
+     volunteers and on Summer School alike, and the old title sent anybody
+     looking for year-round numbers to the wrong place. */
+  { id: "dashboard",   group: null,       label: "Analytics",    title: "Analytics & M&E",     icon: "◫", cap: null },
   { id: "members",     group: "People",   label: "Members",      title: "Members",             icon: "◯", cap: "people" },
   { id: "applications",group: "People",   label: "Applications", title: "Applications",        icon: "✉", cap: "people" },
   { id: "volunteers",  group: "People",   label: "Volunteers",   title: "Volunteers",          icon: "◈", cap: "people" },
@@ -52,12 +65,32 @@ const ADMIN_SECTIONS = [
   { id: "mentorship",  group: "People",   label: "Mentorship",   title: "Mentorship",          icon: "◐", cap: "people" },
   { id: "behaviour",   group: "People",   label: "Behaviour",    title: "Behaviour monitor",   icon: "◔", cap: "people" },
   { id: "fees",        group: "People",   label: "Dues & fees",  title: "Dues & fees",         icon: "₦", cap: "fees" },
+  /* The conduct policy — thresholds, suspensions and the fine amounts —
+     was only reachable through Summer School, because the panel grew up
+     there. It governs NGG members too (its own `member` block, its own
+     on/off switch), so a year-round coordinator looking for "why is
+     nobody being fined" had nowhere to look. Same screen, second door. */
+  { id: "conduct",     group: "People",   label: "Conduct & fines", title: "Conduct policy & fines", icon: "⚖", cap: "people" },
+  { id: "requests",    group: "People",   label: "Member requests", title: "Member requests", icon: "✋", cap: "people" },
   { id: "staff",       group: "People",   label: "Staff activity", title: "Staff activity",    icon: "◑", cap: "people" },
-  { id: "engagement",  group: "People",   label: "Engagement",   title: "Team engagement",     icon: "📈", cap: "audit" },
-  { id: "registration",group: "People",   label: "Registration", title: "Registration",        icon: "❑", cap: "summer" },
-  { id: "qr",          group: "People",   label: "QR codes",     title: "QR codes",            icon: "▦", cap: "summer" },
-  { id: "attendance",  group: "People",   label: "Attendance duty", title: "Attendance duty",  icon: "🗓", cap: "summer" },
-  { id: "assessment",  group: "People",   label: "Assessments",  title: "Baseline & endline",  icon: "◑", cap: "summer" },
+  { id: "engagement",  group: "People",   label: "Engagement",   title: "Engagement",          icon: "📈", cap: "audit" },
+  /* The NGG centre DIRECTORY, in People — where members are administered.
+     It used to be a tab inside Summer School → Registration, and the whole
+     directory gated on `summer`, which had it backwards both ways: a Summer
+     School coordinator could rename or delete the centre every member's record
+     and printed ID card depends on, and a year-round member administrator
+     could not add one. See AdminCentres and admin_centres_list. */
+  { id: "centres",     group: "People",   label: "Centres",      title: "Centres",             icon: "◉", cap: "people" },
+  /* ONE Summer School door. `registration` and `qr` were separate sections
+     that mounted a partial, divergent subset of the same panels the
+     coordinator portal had — see the note above AdminSummer. */
+  /* ID cards: the print log, one member's card history, and the way into the
+     Design Studio. The studio and the batch drawer both existed; what did not
+     was any record of what had been printed — see domain/card-runs.php. */
+  { id: "idcards",     group: "People",   label: "ID cards",     title: "ID cards",            icon: "▣", cap: "people" },
+  { id: "summer",      group: "Summer School", label: "Summer School", title: "Summer School",  icon: "☀", cap: "summer" },
+  { id: "attendance",  group: "Summer School", label: "Duty rota",  title: "Attendance duty rota", icon: "🗓", cap: "summer" },
+  { id: "assessment",  group: "Summer School", label: "Assessments", title: "Baseline & endline",  icon: "◑", cap: "summer" },
   { id: "sessions",    group: "Content",  label: "Sessions",     title: "Sessions",            icon: "▢", cap: "content" },
   { id: "missions",    group: "Content",  label: "Missions",     title: "Anchor missions",     icon: "✦", cap: "content" },
   { id: "anchor",      group: "Content",  label: "Anchor app",   title: "Anchor Journal app",  icon: "⚓", cap: "content" },
@@ -68,6 +101,8 @@ const ADMIN_SECTIONS = [
   { id: "comments",    group: "Content",  label: "Comments",     title: "Comment moderation",  icon: "💬", cap: "content" },
   { id: "community",   group: "Content",  label: "Community",    title: "Community",           icon: "❖", cap: "content" },
   { id: "tournaments", group: "Content",  label: "Tournaments",  title: "Tournaments",         icon: "♟", cap: "people" },
+  { id: "promos",      group: "Content",  label: "Promotions",   title: "Promotions",          icon: "◈", cap: "content" },
+  { id: "wisdom",      group: "Content",  label: "Quote of the week", title: "Quote of the week", icon: "❝", cap: "content" },
   { id: "broadcast",   group: "Content",  label: "Announce",     title: "Announcements",       icon: "📣", cap: "content" },
   { id: "forms",       group: "Content",  label: "Forms",        title: "Forms",               icon: "▤", cap: "content" },
   { id: "site",        group: "Content",  label: "Site content", title: "Site content",        icon: "◧", cap: "settings" },
@@ -84,20 +119,87 @@ const ADMIN_SECTIONS = [
 // Which capability each admin section needs (null = any staff) — derived.
 const SECTION_CAP = ADMIN_SECTIONS.reduce((m, s) => { m[s.id] = s.cap; return m; }, {});
 
+/* Sections that were consolidated, and where their deep links now go.
+ *
+ * A retired section id is not a dead route: it is in bookmarks, in the command
+ * palette, and in adminJump() calls from other screens. Each maps to the
+ * section that absorbed it plus the panel inside it, so an old link lands where
+ * the work moved rather than on the Overview. */
+const ADMIN_SECTION_ALIASES = {
+  registration: { section: "summer", tab: "gates" },
+  qr:           { section: "summer", tab: "qr" },
+  // "Conduct & fines" is one screen with two doors on purpose (it governs NGG
+  // members and Summer School alike), so it is NOT an alias — both ids render.
+};
+/** Resolve a section id, following one consolidation hop. */
+function resolveAdminSection(id) {
+  const a = ADMIN_SECTION_ALIASES[id];
+  if (!a) return { section: id, tab: "" };
+  return a;
+}
+
 // Cross-section deep-link: jump the console to another section (and optionally a
 // specific sub-tab). window.__adminSection is exposed by AdminPage; a section
 // that supports tabs reads the pending tab on mount. Lets one screen point an
 // admin straight at where a piece of data is actually edited.
+/* ── The pending sub-tab, for a cross-section deep link ────────────────────
+ *
+ * It was a bare module global read once, inside a useState initialiser. Two
+ * bugs live in that shape, and both bit:
+ *
+ *   1. A jump to a section that is ALREADY open never applies. The section
+ *      does not remount, so nothing re-reads the global — the Control Room
+ *      simply ignores you. (Opening "QR cards" from the palette while Summer
+ *      School was already on screen did nothing at all.)
+ *   2. The unread value then LEAKS. It sits in the global until the next time
+ *      any section mounts, so leaving Summer School and coming back later
+ *      landed on somebody else's stale deep link rather than the default panel.
+ *
+ * So it is a tiny store with subscribers. `useAdminTab` seeds from it AND
+ * re-reads on every publish, which is what makes a jump work whether or not
+ * the section happens to remount; and reading always clears, so nothing leaks.
+ */
 let _pendingAdminTab = "";
-function adminJump(sectionId, tab) {
-  if (tab) _pendingAdminTab = tab;
-  if (window.__adminSection) window.__adminSection(sectionId);
-  window.scrollTo({ top: 0, behavior: "smooth" });
+const _pendingTabSubs = new Set();
+function setPendingAdminTab(tab) {
+  _pendingAdminTab = tab || "";
+  _pendingTabSubs.forEach(fn => { try { fn(); } catch (_) {} });
 }
 function takePendingAdminTab(fallback) {
   const t = _pendingAdminTab || fallback;
   _pendingAdminTab = "";
   return t;
+}
+
+/** A section's active sub-tab, honouring cross-section deep links.
+ *
+ *  `valid` rejects a tab this section does not have, so a jump aimed at
+ *  another section cannot leave this one rendering nothing. */
+function useAdminTab(fallback, valid) {
+  const okTab = React.useCallback((t) => !!t && (!valid || valid(t)), [valid]);
+  const [tab, setTab] = React.useState(() => {
+    const t = takePendingAdminTab("");
+    return okTab(t) ? t : fallback;
+  });
+  React.useEffect(() => {
+    const fn = () => { const t = takePendingAdminTab(""); if (okTab(t)) setTab(t); };
+    _pendingTabSubs.add(fn);
+    fn();   // a jump that arrived while this section was already on screen
+    return () => { _pendingTabSubs.delete(fn); };
+    // eslint-disable-next-line
+  }, []);
+  return [tab, setTab];
+}
+
+function adminJump(sectionId, tab) {
+  /* Follow one consolidation hop, so a call site that still names a retired
+     section (`registration`, `qr`) lands on the panel the work moved to
+     instead of silently falling back to the Overview. An explicit tab wins
+     over the alias's default. */
+  const r = resolveAdminSection(sectionId);
+  if (window.__adminSection) window.__adminSection(r.section, tab || r.tab);
+  else setPendingAdminTab(tab || r.tab);
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 // Read the ops health payload and distil the two storage faults an admin can
@@ -187,7 +289,17 @@ function AdminHealthBanner({ hasCap, setSection }) {
 
 function AdminPage({ setPage }) {
   const { member, isAdmin, adminOk, loading, openSignIn, setAdminOk, hasCap } = useAuth();
-  const [section, setSection] = React.useState("home");
+  /* One entry point for section changes, so an alias is resolved wherever a
+     deep link comes from — the command palette, another screen's adminJump, or
+     a bookmark. */
+  const [section, setSectionRaw] = React.useState("home");
+  const setSection = React.useCallback((id, tab) => {
+    const r = resolveAdminSection(id);
+    /* Published even when empty: a plain navigation must CLEAR any tab left
+       over from an earlier jump, or the next section to mount inherits it. */
+    setPendingAdminTab(tab || r.tab || "");
+    setSectionRaw(r.section);
+  }, []);
   const [setupView, setSetupView] = React.useState(false);
   const allowed = (s) => !SECTION_CAP[s] || hasCap(SECTION_CAP[s]);
   // Never render a section the current tier can't access (the backend also
@@ -270,8 +382,9 @@ function AdminPage({ setPage }) {
           {view === "members" && <AdminMembers/>}
           {view === "applications" && <AdminApplications/>}
           {view === "volunteers" && <AdminVolunteers/>}
-          {view === "registration" && <AdminRegistration/>}
-          {view === "qr" && <AdminQRCodes/>}
+          {view === "centres" && <AdminCentres/>}
+          {view === "idcards" && <AdminIdCards/>}
+          {view === "summer" && <AdminSummer/>}
           {view === "mentors" && <AdminMentors/>}
           {view === "mentorship" && <AdminMentorship/>}
           {view === "newsletter" && <AdminNewsletter/>}
@@ -280,6 +393,8 @@ function AdminPage({ setPage }) {
           {view === "forms" && <AdminForms/>}
           {view === "site" && <AdminSite/>}
           {view === "fees" && <AdminFees/>}
+          {view === "conduct" && <SummerPolicy/>}
+          {view === "requests" && <AdminRequests/>}
           {view === "status-pages" && <AdminStatusPages/>}
           {view === "sessions" && <AdminSessions/>}
           {view === "missions" && <AdminMissions/>}
@@ -300,6 +415,8 @@ function AdminPage({ setPage }) {
           {view === "comments" && <AdminComments/>}
           {view === "community" && <AdminCommunity/>}
           {view === "tournaments" && <AdminTournaments/>}
+          {view === "promos" && <AdminPromos/>}
+          {view === "wisdom" && <AdminWisdom/>}
           {view === "assessment" && <AdminAssessment/>}
           {view === "donations" && <AdminDonations/>}
         </main>
@@ -397,7 +514,7 @@ function AdminTotpGate({ onPass, member }) {
               onChange={(e) => setCode(e.target.value.replace(/[^\d ]/g, ""))}
               autoFocus
             />
-            {err && <div className="signin-err">{err}</div>}
+            {err && <div role="alert" className="signin-err">{err}</div>}
             <button className="btn btn-primary btn-lg" disabled={busy || code.replace(/\s/g, "").length !== 6}>
               {busy ? "Verifying…" : "Unlock admin →"}
             </button>
@@ -453,7 +570,7 @@ function AdminTopbar({ section, setSection, setPage, member, analyst, toggleAnal
             ✦ Analyst<kbd>⌘J</kbd>
           </button>
         )}
-        {exp && <span className={"admin-session-chip" + (exp.warn ? " warn" : "")} title={sessionExp ? "Your sign-in ends " + new Date(sessionExp * 1000).toLocaleString() : ""}>🔑 {exp.text}</span>}
+        {exp && <span className={"admin-session-chip" + (exp.warn ? " warn" : "")} title={sessionExp ? "Your sign-in ends " + fmtDateTime(sessionExp * 1000) : ""}>🔑 {exp.text}</span>}
         {Array.isArray(member.caps) && member.caps.indexOf("summer") !== -1 && (
           <button className="btn btn-on-dark-ghost btn-sm" onClick={() => setPage("summer-admin")}>Summer ↗</button>
         )}
@@ -468,7 +585,10 @@ function AdminTopbar({ section, setSection, setPage, member, analyst, toggleAnal
 }
 
 // Group order for the sidebar; `null` is the ungrouped top entry (Overview).
-const ADMIN_NAV_GROUPS = [null, "People", "Content", "Inbox", "System"];
+/* Nav group order. "Summer School" is its own group rather than five entries
+   scattered through People: a coordinator's whole job is in one place, and the
+   People group stops mixing "administer a member" with "run a season". */
+const ADMIN_NAV_GROUPS = [null, "People", "Summer School", "Content", "Inbox", "System"];
 
 function AdminNav({ section, setSection, hasCap }) {
   const can = (it) => !it.cap || (hasCap ? hasCap(it.cap) : true);
@@ -579,7 +699,7 @@ function AdminHome({ setSection, hasCap, member }) {
       <div className="admin-tiles">
         {can("people") && <AdminTile n={fmt(m.active)} l="Active members" onClick={() => setSection("members")}/>}
         {can("people") && <AdminTile n={fmt(m.ngg)} l="NGG members" onClick={() => setSection("members")}/>}
-        {can("people") && <AdminTile n={fmt(m.summer)} l="Summer students" onClick={() => setSection("members")}/>}
+        {can("people") && <AdminTile n={fmt(m.summer)} l="Summer School participants" onClick={() => setSection("members")}/>}
         {can("people") && <AdminTile n={fmt(m.graduates)} l="Graduates" onClick={() => setSection("members")}/>}
         {can("people") && <AdminTile n={"+" + fmt(m.new30)} l="New · 30 days" onClick={() => setSection("members")}/>}
         {can("people") && <AdminTile n={fmt((o.mentors || {}).active)} l="Active mentors" onClick={() => setSection("mentors")}/>}
@@ -609,7 +729,7 @@ function AdminHome({ setSection, hasCap, member }) {
           <h3 className="admin-h3">Recent activity</h3>
           <div className="admin-activity">
             {(o.recent || []).map((r, i) => (
-              <div className="admin-activity-row" key={i}><span className="mono admin-activity-when">{fmtTime(r.at)}</span><span className="mono admin-activity-ev">{r.event}</span><span className="admin-activity-sub">{r.subject || ""}</span></div>
+              <div className="admin-activity-row" key={i}><span className="mono admin-activity-when">{fmtDateTime(r.at)}</span><span className="mono admin-activity-ev">{r.event}</span><span className="admin-activity-sub">{r.subject || ""}</span></div>
             ))}
           </div>
         </div>
@@ -634,76 +754,61 @@ function AdminHome({ setSection, hasCap, member }) {
 
 /* General dashboard — the Summer School 2026 board: live attendance + per-centre
    analytics. Read-only; any console admin (incl. the M&E audit role) sees it. */
-function AdminDashboard() {
-  const [d, setD] = React.useState(null);
-  const [err, setErr] = React.useState("");
-  const load = () => NGGApi.admin.dashboard().then(r => { setD(r.dashboard); setErr(""); }).catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); const id = setInterval(() => { if (!document.hidden) load(); }, 30000); return () => clearInterval(id); }, []);
-  if (err) return <div className="admin-section"><ErrorState title="Couldn't load the dashboard" code={err} onRetry={load}/></div>;
-  if (!d) return <div className="admin-section"><div className="dash-spinner"/></div>;
-  const k = d.kpis || {};
-  const maxTrend = Math.max(1, ...(d.trend || []).map(t => (t.present || 0)));
-  const kpi = (n, l, sub) => (
-    <div className="admin-tile" style={{ cursor: "default", alignItems: "flex-start" }}>
-      <div className="admin-tile-n">{n}</div>
-      <div className="mono admin-tile-l">{l}</div>
-      {sub ? <div className="mono" style={{ fontSize: 10, color: "var(--ink-500)", marginTop: 2 }}>{sub}</div> : null}
-    </div>
-  );
-  const rateColor = (r) => r >= 85 ? "#2f9e44" : r >= 60 ? "#f08c00" : "#e03131";
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head">
-        <h2 className="admin-h2">Summer School Dashboard</h2>
-        <span className="mono" style={{ color: "var(--ink-500)", fontSize: 12 }}>Live · {d.today} · updates every 30s</span>
-      </div>
-      <div className="admin-grid-cards" style={{ marginBottom: 22 }}>
-        {kpi(k.centres || 0, "Centres")}
-        {kpi(k.enrolled || 0, "Enrolled students")}
-        {kpi(k.presentToday || 0, "Present today")}
-        {kpi((k.attendanceRate || 0) + "%", "Attendance rate")}
-        {kpi(k.lateToday || 0, "Late today")}
-        {kpi(k.activeVolunteers || 0, "Active volunteers", (k.presentVolToday || 0) + " in today")}
-      </div>
-
-      <h3 className="admin-h3" style={{ margin: "0 0 10px" }}>Centre performance</h3>
-      {!(d.byCentre || []).length ? <div className="admin-empty">No active centres yet — add them under Registration → Centres.</div> :
-        <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Centre</th><th>Enrolled</th><th>Present today</th><th>Late</th><th>Attendance</th></tr></thead>
-          <tbody>
-            {(d.byCentre || []).map(c => (
-              <tr key={c.centreId || c.name}>
-                <td><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: c.color || "#76B043", marginRight: 8 }}/><b>{c.name}</b> <span className="mono admin-cell-sub">{c.code}</span></td>
-                <td className="mono">{c.enrolled}</td>
-                <td className="mono">{c.present}</td>
-                <td className="mono">{c.late ? <span style={{ color: "#e03131" }}>{c.late}</span> : "—"}</td>
-                <td><span style={{ fontWeight: 700, color: rateColor(c.rate) }}>{c.rate}%</span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div>}
-
-      <h3 className="admin-h3" style={{ margin: "24px 0 10px" }}>Attendance — last 14 days</h3>
-      {!(d.trend || []).length ? <div className="admin-empty">No check-ins recorded yet.</div> :
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 120, padding: "0 2px", overflowX: "auto" }}>
-          {(d.trend || []).map(t => (
-            <div key={t.date} title={t.date + " · " + t.present + " present" + (t.late ? " · " + t.late + " late" : "")} style={{ flex: "1 0 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-              <div style={{ width: "100%", maxWidth: 26, height: Math.max(2, Math.round((t.present || 0) / maxTrend * 96)), background: "linear-gradient(180deg,#4c6ef5,#3b5bdb)", borderRadius: "4px 4px 0 0" }}/>
-              <span className="mono" style={{ fontSize: 9, color: "var(--ink-500)", whiteSpace: "nowrap" }}>{String(t.date).slice(5)}</span>
-            </div>
-          ))}
-        </div>}
-      <p className="admin-hint" style={{ marginTop: 16 }}>Per-centre scoping, stars/behaviour, recognition and academic analytics land in the next phases (see the implementation plan). Late is measured against the resumption times in Settings → Attendance.</p>
-    </div>
-  );
-}
-
+/* `AdminDashboard` used to live here — an at-a-glance attendance and
+ * per-centre board reading `admin.dashboard.overview`. Nothing rendered it:
+ * the `dashboard` section mounts the M&E AnalyticsWorkspace, and the Overview
+ * covers the membership counts, so it had been unreachable code for as long as
+ * both of those have existed.
+ *
+ * THE OP IS DELIBERATELY KEPT. `admin.dashboard.overview` is read-only,
+ * admin-gated, centre-scope aware and covered by four tests including the
+ * scoping one — deleting tested behaviour to tidy away an orphan trades a real
+ * guarantee for a cosmetic one. It currently has no UI consumer, which is
+ * recorded here and in CLAUDE.md so the next reader does not "fix" it by
+ * rebuilding a third overview screen beside the two that already exist.
+ */
 function AdminTile({ n, l, onClick, loading }) {
   return (
     <button className="admin-tile" onClick={onClick}>
       <div className="admin-tile-n">{loading ? <span className="dash-skel" style={{display:"inline-block", width:64, height:34, borderRadius:8}}/> : n}</div>
       <div className="mono admin-tile-l">{l}</div>
     </button>
+  );
+}
+
+/* A column header you can order by.
+ *
+ * There are 51 tables and 316 header cells in this file and, until this, not
+ * one sortable column: a coordinator holding four hundred children could not
+ * put the roster in name order, and `aria-sort` did not appear anywhere in the
+ * codebase. Newest-first is a fine default and a poor only-option.
+ *
+ * A real <button> inside the <th>, not a click handler on the cell — a header
+ * that reorders the table is a control, and a control has to be reachable by
+ * keyboard and announce what it does. `aria-sort` on the th is what tells a
+ * screen-reader user which column the table is currently ordered by; the arrow
+ * is the same information for everyone else.
+ *
+ * Clicking the active column flips direction. Clicking a new one starts at the
+ * direction that column is USEFULLY read in: names ascend (A first), dates and
+ * numbers descend (newest, largest first), because that is what somebody means
+ * when they say "sort by joined".
+ */
+function SortTh({ label, col, sort, onSort, numeric, defaultDir }) {
+  const active = sort && sort.col === col;
+  const dir = active ? sort.dir : null;
+  const next = active ? (dir === "asc" ? "desc" : "asc") : (defaultDir || (numeric ? "desc" : "asc"));
+  return (
+    <th className={"admin-sort-th" + (numeric ? " admin-num" : "") + (active ? " is-on" : "")}
+        aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" className="admin-sort-btn" onClick={() => onSort(col, next)}>
+        <span>{label}</span>
+        {/* Hidden from the accessibility tree: aria-sort on the th already
+            says this, and a screen reader announcing "sorted ascending ▲"
+            reads the same fact twice. */}
+        <span className="admin-sort-ind" aria-hidden="true">{active ? (dir === "asc" ? "▲" : "▼") : "↕"}</span>
+      </button>
+    </th>
   );
 }
 
@@ -716,7 +821,7 @@ function Pager({ page, pageSize, total, onPage }) {
   const to = Math.min(total, page * pageSize);
   return (
     <div className="admin-pager" role="navigation" aria-label="Pagination">
-      <span className="admin-pager-count mono">{from.toLocaleString()}–{to.toLocaleString()} of {total.toLocaleString()}</span>
+      <span className="admin-pager-count mono">{fmtNum(from)}–{fmtNum(to)} of {fmtNum(total)}</span>
       <div className="admin-pager-btns">
         <button className="btn btn-ghost btn-sm" disabled={page <= 1} onClick={() => onPage(page - 1)} aria-label="Previous page">← Prev</button>
         <span className="admin-pager-page mono" aria-current="page">Page {page} / {pages}</span>
@@ -780,9 +885,9 @@ function AdminAttendanceDuty() {
       {board === null ? <div className="dash-spinner"/> :
         board.length === 0 ? <div className="admin-empty">No points logged yet.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>#</th><th>Volunteer</th><th>Level</th><th>Streak</th><th>Points</th></tr></thead>
+          <thead><tr><th className="admin-num">#</th><th>Volunteer</th><th className="admin-num">Level</th><th className="admin-num">Streak</th><th className="admin-num">Points</th></tr></thead>
           <tbody>{board.map(v => (
-            <tr key={v.volunteerId}><td className="mono">{v.rank}</td><td>{v.fullName} <span className="chip" style={{ fontSize: 10 }}>{v.role}</span></td><td>L{v.level} · {v.levelName}</td><td>{v.streak}d</td><td><b>{v.points}</b></td></tr>
+            <tr key={v.volunteerId}><td className="mono admin-num">{v.rank}</td><td>{v.fullName} <span className="chip" style={{ fontSize: 10 }}>{v.role}</span></td><td className="admin-num">L{v.level} · {v.levelName}</td><td className="admin-num">{v.streak}d</td><td className="admin-num"><b>{fmtNum(v.points)}</b></td></tr>
           ))}</tbody>
         </table></div>}
     </div>
@@ -809,6 +914,207 @@ function engActivity(r) {
 }
 
 const ENG_LINE = { all: "#111827", volunteer: "#2b8a3e", instructor: "#1971c2", mentor: "#9c36b5" };
+
+/* ── Community engagement ──
+ *
+ * The bands are on REPLY RATE, not on volume, because volume is the metric
+ * that rises while a community dies: one enthusiastic child posting forty
+ * times to silence scores beautifully on posts, reactions and members alike.
+ * A channel where nobody answers is a noticeboard, and that is what the word
+ * says. */
+const CENG_BAND_STYLE = {
+  healthy:     { background: "#e6f7ec", color: "#137a3a" },
+  quiet:       { background: "#fff4e0", color: "#9a5b00" },
+  noticeboard: { background: "#fdecec", color: "#c0322b" },
+};
+const CENG_BAND_LABEL = { healthy: "Healthy", quiet: "Quiet", noticeboard: "Noticeboard" };
+/* Named rungs rather than a score. A reader is not a failure — most healthy
+   communities are mostly readers — so the ladder describes what somebody did,
+   and only `silent` is phrased as something to act on. */
+const CENG_RUNG = {
+  /* `label` counts them ("6 started conversations"); `was` describes one
+     person in the past ("was posting"). One string cannot do both — "was
+     started conversations" is what you get if you try. */
+  poster:  { label: "Started conversations", was: "posting",   tone: "#137a3a" },
+  replier: { label: "Replied to others",     was: "replying",  tone: "#1971c2" },
+  reactor: { label: "Reacted or voted",      was: "reacting",  tone: "#7048e8" },
+  reader:  { label: "Read, said nothing",    was: "reading",   tone: "#5f6874" },
+  silent:  { label: "Gone quiet",            was: "quiet",     tone: "#c0322b" },
+};
+
+/** A stat with its own sentence under it. A number with no unit and no
+ *  denominator is the thing people misread on a dashboard. */
+function CengStat({ label, value, sub, warn }) {
+  return (
+    <div style={{ border: "1px solid var(--line,#e7e9ee)", borderRadius: 12, padding: "12px 14px" }}>
+      <div className="mono" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em",
+                                     color: "var(--ink-400,#5f6874)" }}>{label}</div>
+      <div style={{ fontSize: "1.5rem", fontWeight: 800, fontVariantNumeric: "tabular-nums",
+                    color: warn ? "#c0322b" : "inherit" }}>{value}</div>
+      <div style={{ fontSize: ".82rem", color: "var(--ink-400,#5f6874)" }}>{sub}</div>
+    </div>
+  );
+}
+
+function CommunityEngagementPanel() {
+  const [days, setDays] = React.useState(30);
+  const [channel, setChannel] = React.useState("");
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+
+  const load = React.useCallback(() => {
+    setErr(""); setData(null);
+    return NGGApi.admin.communityEngagement({ days, channel })
+      .then(setData).catch(e => setErr(e.code || e.message || "load_failed"));
+  }, [days, channel]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const h = (data && data.headline) || {};
+  const chans = (data && data.channels) || [];
+  const unanswered = (data && data.unanswered) || [];
+  const quiet = (data && data.quiet) || [];
+  const ladder = (data && data.ladder) || {};
+
+  return (
+    <React.Fragment>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 6px" }}>
+        <select className="admin-select" value={days} onChange={e => setDays(Number(e.target.value))}
+                aria-label="Window" style={{ maxWidth: 150 }}>
+          <option value={7}>Last 7 days</option><option value={30}>Last 30 days</option>
+          <option value={90}>Last 90 days</option>
+        </select>
+        <select className="admin-select" value={channel} onChange={e => setChannel(e.target.value)}
+                aria-label="Channel" style={{ maxWidth: 200 }}>
+          <option value="">Every channel</option>
+          {chans.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+        </select>
+      </div>
+      <p className="admin-hint">
+        Not post counts — those rise while a community dies. The reply rate is the
+        headline because it is the only number here one determined person cannot
+        produce alone. Posts under 24 hours old are left out: this morning's post
+        has not been ignored.
+      </p>
+
+      {err ? <ErrorState code={err} onRetry={load}/> :
+       !data ? <div className="dash-spinner"/> :
+       <React.Fragment>
+         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))",
+                       gap: 12, margin: "6px 0 18px" }}>
+           <CengStat label="Posts answered" value={h.replyRate + "%"}
+                     warn={h.band === "noticeboard"}
+                     sub={(h.postsJudged - h.unanswered) + " of " + h.postsJudged + " · "
+                          + (CENG_BAND_LABEL[h.band] || h.band)}/>
+           <CengStat label="Voices" value={fmtNum(h.contributors)}
+                     sub={h.contributorRate + "% of the " + fmtNum(h.audience) + " who have ever taken part"}/>
+           <CengStat label="Came back" value={h.returnRate + "%"}
+                     warn={h.returnedOf > 0 && h.returnRate < 40}
+                     sub={h.returnedOf
+                       ? "of the " + fmtNum(h.returnedOf) + " active last period · " + fmtNum(h.newcomers) + " new"
+                       : "nobody was active last period"}/>
+           <CengStat label="First reply" value={h.medianFirstReplyHours == null ? "—" : h.medianFirstReplyHours + "h"}
+                     sub={h.medianFirstReplyHours == null ? "nothing was answered" : "median wait for an answer"}/>
+           <CengStat label="Opened it" value={fmtNum(h.reach)}
+                     sub={h.reachRate + "% of the audience read something"}/>
+           <CengStat label="Never turned up" value={fmtNum(h.neverJoinedIn)}
+                     sub={"of " + fmtNum(h.roster) + " active members, have never opened it"}/>
+         </div>
+
+         {/* The ladder. Reading is not a failure and is not drawn as one. */}
+         <h3 className="admin-h3" style={{ margin: "0 0 6px" }}>Who took part</h3>
+         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 18px" }}>
+           {["poster", "replier", "reactor", "reader", "silent"].map(k => (
+             <span key={k} className="chip" style={{ fontWeight: 700 }}>
+               <span aria-hidden="true" style={{ display: "inline-block", width: 8, height: 8, borderRadius: 8,
+                                                 background: CENG_RUNG[k].tone, marginRight: 6 }}/>
+               {fmtNum(ladder[k] || 0)} {CENG_RUNG[k].label.toLowerCase()}
+             </span>
+           ))}
+         </div>
+
+         {/* Per channel, worst first — "the community is quiet" is not an
+             answer, and this is what turns it into one. */}
+         {chans.length > 0 && (
+           <React.Fragment>
+             <h3 className="admin-h3" style={{ margin: "0 0 6px" }}>By channel, worst first</h3>
+             <div className="admin-table-wrap" style={{ margin: "0 0 18px" }}>
+               <table className="admin-table">
+                 <thead><tr>
+                   <th scope="col">Channel</th>
+                   <th scope="col" className="admin-num">Answered</th>
+                   <th scope="col" className="admin-num">Posts</th>
+                   <th scope="col" className="admin-num">Voices</th>
+                   <th scope="col" className="admin-num">First reply</th>
+                 </tr></thead>
+                 <tbody>
+                   {chans.map(c => (
+                     <tr key={c.slug}>
+                       <td>{c.name}{" "}
+                         <span className="chip" style={Object.assign({ fontWeight: 800, fontSize: 11 },
+                                                                     CENG_BAND_STYLE[c.band] || {})}>
+                           {CENG_BAND_LABEL[c.band] || c.band}
+                         </span>
+                       </td>
+                       <td className="mono admin-num">{c.answered}/{c.judged} ({c.replyRate}%)</td>
+                       <td className="mono admin-num">{fmtNum(c.posts)}</td>
+                       <td className="mono admin-num">{fmtNum(c.voices)}</td>
+                       <td className="mono admin-num">{c.medianFirstReplyHours == null ? "—" : c.medianFirstReplyHours + "h"}</td>
+                     </tr>
+                   ))}
+                 </tbody>
+               </table>
+             </div>
+           </React.Fragment>
+         )}
+
+         {/* The two lists somebody can act on this afternoon. Everything above
+             is context for these. */}
+         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 18 }}>
+           <div>
+             <h3 className="admin-h3" style={{ margin: "0 0 6px" }}>
+               Waiting for an answer{data.unansweredTotal > unanswered.length
+                 ? " (" + unanswered.length + " of " + fmtNum(data.unansweredTotal) + ")" : ""}
+             </h3>
+             {unanswered.length === 0
+               ? <EmptyState title="Everything has been answered" message="Every post old enough to judge has at least one reply."/>
+               : <ul className="admin-list" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                   {unanswered.map(p => (
+                     <li key={p.postId} style={{ padding: "8px 0", borderBottom: "1px solid var(--line,#e7e9ee)" }}>
+                       <div style={{ fontSize: ".9rem" }}>{p.excerpt || "(no text)"}</div>
+                       <div className="mono" style={{ fontSize: 12, color: "var(--ink-400,#5f6874)" }}>
+                         {p.authorName || p.authorId}{p.centre ? " · " + p.centre : ""} · {fmtDate(p.createdAt)}
+                       </div>
+                     </li>
+                   ))}
+                 </ul>}
+           </div>
+           <div>
+             <h3 className="admin-h3" style={{ margin: "0 0 6px" }}>
+               Gone quiet{data.quietTotal > quiet.length
+                 ? " (" + quiet.length + " of " + fmtNum(data.quietTotal) + ")" : ""}
+             </h3>
+             <p className="admin-hint" style={{ margin: "0 0 6px" }}>
+               Took part last period and has done nothing since — not even opened it.
+               Somebody who has dropped from posting to reading is still here, and is not listed.
+             </p>
+             {quiet.length === 0
+               ? <EmptyState title="Nobody has dropped off" message="Everybody who took part last period is still here."/>
+               : <ul className="admin-list" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                   {quiet.map(q => (
+                     <li key={q.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--line,#e7e9ee)" }}>
+                       <div style={{ fontSize: ".9rem" }}>{q.name}</div>
+                       <div className="mono" style={{ fontSize: 12, color: "var(--ink-400,#5f6874)" }}>
+                         {q.centre || "no centre"}{q.was && CENG_RUNG[q.was] ? " · was " + CENG_RUNG[q.was].was : ""}
+                       </div>
+                     </li>
+                   ))}
+                 </ul>}
+           </div>
+         </div>
+       </React.Fragment>}
+    </React.Fragment>
+  );
+}
 
 // Compact inline-SVG line chart of weekly average engagement (overall + per role).
 function EngTrendChart({ series }) {
@@ -903,11 +1209,14 @@ function EngagementPanel() {
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Team engagement</h2>
-        <div style={{ display: "flex", gap: 6 }}>{tabBtn("now", "Now")}{tabBtn("trends", "Trends")}</div>
+        <h2 className="admin-h2">Engagement</h2>
+        <div style={{ display: "flex", gap: 6 }}>
+          {tabBtn("now", "Team")}{tabBtn("trends", "Trends")}{tabBtn("community", "Community")}
+        </div>
       </div>
 
-      {tab === "now" ?
+      {tab === "community" ? <CommunityEngagementPanel/> :
+       tab === "now" ?
         <React.Fragment>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 6px" }}>
             {roleSelect}
@@ -1048,7 +1357,7 @@ function MemberBar({ label, value, max, sub }) {
     <div className="mem-bar-row">
       <div className="mem-bar-label">{label}{sub ? <span className="mem-bar-sub"> {sub}</span> : null}</div>
       <div className="mem-bar-track"><div className="mem-bar-fill" style={{ width: Math.max(pct, value > 0 ? 2 : 0) + "%" }}/></div>
-      <div className="mono mem-bar-n">{value.toLocaleString()}</div>
+      <div className="mono mem-bar-n">{fmtNum(value)}</div>
     </div>
   );
 }
@@ -1066,7 +1375,7 @@ function MembersDashboard({ onFilter }) {
   const h = o.headline;
   const q = o.quality || {};
   const maxCentre = Math.max(1, ...(o.byCentre || []).map(c => c.total));
-  const fmtN = (v) => (v || 0).toLocaleString();
+  const fmtN = (v) => fmtNum(v || 0);
   // Only the problems that exist. A panel of zeroes trains people to skip it.
   const issues = [
     { k: "duplicate_groups",  n: q.duplicate_groups,  label: "possible duplicate records", hint: "The same person entered twice. Sign-in resolves an email to one member, so a shared address locks one of them out." },
@@ -1253,7 +1562,7 @@ function MembersSegments({ onFilter }) {
           <button key={r.key} className={"mem-seg" + (r.count ? "" : " is-clear")}
                   disabled={!r.count}
                   onClick={() => onFilter({ segment: r.key })}>
-            <span className="mem-seg-n mono">{r.count.toLocaleString()}</span>
+            <span className="mem-seg-n mono">{fmtNum(r.count)}</span>
             <span className="mem-seg-l">{r.label}</span>
           </button>
         ))}
@@ -1409,164 +1718,212 @@ const SEGMENT_LABELS = {
   no_consent: "members with no publication consent recorded",
 };
 
-/* ── One action across a reviewed selection ───────────────────────────────
- *
- * Status, centre, track, cohort and type. Deliberately NOT roles, consent
- * or deletion: those are one at a time, because each is a decision about a
- * person rather than a correction to a field.
- *
- * Partial success is shown, never rounded up. A "423 updated" that quietly
- * skipped twelve is how people stop trusting the button. */
-function MembersBulkBar({ picked, centreOpts, onClear, onDone }) {
-  const [action, setAction] = React.useState("setStatus");
-  const [value, setValue] = React.useState("active");
-  const [busy, setBusy] = React.useState(false);
-  const [result, setResult] = React.useState(null);
+/* ============================================================================
+   THE MEMBER DESK
 
-  const ACTIONS = [
-    ["setStatus", "Set status"],
-    ["setCentre", "Move to centre"],
-    ["setType", "Set type"],
-    ["setTrack", "Set track"],
-    ["setCohort", "Set cohort"],
-  ];
+   The roster screen an administrator lives on. It already had server-side
+   search, filtering, sorting and paging — the expensive half — and none of the
+   things you do once you have found people:
 
-  const pick = (a) => {
-    setAction(a);
-    setValue(a === "setStatus" ? "active" : a === "setType" ? "NGG" : a === "setCentre" ? (centreOpts[0] || "") : "");
-    setResult(null);
-  };
+     · NO BULK ACTIONS AT ALL. Four hundred members, one drawer at a time.
+       Posting a centre's intake to that centre, or graduating a cohort, was
+       four hundred separate saves, so nobody did it and the roster drifted.
+     · SELECTION WAS IMPOSSIBLE, so "these eleven" had no expression.
+     · A PAGED TABLE CANNOT TICK WHAT IT CANNOT SEE. A filter matching 340
+       members can only ever offer the 50 rows in hand, so "all 340" has to be
+       a separate, explicit decision — resolved by the SERVER from the same
+       filters, not by unioning whatever pages the client happens to hold.
+     · ONE EMPTY STATE for two different situations. "No members match." was
+       shown both to a brand-new deployment and to somebody who had just
+       filtered themselves into a corner, and neither could act on it.
+     · A SPINNER ON EVERY PAGE TURN. The rows were dropped to null before each
+       fetch, so paging flashed the table away and back.
 
-  const go = async () => {
-    setBusy(true); setResult(null);
-    try {
-      const r = await NGGApi.admin.membersBulk(picked, action, value);
-      setResult(r);
-      if (!Object.keys(r.skipped || {}).length) { toast.ok(r.changed + " updated."); onDone(); }
-    } catch (e) {
-      setResult({ changed: 0, skipped: {}, error: e.detail || e.code || e.message });
-    } finally { setBusy(false); }
-  };
-
-  const skipped = result ? Object.entries(result.skipped || {}) : [];
-
-  return (
-    <div className="mem-bulk" role="region" aria-label="Act on the selected members">
-      <div className="mem-bulk-row">
-        <strong>{picked.length} selected</strong>
-        <select className="admin-select" value={action} onChange={(e) => pick(e.target.value)}>
-          {ACTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-
-        {action === "setStatus" && (
-          <select className="admin-select" value={value} onChange={(e) => setValue(e.target.value)}>
-            <option value="active">Active</option>
-            <option value="graduated-ngg">Graduated NGG</option>
-            <option value="graduated-vanguard">Graduated Vanguard</option>
-            <option value="suspended">Suspended</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        )}
-        {action === "setCentre" && (
-          <select className="admin-select" value={value} onChange={(e) => setValue(e.target.value)}>
-            {centreOpts.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        )}
-        {action === "setType" && (
-          <select className="admin-select" value={value} onChange={(e) => setValue(e.target.value)}>
-            <option value="NGG">NGG</option><option value="Summer">Summer</option>
-          </select>
-        )}
-        {(action === "setTrack" || action === "setCohort") && (
-          <input className="admin-input" value={value} onChange={(e) => setValue(e.target.value)}
-                 placeholder={action === "setTrack" ? "Track" : "Cohort"}/>
-        )}
-
-        <button className="btn btn-primary btn-sm" disabled={busy || !String(value).trim()} onClick={go}>
-          {busy ? "Working…" : "Apply to " + picked.length}
-        </button>
-        <button className="btn btn-ghost btn-sm" onClick={onClear}>Clear</button>
-      </div>
-
-      {result && (
-        <div className={"mem-bulk-out" + (skipped.length || result.error ? " has-skips" : "")}>
-          {result.error
-            ? <p>{result.error}</p>
-            : <p><strong>{result.changed} changed.</strong>{skipped.length ? " " + skipped.length + " were not:" : ""}</p>}
-          {skipped.length > 0 && (
-            <ul className="mem-bulk-skips">
-              {skipped.map(([id, why]) => (
-                <li key={id}><span className="mono">{id}</span> — {BULK_SKIP_WHY[why] || why}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* A skip reason is a sentence or it is noise. */
-const BULK_SKIP_WHY = {
-  already_set: "already set to that",
-  cannot_suspend_self: "that is your own account",
-  last_super_admin: "the last active super admin",
-  forbidden: "outside the centres you administer",
-  not_found: "no such member",
-};
-
+   The bulk actions and the per-row menu are built from ONE list of action
+   declarations (see the admin action layer in components.jsx), so an individual
+   action and its bulk equivalent cannot drift into asking differently, being
+   permitted differently, or doing different things. The guards that make them
+   safe — own account, staff accounts, centre scope, batch bounds, per-row
+   verdicts — are server-side in domain/members-bulk.php, because a guard in
+   the UI is a suggestion.
+   ============================================================================ */
 function AdminMembers() {
   const [list, setList] = React.useState(null);
+  const [refreshing, setRefreshing] = React.useState(false);
   const [err, setErr] = React.useState("");
   const centreOpts = useCentreOptions();
-  const [filters, setFilters] = React.useState({ q: "", centre: "", status: "", type: "", segment: "" });
+  const { hasCap } = useAuth();
+  const BLANK_FILTERS = { q: "", centre: "", status: "", type: "", missing: "", level: "", segment: "" };
+  const [filters, setFilters] = React.useState(BLANK_FILTERS);
   const [page, setPage] = React.useState(1);
   const [meta, setMeta] = React.useState({ total: 0, pageSize: 50 });
   const [editing, setEditing] = React.useState(null);
   const [viewing, setViewing] = React.useState(null);
   const [printing, setPrinting] = React.useState(false);
+  const [importing, setImporting] = React.useState(false);
+  /* Cards for everybody who came in before cards existed — the imported roll
+     above all. Bounded per call on the server; repeated until none remain. */
+  const [issuing, setIssuing] = React.useState(false);
+  /* New promotions reach Afrovanguard on their own; this is for the vanguards
+     promoted before that, and is safe to repeat — Afrovanguard keys on the
+     NGG member id and creates nothing twice. */
+  const [syncingNgv, setSyncingNgv] = React.useState(false);
+  const syncNgv = async () => {
+    setSyncingNgv(true);
+  const [merging, setMerging] = React.useState(null);
+    try {
+      const r = await NGGApi.admin.members.ngvPortalSync();
+      toast.success(r.delivered + " of " + r.announced + " sent now; any others are queued and retried.", "NGVs sent to Afrovanguard");
+    } catch (e) { toast.error(e.detail || e.code || e.message, "Couldn't send them"); }
+    finally { setSyncingNgv(false); }
+  };
+  const issueCards = async () => {
+    const ok = await dialog.confirm({ title: "Give every member a gate card?",
+      body: "Members with no card get a new secure card for the CACENTRE gate. The member number on the card they already hold is recorded too, so it keeps working until they are reprinted. Nobody's existing card is replaced.",
+      cta: "Issue cards" });
+    if (!ok) return;
+    setIssuing(true);
+    let issued = 0, printed = 0;
+    try {
+      for (let i = 0; i < 20; i++) {
+        const r = await NGGApi.admin.members.cards.backfill();
+        issued += r.issued || 0; printed += r.printed || 0;
+        if (!r.remaining || !r.issued) break;
+      }
+      toast.success(issued + " secure card" + (issued === 1 ? "" : "s") + " · " + printed + " printed card" + (printed === 1 ? "" : "s") + " recorded", "Cards issued");
+    } catch (e) { toast.error(e.detail || e.code || e.message, "Couldn't issue cards"); }
+    finally { setIssuing(false); }
+  };
+  const [bulkForm, setBulkForm] = React.useState(null);   // which bulk action is asking for a value
+  /* Ordering lives on the SERVER, not in the rendered page: this table is
+     paged, so sorting the fifty rows in hand would order page three of the
+     roster and call it the roster. The column allow-list is in
+     admin_members_list.
+
+     Declared above every reader — the CSV export and the print run both send
+     it now, and a `const` read from a line above the one that declares it is
+     a temporal dead zone waiting for somebody to move a function. */
+  const [sort, setSort] = React.useState({ col: "createdAt", dir: "desc" });
+
+  const filtered = !!(filters.q || filters.centre || filters.status || filters.type || filters.missing || filters.level);
+
+  /* A failed fetch must surface an error + retry, never leave the spinner
+     hanging forever. Server-paged.
+
+     `keep` holds the rows on screen while the next page loads. Dropping them
+     to null first is what made every page turn and every sort flash the table
+     away — which reads as the data going missing, on the screen where that is
+     the most alarming thing it could read as. */
+  const load = React.useCallback((p, so, f) => {
+    const pg = p || page, s0 = so || sort, ff = f || filters;
+    setErr(""); setRefreshing(true);
+    return NGGApi.admin.members.list(Object.assign({}, ff, { page: pg, pageSize: meta.pageSize, sort: s0.col, dir: s0.dir }))
+      .then(r => { setList(r.members || []); setMeta(m => ({ total: r.total || 0, pageSize: r.pageSize || m.pageSize })); })
+      .catch(e => setErr(e.code || e.message || "load_failed"))
+      .finally(() => setRefreshing(false));
+    // eslint-disable-next-line
+  }, [page, sort, filters, meta.pageSize]);
   /* Dashboard first. Opening the section on a 50-row page of a roster
      answers no question anybody arrived with. */
   const [tab, setTab] = React.useState("dashboard");
-  /* The selection is a list of ids the person can see on screen, and that
-     list is what the server acts on. Never a filter for the server to
-     re-expand: the roster somebody reviewed and the rows a filter would
-     select are two different things the moment anybody else saves a
-     record. */
-  const [picked, setPicked] = React.useState([]);
-  const [merging, setMerging] = React.useState(null);
 
-  const [exporting, setExporting] = React.useState(false);
-  const exportCsv = async () => {
-    setExporting(true);
-    try {
-      const r = await NGGApi.admin.members.list(Object.assign({}, filters, { all: 1 }));
-      downloadCsv("members", (r.members || []).map(m => ({ memberId: m.memberId, fullName: m.fullName, email: m.email, type: m.type, status: m.status, centre: m.centre, track: m.track || "" })));
-    } catch (e) { toast.error(e.code || e.message, "Export failed"); } finally { setExporting(false); }
-  };
-  // A failed fetch must surface an error + retry, never leave the spinner
-  // hanging forever (previously there was no .catch here). Server-paged.
-  const load = (p = page) => { setErr(""); return NGGApi.admin.members.list(Object.assign({}, filters, { page: p, pageSize: meta.pageSize })).then(r => { setList(r.members || []); setMeta({ total: r.total || 0, pageSize: r.pageSize || 50 }); }).catch(e => setErr(e.code || e.message || "load_failed")); };
+  /* Re-sorting goes back to page one. Keeping the page number would land
+     somebody on "page 4 of a different order", which is a place nobody meant
+     to be and which looks exactly like data going missing. */
+  const onSort = (col, dir) => { const so = { col, dir }; setSort(so); setPage(1); load(1, so); };
   // Filter changes reset to page 1; the debounced search does too.
-  React.useEffect(() => { setPage(1); setPicked([]); load(1); /* eslint-disable-next-line */ }, [filters.centre, filters.status, filters.type, filters.segment]);
+  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [filters.centre, filters.status, filters.type, filters.missing, filters.level, filters.segment]);
   React.useEffect(() => {
     const t = setTimeout(() => { setPage(1); load(1); }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line
   }, [filters.q]);
-  const goPage = (p) => { setPage(p); setList(null); load(p); };
+  const goPage = (p) => { setPage(p); load(p); };
+  const reload = () => load(page, sort, filters);
+
+  const rows = list || [];
+  const sel = useAdminSelection(rows, m => m.memberId);
+
+  /* "Select all N matching the filter."
+   *
+   * The ids come from the server, resolved from the same filters this page was
+   * built with. A client-side union of the pages it happens to have loaded is
+   * a different set, and the difference is invisible until somebody acts on it. */
+  const [selectingAll, setSelectingAll] = React.useState(false);
+  const selectAllMatching = async () => {
+    setSelectingAll(true);
+    try {
+      const r = await NGGApi.admin.members.ids(Object.assign({}, filters, { sort: sort.col, dir: sort.dir }));
+      sel.replace(r.memberIds || []);
+      if (r.capped) {
+        toast.warn("Selected the first " + fmtNum((r.memberIds || []).length) + " of " + fmtNum(r.total)
+          + " — one action can cover " + fmtNum(r.max) + " members at a time.", "Selection capped");
+      }
+    } catch (e) { toast.error(humanizeError(e.message, e.code), "Couldn't select them all"); }
+    finally { setSelectingAll(false); }
+  };
+
+  const [exporting, setExporting] = React.useState(false);
+  const exportCsv = async (onlySelected) => {
+    setExporting(true);
+    try {
+      // Same rule as the print run: the file comes out in the order the
+      // person exporting it was looking at.
+      const r = await NGGApi.admin.members.list(Object.assign({}, filters, {
+        all: 1, sort: sort.col, dir: sort.dir }));
+      let out = r.members || [];
+      if (onlySelected) { const want = new Set(sel.ids); out = out.filter(m => want.has(m.memberId)); }
+      downloadCsv("members", out.map(m => ({ memberId: m.memberId, displayId: m.displayId || "", fullName: m.fullName, email: m.email, type: m.type, status: m.status, centre: m.centre, level: m.level || "", track: m.track || "" })));
+    } catch (e) { toast.error(e.code || e.message, "Export failed"); } finally { setExporting(false); }
+  };
+
+  /* ── The action declarations ───────────────────────────────────────────────
+     ONE list. The bulk bar renders them across a selection; the row menu
+     renders them for a single member. Both go through runAdminAction, so the
+     confirm copy, the capability check, the partial-failure reporting and the
+     audit trail are identical whether one member or two hundred are involved.
+
+     An action that needs a VALUE (which status? which centre?) opens a small
+     form first — the value cannot be a submenu of buttons, because "set status"
+     has five options and "post to centre" has as many as there are centres. */
+  const ACTIONS = React.useMemo(() => [
+    { id: "status", label: "Set status…", cap: "people",
+      open: (ids) => setBulkForm({ op: "status", ids }) },
+    { id: "centre", label: "Post to centre…", cap: "people",
+      open: (ids) => setBulkForm({ op: "centre", ids }) },
+    { id: "level", label: "Set level…", cap: "people",
+      open: (ids) => setBulkForm({ op: "level", ids }) },
+    { id: "type", label: "Set membership type…", cap: "people",
+      open: (ids) => setBulkForm({ op: "type", ids }) },
+    { id: "remindersOff", label: "Dues reminders…", cap: "fees",
+      hint: "Turn the monthly dues reminder on or off for these families",
+      open: (ids) => setBulkForm({ op: "remindersOff", ids }) },
+    /* Two per-member actions with no sensible bulk form. `rowOnly` keeps them
+       out of the bulk bar: resetting two hundred people's 2FA in one press is
+       not a feature anybody wants to have available. */
+    { id: "reset2fa", label: "Reset 2FA", rowLabel: "Reset their 2FA", cap: "rbac", bulkHidden: true, danger: true,
+      confirm: () => ({ title: "Reset their authenticator?", body: "They'll be asked to enrol a new authenticator the next time they open the Control Room. Their existing backup codes stop working.", cta: "Reset 2FA", danger: true }),
+      runOne: (id) => NGGApi.admin.members.reset2fa(id), pastTense: "reset" },
+    { id: "resetPw", label: "Send a password reset", rowLabel: "Send a password reset", cap: "people", bulkHidden: true,
+      confirm: () => ({ title: "Send a password reset?", body: "They get a one-time link by email. Their current password keeps working until they use it.", cta: "Send it" }),
+      runOne: (id) => NGGApi.admin.members.resetPassword(id), pastTense: "emailed" },
+  ], []);
   const showRoster = (patch) => { setFilters(f => Object.assign({}, f, patch || {})); setTab("roster"); };
 
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Members {meta.total ? <span className="admin-count mono">{meta.total.toLocaleString()}</span> : null}</h2>
+        <h2 className="admin-h2">Members {meta.total ? <span className="admin-count mono">{fmtNum(meta.total)}</span> : null}</h2>
         <div className="admin-section-actions">
-          {tab === "roster" && <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={exporting || !meta.total} title="Exports all members matching the current filters">{exporting ? "Exporting…" : "Export CSV"}</button>}
+          {tab === "roster" && <button className="btn btn-ghost btn-sm" onClick={() => exportCsv(false)} disabled={exporting || !meta.total} title="Exports every member matching the current filters">{exporting ? "Exporting…" : "Export CSV"}</button>}
           {tab === "roster" && <button className="btn btn-ghost btn-sm" onClick={() => setPrinting(true)} disabled={!meta.total} title="Print ID cards for every member matching the current filters">Print IDs</button>}
+          <button className="btn btn-ghost btn-sm" onClick={() => setImporting(true)} title="Load the roster file produced from the members workbook">Import roster</button>
+          <button className="btn btn-ghost btn-sm" onClick={syncNgv} disabled={syncingNgv} title="Make sure everybody promoted to NGV has their NGV account on Afrovanguard">{syncingNgv ? "Sending…" : "Send NGVs to Afrovanguard"}</button>
+          <button className="btn btn-ghost btn-sm" onClick={issueCards} disabled={issuing} title="Give every member with no card a secure card for the CACENTRE gate, and record the member number on the card they already hold">{issuing ? "Issuing…" : "Issue cards"}</button>
           <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New member</button>
         </div>
       </div>
+
       <div className="admin-tabs" role="tablist">
         {[["dashboard", "Dashboard"], ["roster", "Roster"], ["quality", "Data quality"], ["duplicates", "Duplicates"]].map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id}
@@ -1584,74 +1941,308 @@ function AdminMembers() {
           <button className="btn btn-ghost btn-sm" onClick={() => setFilters(f => ({...f, segment: ""}))}>Show everybody</button>
         </div>
       )}
-      <div className="admin-filters">
-        <input className="admin-input" placeholder="Search name, ID, email…" value={filters.q} onChange={(e) => setFilters(f => ({...f, q: e.target.value}))}/>
-        <select className="admin-select" value={filters.centre} onChange={(e) => setFilters(f => ({...f, centre: e.target.value}))}>
+      <div className="admin-filters admin-filters-6">
+        <input className="admin-input" placeholder="Search name, ID, email…" aria-label="Search members by name, member id or email"
+          value={filters.q} onChange={(e) => setFilters(f => ({...f, q: e.target.value}))}/>
+        <select className="admin-select" aria-label="Filter by centre" value={filters.centre} onChange={(e) => setFilters(f => ({...f, centre: e.target.value}))}>
           <option value="">All centres</option>{centreOpts.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select className="admin-select" value={filters.type} onChange={(e) => setFilters(f => ({...f, type: e.target.value}))}>
+        <select className="admin-select" aria-label="Filter by membership type" value={filters.type} onChange={(e) => setFilters(f => ({...f, type: e.target.value}))}>
           <option value="">All types</option><option value="NGG">NGG</option><option value="Summer">Summer</option>
         </select>
-        <select className="admin-select" value={filters.status} onChange={(e) => setFilters(f => ({...f, status: e.target.value}))}>
+        {/* Rows with something missing. Exists because the print preflight
+            counts these three and, until it did, there was no way in the
+            product to get from "90 have no photograph" to those ninety. The
+            values match $missingSql in admin_members_list. */}
+        <select className="admin-select" value={filters.missing} onChange={(e) => setFilters(f => ({...f, missing: e.target.value}))}
+          aria-label="Filter by what is missing from a member's ID card"
+          title="Members with something missing from their ID card">
+          <option value="">Complete or not</option>
+          <option value="photo">No photograph</option>
+          <option value="printedId">No printed ID</option>
+          <option value="discipline">No discipline</option>
+        </select>
+        <select className="admin-select" aria-label="Filter by status" value={filters.status} onChange={(e) => setFilters(f => ({...f, status: e.target.value}))}>
           <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="graduated-ngg">Graduated NGG</option>
-          <option value="graduated-vanguard">Graduated Vanguard</option>
-          <option value="suspended">Suspended</option>
-          <option value="inactive">Inactive</option>
+          {MEMBER_STATUS_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        {/* Level. The roster workbook files every member at one and the column
+            has existed for a while, but nothing could filter by it — so
+            "everyone at level C" meant exporting the roster and opening a
+            spreadsheet. */}
+        <select className="admin-select" aria-label="Filter by level" value={filters.level} onChange={(e) => setFilters(f => ({...f, level: e.target.value}))}>
+          <option value="">All levels</option>
+          {"ABCDEFG".split("").map(x => <option key={x} value={x}>Level {x}</option>)}
         </select>
       </div>
-      {picked.length > 0 && (
-        <MembersBulkBar picked={picked} centreOpts={centreOpts}
-                        onClear={() => setPicked([])}
-                        onDone={() => { setPicked([]); load(); }}/>
+
+      {/* What is actually filtered, and how to undo it one piece at a time.
+          Five dropdowns can be left in a state that explains an empty table,
+          and reading five controls to work out why is worse than being told. */}
+      {filtered && (
+        <div className="admin-chipbar" role="group" aria-label="Active filters">
+          {[
+            ["q", "Search: " + filters.q],
+            ["centre", "Centre: " + filters.centre],
+            ["type", "Type: " + filters.type],
+            ["missing", { photo: "Missing a photograph", printedId: "Missing a printed ID", discipline: "Missing a discipline" }[filters.missing]],
+            ["status", "Status: " + memberStatusLabel(filters.status)],
+            ["level", "Level: " + filters.level],
+          ].filter(([k]) => filters[k]).map(([k, label]) => (
+            <button key={k} type="button" className="admin-chip-x" onClick={() => setFilters(f => ({ ...f, [k]: "" }))}>
+              {label} <span aria-hidden="true">✕</span>
+              <span className="sr-only">— remove this filter</span>
+            </button>
+          ))}
+          <button type="button" className="admin-bulk-link" onClick={() => setFilters(BLANK_FILTERS)}>Clear all filters</button>
+        </div>
       )}
-      {list === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner"/>) :
-        <div className="admin-table-wrap">
+
+      <AdminBulkBar selection={sel} noun="member" hasCap={hasCap} actions={ACTIONS.filter(a => !a.bulkHidden)}
+        total={meta.total} busy={selectingAll}
+        selectAllMatching={selectAllMatching}>
+        <button className="btn btn-ghost btn-sm" onClick={() => exportCsv(true)} disabled={exporting}>Export selected</button>
+      </AdminBulkBar>
+
+      {err && list === null ? <ErrorState title="Couldn't load the roster" code={err} onRetry={reload}/> :
+       list === null ? <div className="dash-spinner"/> :
+        <div className={"admin-table-wrap" + (refreshing ? " is-refreshing" : "")} aria-busy={refreshing ? "true" : undefined}>
+          {/* An error on a REFRESH keeps the rows on screen — they are still
+              the last true answer — and says the refresh failed. */}
+          {err && <p className="admin-form-err" role="alert" style={{ margin: "0 0 10px" }}>
+            Couldn't refresh the roster ({err}). These rows are from the last successful load.{" "}
+            <button className="admin-bulk-link" onClick={reload}>Try again</button>
+          </p>}
           <table className="admin-table">
+            <caption className="sr-only">
+              Members{filtered ? " matching the current filters" : ""} — {fmtNum(meta.total)} in total,
+              page {page} of {Math.max(1, Math.ceil(meta.total / meta.pageSize))}
+            </caption>
             <thead><tr>
-              <th className="mem-pick-col">
-                {/* Selects this PAGE, and says so. A box that silently means
-                    "all 1,400 matching" is how somebody suspends a cohort
-                    they never saw. */}
-                <input type="checkbox" aria-label={"Select all " + list.length + " on this page"}
-                       checked={list.length > 0 && picked.length === list.length}
-                       onChange={(e) => setPicked(e.target.checked ? list.map(m => m.memberId) : [])}/>
-              </th>
-              <th>Member</th><th>Type</th><th>Centre</th><th>Status</th><th>Track</th><th></th>
+              <th scope="col" style={{ width: 34 }}><AdminSelectAll selection={sel} label="Select all members on this page"/></th>
+              <SortTh label="Member" col="fullName" sort={sort} onSort={onSort}/>
+              <SortTh label="Type" col="type" sort={sort} onSort={onSort}/>
+              <SortTh label="Centre" col="centre" sort={sort} onSort={onSort}/>
+              <SortTh label="Status" col="status" sort={sort} onSort={onSort}/>
+              {/* Track is not a column the server can order by — it lives on
+                  the enrolment, not the member row — so it stays a plain
+                  header rather than a control that would do nothing. */}
+              <th scope="col">Track</th>
+              <SortTh label="Joined" col="createdAt" sort={sort} onSort={onSort} defaultDir="desc"/>
+              <th scope="col"><span className="sr-only">Actions</span></th>
             </tr></thead>
             <tbody>
-              {list.map(m => (
-                <tr key={m.memberId} className={"admin-row-click" + (picked.includes(m.memberId) ? " is-picked" : "")} onClick={() => setViewing(m.memberId)}>
-                  <td className="mem-pick-col" onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" aria-label={"Select " + m.fullName}
-                           checked={picked.includes(m.memberId)}
-                           onChange={(e) => setPicked(p => e.target.checked ? p.concat(m.memberId) : p.filter(x => x !== m.memberId))}/>
-                  </td>
+              {rows.map(m => (
+                <tr key={m.memberId} className={"admin-row-click" + (sel.has(m.memberId) ? " is-selected" : "")} onClick={() => setViewing(m.memberId)}>
+                  <td style={{ width: 34 }}><AdminRowCheck selection={sel} id={m.memberId} label={"Select " + (m.fullName || m.memberId)}/></td>
                   <td>
-                    <div className="admin-cell-name">{m.fullName}</div>
+                    {/* The name is the control, not the row.
+                        Opening a member was a click handler on the <tr> and
+                        nothing else: reachable with a mouse, and by keyboard
+                        not at all — you could tab to Edit but never to the
+                        primary action on the primary admin screen. A row is
+                        not a button and cannot become one without swallowing
+                        the Edit button inside it, so the NAME is the button
+                        and the row click stays as a convenience on top. */}
+                    <button type="button" className="admin-cell-link"
+                            onClick={(e) => { e.stopPropagation(); setViewing(m.memberId); }}>
+                      <span className="admin-cell-name">{m.fullName}</span>
+                    </button>
                     <div className="mono admin-cell-sub">{m.memberId} · {m.email}</div>
                   </td>
                   <td>{m.type}</td>
-                  <td>{m.centre}</td>
+                  <td>{m.centre || <span className="admin-cell-sub">— none</span>}</td>
                   <td><span className={"chip status-" + m.status}>{memberStatusLabel(m.status)}</span></td>
-                  <td>{m.track || "—"}</td>
-                  <td onClick={(e) => e.stopPropagation()}><button className="btn btn-ghost btn-sm" onClick={() => setEditing(m)}>Edit</button></td>
+                  <td>{m.track || <span className="admin-cell-sub">—</span>}</td>
+                  <td className="mono admin-cell-sub">{fmtDate(m.createdAt)}</td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setEditing(m)}>Edit</button>
+                    {/* The same declarations as the bulk bar, for one member. */}
+                    <AdminRowActions id={m.memberId} actions={ACTIONS} hasCap={hasCap} noun="member" reload={reload}/>
+                  </td>
                 </tr>
               ))}
-              {list.length === 0 && <tr><td colSpan="7" className="admin-empty">No members match.</td></tr>}
+              {rows.length === 0 && (
+                <tr><td colSpan="8">
+                  {/* Two different situations, two different answers. "No
+                      members match." was shown to a brand-new deployment and to
+                      somebody who had filtered themselves into a corner, and
+                      neither could act on it. */}
+                  {filtered
+                    ? <EmptyState icon="⌕" title="No members match these filters"
+                        message="Nothing in the roster fits every filter at once. Widen one of them, or clear them all."
+                        action={<button className="btn btn-ghost btn-sm" onClick={() => setFilters(BLANK_FILTERS)}>Clear all filters</button>}/>
+                    : <EmptyState icon="◯" title="No members yet"
+                        message="Add the first one by hand, or load the roster file produced from the members workbook."
+                        action={<>
+                          <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New member</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setImporting(true)}>Import roster</button>
+                        </>}/>}
+                </td></tr>
+              )}
             </tbody>
           </table>
           <Pager page={page} pageSize={meta.pageSize} total={meta.total} onPage={goPage}/>
         </div>
       }
       </>}
-      {editing && <AdminMemberEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }}/>}
-      {viewing && <AdminMemberDetail memberId={viewing} onClose={() => setViewing(null)} onEdit={(m) => { setViewing(null); setEditing(m); }} onChanged={load}/>}
-      {printing && <AdminMemberIdBatch filters={filters} total={meta.total} onClose={() => setPrinting(false)}/>}
+      {bulkForm && <AdminMemberBulkForm form={bulkForm} centreOpts={centreOpts}
+        onClose={() => setBulkForm(null)}
+        onDone={() => { setBulkForm(null); sel.clear(); reload(); }}/>}
+      {editing && <AdminMemberEditor data={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }}/>}
+      {viewing && <AdminMemberDetail memberId={viewing} onClose={() => setViewing(null)} onEdit={(m) => { setViewing(null); setEditing(m); }} onChanged={reload}/>}
+      {printing && <AdminMemberIdBatch filters={filters} sort={sort} onClose={() => setPrinting(false)}
+        onFilter={(missing) => { setFilters(f => ({ ...f, missing })); setPrinting(false); }}/>}
       {merging && <AdminMemberMerge keepId={merging.keepId} mergeId={merging.mergeId}
                                     onClose={() => setMerging(null)}
-                                    onDone={() => { setMerging(null); load(); }}/>}
+                                    onDone={() => { setMerging(null); reload(); }}/>}
+      {importing && <AdminRosterImport onClose={() => setImporting(false)} onApplied={() => { setImporting(false); setPage(1); setList(null); load(1); }}/>}
+    </div>
+  );
+}
+
+/* The value a bulk action needs, asked for once.
+ *
+ * "Set status" has five options and "post to centre" has as many as there are
+ * centres; neither fits in a row of buttons. This is deliberately a small
+ * modal rather than a dropdown-inside-the-bulk-bar: the count being acted on
+ * has to be visible at the moment the value is chosen, and it is the number
+ * this dialog was opened with — never re-read afterwards, so a background
+ * refresh cannot change what "these 40" meant between the question and the
+ * answer.
+ *
+ * Every refusal the server can return is named. The partial case is the normal
+ * one: a selection that includes a staff account or somebody outside a scoped
+ * admin's centres comes back with those rows refused and the rest applied, and
+ * this says which and why rather than reporting a clean success.
+ */
+function AdminMemberBulkForm({ form, centreOpts, onClose, onDone }) {
+  const drawer = useAdminDrawer(onClose, false);
+  const count = (form.ids || []).length;   // read once, on open
+  const [value, setValue] = React.useState(() => (
+    form.op === "status" ? "active" :
+    form.op === "type" ? "NGG" :
+    form.op === "remindersOff" ? "1" : ""));
+  const [busy, setBusy] = React.useState(false);
+  const [result, setResult] = React.useState(null);
+
+  const META = {
+    status: { title: "Set status", label: "New status",
+      hint: "Suspended and Inactive are refused for staff accounts — staff lifecycle belongs to Access & roles, where the last-super-admin rule lives.",
+      options: MEMBER_STATUS_OPTS, key: "status" },
+    centre: { title: "Post to a centre", label: "Centre",
+      hint: "The member's record stores the centre NAME. “— no centre —” clears it, which the roster has a filter for.",
+      options: [{ value: "", label: "— no centre —" }].concat(centreOpts.map(c => ({ value: c, label: c }))), key: "centre" },
+    type:   { title: "Set membership type", label: "Type",
+      hint: "NGG is the year-round membership; Summer is a Summer School participant record.",
+      options: [{ value: "NGG", label: "NGG" }, { value: "Summer", label: "Summer" }], key: "type" },
+    level:  { title: "Set level", label: "Level",
+      hint: "A single letter, as it appears on the roster workbook. Blank clears it.",
+      options: [{ value: "", label: "— clear —" }].concat("ABCDEFG".split("").map(x => ({ value: x, label: "Level " + x }))), key: "level" },
+    remindersOff: { title: "Dues reminders", label: "Monthly reminders",
+      hint: "Off is a per-family opt-out. It stops the reminder only; the obligation and the balance are unchanged.",
+      options: [{ value: "1", label: "Off — don't remind these families" }, { value: "0", label: "On — remind them as normal" }], key: "off" },
+  }[form.op] || { title: "Apply", label: "Value", options: [], key: "value" };
+
+  const apply = async () => {
+    setBusy(true);
+    try {
+      const payload = {};
+      payload[META.key] = form.op === "remindersOff" ? (value === "1" ? 1 : 0) : value;
+      const r = await NGGApi.admin.members.bulk(form.op, form.ids, payload);
+      setResult(r);
+      const refused = (r.results || []).filter(x => x && x.ok === false);
+      const unchanged = (r.results || []).filter(x => x && x.ok === true && x.unchanged).length;
+      if (refused.length && r.applied) {
+        toast.warn(r.applied + " of " + count + " updated · " + refused.length + " refused ("
+          + adminFailSummary(refused.map(x => ({ ok: false, error: x.error }))) + ").", META.title);
+      } else if (refused.length) {
+        toast.error("Nothing was changed — all " + refused.length + " refused ("
+          + adminFailSummary(refused.map(x => ({ ok: false, error: x.error }))) + ").", META.title);
+      } else if (!r.applied && unchanged) {
+        toast.info(unchanged + " already had that value — nothing to change.", META.title);
+      } else {
+        toast.success(r.applied + " member" + (r.applied === 1 ? "" : "s") + " updated.", META.title);
+      }
+    } catch (e) {
+      const code = e.code || e.message;
+      const map = {
+        bad_status: "That status isn't one the member desk can set.",
+        centre_not_found: "That centre isn't in the directory any more.",
+        centre_out_of_scope: "That centre isn't one of yours.",
+        bad_type: "Pick NGG or Summer.",
+        bad_level: "A level is a single letter.",
+        too_many: "Too many members selected for one action.",
+        nothing_selected: "Nothing was selected.",
+        forbidden: "You don't have permission for this action.",
+      };
+      toast.error(map[code] || humanizeError(e.message, code), META.title);
+    } finally { setBusy(false); }
+  };
+
+  const REFUSALS = {
+    own_account: "your own account — use the member editor for that",
+    staff_account: "a staff account — staff lifecycle lives in Access & roles",
+    out_of_scope: "outside your centres",
+    not_found: "no longer in the roster",
+    write_failed: "the write failed",
+  };
+
+  return (
+    <div className="admin-drawer" onMouseDown={drawer.close}>
+      <div className="admin-drawer-panel" role="dialog" aria-modal="true" {...drawer.titleProps}
+        ref={drawer.panelRef} onMouseDown={e => e.stopPropagation()}>
+        <div className="admin-drawer-head">
+          <h3 {...drawer.headingProps}>{META.title} · {fmtNum(count)} member{count === 1 ? "" : "s"}</h3>
+          <button className="admin-drawer-close" onClick={drawer.close} aria-label="Close">✕</button>
+        </div>
+        <div className="admin-drawer-scroll">
+          {!result ? (
+            <div className="admin-fields">
+              <FieldSelect label={META.label} value={value} onChange={setValue} options={META.options}/>
+              <p className="admin-hint" style={{ margin: 0 }}>{META.hint}</p>
+              <p className="admin-hint" style={{ margin: 0 }}>
+                This applies to the <b>{fmtNum(count)}</b> member{count === 1 ? "" : "s"} selected when you opened
+                this — not to whatever is selected later.
+              </p>
+            </div>
+          ) : (
+            <div className="admin-fields">
+              <div className="admin-tiles">
+                <AdminTile n={result.applied} l="Updated"/>
+                <AdminTile n={(result.results || []).filter(x => x && x.ok && x.unchanged).length} l="Already set"/>
+                <AdminTile n={result.refused} l="Refused"/>
+              </div>
+              {(result.results || []).filter(x => x && x.ok === false).length > 0 && (
+                <>
+                  <h4 className="admin-h4">What was refused, and why</h4>
+                  <div className="admin-table-wrap"><table className="admin-table">
+                    <thead><tr><th scope="col">Member</th><th scope="col">Reason</th></tr></thead>
+                    <tbody>
+                      {(result.results || []).filter(x => x && x.ok === false).map(x => (
+                        <tr key={x.id}>
+                          <td>{x.name || <span className="mono">{x.id}</span>}</td>
+                          <td className="admin-cell-sub">{REFUSALS[x.error] || String(x.error || "refused").replace(/_/g, " ")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table></div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="admin-drawer-foot">
+          {!result
+            ? <>
+                <button className="btn btn-ghost btn-sm" onClick={drawer.close}>Cancel</button>
+                <button className="btn btn-primary btn-sm" onClick={apply} disabled={busy}>
+                  {busy ? "Applying…" : "Apply to " + fmtNum(count)}
+                </button>
+              </>
+            : <button className="btn btn-primary btn-sm" onClick={onDone}>Done</button>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1667,14 +2258,518 @@ function AdminMembers() {
 // entirely in the browser (the host has no headless renderer), one card at a
 // time, cancellable, so the whole cohort neither locks the tab nor blows memory.
 // ============================================================================
-function AdminMemberIdBatch({ filters, total, onClose }) {
-  const { panelRef, close } = useAdminDrawer(onClose, false);
+/* Roster import — the members workbook, without a shell.
+ *
+ * NGG runs on shared hosting: no SSH, no cron. api/tools/seed-members.php is
+ * the same import, but a CLI-only importer is one the person who actually keeps
+ * the roster cannot run. So the browser reads the file the extractor produced,
+ * posts it, and gets back the identical dry run the command line prints.
+ *
+ * Two steps on purpose, and the Apply button does not appear until the first
+ * one has been read. A roster file rewrites the membership table in one action;
+ * seeing what it would do first is the whole safety property.
+ */
+/* The desk's side of member self-service.
+ *
+ * A queue, not an inbox: every row is something a member is waiting on, and the
+ * only two things to do with one are approve it or say why not. Declining
+ * without words is refused by the server, because a bare refusal is how a
+ * decision becomes a grievance — the form here says so rather than letting
+ * somebody discover it by pressing the button.
+ *
+ * Approving a payment claim posts through the ordinary ledger path. The amount
+ * is editable at the point of approval: when ₦1,000 arrived against a ₦6,000
+ * claim, posting ₦1,000 and saying so beats arguing with the member first.
+ */
+function AdminRequests() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [f, setF] = React.useState({ status: "open", kind: "" });
+  const [open, setOpen] = React.useState(null);      // the row being decided
+  const [reason, setReason] = React.useState("");
+  const [amount, setAmount] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const decideId = React.useId();
+
+  const load = () => { setErr(""); return NGGApi.admin.requests.list(f).then(setD).catch(e => setErr(e.code || e.message)); };
+  React.useEffect(() => { setD(null); load(); /* eslint-disable-next-line */ }, [f.status, f.kind]);
+
+  const start = (r) => { setOpen(r); setReason(""); setAmount(r.kind === "payment" ? String(r.amount || "") : ""); };
+  const decide = async (approve) => {
+    if (!approve && !reason.trim()) { toast.error("Say why — the member sees this."); return; }
+    setBusy(approve ? "yes" : "no");
+    try {
+      await NGGApi.admin.requests.decide(open.requestId, approve, reason.trim(),
+        open.kind === "payment" && approve && amount !== "" ? Number(amount) : undefined);
+      toast.success(approve ? "Approved." : "Declined, with your reason.", open.requestId);
+      setOpen(null); load();
+    } catch (e) { toast.error(e.detail || e.code || e.message); } finally { setBusy(""); }
+  };
+
+  const kinds = (d && d.kinds) || {};
+  const tally = (d && d.openByKind) || {};
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Member requests
+          {Object.values(tally).reduce((a, b) => a + b, 0) > 0 &&
+            <span className="admin-count mono">{Object.values(tally).reduce((a, b) => a + b, 0)} open</span>}
+        </h2>
+      </div>
+      <p className="admin-hint">
+        What members have asked for from their own dashboard. Approving a payment posts it to the
+        ledger exactly as the Dues &amp; fees screen would — a claim is evidence, not an entry.
+      </p>
+      <div className="admin-filters">
+        <select className="admin-select" value={f.status} onChange={e => setF(o => ({ ...o, status: e.target.value }))}>
+          <option value="open">Waiting</option><option value="approved">Approved</option>
+          <option value="declined">Declined</option><option value="withdrawn">Withdrawn</option>
+        </select>
+        <select className="admin-select" value={f.kind} onChange={e => setF(o => ({ ...o, kind: e.target.value }))}>
+          <option value="">Every kind</option>
+          {Object.keys(kinds).map(k => <option key={k} value={k}>{kinds[k]}{tally[k] ? " (" + tally[k] + ")" : ""}</option>)}
+        </select>
+      </div>
+
+      {d === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner"/>) :
+        !d.requests.length ? <div className="admin-empty">Nothing here.</div> :
+        d.requests.map(r => (
+          <div key={r.requestId} className="admin-card" style={{ marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600 }}>{r.subject || r.kindLabel}</div>
+                <div className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>
+                  {r.fullName || r.displayId} · {r.centre} · {r.kindLabel} · {String(r.createdAt).slice(0, 10)}
+                </div>
+              </div>
+              {r.status === "open"
+                ? <button className="btn btn-primary btn-sm" onClick={() => start(r)}>Decide</button>
+                : <span className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>{r.status.toUpperCase()}</span>}
+            </div>
+            {r.body && <p style={{ margin: "8px 0 0", fontSize: 13 }}>{r.body}</p>}
+            {r.kind === "payment" && (
+              <div className="mono" style={{ fontSize: 12, marginTop: 6 }}>
+                Claims ₦{Number(r.amount || 0).toLocaleString("en-NG")}
+                {r.reference ? " · ref " + r.reference : ""}{r.paidAt ? " · paid " + r.paidAt : ""}
+              </div>
+            )}
+            {r.kind === "leave" && <div className="mono" style={{ fontSize: 12, marginTop: 6 }}>{r.fromDate} → {r.toDate || "open-ended"}</div>}
+            {r.decision && <div className="admin-hint" style={{ marginTop: 8 }}>Replied: {r.decision}</div>}
+          </div>
+        ))}
+
+      {open && (
+        <div className="admin-drawer" role="dialog" aria-modal="true" aria-labelledby={decideId}
+          onMouseDown={e => { if (e.target === e.currentTarget && !busy) setOpen(null); }}>
+          <div className="admin-drawer-panel">
+            <div className="admin-drawer-head">
+              <h3 id={decideId}>{open.kindLabel}</h3>
+              <button type="button" className="admin-drawer-close" onClick={() => !busy && setOpen(null)}>✕</button>
+            </div>
+            <div className="admin-fields">
+              <p className="admin-hint" style={{ marginTop: 0 }}>
+                {open.fullName || open.displayId} · {open.requestId}
+              </p>
+              {open.body && <p style={{ fontSize: 13 }}>{open.body}</p>}
+              {open.kind === "payment" && (
+                <Field label="Amount to post (what actually arrived)" value={amount} onChange={setAmount}
+                  placeholder={String(open.amount || 0)}/>
+              )}
+              <label className="admin-field"><span className="admin-label">Your reply — the member reads this</span>
+                <textarea className="admin-input" rows={4} value={reason} onChange={e => setReason(e.target.value)}
+                  placeholder={open.kind === "payment" ? "Found it on the 3rd, thank you." : "Why, in a sentence."}/>
+              </label>
+            </div>
+            <div className="admin-drawer-foot">
+              <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => setOpen(null)}>Cancel</button>
+              <button className="btn btn-ghost btn-sm" disabled={!!busy || !reason.trim()} onClick={() => decide(false)}
+                title={reason.trim() ? "" : "A decline needs a reason"}>{busy === "no" ? "…" : "Decline"}</button>
+              <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => decide(true)}>{busy === "yes" ? "…" : "Approve"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── How the cards members already hold read ─────────────────────────────────
+ *
+ * An imported member used to arrive with no card the CACENTRE gate could read.
+ * Now every member gets a secure MEMQR- card, and the card already in their
+ * wallet keeps working: the importer says what it looks like. Not a regular
+ * expression — "paste what an old card scans as, and point at the number in
+ * it" — and the gate decodes by the same rules (domain/member-cards.php,
+ * gate/src/cards.ts). A format can be tried against a real card before it is
+ * saved, because a format that reads nothing fails silently at the door.
+ */
+function MemberCardFormatPicker({ value, onChange, disabled }) {
+  const { hasCap } = useAuth();
+  const [formats, setFormats] = React.useState(null);
+  const [adding, setAdding] = React.useState(false);
+  const [ex, setEx] = React.useState({ example: "", number: "", label: "", field: "code" });
+  const [derived, setDerived] = React.useState(null);
+  const [tryText, setTryText] = React.useState("");
+  const [tryRes, setTryRes] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => NGGApi.admin.members.cards.formats().then(r => setFormats(r.formats || [])).catch(() => setFormats([]));
+  React.useEffect(() => { load(); }, []);
+  const current = (formats || []).find(f => f.id === value);
+
+  const derive = async () => {
+    setErr(""); setDerived(null);
+    try {
+      const r = await NGGApi.admin.members.cards.derive(ex.example, ex.number);
+      if (!r.derived || !r.derived.ok) { setErr((r.derived && r.derived.error) || "That did not describe a card."); return; }
+      setDerived({ template: r.derived.template, mask: r.derived.mask });
+    } catch (e) { setErr(e.detail || e.code || e.message); }
+  };
+  const save = async () => {
+    setErr("");
+    const id = (ex.label || "printed").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "printed";
+    try {
+      const r = await NGGApi.admin.members.cards.saveFormat({ id, label: ex.label || "Printed cards", template: derived.template, mask: derived.mask, field: ex.field, example: ex.example });
+      setFormats(r.formats || []); onChange(r.format.id); setAdding(false); setDerived(null);
+      toast.success("The gate picks it up within a quarter of an hour.", "Card format saved");
+    } catch (e) { setErr(e.detail || e.code || e.message); }
+  };
+  const tryCard = async () => {
+    const f = derived || current;
+    if (!f) return;
+    try { const r = await NGGApi.admin.members.cards.test(f.template, f.mask, tryText); setTryRes(r.test); }
+    catch (e) { setTryRes({ ok: false, error: e.detail || e.code || e.message }); }
+  };
+
+  return (
+    <div className="admin-field">
+      <span className="admin-label">Cards these members already hold</span>
+      <select className="admin-select" value={value} disabled={disabled || formats === null}
+        onChange={(e) => { if (e.target.value === "__add") { setAdding(true); return; } onChange(e.target.value); setTryRes(null); }}>
+        {(formats || []).map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+        <option value="">None — they hold no card yet</option>
+        {hasCap("rbac") && <option value="__add">Describe another kind of card…</option>}
+      </select>
+      <p className="admin-hint" style={{ margin: "4px 0 0" }}>
+        Everybody imported gets a new secure card for the gate either way. This says how the card already in their
+        wallet reads, so it keeps opening the door until they are reprinted.
+        {current && <> Reads <span className="mono">{current.template.replace("{id}", "[" + current.mask + "]")}</span>.</>}
+      </p>
+      {adding && (
+        <div className="admin-card admin-note-card" style={{ marginTop: 8 }}>
+          <label className="admin-field"><span className="admin-label">What one of the old cards scans as</span>
+            <input className="admin-input mono" value={ex.example} placeholder="https://old.example.org/member/023-001"
+              onChange={(e) => setEx(x => ({ ...x, example: e.target.value }))}/></label>
+          <label className="admin-field"><span className="admin-label">The member's number in it</span>
+            <input className="admin-input mono" value={ex.number} placeholder="023-001"
+              onChange={(e) => setEx(x => ({ ...x, number: e.target.value }))}/></label>
+          <label className="admin-field"><span className="admin-label">That number is</span>
+            <select className="admin-select" value={ex.field} onChange={(e) => setEx(x => ({ ...x, field: e.target.value }))}>
+              <option value="displayId">The member number printed on the card</option>
+              <option value="memberId">The member id (NGG-…)</option>
+              <option value="code">Neither — a code recorded at import (the roster's cardCode column)</option>
+            </select></label>
+          <label className="admin-field"><span className="admin-label">A name for these cards</span>
+            <input className="admin-input" value={ex.label} placeholder="2023 laminated cards"
+              onChange={(e) => setEx(x => ({ ...x, label: e.target.value }))}/></label>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={derive} disabled={!ex.example || !ex.number}>Work out the format</button>
+          {derived && <p className="admin-hint">Reads <span className="mono">{derived.template}</span> where the number looks like <span className="mono">{derived.mask}</span> (9 a digit).</p>}
+          {derived && <button type="button" className="btn btn-primary btn-sm" onClick={save}>Save this format</button>}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setAdding(false); setDerived(null); }}>Cancel</button>
+        </div>
+      )}
+      {(current || derived) && (
+        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+          <input className="admin-input mono" value={tryText} placeholder="Try a card: scan or paste one" aria-label="Try a card against this format"
+            onChange={(e) => { setTryText(e.target.value); setTryRes(null); }} onKeyDown={(e) => { if (e.key === "Enter") tryCard(); }}/>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={tryCard} disabled={!tryText}>Try</button>
+        </div>
+      )}
+      {tryRes && <div className="admin-hint" style={{ color: tryRes.ok && tryRes.decodes ? "var(--ok, #2f9e44)" : "var(--danger, #c0392b)" }}>
+        {tryRes.ok ? (tryRes.decodes ? "Reads as " + tryRes.decodes + "." : "That card does not read under this format.") : tryRes.error}</div>}
+      {err && <div className="admin-hint" style={{ color: "var(--danger, #c0392b)" }}>{err}</div>}
+    </div>
+  );
+}
+
+function AdminRosterImport({ onClose, onApplied }) {
+  const [cardFormat, setCardFormat] = React.useState("member-number");
+  const [file, setFile] = React.useState(null);        // { source, members[] }
+  const [overwrite, setOverwrite] = React.useState(false);
+  const [busy, setBusy] = React.useState("");
+  const [preview, setPreview] = React.useState(null);
+  const [done, setDone] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const panelRef = React.useRef(null);
+  /* This drawer keeps its own close guard (a run in flight must not be
+     dismissed) rather than useAdminDrawer's, so it mints its own heading id. */
+  const titleId = React.useId();
+  const titleProps = { "aria-labelledby": titleId }, headingProps = { id: titleId };
+  const close = () => { if (!busy) onClose(); };
+
+  /* SHA-256 of the bytes as read, before parsing.
+   *
+   * This is the FILE's identity — the same number extract.js prints when it
+   * writes the file — so an operator can see that what the browser is holding
+   * is what the extractor made, and a recorded run can be traced back to a file
+   * on disk. It is not the same thing as the import digest the server returns:
+   * that one hashes what the roster would DO, and survives re-serialisation.
+   *
+   * crypto.subtle needs a secure context. On plain http (a LAN box, someone
+   * testing over an IP) it is simply absent, so this degrades to no file hash
+   * rather than to a broken importer — nothing downstream requires it. */
+  const sha256Hex = async (buf) => {
+    if (!(window.crypto && window.crypto.subtle)) return "";
+    try {
+      const d = await window.crypto.subtle.digest("SHA-256", buf);
+      return Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2, "0")).join("");
+    } catch (_) { return ""; }
+  };
+
+  const read = async (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";                                // re-picking the same file must re-read it
+    if (!f) return;
+    setErr(""); setPreview(null); setDone(null);
+    try {
+      const bytes = await f.arrayBuffer();
+      const fileSha = await sha256Hex(bytes);
+      const text = new TextDecoder().decode(bytes);
+      const parsed = JSON.parse(text);
+      const members = Array.isArray(parsed) ? parsed : parsed.members;
+      if (!Array.isArray(members) || !members.length) throw new Error("no members in that file");
+      /* `text` is what is posted: the file itself, as a single value, because a
+         roster sent as 136 objects is a few thousand values and this host's
+         firewall refuses the request with a 406 before it reaches the site (see
+         rosterOneValueBody in api-client.js). `members` stays for the counts
+         shown here and for the fallback shape. */
+      setFile({ source: parsed.source || f.name, members, warnings: parsed.warnings || [],
+                fileSha, text, bytes: f.size });
+    } catch (ex) {
+      setFile(null);
+      setErr("That is not a roster file — run tools/ngg-import/extract.js on the workbook first. (" + (ex.message || "unreadable") + ")");
+    }
+  };
+
+  const run = async (apply) => {
+    if (!file) return;
+    if (apply && !(await dialog.confirm({
+      title: (preview.created + preview.updated) > 0 ? "Write " + (preview.created + preview.updated) + " member record(s)?" : "Issue " + ((preview.cards && preview.cards.wouldIssue) || 0) + " card(s)?",
+      body: preview.created + " new, " + preview.updated + " updated"
+        + (overwrite ? ". Overwrite is ON — values already in the Control Room will be replaced." : ". Existing values are kept; only blanks are filled.")
+        + (preview.previous ? " This exact roster was already applied on " + String(preview.previous.at).slice(0, 10) + "." : ""),
+      cta: "Import roster", danger: overwrite }))) return;
+    setBusy(apply ? "apply" : "preview"); setErr("");
+    try {
+      /* The apply names the import the dry run described. The server recomputes
+         it from what it receives and refuses a mismatch, so picking a different
+         file after reading the preview fails closed instead of writing a roster
+         nobody confirmed. */
+      const r = await NGGApi.admin.members.importRoster(file,
+        apply ? { apply, overwrite, cardFormat, expectDigest: (preview && preview.digest) || "" } : { apply, overwrite, cardFormat });
+      apply ? (setDone(r), toast.success(r.created + " new · " + r.updated + " updated" + (r.cards ? " · " + r.cards.issued + " cards issued" : ""), "Roster imported")) : setPreview(r);
+    } catch (ex) {
+      /* roster_changed is not a failure to retry — it means the file in hand is
+         not the one that was read, so the dry run has to happen again. */
+      if (ex.code === "roster_changed") { setPreview(null); setDone(null); }
+      setErr(ex.detail || ex.code || ex.message || "The import failed");
+    } finally { setBusy(""); }
+  };
+
+  const res = done || preview;
+  const MARK = { create: "+", update: "~", failed: "!", unchanged: "=" };
+  return (
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+      <div className="admin-drawer-panel">
+        <div className="admin-drawer-head">
+          <h3 {...headingProps}>Import roster</h3>
+          <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
+        </div>
+        <div className="admin-fields">
+          <p className="admin-hint">
+            Loads the roster file produced from the members workbook by
+            <span className="mono"> node tools/ngg-import/extract.js</span>. Members are matched on
+            their printed ID, so running it twice updates the same people instead of duplicating them.
+            The file holds children&rsquo;s personal data — delete your copy once this has run.
+          </p>
+
+          <label className="admin-field"><span className="admin-label">Roster file</span>
+            <label className="btn btn-ghost btn-sm" style={{ cursor: "pointer", margin: 0, alignSelf: "flex-start" }}>
+              {file ? "Choose a different file" : "Choose file…"}
+              <input type="file" accept="application/json,.json" onChange={read} style={{ display: "none" }}/>
+            </label>
+          </label>
+
+          {file && (
+            <div className="mono" style={{ fontSize: 13 }}>
+              {file.source} · {fmtNum(file.members.length)} member{file.members.length === 1 ? "" : "s"}
+              {file.warnings.length ? " · " + file.warnings.length + " extractor warning" + (file.warnings.length === 1 ? "" : "s") : ""}
+              {/* The file's own SHA-256, which extract.js prints when it writes
+                  the file. Twelve characters is what a person can actually
+                  compare against a terminal; the whole thing is on the title so
+                  it can still be copied. Absent on plain http, where
+                  crypto.subtle does not exist — the importer does not need it. */}
+              {file.fileSha
+                ? <div style={{ fontSize: 11, color: "var(--ink-400)", marginTop: 2 }}
+                    title={"sha256:" + file.fileSha}>sha256 {file.fileSha.slice(0, 12)}…</div>
+                : null}
+            </div>
+          )}
+
+          {/* Already loaded this exact roster? Said BEFORE the apply button,
+              because a half-remembered re-import is the mistake this catches —
+              and it is a heads-up, not a block: re-running after fixing four
+              rows in the sheet is the normal workflow. */}
+          {preview && preview.previous && (
+            <div className="admin-card admin-note-card">
+              <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 6 }}>
+                Already imported
+              </div>
+              <div style={{ fontSize: 13, lineHeight: 1.55 }}>
+                This exact roster was applied on <b>{String(preview.previous.at).slice(0, 10)}</b>
+                {preview.previous.actorId ? <> by <span className="mono">{preview.previous.actorId}</span></> : null}
+                {" — "}{fmtNum(preview.previous.created)} new, {fmtNum(preview.previous.updated)} updated then.
+              </div>
+              <p className="admin-hint" style={{ marginBottom: 0 }}>
+                Running it again is safe and usually a no-op — the dry run above says what it would do this time.
+              </p>
+            </div>
+          )}
+
+          <MemberCardFormatPicker value={cardFormat} disabled={!!busy || !!done}
+            onChange={(v) => { setCardFormat(v); setPreview(null); }}/>
+
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+            <input type="checkbox" checked={overwrite} disabled={!!busy || !!done}
+              onChange={(e) => { setOverwrite(e.target.checked); setPreview(null); }}/>
+            Replace values the record already has (default: fill blanks only)
+          </label>
+
+          {err && <div className="admin-hint" style={{ color: "var(--danger, #c0392b)" }}>{err}</div>}
+
+          {res && (
+            <div>
+              <div className="mono" style={{ marginBottom: 8 }}>
+                {done ? "Imported" : "Would import"} — new {res.created} · updated {res.updated}
+                {" "}· already current {res.unchanged} · unusable {res.failed}
+              </div>
+              {res.cards && (
+                <div className="mono" style={{ marginBottom: 8, fontSize: 13 }}>
+                  {done
+                    ? <>Cards — {res.cards.issued} secure card{res.cards.issued === 1 ? "" : "s"} issued · {res.cards.printed} printed card{res.cards.printed === 1 ? "" : "s"} recorded{res.cards.taken ? " · " + res.cards.taken + " printed codes already someone else's" : ""}</>
+                    : <>Cards — {res.cards.wouldIssue} member{res.cards.wouldIssue === 1 ? "" : "s"} would get a secure card{res.cards.format ? "; old cards read as “" + res.cards.format + "”" : ""}</>}
+                </div>
+              )}
+              {/* A list, not a table. Four columns in a drawer this narrow put
+                  "what changes" off the right-hand edge, which is the one
+                  column somebody reading a dry run is here for. */}
+              {res.rows.length > 0 && (
+                <div style={{ maxHeight: 360, overflowY: "auto", borderTop: "1px solid var(--admin-hair, #e6e8ec)" }}>
+                  {res.rows.map((r, i) => (
+                    <div key={i} style={{ display: "flex", gap: 10, padding: "8px 2px", borderBottom: "1px solid var(--admin-hair, #e6e8ec)" }}>
+                      <span className="mono" style={{ width: 12, flex: "none", opacity: .7 }}>{MARK[r.action] || "?"}</span>
+                      <span className="mono" style={{ width: 74, flex: "none", fontSize: 12 }}>{r.ref}</span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div>{r.name}</div>
+                        {r.detail && <div className="mono" style={{ fontSize: 12, opacity: .72, wordBreak: "break-word" }}>{r.detail}</div>}
+                        {(r.warnings || []).map((w, j) => (
+                          <div key={j} className="admin-hint" style={{ margin: "3px 0 0" }}>↳ {w}</div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="admin-drawer-foot">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={close} disabled={!!busy}>{done ? "Close" : "Cancel"}</button>
+          {!done && (
+            <button type="button" className="btn btn-ghost btn-sm" disabled={!file || !!busy} onClick={() => run(false)}>
+              {busy === "preview" ? "Checking…" : "Check what would change"}
+            </button>
+          )}
+          {!done && preview && ((preview.created + preview.updated) > 0 || (preview.cards && preview.cards.wouldIssue > 0)) && (
+            <button type="button" className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => run(true)}>
+              {busy === "apply" ? "Importing…" : (preview.created + preview.updated) > 0
+                ? "Import " + (preview.created + preview.updated) + " record(s)" : "Issue " + preview.cards.wouldIssue + " card(s)"}
+            </button>
+          )}
+          {done && <button type="button" className="btn btn-primary btn-sm" onClick={onApplied}>Back to the roster</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminMemberIdBatch({ filters, sort, onFilter, onClose }) {
+  const { panelRef, close, titleProps, headingProps } = useAdminDrawer(onClose, false);
   const [mode, setMode] = React.useState("zip");
   const [dpi, setDpi] = React.useState(300);
   const [design, setDesign] = React.useState("classic"); // classic | a5 | a5-wallet
   const [run, setRun] = React.useState(null);        // { i, n, note } while rendering
+  const [roster, setRoster] = React.useState(null);  // the members this run covers
+  const [loadErr, setLoadErr] = React.useState("");
+  const [failed, setFailed] = React.useState([]);
   const cancelRef = React.useRef(false);
   const doneRef = React.useRef(false);
+
+  /* ── Read the roster when the drawer opens, not when Print is pressed ──────
+   *
+   * Two reasons, and the second is the one that matters. The count on the
+   * button becomes the real number rather than the table's `total`; and the
+   * cards can be CHECKED before a run instead of after it. A print run is
+   * paper, a print shop and a day — finding out afterwards that ninety of the
+   * hundred cards have an empty photo box is the expensive way to learn it. */
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.admin.members.list(Object.assign({}, filters, {
+      all: 1, sort: (sort && sort.col) || "", dir: (sort && sort.dir) || "" }))
+      .then(r => { if (alive) setRoster(r.members || []); })
+      .catch(e => { if (alive) setLoadErr(e.code || e.message || "load_failed"); });
+    return () => { alive = false; };
+    // eslint-disable-next-line
+  }, []);
+
+  /* What is missing across the selection. Each of these makes a card that is
+     printable but wrong in a way nobody notices until it is in a hand.
+   *
+   * `key` is the server-side predicate that finds the same rows — see
+   * $missingSql in admin_members_list. The two MUST agree: a count that sends
+   * you to a roster showing a different number is worse than no link at all.
+   * tests/id-batch-ui.test.js and api/tests/run.php pin both ends. */
+  const gaps = React.useMemo(() => {
+    const r = roster || [];
+    const miss = {
+      photo: m => !/^https?:\/\//.test(String(m.photoUrl || "")),
+      printedId: m => !String(m.displayId || "").trim(),
+      discipline: m => !String(m.disciplines || m.track || "").trim(),
+    };
+    return {
+      n: r.length,
+      rows: [
+        { key: "photo", n: r.filter(miss.photo).length,
+          thing: "a photograph", so: "the card prints with an empty box" },
+        { key: "printedId", n: r.filter(miss.printedId).length,
+          thing: "a printed ID", so: "the card falls back to the raw member id" },
+        { key: "discipline", n: r.filter(miss.discipline).length,
+          thing: "a discipline", so: "that line is left off the card" },
+      ],
+    };
+  }, [roster]);
+  const gapTotal = gaps.rows.reduce((a, x) => a + x.n, 0);
+
+  /* The failure list is something to act on, and the action is almost always
+     "go and find these people". Reading thirty names six at a time out of a
+     scrolling box and retyping them is not that. */
+  const [copied, setCopied] = React.useState(false);
+  const copyFailed = async () => {
+    try {
+      await navigator.clipboard.writeText(failed.join("\n"));
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
+    } catch (_) { toast.error("The browser would not give us the clipboard — select and copy by hand."); }
+  };
 
   const MODES = [
     { value: "zip", label: "ZIP of images", hint: "A PNG per member, named for them — for emailing or a print merge." },
@@ -1687,13 +2782,12 @@ function AdminMemberIdBatch({ filters, total, onClose }) {
     const exportFn = design === "classic" ? window.MemberIDCardBatch : window.NggcMemberCardExport;
     if (!exportFn) { toast.error("The card renderer isn't loaded — reload and try again."); return; }
     cancelRef.current = false;
-    setRun({ i: 0, n: total || 0, note: "reading the roster…" });
-    let members = [];
-    try {
-      const r = await NGGApi.admin.members.list(Object.assign({}, filters, { all: 1 }));
-      members = r.members || [];
-    } catch (e) { toast.error(e.code || e.message || "Couldn't read the roster", "Print failed"); setRun(null); return; }
-    if (!members.length) { toast.error("Nobody matches these filters."); setRun(null); return; }
+    setFailed([]);
+    /* Already read, in the order the table was showing — the sort is carried
+       into the print because a run's order is the whole reason somebody sorted
+       the table. */
+    const members = roster || [];
+    if (!members.length) { toast.error("Nobody matches these filters."); return; }
     setRun({ i: 0, n: members.length, note: "" });
     try {
       const out = await exportFn(members, {
@@ -1703,11 +2797,15 @@ function AdminMemberIdBatch({ filters, total, onClose }) {
         onProgress: (i, n, m) => setRun({ i, n, note: (m && m.fullName) || "" }),
       });
       doneRef.current = true;
+      /* Kept in the drawer, not only in a toast. A toast truncated the list to
+         three names and then vanished, so a run with eleven gaps left nobody
+         able to say which eleven. */
+      setFailed(out.failed || []);
       if (out.made > 0) {
         const msg = out.made + " card" + (out.made === 1 ? "" : "s")
-          + (out.failed.length ? " · " + out.failed.length + " could not be rendered (" + out.failed.slice(0, 3).join(", ") + (out.failed.length > 3 ? ", …" : "") + ")" : "");
+          + (out.failed.length ? " · " + out.failed.length + " could not be rendered" : "");
         out.failed.length ? toast.error(msg, "Printed with gaps") : toast.success(msg, "Printed");
-        if (!cancelRef.current) { close(); return; }
+        if (!cancelRef.current && !out.failed.length) { close(); return; }
       } else {
         toast.error(cancelRef.current ? "Cancelled before anything was written." : "Nothing could be rendered.");
       }
@@ -1719,18 +2817,69 @@ function AdminMemberIdBatch({ filters, total, onClose }) {
 
   const hintFor = (MODES.find(x => x.value === mode) || {}).hint || "";
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true"
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps}
       onMouseDown={(e) => { if (e.target === e.currentTarget && !run) close(); }}>
       <div className="admin-drawer-panel">
         <div className="admin-drawer-head">
-          <h3>Print member ID cards</h3>
+          <h3 {...headingProps}>Print member ID cards</h3>
           <button type="button" className="admin-drawer-close" onClick={() => { if (!run) close(); }}>✕</button>
         </div>
         <div className="admin-fields">
+          {/* Nothing renders until the roster lands.
+              The alternative — a preflight that pops in ABOVE the three selects
+              — shifted them down ~50px under a cursor already on its way to
+              one, and reserving the space instead only works if you know how
+              tall three gap rows will be. Every control here depends on the
+              roster regardless, so there is nothing to usefully show first. */}
+          {loadErr ? <ErrorState code={loadErr}/> : !roster ? <div className="dash-spinner"/> : (
+          <React.Fragment>
           <p className="admin-hint">
-            One card for every member the current filters match — <b>{(total || 0).toLocaleString()}</b> in all.
-            Narrow the list first (centre, type, status) to print a subset.
+            One card for every member the current filters match — <b>{fmtNum(roster.length)}</b> in all,
+            in the order the table is sorted. Narrow the list first (centre, type, status) to print a subset.
           </p>
+
+          {/* ── What is missing, BEFORE the run ────────────────────────────
+              A card with an empty photo box prints perfectly well and is wrong
+              in the hand. Saying so here costs a glance; finding out costs a
+              print run.
+
+              The height is reserved while the roster loads, because this block
+              sits ABOVE the three selects — letting it pop in shifts everything
+              under it down by ~50px, under a cursor already on its way. */}
+            <div className="admin-card admin-note-card" style={{ marginBottom: 4 }}>
+              {gapTotal === 0 ? (
+                <div className="mono" style={{ fontSize: 12 }}>
+                  All {fmtNum(gaps.n)} have a photograph, a printed ID and a discipline.
+                </div>
+              ) : (
+                <React.Fragment>
+                  <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)", marginBottom: 8 }}>
+                    Before you print
+                  </div>
+                  {gaps.rows.filter(r => r.n > 0).map(r => (
+                    <div key={r.key} style={{ fontSize: 13, lineHeight: 1.55, marginBottom: 6 }}>
+                      {/* "40 of 40" is a thing a person has to decode. */}
+                      {r.n === gaps.n
+                        ? <><b>Nobody</b> has {r.thing}</>
+                        : <><b>{fmtNum(r.n)}</b> of {fmtNum(gaps.n)} have no {r.thing.replace(/^an? /, "")}</>}
+                      {" — " + r.so + "."}
+                      {/* A count nobody can act on is an accusation, not a tool.
+                          The roster has no "no photograph" filter to reach for,
+                          so this link IS the route to those members. */}
+                      {onFilter && (
+                        <button type="button" className="admin-inline-link" style={{ marginLeft: 6 }}
+                          onClick={() => onFilter(r.key)}>
+                          Show {r.n === gaps.n ? "them" : "these " + fmtNum(r.n)}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <p className="admin-hint" style={{ marginBottom: 0 }}>
+                    Printable either way — this is a heads-up, not a block.
+                  </p>
+                </React.Fragment>
+              )}
+            </div>
           <label className="admin-field"><span className="admin-label">Card design</span>
             <select className="admin-select" value={design} onChange={e => setDesign(e.target.value)} disabled={!!run}>
               <option value="classic">Classic · 54×85mm</option>
@@ -1751,6 +2900,28 @@ function AdminMemberIdBatch({ filters, total, onClose }) {
               <option value={600}>600dpi · fine</option>
             </select>
           </label>
+          {failed.length > 0 && (
+            <div className="admin-card admin-note-card" style={{ marginTop: 4 }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "#b03535" }}>
+                  {fmtNum(failed.length)} could not be rendered
+                </div>
+                {/* Reading thirty names six at a time and retyping them is not
+                    acting on a list. */}
+                <button type="button" className="admin-inline-link" onClick={copyFailed}>
+                  {copied ? "Copied" : "Copy names"}
+                </button>
+              </div>
+              {/* tabIndex: Chrome 127+ makes an overflowing region focusable on
+                  its own, Firefox and Safari do not — without it the names past
+                  the sixth are unreachable by keyboard. Named, because an
+                  unlabelled focus stop is just "group". */}
+              <div tabIndex={0} role="group" aria-label={fmtNum(failed.length) + " members that could not be rendered"}
+                style={{ maxHeight: 160, overflowY: "auto", fontSize: 13, lineHeight: 1.7 }}>
+                {failed.map((n, i) => <div key={i}>{n}</div>)}
+              </div>
+            </div>
+          )}
           {run && (
             <p className="admin-hint" role="status" style={{ marginTop: 4 }}>
               {run.note === "reading the roster…" || run.note === "writing the file…"
@@ -1758,13 +2929,19 @@ function AdminMemberIdBatch({ filters, total, onClose }) {
                 : "Rendering " + Math.min(run.i + 1, run.n) + " of " + run.n + (run.note ? " — " + run.note : "")}
             </p>
           )}
+          </React.Fragment>
+          )}
         </div>
         <div className="admin-drawer-foot">
           {run
             ? <button type="button" className="btn btn-ghost" onClick={() => { cancelRef.current = true; }}>Stop</button>
             : <button type="button" className="btn btn-ghost" onClick={close}>Cancel</button>}
-          <button type="button" className="btn btn-primary" onClick={start} disabled={!!run || !total}>
-            {run ? "Working…" : "Print " + (total || 0).toLocaleString()}
+          {/* Never falls back to the table's `total`: that is the PAGE count,
+              and a button reading "Print 999" for the length of the fetch —
+              then correcting itself to "Print 40" — is the exact lie reading
+              the roster on open was meant to stop telling. */}
+          <button type="button" className="btn btn-primary" onClick={start} disabled={!!run || !roster || !roster.length}>
+            {run ? "Working…" : !roster ? "Print…" : "Print " + fmtNum(roster.length)}
           </button>
         </div>
       </div>
@@ -1792,7 +2969,7 @@ const ELEVATED_ROLES = ["admin", "super_admin"];
 function memberStatusLabel(v) { const o = MEMBER_STATUS_OPTS.find(x => x.value === v); return o ? o.label : (v || "—"); }
 
 function AdminMemberEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const { hasCap, member: me } = useAuth();
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
@@ -1823,10 +3000,10 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.memberId ? "Edit member" : "New member"}</h3>
+          <h3 {...headingProps}>{d.memberId ? "Edit member" : "New member"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -1848,6 +3025,20 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
             <Field label="Printed ID" value={d.displayId||""} onChange={v => set("displayId", v)} placeholder="26-AM-135"/>
             <Field label="Disciplines (1–2)" value={d.disciplines||""} onChange={v => set("disciplines", v)} placeholder="TECH, MEDIA"/>
           </div>
+          {/* NGG level — the first thing a centre lead asks about a child, and
+              a column since schema 109. Free text rather than a fixed list:
+              the roster has used A, B, C and O so far and the programme has
+              renamed its levels before. */}
+          <Field label="NGG level" value={d.level||""} onChange={v => set("level", v.toUpperCase())} placeholder="A"/>
+          {/* Division — the brief's four (§5), and a fixed list where NGG level
+              above is free text, for the opposite reason: the levels have been
+              renamed before, the divisions are a commitment with a mandate
+              attached. "Not placed yet" is an option rather than an empty
+              first entry, because unplaced is a real answer a lead gives on
+              purpose and it should be possible to say it deliberately. */}
+          <FieldSelect label="Division" value={d.division||""} onChange={v => set("division", v)}
+            options={[{ value: "", label: "— Not placed yet —" }].concat(
+              (window.NGGC_DIVISIONS || []).map(x => ({ value: x.id, label: x.code + " · " + x.name })))}/>
           <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>
           <Field label="Parent email" value={d.parentEmail||""} onChange={v => set("parentEmail", v)} type="email"/>
           <Field label="School" value={d.school||""} onChange={v => set("school", v)}/>
@@ -1861,19 +3052,27 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
               <span className="admin-label">Account recovery</span>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={async () => {
-                  if (!confirm("Reset this member's 2FA? They'll re-enrol an authenticator at next admin sign-in.")) return;
+                  if (!(await dialog.confirm({ title: "Reset this member's 2FA?",
+                    body: "They will re-enrol an authenticator the next time they sign in to the Console. Until they do, they cannot get in.",
+                    cta: "Reset 2FA" }))) return;
                   try { await NGGApi.admin.members.reset2fa(d.memberId); toast.success("2FA reset — they'll set it up again next sign-in.", "Done"); } catch (e) { toast.error(e.code || e.message); }
                 }}>Reset 2FA</button>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={async () => {
-                  if (!confirm("Clear this member's password? They'll sign in via an emailed code and can set a new one.")) return;
+                  if (!(await dialog.confirm({ title: "Clear this member's password?",
+                    body: "Their current password stops working. They sign in with an emailed code and set a new one.",
+                    cta: "Clear password" }))) return;
                   try { await NGGApi.admin.members.resetPassword(d.memberId); toast.success("Password cleared — they can sign in by email code.", "Done"); } catch (e) { toast.error(e.code || e.message); }
                 }}>Reset password</button>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={async () => {
-                  if (!confirm("View the app as this member? You'll be signed in as them until you stop impersonating.")) return;
+                  if (!(await dialog.confirm({ title: "View the app as " + (d.fullName || "this member") + "?",
+                    body: "You will be signed in as them — and anything you do will be recorded against them — until you stop impersonating.",
+                    cta: "View as them" }))) return;
                   try { await NGGApi.admin.members.impersonate(d.memberId); window.location.href = "/dashboard"; } catch (e) { toast.error(e.code || e.message); }
                 }}>View as member</button>
                 <button type="button" className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={async () => {
-                  if (!confirm("Delete & anonymise this member? Their PII and journal are scrubbed and sessions revoked. This cannot be undone.")) return;
+                  if (!(await dialog.confirm({ title: "Delete and anonymise " + (d.fullName || "this member") + "?",
+                    body: "Their name, contact details and journal entries are scrubbed and every session is revoked. The record of the deletion stays in the audit log. This cannot be undone.",
+                    cta: "Delete and anonymise", cancel: "Keep the member", danger: true }))) return;
                   try { await NGGApi.admin.members.remove(d.memberId); toast.success("Member deleted & anonymised.", "Done"); (onSaved || onClose)(); } catch (e) { toast.error(e.code || e.message); }
                 }}>Delete member</button>
               </div>
@@ -2043,13 +3242,13 @@ function MentorPromote({ centres, onClose, onDone }) {
       onDone();
     } catch (e) { toast.error(e.code || e.message); setBusy(false); }
   };
-  const { panelRef, close } = useAdminDrawer(onClose, false);
+  const { panelRef, close, titleProps, headingProps } = useAdminDrawer(onClose, false);
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true"
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps}
       onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="admin-drawer-panel">
         <div className="admin-drawer-head">
-          <h3>Make someone a mentor</h3>
+          <h3 {...headingProps}>Make someone a mentor</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -2075,7 +3274,7 @@ function MentorPromote({ centres, onClose, onDone }) {
         <div className="admin-fields-row">
           <FieldSelect label="Rank" value={rank} onChange={setRank}
             options={[{ value: "mentor", label: "Mentor — their class" }, { value: "lead", label: "Lead mentor — the whole centre" }]}/>
-          <FieldSelect label="Cohort" value={programme} onChange={setProgramme}
+          <FieldSelect label="Programme" value={programme} onChange={setProgramme}
             options={[{ value: "summer", label: "Summer School" }, { value: "ngg", label: "NGG Club" }, { value: "both", label: "Both" }]}/>
         </div>
         <div className="admin-fields-row">
@@ -2098,6 +3297,66 @@ function MentorPromote({ centres, onClose, onDone }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* Two active mentor records answering to one email.
+ *
+ * The portal gate refuses to resolve an ambiguous address rather than pick
+ * between two people's classes, which means everybody in a pair is locked out
+ * of the Mentor Portal until somebody separates them. They cannot report it:
+ * the thing that is broken is their way in. So it is surfaced here, on the
+ * screen where it gets fixed, rather than waiting in a log.
+ *
+ * No "merge" button on purpose. Resolving a pair means deciding whether it is
+ * one person with a duplicate record or two people on a shared family mailbox,
+ * and getting that wrong hands an adult another adult's children. Each record
+ * opens for editing; the desk decides which address changes. */
+function MentorEmailClashes({ onOpen }) {
+  const [d, setD] = React.useState(null);
+  React.useEffect(() => {
+    let alive = true;
+    NGGApi.admin.mentors.duplicates()
+      .then(r => { if (alive) setD(r); })
+      .catch(() => { if (alive) setD(null); });
+    return () => { alive = false; };
+  }, []);
+  if (!d || !d.duplicates || !d.duplicates.length) return null;
+  return (
+    <div className="admin-clash" role="alert">
+      <div className="admin-clash-h">
+        {d.duplicates.length === 1 ? "One email is claimed by two mentor records."
+          : d.duplicates.length + " emails are each claimed by more than one mentor record."}
+      </div>
+      <p className="admin-clash-p">
+        The Mentor Portal cannot tell these records apart, so it lets none of them in.
+        Give each person their own address — or retire the record that is not theirs —
+        and they are back in immediately.
+      </p>
+      {d.duplicates.map(g => (
+        <div key={g.email} className="admin-clash-group">
+          <div className="mono admin-clash-email">{g.email}</div>
+          <ul className="admin-clash-rows">
+            {g.records.map(r => (
+              <li key={r.mentorId}>
+                <button type="button" onClick={() => onOpen && onOpen(r.mentorId)}>
+                  <span className="admin-clash-name">{r.fullName || r.mentorId}</span>
+                  <span className="mono admin-clash-meta">
+                    {r.centre || "no centre"}
+                    {r.source ? " · " + r.source : ""}
+                    {/* A linked record is reached by its member/volunteer id and
+                        never by the email fallback — so it still works, and it
+                        is usually the one to keep. Worth saying, because it is
+                        the fact that decides most of these. */}
+                    {r.linked ? " · linked — still signs in" : " · locked out"}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </div>
   );
 }
@@ -2127,6 +3386,10 @@ function AdminMentors() {
         </div>
       </div>
       {promoting && <MentorPromote centres={centres} onClose={() => setPromoting(false)} onDone={() => { setPromoting(false); load(); }}/>}
+      <MentorEmailClashes onOpen={(mentorId) => {
+        const row = (list || []).find(x => x.mentorId === mentorId);
+        setEditing(row || { mentorId });
+      }}/>
       {list === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner"/>) :
         <div className="admin-grid-cards">
           {list.map(m => (
@@ -2138,7 +3401,7 @@ function AdminMentors() {
                   is not something anyone should have to open twenty drawers
                   to audit. */}
               <div className="mono admin-card-meta">
-                {{ ngg: "NGG Club", both: "Both cohorts" }[m.programme] || "Summer School"}
+                {{ ngg: "NGG Club", both: "Both programmes" }[m.programme] || "Summer School"}
                 {m.centre ? " · " + m.centre : ""}
               </div>
               <div className="mono admin-card-meta">{(m.tracks || []).join(", ")}</div>
@@ -2153,7 +3416,7 @@ function AdminMentors() {
 }
 
 function AdminMentorEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({}, data, { tracks: Array.isArray(data.tracks) ? data.tracks.join(", ") : (data.tracks || "") }));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -2164,10 +3427,10 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.mentorId ? "Edit mentor" : "New mentor"}</h3>
+          <h3 {...headingProps}>{d.mentorId ? "Edit mentor" : "New mentor"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -2183,7 +3446,7 @@ function AdminMentorEditor({ data, onClose, onSaved }) {
               which is exactly what every mentor could see before the field
               existed. */}
           <FieldSelect label="Supervises" value={d.programme||"summer"} onChange={v => set("programme", v)}
-            options={[{ value: "summer", label: "Summer School" }, { value: "ngg", label: "NGG Club" }, { value: "both", label: "Both cohorts" }]}/>
+            options={[{ value: "summer", label: "Summer School" }, { value: "ngg", label: "NGG Club" }, { value: "both", label: "Both programmes" }]}/>
           <FieldSelect label="Status" value={d.status||"pending-checks"} onChange={v => set("status", v)} options={["active","pending-checks","on-break","retired"]}/>
           <Field label="Max mentees" value={d.maxMentees||"8"} onChange={v => set("maxMentees", v)} type="number"/>
           <div className="admin-field"><span>Photo</span><PhotoCapture value={d.photoUrl||""} onChange={v => set("photoUrl", v)}/></div>
@@ -2392,46 +3655,115 @@ function extractToken(raw) {
   return (parts[parts.length - 1] || s).toUpperCase();
 }
 
+/* ============================================================================
+   THE SUMMER SCHOOL WORKSPACE — one surface, used by both doors.
+
+   There were TWO, and they disagreed. `AdminSummer` (the coordinator portal at
+   /summer-admin) offered form / gates / pending / enrol / kiosk / attendance /
+   policy / QR / cards / roster. `AdminRegistration` (Control Room → People →
+   Registration) offered gates / pending / centres / catalogue / import / certs.
+   Two of those panels were mounted in BOTH places from the same component, and
+   the rest existed in exactly one — so a coordinator could not reach the
+   academy catalogue, bulk import or certificates at all, and a Control Room
+   admin could not reach the roster, the kiosk or enrolment. Each door was
+   missing about half the job, and which half depended on which door you came
+   through.
+
+   So there is one workspace and both doors mount it. The panel list is data,
+   grouped by what a coordinator is actually doing, and a deep link names a
+   panel (adminJump("summer", "roster")) rather than a tab index.
+
+   The centre DIRECTORY is deliberately not in this list. A centre is an
+   NGG-wide place whose code is the printed ID prefix on every member's card;
+   it lives under People → Centres and is written with the `people` capability.
+   ============================================================================ */
+const SUMMER_PANELS = [
+  // What the season IS.
+  { id: "editions",   group: "Structure", label: "Editions & groups", render: () => <SummerEditions/> },
+  { id: "catalogue",  group: "Structure", label: "Academy catalogue", render: () => <AcademyCatalogue/> },
+  { id: "policy",     group: "Structure", label: "Programme & policy", render: () => <SummerPolicy/> },
+  // Getting children in.
+  { id: "form",       group: "Intake",    label: "Intake form",       render: () => <SummerFormBuilder/> },
+  { id: "gates",      group: "Intake",    label: "Gate links",        render: () => <SummerGates/> },
+  { id: "pending",    group: "Intake",    label: "Pending sign-ups",  render: (ctx) => <SummerPending onChange={ctx.reload}/> },
+  { id: "enrol",      group: "Intake",    label: "Enrol at the desk", render: (ctx) => <SummerEnroll cohort={ctx.edition} blank={ctx.qrBlank} onDone={ctx.reload}/> },
+  { id: "import",     group: "Intake",    label: "Bulk import",       render: () => <SummerImport/> },
+  // Running it day to day.
+  { id: "roster",     group: "Running",   label: "Roster",            render: (ctx) => <SummerRoster cohortId={ctx.editionId}/> },
+  { id: "kiosk",      group: "Running",   label: "Check-in kiosk",    render: (ctx) => <SummerKiosk onCheckin={ctx.reload}/> },
+  { id: "attendance", group: "Running",   label: "Attendance",        render: () => <SummerAttendance/> },
+  // What comes out of it.
+  { id: "groupreport",group: "Records",   label: "Group report",      render: () => <SummerGroupReport/> },
+  { id: "qr",         group: "Records",   label: "QR cards",          render: (ctx) => <SummerQR onChange={ctx.reload}/> },
+  { id: "cards",      group: "Records",   label: "ID cards",          render: () => <SummerCardsLink/> },
+  { id: "certs",      group: "Records",   label: "Certificates",      render: () => <SummerCertificates/> },
+];
+const SUMMER_PANEL_GROUPS = ["Structure", "Intake", "Running", "Records"];
+
 function AdminSummer() {
-  const [tab, setTab] = React.useState("overview");
+  /* A deep link names a PANEL. `adminJump("summer", "roster")` has to keep
+     working when a panel is added or reordered, which a tab index does not —
+     and has to work when Summer School is already the open section. */
+  const [tab, setTab] = useAdminTab("editions", React.useCallback(id => SUMMER_PANELS.some(p => p.id === id), []));
   const [ov, setOv] = React.useState(null);
   const [err, setErr] = React.useState("");
-  const load = () => { setErr(""); NGGApi.admin.summer.overview().then(setOv).catch(e => setErr(e.code || e.message)); };
-  React.useEffect(() => { load(); }, []);
+  const load = React.useCallback(() => {
+    setErr("");
+    return NGGApi.admin.summer.overview().then(setOv).catch(e => setErr(e.code || e.message));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
   if (err) return <div className="admin-section"><ErrorState title="Couldn't load Summer School" code={err} onRetry={load}/></div>;
   if (!ov) return <div className="admin-section"><div className="dash-spinner"/></div>;
-  const o = ov.overview, cohort = o.cohort || {};
+  const o = ov.overview, edition = o.cohort || {};
+  const panel = SUMMER_PANELS.filter(p => p.id === tab)[0] || SUMMER_PANELS[0];
+  const ctx = { edition, editionId: edition.cohortId, qrBlank: o.qrBlank, reload: load };
 
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Summer School <span className="chip chip-gold" style={{ fontSize: 11 }}>{cohort.name || cohort.cohortId}</span></h2>
+        <h2 className="admin-h2">
+          Summer School
+          {(edition.name || edition.cohortId) &&
+            <span className="chip chip-gold" style={{ fontSize: 11, marginLeft: 10 }}>{edition.name || edition.cohortId}</span>}
+        </h2>
       </div>
-      <p className="admin-hint">Build the registration form, hand out gate links, review parent-pending sign-ups, pre-print QR cards, enrol, and track attendance — all mirrored to Google Sheets.</p>
+      <p className="admin-hint">
+        One season is an <b>edition</b>; a class inside it is a <b>group</b>. Set those up first — everything else on
+        this screen hangs off the live edition. Centres are managed under <b>People → Centres</b>, because an NGG
+        centre is a place the whole organisation uses.
+      </p>
 
       <div className="admin-tiles" style={{ marginBottom: 8 }}>
-        <AdminTile n={o.students} l="Enrolled students"/>
+        <AdminTile n={o.students} l="Participants enrolled"/>
         <AdminTile n={o.presentToday} l="Present today"/>
         <AdminTile n={o.qrBlank} l="Blank QR cards"/>
         <AdminTile n={o.qrAssigned} l="Assigned cards"/>
       </div>
 
-      <div className="admin-anchor-tabs">
-        {[["form", "Form builder"], ["gates", "Gate links"], ["pending", "Pending sign-ups"], ["overview", "Enrol"], ["kiosk", "Check-in kiosk"], ["attendance", "Attendance"], ["policy", "Programme & policy"], ["qr", "QR cards"], ["cards", "ID cards"], ["students", "Roster (" + o.students + ")"]].map(([id, lbl]) => (
-          <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
+      {/* Grouped tabs. Fifteen panels in one flat strip is a wall; four named
+          groups is a map of the job. A real tablist, so arrow keys work. */}
+      <nav className="admin-panelnav" aria-label="Summer School sections">
+        {SUMMER_PANEL_GROUPS.map(gname => (
+          <div key={gname} className="admin-panelnav-group">
+            <span className="admin-panelnav-label">{gname}</span>
+            <div className="admin-anchor-tabs" role="tablist" aria-label={gname}>
+              {SUMMER_PANELS.filter(p => p.group === gname).map(p => (
+                <button key={p.id} role="tab" id={"sumtab-" + p.id}
+                  aria-selected={tab === p.id} aria-controls="sumpanel"
+                  tabIndex={tab === p.id ? 0 : -1}
+                  className={"admin-anchor-tab" + (tab === p.id ? " is-active" : "")}
+                  onClick={() => setTab(p.id)}>
+                  {p.label}{p.id === "roster" ? " (" + fmtNum(o.students) + ")" : ""}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
-      </div>
+      </nav>
 
-      {tab === "form" && <SummerFormBuilder/>}
-      {tab === "gates" && <SummerGates/>}
-      {tab === "pending" && <SummerPending onChange={load}/>}
-      {tab === "overview" && <SummerEnroll cohort={cohort} blank={o.qrBlank} onDone={load}/>}
-      {tab === "kiosk" && <SummerKiosk onCheckin={load}/>}
-      {tab === "attendance" && <SummerAttendance/>}
-      {tab === "policy" && <SummerPolicy/>}
-      {tab === "qr" && <SummerQR onChange={load}/>}
-      {tab === "cards" && <SummerCardsLink/>}
-      {tab === "students" && <SummerRoster cohortId={cohort.cohortId}/>}
+      <div id="sumpanel" role="tabpanel" aria-labelledby={"sumtab-" + panel.id} tabIndex={-1}>
+        {panel.render(ctx)}
+      </div>
     </div>
   );
 }
@@ -2699,6 +4031,7 @@ function SummerGates() {
   // A generated password exists in the clear exactly once — in this response.
   // Only its hash is stored, so it is shown until dismissed and never again.
   const [reveal, setReveal] = React.useState(null);   // {gateId, name, password}
+  const revealId = React.useId();
   const load = () => NGGApi.admin.registration.gates().then(r => { setGates(r.gates || []); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   const create = async (e) => {
@@ -2842,9 +4175,9 @@ function SummerGates() {
         <button className="btn btn-primary btn-sm" disabled={busy}>{busy ? "…" : "+ Create " + GATE_KINDS[kind].label.toLowerCase()}</button>
       </form>
       {reveal && (
-        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(6,10,24,.6)", display: "grid", placeItems: "center", padding: 18 }}>
+        <div role="dialog" aria-modal="true" aria-labelledby={revealId} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(6,10,24,.6)", display: "grid", placeItems: "center", padding: 18 }}>
           <div style={{ background: "#fff", borderRadius: 16, padding: 22, maxWidth: 460, width: "100%" }}>
-            <h3 style={{ margin: "0 0 6px", fontSize: 18 }}>Desk password for {reveal.name}</h3>
+            <h3 id={revealId} style={{ margin: "0 0 6px", fontSize: 18 }}>Desk password for {reveal.name}</h3>
             <p style={{ color: "#555", fontSize: 13, lineHeight: 1.55, margin: "0 0 14px" }}>
               Copy it now {"\u2014"} only its hash is stored, so this is the one and only time it can be shown.
             </p>
@@ -2863,6 +4196,7 @@ function SummerGates() {
           </div>
         </div>
       )}
+
       {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         gates === null ? <div className="dash-spinner"/> :
         gates.length === 0 ? <div className="admin-empty">No links yet. A <b>public sign-up</b> link is the one you send to families; a <b>review desk</b> is where what they send comes in to be checked.</div> :
@@ -3415,14 +4749,15 @@ function ConsentRecorder({ rows, scope, scopeCount, scopeCentre, onClose, onDone
   };
 
   const Row = ({ children }) => <div style={{ marginBottom: 14 }}>{children}</div>;
+  const consentId = React.useId();
 
   return (
-    <div role="dialog" aria-modal="true" onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    <div role="dialog" aria-modal="true" aria-labelledby={consentId} onClick={e => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(6,10,24,.6)", display: "grid",
                placeItems: "center", padding: 18, overflowY: "auto" }}>
       <div style={{ background: "#fff", borderRadius: 16, padding: 22, maxWidth: 560, width: "100%",
                     maxHeight: "92vh", overflowY: "auto" }}>
-        <h3 style={{ margin: "0 0 4px", fontSize: 19 }}>
+        <h3 id={consentId} style={{ margin: "0 0 4px", fontSize: 19 }}>
           {sweep ? "Record consent for everyone waiting"
             : many ? "Record consent for " + count + " children" : "Record consent"}
         </h3>
@@ -4171,7 +5506,7 @@ function ConsentDocEditor({ doc, onSaved }) {
 }
 
 function ConsentRecord({ studentId, name, onClose }) {
-  const { panelRef, close } = useAdminDrawer(onClose, false);
+  const { panelRef, close, titleProps, headingProps } = useAdminDrawer(onClose, false);
   const [c, setC] = React.useState(null);
   const [err, setErr] = React.useState("");
   const load = () => NGGApi.admin.summer.consent(studentId).then(r => { setC(r.consent); setErr(""); })
@@ -4198,10 +5533,10 @@ function ConsentRecord({ studentId, name, onClose }) {
   const doBlankForm = () => save(consentFormHtml(c, { blank: true }), "consent-form-blank.html");
 
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-drawer-head">
-          <h3>Consent record · {name}</h3>
+          <h3 {...headingProps}>Consent record · {name}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         {err ? <ErrorState title="Couldn't load the consent record" code={err} onRetry={load}/> : !c ? <div className="dash-spinner"/> : (
@@ -4455,7 +5790,7 @@ function SummerRoster({ cohortId }) {
           which question was asked, not just how many answered it. */}
       {activeCount > 0 && (
         <div style={{ marginBottom: 12, fontSize: 13, lineHeight: 1.55, color: "var(--ink-600,#3c4460)" }}>
-          <b>{meta.matched}</b> of {meta.total} {meta.total === 1 ? "child" : "children"} in this cohort match
+          <b>{meta.matched}</b> of {meta.total} {meta.total === 1 ? "child" : "children"} in this edition match
           {" "}{[
             facets.centre && (facets.centre === "unknown" ? "no centre recorded" : "centre " + facets.centre),
             facets.track && (facets.track === "unknown" ? "no faculty recorded" : facets.track),
@@ -4577,7 +5912,8 @@ function ProjRow({ p, subjectType, subjectId, onChanged }) {
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
   const del = async () => {
-    if (!window.confirm("Remove this project from the member's profile? This can't be undone.")) return;
+    if (!(await dialog.confirm({ title: "Remove this project?",
+      body: "It comes off the member's profile for good.", cta: "Remove project", danger: true }))) return;
     setBusy(true);
     try { await NGGApi.admin.profiles.projectDelete(subjectType, subjectId, p.id); onChanged(); }
     catch (e) { toast.error(e.code || e.message); setBusy(false); }
@@ -4609,7 +5945,8 @@ function NoteRow({ n, subjectType, subjectId, onChanged }) {
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
   const del = async () => {
-    if (!window.confirm("Delete this mentor note? This can't be undone.")) return;
+    if (!(await dialog.confirm({ title: "Delete this mentor note?",
+      body: "The note is removed for good.", cta: "Delete note", danger: true }))) return;
     setBusy(true);
     try { await NGGApi.admin.profiles.noteDelete(subjectType, subjectId, n.id); onChanged(); }
     catch (e) { toast.error(e.code || e.message); setBusy(false); }
@@ -4775,7 +6112,7 @@ function StudentEditor({ s, onSaved, onDelete }) {
   })();
   const [f, setF] = React.useState({
     firstName: seedName.firstName, lastName: seedName.lastName,
-    age: s.age != null ? String(s.age) : "", handle: s.handle || "", sex: s.sex || "",
+    age: s.age != null ? String(s.age) : "", dob: s.dob || "", handle: s.handle || "", sex: s.sex || "",
     grade: (s.grade && s.grade.label) || "",
     centre: s.centre || "", track: s.track || "", guardianName: s.guardianName || "",
     guardianPhone: s.guardianPhone || "", parentEmail: s.parentEmail || "", photoUrl: s.photoUrl || "", notes: s.notes || "",
@@ -4788,7 +6125,7 @@ function StudentEditor({ s, onSaved, onDelete }) {
     try {
       await NGGApi.admin.summer.studentUpdate(s.studentId, { ...f, age: f.age === "" ? s.age : parseInt(f.age, 10) || 0 });
       toast.success("Student saved."); onSaved();
-    } catch (e) { toast.error(e.code === "bad_age" ? "Age must be 5–19." : e.code === "bad_email" ? "That parent email isn't valid." : e.code === "handle_taken" ? "That handle is already used." : (e.code || e.message)); }
+    } catch (e) { toast.error(e.code === "bad_age" ? "Age must be 5–19." : e.code === "bad_dob" ? "That date of birth isn't a real date in the past." : e.code === "bad_email" ? "That parent email isn't valid." : e.code === "handle_taken" ? "That handle is already used." : (e.code || e.message)); }
     finally { setBusy(false); }
   };
   const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
@@ -4805,6 +6142,9 @@ function StudentEditor({ s, onSaved, onDelete }) {
         <div style={{ flex: 1, minWidth: 260, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
           {fld("firstName", "First name", { min: 150 })}
           {fld("lastName", "Last name", { min: 150 })}
+          {/* Recorded by an admin. When set, the server works the age out from
+              it, so the age box below follows the date rather than the other way. */}
+          {fld("dob", "Date of birth", { type: "date", min: 160 })}
           {fld("age", "Age", { type: "number" })}
           {/* Editable here because a whole cohort was registered before the form
               asked, and filling it in one child at a time from the roster is the
@@ -4897,7 +6237,7 @@ function AdminSessions() {
 }
 
 function AdminSessionEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -4908,10 +6248,10 @@ function AdminSessionEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.sessionId} · {d.year}</h3>
+          <h3 {...headingProps}>{d.sessionId} · {d.year}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -5028,7 +6368,7 @@ function AdminMissions() {
 }
 
 function AdminMissionEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -5039,10 +6379,10 @@ function AdminMissionEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.missionId ? "Edit mission" : "New mission"}</h3>
+          <h3 {...headingProps}>{d.missionId ? "Edit mission" : "New mission"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -5096,7 +6436,7 @@ function AdminEvents() {
             <button key={ev.eventId} className="admin-event-row" onClick={() => setEditing(ev)}>
               <div className="admin-event-date-block">
                 <div>{ev.startAt ? new Date(ev.startAt).getDate() : "—"}</div>
-                <div className="mono">{ev.startAt ? new Date(ev.startAt).toLocaleString("en", { month: "short" }) : ""}</div>
+                <div className="mono">{ev.startAt ? fmtDayMonth(ev.startAt) : ""}</div>
               </div>
               <div>
                 <div className="admin-event-title">{ev.title}</div>
@@ -5113,7 +6453,7 @@ function AdminEvents() {
 }
 
 function AdminEventEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({ status:"draft", kind:"session", centre:"Egbeda", isPublic: false }, data));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -5124,10 +6464,10 @@ function AdminEventEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.eventId ? "Edit event" : "New event"}</h3>
+          <h3 {...headingProps}>{d.eventId ? "Edit event" : "New event"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -5202,7 +6542,7 @@ function AdminPosts() {
 }
 
 function AdminPostEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({ kind:"blog", status:"draft" }, data));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -5213,10 +6553,10 @@ function AdminPostEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.postId ? "Edit post" : "New post"}</h3>
+          <h3 {...headingProps}>{d.postId ? "Edit post" : "New post"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -5261,7 +6601,7 @@ function AdminBroadcast() {
   React.useEffect(() => { loadHistory(); }, []);
   const audienceLabel = {
     all: "every active member", Egbeda: "members at Egbeda", Ayobo: "members at Ayobo",
-    Summer: "Summer students", NGG: "NGG members",
+    Summer: "Summer School participant", NGG: "NGG member",
   }[d.audience] || "every active member";
   const send = async (e) => {
     e.preventDefault();
@@ -5636,7 +6976,7 @@ function AdminAssessment() {
                   ? (g.pairedBaselinePct === null ? "—" : g.pairedBaselinePct + "%")
                   : (g.pairedBaselineMean === null ? "—" : g.pairedBaselineMean)}</div>
                 <div className="mono admin-tile-l">Their baseline</div>
-                <div className="admin-hint" style={{ margin: 0 }}>whole cohort {g.pctMeaningful
+                <div className="admin-hint" style={{ margin: 0 }}>whole edition {g.pctMeaningful
                   ? (g.baselineMeanPct === null ? "—" : g.baselineMeanPct + "%")
                   : (g.baselineMean === null ? "—" : g.baselineMean)}</div>
               </div>
@@ -5988,6 +7328,771 @@ function AdminCommunityModeration({ mode, onChanged }) {
 }
 
 // ============================================================================
+/* ============================================================================
+   Programme promotions — house announcements in the members' own surfaces.
+
+   Deliberately narrow. There is no URL field, no audience builder beyond the
+   facts the roster already holds, and no third-party anything: the audience is
+   children, and behavioural advertising to minors is a different product with
+   a different legal footing. See api/_lib/domain/promos.php.
+   ========================================================================== */
+
+const PROMO_PLACEMENT_LABEL = {
+  chess: "Chess screen", community: "Community feed",
+  dashboard: "Member dashboard", arcade: "Arcade", game: "Beside a game",
+};
+const PROMO_SHAPE_LABEL = {
+  card: "Strip in the screen", popup: "Small card, once",
+};
+const PROMO_KIND_LABEL = {
+  programme: "Programme", event: "Event", tournament: "Tournament", notice: "Notice",
+};
+
+function AdminPromos() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [editing, setEditing] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+
+  const load = React.useCallback(() => {
+    NGGApi.admin.promos.list()
+      .then(r => { setD(r); setErr(""); })
+      .catch(e => setErr(e.code || e.message || "Couldn't load promotions."));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const save = async (data) => {
+    setBusy("save");
+    try { await NGGApi.admin.promos.save(data); toast.success("Saved."); setEditing(null); load(); }
+    catch (e) { toast.error(e.detail || e.code || e.message); }
+    finally { setBusy(""); }
+  };
+  const remove = async (p) => {
+    if (!(await dialog.confirm({ title: "Delete “" + p.title + "”?",
+      body: "The promotion and its counts go. This cannot be undone.", confirmLabel: "Delete" }))) return;
+    try { await NGGApi.admin.promos.remove(p.promoId); toast.success("Deleted."); load(); }
+    catch (e) { toast.error(e.code || e.message); }
+  };
+  const setStatus = async (p, status) => {
+    /* Everything, not just the status: save() is an upsert of the whole row,
+       so a Publish that forwards three fields silently blanks the rest. */
+    await save(Object.assign({}, p, { status, kinds: p.audience.kinds,
+      centres: p.audience.centres, programme: p.audience.programme }));
+  };
+
+  if (editing) {
+    return <AdminPromoEdit promo={editing} meta={d} busy={busy === "save"}
+                           onCancel={() => setEditing(null)} onSave={save}/>;
+  }
+
+  const rows = (d && d.promos) || [];
+  const live = rows.filter(p => p.status === "live");
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head"><h2 className="admin-h2">Promotions</h2></div>
+      <p className="admin-hint">
+        Announcements for your own programmes, shown inside the screens members already use —
+        one per screen, never a stack, and always dismissible. They can only link to a page in
+        this app: there is no field for an outside address, because the audience is children.
+      </p>
+      {err && <div className="admin-err" role="alert">{err}</div>}
+
+      <div className="admin-card trn-host-card" style={{ marginBottom: 18 }}>
+        <div className="admin-field-label">New promotion</div>
+        <p className="admin-hint" style={{ margin: "0 0 12px" }}>
+          {live.length === 0 ? "Nothing is live right now."
+            : live.length + (live.length === 1 ? " promotion is" : " promotions are") + " live across "
+              + new Set(live.map(p => p.placement)).size + " screen(s)."}
+        </p>
+        <button className="btn btn-primary" onClick={() => setEditing({ status: "draft", placement: "chess",
+          kind: "programme", priority: 0, audience: { kinds: [], centres: [], programme: "" } })}>
+          Write a promotion →
+        </button>
+      </div>
+
+      {!d ? <div className="admin-skel"/> : rows.length === 0 ? (
+        <div className="admin-empty">No promotions yet. Write one and it appears on the screen you choose.</div>
+      ) : (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr>
+              <th>Promotion</th><th>Where</th><th>Audience</th><th>Seen</th><th>Clicks</th><th>Hidden</th><th/>
+            </tr></thead>
+            <tbody>
+              {rows.map(p => (
+                <tr key={p.promoId}>
+                  <td>
+                    <div className="admin-cell-name">{p.title}</div>
+                    <div className="mono admin-cell-sub">
+                      {PROMO_KIND_LABEL[p.kind] || p.kind}
+                      {p.shape === "popup" ? " · popup" : ""}
+                      {p.ctaPage ? " → " + p.ctaPage : " · no link"}
+                      {p.startsAt || p.endsAt ? " · scheduled" : ""}
+                      {p.imageUrl ? (p.inlineImage ? " · picture (in database)" : " · picture") : ""}
+                    </div>
+                  </td>
+                  <td>
+                    <div>{PROMO_PLACEMENT_LABEL[p.placement] || p.placement}</div>
+                    <span className={"chip " + (p.status === "live" ? "chip-lime" : p.status === "draft" ? "status-draft" : "status-archived")}>{p.status}</span>
+                  </td>
+                  <td className="mono admin-cell-sub">
+                    {p.audience.kinds.length || p.audience.centres.length || p.audience.programme
+                      ? [p.audience.kinds.join("/"), p.audience.centres.join("/"), p.audience.programme]
+                          .filter(Boolean).join(" · ")
+                      : p.tournamentId ? "one event" : "everyone"}
+                    {p.tournamentId && p.audience.kinds.length ? " · one event" : ""}
+                  </td>
+                  <td className="mono">{p.impressions}</td>
+                  <td className="mono">
+                    {p.clicks}
+                    {/* A rate under thirty impressions is noise, and a number
+                        that looks like a measurement invites a decision it
+                        cannot support. The server withholds it; so do we. */}
+                    {p.ctr !== null && p.ctr !== undefined
+                      ? <div className="admin-cell-sub">{p.ctr}%</div>
+                      : <div className="admin-cell-sub">—</div>}
+                  </td>
+                  <td className="mono">{p.dismissals}</td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    {p.status !== "live"
+                      ? <button className="btn btn-primary btn-sm" onClick={() => setStatus(p, "live")}>Publish</button>
+                      : <button className="btn btn-ghost btn-sm" onClick={() => setStatus(p, "ended")}>End</button>}
+                    <button className="btn btn-ghost btn-sm" onClick={() => setEditing(p)}>Edit</button>
+                    <button className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={() => remove(p)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Write one. Short on purpose — a promotion is a headline, a line and a
+    destination, and a form that asks for more gets filled in with less. */
+/**
+ * The picture on a promotion.
+ *
+ * Goes through the same upload path as every other image in the product, which
+ * tries the configured cloud first and falls back to an inline data URI when
+ * there is no cloud. Both are supported, and the difference is stated here
+ * rather than hidden, because it is a real one: a cloud URL is a hundred bytes
+ * inside every promo the members fetch, and an inline image is its whole size,
+ * every time, on a connection somebody is paying for by the megabyte.
+ */
+function AdminPromoImage({ value, max, onChange }) {
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const inline = typeof value === "string" && value.slice(0, 5) === "data:";
+
+  const pick = async (file) => {
+    if (!file) return;
+    setBusy(true); setErr("");
+    try {
+      /* `kind` decides how hard the shrink is before upload. A promo image is
+         drawn at about 320px wide, so anything bigger is data nobody sees. */
+      const r = await NGGApi.uploadOrInline(file, "promo");
+      if (r.inline && r.url.length > max) {
+        setErr("That picture is too big to store without a cloud set up (" +
+               Math.round(r.url.length / 1024) + "KB, limit " + Math.round(max / 1024) + "KB). Try a smaller one.");
+      } else {
+        onChange(r.url);
+      }
+    } catch (e) {
+      setErr((e && e.message) || "That upload did not work.");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="trn-field">
+      <span className="trn-field-l">Picture <span>optional</span></span>
+      <div className="promo-img-row">
+        {value ? (
+          <span className="promo-img-thumb">
+            <img src={value} alt="The picture on this promotion, as members will see it."/>
+          </span>
+        ) : <span className="promo-img-thumb is-empty" aria-hidden="true">◫</span>}
+        <div className="promo-img-acts">
+          <label className="btn btn-ghost btn-sm">
+            {busy ? "Uploading…" : value ? "Change picture" : "Add a picture"}
+            <input type="file" accept="image/*" className="sr-only" disabled={busy}
+                   onChange={e => pick(e.target.files && e.target.files[0])}/>
+          </label>
+          {value && <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange("")}>Remove</button>}
+          <p className="admin-hint" style={{ margin: "6px 0 0" }}>
+            {!value ? "Wide pictures work best — it is shown small, beside the words."
+              : inline ? "Stored in the database, because no image cloud is set up. It is sent to every member who sees this promotion, so keep it small."
+              : "On the image cloud, so it costs members almost nothing to load."}
+          </p>
+          {err && <div className="admin-err" role="alert">{err}</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   Quote of the week — Hausa riddles, Igbo and Yoruba proverbs.
+   The home page cycles Hausa → Igbo → Yoruba one week at a time; each
+   language walks its own list top to bottom. See api/_lib/domain/wisdom.php.
+   ========================================================================== */
+const WISDOM_LANG_LABEL = { hausa: "Hausa", igbo: "Igbo", yoruba: "Yorùbá" };
+const WISDOM_ERR = {
+  tts_not_configured: "Voice generation needs a Spitch key in api/config.php ('tts' → 'spitch_key'). A voice-over works without one.",
+  has_custom_voice: "This saying has a staff voice-over. Remove it first if you want a generated one instead.",
+  tts_failed: "The voice service didn't answer. Try again in a minute.",
+  tts_bad_audio: "The voice service sent something that isn't audio.",
+  bad_audio: "That file isn't an audio format we can play (MP3, M4A, WAV, OGG or WebM).",
+  audio_too_big: "That clip is too big — trim it or export it as MP3.",
+  text_required: "Write the saying first.",
+  consent_required: "Tick the consent box — a voice is only cloned with the speaker's permission.",
+  transcript_required: "Type exactly what the speaker says in the recording.",
+  name_required: "Give the voice a name.",
+  too_many_voices: "Twenty cloned voices is the limit here. Delete one first.",
+  clone_failed: "The voice service couldn't make a voice from that recording.",
+};
+const wisdomErr = (e) => WISDOM_ERR[e && e.code] || (e && (e.detail || e.code || e.message)) || "Something went wrong.";
+const wisdomFmtWeek = (iso) => fmtDayMonth(iso + "T12:00:00");
+const wisdomCap = (v) => v ? v[0].toUpperCase() + v.slice(1) : "";
+/* The listen-back: Spitch's own speech-to-text heard the clip and this is how
+   closely it matched the words. Shown so a stumble is caught here, not by a
+   parent on the home page. */
+function WisdomScore({ score }) {
+  if (score == null) return null;
+  const pct = Math.round(score * 100);
+  const good = score >= 0.85;
+  return <span className={"wis-score" + (good ? " is-good" : " is-low")}
+               title="The voice service transcribed this clip and compared it with the words.">
+    {good ? "Pronunciation check " + pct + "%" : pct + "% match — listen before it goes live"}
+  </span>;
+}
+
+/* Voice options for a language: its own system voices first, then the
+   programme's cloned voices (any voice can speak any language). */
+function wisdomVoiceOptions(d, lang) {
+  const own = ((d.voices || {})[lang] || []).map(v => ({ value: v, label: wisdomCap(v) }));
+  const cloned = (d.customVoices || []).map(c => ({ value: c.voiceId, label: c.name + " (cloned)" }));
+  return own.concat(cloned);
+}
+
+/* Record from the microphone, or pick a file. Hands back a Blob. */
+function useWisdomRecorder(onBlob) {
+  const [rec, setRec] = React.useState(null);
+  const [secs, setSecs] = React.useState(0);
+  const can = typeof window !== "undefined" && !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  const start = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const mr = new MediaRecorder(stream);
+      const parts = [];
+      mr.ondataavailable = e => { if (e.data && e.data.size) parts.push(e.data); };
+      mr.onstop = () => { stream.getTracks().forEach(t => t.stop()); clearInterval(mr._t); setRec(null); onBlob(new Blob(parts, { type: mr.mimeType || "audio/webm" })); };
+      mr.start();
+      setSecs(0); mr._t = setInterval(() => setSecs(x => x + 1), 1000);
+      setRec(mr);
+    } catch (_) { toast.error("The microphone isn't available — allow it in the browser, or upload a file instead."); }
+  };
+  React.useEffect(() => () => { if (rec && rec.state !== "inactive") rec.stop(); }, [rec]);
+  return { can, rec, secs, start, stop: () => rec && rec.stop() };
+}
+const wisdomBlobToDataUrl = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(blob); });
+
+function AdminWisdom() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [lang, setLang] = React.useState("hausa");
+  const [editing, setEditing] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+
+  const load = React.useCallback(() => {
+    NGGApi.admin.wisdom.list().then(r => { setD(r); setErr(""); })
+      .catch(e => setErr(wisdomErr(e)));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const act = async (key, fn, ok) => {
+    setBusy(key);
+    try { const r = await fn(); if (ok) toast.success(typeof ok === "function" ? ok(r) : ok); load(); return r || true; }
+    catch (e) { toast.error(wisdomErr(e)); return false; }
+    finally { setBusy(""); }
+  };
+  const save = async (data) => {
+    const r = await act("save", () => NGGApi.admin.wisdom.save(data), (r) =>
+      r && r.voice && r.voice.made && r.voice.made.length ? "Saved and voiced." : r && r.voice && r.voice.ok === false ? "Saved. The voice couldn't be made — try Generate." : "Saved.");
+    if (r) setEditing(null);
+  };
+  const remove = async (w) => {
+    if (!(await dialog.confirm({ title: "Delete this saying?", body: "“" + w.text + "” and its voice clips go. The rotation closes the gap.", confirmLabel: "Delete" }))) return;
+    act("del" + w.wisdomId, () => NGGApi.admin.wisdom.remove(w.wisdomId), "Deleted.");
+  };
+
+  if (err && !d) return (
+    <div className="admin-section"><div className="admin-err" role="alert">{err} <button className="btn btn-ghost btn-sm" onClick={load}>Retry</button></div></div>
+  );
+  if (!d) return <div className="admin-section"><div className="admin-skel"/></div>;
+
+  if (editing) return <AdminWisdomEdit w={editing} kinds={d.kinds} busy={busy === "save"} ttsReady={d.ttsReady} onCancel={() => setEditing(null)} onSave={save}/>;
+
+  const rows = d.sayings.filter(w => w.language === lang);
+  const nowId = d.schedule[0] && d.schedule[0].wisdomId;
+  return (
+    <div className="admin-section wis">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Quote of the week</h2>
+        <button className="btn btn-primary" onClick={() => setEditing({ language: lang, kind: lang === "hausa" ? "riddle" : "proverb", status: "live" })}>Add a saying</button>
+      </div>
+      <p className="admin-hint">
+        One saying a week, taking turns by language: <b>Hausa 1, Igbo 1, Yorùbá 1, then Hausa 2, Igbo 2, Yorùbá 2</b>, and so on.
+        The number in each language's list below is its turn. A language with nothing live sits out until it has one.
+      </p>
+
+      <div className="wis-sched" aria-label="The next nine weeks">
+        {d.schedule.map((s, i) => (
+          <div key={s.week} className={"wis-sched-cell wis-" + s.language + (i === 0 ? " is-now" : "")}>
+            <span className="wis-sched-wk">{i === 0 ? "This week" : wisdomFmtWeek(s.week)}</span>
+            <span className="wis-sched-lang">{WISDOM_LANG_LABEL[s.language]} <span className="wis-sched-n">#{s.number}</span></span>
+            <span className="wis-sched-tx" title={s.text}>{s.text}</span>
+          </div>
+        ))}
+        {d.schedule.length === 0 && <div className="admin-hint">Nothing is live, so the home page hides the section.</div>}
+      </div>
+
+      <WisdomVoiceSettings d={d} busy={busy} act={act}/>
+
+      <div className="wis-tabs" role="tablist" aria-label="Language">
+        {d.languages.map(l => {
+          const n = d.sayings.filter(w => w.language === l).length;
+          return <button key={l} role="tab" aria-selected={lang === l} className={"wis-tab" + (lang === l ? " is-on" : "")} onClick={() => setLang(l)}>{WISDOM_LANG_LABEL[l]} <span className="wis-count">{n}</span></button>;
+        })}
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="admin-card wis-empty">No {WISDOM_LANG_LABEL[lang]} sayings yet. <button className="btn btn-ghost btn-sm" onClick={() => setEditing({ language: lang, kind: "proverb", status: "live" })}>Add the first</button></div>
+      ) : (
+        <ol className="wis-list">
+          {rows.map((w, i) => (
+            <li key={w.wisdomId} className={"admin-card wis-item" + (w.status === "hidden" ? " is-hidden" : "")}>
+              <div className="wis-item-main">
+                <div className="wis-item-meta">
+                  <span className="wis-pos" aria-label={"Turn " + (i + 1)}>{i + 1}</span>
+                  <span className="chip">{w.kind}</span>
+                  {w.status === "hidden" && <span className="chip">hidden</span>}
+                  {w.wisdomId === nowId && <span className="chip wis-live">on the site now</span>}
+                </div>
+                <p className="wis-text" lang={w.langCode}>{w.text}</p>
+                {w.translation && <p className="wis-tr">{w.translation}</p>}
+                {w.answer && <p className="wis-ans"><b>Answer:</b> {w.answer}{w.answerTranslation ? " — " + w.answerTranslation : ""}</p>}
+              </div>
+              <div className="wis-item-side">
+                <div className="wis-order">
+                  <button className="btn btn-ghost btn-sm" aria-label="Move up" disabled={i === 0 || !!busy} onClick={() => act("mv", () => NGGApi.admin.wisdom.move(w.wisdomId, "up"))}>↑</button>
+                  <button className="btn btn-ghost btn-sm" aria-label="Move down" disabled={i === rows.length - 1 || !!busy} onClick={() => act("mv", () => NGGApi.admin.wisdom.move(w.wisdomId, "down"))}>↓</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEditing(w)}>Edit</button>
+                  <button className="btn btn-ghost btn-sm" disabled={busy === "del" + w.wisdomId} onClick={() => remove(w)}>Delete</button>
+                </div>
+                <WisdomVoice w={w} d={d} busy={busy} act={act}/>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+/* The voices the sayings are read in: a default per language, "voice
+   everything", and voices cloned from a real speaker. */
+function WisdomVoiceSettings({ d, busy, act }) {
+  const [defs, setDefs] = React.useState(d.voiceDefaults || {});
+  const [cloning, setCloning] = React.useState(false);
+  React.useEffect(() => { setDefs(d.voiceDefaults || {}); }, [d.voiceDefaults]);
+  const dirty = JSON.stringify(defs) !== JSON.stringify(d.voiceDefaults || {});
+  const langs = d.languages.concat(["english"]);
+  const label = (l) => l === "english" ? "English (translation)" : WISDOM_LANG_LABEL[l];
+
+  const voiceAll = () => act("all", () => NGGApi.admin.wisdom.voiceAll(), (r) =>
+    (r.voiced ? r.voiced + " voiced" : "Nothing voiced") + (r.failed && r.failed.length ? ", " + r.failed.length + " failed" : "")
+    + (r.remaining ? " — " + r.remaining + " left, press again." : "."));
+  const delVoice = async (c) => {
+    if (!(await dialog.confirm({ title: "Delete the voice “" + c.name + "”?", body: "Clips already made keep playing. New ones can't use it.", confirmLabel: "Delete voice" }))) return;
+    act("dv", () => NGGApi.admin.wisdom.deleteVoice(c.voiceId), "Voice deleted.");
+  };
+
+  return (
+    <section className="admin-card wis-vs" aria-labelledby="wis-vs-h">
+      <div className="wis-vs-head">
+        <h3 className="admin-field-label" id="wis-vs-h">Voices</h3>
+        {d.ttsReady
+          ? <button className="btn btn-primary btn-sm" disabled={!!busy || !d.missingVoice} onClick={voiceAll}>
+              {busy === "all" ? "Voicing…" : d.missingVoice ? "Voice everything missing (" + d.missingVoice + ")" : "Everything is voiced"}
+            </button>
+          : null}
+      </div>
+      {!d.ttsReady ? (
+        <p className="admin-hint wis-note">Generated voices are off: add a Spitch key under <code>'tts' → 'spitch_key'</code> in api/config.php.
+          Once it's there, every saying is voiced automatically — in its own language and then in English. Uploading or recording a voice-over works now.</p>
+      ) : (
+        <p className="admin-hint wis-note">Each clip is generated <b>once</b> when a saying is saved and kept — it is never made again for the same words and voice.
+          Every new clip is listened back to by the voice service in the same language; if a voice stumbles, the next native voice is tried and the best is kept.
+          A recorded voice-over always wins over a generated one.</p>
+      )}
+      {d.ttsReady && <div className="wis-vs-grid">
+        {langs.map(l => (
+          <label key={l} className="admin-field">
+            <span>{label(l)}</span>
+            <select className="admin-select" value={defs[l] || ""} onChange={e => setDefs(Object.assign({}, defs, { [l]: e.target.value }))}>
+              {wisdomVoiceOptions(d, l).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+        ))}
+      </div>}
+      {d.ttsReady && dirty && (
+        <div className="wis-form-actions">
+          <button className="btn btn-ghost btn-sm" onClick={() => setDefs(d.voiceDefaults || {})}>Undo</button>
+          <button className="btn btn-primary btn-sm" disabled={busy === "defs"} onClick={() => act("defs", () => NGGApi.admin.wisdom.voiceDefaults(defs), "Default voices saved. Regenerate a saying to hear the new voice.")}>Save default voices</button>
+        </div>
+      )}
+      {d.ttsReady && (
+        <div className="wis-clones">
+          <div className="wis-vs-head">
+            <span className="admin-field-label">Cloned voices</span>
+            {!cloning && <button className="btn btn-ghost btn-sm" onClick={() => setCloning(true)}>Clone a voice from a recording</button>}
+          </div>
+          {(d.customVoices || []).length === 0 && !cloning && (
+            <p className="admin-hint wis-note">A native speaker you know — a teacher, a parent — records 10 to 30 seconds. Every saying can then be read in their voice.</p>
+          )}
+          {(d.customVoices || []).map(c => (
+            <div key={c.voiceId} className="wis-clone-row">
+              <span className="wis-clone-name">{c.name}</span>
+              <span className="wis-clone-meta">{label(c.language) || c.language} · {fmtDate(c.createdAt)}</span>
+              <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => delVoice(c)}>Delete</button>
+            </div>
+          ))}
+          {cloning && <WisdomCloneForm d={d} busy={busy} act={act} onDone={() => setCloning(false)}/>}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WisdomCloneForm({ d, busy, act, onDone }) {
+  const [f, setF] = React.useState({ name: "", language: "yoruba", transcript: "", consent: false });
+  const [blob, setBlob] = React.useState(null);
+  const [url, setUrl] = React.useState("");
+  const fileRef = React.useRef(null);
+  const take = (b) => { if (b.size > 8 * 1024 * 1024) { toast.error("That recording is over 8 MB. Thirty seconds is plenty."); return; } setBlob(b); setUrl(u => { if (u) URL.revokeObjectURL(u); return URL.createObjectURL(b); }); };
+  const r = useWisdomRecorder(take);
+  React.useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  const set = (k, v) => setF(x => Object.assign({}, x, { [k]: v }));
+  const ready = blob && f.name.trim() && f.transcript.trim() && f.consent;
+  const submit = async () => {
+    const audio = await wisdomBlobToDataUrl(blob);
+    const ok = await act("clone", () => NGGApi.admin.wisdom.cloneVoice(Object.assign({ audio }, f)), "Voice created. Choose it as a default or on any saying.");
+    if (ok) onDone();
+  };
+  return (
+    <div className="wis-clone-form">
+      <p className="admin-hint wis-note">One speaker, a quiet room, 10–30 seconds of natural speech — reading one of the sayings aloud works well. Type exactly what they say.</p>
+      <div className="wis-form-row">
+        <Field label="Voice name" value={f.name} onChange={v => set("name", v)} placeholder="e.g. Mrs Adebayo"/>
+        <FieldSelect label="Language they speak" value={f.language} onChange={v => set("language", v)}
+          options={d.languages.concat(["english"]).map(l => ({ value: l, label: l === "english" ? "English" : WISDOM_LANG_LABEL[l] }))}/>
+      </div>
+      <div className="wis-voice-row">
+        {r.can && (r.rec
+          ? <button className="btn btn-primary btn-sm" aria-pressed="true" onClick={r.stop}>■ Stop · {r.secs}s</button>
+          : <button className="btn btn-ghost btn-sm" aria-pressed="false" onClick={r.start}>● Record</button>)}
+        <button className="btn btn-ghost btn-sm" disabled={!!r.rec} onClick={() => fileRef.current && fileRef.current.click()}>Upload a recording</button>
+        <input ref={fileRef} type="file" accept="audio/*" hidden onChange={e => { const x = e.target.files && e.target.files[0]; e.target.value = ""; if (x) take(x); }}/>
+        {r.rec && r.secs >= 30 && <span className="wis-warn" role="status">30 seconds is the most the voice service uses — stop now.</span>}
+      </div>
+      {url && <audio className="wis-audio" controls src={url}/>}
+      <FieldTextarea label="Exactly what is said in the recording" rows={3} value={f.transcript} onChange={v => set("transcript", v)}/>
+      <FieldCheckbox label="The speaker has agreed to their voice being cloned and used to read these sayings on the NGG site." value={f.consent} onChange={v => set("consent", v)}/>
+      <div className="wis-form-actions">
+        <button className="btn btn-ghost btn-sm" onClick={onDone}>Cancel</button>
+        <button className="btn btn-primary btn-sm" disabled={!ready || busy === "clone"} onClick={submit}>{busy === "clone" ? "Creating…" : "Create the voice"}</button>
+      </div>
+    </div>
+  );
+}
+
+/* One saying's audio: both clips, the voice each is read in, and a staff
+   voice-over. A voice-over outranks a generated clip and is never silently
+   replaced. */
+function WisdomVoice({ w, d, busy, act }) {
+  const defs = d.voiceDefaults || {};
+  const [voice, setVoice] = React.useState(w.voice && w.audioSource === "tts" ? w.voice : (defs[w.language] || ""));
+  const [voiceEn, setVoiceEn] = React.useState(w.voiceEn || defs.english || "");
+  const fileRef = React.useRef(null);
+  const key = "v" + w.wisdomId;
+  const working = busy === key;
+
+  const sendBlob = async (blob) => {
+    if (blob.size > d.audioMax) { toast.error(WISDOM_ERR.audio_too_big); return; }
+    const audio = await wisdomBlobToDataUrl(blob);
+    act(key, () => NGGApi.admin.wisdom.upload(w.wisdomId, audio), "Voice-over saved.");
+  };
+  const r = useWisdomRecorder(sendBlob);
+  const gen = async (which) => {
+    const replace = which !== "english" && w.audioSource === "custom";
+    if (replace && !(await dialog.confirm({ title: "Replace the voice-over?", body: "A staff recording is on this saying. The generated voice will replace it.", confirmLabel: "Replace" }))) return;
+    act(key, () => NGGApi.admin.wisdom.generate(w.wisdomId, { which, voice, voiceEn, replace }), (res) =>
+      res && res.partial ? "Partly voiced — one clip failed. Try again." : "Voice saved.");
+  };
+  const nameOf = (v) => { const c = (d.customVoices || []).find(x => x.voiceId === v); return c ? c.name : wisdomCap(v); };
+
+  return (
+    <div className="wis-voice">
+      <div className="wis-voice-head">
+        <span className="admin-field-label">{WISDOM_LANG_LABEL[w.language]}</span>
+        <span className="wis-voice-src">{w.audioSource === "custom" ? "Staff voice-over" : w.audioSource === "tts" ? "Generated · " + nameOf(w.voice) : "No voice yet"}</span>
+      </div>
+      {w.audioUrl && <audio className="wis-audio" controls preload="none" src={w.audioUrl} aria-label={"The saying in " + WISDOM_LANG_LABEL[w.language]}/>}
+      {w.audioSource === "tts" && <WisdomScore score={w.ttsScore}/>}
+      {d.ttsReady && (
+        <div className="wis-voice-row">
+          <select className="admin-select wis-voice-sel" aria-label={WISDOM_LANG_LABEL[w.language] + " voice"} value={voice} onChange={e => setVoice(e.target.value)}>
+            {wisdomVoiceOptions(d, w.language).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          {/* Generated once and saved: nothing to press for the voice it already has. */}
+          {!w.audioUrl || w.audioSource !== "tts" || voice !== w.voice
+            ? <button className="btn btn-ghost btn-sm" disabled={working || !!r.rec} onClick={() => gen("native")}>
+                {working ? "Working…" : !w.audioUrl ? "Generate" : "Use this voice"}</button>
+            : <span className="wis-saved">Saved</span>}
+        </div>
+      )}
+      <div className="wis-voice-row">
+        {r.can && (r.rec
+          ? <button className="btn btn-primary btn-sm" aria-pressed="true" onClick={r.stop}>■ Stop · {r.secs}s</button>
+          : <button className="btn btn-ghost btn-sm" aria-pressed="false" disabled={working} onClick={r.start}>● Record</button>)}
+        <button className="btn btn-ghost btn-sm" disabled={working || !!r.rec} onClick={() => fileRef.current && fileRef.current.click()}>Upload</button>
+        <input ref={fileRef} type="file" accept="audio/*" hidden onChange={e => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (f) sendBlob(f); }}/>
+        {w.audioUrl && <button className="btn btn-ghost btn-sm" disabled={working || !!r.rec} onClick={() => act(key, () => NGGApi.admin.wisdom.clearVoice(w.wisdomId, "native"), "Voice removed.")}>Remove</button>}
+      </div>
+
+      {w.translation && (
+        <>
+          <div className="wis-voice-head wis-voice-en">
+            <span className="admin-field-label">English</span>
+            <span className="wis-voice-src">{w.audioUrlEn ? "Generated · " + nameOf(w.voiceEn) : "No voice yet"}</span>
+          </div>
+          {w.audioUrlEn && <audio className="wis-audio" controls preload="none" src={w.audioUrlEn} aria-label="The English translation"/>}
+          {w.audioUrlEn && <WisdomScore score={w.ttsScoreEn}/>}
+          {d.ttsReady ? (
+            <div className="wis-voice-row">
+              <select className="admin-select wis-voice-sel" aria-label="English voice" value={voiceEn} onChange={e => setVoiceEn(e.target.value)}>
+                {wisdomVoiceOptions(d, "english").map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              {!w.audioUrlEn || voiceEn !== w.voiceEn
+                ? <button className="btn btn-ghost btn-sm" disabled={working} onClick={() => gen("english")}>{!w.audioUrlEn ? "Generate" : "Use this voice"}</button>
+                : <span className="wis-saved">Saved</span>}
+              {w.audioUrlEn && <button className="btn btn-ghost btn-sm" disabled={working} onClick={() => act(key, () => NGGApi.admin.wisdom.clearVoice(w.wisdomId, "english"), "English clip removed.")}>Remove</button>}
+            </div>
+          ) : !w.audioUrlEn && <p className="admin-hint wis-note">Read automatically once a Spitch key is set.</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+function AdminWisdomEdit({ w, kinds, busy, ttsReady, onCancel, onSave }) {
+  const [f, setF] = React.useState({
+    wisdomId: w.wisdomId || "", language: w.language || "hausa", kind: w.kind || "proverb",
+    text: w.text || "", translation: w.translation || "", answer: w.answer || "",
+    answerTranslation: w.answerTranslation || "", meaning: w.meaning || "", status: w.status || "live",
+    spokenText: w.spokenText || "",
+  });
+  const set = (k, v) => setF(x => Object.assign({}, x, { [k]: v }));
+  return (
+    <div className="admin-section">
+      <button className="btn btn-ghost btn-sm" onClick={onCancel}>← All sayings</button>
+      <div className="admin-section-head" style={{ marginTop: 10 }}>
+        <h2 className="admin-h2">{f.wisdomId ? "Edit saying" : "New saying"}</h2>
+      </div>
+      <div className="admin-card wis-form">
+        <div className="wis-form-row">
+          <FieldSelect label="Language" value={f.language} onChange={v => set("language", v)} options={Object.keys(WISDOM_LANG_LABEL).map(k => ({ value: k, label: WISDOM_LANG_LABEL[k] }))}/>
+          <FieldSelect label="Kind" value={f.kind} onChange={v => set("kind", v)} options={(kinds || ["riddle", "proverb", "quote"]).map(k => ({ value: k, label: k[0].toUpperCase() + k.slice(1) }))}/>
+          <FieldSelect label="On the site" value={f.status} onChange={v => set("status", v)} options={[{ value: "live", label: "In the rotation" }, { value: "hidden", label: "Hidden" }]}/>
+        </div>
+        <FieldTextarea label={"The saying, in " + WISDOM_LANG_LABEL[f.language]} rows={2} value={f.text} onChange={v => set("text", v)}/>
+        <FieldTextarea label="English translation" rows={2} value={f.translation} onChange={v => set("translation", v)}/>
+        <FieldTextarea label="How it should be read (optional) — the same words with full tone marks, if the saying above is written without them. Only the voice uses this." rows={2} value={f.spokenText} onChange={v => set("spokenText", v)}/>
+        {f.kind === "riddle" && (
+          <div className="wis-form-row">
+            <Field label="Answer" value={f.answer} onChange={v => set("answer", v)}/>
+            <Field label="Answer in English" value={f.answerTranslation} onChange={v => set("answerTranslation", v)}/>
+          </div>
+        )}
+        <FieldTextarea label="Deeper meaning" rows={4} value={f.meaning} onChange={v => set("meaning", v)}/>
+        <p className="admin-hint">{ttsReady ? "Saving voices it automatically — the saying, then the English translation. " : ""}
+          {f.wisdomId ? "Changing the words remakes a generated voice (the old one would read the old words). A staff voice-over is kept — re-record it if the wording changed." : ""}</p>
+        <div className="wis-form-actions">
+          <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy || f.text.trim().length < 3} onClick={() => onSave(f)}>{busy ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminPromoEdit({ promo, meta, busy, onCancel, onSave }) {
+  const [f, setF] = React.useState({
+    promoId: promo.promoId || "", title: promo.title || "", body: promo.body || "",
+    kind: promo.kind || "programme", placement: promo.placement || "chess",
+    ctaLabel: promo.ctaLabel || "", ctaPage: promo.ctaPage || "", imageUrl: promo.imageUrl || "",
+    shape: promo.shape || "card", tournamentId: promo.tournamentId || "",
+    priority: promo.priority || 0, status: promo.status || "draft",
+    startsAt: promo.startsAt || "", endsAt: promo.endsAt || "",
+    kinds: (promo.audience && promo.audience.kinds) || [],
+    centres: (promo.audience && promo.audience.centres) || [],
+    programme: (promo.audience && promo.audience.programme) || "",
+  });
+  const set = (patch) => setF(v => Object.assign({}, v, patch));
+  const pages = (meta && meta.pages) || ["community", "club", "summer", "events"];
+  const centres = (meta && meta.centres) || [];
+  const toggle = (list, v) => list.indexOf(v) >= 0 ? list.filter(x => x !== v) : list.concat(v);
+
+  return (
+    <div className="admin-section">
+      <button className="btn btn-ghost btn-sm" onClick={onCancel}>← All promotions</button>
+      <div className="admin-section-head" style={{ marginTop: 10 }}>
+        <h2 className="admin-h2">{f.promoId ? "Edit promotion" : "New promotion"}</h2>
+      </div>
+
+      <div className="cm-tokens trn-admin-wrap">
+        <label className="trn-field">
+          <span className="trn-field-l">Headline</span>
+          <input className="trn-in" value={f.title} maxLength={120}
+                 placeholder="e.g. Summer intake is open" onChange={e => set({ title: e.target.value })}/>
+        </label>
+        <label className="trn-field">
+          <span className="trn-field-l">A line about it <span>optional</span></span>
+          <textarea className="trn-in trn-ta" rows={2} value={f.body} maxLength={400}
+                    placeholder="Eight weeks, five centres, starts 6 July."
+                    onChange={e => set({ body: e.target.value })}/>
+        </label>
+
+        <fieldset className="trn-fs">
+          <legend className="trn-legend">Where it appears</legend>
+          <div className="trn-seg">
+            {Object.keys(PROMO_PLACEMENT_LABEL).map(k => (
+              <button key={k} type="button" aria-pressed={f.placement === k}
+                      className={"trn-seg-b" + (f.placement === k ? " is-on" : "")}
+                      onClick={() => set({ placement: k })}>{PROMO_PLACEMENT_LABEL[k]}</button>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset className="trn-fs">
+          <legend className="trn-legend">How it appears</legend>
+          <div className="trn-seg">
+            {Object.keys(PROMO_SHAPE_LABEL).map(k => (
+              <button key={k} type="button" aria-pressed={f.shape === k}
+                      className={"trn-seg-b" + (f.shape === k ? " is-on" : "")}
+                      onClick={() => set({ shape: k })}>{PROMO_SHAPE_LABEL[k]}</button>
+            ))}
+          </div>
+          <p className="trn-hint">
+            {f.shape === "popup"
+              ? "A small card beside a game that has just finished or is about to start. Each member sees it once, ever — being seen is what spends it, so nobody gets it twice."
+              : "A strip inside the screen. It stays until the member hides it, and a member who hides it is not shown it again."}
+          </p>
+        </fieldset>
+
+        <AdminPromoImage value={f.imageUrl} max={(meta && meta.inlineMax) || 60000}
+                         onChange={(url) => set({ imageUrl: url })}/>
+
+        <div className="trn-band">
+          <label className="trn-field">
+            <span className="trn-field-l">Button says</span>
+            <input className="trn-in" value={f.ctaLabel} maxLength={48}
+                   placeholder="See the programme" onChange={e => set({ ctaLabel: e.target.value })}/>
+          </label>
+          <label className="trn-field">
+            <span className="trn-field-l">Takes them to <span>a page in this app</span></span>
+            <select className="trn-in" value={f.ctaPage} onChange={e => set({ ctaPage: e.target.value })}>
+              <option value="">Nowhere — just a notice</option>
+              {pages.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </label>
+        </div>
+
+        <fieldset className="trn-fs">
+          <legend className="trn-legend">Who sees it</legend>
+          <p className="trn-hint" style={{ marginTop: 0, marginBottom: 10 }}>
+            Leave everything unticked to reach the whole club. Targeting uses the roster —
+            centre, programme and role — and nothing about what anybody has read or played.
+          </p>
+          {TRN_KINDS.map(k => (
+            <label key={k.id} className={"trn-check" + (f.kinds.indexOf(k.id) >= 0 ? " is-on" : "")}>
+              <input type="checkbox" checked={f.kinds.indexOf(k.id) >= 0}
+                     onChange={() => set({ kinds: toggle(f.kinds, k.id) })}/>
+              <span>{k.label}</span>
+            </label>
+          ))}
+          {/* One event's players, and nobody else. "Round three is drawn" is
+              news to an entrant and noise to the other ninety members. */}
+          {(meta && meta.tournaments || []).length > 0 && (
+            <label className="trn-field" style={{ marginTop: 12 }}>
+              <span className="trn-field-l">Only the people in one tournament <span>optional</span></span>
+              <select className="trn-in" value={f.tournamentId}
+                      onChange={e => set({ tournamentId: e.target.value })}>
+                <option value="">Anybody who matches above</option>
+                {(meta.tournaments || []).map(t => (
+                  <option key={t.tournamentId} value={t.tournamentId}>{t.name} · {t.status}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {centres.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <span className="trn-field-l" style={{ display: "block", marginBottom: 6 }}>Centres</span>
+              {centres.map(c => (
+                <label key={c} className={"trn-check" + (f.centres.indexOf(c) >= 0 ? " is-on" : "")}>
+                  <input type="checkbox" checked={f.centres.indexOf(c) >= 0}
+                         onChange={() => set({ centres: toggle(f.centres, c) })}/>
+                  <span>{c}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </fieldset>
+
+        <div className="trn-band">
+          <label className="trn-field">
+            <span className="trn-field-l">Starts <span>optional</span></span>
+            <input className="trn-in" type="datetime-local"
+                   value={f.startsAt ? f.startsAt.slice(0, 16) : ""}
+                   onChange={e => set({ startsAt: e.target.value ? e.target.value + ":00Z" : "" })}/>
+          </label>
+          <label className="trn-field">
+            <span className="trn-field-l">Ends <span>optional</span></span>
+            <input className="trn-in" type="datetime-local"
+                   value={f.endsAt ? f.endsAt.slice(0, 16) : ""}
+                   onChange={e => set({ endsAt: e.target.value ? e.target.value + ":00Z" : "" })}/>
+          </label>
+        </div>
+
+        <label className="trn-field">
+          <span className="trn-field-l">Priority <span>higher wins when two are live on one screen</span></span>
+          <input className="trn-in" type="number" min="0" max="100" value={f.priority}
+                 onChange={e => set({ priority: Math.max(0, Math.min(100, +e.target.value || 0)) })}/>
+        </label>
+
+        <div className="trn-wiz-foot" style={{ position: "static", padding: "14px 0 0" }}>
+          <button className="trn-back" onClick={onCancel}>Cancel</button>
+          <button className="cmm-cta" disabled={busy || f.title.trim().length < 3}
+                  onClick={() => onSave(f)}>{busy ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Tournaments — centre rounds through to a final
 // ============================================================================
 
@@ -6000,9 +8105,7 @@ function AdminTournaments() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [openId, setOpenId] = React.useState("");
-  const [busy, setBusy] = React.useState("");
-  const [name, setName] = React.useState("");
-  const [programme, setProgramme] = React.useState("ngg");
+  const [creating, setCreating] = React.useState(false);
 
   const load = React.useCallback(() => {
     NGGApi.admin.tournaments.list()
@@ -6011,16 +8114,23 @@ function AdminTournaments() {
   }, []);
   React.useEffect(() => { load(); }, [load]);
 
-  const create = async () => {
-    if (name.trim().length < 3) { toast.error("Give it a name people will recognise."); return; }
-    setBusy("new");
-    try {
-      const r = await NGGApi.admin.tournaments.create(name.trim(), "chess", programme);
-      toast.success("Created. Add the players next.");
-      setName(""); load(); setOpenId(r.tournamentId);
-    } catch (e) { toast.error(e.code || e.message); }
-    finally { setBusy(""); }
-  };
+  /* ONE creation interface, not two.
+     This screen used to carry its own inline form — a name, a programme
+     dropdown and a Create button — which could not ask for a format, a clock,
+     who may enter or how many rounds. Rather than grow a second wizard beside
+     the one on the chess screen, the console opens the same component: a
+     director gets the same four steps wherever they start, and there is one
+     place to change when the questions change. */
+  if (creating && typeof CmTrnCreate === "function") {
+    return (
+      <div className="admin-section">
+        <div className="cm-tokens trn-admin-wrap">
+          <CmTrnCreate onBack={() => setCreating(false)}
+                       onCreated={(id) => { setCreating(false); load(); setOpenId(id); }}/>
+        </div>
+      </div>
+    );
+  }
 
   if (openId) return <AdminTournamentBracket tournamentId={openId} onBack={() => { setOpenId(""); load(); }}/>;
 
@@ -6029,25 +8139,20 @@ function AdminTournaments() {
     <div className="admin-section">
       <div className="admin-section-head"><h2 className="admin-h2">Tournaments</h2></div>
       <p className="admin-hint">
-        Every centre plays its own knockout, then the centre champions meet in a final. A child at a
-        small centre can win something without being knocked out in round one by a big one.
+        Five formats. A <b>Swiss</b> is usually the right one for a club session — everybody plays
+        every round and nobody goes home after one loss. A <b>centre cup</b> runs a knockout per
+        centre and puts the champions in a final, so a child at a small centre can win something
+        without meeting a big one in round one. Players enter themselves from the chess screen.
       </p>
       {err && <div className="admin-err" role="alert">{err}</div>}
 
-      <div className="admin-card" style={{ marginBottom: 18 }}>
+      <div className="admin-card trn-host-card" style={{ marginBottom: 18 }}>
         <div className="admin-field-label">Host a new one</div>
-        <div className="trn-new">
-          <input className="admin-in" value={name} maxLength={160} placeholder="e.g. NGG Chess Cup 2026"
-            onChange={e => setName(e.target.value)} aria-label="Tournament name"/>
-          <select className="admin-in" value={programme} onChange={e => setProgramme(e.target.value)} aria-label="Programme">
-            <option value="ngg">NGG Club</option>
-            <option value="summer">Summer School</option>
-            <option value="">Both</option>
-          </select>
-          <button className="btn btn-primary btn-sm" disabled={busy === "new"} onClick={create}>
-            {busy === "new" ? "Creating…" : "Create"}
-          </button>
-        </div>
+        <p className="admin-hint" style={{ margin: "0 0 12px" }}>
+          Swiss, knockout, round robin, a centre cup or a timed arena — with a real clock,
+          and a rating that moves. Four steps, and you can see the whole thing before it is published.
+        </p>
+        <button className="btn btn-primary" onClick={() => setCreating(true)}>Host a tournament →</button>
       </div>
 
       {!data ? <div className="admin-skel"/> : rows.length === 0 ? (
@@ -6056,7 +8161,7 @@ function AdminTournaments() {
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead><tr>
-              <th>Name</th><th>Stage</th><th>Entrants</th><th>Still in</th><th>Games open</th><th/>
+              <th>Name</th><th>Format</th><th>Stage</th><th>Entrants</th><th>Still in</th><th>Games open</th><th/>
             </tr></thead>
             <tbody>
               {rows.map(t => (
@@ -6064,6 +8169,12 @@ function AdminTournaments() {
                   <td>
                     <div className="admin-cell-name">{t.name}</div>
                     <div className="mono admin-cell-sub">{t.tournamentId}{t.programme ? " · " + t.programme : ""}</div>
+                  </td>
+                  <td>
+                    <div>{t.formatName || t.format || "Centre cup"}</div>
+                    <div className="mono admin-cell-sub">
+                      {admTc(t.timeControl)} · {t.rated === false ? "casual" : "rated"}
+                    </div>
                   </td>
                   <td>
                     <span className={"chip " + (TRN_STATUS_CHIP[t.status] || "status-draft")}>{t.status}</span>
@@ -6084,6 +8195,50 @@ function AdminTournaments() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Standings and pairings inside the console, from the same components the
+    members' screen uses — so a director and a player are never looking at two
+    different renderings of the same table. */
+/* Wire values, not labels. "1day" printed straight out reads as a typo, and
+   the tournament list and the control room were both printing it. */
+const ADM_TC_LABEL = { "3+2": "3+2", "5+3": "5+3", "10+0": "10+0", "15+10": "15+10", "1day": "1 day" };
+function admTc(id) { return ADM_TC_LABEL[id] || id || "1 day"; }
+
+function AdminTrnTables({ tournamentId }) {
+  const [tab, setTab] = React.useState("standings");
+  const [st, setSt] = React.useState(null);
+  const [rounds, setRounds] = React.useState(null);
+  /* This is a panel INSIDE the director's control room, so it has to fail on
+     its own. A rejected promise was already caught; a call that throws before
+     it returns one was not, and that took the whole bracket screen down with
+     it — advance control, entrants and all — for a table that is nice to have
+     open beside them. */
+  React.useEffect(() => {
+    const load = (fn, ok, no) => {
+      try { fn().then(ok).catch(no); } catch (_) { no(); }
+    };
+    load(() => NGGApi.admin.tournaments.standings(tournamentId), setSt, () => setSt(null));
+    load(() => NGGApi.admin.tournaments.rounds(tournamentId), r => setRounds(r.rounds || []), () => setRounds([]));
+  }, [tournamentId]);
+  if (!st) return null;
+  /* These are the members' own components. They are built against the
+     community palette, which is scoped away from the admin console — see
+     `.cm-tokens` in styles.css. */
+  return (
+    <div className="cm-tokens trn-admin-wrap" style={{ marginTop: 18 }}>
+      <div className="trn-tabs" role="tablist" aria-label="Tournament tables">
+        {[["standings", "Standings"], ["rounds", "Pairings"]].map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={tab === id}
+                  className={"trn-tab" + (tab === id ? " is-on" : "")}
+                  onClick={() => setTab(id)}>{label}</button>
+        ))}
+      </div>
+      {tab === "standings"
+        ? (typeof CmTrnStandings === "function" ? <CmTrnStandings st={st}/> : null)
+        : (typeof CmTrnRounds === "function" ? <CmTrnRounds rounds={rounds} onOpenMatch={() => {}}/> : null)}
     </div>
   );
 }
@@ -6154,11 +8309,15 @@ function AdminTournamentBracket({ tournamentId, onBack }) {
         <h2 className="admin-h2">{t.name} <span className={"chip " + (TRN_STATUS_CHIP[t.status] || "status-draft")}>{t.status}</span></h2>
       </div>
       <p className="admin-hint">
-        {t.status === "open" && "Entries are open. Add players, then start round one — that closes entries."}
-        {t.status === "running" && t.stage === "centre" && "Centre rounds. Each centre plays its own knockout until one player is left."}
-        {t.status === "running" && t.stage === "final" && "The final. The centre champions are playing each other."}
-        {t.status === "complete" && (t.winnerName ? "Won by " + t.winnerName + "." : "Finished.")}
-        {t.status === "cancelled" && "Cancelled. The games are closed but still on the record."}
+        <b>{t.formatName || "Centre cup"}</b> · {admTc(t.timeControl)} · {t.rated === false ? "casual" : "rated"}
+        {t.totalRounds ? " · " + t.totalRounds + " rounds" : ""}
+        {" — "}
+        {t.status === "open" && "entries are open. Players can enter themselves from the chess screen; drawing round one closes entries."}
+        {t.status === "running" && t.stage === "centre" && "each centre plays its own knockout until one player is left."}
+        {t.status === "running" && t.stage === "final" && "the centre champions are playing each other."}
+        {t.status === "running" && t.stage === "main" && "round " + t.round + (t.totalRounds ? " of " + t.totalRounds : "") + " is being played."}
+        {t.status === "complete" && (t.winnerName ? "won by " + t.winnerName + "." : "finished.")}
+        {t.status === "cancelled" && "cancelled. The games are closed but still on the record."}
       </p>
 
       {/* The one control that moves it forward, with the reason it is refused
@@ -6175,8 +8334,8 @@ function AdminTournamentBracket({ tournamentId, onBack }) {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-primary btn-sm" disabled={!!busy || openGames > 0}
-              onClick={() => act("adv", () => NGGApi.admin.tournaments.advance(tournamentId))}>
-              {busy === "adv" ? "Working…" : t.round === 0 ? "Start round one" : "Next round"}
+              onClick={() => act("adv", () => NGGApi.admin.tournaments.draw(tournamentId))}>
+              {busy === "adv" ? "Working…" : t.round === 0 ? "Draw round one" : "Draw round " + (t.round + 1)}
             </button>
             <button className="btn btn-ghost btn-sm" disabled={!!busy} onClick={async () => {
               if (!(await dialog.confirm({ title: "Cancel " + t.name + "?",
@@ -6207,6 +8366,11 @@ function AdminTournamentBracket({ tournamentId, onBack }) {
           ))}
         </div>
       )}
+
+      {/* Standings and pairings, from the same components the members' screen
+          renders — a director and a player never look at two different
+          versions of one table. */}
+      <AdminTrnTables tournamentId={tournamentId}/>
 
       {/* Entrants, grouped by the bracket they actually play in. */}
       <h3 className="admin-h3" style={{ marginTop: 20 }}>Entrants</h3>
@@ -6278,20 +8442,112 @@ function AdminCommunity() {
   const [tab, setTab] = React.useState("moderation");
   const [pending, setPending] = React.useState(null);
   const [mode, setMode] = React.useState("");
-  const loadPending = () => NGGApi.admin.community.overview().then(r => { setPending(r.pending); setMode(r.moderation || "strict"); }).catch(() => {});
+  const [safeguarding, setSafeguarding] = React.useState(0);
+  const loadPending = () => NGGApi.admin.community.overview().then(r => { setPending(r.pending); setMode(r.moderation || "strict"); setSafeguarding(r.safeguarding || 0); }).catch(() => {});
   React.useEffect(() => { loadPending(); }, []);
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Community {pending && (pending.posts + pending.comments + (pending.reported || 0)) > 0 ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{pending.posts + pending.comments + (pending.reported || 0)} to review</span> : null}</h2>
+        {/* Two badges, never one number. "Four things to review" and "a child
+            said something about hurting themselves" are different queues and
+            must not be summed into a single figure somebody can clear by
+            clicking Approve four times. */}
+        <h2 className="admin-h2">Community {pending && (pending.posts + pending.comments + (pending.reported || 0)) > 0 ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle" }}>{pending.posts + pending.comments + (pending.reported || 0)} to review</span> : null}{safeguarding > 0 ? <span className="chip chip-crimson" style={{ fontSize: 11, verticalAlign: "middle", marginLeft: 6 }}>🛟 {safeguarding} safeguarding</span> : null}</h2>
       </div>
       <p className="admin-hint">The members' social feed. {mode === "off" ? "Automatic screening is OFF — nothing is checked before it appears." : mode === "flag" ? "Posts publish immediately; anything borderline lands in the queue below." : "Posts & comments are screened on submit; video and anything borderline waits here for your approval."} Channels mirror the summer courses — add or archive them below.</p>
       <div className="admin-filters">
         <button className={"btn btn-sm " + (tab === "moderation" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("moderation")}>Moderation</button>
         <button className={"btn btn-sm " + (tab === "channels" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("channels")}>Channels</button>
+        <button className={"btn btn-sm " + (tab === "safeguarding" ? "btn-primary" : "btn-ghost")} onClick={() => setTab("safeguarding")}>
+          Safeguarding{safeguarding > 0 ? " · " + safeguarding : ""}
+        </button>
       </div>
       {tab === "moderation" && <AdminCommunityModeration mode={mode} onChanged={setMode}/>}
-      {tab === "moderation" ? <AdminCommunityQueue onChange={loadPending}/> : <AdminCommunityChannels/>}
+      {tab === "moderation" ? <AdminCommunityQueue onChange={loadPending}/>
+        : tab === "safeguarding" ? <AdminCommunitySafeguarding onChange={loadPending}/>
+        : <AdminCommunityChannels/>}
+    </div>
+  );
+}
+
+/* Open safeguarding cases.
+   A child wrote something the crisis gate caught. The post was refused and
+   they were shown a helpline — this is the record of it, which used not to
+   exist at all. Its own screen on purpose: moderation is about whether a
+   message belongs in the feed, and running these past somebody in the same
+   list as "approve, approve, approve" is how a disclosure gets clicked past. */
+function AdminCommunitySafeguarding({ onChange }) {
+  const [status, setStatus] = React.useState("open");
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const load = () => NGGApi.admin.community.safeguarding(status).then(r => { setD(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [status]);
+  const ack = async (caseId) => {
+    setBusy(caseId);
+    try { await NGGApi.admin.community.safeguardingAck(caseId); load(); onChange && onChange(); }
+    catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(""); }
+  };
+  return (
+    <div>
+      <p className="admin-hint">
+        Caught by the crisis screen before anything was posted. The child saw the helpline reply
+        and their message was <b>not</b> published. Acknowledging records who read it and when —
+        it does not contact anybody, so make the call first.
+      </p>
+      <div className="admin-filters">
+        <label className="sr-only" htmlFor="admin-sg-status">Show cases</label>
+        <select id="admin-sg-status" className="admin-select" value={status} onChange={e => setStatus(e.target.value)}>
+          <option value="open">Open</option><option value="acknowledged">Acknowledged</option><option value="all">All</option>
+        </select>
+      </div>
+      {err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
+        d === null ? <div className="dash-spinner"/> :
+        d.cases.length === 0 ? <div className="admin-empty">{status === "open" ? "No open safeguarding cases." : "Nothing here."}</div> :
+        <div className="admin-app-list">
+          {d.cases.map(c => (
+            <div className={"admin-app" + (c.status === "open" ? " admin-app-urgent" : "")} key={c.caseId}>
+              <div className="admin-app-top">
+                <div>
+                  <div className="admin-cell-name">{c.author} {c.status === "open" && <span className="chip chip-crimson">needs a person</span>}</div>
+                  <div className="mono admin-cell-sub">{fmtDate(c.createdAt)} · in a {c.surface}{c.channel ? " · #" + c.channel : ""} · {c.caseId}</div>
+                </div>
+                <span className={"chip status-" + (c.status === "open" ? "draft" : "published")}>{c.status}</span>
+              </div>
+              <blockquote className="admin-sg-body">{c.body}</blockquote>
+              <div className="admin-app-actions">
+                {c.status === "open"
+                  ? <button className="btn btn-primary btn-sm" disabled={busy === c.caseId} onClick={() => ack(c.caseId)}>{busy === c.caseId ? "Saving…" : "I've spoken to them"}</button>
+                  : <span className="mono admin-cell-sub">Acknowledged {fmtDate(c.acknowledgedAt)}</span>}
+              </div>
+            </div>
+          ))}
+        </div>}
+    </div>
+  );
+}
+
+/* What the people who reported this actually said.
+   community_reports has been collecting that sentence since schema v49 and no
+   screen ever read it — the whole table was write-only apart from its own
+   duplicate check. A count tells a moderator something is wrong; only the
+   reason tells them what, and whether it needs a safeguarding response rather
+   than a moderation one. */
+function AdminCommunityReports({ reports }) {
+  if (!reports || !reports.length) return null;
+  return (
+    <div className="admin-reports">
+      <div className="mono admin-reports-h">🚩 {reports.length} report{reports.length === 1 ? "" : "s"}</div>
+      <ul className="admin-reports-list">
+        {reports.map((r, i) => (
+          <li key={i}>
+            <span className="admin-reports-by">{r.by}</span>
+            <span className="admin-reports-why">{r.reason || <em>no reason given</em>}</span>
+            <span className="mono admin-reports-at">{fmtDate(r.at)}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -6327,6 +8583,7 @@ function AdminCommunityQueue({ onChange }) {
                 {p.mediaType === "image" && p.mediaUrl && <img src={p.mediaUrl} alt="" style={{ maxWidth: 220, borderRadius: 10, marginBottom: 8 }}/>}
                 {p.mediaType === "video" && p.mediaUrl && <video src={p.mediaUrl} poster={p.mediaPoster} controls style={{ maxWidth: 260, borderRadius: 10, marginBottom: 8 }}/>}
                 {p.moderation && p.moderation.reason && <div className="mono admin-cell-sub" style={{ marginBottom: 8 }}>AI: {p.moderation.verdict} · {p.moderation.reason}</div>}
+                <AdminCommunityReports reports={p.reports}/>
                 <div className="admin-app-actions">
                   {p.status !== "published" && <button className="btn btn-primary btn-sm" onClick={() => act("post", p.postId, "approve")}>Approve</button>}
                   {p.status !== "hidden" && <button className="btn btn-ghost btn-sm" onClick={() => act("post", p.postId, "hide")}>Hide</button>}
@@ -6342,10 +8599,14 @@ function AdminCommunityQueue({ onChange }) {
             {d.comments.map(c => (
               <div className="admin-app" key={c.commentId}>
                 <div className="admin-app-top">
-                  <div className="admin-cell-name">{c.name}</div>
+                  {/* A reported comment could not appear here at all until the
+                      queue stopped filtering them by a status the moderation
+                      map never writes. Comments are where bullying lives. */}
+                  <div className="admin-cell-name">{c.name} {c.reportCount > 0 && <span className="chip chip-crimson">🚩 {c.reportCount}</span>}</div>
                   <span className={"chip status-" + (c.status === "published" ? "published" : c.status === "removed" ? "archived" : "draft")}>{c.status}</span>
                 </div>
                 <p className="admin-app-why" style={{ whiteSpace: "pre-wrap" }}>{c.body}</p>
+                <AdminCommunityReports reports={c.reports}/>
                 <div className="admin-app-actions">
                   {c.status !== "published" && <button className="btn btn-primary btn-sm" onClick={() => act("comment", c.commentId, "approve")}>Approve</button>}
                   {c.status !== "hidden" && <button className="btn btn-ghost btn-sm" onClick={() => act("comment", c.commentId, "hide")}>Hide</button>}
@@ -6530,7 +8791,7 @@ function AdminOps() {
         Acknowledging a fault does not silence it — if it happens again it comes straight back.
         For an uptime monitor, watch <code>/api/public/health.php</code>: it answers 503 when the site cannot serve.
       </p>
-      {err && <p className="admin-error">{err}</p>}
+      {err && <p role="alert" className="admin-error">{err}</p>}
       {!d && !err && <p className="admin-hint">Loading…</p>}
 
       {d && <>
@@ -6558,6 +8819,11 @@ function AdminOps() {
                 : "")}
               {c.photosOnRecord && light(!!c.photosOnRecord.ok, "Recent sign-ups",
                 c.photosOnRecord.missing + " of the last " + c.photosOnRecord.checked + " arrived with no photo")}
+              {/* A URL on a record whose file is gone. Renders as an empty frame
+                  and a 404 in the console, and until this light existed the two
+                  could not be connected by anyone looking at the product. */}
+              {c.photoLinks && light(!!c.photoLinks.ok, "Images on record",
+                c.photoLinks.missing + " of " + c.photoLinks.checked + " point at a file that is no longer on disk")}
             </div>
             <p className="admin-cell-sub" style={{ marginTop: 6 }}>
               {c.photos.dir ? <>Directory <code>{c.photos.dir}</code> · </> : null}
@@ -6565,6 +8831,20 @@ function AdminOps() {
               {c.photos.bytes ? " · " + (c.photos.bytes / 1048576).toFixed(1) + " MB" : ""}
               {c.photos.where === "storage" ? " · checked by writing and reading back a test image just now" : ""}
             </p>
+            {/* Named where it can be acted on: which table lost them says which
+                screen to go and fix, and the count says how big the job is. */}
+            {c.photoLinks && !c.photoLinks.ok && (
+              <p className="admin-hint" style={{ marginTop: 4 }}>
+                {c.photoLinks.missing} image{c.photoLinks.missing === 1 ? "" : "s"} referenced by a record
+                {" "}{c.photoLinks.missing === 1 ? "is" : "are"} no longer on disk
+                {Object.keys(c.photoLinks.where || {}).length
+                  ? " — " + Object.keys(c.photoLinks.where).map(k => c.photoLinks.where[k] + " in " + k).join(", ")
+                  : ""}.
+                {" "}The bytes cannot be recovered: send those members a retake link
+                (Admin {"→"} Registrations {"→"} the child {"→"} Photo). Cards and rosters print
+                without a headshot in the meantime.
+              </p>
+            )}
             {!c.photos.ok && (
               <p className="admin-hint" style={{ marginTop: 4 }}>
                 Make <code>api/storage</code> writable by the web user (<code>chmod 775</code>, or 755 if PHP runs as
@@ -6710,7 +8990,7 @@ function AdminStaff() {
           Mentors and instructors together, quietest first. These are counts of work filed, not a rating — the point is to notice who has stopped, not to rank anyone.
           {d && d.scope === "lead" && " You're seeing your own centre."}
         </p>
-        {err && <p className="admin-error">{err}</p>}
+        {err && <p role="alert" className="admin-error">{err}</p>}
         {!d && !err && <p className="admin-hint">Loading…</p>}
         {d && (
           <div className="admin-chips" style={{ marginBottom: 12 }}>
@@ -6946,7 +9226,8 @@ function AdminIntegrations() {
     } catch (e) { toast.error(e.code || e.message, "Couldn't save"); } finally { setBusy(""); }
   };
   const test = async (id) => { setBusy("t" + id); try { const r = await NGGApi.admin.integrations.test(id); r.delivered ? toast.success("Test delivered.", "OK") : toast.error(r.error || "No detail", "Test failed"); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
-  const remove = async (id) => { if (!confirm("Delete this integration?")) return; try { await NGGApi.admin.integrations.remove(id); load(); } catch (e) { toast.error(e.code || e.message); } };
+  const remove = async (id) => { if (!(await dialog.confirm({ title: "Delete this integration?",
+    body: "Anything relying on it stops working immediately.", cta: "Delete", danger: true }))) return; try { await NGGApi.admin.integrations.remove(id); load(); } catch (e) { toast.error(e.code || e.message); } };
   const dispatch = async () => { setBusy("disp"); try { const r = await NGGApi.admin.integrations.dispatch(); toast.success("Attempted " + (r.attempted || 0) + ", delivered " + (r.delivered || 0) + ", failed " + (r.failed || 0) + ".", "Queue drained"); load(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); } };
   const retry = async (id = "") => { setBusy("r" + id); try { const r = await NGGApi.admin.integrations.retry(id); const dsp = r.dispatch || {}; toast.success("Requeued " + (r.requeued || 0) + " · delivered " + (dsp.delivered || 0) + ", failed " + (dsp.failed || 0) + ".", "Retry"); load(); } catch (e) { toast.error(e.code || e.message, "Retry failed"); } finally { setBusy(""); } };
   const syncMembers = async () => { setBusy("sync"); try { const r = await NGGApi.admin.integrations.syncMembers(); toast.success("Sent " + (r.chunksSent || 0) + " chunk(s), " + (r.total || 0) + " members.", "Sheets sync"); } catch (e) { toast.error(e.code || e.message, "Sync failed"); } finally { setBusy(""); } };
@@ -7048,7 +9329,7 @@ function AdminAudit() {
         <h2 className="admin-h2">Audit trail <span className="chip chip-gold" style={{ fontSize: 11, verticalAlign: "middle" }}>super admin</span></h2>
         <button className="btn btn-ghost btn-sm" disabled={!rows || !rows.length} onClick={exportCsv}>Export CSV</button>
       </div>
-      <p className="admin-hint">Every action taken by admins and managers, most recent first. This accountability record is visible to super admins only.{data && data.total ? " " + data.total.toLocaleString() + " entries." : ""}</p>
+      <p className="admin-hint">Every action taken by admins and managers, most recent first. This accountability record is visible to super admins only.{data && data.total ? " " + fmtNum(data.total) + " entries." : ""}</p>
       <div className="admin-filters">
         <select className="admin-select" value={f.actor} onChange={e => setF(o => ({ ...o, actor: e.target.value }))}>
           <option value="">All actors</option>
@@ -7068,7 +9349,7 @@ function AdminAudit() {
           <tbody>
             {rows.map((r, i) => (
               <tr key={i}>
-                <td className="mono">{fmtTime(r.at)}</td>
+                <td className="mono">{fmtDateTime(r.at)}</td>
                 <td>{r.actorName || r.actorId || "system"}</td>
                 <td>{r.actorRole ? <span className={"chip " + roleChip(r.actorRole)} style={{ fontSize: 10 }}>{r.actorRole}</span> : <span className="mono" style={{ color: "var(--ink-400)" }}>—</span>}</td>
                 <td className="mono">{r.event}</td>
@@ -7211,7 +9492,7 @@ function AdminAnchor() {
 
       {draft && !dirty && (
         <div className="admin-anchor-restore">
-          <span>↩ You have an unsaved draft{draft.savedAt ? " from " + fmtTime(draft.savedAt) : ""}.</span>
+          <span>↩ You have an unsaved draft{draft.savedAt ? " from " + fmtDateTime(draft.savedAt) : ""}.</span>
           <span style={{ flex: 1 }}/>
           <button className="btn btn-primary btn-sm" onClick={restoreDraft}>Restore draft</button>
           <button className="btn btn-ghost btn-sm" onClick={clearDraft}>Discard</button>
@@ -7404,7 +9685,7 @@ function AdminAssignments() {
 }
 
 function AdminAssignmentEditor({ data, onClose, onSaved }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
   const [d, setD] = React.useState(Object.assign({ status:"draft", proof:"text", points:10, centre:"", track:"" }, data));
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -7415,10 +9696,10 @@ function AdminAssignmentEditor({ data, onClose, onSaved }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <form className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()} onSubmit={save}>
         <div className="admin-drawer-head">
-          <h3>{d.assignmentId ? "Edit assignment" : "New assignment"}</h3>
+          <h3 {...headingProps}>{d.assignmentId ? "Edit assignment" : "New assignment"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div className="admin-fields">
@@ -7450,17 +9731,17 @@ function AdminAssignmentEditor({ data, onClose, onSaved }) {
 }
 
 function AdminSubmissions({ assignment, onClose }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose, false);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose, false);
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const load = () => { setErr(""); return NGGApi.admin.assignments.submissions(assignment.assignmentId)
     .then(setData).catch(e => { setErr(e.code || e.message || "load_failed"); }); };
   React.useEffect(() => { load(); }, []);
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-drawer-head">
-          <h3>Submissions · {assignment.title}</h3>
+          <h3 {...headingProps}>Submissions · {assignment.title}</h3>
           <button type="button" className="admin-drawer-close" onClick={close} aria-label="Close">✕</button>
         </div>
         {err ? <div className="admin-empty">Couldn't load submissions. <button className="btn btn-ghost btn-sm" onClick={() => { setData(null); load(); }}>Retry</button></div> :
@@ -7568,8 +9849,50 @@ function MemberTimeline({ memberId }) {
   );
 }
 
+/* A member's cards, as the CACENTRE gate reads them: the secure one, and any
+   older printed card recorded at import. Reissuing voids the secure card at
+   once — a lost card stops at the door — and can retire the printed ones too. */
+function MemberCardsSection({ memberId }) {
+  const [cards, setCards] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const load = () => NGGApi.admin.members.cards.of(memberId).then(r => setCards(r.cards || [])).catch(() => setCards([]));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [memberId]);
+  const reissue = async (voidPrinted) => {
+    const ok = await dialog.confirm({ title: voidPrinted ? "Replace every card?" : "Issue a new card?",
+      body: voidPrinted ? "The current card and any old printed card stop working at the gate now. Print the new one before they next come in."
+                        : "The current secure card stops working at the gate now. Their old printed card, if any, keeps working.",
+      cta: "Issue new card", danger: true });
+    if (!ok) return;
+    setBusy(true);
+    try { const r = await NGGApi.admin.members.cards.reissue(memberId, voidPrinted); setCards(r.cards || []); toast.success(r.code, "New card issued"); }
+    catch (e) { toast.error(e.detail || e.code || e.message); } finally { setBusy(false); }
+  };
+  const active = (cards || []).filter(c => c.status === "active");
+  return (
+    <div className="admin-detail-section">
+      <div className="admin-detail-h">Cards at the gate</div>
+      {cards === null ? <div className="admin-hint">Loading…</div> : (
+        <>
+          {!active.length && <div className="admin-hint">No card yet — the gate can only find them by name. Issue one below, or use “Issue cards” on the roster.</div>}
+          {active.map((c, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 13, padding: "2px 0" }}>
+              <span className="chip" style={{ flex: "none" }}>{c.kind === "secure" ? "Secure" : "Printed"}</span>
+              <span className="mono">{c.code}</span>
+              <span className="admin-hint" style={{ margin: 0 }}>{c.kind === "printed" ? "read as “" + c.format + "”" : ""}{c.issuedAt ? " · " + String(c.issuedAt).slice(0, 10) : ""}</span>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => reissue(false)}>{active.some(c => c.kind === "secure") ? "Lost card — issue a new one" : "Issue a card"}</button>
+            {active.some(c => c.kind === "printed") && <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => reissue(true)}>Reprinted — retire the old card</button>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
-  const { panelRef, close, onInput } = useAdminDrawer(onClose, false);
+  const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose, false);
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [mentors, setMentors] = React.useState([]);
@@ -7588,12 +9911,51 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
     setBusy(true); try { await NGGApi.admin.members.upsert({ memberId, status }); toast.success("Status → " + status); await load(); onChanged && onChanged(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
   const assign = async (mentorId) => { setBusy(true); try { await NGGApi.admin.assignMentor({ memberId, mentorId }); toast.success(mentorId ? "Mentor assigned" : "Mentor cleared"); await load(); } catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); } };
+  /* §20: progression is evidence of formation, never time served.
+   *
+   * So the promotion asks for the evidence rather than a Yes/No — and puts the
+   * formation record in the question, because an admin who has to scroll away
+   * to find out how a child is actually doing will promote on the name they
+   * recognise. Tenure is shown and labelled as not being evidence, which is
+   * the brief's own argument and the reason it is not left out.
+   *
+   * The readiness read is best-effort: it informs the decision and must never
+   * block it, so a failed fetch asks the question without the summary rather
+   * than refusing to open. */
   const promoteNgv = async () => {
-    const ok = await dialog.confirm({ title: "Promote to NGV?", body: "This advances " + ((m && m.fullName) || "this member") + " into the volunteer tier as a " + ngvRole + ", auto-provisions their NGV record + ID card, and emails them their digital ID. It's idempotent and reversible — you can revoke the NGV standing here later.", cta: "Promote", cancel: "Cancel" });
-    if (!ok) return;
+    let summary = "";
+    try {
+      const rr = await NGGApi.admin.members.readiness(memberId);
+      const f = rr && rr.readiness;
+      if (f) {
+        const bits = [];
+        bits.push(f.courage && f.courage.current !== null
+          ? "Courage " + f.courage.current + "/5 (" + f.courage.marks + " observed)"
+          : "Courage: nothing recorded");
+        bits.push("Reviewed " + f.review.weeksReviewed + " of the last " + f.review.ofWeeks + " weeks"
+          + (f.review.concerns ? " · " + f.review.concerns + " concern(s) raised" : ""));
+        bits.push("Attendance " + f.attendance.total + " sessions, " + f.attendance.last90 + " in 90 days");
+        bits.push("Stars " + f.stars);
+        if (f.dues) bits.push(f.dues.owes ? "Dues: owing" : "Dues: clear");
+        if (f.tenure && f.tenure.months !== null) bits.push("In the programme " + f.tenure.months + " months — time served is not evidence of formation.");
+        summary = bits.join("\n");
+      }
+    } catch (e) { /* informs, never blocks */ }
+
+    const evidence = await dialog.prompt({
+      title: "Promote to NGV?",
+      body: (summary ? summary + "\n\n" : "")
+        + "This advances " + ((m && m.fullName) || "this member")
+        + " into the volunteer tier as a " + ngvRole
+        + ", provisions their NGV record + ID card, and emails them their digital ID. Reversible.",
+      label: "What is the evidence of formation?",
+      placeholder: "What they have carried, led or changed — not how long they have been here.",
+      multiline: true, required: true, cta: "Promote", cancel: "Cancel",
+    });
+    if (!evidence) return;
     setBusy(true);
     try {
-      const r = await NGGApi.admin.members.promoteNgv(memberId, ngvRole);
+      const r = await NGGApi.admin.members.promoteNgv(memberId, ngvRole, { evidence });
       const via = Array.isArray(r.sent) && r.sent.length ? " · ID sent by " + r.sent.join(" + ") : "";
       toast.success((r.already ? "Already an NGV · " : "Promoted to NGV · ") + r.volunteerId + via);
       await load(); onChanged && onChanged();
@@ -7614,10 +9976,10 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
 
   const m = d && d.member;
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }} onInput={onInput}>
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-drawer-head">
-          <h3>{m ? m.fullName : "Member"}</h3>
+          <h3 {...headingProps}>{m ? m.fullName : "Member"}</h3>
           <button type="button" className="admin-drawer-close" onClick={close} aria-label="Close">✕</button>
         </div>
         {err ? <div className="admin-empty">Couldn't load this member. <button className="btn btn-ghost btn-sm" onClick={() => { setD(null); load(); }}>Retry</button></div> :
@@ -7644,6 +10006,8 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
               <div><b>{(d.progress || {}).verified ?? 0}/{(d.progress || {}).total ?? 0}</b><span>Missions</span></div>
               <div><b>{(d.journal || []).length}</b><span>Journals</span></div>
             </div>
+
+            <MemberCardsSection memberId={memberId}/>
 
             <div className="admin-detail-section">
               <div className="admin-detail-h">History</div>
@@ -7712,6 +10076,14 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
               </div>
             )}
 
+            {/* Their ID card, and whether it is the current design. This is
+                the question a desk asks with the person standing there, and
+                the member record was the one place it could not be asked —
+                the print log lived in another section and had to be searched
+                by id. Loaded lazily: most visits to this drawer are not about
+                a card, and the history is a second read. */}
+            <MemberCardHistorySection memberId={m.memberId}/>
+
             <div className="admin-detail-section">
               <div className="admin-detail-h">Recent journal</div>
               {d.journal.length === 0 ? <div className="admin-empty" style={{ padding: 14 }}>No entries yet.</div> :
@@ -7722,6 +10094,34 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* One member's card history, inside their record.
+ *
+ * The same block the ID cards section shows, so there is one rendering of
+ * "their card is / is not the current design" rather than two that can come to
+ * disagree. Collapsed by default and fetched on open: the drawer already makes
+ * two reads, and most visits to it are not about a card. */
+function MemberCardHistorySection({ memberId }) {
+  const [open, setOpen] = React.useState(false);
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  React.useEffect(() => {
+    if (!open || d || err) return;
+    NGGApi.admin.registration.cardHistory(memberId, "member")
+      .then(setD).catch(e => setErr(e.code || e.message || "load_failed"));
+  }, [open, memberId, d, err]);
+  return (
+    <div className="admin-detail-section">
+      <div className="admin-detail-h">ID card</div>
+      {!open
+        ? <button className="btn btn-ghost btn-sm" onClick={() => setOpen(true)}
+            aria-expanded="false">Show their card history</button>
+        : err ? <ErrorState title="Couldn't read the card history" code={err} onRetry={() => { setErr(""); setD(null); }}/>
+        : !d ? <div className="dash-spinner"/>
+        : <AdminCardHistory data={d}/>}
     </div>
   );
 }
@@ -8022,13 +10422,13 @@ const ENTRY_TITLE = {
  * click-outside that come with `useAdminDrawer`.
  */
 function FeeModal({ title, onClose, children }) {
-  const { panelRef, close } = useAdminDrawer(onClose, false);
+  const { panelRef, close, titleProps, headingProps } = useAdminDrawer(onClose, false);
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true"
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps}
       onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="admin-drawer-panel admin-drawer-wide">
         <div className="admin-drawer-head">
-          <h3>{title}</h3>
+          <h3 {...headingProps}>{title}</h3>
           <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
         </div>
         <div style={{ padding: "16px 20px 20px" }}>{children}</div>
@@ -8421,10 +10821,38 @@ function AdminFees() {
             <input type="checkbox" checked={!!cfg.enabled} onChange={e => set("enabled", e.target.checked)}/>
             <b>Charge dues and fees</b>
           </label>
-          {num("membershipFee", "Membership fee", "Charged once, when a member joins.")}
+          {num("membershipFee", "Membership fee",
+            (cfg.membershipEveryMonths > 0
+              ? "Charged on the anniversary of joining, every " + (cfg.membershipEveryMonths === 12 ? "year" : cfg.membershipEveryMonths + " months") + "."
+              : "Charged once, when a member joins."))}
+          {/* The cycle, not a date. Anniversary-based, so a member who joined in
+              November renews in November — billing everyone on 1 January would
+              charge a November joiner twice in six weeks. 0 = the old one-off. */}
+          {num("membershipEveryMonths", "…how often, in months",
+            "12 is yearly. Set 0 to charge it once, on joining, and never again.",
+            null, { min: 0, max: 120 })}
           {num("monthlyDues", "Monthly dues", "Charged for each month a member has been active.")}
-          {num("trainingFee", "Training fee, per session",
-            "Charged for each programme session that has started since they joined.",
+          {/* What the training fee is PER. On 'day' the figure above is a day
+              rate off the meeting calendar in Conduct & fines, not a session
+              total — the label changes with it so the number on screen is never
+              ambiguous about which it is. */}
+          <label style={{ display: "block", marginBottom: 14 }}>
+            <span className="mono" style={{ fontSize: 10, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-400)" }}>Training fee is charged</span>
+            <select className="admin-select" style={{ maxWidth: 260, display: "block", marginTop: 6 }}
+              value={cfg.trainingBasis || "session"} onChange={e => set("trainingBasis", e.target.value)}>
+              <option value="session">Once per session</option>
+              <option value="day">For every day the programme meets</option>
+            </select>
+            <div data-fee-hint="1" style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 5, lineHeight: 1.5 }}>
+              {cfg.trainingBasis === "day"
+                ? "One charge for each meeting day inside a session's dates — using the weekdays, holidays and extra days set in Conduct & fines. A session already charged as a whole is never also charged by the day."
+                : "One charge for each programme session that started after they joined."}
+            </div>
+          </label>
+          {num("trainingFee", cfg.trainingBasis === "day" ? "Training fee, per meeting day" : "Training fee, per session",
+            cfg.trainingBasis === "day"
+              ? "Charged for each day the programme meets, while they are in the training half."
+              : "Charged for each programme session that has started since they joined.",
             /* THE MICROCOPY. Quiet, one line, no emphasis — and stating the
                condition rather than promising the outcome, because a member who
                leaves before the MOU is complete still owes it. */
@@ -8705,10 +11133,10 @@ function AdminStatusPages() {
       <div className="card" style={{ padding: 16, margin: "0 0 18px", background: "var(--bg-sunken, #f7f7f4)" }}>
         <div className="mono" style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--ink-500)", marginBottom: 8 }}>Where the board's data is edited</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => adminJump("registration", "centres")}>🏫 Centres — name, address, lead, meeting times →</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => adminJump("registration", "catalogue")}>🎓 Academy catalogue — faculties &amp; their courses →</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => adminJump("centres")}>🏫 Centres — name, address, lead, meeting times →</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => adminJump("summer", "catalogue")}>🎓 Academy catalogue — faculties &amp; their courses →</button>
           <button className="btn btn-ghost btn-sm" onClick={() => adminJump("volunteers", "needs")}>◈ Volunteer needs (the /v-status targets) →</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => adminJump("registration", "gates")}>❑ Students (enrolment & records) →</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => adminJump("summer", "roster")}>❑ Participants (Summer School roster) →</button>
           <button className="btn btn-ghost btn-sm" onClick={() => adminJump("volunteers", "roster")}>◈ Volunteers (roster) →</button>
         </div>
         <p className="admin-hint" style={{ margin: "10px 0 0" }}>The live KPIs (attendance %, present today, leaderboard) are computed from real attendance, stars and activity records — they update automatically as those are logged; there's nothing to type here.</p>
@@ -8921,7 +11349,7 @@ function VolunteerNeedsEditor() {
 
   if (err) return <ErrorState title="Couldn't load needs" code={err} onRetry={load}/>;
   if (!d) return <div className="dash-spinner"/>;
-  if (!d.centres.length) return <div className="admin-empty">No active centres yet — add centres under Registration → Centres first.</div>;
+  if (!d.centres.length) return <div className="admin-empty">No active centres yet — add centres under <b>People → Centres</b> first.</div>;
 
   const numInput = (centreId, role, faculty, filledCount) => {
     const key = centreId + "|" + role + "|" + faculty;
@@ -9020,6 +11448,7 @@ function VolunteerEditor({ v, onSaved, onDelete }) {
     email: v.email || "", phone: v.phone || "", role: v.role || "mentor",
     centre: v.centre || "", faculty: v.faculty || "", courses: (v.courses || []).join(", "),
     visibilityConsent: !!v.visibilityConsent, status: v.status || "active", photoUrl: v.photoUrl || "",
+    dob: v.dob || "",
   });
   const [busy, setBusy] = React.useState(false);
   const set = (k, val) => setF(x => ({ ...x, [k]: val }));
@@ -9031,7 +11460,7 @@ function VolunteerEditor({ v, onSaved, onDelete }) {
         ...f, courses: f.courses.split(",").map(c => c.trim()).filter(Boolean), visibilityConsent: f.visibilityConsent ? 1 : 0,
       });
       toast.success("Volunteer saved."); onSaved();
-    } catch (e) { toast.error(e.code === "bad_email" ? "That email isn't valid." : e.code === "bad_role" ? "Pick a valid role." : (e.code || e.message)); }
+    } catch (e) { toast.error(e.code === "bad_email" ? "That email isn't valid." : e.code === "bad_role" ? "Pick a valid role." : e.code === "bad_dob" ? "That date of birth isn't a real date in the past." : (e.code || e.message)); }
     finally { setBusy(false); }
   };
   const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
@@ -9063,6 +11492,7 @@ function VolunteerEditor({ v, onSaved, onDelete }) {
           </select>
         </div>
         {fld("faculty", "Faculty")}
+        {fld("dob", "Date of birth", { type: "date", min: 160 })}
         {fld("courses", "Courses (comma-separated)", { min: 220 })}
       </div>
       <label style={{ display: "inline-flex", alignItems: "center", gap: 9, fontSize: 13.5, fontWeight: 600 }}>
@@ -9128,7 +11558,7 @@ function AdminVolunteers() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState("");
-  const [tab, setTab] = React.useState(() => takePendingAdminTab("pending"));
+  const [tab, setTab] = useAdminTab("pending");
   const [q, setQ] = React.useState("");
   const [vCentre, setVCentre] = React.useState("");
   const [expanded, setExpanded] = React.useState(() => new Set());
@@ -9529,7 +11959,7 @@ function AdminSettings() {
         <Field label="Hours credited per volunteer session" type="number" value={s.volunteer_session_hours} onChange={v => setS(o => ({ ...o, volunteer_session_hours: v }))}/>
         <FieldSelect label="Featured session (homepage countdown)" value={s.featured_session_id || ""} onChange={v => setS(o => ({ ...o, featured_session_id: v }))} options={[""].concat(sessions.map(x => x.sessionId))}/>
         <FieldCheckbox label="Geo-fenced registration (auto-pick the centre by location; block off-site sign-ups)" value={s.geofence_enabled} onChange={v => setS(o => ({ ...o, geofence_enabled: v }))}/>
-        {s.geofence_enabled && <p className="admin-hint" style={{ margin: "-4px 0 0" }}>Walk-ups must be on-site at a mapped centre to register. Map each centre's point under <b>Registration → Centres → Map</b>.</p>}
+        {s.geofence_enabled && <p className="admin-hint" style={{ margin: "-4px 0 0" }}>Walk-ups must be on-site at a mapped centre to register. Map each centre's point under <b>People → Centres → Map</b>.</p>}
         <FieldCheckbox label="Require a headshot on the public intake forms (teen, volunteer, kiosk)" value={s.intake_photo_required} onChange={v => setS(o => ({ ...o, intake_photo_required: v }))}/>
         {!s.intake_photo_required && <p className="admin-hint" style={{ margin: "-4px 0 0" }}>Photo is optional on sign-up. It can still be added later via Photo review or the ID studio.</p>}
         <FieldCheckbox label="Hold the ID until the photo is approved (issue only after an editor approves the headshot)" value={s.photo_gate_issuance} onChange={v => setS(o => ({ ...o, photo_gate_issuance: v }))}/>
@@ -9542,7 +11972,7 @@ function AdminSettings() {
           const setA = (k, v) => setS(o => ({ ...o, attendance: { ...(o.attendance || {}), [k]: v } }));
           const rbt = a.resumptionByType || {};
           const setR = (type, v) => setS(o => ({ ...o, attendance: { ...(o.attendance || {}), resumptionByType: { ...((o.attendance || {}).resumptionByType || {}), [type]: v } } }));
-          const TYPES = [["student", "Summer students"], ["volunteer", "Volunteers"], ["default", "Everyone else (default)"]];
+          const TYPES = [["student", "Summer School participants"], ["volunteer", "Volunteers"], ["default", "Everyone else (default)"]];
           return (
             <React.Fragment>
               <FieldCheckbox label="Flag lateness at check-in" value={a.enabled !== false} onChange={v => setA("enabled", v)}/>
@@ -9732,35 +12162,18 @@ function AcademyCatalogue() {
   );
 }
 
-function AdminRegistration() {
-  const [tab, setTab] = React.useState(() => takePendingAdminTab("gates"));
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head"><h2 className="admin-h2">Registration</h2></div>
-      <p className="admin-hint">Run the gated public sign-up: hand out desk links, review parent-pending sign-ups, and manage the centres that drive ID prefixes and card colours. The form itself lives under <b>Forms</b>.</p>
-      <div className="admin-anchor-tabs">
-        {[["gates", "Gate links"], ["pending", "Pending sign-ups"], ["centres", "Centres"], ["catalogue", "Academy catalogue"], ["import", "Bulk import"], ["certs", "Certificates"]].map(([id, l]) => (
-          <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{l}</button>
-        ))}
-      </div>
-      {tab === "gates" && <SummerGates/>}
-      {tab === "pending" && <SummerPending/>}
-      {tab === "centres" && <SummerCentres/>}
-      {tab === "catalogue" && <AcademyCatalogue/>}
-      {tab === "certs" && <SummerCertificates/>}
-      {tab === "import" && <SummerImport/>}
-    </div>
-  );
-}
-
-function AdminQRCodes() {
-  return (
-    <div className="admin-section">
-      <div className="admin-section-head"><h2 className="admin-h2">QR codes</h2></div>
-      <SummerQR/>
-    </div>
-  );
-}
+/* `AdminRegistration` and `AdminQRCodes` used to live here.
+ *
+ * Both were partial duplicates of the Summer School workspace. Registration
+ * mounted SummerGates and SummerPending — the same components the coordinator
+ * portal mounts — beside four panels the portal could not reach, while the
+ * portal had six the Control Room could not. QR codes was a section wrapper
+ * around SummerQR, which the portal also had as a tab.
+ *
+ * There is now one workspace (see AdminSummer above) and both doors mount it,
+ * so a panel exists once and is reachable from either. Deep links that named
+ * the old sections resolve through ADMIN_SECTION_ALIASES.
+ */
 
 /* Bulk student import — paste CSV (fullName,age,centre,track,guardianName,
  * guardianPhone,parentEmail); each row is enrolled + QR-bound (capacity-aware). */
@@ -9841,48 +12254,1294 @@ function SummerCertificates() {
   );
 }
 
-/* Centres manager — name + code + card colour (drives the ID prefix) and an
- * optional geo-fence (mapped to the centre, used to auto-pick it + stop off-site
- * sign-ups when the global fence toggle is on). */
-function SummerCentres() {
+/* ============================================================================
+   SUMMER SCHOOL — EDITIONS AND GROUPS
+
+   Three names, one meaning each, and the screen says them out loud because the
+   confusion this replaces was a vocabulary problem before it was a UI problem:
+
+     EDITION  one season. "Summer School 2026." Exactly one is live at a time.
+     GROUP    a class inside an edition. "Egbeda · Music · Morning." A place, a
+              course, a lead, a capacity, its own dates. The thing a
+              coordinator has always meant by "cohort".
+     CENTRE   a place, owned by NGG and used by every programme. Managed under
+              People → Centres, NOT here — a coordinator picks one, and cannot
+              rename or delete the thing every member's ID card prefix comes
+              from.
+
+   Participants were previously one flat list per edition, filtered by centre
+   and track. So there was no way to run two Music classes at one centre, no way
+   to hand a named lead their register, and no per-class number to report — an
+   edition's attendance was a centre-wide average and nothing smaller existed.
+   ============================================================================ */
+
+const SUMMER_STATE_META = {
+  planning: { label: "Planning",  chip: "",              hint: "Being set up. Not taking anyone yet." },
+  active:   { label: "Live",      chip: "chip-lime",     hint: "The season being run. Only one edition can be live." },
+  closed:   { label: "Closed",    chip: "chip-gold",     hint: "Finished. Still reportable; nothing new goes in." },
+  archived: { label: "Archived",  chip: "status-archived", hint: "Attendance rolled up. Set by the archive tool, not here." },
+};
+function SummerStateChip({ state }) {
+  const m = SUMMER_STATE_META[state] || { label: state || "—", chip: "" };
+  return <span className={"chip " + m.chip} title={m.hint || undefined}>{m.label}</span>;
+}
+
+/** ISO weekday numbers → the short names a human reads. Groups store
+ *  "1,3,6"; nobody should have to. */
+const SUMMER_DOW = [["1", "Mon"], ["2", "Tue"], ["3", "Wed"], ["4", "Thu"], ["5", "Fri"], ["6", "Sat"], ["7", "Sun"]];
+function summerDaysLabel(v) {
+  const set = String(v || "").split(",").map(x => x.trim()).filter(Boolean);
+  if (!set.length) return "";
+  return SUMMER_DOW.filter(([n]) => set.indexOf(n) !== -1).map(([, l]) => l).join(" · ");
+}
+
+function SummerEditions() {
+  const [d, setD] = React.useState(null);         // { editions, currentId, states }
+  const [err, setErr] = React.useState("");
+  const [editing, setEditing] = React.useState(null);   // {} = new
+  const [openId, setOpenId] = React.useState("");       // which edition's groups are open
+  const [busy, setBusy] = React.useState("");
+  const { hasCap } = (typeof useAuth === "function") ? useAuth() : { hasCap: () => true };
+
+  const load = React.useCallback(() => {
+    setErr("");
+    return NGGApi.admin.summer.editions()
+      .then(r => setD(r))
+      .catch(e => setErr(e.code || e.message || "load_failed"));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const setState = async (ed, status) => {
+    const meta = SUMMER_STATE_META[status] || {};
+    const ok = await dialog.confirm({
+      title: status === "active" ? ("Make " + ed.name + " the live edition?") : ("Mark " + ed.name + " " + (meta.label || status).toLowerCase() + "?"),
+      body: status === "active"
+        ? "Only one edition can be live. Whichever is live now becomes Closed — its records stay, and nothing is rolled up or deleted."
+        : (meta.hint || ""),
+      cta: status === "active" ? "Make it live" : (meta.label || "Apply"),
+    });
+    if (!ok) return;
+    setBusy(ed.editionId);
+    try {
+      const r = await NGGApi.admin.summer.editionStatus(ed.editionId, status);
+      toast.success(r.demoted ? (meta.label || status) + " — the previous live edition is now Closed." : (meta.label || status) + ".", ed.name);
+      await load();
+    } catch (e) {
+      toast.error(e.code === "use_archive_op"
+        ? "Archiving rolls attendance up onto each participant — do it from Records → Archive, not from here."
+        : humanizeError(e.message, e.code), "Couldn't change the state");
+    } finally { setBusy(""); }
+  };
+
+  if (err) return <ErrorState title="Couldn't load the editions" code={err} onRetry={load}/>;
+  if (!d) return <div className="dash-spinner"/>;
+  const eds = d.editions || [];
+  const canWrite = hasCap ? hasCap("summer") : true;
+
+  return (
+    <div>
+      <p className="admin-hint">
+        An <b>edition</b> is one season of Summer School; exactly one is live at a time. A <b>group</b> is a class
+        inside an edition — a centre, a course, a lead and a capacity — and it is what a register belongs to.
+        Centres themselves live under <b>People → Centres</b>, because an NGG centre is a place the whole
+        organisation uses, not a Summer School record.
+      </p>
+
+      <div className="admin-section-actions" style={{ marginBottom: 14 }}>
+        {canWrite && <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New edition</button>}
+      </div>
+
+      {eds.length === 0 ? (
+        <EmptyState icon="☀" title="No editions yet"
+          message="Create one for this season. Everything else — groups, participants, attendance, cards — hangs off it."
+          action={canWrite ? <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New edition</button> : null}/>
+      ) : (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <caption className="sr-only">Summer School editions, newest first</caption>
+            <thead><tr>
+              <th scope="col">Edition</th>
+              <th scope="col">State</th>
+              <th scope="col">Dates</th>
+              <th scope="col">Applications</th>
+              <th scope="col" className="admin-num">Groups</th>
+              <th scope="col" className="admin-num">Participants</th>
+              <th scope="col"><span className="sr-only">Actions</span></th>
+            </tr></thead>
+            <tbody>
+              {eds.map(ed => (
+                <React.Fragment key={ed.editionId}>
+                  <tr>
+                    <td>
+                      <b>{ed.name}</b>
+                      <div className="mono admin-cell-sub">{ed.editionId}{ed.code ? " · " + ed.code : ""}</div>
+                    </td>
+                    <td><SummerStateChip state={ed.status}/></td>
+                    <td className="admin-cell-sub">{ed.startDate || "—"}{ed.endDate ? " → " + ed.endDate : ""}</td>
+                    <td className="admin-cell-sub">
+                      {ed.applyOpensAt || ed.applyClosesAt
+                        ? (ed.applyOpensAt || "—") + " → " + (ed.applyClosesAt || "—")
+                        : <span title="No window set — the gate links decide">not set</span>}
+                    </td>
+                    <td className="admin-num">{fmtNum(ed.groups)}</td>
+                    <td className="admin-num">
+                      {fmtNum(ed.participants)}
+                      {/* The number that says whether the grouping work has
+                          been done. 300 participants and 300 ungrouped means
+                          no register exists and no per-class report can mean
+                          anything — so it is on the row, not buried. */}
+                      {ed.ungrouped > 0 && (
+                        <div className="admin-cell-sub" style={{ color: "#8a6d00" }}>
+                          {fmtNum(ed.ungrouped)} not in a group
+                        </div>
+                      )}
+                      {ed.waitlisted > 0 && <div className="admin-cell-sub">{fmtNum(ed.waitlisted)} waitlisted</div>}
+                    </td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      <button className="btn btn-ghost btn-sm"
+                        aria-expanded={openId === ed.editionId}
+                        onClick={() => setOpenId(openId === ed.editionId ? "" : ed.editionId)}>
+                        {openId === ed.editionId ? "Hide groups" : "Groups"}
+                      </button>
+                      {canWrite && <button className="btn btn-ghost btn-sm" onClick={() => setEditing(ed)}>Edit</button>}
+                      {canWrite && ed.status !== "active" && ed.status !== "archived" && (
+                        <button className="btn btn-ghost btn-sm" disabled={busy === ed.editionId}
+                          onClick={() => setState(ed, "active")}>Make live</button>
+                      )}
+                      {canWrite && ed.status === "active" && (
+                        <button className="btn btn-ghost btn-sm" disabled={busy === ed.editionId}
+                          onClick={() => setState(ed, "closed")}>Close</button>
+                      )}
+                    </td>
+                  </tr>
+                  {openId === ed.editionId && (
+                    <tr><td colSpan={7} style={{ background: "rgba(12,20,50,0.03)" }}>
+                      <SummerGroups edition={ed} canWrite={canWrite} onChanged={load}/>
+                    </td></tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {editing && <SummerEditionEditor data={editing} onClose={() => setEditing(null)}
+        onSaved={() => { setEditing(null); load(); }}/>}
+    </div>
+  );
+}
+
+/* One edition's record. A drawer rather than an inline row, because six dated
+   fields inside a table row is where a date lands in the wrong column. */
+function SummerEditionEditor({ data, onClose, onSaved }) {
+  const isNew = !data.editionId;
+  const [f, setF] = React.useState({
+    editionId: data.editionId || "",
+    name: data.name || "", code: data.code || "",
+    year: data.year ? String(data.year) : String(new Date().getFullYear()),
+    status: data.status || "planning",
+    startDate: data.startDate || "", endDate: data.endDate || "",
+    applyOpensAt: data.applyOpensAt || "", applyClosesAt: data.applyClosesAt || "",
+    notes: data.notes || "",
+  });
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const drawer = useAdminDrawer(onClose);
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+
+  /* The same rules the server enforces, said before the round trip. The server
+     is still the authority — this only stops the operator finding out about an
+     inverted date after a save. */
+  const local = (() => {
+    const y = parseInt(f.year, 10);
+    if (!y || y < 2000 || y > 2200) return "Enter a four-digit year.";
+    if (f.startDate && f.endDate && f.endDate < f.startDate) return "The end date is before the start date.";
+    if (f.applyOpensAt && f.applyClosesAt && f.applyClosesAt < f.applyOpensAt) return "Applications close before they open.";
+    return "";
+  })();
+
+  const ERRS = {
+    bad_year: "Enter a four-digit year.",
+    bad_date: "One of the dates isn't a real date — use the picker.",
+    end_before_start: "The end date is before the start date.",
+    apply_window_inverted: "Applications close before they open.",
+    bad_status: "Pick a state from the list.",
+    name_too_long: "That name is too long — keep it under 120 characters.",
+  };
+
+  const save = async () => {
+    if (local) { setErr(local); return; }
+    setBusy(true); setErr("");
+    try {
+      const r = await NGGApi.admin.summer.editionSave({ ...f, year: parseInt(f.year, 10) });
+      toast.success(isNew ? "Edition created." : "Edition saved.", f.name || r.editionId);
+      onSaved();
+    } catch (e) {
+      const code = e.code || e.message;
+      setErr(ERRS[code] || humanizeError(e.message, code));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="admin-drawer" onMouseDown={drawer.close}>
+      <div className="admin-drawer-panel" role="dialog" aria-modal="true" {...drawer.titleProps}
+        ref={drawer.panelRef} onMouseDown={e => e.stopPropagation()} onInput={drawer.onInput}>
+        <div className="admin-drawer-head">
+          <h3 {...drawer.headingProps}>{isNew ? "New edition" : f.name || "Edition"}</h3>
+          <button className="admin-drawer-close" onClick={drawer.close} aria-label="Close">✕</button>
+        </div>
+        <div className="admin-drawer-scroll">
+          <div className="admin-fields">
+            <Field label="Name" value={f.name} onChange={v => set("name", v)} placeholder={"Summer School " + f.year}
+              hint="What coordinators and reports call this season."/>
+            <Field label="Year" type="number" value={f.year} onChange={v => set("year", v)} required
+              hint={isNew ? "Sets the edition id — SUM-" + (f.year || "YYYY") + "." : "The id is fixed once created."}/>
+            <Field label="Short code" value={f.code} onChange={v => set("code", v.toUpperCase())}
+              placeholder={"SS" + String(f.year).slice(-2)} hint="Used as the prefix when a group has no code of its own."/>
+            <FieldSelect label="State" value={f.status} onChange={v => set("status", v)}
+              options={[
+                { value: "planning", label: "Planning — being set up" },
+                { value: "active", label: "Live — the season being run" },
+                { value: "closed", label: "Closed — finished, still reportable" },
+              ]}/>
+            <p className="admin-hint" style={{ margin: "-4px 0 4px" }}>
+              Setting this to <b>Live</b> closes whichever edition is live now. <b>Archived</b> isn't offered here:
+              archiving rolls each participant's attendance onto their record and is done from the archive tool, so a
+              dropdown must not be able to claim it happened.
+            </p>
+            <div className="admin-fields-row">
+              <Field label="Starts" type="date" value={f.startDate} onChange={v => set("startDate", v)}/>
+              <Field label="Ends" type="date" value={f.endDate} onChange={v => set("endDate", v)}/>
+            </div>
+            <div className="admin-fields-row">
+              <Field label="Applications open" type="date" value={f.applyOpensAt} onChange={v => set("applyOpensAt", v)}/>
+              <Field label="Applications close" type="date" value={f.applyClosesAt} onChange={v => set("applyClosesAt", v)}/>
+            </div>
+            <FieldTextarea label="Notes" value={f.notes} onChange={v => set("notes", v)} rows={3}/>
+          </div>
+          {(err || local) && <p className="admin-form-err" role="alert">{err || local}</p>}
+        </div>
+        <div className="admin-drawer-foot">
+          <button className="btn btn-ghost btn-sm" onClick={drawer.close}>Cancel</button>
+          <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || !!local}>
+            {busy ? "Saving…" : isNew ? "Create edition" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Groups within one edition ─────────────────────────────────────────────
+   The register-shaped unit: a place, a course, a lead, a capacity, its own
+   dates. Assignment is here too, because "make a group" and "put the children
+   in it" are one job and splitting them across two screens is how an edition
+   ends up with twelve groups and nobody in them. */
+function SummerGroups({ edition, canWrite, onChanged }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [editing, setEditing] = React.useState(null);
+  const [assigning, setAssigning] = React.useState(null);   // the group being filled
+  const editionId = edition.editionId;
+
+  const load = React.useCallback(() => {
+    setErr("");
+    return NGGApi.admin.summer.groups(editionId)
+      .then(setD)
+      .catch(e => setErr(e.code || e.message || "load_failed"));
+  }, [editionId]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const refresh = async () => { await load(); if (onChanged) await onChanged(); };
+
+  const remove = async (g) => {
+    /* A group with children in it cannot simply be deleted, so the question is
+       asked properly the first time: where do they go? The server refuses a
+       bare delete, and answering "nowhere" has to be a deliberate choice
+       rather than the default the button happens to take. */
+    if (g.enrolled > 0) {
+      const others = (d.groups || []).filter(x => x.groupId !== g.groupId);
+      const choice = await dialog.confirm({
+        title: "Delete " + g.name + "?",
+        body: g.enrolled + " participant" + (g.enrolled === 1 ? " is" : "s are") + " in this group. "
+          + (others.length
+            ? "Deleting it returns them to the edition's ungrouped list — you can then place them in another group."
+            : "Deleting it returns them to the edition's ungrouped list."),
+        cta: "Delete and ungroup " + g.enrolled,
+        danger: true,
+      });
+      if (!choice) return;
+      try {
+        const r = await NGGApi.admin.summer.groupDelete(g.groupId, { unassign: true });
+        toast.success("Group deleted · " + r.moved + " returned to the ungrouped list.", g.name);
+        await refresh();
+      } catch (e) { toast.error(humanizeError(e.message, e.code), "Couldn't delete the group"); }
+      return;
+    }
+    if (!(await dialog.confirm({ title: "Delete " + g.name + "?", body: "The group is empty; nothing else changes.", cta: "Delete", danger: true }))) return;
+    try { await NGGApi.admin.summer.groupDelete(g.groupId); toast.success("Group deleted.", g.name); await refresh(); }
+    catch (e) { toast.error(humanizeError(e.message, e.code), "Couldn't delete the group"); }
+  };
+
+  if (err) return <ErrorState title="Couldn't load the groups" code={err} onRetry={load}/>;
+  if (!d) return <div className="dash-spinner"/>;
+  const groups = d.groups || [];
+
+  return (
+    <div style={{ padding: "4px 0 10px" }}>
+      <div className="admin-section-head" style={{ marginBottom: 10 }}>
+        <h3 className="admin-h3" style={{ margin: 0 }}>
+          Groups in {edition.name}
+          {groups.length ? <span className="admin-count mono">{groups.length}</span> : null}
+        </h3>
+        <div className="admin-section-actions">
+          {d.ungrouped > 0 && (
+            <span className="chip chip-gold" title="Participants in this edition who are not in any group">
+              {fmtNum(d.ungrouped)} ungrouped
+            </span>
+          )}
+          {canWrite && <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New group</button>}
+        </div>
+      </div>
+
+      {groups.length === 0 ? (
+        <EmptyState icon="◫" title="No groups in this edition yet"
+          message={"A group is one class: a centre, a course, a lead and a capacity. "
+            + (d.ungrouped ? fmtNum(d.ungrouped) + " participants are waiting to be placed in one." : "")}
+          action={canWrite ? <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ New group</button> : null}/>
+      ) : (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <caption className="sr-only">Groups in {edition.name}</caption>
+            <thead><tr>
+              <th scope="col">Group</th>
+              <th scope="col">Centre</th>
+              <th scope="col">Course</th>
+              <th scope="col">Lead</th>
+              <th scope="col">Meets</th>
+              <th scope="col" className="admin-num">Filled</th>
+              <th scope="col">State</th>
+              <th scope="col"><span className="sr-only">Actions</span></th>
+            </tr></thead>
+            <tbody>
+              {groups.map(g => (
+                <tr key={g.groupId}>
+                  <td>
+                    <b>{g.name}</b>
+                    <div className="mono admin-cell-sub">{g.code}</div>
+                  </td>
+                  <td>
+                    {g.centreName
+                      ? <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                          {g.centreColor && <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 3, background: g.centreColor, flex: "0 0 auto" }}/>}
+                          {g.centreName}
+                        </span>
+                      : <span className="admin-cell-sub">—</span>}
+                  </td>
+                  <td>{g.track || <span className="admin-cell-sub">—</span>}{g.faculty && g.faculty !== g.track ? <div className="admin-cell-sub">{g.faculty}</div> : null}</td>
+                  <td>{g.leadName ? <span className="chip chip-lime">{g.leadName}</span> : <span className="admin-cell-sub">unassigned</span>}</td>
+                  <td className="admin-cell-sub">{summerDaysLabel(g.meetDays) || "—"}{g.meetTime ? " · " + g.meetTime : ""}</td>
+                  <td className="admin-num">
+                    {g.capacity > 0
+                      ? <span className={g.full ? "chip chip-crimson" : ""}>{g.enrolled}/{g.capacity}</span>
+                      : <span title="No cap set">{g.enrolled} <span className="admin-cell-sub">/ ∞</span></span>}
+                  </td>
+                  <td><SummerStateChip state={g.status}/></td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    {canWrite && <button className="btn btn-ghost btn-sm" onClick={() => setAssigning(g)}>Participants</button>}
+                    {canWrite && <button className="btn btn-ghost btn-sm" onClick={() => setEditing(g)}>Edit</button>}
+                    {canWrite && <button className="btn btn-ghost btn-sm" style={{ color: "#b03535" }} onClick={() => remove(g)}>Delete</button>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {editing && <SummerGroupEditor data={editing} editionId={editionId} ctx={d}
+        onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh(); }}/>}
+      {assigning && <SummerGroupAssign group={assigning} editionId={editionId}
+        onClose={() => setAssigning(null)} onDone={refresh}/>}
+    </div>
+  );
+}
+
+function SummerGroupEditor({ data, editionId, ctx, onClose, onSaved }) {
+  const isNew = !data.groupId;
+  const [f, setF] = React.useState({
+    groupId: data.groupId || "", editionId,
+    name: data.name || "", code: data.code || "",
+    centreId: data.centreId || "", faculty: data.faculty || "", track: data.track || "",
+    leadId: data.leadId || "", capacity: data.capacity ? String(data.capacity) : "",
+    meetDays: String(data.meetDays || ""), meetTime: data.meetTime || "",
+    startDate: data.startDate || "", endDate: data.endDate || "",
+    status: data.status || "active", notes: data.notes || "",
+  });
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const drawer = useAdminDrawer(onClose);
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+
+  const catalogue = ctx.catalogue || {};
+  const faculties = Object.keys(catalogue);
+  const courses = f.faculty && catalogue[f.faculty] ? catalogue[f.faculty] : [];
+  const days = String(f.meetDays || "").split(",").map(x => x.trim()).filter(Boolean);
+  const toggleDay = (n) => set("meetDays", (days.indexOf(n) !== -1 ? days.filter(x => x !== n) : days.concat([n])).sort().join(","));
+
+  /* A suggested name, offered rather than imposed. The name is what a lead
+     reads on a register, so it has to be theirs to write — but "Grouptown ·
+     Music · " is the shape everyone ends up typing. */
+  const suggest = () => {
+    const c = (ctx.centres || []).filter(x => x.centreId === f.centreId)[0];
+    const parts = [c && c.name, f.track || f.faculty].filter(Boolean);
+    if (parts.length) set("name", parts.join(" · "));
+  };
+
+  const ERRS = {
+    bad_name: "Give the group a name of at least two characters.",
+    name_too_long: "That name is too long — keep it under 160 characters.",
+    centre_not_found: "That centre no longer exists — pick another.",
+    edition_not_found: "That edition no longer exists.",
+    edition_immutable: "A group can't be moved to another edition — its participants, attendance and cards are keyed to this one.",
+    lead_not_found: "That lead is no longer an active volunteer.",
+    bad_capacity: "Capacity must be a whole number (0 means no cap).",
+    bad_status: "Pick a state from the list.",
+    bad_date: "One of the dates isn't a real date — use the picker.",
+    end_before_start: "The end date is before the start date.",
+    capacity_below_enrolled: "There are already more participants in this group than that.",
+  };
+
+  const local = (f.name || "").trim().length < 2 ? "Give the group a name of at least two characters."
+    : (f.startDate && f.endDate && f.endDate < f.startDate) ? "The end date is before the start date." : "";
+
+  const save = async () => {
+    if (local) { setErr(local); return; }
+    setBusy(true); setErr("");
+    try {
+      const r = await NGGApi.admin.summer.groupSave({ ...f, capacity: f.capacity === "" ? 0 : parseInt(f.capacity, 10) || 0 });
+      toast.success(isNew ? "Group created · " + r.code : "Group saved.", f.name);
+      onSaved();
+    } catch (e) {
+      const code = e.code || e.message;
+      setErr((ERRS[code] || humanizeError(e.message, code))
+        + (code === "capacity_below_enrolled" && e.data && e.data.enrolled ? " (" + e.data.enrolled + " in the room)" : ""));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="admin-drawer" onMouseDown={drawer.close}>
+      <div className="admin-drawer-panel" role="dialog" aria-modal="true" {...drawer.titleProps}
+        ref={drawer.panelRef} onMouseDown={e => e.stopPropagation()} onInput={drawer.onInput}>
+        <div className="admin-drawer-head">
+          <h3 {...drawer.headingProps}>{isNew ? "New group" : f.name || "Group"}</h3>
+          <button className="admin-drawer-close" onClick={drawer.close} aria-label="Close">✕</button>
+        </div>
+        <div className="admin-drawer-scroll">
+          <div className="admin-fields">
+            <FieldSelect label="Centre" value={f.centreId} onChange={v => set("centreId", v)}
+              options={[{ value: "", label: "— no centre —" }].concat((ctx.centres || []).map(c => ({ value: c.centreId, label: c.name + " (" + c.code + ")" })))}/>
+            <FieldSelect label="Academy" value={f.faculty} onChange={v => { set("faculty", v); set("track", ""); }}
+              options={[{ value: "", label: "— any —" }].concat(faculties.map(x => ({ value: x, label: x })))}/>
+            <FieldSelect label="Course" value={f.track} onChange={v => set("track", v)}
+              options={[{ value: "", label: f.faculty ? "— any course in " + f.faculty + " —" : "— pick an academy first —" }]
+                .concat(courses.map(x => ({ value: x, label: x })))}/>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <Field label="Group name" value={f.name} onChange={v => set("name", v)} required
+                  placeholder="Egbeda · Music · Morning" hint="What the lead sees on their register."/>
+              </div>
+              <button className="btn btn-ghost btn-sm" type="button" onClick={suggest}
+                disabled={!f.centreId && !f.track}>Suggest</button>
+            </div>
+            <Field label="Code" value={f.code} onChange={v => set("code", v.toUpperCase())}
+              placeholder="auto" hint="Unique inside this edition. Left blank, it's built from the centre and course."/>
+            <FieldSelect label="Lead" value={f.leadId} onChange={v => set("leadId", v)}
+              options={[{ value: "", label: "— unassigned —" }].concat((ctx.leadOptions || []).map(v => ({ value: v.volunteerId, label: v.name + (v.role ? " · " + v.role : "") })))}/>
+            <Field label="Capacity" type="number" value={f.capacity} onChange={v => set("capacity", v)}
+              placeholder="0" hint="0 means no cap. A full group refuses further assignment rather than warning about it."/>
+
+            <fieldset className="admin-fieldset">
+              <legend className="admin-legend">Meets on</legend>
+              <div className="admin-daypick">
+                {SUMMER_DOW.map(([n, lbl]) => (
+                  <label key={n} className={"admin-daypick-day" + (days.indexOf(n) !== -1 ? " is-on" : "")}>
+                    <input type="checkbox" checked={days.indexOf(n) !== -1} onChange={() => toggleDay(n)}/>
+                    <span>{lbl}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="admin-hint" style={{ margin: "6px 0 0" }}>
+                Operational only — the public centre pages deliberately never publish when children are in a building.
+              </p>
+            </fieldset>
+            <Field label="Time" value={f.meetTime} onChange={v => set("meetTime", v)} placeholder="09:00 – 12:00"/>
+            <div className="admin-fields-row">
+              <Field label="Starts" type="date" value={f.startDate} onChange={v => set("startDate", v)}
+                hint="Blank = the edition's dates."/>
+              <Field label="Ends" type="date" value={f.endDate} onChange={v => set("endDate", v)}/>
+            </div>
+            <FieldSelect label="State" value={f.status} onChange={v => set("status", v)}
+              options={[
+                { value: "planning", label: "Planning — not taking anyone yet" },
+                { value: "active", label: "Active — running" },
+                { value: "closed", label: "Closed — finished" },
+                { value: "archived", label: "Archived" },
+              ]}/>
+            <FieldTextarea label="Notes" value={f.notes} onChange={v => set("notes", v)} rows={3}/>
+          </div>
+          {(err || local) && <p className="admin-form-err" role="alert">{err || local}</p>}
+        </div>
+        <div className="admin-drawer-foot">
+          <button className="btn btn-ghost btn-sm" onClick={drawer.close}>Cancel</button>
+          <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || !!local}>
+            {busy ? "Saving…" : isNew ? "Create group" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Filling a group.
+ *
+ * Two lists, one action: who is in it, and who in this edition is not in any
+ * group. Assignment is bulk and PARTIAL — a coordinator selecting forty
+ * children for a group with twelve seats gets twelve placed and the
+ * twenty-eight named, because the alternative is either a refusal that wastes
+ * the work or a group crammed past a cap somebody set for a reason. */
+function SummerGroupAssign({ group, editionId, onClose, onDone }) {
+  const [pool, setPool] = React.useState(null);      // ungrouped participants
+  const [mine, setMine] = React.useState(null);      // participants in this group
+  const [q, setQ] = React.useState("");
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const drawer = useAdminDrawer(onClose, false);
+
+  const load = React.useCallback(() => {
+    setErr("");
+    /* The roster op is the one place that knows how to filter participants, so
+       both lists come from it rather than from a second query that would drift.
+       `group` is a client-side split of the same edition read. */
+    return NGGApi.admin.summer.students("", editionId, { limit: 1000 })
+      .then(r => {
+        const rows = r.students || [];
+        setMine(rows.filter(s => String(s.groupId || "") === group.groupId));
+        setPool(rows.filter(s => !String(s.groupId || "") && String(s.status || "active") === "active"));
+      })
+      .catch(e => setErr(e.code || e.message || "load_failed"));
+  }, [editionId, group.groupId]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const poolRows = React.useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const rows = pool || [];
+    if (!needle) return rows;
+    return rows.filter(s => (s.fullName || "").toLowerCase().indexOf(needle) !== -1
+      || (s.displayId || "").toLowerCase().indexOf(needle) !== -1
+      || (s.centre || "").toLowerCase().indexOf(needle) !== -1);
+  }, [pool, q]);
+
+  const sel = useAdminSelection(poolRows, s => s.studentId);
+  const selMine = useAdminSelection(mine || [], s => s.studentId);
+
+  const seatsLeft = group.capacity > 0 ? Math.max(0, group.capacity - ((mine || []).length)) : null;
+
+  const assign = async () => {
+    const ids = sel.ids;
+    if (!ids.length) return;
+    const over = seatsLeft !== null && ids.length > seatsLeft;
+    const ok = await dialog.confirm({
+      title: "Add " + ids.length + " to " + group.name + "?",
+      body: over
+        ? "This group has " + seatsLeft + " seat" + (seatsLeft === 1 ? "" : "s") + " left. "
+          + seatsLeft + " will be placed and the rest left in the ungrouped list — they aren't lost, and you'll be told who."
+        : "They're placed in this group. Nothing else about their record changes.",
+      cta: "Add " + ids.length,
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.admin.summer.groupAssign(group.groupId, ids);
+      const failed = (r.results || []).filter(x => x && x.ok === false);
+      if (failed.length && r.assigned) {
+        toast.warn(r.assigned + " placed · " + failed.length + " not (" + adminFailSummary(failed.map(x => ({ ok: false, error: x.error }))) + ").", group.name);
+      } else if (failed.length) {
+        toast.error("Nobody was placed — " + adminFailSummary(failed.map(x => ({ ok: false, error: x.error }))) + ".", group.name);
+      } else {
+        toast.success(r.assigned + " placed in " + group.name + ".");
+      }
+      sel.clear();
+      await load();
+      if (onDone) await onDone();
+    } catch (e) { toast.error(humanizeError(e.message, e.code), "Couldn't assign"); }
+    finally { setBusy(false); }
+  };
+
+  const removeFromGroup = async () => {
+    const ids = selMine.ids;
+    if (!ids.length) return;
+    if (!(await dialog.confirm({
+      title: "Take " + ids.length + " out of " + group.name + "?",
+      body: "They return to this edition's ungrouped list. Their records, attendance and cards are untouched.",
+      cta: "Remove " + ids.length,
+    }))) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.admin.summer.groupAssign("", ids);
+      toast.success(r.assigned + " returned to the ungrouped list.", group.name);
+      selMine.clear();
+      await load();
+      if (onDone) await onDone();
+    } catch (e) { toast.error(humanizeError(e.message, e.code), "Couldn't remove"); }
+    finally { setBusy(false); }
+  };
+
+  const row = (s, selection) => (
+    <tr key={s.studentId}>
+      <td style={{ width: 34 }}><AdminRowCheck selection={selection} id={s.studentId} label={"Select " + (s.fullName || s.studentId)}/></td>
+      <td><b>{s.fullName}</b><div className="mono admin-cell-sub">{s.displayId || s.studentId}</div></td>
+      <td className="admin-cell-sub">{s.centre || "—"}</td>
+      <td className="admin-cell-sub">{s.track || "—"}</td>
+    </tr>
+  );
+
+  return (
+    <div className="admin-drawer" onMouseDown={drawer.close}>
+      <div className="admin-drawer-panel admin-drawer-wide" role="dialog" aria-modal="true" {...drawer.titleProps}
+        ref={drawer.panelRef} onMouseDown={e => e.stopPropagation()}>
+        <div className="admin-drawer-head">
+          <h3 {...drawer.headingProps}>Participants · {group.name}</h3>
+          <button className="admin-drawer-close" onClick={drawer.close} aria-label="Close">✕</button>
+        </div>
+        <div className="admin-drawer-scroll">
+          {err ? <ErrorState title="Couldn't load the participants" code={err} onRetry={load}/> :
+           (pool === null || mine === null) ? <div className="dash-spinner"/> : (
+            <>
+              <p className="admin-hint">
+                {group.capacity > 0
+                  ? <>This group holds <b>{group.capacity}</b> — {(mine || []).length} in, <b>{seatsLeft}</b> seat{seatsLeft === 1 ? "" : "s"} left.</>
+                  : <>No cap set on this group.</>}
+                {" "}A full group refuses further assignment; nobody is quietly squeezed in.
+              </p>
+
+              <h4 className="admin-h4">In this group <span className="admin-count mono">{(mine || []).length}</span></h4>
+              {(mine || []).length === 0
+                ? <div className="admin-empty">Nobody yet — add them from the list below.</div>
+                : <>
+                    <AdminBulkBar selection={selMine} noun="participant"
+                      actions={[{ id: "ungroup", label: "Remove from group", danger: true, confirm: false,
+                        run: () => removeFromGroup() }]}/>
+                    <div className="admin-table-wrap"><table className="admin-table">
+                      <caption className="sr-only">Participants currently in {group.name}</caption>
+                      <thead><tr>
+                        <th scope="col" style={{ width: 34 }}><AdminSelectAll selection={selMine} label="Select all in this group"/></th>
+                        <th scope="col">Participant</th><th scope="col">Centre</th><th scope="col">Course</th>
+                      </tr></thead>
+                      <tbody>{(mine || []).map(s => row(s, selMine))}</tbody>
+                    </table></div>
+                  </>}
+
+              <h4 className="admin-h4" style={{ marginTop: 22 }}>
+                Not in any group <span className="admin-count mono">{(pool || []).length}</span>
+              </h4>
+              <div className="admin-filters" style={{ marginBottom: 10 }}>
+                <input className="admin-input" value={q} onChange={e => setQ(e.target.value)}
+                  placeholder="Search name, ID or centre…" aria-label="Search the ungrouped participants"/>
+              </div>
+              {(pool || []).length === 0
+                ? <div className="admin-empty">Everybody in this edition is in a group.</div>
+                : poolRows.length === 0
+                ? <div className="admin-empty">Nobody matches “{q}”.</div>
+                : <>
+                    <div className="admin-bulkbar" role="region" aria-label="Add the selected participants">
+                      <AdminSelectAll selection={sel} label="Select all shown"/>
+                      <div className="admin-bulk-actions">
+                        <button className="btn btn-primary btn-sm" disabled={!sel.size || busy} onClick={assign}>
+                          {busy ? "Adding…" : sel.size ? "Add " + sel.size + " to this group" : "Add to this group"}
+                        </button>
+                        {sel.size > 0 && <button className="btn btn-ghost btn-sm" onClick={sel.clear}>Clear</button>}
+                      </div>
+                    </div>
+                    <div className="admin-table-wrap"><table className="admin-table">
+                      <caption className="sr-only">Participants in this edition who are not in any group</caption>
+                      <thead><tr>
+                        <th scope="col" style={{ width: 34 }}><span className="sr-only">Select</span></th>
+                        <th scope="col">Participant</th><th scope="col">Centre</th><th scope="col">Course</th>
+                      </tr></thead>
+                      <tbody>{poolRows.map(s => row(s, sel))}</tbody>
+                    </table></div>
+                  </>}
+            </>
+          )}
+        </div>
+        <div className="admin-drawer-foot">
+          <button className="btn btn-ghost btn-sm" onClick={drawer.close}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Per-group reporting for one edition — the number a lead is accountable for.
+   Attendance is measured over the group's own dates when it has them, so a
+   group that ran for two of six weeks is not scored against six. A group that
+   has not met reports a dash, never 0%. */
+function SummerGroupReport() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [editions, setEditions] = React.useState([]);
+  const [editionId, setEditionId] = React.useState("");
+
+  React.useEffect(() => {
+    NGGApi.admin.summer.editions()
+      .then(r => { setEditions(r.editions || []); setEditionId(prev => prev || r.currentId || ""); })
+      .catch(e => setErr(e.code || e.message));
+  }, []);
+  const load = React.useCallback(() => {
+    if (!editionId) return Promise.resolve();
+    setErr(""); setD(null);
+    return NGGApi.admin.summer.groupReport(editionId).then(setD).catch(e => setErr(e.code || e.message));
+  }, [editionId]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const exportCsv = () => {
+    if (!d) return;
+    downloadCsv("summer-groups-" + editionId, (d.groups || []).map(g => ({
+      code: g.code, group: g.name, centre: g.centreName, academy: g.faculty, course: g.track,
+      lead: g.leadName, capacity: g.capacity, enrolled: g.enrolled,
+      sessions: g.sessions, present: g.present, expected: g.expected,
+      attendanceRate: g.attendanceRate === null ? "" : g.attendanceRate,
+      from: g.from, to: g.to, status: g.status,
+    })));
+  };
+
+  if (err) return <ErrorState title="Couldn't load the report" code={err} onRetry={load}/>;
+  return (
+    <div>
+      <p className="admin-hint">
+        One row per group: how full it is, how many sessions it has actually held, and the attendance rate over
+        <b> its own</b> dates. A group that has not met yet shows a dash rather than 0% — a class that has not
+        started is not a class that is failing.
+      </p>
+      <div className="admin-filters" style={{ alignItems: "center" }}>
+        <label className="sr-only" htmlFor="sgr-edition">Edition</label>
+        <select id="sgr-edition" className="admin-select" value={editionId} onChange={e => setEditionId(e.target.value)}>
+          {editions.map(e => <option key={e.editionId} value={e.editionId}>{e.name} · {SUMMER_STATE_META[e.status] ? SUMMER_STATE_META[e.status].label : e.status}</option>)}
+        </select>
+        <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={!d || !(d.groups || []).length}>Export CSV</button>
+      </div>
+      {!d ? <div className="dash-spinner"/> :
+        (d.groups || []).length === 0
+          ? <EmptyState icon="◫" title="No groups in this edition" message="Create groups under Structure → Editions & groups first."/>
+          : <div className="admin-table-wrap"><table className="admin-table">
+              <caption className="sr-only">Per-group report for {d.edition && d.edition.name}</caption>
+              <thead><tr>
+                <th scope="col">Group</th><th scope="col">Centre</th><th scope="col">Lead</th>
+                <th scope="col" className="admin-num">Filled</th>
+                <th scope="col" className="admin-num">Sessions</th>
+                <th scope="col" className="admin-num">Attendance</th>
+                <th scope="col">Window</th>
+              </tr></thead>
+              <tbody>
+                {(d.groups || []).map(g => (
+                  <tr key={g.groupId}>
+                    <td><b>{g.name}</b><div className="mono admin-cell-sub">{g.code}{g.track ? " · " + g.track : ""}</div></td>
+                    <td>{g.centreName || <span className="admin-cell-sub">—</span>}</td>
+                    <td>{g.leadName || <span className="admin-cell-sub">unassigned</span>}</td>
+                    <td className="admin-num">{g.capacity > 0 ? g.enrolled + "/" + g.capacity : g.enrolled}</td>
+                    <td className="admin-num">{g.sessions}</td>
+                    <td className="admin-num">
+                      {g.attendanceRate === null
+                        ? <span className="admin-cell-sub" title="This group has not met yet">—</span>
+                        : <span className={g.attendanceRate < 60 ? "chip chip-crimson" : ""}>{g.attendanceRate}%</span>}
+                    </td>
+                    <td className="admin-cell-sub">{g.from || "—"}{g.to ? " → " + g.to : ""}</td>
+                  </tr>
+                ))}
+                {d.ungrouped > 0 && (
+                  <tr>
+                    <td colSpan={7} style={{ color: "#8a6d00" }}>
+                      {fmtNum(d.ungrouped)} participant{d.ungrouped === 1 ? "" : "s"} in this edition are not in any group,
+                      so they appear in no row above.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table></div>}
+    </div>
+  );
+}
+
+/* ============================================================================
+   ID CARDS — the print log, and "is the card in their hand the current one?"
+
+   The design studio could draw a card and the batch drawer could print three
+   hundred, and NOTHING recorded that it had happened. A run left an audit line
+   and no rows, so three questions an ID desk asks out loud had no answer:
+
+     · has this member ever been issued a card, and how many times?
+     · which DESIGN is the one in their hand — the current published version,
+       or a version from before the centre changed colour?
+     · what did we send to the printer in July, and can we do exactly that
+       again for the eleven that came back creased?
+
+   Now every credential run writes one row for the batch and one per person,
+   each carrying the FROZEN template version (see api/_lib/domain/card-runs.php).
+   This screen is where those rows are read. It deliberately does not print
+   anything: rendering happens in the Design Studio, on the canvas that drew the
+   proof, because that is where the renderer is.
+   ============================================================================ */
+const CARD_RUN_MODE_META = {
+  print:   { label: "New issue", chip: "chip-lime" },
+  reprint: { label: "Reprint",   chip: "chip-gold" },
+  proof:   { label: "Proof",     chip: "" },
+};
+
+function AdminIdCards() {
+  const [tab, setTab] = useAdminTab("log", React.useCallback(t => t === "log" || t === "history", []));
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">ID cards</h2>
+        <div className="admin-section-actions">
+          {/* The studio renders; this screen records. Both doors, side by side,
+              because an operator arriving here to check a card usually wants to
+              reprint it, and the studio had no nav of its own for years. */}
+          <a className="btn btn-ghost btn-sm" href="/designer" target="_blank" rel="noreferrer">Open the Design Studio ↗</a>
+          <a className="btn btn-ghost btn-sm" href="/cards" target="_blank" rel="noreferrer">Open the Card Studio ↗</a>
+        </div>
+      </div>
+      <p className="admin-hint">
+        Every credential run is recorded with the design and the exact published <b>version</b> it used, so
+        “reprint that batch as it was in July” and “is the card in their hand current?” are both answerable.
+        Cards are designed and rendered in the <b>Design Studio</b>; member cards can also be printed straight
+        from <b>Members → Print IDs</b>.
+      </p>
+      <div className="admin-anchor-tabs" role="tablist" aria-label="ID card sections">
+        {[["log", "Print log"], ["history", "One person's cards"]].map(([id, lbl]) => (
+          <button key={id} role="tab" id={"idctab-" + id} aria-selected={tab === id} aria-controls="idcpanel"
+            tabIndex={tab === id ? 0 : -1}
+            className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
+        ))}
+      </div>
+      <div id="idcpanel" role="tabpanel" aria-labelledby={"idctab-" + tab} tabIndex={-1}>
+        {tab === "log" && <AdminCardRuns/>}
+        {tab === "history" && <AdminCardHistoryLookup/>}
+      </div>
+    </div>
+  );
+}
+
+function AdminCardRuns() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [f, setF] = React.useState({ kind: "", mode: "" });
+  const [page, setPage] = React.useState(1);
+  const [openRun, setOpenRun] = React.useState(null);
+
+  const load = React.useCallback((p) => {
+    setErr("");
+    return NGGApi.admin.registration.cardRuns(Object.assign({}, f, { page: p || page, pageSize: 25 }))
+      .then(setD).catch(e => setErr(e.code || e.message || "load_failed"));
+    // eslint-disable-next-line
+  }, [f, page]);
+  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [f.kind, f.mode]);
+
+  if (err) return <ErrorState title="Couldn't load the print log" code={err} onRetry={() => load()}/>;
+  if (!d) return <div className="dash-spinner"/>;
+  const runs = d.runs || [];
+
+  return (
+    <div>
+      <div className="admin-filters">
+        <select className="admin-select" value={f.kind} onChange={e => setF(x => ({ ...x, kind: e.target.value }))}
+          aria-label="Filter the print log by card kind">
+          <option value="">Every card</option>
+          <option value="member">NGG member cards</option>
+          <option value="student">Summer School cards</option>
+          <option value="volunteer">Volunteer cards</option>
+        </select>
+        <select className="admin-select" value={f.mode} onChange={e => setF(x => ({ ...x, mode: e.target.value }))}
+          aria-label="Filter the print log by run type">
+          <option value="">New issues and reprints</option>
+          <option value="print">New issues only</option>
+          <option value="reprint">Reprints only</option>
+          <option value="proof">Proofs</option>
+        </select>
+      </div>
+      {runs.length === 0
+        ? <EmptyState icon="▣" title="Nothing has been printed yet"
+            message="A run appears here the moment the Design Studio finishes writing a file. Runs made before this log existed are not in it — the record starts now."/>
+        : <div className="admin-table-wrap">
+            <table className="admin-table">
+              <caption className="sr-only">Card print runs, newest first</caption>
+              <thead><tr>
+                <th scope="col">When</th>
+                <th scope="col">Design</th>
+                <th scope="col">Type</th>
+                <th scope="col" className="admin-num">Cards</th>
+                <th scope="col">Output</th>
+                <th scope="col">Run by</th>
+                <th scope="col"><span className="sr-only">Actions</span></th>
+              </tr></thead>
+              <tbody>{runs.map(r => {
+                const m = CARD_RUN_MODE_META[r.mode] || { label: r.mode, chip: "" };
+                return (
+                  <tr key={r.runId}>
+                    <td className="admin-cell-sub">{fmtDateTime(r.finishedAt || r.startedAt)}<div className="mono admin-cell-sub">{r.runId}</div></td>
+                    <td>
+                      <b>{r.templateName || <span className="admin-cell-sub">built-in card</span>}</b>
+                      {/* The version is the whole point of the record. */}
+                      <div className="mono admin-cell-sub">
+                        {r.templateVersion ? "v" + r.templateVersion : "no version — hand-coded card"}
+                        {r.backTemplateId ? " · with a back" : ""}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={"chip " + m.chip}>{m.label}</span>
+                      {r.reason ? <div className="admin-cell-sub">{r.reason}</div> : null}
+                    </td>
+                    <td className="admin-num">
+                      {fmtNum(r.issued)}
+                      {r.failed ? <div className="admin-cell-sub" style={{ color: "#b03535" }}>{r.failed} failed</div> : null}
+                    </td>
+                    <td className="admin-cell-sub">{(r.output || "—").toUpperCase()}{r.dpi ? " · " + r.dpi + "dpi" : ""}{r.sheet ? " · " + r.sheet : ""}</td>
+                    <td className="admin-cell-sub">{r.actorName || r.actorId || "—"}</td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setOpenRun(r)}>Who was in it</button>
+                      {/* A reprint is a rendering job, so it happens in the
+                          studio. The link carries the design so the operator
+                          does not have to remember which of forty it was. */}
+                      {r.templateId
+                        ? <a className="btn btn-ghost btn-sm" href={"/designer?template=" + encodeURIComponent(r.templateId) + "&reprintOf=" + encodeURIComponent(r.runId)}
+                             target="_blank" rel="noreferrer">Reprint ↗</a>
+                        : null}
+                    </td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+            <Pager page={page} pageSize={d.pageSize || 25} total={d.total || 0} onPage={(p) => { setPage(p); load(p); }}/>
+          </div>}
+      {openRun && <AdminCardRunDetail run={openRun} onClose={() => setOpenRun(null)}/>}
+    </div>
+  );
+}
+
+function AdminCardRunDetail({ run, onClose }) {
+  const drawer = useAdminDrawer(onClose, false);
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  React.useEffect(() => {
+    NGGApi.admin.registration.cardRunGet(run.runId).then(setD).catch(e => setErr(e.code || e.message));
+  }, [run.runId]);
+  const m = CARD_RUN_MODE_META[run.mode] || { label: run.mode, chip: "" };
+  return (
+    <div className="admin-drawer" onMouseDown={drawer.close}>
+      <div className="admin-drawer-panel admin-drawer-wide" role="dialog" aria-modal="true" {...drawer.titleProps}
+        ref={drawer.panelRef} onMouseDown={e => e.stopPropagation()}>
+        <div className="admin-drawer-head">
+          <h3 {...drawer.headingProps}>{run.templateName || "Built-in card"} · {m.label}</h3>
+          <button className="admin-drawer-close" onClick={drawer.close} aria-label="Close">✕</button>
+        </div>
+        <div className="admin-drawer-scroll">
+          <div className="admin-fields">
+            <p className="admin-hint" style={{ margin: 0 }}>
+              <b>{fmtNum(run.issued)}</b> card{run.issued === 1 ? "" : "s"} on {fmtDateTime(run.finishedAt || run.startedAt)}
+              {run.templateVersion ? <> from <b>version {run.templateVersion}</b></> : <> from the built-in card, which carries no version</>}.
+              {run.failed ? <> {run.failed} could not be rendered and are not in the file.</> : null}
+            </p>
+            {err ? <ErrorState title="Couldn't load the run" code={err}/> :
+             !d ? <div className="dash-spinner"/> :
+             <div className="admin-table-wrap"><table className="admin-table">
+               <caption className="sr-only">People in run {run.runId}</caption>
+               <thead><tr>
+                 <th scope="col">Printed ID</th><th scope="col">Record</th>
+                 <th scope="col">First or repeat</th><th scope="col">Result</th>
+               </tr></thead>
+               <tbody>{(d.issues || []).map((i, k) => (
+                 <tr key={i.subjectId + ":" + k}>
+                   <td className="mono">{i.displayId || <span className="admin-cell-sub">—</span>}</td>
+                   <td className="mono admin-cell-sub">{i.subjectId}</td>
+                   <td>{i.reprint ? <span className="chip chip-gold">repeat</span> : <span className="chip chip-lime">first</span>}</td>
+                   <td>{i.ok ? <span className="admin-cell-sub">printed</span>
+                            : <span className="chip chip-crimson" title={i.note || ""}>not printed</span>}</td>
+                 </tr>
+               ))}</tbody>
+             </table></div>}
+          </div>
+        </div>
+        <div className="admin-drawer-foot">
+          <button className="btn btn-ghost btn-sm" onClick={drawer.close}>Close</button>
+          {run.templateId && (
+            <a className="btn btn-primary btn-sm" href={"/designer?template=" + encodeURIComponent(run.templateId) + "&reprintOf=" + encodeURIComponent(run.runId)}
+               target="_blank" rel="noreferrer">Reprint in the Design Studio ↗</a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* "Is the card in their hand the current design?"
+ *
+ * Asked at a desk, out loud, with the person standing there — so the answer
+ * leads with the latest issue and whether the published design has moved on
+ * since, which is the difference between "reprint it" and "it's fine". */
+function AdminCardHistoryLookup() {
+  const [type, setType] = React.useState("member");
+  const [id, setId] = React.useState("");
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const look = async (e) => {
+    e && e.preventDefault();
+    if (!id.trim()) return;
+    setBusy(true); setErr(""); setD(null);
+    try { setD(await NGGApi.admin.registration.cardHistory(id.trim(), type)); }
+    catch (e2) { setErr(e2.code || e2.message || "load_failed"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div>
+      <form className="admin-filters" onSubmit={look}>
+        <select className="admin-select" value={type} onChange={e => setType(e.target.value)} aria-label="Whose card">
+          <option value="member">NGG member</option>
+          <option value="student">Summer School participant</option>
+          <option value="volunteer">Volunteer</option>
+        </select>
+        <input className="admin-input" value={id} onChange={e => setId(e.target.value)}
+          placeholder="Member ID, e.g. NGG-2026-0141" aria-label="The record's id"/>
+        <button className="btn btn-primary btn-sm" disabled={busy || !id.trim()}>{busy ? "Looking…" : "Look it up"}</button>
+      </form>
+      {err && <ErrorState title="Couldn't read the card history" code={err} onRetry={look}/>}
+      {d && <AdminCardHistory data={d}/>}
+    </div>
+  );
+}
+
+/** The history block itself, so the member detail drawer can show the same
+ *  thing without a second implementation of it. */
+function AdminCardHistory({ data }) {
+  if (!data) return null;
+  if (!data.count) {
+    return <EmptyState icon="▣" title="No card has been issued to them"
+      message="Either they have never been printed, or their card predates the print log — the record starts from when it was added."/>;
+  }
+  const l = data.latest || {};
+  return (
+    <div>
+      <div className="admin-callout" role="status">
+        {data.designMovedOn === true && (
+          <p style={{ margin: "0 0 8px", color: "#8a6d00" }}>
+            <b>The design has moved on.</b> Their card was printed from version {l.templateVersion} of
+            “{l.templateName}”, which has been republished since. A reprint would look different.
+          </p>
+        )}
+        {data.designMovedOn === false && (
+          <p style={{ margin: "0 0 8px" }}>
+            <b>Their card is the current design</b> — version {l.templateVersion} of “{l.templateName}”.
+          </p>
+        )}
+        {data.designMovedOn === null && (
+          <p style={{ margin: "0 0 8px" }}>
+            Their card came from the <b>built-in card</b>, which carries no version — so whether it matches
+            today's cannot be answered from the record.
+          </p>
+        )}
+        {fmtNum(data.count)} card{data.count === 1 ? "" : "s"} issued
+        {data.reprints ? <> · {fmtNum(data.reprints)} of them replacements</> : null}
+      </div>
+      <div className="admin-table-wrap"><table className="admin-table">
+        <caption className="sr-only">Cards issued, newest first</caption>
+        <thead><tr>
+          <th scope="col">When</th><th scope="col">Printed ID</th>
+          <th scope="col">Design</th><th scope="col">Type</th><th scope="col">Result</th>
+        </tr></thead>
+        <tbody>{(data.issues || []).map((i, k) => (
+          <tr key={i.runId + ":" + k}>
+            <td className="admin-cell-sub">{fmtDateTime(i.at)}<div className="mono admin-cell-sub">{i.runId}</div></td>
+            <td className="mono">{i.displayId || <span className="admin-cell-sub">—</span>}</td>
+            <td>{i.templateName || <span className="admin-cell-sub">built-in</span>}
+              <div className="mono admin-cell-sub">{i.templateVersion ? "v" + i.templateVersion : "no version"}</div></td>
+            <td>{i.reprint ? <span className="chip chip-gold">reprint</span> : <span className="chip chip-lime">first</span>}</td>
+            <td>{i.ok ? <span className="admin-cell-sub">printed</span> : <span className="chip chip-crimson">not printed</span>}</td>
+          </tr>
+        ))}</tbody>
+      </table></div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   THE NGG CENTRE DIRECTORY
+
+   A centre is a PLACE, and it belongs to NGG the organisation. An NGG member is
+   posted to one all year round, their record points at it BY NAME, and its
+   1–4 letter code is the prefix on the ID card in their hand (IJ-26-001) with
+   its colour as the card's accent band. Summer School runs at centres; so do
+   volunteers, attendance, the public centre pages and the status boards.
+
+   This screen used to live inside Summer School → Registration and the whole
+   directory gated on the `summer` capability, which had it backwards in both
+   directions: a Summer School coordinator could rename or delete the centre
+   every member's record and printed card depended on, and a year-round member
+   administrator could not add one at all. Reading is open to either desk;
+   writing is `people`, and the server enforces it either way — `canWrite` in
+   the payload only stops this screen offering buttons that would 403.
+
+   The counts are per programme, deliberately. One column labelled "enrolled"
+   meant Summer School participants in the active edition, which is not what a
+   member administrator reads it as.
+   ============================================================================ */
+function AdminCentres() {
   const [centres, setCentres] = React.useState(null);
   const [leadOptions, setLeadOptions] = React.useState([]);
+  const [canWrite, setCanWrite] = React.useState(true);
   const [err, setErr] = React.useState("");
+  const [q, setQ] = React.useState("");
   const [d, setD] = React.useState({ name: "", code: "", color: "#76B043", capacity: "" });
   const [busy, setBusy] = React.useState(false);
   const [openId, setOpenId] = React.useState("");   // "" | "<id>:edit" | "<id>:map"
-  const load = () => NGGApi.admin.registration.centres().then(r => { setCentres(r.centres || []); setLeadOptions(r.leadOptions || []); setErr(""); }).catch(e => setErr(e.code || e.message));
+  const load = () => NGGApi.admin.registration.centres()
+    .then(r => { setCentres(r.centres || []); setLeadOptions(r.leadOptions || []); setCanWrite(r.canWrite !== false); setErr(""); })
+    .catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   const add = async (e) => {
     e && e.preventDefault();
     setBusy(true);
     try { await NGGApi.admin.registration.centreUpsert({ ...d, capacity: d.capacity === "" ? 0 : parseInt(d.capacity, 10) || 0 }); invalidateCentreOptCache(); setD({ name: "", code: "", color: "#76B043", capacity: "" }); toast.success("Centre added — open Edit to add its address, lead and contacts."); load(); }
-    catch (e2) { toast.error(e2.code === "code_taken" ? "That code is already used." : "Check the name (2+) and code (1–4 letters)."); }
+    catch (e2) {
+      toast.error(e2.code === "code_taken" ? "That code is already used — it's the printed ID prefix, so it has to be unique."
+        : e2.code === "forbidden" ? "Adding a centre needs the member-desk (people) capability."
+        : "Check the name (2+) and code (1–4 letters).");
+    }
     finally { setBusy(false); }
   };
-  const remove = async (c) => { if (!(await dialog.confirm({ title: "Remove " + c.name + "?", body: "Existing students keep their IDs; the centre just stops being offered.", cta: "Remove" }))) return; try { await NGGApi.admin.registration.centreDelete(c.centreId); invalidateCentreOptCache(); load(); } catch (e) { toast.error(e.code || e.message); } };
+
+  /* Removing a centre.
+   *
+   * This was an unconditional DELETE on a row that member records point at BY
+   * NAME, that participants point at by name, that summer groups point at by
+   * id, and whose code is already printed on physical cards. Nothing broke
+   * loudly — the records simply started pointing at a centre that no longer
+   * existed, and the pickers stopped offering theirs.
+   *
+   * So the server refuses and says what points at it, and the operator gets the
+   * choice that is almost always the right one: RETIRE, which keeps the row so
+   * every record still resolves and only stops the centre being offered.
+   * Deleting outright stays available and has to be asked for twice. */
+  const remove = async (c) => {
+    if (!(await dialog.confirm({
+      title: "Remove " + c.name + "?",
+      body: "Members already posted here keep the centre on their record, and cards already printed keep this code and colour.",
+      cta: "Remove", danger: true,
+    }))) return;
+    try {
+      await NGGApi.admin.registration.centreDelete(c.centreId);
+      invalidateCentreOptCache(); toast.success(c.name + " removed."); load();
+    } catch (e) {
+      if ((e.code || e.message) !== "centre_in_use") { toast.error(humanizeError(e.message, e.code), "Couldn't remove the centre"); return; }
+      const u = (e.data && e.data.uses) || {};
+      const parts = [];
+      if (u.members) parts.push(u.members + " NGG member" + (u.members === 1 ? "" : "s"));
+      if (u.participants) parts.push(u.participants + " Summer School participant" + (u.participants === 1 ? "" : "s"));
+      if (u.summerGroups) parts.push(u.summerGroups + " group" + (u.summerGroups === 1 ? "" : "s"));
+      if (u.volunteers) parts.push(u.volunteers + " volunteer" + (u.volunteers === 1 ? "" : "s"));
+      const retire = await dialog.confirm({
+        title: "Still in use by " + (parts.join(", ") || "other records"),
+        body: "Retiring is almost certainly what you want: the centre stops being offered anywhere, and every record that names it still resolves. "
+          + "Deleting it outright leaves those records pointing at a centre that doesn't exist.",
+        cta: "Retire it", cancel: "Delete anyway", danger: false,
+      });
+      try {
+        await NGGApi.admin.registration.centreDelete(c.centreId, retire ? { retire: true } : { force: true });
+        invalidateCentreOptCache();
+        toast.success(retire ? c.name + " retired — no longer offered, records intact." : c.name + " deleted.");
+        load();
+      } catch (e2) { toast.error(humanizeError(e2.message, e2.code), "Couldn't remove the centre"); }
+    }
+  };
+
   const geoLabel = (c) => c.lat == null ? <span className="chip status-archived">— unmapped</span> : c.geofence ? <span className="chip chip-lime">🟢 fence on · {c.radiusM || 150}m</span> : <span className="chip">mapped · off</span>;
   const toggle = (c, mode) => setOpenId(openId === c.centreId + ":" + mode ? "" : c.centreId + ":" + mode);
-  if (err) return <ErrorState title="Couldn't load centres" code={err} onRetry={load}/>;
+  /* Every hook runs before any early return. This useMemo used to sit BELOW
+     the error branch, so the first render called ten hooks and the re-render
+     after a failed load called nine — React threw "Rendered fewer hooks than
+     expected" and the section died exactly when it was meant to be showing
+     its honest error with a retry (CLAUDE.md §9). */
+  const rows = React.useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const all = centres || [];
+    if (!needle) return all;
+    return all.filter(c => (c.name || "").toLowerCase().indexOf(needle) !== -1
+      || (c.code || "").toLowerCase().indexOf(needle) !== -1
+      || (c.area || "").toLowerCase().indexOf(needle) !== -1
+      || (c.address || "").toLowerCase().indexOf(needle) !== -1);
+  }, [centres, q]);
+
+  if (err) return <ErrorState title="Couldn't load the centre directory" code={err} onRetry={load}/>;
+
   return (
-    <div>
-      <p className="admin-hint">Each centre has a 1–4 letter code (the printed ID prefix, e.g. <span className="mono">IJ-26-001</span>) and a colour that drives its ID card accent. Quick-add below, then <b>Edit</b> to set its address, centre lead, contacts and meeting times — these appear on the public status boards — plus the <b>public page</b> (hero image, tagline, story) shown at <span className="mono">/centres/&lt;slug&gt;</span>. <b>Map</b> draws its geo-fence.</p>
-      <form onSubmit={add} className="admin-filters" style={{ alignItems: "center" }}>
-        <input className="admin-input" placeholder="Centre name" value={d.name} onChange={e => setD({ ...d, name: e.target.value })} style={{ minWidth: 200 }}/>
-        <input className="admin-input" placeholder="CODE" value={d.code} maxLength={4} onChange={e => setD({ ...d, code: e.target.value.toUpperCase() })} style={{ maxWidth: 100 }}/>
-        <input type="color" value={d.color} onChange={e => setD({ ...d, color: e.target.value })} style={{ width: 44, height: 38, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)", cursor: "pointer" }}/>
-        <input className="admin-input" type="number" min="0" placeholder="Capacity (0=∞)" value={d.capacity} onChange={e => setD({ ...d, capacity: e.target.value })} style={{ maxWidth: 140 }}/>
-        <button className="btn btn-primary btn-sm" disabled={busy || d.name.length < 2 || !d.code}>{busy ? "…" : "+ Add centre"}</button>
-      </form>
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Centres {centres ? <span className="admin-count mono">{fmtNum(centres.length)}</span> : null}</h2>
+      </div>
+      <p className="admin-hint">
+        The organisation's places. Each centre's 1–4 letter <b>code</b> is the printed ID prefix
+        (<span className="mono">IJ-26-001</span>) and its colour is the card's accent band, so both are effectively
+        permanent once cards are in circulation. <b>Edit</b> sets the address, centre lead, contacts and meeting
+        times shown on the public status boards, plus the public page at <span className="mono">/centres/&lt;slug&gt;</span>.
+        <b> Map</b> draws the geo-fence. Summer School classes that meet here are set up under
+        <b> Summer School → Editions &amp; groups</b>.
+      </p>
+      {!canWrite && (
+        <p className="admin-hint" role="status" style={{ background: "rgba(255,206,84,.1)", border: "1px solid rgba(255,206,84,.4)", borderRadius: 10, padding: "10px 12px" }}>
+          You can see the directory but not change it. A centre's code and colour are printed on member ID cards, so
+          editing it needs the member-desk (<span className="mono">people</span>) capability. Ask an NGG administrator
+          to add or amend one.
+        </p>
+      )}
+      {canWrite && (
+        <form onSubmit={add} className="admin-filters" style={{ alignItems: "center" }}>
+          <input className="admin-input" placeholder="Centre name" aria-label="New centre name" value={d.name} onChange={e => setD({ ...d, name: e.target.value })} style={{ minWidth: 200 }}/>
+          <input className="admin-input" placeholder="CODE" aria-label="New centre code (1–4 letters, the printed ID prefix)" value={d.code} maxLength={4} onChange={e => setD({ ...d, code: e.target.value.toUpperCase() })} style={{ maxWidth: 100 }}/>
+          <input type="color" aria-label="New centre card colour" value={d.color} onChange={e => setD({ ...d, color: e.target.value })} style={{ width: 44, height: 38, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)", cursor: "pointer" }}/>
+          <input className="admin-input" type="number" min="0" placeholder="Summer capacity (0=∞)" aria-label="Summer School capacity, 0 for unlimited" value={d.capacity} onChange={e => setD({ ...d, capacity: e.target.value })} style={{ maxWidth: 180 }}/>
+          <button className="btn btn-primary btn-sm" disabled={busy || d.name.length < 2 || !d.code}>{busy ? "…" : "+ Add centre"}</button>
+        </form>
+      )}
+      {(centres || []).length > 6 && (
+        <div className="admin-filters">
+          <input className="admin-input" value={q} onChange={e => setQ(e.target.value)}
+            placeholder="Search centres by name, code or area…" aria-label="Search the centre directory"/>
+        </div>
+      )}
       {centres === null ? <div className="dash-spinner"/> :
-        centres.length === 0 ? <div className="admin-empty">No centres yet — add your first above.</div> :
-        <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>Centre</th><th>Location</th><th>Lead</th><th>Capacity</th><th>Geo-fence</th><th></th></tr></thead>
-          <tbody>{centres.map(c => (
+        centres.length === 0
+          ? <EmptyState icon="◉" title="No centres yet"
+              message="A centre is a place the whole organisation uses. Its code becomes the ID prefix on every member card issued there, so pick it carefully."/>
+        : rows.length === 0
+          ? <div className="admin-empty">No centre matches “{q}”. <button className="btn btn-ghost btn-sm" onClick={() => setQ("")}>Clear the search</button></div>
+        : <div className="admin-table-wrap"><table className="admin-table">
+          <caption className="sr-only">NGG centres, with the year-round membership and the current Summer School edition counted separately</caption>
+          <thead><tr>
+            <th scope="col">Centre</th>
+            <th scope="col">Location</th>
+            <th scope="col">Lead</th>
+            <th scope="col" className="admin-num">NGG members</th>
+            <th scope="col" className="admin-num">Summer School</th>
+            <th scope="col">Geo-fence</th>
+            <th scope="col"><span className="sr-only">Actions</span></th>
+          </tr></thead>
+          <tbody>{rows.map(c => (
             <React.Fragment key={c.centreId}>
             <tr>
               <td>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 12, height: 12, borderRadius: 4, background: c.color, border: "1px solid rgba(0,0,0,0.1)", flex: "0 0 auto" }}/><b>{c.name}</b> <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-500)" }}>{c.code}</span></span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 4, background: c.color, border: "1px solid rgba(0,0,0,0.1)", flex: "0 0 auto" }}/><b>{c.name}</b> <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-500)" }}>{c.code}</span></span>
+                {c.status === "retired" && <span className="chip status-archived" style={{ marginLeft: 8 }} title="Kept so existing records still resolve; no longer offered anywhere">retired</span>}
                 {c.status === "archived" && <span className="chip status-archived" style={{ marginLeft: 8 }}>archived</span>}
                 {c.pageStatus === "published"
                   ? <a className="chip chip-lime" href={"/centres/" + (c.slug || "")} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8, textDecoration: "none" }}>page live ↗</a>
@@ -9890,16 +13549,27 @@ function SummerCentres() {
               </td>
               <td>{c.area || c.address ? <span style={{ lineHeight: 1.3 }}><b style={{ fontWeight: 600 }}>{c.area || "—"}</b>{c.address ? <><br/><span className="admin-cell-sub" style={{ fontSize: 12 }}>{c.address}</span></> : null}</span> : <span className="admin-cell-sub">—</span>}</td>
               <td>{c.leadName ? <span className="chip chip-lime">{c.leadName}</span> : <span className="admin-cell-sub">—</span>}</td>
-              <td>{(c.capacity || 0) > 0 ? <span className={c.full ? "chip chip-crimson" : ""}>{c.enrolled || 0}/{c.capacity}{c.full ? " full" : ""}{c.waitlisted ? " · " + c.waitlisted + " waitlisted" : ""}</span> : <span className="mono" style={{ color: "var(--ink-500)" }}>∞ {c.enrolled ? "· " + c.enrolled : ""}</span>}</td>
+              {/* Two programmes, two numbers. The year-round roster first,
+                  because this is the NGG directory. */}
+              <td className="admin-num">{c.members ? fmtNum(c.members) : <span className="admin-cell-sub">0</span>}</td>
+              <td className="admin-num">
+                {(c.capacity || 0) > 0
+                  ? <span className={c.full ? "chip chip-crimson" : ""}>{c.summerEnrolled || 0}/{c.capacity}{c.full ? " full" : ""}</span>
+                  : <span title="No Summer School cap set">{c.summerEnrolled || 0} <span className="admin-cell-sub">/ ∞</span></span>}
+                {c.summerWaitlisted ? <div className="admin-cell-sub">{c.summerWaitlisted} waitlisted</div> : null}
+                {c.groups ? <div className="admin-cell-sub">{c.groups} group{c.groups === 1 ? "" : "s"}</div> : null}
+              </td>
               <td>{geoLabel(c)}</td>
               <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                <button className="btn btn-ghost btn-sm" onClick={() => toggle(c, "edit")}>{openId === c.centreId + ":edit" ? "Close" : "Edit"}</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => toggle(c, "map")}>{openId === c.centreId + ":map" ? "Close" : "Map"}</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => remove(c)} style={{ color: "#b03535" }}>Remove</button>
+                {canWrite ? <>
+                  <button className="btn btn-ghost btn-sm" aria-expanded={openId === c.centreId + ":edit"} onClick={() => toggle(c, "edit")}>{openId === c.centreId + ":edit" ? "Close" : "Edit"}</button>
+                  <button className="btn btn-ghost btn-sm" aria-expanded={openId === c.centreId + ":map"} onClick={() => toggle(c, "map")}>{openId === c.centreId + ":map" ? "Close" : "Map"}</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => remove(c)} style={{ color: "#b03535" }}>Remove</button>
+                </> : <span className="admin-cell-sub">read-only</span>}
               </td>
             </tr>
-            {openId === c.centreId + ":edit" && <tr><td colSpan={6} style={{ background: "rgba(12,20,50,0.03)" }}><CentreDetailsEditor c={c} leadOptions={leadOptions} onSaved={() => { setOpenId(""); load(); }}/></td></tr>}
-            {openId === c.centreId + ":map" && <tr><td colSpan={6} style={{ background: "rgba(12,20,50,0.03)" }}><CentreGeoEditor c={c} onSaved={() => { setOpenId(""); load(); }}/></td></tr>}
+            {canWrite && openId === c.centreId + ":edit" && <tr><td colSpan={7} style={{ background: "rgba(12,20,50,0.03)" }}><CentreDetailsEditor c={c} leadOptions={leadOptions} onSaved={() => { setOpenId(""); load(); }}/></td></tr>}
+            {canWrite && openId === c.centreId + ":map" && <tr><td colSpan={7} style={{ background: "rgba(12,20,50,0.03)" }}><CentreGeoEditor c={c} onSaved={() => { setOpenId(""); load(); }}/></td></tr>}
             </React.Fragment>
           ))}</tbody>
         </table></div>}
@@ -10521,8 +14191,15 @@ function FieldUpload({ label, value, onChange, kind, accept, placeholder }) {
   );
 }
 
-function fmtDate(d) { if (!d) return ""; const x = new Date(d); return x.toLocaleDateString("en-GB", { day:"numeric", month:"short", year:"numeric" }); }
-function fmtTime(d) { if (!d) return ""; const x = new Date(d); return x.toLocaleString("en-GB"); }
+/* fmtDate and fmtTime used to be declared here, formatting to en-GB by hand.
+   They are in components.jsx now, with the rest of them, because the bundle is
+   a plain concatenation into ONE scope: two files declaring `function fmtDate`
+   is not two functions, it is the later file silently replacing the earlier
+   one for the whole app. The build test fails on a duplicate top-level name
+   now, which is how this was found.
+
+   The old local fmtTime returned a DATE AND a time ("22/08/2026, 14:30"), so
+   its three callers say fmtDateTime rather than fmtTime, which is time alone. */
 
 // ── Check-in kiosk (Phase 2): camera + handheld/USB scanner + offline queue ──
 const KIOSK_Q = "ngg_summer_kiosk_q";
@@ -10670,7 +14347,7 @@ function SummerKiosk({ onCheckin }) {
                   aria-label={"Switch to the " + (camFacing === "environment" ? "front" : "back") + " camera"}
                   onClick={() => setCamFacing(f => (f === "environment" ? "user" : "environment"))}>🔄</button>
               )}
-              {camErr && <div className="summer-cam-err">{camErr}</div>}
+              {camErr && <div role="alert" className="summer-cam-err">{camErr}</div>}
             </div>
           ) : (
             <form onSubmit={submitManual} className="summer-scan-form">
@@ -10755,7 +14432,7 @@ const STATE_CHIP = {
   suspended: { label: "Suspended", cls: "status-archived" },
   evicted:   { label: "Evicted",   cls: "status-archived" },
 };
-const naira = (n) => "₦" + Number(n || 0).toLocaleString();
+const naira = (n) => fmtMoney(n);
 
 function PolicyStateChip({ state }) {
   const s = STATE_CHIP[state] || STATE_CHIP.clear;
@@ -10844,9 +14521,9 @@ function SummerPolicy() {
           </label>
         </div>
         <p className="admin-hint">
-          Which days the summer students are expected. Absence, attendance rates and guardian
+          Which days participants are expected. Absence, attendance rates and guardian
           alerts all read this — with no calendar set, every calendar day counts, so a Sunday
-          marks the whole cohort absent. Set the term window and the weekdays that run, then
+          marks every participant absent. Set the term window and the weekdays that run, then
           cancel or add individual dates below.
         </p>
 
@@ -11180,7 +14857,7 @@ function SummerPolicy() {
    an admin actually needs: void a wrong fact, and close out a sanction. */
 function PolicyPersonModal({ data, onClose, onChange }) {
   // No unsaved-edit guard: every action here commits immediately.
-  const { panelRef, close } = useAdminDrawer(onClose, false);
+  const { panelRef, close, titleProps, headingProps } = useAdminDrawer(onClose, false);
   const [busy, setBusy] = React.useState("");
   const st = data.state || {};
   const reload = () => NGGApi.admin.policy.person(data.personId, data.personType).then(onChange).catch(() => {});
@@ -11229,10 +14906,10 @@ function PolicyPersonModal({ data, onClose, onChange }) {
   };
 
   return (
-    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+    <div className="admin-drawer" ref={panelRef} role="dialog" aria-modal="true" {...titleProps} onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="admin-drawer-panel admin-drawer-wide" onClick={(e) => e.stopPropagation()}>
       <div className="admin-drawer-head">
-        <h3>Compliance record · {data.personId}</h3>
+        <h3 {...headingProps}>Compliance record · {data.personId}</h3>
         <button type="button" className="admin-drawer-close" onClick={close}>✕</button>
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
@@ -11715,9 +15392,9 @@ function SummerAttendance() {
           <div className="admin-table-wrap"><table className="admin-table att-table">
             <thead><tr>
               <th>Volunteer</th><th>Role</th>
-              <th>Days in<span className="att-th-sub">of their own open days</span></th>
-              <th>Rate<span className="att-th-sub">{win.ranged ? "in this range" : "since they joined"}</span></th>
-              <th>On time</th><th>Streak</th>
+              <th className="admin-num">Days in<span className="att-th-sub">of their own open days</span></th>
+              <th className="admin-num">Rate<span className="att-th-sub">{win.ranged ? "in this range" : "since they joined"}</span></th>
+              <th className="admin-num">On time</th><th className="admin-num">Streak</th>
               <th>Pattern<span className="att-th-sub">oldest → newest</span></th>
               <th>Last seen</th><th>Today</th>
             </tr></thead>
@@ -11728,11 +15405,11 @@ function SummerAttendance() {
                 {/* Their own denominator: programme days since THEY joined, not
                     the whole window — a volunteer who started in week four did
                     not miss weeks one to three. */}
-                <td className="mono">{r.present}/{r.expected}{r.joined ? <div style={{ fontSize: 10.5, color: "var(--ink-500)" }}>from {r.joined}</div> : null}</td>
+                <td className="mono admin-num">{r.present}/{r.expected}{r.joined ? <div style={{ fontSize: 10.5, color: "var(--ink-500)" }}>from {r.joined}</div> : null}</td>
                 <td style={{ minWidth: 120 }}>{r.rate == null ? <span className="mono" style={{ color: "var(--ink-500)" }}>no days yet</span>
-                  : <div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: Math.min(100, r.rate) + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono">{r.rate}%</span></div>}</td>
-                <td className="mono" style={{ color: (r.onTimePct != null && r.onTimePct < 80) ? "var(--gold-700,#7a5600)" : undefined }}>{r.onTimePct == null ? "—" : r.onTimePct + "%"}</td>
-                <td className="mono">{r.streak ? r.streak : "—"}</td>
+                  : <div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: Math.min(100, r.rate) + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono admin-num">{r.rate}%</span></div>}</td>
+                <td className="mono admin-num" style={{ color: (r.onTimePct != null && r.onTimePct < 80) ? "var(--gold-700,#7a5600)" : undefined }}>{r.onTimePct == null ? "—" : r.onTimePct + "%"}</td>
+                <td className="mono admin-num">{r.streak ? r.streak : "—"}</td>
                 <td><AttPattern pattern={r.pattern} missedRun={r.missedRun}/>
                   {r.stopped ? <div className="mono att-stopped">{attMissedLabel(r)}</div> : null}</td>
                 <td className="mono">{r.lastSeen || "—"}</td>
@@ -11751,7 +15428,7 @@ function SummerAttendance() {
         </>
         )
       ) : !roster.length ? (
-        <div className="admin-empty">{(a.rosterTotal || 0) > 0 ? "No child matches that filter." : "Nobody is enrolled in this cohort yet."}</div>
+        <div className="admin-empty">{(a.rosterTotal || 0) > 0 ? "No child matches that filter." : "Nobody is enrolled in this edition yet."}</div>
       ) : (
       <div className="admin-table-wrap" style={{ marginTop: 8 }}><table className="admin-table att-table">
         {/* The headers carry their own units. "Present" and "Rate" against an
@@ -11759,9 +15436,9 @@ function SummerAttendance() {
             hold the window in their head to know what 62% was 62% of. */}
         <thead><tr>
           <th>Child</th><th>Track</th>
-          <th>Days in<span className="att-th-sub">of {a.sessionDays} open</span></th>
-          <th>Rate<span className="att-th-sub">{win.ranged ? "in this range" : "this term"}</span></th>
-          <th>Late</th><th>Standing</th>
+          <th className="admin-num">Days in<span className="att-th-sub">of {a.sessionDays} open</span></th>
+          <th className="admin-num">Rate<span className="att-th-sub">{win.ranged ? "in this range" : "this term"}</span></th>
+          <th className="admin-num">Late</th><th>Standing</th>
           <th>Pattern<span className="att-th-sub">oldest → newest</span></th>
           <th>Last seen</th><th>Today</th>
         </tr></thead>
@@ -11771,12 +15448,12 @@ function SummerAttendance() {
             <td>{r.track || "—"}</td>
             {/* A child who has never once appeared is a different problem from
                 one attending badly, and 0/10 read the same as 3/10 at a glance. */}
-            <td className="mono">{(r.present || 0) === 0
+            <td className="mono admin-num">{(r.present || 0) === 0
               ? <b style={{ color: "var(--coral)" }}>never</b>
               : <>{r.present}<span style={{ color: "var(--ink-500)" }}>/{a.sessionDays}</span></>}
               {r.halfDays ? <span title={r.halfDays + " half-day(s) — missed the Musing Period"} style={{ color: "var(--ink-500)" }}> ·{r.halfDays}½</span> : null}</td>
-            <td style={{ minWidth: 120 }}><div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: Math.min(100, r.rate) + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono">{r.rate}%</span></div></td>
-            <td className="mono">{r.lates ? r.lates : "—"}</td>
+            <td style={{ minWidth: 120 }}><div className="summer-rate"><div className="summer-rate-bar"><div className="summer-rate-fill" style={{ width: Math.min(100, r.rate) + "%", background: r.rate < 50 ? "var(--coral)" : r.rate < 80 ? "var(--gold-500)" : "var(--lime-ink, #6e9c1d)" }}/></div><span className="mono admin-num">{r.rate}%</span></div></td>
+            <td className="mono admin-num">{r.lates ? r.lates : "—"}</td>
             <td>{r.state && r.state !== "clear" ? <PolicyStateChip state={r.state}/> : <span className="mono" style={{ color: "var(--ink-500)" }}>—</span>}</td>
             <td><AttPattern pattern={r.pattern} missedRun={r.missedRun}/>
               {r.stopped ? <div className="mono att-stopped">{attMissedLabel(r)}</div>
@@ -11805,7 +15482,7 @@ function SummerAttendance() {
       <div className="summer-archive">
         <div>
           <div className="eyebrow" style={{ marginBottom: 4 }}>END OF SUMMER</div>
-          <div className="admin-hint" style={{ margin: 0 }}>Archive the cohort when summer ends. Compressing rolls each student's attendance into a summary (kept for NGG Club promotion) and clears the individual check-ins.</div>
+          <div className="admin-hint" style={{ margin: 0 }}>Archive the edition when summer ends. Compressing rolls each participant's attendance into a summary (kept for NGG Club promotion) and clears the individual check-ins.</div>
         </div>
         <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
           <button className="btn btn-ghost btn-sm" onClick={() => archive(false)}>Archive</button>
@@ -11820,79 +15497,477 @@ function SummerAttendance() {
 // NGG Club manager (coordinator portal) — Summer→Club promotion + roster
 // ============================================================================
 
+/* ============================================================================
+   THE NGG CLUB DESK
+
+   A club coordinator holds the `club` capability and nothing else. Their job is
+   the Summer → Club bridge and the club roster, and both screens were built as
+   read-only lists with one exception:
+
+     · PROMOTION WAS ONE CHILD AT A TIME. A graduating edition of four hundred
+       was four hundred confirmations, so in practice it did not happen.
+     · A FAILED LOAD LOOKED LIKE AN EMPTY LIST. Both screens did
+       `.catch(() => setList([]))`, so a 403, a 500 or a dropped connection
+       rendered "No Summer students awaiting promotion." — the most reassuring
+       possible way to report that the screen is broken.
+     · THE ROSTER WAS HARD-WIRED TO status='active', so the two groups the
+       roster exists to track — who went inactive, who graduated — could not be
+       seen at all, and there was no way to find out somebody had been
+       deactivated.
+     · NO ACTIONS. Not one, on either screen, beyond the single promote.
+
+   The bulk actions here are deliberately NARROWER than the member desk's: a
+   club coordinator manages participation (active / graduated / inactive) and
+   posts members to centres. Suspension, membership type, levels and the dues
+   switch stay with `people` and `fees`, because handing them over here would
+   make `club` a quiet superset of the member desk.
+   ============================================================================ */
 function ClubManager() {
-  const [tab, setTab] = React.useState("promote");
+  const [tab, setTab] = useAdminTab("promote", React.useCallback(t => t === "promote" || t === "members", []));
   const [ov, setOv] = React.useState(null);
-  const load = () => NGGApi.admin.club.overview().then(setOv).catch(() => {});
-  React.useEffect(() => { load(); }, []);
+  const [ovErr, setOvErr] = React.useState("");
+  const load = React.useCallback(() => {
+    setOvErr("");
+    return NGGApi.admin.club.overview().then(setOv).catch(e => setOvErr(e.code || e.message || "load_failed"));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
   const o = (ov && ov.overview) || {};
   return (
     <div className="admin-section">
       <div className="admin-section-head"><h2 className="admin-h2">NGG Club</h2></div>
-      <p className="admin-hint">Enrol Summer School graduates into the Club and manage the member roster.</p>
-      <div className="admin-tiles" style={{ marginBottom: 8 }}>
-        <AdminTile n={o.members ?? "—"} l="Club members"/>
-        <AdminTile n={o.promotable ?? "—"} l="Ready to promote"/>
-        <AdminTile n={o.promoted ?? "—"} l="Promoted"/>
-        <AdminTile n={o.mentors ?? "—"} l="Active mentors"/>
-      </div>
-      <div className="admin-anchor-tabs">
-        {[["promote", "Promote from Summer"], ["members", "Club roster"]].map(([id, lbl]) => (
-          <button key={id} className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
+      <p className="admin-hint">
+        Enrol Summer School graduates into the Club, and keep the member roster true. Promotion carries the child's
+        name, photograph, course and centre across, and mints them a way to sign in — so it is worth doing for a whole
+        graduating group at once rather than one at a time.
+      </p>
+      {ovErr
+        ? <p className="admin-form-err" role="alert">
+            Couldn't load the Club figures ({ovErr}). <button className="admin-bulk-link" onClick={load}>Try again</button>
+          </p>
+        : <div className="admin-tiles" style={{ marginBottom: 8 }}>
+            <AdminTile n={o.members ?? "—"} l="Club members" loading={!ov}/>
+            <AdminTile n={o.promotable ?? "—"} l="Ready to promote" loading={!ov}/>
+            <AdminTile n={o.promoted ?? "—"} l="Promoted" loading={!ov}/>
+            <AdminTile n={o.mentors ?? "—"} l="Active mentors" loading={!ov}/>
+          </div>}
+      <div className="admin-anchor-tabs" role="tablist" aria-label="NGG Club sections">
+        {[["promote", "Promote from Summer School"], ["members", "Club roster"]].map(([id, lbl]) => (
+          <button key={id} role="tab" id={"clubtab-" + id} aria-selected={tab === id} aria-controls="clubpanel"
+            tabIndex={tab === id ? 0 : -1}
+            className={"admin-anchor-tab" + (tab === id ? " is-active" : "")} onClick={() => setTab(id)}>{lbl}</button>
         ))}
       </div>
-      {tab === "promote" && <ClubPromote onChange={load}/>}
-      {tab === "members" && <ClubRoster/>}
+      <div id="clubpanel" role="tabpanel" aria-labelledby={"clubtab-" + tab} tabIndex={-1}>
+        {tab === "promote" && <ClubPromote onChange={load}/>}
+        {tab === "members" && <ClubRoster onChange={load}/>}
+      </div>
     </div>
   );
 }
 
+/* The Summer → Club bridge.
+ *
+ * A graduating group is promoted in ONE action, and partially: the children who
+ * cannot be promoted (already promoted, no longer in the roster) come back
+ * named rather than aborting the run for everybody else. Whoever has no
+ * guardian email on file is flagged BEFORE the run, because promoting them
+ * works and produces a member nobody can email a way in to — which is a thing
+ * to know now, not to discover in a support message.
+ */
 function ClubPromote({ onChange }) {
   const [list, setList] = React.useState(null);
-  const load = () => NGGApi.admin.club.promotable().then(r => setList(r.students || [])).catch(() => setList([]));
-  React.useEffect(() => { load(); }, []);
-  const promote = async (s) => {
-    const ok = await dialog.confirm({ title: "Promote " + s.fullName + " to the Club?", body: "Creates an active NGG member from this Summer student, carrying their track, centre and photo.", cta: "Promote" });
+  const [meta, setMeta] = React.useState({ total: 0, pageSize: 50, max: 200 });
+  const [page, setPage] = React.useState(1);
+  const [err, setErr] = React.useState("");
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [f, setF] = React.useState({ q: "", centre: "" });
+  const [result, setResult] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const centreOpts = useCentreOptions();
+
+  const load = React.useCallback((p) => {
+    setErr(""); setRefreshing(true);
+    return NGGApi.admin.club.promotable(Object.assign({}, f, { page: p || page, pageSize: meta.pageSize }))
+      .then(r => { setList(r.students || []); setMeta(m => ({ total: r.total || 0, pageSize: r.pageSize || m.pageSize, max: r.max || m.max })); })
+      /* An error is an error. This used to be `.catch(() => setList([]))`,
+         which rendered a broken screen as "nobody is waiting" — the one
+         message that guarantees nobody investigates. */
+      .catch(e => setErr(e.code || e.message || "load_failed"))
+      .finally(() => setRefreshing(false));
+    // eslint-disable-next-line
+  }, [f, page, meta.pageSize]);
+  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [f.centre]);
+  React.useEffect(() => { const t = setTimeout(() => { setPage(1); load(1); }, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [f.q]);
+
+  const rows = list || [];
+  const sel = useAdminSelection(rows, s => s.studentId);
+  const chosen = rows.filter(s => sel.has(s.studentId));
+  const noContact = chosen.filter(s => s.noContact).length;
+
+  const promoteMany = async () => {
+    const ids = sel.ids;
+    if (!ids.length) return;
+    const ok = await dialog.confirm({
+      title: "Promote " + ids.length + " into the Club?",
+      body: "Each becomes an active NGG member carrying their name, photograph, course and centre, and is emailed a "
+        + "link to set a password. Their Summer School record is marked promoted."
+        + (noContact ? "\n\n" + noContact + " of them have no guardian email on file. They'll still be promoted — "
+            + "but nobody can email them a way in, so somebody will have to set that up by hand." : ""),
+      cta: "Promote " + ids.length,
+    });
     if (!ok) return;
-    try { const r = await NGGApi.admin.club.promote(s.studentId); toast.success("Promoted → " + r.memberId); load(); onChange && onChange(); }
-    catch (e) { toast.error(e.code || e.message); }
+    setBusy(true);
+    try {
+      const r = await NGGApi.admin.club.promoteBulk(ids);
+      setResult(r);
+      const failed = (r.results || []).filter(x => x && x.ok === false);
+      if (failed.length && r.promoted) {
+        toast.warn(r.promoted + " promoted · " + failed.length + " not ("
+          + adminFailSummary(failed.map(x => ({ ok: false, error: x.error }))) + ").", "Promotion");
+      } else if (failed.length) {
+        toast.error("Nobody was promoted — " + adminFailSummary(failed.map(x => ({ ok: false, error: x.error }))) + ".", "Promotion");
+      } else {
+        toast.success(r.promoted + " promoted into the Club.", "Promotion");
+      }
+      sel.clear();
+      await load();
+      if (onChange) await onChange();
+    } catch (e) {
+      const code = e.code || e.message;
+      toast.error(code === "too_many" ? "That's more than one run can cover — promote them in batches of " + meta.max + "."
+        : humanizeError(e.message, code), "Couldn't promote");
+    } finally { setBusy(false); }
   };
+
+  const promoteOne = async (s) => {
+    const ok = await dialog.confirm({
+      title: "Promote " + s.fullName + " into the Club?",
+      body: "Creates an active NGG member from this Summer School record, carrying their course, centre and photograph."
+        + (s.noContact ? "\n\nThere is no guardian email on file, so no sign-in link can be sent — somebody will have to set that up by hand." : ""),
+      cta: "Promote",
+    });
+    if (!ok) return;
+    try { const r = await NGGApi.admin.club.promote(s.studentId); toast.success("Promoted → " + r.memberId, s.fullName); await load(); if (onChange) await onChange(); }
+    catch (e) { toast.error(humanizeError(e.message, e.code), "Couldn't promote " + s.fullName); }
+  };
+
+  if (err && list === null) return <ErrorState title="Couldn't load the promotion list" code={err} onRetry={() => load()}/>;
   if (list === null) return <div className="dash-spinner"/>;
-  if (!list.length) return <div className="admin-empty">No Summer students awaiting promotion.</div>;
+  const filtered = !!(f.q || f.centre);
+
   return (
-    <div className="admin-table-wrap"><table className="admin-table">
-      <thead><tr><th>Student</th><th>ID</th><th>Track</th><th>Centre</th><th>Present</th><th/></tr></thead>
-      <tbody>{list.map(s => (
-        <tr key={s.studentId}>
-          <td>{s.fullName}</td>
-          <td className="mono">{s.studentId}</td>
-          <td>{s.track || "—"}</td><td>{s.centre || "—"}</td>
-          <td className="mono">{s.attendanceCount}</td>
-          <td><button className="btn btn-primary btn-sm" onClick={() => promote(s)}>Promote →</button></td>
-        </tr>
-      ))}</tbody>
-    </table></div>
+    <div>
+      {result && (
+        <div className="admin-callout" role="status">
+          <b>{result.promoted}</b> promoted · <b>{result.refused}</b> refused of {result.requested}.
+          {result.refused > 0 && (
+            <ul className="admin-callout-list">
+              {(result.results || []).filter(x => x && x.ok === false).slice(0, 12).map(x => (
+                <li key={x.id}>{x.name || x.id} — {String(x.error || "refused").replace(/_/g, " ")}</li>
+              ))}
+            </ul>
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={() => setResult(null)}>Dismiss</button>
+        </div>
+      )}
+      <div className="admin-filters">
+        <input className="admin-input" value={f.q} onChange={e => setF(x => ({ ...x, q: e.target.value }))}
+          placeholder="Search name or student ID…" aria-label="Search the promotion list"/>
+        <select className="admin-select" value={f.centre} onChange={e => setF(x => ({ ...x, centre: e.target.value }))}
+          aria-label="Filter the promotion list by centre">
+          <option value="">All centres</option>{centreOpts.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+
+      <AdminBulkBar selection={sel} noun="student" total={meta.total}
+        actions={[{ id: "promote", label: "Promote into the Club", confirm: false, open: () => promoteMany() }]}>
+        {noContact > 0 && (
+          <span className="chip chip-gold" title="Promoting them works; nobody can email them a sign-in link">
+            {noContact} with no guardian email
+          </span>
+        )}
+      </AdminBulkBar>
+
+      {rows.length === 0
+        ? (filtered
+            ? <EmptyState icon="⌕" title="Nobody matches" message="No Summer School record awaiting promotion fits these filters."
+                action={<button className="btn btn-ghost btn-sm" onClick={() => setF({ q: "", centre: "" })}>Clear the filters</button>}/>
+            : <EmptyState icon="☀" title="Nobody is waiting to be promoted"
+                message="Summer School records show up here while they are active or graduated, and drop off once promoted."/>)
+        : <div className={"admin-table-wrap" + (refreshing ? " is-refreshing" : "")} aria-busy={refreshing ? "true" : undefined}>
+            {err && <p className="admin-form-err" role="alert" style={{ margin: "0 0 10px" }}>
+              Couldn't refresh ({err}). These rows are from the last successful load.{" "}
+              <button className="admin-bulk-link" onClick={() => load()}>Try again</button>
+            </p>}
+            <table className="admin-table">
+              <caption className="sr-only">Summer School records awaiting promotion into the Club</caption>
+              <thead><tr>
+                <th scope="col" style={{ width: 34 }}><AdminSelectAll selection={sel} label="Select all on this page"/></th>
+                <th scope="col">Student</th>
+                <th scope="col">Course</th>
+                <th scope="col">Centre</th>
+                <th scope="col" className="admin-num">Days present</th>
+                <th scope="col">Guardian email</th>
+                <th scope="col"><span className="sr-only">Actions</span></th>
+              </tr></thead>
+              <tbody>{rows.map(s => (
+                <tr key={s.studentId} className={sel.has(s.studentId) ? "is-selected" : ""}>
+                  <td style={{ width: 34 }}><AdminRowCheck selection={sel} id={s.studentId} label={"Select " + (s.fullName || s.studentId)}/></td>
+                  <td>
+                    <b>{s.fullName}</b>
+                    <div className="mono admin-cell-sub">{s.displayId || s.studentId}{s.status === "graduated" ? " · graduated" : ""}</div>
+                  </td>
+                  <td>{s.track || <span className="admin-cell-sub">—</span>}</td>
+                  <td>{s.centre || <span className="admin-cell-sub">—</span>}</td>
+                  <td className="admin-num">{s.attendanceCount}</td>
+                  <td>{s.noContact
+                    ? <span className="chip chip-gold" title="They can be promoted, but no sign-in link can be emailed">none on file</span>
+                    : <span className="admin-cell-sub">{s.parentEmail}</span>}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => promoteOne(s)} disabled={busy}>Promote →</button>
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+            <Pager page={page} pageSize={meta.pageSize} total={meta.total} onPage={(p) => { setPage(p); load(p); }}/>
+          </div>}
+    </div>
   );
 }
 
-function ClubRoster() {
+/* The club roster.
+ *
+ * Read-only before, and only ever showing active members — so the two groups a
+ * roster exists to track (who went quiet, who graduated) were invisible, and a
+ * coordinator could not act on anybody. Now searched, filtered by status and
+ * centre, sorted and paged server-side, with the club's own narrow bulk
+ * actions and per-row menu built from one set of declarations.
+ */
+function ClubRoster({ onChange }) {
   const [list, setList] = React.useState(null);
-  const [q, setQ] = React.useState("");
-  const load = () => NGGApi.admin.club.members(q).then(r => setList(r.members || [])).catch(() => setList([]));
-  React.useEffect(() => { const t = setTimeout(load, 200); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q]);
+  const [meta, setMeta] = React.useState({ total: 0, pageSize: 50 });
+  const [page, setPage] = React.useState(1);
+  const [err, setErr] = React.useState("");
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [f, setF] = React.useState({ q: "", centre: "", status: "active" });
+  const [sort, setSort] = React.useState({ col: "createdAt", dir: "desc" });
+  const [bulkForm, setBulkForm] = React.useState(null);
+  const [exporting, setExporting] = React.useState(false);
+  const centreOpts = useCentreOptions();
+
+  const load = React.useCallback((p, so) => {
+    setErr(""); setRefreshing(true);
+    const s0 = so || sort;
+    return NGGApi.admin.club.members(Object.assign({}, f, { page: p || page, pageSize: meta.pageSize, sort: s0.col, dir: s0.dir }))
+      .then(r => { setList(r.members || []); setMeta(m => ({ total: r.total || 0, pageSize: r.pageSize || m.pageSize })); })
+      .catch(e => setErr(e.code || e.message || "load_failed"))
+      .finally(() => setRefreshing(false));
+    // eslint-disable-next-line
+  }, [f, page, sort, meta.pageSize]);
+  React.useEffect(() => { setPage(1); load(1); /* eslint-disable-next-line */ }, [f.centre, f.status]);
+  React.useEffect(() => { const t = setTimeout(() => { setPage(1); load(1); }, 250); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [f.q]);
+  const onSort = (col, dir) => { const so = { col, dir }; setSort(so); setPage(1); load(1, so); };
+  const reload = () => load(page, sort);
+
+  const rows = list || [];
+  const sel = useAdminSelection(rows, m => m.memberId);
+
+  const ACTIONS = React.useMemo(() => [
+    { id: "status", label: "Set participation…", cap: "club",
+      hint: "Active, graduated or inactive — the three states a club roster tracks",
+      open: (ids) => setBulkForm({ op: "status", ids }) },
+    { id: "centre", label: "Post to centre…", cap: "club",
+      open: (ids) => setBulkForm({ op: "centre", ids }) },
+  ], []);
+
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const r = await NGGApi.admin.club.members(Object.assign({}, f, { all: 1, sort: sort.col, dir: sort.dir }));
+      downloadCsv("club-members", (r.members || []).map(m => ({
+        memberId: m.memberId, displayId: m.displayId || "", fullName: m.fullName,
+        email: m.email || "", centre: m.centre || "", track: m.track || "", status: m.status || "",
+      })));
+    } catch (e) { toast.error(humanizeError(e.message, e.code), "Export failed"); }
+    finally { setExporting(false); }
+  };
+
+  if (err && list === null) return <ErrorState title="Couldn't load the club roster" code={err} onRetry={reload}/>;
+  const filtered = !!(f.q || f.centre) || f.status !== "active";
+
   return (
     <div>
-      <div className="admin-filters">
-        <input className="admin-input" placeholder="Search members" value={q} onChange={e => setQ(e.target.value)} style={{ maxWidth: 280 }}/>
-        <button className="btn btn-ghost btn-sm" disabled={!list || !list.length} onClick={() => downloadCsv("club-members", (list || []).map(m => ({ memberId: m.memberId, fullName: m.fullName, centre: m.centre, track: m.track || "" })))}>Export CSV</button>
+      <div className="admin-filters admin-filters-5">
+        <input className="admin-input" value={f.q} onChange={e => setF(x => ({ ...x, q: e.target.value }))}
+          placeholder="Search name, member ID or email…" aria-label="Search the club roster"/>
+        <select className="admin-select" value={f.centre} onChange={e => setF(x => ({ ...x, centre: e.target.value }))}
+          aria-label="Filter the club roster by centre">
+          <option value="">All centres</option>{centreOpts.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        {/* The filter that did not exist. The roster only ever showed active
+            members, so "who went quiet" and "who graduated" had no answer. */}
+        <select className="admin-select" value={f.status} onChange={e => setF(x => ({ ...x, status: e.target.value }))}
+          aria-label="Filter the club roster by participation">
+          <option value="active">Active</option>
+          <option value="graduated-ngg">Graduated · NGG</option>
+          <option value="inactive">Inactive</option>
+          <option value="all">Every status</option>
+        </select>
+        <button className="btn btn-ghost btn-sm" onClick={exportCsv} disabled={exporting || !meta.total}>
+          {exporting ? "Exporting…" : "Export CSV"}
+        </button>
       </div>
+
+      <AdminBulkBar selection={sel} noun="member" actions={ACTIONS} total={meta.total}/>
+
       {list === null ? <div className="dash-spinner"/> :
-        list.length === 0 ? <div className="admin-empty">No club members yet.</div> :
-        <div className="admin-table-wrap"><table className="admin-table">
-          <thead><tr><th>ID</th><th>Name</th><th>Centre</th><th>Track</th></tr></thead>
-          <tbody>{list.map(m => <tr key={m.memberId}><td className="mono">{m.memberId}</td><td>{m.fullName}</td><td>{m.centre}</td><td>{m.track || "—"}</td></tr>)}</tbody>
-        </table></div>
+       rows.length === 0
+        ? (filtered
+            ? <EmptyState icon="⌕" title="No club member matches" message="Nothing in the roster fits every filter at once."
+                action={<button className="btn btn-ghost btn-sm" onClick={() => setF({ q: "", centre: "", status: "active" })}>Reset the filters</button>}/>
+            : <EmptyState icon="◈" title="No club members yet"
+                message="Promote a Summer School graduate from the other tab, and they appear here."/>)
+        : <div className={"admin-table-wrap" + (refreshing ? " is-refreshing" : "")} aria-busy={refreshing ? "true" : undefined}>
+            {err && <p className="admin-form-err" role="alert" style={{ margin: "0 0 10px" }}>
+              Couldn't refresh ({err}). These rows are from the last successful load.{" "}
+              <button className="admin-bulk-link" onClick={reload}>Try again</button>
+            </p>}
+            <table className="admin-table">
+              <caption className="sr-only">Club members — {fmtNum(meta.total)} matching, page {page}</caption>
+              <thead><tr>
+                <th scope="col" style={{ width: 34 }}><AdminSelectAll selection={sel} label="Select all on this page"/></th>
+                <SortTh label="Member" col="fullName" sort={sort} onSort={onSort}/>
+                <SortTh label="Centre" col="centre" sort={sort} onSort={onSort}/>
+                <th scope="col">Track</th>
+                <SortTh label="Status" col="status" sort={sort} onSort={onSort}/>
+                <SortTh label="Joined" col="createdAt" sort={sort} onSort={onSort} defaultDir="desc"/>
+                <th scope="col"><span className="sr-only">Actions</span></th>
+              </tr></thead>
+              <tbody>{rows.map(m => (
+                <tr key={m.memberId} className={sel.has(m.memberId) ? "is-selected" : ""}>
+                  <td style={{ width: 34 }}><AdminRowCheck selection={sel} id={m.memberId} label={"Select " + (m.fullName || m.memberId)}/></td>
+                  <td><b>{m.fullName}</b><div className="mono admin-cell-sub">{m.memberId}{m.email ? " · " + m.email : ""}</div></td>
+                  <td>{m.centre || <span className="admin-cell-sub">— none</span>}</td>
+                  <td>{m.track || <span className="admin-cell-sub">—</span>}</td>
+                  <td><span className={"chip status-" + m.status}>{memberStatusLabel(m.status)}</span></td>
+                  <td className="mono admin-cell-sub">{fmtDate(m.createdAt)}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <AdminRowActions id={m.memberId} actions={ACTIONS} noun="member" reload={reload}/>
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+            <Pager page={page} pageSize={meta.pageSize} total={meta.total} onPage={(p) => { setPage(p); load(p); }}/>
+          </div>}
+
+      {bulkForm && <ClubBulkForm form={bulkForm} centreOpts={centreOpts}
+        onClose={() => setBulkForm(null)}
+        onDone={() => { setBulkForm(null); sel.clear(); reload(); if (onChange) onChange(); }}/>}
+    </div>
+  );
+}
+
+/* The value a club bulk action needs. Same shape as the member desk's, and
+   deliberately a separate list of options: the club desk sets participation,
+   not suspension. */
+function ClubBulkForm({ form, centreOpts, onClose, onDone }) {
+  const drawer = useAdminDrawer(onClose, false);
+  const count = (form.ids || []).length;
+  const [value, setValue] = React.useState(form.op === "status" ? "active" : "");
+  const [busy, setBusy] = React.useState(false);
+  const [result, setResult] = React.useState(null);
+
+  const META = form.op === "status"
+    ? { title: "Set participation", label: "Participation", key: "status",
+        hint: "Suspension is not a club action — it belongs to the member desk, with the record of why.",
+        options: [
+          { value: "active", label: "Active" },
+          { value: "graduated-ngg", label: "Graduated · NGG" },
+          { value: "inactive", label: "Inactive — stopped coming" },
+        ] }
+    : { title: "Post to a centre", label: "Centre", key: "centre",
+        hint: "The record stores the centre NAME. “— no centre —” clears it.",
+        options: [{ value: "", label: "— no centre —" }].concat(centreOpts.map(c => ({ value: c, label: c }))) };
+
+  const REFUSALS = {
+    own_account: "your own account",
+    staff_account: "a staff account — staff are managed in the Control Room",
+    out_of_scope: "outside your centres",
+    not_found: "no longer in the roster",
+  };
+
+  const apply = async () => {
+    setBusy(true);
+    try {
+      const payload = {}; payload[META.key] = value;
+      const r = await NGGApi.admin.club.bulk(form.op, form.ids, payload);
+      setResult(r);
+      const refused = (r.results || []).filter(x => x && x.ok === false);
+      if (refused.length && r.applied) {
+        toast.warn(r.applied + " of " + count + " updated · " + refused.length + " refused ("
+          + adminFailSummary(refused.map(x => ({ ok: false, error: x.error }))) + ").", META.title);
+      } else if (refused.length) {
+        toast.error("Nothing changed — all " + refused.length + " refused.", META.title);
+      } else {
+        toast.success(r.applied + " member" + (r.applied === 1 ? "" : "s") + " updated.", META.title);
       }
+    } catch (e) {
+      const code = e.code || e.message;
+      toast.error({ bad_status: "That isn't a participation state the club desk sets.",
+        centre_not_found: "That centre isn't in the directory any more.",
+        centre_out_of_scope: "That centre isn't one of yours.",
+        too_many: "Too many members for one action." }[code] || humanizeError(e.message, code), META.title);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="admin-drawer" onMouseDown={drawer.close}>
+      <div className="admin-drawer-panel" role="dialog" aria-modal="true" {...drawer.titleProps}
+        ref={drawer.panelRef} onMouseDown={e => e.stopPropagation()}>
+        <div className="admin-drawer-head">
+          <h3 {...drawer.headingProps}>{META.title} · {fmtNum(count)} member{count === 1 ? "" : "s"}</h3>
+          <button className="admin-drawer-close" onClick={drawer.close} aria-label="Close">✕</button>
+        </div>
+        <div className="admin-drawer-scroll">
+          {!result ? (
+            <div className="admin-fields">
+              <FieldSelect label={META.label} value={value} onChange={setValue} options={META.options}/>
+              <p className="admin-hint" style={{ margin: 0 }}>{META.hint}</p>
+              <p className="admin-hint" style={{ margin: 0 }}>
+                Applies to the <b>{fmtNum(count)}</b> member{count === 1 ? "" : "s"} selected when you opened this.
+              </p>
+            </div>
+          ) : (
+            <div className="admin-fields">
+              <div className="admin-tiles">
+                <AdminTile n={result.applied} l="Updated"/>
+                <AdminTile n={(result.results || []).filter(x => x && x.ok && x.unchanged).length} l="Already set"/>
+                <AdminTile n={result.refused} l="Refused"/>
+              </div>
+              {result.refused > 0 && (
+                <>
+                  <h4 className="admin-h4">What was refused, and why</h4>
+                  <div className="admin-table-wrap"><table className="admin-table">
+                    <thead><tr><th scope="col">Member</th><th scope="col">Reason</th></tr></thead>
+                    <tbody>{(result.results || []).filter(x => x && x.ok === false).map(x => (
+                      <tr key={x.id}><td>{x.name || <span className="mono">{x.id}</span>}</td>
+                        <td className="admin-cell-sub">{REFUSALS[x.error] || String(x.error || "refused").replace(/_/g, " ")}</td></tr>
+                    ))}</tbody>
+                  </table></div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="admin-drawer-foot">
+          {!result
+            ? <>
+                <button className="btn btn-ghost btn-sm" onClick={drawer.close}>Cancel</button>
+                <button className="btn btn-primary btn-sm" onClick={apply} disabled={busy}>{busy ? "Applying…" : "Apply to " + fmtNum(count)}</button>
+              </>
+            : <button className="btn btn-primary btn-sm" onClick={onDone}>Done</button>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -11963,7 +16038,7 @@ function PortalLogin({ brand, onVerified }) {
                 <button type="button" onClick={() => setShowPw(v => !v)} aria-label={showPw ? "Hide password" : "Show password"}
                   style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink-500)", letterSpacing: "0.06em" }}>{showPw ? "HIDE" : "SHOW"}</button>
               </div>
-              {err && <div className="signin-err">{err}</div>}
+              {err && <div role="alert" className="signin-err">{err}</div>}
               <button className="btn btn-primary btn-lg" type="submit" disabled={busy || !identifier.trim() || !password}>{busy ? "Signing in…" : "Sign in →"}</button>
               <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-id"); }}>Email me a sign-in code instead</button>
             </form>
@@ -11972,7 +16047,7 @@ function PortalLogin({ brand, onVerified }) {
             <form onSubmit={requestCode}>
               <input className="signin-input" type="text" autoComplete="username" placeholder="NGG-2025-0042  or  you@email.com"
                 value={identifier} onChange={e => setIdentifier(e.target.value)} required minLength={3} autoFocus/>
-              {err && <div className="signin-err">{err}</div>}
+              {err && <div role="alert" className="signin-err">{err}</div>}
               <button className="btn btn-primary btn-lg" type="submit" disabled={busy || !identifier.trim()}>{busy ? "Sending…" : "Send me a code →"}</button>
               <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("password"); }}>← Back to password</button>
             </form>
@@ -11981,7 +16056,7 @@ function PortalLogin({ brand, onVerified }) {
             <form onSubmit={verifyOtp}>
               <input className="signin-input signin-otp" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={7}
                 pattern="[0-9 ]*" placeholder="••• •••" value={otp} onChange={e => setOtp(e.target.value.replace(/[^\d ]/g, ""))} required autoFocus/>
-              {err && <div className="signin-err">{err}</div>}
+              {err && <div role="alert" className="signin-err">{err}</div>}
               <button className="btn btn-primary btn-lg" type="submit" disabled={busy || otp.replace(/\s/g, "").length !== 6}>{busy ? "Verifying…" : "Sign in →"}</button>
               <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-id"); setOtp(""); }}>← Back to send a code</button>
             </form>
@@ -12056,4 +16131,8 @@ function ClubAdminPortal({ setPage }) {
 /* AdminVolunteers is exported so the roster can be mounted on its own. It
    needs nothing but its one data call — no auth, no shell — and the console
    around it is what makes the rest of the admin tree expensive to test. */
-Object.assign(window, { AdminPage, SummerAdminPortal, ClubAdminPortal, AdminVolunteers, SummerGates });
+Object.assign(window, { AdminPage, SummerAdminPortal, ClubAdminPortal, AdminVolunteers, SummerGates, AdminPromos,
+  // Exported for tests/admin-table.test.js: a sortable header is a control
+  // with keyboard, focus, target-size and aria-sort obligations, and none of
+  // those can be asserted by rendering the whole admin shell.
+  SortTh, Pager });

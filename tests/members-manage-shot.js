@@ -3,7 +3,7 @@
    Member management — render the real bundle and photograph it.
 
    The dashboard screens say what is wrong. These four are what you do about
-   it: the segments that turn a figure into a list, the bulk bar, the merge
+   it: the segments that turn a figure into a list, the merge
    preview and a member's history.
 
    Every one of them shipped once with ZERO callers — written, lint-clean,
@@ -11,7 +11,7 @@
    from any URL. Rendering them is the cheapest way to find out that a thing
    exists on screen rather than only in the source.
 
-   The fixtures are deliberately awkward: a bulk run that partly failed, a
+   The fixtures are deliberately awkward: a
    merge blocked on money, a member with no recorded history. A screen that
    only looks right on the happy path is a screen nobody has tested.
 
@@ -147,15 +147,6 @@ function loadChromium() {
   var h = React.createElement;
   var VIEWS = {
     segments: function () { return h(MembersSegments, { onFilter: function () {} }); },
-    bulk: function () {
-      var ids = [];
-      for (var i = 1; i <= 23; i++) ids.push('NGG-2025-' + String(1000 + i));
-      return h('div', null,
-        h(MembersBulkBar, { picked: ids, centreOpts: ['Egbeda', 'Ayobo', 'Ikotun'],
-                            onClear: function () {}, onDone: function () {} }),
-        h('p', { className: 'mem-scope-note' },
-          'Apply is pressed by the screenshot runner, so the partial result below is the real render.'));
-    },
     merge: function () {
       return h(AdminMemberMerge, { keepId: 'NGG-2025-0412', mergeId: 'NGG-2026-0088',
                                    onClose: function () {}, onDone: function () {} });
@@ -216,9 +207,6 @@ function loadChromium() {
     await shoot('segments',        'view=segments',             { width: 1180, height: 900 });
     await shoot('segments-clear',  'view=segments&state=clean', { width: 1180, height: 900 });
     await shoot('segments-phone',  'view=segments',             { width: 390, height: 844 });
-    await shoot('bulk',            'view=bulk',                 { width: 1180, height: 700 });
-    await shoot('bulk-partial',    'view=bulk',                 { width: 1180, height: 700 }, press('Apply to'));
-    await shoot('bulk-phone',      'view=bulk',                 { width: 390, height: 844 });
     await shoot('merge',           'view=merge',                { width: 1180, height: 1000 });
     await shoot('merge-blocked',   'view=merge&state=blocked',  { width: 1180, height: 1000 });
     await shoot('merge-phone',     'view=merge',                { width: 390, height: 844 });

@@ -104,7 +104,12 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     mergeRows: function (f) {
       window.__mergeQuery = f;
       return Promise.resolve({
-        ok: true, audience: (f && f.audience) || 'students', total: 3, matched: 3, truncated: false, limit: 600,
+        ok: true, audience: (f && f.audience) || 'students', total: 3, matched: 3, truncated: false,
+        // As the real endpoint answers: the LIST ceiling, the RUN ceiling, and
+        // the order actually applied. They are three different numbers and the
+        // picker reads all three.
+        limit: 2000, runMax: 600,
+        sort: (f && f.sort) || 'name', dir: (f && f.dir) || 'asc',
         facets: { centres: ['Egbeda', 'Ijaiye'], tracks: ['Coding', 'Piano'], roles: [], maxAttended: 9 },
         rows: [
           { key: 'MRG-1', studentId: 'MRG-1', displayId: 'NGG-26-0101', firstName: 'Amina', surname: 'Alpha',
@@ -268,6 +273,63 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     ok('…and a QR whose squares are too small for a camera', /per square/.test(flight.tiny));
     ok('…and a name that only fits at the minimum size, from the REAL roster',
       /only fits at the minimum size/.test(flight.longName));
+
+    /* ── 4b. …including type nobody can read ──────────────────────────────
+       Preflight knew whether the QR would scan and whether type sat too near
+       the trim. It did not know whether the type was LEGIBLE, so a volunteer
+       card with its role line printed in the tier colour on a pill filled with
+       the tier colour passed with zero errors and would publish. One wrong pick
+       in a colour picker, 240 unreadable cards. */
+    const ink = await page.evaluate(() => {
+      const base = window.TPL_SYSTEM.find(x => x.id === 'sys-volunteer-front');
+      const clone = () => JSON.parse(JSON.stringify(base));
+      const errs = (t, rows) => window.tplPreflight(t, rows || [], window.TPL_REQUIRED.volunteer)
+        .filter(p => p.level === 'error').map(p => p.message).join(' | ');
+      const warns = (t, rows) => window.tplPreflight(t, rows || [], window.TPL_REQUIRED.volunteer)
+        .filter(p => p.level === 'warn').map(p => p.message).join(' | ');
+
+      // The exact mistake: the role line inked with the pill's own colour.
+      const same = clone();
+      same.elements.find(e => e.id === 'role').color = '{{tier.color}}';
+
+      // Literal, and decidable with no roster at all: near-white on the panel.
+      const pale = clone();
+      pale.elements.find(e => e.id === 'surname').color = '#fdfdfd';
+
+      // Only the DATA can answer this one: a tier colour that the template's
+      // hard-coded ink does not read on.
+      const bound = clone();
+      // Chosen to land in the WARN band against this tier colour, so the check
+      // proves the binding was resolved rather than that anything grey fails.
+      bound.elements.find(e => e.id === 'role').color = '#a4a4a4';
+      const boundRow = [{ surname: 'B', token: 'T', displayId: 'X',
+                          centre: { color: '#00225F' }, tier: { color: '#8A1538' } }];
+
+      // Type over a PHOTOGRAPH is unmeasurable, by us and by WCAG. It must not
+      // be reported, or the check becomes noise people learn to skip past.
+      const onPhoto = clone();
+      const photo = onPhoto.elements.find(e => e.id === 'photo');
+      onPhoto.elements.push({ id: 'over', type: 'text', x: photo.x + 10, y: photo.y + 10,
+                              w: 100, h: 30, text: 'OVER', color: '#ffffff' });
+
+      return { same: errs(same), pale: errs(pale), bound: warns(bound, boundRow),
+               photo: errs(onPhoto) + ' | ' + warns(onPhoto) };
+    });
+    ok('preflight refuses text inked with the colour it sits on',
+      /same colour as what it sits on/.test(ink.same));
+    ok('…and text measured too pale against the panel under it',
+      /measures 1\.0\d:1/.test(ink.pale) && /cannot be read/.test(ink.pale));
+    ok('…and warns on a pair only the roster could resolve',
+      /measures 3\.\d\d:1/.test(ink.bound) && /floor for text/.test(ink.bound));
+    ok('…and says nothing about type over a photograph, which nobody can measure',
+      !/OVER/.test(ink.photo));
+    const sysErrs = await page.evaluate(() => window.TPL_SYSTEM
+      .filter(t => t.kind !== 'graphic')
+      .map(t => t.id + ': ' + window.tplPreflight(t, [], window.TPL_REQUIRED[t.kind] || [])
+        .filter(p => p.level === 'error').map(p => p.message).join(' | '))
+      .filter(l => !/: $/.test(l)));
+    ok('…while every card we already print still passes it'
+       + (sysErrs.length ? ' — ' + sysErrs.join('  //  ') : ''), sysErrs.length === 0);
 
     /* ── 5. One renderer, three scales ──────────────────────────────────────
        The export is the same function that drew the preview, at a multiplier —
@@ -540,10 +602,10 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     await page.selectOption('select[aria-label="Open a design"]', '__new_student');
     await page.waitForTimeout(1200);
     await page.click('button:has-text("Batch…")');
-    await page.waitForSelector('.dsn-merge-row', { timeout: 8000 });
+    await page.waitForSelector('.dsn-tbl tbody tr', { timeout: 8000 });
     const merged = await page.evaluate(() => ({
-      rows: document.querySelectorAll('.dsn-merge-row').length,
-      ticked: document.querySelectorAll('.dsn-merge-row.is-on').length,
+      rows: document.querySelectorAll('.dsn-tbl tbody tr').length,
+      ticked: document.querySelectorAll('.dsn-tbl tbody tr.is-on').length,
       flags: Array.from(document.querySelectorAll('.dsn-merge-flag')).map(e => e.textContent),
       asked: window.__mergeQuery,
     }));
@@ -552,6 +614,273 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     /* The flags are the thing an operator scans for. Three "no photo" and one
        "no card" — and the "no card" row is the acceptance test for the whole
        feature: a child the card payload cannot see is in this run. */
+    await page.screenshot({ path: path.join(ROOT, 'tests', 'screens', 'studio-batch.png'), fullPage: false });
+    await page.click('.dsn-view .dsn-chip:has-text("Cards")');
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: path.join(ROOT, 'tests', 'screens', 'studio-batch-cards.png'), fullPage: false });
+    await page.click('.dsn-view .dsn-chip:has-text("List")');
+    await page.waitForTimeout(200);
+
+    /* Review evidence: the batch panel at a narrow desktop and the studio's
+       own chrome, so a UX pass has the same screens an operator does. */
+    /* ── 13c. The panel as an operator meets it ─────────────────────────────
+       Measured on the RENDERED page rather than reasoned about from the
+       stylesheet, because this panel is a translucent surface over a dark
+       ground and the only way to know what its small text actually measures
+       is to composite it and look.
+
+       These were one-off probes during a UX pass. They are assertions now:
+       every number below was a real answer that could quietly stop being
+       true — a token change three files away, a new wrapper with its own
+       background, a font-size nudge — and none of it shows up in a
+       screenshot or a functional test. */
+    const seen = await page.evaluate(() => {
+      const lum = ([r, g, b]) => {
+        const l = [r, g, b].map(v => { const x = v / 255;
+          return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); });
+        return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2];
+      };
+      const parse = (s) => (s.match(/[\d.]+/g) || []).slice(0, 4).map(Number);
+      /* Composite every ancestor background down to one opaque colour. A
+         translucent panel over a dark page is not the colour the stylesheet
+         names, and measuring the named one gives an answer that is wrong in
+         the safe direction — which is the worst kind. */
+      const bgOf = (el) => {
+        let out = [11, 17, 32];
+        const chain = [];
+        for (let n = el; n; n = n.parentElement) chain.unshift(n);
+        for (const n of chain) {
+          const c = parse(getComputedStyle(n).backgroundColor);
+          if (c.length < 3) continue;
+          const a = c.length > 3 ? c[3] : 1;
+          if (a === 0) continue;
+          out = [0, 1, 2].map(i => c[i] * a + out[i] * (1 - a));
+        }
+        return out;
+      };
+      const ratio = (el) => {
+        const fg = parse(getComputedStyle(el).color);
+        const a = fg.length > 3 ? fg[3] : 1;
+        const bg = bgOf(el);
+        const on = [0, 1, 2].map(i => fg[i] * a + bg[i] * (1 - a));
+        const x = lum(on), y = lum(bg);
+        return Math.round(((Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)) * 100) / 100;
+      };
+      const panel = document.querySelector('.dsn-merge');
+      const focusable = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+      const stops = Array.from(panel.querySelectorAll(focusable));
+      const ticks = Array.from(document.querySelectorAll('.dsn-tbl tbody input[type=checkbox]'))
+        .map(e => e.getBoundingClientRect());
+      const text = {};
+      [['idCell', '.dsn-td-mono'], ['runNote', '.dsn-merge-note'],
+       ['chip', '.dsn-chip:not(.is-on)'], ['filterLabel', '.dsn-merge-filters .dsn-prop span'],
+       /* The top bar's zone captions (DESIGN / PROOF / SAVE / OUTPUT). They
+          are the smallest text in the studio and the thing that makes the bar
+          scannable, so they are exactly the text that must not be decorative:
+          a caption nobody can read groups nothing. */
+       ['zoneCap', '.dsn-zone-cap'], ['barFieldLabel', '.dsn-zone .dsn-prop span'],
+       ['colHeader', '.dsn-th:not(.is-on) button']].forEach(([k, sel]) => {
+        const e = document.querySelector(sel);
+        if (e) text[k] = { r: ratio(e), px: parseFloat(getComputedStyle(e).fontSize) };
+      });
+      return {
+        text, stops: stops.length, offTab: stops.filter(e => e.tabIndex < 0).length,
+        tick: ticks[0] ? { w: Math.round(ticks[0].width),
+                           pitch: ticks[1] ? Math.round(ticks[1].top - ticks[0].top) : 0 } : null,
+      };
+    });
+
+    /* Fixes from the UX pass, asserted where they can be. Each was a real
+       defect a screenshot showed and no test caught. */
+    const fixed = await page.evaluate(() => {
+      const parse = (s) => (s.match(/[\d.]+/g) || []).map(Number);
+      const alpha = (el) => { const c = parse(getComputedStyle(el).backgroundColor);
+        return c.length > 3 ? c[3] : 1; };
+      return {
+        // A sticky bar with content scrolling behind it has to be opaque, or
+        // the rows show through and read as a rendering fault.
+        runBarAlpha: alpha(document.querySelector('.dsn-merge-run')),
+        picksAlpha: alpha(document.querySelector('.dsn-merge-picks')),
+        // The count that says how big the run is, announced rather than
+        // silently changing when a filter narrows it.
+        headNoteLive: document.querySelector('.dsn-merge-head .dsn-merge-note')
+                              .getAttribute('role'),
+        // The native date pair renders in the BROWSER's locale, so it says so.
+        dateHint: !!document.getElementById('dsn-date-fmt')
+                  && document.querySelectorAll('input[type=date][aria-describedby="dsn-date-fmt"]').length,
+      };
+    });
+    ok('the sticky bars are opaque, so nothing shows through them',
+      fixed.runBarAlpha === 1 && fixed.picksAlpha === 1);
+
+    ok('the match count is announced, not just silently changed',
+      fixed.headNoteLive === 'status');
+    ok('the date pair says whose date order it is using',
+      fixed.dateHint === 2);
+
+    /* The third state of a select-all. A page with some ticked drew an EMPTY
+       box — "nothing here is selected", about a page where things are. */
+    await page.click('.dsn-merge-picks button:has-text("Clear")');
+    await page.click('.dsn-tbl tbody tr:nth-child(1) input[type=checkbox]');
+    const tri = await page.evaluate(() => {
+      const t = document.querySelector('.dsn-merge-all input');
+      return { mixed: t.indeterminate, checked: t.checked };
+    });
+    ok('a partly-ticked page shows the mixed state rather than an empty box',
+      tri.mixed === true && tri.checked === false);
+    await page.click('.dsn-merge-picks button:has-text("Select all")');
+    const allOn = await page.evaluate(() => {
+      const t = document.querySelector('.dsn-merge-all input');
+      return { mixed: t.indeterminate, checked: t.checked };
+    });
+    ok('…and a fully-ticked one is checked, not mixed',
+      allOn.mixed === false && allOn.checked === true);
+
+    const dim = Object.keys(seen.text).filter(k => seen.text[k].r < 4.5)
+      .map(k => k + ' ' + seen.text[k].r + ':1');
+    ok('every piece of small text in the bar and batch panel clears 4.5:1 where it lands'
+       + (dim.length ? ' — ' + dim.join(', ') : ''), dim.length === 0);
+    ok('nothing in the panel is taken out of the tab order ('
+       + seen.stops + ' stops)', seen.stops > 20 && seen.offTab === 0);
+    /* WCAG 2.5.8 is 24×24, with a spacing exception: imagine a 24px circle on
+       each target, and if none overlap it passes. A row tick is smaller than
+       24px and legal only because the rows are far enough apart — so the row
+       pitch is the thing that has to hold, not the tick. */
+    ok('row ticks clear 2.5.8, by size or by the spacing exception ('
+       + seen.tick.w + 'px, ' + seen.tick.pitch + 'px apart)',
+       seen.tick.w >= 24 || seen.tick.pitch >= 24);
+
+    /* 200% text zoom on a small window. WCAG 1.4.4 wants the content usable,
+       and the failure mode is a horizontal scrollbar on the whole document. */
+    await page.setViewportSize({ width: 700, height: 900 });
+    await page.evaluate(() => { document.documentElement.style.fontSize = '32px'; });
+    await page.waitForTimeout(400);
+    const overflowPx = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    ok('at 200% text zoom on a 700px window the page does not scroll sideways ('
+       + overflowPx + 'px)', overflowPx <= 1);
+    await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+
+    /* ── THE BAR'S ZONES ─────────────────────────────────────────────────
+       Nine controls in one undifferentiated row became four captioned groups:
+       DESIGN, PROOF, SAVE, OUTPUT. The grouping has to be REAL (a labelled
+       role="group", so it exists for a screen reader and is not merely a
+       drawn divider) and it has to hold its shape — a zone that wraps inside
+       itself puts the seam in the wrong place, which is what "SIDE on its own
+       line under NAME while the bar still had room" looked like. */
+    /* Set the width explicitly: the check above leaves the window at 700px for
+       the 200% zoom case, and a bar measured there is four rows — correctly. A
+       layout assertion that does not state its viewport is measuring whatever
+       the previous test left behind. */
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.waitForTimeout(350);
+    const bar = await page.evaluate(() => {
+      const zones = Array.from(document.querySelectorAll('.dsn-zone'));
+      const rects = zones.map(z => z.getBoundingClientRect());
+      return {
+        n: zones.length,
+        labelled: zones.filter(z => z.getAttribute('role') === 'group'
+          && (z.getAttribute('aria-label') || '').trim().length > 2).length,
+        captions: zones.filter(z => z.querySelector('.dsn-zone-cap')).length,
+        caps: zones.map(z => (z.querySelector('.dsn-zone-cap') || {}).textContent || ''),
+        rows: Array.from(new Set(rects.map(r => Math.round(r.top)))).length,
+        // A zone holding one control row is ~1 line tall; one that wrapped
+        // internally is roughly double.
+        tallest: Math.round(Math.max.apply(null, rects.map(r => r.height))),
+        /* When the bar wraps, the zone on the last row must be OUTPUT and it
+           must be pushed to the end of it. */
+        lastIsOutput: (function () {
+          const maxTop = Math.max.apply(null, rects.map(r => Math.round(r.top)));
+          const onLast = zones.filter((z, i) => Math.round(rects[i].top) === maxTop);
+          if (onLast.length !== 1) return zones.length === onLast.length; // single row
+          const z = onLast[0], r = z.getBoundingClientRect();
+          const bar = z.closest('.dsn-bar');
+          const br = bar.getBoundingClientRect();
+          const pad = parseFloat(getComputedStyle(bar).paddingRight);
+          return (z.getAttribute('aria-label') || '').indexOf('Export') === 0
+            && Math.abs((br.right - pad) - r.right) < 3;
+        })(),
+      };
+    });
+    ok('the bar is four labelled zones, not one row of nine controls ('
+       + bar.caps.join('/') + ')', bar.n === 4 && bar.labelled === 4 && bar.captions === 4);
+    /* NOT a row count. How many rows the bar takes depends on which design is
+       open — a two-sided card adds an "Its back" field and a long name pushes
+       further — so pinning a number would pin the fixture, not the design.
+       What must hold whenever it DOES wrap is that OUTPUT is the zone that
+       goes last and sits at the row's end, so the extra line reads as decided
+       rather than as something that fell off. */
+    ok('…and when the bar wraps, OUTPUT is what wraps, to the row\'s end ('
+       + bar.rows + ' row(s))', bar.lastIsOutput);
+    ok('…each breaking as a unit rather than wrapping inside itself ('
+       + bar.tallest + 'px tall)', bar.tallest > 0 && bar.tallest < 70);
+
+    /* ── PRINT MODE: the canvas holds its ground ─────────────────────────
+       The defect this pins: the batch panel used to be a full-width block
+       above the workspace, so opening it pushed the canvas — the thing being
+       proofed — off screen, and proofOne scrolled it back. A studio where you
+       cannot see what you are about to print three hundred times is the whole
+       failure, so it is asserted rather than left to a screenshot nobody
+       diffs. Batch is open at this point in the run. */
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.waitForTimeout(400);
+    const printMode = await page.evaluate(() => {
+      const stage = document.querySelector('.dsn-stage');
+      const merge = document.querySelector('.dsn-merge');
+      const work = document.querySelector('.dsn-work');
+      if (!stage || !merge || !work) return null;
+      const a = stage.getBoundingClientRect(), b = merge.getBoundingClientRect();
+      const cv = document.querySelector('.dsn-canvas-host canvas');
+      const c = cv ? cv.getBoundingClientRect() : null;
+      return {
+        printing: work.classList.contains('is-printing'),
+        // Side by side, not stacked: the panels overlap vertically and not
+        // horizontally. That is the geometric statement of "beside".
+        sideBySide: a.right <= b.left + 1 && a.top < b.bottom && b.top < a.bottom,
+        // The proof is reachable without scrolling.
+        canvasTop: Math.round(a.top),
+        canvasVisible: a.top < 1000 && a.bottom > 0,
+        // The card must not escape its panel — it did at a 420px column.
+        canvasFits: !!c && c.left >= a.left - 1 && c.right <= a.right + 1,
+        /* Editing rails step aside; the canvas is not a rail and must remain.
+           Counted over EVERY .dsn-rail on the page, not over a
+           .is-printing-scoped selector — scoping it to the modifier made the
+           check vacuous, because breaking the modifier also empties the
+           selector and an empty set satisfies "all hidden". */
+        railsOnPage: document.querySelectorAll('.dsn-rail').length,
+        railsVisible: Array.from(document.querySelectorAll('.dsn-rail'))
+          .filter(e => e.getBoundingClientRect().width > 0).length,
+        // The picks bar reflows on the PANEL's width, not the window's: at
+        // 1440 the window is roomy and the panel is not.
+        picksRows: (() => {
+          const p = document.querySelector('.dsn-merge-picks');
+          return p ? Math.round(p.getBoundingClientRect().height) : 0;
+        })(),
+      };
+    });
+    ok('print mode puts the run beside the proof rather than below it',
+      !!printMode && printMode.printing && printMode.sideBySide);
+    ok('…so the canvas is on screen without scrolling (top ' + (printMode && printMode.canvasTop) + 'px)',
+      !!printMode && printMode.canvasVisible && printMode.canvasTop < 700);
+    ok('…the card stays inside its panel at this column width',
+      !!printMode && printMode.canvasFits);
+    ok('…and the editing rails step aside while printing (' + (printMode && printMode.railsOnPage)
+       + ' on the page, ' + (printMode && printMode.railsVisible) + ' visible)',
+      !!printMode && printMode.railsOnPage >= 2 && printMode.railsVisible === 0);
+    ok('…with the picks bar reflowed to two rows on the panel width, not one squeezed row',
+      !!printMode && printMode.picksRows > 60);
+
+    /* The review screens. Off by default — they are for looking at, not for
+       asserting, and rendering them on every run costs seconds for nobody. */
+    if (process.env.DSN_SHOTS) {
+      for (const [name, w, h] of [['1440', 1440, 1000], ['1100', 1100, 950], ['820', 820, 1000]]) {
+        await page.setViewportSize({ width: w, height: h });
+        await page.waitForTimeout(500);
+        await page.screenshot({ path: path.join(ROOT, 'tests', 'screens', 'ux-studio-' + name + '.png') });
+      }
+    }
+    await page.setViewportSize({ width: 1400, height: 1000 });
+    await page.waitForTimeout(300);
     ok('…including the people an ID-card read cannot see, flagged on the row',
       merged.flags.filter(f => f === 'no card').length === 1
       && merged.flags.filter(f => f === 'no photo').length === 3);
@@ -577,11 +906,150 @@ fs.writeFileSync(FIX, `<!doctype html><html><head><meta charset="utf-8">
     await page.waitForTimeout(500);
     ok('…and a filter is a new read, not a client-side sieve over old rows',
       (await page.evaluate(() => (window.__mergeQuery || {}).q)) === 'Beta');
+
+    /* ── 13b. The picker at roster scale ────────────────────────────────────
+       It was a wrapping grid of tick-boxes in insertion order inside a 520px
+       box. Fine at two hundred; at a thousand it is a scroll with no landmarks
+       and no way to bring anybody to the top. */
+
+    /* THE bug this rebuild exists to fix, and the one that cost work rather
+       than patience: every read replaced the selection with "everything that
+       just came back". Untick somebody, type one letter in the search box, and
+       they were silently back in the run — and a run spanning two filters was
+       impossible to build at all. */
     await page.fill('.dsn-merge-q input', '');
+    await page.waitForTimeout(500);
+    // Untick one person, then narrow and widen the filter around them.
+    await page.click('.dsn-tbl tbody tr:nth-child(1) input[type=checkbox]');
+    const tickedBefore = await page.evaluate(() => document.querySelectorAll('.dsn-tbl tbody tr.is-on').length);
+    await page.fill('.dsn-merge-q input', 'Gamma');
+    await page.waitForTimeout(500);
+    await page.fill('.dsn-merge-q input', '');
+    await page.waitForTimeout(600);
+    const tickedAfter = await page.evaluate(() => document.querySelectorAll('.dsn-tbl tbody tr.is-on').length);
+    ok('unticking somebody survives a filter change (' + tickedBefore + ' → ' + tickedAfter + ')',
+      tickedBefore === 2 && tickedAfter === 2);
+    // Put them back so the run below is the three the later checks expect.
+    await page.click('.dsn-tbl tbody tr:nth-child(1) input[type=checkbox]');
+
+    /* Sorting is a SERVER read. Sorting the page in hand would order one page
+       of the roster and call it the roster. */
+    await page.click('.dsn-th:has-text("Surname") button');
+    await page.waitForTimeout(500);
+    const sorted = await page.evaluate(() => window.__mergeQuery || {});
+    ok('a column header orders the run on the server, not the page in hand',
+      sorted.sort === 'surname' && sorted.dir === 'asc');
+    await page.click('.dsn-th:has-text("Surname") button');
+    await page.waitForTimeout(500);
+    ok('…and clicking it again reverses rather than re-sorting the same way',
+      (await page.evaluate(() => (window.__mergeQuery || {}).dir)) === 'desc');
+    ok('…with the sorted column announced to assistive tech',
+      (await page.locator('.dsn-th:has-text("Surname")').getAttribute('aria-sort')) === 'descending');
+
+    /* The readiness chip is the filter an operator actually reaches for: the
+       question before a print run is "which of these will come out wrong". */
+    await page.click('.dsn-chip:has-text("Needs attention")');
+    await page.waitForTimeout(200);
+    const needs = await page.evaluate(() => ({
+      rows: document.querySelectorAll('.dsn-tbl tbody tr').length,
+      ok: document.querySelectorAll('.dsn-merge-flag--ok').length,
+    }));
+    ok('the readiness chip narrows to the rows that will print wrong',
+      needs.rows === 3 && needs.ok === 0);
+    /* The COUNT is the reason anybody clicks it: "Needs attention" makes you
+       click to find out whether it is two or two hundred. */
+    ok('…and says how many before you click it',
+      (await page.locator('.dsn-chip:has-text("Needs attention") .dsn-chip-n').textContent()).trim() === '3');
+    await page.click('.dsn-chip:has-text("Everyone")');
+    await page.waitForTimeout(200);
+
+    /* Shift-click a range. Picking two hundred out of a thousand one tick at a
+       time is not a workflow, and "select all" plus two hundred unticks is not
+       one either. */
+    await page.click('.dsn-tbl tbody tr:nth-child(1) input[type=checkbox]');   // untick + anchor
+    await page.click('.dsn-tbl tbody tr:nth-child(3) input[type=checkbox]', { modifiers: ['Shift'] });
+    ok('shift-click carries the anchor row\'s state across the whole range',
+      (await page.evaluate(() => document.querySelectorAll('.dsn-tbl tbody tr.is-on').length)) === 0);
+    await page.click('.dsn-tbl tbody tr:nth-child(1) input[type=checkbox]');   // re-tick + anchor
+    await page.click('.dsn-tbl tbody tr:nth-child(3) input[type=checkbox]', { modifiers: ['Shift'] });
+    ok('…and back the other way, so a range never half-ticks',
+      (await page.evaluate(() => document.querySelectorAll('.dsn-tbl tbody tr.is-on').length)) === 3);
+
+    /* Seeing the card, which is the whole point of the batch panel: a table
+       says Chidi has no photograph, the card shows the hole where the face
+       goes. Drawn by the SAME renderer that writes the print file. */
+    await page.click('.dsn-view .dsn-chip:has-text("Cards")');
+    await page.waitForSelector('.dsn-card img', { timeout: 20000 });
+    await page.waitForTimeout(1800);
+    const thumbs = await page.evaluate(() => {
+      const imgs = Array.from(document.querySelectorAll('.dsn-card img'));
+      return { n: imgs.length, real: imgs.filter(i => /^data:image\/png/.test(i.src) && i.src.length > 3000).length };
+    });
+    ok('every card in the grid is a real render, not a placeholder (' + thumbs.real + '/' + thumbs.n + ')',
+      thumbs.n === 3 && thumbs.real === 3);
+
+    /* Clicking a name proofs THAT person on the canvas. The toolbar's preview
+       picker only ever knew the card payload; this list is a bigger
+       population, so a child whose photograph was rejected — visible to the
+       merge, invisible to the card read — had no way to be looked at. */
+    await page.click('.dsn-card-name:has-text("Chidi")');
+    await page.waitForTimeout(400);
+    ok('clicking a name proofs that person on the canvas',
+      /Proofing Chidi/.test(await page.evaluate(() => document.body.innerText)));
+
+    /* A page starts at the top of itself.
+       The list keeps its own scroll offset and nothing put it back, so turning
+       a page or switching view landed you wherever the last scroll left you —
+       most visibly as a first row of cards cut off above the fold with its
+       selection ticks out of sight. That reads as controls that are MISSING,
+       and it fooled me into calling it a contrast problem and then a stacking
+       problem before elementFromPoint gave the real answer. Asserted as the
+       thing it actually is: a scroll position.
+
+       Exercised in Cards view because that is the only one that overflows with
+       a three-row fixture. */
+    const scrolled = await page.evaluate(() => {
+      const list = document.querySelector('.dsn-merge-list');
+      /* Three cards do not overflow a 560px box, so the box is squeezed to
+         make one. How the list came to be scrolled is not what is under test
+         — that it gets put back is. */
+      list.style.maxHeight = '90px';
+      list.scrollTop = 40;
+      return list.scrollTop;
+    });
+    await page.click('.dsn-chip:has-text("Ready to print")');
+    await page.waitForTimeout(300);
+    const afterFilter = await page.evaluate(() => document.querySelector('.dsn-merge-list').scrollTop);
+    ok('changing what is shown puts the list back to the top (' + scrolled + ' → ' + afterFilter + ')',
+      scrolled > 0 && afterFilter === 0);
+    await page.evaluate(() => { document.querySelector('.dsn-merge-list').style.maxHeight = ''; });
+    await page.click('.dsn-chip:has-text("Everyone")');
+    await page.waitForTimeout(300);
+
+    /* And the consequence, measured rather than inferred: the first card's
+       selection control is the thing at its own coordinates. */
+    const reachable = await page.evaluate(() => {
+      const t = document.querySelector('.dsn-card-tick');
+      const r = t.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { isTick: top === t, over: top ? String(top.className).slice(0, 24) : null };
+    });
+    ok("…so the first card's tick is hittable, not under the toolbar"
+       + (reachable.isTick ? '' : ' — covered by ' + reachable.over), reachable.isTick);
+    await page.click('.dsn-view .dsn-chip:has-text("List")');
+    await page.waitForTimeout(200);
+
+    // Paging, because a thousand rows is not a scroll.
+    await page.selectOption('.dsn-merge-size select', '25');
+    await page.waitForTimeout(200);
+    ok('the picker pages rather than scrolling, and says where it is',
+      /1–3 of 3/.test(await page.evaluate(() => document.querySelector('.dsn-merge-pager .dsn-merge-note').textContent)));
+
+    await page.click('.dsn-th:has-text("Name") button');
     await page.waitForTimeout(500);
 
     // Drop one person, then run. Two pieces must come out, not three.
-    await page.click('.dsn-merge-row:nth-child(3) input[type=checkbox]');
+    await page.click('.dsn-tbl tbody tr:nth-child(3) input[type=checkbox]');
     await page.selectOption('.dsn-merge-run select', '150');
     await page.click('button:has-text("ZIP of images")');
 

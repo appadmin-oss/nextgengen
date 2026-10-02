@@ -318,6 +318,28 @@ function unzipDocumentXml(buf) {
   /* Volunteers get the same centre identity as students. VOL-3 is the legacy
      shape — a record filed before centres were captured — and must still draw
      a card rather than a hole. */
+  /* NGG MEMBERS — the studio's third subject. Two with a printed ID and one
+     without, because the point of the third tab is that the run shows you what
+     will come off the printer wrong. */
+  /* NOT named MEMBERS: data.js declares a global const MEMBERS, and the bundle
+     has no module closures, so a fixture var of that name is a redeclaration
+     that kills the whole page before it mounts. See CLAUDE.md on
+     concatenation. (No backticks in this comment either — it lives inside the
+     template literal that builds the fixture.) */
+  var MEMBER_CARDS = { program: PROGRAM, cards: [
+    { memberId: 'NGG-2026-0001', fullName: 'Adaeze Okafor', displayId: 'NGG/EG/0001',
+      displayIdMissing: false, level: 'B', type: 'NGG', status: 'active', track: 'Music',
+      disciplines: ['Music'], centre: { name: 'Egbeda', code: 'EG', color: '#76B043' },
+      token: 'NGG-2026-0001', photoUrl: '', joinDate: '2026-01-04', expiresAt: '' },
+    { memberId: 'NGG-2026-0002', fullName: 'Tunde Bakare', displayId: 'NGG/IJ/0002',
+      displayIdMissing: false, level: 'C', type: 'NGG', status: 'active', track: 'Coding',
+      disciplines: ['Coding'], centre: { name: 'Ijaiye', code: 'IJ', color: '#00225F' },
+      token: 'NGG-2026-0002', photoUrl: '', joinDate: '2026-02-11', expiresAt: '' },
+    { memberId: 'NGG-2026-0003', fullName: 'Ngozi Eze', displayId: 'NGG-2026-0003',
+      displayIdMissing: true, level: '', type: 'NGG', status: 'active', track: '',
+      disciplines: [], centre: { name: 'Egbeda', code: 'EG', color: '#76B043' },
+      token: 'NGG-2026-0003', photoUrl: '', joinDate: '', expiresAt: '' },
+  ] };
   var VOLS = { program: PROGRAM, cards: [
     { volunteerId: 'VOL-MEN-26-001', displayId: 'VOL-MEN-26-001', firstName: 'TUNDE', surname: 'BAKARE',
       role: 'Lead Mentor', tier: { name: 'Lead Mentor', code: 'LED', color: '#8A1538' }, token: 'V1', photoUrl: '',
@@ -361,6 +383,7 @@ function unzipDocumentXml(buf) {
     admin: deep({ registration: deep({
       cards: function () { return window.__fail === 'all' ? offline() : Promise.resolve(ROSTER); },
       volunteerCards: function () { return window.__fail === 'all' ? offline() : Promise.resolve(VOLS); },
+      memberCards: function () { return window.__fail === 'all' ? offline() : Promise.resolve(MEMBER_CARDS); },
       centres: function () { return Promise.resolve({ centres: [] }); },
       /* The roster's own read: how many children have no ID, split by what would
          actually fix it. Two ready, one held on a photo, one awaiting consent. */
@@ -1427,30 +1450,48 @@ function unzipDocumentXml(buf) {
         return new Promise(function (r) { setTimeout(function () { r(body); }, 1200); });
       },
     };
-    /* The Math Lab hangs off the same screen. Two levels cleared, the third
-       open, the rest shut — the state that actually exercises the ladder. */
+    /* The Math Lab hangs off the same screen. Two strands, three cleared, and
+       one level shut behind a prerequisite in ANOTHER strand — the shape the
+       ladder actually has, so the grouped view and the "Needs …" line are
+       both exercised rather than merely rendered. */
     window.__mathStarts = [];
     window.__mathSubmits = [];
     var LV = [
       { level: 1, name: 'Number & Numeration', band: 'JSS 1\u20132', icon: '\u2460',
+        strand: 'Number', needs: [],
         blurb: 'Factors, multiples, fractions.', questions: 12, seconds: 300 },
       { level: 2, name: 'Algebraic Processes', band: 'JSS 3', icon: '\u2461',
+        strand: 'Algebra', needs: [],
         blurb: 'Expanding and factorising.', questions: 12, seconds: 330 },
       { level: 3, name: 'Indices & Logarithms', band: 'SSS 1', icon: '\u2462',
+        strand: 'Algebra', needs: [2],
         blurb: 'The laws of indices.', questions: 12, seconds: 330 },
       { level: 4, name: 'Surds', band: 'SSS 1\u20132', icon: '\u2463',
+        strand: 'Algebra', needs: [3],
         blurb: 'Rationalising a denominator.', questions: 10, seconds: 330 },
       { level: 5, name: 'Quadratic Equations', band: 'SSS 2', icon: '\u2464',
+        strand: 'Algebra', needs: [2],
         blurb: 'Roots and the discriminant.', questions: 12, seconds: 360 },
     ];
     window.NGGApi.member.mathlab = {
       board: function () {
         return Promise.resolve({
-          passPct: 70, cleared: 2, total: LV.length,
+          passPct: 70, cleared: 2, total: LV.length, open: 2,
+          strands: ['Number', 'Algebra'],
           levels: LV.map(function (l, i) {
+            var cleared = i <= 1;
+            var waiting = l.needs.filter(function (n) { return n > 2; })
+                                 .map(function (n) { return LV[n - 1].name; });
+            // Same promotion rule the server applies: never cleared →
+            // Foundation, cleared → Standard, cleared at 90%+ → Stretch.
+            // Level 1 is cleared at 92 and level 2 at 74, so the stub carries
+            // one of each rather than two of the same.
+            var best = cleared ? (i === 0 ? 92 : 74) : 0;
+            var stage = !cleared ? 1 : (best >= 90 ? 3 : 2);
             return Object.assign({}, l, {
-              unlocked: i <= 2, cleared: i <= 1,
-              bestScore: i <= 1 ? 92 : 0, bestCorrect: i <= 1 ? 11 : 0, attempts: i <= 1 ? 1 : 0,
+              unlocked: waiting.length === 0, waitingOn: waiting, cleared: cleared,
+              stage: stage, stageName: ['Foundation', 'Standard', 'Stretch'][stage - 1],
+              bestScore: best, bestCorrect: cleared ? 11 : 0, attempts: cleared ? 1 : 0,
             });
           }),
         });
@@ -1460,10 +1501,15 @@ function unzipDocumentXml(buf) {
         return Promise.resolve({
           roundId: 'ML-TESTPAPER', level: level, name: 'Indices & Logarithms', band: 'SSS 1',
           seconds: fast ? 1 : 300,
+          stage: 1, stageName: 'Foundation',
+          stageBlurb: 'Mostly the gentler forms, with one to reach for.',
+          // Tiered and in tier order, the way the server ships a paper: two
+          // foundation questions then one stretch, so there is exactly one
+          // step-up marker to find.
           questions: [
-            { q: 'Simplify 2^3 \u00d7 2^4, giving your answer as a number.' },
-            { q: 'Evaluate log3 of 81.' },
-            { q: 'Evaluate 49^(1/2).' },
+            { q: 'Simplify 2^3 \u00d7 2^4, giving your answer as a number.', tier: 1 },
+            { q: 'Evaluate log3 of 81.', tier: 1 },
+            { q: 'Evaluate 49^(1/2).', tier: 3 },
           ],
         });
       },
@@ -1476,7 +1522,7 @@ function unzipDocumentXml(buf) {
             { ok: false, your: '3',   answer: '4' },
             { ok: true,  your: '7',   answer: '7' },
           ],
-          unlocked: null,
+          opened: [], unlocked: null,
         };
         if (!fast) return Promise.resolve(body);
         return new Promise(function (r) { setTimeout(function () { r(body); }, 1200); });
@@ -1944,7 +1990,14 @@ function unzipDocumentXml(buf) {
     await rg.waitForTimeout(200);
     const cardGeom = await rg.evaluate(() => {
       const cards = Array.from(document.querySelectorAll('.roster-grid > .member-card'));
-      const tiles = cards.map(c => c.querySelector('div[style*="aspect-ratio"], div[style*="aspectRatio"]') || c.firstElementChild);
+      /* The photo tile, by CLASS. It used to be found by matching an inline
+         `aspect-ratio` style, which stopped meaning anything the moment the
+         card's geometry moved into a stylesheet — and then silently measured
+         the card's first child instead, so the assertion still passed while
+         measuring the wrong box. */
+      const tiles = cards.map(c => c.querySelector('.member-card-fig')
+        || c.querySelector('div[style*="aspect-ratio"], div[style*="aspectRatio"]')
+        || c.firstElementChild);
       const r = (el) => el.getBoundingClientRect();
       return {
         n: cards.length,
@@ -1982,7 +2035,10 @@ function unzipDocumentXml(buf) {
         await c2.goto(BASE + '/tests/_boards_fixture.html?board=summer&mode=ok&css=1', { waitUntil: 'networkidle' });
         await c2.waitForTimeout(600);
         const clipped = await c2.evaluate(() => {
-          const el = Array.from(document.querySelectorAll('.roster-grid .member-card div[title]'))
+          /* Any element carrying the full name as a title — the card is a
+             link now and the name is a <span> inside it, so pinning the tag
+             was pinning the markup rather than the behaviour. */
+          const el = Array.from(document.querySelectorAll('.roster-grid .member-card [title]'))
             .find(d => /egbusor-chiemerie-benedict/.test(d.getAttribute('title') || ''));
           if (!el) return false;
           const cs = getComputedStyle(el);
@@ -2137,7 +2193,7 @@ function unzipDocumentXml(buf) {
     const faces = await studio.locator('.idcard').count();
     ok('/cards survives a record with no centre (' + faces + ' faces drawn)', faces >= 58);
     const body = await studio.evaluate(() => document.body.innerText);
-    ok('/cards is not blank', body.trim().length > 200 && /verified student/.test(body));
+    ok('/cards is not blank', body.trim().length > 200 && /verified participant/.test(body));
     ok('/cards offers the bulk exports', /PNG \(all, \.zip\)/.test(body) && /Print-ready PDF/.test(body));
 
     /* ── Centre identity on the printed card ────────────────────────────────
@@ -2288,7 +2344,7 @@ function unzipDocumentXml(buf) {
        it has to say it is a subset — "14 students ready" next to a 30-strong
        roster is how a partial run gets sent to a printer. */
     ok('…and the header says it is a subset, not the whole roster',
-      /15 of 30 verified students ready/.test(await studio.evaluate(() => document.body.innerText)));
+      /15 of 30 verified participants ready/.test(await studio.evaluate(() => document.body.innerText)));
 
     await batch.selectOption({ label: '⚠ No centre on file · 1' });
     await studio.waitForTimeout(500);
@@ -2301,7 +2357,62 @@ function unzipDocumentXml(buf) {
        you hit when a batch is nearly clean — the moment somebody is most
        likely to be reading the screen for reassurance. */
     ok('…in a sentence that survives a count of one',
-      /1 of 30 verified students ready/.test(noneText) && /This card prints without a centre/.test(noneText));
+      /1 of 30 verified participants ready/.test(noneText) && /This card prints without a centre/.test(noneText));
+
+    /* ── The studio's THIRD subject: NGG members ─────────────────────────────
+       Members had no studio. They were printed from a drawer inside the member
+       roster — the same job, in a different place, through different code —
+       while participants and volunteers shared this screen. What made a third
+       subject impossible was `isVol`, a boolean threaded through some
+       twenty-five sites, each re-deciding what a volunteer is and what a
+       student is. It is a subject table now (CARD_SUBJECTS), and these checks
+       are what say the third row of it actually renders rather than merely
+       existing. */
+    await studio.click('button:has-text("NGG members")');
+    await studio.waitForTimeout(700);
+    const memText = await studio.evaluate(() => document.body.innerText);
+    const memCards = await studio.locator('.card-pair').count();
+    ok('the studio has a third tab and it draws member cards (' + memCards + ' of 3)', memCards === 3);
+    ok('…counted as members, not as participants',
+      /3 members ready/.test(memText) && !/participants ready/.test(memText));
+    /* "SCAN TO VERIFY" appears in exactly one place in the codebase —
+       NggcMemberCard, the card a member downloads from their own dashboard and
+       the one NggcMemberCardExport prints. Its presence here is the proof that
+       the studio ADAPTED that renderer rather than growing a second drawing of
+       the member card in this file's own idiom, which would have drifted from
+       the shipped one within a season. */
+    ok('…rendering the SHIPPED member card, not a second drawing of it',
+      /SCAN TO VERIFY/i.test(memText));
+    /* The blank this whole subject exposed: card_row_member falls back to the
+       internal memberId when no printed ID is assigned, which keeps the card
+       from printing blank and hid the problem — the member roster filters and
+       counts exactly these people. The row carries displayIdMissing now. */
+    ok('…and a member with no printed ID assigned is named as such, not silently printed',
+      memText.indexOf('NGG-2026-0003') !== -1);
+    /* The member card is ID-1 and its trim is NOT the Summer School
+       programme's setting. Reading the programme for every subject had the
+       export blurb promising an exact 54×75 trim for a card that prints at
+       54×85, and the preview was scaled from the same wrong ratio — so the
+       studio described a card it was not producing. */
+    ok('…the member card states its own ID-1 trim, not the programme trim',
+      /54\s*[×x]\s*85/.test(memText) && !/exact 54×75 mm trim/.test(memText));
+    ok('…and the trim control says it does not govern this card, and is inert',
+      /NOT USED BY THIS CARD/i.test(memText)
+      && (await studio.locator('button:has-text("Save size")').isDisabled()));
+    /* No resend for members — they issue their own card from the member
+       dashboard — so the button must be absent rather than dead. */
+    ok('…with no dead Resend ID control on a subject that has no resend op',
+      (await studio.locator('button:has-text("Resend ID")').count()) === 0);
+
+    /* Switching back must restore the participant view intact: the subject
+       table swap replaced two useState objects with one keyed store, and a
+       stale key there would show one subject's cards under another's heading. */
+    await studio.click('button:has-text("Participants")');
+    await studio.waitForTimeout(700);
+    const backText = await studio.evaluate(() => document.body.innerText);
+    ok('…and going back to Participants restores that subject, not a mixture',
+      /30 verified participants ready/.test(backText)
+      && (await studio.locator('.card-pair').count()) === 30);
 
     /* ── Printing a RANGE, not the roster ────────────────────────────────────
      * "Everybody" is the rarest print run there is. The real ones are: the
@@ -2323,7 +2434,7 @@ function unzipDocumentXml(buf) {
       (await studio.locator('.card-pair').count()) === 7);
     const dateText = await studio.evaluate(() => document.body.innerText);
     ok('…and the header counts the slice against the batch, not the roster',
-      /Printing 7 of 30/.test(dateText) && /7 of 30 verified students ready/.test(dateText));
+      /Printing 7 of 30/.test(dateText) && /7 of 30 verified participants ready/.test(dateText));
     /* The card with no date is left OUT of a date range and SAID so. Sweeping it
        in would make "print this week's intake" quietly reprint the oldest record
        in the system; dropping it silently would lose a child a card. */
@@ -4372,25 +4483,111 @@ function unzipDocumentXml(buf) {
     await ml.waitForSelector('.ml-ladder', { timeout: 10000 });
     ok('opening it lists every level, locked ones included',
        await ml.evaluate(() => document.querySelectorAll('.ml-lv').length) === 5);
-    ok('…with the cleared ones marked and the next one open',
-       await ml.evaluate(() => document.querySelectorAll('.ml-lv.is-cleared').length) === 2
-       && await ml.evaluate(() => document.querySelectorAll('.ml-lv.is-open').length) === 1);
+    ok('…with the cleared ones marked',
+       await ml.evaluate(() => document.querySelectorAll('.ml-lv.is-cleared').length) === 2);
+
+    /* The whole point of the rewrite. Surds (4) is shut because Indices (3) is
+       not cleared, while Quadratics (5) — which needs only Algebraic Processes
+       — is open. On the old linear ladder that was impossible: a level was
+       open if and only if the one below it was cleared, so a student could not
+       reach anything past the first thing they were stuck on. */
+    ok('a level is open when ITS OWN prerequisites are cleared, not when the one below it is',
+       await ml.evaluate(() => {
+         const open = Array.from(document.querySelectorAll('.ml-lv.is-open'))
+           .map(l => l.querySelector('.ml-lv-h').textContent);
+         return open.length === 2
+             && open.indexOf('Quadratic Equations') >= 0
+             && open.indexOf('Surds') < 0;
+       }));
+
     /* A locked level must have NO control at all, not a disabled one: a
        disabled button is skipped by the keyboard and explains nothing, and the
-       reason is the entire message. */
-    ok('a locked level offers no button to press, and says what would open it',
+       reason is the entire message. And the reason is a NAME — "clear level 3"
+       makes a student count rungs to work out what level 3 was. */
+    ok('a locked level offers no button to press, and names the work that opens it',
        await ml.evaluate(() => {
          const shut = Array.from(document.querySelectorAll('.ml-lv.is-locked'));
-         return shut.length === 2
+         return shut.length === 1
              && shut.every(l => l.querySelector('button') === null)
-             && /Clear level 3 to open this/.test(shut[0].innerText);
+             && /Needs Indices & Logarithms/.test(shut[0].innerText);
        }));
+
+    /* Grouping, and the filter that makes twenty-one levels navigable. */
+    ok('the levels are grouped under their strand, in the order the server sends',
+       await ml.evaluate(() => {
+         const heads = Array.from(document.querySelectorAll('.ml-group-h'))
+           .map(h => h.firstChild.textContent.trim());
+         return heads.join('|') === 'Number|Algebra';
+       }));
+    /* Size is measured on the styled phone pass below — this fixture is
+       deliberately unstyled, so a box measured here would mean nothing. */
+    ok('…and every strand chip is a real button carrying its own pressed state',
+       await ml.evaluate(() => {
+         const chips = Array.from(document.querySelectorAll('.ml-strand'));
+         return chips.length === 3                       // All + two strands
+             && chips.every(c => c.tagName === 'BUTTON' && c.hasAttribute('aria-pressed'))
+             && chips.filter(c => c.getAttribute('aria-pressed') === 'true').length === 1;
+       }));
+    await ml.evaluate(() => Array.from(document.querySelectorAll('.ml-strand'))
+      .find(c => /^Number/.test(c.textContent)).click());
+    ok('…and picking one narrows the list to that strand and says so out loud',
+       await ml.evaluate(() => {
+         const live = document.querySelector('.ml-count');
+         return document.querySelectorAll('.ml-lv').length === 1
+             && document.querySelectorAll('.ml-group-h').length === 1
+             && live && live.getAttribute('role') === 'status'
+             && /1 number level/i.test(live.textContent);
+       }));
+    await ml.evaluate(() => document.querySelectorAll('.ml-strand')[0].click());   // back to All
+
+    /* Difficulty progression on the ladder. Clearing a level does not finish
+       it — it promotes the paper — and the ladder is where a student decides
+       what to do next, so that has to be legible from here. Level 1 was
+       cleared at 92% and level 2 at 74%, so one shows Stretch and one
+       Standard: if the promotion rule were ignored they would read alike. */
+    ok('a cleared level says which paper it will set next, and the two differ',
+       await ml.evaluate(() => {
+         const said = Array.from(document.querySelectorAll('.ml-lv.is-cleared .ml-lv-stage'))
+           .map(p => p.textContent.replace(/\s+/g, ' ').trim());
+         return said.length === 2
+             && /^Stretch paper next/.test(said[0])
+             && /^Standard paper next/.test(said[1]);
+       }));
+    /* …and an untouched level does NOT, because "Foundation paper — gentler
+       forms first" on every one of them is the same sentence eleven times. */
+    ok('…and an untouched level does not repeat the boilerplate',
+       await ml.evaluate(() =>
+         document.querySelectorAll('.ml-lv.is-open .ml-lv-stage').length === 0));
 
     /* Start the third level — by its number, which is not its array index. */
     await ml.evaluate(() => document.querySelectorAll('.ml-lv')[2].querySelector('.ml-go').click());
     await ml.waitForSelector('.ml-qs', { timeout: 10000 });
     ok('starting a level asks the server for that level, not its position in the list',
        (await ml.evaluate(() => window.__mathStarts)).join() === '3');
+    /* The ramp inside a paper. The questions arrive in tier order, and the
+       point where they get harder is marked — a paper that simply gets harder
+       with no warning reads to a child as their own falling apart. The stub
+       paper is two foundation questions then one stretch, so there is exactly
+       one marker, it sits before question 3, and it names the tier. */
+    ok('the paper says which paper it is',
+       /Foundation paper/.test(await ml.evaluate(() =>
+         document.querySelector('.ml-paper-stage').textContent)));
+    ok('…and marks the point where the questions step up',
+       await ml.evaluate(() => {
+         const steps = Array.from(document.querySelectorAll('.ml-q-step'));
+         if (steps.length !== 1 || !/Stretch from here/.test(steps[0].textContent)) return false;
+         // Before the third question, and after the second.
+         const items = Array.from(document.querySelectorAll('.ml-qs > li'));
+         return items.indexOf(steps[0]) === 2;
+       }));
+    /* The marker is decoration around questions that are numbered anyway, so
+       it must not be announced as a list item a screen-reader user has to
+       step through. */
+    ok('…without putting a phantom question into the list for a screen reader',
+       await ml.evaluate(() =>
+         document.querySelector('.ml-q-step').getAttribute('aria-hidden') === 'true'
+         && document.querySelectorAll('.ml-q').length === 3));
+
     ok('the paper shows every question at once, the way a paper does',
        await ml.evaluate(() => document.querySelectorAll('.ml-q').length) === 3
        && await ml.evaluate(() => document.querySelectorAll('.ml-q .ml-q-in').length) === 3);
@@ -4434,6 +4631,35 @@ function unzipDocumentXml(buf) {
              && rows.filter(r => /✓/.test(r.innerText)).length === 2
              && rows.filter(r => /✗/.test(r.innerText)).length === 1;
        }));
+
+    /* The breakdown by difficulty. A single percentage tells a student
+       nothing they can act on; this is the part that says WHERE the marks
+       went, and it is computed by zipping the marks against the tiers that
+       came down with the paper — so it must survive the paper actually
+       spanning more than one tier, and must never claim a tier the paper did
+       not carry. The stub paper is two foundation questions (one right, one
+       wrong) and one stretch (right). */
+    ok('the marking breaks the score down by difficulty, not just a percentage',
+       await ml.evaluate(() => {
+         const bars = Array.from(document.querySelectorAll('.ml-tier'));
+         const read = b => ({
+           name: b.querySelector('.ml-tier-n').textContent.trim(),
+           val: b.querySelector('.ml-tier-v').textContent.trim(),
+         });
+         const got = bars.map(read);
+         return got.length === 2                     // only the tiers the paper carried
+             && got[0].name === 'Foundation' && got[0].val === '1/2'
+             && got[1].name === 'Stretch'    && got[1].val === '1/1';
+       }));
+    ok('…and names the tier the marks actually went on',
+       /foundation questions are where the marks went: 1 of 2 right/i.test(
+         await ml.evaluate(() => document.querySelector('.ml-tier-say').textContent)));
+    /* Every bar carries its own count in text. A bar alone is unreadable to a
+       screen reader and unreadable at a glance, and three coloured bars with
+       no numbers is exactly the chart that says nothing. */
+    ok('…with every bar carrying its number, never colour alone',
+       await ml.evaluate(() => Array.from(document.querySelectorAll('.ml-tier'))
+         .every(b => /^\d+\/\d+$/.test(b.querySelector('.ml-tier-v').textContent.trim()))));
     await ml.close();
 
     /* The clock running out hands the paper in — once. */
@@ -4788,6 +5014,12 @@ function unzipDocumentXml(buf) {
           const r = b.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height));
         })) : 0,
         blurbWidth: Math.min(...cards.map(c => Math.round(c.querySelector('.ml-lv-p').getBoundingClientRect().width))),
+        smallestChip: (() => {
+          const cs = Array.from(document.querySelectorAll('.ml-strand'));
+          return cs.length ? Math.min(...cs.map(c => {
+            const r = c.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height));
+          })) : 0;
+        })(),
       };
     });
     ok('the ladder does not push the page sideways on a 360px phone ('
@@ -4800,6 +5032,11 @@ function unzipDocumentXml(buf) {
        ladderPhone.blurbWidth >= 150);
     ok('…with every Start button a thumb-sized target (' + ladderPhone.smallestBtn + 'px)',
        ladderPhone.smallestBtn >= 44);
+    /* WCAG 2.2 2.5.8 is 24×24; these sit in a wrapping row where the spacing
+       exception is easy to lose, so they are built to the 44px touch size and
+       measured at it. */
+    ok('…and every strand chip too (' + ladderPhone.smallestChip + 'px)',
+       ladderPhone.smallestChip >= 44);
 
     await mlPh.evaluate(() => document.querySelectorAll('.ml-lv')[2].querySelector('.ml-go').click());
     await mlPh.waitForSelector('.ml-qs', { timeout: 10000 });
@@ -4841,25 +5078,38 @@ function unzipDocumentXml(buf) {
     await cmP.waitForFunction(() => Array.from(document.styleSheets).some(ss => {
       try { return (ss.href || '').indexOf('styles.css') !== -1 && ss.cssRules.length > 0; } catch (_) { return false; }
     }), null, { timeout: 10000 });
-    // Stand the community's own markup up; the classes are what carry the CSS.
+    /* Stand the community's own markup up; the classes are what carry the CSS.
+       This is the REDESIGNED markup — the tab bar, the message actions, the
+       filter chips — because the design it used to assert on (a sidebar, a
+       header with a burger and two icon buttons) no longer exists. A test that
+       keeps measuring deleted chrome passes forever and protects nothing. */
     await cmP.evaluate(() => {
       document.body.className = 'cm-app';
-      document.body.innerHTML = '<div class="page cm-slack-page"><div class="cm-slack">'
-        + '<aside class="cm-sb"><nav class="cm-sb-nav">'
-        + '<button class="cm-sb-item cm-sb-chan"><span class="cm-sb-hash">#</span><span class="cm-sb-name">Practical Coding</span></button>'
-        + '</nav></aside>'
-        + '<main class="cm-col"><header class="cm-hd">'
-        + '<button class="cm-hd-burger">☰</button>'
-        + '<div class="cm-hd-title"><div class="cm-hd-line"><span class="cm-hd-name">Commons</span></div></div>'
-        + '<div class="cm-hd-actions"><button class="cm-hd-sortbtn">New</button>'
-        + '<button class="cm-hd-btn cm-hd-btn-ai">✨</button>'
-        + '<button class="cm-hd-btn cm-hd-btn-info">ⓘ</button></div></header>'
-        + '<div class="cm-stream is-feed"><div class="cm-cardfeed"><article class="cm-card">'
-        + '<div class="cm-card-body">Hello</div><div class="cm-card-foot">'
-        + '<button class="cm-chip-react">👏 3</button>'
-        + '<button class="cm-card-reply">2 replies</button>'
-        + '<button class="cm-menu-btn">⋯</button></div></article></div></div></main>'
-        + '</div></div>';
+      document.body.innerHTML = '<div class="page cm-page"><div class="cmm">'
+        + '<div class="cmm-body">'
+        + '<header class="cmm-head"><button class="cmm-av-btn"><span class="cm-avatar cmm-av">A</span></button>'
+        + '<div class="cmm-head-txt"><h1 class="cmm-greet">Good morning, Ada</h1>'
+        + '<p class="cmm-sub">Egbeda · Coding</p></div>'
+        + '<button class="cmm-icon-btn">B</button></header>'
+        + '<button class="cmm-search"><span>Search messages</span></button>'
+        + '<div class="cmm-chips"><button class="cmm-chip is-on">All</button>'
+        + '<button class="cmm-chip">Unread<span class="cmm-chip-n">4</span></button></div>'
+        + '<div class="cmm-list"><button class="cmm-ch-row"><span class="cmm-ch-av">#</span>'
+        + '<span class="cmm-ch-body"><span class="cmm-ch-name">Commons</span>'
+        + '<span class="cmm-ch-prev">Hello</span></span></button></div>'
+        + '<div class="cmm-stream"><article class="cmm-msg">'
+        + '<div class="cmm-msg-body">Hello</div>'
+        + '<div class="cm-chips"><button class="cm-chip-react">👏 <b>3</b></button>'
+        + '<button class="cm-react-add">+</button></div>'
+        + '<div class="cmm-msg-acts"><button class="cmm-msg-act">React</button>'
+        + '<button class="cmm-msg-act">2 replies</button></div></article></div></div>'
+        + '<button class="cmm-fab">+</button>'
+        + '<nav class="cmm-tabs">'
+        + '<button class="cmm-tab is-on"><span class="cmm-tab-l">Today</span></button>'
+        + '<button class="cmm-tab"><span class="cmm-tab-l">Channels</span></button>'
+        + '<button class="cmm-tab"><span class="cmm-tab-l">Arcade</span></button>'
+        + '<button class="cmm-tab"><span class="cmm-tab-l">Journal</span></button>'
+        + '</nav></div></div>';
     });
     await cmP.waitForTimeout(250);
 
@@ -4868,13 +5118,9 @@ function unzipDocumentXml(buf) {
        not there while missing one that is. */
     const tiny = await cmP.evaluate(() => {
       const out = [];
-      document.querySelectorAll('.cm-col button, .cm-sb button').forEach(el => {
+      document.querySelectorAll('.cmm button').forEach(el => {
         const r = el.getBoundingClientRect();
         if (r.width < 1 || r.height < 1) return;
-        /* The sidebar is parked off-canvas on a phone until the burger opens
-           it. elementFromPoint over an off-screen element reports whatever is
-           painted there instead, so measuring it says nothing about the
-           target — it is measured when it is open, not while it is away. */
         if (r.right <= 0 || r.left >= window.innerWidth) return;
         const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
         /* An ancestor at the probe point is the ancestor being hit, not the
@@ -4882,26 +5128,45 @@ function unzipDocumentXml(buf) {
            around it is tall. A ::after that widens the hit area still returns
            the element itself, so real extensions are still credited. */
         const owns = (x, y) => { const h = document.elementFromPoint(x, y); return !!h && (h === el || el.contains(h)); };
-        let up = 0, down = 0;
-        for (let d = 1; d <= 24; d++) { if (owns(cx, cy - d)) up = d; else break; }
-        for (let d = 1; d <= 24; d++) { if (owns(cx, cy + d)) down = d; else break; }
-        if (up + down + 1 < 40 || r.width < 40) out.push(String(el.className).split(' ')[0] + ' ' + Math.round(r.width) + 'x' + (up + down + 1));
+        /* Probe BOTH axes the same way. This measured height by reach and width
+           by painted box, which reported a control with a 44px pseudo-element
+           hit area as 30px wide — the exact case the "hittable area, not
+           painted box" note above exists to handle. */
+        let up = 0, down = 0, left = 0, right = 0;
+        for (let d = 1; d <= 30; d++) { if (owns(cx, cy - d)) up = d; else break; }
+        for (let d = 1; d <= 30; d++) { if (owns(cx, cy + d)) down = d; else break; }
+        for (let d = 1; d <= 30; d++) { if (owns(cx - d, cy)) left = d; else break; }
+        for (let d = 1; d <= 30; d++) { if (owns(cx + d, cy)) right = d; else break; }
+        const h = up + down + 1, w = left + right + 1;
+        if (h < 40 || w < 40) out.push(String(el.className).split(' ')[0] + ' ' + w + 'x' + h);
       });
       return out;
     });
     ok('the community has controls to measure on a phone (control)',
-       await cmP.evaluate(() => document.querySelectorAll('.cm-col button').length) >= 5);
+       await cmP.evaluate(() => document.querySelectorAll('.cmm button').length) >= 10);
     ok('…and every one of them is a 40px+ target (' + (tiny.length ? tiny.join(', ') : 'all pass') + ')',
        tiny.length === 0);
-    /* Details has no other entry point. Catch-up does — the sidebar footer —
-       so it is the one that may give up its space. */
-    ok('channel Details can still be opened on a phone',
+
+    /* The four destinations are all reachable, all the time. The redesign put
+       them in a tab bar precisely so none of them can be hidden behind a
+       burger the way the channel list used to be. */
+    ok('all four destinations are on screen, none behind a menu',
        await cmP.evaluate(() => {
-         const b = document.querySelector('.cm-hd-btn-info');
-         return !!b && getComputedStyle(b).display !== 'none' && b.getBoundingClientRect().width > 0;
+         const tabs = [...document.querySelectorAll('.cmm-tab')];
+         return tabs.length === 4 && tabs.every(t => {
+           const r = t.getBoundingClientRect();
+           return getComputedStyle(t).display !== 'none' && r.width > 40 && r.top < window.innerHeight;
+         });
        }));
-    ok('…while AI catch-up yields its space, since the sidebar still offers it',
-       await cmP.evaluate(() => getComputedStyle(document.querySelector('.cm-hd-btn-ai')).display === 'none'));
+    /* The tab bar must sit ON the viewport bottom and the FAB above it — the
+       one place a phone layout most often gets wrong, because the two are
+       positioned independently and only collide on a real screen. */
+    ok('the tab bar is docked at the bottom and the FAB clears it',
+       await cmP.evaluate(() => {
+         const bar = document.querySelector('.cmm-tabs').getBoundingClientRect();
+         const fab = document.querySelector('.cmm-fab').getBoundingClientRect();
+         return Math.abs(bar.bottom - window.innerHeight) < 2 && fab.bottom <= bar.top + 1;
+       }));
     await cmP.close(); await cmT.close();
 
     /* ── The Control Room on a phone ───────────────────────────────────────
@@ -6535,7 +6800,7 @@ function unzipDocumentXml(buf) {
          negative number ends up read as a loss. */
       /\+8\.4/.test(asTxt) && /Mean change, per child/i.test(asTxt) && /6\.2 to 10\.6/.test(asTxt));
     ok('…beside the paired baseline AND the whole-cohort baseline, distinguished',
-      /Their baseline/i.test(asTxt) && /38%/.test(asTxt) && /whole cohort 41\.5%/.test(asTxt));
+      /Their baseline/i.test(asTxt) && /38%/.test(asTxt) && /whole edition 41\.5%/.test(asTxt));
 
     /* The caveats have to be ABOVE the breakdown. A reader who has absorbed
        the split by sex will not go back and re-read the number with the

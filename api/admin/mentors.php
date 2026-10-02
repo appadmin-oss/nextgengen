@@ -6,9 +6,16 @@ $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
-    $res = (string)($_GET['view'] ?? '') === 'candidates'
-        ? gs_call('admin.mentor.candidates', ['requesterId' => $s['mid'], 'q' => (string)($_GET['q'] ?? '')])
-        : gs_call('admin.mentors.list', ['requesterId' => $s['mid']]);
+    $view = (string)($_GET['view'] ?? '');
+    if ($view === 'candidates') {
+        $res = gs_call('admin.mentor.candidates', ['requesterId' => $s['mid'], 'q' => (string)($_GET['q'] ?? '')]);
+    } elseif ($view === 'duplicates') {
+        // Active records sharing an email — everybody in a pair is locked out
+        // of the portal until the desk separates them.
+        $res = gs_call('admin.mentors.duplicates', ['requesterId' => $s['mid']]);
+    } else {
+        $res = gs_call('admin.mentors.list', ['requesterId' => $s['mid']]);
+    }
     if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
     unset($res['ok']);
     json_ok($res);

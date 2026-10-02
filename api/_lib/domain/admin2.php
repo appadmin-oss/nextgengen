@@ -692,15 +692,66 @@ function admin_application_convert(array $p): array {
     // full NGG members. Falls back to Summer for legacy rows with no program.
     $type = ((string)($a['program'] ?? '') === 'anchor') ? 'NGG' : 'Summer';
     $newId = new_id($type === 'Summer' ? 'SUM' : 'NGG', 'members', 'memberId');
-    db_insert('members', ['memberId' => $newId, 'fullName' => $a['name'], 'email' => $a['email'], 'type' => $type, 'status' => 'active', 'role' => 'member', 'centre' => $a['centre'] ?: 'Egbeda', 'track' => $a['track'] ?: '', 'photoUrl' => (string)($a['photoUrl'] ?? ''), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    /* Carry the intake across.
+     *
+     * This used to write eight fields and drop the rest, and the rest is the
+     * part intake was standardised to REQUIRE. Two consequences, both silent:
+     *
+     *  · The guardian's address landed in `email` and nowhere else, while the
+     *    fortnightly dues reminder and the guardian nudges both select on
+     *    `parentEmail` — so every member admitted this way was counted into a
+     *    `skipped.noEmail` bucket and never written to. The same defect was
+     *    found and fixed on the Summer enrol path; this is the other half.
+     *  · A date of birth is the one fact a programme for ten- to
+     *    seventeen-year-olds cannot reconstruct later, and it was discarded at
+     *    the exact moment the record became permanent.
+     *
+     * The teen intake asks for a parent's email and phone and nothing of the
+     * young person's own, so those go to parentEmail/parentPhone. `email` keeps
+     * the same value it always had — it is what sign-in and every existing
+     * lookup use — and members.phone stays empty rather than being filled with
+     * somebody else's number.
+     */
+    $intakeEmail = (string)$a['email'];
+    $intakePhone = trim((string)($a['phone'] ?? ''));
+    /* An approved applicant becomes a MEMBER, so they are issued a member's
+       printed ID at the same moment — see domain/member-id.php. */
+    $__m = [
+        'memberId' => $newId, 'fullName' => $a['name'], 'email' => $intakeEmail,
+        'type' => $type, 'status' => 'active', 'role' => 'member',
+        'centre' => $a['centre'] ?: 'Egbeda', 'track' => $a['track'] ?: '',
+        'photoUrl' => (string)($a['photoUrl'] ?? ''),
+        'dob' => (string)($a['dob'] ?? ''),
+        'parentEmail' => $intakeEmail,
+        'parentPhone' => $intakePhone,
+        // When they joined, which public_member() publishes and the ID card
+        // prints. It was left empty on every member who arrived this way.
+        'joinDate' => gmdate('Y-m-d'),
+        'createdAt' => now_iso(), 'updatedAt' => now_iso(),
+    ];
+    if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_display_id($__m);
+    db_insert('members', $__m);
+    member_cards_ensure($__m, 'intake', 'created');
     db_update('applications', ['status' => 'accepted'], ['id' => $id]);
-    // Welcome the new member so conversion is a visible action, not a silent DB write.
-    @send_mail((string)$a['email'], 'Welcome to Next Generation Genius',
+
+    /* A way in that the member owns.
+     *
+     * The welcome email pointed at the portal and gave no means of opening it:
+     * the new member has no password, so signing in means a code emailed to
+     * the address on file — their guardian's — every time. A set-password link
+     * turns that into one handoff instead of a standing dependency. */
+    $welcome = function_exists('auth_welcome_link') ? auth_welcome_link($newId) : '';
+    @send_mail($intakeEmail, 'Welcome to Next Generation Genius',
         email_template([
             'title' => 'You\'re in, ' . explode(' ', (string)$a['name'])[0] . '.',
             'intro' => $type === 'Summer' ? 'Your place in Summer Students is confirmed.' : 'Your place in the NGG cohort is confirmed.',
-            'bodyHtml' => 'We\'ll be in touch shortly with your start details. Your member ID is <b>' . esc_html($newId) . '</b>.',
-            'ctaLabel' => 'Open the member portal', 'ctaUrl' => ($GLOBALS['CONFIG']['app_origin'] ?? '') . '/#dashboard',
+            'bodyHtml' => 'We\'ll be in touch shortly with your start details. The member ID is <b>' . esc_html($newId) . '</b>.'
+                . ($welcome !== ''
+                    ? '<p style="margin:14px 0 0">Set a password using the button below — after that they can sign in with the member ID alone, without waiting on this inbox. The link is good for seven days.</p>'
+                    : ''),
+            'ctaLabel' => $welcome !== '' ? 'Set a password' : 'Open the member portal',
+            'ctaUrl' => $welcome !== '' ? $welcome : (($GLOBALS['CONFIG']['app_origin'] ?? '') . '/#dashboard'),
             'footNote' => 'Welcome to the movement.',
         ]));
     audit('admin.application.convert', $g['requester']['memberId'], $newId, ['applicationId' => $id, 'type' => $type], (string)($p['ip'] ?? ''));

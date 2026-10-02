@@ -273,12 +273,33 @@ function admin_mentor_application_convert(array $p): array {
     $existing = db_row('SELECT mentorId FROM mentors WHERE lower(email) = ? LIMIT 1', [strtolower((string)$a['email'])]);
     if ($existing) { db_update('applications', ['status' => 'accepted'], ['id' => $id]); return ['ok' => true, 'mentorId' => $existing['mentorId'], 'existed' => true]; }
 
+    /* Already on the roster under this address? Then accepting again mints
+     * the twin the gate cannot tell apart. Refused rather than merged: the
+     * applicant may genuinely be a second person on a shared family mailbox,
+     * which is a judgement for the desk and not for this function. */
+    if (trim((string)($a['email'] ?? '')) !== '' && mentor_email_taken((string)$a['email'])) {
+        return ['ok' => false, 'error' => 'email_taken'];
+    }
+
     $links = mentorship_links();
     $newId = new_id('MEN', 'mentors', 'mentorId');
+    /* Carry the intake across — the same fix the teen path needed.
+     *
+     * Three conversion paths read the same applications table. The volunteer
+     * one carries everything it collected; this one wrote nine fields and
+     * dropped the phone number, the headshot and the join date, all of which
+     * have a column waiting. The phone is the sharp one: the next thing that
+     * happens to a new mentor is a safeguarding check, and the email below
+     * promises exactly that — "we'll be in touch" — from a record with no way
+     * to be in touch except the inbox they applied from. */
     db_insert('mentors', [
         'mentorId' => $newId, 'fullName' => $a['name'], 'email' => $a['email'],
+        'phone' => (string)($a['phone'] ?? ''),
         'status' => 'pending-checks', 'tracks' => (string)($a['role'] ?? ''), 'centre' => $a['centre'] ?: '',
         'bio' => (string)($a['why'] ?? ''), 'maxMentees' => 3,
+        'photoUrl' => (string)($a['photoUrl'] ?? ''),
+        // When they joined the network, which the roster sorts and prints on.
+        'joinedAt' => gmdate('Y-m-d'),
         'source' => 'afrovanguard', 'program' => $links['mentorProgram'],
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);

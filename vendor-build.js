@@ -49,6 +49,18 @@ const PACKAGES = {
      a security warning and Google Docs refuses. Published as ESM+CJS with no
      UMD build, so it goes through the same bundle step as Filerobot. */
   'docx': '9.7.1',
+  /* PDF.js — the community's document reader.
+   *
+   * The LEGACY build, deliberately. The default build targets recent evergreen
+   * browsers; the legacy one is transpiled down and is what renders on the
+   * older Android WebViews that a shared centre phone actually runs. 50KB more
+   * for a document that opens instead of one that throws.
+   *
+   * Published ESM-only, so both halves go through esbuild below: the library
+   * as an IIFE exposing window.pdfjsLib, and the worker as a CLASSIC worker
+   * script, because `new Worker(url)` without {type:'module'} is the form every
+   * target browser supports. */
+  'pdfjs-dist': '5.4.624',
 };
 
 /* THE TWEAK THAT MAKES FILEROBOT WORK HERE.
@@ -175,6 +187,51 @@ function build(outDir) {
     '--outfile=' + path.join(outDir, 'filerobot-image-editor.min.js'),
   ], work);
 
+  /* PDF.js, in two pieces.
+   *
+   * The worker is not an optimisation here, it is the whole design: parsing and
+   * rasterising a PDF on the main thread locks the page for as long as it takes,
+   * and on the phones this is read on that is seconds per page. Bundled to IIFE
+   * so it loads as a classic worker.
+   *
+   * `pdfjsLib` is assigned from the namespace rather than re-exported, because
+   * the viewer reads `window.pdfjsLib.getDocument` and `GlobalWorkerOptions`. */
+  fs.writeFileSync(path.join(work, 'entry-pdfjs.js'),
+    'import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";\n'
+    + 'window.pdfjsLib = pdfjsLib;\nexport default pdfjsLib;\n');
+  log('bundling pdf.js (legacy build) + its worker');
+  run(fs.existsSync(esbuild) ? esbuild : 'npx', [
+    ...(fs.existsSync(esbuild) ? [] : ['esbuild']),
+    path.join(work, 'entry-pdfjs.js'), '--bundle', '--minify', '--format=iife', '--target=es2019',
+    '--define:process.env.NODE_ENV="production"',
+    '--outfile=' + path.join(outDir, 'pdfjs.min.js'),
+  ], work);
+  run(fs.existsSync(esbuild) ? esbuild : 'npx', [
+    ...(fs.existsSync(esbuild) ? [] : ['esbuild']),
+    path.join(work, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.mjs'),
+    '--bundle', '--minify', '--format=iife', '--target=es2019',
+    '--outfile=' + path.join(outDir, 'pdfjs.worker.min.js'),
+  ], work);
+  const pdfOut = fs.readFileSync(path.join(outDir, 'pdfjs.min.js'), 'utf8');
+  for (const sym of ['getDocument', 'GlobalWorkerOptions']) {
+    if (!pdfOut.includes(sym)) throw new Error('pdf.js bundle is missing ' + sym);
+  }
+  if (!pdfOut.includes('window.pdfjsLib')) throw new Error('pdf.js bundle does not publish window.pdfjsLib');
+
+  /* Standard fonts, for PDFs that reference a base-14 font without embedding it
+     — which is most things exported by older Word and by phone scanners. They
+     are fetched ONE FILE AT A TIME, only when a document actually needs one, so
+     the whole folder is never a download; it is 800KB of files that mostly sit
+     there. cmaps (a further 1.7MB) are deliberately NOT shipped: they exist for
+     CJK text, which this programme does not produce, and a reader who meets a
+     Japanese PDF gets a clear failure rather than everyone paying for it. */
+  const fontsSrc = path.join(work, 'node_modules', 'pdfjs-dist', 'standard_fonts');
+  const fontsOut = path.join(outDir, 'pdfjs-standard-fonts');
+  fs.rmSync(fontsOut, { recursive: true, force: true });
+  fs.mkdirSync(fontsOut, { recursive: true });
+  for (const f of fs.readdirSync(fontsSrc)) fs.copyFileSync(path.join(fontsSrc, f), path.join(fontsOut, f));
+  log('copied', fs.readdirSync(fontsOut).length, 'standard fonts');
+
   log('bundling docx');
   run(fs.existsSync(esbuild) ? esbuild : 'npx', [
     ...(fs.existsSync(esbuild) ? [] : ['esbuild']),
@@ -233,10 +290,61 @@ const OUTPUTS = [
   'fabric.min.js', 'tui-image-editor.min.js', 'tui-image-editor.min.css',
   'tui-color-picker.min.js', 'tui-color-picker.min.css',
   'filerobot-image-editor.min.js', 'filerobot-image-editor.min.css',
-  'docx.min.js',
+  'docx.min.js', 'pdfjs.min.js', 'pdfjs.worker.min.js',
 ];
 
+/* Verify vendor/VERSIONS.json against the bytes on disk.
+ *
+ * The recipe above can only speak for the five packages it builds. The other
+ * eleven files in vendor/ — React, Babel, jspdf, jsQR, pica and the rest — are
+ * committed blobs with no build step, and until VERSIONS.json existed they had
+ * no recorded version, no integrity hash and nothing that would notice one
+ * being edited by hand. This is the part of `--check` that covers them.
+ *
+ * Runs WITHOUT npm, so it works on a machine that cannot reach the registry —
+ * which matters, because it is the only integrity check most of vendor/ has.
+ */
+function checkManifest() {
+  const file = path.join(VENDOR, 'VERSIONS.json');
+  if (!fs.existsSync(file)) { console.error('  ✗ vendor/VERSIONS.json is missing'); return 1; }
+  const manifest = JSON.parse(fs.readFileSync(file, 'utf8')).files || {};
+
+  const onDisk = [];
+  (function walk(dir, base) {
+    for (const name of fs.readdirSync(dir).sort()) {
+      const rel = base ? base + '/' + name : name;
+      if (rel === 'VERSIONS.json') continue;
+      const full = path.join(dir, name);
+      if (fs.statSync(full).isDirectory()) walk(full, rel); else onDisk.push(rel);
+    }
+  })(VENDOR, '');
+
+  let bad = 0;
+  for (const rel of onDisk) {
+    const entry = manifest[rel];
+    if (!entry) { console.error('  ✗ ' + rel + ' is in vendor/ but not in VERSIONS.json'); bad++; continue; }
+    const h = sha(fs.readFileSync(path.join(VENDOR, rel)));
+    if (h !== entry.sha256) {
+      console.error('  ✗ ' + rel + ' does not match VERSIONS.json (disk ' + h + ' vs manifest ' + entry.sha256 + ')');
+      bad++;
+    }
+  }
+  for (const rel of Object.keys(manifest)) {
+    if (!onDisk.includes(rel)) { console.error('  ✗ ' + rel + ' is in VERSIONS.json but missing from vendor/'); bad++; }
+  }
+  if (!bad) {
+    const unresolved = Object.entries(manifest).filter(([, e]) => e.package && !e.version).map(([k]) => k);
+    console.log('  ✓ VERSIONS.json matches all ' + onDisk.length + ' files in vendor/');
+    if (unresolved.length) {
+      console.log('  · version still unestablished for: ' + unresolved.join(', '));
+      console.log('    (identified by hash, not yet by version — see the note in VERSIONS.json)');
+    }
+  }
+  return bad;
+}
+
 if (CHECK) {
+  const manifestBad = checkManifest();
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ngg-vendor-check-'));
   build(tmp);
   let bad = 0;
@@ -249,8 +357,9 @@ if (CHECK) {
     else console.log(`  ✓ ${f} ${ha}`);
   }
   fs.rmSync(tmp, { recursive: true, force: true });
-  if (bad) { console.error(`\n❌ ${bad} vendored file(s) do not match this recipe.`); process.exit(1); }
-  console.log('\n✅ vendored design libraries match vendor-build.js');
+  bad += manifestBad;
+  if (bad) { console.error(`\n❌ ${bad} vendored file(s) do not match this recipe or the manifest.`); process.exit(1); }
+  console.log('\n✅ vendored libraries match vendor-build.js and VERSIONS.json');
 } else {
   build(VENDOR);
   for (const f of OUTPUTS) {

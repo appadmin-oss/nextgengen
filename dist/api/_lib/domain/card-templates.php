@@ -35,7 +35,13 @@ const CTPL_MAX_ELEMENTS = 200;
 /* 'graphic' is everything that is not a credential — a poster, a certificate, a
    social post, a letterhead. It exists because this organisation is not only a
    summer programme, and a design tool that can only make ID cards says it is. */
-const CTPL_KINDS = ['student', 'volunteer', 'graphic'];
+/* 'member' is the NGG member card — the credential every year-round member
+   carries. It was the ONE card this system could not express, so it stayed
+   hand-coded JSX and moving a line on it meant a deploy: exactly the problem
+   templates exist to end, left in place for the card it mattered most for. */
+const CTPL_KINDS = ['member', 'student', 'volunteer', 'graphic'];
+/** A card has two sides. 'single' is a design with no counterpart. */
+const CTPL_FACES = ['single', 'front', 'back'];
 const CTPL_ELEMENT_TYPES = ['rect', 'ellipse', 'line', 'text', 'image', 'qr', 'path', 'group'];
 
 /** Which capability may change what a credential looks like.
@@ -60,6 +66,7 @@ function ctpl_validate(array $t): array {
     $name = trim((string)($t['name'] ?? ''));
     if ($name === '' || mb_strlen($name) > 120) $errors[] = 'name';
     if (!in_array((string)($t['kind'] ?? ''), CTPL_KINDS, true)) $errors[] = 'kind';
+    if (isset($t['face']) && !in_array((string)$t['face'], CTPL_FACES, true)) $errors[] = 'face';
     $w = (int)($t['w'] ?? 0); $h = (int)($t['h'] ?? 0);
     if ($w < 100 || $w > 8000 || $h < 100 || $h > 8000) $errors[] = 'size';
     /* The real-world size, which decides export resolution and every millimetre
@@ -112,6 +119,8 @@ function ctpl_row_public(array $r, bool $withSchema = true): array {
         'kind' => (string)$r['kind'],
         'status' => (string)$r['status'],
         'version' => (int)$r['version'],
+        'face' => (string)($r['face'] ?? 'single'),
+        'pairId' => (string)($r['pairId'] ?? ''),
         'system' => strpos((string)$r['templateId'], 'sys-') === 0,
         'updatedAt' => (string)($r['updatedAt'] ?? ''),
         'publishedAt' => (string)($r['publishedAt'] ?? ''),
@@ -173,6 +182,12 @@ function admin_card_template_save(array $p): array {
         db_insert('card_templates', [
             'templateId' => $id, 'name' => (string)$t['name'], 'kind' => (string)$t['kind'],
             'status' => 'draft', 'version' => 1,
+            'face' => in_array((string)($t['face'] ?? 'single'), CTPL_FACES, true) ? (string)$t['face'] : 'single',
+            /* A fork does NOT inherit the pairing. Two designs claiming the
+               same back is how a duplex run comes out with one member's front
+               and another's back — the pairing has to be re-stated on the copy
+               deliberately. */
+            'pairId' => $forked ? '' : (string)($t['pairId'] ?? ''),
             'schemaJson' => json_encode($t, JSON_UNESCAPED_SLASHES), 'publishedJson' => '',
             'createdById' => $me, 'updatedById' => $me,
             'createdAt' => now_iso(), 'updatedAt' => now_iso(), 'publishedAt' => '',
@@ -181,6 +196,8 @@ function admin_card_template_save(array $p): array {
         $t['id'] = $id;
         db_update('card_templates', [
             'name' => (string)$t['name'], 'kind' => (string)$t['kind'],
+            'face' => in_array((string)($t['face'] ?? ($existing['face'] ?? 'single')), CTPL_FACES, true)
+                      ? (string)($t['face'] ?? ($existing['face'] ?? 'single')) : 'single',
             'schemaJson' => json_encode($t, JSON_UNESCAPED_SLASHES),
             'updatedById' => $me, 'updatedAt' => now_iso(),
         ], ['templateId' => $id]);
@@ -252,6 +269,127 @@ function ctpl_mm_per_unit(array $t): float {
     return ((float)($t['wMm'] ?? 54) ?: 54.0) / $w;
 }
 
+/* ── Can you read it? ────────────────────────────────────────────────────────
+ * Mirrors tplInkProblems() in card-template.jsx. Preflight knew whether the QR
+ * would scan and whether type sat too near the trim; it did not know whether
+ * the type was legible, so a card with its role line printed in the tier colour
+ * ON a pill filled with the tier colour published with zero errors.
+ *
+ * The server has no roster to resolve {{bindings}} against, so it checks the
+ * two cases that need no data: ink and paint that are the SAME STRING (1:1
+ * whatever they resolve to), and pairs that are literal on both sides. The
+ * client, which is proofing against real rows, additionally measures the bound
+ * pairs and warns. Publish refuses on what is decidable here.
+ *
+ * 3:1 refuses and 4.5:1 warns, at every size: WCAG's large-text allowance is
+ * defined in CSS pixels and this is a document measured in millimetres for a
+ * printer, so borrowing the number would borrow a precision we do not have. */
+const CTPL_INK_ERROR_RATIO = 3.0;
+const CTPL_INK_WARN_RATIO = 4.5;
+
+/** WCAG 2.1 relative luminance. Null for anything that is not a hex we read. */
+function ctpl_lum(string $hex): ?float {
+    $h = ltrim(trim($hex), '#');
+    if (strlen($h) === 3) $h = $h[0] . $h[0] . $h[1] . $h[1] . $h[2] . $h[2];
+    if (!preg_match('/^[0-9a-fA-F]{6}$/', $h)) return null;
+    $l = 0.0;
+    foreach ([0.2126, 0.7152, 0.0722] as $i => $k) {
+        $c = hexdec(substr($h, $i * 2, 2)) / 255;
+        $l += $k * ($c <= 0.04045 ? $c / 12.92 : pow(($c + 0.055) / 1.055, 2.4));
+    }
+    return $l;
+}
+function ctpl_contrast(string $a, string $b): ?float {
+    $x = ctpl_lum($a); $y = ctpl_lum($b);
+    if ($x === null || $y === null) return null;
+    return (max($x, $y) + 0.05) / (min($x, $y) + 0.05);
+}
+function ctpl_covers(array $el, float $x, float $y): bool {
+    $ex = (float)($el['x'] ?? 0); $ey = (float)($el['y'] ?? 0);
+    return $x >= $ex && $y >= $ey && $x <= $ex + (float)($el['w'] ?? 0) && $y <= $ey + (float)($el['h'] ?? 0);
+}
+
+/**
+ * The paint under element $i, or null when we cannot say.
+ * Returns ['card' => true] when nothing is between the text and the card.
+ */
+function ctpl_paint_under(array $els, int $i) {
+    $el = $els[$i];
+    $cx = (float)($el['x'] ?? 0) + (float)($el['w'] ?? 0) / 2;
+    $cy = (float)($el['y'] ?? 0) + (float)($el['h'] ?? 0) / 2;
+    for ($j = $i - 1; $j >= 0; $j--) {
+        $u = $els[$j];
+        if (!empty($u['hidden']) || !ctpl_covers($u, $cx, $cy)) continue;
+        // A photograph under the words. WCAG cannot measure that either, and
+        // warning about every name over a picture would teach people to ignore
+        // this check — the one outcome worse than not having it.
+        if (($u['type'] ?? '') === 'image') return null;
+        if (!in_array($u['type'] ?? '', ['rect', 'shape', 'ellipse'], true)) continue;
+        if (isset($u['opacity']) && (float)$u['opacity'] < 1) return null;   // composited
+        return $u['fill'] ?? '';
+    }
+    return ['card' => true];
+}
+
+/** Every literal colour a paint value can be — a gradient counts as all of its
+ *  stops, because text only has to be illegible over part of one. */
+function ctpl_paint_colours($paint): array {
+    if (is_array($paint) && isset($paint['stops']) && is_array($paint['stops'])) {
+        $out = [];
+        foreach ($paint['stops'] as $st) {
+            $c = (string)($st['color'] ?? '');
+            if ($c !== '') $out[] = $c;
+        }
+        return $out;
+    }
+    return is_string($paint) && $paint !== '' ? [$paint] : [];
+}
+
+function ctpl_ink_problems(array $t, callable $add): void {
+    $els = is_array($t['elements'] ?? null) ? array_values($t['elements']) : [];
+    foreach ($els as $i => $el) {
+        if (($el['type'] ?? '') !== 'text' || !empty($el['hidden'])) continue;
+        $text = trim((string)($el['text'] ?? ''));
+        if ($text === '') continue;                       // an empty line cannot be unreadable
+        $under = ctpl_paint_under($els, $i);
+        if ($under === null) continue;
+        $isCard = is_array($under) && !empty($under['card']);
+        $paint = $isCard ? (string)($t['background'] ?? '#ffffff') : $under;
+        $where = $isCard ? 'the card' : 'what it sits on';
+        $ink = $el['color'] ?? '';
+        $label = '“' . mb_substr($text, 0, 24) . '”';
+
+        // 1 · The same string: 1:1 whatever it resolves to. No data needed.
+        if (is_string($ink) && is_string($paint) && trim($ink) !== ''
+            && strcasecmp(trim($ink), trim($paint)) === 0) {
+            $add('error', $label . ' is the same colour as ' . $where . ' — it will print invisible',
+                 (string)($el['id'] ?? ''));
+            continue;
+        }
+
+        // 2 · Measured, where both sides are literal. A {{binding}} is the
+        //     client's to resolve — it has the roster and this does not.
+        if (!is_string($ink) || strpos($ink, '#') !== 0) continue;
+        $worst = null; $worstFor = '';
+        foreach (ctpl_paint_colours($paint) as $bg) {
+            if (strpos($bg, '#') !== 0) continue;
+            $r = ctpl_contrast($ink, $bg);
+            if ($r === null) continue;
+            if ($worst === null || $r < $worst) { $worst = $r; $worstFor = $ink . ' on ' . $bg; }
+        }
+        if ($worst === null) continue;
+        $said = $label . ' measures ' . number_format($worst, 2) . ':1 against ' . $where
+              . ' (' . $worstFor . ')';
+        if ($worst < CTPL_INK_ERROR_RATIO) {
+            $add('error', $said . ' — that cannot be read', (string)($el['id'] ?? ''));
+        } elseif ($worst < CTPL_INK_WARN_RATIO) {
+            $add('warn', $said . ' — ' . CTPL_INK_WARN_RATIO
+                 . ':1 is the floor for text somebody has to read across a hall',
+                 (string)($el['id'] ?? ''));
+        }
+    }
+}
+
 function ctpl_preflight(array $t): array {
     $problems = [];
     $add = function (string $level, string $message, string $elId = '') use (&$problems) {
@@ -270,12 +408,30 @@ function ctpl_preflight(array $t): array {
         }
     }
     $kind = (string)($t['kind'] ?? 'student');
-    $required = $kind === 'graphic' ? []
+    $face = (string)($t['face'] ?? 'single');
+    /* What a card of this kind must show, per kind. Mirrors TPL_REQUIRED in
+       card-template.jsx.
+     *
+     * The BACK of a card is exempt. A back carries terms, an emergency
+     * number, a signature strip — it is not where the name and the code live,
+     * and running the front's rules over it would refuse every back for want
+     * of a QR, which teaches people to route around the checks that matter
+     * (the same reasoning that exempts a poster). The FRONT still has to
+     * satisfy them, so a two-sided card cannot lose its identity by moving
+     * everything to the back. */
+    $required = ($kind === 'graphic' || $face === 'back') ? []
         : ($kind === 'volunteer' ? ['surname', 'token', 'displayId', 'role']
-                                 : ['surname', 'token', 'displayId']);
+        : ($kind === 'member'    ? ['name', 'displayId']
+                                 : ['surname', 'token', 'displayId']));
     foreach ($required as $f) {
         // `role` is satisfied by either field that prints it.
         if ($f === 'role' && (isset($bound['role']) || isset($bound['roleFaculty']))) continue;
+        /* A member card may carry either the split name or the full one — the
+           roster holds a single `fullName` for members, unlike the summer
+           intake which asks for the parts separately. */
+        if ($f === 'name' && (isset($bound['fullName']) || isset($bound['surname']) || isset($bound['firstName'])
+            // The two-weight member lockup counts as showing a name.
+            || isset($bound['member.given']) || isset($bound['member.family']))) continue;
         if (empty($bound[$f])) $add('error', 'Nothing on this card shows ' . $f);
     }
 
@@ -283,7 +439,10 @@ function ctpl_preflight(array $t): array {
     // A poster is not a credential. Running the credential rules on one would
     // refuse every poster for want of a QR, which teaches people to route around
     // the checks that matter.
-    if (!$qr && $kind !== 'graphic') $add('error', 'No QR — the card cannot be scanned at a gate');
+    /* A back with no QR is fine; a FRONT without one is a card nobody can
+       scan. A member card's QR points at their profile rather than a gate
+       token, so it is required for the same reason and refused the same way. */
+    if (!$qr && $kind !== 'graphic' && $face !== 'back') $add('error', 'No QR — the card cannot be scanned at a gate');
     if (count($qr) > 1) $add('error', 'Two QR codes — a scanner reads whichever it sees first');
     /* Ask our own encoder how many modules a real payload needs, rather than
        assuming a version — it is the same function that produces the printed
@@ -321,6 +480,9 @@ function ctpl_preflight(array $t): array {
             }
         }
     }
+    /* Legibility, last: the messages read better after the structural ones. */
+    ctpl_ink_problems($t, $add);
+
     return $problems;
 }
 

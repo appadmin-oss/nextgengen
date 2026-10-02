@@ -15,6 +15,14 @@ if ($method === 'GET') {
             'requesterId' => $s['mid'],
             'subjectId'   => (string)($_GET['subjectId'] ?? ''),
         ]);
+    } elseif ($view === 'due') {
+        // §18's actual question: who has nobody looked at this week.
+        $res = gs_call('member.mentor.reviews.due', [
+            'requesterId' => $s['mid'],
+            'centre'      => (string)($_GET['centre'] ?? ''),
+            'scope'       => (string)($_GET['scope'] ?? ''),
+            'period'      => (string)($_GET['period'] ?? ''),
+        ]);
     } elseif ($view === 'attention') {
         $res = gs_call('member.mentor.attention', [
             'requesterId' => $s['mid'],
@@ -40,6 +48,30 @@ if ($method === 'GET') {
             'stars'       => $b['stars'] ?? 0,
             'category'    => $b['category'] ?? '',
             'note'        => $b['note'] ?? '',
+            'ip'          => client_ip(),
+        ]);
+    } elseif ((string)($b['action'] ?? '') === 'review') {
+        // The twelve questions for one child for one week. Amends in place.
+        rate_limit_check('mentor.review');
+        $res = gs_call('member.mentor.review.save', [
+            'requesterId' => $s['mid'],
+            'subjectId'   => $b['subjectId'] ?? '',
+            'period'      => $b['period'] ?? '',
+            'answers'     => $b['answers'] ?? [],
+            'concern'     => !empty($b['concern']),
+            'ip'          => client_ip(),
+        ]);
+    } elseif ((string)($b['action'] ?? '') === 'courage') {
+        // One observed instance on the 1-5 courage ladder (brief §14). The
+        // domain requires the evidence; this only carries it.
+        rate_limit_check('mentor.courage');
+        $res = gs_call('member.mentor.courage.mark', [
+            'requesterId' => $s['mid'],
+            'subjectId'   => $b['subjectId'] ?? '',
+            'score'       => $b['score'] ?? 0,
+            'prompt'      => $b['prompt'] ?? '',
+            'evidence'    => $b['evidence'] ?? '',
+            'observedOn'  => $b['observedOn'] ?? '',
             'ip'          => client_ip(),
         ]);
     } elseif ((string)($b['action'] ?? '') === 'v3') {

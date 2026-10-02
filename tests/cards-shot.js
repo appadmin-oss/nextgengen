@@ -14,7 +14,7 @@
  */
 const fs = require('fs'), path = require('path');
 const { spawn } = require('child_process');
-const { waitForServer } = require('./_serve');
+const { waitForServer, writeScreenIndex } = require('./_serve');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'docs', 'screens');
@@ -246,11 +246,7 @@ window.useAuth = function () { return { isSignedIn: true }; };
     console.log('  ✓ 20-cards-print-pick.png  (' + shots[shots.length - 1].kb + ' KB)');
 
     // Fold into the screens index rather than beside it.
-    const idxFile = path.join(OUT, 'INDEX.json');
-    let idx = [];
-    try { idx = JSON.parse(fs.readFileSync(idxFile, 'utf8')); } catch (_) {}
-    const keep = Array.isArray(idx) ? idx.filter(s => !shots.some(n => n.name === s.name)) : [];
-    fs.writeFileSync(idxFile, JSON.stringify(keep.concat(shots), null, 2) + '\n');
+    writeScreenIndex(OUT, shots);
     console.log('\n' + shots.length + ' card view(s) in docs/screens/');
   } catch (e) {
     console.error('✗ ' + (e && e.message));

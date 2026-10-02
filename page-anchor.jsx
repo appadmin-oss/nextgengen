@@ -446,7 +446,7 @@ function AnchorCta({ setPage, auth }) {
         </p>
         <div className="anch-cta-actions">
           <Magnetic strength={14}>
-            <button className="btn btn-gold btn-lg" onClick={() => setPage("join")}>Apply now →</button>
+            <button className="btn btn-gold btn-lg" onClick={() => goApply(setPage, "anchor")}>Apply now →</button>
           </Magnetic>
           {auth && auth.isSignedIn ? (
             <button className="btn btn-on-dark-ghost btn-lg" onClick={() => setPage("dashboard")}>Open my dashboard</button>
@@ -567,7 +567,7 @@ function ProfilePage({ setPage }) {
             <div style={{display:"flex", flexDirection:"column", alignItems:"center", textAlign:"center", padding:"24px 32px", borderLeft:"1px solid rgba(255,255,255,0.12)"}}>
               <div className="mono" style={{fontSize:10, letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.5)"}}>GENIUS LEVEL</div>
               <div className="display" style={{fontSize:108, color:"var(--lime)", lineHeight:1, margin:"6px 0"}}>{String(m.level).padStart(2,"0")}</div>
-              <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.6)"}}>{m.xp.toLocaleString()} XP</div>
+              <div className="mono" style={{fontSize:11, color:"rgba(255,255,255,0.6)"}}>{fmtNum(m.xp)} XP</div>
             </div>
           </div>
         </div>

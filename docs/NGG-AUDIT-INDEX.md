@@ -8,7 +8,9 @@ _Schema:_ `schema_version` **83**.
 
 > Companion docs: `afrovanguard-sync.md` (NGG ↔ Afrovanguard),
 > `anchor-journal-v2-gap-analysis.md` (Journal roadmap), `SETUP.md`, `SCHEMAS.md`,
-> `OPERATIONAL-AUDIT.md`, `PRODUCT-DESIGN-AUDIT.md`.
+> `OPERATIONAL-AUDIT.md`, `PRODUCT-DESIGN-AUDIT.md`,
+> `NGGC-2040-BRIEF-AUDIT-2026-09.md` (the 2040 formation brief, clause by
+> clause, against the code — and the three gaps that remain open).
 
 ## 1. Tech stack & build
 - **React 18, no framework, no dev bundler.** JSX is compiled in-browser by
@@ -304,7 +306,7 @@ storage, and cache dirs (7 per-dir `.htaccess` present).
 ## Appendix — Feature-gap remediation (2026-07)
 
 A five-agent feature-gap audit produced a prioritised inventory; all items were
-implemented (see git history on `claude/product-design-audit-r89fjb`).
+implemented (see git history on `product-design-audit-r89fjb`).
 Highlights:
 
 - **No-cron cliff → built-in web-cron** (`api/_lib/webcron.php`): drains the
