@@ -200,6 +200,23 @@ holds even if a stale page is left open.
 
 **People → Members.**
 
+### The dashboard
+
+The **Dashboard** tab counts the membership and, under **Conduct &
+progression**, what has happened to it. Every one of these tiles is a list:
+press it and the roster opens filtered to exactly the members it counted.
+
+| Tile | Counts |
+|---|---|
+| **Fined** | People with a fine imposed — owed, paid or cleared. A fine that is only *proposed*, or was *waived* or *lifted*, is not counted. |
+| **Owing · ₦…** | People with a fine still active or pending, and how much. This is the conduct record's figure; the ledger balance is in the **Dues** panel, which needs the `fees` permission. |
+| **Suspended now** | A live policy suspension (no end date, or ending today or later), or a record set to *Suspended* by hand. Both are turned away at the gate. |
+| **Evicted** | A live eviction. An evicted member is not also counted as suspended. |
+| **Sanction to decide** | The policy proposed a sanction and nobody has confirmed or dismissed it yet. Work these from **Conduct & fines**. |
+| **Promoted to NGV** | Every recorded NGG → NGV promotion; the note under the tiles gives the last 12 months. |
+
+A centre-scoped admin sees their own centres' figures only.
+
 ### Finding somebody
 
 - The **search box** matches name, member ID and email, any part of it.

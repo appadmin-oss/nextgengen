@@ -7242,6 +7242,8 @@ select.cs-field option { background: var(--dsn-s1); color: var(--dsn-ink); }
    empty card. */
 .mem-dash-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 18px; align-items: start; }
 .mem-dash-grid > section { min-width: 0; }
+/* A second tile row on the Members dashboard, headed so it reads as its own group. */
+.mem-dash-sub { margin: 22px 0 10px; }
 @media (max-width: 900px) { .mem-dash-grid { grid-template-columns: 1fr; } }
 
 .mem-bar-row { display: grid; grid-template-columns: minmax(96px, 9rem) 1fr auto; align-items: center; gap: 10px; margin-top: 9px; font-size: 13px; }

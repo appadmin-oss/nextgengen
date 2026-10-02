@@ -19688,6 +19688,66 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('segments need the people capability',
         (backend_dispatch('admin.members.segments', ['requesterId' => 'NGG-2025-0001'])['error'] ?? '') === 'forbidden');
 
+    /* ── Conduct and progression tiles ───────────────────────────────────
+     *
+     * Fined, owing, suspended, evicted, awaiting a decision, promoted. Each
+     * tile is a segment, so the test that matters is that the count and the
+     * list it opens agree, and that each word means what the conduct panel
+     * means by it. */
+    $scopedBefore = backend_dispatch('admin.members.overview', ['requesterId' => $SCOPED])['overview']['conduct'] ?? null;
+    $ov0 = backend_dispatch('admin.members.overview', ['requesterId' => $ADMIN])['overview']['conduct'] ?? [];
+    $sanc = function (string $who, string $kind, string $status, array $over = []) {
+        static $tier = 0; $tier++;
+        db_insert('sanctions', array_merge(['personId' => $who, 'personType' => 'member', 'kind' => $kind, 'tier' => $tier,
+            'amount' => 0, 'status' => $status, 'issuedBy' => 't', 'issuedAt' => now_iso(), 'createdAt' => now_iso()], $over));
+    };
+    foreach (['C1','C2','C3','C4','C5','C6','C7'] as $c) $mk('NGG-MM-' . $c);
+    $sanc('NGG-MM-C1', 'fine', 'active',   ['amount' => 1000]);   // fined, owing
+    $sanc('NGG-MM-C1', 'fine', 'paid',     ['amount' => 500]);    // two fines, one person
+    $sanc('NGG-MM-C2', 'fine', 'paid',     ['amount' => 700]);    // fined, settled
+    $sanc('NGG-MM-C3', 'fine', 'proposed', ['amount' => 900]);    // nobody confirmed it
+    $sanc('NGG-MM-C3', 'fine', 'waived',   ['amount' => 300]);    // should not have been imposed
+    $sanc('NGG-MM-C4', 'suspension', 'active', ['endsAt' => gmdate('Y-m-d', strtotime('+7 days'))]);
+    $sanc('NGG-MM-C5', 'suspension', 'active', ['endsAt' => gmdate('Y-m-d', strtotime('-7 days'))]); // served
+    $sanc('NGG-MM-C5', 'eviction', 'active');
+    db_update('members', ['status' => 'suspended'], ['memberId' => 'NGG-MM-C6']);       // suspended by hand
+    db_insert('member_promotions', ['memberId' => 'NGG-MM-C7', 'byId' => 't', 'at' => now_iso()]);
+    db_insert('member_promotions', ['memberId' => 'NGG-MM-C2', 'byId' => 't', 'at' => '2020-01-01T00:00:00Z']);
+
+    $ov = backend_dispatch('admin.members.overview', ['requesterId' => $ADMIN])['overview']['conduct'] ?? [];
+    $d = fn($k) => ($ov[$k] ?? 0) - ($ov0[$k] ?? 0);
+    chk('the dashboard reports conduct and progression', is_array($ov) && array_key_exists('fined', $ov));
+    chk('"fined" counts people, not fines, and leaves out proposed and waived ones', $d('fined') === 2);
+    chk('"owing" is the fines still active or pending — the conduct panel\'s finesOwed', $d('finesOwedBy') === 1 && $d('finesOwed') === 1000);
+    chk('…and the imposed total counts paid fines too, never proposed or waived', $d('finesImposed') === 2200);
+    chk('"suspended now" takes a live policy suspension AND a record suspended by hand, not one already served',
+        $d('suspended') === 2);
+    chk('…and an evicted member is counted as evicted, not suspended', $d('evicted') === 1);
+    chk('a proposed sanction is counted as awaiting a decision', $d('awaitingReview') === 1);
+    chk('promoted counts every promotion, and "this year" only the recent one',
+        $d('promoted') === 2 && $d('promoted365') === 1);
+
+    $mmIds = function (string $segment) use ($ADMIN): array {
+        $r = backend_dispatch('admin.members.list', ['requesterId' => $ADMIN, 'segment' => $segment, 'centre' => 'Mergeville', 'pageSize' => 200]);
+        $ids = array_column($r['members'] ?? [], 'memberId'); sort($ids); return $ids;
+    };
+    chk('each tile opens the list it counted — fined', $mmIds('fined') === ['NGG-MM-C1', 'NGG-MM-C2']);
+    chk('…owing a fine', $mmIds('fines_owed') === ['NGG-MM-C1']);
+    chk('…suspended now', $mmIds('suspended') === ['NGG-MM-C4', 'NGG-MM-C6']);
+    chk('…evicted', $mmIds('evicted') === ['NGG-MM-C5']);
+    chk('…awaiting a decision', $mmIds('conduct_review') === ['NGG-MM-C3']);
+    chk('…promoted to NGV', $mmIds('promoted_ngv') === ['NGG-MM-C2', 'NGG-MM-C7']);
+    chk('the data-quality tab does not grow conduct entries — those are not missing data',
+        !array_intersect(array_column(backend_dispatch('admin.members.segments', ['requesterId' => $ADMIN])['segments'] ?? [], 'key'),
+                         array_keys(member_conduct_segments())));
+    if ($scopedBefore !== null) {
+        chk('a centre-scoped admin\'s conduct tiles do not count another centre\'s members',
+            (backend_dispatch('admin.members.overview', ['requesterId' => $SCOPED])['overview']['conduct'] ?? null) == $scopedBefore);
+    }
+    db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-MM-C%'");
+    db_exec("DELETE FROM member_promotions WHERE memberId LIKE 'NGG-MM-C%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-MM-C%'");
+
     /* ── Timeline ───────────────────────────────────────────────────────
      *
      * Set up through the bulk action the desk actually calls, so the

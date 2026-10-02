@@ -87,7 +87,9 @@ function loadChromium() {
       ? { no_email: 0, no_phone: 0, no_centre: 0, unknown_centre: 0, no_dob: 0, minor_no_guardian: 0, duplicate_groups: 0 }
       : { no_email: 214, no_phone: 86, no_centre: 55, unknown_centre: 31, no_dob: 142,
           minor_no_guardian: 19, duplicate_groups: 7 },
-    dues: { people: 148, outstanding: 884500 }
+    dues: { people: 148, outstanding: 884500 },
+    conduct: { fined: 63, finesImposed: 412000, finesOwedBy: 21, finesOwed: 96500, suspended: 4,
+               evicted: 1, awaitingReview: 3, promoted: 38, promoted365: 12 }
   };
 
   window.NGGApi = window.NGGApi || {};
@@ -96,7 +98,7 @@ function loadChromium() {
   });
 
   ReactDOM.createRoot(document.getElementById('root'))
-    .render(React.createElement(MembersDashboard, { onFilter: function () {} }));
+    .render(React.createElement(MembersDashboard, { onFilter: function (f) { window.__lastFilter = f; } }));
 </script>
 </body></html>`);
 
@@ -126,6 +128,26 @@ function loadChromium() {
       await page.close();
     };
     await shoot('dash',       '',             { width: 1180, height: 1000 });
+
+    /* The conduct tiles are lists, not posters: each opens the roster
+       segment it counted. */
+    {
+      const page = await browser.newPage({ viewport: { width: 1180, height: 1000 } });
+      await page.goto(BASE + '/tests/_memdash_fixture.html', { waitUntil: 'networkidle' });
+      await page.waitForSelector('.mem-dash-sub');
+      const text = (await page.evaluate(() => document.body.innerText)).toLowerCase();
+      for (const want of ['conduct & progression', 'fined', 'owing · ₦96,500', 'suspended now', 'evicted',
+                          'sanction to decide', 'promoted to ngv', '12 promoted to ngv in the last 12 months', '₦412,000']) {
+        if (!text.includes(want)) problems.push('conduct tiles: missing "' + want + '"');
+      }
+      for (const [label, segment] of [['Fined', 'fined'], ['Suspended now', 'suspended'], ['Evicted', 'evicted'],
+                                      ['Sanction to decide', 'conduct_review'], ['Promoted to NGV', 'promoted_ngv']]) {
+        await page.locator('.admin-tile', { has: page.locator('.admin-tile-l', { hasText: new RegExp('^' + label + '$', 'i') }) }).click();
+        const f = await page.evaluate(() => window.__lastFilter);
+        if (!f || f.segment !== segment) problems.push('conduct tiles: "' + label + '" opened ' + JSON.stringify(f) + ', not segment ' + segment);
+      }
+      await page.close();
+    }
     await shoot('dash-clean', 'state=clean',  { width: 1180, height: 1000 });
     await shoot('dash-scoped','state=scoped', { width: 1180, height: 1000 });
     await shoot('dash-phone', '',             { width: 390, height: 844 });

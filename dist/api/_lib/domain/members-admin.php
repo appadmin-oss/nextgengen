@@ -47,8 +47,59 @@ function member_segment_sql(string $segment): ?array {
         case 'no_consent':
             return ["role = 'member' AND memberId NOT IN (
                        SELECT studentId FROM consents WHERE type = 'site_visibility' AND status = 'granted')", []];
-        default: return null;
     }
+    return member_conduct_segment_sql($segment);
+}
+
+/* ── Conduct and progression segments ─────────────────────────────────────
+ *
+ * The dashboard's "who is fined, suspended, promoted" tiles, each a list.
+ * Read from `sanctions` and `member_promotions` as policy_state() reads them,
+ * so the tile, the roster it opens and the person's own conduct panel give
+ * one answer:
+ *
+ *   fined        a fine was imposed — owed, paid or cleared. Not one that is
+ *                only proposed (nobody has confirmed it), nor one waived or
+ *                lifted (it should not have been imposed).
+ *   fines_owed   a fine still active or pending: policy_state()'s finesOwed.
+ *   suspended    suspended now, by either route the gate refuses: a live
+ *                policy suspension (no end, or ending today or later), or a
+ *                member record set to suspended by hand.
+ *   evicted      a live eviction.
+ *   conduct_review  a sanction the policy proposed and nobody has decided.
+ *   promoted_ngv a recorded NGG → NGV promotion.
+ */
+function member_conduct_segment_sql(string $segment): ?array {
+    $mine = "SELECT personId FROM sanctions WHERE personType = 'member'";
+    switch ($segment) {
+        case 'fined':
+            return ["memberId IN ($mine AND kind = 'fine' AND status IN ('active','pending','paid','cleared'))", []];
+        case 'fines_owed':
+            return ["memberId IN ($mine AND kind = 'fine' AND status IN ('active','pending'))", []];
+        case 'suspended':
+            return ["(status = 'suspended' OR (memberId IN ($mine AND kind = 'suspension' AND status = 'active'
+                        AND (endsAt = '' OR endsAt IS NULL OR SUBSTR(endsAt, 1, 10) >= ?))
+                      AND memberId NOT IN ($mine AND kind = 'eviction' AND status = 'active')))",
+                    [attendance_today()]];
+        case 'evicted':
+            return ["memberId IN ($mine AND kind = 'eviction' AND status = 'active')", []];
+        case 'conduct_review':
+            return ["memberId IN ($mine AND status = 'proposed')", []];
+        case 'promoted_ngv':
+            return ["memberId IN (SELECT memberId FROM member_promotions)", []];
+    }
+    return null;
+}
+
+function member_conduct_segments(): array {
+    return [
+        'fined'          => 'Fined',
+        'fines_owed'     => 'Owing a fine',
+        'suspended'      => 'Suspended now',
+        'evicted'        => 'Evicted',
+        'conduct_review' => 'Sanction awaiting a decision',
+        'promoted_ngv'   => 'Promoted to NGV',
+    ];
 }
 
 function member_segments(): array {

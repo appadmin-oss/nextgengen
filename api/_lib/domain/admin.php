@@ -96,7 +96,7 @@ function admin_members_list(array $p): array {
     if (!empty($p['segment'])) {
         $seg = member_segment_sql((string)$p['segment']);
         if (!$seg) return ['ok' => false, 'error' => 'unknown_segment',
-                           'detail' => 'Known segments: ' . implode(', ', array_keys(member_segments())) . '.'];
+                           'detail' => 'Known segments: ' . implode(', ', array_keys(member_segments() + member_conduct_segments())) . '.'];
         $where[] = '(' . $seg[0] . ')';
         foreach ($seg[1] as $sp) $params[] = $sp;
     }
@@ -504,6 +504,37 @@ function admin_members_overview(array $p): array {
         $staff[(string)$r['role']] = (int)$r['c'];
     }
 
+    /* ── Conduct and progression ─────────────────────────────────────
+       Each count is the roster segment it opens, so the tile and the list
+       behind it cannot disagree. The naira figures are the conduct
+       record's (`sanctions.amount`), visible to whoever runs conduct;
+       the ledger's money stays behind `fees` in the Dues panel above. */
+    $seg = function (string $key) use ($base, $args, $one): int {
+        [$sql, $sp] = member_segment_sql($key);
+        return $one("SELECT COUNT(*) c $base AND ($sql)", array_merge($args, $sp));
+    };
+    $fineSum = function (array $statuses) use ($scope, $args): int {
+        $in = implode(',', array_fill(0, count($statuses), '?'));
+        return (int)(db_row("SELECT COALESCE(SUM(s.amount), 0) c FROM sanctions s JOIN members m ON m.memberId = s.personId
+                             WHERE s.personType = 'member' AND s.kind = 'fine' AND s.status IN ($in)"
+                             . str_replace('centre', 'm.centre', $scope), array_merge($statuses, $args))['c'] ?? 0);
+    };
+    $promotedSince = function (string $since) use ($scope, $args, $one): int {
+        return $one("SELECT COUNT(DISTINCT p.memberId) c FROM member_promotions p JOIN members m ON m.memberId = p.memberId
+                     WHERE p.at >= ?" . str_replace('centre', 'm.centre', $scope), array_merge([$since], $args));
+    };
+    $conduct = [
+        'fined'          => $seg('fined'),
+        'finesImposed'   => $fineSum(['active', 'pending', 'paid', 'cleared']),
+        'finesOwedBy'    => $seg('fines_owed'),
+        'finesOwed'      => $fineSum(['active', 'pending']),
+        'suspended'      => $seg('suspended'),
+        'evicted'        => $seg('evicted'),
+        'awaitingReview' => $seg('conduct_review'),
+        'promoted'       => $seg('promoted_ngv'),
+        'promoted365'    => $promotedSince(gmdate('Y-m-d', strtotime('-365 days'))),
+    ];
+
     $where = []; $wargs = [];
     if ($names !== null) { $where[] = 'centre IN (' . implode(',', array_fill(0, count($names), '?')) . ')'; $wargs = $names; }
 
@@ -526,6 +557,7 @@ function admin_members_overview(array $p): array {
         'consent'  => admin_members_consent_summary($where, $wargs),
         'quality'  => $quality,
         'dues'     => $dues,
+        'conduct'  => $conduct,
     ]];
 }
 

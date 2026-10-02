@@ -1400,6 +1400,32 @@ function MembersDashboard({ onFilter }) {
         <AdminTile n={fmtN(h.dormant)} l="Active but dormant"/>
       </div>
 
+      {/* Conduct and progression. Each count is the roster segment it opens,
+          read on the server from the same SQL, so a tile cannot promise a
+          list that says something else. */}
+      {o.conduct && (
+        <>
+          <h3 className="admin-h3 mem-dash-sub">Conduct &amp; progression</h3>
+          <div className="admin-tiles">
+            <AdminTile n={fmtN(o.conduct.fined)} l="Fined" onClick={() => onFilter({ segment: "fined" })}/>
+            <AdminTile n={fmtN(o.conduct.finesOwedBy)} l={"Owing · ₦" + fmtN(o.conduct.finesOwed)}
+                       onClick={() => onFilter({ segment: "fines_owed" })}/>
+            <AdminTile n={fmtN(o.conduct.suspended)} l="Suspended now" onClick={() => onFilter({ segment: "suspended" })}/>
+            <AdminTile n={fmtN(o.conduct.evicted)} l="Evicted" onClick={() => onFilter({ segment: "evicted" })}/>
+            <AdminTile n={fmtN(o.conduct.awaitingReview)} l="Sanction to decide"
+                       onClick={() => onFilter({ segment: "conduct_review" })}/>
+            <AdminTile n={fmtN(o.conduct.promoted)} l="Promoted to NGV"
+                       onClick={() => onFilter({ segment: "promoted_ngv" })}/>
+          </div>
+          <p className="mem-consent">
+            Fines imposed to date: <strong>₦{fmtN(o.conduct.finesImposed)}</strong>, of which
+            {" "}<strong>₦{fmtN(o.conduct.finesOwed)}</strong> is still owed. Proposed, waived and lifted
+            fines are not counted.
+            {" "}<strong>{fmtN(o.conduct.promoted365)}</strong> promoted to NGV in the last 12 months.
+          </p>
+        </>
+      )}
+
       <div className="mem-dash-grid">
         <section className="admin-panel">
           <h3 className="admin-h3">Joining, month by month</h3>
@@ -1716,6 +1742,12 @@ const SEGMENT_LABELS = {
   minor_no_guardian: "members under 18 with no guardian contact",
   dormant: "active members with nothing recorded for 60 days",
   no_consent: "members with no publication consent recorded",
+  fined: "members who have been fined",
+  fines_owed: "members owing a fine",
+  suspended: "members suspended now",
+  evicted: "members evicted under the policy",
+  conduct_review: "members with a sanction awaiting a decision",
+  promoted_ngv: "members promoted to NGV",
 };
 
 /* ============================================================================
