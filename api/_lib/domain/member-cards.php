@@ -216,7 +216,7 @@ function member_card_lookup(?string $token, ?string $format = null, ?string $val
     if ($token !== null && $token !== '') {
         $c = db_row("SELECT memberId, status FROM member_cards WHERE kind = 'secure' AND code = ? LIMIT 1", [strtoupper($token)]);
         if (!$c) return null;
-        $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$c['memberId']]);
+        $m = member_follow_merge(db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$c['memberId']]));
         return $m ? ['member' => $m, 'void' => (string)$c['status'] !== 'active', 'kind' => 'secure'] : null;
     }
     $f = $format !== null ? member_card_format($format) : null;
@@ -224,7 +224,7 @@ function member_card_lookup(?string $token, ?string $format = null, ?string $val
     $v = strtoupper(trim($value));
     $c = db_row("SELECT memberId, status FROM member_cards WHERE kind = 'printed' AND format = ? AND code = ? LIMIT 1", [(string)$f['id'], $v]);
     if ($c) {
-        $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$c['memberId']]);
+        $m = member_follow_merge(db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)$c['memberId']]));
         return $m ? ['member' => $m, 'void' => (string)$c['status'] !== 'active', 'kind' => 'printed'] : null;
     }
     /* No row recorded: a format that reads a field still knows its member —
@@ -233,7 +233,7 @@ function member_card_lookup(?string $token, ?string $format = null, ?string $val
     $field = (string)($f['field'] ?? 'code');
     if ($field === 'code') return null;
     $col = $field === 'displayId' ? 'displayId' : 'memberId';
-    $m = db_row("SELECT * FROM members WHERE UPPER($col) = ? AND COALESCE(type,'NGG') <> 'Summer' LIMIT 1", [$v]);
+    $m = member_follow_merge(db_row("SELECT * FROM members WHERE UPPER($col) = ? AND COALESCE(type,'NGG') <> 'Summer' LIMIT 1", [$v]));
     return $m ? ['member' => $m, 'void' => false, 'kind' => 'printed'] : null;
 }
 

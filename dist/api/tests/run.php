@@ -19751,6 +19751,30 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             'kind' => 'dues', 'periodKey' => '2026-02', 'amount' => 5000, 'createdAt' => now_iso()]);
     }
 
+    /* What the absorbed person holds outside this database — a card in a
+       wallet, a gate history, a promotion, a fine. Each of these was left on
+       the retired record before the policy named their tables. */
+    $goneCard = member_card_issue('NGG-MM-GONE', 'test', 'merge-test');
+    $keepCard = member_card_issue('NGG-MM-KEEP', 'test', 'merge-test');
+    foreach ([['NGG-MM-GONE', '2026-09-01'], ['NGG-MM-GONE', '2026-09-02'], ['NGG-MM-KEEP', '2026-09-02']] as [$who, $day]) {
+        db_insert('attendance', ['cohortId' => '', 'studentId' => $who, 'token' => '', 'date' => $day,
+            'checkInAt' => $day . 'T08:00:00Z', 'method' => 'webhook', 'byId' => 't', 'device' => 't', 'createdAt' => now_iso()]);
+    }
+    db_insert('member_promotions', ['memberId' => 'NGG-MM-GONE', 'byId' => 't', 'at' => now_iso()]);
+    db_insert('infractions', ['personId' => 'NGG-MM-GONE', 'personType' => 'member', 'kind' => 'late',
+        'date' => '2026-09-01', 'byId' => 't', 'createdAt' => now_iso()]);
+    db_insert('sanctions', ['personId' => 'NGG-MM-GONE', 'personType' => 'member', 'kind' => 'fine', 'tier' => 1,
+        'amount' => 500, 'status' => 'active', 'issuedBy' => 't', 'issuedAt' => now_iso(), 'createdAt' => now_iso()]);
+
+    db_insert('sanctions', ['personId' => 'NGG-MM-KEEP', 'personType' => 'member', 'kind' => 'fine', 'tier' => 1,
+        'amount' => 500, 'status' => 'active', 'issuedBy' => 't', 'issuedAt' => now_iso(), 'createdAt' => now_iso()]);
+    $sBlocked = backend_dispatch('admin.members.merge', ['requesterId' => $ADMIN,
+        'keepId' => 'NGG-MM-KEEP', 'mergeId' => 'NGG-MM-GONE', 'confirm' => 1]);
+    chk('the same fine on both records BLOCKS the merge — combining them would double it',
+        ($sBlocked['error'] ?? '') === 'merge_blocked' && !empty($sBlocked['preview']['blocked']['sanctions']));
+    chk('…and says it is a sanction, not a ledger clash', str_contains((string)($sBlocked['detail'] ?? ''), 'sanction'));
+    db_exec("DELETE FROM sanctions WHERE personId = 'NGG-MM-KEEP'");
+
     $done = backend_dispatch('admin.members.merge', ['requesterId' => $ADMIN,
         'keepId' => 'NGG-MM-KEEP', 'mergeId' => 'NGG-MM-GONE', 'confirm' => 1]);
     chk('with no money clash the merge goes through', !empty($done['merged']));
@@ -19772,6 +19796,38 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         chk('the non-colliding ledger row moved with the person',
             (int) db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-MM-KEEP'")['c'] === 2);
     }
+
+    $hit = member_card_lookup($goneCard);
+    chk('the card in the absorbed person\'s wallet resolves to the SURVIVOR, not to a retired record',
+        ($hit['member']['memberId'] ?? '') === 'NGG-MM-KEEP' && empty($hit['void']));
+    chk('…and the survivor\'s own card still works too — a printed card is never reissued by a merge',
+        (member_card_lookup($keepCard)['member']['memberId'] ?? '') === 'NGG-MM-KEEP');
+    $gr = backend_dispatch('hooks.gate.resolve', ['token' => $goneCard]);
+    chk('…and the gate shows them as active, not "marked merged"',
+        ($gr['person']['ref'] ?? '') === 'NGG-MM-KEEP' && ($gr['person']['status'] ?? '') === 'active');
+    chk('their attendance moved; the day both records were present stays one row',
+        (int) db_row("SELECT COUNT(*) c FROM attendance WHERE studentId = 'NGG-MM-KEEP'")['c'] === 2
+        && (int) db_row("SELECT COUNT(*) c FROM attendance WHERE studentId = 'NGG-MM-GONE'")['c'] === 0);
+    chk('their promotion moved', (int) db_row("SELECT COUNT(*) c FROM member_promotions WHERE memberId = 'NGG-MM-KEEP'")['c'] === 1);
+    chk('their conduct record moved — a merge is not a way to clear a fine',
+        (int) db_row("SELECT COUNT(*) c FROM sanctions WHERE personId = 'NGG-MM-KEEP' AND personType = 'member'")['c'] === 1
+        && (int) db_row("SELECT COUNT(*) c FROM infractions WHERE personId = 'NGG-MM-KEEP'")['c'] === 1);
+    $hk = backend_dispatch('hooks.attendance', ['events' => [['ref' => 'NGG-MM-GONE']]]);
+    chk('a check-in sent for the absorbed id lands on the survivor',
+        ($hk['results'][0]['ref'] ?? '') === 'NGG-MM-KEEP');
+    if ((getenv('NGG_TEST_DSN') ?: '') === '') {   // sqlite_master: SQLite runs only
+        $missing = [];
+        foreach (db_all("SELECT name FROM sqlite_master WHERE type = 'table' AND name <> 'members'") as $t) {
+            if (member_column_exists($t['name'], 'memberId') && !array_key_exists($t['name'], member_merge_policy())) $missing[] = $t['name'];
+        }
+        chk('every table with a memberId is named in the merge policy, so a new one has to say what a '
+            . 'merge does to it' . ($missing ? ' — missing: ' . implode(', ', $missing) : ''), !$missing);
+    }
+    db_exec("DELETE FROM attendance WHERE studentId LIKE 'NGG-MM-%'");
+    db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-MM-%'");
+    db_exec("DELETE FROM infractions WHERE personId LIKE 'NGG-MM-%'");
+    db_exec("DELETE FROM member_promotions WHERE memberId LIKE 'NGG-MM-%'");
+    db_exec("DELETE FROM member_cards WHERE memberId LIKE 'NGG-MM-%'");
 
     $tl2 = backend_dispatch('admin.member.timeline', ['requesterId' => $ADMIN, 'memberId' => 'NGG-MM-KEEP']);
     chk('and the merge is on both timelines rather than only in the log',

@@ -200,7 +200,7 @@ function member_event_sentence(string $event, array $meta): string {
 
 /* ── Merge ────────────────────────────────────────────────────────────────
  *
- * Two records, one person. Twenty-seven tables carry a memberId, and five
+ * Two records, one person. Thirty-odd tables carry a member's id, and several
  * of them have a unique key that includes it — so the obvious
  * `UPDATE ... SET memberId = survivor` fails halfway through on a
  * duplicate key, having already moved some of it.
@@ -252,7 +252,35 @@ function member_merge_policy(): array {
         'community_reports'      => 'MOVE',
         'volunteers'             => 'MOVE',
         'ops_events'             => 'MOVE',
+        /* Tables that arrived after this policy was first written, and the
+           ones that key a member under another column name. Each was left
+           on the retired record by a merge: the card in the child's wallet
+           resolved to a "merged" record at the gate, the survivor had no
+           card, and their attendance, promotion and conduct record stayed
+           behind. A table that carries a member and is not named here is
+           a table a merge silently strands. */
+        'member_cards'           => 'MOVE',           // every card they hold keeps working
+        'member_promotions'      => 'MOVE',
+        'member_requests'        => 'MOVE',
+        'mentors'                => 'MOVE',
+        'promo_seen'             => 'MOVE_UNIQUE',
+        'program_journal_follows' => 'MOVE_UNIQUE',
+        'community_homework_state' => 'MOVE_UNIQUE',
+        'community_homework_nudge' => 'MOVE_UNIQUE',
+        'community_typing'       => 'DROP',           // presence, not history
+        'attendance'             => ['MOVE_UNIQUE', 'studentId'],
+        'engagement_snapshots'   => ['MOVE_UNIQUE', 'personId'],
+        'infractions'            => ['MOVE_UNIQUE', 'personId', "personType = 'member'"],
+        'sanctions'              => ['BLOCK',       'personId', "personType = 'member'"], // fines carry amounts
+        'card_issues'            => ['MOVE',        'subjectId', "subjectType = 'member'"],
     ];
+}
+
+/** One policy entry as [policy, id column, extra WHERE]. Most tables key a
+ *  member as `memberId`; the rest name their column. */
+function member_merge_rule($spec): array {
+    $spec = (array)$spec;
+    return [(string)$spec[0], (string)($spec[1] ?? 'memberId'), (string)($spec[2] ?? '')];
 }
 
 /**
@@ -294,9 +322,11 @@ function admin_members_merge(array $p): array {
 
     $moves = []; $blocked = []; $dropped = [];
 
-    foreach (member_merge_policy() as $table => $policy) {
-        if (!member_table_exists($table)) continue;
-        $n = (int)(db_row("SELECT COUNT(*) c FROM $table WHERE memberId = ?", [$mergeId])['c'] ?? 0);
+    foreach (member_merge_policy() as $table => $spec) {
+        [$policy, $col, $where] = member_merge_rule($spec);
+        if (!member_table_exists($table, $col)) continue;
+        $and = $where !== '' ? " AND $where" : '';
+        $n = (int)(db_row("SELECT COUNT(*) c FROM $table WHERE $col = ?$and", [$mergeId])['c'] ?? 0);
         if ($n === 0) continue;
 
         if ($policy === 'DROP')          { $dropped[$table] = $n; continue; }
@@ -308,7 +338,7 @@ function admin_members_merge(array $p): array {
            unique key differs per table, so rather than parse the schema we
            ask the database: a row collides when the survivor already has
            one the loser's row would duplicate. */
-        $collide = member_merge_collisions($table, $keepId, $mergeId);
+        $collide = member_merge_collisions($table, $keepId, $mergeId, $col, $where);
         if ($policy === 'BLOCK' && $collide['rows']) {
             $blocked[$table] = $collide;
             continue;
@@ -341,9 +371,12 @@ function admin_members_merge(array $p): array {
 
     if ($blocked) {
         return ['ok' => false, 'error' => 'merge_blocked', 'preview' => $preview,
-                'detail' => 'Both records have ledger entries for the same period. Combining them '
-                    . 'automatically would be inventing an account — void or transfer the '
-                    . 'overlapping entries first.'];
+                'detail' => isset($blocked['member_ledger'])
+                    ? 'Both records have ledger entries for the same period. Combining them '
+                      . 'automatically would be inventing an account — void or transfer the '
+                      . 'overlapping entries first.'
+                    : 'Both records carry the same sanction (' . implode(', ', array_keys($blocked)) . '). '
+                      . 'Combining them would double a fine or a suspension — clear one first.'];
     }
 
     if (!$confirm) return ['ok' => true, 'dryRun' => true, 'preview' => $preview];
@@ -351,24 +384,26 @@ function admin_members_merge(array $p): array {
     $me = (string)$g['requester']['memberId'];
     db_exec('BEGIN');
     try {
-        foreach (member_merge_policy() as $table => $policy) {
-            if (!member_table_exists($table)) continue;
+        foreach (member_merge_policy() as $table => $spec) {
+            [$policy, $col, $where] = member_merge_rule($spec);
+            if (!member_table_exists($table, $col)) continue;
+            $and = $where !== '' ? " AND $where" : '';
             if ($policy === 'DROP' || $policy === 'KEEP_SURVIVOR') {
-                db_exec("DELETE FROM $table WHERE memberId = ?", [$mergeId]);
+                db_exec("DELETE FROM $table WHERE $col = ?$and", [$mergeId]);
                 continue;
             }
             if ($policy === 'MOVE') {
-                db_exec("UPDATE $table SET memberId = ? WHERE memberId = ?", [$keepId, $mergeId]);
+                db_exec("UPDATE $table SET $col = ? WHERE $col = ?$and", [$keepId, $mergeId]);
                 continue;
             }
             // MOVE_UNIQUE / BLOCK (no collisions by now): move what fits,
             // delete what would duplicate the survivor's own row.
-            $c = member_merge_collisions($table, $keepId, $mergeId);
+            $c = member_merge_collisions($table, $keepId, $mergeId, $col, $where);
             if ($c['rows']) {
                 $ph = implode(',', array_fill(0, count($c['rows']), '?'));
                 db_exec("DELETE FROM $table WHERE id IN ($ph)", $c['rows']);
             }
-            db_exec("UPDATE $table SET memberId = ? WHERE memberId = ?", [$keepId, $mergeId]);
+            db_exec("UPDATE $table SET $col = ? WHERE $col = ?$and", [$keepId, $mergeId]);
         }
 
         if ($fill) {
@@ -410,13 +445,36 @@ function admin_members_merge(array $p): array {
 }
 
 /**
+ * The record a merged member now lives on, or the row itself.
+ *
+ * A merge moves the cards, but the absorbed id is still printed on things —
+ * a card whose format reads the member id or displayId, a spreadsheet the
+ * gate imports from. Anything that resolves a person from an id the outside
+ * world holds follows the merge here, rather than checking somebody in on a
+ * retired record. Followed from the audit entry the merge writes; bounded,
+ * so a cycle cannot hang a gate.
+ */
+function member_follow_merge(?array $m): ?array {
+    for ($hop = 0; $m && (string)($m['status'] ?? '') === 'merged' && $hop < 5; $hop++) {
+        $a = db_row("SELECT meta FROM audit_log WHERE event = 'admin.members.merged_into' AND subject = ?
+                     ORDER BY id DESC LIMIT 1", [(string)$m['memberId']]);
+        $to = (string)(safe_json($a['meta'] ?? null)['survivor'] ?? '');
+        $next = $to !== '' ? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$to]) : null;
+        if (!$next) break;
+        $m = $next;
+    }
+    return $m;
+}
+
+/**
  * Which of the loser's rows would duplicate one the survivor already has.
  *
  * Asked of the database rather than parsed out of the schema, so it stays
  * right when a unique key changes. The shape of "the same row for a
  * different member" differs per table, so the key columns are named here.
  */
-function member_merge_collisions(string $table, string $keepId, string $mergeId): array {
+function member_merge_collisions(string $table, string $keepId, string $mergeId,
+                                  string $col = 'memberId', string $where = ''): array {
     $keys = [
         'member_progress'      => ['missionId'],
         'member_state'         => ['stateKey'],
@@ -427,8 +485,15 @@ function member_merge_collisions(string $table, string $keepId, string $mergeId)
         'community_bookmarks'  => ['postId'],
         'community_stars'      => ['postId'],
         'event_rsvps'          => ['eventId'],
-        'engagement_snapshots' => ['weekStart'],
+        'engagement_snapshots' => ['weekStart', 'role'],
         'member_ledger'        => ['kind', 'periodKey'],
+        'promo_seen'           => ['promoId'],
+        'program_journal_follows' => ['entryId'],
+        'community_homework_state' => ['homeworkId'],
+        'community_homework_nudge' => ['homeworkId', 'nudgedDay'],
+        'attendance'           => ['date'],               // one row per person per day
+        'infractions'          => ['kind', 'date'],
+        'sanctions'            => ['kind', 'tier'],
     ][$table] ?? null;
 
     if (!$keys) return ['rows' => [], 'on' => []];
@@ -436,9 +501,12 @@ function member_merge_collisions(string $table, string $keepId, string $mergeId)
     if (!$keys) return ['rows' => [], 'on' => []];
 
     $on = implode(' AND ', array_map(fn($k) => "a.$k = b.$k", $keys));
+    // $where names columns bare; it applies to both sides of the join.
+    $wa = $where !== '' ? ' AND ' . preg_replace('/\b(\w+)\s*=/', 'a.$1 =', $where) : '';
+    $wb = $where !== '' ? ' AND ' . preg_replace('/\b(\w+)\s*=/', 'b.$1 =', $where) : '';
     $rows = db_all("SELECT a.id, " . implode(',', array_map(fn($k) => "a.$k", $keys)) . "
-                    FROM $table a JOIN $table b ON $on AND b.memberId = ?
-                    WHERE a.memberId = ?", [$keepId, $mergeId]);
+                    FROM $table a JOIN $table b ON $on AND b.$col = ?$wb
+                    WHERE a.$col = ?$wa", [$keepId, $mergeId]);
 
     return ['rows' => array_map(fn($r) => (int)$r['id'], $rows),
             'on' => $keys,
@@ -460,14 +528,15 @@ function member_merge_collisions(string $table, string $keepId, string $mergeId)
  * Caught by running a real merge, not by reading the policy: the list
  * looks entirely reasonable written down.
  */
-function member_table_exists(string $table): bool {
+function member_table_exists(string $table, string $col = 'memberId'): bool {
     static $cache = [];
-    if (array_key_exists($table, $cache)) return $cache[$table];
+    $k = $table . '.' . $col;
+    if (array_key_exists($k, $cache)) return $cache[$k];
 
     try { db_row("SELECT 1 FROM $table LIMIT 1"); }
-    catch (Throwable $e) { return $cache[$table] = false; }
+    catch (Throwable $e) { return $cache[$k] = false; }
 
-    return $cache[$table] = member_column_exists($table, 'memberId');
+    return $cache[$k] = member_column_exists($table, $col);
 }
 
 function member_column_exists(string $table, string $col): bool {

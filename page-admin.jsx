@@ -1759,6 +1759,8 @@ function AdminMembers() {
   const [meta, setMeta] = React.useState({ total: 0, pageSize: 50 });
   const [editing, setEditing] = React.useState(null);
   const [viewing, setViewing] = React.useState(null);
+  /* The pair the duplicates tab handed to the merge drawer. */
+  const [merging, setMerging] = React.useState(null);
   const [printing, setPrinting] = React.useState(false);
   const [importing, setImporting] = React.useState(false);
   /* Cards for everybody who came in before cards existed — the imported roll
@@ -1770,7 +1772,6 @@ function AdminMembers() {
   const [syncingNgv, setSyncingNgv] = React.useState(false);
   const syncNgv = async () => {
     setSyncingNgv(true);
-  const [merging, setMerging] = React.useState(null);
     try {
       const r = await NGGApi.admin.members.ngvPortalSync();
       toast.success(r.delivered + " of " + r.announced + " sent now; any others are queued and retried.", "NGVs sent to Afrovanguard");

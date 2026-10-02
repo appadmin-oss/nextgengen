@@ -65,7 +65,8 @@ function hooks_attendance(array $p): array {
             $student = db_row('SELECT * FROM summer_students WHERE studentId = ? OR handle = ? LIMIT 1', [$ref, strtolower($ref)]);
             if (!$student) $volunteer = db_row("SELECT * FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$ref]);
             if (!$student && !$volunteer) {
-                $m = db_row('SELECT memberId, fullName, type FROM members WHERE memberId = ? LIMIT 1', [$ref]);
+                // A merged-away id checks in its survivor, not the retired record.
+                $m = member_follow_merge(db_row('SELECT memberId, fullName, type, status FROM members WHERE memberId = ? LIMIT 1', [$ref]));
                 if ($m) { $sid = (string)$m['memberId']; $name = (string)$m['fullName']; $isMember = ((string)$m['type'] === 'NGG'); }
             }
         }
@@ -226,7 +227,7 @@ function hooks_gate_resolve(array $p): array {
         if ($s) return ['ok' => true, 'person' => gate_person_student($s, $s['token'] ? db_row('SELECT * FROM qr_codes WHERE token = ?', [$s['token']]) : null)];
         $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$ref]);
         if ($v) return ['ok' => true, 'person' => gate_person_volunteer($v)];
-        $m = db_row("SELECT * FROM members WHERE memberId = ? AND COALESCE(type,'NGG') <> 'Summer' LIMIT 1", [$ref]);
+        $m = member_follow_merge(db_row("SELECT * FROM members WHERE memberId = ? AND COALESCE(type,'NGG') <> 'Summer' LIMIT 1", [$ref]));
         if ($m) return ['ok' => true, 'person' => gate_person_member($m)];
         return ['ok' => false, 'code' => 'unknown', 'error' => 'NGG does not know ' . $ref . '.'];
     }
