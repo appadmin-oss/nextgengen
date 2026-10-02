@@ -357,3 +357,23 @@ in place — untouched rows take the new wording (compared against
 `wisdom_seed_rows_v1()`), edited rows are left alone, deleted v1 rows stay
 deleted, new sayings are appended. Hausa riddle 3's answer is seeded as
 "Tsintsiya" (broom): the supplied "Tsutsa ko Tsintsiya" reads "worm or broom".
+
+## Member IDs: database uniqueness and the import's loose ends (schema 122)
+
+- `member_display_ids` (primary key = upper-cased printed ID) is the
+  guarantee that one ID is one record. Every minting or typing writer claims
+  first (`member_id_claim`, `member_mint_and_claim`): desk upsert
+  (`display_id_taken`), import, application convert, Club promotion. It is a
+  claims table rather than a unique index because a unique index fails the
+  migration — and the site's boot — on a database that already has a
+  duplicate; the backfill claimed each ID for its earliest record and the rest
+  are reported by `admin.members.idDuplicates` (Members → Duplicates → Member
+  IDs). Claims are never released; the merge policy MOVEs them to the survivor.
+- Registration-form children with no roster row travel as `applicants` in the
+  extract and are filed as `applications` (`importKey`, idempotent). Not
+  members until somebody converts them. The convert no longer matches an
+  applicant with no email to an existing member with no email.
+- The import report carries `idList` (issued / normalized / matched) for the
+  drawer's CSV write-back, reads the intake year from the ID for a row with
+  none (`member_id_year`; declared formats may carry `yearAt`), and names a
+  probable typo (`member_id_suggest`).

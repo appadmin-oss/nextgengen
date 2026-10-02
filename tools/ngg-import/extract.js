@@ -42,7 +42,7 @@ function main(argv) {
   }
 
   const wb = readWorkbook(opts.workbook);
-  const { members, warnings, stats } = extractMembers(wb);
+  const { members, applicants, warnings, stats } = extractMembers(wb);
 
   fs.mkdirSync(path.dirname(opts.out), { recursive: true });
   const body = JSON.stringify({
@@ -51,6 +51,7 @@ function main(argv) {
     stats,
     warnings,
     members,
+    applicants,
   }, null, 2) + '\n';
   fs.writeFileSync(opts.out, body);
 
@@ -76,6 +77,7 @@ function main(argv) {
     process.stderr.write(`  Contactable        email ${stats.withEmail} · phone ${stats.withPhone} · guardian ${stats.withGuardian}\n`);
     process.stderr.write(`  Profile depth      birthday ${stats.withDob} · school ${stats.withSchool}\n`);
     process.stderr.write(`  Cross-referenced   ${stats.matchedIntake} registrations · ${stats.matchedState} status entries\n`);
+    if (stats.applicants) process.stderr.write(`  Applicants         ${stats.applicants} registered with no roster row — filed for the desk to confirm\n`);
     process.stderr.write(`${line}\n`);
     if (warnings.length) {
       process.stderr.write(`  ${warnings.length} thing${warnings.length === 1 ? '' : 's'} the desk should look at:\n`);

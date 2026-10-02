@@ -131,6 +131,16 @@ function loadChromium() {
       }
       return Promise.resolve({ dryRun: !confirm, preview: MERGE_PREVIEW });
     },
+    membersIdDuplicates: function () {
+      if (state === 'clean') return Promise.resolve({ shared: [], twoIds: [], claims: true });
+      return Promise.resolve({ claims: true,
+        shared: [{ displayId: '024-016', claimedBy: 'NGG-2024-0016', samePerson: false, members: [
+          { memberId: 'NGG-2024-0016', fullName: 'Anthony Adams', dob: '2011-02-03', centre: 'Egbeda', status: 'active' },
+          { memberId: 'NGG-2025-0140', fullName: 'Tobi Adeyemi', dob: '2012-07-21', centre: 'Ayobo', status: 'active' }] }],
+        twoIds: [{ dobKnown: true, members: [
+          { memberId: 'NGG-2023-0007', fullName: 'Ada Obi', dob: '2010-04-02', displayId: '023-007', centre: 'Egbeda', status: 'active' },
+          { memberId: 'NGG-2026-0088', fullName: 'Ada Obi', dob: '2010-04-02', displayId: '026-019', centre: 'Egbeda', status: 'inactive' }] }] });
+    },
     memberTimeline: function () {
       if (state === 'empty') return Promise.resolve({ events: [] });
       return Promise.resolve({ events: [
@@ -151,7 +161,11 @@ function loadChromium() {
       return h(AdminMemberMerge, { keepId: 'NGG-2025-0412', mergeId: 'NGG-2026-0088',
                                    onClose: function () {}, onDone: function () {} });
     },
-    timeline: function () { return h(MemberTimeline, { memberId: 'NGG-2025-0412' }); }
+    timeline: function () { return h(MemberTimeline, { memberId: 'NGG-2025-0412' }); },
+    iddupes: function () {
+      return h(MembersIdDuplicates, { onOpen: function () {},
+        onMerge: function (a, b) { window.__merge = [a, b]; } });
+    }
   };
 
   ReactDOM.createRoot(document.getElementById('root')).render(h(VIEWS[view] || VIEWS.segments));
@@ -213,6 +227,21 @@ function loadChromium() {
     await shoot('timeline',        'view=timeline',             { width: 1180, height: 600 });
     await shoot('timeline-empty',  'view=timeline&state=empty', { width: 1180, height: 400 });
     await shoot('timeline-phone',  'view=timeline',             { width: 390, height: 844 });
+    /* Printed IDs that are not one person. The merge offered on a shared ID
+       keeps the record the database gave the ID to. */
+    await shoot('id-dupes',        'view=iddupes',              { width: 1180, height: 900 }, async (page) => {
+      const t = await page.evaluate(() => document.body.innerText);
+      if (!/2 records carry member ID\s*024-016/i.test(t)) problems.push('id-dupes: the shared ID is not named');
+      if (!/One person, 2 member IDs/i.test(t)) problems.push('id-dupes: one person with two IDs is not shown');
+      if (!/different children/i.test(t)) problems.push('id-dupes: two different children are not told apart from one child twice');
+      await page.locator('button', { hasText: 'Same person?' }).first().click();
+      const m = await page.evaluate(() => window.__merge || []);
+      if (m[0] !== 'NGG-2024-0016') problems.push('id-dupes: the merge does not keep the record that holds the ID (' + m.join(' ← ') + ')');
+    });
+    await shoot('id-dupes-clear',  'view=iddupes&state=clean',  { width: 1180, height: 400 }, async (page) => {
+      if (!/belongs to one record/i.test(await page.evaluate(() => document.body.innerText))) problems.push('id-dupes-clear: the empty state says nothing');
+    });
+    await shoot('id-dupes-phone',  'view=iddupes',              { width: 390, height: 844 });
   } finally {
     await browser.close();
     try { process.kill(srv.pid); } catch (_) {}

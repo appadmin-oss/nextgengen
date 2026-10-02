@@ -319,6 +319,12 @@ console.log('\nthe registration form');
   chk('the second name column of the rebuilt form is read as a given name',
     warned(res, 'Praise Anjorin'));
   chk('a registration matching nobody imports nobody', !find(res, '024-016').school);
+  const ap = res.applicants || [];
+  chk('…but it travels as an applicant for the desk, not as a member',
+    ap.length === 1 && ap[0].fullName === 'Praise Anjorin' && ap[0].school === 'Nobody Secondary'
+    && !res.members.some((x) => x.fullName === 'Praise Anjorin') && res.stats.applicants === 1);
+  chk('…keyed so the same workbook files them once', /^intake:/.test(ap[0].importKey));
+  chk('a matched registration is not an applicant', !ap.some((x) => /Ajibola/.test(x.fullName)));
 }
 {
   const res = extractMembers(book({
@@ -462,6 +468,7 @@ console.log('\nthe file hash');
   const a = JSON.parse(fs.readFileSync(out, 'utf8')), b = JSON.parse(fs.readFileSync(out2, 'utf8'));
   chk('two extracts of one workbook hold the same members…',
     JSON.stringify(a.members) === JSON.stringify(b.members));
+  chk('the file carries its applicants beside its members', Array.isArray(a.applicants));
   chk('…and are still different FILES, which is the file hash doing its job',
     cap2.trim() !== printed && a.extractedAt !== b.extractedAt);
 

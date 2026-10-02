@@ -19918,6 +19918,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $byName = fn(string $n) => db_row('SELECT * FROM members WHERE fullName = ? LIMIT 1', [$n]);
     db_exec("DELETE FROM members WHERE fullName LIKE 'Idt %'");
     db_exec("DELETE FROM members WHERE displayId LIKE '019-%' OR displayId LIKE 'OLD/%'");   // a past intake year nobody else uses here
+    db_exec("DELETE FROM member_display_ids WHERE displayKey LIKE '019-%' OR displayKey LIKE 'OLD/%'");
 
     // (1) Somebody already on the desk with no ID is given one by the import.
     db_insert('members', ['memberId' => 'NGG-IDT-0001', 'fullName' => 'Idt Desk Made', 'dob' => '2012-01-02', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'cohort' => '2019', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
@@ -19984,6 +19985,135 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $fm = setting_get('gate.cardFormats');
     setting_set('gate.cardFormats', array_values(array_filter(is_array($fm) ? $fm : [], fn($f) => ($f['id'] ?? '') !== $dec['format']['id'])));
     db_exec("DELETE FROM members WHERE fullName LIKE 'Idt %' OR fullName = 'Carries Next Idt'");
+})();
+
+
+/* ── One printed ID, one record — and the import's loose ends ────────────────
+ *
+ * member_display_ids is the database's guarantee: every writer claims an ID
+ * before writing it, so two writers cannot both win. Then the five things the
+ * import used to leave for somebody to notice: a registration with no roster
+ * row, one person under two IDs, IDs the workbook does not carry, the intake
+ * year an older ID encodes, and a typo of a real ID.
+ */
+(function () {
+    $A = 'NGG-2025-0099';
+    $imp = fn(array $rows, array $o = []) => backend_dispatch('admin.members.import', ['requesterId' => $A, 'members' => $rows] + $o);
+    $apply = function (array $rows, array $o = []) use ($imp) {
+        $dry = $imp($rows, $o);
+        return $imp($rows, $o + ['apply' => true, 'expectDigest' => $dry['digest'] ?? '']) + ['dry' => $dry];
+    };
+    $row = fn(string $name, string $id = '', array $x = []) => $x + ['displayId' => $id, 'fullName' => $name, 'type' => 'NGG', 'status' => 'active', 'cohort' => '2018'];
+    $byName = fn(string $n) => db_row('SELECT * FROM members WHERE fullName = ? LIMIT 1', [$n]);
+    $mk = function (string $mid, string $name, string $id, array $x = []) {
+        db_insert('members', ['memberId' => $mid, 'fullName' => $name, 'displayId' => $id, 'type' => 'NGG', 'status' => 'active',
+                              'role' => 'member', 'cohort' => '2018', 'createdAt' => now_iso(), 'updatedAt' => now_iso()] + $x);
+    };
+    $clean = function () {
+        db_exec("DELETE FROM members WHERE fullName LIKE 'Clm %'");
+        db_exec("DELETE FROM member_display_ids WHERE displayKey LIKE '018-%' OR displayKey = '017-660' OR memberId LIKE 'NGG-CLM-%'");
+        db_exec("DELETE FROM applications WHERE importKey LIKE 'intake:clm %' OR name LIKE 'Clm %'");
+    };
+    $clean();
+    db_exec("DELETE FROM members WHERE displayId LIKE '018-%'");
+
+    chk('claims: the table exists at schema 122', member_id_claims_ready());
+    chk('claims: an ID is claimed once…', member_id_claim('NGG-CLM-0001', '018-500'));
+    chk('claims: …a second record cannot claim it', !member_id_claim('NGG-CLM-0002', '018-500'));
+    chk('claims: …and claiming your own again is not a failure', member_id_claim('NGG-CLM-0001', '018-500'));
+    chk('claims: case does not make a second ID', !member_id_claim('NGG-CLM-0002', '018-500 ') && member_id_claimed_by('018-500') === 'NGG-CLM-0001');
+    $next = member_mint_display_id(['cohort' => '2018', 'type' => 'NGG']);
+    chk('claims: minting counts claimed IDs — a number nobody carries now is still not free', (int)substr($next, 4) > 500);
+
+    // The desk: a typed ID that another record claimed is refused, naming them.
+    $mk('NGG-CLM-0001', 'Clm Holder', '018-500');
+    $mk('NGG-CLM-0003', 'Clm Desk', '');
+    $u = backend_dispatch('admin.members.upsert', ['requesterId' => $A, 'data' => ['memberId' => 'NGG-CLM-0003', 'displayId' => '018-500']]);
+    chk('claims: the desk cannot type somebody else\'s member ID onto a record', ($u['error'] ?? '') === 'display_id_taken' && str_contains((string)($u['detail'] ?? ''), 'Clm Holder'));
+
+    // The import: an ID claimed by a record that no longer carries it.
+    member_id_claim('NGG-CLM-0009', '018-501');
+    $r = $apply([$row('Clm Newcomer', '018-501')]);
+    chk('claims: the import refuses an ID that is claimed, even when no record carries it now', $r['failed'] === 1 && $byName('Clm Newcomer') === null);
+    $r = $apply([$row('Clm Fresh')]);
+    $fresh = $byName('Clm Fresh');
+    chk('claims: an ID the import issues is claimed for that member', $fresh && member_id_claimed_by((string)$fresh['displayId']) === (string)$fresh['memberId']);
+    $r = $apply([$row('Clm Sheet Id', '018-640')]);
+    $sheet = $byName('Clm Sheet Id');
+    chk('claims: …and so is one the sheet carries', $sheet && member_id_claimed_by('018-640') === (string)$sheet['memberId']);
+
+    // (1) The duplicates report.
+    $mk('NGG-CLM-0010', 'Clm Twice Same', '018-700', ['dob' => '2011-03-03']);
+    $mk('NGG-CLM-0011', 'Same Clm Twice', '018-700', ['dob' => '2011-03-03']);
+    member_id_claim('NGG-CLM-0010', '018-700');
+    $mk('NGG-CLM-0012', 'Clm Two Numbers', '018-710', ['dob' => '2010-05-05']);
+    $mk('NGG-CLM-0013', 'Clm Two Numbers', '018-711', ['dob' => '2010-05-05']);
+    $d = backend_dispatch('admin.members.idDuplicates', ['requesterId' => $A]);
+    $sh = array_values(array_filter($d['shared'] ?? [], fn($g) => $g['displayId'] === '018-700'));
+    chk('duplicates: one ID on two records is reported, with the record the database gave it to',
+        count($sh) === 1 && $sh[0]['claimedBy'] === 'NGG-CLM-0010' && count($sh[0]['members']) === 2 && $sh[0]['samePerson'] === true);
+    $two = array_values(array_filter($d['twoIds'] ?? [], fn($g) => ($g['members'][0]['fullName'] ?? '') === 'Clm Two Numbers'));
+    chk('duplicates: one person holding two IDs is reported', count($two) === 1 && $two[0]['dobKnown'] === true);
+    chk('duplicates: the report needs the people capability', !empty(backend_dispatch('admin.members.idDuplicates', ['requesterId' => 'NGG-2025-0001'])['error']));
+    member_id_claim('NGG-CLM-0013', '018-711');
+    $mg = backend_dispatch('admin.members.merge', ['requesterId' => $A, 'keepId' => 'NGG-CLM-0012', 'mergeId' => 'NGG-CLM-0013', 'confirm' => true]);
+    chk('duplicates: a merge moves the retired record\'s ID claim to the survivor — that card still resolves to the person',
+        !empty($mg['ok']) && member_id_claimed_by('018-711') === 'NGG-CLM-0012');
+
+    // (2) Applicants: a registration with no roster row is filed, never made a member.
+    $apps = [['importKey' => 'intake:clm form only', 'fullName' => 'Clm Form Only', 'dob' => '2013-04-04', 'email' => '', 'parentName' => 'Ade Clm', 'parentPhone' => '08031112222'],
+             ['importKey' => 'intake:clm holder', 'fullName' => 'Clm Holder']];
+    $dry = $imp([$row('Clm Fresh')], ['applicants' => $apps]);
+    chk('applicants: the dry run counts them — one to file, one already a member here',
+        ($dry['applicants']['filed'] ?? -1) === 1 && ($dry['applicants']['onRoster'] ?? -1) === 1
+        && !db_row("SELECT id FROM applications WHERE importKey = 'intake:clm form only'"));
+    chk('applicants: they are part of what the dry run promised', $dry['digest'] !== $imp([$row('Clm Fresh')])['digest']);
+    $ap = $imp([$row('Clm Fresh')], ['applicants' => $apps, 'apply' => true, 'expectDigest' => $dry['digest']]);
+    $app = db_row("SELECT * FROM applications WHERE importKey = 'intake:clm form only'");
+    chk('applicants: applied, each is an application for the desk — anchor, new, not a member',
+        $app && $app['kind'] === 'teen' && $app['program'] === 'anchor' && $app['status'] === 'new' && $byName('Clm Form Only') === null
+        && $app['phone'] === '08031112222' && str_contains((string)$app['why'], 'Ade Clm'));
+    $again = $apply([$row('Clm Fresh')], ['applicants' => $apps]);
+    chk('applicants: the same file twice files them once', ($again['applicants']['already'] ?? 0) === 1
+        && (int)db_row("SELECT COUNT(*) c FROM applications WHERE importKey = 'intake:clm form only'")['c'] === 1);
+    $cv = backend_dispatch('admin.application.convert', ['requesterId' => $A, 'id' => (int)$app['id']]);
+    $made = $byName('Clm Form Only');
+    chk('applicants: confirming one makes the member, with a claimed member ID — an empty email no longer "finds" a stranger',
+        !empty($cv['ok']) && empty($cv['existed']) && $made && (string)$made['displayId'] !== ''
+        && member_id_claimed_by((string)$made['displayId']) === (string)$made['memberId']);
+
+    // (3) The write-back list.
+    $wb = $apply([$row('Clm Listed'), $row('Clm Lost Zero', '18-650')]);
+    $acts = array_column($wb['idList'] ?? [], 'action', 'name');
+    chk('write-back: IDs the workbook does not carry are listed — issued, and read differently',
+        ($acts['Clm Listed'] ?? '') === 'issued' && ($acts['Clm Lost Zero'] ?? '') === 'normalized'
+        && (bool) array_filter($wb['idList'], fn($x) => $x['name'] === 'Clm Listed' && $x['displayId'] === (string)$byName('Clm Listed')['displayId'] && $x['memberId'] !== ''));
+
+    // (4) The intake year an ID carries.
+    db_exec("DELETE FROM members WHERE displayId = '017-660'"); db_exec("DELETE FROM member_display_ids WHERE displayKey = '017-660'");
+    $yr = $apply([$row('Clm No Year', '017-660', ['cohort' => ''])]);
+    chk('year: a row with no intake year takes it from the ID, and says so', (string)$byName('Clm No Year')['cohort'] === '2017'
+        && str_contains(implode(' ', $yr['rows'][0]['warnings'] ?? []), 'intake year 2017 read from member ID 017-660'));
+    chk('year: 999-001 is a typo, not a year', member_id_year('999-001') === 0);
+    $bad = backend_dispatch('admin.members.idFormatDeclare', ['requesterId' => $A, 'example' => 'CLM/18/042', 'year' => 2017]);
+    chk('year: a declared year that is not in the example is refused', ($bad['error'] ?? '') === 'bad_year');
+    $dec = backend_dispatch('admin.members.idFormatDeclare', ['requesterId' => $A, 'example' => 'CLM/18/042', 'year' => 2018]);
+    chk('year: a declared format says where the year sits', !empty($dec['ok']) && ($dec['format']['yearAt'] ?? null) === [4, 2]);
+    chk('year: …so an older ID says its own year', member_id_year('CLM/16/007') === 2016);
+    $old = $apply([$row('Clm Old Scheme', 'CLM/16/007', ['cohort' => ''])]);
+    chk('year: …and an import files that member in it', (string)$byName('Clm Old Scheme')['cohort'] === '2016');
+
+    // (5) Near misses.
+    $sg = member_id_suggest('O18-640');
+    chk('suggest: O for 0 is suggested as the real ID, with whose it is', ($sg['id'] ?? '') === '018-640' && ($sg['holder'] ?? '') === 'Clm Sheet Id');
+    chk('suggest: a dropped dash too', (member_id_suggest('018640')['id'] ?? '') === '018-640');
+    $st = $imp([$row('Clm Typo', 'O18-640')], ['idStrict' => true]);
+    chk('suggest: a strict import names the near miss in its refusal', $st['failed'] === 1 && str_contains($st['rows'][0]['detail'], 'did you mean 018-640 (Clm Sheet Id)'));
+
+    $fm = setting_get('gate.cardFormats');
+    setting_set('gate.cardFormats', array_values(array_filter(is_array($fm) ? $fm : [], fn($f) => ($f['id'] ?? '') !== ($dec['format']['id'] ?? ''))));
+    db_exec("DELETE FROM member_display_ids WHERE memberId IN (SELECT memberId FROM members WHERE fullName LIKE 'Clm %') OR displayKey LIKE 'CLM/%'");
+    $clean();
 })();
 
 

@@ -109,6 +109,7 @@ $report = members_import_run($parsed['members'], [
     'apply' => $opts['apply'], 'overwrite' => $opts['overwrite'],
     'emitEvents' => $opts['emitEvents'], 'actor' => 'cli:seed-members',
     'source' => $parsed['source'], 'fileSha' => $fileSha, 'cardFormat' => $opts['cardFormat'],
+    'applicants' => $parsed['applicants'],
 ]);
 if (empty($report['ok'])) { fwrite(STDERR, ($report['detail'] ?? $report['error'] ?? 'failed') . "\n"); exit(1); }
 
@@ -134,6 +135,12 @@ $c = $report['cards'];
 if ($opts['apply']) printf("  cards: %d secure cards issued · %d printed cards recorded (%s)%s\n", $c['issued'], $c['printed'], $c['format'] ?: 'none',
     $c['taken'] ? ' · ' . $c['taken'] . ' printed codes already belong to somebody else' : '');
 else printf("  cards: %d members would be given a secure card · printed cards read as %s\n", $c['wouldIssue'], $c['format'] ?: '(none)');
+$ids = $report['ids'];
+printf("  member IDs: %d kept · %d %s · %d read differently · %d refused\n", $ids['kept'], $ids['issued'],
+    $opts['apply'] ? 'issued' : 'to issue', $ids['normalized'], $ids['refused']);
+$ap = $report['applicants'];
+if ($ap['filed'] || $ap['already'] || $ap['onRoster']) printf("  applicants: %d %s for the desk to confirm · %d filed before · %d already members\n",
+    $ap['filed'], $opts['apply'] ? 'filed' : 'to file', $ap['already'], $ap['onRoster']);
 echo "{$line}\n";
 
 foreach ($report['rows'] as $r) {

@@ -314,7 +314,7 @@ function readState(rows, warn) {
 
 /**
  * @param {Record<string,string[][]>} wb  workbook as read by ./xlsx.js
- * @returns {{members: object[], warnings: string[], stats: object}}
+ * @returns {{members: object[], applicants: object[], warnings: string[], stats: object}}
  */
 function extractMembers(wb) {
   const warnings = [];
@@ -447,10 +447,33 @@ function extractMembers(wb) {
   /* A registration nobody on the roster answers to. Either the child never
      enrolled or their name is spelled differently in the two places — the
      desk can tell which, and cannot if the row is dropped in silence. */
+  /* They are not dropped: each one travels as an APPLICANT, and the import
+     files it as an application for the desk to confirm. Confirming one is the
+     ordinary application convert, which makes the member and issues their
+     printed ID; a near-spelling of somebody already here is rejected there
+     instead. A registration is not a membership, so none of these becomes a
+     member on its own. */
+  const applicants = [];
   for (const [key, form] of intake) {
     if (intakeUsed.has(key)) continue;
-    warn(`${SHEET_INTAKE}: "${form.displayName}" registered but matches nobody on the roster — no member imported for them`);
+    warn(`${SHEET_INTAKE}: "${form.displayName}" registered but matches nobody on the roster — filed as an applicant to confirm`);
+    applicants.push({
+      importKey: `intake:${key}`,
+      fullName: form.displayName,
+      dob: form.dob || '',
+      email: form.email || '',
+      phone: form.phone || '',
+      sex: form.sex || '',
+      school: form.school || '',
+      grade: form.grade || '',
+      address: form.address || '',
+      lga: form.lga || '',
+      parentName: (form.guardians[0] || {}).name || '',
+      parentPhone: (form.guardians[0] || {}).phone || '',
+      guardians: form.guardians,
+    });
   }
+  applicants.sort((a, b) => a.fullName.localeCompare(b.fullName));
 
   const members = [...byRef.values()]
     // Members with an ID in ID order; the ones the app will number, after them by name.
@@ -493,6 +516,7 @@ function extractMembers(wb) {
   const tally = (fn) => members.filter(fn).length;
   return {
     members,
+    applicants,
     warnings,
     stats: {
       total: members.length,
@@ -509,6 +533,7 @@ function extractMembers(wb) {
       matchedIntake: intakeUsed.size,
       matchedState: stateHits,
       intakeRowsUnmatched: intake.size - intakeUsed.size,
+      applicants: applicants.length,
     },
   };
 }

@@ -917,7 +917,8 @@
           saveFormat:(f) => request('/admin/member-cards.php', { body: Object.assign({ action: 'saveFormat' }, f) }),
           /* Declare an ID shape from one example ("NGG/23/042"), so an import
              accepts members carrying it and the gate reads their cards. */
-          declareIdFormat: (example, label, lettersVary) => request('/admin/member-cards.php', { body: { action: 'declareIdFormat', example, label: label || '', lettersVary: !!lettersVary } }),
+          // year: the intake year `example` belongs to, so older IDs say theirs.
+          declareIdFormat: (example, label, lettersVary, year) => request('/admin/member-cards.php', { body: { action: 'declareIdFormat', example, label: label || '', lettersVary: !!lettersVary, year: year ? Number(year) : 0 } }),
           reissue:   (memberId, voidPrinted) => request('/admin/member-cards.php', { body: { action: 'reissue', memberId, voidPrinted: !!voidPrinted } }),
           backfill:  (format) => request('/admin/member-cards.php', { body: { action: 'backfill', format: format === undefined ? 'member-number' : format }, timeout: 120000 }),
         },
@@ -1083,6 +1084,8 @@
       // second deliberate call with the same arguments.
       membersMerge:      (keepId, mergeId, confirm) =>
         request('/admin/members-merge.php', { body: { keepId, mergeId, confirm: !!confirm } }),
+      // Printed IDs held by two records, and one person holding two IDs.
+      membersIdDuplicates: () => request('/admin/members-id-duplicates.php'),
       assignMentor: (data) => request('/admin/assign-mentor.php', { body: data }),
       applications: {
         list:    (q) => request('/admin/applications.php' + qs(q || {})),

@@ -686,7 +686,11 @@ function admin_application_convert(array $p): array {
     if (!$a) return ['ok' => false, 'error' => 'not_found'];
     if ($a['kind'] !== 'teen') return ['ok' => false, 'error' => 'only_teen_apps'];   // mentor apps → mentors, handled separately
     // Don't double-provision.
-    $existing = db_row('SELECT memberId FROM members WHERE lower(email) = ? LIMIT 1', [strtolower((string)$a['email'])]);
+    /* By email only when there is one: `lower(email) = ''` matches every
+       member with none, and an imported applicant often has none — the
+       convert then "found" a stranger and made nobody. */
+    $__em = strtolower(trim((string)$a['email']));
+    $existing = $__em !== '' ? db_row('SELECT memberId FROM members WHERE lower(email) = ? LIMIT 1', [$__em]) : null;
     if ($existing) { db_update('applications', ['status' => 'accepted'], ['id' => $id]); return ['ok' => true, 'memberId' => $existing['memberId'], 'existed' => true]; }
     // Summer applicants become Summer Students; Anchor/NGG applicants become
     // full NGG members. Falls back to Summer for legacy rows with no program.
@@ -730,7 +734,7 @@ function admin_application_convert(array $p): array {
         'joinDate' => gmdate('Y-m-d'),
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ];
-    if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_display_id($__m);
+    if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_and_claim($__m, $newId);
     db_insert('members', $__m);
     member_cards_ensure($__m, 'intake', 'created');
     db_update('applications', ['status' => 'accepted'], ['id' => $id]);

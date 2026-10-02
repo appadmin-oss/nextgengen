@@ -1555,6 +1555,86 @@ function MembersDuplicates({ onOpen, onMerge }) {
 }
 
 
+/* Printed IDs that do not mean one person. Two kinds, both from the server
+ * (admin_members_id_duplicates): one number on two records — the database
+ * claimed it for the earliest, and the other is the one to resolve — and one
+ * person, by name and birthday, holding two numbers. A pair is offered the
+ * ordinary merge; anything else is opened and decided record by record. */
+function MembersIdDuplicates({ onOpen, onMerge }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = () => { setErr(""); return NGGApi.admin.membersIdDuplicates().then(r => setD({ shared: r.shared || [], twoIds: r.twoIds || [] })).catch(e => setErr(e.code || e.message || "load_failed")); };
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  if (err) return <ErrorState code={err} onRetry={load}/>;
+  if (!d) return <div className="dash-spinner"/>;
+  if (!d.shared.length && !d.twoIds.length) return <div className="admin-empty mem-iddupes-clear">Every printed member ID belongs to one record, and nobody holds two.</div>;
+
+  const table = (members, claimedBy) => (
+    <div className="admin-table-wrap">
+      <table className="admin-table">
+        <thead><tr><th scope="col">Member</th><th scope="col">Member ID</th><th scope="col">Born</th><th scope="col">Status</th></tr></thead>
+        <tbody>
+          {members.map(m => (
+            <tr key={m.memberId} className="admin-row-click" onClick={() => onOpen(m.memberId)}>
+              <td>
+                <div className="admin-cell-name">{m.fullName}</div>
+                <div className="mono admin-cell-sub">{m.memberId}{m.centre ? " · " + m.centre : ""}</div>
+              </td>
+              <td className="mono">{m.displayId || "—"}{claimedBy === m.memberId ? " · holds it" : ""}</td>
+              <td className="mono">{m.dob || "—"}</td>
+              <td><span className={"chip status-" + m.status}>{memberStatusLabel(m.status)}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  return (
+    <div className="mem-iddupes" aria-live="polite">
+      {d.shared.map(g => (
+        <section className="admin-panel" key={"s:" + g.displayId}>
+          <div className="mem-dupe-head">
+            <h3 className="admin-h3">{g.members.length} records carry member ID <span className="mono">{g.displayId}</span></h3>
+            {g.members.length === 2 && onMerge && (
+              <button className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        const keep = g.members.find(m => m.memberId === g.claimedBy) || g.members[0];
+                        const other = g.members.find(m => m.memberId !== keep.memberId);
+                        onMerge(keep.memberId, other.memberId);
+                      }}>
+                {g.samePerson ? "Merge — same person" : "Same person?"}
+              </button>
+            )}
+          </div>
+          <p className="mem-scope-note">
+            {g.samePerson
+              ? "The same child entered twice. Merge them and the record that holds the ID keeps it."
+              : "Two different children given one number. The card in the hand of the one who does not hold it reads as the other child — give them a new ID from their record."}
+          </p>
+          {table(g.members.map(m => ({ ...m, displayId: g.displayId })), g.claimedBy)}
+        </section>
+      ))}
+      {d.twoIds.map((g, i) => (
+        <section className="admin-panel" key={"t:" + i}>
+          <div className="mem-dupe-head">
+            <h3 className="admin-h3">One person, {g.members.length} member IDs — {g.members[0].fullName}</h3>
+            {g.members.length === 2 && onMerge && (
+              <button className="btn btn-ghost btn-sm" onClick={() => onMerge(g.members[0].memberId, g.members[1].memberId)}>Same person?</button>
+            )}
+          </div>
+          <p className="mem-scope-note">
+            {g.dobKnown ? "Same name and date of birth." : "Same name, and neither record has a date of birth — check before merging."}
+            {" "}A merge keeps both cards working: the retired number resolves to the survivor.
+          </p>
+          {table(g.members, null)}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 /* ── Data quality: a finding, and the records behind it ───────────────────
  *
  * The dashboard says "214 with no email". This is the list. They are one
@@ -1966,7 +2046,12 @@ function AdminMembers() {
       </div>
       {tab === "dashboard" && <MembersDashboard onFilter={showRoster}/>}
       {tab === "quality" && <MembersSegments onFilter={showRoster}/>}
-      {tab === "duplicates" && <MembersDuplicates onOpen={setViewing} onMerge={(a, b) => setMerging({ keepId: a, mergeId: b })}/>}
+      {tab === "duplicates" && <>
+        <h3 className="admin-h3 mem-dupes-sub">Member IDs</h3>
+        <MembersIdDuplicates onOpen={setViewing} onMerge={(a, b) => setMerging({ keepId: a, mergeId: b })}/>
+        <h3 className="admin-h3 mem-dupes-sub">Shared contact details</h3>
+        <MembersDuplicates onOpen={setViewing} onMerge={(a, b) => setMerging({ keepId: a, mergeId: b })}/>
+      </>}
       {tab === "roster" && <>
       {filters.segment && (
         <div className="mem-seg-on">
@@ -2527,6 +2612,27 @@ function MemberCardFormatPicker({ value, onChange, disabled }) {
   );
 }
 
+/* The member IDs an import issued or corrected, as a CSV for the workbook.
+ * Built in the browser from the report — the server has no file to hand out
+ * on this host. A cell that opens with = + - @ is quoted with a leading ' so a
+ * spreadsheet shows a name rather than evaluating it. */
+function downloadImportIdList(list, source, applied) {
+  const cell = (v) => {
+    let t = String(v == null ? "" : v);
+    if (/^[=+\-@\t\r]/.test(t)) t = "'" + t;
+    return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+  };
+  const what = { issued: applied ? "issued" : "to be issued", normalized: "sheet spells it differently", matched: "sheet has none" };
+  const lines = [["Name", "In the sheet", "Member ID", "What happened", "Record"].map(cell).join(",")]
+    .concat(list.map(r => [r.name, r.sheet, r.displayId, what[r.action] || r.action, r.memberId].map(cell).join(",")));
+  const blob = new Blob(["\ufeff" + lines.join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "member-ids-" + String(source || "roster").replace(/\.[a-z0-9]+$/i, "").replace(/[^A-Za-z0-9_-]+/g, "-") + (applied ? "" : "-preview") + ".csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
 function AdminRosterImport({ onClose, onApplied }) {
   const [cardFormat, setCardFormat] = React.useState("member-number");
   const [file, setFile] = React.useState(null);        // { source, members[] }
@@ -2617,10 +2723,11 @@ function AdminRosterImport({ onClose, onApplied }) {
 
   /* Declare an ID shape the dry run found in the sheet, from its first example,
      then read the file again — the dry run it replaces promised the old answer. */
+  const [years, setYears] = React.useState({});      // shape → the intake year its first example belongs to
   const declare = async (u) => {
     setDeclaring(u.shape); setErr("");
     try {
-      await NGGApi.admin.members.cards.declareIdFormat(u.examples[0], "Member IDs like " + u.examples[0], false);
+      await NGGApi.admin.members.cards.declareIdFormat(u.examples[0], "Member IDs like " + u.examples[0], false, years[u.shape] || 0);
       toast.success("IDs shaped like " + u.examples[0] + " are accepted now, and the gate reads their cards.", "ID format declared");
       setPreview(null);
       const r = await NGGApi.admin.members.importRoster(file, { apply: false, overwrite, cardFormat, idStrict });
@@ -2727,6 +2834,33 @@ function AdminRosterImport({ onClose, onApplied }) {
                   {res.ids.refused ? " · " + res.ids.refused + " refused" : ""}
                 </div>
               )}
+              {/* The IDs the workbook does not carry yet — issued here, or
+                  spelled differently in the sheet. Written back, the next
+                  import matches these members on the ID instead of the name. */}
+              {res.idList && res.idList.length > 0 && (
+                <div className="imp-writeback">
+                  <span className="admin-hint">
+                    {res.idList.length} member ID{res.idList.length === 1 ? "" : "s"} {done ? "to copy" : "that will need copying"} into the workbook
+                  </span>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => downloadImportIdList(res.idList, file && file.source, !!done)}>
+                    Download the ID list (CSV)
+                  </button>
+                </div>
+              )}
+              {/* Registrations with no roster row. Filed as applications for the
+                  desk to confirm — the import never makes a member of them. */}
+              {res.applicants && (res.applicants.filed + res.applicants.already + res.applicants.onRoster) > 0 && (
+                <div className="admin-card admin-note-card imp-applicants">
+                  <div className="imp-cap">Registered, but not on the roster</div>
+                  <div className="mono imp-applicants-n">
+                    {res.applicants.filed} {done ? "filed" : "to be filed"} as applications · {res.applicants.already} filed before · {res.applicants.onRoster} already members here
+                  </div>
+                  <p className="admin-hint imp-last">
+                    They are not members. Each waits in Applications for somebody to confirm, and confirming one
+                    creates the member and issues their member ID.
+                  </p>
+                </div>
+              )}
               {/* Shapes the sheet's IDs take that no format declares. Each is
                   offered for declaring from its first example: old cards keep
                   their IDs, and the gate reads them. */}
@@ -2738,7 +2872,17 @@ function AdminRosterImport({ onClose, onApplied }) {
                   {Object.values(res.ids.undeclared).map(u => (
                     <div key={u.shape} className="imp-shape">
                       <span><b className="mono">{u.examples.join(", ")}</b>{u.count > u.examples.length ? " and " + (u.count - u.examples.length) + " more" : ""}
-                        {" "}<span className="admin-hint">({u.count} ID{u.count === 1 ? "" : "s"}, shape {u.shape})</span></span>
+                        {" "}<span className="admin-hint">({u.count} ID{u.count === 1 ? "" : "s"}, shape {u.shape})</span>
+                        {(u.suggest || []).map(g => (
+                          <span key={g.from} className="imp-sug">{g.from} looks like a typo for <b className="mono">{g.id}</b>{g.holder ? " (" + g.holder + ")" : ""} — correct the sheet rather than declaring it.</span>
+                        ))}
+                      </span>
+                      <label className="imp-year">
+                        <span>Intake year of {u.examples[0]}</span>
+                        <input type="number" inputMode="numeric" min="2000" max={new Date().getFullYear() + 1} placeholder="optional"
+                               value={years[u.shape] || ""} onChange={e => setYears(y => ({ ...y, [u.shape]: e.target.value }))}
+                               aria-label={"Intake year of " + u.examples[0] + ", so members with this shape of ID land in the right intake"}/>
+                      </label>
                       <button type="button" className="btn btn-ghost btn-sm" disabled={!!declaring || !!busy} onClick={() => declare(u)}>
                         {declaring === u.shape ? "Declaring…" : "Declare this format"}
                       </button>
@@ -2780,10 +2924,12 @@ function AdminRosterImport({ onClose, onApplied }) {
               {busy === "preview" ? "Checking…" : "Check what would change"}
             </button>
           )}
-          {!done && preview && ((preview.created + preview.updated) > 0 || (preview.cards && preview.cards.wouldIssue > 0)) && (
+          {!done && preview && ((preview.created + preview.updated) > 0 || (preview.cards && preview.cards.wouldIssue > 0) || (preview.applicants && preview.applicants.filed > 0)) && (
             <button type="button" className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => run(true)}>
               {busy === "apply" ? "Importing…" : (preview.created + preview.updated) > 0
-                ? "Import " + (preview.created + preview.updated) + " record(s)" : "Issue " + preview.cards.wouldIssue + " card(s)"}
+                ? "Import " + (preview.created + preview.updated) + " record(s)"
+                : preview.cards && preview.cards.wouldIssue > 0 ? "Issue " + preview.cards.wouldIssue + " card(s)"
+                : "File " + preview.applicants.filed + " applicant(s)"}
             </button>
           )}
           {done && <button type="button" className="btn btn-primary btn-sm" onClick={onApplied}>Back to the roster</button>}

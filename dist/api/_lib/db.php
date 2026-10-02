@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 121;
+const NGG_SCHEMA_TARGET = 122;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3690,6 +3690,29 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS uq_member_cards_code ON member_cards(kind, format, code);
             CREATE INDEX IF NOT EXISTS idx_member_cards_member ON member_cards(memberId, status);
+        ",
+        /* Printed IDs are CLAIMED: one row per id, the id its primary key, so
+           two records can never hold one id — enforced by the database, not by
+           every writer remembering to check. A unique index on members would
+           fail to build on any deployment that already has a duplicate and
+           take the site down with it; this cannot. The backfill gives each id
+           to its EARLIEST holder and leaves the rest for the duplicates
+           report. Claims are permanent: a retired or merged record's id stays
+           claimed, because it is still printed on somebody's card. */
+        122 => "
+            CREATE TABLE IF NOT EXISTS member_display_ids (
+              displayKey TEXT PRIMARY KEY,
+              displayId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              claimedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mdi_member ON member_display_ids(memberId);
+            INSERT OR IGNORE INTO member_display_ids (displayKey, displayId, memberId, claimedAt)
+              SELECT UPPER(TRIM(displayId)), TRIM(displayId), memberId, COALESCE(createdAt, '')
+                FROM members WHERE TRIM(COALESCE(displayId, '')) <> '' AND COALESCE(type, 'NGG') <> 'Summer'
+               ORDER BY id;
+            ALTER TABLE applications ADD COLUMN importKey TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_apps_importkey ON applications(importKey);
         ",
     ];
 

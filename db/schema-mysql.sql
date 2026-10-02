@@ -2754,3 +2754,20 @@ CREATE TABLE IF NOT EXISTS member_cards (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (121) ON DUPLICATE KEY UPDATE version = version;
+
+-- ── 122 · Printed IDs are claimed: one record per id, by primary key ──
+CREATE TABLE IF NOT EXISTS member_display_ids (
+  displayKey VARCHAR(48) NOT NULL PRIMARY KEY,
+  displayId VARCHAR(48) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  claimedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_mdi_member (memberId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT IGNORE INTO member_display_ids (displayKey, displayId, memberId, claimedAt)
+  SELECT UPPER(TRIM(displayId)), TRIM(displayId), memberId, COALESCE(createdAt, '')
+    FROM members WHERE TRIM(COALESCE(displayId, '')) <> '' AND COALESCE(type, 'NGG') <> 'Summer'
+   ORDER BY id;
+ALTER TABLE applications ADD COLUMN importKey VARCHAR(80) DEFAULT '';
+CREATE INDEX idx_apps_importkey ON applications (importKey);
+
+INSERT INTO schema_version (version) VALUES (122) ON DUPLICATE KEY UPDATE version = version;

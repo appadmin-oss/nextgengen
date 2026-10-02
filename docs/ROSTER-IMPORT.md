@@ -416,7 +416,7 @@ Today's shape is `YYY-NNN`. Cards printed earlier may carry another one. The
 dry run lists every shape in the sheet that no format declares — `NGG/23/042`
 is shape `AAA/99/999` — with **Declare this format**. Declaring (a super admin,
 like any card format) does two things: the importer accepts those IDs as
-printed, and the CACENTRE gate reads the cards that carry them, because their
+printed, and the gate reads the cards that carry them, because their
 QR is the ID.
 
 **Refuse member IDs that fit no declared ID format** is on by default in the
@@ -427,3 +427,51 @@ follow a fresh dry run.
 
 In a shape, `9` is a digit, `A` a letter, `X` either; everything else is as
 printed. A literal `A` or `X` in an example therefore matches any letter there.
+
+Give the **intake year** of the example when you declare it (`NGG/23/042` was
+2023). The format then records where the year sits, and a member imported
+with an ID in that shape and no intake year of their own is filed in the
+year their ID says — the same as `023-001` already says 2023. A year that is
+not in the example as varying digits is refused (`bad_year`).
+
+### Typos
+
+An ID in no declared shape is usually a slip: a letter O for a zero, an I or
+L for a one, a missing dash. The dry run names what it probably is and whose
+ID that is — `O24-016 looks like a typo for 024-016 (Adams Anthony)` — and a
+strict import puts the same words in the refusal. It is a suggestion; the
+sheet is corrected by whoever keeps it.
+
+### One ID, one record — enforced by the database
+
+`member_display_ids` (schema 122) has the printed ID as its primary key.
+Every writer — the import, the desk, an application convert, a Club
+promotion — **claims** an ID before writing it, so two writers racing for one
+number cannot both win: the loser mints again, or, for an ID somebody typed,
+is refused naming the holder. Claims are never released; a merge moves the
+retired record's claim to the survivor, so the card from either record still
+resolves to the person. Migration 122 claimed each existing ID for its
+earliest record. Any later duplicates are on **Members → Duplicates →
+Member IDs**, with the merge for a pair that is one person.
+
+### Writing the IDs back to the workbook
+
+The dry run and the result both offer **Download the ID list (CSV)**: every
+row whose ID was issued here, or that the sheet spells differently from the
+record (`19-950` for `019-950`, or no ID at all for somebody already
+numbered). Copy the IDs into the workbook and the next import matches those
+members on the ID rather than on their name. A name starting `=`, `+`, `-` or
+`@` is written with a leading `'` so a spreadsheet shows it rather than
+running it.
+
+## Registrations with no roster row
+
+A child on the registration form whom no roster row matches is **not**
+dropped and **not** made a member. The extractor writes them to `applicants`
+in the file, and the import files each as an application (anchor programme,
+status new) for the desk to confirm in Applications. Confirming one is the
+ordinary convert: it creates the member and issues their member ID. Each is
+keyed (`importKey`), so the same file applied twice files them once, and one
+already on the desk by name and birthday is counted as "already a member
+here" instead. The applicants are part of what the dry run promised, so a
+file whose applicants changed needs a fresh dry run.

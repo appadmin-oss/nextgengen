@@ -72,6 +72,9 @@ function member_intake_year(array $m): int {
         $y = 2000 + ((int)$hit[1] % 100);
         if ($y >= 2000 && $y <= $now + 1) return $y;
     }
+    // Their printed id, if it says — today's YYY-NNN, or an older declared shape with a year in it.
+    $fromId = trim((string)($m['displayId'] ?? '')) !== '' ? member_id_year((string)$m['displayId']) : 0;
+    if ($fromId) return $fromId;
     // Otherwise the year they joined, which is the same fact by another route.
     $joined = trim((string)($m['joinDate'] ?? '')) ?: trim((string)($m['createdAt'] ?? ''));
     if ($joined !== '' && preg_match('/(\d{4})/', $joined, $hit)) {
@@ -119,6 +122,9 @@ function member_mint_display_id(array $m, array $reserved = []): string {
      * MySQL disagree about how to cast a substring. */
     $n = 0;
     $known = array_column(db_all('SELECT displayId FROM members WHERE displayId LIKE ?', [$like]), 'displayId');
+    /* Claimed ids count too: a retired or merged record's id stays claimed
+       because it is printed on somebody's card, and must never be handed out. */
+    if (member_id_claims_ready()) foreach (db_all('SELECT displayId FROM member_display_ids WHERE displayKey LIKE ?', [$like]) as $r) $known[] = (string)$r['displayId'];
     foreach (array_merge($known, array_keys($taken)) as $d) {
         if (strpos((string)$d, $prefix . '-') !== 0) continue;
         $tail = substr((string)$d, strlen($prefix) + 1);
@@ -126,7 +132,7 @@ function member_mint_display_id(array $m, array $reserved = []): string {
     }
     $n++;
     $id = $prefix . '-' . str_pad((string)$n, 3, '0', STR_PAD_LEFT);
-    for ($i = 0; $i < MEMBER_ID_MAX_BUMP && (isset($taken[$id]) || db_row('SELECT id FROM members WHERE displayId = ?', [$id])); $i++) {
+    for ($i = 0; $i < MEMBER_ID_MAX_BUMP && (isset($taken[$id]) || db_row('SELECT id FROM members WHERE displayId = ?', [$id]) || member_id_claimed_by($id) !== null); $i++) {
         $n++;
         $id = $prefix . '-' . str_pad((string)$n, 3, '0', STR_PAD_LEFT);
     }
@@ -148,7 +154,8 @@ function member_ensure_display_id(array $m): string {
     if (!member_is_ngg($m)) return '';
     $memberId = trim((string)($m['memberId'] ?? ''));
     if ($memberId === '') return '';
-    $id = member_mint_display_id($m);
+    $id = member_mint_and_claim($m, $memberId);
+    if ($id === '') return '';
     db_update('members', ['displayId' => $id, 'updatedAt' => now_iso()], ['memberId' => $memberId]);
     return $id;
 }
@@ -254,6 +261,20 @@ function admin_member_id_format_declare(array $p): array {
     $label = trim((string)($p['label'] ?? '')) ?: 'Member IDs like ' . $example;
     $id = substr('id-' . trim((string)preg_replace('/[^a-z0-9]+/', '-', strtolower($mask)), '-'), 0, 40);
     $f = ['id' => $id, 'label' => mb_substr($label, 0, 80), 'template' => '{id}', 'mask' => $mask, 'field' => 'displayId', 'example' => $example];
+    /* Where the intake year is in it, if the importer says which year the
+       example belongs to: "NGG/23/042" was 2023, so the year is the "23". */
+    $year = (int)($p['year'] ?? 0);
+    if ($year >= 2000 && $year <= (int)gmdate('Y') + 1) {
+        foreach ([(string)$year, substr((string)$year, 2)] as $needle) {
+            $at = strpos($example, $needle);
+            // The year must sit on digits that vary (9s in the shape), not on literal text.
+            if ($at !== false && preg_match('/^9+$/', substr($mask, $at, strlen($needle)))) {
+                $f['yearAt'] = [$at, strlen($needle)];
+                break;
+            }
+        }
+        if (!isset($f['yearAt'])) return ['ok' => false, 'error' => 'bad_year', 'detail' => 'The year ' . $year . ' is not in ' . $example . ' as digits that vary. Leave the year out, or check the example.'];
+    }
     $c = member_card_format_compile($f);
     if (!$c['ok']) return ['ok' => false, 'error' => 'bad_format', 'detail' => $c['error']];
     if (member_card_format_decode($f, $example) === null) return ['ok' => false, 'error' => 'bad_format', 'detail' => 'The example does not fit that shape.'];
@@ -264,4 +285,128 @@ function admin_member_id_format_declare(array $p): array {
     setting_set('gate.cardFormats', $list, (string)($g['requester']['memberId'] ?? ''));
     audit('admin.members.idFormat', (string)($g['requester']['memberId'] ?? ''), $id, ['mask' => $mask, 'example' => $example], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'format' => $f, 'formats' => member_id_formats()];
+}
+
+
+/* ── Claims: one printed id, one record — enforced by the database ────────────
+ *
+ * member_display_ids has the id as its primary key. Every writer claims an id
+ * BEFORE it is written to a member, so two writers racing for the same id — two
+ * imports, an import and the desk — cannot both win: the second INSERT fails on
+ * the key and that writer mints again (or, for an id somebody typed, refuses).
+ * Claims are never released: an id that was printed stays somebody's.
+ */
+
+function member_id_claims_ready(): bool {
+    static $ok = null;
+    if ($ok !== null) return $ok;
+    try { db_row('SELECT 1 FROM member_display_ids LIMIT 1'); return $ok = true; } catch (Throwable $e) { return $ok = false; }
+}
+
+/** Who holds an id, or null. */
+function member_id_claimed_by(string $id): ?string {
+    if (!member_id_claims_ready() || trim($id) === '') return null;
+    $r = db_row('SELECT memberId FROM member_display_ids WHERE displayKey = ?', [strtoupper(trim($id))]);
+    return $r ? (string)$r['memberId'] : null;
+}
+
+/** Claim an id for a member. True if it is now theirs (or already was); false if somebody else holds it. */
+function member_id_claim(string $memberId, string $id): bool {
+    $id = trim($id);
+    if ($id === '' || $memberId === '') return false;
+    if (!member_id_claims_ready()) return true;   // pre-122 database: the members table is the only check
+    try {
+        db_insert('member_display_ids', ['displayKey' => strtoupper($id), 'displayId' => $id, 'memberId' => $memberId, 'claimedAt' => now_iso()]);
+        return true;
+    } catch (Throwable $e) {
+        return member_id_claimed_by($id) === $memberId;
+    }
+}
+
+/** Mint an id and claim it for $memberId, minting again if a racing writer took it first. '' if none could be claimed. */
+function member_mint_and_claim(array $m, string $memberId, array $reserved = []): string {
+    for ($try = 0; $try < 20; $try++) {
+        $id = member_mint_display_id($m, $reserved);
+        if (member_id_claim($memberId, $id)) return $id;
+        $reserved[] = $id;
+    }
+    return '';
+}
+
+/**
+ * Printed ids held by more than one record, and records whose id another
+ * record has claimed. The backfill gave each id to its earliest holder; these
+ * are the rest, for somebody to resolve — usually one person entered twice
+ * (merge them), sometimes two children given one number (renumber the later).
+ */
+function admin_members_id_duplicates(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $groups = [];
+    foreach (db_all("SELECT UPPER(TRIM(displayId)) k, COUNT(*) c FROM members WHERE TRIM(COALESCE(displayId,'')) <> ''
+                       AND COALESCE(type,'NGG') <> 'Summer' AND COALESCE(status,'') <> 'merged' GROUP BY k HAVING c > 1") as $r) {
+        $rows = db_all("SELECT memberId, fullName, dob, email, centre, status, createdAt FROM members WHERE UPPER(TRIM(displayId)) = ? AND COALESCE(status,'') <> 'merged' ORDER BY id", [$r['k']]);
+        $holder = member_id_claimed_by((string)$r['k']);
+        $groups[] = ['displayId' => (string)$r['k'], 'claimedBy' => $holder, 'members' => $rows,
+                     'samePerson' => count($rows) === 2 && members_import_same_person($rows[0], $rows[1])];
+    }
+    /* One person, two ids: the same name (in any word order) and the same date
+       of birth, on two records that each carry a different printed id. */
+    $byKey = [];
+    foreach (db_all("SELECT memberId, fullName, dob, email, displayId, centre, status FROM members
+                      WHERE TRIM(COALESCE(displayId,'')) <> '' AND COALESCE(type,'NGG') <> 'Summer' AND COALESCE(status,'') <> 'merged'") as $m) {
+        $t = preg_split('/\s+/', mb_strtolower(trim(preg_replace('/[^\p{L}\s]/u', ' ', (string)$m['fullName']) ?? ''))) ?: [];
+        $t = array_values(array_filter($t)); sort($t);
+        if (!$t) continue;
+        $byKey[implode(' ', $t) . '|' . trim((string)$m['dob'])][] = $m;
+    }
+    $twoIds = [];
+    foreach ($byKey as $k => $rows) {
+        if (count($rows) < 2) continue;
+        $ids = array_unique(array_map(fn($x) => strtoupper((string)$x['displayId']), $rows));
+        if (count($ids) > 1) $twoIds[] = ['members' => $rows, 'dobKnown' => trim(explode('|', $k, 2)[1]) !== ''];
+    }
+    return ['ok' => true, 'shared' => $groups, 'twoIds' => $twoIds, 'claims' => member_id_claims_ready()];
+}
+
+/* ── The intake year an older id carries ──────────────────────────────────────
+ * A declared format may say where the year is ("NGG/23/042" — the 23). The
+ * importer reads it for a row with no intake year, so a member numbered in an
+ * older scheme still lands in the right intake. */
+
+/** The intake year a printed id encodes under a declared format, or 0. */
+function member_id_year(string $id): int {
+    $id = strtoupper(trim($id));
+    if (preg_match('/^(\d{3})-\d{1,4}$/', $id, $m)) {
+        $y = 2000 + (int)$m[1];
+        return $y <= (int)gmdate('Y') + 1 ? $y : 0;   // 999-001 is a typo, not the year 2999
+    }
+    foreach (member_id_formats() as $f) {
+        $at = $f['yearAt'] ?? null;
+        if (!is_array($at) || count($at) !== 2) continue;
+        if (member_card_format_decode($f, $id) !== $id) continue;
+        $digits = substr($id, (int)$at[0], (int)$at[1]);
+        if (!ctype_digit($digits)) continue;
+        $y = strlen($digits) === 2 ? 2000 + (int)$digits : (int)$digits;
+        if ($y >= 2000 && $y <= (int)gmdate('Y') + 1) return $y;
+    }
+    return 0;
+}
+
+/* ── Near misses ──────────────────────────────────────────────────────────────
+ * An id that fits no shape is usually a typo. The common ones are letters that
+ * look like digits — O for 0, I or l for 1, S for 5, B for 8 — and a missing or
+ * different separator. Offered as a suggestion, never applied: the person who
+ * reads the sheet decides. */
+function member_id_suggest(string $id): ?array {
+    $raw = strtoupper(trim($id));
+    $fixed = strtr($raw, ['O' => '0', 'I' => '1', 'L' => '1', 'S' => '5', 'B' => '8', 'Z' => '2']);
+    $cands = [];
+    if (preg_match('/^(\d{2,3})\D?(\d{3,4})$/', $fixed, $m)) $cands[] = str_pad($m[1], 3, '0', STR_PAD_LEFT) . '-' . $m[2];
+    if (preg_match('/^\d{3}-\d{1,4}$/', $fixed)) $cands[] = $fixed;
+    foreach (array_unique($cands) as $c) {
+        if ($c === $raw) continue;
+        $holder = db_row('SELECT memberId, fullName FROM members WHERE UPPER(displayId) = ? LIMIT 1', [$c]);
+        return ['id' => $c, 'holder' => $holder ? (string)$holder['fullName'] : null];
+    }
+    return null;
 }

@@ -76,6 +76,10 @@ const ROSTER = {
 /* Record every call so the test can assert WHAT was posted, not only that
    something happened — "apply" arriving as false is the whole bug class. */
 window.__calls = [];
+/* The ID list is a download: catch the blob instead of saving a file. */
+URL.createObjectURL = function (b) { window.__blob = b; return 'blob:fixture'; };
+URL.revokeObjectURL = function () {};
+HTMLAnchorElement.prototype.click = function () { window.__downloaded = this.download; };
 /* After the bundle, which sets up its own NGGApi when it loads. */
 window.NGGApi = { admin: { members: {
   importRoster: function (file, opts) {
@@ -91,11 +95,15 @@ window.NGGApi = { admin: { members: {
           warnings: ['will be issued member ID 026-019'] },
       ],
       ids: { kept: 2, issued: 1, normalized: 0, refused: window.__declared ? 0 : 1, strict: !!(opts && opts.idStrict),
-             undeclared: window.__declared ? {} : { 'AAA/99/999': { shape: 'AAA/99/999', count: 1, examples: ['OLD/19/042'] } } } });
+             undeclared: window.__declared ? {} : { 'AAA/99/999': { shape: 'AAA/99/999', count: 1, examples: ['OLD/19/042'],
+               suggest: [{ from: 'O24-016', id: '024-016', holder: 'Adams Anthony' }] } } },
+      idList: [{ name: 'No Id Yet', sheet: '', displayId: '026-019', action: 'issued', memberId: '' },
+               { name: '=Formula Kid', sheet: '24-1', displayId: '024-001', action: 'normalized', memberId: 'NGG-1' }],
+      applicants: { filed: 3, already: 1, onRoster: 0, invalid: 0, rows: [] } });
   },
   cards: {
     formats: function () { return Promise.resolve({ formats: [{ id: 'member-number', label: 'The member number printed on the card (023-001)', template: '{id}', mask: '999-999', field: 'displayId', builtin: true }] }); },
-    declareIdFormat: function (example) { window.__declaredWith = example; window.__declared = true; return Promise.resolve({ format: { id: 'id-old-99-999', mask: 'OLD/99/999' } }); },
+    declareIdFormat: function (example, label, vary, year) { window.__declaredWith = example; window.__declaredYear = year; window.__declared = true; return Promise.resolve({ format: { id: 'id-old-99-999', mask: 'OLD/99/999' } }); },
   },
 } }, public: {
   /* The bundle's shared hooks (useSession, useSiteContent) call these on mount;
@@ -197,11 +205,23 @@ setTimeout(function () { document.body.setAttribute('data-ready', '1'); }, 250);
     chk('…and names the ID a new member will be given', previewText.includes('No Id Yet') && previewText.includes('→ 026-019'));
     chk('an ID shape the sheet uses that is not declared is shown, with its example',
       /not declared/i.test(previewText) && previewText.includes('OLD/19/042') && previewText.includes('AAA/99/999'));
+    chk('a near miss of a real ID is named as a probable typo, with whose ID it is',
+      previewText.includes('O24-016') && previewText.includes('024-016') && previewText.includes('Adams Anthony'));
+    chk('registrations with no roster row are counted as applicants to confirm, not members',
+      /3 to be filed as applications/.test(previewText) && /not members/i.test(previewText));
+    await btn(/Download the ID list/).click();
+    const csv = await page.evaluate(() => window.__blob ? window.__blob.text() : '');
+    chk('the IDs the workbook lacks download as a CSV, named for the file',
+      /^member-ids-NGG_Members-preview\.csv$/.test(await page.evaluate(() => window.__downloaded || ''))
+      && csv.includes('No Id Yet,,026-019,to be issued') && csv.includes('24-1,024-001'));
+    chk('…and a name that would run as a formula in a spreadsheet does not', csv.includes("'=Formula Kid"));
+    await page.fill('.imp-year input', '2019');
     const callsBefore = await page.evaluate(() => window.__calls.length);
     await btn('Declare this format').click();
     await page.waitForFunction(() => window.__declared === true);
     await page.waitForTimeout(250);
     chk('declaring it sends the example', await page.evaluate(() => window.__declaredWith) === 'OLD/19/042');
+    chk('…and the intake year it belongs to, so older IDs file members in their year', await page.evaluate(() => window.__declaredYear) === '2019');
     chk('…and reads the file again, because the old dry run promised the old answer',
       await page.evaluate(() => window.__calls.length) === callsBefore + 1 && !/not declared/i.test(await panel()));
 

@@ -56,7 +56,11 @@ function members_import_parse(string $json): array
     $rows = $data['members'] ?? (array_is_list($data) ? $data : null);
     if (!is_array($rows)) return ['ok' => false, 'error' => 'no_members_array'];
     foreach ($rows as $r) if (!is_array($r)) return ['ok' => false, 'error' => 'member_not_an_object'];
-    return ['ok' => true, 'members' => array_values($rows), 'source' => (string)($data['source'] ?? ''),
+    /* Registrations with no roster row (extract.js files them, not as members).
+       Absent in an older file, and in a hand-made array of members. */
+    $applicants = is_array($data['applicants'] ?? null) && !array_is_list($data) ? array_values(array_filter($data['applicants'], 'is_array')) : [];
+    return ['ok' => true, 'members' => array_values($rows), 'applicants' => $applicants,
+            'source' => (string)($data['source'] ?? ''),
             'extractedAt' => (string)($data['extractedAt'] ?? '')];
 }
 
@@ -131,6 +135,7 @@ function members_import_args(array $fields, string $raw): array
     $source = trim((string)$parsed['source']);
     return ['ok' => true, 'args' => [
         'members'      => $parsed['members'],
+        'applicants'   => $parsed['applicants'],
         'apply'        => members_import_flag($fields['apply'] ?? null),
         'overwrite'    => members_import_flag($fields['overwrite'] ?? null),
         // The file names the workbook it came from; the posted value is only the
@@ -290,7 +295,12 @@ function members_import_match(array $patch, ?string &$by = null): ?array
 {
     $by = null;
     if ($patch['displayId'] !== '') {
-        $hit = db_row('SELECT * FROM members WHERE UPPER(displayId) = ? LIMIT 1', [strtoupper($patch['displayId'])]);
+        /* The claim first: after a merge the retired record still carries the
+           number on paper, but the claim — and the person — moved to the
+           survivor, which is the record this row is about. */
+        $holder = member_id_claimed_by($patch['displayId']);
+        $hit = $holder !== null ? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$holder]) : null;
+        $hit = $hit ?: db_row("SELECT * FROM members WHERE UPPER(displayId) = ? ORDER BY (COALESCE(status,'') = 'merged'), id LIMIT 1", [strtoupper($patch['displayId'])]);
         if ($hit) { $by = 'id'; return $hit; }
     }
     $by = 'person';
@@ -384,11 +394,15 @@ function members_import_digest(array $rows, array $extra = []): string
 }
 
 /** The parts of the outcome that are not in the file: declared id shapes, and strictness. */
-function members_import_digest_extra(bool $strict): array
+function members_import_digest_extra(bool $strict, array $applicants = []): array
 {
     $masks = array_map(static fn($f) => (string)$f['mask'], member_id_formats());
     sort($masks, SORT_STRING);
-    return ['idShapes' => $masks, 'idStrict' => $strict];
+    $extra = ['idShapes' => $masks, 'idStrict' => $strict];
+    /* Applicants are filed on apply, so they are part of what is confirmed —
+       but only named when present, so a file without any keeps its digest. */
+    if ($applicants) $extra['applicants'] = members_import_digest($applicants);
+    return $extra;
 }
 
 /** Two rows, or a row and a record, that are plausibly one person. */
@@ -445,7 +459,8 @@ function members_import_run(array $rows, array $opts = []): array
        digest has to identify the file the operator is holding, not what this
        function made of it. */
     $strict = !empty($opts['idStrict']);
-    $digest = members_import_digest($rows, members_import_digest_extra($strict));
+    $applicants = is_array($opts['applicants'] ?? null) ? array_values(array_filter($opts['applicants'], 'is_array')) : [];
+    $digest = members_import_digest($rows, members_import_digest_extra($strict, $applicants));
     $report = ['ok' => true, 'applied' => $apply, 'created' => 0, 'updated' => 0,
                'unchanged' => 0, 'failed' => 0, 'rows' => [],
                'digest' => $digest, 'rowCount' => count($rows),
@@ -489,6 +504,15 @@ function members_import_run(array $rows, array $opts = []): array
      * A dry run projects the very ids the apply will mint: same rows, same
      * order, same reservations, nothing written. */
     $report['ids'] = ['kept' => 0, 'issued' => 0, 'normalized' => 0, 'refused' => 0, 'undeclared' => [], 'strict' => $strict];
+    /* What to write back into the workbook: every row whose printed ID was
+       issued here or read differently from how the sheet spells it. The
+       drawer offers it as a CSV, so the sheet stops being the place an ID is
+       missing — the next import then matches on the ID, not on the name. */
+    $report['idList'] = [];
+    $listId = static function (array $row, string $name, string $id, string $action, string $memberId) use (&$report): void {
+        $report['idList'][] = ['name' => $name, 'sheet' => trim((string)($row['displayId'] ?? '')), 'displayId' => $id,
+                               'action' => $action, 'memberId' => $memberId];
+    };
     $byId = []; $reserved = [];
     foreach ($rows as $i => $row) {
         $c = member_id_canonical((string)(is_array($row) ? ($row['displayId'] ?? '') : ''));
@@ -502,10 +526,23 @@ function members_import_run(array $rows, array $opts = []): array
         foreach (array_slice($idx, 1) as $j) $dupeOf[$j] = $idx[0];
     }
     $minted = [];
-    $mint = static function (array $m) use (&$reserved, &$minted): string {
-        $id = member_mint_display_id($m, array_keys($reserved));
+    /* A dry run projects; an apply mints AND claims, so a desk write racing
+       the import cannot be handed the same number (member_display_ids). */
+    $mint = static function (array $m, string $memberId) use (&$reserved, &$minted, $apply): string {
+        $id = $apply ? member_mint_and_claim($m, $memberId, array_keys($reserved))
+                     : member_mint_display_id($m, array_keys($reserved));
+        if ($id === '') return '';
         $reserved[$id] = true; $minted[] = $id;
         return $id;
+    };
+    /* Somebody else's claim on the number this row carries: memberId of the
+       record it would be written to ('' for a new one). */
+    $claimedElsewhere = static function (string $id, string $memberId): ?array {
+        if ($id === '') return null;
+        $holder = member_id_claimed_by($id);
+        if ($holder === null || $holder === $memberId) return null;
+        $r = db_row('SELECT memberId, fullName FROM members WHERE memberId = ? LIMIT 1', [$holder]);
+        return ['memberId' => $holder, 'fullName' => (string)($r['fullName'] ?? $holder)];
     };
 
     foreach ($rows as $i => $row) {
@@ -513,6 +550,12 @@ function members_import_run(array $rows, array $opts = []): array
         $parsed = members_import_row(is_array($row) ? $row : [], $stampedOn);
         if (!$parsed['errors'] && $parsed['patch']['displayId'] !== '') {
             $c = $parsed['patch']['displayId'];
+            /* No intake year on the row, but the ID says one — 019-004, or an
+               older shape whose declared format names where the year sits. */
+            if ($parsed['patch']['cohort'] === '' && ($y = member_id_year($c)) > 0) {
+                $parsed['patch']['cohort'] = (string)$y;
+                $parsed['notes'][] = 'intake year ' . $y . ' read from member ID ' . $c;
+            }
             if (strtoupper(preg_replace('/\s+/', '', trim((string)$row['displayId'])) ?? '') !== $c) {
                 $parsed['notes'][] = 'member ID "' . trim((string)$row['displayId']) . '" read as ' . $c;
                 $report['ids']['normalized']++;
@@ -527,8 +570,13 @@ function members_import_run(array $rows, array $opts = []): array
                 $u = $u ?? ['shape' => $shape, 'count' => 0, 'examples' => []];
                 $u['count']++; if (count($u['examples']) < 3) $u['examples'][] = $c;
                 unset($u);
-                if ($strict) $parsed['errors'][] = 'member ID ' . $c . ' fits no declared ID format (' . $shape . ') — declare it, or correct the sheet';
-                else $parsed['notes'][] = 'member ID ' . $c . ' fits no declared ID format (' . $shape . ') — declare it so the gate reads these cards';
+                /* A near miss of the house shape is usually a typo — O for 0,
+                   a dropped dash. Say what it probably is, and whose that is. */
+                $sug = member_id_suggest($c);
+                $hint = $sug ? ' — did you mean ' . $sug['id'] . ($sug['holder'] !== null ? ' (' . $sug['holder'] . ')' : '') . '?' : '';
+                if ($sug && count($report['ids']['undeclared'][$shape]['suggest'] ?? []) < 3) $report['ids']['undeclared'][$shape]['suggest'][] = ['from' => $c] + $sug;
+                if ($strict) $parsed['errors'][] = 'member ID ' . $c . ' fits no declared ID format (' . $shape . ')' . ($hint !== '' ? $hint : ' — declare it, or correct the sheet');
+                else $parsed['notes'][] = 'member ID ' . $c . ' fits no declared ID format (' . $shape . ')' . ($hint !== '' ? $hint : ' — declare it so the gate reads these cards');
             }
             if ($parsed['errors']) $report['ids']['refused']++;
         }
@@ -565,12 +613,22 @@ function members_import_run(array $rows, array $opts = []): array
             if ($have !== '' && $have !== strtoupper($patch['displayId'])) {
                 $notes[] = 'the sheet says ' . $patch['displayId'] . ' but this member already carries ' . $have . ' — kept ' . $have . ' (a printed ID is never changed by an import)';
                 $patch['displayId'] = '';
-            } elseif ($have === '' && ($holder = db_row('SELECT memberId, fullName FROM members WHERE UPPER(displayId) = ? AND id <> ? LIMIT 1', [strtoupper($patch['displayId']), (int)$existing['id']]))) {
+            } elseif ($have === '' && ($holder = db_row('SELECT memberId, fullName FROM members WHERE UPPER(displayId) = ? AND id <> ? LIMIT 1', [strtoupper($patch['displayId']), (int)$existing['id']])
+                                         ?: $claimedElsewhere($patch['displayId'], (string)$existing['memberId']))) {
                 $report['failed']++; $report['ids']['refused']++;
                 $why = 'member ID ' . $patch['displayId'] . ' already belongs to ' . (string)$holder['fullName'];
                 $report['rows'][] = ['ref' => $label, 'action' => 'failed', 'name' => $patch['fullName'], 'detail' => $why, 'reasons' => [$why]];
                 continue;
             }
+        }
+
+        if (!$existing && ($taken = $claimedElsewhere($patch['displayId'], ''))) {
+            /* Nobody here carries it, yet it is claimed — a record that has
+               since been renumbered or merged away. Still not free. */
+            $report['failed']++; $report['ids']['refused']++;
+            $why = 'member ID ' . $patch['displayId'] . ' already belongs to ' . $taken['fullName'];
+            $report['rows'][] = ['ref' => $label, 'action' => 'failed', 'name' => $patch['fullName'], 'detail' => $why, 'reasons' => [$why]];
+            continue;
         }
 
         if (!$existing) {
@@ -584,11 +642,29 @@ function members_import_run(array $rows, array $opts = []): array
                on APPLY: a dry run must not consume serials, or previewing an
                import twice would leave gaps in the roster's numbering. */
             if (trim((string)($insert['displayId'] ?? '')) === '' && member_is_ngg($insert)) {
-                $insert['displayId'] = $mint($insert);
-                $notes[] = ($apply ? 'issued member ID ' : 'will be issued member ID ') . $insert['displayId'];
-                $report['ids']['issued']++;
+                $insert['displayId'] = $mint($insert, $insert['memberId']);
+                if ($insert['displayId'] === '') {
+                    unset($insert['displayId']);
+                    $notes[] = 'no member ID could be issued (every candidate was taken) — issue one from the roster';
+                } else {
+                    $notes[] = ($apply ? 'issued member ID ' : 'will be issued member ID ') . $insert['displayId'];
+                    $report['ids']['issued']++;
+                    $listId(is_array($row) ? $row : [], $patch['fullName'], $insert['displayId'], 'issued', $apply ? $insert['memberId'] : '');
+                }
             } elseif (trim((string)($insert['displayId'] ?? '')) !== '') {
+                /* The sheet's own number, claimed before the row is written:
+                   a desk edit that took it a moment ago wins, and this row is
+                   refused rather than written as the second holder. */
+                if ($apply && member_is_ngg($insert) && !member_id_claim($insert['memberId'], $insert['displayId'])) {
+                    $report['failed']++; $report['ids']['refused']++;
+                    $why = 'member ID ' . $insert['displayId'] . ' was taken while this import ran';
+                    $report['rows'][] = ['ref' => $label, 'action' => 'failed', 'name' => $patch['fullName'], 'detail' => $why, 'reasons' => [$why]];
+                    continue;
+                }
                 $report['ids']['kept']++;
+                if (in_array('member ID "' . trim((string)($row['displayId'] ?? '')) . '" read as ' . $insert['displayId'], $notes, true)) {
+                    $listId(is_array($row) ? $row : [], $patch['fullName'], $insert['displayId'], 'normalized', $apply ? $insert['memberId'] : '');
+                }
             }
             if (!$apply) $card($insert + ['memberId' => ''], is_array($row) ? $row : []);
             if ($apply) {
@@ -620,11 +696,32 @@ function members_import_run(array $rows, array $opts = []): array
            existing record used to skip minting entirely, so these members
            never got an ID however many times the roster was imported. */
         if (trim((string)($existing['displayId'] ?? '')) === '' && $patch['displayId'] === '' && member_is_ngg($existing + $patch)) {
-            $patch['displayId'] = $mint(array_merge($existing, array_filter($patch, fn($v) => $v !== '')));
-            $notes[] = ($apply ? 'issued member ID ' : 'will be issued member ID ') . $patch['displayId'];
-            $report['ids']['issued']++;
+            $patch['displayId'] = $mint(array_merge($existing, array_filter($patch, fn($v) => $v !== '')), (string)$existing['memberId']);
+            if ($patch['displayId'] === '') {
+                $notes[] = 'no member ID could be issued (every candidate was taken) — issue one from the roster';
+            } else {
+                $notes[] = ($apply ? 'issued member ID ' : 'will be issued member ID ') . $patch['displayId'];
+                $report['ids']['issued']++;
+                $listId(is_array($row) ? $row : [], $patch['fullName'], $patch['displayId'], 'issued', (string)$existing['memberId']);
+            }
+        } elseif (trim((string)($existing['displayId'] ?? '')) === '' && $patch['displayId'] !== '') {
+            /* The record has none and the sheet names one: claimed for them
+               now, or refused if a desk write got there first. */
+            if ($apply && member_is_ngg($existing + $patch) && !member_id_claim((string)$existing['memberId'], $patch['displayId'])) {
+                $report['failed']++; $report['ids']['refused']++;
+                $why = 'member ID ' . $patch['displayId'] . ' was taken while this import ran';
+                $report['rows'][] = ['ref' => $label, 'action' => 'failed', 'name' => $patch['fullName'], 'detail' => $why, 'reasons' => [$why]];
+                continue;
+            }
+            $report['ids']['kept']++;
         } elseif (trim((string)($existing['displayId'] ?? '')) !== '') {
             $report['ids']['kept']++;
+            /* The sheet spells the record's number differently (o24-016 for
+               024-016), or not at all: the workbook should carry the real one. */
+            $sheetId = trim((string)($row['displayId'] ?? ''));
+            if ($sheetId !== (string)$existing['displayId']) {
+                $listId(is_array($row) ? $row : [], $patch['fullName'], (string)$existing['displayId'], $sheetId === '' ? 'matched' : 'normalized', (string)$existing['memberId']);
+            }
         }
         if ($isStaff) $notes[] = 'holds the ' . $existing['role'] . ' role — status, name and email left as they are';
 
@@ -665,11 +762,60 @@ function members_import_run(array $rows, array $opts = []): array
                              'warnings' => $notes];
     }
 
+    /* ── Applicants ───────────────────────────────────────────────────────────
+     * A child on the registration form with no roster row is not a member, and
+     * the import does not make them one. They are filed as an application —
+     * the desk's ordinary queue — so somebody decides; confirming one is the
+     * application convert, which creates the member and issues the printed ID.
+     * `importKey` makes it idempotent: the same file applied twice files each
+     * child once, and a child the desk already rejected is not filed again. */
+    $report['applicants'] = ['filed' => 0, 'already' => 0, 'onRoster' => 0, 'invalid' => 0, 'rows' => []];
+    foreach ($applicants as $a) {
+        $name = trim(preg_replace('/\s+/', ' ', (string)($a['fullName'] ?? '')) ?? '');
+        $key = substr(trim((string)($a['importKey'] ?? '')), 0, 80);
+        if ($key === '' && $name !== '') $key = 'intake:' . mb_strtolower($name);
+        if (mb_strlen($name) < 2 || $key === '') { $report['applicants']['invalid']++; continue; }
+        $dob = trim((string)($a['dob'] ?? ''));
+        if ($dob !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) $dob = '';
+        $em = strtolower(trim((string)($a['email'] ?? '')));
+        if ($em !== '' && !filter_var($em, FILTER_VALIDATE_EMAIL)) $em = '';
+        $line = ['name' => $name, 'dob' => $dob, 'action' => 'file'];
+        if (db_row('SELECT id FROM applications WHERE importKey = ? LIMIT 1', [$key])) {
+            $line['action'] = 'already'; $report['applicants']['already']++;
+        } elseif (($m = db_row('SELECT memberId, fullName, displayId FROM members WHERE lower(fullName) = ?' . ($dob !== '' ? ' AND (dob = ? OR COALESCE(dob,\'\') = \'\')' : '') . ' LIMIT 1',
+                                 $dob !== '' ? [mb_strtolower($name), $dob] : [mb_strtolower($name)]))) {
+            /* Already a member here — added on the desk, say — with no row in
+               this sheet. Nothing to file; the sheet is the thing missing them. */
+            $line['action'] = 'onRoster'; $line['memberId'] = (string)$m['memberId']; $line['displayId'] = (string)($m['displayId'] ?? '');
+            $report['applicants']['onRoster']++;
+        } else {
+            $report['applicants']['filed']++;
+            if ($apply) {
+                $parent = trim((string)($a['parentName'] ?? ''));
+                db_insert('applications', [
+                    'kind' => 'teen', 'program' => 'anchor', 'status' => 'new',
+                    'name' => substr($name, 0, 120), 'dob' => $dob, 'email' => substr($em, 0, 160),
+                    // The teen intake's phone is the guardian's; convert files it as parentPhone.
+                    'phone' => substr(trim((string)($a['parentPhone'] ?? '')) ?: trim((string)($a['phone'] ?? '')), 0, 48),
+                    'sex' => substr(trim((string)($a['sex'] ?? '')), 0, 16),
+                    'centre' => '', 'track' => '',
+                    'why' => 'Registered on the intake form but has no row on the roster (imported from '
+                        . ((string)($opts['source'] ?? '') ?: 'the roster workbook') . ').'
+                        . ($parent !== '' ? ' Guardian: ' . $parent . '.' : '')
+                        . (trim((string)($a['school'] ?? '')) !== '' ? ' School: ' . trim((string)$a['school']) . '.' : ''),
+                    'importKey' => $key, 'createdAt' => now_iso(), 'ip' => '',
+                ]);
+            }
+        }
+        $report['applicants']['rows'][] = $line;
+    }
+
     if ($apply) {
         audit('member.import.run', $actor, '', [
             'digest' => $digest,
             'created' => $report['created'], 'updated' => $report['updated'],
-            'unchanged' => $report['unchanged'], 'failed' => $report['failed']], '');
+            'unchanged' => $report['unchanged'], 'failed' => $report['failed'],
+            'applicantsFiled' => $report['applicants']['filed']], '');
         /* The durable record, next to the audit row rather than instead of it:
            audit logs get pruned, and "which roster is this site running" is a
            question somebody asks about a site that has been live for years. */
@@ -734,7 +880,9 @@ function admin_members_import(array $p): array
      * the digest is recomputed here, from the payload actually received, and
      * the echo only has to MATCH. A wrong or absent echo is refused. */
     $strict = !empty($p['idStrict']);
-    $digest = members_import_digest($rows, members_import_digest_extra($strict));
+    $applicants = is_array($p['applicants'] ?? null) ? array_values(array_filter($p['applicants'], 'is_array')) : [];
+    if (count($applicants) > 2000) return ['ok' => false, 'error' => 'too_many_rows', 'detail' => count($applicants) . ' applicants — that is not this roster.'];
+    $digest = members_import_digest($rows, members_import_digest_extra($strict, $applicants));
     if ($apply) {
         $expect = trim((string)($p['expectDigest'] ?? ''));
         if ($expect === '') {
@@ -761,6 +909,7 @@ function admin_members_import(array $p): array
         'cardFormat' => array_key_exists('cardFormat', $p) ? (string)$p['cardFormat'] : 'member-number',
         // Refuse ids that fit no declared shape, rather than import them with a warning.
         'idStrict' => $strict,
+        'applicants' => $applicants,
     ]);
     if (empty($report['ok'])) return $report;
 

@@ -281,7 +281,19 @@ without paging through them.
   touches gets a printed ID if they have none — the dry run names each one.
   An ID in an older format is listed with **Declare this format** (super
   admin); an ID that is somebody else's here, or on two rows, is refused by
-  name, and an import never changes an ID a member already carries.
+  name, and an import never changes an ID a member already carries. A
+  probable typo (`O24-016`) is named with the real ID it looks like and whose
+  that is. **Download the ID list (CSV)** gives every ID issued or spelled
+  differently, to copy back into the workbook. Children on the registration
+  form with no roster row are **filed as applications**, not members —
+  confirm them in Applications, which issues their ID.
+- **Duplicates → Member IDs** lists any printed ID carried by two records,
+  and anybody holding two IDs. One child entered twice: **Same person?**
+  merges them, and the record the ID belongs to keeps it — both old cards
+  still resolve. Two children given one number: give the one who does not
+  hold it a new ID. Every member ID is held by exactly one record, enforced
+  by the database; typing somebody else's ID on a record is refused with
+  their name.
 - **+ New member** creates one by hand.
 
 ### History

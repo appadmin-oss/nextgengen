@@ -7346,3 +7346,13 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
 
 /* Import drawer: ID shapes the sheet uses that no format declares */
 .imp-shape { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 6px 0; font-size: 13px; }
+.imp-shape > span:first-child { flex: 1 1 220px; min-width: 0; }
+.imp-sug { display: block; margin-top: 3px; font-size: 12px; color: var(--ink-600, #4a5160); }
+.imp-year { display: inline-flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--ink-400, #6b7280); }
+.imp-year input { width: 8.5em; padding: 4px 6px; font: inherit; font-size: 13px; }
+.imp-writeback { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 8px; }
+.imp-cap { font-family: var(--font-mono, monospace); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-400, #6b7280); margin-bottom: 6px; }
+.imp-applicants-n { font-size: 13px; }
+.imp-last { margin-bottom: 0; }
+.mem-dupes-sub { margin: 18px 0 8px; }
+.mem-dupes-sub:first-child { margin-top: 0; }

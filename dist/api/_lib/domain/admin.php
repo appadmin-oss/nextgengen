@@ -676,6 +676,17 @@ function admin_members_upsert(array $p): array {
         }
 
         $patch = db_pick($data, $cols);
+        /* A printed id typed on the desk is CLAIMED first: one that another
+           record holds is refused, naming them, rather than giving one id to
+           two people. Correcting an id is allowed; the old one stays claimed,
+           because it may already be printed on a card. */
+        if (array_key_exists('displayId', $patch)) {
+            $patch['displayId'] = trim((string)$patch['displayId']);
+            if ($patch['displayId'] !== '' && strtoupper($patch['displayId']) !== strtoupper(trim((string)($existing['displayId'] ?? '')))) {
+                $taken = admin_member_id_taken($patch['displayId'], (string)$existing['memberId']);
+                if ($taken) return $taken;
+            }
+        }
         $patch['updatedAt'] = now_iso();
         db_update('members', $patch, ['id' => $existing['id']]);
         // Newly promoted to a staff tier → send an invite/onboarding email.
@@ -699,7 +710,10 @@ function admin_members_upsert(array $p): array {
        has. Left blank it falls back to the internal memberId on the card —
        see domain/member-id.php. */
     if (trim((string)($insert['displayId'] ?? '')) === '' && member_is_ngg($insert)) {
-        $insert['displayId'] = member_mint_display_id($insert);
+        $insert['displayId'] = member_mint_and_claim($insert, $newId);
+    } elseif (trim((string)($insert['displayId'] ?? '')) !== '') {
+        $taken = admin_member_id_taken((string)$insert['displayId'], $newId);
+        if ($taken) return $taken;
     }
     db_insert('members', $insert);
     /* And a card the gate can read, printed new — the secure kind. */
@@ -1089,4 +1103,16 @@ function admin_broadcast_history(array $p): array {
         'notifId' => $r['notifId'], 'title' => (string)$r['title'], 'body' => (string)$r['body'],
         'linkPage' => (string)$r['linkPage'], 'audience' => (string)($r['audience'] ?? '') ?: 'all', 'createdAt' => $r['createdAt'],
     ], $rows)];
+}
+
+
+/** Claim a typed printed id for a member; the refusal, naming the holder, if somebody else has it. Null when it is theirs now. */
+function admin_member_id_taken(string $id, string $memberId): ?array {
+    $holder = db_row('SELECT memberId, fullName FROM members WHERE UPPER(displayId) = ? AND memberId <> ? LIMIT 1', [strtoupper(trim($id)), $memberId]);
+    $claimant = member_id_claimed_by($id);
+    if ($holder || ($claimant !== null && $claimant !== $memberId) || !member_id_claim($memberId, $id)) {
+        $who = $holder ? (string)$holder['fullName'] : (string)(db_row('SELECT fullName FROM members WHERE memberId = ?', [(string)$claimant])['fullName'] ?? 'another record');
+        return ['ok' => false, 'error' => 'display_id_taken', 'detail' => 'Member ID ' . strtoupper(trim($id)) . ' already belongs to ' . $who . '. One ID, one person.'];
+    }
+    return null;
 }
