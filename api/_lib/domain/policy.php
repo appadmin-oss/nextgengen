@@ -79,6 +79,39 @@ function programme_window_from_session(): array {
     return [$start, $end];
 }
 
+/** Every session (term) window, normalised to Y-m-d, oldest first. */
+function programme_session_windows(): array {
+    $out = [];
+    foreach (db_all('SELECT startDate, endDate FROM sessions ORDER BY startDate') as $r) {
+        $a = substr((string)$r['startDate'], 0, 10); $b = substr((string)$r['endDate'], 0, 10);
+        if (programme_clean_dates([$a]) && programme_clean_dates([$b]) && $a <= $b) $out[] = [$a, $b];
+    }
+    return $out;
+}
+
+/** Was this window copied from a session (term)? A calendar whose window is
+ *  exactly one term's dates is the old inferred window, not an admin's choice:
+ *  it froze the calendar to one term, so every day after that term ended was
+ *  "not a programme day". Such a window is ignored and re-derived. */
+function programme_window_is_a_term(string $start, string $end, bool $exceptSummerTerm = false): bool {
+    if ($start === '' || $end === '') return false;
+    foreach (db_all('SELECT code, startDate, endDate FROM sessions') as $r) {
+        if ($exceptSummerTerm && strtoupper((string)$r['code']) === 'SUMMER') continue;
+        if (substr((string)$r['startDate'], 0, 10) === $start && substr((string)$r['endDate'], 0, 10) === $end) return true;
+    }
+    return false;
+}
+
+/** The Summer School season: the active edition's dates, else the latest
+ *  edition's. Summer School runs in ITS edition — a term of the year (which is
+ *  what the calendar used to borrow) had it "running" every autumn weekday. */
+function programme_edition_window(): array {
+    $e = db_row("SELECT startDate, endDate FROM summer_cohorts WHERE status = 'active' AND COALESCE(startDate,'') <> '' AND COALESCE(endDate,'') <> '' ORDER BY id DESC LIMIT 1")
+      ?: db_row("SELECT startDate, endDate FROM summer_cohorts WHERE COALESCE(startDate,'') <> '' AND COALESCE(endDate,'') <> '' ORDER BY endDate DESC LIMIT 1");
+    if (!$e) return ['', ''];
+    return [programme_clean_dates([substr((string)$e['startDate'], 0, 10)])[0] ?? '', programme_clean_dates([substr((string)$e['endDate'], 0, 10)])[0] ?? ''];
+}
+
 function programme_settings(): array {
     $cfg = setting_get('programme');
     $cfg = is_array($cfg) ? $cfg : [];
@@ -89,16 +122,23 @@ function programme_settings(): array {
      * from the session. Turning someone's explicit "off" back on would be
      * changing a decision, not supplying a default. */
     $neverConfigured = !array_key_exists('enabled', $cfg);
-    if ($neverConfigured) {
-        [$start, $end] = programme_window_from_session();
-        if ($start !== '' && $end !== '') {
-            $cfg['startDate'] = $cfg['startDate'] ?? $start;
-            $cfg['endDate']   = $cfg['endDate'] ?? $end;
+    /* The window is the Summer School edition's unless an admin typed one.
+       A blank window, or one that is exactly a term's dates (what the old
+       code copied in from `sessions`), is re-derived every time from the
+       edition, so it moves when a new edition is opened. */
+    $start = (string)($cfg['startDate'] ?? ''); $end = (string)($cfg['endDate'] ?? '');
+    if (($start === '' && $end === '') || programme_window_is_a_term($start, $end, true)) {
+        [$es, $ee] = programme_edition_window();
+        if ($es !== '' && $ee !== '') {
+            $cfg['startDate'] = $es; $cfg['endDate'] = $ee;
             // The calendar only describes which days run; enforcement is a
             // separate switch (policy.enabled). Turning this on cannot
             // sanction anybody — it stops Sundays counting as school days.
-            $cfg['enabled'] = true;
-            $cfg['derivedFromSession'] = true;
+            if ($neverConfigured) $cfg['enabled'] = true;
+            $cfg['derivedFromSession'] = true;   // kept name: the UI reads it as "derived"
+            $cfg['derivedFrom'] = 'edition';
+        } else {
+            $cfg['startDate'] = ''; $cfg['endDate'] = '';
         }
     }
     $p = $cfg + PROGRAMME_DEFAULTS;
@@ -126,10 +166,15 @@ function programme_clean_dates($in): array {
 
 function programme_settings_save(array $in, string $by): array {
     $cur = programme_settings();
+    // Dates handed back unchanged from the derived edition window are not an
+    // admin's choice; storing them would freeze the calendar to this edition.
+    if (!empty($cur['derivedFromSession']) && ($in['startDate'] ?? null) === $cur['startDate'] && ($in['endDate'] ?? null) === $cur['endDate']) {
+        $in['startDate'] = ''; $in['endDate'] = '';
+    }
     $clean = [
         'enabled'   => !empty($in['enabled']),
-        'startDate' => programme_clean_dates([$in['startDate'] ?? $cur['startDate']])[0] ?? '',
-        'endDate'   => programme_clean_dates([$in['endDate'] ?? $cur['endDate']])[0] ?? '',
+        'startDate' => programme_clean_dates([array_key_exists('startDate', $in) ? $in['startDate'] : ($cur['derivedFromSession'] ?? false ? '' : $cur['startDate'])])[0] ?? '',
+        'endDate'   => programme_clean_dates([array_key_exists('endDate', $in) ? $in['endDate'] : ($cur['derivedFromSession'] ?? false ? '' : $cur['endDate'])])[0] ?? '',
         'weekdays'  => array_key_exists('weekdays', $in)
             ? array_values(array_unique(array_filter(array_map('intval', (array)$in['weekdays']), fn($d) => $d >= 1 && $d <= 7)))
             : $cur['weekdays'],
@@ -164,17 +209,20 @@ function programme_settings_save(array $in, string $by): array {
 function member_programme_settings(): array {
     $cfg = setting_get('memberProgramme');
     $cfg = is_array($cfg) ? $cfg : [];
-    if (!array_key_exists('enabled', $cfg)) {
-        [$start, $end] = programme_window_from_session();
-        if ($start !== '' && $end !== '') {
-            $cfg['startDate'] = $cfg['startDate'] ?? $start;
-            $cfg['endDate']   = $cfg['endDate'] ?? $end;
-            $cfg['derivedFromSession'] = true;
-        }
-    }
     $defaults = ['enabled' => false, 'startDate' => '', 'endDate' => '',
         'weekdays' => [6], 'holidays' => [], 'extraDays' => []];
     $p = $cfg + $defaults;
+    /* Members attend all year, term after term. With no window typed in (or
+       the old one-term window copied from `sessions`), a day is in the
+       programme when it falls inside ANY term — so the calendar does not stop
+       on the day the current term ends, and the breaks between terms are not
+       programme days. */
+    if (($p['startDate'] === '' && $p['endDate'] === '') || programme_window_is_a_term((string)$p['startDate'], (string)$p['endDate'])) {
+        $p['startDate'] = ''; $p['endDate'] = '';
+        $p['sessionWindows'] = programme_session_windows();
+        $p['derivedFromSession'] = true;
+        $p['derivedFrom'] = 'sessions';
+    }
     $p['weekdays']  = array_values(array_unique(array_filter(array_map('intval', (array)$p['weekdays']), fn($d) => $d >= 1 && $d <= 7)));
     $p['holidays']  = programme_clean_dates($p['holidays']);
     $p['extraDays'] = programme_clean_dates($p['extraDays']);
@@ -184,6 +232,8 @@ function member_programme_settings(): array {
 
 function member_programme_settings_save(array $in, string $by): array {
     $cur = member_programme_settings();
+    // A term's own dates sent back are the derived window, not a choice.
+    if (programme_window_is_a_term((string)($in['startDate'] ?? ''), (string)($in['endDate'] ?? ''))) { $in['startDate'] = ''; $in['endDate'] = ''; }
     $clean = [
         'enabled'   => !empty($in['enabled']),
         'startDate' => programme_clean_dates([$in['startDate'] ?? $cur['startDate']])[0] ?? '',
@@ -213,8 +263,87 @@ function programme_is_day(string $date, ?array $cfg = null): bool {
     if ($cfg['endDate'] !== '' && $date > $cfg['endDate']) return false;
     if (in_array($date, $cfg['holidays'], true)) return false;
     if (in_array($date, $cfg['extraDays'], true)) return true;
+    if (isset($cfg['sessionWindows']) && $cfg['startDate'] === '' && $cfg['endDate'] === '') {
+        $in = false;
+        foreach ((array)$cfg['sessionWindows'] as [$a, $b]) if ($date >= $a && $date <= $b) { $in = true; break; }
+        if (!$in) return false;
+    }
     $dow = (int)date('N', (int)strtotime($date . ' 00:00:00 UTC'));
     return in_array($dow, $cfg['weekdays'], true);
+}
+
+/**
+ * Weekdays named in a centre's free-text "meets" field — "Saturdays",
+ * "Wed & Sat", "Mon, Wed, Fri", "weekends" — as ISO numbers, or [] when the
+ * text names none (then the shared calendar's weekdays apply).
+ */
+function centre_meet_weekdays(string $text): array {
+    $t = strtolower($text);
+    $out = [];
+    if (preg_match('/\bweekends?\b/', $t)) { $out[] = 6; $out[] = 7; }
+    if (preg_match('/\bweekdays\b/', $t)) array_push($out, 1, 2, 3, 4, 5);
+    foreach (['mon' => 1, 'tue' => 2, 'wed' => 3, 'thu' => 4, 'fri' => 5, 'sat' => 6, 'sun' => 7] as $k => $n) {
+        if (preg_match('/\b' . $k . '/', $t)) $out[] = $n;
+    }
+    $out = array_values(array_unique($out)); sort($out);
+    return $out;
+}
+
+/**
+ * The calendar for ONE member: the shared member calendar (window, holidays,
+ * extra days), with the weekdays of the centre they belong to when that
+ * centre says which days it meets. One calendar for every centre marked a
+ * Wednesday centre's members absent every Saturday and never graded their
+ * real Wednesdays.
+ */
+function member_calendar_for(?array $member, ?array $base = null, ?array $centreDays = null): array {
+    $cfg = $base ?? member_programme_settings();
+    $centre = mb_strtolower(trim((string)($member['centre'] ?? '')));
+    if ($centre === '') return $cfg;
+    if ($centreDays !== null) $days = $centreDays[$centre] ?? [];
+    else { $c = db_row('SELECT meetDays FROM centres WHERE lower(name) = ? LIMIT 1', [$centre]); $days = $c ? centre_meet_weekdays((string)$c['meetDays']) : []; }
+    if ($days) { $cfg['weekdays'] = $days; $cfg['weekdaysFrom'] = 'centre'; }
+    return $cfg;
+}
+
+/** Every centre's meeting weekdays, keyed by lower-cased name — one query, for loops. */
+function centre_meet_days_map(): array {
+    $out = [];
+    foreach (db_all('SELECT name, meetDays FROM centres') as $c) {
+        $d = centre_meet_weekdays((string)$c['meetDays']);
+        if ($d) $out[mb_strtolower(trim((string)$c['name']))] = $d;
+    }
+    return $out;
+}
+
+/** The calendar for ONE Summer participant: the season's, with their group's
+ *  meeting days when the group has them (summer_groups.meetDays, ISO numbers). */
+function participant_calendar_for(string $studentId, ?array $base = null, ?array $groupDays = null): array {
+    $cfg = $base ?? programme_settings();
+    if ($groupDays !== null) $days = $groupDays[$studentId] ?? [];
+    else {
+        $r = db_row("SELECT g.meetDays FROM summer_students s JOIN summer_groups g ON g.groupId = s.groupId WHERE s.studentId = ? LIMIT 1", [$studentId]);
+        $days = $r ? array_values(array_filter(array_map('intval', explode(',', (string)$r['meetDays'])), fn($x) => $x >= 1 && $x <= 7)) : [];
+    }
+    if ($days) { $cfg['weekdays'] = $days; $cfg['weekdaysFrom'] = 'group'; }
+    return $cfg;
+}
+
+/** Every grouped participant's meeting weekdays — one query, for loops. */
+function participant_group_days_map(): array {
+    $out = [];
+    foreach (db_all("SELECT s.studentId, g.meetDays FROM summer_students s JOIN summer_groups g ON g.groupId = s.groupId WHERE COALESCE(s.groupId,'') <> '' AND COALESCE(g.meetDays,'') <> ''") as $r) {
+        $d = array_values(array_filter(array_map('intval', explode(',', (string)$r['meetDays'])), fn($x) => $x >= 1 && $x <= 7));
+        if ($d) $out[(string)$r['studentId']] = $d;
+    }
+    return $out;
+}
+
+/** Is `$date` a programme day for THIS person — their centre's or group's days? */
+function policy_is_day_for(string $personId, string $date, string $type): bool {
+    if ($type === 'member') return programme_is_day($date, member_calendar_for(db_row('SELECT centre FROM members WHERE memberId = ? LIMIT 1', [$personId])));
+    if ($type === 'student') return programme_is_day($date, participant_calendar_for($personId));
+    return policy_is_day($date, $type);
 }
 
 /** Every programme day in [$from, $to] inclusive, as Y-m-d strings.
@@ -239,10 +368,26 @@ function programme_days_elapsed(?string $upto = null, ?array $cfg = null): array
     $cfg = $cfg ?? programme_settings();
     $today = $upto ?? attendance_today();
     if (empty($cfg['enabled'])) return [];
-    $start = $cfg['startDate'];
+    [$start, $end0] = programme_term_bounds($today, $cfg);
     if ($start === '') return [];
-    $end = $cfg['endDate'] !== '' && $cfg['endDate'] < $today ? $cfg['endDate'] : $today;
+    $end = $end0 !== '' && $end0 < $today ? $end0 : $today;
     return programme_days_between($start, $end, $cfg);
+}
+
+/**
+ * The window "this term" means for counting: the typed window, or — for a
+ * year-round calendar built from terms — the term holding `$today`, else the
+ * most recent one that has started. [start, end], or ['', ''].
+ */
+function programme_term_bounds(string $today, array $cfg): array {
+    if ((string)$cfg['startDate'] !== '' || empty($cfg['sessionWindows'])) return [(string)$cfg['startDate'], (string)$cfg['endDate']];
+    $pick = ['', ''];
+    foreach ((array)$cfg['sessionWindows'] as [$a, $b]) {
+        if ($a <= $today) $pick = [$a, $b];
+        if ($a <= $today && $today <= $b) return [$a, $b];
+    }
+    if ($pick[0] === '') foreach ((array)$cfg['sessionWindows'] as [$a, $b]) if ($a > $today) return [$a, $b];
+    return $pick;
 }
 
 /** The next programme day strictly after `$date` — what the "closed for today"
@@ -931,14 +1076,21 @@ function policy_sweep_absences(?string $upto = null): array {
     $today = attendance_today();
     $end = $upto ?? gmdate('Y-m-d', (int)strtotime($today . ' 00:00:00 UTC') - 86400);
     $last = (string)(setting_raw('policy_swept_through') ?? '');
+    /* The first sweep starts from yesterday, not the start of term: switching
+       enforcement on mid-season must not log an absence for every past day
+       before anybody was being counted. */
     $start = $last !== ''
         ? gmdate('Y-m-d', (int)strtotime($last . ' 00:00:00 UTC') + 86400)
-        : (string)$cfg['startDate'];
+        : max((string)$cfg['startDate'], $end);
     if ($start === '' || $start > $end) return ['ok' => true, 'days' => 0, 'absences' => 0, 'swept' => $last];
 
     // Catch up at most a fortnight per run so a long outage cannot turn one
-    // cron tick into a multi-thousand-row write.
-    $days = array_slice(programme_days_between($start, $end, $cfg), 0, 14);
+    // cron tick into a multi-thousand-row write. A day is swept when it is a
+    // programme day for anybody — a group meeting on its own weekdays counts.
+    $groupDays = participant_group_days_map();
+    $anyDays = array_values(array_unique(array_merge([], ...array_map(static fn($d) => $d, array_values($groupDays)))));
+    $wide = $cfg; $wide['weekdays'] = array_values(array_unique(array_merge((array)$cfg['weekdays'], $anyDays)));
+    $days = array_slice(programme_days_between($start, $end, $wide), 0, 14);
     if (!$days) { setting_set('policy_swept_through', $end, 'system'); return ['ok' => true, 'days' => 0, 'absences' => 0, 'swept' => $end]; }
 
     $students = db_all("SELECT studentId FROM summer_students WHERE status = 'active'");
@@ -952,6 +1104,8 @@ function policy_sweep_absences(?string $upto = null): array {
         foreach ([['student', $students, 'studentId'], ['volunteer', $vols, 'volunteerId']] as [$type, $rows, $key]) {
             foreach ($rows as $row) {
                 $id = (string)$row[$key];
+                // Their own calendar: a participant's group may meet on other days.
+                if (!programme_is_day($d, $type === 'student' ? participant_calendar_for($id, $cfg, $groupDays) : $cfg)) continue;
                 if (!array_key_exists($id, $present)) {
                     if (policy_log($id, $type, 'absence', $d, 'No check-in scan on a programme day.')) $absences++;
                 } elseif (!empty($pol['checkoutRequired']) && $present[$id] === '') {
@@ -993,15 +1147,20 @@ function policy_sweep_member_absences(?string $upto = null): array {
     $today = attendance_today();
     $end = $upto ?? gmdate('Y-m-d', (int)strtotime($today . ' 00:00:00 UTC') - 86400);
     $last = (string)(setting_raw('policy_member_swept_through') ?? '');
+    // First sweep: from yesterday, never back to the start of term (see above).
     $start = $last !== ''
         ? gmdate('Y-m-d', (int)strtotime($last . ' 00:00:00 UTC') + 86400)
-        : (string)$cal['startDate'];
+        : max((string)$cal['startDate'], $end);
     if ($start === '' || $start > $end) return ['ok' => true, 'days' => 0, 'absences' => 0, 'swept' => $last];
 
-    $days = array_slice(programme_days_between($start, $end, $cal), 0, 14);
+    // A day is swept when any centre meets on it; each member is then judged
+    // on their own centre's days.
+    $centreDays = centre_meet_days_map();
+    $wide = $cal; $wide['weekdays'] = array_values(array_unique(array_merge((array)$cal['weekdays'], ...array_values($centreDays ?: [[]]))));
+    $days = array_slice(programme_days_between($start, $end, $wide), 0, 14);
     if (!$days) { setting_set('policy_member_swept_through', $end, 'system'); return ['ok' => true, 'days' => 0, 'absences' => 0, 'swept' => $end]; }
 
-    $members = db_all("SELECT memberId FROM members WHERE type = 'NGG' AND status = 'active'");
+    $members = db_all("SELECT memberId, centre FROM members WHERE type = 'NGG' AND status = 'active'");
     $absences = 0;
     /* A sign-out is required of members only from the day the rule first
        applied: before it, nobody could sign out at all, and counting those
@@ -1019,6 +1178,7 @@ function policy_sweep_member_absences(?string $upto = null): array {
         }
         foreach ($members as $row) {
             $id = (string)$row['memberId'];
+            if (!programme_is_day($d, member_calendar_for($row, $cal, $centreDays))) continue;   // not their centre's day
             if (!array_key_exists($id, $present)) {
                 if (policy_log($id, 'member', 'absence', $d, 'No check-in on a member programme day.')) $absences++;
             } elseif ($since !== '' && $d >= $since && $present[$id] === '') {
@@ -1046,12 +1206,18 @@ function admin_policy_settings(array $p): array {
     $today = attendance_today();
     $elapsed = programme_days_elapsed($today, $cfg);
     $calFor = function (array $c, string $cursorKey) use ($today) {
+        /* An OFF calendar answers "yes" for every date (programme_is_day), so
+           previewing it listed fourteen days in a row, Sundays included. Off
+           means no preview, not a calendar of every day. */
+        if (empty($c['enabled'])) return ['today' => $today, 'enabled' => false, 'isProgrammeDay' => null, 'nextDay' => '', 'elapsed' => 0, 'total' => 0,
+            'sweptThrough' => (string)(setting_raw($cursorKey) ?? ''), 'upcoming' => [], 'term' => ['', '']];
+        [$ts, $te] = programme_term_bounds($today, $c);
         return [
-            'today' => $today,
+            'today' => $today, 'enabled' => true, 'term' => [$ts, $te], 'derivedFrom' => (string)($c['derivedFrom'] ?? ''),
             'isProgrammeDay' => programme_is_day($today, $c),
             'nextDay' => programme_next_day($today, $c),
             'elapsed' => count(programme_days_elapsed($today, $c)),
-            'total' => count(programme_days_between((string)$c['startDate'], (string)$c['endDate'], $c)),
+            'total' => count(programme_days_between($ts, $te, $c)),
             'sweptThrough' => (string)(setting_raw($cursorKey) ?? ''),
             'upcoming' => array_slice(programme_days_between($today, gmdate('Y-m-d', (int)strtotime($today . ' 00:00:00 UTC') + 45 * 86400), $c), 0, 14),
         ];

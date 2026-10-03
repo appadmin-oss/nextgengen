@@ -100,13 +100,14 @@ function checkin_member(array $p, array $hit): array {
     if ($existing) {
         return ['ok' => true, 'already' => true, 'student' => $pub, 'status' => (string)($existing['status'] ?: 'present'),
                 'lateMinutes' => (int)($existing['lateMinutes'] ?? 0), 'halfDay' => 0,
-                'programmeDay' => policy_is_day($today, 'member'), 'compliance' => policy_state($mid, 'member')];
+                'programmeDay' => policy_is_day_for($mid, $today, 'member'), 'compliance' => policy_state($mid, 'member')];
     }
     $gate = policy_gate_checkin($mid, 'member');
     if (!$gate['ok']) return $gate + ['student' => $pub];
     /* Graded on the member's own weekly calendar and switch — as the
        CACENTRE webhook does — and recorded as plain presence otherwise. */
-    $apply = policy_enabled_for('member') && policy_is_day($today, 'member');
+    // Their centre's days, not one calendar for every centre.
+    $apply = policy_enabled_for('member') && policy_is_day_for($mid, $today, 'member');
     $punc = $apply ? policy_punctuality('member', $at) : ['status' => 'present', 'lateMinutes' => 0, 'redline' => 0, 'halfDay' => 0];
     try {
         db_insert('attendance', ['cohortId' => '', 'studentId' => $mid, 'token' => substr(checkin_scan_value((string)($p['token'] ?? '')), 0, 120),
@@ -123,7 +124,7 @@ function checkin_member(array $p, array $hit): array {
     event_emit('attendance.marked', ['memberId' => $mid, 'name' => $pub['fullName'], 'date' => $today, 'source' => (string)($p['method'] ?? 'qr')]);
     checkin_member_email($m, 'in', $at, $punc);
     return ['ok' => true, 'already' => false, 'student' => $pub, 'status' => $punc['status'], 'lateMinutes' => (int)$punc['lateMinutes'],
-            'halfDay' => (int)$punc['halfDay'], 'programmeDay' => policy_is_day($today, 'member'), 'compliance' => policy_state($mid, 'member'),
+            'halfDay' => (int)$punc['halfDay'], 'programmeDay' => policy_is_day_for($mid, $today, 'member'), 'compliance' => policy_state($mid, 'member'),
             /* An old printed card is a number anybody could write down; the
                desk says so, so somebody glances at the face. */
             'printedCard' => $hit['how'] === 'printed'];

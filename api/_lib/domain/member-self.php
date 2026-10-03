@@ -170,15 +170,22 @@ function member_records(array $p): array
     $days = db_all("SELECT date, checkInAt, checkOutAt, method FROM attendance
                      WHERE studentId = ? ORDER BY date DESC LIMIT 400", [$id]);
 
-    $cal = function_exists('member_programme_settings') ? member_programme_settings() : ['enabled' => false];
-    $ran = 0;
-    $rateKnown = !empty($cal['enabled']) && (string)($cal['startDate'] ?? '') !== '';
+    $cal = function_exists('member_calendar_for') ? member_calendar_for($m) : ['enabled' => false];
+    $ran = 0; $onDays = null;
+    $today = attendance_today();
+    [$termStart, $termEnd] = !empty($cal['enabled']) && function_exists('programme_term_bounds') ? programme_term_bounds($today, $cal) : ['', ''];
+    $rateKnown = !empty($cal['enabled']) && $termStart !== '';
     if ($rateKnown) {
         $joined = substr((string)($m['joinDate'] ?? ''), 0, 10);
-        $from = ($joined !== '' && $joined > (string)$cal['startDate']) ? $joined : (string)$cal['startDate'];
-        $to = gmdate('Y-m-d');
-        if ((string)($cal['endDate'] ?? '') !== '' && (string)$cal['endDate'] < $to) $to = (string)$cal['endDate'];
-        $ran = count(programme_days_between($from, $to, $cal));
+        $from = ($joined !== '' && $joined > $termStart) ? $joined : $termStart;
+        $to = $today;
+        if ($termEnd !== '' && $termEnd < $to) $to = $termEnd;
+        $progDays = programme_days_between($from, $to, $cal);
+        $ran = count($progDays);
+        // Only scans on those days count towards the rate — a scan before
+        // they joined, or on a day the centre does not meet, is not one.
+        $flip = array_flip($progDays);
+        $onDays = count(array_filter($days, static fn($d) => isset($flip[(string)$d['date']])));
     }
 
     $certs = [];
@@ -196,7 +203,7 @@ function member_records(array $p): array
         /* Withheld rather than guessed: a percentage over an unknown
            denominator is a number somebody will quote in an application. */
         'rateKnown' => $rateKnown && $ran > 0,
-        'rate' => ($rateKnown && $ran > 0) ? (int)round($present / $ran * 100) : null,
+        'rate' => ($rateKnown && $ran > 0) ? (int)round(min($ran, (int)$onDays) / $ran * 100) : null,
         'days' => array_map(fn($d) => [
             'date' => (string)$d['date'],
             'in' => substr((string)($d['checkInAt'] ?? ''), 11, 5),

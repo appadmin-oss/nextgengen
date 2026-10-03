@@ -48,7 +48,8 @@ function hooks_attendance(array $p): array {
         $scanTs  = attendance_scan_time(is_string($rawScan) ? $rawScan : null);
         $scanIso = gmdate('Y-m-d\TH:i:s\Z', $scanTs);
         $date = trim((string)($e['date'] ?? ''));
-        if ($date === '') $date = $hasScanTime ? attendance_today($scanTs) : gmdate('Y-m-d');
+        // Local date, not UTC: a punch at 00:30 in Lagos belongs to today.
+        if ($date === '') $date = $hasScanTime ? attendance_today($scanTs) : attendance_today();
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) { $results[] = ['ref' => $ref, 'status' => 'bad_date']; continue; }
 
         // Resolve who this is: QR token → summer student → member → handle.
@@ -114,8 +115,8 @@ function hooks_attendance(array $p): array {
          * do not know is recorded as present but not graded for lateness. */
         $applyMember = $isMember
             && function_exists('policy_enabled_for') && policy_enabled_for('member')
-            && policy_is_day($date, 'member')
-            && ($hasScanTime || $date === gmdate('Y-m-d'));
+            && policy_is_day_for($sid, $date, 'member')
+            && ($hasScanTime || $date === attendance_today());
         $punc = $applyMember ? policy_punctuality('member', $hasScanTime ? $scanTs : null) : null;
         try {
             $row = [

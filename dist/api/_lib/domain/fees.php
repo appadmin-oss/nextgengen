@@ -609,7 +609,8 @@ function fees_training_weeks(string $memberId, array $ten, ?string $asOf = null)
 function fees_training_days(string $memberId, array $ten, ?string $asOf = null): array {
     if (!function_exists('programme_days_between')) return [];
     $today = $asOf ?? gmdate('Y-m-d');
-    $cal = function_exists('member_programme_settings') ? member_programme_settings() : null;
+    // The member's own centre's days, on the shared calendar's holidays.
+    $cal = function_exists('member_calendar_for') ? member_calendar_for(db_row('SELECT centre FROM members WHERE memberId = ? LIMIT 1', [$memberId])) : null;
     /* An unconfigured calendar answers TRUE for every date, which would charge
        for Sundays and public holidays alike. A day rate needs a real calendar,
        so with none set nothing is charged and the accrual says why. */
@@ -632,7 +633,10 @@ function fees_training_days(string $memberId, array $ten, ?string $asOf = null):
            a session they have already been invoiced for. */
         if (db_row("SELECT id FROM member_ledger WHERE memberId = ? AND kind = 'training' AND periodKey = ? LIMIT 1", [$memberId, $sid])) continue;
 
-        foreach (programme_days_between($from, $to, $cal) as $day) {
+        // The SESSION gives the window; the calendar gives weekdays and holidays.
+        // Restricting to the calendar's own window as well charged nothing for
+        // every term but the one the calendar happened to hold.
+        foreach (programme_days_between($from, $to, array_merge($cal, ['startDate' => $from, 'endDate' => $to, 'sessionWindows' => null])) as $day) {
             $out[$sid . ':' . $day] = $day;
             if (count($out) >= FEES_TRAINING_DAYS_MAX) return $out;
         }

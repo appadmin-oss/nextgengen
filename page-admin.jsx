@@ -15754,9 +15754,12 @@ function SummerPolicy() {
   const loadBoard = () => NGGApi.admin.policy.board().then(setBoard).catch(() => setBoard({ board: [], tally: {} }));
   React.useEffect(() => { load(); loadBoard(); }, []);
 
-  const save = async () => {
+  /* Each panel saves ITS calendar. One button saving both wrote the Summer
+     calendar's dates into the member calendar (and back) every time either
+     was touched, freezing whatever window happened to be on screen. */
+  const save = async (which) => {
     setBusy("save");
-    try { const r = await NGGApi.admin.policy.save(prog, pol, mprog); setD(o => ({ ...o, calendar: r.calendar || o.calendar })); toast.success("Saved"); load(); }
+    try { const r = await NGGApi.admin.policy.save(which === "member" ? null : prog, pol, which === "summer" ? null : mprog); setD(o => ({ ...o, calendar: r.calendar || o.calendar })); toast.success("Saved"); load(); }
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(""); }
   };
   const setP = (k, v) => setProg(o => ({ ...o, [k]: v }));
@@ -15824,9 +15827,9 @@ function SummerPolicy() {
             before the policy engine starts marking children absent. */}
         {prog.derivedFromSession && (
           <div className="policy-callout" data-tone="warn">
-            <b>Taken from the active session.</b> Nobody has set a term window here, so the calendar is using the
-            session's own dates ({prog.startDate || "—"} → {prog.endDate || "—"}) and the weekdays below. Check they
-            are right and press Save to make them yours — attendance and absence both count off this.
+            <b>The Summer School season.</b> No window is typed in here, so the calendar runs for the Summer School
+            edition's own dates ({prog.startDate || "—"} → {prog.endDate || "—"}) on the weekdays below, and moves
+            with the next edition by itself. Type dates only to override it. A group with its own meeting days uses those.
           </div>
         )}
         {!prog.enabled && (
@@ -15836,7 +15839,7 @@ function SummerPolicy() {
           </div>
         )}
 
-        {prog.enabled && (
+        {cal.enabled && (
           <div className="policy-callout" data-tone={cal.isProgrammeDay ? "ok" : "muted"}>
             {cal.isProgrammeDay
               ? <><b>Today ({cal.today}) is a programme day.</b> {cal.elapsed} of {cal.total} programme days have run.</>
@@ -15886,7 +15889,7 @@ function SummerPolicy() {
           )
         ))}
 
-        {prog.enabled && (cal.upcoming || []).length > 0 && (
+        {cal.enabled && (cal.upcoming || []).length > 0 && (
           <div style={{ marginTop: 14 }}>
             <div className="eyebrow" style={{ marginBottom: 6 }}>NEXT SESSIONS</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -15974,7 +15977,7 @@ function SummerPolicy() {
         </label>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 18, flexWrap: "wrap" }}>
-          <button className="btn btn-primary" disabled={busy === "save"} onClick={save}>{busy === "save" ? "Saving…" : "Save programme & policy"}</button>
+          <button className="btn btn-primary" disabled={busy === "save"} onClick={() => save("summer")}>{busy === "save" ? "Saving…" : "Save programme & policy"}</button>
           <button className="btn btn-ghost btn-sm" disabled={busy === "sweep"} onClick={sweep}>{busy === "sweep" ? "Sweeping…" : "Run the absence sweep now"}</button>
           <span className="admin-hint" style={{ margin: 0 }}>
             The sweep runs automatically with the daily jobs. Swept through <span className="mono">{cal.sweptThrough || "—"}</span>.
@@ -16007,11 +16010,12 @@ function SummerPolicy() {
         </div>
         {mprog.derivedFromSession && (
           <div className="policy-callout" data-tone="warn">
-            <b>Taken from the active session.</b> Using the session's dates ({mprog.startDate || "—"} → {mprog.endDate || "—"}).
-            Check them and press Save to make them yours — member absence counts off this.
+            <b>All year, term by term.</b> No window is typed in, so a member day is any of the weekdays below inside
+            any term in Sessions — the breaks between terms are not member days, and the calendar never runs out when
+            a term ends. A centre whose "Meets" field names its days (e.g. "Wednesdays") uses those days for its members.
           </div>
         )}
-        {mprog.enabled && (
+        {mcal.enabled && (
           <div className="policy-callout" data-tone={mcal.isProgrammeDay ? "ok" : "muted"}>
             {mcal.isProgrammeDay
               ? <><b>Today ({mcal.today}) is a member day.</b> {mcal.elapsed} of {mcal.total} member days have run.</>
@@ -16102,7 +16106,7 @@ function SummerPolicy() {
           </label>
         </div>
 
-        {mprog.enabled && (mcal.upcoming || []).length > 0 && (
+        {mcal.enabled && (mcal.upcoming || []).length > 0 && (
           <div style={{ marginTop: 14 }}>
             <div className="eyebrow" style={{ marginBottom: 6 }}>NEXT MEMBER DAYS</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -16112,7 +16116,7 @@ function SummerPolicy() {
         )}
 
         <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 18, flexWrap: "wrap" }}>
-          <button className="btn btn-primary" disabled={busy === "save"} onClick={save}>{busy === "save" ? "Saving…" : "Save member enforcement"}</button>
+          <button className="btn btn-primary" disabled={busy === "save"} onClick={() => save("member")}>{busy === "save" ? "Saving…" : "Save member enforcement"}</button>
           <span className="admin-hint" style={{ margin: 0 }}>Swept through <span className="mono">{mcal.sweptThrough || "—"}</span>.</span>
         </div>
       </div>

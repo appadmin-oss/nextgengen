@@ -193,6 +193,12 @@ return [
         // 'fallback' => [provider, api_key, model] tried when the first
         // provider errors. All free-tier friendly.
         'profiles' => [
+            // Marking open curriculum answers (essays, reflections, projects,
+            // code). CAPABLE MODELS ONLY: small/fast tiers (Haiku, Flash,
+            // Mini, Lite, anything under 30B) are refused for this profile,
+            // and with none left an instructor marks instead.
+            'marking'    => ['provider' => 'anthropic', 'api_key' => '', 'model' => 'claude-sonnet-4-5-20250929',
+                             'fallback' => ['provider' => 'openrouter', 'api_key' => '', 'model' => 'anthropic/claude-sonnet-4.5']],
             // Reflection Coach — best free conversational quality.
             'coach'      => ['provider' => 'gemini', 'api_key' => '', 'model' => 'gemini-1.5-flash'],
             // Behaviour classification — high volume, fast, strict JSON.

@@ -645,6 +645,27 @@ next steps so its questions are relevant.
 or mark is corrected (it is not emailed again). **Settings → Companion**
 turns the weekly check-ins off.
 
+### Which days count (programme days)
+
+Two calendars decide which days are programme days; both are on **Conduct &
+fines** (or Summer School → Policy).
+
+- **Summer School** runs for the **Summer School edition's dates** on the
+  weekdays ticked (Mon–Fri by default). Leave the dates blank and it follows
+  each new edition by itself; type dates only to override. A **group** with
+  its own meeting days uses those for its participants.
+- **NGG members** run **all year, term by term**: a member day is any ticked
+  weekday (Saturday by default) inside any term in **Sessions** — the breaks
+  between terms are not member days, and the calendar never stops when a term
+  ends. A **centre** whose *Meets* field names its days ("Wednesdays",
+  "Wed & Sat", "weekends") uses those days for its members instead.
+- Holidays and extra days apply to everybody.
+- Each panel's **Save** saves only that calendar.
+- Switching enforcement on starts counting absences from **yesterday** — it
+  never goes back and marks the whole term absent.
+- Attendance rates count only scans on real programme days, so a visit on a
+  day the centre does not meet never hides a missed session.
+
 ---
 
 ## Applications, sign-ups and verification

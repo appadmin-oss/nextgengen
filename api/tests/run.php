@@ -1869,40 +1869,75 @@ $SU = 'NGG-2025-0099';
  * asking for them again in a second screen is what left this switched off and
  * empty. Deriving them makes days real without inventing anything. */
 (function () use ($SU) {
-    // No active session yet → nothing to infer from, old behaviour stands.
+    /* The Summer calendar's window is the Summer School EDITION's, not a term
+       of the year: borrowing the active term had Summer School "running" every
+       autumn weekday. Editions are set aside for this block and restored. */
+    $keepEd = db_all('SELECT cohortId, status, startDate, endDate FROM summer_cohorts');
+    db_exec("UPDATE summer_cohorts SET startDate = '', endDate = '', status = CASE WHEN status = 'active' THEN 'closed' ELSE status END");
     db_exec("UPDATE sessions SET isActive = 0");
     setting_set('programme', null, 'test');
-    chk('with no session and no calendar, the calendar stays off',
+    chk('with no edition and no calendar, the calendar stays off',
         programme_settings()['enabled'] === false);
     chk('…and every day still counts, as before', programme_is_day('2026-07-26') === true);  // a Sunday
 
-    db_insert('sessions', ['sessionId' => 'SESS-CAL', 'code' => 'SUMMER', 'year' => 2026, 'name' => 'Summer 2026',
-        'startDate' => '2026-07-06', 'endDate' => '2026-08-28', 'isActive' => 1, 'createdAt' => now_iso()]);
+    db_insert('sessions', ['sessionId' => 'SESS-CAL-AUT', 'code' => 'DOMI', 'year' => 2026, 'name' => 'Autumn 2026',
+        'startDate' => '2026-09-07', 'endDate' => '2026-12-13', 'isActive' => 1, 'createdAt' => now_iso()]);
+    setting_set('programme', null, 'test');
+    chk('an active TERM does not switch the Summer calendar on', programme_settings()['enabled'] === false);
+
+    db_insert('summer_cohorts', ['cohortId' => 'COH-CAL-1', 'name' => 'Summer 2026', 'code' => 'S26', 'status' => 'active',
+        'startDate' => '2026-07-06', 'endDate' => '2026-08-28', 'createdAt' => now_iso()]);
     setting_set('programme', null, 'test');
     $derived = programme_settings();
-    chk('an active session switches the calendar on by itself', $derived['enabled'] === true);
-    chk('…using the session term window', $derived['startDate'] === '2026-07-06' && $derived['endDate'] === '2026-08-28');
-    chk('…so a Sunday inside the term is NOT a programme day', programme_is_day('2026-07-26') === false);
+    chk('an active edition switches the calendar on by itself', $derived['enabled'] === true);
+    chk('…using the edition\'s season', $derived['startDate'] === '2026-07-06' && $derived['endDate'] === '2026-08-28' && $derived['derivedFrom'] === 'edition');
+    chk('…so a Sunday inside the season is NOT a programme day', programme_is_day('2026-07-26') === false);
     chk('…a weekday inside it is', programme_is_day('2026-07-23') === true);          // Thursday
-    chk('…and a weekday after the term ends is not', programme_is_day('2026-09-10') === false);
+    chk('…and an autumn weekday is not — the autumn term is not Summer School', programme_is_day('2026-09-10') === false);
+    // A window the old code copied in from the autumn term is not kept.
+    setting_set('programme', ['enabled' => true, 'startDate' => '2026-09-07', 'endDate' => '2026-12-13', 'weekdays' => [1, 2, 3, 4, 5], 'holidays' => [], 'extraDays' => []], 'test');
+    chk('a Summer window copied from the autumn term is replaced by the edition\'s', programme_settings()['startDate'] === '2026-07-06');
+    // Saving the derived window back does not freeze it to this edition.
+    setting_set('programme', null, 'test');
+    $sv = programme_settings_save(programme_settings(), 'test');
+    chk('saving does not freeze the derived season into the settings', $sv['startDate'] === '' && programme_settings()['startDate'] === '2026-07-06');
 
     // An admin who deliberately switched it off must stay switched off — that
     // is a decision, not a missing default.
     backend_dispatch('admin.policy.save', ['requesterId' => $SU, 'programme' => ['enabled' => false]]);
-    chk('an explicit "off" is respected, not overridden by the session',
+    chk('an explicit "off" is respected, not overridden by the edition',
         programme_settings()['enabled'] === false);
 
     /* And with NO dates saved either — the case that separates "was this ever
-     * configured?" from "does it happen to have a start date?". Keying the
-     * decision on an empty startDate looks equivalent, because saving carries
-     * the derived dates through; it differs exactly here, where an admin turns
-     * the calendar off before ever setting a window, and it would switch back
-     * on behind them. */
+     * configured?" from "does it happen to have a start date?". */
     setting_set('programme', ['enabled' => false, 'startDate' => '', 'endDate' => '',
                               'weekdays' => [1, 2, 3, 4, 5], 'holidays' => [], 'extraDays' => []], 'test');
     chk('…even when they turned it off before setting any dates',
         programme_settings()['enabled'] === false);
     setting_set('programme', null, 'test');
+
+    // The member calendar runs all year: across every term, not one.
+    db_insert('sessions', ['sessionId' => 'SESS-CAL-SPR', 'code' => 'TONI', 'year' => 2027, 'name' => 'Spring 2027',
+        'startDate' => '2027-01-06', 'endDate' => '2027-03-29', 'isActive' => 0, 'createdAt' => now_iso()]);
+    $keepM = setting_raw('memberProgramme');
+    setting_set('memberProgramme', ['enabled' => true, 'startDate' => '2026-09-07', 'endDate' => '2026-12-13', 'weekdays' => [6], 'holidays' => [], 'extraDays' => []], 'test');
+    $mc = member_programme_settings();
+    chk('members: a one-term window (the old copy) becomes every term', $mc['startDate'] === '' && count($mc['sessionWindows']) >= 2);
+    chk('members: a Saturday in the NEXT term is still a member day', programme_is_day('2027-01-09', $mc) === true);
+    chk('members: a Saturday between terms is not', programme_is_day('2026-12-26', $mc) === false);
+    // Each centre's own days.
+    chk('centres: meeting days are read from the centre\'s own words', centre_meet_weekdays('Wednesdays & Saturdays') === [3, 6]
+        && centre_meet_weekdays('weekends') === [6, 7] && centre_meet_weekdays('Mon, Wed, Fri') === [1, 3, 5] && centre_meet_weekdays('After school') === []);
+    db_insert('centres', ['centreId' => 'CEN-CAL-W', 'name' => 'Cal Wednesday', 'code' => 'CW', 'status' => 'active', 'meetDays' => 'Wednesdays', 'createdAt' => now_iso()]);
+    $wc = member_calendar_for(['centre' => 'Cal Wednesday'], $mc);
+    chk('centres: a Wednesday centre\'s members meet on Wednesdays, not the shared Saturday', programme_is_day('2026-10-07', $wc) === true && programme_is_day('2026-10-10', $wc) === false);
+    chk('centres: a centre that names no days keeps the shared calendar', member_calendar_for(['centre' => 'Nowhere Hall'], $mc)['weekdays'] === [6]);
+    db_exec("DELETE FROM centres WHERE centreId = 'CEN-CAL-W'");
+    if ($keepM === null) db_exec("DELETE FROM settings WHERE settingKey = 'memberProgramme'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'memberProgramme'", [$keepM]);
+
+    db_exec("DELETE FROM sessions WHERE sessionId IN ('SESS-CAL-AUT', 'SESS-CAL-SPR')");
+    db_exec("DELETE FROM summer_cohorts WHERE cohortId = 'COH-CAL-1'");
+    foreach ($keepEd as $e) db_exec('UPDATE summer_cohorts SET status = ?, startDate = ?, endDate = ? WHERE cohortId = ?', [$e['status'], $e['startDate'], $e['endDate'], $e['cohortId']]);
 })();
 
 // A Mon–Fri term with one holiday and one added Saturday.
@@ -23321,6 +23356,55 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM curriculum_checks WHERE unitId = 'CUR-MK-1'");
     db_exec("DELETE FROM curriculum_units WHERE unitId = 'CUR-MK-1'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-MK-1'");
+})();
+
+/* ── Programme days per person: their centre's days, counted honestly ────── */
+(function () {
+    $now = now_iso();
+    $today = attendance_today();
+    $keep = []; foreach (['memberProgramme', 'policy', 'policy_member_swept_through'] as $k) $keep[$k] = setting_raw($k);
+    // The preview of a calendar that is OFF is empty — not every day in a row.
+    setting_set('memberProgramme', ['enabled' => false, 'startDate' => '', 'endDate' => '', 'weekdays' => [6], 'holidays' => [], 'extraDays' => []], 'test');
+    $st = backend_dispatch('admin.policy.settings', ['requesterId' => 'NGG-2025-0099']);
+    chk('days: an OFF calendar previews nothing, not fourteen days in a row', $st['memberCalendar']['enabled'] === false && $st['memberCalendar']['upcoming'] === [] && $st['memberCalendar']['isProgrammeDay'] === null);
+
+    // A Wednesday centre's member is not absent on the shared Saturday.
+    $ago = fn($d) => gmdate('Y-m-d', strtotime($today . ' UTC') - $d * 86400);
+    db_insert('centres', ['centreId' => 'CEN-PD-W', 'name' => 'Pd Wednesday', 'code' => 'PW', 'status' => 'active', 'meetDays' => 'Wednesdays', 'createdAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-PD-1', 'fullName' => 'Pd Wed', 'email' => 'pd1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Pd Wednesday', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-PD-2', 'fullName' => 'Pd Sat', 'email' => 'pd2@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    member_programme_settings_save(['enabled' => true, 'startDate' => $ago(30), 'endDate' => $ago(-30), 'weekdays' => [6], 'holidays' => [], 'extraDays' => []], 'test');
+    policy_settings_save(['member' => ['enabled' => true, 'checkoutRequired' => false]], 'test');
+    // The last 8 days hold exactly one Saturday and one Wednesday.
+    $sat = ''; $wed = '';
+    for ($i = 1; $i <= 7; $i++) { $d = $ago($i); $n = (int)gmdate('N', strtotime($d . ' UTC')); if ($n === 6) $sat = $d; if ($n === 3) $wed = $d; }
+    setting_set('policy_member_swept_through', $ago(8), 'system');
+    policy_sweep_member_absences($ago(1));
+    $abs = fn($id) => array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'absence'", [$id]), 'date');
+    chk('days: a Wednesday centre\'s member is absent on their Wednesday, not the shared Saturday', in_array($wed, $abs('NGG-PD-1'), true) && !in_array($sat, $abs('NGG-PD-1'), true));
+    chk('days: …while a member on the shared calendar is absent on Saturday', in_array($sat, $abs('NGG-PD-2'), true) && !in_array($wed, $abs('NGG-PD-2'), true));
+    chk('days: the desk grades the Wednesday member on Wednesday', policy_is_day_for('NGG-PD-1', $wed, 'member') === true && policy_is_day_for('NGG-PD-1', $sat, 'member') === false);
+
+    // A scan on a day the centre does not meet is not attendance.
+    db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-PD-1', 'date' => $sat, 'checkInAt' => $sat . 'T09:00:00Z', 'checkOutAt' => '', 'method' => 'test', 'createdAt' => $now]);
+    $x = companion_metrics(db_row("SELECT * FROM members WHERE memberId = 'NGG-PD-1'"));
+    chk('days: a scan on a non-meeting day does not cancel a real absence', $x['attendance']['present'] === 0 && $x['attendance']['absent'] === $x['attendance']['programmeDays']);
+
+    // The first sweep never backfills the term.
+    setting_set('policy_member_swept_through', '', 'system');
+    db_exec("DELETE FROM settings WHERE settingKey = 'policy_member_swept_through'");
+    db_exec("DELETE FROM infractions WHERE personId LIKE 'NGG-PD-%'");
+    policy_sweep_member_absences($ago(1));
+    $early = db_row("SELECT MIN(date) d FROM infractions WHERE personId LIKE 'NGG-PD-%' AND kind = 'absence'")['d'];
+    chk('days: switching enforcement on does not log absences back to the start of term', $early === null || $early >= $ago(1));
+
+    foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
+    db_exec("DELETE FROM infractions WHERE personId LIKE 'NGG-PD-%'");
+    db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-PD-%'");
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-PD-%'");
+    db_exec("DELETE FROM attendance WHERE studentId LIKE 'NGG-PD-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-PD-%'");
+    db_exec("DELETE FROM centres WHERE centreId = 'CEN-PD-W'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

@@ -39,13 +39,18 @@ function companion_metrics(array $m, ?string $today = null): array {
     $mid = (string)$m['memberId'];
     $from = gmdate('Y-m-d', strtotime($today . ' UTC') - COMPANION_WINDOW_DAYS * 86400);
     $rows = db_all('SELECT date, status, checkOutAt FROM attendance WHERE studentId = ? AND date >= ? AND date < ?', [$mid, $from, $today]);
-    $present = count($rows);
     $late = count(array_filter($rows, static fn($r) => in_array((string)$r['status'], ['late'], true)));
     $noOut = count(array_filter($rows, static fn($r) => trim((string)$r['checkOutAt']) === ''));
-    $days = 0;
-    if (function_exists('member_programme_settings')) {
-        $cal = member_programme_settings();
-        if (!empty($cal['enabled'])) $days = count(programme_days_between($from, gmdate('Y-m-d', strtotime($today . ' UTC') - 86400), $cal));
+    $days = 0; $present = count($rows);
+    if (function_exists('member_calendar_for')) {
+        // Their centre's own days. A scan on a day that is not one of them is
+        // not attendance at a session, and must not cancel out a real absence.
+        $cal = member_calendar_for($m);
+        if (!empty($cal['enabled'])) {
+            $prog = array_flip(programme_days_between($from, gmdate('Y-m-d', strtotime($today . ' UTC') - 86400), $cal));
+            $days = count($prog);
+            $present = count(array_filter($rows, static fn($r) => isset($prog[(string)$r['date']])));
+        }
     }
     $absent = max(0, $days - $present);
     $cur = function_exists('curriculum_for_member') ? curriculum_for_member($m) : ['total' => 0, 'completed' => 0, 'overdue' => 0, 'units' => []];

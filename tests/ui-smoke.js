@@ -708,7 +708,7 @@ function unzipDocumentXml(buf) {
                   musing: { enabled: true, endsAt: '08:00' },
                   idCard: { secondOffenceFine: 1000, lostFine: 2000 },
                   reinstatement: { coolOffDays: 365, fine: 10000, training: 'CIMC 1' } },
-        calendar: { today: TODAY, isProgrammeDay: false, nextDay: '2026-07-20', elapsed: 9, total: 40,
+        calendar: { enabled: true, today: TODAY, isProgrammeDay: false, nextDay: '2026-07-20', elapsed: 9, total: 40,
                     sweptThrough: '2026-07-17', upcoming: ['2026-07-20', '2026-07-21'] },
       }); },
       board: function () { return Promise.resolve({ policyEnabled: true,
