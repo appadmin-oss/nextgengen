@@ -6442,3 +6442,16 @@ img { background-color: rgba(12,20,50,0.04); }
 .qow-entoggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .qow-text, .qow-tr { transition: opacity .3s ease; }
 .qow-quote:has(.is-speaking) > :not(.is-speaking) { opacity: .45; }
+
+/* ── The gate desk: the volunteer's guide and the "do not admit" OK ──────── */
+.gate-guide { border: 1px solid rgba(255,255,255,.14); border-radius: 12px; padding: 0 14px; background: rgba(255,255,255,.03); color: rgba(230,238,255,.9); font-size: 14px; line-height: 1.55; }
+.gate-guide > summary { padding: 12px 0; font-weight: 700; cursor: pointer; }
+.gate-guide[open] { padding-bottom: 14px; }
+.gate-guide h3 { margin: 14px 0 6px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #ffce54; font-family: var(--font-mono, monospace); }
+.gate-guide ol, .gate-guide ul { margin: 0; padding-left: 20px; }
+.gate-guide li { margin: 3px 0; }
+.gate-guide dl { display: grid; grid-template-columns: minmax(6.5em, max-content) 1fr; gap: 6px 14px; margin: 0; }
+.gate-guide dt { font-weight: 800; }
+.gate-guide dd { margin: 0; }
+.gate-guide .g-in { color: #6fdc9d; } .gate-guide .g-late { color: #ffce54; } .gate-guide .g-info { color: #9cc3ff; } .gate-guide .g-no { color: #ff9a9a; }
+.gate-stop-ok { margin-top: 10px; padding: 8px 16px; border-radius: 10px; border: 1px solid rgba(255,255,255,.35); background: transparent; color: inherit; font-weight: 700; font-size: 14px; cursor: pointer; }

@@ -4681,14 +4681,54 @@ function scanFeedback(kind, muted) {
   if (navigator.vibrate) { try { navigator.vibrate(k.buzz); } catch (_) {} }
 }
 
+/* The volunteer's guide, on the desk itself. A <details> so it costs one line
+ * until somebody needs it, and opens without leaving the scanner. Same
+ * content as docs/VOLUNTEER-DESK-GUIDE.md (the printable copy). */
+function GateDeskGuide() {
+  return (
+    <details className="gate-guide">
+      <summary>Volunteer guide — what to do at the door</summary>
+      <h3>Every arrival</h3>
+      <ol>
+        <li>Hold the card's QR code 15–20 cm from the camera, flat and still.</li>
+        <li>Read the headline, and check the <b>photo and name match the person in front of you</b>.</li>
+        <li>Green tick: let them in. Then the next person.</li>
+      </ol>
+      <h3>What the screen says</h3>
+      <dl>
+        <dt className="g-in">Checked in</dt><dd>Let them in.</dd>
+        <dt className="g-late">Late</dt><dd>Let them in. Lateness is already recorded — say nothing about fines.</dd>
+        <dt className="g-info">Already in</dt><dd>They were scanned earlier today. Let them in.</dd>
+        <dt className="g-late">Saved offline</dt><dd>The internet dropped. Let them in; it syncs by itself. Do not close the page.</dd>
+        <dt className="g-no">Do not admit</dt><dd>Suspended, evicted or membership not active. Do not argue — call the coordinator.</dd>
+        <dt className="g-no">Not accepted</dt><dd>Read the line under it. Usually: type their code, or send them to the coordinator.</dd>
+      </dl>
+      <h3>When something is off</h3>
+      <ul>
+        <li><b>Camera not working, or no card:</b> press <i>Camera not working? Enter the code</i> and type the code under the QR, or a member's ID (026-014).</li>
+        <li><b>ID expired / season ended:</b> do not let them in on it; send them to the coordinator.</li>
+        <li><b>Card replaced:</b> they have an old member card. Ask for the new one, or type their member ID.</li>
+        <li><b>Leaving early:</b> the coordinator records check-outs.</li>
+        <li><b>A safeguarding warning</b> on a volunteer: they must not be left alone with young people. Tell the coordinator.</li>
+      </ul>
+      <h3>End of your shift</h3>
+      <ol>
+        <li>Wait until no scans are "saved offline".</li>
+        <li>If you are on attendance duty, press <b>Close the roll</b>.</li>
+        <li>Close the page. Never share the desk password or write it down near the desk.</li>
+      </ol>
+    </details>
+  );
+}
+
 /* The panel itself. Big enough to read without leaning in, and it shows the
  * PHOTO — an operator glancing between the screen and the child is the only
  * check that the card belongs to the person holding it. */
 function ScanResult({ result, onDone }) {
   React.useEffect(() => {
-    if (!result) return;
+    if (!result || result.stop) return;
     // Long enough to read a name and compare a face; short enough not to block
-    // the queue behind them.
+    // the queue behind them. A "do not admit" never times out.
     const t = setTimeout(onDone, result.kind === "no" ? 6000 : 3500);
     return () => clearTimeout(t);
   }, [result, onDone]);
@@ -4710,6 +4750,7 @@ function ScanResult({ result, onDone }) {
         </div>
         <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.15, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{result.name}</div>
         {result.sub && <div style={{ fontSize: 13, color: "rgba(230,238,255,.75)", marginTop: 2 }}>{result.sub}</div>}
+        {result.stop && <button type="button" className="gate-stop-ok" onClick={onDone}>OK — next person</button>}
       </div>
     </div>
   );
@@ -4930,7 +4971,12 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
           : c === "policy_suspended" ? "Suspended. Do NOT admit — refer to the coordinator."
           : c === "policy_evicted" ? "Association terminated. Do NOT admit."
           : (e2.message || "Couldn't check in — try again.");
-        announce("no", { name: /^policy_/.test(c) ? ((e2.data && e2.data.student && e2.data.student.fullName) || "Not accepted") : "Not accepted", sub: why });
+        /* "Do not admit" is a different answer from "that card didn't work":
+           it names the person, says so in the headline, and stays on screen
+           until the volunteer presses OK (ScanResult). */
+        const stop = /^policy_/.test(c) || c === "member_inactive";
+        const who = e2.data && e2.data.student && e2.data.student.fullName;
+        announce("no", { name: who || "Not accepted", sub: why, stop, word: stop ? "Do not admit" : undefined });
         setErr(why);
       }
     } finally { busyRef.current = false; setBusy(false); }
@@ -4962,7 +5008,8 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
           {muted ? "🔇 Scan sound off" : "🔊 Scan sound on"}
         </button>
       </div>
-      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 12, margin: 0, textAlign: "center" }}>Hold a Genius ID or volunteer card up to the camera. Students and volunteers both scan here — a duplicate scan is safe, a day counts once.</p>
+      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 12, margin: 0, textAlign: "center" }}>Hold any NGG card up to the camera — a Summer School participant's, a volunteer's or a member's. A duplicate scan is safe; a day counts once.</p>
+      <GateDeskGuide/>
       {pending > 0 && (
         <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(245,176,38,.14)", border: "1px solid rgba(245,176,38,.4)", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
           <span aria-hidden="true">☁︎</span>

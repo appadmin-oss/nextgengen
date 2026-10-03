@@ -366,6 +366,8 @@ date. Cards issued for an edition expire on its end date. The night after the
 end date, the edition moves to **Closed** by itself. Archive it from Records
 when you are ready.
 
+**The volunteer at the door** has a guide on the desk itself (*Volunteer guide*, under the camera) and a printable copy in `docs/VOLUNTEER-DESK-GUIDE.md`. A *Do not admit* result stays up until they press OK.
+
 **One door, everyone.** The kiosk, a gate link's desk and *Mark present* on a
 profile all check in **participants, volunteers and NGG members**. Scan any
 card or type the number printed on it. A member's secure card (`MEMQR-…`),
