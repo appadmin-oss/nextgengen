@@ -25,6 +25,7 @@ if ($method === 'GET') {
         'mou'       => 'admin.fees.mou',
         'remindOff' => 'admin.fees.remindOff',
         'charge'    => 'admin.fees.charge',
+        'fineImport' => 'admin.fees.fineImport',
         'waive'     => 'admin.fees.waive',
         'accrue'    => 'admin.fees.accrue',
         'remindPreview' => 'admin.fees.remind.preview',

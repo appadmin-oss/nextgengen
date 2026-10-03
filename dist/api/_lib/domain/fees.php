@@ -1404,3 +1404,167 @@ function admin_fees_arrears(array $p): array {
             'matched' => $matched, 'truncated' => $matched > $limit,
             'totalPayable' => $totalPayable, 'settings' => $cfg];
 }
+
+/* ══ Bulk fines: a sheet of fines, matched to members, checked before written ══
+ *
+ * One fine is admin_fees_charge(); this is the same charge for a sheet of
+ * them — the register a coordinator kept on paper, typed up. What makes it
+ * safe is the same three rules as every other import here:
+ *
+ *  · MATCHING IS SHOWN, NEVER GUESSED. A row names its member by whatever the
+ *    sheet had — the printed ID, the member number, an email, a name — and the
+ *    verdict says how it matched and who it found, so the operator reads
+ *    "Ada Okafor (026-014), matched by name" before anybody is charged. An
+ *    email that two siblings share, or a name two members carry, is refused as
+ *    ambiguous with the candidates named; it is never resolved to the first.
+ *  · CHECK, THEN APPLY WHAT WAS CHECKED. The dry run returns a digest; the
+ *    apply recomputes it from what it received and refuses on a mismatch.
+ *  · A SHEET UPLOADED TWICE FINES ONCE. Each row's ledger key is derived from
+ *    the member, reason, amount, date and note, so the second upload reports
+ *    `already` rather than charging the family again. Two genuinely separate
+ *    fines on one day for one reason differ in their note.
+ */
+const FEES_FINE_IMPORT_MAX = 500;
+
+/** Reason words a sheet actually contains, mapped onto the fixed vocabulary. */
+function fees_fine_reason_code(string $raw): ?string {
+    $r = strtolower(trim($raw));
+    if ($r === '') return null;
+    if (isset(FEES_FINE_REASONS[$r])) return $r;
+    foreach (FEES_FINE_REASONS as $code => $label) if (strtolower($label) === $r) return $code;
+    $syn = ['lateness' => 'late', 'latecoming' => 'late', 'late coming' => 'late', 'tardy' => 'late', 'late arrival' => 'late',
+            'absence' => 'absent', 'absent without notice' => 'absent', 'missed' => 'absent', 'missed session' => 'absent',
+            'damage' => 'equipment', 'damaged' => 'equipment', 'lost' => 'equipment', 'lost equipment' => 'equipment',
+            'misconduct' => 'conduct', 'behaviour' => 'conduct', 'behavior' => 'conduct', 'indiscipline' => 'conduct'];
+    return $syn[$r] ?? null;
+}
+
+/** "₦5,000", "5000", "5k", "N5,000.00" → whole naira, or 0 when unreadable. */
+function fees_fine_amount(string $raw): int {
+    $s = strtolower(str_replace([',', ' ', '₦'], '', trim($raw)));
+    $s = preg_replace('/^(ngn|n)/', '', $s);
+    if (preg_match('/^(\d+(?:\.\d+)?)k$/', $s, $m)) return (int)round((float)$m[1] * 1000);
+    return preg_match('/^\d+(?:\.\d{1,2})?$/', $s) ? (int)round((float)$s) : 0;
+}
+
+/** A sheet's date as YYYY-MM-DD — ISO, or the day-first form Nigerian sheets use. */
+function fees_fine_date(string $raw): ?string {
+    $s = trim($raw);
+    if ($s === '') return '';
+    if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $s, $m)) [$y, $mo, $d] = [(int)$m[1], (int)$m[2], (int)$m[3]];
+    elseif (preg_match('#^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$#', $s, $m)) [$d, $mo, $y] = [(int)$m[1], (int)$m[2], (int)$m[3]];
+    else return null;
+    return checkdate($mo, $d, $y) ? sprintf('%04d-%02d-%02d', $y, $mo, $d) : null;
+}
+
+/**
+ * Who a sheet row means. Returns ['member' => row, 'by' => how] or
+ * ['error' => code, 'candidates' => [...]] — never a guess.
+ */
+function fees_fine_match(string $ref, string $name, string $email): array {
+    $ref = trim($ref); $name = trim(preg_replace('/\s+/', ' ', $name)); $email = strtolower(trim($email));
+    $shape = static fn($m) => ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? '')];
+    $live = "COALESCE(status,'') NOT IN ('merged','deleted')";
+    /* A Summer account sharing a parent's email or a name is not a reason to
+       call an NGG member ambiguous; but when only a Summer account matches, it
+       is returned, so the verdict can say why it cannot be fined here. */
+    $prefer = static function (array $rows): array {
+        $ngg = array_values(array_filter($rows, 'member_is_ngg'));
+        return $ngg ?: $rows;
+    };
+    if ($ref !== '') {
+        // An identifier — member number, printed ID or a card's own format.
+        $hit = function_exists('checkin_member_resolve') ? checkin_member_resolve($ref) : null;
+        if ($hit && !empty($hit['member'])) return ['member' => $hit['member'], 'by' => 'id'];
+        if (strpos($ref, '@') !== false && $email === '') $email = strtolower($ref);
+        elseif ($name === '') $name = $ref;
+    }
+    if ($email !== '') {
+        $rows = $prefer(db_all("SELECT * FROM members WHERE lower(email) = ? AND $live", [$email]));
+        if ($name !== '') {
+            $rows2 = array_values(array_filter($rows, static fn($m) => mb_strtolower(trim((string)$m['fullName'])) === mb_strtolower($name)));
+            if (count($rows2) === 1) return ['member' => $rows2[0], 'by' => 'email+name'];
+        }
+        if (count($rows) === 1) return ['member' => $rows[0], 'by' => 'email'];
+        // Siblings share a parent's email: more than one means ask, not pick.
+        if (count($rows) > 1) return ['error' => 'ambiguous', 'candidates' => array_map($shape, array_slice($rows, 0, 5))];
+    }
+    if ($name !== '') {
+        $rows = $prefer(db_all("SELECT * FROM members WHERE lower(trim(fullName)) = ? AND $live LIMIT 12", [mb_strtolower($name)]));
+        if (count($rows) === 1) return ['member' => $rows[0], 'by' => 'name'];
+        if (count($rows) > 1) return ['error' => 'ambiguous', 'candidates' => array_map($shape, array_slice($rows, 0, 5))];
+    }
+    return ['error' => ($ref === '' && $name === '' && $email === '') ? 'member_required' : 'no_match', 'candidates' => []];
+}
+
+/**
+ * admin.fees.fineImport — rows: [{member, name, email, amount, reason, note, date}].
+ * dryRun: true returns per-row verdicts and a digest and writes nothing; the
+ * apply must carry that digest back.
+ */
+function admin_fees_fine_import(array $p): array {
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    $rows = is_array($p['rows'] ?? null) ? array_values($p['rows']) : [];
+    if (!$rows) return ['ok' => false, 'error' => 'no_rows'];
+    if (count($rows) > FEES_FINE_IMPORT_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => FEES_FINE_IMPORT_MAX];
+    $dry = !empty($p['dryRun']);
+    $req = $g['requester'];
+    $by = (string)($req['memberId'] ?? '');
+    $str = static fn($r, $k) => is_scalar($r[$k] ?? null) ? trim((string)$r[$k]) : '';
+
+    // Validate and match every row before anything is written.
+    $plan = []; $seen = [];
+    foreach ($rows as $i => $r) {
+        $r = is_array($r) ? $r : [];
+        $v = ['row' => $i + 1, 'verdict' => 'failed'];
+        $match = fees_fine_match($str($r, 'member'), $str($r, 'name'), $str($r, 'email'));
+        if (isset($match['error'])) { $plan[] = $v + ['error' => $match['error'], 'candidates' => $match['candidates']]; continue; }
+        $m = $match['member'];
+        $v += ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),
+               'matchedBy' => $match['by']];
+        if (!member_is_ngg($m)) { $plan[] = $v + ['error' => 'not_ngg_member']; continue; }
+        if (!admin_centre_allowed($req, (string)($m['centre'] ?? ''))) { $plan[] = $v + ['error' => 'out_of_scope']; continue; }
+        $amount = fees_fine_amount($str($r, 'amount'));
+        if ($amount <= 0 || $amount > FEES_AMOUNT_MAX) { $plan[] = $v + ['error' => 'bad_amount']; continue; }
+        $note = mb_substr($str($r, 'note'), 0, 200);
+        $reason = fees_fine_reason_code($str($r, 'reason'));
+        if ($reason === null) {
+            // An unknown word is kept as the written reason rather than lost.
+            if ($str($r, 'reason') === '' && $note === '') { $plan[] = $v + ['error' => 'reason_required']; continue; }
+            $note = trim($str($r, 'reason') . ($note !== '' ? ' — ' . $note : ''));
+            $reason = 'other';
+        }
+        if ($reason === 'other' && $note === '') { $plan[] = $v + ['error' => 'note_required']; continue; }
+        $date = fees_fine_date($str($r, 'date'));
+        if ($date === null) { $plan[] = $v + ['error' => 'bad_date']; continue; }
+        $key = 'bulkfine:' . substr(hash('sha256', implode("\x1f", [$m['memberId'], $reason, $amount, $date, mb_strtolower($note)])), 0, 20);
+        if (isset($seen[$key])) { $plan[] = $v + ['error' => 'duplicate_in_file', 'detail' => 'same as row ' . $seen[$key]]; continue; }
+        $seen[$key] = $i + 1;
+        $exists = db_row("SELECT entryId FROM member_ledger WHERE memberId = ? AND kind = 'fine' AND periodKey = ? AND COALESCE(voidedAt,'') = '' LIMIT 1",
+                         [(string)$m['memberId'], $key]);
+        $v['verdict'] = $exists ? 'already' : 'fine';
+        $plan[] = $v + ['amount' => $amount, 'reason' => $reason,
+                        'reasonLabel' => FEES_FINE_REASONS[$reason], 'note' => $note, 'date' => $date, '_key' => $key];
+    }
+    $tally = ['fine' => 0, 'already' => 0, 'failed' => 0, 'total' => 0];
+    foreach ($plan as $x) { $tally[$x['verdict']]++; if ($x['verdict'] === 'fine') $tally['total'] += $x['amount']; }
+    $digest = members_import_digest(array_map(static fn($x) => array_diff_key($x, ['_key' => 1]), $plan), ['kind' => 'fines']);
+    $public = static fn($list) => array_map(static fn($x) => array_diff_key($x, ['_key' => 1]), $list);
+    if ($dry) return ['ok' => true, 'dryRun' => true, 'digest' => $digest, 'tally' => $tally, 'rows' => $public($plan), 'max' => FEES_FINE_IMPORT_MAX];
+    if ((string)($p['digest'] ?? '') !== $digest) return ['ok' => false, 'error' => 'import_changed'];
+
+    $posted = 0;
+    foreach ($plan as &$x) {
+        if ($x['verdict'] !== 'fine') continue;
+        $label = $x['reasonLabel'] . ($x['date'] !== '' ? ' (' . $x['date'] . ')' : '');
+        $e = fees_post($x['memberId'], 'fine', $x['amount'], ['periodKey' => $x['_key'], 'method' => $x['reason'], 'by' => $by,
+            'note' => $x['note'] !== '' ? $label . ' — ' . $x['note'] : $label]);
+        if ($e) { $x['entryId'] = (string)$e['entryId']; $posted++; }
+        else { $x['verdict'] = 'failed'; $x['error'] = 'post_failed'; $tally['fine']--; $tally['failed']++; $tally['total'] -= $x['amount']; }
+    }
+    unset($x);
+    // One event for the run, with what was refused — not one per row.
+    audit('fees.fine.import', $by, '', ['posted' => $posted, 'already' => $tally['already'], 'failed' => $tally['failed'],
+        'total' => $tally['total'], 'rows' => count($rows), 'digest' => $digest], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'dryRun' => false, 'digest' => $digest, 'tally' => $tally, 'rows' => $public($plan)];
+}

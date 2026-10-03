@@ -22845,5 +22845,69 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-CUR-%' OR memberId = 'SUM-CUR-S1'");
 })();
 
+/* ── Bulk fines: a sheet of fines, matched to members, checked before written ── */
+(function () {
+    $now = now_iso();
+    $mk = fn($id, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'BF ' . $id, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-BF-ADM', ['role' => 'super_admin']);
+    $mk('NGG-BF-ED', ['role' => 'editor']);
+    $mk('NGG-BF-1', ['fullName' => 'Chidi Okafor', 'displayId' => '026-901']);
+    $mk('NGG-BF-2', ['fullName' => 'Amaka Bello', 'email' => 'bellofamily@example.com']);
+    $mk('NGG-BF-3', ['fullName' => 'Tunde Bello', 'email' => 'bellofamily@example.com']);
+    $mk('NGG-BF-4', ['fullName' => 'Sade Ade']); $mk('NGG-BF-5', ['fullName' => 'Sade Ade']);
+    $mk('SUM-BF-1', ['type' => 'Summer', 'fullName' => 'Bf Summer Child']);
+
+    chk('bulk fines: needs the fees capability', (backend_dispatch('admin.fees.fineImport', ['requesterId' => 'NGG-BF-ED', 'rows' => [['member' => '026-901', 'amount' => '500', 'reason' => 'late']], 'dryRun' => true])['error'] ?? '') === 'forbidden');
+    $rows = [
+        ['member' => '026-901', 'amount' => '₦2,000', 'reason' => 'Lateness', 'date' => '04/10/2026'],             // printed ID
+        ['member' => 'NGG-BF-1', 'amount' => '1k', 'reason' => 'absent', 'date' => '2026-10-11'],                   // member number
+        ['email' => 'bellofamily@example.com', 'name' => 'Tunde Bello', 'amount' => '500', 'reason' => 'conduct'],  // shared email + name
+        ['email' => 'bellofamily@example.com', 'amount' => '500', 'reason' => 'conduct'],                           // shared email alone
+        ['name' => 'Sade Ade', 'amount' => '500', 'reason' => 'late'],                                              // two members, one name
+        ['name' => 'Nobody Here', 'amount' => '500', 'reason' => 'late'],
+        ['member' => '026-901', 'amount' => 'five', 'reason' => 'late'],
+        ['member' => '026-901', 'amount' => '500', 'reason' => 'Broke a window', 'date' => '2026-10-04'],           // unknown reason → other, kept
+        ['member' => '026-901', 'amount' => '₦2,000', 'reason' => 'late', 'date' => '2026-10-04'],                  // same as row 1
+        ['name' => 'Bf Summer Child', 'amount' => '500', 'reason' => 'late'],
+        ['member' => '026-901', 'amount' => '500', 'reason' => 'late', 'date' => '31/02/2026'],
+    ];
+    $dry = backend_dispatch('admin.fees.fineImport', ['requesterId' => 'NGG-BF-ADM', 'rows' => $rows, 'dryRun' => true]);
+    $v = array_column($dry['rows'] ?? [], null, 'row');
+    chk('bulk fines: the dry run writes nothing', !empty($dry['ok']) && !db_row("SELECT id FROM member_ledger WHERE memberId LIKE 'NGG-BF-%'"));
+    chk('bulk fines: a printed ID matches, and the verdict says so and who', $v[1]['verdict'] === 'fine' && $v[1]['matchedBy'] === 'id' && $v[1]['memberId'] === 'NGG-BF-1' && $v[1]['amount'] === 2000 && $v[1]['date'] === '2026-10-04');
+    chk('bulk fines: a member number matches; "1k" is a thousand', $v[2]['memberId'] === 'NGG-BF-1' && $v[2]['amount'] === 1000 && $v[2]['reason'] === 'absent');
+    chk('bulk fines: a shared family email resolves with the name', $v[3]['memberId'] === 'NGG-BF-3' && $v[3]['matchedBy'] === 'email+name');
+    chk('bulk fines: a shared email alone is ambiguous, with both siblings named', $v[4]['error'] === 'ambiguous' && count($v[4]['candidates']) === 2);
+    chk('bulk fines: a name two members carry is ambiguous, never the first', $v[5]['error'] === 'ambiguous');
+    chk('bulk fines: an unknown person is no_match', $v[6]['error'] === 'no_match');
+    chk('bulk fines: an unreadable amount is refused', $v[7]['error'] === 'bad_amount');
+    chk('bulk fines: an unknown reason is kept as the written reason', $v[8]['reason'] === 'other' && $v[8]['note'] === 'Broke a window');
+    chk('bulk fines: the same fine twice in one sheet is refused', $v[9]['error'] === 'duplicate_in_file');
+    chk('bulk fines: a Summer participant cannot be fined to the member ledger', $v[10]['error'] === 'not_ngg_member');
+    chk('bulk fines: an impossible date is refused', $v[11]['error'] === 'bad_date');
+    chk('bulk fines: the tally adds up', $dry['tally']['fine'] === 4 && $dry['tally']['failed'] === 7 && $dry['tally']['total'] === 4000);
+
+    chk('bulk fines: an apply without the checked digest is refused', (backend_dispatch('admin.fees.fineImport', ['requesterId' => 'NGG-BF-ADM', 'rows' => $rows, 'digest' => 'x'])['error'] ?? '') === 'import_changed');
+    $ap = backend_dispatch('admin.fees.fineImport', ['requesterId' => 'NGG-BF-ADM', 'rows' => $rows, 'digest' => $dry['digest']]);
+    $owed = (int)db_row("SELECT COALESCE(SUM(amount),0) s FROM member_ledger WHERE memberId = 'NGG-BF-1' AND kind = 'fine'")['s'];
+    chk('bulk fines: the apply posts the rows that passed, to the member ledger', !empty($ap['ok']) && $ap['tally']['fine'] === 4 && $owed === 3500);
+    chk('bulk fines: the fine carries its reason and date', (bool)db_row("SELECT id FROM member_ledger WHERE memberId = 'NGG-BF-1' AND note LIKE 'Late arrival (2026-10-04)%'"));
+    chk('bulk fines: one audit event for the run', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'fees.fine.import'")['c'] === 1);
+    $again = backend_dispatch('admin.fees.fineImport', ['requesterId' => 'NGG-BF-ADM', 'rows' => $rows, 'dryRun' => true]);
+    chk('bulk fines: the same sheet again fines nobody twice', $again['tally']['already'] === 4 && $again['tally']['fine'] === 0);
+
+    // Scope: a centre-scoped admin cannot fine another centre's member.
+    db_insert('centres', ['centreId' => 'CEN-BF-A', 'name' => 'Bf Ayobo', 'code' => 'BA', 'status' => 'active', 'createdAt' => $now]);
+    $mk('NGG-BF-SC', ['role' => 'super_admin', 'centreScope' => json_encode(['CEN-BF-A'])]);
+    $sc = backend_dispatch('admin.fees.fineImport', ['requesterId' => 'NGG-BF-SC', 'rows' => [['member' => '026-901', 'amount' => '500', 'reason' => 'late', 'date' => '2026-10-18']], 'dryRun' => true]);
+    chk('bulk fines: scope is refused per row', ($sc['rows'][0]['error'] ?? '') === 'out_of_scope');
+    chk('bulk fines: the cap is named', (backend_dispatch('admin.fees.fineImport', ['requesterId' => 'NGG-BF-ADM', 'rows' => array_fill(0, FEES_FINE_IMPORT_MAX + 1, $rows[0]), 'dryRun' => true])['max'] ?? 0) === FEES_FINE_IMPORT_MAX);
+
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-BF-%'");
+    db_exec("DELETE FROM centres WHERE centreId = 'CEN-BF-A'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-BF-%' OR memberId = 'SUM-BF-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

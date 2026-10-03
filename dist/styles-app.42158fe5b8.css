@@ -7559,3 +7559,11 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
   .cur-ed-mat { grid-template-columns: 1fr; }
   .cur-ed-grid2 { grid-template-columns: 1fr; }
 }
+
+/* ── Upload fines (AdminFees → Upload fines) ── */
+.fine-imp { display: grid; gap: 12px; }
+.fine-imp-plan { display: grid; gap: 10px; justify-items: start; }
+.fine-imp-plan .admin-table-wrap { justify-self: stretch; }
+.fine-imp-tally { margin: 0; }
+/* A match on a name alone is the weakest; it is worth a second look. */
+.fine-imp-weak { font-weight: 700; color: var(--coral-700, #9a3412); }

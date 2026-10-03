@@ -11336,6 +11336,116 @@ function FeeEntryForm({ kind, account, busy, onCancel, onSubmit }) {
   );
 }
 
+/* ── Upload fines: a sheet of fines, matched to members, checked first ──────
+   The server decides every match and says how it made it (printed ID, member
+   number, email, name); this screen shows that before anybody is charged, and
+   Upload writes exactly what was checked. See admin_fees_fine_import. */
+const FINES_CSV_TEMPLATE = "member,name,email,amount,reason,date,note\n"
+  + "026-014,,,2000,late,2026-10-04,\n"
+  + ",Ada Okafor,okafor.family@example.com,5000,conduct,04/10/2026,Fighting during break\n";
+const FINE_COLS = {
+  member: ["member", "memberid", "member id", "id", "displayid", "display id", "member no", "member number", "card", "card number"],
+  name: ["name", "fullname", "full name", "member name"],
+  email: ["email", "e-mail", "email address", "parent email"],
+  amount: ["amount", "fine", "naira", "amount (₦)", "amount (n)"],
+  reason: ["reason", "offence", "offense", "why", "type"],
+  date: ["date", "day", "on"],
+  note: ["note", "notes", "comment", "comments", "details", "remark", "remarks"],
+};
+function finesRowFromSheet(r) {
+  const out = {};
+  const keys = Object.keys(r);
+  Object.entries(FINE_COLS).forEach(([field, names]) => {
+    const k = keys.find(x => names.includes(String(x).trim().toLowerCase().replace(/_/g, " ")));
+    if (k !== undefined) out[field] = String(r[k] == null ? "" : r[k]).trim();
+  });
+  return out;
+}
+const FINE_ERRORS = {
+  ambiguous: "more than one member matches", no_match: "no member matches", member_required: "no member given",
+  not_ngg_member: "not an NGG member", out_of_scope: "outside your centres", bad_amount: "amount unreadable",
+  reason_required: "no reason", note_required: "say why", bad_date: "date unreadable", duplicate_in_file: "repeated in this file",
+  post_failed: "could not be posted",
+};
+const FINE_MATCHED = { id: "ID", email: "email", "email+name": "email + name", name: "name only" };
+function FinesUpload({ onDone }) {
+  const [rows, setRows] = React.useState(null);
+  const [name, setName] = React.useState("");
+  const [plan, setPlan] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+  const [err, setErr] = React.useState("");
+  const read = async (file) => {
+    if (!file) return;
+    setErr(""); setPlan(null);
+    try {
+      const out = curriculumParseCsv(await file.text()).map(finesRowFromSheet).filter(r => Object.values(r).some(v => v !== ""));
+      if (!out.length) throw new Error("No fines found in that file.");
+      setRows(out); setName(file.name);
+    } catch (e) { setRows(null); setErr(e.message || "Couldn't read that file."); }
+  };
+  const check = async () => {
+    setBusy("check");
+    try { setPlan(await NGGApi.admin.fees.fineImport(rows, { dryRun: true })); }
+    catch (e) { toast.error(e.code === "too_many" ? "That is more than " + (e.max || 500) + " fines — split the file." : humanizeError(e.code, e.code)); }
+    finally { setBusy(""); }
+  };
+  const apply = async () => {
+    const t = plan.tally;   // read before the confirm, so what is agreed is what runs
+    if (!(await dialog.confirm({ title: "Post " + t.fine + " fine" + (t.fine === 1 ? "" : "s") + " — " + naira(t.total) + "?",
+      body: t.fine + " to post · " + t.already + " already on the ledger · " + t.failed + " refused (not posted). Each fine lands on the member's account and in their next reminder.", cta: "Post fines" }))) return;
+    setBusy("apply");
+    try {
+      const r = await NGGApi.admin.fees.fineImport(rows, { digest: plan.digest });
+      setPlan(r);
+      if (r.tally.failed) toast.info(r.tally.fine + " posted · " + r.tally.failed + " refused.", "Fines partly posted");
+      else toast.success(r.tally.fine + " fine" + (r.tally.fine === 1 ? "" : "s") + " posted · " + naira(r.tally.total) + ".", "Fines posted");
+      if (onDone) onDone();
+    } catch (e) { toast.error(e.code === "import_changed" ? "The file changed since it was checked — check it again." : humanizeError(e.code, e.code)); }
+    finally { setBusy(""); }
+  };
+  const download = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([FINES_CSV_TEMPLATE], { type: "text/csv" }));
+    a.download = "ngg-fines-template.csv"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  return (
+    <div className="fine-imp">
+      <p className="admin-hint">Upload a CSV of fines (from Excel or Google Sheets). Name each member by their printed ID or member number where you can; an email or a name also works, but only when it points at exactly one member — siblings sharing a parent's email, or two members with one name, are refused and named so you can fix the row. Reasons: late, absent, equipment, conduct, or anything else (kept as the written reason). Uploading the same sheet twice fines nobody twice. Nothing is posted until you have checked the file and pressed Post fines.</p>
+      <div className="cur-ed-row">
+        <label className="btn btn-ghost btn-sm">Choose a file
+          <input type="file" className="sr-only" accept=".csv,text/csv" onChange={e => { read(e.target.files && e.target.files[0]); e.target.value = ""; }}/></label>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={download}>Download the CSV template</button>
+        {name && <span className="admin-cell-sub">{name} · {rows ? rows.length : 0} row{rows && rows.length === 1 ? "" : "s"}</span>}
+        {rows && <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={check}>{busy === "check" ? "Checking…" : "Check the file"}</button>}
+      </div>
+      {err && <p className="admin-form-err" role="alert">{err}</p>}
+      {plan && (
+        <div className="fine-imp-plan">
+          <p className="fine-imp-tally" aria-live="polite">
+            <b>{plan.tally.fine}</b> to post ({naira(plan.tally.total)}) · <b>{plan.tally.already}</b> already posted · <b>{plan.tally.failed}</b> refused{plan.dryRun ? " — nothing posted yet." : " — posted."}
+          </p>
+          {plan.dryRun && plan.tally.fine > 0 && <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={apply}>{busy === "apply" ? "Posting…" : "Post fines"}</button>}
+          <div className="admin-table-wrap"><table className="admin-table">
+            <thead><tr><th scope="col" className="admin-num">Row</th><th scope="col">Member</th><th scope="col">Matched by</th><th scope="col" className="admin-num">Amount</th><th scope="col">Reason</th><th scope="col">Result</th></tr></thead>
+            <tbody>{plan.rows.map(r => (
+              <tr key={r.row}>
+                <td className="admin-num">{r.row}</td>
+                <td>{r.fullName ? <>{r.fullName}<div className="admin-cell-sub">{r.displayId || r.memberId}</div></> : "—"}
+                  {r.candidates && r.candidates.length > 0 && <div className="admin-cell-sub">Could be: {r.candidates.map(c => c.fullName + " (" + (c.displayId || c.memberId) + ")").join(", ")}</div>}</td>
+                <td className="admin-cell-sub">{r.matchedBy ? <span className={r.matchedBy === "name" ? "fine-imp-weak" : ""}>{FINE_MATCHED[r.matchedBy] || r.matchedBy}</span> : ""}</td>
+                <td className="admin-num">{r.amount ? naira(r.amount) : ""}</td>
+                <td className="admin-cell-sub">{r.reasonLabel ? r.reasonLabel + (r.date ? " · " + r.date : "") + (r.note ? " — " + r.note : "") : ""}</td>
+                <td>{r.verdict === "failed" ? <span className="chip status-archived" title={r.detail}>refused: {FINE_ERRORS[r.error] || String(r.error).replace(/_/g, " ")}</span>
+                  : <span className={"chip " + (r.verdict === "fine" ? "chip-lime" : "")}>{r.verdict === "fine" ? (plan.dryRun ? "to post" : "posted") : "already posted"}</span>}</td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminFees() {
   const [tab, setTab] = React.useState("arrears");   // arrears | settings
   const [cfg, setCfg] = React.useState(null);
@@ -11535,7 +11645,7 @@ function AdminFees() {
   return (
     <div>
       <div className="admin-filters">
-        {[["arrears", "Who owes"], ["reminders", "Reminders"], ["settings", "Amounts"]].map(([k, l]) => (
+        {[["arrears", "Who owes"], ["fines", "Upload fines"], ["reminders", "Reminders"], ["settings", "Amounts"]].map(([k, l]) => (
           <button key={k} className={"btn btn-sm " + (tab === k ? "btn-primary" : "btn-ghost")} onClick={() => setTab(k)}>
             {l}
             {/* A dot on the tab, because an overdue review that is only visible
@@ -11768,6 +11878,7 @@ function AdminFees() {
         </div>
       )}
 
+      {tab === "fines" && <FinesUpload onDone={loadArr}/>}
       {tab === "arrears" && (
         <div>
           {/* Above the list, because the list is only the people who owe. Anybody

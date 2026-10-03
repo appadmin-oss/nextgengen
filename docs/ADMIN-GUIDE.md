@@ -538,6 +538,32 @@ week. **Instructors and NGG mentors** see the lessons for their courses in the
 Mentor Portal's **Curriculum** tab, with the written answers waiting to be
 marked beside the model answer and rubric.
 
+### Uploading a sheet of fines
+
+**Dues & fees → Upload fines** (needs the `fees` permission). For a register
+of fines kept on paper or in a spreadsheet.
+
+1. **Download the CSV template**, or use your own sheet: the columns are
+   *member* (printed ID or member number), *name*, *email*, *amount*,
+   *reason*, *date* and *note*, and common headings ("Member No", "Comments",
+   "Offence") are recognised.
+2. **Check the file.** Every row says which member it matched and **how** —
+   by ID, by email + name, by email, or by **name only** (shown in bold: give it
+   a second look). Nothing is posted yet.
+   - An email that two siblings share, or a name two members carry, is
+     **refused** and the candidates are listed — fix the row with the printed ID.
+   - Amounts may be written `5000`, `₦5,000` or `5k`. Dates may be
+     `2026-10-04` or `04/10/2026` (day first).
+   - Reasons: *late*, *absent*, *equipment*, *conduct*; anything else is kept
+     as the written reason.
+   - Summer School participants cannot be fined here — they have no ledger.
+3. **Post fines.** Each fine lands on the member's account and in their next
+   reminder. Up to **500** rows a file.
+
+Uploading the same sheet again fines nobody twice: rows already on the ledger
+are reported as *already posted*. Two genuine fines for the same member, day
+and reason must differ in their note.
+
 ---
 
 ## Applications, sign-ups and verification
