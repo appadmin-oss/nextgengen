@@ -243,6 +243,13 @@ async function contextFor(memberId, admin, viewport) {
     await ap.waitForSelector('.cur-bar');
     chk('the progress report counts completions per lesson', /1 of 1/.test(await ap.$eval('.admin-main', el => el.innerText)));
 
+    // Deadlines: the term is set on the Progress tab.
+    chk('the Progress tab offers deadlines, unset until a term is given', /not set: nothing is due yet/.test(await ap.$eval('.cur-sched summary', el => el.innerText)));
+    await ap.fill('.cur-sched input[type=date]', '2026-09-07');
+    await ap.click('.cur-sched button:has-text("Save deadlines")');
+    await ap.waitForFunction(() => /term began 2026-09-07/.test(document.querySelector('.cur-sched summary')?.innerText || ''), null, { timeout: 15000 });
+    chk('…and saving the term start is kept', JSON.parse(php(`echo setting_raw('curriculum');`)).startDate === '2026-09-07');
+
     chk('no page errors on any screen', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

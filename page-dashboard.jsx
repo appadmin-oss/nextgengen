@@ -2326,6 +2326,7 @@ function DashCurriculum() {
         <div>
           <div className="eyebrow cur-eyebrow">CURRICULUM{data.track ? " · " + data.track.toUpperCase() : ""}</div>
           <h2 className="dash-card-h">{data.completed} of {data.total} lessons done.</h2>
+          {data.overdue > 0 && <p className="cur-overdue-note" role="status">{data.overdue} assessment{data.overdue === 1 ? " is" : "s are"} overdue. An assessment left undone more than {(data.units[0] || {}).fineAfterDays || 7} days after it is due is fined{(data.units[0] || {}).fineAmount ? " ₦" + Number(data.units[0].fineAmount).toLocaleString() : ""}.</p>}
         </div>
         <div className="cur-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={data.pct} aria-label="Curriculum completed">
           <span style={{ width: data.pct + "%" }}/>
@@ -2346,7 +2347,8 @@ function DashCurriculum() {
                   <button type="button" className="cur-item" onClick={() => setOpen(u.unitId)}>
                     <span className="cur-item-main">
                       <span className="cur-item-title">{u.title}</span>
-                      <span className="cur-item-meta">{u.course || "Whole Club"}{u.durationMins ? " · " + u.durationMins + " min" : ""}{u.checks ? " · " + u.checks + " check" + (u.checks === 1 ? "" : "s") : ""}</span>
+                      <span className="cur-item-meta">{u.course || "Whole Club"}{u.durationMins ? " · " + u.durationMins + " min" : ""}{u.checks ? " · " + u.checks + " check" + (u.checks === 1 ? "" : "s") : ""}
+                        {u.dueDate && !(u.progress && (u.progress.status === "completed" || u.progress.pending)) && <> · <span className={u.overdueDays > 0 ? "cur-due is-over" : "cur-due"}>{u.overdueDays > 0 ? u.overdueDays + " day" + (u.overdueDays === 1 ? "" : "s") + " overdue" : "due " + fmtDate(u.dueDate)}</span></>}</span>
                     </span>
                     <span className={"cur-chip " + st.tone}>{st.label}{u.progress && u.progress.attempts > 0 && !u.progress.pending ? " · " + u.progress.bestPct + "%" : ""}</span>
                   </button>

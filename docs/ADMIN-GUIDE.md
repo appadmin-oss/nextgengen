@@ -533,6 +533,24 @@ the file changed in between, it is refused and you check again. Up to
 **Progress** shows, per lesson, how many members of that course have started
 and finished it, and the average score. A scoped admin sees their centres only.
 
+**Deadlines, reminders and fines** (top of the Progress tab). Set the **term
+start**. A lesson with checks in week N is then due N weeks after the term
+starts — or after the member joined, if that is later, so a new member never
+owes past weeks on day one. While an assessment is outstanding (not completed,
+and not waiting for an instructor to mark it):
+
+- the member and the parent on their record get **one email** listing what is
+  due, from *Remind from* days before it is due and every *Remind every* days
+  after;
+- once it is more than *Fine after* days overdue (a week by default) the
+  member is **fined once** for that lesson, on their account;
+- **Behind** lists the members with overdue assessments, the longest overdue
+  first, with what they have been fined.
+
+Changing the fine amount or window needs the **Dues & fees** permission as
+well as Curriculum. Members see each lesson's due date, and how many days
+overdue it is, on their Curriculum page.
+
 **Members** find their lessons on their dashboard under **Curriculum**, by
 week. **Instructors and NGG mentors** see the lessons for their courses in the
 Mentor Portal's **Curriculum** tab, with the written answers waiting to be

@@ -2825,6 +2825,25 @@ function CurriculumProgress() {
         </select>
         {d && d.scoped && <span className="admin-cell-sub">Your centres only.</span>}
       </div>
+      <CurriculumSchedule onSaved={load}/>
+      {d && d.overdue && d.overdue.length > 0 && (
+        <section className="cur-behind" aria-labelledby="cur-behind-h">
+          <h3 id="cur-behind-h" className="admin-h3">Behind — {d.overdue.length} member{d.overdue.length === 1 ? "" : "s"} with overdue assessments</h3>
+          <div className="admin-table-wrap"><table className="admin-table">
+            <thead><tr><th scope="col">Member</th><th scope="col">Centre · course</th><th scope="col" className="admin-num">Overdue</th><th scope="col" className="admin-num">Longest</th><th scope="col">Lessons</th><th scope="col" className="admin-num">Fined</th></tr></thead>
+            <tbody>{d.overdue.map(m => (
+              <tr key={m.memberId}>
+                <td>{m.fullName}<div className="admin-cell-sub">{m.displayId || m.memberId}</div></td>
+                <td className="admin-cell-sub">{m.centre || "—"} · {m.track || "—"}</td>
+                <td className="admin-num">{m.overdue}</td>
+                <td className="admin-num">{m.worstDays} day{m.worstDays === 1 ? "" : "s"}</td>
+                <td className="admin-cell-sub">{m.lessons.join(", ")}{m.overdue > m.lessons.length ? "…" : ""}</td>
+                <td className="admin-num">{m.finedAmount ? naira(m.finedAmount) : "—"}</td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+        </section>
+      )}
       {err ? <ErrorState title="Couldn't load progress" code={err} onRetry={load}/> : !d ? <div className="dash-spinner" role="status" aria-label="Loading"/> :
         !d.units.length ? <div className="admin-empty">No published lessons{course ? " for " + course : ""} yet.</div> :
         <div className="admin-table-wrap"><table className="admin-table">
@@ -2846,6 +2865,44 @@ function CurriculumProgress() {
           })}</tbody>
         </table></div>}
     </div>
+  );
+}
+
+/* The term, and what an undone assessment costs. Reminders and fines are
+   sent by the server's own clock (domain/curriculum.php, curriculum_due_run);
+   this only sets the rules. Changing the fine needs the fees permission. */
+function CurriculumSchedule({ onSaved }) {
+  const [s, setS] = React.useState(null);
+  const [orig, setOrig] = React.useState("");
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  // Open on arrival when no term is set; never re-collapsed by typing a date.
+  const [startOpen, setStartOpen] = React.useState(null);
+  const load = React.useCallback(() => { setErr(""); NGGApi.admin.curriculum.schedule().then(r => { setS(r.schedule); setOrig(JSON.stringify(r.schedule)); setStartOpen(o => o === null ? !r.schedule.startDate : o); }).catch(e => setErr(e.code || e.message)); }, []);
+  React.useEffect(() => { load(); }, [load]);
+  if (err) return <ErrorState title="Couldn't load the term" code={err} onRetry={load}/>;
+  if (!s) return null;
+  const set = (k, v) => setS(o => ({ ...o, [k]: v }));
+  const save = async () => {
+    setBusy(true);
+    try { const r = await NGGApi.admin.curriculum.scheduleSave(s); setS(r.schedule); setOrig(JSON.stringify(r.schedule)); toast.success("Deadlines saved."); onSaved && onSaved(); }
+    catch (e) { toast.error(e.code === "fees_cap_required" ? "Changing the fine needs the Dues & fees permission." : humanizeError(e.code, e.code)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <details className="cur-sched" open={!!startOpen}>
+      <summary>Deadlines, reminders and fines{s.startDate ? " — term began " + s.startDate : " — not set: nothing is due yet"}</summary>
+      <p className="admin-hint">A lesson with checks in week N is due N weeks after the term starts — or after the member joined, if later. Members (and the parent on their record) are reminded by email while anything is outstanding, from a few days before it is due; an assessment left undone past the fine window is fined once, on their account.</p>
+      <div className="admin-fields cur-sched-grid">
+        <label className="admin-field admin-field-check"><input type="checkbox" checked={!!s.enabled} onChange={e => set("enabled", e.target.checked)}/><span>Deadlines on</span></label>
+        <label className="admin-field"><span>Term starts</span><input type="date" className="admin-input" value={s.startDate || ""} onChange={e => set("startDate", e.target.value)}/></label>
+        <label className="admin-field"><span>Remind from (days before due)</span><input type="number" min={0} max={30} className="admin-input" value={s.remindBeforeDays} onChange={e => set("remindBeforeDays", Number(e.target.value))}/></label>
+        <label className="admin-field"><span>Remind every (days)</span><input type="number" min={1} max={30} className="admin-input" value={s.remindEveryDays} onChange={e => set("remindEveryDays", Number(e.target.value))}/></label>
+        <label className="admin-field"><span>Fine after (days overdue)</span><input type="number" min={1} max={60} className="admin-input" value={s.fineAfterDays} onChange={e => set("fineAfterDays", Number(e.target.value))}/></label>
+        <label className="admin-field"><span>Fine (₦, 0 = none)</span><input type="number" min={0} step={100} className="admin-input" value={s.fineAmount} onChange={e => set("fineAmount", Number(e.target.value))}/></label>
+      </div>
+      <button className="btn btn-primary btn-sm" disabled={busy || JSON.stringify(s) === orig} onClick={save}>{busy ? "Saving…" : "Save deadlines"}</button>
+    </details>
   );
 }
 

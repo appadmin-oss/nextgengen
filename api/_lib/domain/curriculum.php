@@ -546,7 +546,7 @@ function admin_curriculum_report(array $p): array {
     }
     $mid = trim((string)($p['memberId'] ?? ''));
     if ($mid !== '') {
-        $m = db_row("SELECT memberId, fullName, displayId, centre, track FROM members m WHERE $mWhere AND m.memberId = ?", array_merge($mArgs, [$mid]));
+        $m = db_row("SELECT memberId, fullName, displayId, centre, track, joinDate, createdAt, type FROM members m WHERE $mWhere AND m.memberId = ?", array_merge($mArgs, [$mid]));
         if (!$m) return ['ok' => false, 'error' => 'not_found'];
         return ['ok' => true, 'member' => $m + ['curriculum' => curriculum_for_member($m)]];
     }
@@ -571,7 +571,8 @@ function admin_curriculum_report(array $p): array {
         'pending' => (int)$r['pending'], 'avgPct' => $r['avgPct'] !== null ? (int)round((float)$r['avgPct']) : null,
         'audience' => (string)$r['course'] === '' ? $everyone : ($enrolled[(string)$r['course']] ?? 0),
     ], $rows);
-    return ['ok' => true, 'units' => $units, 'scoped' => $scope !== null];
+    return ['ok' => true, 'units' => $units, 'scoped' => $scope !== null,
+            'overdue' => curriculum_overdue_board($mWhere, $mArgs, $course), 'schedule' => curriculum_schedule()];
 }
 
 /* ══ Members ═════════════════════════════════════════════════════════════════ */
@@ -591,23 +592,30 @@ function curriculum_for_member(array $m): array {
         $ph = implode(',', array_fill(0, count($ids), '?'));
         foreach (db_all("SELECT * FROM curriculum_progress WHERE memberId = ? AND unitId IN ($ph)", array_merge([(string)$m['memberId']], $ids)) as $r) $prog[(string)$r['unitId']] = $r;
     }
-    $out = []; $done = 0;
+    $out = []; $done = 0; $overdue = 0;
+    $cfg = curriculum_schedule();
+    $start = curriculum_member_start($m, $cfg);
+    $today = attendance_today();
     foreach ($units as $id => $b) {
         $u = $b['unit']; $pr = $prog[$id] ?? null;
         if ($pr && $pr['status'] === 'completed') $done++;
+        $due = curriculum_due_facts($start, $u, count($b['checks']), $pr, $today, $cfg);
+        if ($due['overdueDays'] > 0) $overdue++;
         $out[] = ['unitId' => $id, 'course' => (string)$u['course'], 'level' => (string)$u['level'], 'week' => (int)$u['week'],
             'position' => (int)$u['position'], 'title' => (string)$u['title'], 'summary' => (string)$u['summary'],
             'durationMins' => (int)$u['durationMins'], 'materials' => count($b['materials']), 'checks' => count($b['checks']),
+            'dueDate' => $due['dueDate'], 'overdueDays' => $due['overdueDays'],
+            'fineAfterDays' => (int)$cfg['fineAfterDays'], 'fineAmount' => (int)$cfg['fineAmount'],
             'progress' => $pr ? ['status' => (string)$pr['status'], 'bestPct' => (int)$pr['bestPct'], 'attempts' => (int)$pr['attempts'],
                                  'pending' => (int)$pr['pending'] > 0, 'completedAt' => (string)$pr['completedAt'],
                                  'stale' => (int)$pr['unitVersion'] !== (int)$u['version'] && (int)$pr['attempts'] > 0] : null];
     }
-    return ['units' => $out, 'total' => count($out), 'completed' => $done,
+    return ['units' => $out, 'total' => count($out), 'completed' => $done, 'overdue' => $overdue,
             'pct' => $out ? (int)round($done / count($out) * 100) : 0];
 }
 
 function curriculum_member_row(string $memberId): ?array {
-    $m = db_row('SELECT memberId, fullName, track, centre, type, status FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    $m = db_row('SELECT memberId, fullName, track, centre, type, status, joinDate, createdAt FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     return ($m && member_is_ngg($m)) ? $m : null;
 }
 
@@ -988,4 +996,211 @@ function curriculum_file_path(string $f): string {
     if (!preg_match('/^([a-f0-9]{16,64})\.([a-z0-9]{2,5})$/', $f, $m) || !isset(CURR_FILE_TYPES[$m[2]])) return '';
     $path = curriculum_file_dir() . '/' . $f;
     return is_file($path) ? $path : '';
+}
+
+/* ══ Due dates, reminders, and the fine for a lesson left undone ══════════════
+ *
+ * A lesson in week N is due N weeks into the member's own term: the term
+ * starts on `curriculum.startDate`, or on the day they joined if that is
+ * later — a member who joins in week 6 does not owe weeks 1–5 on day one.
+ * Only lessons with checks are assessments, so only those fall due.
+ *
+ * A lesson is OUTSTANDING until it is completed or its answers are waiting on
+ * a marker (the second is ours to finish, not theirs). An outstanding lesson
+ * is reminded about from `remindBeforeDays` before it is due, every
+ * `remindEveryDays`, in one mail listing everything outstanding; once it has
+ * been overdue for `fineAfterDays` (a week) the member is fined, once per
+ * lesson, on their ledger.
+ *
+ * The fine amount is money, so changing it needs the `fees` permission as
+ * well as `curriculum`: what a lesson costs to skip is not the curriculum
+ * editor's decision alone.
+ */
+const CURR_SCHEDULE_DEFAULTS = ['enabled' => true, 'startDate' => '', 'remindBeforeDays' => 2, 'remindEveryDays' => 2,
+                                'fineAfterDays' => 7, 'fineAmount' => 1000];
+const CURR_DUE_BATCH = 60;
+
+function curriculum_schedule(): array {
+    $c = setting_get('curriculum');
+    $c = (is_array($c) ? $c : []) + CURR_SCHEDULE_DEFAULTS;
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$c['startDate'])) $c['startDate'] = '';
+    return $c;
+}
+
+/** The first day of this member's term, or '' when no term is set. */
+function curriculum_member_start(array $m, ?array $cfg = null): string {
+    $cfg = $cfg ?? curriculum_schedule();
+    $start = (string)$cfg['startDate'];
+    if ($start === '') return '';
+    $join = substr((string)(($m['joinDate'] ?? '') ?: ($m['createdAt'] ?? '')), 0, 10);
+    return preg_match('/^\d{4}-\d{2}-\d{2}$/', $join) && $join > $start ? $join : $start;
+}
+
+/** When a lesson of week `$week` falls due for a member whose term began `$start`. */
+function curriculum_due_date(string $start, int $week): string {
+    return $start === '' ? '' : gmdate('Y-m-d', (int)strtotime($start . ' 00:00:00 UTC') + max(1, $week) * 7 * 86400);
+}
+
+/** Facts about one lesson's deadline for one member: dueDate, overdueDays, fined. */
+function curriculum_due_facts(string $start, array $unit, int $checks, ?array $pr, string $today, ?array $cfg = null): array {
+    $cfg = $cfg ?? curriculum_schedule();
+    if (empty($cfg['enabled']) || $start === '' || $checks === 0) return ['dueDate' => '', 'overdueDays' => 0, 'outstanding' => false];
+    $due = curriculum_due_date($start, (int)$unit['week']);
+    $status = (string)($pr['status'] ?? '');
+    $outstanding = !in_array($status, ['completed', 'submitted'], true);
+    $over = $outstanding && $today > $due ? (int)round((strtotime($today . ' UTC') - strtotime($due . ' UTC')) / 86400) : 0;
+    return ['dueDate' => $due, 'overdueDays' => $over, 'outstanding' => $outstanding];
+}
+
+/**
+ * The reminder and fine sweep. Idempotent and bounded: a fine is keyed on the
+ * lesson (one per lesson, ever), a reminder on the member and the reminder
+ * period, so firing every fifteen minutes costs nothing.
+ */
+function curriculum_due_run(?string $today = null, int $limit = CURR_DUE_BATCH): array {
+    $cfg = curriculum_schedule();
+    $out = ['reminded' => 0, 'fined' => 0, 'members' => 0];
+    if (empty($cfg['enabled']) || $cfg['startDate'] === '') return $out + ['skipped' => 'no_term'];
+    $today = $today ?? attendance_today();
+    $units = db_all("SELECT u.unitId, u.course, u.week, u.title, (SELECT COUNT(*) FROM curriculum_checks c WHERE c.unitId = u.unitId) checks
+                     FROM curriculum_units u WHERE u.status = 'published'");
+    $units = array_values(array_filter($units, static fn($u) => (int)$u['checks'] > 0));
+    if (!$units) return $out + ['skipped' => 'no_assessments'];
+    $byCourse = [];
+    foreach ($units as $u) $byCourse[mb_strtolower((string)$u['course'])][] = $u;
+    $members = db_all("SELECT memberId, fullName, email, parentEmail, track, centre, joinDate, createdAt, type FROM members
+                       WHERE COALESCE(type,'NGG') <> 'Summer' AND status = 'active'");
+    $prog = [];
+    foreach (db_all("SELECT memberId, unitId, status FROM curriculum_progress") as $r) $prog[(string)$r['memberId']][(string)$r['unitId']] = $r;
+    $every = max(1, (int)$cfg['remindEveryDays']);
+    $period = intdiv((int)(strtotime($today . ' UTC') / 86400), $every);
+    $fineAfter = max(1, (int)$cfg['fineAfterDays']);
+    $amount = max(0, (int)$cfg['fineAmount']);
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+
+    foreach ($members as $m) {
+        if ($out['reminded'] >= $limit) break;
+        $start = curriculum_member_start($m, $cfg);
+        if ($start === '' || $start > $today) continue;
+        $mine = array_merge($byCourse[''] ?? [], $byCourse[mb_strtolower(trim((string)$m['track']))] ?? []);
+        $due = []; $finedNow = [];
+        foreach ($mine as $u) {
+            $f = curriculum_due_facts($start, $u, (int)$u['checks'], $prog[(string)$m['memberId']][(string)$u['unitId']] ?? null, $today, $cfg);
+            if (!$f['outstanding']) continue;
+            $daysLeft = (int)round((strtotime($f['dueDate'] . ' UTC') - strtotime($today . ' UTC')) / 86400);
+            if ($daysLeft > (int)$cfg['remindBeforeDays']) continue;
+            if ($f['overdueDays'] > $fineAfter && $amount > 0 && function_exists('fees_post')) {
+                $key = 'curr-overdue:' . $u['unitId'];
+                $had = db_row("SELECT id FROM member_ledger WHERE memberId = ? AND kind = 'fine' AND periodKey = ? LIMIT 1", [(string)$m['memberId'], $key]);
+                if (!$had && fees_post((string)$m['memberId'], 'fine', $amount, ['periodKey' => $key, 'method' => 'curriculum', 'by' => 'curriculum',
+                        'note' => 'Assessment overdue more than ' . $fineAfter . ' days — ' . mb_substr((string)$u['title'], 0, 120)])) {
+                    $finedNow[] = $u['title']; $out['fined']++;
+                }
+            }
+            $due[] = $u + $f + ['daysLeft' => $daysLeft];
+        }
+        if (!$due) continue;
+        $out['members']++;
+        // One reminder per member per reminder period.
+        $mkey = 'curriculum-due:' . $period;
+        if (db_row('SELECT id FROM nudge_log WHERE messageKey = ? AND recipient = ? LIMIT 1', [$mkey, (string)$m['memberId']])) continue;
+        $to = [];
+        foreach ([(string)$m['email'], (string)($m['parentEmail'] ?? '')] as $e) {
+            $e = strtolower(trim($e));
+            if ($e !== '' && filter_var($e, FILTER_VALIDATE_EMAIL) && !in_array($e, $to, true)) $to[] = $e;
+        }
+        if (!$to) continue;
+        usort($due, static fn($a, $b) => strcmp($a['dueDate'], $b['dueDate']));
+        $rows = '';
+        foreach ($due as $d) {
+            $when = $d['overdueDays'] > 0 ? '<b style="color:#b42318">' . $d['overdueDays'] . ' day' . ($d['overdueDays'] === 1 ? '' : 's') . ' overdue</b>'
+                  : ($d['daysLeft'] === 0 ? '<b>due today</b>' : 'due in ' . $d['daysLeft'] . ' day' . ($d['daysLeft'] === 1 ? '' : 's'));
+            $rows .= '<li style="margin:0 0 6px">' . esc_html((string)$d['title']) . ' — ' . $when . '</li>';
+        }
+        $first = esc_html(explode(' ', trim((string)$m['fullName']))[0] ?: 'there');
+        $over = count(array_filter($due, static fn($d) => $d['overdueDays'] > 0));
+        $subject = $over ? "{$first}, {$over} assessment" . ($over === 1 ? ' is' : 's are') . ' overdue' : "{$first}, an assessment is due soon";
+        $body = '<ul style="margin:0 0 12px;padding-left:18px">' . $rows . '</ul>'
+              . ($amount > 0 ? '<p style="margin:0 0 10px">An assessment left undone for more than ' . $fineAfter . ' days after it is due is fined ₦' . number_format($amount) . ', on your account.</p>' : '')
+              . ($finedNow ? '<p style="margin:0 0 10px"><b>Fined today:</b> ' . esc_html(implode(', ', $finedNow)) . '.</p>' : '');
+        $html = email_template(['title' => 'Assessments due', 'eyebrow' => 'NGG Club · Curriculum',
+            'intro' => 'Here is what is waiting for you in your curriculum.', 'bodyHtml' => $body,
+            'ctaLabel' => 'Open my lessons →', 'ctaUrl' => $origin . '/dashboard/learning',
+            'footNote' => 'Sent to an NGG member and the parent on their record while assessments are outstanding.']);
+        foreach ($to as $addr) @send_mail($addr, $subject, $html);
+        try { db_insert('nudge_log', ['messageKey' => $mkey, 'recipient' => (string)$m['memberId'], 'channel' => 'email', 'sentAt' => now_iso()]); } catch (\Throwable $e) {}
+        $out['reminded']++;
+    }
+    if ($out['fined']) audit('curriculum.overdue_fines', 'system', '', ['fined' => $out['fined'], 'date' => $today]);
+    return $out;
+}
+
+/** admin.curriculum.schedule — read, and with `data`, save. */
+function admin_curriculum_schedule(array $p): array {
+    if (!isset($p['data'])) {
+        $g = admin_cap_gate_any($p, ['curriculum', 'club']); if (!$g['ok']) return $g;
+        return ['ok' => true, 'schedule' => curriculum_schedule()];
+    }
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    $in = is_array($p['data']) ? $p['data'] : [];
+    $cur = curriculum_schedule();
+    $start = trim((string)($in['startDate'] ?? $cur['startDate']));
+    if ($start !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $start)) return ['ok' => false, 'error' => 'bad_date'];
+    $next = [
+        'enabled' => array_key_exists('enabled', $in) ? !empty($in['enabled']) : !empty($cur['enabled']),
+        'startDate' => $start,
+        'remindBeforeDays' => max(0, min(30, (int)($in['remindBeforeDays'] ?? $cur['remindBeforeDays']))),
+        'remindEveryDays' => max(1, min(30, (int)($in['remindEveryDays'] ?? $cur['remindEveryDays']))),
+        'fineAfterDays' => max(1, min(60, (int)($in['fineAfterDays'] ?? $cur['fineAfterDays']))),
+        'fineAmount' => max(0, min(FEES_AMOUNT_MAX, (int)($in['fineAmount'] ?? $cur['fineAmount']))),
+    ];
+    // What skipping a lesson costs is a money decision: it needs `fees` too.
+    if (($next['fineAmount'] !== (int)$cur['fineAmount'] || $next['fineAfterDays'] !== (int)$cur['fineAfterDays'])
+        && !in_array('fees', member_effective_caps($g['requester']), true)) {
+        return ['ok' => false, 'error' => 'fees_cap_required'];
+    }
+    setting_set('curriculum', $next, (string)$g['requester']['memberId']);
+    audit('curriculum.schedule', (string)$g['requester']['memberId'], '', $next, (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'schedule' => $next];
+}
+
+/**
+ * Who is behind: members with overdue assessments, most overdue first, with
+ * what they have been fined for it. Three queries whatever the roster size —
+ * units, progress, fines — never one per member.
+ */
+function curriculum_overdue_board(string $mWhere, array $mArgs, string $course = '', int $limit = 100): array {
+    $cfg = curriculum_schedule();
+    if (empty($cfg['enabled']) || $cfg['startDate'] === '') return [];
+    $today = attendance_today();
+    $units = db_all("SELECT u.unitId, u.course, u.week, u.title FROM curriculum_units u
+                     WHERE u.status = 'published' AND EXISTS (SELECT 1 FROM curriculum_checks c WHERE c.unitId = u.unitId)");
+    if (!$units) return [];
+    $byCourse = [];
+    foreach ($units as $u) $byCourse[mb_strtolower((string)$u['course'])][] = $u;
+    $members = db_all("SELECT m.memberId, m.fullName, m.displayId, m.centre, m.track, m.joinDate, m.createdAt FROM members m WHERE $mWhere"
+                      . ($course !== '' ? ' AND lower(m.track) = lower(?)' : ''), $course !== '' ? array_merge($mArgs, [$course]) : $mArgs);
+    $prog = [];
+    foreach (db_all("SELECT memberId, unitId, status FROM curriculum_progress") as $r) $prog[(string)$r['memberId']][(string)$r['unitId']] = $r;
+    $fined = [];
+    foreach (db_all("SELECT memberId, COUNT(*) n, SUM(amount) amt FROM member_ledger WHERE kind = 'fine' AND periodKey LIKE 'curr-overdue:%' AND COALESCE(voidedAt,'') = '' GROUP BY memberId") as $r)
+        $fined[(string)$r['memberId']] = ['n' => (int)$r['n'], 'amount' => (int)$r['amt']];
+    $out = [];
+    foreach ($members as $m) {
+        $start = curriculum_member_start($m, $cfg);
+        if ($start === '') continue;
+        $mine = array_merge($byCourse[''] ?? [], $byCourse[mb_strtolower(trim((string)$m['track']))] ?? []);
+        $n = 0; $worst = 0; $titles = [];
+        foreach ($mine as $u) {
+            $f = curriculum_due_facts($start, $u, 1, $prog[(string)$m['memberId']][(string)$u['unitId']] ?? null, $today, $cfg);
+            if ($f['overdueDays'] > 0) { $n++; $worst = max($worst, $f['overdueDays']); $titles[] = (string)$u['title']; }
+        }
+        if (!$n) continue;
+        $out[] = ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''),
+                  'centre' => (string)$m['centre'], 'track' => (string)$m['track'], 'overdue' => $n, 'worstDays' => $worst,
+                  'lessons' => array_slice($titles, 0, 5), 'fines' => $fined[(string)$m['memberId']]['n'] ?? 0,
+                  'finedAmount' => $fined[(string)$m['memberId']]['amount'] ?? 0];
+    }
+    usort($out, static fn($a, $b) => [$b['worstDays'], $b['overdue']] <=> [$a['worstDays'], $a['overdue']]);
+    return array_slice($out, 0, $limit);
 }

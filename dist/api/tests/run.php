@@ -23020,5 +23020,64 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-ST-1'");
 })();
 
+/* ── Curriculum deadlines: reminders, and the fine for a lesson left undone ── */
+(function () {
+    $now = now_iso();
+    $today = attendance_today();
+    $ago = fn($d) => gmdate('Y-m-d', strtotime($today . ' UTC') - $d * 86400);
+    $keepSched = setting_raw('curriculum');
+    db_insert('members', ['memberId' => 'NGG-DUE-ADM', 'fullName' => 'Due Admin', 'email' => 'due-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-DUE-SU', 'fullName' => 'Due Super', 'email' => 'due-su@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-DUE-1', 'fullName' => 'Bisi Behind', 'email' => 'bisi@example.com', 'parentEmail' => 'bisi-parent@example.com', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'member', 'track' => 'Violin', 'centre' => 'Egbeda', 'joinDate' => $ago(60), 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-DUE-2', 'fullName' => 'Nnamdi New', 'email' => 'nnamdi@example.com', 'type' => 'NGG', 'status' => 'active',
+        'role' => 'member', 'track' => 'Violin', 'centre' => 'Egbeda', 'joinDate' => $ago(3), 'createdAt' => $now, 'updatedAt' => $now]);
+    $mk = function ($week, $title, $checks = true) {
+        $id = 'CUR-DUE-' . $week . substr(md5($title), 0, 4);
+        db_insert('curriculum_units', ['unitId' => $id, 'course' => 'Violin', 'week' => $week, 'position' => $checks ? 1 : 2, 'title' => $title, 'status' => 'published', 'version' => 1, 'createdAt' => now_iso()]);
+        if ($checks) db_insert('curriculum_checks', ['checkId' => 'CHK-' . $id, 'unitId' => $id, 'kind' => 'mcq', 'prompt' => 'Q', 'options' => '["a","b"]', 'answer' => '0', 'points' => 1, 'position' => 1]);
+        return $id;
+    };
+    $w1 = $mk(1, 'Holding the bow'); $mk(1, 'Reading only', false); $w2 = $mk(2, 'Open strings');
+    $w3 = $mk(3, 'First scale'); $w4 = $mk(4, 'Bowing rhythm'); $mk(5, 'Vibrato');
+    db_insert('curriculum_progress', ['unitId' => $w2, 'memberId' => 'NGG-DUE-1', 'status' => 'completed', 'attempts' => 1, 'bestPct' => 100, 'startedAt' => $now, 'updatedAt' => $now]);
+
+    $GLOBALS['__mail_sink'] = [];
+    chk('deadlines: with no term start, nothing is due', (curriculum_due_run($today)['skipped'] ?? '') === 'no_term');
+    chk('deadlines: a club admin may set the term', !empty(backend_dispatch('admin.curriculum.schedule', ['requesterId' => 'NGG-DUE-ADM', 'data' => ['startDate' => $ago(30)]])['ok']));
+    chk('deadlines: …but changing the fine needs the fees permission', (backend_dispatch('admin.curriculum.schedule', ['requesterId' => 'NGG-DUE-ADM', 'data' => ['fineAmount' => 2500]])['error'] ?? '') === 'fees_cap_required');
+    backend_dispatch('admin.curriculum.schedule', ['requesterId' => 'NGG-DUE-SU', 'data' => ['startDate' => $ago(30), 'fineAmount' => 1000, 'fineAfterDays' => 7, 'remindBeforeDays' => 2, 'remindEveryDays' => 2]]);
+
+    $r = curriculum_due_run($today);
+    $f = array_column(db_all("SELECT periodKey, amount FROM member_ledger WHERE memberId = 'NGG-DUE-1' AND kind = 'fine'"), 'amount', 'periodKey');
+    chk('deadlines: lessons more than a week overdue are fined, once each', count($f) === 2 && isset($f['curr-overdue:' . $w1], $f['curr-overdue:' . $w3]) && (int)$f['curr-overdue:' . $w1] === 1000);
+    chk('deadlines: a lesson only two days overdue is reminded, not fined', !isset($f['curr-overdue:' . $w4]));
+    $mine = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => in_array($m['to'], ['bisi@example.com', 'bisi-parent@example.com'], true)));
+    chk('deadlines: the member and their parent get one reminder each', count($mine) === 2 && strpos($mine[0]['subject'], '3 assessments are overdue') !== false);
+    chk('deadlines: the reminder lists what is outstanding, and not what is done', strpos($mine[0]['html'], 'First scale') !== false && strpos($mine[0]['html'], 'Open strings') === false && strpos($mine[0]['html'], 'Reading only') === false);
+    chk('deadlines: a member who joined three days ago owes nothing yet', !array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'nnamdi@example.com'));
+
+    $GLOBALS['__mail_sink'] = [];
+    $r2 = curriculum_due_run($today);
+    chk('deadlines: running again fines nobody twice and does not re-send in the same period',
+        $r2['fined'] === 0 && !$GLOBALS['__mail_sink'] && (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-DUE-1' AND kind = 'fine'")['c'] === 2);
+
+    $cl = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-DUE-1']);
+    $byId = array_column($cl['units'], null, 'unitId');
+    chk('deadlines: the member sees each due date and how overdue it is', $cl['overdue'] === 3 && $byId[$w1]['dueDate'] === $ago(23) && $byId[$w1]['overdueDays'] === 23 && $byId[$w2]['overdueDays'] === 0);
+    $rep = backend_dispatch('admin.curriculum.report', ['requesterId' => 'NGG-DUE-ADM']);
+    $row = array_values(array_filter($rep['overdue'] ?? [], fn($x) => $x['memberId'] === 'NGG-DUE-1'))[0] ?? [];
+    chk('deadlines: staff see who is behind, by how much, and what they were fined', ($row['overdue'] ?? 0) === 3 && ($row['worstDays'] ?? 0) === 23 && ($row['finedAmount'] ?? 0) === 2000);
+
+    unset($GLOBALS['__mail_sink']);
+    if ($keepSched === null) db_exec("DELETE FROM settings WHERE settingKey = 'curriculum'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'curriculum'", [$keepSched]);
+    db_exec("DELETE FROM nudge_log WHERE recipient LIKE 'NGG-DUE-%'");
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-DUE-%'");
+    db_exec("DELETE FROM curriculum_progress WHERE memberId LIKE 'NGG-DUE-%'");
+    db_exec("DELETE FROM curriculum_checks WHERE unitId LIKE 'CUR-DUE-%'");
+    db_exec("DELETE FROM curriculum_units WHERE unitId LIKE 'CUR-DUE-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-DUE-%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

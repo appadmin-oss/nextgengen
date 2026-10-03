@@ -7567,3 +7567,12 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
 .fine-imp-tally { margin: 0; }
 /* A match on a name alone is the weakest; it is worth a second look. */
 .fine-imp-weak { font-weight: 700; color: var(--coral-700, #9a3412); }
+
+/* Curriculum deadlines (member dashboard). */
+.cur-overdue-note { margin: 6px 0 0; color: var(--coral-700, #9a3412); font-weight: 600; }
+.cur-due { white-space: nowrap; }
+.cur-due.is-over { color: var(--coral-700, #9a3412); font-weight: 700; }
+.cur-sched { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; background: var(--surface-2, #faf6ec); }
+.cur-sched > summary { cursor: pointer; font-weight: 700; }
+.cur-sched-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 8px 0 10px; }
+.cur-behind { margin: 0 0 18px; }

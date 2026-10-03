@@ -1019,6 +1019,8 @@
         list:    (f) => request('/admin/curriculum.php' + qs(Object.assign({ view: 'list' }, f || {}))),
         get:     (unitId) => request('/admin/curriculum.php' + qs({ view: 'get', unitId })),
         report:  (f) => request('/admin/curriculum.php' + qs(Object.assign({ view: 'report' }, f || {}))),
+        schedule: () => request('/admin/curriculum.php' + qs({ view: 'schedule' })),
+        scheduleSave: (data) => request('/admin/curriculum.php', { body: { action: 'schedule', data } }),
         upsert:  (data, allowNewCourse) => request('/admin/curriculum.php', { body: { action: 'upsert', data, allowNewCourse: !!allowNewCourse } }),
         status:  (status, unitIds) => request('/admin/curriculum.php', { body: { action: 'status', status, unitIds } }),
         importRows: (rows, opts) => request('/admin/curriculum.php', { body: Object.assign({ action: 'import', rows }, opts || {}), timeout: 180000 }),

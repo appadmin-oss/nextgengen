@@ -118,6 +118,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.curriculum.import'  => 'admin_curriculum_import',
             'admin.curriculum.ai'      => 'admin_curriculum_ai',
             'admin.curriculum.report'  => 'admin_curriculum_report',
+            'admin.curriculum.schedule' => 'admin_curriculum_schedule',
             'admin.curriculum.file'    => 'admin_curriculum_file_put',
             'member.curriculum.list'   => 'member_curriculum_list',
             'member.curriculum.unit'   => 'member_curriculum_unit',

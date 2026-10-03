@@ -257,6 +257,14 @@ function web_cron_reminders(): void {
      * recipient (see api/_lib/nudges.php), so firing every 15 minutes just
      * drains the day's message in bounded batches and then no-ops. Guarded so a
      * send fault can't take the reminders above down with it. */
+    /* Curriculum: reminders while assessments are outstanding, and the fine
+     * for one left undone past its week. Idempotent per lesson and per
+     * reminder period (domain/curriculum.php), so 15 minutes is harmless. */
+    if (function_exists('curriculum_due_run')) {
+        try { curriculum_due_run(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'curriculum.due', $e->getMessage()); }
+    }
+
     if (function_exists('nudges_run')) {
         try { nudges_run(attendance_today(), NUDGE_CRON_BATCH); }
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'nudges', $e->getMessage()); }
