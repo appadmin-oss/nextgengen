@@ -23148,6 +23148,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $sub = backend_dispatch('staff.curriculum.material', ['requesterId' => 'NGG-SUB-INS', 'unitId' => 'CUR-SUB-1', 'title' => 'Bow hold video',
         'url' => 'https://www.youtube.com/watch?v=abc', 'note' => 'Shows the thumb placement clearly']);
     chk('submissions: an NGG instructor adds a material to a lesson in their course, and it waits', !empty($sub['ok']) && $sub['material']['status'] === 'pending' && $sub['material']['kind'] === 'video' && $sub['approved'] === false);
+    chk('submissions: the curriculum editors are told it is waiting', (bool)db_row("SELECT id FROM notifications WHERE memberId = 'NGG-SUB-ADM' AND title LIKE 'A material is waiting for approval%'"));
     chk('submissions: …but not to a lesson outside their courses', (backend_dispatch('staff.curriculum.material', ['requesterId' => 'NGG-SUB-INS', 'unitId' => 'CUR-SUB-2', 'title' => 'Sticks', 'url' => 'https://example.org/s'])['error'] ?? '') === 'out_of_scope');
     chk('submissions: a link must be https', (backend_dispatch('staff.curriculum.material', ['requesterId' => 'NGG-SUB-INS', 'unitId' => 'CUR-SUB-1', 'title' => 'Bad', 'url' => 'http://example.org/x'])['error'] ?? '') === 'bad_material_url');
     chk('submissions: an interactive site is recognised as one', curriculum_material_kind('', 'https://scratch.mit.edu/projects/1') === 'interactive' && curriculum_material_kind('', '/api/member/curriculum-file.php?f=' . str_repeat('a', 40) . '.epub') === 'ebook');
@@ -23405,6 +23406,43 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM attendance WHERE studentId LIKE 'NGG-PD-%'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-PD-%'");
     db_exec("DELETE FROM centres WHERE centreId = 'CEN-PD-W'");
+})();
+
+/* ── Approval notifications: the people who decide hear, and so does the asker ── */
+(function () {
+    $now = now_iso();
+    $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Nt ' . $id, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => $role, 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-NT-CLUB', 'club_admin'); $mk('NGG-NT-ADM', 'admin'); $mk('NGG-NT-ED', 'editor'); $mk('NGG-NT-T', 'member');
+    $mk('NGG-NT-CUR', 'member', ['capsExtra' => json_encode(['curriculum'])]);
+    $inbox = fn($id) => array_column(db_all('SELECT title FROM notifications WHERE memberId = ? ORDER BY id', [$id]), 'title');
+    $mailTo = fn($addr) => array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === $addr));
+
+    $GLOBALS['__mail_sink'] = [];
+    $q = backend_dispatch('admin.club.members.bulk', ['requesterId' => 'NGG-NT-CLUB', 'action' => 'status', 'status' => 'inactive', 'memberIds' => ['NGG-NT-T']]);
+    chk('notify: a queued approval reaches an admin who can decide it — in the app and by email', ($q['error'] ?? '') === 'approval_pending'
+        && (bool)array_filter($inbox('NGG-NT-ADM'), fn($t) => strpos($t, 'Waiting for your approval') === 0) && count($mailTo('ngg-nt-adm@example.com')) === 1);
+    chk('notify: …the email links straight to Approvals', strpos((string)($mailTo('ngg-nt-adm@example.com')[0]['html'] ?? ''), '/nextadmin?s=approvals') !== false);
+    chk('notify: …not the club admin who asked, nor staff who cannot decide', !$inbox('NGG-NT-CLUB') && !$inbox('NGG-NT-ED'));
+    $GLOBALS['__mail_sink'] = [];
+    backend_dispatch('admin.approvals.decide', ['requesterId' => 'NGG-NT-ADM', 'approvalId' => $q['approvalId'], 'decision' => 'reject', 'reason' => 'Speak to the parents first']);
+    chk('notify: the club admin is told the outcome, with the reason', (bool)array_filter($inbox('NGG-NT-CLUB'), fn($t) => strpos($t, 'Not approved') === 0)
+        && strpos((string)($mailTo('ngg-nt-club@example.com')[0]['html'] ?? ''), 'Speak to the parents first') !== false);
+
+    // A member's request reaches the desk; the decision reaches the member by email too.
+    $GLOBALS['__mail_sink'] = [];
+    $rq = backend_dispatch('member.request.create', ['memberId' => 'NGG-NT-T', 'kind' => 'leave', 'subject' => 'Away for exams', 'body' => 'Two Saturdays', 'fromDate' => '2026-11-07', 'toDate' => '2026-11-14']);
+    chk('notify: a member request reaches the people who decide it', !empty($rq['ok']) && (bool)array_filter($inbox('NGG-NT-ADM'), fn($t) => strpos($t, 'A member request is waiting') === 0));
+    $GLOBALS['__mail_sink'] = [];
+    backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-NT-ADM', 'requestId' => $rq['request']['requestId'], 'approve' => true, 'decision' => 'Good luck with the exams']);
+    chk('notify: …and the member hears the decision by email as well as in the app', count($mailTo('ngg-nt-t@example.com')) === 1
+        && (bool)array_filter($inbox('NGG-NT-T'), fn($t) => strpos($t, 'approved') !== false));
+
+    unset($GLOBALS['__mail_sink']);
+    db_exec("DELETE FROM notifications WHERE memberId LIKE 'NGG-NT-%'");
+    db_exec("DELETE FROM member_requests WHERE memberId LIKE 'NGG-NT-%'");
+    db_exec("DELETE FROM admin_approvals WHERE requesterId = 'NGG-NT-CLUB'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-NT-%'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

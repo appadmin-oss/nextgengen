@@ -666,6 +666,20 @@ fines** (or Summer School → Policy).
 - Attendance rates count only scans on real programme days, so a visit on a
   day the centre does not meet never hides a missed session.
 
+### Approval notifications
+
+Nothing waits in a queue unseen any more. Each of these sends an in-app
+notification **and** an email with a link straight to the right screen:
+
+| When | Who hears |
+|---|---|
+| A club admin's action is queued for approval | every admin who can approve it (holds `people`, is not a club admin, is not the requester) |
+| That request is approved, rejected, or approved but fails to run | the club admin who asked — with the reason |
+| An instructor submits a curriculum material | everyone with the `curriculum` permission |
+| It is approved or sent back | the instructor — with the reason |
+| A member raises a request (payment, appeal, leave, ID card) | staff with `people` whose centre scope includes the member |
+| The request is decided | the member — by email as well as in the app |
+
 ---
 
 ## Applications, sign-ups and verification

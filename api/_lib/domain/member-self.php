@@ -301,6 +301,13 @@ function member_request_create(array $p): array
     audit('member.request.create', $id, $row['requestId'], ['kind' => $kind], (string)($p['ip'] ?? ''));
     /* The desk is told once, when it is raised. Not on every edit — a queue
        that pings is a queue that gets muted. */
+    // …and the people who can decide it, at the member's centre, in the app and by email.
+    $centre = (string)($m['centre'] ?? '');
+    notify_people(staff_with_cap('people', [$id], static fn($s) => admin_centre_allowed($s, $centre)), [
+        'kind' => 'approval', 'title' => 'A member request is waiting: ' . (MEMBER_REQUEST_KINDS[$kind] ?? 'Request'),
+        'intro' => (string)$m['fullName'] . ' raised a request.',
+        'body' => $row['subject'] . ($row['body'] !== '' ? "\n\n" . mb_substr((string)$row['body'], 0, 400) : '') . "\n\nDecide it in Control Room → People → Member requests.",
+        'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=requests', 'ctaLabel' => 'Review it →']);
     if (function_exists('event_emit')) {
         event_emit('member.request.raised', ['requestId' => $row['requestId'], 'memberId' => $id,
             'kind' => $kind, 'subject' => $row['subject'], 'fullName' => (string)$m['fullName']]);
@@ -403,13 +410,13 @@ function admin_request_decide(array $p): array
     /* The member is told. A queue whose decisions arrive silently is one they
        have to keep checking, which is the failure mode self-service exists to
        remove. */
-    if (function_exists('push_notification')) {
-        push_notification((string)$r['memberId'], [
-            'title' => (MEMBER_REQUEST_KINDS[(string)$r['kind']] ?? 'Request') . ' — ' . ($approve ? 'approved' : 'declined'),
-            'body' => $reason !== '' ? $reason : 'Your request has been approved.',
-            'kind' => 'request',
-        ]);
-    }
+    $mm = db_row('SELECT memberId, fullName, email FROM members WHERE memberId = ? LIMIT 1', [(string)$r['memberId']]);
+    if ($mm) notify_people([$mm], [
+        'kind' => 'request', 'eyebrow' => 'NGG · Your requests',
+        'title' => (MEMBER_REQUEST_KINDS[(string)$r['kind']] ?? 'Request') . ' — ' . ($approve ? 'approved' : 'declined'),
+        'intro' => 'Your request “' . (string)$r['subject'] . '” has been ' . ($approve ? 'approved.' : 'declined.'),
+        'body' => $reason !== '' ? $reason : ($approve ? 'Your request has been approved.' : 'Your request was declined.'),
+        'linkPage' => 'dashboard', 'ctaPath' => '/dashboard/requests', 'ctaLabel' => 'See your requests →']);
     $after = db_row('SELECT * FROM member_requests WHERE id = ? LIMIT 1', [(int)$r['id']]);
     return ['ok' => true, 'request' => member_request_public($after ?: [])];
 }

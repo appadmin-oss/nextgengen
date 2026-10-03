@@ -23358,5 +23358,54 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-MK-1'");
 })();
 
+/* ── Programme days per person: their centre's days, counted honestly ────── */
+(function () {
+    $now = now_iso();
+    $today = attendance_today();
+    $keep = []; foreach (['memberProgramme', 'policy', 'policy_member_swept_through'] as $k) $keep[$k] = setting_raw($k);
+    // The preview of a calendar that is OFF is empty — not every day in a row.
+    setting_set('memberProgramme', ['enabled' => false, 'startDate' => '', 'endDate' => '', 'weekdays' => [6], 'holidays' => [], 'extraDays' => []], 'test');
+    $st = backend_dispatch('admin.policy.settings', ['requesterId' => 'NGG-2025-0099']);
+    chk('days: an OFF calendar previews nothing, not fourteen days in a row', $st['memberCalendar']['enabled'] === false && $st['memberCalendar']['upcoming'] === [] && $st['memberCalendar']['isProgrammeDay'] === null);
+
+    // A Wednesday centre's member is not absent on the shared Saturday.
+    $ago = fn($d) => gmdate('Y-m-d', strtotime($today . ' UTC') - $d * 86400);
+    db_insert('centres', ['centreId' => 'CEN-PD-W', 'name' => 'Pd Wednesday', 'code' => 'PW', 'status' => 'active', 'meetDays' => 'Wednesdays', 'createdAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-PD-1', 'fullName' => 'Pd Wed', 'email' => 'pd1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Pd Wednesday', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-PD-2', 'fullName' => 'Pd Sat', 'email' => 'pd2@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    member_programme_settings_save(['enabled' => true, 'startDate' => $ago(30), 'endDate' => $ago(-30), 'weekdays' => [6], 'holidays' => [], 'extraDays' => []], 'test');
+    policy_settings_save(['member' => ['enabled' => true, 'checkoutRequired' => false]], 'test');
+    // The last 8 days hold exactly one Saturday and one Wednesday.
+    $sat = ''; $wed = '';
+    for ($i = 1; $i <= 7; $i++) { $d = $ago($i); $n = (int)gmdate('N', strtotime($d . ' UTC')); if ($n === 6) $sat = $d; if ($n === 3) $wed = $d; }
+    setting_set('policy_member_swept_through', $ago(8), 'system');
+    policy_sweep_member_absences($ago(1));
+    $abs = fn($id) => array_column(db_all("SELECT date FROM infractions WHERE personId = ? AND kind = 'absence'", [$id]), 'date');
+    chk('days: a Wednesday centre\'s member is absent on their Wednesday, not the shared Saturday', in_array($wed, $abs('NGG-PD-1'), true) && !in_array($sat, $abs('NGG-PD-1'), true));
+    chk('days: …while a member on the shared calendar is absent on Saturday', in_array($sat, $abs('NGG-PD-2'), true) && !in_array($wed, $abs('NGG-PD-2'), true));
+    chk('days: the desk grades the Wednesday member on Wednesday', policy_is_day_for('NGG-PD-1', $wed, 'member') === true && policy_is_day_for('NGG-PD-1', $sat, 'member') === false);
+
+    // A scan on a day the centre does not meet is not attendance.
+    db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-PD-1', 'date' => $sat, 'checkInAt' => $sat . 'T09:00:00Z', 'checkOutAt' => '', 'method' => 'test', 'createdAt' => $now]);
+    $x = companion_metrics(db_row("SELECT * FROM members WHERE memberId = 'NGG-PD-1'"));
+    chk('days: a scan on a non-meeting day does not cancel a real absence', $x['attendance']['present'] === 0 && $x['attendance']['absent'] === $x['attendance']['programmeDays']);
+
+    // The first sweep never backfills the term.
+    setting_set('policy_member_swept_through', '', 'system');
+    db_exec("DELETE FROM settings WHERE settingKey = 'policy_member_swept_through'");
+    db_exec("DELETE FROM infractions WHERE personId LIKE 'NGG-PD-%'");
+    policy_sweep_member_absences($ago(1));
+    $early = db_row("SELECT MIN(date) d FROM infractions WHERE personId LIKE 'NGG-PD-%' AND kind = 'absence'")['d'];
+    chk('days: switching enforcement on does not log absences back to the start of term', $early === null || $early >= $ago(1));
+
+    foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
+    db_exec("DELETE FROM infractions WHERE personId LIKE 'NGG-PD-%'");
+    db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-PD-%'");
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-PD-%'");
+    db_exec("DELETE FROM attendance WHERE studentId LIKE 'NGG-PD-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-PD-%'");
+    db_exec("DELETE FROM centres WHERE centreId = 'CEN-PD-W'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

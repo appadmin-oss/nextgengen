@@ -1312,6 +1312,13 @@ function staff_curriculum_material(array $p): array {
         'note' => curriculum_clean_text($p['note'] ?? '', CURR_SUBMIT_NOTE_MAX), 'status' => $self ? 'approved' : 'pending',
         'submittedBy' => $by, 'createdAt' => now_iso()] + ($self ? ['reviewedBy' => $by, 'reviewedAt' => now_iso()] : []));
     audit('curriculum.material.submit', $by, $id, ['unitId' => (string)$u['unitId'], 'title' => $title, 'self' => $self], (string)($p['ip'] ?? ''));
+    if (!$self) {
+        // The curriculum editors are told a submission is waiting.
+        notify_people(staff_with_cap('curriculum', [$by]), ['kind' => 'approval', 'title' => 'A material is waiting for approval: ' . mb_substr($title, 0, 80),
+            'intro' => ((string)($g['member']['fullName'] ?? $by)) . ' added a material to “' . (string)$u['title'] . '”.',
+            'body' => $title . "\n" . $url . ((string)($p['note'] ?? '') !== '' ? "\n\nTheir note: " . mb_substr((string)$p['note'], 0, 300) : '') . "\n\nApprove or send it back in Control Room → Curriculum → Submissions.",
+            'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=curriculum&t=submissions', 'ctaLabel' => 'Review it →']);
+    }
     $m = db_row('SELECT * FROM curriculum_materials WHERE materialId = ?', [$id]);
     return ['ok' => true, 'material' => curriculum_material_public($m, [], [(string)$u['unitId'] => (string)$u['title']]), 'approved' => $self];
 }

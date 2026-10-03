@@ -133,6 +133,13 @@ function approval_intercept(string $op, array $args): ?array {
         'summary' => mb_substr($summary, 0, 480), 'requesterId' => $rid, 'status' => 'pending', 'createdAt' => now_iso(),
     ]);
     audit('approval.requested', $rid, $id, ['op' => $op, 'summary' => $summary], (string)($args['ip'] ?? ''));
+    // Everybody who can decide it is told — in the app and by email.
+    $who = db_row('SELECT fullName FROM members WHERE memberId = ? LIMIT 1', [$rid]);
+    notify_people(staff_with_cap('people', [$rid], static fn($m) => !approval_bound($m)), [
+        'kind' => 'approval', 'title' => 'Waiting for your approval: ' . mb_substr($summary, 0, 90),
+        'intro' => ((string)($who['fullName'] ?? $rid)) . ' (club admin) asked for this, and it needs a second admin before it happens.',
+        'body' => $summary . "\n\nApprove or reject it in Control Room → People → Approvals.",
+        'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=approvals', 'ctaLabel' => 'Review it →']);
     return ['ok' => false, 'error' => 'approval_pending', 'approvalId' => $id, 'summary' => $summary,
             'message' => 'Sent to an admin for approval. Nothing changes until it is approved.'];
 }
@@ -185,6 +192,7 @@ function admin_approvals_decide(array $p): array {
     if ($decision === 'reject') {
         db_update('admin_approvals', ['status' => 'rejected', 'decidedBy' => $me, 'decidedAt' => now_iso(), 'reason' => $reason], ['approvalId' => $row['approvalId']]);
         audit('approval.rejected', $me, (string)$row['approvalId'], ['op' => $row['op'], 'requester' => $row['requesterId'], 'reason' => $reason], (string)($p['ip'] ?? ''));
+        approval_tell_requester($row, 'rejected', $reason, (string)$g['requester']['fullName']);
         return ['ok' => true, 'status' => 'rejected'];
     }
     /* Claim it first, so two approvers pressing at once run it once. */
@@ -201,7 +209,19 @@ function admin_approvals_decide(array $p): array {
     db_update('admin_approvals', ['status' => $ok ? 'approved' : 'failed', 'reason' => $reason,
         'result' => json_encode($res, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)], ['approvalId' => $row['approvalId']]);
     audit('approval.approved', $me, (string)$row['approvalId'], ['op' => $row['op'], 'requester' => $row['requesterId'], 'ran' => $ok, 'error' => $res['error'] ?? null], (string)($p['ip'] ?? ''));
+    approval_tell_requester($row, $ok ? 'approved' : 'failed', $ok ? $reason : (string)($res['error'] ?? 'refused'), (string)$g['requester']['fullName']);
     return ['ok' => true, 'status' => $ok ? 'approved' : 'failed', 'result' => $res];
+}
+
+/** The club admin who asked is told the outcome, in the app and by email. */
+function approval_tell_requester(array $row, string $outcome, string $why, string $byName): void {
+    $m = db_row('SELECT memberId, fullName, email FROM members WHERE memberId = ? LIMIT 1', [(string)$row['requesterId']]);
+    if (!$m) return;
+    $title = ['approved' => 'Approved and done', 'rejected' => 'Not approved', 'failed' => 'Approved, but it could not run'][$outcome] ?? 'Decided';
+    notify_people([$m], ['kind' => 'approval', 'title' => $title . ': ' . mb_substr((string)$row['summary'], 0, 90),
+        'intro' => $byName . ' looked at your request.',
+        'body' => (string)$row['summary'] . ($why !== '' ? "\n\n" . ($outcome === 'failed' ? 'What went wrong: ' : 'Note: ') . $why : ''),
+        'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=approvals', 'ctaLabel' => 'See it →']);
 }
 
 /** The requester changes their mind before anybody decides. */

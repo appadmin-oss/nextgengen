@@ -294,6 +294,53 @@ function push_notification(string $memberId, array $n): void {
 }
 
 /**
+ * Every staff member holding a capability — by role bundle or a per-person
+ * grant — active, optionally filtered. One query, then caps resolved in PHP.
+ *
+ * @return list<array> member rows
+ */
+function staff_with_cap(string $cap, array $excludeIds = [], ?callable $filter = null): array {
+    $rows = db_all("SELECT * FROM members WHERE status = 'active' AND ((COALESCE(role,'') NOT IN ('', 'member')) OR COALESCE(capsExtra,'') NOT IN ('', '[]'))");
+    $out = [];
+    foreach ($rows as $r) {
+        if (in_array((string)$r['memberId'], $excludeIds, true)) continue;
+        if (!in_array($cap, member_effective_caps($r), true)) continue;
+        if ($filter && !$filter($r)) continue;
+        $out[] = $r;
+    }
+    return $out;
+}
+
+/**
+ * Tell people something needs them, or what became of what they asked for:
+ * an in-app notification AND an email, each. An approval nobody hears about
+ * is an approval nobody gives — the queues existed, and the only way to find
+ * an item in one was to go and look.
+ *
+ * `$n`: kind, title, body (plain text), linkPage, and optionally ctaUrl /
+ * ctaLabel for the email. Never throws; a failed mail is not a failed action.
+ */
+function notify_people(array $members, array $n): int {
+    $sent = 0;
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    foreach ($members as $m) {
+        $mid = (string)($m['memberId'] ?? '');
+        if ($mid === '') continue;
+        try { push_notification($mid, ['kind' => $n['kind'] ?? 'approval', 'title' => mb_substr((string)($n['title'] ?? ''), 0, 160),
+            'body' => mb_substr((string)($n['body'] ?? ''), 0, 600), 'linkPage' => (string)($n['linkPage'] ?? '')]); } catch (\Throwable $e) {}
+        $email = trim((string)($m['email'] ?? ''));
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) && function_exists('send_mail') && function_exists('email_template')) {
+            $html = email_template(['title' => (string)($n['title'] ?? ''), 'eyebrow' => (string)($n['eyebrow'] ?? 'NGG Control Room'),
+                'intro' => (string)($n['intro'] ?? ''), 'bodyHtml' => '<p style="margin:0 0 10px">' . nl2br(esc_html((string)($n['body'] ?? ''))) . '</p>',
+                'ctaLabel' => (string)($n['ctaLabel'] ?? 'Open it →'), 'ctaUrl' => $origin . (string)($n['ctaPath'] ?? '/nextadmin')]);
+            @send_mail($email, (string)($n['title'] ?? 'NGG'), $html);
+        }
+        $sent++;
+    }
+    return $sent;
+}
+
+/**
  * Staff roles. The main console (editor/admin/super_admin) and the two
  * stand-alone coordinator portals are deliberately separate surfaces:
  *   editor       — content only (posts, events, missions, Anchor Journal, …)

@@ -319,6 +319,20 @@ function AdminPage({ setPage }) {
 
   // Expose for the command palette (Cmd-K deep-link to admin sub-section).
   React.useEffect(() => { window.__adminSection = setSection; return () => { window.__adminSection = null; }; }, []);
+  /* A link in an email or a notification — /nextadmin?s=approvals&t=… — opens
+     that section (and sub-tab), once, and leaves the address clean. Resolved
+     through the same aliases as every other jump; a section this tier cannot
+     open falls back to home, as any other. */
+  React.useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const s0 = q.get("s");
+      if (s0 && /^[a-z0-9-]{2,40}$/.test(s0)) {
+        setSection(s0, (q.get("t") || "").replace(/[^a-z0-9-]/g, "").slice(0, 40));
+        window.history.replaceState(window.history.state, "", window.location.pathname);
+      }
+    } catch (_) {}
+  }, [setSection]);
 
   /* ── The Analyst pane ─────────────────────────────────────────────────────
      A third grid TRACK, not an overlay: the page reflows beside it rather than
