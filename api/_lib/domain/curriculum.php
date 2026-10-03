@@ -40,7 +40,18 @@ const CURR_STATUSES       = ['draft', 'published', 'retired'];
 const CURR_MATERIAL_KINDS = ['pdf', 'slides', 'doc', 'sheet', 'video', 'audio', 'image', 'ebook', 'code', 'archive', 'interactive', 'link'];
 /** A material's life: an editor's goes straight to approved; an instructor's waits. */
 const CURR_MATERIAL_STATUSES = ['approved', 'pending', 'rejected'];
-const CURR_CHECK_KINDS    = ['mcq', 'short', 'task'];
+const CURR_CHECK_KINDS    = ['mcq', 'short', 'task', 'essay', 'reflection', 'project', 'code'];
+/* How the AI marks each open kind. Only `short` has one right answer; the rest
+ * are judged against the rubric, and a reflection is never marked for having
+ * the "right" opinion. */
+const CURR_MARKING_GUIDE = [
+    'short'      => 'A short answer with a model answer. Award points for the ideas in the model answer, in any wording; spelling and grammar never cost marks.',
+    'task'       => 'A practical task the learner reports on. Judge whether their account shows they did what was asked, against the rubric.',
+    'essay'      => 'Extended writing with no single right answer. Judge against the rubric: a clear point, reasons or evidence, organisation, and answering the question asked. Reward a well-argued view you disagree with.',
+    'reflection' => 'A personal reflection. There is no right answer and no opinion is marked down. Judge honesty, specific detail from their own experience, and a link to the lesson. Never mark down anything personal they disclose.',
+    'project'    => 'A description of a project they made (perhaps with a link you cannot open). Judge the description against the rubric criteria: what they built, how, what they learned. If they give only a link and no description, you cannot judge it.',
+    'code'       => 'Code they wrote. Trace it mentally: does it do what the prompt asks, is the logic sound, is it readable. Small syntax slips cost less than wrong logic.',
+];
 const CURR_IMPORT_MAX     = 1000;
 const CURR_BULK_MAX       = 500;
 const CURR_MAX_MATERIALS  = 20;
@@ -363,7 +374,7 @@ function admin_curriculum_list(array $p): array {
     ], $units);
     return ['ok' => true, 'units' => $out, 'courses' => curriculum_courses(),
             'canWrite' => in_array('curriculum', member_effective_caps($g['requester']), true),
-            'aiEnabled' => function_exists('ai_enabled') && ai_enabled()];
+            'aiEnabled' => function_exists('ai_enabled') && ai_enabled(), 'aiMarking' => function_exists('ai_enabled') && ai_enabled('marking')];
 }
 
 function admin_curriculum_get(array $p): array {
@@ -752,14 +763,26 @@ function curriculum_progress_public(?array $pr, array $b): ?array {
  */
 function curriculum_ai_mark(array $check, string $answer): ?array {
     if (!function_exists('ai_classify') || trim($answer) === '') return null;
+    $kind = isset(CURR_MARKING_GUIDE[$check['kind']]) ? (string)$check['kind'] : 'short';
+    /* Safeguarding before marking: a reflection that discloses harm is not a
+       thing to score. It is held for a person, and flagged. */
+    if (function_exists('coach_is_crisis') && coach_is_crisis($answer)) return ['hold' => true, 'flag' => 'safeguarding'];
     $pts = (int)$check['points'];
-    $r = ai_classify("You mark a 10–17 year old's short answer fairly and kindly. Award whole points from 0 to $pts against "
-        . "the model answer and rubric; spelling does not cost marks. Return JSON {points:int, feedback:string (one or two "
-        . "encouraging sentences saying what was right and what to add)}.",
-        "Question: {$check['prompt']}\nModel answer: {$check['answer']}\nRubric: {$check['rubric']}\nMaximum points: $pts\n\nLearner's answer:\n" . mb_substr($answer, 0, 3000),
-        300, 'default');
+    $r = ai_classify("You are an experienced, fair and kind teacher marking work by a 10–17 year old in the NGG Club. "
+        . CURR_MARKING_GUIDE[$kind] . " Award whole points from 0 to $pts. Give one or two encouraging sentences: what was good, and the one "
+        . "thing that would earn more. Also say how confident you are that another good teacher would give the same mark (0 to 1). "
+        . "Return JSON {points:int, feedback:string, confidence:number}.",
+        "Kind of question: $kind\nQuestion: {$check['prompt']}\n"
+        . (trim((string)$check['answer']) !== '' ? ($kind === 'short' ? 'Model answer: ' : 'What a strong answer includes: ') . $check['answer'] . "\n" : '')
+        . (trim((string)$check['rubric']) !== '' ? "Rubric: {$check['rubric']}\n" : '')
+        . "Maximum points: $pts\n\nLearner's answer:\n" . mb_substr($answer, 0, 6000),
+        400, 'marking');
     if (empty($r['ok']) || !isset($r['data']['points'])) return null;
-    return ['points' => max(0, min($pts, (int)$r['data']['points'])), 'feedback' => curriculum_clean_text($r['data']['feedback'] ?? '', 600), 'by' => 'ai'];
+    // An unsure mark is not a mark: a person decides it.
+    $conf = isset($r['data']['confidence']) ? (float)$r['data']['confidence'] : 1.0;
+    if ($conf < 0.6) return null;
+    return ['points' => max(0, min($pts, (int)$r['data']['points'])), 'feedback' => curriculum_clean_text($r['data']['feedback'] ?? '', 600),
+            'by' => 'ai', 'confidence' => round($conf, 2)];
 }
 
 /** Recompute a progress row's totals from its per-check marks. */
@@ -796,8 +819,14 @@ function member_curriculum_submit(array $p): array {
             $clean[$cid] = $text;
             if ($text === '') { $marks[$cid] = ['points' => 0, 'by' => 'auto', 'feedback' => 'No answer given.']; continue; }
             $ai = curriculum_ai_mark($c, $text);
+            if ($ai && !empty($ai['hold'])) {
+                // Held for a person, unmarked, with the reason the instructor sees.
+                $marks[$cid] = ['flag' => $ai['flag']];
+                audit('curriculum.safeguarding', (string)$m['memberId'], $id, ['checkId' => $cid]);
+                continue;
+            }
             if ($ai) { $marks[$cid] = $ai; if ($ai['feedback'] !== '') $feedback[] = $ai['feedback']; }
-            // No AI: left unmarked, so the total waits for an instructor.
+            // No capable AI, or it was unsure: left unmarked for an instructor.
         }
     }
     $t = curriculum_progress_total($b['checks'], $marks, (int)$b['unit']['passMark']);
@@ -870,7 +899,8 @@ function staff_curriculum(array $p): array {
                 $open = [];
                 foreach ($b['checks'] as $c) {
                     if (isset($marks[$c['checkId']]['points'])) continue;
-                    $open[] = ['checkId' => (string)$c['checkId'], 'prompt' => (string)$c['prompt'], 'points' => (int)$c['points'],
+                    $open[] = ['checkId' => (string)$c['checkId'], 'kind' => (string)$c['kind'], 'flag' => (string)($marks[$c['checkId']]['flag'] ?? ''),
+                               'prompt' => (string)$c['prompt'], 'points' => (int)$c['points'],
                                'modelAnswer' => (string)$c['answer'], 'rubric' => (string)$c['rubric'], 'answer' => (string)($answers[$c['checkId']] ?? '')];
                 }
                 $pending[] = ['progressId' => (int)$r['id'], 'unitId' => (string)$r['unitId'], 'unitTitle' => (string)$b['unit']['title'],

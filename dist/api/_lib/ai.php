@@ -90,6 +90,9 @@ function ai_profile_candidates(string $profile = 'default'): array {
         if (is_array($prof)) { $push($prof); $push($prof['fallback'] ?? null); }
     }
     foreach (ai_default_candidates() as $p) $out[] = $p;
+    if (in_array($profile, AI_CAPABLE_ONLY_PROFILES, true)) {
+        $out = array_values(array_filter($out, static fn($p) => ai_model_is_capable((string)$p['model'])));
+    }
     // De-dup identical provider+key+model entries while preserving order.
     $seen = []; $uniq = [];
     foreach ($out as $p) {
@@ -98,6 +101,29 @@ function ai_profile_candidates(string $profile = 'default'): array {
         $seen[$k] = true; $uniq[] = $p;
     }
     return $uniq;
+}
+
+/* Profiles that may only run on a CAPABLE model. Marking a child's open answer
+ * is a judgement that lands on their record, so it is never handed to a small,
+ * fast model — and that includes every provider's default here (an 8B Llama,
+ * Flash, Haiku). The profile, its fallback and the default block are all
+ * considered, filtered to capable models; with none, the profile is off and
+ * the answer waits for a person. */
+const AI_CAPABLE_ONLY_PROFILES = ['marking'];
+/** Name parts that mark a small, fast tier — matched as whole tokens, so
+ *  "gemini" is not "mini" and "70b" is not "7b". */
+const AI_LIGHT_MODEL_TOKENS = ['haiku', 'flash', 'gemma', 'instant', 'nano', 'tiny', 'mini', 'lite', 'small', 'micro'];
+
+/** Is this model one we trust with a judgement? Small and fast tiers are not,
+ *  nor any open model under 30B parameters. */
+function ai_model_is_capable(string $model): bool {
+    $m = strtolower(trim($model));
+    if ($m === '') return false;
+    foreach (preg_split('/[\/\-_.:@\s]+/', $m) as $tok) {
+        if (in_array($tok, AI_LIGHT_MODEL_TOKENS, true)) return false;
+        if (preg_match('/^(\d+(?:\.\d+)?)b$/', $tok, $x) && (float)$x[1] < 30) return false;
+    }
+    return true;
 }
 
 function ai_enabled(string $profile = 'default'): bool {
@@ -355,6 +381,7 @@ const AI_PROFILE_USES = [
     'coach'             => ['The Anchor Journal coaching replies.', AI_RULES_FALLBACK],
     'analysis'          => ['Narrative summaries on the analytics boards.', AI_RULES_FALLBACK],
     'photo'             => ['Checks uploaded headshots are usable.', AI_RULES_FALLBACK],
+    'marking'           => ['Marks open curriculum answers (written, essay, reflection, project, code) — capable models only; otherwise an instructor marks.', 'Left for the instructor to mark.'],
     // The Analyst (Level 7). Listed so an operator seeing "the analyst is
     // unavailable" on the board can tell here whether a key is missing or a
     // provider is rejecting it — none of these was visible before.

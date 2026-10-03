@@ -2611,6 +2611,20 @@ function CurriculumLessons() {
 }
 
 const CUR_EMPTY_CHECK = { kind: "mcq", prompt: "", options: ["", ""], answer: "0", rubric: "", points: 1 };
+/* The kinds of question, as CURR_CHECK_KINDS has them. Only multiple choice is
+   marked by the computer; the rest are marked by a capable AI model against
+   the rubric when one is configured for marking, and by the instructor if not
+   — or whenever the AI is unsure, or the answer raises a safeguarding worry. */
+const CUR_CHECK_KIND_OPTS = [["mcq", "Multiple choice"], ["short", "Written answer"], ["essay", "Essay / extended writing"],
+  ["reflection", "Reflection"], ["project", "Project write-up"], ["code", "Code"], ["task", "Practical task"]];
+const CUR_MARK_HINT = {
+  short: "Marked against the model answer — any wording that has the ideas earns the points.",
+  essay: "No single right answer: marked against the rubric (a clear point, reasons, evidence).",
+  reflection: "Marked for honesty and specific detail, never for the opinion. A worrying answer is held for the instructor and flagged.",
+  project: "Marked from the learner's description against the rubric; a bare link waits for the instructor.",
+  code: "Marked on whether it does what was asked and the logic is sound.",
+  task: "Marked from the learner's account of what they did, against the rubric.",
+};
 
 function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved }) {
   const isNew = !unit.unitId;
@@ -2728,7 +2742,7 @@ function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved
             <div className="cur-ed-row">
               <span className="cur-check-n">{i + 1}.</span>
               <select className="admin-select" value={c.kind} onChange={e => setCheck(i, "kind", e.target.value)} aria-label="Question type" disabled={ro}>
-                <option value="mcq">Multiple choice</option><option value="short">Written answer</option><option value="task">Task (marked by instructor)</option>
+                {CUR_CHECK_KIND_OPTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
               </select>
               <input className="admin-input cur-ed-pts" type="number" min={1} max={20} value={c.points} onChange={e => setCheck(i, "points", e.target.value)} aria-label="Points" disabled={ro}/>
               {c.source === "ai" && <span className="chip chip-gold" title="Written by the AI — read it before publishing">AI</span>}
@@ -2749,8 +2763,10 @@ function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved
               </div>
             ) : (
               <div className="cur-ed-grid2">
-                <textarea className="admin-input" rows={2} value={c.answer} onChange={e => setCheck(i, "answer", e.target.value)} placeholder="A model answer (what full marks looks like)" aria-label="Model answer" disabled={ro}/>
-                <textarea className="admin-input" rows={2} value={c.rubric} onChange={e => setCheck(i, "rubric", e.target.value)} placeholder="Rubric — what a marker should look for" aria-label="Rubric" disabled={ro}/>
+                <textarea className="admin-input" rows={2} value={c.answer} onChange={e => setCheck(i, "answer", e.target.value)}
+                  placeholder={c.kind === "short" ? "A model answer (what full marks looks like)" : c.kind === "reflection" ? "What a thoughtful reflection would touch on (optional — there is no right answer)" : "What a strong answer includes"} aria-label="Model answer" disabled={ro}/>
+                <textarea className="admin-input" rows={2} value={c.rubric} onChange={e => setCheck(i, "rubric", e.target.value)} placeholder="Rubric — what a marker should look for, and how the points are earned" aria-label="Rubric" disabled={ro}/>
+                <p className="admin-cell-sub cur-ed-markhint">{CUR_MARK_HINT[c.kind] || ""}</p>
               </div>
             )}
           </div>

@@ -506,8 +506,15 @@ line starting `- ` makes a list, `## ` makes a heading), **materials** and
 - **Materials** are links (https only) or files uploaded to this server: PDF,
   slides, documents, sheets, images, audio or video, up to **25 MB** each.
   Uploaded files open only for people who are signed in.
-- **Checks** are *multiple choice* (marked on the spot), *short answer* or
-  *task* (marked by AI when it is set up, otherwise by the instructor). Give a
+- **Checks** are *multiple choice* (marked on the spot) or open: *written
+  answer*, *essay*, *reflection*, *project write-up*, *code* or *practical
+  task*. Open answers are marked by AI **only on a capable model** (set the
+  `marking` AI profile — small, fast models such as Haiku, Flash or Mini are
+  refused), each kind against its own guidance and your rubric: an essay on
+  its argument, a reflection on honesty and detail and never on its opinion,
+  code on whether it works. An answer the AI is unsure about waits for the
+  instructor, and a reflection that may describe harm is never marked — it is
+  held and flagged for the instructor as a safeguarding matter. Give a
   written check a **model answer** and a **rubric** — both are shown to the
   marker, never to the member.
 - **Pass mark** (default 60%) decides when a lesson counts as **Done**.

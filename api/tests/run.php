@@ -23276,5 +23276,52 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-CMP-%' OR memberId = 'SUM-CMP-1'");
 })();
 
+/* ── AI marking: by the kind of question, on capable models only ─────────── */
+(function () {
+    $keepAi = $GLOBALS['CONFIG']['ai'] ?? null;
+    $GLOBALS['CONFIG']['ai'] = ['provider' => 'anthropic', 'anthropic_api_key' => 'k', 'anthropic_model' => 'claude-haiku-4-5-20251001'];
+    chk('marking: a small model is never used to mark', ai_enabled('default') && !ai_enabled('marking'));
+    $GLOBALS['CONFIG']['ai']['profiles']['marking'] = ['provider' => 'anthropic', 'api_key' => 'k', 'model' => 'claude-sonnet-4-5-20250929'];
+    chk('marking: a capable model configured for marking is', ai_enabled('marking') && ai_profile_candidates('marking')[0]['model'] === 'claude-sonnet-4-5-20250929'
+        && !array_filter(ai_profile_candidates('marking'), fn($c) => strpos($c['model'], 'haiku') !== false));
+    chk('marking: model names are judged by whole words', ai_model_is_capable('gemini-2.5-pro') && !ai_model_is_capable('gemini-2.0-flash')
+        && ai_model_is_capable('meta-llama/llama-3.1-70b-instruct') && !ai_model_is_capable('qwen/qwen-2.5-7b-instruct') && !ai_model_is_capable('openai/gpt-4o-mini'));
+
+    $calls = [];
+    $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) use (&$calls) {
+        $calls[] = ['profile' => $profile, 'system' => $system, 'input' => $turns[0]['text']];
+        $conf = strpos($turns[0]['text'], 'UNSURE') !== false ? 0.3 : 0.9;
+        return ['ok' => true, 'provider' => 'mock', 'text' => json_encode(['points' => 3, 'feedback' => 'Clear point, good example.', 'confidence' => $conf])];
+    };
+    $essay = ['kind' => 'essay', 'prompt' => 'Should every school teach coding?', 'answer' => 'A clear position with two reasons', 'rubric' => 'Position, reasons, example', 'points' => 4];
+    $r = curriculum_ai_mark($essay, 'Yes, because coding teaches problem solving and it opens jobs. For example my cousin...');
+    chk('marking: an essay is marked against its rubric, on the marking profile', $r['points'] === 3 && $r['by'] === 'ai' && $calls[0]['profile'] === 'marking'
+        && strpos($calls[0]['system'], 'no single right answer') !== false && strpos($calls[0]['input'], 'What a strong answer includes') !== false);
+    curriculum_ai_mark(['kind' => 'reflection', 'prompt' => 'What did you learn about yourself?', 'answer' => '', 'rubric' => '', 'points' => 2], 'That I give up too fast when it is hard.');
+    chk('marking: a reflection is never marked for its opinion', strpos($calls[1]['system'], 'no opinion is marked down') !== false);
+    chk('marking: an unsure mark is left for a person', curriculum_ai_mark($essay, 'UNSURE text that rambles') === null);
+    $held = curriculum_ai_mark(['kind' => 'reflection', 'prompt' => 'How was your week?', 'answer' => '', 'rubric' => '', 'points' => 2], 'Honestly I want to die, nobody listens');
+    chk('marking: a reflection that discloses harm is held and flagged, never scored', !empty($held['hold']) && $held['flag'] === 'safeguarding' && count($calls) === 3);
+
+    // Through a member's submission: a written check marked by type.
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-MK-1', 'fullName' => 'Mark Learner', 'email' => 'mk1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'track' => 'Debate', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('curriculum_units', ['unitId' => 'CUR-MK-1', 'course' => 'Debate', 'week' => 1, 'position' => 1, 'title' => 'Making a case', 'status' => 'published', 'version' => 1, 'passMark' => 50, 'createdAt' => $now]);
+    db_insert('curriculum_checks', ['checkId' => 'CHK-MK0001', 'unitId' => 'CUR-MK-1', 'kind' => 'essay', 'prompt' => 'Make a case for longer breaks.', 'answer' => '', 'rubric' => 'Claim, reason, example', 'points' => 4, 'position' => 1]);
+    db_insert('curriculum_checks', ['checkId' => 'CHK-MK0002', 'unitId' => 'CUR-MK-1', 'kind' => 'reflection', 'prompt' => 'How did arguing feel?', 'answer' => '', 'rubric' => '', 'points' => 2, 'position' => 2]);
+    $sub = backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-MK-1', 'unitId' => 'CUR-MK-1', 'answers' => ['CHK-MK0001' => 'Longer breaks help focus because...', 'CHK-MK0002' => 'I am not safe at home']]);
+    $pr = db_row("SELECT marks, pending FROM curriculum_progress WHERE memberId = 'NGG-MK-1'");
+    $mk = json_decode($pr['marks'], true);
+    chk('marking: a member\'s essay is AI-marked; the worrying reflection waits, flagged', ($mk['CHK-MK0001']['by'] ?? '') === 'ai' && ($mk['CHK-MK0002']['flag'] ?? '') === 'safeguarding' && (int)$pr['pending'] === 1
+        && (bool)db_row("SELECT id FROM audit_log WHERE event = 'curriculum.safeguarding' AND actorId = 'NGG-MK-1'"));
+    unset($GLOBALS['__ai_mock']);
+    $GLOBALS['CONFIG']['ai'] = $keepAi;
+    if ($keepAi === null) unset($GLOBALS['CONFIG']['ai']);
+    db_exec("DELETE FROM curriculum_progress WHERE memberId = 'NGG-MK-1'");
+    db_exec("DELETE FROM curriculum_checks WHERE unitId = 'CUR-MK-1'");
+    db_exec("DELETE FROM curriculum_units WHERE unitId = 'CUR-MK-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-MK-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

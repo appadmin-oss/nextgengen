@@ -2481,8 +2481,11 @@ function DashCurriculumLesson({ unitId, onBack }) {
                         <input type="radio" name={c.checkId} checked={answers[c.checkId] === k} onChange={() => setAnswers(a => ({ ...a, [c.checkId]: k }))}/>
                         <span>{o}</span>
                       </label>))
-                  : <textarea className="cur-answer" rows={3} value={answers[c.checkId] || ""} aria-label={"Answer to question " + (i + 1)}
-                      onChange={e => setAnswers(a => ({ ...a, [c.checkId]: e.target.value }))} placeholder="Your answer, in your own words"/>}
+                  : <textarea className={"cur-answer" + (c.kind === "code" ? " is-code" : "")} rows={["essay", "reflection", "project", "code"].includes(c.kind) ? 8 : 3}
+                      value={answers[c.checkId] || ""} aria-label={"Answer to question " + (i + 1)} spellCheck={c.kind !== "code"}
+                      onChange={e => setAnswers(a => ({ ...a, [c.checkId]: e.target.value }))}
+                      placeholder={{ essay: "Make your case — a clear point, your reasons, an example", reflection: "Be honest and specific — there is no wrong answer",
+                        project: "What you made, how you made it, and what you learned (add a link if you have one)", code: "Paste or type your code" }[c.kind] || "Your answer, in your own words"}/>}
                 {mk && mk.feedback && <p className="cur-feedback"><b>{mk.by === "ai" ? "Feedback (AI)" : mk.by === "auto" ? "Note" : "Your instructor"}:</b> {mk.feedback}</p>}
                 {rv && c.kind !== "mcq" && rv.answer && <p className="cur-model"><b>A strong answer:</b> {rv.answer}</p>}
               </fieldset>

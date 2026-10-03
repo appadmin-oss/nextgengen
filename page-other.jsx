@@ -7820,6 +7820,7 @@ function StaffCurriculumPanel() {
               <div className="cur-staff-card-h"><b>{item.memberName}</b> · {item.unitTitle}</div>
               {item.checks.map(c => (
                 <div key={c.checkId} className="cur-mark">
+                  {c.flag === "safeguarding" && <p className="cur-mark-flag" role="alert">Safeguarding: this answer may describe harm or risk, so it was not marked automatically. Read it, and follow the safeguarding procedure before marking.</p>}
                   <p className="cur-mark-q">{c.prompt} <span className="cur-check-pts">{c.points} pt{c.points === 1 ? "" : "s"}</span></p>
                   <blockquote className="cur-mark-a">{c.answer || "(no answer)"}</blockquote>
                   {(c.modelAnswer || c.rubric) && <p className="cur-mark-model">Model: {c.modelAnswer}{c.rubric ? " · Rubric: " + c.rubric : ""}</p>}
