@@ -3881,12 +3881,15 @@ function qrSvg(text, cellSize = 4, margin = 2) {
   catch (_) { return ""; }
 }
 
-// Pull a SUMQR token out of whatever a scanner/camera yields (raw token, a
-// /q/<token> URL, or a full profile URL).
+// Pull a card code out of whatever a scanner/camera yields (raw token, a
+// /q/<token> URL, a full profile URL, or an older member card's ?m=<id>).
+// Summer, volunteer AND member codes — the server tells them apart.
 function extractToken(raw) {
   const s = String(raw || "").trim();
-  const m = s.match(/SUMQR-[A-Z0-9]+/i);
+  const m = s.match(/(?:SUMQR|VOLQR|MEMQR)-[A-Z0-9]+/i);
   if (m) return m[0].toUpperCase();
+  const qm = s.match(/[?&]m=([^&#\s]+)/i);
+  if (qm) { try { return decodeURIComponent(qm[1]).toUpperCase(); } catch (_) { return qm[1].toUpperCase(); } }
   const parts = s.replace(/[?#].*$/, "").split("/").filter(Boolean);
   return (parts[parts.length - 1] || s).toUpperCase();
 }
@@ -14488,7 +14491,10 @@ function SummerKiosk({ onCheckin }) {
         const d = e.data || {};
         setResult({ refused: code, student: d.student, message: d.message, compliance: d.state }); buzz(true);
       } else {
-        const map = { qr_unassigned: "That card isn't linked to a student yet.", student_not_found: "Student not found.", forbidden: "Your session expired — sign in again." };
+        const map = { qr_unassigned: "That card isn't linked to anyone yet.", student_not_found: "Nobody found for that code.",
+          card_void: "That member card was replaced — ask for the new one, or type the member ID.",
+          member_inactive: (e.data && e.data.message) || "That membership is not active.",
+          forbidden: "Not permitted — your session expired, or a member's check-in needs the Club permission." };
         setResult({ error: map[code] || code }); buzz(true);
       }
     }

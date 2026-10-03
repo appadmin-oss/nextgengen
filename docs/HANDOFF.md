@@ -377,3 +377,19 @@ deleted, new sayings are appended. Hausa riddle 3's answer is seeded as
   drawer's CSV write-back, reads the intake year from the ID for a row with
   none (`member_id_year`; declared formats may carry `yearAt`), and names a
   probable typo (`member_id_suggest`).
+
+## One check-in for everyone (2026-10)
+
+There was no check-in for NGG members inside NGG. Every desk (gate link, Summer
+kiosk, profile "Mark present") wrote through `summer_checkin()`, and that only
+resolved Summer/volunteer `qr_codes`, so a member's scan was always
+`qr_unassigned`. Members got attendance only through the CACENTRE gate's
+webhook. `domain/checkin.php` adds `checkin_member_resolve()`, which takes a
+MEMQR card, a printed card by NGG's formats, a typed displayId or memberId, a
+`/q/` URL or the old `?m=` link. `summer_checkin`/`summer_checkout` fall back
+to it when `qr_codes` misses. The member path writes the same `attendance`
+table, applies the member policy (gate refusal, punctuality on member days,
+`policy_on_checkin`), and requires `club` unless the call comes through a gate
+link. The Card Studio's member card was also handing a URL to an `<img>`, so its
+QR printed blank; it now renders a data URL. The member QR payload leads with
+the secure MEMQR code.

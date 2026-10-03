@@ -1326,7 +1326,7 @@ function ProfileCheckin({ token, name }) {
   const go = async () => {
     if (busy) return; setBusy(true);
     try { const r = await NGGApi.admin.summer.checkin(token, "profile", "profile-scan"); setRes({ ok: true, already: !!r.already }); }
-    catch (e) { setRes({ err: (e.code === "student_not_found" ? "Not assigned to anyone yet." : e.code === "qr_unassigned" ? "This card isn't assigned yet." : e.code === "id_expired" ? ("This ID expired on " + ((e.data && e.data.expiredOn) || "an earlier date") + " — the coordinator needs to reissue it.") : "Couldn't mark present — try again.") }); }
+    catch (e) { setRes({ err: (e.code === "student_not_found" ? "Not assigned to anyone yet." : e.code === "qr_unassigned" ? "This card isn't assigned yet." : e.code === "card_void" ? "This card has been replaced." : e.code === "member_inactive" ? "This membership is not active." : e.code === "forbidden" ? "You need the Club permission to mark a member present." : e.code === "id_expired" ? ("This ID expired on " + ((e.data && e.data.expiredOn) || "an earlier date") + " — the coordinator needs to reissue it.") : "Couldn't mark present — try again.") }); }
     finally { setBusy(false); }
   };
   return (
@@ -4617,6 +4617,8 @@ function ReshootPage() {
 // (…/q/<token> or …/s/<handle>) or a bare printed code.
 function extractCheckinToken(s) {
   s = String(s || "").trim();
+  const qm = s.match(/[?&]m=([^&#\s]+)/i);
+  if (qm) { try { return decodeURIComponent(qm[1]).toUpperCase(); } catch (_) { return qm[1].toUpperCase(); } }
   const m = s.match(/\/(?:q|s)\/([^/?#\s]+)/i);
   if (m) { try { return decodeURIComponent(m[1]).toUpperCase(); } catch (_) { return m[1].toUpperCase(); } }
   return s.replace(/^https?:\/\/[^/]+\/?/i, "").toUpperCase();
@@ -4919,7 +4921,9 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
            front of them is not checked in, and some of these mean they must not
            be let in at all. It gets the loudest treatment and stays up longest. */
         const why = c === "qr_unassigned" ? "That card isn't assigned to anyone yet."
-          : c === "student_not_found" ? "No student or volunteer found for that code."
+          : c === "student_not_found" ? "Nobody found for that code — participant, volunteer or member."
+          : c === "card_void" ? "That member card was replaced. Ask for the new one, or type the member ID."
+          : c === "member_inactive" ? ((e2.data && e2.data.message) || "That membership is not active.") + " Refer to the coordinator."
           : c === "id_expired" ? "That ID has expired — send them to the coordinator."
           : c === "policy_suspended" ? "Suspended. Do NOT admit — refer to the coordinator."
           : c === "policy_evicted" ? "Association terminated. Do NOT admit."
@@ -4968,7 +4972,7 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
         ? <button type="button" onClick={() => setTyped(true)} style={{ background: "none", border: "none", color: "rgba(230,238,255,.8)", textDecoration: "underline", cursor: "pointer", fontSize: 13, alignSelf: "center" }}>Camera not working? Enter the code</button>
         : (
           <form onSubmit={e => { e.preventDefault(); mark(code); setCode(""); }} style={{ display: "flex", gap: 8 }}>
-            <input style={{ ...inputS, flex: 1, fontFamily: "var(--font-mono, monospace)", letterSpacing: ".08em" }} placeholder="Code from the ID card (SUMQR / VOLQR)" value={code} onChange={e => setCode(e.target.value.toUpperCase())} autoFocus/>
+            <input style={{ ...inputS, flex: 1, fontFamily: "var(--font-mono, monospace)", letterSpacing: ".08em" }} placeholder="Code from the ID card, or a member ID (SUMQR / VOLQR / MEMQR / 026-014)" value={code} onChange={e => setCode(e.target.value.toUpperCase())} autoFocus/>
             <button disabled={busy || !code.trim()} style={{ padding: "0 20px", borderRadius: 11, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "…" : "✓"}</button>
           </form>
         )}
@@ -5604,13 +5608,23 @@ function MemberCardStudioFront({ card, S, H }) {
   const pxH = hMm * MM_PX;
   // Fill the height the studio has allotted, exactly as its own fronts do.
   const k = (H * (S || 1)) / pxH;
+  /* NggcMemberCard draws qrUrl as an IMAGE. This used to hand it the profile
+     URL itself, so the studio's member cards printed with a broken QR. The
+     payload is the same one every other member card encodes. */
+  const payload = card && card.memberId ? _ngMemberQrPayload(card) : "";
+  const [qrUrl, setQrUrl] = React.useState("");
+  React.useEffect(() => {
+    let live = true;
+    if (!payload) { setQrUrl(""); return undefined; }
+    _ngQrDataUrl(payload).then(u => { if (live) setQrUrl(u || ""); });
+    return () => { live = false; };
+  }, [payload]);
   return (
     <div style={{ width: wMm * MM_PX * k, height: pxH * k, overflow: "hidden", position: "relative" }}>
       <div style={{ transform: "scale(" + k + ")", transformOrigin: "top left",
         width: wMm * MM_PX, height: pxH }}>
         {window.NggcMemberCard
-          ? <window.NggcMemberCard member={card} size="wallet" qrUrl={card && card.token
-              ? (window.location.origin || "") + "/q/" + card.token : ""}/>
+          ? <window.NggcMemberCard member={card} size="wallet" qrUrl={qrUrl}/>
           : null}
       </div>
     </div>

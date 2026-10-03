@@ -22454,6 +22454,18 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $sync = backend_dispatch('admin.members.ngvPortalSync', ['requesterId' => $ADM]);
     chk('ngv portal: "Send NGVs to Afrovanguard" sends everybody already promoted', !empty($sync['ok']) && $sync['announced'] >= 1 && $sync['delivered'] === $sync['announced']);
 
+    /* Demoted here ⇒ told there. It used to be a member.demoted.ngv event no
+       Afrovanguard destination subscribed to, so the vanguard stayed active
+       there — fees accruing, their card still opening the gate. */
+    $calls = [];
+    $GLOBALS['__bus_http_mock'] = function ($url, $body, $headers) use (&$calls) { $calls[] = [$url, $body, $headers]; return ['ok' => true, 'body' => '{"ok":true}']; };
+    $dm = backend_dispatch('admin.members.demoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-PORT-1']);
+    $rv = array_values(array_filter($calls, fn($c) => str_contains((string)$c[1], 'private.ngv.revoked')));
+    $rb = json_decode($rv[0][1] ?? '{}', true);
+    chk('ngv portal: a demotion is sent to Afrovanguard, naming the member', !empty($dm['demoted']) && ($dm['ngvPortal'] ?? '') === 'delivered'
+        && count($rv) === 1 && ($rb['data']['nggMemberId'] ?? '') === 'NGG-PORT-1');
+    chk('ngv portal: …and, being private, only to Afrovanguard', !bus_subscribed('["*"]', 'private.ngv.revoked'));
+
     unset($GLOBALS['__bus_http_mock']);
     $CONFIG['afrovanguard'] = $keep;
     db_exec("DELETE FROM deliveries WHERE integrationId IN ('INT-AV-NGV','INT-CHAT-ALL')");
@@ -22462,6 +22474,50 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM volunteers WHERE memberId = 'NGG-PORT-1'");
     db_exec("DELETE FROM member_promotions WHERE memberId = 'NGG-PORT-1'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-PORT-1'");
+})();
+
+/* ── One check-in for everyone: NGG members at the same desks ─────────────
+   Every desk wrote through summer_checkin(), which only knew Summer/volunteer
+   qr_codes — so every member scan was qr_unassigned. domain/checkin.php. */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-CI-1', 'fullName' => 'Ife Member', 'email' => 'ci1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'displayId' => '026-901', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-CI-2', 'fullName' => 'Off Member', 'email' => 'ci2@example.com', 'type' => 'NGG', 'status' => 'suspended', 'role' => 'member', 'centre' => 'Egbeda', 'displayId' => '026-902', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'SUM-CI-3', 'fullName' => 'Summer Account', 'email' => 'ci3@example.com', 'type' => 'Summer', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-CI-CLUB', 'fullName' => 'Club Desk', 'email' => 'cidesk@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-CI-SUM', 'fullName' => 'Summer Desk', 'email' => 'cisum@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'summer_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    $card = member_card_issue('NGG-CI-1', 'test', 'checkin-test');
+
+    $r = backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-CI-CLUB', 'token' => $card, 'method' => 'qr']);
+    chk('checkin: a member\'s MEMQR card checks in at the kiosk', !empty($r['ok']) && empty($r['already'])
+        && ($r['student']['kind'] ?? '') === 'member' && ($r['student']['memberId'] ?? '') === 'NGG-CI-1');
+    chk('checkin: …into the one attendance table, on the member id',
+        (bool)db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', ['NGG-CI-1', attendance_today()]));
+    chk('checkin: a second scan the same day is "already"',
+        !empty(backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-CI-CLUB', 'token' => $card])['already']));
+    chk('checkin: the /q/<card> URL a phone camera reads resolves the same member',
+        ($m = checkin_member_resolve('https://ngg.example/q/' . $card)) && $m['member']['memberId'] === 'NGG-CI-1' && $m['how'] === 'secure');
+    chk('checkin: so does a typed printed ID, in any separator', ($m = checkin_member_resolve('26/901')) && $m['member']['memberId'] === 'NGG-CI-1');
+    chk('checkin: and the older dashboard card\'s ?m=<id> link', ($m = checkin_member_resolve('https://ngg.example/?m=ngg-ci-1')) && $m['member']['memberId'] === 'NGG-CI-1');
+    chk('checkin: a Summer account is never resolved as a member', checkin_member_resolve('SUM-CI-3') === null);
+
+    $f = backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-CI-SUM', 'token' => '026-902']);
+    chk('checkin: a member\'s roll is the Club\'s — a Summer-only operator is refused', ($f['error'] ?? '') === 'forbidden');
+    $g = backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:test', 'token' => '026-902']);
+    chk('checkin: an inactive membership is refused at the gate, and named', ($g['error'] ?? '') === 'member_inactive' && ($g['student']['fullName'] ?? '') === 'Off Member');
+    member_card_issue('NGG-CI-1', 'test', 'reissue');
+    chk('checkin: a replaced card is refused as replaced, not as unknown',
+        (backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:test', 'token' => $card])['error'] ?? '') === 'card_void');
+    $o = backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-CI-CLUB', 'token' => '026-901']);
+    chk('checkin: a member checks out the same way', !empty($o['ok']) && empty($o['already']));
+    chk('checkin: an unknown code is still qr_unassigned for a Summer operator',
+        (backend_dispatch('admin.summer.checkin', ['requesterId' => 'NGG-CI-SUM', 'token' => 'NOPE-123'])['error'] ?? '') === 'qr_unassigned');
+    chk('checkin: Summer cards still take the Summer path (the member fallback runs only when qr_codes misses)',
+        str_contains((string)file_get_contents(__DIR__ . '/../_lib/domain/summer.php'), "if (!\$qr0 && (\$hit = checkin_member_resolve("));
+
+    db_exec("DELETE FROM attendance WHERE studentId LIKE 'NGG-CI-%'");
+    db_exec("DELETE FROM member_cards WHERE memberId LIKE 'NGG-CI-%'");
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-CI-1','NGG-CI-2','SUM-CI-3','NGG-CI-CLUB','NGG-CI-SUM')");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

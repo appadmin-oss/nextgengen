@@ -912,6 +912,13 @@ function attendance_is_dup(\Throwable $e): bool {
 
 // ── Attendance check-in (scan a card) — used by the kiosk in Phase 2 ─────────
 function summer_checkin(array $p): array {
+    /* Not a Summer or volunteer card? It may be an NGG member's — a MEMQR-
+       card, an older printed one, or a typed member ID (domain/checkin.php).
+       Resolved before the `summer` gate because a member's roll is the
+       Club's, and checkin_member() gates on that. */
+    $token0 = trim((string)($p['token'] ?? ''));
+    $qr0 = $token0 !== '' ? db_row("SELECT studentId FROM qr_codes WHERE token = ? AND studentId != '' LIMIT 1", [$token0]) : null;
+    if (!$qr0 && ($hit = checkin_member_resolve((string)(($p['raw'] ?? '') ?: $token0)))) return checkin_member($p, $hit);
     // A desk-password KIOSK session has no staff member/cap — but the caller
     // (public gate route) has already verified the gate token + kiosk session
     // bound to it, so it passes gateAuthorized. Everyone else must hold the
@@ -1016,6 +1023,9 @@ function summer_checkin(array $p): array {
 /** Stamp a departure time on today's attendance row (optional dwell tracking).
  *  Same auth model as check-in (gate token or 'summer' cap). */
 function summer_checkout(array $p): array {
+    $token0 = trim((string)($p['token'] ?? ''));
+    $qr0 = $token0 !== '' ? db_row("SELECT studentId FROM qr_codes WHERE token = ? AND studentId != '' LIMIT 1", [$token0]) : null;
+    if (!$qr0 && ($hit = checkin_member_resolve((string)(($p['raw'] ?? '') ?: $token0)))) return checkin_member_checkout($p, $hit);
     if (!empty($p['gateAuthorized'])) {
         $byId = substr((string)($p['byId'] ?? 'kiosk'), 0, 64) ?: 'kiosk';
     } else {

@@ -359,6 +359,20 @@ what you are actually doing.
 - **Check-in kiosk** — the screen you leave open at the door.
 - **Attendance** — the registers.
 
+**One door, everyone.** The kiosk, a gate link's desk and *Mark present* on a
+profile all check in **participants, volunteers and NGG members**. Scan any
+card or type the number printed on it. A member's secure card (`MEMQR-…`),
+an older printed member card, and a typed member ID (`026-014`) all work.
+A member's attendance belongs to the Club, so checking a member in from the
+Control Room needs the **Club** permission. A gate link's desk needs no
+permission, for anyone. Refusals you may see for a member:
+
+| Says | Means |
+|---|---|
+| *That member card was replaced* | They have an old card. Ask for the new one, or type their member ID. |
+| *That membership is not active* | The member is suspended or inactive. Refer to the coordinator. |
+| *Not permitted* | You lack the Club permission, or your session expired. |
+
 ### Records — what comes out of it
 
 - **Group report** — one group's attendance and progress.

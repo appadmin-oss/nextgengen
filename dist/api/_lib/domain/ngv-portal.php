@@ -24,6 +24,10 @@ declare(strict_types=1);
  */
 
 const NGV_PORTAL_EVENT = 'private.ngv.account';
+/* The reverse: a demoted vanguard stops being one on Afrovanguard too. Without
+   it a demotion here left them an active participant there — fees accruing,
+   their NGV card still opening the gate. */
+const NGV_PORTAL_REVOKE_EVENT = 'private.ngv.revoked';
 const NGV_PORTAL_INTEGRATION = 'INT-AV-NGV';
 
 /** The Afrovanguard destination, created or brought up to date from config. '' when not configured. */
@@ -35,7 +39,7 @@ function ngv_portal_integration(): string {
     $url = trim((string)($av['ngv_webhook_url'] ?? ''))
         ?: rtrim((string)($av['org_url'] ?? 'https://afrovanguard.org.ng'), '/') . '/integrations/ngg.php';
     $config = json_encode(['url' => $url, 'secret' => $secret], JSON_UNESCAPED_SLASHES);
-    $events = json_encode([NGV_PORTAL_EVENT]);
+    $events = json_encode([NGV_PORTAL_EVENT, NGV_PORTAL_REVOKE_EVENT]);
     $row = db_row('SELECT * FROM integrations WHERE integrationId = ? LIMIT 1', [NGV_PORTAL_INTEGRATION]);
     if (!$row) {
         db_insert('integrations', ['integrationId' => NGV_PORTAL_INTEGRATION, 'kind' => 'webhook', 'name' => 'Afrovanguard — NGV accounts',
@@ -75,10 +79,28 @@ function ngv_portal_announce(array $m, string $volunteerId): array {
     return ['sent' => !empty($r['ok']), 'status' => !empty($r['ok']) ? 'delivered' : 'queued'];
 }
 
+/** Tell Afrovanguard a vanguard was demoted here. Same path as an announcement. */
+function ngv_portal_revoke(string $memberId): array {
+    $int = ngv_portal_integration();
+    if ($int === '') return ['sent' => false, 'status' => 'not_configured'];
+    $eventId = event_emit(NGV_PORTAL_REVOKE_EVENT, ['nggMemberId' => $memberId]);
+    if ($eventId === '') return ['sent' => false, 'status' => 'not_queued'];
+    $d = db_row('SELECT * FROM deliveries WHERE eventId = ? AND integrationId = ? LIMIT 1', [$eventId, $int]);
+    if (!$d) return ['sent' => false, 'status' => 'not_queued'];
+    $r = bus_attempt($d);
+    return ['sent' => !empty($r['ok']), 'status' => !empty($r['ok']) ? 'delivered' : 'queued'];
+}
+
 /**
  * Everybody already promoted, announced again — for the vanguards promoted
  * before this existed. Afrovanguard is idempotent by NGG member id, so a
  * second run creates nothing twice. Scoped admins reach their own centres.
+ *
+ * Queued, then delivered within a time budget. It used to deliver inline, one
+ * signed request after another for up to 500 members, which on shared hosting
+ * is killed at ~30s mid-loop (no audit row, an error on screen), and the 500
+ * cap meant anybody past it was never sent. Everybody is queued now; what does
+ * not fit in the budget goes with the dispatcher's next run.
  */
 function admin_members_ngv_portal_sync(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
@@ -92,11 +114,20 @@ function admin_members_ngv_portal_sync(array $p): array {
         $sql .= ' AND m.centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')';
         $args = $scope;
     }
-    $n = 0; $ok = 0;
-    foreach (db_all($sql . ' ORDER BY m.ngvAt ASC LIMIT 500', $args) as $m) {
-        $r = ngv_portal_announce($m, (string)$m['vid']);
-        $n++; if ($r['sent']) $ok++;
+    $int = ngv_portal_integration();
+    $queued = [];
+    foreach (db_all($sql . ' ORDER BY m.ngvAt ASC', $args) as $m) {
+        $eventId = event_emit(NGV_PORTAL_EVENT, ngv_portal_payload($m, (string)$m['vid']));
+        if ($eventId !== '') $queued[] = $eventId;
     }
+    $budget = microtime(true) + 15.0;
+    $ok = 0;
+    foreach ($queued as $eventId) {
+        if (microtime(true) >= $budget) break;
+        $d = db_row('SELECT * FROM deliveries WHERE eventId = ? AND integrationId = ? LIMIT 1', [$eventId, $int]);
+        if ($d && !empty(bus_attempt($d)['ok'])) $ok++;
+    }
+    $n = count($queued);
     audit('member.ngv.portalSync', (string)($g['requester']['memberId'] ?? ''), '', ['announced' => $n, 'delivered' => $ok], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'announced' => $n, 'delivered' => $ok];
+    return ['ok' => true, 'announced' => $n, 'delivered' => $ok, 'queued' => $n - $ok];
 }

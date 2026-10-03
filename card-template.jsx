@@ -903,11 +903,16 @@ function _ngQrDataUrl(payload) {
   });
 }
 /* The one place that decides what a member card's QR points at, so a card the
-   member downloads and a card an admin batch-prints resolve to the same page:
-   the circle-invite short link when we have one, else the member deep link. */
+   member downloads and a card an admin batch-prints resolve to the same page —
+   and so every desk can check the holder in (domain/checkin.php).
+   The secure MEMQR- card code first: it opens the member's profile at /q/
+   AND is what the gate, the kiosk and the CACENTRE desk resolve. The circle
+   invite code was here before it, and nothing that scans a card knew it. */
 function _ngMemberQrPayload(m) {
   m = m || {};
   var origin = (typeof location !== "undefined") ? location.origin : "";
+  if (m.token && /^MEMQR-/i.test(String(m.token))) return origin + "/q/" + String(m.token).toUpperCase();
+  if (m.memberId) return origin + "/?m=" + encodeURIComponent(m.memberId);
   if (m.anchorCode) return origin + "/q/" + m.anchorCode;
   if (m.memberId) return origin + "/?m=" + encodeURIComponent(m.memberId);
   return origin;

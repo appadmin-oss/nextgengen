@@ -44,7 +44,8 @@ if ($method === 'GET') {
         // verified above, so authorize the check-in by the gate rather than by
         // a staff capability (a desk-password kiosk has no member/cap).
         $res = gs_call('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => ($s['mid'] ?: ('gate:' . substr((string)($b['gate'] ?? ''), 0, 24))), 'token' => $b['token'] ?? '', 'scannedAt' => $b['scannedAt'] ?? null, 'method' => 'gate', 'device' => 'gate:' . substr((string)($b['gate'] ?? ''), 0, 12), 'ip' => $ip]);
-        if (!empty($res['ok']) && empty($res['already'])) {
+        /* A member's check-in emits its own event in the domain (checkin.php). */
+        if (!empty($res['ok']) && empty($res['already']) && (($res['student']['kind'] ?? '') !== 'member')) {
             event_emit('attendance.marked', ['memberId' => $res['student']['studentId'] ?? '', 'name' => $res['student']['fullName'] ?? '', 'date' => attendance_today(), 'source' => 'gate', 'by' => $s['mid']]);
         }
     } elseif ($action === 'checkout') {
