@@ -76,6 +76,7 @@ const ADMIN_SECTIONS = [
      renaming or retiring a centre, removing a volunteer — wait here for a
      second admin (domain/approvals.php). The club admin sees their own. */
   { id: "approvals",   group: "People",   label: "Approvals",    title: "Approvals",           icon: "✓", cap: "people" },
+  { id: "companion",   group: "People",   label: "Companion",    title: "Companion check-ins", icon: "✦", cap: "club" },
   /* What the Club teaches: lessons, materials, checks, and the progress
      against them (domain/curriculum.php). NGG only. */
   { id: "curriculum",  group: "Content",  label: "Curriculum",   title: "NGG curriculum",      icon: "❖", cap: "curriculum" },
@@ -406,6 +407,7 @@ function AdminPage({ setPage }) {
           {view === "conduct" && <SummerPolicy/>}
           {view === "requests" && <AdminRequests/>}
           {view === "approvals" && <AdminApprovals/>}
+          {view === "companion" && <AdminCompanion/>}
           {view === "curriculum" && <AdminCurriculum/>}
           {view === "status-pages" && <AdminStatusPages/>}
           {view === "sessions" && <AdminSessions/>}
@@ -2992,6 +2994,58 @@ function CurriculumSchedule({ onSaved }) {
       </div>
       <button className="btn btn-primary btn-sm" disabled={busy || JSON.stringify(s) === orig} onClick={save}>{busy ? "Saving…" : "Save deadlines"}</button>
     </details>
+  );
+}
+
+/* ── The companion board: who needs support this week ──────────────────────
+   Each NGG member's weekly check-in (domain/companion.php), at-risk first. The
+   rating is rules, with its reasons on the row; Re-assess redoes it now (after
+   a correction to a register or a mark). */
+const COMPANION_RATING_LABEL = { on_track: "On track", watch: "Watch", at_risk: "Needs support" };
+function AdminCompanion() {
+  const [rating, setRating] = React.useState("");
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = React.useCallback(() => { setErr(""); return NGGApi.admin.companion.board(rating).then(setD).catch(e => setErr(e.code || e.message)); }, [rating]);
+  React.useEffect(() => { load(); }, [load]);
+  const rows = (d && d.rows) || [];
+  const sel = useAdminSelection(rows, r => r.memberId);
+  const actions = [
+    { id: "assess", label: "Re-assess now", pastTense: "re-assessed", reload: load,
+      confirm: ({ count }) => ({ title: "Re-assess " + count + " member" + (count === 1 ? "" : "s") + "?", body: "Their check-in for this week is worked out again from today's record. It is not emailed again.", cta: "Re-assess" }),
+      run: (ids) => NGGApi.admin.companion.assess(ids) },
+  ];
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head"><h2 className="admin-h2">Companion check-ins</h2></div>
+      <p className="admin-hint">Every week the companion looks at each NGG member's last four weeks — attendance, sign-outs, curriculum and conduct — rates them by fixed rules, and writes them a short note (by AI when it is set up) with what is going well and what to do next. Members and their parents get it by email. Those who need support are listed first, with the reasons.</p>
+      {d && <p className="admin-cell-sub" role="status">Week of {d.period}: {d.counts.at_risk} need support · {d.counts.watch} to watch · {d.counts.on_track} on track · {d.members - (d.counts.at_risk + d.counts.watch + d.counts.on_track)} not assessed yet{d.scoped ? " · your centres only" : ""}.</p>}
+      <div className="admin-filters" role="group" aria-label="Filter by rating">
+        {[["", "Everyone"], ["at_risk", "Needs support"], ["watch", "Watch"], ["on_track", "On track"]].map(([k, l]) => (
+          <button key={k || "all"} className={"btn btn-sm " + (rating === k ? "btn-primary" : "btn-ghost")} aria-pressed={rating === k} onClick={() => { setRating(k); sel.clear(); }}>{l}</button>
+        ))}
+      </div>
+      <AdminBulkBar selection={sel} noun="member" actions={actions}/>
+      {err ? <ErrorState title="Couldn't load the companion board" code={err} onRetry={load}/> :
+        !d ? <div className="dash-spinner" role="status" aria-label="Loading"/> :
+        !rows.length ? <div className="admin-empty">No check-ins {rating ? "with that rating " : ""}yet this week. They are worked out through the week, a few at a time.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <caption className="sr-only">This week's companion check-ins</caption>
+          <thead><tr>
+            <th scope="col"><AdminSelectAll selection={sel} label="Select every member shown"/></th>
+            <th scope="col">Member</th><th scope="col">Rating</th><th scope="col">Why</th><th scope="col">Next steps</th>
+          </tr></thead>
+          <tbody>{rows.map(r => (
+            <tr key={r.memberId} className={sel.has(r.memberId) ? "is-selected" : ""}>
+              <td><AdminRowCheck selection={sel} id={r.memberId} label={"Select " + r.fullName}/></td>
+              <td>{r.fullName}<div className="admin-cell-sub">{r.displayId || r.memberId} · {r.centre || "—"}{r.track ? " · " + r.track : ""}</div></td>
+              <td><span className={"chip " + (r.rating === "at_risk" ? "status-archived" : r.rating === "watch" ? "chip-gold" : "chip-lime")}>{COMPANION_RATING_LABEL[r.rating]}</span></td>
+              <td className="admin-cell-sub">{r.reasons.join(" · ") || "—"}</td>
+              <td className="admin-cell-sub">{r.focus.join(" ")}{r.source === "ai" ? " (AI)" : ""}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>}
+    </div>
   );
 }
 
@@ -13044,6 +13098,7 @@ function AdminSettings() {
         <FieldCheckbox label="Text volunteer IDs by SMS (when phone on file)" value={s.volunteer_sms_notify} onChange={v => setS(o => ({ ...o, volunteer_sms_notify: v }))}/>
         <FieldCheckbox label="Email a state note on check-in (award-focus when doing well, a nudge otherwise)" value={s.checkin_state_emails} onChange={v => setS(o => ({ ...o, checkin_state_emails: v }))}/>
         <FieldCheckbox label="Email NGG members the Quote of the Week every Monday (the same quote as their Anchor Journal)" value={s.qotw_mail} onChange={v => setS(o => ({ ...o, qotw_mail: v }))}/>
+        <FieldCheckbox label="Companion: assess every NGG member weekly and email them (and their parent) the check-in" value={s.companion_enabled} onChange={v => setS(o => ({ ...o, companion_enabled: v }))}/>
         <Field label="Hours credited per volunteer session" type="number" value={s.volunteer_session_hours} onChange={v => setS(o => ({ ...o, volunteer_session_hours: v }))}/>
         <FieldSelect label="Featured session (homepage countdown)" value={s.featured_session_id || ""} onChange={v => setS(o => ({ ...o, featured_session_id: v }))} options={[""].concat(sessions.map(x => x.sessionId))}/>
         <FieldCheckbox label="Geo-fenced registration (auto-pick the centre by location; block off-site sign-ups)" value={s.geofence_enabled} onChange={v => setS(o => ({ ...o, geofence_enabled: v }))}/>

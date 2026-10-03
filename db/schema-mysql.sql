@@ -2882,3 +2882,23 @@ ALTER TABLE curriculum_materials
   ADD KEY idx_cmat_status (status, unitId);
 
 INSERT INTO schema_version (version) VALUES (126) ON DUPLICATE KEY UPDATE version = version;
+
+-- 127: the companion's weekly assessment of each NGG member.
+CREATE TABLE IF NOT EXISTS member_assessments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL,
+  period VARCHAR(10) NOT NULL,
+  rating VARCHAR(16) NOT NULL DEFAULT 'on_track',
+  reasons TEXT,
+  metrics TEXT,
+  summary TEXT,
+  strengths TEXT,
+  focus TEXT,
+  source VARCHAR(16) DEFAULT 'rules',
+  mailedAt VARCHAR(40) DEFAULT '',
+  createdAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_massess_key (memberId, period),
+  KEY idx_massess_period (period, rating)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (127) ON DUPLICATE KEY UPDATE version = version;

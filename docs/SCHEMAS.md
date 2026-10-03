@@ -508,3 +508,6 @@ Managed by `api/_lib/domain/curriculum.php`.
 
 ### `curriculum_progress`
 One row per (`unitId`, `memberId`), UNIQUE. `status` `started` \| `attempted` (below the pass mark) \| `submitted` (written answers awaiting a marker) \| `completed`; `unitVersion`, `score`, `maxScore`, `bestPct`, `attempts`, `answers` / `marks` (JSON keyed by checkId), `feedback`, `pending` (written answers awaiting a marker), `markedBy`, `startedAt`, `completedAt`. Moved on a member merge (`MOVE_UNIQUE`).
+
+## `member_assessments` (migration 127)
+The companion's weekly check-in (`api/_lib/domain/companion.php`). One row per (`memberId`, `period`) — `period` is the week's Monday. `rating` `on_track` | `watch` | `at_risk` (rules); `reasons`, `metrics`, `strengths`, `focus` are JSON; `summary` text; `source` `ai` | `rules`; `mailedAt`. Moved on a member merge (`MOVE_UNIQUE`).

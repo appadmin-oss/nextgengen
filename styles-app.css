@@ -7588,3 +7588,23 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
 .cur-staff-subs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .cur-staff-sub { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; justify-content: space-between; }
 .cur-staff-sub-note { flex-basis: 100%; margin: 0; opacity: .9; }
+
+/* ── The companion (member dashboard) ── */
+.comp { display: grid; gap: 14px; }
+.comp-chip { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+.comp-chip.is-on_track { background: #e3f4e8; color: #14532d; }
+.comp-chip.is-watch { background: #fdf3d8; color: #6b4d00; }
+.comp-chip.is-at_risk { background: #fde8e4; color: #8a2a12; }
+.comp-summary { font-size: 17px; line-height: 1.5; margin: 8px 0 12px; }
+.comp-h3 { font-size: 14px; margin: 10px 0 4px; }
+.comp-list { margin: 0 0 8px; padding-left: 20px; }
+.comp-list.is-focus li { font-weight: 600; }
+.comp-why, .comp-src { margin: 8px 0 0; font-size: 13px; color: var(--ink-500); }
+.comp-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.comp-tile { background: white; border-radius: 12px; padding: 10px 12px; display: grid; gap: 2px; }
+.comp-tile-l { font-size: 12px; color: var(--ink-500); }
+.comp-tile-v { font-size: 20px; }
+.comp-hist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.comp-hist li { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+.comp-hist-w { font-family: var(--font-mono); font-size: 12px; color: var(--ink-500); }
+.comp-hist-s { flex-basis: 100%; font-size: 14px; }

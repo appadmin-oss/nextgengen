@@ -459,6 +459,7 @@ function DashRequests({ openKind, onKindHandled, onCountChange }) {
 var DASH_SECTIONS = [
   { id: "overview", path: "", label: "Overview" },
   { id: "learning", path: "learning", label: "Curriculum" },
+  { id: "companion", path: "companion", label: "Companion" },
   { id: "account",  path: "account",  label: "Money & account" },
   { id: "records",  path: "records",  label: "Records" },
   { id: "requests", path: "requests", label: "Requests" },
@@ -851,6 +852,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
               <DashSectionTabs section={section} go={goSection} openRequests={openRequests}/>
 
               {section === "learning" && <DashCurriculum/>}
+              {section === "companion" && <DashCompanion/>}
               {section === "account"  && <DashAccount onRaise={askFor}/>}
               {section === "records"  && <DashRecords onRaise={askFor}/>}
               {section === "requests" && <DashRequests openKind={raiseKind} onKindHandled={() => setRaiseKind("")} onCountChange={setOpenRequests}/>}
@@ -2296,6 +2298,53 @@ Object.assign(window, { DashboardPage });
  * text, and the checks. A multiple-choice answer is marked on the spot; a
  * written one is marked by the AI where one is set up — and SAID to be the
  * AI's — or waits for their instructor, and the screen says which. */
+/* ── The companion: this week's check-in, and the weeks before ─────────────
+   The rating is the server's rules (domain/companion.php); the words are the
+   AI's when one is set up. Shown with its reasons, so "needs support" is never
+   a verdict without an explanation. */
+const COMPANION_LABEL = { on_track: "On track", watch: "Keep an eye on", at_risk: "Needs support" };
+function DashCompanion() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = React.useCallback(() => { setErr(""); NGGApi.member.companion().then(setD).catch(e => setErr(e.code || e.message)); }, []);
+  React.useEffect(() => { load(); }, [load]);
+  if (err) return err === "not_ngg_member"
+    ? <div className="dash-card"><h2 className="dash-card-h">The companion is for NGG members.</h2></div>
+    : <div className="dash-card" role="alert"><p>Couldn't load your companion ({err}).</p><button className="btn btn-ghost btn-sm" onClick={load}>Try again</button></div>;
+  if (!d) return <div className="dash-spinner" role="status" aria-label="Loading"/>;
+  const c = d.current, x = c.metrics || {}, a = x.attendance || {}, cu = x.curriculum || {};
+  return (
+    <div className="comp">
+      <section className={"dash-card comp-now is-" + c.rating} aria-labelledby="comp-h">
+        <div className="eyebrow">WEEK OF {fmtDate(c.period).toUpperCase()}</div>
+        <h2 id="comp-h" className="dash-card-h"><span className={"comp-chip is-" + c.rating}>{COMPANION_LABEL[c.rating]}</span></h2>
+        <p className="comp-summary">{c.summary}</p>
+        {c.strengths.length > 0 && <><h3 className="comp-h3">Going well</h3><ul className="comp-list">{c.strengths.map((t, i) => <li key={i}>{t}</li>)}</ul></>}
+        <h3 className="comp-h3">This week</h3>
+        <ul className="comp-list is-focus">{c.focus.map((t, i) => <li key={i}>{t}</li>)}</ul>
+        {c.reasons.length > 0 && <p className="comp-why">Why: {c.reasons.join(" · ")}.</p>}
+        <p className="comp-src">{c.source === "ai" ? "Written by the NGG companion (AI) from your record — attendance, curriculum and conduct over the last four weeks." : "From your record — attendance, curriculum and conduct over the last four weeks."}</p>
+      </section>
+      <section className="comp-tiles" aria-label="The last four weeks">
+        {[["Sessions attended", a.programmeDays ? a.present + " of " + a.programmeDays : String(a.present || 0)],
+          ["Late", String(a.late || 0)], ["No sign-out", String(a.noSignOut || 0)],
+          ["Lessons done", (cu.completed || 0) + " of " + (cu.lessons || 0)], ["Overdue", String(cu.overdue || 0)],
+          ["Average score", cu.avgScore != null ? cu.avgScore + "%" : "—"]].map(([l, v]) => (
+          <div key={l} className="comp-tile"><span className="comp-tile-l">{l}</span><b className="comp-tile-v">{v}</b></div>
+        ))}
+      </section>
+      {d.history.length > 1 && (
+        <section className="dash-card" aria-labelledby="comp-hist-h">
+          <h3 id="comp-hist-h" className="comp-h3">Earlier weeks</h3>
+          <ul className="comp-hist">{d.history.slice(1).map(h => (
+            <li key={h.period}><span className="comp-hist-w">{fmtDate(h.period)}</span><span className={"comp-chip is-" + h.rating}>{COMPANION_LABEL[h.rating]}</span><span className="comp-hist-s">{h.summary}</span></li>
+          ))}</ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
 function DashCurriculum() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");

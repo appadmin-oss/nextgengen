@@ -23190,5 +23190,72 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-QW-%' OR memberId = 'SUM-QW-1'");
 })();
 
+/* ── The companion: a weekly assessment of each member ─────────────────── */
+(function () {
+    $now = now_iso();
+    $today = attendance_today();
+    $ago = fn($d) => gmdate('Y-m-d', strtotime($today . ' UTC') - $d * 86400);
+    $keepCal = setting_raw('memberProgramme');
+    member_programme_settings_save(['enabled' => true, 'startDate' => $ago(60), 'endDate' => $ago(-60), 'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []], 'test');
+    $mk = fn($id, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Comp ' . $id, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-CMP-ADM', ['role' => 'club_admin']);
+    $mk('NGG-CMP-1', ['fullName' => 'Zainab Okonkwo-Bello', 'parentEmail' => 'zainab-parent@example.com', 'track' => 'Robotics']);
+    $mk('NGG-CMP-2', ['fullName' => 'Femi Steady', 'centre' => 'Ayobo']);
+    $mk('SUM-CMP-1', ['type' => 'Summer']);
+    // Zainab: present on 5 of the last 28 days, late twice, no sign-out twice.
+    foreach ([2 => ['late', ''], 4 => ['late', 'x'], 6 => ['present', ''], 8 => ['present', 'x'], 10 => ['present', 'x']] as $d => [$st, $out])
+        db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-CMP-1', 'date' => $ago($d), 'checkInAt' => $ago($d) . 'T09:00:00Z',
+            'checkOutAt' => $out ? $ago($d) . 'T14:00:00Z' : '', 'status' => $st, 'method' => 'test', 'createdAt' => $now]);
+
+    $z = db_row("SELECT * FROM members WHERE memberId = 'NGG-CMP-1'");
+    $x = companion_metrics($z);
+    chk('companion: counts four weeks of attendance — present, late, no sign-out, absent',
+        $x['attendance']['present'] === 5 && $x['attendance']['late'] === 2 && $x['attendance']['noSignOut'] === 2 && $x['attendance']['absent'] === $x['attendance']['programmeDays'] - 5 && $x['attendance']['programmeDays'] >= 27);
+    $rate = companion_rate($x);
+    chk('companion: the rating is rules, with its reasons', $rate['rating'] === 'at_risk' && in_array('late 2 times', $rate['reasons'], true) && (bool)array_filter($rate['reasons'], fn($r) => strpos($r, 'programme days missed') !== false));
+
+    // The AI writes the words — and sees numbers and a first name only.
+    $seen = '';
+    $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) use (&$seen) {
+        $seen .= json_encode($turns, JSON_UNESCAPED_UNICODE) . "\n";
+        return ['ok' => true, 'provider' => 'mock', 'text' => json_encode(['summary' => 'Zainab, two late mornings and some missed days. Let us fix the mornings first.',
+            'strengths' => ['You came five times'], 'focus' => ['Leave home ten minutes earlier on Saturday']])];
+    };
+    $GLOBALS['__mail_sink'] = [];
+    $run = companion_weekly_run($today, 1000);
+    unset($GLOBALS['__ai_mock']);
+    $row = companion_public(db_row("SELECT * FROM member_assessments WHERE memberId = 'NGG-CMP-1' AND period = ?", [companion_period($today)]));
+    chk('companion: the weekly sweep assesses each member, with the AI\'s note', $run['assessed'] >= 2 && $row['source'] === 'ai' && $row['rating'] === 'at_risk' && $row['focus'] === ['Leave home ten minutes earlier on Saturday']);
+    chk('companion: the provider never sees a surname, an email or a centre', strpos($seen, 'Zainab') !== false && strpos($seen, 'Okonkwo') === false
+        && strpos($seen, '@example.com') === false && strpos($seen, 'Egbeda') === false);
+    $to = array_column($GLOBALS['__mail_sink'], 'to');
+    chk('companion: the member and their parent get the week\'s note', in_array('ngg-cmp-1@example.com', $to, true) && in_array('zainab-parent@example.com', $to, true));
+    chk('companion: Summer accounts are not assessed', !db_row("SELECT id FROM member_assessments WHERE memberId = 'SUM-CMP-1'"));
+    $GLOBALS['__mail_sink'] = [];
+    chk('companion: once a week — a second sweep does nothing', companion_weekly_run($today, 1000)['assessed'] === 0 && !$GLOBALS['__mail_sink']);
+
+    // Without AI, the rules write a note that still says what to do.
+    $rules = companion_rules_note('Femi', $x, $rate);
+    chk('companion: without AI, the rules\' note names the next steps', count($rules['focus']) === 2 && strpos($rules['focus'][0], 'ten minutes before resumption') !== false);
+
+    $me = backend_dispatch('member.companion', ['memberId' => 'NGG-CMP-1']);
+    chk('companion: the member sees this week and their history', !empty($me['ok']) && $me['current']['rating'] === 'at_risk' && count($me['history']) === 1);
+    chk('companion: …a Summer account has none', (backend_dispatch('member.companion', ['memberId' => 'SUM-CMP-1'])['error'] ?? '') === 'not_ngg_member');
+    $b = backend_dispatch('admin.companion.board', ['requesterId' => 'NGG-CMP-ADM']);
+    $ids = array_column($b['rows'], 'memberId');
+    chk('companion: the staff board puts who needs support first', !empty($b['ok']) && $b['rows'][0]['rating'] === 'at_risk' && in_array('NGG-CMP-1', $ids, true) && ($b['counts']['at_risk'] ?? 0) >= 1);
+    $re = backend_dispatch('admin.companion.assess', ['requesterId' => 'NGG-CMP-ADM', 'memberIds' => ['NGG-CMP-2', 'SUM-CMP-1']]);
+    chk('companion: re-assessing reports per row', $re['applied'] === 1 && $re['results'][1]['error'] === 'not_ngg_member');
+    chk('companion: the Reflection Coach is told the week\'s focus, not the verdict', strpos(companion_coach_context('NGG-CMP-1'), 'Leave home ten minutes earlier') !== false
+        && strpos(companion_coach_context('NGG-CMP-1'), 'at_risk') === false);
+
+    unset($GLOBALS['__mail_sink']);
+    if ($keepCal === null) db_exec("DELETE FROM settings WHERE settingKey = 'memberProgramme'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'memberProgramme'", [$keepCal]);
+    db_exec('DELETE FROM member_assessments');
+    db_exec("DELETE FROM attendance WHERE studentId LIKE 'NGG-CMP-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-CMP-%' OR memberId = 'SUM-CMP-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

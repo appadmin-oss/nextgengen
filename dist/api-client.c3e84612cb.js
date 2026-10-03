@@ -663,6 +663,7 @@
       withdrawRequest: (requestId) => request('/member/self.php', { body: { action: 'withdraw', requestId } }),
       compliance:   () => request('/member/compliance.php'),
       coach:        (messages) => request('/member/coach.php', { body: { messages } }),
+      companion:    () => request('/member/companion.php'),
       circle:       () => request('/member/circle.php'),
       circleRotate: () => request('/member/circle.php', { body: { action: 'rotate' } }),
       circleRevoke: (linkId) => request('/member/circle.php', { body: { action: 'revoke', linkId } }),
@@ -1017,6 +1018,10 @@
       promotions: {
         get: () => request('/admin/promotions.php'),
         set: (promo) => request('/admin/promotions.php', { body: { promo } }),
+      },
+      companion: {
+        board:  (rating) => request('/admin/companion.php' + qs({ rating: rating || '' })),
+        assess: (memberIds) => request('/admin/companion.php', { body: { action: 'assess', memberIds } }),
       },
       curriculum: {
         list:    (f) => request('/admin/curriculum.php' + qs(Object.assign({ view: 'list' }, f || {}))),

@@ -615,6 +615,29 @@ from which people may sign out. Leave one blank for no closing time.
   note on check-in** switch in Settings turns these off with the Summer
   School's guardian notes.
 
+### The companion — weekly check-ins
+
+**Control Room → People → Companion** (needs `club`; `people` and
+`curriculum` can read it). Every week the companion looks at each active NGG
+member's **last four weeks**: sessions attended and missed, late arrivals,
+days with no sign-out, curriculum lessons done and overdue, average check
+score, conduct status and fines owed. It rates each member by **fixed rules**
+— *On track*, *Watch*, or *Needs support* — and the reasons are shown on the
+row, so a rating is never a verdict without an explanation. Those who need
+support are listed first.
+
+It then writes each member a short note — what is going well and one or two
+next steps for the week — and emails it to them and the parent on their
+record. With AI set up the note is written by the AI (it is given numbers
+and a first name only — never a surname, contact or centre); without AI the
+rules write it. Members see it under **Dashboard → Companion**, with the
+weeks before. The Reflection Coach in the Anchor Journal is told the week's
+next steps so its questions are relevant.
+
+**Re-assess now** redoes a member's check-in for the week after a register
+or mark is corrected (it is not emailed again). **Settings → Companion**
+turns the weekly check-ins off.
+
 ---
 
 ## Applications, sign-ups and verification

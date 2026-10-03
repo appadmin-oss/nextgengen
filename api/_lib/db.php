@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 126;
+const NGG_SCHEMA_TARGET = 127;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3836,6 +3836,25 @@ function db_migrate(PDO $db): void {
             ALTER TABLE curriculum_materials ADD COLUMN reviewedAt TEXT DEFAULT '';
             ALTER TABLE curriculum_materials ADD COLUMN reviewNote TEXT DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_cmat_status ON curriculum_materials(status, unitId);
+        ",
+        // The companion's weekly assessment of each NGG member (domain/companion.php).
+        127 => "
+            CREATE TABLE IF NOT EXISTS member_assessments (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              period TEXT NOT NULL,
+              rating TEXT NOT NULL DEFAULT 'on_track',
+              reasons TEXT DEFAULT '',
+              metrics TEXT DEFAULT '',
+              summary TEXT DEFAULT '',
+              strengths TEXT DEFAULT '',
+              focus TEXT DEFAULT '',
+              source TEXT DEFAULT 'rules',
+              mailedAt TEXT DEFAULT '',
+              createdAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_massess_key ON member_assessments(memberId, period);
+            CREATE INDEX IF NOT EXISTS idx_massess_period ON member_assessments(period, rating);
         ",
     ];
 

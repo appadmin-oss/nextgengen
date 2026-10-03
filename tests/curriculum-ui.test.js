@@ -269,6 +269,16 @@ async function contextFor(memberId, admin, viewport) {
     await ap.waitForFunction(() => /term began 2026-09-07/.test(document.querySelector('.cur-sched summary')?.innerText || ''), null, { timeout: 15000 });
     chk('…and saving the term start is kept', JSON.parse(php(`echo setting_raw('curriculum');`)).startDate === '2026-09-07');
 
+    // The companion: the member's weekly check-in, and the staff board.
+    await mp.goto(BASE + '/dashboard/companion', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(mp);
+    await mp.waitForSelector('.comp-now', { timeout: 40000 });
+    chk('the member sees their companion check-in, with next steps', (await mp.$$('.comp-list.is-focus li')).length >= 1 && (await mp.$$('.comp-tile')).length === 6);
+    await mp.screenshot({ path: path.join(SHOTS, 'companion.png'), fullPage: true });
+    await ap.evaluate(() => window.__adminSection('companion'));
+    await ap.waitForSelector('.admin-main .admin-table', { timeout: 30000 });
+    chk('the staff board lists the member with their rating and reasons', /Ada Learner/.test(await ap.$eval('.admin-main', el => el.innerText)));
+
     chk('no page errors on any screen', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

@@ -34,6 +34,7 @@ function rate_limit_default(string $op): ?array {
         'circle.connect'     => ['max' => 5,  'window' => 600],   // consumes a code; tighter still
         'upload.sign'        => ['max' => 30, 'window' => 60],    // mints a cloud upload signature
         'hook'               => ['max' => 120, 'window' => 60],   // inbound webhook bursts
+        'member.coach'       => ['max' => 20, 'window' => 600],   // each reply is a paid model call
 
         'apply'              => ['max' => 6,  'window' => 60],    // sends an acknowledgement email to a client-supplied address
         'apply.hour'         => ['max' => 30, 'window' => 3600],  // mail-amplification ceiling per IP
