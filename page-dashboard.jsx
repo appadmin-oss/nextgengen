@@ -458,6 +458,7 @@ function DashRequests({ openKind, onKindHandled, onCountChange }) {
  */
 var DASH_SECTIONS = [
   { id: "overview", path: "", label: "Overview" },
+  { id: "learning", path: "learning", label: "Curriculum" },
   { id: "account",  path: "account",  label: "Money & account" },
   { id: "records",  path: "records",  label: "Records" },
   { id: "requests", path: "requests", label: "Requests" },
@@ -849,6 +850,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
 
               <DashSectionTabs section={section} go={goSection} openRequests={openRequests}/>
 
+              {section === "learning" && <DashCurriculum/>}
               {section === "account"  && <DashAccount onRaise={askFor}/>}
               {section === "records"  && <DashRecords onRaise={askFor}/>}
               {section === "requests" && <DashRequests openKind={raiseKind} onKindHandled={() => setRaiseKind("")} onCountChange={setOpenRequests}/>}
@@ -2287,3 +2289,161 @@ function timeAgo(iso) {
 }
 
 Object.assign(window, { DashboardPage });
+
+/* ── The member's curriculum (domain/curriculum.php) ───────────────────────────
+ * Their course's lessons and the Club-wide ones, week by week, with where they
+ * stand on each. A lesson opens in place: what to learn, the materials, the
+ * text, and the checks. A multiple-choice answer is marked on the spot; a
+ * written one is marked by the AI where one is set up — and SAID to be the
+ * AI's — or waits for their instructor, and the screen says which. */
+function DashCurriculum() {
+  const [data, setData] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [open, setOpen] = React.useState("");
+  const load = React.useCallback(() => {
+    setErr("");
+    return NGGApi.member.curriculum().then(setData).catch(e => setErr(e.code || e.message || "failed"));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  if (open) return <DashCurriculumLesson unitId={open} onBack={() => { setOpen(""); load(); }}/>;
+  if (err) return err === "not_ngg_member"
+    ? <div className="dash-card cur-empty"><h2 className="dash-card-h">The Club curriculum is for NGG members.</h2><p>Summer School has its own course log with your instructor.</p></div>
+    : <ErrorState title="Couldn't load your curriculum" code={err} onRetry={load}/>;
+  if (!data) return <div className="dash-spinner" role="status" aria-label="Loading"/>;
+  if (!data.units.length) return (
+    <div className="dash-card cur-empty">
+      <div className="eyebrow cur-eyebrow">CURRICULUM</div>
+      <h2 className="dash-card-h">No lessons yet{data.track ? " for " + data.track : ""}.</h2>
+      <p>Your lessons appear here as your instructors publish them.</p>
+    </div>
+  );
+  const weeks = [];
+  data.units.forEach(u => { const w = weeks.find(x => x.week === u.week); w ? w.units.push(u) : weeks.push({ week: u.week, units: [u] }); });
+  return (
+    <div className="cur">
+      <div className="dash-card cur-summary">
+        <div>
+          <div className="eyebrow cur-eyebrow">CURRICULUM{data.track ? " · " + data.track.toUpperCase() : ""}</div>
+          <h2 className="dash-card-h">{data.completed} of {data.total} lessons done.</h2>
+        </div>
+        <div className="cur-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={data.pct} aria-label="Curriculum completed">
+          <span style={{ width: data.pct + "%" }}/>
+        </div>
+      </div>
+      {weeks.map(w => (
+        <section key={w.week} className="cur-week" aria-label={"Week " + w.week}>
+          <h3 className="cur-week-h">Week {w.week}</h3>
+          <ul className="cur-list">
+            {w.units.map(u => {
+              const st = curriculumStatusLabel(u.progress);
+              return (
+                <li key={u.unitId}>
+                  <button type="button" className="cur-item" onClick={() => setOpen(u.unitId)}>
+                    <span className="cur-item-main">
+                      <span className="cur-item-title">{u.title}</span>
+                      <span className="cur-item-meta">{u.course || "Whole Club"}{u.durationMins ? " · " + u.durationMins + " min" : ""}{u.checks ? " · " + u.checks + " check" + (u.checks === 1 ? "" : "s") : ""}</span>
+                    </span>
+                    <span className={"cur-chip " + st.tone}>{st.label}{u.progress && u.progress.attempts > 0 && !u.progress.pending ? " · " + u.progress.bestPct + "%" : ""}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function DashCurriculumLesson({ unitId, onBack }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [answers, setAnswers] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const [result, setResult] = React.useState(null);
+  const load = React.useCallback(() => {
+    setErr("");
+    return NGGApi.member.curriculumUnit(unitId).then(r => { setD(r); setResult(null); }).catch(e => setErr(e.code || e.message));
+  }, [unitId]);
+  React.useEffect(() => { load(); }, [load]);
+  if (err) return <ErrorState title="Couldn't open this lesson" code={err} onRetry={load}/>;
+  if (!d) return <div className="dash-spinner" role="status" aria-label="Loading"/>;
+  const u = d.unit;
+  const p = (result && result.progress) || d.progress;
+  const review = result && result.review;
+  const reviewById = {}; (review || []).forEach(c => { reviewById[c.checkId] = c; });
+  const marks = (p && p.marks) || {};
+  const answered = u.checks.every(c => answers[c.checkId] !== undefined && answers[c.checkId] !== "");
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const r = await NGGApi.member.curriculumSubmit(unitId, answers);
+      setResult(r);
+      if (r.progress.status === "completed") toast.success("Lesson complete — " + r.progress.bestPct + "%.", u.title);
+      else if (r.progress.pending) toast.info("Sent. Your instructor will mark the written answers.", u.title);
+      else toast.info("Not yet — " + Math.round(r.progress.score) + " of " + r.progress.maxScore + ". Have another go.", u.title);
+    } catch (e2) { toast.error(humanizeError(e2.code, e2.code)); }
+    finally { setBusy(false); }
+  };
+  const st = curriculumStatusLabel(p);
+  return (
+    <article className="cur-lesson">
+      <button type="button" className="btn btn-ghost btn-sm cur-back" onClick={onBack}>← All lessons</button>
+      <header className="dash-card cur-lesson-head">
+        <div className="eyebrow cur-eyebrow">WEEK {u.week} · {(u.course || "Whole Club").toUpperCase()}</div>
+        <h2 className="cur-lesson-title">{u.title}</h2>
+        {u.summary && <p className="cur-lesson-sum">{u.summary}</p>}
+        <span className={"cur-chip " + st.tone}>{st.label}</span>
+        {p && p.stale && <p className="cur-note">This lesson's checks have changed since you sat them — your earlier score was on the older questions.</p>}
+      </header>
+      {u.objectives.length > 0 && (
+        <section className="dash-card">
+          <h3 className="cur-sec-h">What you'll learn</h3>
+          <ul className="cur-objectives">{u.objectives.map((o, i) => <li key={i}>{o}</li>)}</ul>
+        </section>
+      )}
+      {(u.body || u.materials.length > 0) && (
+        <section className="dash-card">
+          <h3 className="cur-sec-h">The lesson</h3>
+          <CurriculumText text={u.body}/>
+          <CurriculumMaterials materials={u.materials}/>
+        </section>
+      )}
+      {u.checks.length > 0 && (
+        <form className="dash-card cur-checks" onSubmit={submit} aria-label="Check your understanding">
+          <h3 className="cur-sec-h">Check your understanding</h3>
+          <p className="cur-note">Pass mark {u.passMark}%.{p && p.attempts > 0 ? " Attempts so far: " + p.attempts + "." : ""}</p>
+          {u.checks.map((c, i) => {
+            const rv = reviewById[c.checkId]; const mk = marks[c.checkId];
+            return (
+              <fieldset key={c.checkId} className="cur-check">
+                <legend><span className="cur-check-n">{i + 1}.</span> {c.prompt} <span className="cur-check-pts">{c.points} pt{c.points === 1 ? "" : "s"}</span></legend>
+                {c.kind === "mcq"
+                  ? c.options.map((o, k) => (
+                      <label key={k} className={"cur-opt" + (rv && String(k) === rv.answer ? " is-right" : "") + (rv && answers[c.checkId] === k && String(k) !== rv.answer ? " is-wrong" : "")}>
+                        <input type="radio" name={c.checkId} checked={answers[c.checkId] === k} onChange={() => setAnswers(a => ({ ...a, [c.checkId]: k }))}/>
+                        <span>{o}</span>
+                      </label>))
+                  : <textarea className="cur-answer" rows={3} value={answers[c.checkId] || ""} aria-label={"Answer to question " + (i + 1)}
+                      onChange={e => setAnswers(a => ({ ...a, [c.checkId]: e.target.value }))} placeholder="Your answer, in your own words"/>}
+                {mk && mk.feedback && <p className="cur-feedback"><b>{mk.by === "ai" ? "Feedback (AI)" : mk.by === "auto" ? "Note" : "Your instructor"}:</b> {mk.feedback}</p>}
+                {rv && c.kind !== "mcq" && rv.answer && <p className="cur-model"><b>A strong answer:</b> {rv.answer}</p>}
+              </fieldset>
+            );
+          })}
+          {p && p.attempts > 0 && (
+            <p className="cur-result" aria-live="polite">
+              {p.pending ? "Your written answers are with your instructor. Your score appears once they're marked."
+                : "Score: " + Math.round(p.score) + " of " + p.maxScore + " (" + Math.round(p.maxScore ? p.score / p.maxScore * 100 : 0) + "%) · best " + p.bestPct + "%."}
+            </p>
+          )}
+          <button type="submit" className="btn btn-primary" disabled={busy || !answered}>{busy ? "Marking…" : p && p.attempts > 0 ? "Submit again" : "Submit answers"}</button>
+          {!answered && <span className="cur-note"> Answer every question to submit.</span>}
+        </form>
+      )}
+    </article>
+  );
+}
+

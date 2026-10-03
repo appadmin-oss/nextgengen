@@ -1837,9 +1837,9 @@ chk('s-status: still leaks no PII with registration added', (function () {
 })());
 
 // ── Stand-alone coordinator portals (Summer School + NGG Club are separate) ──
-chk('admin role caps = both programmes and the door, never money or the system', admin_role_caps('admin') === ['content', 'people', 'inbox', 'club', 'summer', 'checkin']
+chk('admin role caps = both programmes and the door, never money or the system', admin_role_caps('admin') === ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum']
     && !array_intersect(admin_role_caps('admin'), ['fees', 'journal', 'settings', 'rbac']));
-chk('club_admin role caps = the Club, its people and the door', admin_role_caps('club_admin') === ['club', 'people', 'checkin']);
+chk('club_admin role caps = the Club, its people, the door and what it teaches', admin_role_caps('club_admin') === ['club', 'people', 'checkin', 'curriculum']);
 chk('the Control Room\'s ROLE_CAPS mirrors admin_role_caps exactly', (function () {
     $src = (string)file_get_contents(__DIR__ . '/../../page-admin.jsx');
     if (!preg_match('/const ROLE_CAPS = \{(.*?)\n\};/s', $src, $m)) return false;
@@ -22711,6 +22711,122 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM summer_students WHERE studentId LIKE 'SS-VEN-%'");
     db_exec("DELETE FROM centres WHERE centreId IN ('CEN-VA','CEN-VB')");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-VEN-ADM'");
+})();
+
+/* ── The NGG Club curriculum ─────────────────────────────────────────────── */
+(function () {
+    $now = now_iso();
+    $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Cur ' . $id, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-CUR-ADM', 'club_admin'); $mk('NGG-CUR-ED', 'editor');
+    $mk('NGG-CUR-M1', 'member', ['track' => 'Piano', 'centre' => 'Egbeda']);
+    $mk('NGG-CUR-M2', 'member', ['track' => 'Guitar', 'centre' => 'Egbeda']);
+    $mk('SUM-CUR-S1', 'member', ['type' => 'Summer', 'track' => 'Piano']);
+    chk('curriculum: a club admin holds the curriculum cap; an editor does not',
+        in_array('curriculum', admin_role_caps('club_admin'), true) && !in_array('curriculum', admin_role_caps('editor'), true));
+    chk('curriculum: an editor cannot write a lesson', (backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ED', 'data' => ['course' => 'Piano', 'title' => 'x']])['error'] ?? '') === 'forbidden');
+
+    $bad = backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['course' => 'Pianno', 'title' => 'Scales', 'week' => 1]]);
+    chk('curriculum: an unknown course is refused, with the nearest catalogue course', ($bad['error'] ?? '') === 'unknown_course' && strpos((string)($bad['detail'] ?? ''), 'Piano') !== false);
+    $u1 = backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => [
+        'course' => 'piano', 'week' => 1, 'position' => 1, 'title' => 'Finding middle C', 'status' => 'published', 'passMark' => 50,
+        'objectives' => "Find middle C; Play a C major scale",
+        'materials' => [['url' => 'https://example.org/c-major.pdf', 'title' => 'Scale sheet']],
+        'checks' => [['kind' => 'mcq', 'prompt' => 'How many white keys in an octave?', 'options' => ['5', '7', '8'], 'answer' => 'B'],
+                     ['kind' => 'mcq', 'prompt' => 'Middle C is…', 'options' => ['C4', 'C2'], 'answer' => 'C4']]]]);
+    chk('curriculum: a lesson saves under the catalogue\'s spelling, with materials and checks',
+        !empty($u1['ok']) && $u1['unit']['course'] === 'Piano' && count($u1['unit']['materials']) === 1 && $u1['unit']['materials'][0]['kind'] === 'pdf'
+        && $u1['unit']['checks'][0]['answer'] === '1' && $u1['unit']['checks'][1]['answer'] === '0' && count($u1['unit']['objectives']) === 2);
+    chk('curriculum: two lessons cannot hold one slot', (backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['course' => 'Piano', 'week' => 1, 'position' => 1, 'title' => 'Dup']])['error'] ?? '') === 'slot_taken');
+    chk('curriculum: a material must be https or a stored file', (backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['course' => 'Piano', 'week' => 9, 'title' => 'Bad link', 'materials' => [['url' => 'javascript:alert(1)']]]])['error'] ?? '') === 'bad_material_url');
+    chk('curriculum: a multiple-choice answer must be one of its options', (backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => ['course' => 'Piano', 'week' => 9, 'title' => 'Bad answer', 'checks' => [['kind' => 'mcq', 'prompt' => 'Q', 'options' => ['a', 'b'], 'answer' => 'z']]]])['error'] ?? '') === 'mcq_answer_missing');
+
+    // Import: dry run, digest, apply, re-run.
+    $rows = [
+        ['course' => 'Piano', 'week' => 1, 'position' => 2, 'title' => 'Hand position', 'summary' => 'Curved fingers.', 'checks' => [['kind' => 'short', 'prompt' => 'Why curve your fingers?', 'answer' => 'Control and speed']]],
+        ['course' => '', 'week' => 1, 'position' => 1, 'title' => 'Welcome to the Club', 'objectives' => ['Know the Club values']],
+        ['course' => 'Guitr', 'week' => 1, 'title' => 'Tuning'],
+        ['course' => 'Piano', 'week' => 1, 'position' => 2, 'title' => 'Duplicate slot'],
+    ];
+    $dry = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => $rows, 'dryRun' => true, 'publish' => true]);
+    chk('import: the dry run gives a verdict per row and writes nothing', !empty($dry['ok']) && $dry['tally']['create'] === 2 && $dry['tally']['failed'] === 2
+        && $dry['rows'][2]['error'] === 'unknown_course' && $dry['rows'][3]['error'] === 'duplicate_in_file'
+        && !db_row("SELECT id FROM curriculum_units WHERE title = 'Hand position'"));
+    chk('import: an apply without the dry run\'s digest is refused', (backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => $rows, 'publish' => true, 'digest' => 'x'])['error'] ?? '') === 'import_changed');
+    $ap = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => $rows, 'publish' => true, 'digest' => $dry['digest']]);
+    chk('import: the apply writes the rows that passed', !empty($ap['ok']) && $ap['tally']['create'] === 2 && (bool)db_row("SELECT id FROM curriculum_units WHERE title = 'Hand position' AND status = 'published' AND source = 'import'"));
+    $again = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => array_slice($rows, 0, 2), 'dryRun' => true, 'publish' => true]);
+    chk('import: the same sheet again is unchanged, not duplicated', $again['tally']['unchanged'] === 2 && $again['tally']['create'] === 0);
+    $rows[0]['summary'] = 'Curved fingers, relaxed wrists.';
+    $chg = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-CUR-ADM', 'rows' => array_slice($rows, 0, 2), 'dryRun' => true, 'publish' => true]);
+    chk('import: a corrected row is an update', $chg['tally']['update'] === 1 && $chg['tally']['unchanged'] === 1);
+
+    // The member's curriculum.
+    $list = backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1']);
+    chk('member: a Piano member sees Piano lessons and the Club-wide one', !empty($list['ok']) && $list['total'] === 3);
+    chk('member: a Guitar member sees only the Club-wide lesson', backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M2'])['total'] === 1);
+    chk('member: a Summer account has no Club curriculum', (backend_dispatch('member.curriculum.list', ['memberId' => 'SUM-CUR-S1'])['error'] ?? '') === 'not_ngg_member');
+    $uid = $u1['unit']['unitId'];
+    $open = backend_dispatch('member.curriculum.unit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
+    chk('member: opening a lesson starts it, and never shows the answers', !empty($open['ok']) && $open['progress']['status'] === 'started' && !isset($open['unit']['checks'][0]['answer']));
+    $c = $open['unit']['checks'];
+    $wrong = backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'answers' => [$c[0]['checkId'] => 0, $c[1]['checkId'] => 1]]);
+    chk('member: a failed attempt is marked on the spot and not completed', !empty($wrong['ok']) && $wrong['progress']['status'] === 'attempted' && $wrong['progress']['bestPct'] === 0);
+    $right = backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid, 'answers' => [$c[0]['checkId'] => 1, $c[1]['checkId'] => 0]]);
+    chk('member: passing at the pass mark completes the lesson, and the answers are then shown',
+        $right['progress']['status'] === 'completed' && $right['progress']['bestPct'] === 100 && $right['progress']['attempts'] === 2 && isset($right['review'][0]['answer']));
+
+    // A written answer with no AI waits for a person.
+    $hp = db_row("SELECT unitId FROM curriculum_units WHERE title = 'Hand position'")['unitId'];
+    $hc = backend_dispatch('member.curriculum.unit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $hp])['unit']['checks'][0]['checkId'];
+    $GLOBALS['__ai_mock'] = fn() => ['ok' => false, 'error' => 'ai_disabled'];
+    $sub = backend_dispatch('member.curriculum.submit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $hp, 'answers' => [$hc => 'So I can play faster']]);
+    chk('member: a written answer with no AI is left for an instructor, not given a score', $sub['progress']['pending'] === true && $sub['progress']['status'] === 'submitted' && $sub['review'] === null);
+    unset($GLOBALS['__ai_mock']);
+
+    // Staff: a Summer-only volunteer is refused; an NGG instructor marks it.
+    db_insert('volunteers', ['volunteerId' => 'VOL-CUR-S', 'fullName' => 'Summer Inst', 'email' => 'vcs@example.com', 'role' => 'instructor', 'courses' => '["Piano"]', 'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'summer', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-CUR-N', 'fullName' => 'Club Inst', 'email' => 'vcn@example.com', 'role' => 'instructor', 'courses' => '["Piano"]', 'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'ngg', 'createdAt' => $now, 'updatedAt' => $now]);
+    $mk('NGG-CUR-VS', 'member', ['email' => 'vcs@example.com']); $mk('NGG-CUR-VN', 'member', ['email' => 'vcn@example.com']);
+    chk('staff: a Summer-only instructor has no Club curriculum', (backend_dispatch('staff.curriculum', ['requesterId' => 'NGG-CUR-VS'])['error'] ?? '') === 'not_ngg_staff');
+    $st = backend_dispatch('staff.curriculum', ['requesterId' => 'NGG-CUR-VN']);
+    $mine = array_values(array_filter($st['pending'] ?? [], fn($x) => $x['memberId'] === 'NGG-CUR-M1'));
+    chk('staff: an NGG instructor sees their course\'s lessons and the answers waiting', !empty($st['ok']) && count($st['units']) >= 2 && count($mine) === 1 && $mine[0]['checks'][0]['answer'] === 'So I can play faster');
+    $mark = backend_dispatch('staff.curriculum.mark', ['requesterId' => 'NGG-CUR-VN', 'progressId' => $mine[0]['progressId'], 'marks' => [$hc => ['points' => 1, 'feedback' => 'Yes — control too.']]]);
+    chk('staff: marking the answer completes the lesson', !empty($mark['ok']) && $mark['status'] === 'completed' && $mark['pending'] === 0);
+    chk('staff: …and a mentor can open the member\'s record', backend_dispatch('staff.curriculum.member', ['requesterId' => 'NGG-CUR-VN', 'memberId' => 'NGG-CUR-M1'])['completed'] === 2);
+
+    // A lesson somebody has sat moves version when its checks change.
+    $edit = $u1['unit']; $edit['checks'][0]['prompt'] = 'How many WHITE keys in one octave?';
+    $u2 = backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-CUR-ADM', 'data' => $edit]);
+    chk('curriculum: changing the checks after an attempt bumps the version, keeping the check ids', $u2['unit']['version'] === 2 && $u2['unit']['checks'][0]['checkId'] === $edit['checks'][0]['checkId']);
+    chk('curriculum: …and the old score is flagged as against the older questions', (bool)array_filter(backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M1'])['units'], fn($x) => $x['unitId'] === $uid && $x['progress']['stale']));
+
+    // Bulk status: a lesson with progress cannot be deleted, only retired.
+    $bs = backend_dispatch('admin.curriculum.status', ['requesterId' => 'NGG-CUR-ADM', 'action' => 'delete', 'unitIds' => [$uid]]);
+    chk('curriculum: a lesson with progress is not deleted', $bs['refused'] === 1 && $bs['results'][0]['error'] === 'has_progress');
+    $rt = backend_dispatch('admin.curriculum.status', ['requesterId' => 'NGG-CUR-ADM', 'action' => 'retire', 'unitIds' => [$uid, $uid . 'X']]);
+    chk('curriculum: retiring reports per row', $rt['applied'] === 1 && $rt['refused'] === 1);
+
+    // AI drafting: a draft, through the same validation, never saved.
+    $GLOBALS['__ai_mock'] = fn() => ['ok' => true, 'provider' => 'mock', 'text' => json_encode(['summary' => 'Rhythm basics.', 'objectives' => ['You will clap a beat'],
+        'checks' => [['kind' => 'mcq', 'prompt' => 'A crotchet is…', 'options' => ['1 beat', '2 beats', '4 beats', 'half'], 'answer' => 0],
+                     ['kind' => 'mcq', 'prompt' => 'Broken', 'options' => ['only one']]]])];
+    $before = (int)db_row('SELECT COUNT(*) c FROM curriculum_units')['c'];
+    $ai = backend_dispatch('admin.curriculum.ai', ['requesterId' => 'NGG-CUR-ADM', 'title' => 'Rhythm', 'text' => 'Notes about beats', 'course' => 'Piano']);
+    unset($GLOBALS['__ai_mock']);
+    chk('ai: the draft comes back for a person to read, and nothing is saved', !empty($ai['ok']) && $ai['draft']['summary'] === 'Rhythm basics.'
+        && (int)db_row('SELECT COUNT(*) c FROM curriculum_units')['c'] === $before);
+    chk('ai: an unusable generated check is not handed to the editor', !empty($ai['note']) && $ai['draft']['checks'] === []);
+
+    // The report.
+    $rep = backend_dispatch('admin.curriculum.report', ['requesterId' => 'NGG-CUR-ADM', 'course' => 'Piano']);
+    $hpr = array_values(array_filter($rep['units'] ?? [], fn($x) => $x['title'] === 'Hand position'))[0] ?? [];
+    chk('report: completions per lesson, against how many members it is for', ($hpr['completed'] ?? 0) === 1 && ($hpr['audience'] ?? 0) >= 1);
+
+    foreach (['curriculum_progress', 'curriculum_checks', 'curriculum_materials', 'curriculum_units'] as $t) db_exec("DELETE FROM $t");
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-CUR-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-CUR-%' OR memberId = 'SUM-CUR-S1'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

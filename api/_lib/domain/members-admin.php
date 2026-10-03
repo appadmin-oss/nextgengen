@@ -311,6 +311,7 @@ function member_merge_policy(): array {
            behind. A table that carries a member and is not named here is
            a table a merge silently strands. */
         'member_cards'           => 'MOVE',           // every card they hold keeps working
+        'curriculum_progress'    => 'MOVE_UNIQUE',    // one row per lesson; the survivor's stands
         'member_promotions'      => 'MOVE',
         'member_requests'        => 'MOVE',
         'mentors'                => 'MOVE',

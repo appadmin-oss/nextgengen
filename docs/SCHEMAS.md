@@ -483,3 +483,28 @@ note.upsert, note.delete}` (cap `people`), surfaced in the admin Student/Volunte
 editors ("Profile projects & mentor notes"). `public.summerProfile` embeds
 `projects` (all) + `notes` (public only) into the profile payload, rendered on
 the `/q/<token>` · `/s/<handle>` profile page.
+
+## SQL-only tables — the NGG Club curriculum (migration 125)
+
+Managed by `api/_lib/domain/curriculum.php`.
+
+### `curriculum_units`
+| field | notes |
+|---|---|
+| `unitId` | `CUR-…`, unique. |
+| `course` | An academy catalogue course, or `''` for the whole Club. |
+| `level`, `week`, `position` | The slot. UNIQUE (`course`, `level`, `week`, `position`). |
+| `title`, `summary`, `objectives`, `body` | Plain text; the SPA renders paragraphs, `- ` lists and `## ` headings, never HTML. |
+| `durationMins`, `passMark` | `passMark` default 60 (%). |
+| `status` | `draft` \| `published` \| `retired`. |
+| `version` | Bumped when checks change after somebody has answered. |
+| `source` | `manual` \| `import` \| `ai`. |
+
+### `curriculum_materials`
+`materialId`, `unitId`, `kind` (`pdf, slides, doc, sheet, video, audio, image, link`), `title`, `url` (https, or `/api/member/curriculum-file.php?f=<sha256>.<ext>` for an uploaded file), `position`.
+
+### `curriculum_checks`
+`checkId`, `unitId`, `kind` (`mcq, short, task`), `prompt`, `options` (JSON array), `answer` (MCQ: option index), `rubric`, `points`, `position`, `source` (`manual`/`ai`).
+
+### `curriculum_progress`
+One row per (`unitId`, `memberId`), UNIQUE. `status` `started` \| `attempted` (below the pass mark) \| `submitted` (written answers awaiting a marker) \| `completed`; `unitVersion`, `score`, `maxScore`, `bestPct`, `attempts`, `answers` / `marks` (JSON keyed by checkId), `feedback`, `pending` (written answers awaiting a marker), `markedBy`, `startedAt`, `completedAt`. Moved on a member merge (`MOVE_UNIQUE`).

@@ -1,0 +1,914 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * The NGG Club curriculum — what the Club teaches, and who has learnt it.
+ *
+ * ── THE SHAPE ────────────────────────────────────────────────────────────────
+ * A UNIT is one lesson. Its natural key is course → level → week → position,
+ * so an import of the same sheet updates the lessons it already made rather
+ * than adding a second copy of each. `course` is a course from the academy
+ * catalogue (the one list of courses the whole platform shares); blank means
+ * the lesson is for everybody in the Club. A unit carries MATERIALS (files and
+ * links) and CHECKS (the questions that say whether it was learnt).
+ *
+ * NGG only. Summer School is a phase with its own course log
+ * (domain/instructor.php); this is the year-round programme a member belongs
+ * to, and a `Summer` account never sees it (member_is_ngg()).
+ *
+ * ── PROGRESS IS ONE ROW PER MEMBER PER UNIT ──────────────────────────────────
+ * Started on first open, completed when the checks are passed at the unit's
+ * pass mark. A multiple-choice answer is marked on the spot. A written answer
+ * is marked by the AI where one is configured — with its reasoning stored and
+ * labelled as the AI's — or waits for an instructor (`pending`), and the
+ * member is told which. A score is never invented for a mark nobody made.
+ *
+ * ── A VERSION, BECAUSE A LESSON MOVES ─────────────────────────────────────────
+ * Changing a published unit's checks bumps its version. A progress row keeps
+ * the version it was marked against, so a report can tell a score on today's
+ * questions from a score on last term's — the same discipline as assessment.php,
+ * where an instrument locks once it has results.
+ *
+ * ── THE AI DRAFTS, A PERSON PUBLISHES ────────────────────────────────────────
+ * admin_curriculum_ai() turns a lesson's text into a summary, objectives and
+ * checks. It returns a DRAFT for the editor to read; it never saves and never
+ * publishes. Generated checks are marked `source = ai` so a reviewer can see
+ * which questions nobody wrote.
+ */
+
+const CURR_STATUSES       = ['draft', 'published', 'retired'];
+const CURR_MATERIAL_KINDS = ['pdf', 'slides', 'doc', 'sheet', 'video', 'audio', 'image', 'link'];
+const CURR_CHECK_KINDS    = ['mcq', 'short', 'task'];
+const CURR_IMPORT_MAX     = 1000;
+const CURR_BULK_MAX       = 500;
+const CURR_MAX_MATERIALS  = 20;
+const CURR_MAX_CHECKS     = 30;
+
+/* ══ Shapes ═══════════════════════════════════════════════════════════════ */
+
+function curriculum_clean_text(mixed $v, int $max): string {
+    return mb_substr(trim(str_replace("\0", '', (string)$v)), 0, $max);
+}
+
+/** Objectives arrive as a list, or as one string split on new lines or `;`. */
+function curriculum_list(mixed $v, int $maxItems = 12, int $maxLen = 240): array {
+    if (is_string($v)) $v = preg_split('/\r\n|\r|\n|;/', $v) ?: [];
+    if (!is_array($v)) return [];
+    $out = [];
+    foreach ($v as $x) {
+        $x = curriculum_clean_text(is_array($x) ? ($x['text'] ?? '') : $x, $maxLen);
+        if ($x !== '') $out[] = $x;
+        if (count($out) >= $maxItems) break;
+    }
+    return $out;
+}
+
+/** The kind a material is, from what it was declared as, or from its URL. */
+function curriculum_material_kind(string $kind, string $url): string {
+    $kind = strtolower(trim($kind));
+    if (in_array($kind, CURR_MATERIAL_KINDS, true)) return $kind;
+    $path = strtolower((string)parse_url($url, PHP_URL_PATH));
+    return match (true) {
+        (bool)preg_match('/\.pdf$/', $path) => 'pdf',
+        (bool)preg_match('/\.(pptx?|key|odp)$/', $path) => 'slides',
+        (bool)preg_match('/\.(docx?|odt|rtf|txt)$/', $path) => 'doc',
+        (bool)preg_match('/\.(xlsx?|csv|ods)$/', $path) => 'sheet',
+        (bool)preg_match('/\.(mp4|mov|webm)$/', $path) || (bool)preg_match('~(youtube\.com|youtu\.be|vimeo\.com)~', $url) => 'video',
+        (bool)preg_match('/\.(mp3|m4a|wav|ogg)$/', $path) => 'audio',
+        (bool)preg_match('/\.(png|jpe?g|webp|gif)$/', $path) => 'image',
+        default => 'link',
+    };
+}
+
+/**
+ * A material's URL: https, or a file in this deployment's own curriculum store
+ * (`/api/member/curriculum-file.php?f=…`). Nothing else reaches an href.
+ */
+function curriculum_material_url(string $u): string {
+    $u = trim($u);
+    if (preg_match('#^https://[^\s<>"]+$#i', $u)) return mb_substr($u, 0, 1000);
+    if (preg_match('#^/api/member/curriculum-file\.php\?f=[a-f0-9]{16,64}\.[a-z0-9]{2,5}$#', $u)) return $u;
+    return '';
+}
+
+function curriculum_unit_public(array $u, array $materials, array $checks, bool $withAnswers): array {
+    return [
+        'unitId' => (string)$u['unitId'], 'course' => (string)$u['course'], 'level' => (string)$u['level'],
+        'week' => (int)$u['week'], 'position' => (int)$u['position'], 'title' => (string)$u['title'],
+        'summary' => (string)$u['summary'], 'objectives' => json_decode((string)$u['objectives'], true) ?: [],
+        'body' => (string)$u['body'], 'durationMins' => (int)$u['durationMins'], 'passMark' => (int)$u['passMark'],
+        'status' => (string)$u['status'], 'version' => (int)$u['version'], 'source' => (string)$u['source'],
+        'updatedAt' => (string)$u['updatedAt'], 'publishedAt' => (string)$u['publishedAt'],
+        'materials' => array_map(static fn($m) => ['materialId' => (string)$m['materialId'], 'kind' => (string)$m['kind'],
+            'title' => (string)$m['title'], 'url' => (string)$m['url']], $materials),
+        'checks' => array_map(static function ($c) use ($withAnswers) {
+            $o = ['checkId' => (string)$c['checkId'], 'kind' => (string)$c['kind'], 'prompt' => (string)$c['prompt'],
+                  'options' => json_decode((string)$c['options'], true) ?: [], 'points' => (int)$c['points'],
+                  'source' => (string)$c['source']];
+            if ($withAnswers) { $o['answer'] = (string)$c['answer']; $o['rubric'] = (string)$c['rubric']; }
+            return $o;
+        }, $checks),
+    ];
+}
+
+/**
+ * Units with their materials and checks — three queries for any number of
+ * units, never one per unit.
+ *
+ * @return array<string,array{unit:array,materials:list<array>,checks:list<array>}>
+ */
+function curriculum_load(string $where = '1=1', array $args = [], string $order = 'course, level, week, position'): array {
+    $units = db_all("SELECT * FROM curriculum_units WHERE $where ORDER BY $order", $args);
+    if (!$units) return [];
+    $ids = array_map(static fn($u) => (string)$u['unitId'], $units);
+    $ph = implode(',', array_fill(0, count($ids), '?'));
+    $out = [];
+    foreach ($units as $u) $out[(string)$u['unitId']] = ['unit' => $u, 'materials' => [], 'checks' => []];
+    foreach (db_all("SELECT * FROM curriculum_materials WHERE unitId IN ($ph) ORDER BY position, id", $ids) as $m) $out[(string)$m['unitId']]['materials'][] = $m;
+    foreach (db_all("SELECT * FROM curriculum_checks WHERE unitId IN ($ph) ORDER BY position, id", $ids) as $c) $out[(string)$c['unitId']]['checks'][] = $c;
+    return $out;
+}
+
+/** The courses an editor may file a lesson under: the academy catalogue, plus
+ *  any course already holding lessons (a retired catalogue entry must not make
+ *  its lessons unfindable). */
+function curriculum_courses(): array {
+    $all = function_exists('academy_courses') ? academy_courses() : [];
+    foreach (db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> ''") as $r) $all[] = (string)$r['course'];
+    $all = array_values(array_unique(array_filter(array_map('strval', $all))));
+    sort($all, SORT_NATURAL | SORT_FLAG_CASE);
+    return $all;
+}
+
+/** A course name as the catalogue spells it, or null. Case- and space-blind,
+ *  so "piano" and "Piano " are the catalogue's "Piano". */
+function curriculum_course_canonical(string $course): ?string {
+    $want = strtolower(preg_replace('/\s+/', ' ', trim($course)) ?? '');
+    if ($want === '') return '';
+    foreach (curriculum_courses() as $c) if (strtolower($c) === $want) return $c;
+    return null;
+}
+
+/** The nearest catalogue course to a misspelt one, for the refusal. */
+function curriculum_course_suggest(string $course): string {
+    $best = ''; $bestD = PHP_INT_MAX;
+    foreach (curriculum_courses() as $c) {
+        $d = levenshtein(strtolower($course), strtolower($c));
+        if ($d < $bestD) { $bestD = $d; $best = $c; }
+    }
+    return $bestD <= max(3, (int)(strlen($course) / 3)) ? $best : '';
+}
+
+/* ══ Validation — one shape for the editor, the import and the AI draft ═════ */
+
+/**
+ * Validate one unit (with its materials and checks) WITHOUT writing.
+ *
+ * @return array{ok:bool,error?:string,detail?:string,unit?:array,materials?:list<array>,checks?:list<array>}
+ */
+function curriculum_validate(array $d, bool $allowNewCourse = false): array {
+    $course = curriculum_clean_text($d['course'] ?? '', 120);
+    $canon = curriculum_course_canonical($course);
+    if ($canon === null) {
+        if (!$allowNewCourse) {
+            $sug = curriculum_course_suggest($course);
+            return ['ok' => false, 'error' => 'unknown_course', 'detail' => $sug !== '' ? 'did you mean ' . $sug . '?' : 'not in the academy catalogue'];
+        }
+        $canon = $course;
+    }
+    $title = curriculum_clean_text($d['title'] ?? '', 200);
+    if (mb_strlen($title) < 2) return ['ok' => false, 'error' => 'title_required'];
+    $week = (int)($d['week'] ?? 1); $pos = (int)($d['position'] ?? ($d['order'] ?? 1));
+    if ($week < 1 || $week > 104) return ['ok' => false, 'error' => 'bad_week', 'detail' => 'week must be 1–104'];
+    if ($pos < 1 || $pos > 50) return ['ok' => false, 'error' => 'bad_position', 'detail' => 'position must be 1–50'];
+    $status = (string)($d['status'] ?? 'draft');
+    if (!in_array($status, CURR_STATUSES, true)) $status = 'draft';
+    $pass = isset($d['passMark']) && $d['passMark'] !== '' ? (int)$d['passMark'] : 60;
+    if ($pass < 0 || $pass > 100) return ['ok' => false, 'error' => 'bad_pass_mark'];
+    $unit = [
+        'course' => $canon, 'level' => curriculum_clean_text($d['level'] ?? '', 60), 'week' => $week, 'position' => $pos,
+        'title' => $title, 'summary' => curriculum_clean_text($d['summary'] ?? '', 1200),
+        'objectives' => json_encode(curriculum_list($d['objectives'] ?? []), JSON_UNESCAPED_UNICODE),
+        'body' => curriculum_clean_text($d['body'] ?? '', 60000),
+        'durationMins' => max(0, min(600, (int)($d['durationMins'] ?? ($d['duration'] ?? 0)))),
+        'passMark' => $pass, 'status' => $status,
+    ];
+
+    // Materials: [{title,url,kind}] or "url | title" lines.
+    $mats = $d['materials'] ?? [];
+    if (is_string($mats)) {
+        $mats = array_map(static function ($line) {
+            [$u, $t] = array_pad(array_map('trim', explode('|', $line, 2)), 2, '');
+            return ['url' => $u, 'title' => $t];
+        }, array_filter(preg_split('/\r\n|\r|\n/', $mats) ?: [], static fn($l) => trim($l) !== ''));
+    }
+    if (!empty($d['materialUrl'])) $mats[] = ['url' => (string)$d['materialUrl'], 'title' => (string)($d['materialTitle'] ?? '')];
+    $materials = [];
+    foreach (is_array($mats) ? $mats : [] as $i => $m) {
+        if (!is_array($m)) continue;
+        $url = curriculum_material_url((string)($m['url'] ?? ''));
+        if ($url === '') return ['ok' => false, 'error' => 'bad_material_url', 'detail' => 'material ' . ($i + 1) . ' needs an https link or an uploaded file'];
+        $materials[] = ['url' => $url, 'kind' => curriculum_material_kind((string)($m['kind'] ?? ''), $url),
+                        'title' => curriculum_clean_text($m['title'] ?? '', 200) ?: basename((string)parse_url($url, PHP_URL_PATH)) ?: 'Material'];
+        if (count($materials) > CURR_MAX_MATERIALS) return ['ok' => false, 'error' => 'too_many_materials', 'max' => CURR_MAX_MATERIALS];
+    }
+
+    // Checks: [{kind,prompt,options,answer,rubric,points}].
+    $checks = [];
+    foreach (is_array($d['checks'] ?? null) ? $d['checks'] : [] as $i => $c) {
+        if (!is_array($c)) continue;
+        $prompt = curriculum_clean_text($c['prompt'] ?? ($c['question'] ?? ''), 1000);
+        if ($prompt === '') continue;
+        $kind = strtolower((string)($c['kind'] ?? (isset($c['options']) ? 'mcq' : 'short')));
+        if (!in_array($kind, CURR_CHECK_KINDS, true)) $kind = 'short';
+        $opts = curriculum_list($c['options'] ?? [], 8, 300);
+        $answer = trim((string)($c['answer'] ?? ''));
+        if ($kind === 'mcq') {
+            if (count($opts) < 2) return ['ok' => false, 'error' => 'mcq_needs_options', 'detail' => 'check ' . ($i + 1)];
+            /* The answer is an option's index — or its text, or its letter,
+               because a sheet typed by a person says "B" or "photosynthesis". */
+            $idx = null;
+            if (ctype_digit($answer) && (int)$answer < count($opts)) $idx = (int)$answer;
+            elseif (preg_match('/^[A-Ha-h]$/', $answer)) $idx = ord(strtoupper($answer)) - 65;
+            else foreach ($opts as $k => $o) if (strcasecmp($o, $answer) === 0) $idx = $k;
+            if ($idx === null || $idx >= count($opts)) return ['ok' => false, 'error' => 'mcq_answer_missing', 'detail' => 'check ' . ($i + 1) . ': the answer must be one of its options'];
+            $answer = (string)$idx;
+        }
+        $checks[] = ['checkId' => preg_match('/^CHK-[A-F0-9]{6,16}$/', (string)($c['checkId'] ?? '')) ? (string)$c['checkId'] : '',
+            'kind' => $kind, 'prompt' => $prompt, 'options' => json_encode($opts, JSON_UNESCAPED_UNICODE), 'answer' => mb_substr($answer, 0, 2000),
+            'rubric' => curriculum_clean_text($c['rubric'] ?? '', 2000), 'points' => max(1, min(20, (int)($c['points'] ?? 1))),
+            'source' => (string)($c['source'] ?? '') === 'ai' ? 'ai' : 'manual'];
+        if (count($checks) > CURR_MAX_CHECKS) return ['ok' => false, 'error' => 'too_many_checks', 'max' => CURR_MAX_CHECKS];
+    }
+    return ['ok' => true, 'unit' => $unit, 'materials' => $materials, 'checks' => $checks];
+}
+
+/** A fingerprint of a validated unit's content, for "unchanged". */
+function curriculum_fingerprint(array $v): string {
+    $u = $v['unit'];
+    unset($u['status']);
+    $strip = static fn($xs) => array_map(static function ($x) { unset($x['checkId']); return $x; }, $xs);
+    return hash('sha256', json_encode([$u, $v['materials'], $strip($v['checks'])], JSON_UNESCAPED_UNICODE));
+}
+
+function curriculum_fingerprint_stored(array $bundle): string {
+    $u = $bundle['unit'];
+    $unit = ['course' => (string)$u['course'], 'level' => (string)$u['level'], 'week' => (int)$u['week'], 'position' => (int)$u['position'],
+        'title' => (string)$u['title'], 'summary' => (string)$u['summary'], 'objectives' => (string)$u['objectives'], 'body' => (string)$u['body'],
+        'durationMins' => (int)$u['durationMins'], 'passMark' => (int)$u['passMark']];
+    $mats = array_map(static fn($m) => ['url' => (string)$m['url'], 'kind' => (string)$m['kind'], 'title' => (string)$m['title']], $bundle['materials']);
+    $checks = array_map(static fn($c) => ['kind' => (string)$c['kind'], 'prompt' => (string)$c['prompt'], 'options' => (string)$c['options'],
+        'answer' => (string)$c['answer'], 'rubric' => (string)$c['rubric'], 'points' => (int)$c['points'], 'source' => (string)$c['source']], $bundle['checks']);
+    return hash('sha256', json_encode([$unit, $mats, $checks], JSON_UNESCAPED_UNICODE));
+}
+
+/**
+ * Write a validated unit. Updates in place when `$existing` is given; the
+ * version moves when the CHECKS changed on a unit somebody has already sat,
+ * because their score answered the old questions.
+ */
+function curriculum_write(array $v, ?array $existing, string $by, string $source): string {
+    $now = now_iso();
+    $unit = $v['unit'];
+    $unitId = $existing ? (string)$existing['unitId'] : 'CUR-' . strtoupper(rand_hex(5));
+    db_tx(function () use ($v, $existing, $by, $source, $now, $unit, $unitId) {
+        $checksBefore = $existing ? db_all('SELECT kind, prompt, options, answer, points FROM curriculum_checks WHERE unitId = ? ORDER BY position, id', [$unitId]) : [];
+        $checksAfter = array_map(static fn($c) => ['kind' => $c['kind'], 'prompt' => $c['prompt'], 'options' => $c['options'], 'answer' => $c['answer'], 'points' => $c['points']], $v['checks']);
+        $sat = $existing ? (bool)db_row('SELECT id FROM curriculum_progress WHERE unitId = ? AND attempts > 0 LIMIT 1', [$unitId]) : false;
+        $norm = static fn($rows) => json_encode(array_map(static fn($r) => array_map('strval', $r), $rows));
+        $bump = $existing && $sat && $norm($checksBefore) !== $norm($checksAfter);
+        $row = $unit + ['updatedBy' => $by, 'updatedAt' => $now];
+        if ($unit['status'] === 'published' && (!$existing || (string)$existing['status'] !== 'published')) $row['publishedAt'] = $now;
+        if ($existing) {
+            if ($bump) $row['version'] = (int)$existing['version'] + 1;
+            db_update('curriculum_units', $row, ['unitId' => $unitId]);
+        } else {
+            db_insert('curriculum_units', $row + ['unitId' => $unitId, 'source' => $source, 'createdBy' => $by, 'createdAt' => $now, 'version' => 1]);
+        }
+        db_exec('DELETE FROM curriculum_materials WHERE unitId = ?', [$unitId]);
+        foreach ($v['materials'] as $i => $m) {
+            db_insert('curriculum_materials', ['materialId' => 'MAT-' . strtoupper(rand_hex(5)), 'unitId' => $unitId, 'kind' => $m['kind'],
+                'title' => $m['title'], 'url' => $m['url'], 'position' => $i + 1, 'createdAt' => $now]);
+        }
+        /* Checks keep their ids where the editor sent them back, so a progress
+           row's answers still point at the question they answered. */
+        $keep = array_values(array_filter(array_column($v['checks'], 'checkId')));
+        if ($keep) {
+            $ph = implode(',', array_fill(0, count($keep), '?'));
+            db_exec("DELETE FROM curriculum_checks WHERE unitId = ? AND checkId NOT IN ($ph)", array_merge([$unitId], $keep));
+        } else {
+            db_exec('DELETE FROM curriculum_checks WHERE unitId = ?', [$unitId]);
+        }
+        foreach ($v['checks'] as $i => $c) {
+            $fields = ['kind' => $c['kind'], 'prompt' => $c['prompt'], 'options' => $c['options'], 'answer' => $c['answer'],
+                       'rubric' => $c['rubric'], 'points' => $c['points'], 'position' => $i + 1, 'source' => $c['source']];
+            if ($c['checkId'] !== '' && db_row('SELECT id FROM curriculum_checks WHERE checkId = ? AND unitId = ?', [$c['checkId'], $unitId])) {
+                db_update('curriculum_checks', $fields, ['checkId' => $c['checkId']]);
+            } else {
+                db_insert('curriculum_checks', $fields + ['checkId' => 'CHK-' . strtoupper(rand_hex(5)), 'unitId' => $unitId]);
+            }
+        }
+    });
+    return $unitId;
+}
+
+/* ══ The Control Room ═══════════════════════════════════════════════════════ */
+
+function admin_curriculum_list(array $p): array {
+    // Reads: the curriculum desk, and the Club desk that runs the classes.
+    $g = admin_cap_gate_any($p, ['curriculum', 'club']); if (!$g['ok']) return $g;
+    $where = ['1=1']; $args = [];
+    $course = trim((string)($p['course'] ?? ''));
+    if ($course !== '') { $where[] = 'course = ?'; $args[] = $course === '__all' ? '' : $course; }
+    $status = (string)($p['status'] ?? '');
+    if (in_array($status, CURR_STATUSES, true)) { $where[] = 'status = ?'; $args[] = $status; }
+    else $where[] = "status <> 'retired'";
+    $q = strtolower(trim((string)($p['q'] ?? '')));
+    if ($q !== '') { $where[] = '(lower(title) LIKE ? OR lower(summary) LIKE ?)'; $args[] = '%' . $q . '%'; $args[] = '%' . $q . '%'; }
+    $units = db_all('SELECT * FROM curriculum_units WHERE ' . implode(' AND ', $where) . ' ORDER BY course, level, week, position LIMIT 2000', $args);
+    $ids = array_map(static fn($u) => (string)$u['unitId'], $units);
+    $counts = ['m' => [], 'c' => [], 'p' => []];
+    if ($ids) {
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        foreach (db_all("SELECT unitId, COUNT(*) n FROM curriculum_materials WHERE unitId IN ($ph) GROUP BY unitId", $ids) as $r) $counts['m'][$r['unitId']] = (int)$r['n'];
+        foreach (db_all("SELECT unitId, COUNT(*) n FROM curriculum_checks WHERE unitId IN ($ph) GROUP BY unitId", $ids) as $r) $counts['c'][$r['unitId']] = (int)$r['n'];
+        foreach (db_all("SELECT unitId, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) done, COUNT(*) started,
+                                SUM(pending) pend, AVG(CASE WHEN attempts > 0 THEN bestPct END) avgPct
+                         FROM curriculum_progress WHERE unitId IN ($ph) GROUP BY unitId", $ids) as $r) {
+            $counts['p'][$r['unitId']] = ['completed' => (int)$r['done'], 'started' => (int)$r['started'], 'pending' => (int)$r['pend'],
+                                          'avgPct' => $r['avgPct'] !== null ? (int)round((float)$r['avgPct']) : null];
+        }
+    }
+    $out = array_map(static fn($u) => [
+        'unitId' => (string)$u['unitId'], 'course' => (string)$u['course'], 'level' => (string)$u['level'],
+        'week' => (int)$u['week'], 'position' => (int)$u['position'], 'title' => (string)$u['title'],
+        'status' => (string)$u['status'], 'version' => (int)$u['version'], 'source' => (string)$u['source'],
+        'materials' => $counts['m'][$u['unitId']] ?? 0, 'checks' => $counts['c'][$u['unitId']] ?? 0,
+        'progress' => $counts['p'][$u['unitId']] ?? ['completed' => 0, 'started' => 0, 'pending' => 0, 'avgPct' => null],
+        'updatedAt' => (string)$u['updatedAt'],
+    ], $units);
+    return ['ok' => true, 'units' => $out, 'courses' => curriculum_courses(),
+            'canWrite' => in_array('curriculum', member_effective_caps($g['requester']), true),
+            'aiEnabled' => function_exists('ai_enabled') && ai_enabled()];
+}
+
+function admin_curriculum_get(array $p): array {
+    $g = admin_cap_gate_any($p, ['curriculum', 'club']); if (!$g['ok']) return $g;
+    $b = curriculum_load('unitId = ?', [(string)($p['unitId'] ?? '')]);
+    if (!$b) return ['ok' => false, 'error' => 'not_found'];
+    $x = reset($b);
+    return ['ok' => true, 'unit' => curriculum_unit_public($x['unit'], $x['materials'], $x['checks'], true)];
+}
+
+function admin_curriculum_upsert(array $p): array {
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    $d = is_array($p['data'] ?? null) ? $p['data'] : [];
+    $v = curriculum_validate($d, !empty($p['allowNewCourse']));
+    if (!$v['ok']) return $v;
+    $id = (string)($d['unitId'] ?? '');
+    $existing = $id !== '' ? db_row('SELECT * FROM curriculum_units WHERE unitId = ?', [$id]) : null;
+    if ($id !== '' && !$existing) return ['ok' => false, 'error' => 'not_found'];
+    $u = $v['unit'];
+    $clash = db_row('SELECT unitId FROM curriculum_units WHERE course = ? AND level = ? AND week = ? AND position = ? LIMIT 1',
+                    [$u['course'], $u['level'], $u['week'], $u['position']]);
+    if ($clash && (!$existing || (string)$clash['unitId'] !== $id)) {
+        return ['ok' => false, 'error' => 'slot_taken', 'detail' => 'another lesson is already week ' . $u['week'] . ', position ' . $u['position'] . ' of this course', 'unitId' => (string)$clash['unitId']];
+    }
+    $unitId = curriculum_write($v, $existing, (string)$g['requester']['memberId'], (string)($d['source'] ?? '') === 'ai' ? 'ai' : 'manual');
+    audit('curriculum.' . ($existing ? 'update' : 'create'), (string)$g['requester']['memberId'], $unitId,
+          ['course' => $u['course'], 'week' => $u['week'], 'status' => $u['status']], (string)($p['ip'] ?? ''));
+    return admin_curriculum_get(['requesterId' => $p['requesterId'], 'unitId' => $unitId]);
+}
+
+/**
+ * Publish, unpublish (back to draft) or retire many units. A unit with progress
+ * is retired rather than deleted, because its scores point at it; `delete` is
+ * refused for those with `has_progress`.
+ */
+function admin_curriculum_status(array $p): array {
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    $action = (string)($p['action'] ?? '');
+    $map = ['publish' => 'published', 'unpublish' => 'draft', 'retire' => 'retired', 'delete' => null];
+    if (!array_key_exists($action, $map)) return ['ok' => false, 'error' => 'unknown_action'];
+    $to = $map[$action];   // null = delete
+    $ids = array_values(array_unique(array_filter(array_map('strval', is_array($p['unitIds'] ?? null) ? $p['unitIds'] : []))));
+    if (!$ids) return ['ok' => false, 'error' => 'nothing_selected'];
+    if (count($ids) > CURR_BULK_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => CURR_BULK_MAX];
+    $results = []; $applied = 0; $refused = 0; $unchanged = 0; $now = now_iso();
+    foreach ($ids as $id) {
+        $u = db_row('SELECT unitId, title, status FROM curriculum_units WHERE unitId = ?', [$id]);
+        if (!$u) { $results[] = ['id' => $id, 'ok' => false, 'error' => 'not_found']; $refused++; continue; }
+        if ($to === null) {
+            if (db_row('SELECT id FROM curriculum_progress WHERE unitId = ? LIMIT 1', [$id])) {
+                $results[] = ['id' => $id, 'name' => $u['title'], 'ok' => false, 'error' => 'has_progress']; $refused++; continue;
+            }
+            db_exec('DELETE FROM curriculum_checks WHERE unitId = ?', [$id]);
+            db_exec('DELETE FROM curriculum_materials WHERE unitId = ?', [$id]);
+            db_exec('DELETE FROM curriculum_units WHERE unitId = ?', [$id]);
+            $results[] = ['id' => $id, 'name' => $u['title'], 'ok' => true]; $applied++; continue;
+        }
+        if ((string)$u['status'] === $to) { $results[] = ['id' => $id, 'name' => $u['title'], 'ok' => true, 'unchanged' => true]; $unchanged++; continue; }
+        if ($to === 'published' && !db_row('SELECT id FROM curriculum_units WHERE unitId = ? AND title <> ?', [$id, ''])) {
+            $results[] = ['id' => $id, 'ok' => false, 'error' => 'title_required']; $refused++; continue;
+        }
+        $row = ['status' => $to, 'updatedAt' => $now, 'updatedBy' => (string)$g['requester']['memberId']];
+        if ($to === 'published') $row['publishedAt'] = $now;
+        db_update('curriculum_units', $row, ['unitId' => $id]);
+        $results[] = ['id' => $id, 'name' => $u['title'], 'ok' => true]; $applied++;
+    }
+    audit('curriculum.bulk', (string)$g['requester']['memberId'], '', ['action' => $action, 'count' => count($ids), 'applied' => $applied, 'refused' => $refused], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'applied' => $applied, 'unchanged' => $unchanged, 'refused' => $refused, 'results' => $results];
+}
+
+/**
+ * Import lessons in bulk — the seed, and every later revision of it.
+ *
+ * Rows are the editor's shape (course, level, week, position, title, summary,
+ * objectives, body, materials, checks). Matched on the natural key, so a
+ * second run of the same sheet reports `unchanged` and a corrected one
+ * `update`. A dry run first, always: the apply must send back the dry run's
+ * digest, so the rows somebody read are the rows that are written. Unknown
+ * courses are refused with the nearest catalogue course, unless the run says
+ * new courses are intended.
+ */
+function admin_curriculum_import(array $p): array {
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    $rows = is_array($p['rows'] ?? null) ? array_values($p['rows']) : [];
+    if (!$rows) return ['ok' => false, 'error' => 'nothing_to_import'];
+    if (count($rows) > CURR_IMPORT_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => CURR_IMPORT_MAX];
+    $allowNew = !empty($p['allowNewCourse']);
+    $publish = !empty($p['publish']);
+    $digest = hash('sha256', json_encode([$rows, $allowNew, $publish], JSON_UNESCAPED_UNICODE));
+    $dry = !empty($p['dryRun']);
+    if (!$dry && (string)($p['digest'] ?? '') !== $digest) return ['ok' => false, 'error' => 'import_changed',
+        'message' => 'These rows are not the ones that were checked. Run the check again.'];
+
+    // Validate EVERYTHING before writing anything (and catch duplicate keys in the file).
+    $plan = []; $seen = [];
+    foreach ($rows as $i => $r) {
+        if (!is_array($r)) { $plan[] = ['row' => $i + 1, 'verdict' => 'failed', 'error' => 'not_a_row']; continue; }
+        if ($publish && !isset($r['status'])) $r['status'] = 'published';
+        $v = curriculum_validate($r, $allowNew);
+        if (!$v['ok']) { $plan[] = ['row' => $i + 1, 'title' => (string)($r['title'] ?? ''), 'verdict' => 'failed', 'error' => $v['error'], 'detail' => $v['detail'] ?? '']; continue; }
+        $u = $v['unit'];
+        $key = strtolower($u['course'] . '|' . $u['level'] . '|' . $u['week'] . '|' . $u['position']);
+        if (isset($seen[$key])) { $plan[] = ['row' => $i + 1, 'title' => $u['title'], 'verdict' => 'failed', 'error' => 'duplicate_in_file', 'detail' => 'same course, level, week and position as row ' . $seen[$key]]; continue; }
+        $seen[$key] = $i + 1;
+        $existing = db_row('SELECT * FROM curriculum_units WHERE course = ? AND level = ? AND week = ? AND position = ? LIMIT 1', [$u['course'], $u['level'], $u['week'], $u['position']]);
+        $verdict = 'create';
+        if ($existing) {
+            $b = curriculum_load('unitId = ?', [(string)$existing['unitId']]);
+            $same = curriculum_fingerprint_stored(reset($b)) === curriculum_fingerprint($v);
+            $verdict = ($same && ((string)$existing['status'] === $u['status'] || !isset($r['status']))) ? 'unchanged' : 'update';
+            if (!isset($r['status'])) $v['unit']['status'] = (string)$existing['status'];
+        }
+        $plan[] = ['row' => $i + 1, 'title' => $u['title'], 'course' => $u['course'], 'week' => $u['week'], 'position' => $u['position'],
+                   'verdict' => $verdict, 'unitId' => $existing ? (string)$existing['unitId'] : '', '_v' => $v, '_e' => $existing,
+                   'materials' => count($v['materials']), 'checks' => count($v['checks'])];
+    }
+    $tally = ['create' => 0, 'update' => 0, 'unchanged' => 0, 'failed' => 0];
+    foreach ($plan as $x) $tally[$x['verdict']]++;
+    $public = static fn($pl) => array_map(static function ($x) { unset($x['_v'], $x['_e']); return $x; }, $pl);
+    if ($dry) return ['ok' => true, 'dryRun' => true, 'digest' => $digest, 'tally' => $tally, 'rows' => $public($plan)];
+
+    $by = (string)$g['requester']['memberId'];
+    foreach ($plan as &$x) {
+        if (!in_array($x['verdict'], ['create', 'update'], true)) continue;
+        $x['unitId'] = curriculum_write($x['_v'], $x['_e'], $by, 'import');
+    }
+    unset($x);
+    audit('curriculum.import', $by, '', $tally + ['rows' => count($rows)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'dryRun' => false, 'tally' => $tally, 'rows' => $public($plan)];
+}
+
+/**
+ * Draft a lesson's summary, objectives and checks from its text, with the AI.
+ * Returns a DRAFT for a person to read — nothing is saved. Fails with
+ * `ai_disabled` when no provider is configured, which the editor says plainly.
+ */
+function admin_curriculum_ai(array $p): array {
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    if (!function_exists('ai_classify')) return ['ok' => false, 'error' => 'ai_disabled'];
+    $title = curriculum_clean_text($p['title'] ?? '', 200);
+    $text = curriculum_clean_text($p['text'] ?? '', 12000);
+    if ($title === '' && $text === '') return ['ok' => false, 'error' => 'nothing_to_draft'];
+    $course = curriculum_clean_text($p['course'] ?? '', 120);
+    $level = curriculum_clean_text($p['level'] ?? '', 60);
+    $n = max(1, min(10, (int)($p['checks'] ?? 5)));
+    $instructions = "You help instructors at Next Generation Genius, a youth programme for 10–17 year olds in Nigeria, "
+        . "turn lesson notes into a clear lesson. Write for the learner, in plain British English, without inventing facts "
+        . "the notes do not support. Return JSON with keys: summary (2–3 sentences), objectives (3–6 short 'You will…' items), "
+        . "checks (exactly $n items; each {kind:'mcq'|'short', prompt, options (4 strings, mcq only), answer (mcq: the "
+        . "0-based index of the correct option; short: a model answer), rubric (short only: what a full-mark answer includes)}). "
+        . "Mix recall with understanding; no trick questions.";
+    $input = "Course: " . ($course ?: 'General') . ($level ? "\nLevel: $level" : '') . "\nLesson title: $title\n\nLesson notes:\n$text";
+    $r = ai_classify($instructions, $input, 1800, 'default');
+    if (empty($r['ok'])) {
+        $err = (string)($r['error'] ?? 'ai_failed');
+        return ['ok' => false, 'error' => $err, 'message' => $err === 'ai_disabled'
+            ? 'No AI provider is configured. Add one in Settings → AI to draft lessons.'
+            : 'The AI could not draft this lesson just now. Try again, or write it by hand.'];
+    }
+    $d = $r['data'];
+    $checks = [];
+    foreach (is_array($d['checks'] ?? null) ? $d['checks'] : [] as $c) {
+        if (!is_array($c)) continue;
+        $c['source'] = 'ai';
+        $checks[] = $c;
+    }
+    // Run the draft through the same validation as a saved lesson, so the
+    // editor is never handed a check it would then refuse to save.
+    $probe = curriculum_validate(['course' => $course, 'title' => $title ?: 'Draft', 'week' => 1, 'position' => 1, 'checks' => $checks], true);
+    $valid = $probe['ok'] ? array_map(static function ($c) {
+        return ['kind' => $c['kind'], 'prompt' => $c['prompt'], 'options' => json_decode($c['options'], true) ?: [],
+                'answer' => $c['answer'], 'rubric' => $c['rubric'], 'points' => $c['points'], 'source' => 'ai'];
+    }, $probe['checks']) : [];
+    audit('curriculum.ai_draft', (string)$g['requester']['memberId'], '', ['course' => $course, 'checks' => count($valid), 'provider' => $r['provider'] ?? ''], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'draft' => [
+        'summary' => curriculum_clean_text($d['summary'] ?? '', 1200),
+        'objectives' => curriculum_list($d['objectives'] ?? []),
+        'checks' => $valid,
+    ], 'provider' => (string)($r['provider'] ?? ''), 'note' => $probe['ok'] ? '' : 'Some generated checks were unusable and were dropped.'];
+}
+
+/**
+ * Progress across the curriculum: per unit (started, completed, pending marks,
+ * average best score) and, with `memberId`, one member's record. Centre scope
+ * applies — a scoped admin sees only their centres' members.
+ */
+function admin_curriculum_report(array $p): array {
+    $g = admin_cap_gate_any($p, ['curriculum', 'club', 'audit']); if (!$g['ok']) return $g;
+    $scope = function_exists('admin_centre_names_in_scope') ? admin_centre_names_in_scope($g['requester']) : null;
+    $mWhere = "m.status = 'active' AND COALESCE(m.type,'NGG') <> 'Summer'"; $mArgs = [];
+    if ($scope !== null) {
+        if (!$scope) return ['ok' => true, 'units' => [], 'members' => [], 'scoped' => true];
+        $mWhere .= ' AND m.centre IN (' . implode(',', array_fill(0, count($scope), '?')) . ')'; $mArgs = $scope;
+    }
+    $mid = trim((string)($p['memberId'] ?? ''));
+    if ($mid !== '') {
+        $m = db_row("SELECT memberId, fullName, displayId, centre, track FROM members m WHERE $mWhere AND m.memberId = ?", array_merge($mArgs, [$mid]));
+        if (!$m) return ['ok' => false, 'error' => 'not_found'];
+        return ['ok' => true, 'member' => $m + ['curriculum' => curriculum_for_member($m)]];
+    }
+    $course = trim((string)($p['course'] ?? ''));
+    $uWhere = "u.status = 'published'"; $uArgs = [];
+    if ($course !== '') { $uWhere .= ' AND u.course = ?'; $uArgs[] = $course; }
+    $rows = db_all("SELECT u.unitId, u.course, u.level, u.week, u.position, u.title,
+                           COUNT(p.id) started, SUM(CASE WHEN p.status = 'completed' THEN 1 ELSE 0 END) completed,
+                           SUM(COALESCE(p.pending, 0)) pending, AVG(CASE WHEN p.attempts > 0 THEN p.bestPct END) avgPct
+                    FROM curriculum_units u
+                    LEFT JOIN curriculum_progress p ON p.unitId = u.unitId
+                      AND p.memberId IN (SELECT m.memberId FROM members m WHERE $mWhere)
+                    WHERE $uWhere GROUP BY u.unitId, u.course, u.level, u.week, u.position, u.title
+                    ORDER BY u.course, u.level, u.week, u.position", array_merge($mArgs, $uArgs));
+    // How many members each course is FOR, so "12 completed" has a denominator.
+    $enrolled = [];
+    foreach (db_all("SELECT m.track, COUNT(*) n FROM members m WHERE $mWhere GROUP BY m.track", $mArgs) as $r) $enrolled[(string)$r['track']] = (int)$r['n'];
+    $everyone = array_sum($enrolled);
+    $units = array_map(static fn($r) => [
+        'unitId' => (string)$r['unitId'], 'course' => (string)$r['course'], 'level' => (string)$r['level'], 'week' => (int)$r['week'],
+        'position' => (int)$r['position'], 'title' => (string)$r['title'], 'started' => (int)$r['started'], 'completed' => (int)$r['completed'],
+        'pending' => (int)$r['pending'], 'avgPct' => $r['avgPct'] !== null ? (int)round((float)$r['avgPct']) : null,
+        'audience' => (string)$r['course'] === '' ? $everyone : ($enrolled[(string)$r['course']] ?? 0),
+    ], $rows);
+    return ['ok' => true, 'units' => $units, 'scoped' => $scope !== null];
+}
+
+/* ══ Members ═════════════════════════════════════════════════════════════════ */
+
+/** The units a member's curriculum holds: their course's, and the Club-wide ones. */
+function curriculum_member_units(array $m): array {
+    $track = trim((string)($m['track'] ?? ''));
+    return curriculum_load("status = 'published' AND (course = '' OR lower(course) = lower(?))", [$track], 'week, course, position');
+}
+
+/** A member's curriculum with their progress — the portal, a mentor's view and the report share it. */
+function curriculum_for_member(array $m): array {
+    $units = curriculum_member_units($m);
+    $prog = [];
+    if ($units) {
+        $ids = array_keys($units);
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        foreach (db_all("SELECT * FROM curriculum_progress WHERE memberId = ? AND unitId IN ($ph)", array_merge([(string)$m['memberId']], $ids)) as $r) $prog[(string)$r['unitId']] = $r;
+    }
+    $out = []; $done = 0;
+    foreach ($units as $id => $b) {
+        $u = $b['unit']; $pr = $prog[$id] ?? null;
+        if ($pr && $pr['status'] === 'completed') $done++;
+        $out[] = ['unitId' => $id, 'course' => (string)$u['course'], 'level' => (string)$u['level'], 'week' => (int)$u['week'],
+            'position' => (int)$u['position'], 'title' => (string)$u['title'], 'summary' => (string)$u['summary'],
+            'durationMins' => (int)$u['durationMins'], 'materials' => count($b['materials']), 'checks' => count($b['checks']),
+            'progress' => $pr ? ['status' => (string)$pr['status'], 'bestPct' => (int)$pr['bestPct'], 'attempts' => (int)$pr['attempts'],
+                                 'pending' => (int)$pr['pending'] > 0, 'completedAt' => (string)$pr['completedAt'],
+                                 'stale' => (int)$pr['unitVersion'] !== (int)$u['version'] && (int)$pr['attempts'] > 0] : null];
+    }
+    return ['units' => $out, 'total' => count($out), 'completed' => $done,
+            'pct' => $out ? (int)round($done / count($out) * 100) : 0];
+}
+
+function curriculum_member_row(string $memberId): ?array {
+    $m = db_row('SELECT memberId, fullName, track, centre, type, status FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    return ($m && member_is_ngg($m)) ? $m : null;
+}
+
+function member_curriculum_list(array $p): array {
+    $m = curriculum_member_row((string)($p['memberId'] ?? ''));
+    if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
+    return ['ok' => true, 'track' => (string)$m['track']] + curriculum_for_member($m);
+}
+
+function member_curriculum_unit(array $p): array {
+    $m = curriculum_member_row((string)($p['memberId'] ?? ''));
+    if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
+    $units = curriculum_member_units($m);
+    $id = (string)($p['unitId'] ?? '');
+    if (!isset($units[$id])) return ['ok' => false, 'error' => 'not_found'];
+    $b = $units[$id];
+    $pr = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$id, (string)$m['memberId']]);
+    if (!$pr) {
+        // Opening a lesson starts it; a duplicate from a double tap is harmless.
+        try { db_insert('curriculum_progress', ['unitId' => $id, 'memberId' => (string)$m['memberId'], 'status' => 'started',
+            'unitVersion' => (int)$b['unit']['version'], 'startedAt' => now_iso(), 'updatedAt' => now_iso()]); } catch (\Throwable $e) {}
+        $pr = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$id, (string)$m['memberId']]);
+    }
+    return ['ok' => true, 'unit' => curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], false),
+            'progress' => curriculum_progress_public($pr, $b)];
+}
+
+function curriculum_progress_public(?array $pr, array $b): ?array {
+    if (!$pr) return null;
+    $marks = json_decode((string)$pr['marks'], true) ?: [];
+    $answers = json_decode((string)$pr['answers'], true) ?: [];
+    return ['status' => (string)$pr['status'], 'score' => (float)$pr['score'], 'maxScore' => (float)$pr['maxScore'],
+            'bestPct' => (int)$pr['bestPct'], 'attempts' => (int)$pr['attempts'], 'pending' => (int)$pr['pending'] > 0,
+            'passMark' => (int)$b['unit']['passMark'], 'feedback' => (string)$pr['feedback'], 'answers' => $answers,
+            'marks' => $marks, 'completedAt' => (string)$pr['completedAt'],
+            'stale' => (int)$pr['unitVersion'] !== (int)$b['unit']['version'] && (int)$pr['attempts'] > 0];
+}
+
+/**
+ * Mark one written answer with the AI, or return null to leave it for a person.
+ * The mark is a whole number of points; the reason is stored with it and shown
+ * labelled as the AI's.
+ */
+function curriculum_ai_mark(array $check, string $answer): ?array {
+    if (!function_exists('ai_classify') || trim($answer) === '') return null;
+    $pts = (int)$check['points'];
+    $r = ai_classify("You mark a 10–17 year old's short answer fairly and kindly. Award whole points from 0 to $pts against "
+        . "the model answer and rubric; spelling does not cost marks. Return JSON {points:int, feedback:string (one or two "
+        . "encouraging sentences saying what was right and what to add)}.",
+        "Question: {$check['prompt']}\nModel answer: {$check['answer']}\nRubric: {$check['rubric']}\nMaximum points: $pts\n\nLearner's answer:\n" . mb_substr($answer, 0, 3000),
+        300, 'default');
+    if (empty($r['ok']) || !isset($r['data']['points'])) return null;
+    return ['points' => max(0, min($pts, (int)$r['data']['points'])), 'feedback' => curriculum_clean_text($r['data']['feedback'] ?? '', 600), 'by' => 'ai'];
+}
+
+/** Recompute a progress row's totals from its per-check marks. */
+function curriculum_progress_total(array $checks, array $marks, int $passMark): array {
+    $score = 0.0; $max = 0.0; $pending = 0;
+    foreach ($checks as $c) {
+        $max += (int)$c['points'];
+        $mk = $marks[(string)$c['checkId']] ?? null;
+        if ($mk === null || !isset($mk['points'])) { $pending++; continue; }
+        $score += (float)$mk['points'];
+    }
+    $pct = $max > 0 ? (int)round($score / $max * 100) : 100;
+    return ['score' => $score, 'max' => $max, 'pct' => $pct, 'pending' => $pending, 'passed' => $pending === 0 && $pct >= $passMark];
+}
+
+function member_curriculum_submit(array $p): array {
+    $m = curriculum_member_row((string)($p['memberId'] ?? ''));
+    if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
+    $units = curriculum_member_units($m);
+    $id = (string)($p['unitId'] ?? '');
+    if (!isset($units[$id])) return ['ok' => false, 'error' => 'not_found'];
+    $b = $units[$id];
+    $answers = is_array($p['answers'] ?? null) ? $p['answers'] : [];
+    $marks = []; $clean = []; $feedback = [];
+    foreach ($b['checks'] as $c) {
+        $cid = (string)$c['checkId'];
+        $a = $answers[$cid] ?? null;
+        if ($c['kind'] === 'mcq') {
+            $pick = is_numeric($a) ? (int)$a : -1;
+            $clean[$cid] = $pick;
+            $marks[$cid] = ['points' => $pick === (int)$c['answer'] ? (int)$c['points'] : 0, 'by' => 'auto'];
+        } else {
+            $text = curriculum_clean_text($a ?? '', 4000);
+            $clean[$cid] = $text;
+            if ($text === '') { $marks[$cid] = ['points' => 0, 'by' => 'auto', 'feedback' => 'No answer given.']; continue; }
+            $ai = curriculum_ai_mark($c, $text);
+            if ($ai) { $marks[$cid] = $ai; if ($ai['feedback'] !== '') $feedback[] = $ai['feedback']; }
+            // No AI: left unmarked, so the total waits for an instructor.
+        }
+    }
+    $t = curriculum_progress_total($b['checks'], $marks, (int)$b['unit']['passMark']);
+    $now = now_iso();
+    $pr = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$id, (string)$m['memberId']]);
+    $best = max($pr ? (int)$pr['bestPct'] : 0, $t['pending'] === 0 ? $t['pct'] : 0);
+    $completedBefore = $pr && (string)$pr['status'] === 'completed';
+    $row = ['status' => $t['passed'] || $completedBefore ? 'completed' : ($t['pending'] > 0 ? 'submitted' : 'attempted'),
+            'unitVersion' => (int)$b['unit']['version'], 'score' => $t['score'], 'maxScore' => $t['max'], 'bestPct' => $best,
+            'attempts' => ($pr ? (int)$pr['attempts'] : 0) + 1, 'answers' => json_encode($clean, JSON_UNESCAPED_UNICODE),
+            'marks' => json_encode($marks, JSON_UNESCAPED_UNICODE), 'feedback' => mb_substr(implode(' ', $feedback), 0, 2000),
+            'pending' => $t['pending'] > 0 ? 1 : 0, 'updatedAt' => $now];
+    if ($t['passed'] && !$completedBefore) $row['completedAt'] = $now;
+    if ($pr) db_update('curriculum_progress', $row, ['id' => $pr['id']]);
+    else db_insert('curriculum_progress', $row + ['unitId' => $id, 'memberId' => (string)$m['memberId'], 'startedAt' => $now]);
+    if ($t['passed'] && !$completedBefore && function_exists('event_emit')) {
+        event_emit('curriculum.completed', ['memberId' => (string)$m['memberId'], 'unitId' => $id, 'title' => (string)$b['unit']['title'], 'pct' => $t['pct']]);
+    }
+    $pr = db_row('SELECT * FROM curriculum_progress WHERE unitId = ? AND memberId = ?', [$id, (string)$m['memberId']]);
+    return ['ok' => true, 'progress' => curriculum_progress_public($pr, $b),
+            // The answers are revealed only once the attempt is fully marked.
+            'review' => $t['pending'] === 0 ? curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], true)['checks'] : null];
+}
+
+/* ══ Instructors and mentors ═══════════════════════════════════════════════ */
+
+/** The portal's own gate, narrowed to the Club: Summer-only staff have no NGG curriculum. */
+function curriculum_staff_gate(array $p): array {
+    $g = mentor_gate($p); if (!$g['ok']) return $g;
+    if (!in_array('ngg', $g['programmes'] ?? [], true)) return ['ok' => false, 'error' => 'not_ngg_staff',
+        'message' => 'The Club curriculum is for NGG mentors and instructors. Ask an admin to set your programme to NGG.'];
+    return $g;
+}
+
+/**
+ * What an instructor or mentor sees: the lessons for their courses, how their
+ * members are getting on with each, and the written answers waiting for them.
+ */
+function staff_curriculum(array $p): array {
+    $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+    $courses = $g['courses'];   // null = every course
+    $where = "status = 'published'"; $args = [];
+    if ($courses !== null) {
+        if (!$courses) return ['ok' => true, 'units' => [], 'pending' => [], 'members' => 0];
+        $where .= " AND (course = '' OR course IN (" . implode(',', array_fill(0, count($courses), '?')) . '))'; $args = $courses;
+    }
+    $units = curriculum_load($where, $args, 'course, week, position');
+    $mWhere = "status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"; $mArgs = [];
+    if ($g['centres'] !== null) {
+        if (!$g['centres']) return ['ok' => true, 'units' => [], 'pending' => [], 'members' => 0];
+        $mWhere .= ' AND centre IN (' . implode(',', array_fill(0, count($g['centres']), '?')) . ')'; $mArgs = $g['centres'];
+    }
+    if ($courses !== null) { $mWhere .= ' AND track IN (' . implode(',', array_fill(0, count($courses), '?')) . ')'; $mArgs = array_merge($mArgs, $courses); }
+    $members = db_all("SELECT memberId, fullName, displayId, centre, track FROM members WHERE $mWhere ORDER BY fullName LIMIT 2000", $mArgs);
+    $byId = []; foreach ($members as $mm) $byId[(string)$mm['memberId']] = $mm;
+    $stats = []; $pending = [];
+    if ($units && $byId) {
+        $uids = array_keys($units); $mids = array_keys($byId);
+        $rows = db_all('SELECT * FROM curriculum_progress WHERE unitId IN (' . implode(',', array_fill(0, count($uids), '?')) . ')
+                        AND memberId IN (' . implode(',', array_fill(0, count($mids), '?')) . ')', array_merge($uids, $mids));
+        foreach ($rows as $r) {
+            $s = &$stats[(string)$r['unitId']];
+            $s['started'] = ($s['started'] ?? 0) + 1;
+            if ($r['status'] === 'completed') $s['completed'] = ($s['completed'] ?? 0) + 1;
+            unset($s);
+            if ((int)$r['pending'] > 0) {
+                $b = $units[(string)$r['unitId']];
+                $marks = json_decode((string)$r['marks'], true) ?: [];
+                $answers = json_decode((string)$r['answers'], true) ?: [];
+                $open = [];
+                foreach ($b['checks'] as $c) {
+                    if (isset($marks[$c['checkId']]['points'])) continue;
+                    $open[] = ['checkId' => (string)$c['checkId'], 'prompt' => (string)$c['prompt'], 'points' => (int)$c['points'],
+                               'modelAnswer' => (string)$c['answer'], 'rubric' => (string)$c['rubric'], 'answer' => (string)($answers[$c['checkId']] ?? '')];
+                }
+                $pending[] = ['progressId' => (int)$r['id'], 'unitId' => (string)$r['unitId'], 'unitTitle' => (string)$b['unit']['title'],
+                              'memberId' => (string)$r['memberId'], 'memberName' => (string)$byId[(string)$r['memberId']]['fullName'],
+                              'submittedAt' => (string)$r['updatedAt'], 'checks' => $open];
+            }
+        }
+    }
+    $out = [];
+    foreach ($units as $id => $b) {
+        $audience = 0;
+        foreach ($members as $mm) if ((string)$b['unit']['course'] === '' || strcasecmp((string)$mm['track'], (string)$b['unit']['course']) === 0) $audience++;
+        $out[] = curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], true)
+            + ['stats' => ['audience' => $audience, 'started' => $stats[$id]['started'] ?? 0, 'completed' => $stats[$id]['completed'] ?? 0]];
+    }
+    return ['ok' => true, 'units' => $out, 'pending' => $pending, 'members' => count($members), 'role' => (string)$g['role']];
+}
+
+/** One member's curriculum, for the mentor or instructor whose member it is. */
+function staff_curriculum_member(array $p): array {
+    $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+    $m = curriculum_member_row((string)($p['memberId'] ?? ''));
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if ($g['centres'] !== null && !in_array((string)$m['centre'], $g['centres'], true)) return ['ok' => false, 'error' => 'out_of_scope'];
+    if ($g['courses'] !== null && !in_array((string)$m['track'], $g['courses'], true)) return ['ok' => false, 'error' => 'out_of_scope'];
+    return ['ok' => true, 'member' => ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'], 'track' => (string)$m['track']]] + curriculum_for_member($m);
+}
+
+/** Mark the written answers waiting on one attempt. */
+function staff_curriculum_mark(array $p): array {
+    $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+    $pr = db_row('SELECT * FROM curriculum_progress WHERE id = ?', [(int)($p['progressId'] ?? 0)]);
+    if (!$pr) return ['ok' => false, 'error' => 'not_found'];
+    $m = curriculum_member_row((string)$pr['memberId']);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    if ($g['centres'] !== null && !in_array((string)$m['centre'], $g['centres'], true)) return ['ok' => false, 'error' => 'out_of_scope'];
+    $b = curriculum_load('unitId = ?', [(string)$pr['unitId']]);
+    if (!$b) return ['ok' => false, 'error' => 'not_found'];
+    $b = reset($b);
+    if ($g['courses'] !== null && (string)$b['unit']['course'] !== '' && !in_array((string)$b['unit']['course'], $g['courses'], true)) return ['ok' => false, 'error' => 'out_of_scope'];
+    $marks = json_decode((string)$pr['marks'], true) ?: [];
+    $in = is_array($p['marks'] ?? null) ? $p['marks'] : [];
+    $byId = []; foreach ($b['checks'] as $c) $byId[(string)$c['checkId']] = $c;
+    foreach ($in as $cid => $mk) {
+        if (!isset($byId[$cid]) || !is_array($mk) || !isset($mk['points'])) continue;
+        $marks[$cid] = ['points' => max(0, min((int)$byId[$cid]['points'], (int)$mk['points'])),
+                        'feedback' => curriculum_clean_text($mk['feedback'] ?? '', 600), 'by' => (string)$g['member']['memberId']];
+    }
+    $t = curriculum_progress_total($b['checks'], $marks, (int)$b['unit']['passMark']);
+    $completedBefore = (string)$pr['status'] === 'completed';
+    $row = ['marks' => json_encode($marks, JSON_UNESCAPED_UNICODE), 'score' => $t['score'], 'maxScore' => $t['max'],
+            'pending' => $t['pending'] > 0 ? 1 : 0, 'markedBy' => (string)$g['member']['memberId'], 'updatedAt' => now_iso(),
+            'bestPct' => max((int)$pr['bestPct'], $t['pending'] === 0 ? $t['pct'] : 0),
+            'status' => $t['passed'] || $completedBefore ? 'completed' : ($t['pending'] > 0 ? 'submitted' : 'attempted')];
+    if ($t['passed'] && !$completedBefore) $row['completedAt'] = now_iso();
+    db_update('curriculum_progress', $row, ['id' => $pr['id']]);
+    audit('curriculum.mark', (string)$g['member']['memberId'], (string)$pr['memberId'], ['unitId' => (string)$pr['unitId'], 'pct' => $t['pct']], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'pct' => $t['pct'], 'pending' => $t['pending'], 'status' => $row['status']];
+}
+
+/* ══ Materials stored on this server ══════════════════════════════════════════
+ *
+ * Cloudinary is optional on this platform, and without it the only store was
+ * for images — so a PDF, a slide deck or a worksheet had nowhere to go and the
+ * curriculum could hold links and nothing else. This is that store: documents
+ * only, named by their own SHA-256 (so the same file uploaded twice is stored
+ * once, and a name reveals nothing), in a directory the web server refuses to
+ * serve directly. They are read back through api/member/curriculum-file.php,
+ * which wants a signed-in session.
+ *
+ * The type is decided from the file's BYTES, never from what the browser said
+ * or the name it carried: a `.pdf` that is really a script is refused.
+ */
+const CURR_FILE_MAX_BYTES = 25 * 1024 * 1024;
+const CURR_FILE_TYPES = [
+    'pdf'  => ['application/pdf'],
+    'docx' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip'],
+    'pptx' => ['application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/zip'],
+    'xlsx' => ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip'],
+    'doc'  => ['application/msword', 'application/x-ole-storage', 'application/CDFV2'],
+    'ppt'  => ['application/vnd.ms-powerpoint', 'application/x-ole-storage', 'application/CDFV2'],
+    'xls'  => ['application/vnd.ms-excel', 'application/x-ole-storage', 'application/CDFV2'],
+    'odt'  => ['application/vnd.oasis.opendocument.text'],
+    'odp'  => ['application/vnd.oasis.opendocument.presentation'],
+    'txt'  => ['text/plain'],
+    'csv'  => ['text/plain', 'text/csv'],
+    'png'  => ['image/png'], 'jpg' => ['image/jpeg'], 'jpeg' => ['image/jpeg'], 'webp' => ['image/webp'],
+    'mp3'  => ['audio/mpeg'], 'm4a' => ['audio/mp4', 'audio/x-m4a'], 'mp4' => ['video/mp4'],
+];
+
+function curriculum_file_dir(): string {
+    $base = (string)(($GLOBALS['CONFIG'] ?? [])['db']['sqlite_path'] ?? '');
+    $dir = ($base !== '' ? dirname($base) : (__DIR__ . '/../../storage')) . '/curriculum';
+    if (!is_dir($dir)) @mkdir($dir, 0775, true);
+    $ht = $dir . '/.htaccess';
+    if (is_dir($dir) && !is_file($ht)) {
+        @file_put_contents($ht, "<IfModule mod_authz_core.c>\n  Require all denied\n</IfModule>\n"
+            . "<IfModule !mod_authz_core.c>\n  Order allow,deny\n  Deny from all\n</IfModule>\nOptions -Indexes\n");
+    }
+    return $dir;
+}
+
+/**
+ * Store one uploaded file. `$p` carries the PHP upload: tmp (path), name, size.
+ * @return array{ok:bool,url?:string,kind?:string,bytes?:int,name?:string,error?:string}
+ */
+function admin_curriculum_file_put(array $p): array {
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    $tmp = (string)($p['tmp'] ?? '');
+    $name = basename((string)($p['name'] ?? ''));
+    if ($tmp === '' || !is_file($tmp)) return ['ok' => false, 'error' => 'no_file'];
+    $size = (int)filesize($tmp);
+    if ($size <= 0) return ['ok' => false, 'error' => 'empty_file'];
+    if ($size > CURR_FILE_MAX_BYTES) return ['ok' => false, 'error' => 'too_large', 'max' => CURR_FILE_MAX_BYTES];
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if (!isset(CURR_FILE_TYPES[$ext])) return ['ok' => false, 'error' => 'bad_type', 'detail' => 'allowed: ' . implode(', ', array_keys(CURR_FILE_TYPES))];
+    $mime = function_exists('finfo_open') ? (string)finfo_file(finfo_open(FILEINFO_MIME_TYPE), $tmp) : '';
+    if ($mime !== '' && !in_array($mime, CURR_FILE_TYPES[$ext], true)) {
+        return ['ok' => false, 'error' => 'type_mismatch', 'detail' => 'the file is not a real .' . $ext];
+    }
+    $hash = hash_file('sha256', $tmp);
+    $file = substr($hash, 0, 40) . '.' . $ext;
+    $dest = curriculum_file_dir() . '/' . $file;
+    if (!is_file($dest)) {
+        $ok = is_uploaded_file($tmp) ? @move_uploaded_file($tmp, $dest) : @copy($tmp, $dest);
+        if (!$ok) return ['ok' => false, 'error' => 'store_failed'];
+        @chmod($dest, 0644);
+    }
+    audit('curriculum.file', (string)$g['requester']['memberId'], $file, ['name' => $name, 'bytes' => $size], (string)($p['ip'] ?? ''));
+    $url = '/api/member/curriculum-file.php?f=' . $file;
+    return ['ok' => true, 'url' => $url, 'kind' => curriculum_material_kind('', 'x.' . $ext), 'bytes' => $size, 'name' => $name];
+}
+
+/** The path of a stored file for a valid name, or '' — a bad name and a
+ *  missing file look the same to the caller. */
+function curriculum_file_path(string $f): string {
+    if (!preg_match('/^([a-f0-9]{16,64})\.([a-z0-9]{2,5})$/', $f, $m) || !isset(CURR_FILE_TYPES[$m[2]])) return '';
+    $path = curriculum_file_dir() . '/' . $f;
+    return is_file($path) ? $path : '';
+}

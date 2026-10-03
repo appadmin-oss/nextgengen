@@ -2800,4 +2800,73 @@ ALTER TABLE centres ADD COLUMN summerArea VARCHAR(120) DEFAULT '';
 ALTER TABLE centres ADD COLUMN summerLat DOUBLE NULL;
 ALTER TABLE centres ADD COLUMN summerLng DOUBLE NULL;
 
-INSERT INTO schema_version (version) VALUES (124) ON DUPLICATE KEY UPDATE version = version;
+
+-- 125: the NGG Club curriculum.
+CREATE TABLE IF NOT EXISTS curriculum_units (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  unitId VARCHAR(40) NOT NULL UNIQUE,
+  course VARCHAR(120) NOT NULL DEFAULT '',
+  level VARCHAR(60) NOT NULL DEFAULT '',
+  week INT NOT NULL DEFAULT 1,
+  position INT NOT NULL DEFAULT 1,
+  title VARCHAR(200) NOT NULL DEFAULT '',
+  summary TEXT,
+  objectives TEXT,
+  body MEDIUMTEXT,
+  durationMins INT DEFAULT 0,
+  passMark INT DEFAULT 60,
+  status VARCHAR(16) NOT NULL DEFAULT 'draft',
+  version INT NOT NULL DEFAULT 1,
+  source VARCHAR(16) DEFAULT 'manual',
+  createdBy VARCHAR(40) DEFAULT '', updatedBy VARCHAR(40) DEFAULT '',
+  createdAt VARCHAR(32) DEFAULT '', updatedAt VARCHAR(32) DEFAULT '', publishedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_cunit_key (course, level, week, position),
+  KEY idx_cunit_status (status, course)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS curriculum_materials (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  materialId VARCHAR(40) NOT NULL UNIQUE,
+  unitId VARCHAR(40) NOT NULL,
+  kind VARCHAR(16) NOT NULL DEFAULT 'link',
+  title VARCHAR(200) DEFAULT '',
+  url VARCHAR(1000) NOT NULL DEFAULT '',
+  position INT DEFAULT 1,
+  createdAt VARCHAR(32) DEFAULT '',
+  KEY idx_cmat_unit (unitId, position)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS curriculum_checks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  checkId VARCHAR(40) NOT NULL UNIQUE,
+  unitId VARCHAR(40) NOT NULL,
+  kind VARCHAR(16) NOT NULL DEFAULT 'mcq',
+  prompt TEXT,
+  options TEXT,
+  answer TEXT,
+  rubric TEXT,
+  points INT DEFAULT 1,
+  position INT DEFAULT 1,
+  source VARCHAR(16) DEFAULT 'manual',
+  KEY idx_ccheck_unit (unitId, position)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS curriculum_progress (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  unitId VARCHAR(40) NOT NULL,
+  memberId VARCHAR(40) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'started',
+  unitVersion INT DEFAULT 1,
+  score DOUBLE DEFAULT 0,
+  maxScore DOUBLE DEFAULT 0,
+  bestPct INT DEFAULT 0,
+  attempts INT DEFAULT 0,
+  answers MEDIUMTEXT,
+  marks TEXT,
+  feedback TEXT,
+  pending TINYINT DEFAULT 0,
+  markedBy VARCHAR(40) DEFAULT '',
+  startedAt VARCHAR(32) DEFAULT '', completedAt VARCHAR(32) DEFAULT '', updatedAt VARCHAR(32) DEFAULT '',
+  UNIQUE KEY idx_cprog_key (unitId, memberId),
+  KEY idx_cprog_member (memberId),
+  KEY idx_cprog_pending (pending, unitId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (125) ON DUPLICATE KEY UPDATE version = version;

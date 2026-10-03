@@ -20,6 +20,7 @@ those five words to mean something else.
 6. [Centres](#centres)
 7. [Summer School](#summer-school)
 8. [The NGG Club](#the-ngg-club)
+   - [The curriculum](#the-curriculum)
 9. [Applications, sign-ups and verification](#applications-sign-ups-and-verification)
 10. [ID cards](#id-cards)
 11. [How bulk actions behave](#how-bulk-actions-behave)
@@ -486,6 +487,56 @@ Search, filter by participation status and centre, sort, page. Statuses are
 Bulk actions on the Club roster are deliberately narrower than the member
 desk: **set participation** and **post to centre**, up to **500** rows. The
 Club roster is not where member lifecycle is administered.
+
+### The curriculum
+
+**Control Room → Content → Curriculum.** Needs the `curriculum` permission
+(held by super admins, admins and Club admins; grant it to anyone else per
+person). Club staff with `club` can read the lessons but not change them; `audit` can also read the progress report.
+
+The curriculum is **NGG Club only**. Summer School does not use it.
+
+**A lesson** belongs to a **course** from the academy catalogue (Piano, Coding,
+…) or to *the whole Club* (leave the course blank), and sits at a **week** and a
+**position in that week**. Two lessons cannot share a slot. Each lesson has a
+summary, what they'll learn, the lesson text (blank lines make paragraphs, a
+line starting `- ` makes a list, `## ` makes a heading), **materials** and
+**checks**.
+
+- **Materials** are links (https only) or files uploaded to this server: PDF,
+  slides, documents, sheets, images, audio or video, up to **25 MB** each.
+  Uploaded files open only for people who are signed in.
+- **Checks** are *multiple choice* (marked on the spot), *short answer* or
+  *task* (marked by AI when it is set up, otherwise by the instructor). Give a
+  written check a **model answer** and a **rubric** — both are shown to the
+  marker, never to the member.
+- **Pass mark** (default 60%) decides when a lesson counts as **Done**.
+- **✦ Draft with AI** writes a draft lesson and checks from the title. Nothing
+  is saved until you press Save, and AI-written checks are labelled as such.
+
+**Statuses:** *Draft* (only staff see it), *Published* (members see it) and
+*Retired* (hidden, but the progress it holds is kept). A lesson somebody has
+started cannot be deleted — retire it. Changing the checks after somebody has
+answered bumps the lesson's **version**, so old results stay readable as what
+they were.
+
+**Import** takes a CSV (download the template on the Import tab): `course,
+week, position, title, summary, objectives, body, materials, check1,
+check1_options, check1_answer, check1_rubric, check2…`. Options are separated
+with `|`; an answer may be the option's letter, number or text. **Check the
+file** first — every row is reported as *new*, *update*, *unchanged* or
+*refused* (with the reason, e.g. "did you mean Piano?" for a misspelt course)
+and nothing is written. **Import** then writes exactly what was checked; if
+the file changed in between, it is refused and you check again. Up to
+**1,000** rows per file.
+
+**Progress** shows, per lesson, how many members of that course have started
+and finished it, and the average score. A scoped admin sees their centres only.
+
+**Members** find their lessons on their dashboard under **Curriculum**, by
+week. **Instructors and NGG mentors** see the lessons for their courses in the
+Mentor Portal's **Curriculum** tab, with the written answers waiting to be
+marked beside the model answer and rubric.
 
 ---
 

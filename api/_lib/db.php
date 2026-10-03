@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 124;
+const NGG_SCHEMA_TARGET = 125;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3750,6 +3750,82 @@ function db_migrate(PDO $db): void {
             ALTER TABLE centres ADD COLUMN summerArea TEXT DEFAULT '';
             ALTER TABLE centres ADD COLUMN summerLat REAL;
             ALTER TABLE centres ADD COLUMN summerLng REAL;
+        ",
+
+        /* The NGG Club curriculum (domain/curriculum.php). A unit is one
+         * lesson: course → level → week → position is its natural key, so a
+         * re-import of the same sheet updates rather than duplicates. Materials
+         * and checks hang off a unit; progress is one row per member per unit,
+         * carrying the unit VERSION it was marked against, because changing a
+         * lesson's checks after somebody sat them makes the old score answer a
+         * different question. */
+        125 => "
+            CREATE TABLE IF NOT EXISTS curriculum_units (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              unitId TEXT UNIQUE NOT NULL,
+              course TEXT NOT NULL DEFAULT '',
+              level TEXT NOT NULL DEFAULT '',
+              week INTEGER NOT NULL DEFAULT 1,
+              position INTEGER NOT NULL DEFAULT 1,
+              title TEXT NOT NULL DEFAULT '',
+              summary TEXT DEFAULT '',
+              objectives TEXT DEFAULT '',
+              body TEXT DEFAULT '',
+              durationMins INTEGER DEFAULT 0,
+              passMark INTEGER DEFAULT 60,
+              status TEXT NOT NULL DEFAULT 'draft',
+              version INTEGER NOT NULL DEFAULT 1,
+              source TEXT DEFAULT 'manual',
+              createdBy TEXT DEFAULT '', updatedBy TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '', updatedAt TEXT DEFAULT '', publishedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_cunit_key ON curriculum_units(course, level, week, position);
+            CREATE INDEX IF NOT EXISTS idx_cunit_status ON curriculum_units(status, course);
+            CREATE TABLE IF NOT EXISTS curriculum_materials (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              materialId TEXT UNIQUE NOT NULL,
+              unitId TEXT NOT NULL,
+              kind TEXT NOT NULL DEFAULT 'link',
+              title TEXT DEFAULT '',
+              url TEXT NOT NULL DEFAULT '',
+              position INTEGER DEFAULT 1,
+              createdAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_cmat_unit ON curriculum_materials(unitId, position);
+            CREATE TABLE IF NOT EXISTS curriculum_checks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              checkId TEXT UNIQUE NOT NULL,
+              unitId TEXT NOT NULL,
+              kind TEXT NOT NULL DEFAULT 'mcq',
+              prompt TEXT NOT NULL DEFAULT '',
+              options TEXT DEFAULT '',
+              answer TEXT DEFAULT '',
+              rubric TEXT DEFAULT '',
+              points INTEGER DEFAULT 1,
+              position INTEGER DEFAULT 1,
+              source TEXT DEFAULT 'manual'
+            );
+            CREATE INDEX IF NOT EXISTS idx_ccheck_unit ON curriculum_checks(unitId, position);
+            CREATE TABLE IF NOT EXISTS curriculum_progress (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              unitId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'started',
+              unitVersion INTEGER DEFAULT 1,
+              score REAL DEFAULT 0,
+              maxScore REAL DEFAULT 0,
+              bestPct INTEGER DEFAULT 0,
+              attempts INTEGER DEFAULT 0,
+              answers TEXT DEFAULT '',
+              marks TEXT DEFAULT '',
+              feedback TEXT DEFAULT '',
+              pending INTEGER DEFAULT 0,
+              markedBy TEXT DEFAULT '',
+              startedAt TEXT DEFAULT '', completedAt TEXT DEFAULT '', updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_cprog_key ON curriculum_progress(unitId, memberId);
+            CREATE INDEX IF NOT EXISTS idx_cprog_member ON curriculum_progress(memberId);
+            CREATE INDEX IF NOT EXISTS idx_cprog_pending ON curriculum_progress(pending, unitId);
         ",
     ];
 

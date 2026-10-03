@@ -632,6 +632,15 @@
       updateProfile: (data) => request('/member/profile.php', { body: data }),
       assignments:      () => request('/member/assignments.php'),
       submitAssignment: (data) => request('/member/assignments.php', { body: data }),
+      /* The NGG Club curriculum (domain/curriculum.php). The member reads and
+         sits lessons; an instructor or mentor reads their view and marks the
+         written answers waiting on them. */
+      curriculum:        () => request('/member/curriculum.php'),
+      curriculumUnit:    (unitId) => request('/member/curriculum.php' + qs({ unit: unitId })),
+      curriculumSubmit:  (unitId, answers) => request('/member/curriculum.php', { body: { action: 'submit', unitId, answers }, timeout: 90000 }),
+      curriculumStaff:   () => request('/member/curriculum.php' + qs({ view: 'staff' })),
+      curriculumStaffMember: (memberId) => request('/member/curriculum.php' + qs({ view: 'staff', memberId })),
+      curriculumMark:    (progressId, marks) => request('/member/curriculum.php', { body: { action: 'mark', progressId, marks } }),
       stateGet:  (keys) => request('/member/state.php' + qs({ keys: Array.isArray(keys) ? keys.join(',') : keys })),
       stateSet:  (key, value) => request('/member/state.php', { body: { key, value } }),
       momentum:     () => request('/member/momentum.php'),
@@ -1004,6 +1013,18 @@
       promotions: {
         get: () => request('/admin/promotions.php'),
         set: (promo) => request('/admin/promotions.php', { body: { promo } }),
+      },
+      curriculum: {
+        list:    (f) => request('/admin/curriculum.php' + qs(Object.assign({ view: 'list' }, f || {}))),
+        get:     (unitId) => request('/admin/curriculum.php' + qs({ view: 'get', unitId })),
+        report:  (f) => request('/admin/curriculum.php' + qs(Object.assign({ view: 'report' }, f || {}))),
+        upsert:  (data, allowNewCourse) => request('/admin/curriculum.php', { body: { action: 'upsert', data, allowNewCourse: !!allowNewCourse } }),
+        status:  (status, unitIds) => request('/admin/curriculum.php', { body: { action: 'status', status, unitIds } }),
+        importRows: (rows, opts) => request('/admin/curriculum.php', { body: Object.assign({ action: 'import', rows }, opts || {}), timeout: 180000 }),
+        ai:      (data) => request('/admin/curriculum.php', { body: Object.assign({ action: 'ai' }, data), timeout: 90000 }),
+        /* A material file, stored on this server. Multipart, so it bypasses the
+           JSON body; the CSRF header still travels. */
+        upload:  (file) => { const fd = new FormData(); fd.append('file', file); return request('/admin/curriculum.php', { body: fd, timeout: 180000 }); },
       },
       assignments: {
         list:        () => request('/admin/assignments.php'),

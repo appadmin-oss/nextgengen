@@ -76,6 +76,9 @@ const ADMIN_SECTIONS = [
      renaming or retiring a centre, removing a volunteer — wait here for a
      second admin (domain/approvals.php). The club admin sees their own. */
   { id: "approvals",   group: "People",   label: "Approvals",    title: "Approvals",           icon: "✓", cap: "people" },
+  /* What the Club teaches: lessons, materials, checks, and the progress
+     against them (domain/curriculum.php). NGG only. */
+  { id: "curriculum",  group: "Content",  label: "Curriculum",   title: "NGG curriculum",      icon: "❖", cap: "curriculum" },
   { id: "staff",       group: "People",   label: "Staff activity", title: "Staff activity",    icon: "◑", cap: "people" },
   { id: "engagement",  group: "People",   label: "Engagement",   title: "Engagement",          icon: "📈", cap: "audit" },
   /* The NGG centre DIRECTORY, in People — where members are administered.
@@ -403,6 +406,7 @@ function AdminPage({ setPage }) {
           {view === "conduct" && <SummerPolicy/>}
           {view === "requests" && <AdminRequests/>}
           {view === "approvals" && <AdminApprovals/>}
+          {view === "curriculum" && <AdminCurriculum/>}
           {view === "status-pages" && <AdminStatusPages/>}
           {view === "sessions" && <AdminSessions/>}
           {view === "missions" && <AdminMissions/>}
@@ -1947,7 +1951,7 @@ function AdminMembers() {
   }, [page, sort, filters, meta.pageSize]);
   /* Dashboard first. Opening the section on a 50-row page of a roster
      answers no question anybody arrived with. */
-  const [tab, setTab] = React.useState("dashboard");
+  const [tab, setTab] = useAdminTab("dashboard", React.useCallback(t => ["dashboard", "roster", "quality", "duplicates"].indexOf(t) !== -1, []));
 
   /* Re-sorting goes back to page one. Keeping the page number would land
      somebody on "page 4 of a different order", which is a place nobody meant
@@ -2417,6 +2421,433 @@ function AdminMemberBulkForm({ form, centreOpts, onClose, onDone }) {
  * requests and may withdraw one nobody has decided yet.
  */
 const APPROVAL_STATUS_LABEL = { pending: "Waiting", approved: "Approved", rejected: "Rejected", failed: "Approved — refused when run", withdrawn: "Withdrawn", running: "Running" };
+
+/* ── The NGG Club curriculum ─────────────────────────────────────────────────
+ *
+ * Lessons (course → week → position), their materials and checks, a bulk
+ * import that matches on that natural key so a corrected sheet updates rather
+ * than duplicates, and the progress members have made. The AI drafts a
+ * lesson's summary, objectives and checks from its text; a person reads the
+ * draft and saves it. domain/curriculum.php has the rules.
+ */
+function AdminCurriculum() {
+  const [tab, setTab] = useAdminTab("lessons");
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head"><h2 className="admin-h2">NGG curriculum</h2></div>
+      <p className="admin-hint">What the Club teaches, lesson by lesson. Members see the published lessons for their course and the Club-wide ones on their dashboard; instructors and NGG mentors see them in their portal and mark the written answers.</p>
+      <div className="admin-tabs" role="tablist">
+        {[["lessons", "Lessons"], ["import", "Import"], ["progress", "Progress"]].map(([k, l]) => (
+          <button key={k} role="tab" aria-selected={tab === k} className={"admin-tab" + (tab === k ? " is-active" : "")} onClick={() => setTab(k)}>{l}</button>
+        ))}
+      </div>
+      {tab === "lessons" && <CurriculumLessons/>}
+      {tab === "import" && <CurriculumImport/>}
+      {tab === "progress" && <CurriculumProgress/>}
+    </div>
+  );
+}
+
+function CurriculumLessons() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [f, setF] = React.useState({ course: "", status: "", q: "" });
+  const [edit, setEdit] = React.useState(null);   // null | {} (new) | unit
+  const load = React.useCallback(() => {
+    setErr("");
+    return NGGApi.admin.curriculum.list(f).then(setD).catch(e => setErr(e.code || e.message));
+  }, [f]);
+  React.useEffect(() => { const t = setTimeout(load, f.q ? 250 : 0); return () => clearTimeout(t); }, [load]);
+  const rows = (d && d.units) || [];
+  const sel = useAdminSelection(rows, u => u.unitId);
+  const actions = [
+    { id: "publish", label: "Publish", pastTense: "published", reload: load,
+      run: (ids) => NGGApi.admin.curriculum.status("publish", ids) },
+    { id: "unpublish", label: "Back to draft", pastTense: "moved to draft", reload: load,
+      run: (ids) => NGGApi.admin.curriculum.status("unpublish", ids) },
+    { id: "retire", label: "Retire", pastTense: "retired", reload: load,
+      confirm: ({ count }) => ({ title: "Retire " + count + " lesson" + (count === 1 ? "" : "s") + "?", body: "Members stop seeing them. Their progress is kept.", cta: "Retire" }),
+      run: (ids) => NGGApi.admin.curriculum.status("retire", ids) },
+    { id: "delete", label: "Delete", danger: true, pastTense: "deleted", reload: load,
+      confirm: ({ count }) => ({ title: "Delete " + count + " lesson" + (count === 1 ? "" : "s") + "?", body: "Only lessons nobody has started can be deleted — retire the rest.", cta: "Delete", danger: true }),
+      run: (ids) => NGGApi.admin.curriculum.status("delete", ids) },
+  ];
+  const openUnit = async (u) => {
+    try { const r = await NGGApi.admin.curriculum.get(u.unitId); setEdit(r.unit); }
+    catch (e) { toast.error(humanizeError(e.code, e.code)); }
+  };
+  if (edit) return <CurriculumEditor unit={edit} courses={(d && d.courses) || []} canWrite={!!(d && d.canWrite)} aiEnabled={!!(d && d.aiEnabled)}
+    onClose={() => setEdit(null)} onSaved={(u) => { setEdit(u); load(); }}/>;
+  return (
+    <div>
+      <div className="admin-filters cur-admin-filters" role="search">
+        <input className="admin-input" placeholder="Search lessons…" value={f.q} onChange={e => setF(x => ({ ...x, q: e.target.value }))} aria-label="Search lessons"/>
+        <select className="admin-select" value={f.course} onChange={e => setF(x => ({ ...x, course: e.target.value }))} aria-label="Course">
+          <option value="">Every course</option><option value="__all">Whole Club (no course)</option>
+          {((d && d.courses) || []).map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select className="admin-select" value={f.status} onChange={e => setF(x => ({ ...x, status: e.target.value }))} aria-label="Status">
+          <option value="">Draft and published</option><option value="draft">Draft</option><option value="published">Published</option><option value="retired">Retired</option>
+        </select>
+        {d && d.canWrite && <button className="btn btn-primary btn-sm" onClick={() => setEdit({})}>New lesson</button>}
+      </div>
+      <AdminBulkBar selection={sel} noun="lesson" actions={d && d.canWrite ? actions : []}/>
+      {err ? <ErrorState title="Couldn't load the curriculum" code={err} onRetry={load}/> :
+        !d ? <div className="dash-spinner" role="status" aria-label="Loading"/> :
+        !rows.length ? <div className="admin-empty">{f.q || f.course || f.status ? "No lesson matches these filters." : "No lessons yet. Add one, or import the curriculum."}</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <caption className="sr-only">Curriculum lessons</caption>
+          <thead><tr>
+            <th scope="col"><AdminSelectAll selection={sel} label="Select every lesson shown"/></th>
+            <th scope="col">Lesson</th><th scope="col">Course</th><th scope="col" className="admin-num">Week</th>
+            <th scope="col">Status</th><th scope="col" className="admin-num">Checks</th><th scope="col">Progress</th>
+          </tr></thead>
+          <tbody>{rows.map(u => (
+            <tr key={u.unitId} className={sel.has(u.unitId) ? "is-selected" : ""}>
+              <td><AdminRowCheck selection={sel} id={u.unitId} label={"Select " + u.title}/></td>
+              <td><button type="button" className="admin-bulk-link cur-admin-title" onClick={() => openUnit(u)}>{u.title}</button>
+                <div className="admin-cell-sub">{u.level ? u.level + " · " : ""}{u.materials} material{u.materials === 1 ? "" : "s"}{u.source !== "manual" ? " · " + u.source : ""}{u.version > 1 ? " · v" + u.version : ""}</div></td>
+              <td>{u.course || <span className="admin-cell-sub">Whole Club</span>}</td>
+              <td className="admin-num">{u.week}.{u.position}</td>
+              <td><span className={"chip " + (u.status === "published" ? "chip-lime" : u.status === "retired" ? "status-archived" : "")}>{u.status}</span></td>
+              <td className="admin-num">{u.checks}</td>
+              <td className="admin-cell-sub">{u.progress.completed} done · {u.progress.started} started{u.progress.pending ? " · " + u.progress.pending + " to mark" : ""}{u.progress.avgPct != null ? " · avg " + u.progress.avgPct + "%" : ""}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>}
+    </div>
+  );
+}
+
+const CUR_EMPTY_CHECK = { kind: "mcq", prompt: "", options: ["", ""], answer: "0", rubric: "", points: 1 };
+
+function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved }) {
+  const isNew = !unit.unitId;
+  const [f, setF] = React.useState(() => ({
+    unitId: unit.unitId || "", course: unit.course || "", level: unit.level || "", week: unit.week || 1, position: unit.position || 1,
+    title: unit.title || "", summary: unit.summary || "", objectives: (unit.objectives || []).join("\n"), body: unit.body || "",
+    durationMins: unit.durationMins || "", passMark: unit.passMark ?? 60, status: unit.status || "draft",
+    materials: (unit.materials || []).map(m => ({ ...m })),
+    checks: (unit.checks || []).map(c => ({ ...c, options: c.options && c.options.length ? c.options : ["", ""], answer: String(c.answer ?? "") })),
+  }));
+  const [busy, setBusy] = React.useState("");
+  const set = (k, v) => setF(x => ({ ...x, [k]: v }));
+  const setCheck = (i, k, v) => setF(x => ({ ...x, checks: x.checks.map((c, j) => j === i ? { ...c, [k]: v } : c) }));
+  const setMat = (i, k, v) => setF(x => ({ ...x, materials: x.materials.map((m, j) => j === i ? { ...m, [k]: v } : m) }));
+  const save = async () => {
+    setBusy("save");
+    try {
+      const data = { ...f, objectives: f.objectives, checks: f.checks.map(c => ({ ...c, options: c.kind === "mcq" ? c.options.filter(o => o.trim()) : [] })) };
+      const r = await NGGApi.admin.curriculum.upsert(data);
+      toast.success(isNew ? "Lesson created." : "Lesson saved.", r.unit.title);
+      onSaved(r.unit);
+    } catch (e) {
+      toast.error(e.code === "unknown_course" ? "That course isn't in the academy catalogue" + (e.detail ? " — " + e.detail : "") + "."
+        : e.code === "slot_taken" ? "Another lesson already holds week " + f.week + ", position " + f.position + " of this course."
+        : (e.detail ? humanizeError(e.code, e.code) + " (" + e.detail + ")" : humanizeError(e.code, e.code)), "Not saved");
+    } finally { setBusy(""); }
+  };
+  const draftAi = async () => {
+    if (!f.title.trim() && !f.body.trim()) { toast.error("Give the lesson a title or some notes for the AI to work from."); return; }
+    setBusy("ai");
+    try {
+      const r = await NGGApi.admin.curriculum.ai({ title: f.title, text: f.body, course: f.course, level: f.level, checks: 5 });
+      setF(x => ({ ...x, summary: x.summary || r.draft.summary, objectives: x.objectives || r.draft.objectives.join("\n"),
+        checks: x.checks.concat(r.draft.checks.map(c => ({ ...c, answer: String(c.answer), options: c.options && c.options.length ? c.options : ["", ""] }))) }));
+      toast.success("Draft added — read it before saving. AI checks are marked AI." + (r.note ? " " + r.note : ""), "AI draft");
+    } catch (e) { toast.error(e.message && e.code === "ai_disabled" ? "No AI provider is configured (Settings → AI)." : humanizeError(e.code, e.code), "No draft"); }
+    finally { setBusy(""); }
+  };
+  const upload = async (file) => {
+    if (!file) return;
+    setBusy("upload");
+    try {
+      const r = await NGGApi.admin.curriculum.upload(file);
+      setF(x => ({ ...x, materials: x.materials.concat([{ title: file.name.replace(/\.[^.]+$/, ""), url: r.url, kind: r.kind }]) }));
+      toast.success("Uploaded — save the lesson to keep it.", file.name);
+    } catch (e) { toast.error(e.code === "bad_type" ? "That file type isn't allowed (" + (e.detail || "") + ")." : e.code === "too_large" ? "That file is larger than 25 MB." : humanizeError(e.code, e.code), "Upload failed"); }
+    finally { setBusy(""); }
+  };
+  const ro = !canWrite;
+  return (
+    <div className="cur-ed">
+      <div className="cur-ed-bar">
+        <button className="btn btn-ghost btn-sm" onClick={onClose}>← All lessons</button>
+        <span className="admin-cell-sub">{isNew ? "New lesson" : unit.unitId + " · v" + unit.version + (unit.publishedAt ? " · published " + fmtDate(unit.publishedAt) : "")}</span>
+      </div>
+      <fieldset className="cur-ed-grid" disabled={ro}>
+        <label className="admin-field cur-ed-wide"><span className="admin-label">Title</span>
+          <input className="admin-input" value={f.title} onChange={e => set("title", e.target.value)} placeholder="e.g. Finding middle C"/></label>
+        <label className="admin-field"><span className="admin-label">Course</span>
+          <select className="admin-select" value={f.course} onChange={e => set("course", e.target.value)}>
+            <option value="">Whole Club (every member)</option>
+            {(f.course && !courses.includes(f.course) ? [f.course, ...courses] : courses).map(c => <option key={c} value={c}>{c}</option>)}
+          </select></label>
+        <label className="admin-field"><span className="admin-label">Level (optional)</span>
+          <input className="admin-input" value={f.level} onChange={e => set("level", e.target.value)} placeholder="e.g. Foundation"/></label>
+        <label className="admin-field"><span className="admin-label">Week</span>
+          <input className="admin-input" type="number" min={1} max={104} value={f.week} onChange={e => set("week", e.target.value)}/></label>
+        <label className="admin-field"><span className="admin-label">Position in week</span>
+          <input className="admin-input" type="number" min={1} max={50} value={f.position} onChange={e => set("position", e.target.value)}/></label>
+        <label className="admin-field"><span className="admin-label">Minutes</span>
+          <input className="admin-input" type="number" min={0} max={600} value={f.durationMins} onChange={e => set("durationMins", e.target.value)}/></label>
+        <label className="admin-field"><span className="admin-label">Pass mark %</span>
+          <input className="admin-input" type="number" min={0} max={100} value={f.passMark} onChange={e => set("passMark", e.target.value)}/></label>
+        <label className="admin-field"><span className="admin-label">Status</span>
+          <select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}>
+            <option value="draft">Draft — only staff see it</option><option value="published">Published — members see it</option><option value="retired">Retired</option>
+          </select></label>
+        <label className="admin-field cur-ed-wide"><span className="admin-label">Summary</span>
+          <textarea className="admin-input" rows={2} value={f.summary} onChange={e => set("summary", e.target.value)} placeholder="Two or three sentences a member reads first."/></label>
+        <label className="admin-field cur-ed-wide"><span className="admin-label">What they'll learn — one per line</span>
+          <textarea className="admin-input" rows={3} value={f.objectives} onChange={e => set("objectives", e.target.value)} placeholder={"You will find middle C\nYou will play a C major scale"}/></label>
+        <label className="admin-field cur-ed-wide"><span className="admin-label">The lesson — blank lines make paragraphs, "- " makes a list</span>
+          <textarea className="admin-input cur-ed-body" rows={10} value={f.body} onChange={e => set("body", e.target.value)}/></label>
+      </fieldset>
+
+      <section className="cur-ed-sec" aria-label="Materials">
+        <h3 className="admin-h3">Materials</h3>
+        {f.materials.map((m, i) => (
+          <div key={i} className="cur-ed-mat">
+            <input className="admin-input" value={m.title} onChange={e => setMat(i, "title", e.target.value)} aria-label="Material title" disabled={ro}/>
+            <input className="admin-input" value={m.url} onChange={e => setMat(i, "url", e.target.value)} aria-label="Material link" placeholder="https://…" disabled={ro}/>
+            <span className="chip">{m.kind || "link"}</span>
+            {!ro && <button type="button" className="btn btn-ghost btn-sm" aria-label={"Remove " + (m.title || "material")} onClick={() => setF(x => ({ ...x, materials: x.materials.filter((_, j) => j !== i) }))}>✕</button>}
+          </div>
+        ))}
+        {!ro && <div className="cur-ed-row">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF(x => ({ ...x, materials: x.materials.concat([{ title: "", url: "", kind: "link" }]) }))}>+ Add a link</button>
+          <label className="btn btn-ghost btn-sm cur-ed-upload">{busy === "upload" ? "Uploading…" : "↑ Upload a file"}
+            <input type="file" className="sr-only" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.odt,.odp,.txt,.csv,.png,.jpg,.jpeg,.webp,.mp3,.m4a,.mp4"
+              onChange={e => { upload(e.target.files && e.target.files[0]); e.target.value = ""; }} disabled={!!busy}/></label>
+          <span className="admin-cell-sub">PDF, slides, documents, sheets, images, audio or video · up to 25 MB</span>
+        </div>}
+      </section>
+
+      <section className="cur-ed-sec" aria-label="Checks">
+        <div className="cur-ed-row cur-ed-row-between">
+          <h3 className="admin-h3">Checks</h3>
+          {!ro && <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy || !aiEnabled} onClick={draftAi}
+            title={aiEnabled ? "Drafts a summary, objectives and five checks from the title and lesson text" : "No AI provider is configured (Settings → AI)"}>
+            {busy === "ai" ? "Drafting…" : "✦ Draft with AI"}</button>}
+        </div>
+        {!f.checks.length && <p className="admin-hint">No checks — the lesson completes when it is opened and submitted. Add questions, or draft them with the AI.</p>}
+        {f.checks.map((c, i) => (
+          <div key={c.checkId || i} className="cur-ed-check">
+            <div className="cur-ed-row">
+              <span className="cur-check-n">{i + 1}.</span>
+              <select className="admin-select" value={c.kind} onChange={e => setCheck(i, "kind", e.target.value)} aria-label="Question type" disabled={ro}>
+                <option value="mcq">Multiple choice</option><option value="short">Written answer</option><option value="task">Task (marked by instructor)</option>
+              </select>
+              <input className="admin-input cur-ed-pts" type="number" min={1} max={20} value={c.points} onChange={e => setCheck(i, "points", e.target.value)} aria-label="Points" disabled={ro}/>
+              {c.source === "ai" && <span className="chip chip-gold" title="Written by the AI — read it before publishing">AI</span>}
+              {!ro && <button type="button" className="btn btn-ghost btn-sm" aria-label={"Remove question " + (i + 1)} onClick={() => setF(x => ({ ...x, checks: x.checks.filter((_, j) => j !== i) }))}>✕</button>}
+            </div>
+            <textarea className="admin-input" rows={2} value={c.prompt} onChange={e => setCheck(i, "prompt", e.target.value)} placeholder="The question" aria-label="Question" disabled={ro}/>
+            {c.kind === "mcq" ? (
+              <div className="cur-ed-opts" role="radiogroup" aria-label="Options — choose the right one">
+                {c.options.map((o, k) => (
+                  <div key={k} className="cur-ed-opt">
+                    <input type="radio" name={"ans-" + i} checked={String(k) === String(c.answer)} onChange={() => setCheck(i, "answer", String(k))} aria-label={"Option " + (k + 1) + " is correct"} disabled={ro}/>
+                    <input className="admin-input" value={o} onChange={e => setCheck(i, "options", c.options.map((x, j) => j === k ? e.target.value : x))} placeholder={"Option " + (k + 1)} disabled={ro}/>
+                    {!ro && c.options.length > 2 && <button type="button" className="btn btn-ghost btn-sm" aria-label={"Remove option " + (k + 1)}
+                      onClick={() => setF(x => ({ ...x, checks: x.checks.map((cc, j) => j !== i ? cc : { ...cc, options: cc.options.filter((_, kk) => kk !== k), answer: String(Number(cc.answer) === k ? 0 : Number(cc.answer) > k ? Number(cc.answer) - 1 : Number(cc.answer)) }) }))}>✕</button>}
+                  </div>
+                ))}
+                {!ro && c.options.length < 8 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCheck(i, "options", c.options.concat([""]))}>+ Option</button>}
+              </div>
+            ) : (
+              <div className="cur-ed-grid2">
+                <textarea className="admin-input" rows={2} value={c.answer} onChange={e => setCheck(i, "answer", e.target.value)} placeholder="A model answer (what full marks looks like)" aria-label="Model answer" disabled={ro}/>
+                <textarea className="admin-input" rows={2} value={c.rubric} onChange={e => setCheck(i, "rubric", e.target.value)} placeholder="Rubric — what a marker should look for" aria-label="Rubric" disabled={ro}/>
+              </div>
+            )}
+          </div>
+        ))}
+        {!ro && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF(x => ({ ...x, checks: x.checks.concat([{ ...CUR_EMPTY_CHECK }]) }))}>+ Add a question</button>}
+      </section>
+
+      {!ro && <div className="cur-ed-foot">
+        <button className="btn btn-primary" disabled={!!busy} onClick={save}>{busy === "save" ? "Saving…" : isNew ? "Create lesson" : "Save lesson"}</button>
+        <span className="admin-cell-sub">{f.status === "published" ? "Members see it as soon as it is saved." : "Drafts are visible to staff only."}</span>
+      </div>}
+    </div>
+  );
+}
+
+/* A CSV parser that understands quotes — a cell holding "Lagos, Nigeria" or
+   a line break stays one cell. The Summer import splits on commas and shifts
+   every column after the first quoted comma; this is the version that doesn't. */
+function curriculumParseCsv(text) {
+  const rows = []; let row = [], cell = "", q = false;
+  const s = String(text || "").replace(/^﻿/, "");
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (q) {
+      if (ch === '"') { if (s[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += ch;
+    } else if (ch === '"') q = true;
+    else if (ch === ",") { row.push(cell); cell = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && s[i + 1] === "\n") i++; row.push(cell); rows.push(row); row = []; cell = ""; }
+    else cell += ch;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  const clean = rows.filter(r => r.some(c => String(c).trim() !== ""));
+  if (!clean.length) return [];
+  const head = clean[0].map(h => String(h).trim().toLowerCase().replace(/\s+/g, "_"));
+  return clean.slice(1).map(r => { const o = {}; head.forEach((h, k) => { o[h] = (r[k] ?? "").trim(); }); return o; });
+}
+
+/* One spreadsheet row → the lesson shape the server validates. Flexible on
+   column names, because a sheet typed by a person says "Lesson", "Order" or
+   "Q1 options". Checks come as check1, check1_options (a|b|c), check1_answer,
+   check1_rubric, check1_points, up to check10. */
+function curriculumRowFromSheet(r) {
+  const pick = (...ks) => { for (const k of ks) if (r[k] !== undefined && r[k] !== "") return r[k]; return ""; };
+  const checks = [];
+  for (let n = 1; n <= 10; n++) {
+    const prompt = pick("check" + n, "q" + n, "question" + n, "check_" + n);
+    if (!prompt) continue;
+    const opts = pick("check" + n + "_options", "q" + n + "_options", "question" + n + "_options");
+    checks.push({ prompt, kind: opts ? "mcq" : "short", options: opts ? opts.split("|").map(x => x.trim()).filter(Boolean) : [],
+      answer: pick("check" + n + "_answer", "q" + n + "_answer", "question" + n + "_answer"),
+      rubric: pick("check" + n + "_rubric", "q" + n + "_rubric"), points: Number(pick("check" + n + "_points", "q" + n + "_points")) || 1 });
+  }
+  const mats = pick("materials", "material", "material_url", "materials_urls");
+  return {
+    course: pick("course", "subject"), level: pick("level", "stage"), week: Number(pick("week")) || 1,
+    position: Number(pick("position", "order", "lesson_no", "lesson_number")) || 1,
+    title: pick("title", "lesson", "lesson_title", "topic"), summary: pick("summary", "overview"),
+    objectives: pick("objectives", "learning_objectives", "outcomes"), body: pick("body", "content", "notes", "lesson_notes"),
+    durationMins: Number(pick("duration", "duration_mins", "minutes")) || 0, passMark: pick("pass_mark", "passmark") === "" ? undefined : Number(pick("pass_mark", "passmark")),
+    materials: mats ? mats.split(/\s*;;\s*|\n/).filter(Boolean).map(x => { const [url, title] = x.split("|").map(y => y.trim()); return { url, title: title || "" }; }) : [],
+    checks,
+  };
+}
+
+const CUR_CSV_TEMPLATE = "course,level,week,position,title,summary,objectives,body,duration,materials,check1,check1_options,check1_answer,check2,check2_answer,check2_rubric\n"
+  + "Piano,Foundation,1,1,Finding middle C,Where the keyboard starts.,Find middle C; Play C major,\"Middle C sits in the centre of the keyboard.\n\n- Find the two black keys\n- C is just left of them\",30,https://example.org/c-major.pdf|Scale sheet,How many white keys in an octave?,5|7|8,7,Why curve your fingers?,Control and speed,Mentions control or speed\n";
+
+function CurriculumImport() {
+  const [rows, setRows] = React.useState(null);
+  const [name, setName] = React.useState("");
+  const [opts, setOpts] = React.useState({ publish: false, allowNewCourse: false });
+  const [plan, setPlan] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+  const [err, setErr] = React.useState("");
+  const read = async (file) => {
+    if (!file) return;
+    setErr(""); setPlan(null);
+    try {
+      const text = await file.text();
+      let out;
+      if (/\.json$/i.test(file.name) || /^\s*[\[{]/.test(text)) {
+        const j = JSON.parse(text);
+        out = Array.isArray(j) ? j : (j.units || j.lessons || []);
+      } else {
+        out = curriculumParseCsv(text).map(curriculumRowFromSheet);
+      }
+      if (!out.length) throw new Error("No lessons found in that file.");
+      setRows(out); setName(file.name);
+    } catch (e) { setRows(null); setErr(e.message || "Couldn't read that file."); }
+  };
+  const check = async () => {
+    setBusy("check");
+    try { setPlan(await NGGApi.admin.curriculum.importRows(rows, { dryRun: true, ...opts })); }
+    catch (e) { toast.error(e.code === "too_many" ? "That is more than 1,000 lessons — split the file." : humanizeError(e.code, e.code)); }
+    finally { setBusy(""); }
+  };
+  const apply = async () => {
+    const n = plan.tally.create + plan.tally.update;
+    if (!(await dialog.confirm({ title: "Import " + n + " lesson" + (n === 1 ? "" : "s") + "?", body: plan.tally.create + " new · " + plan.tally.update + " updated · " + plan.tally.unchanged + " unchanged · " + plan.tally.failed + " refused (not imported).", cta: "Import" }))) return;
+    setBusy("apply");
+    try {
+      const r = await NGGApi.admin.curriculum.importRows(rows, { digest: plan.digest, ...opts });
+      setPlan(r);
+      toast.success(r.tally.create + " created · " + r.tally.update + " updated.", "Curriculum imported");
+    } catch (e) { toast.error(e.code === "import_changed" ? "The file changed since it was checked — check it again." : humanizeError(e.code, e.code)); }
+    finally { setBusy(""); }
+  };
+  const download = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([CUR_CSV_TEMPLATE], { type: "text/csv" }));
+    a.download = "ngg-curriculum-template.csv"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  return (
+    <div className="cur-imp">
+      <p className="admin-hint">Upload a CSV (from Excel or Google Sheets) or a JSON file of lessons. Each lesson is matched on course, level, week and position — importing a corrected file updates those lessons instead of adding copies. Nothing is written until you have checked the file and pressed Import.</p>
+      <div className="cur-ed-row">
+        <label className="btn btn-ghost btn-sm">Choose a file
+          <input type="file" className="sr-only" accept=".csv,.json,text/csv,application/json" onChange={e => { read(e.target.files && e.target.files[0]); e.target.value = ""; }}/></label>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={download}>Download the CSV template</button>
+        {name && <span className="admin-cell-sub">{name} · {rows ? rows.length : 0} lesson{rows && rows.length === 1 ? "" : "s"}</span>}
+      </div>
+      {err && <p className="admin-form-err" role="alert">{err}</p>}
+      {rows && <div className="cur-ed-row">
+        <label className="cur-imp-opt"><input type="checkbox" checked={opts.publish} onChange={e => { setOpts(o => ({ ...o, publish: e.target.checked })); setPlan(null); }}/> Publish new lessons straight away</label>
+        <label className="cur-imp-opt"><input type="checkbox" checked={opts.allowNewCourse} onChange={e => { setOpts(o => ({ ...o, allowNewCourse: e.target.checked })); setPlan(null); }}/> Allow courses not in the academy catalogue</label>
+        <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={check}>{busy === "check" ? "Checking…" : "Check the file"}</button>
+      </div>}
+      {plan && (
+        <div className="cur-imp-plan">
+          <p className="cur-imp-tally" aria-live="polite">
+            <b>{plan.tally.create}</b> new · <b>{plan.tally.update}</b> updated · <b>{plan.tally.unchanged}</b> unchanged · <b>{plan.tally.failed}</b> refused{plan.dryRun ? " — nothing written yet." : " — imported."}
+          </p>
+          {plan.dryRun && plan.tally.create + plan.tally.update > 0 && <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={apply}>{busy === "apply" ? "Importing…" : "Import"}</button>}
+          <div className="admin-table-wrap"><table className="admin-table">
+            <thead><tr><th scope="col" className="admin-num">Row</th><th scope="col">Lesson</th><th scope="col">Course · week</th><th scope="col">Result</th></tr></thead>
+            <tbody>{plan.rows.map(r => (
+              <tr key={r.row}><td className="admin-num">{r.row}</td><td>{r.title || "—"}</td>
+                <td className="admin-cell-sub">{r.course !== undefined ? (r.course || "Whole Club") + " · " + r.week + "." + r.position : ""}</td>
+                <td>{r.verdict === "failed" ? <span className="chip status-archived" title={r.detail}>refused: {String(r.error).replace(/_/g, " ")}{r.detail ? " — " + r.detail : ""}</span>
+                  : <span className={"chip " + (r.verdict === "create" ? "chip-lime" : r.verdict === "update" ? "chip-gold" : "")}>{r.verdict}</span>}</td></tr>
+            ))}</tbody>
+          </table></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CurriculumProgress() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [course, setCourse] = React.useState("");
+  const [courses, setCourses] = React.useState([]);
+  const load = React.useCallback(() => { setErr(""); return NGGApi.admin.curriculum.report({ course }).then(setD).catch(e => setErr(e.code || e.message)); }, [course]);
+  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => { NGGApi.admin.curriculum.list({}).then(r => setCourses(r.courses || [])).catch(() => {}); }, []);
+  return (
+    <div>
+      <div className="admin-filters cur-admin-filters">
+        <select className="admin-select" value={course} onChange={e => setCourse(e.target.value)} aria-label="Course">
+          <option value="">Every course</option>{courses.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        {d && d.scoped && <span className="admin-cell-sub">Your centres only.</span>}
+      </div>
+      {err ? <ErrorState title="Couldn't load progress" code={err} onRetry={load}/> : !d ? <div className="dash-spinner" role="status" aria-label="Loading"/> :
+        !d.units.length ? <div className="admin-empty">No published lessons{course ? " for " + course : ""} yet.</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <caption className="sr-only">Progress through the published curriculum</caption>
+          <thead><tr><th scope="col">Lesson</th><th scope="col">Course</th><th scope="col">Completed</th><th scope="col" className="admin-num">Started</th><th scope="col" className="admin-num">To mark</th><th scope="col" className="admin-num">Avg best</th></tr></thead>
+          <tbody>{d.units.map(u => {
+            const pct = u.audience ? Math.round(u.completed / u.audience * 100) : 0;
+            return (
+              <tr key={u.unitId}>
+                <td>W{u.week}.{u.position} · {u.title}</td>
+                <td>{u.course || <span className="admin-cell-sub">Whole Club</span>}</td>
+                <td><div className="cur-bar" role="img" aria-label={u.completed + " of " + u.audience + " completed"}><span style={{ width: pct + "%" }}/></div>
+                  <span className="admin-cell-sub">{u.completed} of {u.audience} ({pct}%)</span></td>
+                <td className="admin-num">{u.started}</td>
+                <td className="admin-num">{u.pending || ""}</td>
+                <td className="admin-num">{u.avgPct != null ? u.avgPct + "%" : "—"}</td>
+              </tr>
+            );
+          })}</tbody>
+        </table></div>}
+    </div>
+  );
+}
 
 function AdminApprovals() {
   const [d, setD] = React.useState(null);
@@ -7041,11 +7472,11 @@ function AdminBroadcast() {
 // Effective capabilities per role — mirrors util.php admin_role_caps() so the
 // roster can show what each staffer can actually do (read-only display).
 const ROLE_CAPS = {
-  super_admin: ["content", "people", "inbox", "settings", "rbac", "summer", "club", "checkin", "audit", "journal", "fees"],
-  admin: ["content", "people", "inbox", "club", "summer", "checkin"],
+  super_admin: ["content", "people", "inbox", "settings", "rbac", "summer", "club", "checkin", "curriculum", "audit", "journal", "fees"],
+  admin: ["content", "people", "inbox", "club", "summer", "checkin", "curriculum"],
   editor: ["content"],
   summer_admin: ["summer", "checkin"],
-  club_admin: ["club", "people", "checkin"],
+  club_admin: ["club", "people", "checkin", "curriculum"],
   audit: ["audit"],
   member: [],
 };

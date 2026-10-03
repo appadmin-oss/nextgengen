@@ -209,7 +209,12 @@ function mentor_gate(array $p): array {
             'mentorId' => (string)($volMentor['mentorId'] ?? ''),
             'mentor' => ['fullName' => (string)($v['fullName'] ?? ''), 'centre' => $centre,
                          'department' => $isInstructor ? implode(' · ', $courses) : $faculty, 'rank' => 'mentor'],
-            'programmes' => ['summer'],
+            /* The programme their volunteer record says they serve. This was
+             * ['summer'] for every volunteer, so an instructor recruited for
+             * the year-round Club could see no Club member and none of its
+             * curriculum. volunteers.programme speaks the mentors' vocabulary
+             * (summer | ngg | both), and mentor_programmes() reads it. */
+            'programmes' => mentor_programmes(['programme' => volunteer_programme($v)]),
             'centres' => $centre !== '' ? [$centre] : null,
             'courses' => $courses ?: null];
     }

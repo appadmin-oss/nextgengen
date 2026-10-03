@@ -7684,6 +7684,87 @@ function MentorAttention({ centre, onOpenChild }) {
   );
 }
 
+/* ── The Club curriculum, for an instructor or mentor (domain/curriculum.php) ──
+ * Their courses' lessons with how their members are getting on, and the
+ * written answers waiting on them. The model answer and rubric sit beside each
+ * answer, so a mark is a judgement against something written down. */
+function StaffCurriculumPanel() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [open, setOpen] = React.useState("");
+  const [marks, setMarks] = React.useState({});
+  const [busy, setBusy] = React.useState(0);
+  const load = React.useCallback(() => {
+    setErr("");
+    return NGGApi.member.curriculumStaff().then(setD).catch(e => setErr(e.code || e.message));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+  if (err) return <div className="cur-staff-msg" role="alert">{err === "not_ngg_staff" ? "The Club curriculum is for NGG mentors and instructors. Ask an admin to set your programme to NGG." : "Couldn't load the curriculum (" + err + ")."} {err !== "not_ngg_staff" && <button className="btn btn-ghost btn-sm" onClick={load}>Retry</button>}</div>;
+  if (!d) return <div className="dash-spinner" role="status" aria-label="Loading"/>;
+  const setMark = (pid, cid, k, v) => setMarks(x => ({ ...x, [pid]: { ...(x[pid] || {}), [cid]: { ...((x[pid] || {})[cid] || {}), [k]: v } } }));
+  const save = async (item) => {
+    const mk = marks[item.progressId] || {};
+    if (item.checks.some(c => mk[c.checkId] === undefined || mk[c.checkId].points === undefined || mk[c.checkId].points === "")) { toast.error("Give every answer a mark first."); return; }
+    setBusy(item.progressId);
+    try {
+      const out = {}; item.checks.forEach(c => { out[c.checkId] = { points: Number(mk[c.checkId].points), feedback: mk[c.checkId].feedback || "" }; });
+      const r = await NGGApi.member.curriculumMark(item.progressId, out);
+      toast.success(r.status === "completed" ? "Marked — lesson complete (" + r.pct + "%)." : "Marked — " + r.pct + "%.", item.memberName);
+      load();
+    } catch (e) { toast.error(humanizeError(e.code, e.code)); } finally { setBusy(0); }
+  };
+  return (
+    <div className="cur-staff">
+      <section className="cur-staff-sec" aria-label="Answers to mark">
+        <h2 className="cur-staff-h">To mark {d.pending.length > 0 && <span className="cur-chip is-wait">{d.pending.length}</span>}</h2>
+        {!d.pending.length ? <p className="cur-staff-msg">Nothing waiting. Written answers your members submit appear here.</p> :
+          d.pending.map(item => (
+            <div key={item.progressId} className="cur-staff-card">
+              <div className="cur-staff-card-h"><b>{item.memberName}</b> · {item.unitTitle}</div>
+              {item.checks.map(c => (
+                <div key={c.checkId} className="cur-mark">
+                  <p className="cur-mark-q">{c.prompt} <span className="cur-check-pts">{c.points} pt{c.points === 1 ? "" : "s"}</span></p>
+                  <blockquote className="cur-mark-a">{c.answer || "(no answer)"}</blockquote>
+                  {(c.modelAnswer || c.rubric) && <p className="cur-mark-model">Model: {c.modelAnswer}{c.rubric ? " · Rubric: " + c.rubric : ""}</p>}
+                  <div className="cur-mark-row">
+                    <label>Mark <input type="number" min={0} max={c.points} className="cur-mark-pts" value={((marks[item.progressId] || {})[c.checkId] || {}).points ?? ""}
+                      onChange={e => setMark(item.progressId, c.checkId, "points", e.target.value)}/> / {c.points}</label>
+                    <input className="cur-mark-fb" placeholder="A line of feedback (optional)" value={((marks[item.progressId] || {})[c.checkId] || {}).feedback || ""}
+                      onChange={e => setMark(item.progressId, c.checkId, "feedback", e.target.value)} aria-label="Feedback"/>
+                  </div>
+                </div>
+              ))}
+              <button className="btn btn-primary btn-sm" disabled={busy === item.progressId} onClick={() => save(item)}>{busy === item.progressId ? "Saving…" : "Save marks"}</button>
+            </div>
+          ))}
+      </section>
+      <section className="cur-staff-sec" aria-label="Lessons">
+        <h2 className="cur-staff-h">Lessons · {d.members} member{d.members === 1 ? "" : "s"}</h2>
+        {!d.units.length ? <p className="cur-staff-msg">No published lessons for your courses yet.</p> :
+          <ul className="cur-staff-list">
+            {d.units.map(u => (
+              <li key={u.unitId} className="cur-staff-unit">
+                <button type="button" className="cur-staff-unit-btn" aria-expanded={open === u.unitId} onClick={() => setOpen(open === u.unitId ? "" : u.unitId)}>
+                  <span><b>W{u.week}</b> · {u.title} <span className="cur-staff-course">{u.course || "Whole Club"}</span></span>
+                  <span className="cur-staff-stat">{u.stats.completed}/{u.stats.audience} done</span>
+                </button>
+                {open === u.unitId && (
+                  <div className="cur-staff-detail">
+                    {u.summary && <p>{u.summary}</p>}
+                    {u.objectives.length > 0 && <ul className="cur-objectives">{u.objectives.map((o, i) => <li key={i}>{o}</li>)}</ul>}
+                    <CurriculumText text={u.body}/>
+                    <CurriculumMaterials materials={u.materials}/>
+                    {u.checks.length > 0 && <p className="cur-note">{u.checks.length} check{u.checks.length === 1 ? "" : "s"} · pass mark {u.passMark}%</p>}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>}
+      </section>
+    </div>
+  );
+}
+
 function MentorPortal() {
   const auth = (window.useAuth || (() => null))();
   const [data, setData] = React.useState(null);
@@ -7868,8 +7949,12 @@ function MentorPortal() {
   /* One tab row rather than two. It was rendered only for people who teach, so
      a lead mentor — the person the concern flag exists for — had no way to
      reach anything but the roster. */
+  /* The Club curriculum is for staff who serve NGG — a Summer-only mentor has
+     none, and the server refuses them (curriculum_staff_gate). */
+  const servesClub = (m.programmes || []).includes("ngg");
   const tabList = (canTeach ? [["session", "Today's session"], ["class", "Stars & notes"], ["skills", "Skills"]]
                             : [["class", "Stars & notes"]])
+    .concat(servesClub ? [["curriculum", "Curriculum"]] : [])
     .concat(canOversee ? [["attention", "Needs attention"]] : []);
 
   /* An explicit choice wins, but only if it is a tab this person actually has —
@@ -7901,6 +7986,9 @@ function MentorPortal() {
 
   if (tab === "session") return shell(<>{header}{centrePicker}{tabs}
     <SessionPanel courses={teachCourses} centre={data.centre || m.centre || ""} onRemarks={setRemarkOn}/>
+  </>);
+  if (tab === "curriculum") return shell(<>{header}{centrePicker}{tabs}
+    <StaffCurriculumPanel/>
   </>);
   if (tab === "skills") return shell(<>{header}{centrePicker}{tabs}
     <SkillsPanel courses={teachCourses} centre={data.centre || m.centre || ""}/>

@@ -3380,3 +3380,57 @@ Object.assign(window, {
   // accepted, and neither is reachable through a rendered component alone.
   validateHeadshot, photoFormatHelp, HEADSHOT_MIN_PX,
 });
+
+/* ============================================================================
+   CURRICULUM — the pieces the member's lesson, the instructor's view and the
+   Control Room editor all draw with (domain/curriculum.php). One renderer for
+   a lesson's text, so what an editor previews is what a member reads.
+   ========================================================================== */
+
+const CUR_MATERIAL_ICON = { pdf: "📄", slides: "📊", doc: "📝", sheet: "📈", video: "🎬", audio: "🎧", image: "🖼", link: "🔗" };
+
+/* A lesson's body as text, never as HTML: blank lines make paragraphs, lines
+   starting "- " or "* " make a list, "## " a subheading. Anything an importer
+   or an AI typed reaches the page as words, so a pasted <script> is a sentence. */
+function CurriculumText({ text }) {
+  const blocks = String(text || "").replace(/\r\n?/g, "\n").split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
+  if (!blocks.length) return null;
+  return (
+    <div className="cur-text">
+      {blocks.map((b, i) => {
+        const lines = b.split("\n");
+        if (lines.every(l => /^\s*[-*•]\s+/.test(l))) {
+          return <ul key={i}>{lines.map((l, j) => <li key={j}>{l.replace(/^\s*[-*•]\s+/, "")}</li>)}</ul>;
+        }
+        if (/^#{1,3}\s+/.test(b) && lines.length === 1) return <h3 key={i} className="cur-text-h">{b.replace(/^#{1,3}\s+/, "")}</h3>;
+        return <p key={i}>{lines.map((l, j) => <React.Fragment key={j}>{j > 0 && <br/>}{l}</React.Fragment>)}</p>;
+      })}
+    </div>
+  );
+}
+
+function CurriculumMaterials({ materials }) {
+  if (!materials || !materials.length) return null;
+  return (
+    <ul className="cur-mats" aria-label="Materials">
+      {materials.map((m, i) => (
+        <li key={m.materialId || i}>
+          <a className="cur-mat" href={m.url} target="_blank" rel="noopener noreferrer">
+            <span className="cur-mat-icon" aria-hidden="true">{CUR_MATERIAL_ICON[m.kind] || "🔗"}</span>
+            <span className="cur-mat-title">{m.title || m.url}</span>
+            <span className="cur-mat-kind">{m.kind}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/* Where a member stands on one lesson, in words a chip can carry. */
+function curriculumStatusLabel(p) {
+  if (!p) return { label: "New", tone: "" };
+  if (p.status === "completed") return { label: "Done", tone: "is-done" };
+  if (p.pending) return { label: "Waiting for marking", tone: "is-wait" };
+  if (p.attempts > 0) return { label: "Try again", tone: "is-retry" };
+  return { label: "Started", tone: "is-started" };
+}

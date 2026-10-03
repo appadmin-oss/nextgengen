@@ -181,7 +181,7 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
 
     // ════════════════════════════════════════════════════════════════════
     const { page, errs } = await openAs(ADMIN);
-    await page.evaluate(() => window.__adminSection('members'));
+    await page.evaluate(() => window.__adminSection('members', 'roster'));
     await page.waitForSelector('.admin-main .admin-table tbody tr', { timeout: 30000 });
     await page.waitForTimeout(600);
 
