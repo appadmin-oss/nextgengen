@@ -11966,16 +11966,21 @@ function AdminFees() {
               value={cfg.trainingBasis || "session"} onChange={e => set("trainingBasis", e.target.value)}>
               <option value="session">Once per session</option>
               <option value="day">For every day the programme meets</option>
+              <option value="week">For every week the programme meets</option>
             </select>
             <div data-fee-hint="1" style={{ fontSize: 12, color: "var(--ink-500)", marginTop: 5, lineHeight: 1.5 }}>
               {cfg.trainingBasis === "day"
                 ? "One charge for each meeting day inside a session's dates — using the weekdays, holidays and extra days set in Conduct & fines. A session already charged as a whole is never also charged by the day."
+                : cfg.trainingBasis === "week"
+                ? "One charge for each week (Monday to Sunday) with at least one meeting day inside a session's dates — the same calendar as by the day. A week already charged by the day is never charged again."
                 : "One charge for each programme session that started after they joined."}
             </div>
           </label>
-          {num("trainingFee", cfg.trainingBasis === "day" ? "Training fee, per meeting day" : "Training fee, per session",
+          {num("trainingFee", cfg.trainingBasis === "day" ? "Training fee, per meeting day" : cfg.trainingBasis === "week" ? "Training fee, per week" : "Training fee, per session",
             cfg.trainingBasis === "day"
               ? "Charged for each day the programme meets, while they are in the training half."
+              : cfg.trainingBasis === "week"
+              ? "Charged for each week the programme meets, while they are in the training half."
               : "Charged for each programme session that has started since they joined.",
             /* THE MICROCOPY. Quiet, one line, no emphasis — and stating the
                condition rather than promising the outcome, because a member who

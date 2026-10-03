@@ -80,7 +80,13 @@ const FEES_DEFAULTS = [
      *              admin's own calendar: the weekdays it runs, its holidays and
      *              its extra days, inside each session's start/end window.
      *
-     * On 'day' the amount is a DAY RATE, not a session total. Changing the
+     *   'week'     one charge per week in which the programme meets at least
+     *              once — the same calendar as 'day', counted by the week
+     *              (Monday to Sunday). For a centre that meets on Saturdays a
+     *              week rate and a day rate bill the same days; where the
+     *              programme meets several days a week, 'week' charges once.
+     *
+     * On 'day' the amount is a DAY RATE, on 'week' a WEEK RATE, not a session total. Changing the
      * basis does not touch charges already posted, and a session that already
      * carries a session-level charge is never also charged by the day — see
      * fees_training_days(). */
@@ -210,7 +216,7 @@ const FEES_CREDIT_KINDS = ['payment', 'writeoff', 'waiver'];
 const FEES_MANUAL_CHARGE_KINDS = ['fine', 'adjustment'];
 
 /** What the training fee may be charged per. See FEES_DEFAULTS['trainingBasis']. */
-const FEES_TRAINING_BASES = ['session', 'day'];
+const FEES_TRAINING_BASES = ['session', 'day', 'week'];
 
 /** A ceiling on how many day-charges one member can pick up in a single accrual
  *  run. Three years of a five-day week is about 780, so this is generous — it
@@ -559,6 +565,33 @@ function fees_membership_periods(string $start, string $upto, int $everyMonths):
 }
 
 /**
+ * The weeks a member is charged the training fee for, when the basis is 'week':
+ * every Monday-to-Sunday week holding at least one programme day, inside the
+ * same bounds as fees_training_days(). Keyed `<sessionId>:W<monday>`.
+ *
+ * A week already carrying a DAY charge (the basis was 'day' before) is not
+ * charged again by the week — switching basis must never bill one week twice.
+ *
+ * @return array<string,string> periodKey => that week's Monday
+ */
+function fees_training_weeks(string $memberId, array $ten, ?string $asOf = null): array {
+    $out = [];
+    foreach (fees_training_days($memberId, $ten, $asOf) as $key => $day) {
+        $sid = explode(':', $key)[0];
+        $t = strtotime($day . ' 00:00:00 UTC');
+        $monday = gmdate('Y-m-d', $t - ((int)gmdate('N', $t) - 1) * 86400);
+        $wk = $sid . ':W' . $monday;
+        if (isset($out[$wk])) continue;
+        $sunday = gmdate('Y-m-d', strtotime($monday . ' UTC') + 6 * 86400);
+        $dayCharged = db_row("SELECT id FROM member_ledger WHERE memberId = ? AND kind = 'training' AND periodKey >= ? AND periodKey <= ? LIMIT 1",
+                             [$memberId, $sid . ':' . $monday, $sid . ':' . $sunday]);
+        if ($dayCharged) continue;
+        $out[$wk] = $monday;
+    }
+    return $out;
+}
+
+/**
  * The days a member is charged the training fee for, when the basis is 'day'.
  *
  * "Each day they come" is the admin's calendar, not the attendance register:
@@ -796,7 +829,18 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
     /* Training charges attach to a programme SESSION, not to a month — and only
        to sessions that had started, so a session on next year's calendar does
        not appear on an account today. */
-    if ((int)$cfg['trainingFee'] > 0 && (string)$cfg['trainingBasis'] === 'day') {
+    if ((int)$cfg['trainingFee'] > 0 && (string)$cfg['trainingBasis'] === 'week') {
+        /* A week rate, off the same meeting calendar, one charge per week met. */
+        $weeks = fees_training_weeks($memberId, $ten, $asOf);
+        if (!$weeks && empty(member_programme_settings()['enabled'])) $out['skipped'] = 'no_calendar';
+        foreach ($weeks as $key => $monday) {
+            if (fees_post($memberId, 'training', (int)$cfg['trainingFee'],
+                          ['periodKey' => $key, 'sessionId' => explode(':', $key)[0],
+                           'note' => 'Training — week of ' . $monday, 'by' => 'accrual'])) {
+                $out['training']++;
+            }
+        }
+    } elseif ((int)$cfg['trainingFee'] > 0 && (string)$cfg['trainingBasis'] === 'day') {
         /* A day rate, off the admin's own meeting calendar. */
         $days = fees_training_days($memberId, $ten, $asOf);
         if (!$days && empty(member_programme_settings()['enabled'])) $out['skipped'] = 'no_calendar';

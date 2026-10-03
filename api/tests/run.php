@@ -15105,6 +15105,25 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
                 return $r['training'] === 0 && $r['skipped'] === 'no_calendar';
             })());
 
+        /* The week rate: one charge per Monday–Sunday week the programme meets
+           in. Jan 3 is in the week of Dec 29; the 14th and 17th share the week
+           of Jan 12 — two weeks, not three days. */
+        setting_set('memberProgramme', ['enabled' => true, 'startDate' => '2026-01-01', 'endDate' => '2026-12-31',
+            'weekdays' => [6], 'holidays' => ['2026-01-10'], 'extraDays' => ['2026-01-14']], 'test');
+        db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-FEE-DAY'");
+        db_exec("DELETE FROM sessions WHERE sessionId = 'S-DAY-2'");
+        backend_dispatch('admin.fees.settings.set', ['requesterId' => $ADM, 'data' => ['trainingBasis' => 'week', 'trainingFee' => 2000]]);
+        chk('fees (week rate): the basis can be set to weekly', fees_settings()['trainingBasis'] === 'week');
+        fees_post('NGG-FEE-DAY', 'training', 500, ['periodKey' => 'S-DAY-1:2026-01-03', 'by' => 'test']);   // charged by the day before the switch
+        fees_accrue_member($m, null, '2026-01-31');
+        $wk = array_map(fn($x) => (string)$x['periodKey'], db_all("SELECT periodKey FROM member_ledger WHERE memberId = 'NGG-FEE-DAY' AND kind = 'training' AND periodKey LIKE 'S-DAY-1:W%' ORDER BY periodKey"));
+        chk('fees (week rate): one charge per week the programme meets, at the week rate', $wk === ['S-DAY-1:W2026-01-12']
+            && (int)db_row("SELECT amount FROM member_ledger WHERE memberId = 'NGG-FEE-DAY' AND periodKey = 'S-DAY-1:W2026-01-12'")['amount'] === 2000);
+        chk('fees (week rate): a week already charged by the day is not charged again', !in_array('S-DAY-1:W2025-12-29', $wk, true));
+        $before = (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-FEE-DAY'")['c'];
+        fees_accrue_member($m, null, '2026-01-31');
+        chk('fees (week rate): running it again charges nothing more', (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-FEE-DAY'")['c'] === $before);
+
         db_exec("DELETE FROM members WHERE memberId = 'NGG-FEE-DAY'");
         db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-FEE-DAY'");
         db_exec("DELETE FROM sessions WHERE sessionId LIKE 'S-DAY-%'");
