@@ -2579,9 +2579,12 @@ function ParentVerifyPage() {
 }
 
 /* ============================================================================
-   The Gate — registration desk + attendance behind a gated link (?g=…).
-   Dark blue + gold. Requires a signed-in staff member; the token scopes
-   the link. Register wizard: Details → Photo → Confirm. Check-in by code.
+   The gate links, one per job (GATE_KINDS in page-admin.jsx):
+     /apply?g=…   public sign-up, a family on their own phone (SelfRegisterPage)
+     /review?g=…  approving those sign-ups (ReviewDeskPage)
+     /gate?g=…    the door — check-in only (GatePage)
+   GateRegister, the old desk-registration wizard, is no longer mounted; it is
+   kept with its test bench until staff-assisted sign-up finds a home.
    ============================================================================ */
 
 /* ── The public self-registration link — /apply?g=… ──────────────────────────
@@ -3743,19 +3746,47 @@ function ReviewList({ rows, g, gold, picked, setPicked, selectable, busy, onOpen
   </>;
 }
 
+/* ============================================================================
+   THE GATE (/gate?g=…) — a check-in desk, and only that.
+
+   It used to be two tabs, Register and Check-in, on one link. A volunteer at
+   the door does one job; sign-ups have their own link (/apply?g=…, the "self"
+   kind) that a family opens on their own phone. So the desk opens straight
+   onto the scanner.
+
+   Every piece of chrome is a `gate-*` class in styles.css, drawn from the
+   tokens on `.gate-desk`. Inline style here is per-element geometry only.
+   ============================================================================ */
+function GateIcon({ name }) {
+  /* Drawn, not emoji: an emoji renders differently on every phone and cannot
+     take the desk's colour. */
+  const p = {
+    shield: "M12 3l7 3v5c0 4.4-3 8.3-7 9.5C8 19.3 5 15.4 5 11V6l7-3z",
+    sound: "M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z",
+    mute: "M4 9v6h4l5 4V5L8 9H4zm12 1.4L17.4 9 19 10.6 20.6 9 22 10.4 20.4 12l1.6 1.6-1.4 1.4L19 13.4 17.4 15 16 13.6l1.6-1.6L16 10.4z",
+    alert: "M12 3L2 20h20L12 3zm0 5.5l.01 6.5M12 17.2v.01",
+    cloud: "M7 18h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.4 1.6A3.3 3.3 0 0 0 7 18z",
+  }[name];
+  return <svg className="gate-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={p}/></svg>;
+}
+
+function useGateClock() {
+  const [now, setNow] = React.useState(() => new Date());
+  React.useEffect(() => { const id = setInterval(() => setNow(new Date()), 15000); return () => clearInterval(id); }, []);
+  return now;
+}
+
 function GatePage() {
   const g = new URLSearchParams(window.location.search).get("g") || "";
   const auth = (window.useAuth || (() => null))();   // stable: set before mount
   const [ctx, setCtx] = React.useState(null);
   const [state, setState] = React.useState("loading"); // loading|need-auth|error|ready
   const [err, setErr] = React.useState("");
-  const [tab, setTab] = React.useState("register");
   const [pw, setPw] = React.useState("");
   const [unlockBusy, setUnlockBusy] = React.useState(false);
   const [unlockErr, setUnlockErr] = React.useState("");
   const [lockNote, setLockNote] = React.useState("");
   const [switching, setSwitching] = React.useState(false);
-  const draftKey = "ngg_gate_draft_" + g;
 
   const load = React.useCallback(() => {
     setState("loading");
@@ -3764,21 +3795,12 @@ function GatePage() {
       .catch(e => {
         const c = e.code || e.message;
         /* Every refusal in DESK_RELOCK means "unlock this desk", not "something
-         * is broken" — including `forbidden`, which this used to route to a
-         * dead end.
-         *
-         * `forbidden` is what the gate route answers whenever the session on
-         * the device is not an admin AND not a kiosk session bound to THIS
-         * gate. Three ordinary situations land there: a parent or mentor
-         * signed into their own account on a shared desk phone, a volunteer
-         * or student signed in with their ID card, and a staffer who unlocked
-         * a DIFFERENT gate in this browser. All three are fixed by typing the
-         * desk password — which the page refused to show them, offering
-         * "Your account doesn't have staff access" and a Retry button that
-         * could only ever fail again. The link looked broken; it never was. */
+         * is broken" — including `forbidden`, which is what a device signed in
+         * to a personal account (a parent, a student) or to a DIFFERENT gate
+         * gets. All of them are fixed by the desk password, so all of them
+         * land on the unlock screen rather than a dead end. */
         if (DESK_RELOCK.indexOf(c) !== -1) {
-          setLockNote(c === "session_expired" ? "The desk session timed out. Unlock it again to carry on — nothing is lost."
-            : c === "forbidden" ? "" : "");
+          setLockNote(c === "session_expired" ? "The desk session timed out. Unlock it again to carry on — nothing is lost." : "");
           setState("need-auth");
         } else {
           setErr(c === "gate_invalid" ? "This gate link has been closed or revoked. Ask an admin for a fresh one."
@@ -3788,9 +3810,9 @@ function GatePage() {
       });
   }, [g]);
   React.useEffect(() => { load(); }, [load]);
-  /* After the operator signs in through the modal, retry automatically — but
-   * only on the transition INTO signed-in. Re-running while already signed in
-   * as somebody without access would just re-fetch the same 403. */
+  /* After the operator signs in through the modal, retry — but only on the
+   * transition INTO signed-in, or a signed-in account without access would
+   * re-fetch the same 403 for ever. */
   const wasSignedIn = React.useRef(auth && auth.isSignedIn);
   React.useEffect(() => {
     const now = !!(auth && auth.isSignedIn);
@@ -3798,11 +3820,9 @@ function GatePage() {
     wasSignedIn.current = now;
   }, [auth && auth.isSignedIn]);
 
-  /* Sign out of the personal account WITHOUT leaving the gate.
-   *
-   * auth.signOut() navigates to home, which on a desk phone throws the
-   * operator off the link they were sent and gives them nothing to go back
-   * to. Here the point of signing out is to carry on at this gate. */
+  /* Sign out of the personal account WITHOUT leaving the gate: auth.signOut()
+   * navigates home, which strands an operator away from the link they were
+   * sent. */
   const switchAccount = async () => {
     if (switching) return;
     setSwitching(true);
@@ -3812,8 +3832,6 @@ function GatePage() {
     if (auth && auth.openSignIn) auth.openSignIn();
   };
 
-  // Kiosk unlock — field staff without an admin login open the desk with the
-  // gate's password. On success a gate-scoped session is set; reload the gate.
   const doUnlock = async (e) => {
     if (e) e.preventDefault();
     if (!pw.trim() || unlockBusy) return;
@@ -3829,67 +3847,54 @@ function GatePage() {
     } finally { setUnlockBusy(false); }
   };
 
-  const navy = "#16223e", gold = "#ffce54", goldInk = "#2b2100";
-  const card = { background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14 };
-  const inputS = { width: "100%", padding: "12px 14px", borderRadius: 11, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 16, fontFamily: "inherit" };
-  const shell = (children) => (
-    <div style={{ minHeight: "100vh", background: navy, color: "#eef2fb", fontFamily: "var(--font-body, system-ui, sans-serif)" }}>
-      <div style={{ maxWidth: 480, margin: "0 auto", padding: "26px 18px 70px" }}>{children}</div>
-    </div>
+  const shell = (children, cls) => (
+    <div className="gate-desk"><div className={"gate-wrap" + (cls ? " " + cls : "")}>{children}</div></div>
   );
 
-  if (state === "loading") return shell(<div style={{ textAlign: "center", padding: "90px 0" }}><div className="dash-spinner"/></div>);
+  if (state === "loading") return shell(<div className="gate-loading" role="status" aria-live="polite"><div className="dash-spinner"/><span>Opening the desk…</span></div>, "is-narrow");
+
   if (state === "need-auth") {
-    /* Someone IS signed in, and it is not an account that can open this desk.
-     * Saying only "sign in" to a person who is already signed in reads as the
-     * link being broken, so name what happened and give both ways out. */
+    /* Someone IS signed in, with an account that can't open this desk. Saying
+     * only "sign in" to a person who already is reads as a broken link, so
+     * name what happened and give both ways out. */
     const blockedAs = auth && auth.isSignedIn ? auth.member : null;
     const who = blockedAs ? (blockedAs.fullName || blockedAs.name || blockedAs.email || "this account") : "";
-    return shell(<div style={{ ...card, padding: 24, marginTop: 48 }}>
-    <div style={{ textAlign: "center" }}>
-      <div style={{ fontSize: 38 }}>🛡️</div>
-      <h1 style={{ fontSize: 22, margin: "10px 0 6px" }}>Open the desk</h1>
-      <p style={{ color: "rgba(230,238,255,.66)", fontSize: 14, lineHeight: 1.55 }}>This gate link is real — the person operating it just needs to unlock it.</p>
-      {lockNote && <p style={{ color: "#ffd58a", fontSize: 13, lineHeight: 1.5, margin: "8px 0 0" }}>{lockNote}</p>}
-      {blockedAs && <p style={{ color: "rgba(230,238,255,.66)", fontSize: 13.5, lineHeight: 1.55, margin: "10px 0 0" }}>
-        This device is signed in as <b style={{ color: "#eef2fb" }}>{who}</b>, which can't open a registration desk.
-        Use the desk password below — it works without an account, and it will sign {who} out of this device.
-      </p>}
-      {!blockedAs && <button onClick={() => auth && auth.openSignIn()} style={{ marginTop: 14, padding: "13px 26px", borderRadius: 12, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>Staff sign-in →</button>}
-      {blockedAs && <button onClick={switchAccount} disabled={switching} style={{ marginTop: 14, padding: "11px 22px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>{switching ? "Signing out…" : "Sign in as staff instead"}</button>}
-    </div>
-    {/* Desk password — no admin account needed. */}
-    <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0 14px", color: "rgba(230,238,255,.4)", fontSize: 11, fontWeight: 700, letterSpacing: ".14em" }}>
-      <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.14)" }}/>OR DESK PASSWORD<div style={{ flex: 1, height: 1, background: "rgba(255,255,255,.14)" }}/>
-    </div>
-    <form onSubmit={doUnlock} style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-      <input type="password" value={pw} onChange={e => { setPw(e.target.value); if (unlockErr) setUnlockErr(""); }} placeholder="Desk password" autoComplete="off"
-        style={{ width: "100%", padding: "12px 14px", borderRadius: 11, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.07)", color: "#fff", fontSize: 16, fontFamily: "inherit" }}/>
-      {unlockErr && <div role="alert" style={{ fontSize: 12.5, color: "#ff9a9a" }}>{unlockErr}</div>}
-      <button type="submit" disabled={unlockBusy || !pw.trim()} style={{ padding: "12px 26px", borderRadius: 12, border: "1px solid rgba(255,255,255,.25)", background: "transparent", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", opacity: pw.trim() ? 1 : .55 }}>{unlockBusy ? "Unlocking…" : "Unlock the desk"}</button>
-      <p style={{ color: "rgba(230,238,255,.5)", fontSize: 11.5, textAlign: "center", margin: "2px 0 0", lineHeight: 1.5 }}>Ask your coordinator for the desk password. It works only for this gate and expires automatically.</p>
-    </form>
-  </div>);
+    return shell(
+      <section className="gate-panel gate-lock" aria-labelledby="gate-lock-h">
+        <span className="gate-badge"><GateIcon name="shield"/></span>
+        <p className="gate-eyebrow">Check-in desk</p>
+        <h1 id="gate-lock-h" className="gate-panel-h">Open the desk</h1>
+        <p className="gate-lede">This gate link is real — the person on the door just needs to unlock it.</p>
+        {lockNote && <p className="gate-note is-warn">{lockNote}</p>}
+        {blockedAs && <p className="gate-note">
+          This device is signed in as <b>{who}</b>, which can't open a check-in desk.
+          Use the desk password below — it works without an account, and it signs {who} out of this device.
+        </p>}
+        <form className="gate-form" onSubmit={doUnlock}>
+          <label className="gate-label" htmlFor="gate-pw">Desk password</label>
+          <input id="gate-pw" className="gate-input is-secret" type="password" value={pw} placeholder="Desk password" autoComplete="off"
+            onChange={e => { setPw(e.target.value); if (unlockErr) setUnlockErr(""); }} aria-describedby="gate-pw-help"
+            aria-invalid={unlockErr ? "true" : undefined}/>
+          {unlockErr && <p role="alert" className="gate-error">{unlockErr}</p>}
+          <button type="submit" className="gate-btn is-primary" disabled={unlockBusy || !pw.trim()}>{unlockBusy ? "Unlocking…" : "Unlock the desk"}</button>
+          <p id="gate-pw-help" className="gate-fine">Ask your coordinator for the desk password. It works only for this gate and expires automatically.</p>
+        </form>
+        <div className="gate-or" role="separator"><span>or</span></div>
+        {!blockedAs
+          ? <button type="button" className="gate-btn is-quiet" onClick={() => auth && auth.openSignIn()}>Staff sign-in</button>
+          : <button type="button" className="gate-btn is-quiet" onClick={switchAccount} disabled={switching}>{switching ? "Signing out…" : "Sign in as staff instead"}</button>}
+      </section>, "is-narrow");
   }
-  if (state === "error") return shell(<div style={{ ...card, padding: 24, marginTop: 60 }}><h1 style={{ fontSize: 20, margin: "0 0 8px" }}>Gate unavailable</h1><p style={{ color: "rgba(230,238,255,.66)", fontSize: 14 }}>{err}</p><button onClick={load} className="shell-retry">Retry</button></div>);
 
-  return shell(<>
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      <div>
-        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>THE GATE · {String((ctx.gate && ctx.gate.name) || "").toUpperCase()}</div>
-        <h1 style={{ fontSize: 22, margin: "4px 0 0", fontWeight: 800 }}>{(ctx.cohort && ctx.cohort.name) || "Summer School"}</h1>
-      </div>
-      <span style={{ fontSize: 24 }}>⛩️</span>
-    </div>
-    <div style={{ display: "flex", gap: 0, margin: "18px 0" }}>
-      {[["register", "Register"], ["checkin", "Check-in"]].map(([id, label], i) => (
-        <button key={id} onClick={() => setTab(id)} style={{ flex: 1, padding: "11px 0", fontWeight: 800, fontSize: 14, cursor: "pointer", color: tab === id ? goldInk : "rgba(230,238,255,.6)", background: tab === id ? gold : "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: i === 0 ? "11px 0 0 11px" : "0 11px 11px 0" }}>{label}</button>
-      ))}
-    </div>
-    {tab === "register"
-      ? <GateRegister g={g} ctx={ctx} card={card} inputS={inputS} gold={gold} goldInk={goldInk} draftKey={draftKey}/>
-      : <GateCheckin g={g} ctx={ctx} card={card} inputS={inputS} gold={gold} goldInk={goldInk}/>}
-  </>);
+  if (state === "error") return shell(
+    <section className="gate-panel" role="alert">
+      <span className="gate-badge is-bad"><GateIcon name="alert"/></span>
+      <h1 className="gate-panel-h">Gate unavailable</h1>
+      <p className="gate-lede">{err}</p>
+      <button type="button" className="gate-btn is-quiet" onClick={load}>Try again</button>
+    </section>, "is-narrow");
+
+  return shell(<GateCheckin g={g} ctx={ctx}/>);
 }
 
 // Great-circle distance in metres — client preview of the fence match; the
@@ -4070,6 +4075,8 @@ function RegFieldList({ fields, form, set, errors, visible, inputS, gold, mut })
   </>;
 }
 
+/* Not mounted: the gate link is check-in only (see the gate links note above
+   SelfRegisterPage). Kept with its ui-smoke bench, `board=gatereg`. */
 function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
   const geoOn = !!(ctx.geo && ctx.geo.enabled);
   const fields = ((ctx.form && ctx.form.fields) || []).filter(f => !(geoOn && f.key === "centre"));
@@ -4705,10 +4712,9 @@ function GateDeskGuide() {
       </dl>
       <h3>When something is off</h3>
       <ul>
-        <li><b>Camera not working, or no card:</b> press <i>Camera not working? Enter the code</i> and type the code under the QR, or a member's ID (026-014).</li>
+        <li><b>Camera not working, or no card:</b> type the code under the QR in the box below the camera, or a member's ID (026-014).</li>
         <li><b>ID expired / season ended:</b> do not let them in on it; send them to the coordinator.</li>
         <li><b>Card replaced:</b> they have an old member card. Ask for the new one, or type their member ID.</li>
-        <li><b>Leaving early:</b> the coordinator records check-outs.</li>
         <li><b>A safeguarding warning</b> on a volunteer: they must not be left alone with young people. Tell the coordinator.</li>
       </ul>
       <h3>End of your shift</h3>
@@ -4721,9 +4727,10 @@ function GateDeskGuide() {
   );
 }
 
-/* The panel itself. Big enough to read without leaning in, and it shows the
- * PHOTO — an operator glancing between the screen and the child is the only
- * check that the card belongs to the person holding it. */
+/* The outcome. It sits OVER the camera, where the operator is already
+ * looking, big enough to read across a desk, and it shows the PHOTO — glancing
+ * between the screen and the child is the only check that the card belongs to
+ * the person holding it. Kind is told by word, glyph AND colour. */
 function ScanResult({ result, onDone }) {
   React.useEffect(() => {
     if (!result || result.stop) return;
@@ -4732,31 +4739,27 @@ function ScanResult({ result, onDone }) {
     const t = setTimeout(onDone, result.kind === "no" ? 6000 : 3500);
     return () => clearTimeout(t);
   }, [result, onDone]);
+  const okRef = React.useRef(null);
+  React.useEffect(() => { if (result && result.stop && okRef.current) okRef.current.focus(); }, [result]);
   if (!result) return null;
   const k = SCAN_KINDS[result.kind] || SCAN_KINDS.in;
   return (
-    <div role="status" aria-live="assertive"
-      style={{ display: "flex", alignItems: "center", gap: 16, padding: "18px 18px",
-        borderRadius: 16, background: k.bg, border: "2px solid " + k.edge, minHeight: 96 }}>
+    <div role="status" aria-live="assertive" className={"gate-result is-" + result.kind + (result.stop ? " is-stop" : "")}>
       {result.photo
-        ? <img src={result.photo} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", flex: "none", border: "2px solid " + k.edge }}/>
-        : <span aria-hidden="true" style={{ width: 72, height: 72, borderRadius: "50%", flex: "none", display: "grid", placeItems: "center", background: "rgba(0,0,0,.22)", fontSize: 34, color: k.edge, fontWeight: 800 }}>{k.glyph}</span>}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span aria-hidden="true" style={{ fontSize: 20, color: k.edge, fontWeight: 900 }}>{k.glyph}</span>
-          <span style={{ fontSize: 12, letterSpacing: ".14em", textTransform: "uppercase", fontWeight: 800, color: k.fg, fontFamily: "var(--font-mono, monospace)" }}>
-            {result.word || k.word}
-          </span>
-        </div>
-        <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.15, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{result.name}</div>
-        {result.sub && <div style={{ fontSize: 13, color: "rgba(230,238,255,.75)", marginTop: 2 }}>{result.sub}</div>}
-        {result.stop && <button type="button" className="gate-stop-ok" onClick={onDone}>OK — next person</button>}
-      </div>
+        ? <img className="gate-result-photo" src={result.photo} alt=""/>
+        : <span className="gate-result-photo is-glyph" aria-hidden="true">{k.glyph}</span>}
+      <p className="gate-result-word"><span aria-hidden="true">{k.glyph}</span> {result.word || k.word}</p>
+      <p className="gate-result-name">{result.name}</p>
+      {result.sub && <p className="gate-result-sub">{result.sub}</p>}
+      {result.stop && <button ref={okRef} type="button" className="gate-btn is-quiet gate-stop-ok" onClick={onDone}>OK — next person</button>}
     </div>
   );
 }
 
-function QRScanner({ onToken, gold }) {
+/* Camera-first QR reader (window.jsQR). Scans continuously, debounces repeat
+ * reads, and calls onToken with the extracted code. Shared with the Club's
+ * community sign-in; styled by `qrs-*` classes. */
+function QRScanner({ onToken }) {
   const videoRef = React.useRef(null);
   const streamRef = React.useRef(null);
   const rafRef = React.useRef(0);
@@ -4816,32 +4819,32 @@ function QRScanner({ onToken, gold }) {
   }, [facing]);
 
   const flashing = hit && (Date.now() - hit < 700);
-  const box = { position: "relative", width: "100%", aspectRatio: "1/1", maxHeight: 340, borderRadius: 16, overflow: "hidden", background: "#05070f", display: "grid", placeItems: "center" };
   if (state === "nolib" || state === "denied") {
     return (
-      <div style={{ ...box, aspectRatio: "auto", minHeight: 120, padding: 20, textAlign: "center", color: "rgba(230,238,255,.7)", fontSize: 13 }}>
-        <div><div style={{ fontSize: 26, marginBottom: 8 }} aria-hidden="true">{state === "denied" ? "📷" : "⌨"}</div>
-        {state === "denied" ? "Camera unavailable — type the code below to check in." : "Scanner still loading — type the code below."}</div>
+      <div className="qrs is-off">
+        <p className="qrs-msg">{state === "denied"
+          ? "The camera isn't available on this device. Type the code from the card below."
+          : "The scanner is still loading. Type the code from the card below."}</p>
       </div>
     );
   }
   return (
-    <div style={box} aria-label="QR scanner">
-      <video ref={videoRef} style={{ width: "100%", height: "100%", objectFit: "cover" }} playsInline muted/>
-      {state === "starting" && <div style={{ position: "absolute", color: "rgba(230,238,255,.7)", fontSize: 13 }}>Starting camera…</div>}
-      {/* Reticle */}
-      <div aria-hidden="true" style={{ position: "absolute", inset: "18%", border: "3px solid " + (flashing ? "#6fdc9d" : (gold || "#ffce54")), borderRadius: 14, boxShadow: "0 0 0 100vmax rgba(0,0,0,.28)", transition: "border-color .2s" }}/>
-      <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, textAlign: "center", color: "#fff", fontSize: 12, textShadow: "0 1px 3px rgba(0,0,0,.8)" }}>{flashing ? "✓ Scanned" : "Point the QR at the camera"}</div>
+    <div className="qrs" aria-label="QR scanner">
+      <video ref={videoRef} className="qrs-video" playsInline muted/>
+      {state === "starting" && <p className="qrs-msg is-over">Starting the camera…</p>}
+      <div aria-hidden="true" className={"qrs-reticle" + (flashing ? " is-hit" : "")}/>
+      <p className="qrs-hint" aria-live="polite">{flashing ? "Scanned" : "Hold the QR inside the frame"}</p>
       {multiCam && (
-        <button type="button" onClick={() => { setState("starting"); setFacing(f => (f === "environment" ? "user" : "environment")); }}
-          aria-label={"Switch to the " + (facing === "environment" ? "front" : "back") + " camera"} title="Flip camera"
-          style={{ position: "absolute", top: 10, right: 10, width: 40, height: 40, borderRadius: "50%", border: "1px solid rgba(255,255,255,.35)", background: "rgba(0,0,0,.4)", color: "#fff", fontSize: 17, cursor: "pointer", lineHeight: 1 }}>🔄</button>
+        <button type="button" className="qrs-flip" onClick={() => { setState("starting"); setFacing(f => (f === "environment" ? "user" : "environment")); }}
+          aria-label={"Switch to the " + (facing === "environment" ? "front" : "back") + " camera"} title="Switch camera">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h3l2-2h6l2 2h3v12H4V7zm8 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>
+        </button>
       )}
     </div>
   );
 }
 
-function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
+function GateCheckin({ g, ctx }) {
   const [code, setCode] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   // The camera effect captures `mark` once (deps []), so its `busy` closure is
@@ -4849,7 +4852,9 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
   const busyRef = React.useRef(false);
   const [recent, setRecent] = React.useState([]);
   const [err, setErr] = React.useState("");
-  const [typed, setTyped] = React.useState(false); // reveal the manual fallback
+  // Everything this device has taken today — the list keeps the last twelve,
+  // the count keeps them all.
+  const [counts, setCounts] = React.useState({ in: 0, already: 0 });
   // Attendance-taker duty for this gate's centre today (rotation banner).
   const [duty, setDuty] = React.useState((ctx && ctx.duty) || null);
   const [dutyMsg, setDutyMsg] = React.useState("");
@@ -4889,6 +4894,7 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
           const r = await NGGApi.public.gate.checkin(g, item.token, item.scannedAt);
           dequeue(item.token);
           const st = r.student || {};
+          setCounts(c => r.already ? { ...c, already: c.already + 1 } : { ...c, in: c.in + 1 });
           setRecent(list => [{ name: st.fullName || item.token, at: fmtTime(new Date()), already: !!r.already, synced: true }, ...list].slice(0, 12));
         } catch (e) {
           if (isNetErr(e)) break;                       // still offline — stop, keep the rest
@@ -4937,6 +4943,7 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
           .filter(Boolean).join(" · "),
         word: r.already ? "Already in today" : (isVol ? "Checked in · volunteer" : "Checked in"),
       });
+      setCounts(c => r.already ? { ...c, already: c.already + 1 } : { ...c, in: c.in + 1 });
       setRecent(list => [{
         name: st.fullName,
         at: fmtTime(new Date()),
@@ -4977,70 +4984,102 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
         const stop = /^policy_/.test(c) || c === "member_inactive";
         const who = e2.data && e2.data.student && e2.data.student.fullName;
         announce("no", { name: who || "Not accepted", sub: why, stop, word: stop ? "Do not admit" : undefined });
-        setErr(why);
       }
     } finally { busyRef.current = false; setBusy(false); }
   };
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Attendance-taker rotation: who's on the roll today + one-tap close. */}
-      {duty && (
-        <div style={{ ...card, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", borderLeft: "3px solid " + gold }}>
-          <div style={{ flex: 1, minWidth: 160 }}>
-            <div style={{ fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "rgba(230,238,255,.55)", fontFamily: "var(--font-mono, monospace)" }}>On attendance duty{centre ? " · " + centre : ""}</div>
-            <div style={{ fontWeight: 700, fontSize: 15, marginTop: 2 }}>{duty.volunteer ? duty.volunteer.fullName : "Unassigned"}</div>
-          </div>
-          {duty.completedAt
-            ? <span className="chip chip-lime" style={{ fontSize: 11 }}>Roll closed{duty.takenCount ? " · " + duty.takenCount + " present" : ""}</span>
-            : <button type="button" onClick={closeRoll} disabled={dutyBusy || !duty.volunteer} style={{ padding: "8px 16px", borderRadius: 10, border: "1px solid " + gold, background: "transparent", color: gold, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{dutyBusy ? "Closing…" : "Close the roll"}</button>}
+  const now = useGateClock();
+  const gateName = (ctx && ctx.gate && ctx.gate.name) || "Gate";
+  const edition = (ctx && ctx.cohort && ctx.cohort.name) || "Summer School";
+  const dayLabel = now.toLocaleDateString(NGG_LOCALE, { weekday: "long", day: "numeric", month: "long" });
+
+  return (<div className="gate-checkin">
+    <header className="gate-head">
+      <div className="gate-head-main">
+        <p className="gate-eyebrow">Check-in desk · {gateName}</p>
+        <h1 className="gate-title">{edition}</h1>
+        <p className="gate-meta">{centre ? centre + " · " : ""}{dayLabel} · <time>{fmtTime(now)}</time></p>
+      </div>
+      <div className="gate-head-side">
+        <div className="gate-count" role="status" aria-live="polite">
+          <b>{counts.in}</b><span>checked in{counts.already ? " · " + counts.already + " repeat" + (counts.already === 1 ? "" : "s") : ""}</span>
         </div>
-      )}
-      {dutyMsg && <div role="alert" style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(111,220,157,.12)", border: "1px solid rgba(111,220,157,.35)", fontSize: 13 }}>{dutyMsg}</div>}
-      {/* The outcome, before anything else on the screen. */}
-      <ScanResult result={scan} onDone={() => setScan(null)}/>
-      {/* QR-first: the camera scans continuously; typing is the fallback. */}
-      <QRScanner onToken={mark} gold={gold}/>
-      <div style={{ display: "flex", justifyContent: "center" }}>
-        <button type="button" onClick={() => setMuted(m => !m)} aria-pressed={muted}
-          style={{ background: "none", border: "1px solid rgba(255,255,255,.22)", color: "rgba(230,238,255,.8)",
-            borderRadius: 999, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-          {muted ? "🔇 Scan sound off" : "🔊 Scan sound on"}
+        <button type="button" className="gate-tool" onClick={() => setMuted(m => !m)} aria-pressed={!muted}>
+          <GateIcon name={muted ? "mute" : "sound"}/>{muted ? "Scan sound off" : "Scan sound on"}
         </button>
       </div>
-      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 12, margin: 0, textAlign: "center" }}>Hold any NGG card up to the camera — a Summer School participant's, a volunteer's or a member's. A duplicate scan is safe; a day counts once.</p>
-      <GateDeskGuide/>
-      {pending > 0 && (
-        <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(245,176,38,.14)", border: "1px solid rgba(245,176,38,.4)", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
-          <span aria-hidden="true">☁︎</span>
-          <span style={{ flex: 1 }}>{pending} scan{pending === 1 ? "" : "s"} saved offline — they'll sync automatically when you're back online.</span>
-          <button type="button" onClick={flushQueue} style={{ background: "none", border: "1px solid rgba(245,176,38,.5)", color: gold, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Sync now</button>
+    </header>
+
+    {/* Attendance-taker rotation: who's on the roll today + one-tap close. */}
+    {duty && (
+      <section className="gate-duty" aria-label="Attendance duty">
+        <div>
+          <p className="gate-eyebrow is-quiet">On attendance duty{centre ? " · " + centre : ""}</p>
+          <p className="gate-duty-name">{duty.volunteer ? duty.volunteer.fullName : "Nobody assigned"}</p>
         </div>
-      )}
-      {!typed
-        ? <button type="button" onClick={() => setTyped(true)} style={{ background: "none", border: "none", color: "rgba(230,238,255,.8)", textDecoration: "underline", cursor: "pointer", fontSize: 13, alignSelf: "center" }}>Camera not working? Enter the code</button>
-        : (
-          <form onSubmit={e => { e.preventDefault(); mark(code); setCode(""); }} style={{ display: "flex", gap: 8 }}>
-            <input style={{ ...inputS, flex: 1, fontFamily: "var(--font-mono, monospace)", letterSpacing: ".08em" }} placeholder="Code from the ID card, or a member ID (SUMQR / VOLQR / MEMQR / 026-014)" value={code} onChange={e => setCode(e.target.value.toUpperCase())} autoFocus/>
-            <button disabled={busy || !code.trim()} style={{ padding: "0 20px", borderRadius: 11, border: "none", background: gold, color: goldInk, fontWeight: 800, fontSize: 15, cursor: "pointer" }}>{busy ? "…" : "✓"}</button>
-          </form>
+        {duty.completedAt
+          ? <span className="gate-pill is-ok">Roll closed{duty.takenCount ? " · " + duty.takenCount + " present" : ""}</span>
+          : <button type="button" className="gate-btn is-outline" onClick={closeRoll} disabled={dutyBusy || !duty.volunteer}>{dutyBusy ? "Closing…" : "Close the roll"}</button>}
+      </section>
+    )}
+    {dutyMsg && <p role="status" className="gate-banner is-ok">{dutyMsg}</p>}
+
+    <div className="gate-grid">
+      <section className="gate-scan" aria-label="Scan a card">
+        <div className="gate-stage">
+          <QRScanner onToken={mark}/>
+          <ScanResult result={scan} onDone={() => setScan(null)}/>
+        </div>
+        <form className="gate-manual" role="search" aria-label="Check in by code"
+          onSubmit={e => { e.preventDefault(); mark(code); setCode(""); }}>
+          <label className="gate-label" htmlFor="gate-code">No camera, or the card won't scan? Type the code printed under the QR — like <span className="gate-mono">SUMQR-9F2A61C0</span> — or a member ID like <span className="gate-mono">026-014</span>.</label>
+          <div className="gate-manual-row">
+            <input id="gate-code" className="gate-input is-code" value={code} onChange={e => setCode(e.target.value.toUpperCase())}
+              placeholder="Code from the ID card"
+              autoComplete="off" autoCapitalize="characters" spellCheck="false" inputMode="text"/>
+            <button type="submit" className="gate-btn is-primary" disabled={busy || !code.trim()}>{busy ? "Checking…" : "Check in"}</button>
+          </div>
+        </form>
+        {pending > 0 && (
+          <div className="gate-banner is-info" role="status">
+            <GateIcon name="cloud"/>
+            <span>{pending} scan{pending === 1 ? "" : "s"} saved on this device — they'll sync by themselves when the connection is back. Keep this page open.</span>
+            <button type="button" className="gate-btn is-small is-outline" onClick={flushQueue}>Sync now</button>
+          </div>
         )}
-      {err && <div role="alert" style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 13 }}>{err}</div>}
-      <div role="status" aria-live="polite" aria-label="Recent check-ins" style={{ display: "contents" }}>
-      {recent.map((r, i) => (
-        <div key={r.at + "|" + (r.name || "") + "|" + (r.failed ? "f" : r.synced ? "s" : r.queued ? "q" : r.already ? "a" : "n") + "|" + i} style={{ ...card, padding: "11px 14px", display: "flex", alignItems: "center", gap: 10, border: (r.warn || r.failed) ? "1px solid rgba(255,120,120,.5)" : (card.border || undefined) }}>
-          <span style={{ color: r.failed ? "#ff9a9a" : r.queued ? "#ffce54" : r.already ? "#ffce54" : "#6fdc9d", fontWeight: 800 }}>{r.failed ? "✕" : r.queued ? "☁︎" : r.already ? "↻" : "✓"}</span>
-          <b style={{ flex: 1, fontSize: 14, fontFamily: (r.queued || r.failed) ? "var(--font-mono, monospace)" : undefined }}>{r.name}{r.volunteer && <span style={{ marginLeft: 8, fontSize: 10, letterSpacing: ".1em", padding: "2px 7px", borderRadius: 6, background: "rgba(245,176,38,.18)", color: "#ffce54", fontWeight: 700 }}>{(r.role || "VOL").toUpperCase()}</span>}</b>
-          {r.cert > 0 && <span title={r.cert + "-session certificate issued"} style={{ fontSize: 11, color: "#6fdc9d", fontWeight: 700 }}>🏅 {r.cert}</span>}
-          {r.late > 0 && <span title={"Arrived " + r.late + " min after resumption"} style={{ fontSize: 10, letterSpacing: ".08em", padding: "2px 7px", borderRadius: 6, background: "rgba(255,120,120,.16)", color: "#ff9a9a", fontWeight: 700 }}>LATE · {r.late}m</span>}
-          <span style={{ color: "rgba(230,238,255,.6)", fontSize: 12 }}>{r.failed ? "failed — re-scan · " : r.queued ? "saved offline · " : r.synced ? "synced · " : r.already ? "already in · " : ""}{r.at}</span>
-        </div>
-      ))}
-      </div>
-      {recent.some(r => r.warn) && <div style={{ padding: "10px 13px", borderRadius: 10, background: "rgba(255,120,120,.12)", border: "1px solid rgba(255,120,120,.35)", fontSize: 12.5 }}>⚠ A volunteer above has not cleared safeguarding screening. They should not be unsupervised with young people.</div>}
-      {!recent.length && <p style={{ color: "rgba(230,238,255,.45)", fontSize: 13, textAlign: "center", marginTop: 20 }}>Check-ins appear here as they happen.</p>}
+        {err && <p role="alert" className="gate-banner is-bad">{err}</p>}
+      </section>
+
+      <aside className="gate-side">
+        <section className="gate-session" aria-labelledby="gate-session-h">
+          <h2 id="gate-session-h" className="gate-h2">This session</h2>
+          {recent.length === 0
+            ? <p className="gate-empty">Check-ins appear here as they happen.</p>
+            : <ul className="gate-list" role="status" aria-live="polite" aria-label="Recent check-ins">
+                {recent.map((r, i) => {
+                  const st = r.failed ? "bad" : r.queued ? "queued" : r.already ? "already" : "in";
+                  return (
+                    <li key={r.at + "|" + (r.name || "") + "|" + st + "|" + i} className={"gate-row is-" + st + (r.warn ? " is-warn" : "")}>
+                      <span className="gate-row-mark" aria-hidden="true">{st === "bad" ? "✕" : st === "queued" ? "☁" : st === "already" ? "↻" : "✓"}</span>
+                      <span className={"gate-row-name" + (r.queued || r.failed ? " is-code" : "")}>
+                        {r.name}
+                        {r.volunteer && <span className="gate-tag">{(r.role || "Volunteer")}</span>}
+                        {r.late > 0 && <span className="gate-tag is-late">Late {r.late}m</span>}
+                        {r.cert > 0 && <span className="gate-tag is-ok" title={r.cert + "-session certificate issued"}>Certificate · {r.cert}</span>}
+                      </span>
+                      <span className="gate-row-meta">{r.failed ? "failed — re-scan · " : r.queued ? "saved · " : r.synced ? "synced · " : r.already ? "already in · " : ""}{r.at}</span>
+                    </li>
+                  );
+                })}
+              </ul>}
+        </section>
+        {recent.some(r => r.warn) && (
+          <p className="gate-banner is-bad" role="note"><GateIcon name="alert"/><span>A volunteer above has not cleared safeguarding screening. They must not be left alone with young people.</span></p>
+        )}
+        <GateDeskGuide/>
+      </aside>
     </div>
-  );
+  </div>);
 }
 
 /* ============================================================================

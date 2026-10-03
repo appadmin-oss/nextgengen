@@ -403,3 +403,27 @@ edition needs dates, at most 183 days apart. The participant check-in refuses
 outside them. Cards issued for an edition (participants, edition volunteers)
 expire on its end date. `run-jobs.php` closes elapsed editions. The NGV
 promotion card is deliberately not season-bound.
+
+## The gate link is a check-in desk (2026-10)
+
+`/gate?g=…` was two tabs, Register and Check-in. It now opens straight onto
+check-in, because a volunteer at the door does one job and families sign up
+on the public link (`/apply?g=…`). The admin calls the kind a **Check-in desk**.
+
+What changed in the redesign:
+- The result is drawn over the camera, where the operator is already looking.
+- Typed entry is always on screen, with format examples, instead of hiding
+  behind "Camera not working?".
+- The header shows a session count (repeats counted apart) and a live clock.
+- Two columns appear once the desk itself is 760px wide (container query).
+- A "do not admit" takes focus on its OK button.
+- Every style is a `gate-*` / `qrs-*` class on one token set in `styles.css`.
+  Emoji icons are now drawn SVGs, and every ink clears 5.4:1.
+
+`GateRegister` is left in place, unmounted, with its test bench. The server's
+`gate_register` still accepts a desk link; nothing calls it now.
+
+The same pass fixed ten `font: <weight> <size> inherit` declarations in
+`styles-app.css`. Browsers reject that shorthand outright, so those elements
+had silently lost their weight and size. Both stylesheets now pass
+csstree-validator clean.

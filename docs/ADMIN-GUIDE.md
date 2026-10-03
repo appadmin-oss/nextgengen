@@ -347,7 +347,7 @@ what you are actually doing.
 ### Intake — getting children in
 
 - **Intake form** — build the form families fill in.
-- **Gate links** — the shareable sign-up links.
+- **Gate links** — the shareable links: a **Check-in desk** for the door (check-in only), a **Public sign-up** for families, and a **Review desk** for approving sign-ups.
 - **Pending sign-ups** — applications waiting on you.
 - **Enrol at the desk** — enrol somebody in front of you, right now.
 - **Bulk import** — paste a CSV of participants; each row is enrolled and

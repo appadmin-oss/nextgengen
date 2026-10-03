@@ -14,7 +14,7 @@ coordinator sends you.
 | | NGG gate desk | CACENTRE gate desk |
 |---|---|---|
 | Link looks like | `…/gate?g=…` | `cacentre.afrovanguard.org.ng/desk/…` |
-| To open it | Type the **desk password**, press **Unlock the desk**, then tap **Check-in** | Type the **desk password**, press **Open the desk** |
+| To open it | Type the **desk password** and press **Unlock the desk** — it opens straight onto check-in | Type the **desk password**, press **Open the desk** |
 | Who it takes | Summer School participants, volunteers, NGG members | CACENTRE staff and visitors, NGG cards, Afrovanguard members |
 
 The desk password is given to you in person. Never write it on the phone, on

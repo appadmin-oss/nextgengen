@@ -4247,8 +4247,8 @@ const PWEXP_CHOICES = [[0, "Never"], [7, "After 7 days"], [30, "After 30 days"],
  * panel only ever created the first, which is why nobody could find the
  * online registration form — there was no way to make one. */
 const GATE_KINDS = {
-  desk: { label: "Staff desk", chip: "chip-navy", fallback: "Registration desk",
-          blurb: "Staff register a child who is standing in front of them. A desk password lets field staff run it without an admin login." },
+  desk: { label: "Check-in desk", chip: "chip-navy", fallback: "Check-in desk",
+          blurb: "The door. Volunteers scan cards to check in participants, volunteers and NGG members. A desk password lets them run it without an admin login. It takes no sign-ups — send families a Public sign-up link for that." },
   self: { label: "Public sign-up", chip: "chip-lime", fallback: "Public registration link",
           blurb: "The link you send to families. No password — anyone with the link can fill it in, and nothing they submit becomes a registration until somebody checks it." },
   review: { label: "Review desk", chip: "chip-gold", fallback: "Review desk",

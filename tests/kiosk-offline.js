@@ -124,7 +124,7 @@ function cleanup() {
     // Unlock with the desk password.
     await page.fill('input[placeholder="Desk password"]', DESK_PW);
     await page.click('button:has-text("Unlock the desk")');
-    await page.waitForSelector('button:has-text("Check-in")', { timeout: 8000 });
+    await page.waitForSelector('input[placeholder*="Code from the ID card"]', { timeout: 8000 });
     ok('desk unlocked with the password (kiosk session)');
 
     /* A field desk holds a kiosk session, not a member one, and its context
@@ -135,15 +135,13 @@ function cleanup() {
     ok('no sign-in modal was thrown over the desk by a routine 401',
        (await page.$('.signin-scrim')) === null);
 
-    // Open Check-in → reveal the typed fallback (headless has no camera).
-    await page.click('button:has-text("Check-in")');
-    await page.click('button:has-text("Enter the code")');
+    // The desk is check-in only, with the typed entry always on screen.
     await page.waitForSelector('input[placeholder*="Code from the ID card"]', { timeout: 8000 });
 
     // ---- OFFLINE: a scan must be banked, not lost ----
     await context.setOffline(true);
     await page.fill('input[placeholder*="Code from the ID card"]', TOKEN);
-    await page.click('button:has-text("✓")');
+    await page.click('.gate-manual button[type=submit]');
     await page.waitForTimeout(800);
     (await queueLen()) === 1 ? ok('offline scan queued to localStorage') : bad('offline scan NOT queued (len=' + await queueLen() + ')');
     /saved offline/i.test(await text()) ? ok('offline banner shown') : bad('offline banner missing');
@@ -158,7 +156,7 @@ function cleanup() {
 
     // ---- A genuine bad code errors immediately and is never queued ----
     await page.fill('input[placeholder*="Code from the ID card"]', 'NOPE-XXXX');
-    await page.click('button:has-text("✓")');
+    await page.click('.gate-manual button[type=submit]');
     await page.waitForTimeout(700);
     (await queueLen()) === 0 ? ok('bad code not queued') : bad('bad code was queued (should not be)');
     /isn't assigned|No student|couldn't check in/i.test(await text()) ? ok('bad code surfaces an error') : bad('bad code error not shown');

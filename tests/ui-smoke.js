@@ -2771,7 +2771,7 @@ function unzipDocumentXml(buf) {
       href: (tr.querySelector('a[href]') || {}).getAttribute ? tr.querySelector('a[href]').getAttribute('href') : '',
     })));
     ok('…and the table says which door each existing link is',
-      gkRows.length === 3 && gkRows.map(r => r.kind).join('|') === 'Staff desk|Public sign-up|Review desk');
+      gkRows.length === 3 && gkRows.map(r => r.kind).join('|') === 'Check-in desk|Public sign-up|Review desk');
     /* The href is what Copy link and Open both build. Asserting the printed
        path only would pass while the button still handed out /gate for
        everything — which is exactly what it used to do. */
@@ -6724,9 +6724,9 @@ function unzipDocumentXml(buf) {
       if (who === 'member') {
         // Saying only "sign in" to someone already signed in reads as a broken link.
         ok('/gate names the profile that is blocking the desk',
-          /Ngozi Parent/.test(gdTxt) && /can't open a registration desk/.test(gdTxt));
+          /Ngozi Parent/.test(gdTxt) && /can't open a check-in desk/.test(gdTxt));
         ok('…and warns that the desk password signs that profile out of the device',
-          /will sign Ngozi Parent out of this device/.test(gdTxt));
+          /signs Ngozi Parent out of this device/.test(gdTxt));
         /* Signing out must not navigate away from the gate — auth.signOut() goes
            to home, which throws the operator off the link they were sent. */
         await gd.evaluate(() => {
@@ -6749,9 +6749,13 @@ function unzipDocumentXml(buf) {
         && (await gd.$$('input[type=password]')).length === 1);
       await gd.fill('input[type=password]', 'desk-pass-9x');
       await gd.click('button:has-text("Unlock the desk")');
-      await gd.waitForFunction(() => /Register/.test(document.body.innerText), null, { timeout: 8000 });
-      ok('/gate opens the desk on the right password (' + who + ')',
-        /THE GATE · EGBEDA DESK/.test(await gd.evaluate(() => document.body.innerText)));
+      await gd.waitForFunction(() => /Check-in desk/i.test(document.body.innerText), null, { timeout: 8000 });
+      const deskTxt = await gd.evaluate(() => document.body.innerText);
+      ok('/gate opens the desk on the right password (' + who + ')', /CHECK-IN DESK · EGBEDA DESK/i.test(deskTxt));
+      /* Check-in only: a desk link is for the door. Sign-ups have their own
+         link (/apply?g=…), so the desk offers no registration form. */
+      ok('…straight onto check-in, with no registration tab', !/\bRegister\b/.test(deskTxt)
+        && (await gd.$$('#gate-code')).length === 1);
       await gd.close();
     }
 
