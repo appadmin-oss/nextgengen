@@ -1285,7 +1285,7 @@ chk('audit event filter narrows results', (function () {
 })());
 
 // ── Summer School (QR attendance + enrollment) ──
-chk('summer_admin role caps = summer only', admin_role_caps('summer_admin') === ['summer']);
+chk('summer_admin role caps = summer and the door', admin_role_caps('summer_admin') === ['summer', 'checkin']);
 $mint = backend_dispatch('admin.summer.qr.mint', ['requesterId' => 'NGG-2025-0099', 'count' => 5]);
 chk('summer mint creates blank QR cards', count($mint['tokens']) === 5);
 $enr = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Kofi Junior', 'age' => 11, 'dob' => gmdate('Y-m-d', strtotime('-11 years -3 months')), 'centre' => 'Egbeda', 'track' => 'Music']]);
@@ -1837,8 +1837,19 @@ chk('s-status: still leaks no PII with registration added', (function () {
 })());
 
 // ── Stand-alone coordinator portals (Summer School + NGG Club are separate) ──
-chk('admin role caps = console only (no summer/club)', admin_role_caps('admin') === ['content', 'people', 'inbox']);
-chk('club_admin role caps = club only', admin_role_caps('club_admin') === ['club']);
+chk('admin role caps = both programmes and the door, never money or the system', admin_role_caps('admin') === ['content', 'people', 'inbox', 'club', 'summer', 'checkin']
+    && !array_intersect(admin_role_caps('admin'), ['fees', 'journal', 'settings', 'rbac']));
+chk('club_admin role caps = the Club, its people and the door', admin_role_caps('club_admin') === ['club', 'people', 'checkin']);
+chk('the Control Room\'s ROLE_CAPS mirrors admin_role_caps exactly', (function () {
+    $src = (string)file_get_contents(__DIR__ . '/../../page-admin.jsx');
+    if (!preg_match('/const ROLE_CAPS = \{(.*?)\n\};/s', $src, $m)) return false;
+    foreach (['super_admin', 'admin', 'editor', 'summer_admin', 'club_admin', 'audit'] as $r) {
+        if (!preg_match('/\b' . $r . ': \[([^\]]*)\]/', $m[1], $x)) return false;
+        $js = array_values(array_filter(array_map(fn($s) => trim($s, " \"'"), explode(',', $x[1]))));
+        if ($js !== admin_role_caps($r)) return false;
+    }
+    return true;
+})());
 chk('super_admin bridges both portals', in_array('summer', admin_role_caps('super_admin'), true) && in_array('club', admin_role_caps('super_admin'), true));
 
 // Seed a summer_admin + club_admin to prove the two portals are isolated.
@@ -2984,7 +2995,7 @@ chk('form: …while the same course under its own faculty passes', (function () 
     return !empty($r['ok']) && $r['data']['course'] === 'Practical Coding';
 })());
 chk('form: the cascade is enforced through the real registration route too', (function () {
-    $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Cross desk']);
+    $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'kind' => 'register', 'generate' => true, 'name' => 'Cross desk']);
     $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
         'fullName' => 'Wrong Course Kid', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -3 months')), 'faculty' => 'Music', 'course' => 'Graphics',
         'centre' => 'Main', 'parentName' => 'P', 'parentPhone' => '08030000125']]);
@@ -3136,9 +3147,9 @@ chk('logic: answered/empty store no operand', (function () {
     return false;
 })());
 
-$GATE = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Front desk']);
+$GATE = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'kind' => 'register', 'generate' => true, 'name' => 'Front desk']);
 chk('gate: created with URL, context serves live form', (function () use ($GATE) {
-    if (empty($GATE['gateId']) || strpos($GATE['url'], '/gate?g=') === false) return false;
+    if (empty($GATE['gateId']) || strpos($GATE['url'], '/enrol?g=') === false) return false;
     $ctx = backend_dispatch('gate.context', ['gate' => $GATE['gateId']]);
     return !empty($ctx['ok']) && $ctx['form']['version'] === 2 && isset($ctx['consentTypes']['participation']);
 })());
@@ -4535,7 +4546,7 @@ chk('intake: a throw releases the key and still reaches the caller', (function (
 })());
 chk('intake: gate.register is idempotent end to end through dispatch', (function () {
     // Its own gate: the shared $GATE is revoked by an earlier assertion.
-    $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Idempotency desk']);
+    $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'kind' => 'register', 'generate' => true, 'name' => 'Idempotency desk']);
     $sid = 'sub_' . rand_hex(12);
     $d = ['fullName' => 'Idem Child', 'age' => 13, 'dob' => gmdate('Y-m-d', strtotime('-13 years -3 months')), 'faculty' => 'Music', 'course' => 'Guitar',
           'centre' => 'Main', 'parentName' => 'Mrs Idem', 'parentPhone' => '08031117777'];
@@ -4722,7 +4733,7 @@ chk('cards: verified student gets CODE-YY-serial + QR token + centre colour', (f
     return $d2['cards'][0]['displayId'] === $c['displayId'];
 })());
 chk('cards: gate context serves centre options for the centre field', (function () {
-    $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Card desk']);
+    $g = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'kind' => 'register', 'generate' => true, 'name' => 'Card desk']);
     $ctx = backend_dispatch('gate.context', ['gate' => $g['gateId']]);
     foreach ($ctx['form']['fields'] as $f) if ($f['key'] === 'centre') return ($f['options'] ?? []) === ['Ijaiye'];
     return true; // no centre field in the form — acceptable
@@ -4748,8 +4759,11 @@ chk('cards: gate context serves centre options for the centre field', (function 
 */
 $SUMONLY = 'NGG-2025-0700';   // summer_admin — caps: ['summer']
 db_insert('members', ['memberId' => 'NGG-2025-0730', 'fullName' => 'Pam People', 'email' => 'people-only@example.com',
-    'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
-$PEOPLEONLY = 'NGG-2025-0730'; // admin — caps: content, people, inbox (no summer)
+    'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'capsExtra' => '["people","inbox"]', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+/* An editor granted people + inbox: content, people, inbox and nothing else —
+   what the admin role was before it gained club and summer. These checks are
+   about a people-only desk, so they keep one. */
+$PEOPLEONLY = 'NGG-2025-0730';
 
 chk('centres: the Summer School desk can READ the directory', (function () use ($SUMONLY) {
     $l = backend_dispatch('admin.centres.list', ['requesterId' => $SUMONLY]);
@@ -5816,7 +5830,7 @@ chk('centre: without consent the lead shows an anonymous handle, no name', (func
 })());
 
 setting_set('geofence_enabled', '1', 'system');
-$geoGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Geo desk']);
+$geoGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'kind' => 'register', 'generate' => true, 'name' => 'Geo desk']);
 chk('geo: registration is blocked with no location when the fence is on',
     backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid One', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000001']])['error'] === 'geo_unavailable');
 $gi = backend_dispatch('gate.register', ['gate' => $geoGate['gateId'], 'data' => ['fullName' => 'Geo Kid Two', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')), 'faculty' => 'AI & Technology', 'course' => 'Practical Coding', 'parentName' => 'P', 'parentPhone' => '08030000002'], 'lat' => 6.6000, 'lng' => 3.3000]);
@@ -5860,7 +5874,7 @@ backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'dat
 chk('geo: a partial update keeps the point but flips the fence off', (function () use ($cA) { $c = db_row("SELECT lat,lng,geofence FROM centres WHERE centreId=?", [$cA['centreId']]); return $c && abs((float)$c['lat'] - 6.6) < 0.0001 && (int)$c['geofence'] === 0; })());
 
 // ── Issuance gate on photo approval + guardian re-shoot ──
-$issGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Issue desk']);
+$issGate = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'kind' => 'register', 'generate' => true, 'name' => 'Issue desk']);
 setting_set('photo_gate_issuance', '1', 'system');
 // A flagged photo → pending_review, so the ID is held until an editor approves.
 $GLOBALS['__ai_photo_mock'] = fn($u) => ['ok' => true, 'provider' => 'gemini', 'data' => ['score' => 40, 'issues' => ['dark'], 'flags' => ['too_dark'], 'recommend' => ['crop' => true, 'brighten' => true]]];
@@ -9961,7 +9975,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
  * authoritative composed value — search, the duplicate guard and every
  * existing row are built on it — so the two must never drift apart. */
 (function () {
-    $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
+    $g = db_row("SELECT * FROM gate_links WHERE status='active' AND kind='register' ORDER BY id LIMIT 1");
     if (!$g) { chk('name split: no gate fixture available', false); return; }
 
     $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
@@ -10034,7 +10048,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
  * costs them their place. An untouched checkbox also used to be recorded as a
  * refusal the parent never actually made, which is its own problem. */
 (function () use ($SU) {
-    $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
+    $g = db_row("SELECT * FROM gate_links WHERE status='active' AND kind='register' ORDER BY id LIMIT 1");
     $reg = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
         'firstName' => 'Sign', 'lastName' => 'Ature', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')),
         'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Egbeda',
@@ -10109,7 +10123,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
         'name' => 'Grouped Centre', 'code' => 'GRP', 'color' => '#123456',
         'whatsappUrl' => 'https://chat.whatsapp.com/ABCDEF',
     ]]);
-    $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
+    $g = db_row("SELECT * FROM gate_links WHERE status='active' AND kind='register' ORDER BY id LIMIT 1");
     $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
         'firstName' => 'Group', 'lastName' => 'Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')),
         'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Grouped Centre',
@@ -10173,7 +10187,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
         in_array('centre', array_column(form_live('summer-reg')['fields'], 'key'), true));
 
     // The point of all of it: a registration lands at a real centre.
-    $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
+    $g = db_row("SELECT * FROM gate_links WHERE status='active' AND kind='register' ORDER BY id LIMIT 1");
     $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
         'firstName' => 'Centred', 'lastName' => 'Kid', 'age' => 12, 'dob' => gmdate('Y-m-d', strtotime('-12 years -3 months')),
         'faculty' => 'Music', 'course' => 'Piano', 'centre' => 'Egbeda',
@@ -10296,7 +10310,7 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
         idcard_expired(gmdate('Y-m-d')) === false);
 
     // The gate is where it counts.
-    $g = db_row("SELECT * FROM gate_links WHERE status='active' ORDER BY id LIMIT 1");
+    $g = db_row("SELECT * FROM gate_links WHERE status='active' AND kind='register' ORDER BY id LIMIT 1");
     db_insert('summer_students', ['studentId' => 'EXP-1', 'cohortId' => 'RC1', 'fullName' => 'Expired Kid',
         'firstName' => 'Expired', 'lastName' => 'Kid', 'handle' => 'expkid', 'centre' => 'Egbeda', 'track' => 'Tech',
         'status' => 'active', 'regStatus' => 'verified', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
@@ -11687,7 +11701,7 @@ db_exec("DELETE FROM mentors WHERE mentorId LIKE 'IDT-%' OR mentorId LIKE 'FULL-
 (function () {
     $SELF = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Public link', 'kind' => 'self']);
     $REV  = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Review desk', 'kind' => 'review', 'password' => 'review-pass-1']);
-    $DESK = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Front table', 'password' => 'desk-pass-1']);
+    $DESK = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'kind' => 'register', 'name' => 'Front table', 'password' => 'desk-pass-1']);
 
     chk('a public link is created without a password and cannot be given one',
         !empty($SELF['ok']) && $SELF['kind'] === 'self' && $SELF['hasPassword'] === false
@@ -13518,7 +13532,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     chk('sex: a child registered through the real route arrives with it stored', (function () use ($ADM) {
         $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' ORDER BY id LIMIT 1")['name'] ?? 'Main');
-        $g = backend_dispatch('admin.gates.create', ['requesterId' => $ADM, 'name' => 'Sex desk']);
+        $g = backend_dispatch('admin.gates.create', ['requesterId' => $ADM, 'kind' => 'register', 'generate' => true, 'name' => 'Sex desk']);
         $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
             'fullName' => 'Sex Test Child', 'firstName' => 'Sex', 'lastName' => 'Child',
             'dob' => gmdate('Y-m-d', strtotime('-12 years -2 months')),
@@ -13536,7 +13550,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
            the normaliser exists for the paths that have no dropdown: the desk
            enrolment, the roster edit and the CSV import. */
         $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' ORDER BY id LIMIT 1")['name'] ?? 'Main');
-        $g = backend_dispatch('admin.gates.create', ['requesterId' => $ADM, 'name' => 'Sex desk 2']);
+        $g = backend_dispatch('admin.gates.create', ['requesterId' => $ADM, 'kind' => 'register', 'generate' => true, 'name' => 'Sex desk 2']);
         $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
             'fullName' => 'Bad Sex Child', 'firstName' => 'Bad', 'lastName' => 'Child',
             'dob' => gmdate('Y-m-d', strtotime('-12 years -2 months')), 'sex' => 'boy',
@@ -13609,7 +13623,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     chk('grade: a child registered with a class carries the number AND the day it was true', (function () use ($ADM) {
         $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' ORDER BY id LIMIT 1")['name'] ?? 'Main');
-        $g = backend_dispatch('admin.gates.create', ['requesterId' => $ADM, 'name' => 'Grade desk']);
+        $g = backend_dispatch('admin.gates.create', ['requesterId' => $ADM, 'kind' => 'register', 'generate' => true, 'name' => 'Grade desk']);
         $r = backend_dispatch('gate.register', ['gate' => $g['gateId'], 'data' => [
             'fullName' => 'Grade Test Child', 'firstName' => 'Grade', 'lastName' => 'Child',
             'dob' => gmdate('Y-m-d', strtotime('-13 years -2 months')), 'sex' => 'Male', 'grade' => 'JSS 2',
@@ -22556,6 +22570,111 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM qr_codes WHERE token LIKE 'SUMQR-SEAS%'");
     db_exec("DELETE FROM summer_students WHERE studentId LIKE 'SS-SEAS-%'");
     db_exec("DELETE FROM summer_cohorts WHERE cohortId IN ('SUM-SEAS-OLD','SUM-SEAS-NEW') OR name = 'Seas Plan'");
+})();
+
+/* ── Broadened roles: the door, and a club admin's approvals ───────────── */
+(function () {
+    $now = now_iso();
+    foreach ([['NGG-APR-CLUB', 'club_admin'], ['NGG-APR-ADM', 'admin'], ['NGG-APR-SUM', 'summer_admin'], ['NGG-APR-ED', 'editor']] as [$id, $role]) {
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Staff ' . $role, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now]);
+    }
+    db_insert('members', ['memberId' => 'NGG-APR-T1', 'fullName' => 'Target One', 'email' => 't1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-APR-T2', 'fullName' => 'Target Two', 'email' => 't2@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+
+    // The door: a check-in desk is `checkin`, the sign-up kinds are `summer`.
+    $d = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-APR-CLUB', 'name' => 'Club door', 'generate' => true]);
+    chk('door: a club admin can open a check-in desk', !empty($d['ok']) && $d['kind'] === 'desk' && strpos($d['url'], '/gate?g=') !== false);
+    chk('door: …but not a Summer School sign-up link', (backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-APR-CLUB', 'name' => 'x', 'kind' => 'self'])['error'] ?? '') === 'forbidden');
+    chk('door: a Summer coordinator still opens desks for their days', !empty(backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-APR-SUM', 'name' => 'Summer door', 'generate' => true])['ok']));
+    $rg = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-APR-SUM', 'name' => 'Summer reg', 'kind' => 'register', 'generate' => true]);
+    chk('door: the registration desk is a Summer link at /enrol', !empty($rg['ok']) && strpos($rg['url'], '/enrol?g=') !== false);
+    chk('door: …and needs a password', (backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-APR-SUM', 'name' => 'x', 'kind' => 'register'])['error'] ?? '') === 'password_required');
+    $lc = backend_dispatch('admin.gates.list', ['requesterId' => 'NGG-APR-CLUB']);
+    chk('door: a club admin lists only the door\'s links', !empty($lc['ok']) && $lc['gates'] && !array_filter($lc['gates'], fn($g) => $g['kind'] !== 'desk'));
+    chk('door: a club admin cannot revoke a Summer link', (backend_dispatch('admin.gates.revoke', ['requesterId' => 'NGG-APR-CLUB', 'gateId' => $rg['gateId']])['error'] ?? '') === 'forbidden');
+    chk('door: a check-in desk takes no registrations', (backend_dispatch('gate.register', ['gate' => $d['gateId'], 'data' => ['fullName' => 'Nope']])['error'] ?? '') === 'gate_invalid');
+    chk('door: …and a registration desk takes no check-ins', gate_is_desk($d['gateId']) && !gate_is_desk($rg['gateId']));
+    chk('door: the duty rota is the door\'s', !empty(backend_dispatch('admin.attendance.duty', ['requesterId' => 'NGG-APR-CLUB'])['ok'])
+        && (backend_dispatch('admin.attendance.duty', ['requesterId' => 'NGG-APR-ED'])['error'] ?? '') === 'forbidden');
+
+    // Approvals.
+    chk('approvals: erasing a member stays a super-admin act — refused, not queued',
+        (backend_dispatch('admin.members.delete', ['requesterId' => 'NGG-APR-CLUB', 'memberId' => 'NGG-APR-T1'])['error'] ?? '') === 'forbidden');
+    $q = backend_dispatch('admin.club.members.bulk', ['requesterId' => 'NGG-APR-CLUB', 'action' => 'status', 'status' => 'inactive', 'memberIds' => ['NGG-APR-T1']]);
+    chk('approvals: a club admin deactivating members is queued, not run', ($q['error'] ?? '') === 'approval_pending' && !empty($q['approvalId'])
+        && db_row("SELECT status FROM members WHERE memberId = 'NGG-APR-T1'")['status'] === 'active');
+    chk('approvals: …and says what it would do', strpos((string)$q['summary'], 'inactive') !== false);
+    chk('approvals: …but a batch of only staff accounts is refused by the op, not queued',
+        (backend_dispatch('admin.club.members.bulk', ['requesterId' => 'NGG-APR-CLUB', 'action' => 'status', 'status' => 'inactive', 'memberIds' => ['NGG-APR-ADM']])['error'] ?? '') !== 'approval_pending');
+    chk('approvals: an ordinary edit by a club admin runs straight away',
+        !empty(backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-APR-CLUB', 'data' => ['memberId' => 'NGG-APR-T2', 'track' => 'Music']])['ok'])
+        && db_row("SELECT track FROM members WHERE memberId = 'NGG-APR-T2'")['track'] === 'Music');
+    $s2 = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-APR-CLUB', 'data' => ['memberId' => 'NGG-APR-T2', 'status' => 'suspended']]);
+    chk('approvals: suspending somebody is queued', ($s2['error'] ?? '') === 'approval_pending' && db_row("SELECT status FROM members WHERE memberId = 'NGG-APR-T2'")['status'] === 'active');
+    chk('approvals: a merge preview runs (it changes nothing)', (backend_dispatch('admin.members.merge', ['requesterId' => 'NGG-APR-CLUB', 'keepId' => 'NGG-APR-T1', 'mergeId' => 'NGG-APR-T2'])['error'] ?? '') !== 'approval_pending');
+    chk('approvals: the same suspension by an admin runs straight away', (function () {
+        $now = now_iso();
+        db_insert('members', ['memberId' => 'NGG-APR-T3', 'fullName' => 'Target Three', 'email' => 't3@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+        $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-APR-ADM', 'data' => ['memberId' => 'NGG-APR-T3', 'status' => 'suspended']]);
+        return !empty($r['ok']) && db_row("SELECT status FROM members WHERE memberId = 'NGG-APR-T3'")['status'] === 'suspended';
+    })());
+    $mine = backend_dispatch('admin.approvals.list', ['requesterId' => 'NGG-APR-CLUB']);
+    chk('approvals: the club admin sees their own requests, and cannot decide', !empty($mine['ok']) && $mine['pending'] === 2 && $mine['canDecide'] === false);
+    chk('approvals: …and cannot approve their own', (backend_dispatch('admin.approvals.decide', ['requesterId' => 'NGG-APR-CLUB', 'approvalId' => $q['approvalId'], 'decision' => 'approve'])['detail'] ?? '') === 'approver_required');
+    chk('approvals: a staffer without people cannot decide', (backend_dispatch('admin.approvals.decide', ['requesterId' => 'NGG-APR-SUM', 'approvalId' => $q['approvalId'], 'decision' => 'approve'])['error'] ?? '') === 'forbidden');
+    $rj = backend_dispatch('admin.approvals.decide', ['requesterId' => 'NGG-APR-ADM', 'approvalId' => $s2['approvalId'], 'decision' => 'reject', 'reason' => 'Talk to them first']);
+    chk('approvals: a rejection runs nothing', !empty($rj['ok']) && db_row("SELECT status FROM members WHERE memberId = 'NGG-APR-T2'")['status'] === 'active');
+    $ok = backend_dispatch('admin.approvals.decide', ['requesterId' => 'NGG-APR-ADM', 'approvalId' => $q['approvalId'], 'decision' => 'approve']);
+    chk('approvals: an approval runs it, as the requester', !empty($ok['ok']) && $ok['status'] === 'approved'
+        && db_row("SELECT status FROM members WHERE memberId = 'NGG-APR-T1'")['status'] === 'inactive');
+    chk('approvals: …once — a second approval is refused', (backend_dispatch('admin.approvals.decide', ['requesterId' => 'NGG-APR-ADM', 'approvalId' => $q['approvalId'], 'decision' => 'approve'])['error'] ?? '') === 'already_decided');
+    chk('approvals: both decisions are in the audit trail', (int)(db_row("SELECT COUNT(*) c FROM audit_log WHERE event IN ('approval.approved','approval.rejected') AND actorId = 'NGG-APR-ADM'")['c'] ?? 0) === 2);
+    chk('approvals: the queue is empty for the club admin now', backend_dispatch('admin.approvals.list', ['requesterId' => 'NGG-APR-CLUB'])['pending'] === 0);
+    db_exec("DELETE FROM admin_approvals WHERE requesterId LIKE 'NGG-APR-%'");
+    db_exec("DELETE FROM gate_links WHERE createdBy LIKE 'NGG-APR-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-APR-%'");
+})();
+
+/* ── Volunteers serve the Club all year, Summer School, or both ─────────── */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-VPR-ADM', 'fullName' => 'Vol Admin', 'email' => 'vpr-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_exec("DELETE FROM centres WHERE centreId = 'CEN-VPR'");
+    db_insert('centres', ['centreId' => 'CEN-VPR', 'name' => 'Progville', 'code' => 'PGV', 'color' => '#224466', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    $keep = setting_raw('intake_photo_required');
+    setting_set('intake_photo_required', '0', 'test');
+    $apply = fn($email, $phone, $prog) => backend_dispatch('public.apply', ['kind' => 'volunteer', 'sex' => 'Female', 'role' => 'admin',
+        'firstName' => 'Prog', 'lastName' => 'Vol', 'email' => $email, 'phone' => $phone, 'dob' => '1990-01-01', 'centre' => 'Progville', 'why' => 'x']
+        + ($prog === null ? [] : ['programme' => $prog]));
+    chk('volunteers: an unknown programme is refused', ($apply('vpr0@example.com', '08061110000', 'weekends')['error'] ?? '') === 'bad_programme');
+    chk('volunteers: the NGG Club, year-round, is a programme', !empty($apply('vpr1@example.com', '08061110001', 'ngg')['ok'])
+        && db_row("SELECT programme FROM applications WHERE email = 'vpr1@example.com'")['programme'] === 'ngg');
+    chk('volunteers: a client that sends no programme gets Summer, as it always did', !empty($apply('vpr2@example.com', '08061110002', null)['ok'])
+        && db_row("SELECT programme FROM applications WHERE email = 'vpr2@example.com'")['programme'] === 'summer');
+    $l = backend_dispatch('admin.volunteers.list', ['requesterId' => 'NGG-VPR-ADM', 'programme' => 'ngg']);
+    $mine = array_values(array_filter($l['pending'], fn($a) => strpos((string)$a['email'], 'vpr') === 0));
+    chk('volunteers: the queue filters by programme on the server', count($mine) === 1 && $mine[0]['programme'] === 'ngg');
+    chk('volunteers: …and an unknown filter falls back to everything', !empty(backend_dispatch('admin.volunteers.list', ['requesterId' => 'NGG-VPR-ADM', 'programme' => 'bogus'])['ok']));
+    $id1 = (int)db_row("SELECT id FROM applications WHERE email = 'vpr1@example.com'")['id'];
+    $id2 = (int)db_row("SELECT id FROM applications WHERE email = 'vpr2@example.com'")['id'];
+    $c = summer_ensure_cohort();
+    $r1 = backend_dispatch('admin.volunteers.approve', ['requesterId' => 'NGG-VPR-ADM', 'id' => $id1]);
+    $r2 = backend_dispatch('admin.volunteers.approve', ['requesterId' => 'NGG-VPR-ADM', 'id' => $id2]);
+    $v1 = db_row('SELECT * FROM volunteers WHERE volunteerId = ?', [$r1['volunteer']['volunteerId'] ?? '']);
+    $v2 = db_row('SELECT * FROM volunteers WHERE volunteerId = ?', [$r2['volunteer']['volunteerId'] ?? '']);
+    $exp = fn($v) => (string)(db_row('SELECT expiresAt FROM qr_codes WHERE token = ?', [(string)$v['token']])['expiresAt'] ?? 'missing');
+    chk('volunteers: a Club volunteer is approved as one', $v1 && $v1['programme'] === 'ngg');
+    chk('volunteers: …and their card runs on the year-round clock, not the season', $v1 && $exp($v1) === idcard_expiry_for());
+    chk('volunteers: a Summer volunteer\'s card still ends with the season', $v2 && $exp($v2) === summer_edition_card_expiry((string)$c['cohortId']));
+    chk('volunteers: moving someone onto the Club moves their card\'s clock, not their card',
+        !empty(backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-VPR-ADM', 'volunteerId' => $v2['volunteerId'], 'data' => ['programme' => 'both']])['ok'])
+        && $exp($v2) === idcard_expiry_for() && db_row('SELECT token FROM volunteers WHERE volunteerId = ?', [$v2['volunteerId']])['token'] === $v2['token']);
+    chk('volunteers: the editor refuses an unknown programme', (backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-VPR-ADM', 'volunteerId' => $v2['volunteerId'], 'data' => ['programme' => 'x']])['error'] ?? '') === 'bad_programme');
+    setting_set('intake_photo_required', $keep === null ? '1' : (string)$keep, 'test');
+    foreach ([$v1, $v2] as $v) if ($v) { db_exec('DELETE FROM qr_codes WHERE token = ?', [(string)$v['token']]); db_exec('DELETE FROM volunteers WHERE volunteerId = ?', [$v['volunteerId']]); }
+    db_exec("DELETE FROM applications WHERE email LIKE 'vpr%@example.com'");
+    db_exec("DELETE FROM centres WHERE centreId = 'CEN-VPR'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-VPR-ADM'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

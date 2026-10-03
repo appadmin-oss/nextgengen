@@ -172,6 +172,7 @@ function volunteer_public(array $v, bool $withAttendance = false): array {
         'studentId' => $v['volunteerId'],   // lets the scanner/profile UIs reuse one shape
         'fullName' => $v['fullName'],
         'role' => $v['role'],
+        'programme' => volunteer_programme($v),
         'courses' => json_decode((string)($v['courses'] ?? ''), true) ?: [],
         'photoUrl' => (string)($v['photoUrl'] ?? ''),
         'status' => $v['status'],
@@ -360,10 +361,11 @@ function volunteer_check_point_awards(array $v, int $before, int $after): array 
  *  return a value-driven response the kiosk shows the volunteer. */
 function attendance_duty_complete(array $p): array {
     // Dual auth (mirrors summer_checkin): the gate/kiosk route authorizes by the
-    // gate token (gateAuthorized); every other caller needs the 'summer' cap.
+    // gate token (gateAuthorized); every other caller needs the 'checkin' cap —
+    // the door's rota belongs to whoever runs the door, not to Summer School.
     // Admin routes strip gateAuthorized, so it can only arrive from the gate route.
     if (empty($p['gateAuthorized'])) {
-        $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+        $g = admin_cap_gate($p, 'checkin'); if (!$g['ok']) return $g;
     }
     $date = substr(trim((string)($p['date'] ?? gmdate('Y-m-d'))), 0, 12);
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) return ['ok' => false, 'error' => 'bad_date'];
@@ -408,7 +410,7 @@ function attendance_duty_complete(array $p): array {
 /** Attendance-duty leaderboard: volunteers ranked by service points, with
  *  level + streak. Staff view (summer cap) for recognition. */
 function attendance_duty_leaderboard(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'checkin'); if (!$g['ok']) return $g;
     $limit = max(3, min(50, (int)($p['limit'] ?? 15)));
     $rows = db_all("SELECT v.volunteerId, v.fullName, v.role, COALESCE(SUM(vp.points),0) points
                     FROM volunteers v LEFT JOIN volunteer_points vp ON vp.volunteerId = v.volunteerId
@@ -437,7 +439,7 @@ function attendance_duty_board(array $p): array {
 
 /** Admin override: pin a specific volunteer to a centre's duty for a date. */
 function admin_attendance_duty_set(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'checkin'); if (!$g['ok']) return $g;
     $date = substr(trim((string)($p['date'] ?? gmdate('Y-m-d'))), 0, 12);
     $centre = trim((string)($p['centre'] ?? ''));
     $volunteerId = trim((string)($p['volunteerId'] ?? ''));
@@ -455,7 +457,7 @@ function admin_attendance_duty_set(array $p): array {
 
 /** Admin: the duty board + the eligible volunteer pool (for the override picker). */
 function admin_attendance_duty(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'checkin'); if (!$g['ok']) return $g;
     $board = attendance_duty_board($p);
     $board['volunteers'] = array_map(fn($v) => ['volunteerId' => $v['volunteerId'], 'fullName' => $v['fullName'], 'role' => $v['role']], attendance_duty_pool());
     return $board;
@@ -607,15 +609,25 @@ function public_instructor_roster(array $p): array {
 
 function admin_volunteers_list(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
-    $pending = db_all("SELECT id, name, firstName, lastName, otherName, dob, sex, email, phone, role, courses, centre, faculty, visibilityConsent, why, photoUrl, status, createdAt FROM applications WHERE kind = 'volunteer' AND status IN ('new', 'reviewing') ORDER BY id DESC LIMIT 200");
+    /* Filtered here, above the cap, never on the drawn page. `ngg` includes
+       `both` — somebody who serves both is on the Club's roster too. */
+    $prog = (string)($p['programme'] ?? '');
+    $pw = ''; $pargs = [];
+    if (in_array($prog, VOL_PROGRAMMES, true)) {
+        $pw = $prog === 'both' ? " AND COALESCE(programme,'summer') = 'both'" : " AND COALESCE(NULLIF(programme,''),'summer') IN (?, 'both')";
+        if ($prog !== 'both') $pargs = [$prog];
+    }
+    $pending = db_all("SELECT id, name, firstName, lastName, otherName, dob, sex, email, phone, role, courses, centre, faculty, programme, visibilityConsent, why, photoUrl, status, createdAt FROM applications WHERE kind = 'volunteer' AND status IN ('new', 'reviewing')" . $pw . " ORDER BY id DESC LIMIT 200", $pargs);
     foreach ($pending as &$a) {
         $a['courses'] = json_decode((string)($a['courses'] ?? ''), true) ?: [];
         $a['ref'] = function_exists('intake_reference') ? intake_reference('volunteer', (int)$a['id']) : '';
         $a['dobAge'] = !empty($a['dob']) && function_exists('dob_age') ? dob_age((string)$a['dob']) : null;
+        $a['programme'] = volunteer_programme($a);
     }
     unset($a);
-    $roster = db_all('SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, visibilityConsent, token, status, safeguarding, capsExtra, dob, createdAt FROM volunteers ORDER BY id DESC LIMIT 500');
+    $roster = db_all("SELECT volunteerId, fullName, firstName, lastName, email, phone, role, courses, centre, faculty, programme, visibilityConsent, token, status, safeguarding, capsExtra, dob, createdAt FROM volunteers WHERE 1=1" . $pw . ' ORDER BY id DESC LIMIT 500', $pargs);
     foreach ($roster as &$v) {
+        $v['programme'] = volunteer_programme($v);
         $v['courses'] = json_decode((string)($v['courses'] ?? ''), true) ?: [];
         // Portal access granted to this person. Always an array so the console
         // can render "no access" without distinguishing null from '' from '[]'.
@@ -623,7 +635,7 @@ function admin_volunteers_list(array $p): array {
         unset($v['capsExtra']);
     }
     unset($v);
-    return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster];
+    return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster, 'programmes' => VOL_PROGRAMMES];
 }
 
 /** Edit an active volunteer's data — name, contact, role, centre, faculty,
@@ -661,6 +673,10 @@ function admin_volunteer_update(array $p): array {
         $row['courses'] = json_encode(array_slice($courses, 0, 20));
     }
     if (array_key_exists('visibilityConsent', $d)) $row['visibilityConsent'] = !empty($d['visibilityConsent']) ? 1 : 0;
+    if (array_key_exists('programme', $d)) {
+        if (!in_array((string)$d['programme'], VOL_PROGRAMMES, true)) return ['ok' => false, 'error' => 'bad_programme'];
+        $row['programme'] = (string)$d['programme'];
+    }
     if (array_key_exists('dob', $d)) {
         $dob = dob_clean((string)$d['dob']);
         if ($dob === null) return ['ok' => false, 'error' => 'bad_dob'];
@@ -671,6 +687,13 @@ function admin_volunteer_update(array $p): array {
         $row['status'] = (string)$d['status'];
     }
     db_update('volunteers', $row, ['volunteerId' => $volunteerId]);
+    /* Moving someone onto (or off) the Club moves their card's clock with
+       them. The card itself is not reissued — the token in their hand is the
+       same; only when it stops opening the door changes. */
+    if (isset($row['programme']) && $row['programme'] !== volunteer_programme($v) && !empty($v['token'])) {
+        $qr = db_row('SELECT cohortId FROM qr_codes WHERE token = ? LIMIT 1', [(string)$v['token']]);
+        if ($qr) db_update('qr_codes', ['expiresAt' => volunteer_card_expiry($row['programme'], (string)$qr['cohortId'])], ['token' => (string)$v['token']]);
+    }
     audit('volunteer.update', $g['requester']['memberId'], $volunteerId, ['fields' => array_keys($row)], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'volunteerId' => $volunteerId];
 }
@@ -723,11 +746,11 @@ function admin_volunteer_approve(array $p): array {
         'sex' => (string)($a['sex'] ?? ''),
         'role' => (string)$a['role'], 'courses' => (string)($a['courses'] ?? ''),
         'centre' => (string)($a['centre'] ?? ''), 'faculty' => (string)($a['faculty'] ?? ''),
-        'visibilityConsent' => (int)($a['visibilityConsent'] ?? 0),
+        'visibilityConsent' => (int)($a['visibilityConsent'] ?? 0), 'programme' => volunteer_programme($a),
         'token' => $token, 'photoUrl' => (string)($a['photoUrl'] ?? ''),
         'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
-    db_insert('qr_codes', ['token' => $token, 'batch' => 'VOL', 'cohortId' => $c['cohortId'], 'status' => 'assigned', 'studentId' => $volunteerId, 'assignedName' => (string)$a['name'], 'createdAt' => now_iso(), 'assignedAt' => now_iso(), 'expiresAt' => summer_edition_card_expiry((string)$c['cohortId'])]);
+    db_insert('qr_codes', ['token' => $token, 'batch' => 'VOL', 'cohortId' => $c['cohortId'], 'status' => 'assigned', 'studentId' => $volunteerId, 'assignedName' => (string)$a['name'], 'createdAt' => now_iso(), 'assignedAt' => now_iso(), 'expiresAt' => volunteer_card_expiry(volunteer_programme($a), (string)$c['cohortId'])]);
     db_update('applications', ['status' => 'accepted'], ['id' => $id]);
 
     $sent = volunteer_send_id($volunteerId);
@@ -811,7 +834,7 @@ function admin_member_promote_ngv(array $p): array {
     db_insert('volunteers', [
         'volunteerId' => $volunteerId, 'memberId' => $memberId, 'applicationId' => null,
         'fullName' => (string)$m['fullName'], 'email' => (string)($m['email'] ?? ''), 'phone' => (string)($m['phone'] ?? ''),
-        'role' => $role, 'courses' => '', 'centre' => (string)($m['centre'] ?? ''), 'faculty' => '',
+        'role' => $role, 'courses' => '', 'centre' => (string)($m['centre'] ?? ''), 'faculty' => '', 'programme' => 'ngg',
         'token' => $token, 'photoUrl' => (string)($m['photoUrl'] ?? ''),
         'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
@@ -945,6 +968,28 @@ function admin_volunteer_decline(array $p): array {
    value at apply time); we map centre NAME ↔ centreId through the catalogue. */
 
 const VOL_ROLES = ['admin', 'mentor', 'instructor'];
+
+/* Which programme a volunteer serves — the mentors' vocabulary (mentors.programme,
+ * mentor_programmes()): `summer` is the season, `ngg` the Club all year, `both`
+ * the two. Volunteering used to be a Summer School thing only, so every row
+ * from before the column reads `summer` and keeps exactly what it had. */
+const VOL_PROGRAMMES = ['summer', 'ngg', 'both'];
+
+function volunteer_programme(?array $v): string {
+    $p = strtolower(trim((string)($v['programme'] ?? '')));
+    return in_array($p, VOL_PROGRAMMES, true) ? $p : 'summer';
+}
+
+function volunteer_programme_label(string $p): string {
+    return ['summer' => 'Summer School', 'ngg' => 'NGG Club, year-round', 'both' => 'NGG Club and Summer School'][$p] ?? 'Summer School';
+}
+
+/** When a volunteer's card stops opening the door: a Summer-only volunteer's
+ *  with the season, as before; anyone who serves the Club is year-round, so on
+ *  the programme's own validity clock (blank = does not expire). */
+function volunteer_card_expiry(string $programme, string $cohortId): string {
+    return $programme === 'summer' ? summer_edition_card_expiry($cohortId) : idcard_expiry_for();
+}
 
 /** Live filled counts from the active roster, keyed for O(1) lookup. */
 function volunteer_filled_index(): array {

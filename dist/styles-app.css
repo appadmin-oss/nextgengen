@@ -7356,3 +7356,90 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
 .imp-last { margin-bottom: 0; }
 .mem-dupes-sub { margin: 18px 0 8px; }
 .mem-dupes-sub:first-child { margin-top: 0; }
+
+/* ── Approvals (AdminApprovals) ─────────────────────────────────────────── */
+.appr-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 16px; }
+.appr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.appr-item { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px 16px;
+  padding: 14px 16px; background: var(--cream-50); border: 1px solid var(--line-cool-soft); border-radius: var(--r-md); }
+.appr-item.is-pending { border-left: 3px solid var(--ink-900); }
+.appr-item.is-failed { border-left: 3px solid var(--coral); }
+.appr-main { min-width: min(100%, 260px); flex: 1 1 260px; }
+.appr-summary { font-weight: 600; line-height: 1.4; margin: 0; color: var(--ink-900); }
+.appr-meta { font-size: 12px; color: var(--ink-500); margin-top: 4px; overflow-wrap: anywhere; }
+.appr-reason { font-size: 13px; margin-top: 8px; color: var(--ink-700); }
+.appr-reason.is-error { color: var(--ink-900); font-weight: 600; }
+.appr-side { flex: none; }
+
+
+/* ============================================================
+   7y-2. VOLUNTEER REGISTRATION — the form (VolunteerRegisterPage)
+   A progress rail beside numbered cards; one gold accent on the
+   live choice and the submit. Layout lives here, not inline.
+   ============================================================ */
+.volf-hero { padding-top: 72px; }
+.volf-wrap { max-width: 1040px; container-type: inline-size; }
+.volf-eyebrow { color: var(--gold-500); }
+.volf-title { font-size: clamp(40px, 6vw, 80px); margin: 10px 0 14px; line-height: 0.95; }
+.volf-lede { font-size: 17px; color: var(--ink-500); line-height: 1.6; max-width: 600px; margin: 0; }
+.volf-facts { list-style: none; display: flex; flex-wrap: wrap; gap: 10px; padding: 0; margin: 22px 0 0; }
+.volf-facts li { display: flex; align-items: baseline; gap: 8px; padding: 9px 14px; border-radius: 999px;
+  background: var(--cream-50); border: 1px solid var(--line-cool-soft); font-size: 13px; color: var(--ink-700); }
+.volf-facts b { font-family: var(--font-display); color: var(--ink-900); }
+.volf-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 32px; margin-top: 40px; align-items: start; }
+.volf-rail { list-style: none; margin: 0; padding: 0; position: sticky; top: 96px; display: grid; gap: 4px; }
+.volf-rail-step { display: flex; align-items: center; gap: 12px; padding: 8px 0; color: var(--ink-500); font-size: 14px; }
+.volf-rail-dot { width: 30px; height: 30px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--font-mono); font-size: 11px; border: 1.5px solid var(--line-cool); background: white; color: var(--ink-700); }
+.volf-rail-step.is-done { color: var(--ink-900); font-weight: 600; }
+.volf-rail-step.is-done .volf-rail-dot { background: var(--navy-900); border-color: var(--navy-900); color: var(--gold-400); }
+.volf-form { display: grid; gap: 18px; min-width: 0; }
+.volf-card { background: white; border: 1px solid rgba(12, 20, 50, 0.08); border-radius: var(--r-lg);
+  padding: 26px 26px 28px; box-shadow: var(--shadow-sm); }
+.volf-paused { margin-top: 40px; }
+.volf-step-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
+.volf-step-n { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.14em; color: var(--ink-700);
+  background: var(--cream-100); border-radius: 8px; padding: 6px 8px; flex: none; }
+.volf-step-title { font-family: var(--font-display); font-weight: 800; font-size: clamp(20px, 2.4vw, 26px); line-height: 1.15; margin: 0; color: var(--ink-900); }
+.volf-step-hint { font-size: 14px; color: var(--ink-500); line-height: 1.5; margin: 4px 0 0; }
+.volf-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.volf-option { display: flex; flex-direction: column; gap: 8px; text-align: left; font-family: inherit; cursor: pointer;
+  padding: 18px; background: white; border: 1px solid rgba(12, 20, 50, 0.12); border-radius: 16px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease; }
+.volf-option:hover { transform: translateY(-2px); border-color: rgba(12, 20, 50, 0.24); }
+.volf-option:focus-visible, .vol-lane:focus-visible, .vol-chip:focus-visible { outline: 3px solid var(--navy-500); outline-offset: 2px; }
+.volf-option.is-active { border-color: var(--gold-500); box-shadow: 0 0 0 3px rgba(245, 176, 38, 0.25); }
+.volf-option-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.volf-option-name { font-family: var(--font-display); font-weight: 800; font-size: 18px; color: var(--ink-900); }
+.volf-option.is-active .volf-option-name::after { content: " ✓"; color: var(--ink-900); }
+.volf-option-tag { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-700); background: var(--cream-100); padding: 3px 8px; border-radius: 999px; }
+.volf-option-line { font-size: 13px; color: var(--ink-500); line-height: 1.45; }
+.volf-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.volf-span { grid-column: 1 / -1; }
+.volf-hint { font-size: 12px; color: var(--ink-500); }
+.volf-courses { margin-top: 20px; }
+.volf-sub { font-size: 13px; font-weight: 600; color: var(--ink-700); margin: 0 0 10px; }
+.volf-chips { display: flex; flex-wrap: wrap; gap: 10px; }
+.volf-inline-error { font-size: 13.5px; color: var(--ink-700); display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+.volf-consent { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; padding: 14px 16px; border-radius: 12px;
+  background: var(--cream-50); border: 1px solid rgba(12, 20, 50, 0.10); font-size: 13.5px; line-height: 1.5; color: var(--ink-700); }
+.volf-consent.is-on { border-color: var(--navy-700); background: var(--cream-100); }
+.volf-consent input { width: 19px; height: 19px; margin-top: 1px; flex: none; accent-color: var(--navy-700); }
+.volf-error { color: #a3271a; font-size: 14px; font-weight: 600; margin: 0; }
+.volf-submit { position: sticky; bottom: 12px; z-index: 2; display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; padding: 14px 16px 14px 20px; border-radius: var(--r-lg); background: var(--navy-900); color: white;
+  box-shadow: 0 18px 40px -20px rgba(12, 20, 50, 0.6); }
+.volf-submit-text { font-size: 13.5px; line-height: 1.5; color: rgba(255, 255, 255, 0.86); flex: 1 1 260px; }
+.volf-submit-text b { color: white; }
+@container (max-width: 760px) {
+  .volf-layout { grid-template-columns: 1fr; gap: 20px; }
+  .volf-rail { position: static; display: flex; flex-wrap: wrap; gap: 8px 16px; }
+  .volf-rail-label { font-size: 13px; }
+  .volf-options { grid-template-columns: 1fr; }
+  .vol-lanes { grid-template-columns: 1fr; }
+}
+@container (max-width: 560px) {
+  .volf-grid { grid-template-columns: 1fr; }
+  .volf-card { padding: 20px 18px 22px; }
+}

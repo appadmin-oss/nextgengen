@@ -736,7 +736,7 @@ function admin_member_caps_set(array $p): array {
     // being handed content or people access.
     // 'fees' is the financial capability: who may read/write the dues ledger,
     // grantable on its own so a member-desk admin need not also hold the money.
-    $valid = ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'audit', 'journal', 'fees'];
+    $valid = admin_role_caps('super_admin');   // every capability there is, from the one list
     $roleCaps = admin_role_caps((string)$m['role']);
     $in = is_array($p['caps'] ?? null) ? $p['caps'] : [];
     // Store only extras that the role doesn't already grant.

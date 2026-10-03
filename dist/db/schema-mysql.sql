@@ -2771,3 +2771,25 @@ ALTER TABLE applications ADD COLUMN importKey VARCHAR(80) DEFAULT '';
 CREATE INDEX idx_apps_importkey ON applications (importKey);
 
 INSERT INTO schema_version (version) VALUES (122) ON DUPLICATE KEY UPDATE version = version;
+
+-- 123: approvals for a club admin's sensitive actions; volunteers' programme
+CREATE TABLE IF NOT EXISTS admin_approvals (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  approvalId VARCHAR(40) NOT NULL UNIQUE,
+  op VARCHAR(80) NOT NULL,
+  args MEDIUMTEXT NOT NULL,
+  summary VARCHAR(500) NOT NULL DEFAULT '',
+  requesterId VARCHAR(64) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  decidedBy VARCHAR(64) DEFAULT '',
+  decidedAt VARCHAR(40) DEFAULT '',
+  reason VARCHAR(500) DEFAULT '',
+  result MEDIUMTEXT,
+  createdAt VARCHAR(40) DEFAULT '',
+  INDEX idx_appr_status (status, id),
+  INDEX idx_appr_requester (requesterId, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE volunteers ADD COLUMN programme VARCHAR(16) DEFAULT 'summer';
+ALTER TABLE applications ADD COLUMN programme VARCHAR(16) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (123) ON DUPLICATE KEY UPDATE version = version;

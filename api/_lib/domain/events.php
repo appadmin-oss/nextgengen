@@ -551,7 +551,7 @@ function public_apply(array $p): array {
     // Adults only for mentor/volunteer; the teen branch enforces 10–17 below.
     if ($kind !== 'teen' && $dobAge < 16) return ['ok' => false, 'error' => 'dob_too_young'];
 
-    $age = 0; $track = ''; $centre = ''; $role = ''; $program = ''; $courses = []; $faculty = ''; $visibilityConsent = 0;
+    $age = 0; $track = ''; $centre = ''; $role = ''; $program = ''; $programme = ''; $courses = []; $faculty = ''; $visibilityConsent = 0;
     $photoUrl = intake_photo_accept((string)($p['photoUrl'] ?? ''));
     if ($kind === 'teen') {
         // Age is derived from the date of birth, not entered separately.
@@ -586,6 +586,12 @@ function public_apply(array $p): array {
             }
             if (!$courses) return ['ok' => false, 'error' => 'course_required'];
         }
+        /* Which programme: Summer School (the season), the NGG Club (all
+           year), or both. A client from before the choice existed sends
+           nothing and gets what it always got — Summer. */
+        $programme = (string)($p['programme'] ?? '');
+        if ($programme === '') $programme = 'summer';
+        if (!in_array($programme, VOL_PROGRAMMES, true)) return ['ok' => false, 'error' => 'bad_programme'];
         // Optional opt-in to be featured (photo + first name) on the public site.
         $visibilityConsent = !empty($p['visibilityConsent']) ? 1 : 0;
     } else {
@@ -619,7 +625,7 @@ function public_apply(array $p): array {
         'kind' => $kind, 'name' => $name,
         'firstName' => $first, 'lastName' => $last, 'otherName' => $other, 'dob' => $dob, 'sex' => $sex,
         'age' => $age ?: null, 'centre' => $centre, 'track' => $track, 'faculty' => $faculty,
-        'visibilityConsent' => $visibilityConsent,
+        'visibilityConsent' => $visibilityConsent, 'programme' => $programme,
         'role' => $role, 'why' => $why, 'email' => $email, 'program' => $program, 'photoUrl' => $photoUrl,
         'phone' => $phone, 'courses' => $courses ? json_encode($courses, JSON_UNESCAPED_SLASHES) : '',
         'status' => 'new', 'createdAt' => now_iso(), 'ip' => (string)($p['ip'] ?? ''),
@@ -643,6 +649,7 @@ function public_apply(array $p): array {
             . ($track ? '<br><b>Track:</b> ' . esc_html($track) : '')
             . ($role ? '<br><b>Role:</b> ' . esc_html($role) : '')
             . ($courses ? '<br><b>Courses:</b> ' . esc_html(implode(', ', $courses)) : '')
+            . ($programme ? '<br><b>Serving:</b> ' . esc_html(volunteer_programme_label($programme)) : '')
             . ($program ? '<br><b>Program:</b> ' . esc_html($program) : '')
             . ($age ? '<br><b>Age:</b> ' . (int)$age : '')
             . ($why ? '<br><br>' . nl2br(esc_html(substr($why, 0, 800))) : ''),
@@ -657,8 +664,11 @@ function public_apply(array $p): array {
         $body = '<p style="margin:0 0 12px">We review every application by hand and write back within a week.</p>'
             . '<p style="margin:0 0 12px"><b>Role:</b> ' . esc_html($roleLabel)
             . ($courses ? '<br><b>Courses:</b> ' . esc_html(implode(', ', $courses)) : '')
+            . '<br><b>Serving:</b> ' . esc_html(volunteer_programme_label($programme))
             . '<br><b>Reference:</b> ' . esc_html($ref) . '</p>'
-            . '<p style="margin:0 0 12px">Please read the <b>LCASP Summer Impact School 2026 Operations Manual</b> before your first deployment — it covers the five core pillars, the daily rhythm, and the Volunteer Vanguard Code (conduct, punctuality and safeguarding). One movement, one standard.</p>'
+            . ($programme === 'ngg'
+                ? '<p style="margin:0 0 12px">Please read the <b>Operations Manual</b> before your first session — the Volunteer Vanguard Code (conduct, punctuality and safeguarding) is the same all year. One movement, one standard.</p>'
+                : '<p style="margin:0 0 12px">Please read the <b>LCASP Summer Impact School 2026 Operations Manual</b> before your first deployment — it covers the five core pillars, the daily rhythm, and the Volunteer Vanguard Code (conduct, punctuality and safeguarding). One movement, one standard.</p>')
             . '<p style="margin:0">Volunteers working directly with young people complete safeguarding screening before their first session.</p>';
         intake_acknowledge($email, 'We received your volunteer application — Next Generation Genius', [
             'title' => 'Application received',

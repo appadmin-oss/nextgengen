@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 122;
+const NGG_SCHEMA_TARGET = 123;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3713,6 +3713,29 @@ function db_migrate(PDO $db): void {
                ORDER BY id;
             ALTER TABLE applications ADD COLUMN importKey TEXT DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_apps_importkey ON applications(importKey);
+        ",
+        /* 123 — a club admin's sensitive actions wait for a second admin
+         * (domain/approvals.php), and volunteers say which programme they
+         * serve: Summer School, the year-round Club, or both. */
+        123 => "
+            CREATE TABLE IF NOT EXISTS admin_approvals (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              approvalId TEXT UNIQUE NOT NULL,
+              op TEXT NOT NULL,
+              args TEXT NOT NULL DEFAULT '',
+              summary TEXT NOT NULL DEFAULT '',
+              requesterId TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending',
+              decidedBy TEXT DEFAULT '',
+              decidedAt TEXT DEFAULT '',
+              reason TEXT DEFAULT '',
+              result TEXT DEFAULT '',
+              createdAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_appr_status ON admin_approvals(status, id);
+            CREATE INDEX IF NOT EXISTS idx_appr_requester ON admin_approvals(requesterId, id);
+            ALTER TABLE volunteers ADD COLUMN programme TEXT DEFAULT 'summer';
+            ALTER TABLE applications ADD COLUMN programme TEXT DEFAULT '';
         ",
     ];
 

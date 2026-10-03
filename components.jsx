@@ -1248,6 +1248,7 @@ function humanizeError(message, code) {
     already_connected: "You're already connected to this student on this device.",
     consent_required: "Please tick the required consent boxes to continue.",
     member_gone: "That account no longer exists.",
+    approval_pending: "Sent to an admin for approval — nothing changes until it is approved.",
     http_0: "Network trouble — check your connection.",
     http_500: "The server hit an error. Please try again shortly.",
     http_503: "The service is busy. Please try again shortly.",
@@ -1440,6 +1441,12 @@ async function runAdminAction(action, ids, opts) {
     }
   } catch (e) {
     const msg = (e && (e.code || e.message)) || "failed";
+    /* A club admin's sensitive run is queued, not refused (domain/approvals.php):
+       nothing changed yet, and that is the expected outcome, not an error. */
+    if (msg === "approval_pending") {
+      if (typeof toast !== "undefined") toast.info(humanizeError(msg, msg), action.label || "Approval");
+      return { ran: true, ok: 0, failed: 0, results: [], queued: true, approvalId: e.data && e.data.approvalId };
+    }
     if (typeof toast !== "undefined") {
       toast.error(msg === "forbidden" ? "You don't have permission to do that." : humanizeError(msg, msg),
         action.label || "Action failed");

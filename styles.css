@@ -6474,6 +6474,7 @@ img { background-color: rgba(12,20,50,0.04); }
 .gate-desk p { margin: 0; }
 .gate-wrap { max-width: 1080px; margin: 0 auto; padding: max(var(--g-sp-5), env(safe-area-inset-top)) var(--g-sp-4) calc(var(--g-sp-6) * 2); display: flex; flex-direction: column; gap: var(--g-sp-4); }
 .gate-wrap.is-narrow { max-width: 460px; padding-top: 10vh; }
+.gate-wrap.is-form { max-width: 640px; }
 .gate-ico { width: 1.15em; height: 1.15em; flex: none; fill: currentColor; }
 
 /* Type */

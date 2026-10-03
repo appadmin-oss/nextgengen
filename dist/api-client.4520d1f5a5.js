@@ -1305,7 +1305,7 @@
         cancel:   (tournamentId) => request('/admin/tournaments.php', { body: { action: 'cancel', tournamentId } }),
       },
       volunteers: {
-        list:    () => request('/admin/volunteers.php'),
+        list:    (programme) => request('/admin/volunteers.php' + qs({ programme: programme || '' })),
         approve: (id) => request('/admin/volunteers.php', { body: { action: 'approve', id } }),
         decline: (id, reason) => request('/admin/volunteers.php', { body: { action: 'decline', id, reason: reason || '' } }),
         safeguard: (volunteerId, status) => request('/admin/volunteers.php', { body: { action: 'safeguard', volunteerId, status } }),
@@ -1333,6 +1333,14 @@
         missing: (limit) => request('/admin/photos.php' + qs({ view: 'missing', limit })),
         requestMissing: (limit, quietDays) => request('/admin/photos.php', { body: { action: 'request_missing', limit, quietDays } }),
       },
+      /* A club admin's sensitive actions wait here for a second admin
+         (domain/approvals.php). `list` is the queue — a club admin sees their
+         own requests; `decide` approves (runs it, as the requester) or rejects. */
+      approvals: {
+        list:     (status) => request('/admin/approvals.php' + qs({ status: status || 'pending' })),
+        decide:   (approvalId, decision, reason) => request('/admin/approvals.php', { body: { action: 'decide', approvalId, decision, reason: reason || '' } }),
+        withdraw: (approvalId) => request('/admin/approvals.php', { body: { action: 'withdraw', approvalId } }),
+      },
       registration: {
         /* Consent given off-line — on paper, in person or by phone.
            `consents(studentId)` returns what is already on file plus the
@@ -1356,7 +1364,7 @@
         formsList:  () => request('/admin/registration.php' + qs({ view: 'forms' })),
         form:       (formId) => request('/admin/registration.php' + qs({ view: 'form', formId: formId || 'summer-reg' })),
         publishForm: (formId, fields, name) => request('/admin/registration.php', { body: { action: 'publish_form', formId, fields, name } }),
-        gates:      () => request('/admin/registration.php' + qs({ view: 'gates' })),
+        gates:      (scope) => request('/admin/registration.php' + qs({ view: 'gates', scope: scope || '' })),
         gateCreate: (name, expiresAt, password, centreId, opts) => request('/admin/registration.php', { body: Object.assign({ action: 'gate_create', name, expiresAt, password: password || '', centreId: centreId || '' }, opts || {}) }),
         gateSetpass: (gateId, password, generate) => request('/admin/registration.php', { body: { action: 'gate_setpass', gateId, password: password || '', generate: !!generate } }),
         gateValidity: (gateId, opts) => request('/admin/registration.php', { body: Object.assign({ action: 'gate_validity', gateId }, opts || {}) }),

@@ -1717,9 +1717,18 @@ function CertificatePage() {
    by the API from the live registration form, so admins manage it in one
    place. Minimalist single-column flow: lane → (courses) → details. */
 const VOL_LANES = [
-  { key: "admin",      icon: "🗂", name: "Admin / Ops", line: "Logistics, records, parent comms — the engine room of every Saturday." },
-  { key: "mentor",     icon: "🧭", name: "Mentor",      line: "Guide a small circle of teenagers through the season. Listen first." },
-  { key: "instructor", icon: "🎓", name: "Instructor",  line: "Teach one of the season's courses, from first class to showcase." },
+  { key: "admin",      icon: "🗂", name: "Admin / Ops", line: "Logistics, records, parent comms — the engine room of every session." },
+  { key: "mentor",     icon: "🧭", name: "Mentor",      line: "Guide a small circle of young people, week after week. Listen first." },
+  { key: "instructor", icon: "🎓", name: "Instructor",  line: "Teach a course you know, from first class to showcase." },
+];
+
+/* Which programme a volunteer serves — the server's VOL_PROGRAMMES
+   (domain/volunteers.php), the same words mentors use. The Club comes first:
+   it is the programme that runs all year. */
+const VOL_PROGRAMMES = [
+  { key: "ngg",    name: "NGG Club",      when: "Year-round",          line: "Weekly sessions at a centre near you, all year. The programme members belong to for years." },
+  { key: "summer", name: "Summer School", when: "One season",          line: "The intensive summer season — daily for a few weeks, then done until next year." },
+  { key: "both",   name: "Both",          when: "All year + summer",   line: "Club sessions all year, and the summer season when it runs." },
 ];
 
 // The volunteer Operations Manual (LCASP Summer Impact School 2026) — bundled in
@@ -1806,6 +1815,10 @@ function VolunteerRegisterPage({ setPage }) {
     const r = new URLSearchParams(window.location.search).get("role") || "";
     return VOL_LANES.some(l => l.key === r) ? r : "";
   });
+  const [programme, setProgramme] = React.useState(() => {
+    const p = new URLSearchParams(window.location.search).get("programme") || "";
+    return VOL_PROGRAMMES.some(x => x.key === p) ? p : "";
+  });
   const [courses, setCourses] = React.useState([]);
   const [centre, setCentre] = React.useState("");
   const [faculty, setFaculty] = React.useState("");
@@ -1851,13 +1864,14 @@ function VolunteerRegisterPage({ setPage }) {
   };
   // Every field on the volunteer form is required (new fields added later may
   // opt out individually). Consent checkboxes stay optional by nature.
-  const ready = role !== "" && centre !== "" && d.firstName.trim() !== "" && d.lastName.trim() !== ""
+  const ready = programme !== "" && role !== "" && centre !== "" && d.firstName.trim() !== "" && d.lastName.trim() !== ""
     && d.sex !== "" && emailOk
     && phoneOk && dobOk && d.photoUrl !== "" && d.why.trim() !== ""
     && (!needsFaculty || faculty !== "")
     && (role !== "instructor" || courses.length > 0);
   // Tell the applicant WHY the button is disabled instead of greying silently.
   const missing = [];
+  if (programme === "") missing.push("which programme");
   if (role === "") missing.push("pick a role");
   if (centre === "") missing.push("your centre");
   if (needsFaculty && faculty === "") missing.push("your faculty");
@@ -1883,7 +1897,7 @@ function VolunteerRegisterPage({ setPage }) {
         sex: d.sex,
         email: d.email.trim(), phone: d.phone.trim(), dob: d.dob,
         why: d.why.trim(), photoUrl: d.photoUrl || "", courses: role === "instructor" ? courses : [],
-        centre, faculty: needsFaculty ? faculty : "", visibilityConsent,
+        centre, faculty: needsFaculty ? faculty : "", visibilityConsent, programme,
       }, "ngg_apply_volunteer");
       setDone(r && r.ref ? r.ref : true);
       setDoneWa((r && r.whatsapp) || "");
@@ -1905,15 +1919,29 @@ function VolunteerRegisterPage({ setPage }) {
         dob_too_young: "Volunteers must be at least 16 years old.",
         bad_firstName: "Please enter your first name.",
         bad_lastName: "Please enter your last name.",
+        bad_programme: "Choose the programme you'd like to serve.",
       }[code] || "Couldn't submit. Please try again.");
     } finally { setBusy(false); }
   };
 
-  const stepNo = (n, label) => (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 18 }}>
-      <span className="mono" style={{ fontSize: 12, color: "var(--gold-500)", letterSpacing: "0.14em" }}>{n}</span>
-      <h2 className="display" style={{ fontSize: "clamp(24px,3vw,34px)", margin: 0 }}>{label}</h2>
-    </div>
+  /* Where the applicant is, for the progress rail: each step is done when its
+     own fields are, so the rail tells the truth about what is left. */
+  const placementDone = centre !== "" && (!needsFaculty || faculty !== "") && (role !== "instructor" || courses.length > 0);
+  const detailsDone = d.firstName.trim() !== "" && d.lastName.trim() !== "" && d.sex !== "" && emailOk && phoneOk && dobOk && d.photoUrl !== "" && d.why.trim() !== "";
+  const steps = [
+    { n: "01", label: "Programme", done: programme !== "" },
+    { n: "02", label: "Role", done: role !== "" },
+    { n: "03", label: "Placement", done: role !== "" && placementDone },
+    { n: "04", label: "About you", done: detailsDone },
+  ];
+  const stepHead = (n, label, hint, id) => (
+    <header className="volf-step-head">
+      <span className="volf-step-n" aria-hidden="true">{n}</span>
+      <div>
+        <h2 className="volf-step-title" id={id}>{label}</h2>
+        {hint && <p className="volf-step-hint">{hint}</p>}
+      </div>
+    </header>
   );
 
   if (done) return (
@@ -1934,30 +1962,63 @@ function VolunteerRegisterPage({ setPage }) {
     </div>
   );
 
+  const progLabel = (VOL_PROGRAMMES.find(x => x.key === programme) || {}).name;
   return (
-    <div className="page" data-screen-label="Volunteer · register">
-      <section className="section" style={{ paddingTop: 72 }}>
-        <div className="container" style={{ maxWidth: 760 }}>
-          <span className="eyebrow" style={{ color: "var(--gold-500)" }}>VOLUNTEER · NEXT GENERATION GENIUS</span>
-          <h1 className="display" style={{ fontSize: "clamp(44px,6vw,84px)", margin: "10px 0 14px", lineHeight: 0.95 }}>
-            Give a season.<br/>Shape a genius.
-          </h1>
-          <p style={{ fontSize: 17, color: "var(--ink-500)", lineHeight: 1.6, maxWidth: 560, margin: 0 }}>
-            One form, three ways in. Tell us the shape of your time and we'll take it from there.
+    <div className="page volf-page" data-screen-label="Volunteer · register">
+      <section className="section volf-hero">
+        <div className="container volf-wrap">
+          <span className="eyebrow volf-eyebrow">VOLUNTEER · NEXT GENERATION GENIUS</span>
+          <h1 className="display volf-title">Give your time.<br/>Shape a genius.</h1>
+          <p className="volf-lede">
+            Volunteer with the NGG Club all year, with Summer School for the season, or both.
+            One form, about four minutes — we read every one and reply within a week.
           </p>
+          <ul className="volf-facts" aria-label="What to expect">
+            <li><b>16+</b><span>to volunteer</span></li>
+            <li><b>1 week</b><span>to hear back</span></li>
+            <li><b>Screened</b><span>before working with young people</span></li>
+          </ul>
 
           <HandbookSummary/>
 
           {ctx && ctx.open === false ? (
-            <div className="card mt-40" style={{ padding: 32 }}>
-              <h2 className="display" style={{ fontSize: 26, margin: "0 0 8px" }}>Registration is paused.</h2>
-              <p style={{ color: "var(--ink-500)", margin: 0 }}>We're between intakes. Leave your email via the newsletter below and we'll announce the next window.</p>
+            <div className="volf-card volf-paused">
+              <h2 className="volf-step-title">Registration is paused.</h2>
+              <p className="volf-step-hint">We're between intakes. Leave your email via the newsletter below and we'll announce the next window.</p>
             </div>
           ) : (
-            <form onSubmit={submit} noValidate>
-              {/* 01 · Lane */}
-              <div className="mt-48">
-                {stepNo("01", "Pick your lane")}
+            <div className="volf-layout">
+              <ol className="volf-rail" aria-label="Your progress">
+                {steps.map(st => (
+                  <li key={st.n} className={"volf-rail-step" + (st.done ? " is-done" : "")}>
+                    <span className="volf-rail-dot" aria-hidden="true">{st.done ? "✓" : st.n}</span>
+                    <span className="volf-rail-label">{st.label}<span className="sr-only">{st.done ? " — done" : " — to do"}</span></span>
+                  </li>
+                ))}
+              </ol>
+
+            <form onSubmit={submit} noValidate className="volf-form">
+              {/* 01 · Programme */}
+              <section className="volf-card" aria-labelledby="volf-prog-h">
+                {stepHead("01", "Where would you like to serve?", "You can change this later with the team.", "volf-prog-h")}
+                <div className="volf-options" role="radiogroup" aria-labelledby="volf-prog-h">
+                  {VOL_PROGRAMMES.map(x => (
+                    <button type="button" key={x.key} role="radio" aria-checked={programme === x.key}
+                      className={"volf-option" + (programme === x.key ? " is-active" : "")}
+                      onClick={() => { setProgramme(x.key); if (err) setErr(""); }}>
+                      <span className="volf-option-top">
+                        <span className="volf-option-name">{x.name}</span>
+                        <span className="volf-option-tag">{x.when}</span>
+                      </span>
+                      <span className="volf-option-line">{x.line}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              {/* 02 · Role */}
+              <section className="volf-card" aria-labelledby="volf-role-h">
+                {stepHead("02", "Pick your lane", "Three ways in. Pick the one that fits your time and craft.", "volf-role-h")}
                 <div className="vol-lanes" role="radiogroup" aria-label="Volunteer role">
                   {VOL_LANES.map(l => (
                     <button type="button" key={l.key} role="radio" aria-checked={role === l.key}
@@ -1969,16 +2030,16 @@ function VolunteerRegisterPage({ setPage }) {
                     </button>
                   ))}
                 </div>
-              </div>
+              </section>
 
-              {/* 02 · Placement — centre (all roles) + faculty (mentor/instructor) + courses (instructor) */}
+              {/* 03 · Placement — centre (all roles) + faculty (mentor/instructor) + courses (instructor) */}
               {role !== "" && (
-                <div className="mt-48">
-                  {stepNo("02", "Where you'll serve")}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }} className="vol-fields">
+                <section className="volf-card" aria-label="Placement">
+                  {stepHead("03", "Your centre" + (needsFaculty ? " and faculty" : ""), "The centre closest to you — it's where your card and your sessions belong.")}
+                  <div className="volf-grid">
                     <div className="field"><label htmlFor="vol-centre">Centre</label>
                       {ctxErr ? (
-                        <div style={{ fontSize: 13.5, color: "var(--ink-500)", display: "flex", alignItems: "center", gap: 10, padding: "10px 0" }}>
+                        <div className="volf-inline-error" role="alert">
                           Couldn't load centres.
                           <button type="button" className="btn btn-ghost btn-sm" onClick={loadCtx}>Retry</button>
                         </div>
@@ -2001,15 +2062,13 @@ function VolunteerRegisterPage({ setPage }) {
                     )}
                   </div>
                   {role === "instructor" && (
-                    <div className="mt-24">
-                      <p className="mono" style={{ fontSize: 11, color: "var(--ink-500)", letterSpacing: "0.08em", margin: "0 0 10px" }}>
-                        {faculty
-                          ? "COURSES IN " + faculty.toUpperCase() + " — PICK EVERY ONE YOU CAN TEACH."
-                          : "WHICH COURSES CAN YOU TEACH? PICK YOUR FACULTY FIRST."}
+                    <div className="volf-courses">
+                      <p className="volf-sub">
+                        {faculty ? "Courses in " + faculty + " — pick every one you can teach." : "Which courses can you teach? Pick your faculty first."}
                       </p>
                       {faculty ? (
                         courseOptions.length ? (
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                          <div className="volf-chips" role="group" aria-label="Courses you can teach">
                             {courseOptions.map(c => (
                               <button type="button" key={c}
                                 className={"vol-chip" + (courses.includes(c) ? " is-active" : "")}
@@ -2017,21 +2076,17 @@ function VolunteerRegisterPage({ setPage }) {
                                 onClick={() => toggleCourse(c)}>{c}</button>
                             ))}
                           </div>
-                        ) : (
-                          <p style={{ fontSize: 13, color: "var(--ink-500)", margin: 0 }}>No courses are listed under this faculty yet.</p>
-                        )
-                      ) : (
-                        <p style={{ fontSize: 13, color: "var(--ink-500)", margin: 0 }}>Choose your faculty above to see the courses it offers.</p>
-                      )}
+                        ) : <p className="volf-step-hint">No courses are listed under this faculty yet.</p>
+                      ) : <p className="volf-step-hint">Choose your faculty above to see the courses it offers.</p>}
                     </div>
                   )}
-                </div>
+                </section>
               )}
 
-              {/* 03 · Details */}
-              <div className="mt-48">
-                {stepNo(role === "" ? "02" : "03", "Your details")}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }} className="vol-fields">
+              {/* 04 · Details */}
+              <section className="volf-card" aria-label="About you">
+                {stepHead(role === "" ? "03" : "04", "About you", "Exactly as on your ID. We use these to contact you and to print your volunteer card.")}
+                <div className="volf-grid">
                   <div className="field"><label htmlFor="vol-first">First name</label>
                     <input id="vol-first" value={d.firstName} onChange={set("firstName")} autoComplete="given-name" placeholder="e.g. Adaeze"/></div>
                   <div className="field"><label htmlFor="vol-last">Last name</label>
@@ -2039,7 +2094,8 @@ function VolunteerRegisterPage({ setPage }) {
                   <div className="field"><label htmlFor="vol-other">Other name · optional</label>
                     <input id="vol-other" value={d.otherName} onChange={set("otherName")} autoComplete="additional-name" placeholder="Middle name(s)"/></div>
                   <div className="field"><label htmlFor="vol-dob">Date of birth</label>
-                    <input id="vol-dob" type="date" value={d.dob} onChange={set("dob")} max={todayISO} autoComplete="bday"/></div>
+                    <input id="vol-dob" type="date" value={d.dob} onChange={set("dob")} max={todayISO} autoComplete="bday" aria-describedby="vol-dob-hint"/>
+                    <span id="vol-dob-hint" className="volf-hint">Volunteers are 16 or older.</span></div>
                   <div className="field"><label htmlFor="vol-sex">Sex</label>
                     <select id="vol-sex" value={d.sex} onChange={set("sex")}>
                       <option value="" disabled>Select…</option>
@@ -2050,30 +2106,31 @@ function VolunteerRegisterPage({ setPage }) {
                     <input id="vol-email" type="email" value={d.email} onChange={set("email")} autoComplete="email" placeholder="you@example.com"/></div>
                   <div className="field"><label htmlFor="vol-phone">Phone</label>
                     <input id="vol-phone" type="tel" value={d.phone} onChange={set("phone")} autoComplete="tel" placeholder="0803 000 0000"/></div>
-                  <div className="field" style={{ gridColumn: "1 / -1" }}><label htmlFor="vol-why">Why you</label>
+                  <div className="field volf-span"><label htmlFor="vol-why">Why you</label>
                     <textarea id="vol-why" rows={3} value={d.why} onChange={set("why")} placeholder="A line or two — craft, experience, or simply why this matters to you."/></div>
-                  <div className="field" style={{ gridColumn: "1 / -1" }}><label>Photo</label>
-                    <PhotoCapture value={d.photoUrl} onChange={(url) => { setD({ ...d, photoUrl: url }); if (err) setErr(""); }} size={72} label="Used on your volunteer ID once approved (required)"/></div>
-                  <label className="field" style={{ gridColumn: "1 / -1", display: "flex", gap: 12, alignItems: "flex-start", cursor: "pointer", background: visibilityConsent ? "rgba(159,188,59,0.10)" : "var(--paper-100,#f4f1e8)", border: "1px solid " + (visibilityConsent ? "#9fbc3b" : "rgba(12,20,50,0.10)"), borderRadius: 12, padding: "14px 16px" }}>
-                    <input type="checkbox" checked={visibilityConsent} onChange={e => { setVisibilityConsent(e.target.checked); if (err) setErr(""); }} style={{ width: 19, height: 19, marginTop: 1, accentColor: "#7a9c1e", flex: "none" }}/>
-                    <span style={{ fontSize: 13.5, lineHeight: 1.5, color: "var(--ink-700)" }}><b>Feature me on the website</b> — I agree that Next Generation Genius may show my photo and first name publicly on its website and status boards to celebrate the team. Optional, and you can withdraw it any time by contacting us.</span>
+                  <div className="field volf-span"><label>Photo</label>
+                    <PhotoCapture value={d.photoUrl} onChange={(url) => { setD({ ...d, photoUrl: url }); if (err) setErr(""); }} size={72} label="A clear headshot — it goes on your volunteer card once you're approved (required)"/></div>
+                  <label className={"volf-consent volf-span" + (visibilityConsent ? " is-on" : "")}>
+                    <input type="checkbox" checked={visibilityConsent} onChange={e => { setVisibilityConsent(e.target.checked); if (err) setErr(""); }}/>
+                    <span><b>Feature me on the website</b> — I agree that Next Generation Genius may show my photo and first name publicly on its website and status boards to celebrate the team. Optional, and you can withdraw it any time by contacting us.</span>
                   </label>
                 </div>
-              </div>
+              </section>
 
-              {err && <p role="alert" style={{ color: "var(--coral)", fontSize: 14, marginTop: 20, marginBottom: 0 }}>{err}</p>}
+              {err && <p role="alert" className="volf-error">{err}</p>}
 
-              <div className="mt-32" style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+              <div className="volf-submit">
+                <div className="volf-submit-text" aria-live="polite">
+                  {!ready && missing.length
+                    ? <><b>Still needed:</b> {missing.join(", ")}.</>
+                    : <><b>Ready.</b> {progLabel ? "You're applying to serve " + progLabel + ". " : ""}Roles that work with young people pass safeguarding screening before the first session.</>}
+                </div>
                 <button type="submit" className="btn btn-gold btn-lg" disabled={!ready || busy}>
                   {busy ? "Sending…" : "Register as a volunteer →"}
                 </button>
-                <span style={{ fontSize: 12.5, color: "var(--ink-500)", maxWidth: 340, lineHeight: 1.5 }}>
-                  {!ready && missing.length
-                    ? "Still needed: " + missing.join(", ") + "."
-                    : "Roles that work with teenagers pass safeguarding screening before the first session."}
-                </span>
               </div>
             </form>
+            </div>
           )}
         </div>
       </section>
@@ -2583,8 +2640,7 @@ function ParentVerifyPage() {
      /apply?g=…   public sign-up, a family on their own phone (SelfRegisterPage)
      /review?g=…  approving those sign-ups (ReviewDeskPage)
      /gate?g=…    the door — check-in only (GatePage)
-   GateRegister, the old desk-registration wizard, is no longer mounted; it is
-   kept with its test bench until staff-assisted sign-up finds a home.
+     /enrol?g=…   staff enrolling a Summer walk-in (EnrolDeskPage → GateRegister)
    ============================================================================ */
 
 /* ── The public self-registration link — /apply?g=… ──────────────────────────
@@ -3776,7 +3832,13 @@ function useGateClock() {
   return now;
 }
 
-function GatePage() {
+/* Summer School's registration desk (/enrol?g=…): the same shell and unlock
+   as the door, with the staff registration wizard instead of the scanner. */
+function EnrolDeskPage() { return <GatePage mode="enrol"/>; }
+
+function GatePage({ mode }) {
+  const enrol = mode === "enrol";
+  const deskWord = enrol ? "registration desk" : "check-in desk";
   const g = new URLSearchParams(window.location.search).get("g") || "";
   const auth = (window.useAuth || (() => null))();   // stable: set before mount
   const [ctx, setCtx] = React.useState(null);
@@ -3862,12 +3924,12 @@ function GatePage() {
     return shell(
       <section className="gate-panel gate-lock" aria-labelledby="gate-lock-h">
         <span className="gate-badge"><GateIcon name="shield"/></span>
-        <p className="gate-eyebrow">Check-in desk</p>
+        <p className="gate-eyebrow">{enrol ? "Registration desk" : "Check-in desk"}</p>
         <h1 id="gate-lock-h" className="gate-panel-h">Open the desk</h1>
         <p className="gate-lede">This gate link is real — the person on the door just needs to unlock it.</p>
         {lockNote && <p className="gate-note is-warn">{lockNote}</p>}
         {blockedAs && <p className="gate-note">
-          This device is signed in as <b>{who}</b>, which can't open a check-in desk.
+          This device is signed in as <b>{who}</b>, which can't open a {deskWord}.
           Use the desk password below — it works without an account, and it signs {who} out of this device.
         </p>}
         <form className="gate-form" onSubmit={doUnlock}>
@@ -3894,6 +3956,22 @@ function GatePage() {
       <button type="button" className="gate-btn is-quiet" onClick={load}>Try again</button>
     </section>, "is-narrow");
 
+  if (enrol) {
+    /* The registration wizard predates the gate-* system and takes its look
+       as props; these are drawn from the same tokens. */
+    const card = { background: "var(--g-s1)", border: "1px solid var(--g-line)", borderRadius: 16 };
+    const inputS = { width: "100%", minHeight: 48, padding: "0 14px", borderRadius: 12, border: "1px solid var(--g-line-2)", background: "var(--g-sink)", color: "var(--g-ink)", fontSize: 16, fontFamily: "inherit" };
+    return shell(<div className="gate-checkin">
+      <header className="gate-head">
+        <div className="gate-head-main">
+          <p className="gate-eyebrow">Registration desk · {(ctx.gate && ctx.gate.name) || "Summer School"}</p>
+          <h1 className="gate-title">{(ctx.cohort && ctx.cohort.name) || "Summer School"}</h1>
+          <p className="gate-meta">Enrol a child who is here with you: details, photo, consent.</p>
+        </div>
+      </header>
+      <GateRegister g={g} ctx={ctx} card={card} inputS={inputS} gold="var(--g-gold)" goldInk="var(--g-gold-ink)" draftKey={"ngg_gate_draft_" + g}/>
+    </div>, "is-form");
+  }
   return shell(<GateCheckin g={g} ctx={ctx}/>);
 }
 
@@ -4075,8 +4153,8 @@ function RegFieldList({ fields, form, set, errors, visible, inputS, gold, mut })
   </>;
 }
 
-/* Not mounted: the gate link is check-in only (see the gate links note above
-   SelfRegisterPage). Kept with its ui-smoke bench, `board=gatereg`. */
+/* Summer School's staff registration wizard — mounted by the registration
+   desk link (/enrol?g=…, EnrolDeskPage). The door itself is check-in only. */
 function GateRegister({ g, ctx, card, inputS, gold, goldInk, draftKey }) {
   const geoOn = !!(ctx.geo && ctx.geo.enabled);
   const fields = ((ctx.form && ctx.form.fields) || []).filter(f => !(geoOn && f.key === "centre"));

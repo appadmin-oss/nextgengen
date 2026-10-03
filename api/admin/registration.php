@@ -9,7 +9,7 @@ if ($method === 'GET') {
     if ($view === 'selfreg')         $res = gs_call('admin.selfreg.state', ['requesterId' => $s['mid']]);
     elseif ($view === 'forms')       $res = gs_call('admin.forms.list', ['requesterId' => $s['mid']]);
     elseif ($view === 'form')        $res = gs_call('admin.forms.get', ['requesterId' => $s['mid'], 'formId' => (string)($_GET['formId'] ?? 'summer-reg')]);
-    elseif ($view === 'gates')       $res = gs_call('admin.gates.list', ['requesterId' => $s['mid']]);
+    elseif ($view === 'gates')       $res = gs_call('admin.gates.list', ['requesterId' => $s['mid'], 'scope' => (string)($_GET['scope'] ?? '')]);
     elseif ($view === 'registrations') $res = gs_call('admin.registrations.list', [
         'requesterId' => $s['mid'],
         'q' => (string)($_GET['q'] ?? ''), 'status' => (string)($_GET['status'] ?? ''),

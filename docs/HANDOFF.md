@@ -427,3 +427,10 @@ The same pass fixed ten `font: <weight> <size> inherit` declarations in
 `styles-app.css`. Browsers reject that shorthand outright, so those elements
 had silently lost their weight and size. Both stylesheets now pass
 csstree-validator clean.
+
+## Check-in desks out of Summer School; broadened admin roles; approvals; year-round volunteers
+
+- New capability `checkin` (the door): check-in desk links, passwords, duty rota. Control Room → Check-in → Check-in desks / Duty rota. Summer School keeps its sign-up links (public sign-up, review desk) and gains the **Registration desk** kind (`/enrol?g=`), the old staffed registration form; a check-in desk no longer registers anyone, and a registration desk checks nobody in.
+- `admin` += `club`, `summer`, `checkin`; `summer_admin` += `checkin`; `club_admin` += `people`, `checkin`.
+- Approval queue (migration 123, `admin_approvals`): a club admin's sensitive actions are queued and run as them on a second admin's approval. Control Room → People → Approvals. Super-admin-only acts (erase member, reset password/2FA) stay refused, not queued — an approval would run them as the requester, who still cannot.
+- Volunteers: `volunteers.programme` / `applications.programme` = `summer | ngg | both` (the mentors' vocabulary). Club volunteers' cards run on the year-round validity clock; Summer-only cards still end with the season. The /volunteer form asks the programme first and was rebuilt on `.volf-*` classes with a progress rail.

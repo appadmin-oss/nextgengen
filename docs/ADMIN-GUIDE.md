@@ -137,7 +137,7 @@ delivery, Donations, Settings.
 **Retired doors that still work.** The old `registration` and `qr` sections
 were separate screens that showed a partial, drifting copy of panels the
 Summer School workspace already had. They now forward: `registration` opens
-Summer School on *Gate links*, `qr` opens it on *QR cards*. Old bookmarks
+Summer School on *Sign-up links*, `qr` opens it on *QR cards*. Old bookmarks
 and old links keep working; there is just one screen behind them now.
 
 ---
@@ -347,7 +347,9 @@ what you are actually doing.
 ### Intake — getting children in
 
 - **Intake form** — build the form families fill in.
-- **Gate links** — the shareable links: a **Check-in desk** for the door (check-in only), a **Public sign-up** for families, and a **Review desk** for approving sign-ups.
+- **Sign-up links** — Summer School's shareable links: a **Public sign-up** for families, a **Review desk** for approving those sign-ups, and a **Registration desk** where staff enrol a walk-in child (details, photo, consent) with a desk password.
+
+The door's **Check-in desks** are no longer here: they check in members and volunteers all year, so they have their own section (Control Room → Check-in → Check-in desks), with the **Duty rota** beside them.
 - **Pending sign-ups** — applications waiting on you.
 - **Enrol at the desk** — enrol somebody in front of you, right now.
 - **Bulk import** — paste a CSV of participants; each row is enrolled and

@@ -117,7 +117,7 @@ SQLite, **auto-migrated at runtime** from a contiguous ladder in
 Adding a migration is three edits, all required:
 
 1. Append `N => "…"` to `$migrations` — contiguous, never renumbered.
-2. Bump `NGG_SCHEMA_TARGET` to `N` (currently **122**).
+2. Bump `NGG_SCHEMA_TARGET` to `N` (currently **123**).
 3. Mirror the DDL into `db/schema-mysql.sql`, ending with
    `INSERT INTO schema_version (version) VALUES (N) ON DUPLICATE KEY UPDATE version = version;`
 
@@ -156,7 +156,19 @@ Capability-based, not role-based, at the point of use.
 
 `admin_role_caps()` in `api/_lib/util.php` bundles capabilities into roles;
 `capsExtra` on a member row grants extras per person. Capabilities:
-`content, people, inbox, settings, rbac, summer, club, audit, journal, fees`.
+`content, people, inbox, settings, rbac, summer, club, checkin, audit, journal, fees`.
+
+- `checkin` is the door: check-in desk links (`/gate`), their passwords and the
+  duty rota. It checks in everyone all year, so it is not a Summer School cap.
+  The Summer sign-up kinds (`self`, `review`, `register` at `/enrol`) stay
+  `summer` — `GATE_KINDS` in `domain/registration.php` maps each kind to its cap.
+- `admin` holds `club` and `summer` as well as people/content/inbox;
+  `club_admin` holds `club`, `people` and `checkin`. A club admin's sensitive
+  acts (suspend/deactivate, confirmed merge, centre rename/retire/delete,
+  volunteer removal) are **queued, not refused**: `approval_intercept()` in
+  `domain/approvals.php` runs at the top of `backend_dispatch()`, and the
+  request runs as the requester only when a second admin (holding `people`,
+  not a club admin, not the requester) approves it.
 
 - `fees` and `journal` are **deliberately not** in the `admin` or `editor`
   bundles. Money and the institutional record are separate trusts, granted

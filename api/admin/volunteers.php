@@ -8,7 +8,7 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
     if (($_GET['view'] ?? '') === 'needs') $res = gs_call('admin.volunteers.needs.list', ['requesterId' => $s['mid']]);
-    else $res = gs_call('admin.volunteers.list', ['requesterId' => $s['mid']]);
+    else $res = gs_call('admin.volunteers.list', ['requesterId' => $s['mid'], 'programme' => (string)($_GET['programme'] ?? '')]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');

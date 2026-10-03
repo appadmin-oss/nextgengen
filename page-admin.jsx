@@ -72,6 +72,10 @@ const ADMIN_SECTIONS = [
      nobody being fined" had nowhere to look. Same screen, second door. */
   { id: "conduct",     group: "People",   label: "Conduct & fines", title: "Conduct policy & fines", icon: "⚖", cap: "people" },
   { id: "requests",    group: "People",   label: "Member requests", title: "Member requests", icon: "✋", cap: "people" },
+  /* A club admin's sensitive actions — suspending, deactivating, merging,
+     renaming or retiring a centre, removing a volunteer — wait here for a
+     second admin (domain/approvals.php). The club admin sees their own. */
+  { id: "approvals",   group: "People",   label: "Approvals",    title: "Approvals",           icon: "✓", cap: "people" },
   { id: "staff",       group: "People",   label: "Staff activity", title: "Staff activity",    icon: "◑", cap: "people" },
   { id: "engagement",  group: "People",   label: "Engagement",   title: "Engagement",          icon: "📈", cap: "audit" },
   /* The NGG centre DIRECTORY, in People — where members are administered.
@@ -88,8 +92,11 @@ const ADMIN_SECTIONS = [
      Design Studio. The studio and the batch drawer both existed; what did not
      was any record of what had been printed — see domain/card-runs.php. */
   { id: "idcards",     group: "People",   label: "ID cards",     title: "ID cards",            icon: "▣", cap: "people" },
+  /* The door: check-in desk links and who is on duty at them. It checks in
+     everyone all year, so it is not a Summer School screen (it was). */
+  { id: "checkin",     group: "Check-in", label: "Check-in desks", title: "Check-in desks",      icon: "⊡", cap: "checkin" },
+  { id: "attendance",  group: "Check-in", label: "Duty rota",  title: "Attendance duty rota",     icon: "◷", cap: "checkin" },
   { id: "summer",      group: "Summer School", label: "Summer School", title: "Summer School",  icon: "☀", cap: "summer" },
-  { id: "attendance",  group: "Summer School", label: "Duty rota",  title: "Attendance duty rota", icon: "🗓", cap: "summer" },
   { id: "assessment",  group: "Summer School", label: "Assessments", title: "Baseline & endline",  icon: "◑", cap: "summer" },
   { id: "sessions",    group: "Content",  label: "Sessions",     title: "Sessions",            icon: "▢", cap: "content" },
   { id: "missions",    group: "Content",  label: "Missions",     title: "Anchor missions",     icon: "✦", cap: "content" },
@@ -395,6 +402,7 @@ function AdminPage({ setPage }) {
           {view === "fees" && <AdminFees/>}
           {view === "conduct" && <SummerPolicy/>}
           {view === "requests" && <AdminRequests/>}
+          {view === "approvals" && <AdminApprovals/>}
           {view === "status-pages" && <AdminStatusPages/>}
           {view === "sessions" && <AdminSessions/>}
           {view === "missions" && <AdminMissions/>}
@@ -405,6 +413,7 @@ function AdminPage({ setPage }) {
           {view === "photos" && <AdminPhotos/>}
           {view === "broadcast" && <AdminBroadcast/>}
           {view === "attendance" && <AdminAttendanceDuty/>}
+          {view === "checkin" && <CheckinDesks/>}
           {view === "engagement" && <EngagementPanel/>}
           {view === "access" && <AdminAccess/>}
           {view === "audit" && <AdminAudit/>}
@@ -588,7 +597,7 @@ function AdminTopbar({ section, setSection, setPage, member, analyst, toggleAnal
 /* Nav group order. "Summer School" is its own group rather than five entries
    scattered through People: a coordinator's whole job is in one place, and the
    People group stops mixing "administer a member" with "run a season". */
-const ADMIN_NAV_GROUPS = [null, "People", "Summer School", "Content", "Inbox", "System"];
+const ADMIN_NAV_GROUPS = [null, "People", "Check-in", "Summer School", "Content", "Inbox", "System"];
 
 function AdminNav({ section, setSection, hasCap }) {
   const can = (it) => !it.cap || (hasCap ? hasCap(it.cap) : true);
@@ -2399,6 +2408,127 @@ function AdminMemberBulkForm({ form, centreOpts, onClose, onDone }) {
  * is editable at the point of approval: when ₦1,000 arrived against a ₦6,000
  * claim, posting ₦1,000 and saying so beats arguing with the member first.
  */
+/* ── Approvals ───────────────────────────────────────────────────────────────
+ *
+ * A club admin's sensitive actions are queued by backend_dispatch() instead of
+ * run (domain/approvals.php). This is the queue: an approver approves (the
+ * action runs then, as the person who asked — every check it makes still
+ * applies to them) or rejects with a reason; the club admin sees their own
+ * requests and may withdraw one nobody has decided yet.
+ */
+const APPROVAL_STATUS_LABEL = { pending: "Waiting", approved: "Approved", rejected: "Rejected", failed: "Approved — refused when run", withdrawn: "Withdrawn", running: "Running" };
+
+function AdminApprovals() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [status, setStatus] = React.useState("pending");
+  const [open, setOpen] = React.useState(null);
+  const [reason, setReason] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const headId = React.useId();
+  const trigger = React.useRef(null);
+
+  const load = () => { setErr(""); return NGGApi.admin.approvals.list(status).then(setD).catch(e => { setD(null); setErr(e.code || e.message); }); };
+  React.useEffect(() => { setD(null); load(); /* eslint-disable-next-line */ }, [status]);
+
+  const close = () => { if (busy) return; setOpen(null); try { trigger.current && trigger.current.focus(); } catch (_) {} };
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") close(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  const decide = async (decision) => {
+    if (decision === "reject" && !reason.trim()) { toast.error("Say why — the person who asked reads this."); return; }
+    setBusy(decision);
+    try {
+      const r = await NGGApi.admin.approvals.decide(open.approvalId, decision, reason.trim());
+      if (r.status === "failed") toast.error("Approved, but the action itself was refused: " + humanizeError((r.result && r.result.error) || "", (r.result && r.result.error) || ""), open.approvalId);
+      else toast.success(decision === "approve" ? "Approved — it has been done." : "Rejected, with your reason.", open.approvalId);
+      setOpen(null); load();
+    } catch (e) { toast.error(e.code === "own_request" ? "You can't approve your own request." : humanizeError(e.code, e.code), "Not decided"); }
+    finally { setBusy(""); }
+  };
+  const withdraw = async (r) => {
+    try { await NGGApi.admin.approvals.withdraw(r.approvalId); toast.success("Withdrawn — nothing was changed.", r.approvalId); load(); }
+    catch (e) { toast.error(humanizeError(e.code, e.code)); }
+  };
+
+  const canDecide = !!(d && d.canDecide);
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Approvals
+          {d && d.pending > 0 && <span className="admin-count mono" aria-live="polite">{d.pending} waiting</span>}
+        </h2>
+      </div>
+      <p className="admin-hint">
+        {canDecide
+          ? "Sensitive actions a club admin has asked for. Nothing has changed yet: approving does it, as the person who asked; rejecting tells them why."
+          : "Your sensitive actions — suspending or deactivating someone, merging records, renaming or retiring a centre, removing a volunteer — wait here for an admin. Nothing changes until one approves."}
+      </p>
+      <div className="appr-filters" role="group" aria-label="Show">
+        {["pending", "approved", "rejected", "failed", "withdrawn", "all"].map(k => (
+          <button key={k} type="button" className={"btn btn-sm " + (status === k ? "btn-primary" : "btn-ghost")}
+            aria-pressed={status === k} onClick={() => setStatus(k)}>{k === "all" ? "Everything" : APPROVAL_STATUS_LABEL[k]}</button>
+        ))}
+      </div>
+
+      {d === null ? (err ? <ErrorState code={err} onRetry={load}/> : <div className="dash-spinner" role="status" aria-label="Loading"/>) :
+        !d.approvals.length ? <div className="admin-empty">{status === "pending" ? "Nothing is waiting for approval." : "Nothing here."}</div> :
+        <ul className="appr-list">
+          {d.approvals.map(r => (
+            <li key={r.approvalId} className={"appr-item is-" + r.status}>
+              <div className="appr-main">
+                <div className="appr-summary">{r.summary}</div>
+                <div className="appr-meta mono">
+                  {r.approvalId} · asked by {r.requesterName || r.requesterId} · {String(r.createdAt).slice(0, 16).replace("T", " ")}
+                  {r.decidedBy && r.status !== "pending" ? " · " + (r.status === "withdrawn" ? "withdrawn" : "decided by " + (r.decidedByName || r.decidedBy)) : ""}
+                </div>
+                {r.reason && <div className="appr-reason">“{r.reason}”</div>}
+                {r.resultError && <div className="appr-reason is-error">When it ran: {humanizeError(r.resultError, r.resultError)}</div>}
+              </div>
+              <div className="appr-side">
+                {r.status === "pending" && canDecide &&
+                  <button type="button" className="btn btn-primary btn-sm"
+                    onClick={e => { trigger.current = e.currentTarget; setReason(""); setOpen(r); }}>Decide</button>}
+                {r.status === "pending" && !canDecide &&
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => withdraw(r)}>Withdraw</button>}
+                {r.status !== "pending" && <span className="chip">{APPROVAL_STATUS_LABEL[r.status] || r.status}</span>}
+              </div>
+            </li>
+          ))}
+        </ul>}
+
+      {open && (
+        <div className="admin-drawer" role="dialog" aria-modal="true" aria-labelledby={headId}
+          onMouseDown={e => { if (e.target === e.currentTarget) close(); }}>
+          <div className="admin-drawer-panel">
+            <div className="admin-drawer-head">
+              <h3 id={headId}>Approve this?</h3>
+              <button type="button" className="admin-drawer-close" aria-label="Close" onClick={close}>✕</button>
+            </div>
+            <div className="admin-fields">
+              <p className="appr-summary">{open.summary}</p>
+              <p className="admin-hint">Asked by {open.requesterName || open.requesterId} · {open.approvalId}. Approving runs it now, as them.</p>
+              <label className="admin-field"><span className="admin-label">Note — required to reject; they read it</span>
+                <textarea className="admin-input" rows={3} value={reason} onChange={e => setReason(e.target.value)} placeholder="Why, in a sentence."/>
+              </label>
+            </div>
+            <div className="admin-drawer-foot">
+              <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy} onClick={close}>Cancel</button>
+              <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy || !reason.trim()} onClick={() => decide("reject")}
+                title={reason.trim() ? "" : "A rejection needs a reason"}>{busy === "reject" ? "…" : "Reject"}</button>
+              <button type="button" className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => decide("approve")}>{busy === "approve" ? "…" : "Approve"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminRequests() {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -3923,7 +4053,7 @@ const SUMMER_PANELS = [
   { id: "policy",     group: "Structure", label: "Programme & policy", render: () => <SummerPolicy/> },
   // Getting children in.
   { id: "form",       group: "Intake",    label: "Intake form",       render: () => <SummerFormBuilder/> },
-  { id: "gates",      group: "Intake",    label: "Gate links",        render: () => <SummerGates/> },
+  { id: "gates",      group: "Intake",    label: "Sign-up links",     render: () => <SummerGates/> },
   { id: "pending",    group: "Intake",    label: "Pending sign-ups",  render: (ctx) => <SummerPending onChange={ctx.reload}/> },
   { id: "enrol",      group: "Intake",    label: "Enrol at the desk", render: (ctx) => <SummerEnroll cohort={ctx.edition} blank={ctx.qrBlank} onDone={ctx.reload}/> },
   { id: "import",     group: "Intake",    label: "Bulk import",       render: () => <SummerImport/> },
@@ -4246,19 +4376,30 @@ const PWEXP_CHOICES = [[0, "Never"], [7, "After 7 days"], [30, "After 30 days"],
  * The backend has supported all three since self-registration shipped; this
  * panel only ever created the first, which is why nobody could find the
  * online registration form — there was no way to make one. */
+/* Who owns each kind follows what it is for (GATE_KINDS in registration.php):
+   the door is everybody's (`checkin`), sign-up and enrolment are Summer
+   School's. Each section shows the kinds of its own scope. */
 const GATE_KINDS = {
-  desk: { label: "Check-in desk", chip: "chip-navy", fallback: "Check-in desk",
-          blurb: "The door. Volunteers scan cards to check in participants, volunteers and NGG members. A desk password lets them run it without an admin login. It takes no sign-ups — send families a Public sign-up link for that." },
-  self: { label: "Public sign-up", chip: "chip-lime", fallback: "Public registration link",
+  desk: { label: "Check-in desk", chip: "chip-navy", fallback: "Check-in desk", scope: "checkin",
+          blurb: "The door. Volunteers scan cards to check in participants, volunteers and NGG members. A desk password lets them run it without an admin login. It takes no sign-ups — Summer School's Registration desk and Public sign-up links do that." },
+  register: { label: "Registration desk", chip: "chip-navy", fallback: "Summer registration desk", scope: "summer",
+          blurb: "Staff enrol a Summer School child who is standing in front of them: details, photo, consent. Needs a desk password, so field staff run it without an admin login." },
+  self: { label: "Public sign-up", chip: "chip-lime", fallback: "Public registration link", scope: "summer",
           blurb: "The link you send to families. No password — anyone with the link can fill it in, and nothing they submit becomes a registration until somebody checks it." },
-  review: { label: "Review desk", chip: "chip-gold", fallback: "Review desk",
+  review: { label: "Review desk", chip: "chip-gold", fallback: "Review desk", scope: "summer",
             blurb: "Where public submissions get checked and approved. Its own password, deliberately different from the check-in one — approving is what emails a family." },
 };
 
-function SummerGates() {
+function SummerGates() { return <GateLinks scope="summer"/>; }
+function CheckinDesks() { return <GateLinks scope="checkin"/>; }
+
+/* One manager for both: Control Room → Check-in desks (the door) and Summer
+   School → Gate links (sign-up, review, registration desk). */
+function GateLinks({ scope }) {
+  const kinds = Object.keys(GATE_KINDS).filter(k => GATE_KINDS[k].scope === scope);
   const [gates, setGates] = React.useState(null);
   const [err, setErr] = React.useState("");
-  const [kind, setKind] = React.useState("desk");
+  const [kind, setKind] = React.useState(kinds[0]);
   const [name, setName] = React.useState("");
   const [pw, setPw] = React.useState("");
   const [autoPw, setAutoPw] = React.useState(true);
@@ -4271,7 +4412,7 @@ function SummerGates() {
   // Only its hash is stored, so it is shown until dismissed and never again.
   const [reveal, setReveal] = React.useState(null);   // {gateId, name, password}
   const revealId = React.useId();
-  const load = () => NGGApi.admin.registration.gates().then(r => { setGates(r.gates || []); setErr(""); }).catch(e => setErr(e.code || e.message));
+  const load = () => NGGApi.admin.registration.gates(scope).then(r => { setGates(r.gates || []); setErr(""); }).catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
   const create = async (e) => {
     e && e.preventDefault();
@@ -4280,8 +4421,8 @@ function SummerGates() {
        review desk without one lets anybody wave strangers into the programme.
        The server enforces both; saying so here saves a round trip and a
        confusing error. */
-    if (kind === "review" && !autoPw && pw.trim().length < 4) {
-      toast.error("A review desk needs its own password — generate one or type at least 4 characters."); return;
+    if ((kind === "review" || kind === "register") && !autoPw && pw.trim().length < 4) {
+      toast.error("This desk needs its own password — generate one or type at least 4 characters."); return;
     }
     setBusy(true);
     try {
@@ -4377,12 +4518,12 @@ function SummerGates() {
     <div>
       {/* Which door you are making, first — everything below it depends on
           the answer, and the panel used to have no way to ask. */}
-      <div className="admin-pick-row" role="radiogroup" aria-label="What kind of link">
-        {Object.keys(GATE_KINDS).map(k => (
+      {kinds.length > 1 && <div className="admin-pick-row" role="radiogroup" aria-label="What kind of link">
+        {kinds.map(k => (
           <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)}
             className={"btn btn-sm " + (kind === k ? "btn-primary" : "btn-ghost")}>{GATE_KINDS[k].label}</button>
         ))}
-      </div>
+      </div>}
       <p className="admin-hint">{GATE_KINDS[kind].blurb}</p>
       {kind !== "self" && <p className="admin-hint" style={{ marginTop: -4 }}>Generated passwords are shown once and stored only as a hash. A gate set to rotate emails its new password on the day it rolls {"\u2014"} one with no email is flagged due instead, so a desk is never locked out mid-session. <b>Password expiry</b> is the opposite policy and fails closed: past its date the desk stops opening until someone issues a new password. Set both and expiry is the backstop for rotation silently not running.</p>}
       <form onSubmit={create} className="admin-filters" style={{ flexWrap: "wrap" }}>
@@ -6900,11 +7041,11 @@ function AdminBroadcast() {
 // Effective capabilities per role — mirrors util.php admin_role_caps() so the
 // roster can show what each staffer can actually do (read-only display).
 const ROLE_CAPS = {
-  super_admin: ["content", "people", "inbox", "settings", "rbac", "summer", "club", "audit", "journal", "fees"],
-  admin: ["content", "people", "inbox"],
+  super_admin: ["content", "people", "inbox", "settings", "rbac", "summer", "club", "checkin", "audit", "journal", "fees"],
+  admin: ["content", "people", "inbox", "club", "summer", "checkin"],
   editor: ["content"],
-  summer_admin: ["summer"],
-  club_admin: ["club"],
+  summer_admin: ["summer", "checkin"],
+  club_admin: ["club", "people", "checkin"],
   audit: ["audit"],
   member: [],
 };
@@ -6979,7 +7120,9 @@ function AdminAccess() {
 }
 
 // Per-member capability editor (super only): grant caps beyond the role.
-const ALL_CAPS = ["content", "people", "inbox", "settings", "rbac", "summer", "club", "audit", "fees"];
+// Every capability is one super_admin holds; derived, so it cannot drift (it
+// had: 'journal' was missing here, so it could never be granted per person).
+const ALL_CAPS = ROLE_CAPS.super_admin;
 function MemberCapsEditor({ member }) {
   const roleCaps = ROLE_CAPS[member.role] || [];
   const [extra, setExtra] = React.useState(() => new Set(member.capsExtra || []));
@@ -8885,6 +9028,7 @@ function AdminCommunityChannels() {
           <div style={{ flex: "0 0 auto" }}><span style={lbl}>Icon</span><input className="admin-input" value={f.icon} maxLength={4} onChange={e => set("icon", e.target.value)} style={{ width: 64 }} placeholder="💻"/></div>
           <div style={{ flex: "0 0 auto" }}><span style={lbl}>Colour</span><input type="color" value={f.color} onChange={e => set("color", e.target.value)} style={{ width: 44, height: 38, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)", cursor: "pointer" }}/></div>
           <div style={{ flex: "0 0 auto" }}><span style={lbl}>Kind</span><select className="admin-select" value={f.kind} onChange={e => set("kind", e.target.value)}><option value="course">Course</option><option value="topic">Topic</option><option value="centre">Centre</option><option value="commons">Commons</option></select></div>
+          <div style={{ flex: "0 0 auto" }}><span style={lbl}>Serves</span><select className="admin-select" value={f.programme} onChange={e => set("programme", e.target.value)} aria-label="Which programme they serve"><option value="ngg">NGG Club, year-round</option><option value="summer">Summer School</option><option value="both">Both</option></select></div>
           <div style={{ flex: "0 0 auto" }}><span style={lbl}>Status</span><select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}><option value="active">Active</option><option value="archived">Archived</option></select></div>
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}><input type="checkbox" checked={f.pinned} onChange={e => set("pinned", e.target.checked)}/> Pinned</label>
         </div>
@@ -11687,7 +11831,7 @@ function VolunteerEditor({ v, onSaved, onDelete }) {
     email: v.email || "", phone: v.phone || "", role: v.role || "mentor",
     centre: v.centre || "", faculty: v.faculty || "", courses: (v.courses || []).join(", "),
     visibilityConsent: !!v.visibilityConsent, status: v.status || "active", photoUrl: v.photoUrl || "",
-    dob: v.dob || "",
+    dob: v.dob || "", programme: v.programme || "summer",
   });
   const [busy, setBusy] = React.useState(false);
   const set = (k, val) => setF(x => ({ ...x, [k]: val }));
@@ -11793,6 +11937,8 @@ function VolunteerPortalAccess({ v, onSaved }) {
   );
 }
 
+const VOL_PROGRAMME_SHORT = { summer: "Summer", ngg: "NGG Club", both: "Club + Summer" };
+
 function AdminVolunteers() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -11800,10 +11946,13 @@ function AdminVolunteers() {
   const [tab, setTab] = useAdminTab("pending");
   const [q, setQ] = React.useState("");
   const [vCentre, setVCentre] = React.useState("");
+  /* Which programme — filtered on the server, above the roster's cap.
+     "ngg" includes those who serve both. */
+  const [vProg, setVProg] = React.useState("");
   const [expanded, setExpanded] = React.useState(() => new Set());
   const toggleExpand = (id) => setExpanded(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const load = () => NGGApi.admin.volunteers.list().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
-  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  const load = () => NGGApi.admin.volunteers.list(vProg).then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
+  React.useEffect(() => { load(); /* eslint-disable-next-line */ }, [vProg]);
 
   const approve = async (a) => {
     if (a.role === "instructor" && !a.phone) { toast.error("Instructors need a phone before approval."); return; }
@@ -11834,6 +11983,7 @@ function AdminVolunteers() {
     try { await NGGApi.admin.volunteers.remove(v.volunteerId); toast.success("Volunteer deleted."); setEditId(""); load(); } catch (e) { toast.error(e.code || e.message); }
   };
 
+  const progChip = (p) => <span className="chip chip-navy" title="Which programme they serve">{VOL_PROGRAMME_SHORT[p] || VOL_PROGRAMME_SHORT.summer}</span>;
   const roleChip = (r) => <span className={"chip " + (r === "instructor" ? "chip-gold" : r === "mentor" ? "chip-lime" : "chip-navy")}>{r}</span>;
   const pending = (data && data.pending) || [];
   const all = (data && data.volunteers) || [];
@@ -11861,8 +12011,17 @@ function AdminVolunteers() {
       <div className="admin-section-head">
         <h2 className="admin-h2">Volunteers {data ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {pending.length} pending · {(data.volunteers || []).length} active</span> : null}</h2>
         <div className="admin-section-actions">
-          <button className="btn btn-ghost btn-sm" disabled={!data || !(data.volunteers || []).length} onClick={() => downloadCsv("volunteers", (data.volunteers || []).map(v => ({ volunteerId: v.volunteerId, name: v.fullName, email: v.email, phone: v.phone || "", role: v.role, centre: v.centre || "", faculty: v.faculty || "", courses: (v.courses || []).join("; "), safeguarding: v.safeguarding, status: v.status, createdAt: v.createdAt })))}>Export CSV</button>
+          <button className="btn btn-ghost btn-sm" disabled={!data || !(data.volunteers || []).length} onClick={() => downloadCsv("volunteers", (data.volunteers || []).map(v => ({ volunteerId: v.volunteerId, name: v.fullName, email: v.email, phone: v.phone || "", role: v.role, programme: v.programme || "summer", centre: v.centre || "", faculty: v.faculty || "", courses: (v.courses || []).join("; "), safeguarding: v.safeguarding, status: v.status, createdAt: v.createdAt })))}>Export CSV</button>
         </div>
+      </div>
+
+      <div className="admin-filters vol-prog-filter">
+        <select className="admin-select" value={vProg} onChange={e => { setData(null); setVProg(e.target.value); }} aria-label="Filter volunteers by programme">
+          <option value="">Every programme</option>
+          <option value="ngg">NGG Club (incl. both)</option>
+          <option value="summer">Summer School (incl. both)</option>
+          <option value="both">Serving both</option>
+        </select>
       </div>
 
       <div className="admin-tabs">
@@ -11882,7 +12041,7 @@ function AdminVolunteers() {
               <div className="admin-app" key={a.id}>
                 <div className="admin-app-top">
                   <div>
-                    <div className="admin-cell-name">{a.name} {roleChip(a.role)}</div>
+                    <div className="admin-cell-name">{a.name} {roleChip(a.role)} {progChip(a.programme)}</div>
                     <div className="mono admin-cell-sub">{a.email}{a.phone ? " · " + a.phone : " · no phone"}{a.centre ? " · 🏫 " + a.centre : ""}{a.faculty ? " · " + a.faculty : ""}{(a.courses || []).length ? " · " + a.courses.join(", ") : ""} · {fmtDate(a.createdAt)}</div>
                   </div>
                   {a.role === "instructor" && !a.phone && <span className="chip status-archived">phone required</span>}
@@ -11916,13 +12075,14 @@ function AdminVolunteers() {
             {roster.length === 0 ? <div className="admin-empty">{all.length ? "No volunteer matches that filter." : "No volunteers yet."}</div> :
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>Volunteer</th><th>Role</th><th>Centre</th><th>Faculty / Courses</th><th>Safeguarding</th><th>ID</th><th></th></tr></thead>
+                <thead><tr><th scope="col">Volunteer</th><th scope="col">Role</th><th scope="col">Serves</th><th scope="col">Centre</th><th scope="col">Faculty / Courses</th><th scope="col">Safeguarding</th><th scope="col">ID</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
                 <tbody>
                   {roster.map(v => (
                     <React.Fragment key={v.volunteerId}>
                     <tr>
                       <td><div className="admin-cell-name">{v.fullName}</div><div className="mono admin-cell-sub">{v.volunteerId} · {v.email}</div></td>
                       <td>{roleChip(v.role)}</td>
+                      <td>{progChip(v.programme)}</td>
                       <td className="mono" style={{ fontSize: 12 }}>{v.centre || "—"}</td>
                       <td className="mono" style={{ fontSize: 12 }}>{[v.faculty, (v.courses || []).join(", ")].filter(Boolean).join(" · ") || "—"}</td>
                       <td>
@@ -11946,7 +12106,7 @@ function AdminVolunteers() {
                           : <button className="btn btn-primary btn-sm" disabled={busy === "s" + v.volunteerId} onClick={() => setSafeguard(v, "cleared")}>{busy === "s" + v.volunteerId ? "…" : "Mark screened"}</button>}
                       </td>
                     </tr>
-                    {editId === v.volunteerId && <tr><td colSpan={7} style={{ background: "rgba(12,20,50,0.03)" }}>
+                    {editId === v.volunteerId && <tr><td colSpan={8} style={{ background: "rgba(12,20,50,0.03)" }}>
                       <VolunteerEditor v={v} onSaved={() => { setEditId(""); load(); }} onDelete={() => removeVol(v)}/>
                       <VolunteerPortalAccess v={v} onSaved={load}/>
                     </td></tr>}

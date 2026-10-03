@@ -107,6 +107,9 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.members.overview'  => 'admin_members_overview',
             'admin.members.segments'  => 'admin_members_segments',
             'admin.members.bulk'      => 'admin_members_bulk',
+            'admin.approvals.list'    => 'admin_approvals_list',
+            'admin.approvals.decide'  => 'admin_approvals_decide',
+            'admin.approvals.withdraw' => 'admin_approvals_withdraw',
             'admin.members.merge'     => 'admin_members_merge',
             'admin.member.timeline'   => 'admin_member_timeline',
             'admin.members.promoteNgv' => 'admin_member_promote_ngv',
@@ -654,6 +657,10 @@ function backend_dispatch(string $op, array $args = []): array {
     }
     $fn = $map[$op];
     try {
+        /* A club admin's sensitive actions are queued for a second admin
+           instead of run (domain/approvals.php). Here, at the one seam every
+           op passes through, so no screen can reach one around the queue. */
+        if (function_exists('approval_intercept') && ($queued = approval_intercept($op, $args)) !== null) return $queued;
         /* Intake writes are idempotent when the client supplies a submissionId.
          *
          * Declared here, in one place, rather than wrapped inside each of the

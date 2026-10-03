@@ -39,7 +39,7 @@ if ($method === 'GET') {
         ]);
     } elseif ($action === 'checkin') {
         // Reuse the summer check-in op (QR token or explicit studentId).
-        if (!gate_resolve((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
+        if (!gate_is_desk((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
         // The gate token + session (admin or gate-bound kiosk) are already
         // verified above, so authorize the check-in by the gate rather than by
         // a staff capability (a desk-password kiosk has no member/cap).
@@ -49,12 +49,12 @@ if ($method === 'GET') {
             event_emit('attendance.marked', ['memberId' => $res['student']['studentId'] ?? '', 'name' => $res['student']['fullName'] ?? '', 'date' => attendance_today(), 'source' => 'gate', 'by' => $s['mid']]);
         }
     } elseif ($action === 'checkout') {
-        if (!gate_resolve((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
+        if (!gate_is_desk((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
         $res = gs_call('admin.summer.checkout', ['gateAuthorized' => true, 'byId' => ($s['mid'] ?: ('gate:' . substr((string)($b['gate'] ?? ''), 0, 24))), 'token' => $b['token'] ?? '', 'ip' => $ip]);
     } elseif ($action === 'duty_close') {
         // Close today's roll for this gate's centre — credits the on-duty
         // volunteer (points/level/awards) and returns the value-driven response.
-        if (!gate_resolve((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
+        if (!gate_is_desk((string)($b['gate'] ?? ''))) json_error('gate_invalid', 403);
         $ctx = gs_call('gate.context', ['gate' => (string)($b['gate'] ?? '')]);
         $centre = (string)($ctx['centre'] ?? '');
         $volId = (string)(($ctx['duty']['volunteerId'] ?? '') ?: '');

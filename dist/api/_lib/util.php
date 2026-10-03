@@ -307,14 +307,22 @@ function push_notification(string $memberId, array $n): void {
  */
 function admin_role_caps($role): array {
     switch (strtolower((string)($role ?? ''))) {
-        case 'super_admin':  return ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'audit', 'journal', 'fees'];
+        case 'super_admin':  return ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'checkin', 'audit', 'journal', 'fees'];
         // NB: 'admin' deliberately does NOT include 'fees'. The fee ledger is a
         // separate financial capability (audit M4) — a member-desk admin only
         // gets ledger access when 'fees' is granted per-person (capsExtra), just
         // like 'journal'. Existing admins are backfilled once (seed fees_cap_v1).
-        case 'admin':        return ['content', 'people', 'inbox'];
-        case 'summer_admin': return ['summer'];   // Summer School portal only
-        case 'club_admin':   return ['club'];      // NGG Club portal only
+        /* Both programmes and the door (2026-10). Still no fees, journal,
+         * settings or rbac: money, the record and the system stay separate. */
+        case 'admin':        return ['content', 'people', 'inbox', 'club', 'summer', 'checkin'];
+        // 'checkin' is the door: check-in desk links, their passwords and the
+        // duty rota. Everybody who runs a door holds it, whichever programme.
+        case 'summer_admin': return ['summer', 'checkin'];
+        /* The year-round desk: the Club, the people in it (members, centres,
+         * volunteers) and the door. Its SENSITIVE people actions — deleting,
+         * suspending, merging, retiring a centre — are not refused but queued
+         * for a second admin to approve (domain/approvals.php). */
+        case 'club_admin':   return ['club', 'people', 'checkin'];
         /* Deliberately NOT granted 'journal'. The journalist role is ASSIGNED
          * per person (Access & roles → extra capabilities), not inherited from
          * being an editor — writing the programme's institutional record is a

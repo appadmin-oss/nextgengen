@@ -891,12 +891,52 @@ function gate_rotation_due_in(array $gate): ?int {
     return (int)ceil(($from + $days * 86400 - time()) / 86400);
 }
 
+/* ── Gate link kinds ─────────────────────────────────────────────────────
+ * Four kinds of link, and who owns each follows what it is FOR:
+ *   desk     the door — check-in only, for everyone       → `checkin`
+ *   self     a family's own Summer School sign-up          → `summer`
+ *   review   approving those sign-ups                      → `summer`
+ *   register staff enrolling a Summer walk-in at a desk    → `summer`
+ * The door used to be a Summer School link; it checks in members and
+ * volunteers all year, so it moved out (Control Room → Check-in desks). */
+const GATE_KINDS = ['desk' => ['cap' => 'checkin', 'path' => '/gate?g='],
+                    'self' => ['cap' => 'summer', 'path' => '/apply?g='],
+                    'review' => ['cap' => 'summer', 'path' => '/review?g='],
+                    'register' => ['cap' => 'summer', 'path' => '/enrol?g=']];
+
+function gate_kind_of($kind): string {
+    $k = trim((string)($kind ?? ''));
+    return isset(GATE_KINDS[$k]) ? $k : 'desk';
+}
+function gate_kind_path($kind): string { return GATE_KINDS[gate_kind_of($kind)]['path']; }
+
+/** The admin gate for one existing link: the capability its kind needs. An
+ *  unknown id is checked against `summer` and then reported not_found by the
+ *  caller, so its existence is not revealed to somebody holding neither. */
+function admin_gate_for_link(array $p): array {
+    $row = db_row('SELECT kind FROM gate_links WHERE gateId = ?', [(string)($p['gateId'] ?? '')]);
+    return admin_cap_gate($p, $row ? GATE_KINDS[gate_kind_of($row['kind'])]['cap'] : 'summer');
+}
+
+/** A live link of the door kind — the only kind that checks people in. */
+function gate_is_desk(string $gateId): bool {
+    $g = gate_resolve($gateId);
+    return $g !== null && gate_kind_of($g['kind'] ?? '') === 'desk';
+}
+
 function admin_gates_list(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
-    $rows = db_all('SELECT gateId, kind, name, cohortId, centreId, status, createdBy, expiresAt, usedCount, createdAt, passHash, passSetAt, passRotateDays, passNotify, passExpiryDays, passExpiresAt FROM gate_links ORDER BY id DESC LIMIT 50');
+    // A read: either desk may list, and sees only the kinds it owns.
+    $g = admin_cap_gate_any($p, ['checkin', 'summer']); if (!$g['ok']) return $g;
+    $have = member_effective_caps($g['requester']);
+    $scope = (string)($p['scope'] ?? '');              // 'checkin' | 'summer' | '' (both)
+    $kinds = array_keys(array_filter(GATE_KINDS, fn($k) => in_array($k['cap'], $have, true) && ($scope === '' || $k['cap'] === $scope)));
+    if (!$kinds) return ['ok' => true, 'gates' => []];
+    $ph = implode(',', array_fill(0, count($kinds), '?'));
+    $kindSql = in_array('desk', $kinds, true) ? "(COALESCE(kind,'') IN ($ph) OR COALESCE(kind,'') = '')" : "kind IN ($ph)";
+    $rows = db_all("SELECT gateId, kind, name, cohortId, centreId, status, createdBy, expiresAt, usedCount, createdAt, passHash, passSetAt, passRotateDays, passNotify, passExpiryDays, passExpiresAt FROM gate_links WHERE $kindSql ORDER BY id DESC LIMIT 50", $kinds);
     foreach ($rows as &$r) {
-        $r['kind'] = trim((string)($r['kind'] ?? 'desk')) ?: 'desk';
-        $r['path'] = ['desk' => '/gate?g=', 'self' => '/apply?g=', 'review' => '/review?g='][$r['kind']] ?? '/gate?g=';
+        $r['kind'] = gate_kind_of($r['kind'] ?? '');
+        $r['path'] = gate_kind_path($r['kind']);
         $r['hasPassword'] = ($r['passHash'] ?? '') !== '';
         $due = gate_rotation_due_in($r);
         $r['rotateDays'] = (int)($r['passRotateDays'] ?? 0);
@@ -917,7 +957,8 @@ function admin_gates_list(array $p): array {
 }
 
 function admin_gates_create(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $kind = gate_kind_of($p['kind'] ?? 'desk');
+    $g = admin_cap_gate($p, GATE_KINDS[$kind]['cap']); if (!$g['ok']) return $g;
     $c = summer_ensure_cohort();
     $gateId = 'GL-' . strtoupper(rand_hex(6));
     // Optional kiosk password: field staff without an admin login unlock the
@@ -943,10 +984,10 @@ function admin_gates_create(array $p): array {
      * somebody shared. `review` is where those submissions are checked, and it
      * has its own, so the volunteer who can scan cards at the gate cannot also
      * wave strangers into the programme. */
-    $kind = (string)($p['kind'] ?? 'desk');
-    if (!in_array($kind, ['desk', 'self', 'review'], true)) $kind = 'desk';
     if ($kind === 'self') { $passHash = ''; $plain = ''; }
-    if ($kind === 'review' && $passHash === '') return ['ok' => false, 'error' => 'password_required'];
+    /* A review desk approves sign-ups and a registration desk enrols children:
+       neither may be an open link. */
+    if (($kind === 'review' || $kind === 'register') && $passHash === '') return ['ok' => false, 'error' => 'password_required'];
     db_insert('gate_links', [
         'gateId' => $gateId, 'kind' => $kind,
         'name' => substr(trim((string)($p['name'] ?? 'Front desk')), 0, 160),
@@ -961,14 +1002,14 @@ function admin_gates_create(array $p): array {
     audit('gate.create', $g['requester']['memberId'], $gateId, ['kind' => $kind, 'kiosk' => $passHash !== '', 'rotateDays' => $rotate], (string)($p['ip'] ?? ''));
     // The plaintext is returned exactly once, here. Only the hash is stored,
     // so nothing can hand it back later — the panel has to show it now.
-    $path = ['desk' => '/gate?g=', 'self' => '/apply?g=', 'review' => '/review?g='][$kind];
+    $path = gate_kind_path($kind);
     return ['ok' => true, 'gateId' => $gateId, 'kind' => $kind, 'hasPassword' => $passHash !== '', 'password' => $plain,
             'url' => rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . $path . $gateId];
 }
 
 /** Set or clear a gate's kiosk password. Empty password removes it. */
 function admin_gates_setpass(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_gate_for_link($p); if (!$g['ok']) return $g;
     $gateId = (string)($p['gateId'] ?? '');
     if (!db_row('SELECT gateId FROM gate_links WHERE gateId = ?', [$gateId])) return ['ok' => false, 'error' => 'not_found'];
     $pw = (string)($p['password'] ?? '');
@@ -987,7 +1028,7 @@ function admin_gates_setpass(array $p): array {
 
 /** Roll the desk password now and hand back the new one, once. */
 function admin_gates_rotate(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_gate_for_link($p); if (!$g['ok']) return $g;
     $gateId = (string)($p['gateId'] ?? '');
     $gate = db_row('SELECT gateId, status FROM gate_links WHERE gateId = ?', [$gateId]);
     if (!$gate) return ['ok' => false, 'error' => 'not_found'];
@@ -1000,7 +1041,7 @@ function admin_gates_rotate(array $p): array {
 
 /** How often this desk's password should roll, and who to tell when it does. */
 function admin_gates_rotation(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_gate_for_link($p); if (!$g['ok']) return $g;
     $gateId = (string)($p['gateId'] ?? '');
     if (!db_row('SELECT gateId FROM gate_links WHERE gateId = ?', [$gateId])) return ['ok' => false, 'error' => 'not_found'];
     $days = max(0, min(365, (int)($p['rotateDays'] ?? 0)));
@@ -1044,7 +1085,7 @@ function gates_rotate_due(): array {
         $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
         $html = '<p>The desk password for <b>' . htmlspecialchars($name, ENT_QUOTES) . '</b> has rotated on schedule.</p>'
               . '<p style="font:700 22px ui-monospace,monospace;letter-spacing:2px">' . htmlspecialchars($pw, ENT_QUOTES) . '</p>'
-              . '<p>Desk link: <a href="' . htmlspecialchars($origin . '/gate?g=' . $gate['gateId'], ENT_QUOTES) . '">' . htmlspecialchars($origin . '/gate?g=' . $gate['gateId'], ENT_QUOTES) . '</a></p>'
+              . '<p>Desk link: <a href="' . htmlspecialchars($origin . gate_kind_path($gate['kind'] ?? '') . $gate['gateId'], ENT_QUOTES) . '">' . htmlspecialchars($origin . gate_kind_path($gate['kind'] ?? '') . $gate['gateId'], ENT_QUOTES) . '</a></p>'
               . '<p>The previous password stopped working the moment this was sent. Rotation runs every '
               . (int)$gate['passRotateDays'] . ' days; change or switch it off in Admin → Gate links.</p>';
         $sent = send_mail($to, 'Desk password rotated — ' . $name, $html);
@@ -1058,7 +1099,7 @@ function gates_rotate_due(): array {
 
 /** Set, extend or clear how long a link stays usable. */
 function admin_gates_validity(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_gate_for_link($p); if (!$g['ok']) return $g;
     $gateId = (string)($p['gateId'] ?? '');
     if (!db_row('SELECT gateId FROM gate_links WHERE gateId = ?', [$gateId])) return ['ok' => false, 'error' => 'not_found'];
     $expiresAt = gate_expiry_normalise($p['expiresAt'] ?? '', $p['validDays'] ?? null);
@@ -1069,7 +1110,7 @@ function admin_gates_validity(array $p): array {
 }
 
 function admin_gates_revoke(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_gate_for_link($p); if (!$g['ok']) return $g;
     $n = db_update('gate_links', ['status' => 'revoked', 'revokedAt' => now_iso()], ['gateId' => (string)($p['gateId'] ?? '')]);
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     audit('gate.revoke', $g['requester']['memberId'], (string)$p['gateId'], [], (string)($p['ip'] ?? ''));
@@ -1084,7 +1125,7 @@ function admin_gates_revoke(array $p): array {
  * after it.
  */
 function admin_gates_delete(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_gate_for_link($p); if (!$g['ok']) return $g;
     $gateId = (string)($p['gateId'] ?? '');
     $gate = db_row('SELECT gateId, status FROM gate_links WHERE gateId = ?', [$gateId]);
     if (!$gate) return ['ok' => false, 'error' => 'not_found'];
@@ -1222,7 +1263,12 @@ function gate_register(array $p): array {
     /* A review desk checks registrations; it does not take them. Without this
      * the review link's password would also open a registration form, which
      * is the opposite of the reason it has its own password. */
-    if (trim((string)($gate['kind'] ?? 'desk')) === 'review') return ['ok' => false, 'error' => 'gate_invalid'];
+    /* Nor does a check-in desk: the door checks people in, and registering a
+     * child there was moved to its own Summer School link (`register`). The
+     * public link registers only through the self-service path. */
+    $gk = gate_kind_of($gate['kind'] ?? '');
+    $selfServe0 = !empty($p['selfServe']);
+    if ($gk === 'review' || $gk === 'desk' || ($gk === 'self' && !$selfServe0) || ($gk === 'register' && $selfServe0)) return ['ok' => false, 'error' => 'gate_invalid'];
     /* Self-service submissions run every one of the rules below — the fields,
      * the duplicate check, the id — and then stop short of telling anybody.
      * Nothing reaches a family until a human at the review desk has looked at
