@@ -121,6 +121,7 @@ function checkin_member(array $p, array $hit): array {
     audit('member.checkin', $byId, $mid, ['date' => $today, 'status' => $punc['status'], 'how' => $hit['how']], (string)($p['ip'] ?? ''));
     if ($apply) policy_on_checkin($mid, 'member', $today, $punc);
     event_emit('attendance.marked', ['memberId' => $mid, 'name' => $pub['fullName'], 'date' => $today, 'source' => (string)($p['method'] ?? 'qr')]);
+    checkin_member_email($m, 'in', $at, $punc);
     return ['ok' => true, 'already' => false, 'student' => $pub, 'status' => $punc['status'], 'lateMinutes' => (int)$punc['lateMinutes'],
             'halfDay' => (int)$punc['halfDay'], 'programmeDay' => policy_is_day($today, 'member'), 'compliance' => policy_state($mid, 'member'),
             /* An old printed card is a number anybody could write down; the
@@ -132,11 +133,64 @@ function checkin_member(array $p, array $hit): array {
 function checkin_member_checkout(array $p, array $hit): array {
     $a = checkin_member_actor($p); if (!$a['ok']) return $a;
     $mid = (string)$hit['member']['memberId'];
-    $today = attendance_today();
+    $at = attendance_scan_time($p['scannedAt'] ?? null);
+    $today = attendance_today($at);
     $row = db_row('SELECT * FROM attendance WHERE studentId = ? AND date = ?', [$mid, $today]);
     if (!$row) return ['ok' => false, 'error' => 'not_checked_in'];
     if (!empty($row['checkOutAt'])) return ['ok' => true, 'already' => true, 'checkOutAt' => $row['checkOutAt']];
-    db_update('attendance', ['checkOutAt' => now_iso()], ['id' => $row['id']]);
-    audit('member.checkout', $a['byId'], $mid, ['date' => $today], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'already' => false, 'checkOutAt' => now_iso(), 'student' => checkin_member_public($hit['member'])];
+    if ($no = attendance_checkout_refusal('member', $at, $p)) return $no + ['student' => checkin_member_public($hit['member'])];
+    $outIso = gmdate('Y-m-d\\TH:i:s\\Z', $at);
+    db_update('attendance', ['checkOutAt' => $outIso], ['id' => $row['id']]);
+    $early = trim((string)($p['earlyReason'] ?? ''));
+    audit($early !== '' && attendance_close_time('member') !== '' ? 'attendance.early_checkout' : 'member.checkout', $a['byId'], $mid,
+          ['date' => $today] + ($early !== '' ? ['reason' => mb_substr($early, 0, 200)] : []), (string)($p['ip'] ?? ''));
+    checkin_member_email($hit['member'], 'out', $at, ['checkInAt' => (string)$row['checkInAt']]);
+    return ['ok' => true, 'already' => false, 'checkOutAt' => $outIso, 'student' => checkin_member_public($hit['member'])];
+}
+
+/**
+ * Tell an NGG member — and their parent, where one is on the record — that
+ * they signed in or out, and when. The member gets it because a record of
+ * their own attendance is theirs; the parent because a child signing out at
+ * the gate is the moment a parent most wants to know about.
+ *
+ * Off with the same switch as the Summer School's check-in notes
+ * (`checkin_state_emails`). Never blocks the desk: send_mail never throws.
+ */
+function checkin_member_email(array $m, string $dir, int $at, array $facts = []): void {
+    if (!checkin_emails_enabled()) return;
+    $to = [];
+    foreach ([(string)($m['email'] ?? ''), (string)($m['parentEmail'] ?? '')] as $e) {
+        $e = strtolower(trim($e));
+        if ($e !== '' && filter_var($e, FILTER_VALIDATE_EMAIL) && !in_array($e, $to, true)) $to[] = $e;
+    }
+    if (!$to) return;
+    $first = esc_html(explode(' ', trim((string)($m['fullName'] ?? '')))[0] ?: 'You');
+    $clock = attendance_clock($at);
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    if ($dir === 'in') {
+        $status = (string)($facts['status'] ?? 'present');
+        $late = (int)($facts['lateMinutes'] ?? 0);
+        $subject = "{$first} signed in at {$clock}";
+        $line = $status === 'late' || $status === 'tardy'
+            ? "That is <b>{$late} minute" . ($late === 1 ? '' : 's') . " after resumption</b>, and it is recorded as " . esc_html($status) . "."
+            : 'On time — thank you.';
+        $close = attendance_close_time('member');
+        $body = "<p style=\"margin:0 0 10px\">{$line}</p>"
+              . ($close !== '' ? "<p style=\"margin:0 0 10px\">Sign-out opens at <b>{$close}</b>. Leaving before then means there is no sign-out for today, which counts against attendance.</p>" : '');
+        $title = 'Signed in';
+    } else {
+        $inAt = strtotime((string)($facts['checkInAt'] ?? ''));
+        $stay = $inAt ? max(0, intdiv($at - $inAt, 60)) : 0;
+        $subject = "{$first} signed out at {$clock}";
+        $body = '<p style="margin:0 0 10px">' . ($stay > 0 ? 'Time at the centre today: <b>' . intdiv($stay, 60) . 'h ' . ($stay % 60) . 'm</b>.' : 'Signed out for today.') . '</p>';
+        $title = 'Signed out';
+    }
+    $html = email_template([
+        'title' => $title, 'eyebrow' => 'NGG Club · ' . esc_html((string)($m['centre'] ?? '')),
+        'intro' => $dir === 'in' ? "{$first} signed in at the centre at {$clock}." : "{$first} signed out of the centre at {$clock}.", 'bodyHtml' => $body,
+        'ctaLabel' => 'Open my dashboard →', 'ctaUrl' => $origin . '/dashboard',
+        'footNote' => 'You are receiving this because this address is on an NGG member\'s record. Attendance notes can be switched off by the programme.',
+    ]);
+    foreach ($to as $addr) @send_mail($addr, $subject, $html);
 }

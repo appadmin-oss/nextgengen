@@ -22909,5 +22909,60 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-BF-%' OR memberId = 'SUM-BF-1'");
 })();
 
+/* ── Closing time, and the NGG member's sign-in/out mail ───────────────────── */
+(function () {
+    $now = now_iso();
+    $before = setting_get('attendance');
+    $setClose = function (array $close) use ($before) {
+        $a = is_array($before) ? $before : [];
+        $a['closeByType'] = $close;
+        attendance_settings_save($a + ['enabled' => true, 'tzOffset' => 60, 'graceMinutes' => 10], 'test');
+    };
+    db_insert('members', ['memberId' => 'NGG-CL-ADM', 'fullName' => 'Close Admin', 'email' => 'cl-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-CL-1', 'fullName' => 'Kemi Close', 'displayId' => '026-771', 'email' => 'kemi-cl@example.com', 'parentEmail' => 'kemi-parent@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    setting_set('checkin_state_emails', '1', 'test');
+
+    $GLOBALS['__mail_sink'] = [];
+    $in = backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:T', 'token' => '026-771', 'method' => 'gate']);
+    $tos = array_column($GLOBALS['__mail_sink'], 'to');
+    chk('sign-in: an NGG member is emailed, and so is their parent', !empty($in['ok']) && in_array('kemi-cl@example.com', $tos, true) && in_array('kemi-parent@example.com', $tos, true));
+    chk('sign-in: the mail says when', (bool)preg_match('/signed in at \d{2}:\d{2}/', (string)($GLOBALS['__mail_sink'][0]['subject'] ?? '')));
+
+    $setClose(['member' => '23:59', 'student' => '23:59']);
+    $early = backend_dispatch('admin.summer.checkout', ['gateAuthorized' => true, 'byId' => 'gate:T', 'token' => '026-771']);
+    chk('closing time: a sign-out before it is refused, and says when it opens', ($early['error'] ?? '') === 'too_early' && ($early['closesAt'] ?? '') === '23:59');
+    chk('closing time: …and nothing is stamped', (string)db_row("SELECT checkOutAt FROM attendance WHERE studentId = 'NGG-CL-1'")['checkOutAt'] === '');
+    chk('closing time: a check-in desk cannot override it with a reason',
+        (backend_dispatch('admin.summer.checkout', ['gateAuthorized' => true, 'byId' => 'gate:T', 'token' => '026-771', 'earlyReason' => 'Unwell'])['error'] ?? '') === 'too_early');
+    $setClose(['member' => '00:00']);
+    $GLOBALS['__mail_sink'] = [];
+    $out = backend_dispatch('admin.summer.checkout', ['gateAuthorized' => true, 'byId' => 'gate:T', 'token' => '026-771']);
+    chk('closing time: after it, the sign-out goes through', !empty($out['ok']) && empty($out['already']) && (string)db_row("SELECT checkOutAt FROM attendance WHERE studentId = 'NGG-CL-1'")['checkOutAt'] !== '');
+    chk('sign-out: the member and parent are emailed', count(array_filter($GLOBALS['__mail_sink'], fn($m) => strpos((string)$m['subject'], 'signed out at') !== false)) === 2);
+
+    // An admin in the Control Room may let somebody go early — with a reason, recorded.
+    db_update('attendance', ['checkOutAt' => ''], ['studentId' => 'NGG-CL-1']);
+    $setClose(['member' => '23:59']);
+    chk('closing time: an admin without a reason is refused too', (backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-CL-ADM', 'token' => '026-771'])['error'] ?? '') === 'too_early');
+    $let = backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-CL-ADM', 'token' => '026-771', 'earlyReason' => 'Unwell — collected by mother']);
+    chk('closing time: an admin may let them go early with a reason, and it is audited', !empty($let['ok'])
+        && (bool)db_row("SELECT id FROM audit_log WHERE event = 'attendance.early_checkout' AND subject = 'NGG-CL-1'"));
+
+    // The CACENTRE gate: a punch before closing time is answered, not stored.
+    db_update('attendance', ['checkOutAt' => ''], ['studentId' => 'NGG-CL-1']);
+    $h = hooks_attendance(['events' => [['ref' => 'NGG-CL-1', 'action' => 'out']], 'source' => 'cacentre']);
+    chk('closing time: an early CACENTRE punch is too_early, not a sign-out', ($h['results'][0]['status'] ?? '') === 'too_early'
+        && (string)db_row("SELECT checkOutAt FROM attendance WHERE studentId = 'NGG-CL-1'")['checkOutAt'] === '');
+
+    chk('the gate context tells the desk when sign-out opens', function_exists('gate_context') && ($setClose(['member' => '14:00', 'student' => '13:30']) ?? true)
+        && attendance_close_time('member') === '14:00' && attendance_close_time('student') === '13:30' && attendance_close_time('volunteer') === '');
+
+    unset($GLOBALS['__mail_sink']);
+    if (is_array($before)) setting_set('attendance', $before, 'test'); else db_exec("DELETE FROM settings WHERE settingKey = 'attendance'");
+    db_exec("DELETE FROM attendance WHERE studentId = 'NGG-CL-1'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-CL-%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

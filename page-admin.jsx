@@ -12913,7 +12913,9 @@ function AdminSettings() {
           const setA = (k, v) => setS(o => ({ ...o, attendance: { ...(o.attendance || {}), [k]: v } }));
           const rbt = a.resumptionByType || {};
           const setR = (type, v) => setS(o => ({ ...o, attendance: { ...(o.attendance || {}), resumptionByType: { ...((o.attendance || {}).resumptionByType || {}), [type]: v } } }));
-          const TYPES = [["student", "Summer School participants"], ["volunteer", "Volunteers"], ["default", "Everyone else (default)"]];
+          const TYPES = [["member", "NGG Club members"], ["student", "Summer School participants"], ["volunteer", "Volunteers"], ["default", "Everyone else (default)"]];
+          const cbt = a.closeByType || {};
+          const setC = (type, v) => setS(o => ({ ...o, attendance: { ...(o.attendance || {}), closeByType: { ...((o.attendance || {}).closeByType || {}), [type]: v } } }));
           return (
             <React.Fragment>
               <FieldCheckbox label="Flag lateness at check-in" value={a.enabled !== false} onChange={v => setA("enabled", v)}/>
@@ -12926,6 +12928,11 @@ function AdminSettings() {
                   <Field label="Timezone offset from UTC (minutes; WAT = 60)" type="number" value={a.tzOffset ?? 60} onChange={v => setA("tzOffset", parseInt(v, 10) || 0)}/>
                 </div>
               </React.Fragment>}
+              <div className="admin-fields-h" style={{ marginTop: 8, fontWeight: 700 }}>Closing time</div>
+              <p className="admin-hint" style={{ margin: "-6px 0 2px" }}>Nobody can sign out before closing time — the desk, the kiosk and the CACENTRE gate all refuse it, so a sign-out is proof somebody stayed to the end. Somebody who leaves early has no sign-out for the day, and the conduct policy counts that. An admin signed in to the Control Room can still let a person go early with a written reason, which is recorded. Leave a time blank for no closing time.</p>
+              {[["member", "NGG Club members"], ["student", "Summer School participants"], ["volunteer", "Summer volunteers"]].map(([type, label]) => (
+                <Field key={type} label={"Closing time — " + label} type="time" value={cbt[type] || ""} onChange={v => setC(type, v)}/>
+              ))}
             </React.Fragment>
           );
         })()}
@@ -15236,6 +15243,38 @@ function SummerKiosk({ onCheckin }) {
   const device = ((typeof navigator !== "undefined" && navigator.platform) || "kiosk").slice(0, 40);
 
   const buzz = (bad) => { try { navigator.vibrate && navigator.vibrate(bad ? 80 : [25, 35, 25]); } catch (_) {} };
+  /* Arrivals or sign-outs. A mode, not a second scan, so a card presented
+     twice by accident never signs anybody out. Read through a ref so the
+     camera loop does not restart when it flips. */
+  const [dir, setDir] = React.useState("in");
+  const dirRef = React.useRef("in");
+  React.useEffect(() => { dirRef.current = dir; setResult(null); }, [dir]);
+
+  const doCheckout = React.useCallback(async (token, earlyReason) => {
+    const now = Date.now();
+    try {
+      const r = await NGGApi.admin.summer.checkout(token, earlyReason ? { earlyReason } : undefined);
+      setResult({ student: r.student, out: true, already: r.already, early: !!earlyReason });
+      buzz(false);
+      setRecent(x => [{ name: (r.student && r.student.fullName) || token, at: now, already: r.already, out: true }, ...x].slice(0, 8));
+      onCheckin && onCheckin();
+    } catch (e) {
+      const code = e.code || e.message || "";
+      const d = e.data || {};
+      if (code === "too_early") {
+        setResult({ tooEarly: true, token, closesAt: d.closesAt, student: d.student }); buzz(true);
+      } else {
+        const map = { not_checked_in: "They were never checked in today — nothing to sign out.", qr_unassigned: "That card isn't linked to anyone yet.",
+          student_not_found: "Nobody found for that code.", forbidden: "Not permitted — your session expired." };
+        setResult({ error: map[code] || code }); buzz(true);
+      }
+    }
+  }, [onCheckin]);
+  const letGoEarly = async (token) => {
+    const reason = await dialog.prompt({ title: "Let them go before closing time?", label: "Why (recorded in the audit trail)",
+      placeholder: "e.g. Unwell — collected by mother", cta: "Sign out early", multiline: false });
+    if (reason && reason.trim()) doCheckout(token, reason.trim());
+  };
 
   const doCheckin = React.useCallback(async (raw, method) => {
     const token = extractToken(raw);
@@ -15243,6 +15282,7 @@ function SummerKiosk({ onCheckin }) {
     const now = Date.now();
     if (last.current.token === token && now - last.current.at < 3500) return; // debounce repeat scans
     last.current = { token, at: now };
+    if (dirRef.current === "out") return doCheckout(token);
     try {
       const r = await NGGApi.admin.summer.checkin(token, method, device);
       setResult({ student: r.student, already: r.already, status: r.status, lateMinutes: r.lateMinutes, halfDay: r.halfDay, programmeDay: r.programmeDay, compliance: r.compliance });
@@ -15273,7 +15313,7 @@ function SummerKiosk({ onCheckin }) {
         setResult({ error: map[code] || code }); buzz(true);
       }
     }
-  }, [device, onCheckin]);
+  }, [device, onCheckin, doCheckout]);
 
   // Flush the offline queue when back online / periodically.
   const flush = React.useCallback(async () => {
@@ -15346,6 +15386,10 @@ function SummerKiosk({ onCheckin }) {
           <button className={"btn btn-sm " + (mode === "scanner" ? "btn-primary" : "btn-ghost")} onClick={() => setMode("scanner")}>⌨ Scanner / manual</button>
           <button className={"btn btn-sm " + (mode === "camera" ? "btn-primary" : "btn-ghost")} onClick={() => setMode("camera")}>📷 Camera</button>
         </div>
+        <div className="summer-kiosk-modes" role="group" aria-label="Arrivals or sign-outs">
+          <button className={"btn btn-sm " + (dir === "in" ? "btn-primary" : "btn-ghost")} aria-pressed={dir === "in"} onClick={() => setDir("in")}>Arrivals</button>
+          <button className={"btn btn-sm " + (dir === "out" ? "btn-primary" : "btn-ghost")} aria-pressed={dir === "out"} onClick={() => setDir("out")}>Sign-outs</button>
+        </div>
         <div className="summer-kiosk-status">
           <span className={"summer-dot " + (online ? "on" : "off")}/>{online ? "Online" : "Offline"}
           {pending > 0 && <span className="summer-kiosk-pending">⏳ {pending} queued</span>}
@@ -15378,11 +15422,11 @@ function SummerKiosk({ onCheckin }) {
 
         <div className="summer-kiosk-result">
           {!result && <div className="summer-result idle"><i className="ph" aria-hidden="true">◎</i><div>Ready — scan a card.</div></div>}
-          {result && result.student && !result.refused && (
+          {result && result.student && !result.refused && !result.tooEarly && (
             <div className={"summer-result " + (result.already ? "dupe" : result.status === "late" ? "late" : "ok")}>
               <div className="summer-result-av">{result.student.photoUrl ? <img src={result.student.photoUrl} alt=""/> : (result.student.fullName || "?").charAt(0)}</div>
               <div className="summer-result-nm">{result.student.fullName}</div>
-              <div className="summer-result-msg">{result.already ? "Already checked in today" : "Checked in ✓"}</div>
+              <div className="summer-result-msg">{result.out ? (result.already ? "Already signed out today" : result.early ? "Signed out early — reason recorded" : "Signed out →") : result.already ? "Already checked in today" : "Checked in ✓"}</div>
               <div className="mono summer-result-id">{result.student.studentId}{result.student.track ? " · " + result.student.track : ""}</div>
               {/* Punctuality was recorded but never shown, so the desk had no
                   idea a scan had just cost someone a lateness log. */}
@@ -15404,7 +15448,14 @@ function SummerKiosk({ onCheckin }) {
             </div>
           )}
           {result && result.queued && <div className="summer-result queued"><div className="summer-result-nm">Saved offline</div><div className="summer-result-msg">{result.token} — syncs when back online</div></div>}
-          {result && result.error && <div className="summer-result err"><div className="summer-result-nm">Couldn't check in</div><div className="summer-result-msg">{result.error}</div></div>}
+          {result && result.tooEarly && (
+            <div className="summer-result err">
+              <div className="summer-result-nm">{(result.student && result.student.fullName) || "Too early to sign out"}</div>
+              <div className="summer-result-msg">Sign-out opens at {result.closesAt || "closing time"}. Not signed out.</div>
+              <button className="btn btn-ghost btn-sm" onClick={() => letGoEarly(result.token)}>Let them go early…</button>
+            </div>
+          )}
+          {result && result.error && <div className="summer-result err"><div className="summer-result-nm">{dir === "out" ? "Couldn't sign out" : "Couldn't check in"}</div><div className="summer-result-msg">{result.error}</div></div>}
         </div>
       </div>
 

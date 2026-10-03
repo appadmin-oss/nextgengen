@@ -1254,6 +1254,9 @@ function gate_context(array $p): array {
         'cohort' => $c ? ['cohortId' => $c['cohortId'], 'name' => $c['name']] : null,
         'form' => ['version' => (int)$live['version'], 'fields' => $fields],
         'geo' => $geo, 'centre' => $centreName, 'duty' => $duty,
+        // When sign-out opens, per kind of person, so the desk can say so.
+        'closing' => array_filter(['member' => attendance_close_time('member'), 'student' => attendance_close_time('student'),
+                                   'volunteer' => attendance_close_time('volunteer')]),
         'consentTypes' => CONSENT_TYPES];
 }
 

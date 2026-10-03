@@ -69,3 +69,11 @@ A green result fades by itself. **Do not admit** stays on screen until you press
 Keep this guide in step with the on-screen copies (`GateDeskGuide` in
 nextgengen's `page-other.jsx`; the `dk_guide` dialog in cacentre-site's
 `gate/public/desk.html`).
+
+## Signing people out
+
+Press **Sign out** at the top of the desk before scanning anybody who is
+leaving, and **Check in** again for arrivals. Before closing time the screen
+says **Too early to sign out** — do not argue, just tell them sign-out opens at
+the time shown. Only a coordinator in the Control Room can let somebody leave
+early.

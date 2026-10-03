@@ -87,7 +87,17 @@ function hooks_attendance(array $p): array {
             /* A LATER departure moves it: at a CACENTRE terminal the check-out
                is the last punch of the day, and the gate re-sends it as it moves. */
             if (!empty($row['checkOutAt']) && strtotime($scanIso) <= strtotime((string)$row['checkOutAt'])) { $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'already']; $already++; continue; }
+            /* Before closing time a punch is not a sign-out (see
+               attendance_close_time). Answered, not stored — the terminal
+               re-sends the day's last punch, so a later one still lands. */
+            $outType = $isMember ? 'member' : ($volunteer ? 'volunteer' : 'student');
+            if ($no = attendance_checkout_refusal($outType, $scanTs, ['gateAuthorized' => true])) {
+                $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'too_early', 'closesAt' => $no['closesAt']]; continue;
+            }
             db_update('attendance', ['checkOutAt' => $scanIso], ['id' => $row['id']]);
+            if ($isMember && empty($row['checkOutAt']) && ($mrow = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$sid]))) {
+                checkin_member_email($mrow, 'out', $scanTs, ['checkInAt' => (string)(db_row('SELECT checkInAt FROM attendance WHERE id = ?', [$row['id']])['checkInAt'] ?? '')]);
+            }
             $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'marked', 'action' => 'out'];
             $marked++;
             continue;
@@ -129,6 +139,9 @@ function hooks_attendance(array $p): array {
         }
         if ($applyMember) policy_on_checkin($sid, 'member', $date, $punc);
         event_emit('attendance.marked', ['memberId' => $sid, 'name' => $name, 'date' => $date, 'source' => 'webhook:' . $source]);
+        if ($isMember && $date === attendance_today($scanTs) && ($mrow = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$sid]))) {
+            checkin_member_email($mrow, 'in', $scanTs, $punc ?: []);
+        }
         $results[] = ['ref' => $sid, 'date' => $date, 'status' => 'marked'];
         $marked++;
     }

@@ -564,6 +564,28 @@ Uploading the same sheet again fines nobody twice: rows already on the ledger
 are reported as *already posted*. Two genuine fines for the same member, day
 and reason must differ in their note.
 
+### Signing out, and closing time
+
+**Settings → Attendance & punctuality → Closing time** sets, separately for
+NGG Club members, Summer School participants and Summer volunteers, the time
+from which people may sign out. Leave one blank for no closing time.
+
+- The check-in desk has a **Check in / Sign out** switch; the Control Room
+  kiosk has **Arrivals / Sign-outs**. A second scan never signs anybody out —
+  the desk must be switched.
+- Before closing time a sign-out is **refused** ("Too early to sign out —
+  sign-out opens at 14:00") at the desk, the kiosk and the CACENTRE gate.
+  Somebody who leaves early has no sign-out for the day, which the conduct
+  policy counts.
+- An admin in the Control Room kiosk can **Let them go early…** with a written
+  reason (a sick child collected by a parent). It is recorded in the audit
+  trail as an early sign-out. A check-in desk cannot do this.
+- **NGG members are emailed** when they sign in (with the time, and whether
+  they were late) and when they sign out (with the time spent at the centre).
+  Their parent's address on the record gets the same note. The **Email a state
+  note on check-in** switch in Settings turns these off with the Summer
+  School's guardian notes.
+
 ---
 
 ## Applications, sign-ups and verification

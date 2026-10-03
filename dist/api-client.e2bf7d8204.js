@@ -860,6 +860,7 @@
         // punctuality is graded at the moment the card was presented rather
         // than whenever the signal came back. Clamped server-side to 24h.
         checkin:  (gate, token, scannedAt) => request('/public/gate.php', { body: { action: 'checkin', gate, token, scannedAt } }),
+        checkout: (gate, token, scannedAt) => request('/public/gate.php', { body: { action: 'checkout', gate, token, scannedAt } }),
         dutyClose:(gate) => request('/public/gate.php', { body: { action: 'duty_close', gate } }),
         // Kiosk unlock — mints a gate-scoped session so field staff run the
         // desk without an admin login (see /public/gate-unlock.php).
@@ -1198,7 +1199,8 @@
         archive:      (cohortId, compress) => request('/admin/summer.php', { body: { action: 'archive', cohortId, compress: !!compress } }),
         issueCerts:   (status, cohortId) => request('/admin/summer.php', { body: { action: 'issueCerts', status: status || 'graduated', cohortId: cohortId || '' } }),
         revokeCert:   (certId, restore) => request('/admin/summer.php', { body: { action: 'revokeCert', certId, restore: !!restore } }),
-        checkout:     (token) => request('/admin/summer.php', { body: { action: 'checkout', token } }),
+        // earlyReason: an admin letting somebody go before closing time (recorded).
+        checkout:     (token, opts) => request('/admin/summer.php', { body: Object.assign({ action: 'checkout', token }, opts || {}) }),
         consent:      (studentId) => request('/admin/summer.php' + qs({ view: 'consent', studentId })),
         absenceAlert: (studentId, cohortId) => request('/admin/summer.php', { body: { action: 'absenceAlert', studentId: studentId || '', cohortId: cohortId || '' } }),
         importStudents: (rows) => request('/admin/summer.php', { body: { action: 'import', rows } }),

@@ -827,7 +827,8 @@ function admin_cert_revoke(array $p): array {
 function attendance_settings(): array {
     $cfg = setting_get('attendance');
     $p = is_array($cfg) ? $cfg : [];
-    $p += ['enabled' => true, 'tzOffset' => 60, 'graceMinutes' => 10, 'resumptionByType' => []];
+    $p += ['enabled' => true, 'tzOffset' => 60, 'graceMinutes' => 10, 'resumptionByType' => [], 'closeByType' => []];
+    $p['closeByType'] = is_array($p['closeByType']) ? $p['closeByType'] : [];
     /* The shipped resumption times (09:00 students, 08:30 volunteers) are the
      * inverse of the blueprint's Part VI redlines (08:30 / 09:00), so a student
      * would be flagged LATE half an hour before they were ever TARDY. Where the
@@ -858,6 +859,16 @@ function attendance_settings_save(array $in, string $by): void {
         }
     }
     $clean['resumptionByType'] = $byType;
+    // Closing time per type; a blank one means sign-out is not held back.
+    $close = [];
+    if (isset($in['closeByType']) && is_array($in['closeByType'])) {
+        foreach ($in['closeByType'] as $type => $hhmm) {
+            $type = preg_replace('/[^a-z0-9_-]/', '', strtolower((string)$type));
+            $hhmm = trim((string)$hhmm);
+            if ($type !== '' && preg_match('/^([01]?\d|2[0-3]):[0-5]\d$/', $hhmm)) $close[$type] = $hhmm;
+        }
+    }
+    $clean['closeByType'] = $close;
     setting_set('attendance', $clean, $by);
 }
 
@@ -876,6 +887,41 @@ function attendance_punctuality(string $type, ?int $at = null): array {
     $nowMin = attendance_minutes_at($at);
     $late = max(0, $nowMin - $resMin);
     return ['status' => $late > 0 ? 'late' : 'present', 'lateMinutes' => $late];
+}
+
+/**
+ * The closing time for a type of person — 'member' for the NGG Club,
+ * 'student' and 'volunteer' for Summer School — or '' when none is set.
+ *
+ * Signing out before it is refused. That is the rule the admin set: a
+ * sign-out is the record that somebody stayed to the end, so it cannot be
+ * taken at the door at eleven by a child leaving early. Somebody who does
+ * leave early simply has no sign-out, and the nightly sweep treats that as
+ * the policy says (no_checkout) — which is the point.
+ */
+function attendance_close_time(string $type): string {
+    $byType = attendance_settings()['closeByType'];
+    $hhmm = (string)($byType[$type] ?? $byType['default'] ?? '');
+    return preg_match('/^([01]?\d|2[0-3]):[0-5]\d$/', $hhmm) ? $hhmm : '';
+}
+
+/** A refusal for a sign-out taken before closing time, or null when it may go
+ *  through. `$p['earlyReason']` lets a signed-in ADMIN let somebody go early
+ *  (a sick child) — never a check-in desk, which cannot override the rule. */
+function attendance_checkout_refusal(string $type, int $at, array $p): ?array {
+    $close = attendance_close_time($type);
+    if ($close === '') return null;
+    [$h, $m] = array_map('intval', explode(':', $close));
+    if (attendance_minutes_at($at) >= $h * 60 + $m) return null;
+    if (empty($p['gateAuthorized']) && trim((string)($p['earlyReason'] ?? '')) !== '') return null;
+    return ['ok' => false, 'error' => 'too_early', 'closesAt' => $close,
+            'message' => 'Sign-out opens at ' . $close . '.'];
+}
+
+/** Local wall-clock HH:MM of an epoch, on the attendance timezone. */
+function attendance_clock(int $at): string {
+    $min = attendance_minutes_at($at);
+    return sprintf('%02d:%02d', intdiv($min, 60), $min % 60);
 }
 
 /** Minutes past local midnight at `$at` (default now). */
@@ -1045,14 +1091,21 @@ function summer_checkout(array $p): array {
      * would leave them recorded as on-site overnight, which is worse for
      * safeguarding than honouring a card for the last hour of its life. The
      * gate that matters is check-IN. */
-    $today = attendance_today();
-    $row = db_row('SELECT * FROM attendance WHERE studentId = ? AND date = ?', [(string)$qr['studentId'], $today]);
+    $sid = (string)$qr['studentId'];
+    $at = attendance_scan_time($p['scannedAt'] ?? null);
+    $today = attendance_today($at);
+    $row = db_row('SELECT * FROM attendance WHERE studentId = ? AND date = ?', [$sid, $today]);
     if (!$row) return ['ok' => false, 'error' => 'not_checked_in'];
     if (!empty($row['checkOutAt'])) return ['ok' => true, 'already' => true, 'checkOutAt' => $row['checkOutAt']];
-    db_update('attendance', ['checkOutAt' => now_iso()], ['id' => $row['id']]);
-    audit('summer.checkout', $byId, (string)$qr['studentId'], ['date' => $today], (string)($p['ip'] ?? ''));
-    $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [(string)$qr['studentId']]);
-    return ['ok' => true, 'already' => false, 'checkOutAt' => now_iso(), 'student' => $s ? summer_student_public($s) : null];
+    $type = policy_person_type($sid) === 'volunteer' ? 'volunteer' : 'student';
+    if ($no = attendance_checkout_refusal($type, $at, $p)) return $no;
+    $outIso = gmdate('Y-m-d\\TH:i:s\\Z', $at);
+    db_update('attendance', ['checkOutAt' => $outIso], ['id' => $row['id']]);
+    $early = trim((string)($p['earlyReason'] ?? ''));
+    audit($early !== '' && attendance_close_time($type) !== '' ? 'attendance.early_checkout' : 'summer.checkout', $byId, $sid,
+          ['date' => $today] + ($early !== '' ? ['reason' => mb_substr($early, 0, 200)] : []), (string)($p['ip'] ?? ''));
+    $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$sid]);
+    return ['ok' => true, 'already' => false, 'checkOutAt' => $outIso, 'student' => $s ? summer_student_public($s) : null];
 }
 
 /** Email guardians of students absent today (or one named student) a gentle

@@ -161,6 +161,24 @@ function cleanup() {
     (await queueLen()) === 0 ? ok('bad code not queued') : bad('bad code was queued (should not be)');
     /isn't assigned|No student|couldn't check in/i.test(await text()) ? ok('bad code surfaces an error') : bad('bad code error not shown');
 
+    // ---- Sign-out: its own mode, and not before closing time ----
+    const setClose = (hhmm) => php(`setting_set('attendance', ['enabled'=>true,'tzOffset'=>60,'graceMinutes'=>10,'closeByType'=>['student'=>'${hhmm}']], 'test');`);
+    setClose('23:59');
+    await page.click('.gate-mode button:has-text("Sign out")');
+    (await page.getAttribute('.gate-mode button:has-text("Sign out")', 'aria-pressed')) === 'true' ? ok('the desk switches to sign-out mode') : bad('sign-out mode not pressed');
+    await page.fill('input[placeholder*="Code from the ID card"]', TOKEN);
+    await page.click('.gate-manual button[type=submit]');
+    await page.waitForSelector('.gate-result.is-no', { timeout: 8000 });
+    /Too early to sign out/i.test(await text()) && /23:59/.test(await text()) ? ok('a sign-out before closing time is refused, saying when it opens') : bad('early sign-out not refused on screen');
+    php(`echo db_row("SELECT checkOutAt FROM attendance WHERE studentId='${STUDENT}'")['checkOutAt'];`) === '' ? ok('…and nothing is stamped') : bad('early sign-out was stamped');
+    setClose('00:00');
+    await page.waitForTimeout(3700);   // let the refusal panel clear
+    await page.fill('input[placeholder*="Code from the ID card"]', TOKEN);
+    await page.click('.gate-manual button[type=submit]');
+    await page.waitForSelector('.gate-result.is-out', { timeout: 8000 });
+    php(`echo db_row("SELECT checkOutAt FROM attendance WHERE studentId='${STUDENT}'")['checkOutAt'];`) !== '' ? ok('after closing time the sign-out is stamped') : bad('sign-out not stamped');
+    await page.click('.gate-mode button:has-text("Check in")');
+
     if (errs.length) bad('uncaught page errors: ' + errs.slice(0, 2).join(' | '));
   } catch (e) {
     bad('exception: ' + (e && e.message || e));

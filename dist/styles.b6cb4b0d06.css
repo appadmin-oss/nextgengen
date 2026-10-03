@@ -6575,6 +6575,9 @@ img { background-color: rgba(12,20,50,0.04); }
 .gate-result.is-already { border-color: var(--g-info); } .gate-result.is-already .gate-result-word, .gate-result.is-already .gate-result-photo { color: var(--g-info); }
 .gate-result.is-queued  { border-color: var(--g-warn); border-style: dashed; } .gate-result.is-queued .gate-result-word, .gate-result.is-queued .gate-result-photo { color: var(--g-warn); }
 .gate-result.is-no      { border-color: var(--g-bad); }  .gate-result.is-no .gate-result-word, .gate-result.is-no .gate-result-photo { color: var(--g-bad); }
+.gate-result.is-out     { border-color: var(--g-ok); }   .gate-result.is-out .gate-result-word, .gate-result.is-out .gate-result-photo { color: var(--g-ok); }
+.gate-mode { display: inline-flex; gap: 6px; }
+.gate-row.is-out .gate-row-mark { color: var(--g-ok); }
 .gate-result.is-stop { border-width: 8px; }
 .gate-result.is-stop .gate-result-word { font-size: clamp(18px, 5cqi, 24px); }
 .gate-result.is-stop .gate-result-sub { color: var(--g-ink); font-weight: 600; }

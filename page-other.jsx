@@ -4729,6 +4729,7 @@ const SCAN_KINDS = {
   already: { word: "Already in",   glyph: "↻", tone: [660, 660],  buzz: [40, 70, 40], bg: "rgba(245,176,38,.18)", edge: "#f5b026", fg: "#ffd98a" },
   queued:  { word: "Saved offline", glyph: "☁", tone: [520],      buzz: [30],         bg: "rgba(120,160,255,.16)", edge: "#7da2ff", fg: "#c7d8ff" },
   no:      { word: "Not accepted", glyph: "✕", tone: [220, 180],  buzz: [180],        bg: "rgba(230,70,70,.20)",  edge: "#ff6b6b", fg: "#ffc4c4" },
+  out:     { word: "Signed out",   glyph: "→", tone: [1320, 880], buzz: [60, 40, 60], bg: "rgba(48,160,90,.20)",  edge: "#4ad07f", fg: "#b9f5d0" },
 };
 
 /* WebAudio rather than an audio file: no asset to ship, no decode latency, and
@@ -4922,6 +4923,13 @@ function QRScanner({ onToken }) {
   );
 }
 
+/** " — sign-out opens at 14:00 (NGG Club) · 13:00 (Summer School)", or "". */
+function gateClosingLine(ctx) {
+  const c = (ctx && ctx.closing) || {};
+  const parts = [c.member && c.member + " (NGG Club)", c.student && c.student + " (Summer School)", c.volunteer && c.volunteer + " (Summer volunteers)"].filter(Boolean);
+  return parts.length ? " — sign-out opens at " + parts.join(" · ") : "";
+}
+
 function GateCheckin({ g, ctx }) {
   const [code, setCode] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -4932,7 +4940,14 @@ function GateCheckin({ g, ctx }) {
   const [err, setErr] = React.useState("");
   // Everything this device has taken today — the list keeps the last twelve,
   // the count keeps them all.
-  const [counts, setCounts] = React.useState({ in: 0, already: 0 });
+  const [counts, setCounts] = React.useState({ in: 0, already: 0, out: 0 });
+  /* Which way the door is facing. Sign-out is its own mode rather than a
+     second scan meaning "out", because a second scan by accident must never
+     sign somebody out. The camera effect captures `mark` once, so the mode is
+     read through a ref. */
+  const [mode, setMode] = React.useState("in");
+  const modeRef = React.useRef("in");
+  React.useEffect(() => { modeRef.current = mode; }, [mode]);
   // Attendance-taker duty for this gate's centre today (rotation banner).
   const [duty, setDuty] = React.useState((ctx && ctx.duty) || null);
   const [dutyMsg, setDutyMsg] = React.useState("");
@@ -4961,7 +4976,7 @@ function GateCheckin({ g, ctx }) {
   const isNetErr = (e) => (typeof navigator !== "undefined" && !navigator.onLine) || (e && !e.code && !e.status);
   // Remove one token by re-reading storage first, so a scan enqueued during an
   // in-flight sync is never clobbered by a stale in-memory copy of the queue.
-  const dequeue = (token) => { saveQ(loadQ().filter(x => x.token !== token)); };
+  const dequeue = (token, dir) => { saveQ(loadQ().filter(x => !(x.token === token && (x.dir || "in") === (dir || "in")))); };
   const flushQueue = async () => {
     if (flushing.current || (typeof navigator !== "undefined" && !navigator.onLine)) return;
     const snapshot = loadQ(); if (!snapshot.length) return;
@@ -4969,17 +4984,18 @@ function GateCheckin({ g, ctx }) {
     try {
       for (const item of snapshot) {
         try {
-          const r = await NGGApi.public.gate.checkin(g, item.token, item.scannedAt);
-          dequeue(item.token);
+          const isOut = item.dir === "out";
+          const r = await (isOut ? NGGApi.public.gate.checkout : NGGApi.public.gate.checkin)(g, item.token, item.scannedAt);
+          dequeue(item.token, item.dir);
           const st = r.student || {};
-          setCounts(c => r.already ? { ...c, already: c.already + 1 } : { ...c, in: c.in + 1 });
-          setRecent(list => [{ name: st.fullName || item.token, at: fmtTime(new Date()), already: !!r.already, synced: true }, ...list].slice(0, 12));
+          setCounts(c => r.already ? { ...c, already: c.already + 1 } : isOut ? { ...c, out: c.out + 1 } : { ...c, in: c.in + 1 });
+          setRecent(list => [{ name: st.fullName || item.token, at: fmtTime(new Date()), already: !!r.already, out: isOut, synced: true }, ...list].slice(0, 12));
         } catch (e) {
           if (isNetErr(e)) break;                       // still offline — stop, keep the rest
           // The server rejected a banked scan (e.g. unassigned card). Drop it, but
           // never silently: tell the operator and flag it so it can be re-scanned.
-          dequeue(item.token);
-          setErr("A saved scan couldn't be synced (" + (e.code === "qr_unassigned" ? "code not assigned" : e.code === "student_not_found" ? "no member for that code" : e.code === "policy_suspended" ? "that person is suspended" : e.code === "policy_evicted" ? "that person has been evicted" : e.code === "id_expired" ? "that ID has expired" : (e.code || "rejected")) + "). " + (/^policy_/.test(e.code || "") ? "They are NOT checked in — refer them to the coordinator." : "Please re-scan that card."));
+          dequeue(item.token, item.dir);
+          setErr("A saved scan couldn't be synced (" + (e.code === "too_early" ? "signed out before closing time" : e.code === "not_checked_in" ? "signed out but never checked in" : e.code === "qr_unassigned" ? "code not assigned" : e.code === "student_not_found" ? "no member for that code" : e.code === "policy_suspended" ? "that person is suspended" : e.code === "policy_evicted" ? "that person has been evicted" : e.code === "id_expired" ? "that ID has expired" : (e.code || "rejected")) + "). " + (/^policy_/.test(e.code || "") ? "They are NOT checked in — refer them to the coordinator." : "Please re-scan that card."));
           setRecent(list => [{ name: item.token, at: fmtTime(new Date()), failed: true }, ...list].slice(0, 12));
         }
       }
@@ -5007,9 +5023,39 @@ function GateCheckin({ g, ctx }) {
     } finally { setDutyBusy(false); }
   };
 
+  const signOut = async (token) => {
+    try {
+      const r = await NGGApi.public.gate.checkout(g, token);
+      const st = r.student || {};
+      announce(r.already ? "already" : "out", { name: st.fullName || token, photo: st.photoUrl || "",
+        sub: [st.centre, st.track || st.role].filter(Boolean).join(" · "),
+        word: r.already ? "Already signed out" : "Signed out" });
+      setCounts(c => r.already ? { ...c, already: c.already + 1 } : { ...c, out: c.out + 1 });
+      setRecent(list => [{ name: st.fullName || token, at: fmtTime(new Date()), already: !!r.already, out: true }, ...list].slice(0, 12));
+      setCode("");
+    } catch (e2) {
+      if (isNetErr(e2)) {
+        const q = loadQ(); if (!q.some(x => x.token === token && x.dir === "out")) { q.push({ token, dir: "out", at: Date.now(), scannedAt: new Date().toISOString() }); saveQ(q); }
+        announce("queued", { name: token, sub: "No signal — this sign-out will sync automatically." });
+        setRecent(list => [{ name: token, at: fmtTime(new Date()), queued: true }, ...list].slice(0, 12));
+        setCode("");
+        return;
+      }
+      const c = e2.code || e2.message;
+      const d = e2.data || {};
+      const why = c === "too_early" ? "Sign-out opens at " + (d.closesAt || "closing time") + ". They are NOT signed out — anyone leaving now goes without a sign-out."
+        : c === "not_checked_in" ? "They were never checked in today, so there is nothing to sign out."
+        : c === "qr_unassigned" ? "That card isn't assigned to anyone yet."
+        : c === "student_not_found" ? "Nobody found for that code."
+        : (e2.message || "Couldn't sign out — try again.");
+      announce("no", { name: (d.student && d.student.fullName) || "Not signed out", sub: why, word: c === "too_early" ? "Too early to sign out" : undefined });
+    }
+  };
+
   const mark = async (raw) => {
     const token = String(raw || "").trim(); if (!token || busyRef.current) return;
     busyRef.current = true; setBusy(true); setErr("");
+    if (modeRef.current === "out") { try { await signOut(token); } finally { busyRef.current = false; setBusy(false); } return; }
     try {
       const r = await NGGApi.public.gate.checkin(g, token);
       const st = r.student || {};
@@ -5083,7 +5129,11 @@ function GateCheckin({ g, ctx }) {
       </div>
       <div className="gate-head-side">
         <div className="gate-count" role="status" aria-live="polite">
-          <b>{counts.in}</b><span>checked in{counts.already ? " · " + counts.already + " repeat" + (counts.already === 1 ? "" : "s") : ""}</span>
+          <b>{counts.in}</b><span>checked in{counts.out ? " · " + counts.out + " signed out" : ""}{counts.already ? " · " + counts.already + " repeat" + (counts.already === 1 ? "" : "s") : ""}</span>
+        </div>
+        <div className="gate-mode" role="group" aria-label="Which way is the door facing">
+          <button type="button" className="gate-tool" aria-pressed={mode === "in"} onClick={() => setMode("in")}>Check in</button>
+          <button type="button" className="gate-tool" aria-pressed={mode === "out"} onClick={() => setMode("out")}>Sign out</button>
         </div>
         <button type="button" className="gate-tool" onClick={() => setMuted(m => !m)} aria-pressed={!muted}>
           <GateIcon name={muted ? "mute" : "sound"}/>{muted ? "Scan sound off" : "Scan sound on"}
@@ -5111,14 +5161,15 @@ function GateCheckin({ g, ctx }) {
           <QRScanner onToken={mark}/>
           <ScanResult result={scan} onDone={() => setScan(null)}/>
         </div>
-        <form className="gate-manual" role="search" aria-label="Check in by code"
+        {mode === "out" && <p className="gate-banner is-info" role="status"><span>Signing out. Every scan now signs the person <b>out</b>{gateClosingLine(ctx)}. Switch back to Check in for arrivals.</span></p>}
+        <form className="gate-manual" role="search" aria-label={mode === "out" ? "Sign out by code" : "Check in by code"}
           onSubmit={e => { e.preventDefault(); mark(code); setCode(""); }}>
           <label className="gate-label" htmlFor="gate-code">No camera, or the card won't scan? Type the code printed under the QR — like <span className="gate-mono">SUMQR-9F2A61C0</span> — or a member ID like <span className="gate-mono">026-014</span>.</label>
           <div className="gate-manual-row">
             <input id="gate-code" className="gate-input is-code" value={code} onChange={e => setCode(e.target.value.toUpperCase())}
               placeholder="Code from the ID card"
               autoComplete="off" autoCapitalize="characters" spellCheck="false" inputMode="text"/>
-            <button type="submit" className="gate-btn is-primary" disabled={busy || !code.trim()}>{busy ? "Checking…" : "Check in"}</button>
+            <button type="submit" className="gate-btn is-primary" disabled={busy || !code.trim()}>{busy ? "Checking…" : mode === "out" ? "Sign out" : "Check in"}</button>
           </div>
         </form>
         {pending > 0 && (
@@ -5138,17 +5189,17 @@ function GateCheckin({ g, ctx }) {
             ? <p className="gate-empty">Check-ins appear here as they happen.</p>
             : <ul className="gate-list" role="status" aria-live="polite" aria-label="Recent check-ins">
                 {recent.map((r, i) => {
-                  const st = r.failed ? "bad" : r.queued ? "queued" : r.already ? "already" : "in";
+                  const st = r.failed ? "bad" : r.queued ? "queued" : r.already ? "already" : r.out ? "out" : "in";
                   return (
                     <li key={r.at + "|" + (r.name || "") + "|" + st + "|" + i} className={"gate-row is-" + st + (r.warn ? " is-warn" : "")}>
-                      <span className="gate-row-mark" aria-hidden="true">{st === "bad" ? "✕" : st === "queued" ? "☁" : st === "already" ? "↻" : "✓"}</span>
+                      <span className="gate-row-mark" aria-hidden="true">{st === "bad" ? "✕" : st === "queued" ? "☁" : st === "already" ? "↻" : st === "out" ? "→" : "✓"}</span>
                       <span className={"gate-row-name" + (r.queued || r.failed ? " is-code" : "")}>
                         {r.name}
                         {r.volunteer && <span className="gate-tag">{(r.role || "Volunteer")}</span>}
                         {r.late > 0 && <span className="gate-tag is-late">Late {r.late}m</span>}
                         {r.cert > 0 && <span className="gate-tag is-ok" title={r.cert + "-session certificate issued"}>Certificate · {r.cert}</span>}
                       </span>
-                      <span className="gate-row-meta">{r.failed ? "failed — re-scan · " : r.queued ? "saved · " : r.synced ? "synced · " : r.already ? "already in · " : ""}{r.at}</span>
+                      <span className="gate-row-meta">{r.failed ? "failed — re-scan · " : r.queued ? "saved · " : r.synced ? "synced · " : r.already ? (r.out ? "already out · " : "already in · ") : r.out ? "signed out · " : ""}{r.at}</span>
                     </li>
                   );
                 })}
