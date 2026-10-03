@@ -188,6 +188,18 @@ async function contextFor(memberId, admin, viewport) {
     chk('…grouped by week', /Week 1/i.test(await mp.$eval('.cur', el => el.innerText)));
     const mat = await get(BASE + matUrl, { Cookie: 'ngg_sess=' + mtoken });
     chk('the stored material serves to a signed-in member, as the PDF it was', mat.status === 200 && mat.headers['content-type'] === 'application/pdf' && mat.body.toString().startsWith('%PDF'));
+    chk('the dashboard offers the curriculum as a document', (await mp.$$('.cur-download a')).length === 2);
+    const docHtml = await get(BASE + '/api/member/curriculum-doc.php', { Cookie: 'ngg_sess=' + mtoken });
+    chk('the document opens print-ready, with every lesson and no answers', docHtml.status === 200 && /text\/html/.test(docHtml.headers['content-type'])
+      && /Finding middle C/.test(docHtml.body) && /Save as PDF/.test(docHtml.body) && !/Control and speed/.test(docHtml.body));
+    const docWord = await get(BASE + '/api/member/curriculum-doc.php?format=doc', { Cookie: 'ngg_sess=' + mtoken });
+    chk('…and downloads as a Word file', docWord.status === 200 && docWord.headers['content-type'].startsWith('application/msword')
+      && /attachment; filename="Piano-curriculum-Ada-Learner\.doc"/.test(docWord.headers['content-disposition']));
+    chk('…and is nobody else\'s to read', (await get(BASE + '/api/member/curriculum-doc.php')).status === 401);
+    const dp = await mctx.newPage();
+    await dp.goto(BASE + '/api/member/curriculum-doc.php');
+    await dp.screenshot({ path: path.join(SHOTS, 'document.png'), fullPage: true });
+    await dp.close();
     await mp.click('.cur-item:has-text("Finding middle C")');
     await mp.waitForSelector('.cur-lesson');
     chk('the lesson shows its text as a list, never as HTML, and its material', (await mp.$$('.cur-text li')).length === 2 && (await mp.$$('.cur-mat')).length === 1);

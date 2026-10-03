@@ -635,6 +635,83 @@ function member_curriculum_unit(array $p): array {
             'progress' => curriculum_progress_public($pr, $b)];
 }
 
+/**
+ * The member's curriculum as one document — every published lesson of their
+ * course and the Club-wide ones, in teaching order, with what they have done.
+ *
+ * Data only. How it LOOKS is api/_lib/templates/curriculum-document.*, so a
+ * design pass replaces the template without touching what goes into it. The
+ * checks' prompts travel; their answers and rubrics never do — a downloaded
+ * file is a file that can be forwarded.
+ */
+function member_curriculum_document(array $p): array {
+    $m = curriculum_member_row((string)($p['memberId'] ?? ''));
+    if (!$m) return ['ok' => false, 'error' => 'not_ngg_member'];
+    $units = curriculum_member_units($m);
+    $prog = [];
+    if ($units) {
+        $ids = array_keys($units);
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        foreach (db_all("SELECT unitId, status, bestPct, completedAt FROM curriculum_progress WHERE memberId = ? AND unitId IN ($ph)",
+                        array_merge([(string)$m['memberId']], $ids)) as $r) $prog[(string)$r['unitId']] = $r;
+    }
+    $weeks = []; $done = 0;
+    foreach ($units as $id => $b) {
+        $u = curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], false);
+        $pr = $prog[$id] ?? null;
+        $u['progress'] = $pr ? ['status' => (string)$pr['status'], 'bestPct' => (int)$pr['bestPct'], 'completedAt' => (string)$pr['completedAt']] : null;
+        if ($pr && $pr['status'] === 'completed') $done++;
+        $weeks[(int)$u['week']][] = $u;
+    }
+    ksort($weeks);
+    return ['ok' => true, 'document' => [
+        'title' => trim((string)$m['track']) !== '' ? trim((string)$m['track']) . ' curriculum' : 'NGG Club curriculum',
+        'member' => ['memberId' => (string)$m['memberId'], 'fullName' => (string)$m['fullName'],
+                     'track' => (string)$m['track'], 'centre' => (string)$m['centre']],
+        'generatedAt' => now_iso(),
+        'total' => count($units), 'completed' => $done,
+        'pct' => $units ? (int)round($done / count($units) * 100) : 0,
+        'weeks' => array_map(static fn($w, $list) => ['week' => $w, 'lessons' => $list], array_keys($weeks), array_values($weeks)),
+    ]];
+}
+
+/** Render the curriculum document through its template (api/_lib/templates). */
+function curriculum_document_html(array $doc, string $format): string {
+    $dir = dirname(__DIR__) . '/templates';
+    $css = (string)@file_get_contents($dir . '/curriculum-document.css');
+    ob_start();
+    (static function () use ($doc, $format, $css, $dir) { require $dir . '/curriculum-document.php'; })();
+    return (string)ob_get_clean();
+}
+
+/** A lesson's text as HTML: the same three rules the portal's CurriculumText
+ *  applies — blank lines make paragraphs, "- " a list, "## " a heading — and
+ *  everything escaped, so nothing a lesson says becomes markup. */
+function curriculum_text_html(string $text): string {
+    $e = static fn($v) => htmlspecialchars($v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $out = '';
+    foreach (preg_split("/\R\s*\R/", trim($text)) as $block) {
+        $lines = array_values(array_filter(array_map('rtrim', preg_split("/\R/", $block)), static fn($l) => trim($l) !== ''));
+        if (!$lines) continue;
+        if (count(array_filter($lines, static fn($l) => str_starts_with(ltrim($l), '- '))) === count($lines)) {
+            $out .= '<ul>' . implode('', array_map(static fn($l) => '<li>' . $e(substr(ltrim($l), 2)) . '</li>', $lines)) . '</ul>';
+            continue;
+        }
+        foreach ($lines as $i => $l) {
+            if (str_starts_with(ltrim($l), '## ')) { $out .= '<h4>' . $e(substr(ltrim($l), 3)) . '</h4>'; unset($lines[$i]); }
+            else break;
+        }
+        if ($lines) $out .= '<p>' . implode('<br>', array_map($e, $lines)) . '</p>';
+    }
+    return $out;
+}
+
+/** A material's address as somebody holding the file would need it. */
+function curriculum_absolute_url(string $url): string {
+    if (str_starts_with($url, '/')) return rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . $url;
+    return $url;
+}
+
 function curriculum_progress_public(?array $pr, array $b): ?array {
     if (!$pr) return null;
     $marks = json_decode((string)$pr['marks'], true) ?: [];

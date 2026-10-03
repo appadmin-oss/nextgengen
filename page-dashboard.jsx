@@ -2330,6 +2330,10 @@ function DashCurriculum() {
         <div className="cur-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={data.pct} aria-label="Curriculum completed">
           <span style={{ width: data.pct + "%" }}/>
         </div>
+        <div className="cur-download">
+          <a className="btn btn-ghost btn-sm" href="/api/member/curriculum-doc.php" target="_blank" rel="noopener">Open as a document (PDF)</a>
+          <a className="btn btn-ghost btn-sm" href="/api/member/curriculum-doc.php?format=doc">Download for Word</a>
+        </div>
       </div>
       {weeks.map(w => (
         <section key={w.week} className="cur-week" aria-label={"Week " + w.week}>

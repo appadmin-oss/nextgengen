@@ -22766,6 +22766,22 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('member: a Piano member sees Piano lessons and the Club-wide one', !empty($list['ok']) && $list['total'] === 3);
     chk('member: a Guitar member sees only the Club-wide lesson', backend_dispatch('member.curriculum.list', ['memberId' => 'NGG-CUR-M2'])['total'] === 1);
     chk('member: a Summer account has no Club curriculum', (backend_dispatch('member.curriculum.list', ['memberId' => 'SUM-CUR-S1'])['error'] ?? '') === 'not_ngg_member');
+    // The downloadable document: data in, a template out, nothing a lesson says becomes markup.
+    $docR = backend_dispatch('member.curriculum.document', ['memberId' => 'NGG-CUR-M1']);
+    $doc = $docR['document'] ?? [];
+    chk('document: the member\'s curriculum, by week, with the title of their course',
+        !empty($docR['ok']) && $doc['title'] === 'Piano curriculum' && $doc['total'] === 3 && $doc['weeks'][0]['week'] === 1);
+    $flat = json_encode($doc);
+    chk('document: carries the checks\' questions but never their answers or rubrics',
+        strpos($flat, 'Why curve your fingers?') !== false && strpos($flat, 'Control and speed') === false && strpos($flat, '"rubric"') === false);
+    chk('document: a Summer account has none', (backend_dispatch('member.curriculum.document', ['memberId' => 'SUM-CUR-S1'])['error'] ?? '') === 'not_ngg_member');
+    $html = curriculum_document_html($doc, 'html');
+    chk('document: renders through its template, with a Save as PDF and a Word download', strpos($html, 'Finding middle C') !== false
+        && strpos($html, 'Save as PDF') !== false && strpos($html, '?format=doc') !== false && strpos($html, '@page') !== false);
+    chk('document: the Word copy carries no toolbar', strpos(curriculum_document_html($doc, 'doc'), 'Save as PDF') === false);
+    chk('document: lesson text is escaped, with its paragraphs, lists and headings',
+        curriculum_text_html("## Warm up\nBreathe <b>in</b>\n\n- one\n- two") === '<h4>Warm up</h4><p>Breathe &lt;b&gt;in&lt;/b&gt;</p><ul><li>one</li><li>two</li></ul>');
+
     $uid = $u1['unit']['unitId'];
     $open = backend_dispatch('member.curriculum.unit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);
     chk('member: opening a lesson starts it, and never shows the answers', !empty($open['ok']) && $open['progress']['status'] === 'started' && !isset($open['unit']['checks'][0]['answer']));
