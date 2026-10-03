@@ -5067,16 +5067,19 @@ function GateCheckin({ g, ctx }) {
   };
 
   const now = useGateClock();
-  const gateName = (ctx && ctx.gate && ctx.gate.name) || "Gate";
-  const edition = (ctx && ctx.cohort && ctx.cohort.name) || "Summer School";
+  /* The door checks in everyone, all year — NGG members, participants,
+     volunteers. It is not a Summer School screen, so it never titles itself
+     with the edition: it names the door (the link's own name) and the centre. */
+  const gateName = (ctx && ctx.gate && ctx.gate.name) || "";
+  const doorTitle = gateName || centre || "Check-in";
   const dayLabel = now.toLocaleDateString(NGG_LOCALE, { weekday: "long", day: "numeric", month: "long" });
 
   return (<div className="gate-checkin">
     <header className="gate-head">
       <div className="gate-head-main">
-        <p className="gate-eyebrow">Check-in desk · {gateName}</p>
-        <h1 className="gate-title">{edition}</h1>
-        <p className="gate-meta">{centre ? centre + " · " : ""}{dayLabel} · <time>{fmtTime(now)}</time></p>
+        <p className="gate-eyebrow">Check-in desk · Next Generation Genius</p>
+        <h1 className="gate-title">{doorTitle}</h1>
+        <p className="gate-meta">{centre && gateName ? centre + " · " : ""}{dayLabel} · <time>{fmtTime(now)}</time></p>
       </div>
       <div className="gate-head-side">
         <div className="gate-count" role="status" aria-live="polite">

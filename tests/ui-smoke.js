@@ -6751,7 +6751,10 @@ function unzipDocumentXml(buf) {
       await gd.click('button:has-text("Unlock the desk")');
       await gd.waitForFunction(() => /Check-in desk/i.test(document.body.innerText), null, { timeout: 8000 });
       const deskTxt = await gd.evaluate(() => document.body.innerText);
-      ok('/gate opens the desk on the right password (' + who + ')', /CHECK-IN DESK · EGBEDA DESK/i.test(deskTxt));
+      ok('/gate opens the desk on the right password (' + who + ')', /CHECK-IN DESK/i.test(deskTxt)
+        && /Egbeda desk/i.test(await gd.evaluate(() => (document.querySelector('.gate-title') || {}).textContent || '')));
+      /* The door checks in everyone all year: it names itself, never the edition. */
+      ok('…and is not a Summer School screen (' + who + ')', !/Summer School/i.test(deskTxt));
       /* Check-in only: a desk link is for the door. Sign-ups have their own
          link (/apply?g=…), so the desk offers no registration form. */
       ok('…straight onto check-in, with no registration tab', !/\bRegister\b/.test(deskTxt)
