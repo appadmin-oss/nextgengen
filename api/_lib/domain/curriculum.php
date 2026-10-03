@@ -37,7 +37,9 @@ declare(strict_types=1);
  */
 
 const CURR_STATUSES       = ['draft', 'published', 'retired'];
-const CURR_MATERIAL_KINDS = ['pdf', 'slides', 'doc', 'sheet', 'video', 'audio', 'image', 'link'];
+const CURR_MATERIAL_KINDS = ['pdf', 'slides', 'doc', 'sheet', 'video', 'audio', 'image', 'ebook', 'code', 'archive', 'interactive', 'link'];
+/** A material's life: an editor's goes straight to approved; an instructor's waits. */
+const CURR_MATERIAL_STATUSES = ['approved', 'pending', 'rejected'];
 const CURR_CHECK_KINDS    = ['mcq', 'short', 'task'];
 const CURR_IMPORT_MAX     = 1000;
 const CURR_BULK_MAX       = 500;
@@ -68,6 +70,9 @@ function curriculum_material_kind(string $kind, string $url): string {
     $kind = strtolower(trim($kind));
     if (in_array($kind, CURR_MATERIAL_KINDS, true)) return $kind;
     $path = strtolower((string)parse_url($url, PHP_URL_PATH));
+    // A stored file's name is in its query (curriculum-file.php?f=<hash>.<ext>).
+    parse_str((string)parse_url($url, PHP_URL_QUERY), $q);
+    if (!empty($q['f']) && is_string($q['f'])) $path = strtolower($q['f']);
     return match (true) {
         (bool)preg_match('/\.pdf$/', $path) => 'pdf',
         (bool)preg_match('/\.(pptx?|key|odp)$/', $path) => 'slides',
@@ -76,6 +81,10 @@ function curriculum_material_kind(string $kind, string $url): string {
         (bool)preg_match('/\.(mp4|mov|webm)$/', $path) || (bool)preg_match('~(youtube\.com|youtu\.be|vimeo\.com)~', $url) => 'video',
         (bool)preg_match('/\.(mp3|m4a|wav|ogg)$/', $path) => 'audio',
         (bool)preg_match('/\.(png|jpe?g|webp|gif)$/', $path) => 'image',
+        (bool)preg_match('/\.epub$/', $path) => 'ebook',
+        (bool)preg_match('/\.(py|ino|js|sb3|md)$/', $path) => 'code',
+        (bool)preg_match('/\.zip$/', $path) => 'archive',
+        (bool)preg_match('~(scratch\.mit\.edu|replit\.com|codepen\.io|phet\.colorado\.edu|geogebra\.org|desmos\.com|tinkercad\.com|wokwi\.com|code\.org)~', $url) => 'interactive',
         default => 'link',
     };
 }
@@ -124,7 +133,10 @@ function curriculum_load(string $where = '1=1', array $args = [], string $order 
     $ph = implode(',', array_fill(0, count($ids), '?'));
     $out = [];
     foreach ($units as $u) $out[(string)$u['unitId']] = ['unit' => $u, 'materials' => [], 'checks' => []];
-    foreach (db_all("SELECT * FROM curriculum_materials WHERE unitId IN ($ph) ORDER BY position, id", $ids) as $m) $out[(string)$m['unitId']]['materials'][] = $m;
+    /* Approved materials only. A submission waiting for review is not part
+       of the lesson yet — not for members, and not in the editor's list,
+       where saving would otherwise turn it into an approved one. */
+    foreach (db_all("SELECT * FROM curriculum_materials WHERE unitId IN ($ph) AND COALESCE(status,'approved') = 'approved' ORDER BY position, id", $ids) as $m) $out[(string)$m['unitId']]['materials'][] = $m;
     foreach (db_all("SELECT * FROM curriculum_checks WHERE unitId IN ($ph) ORDER BY position, id", $ids) as $c) $out[(string)$c['unitId']]['checks'][] = $c;
     return $out;
 }
@@ -285,10 +297,12 @@ function curriculum_write(array $v, ?array $existing, string $by, string $source
         } else {
             db_insert('curriculum_units', $row + ['unitId' => $unitId, 'source' => $source, 'createdBy' => $by, 'createdAt' => $now, 'version' => 1]);
         }
-        db_exec('DELETE FROM curriculum_materials WHERE unitId = ?', [$unitId]);
+        // The editor's list replaces the APPROVED materials; submissions
+        // waiting for review (or turned down) are left exactly as they are.
+        db_exec("DELETE FROM curriculum_materials WHERE unitId = ? AND COALESCE(status,'approved') = 'approved'", [$unitId]);
         foreach ($v['materials'] as $i => $m) {
             db_insert('curriculum_materials', ['materialId' => 'MAT-' . strtoupper(rand_hex(5)), 'unitId' => $unitId, 'kind' => $m['kind'],
-                'title' => $m['title'], 'url' => $m['url'], 'position' => $i + 1, 'createdAt' => $now]);
+                'title' => $m['title'], 'url' => $m['url'], 'position' => $i + 1, 'createdAt' => $now, 'status' => 'approved', 'submittedBy' => $by]);
         }
         /* Checks keep their ids where the editor sent them back, so a progress
            row's answers still point at the question they answered. */
@@ -330,7 +344,7 @@ function admin_curriculum_list(array $p): array {
     $counts = ['m' => [], 'c' => [], 'p' => []];
     if ($ids) {
         $ph = implode(',', array_fill(0, count($ids), '?'));
-        foreach (db_all("SELECT unitId, COUNT(*) n FROM curriculum_materials WHERE unitId IN ($ph) GROUP BY unitId", $ids) as $r) $counts['m'][$r['unitId']] = (int)$r['n'];
+        foreach (db_all("SELECT unitId, COUNT(*) n FROM curriculum_materials WHERE unitId IN ($ph) AND COALESCE(status,'approved') = 'approved' GROUP BY unitId", $ids) as $r) $counts['m'][$r['unitId']] = (int)$r['n'];
         foreach (db_all("SELECT unitId, COUNT(*) n FROM curriculum_checks WHERE unitId IN ($ph) GROUP BY unitId", $ids) as $r) $counts['c'][$r['unitId']] = (int)$r['n'];
         foreach (db_all("SELECT unitId, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) done, COUNT(*) started,
                                 SUM(pending) pend, AVG(CASE WHEN attempts > 0 THEN bestPct END) avgPct
@@ -872,7 +886,9 @@ function staff_curriculum(array $p): array {
         $out[] = curriculum_unit_public($b['unit'], $b['materials'], $b['checks'], true)
             + ['stats' => ['audience' => $audience, 'started' => $stats[$id]['started'] ?? 0, 'completed' => $stats[$id]['completed'] ?? 0]];
     }
-    return ['ok' => true, 'units' => $out, 'pending' => $pending, 'members' => count($members), 'role' => (string)$g['role']];
+    return ['ok' => true, 'units' => $out, 'pending' => $pending, 'members' => count($members), 'role' => (string)$g['role'],
+            'submissions' => curriculum_submissions_by((string)$g['member']['memberId']),
+            'selfApprove' => in_array('curriculum', member_effective_caps($g['member']), true)];
 }
 
 /** One member's curriculum, for the mentor or instructor whose member it is. */
@@ -945,6 +961,21 @@ const CURR_FILE_TYPES = [
     'csv'  => ['text/plain', 'text/csv'],
     'png'  => ['image/png'], 'jpg' => ['image/jpeg'], 'jpeg' => ['image/jpeg'], 'webp' => ['image/webp'],
     'mp3'  => ['audio/mpeg'], 'm4a' => ['audio/mp4', 'audio/x-m4a'], 'mp4' => ['video/mp4'],
+    // The wider range instructors teach from: spreadsheets and rich text,
+    // e-books, project packs, Scratch projects and code, more audio and video.
+    'ods'  => ['application/vnd.oasis.opendocument.spreadsheet'],
+    'rtf'  => ['text/rtf', 'application/rtf'],
+    'md'   => ['text/plain', 'text/markdown', 'text/x-markdown'],
+    'epub' => ['application/epub+zip'],
+    'zip'  => ['application/zip', 'application/x-zip-compressed'],
+    'sb3'  => ['application/zip'],
+    'py'   => ['text/x-python', 'text/x-script.python', 'text/plain'],
+    'ino'  => ['text/x-c', 'text/x-c++', 'text/plain'],
+    'gif'  => ['image/gif'],
+    'wav'  => ['audio/x-wav', 'audio/wav', 'audio/vnd.wave'],
+    'ogg'  => ['audio/ogg', 'video/ogg', 'application/ogg'],
+    'webm' => ['video/webm', 'audio/webm'],
+    'mov'  => ['video/quicktime'],
 ];
 
 function curriculum_file_dir(): string {
@@ -965,6 +996,11 @@ function curriculum_file_dir(): string {
  */
 function admin_curriculum_file_put(array $p): array {
     $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    return curriculum_file_store($p, (string)$g['requester']['memberId']);
+}
+
+/** Store one uploaded file for whoever the caller's gate already admitted. */
+function curriculum_file_store(array $p, string $by): array {
     $tmp = (string)($p['tmp'] ?? '');
     $name = basename((string)($p['name'] ?? ''));
     if ($tmp === '' || !is_file($tmp)) return ['ok' => false, 'error' => 'no_file'];
@@ -985,7 +1021,7 @@ function admin_curriculum_file_put(array $p): array {
         if (!$ok) return ['ok' => false, 'error' => 'store_failed'];
         @chmod($dest, 0644);
     }
-    audit('curriculum.file', (string)$g['requester']['memberId'], $file, ['name' => $name, 'bytes' => $size], (string)($p['ip'] ?? ''));
+    audit('curriculum.file', $by, $file, ['name' => $name, 'bytes' => $size], (string)($p['ip'] ?? ''));
     $url = '/api/member/curriculum-file.php?f=' . $file;
     return ['ok' => true, 'url' => $url, 'kind' => curriculum_material_kind('', 'x.' . $ext), 'bytes' => $size, 'name' => $name];
 }
@@ -1203,4 +1239,135 @@ function curriculum_overdue_board(string $mWhere, array $mArgs, string $course =
     }
     usort($out, static fn($a, $b) => [$b['worstDays'], $b['overdue']] <=> [$a['worstDays'], $a['overdue']]);
     return array_slice($out, 0, $limit);
+}
+
+/* ══ Materials instructors submit, and their approval ══════════════════════════
+ *
+ * An NGG instructor or mentor adds a material — a link, or a file in any of
+ * the store's types — to a lesson in one of THEIR courses. It is pending: not
+ * part of the lesson, not seen by members, not in the editor's list, until
+ * somebody holding `curriculum` approves it. A rejection carries a note back
+ * to the person who sent it. A submitter who already holds `curriculum`
+ * approves their own as they add it — there is nobody above them to wait for.
+ */
+const CURR_SUBMIT_NOTE_MAX = 500;
+
+function curriculum_material_public(array $m, array $names = [], array $titles = []): array {
+    return ['materialId' => (string)$m['materialId'], 'unitId' => (string)$m['unitId'], 'unitTitle' => (string)($titles[(string)$m['unitId']] ?? ''),
+            'kind' => (string)$m['kind'], 'title' => (string)$m['title'], 'url' => (string)$m['url'], 'note' => (string)($m['note'] ?? ''),
+            'status' => (string)($m['status'] ?: 'approved'), 'submittedBy' => (string)($m['submittedBy'] ?? ''),
+            'submitterName' => (string)($names[(string)($m['submittedBy'] ?? '')] ?? ''), 'submittedAt' => (string)$m['createdAt'],
+            'reviewedAt' => (string)($m['reviewedAt'] ?? ''), 'reviewNote' => (string)($m['reviewNote'] ?? '')];
+}
+
+/** staff.curriculum.material — an instructor submits a material to a lesson. */
+function staff_curriculum_material(array $p): array {
+    $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+    $u = db_row('SELECT unitId, course, title, status FROM curriculum_units WHERE unitId = ? LIMIT 1', [(string)($p['unitId'] ?? '')]);
+    if (!$u || (string)$u['status'] === 'retired') return ['ok' => false, 'error' => 'not_found'];
+    // Their courses only: an instructor's reach is their courses, here as in the roster.
+    if ($g['courses'] !== null && (string)$u['course'] !== '' && !in_array((string)$u['course'], $g['courses'], true)) {
+        return ['ok' => false, 'error' => 'out_of_scope', 'message' => 'That lesson is not in one of your courses.'];
+    }
+    $url = curriculum_material_url(trim((string)($p['url'] ?? '')));
+    if ($url === '') return ['ok' => false, 'error' => 'bad_material_url', 'detail' => 'a link must start with https://, or upload a file'];
+    $title = curriculum_clean_text($p['title'] ?? '', 160);
+    if (mb_strlen($title) < 2) return ['ok' => false, 'error' => 'title_required'];
+    $by = (string)$g['member']['memberId'];
+    $self = in_array('curriculum', member_effective_caps($g['member']), true);
+    $id = 'MAT-' . strtoupper(rand_hex(5));
+    $pos = (int)(db_row('SELECT COALESCE(MAX(position),0) p FROM curriculum_materials WHERE unitId = ?', [(string)$u['unitId']])['p'] ?? 0) + 1;
+    db_insert('curriculum_materials', ['materialId' => $id, 'unitId' => (string)$u['unitId'],
+        'kind' => curriculum_material_kind((string)($p['kind'] ?? ''), $url), 'title' => $title, 'url' => $url, 'position' => $pos,
+        'note' => curriculum_clean_text($p['note'] ?? '', CURR_SUBMIT_NOTE_MAX), 'status' => $self ? 'approved' : 'pending',
+        'submittedBy' => $by, 'createdAt' => now_iso()] + ($self ? ['reviewedBy' => $by, 'reviewedAt' => now_iso()] : []));
+    audit('curriculum.material.submit', $by, $id, ['unitId' => (string)$u['unitId'], 'title' => $title, 'self' => $self], (string)($p['ip'] ?? ''));
+    $m = db_row('SELECT * FROM curriculum_materials WHERE materialId = ?', [$id]);
+    return ['ok' => true, 'material' => curriculum_material_public($m, [], [(string)$u['unitId'] => (string)$u['title']]), 'approved' => $self];
+}
+
+/** staff.curriculum.file — an instructor uploads the file for a submission. */
+function staff_curriculum_file_put(array $p): array {
+    $g = curriculum_staff_gate($p); if (!$g['ok']) return $g;
+    return curriculum_file_store($p, (string)$g['member']['memberId']);
+}
+
+/** What this person has submitted, newest first, with each one's verdict. */
+function curriculum_submissions_by(string $memberId, int $limit = 50): array {
+    $rows = db_all("SELECT * FROM curriculum_materials WHERE submittedBy = ? AND COALESCE(status,'approved') IN ('pending','rejected','approved') AND reviewedBy <> submittedBy
+                    ORDER BY id DESC LIMIT " . (int)$limit, [$memberId]);
+    return curriculum_materials_shaped($rows);
+}
+
+function curriculum_materials_shaped(array $rows): array {
+    if (!$rows) return [];
+    $uids = array_values(array_unique(array_column($rows, 'unitId')));
+    $titles = array_column(db_all('SELECT unitId, title FROM curriculum_units WHERE unitId IN (' . implode(',', array_fill(0, count($uids), '?')) . ')', $uids), 'title', 'unitId');
+    $mids = array_values(array_unique(array_filter(array_column($rows, 'submittedBy'))));
+    $names = $mids ? array_column(db_all('SELECT memberId, fullName FROM members WHERE memberId IN (' . implode(',', array_fill(0, count($mids), '?')) . ')', $mids), 'fullName', 'memberId') : [];
+    return array_map(static fn($m) => curriculum_material_public($m, $names, $titles), $rows);
+}
+
+/** admin.curriculum.submissions — the review queue (pending first, then recent decisions). */
+function admin_curriculum_submissions(array $p): array {
+    $g = admin_cap_gate_any($p, ['curriculum', 'club']); if (!$g['ok']) return $g;
+    $status = (string)($p['status'] ?? 'pending');
+    if (!in_array($status, CURR_MATERIAL_STATUSES, true)) $status = 'pending';
+    $rows = db_all("SELECT * FROM curriculum_materials WHERE status = ? AND submittedBy <> '' AND COALESCE(reviewedBy,'') <> submittedBy ORDER BY id " . ($status === 'pending' ? 'ASC' : 'DESC') . ' LIMIT 300', [$status]);
+    $counts = array_column(db_all("SELECT status, COUNT(*) n FROM curriculum_materials WHERE submittedBy <> '' AND COALESCE(reviewedBy,'') <> submittedBy GROUP BY status"), 'n', 'status');
+    return ['ok' => true, 'materials' => curriculum_materials_shaped($rows), 'counts' => array_map('intval', $counts) + ['pending' => 0, 'approved' => 0, 'rejected' => 0]];
+}
+
+/**
+ * admin.curriculum.review — approve or reject submissions, one or many.
+ * Per-row verdicts; `unchanged` for one already decided that way; one audit
+ * event for the run; the submitter is told either way.
+ */
+function admin_curriculum_review(array $p): array {
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    $decision = (string)($p['decision'] ?? '');
+    if (!in_array($decision, ['approve', 'reject'], true)) return ['ok' => false, 'error' => 'bad_decision'];
+    $ids = array_values(array_unique(array_filter(array_map('strval', is_array($p['materialIds'] ?? null) ? $p['materialIds'] : []))));
+    if (!$ids) return ['ok' => false, 'error' => 'no_ids'];
+    if (count($ids) > CURR_BULK_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => CURR_BULK_MAX];
+    $note = curriculum_clean_text($p['note'] ?? '', CURR_SUBMIT_NOTE_MAX);
+    if ($decision === 'reject' && $note === '') return ['ok' => false, 'error' => 'note_required', 'message' => 'Say why, so the instructor can fix it.'];
+    $by = (string)$g['requester']['memberId'];
+    $to = $decision === 'approve' ? 'approved' : 'rejected';
+    $rows = array_column(db_all('SELECT * FROM curriculum_materials WHERE materialId IN (' . implode(',', array_fill(0, count($ids), '?')) . ')', $ids), null, 'materialId');
+    $results = []; $applied = 0; $told = [];
+    foreach ($ids as $id) {
+        $m = $rows[$id] ?? null;
+        if (!$m || (string)($m['submittedBy'] ?? '') === '') { $results[] = ['id' => $id, 'ok' => false, 'error' => 'not_found']; continue; }
+        if ((string)$m['status'] === $to) { $results[] = ['id' => $id, 'ok' => true, 'unchanged' => true]; continue; }
+        db_update('curriculum_materials', ['status' => $to, 'reviewedBy' => $by, 'reviewedAt' => now_iso(), 'reviewNote' => $note], ['materialId' => $id]);
+        $results[] = ['id' => $id, 'ok' => true];
+        $applied++;
+        $told[(string)$m['submittedBy']][] = $m;
+    }
+    foreach ($told as $who => $list) curriculum_review_notify($who, $list, $to, $note);
+    audit('curriculum.material.review', $by, '', ['decision' => $decision, 'count' => count($ids), 'applied' => $applied,
+        'refused' => count(array_filter($results, static fn($r) => !$r['ok']))], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'applied' => $applied, 'results' => $results];
+}
+
+/** Tell an instructor what became of what they sent: in-app, and by mail. */
+function curriculum_review_notify(string $memberId, array $list, string $to, string $note): void {
+    $m = db_row('SELECT memberId, fullName, email FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
+    if (!$m) return;
+    $titles = implode(', ', array_map(static fn($x) => (string)$x['title'], $list));
+    $n = count($list);
+    $head = $to === 'approved' ? ($n === 1 ? 'Your material was approved' : "{$n} of your materials were approved")
+                               : ($n === 1 ? 'Your material needs changes' : "{$n} of your materials need changes");
+    if (function_exists('push_notification')) {
+        push_notification($memberId, ['kind' => 'curriculum', 'title' => $head, 'body' => mb_substr($titles . ($note !== '' ? ' — ' . $note : ''), 0, 240), 'linkPage' => 'mentor']);
+    }
+    $email = trim((string)$m['email']);
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) return;
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    $body = '<p style="margin:0 0 10px">' . esc_html($titles) . '</p>'
+          . ($to === 'approved' ? '<p style="margin:0 0 10px">Members studying the lesson can see it now. Thank you.</p>'
+                                : '<p style="margin:0 0 10px"><b>Why:</b> ' . esc_html($note) . '</p><p style="margin:0 0 10px">Fix it and send it again from the Curriculum tab of your portal.</p>');
+    @send_mail($email, $head, email_template(['title' => $head, 'eyebrow' => 'NGG Club · Curriculum', 'intro' => 'A curriculum editor has looked at what you sent.',
+        'bodyHtml' => $body, 'ctaLabel' => 'Open my portal →', 'ctaUrl' => $origin . '/mentor']));
 }

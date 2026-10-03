@@ -10,7 +10,7 @@ if ($path === '') { http_response_code(404); exit; }
 $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
 $type = CURR_FILE_TYPES[$ext][0] ?? 'application/octet-stream';
 // Documents download; media and PDFs open in the browser.
-$inline = in_array($ext, ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'mp3', 'm4a', 'mp4', 'txt'], true);
+$inline = in_array($ext, ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'mp3', 'm4a', 'wav', 'ogg', 'mp4', 'webm', 'mov', 'txt'], true);
 header('Content-Type: ' . $type);
 header('Content-Length: ' . filesize($path));
 header('X-Content-Type-Options: nosniff');

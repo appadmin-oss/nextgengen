@@ -238,6 +238,25 @@ async function contextFor(memberId, admin, viewport) {
     chk('marking it completes the member\'s lesson', php(`echo db_row("SELECT p.status FROM curriculum_progress p JOIN curriculum_units u ON u.unitId = p.unitId WHERE u.title LIKE 'Hand position%'")['status'];`) === 'completed');
     await ip.screenshot({ path: path.join(SHOTS, 'instructor.png'), fullPage: true });
 
+    /* ── An instructor's material, approved ── */
+    await ip.click('.cur-staff-unit-btn:has-text("Finding middle C")');
+    await ip.click('button:has-text("+ Add a material")');
+    await ip.fill('.cur-staff-matform input[placeholder^="e.g. Bow hold"]', 'Middle C, slowed down');
+    await ip.fill('.cur-staff-matform input[placeholder^="https://"]', 'https://www.youtube.com/watch?v=middlec');
+    await ip.click('button:has-text("Send for approval")');
+    await ip.waitForSelector('.cur-staff-sub', { timeout: 15000 });
+    chk('an instructor sends a material, and it waits for approval', /Waiting for approval/.test(await ip.$eval('.cur-staff-sub', el => el.innerText))
+      && php(`echo db_row("SELECT status FROM curriculum_materials WHERE title = 'Middle C, slowed down'")['status'];`) === 'pending');
+    await ap.click('.admin-tab:has-text("Submissions")');
+    await ap.waitForSelector('.cur-subs .admin-table', { timeout: 15000 });
+    chk('the editor sees it in Submissions, from the instructor', /Middle C, slowed down/.test(await ap.$eval('.cur-subs', el => el.innerText)) && /Tobi Instructor/.test(await ap.$eval('.cur-subs', el => el.innerText)));
+    await ap.click('.cur-subs .admin-table thead input[type=checkbox]');
+    await ap.click('.admin-bulkbar button:has-text("Approve")');
+    await ap.click('.modal-ok, button:has-text("Approve") >> nth=-1').catch(() => {});
+    await ap.waitForFunction(() => /Nothing waiting/.test(document.querySelector('.cur-subs')?.innerText || ''), null, { timeout: 15000 });
+    chk('approving puts it in the lesson', php(`echo db_row("SELECT status FROM curriculum_materials WHERE title = 'Middle C, slowed down'")['status'];`) === 'approved');
+    await ap.screenshot({ path: path.join(SHOTS, 'submissions.png'), fullPage: true });
+
     /* ── Progress ── */
     await ap.click('.admin-tab:has-text("Progress")');
     await ap.waitForSelector('.cur-bar');

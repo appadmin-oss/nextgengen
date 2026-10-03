@@ -2870,3 +2870,15 @@ CREATE TABLE IF NOT EXISTS curriculum_progress (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (125) ON DUPLICATE KEY UPDATE version = version;
+
+-- 126: materials instructors submit wait for approval; members see only approved.
+ALTER TABLE curriculum_materials
+  ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'approved',
+  ADD COLUMN note TEXT,
+  ADD COLUMN submittedBy VARCHAR(64) DEFAULT '',
+  ADD COLUMN reviewedBy VARCHAR(64) DEFAULT '',
+  ADD COLUMN reviewedAt VARCHAR(40) DEFAULT '',
+  ADD COLUMN reviewNote TEXT,
+  ADD KEY idx_cmat_status (status, unitId);
+
+INSERT INTO schema_version (version) VALUES (126) ON DUPLICATE KEY UPDATE version = version;

@@ -4,7 +4,7 @@
  *   GET               their lessons, with progress
  *   GET ?unit=ID      one lesson (starts it)
  *   GET ?view=staff   an instructor's or mentor's view; &memberId= one member's
- *   POST action=submit | mark
+ *   POST action=submit | mark | material   (multipart `file` → an instructor's upload)
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_session();
@@ -21,6 +21,11 @@ if ($method === 'GET') {
     } else {
         $res = gs_call('member.curriculum.list', ['memberId' => $mid]);
     }
+} elseif ($method === 'POST' && !empty($_FILES['file'])) {
+    // An instructor's material file (multipart); the submission follows as JSON.
+    $f = $_FILES['file'];
+    if ((int)($f['error'] ?? 1) !== UPLOAD_ERR_OK) json_send(['ok' => false, 'error' => (int)($f['error'] ?? 1) === UPLOAD_ERR_INI_SIZE ? 'too_large' : 'upload_failed'], 400);
+    $res = gs_call('staff.curriculum.file', ['requesterId' => $mid, 'tmp' => (string)$f['tmp_name'], 'name' => (string)$f['name'], 'ip' => client_ip()]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
@@ -30,6 +35,9 @@ if ($method === 'GET') {
     } elseif ($action === 'mark') {
         $res = gs_call('staff.curriculum.mark', ['requesterId' => $mid, 'progressId' => (int)($b['progressId'] ?? 0),
             'marks' => is_array($b['marks'] ?? null) ? $b['marks'] : [], 'ip' => client_ip()]);
+    } elseif ($action === 'material') {
+        $res = gs_call('staff.curriculum.material', ['requesterId' => $mid, 'unitId' => (string)($b['unitId'] ?? ''), 'title' => (string)($b['title'] ?? ''),
+            'url' => (string)($b['url'] ?? ''), 'kind' => (string)($b['kind'] ?? ''), 'note' => (string)($b['note'] ?? ''), 'ip' => client_ip()]);
     } else {
         $res = ['ok' => false, 'error' => 'unknown_action'];
     }

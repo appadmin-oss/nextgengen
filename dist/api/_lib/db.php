@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 125;
+const NGG_SCHEMA_TARGET = 126;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3826,6 +3826,16 @@ function db_migrate(PDO $db): void {
             CREATE UNIQUE INDEX IF NOT EXISTS idx_cprog_key ON curriculum_progress(unitId, memberId);
             CREATE INDEX IF NOT EXISTS idx_cprog_member ON curriculum_progress(memberId);
             CREATE INDEX IF NOT EXISTS idx_cprog_pending ON curriculum_progress(pending, unitId);
+        ",
+        // Materials instructors submit wait for approval; members see only approved.
+        126 => "
+            ALTER TABLE curriculum_materials ADD COLUMN status TEXT NOT NULL DEFAULT 'approved';
+            ALTER TABLE curriculum_materials ADD COLUMN note TEXT DEFAULT '';
+            ALTER TABLE curriculum_materials ADD COLUMN submittedBy TEXT DEFAULT '';
+            ALTER TABLE curriculum_materials ADD COLUMN reviewedBy TEXT DEFAULT '';
+            ALTER TABLE curriculum_materials ADD COLUMN reviewedAt TEXT DEFAULT '';
+            ALTER TABLE curriculum_materials ADD COLUMN reviewNote TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_cmat_status ON curriculum_materials(status, unitId);
         ",
     ];
 

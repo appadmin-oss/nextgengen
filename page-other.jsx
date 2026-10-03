@@ -7739,6 +7739,52 @@ function MentorAttention({ centre, onOpenChild }) {
  * Their courses' lessons with how their members are getting on, and the
  * written answers waiting on them. The model answer and rubric sit beside each
  * answer, so a mark is a judgement against something written down. */
+/* An instructor adds a material to one of their lessons: a link, or a file
+   from the curriculum store's wide range. It waits for a curriculum editor's
+   approval before members see it — unless the instructor is one. */
+function StaffMaterialForm({ unitId, selfApprove, onDone }) {
+  const [open, setOpen] = React.useState(false);
+  const [f, setF] = React.useState({ title: "", url: "", note: "" });
+  const [busy, setBusy] = React.useState("");
+  const upload = async (file) => {
+    if (!file) return;
+    setBusy("upload");
+    try {
+      const r = await NGGApi.member.curriculumUpload(file);
+      setF(x => ({ ...x, url: r.url, title: x.title || String(r.name || file.name).replace(/\.[^.]+$/, "") }));
+    } catch (e) {
+      toast.error(e.code === "too_large" ? "That file is over 25 MB." : e.code === "bad_type" || e.code === "type_mismatch" ? "That kind of file isn't accepted." : humanizeError(e.code, e.code));
+    } finally { setBusy(""); }
+  };
+  const send = async (e) => {
+    e.preventDefault();
+    setBusy("send");
+    try {
+      const r = await NGGApi.member.curriculumMaterial({ unitId, ...f });
+      toast.success(r.approved ? "Added to the lesson." : "Sent — it appears in the lesson once a curriculum editor approves it.", f.title);
+      setF({ title: "", url: "", note: "" }); setOpen(false); onDone && onDone();
+    } catch (e2) {
+      toast.error(e2.code === "bad_material_url" ? "A link must start with https:// — or upload the file." : e2.code === "title_required" ? "Give it a title." : humanizeError(e2.code, e2.code));
+    } finally { setBusy(""); }
+  };
+  if (!open) return <button type="button" className="btn btn-ghost btn-sm cur-staff-add" onClick={() => setOpen(true)}>+ Add a material</button>;
+  return (
+    <form className="cur-staff-matform" onSubmit={send}>
+      <p className="cur-note">{selfApprove ? "You can approve curriculum, so this joins the lesson straight away." : "A curriculum editor approves it before members see it."}</p>
+      <label>Title <input className="cur-mark-fb" value={f.title} onChange={e => setF(x => ({ ...x, title: e.target.value }))} placeholder="e.g. Bow hold, slowed down" required/></label>
+      <label>Link <input className="cur-mark-fb" value={f.url} onChange={e => setF(x => ({ ...x, url: e.target.value }))} placeholder="https://… (a video, a Scratch project, a PDF)"/></label>
+      <label className="btn btn-ghost btn-sm cur-staff-upload">{busy === "upload" ? "Uploading…" : "…or upload a file"}
+        <input type="file" className="sr-only" accept={CUR_FILE_ACCEPT} onChange={e => { upload(e.target.files && e.target.files[0]); e.target.value = ""; }}/></label>
+      <span className="cur-note">PDF, slides, documents, sheets, e-books, images, audio, video, Scratch and code files, zip packs · up to 25 MB</span>
+      <label>Note for the editor <input className="cur-mark-fb" value={f.note} onChange={e => setF(x => ({ ...x, note: e.target.value }))} placeholder="What it is for (optional)"/></label>
+      <div className="cur-mark-row">
+        <button type="submit" className="btn btn-primary btn-sm" disabled={!!busy || !f.title.trim() || !f.url.trim()}>{busy === "send" ? "Sending…" : selfApprove ? "Add to the lesson" : "Send for approval"}</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setOpen(false)}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
 function StaffCurriculumPanel() {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -7789,6 +7835,20 @@ function StaffCurriculumPanel() {
             </div>
           ))}
       </section>
+      {(d.submissions || []).length > 0 && (
+        <section className="cur-staff-sec" aria-label="Materials you sent">
+          <h2 className="cur-staff-h">Materials you sent</h2>
+          <ul className="cur-staff-subs">
+            {d.submissions.map(m => (
+              <li key={m.materialId} className="cur-staff-sub">
+                <span><span aria-hidden="true">{CUR_MATERIAL_ICON[m.kind] || "🔗"}</span> {m.title} <span className="cur-staff-course">{m.unitTitle}</span></span>
+                <span className={"cur-chip " + (m.status === "approved" ? "is-done" : m.status === "rejected" ? "is-over" : "is-wait")}>{m.status === "approved" ? "Approved" : m.status === "rejected" ? "Sent back" : "Waiting for approval"}</span>
+                {m.status === "rejected" && m.reviewNote && <p className="cur-staff-sub-note">Why: {m.reviewNote}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section className="cur-staff-sec" aria-label="Lessons">
         <h2 className="cur-staff-h">Lessons · {d.members} member{d.members === 1 ? "" : "s"}</h2>
         {!d.units.length ? <p className="cur-staff-msg">No published lessons for your courses yet.</p> :
@@ -7806,6 +7866,7 @@ function StaffCurriculumPanel() {
                     <CurriculumText text={u.body}/>
                     <CurriculumMaterials materials={u.materials}/>
                     {u.checks.length > 0 && <p className="cur-note">{u.checks.length} check{u.checks.length === 1 ? "" : "s"} · pass mark {u.passMark}%</p>}
+                    <StaffMaterialForm unitId={u.unitId} selfApprove={!!d.selfApprove} onDone={load}/>
                   </div>
                 )}
               </li>

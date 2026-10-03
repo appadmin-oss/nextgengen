@@ -514,6 +514,17 @@ line starting `- ` makes a list, `## ` makes a heading), **materials** and
 - **✦ Draft with AI** writes a draft lesson and checks from the title. Nothing
   is saved until you press Save, and AI-written checks are labelled as such.
 
+**Materials from instructors.** NGG instructors and mentors can add a
+material to any lesson in **their own courses** from the Curriculum tab of
+their portal — a link (a video, a Scratch or Replit project, a PDF) or a file:
+PDF, slides, documents, sheets, e-books, images, audio, video, Scratch and
+code files, zip packs, up to 25 MB. It **waits for approval**: members do not
+see it, and it is not in the lesson editor's list, until somebody with the
+`curriculum` permission approves it under **Curriculum → Submissions** (one
+at a time or in bulk). Sending one back needs a reason, which the instructor
+gets by email and in their portal. Somebody who already holds `curriculum`
+adds materials straight in.
+
 **Statuses:** *Draft* (only staff see it), *Published* (members see it) and
 *Retired* (hidden, but the progress it holds is kept). A lesson somebody has
 started cannot be deleted — retire it. Changing the checks after somebody has

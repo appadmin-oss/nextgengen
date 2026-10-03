@@ -501,7 +501,7 @@ Managed by `api/_lib/domain/curriculum.php`.
 | `source` | `manual` \| `import` \| `ai`. |
 
 ### `curriculum_materials`
-`materialId`, `unitId`, `kind` (`pdf, slides, doc, sheet, video, audio, image, link`), `title`, `url` (https, or `/api/member/curriculum-file.php?f=<sha256>.<ext>` for an uploaded file), `position`.
+`materialId`, `unitId`, `kind` (`pdf, slides, doc, sheet, video, audio, image, ebook, code, archive, interactive, link`), `status` (`approved` | `pending` | `rejected`, migration 126 — members and the editor see approved only), `note`, `submittedBy`, `reviewedBy`, `reviewedAt`, `reviewNote`, `title`, `url` (https, or `/api/member/curriculum-file.php?f=<sha256>.<ext>` for an uploaded file), `position`.
 
 ### `curriculum_checks`
 `checkId`, `unitId`, `kind` (`mcq, short, task`), `prompt`, `options` (JSON array), `answer` (MCQ: option index), `rubric`, `points`, `position`, `source` (`manual`/`ai`).

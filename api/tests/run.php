@@ -23079,5 +23079,63 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-DUE-%'");
 })();
 
+/* ── Materials instructors submit, and their approval ───────────────────── */
+(function () {
+    $now = now_iso();
+    $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Sub ' . $id, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-SUB-ADM', 'club_admin'); $mk('NGG-SUB-INS', 'member', ['email' => 'sub-ins@example.com']); $mk('NGG-SUB-M', 'member', ['track' => 'Cello']);
+    db_insert('volunteers', ['volunteerId' => 'VOL-SUB-1', 'fullName' => 'Sub Instructor', 'email' => 'sub-ins@example.com', 'role' => 'instructor', 'courses' => '["Cello"]',
+        'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'ngg', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('curriculum_units', ['unitId' => 'CUR-SUB-1', 'course' => 'Cello', 'week' => 1, 'position' => 1, 'title' => 'Cello posture', 'status' => 'published', 'version' => 1, 'createdAt' => $now]);
+    db_insert('curriculum_units', ['unitId' => 'CUR-SUB-2', 'course' => 'Drums', 'week' => 1, 'position' => 1, 'title' => 'Drum grip', 'status' => 'published', 'version' => 1, 'createdAt' => $now]);
+    db_insert('curriculum_materials', ['materialId' => 'MAT-SUB-OK', 'unitId' => 'CUR-SUB-1', 'kind' => 'link', 'title' => 'Editor link', 'url' => 'https://example.org/a', 'position' => 1, 'createdAt' => $now]);
+
+    $sub = backend_dispatch('staff.curriculum.material', ['requesterId' => 'NGG-SUB-INS', 'unitId' => 'CUR-SUB-1', 'title' => 'Bow hold video',
+        'url' => 'https://www.youtube.com/watch?v=abc', 'note' => 'Shows the thumb placement clearly']);
+    chk('submissions: an NGG instructor adds a material to a lesson in their course, and it waits', !empty($sub['ok']) && $sub['material']['status'] === 'pending' && $sub['material']['kind'] === 'video' && $sub['approved'] === false);
+    chk('submissions: …but not to a lesson outside their courses', (backend_dispatch('staff.curriculum.material', ['requesterId' => 'NGG-SUB-INS', 'unitId' => 'CUR-SUB-2', 'title' => 'Sticks', 'url' => 'https://example.org/s'])['error'] ?? '') === 'out_of_scope');
+    chk('submissions: a link must be https', (backend_dispatch('staff.curriculum.material', ['requesterId' => 'NGG-SUB-INS', 'unitId' => 'CUR-SUB-1', 'title' => 'Bad', 'url' => 'http://example.org/x'])['error'] ?? '') === 'bad_material_url');
+    chk('submissions: an interactive site is recognised as one', curriculum_material_kind('', 'https://scratch.mit.edu/projects/1') === 'interactive' && curriculum_material_kind('', '/api/member/curriculum-file.php?f=' . str_repeat('a', 40) . '.epub') === 'ebook');
+
+    $list = backend_dispatch('member.curriculum.unit', ['memberId' => 'NGG-SUB-M', 'unitId' => 'CUR-SUB-1']);
+    chk('submissions: members do not see a pending material', array_column($list['unit']['materials'], 'title') === ['Editor link']);
+    $mid = $sub['material']['materialId'];
+    // Saving the lesson in the editor must not swallow a pending submission.
+    backend_dispatch('admin.curriculum.upsert', ['requesterId' => 'NGG-SUB-ADM', 'data' => ['unitId' => 'CUR-SUB-1', 'course' => 'Cello', 'week' => 1, 'position' => 1,
+        'title' => 'Cello posture', 'status' => 'published', 'materials' => [['url' => 'https://example.org/a', 'title' => 'Editor link']]]]);
+    chk('submissions: saving the lesson in the editor leaves the pending submission alone', (bool)db_row("SELECT id FROM curriculum_materials WHERE materialId = ? AND status = 'pending'", [$mid]));
+    $q = backend_dispatch('admin.curriculum.submissions', ['requesterId' => 'NGG-SUB-ADM']);
+    chk('submissions: the review queue shows it, with who sent it and their note', ($q['counts']['pending'] ?? 0) === 1 && $q['materials'][0]['submitterName'] === 'Sub NGG-SUB-INS' && $q['materials'][0]['note'] === 'Shows the thumb placement clearly');
+
+    chk('submissions: rejecting needs a reason', (backend_dispatch('admin.curriculum.review', ['requesterId' => 'NGG-SUB-ADM', 'decision' => 'reject', 'materialIds' => [$mid]])['error'] ?? '') === 'note_required');
+    $GLOBALS['__mail_sink'] = [];
+    $ap = backend_dispatch('admin.curriculum.review', ['requesterId' => 'NGG-SUB-ADM', 'decision' => 'approve', 'materialIds' => [$mid, 'MAT-NOPE']]);
+    chk('submissions: approving reports per row', $ap['applied'] === 1 && $ap['results'][1]['error'] === 'not_found');
+    chk('submissions: …the instructor is told', count(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'sub-ins@example.com' && strpos($m['subject'], 'approved') !== false)) === 1
+        && (bool)db_row("SELECT id FROM notifications WHERE memberId = 'NGG-SUB-INS' AND kind = 'curriculum'"));
+    $list2 = backend_dispatch('member.curriculum.unit', ['memberId' => 'NGG-SUB-M', 'unitId' => 'CUR-SUB-1']);
+    chk('submissions: …and members now see it', in_array('Bow hold video', array_column($list2['unit']['materials'], 'title'), true));
+    chk('submissions: approving again is unchanged, not re-sent', !empty(backend_dispatch('admin.curriculum.review', ['requesterId' => 'NGG-SUB-ADM', 'decision' => 'approve', 'materialIds' => [$mid]])['results'][0]['unchanged']));
+    $sub2 = backend_dispatch('staff.curriculum.material', ['requesterId' => 'NGG-SUB-INS', 'unitId' => 'CUR-SUB-1', 'title' => 'Blurry photo', 'url' => 'https://example.org/p.jpg']);
+    backend_dispatch('admin.curriculum.review', ['requesterId' => 'NGG-SUB-ADM', 'decision' => 'reject', 'materialIds' => [$sub2['material']['materialId']], 'note' => 'Too blurry to read the fingering']);
+    $mine = backend_dispatch('staff.curriculum', ['requesterId' => 'NGG-SUB-INS'])['submissions'] ?? [];
+    $byT = array_column($mine, null, 'title');
+    chk('submissions: the instructor sees each verdict and the reason', ($byT['Blurry photo']['status'] ?? '') === 'rejected' && ($byT['Blurry photo']['reviewNote'] ?? '') === 'Too blurry to read the fingering' && ($byT['Bow hold video']['status'] ?? '') === 'approved');
+    chk('submissions: an admin who submits is approved at once', (function () use ($now) {
+        db_insert('volunteers', ['volunteerId' => 'VOL-SUB-2', 'fullName' => 'Sub Admin', 'email' => 'ngg-sub-adm@example.com', 'role' => 'instructor', 'courses' => '["Cello"]', 'centre' => 'Egbeda', 'status' => 'active', 'programme' => 'ngg', 'createdAt' => $now, 'updatedAt' => $now]);
+        $r = backend_dispatch('staff.curriculum.material', ['requesterId' => 'NGG-SUB-ADM', 'unitId' => 'CUR-SUB-1', 'title' => 'Admin sheet', 'url' => 'https://example.org/sheet.pdf']);
+        return !empty($r['ok']) && $r['approved'] === true;
+    })());
+    chk('submissions: the review is one audit event per run', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'curriculum.material.review'")['c'] === 3);
+
+    unset($GLOBALS['__mail_sink']);
+    db_exec("DELETE FROM notifications WHERE memberId = 'NGG-SUB-INS'");
+    db_exec("DELETE FROM curriculum_materials WHERE unitId LIKE 'CUR-SUB-%'");
+    db_exec("DELETE FROM curriculum_units WHERE unitId LIKE 'CUR-SUB-%'");
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-SUB-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-SUB-%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

@@ -2326,7 +2326,7 @@ function DashCurriculum() {
         <div>
           <div className="eyebrow cur-eyebrow">CURRICULUM{data.track ? " · " + data.track.toUpperCase() : ""}</div>
           <h2 className="dash-card-h">{data.completed} of {data.total} lessons done.</h2>
-          {data.overdue > 0 && <p className="cur-overdue-note" role="status">{data.overdue} assessment{data.overdue === 1 ? " is" : "s are"} overdue. An assessment left undone more than {(data.units[0] || {}).fineAfterDays || 7} days after it is due is fined{(data.units[0] || {}).fineAmount ? " ₦" + Number(data.units[0].fineAmount).toLocaleString() : ""}.</p>}
+          {data.overdue > 0 && <p className="cur-overdue-note" role="status">{data.overdue} assessment{data.overdue === 1 ? " is" : "s are"} overdue. An assessment left undone more than {(data.units[0] || {}).fineAfterDays || 7} days after it is due is fined{(data.units[0] || {}).fineAmount ? " " + fmtMoney(data.units[0].fineAmount) : ""}.</p>}
         </div>
         <div className="cur-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={data.pct} aria-label="Curriculum completed">
           <span style={{ width: data.pct + "%" }}/>

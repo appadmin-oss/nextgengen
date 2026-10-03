@@ -2432,18 +2432,107 @@ const APPROVAL_STATUS_LABEL = { pending: "Waiting", approved: "Approved", reject
  */
 function AdminCurriculum() {
   const [tab, setTab] = useAdminTab("lessons");
+  // Materials instructors sent, waiting for review — on the tab, so a queue
+  // nobody opens still says it is there.
+  const [pendingSubs, setPendingSubs] = React.useState(0);
+  React.useEffect(() => { NGGApi.admin.curriculum.submissions("pending").then(r => setPendingSubs((r.counts || {}).pending || 0)).catch(() => {}); }, []);
   return (
     <div className="admin-section">
       <div className="admin-section-head"><h2 className="admin-h2">NGG curriculum</h2></div>
       <p className="admin-hint">What the Club teaches, lesson by lesson. Members see the published lessons for their course and the Club-wide ones on their dashboard; instructors and NGG mentors see them in their portal and mark the written answers.</p>
       <div className="admin-tabs" role="tablist">
-        {[["lessons", "Lessons"], ["import", "Import"], ["progress", "Progress"]].map(([k, l]) => (
-          <button key={k} role="tab" aria-selected={tab === k} className={"admin-tab" + (tab === k ? " is-active" : "")} onClick={() => setTab(k)}>{l}</button>
+        {[["lessons", "Lessons"], ["submissions", "Submissions"], ["import", "Import"], ["progress", "Progress"]].map(([k, l]) => (
+          <button key={k} role="tab" aria-selected={tab === k} className={"admin-tab" + (tab === k ? " is-active" : "")} onClick={() => setTab(k)}>
+            {l}{k === "submissions" && pendingSubs > 0 && <span className="admin-tab-count" aria-label={pendingSubs + " waiting"}>{pendingSubs}</span>}
+          </button>
         ))}
       </div>
       {tab === "lessons" && <CurriculumLessons/>}
+      {tab === "submissions" && <CurriculumSubmissions onCount={setPendingSubs}/>}
       {tab === "import" && <CurriculumImport/>}
       {tab === "progress" && <CurriculumProgress/>}
+    </div>
+  );
+}
+
+/* Materials NGG instructors and mentors submitted to lessons. Pending ones are
+   not part of any lesson until approved here; a rejection carries a note back
+   to the person who sent it. One declaration per action, for the bulk bar and
+   the row menu alike. */
+function CurriculumSubmissions({ onCount }) {
+  const [status, setStatus] = React.useState("pending");
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [rejecting, setRejecting] = React.useState(null);   // ids awaiting a note
+  const [note, setNote] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const load = React.useCallback(() => {
+    setErr("");
+    return NGGApi.admin.curriculum.submissions(status).then(r => { setD(r); onCount && onCount((r.counts || {}).pending || 0); }).catch(e => setErr(e.code || e.message));
+  }, [status, onCount]);
+  React.useEffect(() => { load(); }, [load]);
+  const rows = (d && d.materials) || [];
+  const sel = useAdminSelection(rows, m => m.materialId);
+  const actions = [
+    { id: "approve", label: "Approve", pastTense: "approved", reload: load, rowHidden: status === "approved",
+      confirm: ({ count }) => ({ title: "Approve " + count + " material" + (count === 1 ? "" : "s") + "?", body: "Members studying those lessons will see them straight away.", cta: "Approve" }),
+      run: (ids) => NGGApi.admin.curriculum.review("approve", ids) },
+    { id: "reject", label: "Send back…", rowHidden: status === "rejected",
+      open: (ids) => { setNote(""); setRejecting(ids); } },
+  ];
+  const reject = async (e) => {
+    e.preventDefault();
+    if (!note.trim()) return;
+    setBusy(true);
+    const ids = rejecting;
+    // The note form IS the confirmation, so no second dialog.
+    const r = await runAdminAction({ id: "reject", label: "Send back", pastTense: "sent back", confirm: false,
+      run: (x) => NGGApi.admin.curriculum.review("reject", x, note.trim()) }, ids, { noun: "material" });
+    setBusy(false);
+    if (r.ran) { setRejecting(null); sel.clear(); load(); }
+  };
+  return (
+    <div className="cur-subs">
+      <p className="admin-hint">Links and files that NGG instructors and mentors added to lessons in their courses. A pending one is not part of the lesson — members do not see it — until it is approved. Sending one back needs a reason, which goes to the instructor.</p>
+      <div className="admin-filters" role="group" aria-label="Which submissions">
+        {[["pending", "Waiting"], ["approved", "Approved"], ["rejected", "Sent back"]].map(([k, l]) => (
+          <button key={k} className={"btn btn-sm " + (status === k ? "btn-primary" : "btn-ghost")} aria-pressed={status === k} onClick={() => { setStatus(k); sel.clear(); }}>
+            {l}{d && d.counts && d.counts[k] ? " · " + d.counts[k] : ""}
+          </button>
+        ))}
+      </div>
+      <AdminBulkBar selection={sel} noun="material" actions={actions.filter(a => !(a.id === "approve" && status === "approved") && !(a.id === "reject" && status === "rejected"))}/>
+      {rejecting && (
+        <form className="cur-subs-reject" onSubmit={reject}>
+          <label className="admin-field"><span>Why is {rejecting.length === 1 ? "it" : "each of these " + rejecting.length} being sent back? The instructor reads this.</span>
+            <textarea className="admin-input" rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. The video is private — make it public or upload the file" autoFocus/></label>
+          <div className="cur-ed-row">
+            <button type="submit" className="btn btn-primary btn-sm" disabled={busy || !note.trim()}>{busy ? "Sending…" : "Send back"}</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setRejecting(null)}>Cancel</button>
+          </div>
+        </form>
+      )}
+      {err ? <ErrorState title="Couldn't load submissions" code={err} onRetry={load}/> :
+        !d ? <div className="dash-spinner" role="status" aria-label="Loading"/> :
+        !rows.length ? <div className="admin-empty">{status === "pending" ? "Nothing waiting. Materials instructors add to their lessons appear here." : "None yet."}</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <caption className="sr-only">Submitted materials</caption>
+          <thead><tr>
+            <th scope="col"><AdminSelectAll selection={sel} label="Select every submission shown"/></th>
+            <th scope="col">Material</th><th scope="col">Lesson</th><th scope="col">From</th><th scope="col">Note</th><th scope="col"><span className="sr-only">Actions</span></th>
+          </tr></thead>
+          <tbody>{rows.map(m => (
+            <tr key={m.materialId} className={sel.has(m.materialId) ? "is-selected" : ""}>
+              <td><AdminRowCheck selection={sel} id={m.materialId} label={"Select " + m.title}/></td>
+              <td><span aria-hidden="true">{CUR_MATERIAL_ICON[m.kind] || "🔗"}</span> <a href={m.url} target="_blank" rel="noopener noreferrer">{m.title}</a>
+                <div className="admin-cell-sub">{m.kind}{m.reviewNote ? " · " + m.reviewNote : ""}</div></td>
+              <td>{m.unitTitle}</td>
+              <td>{m.submitterName || m.submittedBy}<div className="admin-cell-sub">{fmtDate(m.submittedAt)}</div></td>
+              <td className="admin-cell-sub">{m.note || "—"}</td>
+              <td><AdminRowActions id={m.materialId} actions={actions} noun="material" reload={load}/></td>
+            </tr>
+          ))}</tbody>
+        </table></div>}
     </div>
   );
 }
@@ -2618,9 +2707,9 @@ function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved
         {!ro && <div className="cur-ed-row">
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setF(x => ({ ...x, materials: x.materials.concat([{ title: "", url: "", kind: "link" }]) }))}>+ Add a link</button>
           <label className="btn btn-ghost btn-sm cur-ed-upload">{busy === "upload" ? "Uploading…" : "↑ Upload a file"}
-            <input type="file" className="sr-only" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.odt,.odp,.txt,.csv,.png,.jpg,.jpeg,.webp,.mp3,.m4a,.mp4"
+            <input type="file" className="sr-only" accept={CUR_FILE_ACCEPT}
               onChange={e => { upload(e.target.files && e.target.files[0]); e.target.value = ""; }} disabled={!!busy}/></label>
-          <span className="admin-cell-sub">PDF, slides, documents, sheets, images, audio or video · up to 25 MB</span>
+          <span className="admin-cell-sub">PDF, slides, documents, sheets, e-books, images, audio, video, Scratch and code files, zip packs · up to 25 MB</span>
         </div>}
       </section>
 

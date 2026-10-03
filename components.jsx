@@ -3387,7 +3387,9 @@ Object.assign(window, {
    a lesson's text, so what an editor previews is what a member reads.
    ========================================================================== */
 
-const CUR_MATERIAL_ICON = { pdf: "📄", slides: "📊", doc: "📝", sheet: "📈", video: "🎬", audio: "🎧", image: "🖼", link: "🔗" };
+const CUR_MATERIAL_ICON = { pdf: "📄", slides: "📊", doc: "📝", sheet: "📈", video: "🎬", audio: "🎧", image: "🖼", ebook: "📚", code: "⌨", archive: "🗂", interactive: "🧩", link: "🔗" };
+/** Every file type the curriculum store accepts — keep in step with CURR_FILE_TYPES. */
+const CUR_FILE_ACCEPT = ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.odt,.odp,.ods,.rtf,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.gif,.mp3,.m4a,.wav,.ogg,.mp4,.webm,.mov,.epub,.zip,.sb3,.py,.ino";
 
 /* A lesson's body as text, never as HTML: blank lines make paragraphs, lines
    starting "- " or "* " make a list, "## " a subheading. Anything an importer
