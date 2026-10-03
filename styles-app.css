@@ -7443,3 +7443,12 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
   .volf-grid { grid-template-columns: 1fr; }
   .volf-card { padding: 20px 18px 22px; }
 }
+
+/* ── Summer venue editor (SummerVenueEditor) ───────────────────────────── */
+.svenue-cell { background: var(--cream-50); }
+.svenue { padding: 14px 4px; display: grid; gap: 12px; container-type: inline-size; }
+.svenue-lede, .svenue-foot { margin: 0; }
+.svenue-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px; }
+.svenue-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.promote-joins { min-width: 140px; }
+@container (max-width: 720px) { .svenue-grid { grid-template-columns: 1fr 1fr; } .svenue-wide { grid-column: 1 / -1; } }

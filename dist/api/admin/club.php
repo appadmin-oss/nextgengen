@@ -29,9 +29,9 @@ if ($method === 'GET') {
     $b = read_json_body();
     $action = (string)($b['action'] ?? '');
     if ($action === 'promote') {
-        $res = gs_call('admin.club.promote', ['requesterId' => $mid, 'studentId' => $b['studentId'] ?? '', 'ip' => client_ip()]);
+        $res = gs_call('admin.club.promote', ['requesterId' => $mid, 'studentId' => $b['studentId'] ?? '', 'centre' => (string)($b['centre'] ?? ''), 'ip' => client_ip()]);
     } elseif ($action === 'promoteBulk') {
-        $res = gs_call('admin.club.promote.bulk', ['requesterId' => $mid, 'studentIds' => $b['studentIds'] ?? [], 'ip' => client_ip()]);
+        $res = gs_call('admin.club.promote.bulk', ['requesterId' => $mid, 'studentIds' => $b['studentIds'] ?? [], 'centres' => is_array($b['centres'] ?? null) ? $b['centres'] : [], 'ip' => client_ip()]);
     } elseif ($action === 'bulk') {
         // `action` on the wire picks the route branch; `op` names the bulk
         // action, so one key never has to mean two things.

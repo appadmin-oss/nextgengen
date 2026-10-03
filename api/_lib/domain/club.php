@@ -72,9 +72,16 @@ function admin_club_promotable(array $p): array {
             $days[(string)$a['studentId']] = (int)$a['c'];
         }
     }
+    /* Where each would go. One centres query for the page and one ranking per
+       distinct Summer centre on it — the suggestion is about the centre, not
+       the child, so twenty participants from one venue cost one ranking. */
+    $centres = db_all("SELECT name, code, status, lat, lng, summerLat, summerLng, address, summerAddress, area, summerArea FROM centres");
+    $suggest = [];
     $out = [];
     foreach ($rows as $s) {
         $sid = (string)$s['studentId'];
+        $sc = (string)($s['centre'] ?? '');
+        if (!array_key_exists($sc, $suggest)) $suggest[$sc] = club_promote_suggestion($sc, $centres);
         $out[] = [
             'studentId' => $sid,
             'displayId' => (string)($s['displayId'] ?? ''),
@@ -94,6 +101,7 @@ function admin_club_promotable(array $p): array {
                way in, and the coordinator should know that BEFORE the run
                rather than discovering it in a support message. */
             'noContact' => trim((string)($s['parentEmail'] ?? '')) === '',
+            'suggestedCentre' => $suggest[$sc],
         ];
     }
     return ['ok' => true, 'students' => $out, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize,
@@ -120,8 +128,11 @@ function admin_club_promote_bulk(array $p): array {
     $results = []; $promoted = 0; $refused = 0;
     foreach ($ids as $sid) {
         $name = (string)(db_row('SELECT fullName FROM summer_students WHERE studentId = ?', [$sid])['fullName'] ?? '');
-        $r = admin_club_promote(['requesterId' => $p['requesterId'] ?? '', 'studentId' => $sid, 'ip' => $p['ip'] ?? '']);
-        if (!empty($r['ok'])) { $results[] = ['id' => $sid, 'name' => $name, 'ok' => true, 'memberId' => $r['memberId']]; $promoted++; }
+        /* A coordinator may have overridden the suggestion for some rows
+           (`centres` = {studentId: centre}); the rest take the suggestion. */
+        $pick = is_array($p['centres'] ?? null) ? trim((string)($p['centres'][$sid] ?? '')) : '';
+        $r = admin_club_promote(['requesterId' => $p['requesterId'] ?? '', 'studentId' => $sid, 'centre' => $pick, 'ip' => $p['ip'] ?? '']);
+        if (!empty($r['ok'])) { $results[] = ['id' => $sid, 'name' => $name, 'ok' => true, 'memberId' => $r['memberId'], 'centre' => $r['centre'] ?? '']; $promoted++; }
         else { $results[] = ['id' => $sid, 'name' => $name, 'ok' => false, 'error' => (string)($r['error'] ?? 'refused')]; $refused++; }
     }
     audit('club.promote.bulk', $g['requester']['memberId'], '',
@@ -196,12 +207,48 @@ function admin_club_members_bulk(array $p): array {
 }
 
 /** Promote a summer student into a full NGG Club member. */
+/**
+ * Which NGG centre a promoted Summer participant should join, and why.
+ *
+ * The nearest Club to where their Summer School met — a family who managed the
+ * summer venue every day can manage the nearest Club once a week. Falls back to
+ * their own centre (same identity, possibly a different building) when nothing
+ * is mapped well enough to measure, and says so, so a coordinator never mistakes
+ * a fallback for a measurement.
+ *
+ * @return array{name:string,km:?float,reason:string,alternatives:list<array>}
+ */
+function club_promote_suggestion(string $summerCentre, ?array $centres = null): array {
+    $ranked = centre_suggest_ngg($summerCentre, $centres);
+    if ($ranked) {
+        $best = $ranked[0];
+        return ['name' => $best['name'], 'km' => $best['km'],
+                'reason' => $best['same'] ? 'their own centre is also the nearest Club' : 'nearest Club to where their Summer School met',
+                'alternatives' => array_slice($ranked, 1, 3)];
+    }
+    $own = $summerCentre !== '' && db_row("SELECT name FROM centres WHERE name = ? AND status = 'active' LIMIT 1", [$summerCentre]);
+    return ['name' => $own ? $summerCentre : '', 'km' => null,
+            'reason' => $own ? 'their own centre — the venues are not mapped, so distance could not be measured' : 'no active centre could be suggested',
+            'alternatives' => []];
+}
+
 function admin_club_promote(array $p): array {
     $g = admin_cap_gate($p, 'club'); if (!$g['ok']) return $g;
     $sid = (string)($p['studentId'] ?? '');
     $s = db_row('SELECT * FROM summer_students WHERE studentId = ? LIMIT 1', [$sid]);
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
     if (($s['status'] ?? '') === 'promoted') return ['ok' => false, 'error' => 'already_promoted'];
+    /* The Club they join: the coordinator's choice when given, otherwise the
+       suggestion (the nearest Club to their Summer venue). A choice must be an
+       active centre — a typo here is a member posted nowhere. */
+    $chosen = trim((string)($p['centre'] ?? ''));
+    if ($chosen !== '') {
+        $hit = db_row("SELECT name FROM centres WHERE lower(name) = lower(?) AND status = 'active' LIMIT 1", [$chosen]);
+        if (!$hit) return ['ok' => false, 'error' => 'invalid_centre'];
+        $chosen = (string)$hit['name'];
+    } else {
+        $chosen = club_promote_suggestion((string)($s['centre'] ?? ''))['name'];
+    }
     $newId = new_id('NGG', 'members', 'memberId');
     /* Carry the record across.
      *
@@ -225,7 +272,7 @@ function admin_club_promote(array $p): array {
     $__m = [
         'memberId' => $newId, 'fullName' => $s['fullName'],
         'email' => $guardianEmail, 'type' => 'NGG',
-        'status' => 'active', 'role' => 'member', 'centre' => $s['centre'] ?: 'Egbeda',
+        'status' => 'active', 'role' => 'member', 'centre' => $chosen ?: ($s['centre'] ?: 'Egbeda'),
         'track' => $s['track'] ?: '', 'photoUrl' => $s['photoUrl'] ?: '',
         'dob' => (string)($s['dob'] ?? ''),
         'parentName' => (string)($s['guardianName'] ?? ''),
@@ -255,8 +302,8 @@ function admin_club_promote(array $p): array {
             ]));
     }
     db_update('summer_students', ['status' => 'promoted', 'updatedAt' => now_iso()], ['studentId' => $sid]);
-    audit('club.promote', $g['requester']['memberId'], $newId, ['fromSummer' => $sid], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'memberId' => $newId];
+    audit('club.promote', $g['requester']['memberId'], $newId, ['fromSummer' => $sid, 'centre' => $__m['centre'], 'summerCentre' => (string)($s['centre'] ?? '')], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'memberId' => $newId, 'centre' => $__m['centre']];
 }
 
 /**

@@ -428,6 +428,7 @@ function CentreDetail({ slug, go, setPage }) {
             <dl className="centre-find-list">
               {c.area && <div className="centre-find-row"><dt>Area</dt><dd>{c.area}</dd></div>}
               {c.address && <div className="centre-find-row"><dt>Address</dt><dd>{c.address}</dd></div>}
+              {c.summerVenue && c.summerVenue.address && <div className="centre-find-row"><dt>Summer School venue</dt><dd>{c.summerVenue.address}{c.summerVenue.area ? " · " + c.summerVenue.area : ""}</dd></div>}
               {lead && <div className="centre-find-row"><dt>Centre lead</dt><dd>{(lead.name || lead.handle)}{lead.role ? " · " + cap(lead.role) : ""}</dd></div>}
             </dl>
           </div>

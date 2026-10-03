@@ -13967,12 +13967,15 @@ function AdminCentres() {
                 {canWrite ? <>
                   <button className="btn btn-ghost btn-sm" aria-expanded={openId === c.centreId + ":edit"} onClick={() => toggle(c, "edit")}>{openId === c.centreId + ":edit" ? "Close" : "Edit"}</button>
                   <button className="btn btn-ghost btn-sm" aria-expanded={openId === c.centreId + ":map"} onClick={() => toggle(c, "map")}>{openId === c.centreId + ":map" ? "Close" : "Map"}</button>
+                  <button className="btn btn-ghost btn-sm" aria-expanded={openId === c.centreId + ":summer"} onClick={() => toggle(c, "summer")}
+                    title="Where Summer School meets, when it is not the Club's building">{openId === c.centreId + ":summer" ? "Close" : (c.summerLat != null || c.summerAddress ? "Summer venue ✓" : "Summer venue")}</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => remove(c)} style={{ color: "#b03535" }}>Remove</button>
                 </> : <span className="admin-cell-sub">read-only</span>}
               </td>
             </tr>
             {canWrite && openId === c.centreId + ":edit" && <tr><td colSpan={7} style={{ background: "rgba(12,20,50,0.03)" }}><CentreDetailsEditor c={c} leadOptions={leadOptions} onSaved={() => { setOpenId(""); load(); }}/></td></tr>}
             {canWrite && openId === c.centreId + ":map" && <tr><td colSpan={7} style={{ background: "rgba(12,20,50,0.03)" }}><CentreGeoEditor c={c} onSaved={() => { setOpenId(""); load(); }}/></td></tr>}
+            {canWrite && openId === c.centreId + ":summer" && <tr><td colSpan={7} className="svenue-cell"><SummerVenueEditor c={c} onSaved={() => { setOpenId(""); load(); }}/></td></tr>}
             </React.Fragment>
           ))}</tbody>
         </table></div>}
@@ -14157,6 +14160,70 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
 
 /* Per-centre geo-fence editor: capture the point on-site (device GPS) or enter
  * coordinates from a dependable source, set the radius, and toggle the fence. */
+/* Where Summer School meets for this centre, when it is not the Club's building.
+   Same centre, same code and colour and printed prefix — only the venue moves.
+   Blank means Summer meets where the Club does (centre_point() in
+   registration.php). It drives the Summer registration desk's fence and the
+   nearest-Club suggestion when a participant is promoted. */
+function SummerVenueEditor({ c, onSaved }) {
+  const [f, setF] = React.useState({
+    summerAddress: c.summerAddress || "", summerArea: c.summerArea || "",
+    summerLat: c.summerLat != null ? String(c.summerLat) : "", summerLng: c.summerLng != null ? String(c.summerLng) : "",
+  });
+  const [busy, setBusy] = React.useState(false);
+  const [locating, setLocating] = React.useState(false);
+  const set = (k) => (e) => setF(x => ({ ...x, [k]: e.target.value }));
+  const capture = () => {
+    if (!navigator.geolocation) { toast.error("This device can't capture GPS."); return; }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      p => { setF(x => ({ ...x, summerLat: p.coords.latitude.toFixed(6), summerLng: p.coords.longitude.toFixed(6) })); setLocating(false); toast.success("Captured this spot (±" + Math.round(p.coords.accuracy) + "m). Review and save."); },
+      e => { setLocating(false); toast.error(e && e.code === 1 ? "Location permission was blocked." : "Couldn't get a GPS fix — try again outdoors."); },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  };
+  const save = async (clear) => {
+    const la = parseFloat(f.summerLat), ln = parseFloat(f.summerLng);
+    if (!clear && (f.summerLat !== "" || f.summerLng !== "") && (isNaN(la) || isNaN(ln))) { toast.error("Enter both coordinates, or neither."); return; }
+    setBusy(true);
+    try {
+      const data = { centreId: c.centreId, name: c.name, code: c.code, color: c.color };
+      if (clear) data.summerClear = true;
+      else {
+        data.summerAddress = f.summerAddress; data.summerArea = f.summerArea;
+        if (!isNaN(la) && !isNaN(ln)) { data.summerLat = la; data.summerLng = ln; }
+      }
+      await NGGApi.admin.registration.centreUpsert(data);
+      toast.success(clear ? "Summer School meets at the Club again." : "Summer venue saved.", c.name); onSaved();
+    } catch (e) { toast.error(e.code === "bad_latlng" ? "Those coordinates aren't valid." : humanizeError(e.code, e.code)); }
+    finally { setBusy(false); }
+  };
+  const hasVenue = c.summerLat != null || !!c.summerAddress;
+  return (
+    <div className="svenue">
+      <p className="admin-hint svenue-lede">
+        Same centre — name, code, colour and printed prefix — but Summer School can meet in a different building.
+        Leave this blank if Summer meets at the Club's address{c.address ? " (" + c.address + ")" : ""}.
+      </p>
+      <div className="svenue-grid">
+        <label className="admin-field svenue-wide"><span className="admin-label">Summer venue address</span>
+          <input className="admin-input" value={f.summerAddress} onChange={set("summerAddress")} placeholder="e.g. Community Grammar School, Ayobo Road"/></label>
+        <label className="admin-field"><span className="admin-label">Area</span>
+          <input className="admin-input" value={f.summerArea} onChange={set("summerArea")} placeholder="e.g. Ayobo"/></label>
+        <label className="admin-field"><span className="admin-label">Latitude</span>
+          <input className="admin-input" inputMode="decimal" value={f.summerLat} onChange={set("summerLat")} placeholder="6.601234"/></label>
+        <label className="admin-field"><span className="admin-label">Longitude</span>
+          <input className="admin-input" inputMode="decimal" value={f.summerLng} onChange={set("summerLng")} placeholder="3.301234"/></label>
+      </div>
+      <div className="svenue-actions">
+        <button type="button" className="btn btn-ghost btn-sm" disabled={locating} onClick={capture}>{locating ? "Locating…" : "📍 Capture on-site"}</button>
+        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => save(false)}>{busy ? "Saving…" : "Save Summer venue"}</button>
+        {hasVenue && <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => save(true)}>Summer meets at the Club</button>}
+      </div>
+      <p className="admin-hint svenue-foot">Used by the Summer registration desk's location check, and to suggest the nearest Club when a participant is promoted.</p>
+    </div>
+  );
+}
+
 function CentreGeoEditor({ c, onSaved }) {
   const [lat, setLat] = React.useState(c.lat != null ? String(c.lat) : "");
   const [lng, setLng] = React.useState(c.lng != null ? String(c.lng) : "");
@@ -15991,7 +16058,12 @@ function ClubPromote({ onChange }) {
   const [f, setF] = React.useState({ q: "", centre: "" });
   const [result, setResult] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
+  /* The Club each would join. Preselected from the server's suggestion (the
+     nearest Club to their Summer venue); a coordinator's change is kept here
+     and sent with the run, so the bulk bar and the row button agree. */
+  const [picks, setPicks] = React.useState({});
   const centreOpts = useCentreOptions();
+  const joinsFor = (s) => picks[s.studentId] ?? ((s.suggestedCentre && s.suggestedCentre.name) || s.centre || "");
 
   const load = React.useCallback((p) => {
     setErr(""); setRefreshing(true);
@@ -16026,7 +16098,9 @@ function ClubPromote({ onChange }) {
     if (!ok) return;
     setBusy(true);
     try {
-      const r = await NGGApi.admin.club.promoteBulk(ids);
+      const chosen = {};
+      rows.filter(s => ids.includes(s.studentId)).forEach(s => { chosen[s.studentId] = joinsFor(s); });
+      const r = await NGGApi.admin.club.promoteBulk(ids, chosen);
       setResult(r);
       const failed = (r.results || []).filter(x => x && x.ok === false);
       if (failed.length && r.promoted) {
@@ -16050,12 +16124,13 @@ function ClubPromote({ onChange }) {
   const promoteOne = async (s) => {
     const ok = await dialog.confirm({
       title: "Promote " + s.fullName + " into the Club?",
-      body: "Creates an active NGG member from this Summer School record, carrying their course, centre and photograph."
+      body: "Creates an active NGG member from this Summer School record, carrying their course and photograph, "
+        + "and posts them to " + (joinsFor(s) || "their centre") + "."
         + (s.noContact ? "\n\nThere is no guardian email on file, so no sign-in link can be sent — somebody will have to set that up by hand." : ""),
       cta: "Promote",
     });
     if (!ok) return;
-    try { const r = await NGGApi.admin.club.promote(s.studentId); toast.success("Promoted → " + r.memberId, s.fullName); await load(); if (onChange) await onChange(); }
+    try { const r = await NGGApi.admin.club.promote(s.studentId, joinsFor(s)); toast.success("Promoted → " + r.memberId + (r.centre ? " · " + r.centre : ""), s.fullName); await load(); if (onChange) await onChange(); }
     catch (e) { toast.error(humanizeError(e.message, e.code), "Couldn't promote " + s.fullName); }
   };
 
@@ -16113,7 +16188,8 @@ function ClubPromote({ onChange }) {
                 <th scope="col" style={{ width: 34 }}><AdminSelectAll selection={sel} label="Select all on this page"/></th>
                 <th scope="col">Student</th>
                 <th scope="col">Course</th>
-                <th scope="col">Centre</th>
+                <th scope="col">Summer centre</th>
+                <th scope="col">Joins (Club)</th>
                 <th scope="col" className="admin-num">Days present</th>
                 <th scope="col">Guardian email</th>
                 <th scope="col"><span className="sr-only">Actions</span></th>
@@ -16127,6 +16203,21 @@ function ClubPromote({ onChange }) {
                   </td>
                   <td>{s.track || <span className="admin-cell-sub">—</span>}</td>
                   <td>{s.centre || <span className="admin-cell-sub">—</span>}</td>
+                  <td>
+                    <select className="admin-select promote-joins" value={joinsFor(s)}
+                      onChange={e => setPicks(x => ({ ...x, [s.studentId]: e.target.value }))}
+                      aria-label={"Club centre " + (s.fullName || s.studentId) + " joins"}>
+                      {!joinsFor(s) && <option value="">Choose a centre…</option>}
+                      {(joinsFor(s) && !centreOpts.includes(joinsFor(s)) ? [joinsFor(s), ...centreOpts] : centreOpts).map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    {s.suggestedCentre && (
+                      <div className="admin-cell-sub" title={s.suggestedCentre.reason}>
+                        {picks[s.studentId] && picks[s.studentId] !== s.suggestedCentre.name
+                          ? "Suggested: " + s.suggestedCentre.name
+                          : s.suggestedCentre.km != null ? "Nearest · " + s.suggestedCentre.km + " km" : "Not mapped — their own centre"}
+                      </div>
+                    )}
+                  </td>
                   <td className="admin-num">{s.attendanceCount}</td>
                   <td>{s.noContact
                     ? <span className="chip chip-gold" title="They can be promoted, but no sign-in link can be emailed">none on file</span>

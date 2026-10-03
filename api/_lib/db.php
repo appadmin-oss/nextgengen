@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 123;
+const NGG_SCHEMA_TARGET = 124;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3736,6 +3736,20 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_appr_requester ON admin_approvals(requesterId, id);
             ALTER TABLE volunteers ADD COLUMN programme TEXT DEFAULT 'summer';
             ALTER TABLE applications ADD COLUMN programme TEXT DEFAULT '';
+        ",
+
+        /* A centre is one identity for both programmes — its name, code, colour
+         * and printed prefix — but Summer School often runs at a different
+         * VENUE from the year-round Club. The address and map point were the
+         * Club's, so a Summer family was sent to the wrong building and the
+         * registration desk's fence was drawn round the wrong one. The Summer
+         * venue is its own optional address and point; blank means the Summer
+         * School meets where the Club does (centre_point()). */
+        124 => "
+            ALTER TABLE centres ADD COLUMN summerAddress TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN summerArea TEXT DEFAULT '';
+            ALTER TABLE centres ADD COLUMN summerLat REAL;
+            ALTER TABLE centres ADD COLUMN summerLng REAL;
         ",
     ];
 

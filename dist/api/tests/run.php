@@ -22677,5 +22677,41 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-VPR-ADM'");
 })();
 
+/* ── One centre, two venues; promotion suggests the nearest Club ─────────── */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-VEN-ADM', 'fullName' => 'Venue Admin', 'email' => 'ven-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    // Alpha's Club is far west; its Summer School meets next to Bravo's Club.
+    db_insert('centres', ['centreId' => 'CEN-VA', 'name' => 'Venue Alpha', 'code' => 'VNA', 'color' => '#224466', 'status' => 'active', 'lat' => 9.40, 'lng' => 7.00, 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('centres', ['centreId' => 'CEN-VB', 'name' => 'Venue Bravo', 'code' => 'VNB', 'color' => '#446622', 'status' => 'active', 'lat' => 9.60, 'lng' => 7.30, 'createdAt' => $now, 'updatedAt' => $now]);
+    $up = backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-VEN-ADM', 'data' => ['centreId' => 'CEN-VA', 'name' => 'Venue Alpha', 'code' => 'VNA', 'color' => '#224466',
+        'summerAddress' => 'Grammar School Hall', 'summerLat' => 9.601, 'summerLng' => 7.301]]);
+    chk('venues: a centre takes a Summer venue of its own', !empty($up['ok']));
+    $a = db_row("SELECT * FROM centres WHERE centreId = 'CEN-VA'");
+    chk('venues: Summer readers get the Summer venue', centre_point($a, 'summer')['venue'] === 'summer' && abs(centre_point($a, 'summer')['lat'] - 9.601) < 1e-6);
+    chk('venues: NGG readers never see it', centre_point($a, 'ngg')['venue'] === 'club' && abs(centre_point($a, 'ngg')['lat'] - 9.40) < 1e-6);
+    chk('venues: half a Summer point is refused', (backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-VEN-ADM', 'data' => ['centreId' => 'CEN-VA', 'name' => 'Venue Alpha', 'code' => 'VNA', 'color' => '#224466', 'summerLat' => 9.5]])['error'] ?? '') === 'bad_latlng');
+    $sug = club_promote_suggestion('Venue Alpha');
+    chk('promote: the suggestion is the nearest Club to where Summer School met', $sug['name'] === 'Venue Bravo' && $sug['km'] !== null && $sug['km'] < 1.0);
+    chk('promote: …with the participant\'s own centre among the alternatives', (bool)array_filter($sug['alternatives'], fn($x) => $x['name'] === 'Venue Alpha'));
+    $b = db_row("SELECT * FROM centres WHERE centreId = 'CEN-VB'");
+    chk('venues: no Summer venue means Summer meets at the Club', centre_point($b, 'summer')['venue'] === 'club');
+
+    db_insert('summer_students', ['studentId' => 'SS-VEN-1', 'fullName' => 'Promo One', 'centre' => 'Venue Alpha', 'cohortId' => 'C-VEN', 'status' => 'graduated', 'parentEmail' => 'p1@example.com', 'enrolledAt' => $now, 'updatedAt' => $now]);
+    db_insert('summer_students', ['studentId' => 'SS-VEN-2', 'fullName' => 'Promo Two', 'centre' => 'Venue Alpha', 'cohortId' => 'C-VEN', 'status' => 'graduated', 'parentEmail' => 'p2@example.com', 'enrolledAt' => $now, 'updatedAt' => $now]);
+    $list = backend_dispatch('admin.club.promotable', ['requesterId' => 'NGG-VEN-ADM', 'q' => 'promo']);
+    $row = array_values(array_filter($list['students'] ?? [], fn($x) => $x['studentId'] === 'SS-VEN-1'))[0] ?? [];
+    chk('promote: the roster carries the suggestion', ($row['suggestedCentre']['name'] ?? '') === 'Venue Bravo');
+    $r1 = backend_dispatch('admin.club.promote', ['requesterId' => 'NGG-VEN-ADM', 'studentId' => 'SS-VEN-1']);
+    chk('promote: with no choice, the member joins the suggested Club', !empty($r1['ok']) && db_row('SELECT centre FROM members WHERE memberId = ?', [$r1['memberId']])['centre'] === 'Venue Bravo');
+    chk('promote: an inactive or unknown centre is refused', (backend_dispatch('admin.club.promote', ['requesterId' => 'NGG-VEN-ADM', 'studentId' => 'SS-VEN-2', 'centre' => 'Nowhere'])['error'] ?? '') === 'invalid_centre');
+    $r2 = backend_dispatch('admin.club.promote.bulk', ['requesterId' => 'NGG-VEN-ADM', 'studentIds' => ['SS-VEN-2'], 'centres' => ['SS-VEN-2' => 'venue alpha']]);
+    chk('promote: a coordinator\'s choice wins, in the bulk run too', ($r2['promoted'] ?? 0) === 1 && ($r2['results'][0]['centre'] ?? '') === 'Venue Alpha');
+    foreach ([$r1['memberId'] ?? '', $r2['results'][0]['memberId'] ?? ''] as $mid) if ($mid) { db_exec('DELETE FROM member_cards WHERE memberId = ?', [$mid]); db_exec('DELETE FROM members WHERE memberId = ?', [$mid]); }
+    db_exec("DELETE FROM summer_students WHERE studentId LIKE 'SS-VEN-%'");
+    db_exec("DELETE FROM centres WHERE centreId IN ('CEN-VA','CEN-VB')");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-VEN-ADM'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

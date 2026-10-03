@@ -1240,11 +1240,11 @@
            what this screen has always shown; pass 'all' for every status. */
         members:    (opts) => request('/admin/club.php' + qs(Object.assign({ view: 'members' },
                       typeof opts === 'string' ? { q: opts } : (opts || {})))),
-        promote:    (studentId) => request('/admin/club.php', { body: { action: 'promote', studentId } }),
+        promote:    (studentId, centre) => request('/admin/club.php', { body: { action: 'promote', studentId, centre: centre || '' } }),
         /* Bulk, and PARTIAL: read `results` for the per-row verdicts, not just
            `ok`. Each promotion goes through the single promote path, so the
            bulk cannot drift from it. */
-        promoteBulk: (studentIds) => request('/admin/club.php', { body: { action: 'promoteBulk', studentIds }, timeout: 180000 }),
+        promoteBulk: (studentIds, centres) => request('/admin/club.php', { body: { action: 'promoteBulk', studentIds, centres: centres || {} }, timeout: 180000 }),
         bulk:       (op, memberIds, payload) => request('/admin/club.php', {
                       body: Object.assign({ action: 'bulk', op, memberIds }, payload || {}), timeout: 120000 }),
       },

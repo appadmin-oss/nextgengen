@@ -2793,3 +2793,11 @@ ALTER TABLE volunteers ADD COLUMN programme VARCHAR(16) DEFAULT 'summer';
 ALTER TABLE applications ADD COLUMN programme VARCHAR(16) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (123) ON DUPLICATE KEY UPDATE version = version;
+
+-- 124: a centre's Summer School venue, when it is not where the Club meets.
+ALTER TABLE centres ADD COLUMN summerAddress VARCHAR(240) DEFAULT '';
+ALTER TABLE centres ADD COLUMN summerArea VARCHAR(120) DEFAULT '';
+ALTER TABLE centres ADD COLUMN summerLat DOUBLE NULL;
+ALTER TABLE centres ADD COLUMN summerLng DOUBLE NULL;
+
+INSERT INTO schema_version (version) VALUES (124) ON DUPLICATE KEY UPDATE version = version;

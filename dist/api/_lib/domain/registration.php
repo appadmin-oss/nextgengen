@@ -2665,10 +2665,76 @@ function geo_distance_m(float $lat1, float $lng1, float $lat2, float $lng2): flo
     return $R * 2 * atan2(sqrt($a), sqrt(1 - $a));
 }
 
-/** Active centres that are fenced AND carry a mapped point. */
+/**
+ * Where a centre IS, for one programme.
+ *
+ * One centre, two possible buildings: the Club's address and point, and — when
+ * Summer School runs somewhere else — the Summer venue's (migration 124). A
+ * Summer reader with no venue set gets the Club's, which is what "Summer meets
+ * where the Club does" means. An NGG reader never sees the Summer venue.
+ *
+ * @return array{lat:?float,lng:?float,address:string,area:string,venue:string}
+ *         venue: 'summer' when the Summer venue answered, 'club' otherwise
+ */
+function centre_point(array $c, string $programme = 'ngg'): array {
+    $summer = $programme === 'summer' && isset($c['summerLat'], $c['summerLng'])
+        && $c['summerLat'] !== null && $c['summerLat'] !== '' && $c['summerLng'] !== null && $c['summerLng'] !== '';
+    $summerText = $programme === 'summer' && trim((string)($c['summerAddress'] ?? '')) !== '';
+    $hasClub = isset($c['lat'], $c['lng']) && $c['lat'] !== null && $c['lat'] !== '' && $c['lng'] !== null && $c['lng'] !== '';
+    return [
+        'lat' => $summer ? (float)$c['summerLat'] : ($hasClub ? (float)$c['lat'] : null),
+        'lng' => $summer ? (float)$c['summerLng'] : ($hasClub ? (float)$c['lng'] : null),
+        'address' => $summerText ? (string)$c['summerAddress'] : (string)($c['address'] ?? ''),
+        'area' => ($programme === 'summer' && trim((string)($c['summerArea'] ?? '')) !== '') ? (string)$c['summerArea'] : (string)($c['area'] ?? ''),
+        'venue' => ($summer || $summerText) ? 'summer' : 'club',
+    ];
+}
+
+/**
+ * The NGG centres nearest a Summer School participant's centre, nearest first.
+ *
+ * Measured from where Summer School actually met (the centre's Summer venue,
+ * or the Club's address when it has none) to where each active centre's CLUB
+ * meets — the place a promoted member will have to get to every week. Centres
+ * with no mapped Club point cannot be ranked and are left out of the list; the
+ * caller falls back to the participant's own centre.
+ *
+ * @param array<int,array>|null $centres an already-loaded centres list, so a
+ *        roster page computes every suggestion from one query
+ * @return list<array{name:string,code:string,km:float,same:bool}>
+ */
+function centre_suggest_ngg(string $summerCentre, ?array $centres = null): array {
+    $centres ??= db_all("SELECT name, code, status, lat, lng, summerLat, summerLng, address, summerAddress, area, summerArea FROM centres");
+    $from = null;
+    foreach ($centres as $c) {
+        if (strcasecmp((string)$c['name'], $summerCentre) === 0) { $from = centre_point($c, 'summer'); break; }
+    }
+    if (!$from || $from['lat'] === null) return [];
+    $out = [];
+    foreach ($centres as $c) {
+        if ((string)($c['status'] ?? 'active') !== 'active') continue;
+        $to = centre_point($c, 'ngg');
+        if ($to['lat'] === null) continue;
+        $out[] = ['name' => (string)$c['name'], 'code' => (string)$c['code'],
+                  'km' => round(geo_distance_m($from['lat'], $from['lng'], $to['lat'], $to['lng']) / 1000, 1),
+                  'same' => strcasecmp((string)$c['name'], $summerCentre) === 0];
+    }
+    usort($out, fn($a, $b) => $a['km'] <=> $b['km'] ?: strcmp($a['name'], $b['name']));
+    return $out;
+}
+
+/** Active centres that are fenced AND carry a mapped point — the point of the
+ *  SUMMER venue, because the only fence is the Summer registration desk's. */
 function geo_fenced_centres(): array {
-    return db_all("SELECT centreId, name, code, color, lat, lng, radiusM FROM centres
-                   WHERE status = 'active' AND geofence = 1 AND lat IS NOT NULL AND lng IS NOT NULL");
+    $out = [];
+    foreach (db_all("SELECT centreId, name, code, color, lat, lng, summerLat, summerLng, summerAddress, address, radiusM FROM centres
+                     WHERE status = 'active' AND geofence = 1") as $c) {
+        $pt = centre_point($c, 'summer');
+        if ($pt['lat'] === null) continue;
+        $c['lat'] = $pt['lat']; $c['lng'] = $pt['lng'];
+        $out[] = $c;
+    }
+    return $out;
 }
 
 /**
@@ -2712,7 +2778,7 @@ function admin_centres_list(array $p): array {
     $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
     $canWrite = in_array('people', member_effective_caps($g['requester']), true);
     $c = summer_ensure_cohort();
-    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt FROM centres ORDER BY name");
+    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, summerAddress, summerArea, summerLat, summerLng, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt FROM centres ORDER BY name");
     // Volunteers available to lead a centre — active only, labelled for the picker.
     $vols = db_all("SELECT volunteerId, fullName, firstName, role, centre FROM volunteers WHERE status = 'active' ORDER BY fullName");
     $volById = [];
@@ -2825,6 +2891,7 @@ function admin_centres_upsert(array $p): array {
     $textFields = [
         'address' => 240, 'area' => 120, 'phone' => 40, 'email' => 160,
         'meetDays' => 120, 'meetTime' => 60, 'notes' => 400,
+        'summerAddress' => 240, 'summerArea' => 120,
     ];
     foreach ($textFields as $f => $max) {
         if (array_key_exists($f, $d)) $row[$f] = substr(trim((string)$d[$f]), 0, $max);
@@ -2906,6 +2973,22 @@ function admin_centres_upsert(array $p): array {
         $pageTouched = true;
     }
     if ($pageTouched || array_key_exists('pageStatus', $d)) $row['pageUpdatedAt'] = now_iso();
+
+    /* The Summer venue's point, when Summer School meets somewhere else. Both
+       or neither; `summerClear` removes it, so the venue falls back to the
+       Club's (centre_point()). */
+    if (!empty($d['summerClear'])) {
+        $row['summerLat'] = null; $row['summerLng'] = null; $row['summerAddress'] = ''; $row['summerArea'] = '';
+    } else {
+        $sLat = isset($d['summerLat']) && $d['summerLat'] !== '' && $d['summerLat'] !== null;
+        $sLng = isset($d['summerLng']) && $d['summerLng'] !== '' && $d['summerLng'] !== null;
+        if ($sLat || $sLng) {
+            if (!$sLat || !$sLng) return ['ok' => false, 'error' => 'bad_latlng'];
+            $la = (float)$d['summerLat']; $lo = (float)$d['summerLng'];
+            if ($la < -90 || $la > 90 || $lo < -180 || $lo > 180 || ($la === 0.0 && $lo === 0.0)) return ['ok' => false, 'error' => 'bad_latlng'];
+            $row['summerLat'] = $la; $row['summerLng'] = $lo;
+        }
+    }
 
     // Optional geo-mapping. Partial updates preserve any existing point: lat/lng
     // are only written when BOTH are supplied and valid; the fence flag only
@@ -3013,6 +3096,11 @@ function centre_page_public(array $c): array {
         'meetTime'  => $meta['meetTime'],
         'lead'      => $meta['lead'],
         'whatsappUrl' => (string)($c['whatsappUrl'] ?? ''),
+        /* Where Summer School meets, when it is not here — so a Summer family
+           reading the centre's page is not sent to the Club's building. Null
+           when Summer meets at the Club's address. */
+        'summerVenue' => ($sv = centre_point($c, 'summer'))['venue'] === 'summer'
+            ? ['address' => $sv['address'], 'area' => $sv['area']] : null,
     ];
 }
 
