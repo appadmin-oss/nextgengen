@@ -22835,6 +22835,9 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('document: the Word copy carries no toolbar', strpos(curriculum_document_html($doc, 'doc'), 'Save as PDF') === false);
     chk('document: lesson text is escaped, with its paragraphs, lists and headings',
         curriculum_text_html("## Warm up\nBreathe <b>in</b>\n\n- one\n- two") === '<h4>Warm up</h4><p>Breathe &lt;b&gt;in&lt;/b&gt;</p><ul><li>one</li><li>two</li></ul>');
+    chk('document: the editor\'s formatting prints too — bold, links, numbered lists, callouts, code', curriculum_text_html("Use **care** and [the guide](https://example.org/g)\n\n1. one\n2. two\n\n> Remember this\n\n```\nprint(1 < 2)\n```")
+        === '<p>Use <strong>care</strong> and <a href="https://example.org/g">the guide</a></p><ol><li>one</li><li>two</li></ol><blockquote>Remember this</blockquote><pre><code>print(1 &lt; 2)</code></pre>');
+    chk('document: an unsafe link is printed as text, never an href', strpos(curriculum_text_html('[click](javascript:alert(1))'), 'href') === false);
 
     $uid = $u1['unit']['unitId'];
     $open = backend_dispatch('member.curriculum.unit', ['memberId' => 'NGG-CUR-M1', 'unitId' => $uid]);

@@ -3394,36 +3394,129 @@ const CUR_FILE_ACCEPT = ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.odt,.odp,.ods,.r
 /* A lesson's body as text, never as HTML: blank lines make paragraphs, lines
    starting "- " or "* " make a list, "## " a subheading. Anything an importer
    or an AI typed reaches the page as words, so a pasted <script> is a sentence. */
+/* ── Lesson text: a small, safe formatting language ──────────────────────────
+   What the lesson editor's toolbar writes and what learners read. Rendered as
+   React elements, never as HTML, so nothing a lesson says can become markup:
+
+     ## Heading   ### Smaller heading      **bold**  *italic*  `code`
+     - bullet     1. numbered              [link text](https://…)
+     > a callout  ---  (a divider)         ![caption](https://… or a stored file)
+     ```          a block of code          a line that is just a YouTube or
+     ```                                   Vimeo link becomes the video
+
+   Links and images accept https only, or a file in the curriculum store. The
+   server renders the same language for the downloadable document
+   (curriculum_text_html), so the page and the printout agree. */
+const CUR_SAFE_URL = /^(https:\/\/[^\s<>"']+|\/api\/member\/curriculum-file\.php\?f=[a-f0-9]{16,64}\.[a-z0-9]{2,5})$/i;
+function curVideoEmbed(url) {
+  const u = String(url || "").trim();
+  let m = u.match(/^https:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{6,15})/);
+  if (m) return { src: "https://www.youtube-nocookie.com/embed/" + m[1], title: "YouTube video" };
+  m = u.match(/^https:\/\/(?:www\.)?vimeo\.com\/(?:video\/)?(\d{5,12})/);
+  if (m) return { src: "https://player.vimeo.com/video/" + m[1], title: "Vimeo video" };
+  return null;
+}
+function curInline(text, keyBase) {
+  const out = [];
+  const re = /(\*\*([^*]+)\*\*|\*([^*\s][^*]*)\*|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\))/g;
+  let last = 0, m, k = 0;
+  const s = String(text || "");
+  while ((m = re.exec(s))) {
+    if (m.index > last) out.push(s.slice(last, m.index));
+    const key = keyBase + "-" + (k++);
+    if (m[2]) out.push(<strong key={key}>{m[2]}</strong>);
+    else if (m[3]) out.push(<em key={key}>{m[3]}</em>);
+    else if (m[4]) out.push(<code key={key} className="cur-code-inline">{m[4]}</code>);
+    else if (m[5]) out.push(CUR_SAFE_URL.test(m[6]) ? <a key={key} href={m[6]} target="_blank" rel="noopener noreferrer">{m[5]}</a> : m[5]);
+    last = re.lastIndex;
+  }
+  if (last < s.length) out.push(s.slice(last));
+  return out;
+}
 function CurriculumText({ text }) {
-  const blocks = String(text || "").replace(/\r\n?/g, "\n").split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
-  if (!blocks.length) return null;
+  const src = String(text || "").replace(/\r\n?/g, "\n");
+  if (!src.trim()) return null;
+  // Code fences first, so nothing inside one is read as formatting.
+  const parts = src.split(/^```[^\n]*\n?/m);
+  const blocks = [];
+  parts.forEach((part, pi) => {
+    if (pi % 2 === 1) { blocks.push({ code: part.replace(/\n$/, "") }); return; }
+    part.split(/\n{2,}/).map(b => b.replace(/^\n+|\n+$/g, "")).filter(b => b.trim()).forEach(b => blocks.push({ text: b }));
+  });
   return (
     <div className="cur-text">
-      {blocks.map((b, i) => {
-        const lines = b.split("\n");
-        if (lines.every(l => /^\s*[-*•]\s+/.test(l))) {
-          return <ul key={i}>{lines.map((l, j) => <li key={j}>{l.replace(/^\s*[-*•]\s+/, "")}</li>)}</ul>;
+      {blocks.map((blk, i) => {
+        if (blk.code !== undefined) return <pre key={i} className="cur-code"><code>{blk.code}</code></pre>;
+        const b = blk.text, lines = b.split("\n");
+        if (lines.every(l => /^\s*[-*•]\s+/.test(l))) return <ul key={i}>{lines.map((l, j) => <li key={j}>{curInline(l.replace(/^\s*[-*•]\s+/, ""), i + "." + j)}</li>)}</ul>;
+        if (lines.every(l => /^\s*\d+[.)]\s+/.test(l))) return <ol key={i}>{lines.map((l, j) => <li key={j}>{curInline(l.replace(/^\s*\d+[.)]\s+/, ""), i + "." + j)}</li>)}</ol>;
+        if (lines.every(l => /^\s*>\s?/.test(l))) return <blockquote key={i} className="cur-callout">{lines.map((l, j) => <React.Fragment key={j}>{j > 0 && <br/>}{curInline(l.replace(/^\s*>\s?/, ""), i + "." + j)}</React.Fragment>)}</blockquote>;
+        if (lines.length === 1) {
+          const one = b.trim();
+          if (/^-{3,}$/.test(one)) return <hr key={i} className="cur-rule"/>;
+          if (/^###\s+/.test(one)) return <h4 key={i} className="cur-text-h4">{curInline(one.replace(/^###\s+/, ""), i)}</h4>;
+          if (/^#{1,2}\s+/.test(one)) return <h3 key={i} className="cur-text-h">{curInline(one.replace(/^#{1,2}\s+/, ""), i)}</h3>;
+          const img = one.match(/^!\[([^\]]*)\]\(([^)\s]+)\)$/);
+          if (img && CUR_SAFE_URL.test(img[2])) return <figure key={i} className="cur-figure"><img src={img[2]} alt={img[1]} loading="lazy"/>{img[1] && <figcaption>{img[1]}</figcaption>}</figure>;
+          const vid = curVideoEmbed(one);
+          if (vid) return <div key={i} className="cur-embed"><iframe src={vid.src} title={vid.title} loading="lazy" allow="accelerometer; encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="strict-origin-when-cross-origin"/></div>;
         }
-        if (/^#{1,3}\s+/.test(b) && lines.length === 1) return <h3 key={i} className="cur-text-h">{b.replace(/^#{1,3}\s+/, "")}</h3>;
-        return <p key={i}>{lines.map((l, j) => <React.Fragment key={j}>{j > 0 && <br/>}{l}</React.Fragment>)}</p>;
+        return <p key={i}>{lines.map((l, j) => <React.Fragment key={j}>{j > 0 && <br/>}{curInline(l, i + "." + j)}</React.Fragment>)}</p>;
       })}
     </div>
   );
 }
 
+/* Materials open IN the lesson — a PDF, a video, a recording, a picture or a
+   YouTube/Vimeo link plays or reads in place — with "Open" beside it for a new
+   tab or a download. Anything else (a document, slides, a zip) opens as before. */
+function curMaterialViewer(m) {
+  const u = String(m.url || ""), k = m.kind;
+  const v = curVideoEmbed(u);
+  if (v) return { type: "frame", src: v.src, title: v.title };
+  if (!CUR_SAFE_URL.test(u)) return null;
+  if (k === "pdf") return { type: "frame", src: u, title: m.title || "PDF" };
+  if (k === "video" && /\.(mp4|webm|mov)(\?|$)/i.test(u)) return { type: "video", src: u };
+  if (k === "audio") return { type: "audio", src: u };
+  if (k === "image") return { type: "image", src: u };
+  return null;
+}
 function CurriculumMaterials({ materials }) {
+  const [open, setOpen] = React.useState("");
   if (!materials || !materials.length) return null;
   return (
     <ul className="cur-mats" aria-label="Materials">
-      {materials.map((m, i) => (
-        <li key={m.materialId || i}>
-          <a className="cur-mat" href={m.url} target="_blank" rel="noopener noreferrer">
-            <span className="cur-mat-icon" aria-hidden="true">{CUR_MATERIAL_ICON[m.kind] || "🔗"}</span>
-            <span className="cur-mat-title">{m.title || m.url}</span>
-            <span className="cur-mat-kind">{m.kind}</span>
-          </a>
-        </li>
-      ))}
+      {materials.map((m, i) => {
+        const id = m.materialId || String(i);
+        const viewer = curMaterialViewer(m);
+        const isOpen = open === id && viewer;
+        return (
+          <li key={id} className={isOpen ? "is-open" : ""}>
+            <div className="cur-mat-row">
+              {viewer
+                ? <button type="button" className="cur-mat" aria-expanded={!!isOpen} onClick={() => setOpen(isOpen ? "" : id)}>
+                    <span className="cur-mat-icon" aria-hidden="true">{CUR_MATERIAL_ICON[m.kind] || "🔗"}</span>
+                    <span className="cur-mat-title">{m.title || m.url}</span>
+                    <span className="cur-mat-kind">{isOpen ? "Close" : (m.kind === "audio" ? "Listen" : m.kind === "image" ? "View" : m.kind === "pdf" ? "Read here" : "Watch")}</span>
+                  </button>
+                : <a className="cur-mat" href={m.url} target="_blank" rel="noopener noreferrer">
+                    <span className="cur-mat-icon" aria-hidden="true">{CUR_MATERIAL_ICON[m.kind] || "🔗"}</span>
+                    <span className="cur-mat-title">{m.title || m.url}</span>
+                    <span className="cur-mat-kind">{m.kind}</span>
+                  </a>}
+              {viewer && <a className="cur-mat-open" href={m.url} target="_blank" rel="noopener noreferrer" aria-label={"Open " + (m.title || "material") + " in a new tab"}>Open ↗</a>}
+            </div>
+            {isOpen && (
+              <div className={"cur-viewer is-" + viewer.type}>
+                {viewer.type === "frame" && <iframe src={viewer.src} title={viewer.title} loading="lazy" allow="encrypted-media; picture-in-picture; fullscreen" allowFullScreen/>}
+                {viewer.type === "video" && <video src={viewer.src} controls preload="metadata"/>}
+                {viewer.type === "audio" && <audio src={viewer.src} controls preload="metadata"/>}
+                {viewer.type === "image" && <img src={viewer.src} alt={m.title || ""}/>}
+              </div>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

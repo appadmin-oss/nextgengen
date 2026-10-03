@@ -722,19 +722,50 @@ function curriculum_document_html(array $doc, string $format): string {
  *  everything escaped, so nothing a lesson says becomes markup. */
 function curriculum_text_html(string $text): string {
     $e = static fn($v) => htmlspecialchars($v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $safe = static fn($u) => (bool)preg_match('#^(https://[^\s<>"\']+|/api/member/curriculum-file\.php\?f=[a-f0-9]{16,64}\.[a-z0-9]{2,5})$#i', $u);
+    // Inline: **bold**, *italic*, `code`, [text](url) — escaped first, so a
+    // lesson's own angle brackets stay text.
+    $inline = static function (string $line) use ($e, $safe): string {
+        $out = ''; $last = 0;
+        if (preg_match_all('/\*\*([^*]+)\*\*|\*([^*\s][^*]*)\*|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)/', $line, $mm, PREG_OFFSET_CAPTURE | PREG_SET_ORDER)) {
+            foreach ($mm as $m) {
+                $out .= $e(substr($line, $last, $m[0][1] - $last));
+                if (($m[1][0] ?? '') !== '') $out .= '<strong>' . $e($m[1][0]) . '</strong>';
+                elseif (($m[2][0] ?? '') !== '') $out .= '<em>' . $e($m[2][0]) . '</em>';
+                elseif (($m[3][0] ?? '') !== '') $out .= '<code>' . $e($m[3][0]) . '</code>';
+                else { $u = (string)($m[5][0] ?? ''); $href = str_starts_with($u, '/') ? curriculum_absolute_url($u) : $u;
+                       $out .= $safe($u) ? '<a href="' . $e($href) . '">' . $e($m[4][0]) . '</a>' : $e($m[4][0]); }
+                $last = $m[0][1] + strlen($m[0][0]);
+            }
+        }
+        return $out . $e(substr($line, $last));
+    };
     $out = '';
-    foreach (preg_split("/\R\s*\R/", trim($text)) as $block) {
-        $lines = array_values(array_filter(array_map('rtrim', preg_split("/\R/", $block)), static fn($l) => trim($l) !== ''));
-        if (!$lines) continue;
-        if (count(array_filter($lines, static fn($l) => str_starts_with(ltrim($l), '- '))) === count($lines)) {
-            $out .= '<ul>' . implode('', array_map(static fn($l) => '<li>' . $e(substr(ltrim($l), 2)) . '</li>', $lines)) . '</ul>';
-            continue;
+    $parts = preg_split('/^```[^\n]*\R?/m', str_replace("\r\n", "\n", trim($text)));
+    foreach ($parts as $pi => $part) {
+        if ($pi % 2 === 1) { $out .= '<pre><code>' . $e(rtrim($part, "\n")) . '</code></pre>'; continue; }
+        foreach (preg_split("/\\R\\s*\\R/", trim($part)) as $block) {
+            $lines = array_values(array_filter(array_map('rtrim', preg_split("/\\R/", $block)), static fn($l) => trim($l) !== ''));
+            if (!$lines) continue;
+            $all = static fn($re) => count(array_filter($lines, static fn($l) => (bool)preg_match($re, ltrim($l)))) === count($lines);
+            if ($all('/^[-*•]\s+/')) { $out .= '<ul>' . implode('', array_map(static fn($l) => '<li>' . $inline(preg_replace('/^[-*•]\s+/', '', ltrim($l))) . '</li>', $lines)) . '</ul>'; continue; }
+            if ($all('/^\d+[.)]\s+/')) { $out .= '<ol>' . implode('', array_map(static fn($l) => '<li>' . $inline(preg_replace('/^\d+[.)]\s+/', '', ltrim($l))) . '</li>', $lines)) . '</ol>'; continue; }
+            if ($all('/^>\s?/')) { $out .= '<blockquote>' . implode('<br>', array_map(static fn($l) => $inline(preg_replace('/^>\s?/', '', ltrim($l))), $lines)) . '</blockquote>'; continue; }
+            if (count($lines) === 1) {
+                $one = trim($lines[0]);
+                if (preg_match('/^-{3,}$/', $one)) { $out .= '<hr>'; continue; }
+                if (preg_match('/^!\[([^\]]*)\]\(([^)\s]+)\)$/', $one, $im) && $safe($im[2])) {
+                    $src = str_starts_with($im[2], '/') ? curriculum_absolute_url($im[2]) : $im[2];
+                    $out .= '<figure><img src="' . $e($src) . '" alt="' . $e($im[1]) . '" style="max-width:100%">' . ($im[1] !== '' ? '<figcaption>' . $e($im[1]) . '</figcaption>' : '') . '</figure>'; continue;
+                }
+                if (preg_match('~^https://(?:www\.|m\.)?(?:youtube\.com|youtu\.be|vimeo\.com)/\S+$~i', $one)) { $out .= '<p>Video: <a href="' . $e($one) . '">' . $e($one) . '</a></p>'; continue; }
+            }
+            foreach ($lines as $i => $l) {
+                if (preg_match('/^(#{1,3})\s+(.*)$/', ltrim($l), $h)) { $out .= '<h4>' . $inline($h[2]) . '</h4>'; unset($lines[$i]); }
+                else break;
+            }
+            if ($lines) $out .= '<p>' . implode('<br>', array_map($inline, $lines)) . '</p>';
         }
-        foreach ($lines as $i => $l) {
-            if (str_starts_with(ltrim($l), '## ')) { $out .= '<h4>' . $e(substr(ltrim($l), 3)) . '</h4>'; unset($lines[$i]); }
-            else break;
-        }
-        if ($lines) $out .= '<p>' . implode('<br>', array_map($e, $lines)) . '</p>';
     }
     return $out;
 }

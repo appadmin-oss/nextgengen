@@ -133,6 +133,14 @@ async function contextFor(memberId, admin, viewport) {
     await ap.selectOption('.cur-ed-grid select >> nth=1', 'published');
     await ap.fill('.cur-ed textarea[placeholder^="Two or three"]', 'Where every pianist starts.');
     await ap.fill('.cur-ed-body', 'Middle C sits in the centre.\n\n- Find the two black keys\n- C is just to their left');
+    // The editor's toolbar wraps the selection, and the preview renders it.
+    await ap.$eval('.cur-ed-body', el => { el.focus(); el.setSelectionRange(0, 8); });
+    await ap.click('.cur-rte-btn.is-b');
+    chk('the toolbar bolds the selected words', (await ap.$eval('.cur-ed-body', el => el.value)).startsWith('**Middle C** sits'));
+    await ap.click('.cur-rte-btn.is-preview');
+    chk('…and the preview shows the lesson as a learner will see it', await ap.$eval('.cur-rte-preview', el => !!el.querySelector('strong') && !!el.querySelector('ul')));
+    await ap.click('.cur-rte-btn.is-preview');
+    await ap.waitForSelector('.cur-ed-body');
     // A material file, uploaded to this server's store.
     const pdf = path.join(TMP, 'scale-sheet.pdf');
     fs.writeFileSync(pdf, '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n');
@@ -186,6 +194,13 @@ async function contextFor(memberId, admin, viewport) {
     await mp.waitForSelector('.cur-item', { timeout: 40000 });
     chk('the member sees their course\'s lessons and the Club-wide one', (await mp.$$('.cur-item')).length === 3);
     chk('…grouped by week', /Week 1/i.test(await mp.$eval('.cur', el => el.innerText)));
+    await mp.click('.cur-item:has-text("Finding middle C")');
+    await mp.waitForSelector('.cur-mats button.cur-mat', { timeout: 15000 });
+    chk('the lesson renders its formatting', await mp.$eval('.cur-text strong, .cur strong', el => el.textContent === 'Middle C'));
+    await mp.click('.cur-mats button.cur-mat');
+    chk('a PDF material opens inside the lesson, without leaving the platform', !!(await mp.waitForSelector('.cur-viewer iframe', { timeout: 10000 })));
+    await mp.goto(BASE + '/dashboard/learning', { waitUntil: 'domcontentloaded' });
+    await mp.waitForSelector('.cur-item', { timeout: 40000 });
     const mat = await get(BASE + matUrl, { Cookie: 'ngg_sess=' + mtoken });
     chk('the stored material serves to a signed-in member, as the PDF it was', mat.status === 200 && mat.headers['content-type'] === 'application/pdf' && mat.body.toString().startsWith('%PDF'));
     chk('the dashboard offers the curriculum as a document', (await mp.$$('.cur-download a')).length === 2);

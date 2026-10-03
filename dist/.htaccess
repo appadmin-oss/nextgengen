@@ -91,7 +91,9 @@ AddDefaultCharset UTF-8
   # directive it inherits default-src 'self', which silently blocks every
   # cross-origin iframe — the in-page PDF viewer (documents are served from
   # Cloudinary) and YouTube embeds both render as an empty box with a console
-  # error and nothing else. Only the two hosts we actually frame are listed.
+  # error and nothing else. Only the hosts we actually frame are listed — and
+  # Vimeo's player, because a lesson may embed a Vimeo video. media-src lets a
+  # lesson play an audio or video material in place (our own store, or https).
   #
   # youtube-nocookie.com rather than youtube.com for the embed itself: it is the
   # same player without the tracking cookie being set before a member presses
@@ -110,7 +112,8 @@ img-src 'self' data: https: blob:; \
 font-src 'self' https://fonts.gstatic.com data:; \
 connect-src 'self' https://api.cloudinary.com blob:; \
 worker-src 'self' blob:; \
-frame-src 'self' https://res.cloudinary.com https://www.youtube-nocookie.com https://www.youtube.com; \
+frame-src 'self' https://res.cloudinary.com https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; \
+media-src 'self' https: blob:; \
 frame-ancestors 'self'; \
 base-uri 'self'; \
 form-action 'self'; \

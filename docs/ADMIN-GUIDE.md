@@ -499,13 +499,21 @@ The curriculum is **NGG Club only**. Summer School does not use it.
 **A lesson** belongs to a **course** from the academy catalogue (Piano, Coding,
 …) or to *the whole Club* (leave the course blank), and sits at a **week** and a
 **position in that week**. Two lessons cannot share a slot. Each lesson has a
-summary, what they'll learn, the lesson text (blank lines make paragraphs, a
-line starting `- ` makes a list, `## ` makes a heading), **materials** and
-**checks**.
+summary, what they'll learn, the lesson text, **materials** and **checks**.
+
+The lesson text has a **formatting toolbar**: headings, bold, italic, bullet
+and numbered lists, a callout, code, a divider, links (**Ctrl+K**; also
+Ctrl+B and Ctrl+I), an **image** you upload, and a **video** — paste a
+YouTube or Vimeo link and it plays inside the lesson. **Preview** shows it as
+a learner will see it. Only https links (and files uploaded here) are kept as
+links; anything else stays plain text. The downloadable curriculum document
+carries the same formatting.
 
 - **Materials** are links (https only) or files uploaded to this server: PDF,
   slides, documents, sheets, images, audio or video, up to **25 MB** each.
-  Uploaded files open only for people who are signed in.
+  Uploaded files open only for people who are signed in. A PDF, image,
+  audio, video or YouTube/Vimeo material **opens inside the lesson** — the
+  learner does not leave the platform — with *Open ↗* for a new tab.
 - **Checks** are *multiple choice* (marked on the spot) or open: *written
   answer*, *essay*, *reflection*, *project write-up*, *code* or *practical
   task*. Open answers are marked by AI **only on a capable model** (set the

@@ -2640,6 +2640,99 @@ const CUR_MARK_HINT = {
   task: "Marked from the learner's account of what they did, against the rubric.",
 };
 
+/* ── The lesson text editor ───────────────────────────────────────────────────
+   A toolbar over a plain textarea, writing the small formatting language
+   CurriculumText renders (headings, bold, lists, links, images, video, code).
+   Plain text underneath, so an import, the AI draft and a hand edit all speak
+   the same language and nothing a lesson says can become HTML. Every button
+   has a keyboard route (Ctrl/⌘+B, I, K) and Preview shows exactly what a
+   member will see. */
+const LESSON_TOOLS = [
+  { id: "h2", label: "Heading", icon: "H", line: "## " },
+  { id: "h3", label: "Subheading", icon: "h", line: "### " },
+  { id: "b", label: "Bold (Ctrl+B)", icon: "B", wrap: ["**", "**"], key: "b" },
+  { id: "i", label: "Italic (Ctrl+I)", icon: "I", wrap: ["*", "*"], key: "i" },
+  { id: "ul", label: "Bulleted list", icon: "•", line: "- " },
+  { id: "ol", label: "Numbered list", icon: "1.", line: "1. " },
+  { id: "q", label: "Callout", icon: "❝", line: "> " },
+  { id: "code", label: "Code block", icon: "</>", block: ["```\n", "\n```"] },
+  { id: "hr", label: "Divider", icon: "—", insert: "\n\n---\n\n" },
+];
+function LessonTextEditor({ value, onChange, labelledBy, disabled }) {
+  const ref = React.useRef(null);
+  const [preview, setPreview] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const edit = (fn) => {
+    const ta = ref.current; if (!ta) return;
+    const v = value || "", a = ta.selectionStart, b = ta.selectionEnd;
+    const r = fn(v, a, b);
+    onChange(r.text);
+    requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(r.a, r.b); });
+  };
+  const apply = (t) => edit((v, a, b) => {
+    const sel = v.slice(a, b);
+    if (t.wrap) { const ins = t.wrap[0] + (sel || "text") + t.wrap[1]; return { text: v.slice(0, a) + ins + v.slice(b), a: a + t.wrap[0].length, b: a + ins.length - t.wrap[1].length }; }
+    if (t.block) { const ins = t.block[0] + (sel || "") + t.block[1]; return { text: v.slice(0, a) + ins + v.slice(b), a: a + t.block[0].length, b: a + t.block[0].length + sel.length }; }
+    if (t.insert) return { text: v.slice(0, a) + t.insert + v.slice(b), a: a + t.insert.length, b: a + t.insert.length };
+    // A line prefix: every selected line (or the current one) gets it; a numbered list counts up.
+    const ls = v.lastIndexOf("\n", a - 1) + 1, leRaw = v.indexOf("\n", b), le = leRaw === -1 ? v.length : leRaw;
+    const lines = v.slice(ls, le).split("\n").map((l, n) => (t.id === "ol" ? (n + 1) + ". " : t.line) + l.replace(/^(#{1,3}\s+|[-*•]\s+|\d+[.)]\s+|>\s?)/, ""));
+    const joined = lines.join("\n");
+    return { text: v.slice(0, ls) + joined + v.slice(le), a: ls, b: ls + joined.length };
+  });
+  const link = async () => {
+    const url = await dialog.prompt({ title: "Add a link", label: "Web address (https://…)", placeholder: "https://", cta: "Add link" });
+    if (!url) return;
+    if (!/^https:\/\//i.test(url.trim())) { toast.error("Links must start with https://"); return; }
+    edit((v, a, b) => { const txt = v.slice(a, b) || "link text"; const ins = "[" + txt + "](" + url.trim() + ")"; return { text: v.slice(0, a) + ins + v.slice(b), a: a + 1, b: a + 1 + txt.length }; });
+  };
+  const video = async () => {
+    const url = await dialog.prompt({ title: "Embed a video", label: "YouTube or Vimeo link", placeholder: "https://www.youtube.com/watch?v=…", cta: "Embed" });
+    if (!url) return;
+    if (!curVideoEmbed(url.trim())) { toast.error("That is not a YouTube or Vimeo link — add it as a link or a material instead."); return; }
+    edit((v, a) => { const ins = "\n\n" + url.trim() + "\n\n"; return { text: v.slice(0, a) + ins + v.slice(a), a: a + ins.length, b: a + ins.length }; });
+  };
+  const image = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const r = await NGGApi.admin.curriculum.upload(file);
+      if (r.kind !== "image") { toast.error("That is not an image — add it as a material instead."); return; }
+      const cap = String(file.name || "").replace(/\.[^.]+$/, "").replace(/[\[\]]/g, "");
+      edit((v, a) => { const ins = "\n\n![" + cap + "](" + r.url + ")\n\n"; return { text: v.slice(0, a) + ins + v.slice(a), a: a + ins.length, b: a + ins.length }; });
+    } catch (e) { toast.error(e.code === "too_large" ? "That image is over 25 MB." : humanizeError(e.code, e.code)); }
+    finally { setBusy(false); }
+  };
+  const onKey = (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const k = e.key.toLowerCase();
+    if (k === "k") { e.preventDefault(); link(); return; }
+    const t = LESSON_TOOLS.find(x => x.key === k);
+    if (t) { e.preventDefault(); apply(t); }
+  };
+  return (
+    <div className="cur-rte">
+      <div className="cur-rte-bar" role="toolbar" aria-label="Format the lesson" aria-controls="cur-rte-ta">
+        {LESSON_TOOLS.map(t => (
+          <button key={t.id} type="button" className={"cur-rte-btn is-" + t.id} aria-label={t.label} title={t.label} disabled={disabled || preview} onClick={() => apply(t)}>{t.icon}</button>
+        ))}
+        <button type="button" className="cur-rte-btn" aria-label="Link (Ctrl+K)" title="Link (Ctrl+K)" disabled={disabled || preview} onClick={link}>🔗</button>
+        <label className={"cur-rte-btn" + (disabled || preview || busy ? " is-disabled" : "")} title="Insert an image" aria-label="Insert an image">{busy ? "…" : "🖼"}
+          <input type="file" className="sr-only" accept=".png,.jpg,.jpeg,.webp,.gif" disabled={disabled || preview || busy} onChange={e => { image(e.target.files && e.target.files[0]); e.target.value = ""; }}/></label>
+        <button type="button" className="cur-rte-btn" aria-label="Embed a YouTube or Vimeo video" title="Embed a video" disabled={disabled || preview} onClick={video}>▶</button>
+        <span className="cur-rte-sp"/>
+        <button type="button" className="cur-rte-btn is-preview" aria-pressed={preview} onClick={() => setPreview(p => !p)}>{preview ? "Edit" : "Preview"}</button>
+      </div>
+      {preview
+        ? <div className="cur-rte-preview">{(value || "").trim() ? <CurriculumText text={value}/> : <p className="admin-cell-sub">Nothing written yet.</p>}</div>
+        : <textarea id="cur-rte-ta" ref={ref} className="admin-input cur-ed-body" rows={12} value={value || ""} aria-labelledby={labelledBy}
+            onChange={e => onChange(e.target.value)} onKeyDown={onKey} disabled={disabled}
+            placeholder={"Write the lesson. Use the toolbar for headings, lists, links, pictures and videos.\n\n## A heading\nA paragraph — **bold** and *italic* work too.\n\n- a bulleted point\n- another"}/>}
+      <p className="admin-cell-sub cur-rte-hint">Blank lines make paragraphs. A line that is just a YouTube or Vimeo link plays the video in the lesson.</p>
+    </div>
+  );
+}
+
 function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved }) {
   const isNew = !unit.unitId;
   const [f, setF] = React.useState(() => ({
@@ -2720,8 +2813,8 @@ function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved
           <textarea className="admin-input" rows={2} value={f.summary} onChange={e => set("summary", e.target.value)} placeholder="Two or three sentences a member reads first."/></label>
         <label className="admin-field cur-ed-wide"><span className="admin-label">What they'll learn — one per line</span>
           <textarea className="admin-input" rows={3} value={f.objectives} onChange={e => set("objectives", e.target.value)} placeholder={"You will find middle C\nYou will play a C major scale"}/></label>
-        <label className="admin-field cur-ed-wide"><span className="admin-label">The lesson — blank lines make paragraphs, "- " makes a list</span>
-          <textarea className="admin-input cur-ed-body" rows={10} value={f.body} onChange={e => set("body", e.target.value)}/></label>
+        <div className="admin-field cur-ed-wide"><span className="admin-label" id="cur-ed-body-l">The lesson</span>
+          <LessonTextEditor value={f.body} onChange={v => set("body", v)} labelledBy="cur-ed-body-l" disabled={ro}/></div>
       </fieldset>
 
       <section className="cur-ed-sec" aria-label="Materials">
