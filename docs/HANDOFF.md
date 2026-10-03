@@ -393,3 +393,13 @@ table, applies the member policy (gate refusal, punctuality on member days,
 link. The Card Studio's member card was also handing a URL to an `<img>`, so its
 QR printed blank; it now renders a data URL. The member QR payload leads with
 the secure MEMQR code.
+
+## Summer School has a duration (2026-10)
+
+Editions had optional dates and nothing read them, so a season ran for ever:
+cards expired on a ninety-day timer unrelated to it, the desk took check-ins
+in November, and nothing closed an edition. Now there is invariant 7: a live
+edition needs dates, at most 183 days apart. The participant check-in refuses
+outside them. Cards issued for an edition (participants, edition volunteers)
+expire on its end date. `run-jobs.php` closes elapsed editions. The NGV
+promotion card is deliberately not season-bound.

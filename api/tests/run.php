@@ -22520,5 +22520,43 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-CI-1','NGG-CI-2','SUM-CI-3','NGG-CI-CLUB','NGG-CI-SUM')");
 })();
 
+/* ── Summer School has a duration (invariant 7) ───────────────────────── */
+(function () {
+    $A = 'NGG-2025-0099';
+    chk('season: a live edition needs dates', (backend_dispatch('admin.summer.edition.save',
+        ['requesterId' => $A, 'data' => ['year' => 2032, 'name' => 'Undated', 'status' => 'active']])['error'] ?? '') === 'dates_required');
+    chk('season: and no longer than six months', (backend_dispatch('admin.summer.edition.save',
+        ['requesterId' => $A, 'data' => ['year' => 2032, 'status' => 'active', 'startDate' => '2032-01-01', 'endDate' => '2032-12-31']])['error'] ?? '') === 'season_too_long');
+    chk('season: a planning edition may stay undated', !empty(backend_dispatch('admin.summer.edition.save',
+        ['requesterId' => $A, 'data' => ['year' => 2033, 'name' => 'Seas Plan', 'status' => 'planning']])['ok']));
+    $plan = db_row("SELECT cohortId FROM summer_cohorts WHERE name = 'Seas Plan'")['cohortId'];
+    chk('season: …but cannot be made live while undated', (backend_dispatch('admin.summer.edition.status',
+        ['requesterId' => $A, 'editionId' => $plan, 'status' => 'active'])['error'] ?? '') === 'dates_required');
+
+    $now = now_iso();
+    db_insert('summer_cohorts', ['cohortId' => 'SUM-SEAS-OLD', 'year' => 2020, 'name' => 'Old Season', 'startDate' => '2020-07-01', 'endDate' => '2020-08-31', 'status' => 'planning', 'createdAt' => $now]);
+    db_insert('summer_cohorts', ['cohortId' => 'SUM-SEAS-NEW', 'year' => 2099, 'name' => 'Far Season', 'startDate' => '2099-07-01', 'endDate' => '2099-08-31', 'status' => 'planning', 'createdAt' => $now]);
+    chk('season: a card issued for an edition expires with its season', summer_edition_card_expiry('SUM-SEAS-OLD') === '2020-08-31');
+    chk('season: an undated edition falls back to the validity clock', summer_edition_card_expiry('') === idcard_expiry_for());
+    foreach (['OLD' => 'SUM-SEAS-OLD', 'NEW' => 'SUM-SEAS-NEW'] as $k => $c) {
+        db_insert('summer_students', ['studentId' => 'SS-SEAS-' . $k, 'handle' => 'seas-' . strtolower($k), 'fullName' => 'Season ' . $k, 'cohortId' => $c, 'status' => 'active']);
+        db_insert('qr_codes', ['token' => 'SUMQR-SEAS' . $k, 'batch' => 'T', 'cohortId' => $c, 'status' => 'assigned', 'studentId' => 'SS-SEAS-' . $k, 'createdAt' => $now]);
+    }
+    $o = backend_dispatch('admin.summer.checkin', ['requesterId' => $A, 'token' => 'SUMQR-SEASOLD']);
+    chk('season: the desk refuses a participant whose season has ended, with the date', ($o['error'] ?? '') === 'edition_ended' && ($o['endDate'] ?? '') === '2020-08-31');
+    chk('season: and one whose season has not started', (backend_dispatch('admin.summer.checkin', ['requesterId' => $A, 'token' => 'SUMQR-SEASNEW'])['error'] ?? '') === 'edition_not_started');
+    chk('season: nothing is written for a refused scan', !db_row("SELECT id FROM attendance WHERE studentId LIKE 'SS-SEAS-%'"));
+
+    db_exec("UPDATE summer_cohorts SET status = 'active' WHERE cohortId = 'SUM-SEAS-OLD'");
+    $cl = summer_editions_close_elapsed('2026-10-03');
+    chk('season: the nightly job closes an edition whose season ended — closed, not archived',
+        in_array('SUM-SEAS-OLD', $cl['closed'], true) && db_row("SELECT status FROM summer_cohorts WHERE cohortId = 'SUM-SEAS-OLD'")['status'] === 'closed');
+    chk('season: the nightly job is wired', str_contains((string)file_get_contents(__DIR__ . '/../tools/run-jobs.php'), 'summer_editions_close_elapsed()'));
+
+    db_exec("DELETE FROM qr_codes WHERE token LIKE 'SUMQR-SEAS%'");
+    db_exec("DELETE FROM summer_students WHERE studentId LIKE 'SS-SEAS-%'");
+    db_exec("DELETE FROM summer_cohorts WHERE cohortId IN ('SUM-SEAS-OLD','SUM-SEAS-NEW') OR name = 'Seas Plan'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

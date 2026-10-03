@@ -1659,7 +1659,7 @@ function registration_issue_id(string $studentId): array {
         db_insert('qr_codes', ['token' => $tok, 'batch' => 'AUTO', 'cohortId' => $s['cohortId'], 'status' => 'blank', 'studentId' => '', 'assignedName' => '', 'createdAt' => now_iso(), 'assignedAt' => '']);
         $qr = db_row('SELECT * FROM qr_codes WHERE token = ?', [$tok]);
     }
-    db_update('qr_codes', ['status' => 'assigned', 'studentId' => $s['studentId'], 'assignedName' => (string)$s['handle'], 'assignedAt' => now_iso(), 'expiresAt' => idcard_expiry_for(), 'cohortId' => $s['cohortId']], ['token' => $qr['token']]);
+    db_update('qr_codes', ['status' => 'assigned', 'studentId' => $s['studentId'], 'assignedName' => (string)$s['handle'], 'assignedAt' => now_iso(), 'expiresAt' => summer_edition_card_expiry((string)$s['cohortId']), 'cohortId' => $s['cohortId']], ['token' => $qr['token']]);
     db_update('summer_students', ['token' => $qr['token'], 'updatedAt' => now_iso()], ['studentId' => $s['studentId']]);
     card_display_id(db_row('SELECT * FROM summer_students WHERE studentId = ?', [$s['studentId']]) ?: $s);
     audit('registration.id_issued', null, $studentId, ['token' => $qr['token']], '');

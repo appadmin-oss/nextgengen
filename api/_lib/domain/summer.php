@@ -156,7 +156,7 @@ function admin_summer_qr_reassign(array $p): array {
     // Free the student's old card, free any student on the target card.
     if (!empty($s['token']) && $s['token'] !== $token) db_update('qr_codes', ['status' => 'blank', 'studentId' => '', 'assignedName' => '', 'assignedAt' => ''], ['token' => $s['token']]);
     if (!empty($qr['studentId']) && $qr['studentId'] !== $studentId) db_update('summer_students', ['token' => '', 'updatedAt' => now_iso()], ['studentId' => $qr['studentId']]);
-    db_update('qr_codes', ['status' => 'assigned', 'studentId' => $studentId, 'assignedName' => (string)($s['handle'] ?? $s['fullName']), 'assignedAt' => now_iso(), 'expiresAt' => idcard_expiry_for(), 'cohortId' => (string)$s['cohortId']], ['token' => $token]);
+    db_update('qr_codes', ['status' => 'assigned', 'studentId' => $studentId, 'assignedName' => (string)($s['handle'] ?? $s['fullName']), 'assignedAt' => now_iso(), 'expiresAt' => summer_edition_card_expiry((string)$s['cohortId']), 'cohortId' => (string)$s['cohortId']], ['token' => $token]);
     db_update('summer_students', ['token' => $token, 'updatedAt' => now_iso()], ['studentId' => $studentId]);
     audit('summer.qr.reassign', $g['requester']['memberId'], $token, ['student' => $studentId], (string)($p['ip'] ?? ''));
     return ['ok' => true];
@@ -224,7 +224,7 @@ function admin_summer_enroll(array $p): array {
         'status' => $waitlisted ? 'waitlisted' : 'active', 'notes' => substr((string)($d['notes'] ?? ''), 0, 2000),
         'enrolledAt' => now_iso(), 'updatedAt' => now_iso(),
     ]);
-    db_update('qr_codes', ['status' => 'assigned', 'studentId' => $studentId, 'assignedName' => $handle, 'assignedAt' => now_iso(), 'expiresAt' => idcard_expiry_for(), 'cohortId' => $c['cohortId']], ['token' => $token]);
+    db_update('qr_codes', ['status' => 'assigned', 'studentId' => $studentId, 'assignedName' => $handle, 'assignedAt' => now_iso(), 'expiresAt' => summer_edition_card_expiry((string)$c['cohortId']), 'cohortId' => $c['cohortId']], ['token' => $token]);
     audit('summer.enroll', $g['requester']['memberId'], $studentId, ['token' => $token, 'handle' => $handle, 'waitlisted' => $waitlisted], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'studentId' => $studentId, 'handle' => $handle, 'token' => $token, 'waitlisted' => $waitlisted];
 }
@@ -995,6 +995,11 @@ function summer_checkin(array $p): array {
     }
     $existing = db_row('SELECT status, lateMinutes FROM attendance WHERE studentId = ? AND date = ?', [$s['studentId'], $today]);
     $already = (bool)$existing;
+    /* The season is the participant's whole relationship with the programme:
+       outside their edition's dates the desk does not take them in. */
+    if (!$already && ($season = summer_edition_season_refusal((string)$s['cohortId'], $today))) {
+        return $season + ['student' => summer_student_public($s)];
+    }
     if (!$already) {
         $gate = policy_gate_checkin((string)$s['studentId'], 'student');
         if (!$gate['ok']) return $gate + ['student' => summer_student_public($s)];

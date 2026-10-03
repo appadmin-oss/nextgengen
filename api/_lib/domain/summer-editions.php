@@ -45,6 +45,63 @@ declare(strict_types=1);
 
 /** Lifecycle states, in order. `active` is the one edition being run. */
 const SUMMER_EDITION_STATES = ['planning', 'active', 'closed', 'archived'];
+/** Summer School is a season. Six months is already generous; past that it is
+ *  not a summer, it is a typo in a year. */
+const SUMMER_EDITION_MAX_DAYS = 183;
+
+/**
+ * Invariant 7 — a live edition has a duration.
+ *
+ * An edition with no dates ran for ever: cards never knew when the season
+ * ended, the desk took check-ins in November, and nothing closed it. So
+ * activating one needs a start and an end, within SUMMER_EDITION_MAX_DAYS.
+ * Planning editions may stay undated while the season is being decided.
+ */
+function summer_edition_duration_check(string $status, string $start, string $end): ?array {
+    if ($status !== 'active') return null;
+    if ($start === '' || $end === '') return ['ok' => false, 'error' => 'dates_required',
+        'message' => 'Set the season’s start and end dates before making it the active edition.'];
+    $days = (int)round((strtotime($end . ' 00:00:00 UTC') - strtotime($start . ' 00:00:00 UTC')) / 86400) + 1;
+    if ($days > SUMMER_EDITION_MAX_DAYS) return ['ok' => false, 'error' => 'season_too_long', 'days' => $days, 'max' => SUMMER_EDITION_MAX_DAYS];
+    return null;
+}
+
+/**
+ * Is $date inside the participant's edition? Null when it is (or when the
+ * edition is undated — a planning edition, or data from before dates were
+ * required), otherwise the refusal the desk shows.
+ */
+function summer_edition_season_refusal(string $cohortId, string $date): ?array {
+    if ($cohortId === '') return null;
+    $e = db_row('SELECT name, startDate, endDate FROM summer_cohorts WHERE cohortId = ? LIMIT 1', [$cohortId]);
+    if (!$e) return null;
+    $start = (string)($e['startDate'] ?? ''); $end = (string)($e['endDate'] ?? '');
+    if ($start !== '' && $date < $start) return ['ok' => false, 'error' => 'edition_not_started', 'startDate' => $start, 'edition' => (string)$e['name']];
+    if ($end !== '' && $date > $end) return ['ok' => false, 'error' => 'edition_ended', 'endDate' => $end, 'edition' => (string)$e['name']];
+    return null;
+}
+
+/** When a card issued for this edition stops opening the door: the season's
+ *  end if it has one, otherwise the programme's validity clock. */
+function summer_edition_card_expiry(string $cohortId): string {
+    $end = $cohortId !== '' ? (string)(db_row('SELECT endDate FROM summer_cohorts WHERE cohortId = ? LIMIT 1', [$cohortId])['endDate'] ?? '') : '';
+    return $end !== '' ? $end : idcard_expiry_for();
+}
+
+/** Close every active edition whose season has ended. Run nightly
+ *  (api/tools/run-jobs.php). Closed, never archived — archiving is a roll-up
+ *  with its own op (invariant 1). */
+function summer_editions_close_elapsed(?string $today = null): array {
+    $today = $today ?: attendance_today();
+    $rows = db_all("SELECT cohortId, endDate FROM summer_cohorts WHERE status = 'active' AND endDate IS NOT NULL AND endDate <> '' AND endDate < ?", [$today]);
+    $closed = [];
+    foreach ($rows as $r) {
+        db_update('summer_cohorts', ['status' => 'closed', 'updatedAt' => now_iso()], ['cohortId' => (string)$r['cohortId']]);
+        audit('summer.edition.status', 'system', (string)$r['cohortId'], ['from' => 'active', 'to' => 'closed', 'why' => 'season ended ' . $r['endDate']], '');
+        $closed[] = (string)$r['cohortId'];
+    }
+    return ['closed' => $closed];
+}
 /** A group's lifecycle mirrors the edition's, minus the singleton rule. */
 const SUMMER_GROUP_STATES = ['planning', 'active', 'closed', 'archived'];
 
@@ -178,6 +235,7 @@ function admin_summer_edition_save(array $p): array {
     $aClose = summer_edition_date($d['applyClosesAt'] ?? ($existing['applyClosesAt'] ?? ''));
     if ($aOpen === null || $aClose === null) return ['ok' => false, 'error' => 'bad_date'];
     if ($aOpen !== '' && $aClose !== '' && $aClose < $aOpen) return ['ok' => false, 'error' => 'apply_window_inverted'];
+    if ($bad = summer_edition_duration_check($status, $start, $end)) return $bad;
 
     $code = strtoupper(preg_replace('/[^A-Za-z0-9-]/', '', (string)($d['code'] ?? ($existing['code'] ?? ''))) ?? '');
     if ($code === '') $code = 'SS' . substr((string)$year, -2);
@@ -242,6 +300,7 @@ function admin_summer_edition_status(array $p): array {
        status dropdown write 'archived' would leave an edition labelled archived
        with nothing rolled up, which is what the old upsert did. */
     if ($status === 'archived') return ['ok' => false, 'error' => 'use_archive_op'];
+    if ($bad = summer_edition_duration_check($status, (string)($e['startDate'] ?? ''), (string)($e['endDate'] ?? ''))) return $bad;
     $now = now_iso();
     db_update('summer_cohorts', ['status' => $status, 'updatedAt' => $now], ['cohortId' => $id]);
     $demoted = 0;

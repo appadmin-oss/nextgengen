@@ -59,6 +59,10 @@ require_once $root . '/_lib/domain/policy.php';
 $log['policy_sweep'] = policy_sweep_absences();
 $log['policy_sweep_member'] = policy_sweep_member_absences();
 
+// 7b) Close any Summer School edition whose season has ended.
+require_once $root . '/_lib/domain/summer-editions.php';
+$log['editions_closed'] = summer_editions_close_elapsed();
+
 // 8) Push the Sheets mirror if configured.
 if (trim((string)($CONFIG['apps_script_url'] ?? '')) !== '') {
     $out = [];

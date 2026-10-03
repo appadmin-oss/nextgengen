@@ -12568,6 +12568,8 @@ function SummerEditions() {
     } catch (e) {
       toast.error(e.code === "use_archive_op"
         ? "Archiving rolls attendance up onto each participant — do it from Records → Archive, not from here."
+        : e.code === "dates_required" ? "Set this edition's start and end dates (Edit) before making it live."
+        : e.code === "season_too_long" ? "This edition's season runs longer than six months — fix the end date first."
         : humanizeError(e.message, e.code), "Couldn't change the state");
     } finally { setBusy(""); }
   };
@@ -12705,6 +12707,8 @@ function SummerEditionEditor({ data, onClose, onSaved }) {
     bad_date: "One of the dates isn't a real date — use the picker.",
     end_before_start: "The end date is before the start date.",
     apply_window_inverted: "Applications close before they open.",
+    dates_required: "A live edition needs its season: set the start and end dates first.",
+    season_too_long: "That season runs longer than six months — check the end date.",
     bad_status: "Pick a state from the list.",
     name_too_long: "That name is too long — keep it under 120 characters.",
   };
@@ -14492,6 +14496,8 @@ function SummerKiosk({ onCheckin }) {
         setResult({ refused: code, student: d.student, message: d.message, compliance: d.state }); buzz(true);
       } else {
         const map = { qr_unassigned: "That card isn't linked to anyone yet.", student_not_found: "Nobody found for that code.",
+          edition_ended: "Their season has ended" + (e.data && e.data.endDate ? " (" + e.data.endDate + ")" : "") + " — not checked in.",
+          edition_not_started: "Their season hasn't started" + (e.data && e.data.startDate ? " (starts " + e.data.startDate + ")" : "") + " — not checked in.",
           card_void: "That member card was replaced — ask for the new one, or type the member ID.",
           member_inactive: (e.data && e.data.message) || "That membership is not active.",
           forbidden: "Not permitted — your session expired, or a member's check-in needs the Club permission." };

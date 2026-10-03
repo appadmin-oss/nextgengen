@@ -250,6 +250,15 @@ Centres (`api/_lib/domain/registration.php`):
    retiring is the answer to the refusal) or `force`. Retire keeps every
    record resolving; that is the intended path.
 
+Seasons (`summer-editions.php`):
+
+7. A **live edition has a duration**: activating one needs a start and an end
+   date, at most `SUMMER_EDITION_MAX_DAYS` (183) apart (`dates_required`,
+   `season_too_long`). The desk refuses a participant outside their edition's
+   dates (`edition_not_started` / `edition_ended`); cards issued for an edition
+   expire on its end date (`summer_edition_card_expiry`); the nightly job
+   closes an active edition whose season has ended (closed, never archived).
+
 ## 6. Control Room conventions
 
 ### Sections

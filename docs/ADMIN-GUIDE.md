@@ -359,6 +359,13 @@ what you are actually doing.
 - **Check-in kiosk** — the screen you leave open at the door.
 - **Attendance** — the registers.
 
+**The season.** An edition is live only with its start and end dates set,
+and no more than six months apart. Outside those dates the desk will not check
+a participant in: it says *season ended* or *season hasn't started*, with the
+date. Cards issued for an edition expire on its end date. The night after the
+end date, the edition moves to **Closed** by itself. Archive it from Records
+when you are ready.
+
 **One door, everyone.** The kiosk, a gate link's desk and *Mark present* on a
 profile all check in **participants, volunteers and NGG members**. Scan any
 card or type the number printed on it. A member's secure card (`MEMQR-…`),

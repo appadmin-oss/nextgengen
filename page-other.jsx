@@ -4922,6 +4922,8 @@ function GateCheckin({ g, ctx, card, inputS, gold, goldInk }) {
            be let in at all. It gets the loudest treatment and stays up longest. */
         const why = c === "qr_unassigned" ? "That card isn't assigned to anyone yet."
           : c === "student_not_found" ? "Nobody found for that code — participant, volunteer or member."
+          : c === "edition_ended" ? "Their Summer School season ended on " + ((e2.data && e2.data.endDate) || "an earlier date") + ". Not checked in."
+          : c === "edition_not_started" ? "Their Summer School season starts on " + ((e2.data && e2.data.startDate) || "a later date") + ". Not checked in yet."
           : c === "card_void" ? "That member card was replaced. Ask for the new one, or type the member ID."
           : c === "member_inactive" ? ((e2.data && e2.data.message) || "That membership is not active.") + " Refer to the coordinator."
           : c === "id_expired" ? "That ID has expired — send them to the coordinator."
