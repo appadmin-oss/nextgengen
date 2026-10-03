@@ -22454,6 +22454,18 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $sync = backend_dispatch('admin.members.ngvPortalSync', ['requesterId' => $ADM]);
     chk('ngv portal: "Send NGVs to Afrovanguard" sends everybody already promoted', !empty($sync['ok']) && $sync['announced'] >= 1 && $sync['delivered'] === $sync['announced']);
 
+    /* Demoted here ⇒ told there. It used to be a member.demoted.ngv event no
+       Afrovanguard destination subscribed to, so the vanguard stayed active
+       there — fees accruing, their card still opening the gate. */
+    $calls = [];
+    $GLOBALS['__bus_http_mock'] = function ($url, $body, $headers) use (&$calls) { $calls[] = [$url, $body, $headers]; return ['ok' => true, 'body' => '{"ok":true}']; };
+    $dm = backend_dispatch('admin.members.demoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-PORT-1']);
+    $rv = array_values(array_filter($calls, fn($c) => str_contains((string)$c[1], 'private.ngv.revoked')));
+    $rb = json_decode($rv[0][1] ?? '{}', true);
+    chk('ngv portal: a demotion is sent to Afrovanguard, naming the member', !empty($dm['demoted']) && ($dm['ngvPortal'] ?? '') === 'delivered'
+        && count($rv) === 1 && ($rb['data']['nggMemberId'] ?? '') === 'NGG-PORT-1');
+    chk('ngv portal: …and, being private, only to Afrovanguard', !bus_subscribed('["*"]', 'private.ngv.revoked'));
+
     unset($GLOBALS['__bus_http_mock']);
     $CONFIG['afrovanguard'] = $keep;
     db_exec("DELETE FROM deliveries WHERE integrationId IN ('INT-AV-NGV','INT-CHAT-ALL')");

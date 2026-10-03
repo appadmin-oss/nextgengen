@@ -874,7 +874,10 @@ function admin_member_demote_ngv(array $p): array {
     $doneVid = $vid !== '' ? $vid : (string)($v['volunteerId'] ?? '');
     audit('member.demote.ngv', (string)$g['requester']['memberId'], $memberId, ['volunteerId' => $doneVid], (string)($p['ip'] ?? ''));
     event_emit('member.demoted.ngv', ['memberId' => $memberId, 'volunteerId' => $doneVid]);
-    return ['ok' => true, 'demoted' => true, 'volunteerId' => $doneVid];
+    /* And Afrovanguard, where they are a participant with a card: told, so
+       they stop being one there too (domain/ngv-portal.php). */
+    $portal = function_exists('ngv_portal_revoke') ? ngv_portal_revoke($memberId) : ['status' => 'not_configured'];
+    return ['ok' => true, 'demoted' => true, 'volunteerId' => $doneVid, 'ngvPortal' => $portal['status']];
 }
 
 /** Deliver the digital ID — email always; SMS when the admin has it on. */
