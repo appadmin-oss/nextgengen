@@ -15865,6 +15865,19 @@ function SummerPolicy() {
             <input type="number" min={0} step={500} className="admin-input" value={(pol.member || {}).fine} onChange={e => setPol2("member", "fine", Number(e.target.value))}/>
           </label>
         </div>
+        <div className="admin-fields-h" style={{ marginTop: 16, fontWeight: 700 }}>Stricter than Summer School</div>
+        <p className="admin-hint" style={{ margin: "2px 0 8px" }}>Summer School participants have no account, so their ladder is warnings, dormancy and suspension. NGG members have a ledger and are held to more: every late is fined from the first, there is no "tardy" grace band, and a day with no sign-out (see Settings → Closing time) counts as an absence.</p>
+        <div className="admin-fields">
+          <label className="admin-field"><span>Fine for every late (₦, 0 = off)</span>
+            <input type="number" min={0} step={100} className="admin-input" value={(pol.member || {}).lateFine ?? 500} onChange={e => setPol2("member", "lateFine", Number(e.target.value))}/>
+          </label>
+          <label className="admin-field admin-field-check"><input type="checkbox" checked={(pol.member || {}).tardyIsLate !== false} onChange={e => setPol2("member", "tardyIsLate", e.target.checked)}/>
+            <span>No grace band — arriving after resumption is late</span>
+          </label>
+          <label className="admin-field admin-field-check"><input type="checkbox" checked={(pol.member || {}).checkoutRequired !== false} onChange={e => setPol2("member", "checkoutRequired", e.target.checked)}/>
+            <span>A day with no sign-out counts as an absence</span>
+          </label>
+        </div>
 
         {mprog.enabled && (mcal.upcoming || []).length > 0 && (
           <div style={{ marginTop: 14 }}>

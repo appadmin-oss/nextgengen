@@ -211,3 +211,24 @@ Timezone for the redlines: **Africa/Lagos (WAT, UTC+1)**, from the `tzOffset`
 in Settings → Attendance. Check-ins are dated and graded in that local
 timezone, and a scan banked while a kiosk is offline is graded at the moment
 the card was presented, not when the queue flushed.
+
+
+## NGG members are held to more than Summer School (platform rules)
+
+Summer School participants are children in a season with no account; their
+ladder is warnings, dormancy and suspension, and a fine only after a
+suspension. NGG members belong for years and carry a ledger, so the platform
+holds them to three further rules, each set in **Conduct & fines → Member
+thresholds → Stricter than Summer School**:
+
+1. **Every late is fined, from the first** (default ₦500), on the member's
+   account. This is in addition to the suspension ladder.
+2. **No grace band.** Arriving after resumption (plus any grace minutes) is
+   late — there is no "tardy" in between for members.
+3. **A day with no sign-out is incomplete** and counts as an absence, as §1.3
+   does for Summer School. Sign-out opens at the closing time set in
+   Settings, so leaving early means no sign-out. This applies from the day the
+   rule first took effect; earlier days are not counted.
+
+Member enforcement is switched on separately ("Enforce for NGG members"); none
+of this applies until it is.

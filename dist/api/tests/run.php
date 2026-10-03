@@ -22909,5 +22909,116 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-BF-%' OR memberId = 'SUM-BF-1'");
 })();
 
+/* ── Closing time, and the NGG member's sign-in/out mail ───────────────────── */
+(function () {
+    $now = now_iso();
+    $before = setting_get('attendance');
+    $setClose = function (array $close) use ($before) {
+        $a = is_array($before) ? $before : [];
+        $a['closeByType'] = $close;
+        attendance_settings_save($a + ['enabled' => true, 'tzOffset' => 60, 'graceMinutes' => 10], 'test');
+    };
+    db_insert('members', ['memberId' => 'NGG-CL-ADM', 'fullName' => 'Close Admin', 'email' => 'cl-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-CL-1', 'fullName' => 'Kemi Close', 'displayId' => '026-771', 'email' => 'kemi-cl@example.com', 'parentEmail' => 'kemi-parent@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    setting_set('checkin_state_emails', '1', 'test');
+
+    $GLOBALS['__mail_sink'] = [];
+    $in = backend_dispatch('admin.summer.checkin', ['gateAuthorized' => true, 'byId' => 'gate:T', 'token' => '026-771', 'method' => 'gate']);
+    $tos = array_column($GLOBALS['__mail_sink'], 'to');
+    chk('sign-in: an NGG member is emailed, and so is their parent', !empty($in['ok']) && in_array('kemi-cl@example.com', $tos, true) && in_array('kemi-parent@example.com', $tos, true));
+    chk('sign-in: the mail says when', (bool)preg_match('/signed in at \d{2}:\d{2}/', (string)($GLOBALS['__mail_sink'][0]['subject'] ?? '')));
+
+    $setClose(['member' => '23:59', 'student' => '23:59']);
+    $early = backend_dispatch('admin.summer.checkout', ['gateAuthorized' => true, 'byId' => 'gate:T', 'token' => '026-771']);
+    chk('closing time: a sign-out before it is refused, and says when it opens', ($early['error'] ?? '') === 'too_early' && ($early['closesAt'] ?? '') === '23:59');
+    chk('closing time: …and nothing is stamped', (string)db_row("SELECT checkOutAt FROM attendance WHERE studentId = 'NGG-CL-1'")['checkOutAt'] === '');
+    chk('closing time: a check-in desk cannot override it with a reason',
+        (backend_dispatch('admin.summer.checkout', ['gateAuthorized' => true, 'byId' => 'gate:T', 'token' => '026-771', 'earlyReason' => 'Unwell'])['error'] ?? '') === 'too_early');
+    $setClose(['member' => '00:00']);
+    $GLOBALS['__mail_sink'] = [];
+    $out = backend_dispatch('admin.summer.checkout', ['gateAuthorized' => true, 'byId' => 'gate:T', 'token' => '026-771']);
+    chk('closing time: after it, the sign-out goes through', !empty($out['ok']) && empty($out['already']) && (string)db_row("SELECT checkOutAt FROM attendance WHERE studentId = 'NGG-CL-1'")['checkOutAt'] !== '');
+    chk('sign-out: the member and parent are emailed', count(array_filter($GLOBALS['__mail_sink'], fn($m) => strpos((string)$m['subject'], 'signed out at') !== false)) === 2);
+
+    // An admin in the Control Room may let somebody go early — with a reason, recorded.
+    db_update('attendance', ['checkOutAt' => ''], ['studentId' => 'NGG-CL-1']);
+    $setClose(['member' => '23:59']);
+    chk('closing time: an admin without a reason is refused too', (backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-CL-ADM', 'token' => '026-771'])['error'] ?? '') === 'too_early');
+    $let = backend_dispatch('admin.summer.checkout', ['requesterId' => 'NGG-CL-ADM', 'token' => '026-771', 'earlyReason' => 'Unwell — collected by mother']);
+    chk('closing time: an admin may let them go early with a reason, and it is audited', !empty($let['ok'])
+        && (bool)db_row("SELECT id FROM audit_log WHERE event = 'attendance.early_checkout' AND subject = 'NGG-CL-1'"));
+
+    // The CACENTRE gate: a punch before closing time is answered, not stored.
+    db_update('attendance', ['checkOutAt' => ''], ['studentId' => 'NGG-CL-1']);
+    $h = hooks_attendance(['events' => [['ref' => 'NGG-CL-1', 'action' => 'out']], 'source' => 'cacentre']);
+    chk('closing time: an early CACENTRE punch is too_early, not a sign-out', ($h['results'][0]['status'] ?? '') === 'too_early'
+        && (string)db_row("SELECT checkOutAt FROM attendance WHERE studentId = 'NGG-CL-1'")['checkOutAt'] === '');
+
+    chk('the gate context tells the desk when sign-out opens', function_exists('gate_context') && ($setClose(['member' => '14:00', 'student' => '13:30']) ?? true)
+        && attendance_close_time('member') === '14:00' && attendance_close_time('student') === '13:30' && attendance_close_time('volunteer') === '');
+
+    unset($GLOBALS['__mail_sink']);
+    if (is_array($before)) setting_set('attendance', $before, 'test'); else db_exec("DELETE FROM settings WHERE settingKey = 'attendance'");
+    db_exec("DELETE FROM attendance WHERE studentId = 'NGG-CL-1'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-CL-%'");
+})();
+
+/* ── NGG is stricter than Summer School ─────────────────────────────────── */
+(function () {
+    $now = now_iso();
+    $keep = [];
+    foreach (['policy', 'attendance', 'memberProgramme', 'programme', 'policy_member_swept_through', 'policy_member_checkout_since'] as $k) $keep[$k] = setting_raw($k);
+    $every = ['enabled' => true, 'startDate' => '2026-01-01', 'endDate' => '2027-12-31', 'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []];
+    member_programme_settings_save($every, 'test');
+    setting_set('programme', $every, 'test');
+    // Resumption at midnight with no grace, redline at 23:59: every scan today
+    // is past resumption and inside the redline — the band where the two differ.
+    setting_set('attendance', ['enabled' => true, 'tzOffset' => 60, 'graceMinutes' => 0,
+        'resumptionByType' => ['default' => '00:00', 'student' => '00:00', 'member' => '00:00']], 'test');
+    policy_settings_save(['enabled' => true, 'autoEnforce' => true,
+        'student' => ['lateRedline' => '23:59', 'fine' => 5000],
+        'member' => ['enabled' => true, 'lateRedline' => '23:59', 'latenessCap' => 10, 'lateFine' => 500, 'tardyIsLate' => true, 'checkoutRequired' => true]], 'test');
+    db_insert('members', ['memberId' => 'NGG-ST-1', 'fullName' => 'Strict Member', 'email' => 'strict1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+
+    $at = time();
+    $m = policy_punctuality('member', $at);
+    $s = policy_punctuality('student', $at);
+    chk('strict: past resumption is LATE for an NGG member — no tardy band', $m['status'] === 'late' && $m['redline'] === 1);
+    chk('strict: …while a Summer participant at the same minute is only tardy', $s['status'] === 'tardy' && $s['redline'] === 0);
+    $today = attendance_today($at);
+    policy_on_checkin('NGG-ST-1', 'member', $today, $m);
+    $owed = (int)db_row("SELECT COALESCE(SUM(amount),0) s FROM member_ledger WHERE memberId = 'NGG-ST-1' AND kind = 'fine' AND COALESCE(voidedAt,'') = ''")['s'];
+    chk('strict: the FIRST late is fined, on the member\'s ledger', $owed === 500);
+    policy_apply('NGG-ST-1', 'member');
+    chk('strict: re-evaluating does not fine the same late twice', (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-ST-1' AND kind = 'fine'")['c'] === 1);
+    policy_log('NGG-ST-1', 'member', 'late', gmdate('Y-m-d', strtotime('-7 days')));
+    policy_apply('NGG-ST-1', 'member');
+    chk('strict: the second late is a second fine', (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-ST-1' AND kind = 'fine'")['c'] === 2);
+
+    // A day with no sign-out is incomplete — but only from when the rule applied.
+    $d1 = gmdate('Y-m-d', strtotime($today . ' -2 days')); $d0 = gmdate('Y-m-d', strtotime($today . ' -3 days'));
+    foreach ([$d0, $d1] as $d) db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-ST-1', 'date' => $d, 'checkInAt' => $d . 'T09:00:00Z', 'checkOutAt' => '', 'method' => 'test', 'createdAt' => $now]);
+    setting_set('policy_member_checkout_since', $d1, 'system');
+    setting_set('policy_member_swept_through', gmdate('Y-m-d', strtotime($d0 . ' -1 day')), 'system');
+    policy_sweep_member_absences(gmdate('Y-m-d', strtotime($today . ' -1 day')));
+    $nc = array_column(db_all("SELECT date FROM infractions WHERE personId = 'NGG-ST-1' AND kind = 'no_checkout'"), 'date');
+    chk('strict: a member who signed in and never out has an incomplete day', in_array($d1, $nc, true)
+        && (bool)db_row("SELECT id FROM infractions WHERE personId = 'NGG-ST-1' AND kind = 'absence' AND date = ?", [$d1]));
+    chk('strict: …but not for days before the rule applied', !in_array($d0, $nc, true));
+
+    chk('strict: the settings save keeps the three NGG rules', (function () {
+        $c = policy_settings_save(['member' => ['lateFine' => 750, 'tardyIsLate' => false, 'checkoutRequired' => false]], 'test');
+        return $c['member']['lateFine'] === 750 && $c['member']['tardyIsLate'] === false && $c['member']['checkoutRequired'] === false;
+    })());
+
+    foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
+    db_exec("DELETE FROM sanctions WHERE personId = 'NGG-ST-1'");
+    db_exec("DELETE FROM infractions WHERE personId = 'NGG-ST-1'");
+    db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-ST-1'");
+    db_exec("DELETE FROM attendance WHERE studentId = 'NGG-ST-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-ST-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

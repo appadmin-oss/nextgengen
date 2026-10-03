@@ -22964,5 +22964,61 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-CL-%'");
 })();
 
+/* ── NGG is stricter than Summer School ─────────────────────────────────── */
+(function () {
+    $now = now_iso();
+    $keep = [];
+    foreach (['policy', 'attendance', 'memberProgramme', 'programme', 'policy_member_swept_through', 'policy_member_checkout_since'] as $k) $keep[$k] = setting_raw($k);
+    $every = ['enabled' => true, 'startDate' => '2026-01-01', 'endDate' => '2027-12-31', 'weekdays' => [1, 2, 3, 4, 5, 6, 7], 'holidays' => [], 'extraDays' => []];
+    member_programme_settings_save($every, 'test');
+    setting_set('programme', $every, 'test');
+    // Resumption at midnight with no grace, redline at 23:59: every scan today
+    // is past resumption and inside the redline — the band where the two differ.
+    setting_set('attendance', ['enabled' => true, 'tzOffset' => 60, 'graceMinutes' => 0,
+        'resumptionByType' => ['default' => '00:00', 'student' => '00:00', 'member' => '00:00']], 'test');
+    policy_settings_save(['enabled' => true, 'autoEnforce' => true,
+        'student' => ['lateRedline' => '23:59', 'fine' => 5000],
+        'member' => ['enabled' => true, 'lateRedline' => '23:59', 'latenessCap' => 10, 'lateFine' => 500, 'tardyIsLate' => true, 'checkoutRequired' => true]], 'test');
+    db_insert('members', ['memberId' => 'NGG-ST-1', 'fullName' => 'Strict Member', 'email' => 'strict1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+
+    $at = time();
+    $m = policy_punctuality('member', $at);
+    $s = policy_punctuality('student', $at);
+    chk('strict: past resumption is LATE for an NGG member — no tardy band', $m['status'] === 'late' && $m['redline'] === 1);
+    chk('strict: …while a Summer participant at the same minute is only tardy', $s['status'] === 'tardy' && $s['redline'] === 0);
+    $today = attendance_today($at);
+    policy_on_checkin('NGG-ST-1', 'member', $today, $m);
+    $owed = (int)db_row("SELECT COALESCE(SUM(amount),0) s FROM member_ledger WHERE memberId = 'NGG-ST-1' AND kind = 'fine' AND COALESCE(voidedAt,'') = ''")['s'];
+    chk('strict: the FIRST late is fined, on the member\'s ledger', $owed === 500);
+    policy_apply('NGG-ST-1', 'member');
+    chk('strict: re-evaluating does not fine the same late twice', (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-ST-1' AND kind = 'fine'")['c'] === 1);
+    policy_log('NGG-ST-1', 'member', 'late', gmdate('Y-m-d', strtotime('-7 days')));
+    policy_apply('NGG-ST-1', 'member');
+    chk('strict: the second late is a second fine', (int)db_row("SELECT COUNT(*) c FROM member_ledger WHERE memberId = 'NGG-ST-1' AND kind = 'fine'")['c'] === 2);
+
+    // A day with no sign-out is incomplete — but only from when the rule applied.
+    $d1 = gmdate('Y-m-d', strtotime($today . ' -2 days')); $d0 = gmdate('Y-m-d', strtotime($today . ' -3 days'));
+    foreach ([$d0, $d1] as $d) db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-ST-1', 'date' => $d, 'checkInAt' => $d . 'T09:00:00Z', 'checkOutAt' => '', 'method' => 'test', 'createdAt' => $now]);
+    setting_set('policy_member_checkout_since', $d1, 'system');
+    setting_set('policy_member_swept_through', gmdate('Y-m-d', strtotime($d0 . ' -1 day')), 'system');
+    policy_sweep_member_absences(gmdate('Y-m-d', strtotime($today . ' -1 day')));
+    $nc = array_column(db_all("SELECT date FROM infractions WHERE personId = 'NGG-ST-1' AND kind = 'no_checkout'"), 'date');
+    chk('strict: a member who signed in and never out has an incomplete day', in_array($d1, $nc, true)
+        && (bool)db_row("SELECT id FROM infractions WHERE personId = 'NGG-ST-1' AND kind = 'absence' AND date = ?", [$d1]));
+    chk('strict: …but not for days before the rule applied', !in_array($d0, $nc, true));
+
+    chk('strict: the settings save keeps the three NGG rules', (function () {
+        $c = policy_settings_save(['member' => ['lateFine' => 750, 'tardyIsLate' => false, 'checkoutRequired' => false]], 'test');
+        return $c['member']['lateFine'] === 750 && $c['member']['tardyIsLate'] === false && $c['member']['checkoutRequired'] === false;
+    })());
+
+    foreach ($keep as $k => $v) { if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$v, $k]); }
+    db_exec("DELETE FROM sanctions WHERE personId = 'NGG-ST-1'");
+    db_exec("DELETE FROM infractions WHERE personId = 'NGG-ST-1'");
+    db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-ST-1'");
+    db_exec("DELETE FROM attendance WHERE studentId = 'NGG-ST-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-ST-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

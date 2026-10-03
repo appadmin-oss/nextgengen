@@ -338,6 +338,15 @@ const POLICY_DEFAULTS = [
         'postSuspensionLateness' => 2,
         'fine'                   => 5000,
         'suspensionDays'         => 14,
+        /* Where NGG is stricter than Summer School. A Summer participant is a
+         * child in a season with no account: warnings, dormancy and suspension
+         * are the ladder, and money only after a suspension. A member is in a
+         * programme for years and has a ledger, so lateness costs from the
+         * FIRST time, there is no "tardy" grey band to sit in, and a day with
+         * no sign-out (closing time is the rule) is a day not completed. */
+        'lateFine'               => 500,    // ₦ per redline late, from the first
+        'tardyIsLate'            => true,   // past resumption + grace is late
+        'checkoutRequired'       => true,   // no sign-out = absence, as §1.3
     ],
     'musing' => ['enabled' => true, 'endsAt' => '08:00'],  // §"The Musing Period"
     'idCard' => ['secondOffenceFine' => 1000, 'lostFine' => 2000],
@@ -423,9 +432,13 @@ function policy_settings_save(array $in, string $by): array {
         if ($type === 'volunteer') {
             $clean[$type]['reviewMissedCap'] = max(1, min(60, (int)($src['reviewMissedCap'] ?? $c['reviewMissedCap'])));
         }
-        // Members carry their own enforcement switch, separate from the global.
+        // Members carry their own enforcement switch, separate from the global,
+        // and the three rules that make NGG stricter than Summer School.
         if ($type === 'member') {
             $clean[$type]['enabled'] = array_key_exists('enabled', $src) ? !empty($src['enabled']) : !empty($c['enabled']);
+            $clean[$type]['lateFine'] = max(0, min(10000000, (int)($src['lateFine'] ?? $c['lateFine'])));
+            $clean[$type]['tardyIsLate'] = array_key_exists('tardyIsLate', $src) ? !empty($src['tardyIsLate']) : !empty($c['tardyIsLate']);
+            $clean[$type]['checkoutRequired'] = array_key_exists('checkoutRequired', $src) ? !empty($src['checkoutRequired']) : !empty($c['checkoutRequired']);
         }
     }
     $m = is_array($in['musing'] ?? null) ? $in['musing'] : [];
@@ -792,6 +805,18 @@ function policy_apply(string $personId, string $type): array {
         }
     }
 
+    // NGG members: every late costs, from the first — the ledger is theirs.
+    // One fine per late (tier 400000 + n), so re-evaluating never charges twice.
+    if ($type === 'member' && (int)($cfg['lateFine'] ?? 0) > 0) {
+        $amt = (int)$cfg['lateFine'];
+        for ($n = 1; $n <= min($lates, 5000); $n++) {
+            if (policy_issue($personId, $type, 'fine', 400000 + $n, [
+                'amount' => $amt, 'status' => 'pending',
+                'reason' => "Late {$n} — ₦" . number_format((float)$amt) . ' lateness fine (NGG members are fined from the first late).',
+            ])) $issued[] = 'fine';
+        }
+    }
+
     // §2.3 Volunteer dormancy — a pattern of missed Review Times.
     if ($type === 'volunteer') {
         $rcap = (int)($cfg['reviewMissedCap'] ?? 2);
@@ -862,6 +887,9 @@ function policy_punctuality(string $type, ?int $at = null): array {
     $now = attendance_minutes_at($at);
     if ($now >= policy_minutes((string)$cfg['lateRedline'])) {
         $out['status'] = 'late'; $out['redline'] = 1;
+    } elseif ($out['status'] === 'late' && $type === 'member' && !empty($cfg['tardyIsLate'])) {
+        // NGG has no grey band: past resumption + grace is late, and it counts.
+        $out['redline'] = 1;
     } elseif ($out['status'] === 'late') {
         // Past resumption but inside the redline: tardy, not an infraction.
         $out['status'] = 'tardy';
@@ -952,9 +980,10 @@ function policy_sweep_absences(?string $upto = null): array {
  * are on, on its own cursor (policy_member_swept_through) so it never collides
  * with the summer sweep.
  *
- * Members check in through the attendance webhook, which is check-in only, so
- * the summer §1.3 no-checkout rule does not apply — a member is simply present
- * or absent for the day.
+ * Members sign out at the desk, the kiosk or the CACENTRE gate, and with
+ * `member.checkoutRequired` a day with no sign-out is incomplete: logged as
+ * no_checkout and counted as an absence, as §1.3 does for Summer School —
+ * from the day the rule first applied (`policy_member_checkout_since`).
  */
 function policy_sweep_member_absences(?string $upto = null): array {
     if (!policy_enabled_for('member')) return ['ok' => true, 'skipped' => 'member_policy_disabled'];
@@ -974,15 +1003,29 @@ function policy_sweep_member_absences(?string $upto = null): array {
 
     $members = db_all("SELECT memberId FROM members WHERE type = 'NGG' AND status = 'active'");
     $absences = 0;
+    /* A sign-out is required of members only from the day the rule first
+       applied: before it, nobody could sign out at all, and counting those
+       days would turn every past attendance into an absence. */
+    $mcfg = policy_for('member');
+    $since = '';
+    if (!empty($mcfg['checkoutRequired'])) {
+        $since = (string)(setting_raw('policy_member_checkout_since') ?? '');
+        if ($since === '') { $since = $today; setting_set('policy_member_checkout_since', $since, 'system'); }
+    }
     foreach ($days as $d) {
         $present = [];
-        foreach (db_all("SELECT studentId FROM attendance WHERE date = ?", [$d]) as $r) {
-            $present[(string)$r['studentId']] = true;   // members share the attendance table, keyed by memberId in studentId
+        foreach (db_all("SELECT studentId, checkOutAt FROM attendance WHERE date = ?", [$d]) as $r) {
+            $present[(string)$r['studentId']] = (string)($r['checkOutAt'] ?? '');   // members share the attendance table, keyed by memberId in studentId
         }
         foreach ($members as $row) {
             $id = (string)$row['memberId'];
             if (!array_key_exists($id, $present)) {
                 if (policy_log($id, 'member', 'absence', $d, 'No check-in on a member programme day.')) $absences++;
+            } elseif ($since !== '' && $d >= $since && $present[$id] === '') {
+                // Signed in, never signed out — left before closing time, or
+                // walked past the desk. The day was not completed.
+                policy_log($id, 'member', 'no_checkout', $d, 'Signed in but never signed out.');
+                if (policy_log($id, 'member', 'absence', $d, 'Incomplete day — no sign-out.')) $absences++;
             }
         }
         setting_set('policy_member_swept_through', $d, 'system');
