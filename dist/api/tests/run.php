@@ -23137,5 +23137,58 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-SUB-%'");
 })();
 
+/* ── One quote of the week: the home page, the Journal and the Monday mail ── */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-QW-1', 'fullName' => 'Quote Reader', 'email' => 'qw1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-QW-2', 'fullName' => 'Quote Leaver', 'email' => 'qw2@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'SUM-QW-1', 'fullName' => 'Summer Quote', 'email' => 'sqw@example.com', 'type' => 'Summer', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+    $ts = strtotime('2031-03-05 10:00:00 UTC');   // a week no other test touches
+    $hadLive = (int)db_row("SELECT COUNT(*) c FROM wisdom_sayings WHERE status = 'live'")['c'];
+    if (!$hadLive) db_insert('wisdom_sayings', ['wisdomId' => 'WS-QW001', 'language' => 'yoruba', 'kind' => 'proverb', 'text' => 'Ìwà l\'ẹwà',
+        'translation' => 'Character is beauty', 'meaning' => 'How you behave is what people see.', 'position' => 1, 'status' => 'live', 'createdAt' => $now, 'updatedAt' => $now]);
+    $pub = public_wisdom_week([]);
+    $q = weekly_quote();
+    chk('qotw: the home page and the Journal read one quote of the week', $pub['quote']['text'] === $q['text'] && $q['text'] !== '' && ($pub['saying']['text'] ?? '') === $q['text'] && $q['source'] === 'wisdom');
+    chk('qotw: it changes by the week, not the day', weekly_quote($ts)['text'] === weekly_quote($ts + 3 * 86400)['text'] && weekly_quote($ts)['week'] === weekly_quote($ts + 3 * 86400)['week']);
+
+    $GLOBALS['__mail_sink'] = [];
+    $r = qotw_mail_run($ts, 100000);
+    $to = array_column($GLOBALS['__mail_sink'], 'to');
+    chk('qotw: NGG members are mailed the week\'s quote', in_array('qw1@example.com', $to, true) && in_array('qw2@example.com', $to, true) && $r['week'] === weekly_quote($ts)['week']);
+    chk('qotw: …not Summer accounts', !in_array('sqw@example.com', $to, true));
+    $mine = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'qw1@example.com'))[0] ?? [];
+    chk('qotw: the mail carries the same quote and a working opt-out link', strpos((string)($mine['html'] ?? ''), esc_html(weekly_quote($ts)['text'])) !== false
+        && strpos((string)$mine['html'], 'kind=qotw&amp;m=NGG-QW-1&amp;t=' . qotw_unsub_token('NGG-QW-1')) !== false);
+    $GLOBALS['__mail_sink'] = [];
+    qotw_mail_run($ts + 86400, 100000);
+    chk('qotw: once per member per week, however often the job fires', !array_filter($GLOBALS['__mail_sink'], fn($m) => in_array($m['to'], ['qw1@example.com', 'qw2@example.com'], true)));
+
+    chk('qotw: a forged opt-out is refused', (public_qotw_unsubscribe(['memberId' => 'NGG-QW-2', 'token' => 'nope'])['error'] ?? '') === 'bad_token');
+    chk('qotw: the signed opt-out works', !empty(public_qotw_unsubscribe(['memberId' => 'NGG-QW-2', 'token' => qotw_unsub_token('NGG-QW-2')])['ok']));
+    $GLOBALS['__mail_sink'] = [];
+    qotw_mail_run($ts + 7 * 86400, 100000);
+    $to2 = array_column($GLOBALS['__mail_sink'], 'to');
+    chk('qotw: next week, the member who opted out is not mailed; the other is', in_array('qw1@example.com', $to2, true) && !in_array('qw2@example.com', $to2, true));
+    setting_set('qotw_mail', '0', 'test');
+    chk('qotw: the switch in Settings stops it', (qotw_mail_run($ts + 14 * 86400)['skipped'] ?? '') === 'disabled');
+    setting_set('qotw_mail', '1', 'test');
+
+    // With no live saying, the week's Anchor quote — by the same week number.
+    $live = array_column(db_all("SELECT wisdomId FROM wisdom_sayings WHERE status = 'live'"), 'wisdomId');
+    db_exec("UPDATE wisdom_sayings SET status = 'hidden' WHERE status = 'live'");
+    $fb = weekly_quote($ts);
+    $quotes = array_values(anchor_content()['quotes']);
+    $w = wisdom_week_index($ts);
+    chk('qotw: with no saying live, it is the week\'s Anchor quote', $fb['source'] === 'anchor' && $fb['text'] === $quotes[(($w % count($quotes)) + count($quotes)) % count($quotes)]);
+    if ($live) db_exec('UPDATE wisdom_sayings SET status = \'live\' WHERE wisdomId IN (' . implode(',', array_fill(0, count($live), '?')) . ')', $live);
+
+    unset($GLOBALS['__mail_sink']);
+    db_exec("DELETE FROM wisdom_sayings WHERE wisdomId = 'WS-QW001'");
+    db_exec("DELETE FROM nudge_log WHERE messageKey LIKE 'qotw:%'");
+    db_exec("DELETE FROM member_state WHERE memberId LIKE 'NGG-QW-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-QW-%' OR memberId = 'SUM-QW-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

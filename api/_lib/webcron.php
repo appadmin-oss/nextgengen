@@ -257,6 +257,12 @@ function web_cron_reminders(): void {
      * recipient (see api/_lib/nudges.php), so firing every 15 minutes just
      * drains the day's message in bounded batches and then no-ops. Guarded so a
      * send fault can't take the reminders above down with it. */
+    /* The Monday quote mail — once per member per week, drained in batches. */
+    if (function_exists('qotw_mail_run')) {
+        try { qotw_mail_run(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'qotw.mail', $e->getMessage()); }
+    }
+
     /* Curriculum: reminders while assessments are outstanding, and the fine
      * for one left undone past its week. Idempotent per lesson and per
      * reminder period (domain/curriculum.php), so 15 minutes is harmless. */

@@ -264,7 +264,106 @@ function public_wisdom_week(array $p): array {
         $row = db_row('SELECT * FROM wisdom_sayings WHERE wisdomId = ?', [$row['wisdomId']]);
     }
     return ['ok' => true, 'week' => wisdom_week_monday($w),
-            'saying' => $row ? wisdom_shape($row) : null];
+            'saying' => $row ? wisdom_shape($row) : null,
+            'quote' => weekly_quote(null, $row)];
+}
+
+/**
+ * THE quote of the week — one answer for the home page, the Anchor Journal
+ * and the Monday mail, so all three always say the same thing.
+ *
+ * It is the Quote of the Week saying when one is live; when none is, the
+ * Anchor quote that week's number lands on — the same week number, so the
+ * Journal never falls back to a different quote from the mail. Changes on
+ * the Lagos Monday (WISDOM_ANCHOR), never daily.
+ *
+ * `$row` lets a caller that already picked the saying avoid picking twice.
+ */
+function weekly_quote(?int $ts = null, ?array $row = null): array {
+    $w = wisdom_week_index($ts);
+    if ($row === null) { wisdom_ensure_seeded(); $row = wisdom_pick(wisdom_live_by_lang(), $w); }
+    if ($row) {
+        return ['week' => wisdom_week_monday($w), 'source' => 'wisdom', 'wisdomId' => (string)$row['wisdomId'],
+                'language' => (string)$row['language'], 'kind' => (string)$row['kind'], 'text' => (string)$row['text'],
+                'translation' => (string)($row['translation'] ?? ''), 'meaning' => (string)($row['meaning'] ?? ''),
+                'answer' => (string)($row['answer'] ?? ''), 'answerTranslation' => (string)($row['answerTranslation'] ?? '')];
+    }
+    $quotes = function_exists('anchor_content') ? array_values(array_filter((array)(anchor_content()['quotes'] ?? []), 'is_string')) : [];
+    $text = $quotes ? $quotes[(($w % count($quotes)) + count($quotes)) % count($quotes)] : '';
+    return ['week' => wisdom_week_monday($w), 'source' => 'anchor', 'wisdomId' => '', 'language' => 'english', 'kind' => 'quote',
+            'text' => $text, 'translation' => '', 'meaning' => '', 'answer' => '', 'answerTranslation' => ''];
+}
+
+/* ── The Monday mail ──────────────────────────────────────────────────── */
+
+const QOTW_MAIL_BATCH = 60;
+
+/** A signed, per-member token for the quote mail's one-click opt-out. */
+function qotw_unsub_token(string $memberId): string {
+    return substr(hash_hmac('sha256', 'qotw:' . $memberId, (string)($GLOBALS['CONFIG']['cookie_secret'] ?? 'ngg')), 0, 32);
+}
+
+function qotw_opted_out(string $memberId): bool {
+    $r = db_row("SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = 'mail' LIMIT 1", [$memberId]);
+    $v = $r ? json_decode((string)$r['stateValue'], true) : null;
+    return is_array($v) && !empty($v['qotwOff']);
+}
+
+/**
+ * Mail the week's quote to every active NGG member, once per member per week.
+ * Runs from the 15-minute reminders job and drains in batches; a week that
+ * started while the site was quiet still goes out — late, never twice.
+ * Off with `qotw_mail` = '0'.
+ */
+function qotw_mail_run(?int $ts = null, int $limit = QOTW_MAIL_BATCH): array {
+    if ((setting_raw('qotw_mail') ?? '1') === '0') return ['sent' => 0, 'skipped' => 'disabled'];
+    $q = weekly_quote($ts);
+    if (trim($q['text']) === '') return ['sent' => 0, 'skipped' => 'no_quote'];
+    $key = 'qotw:' . $q['week'];
+    $members = db_all("SELECT m.memberId, m.fullName, m.email FROM members m
+                       WHERE COALESCE(m.type,'NGG') <> 'Summer' AND m.status = 'active' AND COALESCE(m.email,'') <> ''
+                         AND NOT EXISTS (SELECT 1 FROM nudge_log n WHERE n.messageKey = ? AND n.recipient = m.memberId)
+                       ORDER BY m.id LIMIT " . (int)($limit * 3), [$key]);
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    $lang = ucfirst($q['language']);
+    $sent = 0;
+    foreach ($members as $m) {
+        if ($sent >= $limit) break;
+        $mid = (string)$m['memberId'];
+        $mark = static function () use ($key, $mid) { try { db_insert('nudge_log', ['messageKey' => $key, 'recipient' => $mid, 'channel' => 'email', 'sentAt' => now_iso()]); } catch (\Throwable $e) {} };
+        $email = trim((string)$m['email']);
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || qotw_opted_out($mid)) { $mark(); continue; }
+        $first = esc_html(explode(' ', trim((string)$m['fullName']))[0] ?: 'there');
+        $body = '<p style="margin:0 0 6px;font-size:20px;line-height:1.4;font-weight:700">“' . esc_html($q['text']) . '”</p>'
+              . ($q['translation'] !== '' ? '<p style="margin:0 0 10px;font-style:italic">' . esc_html($q['translation']) . '</p>' : '')
+              . ($q['source'] === 'wisdom' ? '<p style="margin:0 0 10px;font-size:12px;letter-spacing:.08em;text-transform:uppercase">A ' . esc_html($lang) . ' ' . esc_html($q['kind']) . '</p>' : '')
+              . ($q['meaning'] !== '' ? '<p style="margin:0 0 10px">' . esc_html($q['meaning']) . '</p>' : '')
+              . '<p style="margin:0 0 10px">It is the quote in your Anchor Journal all week. Carry it into Saturday.</p>';
+        $unsub = $origin . '/api/public/unsubscribe.php?kind=qotw&m=' . rawurlencode($mid) . '&t=' . qotw_unsub_token($mid);
+        // The template escapes its foot note, so the opt-out link rides in the body.
+        $body .= '<p style="margin:16px 0 0;font-size:12px"><a href="' . esc_html($unsub) . '">Stop these quote emails</a></p>';
+        $html = email_template(['title' => 'Quote of the week', 'eyebrow' => 'NGG Club · Week of ' . $q['week'],
+            'intro' => "Good morning, {$first}. This week's quote:", 'bodyHtml' => $body,
+            'ctaLabel' => 'Hear it on the site →', 'ctaUrl' => $origin . '/',
+            'footNote' => 'Sent to NGG members every Monday.']);
+        @send_mail($email, 'Quote of the week: ' . mb_substr($q['translation'] !== '' ? $q['translation'] : $q['text'], 0, 70), $html);
+        $mark();
+        $sent++;
+    }
+    return ['sent' => $sent, 'week' => $q['week']];
+}
+
+/** public.qotw.unsubscribe — the mail's one-click opt-out. */
+function public_qotw_unsubscribe(array $p): array {
+    $mid = (string)($p['memberId'] ?? '');
+    if ($mid === '' || !hash_equals(qotw_unsub_token($mid), (string)($p['token'] ?? ''))) return ['ok' => false, 'error' => 'bad_token'];
+    if (!db_row('SELECT id FROM members WHERE memberId = ? LIMIT 1', [$mid])) return ['ok' => false, 'error' => 'bad_token'];
+    $r = db_row("SELECT stateValue FROM member_state WHERE memberId = ? AND stateKey = 'mail' LIMIT 1", [$mid]);
+    $v = ($r ? json_decode((string)$r['stateValue'], true) : null) ?: [];
+    $v['qotwOff'] = true;
+    member_state_set(['memberId' => $mid, 'key' => 'mail', 'value' => $v]);
+    audit('qotw.unsubscribe', $mid, $mid, [], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
 }
 
 /* ── Audio store ──────────────────────────────────────────────────────── */

@@ -182,6 +182,17 @@ function weekLogs(entries, week) {
 // Admin-managed content overrides the built-in defaults above (fetched from
 // /api/public/anchor-content.php). Falls back to the defaults if unset/offline.
 let TILT_ON = true;
+/* The quote of the week — the SAME quote as the home page's Quote of the
+   Week and the Monday email (weekly_quote() on the server), not a daily one.
+   Offline, the Anchor quote that week's number lands on, by the same count
+   from the same Lagos Monday the server uses. */
+let WEEK_QUOTE = null;
+const QOTW_ANCHOR = Date.parse("2026-09-21T00:00:00+01:00");
+function weekQuoteFallback() {
+  const w = Math.floor((Date.now() - QOTW_ANCHOR) / 604800000);
+  const n = QUOTES.length;
+  return n ? { text: QUOTES[((w % n) + n) % n], translation: "", source: "anchor" } : { text: "", translation: "" };
+}
 function applyContent(c) {
   if (!c) return;
   if (Array.isArray(c.quotes) && c.quotes.length) QUOTES = c.quotes;
@@ -279,6 +290,8 @@ function App() {
   useEffect(() => {
     const cached = store.cache().content; if (cached) { applyContent(cached); setCver(v => v + 1); }
     NGGApi.public.anchorContent().then(r => { if (r && r.content) { applyContent(r.content); store.patch({ content: r.content }); setCver(v => v + 1); } }).catch(() => {});
+    const cq = store.cache().weekQuote; if (cq) WEEK_QUOTE = cq;
+    NGGApi.public.wisdomWeek().then(r => { if (r && r.quote && r.quote.text) { WEEK_QUOTE = r.quote; store.patch({ weekQuote: r.quote }); setCver(v => v + 1); } }).catch(() => {});
   }, []);
 
   const go = (v) => { prev.current = view; setView(v); };
@@ -702,7 +715,9 @@ function Reflect({ ctx }) {
   const [noticed, setNoticed] = useState("");
   const [mood, setMood] = useState("good");
   const [busy, setBusy] = useState(false);
-  const quote = QUOTES[(Math.floor(Date.now() / 864e5)) % QUOTES.length];
+  // A cached quote from an earlier week is not this week's quote.
+  const wq = WEEK_QUOTE && WEEK_QUOTE.week && (Date.now() - Date.parse(WEEK_QUOTE.week + "T00:00:00+01:00")) < 604800000 ? WEEK_QUOTE : weekQuoteFallback();
+  const quote = wq.text;
   const theme = (WEEK_TITLES[currentWeek - 1] || "Identity").split(" · ")[0];
   const weekPrompt = (WEEK_DATA[currentWeek - 1] || {}).journal || "";
   const dateStr = fmtDayLong(new Date()).toUpperCase();
@@ -760,10 +775,11 @@ function Reflect({ ctx }) {
 
       <div className="pad" style={{ marginTop: 20 }}><Tilt strength={7}><div className="card-grad aj-quote">
         <div className="aj-quote-top">
-          <span className="aj-quote-lbl">MORNING QUOTE</span>
-          {(pstate.prefs || {}).readAloud !== false && <button className="aj-read" onClick={() => speak(quote)}><i className="ph-fill ph-speaker-high"/>Read aloud</button>}
+          <span className="aj-quote-lbl">QUOTE OF THE WEEK</span>
+          {(pstate.prefs || {}).readAloud !== false && <button className="aj-read" onClick={() => speak(wq.translation || quote)}><i className="ph-fill ph-speaker-high"/>Read aloud</button>}
         </div>
         <p className="aj-quote-q">“{quote}”</p>
+        {wq.translation && <p className="aj-quote-tr">{wq.translation}</p>}
       </div></Tilt></div>
 
       {sec("1", "TODAY'S MUSING", <>

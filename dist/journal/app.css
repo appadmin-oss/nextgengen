@@ -548,3 +548,5 @@ i[class^="ph"] { line-height: 1; }
   .btn-a:hover { filter: brightness(1.05); }
   .aj-link:hover, .aj-setrow:hover, .aj-tool:hover { border-color: rgba(255,255,255,.28); }
 }
+
+.aj-quote-tr { margin: 6px 0 0; font-style: italic; opacity: .9; }

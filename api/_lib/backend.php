@@ -621,6 +621,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.promo.upsert'      => 'admin_promo_upsert',
             'admin.promo.delete'      => 'admin_promo_delete',
             // Quote of the week (domain/wisdom.php).
+            'public.qotw.unsubscribe' => 'public_qotw_unsubscribe',
             'public.wisdom.week'      => 'public_wisdom_week',
             'admin.wisdom.list'       => 'admin_wisdom_list',
             'admin.wisdom.upsert'     => 'admin_wisdom_upsert',

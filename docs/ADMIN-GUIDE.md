@@ -775,6 +775,18 @@ the English part off ("English too").
 - Changing a saying's words remakes its generated voice; changing only the
   translation remakes only the English part.
 
+### One quote, everywhere, and the Monday email
+
+The quote on the home page **is** the quote in every member's Anchor Journal
+for the week (the Journal's card now reads "Quote of the week", and changes on
+Monday, not daily) and the quote in the Monday email. When no saying is live,
+all three fall back to the same week's Anchor quote from **Anchor app →
+Quotes**.
+
+Every active NGG member gets the email once a week; each has a one-click
+"Stop these quote emails" link. **Settings → Email NGG members the Quote of
+the Week** turns the email off for everyone.
+
 ## How bulk actions behave
 
 Every bulk action in the Control Room goes through the same machinery, so
