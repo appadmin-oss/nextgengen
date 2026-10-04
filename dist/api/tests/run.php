@@ -23855,6 +23855,62 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-AC-%'");
 })();
 
+/* ── The status board and the member record ── */
+(function () {
+    $now = now_iso(); $today = attendance_today();
+    db_insert('centres', ['centreId' => 'CEN-SB-A', 'name' => 'Sb Alpha', 'code' => 'SA', 'status' => 'active', 'meetDays' => 'Mon,Tue,Wed,Thu,Fri,Sat,Sun', 'lat' => 6.5, 'lng' => 3.3, 'createdAt' => $now]);
+    db_insert('centres', ['centreId' => 'CEN-SB-B', 'name' => 'Sb Beta', 'code' => 'SBB', 'status' => 'active', 'createdAt' => $now]);
+    $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Sb ' . $id, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-SB-SUP', 'super_admin', ['totpSecret' => 'X']);
+    $mk('NGG-SB-LEAD', 'centre_lead', ['centreScope' => json_encode(['CEN-SB-A']), 'lastLoginAt' => $now]);
+    $mk('NGG-SB-ED', 'editor');
+    $mk('NGG-SB-M1', 'member', ['centre' => 'Sb Alpha', 'lastLoginAt' => $now]);
+    $mk('NGG-SB-M2', 'member', ['centre' => 'Sb Alpha']);
+    $mk('NGG-SB-M3', 'member', ['centre' => 'Sb Beta']);
+    db_insert('attendance', ['studentId' => 'NGG-SB-M1', 'date' => $today, 'status' => 'late', 'checkInAt' => $now]);
+    db_insert('member_assessments', ['memberId' => 'NGG-SB-M2', 'period' => companion_period($today), 'rating' => 'at_risk', 'summary' => 'x', 'source' => 'rules', 'createdAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-SB-I', 'fullName' => 'Sb Instructor', 'email' => 'sbi@example.com', 'role' => 'instructor', 'centre' => 'Sb Alpha', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('timetable_slots', ['slotId' => 'TT-SB1', 'centreId' => 'CEN-SB-A', 'course' => 'Piano', 'weekday' => 6, 'startTime' => '10:00', 'endTime' => '11:00', 'instructorId' => 'VOL-SB-I', 'status' => 'active', 'createdAt' => $now]);
+
+    $b = backend_dispatch('admin.status.board', ['requesterId' => 'NGG-SB-SUP']);
+    chk('status: the board has every part for somebody who holds every capability', ($b['parts'] ?? []) === ['members', 'centres', 'mentors', 'instructors', 'leads', 'staff']);
+    $att = array_column($b['members']['attention'] ?? [], null, 'memberId');
+    chk('status: a member the companion rated at risk is on the attention list, saying why', in_array('at risk (companion)', $att['NGG-SB-M2']['reasons'] ?? [], true));
+    $cen = array_column($b['centres']['rows'] ?? [], null, 'name');
+    chk('status: a centre counts its members and who came in today (late included)', ($cen['Sb Alpha']['members'] ?? 0) === 2 && ($cen['Sb Alpha']['presentToday'] ?? 0) === 1 && ($cen['Sb Alpha']['lateToday'] ?? 0) === 1);
+    chk('status: a centre with no lead, no classes and no map says so', array_intersect(['no lead', 'no classes on the timetable', 'not mapped'], $cen['Sb Beta']['issues'] ?? []) === ['no lead', 'no classes on the timetable', 'not mapped']);
+    chk('status: a Centre lead account counts as the centre\'s lead', in_array('Sb NGG-SB-LEAD', $cen['Sb Alpha']['leadAccounts'] ?? [], true) && !in_array('no lead', $cen['Sb Alpha']['issues'], true));
+    $ins = array_column($b['instructors']['rows'] ?? [], null, 'id');
+    chk('status: an instructor shows their classes, and "no activity yet" when nothing is recorded', ($ins['VOL-SB-I']['classes'] ?? 0) === 1 && ($ins['VOL-SB-I']['state'] ?? '') === 'never');
+    $st = array_column($b['staff']['rows'] ?? [], null, 'memberId');
+    chk('status: staff without 2FA are flagged; one with it is not', in_array('no 2FA', $st['NGG-SB-ED']['flags'] ?? [], true) && !in_array('no 2FA', $st['NGG-SB-SUP']['flags'] ?? [], true));
+
+    $l = backend_dispatch('admin.status.board', ['requesterId' => 'NGG-SB-LEAD']);
+    chk('status: a centre lead sees their centre only, and no staff part (that needs rbac or audit)',
+        array_column($l['centres']['rows'] ?? [], 'name') === ['Sb Alpha'] && !in_array('staff', $l['parts'] ?? [], true) && ($l['members']['tally']['active'] ?? 0) === 2);
+    chk('status: an editor has no status board at all', (backend_dispatch('admin.status.board', ['requesterId' => 'NGG-SB-ED'])['error'] ?? '') === 'forbidden');
+    // The query count does not grow with the roster.
+    db_count_start(); backend_dispatch('admin.status.board', ['requesterId' => 'NGG-SB-SUP']); $q1 = db_count_read(); db_count_stop();
+    for ($i = 0; $i < 30; $i++) $mk('NGG-SB-X' . $i, 'member', ['centre' => 'Sb Alpha']);
+    db_count_start(); backend_dispatch('admin.status.board', ['requesterId' => 'NGG-SB-SUP']); $q2 = db_count_read(); db_count_stop();
+    chk('status: thirty more members cost no more queries (no query per row)', $q2 <= $q1 + 2);
+
+    $r = backend_dispatch('admin.members.record', ['requesterId' => 'NGG-SB-SUP', 'memberId' => 'NGG-SB-M1']);
+    chk('record: one read carries attendance, conduct, money, curriculum, companion, family and mentorship',
+        ($r['attendance']['late'] ?? -1) === 1 && isset($r['conduct'], $r['fees'], $r['curriculum'], $r['companion'], $r['family'], $r['mentorship']));
+    $rl = backend_dispatch('admin.members.record', ['requesterId' => 'NGG-SB-LEAD', 'memberId' => 'NGG-SB-M1']);
+    chk('record: money is absent for somebody without fees — absent, not empty', !empty($rl['ok']) && !array_key_exists('fees', $rl));
+    chk('record: a centre lead cannot open a member of another centre', (backend_dispatch('admin.members.record', ['requesterId' => 'NGG-SB-LEAD', 'memberId' => 'NGG-SB-M3'])['error'] ?? '') === 'out_of_scope');
+
+    db_exec("DELETE FROM attendance WHERE studentId LIKE 'NGG-SB-%'");
+    db_exec("DELETE FROM member_assessments WHERE memberId LIKE 'NGG-SB-%'");
+    db_exec("DELETE FROM timetable_slots WHERE slotId = 'TT-SB1'");
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-SB-I'");
+    db_exec("DELETE FROM centres WHERE centreId LIKE 'CEN-SB-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-SB-%'");
+})();
+
 /* ── NGG and Summer School keep their own course and centre lists ── */
 (function () {
     $now = now_iso();

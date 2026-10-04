@@ -1333,6 +1333,10 @@
          many children they are responsible for. */
       // The staff role registry — the only list of roles the screen uses.
       roles: () => request('/admin/roles.php'),
+      // The status board: members, centres, mentors, instructors, centre leads, staff.
+      status: () => request('/admin/status.php'),
+      // One member's whole record, for the Members desk.
+      memberRecord: (memberId) => request('/admin/member-record.php' + qs({ memberId })),
       staff: {
         performance: (days) => request('/admin/staff.php?view=performance&days=' + (days || 30)),
         ackRemark:   (remarkId) => request('/admin/staff.php', { body: { action: 'ack', remarkId } }),

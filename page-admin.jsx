@@ -58,6 +58,10 @@ const ADMIN_SECTIONS = [
      volunteers and on Summer School alike, and the old title sent anybody
      looking for year-round numbers to the wrong place. */
   { id: "dashboard",   group: null,       label: "Analytics",    title: "Analytics & M&E",     icon: "◫", cap: null },
+  /* How is everything? Members, centres, mentors, instructors, centre leads
+     and staff — each tab needs the capability that owns its data, so a
+     section any of those desks can open, scoped on the server. */
+  { id: "status",      group: null,       label: "Status board", title: "Status board",        icon: "◉", cap: ["people", "club", "rbac", "audit"] },
   { id: "members",     group: "People",   label: "Members",      title: "Members",             icon: "◯", cap: "people" },
   { id: "applications",group: "People",   label: "Applications", title: "Applications",        icon: "✉", cap: "people" },
   { id: "volunteers",  group: "People",   label: "Volunteers",   title: "Volunteers",          icon: "◈", cap: "people" },
@@ -199,13 +203,21 @@ function takePendingAdminTab(fallback) {
  *  `valid` rejects a tab this section does not have, so a jump aimed at
  *  another section cannot leave this one rendering nothing. */
 function useAdminTab(fallback, valid) {
+  // `valid` is required in practice: without it an open section accepts any
+  // jump's tab (see below). Every caller declares its own tab ids.
   const okTab = React.useCallback((t) => !!t && (!valid || valid(t)), [valid]);
   const [tab, setTab] = React.useState(() => {
     const t = takePendingAdminTab("");
     return okTab(t) ? t : fallback;
   });
   React.useEffect(() => {
-    const fn = () => { const t = takePendingAdminTab(""); if (okTab(t)) setTab(t); };
+    /* A section ALREADY on screen takes a pending tab only when it is one of
+       its own. Subscribers fire before the target section mounts, so taking
+       every tab let whichever section was open consume a jump aimed at the
+       next one — the Status board swallowed `members/roster`, and Members
+       opened on its Dashboard. Mounting (the initialiser above) still always
+       consumes, so a pending tab cannot leak past the section it was for. */
+    const fn = () => { if (okTab(_pendingAdminTab)) setTab(takePendingAdminTab("")); };
     _pendingTabSubs.add(fn);
     fn();   // a jump that arrived while this section was already on screen
     return () => { _pendingTabSubs.delete(fn); };
@@ -434,6 +446,7 @@ function AdminPage({ setPage }) {
           {view === "requests" && <AdminRequests/>}
           {view === "families" && <AdminFamilies/>}
           {view === "timetable" && <AdminTimetable/>}
+          {view === "status" && <AdminStatus/>}
           {view === "approvals" && <AdminApprovals/>}
           {view === "companion" && <AdminCompanion/>}
           {view === "curriculum" && <AdminCurriculum/>}
@@ -2461,7 +2474,7 @@ const APPROVAL_STATUS_LABEL = { pending: "Waiting", approved: "Approved", reject
  * draft and saves it. domain/curriculum.php has the rules.
  */
 function AdminCurriculum() {
-  const [tab, setTab] = useAdminTab("lessons");
+  const [tab, setTab] = useAdminTab("lessons", React.useCallback(t => ["lessons", "courses", "submissions", "import", "progress"].indexOf(t) !== -1, []));
   // Materials instructors sent, waiting for review — on the tab, so a queue
   // nobody opens still says it is there.
   const [pendingSubs, setPendingSubs] = React.useState(0);
@@ -8137,6 +8150,192 @@ function AdminBroadcast() {
   );
 }
 
+/* ── Status board ─────────────────────────────────────────────────────────────
+ * One screen for "how is everything?": members, centres, mentors,
+ * instructors, centre leads and staff. Every status is derived on the server
+ * from records the platform already keeps (domain/status.php says what each
+ * word means); each tab appears only to somebody whose capabilities cover it,
+ * and a scoped admin sees their centres only. Words, not colour alone: every
+ * chip says its state.
+ */
+const STATUS_TABS = [
+  ["members", "Members"], ["centres", "Centres"], ["mentors", "Mentors"],
+  ["instructors", "Instructors"], ["leads", "Centre leads"], ["staff", "Staff & admins"],
+];
+const STATUS_WORD = { active: "Active", quiet: "Quiet", dormant: "Dormant", never: "No activity yet", ok: "OK", attention: "Needs attention", unled: "No lead" };
+function StatusChip({ state, days }) {
+  return <span className={"st-chip is-" + state}>{STATUS_WORD[state] || state}{days != null && state !== "active" ? " · " + days + "d" : ""}</span>;
+}
+function StatusKpi({ n, label, tone, onClick }) {
+  const body = <><b className="st-kpi-n">{fmtNum(n || 0)}</b><span className="st-kpi-l">{label}</span></>;
+  return onClick ? <button type="button" className={"st-kpi" + (tone ? " is-" + tone : "")} onClick={onClick}>{body}</button>
+    : <div className={"st-kpi" + (tone ? " is-" + tone : "")}>{body}</div>;
+}
+function AdminStatus() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const [tab, setTab] = useAdminTab("members", React.useCallback(t => STATUS_TABS.some(([k]) => k === t), []));
+  const [only, setOnly] = React.useState(false);   // only what needs attention
+  const load = React.useCallback(() => { setErr(null); return NGGApi.admin.status().then(setD).catch(setErr); }, []);
+  React.useEffect(() => { load(); }, [load]);
+  if (err) return <div className="admin-section"><ErrorState title="Couldn't load the status board" message={err.message} code={err.code} onRetry={load}/></div>;
+  if (!d) return <div className="admin-section"><div className="dash-spinner" role="status" aria-label="Loading the status board"/></div>;
+  const tabs = STATUS_TABS.filter(([k]) => d.parts.indexOf(k) !== -1);
+  const cur = tabs.some(([k]) => k === tab) ? tab : (tabs[0] || [""])[0];
+  const m = d.members, c = d.centres;
+  const quietStaff = (t) => t ? (t.quiet || 0) + (t.dormant || 0) + (t.never || 0) : 0;
+  return (
+    <div className="admin-section st-board">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Status board</h2>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={load}>Refresh</button>
+      </div>
+      <p className="admin-hint">Today is {fmtDate(d.today)} (Lagos). {d.scoped ? "Your centres only: " + d.scopeNames.join(", ") + "." : "Every centre."} Active means work recorded in the last 14 days, quiet within 30, dormant beyond that.</p>
+
+      <div className="st-kpis" role="list" aria-label="Headline figures">
+        {m && <StatusKpi n={m.tally.active} label="active members" onClick={() => setTab("members")}/>}
+        {m && <StatusKpi n={m.tally.presentToday} label={"in today" + (m.tally.lateToday ? " · " + m.tally.lateToday + " late" : "")}/>}
+        {m && <StatusKpi n={m.tally.atRisk + (m.conduct.suspended || 0) + (m.conduct.evicted || 0)} label="at risk or blocked" tone={m.tally.atRisk ? "warn" : ""} onClick={() => setTab("members")}/>}
+        {m && m.withFees && <StatusKpi n={m.tally.owing} label={"owing · " + naira(m.tally.owingTotal)} tone={m.tally.owing ? "warn" : ""}/>}
+        {c && <StatusKpi n={c.withIssues} label={"of " + c.total + " centres need attention"} tone={c.withIssues ? "warn" : ""} onClick={() => setTab("centres")}/>}
+        {d.mentors && <StatusKpi n={quietStaff(d.mentors.tally)} label="mentors quiet or dormant" tone={quietStaff(d.mentors.tally) ? "warn" : ""} onClick={() => setTab("mentors")}/>}
+        {d.instructors && <StatusKpi n={quietStaff(d.instructors.tally)} label="instructors quiet or dormant" tone={quietStaff(d.instructors.tally) ? "warn" : ""} onClick={() => setTab("instructors")}/>}
+        {d.leads && <StatusKpi n={d.leads.unled} label="centres with no lead" tone={d.leads.unled ? "bad" : ""} onClick={() => setTab("leads")}/>}
+        {d.staff && <StatusKpi n={d.staff.tally.no2fa} label="staff without 2FA" tone={d.staff.tally.no2fa ? "bad" : ""} onClick={() => setTab("staff")}/>}
+      </div>
+
+      <div className="st-bar">
+        <div className="admin-tabs" role="tablist" aria-label="Status by area">
+          {tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={cur === k} className={"admin-tab" + (cur === k ? " is-active" : "")} onClick={() => setTab(k)}>{l}</button>)}
+        </div>
+        <label className="st-only"><input type="checkbox" checked={only} onChange={e => setOnly(e.target.checked)}/> Only what needs attention</label>
+      </div>
+
+      {cur === "members" && m && <StatusMembers m={m} only={only}/>}
+      {cur === "centres" && c && <StatusCentres c={c} only={only}/>}
+      {cur === "mentors" && d.mentors && <StatusPeople rows={d.mentors.rows} only={only} cols={[["Kind", r => r.kind], ["Centre", r => r.centre || "—"], ["Mentees", r => r.mentees, true], ["Stars · remarks (60d)", r => r.stars + " · " + r.remarks, true]]} empty="No mentors in your centres yet." caption="Mentors"/>}
+      {cur === "instructors" && d.instructors && <StatusPeople rows={d.instructors.rows} only={only} cols={[["Centre", r => r.centre || "—"], ["Courses", r => r.courses || "—"], ["Classes", r => r.classes, true], ["Sessions (60d)", r => r.sessions, true], ["Materials waiting", r => r.pendingMaterials, true]]} empty="No instructors in your centres yet." caption="Instructors"/>}
+      {cur === "leads" && d.leads && <StatusLeads l={d.leads} only={only}/>}
+      {cur === "staff" && d.staff && <StatusStaff s={d.staff} only={only}/>}
+    </div>
+  );
+}
+function StatusMembers({ m, only }) {
+  const t = m.tally;
+  const rows = m.attention;
+  return (
+    <div className="st-pane">
+      <div className="st-strip">
+        <span><b>{t.onTrack}</b> on track</span><span><b>{t.watch}</b> watch</span><span><b>{t.atRisk}</b> at risk</span><span><b>{t.unrated}</b> not yet rated this week</span>
+        <span><b>{m.conduct.warned || 0}</b> conduct warning</span><span><b>{(m.conduct.suspended || 0) + (m.conduct.evicted || 0)}</b> suspended or evicted</span>
+        <span><b>{t.newThisMonth}</b> joined this month</span><span><b>{t.neverSignedIn}</b> never signed in</span><span><b>{t.notSignedIn60}</b> not signed in for 60 days</span>
+        {Object.entries(m.byStatus).filter(([k]) => k !== "active").map(([k, n]) => <span key={k}><b>{n}</b> {k.replace(/-/g, " ")}</span>)}
+      </div>
+      <h3 className="admin-h4">Members who need attention <span className="admin-count mono">{m.attentionTotal}</span></h3>
+      {!rows.length ? <EmptyState title="Nobody flagged" message="No member is at risk, blocked, warned or owing a large balance."/> :
+      <div className="admin-table-wrap"><table className="admin-table">
+        <caption className="sr-only">Members who need attention, most urgent first</caption>
+        <thead><tr><th scope="col">Member</th><th scope="col">Centre</th><th scope="col">Why</th><th scope="col">Last signed in</th></tr></thead>
+        <tbody>{rows.map(r => (
+          <tr key={r.memberId}>
+            <td><div className="admin-cell-name">{r.fullName}</div><div className="mono admin-cell-sub">{r.memberId}</div></td>
+            <td className="admin-cell-sub">{r.centre || "—"}</td>
+            <td><div className="st-reasons">{r.reasons.map(x => <span key={x} className={"st-chip " + (r.severity >= 3 ? "is-dormant" : "is-quiet")}>{x}</span>)}</div></td>
+            <td className="admin-cell-sub">{r.lastSignIn ? fmtDate(r.lastSignIn) : "never"}</td>
+          </tr>
+        ))}</tbody>
+      </table></div>}
+      {m.attentionTotal > rows.length && <p className="admin-hint">Showing the {rows.length} most urgent of {m.attentionTotal}.</p>}
+    </div>
+  );
+}
+function StatusCentres({ c, only }) {
+  const rows = only ? c.rows.filter(r => r.state !== "ok") : c.rows;
+  return (
+    <div className="st-pane">
+      {!rows.length ? <EmptyState title={only ? "Every centre is in order" : "No centres"} message={only ? "No centre has an open issue." : "Add a centre under People → Centres."}/> :
+      <div className="admin-table-wrap"><table className="admin-table">
+        <caption className="sr-only">Centres and what each needs</caption>
+        <thead><tr><th scope="col">Centre</th><th scope="col" className="admin-num">Members</th><th scope="col" className="admin-num">In today</th><th scope="col" className="admin-num">Classes</th><th scope="col">Lead</th><th scope="col">Status</th></tr></thead>
+        <tbody>{rows.map(r => (
+          <tr key={r.centreId}>
+            <td><div className="admin-cell-name">{r.name}</div><div className="admin-cell-sub">{r.meetDays || "meeting days not set"}{r.meetsToday ? " · meets today" : ""}</div></td>
+            <td className="admin-num">{r.members}{r.capacity ? <span className="admin-cell-sub"> / {r.capacity}</span> : null}</td>
+            <td className="admin-num">{r.presentToday}{r.lateToday ? <span className="admin-cell-sub"> ({r.lateToday} late)</span> : null}</td>
+            <td className="admin-num">{r.classes}</td>
+            <td className="admin-cell-sub">{[r.lead].concat(r.leadAccounts).filter(Boolean).join(", ") || "—"}</td>
+            <td>{r.issues.length ? <div className="st-reasons">{r.issues.map(x => <span key={x} className="st-chip is-quiet">{x}</span>)}</div> : <StatusChip state="ok"/>}</td>
+          </tr>
+        ))}</tbody>
+      </table></div>}
+    </div>
+  );
+}
+function StatusPeople({ rows, only, cols, empty, caption }) {
+  const list = only ? rows.filter(r => r.state !== "active") : rows;
+  return (
+    <div className="st-pane">
+      {!list.length ? <EmptyState title={only ? "Everybody is active" : "Nobody here"} message={only ? "Nobody has gone quiet." : empty}/> :
+      <div className="admin-table-wrap"><table className="admin-table">
+        <caption className="sr-only">{caption}, quietest first</caption>
+        <thead><tr><th scope="col">Name</th>{cols.map(([h, , num]) => <th key={h} scope="col" className={num ? "admin-num" : ""}>{h}</th>)}<th scope="col">Last active</th><th scope="col">Status</th></tr></thead>
+        <tbody>{list.map(r => (
+          <tr key={r.id}>
+            <td className="admin-cell-name">{r.fullName}</td>
+            {cols.map(([h, f, num]) => <td key={h} className={num ? "admin-num" : "admin-cell-sub"}>{f(r)}</td>)}
+            <td className="admin-cell-sub">{r.lastActive ? fmtDate(r.lastActive) : "—"}</td>
+            <td><StatusChip state={r.state} days={r.days}/></td>
+          </tr>
+        ))}</tbody>
+      </table></div>}
+    </div>
+  );
+}
+function StatusLeads({ l, only }) {
+  const rows = only ? l.rows.filter(r => r.state !== "active") : l.rows;
+  return (
+    <div className="st-pane">
+      <p className="admin-hint">A centre's leads are its lead volunteer (People → Centres), its lead mentors, and any <b>Centre lead</b> account scoped to it (Access &amp; roles).</p>
+      {!rows.length ? <EmptyState title="Every centre is led" message="Each centre has an active lead."/> :
+      <div className="admin-table-wrap"><table className="admin-table">
+        <caption className="sr-only">Who leads each centre</caption>
+        <thead><tr><th scope="col">Centre</th><th scope="col">Leads</th><th scope="col">Status</th></tr></thead>
+        <tbody>{rows.map(r => (
+          <tr key={r.centreId}>
+            <td className="admin-cell-name">{r.centre}</td>
+            <td>{r.leads.length ? <ul className="st-leads">{r.leads.map((p, i) => <li key={i}><b>{p.name}</b> <span className="admin-cell-sub">{p.kind}</span> <StatusChip state={p.state} days={p.days}/></li>)}</ul> : <span className="admin-cell-sub">Nobody — name a lead volunteer or give somebody the Centre lead role.</span>}</td>
+            <td><StatusChip state={r.state === "unled" ? "unled" : r.state}/></td>
+          </tr>
+        ))}</tbody>
+      </table></div>}
+    </div>
+  );
+}
+function StatusStaff({ s, only }) {
+  const rows = only ? s.rows.filter(r => r.state !== "active" || r.flags.length) : s.rows;
+  return (
+    <div className="st-pane">
+      <div className="st-strip"><span><b>{s.tally.active}</b> active</span><span><b>{s.tally.quiet}</b> quiet</span><span><b>{s.tally.dormant + s.tally.never}</b> dormant or never</span><span><b>{s.tally.no2fa}</b> without 2FA</span><span><b>{s.tally.noCentre}</b> with no centre</span></div>
+      {!rows.length ? <EmptyState title="Nothing to flag" message="Every staff account is active, has 2FA and has what its role needs."/> :
+      <div className="admin-table-wrap"><table className="admin-table">
+        <caption className="sr-only">Staff accounts</caption>
+        <thead><tr><th scope="col">Person</th><th scope="col">Role</th><th scope="col">Centres</th><th scope="col">2FA</th><th scope="col">Last signed in · acted</th><th scope="col" className="admin-num">Awaiting approval</th><th scope="col">Status</th></tr></thead>
+        <tbody>{rows.map(r => (
+          <tr key={r.memberId}>
+            <td><div className="admin-cell-name">{r.fullName}</div>{r.extraCaps.length > 0 && <div className="admin-cell-sub">+ {r.extraCaps.join(", ")}</div>}</td>
+            <td className="admin-cell-sub">{r.roleLabel}</td>
+            <td className="admin-cell-sub">{r.centres.length ? r.centres.join(", ") : "All"}</td>
+            <td>{r.twoFactor ? <span className="st-chip is-active">On</span> : <span className="st-chip is-dormant">Off</span>}</td>
+            <td className="admin-cell-sub">{r.lastSignIn ? fmtDate(r.lastSignIn) : "never"} · {r.lastAction ? fmtDate(r.lastAction) : "—"}</td>
+            <td className="admin-num">{r.pendingApprovals}</td>
+            <td><div className="st-reasons"><StatusChip state={r.state} days={r.days}/>{r.flags.map(f => <span key={f} className="st-chip is-dormant">{f}</span>)}</div></td>
+          </tr>
+        ))}</tbody>
+      </table></div>}
+    </div>
+  );
+}
+
 // Access & roles — every staff account, its role and what it can actually do,
 // and the matrix of roles × capabilities × the sections each opens. All of it
 // derived from the server's registry (admin.roles), so it cannot drift.
@@ -11428,6 +11627,7 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
   const [mentors, setMentors] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
   const [ngvRole, setNgvRole] = React.useState("volunteer");
+  const [rtab, setRtab] = React.useState("overview");
   const load = () => { setErr(""); return NGGApi.admin.memberDetail(memberId).then(r => setD(r.detail)).catch(e => { setErr(e.code || e.message || "load_failed"); }); };
   React.useEffect(() => { load(); NGGApi.admin.mentors.list().then(r => setMentors(r.mentors || [])).catch(() => {}); /* eslint-disable-next-line */ }, [memberId]);
   const STATUS_LABEL = { active: "Activate", suspended: "Suspend", "graduated-ngg": "Graduate from NGG", "graduated-vanguard": "Graduate as Vanguard", inactive: "Deactivate" };
@@ -11529,6 +11729,11 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
               <button className="btn btn-ghost btn-sm" onClick={() => onEdit(m)}>Edit profile</button>
             </div>
 
+            <div className="admin-tabs mr-tabs" role="tablist" aria-label="Member record">
+              {MEMBER_RECORD_TABS.map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={rtab === k} className={"admin-tab" + (rtab === k ? " is-active" : "")} onClick={() => setRtab(k)}>{l}</button>)}
+            </div>
+
+            {rtab !== "overview" ? <MemberRecordPanel memberId={memberId} tab={rtab}/> : <>
             <div className="admin-detail-stats">
               <div><b>{(d.stats || {}).level ?? "—"}</b><span>Level</span></div>
               <div><b>{(d.stats || {}).streak ?? "—"}</b><span>Streak</span></div>
@@ -11621,11 +11826,122 @@ function AdminMemberDetail({ memberId, onClose, onEdit, onChanged }) {
                   <div className="admin-detail-journal" key={i}><span className="mono admin-detail-jdate">WK{j.week} · {fmtDate(j.createdAt)}</span><p>{(j.body || "").split("\n")[0]}</p></div>
                 ))}
             </div>
+            </>}
           </div>
         )}
       </div>
     </div>
   );
+}
+
+/* The member record's tabs beyond Overview, from ONE read
+ * (admin.members.record). Answering "how is this child doing?" used to mean
+ * six sections; it is one drawer now. A part the server leaves out is one the
+ * reader may not see (money without `fees`, conduct outside policy scope), and
+ * the panel says so — "not yours to see" is not "nothing here". Loaded the
+ * first time a tab is opened and shared by every tab after that, so moving
+ * between them costs nothing. */
+const MEMBER_RECORD_TABS = [["overview", "Overview"], ["attendance", "Attendance"], ["conduct", "Conduct"], ["fees", "Fees"],
+  ["curriculum", "Curriculum"], ["companion", "Companion"], ["family", "Family & mentor"], ["classes", "Classes"]];
+const MR_RATING = { on_track: "On track", watch: "Watch", at_risk: "At risk" };
+const MR_KIND = { present: "Present", late: "Late", absent: "Absent" };
+const mrCache = {};
+function MemberRecordPanel({ memberId, tab }) {
+  const [r, setR] = React.useState(mrCache[memberId] || null);
+  const [err, setErr] = React.useState(null);
+  const load = React.useCallback(() => {
+    setErr(null);
+    return NGGApi.admin.memberRecord(memberId).then(x => { mrCache[memberId] = x; setR(x); }).catch(setErr);
+  }, [memberId]);
+  // Always re-read once per drawer opening; show the cached copy meanwhile.
+  React.useEffect(() => { load(); }, [load]);
+  if (err && !r) return <ErrorState title="Couldn't load this member's record" message={err.message} code={err.code} onRetry={load}/>;
+  if (!r) return <div className="dash-spinner" role="status" aria-label="Loading the record"/>;
+  const hidden = (what) => <div className="admin-empty mr-hidden">{what} is not part of your access. Somebody holding the right capability can see it.</div>;
+  const none = (what) => <div className="admin-empty">{what}</div>;
+  const Kv = ({ items }) => <div className="mr-kv">{items.filter(Boolean).map(([k, v], i) => <div key={i}><b>{v}</b><span>{k}</span></div>)}</div>;
+  const days = r.days;
+
+  if (tab === "attendance") {
+    const a = r.attendance;
+    return <div className="mr-panel">
+      <Kv items={[["Attendance rate", a.rate == null ? "—" : a.rate + "%"], ["Days in", a.present], ["Of them late", a.late], ["Absences recorded", a.absent]]}/>
+      <div className="admin-hint">The last {days} days. An absence is one the nightly sweep recorded against a meeting day.</div>
+      {a.recent.length === 0 ? none("Nothing recorded in the last " + days + " days.") :
+        <table className="admin-table mr-table"><caption className="sr-only">Recent attendance</caption>
+          <thead><tr><th scope="col">Date</th><th scope="col">Day</th><th scope="col">In</th><th scope="col">Out</th></tr></thead>
+          <tbody>{a.recent.map((x, i) => <tr key={i}><td className="mono">{x.date}</td><td><span className={"st-chip is-" + (x.kind === "present" ? "active" : x.kind === "late" ? "quiet" : "dormant")}>{MR_KIND[x.kind]}{x.lateMinutes ? " · " + x.lateMinutes + " min" : ""}</span></td><td className="mono">{x.in || "—"}</td><td className="mono">{x.out || "—"}</td></tr>)}</tbody>
+        </table>}
+    </div>;
+  }
+  if (tab === "conduct") {
+    if (!r.conduct) return hidden("Conduct");
+    const c = r.conduct;
+    return <div className="mr-panel">
+      <Kv items={[["Standing", c.state + (c.until ? " until " + c.until : "")], ["Lates (term)", c.lates], ["Absences", c.absences + (c.absenceLimit ? " / " + c.absenceLimit : "")], ["Fines owed", fmtMoney(c.finesOwed)]]}/>
+      {c.awaitingReview && <div className="admin-hint mr-warn">A sanction is waiting for review.</div>}
+      <div className="admin-detail-h">Infractions</div>
+      {c.infractions.length === 0 ? none("None recorded.") : c.infractions.map(x => <div className="admin-detail-row" key={x.id}><span className={x.voidedAt ? "mr-void" : ""}><span className="mono">{x.date}</span> · {x.kind}{x.note ? " — " + x.note : ""}</span>{x.voidedAt && <span className="chip">voided</span>}</div>)}
+      <div className="admin-detail-h">Sanctions</div>
+      {c.sanctions.length === 0 ? none("None.") : c.sanctions.map(x => <div className="admin-detail-row" key={x.id}><span><span className="mono">{String(x.issuedAt || "").slice(0, 10)}</span> · {x.kind}{x.amount ? " · " + fmtMoney(x.amount) : ""}{x.reason ? " — " + x.reason : ""}</span><span className="chip">{x.status}</span></div>)}
+    </div>;
+  }
+  if (tab === "fees") {
+    if (!r.fees) return hidden("Money");
+    const f = r.fees;
+    return <div className="mr-panel">
+      <Kv items={[["Outstanding", fmtMoney(f.outstanding)], ["Payable now", fmtMoney(f.payable)], ["Charged", fmtMoney(f.charged)], ["Paid / credited", fmtMoney(f.credited)],
+        f.programmeCost ? ["Programme covered", fmtMoney(f.programmeCovered) + " of " + fmtMoney(f.programmeCost)] : null]}/>
+      {f.phase && <div className="admin-hint">Tenure phase: {f.phase}. Record payments in Fees.</div>}
+      {f.recent.length === 0 ? none("No ledger entries yet.") : f.recent.map((e, i) => <div className="admin-detail-row" key={i}><span className={e.voided ? "mr-void" : ""}><span className="mono">{e.date}</span> · {e.kind}{e.note ? " — " + e.note : ""}</span><span className="mono">{e.direction === "credit" ? "−" : "+"}{fmtMoney(e.amount)}</span></div>)}
+    </div>;
+  }
+  if (tab === "curriculum") {
+    const c = r.curriculum;
+    if (!c || !c.total) return none("No curriculum is published for " + (r.course || "this member's course") + " yet.");
+    return <div className="mr-panel">
+      <Kv items={[["Through the course", c.pct + "%"], ["Units done", c.completed + " / " + c.total], ["Overdue", c.overdue]]}/>
+      {c.next && <div className="admin-hint">Next: week {c.next.week} — {c.next.title}</div>}
+      <div className="admin-detail-h">Overdue</div>
+      {c.overdueUnits.length === 0 ? none("Nothing overdue.") : c.overdueUnits.map((u, i) => <div className="admin-detail-row" key={i}><span>Week {u.week} — {u.title}</span><span className="st-chip is-dormant">{u.overdueDays}d late</span></div>)}
+    </div>;
+  }
+  if (tab === "companion") {
+    return <div className="mr-panel">
+      <div className="admin-hint">The weekly assessment the companion writes from attendance, conduct, curriculum and journal. It informs a conversation; it decides nothing.</div>
+      {r.companion.length === 0 ? none("No assessments yet — the first is written at the end of a week.") :
+        r.companion.map((x, i) => <div className="mr-assess" key={i}>
+          <div className="mr-assess-h"><span className="mono">{x.period}</span><span className={"st-chip is-" + (x.rating === "at_risk" ? "dormant" : x.rating === "watch" ? "quiet" : "active")}>{MR_RATING[x.rating] || x.rating}</span></div>
+          <p>{x.summary}</p>
+          {x.focus.length > 0 && <ul>{x.focus.map((f, j) => <li key={j}>{typeof f === "string" ? f : (f.text || f.title || "")}</li>)}</ul>}
+        </div>)}
+    </div>;
+  }
+  if (tab === "family") {
+    const g = r.guardian, mt = r.mentorship;
+    return <div className="mr-panel">
+      <div className="admin-detail-h">Guardian on the record</div>
+      {g.name || g.email || g.phone ? <div className="admin-detail-kv">{g.name && <div><span>Name</span>{g.name}</div>}{g.email && <div><span>Email</span>{g.email}</div>}{g.phone && <div><span>Phone</span>{g.phone}</div>}</div> : none("No guardian on the record.")}
+      <div className="admin-detail-h">Family accounts linked</div>
+      {r.family.length === 0 ? none("No family account is linked. A guardian can request a link from the family page.") :
+        r.family.map((f, i) => <div className="admin-detail-row" key={i}><span>{f.fullName}{f.relationship ? " · " + f.relationship : ""} <span className="mono admin-cell-sub">{f.email}</span></span><span className="chip">{f.status}</span></div>)}
+      <div className="admin-detail-h">Mentorship</div>
+      {mt.mentor ? <Kv items={[["Mentor", mt.mentor], ["Since", mt.since || "—"], ["Meetings (90 days)", mt.meetings90], ["Last met", mt.lastMet || "—"]]}/> : none("No mentor assigned. Assign one on Overview.")}
+      {mt.mentor && !mt.meetings90 && <div className="admin-hint mr-warn">No meeting logged in 90 days.</div>}
+    </div>;
+  }
+  if (tab === "classes") {
+    const cl = r.classes || [];
+    if (!r.centre) return none("No centre on the record, so no timetable.");
+    return <div className="mr-panel">
+      {cl.length === 0 ? none("No classes for " + (r.course || "their course") + " on " + r.centre + "'s timetable.") :
+        <table className="admin-table mr-table"><caption className="sr-only">Their classes</caption>
+          <thead><tr><th scope="col">Day</th><th scope="col">Time</th><th scope="col">Class</th><th scope="col">Room · instructor</th></tr></thead>
+          <tbody>{cl.map((s, i) => <tr key={i}><td>{s.day}</td><td className="mono">{s.startTime}–{s.endTime}</td><td>{s.course}{s.level ? " · " + s.level : ""}</td><td>{[s.room, s.instructor].filter(Boolean).join(" · ") || "—"}</td></tr>)}</tbody>
+        </table>}
+    </div>;
+  }
+  return null;
 }
 
 /* One member's card history, inside their record.
@@ -13292,7 +13608,7 @@ function AdminVolunteers() {
   const [data, setData] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState("");
-  const [tab, setTab] = useAdminTab("pending");
+  const [tab, setTab] = useAdminTab("pending", React.useCallback(t => t === "pending" || t === "roster" || t === "needs", []));
   const [q, setQ] = React.useState("");
   const [vCentre, setVCentre] = React.useState("");
   /* Which programme — filtered on the server, above the roster's cap.

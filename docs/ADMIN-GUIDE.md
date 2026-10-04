@@ -16,17 +16,18 @@ those five words to mean something else.
 2. [The five words that matter](#the-five-words-that-matter)
 3. [Map of the Control Room](#map-of-the-control-room)
 4. [What you can see and do (permissions)](#what-you-can-see-and-do-permissions)
-5. [Members](#members)
-6. [Centres](#centres)
-7. [Summer School](#summer-school)
-8. [The NGG Club](#the-ngg-club)
+5. [The status board](#the-status-board)
+6. [Members](#members)
+7. [Centres](#centres)
+8. [Summer School](#summer-school)
+9. [The NGG Club](#the-ngg-club)
    - [The curriculum](#the-curriculum)
-9. [Applications, sign-ups and verification](#applications-sign-ups-and-verification)
-10. [ID cards](#id-cards)
-11. [How bulk actions behave](#how-bulk-actions-behave)
-12. [Searching and filtering](#searching-and-filtering)
-13. [Things that go wrong, and what they mean](#things-that-go-wrong-and-what-they-mean)
-14. [Before you press it — the warnings list](#before-you-press-it--the-warnings-list)
+10. [Applications, sign-ups and verification](#applications-sign-ups-and-verification)
+11. [ID cards](#id-cards)
+12. [How bulk actions behave](#how-bulk-actions-behave)
+13. [Searching and filtering](#searching-and-filtering)
+14. [Things that go wrong, and what they mean](#things-that-go-wrong-and-what-they-mean)
+15. [Before you press it — the warnings list](#before-you-press-it--the-warnings-list)
 
 ---
 
@@ -97,6 +98,8 @@ not shown at all, so your sidebar may be shorter than a colleague's.
 **Top (no permission needed beyond staff access)**
 
 - **Overview** — what needs attention today.
+- **Status board** — how everybody is doing: members, centres, mentors,
+  instructors, centre leads and staff. See [The status board](#the-status-board).
 - **Analytics & M&E** — figures across members, volunteers and Summer School.
   (It was called "Summer School Analytics", which sent everybody looking for
   year-round numbers to the wrong place.)
@@ -208,6 +211,34 @@ holds even if a stale page is left open.
 
 ---
 
+## The status board
+
+**Status board** answers "how is everybody doing?" in one screen, one tab per
+kind of person. Every figure is for the centres you can see: a centre lead sees
+their own centre, a super admin sees all of them.
+
+| Tab | Shows | Needs |
+|---|---|---|
+| Members | Counts by status, who came in today (and how many late), the companion's ratings, who is suspended or owes fines, and an **attention list** naming each member who needs somebody and why | `people` or `club` |
+| Centres | Per centre: members, who is in today, classes on the timetable, lead, and what is missing (no lead, no classes, not on the map) | `people` or `club` |
+| Mentors | Mentees, stars and remarks in the last 60 days, and whether they are active | `people` |
+| Instructors | Courses, classes on the timetable, sessions taught and materials waiting for review | `people` |
+| Centre leads | Each centre's lead, and the centres with nobody leading them | `people` |
+| Staff & admins | Role, centres, 2FA, last sign-in and last action, approvals waiting | `rbac` or `audit` |
+
+The money totals on the Members tab appear only for somebody holding `fees`.
+
+**Active, quiet, dormant.** Active means work recorded in the last 14 days,
+quiet within 30, dormant beyond that, and "No activity yet" means nothing has
+ever been recorded. Tick **Only what needs attention** to hide everybody who
+is fine. Each figure in the strip at the top opens the tab it counts.
+
+**Flags on staff.** "no 2FA" is a staff account without an authenticator;
+"no centre" is a scoped role (a centre lead) with no centre assigned. That
+account cannot open anything until one is given, in Access & roles.
+
+---
+
 ## Members
 
 **People → Members.**
@@ -250,6 +281,27 @@ A centre-scoped admin sees their own centres' figures only.
 | Graduated · Vanguard | Finished the Vanguard track |
 | Suspended | Out of circulation, expected back |
 | Inactive | Out of circulation |
+
+### One member's whole record
+
+Click a member to open their record. **Overview** is what it always showed:
+profile, ID card, mentor, NGV standing and status. The other tabs come from
+one read, so moving between them costs nothing:
+
+- **Attendance**: the last 60 days, with lates (and by how many minutes) and
+  the absences the nightly sweep recorded.
+- **Conduct**: their standing, lates, absences against the limit, fines owed,
+  infractions and sanctions.
+- **Fees**: balance, payable now and recent ledger entries. Only for `fees`.
+- **Curriculum**: how far through their course they are, what is overdue and
+  what comes next.
+- **Companion**: the last six weekly assessments.
+- **Family & mentor**: the guardian on the record, family accounts linked to
+  them, and their mentor with meetings in the last 90 days.
+- **Classes**: their course's classes on their centre's timetable.
+
+A tab you have no permission for says so. "Not part of your access" is not the
+same as an empty ledger, and the screen never shows one as the other.
 
 ### Acting on one member
 
