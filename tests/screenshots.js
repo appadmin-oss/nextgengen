@@ -40,10 +40,25 @@ function loadChromium() {
 
 function php(snippet) {
   const req = (f) => `require ${JSON.stringify(ROOT + '/api/_lib/' + f)};`;
-  const domains = ['auth', 'members', 'anchor', 'assignments', 'events', 'admin', 'admin2',
-    'mentorship', 'summer', 'policy', 'club', 'circle', 'momentum', 'integrations',
-    'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor',
-    'instructor', 'ops', 'analytics', 'growth', 'insight', 'insight-chat', 'journal', 'profiles', 'community', 'arcade'];
+  /* THE DOMAIN LIST IS READ FROM bootstrap.php, NEVER COPIED.
+   *
+   * This helper used to keep its own array of domain names. It went stale the
+   * moment a domain started calling across to another: registration.php began
+   * calling summer_edition_card_expiry(), which lives in summer-editions.php,
+   * and this list had never heard of it — so selfreg.approve died with
+   * "Call to undefined function" HERE and nowhere else. The app bootstraps and
+   * was always fine; the test was the only thing broken, and it reported the
+   * product as broken, which is the expensive direction.
+   *
+   * CLAUDE.md §3 and §11 both say it: tests bootstrap, and a second list of
+   * anything drifts. Reading the real one means a new domain is picked up with
+   * no edit here, and a renamed one fails loudly instead of silently. */
+  const domains = (() => {
+    const boot = fs.readFileSync(ROOT + '/api/_lib/bootstrap.php', 'utf8');
+    const m = boot.match(/foreach\s*\(\s*\[([^\]]*)\]\s*as\s*\$__d\s*\)/);
+    if (!m) throw new Error('cannot find the domain list in bootstrap.php');
+    return m[1].match(/'([a-z0-9-]+)'/g).map(s => s.slice(1, -1));
+  })();
   const code = `<?php $GLOBALS['CONFIG']=require ${JSON.stringify(CFG)};`
     + `function client_ip(){return '127.0.0.1';} function client_ua(){return 'shots';}`
     + req('qr-encode.php') + req('response.php') + req('db.php') + req('util.php') + req('mailer.php')
