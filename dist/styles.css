@@ -6743,3 +6743,15 @@ textarea.fam-input { resize: vertical; }
 .tt-pick { display: inline-flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; color: var(--ink-700); }
 .tt-pick select { min-height: 44px; min-width: 240px; padding: 8px 12px; border: 1px solid var(--ink-300); border-radius: 12px; font: 500 15px/1.3 var(--font-body, sans-serif); color: var(--ink-900); background: #fff; }
 .tt-pick select:focus-visible { outline: 3px solid var(--navy-500); outline-offset: 1px; }
+
+/* ── Join form: this programme's own courses, grouped by faculty ─────────── */
+.join-courses { display: grid; gap: 18px; }
+.join-fac { border: 0; margin: 0; padding: 0; min-width: 0; }
+.join-fac legend { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-700); margin-bottom: 8px; padding: 0; }
+.join-fac-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.join-course { padding: 14px 16px; min-height: 48px; border-radius: 14px; text-align: left; font: inherit; font-weight: 700; cursor: pointer;
+  background: #fff; color: var(--ink-900); border: 1px solid rgba(12,20,50,0.16); }
+.join-course:hover { border-color: var(--navy-900); }
+.join-course:focus-visible { outline: 3px solid var(--gold-500); outline-offset: 2px; }
+.join-course.is-on { background: var(--navy-900); color: #fff; border: 2px solid var(--gold-500); }
+.join-course-none { color: var(--ink-700); }

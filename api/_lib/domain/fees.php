@@ -1708,8 +1708,49 @@ function fees_fine_match(string $ref, string $name, string $email): array {
         $rows = $prefer(db_all("SELECT * FROM members WHERE lower(trim(fullName)) = ? AND $live LIMIT 12", [mb_strtolower($name)]));
         if (count($rows) === 1) return ['member' => $rows[0], 'by' => 'name'];
         if (count($rows) > 1) return ['error' => 'ambiguous', 'candidates' => array_map($shape, array_slice($rows, 0, 5))];
+        /* Sheets typed by hand write "Mobolaji Daniel" for Daniel Mobolaji, and
+           mark rows with "*". The same words in any order still has to point at
+           exactly one person; a near miss ("Ounfayo" for Ogunfayo) is offered
+           as a candidate and never charged. */
+        $key = fees_fine_name_key($name);
+        if ($key !== '') {
+            $idx = fees_fine_name_index();
+            $rows = $prefer($idx['byKey'][$key] ?? []);
+            if (count($rows) === 1) return ['member' => $rows[0], 'by' => 'name_any'];
+            if (count($rows) > 1) return ['error' => 'ambiguous', 'candidates' => array_map($shape, array_slice($rows, 0, 5))];
+            $near = [];
+            foreach ($idx['byKey'] as $k => $list) {
+                if (abs(strlen($k) - strlen($key)) > 3) continue;
+                $d = levenshtein($key, $k);
+                if ($d <= max(2, intdiv(strlen($key), 8))) foreach ($list as $m) $near[] = [$d, $m];
+            }
+            usort($near, static fn($a, $b) => $a[0] <=> $b[0]);
+            if ($near) return ['error' => 'no_match', 'candidates' => array_map(static fn($x) => $shape($x[1]), array_slice($near, 0, 3))];
+        }
     }
     return ['error' => ($ref === '' && $name === '' && $email === '') ? 'member_required' : 'no_match', 'candidates' => []];
+}
+
+/** A name as a bag of words: lower case, letters only, sorted. */
+function fees_fine_name_key(string $name): string {
+    $w = preg_split('/\s+/u', trim(mb_strtolower(preg_replace('/[^\p{L}\s\-\']+/u', ' ', $name) ?? ''))) ?: [];
+    $w = array_values(array_filter(array_map(static fn($x) => trim($x, "-'"), $w), static fn($x) => $x !== ''));
+    sort($w);
+    return implode(' ', $w);
+}
+
+/** Every live member by name key, built once per request — one query for the
+ *  whole sheet rather than one per row. */
+function fees_fine_name_index(bool $reset = false): array {
+    static $idx = null;
+    if ($reset) { $idx = null; return []; }
+    if ($idx !== null) return $idx;
+    $idx = ['byKey' => []];
+    foreach (db_all("SELECT * FROM members WHERE COALESCE(status,'') NOT IN ('merged','deleted') AND COALESCE(fullName,'') <> ''") as $m) {
+        $k = fees_fine_name_key((string)$m['fullName']);
+        if ($k !== '') $idx['byKey'][$k][] = $m;
+    }
+    return $idx;
 }
 
 /**
@@ -1728,10 +1769,15 @@ function admin_fees_fine_import(array $p): array {
     $str = static fn($r, $k) => is_scalar($r[$k] ?? null) ? trim((string)$r[$k]) : '';
 
     // Validate and match every row before anything is written.
+    fees_fine_name_index(true);
     $plan = []; $seen = [];
     foreach ($rows as $i => $r) {
         $r = is_array($r) ? $r : [];
         $v = ['row' => $i + 1, 'verdict' => 'failed'];
+        // A sheet's "Null", "-" or empty cell means no fine, not a bad one.
+        if (in_array(strtolower($str($r, 'amount')), ['', 'null', 'nil', 'none', '-', '—', 'n/a', 'na', '0'], true)) {
+            $v['verdict'] = 'skipped'; $plan[] = $v + ['error' => 'no_amount', 'fullName' => $str($r, 'name')]; continue;
+        }
         $match = fees_fine_match($str($r, 'member'), $str($r, 'name'), $str($r, 'email'));
         if (isset($match['error'])) { $plan[] = $v + ['error' => $match['error'], 'candidates' => $match['candidates']]; continue; }
         $m = $match['member'];
@@ -1761,7 +1807,7 @@ function admin_fees_fine_import(array $p): array {
         $plan[] = $v + ['amount' => $amount, 'reason' => $reason,
                         'reasonLabel' => FEES_FINE_REASONS[$reason], 'note' => $note, 'date' => $date, '_key' => $key];
     }
-    $tally = ['fine' => 0, 'already' => 0, 'failed' => 0, 'total' => 0];
+    $tally = ['fine' => 0, 'already' => 0, 'skipped' => 0, 'failed' => 0, 'total' => 0];
     foreach ($plan as $x) { $tally[$x['verdict']]++; if ($x['verdict'] === 'fine') $tally['total'] += $x['amount']; }
     $digest = members_import_digest(array_map(static fn($x) => array_diff_key($x, ['_key' => 1]), $plan), ['kind' => 'fines']);
     $public = static fn($list) => array_map(static fn($x) => array_diff_key($x, ['_key' => 1]), $list);
@@ -1779,7 +1825,7 @@ function admin_fees_fine_import(array $p): array {
     }
     unset($x);
     // One event for the run, with what was refused — not one per row.
-    audit('fees.fine.import', $by, '', ['posted' => $posted, 'already' => $tally['already'], 'failed' => $tally['failed'],
+    audit('fees.fine.import', $by, '', ['posted' => $posted, 'already' => $tally['already'], 'skipped' => $tally['skipped'], 'failed' => $tally['failed'],
         'total' => $tally['total'], 'rows' => count($rows), 'digest' => $digest], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'dryRun' => false, 'digest' => $digest, 'tally' => $tally, 'rows' => $public($plan)];
 }

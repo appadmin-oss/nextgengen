@@ -1537,7 +1537,7 @@ function admin_summer_attendance(array $p): array {
          * has already narrowed to the chosen centre — so picking Egbeda left
          * Egbeda as the only option and there was no way to move to another
          * centre without clearing the filter first. */
-        'centres' => array_column(db_all("SELECT name FROM centres WHERE status = 'active' ORDER BY name"), 'name'),
+        'centres' => centre_names_for_programme('summer'),
         'atRiskTotal' => count($atRiskAll),
         'programme' => [
             'enabled' => !empty($prog['enabled']),

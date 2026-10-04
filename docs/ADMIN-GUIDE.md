@@ -311,6 +311,18 @@ so "who suspended forty people on Tuesday" has a readable answer.
 **People → Centres.** A centre is a place. Adding, editing and retiring one
 needs the *Members* (`people`) permission.
 
+**Programmes at this centre** (under *Identity* when you edit one): tick **NGG
+Club**, **Summer School**, or both. Each programme offers only its own
+centres — the NGG join form, the Club timetable and its public page list NGG
+centres; the Summer form, the Summer desks, the review queue, the Summer roster
+and the Summer centre pages list Summer centres. A centre that runs only one
+programme shows *NGG Club only* or *Summer only* on its row. Every centre
+starts as both, so nothing changes until you narrow one.
+
+**Codes.** `ST` is kept for Summer cards whose centre cannot be found, and a
+code made only of digits (`026`) would read as an NGG member number, so both
+are refused.
+
 Each row shows what depends on it: members posted there, Summer School
 participants enrolled and waitlisted in the current edition, and groups. When
 you try to delete one, the refusal adds volunteers to that list.
@@ -379,7 +391,7 @@ what you are actually doing.
 ### Structure — what the season *is*
 
 - **Editions & groups** — the important one. See below.
-- **Academy catalogue** — the academies/courses on offer.
+- **Academy catalogue** — Summer School's academies and courses for the season. The NGG Club keeps its **own** course list under **Curriculum → Courses**; editing one never changes the other.
 - **Programme & policy** — the rules of the season.
 
 ### Intake — getting children in
@@ -533,7 +545,16 @@ person). Club staff with `club` can read the lessons but not change them; `audit
 
 The curriculum is **NGG Club only**. Summer School does not use it.
 
-**A lesson** belongs to a **course** from the academy catalogue (Piano, Coding,
+**Courses** (the *Courses* tab, needs `curriculum` to change) is the NGG
+Club's own course list, by faculty: what the NGG join form offers, what lessons
+are filed under, and what the timetable can schedule. It started as a copy of
+Summer School's academy catalogue and is separate from it — a Summer
+coordinator tidying the season's offer no longer takes courses off the Club. A
+course that still has lessons or timetable classes keeps working if you take it
+off the list, and the tab names it. *Copy Summer's catalogue* replaces the
+Club's list with Summer's current one, if you ever want them equal again.
+
+**A lesson** belongs to a **course** from the Club's course list (Piano, Coding,
 …) or to *the whole Club* (leave the course blank), and sits at a **week** and a
 **position in that week**. Two lessons cannot share a slot. Each lesson has a
 summary, what they'll learn, the lesson text, **materials** and **checks**.
@@ -676,13 +697,24 @@ reaches as far as the meeting calendar is set.
 **Dues & fees → Upload fines** (needs the `fees` permission). For a register
 of fines kept on paper or in a spreadsheet.
 
-1. **Download the CSV template**, or use your own sheet: the columns are
-   *member* (printed ID or member number), *name*, *email*, *amount*,
-   *reason*, *date* and *note*, and common headings ("Member No", "Comments",
-   "Offence") are recognised.
+1. **Choose your sheet** — an **Excel workbook (.xlsx)** or a **CSV** (commas,
+   semicolons or tabs). Or download the CSV template. Columns are found by
+   their heading: *member* (printed ID or member number), *name*, *email*,
+   *amount* (or **Fine**), *reason*, *date* and *note*; common headings ("Member
+   No", "Comments", "Offence", "Outstanding fine") are recognised and any other
+   column (a subscription or commitment fee, say) is ignored. If the sheet has
+   **no reason column**, type one reason for every row ("Outstanding fine,
+   term 1") in the box that appears. A PDF cannot be read — in Excel or Google
+   Sheets choose *File → Download → CSV* or save as .xlsx.
 2. **Check the file.** Every row says which member it matched and **how** —
    by ID, by email + name, by email, or by **name only** (shown in bold: give it
    a second look). Nothing is posted yet.
+   - Names may be written in either order and with stray marks
+     ("Mobolaji Daniel *" finds Daniel Mobolaji); that match says *name, words
+     reordered*, in bold. A misspelt name is **refused** with the likely member
+     offered as "Could be" — it is never charged on a guess.
+   - A row whose fine is empty, `Null`, `-` or `0` is **skipped** ("no fine on
+     this row"), not refused.
    - An email that two siblings share, or a name two members carry, is
      **refused** and the candidates are listed — fix the row with the printed ID.
    - Amounts may be written `5000`, `₦5,000` or `5k`. Dates may be

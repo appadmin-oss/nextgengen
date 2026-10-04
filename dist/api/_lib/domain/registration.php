@@ -608,7 +608,7 @@ function form_hydrate_options(array $fields, string $formId = 'summer-reg'): arr
     if ($formId !== 'summer-reg') return $fields;
     $catalogue = academy_catalogue();
     $faculties = array_keys($catalogue);
-    $centres = array_column(db_all("SELECT name FROM centres WHERE status = 'active' ORDER BY name"), 'name');
+    $centres = centre_names_for_programme('summer');
 
     foreach ($fields as &$f) {
         if (!is_array($f)) continue;
@@ -1227,7 +1227,7 @@ function gate_context(array $p): array {
     }
     unset($__f);
     // Centres drive the 'centre' choice field + the card's ID prefix/color.
-    $centres = db_all("SELECT name, code FROM centres WHERE status = 'active' ORDER BY name");
+    $centres = centres_for_programme('summer', 'name, code');
     foreach ($fields as &$f) {
         if ($f['key'] === 'centre' && $centres) { $f['type'] = 'choice'; $f['options'] = array_column($centres, 'name'); }
     }
@@ -1332,7 +1332,7 @@ function gate_register(array $p): array {
     // context serves). When the fence is on it assigns the centre, so we don't
     // force the field on the operator.
     $fields = $live['fields'];
-    $centreNames = array_column(db_all("SELECT name FROM centres WHERE status = 'active'"), 'name');
+    $centreNames = centre_names_for_programme('summer');
     foreach ($fields as &$f) {
         if ($f['key'] === 'centre') {
             if ($centreNames) { $f['type'] = 'choice'; $f['options'] = $centreNames; }
@@ -2781,7 +2781,7 @@ function admin_centres_list(array $p): array {
     $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
     $canWrite = in_array('people', member_effective_caps($g['requester']), true);
     $c = summer_ensure_cohort();
-    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, summerAddress, summerArea, summerLat, summerLng, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt FROM centres ORDER BY name");
+    $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, summerAddress, summerArea, summerLat, summerLng, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt, programmes FROM centres ORDER BY name");
     // Volunteers available to lead a centre — active only, labelled for the picker.
     $vols = db_all("SELECT volunteerId, fullName, firstName, role, centre FROM volunteers WHERE status = 'active' ORDER BY fullName");
     $volById = [];
@@ -2865,6 +2865,37 @@ function centre_is_full(string $centreName, string $cohortId): bool {
     return $active >= $cap;
 }
 
+/* ── Which programmes run at a centre ──────────────────────────────────────
+ * One centres table serves the year-round NGG Club and Summer School. A centre
+ * says which of the two it runs (`programmes`, migration 130), and every list a
+ * programme offers is filtered by it — so a Summer-only venue is not offered to
+ * an NGG member, and a Club-only centre is not on the Summer form. Empty reads
+ * as both, which is what every row was before the column existed. */
+const CENTRE_PROGRAMMES = ['ngg', 'summer'];
+const CENTRE_FALLBACK_CODE = 'ST';
+function centre_programmes_clean($raw): array {
+    $list = is_array($raw) ? $raw : preg_split('/[\s,]+/', (string)$raw);
+    $out = [];
+    foreach ($list as $x) { $x = strtolower(trim((string)$x)); if ($x === 'club' || $x === 'anchor') $x = 'ngg'; if (in_array($x, CENTRE_PROGRAMMES, true) && !in_array($x, $out, true)) $out[] = $x; }
+    return array_values(array_intersect(CENTRE_PROGRAMMES, $out));
+}
+function centre_programmes(array $c): array {
+    $pr = centre_programmes_clean($c['programmes'] ?? '');
+    return $pr ?: CENTRE_PROGRAMMES;
+}
+function centre_serves(array $c, string $programme): bool {
+    $programme = strtolower($programme) === 'summer' ? 'summer' : 'ngg';
+    return in_array($programme, centre_programmes($c), true);
+}
+/** Active centres a programme runs at, by name — the list every form of that programme offers. */
+function centres_for_programme(string $programme, string $cols = 'name'): array {
+    $rows = db_all("SELECT $cols, programmes FROM centres WHERE status = 'active' ORDER BY name");
+    return array_values(array_filter($rows, static fn($c) => centre_serves($c, $programme)));
+}
+function centre_names_for_programme(string $programme): array {
+    return array_column(centres_for_programme($programme), 'name');
+}
+
 /* Writing the directory is `people`, not `summer` — see admin_centres_list for
    why. A Summer School coordinator who needs a new centre asks the member desk;
    what a coordinator owns is the EDITION and its GROUPS
@@ -2877,6 +2908,11 @@ function admin_centres_upsert(array $p): array {
     $color = (string)($d['color'] ?? '#76B043');
     if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name'];
     if (strlen($code) < 1 || strlen($code) > 4) return ['ok' => false, 'error' => 'bad_code'];
+    /* 'ST' is the prefix a Summer card falls back to when its centre is not
+       found, so a centre holding it would share numbers with every unplaced
+       child. An all-digit code reads as an NGG intake year ('026-014'). */
+    if ($code === CENTRE_FALLBACK_CODE) return ['ok' => false, 'error' => 'code_reserved', 'detail' => CENTRE_FALLBACK_CODE . ' is kept for Summer cards whose centre is unknown.'];
+    if (ctype_digit($code)) return ['ok' => false, 'error' => 'code_reserved', 'detail' => 'A code of only digits looks like an NGG member number. Use letters.'];
     if (!preg_match('/^#[0-9a-fA-F]{6}$/', $color)) return ['ok' => false, 'error' => 'bad_color'];
     $id = (string)($d['centreId'] ?? '');
     $existing = $id !== '' ? db_row('SELECT * FROM centres WHERE centreId = ?', [$id]) : null;
@@ -2887,6 +2923,11 @@ function admin_centres_upsert(array $p): array {
         'status' => in_array((string)($d['status'] ?? 'active'), ['active', 'archived'], true) ? (string)($d['status'] ?? 'active') : 'active',
         'updatedAt' => now_iso()];
     if (array_key_exists('capacity', $d)) $row['capacity'] = max(0, (int)$d['capacity']);
+    if (array_key_exists('programmes', $d)) {
+        $pr = centre_programmes_clean($d['programmes']);
+        if (!$pr) return ['ok' => false, 'error' => 'programme_required', 'detail' => 'A centre runs the NGG Club, Summer School, or both.'];
+        $row['programmes'] = implode(',', $pr);
+    }
 
     // Operational detail — where the centre is, who leads it, how to reach it,
     // when it meets. Each is optional and only written when the key is present,
@@ -3110,12 +3151,17 @@ function centre_page_public(array $c): array {
 
 /** Public: the directory of published Summer School centres (for /centres). */
 function public_centres_list(): array {
-    $rows = db_all("SELECT centreId, name, code, color, slug, tagline, headline, heroImageUrl, heroPosition, area, address, meetDays, meetTime, capacity, leadVolunteerId, whatsappUrl
+    $rows = db_all("SELECT centreId, name, code, color, slug, tagline, headline, heroImageUrl, heroPosition, area, address, meetDays, meetTime, capacity, leadVolunteerId, whatsappUrl, programmes
                     FROM centres WHERE status = 'active' AND pageStatus = 'published' AND slug <> '' ORDER BY name");
+    // These are Summer School's centre pages: a Club-only centre is not one.
+    $rows = array_values(array_filter($rows, static fn($r) => centre_serves($r, 'summer')));
     $c = summer_ensure_cohort();
+    // One grouped count for the list, not one query per centre.
+    $byCentre = [];
+    foreach (db_all("SELECT centre, COUNT(*) c FROM summer_students WHERE cohortId = ? AND status = 'active' GROUP BY centre", [$c['cohortId']]) as $x) $byCentre[(string)$x['centre']] = (int)$x['c'];
     $centres = [];
     foreach ($rows as $r) {
-        $enrolled = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
+        $enrolled = $byCentre[(string)$r['name']] ?? 0;
         $meta = centre_public_meta($r);
         $centres[] = [
             'slug'    => (string)$r['slug'],
@@ -3141,7 +3187,7 @@ function public_centre_page(array $p): array {
     $slug = centre_slugify((string)($p['slug'] ?? ''));
     if ($slug === '') return ['ok' => false, 'error' => 'not_found'];
     $c = db_row("SELECT * FROM centres WHERE slug = ? AND status = 'active' AND pageStatus = 'published' LIMIT 1", [$slug]);
-    if (!$c) return ['ok' => false, 'error' => 'not_found'];
+    if (!$c || !centre_serves($c, 'summer')) return ['ok' => false, 'error' => 'not_found'];
     $cohort = summer_ensure_cohort();
     $enrolled = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$cohort['cohortId'], (string)$c['name']])['c'] ?? 0);
     $page = centre_page_public($c);
@@ -3249,6 +3295,7 @@ function admin_academy_catalogue_set(array $p): array {
     if (!empty($p['reset'])) {
         setting_set('academy_catalogue', '', $g['requester']['memberId']);
         audit('academy.catalogue.reset', $g['requester']['memberId'], '', [], (string)($p['ip'] ?? ''));
+        cache_invalidate('catalogue');
         return ['ok' => true, 'reset' => true];
     }
     // Normalise a {faculty, courses} list into a plain map first.
@@ -3266,6 +3313,7 @@ function admin_academy_catalogue_set(array $p): array {
     if (count($clean) > 40) return ['ok' => false, 'error' => 'too_many_faculties'];
     setting_set('academy_catalogue', $clean, $g['requester']['memberId']);
     audit('academy.catalogue.set', $g['requester']['memberId'], '', ['faculties' => count($clean)], (string)($p['ip'] ?? ''));
+    cache_invalidate('catalogue');
     return ['ok' => true, 'faculties' => count($clean)];
 }
 
@@ -3277,9 +3325,17 @@ function card_display_id(array $student): string {
     if (!empty($student['displayId'])) return (string)$student['displayId'];
     $centre = db_row("SELECT code FROM centres WHERE (name = ? OR code = ?) AND status = 'active' LIMIT 1",
         [(string)($student['centre'] ?? ''), strtoupper((string)($student['centre'] ?? ''))]);
-    $code = $centre ? (string)$centre['code'] : 'ST';
+    $code = $centre ? (string)$centre['code'] : CENTRE_FALLBACK_CODE;
     $yy = gmdate('y');
-    $n = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE displayId LIKE ?", [$code . '-' . $yy . '-%'])['c'] ?? 0) + 1;
+    /* From the highest serial, never a count: a count reuses the number of a
+       card that was printed and then removed here, and that card is still in
+       somebody's hand. */
+    $n = 0; $pre = $code . '-' . $yy . '-';
+    foreach (db_all("SELECT displayId FROM summer_students WHERE displayId LIKE ?", [$pre . '%']) as $r) {
+        $tail = substr((string)$r['displayId'], strlen($pre));
+        if (ctype_digit($tail)) $n = max($n, (int)$tail);
+    }
+    $n++;
     $displayId = $code . '-' . $yy . '-' . str_pad((string)$n, 3, '0', STR_PAD_LEFT);
     // Serial race safety on shared hosting: bump until free (bounded).
     for ($i = 0; $i < 50 && db_row('SELECT id FROM summer_students WHERE displayId = ?', [$displayId]); $i++) {

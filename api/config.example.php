@@ -439,6 +439,7 @@ return [
            page a promotion drives traffic to, which is exactly when a cache
            earns its keep. Purged alongside public.centres on a centre write. */
         'public.summer'    => 300,
+        'public.programme' => 300,  // the join form's courses and centres per programme; purged by catalogue and centre writes
         'public.timetable' => 300,  // a centre's public timetable; purged on any timetable or centre write
         'community.showcase' => 180, // admin-featured posts; purged on feature/hide
         'post.get'         => 120,  // a single post by slug; purged with public.posts

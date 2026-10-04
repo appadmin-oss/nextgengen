@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 129;
+const NGG_SCHEMA_TARGET = 130;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3925,6 +3925,11 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_tt_centre ON timetable_slots(centreId, weekday, status);
             CREATE INDEX IF NOT EXISTS idx_tt_instructor ON timetable_slots(instructorId, weekday, status);
         ",
+        /* 130 — which programmes run at a centre. One centres table serves the
+         * year-round Club and Summer School, and with no marker every centre
+         * list offered every centre to both. 'ngg,summer' keeps today's
+         * behaviour for every existing row; a centre is narrowed on purpose. */
+        130 => "ALTER TABLE centres ADD COLUMN programmes TEXT DEFAULT 'ngg,summer';",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

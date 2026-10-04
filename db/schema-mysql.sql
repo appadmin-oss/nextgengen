@@ -2966,3 +2966,8 @@ CREATE TABLE IF NOT EXISTS timetable_slots (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (129) ON DUPLICATE KEY UPDATE version = version;
+
+-- 130: which programmes run at a centre ('ngg', 'summer', or both).
+ALTER TABLE centres ADD COLUMN programmes VARCHAR(32) DEFAULT 'ngg,summer';
+
+INSERT INTO schema_version (version) VALUES (130) ON DUPLICATE KEY UPDATE version = version;

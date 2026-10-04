@@ -522,3 +522,8 @@ A centre's weekly timetable (`api/_lib/domain/timetable.php`). `slotId` (`TT-` +
 
 Setting `wisdom_week_pins` — `{ "<Monday YYYY-MM-DD>": "<wisdomId>" }`, the saying locked for each week once shown (last 26 kept).
 
+## `centres.programmes` (migration 130)
+Which programmes run at a centre: `ngg`, `summer`, or `ngg,summer` (the default, and what blank means). Read through `centre_serves()` / `centres_for_programme()` in `domain/registration.php`; every programme's centre list is filtered by it.
+
+Setting `club_catalogue` — the NGG Club's own faculty → courses map (`club_catalogue()` in `domain/curriculum.php`), separate from Summer School's `academy_catalogue`. Materialised from the academy catalogue on first read, then edited only under Curriculum → Courses.
+

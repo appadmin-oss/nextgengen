@@ -84,7 +84,7 @@ function tt_public_slot(array $r, array $centres, array $instructors, bool $with
 /** Every active centre by id, and every volunteer's name by id — two queries for any list. */
 function tt_lookups(): array {
     $centres = [];
-    foreach (db_all("SELECT centreId, name, status, meetDays, meetTime, slug, pageStatus FROM centres") as $c) $centres[(string)$c['centreId']] = $c;
+    foreach (db_all("SELECT centreId, name, status, meetDays, meetTime, slug, pageStatus, programmes FROM centres") as $c) $centres[(string)$c['centreId']] = $c;
     $vol = [];
     foreach (db_all("SELECT volunteerId, fullName FROM volunteers") as $v) $vol[(string)$v['volunteerId']] = (string)$v['fullName'];
     return [$centres, $vol];
@@ -147,12 +147,19 @@ function admin_timetable_list(array $p): array {
         $rows[] = tt_public_slot($r, $centres, $vol) + ['clashes' => tt_clashes($r, $all, $centres, $vol)];
     }
     $centreList = [];
-    foreach ($centres as $cid => $c) if ((string)$c['status'] !== 'retired' && $allowed($cid)) {
+    // The timetable is the Club's: a Summer-only venue is not on it.
+    foreach ($centres as $cid => $c) if ((string)$c['status'] !== 'retired' && $allowed($cid) && centre_serves($c, 'ngg')) {
         $centreList[] = ['centreId' => $cid, 'name' => (string)$c['name'], 'slug' => (string)($c['slug'] ?? ''), 'meetDays' => (string)$c['meetDays'], 'meetTime' => (string)$c['meetTime']];
     }
     usort($centreList, static fn($x, $y) => strcasecmp($x['name'], $y['name']));
-    $instructors = array_map(static fn($v) => ['volunteerId' => (string)$v['volunteerId'], 'fullName' => (string)$v['fullName'], 'courses' => (string)$v['courses']],
-        db_all("SELECT volunteerId, fullName, courses FROM volunteers WHERE status = 'active' AND role IN ('instructor','mentor','volunteer') ORDER BY fullName"));
+    /* The Club's volunteers first. Summer-only volunteers are still listed,
+       labelled: everybody who signed up before the programme choice existed
+       carries 'summer' by default, and hiding them would empty the list on a
+       deployment whose Club instructors all predate it. */
+    $instructors = array_map(static fn($v) => ['volunteerId' => (string)$v['volunteerId'], 'fullName' => (string)$v['fullName'], 'courses' => (string)$v['courses'],
+            'programme' => (string)($v['programme'] ?? ''), 'summerOnly' => (string)($v['programme'] ?? 'summer') === 'summer'],
+        db_all("SELECT volunteerId, fullName, courses, programme FROM volunteers WHERE status = 'active' AND role IN ('instructor','mentor','volunteer') ORDER BY fullName"));
+    usort($instructors, static fn($a, $b) => ($a['summerOnly'] <=> $b['summerOnly']) ?: strcasecmp($a['fullName'], $b['fullName']));
     return ['ok' => true, 'slots' => $rows, 'centres' => $centreList, 'courses' => tt_courses(), 'instructors' => $instructors,
             'days' => TT_DAYS, 'scoped' => $scope !== null, 'canEdit' => admin_cap_gate($p, 'club')['ok'],
             'clashCount' => count(array_filter($rows, static fn($r) => $r['clashes']))];
@@ -167,9 +174,10 @@ function admin_timetable_save(array $p): array {
     $c = $centres[$cid] ?? null;
     if (!$c || (string)$c['status'] === 'retired') return ['ok' => false, 'error' => 'bad_centre', 'detail' => 'Choose an active centre.'];
     if (!admin_centre_allowed($g['requester'], (string)$c['name'])) return ['ok' => false, 'error' => 'out_of_scope'];
+    if (!centre_serves($c, 'ngg')) return ['ok' => false, 'error' => 'centre_not_ngg', 'detail' => $c['name'] . ' is marked as a Summer School venue only. Mark it as running the NGG Club under People → Centres first.'];
     $course = trim((string)($d['course'] ?? ''));
     $canon = null; foreach (tt_courses() as $k) if (strcasecmp($k, $course) === 0) $canon = $k;
-    if ($canon === null) return ['ok' => false, 'error' => 'unknown_course', 'detail' => 'Choose a course from the academy catalogue.'];
+    if ($canon === null) return ['ok' => false, 'error' => 'unknown_course', 'detail' => 'Choose a course from the NGG Club course list (Curriculum → Courses).'];
     $wd = (int)($d['weekday'] ?? 0);
     if (!isset(TT_DAYS[$wd])) return ['ok' => false, 'error' => 'bad_day'];
     $a = tt_minutes((string)($d['startTime'] ?? '')); $b = tt_minutes((string)($d['endTime'] ?? ''));
@@ -251,7 +259,7 @@ function public_timetable(array $p): array {
     $withSlots = array_flip(array_column(db_all("SELECT DISTINCT centreId FROM timetable_slots WHERE status = 'active'"), 'centreId'));
     $list = [];
     foreach ($centres as $cid => $c) {
-        if ((string)$c['status'] === 'retired' || !isset($withSlots[$cid]) || (string)($c['slug'] ?? '') === '') continue;
+        if ((string)$c['status'] === 'retired' || !isset($withSlots[$cid]) || (string)($c['slug'] ?? '') === '' || !centre_serves($c, 'ngg')) continue;
         $list[] = ['slug' => (string)$c['slug'], 'name' => (string)$c['name']];
     }
     usort($list, static fn($x, $y) => strcasecmp($x['name'], $y['name']));

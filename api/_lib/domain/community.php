@@ -129,7 +129,7 @@ function community_ensure_channels(): void {
     $palette = ['#e4032b', '#f5b026', '#2f9e44', '#b07cff', '#3b5bdb', '#ff5a3c', '#17a2b8', '#a8d91a'];
     $icons = ['💻', '🎤', '🚀', '🎬', '🎨', '🎵', '📊', '🧠'];
     $i = 0;
-    foreach (academy_catalogue() as $faculty => $courses) {
+    foreach ((function_exists('club_catalogue') ? club_catalogue() : academy_catalogue()) as $faculty => $courses) {
         foreach ((array)$courses as $course) {
             $slug = centre_slugify((string)$course);
             if ($slug === '') continue;

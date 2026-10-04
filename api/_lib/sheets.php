@@ -93,7 +93,11 @@ function gs_cache_topics(): array {
            centres and the courses running at each, so a centre change that did
            not purge it left the promotion page advertising a centre that had
            been renamed or retired. */
-        'centres'  => ['public.centres', 'public.stats', 'public.summer', 'public.timetable'],
+        'centres'  => ['public.centres', 'public.stats', 'public.summer', 'public.timetable', 'public.programme'],
+        /* Either programme's course list — the Club's (curriculum) or Summer
+           School's academy catalogue — changes what the join form offers and
+           the /summer page's academies. */
+        'catalogue' => ['public.programme', 'public.summer'],
         // A centre's published timetable — changed by the timetable desk.
         'timetable' => ['public.timetable'],
         // Featuring or hiding a post changes the public Showcase.

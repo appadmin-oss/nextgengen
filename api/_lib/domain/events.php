@@ -563,6 +563,19 @@ function public_apply(array $p): array {
         // Students on-ramp; 'anchor' = the flagship 12-week NGG. Drives the
         // member type created on conversion.
         $program = in_array((string)($p['program'] ?? ''), ['summer', 'anchor'], true) ? (string)$p['program'] : 'anchor';
+        /* The two programmes keep separate centre and course lists. A centre
+           that exists but does not run this programme is refused by name; a
+           course is spelled as its own programme's list spells it, so a
+           member's track matches the timetable and the curriculum. */
+        $progKey = $program === 'summer' ? 'summer' : 'ngg';
+        if ($centre !== '') {
+            $hit = db_row("SELECT name, programmes FROM centres WHERE lower(name) = ? AND status = 'active' LIMIT 1", [mb_strtolower($centre)]);
+            if ($hit && function_exists('centre_serves') && !centre_serves($hit, $progKey)) {
+                return ['ok' => false, 'error' => 'centre_not_offered', 'detail' => $hit['name'] . ' does not run ' . ($progKey === 'summer' ? 'Summer School' : 'the NGG Club') . '.'];
+            }
+            if ($hit) $centre = (string)$hit['name'];
+        }
+        if ($track !== '') foreach (programme_courses($progKey) as $c) if (strcasecmp($c, $track) === 0) { $track = $c; break; }
     } elseif ($kind === 'volunteer') {
         // Structured taxonomy: Volunteer → admin | mentor | instructor.
         // Every volunteer picks a home CENTRE (required, must be an active
@@ -713,7 +726,18 @@ function volunteer_course_options(): array {
 function volunteer_courses_accepted(): array {
     $out = volunteer_course_options();
     foreach (academy_courses() as $c) { if (!in_array($c, $out, true)) $out[] = $c; }
+    // A Club instructor teaches the Club's courses, which are its own list now.
+    if (function_exists('club_courses')) foreach (club_courses() as $c) { if (!in_array($c, $out, true)) $out[] = $c; }
     return $out;
+}
+
+/** Both programmes' faculty → courses, merged: a volunteer may teach either. */
+function volunteer_courses_by_faculty(): array {
+    $map = academy_catalogue();
+    if (function_exists('club_catalogue')) foreach (club_catalogue() as $f => $cs) {
+        $map[$f] = array_values(array_unique(array_merge($map[$f] ?? [], $cs)));
+    }
+    return $map;
 }
 
 /** The faculties (teaching groups) mentors & instructors belong to — sourced
@@ -728,6 +752,29 @@ function volunteer_faculty_options(): array {
         }
     }
     return academy_faculties();
+}
+
+/** A programme's own courses: the Club's list for 'ngg', the academy catalogue for 'summer'. */
+function programme_courses(string $programme): array {
+    return $programme === 'summer' ? academy_courses() : (function_exists('club_courses') ? club_courses() : academy_courses());
+}
+function programme_catalogue(string $programme): array {
+    return $programme === 'summer' ? academy_catalogue() : (function_exists('club_catalogue') ? club_catalogue() : academy_catalogue());
+}
+
+/**
+ * public.programme — what the join form offers for one programme: its courses
+ * (faculty → courses) and the centres it runs at. One read, so the form cannot
+ * offer a Summer course to an NGG applicant or a Club-only centre to a family
+ * applying for Summer School. Cached; purged by the `catalogue` and `centres` topics.
+ */
+function public_programme(array $p): array {
+    $prog = in_array(strtolower((string)($p['program'] ?? '')), ['summer'], true) ? 'summer' : 'ngg';
+    $fac = [];
+    foreach (programme_catalogue($prog) as $f => $cs) $fac[] = ['faculty' => (string)$f, 'courses' => array_values(array_map('strval', $cs))];
+    $centres = array_map(static fn($c) => ['name' => (string)$c['name'], 'slug' => (string)($c['slug'] ?? ''), 'area' => (string)($prog === 'summer' && trim((string)($c['summerArea'] ?? '')) !== '' ? $c['summerArea'] : ($c['area'] ?? ''))],
+        centres_for_programme($prog, 'name, slug, area, summerArea'));
+    return ['ok' => true, 'program' => $prog === 'summer' ? 'summer' : 'anchor', 'faculties' => $fac, 'centres' => $centres];
 }
 
 /** Public-safe centre catalogue for the volunteer form (no PII, active only). */
@@ -746,7 +793,7 @@ function public_volunteer_context(): array {
         'open' => setting_raw('volunteer_applications_open') !== '0',
         'roles' => ['admin', 'mentor', 'instructor'],
         'courses' => volunteer_course_options(),
-        'coursesByFaculty' => academy_catalogue(),
+        'coursesByFaculty' => volunteer_courses_by_faculty(),
         'faculties' => volunteer_faculty_options(),
         'centres' => public_centre_options(),
     ];

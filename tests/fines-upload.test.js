@@ -94,7 +94,9 @@ async function contextFor(memberId, admin, viewport) {
       + mk('NGG-FU-ADM', "['role'=>'super_admin','fullName'=>'Fines Admin']")
       + mk('NGG-FU-1', "['fullName'=>'Chidi Okafor','displayId'=>'026-501']")
       + mk('NGG-FU-2', "['fullName'=>'Amaka Bello','email'=>'bello@example.org']")
-      + mk('NGG-FU-3', "['fullName'=>'Tunde Bello','email'=>'bello@example.org']"));
+      + mk('NGG-FU-3', "['fullName'=>'Tunde Bello','email'=>'bello@example.org']")
+      + mk('NGG-FU-4', "['fullName'=>'Daniel Mobolaji']")
+      + mk('NGG-FU-5', "['fullName'=>'Naomi Akintola']"));
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
     const launch = {};
@@ -138,6 +140,37 @@ async function contextFor(memberId, admin, viewport) {
     await ap.click('button:has-text("Check the file")');
     await ap.waitForFunction(() => /2\s*already posted/.test(document.querySelector('.fine-imp-tally')?.innerText || ''), null, { timeout: 15000 });
     chk('the same sheet again fines nobody twice', !(await ap.$('.fine-imp-plan button:has-text("Post fines")')));
+
+    /* The sheet the programme actually keeps: an Excel workbook, names in either
+       order with a "*" marker, extra fee columns, no reason column, "Null" for
+       no fine. It has to check without being retyped. */
+    const JSZip = require(path.join(ROOT, 'vendor', 'jszip.min.js'));
+    const zip = new JSZip();
+    const strs = ['NAME', 'SUBSCRIPTION FEE', 'COMMITMENT FEE', 'FINE', 'Mobolaji Daniel *', 'Akintola Naomi', 'Ashowo Obaloluwa', 'Null'];
+    const si = (t) => strs.indexOf(t);
+    const c = (ref, v) => typeof v === 'number' ? `<c r="${ref}"><v>${v}</v></c>` : `<c r="${ref}" t="s"><v>${si(v)}</v></c>`;
+    const sheetRows = [['NAME', 'SUBSCRIPTION FEE', 'COMMITMENT FEE', 'FINE'], ['Mobolaji Daniel *', null, 8000, 1000], ['Akintola Naomi', null, 8000, 6000], ['Ashowo Obaloluwa', null, 'Null', 'Null']];
+    const rowsXml = sheetRows.map((r, i) => `<row r="${i + 1}">` + r.map((v, k) => v === null ? '' : c('ABCD'[k] + (i + 1), v)).join('') + '</row>').join('');
+    zip.file('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>');
+    zip.file('_rels/.rels', '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+    zip.file('xl/workbook.xml', '<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Fines" sheetId="1" r:id="rId1"/></sheets></workbook>');
+    zip.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');
+    zip.file('xl/sharedStrings.xml', '<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' + strs.map(t => `<si><t>${t}</t></si>`).join('') + '</sst>');
+    zip.file('xl/worksheets/sheet1.xml', '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' + rowsXml + '</sheetData></worksheet>');
+    const xlsx = path.join(TMP, 'outstanding.xlsx');
+    fs.writeFileSync(xlsx, await zip.generateAsync({ type: 'nodebuffer' }));
+    await ap.setInputFiles('.fine-imp input[type=file]', xlsx);
+    await ap.waitForSelector('.fine-imp-reason input', { timeout: 10000 });
+    chk('an Excel workbook is read, and a sheet with no reason column asks for one reason for all its rows',
+      /3 rows/.test(await ap.$eval('.fine-imp', el => el.innerText)) && /Reason for the 3 rows/.test(await ap.$eval('.fine-imp-reason', el => el.innerText)));
+    await ap.fill('.fine-imp-reason input', 'Outstanding fine');
+    await ap.click('button:has-text("Check the file")');
+    await ap.waitForFunction(() => /with no fine/.test(document.querySelector('.fine-imp-tally')?.innerText || ''), null, { timeout: 15000 });
+    const t3 = await ap.$eval('.fine-imp-plan', el => el.innerText);
+    chk('names in either order with a "*" still match, and say so; a "Null" fine is skipped, not refused',
+      /2\s*to post/.test(t3) && /₦7,000/.test(t3) && /Daniel Mobolaji/.test(t3) && /words reordered/i.test(t3) && /1\s*with no fine/.test(t3) && /0\s*refused/.test(t3)
+      && /skipped: no fine/i.test(t3) && !/already posted\s*$/im.test(t3.split('\n').filter(l => /Ashowo/.test(l)).join('\n')));
+    await ap.screenshot({ path: path.join(SHOTS, 'xlsx-checked.png'), fullPage: true });
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

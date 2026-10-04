@@ -210,6 +210,11 @@ const VENDOR_LIBS = {
   // Already vendored for the card studio's batch PDF; the designer wants it too,
   // for a single sheet at its real trim size with crop marks.
   jspdf: { js: ["/vendor/jspdf.umd.min.js"], global: "jspdf" },
+  // Reading an .xlsx someone saved from Excel — an upload screen that says
+  // "from Excel" and then refuses an Excel file is the screen not working.
+  jszip: { js: ["/vendor/jszip.min.js"], global: "JSZip" },
+  // A page rendered to an image, for the timetable maker's download.
+  html2canvas: { js: ["/vendor/html2canvas.min.js"], global: "html2canvas" },
   /* The card studio's prepress module — imposition, bleed, crop marks, real
      zips. The design studio's data merge produces exactly the artefacts this
      already knows how to lay out, and a second imposition engine written for

@@ -22954,6 +22954,26 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $again = backend_dispatch('admin.fees.fineImport', ['requesterId' => 'NGG-BF-ADM', 'rows' => $rows, 'dryRun' => true]);
     chk('bulk fines: the same sheet again fines nobody twice', $again['tally']['already'] === 4 && $again['tally']['fine'] === 0);
 
+    // A hand-typed sheet: names in either order, a "*" marker, a typo, "Null" fines.
+    $mk('NGG-BF-6', ['fullName' => 'Daniel Mobolaji']);
+    $mk('NGG-BF-7', ['fullName' => 'Kehinde Ogunfayo']);
+    $sheet = [
+        ['name' => 'Mobolaji Daniel *', 'amount' => '1,000', 'reason' => 'Outstanding fine'],
+        ['name' => 'Kehinde Ounfayo', 'amount' => '500', 'reason' => 'late'],
+        ['name' => 'Kehinde Ogunfayo', 'amount' => 'Null'],
+        ['name' => 'Ade Sade', 'amount' => '500', 'reason' => 'late'],
+    ];
+    $hs = backend_dispatch('admin.fees.fineImport', ['requesterId' => 'NGG-BF-ADM', 'rows' => $sheet, 'dryRun' => true]);
+    $hv = array_column($hs['rows'] ?? [], null, 'row');
+    chk('bulk fines: the same words in another order, and a "*" marker, still find the one member — and say how',
+        ($hv[1]['memberId'] ?? '') === 'NGG-BF-6' && ($hv[1]['matchedBy'] ?? '') === 'name_any' && ($hv[1]['note'] ?? '') === 'Outstanding fine');
+    chk('bulk fines: a misspelt name is refused, with the likely member offered — never charged',
+        ($hv[2]['error'] ?? '') === 'no_match' && ($hv[2]['candidates'][0]['memberId'] ?? '') === 'NGG-BF-7');
+    chk('bulk fines: a "Null" fine is skipped, not refused', ($hv[3]['verdict'] ?? '') === 'skipped' && $hs['tally']['skipped'] === 1);
+    chk('bulk fines: reordered words two members share are still ambiguous', ($hv[4]['error'] ?? '') === 'ambiguous');
+    chk('bulk fines: the reordered-name lookup is one query for the whole sheet',
+        (function () { fees_fine_name_index(true); db_count_start(); fees_fine_name_index(); fees_fine_name_index(); $n = db_count_read(); db_count_stop(); return $n === 1; })());
+
     // Scope: a centre-scoped admin cannot fine another centre's member.
     db_insert('centres', ['centreId' => 'CEN-BF-A', 'name' => 'Bf Ayobo', 'code' => 'BA', 'status' => 'active', 'createdAt' => $now]);
     $mk('NGG-BF-SC', ['role' => 'super_admin', 'centreScope' => json_encode(['CEN-BF-A'])]);
@@ -23769,6 +23789,69 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     if ($ids) { $ph = implode(',', array_fill(0, count($ids), '?'));
         db_exec("DELETE FROM curriculum_checks WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_materials WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_units WHERE unitId IN ($ph)", $ids); }
     db_exec("DELETE FROM members WHERE memberId = 'NGG-SEED-ADM'");
+})();
+
+/* ── NGG and Summer School keep their own course and centre lists ── */
+(function () {
+    $now = now_iso();
+    $keepClub = setting_get('club_catalogue'); $keepAcad = setting_get('academy_catalogue');
+    db_exec("DELETE FROM settings WHERE settingKey = 'club_catalogue'");
+    $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Sep ' . $id, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-SEP-SUP', 'super_admin'); $mk('NGG-SEP-SUM', 'member', ['capsExtra' => json_encode(['summer'])]); $mk('NGG-SEP-CLUB', 'club_admin');
+
+    // Courses.
+    $first = club_courses();
+    chk('separation: the Club\'s course list starts as a copy of the catalogue, and is stored', $first === academy_courses() && is_array(setting_get('club_catalogue')));
+    $r = backend_dispatch('admin.academy.catalogue.set', ['requesterId' => 'NGG-SEP-SUP', 'catalogue' => ['Music' => ['Piano']]]);
+    chk('separation: Summer School trimming its catalogue does not take courses off the Club', !empty($r['ok']) && academy_courses() === ['Piano'] && in_array('Guitar', club_courses(), true) && in_array('Guitar', curriculum_courses(), true));
+    $r = backend_dispatch('admin.club.catalogue.set', ['requesterId' => 'NGG-SEP-CLUB', 'catalogue' => [['faculty' => 'Media', 'courses' => ['Media Lab', 'Video Editing']], ['faculty' => 'Music', 'courses' => ['Guitar']]]]);
+    chk('separation: the Club edits its own list with the curriculum permission — and Summer\'s is untouched', !empty($r['ok']) && in_array('Media Lab', club_courses(), true) && academy_courses() === ['Piano']);
+    chk('separation: a Summer School coordinator cannot edit the Club\'s courses', (backend_dispatch('admin.club.catalogue.set', ['requesterId' => 'NGG-SEP-SUM', 'catalogue' => ['X' => ['Y']]])['error'] ?? '') === 'forbidden');
+    $pn = backend_dispatch('public.programme', ['program' => 'anchor']); $ps = backend_dispatch('public.programme', ['program' => 'summer']);
+    $flat = fn($r) => array_merge(...array_map(fn($f) => $f['courses'], $r['faculties'] ?? [['courses' => []]]));
+    chk('separation: the join form offers each programme its own courses', in_array('Media Lab', $flat($pn), true) && !in_array('Piano', $flat($pn), true) && $flat($ps) === ['Piano']);
+
+    // Centres.
+    db_insert('centres', ['centreId' => 'CEN-SEP-S', 'name' => 'Sep Summer Venue', 'code' => 'SV', 'status' => 'active', 'slug' => 'sep-summer', 'pageStatus' => 'published', 'programmes' => 'summer', 'meetDays' => 'Saturdays', 'createdAt' => $now]);
+    db_insert('centres', ['centreId' => 'CEN-SEP-C', 'name' => 'Sep Club House', 'code' => 'SC', 'status' => 'active', 'slug' => 'sep-club', 'pageStatus' => 'published', 'programmes' => 'ngg', 'meetDays' => 'Saturdays', 'createdAt' => $now]);
+    db_insert('centres', ['centreId' => 'CEN-SEP-B', 'name' => 'Sep Both', 'code' => 'SB', 'status' => 'active', 'slug' => 'sep-both', 'pageStatus' => 'published', 'createdAt' => $now]);
+    $names = fn($list) => array_column($list, 'name');
+    $pn = backend_dispatch('public.programme', ['program' => 'anchor']); $ps = backend_dispatch('public.programme', ['program' => 'summer']);
+    chk('separation: a centre with no programme set runs both — every existing row keeps working', in_array('Sep Both', centre_names_for_programme('ngg'), true) && in_array('Sep Both', centre_names_for_programme('summer'), true));
+    chk('separation: the NGG join form does not offer a Summer-only venue; the Summer form does not offer a Club-only centre',
+        in_array('Sep Club House', $names($pn['centres']), true) && !in_array('Sep Summer Venue', $names($pn['centres']), true)
+        && in_array('Sep Summer Venue', $names($ps['centres']), true) && !in_array('Sep Club House', $names($ps['centres']), true));
+    $tl = backend_dispatch('admin.timetable.list', ['requesterId' => 'NGG-SEP-SUP']);
+    chk('separation: the Club timetable does not offer a Summer-only venue', !in_array('Sep Summer Venue', $names($tl['centres'] ?? []), true) && in_array('Sep Club House', $names($tl['centres'] ?? []), true));
+    $ts = backend_dispatch('admin.timetable.save', ['requesterId' => 'NGG-SEP-SUP', 'data' => ['centreId' => 'CEN-SEP-S', 'course' => 'Guitar', 'weekday' => 6, 'startTime' => '10:00', 'endTime' => '11:00']]);
+    chk('separation: …and refuses a class there, saying how to fix it', ($ts['error'] ?? '') === 'centre_not_ngg' && str_contains($ts['detail'], 'People → Centres'));
+    chk('separation: Summer School\'s public centre pages do not list a Club-only centre', !in_array('Sep Club House', $names(public_centres_list()['centres']), true) && (public_centre_page(['slug' => 'sep-club'])['error'] ?? '') === 'not_found');
+    $ap = backend_dispatch('public.apply', ['kind' => 'teen', 'program' => 'anchor', 'firstName' => 'Sep', 'lastName' => 'Kid', 'dob' => '2014-01-01', 'sex' => 'Female',
+        'centre' => 'sep summer venue', 'track' => 'guitar', 'why' => str_repeat('I want to learn. ', 3), 'email' => 'sepkid@example.com', 'phone' => '08030000000']);
+    chk('separation: an NGG application to a Summer-only venue is refused by name', ($ap['error'] ?? '') === 'centre_not_offered' && str_contains($ap['detail'] ?? '', 'Sep Summer Venue'));
+    $cu = fn($d) => backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-SEP-SUP', 'data' => $d + ['name' => 'Sep New', 'color' => '#76B043']]);
+    chk('separation: "ST" is kept for unplaced Summer cards and cannot be a centre code', ($cu(['code' => 'ST'])['error'] ?? '') === 'code_reserved');
+    chk('separation: an all-digit code (an NGG year prefix) is refused', ($cu(['code' => '026'])['error'] ?? '') === 'code_reserved');
+    chk('separation: a centre must run at least one programme', ($cu(['code' => 'SN', 'programmes' => []])['error'] ?? '') === 'programme_required');
+    $ok = $cu(['code' => 'SN', 'programmes' => ['summer']]);
+    chk('separation: the programmes a centre runs are saved', !empty($ok['ok']) && (string)db_row("SELECT programmes FROM centres WHERE code = 'SN'")['programmes'] === 'summer');
+
+    // Summer cards mint from the highest serial, never a count.
+    $yy = gmdate('y');
+    db_insert('summer_students', ['studentId' => 'STU-SEP-1', 'fullName' => 'Sep A', 'centre' => 'Sep Summer Venue', 'displayId' => "SV-$yy-001"]);
+    db_insert('summer_students', ['studentId' => 'STU-SEP-2', 'fullName' => 'Sep B', 'centre' => 'Sep Summer Venue', 'displayId' => "SV-$yy-007"]);
+    db_insert('summer_students', ['studentId' => 'STU-SEP-3', 'fullName' => 'Sep C', 'centre' => 'Sep Summer Venue']);
+    chk('separation: a Summer card number follows the highest serial, not the count (a gap is a printed card)',
+        card_display_id(db_row("SELECT * FROM summer_students WHERE studentId = 'STU-SEP-3'")) === "SV-$yy-008");
+
+    db_exec("DELETE FROM summer_students WHERE studentId LIKE 'STU-SEP-%'");
+    db_exec("DELETE FROM centres WHERE centreId LIKE 'CEN-SEP-%' OR code = 'SN'");
+    db_exec("DELETE FROM applications WHERE email = 'sepkid@example.com'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-SEP-%'");
+    foreach (['club_catalogue' => $keepClub, 'academy_catalogue' => $keepAcad] as $k => $v) {
+        if ($v === null || $v === '') db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else setting_set($k, $v, 'test');
+    }
 })();
 
 /* ── The timetable: clashes refused on the way in, by name ── */

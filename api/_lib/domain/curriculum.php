@@ -7,8 +7,9 @@ declare(strict_types=1);
  * ── THE SHAPE ────────────────────────────────────────────────────────────────
  * A UNIT is one lesson. Its natural key is course → level → week → position,
  * so an import of the same sheet updates the lessons it already made rather
- * than adding a second copy of each. `course` is a course from the academy
- * catalogue (the one list of courses the whole platform shares); blank means
+ * than adding a second copy of each. `course` is a course from the CLUB's
+ * course list (club_catalogue() — the Club's own, not Summer School's academy
+ * catalogue; see the comment there); blank means
  * the lesson is for everybody in the Club. A unit carries MATERIALS (files and
  * links) and CHECKS (the questions that say whether it was learnt).
  *
@@ -152,11 +153,70 @@ function curriculum_load(string $where = '1=1', array $args = [], string $order 
     return $out;
 }
 
-/** The courses an editor may file a lesson under: the academy catalogue, plus
- *  any course already holding lessons (a retired catalogue entry must not make
- *  its lessons unfindable). */
+/**
+ * The NGG Club's course list — faculty → courses, the Club's own.
+ *
+ * It used to be Summer School's academy catalogue, read by both programmes and
+ * editable only with the `summer` capability: a coordinator tidying a season's
+ * offer took courses off the Club's timetable and curriculum without either
+ * screen saying so, and a Club-only course (the Media Lab) could not be listed
+ * at all. The Club owns this list now, under the `curriculum` capability, and
+ * Summer School keeps its catalogue for its season.
+ *
+ * Stored in `club_catalogue`. The first read on a deployment that has never
+ * saved one COPIES the academy catalogue as it stands — the two lists start out
+ * equal, then diverge only by somebody's deliberate edit — and stores the copy,
+ * so a later Summer edit cannot reach the Club through the fallback.
+ */
+function club_catalogue(): array {
+    $saved = academy_catalogue_clean(setting_get('club_catalogue'));
+    if ($saved) return $saved;
+    $seed = academy_catalogue();
+    setting_set('club_catalogue', $seed, 'system');
+    return $seed;
+}
+function club_courses(): array { $out = []; foreach (club_catalogue() as $courses) foreach ($courses as $c) if (!in_array($c, $out, true)) $out[] = $c; return $out; }
+
+/** admin.club.catalogue.get — the Club's course list, for its editor. */
+function admin_club_catalogue_get(array $p): array {
+    $g = admin_cap_gate_any($p, ['curriculum', 'club', 'people']); if (!$g['ok']) return $g;
+    $emit = static function (array $map): array { $out = []; foreach ($map as $f => $cs) $out[] = ['faculty' => $f, 'courses' => array_values($cs)]; return $out; };
+    $inUse = [];
+    foreach (db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> '' AND COALESCE(status,'') <> 'archived'") as $r) $inUse[(string)$r['course']] = true;
+    foreach (db_all("SELECT DISTINCT course FROM timetable_slots WHERE status = 'active'") as $r) $inUse[(string)$r['course']] = true;
+    return ['ok' => true, 'catalogue' => $emit(club_catalogue()), 'defaults' => $emit(academy_catalogue()), 'customised' => true,
+            'inUse' => array_keys($inUse), 'canEdit' => admin_cap_gate($p, 'curriculum')['ok']];
+}
+/** admin.club.catalogue.set — save it (`curriculum`). `reset` copies Summer's catalogue again. */
+function admin_club_catalogue_set(array $p): array {
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    $by = (string)$g['requester']['memberId'];
+    if (!empty($p['reset'])) {
+        setting_set('club_catalogue', academy_catalogue(), $by);
+        audit('club.catalogue.reset', $by, '', [], (string)($p['ip'] ?? ''));
+        if (function_exists('cache_invalidate')) cache_invalidate('catalogue');
+        return ['ok' => true, 'reset' => true];
+    }
+    $raw = $p['catalogue'] ?? null;
+    if (is_array($raw) && $raw && isset($raw[0]) && is_array($raw[0])) {
+        $map = [];
+        foreach ($raw as $row) if (is_array($row)) $map[(string)($row['faculty'] ?? '')] = is_array($row['courses'] ?? null) ? $row['courses'] : [];
+        $raw = $map;
+    }
+    $clean = academy_catalogue_clean($raw);
+    if (!$clean) return ['ok' => false, 'error' => 'catalogue_empty'];
+    if (count($clean) > 40) return ['ok' => false, 'error' => 'too_many_faculties'];
+    setting_set('club_catalogue', $clean, $by);
+    audit('club.catalogue.set', $by, '', ['faculties' => count($clean)], (string)($p['ip'] ?? ''));
+    if (function_exists('cache_invalidate')) cache_invalidate('catalogue');
+    return ['ok' => true, 'faculties' => count($clean)];
+}
+
+/** The courses an editor may file a lesson under: the Club's course list, plus
+ *  any course already holding lessons (a retired entry must not make its
+ *  lessons unfindable). */
 function curriculum_courses(): array {
-    $all = function_exists('academy_courses') ? academy_courses() : [];
+    $all = club_courses();
     foreach (db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> ''") as $r) $all[] = (string)$r['course'];
     $all = array_values(array_unique(array_filter(array_map('strval', $all))));
     sort($all, SORT_NATURAL | SORT_FLAG_CASE);

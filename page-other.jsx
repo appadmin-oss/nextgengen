@@ -554,7 +554,11 @@ function MentorApplySection() {
 }
 
 /* =================== JOIN / APPLICATION =================== */
+/* One draft per programme. A single key carried a half-finished Summer School
+   application's centre and course into an NGG application (and back), because
+   a saved draft rightly wins over the link. */
 const JOIN_DRAFT_KEY = "ngg.join.draft";
+const joinDraftKey = (program) => JOIN_DRAFT_KEY + "." + (program === "summer" ? "summer" : "anchor");
 
 /* Shared post-submission success card (students + volunteers). Adapts the
    attached "Success" design: accent bar, pulsing check badge, kicker pill,
@@ -676,7 +680,7 @@ function JoinPage({ setPage }) {
   const isSummer = program === "summer";
   const [restored, setRestored] = useState(false);
   const [data, setData] = useState(() => {
-    const base = { firstName: "", lastName: "", otherName: "", sex: "", dob: "", city: "Egbeda", track: "Music", why: "", parentEmail: "", parentPhone: "", photoUrl: "" };
+    const base = { firstName: "", lastName: "", otherName: "", sex: "", dob: "", city: "", track: "", why: "", parentEmail: "", parentPhone: "", photoUrl: "" };
     /* "Apply to THIS centre" has to arrive at a form with that centre already
        chosen, or the button is decoration. Same for a course picked off the
        Summer School page. A saved draft still wins — somebody halfway through
@@ -690,7 +694,15 @@ function JoinPage({ setPage }) {
       if (track) seed.track = track;
     } catch (_) {}
     try {
-      const saved = JSON.parse(localStorage.getItem(JOIN_DRAFT_KEY) || "null");
+      /* The old shared draft moves, once, into the form that is open — a half-
+         typed application is not thrown away by the split — and is retired.
+         Its course and centre are re-checked against this programme below. */
+      const legacy = localStorage.getItem(JOIN_DRAFT_KEY);
+      if (legacy !== null) {
+        if (localStorage.getItem(joinDraftKey(program)) === null) localStorage.setItem(joinDraftKey(program), legacy);
+        localStorage.removeItem(JOIN_DRAFT_KEY);
+      }
+      const saved = JSON.parse(localStorage.getItem(joinDraftKey(program)) || "null");
       if (saved && typeof saved === "object") return Object.assign(base, seed, saved);
     } catch (_) {}
     return Object.assign(base, seed);
@@ -699,13 +711,13 @@ function JoinPage({ setPage }) {
   // "save as you go" promise is visible rather than silent.
   React.useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(JOIN_DRAFT_KEY) || "null");
+      const saved = JSON.parse(localStorage.getItem(joinDraftKey(program)) || "null");
       if (saved && (saved.firstName || saved.name || saved.why || saved.parentEmail || saved.photoUrl)) setRestored(true);
     } catch (_) {}
   }, []);
   const [busy, setBusy] = useState(false);
   const [fieldErr, setFieldErr] = useState("");
-  const steps = ["Identity", "Track", "Story", "Parent"];
+  const steps = ["Identity", "Course", "Story", "Parent"];
   const session = useSession();
   const applyEyebrow = isSummer
     ? "APPLY · SUMMER STUDENTS"
@@ -717,8 +729,36 @@ function JoinPage({ setPage }) {
 
   // Persist draft on every change (cleared on successful submit).
   React.useEffect(() => {
-    try { localStorage.setItem(JOIN_DRAFT_KEY, JSON.stringify(data)); } catch (_) {}
-  }, [data]);
+    try { localStorage.setItem(joinDraftKey(program), JSON.stringify(data)); } catch (_) {}
+  }, [data, program]);
+
+  /* This programme's own courses and centres. Summer School offers its
+     academy catalogue at the centres that run it; the NGG Club offers the
+     Club's course list at the Club's centres. One list for both is how a
+     Summer course arrived on an NGG application, and a Club-only centre on a
+     Summer one. */
+  const [offer, setOffer] = useState(null);
+  const [offerErr, setOfferErr] = useState(null);
+  const loadOffer = React.useCallback(() => {
+    setOfferErr(null);
+    return NGGApi.public.programme(program).then(setOffer).catch(e => setOfferErr(e));
+  }, [program]);
+  React.useEffect(() => { loadOffer(); }, [loadOffer]);
+  const offerCourses = React.useMemo(() => ((offer && offer.faculties) || []).flatMap(f => f.courses), [offer]);
+  // A link or an old draft naming a course or centre this programme does not
+  // offer is cleared rather than submitted.
+  React.useEffect(() => {
+    if (!offer) return;
+    setData(d => {
+      let n = d;
+      const course = offerCourses.find(c => c.toLowerCase() === String(d.track || "").toLowerCase());
+      if (d.track && !course) n = { ...n, track: "" }; else if (course && course !== d.track) n = { ...n, track: course };
+      const names = (offer.centres || []).map(c => c.name);
+      const centre = names.find(c => c.toLowerCase() === String(d.city || "").toLowerCase() || c.toLowerCase().endsWith(" " + String(d.city || "").toLowerCase()));
+      if (d.city && d.city !== "Other" && !centre) n = { ...n, city: "" }; else if (centre && centre !== d.city) n = { ...n, city: centre };
+      return n;
+    });
+  }, [offer, offerCourses]);
 
   const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim());
 
@@ -731,7 +771,9 @@ function JoinPage({ setPage }) {
       if (age < 10 || age > 17) return "Applicants must be between 10 and 17 years old.";
       if (!data.sex) return "Select the applicant's sex.";
       if (!data.photoUrl) return "Add a headshot — take or upload a photo to continue.";
+      if (!data.city) return "Choose the centre closest to you, or “Neither — I'll travel”.";
     }
+    if (s === 1 && offerCourses.length && !data.track) return "Pick the course you'd like to start with.";
     if (s === 2 && data.why.trim().length < 20) {
       return "Give us at least a sentence or two — 20 characters minimum.";
     }
@@ -769,7 +811,7 @@ function JoinPage({ setPage }) {
       });
       setAppRef((r && r.ref) || "");
       setAppWa((r && r.whatsapp) || "");
-      try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {}
+      try { localStorage.removeItem(joinDraftKey(program)); } catch (_) {}
       setStep(4);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
@@ -821,7 +863,7 @@ function JoinPage({ setPage }) {
           {restored && (
             <div role="status" style={{display:"flex", alignItems:"center", gap:12, justifyContent:"space-between", marginBottom:20, padding:"12px 16px", borderRadius:12, background:"rgba(245,176,38,0.14)", border:"1px solid rgba(245,176,38,0.4)", fontSize:14, color:"var(--ink-900)"}}>
               <span>↩︎ We saved your progress — pick up where you left off.</span>
-              <button type="button" onClick={() => { try { localStorage.removeItem(JOIN_DRAFT_KEY); } catch (_) {} setData({ firstName: "", lastName: "", otherName: "", sex: "", dob: "", city: "Egbeda", track: "Music", why: "", parentEmail: "", parentPhone: "", photoUrl: "" }); setStep(0); setRestored(false); }} className="mono" style={{background:"none", border:"none", cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--ink-500)", fontWeight:600}}>Start fresh</button>
+              <button type="button" onClick={() => { try { localStorage.removeItem(joinDraftKey(program)); } catch (_) {} setData({ firstName: "", lastName: "", otherName: "", sex: "", dob: "", city: "", track: "", why: "", parentEmail: "", parentPhone: "", photoUrl: "" }); setStep(0); setRestored(false); }} className="mono" style={{background:"none", border:"none", cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--ink-500)", fontWeight:600}}>Start fresh</button>
             </div>
           )}
 
@@ -892,12 +934,13 @@ function JoinPage({ setPage }) {
                     </select>
                   </div>
                   <div className="field" style={{gridColumn:"1 / -1"}}>
-                    <label>Which centre is closest to you?</label>
-                    <select value={data.city} onChange={e => setData({...data, city: e.target.value})}>
-                      <option value="Egbeda">CACENTRE Egbeda</option>
-                      <option value="Ayobo">CACENTRE Ayobo</option>
+                    <label htmlFor="join-centre">Which centre is closest to you?</label>
+                    <select id="join-centre" value={data.city} onChange={e => setData({...data, city: e.target.value})} disabled={!offer && !offerErr}>
+                      <option value="" disabled>{offer ? "Choose a centre…" : offerErr ? "Couldn't load the centres" : "Loading centres…"}</option>
+                      {((offer && offer.centres) || []).map(c => <option key={c.name} value={c.name}>{c.name}{c.area ? " · " + c.area : ""}</option>)}
                       <option value="Other">Neither — I'll travel</option>
                     </select>
+                    {offerErr && <button type="button" className="btn btn-ghost btn-sm" onClick={loadOffer} style={{marginTop:8}}>Try loading the centres again</button>}
                   </div>
                 </div>
                 {/* Headshot — the site takes the picture (camera-first), with
@@ -909,23 +952,24 @@ function JoinPage({ setPage }) {
             )}
             {step === 1 && (
               <div>
-                <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:"0 0 8px", letterSpacing:"-0.02em"}}>Pick a starting track.</h2>
-                <p style={{color:"var(--ink-500)", margin:"0 0 24px"}}>You can switch tracks any time in your first four weeks.</p>
-                <div style={{display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:12}}>
-                  {TRACKS.map(t => (
-                    <button key={t.id} onClick={() => setData({...data, track: t.name})} style={{
-                      padding:18, borderRadius:14, textAlign:"left",
-                      background: data.track === t.name ? "var(--navy-900)" : "white",
-                      color: data.track === t.name ? "white" : "var(--ink-900)",
-                      border: data.track === t.name ? "2px solid var(--gold-500)" : "1px solid rgba(12,20,50,0.12)",
-                      cursor:"pointer", fontFamily:"inherit",
-                    }}>
-                      <div style={{fontSize:28, marginBottom:8}}>{t.icon}</div>
-                      <div style={{fontWeight:700}}>{t.name}</div>
-                      <div style={{fontSize:11, opacity:0.7, marginTop:4, lineHeight:1.3}}>{t.desc}</div>
-                    </button>
-                  ))}
-                </div>
+                <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:"0 0 8px", letterSpacing:"-0.02em"}}>Pick a starting course.</h2>
+                <p style={{color:"var(--ink-500)", margin:"0 0 24px"}}>{isSummer ? "The courses Summer School is teaching this season." : "The courses the NGG Club teaches. You can switch in your first four weeks."}</p>
+                {offerErr ? <ErrorState title="Couldn't load the courses" message={offerErr.message} code={offerErr.code} onRetry={loadOffer}/>
+                  : !offer ? <div className="dash-spinner" role="status" aria-label="Loading the courses"/>
+                  : !offerCourses.length ? <p className="join-course-none">No courses are listed yet — carry on, and we'll place you.</p>
+                  : <div className="join-courses">
+                      {offer.faculties.map(f => (
+                        <fieldset key={f.faculty} className="join-fac">
+                          <legend>{f.faculty}</legend>
+                          <div className="join-fac-grid">
+                            {f.courses.map(c => (
+                              <button key={c} type="button" className={"join-course" + (data.track === c ? " is-on" : "")} aria-pressed={data.track === c}
+                                onClick={() => setData({...data, track: c})}>{c}</button>
+                            ))}
+                          </div>
+                        </fieldset>
+                      ))}
+                    </div>}
               </div>
             )}
             {step === 2 && (

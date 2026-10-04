@@ -896,6 +896,8 @@
         submit:  (t, photoUrl, submissionId) => request('/public/reshoot.php', { body: { t, photoUrl, submissionId: submissionId || '' } }),
       },
       timetable: (centre) => request('/public/timetable.php' + qs({ centre: centre || '' })),
+      // One programme's own courses and centres, for the join form.
+      programme: (program) => request('/public/programme.php' + qs({ program: program === 'summer' ? 'summer' : 'anchor' })),
       circle: {
         // The child's name is required, not optional: the code alone no longer
         // resolves to anything, so a guessed code cannot reveal who it belongs to.
@@ -1046,6 +1048,10 @@
         assess: (memberIds) => request('/admin/companion.php', { body: { action: 'assess', memberIds } }),
       },
       curriculum: {
+        // The Club's own course list (not Summer School's academy catalogue).
+        courses:      () => request('/admin/curriculum.php' + qs({ view: 'courses' })),
+        coursesSet:   (catalogue) => request('/admin/curriculum.php', { body: { action: 'courses', catalogue } }),
+        coursesReset: () => request('/admin/curriculum.php', { body: { action: 'courses', reset: true } }),
         list:    (f) => request('/admin/curriculum.php' + qs(Object.assign({ view: 'list' }, f || {}))),
         get:     (unitId) => request('/admin/curriculum.php' + qs({ view: 'get', unitId })),
         report:  (f) => request('/admin/curriculum.php' + qs(Object.assign({ view: 'report' }, f || {}))),

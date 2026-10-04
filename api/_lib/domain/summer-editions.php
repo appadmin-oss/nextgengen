@@ -645,31 +645,33 @@ function public_summer_page(): array {
     }
 
     $centres = [];
-    $rows = db_all("SELECT centreId, name, code, color, slug, tagline, area, capacity
+    $rows = db_all("SELECT centreId, name, code, color, slug, tagline, area, summerArea, capacity, programmes
                       FROM centres
                      WHERE status = 'active' AND pageStatus = 'published' AND slug <> ''
                      ORDER BY name");
+    // Summer School's page lists only the centres Summer School runs at.
+    $rows = array_values(array_filter($rows, static fn($r) => centre_serves($r, 'summer')));
+    /* Two grouped reads for the whole list (enrolments, and which courses run
+       where), not two queries per centre. Which courses actually run HERE this
+       edition comes from the groups — the difference between "the programme
+       teaches Piano" and "you can learn Piano at Ijaiye". Only running groups:
+       a planning group is not a promise. */
+    $enrolledBy = [];
+    foreach (db_all("SELECT centre, COUNT(*) c FROM summer_students WHERE cohortId = ? AND status = 'active' GROUP BY centre", [$e['cohortId']]) as $x) $enrolledBy[(string)$x['centre']] = (int)$x['c'];
+    $coursesBy = [];
+    foreach (db_all("SELECT DISTINCT centreId, track FROM summer_groups WHERE cohortId = ? AND status = 'active' AND track <> '' ORDER BY track", [$e['cohortId']]) as $g) $coursesBy[(string)$g['centreId']][] = (string)$g['track'];
     foreach ($rows as $r) {
-        $enrolled = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'",
-            [$e['cohortId'], (string)$r['name']])['c'] ?? 0);
+        $enrolled = $enrolledBy[(string)$r['name']] ?? 0;
         $cap = (int)($r['capacity'] ?? 0);
-        /* Which courses actually run HERE this edition, from the groups —
-           which is the difference between "the programme teaches Piano" and
-           "you can learn Piano at Ijaiye". Only from groups that are running:
-           a planning group is not a promise. */
-        $courses = [];
-        foreach (db_all("SELECT DISTINCT track FROM summer_groups
-                          WHERE cohortId = ? AND centreId = ? AND status = 'active' AND track <> ''
-                          ORDER BY track", [$e['cohortId'], (string)$r['centreId']]) as $g) {
-            $courses[] = (string)$g['track'];
-        }
+        $courses = $coursesBy[(string)$r['centreId']] ?? [];
         $centres[] = [
             'slug'    => (string)$r['slug'],
             'name'    => (string)$r['name'],
             'code'    => (string)$r['code'],
             'color'   => (string)$r['color'],
             'tagline' => (string)$r['tagline'],
-            'area'    => (string)($r['area'] ?? ''),
+            // Where Summer School meets, when that is not the Club's building.
+            'area'    => trim((string)($r['summerArea'] ?? '')) !== '' ? (string)$r['summerArea'] : (string)($r['area'] ?? ''),
             'courses' => $courses,
             /* Aggregates only, and `full` rather than a headcount when there
                is a cap: "3 places left" is useful; "37 children attend here"

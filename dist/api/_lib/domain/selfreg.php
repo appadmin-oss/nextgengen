@@ -657,7 +657,7 @@ function selfreg_queue(array $p): array {
     foreach (db_all("SELECT regStatus, COUNT(*) c FROM summer_students WHERE submittedVia != '' GROUP BY regStatus") as $c) {
         $counts[(string)$c['regStatus']] = (int)$c['c'];
     }
-    $centres = array_column(db_all("SELECT name FROM centres WHERE status = 'active' ORDER BY name"), 'name');
+    $centres = centre_names_for_programme('summer');
     return ['ok' => true, 'queue' => $out, 'total' => $total, 'page' => $page, 'per' => $per,
             'shown' => count($out), 'counts' => $counts,
             'centres' => $centres, 'courses' => academy_courses(),

@@ -2463,13 +2463,14 @@ function AdminCurriculum() {
       <div className="admin-section-head"><h2 className="admin-h2">NGG curriculum</h2></div>
       <p className="admin-hint">What the Club teaches, lesson by lesson. Members see the published lessons for their course and the Club-wide ones on their dashboard; instructors and NGG mentors see them in their portal and mark the written answers.</p>
       <div className="admin-tabs" role="tablist">
-        {[["lessons", "Lessons"], ["submissions", "Submissions"], ["import", "Import"], ["progress", "Progress"]].map(([k, l]) => (
+        {[["lessons", "Lessons"], ["courses", "Courses"], ["submissions", "Submissions"], ["import", "Import"], ["progress", "Progress"]].map(([k, l]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={"admin-tab" + (tab === k ? " is-active" : "")} onClick={() => setTab(k)}>
             {l}{k === "submissions" && pendingSubs > 0 && <span className="admin-tab-count" aria-label={pendingSubs + " waiting"}>{pendingSubs}</span>}
           </button>
         ))}
       </div>
       {tab === "lessons" && <CurriculumLessons/>}
+      {tab === "courses" && <AcademyCatalogue source="club"/>}
       {tab === "submissions" && <CurriculumSubmissions onCount={setPendingSubs}/>}
       {tab === "import" && <CurriculumImport/>}
       {tab === "progress" && <CurriculumProgress/>}
@@ -2901,13 +2902,18 @@ function CurriculumEditor({ unit, courses, canWrite, aiEnabled, onClose, onSaved
 function curriculumParseCsv(text) {
   const rows = []; let row = [], cell = "", q = false;
   const s = String(text || "").replace(/^﻿/, "");
+  /* Excel saves "CSV" with semicolons where the comma is the decimal mark, and
+     some sheets are pasted as tabs. The header line says which. */
+  const first = s.split(/\r?\n/, 1)[0] || "";
+  const cnt = (ch) => first.split(ch).length - 1;
+  const sep = cnt(",") >= cnt(";") && cnt(",") >= cnt("\t") ? "," : (cnt(";") >= cnt("\t") ? ";" : "\t");
   for (let i = 0; i < s.length; i++) {
     const ch = s[i];
     if (q) {
       if (ch === '"') { if (s[i + 1] === '"') { cell += '"'; i++; } else q = false; }
       else cell += ch;
     } else if (ch === '"') q = true;
-    else if (ch === ",") { row.push(cell); cell = ""; }
+    else if (ch === sep) { row.push(cell); cell = ""; }
     else if (ch === "\n" || ch === "\r") { if (ch === "\r" && s[i + 1] === "\n") i++; row.push(cell); rows.push(row); row = []; cell = ""; }
     else cell += ch;
   }
@@ -2916,6 +2922,51 @@ function curriculumParseCsv(text) {
   if (!clean.length) return [];
   const head = clean[0].map(h => String(h).trim().toLowerCase().replace(/\s+/g, "_"));
   return clean.slice(1).map(r => { const o = {}; head.forEach((h, k) => { o[h] = (r[k] ?? "").trim(); }); return o; });
+}
+
+/* An .xlsx workbook's first sheet → the same objects curriculumParseCsv gives
+   (header row → keys). Read in the browser with JSZip; numbers come back as
+   typed, so an Excel date arrives as a serial and the caller converts it. */
+async function readXlsxRows(buf) {
+  const JSZip = await loadVendor("jszip");
+  const zip = await JSZip.loadAsync(buf);
+  const xml = async (p) => { const f = zip.file(p); return f ? new DOMParser().parseFromString(await f.async("string"), "application/xml") : null; };
+  const shared = [];
+  const ss = await xml("xl/sharedStrings.xml");
+  if (ss) Array.from(ss.getElementsByTagName("si")).forEach(si => shared.push(Array.from(si.getElementsByTagName("t")).map(t => t.textContent).join("")));
+  // The first sheet in the workbook's own order, not whichever file is sheet1.
+  let path = "xl/worksheets/sheet1.xml";
+  const wb = await xml("xl/workbook.xml"), rels = await xml("xl/_rels/workbook.xml.rels");
+  const firstSheet = wb && wb.getElementsByTagName("sheet")[0];
+  if (firstSheet && rels) {
+    const rid = firstSheet.getAttribute("r:id") || firstSheet.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id");
+    const rel = Array.from(rels.getElementsByTagName("Relationship")).find(r => r.getAttribute("Id") === rid);
+    if (rel) { const t = rel.getAttribute("Target").replace(/^\//, ""); path = t.startsWith("xl/") ? t : "xl/" + t; }
+  }
+  const sheet = await xml(path);
+  if (!sheet) throw new Error("That workbook has no sheet I can read.");
+  const colIdx = (ref) => { let n = 0; for (const ch of String(ref).replace(/\d+/g, "")) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; };
+  const grid = Array.from(sheet.getElementsByTagName("row")).map(r => {
+    const out = [];
+    Array.from(r.getElementsByTagName("c")).forEach(c => {
+      const t = c.getAttribute("t"), v = c.getElementsByTagName("v")[0];
+      let val = "";
+      if (t === "s") val = shared[+((v && v.textContent) || 0)] || "";
+      else if (t === "inlineStr") val = Array.from(c.getElementsByTagName("t")).map(x => x.textContent).join("");
+      else val = v ? v.textContent : "";
+      out[colIdx(c.getAttribute("r"))] = String(val).trim();
+    });
+    return Array.from(out, x => x || "");
+  }).filter(r => r.some(x => x !== ""));
+  if (!grid.length) return [];
+  const head = grid[0].map(h => String(h).trim().toLowerCase().replace(/\s+/g, "_"));
+  return grid.slice(1).map(r => { const o = {}; head.forEach((h, k) => { if (h) o[h] = (r[k] ?? "").trim(); }); return o; });
+}
+/** Any sheet a person is likely to have: .xlsx, or CSV with commas, semicolons or tabs. */
+async function readSheetFile(file) {
+  if (/\.xlsx$/i.test(file.name)) return readXlsxRows(await file.arrayBuffer());
+  if (/\.(xls|numbers|pdf|docx?)$/i.test(file.name)) throw new Error("That file type can't be read here. In Excel or Google Sheets choose File → Download → CSV (or save as .xlsx) and choose that file.");
+  return curriculumParseCsv(await file.text());
 }
 
 /* One spreadsheet row → the lesson shape the server validates. Flexible on
@@ -2959,6 +3010,11 @@ function CurriculumImport() {
     if (!file) return;
     setErr(""); setPlan(null);
     try {
+      if (/\.xlsx$/i.test(file.name)) {
+        const out = (await readXlsxRows(await file.arrayBuffer())).map(curriculumRowFromSheet);
+        if (!out.length) throw new Error("No lessons found in that file.");
+        setRows(out); setName(file.name); return;
+      }
       const text = await file.text();
       let out;
       if (/\.json$/i.test(file.name) || /^\s*[\[{]/.test(text)) {
@@ -3008,7 +3064,7 @@ function CurriculumImport() {
       <p className="admin-hint">Upload a CSV (from Excel or Google Sheets) or a JSON file of lessons. Each lesson is matched on course, level, week and position — importing a corrected file updates those lessons instead of adding copies. Nothing is written until you have checked the file and pressed Import.</p>
       <div className="cur-ed-row">
         <label className="btn btn-ghost btn-sm">Choose a file
-          <input type="file" className="sr-only" accept=".csv,.json,text/csv,application/json" onChange={e => { read(e.target.files && e.target.files[0]); e.target.value = ""; }}/></label>
+          <input type="file" className="sr-only" accept=".csv,.xlsx,.json,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={e => { read(e.target.files && e.target.files[0]); e.target.value = ""; }}/></label>
         <button type="button" className="btn btn-ghost btn-sm" onClick={download}>Download the CSV template</button>
         {name && <span className="admin-cell-sub">{name} · {rows ? rows.length : 0} lesson{rows && rows.length === 1 ? "" : "s"}</span>}
       </div>
@@ -3415,7 +3471,7 @@ function AdminTimetableForm({ form, d, onClose, onSaved }) {
           <label className="admin-field"><span className="admin-label">Room (blank means the centre's main room)</span><input className="admin-input" value={f.room} onChange={e => set("room", e.target.value)} placeholder="e.g. Studio 2"/></label>
           <label className="admin-field"><span className="admin-label">Instructor (optional)</span>
             <select className="admin-select" value={f.instructorId || ""} onChange={e => set("instructorId", e.target.value)}>
-              <option value="">Not assigned</option>{d.instructors.map(v => <option key={v.volunteerId} value={v.volunteerId}>{v.fullName}{v.courses ? " — " + String(v.courses).replace(/[\[\]"]/g, "").replace(/,/g, ", ") : ""}</option>)}</select></label>
+              <option value="">Not assigned</option>{d.instructors.map(v => <option key={v.volunteerId} value={v.volunteerId}>{v.fullName}{v.summerOnly ? " (signed up for Summer School)" : ""}{v.courses ? " — " + String(v.courses).replace(/[\[\]"]/g, "").replace(/,/g, ", ") : ""}</option>)}</select></label>
           <label className="admin-field"><span className="admin-label">Note (optional)</span><input className="admin-input" value={f.note} onChange={e => set("note", e.target.value)} placeholder="e.g. Bring your phone charged"/></label>
           {clash && <div className="admin-form-err" role="alert"><b>Not saved — it clashes:</b><ul>{clash.map((c, i) => <li key={i}>{c}</li>)}</ul></div>}
         </div></div>
@@ -11930,7 +11986,7 @@ const FINE_COLS = {
   member: ["member", "memberid", "member id", "id", "displayid", "display id", "member no", "member number", "card", "card number"],
   name: ["name", "fullname", "full name", "member name"],
   email: ["email", "e-mail", "email address", "parent email"],
-  amount: ["amount", "fine", "naira", "amount (₦)", "amount (n)"],
+  amount: ["amount", "fine", "fines", "fine (₦)", "fine (n)", "outstanding fine", "outstanding", "naira", "amount (₦)", "amount (n)"],
   reason: ["reason", "offence", "offense", "why", "type"],
   date: ["date", "day", "on"],
   note: ["note", "notes", "comment", "comments", "details", "remark", "remarks"],
@@ -11942,43 +11998,53 @@ function finesRowFromSheet(r) {
     const k = keys.find(x => names.includes(String(x).trim().toLowerCase().replace(/_/g, " ")));
     if (k !== undefined) out[field] = String(r[k] == null ? "" : r[k]).trim();
   });
+  // An Excel date cell arrives as a day count from 1899-12-30.
+  if (/^\d{5}(\.\d+)?$/.test(out.date || "")) out.date = new Date(Date.UTC(1899, 11, 30) + Math.floor(+out.date) * 86400000).toISOString().slice(0, 10);
   return out;
 }
 const FINE_ERRORS = {
   ambiguous: "more than one member matches", no_match: "no member matches", member_required: "no member given",
   not_ngg_member: "not an NGG member", out_of_scope: "outside your centres", bad_amount: "amount unreadable",
   reason_required: "no reason", note_required: "say why", bad_date: "date unreadable", duplicate_in_file: "repeated in this file",
-  post_failed: "could not be posted",
+  post_failed: "could not be posted", no_amount: "no fine on this row",
 };
-const FINE_MATCHED = { id: "ID", email: "email", "email+name": "email + name", name: "name only" };
+const FINE_MATCHED = { id: "ID", email: "email", "email+name": "email + name", name: "name only", name_any: "name, words reordered" };
 function FinesUpload({ onDone }) {
   const [rows, setRows] = React.useState(null);
   const [name, setName] = React.useState("");
   const [plan, setPlan] = React.useState(null);
   const [busy, setBusy] = React.useState("");
   const [err, setErr] = React.useState("");
+  const [reason, setReason] = React.useState("");
   const read = async (file) => {
     if (!file) return;
     setErr(""); setPlan(null);
     try {
-      const out = curriculumParseCsv(await file.text()).map(finesRowFromSheet).filter(r => Object.values(r).some(v => v !== ""));
+      const raw = await readSheetFile(file);
+      const out = raw.map(finesRowFromSheet).filter(r => Object.values(r).some(v => v !== ""));
       if (!out.length) throw new Error("No fines found in that file.");
+      if (!out.some(r => r.member || r.name || r.email)) throw new Error("That sheet has no column for who is being fined. Name a column “Name”, “Member ID” or “Email”.");
+      if (!out.some(r => r.amount)) throw new Error("That sheet has no column for the amount. Name a column “Fine” or “Amount”.");
       setRows(out); setName(file.name);
     } catch (e) { setRows(null); setErr(e.message || "Couldn't read that file."); }
   };
+  // The reason typed once, for every row whose sheet gave none. Sent with the
+  // rows, so it is part of what is checked and of the digest that is applied.
+  const sent = () => (rows || []).map(r => (r.reason || !reason.trim()) ? r : { ...r, reason: reason.trim() });
+  const noReason = (rows || []).filter(r => !r.reason).length;
   const check = async () => {
     setBusy("check");
-    try { setPlan(await NGGApi.admin.fees.fineImport(rows, { dryRun: true })); }
+    try { setPlan(await NGGApi.admin.fees.fineImport(sent(), { dryRun: true })); }
     catch (e) { toast.error(e.code === "too_many" ? "That is more than " + (e.max || 500) + " fines — split the file." : humanizeError(e.code, e.code)); }
     finally { setBusy(""); }
   };
   const apply = async () => {
     const t = plan.tally;   // read before the confirm, so what is agreed is what runs
     if (!(await dialog.confirm({ title: "Post " + t.fine + " fine" + (t.fine === 1 ? "" : "s") + " — " + naira(t.total) + "?",
-      body: t.fine + " to post · " + t.already + " already on the ledger · " + t.failed + " refused (not posted). Each fine lands on the member's account and in their next reminder.", cta: "Post fines" }))) return;
+      body: t.fine + " to post · " + t.already + " already on the ledger · " + (t.skipped || 0) + " with no fine · " + t.failed + " refused (not posted). Each fine lands on the member's account and in their next reminder.", cta: "Post fines" }))) return;
     setBusy("apply");
     try {
-      const r = await NGGApi.admin.fees.fineImport(rows, { digest: plan.digest });
+      const r = await NGGApi.admin.fees.fineImport(sent(), { digest: plan.digest });
       setPlan(r);
       if (r.tally.failed) toast.info(r.tally.fine + " posted · " + r.tally.failed + " refused.", "Fines partly posted");
       else toast.success(r.tally.fine + " fine" + (r.tally.fine === 1 ? "" : "s") + " posted · " + naira(r.tally.total) + ".", "Fines posted");
@@ -11993,19 +12059,24 @@ function FinesUpload({ onDone }) {
   };
   return (
     <div className="fine-imp">
-      <p className="admin-hint">Upload a CSV of fines (from Excel or Google Sheets). Name each member by their printed ID or member number where you can; an email or a name also works, but only when it points at exactly one member — siblings sharing a parent's email, or two members with one name, are refused and named so you can fix the row. Reasons: late, absent, equipment, conduct, or anything else (kept as the written reason). Uploading the same sheet twice fines nobody twice. Nothing is posted until you have checked the file and pressed Post fines.</p>
+      <p className="admin-hint">Upload a sheet of fines — an Excel workbook (.xlsx) or a CSV from Excel or Google Sheets. Columns are recognised by their heading (Name, Member ID, Email, Fine or Amount, Reason, Date, Note); any other column is ignored, and a row whose fine is empty or “Null” is skipped. Name each member by their printed ID or member number where you can; an email or a name also works, but only when it points at exactly one member — siblings sharing a parent's email, or two members with one name, are refused and named so you can fix the row. Reasons: late, absent, equipment, conduct, or anything else (kept as the written reason). Uploading the same sheet twice fines nobody twice. Nothing is posted until you have checked the file and pressed Post fines.</p>
       <div className="cur-ed-row">
         <label className="btn btn-ghost btn-sm">Choose a file
-          <input type="file" className="sr-only" accept=".csv,text/csv" onChange={e => { read(e.target.files && e.target.files[0]); e.target.value = ""; }}/></label>
+          <input type="file" className="sr-only" accept=".csv,.xlsx,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={e => { read(e.target.files && e.target.files[0]); e.target.value = ""; }}/></label>
         <button type="button" className="btn btn-ghost btn-sm" onClick={download}>Download the CSV template</button>
         {name && <span className="admin-cell-sub">{name} · {rows ? rows.length : 0} row{rows && rows.length === 1 ? "" : "s"}</span>}
         {rows && <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={check}>{busy === "check" ? "Checking…" : "Check the file"}</button>}
       </div>
       {err && <p className="admin-form-err" role="alert">{err}</p>}
+      {rows && noReason > 0 && (
+        <label className="fine-imp-reason"><span>Reason for the {noReason} row{noReason === 1 ? "" : "s"} that give none</span>
+          <input className="admin-input" value={reason} onChange={e => { setReason(e.target.value); setPlan(null); }}
+            placeholder="e.g. late, absent, conduct — or words such as “Outstanding fine, term 1”"/></label>
+      )}
       {plan && (
         <div className="fine-imp-plan">
           <p className="fine-imp-tally" aria-live="polite">
-            <b>{plan.tally.fine}</b> to post ({naira(plan.tally.total)}) · <b>{plan.tally.already}</b> already posted · <b>{plan.tally.failed}</b> refused{plan.dryRun ? " — nothing posted yet." : " — posted."}
+            <b>{plan.tally.fine}</b> to post ({naira(plan.tally.total)}) · <b>{plan.tally.already}</b> already posted · <b>{plan.tally.skipped || 0}</b> with no fine · <b>{plan.tally.failed}</b> refused{plan.dryRun ? " — nothing posted yet." : " — posted."}
           </p>
           {plan.dryRun && plan.tally.fine > 0 && <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={apply}>{busy === "apply" ? "Posting…" : "Post fines"}</button>}
           <div className="admin-table-wrap"><table className="admin-table">
@@ -12015,10 +12086,10 @@ function FinesUpload({ onDone }) {
                 <td className="admin-num">{r.row}</td>
                 <td>{r.fullName ? <>{r.fullName}<div className="admin-cell-sub">{r.displayId || r.memberId}</div></> : "—"}
                   {r.candidates && r.candidates.length > 0 && <div className="admin-cell-sub">Could be: {r.candidates.map(c => c.fullName + " (" + (c.displayId || c.memberId) + ")").join(", ")}</div>}</td>
-                <td className="admin-cell-sub">{r.matchedBy ? <span className={r.matchedBy === "name" ? "fine-imp-weak" : ""}>{FINE_MATCHED[r.matchedBy] || r.matchedBy}</span> : ""}</td>
+                <td className="admin-cell-sub">{r.matchedBy ? <span className={r.matchedBy === "name" || r.matchedBy === "name_any" ? "fine-imp-weak" : ""}>{FINE_MATCHED[r.matchedBy] || r.matchedBy}</span> : ""}</td>
                 <td className="admin-num">{r.amount ? naira(r.amount) : ""}</td>
                 <td className="admin-cell-sub">{r.reasonLabel ? r.reasonLabel + (r.date ? " · " + r.date : "") + (r.note ? " — " + r.note : "") : ""}</td>
-                <td>{r.verdict === "failed" ? <span className="chip status-archived" title={r.detail}>refused: {FINE_ERRORS[r.error] || String(r.error).replace(/_/g, " ")}</span>
+                <td>{r.verdict === "skipped" ? <span className="chip">skipped: no fine</span> : r.verdict === "failed" ? <span className="chip status-archived" title={r.detail}>refused: {FINE_ERRORS[r.error] || String(r.error).replace(/_/g, " ")}</span>
                   : <span className={"chip " + (r.verdict === "fine" ? "chip-lime" : "")}>{r.verdict === "fine" ? (plan.dryRun ? "to post" : "posted") : "already posted"}</span>}</td>
               </tr>
             ))}</tbody>
@@ -13688,7 +13759,27 @@ function AdminSettings() {
  * form (instructors pick courses UNDER their chosen faculty), the student course
  * list, and the /v-status faculty/course breakdowns. Fully editable; "Reset"
  * reverts to the seeded default. */
-function AcademyCatalogue() {
+/* The same editor serves two lists that are deliberately separate: Summer
+ * School's academy catalogue (Summer School → Structure, `summer`) and the NGG
+ * Club's own course list (Curriculum → Courses, `curriculum`). `source` says
+ * which; nothing else differs, so the two cannot drift into editing
+ * differently. */
+const CATALOGUE_SOURCES = {
+  summer: {
+    load: () => NGGApi.admin.registration.catalogue(), save: (c) => NGGApi.admin.registration.catalogueSet(c), reset: () => NGGApi.admin.registration.catalogueReset(),
+    hint: <>Summer School's academies (faculties) and the courses in each — what this season's Summer form, groups and course log offer, and the courses a volunteer can pick. The NGG Club keeps its own list under <b>Curriculum → Courses</b>; changing this one does not change the Club's.</>,
+    resetTitle: "Reset to the seeded catalogue?", resetBody: "Your custom faculties and courses will be replaced by the built-in default.",
+  },
+  club: {
+    load: () => NGGApi.admin.curriculum.courses(), save: (c) => NGGApi.admin.curriculum.coursesSet(c), reset: () => NGGApi.admin.curriculum.coursesReset(),
+    hint: <>The courses the <b>NGG Club</b> teaches, by faculty — what the NGG join form offers, what lessons are filed under and what the timetable schedules. Summer School keeps its own catalogue under <b>Summer School → Structure</b>; changing this list does not change Summer's. A course with lessons or classes on the timetable stays usable even if you take it off here.</>,
+    resetTitle: "Copy Summer School's catalogue over this list?", resetBody: "The Club's list will be replaced by Summer School's current catalogue. Lessons and timetable classes are not touched.",
+  },
+};
+function AcademyCatalogue({ source = "summer" }) {
+  const src = CATALOGUE_SOURCES[source] || CATALOGUE_SOURCES.summer;
+  const [canEdit, setCanEdit] = React.useState(true);
+  const [inUse, setInUse] = React.useState([]);
   const [rows, setRows] = React.useState(null);   // [{faculty, courses:[]}]
   const [customised, setCustomised] = React.useState(false);
   const [orig, setOrig] = React.useState("");
@@ -13697,8 +13788,8 @@ function AcademyCatalogue() {
   const [draftCourse, setDraftCourse] = React.useState({});   // facultyIndex -> input text
 
   const norm = (cat) => (cat || []).map(r => ({ faculty: String(r.faculty || ""), courses: (r.courses || []).map(String) }));
-  const load = () => NGGApi.admin.registration.catalogue()
-    .then(r => { const n = norm(r.catalogue); setRows(n); setCustomised(!!r.customised); setOrig(JSON.stringify(n)); setErr(""); })
+  const load = () => src.load()
+    .then(r => { const n = norm(r.catalogue); setRows(n); setCustomised(!!r.customised); setOrig(JSON.stringify(n)); setErr(""); setCanEdit(r.canEdit !== false); setInUse(r.inUse || []); })
     .catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
 
@@ -13721,14 +13812,14 @@ function AcademyCatalogue() {
       .filter(r => r.faculty !== "" && r.courses.length > 0);
     if (!clean.length) { toast.error("Add at least one faculty with one course."); return; }
     setBusy(true);
-    try { const r = await NGGApi.admin.registration.catalogueSet(clean); toast.success("Catalogue saved — " + (r.faculties || clean.length) + " faculties live now."); load(); }
+    try { const r = await src.save(clean); toast.success((source === "club" ? "Club courses saved — " : "Catalogue saved — ") + (r.faculties || clean.length) + " faculties live now."); load(); }
     catch (e) { toast.error(e.code === "catalogue_empty" ? "Add at least one faculty with one course." : (e.code || e.message)); }
     finally { setBusy(false); }
   };
   const reset = async () => {
-    if (!(await dialog.confirm({ title: "Reset to the seeded catalogue?", body: "Your custom faculties and courses will be replaced by the built-in default.", cta: "Reset" }))) return;
+    if (!(await dialog.confirm({ title: src.resetTitle, body: src.resetBody, cta: "Reset" }))) return;
     setBusy(true);
-    try { await NGGApi.admin.registration.catalogueReset(); toast.success("Reverted to the seeded catalogue."); load(); }
+    try { await src.reset(); toast.success(source === "club" ? "The Club's list now matches Summer School's catalogue." : "Reverted to the seeded catalogue."); load(); }
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
 
@@ -13736,7 +13827,9 @@ function AcademyCatalogue() {
   if (rows === null) return <div className="dash-spinner"/>;
   return (
     <div>
-      <p className="admin-hint">The academies (faculties) and the courses within each. This is the single source that drives the <b>volunteer form</b> — instructors pick courses <b>under</b> the faculty they choose — plus the student course list and the /v-status breakdowns. {customised ? <span className="chip chip-lime">customised</span> : <span className="chip">seeded default</span>}</p>
+      <p className="admin-hint">{src.hint} {source === "summer" && (customised ? <span className="chip chip-lime">customised</span> : <span className="chip">seeded default</span>)}</p>
+      {!canEdit && <p className="admin-hint" role="note">You can read this list; changing it needs the <b>Curriculum</b> permission.</p>}
+      {inUse.length > 0 && (() => { const listed = new Set(rows.flatMap(r => r.courses)); const off = inUse.filter(c => !listed.has(c)); return off.length ? <p className="admin-hint" role="note">Still in use but not on this list: {off.join(", ")} — their lessons and classes keep working.</p> : null; })()}
       <div style={{ display: "grid", gap: 16 }}>
         {rows.map((r, i) => (
           <div key={i} className="admin-card" style={{ padding: 16, border: "1px solid rgba(12,20,50,0.12)", borderRadius: 12 }}>
@@ -13764,8 +13857,8 @@ function AcademyCatalogue() {
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 16, flexWrap: "wrap" }}>
         <button className="btn btn-ghost btn-sm" onClick={addFaculty}>+ Add faculty</button>
         <div style={{ flex: 1 }}/>
-        {customised && <button className="btn btn-ghost btn-sm" onClick={reset} disabled={busy}>Reset to default</button>}
-        <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || !dirty}>{busy ? "Saving…" : dirty ? "Save catalogue" : "Saved"}</button>
+        {customised && canEdit && <button className="btn btn-ghost btn-sm" onClick={reset} disabled={busy}>{source === "club" ? "Copy Summer's catalogue" : "Reset to default"}</button>}
+        {canEdit && <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || !dirty}>{busy ? "Saving…" : dirty ? (source === "club" ? "Save Club courses" : "Save catalogue") : "Saved"}</button>}
       </div>
     </div>
   );
@@ -15156,6 +15249,7 @@ function AdminCentres() {
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 4, background: c.color, border: "1px solid rgba(0,0,0,0.1)", flex: "0 0 auto" }}/><b>{c.name}</b> <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-500)" }}>{c.code}</span></span>
                 {c.status === "retired" && <span className="chip status-archived" style={{ marginLeft: 8 }} title="Kept so existing records still resolve; no longer offered anywhere">retired</span>}
                 {c.status === "archived" && <span className="chip status-archived" style={{ marginLeft: 8 }}>archived</span>}
+                {centreProgrammes(c).length === 1 && <span className="chip" style={{ marginLeft: 8 }} title="Only this programme's forms and lists offer this centre">{centreProgrammes(c)[0] === "ngg" ? "NGG Club only" : "Summer only"}</span>}
                 {c.pageStatus === "published"
                   ? <a className="chip chip-lime" href={"/centres/" + (c.slug || "")} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8, textDecoration: "none" }}>page live ↗</a>
                   : <span className="chip" style={{ marginLeft: 8, opacity: 0.7 }}>page draft</span>}
@@ -15203,6 +15297,14 @@ function centreSlugify(s) {
     .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 } // (NFD + combining-mark strip mirrors iconv//TRANSLIT on the server)
 
+/* Which programmes run at a centre (centres.programmes). Blank means both —
+   every row before the column existed. Each programme's forms and lists offer
+   only its own centres. */
+const CENTRE_PROGRAMMES = [["ngg", "NGG Club", "members, the Club timetable and curriculum"], ["summer", "Summer School", "the Summer form, desks and groups"]];
+function centreProgrammes(c) {
+  const v = String((c && c.programmes) || "").split(",").map(x => x.trim()).filter(x => x === "ngg" || x === "summer");
+  return v.length ? CENTRE_PROGRAMMES.map(p => p[0]).filter(k => v.indexOf(k) !== -1) : ["ngg", "summer"];
+}
 function CentreDetailsEditor({ c, leadOptions, onSaved }) {
   const [f, setF] = React.useState({
     name: c.name || "", code: c.code || "", color: c.color || "#76B043",
@@ -15215,9 +15317,11 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
     heroImageUrl: c.heroImageUrl || "", heroImageMobileUrl: c.heroImageMobileUrl || "",
     heroPosition: c.heroPosition || "center bottom",
     story: c.story || "", gallery: Array.isArray(c.gallery) ? c.gallery : [],
+    programmes: centreProgrammes(c),
   });
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setF(s => ({ ...s, [k]: v }));
+  const toggleProg = (k) => set("programmes", f.programmes.indexOf(k) !== -1 ? f.programmes.filter(x => x !== k) : CENTRE_PROGRAMMES.map(p => p[0]).filter(x => x === k || f.programmes.indexOf(x) !== -1));
   const galleryAdd = () => set("gallery", [...(f.gallery || []), ""]);
   const gallerySet = (i, v) => set("gallery", (f.gallery || []).map((x, j) => (j === i ? v : x)));
   const galleryRemove = (i) => set("gallery", (f.gallery || []).filter((_, j) => j !== i));
@@ -15232,6 +15336,7 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
   const save = async () => {
     if (f.name.trim().length < 2) { toast.error("Centre name needs at least 2 characters."); return; }
     if (!f.code.trim()) { toast.error("Add a 1–4 letter code."); return; }
+    if (!f.programmes.length) { toast.error("Tick the NGG Club, Summer School, or both."); return; }
     setBusy(true);
     try {
       await NGGApi.admin.registration.centreUpsert({
@@ -15245,11 +15350,12 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
         heroImageUrl: f.heroImageUrl.trim(), heroImageMobileUrl: f.heroImageMobileUrl.trim(),
         heroPosition: f.heroPosition,
         story: f.story, gallery: (f.gallery || []).map(s => (s || "").trim()).filter(Boolean),
+        programmes: f.programmes,
       });
       invalidateCentreOptCache();
       toast.success("Centre saved."); onSaved();
     } catch (e) {
-      toast.error(e.code === "code_taken" ? "That code is already used." : e.code === "bad_email" ? "That email address isn't valid." : e.code === "bad_whatsapp" ? "The WhatsApp link must start with https://" : e.code === "bad_lead" ? "Pick a current volunteer as lead." : e.code === "bad_color" ? "Pick a valid colour." : e.code === "bad_image" ? "Image links must start with https://" : (e.code || e.message));
+      toast.error(e.code === "code_taken" ? "That code is already used." : e.code === "code_reserved" ? (e.detail || "That code is reserved.") : e.code === "programme_required" ? "Tick the NGG Club, Summer School, or both." : e.code === "bad_email" ? "That email address isn't valid." : e.code === "bad_whatsapp" ? "The WhatsApp link must start with https://" : e.code === "bad_lead" ? "Pick a current volunteer as lead." : e.code === "bad_color" ? "Pick a valid colour." : e.code === "bad_image" ? "Image links must start with https://" : (e.code || e.message));
     } finally { setBusy(false); }
   };
   const lbl = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--ink-600, #47506e)", marginBottom: 3 };
@@ -15270,6 +15376,12 @@ function CentreDetailsEditor({ c, leadOptions, onSaved }) {
           <div style={{ flex: "0 0 auto" }}><span style={lbl}>Status</span><select className="admin-select" value={f.status} onChange={e => set("status", e.target.value)}><option value="active">Active</option><option value="archived">Archived</option></select></div>
           <div style={{ flex: "0 0 auto" }}><span style={lbl}>Capacity</span><input className="admin-input" type="number" min="0" placeholder="0 = ∞" value={f.capacity} onChange={e => set("capacity", e.target.value)} style={{ width: 120 }}/></div>
         </div>
+        <fieldset className="centre-progs">
+          <legend>Programmes at this centre</legend>
+          {CENTRE_PROGRAMMES.map(([k, label, hint]) => (
+            <label key={k} className="centre-prog"><input type="checkbox" checked={f.programmes.indexOf(k) !== -1} onChange={() => toggleProg(k)}/> <b>{label}</b> <span className="admin-cell-sub">{hint}</span></label>
+          ))}
+        </fieldset>
       </div>
       <div>
         <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".12em", color: "var(--ink-500)", marginBottom: 8 }}>LOCATION &amp; LEAD</div>
