@@ -156,6 +156,72 @@ function session_issue_cardholder(array $person, string $kind, bool $remember = 
     return $token;
 }
 
+/* ── Family accounts ──────────────────────────────────────────────────────
+ *
+ * A parent's or guardian's session. It is a different PRINCIPAL from a member,
+ * so it gets a different cookie and a different signing key:
+ *
+ *   - its own cookie (`<cookie_name>_family`), so a parent who is also a member
+ *     or a member of staff can hold both on one browser, and no member route
+ *     ever sees a guardian — require_session() never reads this cookie;
+ *   - its own key derivation ("family|" + secret), so copying the value into
+ *     the member cookie fails the signature instead of arriving as a session
+ *     with an empty memberId.
+ *
+ * The cookie carries the guardian's `sessionEpoch`; require_family() checks it
+ * against the row on every request, so "sign out everywhere" and a staff
+ * suspension end every copy at once without a device register.
+ */
+function family_cookie_name(): string { return (string)($GLOBALS['CONFIG']['cookie_name'] ?? 'ngg_sess') . '_family'; }
+function family_cookie_key(): string { return 'family|' . (string)($GLOBALS['CONFIG']['cookie_secret'] ?? ''); }
+
+function session_issue_family(array $guardian, bool $remember = false): string {
+    global $CONFIG;
+    $now = time();
+    $exp = $now + ($remember ? SESSION_REMEMBER_TTL : max(3600, (int)($CONFIG['session_ttl'] ?? 86400)));
+    $payload = ['k' => 'family', 'gid' => (string)$guardian['guardianId'], 'ep' => (int)($guardian['sessionEpoch'] ?? 1), 'iat' => $now, 'exp' => $exp];
+    $body = b64url(json_encode($payload, JSON_UNESCAPED_SLASHES));
+    $token = $body . '.' . b64url(hash_hmac('sha256', $body, family_cookie_key(), true));
+    setcookie(family_cookie_name(), $token, [
+        'expires' => $exp, 'path' => '/', 'domain' => $CONFIG['cookie_domain'] ?: '',
+        'secure' => (bool)$CONFIG['cookie_secure'], 'httponly' => true, 'samesite' => $CONFIG['cookie_samesite'],
+    ]);
+    return $token;
+}
+
+function family_session_clear(): void {
+    global $CONFIG;
+    setcookie(family_cookie_name(), '', ['expires' => time() - 3600, 'path' => '/', 'domain' => $CONFIG['cookie_domain'] ?: '',
+        'secure' => (bool)$CONFIG['cookie_secure'], 'httponly' => true, 'samesite' => $CONFIG['cookie_samesite']]);
+}
+
+/** The signed payload, or null. Signature and expiry only — require_family() asks the database. */
+function family_session_read(?string $raw = null): ?array {
+    $raw = $raw ?? (string)($_COOKIE[family_cookie_name()] ?? '');
+    $dot = strpos($raw, '.');
+    if ($raw === '' || $dot === false) return null;
+    $body = substr($raw, 0, $dot);
+    if (!hash_equals(b64url(hash_hmac('sha256', $body, family_cookie_key(), true)), substr($raw, $dot + 1))) return null;
+    $p = json_decode(b64url_decode($body), true);
+    if (!is_array($p) || ($p['k'] ?? '') !== 'family' || (int)($p['exp'] ?? 0) < time() || (string)($p['gid'] ?? '') === '') return null;
+    return $p;
+}
+
+/** A live guardian session, or a 401. Returns ['gid' => …, 'guardian' => row]. */
+function require_family(): array {
+    $p = family_session_read();
+    if (!$p) json_error('unauthorized', 401);
+    $g = db_row('SELECT * FROM guardians WHERE guardianId = ? LIMIT 1', [(string)$p['gid']]);
+    if (!$g || (string)$g['status'] !== 'active' || (int)$g['sessionEpoch'] !== (int)$p['ep']) {
+        family_session_clear();
+        json_error('unauthorized', 401);
+    }
+    if (time() - (strtotime((string)($g['lastSeenAt'] ?? '')) ?: 0) > 300) {
+        try { db_update('guardians', ['lastSeenAt' => now_iso()], ['id' => (int)$g['id']]); } catch (Throwable $e) {}
+    }
+    return ['gid' => (string)$g['guardianId'], 'guardian' => $g];
+}
+
 function session_clear(): void {
     global $CONFIG;
     setcookie($CONFIG['cookie_name'], '', [

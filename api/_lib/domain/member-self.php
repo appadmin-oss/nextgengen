@@ -79,6 +79,7 @@ function member_request_public(array $r): array
         'decision'  => (string)($r['decision'] ?? ''),
         'decidedAt' => (string)($r['decidedAt'] ?? ''),
         'createdAt' => (string)($r['createdAt'] ?? ''),
+        'byFamily'  => (string)($r['raisedBy'] ?? '') !== '',
     ];
 }
 
@@ -240,7 +241,7 @@ function member_requests_list(array $p): array
 function member_request_create(array $p): array
 {
     $id = (string)($p['memberId'] ?? '');
-    $m = db_row('SELECT memberId, fullName FROM members WHERE memberId = ? LIMIT 1', [$id]);
+    $m = db_row('SELECT memberId, fullName, centre FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
 
     $kind = (string)($p['kind'] ?? '');
@@ -263,6 +264,9 @@ function member_request_create(array $p): array
         'fromDate' => '', 'toDate' => '', 'refEntryId' => '',
         'decision' => '', 'decidedBy' => '', 'decidedAt' => '', 'ledgerEntryId' => '',
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
+        /* Set only by family_request_create() — the member route passes an
+           explicit field list, so a member cannot claim a parent raised it. */
+        'raisedBy' => preg_match('/^guardian:GDN-[A-F0-9]{10}$/', (string)($p['raisedBy'] ?? '')) ? (string)$p['raisedBy'] : '',
     ];
 
     if ($kind === 'payment') {
@@ -305,7 +309,9 @@ function member_request_create(array $p): array
     $centre = (string)($m['centre'] ?? '');
     notify_people(staff_with_cap('people', [$id], static fn($s) => admin_centre_allowed($s, $centre)), [
         'kind' => 'approval', 'title' => 'A member request is waiting: ' . (MEMBER_REQUEST_KINDS[$kind] ?? 'Request'),
-        'intro' => (string)$m['fullName'] . ' raised a request.',
+        'intro' => $row['raisedBy'] !== ''
+            ? (string)($p['raisedByName'] ?? 'A parent') . ' raised a request for ' . (string)$m['fullName'] . ' from their family account.'
+            : (string)$m['fullName'] . ' raised a request.',
         'body' => $row['subject'] . ($row['body'] !== '' ? "\n\n" . mb_substr((string)$row['body'], 0, 400) : '') . "\n\nDecide it in Control Room → People → Member requests.",
         'linkPage' => 'admin', 'ctaPath' => '/nextadmin?s=requests', 'ctaLabel' => 'Review it →']);
     if (function_exists('event_emit')) {
@@ -347,7 +353,16 @@ function admin_requests_list(array $p): array
     $rows = array_map(fn($r) => member_request_public($r) + [
         'fullName' => (string)($r['fullName'] ?? ''), 'displayId' => (string)($r['displayId'] ?? ''),
         'centre' => (string)($r['centre'] ?? ''), 'decidedBy' => (string)($r['decidedBy'] ?? ''),
-    ], db_all($sql, $args));
+    ], $raw = db_all($sql, $args));
+    /* Who raised it, when a parent did — one lookup for the page, not one per row. */
+    $gids = array_values(array_unique(array_filter(array_map(static fn($r) => str_starts_with((string)($r['raisedBy'] ?? ''), 'guardian:') ? substr((string)$r['raisedBy'], 9) : '', $raw))));
+    if ($gids) {
+        $names = [];
+        foreach (db_all('SELECT guardianId, fullName, email FROM guardians WHERE guardianId IN (' . implode(',', array_fill(0, count($gids), '?')) . ')', $gids) as $gr) {
+            $names['guardian:' . $gr['guardianId']] = trim((string)$gr['fullName']) !== '' ? (string)$gr['fullName'] : (string)$gr['email'];
+        }
+        foreach ($rows as $i => $row) $rows[$i]['raisedByName'] = $names[(string)($raw[$i]['raisedBy'] ?? '')] ?? '';
+    }
     $tally = [];
     foreach (db_all("SELECT kind, COUNT(*) c FROM member_requests WHERE status = 'open' GROUP BY kind") as $t) {
         $tally[(string)$t['kind']] = (int)$t['c'];
@@ -417,6 +432,15 @@ function admin_request_decide(array $p): array
         'intro' => 'Your request “' . (string)$r['subject'] . '” has been ' . ($approve ? 'approved.' : 'declined.'),
         'body' => $reason !== '' ? $reason : ($approve ? 'Your request has been approved.' : 'Your request was declined.'),
         'linkPage' => 'dashboard', 'ctaPath' => '/dashboard/requests', 'ctaLabel' => 'See your requests →']);
+    /* …and so is the parent who raised it, at the address they signed in with. */
+    if (str_starts_with((string)($r['raisedBy'] ?? ''), 'guardian:') && function_exists('family_mail')) {
+        $gr = db_row('SELECT email FROM guardians WHERE guardianId = ? AND status = ? LIMIT 1', [substr((string)$r['raisedBy'], 9), 'active']);
+        if ($gr) family_mail((string)$gr['email'], (MEMBER_REQUEST_KINDS[(string)$r['kind']] ?? 'Request') . ' — ' . ($approve ? 'approved' : 'declined'), [
+            'title' => 'Your request was ' . ($approve ? 'approved' : 'declined'),
+            'intro' => '“' . (string)$r['subject'] . '” for ' . (string)($mm['fullName'] ?? 'your ward') . ' has been ' . ($approve ? 'approved.' : 'declined.'),
+            'bodyHtml' => $reason !== '' ? '<p style="margin:0 0 10px">' . nl2br(esc_html($reason)) . '</p>' : '',
+            'ctaLabel' => 'Open the family account →', 'ctaUrl' => family_origin() . '/family']);
+    }
     $after = db_row('SELECT * FROM member_requests WHERE id = ? LIMIT 1', [(int)$r['id']]);
     return ['ok' => true, 'request' => member_request_public($after ?: [])];
 }

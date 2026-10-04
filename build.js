@@ -53,6 +53,7 @@ const ORDER = [
   'page-centres.jsx',
   'page-blog.jsx',
   'page-dashboard.jsx',
+  'page-family.jsx',
   'page-book.jsx',
   'page-analytics.jsx',
   'page-designer.jsx',

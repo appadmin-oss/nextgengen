@@ -78,6 +78,9 @@ const ROUTES = [
   { id: "summer-admin", title: "Summer School · Staff Portal · NGG",       desc: "", chrome: "own", index: false },
   { id: "club-admin",   title: "NGG Club · Staff Portal · NGG",            desc: "", chrome: "own", index: false },
   { id: "mentor",       title: "Mentor Portal · NGG",                      desc: "", chrome: "own", index: false },
+  /* A parent's own account: their own sign-in (not a member session), every
+     child they look after on one screen. Noindexed — it is a signed-in page. */
+  { id: "family",       title: "Family account · NGG",                     desc: "For parents and guardians: attendance, conduct, fees and lesson progress for each child, and a way to tell the centre.", chrome: "own", index: false },
   { id: "circle",       title: "Anchor Circle · Guardian & Mentor Portal", desc: "Support your child's twelve-week Anchor journey — confirm conduct, encourage, and track growth without reading their private words.", chrome: "own", index: false },
   { id: "gate",         title: "Check-in desk · NGG",                      desc: "", chrome: "own", index: false },
   { id: "enrol",        title: "Registration desk · Summer School · NGG",   desc: "", chrome: "own", index: false },
@@ -375,6 +378,7 @@ function App() {
     "summer-admin": <SummerAdminPortal setPage={setPage}/>,
     "club-admin":   <ClubAdminPortal   setPage={setPage}/>,
     circle:     <CirclePortal   setPage={setPage}/>,
+    family:     <FamilyPage     setPage={setPage}/>,
     mentor:     <MentorPortal/>,
     apply:      <SelfRegisterPage/>,
     review:     <ReviewDeskPage/>,

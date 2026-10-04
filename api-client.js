@@ -85,8 +85,10 @@
          screen discovering it separately is why it surfaced as a raw code in a
          red toast beside a half-filled form. Announce it once; the auth layer
          decides what the user sees. Sign-in endpoints are exempt — a failed
-         sign-in attempt is a 401 too, and it must not look like an expiry. */
-      if (res.status === 401 && !/\/auth\/(login|verify|request|gateway|reset)/.test(path)) {
+         sign-in attempt is a 401 too, and it must not look like an expiry.
+         A family-account 401 is a different principal's cookie entirely and
+         says nothing about the member session. */
+      if (res.status === 401 && !/\/auth\/(login|verify|request|gateway|reset)/.test(path) && !/^\/family\//.test(path)) {
         try { window.dispatchEvent(new CustomEvent('ngg:session-expired', { detail: { code: data.error || '' } })); } catch (_) {}
       }
       err.detail = data.detail;
@@ -904,6 +906,15 @@
         cohort:    (tokens) => request('/public/circle.php', { body: { action: 'cohort', tokens } }),
       },
     },
+    /* Family accounts — a parent's own sign-in (its own cookie; never a member session). */
+    family: {
+      me:       () => request('/family/me.php'),
+      request:  (email) => request('/family/request.php', { body: { email } }),
+      verify:   (data) => request('/family/verify.php', { body: data }),
+      logout:   (everywhere) => request('/family/logout.php', { body: { everywhere: !!everywhere } }),
+      ward:     (linkId) => request('/family/ward.php' + qs({ link: linkId })),
+      act:      (action, data) => request('/family/account.php', { body: Object.assign({ action }, data || {}) }),
+    },
     admin: {
       members: {
         list:   (q) => request('/admin/members.php' + qs(q || {})),
@@ -969,6 +980,10 @@
         setCaps: (memberId, caps, centreScope) => request('/admin/members.php', { body: Object.assign({ action: 'setCaps', memberId, caps }, centreScope !== undefined ? { centreScope } : {}) }),
         impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),
         stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),
+      },
+      families: {
+        list:   (q) => request('/admin/families.php' + qs(q || {})),
+        decide: (action, linkIds, note) => request('/admin/families.php', { body: { action, linkIds, note: note || '' } }),
       },
       requests: {
         list:   (q) => request('/admin/requests.php' + qs(q || {})),

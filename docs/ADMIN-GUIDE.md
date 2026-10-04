@@ -687,6 +687,43 @@ notification **and** an email with a link straight to the right screen:
 | It is approved or sent back | the instructor — with the reason |
 | A member raises a request (payment, appeal, leave, ID card) | staff with `people` whose centre scope includes the member |
 | The request is decided | the member — by email as well as in the app |
+| A parent asks to connect through the record's parent email | staff with `people` whose centre scope includes the child |
+| A request a parent raised is decided | the member, **and** the parent at their family-account address |
+
+### Family accounts — parents and guardians
+
+**Control Room → People → Families.** Needs `people`; a centre-scoped admin
+sees and decides only their own centres' children.
+
+Parents sign in at **/family** with their own email — a six-digit code, no
+password. It is a separate account, not a member account: it cannot open
+any member page, and nothing in it can reach the Control Room. On it they see,
+for each child: today's sign-in (late, and by how much), attendance this term,
+conduct and fines, fees due, lesson progress and the weekly check-in. They
+**never** see the child's journal, reflections, coach chats or messages.
+
+A parent connects to a child in one of two ways:
+
+- **The child's Anchor code + a part of their name** (the code on the child's
+  *You → Your Circle* screen). This connects at once — the child gave the code.
+- **"Records with your email"** — NGG records whose *parent email* is the
+  parent's sign-in address. This only **asks**: it waits in *Families* until
+  someone approves it. Holding an inbox is not proof of being the parent, so
+  approve only when you know the family.
+
+Either way the child is told (in the app and by email), and the connection is
+listed on their own Circle screen. A child cannot remove it themselves —
+**Disconnect…** here does, at once, and the parent is emailed your reason.
+Refusing a request also needs a reason.
+
+From the family account a parent can tell the centre a child will be away,
+appeal a charge, or ask for a replacement card. These arrive in **Member
+requests** marked *From their family account*, and your reply is emailed to
+the parent as well as the member. A parent cannot claim a payment — an
+offline payment needs a verified receipt, which is the member's path.
+
+Parents choose per child which emails they get: every sign-in and sign-out,
+the Monday weekly summary, and an alert when a fine is issued.
 
 ---
 

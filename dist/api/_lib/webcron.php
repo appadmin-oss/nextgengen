@@ -264,6 +264,12 @@ function web_cron_reminders(): void {
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'companion', $e->getMessage()); }
     }
 
+    /* The family week — one mail per guardian per week, claimed before it is sent. */
+    if (function_exists('family_weekly_run')) {
+        try { family_weekly_run(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'family.weekly', $e->getMessage()); }
+    }
+
     /* The Monday quote mail — once per member per week, drained in batches. */
     if (function_exists('qotw_mail_run')) {
         try { qotw_mail_run(); }

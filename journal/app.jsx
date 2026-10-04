@@ -1671,7 +1671,7 @@ function You({ ctx }) {
   const on = (k) => prefs[k] !== false;
   // LINKED comes from real circle_links (or the mentorship engine for the
   // mentor row); anything not yet linked reads PENDING for NGG members.
-  const linked = (cd && cd.circle) || {};
+  const linked = Object.assign({}, (cd && cd.circle) || {}, cd && (cd.family || []).length ? { parent: true } : {});
   const tag = (isLinked) => !isNGG ? "locked" : isLinked ? "linked" : "pending";
   const circle = [
     { role: "Home · Parent", sub: "Confirms daily order", icon: "ph-house", tint: "rgba(var(--a-rgb),.16)", ic: "var(--a)", tag: tag(linked.parent) },
@@ -1701,7 +1701,7 @@ function You({ ctx }) {
             <div className="aj-code mono" aria-label={cd && cd.code ? "Your invite code is " + cd.code.split("").join(" ") : "Loading your invite code"}>
               {cd && cd.code ? cd.code.slice(0, 3) + " " + cd.code.slice(3) : "··· ···"}
             </div>
-            <p className="muted" style={{ fontSize: 12, lineHeight: 1.5, margin: 0 }}>Read this to a parent, teacher or mentor. They enter it at <b style={{ color: "var(--tx-70)" }}>the Anchor Circle portal</b> (/circle on the NGG site) — read-only, consent-based, and you can unlink anyone at any time.</p>
+            <p className="muted" style={{ fontSize: 12, lineHeight: 1.5, margin: 0 }}>Read this to a parent, teacher or mentor. They enter it at <b style={{ color: "var(--tx-70)" }}>the Anchor Circle portal</b> (/circle on the NGG site), or a parent adds you to their family account at /family — read-only, consent-based, and you can unlink anyone at any time.</p>
             <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
               <button className="aj-code-btn" onClick={copyCode} disabled={!cd || !cd.code}><i className="ph-bold ph-copy"/> Copy</button>
               <button className="aj-code-btn" onClick={rotateCode} disabled={codeBusy || !cd}><i className="ph-bold ph-arrows-clockwise"/> {codeBusy ? "…" : "New code"}</button>
@@ -1729,6 +1729,25 @@ function You({ ctx }) {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Family accounts can't be unlinked from here — a parent's oversight of
+            a child is the Club desk's to end — but they are never invisible. */}
+        {cd && (cd.family || []).length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>FAMILY ACCOUNTS</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {cd.family.map((f, i) => (
+                <div className="aj-circle-row" key={i} style={{ padding: "11px 14px" }}>
+                  <div className="aj-circle-t">
+                    <b style={{ fontSize: 14 }}>{f.name}</b>
+                    <small>{String(f.relationship || "").toUpperCase()} · since {f.since ? fmtDayMonth(f.since) : "—"}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="muted" style={{ fontSize: 12, lineHeight: 1.5, marginTop: 8 }}>They can see your attendance, conduct, fees, lesson progress and weekly check-in — never your journal. Don't recognise someone? Tell the Club desk.</p>
           </div>
         )}
 

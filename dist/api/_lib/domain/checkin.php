@@ -159,9 +159,13 @@ function checkin_member_checkout(array $p, array $hit): array {
  * (`checkin_state_emails`). Never blocks the desk: send_mail never throws.
  */
 function checkin_member_email(array $m, string $dir, int $at, array $facts = []): void {
-    if (!checkin_emails_enabled()) return;
+    /* The record's own addresses follow the programme switch. A guardian who
+       turned sign-in mails on in their family account asked for them, so
+       those go regardless of it. */
+    $family = function_exists('family_guardian_emails') ? family_guardian_emails((string)($m['memberId'] ?? ''), 'checkin') : [];
+    if (!checkin_emails_enabled() && !$family) return;
     $to = [];
-    foreach ([(string)($m['email'] ?? ''), (string)($m['parentEmail'] ?? '')] as $e) {
+    foreach (array_merge(checkin_emails_enabled() ? [(string)($m['email'] ?? ''), (string)($m['parentEmail'] ?? '')] : [], $family) as $e) {
         $e = strtolower(trim($e));
         if ($e !== '' && filter_var($e, FILTER_VALIDATE_EMAIL) && !in_array($e, $to, true)) $to[] = $e;
     }

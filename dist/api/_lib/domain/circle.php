@@ -154,6 +154,7 @@ function member_circle(array $p): array {
     // Circle summary for the "Your Circle" rows (home/school/mentor linked?).
     $has = fn($role) => (bool)db_row("SELECT id FROM circle_links WHERE memberId = ? AND role = ? AND status = 'active' LIMIT 1", [$mid, $role]);
     return ['ok' => true, 'code' => $code, 'links' => $links, 'remarks' => $remarks,
+        'family' => function_exists('family_links_for_member') ? family_links_for_member($mid) : [],
         'circle' => ['parent' => $has('parent'), 'teacher' => $has('teacher'), 'mentor' => $has('mentor')]];
 }
 

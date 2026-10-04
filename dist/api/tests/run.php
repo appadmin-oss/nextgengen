@@ -23448,5 +23448,139 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-NT-%'");
 })();
 
+/* ── Family accounts: a guardian's own sign-in, their wards, the desk's approval ── */
+(function () {
+    $now = now_iso();
+    $mk = fn($id, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Fa ' . $id, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-FA-KID', ['fullName' => 'Tobi Adeyemi', 'parentEmail' => 'Mum@Example.com', 'anchorCode' => '482913']);
+    $mk('NGG-FA-SIB', ['fullName' => 'Kemi Adeyemi', 'parentEmail' => 'mum@example.com']);
+    $mk('NGG-FA-OTHER', ['fullName' => 'Zara Bello', 'parentEmail' => 'someone@example.com']);
+    $mk('SUM-FA-1', ['fullName' => 'Ola Summer', 'type' => 'Summer', 'parentEmail' => 'mum@example.com']);
+    $mk('NGG-FA-ADM', ['role' => 'admin']);
+    $mk('NGG-FA-SCOPED', ['role' => 'admin', 'centreScope' => json_encode(['Ikeja'])]);
+    $mailTo = fn($addr) => array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === $addr));
+    $inbox = fn($id) => array_column(db_all('SELECT title FROM notifications WHERE memberId = ? ORDER BY id', [$id]), 'title');
+
+    // Sign-in: a code by email, the same answer for an address nobody has used.
+    $GLOBALS['__mail_sink'] = [];
+    $r = backend_dispatch('family.request', ['email' => 'Mum@Example.com']);
+    $ch = db_row("SELECT * FROM auth_sessions WHERE purpose = 'family_login' AND email = 'mum@example.com' ORDER BY id DESC LIMIT 1");
+    chk('family: a sign-in request mails a code to the address, lower-cased', !empty($r['ok']) && $ch && count($mailTo('mum@example.com')) === 1
+        && strpos($mailTo('mum@example.com')[0]['html'], '/family?fsignin=') !== false);
+    chk('family: …and a bad address is refused before anything is sent', (backend_dispatch('family.request', ['email' => 'not-an-email'])['error'] ?? '') === 'bad_email');
+    $bad = backend_dispatch('family.verify', ['email' => 'mum@example.com', 'otp' => $ch['otp'] === '000000' ? '111111' : '000000']);
+    chk('family: a wrong code is refused', ($bad['error'] ?? '') === 'invalid');
+    $v = backend_dispatch('family.verify', ['email' => 'mum@example.com', 'otp' => $ch['otp']]);
+    $gid = (string)($v['guardian']['guardianId'] ?? '');
+    chk('family: the right code creates the family account on first sign-in', !empty($v['ok']) && preg_match('/^GDN-[A-F0-9]{10}$/', $gid) === 1);
+    chk('family: …and a code works once', (backend_dispatch('family.verify', ['email' => 'mum@example.com', 'otp' => $ch['otp']])['error'] ?? '') === 'invalid');
+    backend_dispatch('family.request', ['email' => 'mum@example.com']);
+    $ch2 = db_row("SELECT * FROM auth_sessions WHERE purpose = 'family_login' AND email = 'mum@example.com' ORDER BY id DESC LIMIT 1");
+    for ($i = 0; $i < 5; $i++) backend_dispatch('family.verify', ['email' => 'mum@example.com', 'otp' => $ch2['otp'] === '999999' ? '888888' : '999999']);
+    chk('family: five wrong guesses spend the code, even the right one after them', (backend_dispatch('family.verify', ['email' => 'mum@example.com', 'otp' => $ch2['otp']])['error'] ?? '') === 'too_many_attempts');
+    $v2 = backend_dispatch('family.verify', ['token' => db_row("SELECT token FROM auth_sessions WHERE purpose = 'family_login' AND email = 'mum@example.com' ORDER BY id DESC LIMIT 1")['token']]);
+    chk('family: a member\'s sign-in token is not a family one', (backend_dispatch('family.verify', ['token' => 'deadbeef'])['error'] ?? '') === 'invalid');
+    chk('family: signing in again finds the same account, not a second one', ($v2['error'] ?? '') === 'already_used' || ($v2['guardian']['guardianId'] ?? '') === $gid);
+    chk('family: one account per address', (int)db_row("SELECT COUNT(*) c FROM guardians WHERE email = 'mum@example.com'")['c'] === 1);
+
+    // Records naming this address are suggested, NGG only, first name only.
+    $me = backend_dispatch('family.me', ['guardianId' => $gid]);
+    $sugg = array_column($me['suggestions'] ?? [], 'memberId');
+    chk('family: the NGG records naming this address are suggested — not Summer, not anyone else\'s', $sugg && !array_diff($sugg, ['NGG-FA-KID', 'NGG-FA-SIB']) && count($sugg) === 2);
+    chk('family: …by first name, not the whole record', ($me['suggestions'][0]['firstName'] ?? '') !== '' && !isset($me['suggestions'][0]['fullName']));
+
+    // A record match only ASKS; the desk at the child's centre decides.
+    $GLOBALS['__mail_sink'] = [];
+    $ask = backend_dispatch('family.ward.add', ['guardianId' => $gid, 'method' => 'record', 'memberId' => 'NGG-FA-SIB', 'relationship' => 'parent']);
+    chk('family: asking through the record makes a pending link, not an active one', ($ask['link']['status'] ?? '') === 'pending');
+    chk('family: …and the desk is told, in the app and by email', (bool)array_filter($inbox('NGG-FA-ADM'), fn($t) => strpos($t, 'A family account is asking to connect') === 0)
+        && count($mailTo('ngg-fa-adm@example.com')) === 1 && !$inbox('NGG-FA-SCOPED'));
+    chk('family: a record that does not name this address cannot be asked for', (backend_dispatch('family.ward.add', ['guardianId' => $gid, 'method' => 'record', 'memberId' => 'NGG-FA-OTHER'])['error'] ?? '') === 'not_found');
+    chk('family: a pending ward is not readable', (backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $ask['link']['linkId']])['error'] ?? '') === 'not_found');
+
+    // The child's code + name links at once, and the child is told.
+    $GLOBALS['__mail_sink'] = [];
+    chk('family: a code with the wrong name links nothing', (backend_dispatch('family.ward.add', ['guardianId' => $gid, 'code' => '482913', 'name' => 'Bello'])['error'] ?? '') === 'not_found');
+    $add = backend_dispatch('family.ward.add', ['guardianId' => $gid, 'code' => '482913', 'name' => 'tobi', 'relationship' => 'parent']);
+    $lid = (string)($add['link']['linkId'] ?? '');
+    chk('family: the child\'s code + name links at once', ($add['link']['status'] ?? '') === 'active');
+    chk('family: …and the child is told someone is now connected', (bool)array_filter($inbox('NGG-FA-KID'), fn($t) => $t === 'A family account is connected to you'));
+    chk('family: …which they can see on their own Circle screen', count(backend_dispatch('member.circle', ['requesterId' => 'NGG-FA-KID'])['family'] ?? []) === 1);
+    chk('family: linking the same child twice is refused', (backend_dispatch('family.ward.add', ['guardianId' => $gid, 'code' => '482913', 'name' => 'Tobi'])['error'] ?? '') === 'already_linked');
+
+    // The dashboard: what the member's own screen reads, and nothing private.
+    db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-FA-KID', 'date' => attendance_today(), 'checkInAt' => attendance_today() . 'T09:12:00Z', 'checkOutAt' => '', 'status' => 'late', 'lateMinutes' => 12, 'method' => 'test', 'createdAt' => $now]);
+    $w = backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid]);
+    chk('family: the ward\'s dashboard shows today, late and by how much', !empty($w['ok']) && $w['today']['in'] === '09:12' && $w['today']['status'] === 'late' && $w['today']['lateMinutes'] === 12);
+    chk('family: …with attendance, conduct, fees and learning sections', isset($w['attendance'], $w['conduct'], $w['fees'], $w['learning']) && $w['member']['fullName'] === 'Tobi Adeyemi');
+    $flat = json_encode($w);
+    chk('family: …and no journal, notes, email or Anchor code in it', strpos($flat, '482913') === false && strpos($flat, 'ngg-fa-kid@example.com') === false && !isset($w['journal']) && !isset($w['notes']));
+    chk('family: another guardian cannot read the ward through this link', (backend_dispatch('family.ward', ['guardianId' => 'GDN-0000000000', 'linkId' => $lid])['error'] ?? '') === 'not_found');
+
+    // A notice to the desk is a member request, marked as the parent's.
+    $GLOBALS['__mail_sink'] = [];
+    $rq = backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'leave', 'fromDate' => '2026-11-07', 'toDate' => '2026-11-07', 'body' => 'Family wedding']);
+    chk('family: a parent\'s absence notice lands in the desk\'s request queue', !empty($rq['ok']) && ($rq['request']['byFamily'] ?? false) === true
+        && (bool)array_filter($inbox('NGG-FA-ADM'), fn($t) => strpos($t, 'A member request is waiting') === 0));
+    chk('family: a parent cannot raise a payment claim', (backend_dispatch('family.request.create', ['guardianId' => $gid, 'linkId' => $lid, 'kind' => 'payment', 'amount' => 5000])['error'] ?? '') === 'unknown_kind');
+    $list = backend_dispatch('admin.requests.list', ['requesterId' => 'NGG-FA-ADM', 'status' => 'open']);
+    $row = array_values(array_filter($list['requests'] ?? [], fn($x) => $x['requestId'] === $rq['request']['requestId']))[0] ?? [];
+    chk('family: …and the desk sees who raised it', ($row['raisedByName'] ?? '') === 'mum@example.com');
+    $GLOBALS['__mail_sink'] = [];
+    backend_dispatch('admin.requests.decide', ['requesterId' => 'NGG-FA-ADM', 'requestId' => $rq['request']['requestId'], 'approve' => true, 'decision' => 'Enjoy the day']);
+    chk('family: the parent hears the decision at the address they signed in with', count($mailTo('mum@example.com')) === 1 && strpos($mailTo('mum@example.com')[0]['html'], 'Enjoy the day') !== false);
+    chk('family: a member cannot pass themselves off as a parent', empty(backend_dispatch('member.request.create', ['memberId' => 'NGG-FA-KID', 'kind' => 'idcard', 'raisedBy' => 'guardian:NOT-A-REAL-ONE'])['request']['byFamily']));
+
+    // Notification choices drive the mails.
+    $GLOBALS['__mail_sink'] = [];
+    $kid = db_row("SELECT * FROM members WHERE memberId = 'NGG-FA-KID'");
+    $prev = setting_raw('checkin_emails');
+    checkin_member_email($kid, 'in', time(), ['status' => 'present']);
+    $base = count($mailTo('mum@example.com'));
+    backend_dispatch('family.ward.notify', ['guardianId' => $gid, 'linkId' => $lid, 'notify' => ['checkin' => true]]);
+    $GLOBALS['__mail_sink'] = [];
+    checkin_member_email($kid, 'in', time(), ['status' => 'present']);
+    chk('family: switching sign-in mails on sends them to the guardian once — not twice when they are also the record\'s parent', count($mailTo('mum@example.com')) === 1);
+    $GLOBALS['__mail_sink'] = [];
+    policy_issue('NGG-FA-KID', 'member', 'fine', 9, ['amount' => 500, 'reason' => 'Late three times']);
+    chk('family: a fine reaches a guardian with alerts on', count($mailTo('mum@example.com')) === 1 && strpos($mailTo('mum@example.com')[0]['html'], 'Late three times') !== false);
+
+    // The weekly mail: once per family per week, whatever the tick count.
+    $GLOBALS['__mail_sink'] = [];
+    $a = family_weekly_run(attendance_today()); $b = family_weekly_run(attendance_today());
+    chk('family: the weekly mail goes once per family per week', $a['sent'] >= 1 && $b['sent'] === 0 && count($mailTo('mum@example.com')) === 1);
+
+    // The desk: scope per row, a reason to refuse, one audit event per run.
+    chk('family: a scoped admin cannot approve outside their centres', (backend_dispatch('admin.families.decide', ['requesterId' => 'NGG-FA-SCOPED', 'action' => 'approve', 'linkIds' => [$ask['link']['linkId']]])['results'][0]['error'] ?? '') === 'out_of_scope');
+    chk('family: refusing needs a reason', (backend_dispatch('admin.families.decide', ['requesterId' => 'NGG-FA-ADM', 'action' => 'refuse', 'linkIds' => [$ask['link']['linkId']]])['error'] ?? '') === 'need_reason');
+    $GLOBALS['__mail_sink'] = [];
+    $audits = (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'family.links.approve'")['c'];
+    $d = backend_dispatch('admin.families.decide', ['requesterId' => 'NGG-FA-ADM', 'action' => 'approve', 'linkIds' => [$ask['link']['linkId'], 'GW-NOPE']]);
+    chk('family: approving reports per row — one done, one not found', ($d['done'] ?? 0) === 1 && ($d['results'][1]['error'] ?? '') === 'not_found');
+    chk('family: …the parent is told, and the ward becomes readable', count($mailTo('mum@example.com')) === 1 && !empty(backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $ask['link']['linkId']])['ok']));
+    chk('family: …one audit event for the run', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'family.links.approve'")['c'] === $audits + 1);
+    chk('family: approving it again is reported as unchanged', (backend_dispatch('admin.families.decide', ['requesterId' => 'NGG-FA-ADM', 'action' => 'approve', 'linkIds' => [$ask['link']['linkId']]])['results'][0]['error'] ?? '') === 'unchanged');
+    $lst = backend_dispatch('admin.families.list', ['requesterId' => 'NGG-FA-SCOPED', 'status' => 'active']);
+    chk('family: a scoped admin\'s list shows only their centres', ($lst['rows'] ?? null) === [] && !empty($lst['scoped']));
+    backend_dispatch('admin.families.decide', ['requesterId' => 'NGG-FA-ADM', 'action' => 'revoke', 'linkIds' => [$lid], 'note' => 'At the family\'s request']);
+    chk('family: a revoked link stops the dashboard at once', (backend_dispatch('family.ward', ['guardianId' => $gid, 'linkId' => $lid])['error'] ?? '') === 'not_found');
+
+    // Sign out everywhere bumps the epoch the cookie carries.
+    $ep = (int)db_row('SELECT sessionEpoch e FROM guardians WHERE guardianId = ?', [$gid])['e'];
+    backend_dispatch('family.signout_all', ['guardianId' => $gid]);
+    chk('family: signing out everywhere moves the session epoch', (int)db_row('SELECT sessionEpoch e FROM guardians WHERE guardianId = ?', [$gid])['e'] === $ep + 1);
+
+    unset($GLOBALS['__mail_sink']);
+    db_exec("DELETE FROM notifications WHERE memberId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM member_requests WHERE memberId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM sanctions WHERE personId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM attendance WHERE studentId LIKE 'NGG-FA-%'");
+    db_exec("DELETE FROM guardian_wards WHERE guardianId = ?", [$gid]);
+    db_exec("DELETE FROM guardians WHERE guardianId = ?", [$gid]);
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-FA-%' OR memberId = 'SUM-FA-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

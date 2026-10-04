@@ -29,6 +29,9 @@ function rate_limit_default(string $op): ?array {
         'auth.gateway'       => ['max' => 30, 'window' => 60],    // identifier lookup only; sends nothing
         'auth.request'       => ['max' => 5,  'window' => 60],    // EMAILS a sign-in code — mail-amplification
         'auth.verify'        => ['max' => 10, 'window' => 60],    // password / OTP / TOTP checks
+        'family.request'     => ['max' => 5,  'window' => 60],    // EMAILS a sign-in code, like auth.request
+        'family.verify'      => ['max' => 10, 'window' => 60],
+        'family.write'       => ['max' => 30, 'window' => 60],
         'gate.unlock'        => ['max' => 8,  'window' => 300],   // kiosk desk password
         'circle.lookup'      => ['max' => 6,  'window' => 300],   // 6-digit code → a child's name
         'circle.connect'     => ['max' => 5,  'window' => 600],   // consumes a code; tighter still

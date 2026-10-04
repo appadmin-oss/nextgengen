@@ -297,6 +297,7 @@ function member_merge_policy(): array {
         'assignment_submissions' => 'MOVE',
         'mentor_assignments'     => 'MOVE',
         'circle_links'           => 'MOVE',
+        'guardian_wards'         => 'MOVE',           // a parent's link follows the child
         'circle_confirmations'   => 'MOVE',
         'circle_remarks'         => 'MOVE',
         'post_comments'          => 'MOVE',

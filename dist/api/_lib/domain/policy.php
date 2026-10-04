@@ -680,6 +680,9 @@ function policy_issue(string $personId, string $type, string $kind, int $tier, a
         if ($kind === 'fine') {
             $new = db_row('SELECT id FROM sanctions WHERE personId = ? AND kind = ? AND tier = ?', [$personId, $kind, $tier]);
             policy_fine_to_ledger($personId, $type, (int)($new['id'] ?? 0), (int)($extra['amount'] ?? 0), (string)($extra['reason'] ?? ''));
+            if ($type === 'member' && function_exists('family_alert_fine')) {
+                try { family_alert_fine($personId, (int)($extra['amount'] ?? 0), (string)($extra['reason'] ?? '')); } catch (\Throwable $e) { /* a mail must not undo a fine */ }
+            }
         }
         event_emit('policy.sanction', ['ref' => $personId, 'kind' => $kind, 'tier' => $tier, 'personType' => $type, 'reason' => (string)($extra['reason'] ?? '')]);
         return true;

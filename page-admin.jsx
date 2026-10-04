@@ -72,6 +72,7 @@ const ADMIN_SECTIONS = [
      nobody being fined" had nowhere to look. Same screen, second door. */
   { id: "conduct",     group: "People",   label: "Conduct & fines", title: "Conduct policy & fines", icon: "⚖", cap: "people" },
   { id: "requests",    group: "People",   label: "Member requests", title: "Member requests", icon: "✋", cap: "people" },
+  { id: "families",    group: "People",   label: "Families",     title: "Family accounts",     icon: "⌂", cap: "people" },
   /* A club admin's sensitive actions — suspending, deactivating, merging,
      renaming or retiring a centre, removing a volunteer — wait here for a
      second admin (domain/approvals.php). The club admin sees their own. */
@@ -420,6 +421,7 @@ function AdminPage({ setPage }) {
           {view === "fees" && <AdminFees/>}
           {view === "conduct" && <SummerPolicy/>}
           {view === "requests" && <AdminRequests/>}
+          {view === "families" && <AdminFamilies/>}
           {view === "approvals" && <AdminApprovals/>}
           {view === "companion" && <AdminCompanion/>}
           {view === "curriculum" && <AdminCurriculum/>}
@@ -3172,6 +3174,115 @@ function AdminCompanion() {
   );
 }
 
+/* ── Family accounts ──────────────────────────────────────────────────────────
+ *
+ * Parents sign in with their own email (/family) and connect to their children.
+ * The child's Anchor code + name connects at once; a match on the record's
+ * parent email only ASKS, and lands here — holding an inbox is not proof of
+ * being the parent, so somebody who knows the family confirms it. Revoking
+ * ends the connection immediately and tells the parent why.
+ */
+const FAMILY_REFUSALS = { out_of_scope: "outside your centres", unchanged: "already done", wrong_state: "no longer waiting", not_found: "gone" };
+function AdminFamilies() {
+  const [status, setStatus] = React.useState("pending");
+  const [q, setQ] = React.useState("");
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [form, setForm] = React.useState(null);
+  const load = React.useCallback(() => { setErr(""); return NGGApi.admin.families.list({ status, q }).then(setD).catch(e => { setD(null); setErr(e.code || e.message); }); }, [status, q]);
+  React.useEffect(() => { setD(null); load(); }, [load]);
+  const rows = (d && d.rows) || [];
+  const sel = useAdminSelection(rows, r => r.linkId);
+  const actions = status === "pending" ? [
+    { id: "approve", label: "Approve", pastTense: "approved", reload: load,
+      confirm: ({ count }) => ({ title: "Connect " + count + " famil" + (count === 1 ? "y" : "ies") + "?", body: "Each parent will see their child's attendance, conduct, fees and lessons, and the child is told. Only approve when you know this is the parent or guardian.", cta: "Approve" }),
+      run: (ids) => NGGApi.admin.families.decide("approve", ids) },
+    { id: "refuse", label: "Refuse…", open: (ids) => setForm({ action: "refuse", ids }) },
+  ] : status === "active" ? [
+    { id: "revoke", label: "Disconnect…", danger: true, open: (ids) => setForm({ action: "revoke", ids }) },
+  ] : [];
+  const counts = (d && d.counts) || {};
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head"><h2 className="admin-h2">Family accounts{counts.pending ? <span className="admin-count mono">{counts.pending} waiting</span> : null}</h2></div>
+      <p className="admin-hint">Parents and guardians follow their children from their own family account at <b>/family</b>. A child's code connects at once. A match on the parent email in the record waits here until someone confirms it. Disconnecting takes effect immediately, and the parent is emailed your reason.</p>
+      <div className="admin-filters">
+        <div role="group" aria-label="Filter by status" className="admin-filters">
+          {[["pending", "Waiting"], ["active", "Connected"], ["refused", "Refused"], ["revoked", "Disconnected"], ["removed", "Left by the parent"]].map(([k, l]) => (
+            <button key={k} className={"btn btn-sm " + (status === k ? "btn-primary" : "btn-ghost")} aria-pressed={status === k} onClick={() => { setStatus(k); sel.clear(); }}>{l}{counts[k] ? " (" + counts[k] + ")" : ""}</button>
+          ))}
+        </div>
+        <form role="search" onSubmit={e => { e.preventDefault(); load(); }}>
+          <input className="admin-input" type="search" aria-label="Search by member, parent name or email" placeholder="Search…" value={q} onChange={e => setQ(e.target.value)}/>
+        </form>
+      </div>
+      {d && <p className="admin-cell-sub" role="status">{rows.length} shown{d.scoped ? " · your centres only" : ""}.</p>}
+      {actions.length > 0 && <AdminBulkBar selection={sel} noun="connection" actions={actions}/>}
+      {err ? <ErrorState title="Couldn't load family accounts" code={err} onRetry={load}/> :
+        !d ? <div className="dash-spinner" role="status" aria-label="Loading"/> :
+        !rows.length ? <div className="admin-empty">{status === "pending" ? "Nobody is waiting to connect." : "Nothing here."}</div> :
+        <div className="admin-table-wrap"><table className="admin-table">
+          <caption className="sr-only">Family account connections</caption>
+          <thead><tr>
+            {actions.length > 0 && <th scope="col"><AdminSelectAll selection={sel} label="Select every connection shown"/></th>}
+            <th scope="col">Member</th><th scope="col">Parent or guardian</th><th scope="col">On the record</th><th scope="col">How</th><th scope="col">When</th>
+          </tr></thead>
+          <tbody>{rows.map(r => (
+            <tr key={r.linkId} className={sel.has(r.linkId) ? "is-selected" : ""}>
+              {actions.length > 0 && <td><AdminRowCheck selection={sel} id={r.linkId} label={"Select " + r.fullName}/></td>}
+              <td>{r.fullName}<div className="admin-cell-sub">{r.displayId || r.memberId} · {r.centre || "—"}</div></td>
+              <td>{r.guardianName || "—"} <span className="admin-cell-sub">({r.relationshipLabel})</span><div className="admin-cell-sub">{r.guardianEmail}{r.guardianPhone ? " · " + r.guardianPhone : ""}</div></td>
+              <td className="admin-cell-sub">{r.recordParentName || "—"}<div>{r.recordParentEmail || "—"}</div></td>
+              <td className="admin-cell-sub">{r.via === "code" ? "Child's code" : "Record email"}{r.note ? <div>{r.note}</div> : null}</td>
+              <td className="admin-cell-sub">{fmtDate(r.decidedAt || r.createdAt)}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>}
+      {form && <AdminFamilyReason form={form} onClose={() => setForm(null)} onDone={() => { setForm(null); sel.clear(); load(); }}/>}
+    </div>
+  );
+}
+
+function AdminFamilyReason({ form, onClose, onDone }) {
+  const drawer = useAdminDrawer(onClose, false);
+  const count = form.ids.length;
+  const [note, setNote] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const title = form.action === "refuse" ? "Refuse" : "Disconnect";
+  const apply = async () => {
+    setBusy(true);
+    try {
+      const r = await NGGApi.admin.families.decide(form.action, form.ids, note.trim());
+      const refused = (r.results || []).filter(x => x && x.ok === false);
+      if (refused.length && r.done) toast.warn(r.done + " of " + count + " done · " + refused.length + " refused (" + refused.map(x => FAMILY_REFUSALS[x.error] || x.error).join(", ") + ").", title);
+      else if (refused.length) toast.error("Nothing changed — " + refused.map(x => FAMILY_REFUSALS[x.error] || x.error).join(", ") + ".", title);
+      else toast.success(r.done + " done. The parent" + (r.done === 1 ? " has" : "s have") + " been emailed.", title);
+      onDone();
+    } catch (e) { toast.error(e.detail || humanizeError(e.message, e.code), title); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="admin-drawer" onMouseDown={drawer.close}>
+      <div className="admin-drawer-panel" role="dialog" aria-modal="true" {...drawer.titleProps} ref={drawer.panelRef} onMouseDown={e => e.stopPropagation()}>
+        <div className="admin-drawer-head">
+          <h3 {...drawer.headingProps}>{title} · {fmtNum(count)} connection{count === 1 ? "" : "s"}</h3>
+          <button className="admin-drawer-close" onClick={drawer.close} aria-label="Close">✕</button>
+        </div>
+        <div className="admin-drawer-scroll"><div className="admin-fields">
+          <label className="admin-field"><span className="admin-label">Your reason — the parent reads this</span>
+            <textarea className="admin-input" rows={4} value={note} onChange={e => setNote(e.target.value)} placeholder={form.action === "refuse" ? "We couldn't confirm you're on the child's record. Please visit the centre." : "At the family's request."}/>
+          </label>
+          <p className="admin-hint">Applies to the <b>{fmtNum(count)}</b> selected when you opened this.</p>
+        </div></div>
+        <div className="admin-drawer-foot">
+          <button className="btn btn-ghost btn-sm" disabled={busy} onClick={drawer.close}>Cancel</button>
+          <button className="btn btn-primary btn-sm" disabled={busy || !note.trim()} onClick={apply}>{busy ? "…" : title}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminApprovals() {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
@@ -3343,6 +3454,7 @@ function AdminRequests() {
                 <div className="mono" style={{ fontSize: 11, color: "var(--ink-400)" }}>
                   {r.fullName || r.displayId} · {r.centre} · {r.kindLabel} · {String(r.createdAt).slice(0, 10)}
                 </div>
+                {r.byFamily && <div className="admin-cell-sub">From their family account{r.raisedByName ? ": " + r.raisedByName : ""} — the parent is emailed your reply.</div>}
               </div>
               {r.status === "open"
                 ? <button className="btn btn-primary btn-sm" onClick={() => start(r)}>Decide</button>

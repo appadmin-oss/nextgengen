@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 127;
+const NGG_SCHEMA_TARGET = 128;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3855,6 +3855,48 @@ function db_migrate(PDO $db): void {
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_massess_key ON member_assessments(memberId, period);
             CREATE INDEX IF NOT EXISTS idx_massess_period ON member_assessments(period, rating);
+        ",
+
+        /* Family accounts — a parent's or guardian's own sign-in, holding the
+         * NGG members they look after. A guardian is NOT a member: separate
+         * table, separate cookie, no capability, and a ward is reached only
+         * through an active link. `sessionEpoch` is the "sign out everywhere"
+         * switch — the cookie carries it, and bumping it ends every copy.
+         * `raisedBy` marks a member request a guardian raised, so the desk
+         * knows who to answer and the guardian sees only their own. */
+        128 => "
+            CREATE TABLE IF NOT EXISTS guardians (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              guardianId TEXT UNIQUE NOT NULL,
+              email TEXT NOT NULL,
+              fullName TEXT DEFAULT '',
+              phone TEXT DEFAULT '',
+              status TEXT DEFAULT 'active',
+              sessionEpoch INTEGER DEFAULT 1,
+              weeklySentFor TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT '',
+              lastSeenAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_guardians_email ON guardians(email);
+            CREATE TABLE IF NOT EXISTS guardian_wards (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              linkId TEXT UNIQUE NOT NULL,
+              guardianId TEXT NOT NULL,
+              memberId TEXT NOT NULL,
+              relationship TEXT DEFAULT 'parent',
+              status TEXT DEFAULT 'active',
+              via TEXT DEFAULT '',
+              notify TEXT DEFAULT '',
+              note TEXT DEFAULT '',
+              decidedBy TEXT DEFAULT '',
+              decidedAt TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_gwards_guardian ON guardian_wards(guardianId, status);
+            CREATE INDEX IF NOT EXISTS idx_gwards_member ON guardian_wards(memberId, status);
+            ALTER TABLE member_requests ADD COLUMN raisedBy TEXT DEFAULT '';
         ",
     ];
 

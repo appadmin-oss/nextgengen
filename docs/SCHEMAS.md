@@ -511,3 +511,8 @@ One row per (`unitId`, `memberId`), UNIQUE. `status` `started` \| `attempted` (b
 
 ## `member_assessments` (migration 127)
 The companion's weekly check-in (`api/_lib/domain/companion.php`). One row per (`memberId`, `period`) — `period` is the week's Monday. `rating` `on_track` | `watch` | `at_risk` (rules); `reasons`, `metrics`, `strengths`, `focus` are JSON; `summary` text; `source` `ai` | `rules`; `mailedAt`. Moved on a member merge (`MOVE_UNIQUE`).
+
+## `guardians`, `guardian_wards` (migration 128)
+Family accounts (`api/_lib/domain/family.php`). `guardians`: `guardianId` (`GDN-` + 10 hex), `email` (unique, lower-case — the sign-in), `fullName`, `phone`, `status`, `sessionEpoch` (the family cookie carries it; bumping it signs out every device), `weeklySentFor` (the Monday last mailed — claimed before sending). `guardian_wards`: `linkId` (`GW-…`), `guardianId`, `memberId`, `relationship` (`parent` | `guardian` | `carer` | `relative`), `status` `active` | `pending` | `refused` | `revoked` | `removed`, `via` `code` | `record`, `notify` JSON `{checkin, weekly, alerts}`, `note` (the desk's reason), `decidedBy`, `decidedAt`. Moved on a member merge (`MOVE`). Sign-in codes live in `auth_sessions` with `purpose = 'family_login'`.
+
+`member_requests.raisedBy` — `guardian:<guardianId>` when a parent raised the request from their family account; empty otherwise. Only `family_request_create()` sets it.

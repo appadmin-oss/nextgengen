@@ -46,6 +46,8 @@ function csrf_require(): void {
     $path = $_SERVER['SCRIPT_NAME'] ?? '';
     if (preg_match('#/api/auth/(gateway|request|verify|login|reset-request|reset-confirm)\\.php$#', $path)) return;
     if (preg_match('#/api/public/verify\\.php$#', $path)) return; // parent link: the token IS the proof
+    // Family sign-in: pre-session, the emailed code or link IS the proof (same basis as auth/request + verify).
+    if (preg_match('#/api/family/(request|verify)\\.php$#', $path)) return;
     if (preg_match('#/api/hooks/[a-z-]+\\.php$#', $path)) return;  // inbound hooks: the HMAC IS the proof
     if (preg_match('#/api/public/newsletter\\.php$#', $path))     return;
     // Anonymous intake — no session privileges to ride; IP rate-limited,

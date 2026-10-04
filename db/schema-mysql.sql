@@ -2902,3 +2902,43 @@ CREATE TABLE IF NOT EXISTS member_assessments (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (127) ON DUPLICATE KEY UPDATE version = version;
+
+-- 128: family accounts — a parent's or guardian's own sign-in and their wards.
+CREATE TABLE IF NOT EXISTS guardians (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  guardianId VARCHAR(32) NOT NULL,
+  email VARCHAR(190) NOT NULL,
+  fullName VARCHAR(160) DEFAULT '',
+  phone VARCHAR(40) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'active',
+  sessionEpoch INT DEFAULT 1,
+  weeklySentFor VARCHAR(10) DEFAULT '',
+  createdAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  lastSeenAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_guardians_gid (guardianId),
+  UNIQUE KEY idx_guardians_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS guardian_wards (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  linkId VARCHAR(32) NOT NULL,
+  guardianId VARCHAR(32) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  relationship VARCHAR(16) DEFAULT 'parent',
+  status VARCHAR(16) DEFAULT 'active',
+  via VARCHAR(16) DEFAULT '',
+  notify VARCHAR(255) DEFAULT '',
+  note TEXT,
+  decidedBy VARCHAR(64) DEFAULT '',
+  decidedAt VARCHAR(40) DEFAULT '',
+  createdAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_gwards_link (linkId),
+  KEY idx_gwards_guardian (guardianId, status),
+  KEY idx_gwards_member (memberId, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE member_requests ADD COLUMN raisedBy VARCHAR(64) DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (128) ON DUPLICATE KEY UPDATE version = version;

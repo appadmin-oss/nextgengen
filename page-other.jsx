@@ -226,6 +226,10 @@ function ParentsPage({ setPage }) {
               <p style={{fontSize:19, lineHeight:1.5, color:"var(--ink-700)", maxWidth:560, margin:0}}>
                 You are not handing your teenager to a workshop. You are introducing them to a movement that asks more of them, and protects them while it does.
               </p>
+              <div className="fam-cta-row">
+                <button className="btn btn-primary" onClick={() => setPage("family")}>Open your family account →</button>
+                <span className="fam-cta-note">Attendance, conduct, fees and lessons for each child, in one place.</span>
+              </div>
             </div>
             <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
               {[
