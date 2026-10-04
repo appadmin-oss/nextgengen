@@ -181,7 +181,14 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     chk('admin shows nine weeks of schedule, this week first', (await ap.$$('.wis-sched-cell')).length === 9 && /This week/i.test(main));
     chk('without a TTS key there is no Generate button, and the page says what to set',
         (await ap.$$('.wis-voice button:has-text("Generate")')).length === 0 && /spitch_key/.test(main));
-    chk('the schedule numbers each language’s turn', /Hausa\s*#1/.test(main) && /Igbo\s*#1/.test(main) && /Hausa\s*#2/.test(main));
+    /* Which language opens the strip depends on today's week, so the promise is
+       asserted rather than a date: every cell names a language and its turn, and
+       a language's turns count up the strip. */
+    const cells = await ap.$$eval('.wis-sched-cell', els => els.map(e => e.innerText));
+    const turns = {};
+    cells.forEach(t => { const m = t.match(/(Hausa|Igbo|Yorùbá)\s*#(\d+)/); if (m) (turns[m[1]] = turns[m[1]] || []).push(+m[2]); });
+    chk('the schedule numbers each language’s turn', Object.values(turns).flat().length === cells.length && Object.keys(turns).length === 3
+        && Object.values(turns).every(n => n.every((x, i) => i === 0 || x === n[i - 1] + 1)));
     await ap.click('.wis-tab:has-text("Igbo")');
     chk('the Igbo tab lists the four proverbs', (await ap.$$('.wis-item')).length === 4);
     await ap.click('.wis-tab:has-text("Yorùbá")');
@@ -196,7 +203,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     fs.writeFileSync(CFG, fs.readFileSync(CFG, 'utf8').replace("'debug' => false,", "'debug' => false, 'tts' => ['spitch_key' => 'e2e-never-called'],"));
     php(`db_exec("UPDATE wisdom_sayings SET audioFile = ?, audioFileEn = ?, audioSource = 'tts', voiceEn = 'lucy', ttsScore = 0.96, ttsScoreEn = 0.98, ttsTriedAt = ?", ['${name}', '${nameEn}', now_iso()]);`
       + `db_exec("UPDATE wisdom_sayings SET voice = CASE language WHEN 'hausa' THEN 'amina' WHEN 'igbo' THEN 'ngozi' ELSE 'sade' END");`
-      + `db_exec("UPDATE wisdom_sayings SET ttsScore = 0.62 WHERE wisdomId = ?", ['${s.wisdomId}']);`);
+      + `db_exec("UPDATE wisdom_sayings SET ttsScore = 0.62 WHERE wisdomId = (SELECT wisdomId FROM wisdom_sayings WHERE language = 'hausa' ORDER BY position, id LIMIT 1)");`);
     await ap.reload({ waitUntil: 'domcontentloaded' });
     await waitForBoot(ap);
     await ap.waitForFunction(() => !!window.__adminSection, null, { timeout: 60000 });

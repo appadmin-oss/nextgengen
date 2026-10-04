@@ -406,6 +406,15 @@ function FamilyWard({ link, onRemoved }) {
         </section>
       )}
 
+      {d.timetable && (
+        <section className="fam-card tt-print" aria-labelledby="fam-tt-h">
+          <div className="fam-row"><h3 id="fam-tt-h" className="fam-h3">{first}'s timetable{d.timetable.centre ? " · " + d.timetable.centre : ""}</h3>
+            {d.timetable.slots.length > 0 && <button type="button" className="fam-link tt-noprint" onClick={() => window.print()}>Print</button>}</div>
+          <TimetableView slots={d.timetable.slots} showInstructor title={first} mineLabel={first + "'s course"}
+            emptyText={d.timetable.centre ? d.timetable.centre + " has not published its timetable yet." : first + " has not been placed at a centre yet."}/>
+        </section>
+      )}
+
       <FamilyTellCentre d={d} link={link} first={first} reload={load}/>
       <FamilyNotify link={link} first={first} onRemoved={onRemoved}/>
     </div>

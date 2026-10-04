@@ -458,6 +458,7 @@ function DashRequests({ openKind, onKindHandled, onCountChange }) {
  */
 var DASH_SECTIONS = [
   { id: "overview", path: "", label: "Overview" },
+  { id: "timetable", path: "timetable", label: "Timetable" },
   { id: "learning", path: "learning", label: "Curriculum" },
   { id: "companion", path: "companion", label: "Companion" },
   { id: "account",  path: "account",  label: "Money & account" },
@@ -853,6 +854,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
 
               {section === "learning" && <DashCurriculum/>}
               {section === "companion" && <DashCompanion/>}
+              {section === "timetable" && <DashTimetable/>}
               {section === "account"  && <DashAccount onRaise={askFor}/>}
               {section === "records"  && <DashRecords onRaise={askFor}/>}
               {section === "requests" && <DashRequests openKind={raiseKind} onKindHandled={() => setRaiseKind("")} onCountChange={setOpenRequests}/>}
@@ -1727,6 +1729,29 @@ function DashboardMomentum({ momentum }) {
  * state, and hiding the card would leave them with no way to discover the
  * question exists — the empty state names their centre lead as the person who
  * answers it. */
+/* The member's own centre's timetable, their course marked — the same drawing
+   (TimetableView) the Control Room and the public page use. Printable. */
+function DashTimetable() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const load = React.useCallback(() => { setErr(null); return NGGApi.member.timetable().then(setD).catch(setErr); }, []);
+  React.useEffect(() => { load(); }, [load]);
+  if (err) return <ErrorState title="Couldn't load your timetable" message={err.message} code={err.code} onRetry={load}/>;
+  if (!d) return <div className="dash-spinner" role="status" aria-label="Loading your timetable"/>;
+  return (
+    <div className="dash-card tt-print">
+      <div className="tt-toolbar">
+        <h2 className="dash-card-h-sm">{d.centre ? d.centre + " timetable" : "Your timetable"}</h2>
+        {d.slots.length > 0 && <button type="button" className="btn btn-ghost btn-sm tt-noprint" onClick={() => window.print()}>Print</button>}
+      </div>
+      {!d.centre ? <p className="tt-empty">You have not been placed at a centre yet. Ask your centre lead.</p>
+        : <TimetableView slots={d.slots} showInstructor title={d.centre} mineLabel="Your course"
+            emptyText={d.centre + " has not published its timetable yet. It meets " + (d.meetDays || "on days your centre lead will tell you") + (d.meetTime ? ", " + d.meetTime : "") + "."}/>}
+      {d.course && d.slots.length > 0 && !d.slots.some(x => x.mine) && <p className="tt-sub">There is no {d.course} slot on this timetable yet — ask your centre lead when it meets.</p>}
+    </div>
+  );
+}
+
 function DashboardDivision({ m }) {
   const d = (typeof nggcDivision === "function") ? nggcDivision((m && m.division) || "") : null;
   if (!m) return null;

@@ -1715,6 +1715,57 @@ function TrainingFeeRow({ x, tag }) {
   );
 }
 
+/* ── The timetable, drawn once ───────────────────────────────────────────────
+ *
+ * One component for every place a timetable appears — the Control Room, a
+ * member's dashboard, a parent's family account and the public centre page —
+ * so they cannot show the same week differently.
+ *
+ * Accessible by construction: a heading per day and a real table under it
+ * (caption, th scope="col"), times as text, and "Your course" written out
+ * rather than shown by colour alone. On a narrow screen the rows stack into
+ * labelled cards by the container's own width. Printing prints only the
+ * timetable (`.tt-print`), on white, with every row.
+ */
+const TT_DAY_NAMES = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+function TimetableView({ slots, showInstructor, mineLabel, emptyText, actions, title }) {
+  const list = Array.isArray(slots) ? slots : [];
+  const days = [1, 2, 3, 4, 5, 6, 7].filter(d => list.some(x => x.weekday === d));
+  if (!list.length) return <p className="tt-empty">{emptyText || "No timetable has been set yet."}</p>;
+  return (
+    <div className="tt">
+      {days.map(d => {
+        const rows = list.filter(x => x.weekday === d);
+        return (
+          <section key={d} className="tt-day" aria-labelledby={"tt-d" + d + (title ? "-" + title : "")}>
+            <h3 className="tt-day-h" id={"tt-d" + d + (title ? "-" + title : "")}>{TT_DAY_NAMES[d]}</h3>
+            <table className="tt-table">
+              <caption className="sr-only">{(title ? title + " — " : "") + TT_DAY_NAMES[d] + ", " + rows.length + " session" + (rows.length === 1 ? "" : "s")}</caption>
+              <thead><tr>
+                <th scope="col">Time</th><th scope="col">Course</th><th scope="col">Room</th>
+                {showInstructor && <th scope="col">Instructor</th>}
+                {actions && <th scope="col"><span className="sr-only">Actions</span></th>}
+              </tr></thead>
+              <tbody>{rows.map(x => (
+                <tr key={x.slotId} className={(x.mine ? "is-mine" : "") + (x.clashes && x.clashes.length ? " is-clash" : "")}>
+                  <td data-label="Time"><span className="tt-time">{x.startTime}–{x.endTime}</span></td>
+                  <td data-label="Course"><b>{x.course}</b>{x.level ? <span className="tt-sub"> · {x.level}</span> : null}
+                    {x.mine && <span className="tt-mine">{mineLabel || "Your course"}</span>}
+                    {x.note ? <div className="tt-sub">{x.note}</div> : null}
+                    {x.clashes && x.clashes.length > 0 && <ul className="tt-clash" aria-label="Clashes">{x.clashes.map((c, i) => <li key={i}>⚠ {c.detail}</li>)}</ul>}</td>
+                  <td data-label="Room">{x.room || "Main room"}</td>
+                  {showInstructor && <td data-label="Instructor">{x.instructor || "—"}</td>}
+                  {actions && <td data-label="Actions" className="tt-actions">{actions(x)}</td>}
+                </tr>
+              ))}</tbody>
+            </table>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function ErrorState({ title, message, code, onRetry }) {
   return (
     <div className="state-block state-error" role="alert">

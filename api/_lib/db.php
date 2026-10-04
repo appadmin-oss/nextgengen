@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 128;
+const NGG_SCHEMA_TARGET = 129;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3897,6 +3897,33 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_gwards_guardian ON guardian_wards(guardianId, status);
             CREATE INDEX IF NOT EXISTS idx_gwards_member ON guardian_wards(memberId, status);
             ALTER TABLE member_requests ADD COLUMN raisedBy TEXT DEFAULT '';
+        ",
+
+        /* The timetable — which course meets when, where, and with whom, per
+         * centre. Keyed to the centre by centreId, not its name, so renaming a
+         * centre carries its timetable with it. Times are 'HH:MM', 24-hour, on
+         * a weekday 1 (Monday) … 7 (Sunday). Clashes are refused on the way in
+         * (domain/timetable.php), not stored and flagged later. */
+        129 => "
+            CREATE TABLE IF NOT EXISTS timetable_slots (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              slotId TEXT UNIQUE NOT NULL,
+              centreId TEXT NOT NULL,
+              course TEXT NOT NULL,
+              level TEXT DEFAULT '',
+              weekday INTEGER NOT NULL,
+              startTime TEXT NOT NULL,
+              endTime TEXT NOT NULL,
+              room TEXT DEFAULT '',
+              instructorId TEXT DEFAULT '',
+              note TEXT DEFAULT '',
+              status TEXT DEFAULT 'active',
+              createdAt TEXT DEFAULT '',
+              updatedAt TEXT DEFAULT '',
+              updatedBy TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_tt_centre ON timetable_slots(centreId, weekday, status);
+            CREATE INDEX IF NOT EXISTS idx_tt_instructor ON timetable_slots(instructorId, weekday, status);
         ",
     ];
 

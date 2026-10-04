@@ -44,6 +44,10 @@ const ROUTES = [
   { id: "home",        title: "Next Generation Genius · Afrovanguard",     desc: "A twelve-week growth journey for African teenagers, 10–17. From summer student to vanguard leader." },
   { id: "about",       title: "About NGGC · The 2040 formation brief",    desc: "The Next Generation Genius Club is a formation system: four divisions, six goals, a courage index and a mentor for every member — raising 1,000,000 incorruptible African leaders by 2040." },
   { id: "summer",      title: "Summer School · NGG",                       desc: "Six weeks, eight academies, one bold move. Search every NGG Summer School centre, course and edition — and apply." },
+  /* Each centre's weekly timetable — public, without instructors' names. The
+     centre travels in the URL (?centre=slug), so a link to one centre's week
+     is a link anybody can send. */
+  { id: "timetable",   title: "Timetable · NGG",                           desc: "When each NGG course meets at each centre, week by week." },
   { id: "centres",     title: "NGG member centres · NGG",                  desc: "Every Next Generation Genius member centre — find yours, meet the crew, see what's next." },
   { id: "club",        title: "NGGC · The Genius Club",                    desc: "A teen society with Genius IDs, weekly missions, public skill badges and a leaderboard." },
   { id: "community",   title: "Community · NGG",                           desc: "Every centre, every track, one movement — the Next Generation Genius community." },
@@ -357,6 +361,7 @@ function App() {
     about:     <AboutPage     setPage={setPage}/>,
     summer:    <SummerPage    setPage={setPage}/>,
     centres:   <CentresPage   setPage={setPage}/>,
+    timetable: <TimetablePage setPage={setPage}/>,
     club:      <ClubPage      setPage={setPage}/>,
     community:  <CommunityPage setPage={setPage}/>,
     anchor:    <AnchorPage    setPage={setPage}/>,

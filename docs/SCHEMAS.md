@@ -516,3 +516,9 @@ The companion's weekly check-in (`api/_lib/domain/companion.php`). One row per (
 Family accounts (`api/_lib/domain/family.php`). `guardians`: `guardianId` (`GDN-` + 10 hex), `email` (unique, lower-case — the sign-in), `fullName`, `phone`, `status`, `sessionEpoch` (the family cookie carries it; bumping it signs out every device), `weeklySentFor` (the Monday last mailed — claimed before sending). `guardian_wards`: `linkId` (`GW-…`), `guardianId`, `memberId`, `relationship` (`parent` | `guardian` | `carer` | `relative`), `status` `active` | `pending` | `refused` | `revoked` | `removed`, `via` `code` | `record`, `notify` JSON `{checkin, weekly, alerts}`, `note` (the desk's reason), `decidedBy`, `decidedAt`. Moved on a member merge (`MOVE`). Sign-in codes live in `auth_sessions` with `purpose = 'family_login'`.
 
 `member_requests.raisedBy` — `guardian:<guardianId>` when a parent raised the request from their family account; empty otherwise. Only `family_request_create()` sets it.
+
+## `timetable_slots` (migration 129)
+A centre's weekly timetable (`api/_lib/domain/timetable.php`). `slotId` (`TT-` + hex), `centreId`, `course` (a curriculum/catalogue course), `level`, `weekday` 1 (Mon)–7 (Sun), `startTime` / `endTime` `HH:MM` (end after start, at most 8 hours), `room`, `instructorId` (a volunteer), `note`, `status` `active` | `removed`, `createdAt`, `updatedAt`, `updatedBy`. Indexed on (`centreId`, `status`) and (`instructorId`, `status`). Clashes (room, instructor across centres, course+level, centre day, centre hours) are refused on save by `tt_clashes()`; rows saved before a rule are reported, not rewritten.
+
+Setting `wisdom_week_pins` — `{ "<Monday YYYY-MM-DD>": "<wisdomId>" }`, the saying locked for each week once shown (last 26 kept).
+

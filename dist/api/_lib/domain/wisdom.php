@@ -251,10 +251,46 @@ function wisdom_week_monday(int $w): string {
 
 /* ── Public ───────────────────────────────────────────────────────────── */
 
+/**
+ * The saying for week $w, LOCKED for the week once it has been shown.
+ *
+ * wisdom_pick() works the week out from the live list, so adding, removing
+ * or re-ordering a saying on a Wednesday used to change that week's quote on
+ * the spot — on the home page, in every Journal, a few days after the Monday
+ * mail had gone out with a different one. The week is the unit: the quote
+ * changes once, at the turn of the week (00:00 Monday, Lagos — the end of
+ * Sunday), and an edit mid-week shapes the weeks AFTER this one.
+ *
+ * The one exception is deliberate: a pinned saying that is no longer live
+ * (retired because it was wrong or unsuitable) is replaced at once — locking
+ * the week must never keep a withdrawn saying on screen.
+ */
+const WISDOM_PIN_KEEP = 26;
+function wisdom_week_row(int $w, ?array $byLang = null): ?array {
+    $byLang = $byLang ?? wisdom_live_by_lang();
+    $current = wisdom_week_index();
+    $key = wisdom_week_monday($w);
+    $pins = setting_get('wisdom_week_pins');
+    $pins = is_array($pins) ? $pins : [];
+    if (!empty($pins[$key])) {
+        foreach ($byLang as $list) foreach ($list as $r) if ((string)$r['wisdomId'] === (string)$pins[$key]) return $r;
+    }
+    $row = wisdom_pick($byLang, $w);
+    // Only a week that has started is locked; the schedule preview of weeks
+    // to come stays a forecast that edits can still change.
+    if ($row && $w <= $current) {
+        $pins[$key] = (string)$row['wisdomId'];
+        ksort($pins);
+        $pins = array_slice($pins, -WISDOM_PIN_KEEP, null, true);
+        setting_set('wisdom_week_pins', $pins, 'system');
+    }
+    return $row;
+}
+
 function public_wisdom_week(array $p): array {
     wisdom_ensure_seeded();
     $w = wisdom_week_index();
-    $row = wisdom_pick(wisdom_live_by_lang(), $w);
+    $row = wisdom_week_row($w);
     if ($row && wisdom_tts_missing($row) && wisdom_tts_key() !== '' && (string)($row['ttsTriedAt'] ?? '') === '') {
         /* Once per saying, ever. The stamp is written first and is the lock: a
          * burst of visitors produces one attempt, not one each, and a failed
@@ -274,14 +310,15 @@ function public_wisdom_week(array $p): array {
  *
  * It is the Quote of the Week saying when one is live; when none is, the
  * Anchor quote that week's number lands on — the same week number, so the
- * Journal never falls back to a different quote from the mail. Changes on
- * the Lagos Monday (WISDOM_ANCHOR), never daily.
+ * Journal never falls back to a different quote from the mail. Changes once
+ * a week, at 00:00 Monday Lagos time — the end of Sunday (WISDOM_ANCHOR) —
+ * and is locked for the week once shown (wisdom_week_row), never daily.
  *
  * `$row` lets a caller that already picked the saying avoid picking twice.
  */
 function weekly_quote(?int $ts = null, ?array $row = null): array {
     $w = wisdom_week_index($ts);
-    if ($row === null) { wisdom_ensure_seeded(); $row = wisdom_pick(wisdom_live_by_lang(), $w); }
+    if ($row === null) { wisdom_ensure_seeded(); $row = wisdom_week_row($w); }
     if ($row) {
         return ['week' => wisdom_week_monday($w), 'source' => 'wisdom', 'wisdomId' => (string)$row['wisdomId'],
                 'language' => (string)$row['language'], 'kind' => (string)$row['kind'], 'text' => (string)$row['text'],
@@ -661,7 +698,7 @@ function admin_wisdom_list(array $p): array {
     foreach ($by as $list) foreach ($list as $k => $r) $num[$r['wisdomId']] = $k + 1;
     $schedule = [];
     for ($i = 0; $i < 9; $i++) {
-        $r = wisdom_pick($by, $w + $i);
+        $r = $i === 0 ? wisdom_week_row($w, $by) : wisdom_pick($by, $w + $i);
         if ($r) $schedule[] = ['week' => wisdom_week_monday($w + $i), 'wisdomId' => (string)$r['wisdomId'],
                                'language' => (string)$r['language'], 'number' => $num[$r['wisdomId']] ?? 0,
                                'text' => (string)$r['text']];

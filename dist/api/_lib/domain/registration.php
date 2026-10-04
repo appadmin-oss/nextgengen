@@ -3040,6 +3040,7 @@ function admin_centres_delete(array $p): array {
         'participants'  => (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE centre = ?", [$name])['c'] ?? 0),
         'summerGroups'  => (int)(db_row("SELECT COUNT(*) c FROM summer_groups WHERE centreId = ?", [$id])['c'] ?? 0),
         'volunteers'    => (int)(db_row("SELECT COUNT(*) c FROM volunteers WHERE centre = ?", [$name])['c'] ?? 0),
+        'timetable'     => function_exists('tt_centre_uses') ? tt_centre_uses((string)$c['centreId']) : 0,
     ];
     /* Retiring, not deleting, is almost always what is meant, and it is the
        ANSWER to the refusal below rather than something it should block: the

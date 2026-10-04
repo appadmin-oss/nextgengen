@@ -23248,6 +23248,54 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-QW-%' OR memberId = 'SUM-QW-1'");
 })();
 
+/* ── Quote of the week: turns over at the end of Sunday, and is locked for the week ── */
+(function () {
+    wisdom_ensure_seeded();
+    $sun = strtotime('2026-10-04T23:59:59+01:00'); $mon = strtotime('2026-10-05T00:00:00+01:00');
+    $sat = strtotime('2026-10-03T12:00:00+01:00'); $wed = strtotime('2026-09-30T09:00:00+01:00');
+    chk('qotw: the week turns over at midnight at the end of Sunday, Lagos time', wisdom_week_index($mon) === wisdom_week_index($sun) + 1);
+    chk('qotw: …and not on any other day — Wednesday and Saturday are the same week as the Sunday after', wisdom_week_index($wed) === wisdom_week_index($sun) && wisdom_week_index($sat) === wisdom_week_index($sun));
+    chk('qotw: the week is named by its Monday', wisdom_week_monday(wisdom_week_index($sun)) === '2026-09-28');
+
+    $keepPins = setting_raw('wisdom_week_pins');
+    db_exec("DELETE FROM settings WHERE settingKey = 'wisdom_week_pins'");
+    // A known set of live sayings: two in each language.
+    $wasLive = array_column(db_all("SELECT wisdomId FROM wisdom_sayings WHERE status = 'live'"), 'wisdomId');
+    db_exec("UPDATE wisdom_sayings SET status = 'hidden' WHERE status = 'live'");
+    $n = 0;
+    foreach (WISDOM_LANGS as $lang) for ($k = 1; $k <= 2; $k++) {
+        db_insert('wisdom_sayings', ['wisdomId' => 'WS-LK' . (++$n), 'language' => $lang, 'kind' => 'proverb', 'text' => 'Lock test ' . $lang . ' ' . $k,
+            'status' => 'live', 'position' => $k, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    }
+    $w = wisdom_week_index();
+    $before = wisdom_week_row($w);
+    // Change the live list mid-week so a fresh pick would land somewhere else.
+    $hidden = [];
+    foreach (WISDOM_LANGS as $lang) {
+        if ($before && $lang === (string)$before['language']) continue;
+        $ids = array_column(db_all("SELECT wisdomId FROM wisdom_sayings WHERE language = ? AND status = 'live'", [$lang]), 'wisdomId');
+        if (!$ids) continue;
+        db_exec("UPDATE wisdom_sayings SET status = 'hidden' WHERE language = ? AND status = 'live'", [$lang]);
+        $hidden = array_merge($hidden, $ids);
+        $fresh = wisdom_pick(wisdom_live_by_lang(), $w);
+        if ($fresh && $before && (string)$fresh['wisdomId'] !== (string)$before['wisdomId']) break;
+    }
+    $fresh = wisdom_pick(wisdom_live_by_lang(), $w);
+    chk('qotw: an edit mid-week would have changed a freshly worked-out pick (the test is meaningful)', $before && $fresh && (string)$fresh['wisdomId'] !== (string)$before['wisdomId']);
+    chk('qotw: …but this week\'s saying stays the one already shown', $before && (string)(wisdom_week_row($w)['wisdomId'] ?? '') === (string)$before['wisdomId']
+        && (string)(public_wisdom_week([])['saying']['wisdomId'] ?? '') === (string)$before['wisdomId']);
+    // Retiring the shown saying replaces it at once.
+    if ($before) db_exec("UPDATE wisdom_sayings SET status = 'hidden' WHERE wisdomId = ?", [$before['wisdomId']]);
+    $after = wisdom_week_row($w);
+    chk('qotw: retiring this week\'s saying replaces it straight away, and the replacement is then locked', $after === null
+        || ((string)$after['wisdomId'] !== (string)$before['wisdomId'] && (string)(wisdom_week_row($w)['wisdomId'] ?? '') === (string)$after['wisdomId']));
+    if ($before) db_exec("UPDATE wisdom_sayings SET status = 'live' WHERE wisdomId = ?", [$before['wisdomId']]);
+    if ($hidden) db_exec("UPDATE wisdom_sayings SET status = 'live' WHERE wisdomId IN (" . implode(',', array_fill(0, count($hidden), '?')) . ")", $hidden);
+    db_exec("DELETE FROM wisdom_sayings WHERE wisdomId LIKE 'WS-LK%'");
+    if ($wasLive) db_exec("UPDATE wisdom_sayings SET status = 'live' WHERE wisdomId IN (" . implode(',', array_fill(0, count($wasLive), '?')) . ")", $wasLive);
+    if ($keepPins === null) db_exec("DELETE FROM settings WHERE settingKey = 'wisdom_week_pins'"); else db_exec("UPDATE settings SET settingValue = ? WHERE settingKey = 'wisdom_week_pins'", [$keepPins]);
+})();
+
 /* ── The companion: a weekly assessment of each member ─────────────────── */
 (function () {
     $now = now_iso();
@@ -23657,6 +23705,34 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     if ($keepCal === null) db_exec("DELETE FROM settings WHERE settingKey = 'memberProgramme'"); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$keepCal, 'memberProgramme']);
 })();
 
+/* ── The bundled Media Lab course: a course the catalogue does not list, loaded on purpose ── */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-ML-ADM', 'fullName' => 'Media Admin', 'email' => 'ml-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    $s = backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-ML-ADM', 'key' => 'media-lab-2026']);
+    $rows = $s['rows'] ?? [];
+    chk('media lab: the course ships, 24 weeks of two sessions, every lesson with a check', count($rows) === 48
+        && count(array_unique(array_column($rows, 'week'))) === 24 && !array_filter($rows, fn($r) => !$r['checks'] || $r['course'] !== 'Media Lab'));
+    chk('media lab: the seed says it files under a course outside the catalogue', ($s['allowNewCourse'] ?? false) === true);
+    $proj = 0; $refl = 0;
+    foreach ($rows as $r) foreach ($r['checks'] as $c) { if ($c['kind'] === 'project') $proj++; if ($c['kind'] === 'reflection') $refl++; }
+    chk('media lab: a team challenge every month, marked on the programme\'s rubric, with a reflection', $proj >= 6 && $refl >= 6
+        && !array_filter($rows, fn($r) => array_filter($r['checks'], fn($c) => $c['kind'] === 'project' && !str_contains($c['rubric'], 'Technical skill 30%'))));
+    $bodies = implode("\n", array_map(fn($r) => $r['title'] . ' ' . $r['body'] . ' ' . $r['summary'], $rows));
+    chk('media lab: consent and age rules are taught before the first photograph of a person', stripos($bodies, 'consent') !== false && stripos($bodies, '13+') !== false
+        && array_search('Staying safe online, and asking before you post', array_column($rows, 'title')) < array_search('Portraits — with permission', array_column($rows, 'title')));
+    $refused = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-ML-ADM', 'rows' => $rows, 'dryRun' => true]);
+    chk('media lab: without the flag the importer refuses an uncatalogued course', ($refused['tally']['failed'] ?? 0) === 48);
+    $dry = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-ML-ADM', 'rows' => $rows, 'dryRun' => true, 'allowNewCourse' => true]);
+    chk('media lab: with it, every lesson passes', ($dry['tally']['create'] ?? 0) === 48 && ($dry['tally']['failed'] ?? 1) === 0);
+    $ap = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-ML-ADM', 'rows' => $rows, 'allowNewCourse' => true, 'digest' => $dry['digest']]);
+    chk('media lab: imported as 48 drafts, and the course can then be timetabled', ($ap['tally']['create'] ?? 0) === 48 && in_array('Media Lab', tt_courses(), true));
+    $ids = array_column(db_all("SELECT unitId FROM curriculum_units WHERE level = 'Media Lab 2026'"), 'unitId');
+    if ($ids) { $ph = implode(',', array_fill(0, count($ids), '?'));
+        db_exec("DELETE FROM curriculum_checks WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_materials WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_units WHERE unitId IN ($ph)", $ids); }
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-ML-ADM'");
+})();
+
 /* ── The bundled Practical Coding course: loads through the real import, cleanly ── */
 (function () {
     $now = now_iso();
@@ -23693,6 +23769,72 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     if ($ids) { $ph = implode(',', array_fill(0, count($ids), '?'));
         db_exec("DELETE FROM curriculum_checks WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_materials WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_units WHERE unitId IN ($ph)", $ids); }
     db_exec("DELETE FROM members WHERE memberId = 'NGG-SEED-ADM'");
+})();
+
+/* ── The timetable: clashes refused on the way in, by name ── */
+(function () {
+    $now = now_iso();
+    db_insert('centres', ['centreId' => 'CEN-TT-A', 'name' => 'Tt Alpha', 'code' => 'TA', 'status' => 'active', 'meetDays' => 'Saturdays', 'meetTime' => '9am - 2pm', 'slug' => 'tt-alpha', 'createdAt' => $now]);
+    db_insert('centres', ['centreId' => 'CEN-TT-B', 'name' => 'Tt Beta', 'code' => 'TB', 'status' => 'active', 'meetDays' => 'Saturdays, Wednesdays', 'meetTime' => '', 'slug' => 'tt-beta', 'createdAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-TT-1', 'fullName' => 'Ife Instructor', 'email' => 'tt1@example.com', 'role' => 'instructor', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Tt ' . $id, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-TT-ADM', 'club_admin'); $mk('NGG-TT-SCOPED', 'club_admin', ['centreScope' => json_encode(['Tt Beta'])]);
+    $mk('NGG-TT-ED', 'editor'); $mk('NGG-TT-M', 'member', ['centre' => 'Tt Alpha', 'track' => 'Piano']);
+    $save = fn($d, $who = 'NGG-TT-ADM') => backend_dispatch('admin.timetable.save', ['requesterId' => $who, 'data' => $d]);
+    $base = ['centreId' => 'CEN-TT-A', 'course' => 'piano', 'weekday' => 6, 'startTime' => '10:00', 'endTime' => '11:30', 'room' => '', 'instructorId' => 'VOL-TT-1'];
+
+    $a = $save($base);
+    chk('timetable: a slot saves, with the course spelt as the catalogue spells it', !empty($a['ok']) && $a['slot']['course'] === 'Piano' && $a['slot']['day'] === 'Saturday');
+    $r = $save(array_merge($base, ['course' => 'Guitar', 'instructorId' => '', 'startTime' => '11:00', 'endTime' => '12:00']));
+    chk('timetable: two courses in the same room at once are refused, naming what is there', ($r['error'] ?? '') === 'clash' && $r['clashes'][0]['type'] === 'room' && str_contains($r['detail'], 'Piano'));
+    $r = $save(array_merge($base, ['course' => 'Guitar', 'instructorId' => '', 'startTime' => '11:30', 'endTime' => '12:30']));
+    chk('timetable: back-to-back is not a clash', !empty($r['ok']));
+    $r = $save(array_merge($base, ['course' => 'Guitar', 'room' => 'Studio 2', 'startTime' => '10:30', 'endTime' => '11:00']));
+    chk('timetable: one instructor in two rooms at once is refused', ($r['error'] ?? '') === 'clash' && in_array('instructor', array_column($r['clashes'], 'type'), true) && str_contains($r['detail'], 'Ife Instructor'));
+    $r = $save(array_merge($base, ['centreId' => 'CEN-TT-B', 'course' => 'Guitar', 'room' => '']));
+    chk('timetable: …and at another centre too', ($r['error'] ?? '') === 'clash' && $r['clashes'][0]['type'] === 'instructor' && str_contains($r['detail'], 'Tt Alpha'));
+    $r = $save(array_merge($base, ['instructorId' => '', 'room' => 'Studio 2', 'startTime' => '11:00', 'endTime' => '12:00']));
+    chk('timetable: the same course twice at one centre at once is refused — its members cannot be in two rooms', ($r['error'] ?? '') === 'clash' && $r['clashes'][0]['type'] === 'course');
+    $r = $save(array_merge($base, ['weekday' => 2, 'instructorId' => '']));
+    chk('timetable: a day the centre does not meet is refused, saying which days it does', ($r['error'] ?? '') === 'clash' && $r['clashes'][0]['type'] === 'centre_day' && str_contains($r['detail'], 'Saturday'));
+    $r = $save(array_merge($base, ['instructorId' => '', 'course' => 'Guitar', 'room' => 'Hall B', 'startTime' => '13:30', 'endTime' => '15:00']));
+    chk('timetable: outside the centre\'s meeting hours is refused', ($r['error'] ?? '') === 'clash' && $r['clashes'][0]['type'] === 'centre_time' && str_contains($r['detail'], '09:00–14:00'));
+    chk('timetable: a course outside the catalogue is refused', ($save(array_merge($base, ['course' => 'Underwater Basketry']))['error'] ?? '') === 'unknown_course');
+    chk('timetable: it must end after it starts', ($save(array_merge($base, ['startTime' => '12:00', 'endTime' => '11:00']))['error'] ?? '') === 'bad_time');
+    chk('timetable: moving a slot does not clash with itself', !empty($save(array_merge($base, ['slotId' => $a['slot']['slotId'], 'endTime' => '11:15']))['ok']));
+
+    // Scope and permission.
+    chk('timetable: a scoped club admin cannot add to a centre outside their scope', ($save(array_merge($base, ['course' => 'Guitar', 'weekday' => 6, 'startTime' => '09:00', 'endTime' => '09:45', 'instructorId' => '']), 'NGG-TT-SCOPED')['error'] ?? '') === 'out_of_scope');
+    chk('timetable: changing it needs the club permission', ($save($base, 'NGG-TT-ED')['ok'] ?? true) === false);
+    $sl = backend_dispatch('admin.timetable.list', ['requesterId' => 'NGG-TT-SCOPED']);
+    chk('timetable: a scoped list shows only their centres', !array_filter($sl['slots'], fn($x) => $x['centreId'] === 'CEN-TT-A') && !in_array('CEN-TT-A', array_column($sl['centres'], 'centreId'), true));
+
+    // A clash already stored (the centre changed its days after) is reported, not hidden.
+    db_update('centres', ['meetDays' => 'Sundays'], ['centreId' => 'CEN-TT-A']);
+    $l = backend_dispatch('admin.timetable.list', ['requesterId' => 'NGG-TT-ADM', 'centreId' => 'CEN-TT-A']);
+    chk('timetable: a centre changing its days later shows up as clashes on the list', $l['clashCount'] === count($l['slots']) && $l['clashCount'] >= 2
+        && $l['slots'][0]['clashes'][0]['type'] === 'centre_day');
+    db_update('centres', ['meetDays' => 'Saturdays'], ['centreId' => 'CEN-TT-A']);
+
+    // The member, the family, the public.
+    $mt = backend_dispatch('member.timetable', ['memberId' => 'NGG-TT-M']);
+    chk('timetable: a member sees their centre\'s timetable, with their own course marked', count($mt['slots']) === 2
+        && array_values(array_filter($mt['slots'], fn($x) => $x['mine']))[0]['course'] === 'Piano');
+    $pub = backend_dispatch('public.timetable', ['slug' => 'tt-alpha']);
+    chk('timetable: the public page lists the centre\'s slots without naming instructors', count($pub['slots']) === 2 && !isset($pub['slots'][0]['instructor']) && !str_contains(json_encode($pub), 'Ife Instructor'));
+    chk('timetable: the public index lists only centres that have a timetable', in_array('tt-alpha', array_column($pub['centres'], 'slug'), true) && !in_array('tt-beta', array_column($pub['centres'], 'slug'), true));
+    chk('timetable: deleting a centre counts its timetable as a use', (backend_dispatch('admin.centres.delete', ['requesterId' => 'NGG-2025-0099', 'centreId' => 'CEN-TT-A'])['uses']['timetable'] ?? 0) === 2);
+
+    // Removing: per-row verdicts, one audit event.
+    $rm = backend_dispatch('admin.timetable.remove', ['requesterId' => 'NGG-TT-ADM', 'slotIds' => [$a['slot']['slotId'], 'TT-NOPE']]);
+    chk('timetable: removing reports per row', $rm['done'] === 1 && $rm['results'][1]['error'] === 'not_found');
+    chk('timetable: a removed slot leaves the member\'s view', count(backend_dispatch('member.timetable', ['memberId' => 'NGG-TT-M'])['slots']) === 1);
+
+    db_exec("DELETE FROM timetable_slots WHERE centreId LIKE 'CEN-TT-%'");
+    db_exec("DELETE FROM centres WHERE centreId LIKE 'CEN-TT-%'");
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-TT-1'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-TT-%'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

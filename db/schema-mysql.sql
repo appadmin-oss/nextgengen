@@ -2942,3 +2942,27 @@ CREATE TABLE IF NOT EXISTS guardian_wards (
 ALTER TABLE member_requests ADD COLUMN raisedBy VARCHAR(64) DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (128) ON DUPLICATE KEY UPDATE version = version;
+
+-- 129: the timetable — which course meets when, where and with whom, per centre.
+CREATE TABLE IF NOT EXISTS timetable_slots (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  slotId VARCHAR(32) NOT NULL,
+  centreId VARCHAR(64) NOT NULL,
+  course VARCHAR(120) NOT NULL,
+  level VARCHAR(60) DEFAULT '',
+  weekday TINYINT NOT NULL,
+  startTime VARCHAR(5) NOT NULL,
+  endTime VARCHAR(5) NOT NULL,
+  room VARCHAR(80) DEFAULT '',
+  instructorId VARCHAR(64) DEFAULT '',
+  note VARCHAR(400) DEFAULT '',
+  status VARCHAR(16) DEFAULT 'active',
+  createdAt VARCHAR(40) DEFAULT '',
+  updatedAt VARCHAR(40) DEFAULT '',
+  updatedBy VARCHAR(64) DEFAULT '',
+  UNIQUE KEY idx_tt_slot (slotId),
+  KEY idx_tt_centre (centreId, weekday, status),
+  KEY idx_tt_instructor (instructorId, weekday, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO schema_version (version) VALUES (129) ON DUPLICATE KEY UPDATE version = version;

@@ -90,6 +90,9 @@ const ADMIN_SECTIONS = [
      and printed ID card depends on, and a year-round member administrator
      could not add one. See AdminCentres and admin_centres_list. */
   { id: "centres",     group: "People",   label: "Centres",      title: "Centres",             icon: "◉", cap: "people" },
+  /* Which course meets when, where and with whom, per centre. Changing it is
+     the Club's (club); reading it is open to anyone who works with members. */
+  { id: "timetable",   group: "People",   label: "Timetable",    title: "Timetable",           icon: "▦", cap: "club" },
   /* ONE Summer School door. `registration` and `qr` were separate sections
      that mounted a partial, divergent subset of the same panels the
      coordinator portal had — see the note above AdminSummer. */
@@ -422,6 +425,7 @@ function AdminPage({ setPage }) {
           {view === "conduct" && <SummerPolicy/>}
           {view === "requests" && <AdminRequests/>}
           {view === "families" && <AdminFamilies/>}
+          {view === "timetable" && <AdminTimetable/>}
           {view === "approvals" && <AdminApprovals/>}
           {view === "companion" && <AdminCompanion/>}
           {view === "curriculum" && <AdminCurriculum/>}
@@ -2973,7 +2977,7 @@ function CurriculumImport() {
   React.useEffect(() => { NGGApi.admin.curriculum.seed().then(r => setSeeds(r.seeds || [])).catch(() => setSeeds([])); }, []);
   const loadSeed = async (s) => {
     setErr(""); setPlan(null); setBusy("seed:" + s.key);
-    try { const r = await NGGApi.admin.curriculum.seed(s.key); setRows(r.rows); setName(r.title); }
+    try { const r = await NGGApi.admin.curriculum.seed(s.key); setRows(r.rows); setName(r.title); if (r.allowNewCourse) setOpts(o => ({ ...o, allowNewCourse: true })); }
     catch (e) { setErr(humanizeError(e.code, e.code)); }
     finally { setBusy(""); }
   };
@@ -3301,6 +3305,125 @@ function AdminFamilyReason({ form, onClose, onDone }) {
           <button className="btn btn-primary btn-sm" disabled={busy || !note.trim()} onClick={apply}>{busy ? "…" : title}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── The timetable desk ───────────────────────────────────────────────────────
+ *
+ * Add, move and remove slots per centre. Every save goes through the server's
+ * clash check — the same room, the same instructor, the same course twice, a
+ * day the centre does not meet, or outside its hours — and a refusal says
+ * exactly what it clashes with. Clashes already in the timetable (a centre that
+ * changed its days later) are listed at the top, each with a way to fix it.
+ */
+function AdminTimetable() {
+  const [centre, setCentre] = React.useState(() => { try { return localStorage.getItem("ngg.tt.centre") || ""; } catch (_) { return ""; } });
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [form, setForm] = React.useState(null);
+  const load = React.useCallback(() => { setErr(""); return NGGApi.admin.timetable.list(centre).then(setD).catch(e => { setD(null); setErr(e.code || e.message); }); }, [centre]);
+  React.useEffect(() => { load(); try { localStorage.setItem("ngg.tt.centre", centre); } catch (_) {} }, [load]);
+  const remove = async (x) => {
+    if (!(await dialog.confirm({ title: "Remove " + x.course + " on " + x.day + " " + x.startTime + "?", body: "It comes off the timetable for members, parents and the public page.", cta: "Remove", danger: true }))) return;
+    try { const r = await NGGApi.admin.timetable.remove([x.slotId]); if (r.done) toast.success("Removed."); else toast.error(humanizeError(r.results[0].error, r.results[0].error)); load(); }
+    catch (e) { toast.error(humanizeError(e.code, e.code)); }
+  };
+  const clashed = d ? d.slots.filter(x => x.clashes.length) : [];
+  const centreName = d && centre ? ((d.centres.find(c => c.centreId === centre) || {}).name || "") : "";
+  const cinfo = d && centre ? d.centres.find(c => c.centreId === centre) : null;
+  return (
+    <div className="admin-section">
+      <div className="admin-section-head">
+        <h2 className="admin-h2">Timetable{d && d.clashCount ? <span className="admin-count mono">{d.clashCount} clash{d.clashCount === 1 ? "" : "es"}</span> : null}</h2>
+        <div className="admin-section-actions">
+          <button className="btn btn-ghost btn-sm" onClick={() => window.open("/timetable" + (cinfo && cinfo.slug ? "?centre=" + cinfo.slug : ""), "_blank", "noopener")}>Public page ↗</button>
+          {d && d.canEdit && <button className="btn btn-primary btn-sm" disabled={!d.centres.length} onClick={() => setForm({ centreId: centre || (d.centres[0] || {}).centreId, weekday: 6, startTime: "10:00", endTime: "11:00", course: "", level: "", room: "", instructorId: "", note: "" })}>Add a slot</button>}
+        </div>
+      </div>
+      <p className="admin-hint">Which course meets when, where and with whom at each centre. Members see their own centre's timetable on their dashboard (with their course marked), parents see it on their family account, and each centre's is public at <b>/timetable</b> — without instructors' names. A slot that clashes is not saved: the same room at the same time, one instructor in two places, the same course twice, a day the centre does not meet, or outside its hours.</p>
+      <div className="admin-filters">
+        <label className="admin-field"><span className="admin-label">Centre</span>
+          <select className="admin-select" value={centre} onChange={e => setCentre(e.target.value)}>
+            <option value="">Every centre</option>
+            {(d ? d.centres : []).map(c => <option key={c.centreId} value={c.centreId}>{c.name}</option>)}
+          </select></label>
+        {cinfo && <span className="admin-cell-sub">Meets {cinfo.meetDays || "— days not set"}{cinfo.meetTime ? ", " + cinfo.meetTime : ""}. Change that under People → Centres.</span>}
+        {d && d.scoped && <span className="admin-cell-sub">Your centres only.</span>}
+      </div>
+      {err ? <ErrorState title="Couldn't load the timetable" code={err} onRetry={load}/> :
+        !d ? <div className="dash-spinner" role="status" aria-label="Loading"/> : <>
+        {clashed.length > 0 && (
+          <div className="admin-card tt-clash-box" role="alert">
+            <b>{clashed.length} slot{clashed.length === 1 ? " clashes" : "s clash"}.</b> These were fine when saved, but something changed since (usually a centre's meeting days). Move or remove them:
+            <ul>{clashed.map(x => <li key={x.slotId}>{x.centre} · {x.day} {x.startTime}–{x.endTime} · {x.course}: {x.clashes.map(c => c.detail).join("; ")}
+              {d.canEdit && <> <button className="btn btn-ghost btn-sm" onClick={() => setForm(x)}>Fix</button></>}</li>)}</ul>
+          </div>
+        )}
+        {centre ? <div className="tt-print"><h3 className="admin-h3">{centreName}</h3>
+            <TimetableView slots={d.slots} showInstructor title={centreName} emptyText={"Nothing on " + centreName + "'s timetable yet."}
+              actions={d.canEdit ? (x => <><button className="btn btn-ghost btn-sm" onClick={() => setForm(x)} aria-label={"Edit " + x.course + " " + x.day + " " + x.startTime}>Edit</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => remove(x)} aria-label={"Remove " + x.course + " " + x.day + " " + x.startTime}>Remove</button></>) : null}/></div>
+          : d.centres.map(c => {
+              const mine = d.slots.filter(x => x.centreId === c.centreId);
+              return <section key={c.centreId} className="tt-centre"><h3 className="admin-h3">{c.name} <span className="admin-cell-sub">· {mine.length} slot{mine.length === 1 ? "" : "s"}</span></h3>
+                <TimetableView slots={mine} showInstructor title={c.name} emptyText="Nothing on this centre's timetable yet."
+                  actions={d.canEdit ? (x => <><button className="btn btn-ghost btn-sm" onClick={() => setForm(x)} aria-label={"Edit " + x.course + " " + x.day + " " + x.startTime}>Edit</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => remove(x)} aria-label={"Remove " + x.course + " " + x.day + " " + x.startTime}>Remove</button></>) : null}/></section>;
+            })}
+        {centre && <button className="btn btn-ghost btn-sm tt-noprint" onClick={() => window.print()}>Print this timetable</button>}
+      </>}
+      {form && d && <AdminTimetableForm form={form} d={d} onClose={() => setForm(null)} onSaved={() => { setForm(null); load(); }}/>}
+    </div>
+  );
+}
+
+function AdminTimetableForm({ form, d, onClose, onSaved }) {
+  const drawer = useAdminDrawer(onClose, false);
+  const [f, setF] = React.useState({ ...form });
+  const [busy, setBusy] = React.useState(false);
+  const [clash, setClash] = React.useState(null);
+  const set = (k, v) => { setF(o => ({ ...o, [k]: v })); setClash(null); };
+  const save = async (e) => {
+    e.preventDefault(); setBusy(true); setClash(null);
+    try { await NGGApi.admin.timetable.save({ ...f, weekday: Number(f.weekday) }); toast.success(form.slotId ? "Slot moved." : "Slot added."); onSaved(); }
+    catch (x) { setClash(x.data && x.data.clashes ? x.data.clashes.map(c => c.detail) : [x.detail || humanizeError(x.code, x.code)]); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="admin-drawer" onMouseDown={drawer.close}>
+      <form className="admin-drawer-panel" role="dialog" aria-modal="true" {...drawer.titleProps} ref={drawer.panelRef} onMouseDown={e => e.stopPropagation()} onSubmit={save}>
+        <div className="admin-drawer-head">
+          <h3 {...drawer.headingProps}>{form.slotId ? "Move or change a slot" : "Add a slot"}</h3>
+          <button type="button" className="admin-drawer-close" onClick={drawer.close} aria-label="Close">✕</button>
+        </div>
+        <div className="admin-drawer-scroll"><div className="admin-fields">
+          <label className="admin-field"><span className="admin-label">Centre</span>
+            <select className="admin-select" value={f.centreId} onChange={e => set("centreId", e.target.value)} required>
+              {d.centres.map(c => <option key={c.centreId} value={c.centreId}>{c.name}</option>)}</select></label>
+          <label className="admin-field"><span className="admin-label">Day</span>
+            <select className="admin-select" value={f.weekday} onChange={e => set("weekday", e.target.value)}>
+              {[1, 2, 3, 4, 5, 6, 7].map(n => <option key={n} value={n}>{TT_DAY_NAMES[n]}</option>)}</select></label>
+          <div className="admin-grid2">
+            <label className="admin-field"><span className="admin-label">Starts</span><input className="admin-input" type="time" value={f.startTime} onChange={e => set("startTime", e.target.value)} required/></label>
+            <label className="admin-field"><span className="admin-label">Ends</span><input className="admin-input" type="time" value={f.endTime} onChange={e => set("endTime", e.target.value)} required/></label>
+          </div>
+          <label className="admin-field"><span className="admin-label">Course</span>
+            <select className="admin-select" value={f.course} onChange={e => set("course", e.target.value)} required>
+              <option value="">Choose a course…</option>{d.courses.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
+          <label className="admin-field"><span className="admin-label">Level or group (optional)</span><input className="admin-input" value={f.level} onChange={e => set("level", e.target.value)} placeholder="e.g. Beginners"/></label>
+          <label className="admin-field"><span className="admin-label">Room (blank means the centre's main room)</span><input className="admin-input" value={f.room} onChange={e => set("room", e.target.value)} placeholder="e.g. Studio 2"/></label>
+          <label className="admin-field"><span className="admin-label">Instructor (optional)</span>
+            <select className="admin-select" value={f.instructorId || ""} onChange={e => set("instructorId", e.target.value)}>
+              <option value="">Not assigned</option>{d.instructors.map(v => <option key={v.volunteerId} value={v.volunteerId}>{v.fullName}{v.courses ? " — " + String(v.courses).replace(/[\[\]"]/g, "").replace(/,/g, ", ") : ""}</option>)}</select></label>
+          <label className="admin-field"><span className="admin-label">Note (optional)</span><input className="admin-input" value={f.note} onChange={e => set("note", e.target.value)} placeholder="e.g. Bring your phone charged"/></label>
+          {clash && <div className="admin-form-err" role="alert"><b>Not saved — it clashes:</b><ul>{clash.map((c, i) => <li key={i}>{c}</li>)}</ul></div>}
+        </div></div>
+        <div className="admin-drawer-foot">
+          <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={drawer.close}>Cancel</button>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={busy}>{busy ? "Checking…" : "Save"}</button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -8916,6 +9039,9 @@ function AdminWisdom() {
       <p className="admin-hint">
         One saying a week, taking turns by language: <b>Hausa 1, Igbo 1, Yorùbá 1, then Hausa 2, Igbo 2, Yorùbá 2</b>, and so on.
         The number in each language's list below is its turn. A language with nothing live sits out until it has one.
+        It changes <b>once a week, at midnight at the end of Sunday</b> (00:00 Monday, Lagos time), and this week's saying is
+        locked once it has been shown — adding or re-ordering sayings changes the weeks after it, never the one already running.
+        Retiring this week's saying is the exception: the next one takes its place straight away.
       </p>
 
       <div className="wis-sched" aria-label="The next nine weeks">

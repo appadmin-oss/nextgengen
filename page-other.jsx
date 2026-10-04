@@ -229,6 +229,7 @@ function ParentsPage({ setPage }) {
               <div className="fam-cta-row">
                 <button className="btn btn-primary" onClick={() => setPage("family")}>Open your family account →</button>
                 <span className="fam-cta-note">Attendance, conduct, fees and lessons for each child, in one place.</span>
+                <button className="btn btn-ghost" onClick={() => setPage("timetable")}>Centre timetables</button>
               </div>
             </div>
             <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>

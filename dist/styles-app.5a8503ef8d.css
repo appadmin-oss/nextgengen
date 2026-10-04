@@ -7660,3 +7660,9 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
 .cur-imp-seeds { margin: 12px 0; display: grid; gap: 8px; }
 .cur-imp-seed { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
 .cur-imp-seed p { margin: 4px 0 0; }
+
+/* Timetable desk */
+.tt-clash-box { border-left: 4px solid #a3271a; margin-bottom: 14px; }
+.tt-clash-box ul { margin: 8px 0 0; padding-left: 18px; }
+.tt-centre { margin-bottom: 22px; }
+.admin-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

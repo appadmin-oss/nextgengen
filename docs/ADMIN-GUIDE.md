@@ -328,6 +328,43 @@ instead**. Take that offer unless you are certain.
 
 A centre with nothing depending on it deletes without the prompt.
 
+## Timetable
+
+**People → Timetable** (anyone with *Club*, *Members*, *Curriculum* or
+*Check-in* can read it; changing it needs *Club*). One timetable per centre:
+each class is a course, a day, a start and end time, and optionally a level, a
+room and an instructor. Pick the centre at the top — the screen remembers it.
+
+**Clashes are refused, not warned about.** Saving a class is refused, with the
+reason in words, when it would:
+
+- put two classes in the **same room** at overlapping times;
+- give one **instructor** two classes at once — at any centre;
+- run the **same course and level** twice at once at one centre;
+- fall on a **day the centre does not meet**, or **outside its hours** (both
+  read from the centre's *meeting days / time* on People → Centres).
+
+A class that ends at 12:00 and one that starts at 12:00 do not clash. Classes
+saved before a rule existed, or that a centre edit has since put out of hours,
+are listed at the top under *Clashes to fix*, each with a **Fix** button.
+
+**Removing a class** asks first, then takes it off every view. A centre with classes
+on its timetable counts them among its *uses* when you try to delete it.
+
+### Where people see it
+
+| Who | Where |
+|---|---|
+| Staff | **People → Timetable**, with **Print** and a link to the public page |
+| Members | **Dashboard → Timetable** (`/dashboard/timetable`) — their centre, their course marked "Your course" |
+| Parents | their **family account** (`/family`), on each child's card |
+| Anybody | **`/timetable`** — linked from the Centres page and the Parents page; choose a centre, or share `/timetable?centre=<centre>` |
+
+The public page never shows instructors' names. Every version prints on one
+clean sheet (**Print**), lists classes under a heading per day as a real
+table, says "Your course" in words rather than by colour alone, and becomes
+labelled cards on a phone rather than a table that scrolls sideways.
+
 **Centre codes are unique across the whole system**, not per year. The code
 is the prefix on printed member ID cards, so changing one changes what new
 cards say.
@@ -575,6 +612,20 @@ steps (the sheet had 104 and 115); the back end is four required weeks with
 security and deployment, not five optional sessions; there are catch-up weeks
 after each phase, a project at the end of each, a full-stack capstone, and a
 check on every lesson. A readable copy is `docs/curriculum/practical-coding-2026.csv`.
+
+**Media Lab — Digital Creative Learning (2026)** is the second: 48 lessons over
+24 weeks, two a week (*learn & practise*, then *create & review*), level
+*Media Lab 2026*. Month by month: foundation and digital safety, graphic design,
+photography and writing, video, social media and marketing, then leadership and
+portfolio. Each month ends in a team challenge marked on the programme's rubric
+(technical skill 30%, creativity 20%, completion 20%, teamwork 15%, leadership
+15%) and a reflection. It is filed under its own course, **Media Lab**, because
+it spans design, photography, video and social media and is not one of
+*Graphics Design* or *Video Editing*. That course is not in the academy
+catalogue, so loading it ticks *Allow courses not in the academy catalogue* for
+you. Once imported, *Media Lab* can be put on the timetable. Consent and the
+13+ age rules of Canva and CapCut are taught in week 1, before anybody
+photographs a person. A readable copy is `docs/curriculum/media-lab-2026.csv`.
 
 **Progress** shows, per lesson, how many members of that course have started
 and finished it, and the average score. A scoped admin sees their centres only.
@@ -884,6 +935,13 @@ language's list is its turn. The strip at the top shows the next nine weeks as
 "Hausa #1", "Igbo #1"… A language with nothing live sits out until it has one,
 and the same language never shows two weeks running.
 
+**When it changes:** once a week, at **midnight at the end of Sunday (00:00
+Monday, Lagos time)**, and never in between. Once a week's saying has been
+shown it is **locked for that week**: adding, hiding or reordering sayings
+changes the weeks to come (the strip is a forecast), never the one already on
+the home page, in the Journals and in Monday's email. If the locked saying is
+hidden or deleted, the week picks again.
+
 - **Add / edit** — the saying in its language, the English translation, the
   answer (riddles only) and the deeper meaning. *Hidden* keeps a saying but
   takes it out of the rotation.
@@ -926,8 +984,8 @@ the English part off ("English too").
 ### One quote, everywhere, and the Monday email
 
 The quote on the home page **is** the quote in every member's Anchor Journal
-for the week (the Journal's card now reads "Quote of the week", and changes on
-Monday, not daily) and the quote in the Monday email. When no saying is live,
+for the week (the Journal's card now reads "Quote of the week", and changes at
+midnight at the end of Sunday, not daily) and the quote in the Monday email. When no saying is live,
 all three fall back to the same week's Anchor quote from **Anchor app →
 Quotes**.
 

@@ -535,7 +535,12 @@ function admin_curriculum_seed(array $p): array {
             'description' => (string)($j['description'] ?? ''), 'source' => (string)($j['source'] ?? ''), 'lessons' => count($j['lessons'] ?? [])], $all))];
     }
     if (!isset($all[$key])) return ['ok' => false, 'error' => 'not_found'];
-    return ['ok' => true, 'key' => $key, 'title' => (string)($all[$key]['title'] ?? $key), 'rows' => array_values($all[$key]['lessons'] ?? [])];
+    /* A seed may file its lessons under a course the catalogue does not list
+       (the Media Lab spans design, photography, video and social media, so it is
+       not one of Graphics Design / Video Editing). It says so, and the import
+       screen ticks "allow new courses" visibly rather than refusing every row. */
+    return ['ok' => true, 'key' => $key, 'title' => (string)($all[$key]['title'] ?? $key), 'allowNewCourse' => !empty($all[$key]['allowNewCourse']),
+        'rows' => array_values($all[$key]['lessons'] ?? [])];
 }
 
 /**

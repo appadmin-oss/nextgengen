@@ -661,6 +661,7 @@
          portal. */
       courage:      () => request('/member/self.php?view=courage'),
       requests:     () => request('/member/self.php?view=requests'),
+      timetable:    () => request('/member/timetable.php'),
       raiseRequest: (data) => request('/member/self.php', { body: data }),
       withdrawRequest: (requestId) => request('/member/self.php', { body: { action: 'withdraw', requestId } }),
       compliance:   () => request('/member/compliance.php'),
@@ -894,6 +895,7 @@
         context: (t) => request('/public/reshoot.php' + qs({ t })),
         submit:  (t, photoUrl, submissionId) => request('/public/reshoot.php', { body: { t, photoUrl, submissionId: submissionId || '' } }),
       },
+      timetable: (centre) => request('/public/timetable.php' + qs({ centre: centre || '' })),
       circle: {
         // The child's name is required, not optional: the code alone no longer
         // resolves to anything, so a guessed code cannot reveal who it belongs to.
@@ -980,6 +982,11 @@
         setCaps: (memberId, caps, centreScope) => request('/admin/members.php', { body: Object.assign({ action: 'setCaps', memberId, caps }, centreScope !== undefined ? { centreScope } : {}) }),
         impersonate: (memberId) => request('/admin/impersonate.php', { body: { action: 'start', memberId } }),
         stopImpersonate: () => request('/admin/impersonate.php', { body: { action: 'stop' } }),
+      },
+      timetable: {
+        list:   (centreId) => request('/admin/timetable.php' + qs({ centreId: centreId || '' })),
+        save:   (data) => request('/admin/timetable.php', { body: { action: 'save', data } }),
+        remove: (slotIds) => request('/admin/timetable.php', { body: { action: 'remove', slotIds } }),
       },
       families: {
         list:   (q) => request('/admin/families.php' + qs(q || {})),

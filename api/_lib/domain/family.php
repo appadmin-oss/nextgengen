@@ -342,6 +342,7 @@ function family_ward(array $p): array {
                        'next' => array_map(static fn($u) => ['title' => (string)$u['title'], 'course' => (string)$u['course'], 'week' => (int)$u['week'],
                            'dueDate' => (string)$u['dueDate'], 'overdueDays' => (int)$u['overdueDays'],
                            'status' => $u['progress'] ? (string)$u['progress']['status'] : 'not_started'], array_slice($next, 0, 5))],
+        'timetable' => function_exists('tt_for_centre') ? tt_for_centre((string)($m['centre'] ?? ''), true, (string)($m['track'] ?? '')) : null,
         'companion' => function_exists('companion_public') ? companion_public($comp ?: null) : null,
         'requests' => array_map('member_request_public', $reqs),
         'kinds' => array_combine(FAMILY_REQUEST_KINDS, array_map(static fn($k) => MEMBER_REQUEST_KINDS[$k], FAMILY_REQUEST_KINDS)),  // leave first: the commonest thing a parent tells the desk
