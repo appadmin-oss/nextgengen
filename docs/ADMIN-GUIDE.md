@@ -582,6 +582,24 @@ week. **Instructors and NGG mentors** see the lessons for their courses in the
 Mentor Portal's **Curriculum** tab, with the written answers waiting to be
 marked beside the model answer and rubric.
 
+### Watching the training fee
+
+**Dues & fees → Training fees** (needs `fees`; a centre-scoped admin sees their
+own centres). One row per NGG member who carries a training fee or is in their
+training months: what has been **charged** (and how many sessions, days or
+weeks that is), how much service has **covered** (earned off, plus anything
+written off at the MOU), what is **still to cover**, where they are in the
+three years, and whether their service credit is **paused** (a suspension) or
+**stopped** (an eviction). Filter by phase or by paused/stopped, sort by what
+matters today, or search. Totals for what is shown sit above the table.
+
+**Open →** shows that member's account with the same schedule the member sees
+on their own dashboard — every charge, what has happened but waits for the
+next accrual run, and what is still to come before charges end — in staff
+words. The member's panel and this drawer are drawn by one component from one
+server answer, so they cannot disagree. On a day or week rate, "still to come"
+reaches as far as the meeting calendar is set.
+
 ### Uploading a sheet of fines
 
 **Dues & fees → Upload fines** (needs the `fees` permission). For a register

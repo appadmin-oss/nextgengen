@@ -839,6 +839,10 @@ function unzipDocumentXml(buf) {
                      cap: 500000, atCap: false, mouAt: '',
                      tenure: { start: '2024-09-01', months: 22, phase: 'service', trainingMonths: 18,
                                serviceMonths: 18, servedMonths: 4, complete: false } },
+          training: { basis: 'session', unit: 'session', perUnit: 75000, charged: 1, due: 0, upcoming: 0, chargedAmount: 75000, dueAmount: 0, upcomingAmount: 0,
+                    earnedOff: 18000, writtenOff: 0, covered: 18000, coveredPct: 24, calendarKnown: true, phase: 'service', months: 22,
+                    trainingMonths: 18, serviceMonths: 18, servedMonths: 4, trainingEndsAt: '2026-03-01', creditStopped: false, creditPausedAt: '', mouAt: '',
+                    rows: [{ key: 'SES-2026', label: 'Training fee — 2026 session', date: '2026-01-10', amount: 75000, state: 'charged' }] },
           entries: [
             { entryId: 'FEE-1', kind: 'payment', direction: 'credit', amount: 21000, periodKey: 'payment:x',
               sessionId: '', note: '', method: 'transfer', reference: 'TRF-9', createdAt: '2026-07-02T09:00:00Z', void: false, voidReason: '' },
@@ -847,6 +851,18 @@ function unzipDocumentXml(buf) {
             { entryId: 'FEE-3', kind: 'dues', direction: 'charge', amount: 1000, periodKey: '2026-06',
               sessionId: '', note: 'Monthly dues 2026-06', createdAt: '2026-06-01T09:00:00Z', void: true, voidReason: 'charged twice' },
           ] } });
+      },
+      /* The desk's training-fee watch: one member serving it off, one paused. */
+      training: function (q) {
+        window.__trainingQ = q;
+        return Promise.resolve({ rows: [
+            { memberId: 'NGG-2026-0001', fullName: 'Ada Obi', displayId: '024-117', centre: 'Egbeda', units: 1, charged: 75000, earned: 18000, writtenOff: 0,
+              covered: 18000, remaining: 57000, coveredPct: 24, phase: 'service', months: 22, servedMonths: 4, trainingEndsAt: '2026-03-01', mouAt: '', creditStopped: false, creditPausedAt: '' },
+            { memberId: 'NGG-2026-0002', fullName: 'Bode Eze', displayId: '026-002', centre: 'Ijaiye', units: 3, charged: 30000, earned: 0, writtenOff: 0,
+              covered: 0, remaining: 30000, coveredPct: 0, phase: 'training', months: 4, servedMonths: 0, trainingEndsAt: '2027-08-01', mouAt: '', creditStopped: false, creditPausedAt: '2026-09-01' },
+          ], matched: 2, truncated: false, totals: { members: 2, charged: 105000, earned: 18000, writtenOff: 0, remaining: 87000 },
+          counts: { all: 2, training: 1, service: 1, complete: 0, paused: 1, stopped: 0, nojoin: 0 }, filter: (q && q.filter) || 'all', sort: (q && q.sort) || 'charged',
+          scoped: false, basis: 'session', perUnit: 75000, trainingMonths: 18, serviceMonths: 18 });
       },
       payment: function () { return Promise.resolve({ ok: true, entryId: 'FEE-9' }); },
       void: function () { return Promise.resolve({ ok: true }); },
@@ -926,6 +942,10 @@ function unzipDocumentXml(buf) {
         programmeCost: 75000, programmeCovered: 18000,
         trainingCharged: 75000, trainingEarned: 18000, trainingWrittenOff: 0,
         trainingFeePerSession: 75000, schedule: [],
+        training: { basis: 'session', unit: 'session', perUnit: 75000, charged: 1, due: 0, upcoming: 0, chargedAmount: 75000, dueAmount: 0, upcomingAmount: 0,
+                    earnedOff: 18000, writtenOff: 0, covered: 18000, coveredPct: 24, calendarKnown: true, phase: 'service', months: 22,
+                    trainingMonths: 18, serviceMonths: 18, servedMonths: 4, trainingEndsAt: '2026-03-01', creditStopped: false, creditPausedAt: '', mouAt: '',
+                    rows: [{ key: 'SES-2026', label: 'Training fee — 2026 session', date: '2026-01-10', amount: 75000, state: 'charged' }] },
         mouAt: '', currency: 'NGN', remindOff: false,
         tenure: { start: '2024-09-01', months: 22, phase: 'service', trainingMonths: 18,
                   serviceMonths: 18, servedMonths: 4, complete: false,
@@ -6000,6 +6020,26 @@ function unzipDocumentXml(buf) {
      * to answer "why not" for everybody else, because that is the question a
      * coordinator gets when a family says they were never told.
      */
+    /* ── The training-fee watch, for the desk ─────────────────────────────── */
+    if (await step('the fees screen has a Training fees tab', () => fz.getByRole('button', { name: /^Training fees$/ }).click())) {
+      await fz.waitForTimeout(300);
+      const tw = await fz.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
+      ok('…listing everybody\'s training fee: charged, covered and still to cover', /Ada Obi/.test(tw) && /Bode Eze/.test(tw)
+        && /₦105,000 charged as training/.test(tw) && /₦87,000 still to cover/.test(tw));
+      ok('…and saying whose credit is paused', /Credit paused from/.test(tw));
+      if (await step('…filtered by phase, on the server', () => fz.getByRole('button', { name: /^Serving/ }).click())) {
+        await fz.waitForTimeout(250);
+        ok('…the filter goes to the server, not to the drawn rows', (await fz.evaluate(() => (window.__trainingQ || {}).filter)) === 'service');
+      }
+      if (await step('…and a row opens the account with the full schedule', () => fz.getByRole('button', { name: /Open Ada Obi/ }).click())) {
+        await fz.waitForTimeout(300);
+        const dr = await fz.evaluate(() => { const el = document.querySelector('.tfw'); return el ? el.innerText.replace(/\s+/g, ' ') : null; });
+        ok('…showing the same watch the member sees, in staff words', dr !== null && /per session/.test(dr) && /covered \(24%\)/.test(dr) && /charged/i.test(dr) && /MONTH 22 OF 36/.test(dr));
+        await fz.keyboard.press('Escape');
+        await fz.waitForTimeout(200);
+      }
+    }
+
     if (await step('the fees screen has a Reminders tab',
                    () => fz.getByRole('button', { name: /^Reminders$/ }).click())) {
       await fz.waitForTimeout(250);

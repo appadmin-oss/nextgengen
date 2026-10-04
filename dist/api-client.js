@@ -1240,6 +1240,7 @@
         settingsSet: (data) => request('/admin/fees.php', { body: { action: 'settings', data } }),
         member:      (memberId) => request('/admin/fees.php' + qs({ view: 'member', memberId })),
         arrears:     (limit) => request('/admin/fees.php' + qs({ view: 'arrears', limit })),
+        training: (q) => request('/admin/fees.php' + qs(Object.assign({ view: 'training' }, q || {}))),
         /* Find anybody's account, not only a debtor's — the arrears list holds
            people who owe, so it could never answer "has Ada paid?". */
         lookup:      (q) => request('/admin/fees.php' + qs({ view: 'lookup', q })),

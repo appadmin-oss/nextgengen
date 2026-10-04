@@ -13,6 +13,8 @@ if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'settings');
     if ($view === 'member')       $res = gs_call('admin.fees.member', ['requesterId' => $mid, 'memberId' => $_GET['memberId'] ?? '']);
     elseif ($view === 'arrears')  $res = gs_call('admin.fees.arrears', ['requesterId' => $mid, 'limit' => $_GET['limit'] ?? '']);
+    elseif ($view === 'training') $res = gs_call('admin.fees.training', ['requesterId' => $mid, 'filter' => $_GET['filter'] ?? '',
+                                    'sort' => $_GET['sort'] ?? '', 'q' => $_GET['q'] ?? '', 'limit' => $_GET['limit'] ?? '']);
     elseif ($view === 'lookup')   $res = gs_call('admin.fees.lookup', ['requesterId' => $mid, 'q' => $_GET['q'] ?? '']);
     else                          $res = gs_call('admin.fees.settings.get', ['requesterId' => $mid]);
 } elseif ($method === 'POST') {

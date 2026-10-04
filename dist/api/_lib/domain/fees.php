@@ -458,7 +458,7 @@ function fees_compliance_cutoff(array $member): array {
     return ['cutoff' => '', 'state' => $state, 'final' => false];
 }
 
-function fees_tenure(array $member, ?array $cfg = null, ?string $asOf = null): array {
+function fees_tenure(array $member, ?array $cfg = null, ?string $asOf = null, ?array $comp = null): array {
     $cfg = $cfg ?? fees_settings();
     $start = substr((string)($member['joinDate'] ?? ''), 0, 10);
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start)) $start = substr((string)($member['createdAt'] ?? ''), 0, 10);
@@ -476,7 +476,7 @@ function fees_tenure(array $member, ?array $cfg = null, ?string $asOf = null): a
      * because "how far through are they" and "how much have they earned" are
      * different questions and a screen showing one as the other is a screen
      * nobody can reconcile. */
-    $comp = fees_compliance_cutoff($member);
+    $comp = $comp ?? fees_compliance_cutoff($member);
     $creditTo = ($comp['cutoff'] !== '' && $comp['cutoff'] < $today) ? $comp['cutoff'] : $today;
     $creditMonths = fees_months_between($start, $creditTo);
     $served = max(0, min($sm, $creditMonths - $tm));
@@ -704,12 +704,15 @@ function fees_entries(string $memberId): array {
  * off", and a member who leaves early is not told an unearned amount was already
  * forgiven.
  */
-function fees_balance(array $member, ?array $cfg = null, ?string $asOf = null): array {
+function fees_balance(array $member, ?array $cfg = null, ?string $asOf = null, ?array $entries = null, ?array $comp = null): array {
     $cfg = $cfg ?? fees_settings();
     $memberId = (string)($member['memberId'] ?? '');
     $charged = 0; $credited = 0; $byKind = [];
     $trainingCharged = 0; $trainingWritten = 0;
-    foreach (fees_entries($memberId) as $e) {
+    /* `$entries` and `$comp` let a list pass what it already fetched in one
+       query, so a roster of three hundred is not three hundred ledger reads. */
+    $entries = $entries ?? fees_entries($memberId);
+    foreach ($entries as $e) {
         if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
         $amt = (int)$e['amount']; $kind = (string)$e['kind'];
         $byKind[$kind] = ($byKind[$kind] ?? 0) + $amt;
@@ -721,7 +724,7 @@ function fees_balance(array $member, ?array $cfg = null, ?string $asOf = null): 
             if ($kind === 'writeoff') $trainingWritten += $amt;
         }
     }
-    $ten = fees_tenure($member, $cfg, $asOf);
+    $ten = fees_tenure($member, $cfg, $asOf, $comp);
     /* "Deducts as they come": the share of the training fee that service has
        earned off so far. Straight-line across the service half — the simplest
        rule that is also explainable to a family, which matters more here than
@@ -752,7 +755,7 @@ function fees_balance(array $member, ?array $cfg = null, ?string $asOf = null): 
      * a figure, and every reminder, reads it.
      */
     $realCharged = 0; $realCredited = 0;
-    foreach (fees_entries($memberId) as $e) {
+    foreach ($entries as $e) {
         if (trim((string)($e['voidedAt'] ?? '')) !== '') continue;
         $kind = (string)$e['kind']; $amt = (int)$e['amount'];
         if ((string)$e['direction'] === 'charge') {
@@ -785,6 +788,184 @@ function fees_balance(array $member, ?array $cfg = null, ?string $asOf = null): 
         'cap' => $cap, 'atCap' => $cap > 0 && $outstanding >= $cap,
         'tenure' => $ten, 'mouAt' => (string)($member['mouAt'] ?? ''),
     ];
+}
+
+/* ── The training-fee watch ──────────────────────────────────────────────
+ *
+ * One answer to "where is this member's training fee", read by the member's
+ * own account panel, by the account drawer in the Control Room and by the
+ * programme-wide watch. It used to be built inline in member_fees_account()
+ * from the `sessions` table alone, so on a day or week basis the member saw a
+ * session list that bore no relation to what was being charged, and staff saw
+ * no schedule at all. Now there is one builder, it knows all three bases, and
+ * every screen draws the same rows.
+ *
+ * Rows are the charges ALREADY on the account (from the ledger, so a voided
+ * charge is gone and a renamed session keeps the name it was charged under),
+ * then what has happened but not been charged yet (`due` — the next accrual
+ * run picks it up), then what is still to come before the training half ends
+ * (`upcoming`). For a day or week rate "still to come" is only as far as the
+ * meeting calendar is set; the count says so rather than guessing.
+ */
+const FEES_WATCH_UPCOMING_MAX = 24;
+const FEES_WATCH_ROWS_MAX = 400;
+const FEES_TRAINING_UNIT = ['session' => 'session', 'day' => 'day', 'week' => 'week'];
+
+function fees_training_watch(array $member, ?array $cfg = null, ?array $bal = null, ?string $asOf = null): array {
+    $cfg = $cfg ?? fees_settings();
+    $bal = $bal ?? fees_balance($member, $cfg, $asOf);
+    $ten = $bal['tenure'];
+    $basis = in_array((string)($cfg['trainingBasis'] ?? 'session'), FEES_TRAINING_BASES, true) ? (string)$cfg['trainingBasis'] : 'session';
+    $fee = (int)$cfg['trainingFee'];
+    $today = $asOf ?? gmdate('Y-m-d');
+    $mid = (string)$member['memberId'];
+    $rows = []; $chargedKeys = [];
+    // A session charge is dated by its session, not by the night the accrual ran.
+    $sessStart = array_column(db_all('SELECT sessionId, startDate FROM sessions'), 'startDate', 'sessionId');
+    foreach (db_all("SELECT periodKey, sessionId, note, amount, createdAt FROM member_ledger
+                      WHERE memberId = ? AND kind = 'training' AND direction = 'charge' AND (voidedAt IS NULL OR voidedAt = '') ORDER BY id", [$mid]) as $e) {
+        $key = (string)$e['periodKey'];
+        $chargedKeys[$key] = true;
+        $date = preg_match('/:(?:W)?(\d{4}-\d{2}-\d{2})$/', $key, $mm) ? $mm[1]
+              : (isset($sessStart[$key]) && (string)$sessStart[$key] !== '' ? substr((string)$sessStart[$key], 0, 10) : substr((string)$e['createdAt'], 0, 10));
+        $rows[] = ['key' => $key, 'label' => (string)$e['note'] !== '' ? (string)$e['note'] : 'Training', 'date' => $date, 'amount' => (int)$e['amount'], 'state' => 'charged'];
+    }
+    $due = []; $upcoming = []; $upcomingCount = 0;
+    if ($fee > 0 && $ten['start'] !== '' && $ten['phase'] === 'training') {
+        $ends = (string)($ten['trainingEndsAt'] ?? '');
+        if ($basis === 'session') {
+            foreach (db_all('SELECT sessionId, name, startDate FROM sessions ORDER BY startDate') as $sx) {
+                $sd = substr((string)($sx['startDate'] ?? ''), 0, 10);
+                $sid = (string)$sx['sessionId'];
+                if ($sd === '' || $sd < $ten['start'] || ($ends !== '' && $sd >= $ends) || isset($chargedKeys[$sid])) continue;
+                $r = ['key' => $sid, 'label' => (string)($sx['name'] ?: $sid), 'date' => $sd, 'amount' => $fee];
+                if ($sd <= $today) $due[] = $r + ['state' => 'due'];
+                else { $upcomingCount++; if (count($upcoming) < FEES_WATCH_UPCOMING_MAX) $upcoming[] = $r + ['state' => 'upcoming']; }
+            }
+        } else {
+            $happened = $basis === 'week' ? fees_training_weeks($mid, $ten, $today) : fees_training_days($mid, $ten, $today);
+            foreach ($happened as $key => $d) if (!isset($chargedKeys[$key])) {
+                $due[] = ['key' => $key, 'label' => $basis === 'week' ? 'Week of ' . $d : 'Training day', 'date' => $d, 'amount' => $fee, 'state' => 'due'];
+            }
+            // Still to come: the member's own meeting days from tomorrow to the
+            // end of the training half, as far as the calendar is set.
+            $cal = function_exists('member_calendar_for') ? member_calendar_for($member) : ['enabled' => false];
+            if (!empty($cal['enabled']) && function_exists('programme_days_between')) {
+                $from = gmdate('Y-m-d', (int)strtotime($today . ' 00:00:00 UTC +1 day'));
+                $to = $ends !== '' ? gmdate('Y-m-d', (int)strtotime($ends . ' 00:00:00 UTC -1 day')) : '';
+                $calEnd = (string)($cal['endDate'] ?? '');
+                if ($calEnd !== '' && ($to === '' || $calEnd < $to)) $to = $calEnd;
+                $seen = [];
+                if ($to !== '' && $from <= $to) foreach (programme_days_between($from, $to, $cal) as $d) {
+                    if ($basis === 'week') {
+                        $t = strtotime($d . ' 00:00:00 UTC');
+                        $d = gmdate('Y-m-d', $t - ((int)gmdate('N', $t) - 1) * 86400);
+                        if (isset($seen[$d])) continue;
+                        $seen[$d] = true;
+                    }
+                    $upcomingCount++;
+                    if (count($upcoming) < FEES_WATCH_UPCOMING_MAX) $upcoming[] = ['key' => 'next:' . $d, 'label' => $basis === 'week' ? 'Week of ' . $d : 'Training day', 'date' => $d, 'amount' => $fee, 'state' => 'upcoming'];
+                }
+            }
+        }
+    }
+    $chargedCount = count($rows);
+    $all = array_merge($rows, $due, $upcoming);
+    if (count($all) > FEES_WATCH_ROWS_MAX) $all = array_slice($all, -FEES_WATCH_ROWS_MAX);
+    return [
+        'basis' => $basis, 'unit' => FEES_TRAINING_UNIT[$basis], 'perUnit' => $fee,
+        'charged' => $chargedCount, 'due' => count($due), 'upcoming' => $upcomingCount,
+        'chargedAmount' => (int)$bal['trainingCharged'],
+        'dueAmount' => count($due) * $fee, 'upcomingAmount' => $upcomingCount * $fee,
+        'earnedOff' => (int)$bal['trainingEarned'], 'writtenOff' => (int)$bal['trainingWrittenOff'],
+        'covered' => (int)$bal['programmeCovered'],
+        'coveredPct' => (int)$bal['trainingCharged'] > 0 ? (int)floor(100 * (int)$bal['programmeCovered'] / (int)$bal['trainingCharged']) : 0,
+        'calendarKnown' => $basis === 'session' || $upcomingCount > 0 || $ten['phase'] !== 'training',
+        'phase' => (string)$ten['phase'], 'months' => (int)$ten['months'],
+        'trainingMonths' => (int)$ten['trainingMonths'], 'serviceMonths' => (int)$ten['serviceMonths'],
+        'servedMonths' => (int)$ten['servedMonths'], 'trainingEndsAt' => (string)($ten['trainingEndsAt'] ?? ''),
+        'creditStopped' => !empty($ten['creditStopped']), 'creditPausedAt' => (string)($ten['creditPausedAt'] ?? ''),
+        'mouAt' => (string)$bal['mouAt'],
+        'rows' => $all,
+    ];
+}
+
+/**
+ * admin.fees.training — the training fee across the whole programme, one row
+ * per NGG member who has one: how much has been charged, how much service has
+ * earned off, what is waiting to be charged, and whether the credit is paused
+ * or stopped. Built from three queries however long the roster is (members,
+ * their ledger rows, their live suspension/eviction sanctions) — the per-row
+ * fees_balance() the account drawer uses would be a read per member.
+ *
+ * Filtered and sorted by allow-listed names; an unknown value falls back to
+ * the default rather than erroring, so a stale bookmark still shows the list.
+ */
+const FEES_TRAINING_FILTERS = ['all', 'training', 'service', 'complete', 'stopped', 'paused', 'nojoin'];
+const FEES_TRAINING_SORTS = ['charged', 'earned', 'remaining', 'name', 'month'];
+function admin_fees_training(array $p): array {
+    $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    $cfg = fees_settings();
+    $filter = in_array($p['filter'] ?? '', FEES_TRAINING_FILTERS, true) ? (string)$p['filter'] : 'all';
+    $sort = in_array($p['sort'] ?? '', FEES_TRAINING_SORTS, true) ? (string)$p['sort'] : 'charged';
+    $q = mb_strtolower(trim((string)($p['q'] ?? '')));
+    $limit = max(1, min(FEES_ARREARS_PAGE_MAX, (int)($p['limit'] ?? FEES_ARREARS_PAGE)));
+    $scope = admin_centre_names_in_scope($g['requester']);
+    $members = array_values(array_filter(db_all("SELECT * FROM members WHERE status = 'active' AND COALESCE(type,'NGG') <> 'Summer'"),
+        static fn($m) => member_is_ngg($m) && ($scope === null || in_array((string)($m['centre'] ?? ''), $scope, true))));
+    $out = []; $totals = ['charged' => 0, 'earned' => 0, 'writtenOff' => 0, 'remaining' => 0, 'members' => 0];
+    $counts = array_fill_keys(FEES_TRAINING_FILTERS, 0);
+    foreach (array_chunk($members, 400) as $chunk) {
+        $ids = array_map(static fn($m) => (string)$m['memberId'], $chunk);
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $ledger = [];
+        foreach (db_all("SELECT * FROM member_ledger WHERE memberId IN ($ph) ORDER BY id", $ids) as $e) $ledger[(string)$e['memberId']][] = $e;
+        $comp = [];
+        $today = attendance_today();
+        // The same reading as fees_compliance_cutoff(): a suspension past its end date no longer pauses anything.
+        foreach (db_all("SELECT personId, kind, issuedAt, startsAt, endsAt FROM sanctions WHERE personId IN ($ph) AND status = 'active' AND kind IN ('eviction','suspension') ORDER BY issuedAt", $ids) as $sx) {
+            $pid = (string)$sx['personId'];
+            if ($sx['kind'] === 'suspension' && (string)$sx['endsAt'] !== '' && substr((string)$sx['endsAt'], 0, 10) < $today) continue;
+            if ($sx['kind'] === 'eviction') $comp[$pid] = ['cutoff' => substr((string)$sx['issuedAt'], 0, 10), 'state' => 'evicted', 'final' => true];
+            elseif (($comp[$pid]['state'] ?? '') !== 'evicted') $comp[$pid] = ['cutoff' => substr((string)$sx['startsAt'], 0, 10), 'state' => 'suspended', 'final' => false];
+        }
+        foreach ($chunk as $m) {
+            $mid = (string)$m['memberId'];
+            $b = fees_balance($m, $cfg, null, $ledger[$mid] ?? [], $comp[$mid] ?? ['cutoff' => '', 'state' => 'clear', 'final' => false]);
+            $t = $b['tenure'];
+            $units = 0;
+            foreach ($ledger[$mid] ?? [] as $e) if ((string)$e['kind'] === 'training' && (string)$e['direction'] === 'charge' && trim((string)($e['voidedAt'] ?? '')) === '') $units++;
+            /* Listed: anybody carrying a training charge, and a member in their
+               training months who will be. A staff account with no charge is
+               not on a training programme. */
+            if ($units === 0 && ($t['phase'] !== 'training' || is_admin_role((string)($m['role'] ?? '')))) continue;
+            $remaining = max(0, (int)$b['trainingCharged'] - (int)$b['programmeCovered']);
+            $tags = [$t['phase'] === 'unknown' ? 'nojoin' : $t['phase']];
+            if (!empty($t['creditStopped'])) $tags[] = 'stopped';
+            elseif ((string)($t['creditPausedAt'] ?? '') !== '') $tags[] = 'paused';
+            $counts['all']++; foreach ($tags as $tg) if (isset($counts[$tg])) $counts[$tg]++;
+            if ($filter !== 'all' && !in_array($filter, $tags, true)) continue;
+            if ($q !== '' && !str_contains(mb_strtolower($m['fullName'] . ' ' . ($m['displayId'] ?? '') . ' ' . $mid . ' ' . ($m['centre'] ?? '')), $q)) continue;
+            $totals['charged'] += (int)$b['trainingCharged']; $totals['earned'] += (int)$b['trainingEarned'];
+            $totals['writtenOff'] += (int)$b['trainingWrittenOff']; $totals['remaining'] += $remaining; $totals['members']++;
+            $out[] = ['memberId' => $mid, 'fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''), 'centre' => (string)($m['centre'] ?? ''),
+                      'units' => $units, 'charged' => (int)$b['trainingCharged'], 'earned' => (int)$b['trainingEarned'],
+                      'writtenOff' => (int)$b['trainingWrittenOff'], 'covered' => (int)$b['programmeCovered'], 'remaining' => $remaining,
+                      'coveredPct' => (int)$b['trainingCharged'] > 0 ? (int)floor(100 * (int)$b['programmeCovered'] / (int)$b['trainingCharged']) : 0,
+                      'phase' => (string)$t['phase'], 'months' => (int)$t['months'], 'servedMonths' => (int)$t['servedMonths'],
+                      'trainingEndsAt' => (string)($t['trainingEndsAt'] ?? ''), 'mouAt' => (string)$b['mouAt'],
+                      'creditStopped' => !empty($t['creditStopped']), 'creditPausedAt' => (string)($t['creditPausedAt'] ?? '')];
+        }
+    }
+    $by = ['charged' => static fn($a, $b) => $b['charged'] <=> $a['charged'], 'earned' => static fn($a, $b) => $b['earned'] <=> $a['earned'],
+           'remaining' => static fn($a, $b) => $b['remaining'] <=> $a['remaining'], 'name' => static fn($a, $b) => strcasecmp($a['fullName'], $b['fullName']),
+           'month' => static fn($a, $b) => $b['months'] <=> $a['months']];
+    usort($out, $by[$sort]);
+    $matched = count($out);
+    return ['ok' => true, 'rows' => array_slice($out, 0, $limit), 'matched' => $matched, 'truncated' => $matched > $limit,
+            'totals' => $totals, 'counts' => $counts, 'filter' => $filter, 'sort' => $sort, 'scoped' => $scope !== null,
+            'basis' => (string)$cfg['trainingBasis'], 'perUnit' => (int)$cfg['trainingFee'],
+            'trainingMonths' => (int)$cfg['trainingMonths'], 'serviceMonths' => (int)$cfg['serviceMonths']];
 }
 
 /**
@@ -1036,7 +1217,8 @@ function admin_fees_member(array $p): array {
         'centre' => (string)($m['centre'] ?? ''), 'status' => (string)($m['status'] ?? ''),
         'guardian' => ['name' => (string)($m['parentName'] ?? ''), 'phone' => (string)($m['parentPhone'] ?? ''),
                        'email' => (string)($m['parentEmail'] ?? '')],
-        'balance' => fees_balance($m, $cfg),
+        'balance' => $bal = fees_balance($m, $cfg),
+        'training' => fees_training_watch($m, $cfg, $bal),
         'entries' => array_reverse($entries),          // newest first for reading
         'remindOff' => (int)($m['duesRemindOff'] ?? 0) === 1,
         'settings' => $cfg,
@@ -1239,33 +1421,18 @@ function member_fees_account(array $p): array {
      * calendar rather than from the ledger alone, so a member three sessions in
      * can see the whole shape of what they signed up to instead of only the
      * part that has already happened. */
-    $schedule = [];
-    $ten = $bal['tenure'];
-    $chargedBySession = [];
-    foreach (fees_entries($id) as $e) {
-        if ((string)$e['kind'] !== 'training' || trim((string)($e['voidedAt'] ?? '')) !== '') continue;
-        $chargedBySession[(string)$e['sessionId']] = (int)$e['amount'];
-    }
-    if ($ten['start'] !== '') {
-        $today = gmdate('Y-m-d');
-        foreach (db_all('SELECT sessionId, name, startDate FROM sessions ORDER BY startDate') as $s) {
-            $sd = substr((string)($s['startDate'] ?? ''), 0, 10);
-            if ($sd === '' || $sd < $ten['start']) continue;
-            if ($sd >= (string)$ten['trainingEndsAt']) continue;     // past the training half
-            $sid = (string)$s['sessionId'];
-            $schedule[] = [
-                'sessionId' => $sid, 'name' => (string)($s['name'] ?? $sid), 'startDate' => $sd,
-                'amount' => $chargedBySession[$sid] ?? (int)$cfg['trainingFee'],
-                // 'charged' = already on the account; 'upcoming' = still to come.
-                'state' => isset($chargedBySession[$sid]) ? 'charged' : ($sd > $today ? 'upcoming' : 'due'),
-            ];
-        }
-    }
+    /* The schedule is the training-fee watch's rows — the same builder the
+       Control Room reads, so the member and the desk see one list. `schedule`
+       keeps its old shape for the panel; `training` is the whole watch. */
+    $watch = fees_training_watch($m, $cfg, $bal);
+    $schedule = array_map(static fn($r) => ['sessionId' => $r['key'], 'name' => $r['label'], 'startDate' => $r['date'],
+                                           'amount' => $r['amount'], 'state' => $r['state']], $watch['rows']);
 
     return ['ok' => true, 'enabled' => true, 'account' => [
         'memberId' => (string)$m['memberId'],
         'trainingFeePerSession' => (int)$cfg['trainingFee'],
         'schedule' => $schedule,
+        'training' => $watch,
         'payable' => (int)$bal['payable'],
         'outstanding' => (int)$bal['outstanding'],
         'charged' => (int)$bal['charged'],

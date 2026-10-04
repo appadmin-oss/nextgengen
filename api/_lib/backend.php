@@ -231,6 +231,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.fees.uprate.preview'   => 'admin_fees_uprate_preview',
             'admin.fees.uprate.apply'     => 'admin_fees_uprate_apply',
             'admin.fees.arrears'          => 'admin_fees_arrears',
+            'admin.fees.training'         => 'admin_fees_training',
             'admin.fees.charge'           => 'admin_fees_charge',
             'admin.fees.fineImport'       => 'admin_fees_fine_import',
             'admin.fees.waive'            => 'admin_fees_waive',

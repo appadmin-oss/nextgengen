@@ -1880,55 +1880,17 @@ function DashboardObligations({ account }) {
         </div>
       )}
 
-      {t.phase && t.phase !== "unknown" && (
-        <div className="dash-account-phase mono">
-          MONTH {t.months} OF {(t.trainingMonths || 0) + (t.serviceMonths || 0)} · {String(t.phase).toUpperCase()}
-          {t.phase === "service" && typeof t.servedMonths === "number"
-            && <> · {t.servedMonths}/{t.serviceMonths} SERVED</>}
-        </div>
-      )}
-
-      {/* Why the write-down has stopped, said plainly. A member watching the
-          figure stop moving will otherwise assume the screen is broken, and
-          that is the worst moment to leave somebody guessing. */}
-      {t.creditStopped && (
-        <div className="dash-account-halt">
-          Your service credit stopped on {String(t.creditPausedAt).slice(0, 10)}. Speak to your
-          centre coordinator — this is something to talk through, not something to read off a screen.
-        </div>
-      )}
-      {!t.creditStopped && t.creditPausedAt && (
-        <div className="dash-account-halt is-paused">
-          Your service credit is paused from {String(t.creditPausedAt).slice(0, 10)} while your
-          suspension stands. It starts again when the suspension is lifted.
-        </div>
-      )}
-
-      {/* The per-session schedule — what each session costs, what has been
-          charged, and what is still to come before the training half ends.
-          This is the part a member is actually asking about. */}
-      {(a.schedule || []).length > 0 && (
-        <div className="dash-sched">
-          <div className="dash-sched-head">
-            <b>{naira(a.trainingFeePerSession)}</b> per session
-            <span> · {(a.schedule || []).filter(x => x.state === "charged").length} of {(a.schedule || []).length} charged</span>
-          </div>
-          <ol className="dash-sched-list">
-            {(a.schedule || []).map(x => (
-              <li key={x.sessionId} className={"dash-sched-row is-" + x.state}>
-                <span className="dash-sched-name">{x.name}</span>
-                <span className="mono dash-sched-when">{String(x.startDate).slice(0, 10)}</span>
-                <span className="mono dash-sched-amt">{naira(x.amount)}</span>
-                <span className="dash-sched-tag">{x.state === "charged" ? "on your account" : x.state === "due" ? "due" : "to come"}</span>
-              </li>
-            ))}
-          </ol>
-          <p className="dash-sched-foot">
-            Sessions are added for your first {t.trainingMonths} months. After that the total
-            starts coming down again over {t.serviceMonths} months as you serve — as long as you
-            keep to the MOU.
-          </p>
-        </div>
+      {/* The training-fee watch — the phase, any pause in the credit, and the
+          schedule, drawn by the one component the Control Room uses too. */}
+      {a.training && (a.training.rows.length > 0 || a.training.phase !== "unknown")
+        ? <TrainingFeeWatch w={a.training} audience="member"/>
+        : null}
+      {a.training && a.training.phase === "training" && a.training.rows.length > 0 && (
+        <p className="dash-sched-foot">
+          The fee is added for your first {t.trainingMonths} months. After that the total
+          starts coming down again over {t.serviceMonths} months as you serve — as long as you
+          keep to the MOU.
+        </p>
       )}
 
       <button className="btn btn-ghost btn-sm dash-account-toggle" onClick={() => setOpen(o => !o)}>

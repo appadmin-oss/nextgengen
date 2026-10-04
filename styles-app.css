@@ -7642,3 +7642,16 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
 .cur-rte-preview { min-height: 240px; padding: 12px 14px; border: 1px solid var(--line-cool-soft, #d9dde5); border-radius: 8px; background: #fff; }
 .cur-rte-hint { margin: 0; }
 @media (pointer: coarse) { .cur-rte-btn { min-width: 44px; height: 44px; } }
+
+/* ── The training-fee watch (member panel + Control Room) ── */
+.tfw-progress { margin: 4px 0 10px; }
+.tfw-bar { height: 8px; border-radius: 999px; background: rgba(12,20,50,.08); overflow: hidden; }
+.tfw-bar span { display: block; height: 100%; background: #2f7a3f; }
+.tfw-figs { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin-top: 6px; font-size: 12.5px; color: var(--ink-500, #5b6478); }
+.tfw-figs b { color: var(--ink-900, #16223e); }
+.dash-sched-row.is-due .dash-sched-tag { color: #6b4600; }
+.tfw-more { margin-top: 8px; }
+.fee-train-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.fee-train-sum { padding: 14px 18px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink-700); line-height: 1.55; }
+.fee-train-bar { width: 120px; height: 6px; border-radius: 999px; background: rgba(12,20,50,.08); overflow: hidden; margin-top: 4px; }
+.fee-train-bar span { display: block; height: 100%; background: #2f7a3f; }

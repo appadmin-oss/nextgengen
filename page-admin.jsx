@@ -11881,6 +11881,75 @@ function FinesUpload({ onDone }) {
   );
 }
 
+/* ── Training fees across the programme ──────────────────────────────────────
+ *
+ * The member watches their training fee being earned off; this is the same
+ * watch for the desk, for everybody at once: what has been charged, how much
+ * service has covered, what is left, and whose credit is paused or stopped.
+ * Opening a row shows that member's whole schedule in the account drawer.
+ * Filters and sort are names the server allow-lists, and the list is scoped to
+ * the operator's centres.
+ */
+const FEE_TRAIN_FILTERS = [["all", "Everybody"], ["training", "In training"], ["service", "Serving"], ["complete", "Complete"], ["paused", "Credit paused"], ["stopped", "Credit stopped"], ["nojoin", "No join date"]];
+const FEE_TRAIN_SORTS = [["charged", "Most charged"], ["remaining", "Most still to cover"], ["earned", "Most earned off"], ["month", "Furthest in"], ["name", "Name"]];
+function FeeTrainingWatch({ onOpen }) {
+  const [f, setF] = React.useState({ filter: "all", sort: "charged", q: "" });
+  const [q, setQ] = React.useState("");
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const load = React.useCallback(() => { setErr(""); return NGGApi.admin.fees.training(f).then(setD).catch(e => { setD(null); setErr(e.code || e.message); }); }, [f]);
+  React.useEffect(() => { setD(null); load(); }, [load]);
+  const c = (d && d.counts) || {};
+  const t = (d && d.totals) || {};
+  return (
+    <div>
+      <div className="fee-train-filters" role="group" aria-label="Filter the training fees">
+        {FEE_TRAIN_FILTERS.map(([k, l]) => (
+          <button key={k} className={"btn btn-sm " + (f.filter === k ? "btn-primary" : "btn-ghost")} aria-pressed={f.filter === k}
+            onClick={() => setF(o => ({ ...o, filter: k }))}>{l}{c[k] ? " (" + c[k] + ")" : ""}</button>
+        ))}
+        <select className="admin-select" aria-label="Sort by" value={f.sort} onChange={e => setF(o => ({ ...o, sort: e.target.value }))}>
+          {FEE_TRAIN_SORTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+        <form role="search" onSubmit={e => { e.preventDefault(); setF(o => ({ ...o, q: q.trim() })); }}>
+          <input className="admin-input" type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Name, ID or centre" aria-label="Search the training fees"/>
+        </form>
+      </div>
+      {err ? <ErrorState title="Couldn't load the training fees" code={err} onRetry={load}/> :
+        !d ? <div className="dash-spinner" role="status" aria-label="Loading"/> :
+        <div className="admin-card" style={{ padding: 0, overflow: "hidden" }}>
+          <div className="fee-train-sum" role="status">
+            <b>{fmtNum(t.members || 0)}</b> member{t.members === 1 ? "" : "s"} shown · <b>{naira(t.charged || 0)}</b> charged as training
+            {" "}· <b>{naira((t.earned || 0) + (t.writtenOff || 0))}</b> covered by service ({naira(t.earned || 0)} earned, {naira(t.writtenOff || 0)} written off)
+            {" "}· <b>{naira(t.remaining || 0)}</b> still to cover.
+            {" "}Charged at {naira(d.perUnit)} per {d.basis === "day" ? "programme day" : d.basis}, for the first {d.trainingMonths} months; covered over the {d.serviceMonths} months of service.
+            {d.scoped && " Your centres only."}
+            {d.truncated && <> Showing the first {d.rows.length} of {d.matched}.</>}
+          </div>
+          {!d.rows.length ? <div className="admin-empty">Nobody here{f.filter !== "all" ? " for that filter" : ""}{f.q ? " matching “" + f.q + "”" : ""}.</div> :
+          <div className="admin-table-wrap"><table className="admin-table">
+            <caption className="sr-only">Training fee by member</caption>
+            <thead><tr><th scope="col">Member</th><th scope="col">Where they are</th><th scope="col">Charged</th><th scope="col">Covered</th><th scope="col">Still to cover</th><th scope="col"><span className="sr-only">Open</span></th></tr></thead>
+            <tbody>{d.rows.map(r => (
+              <tr key={r.memberId}>
+                <td><b>{r.fullName}</b><div className="admin-cell-sub">{r.displayId || r.memberId} · {r.centre || "—"}</div></td>
+                <td>{r.phase === "unknown" ? "No join date" : <>Month {r.months} · {r.phase}{r.phase === "service" ? " · " + r.servedMonths + " served" : ""}</>}
+                  {r.mouAt && <div className="admin-cell-sub">MOU done</div>}
+                  {r.creditStopped && <div className="admin-cell-sub">Credit stopped {fmtDate(r.creditPausedAt)}</div>}
+                  {!r.creditStopped && r.creditPausedAt && <div className="admin-cell-sub">Credit paused from {fmtDate(r.creditPausedAt)}</div>}</td>
+                <td className="mono">{naira(r.charged)}<div className="admin-cell-sub">{r.units} charge{r.units === 1 ? "" : "s"}</div></td>
+                <td className="mono">{naira(r.covered)} <span className="admin-cell-sub">({r.coveredPct}%)</span>
+                  <div className="fee-train-bar" aria-hidden="true"><span style={{ width: r.coveredPct + "%" }}/></div></td>
+                <td className="mono">{r.remaining > 0 ? naira(r.remaining) : "—"}</td>
+                <td><button className="btn btn-ghost btn-sm" onClick={() => onOpen(r.memberId)} aria-label={"Open " + r.fullName + "'s account"}>Open →</button></td>
+              </tr>
+            ))}</tbody>
+          </table></div>}
+        </div>}
+    </div>
+  );
+}
+
 function AdminFees() {
   const [tab, setTab] = React.useState("arrears");   // arrears | settings
   const [cfg, setCfg] = React.useState(null);
@@ -12080,7 +12149,7 @@ function AdminFees() {
   return (
     <div>
       <div className="admin-filters">
-        {[["arrears", "Who owes"], ["fines", "Upload fines"], ["reminders", "Reminders"], ["settings", "Amounts"]].map(([k, l]) => (
+        {[["arrears", "Who owes"], ["training", "Training fees"], ["fines", "Upload fines"], ["reminders", "Reminders"], ["settings", "Amounts"]].map(([k, l]) => (
           <button key={k} className={"btn btn-sm " + (tab === k ? "btn-primary" : "btn-ghost")} onClick={() => setTab(k)}>
             {l}
             {/* A dot on the tab, because an overdue review that is only visible
@@ -12319,6 +12388,7 @@ function AdminFees() {
       )}
 
       {tab === "fines" && <FinesUpload onDone={loadArr}/>}
+      {tab === "training" && <FeeTrainingWatch onOpen={openAcct}/>}
       {tab === "arrears" && (
         <div>
           {/* Above the list, because the list is only the people who owe. Anybody
@@ -12406,6 +12476,7 @@ function AdminFees() {
                  {acct.balance.tenure.phase === "service" && <> {acct.balance.tenure.servedMonths} of {acct.balance.tenure.serviceMonths} service months served.</>}</>}
             {acct.mouAt && <> MOU accomplished {String(acct.mouAt).slice(0, 10)}.</>}
           </div>
+          {acct.training && <TrainingFeeWatch w={acct.training} audience="staff"/>}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
             <button className="btn btn-primary btn-sm" onClick={() => setEntry("payment")}>Record a payment</button>
             {/* Both of these existed as valid ledger kinds and neither could be

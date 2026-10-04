@@ -23582,5 +23582,80 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-FA-%' OR memberId = 'SUM-FA-1'");
 })();
 
+/* ── The training-fee watch: one schedule for the member and the desk ── */
+(function () {
+    $now = now_iso();
+    $keep = setting_raw('fees'); $keepCal = setting_raw('memberProgramme');
+    fees_settings_save(['enabled' => true, 'trainingFee' => 10000, 'trainingBasis' => 'session', 'trainingMonths' => 18,
+                        'serviceMonths' => 18, 'membershipFee' => 0, 'monthlyDues' => 0, 'balanceCap' => 0], 'test');
+    $mk = fn($id, $joinMonthsAgo, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Tw ' . $id, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'joinDate' => gmdate('Y-m-d', strtotime('-' . $joinMonthsAgo . ' months')),
+        'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-TW-NEW', 2); $mk('NGG-TW-OLD', 24); $mk('NGG-TW-IKJ', 2, ['centre' => 'Ikeja']);
+    $mk('NGG-TW-ADM', 0, ['role' => 'admin', 'capsExtra' => json_encode(['fees'])]);
+    $mk('NGG-TW-SCOPED', 0, ['role' => 'admin', 'capsExtra' => json_encode(['fees']), 'centreScope' => json_encode(['Egbeda'])]);
+    foreach ([['TWS-1', -1, 'Term one'], ['TWS-2', 2, 'Term two'], ['TWS-OLD', -22, 'Long ago']] as [$sid, $off, $name]) {
+        db_insert('sessions', ['sessionId' => $sid, 'name' => $name, 'year' => (int)gmdate('Y'),
+            'startDate' => gmdate('Y-m-d', strtotime($off . ' months')), 'endDate' => gmdate('Y-m-d', strtotime(($off + 2) . ' months'))]);
+    }
+    foreach (['NGG-TW-NEW', 'NGG-TW-OLD', 'NGG-TW-IKJ'] as $id) fees_accrue_member(db_row('SELECT * FROM members WHERE memberId = ?', [$id]));
+    $new = db_row("SELECT * FROM members WHERE memberId = 'NGG-TW-NEW'");
+    $w = fees_training_watch($new);
+    $states = array_column($w['rows'], 'state', 'key');
+    $tws1 = array_values(array_filter($w['rows'], fn($r) => $r['key'] === 'TWS-1'))[0] ?? [];
+    chk('watch: a member in training sees the session charged, dated by the session, and the next one to come', ($states['TWS-1'] ?? '') === 'charged' && ($states['TWS-2'] ?? '') === 'upcoming'
+        && ($tws1['date'] ?? '') === gmdate('Y-m-d', strtotime('-1 months')) && $w['charged'] >= 1 && $w['upcoming'] >= 1 && $w['unit'] === 'session' && $w['perUnit'] === 10000);
+    chk('watch: …a session before they joined is not on their schedule', !isset($states['TWS-OLD']));
+    $acct = backend_dispatch('member.fees', ['memberId' => 'NGG-TW-NEW'])['account'];
+    $adm = backend_dispatch('admin.fees.member', ['requesterId' => 'NGG-TW-ADM', 'memberId' => 'NGG-TW-NEW'])['account'];
+    chk('watch: the member\'s panel and the Control Room drawer read the same rows', $acct['training']['rows'] === $adm['training']['rows']
+        && array_column($acct['schedule'], 'state', 'sessionId') === $states);
+    $old = fees_training_watch(db_row("SELECT * FROM members WHERE memberId = 'NGG-TW-OLD'"));
+    chk('watch: two years in, nothing is still to come and service is covering it', $old['phase'] === 'service' && $old['upcoming'] === 0 && $old['due'] === 0
+        && $old['covered'] > 0 && $old['coveredPct'] > 0 && $old['coveredPct'] < 100);
+
+    // A week basis lists the weeks still to come off the meeting calendar.
+    setting_set('memberProgramme', ['enabled' => true, 'startDate' => gmdate('Y-m-d', strtotime('-60 days')), 'endDate' => gmdate('Y-m-d', strtotime('+60 days')),
+        'weekdays' => [6], 'holidays' => [], 'extraDays' => []], 'test');
+    fees_settings_save(['trainingBasis' => 'week'] + fees_settings(), 'test');
+    // Weeks are only charged where the session was not already charged whole.
+    db_exec("DELETE FROM member_ledger WHERE memberId = 'NGG-TW-NEW' AND kind = 'training'");
+    $ww = fees_training_watch($new);
+    $mondays = array_column(array_filter($ww['rows'], fn($r) => $r['state'] === 'upcoming'), 'date');
+    chk('watch (week rate): the weeks still to come are listed, one per week, each on its Monday', $ww['unit'] === 'week' && count($mondays) >= 7
+        && count($mondays) === count(array_unique($mondays)) && !array_filter($mondays, fn($d) => gmdate('N', strtotime($d . ' UTC')) !== '1'));
+    chk('watch (week rate): weeks that have happened but are not charged yet wait for the next run', $ww['due'] > 0
+        && !array_filter($ww['rows'], fn($r) => $r['state'] === 'due' && $r['date'] > gmdate('Y-m-d')));
+    fees_settings_save(['trainingBasis' => 'session'] + fees_settings(), 'test');
+
+    // The desk's watch over everybody.
+    fees_accrue_member($new);
+    $all = backend_dispatch('admin.fees.training', ['requesterId' => 'NGG-TW-ADM', 'limit' => 1000]);
+    $ids = array_column($all['rows'] ?? [], 'memberId');
+    chk('watch (desk): everybody with a training fee is listed, staff are not', !array_diff(['NGG-TW-NEW', 'NGG-TW-OLD', 'NGG-TW-IKJ'], $ids) && !in_array('NGG-TW-ADM', $ids, true));
+    $row = array_values(array_filter($all['rows'], fn($r) => $r['memberId'] === 'NGG-TW-OLD'))[0];
+    $bal = fees_balance(db_row("SELECT * FROM members WHERE memberId = 'NGG-TW-OLD'"));
+    chk('watch (desk): a row agrees with the member\'s own account', $row['charged'] === (int)$bal['trainingCharged'] && $row['covered'] === (int)$bal['programmeCovered']
+        && $row['remaining'] === (int)$bal['trainingCharged'] - (int)$bal['programmeCovered']);
+    chk('watch (desk): filtering by phase works, and an unknown filter falls back to everybody',
+        in_array('NGG-TW-OLD', $svc = array_column(backend_dispatch('admin.fees.training', ['requesterId' => 'NGG-TW-ADM', 'filter' => 'service', 'limit' => 1000])['rows'], 'memberId'), true)
+        && !in_array('NGG-TW-NEW', $svc, true)
+        && backend_dispatch('admin.fees.training', ['requesterId' => 'NGG-TW-ADM', 'filter' => 'DROP TABLE'])['filter'] === 'all');
+    chk('watch (desk): a centre-scoped operator sees only their centres', !in_array('NGG-TW-IKJ', array_column(backend_dispatch('admin.fees.training', ['requesterId' => 'NGG-TW-SCOPED'])['rows'], 'memberId'), true));
+    chk('watch (desk): it needs the fees permission', (backend_dispatch('admin.fees.training', ['requesterId' => 'NGG-TW-NEW'])['ok'] ?? true) === false);
+    // The query count does not grow with the roster.
+    $GLOBALS['__db_qcount'] = 0; backend_dispatch('admin.fees.training', ['requesterId' => 'NGG-TW-ADM']); $q1 = $GLOBALS['__db_qcount'];
+    for ($i = 0; $i < 15; $i++) { $mk('NGG-TW-X' . $i, 3); }
+    $GLOBALS['__db_qcount'] = 0; backend_dispatch('admin.fees.training', ['requesterId' => 'NGG-TW-ADM']); $q2 = $GLOBALS['__db_qcount'];
+    unset($GLOBALS['__db_qcount']);
+    chk('watch (desk): fifteen more members cost no more queries', $q2 === $q1);
+
+    db_exec("DELETE FROM member_ledger WHERE memberId LIKE 'NGG-TW-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-TW-%'");
+    db_exec("DELETE FROM sessions WHERE sessionId LIKE 'TWS-%'");
+    if ($keep === null) db_exec("DELETE FROM settings WHERE settingKey = 'fees'"); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$keep, 'fees']);
+    if ($keepCal === null) db_exec("DELETE FROM settings WHERE settingKey = 'memberProgramme'"); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$keepCal, 'memberProgramme']);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

@@ -1631,6 +1631,90 @@ function OfflineBanner() {
   );
 }
 
+/* ── The training-fee watch ─────────────────────────────────────────────────
+ *
+ * One drawing of fees_training_watch() (domain/fees.php), for the member's own
+ * account panel and the Control Room's account drawer alike, so the member and
+ * the desk are never looking at two different lists. `audience` changes the
+ * words, never the rows: a member reads "on your account", a coordinator reads
+ * "charged". A long day-rate history is folded to its latest rows with a way
+ * to open the rest — two hundred lines is a ledger, not a watch.
+ */
+const TFW_TAG = {
+  member: { charged: "on your account", due: "next to be added", upcoming: "to come" },
+  staff:  { charged: "charged", due: "waiting for the next run", upcoming: "to come" },
+};
+const TFW_PHASE = { training: "training", service: "service", complete: "complete", unknown: "no join date" };
+function TrainingFeeWatch({ w, audience }) {
+  const [all, setAll] = React.useState(false);
+  if (!w) return null;
+  const who = audience === "staff" ? "staff" : "member";
+  const tag = TFW_TAG[who];
+  const charged = w.rows.filter(r => r.state === "charged");
+  const rest = w.rows.filter(r => r.state !== "charged");
+  const SHOW = 6;
+  const shownCharged = all ? charged : charged.slice(-SHOW);
+  const total = w.trainingMonths + w.serviceMonths;
+  return (
+    <div className="dash-sched tfw" data-audience={who}>
+      <div className="dash-sched-head">
+        <b>{fmtMoney(w.perUnit)}</b> per {w.unit}
+        <span> · {w.charged} charged{w.due ? " · " + w.due + " waiting" : ""}{w.upcoming ? " · " + w.upcoming + " still to come" : ""}</span>
+      </div>
+      {w.chargedAmount > 0 && (
+        <div className="tfw-progress">
+          <div className="tfw-bar" role="progressbar" aria-valuenow={w.coveredPct} aria-valuemin="0" aria-valuemax="100"
+            aria-label={who === "staff" ? "Training fee covered by service" : "Your training fee earned off so far"}><span style={{ width: w.coveredPct + "%" }}/></div>
+          <div className="tfw-figs">
+            <span><b>{fmtMoney(w.covered)}</b> of {fmtMoney(w.chargedAmount)} {who === "staff" ? "covered" : "earned off"} ({w.coveredPct}%)</span>
+            {who === "staff" && <span>{fmtMoney(w.earnedOff)} earned by service · {fmtMoney(w.writtenOff)} written off</span>}
+          </div>
+        </div>
+      )}
+      {w.phase !== "unknown" ? (
+        <div className="dash-account-phase mono">
+          MONTH {w.months} OF {total} · {String(TFW_PHASE[w.phase] || w.phase).toUpperCase()}
+          {w.phase === "service" && <> · {w.servedMonths}/{w.serviceMonths} SERVED</>}
+          {w.phase === "training" && w.trainingEndsAt && <> · CHARGES END {fmtDate(w.trainingEndsAt).toUpperCase()}</>}
+        </div>
+      ) : <p className="dash-sched-foot">No join date on the record, so the training clock cannot be worked out.</p>}
+      {w.creditStopped && <div className="dash-account-halt">{who === "staff"
+        ? "Service credit stopped on " + fmtDate(w.creditPausedAt) + " (eviction). Nothing more is earned off."
+        : "Your service credit stopped on " + fmtDate(w.creditPausedAt) + ". Speak to your centre coordinator — this is something to talk through, not something to read off a screen."}</div>}
+      {!w.creditStopped && w.creditPausedAt && <div className="dash-account-halt is-paused">{who === "staff"
+        ? "Service credit paused from " + fmtDate(w.creditPausedAt) + " while a suspension stands."
+        : "Your service credit is paused from " + fmtDate(w.creditPausedAt) + " while your suspension stands. It starts again when the suspension is lifted."}</div>}
+      {w.rows.length > 0 && (
+        <ol className="dash-sched-list">
+          {shownCharged.map(x => <TrainingFeeRow key={x.key} x={x} tag={tag}/>)}
+          {rest.map(x => <TrainingFeeRow key={x.key} x={x} tag={tag}/>)}
+        </ol>
+      )}
+      {charged.length > SHOW && (
+        <button type="button" className="btn btn-ghost btn-sm tfw-more" aria-expanded={all} onClick={() => setAll(a => !a)}>
+          {all ? "Show only the latest" : "Show all " + charged.length + " charged"}
+        </button>
+      )}
+      {w.phase === "training" && !w.calendarKnown && (
+        <p className="dash-sched-foot">What is still to come shows once the meeting calendar for the rest of the training period is set.</p>
+      )}
+      {w.phase === "training" && w.upcoming > rest.filter(r => r.state === "upcoming").length && (
+        <p className="dash-sched-foot">Showing the next {rest.filter(r => r.state === "upcoming").length} of {w.upcoming} still to come.</p>
+      )}
+    </div>
+  );
+}
+function TrainingFeeRow({ x, tag }) {
+  return (
+    <li className={"dash-sched-row is-" + x.state}>
+      <span className="dash-sched-name">{x.label}</span>
+      <span className="mono dash-sched-when">{fmtDate(x.date)}</span>
+      <span className="mono dash-sched-amt">{fmtMoney(x.amount)}</span>
+      <span className="dash-sched-tag">{tag[x.state] || x.state}</span>
+    </li>
+  );
+}
+
 function ErrorState({ title, message, code, onRetry }) {
   return (
     <div className="state-block state-error" role="alert">
