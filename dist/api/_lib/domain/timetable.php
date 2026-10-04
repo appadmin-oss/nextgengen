@@ -237,7 +237,8 @@ function tt_for_centre(string $centreName, bool $withInstructor, string $highlig
     $slots = array_map(static fn($r) => tt_public_slot($r, $centres, $vol, $withInstructor)
                        + ['mine' => $highlightCourse !== '' && strcasecmp((string)$r['course'], $highlightCourse) === 0],
         db_all("SELECT * FROM timetable_slots WHERE centreId = ? AND status = 'active' ORDER BY weekday, startTime, course", [$cid]));
-    return ['centre' => (string)$centres[$cid]['name'], 'meetDays' => (string)$centres[$cid]['meetDays'], 'meetTime' => (string)$centres[$cid]['meetTime'], 'slots' => $slots];
+    // The slug opens the public timetable maker on this centre's week (?centre=).
+    return ['centre' => (string)$centres[$cid]['name'], 'slug' => (string)($centres[$cid]['slug'] ?? ''), 'meetDays' => (string)$centres[$cid]['meetDays'], 'meetTime' => (string)$centres[$cid]['meetTime'], 'slots' => $slots];
 }
 
 /** member.timetable — the member's own centre, their course marked. */

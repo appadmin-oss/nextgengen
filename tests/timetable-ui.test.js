@@ -140,6 +140,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     chk('the member\'s dashboard has a Timetable tab with their centre\'s week', (await mp.$$('.tt-table tbody tr')).length === 2);
     chk('…their own course marked in words, not only colour', /Piano/.test(mine) && /Your course/.test(mine));
     chk('…readable on a phone without sideways scrolling', await mp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    chk('…and "Design my own timetable" opens the maker on their centre', await mp.$eval('a:has-text("Design my own timetable")', a => /\/timetable\?centre=egbeda$/.test(a.getAttribute('href'))).catch(() => false));
     await mp.screenshot({ path: path.join(SHOTS, 'member-phone.png'), fullPage: true });
 
     /* ── The public: the timetable maker ── */
@@ -225,7 +226,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await dp.screenshot({ path: path.join(SHOTS, 'maker-desktop.png') });
     // Every template with the sample week, as it downloads: one poster, print size.
     await dp.click('#tm-tab-design');
-    const TPLS = ['studio', 'midnight', 'sunrise', 'blueprint', 'bold', 'kente'];
+    const TPLS = ['studio', 'midnight', 'sunrise', 'blueprint', 'bold', 'kente', 'pastel', 'chalkboard'];
     for (const t of TPLS) {
       await dp.click('.tm-tpl >> nth=' + TPLS.indexOf(t));
       await dp.waitForSelector('.tmp.tmp--' + t);
@@ -237,6 +238,61 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
       return Array.from(document.querySelectorAll('.tmp .tmb')).map(b => ratio(getComputedStyle(b).color, getComputedStyle(b).backgroundColor));
     });
     chk('every class block reads at 4.5:1 or better on its own colour', contrast.length > 5 && Math.min(...contrast) >= 4.5);
+
+    // A title colour that cannot be read is said so, with a one-tap fix.
+    await dp.click('.tm-tpl:has-text("Studio")');
+    await dp.click('.tm-swatch[title="Gold"]');
+    await dp.waitForSelector('.tm-warn', { timeout: 5000 });
+    chk('a pale title colour on white is flagged with its ratio', /hard to read on Studio/.test(await dp.$eval('.tm-warn', el => el.innerText)));
+    await dp.click('.tm-warn .tm-linkbtn');
+    await dp.waitForFunction(() => !document.querySelector('.tm-warn'), null, { timeout: 5000 });
+    chk('…and "use the nearest shade" fixes it, on the poster too', /Reads clearly/.test(await dp.$eval('#tm-pane-design', el => el.innerText))
+      && await dp.$eval('.tmp-title', el => getComputedStyle(el).color !== 'rgb(245, 176, 38)'));
+    await dp.click('.tm-check:has-text("Larger text") input');
+    chk('larger text is one tick away', !!(await dp.$('.tmp.is-large')));
+
+    // Undo and redo, by button and by keyboard.
+    await dp.click('#tm-tab-classes');
+    const n0 = (await dp.$$('.tm-item')).length;
+    await dp.click('button[aria-label^="Remove "] >> nth=0');
+    await dp.waitForFunction((n) => document.querySelectorAll('.tm-item').length === n - 1, n0);
+    await dp.click('.tm-history button:has-text("Undo")');
+    await dp.waitForFunction((n) => document.querySelectorAll('.tm-item').length === n, n0, { timeout: 5000 }).then(() => chk('Undo brings a removed class back', true), () => chk('Undo brings a removed class back', false));
+    await dp.keyboard.press('Control+Shift+Z');
+    await dp.waitForFunction((n) => document.querySelectorAll('.tm-item').length === n - 1, n0, { timeout: 5000 }).then(() => chk('…and Ctrl+Shift+Z redoes it', true), () => chk('…and Ctrl+Shift+Z redoes it', false));
+    await dp.keyboard.press('Control+Z');
+    await dp.waitForFunction((n) => document.querySelectorAll('.tm-item').length === n, n0, { timeout: 5000 });
+
+    // Quick add fills the form; an icon is a named choice.
+    await dp.click('.tm-quick .tm-chip >> nth=0');
+    const quickName = await dp.$eval('.tm-form input', el => el.value);
+    chk('a quick-add chip opens the form with the name filled in', quickName.length > 1);
+    await dp.click('.tm-icon[title="Music"]');
+    await dp.click('.tm-form .tm-day[aria-label="Wednesday"]');
+    await dp.fill('.tm-form input[type=time] >> nth=0', '15:30');
+    await dp.fill('.tm-form input[type=time] >> nth=1', '16:00');
+    await dp.click('.tm-form button[type=submit]');
+    await dp.waitForFunction((n) => document.querySelectorAll('.tm-item').length === n + 1, n0);
+    chk('…and the icon shows on the poster', await dp.evaluate(() => Array.from(document.querySelectorAll('.tmb-icon')).some(i => i.textContent === '🎵')));
+
+    // Sunday first.
+    await dp.click('#tm-tab-layout');
+    await dp.click('.tm-segbtn:has-text("Sunday")');
+    await dp.click('#tm-tab-classes');
+    await dp.click('.tm-add'); await dp.fill('.tm-form input >> nth=0', 'Church'); await dp.click('.tm-form .tm-day[aria-label="Monday"]'); await dp.click('.tm-form .tm-day[aria-label="Sunday"]');
+    await dp.click('.tm-form button[type=submit]');
+    await dp.waitForFunction(() => /Church/.test(document.querySelector('.tm-list').innerText));
+    chk('"week starts on Sunday" puts Sunday first', /Sun/.test(await dp.$eval('.tmp-dayhead', el => el.innerText)));
+
+    // Paste rows from a spreadsheet.
+    const before = (await dp.$$('.tm-item')).length;
+    await dp.click('#tm-tab-start');
+    await dp.fill('.tm-paste', 'Day\tStart\tEnd\tClass\tWhere\nMon/Wed\t4pm\t5pm\tPiano\tHall\nTue\t16:00-17:30\tCoding club\tLab 2\nFriday\t9\tnot a time\tBroken');
+    await dp.waitForSelector('.tm-paste-res');
+    const pr = await dp.$eval('.tm-paste-res', el => el.innerText);
+    chk('pasted rows are read in any column order, a header is skipped, and a bad line is named', /2\s*classes ready/.test(pr) && /line 4: needs a start and an end time/.test(pr));
+    await dp.click('.tm-paste-res button:has-text("Add 2 classes")');
+    await dp.waitForFunction((n) => document.querySelectorAll('.tm-item').length === n + 2, before, { timeout: 5000 }).then(() => chk('…and "Add 2 classes" adds them', true), () => chk('…and "Add 2 classes" adds them', false));
 
     chk('no page errors on any screen', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));

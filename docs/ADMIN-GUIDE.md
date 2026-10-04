@@ -383,8 +383,8 @@ and become labelled cards on a phone rather than a table that scrolls sideways.
 are not members yet. Nobody signs in and nothing is sent to us: the timetable
 stays in that browser.
 
-- **Six designed templates**: Studio, Midnight, Sunrise, Blueprint, Bold and
-  Kente. Each has eight named colours (Blue, Green, Amber, Rose, Violet,
+- **Eight designed templates**: Studio, Midnight, Sunrise, Blueprint, Bold,
+  Kente, Pastel and Chalkboard. Each has eight named colours (Blue, Green, Amber, Rose, Violet,
   Orange, Teal, Slate), and the text on every class block reads at 4.5:1 or
   better on its colour.
 - **Classes** are added through a form — name, days, start and end, where, a
@@ -395,6 +395,19 @@ stays in that browser.
   portrait.
 - **Start from**: a centre's official week (its classes come in and can be
   changed — instructors are never named), the sample school week, or blank.
+- **Undo and redo** (buttons, or Ctrl/Cmd+Z and Shift+Ctrl/Cmd+Z): every
+  change can be taken back, including a cleared timetable.
+- **Quick add**: the NGG Club's courses and common school subjects, one tap to
+  start a class. Each class can carry an **icon** (named, for screen readers).
+- **Title colour**: any colour; one that will not read on the template is
+  flagged with its contrast ratio and a one-tap "nearest shade that reads".
+  **Larger text** for a timetable read from across a room. **Week starts on**
+  Monday or Sunday. Eight templates, including **Pastel** and **Chalkboard**.
+- **Paste from a spreadsheet** (*Start from*): rows copied from Excel or Google
+  Sheets — day(s), times, class, where, in any column order ("Mon/Wed",
+  "Mon–Fri", "9am", "14:30–15:15") — with unreadable lines named.
+- Members (Dashboard → Timetable) and parents (family account) have **Design my
+  own timetable**, which opens the maker on their centre's week.
 - **Take it away**: **Download PDF** (fills the page at the chosen size),
   **Picture (PNG)** (twice print size), **Add to calendar (.ics)** — every class
   repeats weekly in Lagos time from the *Starts on* date, until the optional

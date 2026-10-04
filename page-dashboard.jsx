@@ -1742,7 +1742,10 @@ function DashTimetable() {
     <div className="dash-card tt-print">
       <div className="tt-toolbar">
         <h2 className="dash-card-h-sm">{d.centre ? d.centre + " timetable" : "Your timetable"}</h2>
-        {d.slots.length > 0 && <button type="button" className="btn btn-ghost btn-sm tt-noprint" onClick={() => window.print()}>Print</button>}
+        <div className="tt-toolbar-actions tt-noprint">
+          {d.slug && d.slots.length > 0 && <a className="btn btn-ghost btn-sm" href={"/timetable?centre=" + encodeURIComponent(d.slug)}>Design my own timetable</a>}
+          {d.slots.length > 0 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => window.print()}>Print</button>}
+        </div>
       </div>
       {!d.centre ? <p className="tt-empty">You have not been placed at a centre yet. Ask your centre lead.</p>
         : <TimetableView slots={d.slots} showInstructor title={d.centre} mineLabel="Your course"

@@ -35,6 +35,13 @@ const TM_STORE = "ngg.timetable.maker.v1";
 /* Eight hue families, the same in every template, so a class keeps its NAMED
    colour when the template changes and the colour picker can say what it is. */
 const TM_COLOUR_NAMES = ["Blue", "Green", "Amber", "Rose", "Violet", "Orange", "Teal", "Slate"];
+/* An optional mark before a class's name. Named, so the picker can say what
+   each one is; on the poster it is part of the picture. */
+const TM_ICONS = [["", "No icon"], ["📐", "Maths"], ["📖", "Reading"], ["✏️", "Writing"], ["🔬", "Science"], ["🧪", "Lab"], ["💻", "Computers"], ["🌍", "Geography"],
+  ["🎨", "Art"], ["🎵", "Music"], ["🎭", "Drama"], ["⚽", "Sport"], ["🏃", "Exercise"], ["🍽️", "Meal"], ["🧠", "Study"], ["🙏", "Worship"], ["⭐", "Special"]];
+const TM_SCHOOL_SUBJECTS = ["Mathematics", "English", "Basic Science", "Social Studies", "Civic Education", "Computer Studies", "Agricultural Science", "French", "Yoruba", "Igbo", "Hausa", "PE", "Break", "Homework"];
+/* Title colours offered by name; any colour can be typed, and is checked. */
+const TM_TITLE_SWATCHES = [["", "Template's own"], ["#0c1432", "Navy"], ["#14532d", "Forest"], ["#9f1239", "Wine"], ["#c2410c", "Burnt orange"], ["#6b21a8", "Plum"], ["#f5b026", "Gold"], ["#ffffff", "White"]];
 
 const TM_TEMPLATES = [
   { id: "studio", name: "Studio", blurb: "Clean white paper, quiet colour.",
@@ -56,6 +63,12 @@ const TM_TEMPLATES = [
     v: { bg: "#fffaf0", ink: "#1f2a1a", ink2: "#56604c", line: "#efe3c8", band: "#14532d", bandInk: "#fff7df", accent: "#8a5a00", dayBg: "#f8efda",
          stripes: ["#d4a017", "#14532d", "#b91c1c", "#111111", "#d4a017", "#14532d"] },
     palette: ["#b7d0f5", "#b9e2b0", "#f7d774", "#f4b6a6", "#d6c3ec", "#f5bf85", "#a9dfd6", "#ddd4c0"] },
+  { id: "pastel", name: "Pastel", blurb: "Soft gradient, rounded and friendly.",
+    v: { bg: "#fbf7ff", bg2: "#f2f7ff", ink: "#2a2140", ink2: "#5d5478", line: "#ece4f7", band: "#c9b6ff", band2: "#ffc9dc", bandInk: "#2a2140", accent: "#6b3fd6", dayBg: "#f1eafc" },
+    palette: ["#c7dbff", "#c9f0d6", "#ffeaa6", "#ffd0de", "#e4d6ff", "#ffd6b8", "#c2f0ee", "#e2e0ea"] },
+  { id: "chalkboard", name: "Chalkboard", blurb: "Classroom green, hand-chalked title.",
+    v: { bg: "#1f3a2c", bg2: "#173025", ink: "#f2f5ee", ink2: "#c8d3c2", line: "rgba(242,245,238,0.14)", band: "#f2f5ee", bandInk: "#1f3a2c", accent: "#ffe58a", dayBg: "rgba(242,245,238,0.08)" },
+    palette: ["#9ec5ff", "#a8e6b8", "#ffe58a", "#ffb8c6", "#d4c2ff", "#ffc49a", "#9fe3dd", "#d8dcd2"] },
 ];
 const tmTemplate = (id) => TM_TEMPLATES.find(t => t.id === id) || TM_TEMPLATES[0];
 
@@ -80,11 +93,23 @@ function tmShade(hex, f) {
   const n = parseInt(m[1], 16), c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(x => Math.max(0, Math.min(255, Math.round(f < 0 ? x * (1 + f) : x + (255 - x) * f))));
   return "#" + c.map(x => x.toString(16).padStart(2, "0")).join("");
 }
+/* The ground a template's title sits on: its header band where it has one,
+   the page otherwise. A chosen title colour is measured against it. */
+const TM_TITLE_ON_BAND = { sunrise: true, pastel: true };
+function tmTitleGround(tpl) { return TM_TITLE_ON_BAND[tpl.id] ? tpl.v.band : tpl.v.bg; }
+function tmTitleContrast(hex, tpl) { return (typeof inkContrast === "function" ? inkContrast(hex, tmTitleGround(tpl)) : null) || 0; }
+/* The nearest shade of a colour that reads on the title's ground at 3:1 —
+   the floor for large text — darkening on a light ground, lightening on dark. */
+function tmTitleFix(hex, tpl) {
+  const dark = (typeof inkLum === "function" ? inkLum(tmTitleGround(tpl)) : 1) > 0.4;
+  for (let i = 1; i <= 20; i++) { const c = tmShade(hex, dark ? -0.05 * i : 0.05 * i); if (tmTitleContrast(c, tpl) >= 3) return c; }
+  return dark ? "#111111" : "#ffffff";
+}
 function tmId() { return "c" + Math.random().toString(36).slice(2, 9); }
 function tmSlug(s) { return String(s || "timetable").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "timetable"; }
 
 const TM_DEFAULT_SETTINGS = { title: "My week", subtitle: "", template: "studio", days: [1, 2, 3, 4, 5], from: 8, to: 17, clock: "24",
-  orient: "landscape", paper: "a4", showPlace: true, note: "", startsOn: "", until: "" };
+  orient: "landscape", paper: "a4", showPlace: true, note: "", startsOn: "", until: "", weekStart: 1, titleColour: "", large: false };
 function tmSample() {
   const e = (title, days, start, end, place, color) => ({ id: tmId(), title, days, start, end, place, note: "", color });
   return {
@@ -110,11 +135,13 @@ function tmClean(raw) {
   s.clock = s.clock === "12" ? "12" : "24"; s.orient = s.orient === "portrait" ? "portrait" : "landscape"; s.paper = TM_PAPER[s.paper] ? s.paper : "a4";
   s.showPlace = s.showPlace !== false;
   s.startsOn = /^\d{4}-\d{2}-\d{2}$/.test(s.startsOn || "") ? s.startsOn : ""; s.until = /^\d{4}-\d{2}-\d{2}$/.test(s.until || "") ? s.until : "";
+  s.weekStart = +s.weekStart === 7 ? 7 : 1; s.titleColour = /^#[0-9a-f]{6}$/i.test(s.titleColour || "") ? s.titleColour : ""; s.large = !!s.large;
   const entries = (Array.isArray(raw && raw.entries) ? raw.entries : []).slice(0, 120).map(x => ({
     id: String((x && x.id) || tmId()).slice(0, 12), title: String((x && x.title) || "").slice(0, 60),
     days: (Array.isArray(x && x.days) ? x.days : []).map(Number).filter(d => d >= 1 && d <= 7),
     start: String((x && x.start) || ""), end: String((x && x.end) || ""), place: String((x && x.place) || "").slice(0, 60),
     note: String((x && x.note) || "").slice(0, 80), color: Math.max(0, Math.min(7, parseInt(x && x.color, 10) || 0)),
+    icon: TM_ICONS.some(i => i[0] === (x && x.icon)) ? x.icon : "",
   })).filter(x => x.title && x.days.length && tmMin(x.start) !== null && tmMin(x.end) !== null && tmMin(x.end) > tmMin(x.start));
   return { settings: s, entries };
 }
@@ -132,7 +159,8 @@ function tmFrame(settings, entries) {
   let from = settings.from * 60, to = settings.to * 60;
   const days = new Set(settings.days);
   entries.forEach(e => { from = Math.min(from, Math.floor(tmMin(e.start) / 60) * 60); to = Math.max(to, Math.ceil(tmMin(e.end) / 60) * 60); e.days.forEach(d => days.add(d)); });
-  return { from, to: Math.min(to, 24 * 60), days: TM_DAYS.filter(d => days.has(d[0])) };
+  const order = settings.weekStart === 7 ? [TM_DAYS[6]].concat(TM_DAYS.slice(0, 6)) : TM_DAYS;
+  return { from, to: Math.min(to, 24 * 60), days: order.filter(d => days.has(d[0])) };
 }
 /* Side-by-side lanes for classes that overlap on a day, and which overlap. */
 function tmLayoutDay(items) {
@@ -169,13 +197,14 @@ function TmPoster({ settings, entries, size, posterRef, id }) {
   const v = tpl.v;
   const vars = { "--tm-bg": v.bg, "--tm-bg2": v.bg2 || v.bg, "--tm-ink": v.ink, "--tm-ink2": v.ink2, "--tm-line": v.line, "--tm-band": v.band,
     "--tm-band2": v.band2 || v.band, "--tm-band-ink": v.bandInk, "--tm-accent": v.accent, "--tm-day": v.dayBg, width: size.w + "px", height: size.h + "px" };
+  if (settings.titleColour) vars["--tm-title"] = settings.titleColour;
   const byDay = {};
   frame.days.forEach(([d]) => {
     byDay[d] = tmLayoutDay(entries.filter(e => e.days.indexOf(d) !== -1).map(e => ({ e2: e, s: tmMin(e.start), e: tmMin(e.end) })));
   });
   const total = entries.reduce((n, e) => n + e.days.length, 0);
   return (
-    <div ref={posterRef} id={id} className={"tmp tmp--" + tpl.id + (settings.orient === "portrait" ? " is-portrait" : "") + (frame.days.length > 5 ? " is-wide" : "")} style={vars}
+    <div ref={posterRef} id={id} className={"tmp tmp--" + tpl.id + (settings.orient === "portrait" ? " is-portrait" : "") + (frame.days.length > 5 ? " is-wide" : "") + (settings.large ? " is-large" : "")} style={vars}
       role="img" aria-label={(settings.title || "Timetable") + ": " + total + " class" + (total === 1 ? "" : "es") + " across " + frame.days.length + " day" + (frame.days.length === 1 ? "" : "s") + ". The list of classes on this page says the same in words."}>
       {tpl.id === "kente" && <div className="tmp-weave" aria-hidden="true">{(v.stripes || []).concat(v.stripes || []).concat(v.stripes || []).map((c, i) => <span key={i} style={{ background: c }}/>)}</div>}
       <header className="tmp-head">
@@ -202,7 +231,7 @@ function TmPoster({ settings, entries, size, posterRef, id }) {
                 "--tmb": col, "--tmb-ink": ink, "--tmb-edge": tmShade(col, -0.38) };
               return (
                 <div key={e.id + ":" + d} className={"tmb" + (dur <= 40 ? " is-short" : "") + (dur <= 25 ? " is-tiny" : "") + (x.lanes > 1 ? " is-split" : "")} style={st}>
-                  <div className="tmb-title">{e.title}</div>
+                  <div className="tmb-title">{e.icon && <span className="tmb-icon" aria-hidden="true">{e.icon}</span>}{e.title}</div>
                   <div className="tmb-time">{tmFmt(x.s, settings.clock)}–{tmFmt(x.e, settings.clock)}</div>
                   {settings.showPlace && e.place && <div className="tmb-place">{e.place}</div>}
                 </div>
@@ -275,9 +304,59 @@ function tmSave(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1500);
 }
 
+/* ── Paste from a spreadsheet ───────────────────────────────────────────────
+   Rows copied from Excel or Google Sheets arrive tab-separated (or with commas
+   or semicolons from a CSV). Columns are recognised by what they hold, not by
+   their order: day(s), a start and an end time (or one "9:00–10:30" cell), the
+   class, and where. Lines that cannot be read are named, never guessed. */
+const TM_DAY_WORDS = { mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2, wed: 3, weds: 3, wednesday: 3, thu: 4, thur: 4, thurs: 4, thursday: 4, fri: 5, friday: 5, sat: 6, saturday: 6, sun: 7, sunday: 7 };
+function tmParseDays(cell) {
+  const s = String(cell || "").toLowerCase().replace(/\./g, "").trim();
+  if (!s) return null;
+  const range = /^([a-z]+)\s*(?:-|–|to)\s*([a-z]+)$/.exec(s);
+  if (range && TM_DAY_WORDS[range[1]] && TM_DAY_WORDS[range[2]]) {
+    const out = []; let d = TM_DAY_WORDS[range[1]]; const end = TM_DAY_WORDS[range[2]];
+    for (let i = 0; i < 7; i++) { out.push(d); if (d === end) break; d = d % 7 + 1; }
+    return out;
+  }
+  const parts = s.split(/\s*(?:\/|,|&|\band\b|\s)\s*/).filter(Boolean);
+  if (!parts.length || !parts.every(p => TM_DAY_WORDS[p])) return null;
+  return Array.from(new Set(parts.map(p => TM_DAY_WORDS[p]))).sort();
+}
+function tmParseTime(cell) {
+  const m = /^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?$/i.exec(String(cell || "").trim());
+  if (!m) return null;
+  let h = +m[1]; const mi = m[2] ? +m[2] : 0; const ap = (m[3] || "").toLowerCase().replace(/\./g, "");
+  if (ap === "pm" && h < 12) h += 12; if (ap === "am" && h === 12) h = 0;
+  if (h > 23 || mi > 59) return null;
+  return String(h).padStart(2, "0") + ":" + String(mi).padStart(2, "0");
+}
+function tmParseRows(text) {
+  const rows = [], skipped = [];
+  String(text || "").split(/\r?\n/).forEach((line, i) => {
+    if (!line.trim()) return;
+    const sep = line.indexOf("\t") !== -1 ? "\t" : line.indexOf(";") !== -1 ? ";" : ",";
+    const cells = line.split(sep).map(c => c.trim()).filter(Boolean);
+    let days = null; const times = []; const texts = [];
+    cells.forEach(c => {
+      const r = /^(.+?)\s*(?:-|–|—|to)\s*(.+)$/i.exec(c);
+      const a = r && tmParseTime(r[1]), b = r && tmParseTime(r[2]);
+      if (a && b) { times.push(a, b); return; }
+      const t = tmParseTime(c); if (t) { times.push(t); return; }
+      const d = !days && tmParseDays(c); if (d) { days = d; return; }
+      texts.push(c);
+    });
+    if (!days && !times.length && i === 0) return;   // a header row
+    const why = !days ? "no day" : times.length < 2 ? "needs a start and an end time" : tmMin(times[1]) <= tmMin(times[0]) ? "ends before it starts" : !texts.length ? "no class name" : "";
+    if (why) { skipped.push("line " + (i + 1) + ": " + why); return; }
+    rows.push({ id: tmId(), title: texts[0].slice(0, 60), days, start: times[0], end: times[1], place: (texts[1] || "").slice(0, 60), note: (texts[2] || "").slice(0, 80), color: rows.length % 8, icon: "" });
+  });
+  return { rows, skipped };
+}
+
 /* ── One class: add or change ───────────────────────────────────────────── */
 function TmEntryForm({ initial, tpl, onSave, onCancel, clock }) {
-  const [f, setF] = React.useState(() => initial || { id: "", title: "", days: [1], start: "09:00", end: "10:00", place: "", note: "", color: 0 });
+  const [f, setF] = React.useState(() => Object.assign({ id: "", title: "", days: [1], start: "09:00", end: "10:00", place: "", note: "", color: 0, icon: "" }, initial || {}));
   const [err, setErr] = React.useState("");
   const titleRef = React.useRef(null);
   React.useEffect(() => { titleRef.current && titleRef.current.focus(); }, []);
@@ -308,6 +387,16 @@ function TmEntryForm({ initial, tpl, onSave, onCancel, clock }) {
       </div>
       <label className="tm-field"><span>Where <em>· optional</em></span><input value={f.place} maxLength={60} onChange={e => set("place", e.target.value)} placeholder="Room, centre, field…"/></label>
       <label className="tm-field"><span>Note for the calendar <em>· optional</em></span><input value={f.note} maxLength={80} onChange={e => set("note", e.target.value)} placeholder="Bring your recorder"/></label>
+      <fieldset className="tm-fieldset"><legend>Icon <em>· optional</em></legend>
+        <div className="tm-icons" role="radiogroup" aria-label="Icon">
+          {TM_ICONS.map(([ic, label]) => (
+            <label key={label} className={"tm-icon" + (f.icon === ic ? " is-on" : "")} title={label}>
+              <input type="radio" name="tm-icon" className="sr-only" checked={f.icon === ic} onChange={() => set("icon", ic)}/>
+              <span aria-hidden="true">{ic || "–"}</span><span className="sr-only">{label}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <fieldset className="tm-fieldset"><legend>Colour</legend>
         <div className="tm-swatches" role="radiogroup" aria-label="Colour">
           {tpl.palette.map((c, i) => (
@@ -334,8 +423,33 @@ function TimetablePage({ setPage }) {
     try { const raw = localStorage.getItem(TM_STORE); if (raw) return { ...tmClean(JSON.parse(raw)), from: "saved" }; } catch (_) {}
     return { ...tmSample(), from: "sample" };
   }, []);
-  const [settings, setSettings] = React.useState(initial.settings);
-  const [entries, setEntries] = React.useState(initial.entries);
+  /* One document, with a history: every change can be undone. Typing in one
+     field within a second is one step, not one per keystroke. */
+  const [hist, setHist] = React.useState(() => ({ past: [], present: { settings: initial.settings, entries: initial.entries }, future: [] }));
+  const lastTag = React.useRef({ tag: "", at: 0 });
+  const update = (fn, tag) => setHist(h => {
+    const next = fn(h.present);
+    if (next === h.present) return h;
+    const now = Date.now(), merge = !!tag && lastTag.current.tag === tag && now - lastTag.current.at < 1200;
+    lastTag.current = { tag: tag || "", at: now };
+    return { past: merge ? h.past : h.past.concat([h.present]).slice(-60), present: next, future: [] };
+  });
+  const settings = hist.present.settings, entries = hist.present.entries;
+  const setSettings = (f, tag) => update(d => ({ ...d, settings: typeof f === "function" ? f(d.settings) : f }), tag);
+  const setEntries = (f, tag) => update(d => ({ ...d, entries: typeof f === "function" ? f(d.entries) : f }), tag);
+  const undo = () => { lastTag.current = { tag: "", at: 0 }; setHist(h => h.past.length ? { past: h.past.slice(0, -1), present: h.past[h.past.length - 1], future: [h.present].concat(h.future) } : h); setSay("Undone."); };
+  const redo = () => { lastTag.current = { tag: "", at: 0 }; setHist(h => h.future.length ? { past: h.past.concat([h.present]), present: h.future[0], future: h.future.slice(1) } : h); setSay("Redone."); };
+  React.useEffect(() => {
+    // Ctrl/Cmd+Z and Shift+Ctrl/Cmd+Z (or Ctrl+Y) — except inside a field, where the browser's own undo is the right one.
+    const onKey = (e) => {
+      const t = e.target, typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+      if (typing || !(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) { e.preventDefault(); undo(); } else if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); redo(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [editing, setEditing] = React.useState(null);     // null | {} (new) | entry
   // A shared centre link (?centre=) opens on that centre's week.
   const [tab, setTab] = React.useState(() => { try { return new URL(window.location.href).searchParams.get("centre") ? "start" : "classes"; } catch (_) { return "classes"; } });
@@ -348,7 +462,17 @@ function TimetablePage({ setPage }) {
   const tpl = tmTemplate(settings.template);
   const size = tmPosterSize(settings);
   const overlaps = React.useMemo(() => tmOverlaps(entries), [entries]);
-  const setS = (k, v) => setSettings(s => ({ ...s, [k]: v }));
+  const setS = (k, v) => setSettings(s => ({ ...s, [k]: v }), "s:" + k);
+  /* Quick add: the NGG Club's own courses, then common school subjects —
+     a tap opens the form with the name filled in. */
+  const [clubCourses, setClubCourses] = React.useState([]);
+  React.useEffect(() => { NGGApi.public.programme("anchor").then(d => setClubCourses(((d && d.faculties) || []).flatMap(f => f.courses))).catch(() => {}); }, []);
+  const suggestions = React.useMemo(() => {
+    const have = new Set(entries.map(e => e.title.toLowerCase()));
+    return Array.from(new Set(clubCourses.concat(TM_SCHOOL_SUBJECTS))).filter(s => !have.has(s.toLowerCase())).slice(0, 12);
+  }, [clubCourses, entries]);
+  const [paste, setPaste] = React.useState("");
+  const pasted = React.useMemo(() => paste.trim() ? tmParseRows(paste) : null, [paste]);
 
   // Saved in this browser as they go — a convenience; the link is the way to keep it.
   React.useEffect(() => { try { localStorage.setItem(TM_STORE, JSON.stringify({ settings, entries })); } catch (_) {} }, [settings, entries]);
@@ -381,14 +505,15 @@ function TimetablePage({ setPage }) {
       const key = sl.course; if (pal[key] === undefined) pal[key] = (next++) % 8;
       return { id: tmId(), title: sl.course + (sl.level ? " · " + sl.level : ""), days: [sl.weekday], start: sl.startTime, end: sl.endTime, place: sl.room || official.centre || "", note: sl.note || "", color: pal[key] };
     });
-    setEntries(es => replace ? add : es.concat(add));
     /* Starting from a centre fits the poster to it: its days, and its hours
-       rounded out to the hour — not the sample week's Monday-to-Friday. */
-    if (replace && add.length) {
+       rounded out to the hour — not the sample week's Monday-to-Friday. One
+       step in the history, so one Undo puts back what was there. */
+    update(d => {
+      if (!replace || !add.length) return { ...d, entries: d.entries.concat(add) };
       const days = Array.from(new Set(add.flatMap(a => a.days))).sort();
       const from = Math.floor(Math.min(...add.map(a => tmMin(a.start))) / 60), to = Math.ceil(Math.max(...add.map(a => tmMin(a.end))) / 60);
-      setSettings(s => ({ ...s, title: official.centre + " timetable", subtitle: (official.meetDays || "") + (official.meetTime ? ", " + official.meetTime : ""), days, from, to: Math.max(to, from + 1) }));
-    }
+      return { entries: add, settings: { ...d.settings, title: official.centre + " timetable", subtitle: (official.meetDays || "") + (official.meetTime ? ", " + official.meetTime : ""), days, from, to: Math.max(to, from + 1) } };
+    });
     setSay((replace ? "Started from " : "Added ") + add.length + " class" + (add.length === 1 ? "" : "es") + " from " + official.centre + ".");
     setTab("classes");
   };
@@ -455,10 +580,10 @@ function TimetablePage({ setPage }) {
     catch (_) { window.prompt("Copy this link:", url); }
   });
   const reset = async (which) => {
-    if (which === "blank" && entries.length && !(await dialog.confirm({ title: "Start a blank timetable?", body: "Your " + entries.length + " class" + (entries.length === 1 ? "" : "es") + " will be cleared from this browser. Copy the link first if you want to keep them.", cta: "Start blank", danger: true }))) return;
+    if (which === "blank" && entries.length && !(await dialog.confirm({ title: "Start a blank timetable?", body: "Your " + entries.length + " class" + (entries.length === 1 ? "" : "es") + " will be cleared. Undo brings them back.", cta: "Start blank", danger: true }))) return;
     if (which === "sample" && entries.length && !(await dialog.confirm({ title: "Replace with the sample week?", body: "Your classes will be replaced by an example school week.", cta: "Use the sample" }))) return;
     const st = which === "sample" ? tmSample() : { settings: { ...TM_DEFAULT_SETTINGS, template: settings.template }, entries: [] };
-    setSettings(st.settings); setEntries(st.entries); setEditing(null);
+    update(() => st); setEditing(null);
     setSay(which === "sample" ? "Loaded the sample week." : "Started a blank timetable.");
   };
 
@@ -484,8 +609,14 @@ function TimetablePage({ setPage }) {
               <label className="tm-field"><span>Title</span><input value={settings.title} maxLength={60} onChange={e => setS("title", e.target.value)}/></label>
               <label className="tm-field"><span>Subtitle <em>· optional</em></span><input value={settings.subtitle} maxLength={80} placeholder="Your name, class or term" onChange={e => setS("subtitle", e.target.value)}/></label>
             </div>
-            {editing ? <TmEntryForm key={editing.id || "new"} initial={editing.id ? editing : null} tpl={tpl} clock={settings.clock} onSave={saveEntry} onCancel={() => { setEditing(null); setTimeout(() => addBtnRef.current && addBtnRef.current.focus(), 0); }}/>
-              : <button ref={addBtnRef} type="button" className="btn btn-primary tm-add" onClick={() => setEditing({})}>+ Add a class</button>}
+            {editing ? <TmEntryForm key={editing.id || "new:" + (editing.title || "")} initial={editing} tpl={tpl} clock={settings.clock} onSave={saveEntry} onCancel={() => { setEditing(null); setTimeout(() => addBtnRef.current && addBtnRef.current.focus(), 0); }}/>
+              : <>
+                  <button ref={addBtnRef} type="button" className="btn btn-primary tm-add" onClick={() => setEditing({})}>+ Add a class</button>
+                  {suggestions.length > 0 && <div className="tm-quick" role="group" aria-label="Quick add">
+                    <span className="tm-quick-lbl">Quick add</span>
+                    {suggestions.map(s => <button key={s} type="button" className="tm-chip" onClick={() => setEditing({ title: s, color: entries.length % 8 })}>+ {s}</button>)}
+                  </div>}
+                </>}
             <h2 className="tm-h2" id="tm-list-h">Your classes <span className="tm-count">{entries.length}</span></h2>
             {!entries.length ? <p className="tm-empty">No classes yet. Add your first one, or start from your centre's timetable or the sample week.</p> :
               <ul className="tm-list" aria-labelledby="tm-list-h">
@@ -493,7 +624,7 @@ function TimetablePage({ setPage }) {
                   <li key={e.id} className="tm-item">
                     <span className="tm-item-dot" style={{ background: tpl.palette[e.color] }} aria-hidden="true"/>
                     <div className="tm-item-main">
-                      <b>{e.title}</b>
+                      <b>{e.icon ? e.icon + " " : ""}{e.title}</b>
                       <span className="tm-item-sub">{e.days.map(d => TM_DAYS[d - 1][2]).join(", ")} · {tmFmt(tmMin(e.start), settings.clock)}–{tmFmt(tmMin(e.end), settings.clock)}{e.place ? " · " + e.place : ""} · <span className="sr-only">colour </span>{TM_COLOUR_NAMES[e.color]}</span>
                       {overlaps[e.id] && <span className="tm-item-warn">Overlaps {Array.from(new Set(overlaps[e.id])).join(", ")} — they sit side by side.</span>}
                     </div>
@@ -519,8 +650,25 @@ function TimetablePage({ setPage }) {
                 ))}
               </div>
             </fieldset>
+            <fieldset className="tm-fieldset"><legend>Title colour</legend>
+              <div className="tm-swatches" role="radiogroup" aria-label="Title colour">
+                {TM_TITLE_SWATCHES.map(([c, label]) => (
+                  <label key={label} className={"tm-swatch" + (settings.titleColour === c ? " is-on" : "") + (c ? "" : " is-default")} style={c ? { "--sw": c, "--sw-ink": inkOn(c).ink } : undefined} title={label}>
+                    <input type="radio" name="tm-title-colour" className="sr-only" checked={settings.titleColour === c} onChange={() => setS("titleColour", c)}/>
+                    <span aria-hidden="true">{settings.titleColour === c ? "✓" : c ? "" : "A"}</span><span className="sr-only">{label}</span>
+                  </label>
+                ))}
+                <label className="tm-colour-own"><span>Your own</span><input type="color" value={settings.titleColour || "#0c1432"} onChange={e => setS("titleColour", e.target.value)}/></label>
+              </div>
+              {settings.titleColour && (() => {
+                const r = tmTitleContrast(settings.titleColour, tpl);
+                return r >= 3 ? <p className="tm-hint">Reads clearly on this template ({r.toFixed(1)}:1).</p>
+                  : <p className="tm-warn" role="status">That colour is hard to read on {tpl.name} ({r.toFixed(1)}:1; a title needs 3:1). <button type="button" className="tm-linkbtn" onClick={() => setS("titleColour", tmTitleFix(settings.titleColour, tpl))}>Use the nearest shade that reads</button></p>;
+              })()}
+            </fieldset>
             <label className="tm-field"><span>Footer note <em>· optional</em></span><input value={settings.note} maxLength={120} placeholder="e.g. Bring PE kit on Tuesdays" onChange={e => setS("note", e.target.value)}/></label>
             <label className="tm-check"><input type="checkbox" checked={settings.showPlace} onChange={e => setS("showPlace", e.target.checked)}/> Show where each class is</label>
+            <label className="tm-check"><input type="checkbox" checked={settings.large} onChange={e => setS("large", e.target.checked)}/> Larger text — easier to read on the wall</label>
           </div>}
 
           {tab === "layout" && <div id="tm-pane-layout" role="tabpanel" aria-labelledby="tm-tab-layout" className="tm-pane">
@@ -538,6 +686,9 @@ function TimetablePage({ setPage }) {
                 {Array.from({ length: 24 }, (_, h) => h + 1).map(h => <option key={h} value={h}>{tmFmt(h * 60 % 1440, settings.clock) + (h === 24 ? " (midnight)" : "")}</option>)}</select></label>
             </div>
             <p className="tm-hint">The hours widen by themselves to fit an early or late class.</p>
+            <fieldset className="tm-fieldset"><legend>Week starts on</legend><div className="tm-seg">
+              {[[1, "Monday"], [7, "Sunday"]].map(([k, l]) => <button key={k} type="button" className={"tm-segbtn" + (settings.weekStart === k ? " is-on" : "")} aria-pressed={settings.weekStart === k} onClick={() => setS("weekStart", k)}>{l}</button>)}
+            </div></fieldset>
             <fieldset className="tm-fieldset"><legend>Clock</legend><div className="tm-seg">
               {[["24", "24-hour"], ["12", "12-hour"]].map(([k, l]) => <button key={k} type="button" className={"tm-segbtn" + (settings.clock === k ? " is-on" : "")} aria-pressed={settings.clock === k} onClick={() => setS("clock", k)}>{l}</button>)}
             </div></fieldset>
@@ -579,6 +730,15 @@ function TimetablePage({ setPage }) {
                 <TimetableView slots={official.slots} title={official.centre} emptyText="This centre has not published its timetable yet."/>
               </details>
             </div>}
+            <h2 className="tm-h2">Paste from a spreadsheet</h2>
+            <p className="tm-hint">Copy rows from Excel or Google Sheets — a day, a start and an end time, the class, and where — and paste them here. Column order does not matter; “Mon/Wed”, “Mon–Fri”, “9am” and “14:30–15:15” are all understood.</p>
+            <label className="tm-field"><span>Rows</span>
+              <textarea className="tm-paste" rows={5} value={paste} onChange={e => setPaste(e.target.value)} placeholder={"Monday\t08:30\t09:30\tMathematics\tRoom 4\nTue/Thu\t2pm-3pm\tFootball\tField"}/></label>
+            {pasted && <div className="tm-paste-res" role="status">
+              <p className="tm-hint"><b>{pasted.rows.length}</b> class{pasted.rows.length === 1 ? "" : "es"} ready{pasted.skipped.length ? " · " + pasted.skipped.length + " line" + (pasted.skipped.length === 1 ? "" : "s") + " skipped" : ""}.</p>
+              {pasted.skipped.length > 0 && <ul className="tm-skipped">{pasted.skipped.slice(0, 6).map(s => <li key={s}>{s}</li>)}</ul>}
+              {pasted.rows.length > 0 && <button type="button" className="btn btn-primary btn-sm" onClick={() => { setEntries(es => es.concat(pasted.rows)); setSay("Added " + pasted.rows.length + " class" + (pasted.rows.length === 1 ? "" : "es") + " from your paste."); setPaste(""); setTab("classes"); }}>Add {pasted.rows.length} class{pasted.rows.length === 1 ? "" : "es"}</button>}
+            </div>}
             <h2 className="tm-h2">Or</h2>
             <div className="tm-official-actions">
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => reset("sample")}>Use the sample week</button>
@@ -588,6 +748,10 @@ function TimetablePage({ setPage }) {
         </div>
 
         <div className="tm-preview">
+          <div className="tm-history tm-noprint" role="group" aria-label="History">
+            <button type="button" className="tm-iconbtn" onClick={undo} disabled={!hist.past.length} aria-keyshortcuts="Control+Z Meta+Z">↶ Undo</button>
+            <button type="button" className="tm-iconbtn" onClick={redo} disabled={!hist.future.length} aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y">↷ Redo</button>
+          </div>
           <div className="tm-actions tm-noprint" role="group" aria-label="Download your timetable">
             <button type="button" className="btn btn-primary" disabled={!!busy} onClick={downloadPdf}>{busy === "pdf" ? "Making the PDF…" : "Download PDF"}</button>
             <button type="button" className="btn btn-ghost" disabled={!!busy} onClick={downloadPng}>{busy === "png" ? "Drawing…" : "Picture (PNG)"}</button>

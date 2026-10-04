@@ -409,7 +409,10 @@ function FamilyWard({ link, onRemoved }) {
       {d.timetable && (
         <section className="fam-card tt-print" aria-labelledby="fam-tt-h">
           <div className="fam-row"><h3 id="fam-tt-h" className="fam-h3">{first}'s timetable{d.timetable.centre ? " · " + d.timetable.centre : ""}</h3>
-            {d.timetable.slots.length > 0 && <button type="button" className="fam-link tt-noprint" onClick={() => window.print()}>Print</button>}</div>
+            <span className="tt-noprint">
+              {d.timetable.slug && d.timetable.slots.length > 0 && <a className="fam-link" href={"/timetable?centre=" + encodeURIComponent(d.timetable.slug)}>Make a personal timetable</a>}
+              {d.timetable.slots.length > 0 && <button type="button" className="fam-link" onClick={() => window.print()}>Print</button>}
+            </span></div>
           <TimetableView slots={d.timetable.slots} showInstructor title={first} mineLabel={first + "'s course"}
             emptyText={d.timetable.centre ? d.timetable.centre + " has not published its timetable yet." : first + " has not been placed at a centre yet."}/>
         </section>
