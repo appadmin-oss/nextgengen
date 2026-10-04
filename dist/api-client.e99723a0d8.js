@@ -1331,6 +1331,8 @@
       },
       /* Staff, not children: who has filed what, over what window, next to how
          many children they are responsible for. */
+      // The staff role registry — the only list of roles the screen uses.
+      roles: () => request('/admin/roles.php'),
       staff: {
         performance: (days) => request('/admin/staff.php?view=performance&days=' + (days || 30)),
         ackRemark:   (remarkId) => request('/admin/staff.php', { body: { action: 'ack', remarkId } }),

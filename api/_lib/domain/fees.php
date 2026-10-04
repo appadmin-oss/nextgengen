@@ -1197,9 +1197,21 @@ function admin_fees_settings_set(array $p): array {
 }
 
 /** One member's account: the balance, the tenure, and every entry behind it. */
+/**
+ * The money desk follows the centre scope like every other desk: a scoped
+ * fees officer sees and changes only their centres' members' accounts. The
+ * refusal is the same for an unknown id as for one outside scope.
+ */
+function fees_scope_gate(array $requester, string $memberId): array {
+    if (admin_centre_names_in_scope($requester) === null) return ['ok' => true];
+    $sg = admin_member_scope_gate($requester, $memberId);
+    return $sg['ok'] ? ['ok' => true] : $sg;
+}
+
 function admin_fees_member(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
+    $sg = fees_scope_gate($g['requester'], $id); if (!$sg['ok']) return $sg;
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $cfg = fees_settings();
@@ -1230,6 +1242,7 @@ function admin_fees_member(array $p): array {
 function admin_fees_payment(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
+    $sg = fees_scope_gate($g['requester'], $id); if (!$sg['ok']) return $sg;
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $amount = fees_money($p['amount'] ?? null, 0);
@@ -1267,6 +1280,7 @@ function admin_fees_payment(array $p): array {
 function admin_fees_charge(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
+    $sg = fees_scope_gate($g['requester'], $id); if (!$sg['ok']) return $sg;
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $kind = (string)($p['kind'] ?? 'fine');
@@ -1315,6 +1329,7 @@ function admin_fees_charge(array $p): array {
 function admin_fees_waive(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
+    $sg = fees_scope_gate($g['requester'], $id); if (!$sg['ok']) return $sg;
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     $reason = trim((string)($p['reason'] ?? ''));
@@ -1353,6 +1368,8 @@ function admin_fees_lookup(array $p): array {
     $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
     $rows = db_all("SELECT * FROM members WHERE status <> 'deleted' AND (fullName LIKE ? OR memberId LIKE ? OR email LIKE ?)
                     ORDER BY fullName LIMIT " . (FEES_LOOKUP_MAX + 1), [$like, $like, $like]);
+    $scope = admin_centre_names_in_scope($g['requester']);
+    if ($scope !== null) $rows = array_values(array_filter($rows, static fn($m) => in_array((string)($m['centre'] ?? ''), $scope, true)));
     $cfg = fees_settings();
     $out = [];
     foreach (array_slice($rows, 0, FEES_LOOKUP_MAX) as $m) {
@@ -1454,6 +1471,7 @@ function admin_fees_void(array $p): array {
     $reason = trim((string)($p['reason'] ?? ''));
     if ($reason === '') return ['ok' => false, 'error' => 'reason_required'];
     $e = db_row('SELECT * FROM member_ledger WHERE entryId = ? LIMIT 1', [$entryId]);
+    if ($e) { $sg = fees_scope_gate($g['requester'], (string)$e['memberId']); if (!$sg['ok']) return $sg; }
     if (!$e) return ['ok' => false, 'error' => 'not_found'];
     if (trim((string)($e['voidedAt'] ?? '')) !== '') return ['ok' => false, 'error' => 'already_void'];
     $by = (string)($g['requester']['memberId'] ?? '');
@@ -1474,6 +1492,7 @@ function admin_fees_void(array $p): array {
 function admin_fees_mou(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
+    $sg = fees_scope_gate($g['requester'], $id); if (!$sg['ok']) return $sg;
     $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     if (trim((string)($m['mouAt'] ?? '')) !== '') return ['ok' => false, 'error' => 'already_done'];
@@ -1495,6 +1514,7 @@ function admin_fees_mou(array $p): array {
 function admin_fees_remind_off(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $id = trim((string)($p['memberId'] ?? ''));
+    $sg = fees_scope_gate($g['requester'], $id); if (!$sg['ok']) return $sg;
     if (!db_row('SELECT 1 x FROM members WHERE memberId = ? LIMIT 1', [$id])) return ['ok' => false, 'error' => 'not_found'];
     $off = !empty($p['off']) ? 1 : 0;
     db_update('members', ['duesRemindOff' => $off, 'updatedAt' => now_iso()], ['memberId' => $id]);
@@ -1595,10 +1615,12 @@ function admin_fees_arrears(array $p): array {
     }
     $ids = array_keys(array_filter($owedBy, fn($v) => $v > 0));
     $out = []; $totalPayable = 0;
+    $scope = admin_centre_names_in_scope($g['requester']);
     if ($ids) {
         foreach (array_chunk($ids, 400) as $chunk) {
             $ph = implode(',', array_fill(0, count($chunk), '?'));
             foreach (db_all("SELECT * FROM members WHERE memberId IN ($ph)", $chunk) as $m) {
+                if ($scope !== null && !in_array((string)($m['centre'] ?? ''), $scope, true)) continue;
                 $b = fees_balance($m, $cfg);
                 if ((int)$b['payable'] <= 0) continue;
                 $totalPayable += (int)$b['payable'];

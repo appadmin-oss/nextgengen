@@ -341,51 +341,79 @@ function notify_people(array $members, array $n): int {
 }
 
 /**
- * Staff roles. The main console (editor/admin/super_admin) and the two
- * stand-alone coordinator portals are deliberately separate surfaces:
- *   editor       — content only (posts, events, missions, Anchor Journal, …)
- *   admin        — content + people (members/mentors/applications) + inbox
- *   super_admin  — everything: console + site settings, RBAC, AND both
- *                  coordinator portals (the only role that bridges all three)
- *   summer_admin — Summer School staff portal ONLY (locked out of console/club)
- *   club_admin   — NGG Club staff portal ONLY (locked out of console/summer)
- * summer_admin/club_admin hold a single portal cap so they can't cross over;
- * super_admin holds every cap and can enter any portal for oversight.
+ * Staff roles — THE registry. Every list of roles anywhere (the role picker,
+ * the staff filter, the access matrix, the approval queue) is derived from it,
+ * so a role cannot exist in one place and not another. Ordered by reach.
+ *
+ *   caps    the capabilities the role holds (see ADMIN_CAPS)
+ *   scoped  the role only makes sense for named centres: with no centreScope
+ *           it is refused at every gate (fail closed), never "all centres"
+ *   queued  its sensitive people actions wait for a second admin
+ *           (domain/approvals.php) instead of being refused
+ *   tier    how far it reaches, for "may grant at most your own level"
+ *
+ * Deliberately separate trusts: money (fees), the institutional record
+ * (journal), the system (settings, rbac) — in no bundle but super_admin's;
+ * grant them per person (capsExtra).
  */
+const ADMIN_ROLES = [
+    'super_admin'  => ['label' => 'Super admin', 'tier' => 5, 'caps' => ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'checkin', 'curriculum', 'audit', 'journal', 'fees'],
+                       'summary' => 'Everything, including settings, roles and access. Keep to two or three people.'],
+    'admin'        => ['label' => 'Admin', 'tier' => 4, 'caps' => ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum'],
+                       'summary' => 'Runs the programme day to day: both programmes, members, the door, content and the inbox. No money, settings or roles.'],
+    'club_admin'   => ['label' => 'Club coordinator', 'tier' => 3, 'queued' => true, 'caps' => ['club', 'people', 'checkin', 'curriculum'],
+                       'summary' => 'The year-round Club: members, centres, volunteers, the door, the timetable and the curriculum. Suspensions, merges and centre changes wait for a second admin.'],
+    'summer_admin' => ['label' => 'Summer coordinator', 'tier' => 3, 'caps' => ['summer', 'checkin'],
+                       'summary' => 'One Summer School season: editions, groups, participants, sign-up desks and the door.'],
+    'centre_lead'  => ['label' => 'Centre lead', 'tier' => 2, 'scoped' => true, 'queued' => true, 'caps' => ['club', 'people', 'checkin'],
+                       'summary' => 'Runs their own centre(s) only: its members, roster, timetable and door. Has no access at all until given a centre; suspensions and merges wait for a second admin.'],
+    'editor'       => ['label' => 'Editor', 'tier' => 1, 'caps' => ['content'],
+                       'summary' => 'Site content: posts, events, missions, the Anchor Journal, quotes and announcements.'],
+    'audit'        => ['label' => 'Auditor (M&E)', 'tier' => 1, 'caps' => ['audit'],
+                       'summary' => 'Reads monitoring and evaluation and the audit trail. Changes nothing.'],
+];
+/** What each capability lets somebody do, in words — for the access matrix. */
+const ADMIN_CAPS = [
+    'people'     => 'Members, centres, volunteers, mentors, applications, families and ID cards',
+    'club'       => 'The NGG Club roster, timetable and companion',
+    'summer'     => 'Summer School editions, groups, participants, sign-up desks and conduct',
+    'checkin'    => 'Check-in desks, their passwords and the duty rota',
+    'curriculum' => 'Lessons, materials, checks and the Club\'s course list',
+    'content'    => 'Posts, events, missions, sessions, assignments, the Journal, quotes and announcements',
+    'inbox'      => 'Newsletter and messages',
+    'fees'       => 'Dues, training fees, fines and payments',
+    'journal'    => 'Writing the programme\'s institutional record',
+    'audit'      => 'Monitoring & evaluation and the audit trail (read only)',
+    'settings'   => 'Site settings, integrations, diagnostics and donations',
+    'rbac'       => 'Staff roles, extra capabilities and centre scope',
+];
 function admin_role_caps($role): array {
-    switch (strtolower((string)($role ?? ''))) {
-        case 'super_admin':  return ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'checkin', 'curriculum', 'audit', 'journal', 'fees'];
-        // NB: 'admin' deliberately does NOT include 'fees'. The fee ledger is a
-        // separate financial capability (audit M4) — a member-desk admin only
-        // gets ledger access when 'fees' is granted per-person (capsExtra), just
-        // like 'journal'. Existing admins are backfilled once (seed fees_cap_v1).
-        /* Both programmes and the door (2026-10). Still no fees, journal,
-         * settings or rbac: money, the record and the system stay separate. */
-        case 'admin':        return ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum'];
-        // 'checkin' is the door: check-in desk links, their passwords and the
-        // duty rota. Everybody who runs a door holds it, whichever programme.
-        case 'summer_admin': return ['summer', 'checkin'];
-        /* The year-round desk: the Club, the people in it (members, centres,
-         * volunteers) and the door. Its SENSITIVE people actions — deleting,
-         * suspending, merging, retiring a centre — are not refused but queued
-         * for a second admin to approve (domain/approvals.php). */
-        /* 'curriculum' — what the Club teaches: lessons, materials, checks and
-         * the progress against them (domain/curriculum.php). Grantable per
-         * person (capsExtra) to an instructor who writes lessons. */
-        case 'club_admin':   return ['club', 'people', 'checkin', 'curriculum'];
-        /* Deliberately NOT granted 'journal'. The journalist role is ASSIGNED
-         * per person (Access & roles → extra capabilities), not inherited from
-         * being an editor — writing the programme's institutional record is a
-         * different trust from publishing site content, and bundling them would
-         * make every editor a journalist by accident. super_admin holds it
-         * because super_admin holds everything. */
-        case 'editor':       return ['content'];
-        // Monitoring & Evaluation: reads everything the M&E workspace shows,
-        // writes nothing operational — the role simply holds no other cap.
-        case 'audit':        return ['audit'];
-        default:             return [];
-    }
+    $r = ADMIN_ROLES[strtolower((string)($role ?? ''))] ?? null;
+    return $r ? $r['caps'] : [];
 }
+/**
+ * May this requester manage an account at `$targetRole` (and, for a role
+ * change, give it `$newRole`)? Managing access is the `rbac` capability, and
+ * never upward: nobody acts on, or grants, a role that reaches further than
+ * their own, and only a super admin creates or touches another super admin.
+ */
+function admin_may_manage(array $requester, string $targetRole, ?string $newRole = null): bool {
+    if (!in_array('rbac', member_effective_caps($requester), true)) return false;
+    $mine = admin_role_tier((string)($requester['role'] ?? ''));
+    $isSuper = strtolower((string)($requester['role'] ?? '')) === 'super_admin';
+    foreach (array_filter([$targetRole, $newRole], static fn($r) => $r !== null) as $r) {
+        if (strtolower($r) === 'super_admin' && !$isSuper) return false;
+        if (admin_role_tier($r) > $mine) return false;
+    }
+    return true;
+}
+
+/** Every staff role name, most reach first. */
+function staff_role_names(): array { return array_keys(ADMIN_ROLES); }
+function admin_role_label($role): string { return (string)(ADMIN_ROLES[strtolower((string)$role)]['label'] ?? $role); }
+function admin_role_scoped($role): bool { return !empty(ADMIN_ROLES[strtolower((string)$role)]['scoped']); }
+function admin_role_queued($role): bool { return !empty(ADMIN_ROLES[strtolower((string)$role)]['queued']); }
+function admin_role_tier($role): int { return (int)(ADMIN_ROLES[strtolower((string)$role)]['tier'] ?? 0); }
 
 /** Does this role hold a given admin capability? */
 function role_has_cap($role, string $cap): bool {
@@ -406,6 +434,14 @@ function admin_centre_names_in_scope(array $requester): ?array {
     $ph = implode(',', array_fill(0, count($scope), '?'));
     $rows = db_all("SELECT name FROM centres WHERE centreId IN ($ph)", $scope);
     return array_map(fn($r) => (string)$r['name'], $rows);
+}
+
+/** The centre IDS in a requester's scope, or null when unscoped. */
+function admin_centre_ids_in_scope(array $requester): ?array {
+    $scope = safe_json((string)($requester['centreScope'] ?? ''));
+    if (!is_array($scope)) return null;
+    $scope = array_values(array_filter(array_map('strval', $scope)));
+    return $scope ?: null;
 }
 
 /** Is a given centre name within a requester's scope? Unscoped ⇒ always true. */

@@ -246,7 +246,7 @@ function buildItems(auth) {
       hint: "The staff console", run: nav("admin") });
     (typeof ADMIN_SECTIONS !== "undefined" ? ADMIN_SECTIONS : [])
       .filter(sec => sec.id !== "home")
-      .filter(sec => !sec.cap || (auth.hasCap && auth.hasCap(sec.cap)))
+      .filter(sec => typeof adminCapOk === "function" ? adminCapOk(sec.cap, auth.hasCap) : (!sec.cap || (auth.hasCap && auth.hasCap(sec.cap))))
       .forEach(sec => list.push({
         id: "adm." + sec.id, section: "Admin", icon: sec.icon || "›",
         label: sec.label,

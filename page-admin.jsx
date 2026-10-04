@@ -63,14 +63,14 @@ const ADMIN_SECTIONS = [
   { id: "volunteers",  group: "People",   label: "Volunteers",   title: "Volunteers",          icon: "◈", cap: "people" },
   { id: "mentors",     group: "People",   label: "Mentors",      title: "Mentors",             icon: "☺", cap: "people" },
   { id: "mentorship",  group: "People",   label: "Mentorship",   title: "Mentorship",          icon: "◐", cap: "people" },
-  { id: "behaviour",   group: "People",   label: "Behaviour",    title: "Behaviour monitor",   icon: "◔", cap: "people" },
+  { id: "behaviour",   group: "People",   label: "Behaviour",    title: "Behaviour monitor",   icon: "◔", cap: ["people", "summer"] },
   { id: "fees",        group: "People",   label: "Dues & fees",  title: "Dues & fees",         icon: "₦", cap: "fees" },
   /* The conduct policy — thresholds, suspensions and the fine amounts —
      was only reachable through Summer School, because the panel grew up
      there. It governs NGG members too (its own `member` block, its own
      on/off switch), so a year-round coordinator looking for "why is
      nobody being fined" had nowhere to look. Same screen, second door. */
-  { id: "conduct",     group: "People",   label: "Conduct & fines", title: "Conduct policy & fines", icon: "⚖", cap: "people" },
+  { id: "conduct",     group: "People",   label: "Conduct & fines", title: "Conduct policy & fines", icon: "⚖", cap: ["people", "summer"] },
   { id: "requests",    group: "People",   label: "Member requests", title: "Member requests", icon: "✋", cap: "people" },
   { id: "families",    group: "People",   label: "Families",     title: "Family accounts",     icon: "⌂", cap: "people" },
   /* A club admin's sensitive actions — suspending, deactivating, merging,
@@ -133,6 +133,14 @@ const ADMIN_SECTIONS = [
 ];
 // Which capability each admin section needs (null = any staff) — derived.
 const SECTION_CAP = ADMIN_SECTIONS.reduce((m, s) => { m[s.id] = s.cap; return m; }, {});
+/* A section's `cap` is one capability, or a list meaning "any of these" — for
+   a screen two desks both open, whose writes the server gates per record
+   (Conduct: members are the people desk's, participants the summer desk's). */
+function adminCapOk(cap, hasCap) {
+  if (!cap) return true;
+  if (typeof hasCap !== "function") return true;
+  return Array.isArray(cap) ? cap.some(c => hasCap(c)) : hasCap(cap);
+}
 
 /* Sections that were consolidated, and where their deep links now go.
  *
@@ -316,7 +324,7 @@ function AdminPage({ setPage }) {
     setSectionRaw(r.section);
   }, []);
   const [setupView, setSetupView] = React.useState(false);
-  const allowed = (s) => !SECTION_CAP[s] || hasCap(SECTION_CAP[s]);
+  const allowed = (s) => adminCapOk(SECTION_CAP[s], hasCap);
   // Never render a section the current tier can't access (the backend also
   // enforces this — data calls 403 — but this keeps the UI honest).
   const view = allowed(section) ? section : "home";
@@ -626,7 +634,7 @@ function AdminTopbar({ section, setSection, setPage, member, analyst, toggleAnal
 const ADMIN_NAV_GROUPS = [null, "People", "Check-in", "Summer School", "Content", "Inbox", "System"];
 
 function AdminNav({ section, setSection, hasCap }) {
-  const can = (it) => !it.cap || (hasCap ? hasCap(it.cap) : true);
+  const can = (it) => adminCapOk(it.cap, hasCap);
   const groups = ADMIN_NAV_GROUPS
     .map(h => ({ h, items: ADMIN_SECTIONS.filter(s => s.group === h).filter(can) }))
     .filter(g => g.items.length);
@@ -1521,7 +1529,7 @@ function MembersDashboard({ onFilter }) {
                 select ("Super admin (full access)") that truncates to
                 nothing useful in a 9rem bar label. */}
             {Object.entries(o.staff).map(([k, v]) =>
-              <MemberBar key={k} label={((ROLE_OPTS.find(r => r.value === k) || {}).label || k).replace(/\s*[(·].*$/, "")}
+              <MemberBar key={k} label={adminRoleLabel(k)}
                          value={v} max={Math.max(1, ...Object.values(o.staff))}/>)}
           </section>
         )}
@@ -2052,7 +2060,7 @@ function AdminMembers() {
     { id: "reset2fa", label: "Reset 2FA", rowLabel: "Reset their 2FA", cap: "rbac", bulkHidden: true, danger: true,
       confirm: () => ({ title: "Reset their authenticator?", body: "They'll be asked to enrol a new authenticator the next time they open the Control Room. Their existing backup codes stop working.", cta: "Reset 2FA", danger: true }),
       runOne: (id) => NGGApi.admin.members.reset2fa(id), pastTense: "reset" },
-    { id: "resetPw", label: "Send a password reset", rowLabel: "Send a password reset", cap: "people", bulkHidden: true,
+    { id: "resetPw", label: "Send a password reset", rowLabel: "Send a password reset", cap: "rbac", bulkHidden: true,
       confirm: () => ({ title: "Send a password reset?", body: "They get a one-time link by email. Their current password keeps working until they use it.", cta: "Send it" }),
       runOne: (id) => NGGApi.admin.members.resetPassword(id), pastTense: "emailed" },
   ], []);
@@ -4390,19 +4398,43 @@ const MEMBER_STATUS_OPTS = [
   { value: "suspended", label: "Suspended" },
   { value: "inactive", label: "Inactive" },
 ];
-const ROLE_OPTS = [
-  { value: "member", label: "Member (no staff access)" },
-  { value: "editor", label: "Editor · content" },
-  { value: "summer_admin", label: "Summer coordinator" },
-  { value: "club_admin", label: "Club coordinator" },
-  { value: "admin", label: "Admin" },
-  { value: "super_admin", label: "Super admin (full access)" },
-];
-const ELEVATED_ROLES = ["admin", "super_admin"];
+/* The staff roles come from the server (ADMIN_ROLES in util.php, via
+   admin.roles) — the screen keeps no copy, because the copy it used to keep
+   had drifted: it had no Auditor, so nobody could be made one from here.
+   Loaded once per page; every picker, label and matrix reads this. */
+let _adminRolesCache = null, _adminRolesLoad = null;
+function loadAdminRoles() {
+  if (_adminRolesCache) return Promise.resolve(_adminRolesCache);
+  if (!_adminRolesLoad) _adminRolesLoad = NGGApi.admin.roles().then(r => (_adminRolesCache = r)).catch(e => { _adminRolesLoad = null; throw e; });
+  return _adminRolesLoad;
+}
+function useAdminRoles() {
+  const [r, setR] = React.useState(_adminRolesCache);
+  React.useEffect(() => { if (!r) loadAdminRoles().then(setR).catch(() => {}); }, []);
+  return r;
+}
+function adminRoleLabel(id) {
+  if (!id || id === "member") return "Member";
+  const r = _adminRolesCache && _adminRolesCache.roles.find(x => x.id === id);
+  return r ? r.label : String(id).replace(/_/g, " ");
+}
+/* Options for a role picker: "Member" plus the roles this operator may grant,
+   and the account's current role even if they may not (so it still reads). */
+function adminRoleOptions(roles, current) {
+  const list = [{ value: "member", label: "Member (no staff access)" }];
+  ((roles && roles.roles) || []).forEach(r => { if (r.mayGrant || r.id === current) list.push({ value: r.id, label: r.label + (r.scoped ? " · own centres only" : "") }); });
+  return list;
+}
+/* "Elevated" = reaches as far as an admin: granting it is confirmed. */
+function adminRoleElevated(id) {
+  const r = _adminRolesCache && _adminRolesCache.roles.find(x => x.id === id);
+  return r ? r.tier >= 4 : (id === "admin" || id === "super_admin");
+}
 function memberStatusLabel(v) { const o = MEMBER_STATUS_OPTS.find(x => x.value === v); return o ? o.label : (v || "—"); }
 
 function AdminMemberEditor({ data, onClose, onSaved }) {
   const { panelRef, close, onInput, titleProps, headingProps } = useAdminDrawer(onClose);
+  const rolesReg = useAdminRoles();
   const { hasCap, member: me } = useAuth();
   const [d, setD] = React.useState(data);
   const [busy, setBusy] = React.useState(false);
@@ -4414,10 +4446,10 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
   const setRole = async (v) => {
     const from = d.role || "member";
     if (v === from) return;
-    if (isSelf && ELEVATED_ROLES.indexOf(from) !== -1 && ELEVATED_ROLES.indexOf(v) === -1) {
+    if (isSelf && adminRoleElevated(from) && !adminRoleElevated(v)) {
       const ok = await dialog.confirm({ title: "Change your own access?", body: "You're lowering your OWN staff level. You may immediately lose access to parts of the Control Room. The last active super admin cannot be demoted.", cta: "Change my access", cancel: "Keep as is", danger: true });
       if (!ok) return;
-    } else if (ELEVATED_ROLES.indexOf(v) !== -1) {
+    } else if (adminRoleElevated(v)) {
       const ok = await dialog.confirm({ title: "Grant " + (v === "super_admin" ? "super admin" : "admin") + " access?", body: (d.fullName || "This member") + " will be able to " + (v === "super_admin" ? "manage everything, including roles and the audit trail." : "manage members, content and the inbox."), cta: "Grant access", cancel: "Cancel", danger: v === "super_admin" });
       if (!ok) return;
     }
@@ -4478,7 +4510,7 @@ function AdminMemberEditor({ data, onClose, onSaved }) {
           {/* Staff level — only super_admins (the 'rbac' capability) may assign roles.
               setRole confirms elevation and warns on self-demotion. */}
           {hasCap && hasCap("rbac") && (
-            <FieldSelect label="Staff level (access)" value={d.role||"member"} onChange={setRole} options={ROLE_OPTS}/>
+            <FieldSelect label="Staff level (access)" value={d.role||"member"} onChange={setRole} options={adminRoleOptions(rolesReg, data.role)}/>
           )}
           {hasCap && hasCap("rbac") && d.memberId && (
             <div className="admin-field">
@@ -8105,83 +8137,127 @@ function AdminBroadcast() {
   );
 }
 
-// Effective capabilities per role — mirrors util.php admin_role_caps() so the
-// roster can show what each staffer can actually do (read-only display).
-const ROLE_CAPS = {
-  super_admin: ["content", "people", "inbox", "settings", "rbac", "summer", "club", "checkin", "curriculum", "audit", "journal", "fees"],
-  admin: ["content", "people", "inbox", "club", "summer", "checkin", "curriculum"],
-  editor: ["content"],
-  summer_admin: ["summer", "checkin"],
-  club_admin: ["club", "people", "checkin", "curriculum"],
-  audit: ["audit"],
-  member: [],
-};
-
-// Access & roles — the RBAC roster the audit called for: every staff account,
-// its role and effective capabilities, with inline role editing (super_admin
-// only). Server enforces last-super-admin / self-demotion; we surface those.
+// Access & roles — every staff account, its role and what it can actually do,
+// and the matrix of roles × capabilities × the sections each opens. All of it
+// derived from the server's registry (admin.roles), so it cannot drift.
 function AdminAccess() {
   const { member: me } = useAuth();
+  const reg = useAdminRoles();
   const [list, setList] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState("");
+  const [tab, setTab] = React.useState("staff");
+  const [centreNames, setCentreNames] = React.useState({});
+  React.useEffect(() => { NGGApi.admin.registration.centres().then(r => { const m = {}; (r.centres || []).forEach(c => { m[c.centreId] = c.name; }); setCentreNames(m); }).catch(() => {}); }, []);
   const load = () => { setErr(""); return NGGApi.admin.members.list({ staff: 1, pageSize: 200 }).then(r => setList(r.members || [])).catch(e => setErr(e.code || e.message || "load_failed")); };
   React.useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
-  const roleLabel = (r) => (ROLE_OPTS.find(o => o.value === r) || {}).label || r;
+  const roleOf = (id) => ((reg && reg.roles) || []).find(r => r.id === id);
+  const capsOf = (m) => { const r = roleOf(m.role); const base = r ? r.caps : []; return base.concat((m.capsExtra || []).filter(c => base.indexOf(c) === -1)); };
   const changeRole = async (m, v) => {
     if (v === m.role) return;
     const isSelf = me && m.memberId === me.memberId;
-    if (isSelf && ELEVATED_ROLES.indexOf(m.role) !== -1 && ELEVATED_ROLES.indexOf(v) === -1) {
+    if (isSelf && adminRoleElevated(m.role) && !adminRoleElevated(v)) {
       const ok = await dialog.confirm({ title: "Change your own access?", body: "You're lowering your OWN staff level and may lose access. The last active super admin cannot be demoted.", cta: "Change my access", cancel: "Keep as is", danger: true });
       if (!ok) return;
-    } else if (ELEVATED_ROLES.indexOf(v) !== -1) {
-      const ok = await dialog.confirm({ title: "Grant " + roleLabel(v) + "?", body: m.fullName + " will gain elevated access.", cta: "Grant access", cancel: "Cancel", danger: v === "super_admin" });
+    } else if (adminRoleElevated(v)) {
+      const ok = await dialog.confirm({ title: "Grant " + adminRoleLabel(v) + "?", body: m.fullName + " will gain elevated access.", cta: "Grant access", cancel: "Cancel", danger: v === "super_admin" });
       if (!ok) return;
     }
+    const nr = roleOf(v);
     setBusy(m.memberId);
-    try { await NGGApi.admin.members.upsert({ memberId: m.memberId, role: v }); toast.success("Role updated"); await load(); }
-    catch (e) {
+    try {
+      await NGGApi.admin.members.upsert({ memberId: m.memberId, role: v });
+      toast.success(nr && nr.scoped && !(m.centreScope || []).length ? "Role updated. " + nr.label + " has no access until you give them a centre (open them in Members → Edit → Access)." : "Role updated");
+      await load();
+    } catch (e) {
       const map = { last_super_admin: "That's the last active super admin — promote another first.", cannot_demote_self: "Ask another super admin to change your role.", cannot_suspend_self: "You can't suspend yourself." };
-      toast.error(map[e.code || e.message] || (e.code || e.message));
+      toast.error(map[e.code || e.message] || humanizeError(e.code, e.code));
     } finally { setBusy(""); }
   };
+  const noCentre = (list || []).filter(m => { const r = roleOf(m.role); return r && r.scoped && !(m.centreScope || []).length; });
   return (
     <div className="admin-section">
       <div className="admin-section-head">
-        <h2 className="admin-h2">Access &amp; roles <span className="chip chip-gold" style={{ fontSize: 11, verticalAlign: "middle" }}>super admin</span>{list ? <span className="admin-count mono">{list.length}</span> : null}</h2>
+        <h2 className="admin-h2">Access &amp; roles{list ? <span className="admin-count mono">{list.length}</span> : null}</h2>
       </div>
-      <p className="admin-hint">Everyone with staff access and what they can do. Roles map to fixed capability sets; the last active super admin can't be demoted, and you can't demote yourself.</p>
-      {err ? <ErrorState code={err} onRetry={load}/> :
-        list === null ? <div className="dash-spinner"/> :
-        list.length === 0 ? <EmptyState title="No staff yet" message="Grant a member a staff role from the Members editor."/> :
-        <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead><tr><th>Person</th><th>Role</th><th>Can access</th></tr></thead>
-            <tbody>
-              {list.map(m => (
-                <tr key={m.memberId}>
-                  <td>
-                    <div className="admin-cell-name">{m.fullName}{me && m.memberId === me.memberId ? <span className="chip" style={{ marginLeft: 8, fontSize: 10 }}>you</span> : null}</div>
-                    <div className="mono admin-cell-sub">{m.memberId} · {m.email}</div>
-                  </td>
-                  <td style={{ minWidth: 190 }}>
-                    <select className="admin-select" value={m.role} disabled={busy === m.memberId} onChange={(e) => changeRole(m, e.target.value)} aria-label={"Role for " + m.fullName}>
-                      {ROLE_OPTS.filter(o => o.value !== "member").map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {(ROLE_CAPS[m.role] || []).length
-                        ? (ROLE_CAPS[m.role] || []).map(c => <span key={c} className="chip" style={{ fontSize: 10 }}>{c}</span>)
-                        : <span className="mono" style={{ color: "var(--ink-400)", fontSize: 12 }}>—</span>}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      }
+      <p className="admin-hint">Who has staff access and what each level can do. Roles are fixed bundles of capabilities; a super admin can add single capabilities and limit anyone to named centres (Members → Edit → Access). Nobody can grant a role that reaches further than their own, and the last super admin cannot be demoted.</p>
+      <div className="admin-tabs" role="tablist" aria-label="Access and roles">
+        {[["staff", "Staff"], ["matrix", "What each role can do"]].map(([k, l]) => (
+          <button key={k} role="tab" aria-selected={tab === k} className={"admin-tab" + (tab === k ? " is-active" : "")} onClick={() => setTab(k)}>{l}</button>
+        ))}
+      </div>
+      {tab === "staff" && (err ? <ErrorState code={err} onRetry={load}/> :
+        list === null || !reg ? <div className="dash-spinner" role="status" aria-label="Loading"/> :
+        <>
+          {noCentre.length > 0 && <p className="access-warn" role="status"><b>{noCentre.length} account{noCentre.length === 1 ? "" : "s"} with no access yet:</b> {noCentre.map(m => m.fullName).join(", ")} — {noCentre.length === 1 ? "this role works" : "these roles work"} only for named centres. Give {noCentre.length === 1 ? "them" : "each"} a centre in Members → Edit → Access.</p>}
+          {list.length === 0 ? <EmptyState title="No staff yet" message="Grant a member a staff role from the Members editor."/> :
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <caption className="sr-only">Staff accounts and their access</caption>
+              <thead><tr><th scope="col">Person</th><th scope="col">Role</th><th scope="col">Centres</th><th scope="col">Can access</th></tr></thead>
+              <tbody>
+                {list.map(m => {
+                  const r = roleOf(m.role);
+                  const opts = adminRoleOptions(reg, m.role).filter(o => o.value !== "member" || r == null);
+                  return (
+                    <tr key={m.memberId}>
+                      <td>
+                        <div className="admin-cell-name">{m.fullName}{me && m.memberId === me.memberId ? <span className="chip access-you">you</span> : null}</div>
+                        <div className="mono admin-cell-sub">{m.memberId} · {m.email}</div>
+                      </td>
+                      <td className="access-role">
+                        <select className="admin-select" value={m.role} disabled={busy === m.memberId || !opts.some(o => o.value !== m.role)} onChange={(e) => changeRole(m, e.target.value)} aria-label={"Role for " + m.fullName}>
+                          {opts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          <option value="member">Remove staff access</option>
+                        </select>
+                      </td>
+                      <td className="admin-cell-sub">{(m.centreScope || []).length ? m.centreScope.map(id => centreNames[id] || id).join(", ") : (r && r.scoped ? <span className="access-none">none — no access</span> : "All centres")}</td>
+                      <td><div className="access-caps">{capsOf(m).length ? capsOf(m).map(c => <span key={c} className={"chip" + ((m.capsExtra || []).indexOf(c) !== -1 && !(r && r.caps.indexOf(c) !== -1) ? " chip-gold" : "")} title={((reg.caps.find(x => x.id === c) || {}).label) || c}>{c}</span>) : <span className="admin-cell-sub">—</span>}</div></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>}
+        </>)}
+      {tab === "matrix" && (!reg ? <div className="dash-spinner" role="status" aria-label="Loading"/> : <AccessMatrix reg={reg}/>)}
+    </div>
+  );
+}
+
+/* The matrix: one row per role (what it is for, whether it is limited to its
+   centres, whether its sensitive acts wait for approval), one column per
+   capability — and, under it, which Control Room sections each capability
+   opens, read from ADMIN_SECTIONS so the answer is the real navigation. */
+function AccessMatrix({ reg }) {
+  const sectionsFor = (cap) => ADMIN_SECTIONS.filter(s => s.cap === cap || (Array.isArray(s.cap) && s.cap.indexOf(cap) !== -1)).map(s => s.label);
+  return (
+    <div className="access-matrix">
+      <div className="admin-table-wrap">
+        <table className="admin-table access-table">
+          <caption className="sr-only">Which capabilities each staff role holds</caption>
+          <thead><tr><th scope="col">Role</th>{reg.caps.map(c => <th scope="col" key={c.id} title={c.label}><span className="access-cap-h">{c.id}</span></th>)}</tr></thead>
+          <tbody>
+            {reg.roles.map(r => (
+              <tr key={r.id}>
+                <th scope="row" className="access-role-cell">
+                  <b>{r.label}</b>
+                  <span className="admin-cell-sub">{r.summary}</span>
+                  <span className="access-flags">{r.scoped && <span className="chip">own centres only</span>}{r.queued && <span className="chip">second admin approves</span>}</span>
+                </th>
+                {reg.caps.map(c => { const has = r.caps.indexOf(c.id) !== -1; return <td key={c.id} className={"access-cell" + (has ? " is-on" : "")}>{has ? <span aria-label="Yes">✓</span> : <span className="sr-only">No</span>}</td>; })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <h3 className="admin-h4">What each capability opens</h3>
+      <dl className="access-capdefs">
+        {reg.caps.map(c => (
+          <div key={c.id}><dt className="mono">{c.id}</dt><dd>{c.label}{sectionsFor(c.id).length ? <span className="admin-cell-sub"> — {sectionsFor(c.id).join(", ")}</span> : null}</dd></div>
+        ))}
+      </dl>
+      <p className="admin-hint">Money (<span className="mono">fees</span>), the institutional record (<span className="mono">journal</span>) and the system (<span className="mono">settings</span>, <span className="mono">rbac</span>) are in no bundle but the super admin's on purpose. Grant them to a named person, never to a role.</p>
     </div>
   );
 }
@@ -8189,9 +8265,10 @@ function AdminAccess() {
 // Per-member capability editor (super only): grant caps beyond the role.
 // Every capability is one super_admin holds; derived, so it cannot drift (it
 // had: 'journal' was missing here, so it could never be granted per person).
-const ALL_CAPS = ROLE_CAPS.super_admin;
 function MemberCapsEditor({ member }) {
-  const roleCaps = ROLE_CAPS[member.role] || [];
+  const reg = useAdminRoles();
+  const ALL_CAPS = reg ? reg.caps.map(c => c.id) : [];
+  const roleCaps = ((reg && reg.roles.find(r => r.id === member.role)) || {}).caps || [];
   const [extra, setExtra] = React.useState(() => new Set(member.capsExtra || []));
   const [scope, setScope] = React.useState(() => new Set(member.centreScope || []));
   const [centres, setCentres] = React.useState([]);

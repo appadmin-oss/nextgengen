@@ -485,3 +485,13 @@ csstree-validator clean.
 - **.ics**: one weekly `RRULE` VEVENT per class-day, `TZID=Africa/Lagos` with a VTIMEZONE (WAT, no DST), optional UNTIL, RFC 5545 escaping and folding.
 - Tests: `tests/timetable-ui.test.js` (public half rewritten: import, form, Escape, overlap, templates, real PNG/PDF/.ics downloads, reload, phone and desktop layout, block contrast); template screenshots in `tests/screens/timetable/template-*.png`.
 
+## Roles, tasks and access per administrative level (2026-10)
+
+- **One role registry**: `ADMIN_ROLES` + `ADMIN_CAPS` in util.php (label, summary, caps, `scoped`, `queued`, `tier`); `admin_role_caps()`, `staff_role_names()`, the staff filter, the invite mail's label and the approval queue (`admin_role_queued`) all derive from it. The screen's `ROLE_CAPS`/`ROLE_OPTS` copies are gone (they had no Auditor, so nobody could be made one); it reads `admin.roles` (`useAdminRoles`, `adminRoleOptions`, `adminRoleLabel`). A run.php test fails if a typed copy comes back.
+- **Centre lead** role (`club`, `people`, `checkin`; `scoped`, `queued`): with no centreScope `admin_gate` refuses `scope_required` — an empty scope must never mean "every centre" for somebody who runs one.
+- **No granting upward**: `admin_may_manage()` — role changes, 2FA and password resets need `rbac` (effective caps, so a capsExtra grant counts) and never reach a tier above the requester's; only a super admin touches a super admin. The Members row actions now show exactly to who can use them.
+- **Writes gated by one capability**: posts/events/missions/sessions/assignments/grading/broadcast moved from any staff to `content` (an auditor could publish). Behaviour and conduct writes are gated by the SUBJECT's real type (`behaviour_subject_gate`, `policy_subject_gate`: member/volunteer → `people`, participant → `summer`), never by the browser's `personType`, which a Summer coordinator could previously set to "student" for an NGG member. Reads take either; the conduct board shows each desk only its own people. Sections may declare `cap: [a, b]` (any) via `adminCapOk`.
+- **Scope holes closed**: centres list/upsert/delete (a scoped admin edits only their centres and adds none), fees member ops + lookup + arrears (`fees_scope_gate`), volunteers list/update/delete/approve, mentor assignment, gates list/create (`admin_centre_ids_in_scope`), behaviour list. `admin_centres_list` lost four queries per centre.
+- The audit trail's "staff only" filter now covers every staff role.
+- Tests: `access:` block in run.php (15 checks). `tests/forms-*.js` and `tests/screenshots.js` now read bootstrap.php's domain list instead of keeping a copy (the copy fell behind summer-editions.php and the self-registration approval fataled in the harness).
+

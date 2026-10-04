@@ -157,6 +157,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'public.timetable'         => 'public_timetable',
             'public.programme'         => 'public_programme',
             'admin.club.catalogue.get' => 'admin_club_catalogue_get',
+            'admin.roles'              => 'admin_roles',
             'admin.club.catalogue.set' => 'admin_club_catalogue_set',
             'admin.members.merge'     => 'admin_members_merge',
             'admin.member.timeline'   => 'admin_member_timeline',

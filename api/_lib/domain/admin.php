@@ -10,6 +10,12 @@ function admin_gate(array $p): array {
     $requester = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['requesterId'] ?? '')]);
     if (!$requester) return ['ok' => false, 'error' => 'no_requester'];
     if (!is_admin_role($requester['role'])) return ['ok' => false, 'error' => 'forbidden'];
+    /* A role that exists for named centres (a centre lead) and has none is
+       refused, not widened: an empty centreScope means "every centre" for an
+       admin, and must never mean that for somebody who runs one. */
+    if (admin_role_scoped($requester['role']) && admin_centre_names_in_scope($requester) === null) {
+        return ['ok' => false, 'error' => 'scope_required', 'detail' => 'This role needs a centre. Ask a super admin to set one under Access & roles.'];
+    }
     return ['ok' => true, 'requester' => $requester];
 }
 
@@ -87,7 +93,7 @@ function admin_members_list(array $p): array {
         if (!empty($p[$f])) { $where[] = "$f = ?"; $params[] = $p[$f]; }
     }
     // Staff-only view powers the Access & roles roster.
-    if (!empty($p['staff'])) { $where[] = "role IN ('editor','summer_admin','club_admin','audit','admin','super_admin')"; }
+    if (!empty($p['staff'])) { $where[] = "role IN ('" . implode("','", staff_role_names()) . "')"; }
     /* A dashboard figure leads to the records behind it. The fragment comes
        from member_segment_sql(), which lives beside the figures it mirrors
        so a segment cannot quietly select something the dashboard did not
@@ -603,11 +609,15 @@ function admin_members_upsert(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $data = $p['data'] ?? [];
     $memberId = trim((string)($data['memberId'] ?? ''));
-    // Only holders of the 'rbac' capability (super_admin) may set/change roles,
-    // and never to a tier above their own.
+    // Only holders of the 'rbac' capability may set/change roles, and never
+    // to a tier above their own (admin_may_manage). A role they may not give
+    // is dropped from the edit, not silently coerced into another.
     if (isset($data['role'])) {
-        if (!role_has_cap($g['requester']['role'], 'rbac')) unset($data['role']);
-        elseif (!in_array($data['role'], ['member', 'editor', 'summer_admin', 'club_admin', 'audit', 'admin', 'super_admin'], true)) unset($data['role']);
+        if ($data['role'] !== 'member' && !in_array($data['role'], staff_role_names(), true)) unset($data['role']);
+        else {
+            $cur = $memberId !== '' ? (string)(db_row('SELECT role FROM members WHERE memberId = ? LIMIT 1', [$memberId])['role'] ?? 'member') : 'member';
+            if ($cur !== $data['role'] && !admin_may_manage($g['requester'], $cur, (string)$data['role'])) unset($data['role']);
+        }
     }
 
     $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes','displayId','disciplines','level','division'];
@@ -691,7 +701,7 @@ function admin_members_upsert(array $p): array {
         db_update('members', $patch, ['id' => $existing['id']]);
         // Newly promoted to a staff tier → send an invite/onboarding email.
         $wasStaff = is_admin_role((string)$existing['role']);
-        if ($newRole !== null && !$wasStaff && in_array($newRole, ['editor', 'summer_admin', 'club_admin', 'audit', 'admin', 'super_admin'], true)) {
+        if ($newRole !== null && !$wasStaff && in_array($newRole, staff_role_names(), true)) {
             staff_invite_email($memberId, $newRole);
         }
         audit('admin.member.update', $g['requester']['memberId'], $memberId, ['keys' => array_keys($patch)], (string)($p['ip'] ?? ''));
@@ -774,11 +784,28 @@ function admin_member_caps_set(array $p): array {
     return ['ok' => true, 'capsExtra' => $extra, 'centreScope' => $scopeOut];
 }
 
+/**
+ * admin.roles — the role registry and what each capability means, for the
+ * role picker and the access matrix. The screen derives every list of roles
+ * from this; it keeps no copy of its own (CLAUDE.md §11).
+ */
+function admin_roles(array $p): array {
+    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $roles = [];
+    foreach (ADMIN_ROLES as $id => $r) $roles[] = ['id' => $id, 'label' => $r['label'], 'summary' => $r['summary'], 'caps' => $r['caps'],
+        'scoped' => !empty($r['scoped']), 'queued' => !empty($r['queued']), 'tier' => (int)$r['tier'],
+        'mayGrant' => admin_may_manage($g['requester'], 'member', $id)];
+    $caps = [];
+    foreach (ADMIN_CAPS as $k => $d) $caps[] = ['id' => $k, 'label' => $d];
+    return ['ok' => true, 'roles' => $roles, 'caps' => $caps,
+            'me' => ['role' => (string)$g['requester']['role'], 'caps' => member_effective_caps($g['requester']), 'scoped' => admin_centre_names_in_scope($g['requester']) !== null]];
+}
+
 /** Email a newly-granted staff member their onboarding invite (sign-in link). */
 function staff_invite_email(string $memberId, string $role): void {
     $m = db_row('SELECT fullName, email FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     if (!$m || empty($m['email']) || !filter_var((string)$m['email'], FILTER_VALIDATE_EMAIL)) return;
-    $roleName = ['editor' => 'Editor', 'summer_admin' => 'Summer School coordinator', 'club_admin' => 'Club coordinator', 'audit' => 'Auditor', 'admin' => 'Admin', 'super_admin' => 'Super admin'][$role] ?? 'Staff';
+    $roleName = is_admin_role($role) ? admin_role_label($role) : 'Staff';
     $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/login';
     @send_mail((string)$m['email'], "You've been added to the NGG team", email_template([
         'title' => 'Welcome to the team',
@@ -845,7 +872,7 @@ function admin_mentors_upsert(array $p): array {
 // ── Sessions ───────────────────────────────────────────────────────────────
 
 function admin_sessions_upsert(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;   // a write: content, not any staff
     $data = $p['data'] ?? [];
     $sessionId = trim((string)($data['sessionId'] ?? ''));
     $cols = ['code','year','name','startDate','endDate','theme','isActive','coverUrl','notes'];
@@ -880,7 +907,7 @@ function admin_missions_list(array $p): array {
 }
 
 function admin_missions_upsert(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;   // a write: content, not any staff
     $data = $p['data'] ?? [];
     if (array_key_exists('order', $data)) $data['orderIndex'] = $data['order'];
     $missionId = trim((string)($data['missionId'] ?? ''));
@@ -912,7 +939,7 @@ function admin_events_list(array $p): array {
 }
 
 function admin_events_upsert(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;   // a write: content, not any staff
     $data = $p['data'] ?? [];
     $eventId = trim((string)($data['eventId'] ?? ''));
     $cols = ['title','kind','sessionId','startAt','endAt','centre','location','coverUrl','body','capacity','isPublic','status'];
@@ -949,7 +976,7 @@ function admin_posts_get(array $p): array {
 }
 
 function admin_posts_upsert(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;   // a write: content, not any staff
     $data = $p['data'] ?? [];
     $postId = trim((string)($data['postId'] ?? ''));
     $cols = ['slug','kind','title','excerpt','body','coverUrl','category','authorId','tags','status','publishAt','featured','promoCta','promoUrl','promoExpires'];
@@ -1028,7 +1055,7 @@ function admin_audit_tail(array $p): array {
     $where = []; $params = [];
     if (!empty($p['actor']))  { $where[] = 'a.actorId = ?'; $params[] = (string)$p['actor']; }
     if (!empty($p['event']))  { $where[] = 'a.event LIKE ?'; $params[] = '%' . (string)$p['event'] . '%'; }
-    if (!empty($p['staffOnly'])) { $where[] = "m.role IN ('editor','admin','super_admin')"; }
+    if (!empty($p['staffOnly'])) { $where[] = "m.role IN ('" . implode("','", staff_role_names()) . "')"; }
     $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
     // True total so the accountability record is never silently truncated —
     // the client pages through ALL matching entries instead of a hard cap.
@@ -1058,7 +1085,7 @@ function admin_audit_tail(array $p): array {
 // ── Announcements / broadcast ────────────────────────────────────────────
 
 function admin_broadcast(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;   // a write: content, not any staff
     $title = (string)($p['title'] ?? '');
     $body = (string)($p['body'] ?? '');
     $linkPage = (string)($p['linkPage'] ?? '');

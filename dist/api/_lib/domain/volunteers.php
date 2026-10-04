@@ -635,7 +635,13 @@ function admin_volunteers_list(array $p): array {
         unset($v['capsExtra']);
     }
     unset($v);
-    return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster, 'programmes' => VOL_PROGRAMMES];
+    // A scoped admin's volunteers are their centres' — applicants included.
+    $scope = admin_centre_names_in_scope($g['requester']);
+    if ($scope !== null) {
+        $in = static fn($r) => in_array((string)($r['centre'] ?? ''), $scope, true);
+        $pending = array_values(array_filter($pending, $in)); $roster = array_values(array_filter($roster, $in));
+    }
+    return ['ok' => true, 'pending' => $pending, 'volunteers' => $roster, 'programmes' => VOL_PROGRAMMES, 'scoped' => $scope !== null];
 }
 
 /** Edit an active volunteer's data — name, contact, role, centre, faculty,
@@ -645,7 +651,10 @@ function admin_volunteer_update(array $p): array {
     $volunteerId = (string)($p['volunteerId'] ?? '');
     $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$volunteerId]);
     if (!$v) return ['ok' => false, 'error' => 'not_found'];
+    if (!admin_centre_allowed($g['requester'], (string)($v['centre'] ?? ''))) return ['ok' => false, 'error' => 'out_of_scope'];
     $d = is_array($p['data'] ?? null) ? $p['data'] : [];
+    // …and cannot move them to a centre outside it.
+    if (array_key_exists('centre', $d) && !admin_centre_allowed($g['requester'], trim((string)$d['centre']))) return ['ok' => false, 'error' => 'out_of_scope'];
     $row = ['updatedAt' => now_iso()];
     if (array_key_exists('fullName', $d)) { $name = trim((string)$d['fullName']); if (strlen($name) < 2) return ['ok' => false, 'error' => 'bad_name']; $row['fullName'] = substr($name, 0, 120); }
     foreach (['firstName' => 80, 'lastName' => 80, 'phone' => 48, 'centre' => 48, 'faculty' => 80] as $f => $max) {
@@ -704,6 +713,7 @@ function admin_volunteer_delete(array $p): array {
     $volunteerId = (string)($p['volunteerId'] ?? '');
     $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$volunteerId]);
     if (!$v) return ['ok' => false, 'error' => 'not_found'];
+    if (!admin_centre_allowed($g['requester'], (string)($v['centre'] ?? ''))) return ['ok' => false, 'error' => 'out_of_scope'];
     if (!empty($v['token'])) db_exec('DELETE FROM qr_codes WHERE token = ?', [(string)$v['token']]);
     db_exec('DELETE FROM volunteers WHERE volunteerId = ?', [$volunteerId]);
     audit('volunteer.delete', $g['requester']['memberId'], $volunteerId, ['name' => (string)$v['fullName']], (string)($p['ip'] ?? ''));
@@ -715,6 +725,7 @@ function admin_volunteer_approve(array $p): array {
     $id = (int)($p['id'] ?? 0);
     $a = db_row("SELECT * FROM applications WHERE id = ? AND kind = 'volunteer' LIMIT 1", [$id]);
     if (!$a) return ['ok' => false, 'error' => 'not_found'];
+    if (!admin_centre_allowed($g['requester'], (string)($a['centre'] ?? ''))) return ['ok' => false, 'error' => 'out_of_scope'];
 
     // Idempotent: approving twice (or a second application from the same
     // email) surfaces the existing record instead of minting a duplicate.

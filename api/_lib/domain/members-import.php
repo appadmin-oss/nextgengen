@@ -854,7 +854,7 @@ function admin_members_import(array $p): array
     if (!$g['ok']) return $g;
 
     $apply = !empty($p['apply']);
-    if ($apply && !role_has_cap((string)($g['requester']['role'] ?? ''), 'rbac')) {
+    if ($apply && !in_array('rbac', member_effective_caps($g['requester']), true)) {
         return ['ok' => false, 'error' => 'forbidden',
                 'detail' => 'Applying a roster import needs super-admin access. The preview does not.'];
     }

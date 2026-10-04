@@ -103,7 +103,7 @@ function admin_assignments_list(array $p): array {
 }
 
 function admin_assignments_upsert(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;   // a write: content, not any staff
     $data = $p['data'] ?? [];
     $assignmentId = trim((string)($data['assignmentId'] ?? ''));
     $cols = ['title','instructions','track','sessionId','week','dueAt','points','attachmentUrl','proof','centre','status'];
@@ -182,7 +182,7 @@ function admin_assignment_submissions(array $p): array {
 
 function assignment_grade(array $p): array {
     global $CONFIG;
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;   // a write: content, not any staff
     $submissionId = (string)($p['submissionId'] ?? '');
     $row = db_row('SELECT * FROM assignment_submissions WHERE submissionId = ? LIMIT 1', [$submissionId]);
     if (!$row) return ['ok' => false, 'error' => 'not_found'];
@@ -214,7 +214,7 @@ function assignment_grade(array $p): array {
 
 /** Return a submission for revision (no lock) so the member can resubmit. */
 function assignment_return(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;   // a write: content, not any staff
     $row = db_row('SELECT * FROM assignment_submissions WHERE submissionId = ? LIMIT 1', [(string)($p['submissionId'] ?? '')]);
     if (!$row) return ['ok' => false, 'error' => 'not_found'];
     $a = db_row('SELECT title FROM assignments WHERE assignmentId = ? LIMIT 1', [$row['assignmentId']]);

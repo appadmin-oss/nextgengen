@@ -145,52 +145,63 @@ and old links keep working; there is just one screen behind them now.
 
 ## What you can see and do (permissions)
 
-Access is built from **capabilities**. A role is a bundle of them, and an
-individual can be granted extras on top. Both are set in
-**System → Access & roles**.
+Access is built from **capabilities**. A role is a fixed bundle of them; an
+individual can be granted extra capabilities and limited to named centres.
+**System → Access & roles** shows every staff account and, under *What each
+role can do*, the full matrix — roles × capabilities × the sections each one
+opens — read from the same list the server enforces, so it is always true.
 
 | Capability | Unlocks |
 |---|---|
-| `content` | Sessions, missions, posts, events, forms, photo review, site content |
-| `people` | Members, applications, volunteers, mentors, centres, ID cards, conduct |
+| `people` | Members, centres, volunteers, mentors, applications, families, ID cards; conduct and behaviour for **NGG members and volunteers** |
+| `club` | The NGG Club roster, the timetable, the companion |
+| `summer` | Summer School editions, groups, participants, sign-up desks; conduct and behaviour for **Summer participants** |
+| `checkin` | Check-in desks, their passwords, the duty rota |
+| `curriculum` | Lessons, materials, checks, the Club's course list |
+| `content` | Posts, events, missions, sessions, assignments, the Journal, quotes, announcements |
 | `inbox` | Newsletter, messages |
-| `settings` | Settings, diagnostics, integrations, donations, site content |
-| `rbac` | Access & roles, and resetting somebody's 2FA |
-| `summer` | The Summer School sections |
-| `club` | The NGG Club portal |
-| `audit` | Audit log, Engagement, the M&E view |
-| `journal` | The institutional journal |
-| `fees` | The fee ledger and dues reminders |
+| `fees` | Dues, training fees, fines, payments |
+| `journal` | Writing the institutional record |
+| `audit` | Monitoring & evaluation and the audit trail (read only) |
+| `settings` | Settings, integrations, diagnostics, donations |
+| `rbac` | Staff roles, extra capabilities, centre scope, and account recovery (2FA and password resets) |
 
-The roles:
+| Role | Capabilities | Notes |
+|---|---|---|
+| **Super admin** | everything | Keep to two or three people. |
+| **Admin** | `content` `people` `inbox` `club` `summer` `checkin` `curriculum` | Runs the programme. No money, settings or roles. |
+| **Club coordinator** | `club` `people` `checkin` `curriculum` | Suspensions, merges and centre changes wait for a second admin. |
+| **Summer coordinator** | `summer` `checkin` | One season. |
+| **Centre lead** | `club` `people` `checkin` | **Only their own centre(s).** Has no access at all until given a centre. Suspensions and merges wait for a second admin. |
+| **Editor** | `content` | |
+| **Auditor (M&E)** | `audit` | Reads; changes nothing. |
 
-| Role | Capabilities |
-|---|---|
-| Super admin | everything |
-| Admin | `content`, `people`, `inbox` |
-| Summer coordinator | `summer` |
-| Club coordinator | `club` |
-| Editor | `content` |
-| Audit / M&E | `audit` |
+**Deliberately in no role but the super admin's:** `fees` (money), `journal`
+(the record), `settings` and `rbac` (the system). Grant them to a named person.
 
-Two of these are **deliberately not bundled** and have to be granted
-per-person:
+**Nobody grants upward.** Changing someone's role, or resetting their 2FA or
+password, needs `rbac` — and never reaches a role further than your own. Only a
+super admin can create or touch another super admin.
 
-- **`fees`** — the fee ledger is money. A member-desk admin does not get it
-  by being a member-desk admin.
-- **`journal`** — writing the programme's institutional record is a
-  different trust from publishing site content. An editor is not
-  automatically a journalist.
+**Who a record is about decides who may change it.** A conduct entry or a
+behaviour note about an NGG member needs `people`; about a Summer participant,
+`summer`. Both desks can open *Conduct & fines* and *Behaviour*; each sees and
+changes only its own people.
 
 ### Centre scoping
 
-A staff account can be **scoped to particular centres**. If yours is:
+A staff account can be **limited to particular centres** (Members → Edit →
+Access). A *Centre lead* must be; for other roles it is optional. Scoped, you
+see and act on only your centres':
 
-- The member roster only ever shows you members at your centres, including
-  when you export, count or select-all. There is no filter you can clear to
-  see past it.
-- A bulk action refuses any row outside your centres and tells you which.
-  It does not silently skip them.
+- members (including export, count and select-all), the roster and bulk
+  actions — refused per row, never silently skipped;
+- the centre directory (you can edit your centres, not add one);
+- volunteers and volunteer applicants;
+- fees accounts, the arrears list and the fees search;
+- conduct and behaviour records;
+- check-in desks (a desk for every centre is not yours to see);
+- mentor assignments and the status board.
 
 Scoping is enforced when the request arrives, not by hiding buttons — so it
 holds even if a stale page is left open.

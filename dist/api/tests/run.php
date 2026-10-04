@@ -1840,15 +1840,14 @@ chk('s-status: still leaks no PII with registration added', (function () {
 chk('admin role caps = both programmes and the door, never money or the system', admin_role_caps('admin') === ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum']
     && !array_intersect(admin_role_caps('admin'), ['fees', 'journal', 'settings', 'rbac']));
 chk('club_admin role caps = the Club, its people, the door and what it teaches', admin_role_caps('club_admin') === ['club', 'people', 'checkin', 'curriculum']);
-chk('the Control Room\'s ROLE_CAPS mirrors admin_role_caps exactly', (function () {
+chk('the Control Room keeps no copy of the roles — it reads them from admin.roles', (function () {
+    /* It used to keep one (ROLE_CAPS + ROLE_OPTS) and it drifted: it had no
+       Auditor, so nobody could be made one from the screen. A list of role
+       names with their caps typed into the page is the thing that must not
+       come back (CLAUDE.md §11). */
     $src = (string)file_get_contents(__DIR__ . '/../../page-admin.jsx');
-    if (!preg_match('/const ROLE_CAPS = \{(.*?)\n\};/s', $src, $m)) return false;
-    foreach (['super_admin', 'admin', 'editor', 'summer_admin', 'club_admin', 'audit'] as $r) {
-        if (!preg_match('/\b' . $r . ': \[([^\]]*)\]/', $m[1], $x)) return false;
-        $js = array_values(array_filter(array_map(fn($s) => trim($s, " \"'"), explode(',', $x[1]))));
-        if ($js !== admin_role_caps($r)) return false;
-    }
-    return true;
+    return !preg_match('/const ROLE_(CAPS|OPTS)\s*=/', $src) && !preg_match('/super_admin:\s*\[\s*"content"/', $src)
+        && str_contains($src, 'NGGApi.admin.roles()');
 })());
 chk('super_admin bridges both portals', in_array('summer', admin_role_caps('super_admin'), true) && in_array('club', admin_role_caps('super_admin'), true));
 
@@ -23789,6 +23788,71 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     if ($ids) { $ph = implode(',', array_fill(0, count($ids), '?'));
         db_exec("DELETE FROM curriculum_checks WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_materials WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_units WHERE unitId IN ($ph)", $ids); }
     db_exec("DELETE FROM members WHERE memberId = 'NGG-SEED-ADM'");
+})();
+
+/* ── Roles, tasks and access per administrative level ── */
+(function () {
+    $now = now_iso();
+    db_insert('centres', ['centreId' => 'CEN-AC-A', 'name' => 'Ac Alpha', 'code' => 'AA', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('centres', ['centreId' => 'CEN-AC-B', 'name' => 'Ac Beta', 'code' => 'AB', 'status' => 'active', 'createdAt' => $now]);
+    $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Ac ' . $id, 'email' => strtolower($id) . '@example.com',
+        'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now], $extra));
+    $mk('NGG-AC-SUP', 'super_admin');
+    $mk('NGG-AC-LEAD0', 'centre_lead');
+    $mk('NGG-AC-LEAD', 'centre_lead', ['centreScope' => json_encode(['CEN-AC-A'])]);
+    $mk('NGG-AC-AUD', 'audit');
+    $mk('NGG-AC-ADM', 'admin', ['capsExtra' => json_encode(['rbac'])]);
+    $mk('NGG-AC-SUM', 'summer_admin');
+    $mk('NGG-AC-FEE', 'club_admin', ['capsExtra' => json_encode(['fees']), 'centreScope' => json_encode(['CEN-AC-A'])]);
+    $mk('NGG-AC-MA', 'member', ['centre' => 'Ac Alpha']);
+    $mk('NGG-AC-MB', 'member', ['centre' => 'Ac Beta']);
+    db_insert('volunteers', ['volunteerId' => 'VOL-AC-A', 'fullName' => 'Vol Alpha', 'email' => 'vola@example.com', 'role' => 'instructor', 'centre' => 'Ac Alpha', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-AC-B', 'fullName' => 'Vol Beta', 'email' => 'volb@example.com', 'role' => 'instructor', 'centre' => 'Ac Beta', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+
+    $roles = backend_dispatch('admin.roles', ['requesterId' => 'NGG-AC-ADM']);
+    $ids = array_column($roles['roles'] ?? [], 'id');
+    chk('access: one registry lists every role, Auditor and Centre lead included', in_array('audit', $ids, true) && in_array('centre_lead', $ids, true) && $ids === staff_role_names());
+    $grant = array_column($roles['roles'], 'mayGrant', 'id');
+    chk('access: an admin holding rbac may grant up to their own level, never super admin', $grant['editor'] && $grant['centre_lead'] && $grant['admin'] && !$grant['super_admin']);
+
+    chk('access: a centre lead with no centre has no access at all — never "every centre"',
+        (backend_dispatch('admin.centres.list', ['requesterId' => 'NGG-AC-LEAD0'])['error'] ?? '') === 'scope_required');
+    $cl = backend_dispatch('admin.centres.list', ['requesterId' => 'NGG-AC-LEAD']);
+    chk('access: a centre lead sees only their centre', array_column($cl['centres'] ?? [], 'name') === ['Ac Alpha']);
+    chk('access: …cannot edit another centre or add one', (backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-AC-LEAD', 'data' => ['centreId' => 'CEN-AC-B', 'name' => 'Ac Beta', 'code' => 'AB']])['error'] ?? '') === 'out_of_scope'
+        && (backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-AC-LEAD', 'data' => ['name' => 'Ac New', 'code' => 'AN']])['error'] ?? '') === 'out_of_scope');
+    $vl = backend_dispatch('admin.volunteers.list', ['requesterId' => 'NGG-AC-LEAD']);
+    chk('access: …and sees and edits only their centre\'s volunteers', array_column($vl['volunteers'] ?? [], 'volunteerId') === ['VOL-AC-A']
+        && (backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-AC-LEAD', 'volunteerId' => 'VOL-AC-B', 'data' => ['phone' => '1']])['error'] ?? '') === 'out_of_scope');
+    $ap = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-AC-LEAD', 'data' => ['memberId' => 'NGG-AC-MA', 'status' => 'suspended']]);
+    chk('access: a centre lead\'s suspension waits for a second admin', !empty($ap['queued']) || ($ap['error'] ?? '') === 'approval_required' || !empty($ap['approvalId']));
+
+    chk('access: an auditor cannot publish — content writes need the content capability',
+        (backend_dispatch('admin.posts.upsert', ['requesterId' => 'NGG-AC-AUD', 'data' => ['title' => 'x', 'body' => 'y']])['error'] ?? '') === 'forbidden'
+        && (backend_dispatch('admin.broadcast', ['requesterId' => 'NGG-AC-AUD', 'title' => 'x', 'body' => 'y'])['error'] ?? '') === 'forbidden');
+
+    // Role changes and recovery never reach upward.
+    backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-AC-ADM', 'data' => ['memberId' => 'NGG-AC-MB', 'role' => 'super_admin']]);
+    chk('access: an admin with rbac cannot make anyone a super admin', db_row("SELECT role FROM members WHERE memberId = 'NGG-AC-MB'")['role'] === 'member');
+    backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-AC-ADM', 'data' => ['memberId' => 'NGG-AC-MB', 'role' => 'editor']]);
+    chk('access: …but can make them an editor', db_row("SELECT role FROM members WHERE memberId = 'NGG-AC-MB'")['role'] === 'editor');
+    db_exec("UPDATE members SET role = 'member' WHERE memberId = 'NGG-AC-MB'");
+    chk('access: recovery (2FA reset) cannot touch a super admin from below', (backend_dispatch('admin.members.reset2fa', ['requesterId' => 'NGG-AC-ADM', 'memberId' => 'NGG-AC-SUP'])['detail'] ?? '') === 'above_your_level');
+
+    // Money follows the centre scope.
+    chk('access: a scoped fees officer cannot open another centre\'s account', (backend_dispatch('admin.fees.member', ['requesterId' => 'NGG-AC-FEE', 'memberId' => 'NGG-AC-MB'])['error'] ?? '') === 'out_of_scope'
+        && !empty(backend_dispatch('admin.fees.member', ['requesterId' => 'NGG-AC-FEE', 'memberId' => 'NGG-AC-MA'])['ok']));
+
+    // Conduct and behaviour are gated by WHO the record is about, never by a type the browser sends.
+    $pi = backend_dispatch('admin.policy.infraction', ['requesterId' => 'NGG-AC-SUM', 'personId' => 'NGG-AC-MA', 'personType' => 'student', 'kind' => 'misconduct', 'date' => '2026-10-01']);
+    chk('access: a Summer coordinator cannot fine an NGG member by calling them a "student"', ($pi['error'] ?? '') === 'forbidden');
+    chk('access: …or log behaviour about one', (backend_dispatch('admin.behaviour.log', ['requesterId' => 'NGG-AC-SUM', 'subjectId' => 'NGG-AC-MA', 'note' => 'Behaved well today'])['error'] ?? '') === 'forbidden');
+    chk('access: the conduct board shows a Summer coordinator no NGG member', !in_array('member', array_column(backend_dispatch('admin.policy.board', ['requesterId' => 'NGG-AC-SUM'])['rows'] ?? [], 'type'), true));
+
+    db_exec("DELETE FROM admin_approvals WHERE requesterId LIKE 'NGG-AC-%'");
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-AC-%'");
+    db_exec("DELETE FROM centres WHERE centreId LIKE 'CEN-AC-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-AC-%'");
 })();
 
 /* ── NGG and Summer School keep their own course and centre lists ── */

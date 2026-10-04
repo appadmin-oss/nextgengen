@@ -7672,3 +7672,23 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
 .centre-progs { border: 0; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; }
 .centre-progs legend { font-size: 11.5px; font-weight: 700; color: var(--ink-700); margin-bottom: 6px; padding: 0; }
 .centre-prog { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; min-height: 32px; cursor: pointer; }
+
+/* Access & roles */
+.access-warn { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: #fff4e5; color: #7a3d00; font-size: 13.5px; }
+.access-you { margin-left: 8px; font-size: 10px; }
+.access-role { min-width: 210px; }
+.access-none { color: #9a3412; font-weight: 600; }
+.access-caps { display: flex; flex-wrap: wrap; gap: 6px; }
+.access-caps .chip { font-size: 10px; }
+.access-table th[scope=col] { text-align: center; }
+.access-table th[scope=col]:first-child { text-align: left; }
+.access-cap-h { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; }
+.access-role-cell { text-align: left; font-weight: 400; min-width: 260px; display: grid; gap: 4px; }
+.access-flags { display: flex; flex-wrap: wrap; gap: 6px; }
+.access-flags .chip { font-size: 10px; }
+.access-cell { text-align: center; color: var(--ink-400, #8088a6); }
+.access-cell.is-on { color: #1f7a3a; font-weight: 800; background: rgba(47,158,68,0.08); }
+.access-capdefs { display: grid; gap: 8px; margin: 8px 0 14px; }
+.access-capdefs > div { display: grid; grid-template-columns: 110px 1fr; gap: 10px; font-size: 13.5px; }
+.access-capdefs dt { font-weight: 700; }
+.access-capdefs dd { margin: 0; }

@@ -538,10 +538,12 @@ function auth_totp_verify(array $p): array {
 /** Super-admin recovery: clear a member's TOTP + backup codes so they re-enrol
  *  at next admin sign-in (the fix for a lost authenticator). */
 function admin_member_reset_2fa(array $p): array {
-    if (!admin_is_super($p)) return ['ok' => false, 'error' => 'forbidden'];
+    $g = admin_cap_gate($p, 'rbac'); if (!$g['ok']) return $g;
     $target = (string)($p['memberId'] ?? '');
     $m = db_row('SELECT id, role FROM members WHERE memberId = ? LIMIT 1', [$target]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    // Account recovery reaches no further than the operator's own level.
+    if (!admin_may_manage($g['requester'], (string)($m['role'] ?? 'member'))) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'above_your_level'];
     db_update('members', ['totpSecret' => '', 'totpBackup' => '', 'updatedAt' => now_iso()], ['id' => $m['id']]);
     audit('admin.totp.reset', (string)($p['requesterId'] ?? ''), $target, [], (string)($p['ip'] ?? ''));
     return ['ok' => true];
@@ -550,10 +552,12 @@ function admin_member_reset_2fa(array $p): array {
 /** Super-admin recovery: clear a member's password so they sign in via the
  *  emailed code/magic-link and can set a fresh password. */
 function admin_member_reset_password(array $p): array {
-    if (!admin_is_super($p)) return ['ok' => false, 'error' => 'forbidden'];
+    $g = admin_cap_gate($p, 'rbac'); if (!$g['ok']) return $g;
     $target = (string)($p['memberId'] ?? '');
-    $m = db_row('SELECT id FROM members WHERE memberId = ? LIMIT 1', [$target]);
+    $m = db_row('SELECT id, role FROM members WHERE memberId = ? LIMIT 1', [$target]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    // Account recovery reaches no further than the operator's own level.
+    if (!admin_may_manage($g['requester'], (string)($m['role'] ?? 'member'))) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'above_your_level'];
     db_update('members', ['passwordHash' => '', 'updatedAt' => now_iso()], ['id' => $m['id']]);
     audit('admin.password.reset', (string)($p['requesterId'] ?? ''), $target, [], (string)($p['ip'] ?? ''));
     return ['ok' => true];

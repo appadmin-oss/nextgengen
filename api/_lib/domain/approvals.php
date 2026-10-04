@@ -29,7 +29,8 @@ function approval_running(?bool $set = null): bool {
 
 /** Whose sensitive actions wait for approval: the club admin role. */
 function approval_bound(?array $requester): bool {
-    return $requester !== null && strtolower((string)($requester['role'] ?? '')) === 'club_admin';
+    // Roles marked `queued` in ADMIN_ROLES: the Club coordinator and the centre lead.
+    return $requester !== null && admin_role_queued((string)($requester['role'] ?? ''));
 }
 
 /**

@@ -108,11 +108,30 @@ function behaviour_presets(): array {
 }
 
 function admin_behaviour_presets_save(array $p): array {
-    $g = behaviour_gate($p); if (!$g['ok']) return $g;
+    // Shared configuration — one owner, not "either desk".
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $in = is_array($p['presets'] ?? null) ? array_slice($p['presets'], 0, 40) : [];
     setting_set('behaviour_presets', $in, (string)$g['requester']['memberId']);
     audit('behaviour.presets.set', (string)$g['requester']['memberId'], '', ['count' => count($in)], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'presets' => behaviour_presets()];
+}
+
+/**
+ * A WRITE about one person is gated by who that person is, never by "people
+ * OR summer": a Summer School participant is the summer desk's, an NGG member
+ * the people desk's — and, for a scoped admin, only inside their centres.
+ */
+function behaviour_subject_gate(array $requester, string $subjectId): array {
+    $caps = member_effective_caps($requester);
+    $st = db_row('SELECT centre FROM summer_students WHERE studentId = ? LIMIT 1', [$subjectId]);
+    if ($st) {
+        if (!in_array('summer', $caps, true)) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:summer'];
+        return admin_centre_allowed($requester, (string)$st['centre']) ? ['ok' => true] : ['ok' => false, 'error' => 'out_of_scope'];
+    }
+    if (!in_array('people', $caps, true)) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:people'];
+    $sg = admin_member_scope_gate($requester, $subjectId);
+    if (!$sg['ok'] && ($sg['error'] ?? '') === 'not_found') return ['ok' => false, 'error' => 'subject_not_found'];
+    return $sg['ok'] ? ['ok' => true] : $sg;
 }
 
 /** Staff with people OR summer capability may observe/read. */
@@ -127,6 +146,7 @@ function admin_behaviour_log(array $p): array {
     $subjectId = trim((string)($p['subjectId'] ?? ''));
     $note = trim((string)($p['note'] ?? ''));
     if ($subjectId === '') return ['ok' => false, 'error' => 'no_subject'];
+    $sg = behaviour_subject_gate($g['requester'], $subjectId); if (!$sg['ok']) return $sg;
     if (strlen($note) < 5) return ['ok' => false, 'error' => 'note_too_short'];
     $note = substr($note, 0, 1500);
 
@@ -176,6 +196,17 @@ function admin_behaviour_list(array $p): array {
     if (!empty($p['status']) && in_array($p['status'], ['open', 'reviewed'], true)) { $where[] = 'status = ?'; $params[] = (string)$p['status']; }
     if (!empty($p['category']) && in_array($p['category'], BEHAVIOUR_CATEGORIES, true)) { $where[] = 'category = ?'; $params[] = (string)$p['category']; }
     $rows = db_all('SELECT * FROM behaviour_logs' . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY id DESC LIMIT 300', $params);
+    /* A scoped admin reads only the people in their centres — two grouped
+       lookups for the whole list, not one per row. */
+    $names = admin_centre_names_in_scope($g['requester']);
+    if ($names !== null && $rows) {
+        $ids = array_values(array_unique(array_column($rows, 'subjectId')));
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $centreOf = [];
+        foreach (db_all("SELECT memberId id, centre FROM members WHERE memberId IN ($ph)", $ids) as $r) $centreOf[(string)$r['id']] = (string)$r['centre'];
+        foreach (db_all("SELECT studentId id, centre FROM summer_students WHERE studentId IN ($ph)", $ids) as $r) $centreOf[(string)$r['id']] = (string)$r['centre'];
+        $rows = array_values(array_filter($rows, static fn($r) => in_array($centreOf[(string)$r['subjectId']] ?? '', $names, true)));
+    }
 
     // 30-day trend: counts per category + open flags — the M&E feed.
     $since = gmdate('Y-m-d\TH:i:s\Z', time() - 30 * 86400);
@@ -187,6 +218,9 @@ function admin_behaviour_list(array $p): array {
 
 function admin_behaviour_review(array $p): array {
     $g = behaviour_gate($p); if (!$g['ok']) return $g;
+    $log = db_row('SELECT subjectId FROM behaviour_logs WHERE logId = ? LIMIT 1', [(string)($p['logId'] ?? '')]);
+    if (!$log) return ['ok' => false, 'error' => 'not_found'];
+    $sg = behaviour_subject_gate($g['requester'], (string)$log['subjectId']); if (!$sg['ok']) return $sg;
     $n = db_update('behaviour_logs', ['status' => 'reviewed', 'reviewedBy' => $g['requester']['memberId'], 'reviewedAt' => now_iso()], ['logId' => (string)($p['logId'] ?? '')]);
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     audit('behaviour.review', $g['requester']['memberId'], (string)$p['logId'], [], (string)($p['ip'] ?? ''));

@@ -637,6 +637,7 @@ function admin_assign_mentor(array $p): array {
     $sc = session_current();
     $sessionId = (string)($p['sessionId'] ?? ($sc['current']['sessionId'] ?? ''));
     if (!$memberId) return ['ok' => false, 'error' => 'no_member'];
+    $sg = admin_member_scope_gate($g['requester'], $memberId); if (!$sg['ok']) return $sg;
     // End any current active links for this member+session.
     db_exec("UPDATE mentor_assignments SET status='ended', endedAt=? WHERE memberId=? AND sessionId=? AND status='active'", [now_iso(), $memberId, $sessionId]);
     if ($mentorId) {

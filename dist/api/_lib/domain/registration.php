@@ -934,6 +934,10 @@ function admin_gates_list(array $p): array {
     $ph = implode(',', array_fill(0, count($kinds), '?'));
     $kindSql = in_array('desk', $kinds, true) ? "(COALESCE(kind,'') IN ($ph) OR COALESCE(kind,'') = '')" : "kind IN ($ph)";
     $rows = db_all("SELECT gateId, kind, name, cohortId, centreId, status, createdBy, expiresAt, usedCount, createdAt, passHash, passSetAt, passRotateDays, passNotify, passExpiryDays, passExpiresAt FROM gate_links WHERE $kindSql ORDER BY id DESC LIMIT 50", $kinds);
+    /* A scoped admin sees their centres' desks. A desk for every centre (no
+       centreId) is not theirs to see or reset: it opens doors they do not run. */
+    $scopeIds = admin_centre_ids_in_scope($g['requester']);
+    if ($scopeIds !== null) $rows = array_values(array_filter($rows, static fn($r) => in_array((string)$r['centreId'], $scopeIds, true)));
     foreach ($rows as &$r) {
         $r['kind'] = gate_kind_of($r['kind'] ?? '');
         $r['path'] = gate_kind_path($r['kind']);
@@ -959,6 +963,10 @@ function admin_gates_list(array $p): array {
 function admin_gates_create(array $p): array {
     $kind = gate_kind_of($p['kind'] ?? 'desk');
     $g = admin_cap_gate($p, GATE_KINDS[$kind]['cap']); if (!$g['ok']) return $g;
+    $scopeIds = admin_centre_ids_in_scope($g['requester']);
+    if ($scopeIds !== null && !in_array((string)($p['centreId'] ?? ''), $scopeIds, true)) {
+        return ['ok' => false, 'error' => 'out_of_scope', 'detail' => 'Choose one of your centres for this desk.'];
+    }
     $c = summer_ensure_cohort();
     $gateId = 'GL-' . strtoupper(rand_hex(6));
     // Optional kiosk password: field staff without an admin login unlock the
@@ -2782,6 +2790,17 @@ function admin_centres_list(array $p): array {
     $canWrite = in_array('people', member_effective_caps($g['requester']), true);
     $c = summer_ensure_cohort();
     $rows = db_all("SELECT centreId, name, code, color, status, capacity, address, area, leadVolunteerId, phone, email, meetDays, meetTime, notes, whatsappUrl, lat, lng, radiusM, geofence, mapSource, mapAccuracyM, mappedAt, summerAddress, summerArea, summerLat, summerLng, slug, pageStatus, tagline, headline, heroImageUrl, heroImageMobileUrl, heroPosition, story, gallery, pageUpdatedAt, programmes FROM centres ORDER BY name");
+    // A scoped admin's directory is their centres.
+    $scopeNames = admin_centre_names_in_scope($g['requester']);
+    if ($scopeNames !== null) $rows = array_values(array_filter($rows, static fn($r) => in_array((string)$r['name'], $scopeNames, true)));
+    /* Grouped counts for the whole directory — this ran four queries per
+       centre, which is the N+1 CLAUDE.md §6 calls a defect. */
+    $sumBy = [];
+    foreach (db_all("SELECT centre, status, COUNT(*) c FROM summer_students WHERE cohortId = ? AND status IN ('active','waitlisted') GROUP BY centre, status", [$c['cohortId']]) as $x) $sumBy[(string)$x['centre']][(string)$x['status']] = (int)$x['c'];
+    $memBy = [];
+    foreach (db_all("SELECT centre, COUNT(*) c FROM members WHERE status = 'active' GROUP BY centre") as $x) $memBy[(string)$x['centre']] = (int)$x['c'];
+    $grpBy = [];
+    foreach (db_all("SELECT centreId, COUNT(*) c FROM summer_groups WHERE cohortId = ? GROUP BY centreId", [$c['cohortId']]) as $x) $grpBy[(string)$x['centreId']] = (int)$x['c'];
     // Volunteers available to lead a centre — active only, labelled for the picker.
     $vols = db_all("SELECT volunteerId, fullName, firstName, role, centre FROM volunteers WHERE status = 'active' ORDER BY fullName");
     $volById = [];
@@ -2798,12 +2817,12 @@ function admin_centres_list(array $p): array {
            aliased under summer* names so a reader cannot mistake them for the
            year-round membership. `members` is the NGG side: who is posted here
            all year, which is what capacity on an NGG centre is about. */
-        $r['summerEnrolled'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'active'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
-        $r['summerWaitlisted'] = (int)(db_row("SELECT COUNT(*) c FROM summer_students WHERE cohortId = ? AND centre = ? AND status = 'waitlisted'", [$c['cohortId'], (string)$r['name']])['c'] ?? 0);
+        $r['summerEnrolled'] = $sumBy[(string)$r['name']]['active'] ?? 0;
+        $r['summerWaitlisted'] = $sumBy[(string)$r['name']]['waitlisted'] ?? 0;
         $r['enrolled'] = $r['summerEnrolled'];
         $r['waitlisted'] = $r['summerWaitlisted'];
-        $r['members'] = (int)(db_row("SELECT COUNT(*) c FROM members WHERE centre = ? AND status = 'active'", [(string)$r['name']])['c'] ?? 0);
-        $r['groups'] = (int)(db_row("SELECT COUNT(*) c FROM summer_groups WHERE centreId = ? AND cohortId = ?", [(string)$r['centreId'], $c['cohortId']])['c'] ?? 0);
+        $r['members'] = $memBy[(string)$r['name']] ?? 0;
+        $r['groups'] = $grpBy[(string)$r['centreId']] ?? 0;
         $r['full'] = ((int)$r['capacity'] > 0 && $r['summerEnrolled'] >= (int)$r['capacity']);
         $lid = (string)($r['leadVolunteerId'] ?? '');
         $r['leadName'] = $lid !== '' ? ($volById[$lid] ?? db_row('SELECT fullName FROM volunteers WHERE volunteerId = ?', [$lid])['fullName'] ?? '') : '';
@@ -2903,6 +2922,14 @@ function centre_names_for_programme(string $programme): array {
 function admin_centres_upsert(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $d = is_array($p['data'] ?? null) ? $p['data'] : [];
+    /* A scoped admin edits only their own centres and cannot add one: a new
+       centre is a new place in the organisation, decided above a centre. */
+    if (admin_centre_names_in_scope($g['requester']) !== null) {
+        $cid0 = (string)($d['centreId'] ?? '');
+        $own = $cid0 !== '' ? db_row('SELECT name FROM centres WHERE centreId = ?', [$cid0]) : null;
+        if (!$own) return ['ok' => false, 'error' => 'out_of_scope', 'detail' => 'Only an admin for every centre can add a centre.'];
+        if (!admin_centre_allowed($g['requester'], (string)$own['name'])) return ['ok' => false, 'error' => 'out_of_scope'];
+    }
     $name = substr(trim((string)($d['name'] ?? '')), 0, 80);
     $code = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($d['code'] ?? '')));
     $color = (string)($d['color'] ?? '#76B043');
@@ -3075,6 +3102,7 @@ function admin_centres_delete(array $p): array {
     $id = (string)($p['centreId'] ?? '');
     $c = $id !== '' ? db_row('SELECT * FROM centres WHERE centreId = ?', [$id]) : null;
     if (!$c) return ['ok' => false, 'error' => 'not_found'];
+    if (!admin_centre_allowed($g['requester'], (string)$c['name'])) return ['ok' => false, 'error' => 'out_of_scope'];
     $name = (string)$c['name'];
     $uses = [
         'members'       => (int)(db_row("SELECT COUNT(*) c FROM members WHERE centre = ?", [$name])['c'] ?? 0),

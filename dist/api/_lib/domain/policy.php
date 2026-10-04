@@ -519,6 +519,28 @@ function policy_for(string $type): array {
  *  an NGG member → 'member', someone on the volunteer roster → 'volunteer',
  *  otherwise 'student'. Members are checked first so a member id is never
  *  mistaken for a summer student. */
+/**
+ * May this staff member change this person's conduct record? Decided by the
+ * person's REAL type, read here — never by a personType the browser sent:
+ * an NGG member or a volunteer is the people desk's (and inside the reader's
+ * centres), a Summer School participant the summer desk's.
+ */
+function policy_subject_gate(array $requester, string $id): array {
+    $caps = member_effective_caps($requester);
+    if ($m = db_row("SELECT centre FROM members WHERE memberId = ? AND type = 'NGG' LIMIT 1", [$id])) {
+        if (!in_array('people', $caps, true)) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:people'];
+        return admin_centre_allowed($requester, (string)$m['centre']) ? ['ok' => true, 'type' => 'member'] : ['ok' => false, 'error' => 'out_of_scope'];
+    }
+    if ($v = db_row('SELECT centre FROM volunteers WHERE volunteerId = ? LIMIT 1', [$id])) {
+        if (!in_array('people', $caps, true)) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:people'];
+        return admin_centre_allowed($requester, (string)$v['centre']) ? ['ok' => true, 'type' => 'volunteer'] : ['ok' => false, 'error' => 'out_of_scope'];
+    }
+    $st = db_row('SELECT centre FROM summer_students WHERE studentId = ? LIMIT 1', [$id]);
+    if (!in_array('summer', $caps, true)) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:summer'];
+    if ($st && !admin_centre_allowed($requester, (string)$st['centre'])) return ['ok' => false, 'error' => 'out_of_scope'];
+    return ['ok' => true, 'type' => 'student'];
+}
+
 function policy_person_type(string $id, string $given = ''): string {
     if ($given !== '') return $given;
     if (db_row("SELECT 1 x FROM members WHERE memberId = ? AND type = 'NGG'", [$id])) return 'member';
@@ -1272,8 +1294,10 @@ function admin_policy_day_toggle(array $p): array {
 
 /** One person's full compliance record — state, ledger, sanctions. */
 function admin_policy_person(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;   // either desk may open it; the write is re-gated per person below
     $id = trim((string)($p['personId'] ?? ''));
+    $pg = policy_subject_gate($g['requester'], $id); if (!$pg['ok']) return $pg;
+    $p['personType'] = $pg['type'];   // the record's real type, never the browser's claim
     if ($id === '') return ['ok' => false, 'error' => 'bad_person'];
     $type = policy_person_type($id, (string)($p['personType'] ?? ''));
     return ['ok' => true,
@@ -1288,8 +1312,10 @@ function admin_policy_person(array $p): array {
  *  that no scanner can see. Auto-kinds (absence/late) stay off this path so
  *  the scan record and the ledger cannot disagree. */
 function admin_policy_infraction(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;   // either desk may open it; the write is re-gated per person below
     $id = trim((string)($p['personId'] ?? ''));
+    $pg = policy_subject_gate($g['requester'], $id); if (!$pg['ok']) return $pg;
+    $p['personType'] = $pg['type'];   // the record's real type, never the browser's claim
     $kind = trim((string)($p['kind'] ?? ''));
     $manual = ['idcard_missing', 'idcard_lost', 'review_missed', 'misconduct'];
     if ($id === '' || !in_array($kind, $manual, true)) return ['ok' => false, 'error' => 'bad_infraction'];
@@ -1308,12 +1334,13 @@ function admin_policy_infraction(array $p): array {
 /** Void a wrongly logged fact. Everything it caused is re-derived, so a bad
  *  absence that triggered dormancy stops causing dormancy the moment it goes. */
 function admin_policy_void(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;   // either desk may open it; the write is re-gated per person below
     $iid = (int)($p['infractionId'] ?? 0);
     $reason = trim((string)($p['reason'] ?? ''));
     if (!$iid || $reason === '') return ['ok' => false, 'error' => 'reason_required'];
     $row = db_row('SELECT * FROM infractions WHERE id = ?', [$iid]);
     if (!$row) return ['ok' => false, 'error' => 'not_found'];
+    $pg = policy_subject_gate($g['requester'], (string)$row['personId']); if (!$pg['ok']) return $pg;
     db_update('infractions', ['voidedAt' => now_iso(), 'voidedBy' => (string)$g['requester']['memberId'], 'voidReason' => substr($reason, 0, 240)], ['id' => $iid]);
     // Sanctions are keyed on the count that triggered them, so any sanction at
     // a tier the ledger no longer reaches is lifted. Rows are kept, not
@@ -1359,13 +1386,14 @@ function policy_relift(string $personId, string $type): int {
 /** Close out a sanction: pay a fine, serve a suspension, clear dormancy, or
  *  overturn any of them on appeal. */
 function admin_policy_sanction_update(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;   // either desk may open it; the write is re-gated per person below
     $sid = (int)($p['sanctionId'] ?? 0);
     $status = (string)($p['status'] ?? '');
     // 'active' on a proposed suspension/eviction is the admin confirming it.
     if (!$sid || !in_array($status, ['active', 'proposed', 'paid', 'served', 'cleared', 'waived', 'lifted'], true)) return ['ok' => false, 'error' => 'bad_status'];
     $s = db_row('SELECT * FROM sanctions WHERE id = ?', [$sid]);
     if (!$s) return ['ok' => false, 'error' => 'not_found'];
+    $pg = policy_subject_gate($g['requester'], (string)$s['personId']); if (!$pg['ok']) return $pg;
     db_update('sanctions', [
         'status' => $status,
         'clearedAt' => in_array($status, ['active', 'proposed'], true) ? '' : now_iso(),
@@ -1395,8 +1423,10 @@ function admin_policy_sanction_update(array $p): array {
 /** Issue a sanction by hand — §2.3 dormancy for declining energy, or a
  *  discretionary suspension/eviction that no counter can infer. */
 function admin_policy_sanction_issue(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;   // either desk may open it; the write is re-gated per person below
     $id = trim((string)($p['personId'] ?? ''));
+    $pg = policy_subject_gate($g['requester'], $id); if (!$pg['ok']) return $pg;
+    $p['personType'] = $pg['type'];   // the record's real type, never the browser's claim
     $kind = (string)($p['kind'] ?? '');
     $reason = trim((string)($p['reason'] ?? ''));
     if ($id === '' || !in_array($kind, POLICY_SANCTIONS, true) || $reason === '') return ['ok' => false, 'error' => 'reason_required'];
@@ -1425,8 +1455,10 @@ function admin_policy_sanction_issue(array $p): array {
  * whole question this screen exists to answer.
  */
 function admin_policy_reinstate(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;   // either desk may open it; the write is re-gated per person below
     $id = trim((string)($p['personId'] ?? ''));
+    $pg = policy_subject_gate($g['requester'], $id); if (!$pg['ok']) return $pg;
+    $p['personType'] = $pg['type'];   // the record's real type, never the browser's claim
     if ($id === '') return ['ok' => false, 'error' => 'bad_person'];
     $type = policy_person_type($id, (string)($p['personType'] ?? ''));
     $r = policy_settings()['reinstatement'];
@@ -1461,12 +1493,19 @@ function admin_policy_reinstate(array $p): array {
 
 /** The compliance board — everyone who is not clear, worst first. */
 function admin_policy_board(array $p): array {
-    $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
     $rows = [];
     $names = [];
-    foreach (db_all("SELECT studentId id, fullName FROM summer_students WHERE status = 'active'") as $r) $names[(string)$r['id']] = ['name' => (string)$r['fullName'], 'type' => 'student'];
-    foreach (db_all("SELECT volunteerId id, fullName FROM volunteers WHERE status = 'active'") as $r) $names[(string)$r['id']] = ['name' => (string)$r['fullName'], 'type' => 'volunteer'];
-    foreach (db_all("SELECT memberId id, fullName FROM members WHERE type = 'NGG' AND status = 'active'") as $r) $names[(string)$r['id']] = ['name' => (string)$r['fullName'], 'type' => 'member'];
+    /* The board shows only the people this reader may act on: Summer
+       participants to the summer desk, members and volunteers to the people
+       desk — and, for a scoped admin, only in their centres. */
+    $caps = member_effective_caps($g['requester']);
+    $mayType = ['student' => in_array('summer', $caps, true), 'member' => in_array('people', $caps, true), 'volunteer' => in_array('people', $caps, true)];
+    $scopeNames = admin_centre_names_in_scope($g['requester']);
+    $inScope = static fn($centre) => $scopeNames === null || in_array((string)$centre, $scopeNames, true);
+    if ($mayType['student']) foreach (db_all("SELECT studentId id, fullName, centre FROM summer_students WHERE status = 'active'") as $r) if ($inScope($r['centre'])) $names[(string)$r['id']] = ['name' => (string)$r['fullName'], 'type' => 'student'];
+    if ($mayType['volunteer']) foreach (db_all("SELECT volunteerId id, fullName, centre FROM volunteers WHERE status = 'active'") as $r) if ($inScope($r['centre'])) $names[(string)$r['id']] = ['name' => (string)$r['fullName'], 'type' => 'volunteer'];
+    if ($mayType['member']) foreach (db_all("SELECT memberId id, fullName, centre FROM members WHERE type = 'NGG' AND status = 'active'") as $r) if ($inScope($r['centre'])) $names[(string)$r['id']] = ['name' => (string)$r['fullName'], 'type' => 'member'];
     // Only people with something on their ledger — a clean roster costs nothing.
     $ids = db_all("SELECT DISTINCT personId FROM infractions WHERE voidedAt IS NULL OR voidedAt = ''");
     foreach (db_all("SELECT DISTINCT personId FROM sanctions WHERE status IN ('active','proposed','pending')") as $r) $ids[] = $r;
@@ -1475,7 +1514,8 @@ function admin_policy_board(array $p): array {
         $id = (string)$r['personId'];
         if ($id === '' || isset($seen[$id])) continue;
         $seen[$id] = true;
-        $meta = $names[$id] ?? ['name' => $id, 'type' => 'student'];
+        if (!isset($names[$id])) continue;   // not someone this reader may see
+        $meta = $names[$id];
         $st = policy_state($id, $meta['type']);
         if ($st['state'] === 'clear' && !$st['lates'] && !$st['absences'] && !$st['finesOwed'] && empty($st['awaitingReview'])) continue;
         $rows[] = ['personId' => $id, 'fullName' => $meta['name'], 'personType' => $meta['type']] + $st;
