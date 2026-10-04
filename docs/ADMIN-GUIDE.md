@@ -370,12 +370,36 @@ on its timetable counts them among its *uses* when you try to delete it.
 | Staff | **People → Timetable**, with **Print** and a link to the public page |
 | Members | **Dashboard → Timetable** (`/dashboard/timetable`) — their centre, their course marked "Your course" |
 | Parents | their **family account** (`/family`), on each child's card |
-| Anybody | **`/timetable`** — linked from the Centres page and the Parents page; choose a centre, or share `/timetable?centre=<centre>` |
+| Anybody | **`/timetable`** — the **Timetable maker** (menu: *The room → Timetable maker*; also linked from the Centres and Parents pages). *Start from* a centre's week, or share `/timetable?centre=<centre>` to open on it |
 
-The public page never shows instructors' names. Every version prints on one
-clean sheet (**Print**), lists classes under a heading per day as a real
-table, says "Your course" in words rather than by colour alone, and becomes
-labelled cards on a phone rather than a table that scrolls sideways.
+The public page never shows instructors' names. The staff, member and family
+versions print on one clean sheet (**Print**), list classes under a heading per
+day as a real table, say "Your course" in words rather than by colour alone,
+and become labelled cards on a phone rather than a table that scrolls sideways.
+
+### The Timetable maker (public)
+
+**`/timetable`** is a free tool for anybody — members, parents, children who
+are not members yet. Nobody signs in and nothing is sent to us: the timetable
+stays in that browser.
+
+- **Six designed templates**: Studio, Midnight, Sunrise, Blueprint, Bold and
+  Kente. Each has eight named colours (Blue, Green, Amber, Rose, Violet,
+  Orange, Teal, Slate), and the text on every class block reads at 4.5:1 or
+  better on its colour.
+- **Classes** are added through a form — name, days, start and end, where, a
+  note, a colour. Nothing needs dragging. Classes that overlap sit side by side
+  and the list says "Overlaps …".
+- **Layout**: which days, which hours (they widen by themselves to fit an
+  early or late class), 12- or 24-hour clock, A4 or US Letter, landscape or
+  portrait.
+- **Start from**: a centre's official week (its classes come in and can be
+  changed — instructors are never named), the sample school week, or blank.
+- **Take it away**: **Download PDF** (fills the page at the chosen size),
+  **Picture (PNG)** (twice print size), **Add to calendar (.ics)** — every class
+  repeats weekly in Lagos time from the *Starts on* date, until the optional
+  *Repeats until* date — **Print**, and **Copy link**, which carries the whole
+  timetable in the link so someone else gets their own copy to change.
 
 **Centre codes are unique across the whole system**, not per year. The code
 is the prefix on printed member ID cards, so changing one changes what new

@@ -111,7 +111,7 @@ function CentresIndex({ go, setPage }) {
             centres. Each one is a room with high ceilings — mentors, tracks and
             a crew of teenagers who don't dey settle for less. Pick yours.
           </p>
-          <p className="centres-intro-p"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setPage("timetable")}>See each centre's timetable →</button></p>
+          <p className="centres-intro-p"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setPage("timetable")}>Make your timetable from a centre's week →</button></p>
         </div>
       </section>
 
@@ -538,52 +538,5 @@ function cap(s) { s = String(s || ""); return s ? s.charAt(0).toUpperCase() + s.
 Object.assign(window, { CentresPage, CentresIndex, CentreCard, CentreDetail, CentreHeroFigure });
 
 
-/* ── /timetable — each centre's week, public ─────────────────────────────────
- *
- * The centre is the URL (?centre=slug): choosing one replaces the query, so the
- * back button and a shared link both land on the same week. Instructors are not
- * named here (the server leaves them out). Accessible and printable through
- * TimetableView; the centre picker is a labelled select, not a row of tiles.
- */
-function TimetablePage({ setPage }) {
-  const read = () => { try { return new URL(window.location.href).searchParams.get("centre") || ""; } catch (_) { return ""; } };
-  const [slug, setSlug] = React.useState(read);
-  const [d, setD] = React.useState(null);
-  const [err, setErr] = React.useState(null);
-  React.useEffect(() => {
-    const onPop = () => setSlug(read());
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
-  const load = React.useCallback(() => { setErr(null); setD(null); return NGGApi.public.timetable(slug).then(setD).catch(e => { if (slug && e.code === "not_found") { setSlug(""); } else setErr(e); }); }, [slug]);
-  React.useEffect(() => { load(); }, [load]);
-  const choose = (v) => {
-    try { const u = new URL(window.location.href); if (v) u.searchParams.set("centre", v); else u.searchParams.delete("centre"); history.pushState({ page: "timetable" }, "", u.pathname + u.search); } catch (_) {}
-    setSlug(v);
-  };
-  return (
-    <div className="page tt-page">
-      <section className="section"><div className="container">
-        <span className="chip chip-navy">TIMETABLE</span>
-        <h1 className="tt-page-h">When each course meets</h1>
-        <p className="tt-page-lede">Choose a centre to see its week. Members also find their own centre's timetable, with their course marked, on their dashboard; parents find it on their family account.</p>
-        <div className="tt-toolbar tt-noprint">
-          <label className="tt-pick"><span>Centre</span>
-            <select value={slug} onChange={e => choose(e.target.value)}>
-              <option value="">Choose a centre…</option>
-              {((d && d.centres) || []).map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
-            </select></label>
-          {slug && d && d.slots && d.slots.length > 0 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => window.print()}>Print</button>}
-        </div>
-        {err ? <ErrorState title="Couldn't load the timetable" message={err.message} code={err.code} onRetry={load}/>
-          : !d ? <div className="dash-spinner" role="status" aria-label="Loading"/>
-          : !slug ? (d.centres.length ? <p className="tt-empty">Choose a centre above.</p> : <p className="tt-empty">No centre has published a timetable yet.</p>)
-          : <div className="tt-print" aria-live="polite">
-              <h2 className="tt-page-h2">{d.centre}</h2>
-              {(d.meetDays || d.meetTime) && <p className="tt-sub">Meets {d.meetDays}{d.meetTime ? ", " + d.meetTime : ""}</p>}
-              <TimetableView slots={d.slots} title={d.centre} emptyText="This centre has not published its timetable yet."/>
-            </div>}
-      </div></section>
-    </div>
-  );
-}
+/* /timetable is the public timetable maker (page-timetable.jsx). A centre's
+   official week is one way to start there, and ?centre=slug still opens it. */
