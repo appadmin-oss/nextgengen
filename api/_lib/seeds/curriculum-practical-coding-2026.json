@@ -1,0 +1,2997 @@
+{
+ "key": "practical-coding-2026",
+ "title": "Practical Coding — Full Stack Web Developer (2026)",
+ "description": "24 weeks, three 90-minute lessons a week: HTML, CSS, JavaScript, Node/Express/MongoDB and a full-stack capstone. Built on the freeCodeCamp Full Stack Developer curriculum, with Git, early deployment, mobile-first CSS and a real back end added, and a check on every lesson.",
+ "source": "freeCodeCamp Full Stack Developer curriculum (https://www.freecodecamp.org/learn/full-stack-developer/)",
+ "lessons": [
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 1,
+   "position": 1,
+   "title": "How the web works, and your tools",
+   "summary": "What happens between typing an address and seeing a page, and the three tools you will use every session: a browser, a code editor and the browser's developer tools.",
+   "objectives": [
+    "You will explain what a browser, a server and a URL are",
+    "You will open the developer tools and inspect a page",
+    "You will create, save and open your first .html file"
+   ],
+   "body": "## What to do\n\n- Install a code editor (VS Code, or an online editor if you are on a phone)\n- Open any website, right-click, choose **Inspect**, and change some text in the Elements panel\n- Create `index.html`, type a sentence into it, save it and open it in your browser\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview",
+     "title": "MDN: An overview of HTTP",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "When you visit a website, which program requests the page and draws it on your screen?",
+     "options": [
+      "The server",
+      "The browser",
+      "The code editor",
+      "The router"
+     ],
+     "answer": "The browser",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Changing text in the developer tools' Elements panel…",
+     "options": [
+      "Changes the website for everyone",
+      "Changes only your copy until you reload",
+      "Deletes the page",
+      "Saves the change to the server"
+     ],
+     "answer": "Changes only your copy until you reload",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 1,
+   "position": 2,
+   "title": "Basic HTML 1: tags, headings, paragraphs and links",
+   "summary": "HTML describes what each part of a page is. Start with the elements every page uses.",
+   "objectives": [
+    "You will write opening and closing tags",
+    "You will use h1–h6 and p correctly",
+    "You will link to another page with an a element"
+   ],
+   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Work through the first Basic HTML workshop on freeCodeCamp\n- Build a page about yourself with one h1, two h2 sections and a link to a site you like\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Basic HTML",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which element is the main heading of a page?",
+     "options": [
+      "<head>",
+      "<h1>",
+      "<header>",
+      "<title>"
+     ],
+     "answer": "<h1>",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Which attribute gives a link its destination?",
+     "options": [
+      "src",
+      "href",
+      "link",
+      "to"
+     ],
+     "answer": "href",
+     "points": 1
+    },
+    {
+     "kind": "code",
+     "prompt": "Write the HTML for a link with the text 'NGG' that goes to https://example.org",
+     "answer": "<a href=\"https://example.org\">NGG</a>",
+     "rubric": "An a element; href is the URL in quotes; the visible text is NGG; the tag is closed.",
+     "points": 3
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 1,
+   "position": 3,
+   "title": "Basic HTML 2: lists, images and nesting",
+   "summary": "Group items into lists, put pictures on the page, and nest elements inside each other properly.",
+   "objectives": [
+    "You will build ordered and unordered lists",
+    "You will add an image with alt text",
+    "You will nest elements without overlapping tags"
+   ],
+   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Continue the Basic HTML workshop on freeCodeCamp\n- Add a list of three things you want to build, and a picture with a sensible alt text, to your page\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Basic HTML",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which list shows numbers beside each item?",
+     "options": [
+      "<ul>",
+      "<ol>",
+      "<li>",
+      "<dl>"
+     ],
+     "answer": "<ol>",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Why does every img need alt text?",
+     "options": [
+      "It makes the image load faster",
+      "Screen readers read it, and it shows if the image fails to load",
+      "It sets the image size",
+      "It is only needed for logos"
+     ],
+     "answer": "Screen readers read it, and it shows if the image fails to load",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 2,
+   "position": 1,
+   "title": "Finishing basic HTML: the structure of a page",
+   "summary": "Every page has the same skeleton. Learn what goes in the head and what goes in the body, and why.",
+   "objectives": [
+    "You will write a complete HTML document from memory",
+    "You will explain what belongs in head and in body",
+    "You will set the page title and character set"
+   ],
+   "body": "This lesson is about **24 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the Basic HTML workshop on freeCodeCamp\n- Rewrite your page with `<!DOCTYPE html>`, `<html lang=\"en\">`, a head with charset and title, and a body\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Basic HTML",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Where does the <title> element go?",
+     "options": [
+      "In <body>",
+      "In <head>",
+      "In <footer>",
+      "Anywhere"
+     ],
+     "answer": "In <head>",
+     "points": 1
+    },
+    {
+     "kind": "code",
+     "prompt": "Write the smallest complete HTML document with the title 'My page'",
+     "answer": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>My page</title>\n</head>\n<body></body>\n</html>",
+     "rubric": "Has a doctype, html with lang, head containing meta charset and title 'My page', and an empty body; tags are properly closed.",
+     "points": 3
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 2,
+   "position": 2,
+   "title": "Semantic HTML",
+   "summary": "Use elements that say what content is — header, nav, main, section, article, footer — so people, search engines and screen readers understand your page.",
+   "objectives": [
+    "You will choose between section, article and div",
+    "You will lay out a page with header, nav, main and footer",
+    "You will explain why semantic HTML helps accessibility"
+   ],
+   "body": "This lesson is about **39 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Semantic HTML workshop on freeCodeCamp\n- Restructure your page so it has header, nav, main and footer\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Semantic HTML",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which element should hold the main content of a page, once per page?",
+     "options": [
+      "<section>",
+      "<main>",
+      "<div>",
+      "<body>"
+     ],
+     "answer": "<main>",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "A blog post that would make sense on its own belongs in…",
+     "options": [
+      "<article>",
+      "<aside>",
+      "<span>",
+      "<nav>"
+     ],
+     "answer": "<article>",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 2,
+   "position": 3,
+   "title": "Git and GitHub: saving your work properly",
+   "summary": "Developers keep every version of their code with Git and share it on GitHub. Set it up now, so everything you build from here has a history.",
+   "objectives": [
+    "You will create a GitHub account and a repository",
+    "You will commit and push your page",
+    "You will read a commit history"
+   ],
+   "body": "## What to do\n\n- Create a GitHub account (with a parent's permission if you are under 13 — GitHub's minimum age is 13)\n- Make a repository called `my-first-site` and upload your index.html\n- Change one line, commit it with a clear message, and look at the history\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://docs.github.com/en/get-started/start-your-journey/hello-world",
+     "title": "GitHub Docs: Hello World",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "What is a commit?",
+     "options": [
+      "A saved snapshot of your files with a message",
+      "A web page",
+      "A GitHub account",
+      "A type of HTML tag"
+     ],
+     "answer": "A saved snapshot of your files with a message",
+     "points": 1
+    },
+    {
+     "kind": "short",
+     "prompt": "Write a good commit message for adding a contact form to your page, and say why it is good.",
+     "answer": "Add contact form to the home page — it says what changed, in the present tense, briefly.",
+     "rubric": "A short, specific message describing the change; the reason mentions that it explains what changed so it can be found later.",
+     "points": 2
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 3,
+   "position": 1,
+   "title": "Forms 1: inputs, labels and choices",
+   "summary": "Forms are how a page collects information. Build one that works for everybody, including people using screen readers.",
+   "objectives": [
+    "You will build text, email and number inputs",
+    "You will connect every input to a label",
+    "You will use select, radio buttons, checkboxes and textarea"
+   ],
+   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first Forms and Tables workshop on freeCodeCamp\n- Build a sign-up form for a club, with a label for every field\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Forms and Tables",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "How do you connect a <label> to its input?",
+     "options": [
+      "Put them next to each other",
+      "Give the label a for attribute matching the input's id",
+      "Use the same class on both",
+      "Give both the same name"
+     ],
+     "answer": "Give the label a for attribute matching the input's id",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Which input lets someone choose only ONE option from a group?",
+     "options": [
+      "checkbox",
+      "radio",
+      "select multiple",
+      "textarea"
+     ],
+     "answer": "radio",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 3,
+   "position": 2,
+   "title": "Forms 2 and tables",
+   "summary": "Finish forms, then lay out data in tables — the right tool for timetables and results, and the wrong tool for page layout.",
+   "objectives": [
+    "You will group fields with fieldset and legend",
+    "You will build a table with a header row",
+    "You will explain when a table is the right choice"
+   ],
+   "body": "This lesson is about **29 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the Forms and Tables workshops on freeCodeCamp\n- Add a weekly timetable table to your page, with th scope=\"col\" on the header row\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Forms and Tables",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which element is a header cell in a table?",
+     "options": [
+      "<td>",
+      "<th>",
+      "<tr>",
+      "<thead>"
+     ],
+     "answer": "<th>",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Should you use a table to arrange the columns of a page layout?",
+     "options": [
+      "Yes, always",
+      "No — tables are for tabular data; use CSS for layout",
+      "Only on phones",
+      "Only for images"
+     ],
+     "answer": "No — tables are for tabular data; use CSS for layout",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 3,
+   "position": 3,
+   "title": "Accessible HTML",
+   "summary": "About one in six people lives with a disability. Make pages that work with a keyboard and a screen reader, using the right elements and ARIA only where HTML has no answer.",
+   "objectives": [
+    "You will check a page using only the keyboard",
+    "You will use headings in order and give images alt text",
+    "You will explain when ARIA is and is not needed"
+   ],
+   "body": "This lesson is about **28 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the HTML accessibility workshop on freeCodeCamp\n- Use Tab to move through your page — can you reach and use everything?\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Accessibility",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "What is the first rule of ARIA?",
+     "options": [
+      "Add role to every element",
+      "If a native HTML element does the job, use it instead of ARIA",
+      "Use aria-label on every div",
+      "ARIA replaces HTML"
+     ],
+     "answer": "If a native HTML element does the job, use it instead of ARIA",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Someone who cannot use a mouse moves through links and buttons with…",
+     "options": [
+      "The Tab key",
+      "The Shift key",
+      "The scroll wheel",
+      "Right-click"
+     ],
+     "answer": "The Tab key",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 4,
+   "position": 1,
+   "title": "Project: your first page, live on the internet",
+   "summary": "Put your HTML page online with GitHub Pages, so you have a real address to share by week four.",
+   "objectives": [
+    "You will publish a site with GitHub Pages",
+    "You will fix problems a real browser shows you",
+    "You will share a working link"
+   ],
+   "body": "## What to do\n\n- Turn on GitHub Pages for `my-first-site`\n- Check it on your phone and on a computer\n- Send the link to your instructor\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://pages.github.com/",
+     "title": "GitHub Pages",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "project",
+     "prompt": "Paste the link to your published page. It must have semantic structure (header, main, footer), a list, an image with alt text, a form with labels and a table.",
+     "answer": "",
+     "rubric": "Live link works; semantic elements used; image has meaningful alt text; every form field has a label; table has header cells; no broken tags.",
+     "points": 10
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 4,
+   "position": 2,
+   "title": "Introduction to CSS",
+   "summary": "CSS decides how HTML looks. Learn how to attach a stylesheet and how selectors pick out the elements to style.",
+   "objectives": [
+    "You will link an external stylesheet",
+    "You will style elements by type, class and id",
+    "You will explain which rule wins when two rules disagree"
+   ],
+   "body": "This lesson is about **16 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the CSS introduction on freeCodeCamp\n- Create `styles.css`, link it from your page and change the colours and font\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Basic CSS",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which selector targets every element with class=\"card\"?",
+     "options": [
+      "#card",
+      ".card",
+      "card",
+      "*card"
+     ],
+     "answer": ".card",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Where should the <link rel=\"stylesheet\"> go?",
+     "options": [
+      "In <head>",
+      "At the end of <body>",
+      "Inside <style>",
+      "In the CSS file"
+     ],
+     "answer": "In <head>",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 4,
+   "position": 3,
+   "title": "Basic CSS 1",
+   "summary": "Colours, backgrounds, borders, width and spacing — the CSS you will use on every page.",
+   "objectives": [
+    "You will set colours and backgrounds",
+    "You will use margin and padding",
+    "You will use rem units for sizes"
+   ],
+   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Work through Basic CSS on freeCodeCamp (first half)\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Basic CSS",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which property sets the space INSIDE an element's border?",
+     "options": [
+      "margin",
+      "padding",
+      "gap",
+      "border-spacing"
+     ],
+     "answer": "padding",
+     "points": 1
+    },
+    {
+     "kind": "code",
+     "prompt": "Write a rule that gives every p element a dark grey colour (#333) and 1rem of space below it.",
+     "answer": "p {\n  color: #333;\n  margin-bottom: 1rem;\n}",
+     "rubric": "Selector is p; color #333; margin-bottom 1rem; valid CSS syntax with braces, colons and semicolons.",
+     "points": 3
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 5,
+   "position": 1,
+   "title": "Basic CSS 2",
+   "summary": "Finish the fundamentals: fonts, text, display, and how the cascade and specificity decide which rule applies.",
+   "objectives": [
+    "You will style text with font-family, size and weight",
+    "You will switch elements between block and inline",
+    "You will predict which of two rules applies"
+   ],
+   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish Basic CSS on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Basic CSS",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which rule wins when both target the same element: `#nav a` or `.link`?",
+     "options": [
+      "#nav a — an id is more specific",
+      ".link — it comes later",
+      "Neither",
+      "The browser chooses randomly"
+     ],
+     "answer": "#nav a — an id is more specific",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Which display value makes an element start on a new line and take the full width?",
+     "options": [
+      "inline",
+      "block",
+      "none",
+      "contents"
+     ],
+     "answer": "block",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 5,
+   "position": 2,
+   "title": "The box model",
+   "summary": "Every element is a box: content, padding, border, margin. Understand it now and the rest of CSS gets easier.",
+   "objectives": [
+    "You will draw the four layers of the box model",
+    "You will use box-sizing: border-box",
+    "You will debug spacing with the developer tools"
+   ],
+   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the box model lessons on freeCodeCamp\n- In the developer tools, hover over an element and read its box model diagram\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Box Model",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "From inside to outside, the box model is…",
+     "options": [
+      "content, padding, border, margin",
+      "margin, border, padding, content",
+      "content, margin, border, padding",
+      "padding, content, border, margin"
+     ],
+     "answer": "content, padding, border, margin",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "With box-sizing: border-box, a 200px-wide box with 20px padding is how wide on screen?",
+     "options": [
+      "240px",
+      "200px",
+      "220px",
+      "180px"
+     ],
+     "answer": "200px",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 5,
+   "position": 3,
+   "title": "Colour",
+   "summary": "Colour carries meaning and mood — and text must be readable. Use hex, rgb and hsl, and check contrast.",
+   "objectives": [
+    "You will write colours as hex, rgb and hsl",
+    "You will build a small palette",
+    "You will check text contrast is at least 4.5:1"
+   ],
+   "body": "This lesson is about **49 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Colors workshop on freeCodeCamp\n- Pick a palette of four colours for your site and check text contrast with a contrast checker\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Colors",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "What is the minimum contrast ratio for normal body text (WCAG AA)?",
+     "options": [
+      "2:1",
+      "3:1",
+      "4.5:1",
+      "10:1"
+     ],
+     "answer": "4.5:1",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "In hsl(210, 80%, 40%), what does 210 set?",
+     "options": [
+      "Lightness",
+      "Saturation",
+      "Hue",
+      "Opacity"
+     ],
+     "answer": "Hue",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 6,
+   "position": 1,
+   "title": "Responsive design, mobile first",
+   "summary": "Most people here use the web on a phone. Design for the small screen first, then add room with media queries.",
+   "objectives": [
+    "You will add the viewport meta tag",
+    "You will write mobile-first media queries",
+    "You will test a page at phone width in the developer tools"
+   ],
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Responsive Design lessons on freeCodeCamp\n- Make your page work at 360px wide, then add a min-width media query for larger screens\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Responsive Design",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Mobile first means you write the base CSS for…",
+     "options": [
+      "Large screens, then shrink",
+      "Small screens, then add min-width media queries",
+      "Tablets only",
+      "Printers"
+     ],
+     "answer": "Small screens, then add min-width media queries",
+     "points": 1
+    },
+    {
+     "kind": "code",
+     "prompt": "Write a media query that makes .grid two columns from 600px wide and up.",
+     "answer": "@media (min-width: 600px) {\n  .grid { display: grid; grid-template-columns: 1fr 1fr; }\n}",
+     "rubric": "Uses @media with min-width 600px; inside, .grid gets two columns (grid or flex is acceptable); valid syntax.",
+     "points": 3
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 6,
+   "position": 2,
+   "title": "Flexbox",
+   "summary": "Lay things out in a row or a column, space them evenly and line them up — the tool for most everyday layouts.",
+   "objectives": [
+    "You will use display: flex",
+    "You will align with justify-content and align-items",
+    "You will let items wrap with flex-wrap"
+   ],
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Flexbox workshop on freeCodeCamp\n- Lay out your nav links in a row with even spacing\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Flexbox",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "In a row flex container, which property spaces items along the row?",
+     "options": [
+      "align-items",
+      "justify-content",
+      "flex-direction",
+      "align-content"
+     ],
+     "answer": "justify-content",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "What does flex-wrap: wrap do?",
+     "options": [
+      "Hides overflowing items",
+      "Lets items move onto a new line when there is no room",
+      "Reverses the order",
+      "Makes every item the same width"
+     ],
+     "answer": "Lets items move onto a new line when there is no room",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 6,
+   "position": 3,
+   "title": "Typography",
+   "summary": "Choose fonts, sizes and line lengths that make text easy to read — on a phone in sunlight as well as on a laptop.",
+   "objectives": [
+    "You will set a type scale",
+    "You will choose a comfortable line height and line length",
+    "You will load a web font responsibly"
+   ],
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Typography workshop on freeCodeCamp\n- Set your body text to 1rem with a line-height of about 1.5\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Typography",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "A comfortable line length for reading is roughly…",
+     "options": [
+      "10–20 characters",
+      "45–75 characters",
+      "120–150 characters",
+      "As wide as the screen"
+     ],
+     "answer": "45–75 characters",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Why use rem for font sizes rather than px?",
+     "options": [
+      "rem is faster",
+      "rem respects the reader's own text-size setting",
+      "px is not allowed",
+      "rem is only for headings"
+     ],
+     "answer": "rem respects the reader's own text-size setting",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 7,
+   "position": 1,
+   "title": "Styling forms",
+   "summary": "Make forms clear and friendly: visible labels, large tap targets, obvious focus and helpful error states.",
+   "objectives": [
+    "You will style inputs and buttons consistently",
+    "You will make focus clearly visible",
+    "You will size tap targets for fingers (at least 44px)"
+   ],
+   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Styling Forms workshop on freeCodeCamp\n- Style your sign-up form so it is easy to use on a phone\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Styling Forms",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Why should you never remove the focus outline without replacing it?",
+     "options": [
+      "It slows the page",
+      "Keyboard users can no longer see where they are",
+      "Browsers block it",
+      "It breaks the form"
+     ],
+     "answer": "Keyboard users can no longer see where they are",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "A comfortable minimum size for a button on a touch screen is about…",
+     "options": [
+      "16px",
+      "24px",
+      "44px",
+      "100px"
+     ],
+     "answer": "44px",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 7,
+   "position": 2,
+   "title": "Positioning",
+   "summary": "Relative, absolute, fixed and sticky — and z-index. One lesson for all of positioning, instead of three scattered ones.",
+   "objectives": [
+    "You will explain the four position values",
+    "You will place an element relative to its parent",
+    "You will make a sticky header"
+   ],
+   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the positioning lessons on freeCodeCamp\n- Make your page header stick to the top as you scroll\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Positioning",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "An absolutely positioned element is placed relative to…",
+     "options": [
+      "The window, always",
+      "Its nearest positioned ancestor",
+      "The element before it",
+      "The body, always"
+     ],
+     "answer": "Its nearest positioned ancestor",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Which value keeps a header in the flow until it reaches the top, then sticks?",
+     "options": [
+      "fixed",
+      "absolute",
+      "sticky",
+      "relative"
+     ],
+     "answer": "sticky",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 7,
+   "position": 3,
+   "title": "Pseudo-classes, pseudo-elements and attribute selectors",
+   "summary": "Style states (:hover, :focus), parts (::before, ::first-letter) and elements by their attributes.",
+   "objectives": [
+    "You will style :hover and :focus-visible",
+    "You will add content with ::before",
+    "You will select elements by attribute"
+   ],
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the pseudo-classes and attribute selectors lessons on freeCodeCamp\n- Style external links differently using a[href^=\"https\"]\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Pseudo-classes and pseudo-elements",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which selector styles a link only while the mouse is over it?",
+     "options": [
+      "a::hover",
+      "a:hover",
+      "a.hover",
+      "a[hover]"
+     ],
+     "answer": "a:hover",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "What does input[type=\"email\"] select?",
+     "options": [
+      "Every input",
+      "Inputs whose type attribute is email",
+      "Elements with class email",
+      "Labels for email"
+     ],
+     "answer": "Inputs whose type attribute is email",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 8,
+   "position": 1,
+   "title": "CSS variables",
+   "summary": "Store your colours and sizes once as custom properties and reuse them, so a change is one edit, not fifty.",
+   "objectives": [
+    "You will declare custom properties on :root",
+    "You will use var() with a fallback",
+    "You will theme a page by changing variables"
+   ],
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the CSS Variables workshop on freeCodeCamp\n- Move your palette into variables on :root\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: CSS Variables",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "code",
+     "prompt": "Declare a custom property --brand set to #0b5 on :root, and use it as the colour of h1.",
+     "answer": ":root { --brand: #0b5; }\nh1 { color: var(--brand); }",
+     "rubric": "Declares --brand on :root; h1 uses var(--brand); valid syntax.",
+     "points": 3
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Where are custom properties usually declared so the whole page can use them?",
+     "options": [
+      ":root",
+      "body only",
+      "Inside @media",
+      "In HTML"
+     ],
+     "answer": ":root",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 8,
+   "position": 2,
+   "title": "Grid 1",
+   "summary": "CSS Grid lays out rows and columns at once — the tool for whole-page layouts and galleries.",
+   "objectives": [
+    "You will create a grid with grid-template-columns",
+    "You will use fr units and gap",
+    "You will place items across columns"
+   ],
+   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first CSS Grid workshop on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: CSS Grid",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "What does 1fr mean in grid-template-columns?",
+     "options": [
+      "1 pixel",
+      "One fraction of the free space",
+      "One full row",
+      "First row"
+     ],
+     "answer": "One fraction of the free space",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Which property sets the space between grid cells?",
+     "options": [
+      "margin",
+      "gap",
+      "padding",
+      "spacing"
+     ],
+     "answer": "gap",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 8,
+   "position": 3,
+   "title": "Grid 2",
+   "summary": "Responsive grids without media queries, named areas, and when to choose Grid or Flexbox.",
+   "objectives": [
+    "You will use repeat(auto-fit, minmax())",
+    "You will lay out a page with grid-template-areas",
+    "You will choose between Grid and Flexbox"
+   ],
+   "body": "This lesson is about **46 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the CSS Grid workshops on freeCodeCamp\n- Build a photo gallery that goes from one column on a phone to four on a laptop\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: CSS Grid",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "repeat(auto-fit, minmax(200px, 1fr)) gives you…",
+     "options": [
+      "Exactly 200 columns",
+      "As many columns of at least 200px as fit",
+      "One column",
+      "Columns that never shrink"
+     ],
+     "answer": "As many columns of at least 200px as fit",
+     "points": 1
+    },
+    {
+     "kind": "short",
+     "prompt": "When would you choose Flexbox over Grid?",
+     "answer": "For laying out items in one direction, like a row of buttons or a nav bar.",
+     "rubric": "Mentions one-dimensional layout (a single row or column); Grid is for two dimensions.",
+     "points": 2
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 9,
+   "position": 1,
+   "title": "Accessible CSS and design principles",
+   "summary": "Hierarchy, spacing, alignment and contrast — and the CSS habits that keep pages usable: visible focus, reduced motion, readable sizes.",
+   "objectives": [
+    "You will use spacing and size to show what matters",
+    "You will respect prefers-reduced-motion",
+    "You will review a page against simple design principles"
+   ],
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the CSS accessibility and design lessons on freeCodeCamp\n- Review your site: is it obvious what matters most on each page?\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Design",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "What does @media (prefers-reduced-motion: reduce) let you do?",
+     "options": [
+      "Make the page smaller",
+      "Turn off or tone down animation for people who asked for less motion",
+      "Slow down the network",
+      "Hide images"
+     ],
+     "answer": "Turn off or tone down animation for people who asked for less motion",
+     "points": 1
+    },
+    {
+     "kind": "reflection",
+     "prompt": "Look at your own site. Name one thing that draws the eye first, and say whether that is the most important thing on the page.",
+     "answer": "",
+     "rubric": "Names a specific element and gives an honest judgement with a reason; suggests a change if it is not the most important thing.",
+     "points": 2
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 9,
+   "position": 2,
+   "title": "Animations 1: transitions and keyframes",
+   "summary": "Small, purposeful movement: transitions on hover and focus, and your first keyframe animation.",
+   "objectives": [
+    "You will add a transition to a button",
+    "You will write a @keyframes animation",
+    "You will keep motion short and purposeful"
+   ],
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first CSS Animation workshop on freeCodeCamp (to about step 45)\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Animations",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which property animates a change smoothly, such as a colour change on hover?",
+     "options": [
+      "animation",
+      "transition",
+      "transform",
+      "keyframes"
+     ],
+     "answer": "transition",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Which properties are cheapest for the browser to animate?",
+     "options": [
+      "width and height",
+      "transform and opacity",
+      "margin and padding",
+      "font-size"
+     ],
+     "answer": "transform and opacity",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 9,
+   "position": 3,
+   "title": "Animations 2",
+   "summary": "Finish the animation workshops: timing, delays, iteration and combining transforms.",
+   "objectives": [
+    "You will control timing and easing",
+    "You will chain several animations",
+    "You will turn animation off for reduced motion"
+   ],
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the CSS Animation workshops on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Animations",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "code",
+     "prompt": "Write a @keyframes rule called fade that goes from opacity 0 to 1, and apply it to .hero over 0.5s.",
+     "answer": "@keyframes fade { from { opacity: 0; } to { opacity: 1; } }\n.hero { animation: fade 0.5s ease-out; }",
+     "rubric": "Defines @keyframes fade from opacity 0 to 1; .hero uses animation with fade and 0.5s; valid syntax.",
+     "points": 3
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 10,
+   "position": 1,
+   "title": "CSS project 1: plan and build",
+   "summary": "Build a responsive multi-page site for a real local business, club or cause. Today: plan it and build the layout.",
+   "objectives": [
+    "You will plan a site on paper before coding",
+    "You will build the layout mobile first",
+    "You will commit as you go"
+   ],
+   "body": "## What to do\n\n- Sketch the pages on paper\n- Build the header, footer and main layout\n- Commit at least three times with clear messages\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://pages.github.com/",
+     "title": "GitHub Pages",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "reflection",
+     "prompt": "What site are you building, and for whom? What do they need it to do?",
+     "answer": "",
+     "rubric": "Names a real audience and at least two things the site must help them do.",
+     "points": 2
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 10,
+   "position": 2,
+   "title": "CSS project 2: finish and publish",
+   "summary": "Finish the content and styling, test it on a phone and publish it.",
+   "objectives": [
+    "You will finish a responsive site",
+    "You will test on a real phone",
+    "You will publish and share it"
+   ],
+   "body": "## What to do\n\n- Finish the pages and styling\n- Test at 360px and on a real phone\n- Publish with GitHub Pages\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://pages.github.com/",
+     "title": "GitHub Pages",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "project",
+     "prompt": "Paste the link to your published site and the link to its GitHub repository.",
+     "answer": "",
+     "rubric": "Live site and repository; at least two pages; works at phone width; uses Flexbox or Grid; colours pass 4.5:1 contrast; visible focus; at least five meaningful commits.",
+     "points": 10
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 10,
+   "position": 3,
+   "title": "Catch-up and challenge",
+   "summary": "No new topic. Finish anything overdue, or take on a challenge.",
+   "objectives": [
+    "You will finish any overdue lessons",
+    "You will improve one thing on your project"
+   ],
+   "body": "## What to do\n\n- Finish anything you are behind on\n- Challenge: add a dark mode to your site with CSS variables\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Full Stack Developer curriculum",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "reflection",
+     "prompt": "What did you catch up on or improve this week, and what is still hard?",
+     "answer": "",
+     "rubric": "Names specific work done and one honest difficulty.",
+     "points": 2
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 11,
+   "position": 1,
+   "title": "JavaScript 1: variables and strings",
+   "summary": "Your first programming: store values in variables and work with text.",
+   "objectives": [
+    "You will declare variables with let and const",
+    "You will join and change strings",
+    "You will print to the console"
+   ],
+   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first part of the JavaScript fundamentals (variables and strings) on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: JavaScript Variables and Strings",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which keyword declares a variable that should never be reassigned?",
+     "options": [
+      "var",
+      "let",
+      "const",
+      "static"
+     ],
+     "answer": "const",
+     "points": 1
+    },
+    {
+     "kind": "code",
+     "prompt": "Write code that stores your name in a constant and prints 'Hello, <name>!' to the console using a template literal.",
+     "answer": "const name = 'Ada';\nconsole.log(`Hello, ${name}!`);",
+     "rubric": "Uses const; uses a template literal with ${name}; prints with console.log.",
+     "points": 3
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 11,
+   "position": 2,
+   "title": "JavaScript 2: numbers, booleans and conditions",
+   "summary": "Do arithmetic, compare values, and make your code choose with if and else.",
+   "objectives": [
+    "You will do arithmetic and use the % operator",
+    "You will compare with === and !==",
+    "You will write if / else if / else"
+   ],
+   "body": "This lesson is about **54 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the numbers, booleans and conditionals part of JavaScript fundamentals on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: JavaScript Booleans and Numbers",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "What does 7 % 3 give?",
+     "options": [
+      "2",
+      "1",
+      "2.33",
+      "21"
+     ],
+     "answer": "1",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Why prefer === over ==?",
+     "options": [
+      "It is faster to type",
+      "It compares without converting types, so '5' === 5 is false",
+      "== does not exist",
+      "It works only with strings"
+     ],
+     "answer": "It compares without converting types, so '5' === 5 is false",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 11,
+   "position": 3,
+   "title": "Functions",
+   "summary": "Wrap code in a function so you can reuse it, pass it values, and get a result back.",
+   "objectives": [
+    "You will write functions with parameters",
+    "You will return values",
+    "You will write arrow functions"
+   ],
+   "body": "This lesson is about **35 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Functions lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: JavaScript Functions",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "code",
+     "prompt": "Write a function area(width, height) that returns the area of a rectangle.",
+     "answer": "function area(width, height) {\n  return width * height;\n}",
+     "rubric": "Named area; two parameters; returns width * height (does not just print it).",
+     "points": 3
+    },
+    {
+     "kind": "mcq",
+     "prompt": "What does a function return if it has no return statement?",
+     "options": [
+      "0",
+      "null",
+      "undefined",
+      "An error"
+     ],
+     "answer": "undefined",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 12,
+   "position": 1,
+   "title": "Arrays",
+   "summary": "Keep lists of values in arrays, and add, remove and find items.",
+   "objectives": [
+    "You will create and index arrays",
+    "You will use push, pop and includes",
+    "You will find an array's length"
+   ],
+   "body": "This lesson is about **35 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Arrays lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: JavaScript Arrays",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "What is the index of the first item in an array?",
+     "options": [
+      "1",
+      "0",
+      "-1",
+      "It depends"
+     ],
+     "answer": "0",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Which method adds an item to the end of an array?",
+     "options": [
+      "shift",
+      "push",
+      "unshift",
+      "pop"
+     ],
+     "answer": "push",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 12,
+   "position": 2,
+   "title": "Objects",
+   "summary": "Group related values under names — a learner's name, age and centre in one object.",
+   "objectives": [
+    "You will create objects with properties",
+    "You will read and update properties",
+    "You will store objects in arrays"
+   ],
+   "body": "This lesson is about **25 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Objects lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: JavaScript Objects",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "code",
+     "prompt": "Create an object learner with name 'Tobi', age 14 and centre 'Egbeda', then print the centre.",
+     "answer": "const learner = { name: 'Tobi', age: 14, centre: 'Egbeda' };\nconsole.log(learner.centre);",
+     "rubric": "Object literal with the three properties and correct values; reads centre with dot or bracket notation; prints it.",
+     "points": 3
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 12,
+   "position": 3,
+   "title": "Loops",
+   "summary": "Repeat work with for, while and for…of — and stop a loop at the right time.",
+   "objectives": [
+    "You will write for and while loops",
+    "You will loop over an array with for…of",
+    "You will avoid infinite loops"
+   ],
+   "body": "This lesson is about **25 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Loops lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: JavaScript Loops",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "code",
+     "prompt": "Write a loop that prints the numbers 1 to 5.",
+     "answer": "for (let i = 1; i <= 5; i++) {\n  console.log(i);\n}",
+     "rubric": "Prints exactly 1 through 5; loop terminates; any loop form is acceptable.",
+     "points": 3
+    },
+    {
+     "kind": "mcq",
+     "prompt": "A loop that never ends is usually caused by…",
+     "options": [
+      "Too many variables",
+      "A condition that never becomes false",
+      "Using const",
+      "Printing inside it"
+     ],
+     "answer": "A condition that never becomes false",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 13,
+   "position": 1,
+   "title": "Fundamentals review and higher-order functions",
+   "summary": "Review the basics, then pass functions into functions with map, filter and reduce.",
+   "objectives": [
+    "You will use map, filter and reduce",
+    "You will pass a function as an argument",
+    "You will choose the right array method"
+   ],
+   "body": "This lesson is about **37 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the JavaScript fundamentals review and higher-order functions lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Higher Order Functions",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which method makes a NEW array with only the items that pass a test?",
+     "options": [
+      "map",
+      "filter",
+      "forEach",
+      "reduce"
+     ],
+     "answer": "filter",
+     "points": 1
+    },
+    {
+     "kind": "code",
+     "prompt": "Given const scores = [40, 75, 90], use map to make a new array with 5 added to each score.",
+     "answer": "const raised = scores.map(s => s + 5);",
+     "rubric": "Uses map; returns s + 5 for each item; stores or returns the new array without changing scores.",
+     "points": 3
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 13,
+   "position": 2,
+   "title": "The DOM 1: finding and changing the page",
+   "summary": "JavaScript can read and change the page. Select elements and change their text and classes.",
+   "objectives": [
+    "You will select elements with querySelector",
+    "You will change textContent",
+    "You will add and remove classes"
+   ],
+   "body": "This lesson is about **36 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first DOM Manipulation workshop on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: DOM Manipulation",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which method finds the FIRST element matching a CSS selector?",
+     "options": [
+      "getElementsByClassName",
+      "querySelector",
+      "querySelectorAll",
+      "find"
+     ],
+     "answer": "querySelector",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Why use textContent rather than innerHTML to show text a user typed?",
+     "options": [
+      "It is shorter",
+      "innerHTML can run code hidden in the text; textContent cannot",
+      "textContent is faster to type",
+      "They are identical"
+     ],
+     "answer": "innerHTML can run code hidden in the text; textContent cannot",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 13,
+   "position": 3,
+   "title": "The DOM 2: events",
+   "summary": "Make the page respond to people: clicks, typing and form submissions.",
+   "objectives": [
+    "You will add event listeners",
+    "You will read input values",
+    "You will stop a form reloading the page"
+   ],
+   "body": "This lesson is about **36 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the DOM Manipulation and Events workshop on freeCodeCamp\n- Make a button that counts how many times it is pressed\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: DOM Manipulation and Events",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "code",
+     "prompt": "Write code that prints 'clicked' to the console when the button with id 'go' is clicked.",
+     "answer": "document.getElementById('go').addEventListener('click', () => {\n  console.log('clicked');\n});",
+     "rubric": "Selects #go; uses addEventListener with 'click'; logs 'clicked' inside the handler.",
+     "points": 3
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Inside a submit handler, what stops the page from reloading?",
+     "options": [
+      "return false only",
+      "event.preventDefault()",
+      "event.stop()",
+      "window.stop()"
+     ],
+     "answer": "event.preventDefault()",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 14,
+   "position": 1,
+   "title": "Debugging",
+   "summary": "Every developer's code breaks. Read error messages, use the console and breakpoints, and fix problems step by step.",
+   "objectives": [
+    "You will read an error message and find its line",
+    "You will use console.log and breakpoints",
+    "You will fix a bug methodically"
+   ],
+   "body": "This lesson is about **26 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Debugging lessons on freeCodeCamp\n- Set a breakpoint in your counter and step through it\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Debugging",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "'TypeError: Cannot read properties of null' usually means…",
+     "options": [
+      "The internet is down",
+      "You tried to use something that was not found, such as an element that does not exist",
+      "You forgot a semicolon",
+      "The file is too long"
+     ],
+     "answer": "You tried to use something that was not found, such as an element that does not exist",
+     "points": 1
+    },
+    {
+     "kind": "reflection",
+     "prompt": "Describe a bug you hit this week: what you saw, how you found the cause, and how you fixed it.",
+     "answer": "",
+     "rubric": "Describes the symptom, the steps taken to find the cause, and the fix; honest about anything still unclear.",
+     "points": 2
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 14,
+   "position": 2,
+   "title": "Regular expressions basics",
+   "summary": "Patterns for text: check a phone number, find words, clean up input.",
+   "objectives": [
+    "You will write simple patterns with character classes",
+    "You will test a string with .test()",
+    "You will use flags such as i and g"
+   ],
+   "body": "This lesson is about **26 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Regular Expressions basics on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Regular Expressions",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "What does the regex /\\d/ match?",
+     "options": [
+      "Any letter",
+      "Any digit",
+      "The letter d",
+      "Any space"
+     ],
+     "answer": "Any digit",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "What does the i flag do in /hello/i?",
+     "options": [
+      "Matches only at the start",
+      "Ignores upper and lower case",
+      "Finds every match",
+      "Inverts the match"
+     ],
+     "answer": "Ignores upper and lower case",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 14,
+   "position": 3,
+   "title": "Form validation 1",
+   "summary": "Check what people type before you use it, and tell them clearly what to fix.",
+   "objectives": [
+    "You will use HTML validation attributes",
+    "You will validate with JavaScript",
+    "You will write helpful error messages"
+   ],
+   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the first Form Validation workshop on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Form Validation",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which attribute makes a field compulsory without any JavaScript?",
+     "options": [
+      "mandatory",
+      "required",
+      "needed",
+      "validate"
+     ],
+     "answer": "required",
+     "points": 1
+    },
+    {
+     "kind": "short",
+     "prompt": "Rewrite this error message so it helps the person: 'Invalid input.'",
+     "answer": "Enter an email address like name@example.com.",
+     "rubric": "Says what is wrong or what to type, in plain words, and gives an example or the rule.",
+     "points": 2
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 15,
+   "position": 1,
+   "title": "Form validation 2",
+   "summary": "Finish validation: custom rules, live feedback, and why the server must check again.",
+   "objectives": [
+    "You will validate as the person types",
+    "You will show errors next to the field",
+    "You will explain why browser checks are not enough"
+   ],
+   "body": "This lesson is about **53 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Finish the Form Validation workshops on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Form Validation",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Why must a server check form data even if the browser already did?",
+     "options": [
+      "Browsers are slow",
+      "Anyone can bypass browser checks and send data directly",
+      "It is a legal rule",
+      "It does not need to"
+     ],
+     "answer": "Anyone can bypass browser checks and send data directly",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 15,
+   "position": 2,
+   "title": "Dates",
+   "summary": "Work with dates and times: today's date, durations, and showing dates the way people read them.",
+   "objectives": [
+    "You will create Date objects",
+    "You will format a date for display",
+    "You will work out the days between two dates"
+   ],
+   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Dates lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Dates",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "In JavaScript, which month number is January in new Date(2026, 0, 1)?",
+     "options": [
+      "1",
+      "0",
+      "12",
+      "-1"
+     ],
+     "answer": "0",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 15,
+   "position": 3,
+   "title": "Audio and video events",
+   "summary": "Control audio and video from JavaScript — play, pause and react to the media's own events.",
+   "objectives": [
+    "You will control media with play() and pause()",
+    "You will listen for media events",
+    "You will add captions with a track element"
+   ],
+   "body": "This lesson is about **30 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Audio and Video events lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Audio and Video",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which element adds captions to a video?",
+     "options": [
+      "<caption>",
+      "<track>",
+      "<subtitle>",
+      "<source>"
+     ],
+     "answer": "<track>",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 16,
+   "position": 1,
+   "title": "Maps and sets",
+   "summary": "Two more ways to hold data: a Set never repeats a value; a Map looks values up by key.",
+   "objectives": [
+    "You will remove duplicates with a Set",
+    "You will store and look up values in a Map",
+    "You will choose between an object and a Map"
+   ],
+   "body": "This lesson is about **50 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Maps and Sets lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Maps and Sets",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "code",
+     "prompt": "Given const names = ['Ada', 'Tobi', 'Ada'], make an array with each name once.",
+     "answer": "const unique = [...new Set(names)];",
+     "rubric": "Uses a Set (or an equivalent correct method) and produces ['Ada', 'Tobi'].",
+     "points": 3
+    },
+    {
+     "kind": "mcq",
+     "prompt": "What does a Set do with a value it already holds?",
+     "options": [
+      "Adds it again",
+      "Ignores it",
+      "Throws an error",
+      "Replaces it"
+     ],
+     "answer": "Ignores it",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 16,
+   "position": 2,
+   "title": "localStorage and a CRUD app",
+   "summary": "Save data in the browser so it survives a refresh, and build an app that creates, reads, updates and deletes items.",
+   "objectives": [
+    "You will save and load with localStorage",
+    "You will convert data with JSON.stringify and JSON.parse",
+    "You will build create, read, update and delete"
+   ],
+   "body": "This lesson is about **65 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the localStorage and CRUD workshop on freeCodeCamp\n- Build a to-do list that keeps its items after a refresh\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Local Storage and CRUD",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "localStorage stores values as…",
+     "options": [
+      "Numbers",
+      "Strings",
+      "Objects",
+      "Files"
+     ],
+     "answer": "Strings",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "What does CRUD stand for?",
+     "options": [
+      "Create, Read, Update, Delete",
+      "Copy, Run, Undo, Debug",
+      "Code, Review, Upload, Deploy",
+      "Create, Remove, Use, Display"
+     ],
+     "answer": "Create, Read, Update, Delete",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 16,
+   "position": 3,
+   "title": "Classes",
+   "summary": "Describe a kind of thing once with a class, then make as many objects from it as you need.",
+   "objectives": [
+    "You will write a class with a constructor",
+    "You will add methods",
+    "You will create objects with new"
+   ],
+   "body": "This lesson is about **45 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Classes lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Classes",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "code",
+     "prompt": "Write a class Learner with a constructor taking name, and a method greet() that returns 'Hi, <name>'.",
+     "answer": "class Learner {\n  constructor(name) { this.name = name; }\n  greet() { return `Hi, ${this.name}`; }\n}",
+     "rubric": "class Learner; constructor stores name on this; greet returns the greeting using this.name.",
+     "points": 3
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 17,
+   "position": 1,
+   "title": "Functional programming",
+   "summary": "Write small functions that do not change things outside themselves, and combine them.",
+   "objectives": [
+    "You will explain what a pure function is",
+    "You will avoid changing data you were given",
+    "You will combine small functions"
+   ],
+   "body": "This lesson is about **46 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Functional Programming lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Functional Programming",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "A pure function…",
+     "options": [
+      "Always prints something",
+      "Returns the same output for the same input and changes nothing outside itself",
+      "Uses no parameters",
+      "Runs only once"
+     ],
+     "answer": "Returns the same output for the same input and changes nothing outside itself",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 17,
+   "position": 2,
+   "title": "Recursion",
+   "summary": "A function that calls itself — useful for nested data, and a good test of your understanding.",
+   "objectives": [
+    "You will write a base case and a recursive case",
+    "You will trace a recursive call by hand",
+    "You will recognise when recursion fits"
+   ],
+   "body": "This lesson is about **35 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Recursion lessons on freeCodeCamp\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Recursion",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "What stops a recursive function from calling itself for ever?",
+     "options": [
+      "A loop",
+      "A base case",
+      "A return type",
+      "The browser"
+     ],
+     "answer": "A base case",
+     "points": 1
+    },
+    {
+     "kind": "code",
+     "prompt": "Write a recursive function countdown(n) that prints n down to 1.",
+     "answer": "function countdown(n) {\n  if (n < 1) return;\n  console.log(n);\n  countdown(n - 1);\n}",
+     "rubric": "Has a base case that stops below 1; prints n; calls itself with n - 1.",
+     "points": 3
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 17,
+   "position": 3,
+   "title": "Asynchronous JavaScript and fetch",
+   "summary": "Get data from the internet without freezing the page: promises, async/await and fetch.",
+   "objectives": [
+    "You will explain why some code waits",
+    "You will use fetch with async/await",
+    "You will handle errors with try/catch"
+   ],
+   "body": "This lesson is about **40 freeCodeCamp steps**. Work through them in order — the steps build on each other.\n\n## What to do\n\n- Do the Asynchronous JavaScript lessons on freeCodeCamp\n- Fetch data from a free public API and show it on your page\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Asynchronous JavaScript",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "What does await do inside an async function?",
+     "options": [
+      "Stops the whole browser",
+      "Pauses that function until the promise settles",
+      "Runs code in parallel",
+      "Repeats the request"
+     ],
+     "answer": "Pauses that function until the promise settles",
+     "points": 1
+    },
+    {
+     "kind": "code",
+     "prompt": "Write an async function that fetches https://example.org/data.json and returns the parsed JSON.",
+     "answer": "async function load() {\n  const res = await fetch('https://example.org/data.json');\n  return await res.json();\n}",
+     "rubric": "async function; awaits fetch of the URL; awaits res.json() and returns it. Checking res.ok or try/catch is a plus.",
+     "points": 3
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 18,
+   "position": 1,
+   "title": "JavaScript project 1: plan and build",
+   "summary": "Build an interactive app — a quiz, a budget tracker or a habit tracker — that saves its data. Today: plan and build the core.",
+   "objectives": [
+    "You will plan features before coding",
+    "You will build the core with the DOM and events",
+    "You will commit as you go"
+   ],
+   "body": "## What to do\n\n- Write down the three things your app must do\n- Build the core feature first\n- Commit at least three times\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Full Stack Developer curriculum",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "reflection",
+     "prompt": "What is your app, and what are the three things it must do?",
+     "answer": "",
+     "rubric": "Names the app and three concrete features.",
+     "points": 2
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 18,
+   "position": 2,
+   "title": "JavaScript project 2: finish and publish",
+   "summary": "Finish the app, save data with localStorage, test it and publish it.",
+   "objectives": [
+    "You will finish an interactive app",
+    "You will save data between visits",
+    "You will publish and share it"
+   ],
+   "body": "## What to do\n\n- Add saving with localStorage\n- Test with the keyboard and on a phone\n- Publish with GitHub Pages\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://pages.github.com/",
+     "title": "GitHub Pages",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "project",
+     "prompt": "Paste the link to your published app and its repository.",
+     "answer": "",
+     "rubric": "Live app and repository; uses events and the DOM; saves data with localStorage; validates input; works with a keyboard and on a phone; readable code with meaningful names; at least five meaningful commits.",
+     "points": 10
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 18,
+   "position": 3,
+   "title": "Catch-up and challenge",
+   "summary": "No new topic. Finish anything overdue, or take on a challenge.",
+   "objectives": [
+    "You will finish any overdue lessons",
+    "You will improve your app"
+   ],
+   "body": "## What to do\n\n- Finish anything you are behind on\n- Challenge: add data from a public API to your app\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Full Stack Developer curriculum",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "reflection",
+     "prompt": "What did you catch up on or improve, and what is still hard?",
+     "answer": "",
+     "rubric": "Names specific work done and one honest difficulty.",
+     "points": 2
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 19,
+   "position": 1,
+   "title": "How servers work: HTTP and JSON",
+   "summary": "What happens on the other side of fetch: requests, responses, status codes and JSON.",
+   "objectives": [
+    "You will name the parts of an HTTP request and response",
+    "You will explain common status codes",
+    "You will read and write JSON"
+   ],
+   "body": "## What to do\n\n- Read the MDN overview of HTTP\n- Open the Network tab in the developer tools and watch a page load\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview",
+     "title": "MDN: An overview of HTTP",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which status code means 'not found'?",
+     "options": [
+      "200",
+      "301",
+      "404",
+      "500"
+     ],
+     "answer": "404",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Which HTTP method is normally used to create something new?",
+     "options": [
+      "GET",
+      "POST",
+      "DELETE",
+      "HEAD"
+     ],
+     "answer": "POST",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 19,
+   "position": 2,
+   "title": "Node.js and npm",
+   "summary": "Run JavaScript outside the browser, and install packages with npm.",
+   "objectives": [
+    "You will run a script with Node",
+    "You will start a project with npm init",
+    "You will install a package"
+   ],
+   "body": "## What to do\n\n- Install Node.js (LTS), or use an online environment\n- Run a script that prints today's date\n- Create a project with npm init -y\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://nodejs.org/en/learn/getting-started/introduction-to-nodejs",
+     "title": "Node.js: Introduction",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which file lists a Node project's packages?",
+     "options": [
+      "index.html",
+      "package.json",
+      "node.config",
+      "npm.txt"
+     ],
+     "answer": "package.json",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 19,
+   "position": 3,
+   "title": "Express: your first server",
+   "summary": "Build a web server with Express that answers requests on different routes.",
+   "objectives": [
+    "You will start an Express server",
+    "You will add GET routes",
+    "You will send text and JSON"
+   ],
+   "body": "## What to do\n\n- Follow the Express Hello World guide\n- Add a /about route that returns JSON\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://expressjs.com/en/starter/hello-world.html",
+     "title": "Express: Hello world",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "code",
+     "prompt": "Write an Express route that answers GET /hello with the JSON {\"message\": \"Hello\"}.",
+     "answer": "app.get('/hello', (req, res) => {\n  res.json({ message: 'Hello' });\n});",
+     "rubric": "Uses app.get with '/hello'; responds with res.json and the right object.",
+     "points": 3
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 20,
+   "position": 1,
+   "title": "Express: middleware and serving pages",
+   "summary": "Middleware runs on every request — for reading JSON, logging and serving your front end.",
+   "objectives": [
+    "You will explain middleware",
+    "You will read JSON request bodies with express.json()",
+    "You will serve static files"
+   ],
+   "body": "## What to do\n\n- Add express.json() and a logging middleware\n- Serve your JavaScript project's files with express.static\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://expressjs.com/en/guide/using-middleware.html",
+     "title": "Express: Using middleware",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "What does app.use(express.json()) do?",
+     "options": [
+      "Sends JSON to every visitor",
+      "Reads JSON request bodies into req.body",
+      "Converts HTML to JSON",
+      "Starts the server"
+     ],
+     "answer": "Reads JSON request bodies into req.body",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 20,
+   "position": 2,
+   "title": "REST APIs: create, read, update, delete",
+   "summary": "Design an API with routes for each operation, and the right method and status code for each.",
+   "objectives": [
+    "You will design REST routes for a resource",
+    "You will use GET, POST, PUT and DELETE",
+    "You will return correct status codes"
+   ],
+   "body": "## What to do\n\n- Build an API for your to-do items: list, add, update and delete (keep data in an array for now)\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://expressjs.com/en/guide/routing.html",
+     "title": "Express: Routing",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Which route and method best updates the item with id 7?",
+     "options": [
+      "GET /items/7",
+      "PUT /items/7",
+      "POST /update",
+      "DELETE /items"
+     ],
+     "answer": "PUT /items/7",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "What status code should a successful create return?",
+     "options": [
+      "200",
+      "201",
+      "204",
+      "302"
+     ],
+     "answer": "201",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 20,
+   "position": 3,
+   "title": "Testing your API and handling errors",
+   "summary": "Check every route works and fails safely: bad input, missing items and server errors.",
+   "objectives": [
+    "You will test routes with curl or an API client",
+    "You will return 400 and 404 when something is wrong",
+    "You will never crash on bad input"
+   ],
+   "body": "## What to do\n\n- Test every route, including with bad input\n- Return 400 for invalid data and 404 for missing items\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://expressjs.com/en/guide/error-handling.html",
+     "title": "Express: Error handling",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "short",
+     "prompt": "Someone sends POST /items with no title. What should your API respond, and why?",
+     "answer": "400 Bad Request with a message saying the title is required, because the request itself is invalid.",
+     "rubric": "Says 400 (or a 4xx client error) with a helpful message; explains the client sent invalid data; does not crash or save the item.",
+     "points": 2
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 21,
+   "position": 1,
+   "title": "Databases and MongoDB",
+   "summary": "Data in an array disappears when the server restarts. Store it in a database, and model it sensibly.",
+   "objectives": [
+    "You will explain why apps need a database",
+    "You will create a free MongoDB Atlas database",
+    "You will design documents for your data"
+   ],
+   "body": "## What to do\n\n- Create a free MongoDB Atlas cluster\n- Insert and find a few documents in the Atlas interface\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.mongodb.com/docs/manual/introduction/",
+     "title": "MongoDB: Introduction",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "In MongoDB, a single record is called a…",
+     "options": [
+      "Row",
+      "Document",
+      "Table",
+      "Sheet"
+     ],
+     "answer": "Document",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 21,
+   "position": 2,
+   "title": "Mongoose: schemas and queries",
+   "summary": "Describe your data with a schema, then create, find, update and delete records from Node.",
+   "objectives": [
+    "You will define a Mongoose schema and model",
+    "You will create and find documents",
+    "You will validate data in the schema"
+   ],
+   "body": "## What to do\n\n- Follow the Mongoose quick start\n- Make a Task model with a required title\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://mongoosejs.com/docs/index.html",
+     "title": "Mongoose: Getting started",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "code",
+     "prompt": "Define a Mongoose schema for a task with a required string title and a done boolean that defaults to false.",
+     "answer": "const taskSchema = new mongoose.Schema({\n  title: { type: String, required: true },\n  done: { type: Boolean, default: false },\n});",
+     "rubric": "Uses mongoose.Schema; title is String and required; done is Boolean with default false.",
+     "points": 3
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 21,
+   "position": 3,
+   "title": "Connecting your API to the database",
+   "summary": "Swap the array in your API for the database, so your data survives a restart.",
+   "objectives": [
+    "You will connect Express to MongoDB",
+    "You will use your model in each route",
+    "You will handle database errors"
+   ],
+   "body": "## What to do\n\n- Connect with mongoose.connect\n- Change each route to use the Task model\n- Restart the server and check your data is still there\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://mongoosejs.com/docs/connections.html",
+     "title": "Mongoose: Connections",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "Why should your database password not be written in your code?",
+     "options": [
+      "It makes the code slower",
+      "Anyone who sees the code (for example on GitHub) could use it",
+      "Mongoose forbids it",
+      "It is too long"
+     ],
+     "answer": "Anyone who sees the code (for example on GitHub) could use it",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 22,
+   "position": 1,
+   "title": "Security basics",
+   "summary": "Keep secrets out of your code, check every input on the server, and never store passwords as plain text.",
+   "objectives": [
+    "You will keep secrets in environment variables",
+    "You will validate input on the server",
+    "You will explain password hashing"
+   ],
+   "body": "## What to do\n\n- Move your database connection string into a .env file and add .env to .gitignore\n- Add server-side validation to your create route\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://cheatsheetseries.owasp.org/cheatsheets/Nodejs_Security_Cheat_Sheet.html",
+     "title": "OWASP: Node.js security cheat sheet",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "mcq",
+     "prompt": "How should a website store users' passwords?",
+     "options": [
+      "As plain text",
+      "Encrypted with a key kept in the code",
+      "Hashed with a slow algorithm such as bcrypt",
+      "In localStorage"
+     ],
+     "answer": "Hashed with a slow algorithm such as bcrypt",
+     "points": 1
+    },
+    {
+     "kind": "mcq",
+     "prompt": "Which file stops .env being uploaded to GitHub?",
+     "options": [
+      ".env.example",
+      ".gitignore",
+      "package.json",
+      "README.md"
+     ],
+     "answer": ".gitignore",
+     "points": 1
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 22,
+   "position": 2,
+   "title": "Deployment",
+   "summary": "Put your server online so your front end can use it from anywhere.",
+   "objectives": [
+    "You will deploy a Node app to a hosting service",
+    "You will set environment variables on the host",
+    "You will connect your front end to the live API"
+   ],
+   "body": "## What to do\n\n- Deploy your API to a free Node host (for example Render)\n- Set your environment variables there\n- Point your front end at the live API\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://render.com/docs/deploy-node-express-app",
+     "title": "Render: Deploy a Node Express app",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "project",
+     "prompt": "Paste the link to your live API (a GET route that returns your tasks) and its repository.",
+     "answer": "",
+     "rubric": "Live URL returns JSON; secrets are not in the repository; .env is ignored; routes validate input and return sensible status codes.",
+     "points": 10
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 22,
+   "position": 3,
+   "title": "Catch-up and challenge",
+   "summary": "No new topic. Finish anything overdue, or take on a challenge.",
+   "objectives": [
+    "You will finish any overdue lessons",
+    "You will strengthen your API"
+   ],
+   "body": "## What to do\n\n- Finish anything you are behind on\n- Challenge: add a search route to your API\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Full Stack Developer curriculum",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "reflection",
+     "prompt": "What is the hardest part of the back end for you so far, and what helped?",
+     "answer": "",
+     "rubric": "Names a specific difficulty and something that helped, honestly.",
+     "points": 2
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 23,
+   "position": 1,
+   "title": "Capstone: plan",
+   "summary": "Your final project is a full-stack app for a real need — a front end, an API and a database. Today: plan it properly.",
+   "objectives": [
+    "You will write a one-page brief",
+    "You will sketch the screens",
+    "You will design the data and the routes"
+   ],
+   "body": "## What to do\n\n- Write the brief: who it is for and what it does\n- Sketch the screens\n- List the data and the API routes\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Full Stack Developer curriculum",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "reflection",
+     "prompt": "Write your capstone brief: who is it for, what problem does it solve, and what are its three core features?",
+     "answer": "",
+     "rubric": "Names a real user, a real problem and three concrete features; realistic for three build days.",
+     "points": 4
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 23,
+   "position": 2,
+   "title": "Capstone: build 1",
+   "summary": "Build the API and the database first.",
+   "objectives": [
+    "You will build the back end of your capstone",
+    "You will test every route"
+   ],
+   "body": "## What to do\n\n- Build the model and the routes\n- Test them before starting the front end\n- Commit as you go\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Full Stack Developer curriculum",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "reflection",
+     "prompt": "What did you finish today, and what is blocking you?",
+     "answer": "",
+     "rubric": "States work completed and any blocker honestly.",
+     "points": 2
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 23,
+   "position": 3,
+   "title": "Capstone: build 2",
+   "summary": "Build the front end and connect it to your API.",
+   "objectives": [
+    "You will build the front end of your capstone",
+    "You will connect it to your API"
+   ],
+   "body": "## What to do\n\n- Build the screens\n- Connect them with fetch\n- Commit as you go\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Full Stack Developer curriculum",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "reflection",
+     "prompt": "What did you finish today, and what is left?",
+     "answer": "",
+     "rubric": "States work completed and what remains.",
+     "points": 2
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 24,
+   "position": 1,
+   "title": "Capstone: finish and deploy",
+   "summary": "Finish, test with the keyboard and on a phone, and deploy both halves.",
+   "objectives": [
+    "You will deploy a full-stack app",
+    "You will fix what testing shows"
+   ],
+   "body": "## What to do\n\n- Test everything, including bad input\n- Deploy the API and the front end\n- Write a README explaining what it does and how to run it\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://pages.github.com/",
+     "title": "GitHub Pages",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "project",
+     "prompt": "Paste the links to your live app, your live API and your repositories.",
+     "answer": "",
+     "rubric": "Front end and API both live and connected; data stored in a database; input validated on the server; secrets kept out of the repository; works on a phone and with a keyboard; README explains the project; steady commit history.",
+     "points": 20
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 24,
+   "position": 2,
+   "title": "Final review and portfolio",
+   "summary": "Look back over everything you have built, and put your best work in a portfolio page.",
+   "objectives": [
+    "You will build a portfolio page linking your projects",
+    "You will describe your work clearly"
+   ],
+   "body": "## What to do\n\n- Make a portfolio page linking your three projects and capstone\n- Write two or three sentences about each\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://pages.github.com/",
+     "title": "GitHub Pages",
+     "kind": "link"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "project",
+     "prompt": "Paste the link to your portfolio page.",
+     "answer": "",
+     "rubric": "Live page; links to every project; a clear sentence or two about each; readable on a phone.",
+     "points": 5
+    }
+   ]
+  },
+  {
+   "course": "Practical Coding",
+   "level": "Full Stack Web Developer 2026",
+   "week": 24,
+   "position": 3,
+   "title": "Showcase",
+   "summary": "Present your capstone to the group: what it does, how you built it, and what you would do next.",
+   "objectives": [
+    "You will present your work",
+    "You will give and receive useful feedback"
+   ],
+   "body": "## What to do\n\n- Prepare a three-minute demo\n- Present, and give feedback to two others\n\n## Before the next lesson\n\nAnswer the check below. If you get stuck, write down exactly where — that is the question to bring to your instructor.",
+   "durationMins": 90,
+   "passMark": 60,
+   "materials": [
+    {
+     "url": "https://www.freecodecamp.org/learn/full-stack-developer/",
+     "title": "freeCodeCamp: Full Stack Developer curriculum",
+     "kind": "interactive"
+    }
+   ],
+   "checks": [
+    {
+     "kind": "reflection",
+     "prompt": "What are you proudest of in this course, and what will you build next?",
+     "answer": "",
+     "rubric": "Names something specific they are proud of and a concrete next step.",
+     "points": 2
+    }
+   ]
+  }
+ ]
+}

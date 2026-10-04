@@ -556,6 +556,26 @@ and nothing is written. **Import** then writes exactly what was checked; if
 the file changed in between, it is refused and you check again. Up to
 **1,000** rows per file.
 
+**Courses that come with the platform** are listed on the same Import tab.
+**Practical Coding — Full Stack Web Developer (2026)** is the first: 72 lessons
+over 24 weeks, three a week (one per class day — Tue/Wed/Thu), filed under
+*Practical Coding*, level *Full Stack Web Developer 2026*. **Load to check**
+puts it through the normal check; nothing is written until you press
+**Import**, and it arrives as drafts unless you tick *Publish*. Loading it
+again later updates only the lessons that changed. It has no dates of its
+own: set the **term start** under Progress → Deadlines and every lesson's due
+date follows from its week.
+
+It is the coordinators' freeCodeCamp-based sheet, corrected: the "weeks" in
+the sheet were really sessions (three to a week), and the dates were 2025's.
+Git and GitHub, going live on GitHub Pages by week 4, mobile-first responsive
+design and the box model all come before layout; the three scattered
+positioning lessons are one; no lesson is more than about 65 freeCodeCamp
+steps (the sheet had 104 and 115); the back end is four required weeks with
+security and deployment, not five optional sessions; there are catch-up weeks
+after each phase, a project at the end of each, a full-stack capstone, and a
+check on every lesson. A readable copy is `docs/curriculum/practical-coding-2026.csv`.
+
 **Progress** shows, per lesson, how many members of that course have started
 and finished it, and the average score. A scoped admin sees their centres only.
 

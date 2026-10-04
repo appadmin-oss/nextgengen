@@ -7655,3 +7655,8 @@ tr.is-picked { background: rgba(138, 109, 31, 0.07); }
 .fee-train-sum { padding: 14px 18px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink-700); line-height: 1.55; }
 .fee-train-bar { width: 120px; height: 6px; border-radius: 999px; background: rgba(12,20,50,.08); overflow: hidden; margin-top: 4px; }
 .fee-train-bar span { display: block; height: 100%; background: #2f7a3f; }
+
+/* Bundled courses on the curriculum import screen */
+.cur-imp-seeds { margin: 12px 0; display: grid; gap: 8px; }
+.cur-imp-seed { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.cur-imp-seed p { margin: 4px 0 0; }

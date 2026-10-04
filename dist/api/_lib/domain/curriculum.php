@@ -507,6 +507,38 @@ function admin_curriculum_import(array $p): array {
 }
 
 /**
+ * Bundled courses — curricula that ship with the code (api/_lib/seeds/
+ * curriculum-*.json). There is no shell on the host, so "seed the course"
+ * cannot mean a script somebody runs: it means a file the Control Room can
+ * load into the ordinary import, where it is checked, shown row by row and
+ * written only when somebody presses Import. Running it again after a revised
+ * file ships updates the changed lessons and reports the rest as unchanged.
+ *
+ * admin.curriculum.seed — with no key, the list; with a key, that course's rows.
+ */
+function curriculum_seed_files(): array {
+    $out = [];
+    foreach (glob(__DIR__ . '/../seeds/curriculum-*.json') ?: [] as $f) {
+        $j = json_decode((string)file_get_contents($f), true);
+        if (!is_array($j) || !preg_match('/^[a-z0-9-]{3,60}$/', (string)($j['key'] ?? ''))) continue;
+        $out[(string)$j['key']] = $j;
+    }
+    ksort($out);
+    return $out;
+}
+function admin_curriculum_seed(array $p): array {
+    $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
+    $all = curriculum_seed_files();
+    $key = (string)($p['key'] ?? '');
+    if ($key === '') {
+        return ['ok' => true, 'seeds' => array_values(array_map(static fn($j) => ['key' => (string)$j['key'], 'title' => (string)($j['title'] ?? $j['key']),
+            'description' => (string)($j['description'] ?? ''), 'source' => (string)($j['source'] ?? ''), 'lessons' => count($j['lessons'] ?? [])], $all))];
+    }
+    if (!isset($all[$key])) return ['ok' => false, 'error' => 'not_found'];
+    return ['ok' => true, 'key' => $key, 'title' => (string)($all[$key]['title'] ?? $key), 'rows' => array_values($all[$key]['lessons'] ?? [])];
+}
+
+/**
  * Draft a lesson's summary, objectives and checks from its text, with the AI.
  * Returns a DRAFT for a person to read — nothing is saved. Fails with
  * `ai_disabled` when no provider is configured, which the editor says plainly.

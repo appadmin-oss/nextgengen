@@ -2967,6 +2967,16 @@ function CurriculumImport() {
       setRows(out); setName(file.name);
     } catch (e) { setRows(null); setErr(e.message || "Couldn't read that file."); }
   };
+  /* Courses that ship with the platform. Loading one only fills the same
+     check-then-import flow as a file — nothing is written until Import. */
+  const [seeds, setSeeds] = React.useState(null);
+  React.useEffect(() => { NGGApi.admin.curriculum.seed().then(r => setSeeds(r.seeds || [])).catch(() => setSeeds([])); }, []);
+  const loadSeed = async (s) => {
+    setErr(""); setPlan(null); setBusy("seed:" + s.key);
+    try { const r = await NGGApi.admin.curriculum.seed(s.key); setRows(r.rows); setName(r.title); }
+    catch (e) { setErr(humanizeError(e.code, e.code)); }
+    finally { setBusy(""); }
+  };
   const check = async () => {
     setBusy("check");
     try { setPlan(await NGGApi.admin.curriculum.importRows(rows, { dryRun: true, ...opts })); }
@@ -2998,6 +3008,18 @@ function CurriculumImport() {
         <button type="button" className="btn btn-ghost btn-sm" onClick={download}>Download the CSV template</button>
         {name && <span className="admin-cell-sub">{name} · {rows ? rows.length : 0} lesson{rows && rows.length === 1 ? "" : "s"}</span>}
       </div>
+      {seeds && seeds.length > 0 && (
+        <div className="cur-imp-seeds">
+          <h4 className="admin-h4">Courses that come with the platform</h4>
+          {seeds.map(s => (
+            <div key={s.key} className="cur-imp-seed">
+              <div><b>{s.title}</b> <span className="admin-cell-sub">· {s.lessons} lessons</span>
+                {s.description && <p className="admin-cell-sub">{s.description}</p>}</div>
+              <button type="button" className="btn btn-ghost btn-sm" disabled={!!busy} onClick={() => loadSeed(s)}>{busy === "seed:" + s.key ? "Loading…" : "Load to check"}</button>
+            </div>
+          ))}
+        </div>
+      )}
       {err && <p className="admin-form-err" role="alert">{err}</p>}
       {rows && <div className="cur-ed-row">
         <label className="cur-imp-opt"><input type="checkbox" checked={opts.publish} onChange={e => { setOpts(o => ({ ...o, publish: e.target.checked })); setPlan(null); }}/> Publish new lessons straight away</label>

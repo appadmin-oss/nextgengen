@@ -184,6 +184,15 @@ async function contextFor(memberId, admin, viewport) {
     await ap.waitForFunction(() => /imported\./.test(document.querySelector('.cur-imp-tally')?.innerText || ''), null, { timeout: 15000 });
     chk('Import writes the rows that passed', php(`echo (int)db_row("SELECT COUNT(*) c FROM curriculum_units WHERE status = 'published'")['c'];`) === '3');
     await ap.screenshot({ path: path.join(SHOTS, 'import.png'), fullPage: true });
+    // The bundled course loads into the same check — and nothing is written by checking it.
+    await ap.uncheck('.cur-imp-opt:has-text("Publish") input').catch(() => {});
+    await ap.click('.cur-imp-seed:has-text("Practical Coding") button:has-text("Load to check")');
+    await ap.waitForFunction(() => /72 lessons/.test(document.querySelector('.cur-imp')?.innerText || ''), null, { timeout: 15000 });
+    await ap.click('button:has-text("Check the file")');
+    await ap.waitForFunction(() => /nothing written/.test(document.querySelector('.cur-imp-tally')?.innerText || ''), null, { timeout: 30000 });
+    const seedTally = await ap.$eval('.cur-imp-tally', el => el.innerText);
+    chk('the bundled Practical Coding course loads to check: 72 new, none refused, nothing written', /72\s*new/.test(seedTally) && /0\s*refused/.test(seedTally)
+      && php(`echo (int)db_row("SELECT COUNT(*) c FROM curriculum_units")['c'];`) === '3');
 
     /* ── The member ── */
     const { ctx: mctx, token: mtoken } = await contextFor('NGG-CU-M1', false, { width: 420, height: 900 });

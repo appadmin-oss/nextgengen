@@ -1,7 +1,7 @@
 <?php
 /**
  * Admin: the NGG Club curriculum (domain/curriculum.php).
- * GET  ?view=list|get|report|schedule|submissions   POST action=upsert|status|import|ai|schedule|review|file
+ * GET  ?view=list|get|report|schedule|submissions|seed   POST action=upsert|status|import|ai|schedule|review|file
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_admin();
@@ -11,6 +11,7 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'list');
     if ($view === 'get') $res = gs_call('admin.curriculum.get', ['requesterId' => $mid, 'unitId' => (string)($_GET['unitId'] ?? '')]);
+    elseif ($view === 'seed') $res = gs_call('admin.curriculum.seed', ['requesterId' => $mid, 'key' => (string)($_GET['key'] ?? '')]);
     elseif ($view === 'schedule') $res = gs_call('admin.curriculum.schedule', ['requesterId' => $mid]);
     elseif ($view === 'submissions') $res = gs_call('admin.curriculum.submissions', ['requesterId' => $mid, 'status' => (string)($_GET['status'] ?? 'pending')]);
     elseif ($view === 'report') $res = gs_call('admin.curriculum.report', ['requesterId' => $mid, 'course' => (string)($_GET['course'] ?? ''), 'memberId' => (string)($_GET['memberId'] ?? '')]);

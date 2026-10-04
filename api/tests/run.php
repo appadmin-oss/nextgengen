@@ -23657,5 +23657,43 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     if ($keepCal === null) db_exec("DELETE FROM settings WHERE settingKey = 'memberProgramme'"); else db_exec('UPDATE settings SET settingValue = ? WHERE settingKey = ?', [$keepCal, 'memberProgramme']);
 })();
 
+/* ── The bundled Practical Coding course: loads through the real import, cleanly ── */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-SEED-ADM', 'fullName' => 'Seed Admin', 'email' => 'seed-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    $list = backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-SEED-ADM']);
+    $seed = array_values(array_filter($list['seeds'] ?? [], fn($x) => $x['key'] === 'practical-coding-2026'))[0] ?? null;
+    chk('seed: the Practical Coding 2026 course ships with the platform', $seed !== null && $seed['lessons'] === 72);
+    $rows = backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-SEED-ADM', 'key' => 'practical-coding-2026'])['rows'] ?? [];
+    $byWeek = [];
+    foreach ($rows as $r) $byWeek[$r['week']][] = $r['position'];
+    chk('seed: 24 weeks of three lessons — one per class day, not a "week" per session', count($byWeek) === 24 && !array_filter($byWeek, fn($p) => $p !== [1, 2, 3]));
+    chk('seed: every lesson has a check, and the course is filed under the catalogue\'s Practical Coding', !array_filter($rows, fn($r) => !$r['checks'] || $r['course'] !== 'Practical Coding'));
+    $titles = array_column($rows, 'title');
+    chk('seed: the gaps are filled — Git, going live by week 4, mobile-first, the box model before layout, a required back end',
+        in_array('Git and GitHub: saving your work properly', $titles, true)
+        && array_search('Project: your first page, live on the internet', $titles) < array_search('Introduction to CSS', $titles)
+        && array_search('The box model', $titles) < array_search('Flexbox', $titles)
+        && array_search('Responsive design, mobile first', $titles) < array_search('Flexbox', $titles)
+        && count(array_filter($titles, fn($t) => stripos($t, 'positioning') !== false)) === 1
+        && !array_filter($titles, fn($t) => stripos($t, 'optional') !== false));
+    $steps = [];
+    foreach ($rows as $r) if (preg_match('/about \*\*(\d+) freeCodeCamp steps/', $r['body'], $m)) $steps[] = (int)$m[1];
+    chk('seed: no lesson asks for more than 65 freeCodeCamp steps (the old sheet had 104 and 115)', $steps && max($steps) <= 65);
+    $dry = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-SEED-ADM', 'rows' => $rows, 'dryRun' => true]);
+    chk('seed: every lesson passes the real importer — nothing refused', ($dry['tally']['create'] ?? 0) === 72 && ($dry['tally']['failed'] ?? 1) === 0);
+    $ap = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-SEED-ADM', 'rows' => $rows, 'digest' => $dry['digest']]);
+    chk('seed: importing writes 72 lessons as drafts, with their checks and materials', ($ap['tally']['create'] ?? 0) === 72
+        && (int)db_row("SELECT COUNT(*) c FROM curriculum_units WHERE level = 'Full Stack Web Developer 2026' AND status = 'draft'")['c'] === 72
+        && (int)db_row("SELECT COUNT(*) c FROM curriculum_checks k JOIN curriculum_units u ON u.unitId = k.unitId WHERE u.level = 'Full Stack Web Developer 2026'")['c'] === 116);
+    $again = backend_dispatch('admin.curriculum.import', ['requesterId' => 'NGG-SEED-ADM', 'rows' => $rows, 'dryRun' => true]);
+    chk('seed: loading it a second time changes nothing', ($again['tally']['unchanged'] ?? 0) === 72);
+    chk('seed: an unknown key is refused', (backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-SEED-ADM', 'key' => '../../config'])['error'] ?? '') === 'not_found');
+    $ids = array_column(db_all("SELECT unitId FROM curriculum_units WHERE level = 'Full Stack Web Developer 2026'"), 'unitId');
+    if ($ids) { $ph = implode(',', array_fill(0, count($ids), '?'));
+        db_exec("DELETE FROM curriculum_checks WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_materials WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_units WHERE unitId IN ($ph)", $ids); }
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-SEED-ADM'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

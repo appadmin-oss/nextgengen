@@ -1048,6 +1048,7 @@
         scheduleSave: (data) => request('/admin/curriculum.php', { body: { action: 'schedule', data } }),
         upsert:  (data, allowNewCourse) => request('/admin/curriculum.php', { body: { action: 'upsert', data, allowNewCourse: !!allowNewCourse } }),
         status:  (status, unitIds) => request('/admin/curriculum.php', { body: { action: 'status', status, unitIds } }),
+        seed:    (key) => request('/admin/curriculum.php' + qs({ view: 'seed', key: key || '' })),
         importRows: (rows, opts) => request('/admin/curriculum.php', { body: Object.assign({ action: 'import', rows }, opts || {}), timeout: 180000 }),
         ai:      (data) => request('/admin/curriculum.php', { body: Object.assign({ action: 'ai' }, data), timeout: 90000 }),
         /* A material file, stored on this server. Multipart, so it bypasses the
