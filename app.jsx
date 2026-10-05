@@ -47,7 +47,7 @@ const ROUTES = [
   /* The public timetable maker. A centre's official week (without instructors'
      names) is one way to start, and travels in the URL (?centre=slug), so a
      link to one centre's week is still a link anybody can send. */
-  { id: "timetable",   title: "Timetable maker · NGG",                     desc: "Design your own weekly timetable on a professional template and download it as a PDF, a picture or a calendar file. Free, no account.", chrome: "own" },
+  { id: "timetable",   title: "Timetable maker · NGG",                     desc: "Design your own weekly timetable on a professional template and download it as a PDF, a picture or a calendar file. Free, no account." },
   { id: "centres",     title: "NGG member centres · NGG",                  desc: "Every Next Generation Genius member centre — find yours, meet the crew, see what's next." },
   { id: "club",        title: "NGGC · The Genius Club",                    desc: "A teen society with Genius IDs, weekly missions, public skill badges and a leaderboard." },
   { id: "community",   title: "Community · NGG",                           desc: "Every centre, every track, one movement — the Next Generation Genius community." },
@@ -361,7 +361,7 @@ function App() {
     about:     <AboutPage     setPage={setPage}/>,
     summer:    <SummerPage    setPage={setPage}/>,
     centres:   <CentresPage   setPage={setPage}/>,
-    timetable: <TimetableMakerPage setPage={setPage}/>,
+    timetable: null,
     club:      <ClubPage      setPage={setPage}/>,
     community:  <CommunityPage setPage={setPage}/>,
     anchor:    <AnchorPage    setPage={setPage}/>,

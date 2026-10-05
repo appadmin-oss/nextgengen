@@ -662,8 +662,6 @@
       courage:      () => request('/member/self.php?view=courage'),
       requests:     () => request('/member/self.php?view=requests'),
       timetable:    () => request('/member/timetable.php'),
-      myTimetable:  () => request('/member/my-timetable.php'),
-      saveMyTimetable: (doc) => request('/member/my-timetable.php', { body: doc }),
       raiseRequest: (data) => request('/member/self.php', { body: data }),
       withdrawRequest: (requestId) => request('/member/self.php', { body: { action: 'withdraw', requestId } }),
       compliance:   () => request('/member/compliance.php'),
@@ -898,8 +896,6 @@
         submit:  (t, photoUrl, submissionId) => request('/public/reshoot.php', { body: { t, photoUrl, submissionId: submissionId || '' } }),
       },
       timetable: (centre) => request('/public/timetable.php' + qs({ centre: centre || '' })),
-      timetableSave: (body) => request('/public/timetable-save.php', { body }),
-      timetableLoad: (k) => request('/public/timetable-save.php' + qs({ k })),
       // One programme's own courses and centres, for the join form.
       programme: (program) => request('/public/programme.php' + qs({ program: program === 'summer' ? 'summer' : 'anchor' })),
       circle: {

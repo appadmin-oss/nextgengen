@@ -121,14 +121,7 @@ function session_ensure_year(array $p): array {
 
 function op_public_session(array $p): array {
     $sc = session_current();
-    /* The Club's current term, for anything that defaults to "this term" — the
-       Timetable Maker's calendar file starts and ends there. '' when unset. */
-    $term = ['', ''];
-    if (function_exists('member_programme_settings') && function_exists('programme_term_bounds')) {
-        $cal = member_programme_settings();
-        if (!empty($cal['enabled'])) $term = programme_term_bounds(gmdate('Y-m-d'), $cal);
-    }
-    return ['ok' => true, 'current' => $sc['current'], 'next' => $sc['next'], 'term' => ['start' => (string)$term[0], 'end' => (string)$term[1]]];
+    return ['ok' => true, 'current' => $sc['current'], 'next' => $sc['next']];
 }
 
 function public_anchor_content(array $p): array {
