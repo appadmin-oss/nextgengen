@@ -23911,6 +23911,61 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-SB-%'");
 })();
 
+/* ── Personal timetables (Timetable Maker v5) ── */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-TTP-1', 'fullName' => 'Tobi Personal', 'email' => 'tobi-ttp@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+    $doc = ['settings' => ['title' => 'Tobi’s week', 'theme' => 'kente', 'look' => 'notebook', 'clock' => '12', 'weekStart' => 7, 'showPlace' => true, 'mode' => 'school'],
+            'entries' => [['id' => 'e1', 'title' => 'Maths', 'days' => [1, 3], 'start' => '08:00', 'end' => '09:00', 'place' => 'Room 4', 'color' => 2, 'kind' => 'class'],
+                          ['id' => 'e2', 'title' => 'Coding', 'days' => [6], 'start' => '11:00', 'end' => '12:30', 'place' => 'ICT room', 'color' => 6, 'kind' => 'class', 'official' => true, 'source' => 'Egbeda', 'mine' => true]],
+            'exceptions' => ['2026-10-05' => ['skip' => ['e1:1' => true], 'once' => [['id' => 'o1', 'title' => 'Maths test', 'days' => [4], 'start' => '10:00', 'end' => '10:40', 'kind' => 'class']]]]];
+    chk('timetable personal: a member has none until they save one', backend_dispatch('member.myTimetable', ['memberId' => 'NGG-TTP-1'])['timetable'] === null);
+    $r = backend_dispatch('member.myTimetable.save', ['memberId' => 'NGG-TTP-1'] + $doc);
+    chk('timetable personal: a member saves their own week', !empty($r['ok']) && $r['updatedAt'] !== '');
+    $g = backend_dispatch('member.myTimetable', ['memberId' => 'NGG-TTP-1'])['timetable'];
+    chk('timetable personal: it comes back whole — settings, entries, the official flag and a week’s changes',
+        $g['settings']['look'] === 'notebook' && $g['settings']['weekStart'] === 7 && count($g['entries']) === 2 && $g['entries'][1]['official'] === true
+        && $g['exceptions']['2026-10-05']['skip']['e1:1'] === true && $g['exceptions']['2026-10-05']['once'][0]['once'] === true);
+    chk('timetable personal: it never touches the Club’s timetable_slots', (int)db_row("SELECT COUNT(*) c FROM timetable_slots WHERE course IN ('Maths','Coding') AND centreId = ''")['c'] === 0);
+    $stale = backend_dispatch('member.myTimetable.save', ['memberId' => 'NGG-TTP-1', 'baseUpdatedAt' => '2000-01-01T00:00:00Z'] + $doc);
+    chk('timetable personal: a save from a stale copy is a conflict, with the server’s copy to show', ($stale['error'] ?? '') === 'conflict' && $stale['server']['settings']['title'] === 'Tobi’s week');
+    $ok2 = backend_dispatch('member.myTimetable.save', ['memberId' => 'NGG-TTP-1', 'baseUpdatedAt' => $r['updatedAt']] + $doc);
+    chk('timetable personal: a save from the current copy goes through and moves the clock on', !empty($ok2['ok']) && $ok2['updatedAt'] > $r['updatedAt']);
+    $bad = static fn(array $e) => backend_dispatch('member.myTimetable.save', ['memberId' => 'NGG-TTP-1', 'baseUpdatedAt' => $ok2['updatedAt'], 'settings' => [], 'entries' => [$e]])['error'] ?? '';
+    chk('timetable personal: the server refuses what the browser should never send',
+        $bad(['title' => str_repeat('x', 61), 'days' => [1], 'start' => '08:00', 'end' => '09:00']) === 'bad_title'
+        && $bad(['title' => 'A', 'days' => [8], 'start' => '08:00', 'end' => '09:00']) === 'bad_days'
+        && $bad(['title' => 'A', 'days' => [1], 'start' => '09:00', 'end' => '08:00']) === 'bad_time'
+        && $bad(['title' => 'A', 'days' => [1], 'start' => '08:00', 'end' => '09:00', 'kind' => 'party']) === 'bad_kind');
+    chk('timetable personal: more than 120 entries is refused', (backend_dispatch('member.myTimetable.save', ['memberId' => 'NGG-TTP-1', 'settings' => [], 'entries' => array_fill(0, 121, $doc['entries'][0])])['error'] ?? '') === 'too_many_entries');
+
+    $GLOBALS['__mail_sink'] = [];
+    $g1 = backend_dispatch('public.timetableSave', ['email' => 'Guest@Example.com'] + $doc);
+    $mail = $GLOBALS['__mail_sink'][0] ?? null;
+    chk('timetable personal: a guest gets a link by email, and only its hash is kept',
+        !empty($g1['ok']) && preg_match('/^[a-f0-9]{64}$/', $g1['k']) && $mail && $mail['to'] === 'guest@example.com' && str_contains($mail['html'], '/timetable?k=' . $g1['k'])
+        && (int)db_row('SELECT COUNT(*) c FROM timetable_links WHERE tokenHash = ?', [hash('sha256', $g1['k'])])['c'] === 1
+        && (int)db_row('SELECT COUNT(*) c FROM timetable_links WHERE tokenHash = ?', [$g1['k']])['c'] === 0);
+    $l = backend_dispatch('public.timetableLoad', ['k' => $g1['k']]);
+    chk('timetable personal: the link opens the timetable', !empty($l['ok']) && $l['timetable']['settings']['theme'] === 'kente');
+    $doc2 = $doc; $doc2['settings']['title'] = 'Edited';
+    chk('timetable personal: the maker saves through a live link', !empty(backend_dispatch('public.timetableSave', ['k' => $g1['k']] + $doc2)['ok'])
+        && backend_dispatch('public.timetableLoad', ['k' => $g1['k']])['timetable']['settings']['title'] === 'Edited');
+    db_exec('UPDATE timetable_links SET expiresAt = ? WHERE tokenHash = ?', ['2000-01-01T00:00:00Z', hash('sha256', $g1['k'])]);
+    chk('timetable personal: an expired link opens nothing, and cannot be saved through', (backend_dispatch('public.timetableLoad', ['k' => $g1['k']])['error'] ?? '') === 'link_expired'
+        && (backend_dispatch('public.timetableSave', ['k' => $g1['k']] + $doc)['error'] ?? '') === 'link_expired');
+    chk('timetable personal: a made-up token is refused', (backend_dispatch('public.timetableLoad', ['k' => str_repeat('a', 64)])['error'] ?? '') === 'link_expired');
+    backend_dispatch('public.timetableSave', ['email' => 'guest@example.com'] + $doc); backend_dispatch('public.timetableSave', ['email' => 'guest@example.com'] + $doc);
+    chk('timetable personal: one address gets at most three links a day', (backend_dispatch('public.timetableSave', ['email' => 'guest@example.com'] + $doc)['error'] ?? '') === 'too_many_links');
+    unset($GLOBALS['__mail_sink']);
+    $sess = backend_dispatch('public.session', []);
+    chk('timetable personal: the session API says the current term (start and end, possibly blank)', isset($sess['term']['start'], $sess['term']['end']));
+
+    db_exec("DELETE FROM timetable_links WHERE email = 'guest@example.com'");
+    db_exec("DELETE FROM member_timetables WHERE memberId = 'NGG-TTP-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-TTP-1'");
+})();
+
 /* ── NGG and Summer School keep their own course and centre lists ── */
 (function () {
     $now = now_iso();

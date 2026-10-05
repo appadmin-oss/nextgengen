@@ -277,3 +277,161 @@ function public_timetable(array $p): array {
 function tt_centre_uses(string $centreId): int {
     return (int)(db_row("SELECT COUNT(*) c FROM timetable_slots WHERE centreId = ? AND status = 'active'", [$centreId])['c'] ?? 0);
 }
+
+/* ══ Personal timetables (the public Timetable Maker, v5) ════════════════════
+ *
+ * A personal timetable is somebody's own week — school lessons, study, chores
+ * and the NGG sessions they copied in — and it is never the Club's
+ * timetable_slots. A member keeps one in member_timetables; anybody else keeps
+ * one behind an emailed link (timetable_links, the token stored hashed).
+ *
+ * Everything is validated here, not trusted from the browser: the maker keeps
+ * its own copy in localStorage, and whatever arrives is the visitor's own data
+ * but may have been hand-edited.
+ */
+
+const TT_PERSONAL_MAX_ENTRIES = 120;
+const TT_PERSONAL_MAX_WEEKS = 52;
+const TT_PERSONAL_KINDS = ['class', 'study', 'activity', 'break'];
+const TT_LINK_DAYS = 30;
+
+/** One entry, cleaned, or a reason it is refused. */
+function tt_personal_entry($x, bool $once): array {
+    if (!is_array($x)) return ['ok' => false, 'error' => 'bad_entry'];
+    $title = trim((string)($x['title'] ?? ''));
+    $place = trim((string)($x['place'] ?? ''));
+    $start = (string)($x['start'] ?? ''); $end = (string)($x['end'] ?? '');
+    if ($title === '' || mb_strlen($title) > 60) return ['ok' => false, 'error' => 'bad_title'];
+    if (mb_strlen($place) > 60) return ['ok' => false, 'error' => 'bad_place'];
+    if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $start) || !preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $end) || $end <= $start) return ['ok' => false, 'error' => 'bad_time'];
+    $days = array_values(array_unique(array_map('intval', is_array($x['days'] ?? null) ? $x['days'] : [])));
+    sort($days);
+    if (!$days || min($days) < 1 || max($days) > 7) return ['ok' => false, 'error' => 'bad_days'];
+    $kind = (string)($x['kind'] ?? 'class');
+    if (!in_array($kind, TT_PERSONAL_KINDS, true)) return ['ok' => false, 'error' => 'bad_kind'];
+    $e = ['id' => substr(preg_replace('/[^\w-]/', '', (string)($x['id'] ?? '')) ?: bin2hex(random_bytes(4)), 0, 16),
+          'title' => $title, 'days' => $once ? [$days[0]] : $days, 'start' => $start, 'end' => $end, 'place' => $place,
+          'color' => max(0, min(7, (int)($x['color'] ?? 0))), 'kind' => $kind];
+    if (!empty($x['official'])) { $e['official'] = true; $e['source'] = mb_substr((string)($x['source'] ?? ''), 0, 40); $e['mine'] = !empty($x['mine']); }
+    if ($once) $e['once'] = true;
+    return ['ok' => true, 'entry' => $e];
+}
+
+/** A whole timetable { settings, entries, exceptions } → ['ok', 'doc'] or ['ok' => false, 'error']. */
+function tt_personal_clean(array $p): array {
+    $entries = $p['entries'] ?? null; $ex = $p['exceptions'] ?? [];
+    $set = $p['settings'] ?? null;
+    if (!is_array($entries) || !is_array($set)) return ['ok' => false, 'error' => 'bad_timetable'];
+    if (count($entries) > TT_PERSONAL_MAX_ENTRIES) return ['ok' => false, 'error' => 'too_many_entries'];
+    $clean = [];
+    foreach ($entries as $x) { $r = tt_personal_entry($x, false); if (!$r['ok']) return $r; $clean[] = $r['entry']; }
+    if (!is_array($ex) || count($ex) > TT_PERSONAL_MAX_WEEKS) return ['ok' => false, 'error' => 'too_many_weeks'];
+    $weeks = [];
+    foreach ($ex as $k => $w) {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$k) || !is_array($w)) return ['ok' => false, 'error' => 'bad_exceptions'];
+        $skip = [];
+        foreach ((array)($w['skip'] ?? []) as $z => $v) if ($v === true && preg_match('/^[\w-]{1,16}:[1-7]$/', (string)$z)) $skip[(string)$z] = true;
+        $once = [];
+        foreach (array_slice((array)($w['once'] ?? []), 0, 40) as $x) { $r = tt_personal_entry($x, true); if (!$r['ok']) return $r; $once[] = $r['entry']; }
+        if ($skip || $once) $weeks[(string)$k] = ['skip' => (object)$skip, 'once' => $once];
+    }
+    $s = [];
+    foreach (['title' => 60, 'subtitle' => 80, 'note' => 120] as $k => $max) $s[$k] = mb_substr((string)($set[$k] ?? ''), 0, $max);
+    foreach (['theme' => ['paper', 'navy', 'kente', 'chalk'], 'look' => ['classic', 'bold', 'minimal', 'notebook', 'editorial'], 'layout' => ['timeline', 'list'],
+              'orient' => ['auto', 'landscape', 'portrait'], 'clock' => ['24', '12']] as $k => $allowed) {
+        $v = (string)($set[$k] ?? $allowed[0]); $s[$k] = in_array($v, $allowed, true) ? $v : $allowed[0];
+    }
+    $s['weekStart'] = (int)($set['weekStart'] ?? 1) === 7 ? 7 : 1;
+    foreach (['showPlace', 'legend', 'large', 'hideBreaks', 'fold'] as $k) $s[$k] = !empty($set[$k]);
+    $mode = (string)($set['mode'] ?? '');
+    $s['mode'] = in_array($mode, ['school', 'uni', 'revision', 'routine'], true) ? $mode : null;
+    return ['ok' => true, 'doc' => ['settings' => $s, 'entries' => $clean, 'exceptions' => (object)$weeks]];
+}
+
+function tt_personal_out(?array $row): ?array {
+    if (!$row) return null;
+    $d = json_decode((string)$row['doc'], true);
+    return is_array($d) ? $d + ['updatedAt' => (string)$row['updatedAt']] : null;
+}
+
+/** member.myTimetable — the signed-in member's own timetable, or null. */
+function member_my_timetable(array $p): array {
+    $id = (string)($p['memberId'] ?? '');
+    return ['ok' => true, 'timetable' => tt_personal_out(db_row('SELECT doc, updatedAt FROM member_timetables WHERE memberId = ?', [$id]))];
+}
+
+/**
+ * member.myTimetable.save — replace it, but only if nobody else saved since
+ * the copy the browser started from (baseUpdatedAt). A second tab or the
+ * family app writing in between is a conflict to show, not to overwrite.
+ */
+function member_my_timetable_save(array $p): array {
+    $id = (string)($p['memberId'] ?? '');
+    if ($id === '' || !db_row('SELECT memberId FROM members WHERE memberId = ?', [$id])) return ['ok' => false, 'error' => 'not_found'];
+    $c = tt_personal_clean($p);
+    if (!$c['ok']) return $c;
+    $cur = db_row('SELECT doc, updatedAt FROM member_timetables WHERE memberId = ?', [$id]);
+    $base = (string)($p['baseUpdatedAt'] ?? '');
+    if ($cur && $base !== (string)$cur['updatedAt']) return ['ok' => false, 'error' => 'conflict', 'server' => tt_personal_out($cur)];
+    $now = now_iso();
+    if ($cur && $now <= (string)$cur['updatedAt']) $now = gmdate('Y-m-d\TH:i:s\Z', strtotime((string)$cur['updatedAt']) + 1);
+    $json = json_encode($c['doc'], JSON_UNESCAPED_UNICODE);
+    if ($cur) db_exec('UPDATE member_timetables SET doc = ?, updatedAt = ? WHERE memberId = ?', [$json, $now, $id]);
+    else db_insert('member_timetables', ['memberId' => $id, 'doc' => $json, 'updatedAt' => $now]);
+    return ['ok' => true, 'updatedAt' => $now];
+}
+
+/**
+ * public.timetableSave — a guest's timetable behind a link.
+ *   with `email`: a NEW link is minted and emailed (rate-limited per IP at the
+ *   route, and here per address: three a day);
+ *   with `k`: the timetable behind that live link is replaced (the maker
+ *   autosaves through it).
+ * The token is 32 random bytes; only its sha256 is stored.
+ */
+function public_timetable_save(array $p): array {
+    $c = tt_personal_clean($p);
+    if (!$c['ok']) return $c;
+    $json = json_encode($c['doc'], JSON_UNESCAPED_UNICODE);
+    $now = now_iso();
+    $k = (string)($p['k'] ?? '');
+    if ($k !== '') {
+        $row = tt_link_row($k);
+        if (!$row) return ['ok' => false, 'error' => 'link_expired'];
+        db_exec('UPDATE timetable_links SET doc = ?, updatedAt = ? WHERE tokenHash = ?', [$json, $now, hash('sha256', $k)]);
+        return ['ok' => true, 'updatedAt' => $now];
+    }
+    $email = strtolower(trim((string)($p['email'] ?? '')));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 190) return ['ok' => false, 'error' => 'bad_email'];
+    $day = gmdate('Y-m-d\TH:i:s\Z', time() - 86400);
+    if ((int)(db_row('SELECT COUNT(*) c FROM timetable_links WHERE email = ? AND createdAt > ?', [$email, $day])['c'] ?? 0) >= 3) {
+        return ['ok' => false, 'error' => 'too_many_links'];
+    }
+    $token = bin2hex(random_bytes(32));
+    db_insert('timetable_links', ['tokenHash' => hash('sha256', $token), 'email' => $email, 'doc' => $json, 'createdAt' => $now, 'updatedAt' => $now,
+        'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', time() + TT_LINK_DAYS * 86400), 'revokedAt' => '']);
+    $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/timetable?k=' . $token;
+    $title = (string)$c['doc']['settings']['title'];
+    $html = email_template([
+        'eyebrow' => 'Timetable Maker', 'title' => 'Your timetable: ' . esc_html($title),
+        'intro' => 'Open this link on any phone or computer to keep editing. It works for ' . TT_LINK_DAYS . ' days; saving again gives you a fresh one.',
+        'ctaLabel' => 'Open my timetable', 'ctaUrl' => $url,
+        'footNote' => 'Somebody saved a timetable from nextgengenius.ng with this address. If it was not you, ignore this email and the link will lapse.',
+    ]);
+    $sent = function_exists('send_mail') ? send_mail($email, 'Your timetable', $html) : false;
+    return ['ok' => true, 'k' => $token, 'sent' => (bool)$sent, 'masked' => function_exists('mask_email') ? mask_email($email) : ''];
+}
+
+function tt_link_row(string $k): ?array {
+    if (!preg_match('/^[a-f0-9]{64}$/', $k)) return null;
+    $row = db_row('SELECT * FROM timetable_links WHERE tokenHash = ?', [hash('sha256', $k)]);
+    if (!$row || (string)$row['revokedAt'] !== '' || (string)$row['expiresAt'] < now_iso()) return null;
+    return $row;
+}
+
+/** public.timetableLoad — the timetable behind a live link, or link_expired. */
+function public_timetable_load(array $p): array {
+    $row = tt_link_row((string)($p['k'] ?? ''));
+    if (!$row) return ['ok' => false, 'error' => 'link_expired'];
+    return ['ok' => true, 'timetable' => tt_personal_out($row), 'email' => function_exists('mask_email') ? mask_email((string)$row['email']) : ''];
+}

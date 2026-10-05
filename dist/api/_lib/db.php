@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 130;
+const NGG_SCHEMA_TARGET = 131;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3930,6 +3930,29 @@ function db_migrate(PDO $db): void {
          * list offered every centre to both. 'ngg,summer' keeps today's
          * behaviour for every existing row; a centre is narrowed on purpose. */
         130 => "ALTER TABLE centres ADD COLUMN programmes TEXT DEFAULT 'ngg,summer';",
+        /* 131 — personal timetables (the public Timetable Maker, v5). A
+         * member's own week is NOT the Club's timetable_slots: it holds school
+         * lessons, study and chores, it is theirs to change, and it must never
+         * reach a centre's published week. Guests keep theirs behind an
+         * emailed link; only the sha256 of the link's token is stored, so the
+         * table cannot be read back into working links. */
+        131 => "
+            CREATE TABLE IF NOT EXISTS member_timetables (
+              memberId TEXT PRIMARY KEY,
+              doc TEXT NOT NULL,
+              updatedAt TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS timetable_links (
+              tokenHash TEXT PRIMARY KEY,
+              email TEXT NOT NULL,
+              doc TEXT NOT NULL,
+              createdAt TEXT NOT NULL,
+              updatedAt TEXT NOT NULL,
+              expiresAt TEXT NOT NULL,
+              revokedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_ttl_email ON timetable_links(email, createdAt);
+        ",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
