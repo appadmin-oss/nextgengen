@@ -51,7 +51,6 @@ const ORDER = [
   'page-anchor.jsx',
   'page-other.jsx',
   'page-centres.jsx',
-  'page-timetable.jsx',
   'page-blog.jsx',
   'page-dashboard.jsx',
   'page-family.jsx',

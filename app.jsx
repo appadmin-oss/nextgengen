@@ -361,7 +361,7 @@ function App() {
     about:     <AboutPage     setPage={setPage}/>,
     summer:    <SummerPage    setPage={setPage}/>,
     centres:   <CentresPage   setPage={setPage}/>,
-    timetable: <TimetablePage setPage={setPage}/>,
+    timetable: null,
     club:      <ClubPage      setPage={setPage}/>,
     community:  <CommunityPage setPage={setPage}/>,
     anchor:    <AnchorPage    setPage={setPage}/>,
