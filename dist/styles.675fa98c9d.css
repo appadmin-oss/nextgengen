@@ -7359,3 +7359,107 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .tt-app *, .tt-app *::before, .tt-app *::after { transition: none !important; animation: none !important; }
 }
+
+/* ── Quote of the week (home) — src/modules/qow/qow.jsx ─────────────────────
+   One saying, one gold action (Listen); speed, loop and English are quiet
+   chips under the status line, and everything else recedes. The large quote
+   mark and the language hairline are the only ornament. Every colour is a
+   token here; a language changes only --qow-accent. */
+.qow {
+  --qow-ground: var(--navy-900);
+  --qow-ink: #ffffff;
+  --qow-ink-2: rgba(255, 255, 255, 0.82);
+  --qow-ink-3: rgba(255, 255, 255, 0.72);
+  --qow-line: rgba(255, 255, 255, 0.28);
+  --qow-line-strong: rgba(255, 255, 255, 0.6);
+  --qow-rule: rgba(255, 255, 255, 0.12);
+  --qow-wash: rgba(255, 255, 255, 0.08);
+  --qow-card: rgba(255, 255, 255, 0.05);
+  --qow-mark: rgba(255, 255, 255, 0.04);
+  --qow-action: var(--gold-500);
+  --qow-on-action: var(--navy-900);
+  --qow-eyebrow: var(--gold-400);
+  --qow-accent: var(--gold-500);
+  background: var(--qow-ground); color: var(--qow-ink); padding: clamp(56px, 8vw, 104px) 16px;
+  position: relative; overflow: hidden; container-type: inline-size;
+}
+.qow-igbo   { --qow-accent: #5fd08a; }
+.qow-yoruba { --qow-accent: #ff9b73; }
+.qow::before {
+  content: "\201C"; position: absolute; top: clamp(8px, 2vw, 24px); right: clamp(8px, 4vw, 64px);
+  font-family: Georgia, "Times New Roman", serif; font-size: clamp(180px, 26vw, 360px); line-height: 1; color: var(--qow-mark); pointer-events: none;
+}
+.qow-inner { max-width: 880px; margin: 0 auto; position: relative; }
+.qow-head {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px;
+  padding-bottom: 18px; margin-bottom: clamp(24px, 4vw, 40px); border-bottom: 1px solid var(--qow-rule); position: relative;
+}
+.qow-head::after { content: ""; position: absolute; left: 0; bottom: -1px; width: 64px; height: 2px; background: var(--qow-accent); }
+.qow-eyebrow { font-family: var(--font-mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--qow-eyebrow); }
+.qow-tag { font-family: var(--font-display); font-size: 14px; font-weight: 600; color: var(--qow-ink); }
+.qow-tag-en { font-family: var(--font-mono); font-weight: 400; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--qow-ink-3); margin-left: 6px; }
+.qow-quote { margin: 0; }
+.qow-text { font-family: var(--font-display); font-weight: 600; font-size: clamp(28px, 4.6vw, 50px); line-height: 1.15; letter-spacing: -0.015em; margin: 0 0 18px; text-wrap: balance; }
+.qow-tr { font-family: var(--font-body); font-style: italic; font-size: clamp(16px, 1.9vw, 20px); line-height: 1.5; color: var(--qow-ink-2); margin: 0; max-width: 60ch; }
+.qow-text, .qow-tr { transition: opacity .3s ease; }
+.qow-quote:has(.is-speaking) > :not(.is-speaking) { opacity: .45; }
+
+.qow-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-top: clamp(28px, 4vw, 40px); }
+.qow-spacer { flex: 1 1 auto; }
+.qow-player { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.qow-player-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.qow-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.qow-btns { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.qow-play {
+  position: relative; flex-shrink: 0; width: 60px; height: 60px; border-radius: 50%; border: 0; padding: 0;
+  background: var(--qow-action); color: var(--qow-on-action); cursor: pointer; display: grid; place-items: center; transition: transform .15s ease;
+}
+.qow-play:hover { transform: scale(1.05); }
+.qow-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.qow-ring-fg { fill: none; stroke: var(--qow-on-action); stroke-width: 3; stroke-linecap: round; opacity: .55; transition: stroke-dashoffset .25s linear; }
+/* The play triangle and the stop square, drawn rather than typed, so every platform shows the same shape. */
+.qow-play-ico { position: relative; width: 0; height: 0; margin-left: 4px; border-style: solid; border-width: 9px 0 9px 15px; border-color: transparent transparent transparent currentColor; }
+.qow-play-ico.is-stop { margin-left: 0; width: 14px; height: 14px; border: 0; border-radius: 2px; background: currentColor; }
+
+.qow-listen { font-family: var(--font-mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--qow-ink-2); }
+
+/* Speed: a segmented radio group; the chosen speed is a state, so it takes the accent outline, not the gold fill. */
+.qow-speed { display: inline-flex; padding: 2px; border-radius: 999px; border: 1px solid var(--qow-line); }
+.qow-speed-opt, .qow-chip {
+  min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid transparent; background: transparent;
+  color: var(--qow-ink-2); font: 600 12px var(--font-mono); letter-spacing: .02em; cursor: pointer;
+}
+.qow-speed-opt.is-on { background: var(--qow-wash); border-color: var(--qow-accent); color: var(--qow-ink); }
+.qow-chip { border-color: var(--qow-line); font-family: var(--font-body); letter-spacing: 0; }
+.qow-chip.is-on { border-color: var(--qow-accent); color: var(--qow-ink); background: var(--qow-wash); }
+@media (pointer: coarse) { .qow-speed-opt, .qow-chip { min-height: 44px; min-width: 44px; } }
+
+.qow-btn {
+  min-height: 44px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--qow-line); background: transparent;
+  color: var(--qow-ink); font: 600 14px var(--font-body); cursor: pointer; transition: background .15s, border-color .15s;
+}
+.qow-btn:hover, .qow-chip:hover, .qow-speed-opt:hover { border-color: var(--qow-line-strong); }
+.qow-btn.is-on { background: var(--qow-wash); border-color: var(--qow-accent); }
+.qow-play:focus-visible, .qow-btn:focus-visible, .qow-chip:focus-visible, .qow-speed-opt:focus-visible { outline: 2px solid var(--qow-ink); outline-offset: 3px; }
+
+.qow-reveals:empty { display: none; }
+.qow-reveals { margin-top: 22px; display: grid; gap: 14px; }
+.qow-k { display: block; font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--qow-accent); margin-bottom: 6px; }
+.qow-answer, .qow-meaning { background: var(--qow-card); border-radius: 14px; padding: 18px 20px; animation: qow-in .25s ease; margin: 0; }
+.qow-a { font-family: var(--font-display); font-size: clamp(22px, 3vw, 30px); font-weight: 600; margin-right: 12px; }
+.qow-a-en { color: var(--qow-ink-2); font-size: 16px; }
+.qow-meaning { font-size: 16px; line-height: 1.6; color: var(--qow-ink-2); }
+@keyframes qow-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* The card's own width, not the window's: the player takes a row of its own when the card is narrow. */
+@container (max-width: 560px) {
+  .qow-spacer { display: none; }
+  .qow-actions { flex-direction: column; align-items: stretch; }
+  .qow-player { align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .qow-play, .qow-ring-fg, .qow-text, .qow-tr, .qow-btn { transition: none; }
+  .qow-answer, .qow-meaning { animation: none; }
+  .qow-play:hover { transform: none; }
+}

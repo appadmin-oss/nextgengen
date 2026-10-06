@@ -12,6 +12,7 @@ function HomePage({ setPage }) {
       <ProgressionSystem setPage={setPage} />
       <FlagshipCallout setPage={setPage} />
       <ManifestoMarquee />
+      <QuoteOfWeek />
       <TracksRibbon setPage={setPage} />
       <CommunityCollage />
       <Testimonials />

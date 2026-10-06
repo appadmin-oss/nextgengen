@@ -46,6 +46,7 @@ const ORDER = [
   'table.jsx',
   'card-template.jsx',
   'page-home.jsx',
+  'src/modules/qow/qow.jsx',
   'page-about.jsx',
   'page-club.jsx',
   'page-anchor.jsx',

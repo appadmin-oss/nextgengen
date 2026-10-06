@@ -162,6 +162,37 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
         await mp.waitForFunction(() => document.querySelector('.qow-tr.is-speaking'), null, { timeout: 15000 }).then(() => true, () => false));
     await mp.click('.qow-entoggle');
     chk('turning English off updates the promise', !/then English/.test(await mp.$eval('.qow-listen', el => el.textContent)));
+    // Speed, for somebody learning the saying by ear.
+    await mp.click('.qow-play[aria-pressed=true]').catch(() => {});
+    chk('speed is a radio group of three, at 1× until chosen', (await mp.$$eval('.qow-speed [role=radio]', b => b.map(x => x.textContent + ':' + x.getAttribute('aria-checked')).join())) === '1×:true,0.75×:false,0.5×:false');
+    await mp.click('.qow-speed [data-rate="0.5"]');
+    chk('half speed is said in the promise', /at half speed/i.test(await mp.$eval('.qow-listen', el => el.textContent)));
+    await mp.click('.qow-play');
+    chk('…and the clip really plays at half speed, pitch kept', await mp.waitForFunction(() => { const a = document.querySelector('.qow audio'); return a && a.playbackRate === 0.5 && a.preservesPitch !== false; }, null, { timeout: 5000 }).then(() => true, () => false));
+    await mp.click('.qow-play');
+    await mp.focus('.qow-speed [data-rate="0.5"]');
+    await mp.keyboard.press('ArrowLeft');
+    chk('arrow keys move the speed, and the chosen one is the only tab stop', (await mp.getAttribute('.qow-speed [data-rate="0.75"]', 'aria-checked')) === 'true'
+      && (await mp.$$eval('.qow-speed [role=radio]', b => b.map(x => x.tabIndex).join())) === '-1,0,-1');
+    await mp.reload({ waitUntil: 'domcontentloaded' });
+    await waitForBoot(mp);
+    await mp.waitForSelector('.qow .qow-play', { timeout: 30000 });
+    chk('the chosen speed is remembered', (await mp.getAttribute('.qow-speed [data-rate="0.75"]', 'aria-checked')) === 'true');
+    // Loop: the reading starts again after a pause until stopped.
+    if (await mp.$eval('.qow-entoggle', b => b.getAttribute('aria-pressed') === 'true')) await mp.click('.qow-entoggle');
+    await mp.click('.qow-chip:has-text("Loop")');
+    chk('Loop is a pressed toggle', (await mp.getAttribute('.qow-chip:has-text("Loop")', 'aria-pressed')) === 'true');
+    await mp.click('.qow-play');
+    chk('with Loop on, the end of a reading is followed by another',
+        await mp.waitForFunction(() => /Again in a moment/i.test(document.querySelector('.qow-listen').textContent), null, { timeout: 15000 }).then(() => true, () => false)
+        && await mp.waitForFunction(() => document.querySelector('.qow-text.is-speaking'), null, { timeout: 8000 }).then(() => true, () => false));
+    await mp.click('.qow-play');
+    chk('Stop ends the loop', await mp.waitForTimeout(2500).then(() => mp.$eval('.qow-play', b => b.getAttribute('aria-pressed') === 'false')));
+    // Share: the phone's sheet where there is one, else the saying copied with its meaning.
+    await mp.evaluate(() => { try { Object.defineProperty(navigator, 'share', { value: undefined, configurable: true }); } catch (_) {} navigator.clipboard.writeText = t => { window.__copied = t; return Promise.resolve(); }; });
+    await mp.click('.qow-share');
+    const copied = await mp.evaluate(() => window.__copied || '');
+    chk('Share copies the saying, its meaning and where it came from, and says so', copied.includes(s.text) && (!s.translation || copied.includes(s.translation)) && /Copied/.test(await mp.$eval('.qow-listen', el => el.textContent)));
         chk('the card fits a phone with no sideways scroll', await mp.evaluate(() => document.querySelector('.qow').scrollWidth <= window.innerWidth));
     await (await mp.$('.qow')).screenshot({ path: path.join(SHOTS, 'home-phone.png') });
 
