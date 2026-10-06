@@ -585,6 +585,8 @@
       logout:  () => request('/auth/logout.php', { method: 'POST' }),
       adminTotpSetup:  () => request('/auth/admin-totp-setup.php', { method: 'POST' }),
       adminTotpVerify: (code) => request('/auth/admin-2fa.php', { body: { code } }),
+      // Lock: the cookie loses its 2FA clearance on the server, not only in the page.
+      adminLock:       () => request('/auth/admin-lock.php', { method: 'POST' }),
     },
     member: {
       dashboard:     () => request('/member/dashboard.php'),

@@ -587,8 +587,57 @@ function admin_overview(array $p): array {
         'messages'   => ['unread' => $one("SELECT COUNT(*) c FROM contact_messages WHERE status='new'"), 'total' => $one("SELECT COUNT(*) c FROM contact_messages")],
         'byCentre'   => $byCentre,
         'byTrack'    => $byTrack,
-        'recent'     => db_all("SELECT at, actorId, event, subject FROM audit_log ORDER BY id DESC LIMIT 12"),
+        'recent'     => db_all("SELECT a.at, a.actorId, a.event, a.subject, COALESCE(m.fullName, '') actorName
+                                FROM audit_log a LEFT JOIN members m ON m.memberId = a.actorId ORDER BY a.id DESC LIMIT 12"),
+        /* What the Control Room's Home lists as "Needs you": how many wait in
+           each queue and how long the OLDEST has waited, so the list can be
+           sorted oldest first (CONTROL_ROOM.md §3 attention). Counts only —
+           every list behind them is gated and scoped where it is read. */
+        'waiting'    => admin_overview_waiting(),
+        /* Check-ins per week for twelve weeks. Grouped by day in SQL (portable
+           to MySQL — no date functions) and bucketed into weeks here. A count
+           of check-ins, not a rate: nothing records how many were expected. */
+        'checkins'   => admin_overview_checkins(),
     ]];
+}
+
+function admin_overview_waiting(): array {
+    $q = function (string $sql, array $a = []) {
+        try { $r = db_row($sql, $a); return ['n' => (int)($r['c'] ?? 0), 'oldest' => (string)($r['o'] ?? '')]; }
+        catch (Throwable $e) { return ['n' => 0, 'oldest' => '']; }
+    };
+    return [
+        'applications' => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM applications WHERE status = 'new' AND kind != 'volunteer'"),
+        'volunteers'   => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM applications WHERE kind = 'volunteer' AND status IN ('new','reviewing')"),
+        'unscreened'   => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM volunteers WHERE status = 'active' AND safeguarding != 'cleared'"),
+        'toGrade'      => $q("SELECT COUNT(*) c, MIN(submittedAt) o FROM assignment_submissions WHERE status = 'submitted'"),
+        'messages'     => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM contact_messages WHERE status = 'new'"),
+        'photos'       => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM photo_assets WHERE status IN ('pending_review','in_review')"),
+        'approvals'    => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM admin_approvals WHERE status = 'pending'"),
+        'requests'     => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM member_requests WHERE status = 'open'"),
+        'comments'     => $q("SELECT COUNT(*) c, MIN(createdAt) o FROM post_comments WHERE status = 'pending'"),
+        'missions'     => $q("SELECT COUNT(*) c, MIN(submittedAt) o FROM member_progress WHERE status = 'submitted'"),
+    ];
+}
+
+function admin_overview_checkins(int $weeks = 12): array {
+    $today = new DateTimeImmutable('today', new DateTimeZone('UTC'));
+    // Weeks end on the coming Sunday, so this week's Saturday is in the last bar.
+    $end = $today->modify('sunday this week');
+    $start = $end->modify('-' . ($weeks * 7 - 1) . ' days');
+    $byDay = [];
+    try {
+        foreach (db_all("SELECT date, COUNT(*) c FROM attendance WHERE date >= ? AND date <= ? GROUP BY date",
+                        [$start->format('Y-m-d'), $end->format('Y-m-d')]) as $r) $byDay[(string)$r['date']] = (int)$r['c'];
+    } catch (Throwable $e) {}
+    $out = [];
+    for ($w = 0; $w < $weeks; $w++) {
+        $ws = $start->modify('+' . ($w * 7) . ' days');
+        $n = 0;
+        for ($d = 0; $d < 7; $d++) $n += $byDay[$ws->modify("+$d days")->format('Y-m-d')] ?? 0;
+        $out[] = ['from' => $ws->format('Y-m-d'), 'n' => $n];
+    }
+    return $out;
 }
 
 // ── 360° member detail ──────────────────────────────────────────────────────

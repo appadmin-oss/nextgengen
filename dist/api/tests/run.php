@@ -385,6 +385,12 @@ chk('totp setup mints 8 backup codes', is_array($setup['backupCodes']) && count(
 $bc = $setup['backupCodes'][0];
 chk('a backup code satisfies the 2FA gate', backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => $bc])['backupUsed'] === true);
 chk('a backup code cannot be reused', empty(backend_dispatch('auth.totpVerify', ['memberId' => 'NGG-2025-0099', 'code' => $bc])['ok']));
+// Lock is a server act: the cleared device session is revoked, so the cookie
+// that carried 2FA clearance cannot be replayed after "Lock Control Room".
+db_insert('device_sessions', ['sid' => 'lock-test-sid', 'memberId' => 'NGG-2025-0099', 'ip' => '', 'userAgent' => '', 'uaHash' => 'x', 'createdAt' => now_iso(), 'lastSeenAt' => now_iso()]);
+chk('lock: auth.lock is mapped and revokes the cleared session', (backend_dispatch('auth.lock', ['memberId' => 'NGG-2025-0099', 'sid' => 'lock-test-sid'])['ok'] ?? false) === true
+    && (string)db_row("SELECT revokedAt FROM device_sessions WHERE sid = 'lock-test-sid'")['revokedAt'] !== '');
+chk('lock: it is audited', (bool)db_row("SELECT id FROM audit_log WHERE event = 'admin.lock' LIMIT 1"));
 
 /* Re-enrolment is refused once a secret exists — the 2FA bypass.
  *
@@ -940,6 +946,17 @@ chk('member_state set+get roundtrips', (function () {
 // ── Enterprise admin: overview, applications, mentor assign, settings ──
 chk('overview returns member counts', backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0099'])['overview']['members']['active'] >= 2);
 chk('overview gated', backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+chk('overview: every Home queue reports a count and its oldest item', (function () {
+    $w = backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0099'])['overview']['waiting'] ?? [];
+    foreach (['applications', 'volunteers', 'unscreened', 'toGrade', 'messages', 'photos', 'approvals', 'requests', 'comments', 'missions'] as $k)
+        if (!isset($w[$k]['n'], $w[$k]['oldest'])) return false;
+    return true;
+})());
+chk('overview: twelve weeks of check-ins, oldest first, ending this week', (function () {
+    $c = backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0099'])['overview']['checkins'] ?? [];
+    return count($c) === 12 && $c[0]['from'] < $c[11]['from'] && $c[11]['from'] <= gmdate('Y-m-d') && strtotime($c[11]['from']) > time() - 8 * 86400;
+})());
+chk('overview: recent activity names the person who did it', array_key_exists('actorName', (backend_dispatch('admin.overview', ['requesterId' => 'NGG-2025-0099'])['overview']['recent'][0] ?? ['actorName' => ''])));
 backend_dispatch('public.apply', ['kind' => 'teen', 'sex' => 'Male', 'firstName' => 'Applicant', 'lastName' => 'One', 'email' => 'app1@example.com', 'phone' => '08031110030', 'dob' => '2011-01-01', 'track' => 'Music', 'centre' => 'Ayobo']);
 $apps = backend_dispatch('admin.applications.list', ['requesterId' => 'NGG-2025-0099', 'kind' => 'teen'])['applications'];
 chk('applications listed', count($apps) >= 1);
@@ -5781,6 +5798,11 @@ $fp = photo_process($fi['assetId']);
 chk('a flagged photo routes to human review, not auto-approve', $fp['status'] === 'pending_review');
 $queue = backend_dispatch('admin.photo.queue', ['requesterId' => 'NGG-2025-0099']);
 chk('review queue lists the flagged asset', in_array($fi['assetId'], array_column($queue['queue'], 'assetId'), true));
+chk('review queue says whose face it is, without a query per row', (function () use ($queue, $fi) {
+    $row = array_values(array_filter($queue['queue'], fn($q) => $q['assetId'] === $fi['assetId']))[0] ?? [];
+    $v = db_row("SELECT fullName FROM volunteers WHERE volunteerId = 'VOL-INS-26-777'");
+    return array_key_exists('subjectName', $row) && $row['subjectName'] === (string)($v['fullName'] ?? '');
+})());
 chk('editor cannot be a plain member', backend_dispatch('admin.photo.queue', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 // Atomic claim, then approve.
 $c1 = backend_dispatch('admin.photo.claim', ['requesterId' => 'NGG-2025-0099', 'assetId' => $fi['assetId']]);
@@ -22078,6 +22100,15 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         (function () use ($ADMIN, $claim) {
             $r = admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $claim['request']['requestId'], 'approve' => false]);
             return ($r['error'] ?? '') === 'need_reason';
+        })());
+    chk('self-service (desk): approving a payment needs the Fees permission — People alone is refused and posts nothing',
+        (function () use ($MEM, $claim) {
+            if (!db_row("SELECT memberId FROM members WHERE memberId = 'SELF-PPL'"))
+                db_insert('members', ['memberId' => 'SELF-PPL', 'fullName' => 'People Only', 'email' => 'ppl@afrovanguard.org.ng', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+            $r = admin_request_decide(['requesterId' => 'SELF-PPL', 'requestId' => $claim['request']['requestId'], 'approve' => true, 'decision' => 'ok']);
+            $row = db_row('SELECT status FROM member_requests WHERE requestId = ?', [$claim['request']['requestId']]);
+            return ($r['error'] ?? '') === 'forbidden' && (string)$row['status'] === 'open'
+                && (int)member_statement(['memberId' => $MEM])['closingPayable'] === 7000;
         })());
     chk('self-service (desk): approving a claim posts the payment through the ledger\'s own door',
         (function () use ($ADMIN, $MEM, $claim) {

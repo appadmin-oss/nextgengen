@@ -240,9 +240,10 @@ function pageFromPath() {
   if (seg === "q" || seg === "s") return "summerprofile";
   // Volunteer service certificates: /cert/<certId> — public + printable.
   if (seg === "cert") return "certificate";
-  // The staff Control Room lives at /nextadmin; /hq and /admin are kept as
-  // legacy aliases so old links keep working.
-  if (seg === "nextadmin" || seg === "hq" || seg === "admin") return "admin";
+  // The staff Control Room lives at /control (it owns the subtree
+  // /control/<page>/<tab>); /nextadmin, /hq and /admin are kept as aliases so
+  // old links, bookmarks and emailed ?s=<section> deep links keep working.
+  if (seg === "control" || seg === "nextadmin" || seg === "hq" || seg === "admin") return "admin";
   // Legacy alias: the public attendance board moved from /status to /s-status.
   // Resolve old bookmarks/shared links transparently (the router then rewrites
   // the address bar to /s-status via pathForPage in the effect below).
@@ -254,7 +255,7 @@ function pageFromPath() {
   return PAGE_IDS.includes(seg) ? seg : "_notfound";
 }
 function pathForPage(page) {
-  if (page === "admin") return "/nextadmin";
+  if (page === "admin") return "/control";
   if (page === "id-cards") return "/club/id-cards";
   return page === "home" ? "/" : "/" + page;
 }
@@ -305,7 +306,10 @@ function App() {
        and rewriting them back to /dashboard here would undo a deep link the
        moment the page mounted, which reads as "the tab does not work". */
     const inDashSubtree = page === "dashboard" && (window.location.pathname || "").replace(/\/+$/, "").startsWith("/dashboard");
-    if (page !== "_notfound" && page !== "summerprofile" && page !== "certificate" && !inCentresSubtree && !inDashSubtree && window.location.pathname !== pathForPage(page)) {
+    /* The Control Room owns /control/<page>/<tab> and resolves the old
+       /nextadmin?s=… addresses itself (src/modules/control/cr-app.jsx). */
+    const inControlSubtree = page === "admin" && /^\/(control|nextadmin|hq|admin)(\/|$)/.test(window.location.pathname || "");
+    if (page !== "_notfound" && page !== "summerprofile" && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
     }
     // Expose for the sign-in modal / magic link consumer.
@@ -384,7 +388,7 @@ function App() {
     "s-status": <StatusPage    setPage={setPage}/>,
     "v-status": <VolunteerStatusPage setPage={setPage}/>,
     summerprofile: <SummerProfilePage setPage={setPage}/>,
-    admin:     null,
+    admin:     <ControlRoomPage setPage={setPage}/>,
     "summer-admin": <SummerAdminPortal setPage={setPage}/>,
     "club-admin":   <ClubAdminPortal   setPage={setPage}/>,
     circle:     <CirclePortal   setPage={setPage}/>,
@@ -429,7 +433,8 @@ function App() {
         {pages[page]}
         <ToastHost/>
         <DialogHost/>
-        <CommandPalette/>
+        {/* The Control Room has its own palette (⌘K, CONTROL_ROOM.md §4.1). */}
+        {page !== "admin" && <CommandPalette/>}
         <div id="ngg-a11y-live" aria-live="polite" className="sr-only"/>
       </div>
     );

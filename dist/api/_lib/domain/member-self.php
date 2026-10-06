@@ -390,6 +390,14 @@ function admin_request_decide(array $p): array
     if ((string)$r['status'] !== 'open') return ['ok' => false, 'error' => 'already_decided'];
 
     $approve = !empty($p['approve']);
+    /* Approving a payment claim posts money to the fees ledger, and money is
+       a separate trust (CLAUDE.md §4): `people` decides leave and appeals,
+       only a `fees` holder may say a payment arrived. Declining needs no
+       money permission — nothing is posted. */
+    if ($approve && (string)$r['kind'] === 'payment' && !in_array('fees', member_effective_caps($g['requester']), true)) {
+        return ['ok' => false, 'error' => 'forbidden', 'detail' => 'missing_cap:fees',
+                'message' => 'Approving a payment posts money to the account, which needs the Fees permission.'];
+    }
     $reason = trim(substr((string)($p['decision'] ?? ''), 0, MEMBER_REQUEST_BODY_MAX));
     if (!$approve && $reason === '') {
         return ['ok' => false, 'error' => 'need_reason',

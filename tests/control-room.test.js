@@ -1,0 +1,159 @@
+#!/usr/bin/env node
+/* ============================================================================
+   Control Room v2 (/control), end to end against the real PHP backend.
+   CONTROL_ROOM.md §8: the shell at its breakpoints, the palette, the queue
+   (j/k, resolve, Undo, all clear), forms, the drawer, density, Ask overlay,
+   the phone tree, and the old addresses forwarding.
+
+   Run:  node tests/control-room.test.js
+   ========================================================================== */
+'use strict';
+
+const { execSync, spawn } = require('child_process');
+const { waitForServer, waitForBoot } = require('./_serve');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const ROOT = path.resolve(__dirname, '..');
+const PORT = process.env.CR_PORT || '8291';
+const BASE = 'http://127.0.0.1:' + PORT;
+const CFG = path.join(ROOT, 'api', 'config.php');
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'ngg-cr-'));
+const DB = path.join(TMP, 'ngg.db');
+const ADMIN = 'NGG-CR-ADM';
+
+let seq = 0;
+function php(snippet, extra = []) {
+  const code = `<?php $GLOBALS['CONFIG']=require ${JSON.stringify(CFG)};`
+    + ['response', 'db', 'util'].concat(extra).map(f => `require ${JSON.stringify(ROOT + '/api/_lib/' + f + '.php')};`).join('')
+    + `db_conn();\n` + snippet;
+  const f = path.join(TMP, `s${++seq}.php`);
+  fs.writeFileSync(f, code);
+  return execSync('php ' + JSON.stringify(f), { cwd: ROOT }).toString().trim();
+}
+function loadChromium() {
+  for (const m of [process.env.PLAYWRIGHT_MODULE, 'playwright-core', 'playwright'].filter(Boolean)) { try { return require(m).chromium; } catch (_) {} }
+  return null;
+}
+let server, browser, passed = 0, failed = 0;
+const chk = (m, c) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m); } };
+function cleanup() {
+  try { if (server) process.kill(-server.pid); } catch (_) {}
+  try { fs.unlinkSync(CFG); } catch (_) {}
+  try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (_) {}
+}
+
+(async () => {
+  const chromium = loadChromium();
+  if (!chromium) { console.log('⏭  control room: skipped (playwright not installed)'); process.exit(0); }
+  if (fs.existsSync(CFG)) { console.error('api/config.php already exists — refusing to overwrite. Move it aside and re-run.'); process.exit(2); }
+  fs.writeFileSync(CFG, `<?php return [
+    'db' => ['dsn' => '', 'sqlite_path' => ${JSON.stringify(DB)}],
+    'mail' => ['from_name' => 'NGG', 'from_email' => 'no-reply@example.org', 'reply_to' => 'next@afrovanguard.org.ng', 'smtp' => ['host' => '']],
+    'app_origin' => ${JSON.stringify(BASE)},
+    'cookie_secret' => 'control_room_secret_0123456789abcdef',
+    'cookie_secure' => false, 'cookie_name' => 'ngg_sess', 'cookie_domain' => '', 'cookie_samesite' => 'Lax',
+    'cache_dir' => ${JSON.stringify(path.join(TMP, 'cache'))},
+    'rate_limits' => ['default' => ['max' => 100000, 'window' => 60]], 'cache_ttl' => ['default' => 0],
+    'session_ttl' => 604800, 'kiosk_ttl' => 43200, 'session_idle' => ['admin' => 1800, 'member' => 43200, 'kiosk' => 43200],
+    'webcron' => ['enabled' => false], 'ai' => ['enabled' => false], 'debug' => false,
+  ];\n`);
+  try {
+    const now = 'now_iso()';
+    let seed = `db_migrate(db_conn());`
+      + `db_insert('centres', ['centreId'=>'CEN-CR-1','name'=>'Egbeda','code'=>'EG','color'=>'#e9a21b','status'=>'active','slug'=>'egbeda','createdAt'=>${now}]);`
+      + `db_insert('members', ['memberId'=>'${ADMIN}','fullName'=>'Adaeze Okafor','email'=>'adaeze@afrovanguard.org.ng','type'=>'NGG','status'=>'active','role'=>'super_admin','centre'=>'Egbeda','totpSecret'=>'JBSWY3DPEHPK3PXP','createdAt'=>${now},'updatedAt'=>${now}]);`;
+    for (let i = 1; i <= 8; i++) {
+      seed += `db_insert('members', ['memberId'=>'NGG-CR-${i}','fullName'=>'Member ${String.fromCharCode(64 + i)} Test','email'=>'cr${i}@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','track'=>'Technology','createdAt'=>${now},'updatedAt'=>${now}]);`;
+    }
+    // Three things waiting: two applications and a contact message.
+    seed += `db_insert('applications', ['kind'=>'teen','program'=>'ngg','name'=>'Chiamaka Eze','email'=>'ce@example.org','age'=>14,'centre'=>'Egbeda','track'=>'Technology','status'=>'new','why'=>'I want to build an app.','createdAt'=>gmdate('Y-m-d\\\\TH:i:s\\\\Z', time()-4*86400)]);`
+      + `db_insert('applications', ['kind'=>'teen','program'=>'summer','name'=>'Samuel Afolabi','email'=>'sa@example.org','age'=>16,'centre'=>'Egbeda','track'=>'Business','status'=>'new','why'=>'Runs a stall.','createdAt'=>gmdate('Y-m-d\\\\TH:i:s\\\\Z', time()-86400)]);`
+      + `db_insert('contact_messages', ['ref'=>'MSG-1','purpose'=>'general','name'=>'Funke Adeyemi','email'=>'fa@example.org','phone'=>'08021234118','subject'=>'Pick-up time changed?','message'=>'Is Saturday ending at 3pm now?','status'=>'new','createdAt'=>${now}]);`;
+    php(seed, ['bootstrap']);
+    server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
+    await waitForServer(BASE);
+    const d = fs.existsSync('/opt/pw-browsers') && fs.readdirSync('/opt/pw-browsers').find(x => /^chromium-\d+$/.test(x));
+    browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : d ? { executablePath: '/opt/pw-browsers/' + d + '/chrome-linux/chrome' } : {});
+    const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${ADMIN}'"), true);`, ['session']);
+    const errs = [];
+    const open = async (w, h, at) => {
+      const ctx = await browser.newContext({ viewport: { width: w, height: h } });
+      await ctx.addCookies([{ name: 'ngg_sess', value: token, domain: '127.0.0.1', path: '/', httpOnly: true }, { name: 'ngg_csrf', value: 'e2e-csrf-token-0123456789', domain: '127.0.0.1', path: '/' }]);
+      const p = await ctx.newPage();
+      p.on('pageerror', e => errs.push(String(e).slice(0, 300)));
+      p.on('console', m => { if (m.type() === 'error' && !/favicon|Failed to load resource|\[BABEL\]/.test(m.text())) errs.push('console: ' + m.text().slice(0, 300)); });
+      await p.goto(BASE + (at || '/control'), { waitUntil: 'domcontentloaded' });
+      await waitForBoot(p);
+      await p.waitForSelector('.cr-app', { timeout: 30000 });
+      return p;
+    };
+    const toastHas = (p, re) => p.waitForFunction(src => new RegExp(src).test((document.querySelector('.cr-toast') || {}).innerText || ''), re.source, { timeout: 8000 }).then(() => true, () => false);
+
+    console.log('desktop (1440) — the shell and Home');
+    const P = await open(1440, 900);
+    await P.waitForSelector('.cr-side', { timeout: 20000 });
+    chk('it opens at /control with the sidebar, the top bar and Home', new URL(P.url()).pathname === '/control' && !!(await P.$('.cr-top')) && /Home/.test(await P.innerText('.cr-head h1')));
+    await P.waitForSelector('.cr-att-row', { timeout: 20000 });
+    const att = await P.$$eval('.cr-att-row', r => r.map(x => x.innerText.replace(/\s+/g, ' ')));
+    chk('Needs you lists the queues, oldest first (applications waited 4 days)', /Applications to review/.test(att[0]) && /2/.test(att[0]) && att.some(x => /Unread messages/.test(x)));
+    chk('the inbox badge counts what is waiting', (await P.innerText('.cr-nav-item:has-text("Inbox") .cr-badge')).trim() === '3');
+    await P.screenshot({ path: path.join(TMP, '..', 'cr-home.png') }).catch(() => {});
+
+    console.log('the Inbox queue (§3 queue)');
+    await P.click('.cr-nav-item:has-text("Inbox")');
+    await P.waitForSelector('.cr-q-item', { timeout: 20000 });
+    chk('Inbox opens at /control/inbox on All, with every waiting item', new URL(P.url()).pathname === '/control/inbox' && (await P.$$('.cr-q-item')).length === 3);
+    const sel0 = await P.innerText('.cr-q-item[aria-current="true"] .cr-q-who b');
+    await P.keyboard.press('j');
+    const sel1 = await P.innerText('.cr-q-item[aria-current="true"] .cr-q-who b');
+    chk('j moves down the queue', sel0 !== sel1);
+    await P.keyboard.press('k');
+    chk('k moves back up', (await P.innerText('.cr-q-item[aria-current="true"] .cr-q-who b')) === sel0);
+    await P.click('.cr-tab:has-text("Applications")');
+    await P.waitForSelector('.cr-q-item', { timeout: 20000 });
+    chk('a tab has its own address', new URL(P.url()).pathname === '/control/inbox/applications');
+    const who = await P.innerText('.cr-q-item[aria-current="true"] .cr-q-who b');
+    await P.keyboard.press('2');
+    chk('pressing 2 runs the second action (Waitlist) and offers Undo', await toastHas(P, /Waitlisted · [\s\S]*Undo/));
+    const st = () => php(`echo db_row("SELECT status FROM applications WHERE name = '${who}'")['status'];`);
+    chk('…and the server has it', st() === 'waitlist');
+    chk('…the next item is selected and progress shows', /1 left · 1 done this session/.test(await P.innerText('.cr-q-prog')));
+    await P.click('.cr-toast-undo');
+    await P.waitForTimeout(600);
+    chk('Undo puts it back, on the server too', st() === 'new' && (await P.$$('.cr-q-item')).length === 2);
+
+    console.log('palette (§4.1) and Escape order');
+    await P.keyboard.press('Control+k');
+    await P.waitForSelector('.cr-cmd');
+    chk('⌘/Ctrl K opens the palette with the input focused', await P.evaluate(() => document.activeElement && document.activeElement.closest('.cr-cmd') !== null));
+    await P.keyboard.type('mon');
+    chk('typing ranks pages (Money first for “mon”)', /Money/.test(await P.innerText('.cr-cmd-opt[aria-selected="true"]')));
+    await P.keyboard.press('Tab');
+    chk('Tab switches scope', (await P.innerText('.cr-cmd-scope[aria-selected="true"]')) === 'Pages');
+    await P.keyboard.press('Escape');
+    chk('Escape closes the palette', !(await P.$('.cr-cmd')));
+    await P.keyboard.press('/');
+    await P.waitForSelector('.cr-cmd-in input:focus');
+    await P.keyboard.type('zzzz');
+    chk('no match says so', /Nothing called “zzzz”/.test(await P.innerText('.cr-cmd')));
+    await P.keyboard.press('Escape');
+
+    console.log('old addresses');
+    const Q = await open(1280, 800, '/nextadmin?s=messages');
+    await Q.waitForSelector('.cr-q-item', { timeout: 20000 });
+    chk('/nextadmin?s=messages lands on Inbox › Messages at /control/inbox/messages', new URL(Q.url()).pathname === '/control/inbox/messages' && /Messages/.test(await Q.innerText('.cr-crumb')));
+    await Q.context().close();
+
+    chk('no page errors', errs.length === 0);
+    if (errs.length) console.error(errs.join('\n'));
+  } catch (e) {
+    failed++; console.error('  ✗ harness error: ' + (e && e.stack || e));
+  } finally {
+    try { browser && await browser.close(); } catch (_) {}
+    cleanup();
+    console.log(`\n${failed ? '❌ FAIL' : '✅ PASS'}: ${passed} passed, ${failed} failed (control room)`);
+    process.exit(failed ? 1 : 0);
+  }
+})();

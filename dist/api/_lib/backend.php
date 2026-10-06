@@ -28,6 +28,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'auth.verify'             => 'auth_verify',
             'auth.me'                 => 'auth_me',
             'auth.logout'             => 'auth_logout',
+            'auth.lock'               => 'auth_admin_lock',
             'auth.totpSetup'          => 'auth_totp_setup',
             'auth.totpVerify'         => 'auth_totp_verify',
             // Members
