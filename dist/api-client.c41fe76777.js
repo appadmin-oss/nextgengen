@@ -1172,6 +1172,16 @@
         save:   (data) => request('/admin/promos.php', { body: { action: 'save', data } }),
         remove: (promoId) => request('/admin/promos.php', { body: { action: 'delete', promoId } }),
       },
+      /* ID Card Studio (/club/id-cards): who has a card, the reprint queue,
+         one-person photo asks, after-print failures, printed IDs. */
+      idStudio: {
+        state:     () => request('/admin/id-studio.php'),
+        reprint:   (items) => request('/admin/id-studio.php', { body: { action: 'reprint', items } }),
+        printed:   (items, runId) => request('/admin/id-studio.php', { body: { action: 'printed', items, runId } }),
+        failed:    (runId, items) => request('/admin/id-studio.php', { body: { action: 'failed', runId, items } }),
+        askPhoto:  (subjectType, subjectId) => request('/admin/id-studio.php', { body: { action: 'askPhoto', subjectType, subjectId } }),
+        mintIds:   (limit) => request('/admin/id-studio.php', { body: { action: 'mintIds', limit } }),
+      },
       wisdom: {
         list:     () => request('/admin/wisdom.php'),
         save:     (data) => request('/admin/wisdom.php', { body: { action: 'save', data } }),

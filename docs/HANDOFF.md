@@ -502,3 +502,20 @@ csstree-validator clean.
 - **Member record**: `admin.members.record` → `admin_member_record()` in `domain/member-record.php` (needs `people` plus the member in scope). Attendance (60 days), conduct (where `policy_subject_gate` allows), fees (`fees` only), curriculum, companion, family and guardian, mentorship, classes in one read. A part the reader may not see is ABSENT from the payload, and the drawer's tabs (`MemberRecordPanel`, `MEMBER_RECORD_TABS`) say "not part of your access" rather than showing it empty.
 - **Pending-tab fix**: `useAdminTab`'s subscriber took ANY pending tab, and subscribers fire before the target section mounts — so the section on screen swallowed a jump meant for the next one (Status board → `members/roster` landed on Members' Dashboard), and a section with no validator switched itself to a tab it does not have. An open section now takes a pending tab only if it is one of its own; mounting still always consumes. The three callers without a validator (Status, Curriculum, Volunteers) declare their tabs.
 - Tests: `status:` and `record:` checks in run.php; `tests/status-board.test.js` (`test:status`, in `test:all`) drives the board as a super admin and as a centre lead, the jump into the roster, and the drawer tabs.
+
+## 2026-10-06 · ID Card Studio rebuilt at /club/id-cards
+
+The old Card Studio (`/cards`, `CardStudio` in page-other.jsx) was removed in
+one deletions-only commit and rebuilt from empty files in
+`src/modules/idcards/` to the design handoff (ID_CARD_STUDIO.md). `/cards`
+forwards to the new address. What did not exist before and does now:
+sheet layout on card stock with the grid maths held to the millimetre, cut
+marks, mirrored backs for long- and short-edge duplex, skip used slots, a new
+sheet per centre or kind, the all-sheets overview, five print scenarios,
+uploaded card images with dpi and fit checks and front/back auto-pairing,
+batch printing, a packing list, an alignment test, the after-print check that
+marks jammed cards failed on their run and requeues them, a reprint queue
+(migration 132, `id_reprints`), a one-person photo ask (`id_photo_asks`; it
+emails a participant's guardian and says honestly when there is nobody to
+email), the print log with a run drawer, and look up by printed ID. The card
+renderers were kept and are drawn in the slots unchanged.

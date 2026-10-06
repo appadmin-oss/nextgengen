@@ -970,19 +970,35 @@ to.
 There are **two studios**, and they do different jobs. Each names the other
 on screen, so you do not have to remember which is which.
 
-| | **Card Studio** (`/cards`) | **Design Studio** (`/designer`) |
+| | **ID Card Studio** (`/club/id-cards`) | **Design Studio** (`/designer`) |
 |---|---|---|
-| What it is | Prints the **standard** cards for all three subjects | Draws layouts, binds them to your own fields, publishes them, prints them |
+| What it is | Lays out and prints the **standard** cards for all three subjects on sheets of card stock, and keeps the print log and a reprint queue | Draws layouts, binds them to your own fields, publishes them, prints them |
 | Layout lives | in code — fixed | in a template you edit |
-| Use it when | you want the standard card, in quantity | you want a card **back**, or a layout change |
+| Use it when | you want the standard card, in quantity, cut from sheets | you want a card **back**, or a layout change |
 
-The Card Studio has a tab per subject: **Participants**, **NGG members** and
-**Volunteers**. Each one prints that subject's own standard card, and each
-says what is true of it — a member card is fixed at 54 × 85 mm (ID-1, a
-wallet slot), so the trim setting on that screen is switched off with a note
-saying so; it governs the Summer School and volunteer cards only. Members
-have no *Resend ID* button because a member issues their own card from their
-dashboard.
+The old address `/cards` still works and opens the ID Card Studio.
+
+**Make cards.** The left column is everyone who needs a card: **New** (never
+printed), **Reprints** (asked for again), **Blocked** (no photo yet — press
+*Ask for photo*; for a Summer School participant this emails the guardian,
+for anyone else it notes the request and tells you to ask in person). Tick
+people, or *Add N to the sheet*. The middle is the sheet exactly as it will
+print. Pick what you are doing at the top — *New intake*, *Reprints*, *One
+person*, *Made elsewhere* (upload finished card images; files named
+"…-front" and "…-back" pair up on their own) or *Proof* (150 dpi, watermarked,
+nobody is marked as printed). The right column sets card size, paper,
+margins, order, backs and cut marks, and lists anything that would spoil the
+run. Red items must be fixed before *Print* works.
+
+**Printing.** The confirm lets you print everything, in batches (so a paper
+jam costs one batch), or only some sheets (to redo the ones that jammed).
+Print at 100%, not "fit to page". *Print an alignment test* first on a new
+printer and measure it with a ruler. After each run the studio asks which
+cards came out badly; tap them and they go straight back on the sheet as
+reprints, and the run in the log shows them as not printed.
+
+**Print log** and **Look up a person** are tabs in the studio too: every run
+with the design it used, and every card ever issued to one printed ID.
 
 A member with no printed ID assigned still prints, falling back to their
 internal member id rather than a blank — but the studio and the Design

@@ -83,7 +83,7 @@ that is set before navigation and read after it is a race; the URL is the
 state, and it survives a refresh and a shared link.
 
 - Staff Control Room: `/nextadmin`. `/hq` and `/admin` are kept aliases.
-- Card Studio: `/cards`. Design Studio: `/designer`.
+- ID Card Studio: `/club/id-cards` (`/cards` forwards to it). Design Studio: `/designer`.
 
 ## 3. Backend layout
 
@@ -117,7 +117,7 @@ SQLite, **auto-migrated at runtime** from a contiguous ladder in
 Adding a migration is three edits, all required:
 
 1. Append `N => "…"` to `$migrations` — contiguous, never renumbered.
-2. Bump `NGG_SCHEMA_TARGET` to `N` (currently **131**).
+2. Bump `NGG_SCHEMA_TARGET` to `N` (currently **132**).
 3. Mirror the DDL into `db/schema-mysql.sql`, ending with
    `INSERT INTO schema_version (version) VALUES (N) ON DUPLICATE KEY UPDATE version = version;`
 
@@ -355,12 +355,16 @@ query now. New list code that loops queries is a defect, not a slow path.
 
 Two studios, one record. Say which is which in any UI that mentions them.
 
-- **Card Studio** (`/cards`) prints the **standard** cards, hand-coded, for
-  all three subjects — a tab each for participants, NGG members and
-  volunteers, declared once in **`CARD_SUBJECTS`** (`page-other.jsx`). Adding
-  a subject is a row in that table. It replaced an `isVol` boolean threaded
-  through ~25 sites, which could hold two subjects and no more; do not
-  reintroduce a per-subject branch anywhere that table can answer.
+- **ID Card Studio** (`/club/id-cards`, `src/modules/idcards/`) lays out and
+  prints the **standard** cards for all three subjects — members, Summer
+  School participants, volunteers — on sheets of card stock, logs every run,
+  and keeps a reprint queue (`domain/id-studio.php`). The sheet maths is
+  `ids-core.jsx` and is held to the millimetre by `tests/ids-core.test.js`.
+  Its slots draw the REAL renderers (`NggcMemberCard`, `CardFront`,
+  `VolunteerCardFront`, `CardBack`) through one adapter, `IdsCardFace` /
+  `IdsRecordFace` — never a second drawing of a card. A subject is a row of
+  `IDS_KINDS`, never an `isVol`-style boolean. A proof, or a card marked
+  failed after printing, does not count as somebody having a card.
 - **Design Studio** (`/designer`) draws, binds, publishes and prints
   templates, including card **backs**. Its workspace has two modes:
   **design** (layers | canvas | properties) and **print**
@@ -410,7 +414,7 @@ Architecture:
 
 ## 8. The studios' design system
 
-Both studios (`/designer` and `/cards`) render from **one set of tokens**,
+The Design Studio (`/designer`) renders from **one set of tokens**,
 declared once in `styles-app.css`. The direction, so a change can be checked
 against it rather than argued about:
 
@@ -432,11 +436,10 @@ not on them:
 | Control height | `--dsn-ctl` — **one value**, 36px, 44px on coarse pointers |
 | Type | `--dsn-t-display` / `-head` / `-body` / `-ctl` / `-small` / `-meta` |
 
-Classes, not inline styles. The Card Studio's vocabulary: `.cs-page`,
-`.cs-btn` (`.is-primary`, `.is-on`, `.cs-btn-lg`, `.cs-btn-pill`), `.cs-field`
-(`.is-set` for a filter off its default), `.cs-box` + `.cs-box-cap`, `.cs-row`,
-`.cs-lbl`, `.cs-chip` + `.cs-chip-x`, `.cs-div`, `.cs-note`, `.cs-meta`,
-`.cs-cardface`, `.cs-iconbtn`, `.cs-state`. The Design Studio uses `.dsn-*`.
+Classes, not inline styles. The Design Studio uses `.dsn-*`. The ID Card
+Studio is a light workspace with its own closed token set on `.ids-app`
+(`--ids-*`, ID_CARD_STUDIO.md §7) and `.ids-*` classes; `.cs-row` survives
+from the old Card Studio because the review desk's bar uses it.
 
 **Inline styles beat a stylesheet**, so consistency cannot be imposed from
 outside: chrome belongs in CSS or it will drift. What legitimately stays

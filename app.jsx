@@ -91,6 +91,7 @@ const ROUTES = [
   { id: "review",       title: "Review desk · NGG",                        desc: "", chrome: "own", index: false },
   { id: "verify",       title: "Confirm your child's registration · NGG",  desc: "", chrome: "own", index: false },
   { id: "reshoot",      title: "A new photo · NGG",                        desc: "", chrome: "own", index: false },
+  { id: "id-cards",     title: "ID Card Studio · NGG",                     desc: "", chrome: "own", index: false },
   { id: "designer",     title: "Design Studio · NGG",                      desc: "", chrome: "own", index: false },
   { id: "certificate",  title: "Service certificate · NGG",                desc: "A verifiable Next Generation Genius volunteer service certificate.", chrome: "own", index: false },
   { id: "journal-entry",title: "From the programme journal · NGG",         desc: "", chrome: "own", index: false },
@@ -246,10 +247,15 @@ function pageFromPath() {
   // Resolve old bookmarks/shared links transparently (the router then rewrites
   // the address bar to /s-status via pathForPage in the effect below).
   if (seg === "status") return "s-status";
+  // The ID Card Studio lives under the Club (/club/id-cards). /cards was the
+  // old Card Studio's address and is kept as an alias: it is in bookmarks.
+  if (seg === "cards") return "id-cards";
+  if (seg === "club" && (window.location.pathname || "").replace(/^\/+|\/+$/g, "").split("/")[1] === "id-cards") return "id-cards";
   return PAGE_IDS.includes(seg) ? seg : "_notfound";
 }
 function pathForPage(page) {
   if (page === "admin") return "/nextadmin";
+  if (page === "id-cards") return "/club/id-cards";
   return page === "home" ? "/" : "/" + page;
 }
 
@@ -390,6 +396,7 @@ function App() {
     enrol:      <EnrolDeskPage/>,
     verify:     <ParentVerifyPage/>,
     reshoot:    <ReshootPage/>,
+    "id-cards": <IdCardStudioPage setPage={setPage}/>,
     designer:   <DesignerPage/>,
     certificate: <CertificatePage/>,
     "journal-entry": <JournalEntryPage/>,

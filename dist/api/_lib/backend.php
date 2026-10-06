@@ -340,6 +340,11 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.card.runs'                   => 'admin_card_runs',
             'admin.card.run.get'                => 'admin_card_run_get',
             'admin.card.history'                => 'admin_card_history',
+            'admin.ids.state'                   => 'admin_ids_state',
+            'admin.ids.reprint.request'         => 'admin_ids_reprint_request',
+            'admin.ids.reprint.done'            => 'admin_ids_reprint_done',
+            'admin.ids.run.failed'              => 'admin_ids_run_failed',
+            'admin.ids.photo.ask'               => 'admin_ids_photo_ask',
             /* The design asset library. Images placed in a design used to be
                data: URLs inside the design itself, which capped a poster at one
                small photograph — see api/_lib/domain/design-assets.php. */

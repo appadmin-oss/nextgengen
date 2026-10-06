@@ -24103,5 +24103,56 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-TP-1'");
 })();
 
+/* ── ID Card Studio: who has a card, the reprint queue, failures after printing ── */
+(function () use ($CARDADM, $RUN1) {
+    $SUMADM = 'NGG-2025-0700';   // summer_admin: Summer School's cards, not members'
+    $st = backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM]);
+    $key = 'member:NGG-CARD-1';
+    $last = db_row("SELECT i.runId, i.displayId FROM card_issues i JOIN card_runs r ON r.runId = i.runId
+                    WHERE i.subjectType = 'member' AND i.subjectId = 'NGG-CARD-1' AND r.mode != 'proof' AND i.ok = 1 ORDER BY i.id DESC LIMIT 1");
+    chk('id studio: the state says who already has a card, from the issue log', !empty($st['ok']) && $last && ($st['issued']->$key['runId'] ?? '') === $last['runId']);
+    chk('id studio: …and it is the LATEST issue per person, not the first', ($st['issued']->$key['displayId'] ?? '') === $last['displayId']
+        && (int)db_row("SELECT COUNT(*) c FROM card_issues WHERE subjectId = 'NGG-CARD-1'")['c'] > 1);
+    $pr = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member', 'subjectType' => 'member', 'mode' => 'proof', 'output' => 'sheet',
+        'items' => [['subjectId' => 'NGG-IDS-PROOF', 'displayId' => 'P-1']]]);
+    chk('id studio: a PROOF does not count as having a card, so nobody drops out of the queue', !empty($pr['ok'])
+        && !property_exists(backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['issued'], 'member:NGG-IDS-PROOF'));
+    $sst = backend_dispatch('admin.ids.state', ['requesterId' => $SUMADM]);
+    chk('id studio: a Summer admin sees participants only, never the members\' log', !empty($sst['ok']) && $sst['types'] === ['student'] && !property_exists($sst['issued'], $key));
+    db_insert('members', ['memberId' => 'NGG-IDS-ED', 'fullName' => 'Ida Editor', 'email' => 'ids-ed@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'editor', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('id studio: staff with neither capability are refused', (backend_dispatch('admin.ids.state', ['requesterId' => 'NGG-IDS-ED'])['error'] ?? '') === 'forbidden');
+
+    $r = backend_dispatch('admin.ids.reprint.request', ['requesterId' => $CARDADM, 'items' => [
+        ['subjectType' => 'member', 'subjectId' => 'NGG-CARD-1', 'why' => 'Lost'], ['subjectType' => 'alien', 'subjectId' => 'x']]]);
+    chk('id studio: a reprint is queued, and a bad row is refused by name, not dropped', !empty($r['ok']) && $r['added'] === 1 && ($r['refused'][0]['error'] ?? '') === 'bad_subject');
+    $r = backend_dispatch('admin.ids.reprint.request', ['requesterId' => $CARDADM, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-CARD-1', 'why' => 'Damaged']]]);
+    chk('id studio: asking again updates the open request rather than doubling it', $r['added'] === 0 && $r['updated'] === 1
+        && (int)db_row("SELECT COUNT(*) c FROM id_reprints WHERE subjectId = 'NGG-CARD-1' AND doneAt = ''")['c'] === 1);
+    chk('id studio: …and the queue reads the newest reason', (backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['reprints']->$key['why'] ?? '') === 'Damaged');
+    $r = backend_dispatch('admin.ids.reprint.request', ['requesterId' => $SUMADM, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-CARD-1']]]);
+    chk('id studio: a Summer admin cannot queue a MEMBER\'s reprint — refused per row', !empty($r['ok']) && $r['added'] === 0 && ($r['refused'][0]['error'] ?? '') === 'forbidden');
+    chk('id studio: a batch over the cap is refused, naming it', (backend_dispatch('admin.ids.reprint.request', ['requesterId' => $CARDADM,
+        'items' => array_fill(0, 601, ['subjectType' => 'member', 'subjectId' => 'x'])])['error'] ?? '') === 'too_many');
+
+    $f = backend_dispatch('admin.ids.run.failed', ['requesterId' => $CARDADM, 'runId' => $RUN1['runId'], 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-CARD-1']]]);
+    $issue = db_row("SELECT ok, note FROM card_issues WHERE runId = ? AND subjectId = 'NGG-CARD-1'", [$RUN1['runId']]);
+    chk('id studio: a card that jammed is marked failed on the run it was printed in', !empty($f['ok']) && $f['marked'] === 1 && (int)$issue['ok'] === 0
+        && (int)db_row('SELECT failed FROM card_runs WHERE runId = ?', [$RUN1['runId']])['failed'] === 1);
+    chk('id studio: …and goes back in the queue as a reprint', $f['requeued'] === 1 && (backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['reprints']->$key['why'] ?? '') === 'Didn’t print properly');
+    chk('id studio: an unknown run is not_found', (backend_dispatch('admin.ids.run.failed', ['requesterId' => $CARDADM, 'runId' => 'CRUN-NOPE', 'items' => [['subjectType' => 'member', 'subjectId' => 'x']]])['error'] ?? '') === 'not_found');
+
+    $d = backend_dispatch('admin.ids.reprint.done', ['requesterId' => $CARDADM, 'runId' => 'CRUN-NEXT', 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-CARD-1']]]);
+    chk('id studio: printing closes the open request', !empty($d['ok']) && $d['closed'] === 1 && !property_exists(backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['reprints'], $key));
+
+    $a = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'subjectType' => 'member', 'subjectId' => 'NGG-CARD-1']);
+    chk('id studio: a member photo ask is recorded, and says honestly it was not sent', !empty($a['ok']) && $a['sent'] === false
+        && property_exists(backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['asked'], $key));
+    chk('id studio: a photo ask for a participant who does not exist is not_found', (backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'subjectType' => 'student', 'subjectId' => 'SUM-NOPE'])['error'] ?? '') === 'not_found');
+    chk('id studio: a Summer admin cannot ask about a member', (backend_dispatch('admin.ids.photo.ask', ['requesterId' => $SUMADM, 'subjectType' => 'member', 'subjectId' => 'NGG-CARD-1'])['error'] ?? '') === 'forbidden');
+    chk('id studio: every op is in the map', count(array_filter(['admin.ids.state', 'admin.ids.reprint.request', 'admin.ids.reprint.done', 'admin.ids.run.failed', 'admin.ids.photo.ask'],
+        fn($op) => (backend_dispatch($op, ['requesterId' => ''])['error'] ?? '') === 'unknown_op')) === 0);
+    db_exec("DELETE FROM id_reprints"); db_exec("DELETE FROM id_photo_asks"); db_exec("DELETE FROM members WHERE memberId = 'NGG-IDS-ED'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

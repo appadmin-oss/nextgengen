@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 131;
+const NGG_SCHEMA_TARGET = 132;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3935,6 +3935,11 @@ function db_migrate(PDO $db): void {
         131 => "CREATE TABLE IF NOT EXISTS member_timetables (memberId TEXT PRIMARY KEY, doc TEXT NOT NULL, updatedAt TEXT NOT NULL);"
              . "CREATE TABLE IF NOT EXISTS timetable_links (tokenHash TEXT PRIMARY KEY, email TEXT NOT NULL, doc TEXT NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, expiresAt TEXT NOT NULL, revokedAt TEXT NOT NULL DEFAULT '');"
              . "CREATE INDEX IF NOT EXISTS idx_timetable_links_email ON timetable_links(email, createdAt);",
+        // ID Card Studio: the reprint queue and single-person photo asks (domain/id-studio.php).
+        132 => "CREATE TABLE IF NOT EXISTS id_reprints (id INTEGER PRIMARY KEY AUTOINCREMENT, subjectType TEXT NOT NULL, subjectId TEXT NOT NULL, why TEXT NOT NULL DEFAULT '', requestedBy TEXT NOT NULL DEFAULT '', requestedAt TEXT NOT NULL, doneRunId TEXT NOT NULL DEFAULT '', doneAt TEXT NOT NULL DEFAULT '');"
+             . "CREATE INDEX IF NOT EXISTS idx_id_reprints_subject ON id_reprints(subjectType, subjectId, doneAt);"
+             . "CREATE TABLE IF NOT EXISTS id_photo_asks (id INTEGER PRIMARY KEY AUTOINCREMENT, subjectType TEXT NOT NULL, subjectId TEXT NOT NULL, askedBy TEXT NOT NULL DEFAULT '', askedAt TEXT NOT NULL, sent INTEGER NOT NULL DEFAULT 0);"
+             . "CREATE INDEX IF NOT EXISTS idx_id_photo_asks_subject ON id_photo_asks(subjectType, subjectId);",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

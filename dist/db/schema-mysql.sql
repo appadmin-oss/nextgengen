@@ -2990,3 +2990,28 @@ CREATE TABLE IF NOT EXISTS timetable_links (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO schema_version (version) VALUES (131) ON DUPLICATE KEY UPDATE version = version;
+
+-- 132 · ID Card Studio: the reprint queue and single-person photo asks.
+CREATE TABLE IF NOT EXISTS id_reprints (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  why VARCHAR(80) NOT NULL DEFAULT '',
+  requestedBy VARCHAR(64) NOT NULL DEFAULT '',
+  requestedAt VARCHAR(32) NOT NULL,
+  doneRunId VARCHAR(40) NOT NULL DEFAULT '',
+  doneAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_id_reprints_subject (subjectType, subjectId, doneAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS id_photo_asks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectType VARCHAR(16) NOT NULL,
+  subjectId VARCHAR(64) NOT NULL,
+  askedBy VARCHAR(64) NOT NULL DEFAULT '',
+  askedAt VARCHAR(32) NOT NULL,
+  sent TINYINT NOT NULL DEFAULT 0,
+  KEY idx_id_photo_asks_subject (subjectType, subjectId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO schema_version (version) VALUES (132) ON DUPLICATE KEY UPDATE version = version;
