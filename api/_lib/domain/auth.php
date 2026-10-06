@@ -443,6 +443,14 @@ function auth_logout(array $p): array {
     return ['ok' => true];
 }
 
+/** Lock: retire this device's cleared session; the route issues one without 2FA clearance. */
+function auth_admin_lock(array $p): array {
+    $sid = (string)($p['sid'] ?? '');
+    if ($sid !== '') { try { db_update('device_sessions', ['revokedAt' => now_iso()], ['sid' => $sid]); } catch (Throwable $e) {} }
+    audit('admin.lock', (string)($p['memberId'] ?? '') ?: null, (string)($p['memberId'] ?? ''), [], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
+}
+
 function auth_totp_setup(array $p): array {
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['memberId'] ?? '')]);
     if (!$member) return ['ok' => false, 'error' => 'not_found'];

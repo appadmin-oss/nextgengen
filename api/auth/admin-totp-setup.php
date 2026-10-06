@@ -11,8 +11,10 @@ require_method('POST');
  * A lost authenticator is a super-admin reset, not a self-service re-issue. */
 $s = session_read();
 if (!$s) json_error('unauthorized', 401);
-$role = strtolower((string)($s['role'] ?? ''));
-if ($role !== 'admin' && $role !== 'super_admin') json_error('forbidden', 403);
+// Every staff role enrols: the Control Room asks every one of them for a code,
+// and refusing all but admin and super_admin here left editors, coordinators,
+// centre leads and auditors with a gate they could never pass.
+if (!is_admin_role($s['role'] ?? '')) json_error('forbidden', 403);
 // Minting a secret is cheap but not free, and this runs pre-2FA.
 rate_limit_check('auth.verify');
 

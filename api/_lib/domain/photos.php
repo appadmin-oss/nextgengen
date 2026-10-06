@@ -957,7 +957,34 @@ function photo_public(array $a): array {
 function admin_photo_queue(array $p): array {
     $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
     $rows = db_all("SELECT * FROM photo_assets WHERE status IN ('pending_review','in_review') ORDER BY (status='in_review'), createdAt LIMIT 300");
-    return ['ok' => true, 'queue' => array_map('photo_public', $rows), 'pending' => count($rows)];
+    /* Whose face it is. A reviewer deciding "is this the right child" was
+       shown `student:SS-0412` and nothing else. One grouped read per subject
+       type — never a query per row (CLAUDE.md §11). */
+    $names = photo_subject_names($rows);
+    $out = array_map(function ($r) use ($names) {
+        $n = $names[$r['subjectType'] . ':' . $r['subjectId']] ?? null;
+        return photo_public($r) + ['subjectName' => $n['name'] ?? '', 'subjectCentre' => $n['centre'] ?? ''];
+    }, $rows);
+    return ['ok' => true, 'queue' => $out, 'pending' => count($rows)];
+}
+
+/** "type:id" => [name, centre] for the subjects of these photo rows. */
+function photo_subject_names(array $rows): array {
+    $by = [];
+    foreach ($rows as $r) $by[(string)$r['subjectType']][(string)$r['subjectId']] = true;
+    $src = ['student' => ['summer_students', 'studentId', 'centre'], 'volunteer' => ['volunteers', 'volunteerId', null], 'member' => ['members', 'memberId', 'centre']];
+    $out = [];
+    foreach ($by as $type => $ids) {
+        if (!isset($src[$type])) continue;
+        [$table, $key, $centre] = $src[$type];
+        $ids = array_keys($ids);
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        try {
+            foreach (db_all("SELECT $key k, fullName" . ($centre ? ", $centre c" : "") . " FROM $table WHERE $key IN ($ph)", $ids) as $x)
+                $out[$type . ':' . $x['k']] = ['name' => (string)$x['fullName'], 'centre' => (string)($x['c'] ?? '')];
+        } catch (Throwable $e) {}
+    }
+    return $out;
 }
 
 /** Atomic claim — only one editor can hold an item; guards against double review. */
