@@ -30,6 +30,8 @@ function rate_limit_default(string $op): ?array {
         'auth.request'       => ['max' => 5,  'window' => 60],    // EMAILS a sign-in code — mail-amplification
         'auth.verify'        => ['max' => 10, 'window' => 60],    // password / OTP / TOTP checks
         'family.request'     => ['max' => 5,  'window' => 60],    // EMAILS a sign-in code, like auth.request
+        'timetable.save'     => ['max' => 5,  'window' => 60],    // EMAILS a timetable link — mail-amplification
+        'timetable.load'     => ['max' => 30, 'window' => 60],    // a link token is a bearer secret; slows guessing
         'family.verify'      => ['max' => 10, 'window' => 60],
         'family.write'       => ['max' => 30, 'window' => 60],
         'gate.unlock'        => ['max' => 8,  'window' => 300],   // kiosk desk password

@@ -281,6 +281,7 @@ function member_merge_policy(): array {
         'member_stats'           => 'KEEP_SURVIVOR',  // xp/streak are not additive
         'member_progress'        => 'MOVE_UNIQUE',
         'member_state'           => 'MOVE_UNIQUE',
+        'member_timetables'      => 'MOVE_UNIQUE',    // one personal week per person; the survivor's stands
         'member_assessments'     => 'MOVE_UNIQUE',
         'community_reads'        => 'MOVE_UNIQUE',
         'community_poll_votes'   => 'MOVE_UNIQUE',    // one person, one vote

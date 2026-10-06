@@ -2971,3 +2971,22 @@ INSERT INTO schema_version (version) VALUES (129) ON DUPLICATE KEY UPDATE versio
 ALTER TABLE centres ADD COLUMN programmes VARCHAR(32) DEFAULT 'ngg,summer';
 
 INSERT INTO schema_version (version) VALUES (130) ON DUPLICATE KEY UPDATE version = version;
+
+-- 131: personal timetables (the public Timetable Maker).
+CREATE TABLE IF NOT EXISTS member_timetables (
+  memberId VARCHAR(64) NOT NULL PRIMARY KEY,
+  doc MEDIUMTEXT NOT NULL,
+  updatedAt VARCHAR(32) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS timetable_links (
+  tokenHash CHAR(64) NOT NULL PRIMARY KEY,
+  email VARCHAR(190) NOT NULL,
+  doc MEDIUMTEXT NOT NULL,
+  createdAt VARCHAR(32) NOT NULL,
+  updatedAt VARCHAR(32) NOT NULL,
+  expiresAt VARCHAR(32) NOT NULL,
+  revokedAt VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_timetable_links_email (email, createdAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO schema_version (version) VALUES (131) ON DUPLICATE KEY UPDATE version = version;

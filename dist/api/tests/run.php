@@ -24040,5 +24040,68 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-TT-%'");
 })();
 
+
+/* ── Personal timetables (the Timetable Maker): validated, never written into a centre's week ── */
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-TP-1', 'fullName' => 'Tp Learner', 'email' => 'tp-1@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'createdAt' => $now, 'updatedAt' => $now]);
+    $doc = fn(array $over = []) => array_merge([
+        'settings' => ['title' => 'My week', 'theme' => 'paper'],
+        'entries' => [['id' => 'e1', 'title' => 'Maths', 'days' => [3, 1, 1], 'start' => '08:00', 'end' => '09:00', 'place' => 'Room 4', 'color' => 9, 'kind' => 'class']],
+        'exceptions' => ['2026-10-05' => ['skip' => ['e1:1' => true, 'bad' => true], 'once' => [['id' => 'x1', 'title' => 'Test', 'days' => [4], 'start' => '10:00', 'end' => '11:00', 'kind' => 'class']]]],
+    ], $over);
+    $slotsBefore = (int)db_row('SELECT COUNT(*) c FROM timetable_slots')['c'];
+
+    chk('personal timetable: none is stored until one is saved', backend_dispatch('member.myTimetable', ['memberId' => 'NGG-TP-1'])['timetable'] === null);
+    $s = backend_dispatch('member.myTimetable.save', ['memberId' => 'NGG-TP-1', 'baseUpdatedAt' => ''] + $doc());
+    $g = backend_dispatch('member.myTimetable', ['memberId' => 'NGG-TP-1'])['timetable'];
+    chk('personal timetable: a member saves their week and reads it back', !empty($s['ok']) && $g['entries'][0]['title'] === 'Maths' && $g['updatedAt'] === $s['updatedAt']);
+    chk('personal timetable: days are deduped and sorted, a colour is clamped', $g['entries'][0]['days'] === [1, 3] && $g['entries'][0]['color'] === 7);
+    chk('personal timetable: a skip keeps only well-formed keys, a one-off is kept', array_keys($g['exceptions']['2026-10-05']['skip']) === ['e1:1'] && $g['exceptions']['2026-10-05']['once'][0]['once'] === true);
+    chk('personal timetable: it never lands in a centre\'s timetable_slots', (int)db_row('SELECT COUNT(*) c FROM timetable_slots')['c'] === $slotsBefore);
+
+    $c = backend_dispatch('member.myTimetable.save', ['memberId' => 'NGG-TP-1', 'baseUpdatedAt' => '2000-01-01T00:00:00Z'] + $doc());
+    chk('personal timetable: a save from a stale copy is a conflict carrying the stored one, not an overwrite', ($c['error'] ?? '') === 'conflict' && $c['server']['updatedAt'] === $s['updatedAt']);
+    $s2 = backend_dispatch('member.myTimetable.save', ['memberId' => 'NGG-TP-1', 'baseUpdatedAt' => $s['updatedAt']] + $doc(['settings' => ['title' => 'Again']]));
+    chk('personal timetable: a save from the current copy goes through with a later stamp', !empty($s2['ok']) && $s2['updatedAt'] > $s['updatedAt']);
+
+    $bad = fn(array $e) => backend_dispatch('member.myTimetable.save', ['memberId' => 'NGG-TP-1', 'baseUpdatedAt' => $s2['updatedAt']] + $doc(['entries' => [$e]]))['error'] ?? 'saved';
+    $ok = ['id' => 'e', 'title' => 'Maths', 'days' => [1], 'start' => '08:00', 'end' => '09:00', 'kind' => 'class'];
+    chk('personal timetable: an entry that ends before it starts is refused', $bad(['start' => '10:00', 'end' => '09:00'] + $ok) === 'bad_time');
+    chk('personal timetable: a time that is not HH:MM is refused', $bad(['start' => '8am'] + $ok) === 'bad_time');
+    chk('personal timetable: a weekday outside 1–7 is refused', $bad(['days' => [0, 8]] + $ok) === 'bad_days');
+    chk('personal timetable: a title over 60 characters is refused', $bad(['title' => str_repeat('x', 61)] + $ok) === 'bad_title');
+    chk('personal timetable: a type outside class/study/activity/break is refused', $bad(['kind' => 'party'] + $ok) === 'bad_kind');
+    $many = backend_dispatch('member.myTimetable.save', ['memberId' => 'NGG-TP-1', 'baseUpdatedAt' => $s2['updatedAt']] + $doc(['entries' => array_fill(0, 121, $ok)]));
+    chk('personal timetable: more than 120 entries is refused', ($many['error'] ?? '') === 'too_many_entries');
+    $weeks = [];
+    for ($i = 0; $i < 53; $i++) $weeks[gmdate('Y-m-d', strtotime('2026-01-05 +' . $i . ' weeks'))] = ['skip' => ['e1:1' => true]];
+    chk('personal timetable: more than 52 weeks of changes is refused', (backend_dispatch('member.myTimetable.save', ['memberId' => 'NGG-TP-1', 'baseUpdatedAt' => $s2['updatedAt']] + $doc(['exceptions' => $weeks]))['error'] ?? '') === 'too_many_weeks');
+
+    // Without an account: an emailed link, its token stored only as a hash.
+    $l = backend_dispatch('public.timetableSave', ['email' => 'Parent@Example.org'] + $doc());
+    $row = db_row('SELECT * FROM timetable_links WHERE email = ?', ['parent@example.org']);
+    chk('personal timetable: saving by email mints a link and keeps only its hash', !empty($l['ok']) && preg_match('/^[a-f0-9]{64}$/', $l['k']) && $row && $row['tokenHash'] === hash('sha256', $l['k']));
+    chk('personal timetable: the link opens the same timetable', backend_dispatch('public.timetableLoad', ['k' => $l['k']])['timetable']['entries'][0]['title'] === 'Maths');
+    $u = backend_dispatch('public.timetableSave', ['k' => $l['k']] + $doc(['settings' => ['title' => 'Edited']]));
+    chk('personal timetable: saving through the link updates it', !empty($u['ok']) && backend_dispatch('public.timetableLoad', ['k' => $l['k']])['timetable']['settings']['title'] === 'Edited');
+    chk('personal timetable: an unknown or malformed token opens nothing', (backend_dispatch('public.timetableLoad', ['k' => str_repeat('a', 64)])['error'] ?? '') === 'link_expired'
+        && (backend_dispatch('public.timetableLoad', ['k' => 'nope'])['error'] ?? '') === 'link_expired');
+    db_exec("UPDATE timetable_links SET expiresAt = '2000-01-01T00:00:00Z' WHERE email = 'parent@example.org'");
+    chk('personal timetable: a lapsed link neither opens nor saves', (backend_dispatch('public.timetableLoad', ['k' => $l['k']])['error'] ?? '') === 'link_expired'
+        && (backend_dispatch('public.timetableSave', ['k' => $l['k']] + $doc())['error'] ?? '') === 'link_expired');
+    backend_dispatch('public.timetableSave', ['email' => 'parent@example.org'] + $doc());
+    backend_dispatch('public.timetableSave', ['email' => 'parent@example.org'] + $doc());
+    chk('personal timetable: three links a day per address, then refused', (backend_dispatch('public.timetableSave', ['email' => 'parent@example.org'] + $doc())['error'] ?? '') === 'too_many_links');
+    chk('personal timetable: an address that is not one is refused', (backend_dispatch('public.timetableSave', ['email' => 'not-an-email'] + $doc())['error'] ?? '') === 'bad_email');
+    $term = backend_dispatch('public.timetableTerm', []);
+    chk('personal timetable: the term op answers with two dates or two blanks', !empty($term['ok']) && array_key_exists('start', $term) && array_key_exists('end', $term));
+    chk('personal timetable: a member merge says what happens to a personal week', (member_merge_policy()['member_timetables'] ?? '') === 'MOVE_UNIQUE');
+
+    db_exec("DELETE FROM timetable_links WHERE email = 'parent@example.org'");
+    db_exec("DELETE FROM member_timetables WHERE memberId = 'NGG-TP-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-TP-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
