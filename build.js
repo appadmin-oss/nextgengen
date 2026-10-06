@@ -73,7 +73,6 @@ const ORDER = [
   'page-analytics.jsx',
   'page-designer.jsx',
   'page-portals.jsx',
-  'page-admin.jsx',
   'app.jsx',
 ];
 

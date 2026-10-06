@@ -384,7 +384,7 @@ function App() {
     "s-status": <StatusPage    setPage={setPage}/>,
     "v-status": <VolunteerStatusPage setPage={setPage}/>,
     summerprofile: <SummerProfilePage setPage={setPage}/>,
-    admin:     <AdminPage     setPage={setPage}/>,
+    admin:     null,
     "summer-admin": <SummerAdminPortal setPage={setPage}/>,
     "club-admin":   <ClubAdminPortal   setPage={setPage}/>,
     circle:     <CirclePortal   setPage={setPage}/>,
