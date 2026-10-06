@@ -138,7 +138,7 @@ function CommandHint() {
   const appChrome = () => typeof document !== "undefined" && (
     document.body.classList.contains("own-chrome") ||
     document.body.classList.contains("cm-app") ||
-    /^\/(community|nextadmin|admin)/.test(location.pathname));
+    /^\/(community|control|nextadmin|admin)/.test(location.pathname));
   const seen = () => { try { return parseInt(localStorage.getItem("ngg.cmdk.seen") || "0", 10); } catch (_) { return 0; } };
   const [hidden, setHidden] = React.useState(
     (typeof localStorage !== "undefined" && localStorage.getItem("ngg.cmdk.dismissed") === "1") || seen() >= 3 || appChrome()
@@ -172,24 +172,20 @@ function CommandHint() {
   );
 }
 
-/* Open the Control Room at a named section.
+/* Open the Control Room at a page and tab.
  *
- * The console publishes `window.__adminSection` from an effect, so it does not
- * exist until AdminPage has mounted. Every call site used to guess at that with
- * a 60ms setTimeout, which is a race that mostly wins — and when it loses, the
- * palette navigates to the Overview and the section the operator asked for is
- * silently dropped. This polls briefly instead, and gives up rather than
- * hanging, so the failure is "you are on the Overview" and not a wedged tab.
- *
- * Section ids are resolved through ADMIN_SECTION_ALIASES by the console itself,
- * so a retired id still lands where the work moved.
+ * The Control Room publishes `window.__adminSection` from an effect, so it does
+ * not exist until it has mounted. A fixed timeout here was a race that mostly
+ * won — and when it lost, the operator landed on Home and the place they asked
+ * for was silently dropped. This polls briefly instead and gives up rather than
+ * hanging. Old section ids still resolve: crResolve() reads CR_ALIASES.
  */
-function adminGo(sectionId) {
+function adminGo(page, tab) {
   if (window.__navigate) window.__navigate("admin");
   let tries = 0;
   const go = () => {
-    if (window.__adminSection) { window.__adminSection(sectionId); return; }
-    if (++tries > 40) return;      // ~2s, then leave them on the Overview
+    if (window.__adminSection) { window.__adminSection(page, tab); return; }
+    if (++tries > 40) return;      // ~2s, then leave them on Home
     setTimeout(go, 50);
   };
   go();
@@ -230,36 +226,19 @@ function buildItems(auth) {
   }
 
   if (auth.isAdmin) {
-    /* EVERY admin section, generated from ADMIN_SECTIONS.
-     *
-     * There used to be five hand-written entries — members, posts, events,
-     * broadcast and "the console" — out of some forty sections, each repeating
-     * the same navigate-then-setSection dance with a magic 60ms timeout. So
-     * ⌘K, the fastest way to reach anything in the product, could not reach
-     * thirty-five of the places an administrator works, and the console's
-     * sidebar was the only route to them.
-     *
-     * Generated from the section table means it cannot go stale: a section
-     * added there is searchable here, gated by the same capability, with the
-     * same label. */
+    /* Every Control Room page and tab this person may open, generated from
+     * CR_PAGES by the same function that feeds the Control Room's own ⌘K —
+     * one registry, gated by the same capability, with the same labels. A
+     * hand-written list here once reached five places out of forty. */
     list.push({ id: "adm.console", section: "Admin", icon: "⚙", label: "Control Room",
       hint: "The staff console", run: nav("admin") });
-    (typeof ADMIN_SECTIONS !== "undefined" ? ADMIN_SECTIONS : [])
-      .filter(sec => sec.id !== "home")
-      .filter(sec => typeof adminCapOk === "function" ? adminCapOk(sec.cap, auth.hasCap) : (!sec.cap || (auth.hasCap && auth.hasCap(sec.cap))))
-      .forEach(sec => list.push({
-        id: "adm." + sec.id, section: "Admin", icon: sec.icon || "›",
-        label: sec.label,
-        hint: (sec.group ? sec.group + " · " : "") + (sec.title || sec.label),
-        keywords: [sec.id, sec.group || ""].filter(Boolean),
-        run: () => adminGo(sec.id),
+    const has = c => !!(auth.hasCap && auth.hasCap(c));
+    (typeof crPalettePages === "function" ? crPalettePages(has, adminGo) : [])
+      .forEach((it, i) => list.push({
+        id: "adm." + i + "." + it.l, section: "Admin", icon: "›",
+        label: it.l, hint: it.path, keywords: String(it.keywords || "").split(/\s+/).filter(Boolean),
+        run: it.run,
       }));
-    // Two shortcuts that are an ACTION rather than a place, so they read as
-    // verbs beside the sections.
-    list.push(
-      { id: "adm.new.post",  section: "Admin", icon: "✎", label: "New post", hint: "Blog · news · update", keywords: ["write", "publish"], run: () => adminGo("posts") },
-      { id: "adm.new.event", section: "Admin", icon: "▶", label: "New event", hint: "Showcase · parent meet", keywords: ["schedule"], run: () => adminGo("events") },
-    );
   }
 
   return list;

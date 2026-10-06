@@ -52,3 +52,4 @@ api/storage/*
 # hand-authored fixtures under tests/_ are sources and stay tracked.
 tests/_*_fixture.html
 !tests/_bench_fixture.html
+.claude/
