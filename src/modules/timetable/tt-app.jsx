@@ -131,7 +131,54 @@ async function ttPrintPdf(node, model, paper, name) {
   setTimeout(() => frame.remove(), 60000);
 }
 
+/**
+ * Is this somebody arriving at a bare /timetable for the first time (LANDING.md §1)?
+ * Then they are shown the landing instead. Anything that says what they came to
+ * do opens the maker: a link (#t=, ?k=), a mode, an import, a sign-in, a centre,
+ * a timetable already in this browser, or having just come from the landing —
+ * whose "Make my timetable" is a plain link to /timetable, and must not bounce.
+ * Only ever true AT /timetable: the SPA also resolves /timetable/about to this
+ * page when the static file is not there (offline, a dev server), and a
+ * redirect from it to itself would never end.
+ */
+function ttFirstVisit() {
+  if (!/^\/timetable\/?$/.test(window.location.pathname)) return false;
+  if (/#t=/.test(TT_BOOT_URL.hash)) return false;
+  const q = new URLSearchParams(TT_BOOT_URL.search);
+  if (["k", "mode", "import", "signin", "centre"].some(k => q.has(k))) return false;
+  try { if (localStorage.getItem(TT_STORE) || localStorage.getItem(TT_STORE_V1)) return false; } catch (_) { return false; }
+  try {
+    const r = document.referrer ? new URL(document.referrer) : null;
+    if (r && r.origin === window.location.origin && /^\/timetable(\/about\/?|-about\.html)$/.test(r.pathname)) return false;
+  } catch (_) {}
+  return true;
+}
+
+/**
+ * The route. Decides between the landing and the maker BEFORE the maker
+ * mounts, because the maker keeps a copy in this browser within 300ms of
+ * opening — and a first visit that wrote one would never be a first visit
+ * again. A signed-in member with a saved personal timetable is not new here.
+ * The landing is never a gate: if the check cannot be made, the maker opens.
+ */
 function TimetableMakerPage({ setPage }) {
+  const auth = useAuth() || {};
+  const [open, setOpen] = React.useState(() => !ttFirstVisit());
+  React.useEffect(() => {
+    if (open || auth.loading) return undefined;
+    const toLanding = () => window.location.replace("/timetable/about");
+    if (!auth.member) { toLanding(); return undefined; }
+    let live = true;
+    NGGApi.member.myTimetable()
+      .then(r => { if (live) { if (r && r.timetable) setOpen(true); else toLanding(); } })
+      .catch(() => { if (live) setOpen(true); });
+    return () => { live = false; };
+  }, [open, auth.loading, auth.member]);
+  if (!open) return <div className="tt-app" aria-busy="true"/>;
+  return <TtMaker setPage={setPage}/>;
+}
+
+function TtMaker({ setPage }) {
   const auth = useAuth() || {};
   const member = auth.member || null;
 

@@ -241,6 +241,9 @@ object-src 'none'"
   # Don't rewrite known asset paths or the API tree (its own .htaccess wins)
   # Sitemap is generated (static pages + published posts).
   RewriteRule ^sitemap\.xml$ api/public/sitemap.php [L]
+  # The Timetable Maker's landing is one prerendered file, not a folder: a
+  # timetable/ directory would turn the maker's own /timetable into a directory.
+  RewriteRule ^timetable/about/?$ timetable-about.html [L]
   RewriteRule ^(assets|uploads|api|vendor|apps-script|docs)/ - [L]
 
   # Everything else → index.html (SPA fallback)

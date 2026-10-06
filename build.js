@@ -300,6 +300,9 @@ async function build() {
     if (fs.existsSync(src)) copyDir(src, path.join(DIST, dir));
   }
 
+  // The Timetable Maker's landing, prerendered (served at /timetable/about by .htaccess).
+  require('./src/modules/timetable/landing/tt-landing-build').buildTimetableLanding({ root: ROOT, dist: DIST, esbuild, log });
+
   // Second build target: the Anchor Journal PWA (its own bundle + shell).
   await buildJournal(buildId, assets);
   for (const junk of ['api/storage/ngg.db', 'api/storage/ngg.db-wal', 'api/storage/ngg.db-shm', 'api/config.php']) {

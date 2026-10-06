@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Timetable Maker · NextGen Genius</title>
+<meta name="description" content="Type your classes the way you’d say them. See what’s on today and what’s next. Print a poster for the wall, put it on your lock screen, or add it to your calendar.">
+<link rel="canonical" href="https://next.afrovanguard.org.ng/timetable/about">
+<meta name="theme-color" content="#fbf7ed">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://next.afrovanguard.org.ng/timetable/about">
+<meta property="og:title" content="Timetable Maker · NextGen Genius">
+<meta property="og:description" content="Type your classes the way you’d say them. See what’s on today and what’s next. Print a poster for the wall, put it on your lock screen, or add it to your calendar.">
+<meta property="og:image" content="https://next.afrovanguard.org.ng/assets/timetable/landing/style-classic.png">
+<meta property="og:image:width" content="1744">
+<meta property="og:image:height" content="1232">
+<meta property="og:image:alt" content="A school week printed in the Classic style">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/assets/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="image" href="/assets/timetable/landing/style-classic.webp" type="image/webp" fetchpriority="high">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="/vendor/phosphor/phosphor.css">
+<style>
+/* ═══ Timetable Maker landing (/timetable/about) ════════════════════════════
+   Inlined into the prerendered page by tt-landing-build.js, so the page paints
+   from one request. Every colour is a token here and nowhere else; the values
+   are the handoff's (LANDING.md §2, TIMETABLE.md §9.1). */
+
+:root {
+  --tt-lp-ground: #fbf7ed;
+  --tt-lp-surface: #ffffff;
+  --tt-lp-ink: #0a1130;
+  --tt-lp-ink-2: #2a335c;
+  --tt-lp-soft: #5a6488;
+  --tt-lp-primary: #0c1432;
+  --tt-lp-primary-hover: #1c2a5e;
+  --tt-lp-link: #1c2a5e;
+  --tt-lp-gold: #f5b026;
+  --tt-lp-gold-ink: #7a5600;
+  --tt-lp-gold-tint: #fff3d1;
+  --tt-lp-line: #ebe7dc;
+  --tt-lp-line-bars: #e8e5dd;
+  --tt-lp-line-strong: #d6d4cc;
+  --tt-lp-subtle: #fbf9f3;
+  --tt-lp-on-navy: #f4f6ff;
+  --tt-lp-on-navy-soft: #b9c2e6;
+  --tt-lp-on-primary: #ffffff;
+  --tt-lp-head-glass: rgba(251, 247, 237, 0.94);
+  --tt-lp-navy-card: rgba(255, 255, 255, 0.06);
+  --tt-lp-navy-card-line: rgba(255, 255, 255, 0.12);
+  --tt-lp-gold-wash: rgba(245, 176, 38, 0.16);
+  --tt-lp-shadow-hero: 0 40px 80px -40px rgba(12, 20, 50, 0.45), 0 0 0 1px rgba(12, 20, 50, 0.08);
+  --tt-lp-shadow-fig: 0 0 0 1px rgba(12, 20, 50, 0.08), 0 20px 40px -28px rgba(12, 20, 50, 0.4);
+
+  --tt-lp-font-display: "Sora", system-ui, sans-serif;
+  --tt-lp-font-body: "Inter", system-ui, sans-serif;
+  --tt-lp-font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --tt-lp-max: 1200px;
+  --tt-lp-gutter: clamp(16px, 4vw, 32px);
+  --tt-lp-pad: clamp(48px, 7vw, 88px);
+  --tt-lp-poster-ratio: 872 / 616;
+}
+
+html { background: var(--tt-lp-ground); scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+body {
+  margin: 0; background: var(--tt-lp-ground); color: var(--tt-lp-ink);
+  font-family: var(--tt-lp-font-body); font-size: 16px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+/* The sticky header must not cover what an anchor link scrolls to. */
+[id] { scroll-margin-top: 80px; }
+a { color: var(--tt-lp-link); text-decoration: none; }
+a:hover { color: var(--tt-lp-primary); text-decoration: underline; }
+:focus-visible { outline: 3px solid var(--tt-lp-gold); outline-offset: 2px; }
+img { display: block; max-width: 100%; }
+h1, h2 { margin: 0; font-family: var(--tt-lp-font-display); font-weight: 800; text-wrap: balance; }
+p { margin: 0; }
+
+.tt-lp-skip {
+  position: absolute; left: 16px; top: -100px; z-index: 20; padding: 10px 16px; border-radius: 999px;
+  background: var(--tt-lp-primary); color: var(--tt-lp-on-primary); font-weight: 600;
+}
+.tt-lp-skip:focus { top: 12px; }
+
+.tt-lp-wrap { max-width: var(--tt-lp-max); margin: 0 auto; padding-left: var(--tt-lp-gutter); padding-right: var(--tt-lp-gutter); box-sizing: border-box; }
+
+/* ── Header ── */
+.tt-lp-head {
+  position: sticky; top: 0; z-index: 10; background: var(--tt-lp-head-glass);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-bottom: 1px solid var(--tt-lp-line);
+}
+.tt-lp-head .tt-lp-wrap { height: 64px; display: flex; align-items: center; gap: 16px; }
+/* The brand pushes the buttons right whether or not the anchor links are showing. */
+.tt-lp-brand { display: flex; align-items: center; gap: 10px; color: var(--tt-lp-ink); margin-right: auto; }
+.tt-lp-brand:hover { color: var(--tt-lp-ink); text-decoration: none; }
+.tt-lp-brand img { border-radius: 50%; }
+.tt-lp-brand span { font-family: var(--tt-lp-font-display); font-weight: 700; font-size: 16px; white-space: nowrap; }
+.tt-lp-anchors { display: flex; gap: 4px; margin-left: 16px; flex: 1; min-width: 0; overflow: hidden; }
+.tt-lp-anchors a { padding: 8px 12px; border-radius: 999px; font-size: 14px; font-weight: 500; color: var(--tt-lp-ink-2); white-space: nowrap; }
+.tt-lp-signin {
+  height: 40px; padding: 0 14px; display: inline-flex; align-items: center; border-radius: 999px;
+  font-size: 14px; font-weight: 600; color: var(--tt-lp-ink); white-space: nowrap;
+}
+.tt-lp-head .tt-lp-btn { height: 44px; padding: 0 18px; font-size: 14px; }
+/* The anchor links show from 860px (LANDING.md §2.1). The handoff's header
+   holds four things and they stop fitting on a phone: below 600px the wordmark
+   is hidden from sight (the link keeps it as its name) and below 400px so is
+   "Member sign in", which the maker's own Save offers. Nothing scrolls sideways. */
+@media (max-width: 859.98px) { .tt-lp-anchors { display: none; } }
+@media (max-width: 599.98px) {
+  .tt-lp-brand span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+@media (max-width: 399.98px) { .tt-lp-signin { display: none; } }
+
+/* ── Buttons ── */
+.tt-lp-btn {
+  height: 54px; padding: 0 24px; display: inline-flex; align-items: center; gap: 10px; border-radius: 999px;
+  background: var(--tt-lp-primary); color: var(--tt-lp-on-primary); font-size: 16px; font-weight: 600; white-space: nowrap; box-sizing: border-box;
+}
+.tt-lp-btn:hover { background: var(--tt-lp-primary-hover); color: var(--tt-lp-on-primary); text-decoration: none; }
+.tt-lp-btn--ghost { padding: 0 22px; background: var(--tt-lp-surface); border: 1px solid var(--tt-lp-line-strong); color: var(--tt-lp-ink); }
+.tt-lp-btn--ghost:hover { background: var(--tt-lp-surface); border-color: var(--tt-lp-primary); color: var(--tt-lp-ink); }
+.tt-lp-btns { display: flex; flex-wrap: wrap; gap: 12px; }
+
+/* ── Shared section parts ── */
+.tt-lp-sec { padding-top: var(--tt-lp-pad); padding-bottom: var(--tt-lp-pad); }
+.tt-lp-band { background: var(--tt-lp-surface); border-top: 1px solid var(--tt-lp-line); border-bottom: 1px solid var(--tt-lp-line); }
+.tt-lp-stack { display: flex; flex-direction: column; gap: 32px; }
+.tt-lp-intro { display: flex; flex-direction: column; gap: 14px; max-width: 640px; }
+.tt-lp-kicker {
+  font-family: var(--tt-lp-font-mono); font-size: 13px; font-weight: 600; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--tt-lp-gold-ink);
+}
+.tt-lp-h2 { font-size: clamp(30px, 4vw, 42px); line-height: 1.08; letter-spacing: -0.03em; }
+.tt-lp-text { color: var(--tt-lp-ink-2); font-size: 17px; text-wrap: pretty; }
+.tt-lp-tile {
+  width: 40px; height: 40px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 20px; flex-shrink: 0; background: var(--tt-lp-gold-tint); color: var(--tt-lp-gold-ink);
+}
+
+/* ── Hero ── */
+.tt-lp-hero {
+  padding-top: clamp(40px, 7vw, 88px); padding-bottom: clamp(40px, 6vw, 72px);
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: clamp(32px, 5vw, 64px); align-items: center;
+}
+.tt-lp-hero-copy { display: flex; flex-direction: column; gap: 22px; max-width: 540px; }
+.tt-lp-pill {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+  background: var(--tt-lp-gold-tint); color: var(--tt-lp-gold-ink); font-size: 13px; font-weight: 600;
+}
+.tt-lp-h1 { font-size: clamp(40px, 6vw, 64px); line-height: 1.02; letter-spacing: -0.035em; }
+.tt-lp-lead { font-size: clamp(17px, 1.6vw, 19px); color: var(--tt-lp-ink-2); text-wrap: pretty; }
+.tt-lp-note { font-size: 14px; color: var(--tt-lp-soft); }
+.tt-lp-hero-fig { margin: 0; display: flex; flex-direction: column; gap: 14px; }
+.tt-lp-poster { border-radius: 14px; overflow: hidden; background: var(--tt-lp-surface); box-shadow: var(--tt-lp-shadow-hero); }
+.tt-lp-poster img, .tt-lp-style-img img { width: 100%; height: auto; aspect-ratio: var(--tt-lp-poster-ratio); }
+.tt-lp-pick { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.tt-lp-pick[hidden] { display: none; }
+.tt-lp-pick button {
+  height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--tt-lp-line-strong); background: var(--tt-lp-surface);
+  color: var(--tt-lp-ink); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+/* Selected is a 2px ink border; the padding gives back the extra pixel so the label does not move. */
+.tt-lp-pick button[aria-checked="true"] { border: 2px solid var(--tt-lp-primary); padding: 0 13px; }
+
+/* ── How it works ── */
+.tt-lp-how { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: clamp(32px, 5vw, 64px); align-items: start; }
+.tt-lp-how .tt-lp-intro { max-width: 460px; }
+.tt-lp-examples { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.tt-lp-example {
+  display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; border-radius: 16px;
+  border: 1px solid var(--tt-lp-line); background: var(--tt-lp-subtle);
+}
+.tt-lp-typed { display: flex; align-items: center; gap: 10px; font-family: var(--tt-lp-font-mono); font-size: 15px; color: var(--tt-lp-ink); overflow-wrap: anywhere; }
+.tt-lp-typed .ph { color: var(--tt-lp-soft); font-size: 18px; flex-shrink: 0; }
+.tt-lp-parts { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 28px; margin: 0; list-style: none; }
+.tt-lp-part {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--tt-lp-surface);
+  border: 1px solid var(--tt-lp-line-bars); font-size: 13px; font-weight: 600; color: var(--tt-lp-ink-2);
+}
+.tt-lp-part .ph { color: var(--tt-lp-gold-ink); }
+
+/* ── Styles ── */
+.tt-lp-styles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 20px; }
+.tt-lp-style { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.tt-lp-style-img { border-radius: 12px; overflow: hidden; background: var(--tt-lp-surface); box-shadow: var(--tt-lp-shadow-fig); }
+.tt-lp-style figcaption { display: flex; flex-direction: column; gap: 2px; }
+.tt-lp-style b { font-size: 16px; font-weight: 700; }
+.tt-lp-style span { font-size: 14px; color: var(--tt-lp-soft); }
+
+/* ── Downloads (navy band) ── */
+.tt-lp-navy { background: var(--tt-lp-primary); color: var(--tt-lp-on-navy); }
+.tt-lp-navy .tt-lp-kicker { color: var(--tt-lp-gold); }
+.tt-lp-formats { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 14px; }
+.tt-lp-format {
+  display: flex; flex-direction: column; gap: 10px; padding: 20px; border-radius: 16px;
+  background: var(--tt-lp-navy-card); border: 1px solid var(--tt-lp-navy-card-line);
+}
+.tt-lp-format .tt-lp-tile { background: var(--tt-lp-gold-wash); color: var(--tt-lp-gold); }
+.tt-lp-format b { font-size: 16px; font-weight: 700; }
+.tt-lp-format span:last-child { font-size: 14px; color: var(--tt-lp-on-navy-soft); text-wrap: pretty; }
+
+/* ── Start here ── */
+.tt-lp-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 14px; }
+.tt-lp-mode {
+  display: flex; flex-direction: column; gap: 12px; padding: 20px; min-height: 150px; box-sizing: border-box; border-radius: 16px;
+  background: var(--tt-lp-surface); border: 1px solid var(--tt-lp-line); color: var(--tt-lp-ink);
+}
+.tt-lp-mode:hover { border-color: var(--tt-lp-primary); color: var(--tt-lp-ink); text-decoration: none; }
+.tt-lp-mode b { font-size: 17px; font-weight: 700; }
+.tt-lp-mode-sub { font-size: 14px; color: var(--tt-lp-soft); }
+.tt-lp-mode-ex { margin-top: auto; font-family: var(--tt-lp-font-mono); font-size: 12.5px; color: var(--tt-lp-ink-2); overflow-wrap: anywhere; }
+
+/* ── Saving ── */
+.tt-lp-keep { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; }
+.tt-lp-keepcard {
+  display: flex; flex-direction: column; gap: 14px; padding: 24px; border-radius: 20px;
+  background: var(--tt-lp-subtle); border: 1px solid var(--tt-lp-line);
+}
+.tt-lp-keephead { display: flex; align-items: center; gap: 10px; }
+.tt-lp-keephead .ph { font-size: 24px; color: var(--tt-lp-link); }
+.tt-lp-keephead b { font-size: 18px; font-weight: 700; }
+.tt-lp-points { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 15px; color: var(--tt-lp-ink-2); }
+.tt-lp-points li { display: flex; gap: 10px; }
+.tt-lp-points .ph { font-size: 18px; color: var(--tt-lp-soft); flex-shrink: 0; margin-top: 2px; }
+.tt-lp-keepcard > a { font-size: 14px; font-weight: 600; }
+
+/* ── Closing ── */
+.tt-lp-cta { padding-top: clamp(56px, 8vw, 96px); padding-bottom: clamp(56px, 8vw, 96px); display: flex; flex-direction: column; align-items: center; gap: 20px; text-align: center; }
+.tt-lp-cta .tt-lp-h2 { font-size: clamp(30px, 4.5vw, 48px); line-height: 1.05; max-width: 720px; }
+.tt-lp-cta .tt-lp-btns { justify-content: center; }
+
+/* ── Footer ── */
+.tt-lp-foot { border-top: 1px solid var(--tt-lp-line); }
+.tt-lp-foot .tt-lp-wrap {
+  padding-top: 24px; padding-bottom: 24px; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center;
+  justify-content: space-between; font-size: 14px; color: var(--tt-lp-soft);
+}
+.tt-lp-foot-brand { display: flex; align-items: center; gap: 10px; }
+.tt-lp-foot-brand img { border-radius: 50%; }
+.tt-lp-foot nav { display: flex; flex-wrap: wrap; gap: 16px; }
+/* Footer links sit on a 44px target without changing how the row reads. */
+.tt-lp-foot nav a { display: inline-flex; align-items: center; min-height: 44px; }
+
+</style>
+</head>
+<body>
+<a class="tt-lp-skip" href="#tt-lp-main">Skip to content</a>
+<header class="tt-lp-head">
+  <div class="tt-lp-wrap">
+    <a class="tt-lp-brand" href="/"><img src="/assets/logo.png" alt="" width="32" height="32"><span>Timetable Maker</span></a>
+    <nav class="tt-lp-anchors" aria-label="Page">
+      <a href="#how">How it works</a><a href="#styles">Styles</a><a href="#downloads">Downloads</a><a href="#keep">Saving</a>
+    </nav>
+    <a class="tt-lp-signin" href="/timetable?signin=1">Member sign in</a>
+    <a class="tt-lp-btn" href="/timetable">Make my timetable</a>
+  </div>
+</header>
+<main id="tt-lp-main">
+  <section class="tt-lp-wrap tt-lp-hero" aria-labelledby="hero-title">
+    <div class="tt-lp-hero-copy">
+      <span class="tt-lp-pill"><i class="ph ph-sparkle" aria-hidden="true"></i>Free · no account needed</span>
+      <h1 class="tt-lp-h1" id="hero-title">Your whole week on one page.</h1>
+      <p class="tt-lp-lead">Type your classes the way you’d say them. See what’s on today and what’s next. Print a poster for the wall, put it on your lock screen, or add it to your calendar.</p>
+      <div class="tt-lp-btns">
+        <a class="tt-lp-btn" href="/timetable">Make my timetable<i class="ph ph-arrow-right" aria-hidden="true"></i></a>
+        <a class="tt-lp-btn tt-lp-btn--ghost" href="/timetable?import=centre"><i class="ph ph-map-pin" aria-hidden="true"></i>Start from my NGG centre</a>
+      </div>
+      <span class="tt-lp-note">Works on phones and computers. Nothing to install.</span>
+    </div>
+    <figure class="tt-lp-hero-fig">
+      <div class="tt-lp-poster"><picture><source type="image/webp" srcset="/assets/timetable/landing/style-classic.webp" data-tt-lp-src><img src="/assets/timetable/landing/style-classic.png" alt="A school week printed in the Classic style" width="872" height="616" fetchpriority="high" data-tt-lp-img></picture></div>
+      <div class="tt-lp-pick" role="radiogroup" aria-label="Preview a style" data-tt-lp-pick hidden>
+        <button type="button" role="radio" aria-checked="true" tabindex="0" data-look="classic">Classic</button><button type="button" role="radio" aria-checked="false" tabindex="-1" data-look="bold">Bold</button><button type="button" role="radio" aria-checked="false" tabindex="-1" data-look="minimal">Minimal</button><button type="button" role="radio" aria-checked="false" tabindex="-1" data-look="notebook">Notebook</button><button type="button" role="radio" aria-checked="false" tabindex="-1" data-look="editorial">Editorial</button>
+      </div>
+    </figure>
+  </section>
+
+  <section id="how" class="tt-lp-band" aria-labelledby="how-title">
+    <div class="tt-lp-wrap tt-lp-sec tt-lp-how">
+      <div class="tt-lp-intro">
+        <span class="tt-lp-kicker">How it works</span>
+        <h2 class="tt-lp-h2" id="how-title">Type it the way you’d say it.</h2>
+        <p class="tt-lp-text">One line adds a class to every day it repeats. Leave the time out and it goes in your next free slot. Add “this week” for a one-off.</p>
+      </div>
+      <ol class="tt-lp-examples">
+        <li class="tt-lp-example">
+          <span class="tt-lp-typed"><i class="ph ph-keyboard" aria-hidden="true"></i>Maths Mon Wed 8–9 room 4</span>
+          <ul class="tt-lp-parts" aria-label="What it understood"><li class="tt-lp-part"><i class="ph ph-book-open" aria-hidden="true"></i>Maths</li><li class="tt-lp-part"><i class="ph ph-calendar-blank" aria-hidden="true"></i>Mon Wed</li><li class="tt-lp-part"><i class="ph ph-clock" aria-hidden="true"></i>08:00–09:00</li><li class="tt-lp-part"><i class="ph ph-map-pin" aria-hidden="true"></i>Room 4</li></ul>
+        </li>
+        <li class="tt-lp-example">
+          <span class="tt-lp-typed"><i class="ph ph-keyboard" aria-hidden="true"></i>Football Tue Thu 4–5:30pm at the field</span>
+          <ul class="tt-lp-parts" aria-label="What it understood"><li class="tt-lp-part"><i class="ph ph-person-simple-run" aria-hidden="true"></i>Football</li><li class="tt-lp-part"><i class="ph ph-calendar-blank" aria-hidden="true"></i>Tue Thu</li><li class="tt-lp-part"><i class="ph ph-clock" aria-hidden="true"></i>16:00–17:30</li><li class="tt-lp-part"><i class="ph ph-map-pin" aria-hidden="true"></i>The field</li></ul>
+        </li>
+        <li class="tt-lp-example">
+          <span class="tt-lp-typed"><i class="ph ph-keyboard" aria-hidden="true"></i>Maths test Thu 10am this week</span>
+          <ul class="tt-lp-parts" aria-label="What it understood"><li class="tt-lp-part"><i class="ph ph-book-open" aria-hidden="true"></i>Maths test</li><li class="tt-lp-part"><i class="ph ph-calendar-dots" aria-hidden="true"></i>Only Thu 8 Oct</li><li class="tt-lp-part"><i class="ph ph-clock" aria-hidden="true"></i>10:00–10:40</li></ul>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="styles" class="tt-lp-wrap tt-lp-sec tt-lp-stack" aria-labelledby="styles-title">
+    <div class="tt-lp-intro">
+      <span class="tt-lp-kicker">Styles</span>
+      <h2 class="tt-lp-h2" id="styles-title">Pick a style, then the colours.</h2>
+      <p class="tt-lp-text">Each style changes the type, the shape of each class and the lines. Every style works with Paper, Midnight, Kente and Chalkboard colours.</p>
+    </div>
+    <div class="tt-lp-styles">
+      <figure class="tt-lp-style"><div class="tt-lp-style-img"><picture><source type="image/webp" srcset="/assets/timetable/landing/style-classic.webp"><img src="/assets/timetable/landing/style-classic.png" alt="A school week printed in the Classic style" width="872" height="616" loading="lazy" decoding="async"></picture></div><figcaption><b>Classic</b><span>Rounded blocks, bold sans</span></figcaption></figure>
+      <figure class="tt-lp-style"><div class="tt-lp-style-img"><picture><source type="image/webp" srcset="/assets/timetable/landing/style-bold.webp"><img src="/assets/timetable/landing/style-bold.png" alt="A school week printed in the Bold style" width="872" height="616" loading="lazy" decoding="async"></picture></div><figcaption><b>Bold</b><span>Heavy outlines, poster type</span></figcaption></figure>
+      <figure class="tt-lp-style"><div class="tt-lp-style-img"><picture><source type="image/webp" srcset="/assets/timetable/landing/style-minimal.webp"><img src="/assets/timetable/landing/style-minimal.png" alt="A school week printed in the Minimal style" width="872" height="616" loading="lazy" decoding="async"></picture></div><figcaption><b>Minimal</b><span>Outlines and lots of air</span></figcaption></figure>
+      <figure class="tt-lp-style"><div class="tt-lp-style-img"><picture><source type="image/webp" srcset="/assets/timetable/landing/style-notebook.webp"><img src="/assets/timetable/landing/style-notebook.png" alt="A school week printed in the Notebook style" width="872" height="616" loading="lazy" decoding="async"></picture></div><figcaption><b>Notebook</b><span>Handwritten on ruled paper</span></figcaption></figure>
+      <figure class="tt-lp-style"><div class="tt-lp-style-img"><picture><source type="image/webp" srcset="/assets/timetable/landing/style-editorial.webp"><img src="/assets/timetable/landing/style-editorial.png" alt="A school week printed in the Editorial style" width="872" height="616" loading="lazy" decoding="async"></picture></div><figcaption><b>Editorial</b><span>Serif headings, fine rules</span></figcaption></figure>
+    </div>
+  </section>
+
+  <section id="downloads" class="tt-lp-navy" aria-labelledby="dl-title">
+    <div class="tt-lp-wrap tt-lp-sec tt-lp-stack">
+      <div class="tt-lp-intro">
+        <span class="tt-lp-kicker">Downloads</span>
+        <h2 class="tt-lp-h2" id="dl-title">One timetable, laid out for where you’ll use it.</h2>
+      </div>
+      <ul class="tt-lp-formats">
+        <li class="tt-lp-format"><span class="tt-lp-tile"><i class="ph ph-file-pdf" aria-hidden="true"></i></span><b>Poster PDF</b><span>A4 or Letter, for the wall or the fridge</span></li>
+        <li class="tt-lp-format"><span class="tt-lp-tile"><i class="ph ph-image" aria-hidden="true"></i></span><b>Share image</b><span>Portrait card sized for WhatsApp and status</span></li>
+        <li class="tt-lp-format"><span class="tt-lp-tile"><i class="ph ph-device-mobile" aria-hidden="true"></i></span><b>Phone wallpaper</b><span>A lock-screen list that leaves room for the clock</span></li>
+        <li class="tt-lp-format"><span class="tt-lp-tile"><i class="ph ph-calendar-plus" aria-hidden="true"></i></span><b>Calendar file</b><span>Every class repeats in your phone’s calendar</span></li>
+        <li class="tt-lp-format"><span class="tt-lp-tile"><i class="ph ph-link-simple" aria-hidden="true"></i></span><b>Share link</b><span>Others get their own copy to change</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="tt-lp-wrap tt-lp-sec tt-lp-stack" aria-labelledby="modes-title">
+    <div class="tt-lp-intro">
+      <span class="tt-lp-kicker">Start here</span>
+      <h2 class="tt-lp-h2" id="modes-title">What’s your week like?</h2>
+    </div>
+    <div class="tt-lp-modes">
+      <a class="tt-lp-mode" href="/timetable?mode=school"><span class="tt-lp-tile"><i class="ph ph-backpack" aria-hidden="true"></i></span><b>School</b><span class="tt-lp-mode-sub">Lessons on weekdays, maybe NGG on Saturday</span><span class="tt-lp-mode-ex">Maths Mon Wed 8–8:40 Room 4</span></a>
+      <a class="tt-lp-mode" href="/timetable?mode=uni"><span class="tt-lp-tile"><i class="ph ph-graduation-cap" aria-hidden="true"></i></span><b>University</b><span class="tt-lp-mode-sub">Lectures, labs and tutorials</span><span class="tt-lp-mode-ex">MTH 201 lecture Tue Thu 10–12 in LT2</span></a>
+      <a class="tt-lp-mode" href="/timetable?mode=revision"><span class="tt-lp-tile"><i class="ph ph-exam" aria-hidden="true"></i></span><b>Exam revision</b><span class="tt-lp-mode-sub">Plan study around what’s fixed</span><span class="tt-lp-mode-ex">Past questions Sat 9–11am</span></a>
+      <a class="tt-lp-mode" href="/timetable?mode=routine"><span class="tt-lp-tile"><i class="ph ph-sneaker-move" aria-hidden="true"></i></span><b>Activities &amp; routines</b><span class="tt-lp-mode-sub">Clubs, sport, chores, worship</span><span class="tt-lp-mode-ex">Football Tue Thu 4–5:30pm at the field</span></a>
+    </div>
+  </section>
+
+  <section id="keep" class="tt-lp-band" aria-labelledby="keep-title">
+    <div class="tt-lp-wrap tt-lp-sec tt-lp-stack">
+      <div class="tt-lp-intro">
+        <span class="tt-lp-kicker">Saving</span>
+        <h2 class="tt-lp-h2" id="keep-title">Keep it, with or without an NGG account.</h2>
+        <p class="tt-lp-text">Your timetable stays in this browser until you save it.</p>
+      </div>
+      <div class="tt-lp-keep">
+        <div class="tt-lp-keepcard">
+          <span class="tt-lp-keephead"><i class="ph ph-identification-badge" aria-hidden="true"></i><b>I’m an NGG member</b></span>
+          <ul class="tt-lp-points">
+            <li><i class="ph ph-house-line" aria-hidden="true"></i>It shows on your member dashboard.</li>
+            <li><i class="ph ph-users-three" aria-hidden="true"></i>Your parent or guardian sees it in the family app.</li>
+            <li><i class="ph ph-arrows-clockwise" aria-hidden="true"></i>If your centre changes a session, you’re asked before anything changes here.</li>
+          </ul>
+          <span class="tt-lp-note">Sign in with your member ID or email and a one-time code.</span>
+        </div>
+        <div class="tt-lp-keepcard">
+          <span class="tt-lp-keephead"><i class="ph ph-envelope-simple" aria-hidden="true"></i><b>I’m not a member</b></span>
+          <ul class="tt-lp-points">
+            <li><i class="ph ph-link-simple" aria-hidden="true"></i>We email you a link to your timetable.</li>
+            <li><i class="ph ph-devices" aria-hidden="true"></i>Open it on any phone or computer to keep editing.</li>
+            <li><i class="ph ph-shield-check" aria-hidden="true"></i>No membership needed.</li>
+          </ul>
+          <a href="/join">Curious about NGG? See how to join</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="tt-lp-wrap tt-lp-cta" aria-labelledby="cta-title">
+    <h2 class="tt-lp-h2" id="cta-title">Start with a blank week, or your centre’s sessions.</h2>
+    <div class="tt-lp-btns">
+      <a class="tt-lp-btn" href="/timetable">Make my timetable<i class="ph ph-arrow-right" aria-hidden="true"></i></a>
+      <a class="tt-lp-btn tt-lp-btn--ghost" href="/timetable?import=paste"><i class="ph ph-clipboard-text" aria-hidden="true"></i>Paste one I already have</a>
+    </div>
+  </section>
+</main>
+<footer class="tt-lp-foot">
+  <div class="tt-lp-wrap">
+    <span class="tt-lp-foot-brand"><img src="/assets/logo.png" alt="" width="24" height="24">NextGen Genius · nextgengenius.ng</span>
+    <nav aria-label="Footer"><a href="/privacy">Privacy</a><a href="/join">Join NGG</a><a href="/contact">Contact</a></nav>
+  </div>
+</footer>
+<script>(function () {
+  var g = document.querySelector('[data-tt-lp-pick]');
+  if (!g) return;
+  var btns = Array.prototype.slice.call(g.querySelectorAll('[role=radio]'));
+  var img = document.querySelector('[data-tt-lp-img]'), src = document.querySelector('[data-tt-lp-src]');
+  function pick(b, focus) {
+    btns.forEach(function (x) { var on = x === b; x.setAttribute('aria-checked', on ? 'true' : 'false'); x.tabIndex = on ? 0 : -1; });
+    var k = b.getAttribute('data-look');
+    src.srcset = '/assets/timetable/landing/style-' + k + '.webp';
+    img.src = '/assets/timetable/landing/style-' + k + '.png';
+    img.alt = 'A school week printed in the ' + b.textContent + ' style';
+    if (focus) b.focus();
+  }
+  btns.forEach(function (b, i) {
+    b.addEventListener('click', function () { pick(b, false); });
+    b.addEventListener('keydown', function (e) {
+      var n = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+      if (n) { e.preventDefault(); pick(btns[(i + n + btns.length) % btns.length], true); }
+      else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); pick(btns[e.key === 'Home' ? 0 : btns.length - 1], true); }
+    });
+  });
+  g.hidden = false;
+})();</script>
+</body>
+</html>
