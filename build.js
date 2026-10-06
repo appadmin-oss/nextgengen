@@ -72,6 +72,7 @@ const ORDER = [
   'page-book.jsx',
   'page-analytics.jsx',
   'page-designer.jsx',
+  'page-portals.jsx',
   'page-admin.jsx',
   'app.jsx',
 ];
