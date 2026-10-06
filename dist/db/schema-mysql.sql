@@ -3015,3 +3015,14 @@ CREATE TABLE IF NOT EXISTS id_photo_asks (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO schema_version (version) VALUES (132) ON DUPLICATE KEY UPDATE version = version;
+
+-- 133 · ID Card Studio: the design each card type prints with, and which channels a photo ask reached.
+CREATE TABLE IF NOT EXISTS id_designs (
+  kind VARCHAR(16) PRIMARY KEY,
+  templateId VARCHAR(64) NOT NULL DEFAULT '',
+  setBy VARCHAR(64) NOT NULL DEFAULT '',
+  setAt VARCHAR(32) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE id_photo_asks ADD COLUMN channels VARCHAR(255) NOT NULL DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (133) ON DUPLICATE KEY UPDATE version = version;

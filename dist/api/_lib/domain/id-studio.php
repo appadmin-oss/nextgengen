@@ -5,16 +5,24 @@
  *
  * The rows to print come from the existing card ops (admin.mcards.data,
  * admin.cards.data, admin.vcards.data) and runs are recorded by
- * admin.card.run.record. This adds the four things nothing stored:
+ * admin.card.run.record. This adds what nothing stored:
  *
  *   - who has ever had a card, as one map, so the queue can say "New" or
- *     "Reprint" without a history call per person (that would be the N+1
- *     CLAUDE.md §6 calls a defect);
- *   - a reprint QUEUE: "Queue a reprint", "Reprint this run" and the cards that
- *     jammed at the cutter all land in id_reprints, and a print closes them;
- *   - a photo request for ONE person, where the only ask was a bulk sweep;
- *   - marking cards in an already-recorded run as failed, because the operator
- *     only knows which jammed once the sheet is out of the printer.
+ *     "Reprint" without a history call per person (the N+1 CLAUDE.md §6
+ *     calls a defect);
+ *   - a reprint QUEUE (id_reprints): "Queue a reprint", "Reprint this run" and
+ *     the cards that jammed at the cutter all land there; a print closes them;
+ *   - the DESIGN IN USE per card type (id_designs). Industry practice for card
+ *     printing (CardPresso, Zebra, Entrust): print from one assigned,
+ *     published, versioned template, and log the version. Nothing assigned
+ *     means the built-in standard card. Publishing a new version of the
+ *     assigned template moves every future print to it; the log keeps the
+ *     version each run actually used;
+ *   - a PHOTO REQUEST that reaches the people who can act on it — the person
+ *     (or a child's guardians) and the NGG admins for their centre — with a
+ *     quiet period so nobody is asked twice in a week by two coordinators;
+ *   - marking cards in an already-recorded run as failed;
+ *   - printed IDs minted for exactly the members about to be printed.
  *
  * Capabilities follow the data: a participant is Summer School's (`summer`),
  * a member or volunteer belongs to `people`. Writes are checked per row, so a
@@ -23,6 +31,9 @@
 
 const IDS_SUBJECTS = ['member', 'student', 'volunteer'];
 const IDS_BATCH_MAX = 600;      // the same ceiling as a recorded run (CRUN_MAX_ISSUES)
+const IDS_ASK_MAX = 200;        // photo asks in one press
+const IDS_ASK_QUIET_DAYS = 3;   // nobody is asked again inside this window unless the operator insists
+const IDS_ASK_DIGEST_NAMES = 20; // names listed in the admins' notice; the rest are counted
 const IDS_WHY_MAX = 80;
 
 /** The capability that owns a subject's card. */
@@ -32,20 +43,40 @@ function ids_can(array $requester, string $subjectType): bool {
     return in_array($subjectType, IDS_SUBJECTS, true) && in_array(ids_cap_for($subjectType), member_effective_caps($requester), true);
 }
 
+/** The assigned design for a card type, with its published front (and paired back) — or null for the standard card. */
+function ids_design_for(string $kind): ?array {
+    $d = db_row('SELECT * FROM id_designs WHERE kind = ? LIMIT 1', [$kind]);
+    if (!$d || (string)$d['templateId'] === '') return null;
+    $t = db_row('SELECT * FROM card_templates WHERE templateId = ? LIMIT 1', [(string)$d['templateId']]);
+    $pub = $t ? json_decode((string)($t['publishedJson'] ?? ''), true) : null;
+    if (!$t || !$pub) return null;   // retired or unpublished since: fall back, never print a draft
+    $out = ['templateId' => (string)$t['templateId'], 'name' => (string)$t['name'], 'version' => (int)$t['version'],
+            'wMm' => (float)($pub['wMm'] ?? 54), 'hMm' => (float)($pub['hMm'] ?? 85), 'published' => $pub, 'back' => null];
+    $pairId = (string)($t['pairId'] ?? '');
+    if ($pairId !== '') {
+        $b = db_row('SELECT * FROM card_templates WHERE templateId = ? LIMIT 1', [$pairId]);
+        $bp = $b ? json_decode((string)($b['publishedJson'] ?? ''), true) : null;
+        if ($b && $bp) $out['back'] = ['templateId' => (string)$b['templateId'], 'name' => (string)$b['name'], 'version' => (int)$b['version'], 'published' => $bp];
+    }
+    return $out;
+}
+
 /**
- * Everything the queue needs to sort its rows, in three grouped queries.
+ * Everything the queue needs, in grouped queries:
+ *   issued   "type:id" => latest issue that counts { at, displayId, runId, version, ok }
+ *   reprints "type:id" => { why, at }      open requests
+ *   asked    "type:id" => { at, channels } the last photo request
+ *   designs  kind => assigned design | null, choices kind => published fronts
  * A PROOF is not a card anybody holds, and neither is one that failed at the
  * cutter, so neither counts as "already has a card" — or a proofed person
  * would silently drop out of the queue they were proofed for.
- *   issued  "type:id" => { at, displayId, runId, version, ok }  (the LATEST issue)
- *   reprints "type:id" => { why, at }                            (open requests)
- *   asked   "type:id" => at                                      (photo asks)
  * Only subjects the caller may print are included.
  */
 function admin_ids_state(array $p): array {
     $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
     $types = array_values(array_filter(IDS_SUBJECTS, fn($t) => ids_can($g['requester'], $t)));
-    if (!$types) return ['ok' => true, 'issued' => (object)[], 'reprints' => (object)[], 'asked' => (object)[], 'types' => []];
+    $empty = ['ok' => true, 'issued' => (object)[], 'reprints' => (object)[], 'asked' => (object)[], 'designs' => (object)[], 'choices' => (object)[], 'types' => []];
+    if (!$types) return $empty;
     $ph = implode(',', array_fill(0, count($types), '?'));
 
     $issued = [];
@@ -67,10 +98,44 @@ function admin_ids_state(array $p): array {
         $reprints[$r['subjectType'] . ':' . $r['subjectId']] = ['why' => (string)$r['why'], 'at' => (string)$r['requestedAt']];
     }
     $asked = [];
-    foreach (db_all("SELECT subjectType, subjectId, MAX(askedAt) at FROM id_photo_asks WHERE subjectType IN ($ph) GROUP BY subjectType, subjectId", $types) as $r) {
-        $asked[$r['subjectType'] . ':' . $r['subjectId']] = (string)$r['at'];
+    foreach (db_all("SELECT a.subjectType, a.subjectId, a.askedAt, a.channels FROM id_photo_asks a
+                     JOIN (SELECT subjectType, subjectId, MAX(id) mid FROM id_photo_asks WHERE subjectType IN ($ph) GROUP BY subjectType, subjectId) last
+                       ON last.mid = a.id", $types) as $r) {
+        $asked[$r['subjectType'] . ':' . $r['subjectId']] = ['at' => (string)$r['askedAt'], 'channels' => json_decode((string)($r['channels'] ?? ''), true) ?: []];
     }
-    return ['ok' => true, 'issued' => (object)$issued, 'reprints' => (object)$reprints, 'asked' => (object)$asked, 'types' => $types];
+    $designs = []; $choices = [];
+    foreach ($types as $t) {
+        $designs[$t] = ids_design_for($t);
+        $choices[$t] = array_map(fn($r) => ['templateId' => (string)$r['templateId'], 'name' => (string)$r['name'], 'version' => (int)$r['version'], 'paired' => (string)($r['pairId'] ?? '') !== ''],
+            db_all("SELECT templateId, name, version, pairId FROM card_templates WHERE kind = ? AND face IN ('single','front') AND publishedJson IS NOT NULL AND publishedJson != '' ORDER BY name LIMIT 100", [$t]));
+    }
+    return ['ok' => true, 'issued' => (object)$issued, 'reprints' => (object)$reprints, 'asked' => (object)$asked,
+            'designs' => (object)$designs, 'choices' => (object)$choices, 'types' => $types];
+}
+
+/**
+ * Assign the design a card type prints with. '' goes back to the standard
+ * card. Only a PUBLISHED front of the same kind may be assigned — a draft is
+ * not something anybody may print.
+ */
+function admin_ids_design_set(array $p): array {
+    $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
+    $kind = (string)($p['kind'] ?? '');
+    if (!in_array($kind, IDS_SUBJECTS, true)) return ['ok' => false, 'error' => 'bad_kind'];
+    if (!ids_can($g['requester'], $kind)) return ['ok' => false, 'error' => 'forbidden'];
+    $tid = trim((string)($p['templateId'] ?? ''));
+    if ($tid !== '') {
+        $t = db_row('SELECT kind, face, publishedJson FROM card_templates WHERE templateId = ? LIMIT 1', [$tid]);
+        if (!$t) return ['ok' => false, 'error' => 'template_not_found'];
+        if ((string)$t['kind'] !== $kind) return ['ok' => false, 'error' => 'wrong_kind', 'message' => 'That design is for a different kind of card.'];
+        if ((string)($t['face'] ?? 'single') === 'back') return ['ok' => false, 'error' => 'is_back', 'message' => 'Assign the front; its paired back comes with it.'];
+        if (trim((string)($t['publishedJson'] ?? '')) === '') return ['ok' => false, 'error' => 'not_published', 'message' => 'Publish the design in the Design Studio first.'];
+    }
+    $by = (string)$g['requester']['memberId'];
+    if (db_row('SELECT kind FROM id_designs WHERE kind = ?', [$kind])) db_update('id_designs', ['templateId' => $tid, 'setBy' => $by, 'setAt' => now_iso()], ['kind' => $kind]);
+    else db_insert('id_designs', ['kind' => $kind, 'templateId' => $tid, 'setBy' => $by, 'setAt' => now_iso()]);
+    audit('ids.design.set', $by, $tid, ['kind' => $kind], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'design' => ids_design_for($kind)];
 }
 
 /** Validate a list of {subjectType, subjectId[, why]} BEFORE any write; refuse per row on capability. */
@@ -139,28 +204,146 @@ function admin_ids_run_failed(array $p): array {
     return ['ok' => true, 'marked' => $marked, 'failed' => $failed, 'requeued' => (int)($re['added'] ?? 0) + (int)($re['updated'] ?? 0), 'refused' => $v['refused']];
 }
 
+
+/* ── Photo requests ───────────────────────────────────────────────────────── */
+
+/** The person behind a subject, for a photo request: name, centre, and who can be told. */
+function ids_subject_contact(string $t, string $id): ?array {
+    if ($t === 'student') {
+        $s = db_row('SELECT studentId, fullName, centre, parentEmail, photoUrl FROM summer_students WHERE studentId = ? LIMIT 1', [$id]);
+        return $s ? ['name' => (string)$s['fullName'], 'centre' => (string)($s['centre'] ?? ''), 'email' => '', 'guardian' => (string)($s['parentEmail'] ?? ''), 'photo' => (string)($s['photoUrl'] ?? ''), 'row' => $s] : null;
+    }
+    if ($t === 'volunteer') {
+        $v = db_row('SELECT volunteerId, fullName, centre, email, photoUrl FROM volunteers WHERE volunteerId = ? LIMIT 1', [$id]);
+        return $v ? ['name' => (string)$v['fullName'], 'centre' => (string)($v['centre'] ?? ''), 'email' => (string)($v['email'] ?? ''), 'guardian' => '', 'photo' => (string)($v['photoUrl'] ?? ''), 'row' => $v] : null;
+    }
+    $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
+    return $m ? ['name' => (string)$m['fullName'], 'centre' => (string)($m['centre'] ?? ''), 'email' => (string)($m['email'] ?? ''), 'guardian' => '', 'photo' => (string)($m['photoUrl'] ?? ''), 'row' => $m] : null;
+}
+
+/** One email in the house template. Never throws: a mail that fails is a channel that did not work, not a failed request. */
+function ids_mail(string $to, string $title, string $intro, string $body, string $ctaLabel = '', string $ctaPath = ''): bool {
+    if ($to === '' || !filter_var($to, FILTER_VALIDATE_EMAIL) || !function_exists('send_mail') || !function_exists('email_template')) return false;
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    try {
+        $html = email_template(['title' => $title, 'eyebrow' => 'Next Generation Genius', 'intro' => $intro,
+            'bodyHtml' => '<p style="margin:0 0 10px">' . nl2br(esc_html($body)) . '</p>',
+            'ctaLabel' => $ctaLabel, 'ctaUrl' => $ctaPath !== '' ? $origin . $ctaPath : '']);
+        return (bool)@send_mail($to, $title, $html);
+    } catch (\Throwable $e) { error_log('[ids.mail] ' . $e->getMessage()); return false; }
+}
+
 /**
- * Ask for a photo for ONE person. A participant's guardian is emailed the
- * reshoot link the bulk sweep uses. For a member or volunteer there is no
- * guardian channel here yet, so the ask is recorded and the answer says it
- * was not sent — the screen must not claim a message went out.
+ * Ask for a photo, for one person or many (§3.1 "Ask for photo"; the
+ * blocked filter's "Ask everyone").
+ *
+ * Who hears, by who can act:
+ *   - a member: the member (in-app and email, pointing at the dashboard's
+ *     Edit profile, where the photo uploads), and their linked guardians who
+ *     take alerts — many members are children;
+ *   - a volunteer: the volunteer, by email (there is no self-upload for a
+ *     volunteer, so it asks them to send one to their coordinator);
+ *   - a Summer School participant: their guardian, with the reshoot link;
+ *   - and for every kind: the NGG admins who own that card for that centre
+ *     (the capability, centre-scoped), in ONE notice per press listing who is
+ *     waiting — never one notice per child.
+ * Nobody is asked again within IDS_ASK_QUIET_DAYS unless `force`; that row is
+ * reported as asked_recently. The answer says, per person, which channels
+ * actually went, so the screen never claims a message nobody sent.
  */
 function admin_ids_photo_ask(array $p): array {
     $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
-    $t = (string)($p['subjectType'] ?? ''); $id = trim((string)($p['subjectId'] ?? ''));
-    if (!in_array($t, IDS_SUBJECTS, true) || $id === '') return ['ok' => false, 'error' => 'bad_subject'];
-    if (!ids_can($g['requester'], $t)) return ['ok' => false, 'error' => 'forbidden'];
-    $sent = false;
-    if ($t === 'student') {
-        $s = db_row('SELECT studentId, parentEmail FROM summer_students WHERE studentId = ? LIMIT 1', [$id]);
-        if (!$s) return ['ok' => false, 'error' => 'not_found'];
-        if ((string)$s['parentEmail'] !== '' && function_exists('reshoot_notify_guardian')) {
-            db_update('summer_students', ['photoAskedAt' => now_iso()], ['studentId' => $id]);
-            try { reshoot_notify_guardian($id, 'We do not have a photo on file for their ID card.'); $sent = true; }
-            catch (Throwable $e) { error_log('[ids.photo.ask] ' . $id . ': ' . $e->getMessage()); }
+    $raw = $p['items'] ?? null;
+    if ($raw === null && isset($p['subjectType'])) $raw = [['subjectType' => $p['subjectType'], 'subjectId' => $p['subjectId'] ?? '']];
+    if (!is_array($raw) || !$raw) return ['ok' => false, 'error' => 'no_items'];
+    if (count($raw) > IDS_ASK_MAX) return ['ok' => false, 'error' => 'too_many', 'message' => 'At most ' . IDS_ASK_MAX . ' at a time.'];
+    $force = !empty($p['force']);
+    $by = (string)$g['requester']['memberId'];
+    $cut = gmdate('Y-m-d\TH:i:s\Z', time() - IDS_ASK_QUIET_DAYS * 86400);
+    $results = []; $waiting = [];   // $waiting[cap] = [[name, centre], …] for the admins' notice
+
+    foreach ($raw as $it) {
+        $t = (string)($it['subjectType'] ?? ''); $id = trim((string)($it['subjectId'] ?? ''));
+        if (!in_array($t, IDS_SUBJECTS, true) || $id === '') { $results[] = ['subjectId' => $id, 'error' => 'bad_subject']; continue; }
+        if (!ids_can($g['requester'], $t)) { $results[] = ['subjectId' => $id, 'error' => 'forbidden']; continue; }
+        $c = ids_subject_contact($t, $id);
+        if (!$c) { $results[] = ['subjectId' => $id, 'error' => 'not_found']; continue; }
+        if ($c['centre'] !== '' && !admin_centre_allowed($g['requester'], $c['centre'])) { $results[] = ['subjectId' => $id, 'error' => 'out_of_scope']; continue; }
+        if ($c['photo'] !== '') { $results[] = ['subjectId' => $id, 'error' => 'has_photo']; continue; }
+        $last = db_row('SELECT askedAt FROM id_photo_asks WHERE subjectType = ? AND subjectId = ? ORDER BY id DESC LIMIT 1', [$t, $id]);
+        if ($last && (string)$last['askedAt'] > $cut && !$force) { $results[] = ['subjectId' => $id, 'error' => 'asked_recently', 'askedAt' => (string)$last['askedAt']]; continue; }
+
+        $first = explode(' ', trim($c['name']))[0] ?: 'there';
+        $sent = [];
+        if ($t === 'member') {
+            notify_people([$c['row']], ['kind' => 'photo', 'title' => 'A photo for your NGG ID card',
+                'body' => 'Your NGG ID card is ready to print except for your photo. On your dashboard, tap Edit profile, then Upload, and choose a clear, front-facing photo in good light. It is checked before it goes on your card.',
+                'intro' => 'Hello ' . $first . ',', 'eyebrow' => 'Next Generation Genius', 'ctaLabel' => 'Add your photo', 'ctaPath' => '/dashboard', 'linkPage' => 'dashboard']);
+            if ($c['email'] !== '') $sent[] = 'member';
+            else $sent[] = 'member_app';
+            $gs = function_exists('family_guardian_emails') ? family_guardian_emails($id, 'alerts') : [];
+            $gOk = 0;
+            foreach ($gs as $ge) if (ids_mail($ge, 'A photo for ' . $first . '’s NGG ID card', 'Hello,',
+                $c['name'] . '’s NGG ID card is ready to print except for the photo. ' . $first . ' can add it from their dashboard (Edit profile, then Upload), or you can send a clear, front-facing photo to their centre coordinator.')) $gOk++;
+            if ($gOk) $sent[] = 'guardians';
+        } elseif ($t === 'volunteer') {
+            if (ids_mail($c['email'], 'A photo for your NGG volunteer card', 'Hello ' . $first . ',',
+                'Your NGG volunteer card is ready to print except for your photo. Reply to this email with a clear, front-facing photo in good light, or hand one to your centre coordinator.')) $sent[] = 'volunteer';
+        } else {
+            if ($c['guardian'] !== '' && function_exists('reshoot_notify_guardian')) {
+                db_update('summer_students', ['photoAskedAt' => now_iso()], ['studentId' => $id]);
+                try { reshoot_notify_guardian($id, 'We do not have a photo on file for their ID card.'); $sent[] = 'guardian'; }
+                catch (\Throwable $e) { error_log('[ids.photo.ask] ' . $id . ': ' . $e->getMessage()); }
+            }
         }
+        $waiting[ids_cap_for($t)][] = [$c['name'], $c['centre'], $t];
+        db_insert('id_photo_asks', ['subjectType' => $t, 'subjectId' => $id, 'askedBy' => $by, 'askedAt' => now_iso(), 'sent' => $sent ? 1 : 0, 'channels' => json_encode($sent)]);
+        $results[] = ['subjectId' => $id, 'subjectType' => $t, 'sent' => $sent];
     }
-    db_insert('id_photo_asks', ['subjectType' => $t, 'subjectId' => $id, 'askedBy' => (string)$g['requester']['memberId'], 'askedAt' => now_iso(), 'sent' => $sent ? 1 : 0]);
-    audit('ids.photo.ask', (string)$g['requester']['memberId'], $id, ['subjectType' => $t, 'sent' => $sent], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'sent' => $sent];
+
+    // The admins who own these cards, scoped to the centres involved: one notice each, per press.
+    $admins = 0;
+    foreach ($waiting as $cap => $people) {
+        $centres = array_values(array_unique(array_filter(array_map(fn($x) => $x[1], $people))));
+        $staff = staff_with_cap($cap, [$by], function ($s) use ($centres) {
+            if (!$centres) return true;
+            foreach ($centres as $c) if (admin_centre_allowed($s, $c)) return true;
+            return false;
+        });
+        if (!$staff) continue;
+        $names = array_map(fn($x) => $x[0] . ($x[1] !== '' ? ' (' . $x[1] . ')' : ''), array_slice($people, 0, IDS_ASK_DIGEST_NAMES));
+        $more = count($people) - count($names);
+        $admins += notify_people($staff, ['kind' => 'photo', 'title' => count($people) === 1 ? 'A card is waiting on a photo' : count($people) . ' cards are waiting on photos',
+            'body' => 'A photo was requested for: ' . implode(', ', $names) . ($more > 0 ? ', and ' . $more . ' more' : '') . '. Their cards print as soon as a photo is approved. If you see them at the centre, a photo taken there works too.',
+            'ctaLabel' => 'Open the ID Card Studio', 'ctaPath' => '/club/id-cards', 'linkPage' => 'id-cards']);
+    }
+    $asked = count(array_filter($results, fn($r) => isset($r['sent'])));
+    audit('ids.photo.ask', $by, '', ['asked' => $asked, 'refused' => count($results) - $asked, 'admins' => $admins, 'force' => $force], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'asked' => $asked, 'admins' => $admins, 'results' => $results];
+}
+
+/**
+ * Printed IDs for exactly these members, minted from the highest serial
+ * (member_mint_display_id), before their cards are drawn. Never reissues: a
+ * member who already has one keeps it. Centre-scoped per row.
+ */
+function admin_ids_mint(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $ids = array_values(array_unique(array_filter(array_map(fn($x) => trim((string)$x), (array)($p['memberIds'] ?? [])))));
+    if (!$ids) return ['ok' => false, 'error' => 'no_items'];
+    if (count($ids) > IDS_BATCH_MAX) return ['ok' => false, 'error' => 'too_many', 'message' => 'At most ' . IDS_BATCH_MAX . ' at a time.'];
+    $issued = []; $refused = []; $reserved = [];
+    foreach ($ids as $id) {
+        $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
+        if (!$m) { $refused[] = ['memberId' => $id, 'error' => 'not_found']; continue; }
+        if (!member_is_ngg($m)) { $refused[] = ['memberId' => $id, 'error' => 'not_ngg']; continue; }
+        if (!admin_centre_allowed($g['requester'], (string)($m['centre'] ?? ''))) { $refused[] = ['memberId' => $id, 'error' => 'out_of_scope']; continue; }
+        if ((string)($m['displayId'] ?? '') !== '') { $refused[] = ['memberId' => $id, 'error' => 'unchanged', 'displayId' => (string)$m['displayId']]; continue; }
+        $did = member_mint_display_id($m, $reserved);
+        $reserved[] = $did;
+        db_update('members', ['displayId' => $did, 'updatedAt' => now_iso()], ['memberId' => $id]);
+        $issued[$id] = $did;
+    }
+    audit('ids.mint', (string)$g['requester']['memberId'], '', ['issued' => count($issued), 'refused' => count($refused)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'issued' => (object)$issued, 'refused' => $refused];
 }

@@ -972,16 +972,33 @@ on screen, so you do not have to remember which is which.
 
 | | **ID Card Studio** (`/club/id-cards`) | **Design Studio** (`/designer`) |
 |---|---|---|
-| What it is | Lays out and prints the **standard** cards for all three subjects on sheets of card stock, and keeps the print log and a reprint queue | Draws layouts, binds them to your own fields, publishes them, prints them |
-| Layout lives | in code — fixed | in a template you edit |
-| Use it when | you want the standard card, in quantity, cut from sheets | you want a card **back**, or a layout change |
+| What it is | Lays out and prints the cards for all three subjects on sheets of card stock, and keeps the print log and a reprint queue | Draws layouts, binds them to your own fields, publishes them, prints them |
+| Layout lives | the design assigned to each card type, or the built-in standard card | in a template you edit |
+| Use it when | you want cards in quantity, cut from sheets | you want a new layout or a new back |
+
+**Which design prints.** In the ID Card Studio, *Designs* (right column)
+picks the design for each card type — NGG members, Summer School,
+volunteers. Only designs **published** in the Design Studio are offered, and
+a design's paired back comes with it. *Standard card* is the built-in one;
+members' standard card has a back too (return-to address, the holder's name
+and ID, a signature line — never money or medical details). The header shows
+what each type prints with, and every run in the log records the design and
+its version. The sheet takes the size of the cards on it: if you change a
+design or the card size so they disagree, a red check says so and offers the
+one-click fix.
 
 The old address `/cards` still works and opens the ID Card Studio.
 
 **Make cards.** The left column is everyone who needs a card: **New** (never
 printed), **Reprints** (asked for again), **Blocked** (no photo yet — press
-*Ask for photo*; for a Summer School participant this emails the guardian,
-for anyone else it notes the request and tells you to ask in person). Tick
+*Ask for photo*, or *Ask everyone blocked* to ask up to 200 at once). A
+member is told how to add a photo (Edit profile on their dashboard), in the
+app and by email, and a child member's guardians are told too; a Summer
+School participant's guardian is emailed; a volunteer is emailed and asked to
+reply with one. The admins for their centre get one summary per press. The
+row then says when they were asked; asking again within 3 days needs *Ask
+again*. A member printed for the first time is given their ID number when you
+print — it is theirs for good and never reissued. Tick
 people, or *Add N to the sheet*. The middle is the sheet exactly as it will
 print. Pick what you are doing at the top — *New intake*, *Reprints*, *One
 person*, *Made elsewhere* (upload finished card images; files named

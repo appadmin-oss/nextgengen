@@ -53,11 +53,12 @@ function IdsRecords({ M }) {
         </select>
       </div>
       {R.canAddAll && <button type="button" className="ids-btn ids-btn--outline" onClick={R.addAll}><IdsIcon name="plus"/>Add {R.addable} to the sheet</button>}
+      {R.canAskAll && <button type="button" className="ids-btn ids-btn--outline" onClick={R.askAll}><IdsIcon name="envelope-simple"/>Ask everyone blocked for a photo ({R.askable})</button>}
       {M.dataState !== "ready" ? <IdsLoadState state={M.dataState} onRetry={M.reload} what="the records"/> : (
         <ul className="ids-recs">
           {R.rows.map(r => (
             <li key={r.id} className={"ids-rec" + (r.on ? " is-on" : "") + (r.blocked ? " is-blocked" : "")}>
-              <button type="button" role="checkbox" aria-checked={r.on} aria-disabled={r.blocked || !M.recOK || undefined} className="ids-cb" aria-label={r.aria} onClick={r.toggle}>
+              <button type="button" role="checkbox" aria-checked={r.on} aria-disabled={r.blocked || undefined} className="ids-cb" aria-label={r.aria} onClick={r.toggle}>
                 <IdsIcon name={r.on ? "check" : r.blocked ? "minus" : "check"}/>
               </button>
               <span className="ids-thumb" style={{ "--ids-accent": M.accent(r.centre) }}>
@@ -68,7 +69,7 @@ function IdsRecords({ M }) {
                 <span className="ids-rec-meta"><span className="ids-mono">{r.displayId || "ID assigned on print"}</span> · {r.centre || "No centre"} · {IDS_KINDS[r.kind]}</span>
                 <span className={"ids-rec-tag is-" + r.tagTone}>{r.tag}</span>
               </span>
-              {r.blocked && <button type="button" className="ids-btn ids-btn--28" onClick={r.ask}>Ask for photo</button>}
+              {r.blocked && <button type="button" className="ids-btn ids-btn--28" onClick={r.ask} aria-label={r.askLabel + ": " + r.name}>{r.askLabel}</button>}
             </li>
           ))}
         </ul>
@@ -292,6 +293,22 @@ function IdsSettings({ M }) {
   return (
     <aside className="ids-set" aria-label="Layout and print">
       <div className="ids-set-scroll">
+        <section className="ids-sec" aria-labelledby="ids-designs-h">
+          <h2 className="ids-h2" id="ids-designs-h">Designs</h2>
+          {M.designsUI.map(d => (
+            <label key={d.kind} className="ids-field">
+              <span className="ids-field-l">{d.label}</span>
+              <select className="ids-select" value={d.value} disabled={d.busy} onChange={e => M.setDesign(d.kind, e.target.value)}>
+                <option value="">Standard card</option>
+                {d.options.map(o => <option key={o.templateId} value={o.templateId}>{o.name} · v{o.version}{o.paired ? " · with back" : ""}</option>)}
+              </select>
+              <span className="ids-help">{d.help}</span>
+            </label>
+          ))}
+          {!M.designsUI.length && <p className="ids-note">No card type you can print.</p>}
+          <p className="ids-note">Only published designs are offered. Draw and publish them in the <a className="ids-linkbtn" href="/designer" onClick={M.openDesigner}>Design Studio</a>; every run logs the version it used.</p>
+        </section>
+
         <section className="ids-sec">
           <h2 className="ids-h2">Card size</h2>
           <div className="ids-sizes" role="radiogroup" aria-label="Card size">

@@ -9,6 +9,11 @@
    mm, logs the run, and takes the printed people off the queue; a card
    marked bad afterwards is marked on that run and comes back as a reprint;
    the log, look up and the phone's Queue each read the same data.
+   Round 2: a photo request reaches the person and is reported from the
+   server's verdicts, one by one or for everyone blocked; a member card has a
+   back; the sheet follows the size the cards are designed at; a member with
+   no ID number is given one before printing; and a card type prints with
+   its assigned, published design, logged with that design's version.
 
    Run:  node tests/ids-studio.test.js
    ========================================================================== */
@@ -74,8 +79,13 @@ function cleanup() {
     for (let i = 1; i <= 14; i++) {
       const photo = i <= 12 ? `'/assets/logo.png'` : `''`;
       seed += `db_insert('members', ['memberId'=>'NGG-IDS-${i}','fullName'=>'Member ${String.fromCharCode(64 + i)} Test','email'=>'ids${i}@example.org','type'=>'NGG','status'=>'active','role'=>'member',`
-        + `'centre'=>'Egbeda','track'=>${i === 3 ? "''" : "'Coding'"},'displayId'=>'EG-25-${String(i).padStart(4, '0')}','photoUrl'=>${photo},'createdAt'=>${now},'updatedAt'=>${now}]);`;
+        + `'centre'=>'Egbeda','track'=>${i === 3 ? "''" : "'Coding'"},'displayId'=>${i === 10 ? "''" : `'EG-25-${String(i).padStart(4, '0')}'`},'photoUrl'=>${photo},'createdAt'=>${now},'updatedAt'=>${now}]);`;
     }
+    // A published member design (v2) and a draft one: only the first may be assigned.
+    const tpl = JSON.stringify({ kind: 'member', face: 'front', w: 590, h: 929, wMm: 54, hMm: 85, safe: 30, bleedMm: 3, background: '#0B1F51',
+      elements: [{ id: 'n', type: 'text', x: 40, y: 400, w: 510, h: 60, text: '{{fullName}}', size: 40, weight: 700, color: '#ffffff' }] });
+    seed += `db_insert('card_templates', ['templateId'=>'TPL-IDS-1','name'=>'Club card','kind'=>'member','face'=>'front','pairId'=>'','status'=>'published','version'=>2,'schemaJson'=>${JSON.stringify(tpl)},'publishedJson'=>${JSON.stringify(tpl)},'createdAt'=>${now},'updatedAt'=>${now}]);`
+      + `db_insert('card_templates', ['templateId'=>'TPL-IDS-DRAFT','name'=>'Unfinished','kind'=>'member','face'=>'front','pairId'=>'','status'=>'draft','version'=>1,'schemaJson'=>${JSON.stringify(tpl)},'publishedJson'=>'','createdAt'=>${now},'updatedAt'=>${now}]);`;
     seed += `$GLOBALS['__s'] = ['requesterId'=>'${ADMIN}'];`
       + `backend_dispatch('admin.card.run.record', ['requesterId'=>'${ADMIN}','kind'=>'member','subjectType'=>'member','output'=>'sheet','items'=>[['subjectId'=>'NGG-IDS-11','displayId'=>'EG-25-0011'],['subjectId'=>'NGG-IDS-12','displayId'=>'EG-25-0012'],['subjectId'=>'${ADMIN}','displayId'=>'EG-24-0001']]]);`
       + `backend_dispatch('admin.ids.reprint.request', ['requesterId'=>'${ADMIN}','items'=>[['subjectType'=>'member','subjectId'=>'NGG-IDS-11','why'=>'Lost']]]);`;
@@ -111,15 +121,24 @@ function cleanup() {
     // A person can press it (aria-disabled, not disabled) and is told why; Playwright needs force for that.
     await P.click('.ids-rec .ids-cb', { force: true });
     chk('ticking a blocked row is refused in words', await toastHas(P, /Needs a photo first/));
+    const asks = () => php(`echo db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE subjectType = 'member'")['c'];`);
+    await P.click('.ids-btn--outline:has-text("Ask everyone blocked for a photo (2)")');
+    await P.waitForSelector('[role=alertdialog]:has-text("Ask 2 people for a photo?")');
+    await P.click('[role=alertdialog] .ids-btn--primary:has-text("Ask 2")');
+    chk('asking everyone blocked confirms the count first, then reports what the server did', await toastHas(P, /^Asked 2 people\./) && asks() === '2'
+      && /"member"/.test(php(`echo db_row("SELECT channels FROM id_photo_asks ORDER BY id DESC LIMIT 1")['channels'];`)));
+    await P.waitForTimeout(200);
+    chk('…each row then says when they were asked, and offers to ask again', /No photo yet · asked \d+ \w+/.test(await P.innerText('.ids-recs'))
+      && (await P.$$eval('.ids-rec .ids-btn--28', bs => bs.every(b => b.textContent === 'Ask again'))) && !(await P.$('.ids-btn--outline:has-text("Ask everyone blocked")')));
     await P.click('.ids-rec .ids-btn--28');
-    chk('asking for a member’s photo says honestly that nothing was sent', await toastHas(P, /no guardian email to send to/)
-      && php(`echo db_row("SELECT COUNT(*) c FROM id_photo_asks WHERE subjectType = 'member'")['c'];`) === '1');
+    chk('"Ask again" inside the quiet period goes through, and says where it went', await toastHas(P, /Asked them by email\./) && asks() === '3');
     await P.click('.ids-fchip:has-text("New")');
     await P.click('.ids-btn--outline:has-text("Add 10 to the sheet")');
     chk('"Add 10 to the sheet" adds them, with Undo', await toastHas(P, /10 cards added\s*Undo/));
     await P.waitForTimeout(300);
     chk('the sheet is A4 at 3 × 3, so 10 cards are 2 sheets', /Sheet 1 of 2/.test(await P.innerText('.ids-pager')) && /9 cards/.test(await P.innerText('.ids-perline')));
     chk('…each slot draws the real member card', (await P.$$('.ids-slot.is-card')).length === 9 && (await P.$$('.ids-slot.is-card .ids-face-rec')).length === 9);
+    chk('the member with no ID number is told they get one at print', /1 member gets their ID number when you print/.test(await P.innerText('.ids-set')));
     chk('the blank division is flagged on its slot', (await P.$$('.ids-slot-warn.is-warn')).length === 1);
     chk('while piles are kept apart by centre, there is no gap bar (§3.2)', !(await P.$('.ids-gapbar')));
     await P.click('.ids-slot.is-card >> nth=0');
@@ -137,9 +156,10 @@ function cleanup() {
     chk('…and Undo puts it back', /10 cards ·/.test(await P.innerText('.ids-stat')));
 
     await P.click('.ids-size:has-text("A6 portrait")');
-    chk('record cards on a non-CR80 size block the print, with the fix one click away', /use the standard design, which is CR80 portrait/.test(await P.innerText('.ids-set'))
+    chk('cards designed at one size on a sheet of another block the print, with the fix one click away', /designed at 54 × 85.6 mm but the sheet is set to 105 × 148 mm/.test(await P.innerText('.ids-set'))
       && await P.$eval('.ids-btn--print', b => b.getAttribute('aria-disabled') === 'true'));
-    await P.click('.ids-set .ids-linkbtn:has-text("Use CR80 portrait")');
+    await P.click('.ids-set .ids-linkbtn:has-text("Use 54 × 85.6 mm")');
+    chk('…which puts the sheet back to the cards’ size', (await P.getAttribute('.ids-size:has-text("CR80 portrait")', 'aria-checked')) === 'true');
     await P.click('.ids-size:has-text("Custom")');
     await P.fill('#ids-cw', '200'); await P.press('#ids-cw', 'Enter');
     await P.fill('#ids-ch', '280'); await P.press('#ids-ch', 'Enter');
@@ -153,8 +173,16 @@ function cleanup() {
     await P.click('.ids-ov >> nth=1');
     chk('…and opens the one clicked', /Sheet 2 of 2/.test(await P.innerText('.ids-pager')));
 
+    await P.click('.ids-radio:has-text("Double-sided · long edge")');
+    await P.click('.ids-seg-opt:has-text("Backs")');
+    const back = await P.innerText('.ids-slot.is-card >> nth=0');
+    chk('a member card has a back: who it belongs to, where to return it, and no money or medical details',
+      /if found, please return to/i.test(back) && /no money and no medical details/i.test(back) && /holder’s signature/i.test(back));
+    await P.click('.ids-seg-opt:has-text("Fronts")');
+    await P.click('.ids-radio:has-text("Fronts only")');
+
     await P.click('.ids-scen-btn:has-text("Proof")');
-    chk('the Proof scenario sets 150 dpi and watermarks every slot', (await P.$eval('.ids-set select', s => s.value)) === '150' && (await P.$$('.ids-slot-proof')).length > 0);
+    chk('the Proof scenario sets 150 dpi and watermarks every slot', (await P.$eval('.ids-set .ids-field:has-text("Image quality") select', s => s.value)) === '150' && (await P.$$('.ids-slot-proof')).length > 0);
     await P.click('.ids-scen-btn:has-text("New intake")');
 
     // Print: confirm, the print window, the log, the queue.
@@ -168,6 +196,7 @@ function cleanup() {
     chk('the print window is sized to the paper in mm, with a packing list and 2 sheets of 10 cards', /@page\{size:210mm 297mm;margin:0\}/.test(pw.css) && pw.list && pw.pages === 3 && pw.slots === 10);
     await win.close();
     chk('it is logged as a run', await toastHas(P, /logged as CRUN-/) && php(`echo db_row("SELECT COUNT(*) c FROM card_runs")['c'];`) === '2');
+    chk('the member with no ID number was given one first, from the member series', /^\d{3}-\d{3,}$/.test(php(`echo db_row("SELECT displayId FROM members WHERE memberId = 'NGG-IDS-10'")['displayId'];`)));
     await P.waitForSelector('.ids-dialog:has-text("Did all 10 print properly?")', { timeout: 10000 });
     chk('the printed people leave the queue', (await chip('New')) === 0);
     await P.click('.ids-after-card >> nth=0');
@@ -193,6 +222,26 @@ function cleanup() {
     await P.fill('#ids-lq', 'EG-99-9999'); await P.keyboard.press('Enter');
     await P.waitForSelector('.ids-lookup-none', { timeout: 10000 });
     chk('…and says plainly when nobody has a card under that ID', /No card has been issued to EG-99-9999/.test(await P.innerText('.ids-page')));
+
+    // Option 1: a card type prints with its assigned, published design.
+    await P.click('.ids-tab:has-text("Make cards")');
+    const pick = '.ids-set .ids-field:has-text("NGG members") select';
+    await P.waitForSelector(pick);
+    chk('only published designs are offered — the draft is not', await P.$eval(pick, s => [...s.options].map(o => o.value).join(',')) === ',TPL-IDS-1');
+    await P.selectOption(pick, 'TPL-IDS-1');
+    chk('assigning one says so, the header names it, and it is stored', await toastHas(P, /NGG members now print with Club card v2/)
+      && /Member: Club card v2/.test(await P.innerText('.ids-head')) && php(`echo db_row("SELECT templateId FROM id_designs WHERE kind = 'member'")['templateId'];`) === 'TPL-IDS-1');
+    await P.waitForSelector('.ids-slot.is-card .ids-face-tpl', { timeout: 30000 });
+    chk('the sheet draws it with the Design Studio’s own renderer', (await P.$$('.ids-slot.is-card .ids-face-tpl')).length >= 1);
+    await P.click('.ids-btn--print');
+    await P.waitForSelector('[role=alertdialog]');
+    chk('the confirm names the design', /Club card v2/.test(await P.innerText('.ids-sum')));
+    const [win2] = await Promise.all([P.context().waitForEvent('page'), P.click('[role=alertdialog] .ids-btn--primary')]);
+    await win2.waitForLoadState('domcontentloaded');
+    chk('the print carries the drawn design', await win2.evaluate(() => document.querySelectorAll('.ids-ps img.ids-face-tpl').length) >= 1);
+    await win2.close();
+    await toastHas(P, /logged as CRUN-/);
+    chk('…and the run records that design and its version', php(`$r = db_row("SELECT templateId, templateVersion FROM card_runs ORDER BY id DESC LIMIT 1"); echo $r['templateId'] . '@' . $r['templateVersion'];`) === 'TPL-IDS-1@2');
     await P.context().close();
 
     console.log('phone (390) and the old address');

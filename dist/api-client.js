@@ -1179,8 +1179,9 @@
         reprint:   (items) => request('/admin/id-studio.php', { body: { action: 'reprint', items } }),
         printed:   (items, runId) => request('/admin/id-studio.php', { body: { action: 'printed', items, runId } }),
         failed:    (runId, items) => request('/admin/id-studio.php', { body: { action: 'failed', runId, items } }),
-        askPhoto:  (subjectType, subjectId) => request('/admin/id-studio.php', { body: { action: 'askPhoto', subjectType, subjectId } }),
-        mintIds:   (limit) => request('/admin/id-studio.php', { body: { action: 'mintIds', limit } }),
+        askPhoto:  (items, force) => request('/admin/id-studio.php', { body: { action: 'askPhoto', items, force: !!force } }),
+        design:    (kind, templateId) => request('/admin/id-studio.php', { body: { action: 'design', kind, templateId: templateId || '' } }),
+        mintIds:   (memberIds) => request('/admin/id-studio.php', { body: { action: 'mintIds', memberIds } }),
       },
       wisdom: {
         list:     () => request('/admin/wisdom.php'),

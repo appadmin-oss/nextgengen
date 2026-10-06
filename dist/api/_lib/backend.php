@@ -345,6 +345,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.ids.reprint.done'            => 'admin_ids_reprint_done',
             'admin.ids.run.failed'              => 'admin_ids_run_failed',
             'admin.ids.photo.ask'               => 'admin_ids_photo_ask',
+            'admin.ids.design.set'              => 'admin_ids_design_set',
+            'admin.ids.mint'                    => 'admin_ids_mint',
             /* The design asset library. Images placed in a design used to be
                data: URLs inside the design itself, which capped a poster at one
                small photograph — see api/_lib/domain/design-assets.php. */

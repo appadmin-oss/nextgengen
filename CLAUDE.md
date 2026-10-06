@@ -117,7 +117,7 @@ SQLite, **auto-migrated at runtime** from a contiguous ladder in
 Adding a migration is three edits, all required:
 
 1. Append `N => "…"` to `$migrations` — contiguous, never renumbered.
-2. Bump `NGG_SCHEMA_TARGET` to `N` (currently **132**).
+2. Bump `NGG_SCHEMA_TARGET` to `N` (currently **133**).
 3. Mirror the DDL into `db/schema-mysql.sql`, ending with
    `INSERT INTO schema_version (version) VALUES (N) ON DUPLICATE KEY UPDATE version = version;`
 
@@ -356,15 +356,34 @@ query now. New list code that loops queries is a defect, not a slow path.
 Two studios, one record. Say which is which in any UI that mentions them.
 
 - **ID Card Studio** (`/club/id-cards`, `src/modules/idcards/`) lays out and
-  prints the **standard** cards for all three subjects — members, Summer
-  School participants, volunteers — on sheets of card stock, logs every run,
-  and keeps a reprint queue (`domain/id-studio.php`). The sheet maths is
+  prints the cards for all three subjects — members, Summer School
+  participants, volunteers — on sheets of card stock, logs every run, and
+  keeps a reprint queue (`domain/id-studio.php`). The sheet maths is
   `ids-core.jsx` and is held to the millimetre by `tests/ids-core.test.js`.
-  Its slots draw the REAL renderers (`NggcMemberCard`, `CardFront`,
-  `VolunteerCardFront`, `CardBack`) through one adapter, `IdsCardFace` /
-  `IdsRecordFace` — never a second drawing of a card. A subject is a row of
-  `IDS_KINDS`, never an `isVol`-style boolean. A proof, or a card marked
-  failed after printing, does not count as somebody having a card.
+  Its slots draw the REAL renderers through one adapter, `IdsRecordFace` —
+  never a second drawing of a card. A subject is a row of `IDS_KINDS`, never
+  an `isVol`-style boolean. A proof, or a card marked failed after printing,
+  does not count as somebody having a card.
+  - **Each card type prints with its assigned design** (`id_designs`,
+    `admin_ids_design_set`): a **published** front of that kind, with its
+    paired back, drawn by the Design Studio's own `dsnRaster` → `tplToFabric`;
+    or, when none is assigned, the standard card (`NggcMemberCard` +
+    `NggcMemberCardBack` for members, `CardFront` / `VolunteerCardFront` /
+    `CardBack` for the rest). A draft is never assignable, and a design
+    unpublished since falls back rather than printing a draft. The run sends
+    only the `templateId`; the version is the server's.
+  - **The sheet takes the size of the cards on it** (`idsRecordMm`), never the
+    reverse; a mixed-size sheet is a red check.
+  - **A member with no printed ID is minted one before the print**
+    (`admin_ids_mint`, never reissued), so the card carries the record's number.
+  - **A photo request reaches people, not a log**: the member (and their
+    guardians who take alerts), a participant's guardian, a volunteer by
+    email, plus ONE digest per press to the staff for that centre, never the
+    requester. `id_photo_asks.channels` records what actually went; a 3-day
+    quiet period needs `force` to override; at most 200 a press.
+  - **The member card's back** is `NggcMemberCardBack`
+    (`ids-member-back.jsx`): return-to, the holder, a signature line, and
+    never money or medical details.
 - **Design Studio** (`/designer`) draws, binds, publishes and prints
   templates, including card **backs**. Its workspace has two modes:
   **design** (layers | canvas | properties) and **print**

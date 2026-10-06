@@ -519,3 +519,28 @@ marks jammed cards failed on their run and requeues them, a reprint queue
 emails a participant's guardian and says honestly when there is nobody to
 email), the print log with a run drawer, and look up by printed ID. The card
 renderers were kept and are drawn in the slots unchanged.
+
+## 2026-10-06 · ID Card Studio, round 2: designs, the member back, photo requests
+
+- **Option 1, the industry-standard shape** (as card-printing suites do it):
+  each card type prints from an **assigned, published, versioned** template
+  with its paired back, falls back to the standard card when none is
+  assigned, and logs the version on every run. Migration 133 adds
+  `id_designs (kind, templateId, setBy, setAt)`; `admin.ids.design.set`
+  refuses drafts (`not_published`), backs (`is_back`) and another kind's
+  design (`wrong_kind`). The studio draws an assigned design through
+  `dsnRaster`, cached per template, version, side and person, and the print
+  waits (`idsTplSettled`) for the last card to finish drawing.
+- **The member card has a back**: `NggcMemberCardBack`, a new module file,
+  the standard back for members. Before this it printed blank.
+- **Photo requests reach the person and the admins**: `admin.ids.photo.ask`
+  takes a list (max 200), refuses per row (`has_photo`, `asked_recently`
+  unless `force`, `out_of_scope`, …), notifies the member and guardians, a
+  participant's guardian or a volunteer, sends one digest per press to the
+  centre's staff (never the requester), and records the channels that went
+  (`id_photo_asks.channels`, migration 133). The toast reads the server's
+  per-row verdicts.
+- **IDs minted before printing**: `admin.ids.mint` gives a member with no
+  printed ID their number (never reissued) before the print window opens.
+- **The sheet follows the cards' size** instead of refusing anything not
+  CR80 portrait; a mixed-size sheet is a red check with a one-click fix.

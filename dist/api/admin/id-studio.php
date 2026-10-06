@@ -16,9 +16,10 @@ if ($method === 'GET') {
         case 'reprint':   $res = gs_call('admin.ids.reprint.request', $base + ['items' => $b['items'] ?? []]); break;
         case 'printed':   $res = gs_call('admin.ids.reprint.done', $base + ['items' => $b['items'] ?? [], 'runId' => (string)($b['runId'] ?? '')]); break;
         case 'failed':    $res = gs_call('admin.ids.run.failed', $base + ['items' => $b['items'] ?? [], 'runId' => (string)($b['runId'] ?? '')]); break;
-        case 'askPhoto':  $res = gs_call('admin.ids.photo.ask', $base + ['subjectType' => (string)($b['subjectType'] ?? ''), 'subjectId' => (string)($b['subjectId'] ?? '')]); break;
-        // Printed IDs for members who have none yet, before their cards are drawn.
-        case 'mintIds':   $res = gs_call('admin.members.issueIds', $base + ['limit' => (int)($b['limit'] ?? 200)]); break;
+        case 'askPhoto':  $res = gs_call('admin.ids.photo.ask', $base + ['items' => $b['items'] ?? null, 'force' => !empty($b['force'])]); break;
+        case 'design':    $res = gs_call('admin.ids.design.set', $base + ['kind' => (string)($b['kind'] ?? ''), 'templateId' => (string)($b['templateId'] ?? '')]); break;
+        // Printed IDs for exactly the members about to be printed.
+        case 'mintIds':   $res = gs_call('admin.ids.mint', $base + ['memberIds' => $b['memberIds'] ?? []]); break;
         default: json_error('unknown_action', 400);
     }
 } else {

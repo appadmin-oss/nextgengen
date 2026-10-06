@@ -24104,7 +24104,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 })();
 
 /* ── ID Card Studio: who has a card, the reprint queue, failures after printing ── */
-(function () use ($CARDADM, $RUN1) {
+(function () use ($CARDADM, $RUN1, $TID) {
+    $TIDX = $TID;
     $SUMADM = 'NGG-2025-0700';   // summer_admin: Summer School's cards, not members'
     $st = backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM]);
     $key = 'member:NGG-CARD-1';
@@ -24144,12 +24145,48 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $d = backend_dispatch('admin.ids.reprint.done', ['requesterId' => $CARDADM, 'runId' => 'CRUN-NEXT', 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-CARD-1']]]);
     chk('id studio: printing closes the open request', !empty($d['ok']) && $d['closed'] === 1 && !property_exists(backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['reprints'], $key));
 
-    $a = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'subjectType' => 'member', 'subjectId' => 'NGG-CARD-1']);
-    chk('id studio: a member photo ask is recorded, and says honestly it was not sent', !empty($a['ok']) && $a['sent'] === false
-        && property_exists(backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['asked'], $key));
-    chk('id studio: a photo ask for a participant who does not exist is not_found', (backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'subjectType' => 'student', 'subjectId' => 'SUM-NOPE'])['error'] ?? '') === 'not_found');
-    chk('id studio: a Summer admin cannot ask about a member', (backend_dispatch('admin.ids.photo.ask', ['requesterId' => $SUMADM, 'subjectType' => 'member', 'subjectId' => 'NGG-CARD-1'])['error'] ?? '') === 'forbidden');
-    chk('id studio: every op is in the map', count(array_filter(['admin.ids.state', 'admin.ids.reprint.request', 'admin.ids.reprint.done', 'admin.ids.run.failed', 'admin.ids.photo.ask'],
+    // Photo requests reach the person and the admins who own the card, once per quiet period.
+    db_insert('members', ['memberId' => 'NGG-IDS-NOPIC', 'fullName' => 'Pat Nophoto', 'email' => 'pat-nopic@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'photoUrl' => '', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'NGG-IDS-PIC', 'fullName' => 'Has Photo', 'email' => 'has-pic@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'photoUrl' => 'https://example.org/p.jpg', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $nb = (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-IDS-NOPIC'")['c'];
+    $a = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'items' => [
+        ['subjectType' => 'member', 'subjectId' => 'NGG-IDS-NOPIC'], ['subjectType' => 'member', 'subjectId' => 'NGG-IDS-PIC'], ['subjectType' => 'member', 'subjectId' => 'NGG-NOBODY']]]);
+    $res = array_column($a['results'] ?? [], null, 'subjectId');
+    chk('id studio: a member is asked for their photo themselves — in the app and by email', !empty($a['ok']) && in_array('member', $res['NGG-IDS-NOPIC']['sent'] ?? [], true)
+        && (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = 'NGG-IDS-NOPIC'")['c'] === $nb + 1);
+    chk('id studio: …and the NGG admins who own that card are told, in one notice per press', ($a['admins'] ?? 0) >= 1
+        && (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId != 'NGG-IDS-NOPIC' AND title = 'A card is waiting on a photo'")['c'] === $a['admins']);
+    chk('id studio: …never the operator who pressed the button', (int)db_row("SELECT COUNT(*) c FROM notifications WHERE memberId = ? AND title = 'A card is waiting on a photo'", [$CARDADM])['c'] === 0);
+    chk('id studio: somebody who already has a photo is refused by name, not asked', ($res['NGG-IDS-PIC']['error'] ?? '') === 'has_photo' && ($res['NGG-NOBODY']['error'] ?? '') === 'not_found');
+    chk('id studio: the channels that went are recorded with the ask', in_array('member', backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['asked']->{'member:NGG-IDS-NOPIC'}['channels'] ?? [], true));
+    $again = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-IDS-NOPIC']]]);
+    chk('id studio: nobody is asked twice inside the quiet period', ($again['results'][0]['error'] ?? '') === 'asked_recently' && $again['asked'] === 0);
+    $forced = backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'force' => true, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-IDS-NOPIC']]]);
+    chk('id studio: …unless the operator insists', $forced['asked'] === 1);
+    chk('id studio: a Summer admin cannot ask about a member — refused per row', (backend_dispatch('admin.ids.photo.ask', ['requesterId' => $SUMADM, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-IDS-NOPIC']]])['results'][0]['error'] ?? '') === 'forbidden');
+    chk('id studio: a photo ask is capped, naming the cap', (backend_dispatch('admin.ids.photo.ask', ['requesterId' => $CARDADM, 'items' => array_fill(0, 201, ['subjectType' => 'member', 'subjectId' => 'x'])])['error'] ?? '') === 'too_many');
+
+    // The design each card type prints with: a published front of the same kind, or the standard card.
+    $draft = backend_dispatch('admin.card.template.save', ['requesterId' => $CARDADM, 'template' => ['id' => '', 'name' => 'Unpublished member', 'kind' => 'member', 'face' => 'front', 'w' => 590, 'h' => 929, 'wMm' => 54, 'hMm' => 85, 'elements' => []]]);
+    chk('id studio: a draft cannot be assigned — nobody may print a draft', (backend_dispatch('admin.ids.design.set', ['requesterId' => $CARDADM, 'kind' => 'member', 'templateId' => $draft['templateId']])['error'] ?? '') === 'not_published');
+    chk('id studio: a design for another kind of card is refused', (backend_dispatch('admin.ids.design.set', ['requesterId' => $CARDADM, 'kind' => 'volunteer', 'templateId' => $TIDX])['error'] ?? '') === 'wrong_kind');
+    $ds = backend_dispatch('admin.ids.design.set', ['requesterId' => $CARDADM, 'kind' => 'member', 'templateId' => $TIDX]);
+    $dst = backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM]);
+    chk('id studio: a published member design is assigned, with the version the server holds', !empty($ds['ok']) && ($dst['designs']->member['templateId'] ?? '') === $TIDX
+        && ($dst['designs']->member['version'] ?? 0) >= 1 && !empty($dst['designs']->member['published']));
+    chk('id studio: …and the published member designs are offered to choose from', in_array($TIDX, array_column($dst['choices']->member ?? [], 'templateId'), true));
+    backend_dispatch('admin.ids.design.set', ['requesterId' => $CARDADM, 'kind' => 'member', 'templateId' => '']);
+    chk('id studio: an empty choice goes back to the standard card', backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['designs']->member === null);
+    chk('id studio: a Summer admin cannot set the member design', (backend_dispatch('admin.ids.design.set', ['requesterId' => $SUMADM, 'kind' => 'member', 'templateId' => ''])['error'] ?? '') === 'forbidden');
+
+    // Printed IDs for exactly the members about to print.
+    $mi = backend_dispatch('admin.ids.mint', ['requesterId' => $CARDADM, 'memberIds' => ['NGG-IDS-NOPIC', 'NGG-IDS-NOPIC']]);
+    $did = (string)db_row("SELECT displayId FROM members WHERE memberId = 'NGG-IDS-NOPIC'")['displayId'];
+    chk('id studio: minting gives exactly the named member a printed ID', !empty($mi['ok']) && $did !== '' && ($mi['issued']->{'NGG-IDS-NOPIC'} ?? '') === $did);
+    $mi2 = backend_dispatch('admin.ids.mint', ['requesterId' => $CARDADM, 'memberIds' => ['NGG-IDS-NOPIC']]);
+    chk('id studio: …and never reissues one — a printed ID is in somebody\'s wallet', ($mi2['refused'][0]['error'] ?? '') === 'unchanged' && db_row("SELECT displayId FROM members WHERE memberId = 'NGG-IDS-NOPIC'")['displayId'] === $did);
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-IDS-NOPIC', 'NGG-IDS-PIC')"); db_exec("DELETE FROM id_designs");
+    chk('id studio: every op is in the map', count(array_filter(['admin.ids.state', 'admin.ids.reprint.request', 'admin.ids.reprint.done', 'admin.ids.run.failed', 'admin.ids.photo.ask', 'admin.ids.design.set', 'admin.ids.mint'],
         fn($op) => (backend_dispatch($op, ['requesterId' => ''])['error'] ?? '') === 'unknown_op')) === 0);
     db_exec("DELETE FROM id_reprints"); db_exec("DELETE FROM id_photo_asks"); db_exec("DELETE FROM members WHERE memberId = 'NGG-IDS-ED'");
 })();

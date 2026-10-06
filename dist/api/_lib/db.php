@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 132;
+const NGG_SCHEMA_TARGET = 133;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3940,6 +3940,9 @@ function db_migrate(PDO $db): void {
              . "CREATE INDEX IF NOT EXISTS idx_id_reprints_subject ON id_reprints(subjectType, subjectId, doneAt);"
              . "CREATE TABLE IF NOT EXISTS id_photo_asks (id INTEGER PRIMARY KEY AUTOINCREMENT, subjectType TEXT NOT NULL, subjectId TEXT NOT NULL, askedBy TEXT NOT NULL DEFAULT '', askedAt TEXT NOT NULL, sent INTEGER NOT NULL DEFAULT 0);"
              . "CREATE INDEX IF NOT EXISTS idx_id_photo_asks_subject ON id_photo_asks(subjectType, subjectId);",
+        // ID Card Studio: the design each card type prints with, and which channels a photo ask reached.
+        133 => "CREATE TABLE IF NOT EXISTS id_designs (kind TEXT PRIMARY KEY, templateId TEXT NOT NULL DEFAULT '', setBy TEXT NOT NULL DEFAULT '', setAt TEXT NOT NULL DEFAULT '');"
+             . "ALTER TABLE id_photo_asks ADD COLUMN channels TEXT NOT NULL DEFAULT '';",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).
