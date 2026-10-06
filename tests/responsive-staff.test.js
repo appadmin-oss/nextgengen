@@ -73,7 +73,6 @@ const PORTALS = [
   { id: 'gate',         component: 'GatePage',          label: 'The Gate desk' },
   { id: 'apply',        component: 'SelfRegisterPage',  label: 'Direct Apply' },
   { id: 'review',       component: 'ReviewDeskPage',    label: 'Review desk' },
-  { id: 'cards',        component: 'CardStudio',        label: 'Card Studio' },
   { id: 'designer',     component: 'DesignerPage',      label: 'Design Studio' },
 ];
 

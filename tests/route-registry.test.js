@@ -170,7 +170,7 @@ const FIXTURE = `<!doctype html><html><head><meta charset="utf-8"><title>route r
     // the list app.jsx shipped before the registry existed.
     ['dashboard', 'profile', 'admin', 'summer-admin', 'club-admin', 'gate', 'verify',
       'circle', 'mentor', 'certificate', 'review', 'journal-entry', 'apply', 'reshoot',
-      'cards', 'designer'].forEach(id => {
+      'designer'].forEach(id => {
       chk('noindex: /' + id, (reg.noindex || []).indexOf(id) !== -1);
     });
     // The public marketing + discovery pages must stay indexable, or the fix

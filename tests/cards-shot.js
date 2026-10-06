@@ -146,43 +146,6 @@ function View() {
 ReactDOM.createRoot(document.getElementById('root')).render(e(View));
 </script></body></html>`);
 
-  /* The studio itself, for the range controls. Same mount-the-bundle approach,
-     with only the four calls CardStudio makes on load stubbed. */
-  const STUDIO = path.join(ROOT, 'tests', '_studio_fixture.html');
-  fs.writeFileSync(STUDIO, `<!doctype html><html><head><meta charset="utf-8">
-<link rel="stylesheet" href="/dist/styles.css"><link rel="stylesheet" href="/dist/styles-app.css">
-<style>body{margin:0;background:#0b1327}</style>
-</head><body><div id="root"></div>
-<script src="/dist/vendor/react.production.min.js"></script>
-<script src="/dist/vendor/react-dom.production.min.js"></script>
-<script src="/dist/data.js"></script><script src="/dist/photos.js"></script>
-<script>
-${FACE}
-var PROGRAM = { program: 'NGG', year: '2026', motto: 'GROW', website: 'nextgengenius.org', phone: '+234', widthMm: 54, heightMm: 75 };
-var CENTRES = [{ centreId: 'C1', name: 'Egbeda', code: 'EG', color: '#D64545' },
-               { centreId: 'C2', name: 'Ijaiye', code: 'IJ', color: '#2E7DD1' }];
-var CARDS = Array.from({ length: 24 }, function (_, i) {
-  var n = i + 1;
-  return { studentId: 'SUM-' + n, displayId: 'NGG/26/' + ('000' + n).slice(-4),
-    firstName: ['ADAEZE','TUNDE','NGOZI','CHIDI','AMAKA','SEGUN','BLESSING','IFEOMA'][i % 8],
-    surname: ['OBI','BAKARE','EZE','NWANKWO','OKONJO','ADEYEMI','ADEYEMI','UCHE'][i % 8],
-    track: 'Arts', token: 'T' + n, photoUrl: face(n, 900, 900),
-    enrolledAt: '2026-07-' + ('0' + (n % 26 + 1)).slice(-2) + 'T09:00:00Z',
-    centre: n % 2 ? CENTRES[1] : CENTRES[0] };
-});
-function P(v) { return function () { return Promise.resolve(v); }; }
-window.NGGApi = { admin: { registration: {
-  cards: P({ program: PROGRAM, cards: CARDS }),
-  centres: P({ centres: CENTRES }),
-  volunteerCards: P({ program: PROGRAM, cards: [] }),
-  hierarchy: P({ tiers: [{ tierId: 'T1', name: 'Mentor', code: 'MEN', color: '#00225F' }] }),
-}, settings: { set: P({ ok: true }) } }, public: {} };
-window.useAuth = function () { return { isSignedIn: true }; };
-</script>
-<script src="/dist/app.min.js"></script>
-<script>ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(window.CardStudio));</script>
-</body></html>`);
-
   const srv = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, stdio: 'ignore' });
   const browser = await chromium.launch(exe ? { executablePath: exe } : {});
   const shots = [];
@@ -218,33 +181,6 @@ window.useAuth = function () { return { isSignedIn: true }; };
     shots.push({ name: '18-volunteer-id-detail', label: 'One card at full scale — keyline, chip and band', kb: Math.round(fs.statSync(f3).size / 1024) });
     console.log('  ✓ 18-volunteer-id-detail.png  (' + shots[shots.length - 1].kb + ' KB)');
 
-    /* The range controls, mid-use: a date window applied, the slice counted
-       against the batch, and the sentence about the cards a date range cannot
-       speak about. */
-    const sp = await ctx.newPage();
-    await sp.setViewportSize({ width: 1500, height: 1250 });
-    await sp.goto(BASE + '/tests/_studio_fixture.html', { waitUntil: 'networkidle' });
-    await sp.waitForSelector('.card-pair', { timeout: 25000 });
-    await sp.getByLabel('Print a range of cards').selectOption('date');
-    await sp.getByLabel('Registered from').fill('2026-07-04');
-    await sp.getByLabel('Registered to').fill('2026-07-10');
-    await sp.waitForTimeout(900);
-    const f4 = path.join(OUT, '19-cards-print-range.png');
-    await sp.screenshot({ path: f4 });
-    shots.push({ name: '19-cards-print-range', label: 'Printing a range — by date, by ID number, or card by card', kb: Math.round(fs.statSync(f4).size / 1024) });
-    console.log('  ✓ 19-cards-print-range.png  (' + shots[shots.length - 1].kb + ' KB)');
-
-    // Picking individually: every candidate still on screen, two ticked.
-    await sp.getByLabel('Print a range of cards').selectOption('pick');
-    await sp.waitForTimeout(600);
-    await sp.getByLabel('Print NGG/26/0002').check();
-    await sp.getByLabel('Print NGG/26/0005').check();
-    await sp.waitForTimeout(700);
-    const f5 = path.join(OUT, '20-cards-print-pick.png');
-    await sp.screenshot({ path: f5 });
-    shots.push({ name: '20-cards-print-pick', label: 'A reprint of two — the rest stay visible to pick from, and off the sheet', kb: Math.round(fs.statSync(f5).size / 1024) });
-    console.log('  ✓ 20-cards-print-pick.png  (' + shots[shots.length - 1].kb + ' KB)');
-
     // Fold into the screens index rather than beside it.
     writeScreenIndex(OUT, shots);
     console.log('\n' + shots.length + ' card view(s) in docs/screens/');
@@ -255,6 +191,5 @@ window.useAuth = function () { return { isSignedIn: true }; };
     await browser.close();
     srv.kill();
     try { fs.unlinkSync(FIX); } catch (_) {}
-    try { fs.unlinkSync(path.join(ROOT, 'tests', '_studio_fixture.html')); } catch (_) {}
   }
 })();
