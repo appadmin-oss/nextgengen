@@ -229,6 +229,9 @@ function admin_members_with_consent(array $rows): array {
         // once a member has generated one; the card falls back to a member deep
         // link otherwise. Not added to public_member — this is a staff read.
         if (!empty($r['anchorCode'])) $m['anchorCode'] = (string)$r['anchorCode'];
+        // When they joined: the roster's Joined column and its default order.
+        // public_member() leaves it out; the roster sorted by a date it never showed.
+        $m['createdAt'] = (string)($r['createdAt'] ?? '');
         $cs = $byId[$mid] ?? [];
         $d = $decide[$mid] ?? ['mayName' => true, 'gated' => false];
         $m['consent'] = [

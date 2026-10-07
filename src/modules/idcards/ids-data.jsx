@@ -43,6 +43,10 @@ function idsRecord(kind, raw, state) {
     reason: re ? "reprint" : "new", why: re ? re.why : "",
     printedBefore: !!issued, lastIssue: issued,
     divMissing: !String(division || "").trim(),
+    // When they registered (participants, volunteers) or joined (members): what a run "by date" cuts on.
+    day: String(raw.enrolledAt || raw.joinDate || raw.createdAt || "").slice(0, 10),
+    // The number a person means by "cards 40 to 80": the last run of digits in the printed ID.
+    seq: (m => m ? parseInt(m[1], 10) : null)(String(displayId).match(/(\d+)(?!.*\d)/)),
     asked: (state.asked || {})[key] || null,      // { at, channels } of the last photo request
   };
 }

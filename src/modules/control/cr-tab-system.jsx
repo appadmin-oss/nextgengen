@@ -2,7 +2,7 @@
    Control Room v2 — the system tabs (page `settings`). Filled into CR_TAB_DEFS
    (see cr-pages.jsx). Every top-level name here starts `crSy`.
 
-   PROGRESS (for a resumed run): audit — built, verified.
+   PROGRESS (for a resumed run): audit, ops — built, verified in the lab. integrations — built, verified. settings (General) — built, verified. access — built, verifying.
    ========================================================================== */
 
 /* ── Shared: the role registry, from the server (admin.roles). The screen keeps
@@ -238,6 +238,638 @@ Object.assign(CR_TAB_DEFS, {
         </p>
       ) });
       return out;
+    },
+  },
+});
+
+/* ══ Integrations ════════════════════════════════════════════════════════════
+   v1 AdminIntegrations: destinations (Google Chat, signed webhook, Sheets
+   mirror, Drive sink) with add/edit/pause, Send test, Retry stuck, Delete; the
+   delivery health of each; the delivery queue run by hand; the full member
+   sync to Sheets; the recent deliveries; and a setup guide per kind with the
+   Apps Script to paste. The signing secret is shown once, on create. */
+const CR_SY_INT_KINDS = [["gchat", "Google Chat"], ["webhook", "Signed webhook"], ["sheets", "Google Sheets mirror"], ["drive", "Drive (any provider)"]];
+const CR_SY_INT_HINT = { gchat: "https://chat.googleapis.com/…", sheets: "https://script.google.com/macros/s/…/exec", webhook: "https://your-endpoint.example/…", drive: "https://script.google.com/macros/s/…/exec" };
+const CR_SY_INT_URL_ERR = {
+  bad_gchat_url: "A Google Chat webhook starts with https://chat.googleapis.com/.",
+  bad_script_url: "A Sheets mirror is an Apps Script web app: it starts with https://script.google.com/.",
+  bad_url: "The address must start with https://.",
+};
+const CR_SY_SCRIPT_SHEETS = `function doPost(e) {
+  var body = JSON.parse(e.postData.contents);
+  // Optional shared-secret check (matches the signing secret you saved):
+  // if (body.secret !== 'PASTE_SECRET') return ok('bad secret');
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(body.event) || ss.insertSheet(body.event);
+  var rows = [].concat(body.data.members || [body.data]);
+  rows.forEach(function (r) { sheet.appendRow([new Date(), JSON.stringify(r)]); });
+  return ok('ok');
+}
+function ok(msg){ return ContentService.createTextOutput(msg); }`;
+const CR_SY_SCRIPT_DRIVE = `function doPost(e) {
+  var body = JSON.parse(e.postData.contents);
+  var d = body.data;                       // { name, url, channel, author }
+  var file = UrlFetchApp.fetch(d.url).getBlob().setName(d.name || 'document');
+  var folder = DriveApp.getFoldersByName('NGG Community Docs').hasNext()
+    ? DriveApp.getFoldersByName('NGG Community Docs').next()
+    : DriveApp.createFolder('NGG Community Docs');
+  folder.createFile(file);
+  return ContentService.createTextOutput('ok');
+}`;
+function crSyKindLabel(k) { const f = CR_SY_INT_KINDS.find(x => x[0] === k); return f ? f[1] : k; }
+async function crSyCopy(ctx, text, what) {
+  try { await navigator.clipboard.writeText(text); ctx.toast(what + " copied"); }
+  catch (_) { ctx.toast("Couldn’t reach the clipboard. Select the text in the guide and copy it.", null, true); }
+}
+function crSyIntGuide(ctx, kind) {
+  const script = [
+    "1. Open a Google Sheet (any Google account with Drive for a Drive sink) → Extensions → Apps Script.",
+    "2. Delete the sample, paste the Apps Script below, and save.",
+    "3. Deploy → New deployment → Web app. Execute as: Me. Who has access: Anyone. This is the step usually missed — without “Anyone”, Google shows a sign-in page and nothing is written.",
+    "4. Copy the /exec web app address, paste it into the integration, save, then Send test.",
+  ].join("\n");
+  const sec = {
+    gchat: [{ h: "Google Chat", text: "1. In the Google Chat space → Apps & integrations → Manage webhooks.\n2. Create a webhook and copy its address (it starts with https://chat.googleapis.com/).\n3. Add it here, choose the events, save, and use Send test to confirm." }],
+    webhook: [{ h: "Signed webhook", text: "1. Point the address at your HTTPS endpoint.\n2. Every POST is signed: header X-NGG-Signature: sha256=HMAC(timestamp + \".\" + body, secret). Verify it with the signing secret shown once when you save.\n3. Answer 2xx within 15 seconds. Anything else is retried with backoff (8 tries, then dead)." }],
+    sheets: [{ h: "Google Sheets mirror", text: script }, { h: "Apps Script — paste into the editor", text: CR_SY_SCRIPT_SHEETS }],
+    drive: [{ h: "Drive (any provider)", text: script + "\n5. Set the events to community.document so shared documents are filed to Drive automatically.\nFor Dropbox, OneDrive or S3, point the address at a Zapier or Make webhook (or your own endpoint): it receives the same signed JSON." }, { h: "Apps Script — paste into the editor", text: CR_SY_SCRIPT_DRIVE }],
+  };
+  ctx.drawer({
+    title: "Setup guide · " + crSyKindLabel(kind), sub: "Step by step",
+    sections: sec[kind],
+    actions: [
+      kind === "sheets" || kind === "drive" ? { l: "Copy the Apps Script", primary: true, run: () => crSyCopy(ctx, kind === "drive" ? CR_SY_SCRIPT_DRIVE : CR_SY_SCRIPT_SHEETS, "Apps Script") } : null,
+      ...CR_SY_INT_KINDS.filter(k => k[0] !== kind).map(k => ({ l: k[1], run: () => crSyIntGuide(ctx, k[0]) })),
+    ].filter(Boolean),
+  });
+}
+function crSyIntEdit(ctx, i) {
+  const editing = !!i;
+  ctx.closeDrawer();
+  ctx.form({
+    title: editing ? "Edit " + (i.name || "integration") : "Add integration", submit: editing ? "Save changes" : "Add integration", busyLabel: "Saving…",
+    intro: "Events go out to this destination as they happen. Open the setup guide from the header for the steps for each kind.",
+    values: editing ? { kind: i.kind, name: i.name, status: i.status, url: i.url, events: (i.events || ["*"]).join(", "), secret: "" } : { kind: "gchat", status: "active", events: "*" },
+    fields: [
+      { id: "kind", l: "Kind", type: "chips", req: true, opts: CR_SY_INT_KINDS },
+      { id: "name", l: "Name", max: 160, ph: "Shown in this list", help: "Leave blank to use the kind." },
+      { id: "url", l: "Destination address", req: true, type: "url", ph: CR_SY_INT_HINT.webhook, check: (v, all) => /^https:\/\//.test(String(v).trim()) ? "" : "The address must start with https://.", help: "Google Chat: https://chat.googleapis.com/… · Sheets: https://script.google.com/macros/s/…/exec" },
+      { id: "events", l: "Events", req: true, ph: "* or attendance.*, registration.created", help: "Comma-separated. * is every event; attendance.* matches every attendance event. A Drive sink usually takes community.document." },
+      { id: "secret", l: "Signing secret", max: 200, when: v => v.kind !== "gchat", help: editing ? "Leave blank to keep the current secret" + (i.secretHint ? " (" + i.secretHint + ")" : "") + "." : "Leave blank and one is made for you, shown once." },
+      { id: "status", l: "Status", type: "chips", req: true, opts: [["active", "Active"], ["paused", "Paused"]] },
+    ],
+    onSubmit: async v => {
+      const events = String(v.events || "").split(",").map(s => s.trim()).filter(Boolean);
+      try {
+        const r = await NGGApi.admin.integrations.upsert({ integrationId: editing ? i.integrationId : undefined, kind: v.kind, name: v.name, url: String(v.url).trim(),
+          events: events.length ? events : ["*"], secret: v.kind !== "gchat" && v.secret ? v.secret : undefined, status: v.status });
+        ctx.reload();
+        return r;
+      } catch (e) {
+        const code = (e && e.data && e.data.error) || (e && (e.code || e.message));
+        if (CR_SY_INT_URL_ERR[code]) return { fieldErrors: { url: CR_SY_INT_URL_ERR[code] } };
+        throw e;
+      }
+    },
+    done: (v, r) => {
+      /* The secret is revealed once. A 4-second toast is not long enough to
+         copy it, so it opens in a drawer that stays until it is closed. */
+      if (r && r.secret) setTimeout(() => ctx.drawer({ title: "Copy the signing secret now", sub: "It is shown once. Afterwards only its last four characters are.",
+        sections: [{ h: "Signing secret", text: r.secret }, { h: "What it is for", text: "The receiver checks X-NGG-Signature against it, so only this server can post to it." }],
+        actions: [{ l: "Copy the secret", primary: true, run: () => crSyCopy(ctx, r.secret, "Secret") }, { l: "Done", run: () => ctx.closeDrawer() }] }), 50);
+      return (editing ? "Saved · " : "Added · ") + (v.name || crSyKindLabel(v.kind));
+    },
+  });
+}
+async function crSyIntTest(ctx, id) {
+  ctx.toast("Sending a test…");
+  try {
+    const r = await NGGApi.admin.integrations.test(id);
+    ctx.toast(r.delivered ? "Test delivered" : "Test failed: " + (r.error || "no detail from the receiver"), null, !r.delivered);
+    ctx.reload();
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t send the test."), null, true); }
+}
+async function crSyIntRetry(ctx, id) {
+  try {
+    const r = await NGGApi.admin.integrations.retry(id || "");
+    const dsp = r.dispatch || {};
+    ctx.toast("Requeued " + crNum(r.requeued) + " · " + crNum(dsp.delivered) + " delivered · " + crNum(dsp.failed) + " failed", null, (dsp.failed || 0) > 0);
+    ctx.closeDrawer(); ctx.reload();
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t retry."), null, true); }
+}
+async function crSyIntDelete(ctx, i) {
+  const ok = await ctx.confirm({ title: "Delete " + (i.name || "this integration") + "?", danger: true, cta: "Delete",
+    body: "Anything relying on it stops receiving events straight away. Its delivery history goes with it. This can’t be undone." });
+  if (!ok) return;
+  try { await NGGApi.admin.integrations.remove(i.integrationId); ctx.closeDrawer(); ctx.toast("Deleted · " + (i.name || i.integrationId)); ctx.reload(); }
+  catch (e) { ctx.toast(crErr(e, "Couldn’t delete it."), null, true); }
+}
+function crSyIntOpen(ctx, i, h) {
+  const stuck = (h.pending || 0) + (h.dead || 0);
+  ctx.drawer({
+    title: i.name || i.integrationId, sub: crSyKindLabel(i.kind) + (i.status === "paused" ? " · paused" : ""),
+    stats: [["Delivered", crNum(h.ok)], ["Pending", crNum(h.pending)], ["Dead", crNum(h.dead)]],
+    fields: [["Address", i.url], ["Events", (i.events || []).join(", ")], ["Signing secret", i.hasSecret ? i.secretHint : "None"], ["Status", i.status === "paused" ? "Paused" : "Active"],
+      ["Last delivered", h.lastOkAt ? crDate(h.lastOkAt, true) : "Never"], ["Added", crDate(i.createdAt)]],
+    sections: [h.lastError ? { h: "Last error", text: h.lastError } : null],
+    actions: [
+      { l: "Send test", primary: true, run: () => crSyIntTest(ctx, i.integrationId) },
+      stuck ? { l: "Retry " + crNum(stuck) + " stuck", run: () => crSyIntRetry(ctx, i.integrationId) } : null,
+      { l: "Edit", run: () => crSyIntEdit(ctx, i) },
+      { l: "Setup guide", run: () => crSyIntGuide(ctx, i.kind) },
+      { l: "Delete", run: () => crSyIntDelete(ctx, i) },
+    ].filter(Boolean),
+  });
+}
+const CR_SY_DLV = { ok: ["Delivered", "ok"], pending: ["Pending", "warn"], failed: ["Retrying", "warn"], dead: ["Dead", "bad"] };
+
+Object.assign(CR_TAB_DEFS, {
+  integrations: {
+    skeleton: ["kpis", "cards", "table"],
+    load: async () => NGGApi.admin.integrations.list(),
+    actions: (d, ctx) => {
+      const hasSheets = (d.integrations || []).some(i => i.kind === "sheets" && i.status === "active");
+      return [
+        { l: "Add integration", icon: "plus", primary: true, run: () => crSyIntEdit(ctx, null) },
+        { l: "Run delivery queue now", icon: "paper-plane-tilt", run: async () => {
+          try { const r = await NGGApi.admin.integrations.dispatch(); ctx.toast("Tried " + crNum(r.attempted) + " · " + crNum(r.delivered) + " delivered · " + crNum(r.failed) + " failed", null, (r.failed || 0) > 0); ctx.reload(); }
+          catch (e) { ctx.toast(crErr(e, "Couldn’t run the queue."), null, true); }
+        } },
+        { l: "Sync members to Sheets", icon: "table", disabled: !hasSheets, why: hasSheets ? "Sends every member to the active Sheets mirror" : "Add an active Google Sheets mirror first.", run: async () => {
+          ctx.toast("Syncing members to Sheets…");
+          try { const r = await NGGApi.admin.integrations.syncMembers(); ctx.toast("Sent " + crPlural(r.total || 0, "member") + " in " + crPlural(r.chunksSent || 0, "batch", "batches")); }
+          catch (e) { ctx.toast(crErr(e, "Couldn’t sync to Sheets."), null, true); }
+        } },
+        { l: "Setup guides", icon: "book-open", run: () => crSyIntGuide(ctx, "gchat") },
+      ];
+    },
+    blocks: (d, ctx) => {
+      const items = d.integrations || [], health = d.health || {}, log = d.log || [];
+      const sum = k => items.reduce((n, i) => n + ((health[i.integrationId] || {})[k] || 0), 0);
+      const queued = log.filter(x => x.status === "pending" || x.status === "failed").length;
+      const dead = sum("dead");
+      return [
+        { type: "kpis", span: 6, items: [
+          { l: "Destinations", v: crNum(items.length), dn: crNum(items.filter(i => i.status !== "paused").length) + " active" },
+          { l: "Delivered", v: crNum(sum("ok")) },
+          { l: "Waiting to send", v: crNum(sum("pending")), dn: queued ? crNum(queued) + " in the recent log" : "" },
+          { l: "Dead", v: crNum(dead), dn: dead ? "Open the destination to retry" : "" },
+        ] },
+        { type: "note", span: 6, icon: "plugs-connected", text: "Events — registrations, attendance, awards, wellbeing flags, shared documents — go to Google Chat, a signed webhook, the Sheets mirror or a Drive sink.",
+          sub: "Delivery runs by itself on web-cron. Use “Run delivery queue now” to send what is waiting straight away." },
+        { type: "cards", span: 6, title: "Destinations", empty: "No integrations yet. Add one to send events to Google Chat, Sheets, Drive or your own endpoint.",
+          cards: items.map(i => {
+            const h = health[i.integrationId] || {};
+            const stuck = (h.pending || 0) + (h.dead || 0);
+            return { icon: { gchat: "chat-circle-text", webhook: "webhooks-logo", sheets: "table", drive: "folder-simple" }[i.kind] || "plug",
+              title: i.name || i.integrationId, sub: i.url,
+              tag: i.status === "paused" ? "Paused" : h.dead ? crNum(h.dead) + " dead" : stuck ? crNum(stuck) + " waiting" : "Active",
+              tone: i.status === "paused" ? "neutral" : h.dead ? "bad" : stuck ? "warn" : "ok",
+              meta: [["Kind", crSyKindLabel(i.kind)], ["Delivered", crNum(h.ok)], ["Last delivered", h.lastOkAt ? crAgo(h.lastOkAt) : "Never"], ["Events", (i.events || []).join(", ")]],
+              onClick: () => crSyIntOpen(ctx, i, h) };
+          }) },
+        { type: "table", span: 6, title: "Recent deliveries", sub: "The latest 40", nosel: true,
+          cols: ["Event", "Destination", "Status", { l: "Tries", num: true }, { l: "Last error", wrap: true }, "When"],
+          rows: log.map((x, n) => {
+            const s = CR_SY_DLV[x.status] || [x.status, "neutral"];
+            const dest = items.find(i => i.integrationId === x.integrationId);
+            return { key: x.eventId + "-" + x.integrationId + "-" + n, cells: [{ k: "mono", t: x.kind || x.eventId }, { k: "text", t: dest ? dest.name : x.integrationId }, { k: "status", t: s[0], tone: s[1] },
+              { k: "num", t: crNum(x.attempts), v: Number(x.attempts) || 0 }, { k: "text", t: x.lastError || "" }, { k: "text", t: crDate(x.deliveredAt || x.nextAttemptAt, true) }] };
+          }),
+          filters: ["Status", "Destination"],
+          emptyText: "Nothing has been sent yet. Deliveries appear here as events go out." },
+      ];
+    },
+  },
+});
+
+/* ══ General ═════════════════════════════════════════════════════════════════
+   v1 AdminSettings: sign-up switches, messages, volunteer hours, the featured
+   session, geo-fencing, the photo rules, attendance and closing times, the
+   staff idle sign-out, ID card branding, the homepage promo banner, the email
+   delivery test, AI status with a live key test, and this device's
+   accessibility settings.
+
+   The form blocks are built ONCE per load and kept on the data: CrFormBlock
+   re-bases its edits whenever its block object changes, and blocks() runs on
+   every shell render — including the one the unsaved bar itself causes — so a
+   block rebuilt per render would throw away the first keystroke. */
+const crSyGenCtx = { current: null };
+const CR_SY_ATT_TYPES = [["member", "NGG members"], ["student", "Summer School participants"], ["volunteer", "Volunteers"], ["default", "Everyone else"]];
+const CR_SY_CLOSE_TYPES = [["member", "NGG members"], ["student", "Summer School participants"], ["volunteer", "Summer volunteers"]];
+const CR_SY_IDLE = [["900", "15 minutes"], ["1800", "30 minutes (default)"], ["3600", "1 hour"], ["14400", "4 hours"], ["43200", "12 hours — a full working day"], ["0", "Never — only for a locked, private office"]];
+const CR_SY_TOGGLES = ["applications_open", "mentor_applications_open", "volunteer_applications_open", "intake_photo_required", "photo_gate_issuance", "geofence_enabled", "volunteer_sms_notify", "checkin_state_emails", "qotw_mail", "companion_enabled"];
+const CR_SY_ID_KEYS = ["program", "year", "motto", "validityDays", "website", "phone", "logoLockup", "logoOkun"];
+const crSyTime = v => !v || /^([01]?\d|2[0-3]):[0-5]\d$/.test(v) ? "" : "Use a time like 09:00.";
+const crSyInt = (lo, hi, what) => v => /^-?\d+$/.test(String(v).trim()) && +v >= lo && +v <= hi ? "" : "Enter " + what + " from " + lo + " to " + hi + ".";
+
+function crSyGenForm(d) {
+  const s = d.settings || {}, a = s.attendance || {}, rbt = a.resumptionByType || {}, cbt = a.closeByType || {}, id = s.idcard || {};
+  const tog = (k, l, help) => ({ id: k, l, help, c: "toggle", value: !!s[k] });
+  const sessOpts = [["", "None"]].concat((d.sessions || []).map(x => [x.sessionId, (x.name || x.code || x.sessionId) + (x.startDate ? " · from " + crDate(x.startDate) : "")]));
+  if (s.featured_session_id && !sessOpts.some(o => o[0] === s.featured_session_id)) sessOpts.push([s.featured_session_id, s.featured_session_id + " (not this year)"]);
+  return {
+    type: "form", span: 6, key: "settings-general",
+    groups: [
+      { h: "Sign-ups", help: "Whether the public forms take new applications.", rows: [
+        tog("applications_open", "Teen applications open"),
+        tog("mentor_applications_open", "Mentor applications open"),
+        tog("volunteer_applications_open", "Volunteer registration open"),
+        tog("intake_photo_required", "Require a headshot on the public forms", "Teen, volunteer and kiosk. Off: the photo is optional at sign-up and can be added later through Photo review or the ID Card Studio."),
+        tog("photo_gate_issuance", "Hold the ID until the photo is approved", "The ID is bound only once parent consent is in and the headshot is approved in Photo review. A registration with no photo is never held."),
+        tog("geofence_enabled", "Geo-fenced registration", "Picks the centre by location and refuses off-site sign-ups. Map each centre’s point under Members → Centres."),
+      ] },
+      { h: "Messages", rows: [
+        tog("volunteer_sms_notify", "Text volunteers their ID by SMS", "When a phone number is on file."),
+        tog("checkin_state_emails", "Email a note on check-in", "Award-focused when somebody is doing well, a nudge otherwise."),
+        tog("qotw_mail", "Email NGG members the quote of the week every Monday", "The same quote as their Anchor Journal."),
+        tog("companion_enabled", "Companion check-ins", "Assess every NGG member weekly and email them, and their parent, the check-in."),
+      ] },
+      { h: "Volunteers and the homepage", rows: [
+        { id: "volunteer_session_hours", l: "Hours credited per volunteer session", c: "input", type: "number", value: String(s.volunteer_session_hours == null ? 4 : s.volunteer_session_hours), check: crSyInt(1, 12, "hours") },
+        { id: "featured_session_id", l: "Featured session", help: "The homepage countdown counts down to it.", c: "select", opts: sessOpts, value: s.featured_session_id || "" },
+      ] },
+      { h: "Attendance and punctuality", help: "Every card scan is stamped present or late against these times, and the check-in desk shows it live.", rows: [
+        { id: "att_enabled", l: "Flag lateness at check-in", c: "toggle", value: a.enabled !== false },
+      ].concat(CR_SY_ATT_TYPES.map(([t, l]) => ({ id: "att_res_" + t, l: "Due time · " + l, c: "input", type: "time", value: rbt[t] || "", help: t === "member" && !rbt[t] ? "Blank: uses the time for everyone else." : undefined, check: crSyTime })), [
+        { id: "att_grace", l: "Grace period before ‘late’", help: "Minutes.", c: "input", type: "number", value: String(a.graceMinutes == null ? 10 : a.graceMinutes), check: crSyInt(0, 180, "minutes") },
+        { id: "att_tz", l: "Time zone offset from UTC", help: "Minutes. West Africa Time is 60.", c: "input", type: "number", value: String(a.tzOffset == null ? 60 : a.tzOffset), check: crSyInt(-720, 840, "minutes") },
+      ]) },
+      { h: "Closing time", help: "Nobody can sign out before closing time — the desk, the kiosk and the gate all refuse it, so a sign-out is proof somebody stayed. An admin can still let a person go early with a written reason, which is recorded. Leave a time blank for no closing time.",
+        rows: CR_SY_CLOSE_TYPES.map(([t, l]) => ({ id: "att_close_" + t, l: "Closing time · " + l, c: "input", type: "time", value: cbt[t] || "", check: crSyTime })) },
+      { h: "Staff sign-in", help: "How long a Control Room session may sit untouched before it locks. A warning appears two minutes before; reading or clicking anywhere keeps it alive.", rows: [
+        { id: "session_idle_admin", l: "Sign staff out after", c: "select", opts: CR_SY_IDLE.concat(CR_SY_IDLE.some(o => o[0] === String(s.session_idle_admin)) || s.session_idle_admin == null ? [] : [[String(s.session_idle_admin), Math.round(s.session_idle_admin / 60) + " minutes"]]), value: String(s.session_idle_admin == null ? 1800 : s.session_idle_admin) },
+      ] },
+      { h: "ID card branding", help: "Printed on the Summer School cards and the digital IDs. The card’s QR always opens the holder’s /q/ profile page.", rows: [
+        { id: "id_program", l: "Programme name", c: "input", max: 512, value: id.program || "" },
+        { id: "id_year", l: "Year", c: "input", max: 512, value: id.year == null ? "" : String(id.year) },
+        { id: "id_motto", l: "Motto", c: "input", max: 512, value: id.motto || "" },
+        { id: "id_validityDays", l: "A new card is valid for", help: "Days. 0 means it never expires. Cards already issued keep the expiry they were issued with.", c: "input", type: "number", value: String(id.validityDays == null ? 90 : id.validityDays), check: crSyInt(0, 3650, "days") },
+        { id: "id_website", l: "Website printed on the card", c: "input", max: 512, value: id.website || "" },
+        { id: "id_phone", l: "Phone printed on the card", c: "input", type: "tel", max: 512, value: id.phone || "" },
+        { id: "id_logoLockup", l: "Lockup logo address", c: "input", max: 512, value: id.logoLockup || "" },
+        { id: "id_logoOkun", l: "Partner logo address (card back)", c: "input", max: 512, value: id.logoOkun || "" },
+      ] },
+    ],
+    /* Only what changed goes back. Attendance is the exception: the server
+       replaces that setting whole, so it is sent whole — every field of it is
+       on this screen — built over what was loaded. */
+    save: async (patch, all) => {
+      const out = {};
+      Object.keys(patch).forEach(k => {
+        if (CR_SY_TOGGLES.includes(k)) out[k] = !!patch[k];
+        else if (k === "volunteer_session_hours" || k === "session_idle_admin") out[k] = parseInt(patch[k], 10) || 0;
+        else if (k === "featured_session_id") out[k] = patch[k];
+      });
+      const idk = Object.keys(patch).filter(k => k.indexOf("id_") === 0);
+      if (idk.length) { out.idcard = {}; idk.forEach(k => { const f = k.slice(3); out.idcard[f] = f === "validityDays" ? parseInt(patch[k], 10) || 0 : String(patch[k]).trim(); }); }
+      if (Object.keys(patch).some(k => k.indexOf("att_") === 0)) {
+        const res = Object.assign({}, rbt), close = {};
+        CR_SY_ATT_TYPES.forEach(([t]) => { const v = String(all["att_res_" + t] || "").trim(); if (v) res[t] = v; else delete res[t]; });
+        CR_SY_CLOSE_TYPES.forEach(([t]) => { const v = String(all["att_close_" + t] || "").trim(); if (v) close[t] = v; });
+        Object.keys(cbt).forEach(t => { if (!CR_SY_CLOSE_TYPES.some(x => x[0] === t)) close[t] = cbt[t]; });
+        out.attendance = { enabled: !!all.att_enabled, graceMinutes: parseInt(all.att_grace, 10) || 0, tzOffset: parseInt(all.att_tz, 10) || 0, resumptionByType: res, closeByType: close };
+      }
+      await NGGApi.admin.settings.set(out);
+    },
+    onSaved: () => crSyGenCtx.current && crSyGenCtx.current.reload(),
+  };
+}
+
+function crSyPromoForm(d) {
+  const p = d.promo || {};
+  return {
+    type: "form", span: 6, key: "settings-promo",
+    groups: [{ h: "Homepage banner", help: "A banner across the top of the public homepage that visitors can dismiss. Give it an expiry and it retires itself.", rows: [
+      { id: "text", l: "Banner text", c: "input", max: 200, ph: "Summer School registration closes Friday", value: p.text || "", check: v => String(v).trim() ? "" : "Enter the banner text, or clear the banner instead." },
+      { id: "ctaLabel", l: "Button label", help: "Optional.", c: "input", max: 40, ph: "Register now", value: p.ctaLabel || "" },
+      { id: "ctaUrl", l: "Button link", help: "Optional. A path on this site, like /join, or a full address.", c: "input", max: 300, ph: "/join", value: p.ctaUrl || "" },
+      { id: "expires", l: "Expires", help: "Optional. The banner disappears at the end of this day.", c: "input", type: "date", value: (p.expires || "").slice(0, 10) },
+    ] }],
+    /* The banner is stored as one value, so the whole of it is sent. */
+    save: async (patch, all) => {
+      if (!String(all.text || "").trim()) throw Object.assign(new Error("bad"), { data: { message: "Enter the banner text, or clear the banner instead." } });
+      await NGGApi.admin.promotions.set({ text: String(all.text).trim(), ctaLabel: String(all.ctaLabel || "").trim(), ctaUrl: String(all.ctaUrl || "").trim(), expires: all.expires ? all.expires + "T23:59:59Z" : "" });
+    },
+    onSaved: () => crSyGenCtx.current && crSyGenCtx.current.reload(),
+  };
+}
+
+async function crSyPromoClear(ctx, old) {
+  try {
+    await NGGApi.admin.promotions.set(null);
+    ctx.reload();
+    ctx.toast("Homepage banner cleared", async () => { try { await NGGApi.admin.promotions.set(old); ctx.reload(); } catch (e) { ctx.toast(crErr(e, "Couldn’t put it back."), null, true); } });
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t clear the banner."), null, true); }
+}
+
+function crSyMailTest(ctx) {
+  ctx.form({
+    title: "Send a test email", submit: "Send test", busyLabel: "Sending…",
+    intro: "Sends one real email and reports exactly what happened. Shared hosts often drop plain PHP mail(); if it fails in that mode, set mail.smtp in api/config.php.",
+    values: { to: "" },
+    fields: [{ id: "to", l: "Send to", type: "email", email: true, ph: (ctx.me && ctx.me.email) || "", help: "Leave blank to send it to yourself." }],
+    onSubmit: async v => NGGApi.admin.settings.testMail(String(v.to || "").trim()),
+    done: (v, r) => {
+      setTimeout(() => ctx.drawer({
+        title: r.delivered ? "Test email sent" : "Test email not delivered", sub: "Mode: " + (r.mode || "unknown"),
+        fields: [["Result", r.delivered ? "Handed over for delivery. Check the inbox, and spam." : "Not delivered"], ["To", r.to], ["Mode", r.mode], ["From", r.from], ["Reply to", r.replyTo],
+          ["SMTP server", r.smtp ? r.smtp.host + ":" + r.smtp.port + " (" + (r.smtp.secure || "plain") + ")" : ""], ["SMTP sign-in", r.smtp && r.smtp.authUser]],
+        sections: [r.error ? { h: "Error", text: r.error } : null, (r.hints || []).length ? { h: "What to check", text: r.hints.join("\n\n") } : null],
+      }), 50);
+      return r.delivered ? "Sent to " + r.to : null;
+    },
+  });
+}
+
+async function crSyAiProbe(ctx) {
+  ctx.toast("Sending one real request per profile…");
+  try {
+    const r = await NGGApi.admin.summer.aiStatus(true);
+    ctx.setData(x => Object.assign({}, x, { ai: r }));
+    const bad = (r.ai || []).filter(x => x.probe && !x.probe.ok).length;
+    ctx.toast(bad ? crPlural(bad, "profile") + " failed the test" : "Keys tested", null, bad > 0);
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t test the keys."), null, true); }
+}
+
+Object.assign(CR_TAB_DEFS, {
+  settings: {
+    skeleton: ["table", "table"],
+    load: async () => {
+      const [st, sess, promo, ai] = await Promise.all([
+        NGGApi.admin.settings.get(),
+        NGGApi.admin.sessions.list(new Date().getFullYear()).catch(() => ({ sessions: [] })),
+        NGGApi.admin.promotions.get().catch(e => ({ promoErr: e })),
+        NGGApi.admin.summer.aiStatus(false).catch(e => ({ aiErr: e })),
+      ]);
+      const d = { settings: st.settings || {}, sessions: sess.sessions || [], promo: promo.promo || null, promoErr: promo.promoErr || null, ai };
+      d.formMain = crSyGenForm(d);
+      d.formPromo = crSyPromoForm(d);
+      return d;
+    },
+    actions: (d, ctx) => [
+      { l: "Send test email", icon: "envelope-simple", primary: true, run: () => crSyMailTest(ctx) },
+      { l: "Test the AI keys", icon: "sparkle", run: () => crSyAiProbe(ctx), disabled: !(d.ai && d.ai.anyEnabled), why: d.ai && d.ai.anyEnabled ? "Sends one real request per profile" : "No AI provider key is configured, so there is nothing to test." },
+    ],
+    blocks: (d, ctx) => {
+      crSyGenCtx.current = ctx;
+      const ai = d.ai || {}, rows = ai.ai || [];
+      return [
+        Object.assign(d.formMain, { title: "Programme settings" }),
+        d.promoErr ? { type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the homepage banner. " + crErr(d.promoErr, ""), act: { l: "Try again", run: () => ctx.reload() } }
+          : Object.assign(d.formPromo, { title: "Homepage promo banner" }),
+        d.promo && d.promo.text ? { type: "note", span: 6, icon: "megaphone", text: "The banner is live: “" + d.promo.text + "”" + (d.promo.expires ? " until " + crDate(d.promo.expires) : "") + ".", act: { l: "Clear the banner", run: () => crSyPromoClear(ctx, d.promo) } }
+          : { type: "note", span: 6, icon: "megaphone", text: "No homepage banner is showing. Write one above and save to put it up." },
+        ai.aiErr ? { type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t read the AI status. " + crErr(ai.aiErr, ""), act: { l: "Try again", run: () => ctx.reload() } }
+          : { type: "note", span: 6, icon: "sparkle", tone: ai.anyEnabled ? "ok" : "warn",
+            text: ai.anyEnabled ? "AI is on. The table shows which provider answers each feature." : "AI is off — everything still works.",
+            sub: ai.anyEnabled ? "Use “Test the AI keys” to send one real request per profile: a key that is set but rejected looks exactly like a working one until you do." : "No provider key is configured, so every feature below runs on its built-in rules. Nothing is broken; it just isn’t intelligent. Add a Groq or Gemini key in api/config.php to switch it on." },
+        ai.aiErr ? null : { type: "table", span: 6, title: "AI features", nosel: true,
+          cols: [{ l: "Feature", wrap: true }, { l: "Status", wrap: true }, "Provider", "Test"],
+          rows: rows.map(r => ({ key: r.profile, cells: [
+            { k: "strong", t: r.profile, s: r.what },
+            r.enabled ? { k: "status", t: "On", tone: "ok" } : { k: "text", t: "Rules only", s: r.behaviourWhenOff },
+            { k: "text", t: r.enabled ? r.provider + (r.model ? " · " + r.model : "") : "—", s: r.fallbacks > 0 ? "+" + crPlural(r.fallbacks, "fallback") : "" },
+            !r.probe ? { k: "text", t: "Not tested" } : r.probe.ok ? { k: "status", t: "OK · " + crNum(r.probe.ms) + " ms", tone: "ok" } : { k: "status", t: r.probe.error || "Failed", tone: "bad" },
+          ] })),
+          emptyText: "This server reports no AI features." },
+        /* Mounted, not rebuilt: A11ySettingsPanel (components.jsx) is the one
+           implementation of these per-device preferences (CLAUDE.md §11). */
+        { type: "custom", span: 6, title: "Accessibility on this device", sub: "Applies to the Control Room and the public site in this browser only. Nothing is saved to your account.",
+          render: () => <div className="cr-box cr-sy-a11y" style={{ padding: "8px 20px 16px" }}><A11ySettingsPanel/></div> },
+      ];
+    },
+  },
+});
+
+/* ══ Access & roles ══════════════════════════════════════════════════════════
+   v1 AdminAccess + AccessMatrix + the role and access parts of the member
+   editor (MemberCapsEditor, account recovery). Roles come from the server
+   (admin.roles) — never a list typed here. The guards are the server's and
+   stay there: a role above the operator's own is dropped by admin_may_manage,
+   the last active super admin cannot be demoted, a super admin cannot demote
+   themselves, extra capabilities and centre scope are super-admin only. The
+   screen adds the confirmations v1 had (granting an elevated role, lowering
+   your own) and, after a role change, reads the record back so a change the
+   server declined is reported as declined, never as done. */
+const CR_SY_ROLE_ERR = {
+  last_super_admin: "That’s the last active super admin. Make somebody else a super admin first.",
+  cannot_demote_self: "You can’t lower your own role. Ask another super admin.",
+  cannot_suspend_self: "You can’t suspend yourself.",
+};
+function crSyCapsOf(reg, m) {
+  const r = (reg.roles || []).find(x => x.id === m.role);
+  const base = r ? r.caps : [];
+  return { base, extra: (m.capsExtra || []).filter(c => base.indexOf(c) < 0) };
+}
+function crSyElevated(reg, id) { const r = (reg.roles || []).find(x => x.id === id); return r ? r.tier >= 4 : id === "admin" || id === "super_admin"; }
+/* The roles this operator may hand out, and the account's current one so it still reads. */
+function crSyRoleOpts(reg, current) {
+  return (reg.roles || []).filter(r => r.mayGrant || r.id === current).map(r => [r.id, r.label + (r.scoped ? " · own centres only" : "")]);
+}
+function crSyScopeText(d, m) {
+  const r = (d.reg.roles || []).find(x => x.id === m.role);
+  if ((m.centreScope || []).length) return m.centreScope.map(id => d.centreNames[id] || id).join(", ");
+  return r && r.scoped ? "None — no access yet" : "All centres";
+}
+
+async function crSyRoleApply(ctx, d, m, role) {
+  const me = ctx.me || {}, reg = d.reg;
+  if (role === m.role) return;
+  const self = m.memberId === me.id;
+  if (self && crSyElevated(reg, m.role) && !crSyElevated(reg, role)) {
+    const ok = await ctx.confirm({ title: "Lower your own access?", danger: true, cta: "Change my access", cancel: "Keep as is",
+      body: "You’re lowering your own staff level and may lose parts of the Control Room straight away. The last active super admin can’t be demoted." });
+    if (!ok) return;
+  } else if (role !== "member" && crSyElevated(reg, role)) {
+    const ok = await ctx.confirm({ title: "Grant " + crSyRoleLabel(reg, role) + "?", danger: role === "super_admin", cta: "Grant access",
+      body: (m.fullName || m.memberId) + " will gain elevated access" + (role === "super_admin" ? ": everything, including roles, settings, money and the audit trail." : ".") });
+    if (!ok) return;
+  }
+  const from = m.role || "member";
+  try {
+    const res = await NGGApi.admin.members.upsert({ memberId: m.memberId, role });
+    if (crQueued(res)) { ctx.toast("Sent to a second admin to approve."); return; }
+    /* The server drops a role the operator may not give rather than refusing
+       the save, so read the record back before saying it happened. */
+    const back = (await NGGApi.admin.memberDetail(m.memberId)).detail.member || {};
+    if ((back.role || "member") !== role) {
+      ctx.toast("Not changed: " + crSyRoleLabel(reg, role) + " reaches further than your own role, so you can’t grant it.", null, true);
+      ctx.reload(); return;
+    }
+    const nr = (reg.roles || []).find(x => x.id === role);
+    ctx.closeDrawer(); ctx.reload();
+    if (nr && nr.scoped && !(m.centreScope || []).length) {
+      ctx.toast(nr.label + " works only for named centres, so " + (m.fullName || "they") + " has no access until you give them one. Open them and choose Capabilities and centres.", null, true);
+      return;
+    }
+    const undo = self ? null : async () => {
+      try { await NGGApi.admin.members.upsert({ memberId: m.memberId, role: from }); ctx.reload(); ctx.toast("Put back · " + crSyRoleLabel(reg, from)); }
+      catch (e) { ctx.toast(crErr(e, "Couldn’t put the role back."), null, true); }
+    };
+    ctx.toast(role === "member" ? "Staff access removed · " + (m.fullName || m.memberId) : (m.fullName || m.memberId) + " is now " + crSyRoleLabel(reg, role), undo);
+  } catch (e) {
+    const code = (e && e.data && e.data.error) || (e && (e.code || e.message));
+    if (code === "approval_pending") { ctx.toast("Sent to a second admin to approve."); return; }
+    ctx.toast(CR_SY_ROLE_ERR[code] || crErr(e, "Couldn’t change the role."), null, true);
+  }
+}
+
+function crSyRoleForm(ctx, d, m) {
+  const opts = crSyRoleOpts(d.reg, m.role);
+  ctx.closeDrawer();
+  ctx.form({
+    title: "Change role · " + (m.fullName || m.memberId), submit: "Continue",
+    intro: "A role is a fixed bundle of capabilities. You can only give roles that reach no further than your own.",
+    values: { role: m.role },
+    fields: [{ id: "role", l: "Role", type: "chips", req: true, opts: opts.concat([["member", "No staff access"]]),
+      help: "Granting admin or super admin asks you to confirm. Choosing “No staff access” removes it." }],
+    onSubmit: async v => ({ role: v.role }),
+    done: v => { setTimeout(() => crSyRoleApply(ctx, d, m, v.role), 30); return null; },
+  });
+}
+
+function crSyAccessForm(ctx, d, m) {
+  const reg = d.reg, c = crSyCapsOf(reg, m);
+  ctx.closeDrawer();
+  ctx.form({
+    title: "Capabilities and centres · " + (m.fullName || m.memberId), submit: "Save access", busyLabel: "Saving…",
+    intro: "Extra capabilities are granted to this person on top of their " + crSyRoleLabel(reg, m.role) + " role. Money (fees), the institutional record (journal) and the system (settings, rbac) belong to named people, never to a role.",
+    values: { caps: c.extra.slice(), scope: (m.centreScope || []).slice() },
+    fields: [
+      { id: "caps", l: "Extra capabilities", type: "multi", opts: (reg.caps || []).filter(x => c.base.indexOf(x.id) < 0).map(x => [x.id, x.id]),
+        help: "Already in the role: " + (c.base.join(", ") || "nothing") + "." },
+      { id: "scope", l: "Centre scope", type: "multi", opts: d.centres.map(x => [x.centreId, x.name + (x.status === "retired" ? " (retired)" : "")]),
+        help: "Leave every centre unticked for access to all of them. Ticking centres limits this person’s members, roster, exports and dashboard to those centres." },
+    ],
+    onSubmit: async v => NGGApi.admin.members.setCaps(m.memberId, v.caps || [], v.scope || []),
+    done: (v, r) => { ctx.reload(); return "Access saved · " + crPlural((r.capsExtra || []).length, "extra capability", "extra capabilities") + " · " + ((r.centreScope || []).length ? crPlural(r.centreScope.length, "centre") : "all centres"); },
+  });
+}
+
+async function crSyRecovery(ctx, m, kind) {
+  const two = kind === "2fa";
+  const ok = await ctx.confirm(two
+    ? { title: "Reset " + (m.fullName || "their") + "’s two-factor sign-in?", cta: "Reset 2FA", danger: true, body: "They set up an authenticator again the next time they open the Control Room. Until they do, they can’t get in." }
+    : { title: "Clear " + (m.fullName || "their") + "’s password?", cta: "Clear password", danger: true, body: "Their current password stops working at once. They sign in with an emailed code and set a new one." });
+  if (!ok) return;
+  try {
+    await (two ? NGGApi.admin.members.reset2fa(m.memberId) : NGGApi.admin.members.resetPassword(m.memberId));
+    ctx.toast(two ? "2FA reset. They set it up again at their next sign-in." : "Password cleared. They can sign in with an emailed code.");
+  } catch (e) {
+    const det = e && e.data && e.data.detail;
+    ctx.toast(det === "above_your_level" ? "Their role reaches further than yours, so you can’t reset their sign-in." : crErr(e, "Couldn’t do that."), null, true);
+  }
+}
+
+function crSyStaffOpen(ctx, d, m) {
+  const reg = d.reg, me = ctx.me || {}, c = crSyCapsOf(reg, m);
+  const r = (reg.roles || []).find(x => x.id === m.role) || {};
+  const isSuper = reg.me && reg.me.role === "super_admin";
+  const canRole = crSyRoleOpts(reg, m.role).some(o => o[0] !== m.role) && (r.mayGrant || m.role === "member");
+  const self = m.memberId === me.id;
+  ctx.drawer({
+    title: m.fullName || m.memberId, name: m.fullName, sub: [m.memberId, m.email].filter(Boolean).join(" · ") + (self ? " · you" : ""),
+    stats: [["Role", crSyRoleLabel(reg, m.role)], ["Capabilities", crNum(c.base.length + c.extra.length)], ["Centres", (m.centreScope || []).length ? crNum(m.centreScope.length) : r.scoped ? "None" : "All"]],
+    fields: [["Status", m.status], ["Centre scope", crSyScopeText(d, m)], ["Limited to own centres", r.scoped ? "Yes" : "No"], ["Sensitive acts", r.queued ? "Wait for a second admin to approve" : "Run at once"]],
+    sections: [
+      { h: "From the role", text: r.summary ? r.summary + "\n\n" + (c.base.join(", ") || "No capabilities") : (c.base.join(", ") || "No capabilities") },
+      { h: "Granted to this person", list: c.extra.map(x => ({ icon: "plus-circle", t: x, s: ((reg.caps || []).find(y => y.id === x) || {}).label })), empty: "Nothing beyond the role." },
+    ],
+    actions: [
+      { l: "Change role", primary: true, run: () => crSyRoleForm(ctx, d, m), disabled: !canRole, why: canRole ? undefined : "This role reaches further than yours." },
+      { l: "Capabilities and centres", run: () => crSyAccessForm(ctx, d, m), disabled: !isSuper, why: isSuper ? undefined : "Only a super admin grants extra capabilities and centre scope." },
+      { l: "Reset 2FA", run: () => crSyRecovery(ctx, m, "2fa"), disabled: !r.mayGrant && m.role !== "member", why: "Their role reaches further than yours." },
+      { l: "Reset password", run: () => crSyRecovery(ctx, m, "pw"), disabled: !r.mayGrant && m.role !== "member", why: "Their role reaches further than yours." },
+      self ? null : { l: "Remove staff access", run: () => crSyRoleApply(ctx, d, m, "member"), disabled: !r.mayGrant, why: r.mayGrant ? undefined : "Their role reaches further than yours." },
+    ].filter(Boolean),
+  });
+}
+
+function crSyGrant(ctx, d) {
+  const opts = crSyRoleOpts(d.reg, null);
+  ctx.form({
+    title: "Grant staff access", submit: "Continue", busyLabel: "Finding them…",
+    intro: "Give a member a staff role. They get an email inviting them to sign in, and set up two-factor sign-in the first time they open the Control Room.",
+    values: { who: "", role: "" },
+    fields: [
+      { id: "who", l: "Member", req: true, ph: "Member ID or email", help: "The member must already have a record. Add them under Members first if not." },
+      { id: "role", l: "Role", type: "chips", req: true, opts },
+    ],
+    onSubmit: async v => {
+      const q = String(v.who).trim();
+      const r = await NGGApi.admin.members.list({ q, pageSize: 10 });
+      const list = r.members || [];
+      const exact = list.filter(x => String(x.memberId).toLowerCase() === q.toLowerCase() || String(x.email || "").toLowerCase() === q.toLowerCase() || String(x.displayId || "").toLowerCase() === q.toLowerCase());
+      const m = exact.length === 1 ? exact[0] : list.length === 1 ? list[0] : null;
+      if (!m) return { fieldErrors: { who: list.length ? crNum(r.total || list.length) + " members match. Use their member ID or full email." : "No member matches that. Check the ID or email." } };
+      if (m.role && m.role !== "member") return { fieldErrors: { who: (m.fullName || m.memberId) + " is already " + crSyRoleLabel(d.reg, m.role) + ". Change their role from the staff list." } };
+      return { m };
+    },
+    done: (v, r) => { setTimeout(() => crSyRoleApply(ctx, d, Object.assign({}, r.m, { role: r.m.role || "member" }), v.role), 30); return null; },
+  });
+}
+
+Object.assign(CR_TAB_DEFS, {
+  access: {
+    skeleton: ["table", "table"],
+    load: async () => {
+      const [reg, list, cs] = await Promise.all([
+        NGGApi.admin.roles(),
+        NGGApi.admin.members.list({ staff: 1, pageSize: 200 }),
+        NGGApi.admin.registration.centres().catch(() => ({ centres: [] })),
+      ]);
+      crSyRolesP = Promise.resolve(reg);
+      const centreNames = {};
+      (cs.centres || []).forEach(c => { centreNames[c.centreId] = c.name; });
+      return { reg, staff: list.members || [], total: list.total || 0, centres: (cs.centres || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name))), centreNames };
+    },
+    actions: (d, ctx) => {
+      const can = crSyRoleOpts(d.reg, null).length > 0;
+      return [{ l: "Grant staff access", icon: "user-plus", primary: true, run: () => crSyGrant(ctx, d), disabled: !can, why: can ? undefined : "Your role can’t grant any staff role." }];
+    },
+    blocks: (d, ctx) => {
+      const reg = d.reg, me = ctx.me || {};
+      const noCentre = d.staff.filter(m => { const r = (reg.roles || []).find(x => x.id === m.role); return r && r.scoped && !(m.centreScope || []).length; });
+      const capRows = (reg.caps || []).map(c => {
+        const tabs = [];
+        Object.keys(CR_PAGES).forEach(pid => CR_PAGES[pid].tabs.forEach(t => {
+          if (t.cap === c.id || (Array.isArray(t.cap) && t.cap.indexOf(c.id) >= 0)) tabs.push(CR_PAGES[pid].label === t.label ? t.label : CR_PAGES[pid].label + " › " + t.label);
+        }));
+        return { icon: "key", t: c.id, s: c.label + (tabs.length ? " — opens " + tabs.join(", ") : ""), m: crPlural(reg.roles.filter(r => r.caps.indexOf(c.id) >= 0).length, "role") };
+      });
+      return [
+        { type: "note", span: 6, icon: "lock-key", text: "Who has staff access and what each level can do. A role is a fixed bundle of capabilities; a super admin can add single capabilities to a person and limit them to named centres.",
+          sub: "Nobody can grant a role that reaches further than their own, and the last active super admin can’t be demoted." },
+        noCentre.length ? { type: "note", span: 6, icon: "warning", tone: "warn",
+          text: crPlural(noCentre.length, "account") + " with no access yet: " + noCentre.map(m => m.fullName || m.memberId).join(", ") + ".",
+          sub: (noCentre.length === 1 ? "This role works" : "These roles work") + " only for named centres. Open " + (noCentre.length === 1 ? "them" : "each") + " and choose Capabilities and centres." } : null,
+        { type: "table", span: 6, title: "Staff", sub: crPlural(d.staff.length, "account") + (d.total > d.staff.length ? " · showing the first " + crNum(d.staff.length) + " of " + crNum(d.total) : ""), nosel: true,
+          cols: ["Person", "Role", "Centres", "Can access"],
+          rows: d.staff.map(m => {
+            const c = crSyCapsOf(reg, m);
+            return { key: m.memberId, cells: [
+              { k: "person", t: (m.fullName || m.memberId) + (m.memberId === me.id ? " (you)" : ""), s: [m.memberId, m.email].filter(Boolean).join(" · ") },
+              { k: "status", t: crSyRoleLabel(reg, m.role), tone: CR_SY_ROLE_TONE[m.role] || "neutral" },
+              { k: "text", t: crSyScopeText(d, m) },
+              { k: "text", t: c.base.length > 4 ? crPlural(c.base.length, "capability", "capabilities") + " from the role" : (c.base.join(", ") || "—"), s: c.extra.length ? "Plus " + c.extra.join(", ") : "" },
+            ], open: () => crSyStaffOpen(ctx, d, m) };
+          }),
+          search: "Search staff", filters: ["Role", "Centres"],
+          emptyText: "No staff yet. Grant a member a staff role from the header." },
+        { type: "table", span: 6, title: "What each role can do", sub: "Read from the server’s role list, so it is what the server enforces. Open a role for what it is for.", nosel: true,
+          cols: ["Role", "Limits"].concat((reg.caps || []).map(c => ({ l: c.id, sort: false }))),
+          rows: (reg.roles || []).map(r => ({ key: r.id, open: () => ctx.drawer({ title: r.label, sub: r.scoped ? "Own centres only" : "Every centre",
+              fields: [["Limited to own centres", r.scoped ? "Yes" : "No"], ["Sensitive acts", r.queued ? "Wait for a second admin to approve" : "Run at once"], ["You can grant it", r.mayGrant ? "Yes" : "No"],
+                ["Held by", crPlural(d.staff.filter(m => m.role === r.id).length, "person", "people")]],
+              sections: [{ h: "What it is for", text: r.summary || "—" }, { h: "Capabilities", list: r.caps.map(x => ({ icon: "key", t: x, s: ((reg.caps || []).find(y => y.id === x) || {}).label })), empty: "None." }] }), cells: [
+            { k: "strong", t: r.label },
+            { k: "text", t: [r.scoped ? "Own centres only" : "", r.queued ? "Second admin approves" : ""].filter(Boolean).join(" · ") || "—" },
+          ].concat((reg.caps || []).map(c => r.caps.indexOf(c.id) >= 0 ? { k: "status", t: "Yes", tone: "ok" } : { k: "text", t: "—" })) })),
+          sortInit: null },
+        { type: "list", span: 6, title: "What each capability opens", rows: capRows, empty: "The server lists no capabilities." },
+        { type: "note", span: 6, icon: "info", text: "Money (fees), the institutional record (journal) and the system (settings, rbac) are in no bundle but the super admin’s, on purpose.", sub: "Grant them to a named person through Capabilities and centres, never to a role." },
+      ];
     },
   },
 });

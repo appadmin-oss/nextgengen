@@ -7703,6 +7703,7 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-select--30 { height: 30px; flex: 1 1 0; }
 .ids-select--28 { height: 28px; font-size: 12px; }
 .ids-input--lg { height: 44px; font-size: 15px; flex: 1 1 auto; }
+.ids-input--area { height: auto; padding: 8px 10px; resize: vertical; font-family: var(--ids-mono); }
 .ids-field { display: flex; flex-direction: column; gap: 4px; }
 .ids-field-l, .ids-num-l { font-size: 12px; color: var(--ids-muted); font-weight: 500; }
 .ids-num { display: flex; flex-direction: column; gap: 4px; }
@@ -7738,6 +7739,7 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-check.is-bad { background: var(--ids-bad-bg); color: var(--ids-bad-fg); }
 .ids-check.is-info { background: var(--ids-info-bg); color: var(--ids-info-fg); }
 .ids-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.ids-swatch { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; box-shadow: inset 0 0 0 1px var(--ids-line-3); }
 .ids-dot.is-ok { background: var(--ids-ok-dot); } .ids-dot.is-warn { background: var(--ids-warn-dot); } .ids-dot.is-bad { background: var(--ids-bad-dot); }
 
 /* ── Header ── */
@@ -7901,6 +7903,7 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-drawer-body p { margin: 0; }
 .ids-drawer-foot { padding: 14px 20px; border-top: 1px solid var(--ids-line); display: flex; flex-direction: column; gap: 6px; }
 .ids-people { margin: 0; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 4px; }
+.ids-tiers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .ids-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-radius: var(--ids-r-lg); background: var(--ids-ink); color: var(--ids-on-ink); font-size: 13px; box-shadow: var(--ids-dialog-shadow); max-width: calc(100% - 32px); }
 .ids-toast-undo { border: 0; background: none; color: var(--ids-gold); font-weight: 600; cursor: pointer; }
 
@@ -7948,6 +7951,7 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-print-host .ids-pg { position: relative; overflow: hidden; background: var(--ids-s0); }
 .ids-print-host .ids-ps { position: absolute; overflow: hidden; }
 .ids-print-host .ids-pg-mark { position: absolute; background: var(--ids-ink); }
+.ids-print-host .ids-x-face { position: relative; overflow: hidden; background: var(--ids-s0); }
 /* ============================================================================
    Control Room v2 (/control) — CONTROL_ROOM.md §2–§6.
    One closed token set on .cr-app; every component reads these and carries

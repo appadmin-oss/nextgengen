@@ -165,3 +165,72 @@ function IdsAfterPrint({ items, renderFace, onLater, onDone }) {
     </IdsDialog>
   );
 }
+
+/* ── Files for a print shop (restored from the old Card Studio) ─────────── */
+
+const IDS_EXPORT_DPI = [[300, "300 dpi · digital press"], [350, "350 dpi · offset standard"], [600, "600 dpi · line art (slow)"]];
+const IDS_QR_WHY = { unreadable: "no code could be read", wrong_token: "it reads, but not this person’s code", decode_failed: "the image couldn’t be read", canvas_tainted: "a picture blocked the check" };
+
+function IdsExportDialog({ run, onCancel, onStart }) {
+  const { nCards, nRecords, backs, G, designLabel } = run;
+  const [format, setFormat] = React.useState("pdf");
+  const [dpi, setDpi] = React.useState(run.dpi || 350);
+  const [verify, setVerify] = React.useState(true);
+  const [reason, setReason] = React.useState(run.defaultReason);
+  const double = backs !== "off";
+  return (
+    <IdsDialog alert width={540} title={"Export " + idsN(nCards, "card") + "?"} sub="A file to hand to a print shop or a card printer. It is made in this browser; nothing is uploaded." onClose={onCancel}
+      footer={<>
+        <button type="button" className="ids-btn" onClick={onCancel}>Cancel</button>
+        <button type="button" className="ids-btn ids-btn--primary" data-autofocus onClick={() => onStart({ format, dpi, verify, reason })}>{format === "pdf" ? "Make the PDF" : "Make the ZIP"}</button>
+      </>}>
+      <IdsSeg label="What to make" value={format} onChange={setFormat} options={[["pdf", "Print-ready PDF", "file-pdf"], ["png", "PNG images (.zip)", "file-zip"]]}/>
+      <p className="ids-note"><span>{format === "pdf"
+        ? "Cards imposed on " + IDS_PAPERS[G.paper][0] + " at an exact " + G.cw + " × " + G.ch + " mm trim with 3 mm bleed, crop and registration marks, a colour bar and a CMYK (FOGRA39) output intent" + (double ? ", each back sheet after its front, mirrored for a " + backs + "-edge flip." : ", fronts only.")
+        : "One PNG per face at the same resolution and 3 mm bleed, named by printed ID, for a print merge or a card printer’s own software."}</span></p>
+      <label className="ids-field">
+        <span className="ids-field-l">Resolution</span>
+        <select className="ids-select" value={dpi} onChange={e => setDpi(+e.target.value)}>{IDS_EXPORT_DPI.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+      </label>
+      <IdsSwitch id="ids-xverify" on={verify} onChange={setVerify} label="Check every QR code" help="Reads each code back out of the exported image with the gate’s own reader. Slower; catches codes that look right and won’t scan."/>
+      <dl className="ids-sum">
+        <dt>Cards</dt><dd>{nCards}{nRecords !== nCards ? " (" + nRecords + " from records)" : ""}</dd>
+        <dt>Design</dt><dd>{nRecords ? designLabel : "Uploaded images as they are"}</dd>
+      </dl>
+      <label className="ids-field">
+        <span className="ids-field-l">Reason for the log</span>
+        <select className="ids-select" value={reason} onChange={e => setReason(e.target.value)}>{IDS_REASONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+        <span className="ids-help">Logged like a print: the cards leave the queue (except a proof), and a card spoiled at the shop can be marked from the print log.</span>
+      </label>
+    </IdsDialog>
+  );
+}
+
+/** What the export made, and — kept on screen, not in a toast — what it could not. */
+function IdsExportResult({ res, onClose }) {
+  const [copied, setCopied] = React.useState(false);
+  const names = res.failed.concat(res.qrBad.map(q => q.name));
+  const copy = () => { try { navigator.clipboard.writeText(names.join("\n")).then(() => setCopied(true), () => {}); } catch (_) {} };
+  const title = !res.made ? (res.cancelled ? "Stopped before anything was made" : "Nothing could be exported")
+    : res.failed.length || res.qrBad.length ? "Exported, with gaps" : "Exported";
+  return (
+    <IdsDialog width={520} title={title} onClose={onClose}
+      footer={<>
+        {names.length > 0 && <button type="button" className="ids-btn" onClick={copy}>{copied ? "Copied" : "Copy names"}</button>}
+        <button type="button" className="ids-btn ids-btn--primary" data-autofocus onClick={onClose}>Done</button>
+      </>}>
+      {res.made > 0 && <IdsCheck tone="ok" text={idsN(res.made, "card") + (res.total && res.total !== res.made ? " of " + res.total : "") + " in " + res.fileName + (res.runIds ? ". Logged as " + res.runIds + "." : ".")}/>}
+      {res.cancelled && res.made > 0 && <IdsCheck tone="warn" text="Stopped early: the file holds only the cards made before you pressed Stop."/>}
+      {res.failed.length > 0 && <IdsCheck tone="bad" text={idsN(res.failed.length, "card") + " couldn’t be drawn and are NOT in the file. Export again for them."}/>}
+      {res.qrBad.length > 0 && <IdsCheck tone="bad" text={idsN(res.qrBad.length, "card") + " ARE in the file but their QR didn’t read back from the exported image, so they may not scan at the gate. Try a higher resolution."}/>}
+      {res.verify && !res.qrBad.length && res.made > 0 && !res.qrSkipped && <IdsCheck tone="ok" text="Every QR code read back from the exported image."/>}
+      {res.qrSkipped > 0 && <IdsCheck tone="info" text="The QR check was skipped: the reader couldn’t be loaded. The cards were made; they just weren’t checked."/>}
+      {names.length > 0 && (
+        <ul className="ids-people" tabIndex={0} aria-label={idsN(names.length, "card") + " to look at"}>
+          {res.failed.map((n, i) => <li key={"f" + i}>{n} · not in the file</li>)}
+          {res.qrBad.map((q, i) => <li key={"q" + i}>{q.name} · {IDS_QR_WHY[q.reason] || q.reason}</li>)}
+        </ul>
+      )}
+    </IdsDialog>
+  );
+}

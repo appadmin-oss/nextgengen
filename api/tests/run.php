@@ -241,6 +241,11 @@ chk('public stats active=2', backend_dispatch('public.stats', [])['stats']['acti
 // ── Admin gating ──
 chk('member is not admin', backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
 chk('admin lists members', backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099'])['total'] === 2);
+chk('the roster carries when each member joined (its Joined column and default order)', (function () {
+    $r = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099']);
+    foreach ($r['members'] as $m) if (!isset($m['createdAt']) || $m['createdAt'] === '') return false;
+    return count($r['members']) > 0;
+})());
 chk('non-super cannot set role', (function () {
     // create a plain admin, verify they cannot promote via upsert
     backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['fullName' => 'Plain Admin', 'email' => 'pa@example.com', 'type' => 'NGG', 'centre' => 'Ayobo', 'role' => 'admin']]);
@@ -5177,6 +5182,17 @@ chk('ids: a scoped admin only ever sees their own centres', (function () {
     return true;
 })());
 chk('ids: gated on the people cap', backend_dispatch('admin.members.ids', ['requesterId' => 'NGG-2025-0001'])['error'] === 'forbidden');
+chk('ids: a segment selects the members the segment lists, and no others', (function () {
+    $r = backend_dispatch('admin.members.ids', ['requesterId' => 'NGG-2025-0099', 'segment' => 'suspended']);
+    $l = backend_dispatch('admin.members.list', ['requesterId' => 'NGG-2025-0099', 'segment' => 'suspended', 'all' => 1]);
+    if (empty($r['ok']) || empty($l['ok'])) return false;
+    $want = array_map(fn($m) => (string)$m['memberId'], $l['members']);
+    sort($want); $got = $r['memberIds']; sort($got);
+    return $got === $want && $r['total'] === $l['total'];
+})());
+/* And the route forwards it: "select all N" on a roster filtered to a dashboard
+   segment once named the whole roster, because the ids view dropped the key. */
+chk('ids route: forwards the segment to the op', strpos((string)file_get_contents(__DIR__ . '/../admin/members.php'), "'segment' => \$_GET['segment'] ?? null,\n            'staff'") !== false);
 
 /* ═══════════════════════════════════════════════════════════════════════════
    NGG Club desk — bulk promotion, and the roster a coordinator can finally see

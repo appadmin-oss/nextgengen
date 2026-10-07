@@ -21,6 +21,9 @@ if ($method === 'GET') {
             'q' => $_GET['q'] ?? '', 'centre' => $_GET['centre'] ?? '',
             'status' => $_GET['status'] ?? '', 'type' => $_GET['type'] ?? '',
             'missing' => $_GET['missing'] ?? '', 'level' => $_GET['level'] ?? '',
+            // The segment the roster is filtered to: without it "select all N
+            // matching" named every member, not the N the list was showing.
+            'segment' => $_GET['segment'] ?? null,
             'staff' => $_GET['staff'] ?? null,
             'sort' => $_GET['sort'] ?? '', 'dir' => $_GET['dir'] ?? '',
             'ip' => client_ip(),
