@@ -91,7 +91,15 @@ function crMemEdit(ctx, m) {
   ctx.closeDrawer();
   ctx.form({
     title: "Edit " + (m.fullName || "member"), submit: "Save changes", busyLabel: "Saving…",
-    values: before, fields: crMemFields(data.centres || [], data.divisions || []),
+    /* A field whose STORED value already breaks its own format rule ("N/A" for
+       an email) is not checked here: the rule would refuse every save of the
+       record for a field nobody touched. The server still checks it if changed. */
+    values: before, fields: crMemFields(data.centres || [], data.divisions || []).map(f => {
+      const v = before[f.id];
+      if (!v) return f;
+      const breaks = (f.email && !/^\S+@\S+\.\S+$/.test(v)) || (f.check && f.check(v, before)) || (f.max && v.length > f.max);
+      return breaks ? Object.assign({}, f, { email: false, check: null, max: null, help: "The stored value isn’t in the usual format. Correct it if you can." }) : f;
+    }),
     onSubmit: async v => {
       const patch = crMemPatch(before, v);
       if (!Object.keys(patch).length) return { nothing: true };
