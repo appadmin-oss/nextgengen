@@ -2,7 +2,7 @@
    Control Room v2 — the system tabs (page `settings`). Filled into CR_TAB_DEFS
    (see cr-pages.jsx). Every top-level name here starts `crSy`.
 
-   PROGRESS (for a resumed run): audit, ops — built, verified in the lab. integrations — built, verified. settings (General) — built, verified. access — built, verifying.
+   PROGRESS (for a resumed run): audit, ops — built, verified in the lab. integrations — built, verified. settings (General) — built, verified. access — built, verified. All five tabs done.
    ========================================================================== */
 
 /* ── Shared: the role registry, from the server (admin.roles). The screen keeps

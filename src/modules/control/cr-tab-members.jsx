@@ -479,7 +479,7 @@ async function crMbRecFetch(id) {
   const [det, rec, tl, cards, hist, row] = await Promise.all([
     NGGApi.admin.memberDetail(id), soft(NGGApi.admin.memberRecord(id)), soft(NGGApi.admin.memberTimeline(id)),
     soft(NGGApi.admin.members.cards.of(id)), soft(NGGApi.admin.registration.cardHistory(id, "member")),
-    NGGApi.admin.members.list({ q: id, page: 1, pageSize: 5 }).catch(() => ({ members: [] })),
+    NGGApi.admin.members.list({ q: id, page: 1, pageSize: 200, sort: "memberId", dir: "asc" }).catch(() => ({ members: [] })),
   ]);
   const listRow = (row.members || []).find(x => x.memberId === id) || {};
   return { id, detail: det.detail || {}, record: rec, timeline: tl, cards, hist, consent: listRow.consent || null };

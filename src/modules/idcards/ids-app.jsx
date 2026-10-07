@@ -22,8 +22,8 @@
    [x] F4 per-card edit photo, resend ID (PNG download is F5)
    [x] F5 print-ready PDF (bleed, crop marks, CMYK intent, duplex, dpi, QR verify, art probe) + PNG ZIP
    [x] F6 volunteer tiers (code + card colour)
-   [ ] F7 warm the hosted QR cache
-   [ ] F8 log paging, first/repeat + mark failed later in the run drawer, look up by record id */
+   [x] F7 warm the hosted QR cache
+   [x] F8 log paging, first/repeat + mark failed later in the run drawer, look up by record id */
 
 const IDS_DEFAULT_SETTINGS = { size: "cr80p", cw: 60, ch: 90, paper: "a4", margin: IDS_MARGIN.def, gap: IDS_GAP.def, skip: 0,
   backs: "off", marks: true, dpi: 300, order: "centre", breakBy: true, packing: true, reason: "new" };
@@ -51,8 +51,22 @@ function idsQrPng(token) {
     setTimeout(() => res(window.qrcode || null), 6000);
   }).then(lib => {
     if (!lib || !token) return "";
-    try { const q = lib(0, "M"); q.addData(location.origin + "/q/" + String(token)); q.make(); return q.createDataURL(8, 16); } catch (_) { return ""; }
+    return idsQrPngWith(lib, token);
   });
+}
+/* A PNG, drawn on a canvas. The encoder's own createDataURL makes a GIF, which
+   the server's QR cache refuses (it stores PNG only) — the old studio's warm-up
+   sent GIFs and so never warmed anything. */
+function idsQrPngWith(lib, token) {
+  try {
+    const q = lib(0, "M"); q.addData(location.origin + "/q/" + String(token)); q.make();
+    const n = q.getModuleCount(), cell = 8, margin = 16, size = n * cell + margin * 2;
+    const cv = document.createElement("canvas"); cv.width = cv.height = size;
+    const ctx = cv.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, size, size);
+    ctx.save(); ctx.translate(margin, margin); q.renderTo2dContext(ctx, cell); ctx.restore();
+    return cv.toDataURL("image/png");
+  } catch (_) { return ""; }
 }
 function idsErrText(e, fallback) { return (e && e.data && e.data.message) || fallback; }
 
@@ -689,6 +703,33 @@ function IdCardStudioPage({ setPage }) {
   const byKeyRef = React.useRef(byKey);
   byKeyRef.current = byKey;
 
+  /* Warm the hosted QR cache, once, in the background (restored from the old
+     Card Studio). Mail clients strip data: images, so an emailed ID needs a
+     hosted QR PNG, and the server has no QR encoder — only this browser does.
+     After one visit every participant and volunteer token has a hosted image,
+     so an ID mailed at 2am by a consent link still carries a scannable code.
+     Batched 60 at a time; the server skips tokens it already holds. */
+  const qrWarmed = React.useRef(false);
+  React.useEffect(() => {
+    // The server gates the warm-up on Summer School; an operator without it has nothing to warm.
+    if (qrWarmed.current || data.state !== "ready" || !data.kinds.includes("summer")) return undefined;
+    const tokens = data.records.filter(r => r.kind !== "member").map(r => String((r.raw || {}).token || "")).filter(Boolean);
+    if (!tokens.length) return undefined;
+    const t = setTimeout(async () => {
+      qrWarmed.current = true;
+      try {
+        if (!(await idsQrPng(""))) { /* loads the encoder; "" makes no image */ }
+        if (!window.qrcode) return;
+        const items = [];
+        tokens.forEach(tok => { const png = idsQrPngWith(window.qrcode, tok); if (png) items.push({ token: tok, qrPng: png }); });
+        for (let i = 0; i < items.length; i += 60) {
+          try { await NGGApi.admin.registration.qrWarm(items.slice(i, i + 60)); } catch (_) { break; }
+        }
+      } catch (_) {}
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [data.state, data.records]);
+
   /* ── Keys (§3.5) ── */
   React.useEffect(() => {
     const onKey = e => {
@@ -703,25 +744,55 @@ function IdCardStudioPage({ setPage }) {
   });
 
   /* ── The log and lookup ── */
-  const [log, setLog] = React.useState({ state: "idle", runs: [] });
-  const loadLog = React.useCallback(() => {
-    setLog({ state: "loading", runs: [] });
-    NGGApi.admin.registration.cardRuns({ pageSize: 100 }).then(r => setLog({ state: "ready", runs: (r.runs || []).map(x => ({
-      runId: x.runId, at: x.startedAt ? new Date(x.startedAt).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "",
-      design: x.templateName || (x.kind === "graphic" ? "External upload" : "Standard card"), version: x.templateVersion ? "v" + x.templateVersion : "",
-      type: x.kind === "graphic" ? "external" : x.mode === "proof" ? "proof" : x.mode === "reprint" ? "reprint" : "new",
-      cards: x.issued || x.requested || 0, failed: x.failed || 0, output: [x.output === "sheet" ? "Browser print" : x.output, x.dpi ? x.dpi + " dpi" : "", x.sheet].filter(Boolean).join(" · "),
-      by: x.actorName || "", kind: x.kind === "student" ? "summer" : x.kind, reprintable: x.kind !== "graphic",
-    })) })).catch(() => setLog({ state: "error", runs: [] }));
+  /* The log reads the server a page at a time, with the kind and run type
+     filtered ON THE SERVER — a filter applied to the drawn page filters the
+     page (CLAUDE.md §6). The rebuild read the newest 100 and filtered those. */
+  const IDS_LOG_PAGE = 50;
+  const [log, setLog] = React.useState({ state: "idle", runs: [], total: 0, page: 0, kind: "", type: "" });
+  const logRow = x => ({
+    runId: x.runId, at: x.startedAt ? new Date(x.startedAt).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "",
+    design: x.templateName || (x.kind === "graphic" ? "External upload" : "Standard card"), version: x.templateVersion ? "v" + x.templateVersion : "",
+    type: x.kind === "graphic" ? "external" : x.mode === "proof" ? "proof" : x.mode === "reprint" ? "reprint" : x.reason === IDS_REASON_LABEL.mixed ? "mixed" : "new",
+    cards: x.issued || x.requested || 0, failed: x.failed || 0, output: [x.output === "sheet" ? "Browser print" : x.output === "pdf" ? "Print-ready PDF" : x.output === "png" ? "PNG images" : x.output, x.dpi ? x.dpi + " dpi" : "", x.sheet].filter(Boolean).join(" · "),
+    by: x.actorName || "", kind: x.kind === "student" ? "summer" : x.kind, reprintable: x.kind !== "graphic", proof: x.mode === "proof",
+  });
+  const logRef = React.useRef(log);
+  logRef.current = log;
+  const loadLog = React.useCallback((f, more) => {
+    const l = logRef.current;
+    const kind = f ? f.kind : l.kind, type = f ? f.type : l.type, page = more ? l.page + 1 : 1;
+    const q = { pageSize: IDS_LOG_PAGE, page };
+    if (type === "external") q.kind = "graphic";
+    else if (kind) q.kind = IDS_KIND_FOR_RUN[kind];
+    if (type === "new" || type === "mixed") q.mode = "print"; else if (type === "reprint" || type === "proof") q.mode = type;
+    setLog(cur => Object.assign({}, cur, { kind, type, state: more ? cur.state : "loading", runs: more ? cur.runs : [], moreErr: false, loadingMore: !!more }));
+    NGGApi.admin.registration.cardRuns(q).then(r => setLog(cur => {
+      if (cur.kind !== kind || cur.type !== type) return cur;      // a newer filter has taken over
+      // "New issues" and "mixed" share the server's print mode; the reason tells them apart.
+      const rows = (r.runs || []).map(logRow).filter(x => type !== "new" && type !== "mixed" ? true : x.type === type);
+      return Object.assign({}, cur, { state: "ready", runs: more ? cur.runs.concat(rows) : rows, total: r.total || 0, page, more: page * IDS_LOG_PAGE < (r.total || 0), loadingMore: false });
+    })).catch(() => setLog(cur => Object.assign({}, cur, { state: more ? "ready" : "error", moreErr: !!more, loadingMore: false })));
+    // eslint-disable-next-line
   }, []);
   React.useEffect(() => { if (tab === "log" && log.state === "idle") loadLog(); }, [tab, log.state, loadLog]);
   const openRun = async r => {
-    setRunOpen(Object.assign({}, r, { people: [] }));
+    setRunOpen(Object.assign({}, r, { people: [], issuesState: "loading" }));
     try {
       const res = await NGGApi.admin.registration.cardRunGet(r.runId);
-      const people = (res.issues || []).map(i => { const rec = byKey[i.subjectType + ":" + i.subjectId]; return (rec ? rec.name : i.subjectId) + (i.displayId ? " · " + i.displayId : "") + (i.ok ? "" : " · not printed"); });
-      setRunOpen(o => o && o.runId === r.runId ? Object.assign({}, o, { people, issues: res.issues || [], reprintable: o.reprintable && (res.issues || []).length > 0 }) : o);
-    } catch (_) {}
+      const issues = (res.issues || []).map(i => { const rec = byKey[i.subjectType + ":" + i.subjectId]; return Object.assign({}, i, { name: rec ? rec.name : i.subjectId }); });
+      setRunOpen(o => o && o.runId === r.runId ? Object.assign({}, o, { issues, issuesState: "ready", people: issues.map(i => i.name), reprintable: o.reprintable && issues.length > 0 }) : o);
+    } catch (_) { setRunOpen(o => o && o.runId === r.runId ? Object.assign({}, o, { issuesState: "error" }) : o); }
+  };
+  /* "Check later" promised failures could be marked from the print log, and
+     the log had no way to. A card spoiled at the cutter or at a print shop is
+     marked here: failed on its run, back in the queue as a reprint. */
+  const markRunFailed = async (r, list) => {
+    if (!list.length) return;
+    try {
+      const res = await NGGApi.admin.idStudio.failed(r.runId, list.map(i => ({ subjectType: i.subjectType, subjectId: i.subjectId })));
+      say(idsN(res.marked || list.length, "card") + " marked as not printed" + (res.requeued ? ", back in the queue as reprints" : ""));
+      openRun(r); loadLog(); load();
+    } catch (e) { say(idsErrText(e, "Couldn’t mark them. Try again.")); }
   };
   const reprintRun = async r => {
     const items = (r.issues || []).map(i => ({ subjectType: i.subjectType, subjectId: i.subjectId, why: "Reprint of " + r.runId }));
@@ -729,13 +800,22 @@ function IdCardStudioPage({ setPage }) {
     try { await NGGApi.admin.idStudio.reprint(items); setRunOpen(null); say(idsN(items.length, "card") + " queued as reprints"); load(); }
     catch (_) { say("Couldn’t queue the reprint. Try again."); }
   };
+  /* Look up by printed ID or by the record's own id (member, participant or
+     volunteer id), as the old Control Room did, and answer "is the card in
+     their hand current?" all three ways: current, moved on, or a standard
+     card that carries no version. */
   const lookup = async id => {
-    const rec = data.records.find(r => r.displayId.toUpperCase() === id);
+    const norm = x => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const want = norm(id);
+    const rec = data.records.find(r => norm(r.displayId) === want) || data.records.find(r => norm(r.id) === want);
     if (!rec) return null;
     const res = await NGGApi.admin.registration.cardHistory(rec.id, rec.subjectType);
     const rows = (res.issues || res.history || []).map(i => ({ at: i.at ? new Date(i.at).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : "",
-      run: i.runId, design: (i.templateName || "Standard card") + (i.templateVersion ? " v" + i.templateVersion : ""), type: (i.reprint ? "Reprint" : "New issue") + (i.mode === "proof" ? " · proof" : ""), ok: i.ok !== false, reprint: !!i.reprint }));
-    return { name: rec.name, rows, moved: !!(res.stale || (res.latest && res.latest.stale) || res.designMovedOn === true), queueable: true, rec };
+      run: i.runId, design: (i.templateName || "Standard card") + (i.templateVersion ? " v" + i.templateVersion : ""), type: (i.reprint ? "Reprint" : "New issue") + (i.mode === "proof" ? " · proof" : ""), ok: i.ok !== false, reprint: !!i.reprint, output: i.output || "" }));
+    const l = res.latest || {};
+    const moved = !!(res.stale || l.stale || res.designMovedOn === true);
+    return { name: rec.name, displayId: rec.displayId, rows, moved, current: res.designMovedOn === false, unversioned: res.designMovedOn === null && rows.length > 0,
+      latestDesign: l.templateName ? l.templateName + (l.templateVersion ? " v" + l.templateVersion : "") : "", queueable: true, rec };
   };
   const queueReprint = async d => {
     try { await NGGApi.admin.idStudio.reprint([{ subjectType: d.rec.subjectType, subjectId: d.rec.id, why: "Design changed" }]); say(d.name + " is queued for a reprint"); load(); }
@@ -791,7 +871,7 @@ function IdCardStudioPage({ setPage }) {
             <IdsSheetCol M={M}/>
             <IdsSettings M={M}/>
           </div>
-        )) : tab === "log" ? <IdsLog runs={log.runs} state={log.state === "idle" ? "loading" : log.state} onRetry={loadLog} onOpen={openRun} narrow={W < 900}/>
+        )) : tab === "log" ? <IdsLog log={log} state={log.state === "idle" ? "loading" : log.state} onFilter={f => loadLog(f)} onMore={() => loadLog(null, true)} onRetry={() => loadLog()} onOpen={openRun} narrow={W < 900}/>
         : <IdsLookup lookup={lookup} design={designHead} onQueue={queueReprint}/>}
 
       {confirm && <IdsConfirm run={confirm} onCancel={() => setConfirm(null)} onPrint={onConfirmPrint}/>}
@@ -806,7 +886,7 @@ function IdCardStudioPage({ setPage }) {
         </IdsDialog>
       )}
       {after && <IdsAfterPrint items={after.items} renderFace={renderFace} onLater={() => { setAfter(null); say("You can mark failures from the print log later."); }} onDone={afterDone}/>}
-      {runOpen && <IdsRunDrawer run={runOpen} phone={phone} onClose={() => setRunOpen(null)} onReprint={reprintRun}/>}
+      {runOpen && <IdsRunDrawer run={runOpen} phone={phone} onClose={() => setRunOpen(null)} onReprint={reprintRun} onFailed={markRunFailed} onRetry={() => openRun(runOpen)}/>}
       {editPhoto && typeof PhotoEditor !== "undefined" && (
         <PhotoEditor target={{ subjectType: IDS_PHOTO_EDIT[editPhoto.kind], subjectId: editPhoto.id }} currentUrl={editPhoto.photoUrl} title={editPhoto.name}
           onSaved={() => { say(editPhoto.name + "’s photo is updated"); _idsTplDone.clear(); load(); }} onClose={() => setEditPhoto(null)}/>

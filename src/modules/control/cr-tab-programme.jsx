@@ -6,8 +6,8 @@
      attendance  Duty rota    — done, verified in the lab (override, close roll, day in URL)
      summer      Edition      — done, verified (AdminSummer mounted; /control/summer/summer/roster opens the roster panel)
      assessment  Assessments  — done, verified (adopt, new instrument, sittings, register, results, edit locked, new version, close sitting)
-     events      Events       — in progress
-     tournaments Tournaments  — not started
+     events      Events       — done, verified (new, validation, edit to cancelled)
+     tournaments Tournaments  — in progress
 
    Desks: the check-in DESK links only (kind `desk`, cap `checkin`). Summer
    School's sign-up, review and registration-desk links live in its own portal
@@ -490,7 +490,7 @@ function crPgInstrumentForm(ctx, i) {
       lockF({ id: "domain", l: "Domain", type: "select", req: true, opts: CR_PG_DOMAINS }),
       locked ? { id: "maxScore", l: "Maximum score", type: "select", req: true, opts: [[v0.maxScore, v0.maxScore]], help: fixed.help }
         : { id: "maxScore", l: "Maximum score", type: "number", req: true, num: true, im: "numeric", check: v => { const n = Number(v); return Number.isInteger(n) && n >= 1 && n <= 1000 ? "" : CR_PG_ASSESS_ERR.bad_max; } },
-      locked ? null : { id: "items", l: "Number of items", type: "number", num: true, im: "numeric", check: v => v === "" || (Number.isInteger(Number(v)) && Number(v) >= 0) ? "" : "Use a whole number." },
+      locked ? null : { id: "items", l: "Number of items", type: "number", im: "numeric", check: v => v === "" || (Number.isInteger(Number(v)) && Number(v) >= 0) ? "" : "Use a whole number." },
       lockF({ id: "scale", l: "Kind of score", type: "select", req: true, opts: CR_PG_SCALES, help: "Decides whether a percentage may be printed at all." }),
       { id: "unit", l: "Unit", max: 64, ph: "correct words per minute", help: "How the score is written." },
       locked ? null : { id: "higherIsBetter", l: "A higher score is the better result", type: "switch", help: "Off for a difficulties score, where the fall is the win." },
@@ -596,7 +596,7 @@ async function crPgRegister(ctx, w, centre) {
     intro: (inst.unit ? "Scored in " + inst.unit + ", 0–" + max + "." : "Out of " + max + ".") + " Leave a score blank for a child not marked yet. Tick Absent for one who did not sit — that is not a zero, and recording it as one would turn an attendance problem into a learning finding.",
     values,
     fields: [{ id: "absent", l: "Absent", type: "multi", opts: st.map(s => [s.studentId, s.name]) }].concat(st.map(s => ({
-      id: "s_" + s.studentId, l: s.name + " · " + [s.centre, s.grade || "no class on file"].filter(Boolean).join(" · "), type: "number", num: true, im: "numeric",
+      id: "s_" + s.studentId, l: s.name + " · " + [s.centre, s.grade || "no class on file"].filter(Boolean).join(" · "), type: "number", im: "numeric",
       help: s.outOfRange ? "Outside this instrument’s classes." : undefined,
       when: v => !(v.absent || []).includes(s.studentId),
       check: v => v === "" || (Number(v) >= 0 && Number(v) <= max) ? "" : "Use a score from 0 to " + max + ".",
@@ -792,7 +792,7 @@ function crPgEventForm(ctx, ev) {
       { id: "coverUrl", l: "Cover image link", type: "url", ph: "https://…", help: "Paste a direct https:// image link, or upload one below." },
       { id: "cover", l: "Upload a cover image", type: "file", accept: "image/*" },
       { id: "body", l: "Description", type: "textarea", rows: 6, help: "Markdown works." },
-      { id: "capacity", l: "Capacity", type: "number", num: true, im: "numeric", help: "0 means open — no limit on RSVPs.", check: v => v === "" || (Number.isInteger(Number(v)) && Number(v) >= 0) ? "" : "Use a whole number, 0 or more." },
+      { id: "capacity", l: "Capacity", type: "number", im: "numeric", help: "0 means open — no limit on RSVPs.", check: v => v === "" || (Number.isInteger(Number(v)) && Number(v) >= 0) ? "" : "Use a whole number, 0 or more." },
       { id: "status", l: "Status", type: "chips", req: true, opts: CR_PG_EV_STATUS },
       { id: "isPublic", l: "Show on the public events page", type: "switch", help: "Off: members and staff see it; the public site does not." },
     ],
@@ -860,6 +860,244 @@ Object.assign(CR_TAB_DEFS, {
           search: "Search events", filters: ["Status", "Centre", "Kind", "Seen by"],
           emptyText: "No events yet. Add one and publish it when it is ready for members to RSVP." },
       ];
+    },
+  },
+});
+
+/* ── Tournaments ────────────────────────────────────────────────────────────
+   Every write is `people` (a tournament pairs named children). The address
+   carries the view: /control/events/tournaments            the list
+                     /control/events/tournaments/new        host one
+                     /control/events/tournaments/<id>       one tournament
+   Creating one is the chess screen's own four-step wizard (CmTrnCreate,
+   page-club.jsx), and standings and pairings are the members' own components
+   (CmTrnStandings / CmTrnRounds) — ONE creation interface and one rendering of
+   a table that a director and a player both look at, so those three are
+   mounted in `custom` blocks rather than redrawn. */
+const CR_PG_TRN_TONE = { draft: "neutral", open: "ok", running: "gold", complete: "neutral", cancelled: "bad" };
+const CR_PG_TRN_STATUS = { draft: "Draft", open: "Entries open", running: "Running", complete: "Finished", cancelled: "Cancelled" };
+const CR_PG_TC = { "3+2": "3+2", "5+3": "5+3", "10+0": "10+0", "15+10": "15+10", "1day": "1 day a move" };
+const crPgTc = id => CR_PG_TC[id] || id || "1 day a move";
+const CR_PG_TRN_ERR = {
+  round_in_progress: "Some games from this round are still being played.",
+  no_entrants: "Nobody has been entered yet.",
+  already_finished: "This tournament is already over.",
+  player_has_no_centre: "That member has no centre, so they would have no bracket.",
+  already_entered: "They are already in.",
+  wrong_programme: "They are not in this tournament’s programme.",
+  entries_closed: "Entries closed when round one started.",
+};
+function crPgTrnErr(e, fb) { const c = e && ((e.data && e.data.error) || e.code); return CR_PG_TRN_ERR[c] || crErr(e, fb); }
+function crPgTrnView() { return crUrlParts()[2] || ""; }
+function crPgTrnGo(ctx, sub) { ctx.closeDrawer(); ctx.setSub(sub || ""); ctx.reload(); }
+function crPgRoundLabel(k) {
+  const m = /^(.*)-(\d+)$/.exec(k || "");
+  if (!m) return k;
+  const stage = { centre: "Centre round", final: "Final round", main: "Round" }[m[1]] || (m[1] ? m[1][0].toUpperCase() + m[1].slice(1) + " round" : "Round");
+  return stage + " " + m[2];
+}
+function crPgTrnLine(t) {
+  if (t.status === "open") return "Entries are open. Players can enter themselves from the chess screen; drawing round one closes entries.";
+  if (t.status === "running" && t.stage === "centre") return "Each centre plays its own knockout until one player is left.";
+  if (t.status === "running" && t.stage === "final") return "The centre champions are playing each other.";
+  if (t.status === "running") return "Round " + t.round + (t.totalRounds ? " of " + t.totalRounds : "") + " is being played.";
+  if (t.status === "complete") return t.winnerName ? "Won by " + t.winnerName + "." : "Finished.";
+  if (t.status === "cancelled") return "Cancelled. The games are closed but still on the record.";
+  return "";
+}
+
+/** Sequential, one verdict per player — the server has no bulk op, and partial is reported as partial. */
+async function crPgTrnEach(ctx, ids, fn, verb) {
+  let ok = 0; const why = {};
+  for (const id of ids) {
+    try { await fn(id); ok++; }
+    catch (e) { const k = crPgTrnErr(e, "refused"); why[k] = (why[k] || 0) + 1; }
+  }
+  const bad = Object.keys(why).reduce((n, k) => n + why[k], 0);
+  ctx.toast(crNum(ok) + " " + verb + (bad ? " · " + crNum(bad) + " refused — " + Object.keys(why).map(k => why[k] + " × " + k.replace(/\.$/, "")).join("; ") : ""), null, bad > 0);
+  ctx.reload();
+}
+
+async function crPgTrnDraw(ctx, t) {
+  try { await NGGApi.admin.tournaments.draw(t.tournamentId); ctx.toast(t.round === 0 ? "Round one drawn. Entries are closed." : "Round " + (t.round + 1) + " drawn."); }
+  catch (e) { ctx.toast(crPgTrnErr(e, "Couldn’t draw the next round."), null, true); }
+  ctx.reload();
+}
+async function crPgTrnCancel(ctx, t) {
+  const ok = await ctx.confirm({ title: "Cancel " + t.name + "?", danger: true, cta: "Cancel the tournament", cancel: "Keep it",
+    body: "Open games are closed and it can’t be restarted. Nothing is deleted — the games stay on the record." });
+  if (!ok) return;
+  try { await NGGApi.admin.tournaments.cancel(t.tournamentId); ctx.toast("Cancelled · " + t.name); }
+  catch (e) { ctx.toast(crPgTrnErr(e, "Couldn’t cancel it."), null, true); }
+  ctx.reload();
+}
+async function crPgTrnReplay(ctx, t, m) {
+  ctx.closeDrawer();
+  try { await NGGApi.admin.tournaments.replay(t.tournamentId, m.matchId); ctx.toast("Replay set · " + m.a.name + " v " + m.b.name + ", colours swapped."); }
+  catch (e) { ctx.toast(crPgTrnErr(e, "Couldn’t set up the replay."), null, true); }
+  ctx.reload();
+}
+
+/* The members' own standings and pairings, failing on their own (v1 AdminTrnTables). */
+function CrPgTrnTables({ id }) {
+  const [tab, setTab] = React.useState("standings");
+  const [st, setSt] = React.useState(undefined);
+  const [rounds, setRounds] = React.useState(null);
+  const [n, setN] = React.useState(0);
+  React.useEffect(() => {
+    let live = true; setSt(undefined);
+    const get = (fn, ok, no) => { try { fn().then(r => live && ok(r), () => live && no()); } catch (_) { no(); } };
+    get(() => NGGApi.admin.tournaments.standings(id), r => setSt(r), () => setSt(null));
+    get(() => NGGApi.admin.tournaments.rounds(id), r => setRounds(r.rounds || []), () => setRounds([]));
+    return () => { live = false; };
+  }, [id, n]);
+  if (st === undefined) return <CrSkeleton/>;
+  if (st === null) return <CrError error={{ code: "load_failed" }} onRetry={() => setN(x => x + 1)} what="the standings"/>;
+  return (
+    <div className="cr-box">
+      <div className="cr-wrap" role="tablist" aria-label="Tournament tables">
+        {[["standings", "Standings"], ["rounds", "Pairings"]].map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={tab === k} className="cr-chip" aria-checked={tab === k} onClick={() => setTab(k)}>{l}</button>)}
+      </div>
+      <div className="cm-tokens trn-admin-wrap">
+        {tab === "standings" ? (typeof CmTrnStandings === "function" ? <CmTrnStandings st={st}/> : null)
+          : (typeof CmTrnRounds === "function" ? <CmTrnRounds rounds={rounds} onOpenMatch={() => {}}/> : null)}
+      </div>
+    </div>
+  );
+}
+
+function crPgTrnListBlocks(d, ctx) {
+  const rows = d.tournaments;
+  return [
+    { type: "note", span: 6, icon: "trophy", text: "Five formats. A Swiss is usually the right one for a club session — everybody plays every round and nobody goes home after one loss.",
+      sub: "A centre cup runs a knockout per centre and puts the champions in a final, so a child at a small centre can win something without meeting a big one in round one. Players enter themselves from the chess screen." },
+    { type: "table", span: 6, title: "Tournaments", nosel: true, sortInit: null,
+      cols: ["Tournament", "Format", "Stage", { l: "Entrants", num: true }, { l: "Still in", num: true }, { l: "Games open", num: true }],
+      rows: rows.map(t => ({ key: t.tournamentId, open: () => crPgTrnGo(ctx, t.tournamentId), cells: [
+        { k: "strong", t: t.name, s: [t.tournamentId, t.programme === "summer" ? "Summer School" : t.programme ? "NGG" : ""].filter(Boolean).join(" · ") },
+        { k: "text", t: t.formatName || t.format || "Centre cup", s: crPgTc(t.timeControl) + " · " + (t.rated === false ? "casual" : "rated") },
+        { k: "status", t: (CR_PG_TRN_STATUS[t.status] || t.status) + (t.status === "running" ? " · round " + t.round : "") + (t.winnerName ? " · won by " + t.winnerName : ""), tone: CR_PG_TRN_TONE[t.status] || "neutral" },
+        { k: "num", t: crNum(t.entrants), v: t.entrants || 0 },
+        { k: "num", t: crNum(t.live), v: t.live || 0 },
+        { k: "num", t: t.openMatches > 0 ? crNum(t.openMatches) : "None", v: t.openMatches || 0 },
+      ] })),
+      search: "Search tournaments", filters: ["Format", "Stage"],
+      emptyText: "No tournaments yet. Host one, add the players, then draw round one." },
+  ];
+}
+
+function crPgTrnDetailBlocks(d, ctx) {
+  const t = d.bracket.tournament, centres = d.bracket.centres || {}, rounds = d.bracket.rounds || {};
+  const live = t.status !== "complete" && t.status !== "cancelled";
+  const keys = Object.keys(rounds).sort();
+  const games = [];
+  keys.forEach(k => rounds[k].forEach(m => games.push(Object.assign({ key: k }, m))));
+  const openGames = games.filter(m => m.status === "active" || m.status === "invited").length;
+  const draws = games.filter(m => m.result === "draw" && live);
+  const entrants = [];
+  Object.keys(centres).sort().forEach(c => centres[c].forEach(p => entrants.push(Object.assign({ centre: c }, p))));
+  const entered = entrants.map(p => p.playerId);
+  const out = [
+    { type: "note", span: 6, icon: "trophy", tone: t.status === "cancelled" ? "bad" : undefined,
+      text: t.name + " · " + (t.formatName || "Centre cup") + " · " + crPgTc(t.timeControl) + " · " + (t.rated === false ? "casual" : "rated") + (t.totalRounds ? " · " + crPlural(t.totalRounds, "round") : ""),
+      sub: crPgTrnLine(t) },
+  ];
+  if (live) out.push({ type: "kpis", span: 6, items: [
+    { l: t.stage === "centre" ? "Centre stage" : t.stage === "final" ? "Final" : "Round", v: t.round > 0 ? "Round " + t.round : "Not started", tone: "flat" },
+    { l: "Games still being played", v: crNum(openGames), tone: "flat", dn: openGames ? "The next round waits for them." : t.round === 0 ? "Ready to start." : "Ready for the next round." },
+    { l: "Entrants", v: crNum(entrants.length), tone: "flat" },
+    { l: "Still in", v: crNum(entrants.filter(p => p.status === "active").length), tone: "flat" },
+  ] });
+  /* A drawn knockout game eliminates nobody, so it blocks the round until somebody decides. */
+  if (draws.length) out.push({ type: "table", span: 6, title: crPlural(draws.length, "drawn game") + " to replay", sub: "A draw knocks nobody out. Replaying swaps the colours.", nosel: true,
+    cols: ["Game", "Centre", "Round"],
+    rows: draws.map(m => ({ key: "d" + m.matchId, open: () => ctx.drawer({ title: m.a.name + " v " + m.b.name, sub: crPgRoundLabel(m.key) + " · " + (m.centre || ""), fields: [["Result", "Drawn"], ["Centre", m.centre]],
+      actions: [{ l: "Replay", primary: true, run: () => crPgTrnReplay(ctx, t, m), disabled: !ctx.can("people") }] }), cells: [
+      { k: "strong", t: m.a.name + " v " + m.b.name }, { k: "text", t: m.centre || "—" }, { k: "text", t: crPgRoundLabel(m.key) },
+    ] })) });
+  out.push({ type: "custom", span: 6, title: "Standings and pairings", render: () => <CrPgTrnTables id={t.tournamentId}/> });
+  const canEdit = t.status === "open" && ctx.can("people");
+  out.push({ type: "table", span: 6, title: "Entrants", sub: "Grouped by the bracket they play in." + (t.status === "open" ? " Withdrawing is possible until round one is drawn." : ""),
+    cols: ["Player", "Centre", "Standing"],
+    rows: entrants.map(p => ({ key: p.playerId, open: () => ctx.drawer({ title: p.name, name: p.name, sub: p.centre || "No centre",
+      fields: [["Standing", p.status === "eliminated" ? "Out" + (p.eliminatedRound ? " in round " + p.eliminatedRound : "") : "Still in"], ["Centre champion", p.centreChampion ? "Yes" : "No"], ["Player ID", p.playerId]],
+      actions: canEdit ? [{ l: "Withdraw", run: () => { ctx.closeDrawer(); crPgTrnEach(ctx, [p.playerId], id => NGGApi.admin.tournaments.withdraw(t.tournamentId, id), "withdrawn"); } }] : [] }), cells: [
+      { k: "strong", t: p.name, s: p.playerId },
+      { k: "text", t: p.centre || "No centre" },
+      p.centreChampion ? { k: "status", t: "Centre champion", tone: "gold" } : p.status === "eliminated" ? { k: "status", t: "Out" + (p.eliminatedRound ? " · round " + p.eliminatedRound : ""), tone: "neutral" } : { k: "status", t: "Still in", tone: "ok" },
+    ] })),
+    search: "Search entrants", filters: ["Centre", "Standing"], nosel: !canEdit,
+    bulk: canEdit ? [{ l: "Withdraw", max: 200, run: async keys => crPgTrnEach(ctx, keys, id => NGGApi.admin.tournaments.withdraw(t.tournamentId, id), "withdrawn") }] : [],
+    emptyText: t.status === "open" ? "Nobody entered yet. Add players below, or let them enter from the chess screen." : "Nobody entered." });
+  if (canEdit) {
+    const pool = (d.pool || []).filter(m => entered.indexOf(m.memberId) < 0);
+    out.push({ type: "table", span: 6, title: "Add players", sub: "Active " + (t.programme === "summer" ? "Summer School" : "NGG") + " members not yet entered" + (d.poolTotal > (d.pool || []).length ? " — the first " + crNum((d.pool || []).length) + " of " + crNum(d.poolTotal) + "; search to narrow" : "") + ". Select them and press Enter.",
+      cols: ["Member", "Centre"],
+      rows: pool.map(m => ({ key: m.memberId, cells: [{ k: "strong", t: m.fullName || m.memberId, s: m.displayId || m.memberId }, { k: "text", t: m.centre || "No centre" }] })),
+      search: "Search by name", filters: ["Centre"],
+      bulk: [{ l: "Enter", max: 200, run: async keys => crPgTrnEach(ctx, keys, id => NGGApi.admin.tournaments.enter(t.tournamentId, id), "entered") }],
+      emptyText: "Nobody left to add." });
+  }
+  if (games.length) out.push({ type: "table", span: 6, title: "Games", nosel: true, sortInit: null,
+    cols: ["Round", "White", "Black", "Centre", "Result"],
+    rows: games.map(m => ({ key: m.matchId, cells: [
+      { k: "text", t: crPgRoundLabel(m.key) },
+      { k: "text", t: m.a.name + (m.winnerId && m.winnerId === m.a.id ? " · won" : "") },
+      { k: "text", t: m.b.name + (m.winnerId && m.winnerId === m.b.id ? " · won" : "") },
+      { k: "text", t: m.centre || "—" },
+      m.status === "complete" ? { k: "status", t: (m.result === "draw" ? "Drawn" : "Won") + (m.reason ? " · " + String(m.reason).replace(/_/g, " ") : ""), tone: m.result === "draw" ? "warn" : "ok" }
+        : { k: "status", t: "In play · move " + Math.max(1, Math.ceil((m.ply || 0) / 2)), tone: "gold" },
+    ] })),
+    filters: ["Round", "Centre", "Result"] });
+  return out;
+}
+
+Object.assign(CR_TAB_DEFS, {
+  tournaments: {
+    skeleton: ["table"],
+    load: async () => {
+      const v = crPgTrnView();
+      if (v === "new") return { mode: "new" };
+      if (v) {
+        const b = await NGGApi.admin.tournaments.bracket(v);
+        const t = b.tournament;
+        let pool = [], poolTotal = 0;
+        if (t.status === "open") {
+          const r = await NGGApi.admin.members.list({ status: "active", type: t.programme === "summer" ? "Summer" : "NGG", page: 1, pageSize: 200 }).catch(() => ({ members: [] }));
+          pool = r.members || []; poolTotal = r.total || pool.length;
+        }
+        return { mode: "one", bracket: b, pool, poolTotal };
+      }
+      const r = await NGGApi.admin.tournaments.list();
+      return { mode: "list", tournaments: r.tournaments || [] };
+    },
+    actions: (d, ctx) => {
+      const can = ctx.can("people");
+      if (d.mode === "new") return [{ l: "All tournaments", icon: "caret-left", primary: true, run: () => crPgTrnGo(ctx, "") }];
+      if (d.mode === "one") {
+        const t = d.bracket.tournament;
+        const live = t.status !== "complete" && t.status !== "cancelled";
+        const rounds = d.bracket.rounds || {};
+        const open = Object.keys(rounds).reduce((n, k) => n + rounds[k].filter(m => m.status === "active" || m.status === "invited").length, 0);
+        return [
+          live ? { l: t.round === 0 ? "Draw round one" : "Draw round " + (t.round + 1), icon: "shuffle", primary: true, run: () => crPgTrnDraw(ctx, t),
+            disabled: !can || open > 0, why: !can ? "Running a tournament needs the people permission." : open > 0 ? crPlural(open, "game") + " still being played — the next round waits for them." : undefined } : null,
+          { l: "All tournaments", icon: "caret-left", primary: !live, run: () => crPgTrnGo(ctx, "") },
+          live && can ? { l: "Cancel the tournament", icon: "x", run: () => crPgTrnCancel(ctx, t) } : null,
+        ];
+      }
+      return [{ l: "Host a tournament", icon: "trophy", primary: true, run: () => crPgTrnGo(ctx, "new"), disabled: !can || typeof CmTrnCreate !== "function", why: !can ? "Hosting needs the people permission." : typeof CmTrnCreate !== "function" ? "The tournament wizard didn’t load." : undefined }];
+    },
+    facts: d => d.mode === "one" ? d.bracket.tournament.name + ": " + d.bracket.tournament.status + ", round " + d.bracket.tournament.round + ". " + crPgTrnLine(d.bracket.tournament)
+      : d.mode === "list" ? d.tournaments.map(t => t.name + " (" + t.status + ", " + t.entrants + " entrants, " + t.openMatches + " games open)").join("; ") || "No tournaments yet." : "Hosting a new tournament.",
+    blocks: (d, ctx) => {
+      if (d.mode === "new") return [{ type: "custom", span: 6, render: () => (
+        <div className="cm-tokens trn-admin-wrap">
+          <CmTrnCreate onBack={() => crPgTrnGo(ctx, "")} onCreated={id => { ctx.toast("Tournament created. Add the players, then draw round one."); crPgTrnGo(ctx, id || ""); }}/>
+        </div>
+      ) }];
+      if (d.mode === "one") return crPgTrnDetailBlocks(d, ctx);
+      return crPgTrnListBlocks(d, ctx);
     },
   },
 });
