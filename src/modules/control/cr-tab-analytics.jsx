@@ -186,3 +186,90 @@ Object.assign(CR_TAB_DEFS, {
     blocks: (d, ctx) => crAnStatusBlocks(d, ctx),
   },
 });
+
+/* ── Staff activity ───────────────────────────────────────────────────────
+   admin.staff.performance: mentors and instructors together, quietest first.
+   Counts of work filed, not a rating. Course skills (what instructors mark
+   each child against) is the second view, /control/analytics/staff/skills;
+   saving it needs `summer`, as the server's admin_course_skills_save gates. */
+const crAnStaffView = { days: 30 };
+const CR_AN_DAYS = [["7", "Last 7 days"], ["30", "Last 30 days"], ["90", "Last 90 days"]];
+
+function crAnStaffBlocks(d, ctx) {
+  const p = d.perf || {}, t = p.totals || {}, rows = p.staff || [];
+  const view = ctx.sub === "skills" ? "skills" : "activity";
+  const out = [crAnBarBlock([
+    { label: "View", value: view, options: [["activity", "Who is filing" + (t.silent ? " · " + crNum(t.silent) + " silent" : "")], ["skills", "Course skills"]], onChange: v => ctx.setSub(v === "skills" ? "skills" : "") },
+    view === "activity" ? { kind: "select", label: "Window", value: String(crAnStaffView.days), options: CR_AN_DAYS, onChange: v => { crAnStaffView.days = Number(v) || 30; ctx.reload(); } } : null,
+  ], view === "activity" && p.since ? "Since " + crDate(p.since) : "")];
+
+  if (view === "activity") {
+    out.push({ type: "note", span: 6, icon: "info", text: "Mentors and instructors together, quietest first. These are counts of work filed, not a rating — the point is to notice who has stopped, not to rank anyone." + (p.scope === "lead" ? " You’re seeing your own centre." : ""),
+      sub: "Coverage is the share of a person’s own children they recorded anything about in the window." });
+    out.push({ type: "kpis", span: 6, items: [
+      { l: "Staff", v: crNum(t.staff), dn: t.silent ? crNum(t.silent) + " never filed anything" : "everyone has filed something" },
+      { l: "Stars", v: crNum(t.stars), dn: crNum(t.remarks) + " notes" + (t.flags ? " · " + crNum(t.flags) + " safeguarding" : "") },
+      { l: "Sessions logged", v: crNum(t.sessions) },
+      { l: "Skill marks", v: crNum(t.skillMarks) },
+    ] });
+    out.push({ type: "table", span: 6, title: "Who is filing", sub: crPlural(rows.length, "person", "people"), nosel: true, search: "Search staff", filters: ["Kind", "Centre"], sortInit: null,
+      cols: ["Person", "Kind", "Centre", "Last active", "Coverage", { l: "Stars", num: true }, { l: "Notes", num: true }, { l: "Sessions", num: true }, { l: "Skills", num: true }],
+      rows: rows.map(s => ({ key: s.staffId + "|" + s.kind, cells: [
+        { k: "person", t: s.fullName, s: s.focus || "" },
+        s.kind === "lead mentor" ? { k: "status", t: "Lead mentor", tone: "gold" } : { k: "text", t: s.kind[0].toUpperCase() + s.kind.slice(1) },
+        { k: "text", t: s.centre || "—" },
+        /* Never filed is a different thing from quiet for a while; they must not read the same. */
+        s.lastActive ? { k: "text", t: s.quietDays === 0 ? "Today" : crNum(s.quietDays) + "d ago", s: crDate(s.lastActive) } : { k: "status", t: "Never", tone: "bad" },
+        s.coverage === null ? { k: "text", t: "No class set" } : { k: "progress", pct: s.coverage, t: s.coverage + "% · " + crNum(s.childrenStarred) + " of " + crNum(s.classSize) },
+        { k: "num", t: s.stars ? crNum(s.stars) : "—", v: s.stars },
+        { k: "num", t: (s.remarks ? crNum(s.remarks) : "—") + (s.flags ? " (" + crNum(s.flags) + " flagged)" : ""), v: s.remarks },
+        { k: "num", t: s.sessions ? crNum(s.sessions) : "—", v: s.sessions },
+        { k: "num", t: s.skillMarks ? crNum(s.skillMarks) : "—", v: s.skillMarks },
+      ] })),
+      emptyText: "No mentors or instructors on record yet." });
+    return out;
+  }
+
+  out.push({ type: "note", span: 6, icon: "info", text: "What instructors mark each child against, per course. Four levels — not yet, getting there, can do it, can teach it — and no numbers, because a score invites a ranking between children.",
+    sub: "Seeded from the catalogue; correct them to whatever the people teaching the course actually mean. One skill per line, verb-led and observable, at most 12 a course." });
+  if (d.skillsErr) {
+    out.push({ type: "custom", span: 6, render: () => <CrError error={d.skillsErr} onRetry={() => ctx.reload()} what="the course skills"/> });
+    return out;
+  }
+  const skills = d.skills || {}, courses = Object.keys(skills);
+  if (!courses.length) { out.push({ type: "note", span: 6, icon: "books", text: "No courses in the catalogue yet, so there is nothing to mark against." }); return out; }
+  const canSave = ctx.can("summer");
+  if (!canSave) out.push({ type: "note", span: 6, icon: "lock-simple", tone: "warn", text: "Changing the course skills needs the Summer School capability. You can read them." });
+  const lines = v => String(v || "").split("\n").map(x => x.trim()).filter(Boolean);
+  out.push({ type: "form", span: 6, key: "crAnSkills",
+    groups: [{ h: "Course skills", help: "Instructors mark against these from the moment they are saved.", rows: courses.map(c => ({
+      id: c, l: c, c: "textarea", rows: Math.max(3, (skills[c] || []).length + 1), value: (skills[c] || []).join("\n"), disabled: !canSave,
+      help: crPlural(lines((skills[c] || []).join("\n")).length, "skill"),
+      check: v => { const l = lines(v); return l.length > 12 ? "At most 12 skills a course. This has " + l.length + "." : l.some(x => x.length > 120) ? "Keep each skill under 120 characters." : ""; },
+    })) }],
+    save: async (patch, all) => {
+      if (!canSave) throw new Error("forbidden");
+      const body = {};
+      courses.forEach(c => { body[c] = lines(all[c]); });
+      const r = await NGGApi.admin.staff.saveSkills(body);
+      ctx.setData(x => Object.assign({}, x, { skills: r.skills || body }));
+    } });
+  return out;
+}
+
+Object.assign(CR_TAB_DEFS, {
+  staff: {
+    skeleton: ["kpis", "table"],
+    load: async () => {
+      const [perf, sk] = await Promise.all([
+        NGGApi.admin.staff.performance(crAnStaffView.days),
+        NGGApi.admin.staff.skills().then(r => ({ skills: r.skills || {} }), e => ({ skillsErr: e })),
+      ]);
+      return Object.assign({ perf }, sk);
+    },
+    actions: (d, ctx) => [{ l: "Export CSV", icon: "download-simple", primary: true, disabled: !((d.perf || {}).staff || []).length, why: "Nobody to export yet.",
+      run: () => crDownloadCsv("staff-activity-" + crAnStaffView.days + "d", ["Name", "Kind", "Focus", "Centre", "Last active", "Quiet days", "Coverage %", "Children recorded", "Class size", "Stars", "Notes", "Safeguarding flags", "Sessions", "Skill marks"],
+        d.perf.staff.map(s => [s.fullName, s.kind, s.focus, s.centre, s.lastActive || "never", s.quietDays == null ? "" : s.quietDays, s.coverage == null ? "" : s.coverage, s.childrenStarred, s.classSize, s.stars, s.remarks, s.flags, s.sessions, s.skillMarks])) }],
+    blocks: (d, ctx) => crAnStaffBlocks(d, ctx),
+  },
+});
