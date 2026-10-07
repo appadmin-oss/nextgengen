@@ -11,7 +11,29 @@
     return m ? decodeURIComponent(m[1]) : '';
   }
 
+  /* The CSRF token is a cookie that only GET /auth/me.php mints. A write made
+     * without it is refused 403 csrf_failed, and every screen then showed its
+     * generic "Something went wrong" — a staff member's edit or import silently
+     * failing because the cookie had expired or this tab never called me.php.
+     * So: mint one before a write that has none, and mint-and-retry once if the
+     * server still says csrf_failed (the cookie was rotated by another tab). */
+  async function mintCsrf() {
+    try { await fetch(BASE + '/auth/me.php', { credentials: 'include', cache: 'no-store' }); } catch (_) {}
+    return getCookie('ngg_csrf');
+  }
   async function request(path, opts) {
+    const o = opts || {};
+    const m = o.method || (o.body ? 'POST' : 'GET');
+    const write = m !== 'GET' && m !== 'HEAD';
+    if (write && !getCookie('ngg_csrf')) await mintCsrf();
+    try { return await requestRaw(path, opts); }
+    catch (e) {
+      if (write && e && e.code === 'csrf_failed' && await mintCsrf()) return await requestRaw(path, opts);
+      throw e;
+    }
+  }
+
+  async function requestRaw(path, opts) {
     opts = opts || {};
     const method = opts.method || (opts.body ? 'POST' : 'GET');
     const headers = Object.assign({ 'Accept': 'application/json' }, opts.headers || {});

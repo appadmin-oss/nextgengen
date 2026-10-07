@@ -1257,6 +1257,7 @@ function humanizeError(message, code) {
     member_gone: "That account no longer exists.",
     approval_pending: "Sent to an admin for approval — nothing changes until it is approved.",
     http_0: "Network trouble — check your connection.",
+    csrf_failed: "Your session needs refreshing. Reload the page and try again.",
     http_500: "The server hit an error. Please try again shortly.",
     http_403: "The host refused this request before it reached the site. Ask your host to allow it, or try a smaller file.",
     http_406: "The host's firewall refused this request. Ask your host to allow it, or try a smaller file.",
