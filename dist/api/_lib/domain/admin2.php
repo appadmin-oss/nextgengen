@@ -560,7 +560,8 @@ function admin_overview(array $p): array {
             'summer'   => $one("SELECT COUNT(*) c FROM members WHERE status='active' AND type='Summer'"),
             'graduates'=> $one("SELECT COUNT(*) c FROM members WHERE status IN ('graduated-ngg','graduated-vanguard')"),
             'suspended'=> $one("SELECT COUNT(*) c FROM members WHERE status='suspended'"),
-            'new30'    => $one("SELECT COUNT(*) c FROM members WHERE createdAt >= ?", [$since30]),
+            // Joined, not created: an import makes every record on one day.
+            'new30'    => $one("SELECT COUNT(*) c FROM members WHERE COALESCE(NULLIF(joinDate, ''), SUBSTR(createdAt, 1, 10)) >= ?", [substr($since30, 0, 10)]),
         ],
         'mentors' => ['active' => $one("SELECT COUNT(*) c FROM mentors WHERE status='active'"), 'total' => $one("SELECT COUNT(*) c FROM mentors")],
         'applications' => [

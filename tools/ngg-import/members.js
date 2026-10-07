@@ -43,13 +43,47 @@ const FACULTIES = ['TECH', 'MEDIA', 'ART'];
 
 const clean = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
 
-/** Excel serial → ISO date. Day 1 is 1900-01-01 with the 1900 leap-year bug,
- *  which puts the epoch at 1899-12-30. Serials are also how Sheets stores a
- *  timestamp, so the fractional part (time of day) is dropped. */
+/** A sheet's date → ISO (YYYY-MM-DD), or '' when there is none to read.
+ *
+ *  A date cell arrives as an Excel serial: day 1 is 1900-01-01 with the 1900
+ *  leap-year bug, which puts the epoch at 1899-12-30, and the fractional part
+ *  (time of day — Sheets stores a timestamp the same way) is dropped. But a
+ *  column somebody typed into as text holds "15/03/2023" or "15 March 2023",
+ *  and reading only serials turned every one of those into a blank join date.
+ *  Day first, as Nigerian sheets write it; month-first is not guessed at.
+ *  The same reading as member_date() in api/_lib/domain/member-id.php, which
+ *  checks it again on import. */
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
 function excelDate(v) {
-  const n = Number(clean(v));
-  if (!Number.isFinite(n) || n < 1 || n > 80000) return '';
-  return new Date(Date.UTC(1899, 11, 30) + Math.floor(n) * 86400000).toISOString().slice(0, 10);
+  const s = clean(v);
+  if (!s) return '';
+  const ymd = (y, m, d) => {
+    const t = new Date(Date.UTC(y, m - 1, d));
+    const ok = y >= 1900 && y <= new Date().getUTCFullYear() + 1
+      && t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+    return ok ? t.toISOString().slice(0, 10) : '';
+  };
+  let m;
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/))) return ymd(+m[1], +m[2], +m[3]);
+  // A bare year: as a serial, 2023 is a day in 1905.
+  if (/^(19|20)\d{2}$/.test(s)) return ymd(+s, 1, 1);
+  if (/^\d{1,5}(\.\d+)?$/.test(s)) {
+    const n = Math.floor(Number(s));
+    if (n < 1 || n > 80000) return '';
+    return new Date(Date.UTC(1899, 11, 30) + n * 86400000).toISOString().slice(0, 10);
+  }
+  if ((m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/))) {
+    let y = +m[3];
+    if (m[3].length === 2) y += y > (new Date().getUTCFullYear() % 100) + 1 ? 1900 : 2000;
+    return ymd(y, +m[2], +m[1]);
+  }
+  const t = s.toLowerCase().replace(/[,.]/g, ' ').replace(/(\d)(st|nd|rd|th)\b/g, '$1').trim();
+  const mon = (w) => MONTHS[w.slice(0, 3)] || 0;
+  const sep = '[ \\-/]+';
+  if ((m = t.match(new RegExp(`^(\\d{1,2})${sep}([a-z]{3,9})${sep}(\\d{4})$`))) && mon(m[2])) return ymd(+m[3], mon(m[2]), +m[1]);
+  if ((m = t.match(new RegExp(`^([a-z]{3,9})${sep}(\\d{1,2})${sep}(\\d{4})$`))) && mon(m[1])) return ymd(+m[3], mon(m[1]), +m[2]);
+  if ((m = t.match(new RegExp(`^([a-z]{3,9})${sep}(\\d{4})$`))) && mon(m[1])) return ymd(+m[2], mon(m[1]), 1);
+  return '';
 }
 
 /** Nigerian mobile → 0XXXXXXXXXX. Numbers that spent time in a numeric column
@@ -168,6 +202,17 @@ function headerIndex(row) {
   return idx;
 }
 
+/** The column a header goes by under any of its spellings. "Date_Joined",
+ *  "Date Joined" and "date joined" are one column — matching only the first
+ *  read a re-typed header as no column at all, and every join date as blank. */
+const JOINED_HEADERS = ['date_joined', 'date joined', 'joined', 'join date', 'joining date', 'date of joining', 'joined on'];
+function headerCol(idx, names) {
+  const flat = (k) => k.replace(/[^a-z0-9]/g, '');
+  const want = names.map(flat);
+  for (const [k, i] of Object.entries(idx)) if (want.includes(flat(k))) return i;
+  return undefined;
+}
+
 function requireSheet(wb, name) {
   if (!wb[name]) throw new Error(`workbook has no "${name}" sheet — was it re-tabbed?`);
   return wb[name];
@@ -179,7 +224,7 @@ function readRegistry(rows, sheetName, warn) {
   const h = headerIndex(rows[0]);
   const col = {
     ref: 0,                              // the ID column's header is a stray "j"
-    joined: h['date_joined'],
+    joined: headerCol(h, JOINED_HEADERS),
     level: h['level'],
     first: h['first_name'],
     last: h['last_name'],
@@ -351,6 +396,7 @@ function extractMembers(wb) {
 
   // 2. The master list: every ID ever issued, so it decides who exists at all.
   const hm = headerIndex(master[0]);
+  const masterJoined = headerCol(hm, JOINED_HEADERS);
   const masterByName = new Map();
   const masterRows = [];
   for (let i = 1; i < master.length; i++) {
@@ -359,7 +405,7 @@ function extractMembers(wb) {
     const ref = memberRef(r[hm['members id']]);
     const name = properName(r[hm['name']]);
     if (!ref) continue;
-    masterRows.push({ row: i + 1, ref, name, level: clean(r[hm['level']]).toUpperCase() });
+    masterRows.push({ row: i + 1, ref, name, level: clean(r[hm['level']]).toUpperCase(), joinDate: excelDate(r[masterJoined]) });
     if (name) {
       const key = nameKey(name);
       if (masterByName.has(key)) {
@@ -392,10 +438,11 @@ function extractMembers(wb) {
     warn(`${rec.source} row ${row}: "${rec.fullName}" had no member ID — matched to ${ref} by name${hit.exact ? '' : ' (spelling differs on the master list)'}`);
   }
 
-  for (const { row, ref, name, level } of masterRows) {
+  for (const { row, ref, name, level, joinDate } of masterRows) {
     const known = byRef.get(ref);
     if (known) {
       if (!known.level) known.level = level;
+      if (!known.joinDate) known.joinDate = joinDate;
       if (!known.sources.includes(SHEET_MASTER)) known.sources.push(SHEET_MASTER);
       continue;
     }
@@ -403,7 +450,7 @@ function extractMembers(wb) {
        order — "Eleyinmi Josiah" is surname-first, "Naomi Akintola" is not — so
        the string is kept verbatim rather than guessed at. */
     if (!name) { warn(`${SHEET_MASTER} row ${row}: ${ref} has no name — skipped`); continue; }
-    upsert(ref, { fullName: name, level, centre: CENTRE_DEFAULT, onRoster: false, source: SHEET_MASTER });
+    upsert(ref, { fullName: name, level, joinDate, centre: CENTRE_DEFAULT, onRoster: false, source: SHEET_MASTER });
     warn(`${ref} ("${name}") is on the master list but in no registry sheet — imported as inactive, and the name is stored as written because the sheet's word order is not consistent`);
   }
 
@@ -528,6 +575,7 @@ function extractMembers(wb) {
       withEmail: tally((m) => !!m.email),
       withPhone: tally((m) => !!m.phone),
       withDob: tally((m) => !!m.dob),
+      withJoinDate: tally((m) => !!m.joinDate),
       withSchool: tally((m) => !!m.school),
       withGuardian: tally((m) => m.guardians.length > 0),
       matchedIntake: intakeUsed.size,

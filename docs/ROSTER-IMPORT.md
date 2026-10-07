@@ -126,7 +126,7 @@ current roster from everyone who has left.
 | First\_Name + Last\_Name | `fullName` | |
 | First\_Faculty | `track` | What the app calls a faculty elsewhere |
 | First + Second\_Faculty | `disciplines` | The one or two shown on the ID card |
-| Date\_Joined | `joinDate` | Excel serial → ISO date |
+| Date\_Joined | `joinDate` | Stored as an ISO date. Read from a date cell (Excel serial) or from text typed day first — `15/03/2023`, `15-3-23`, `15 March 2023`, `Mar 2023` (the 1st), `2023` (1 January). The header may be spelled `Date_Joined`, `Date Joined`, `Joined` or `Join Date`; the `MEMBERS` sheet's own join date column is read too, for members on no registry sheet. A value that is not a date (or is month first, `03/15/2023`) is left blank and named in the dry run, never stored as written. Re-running the import fills a join date that is blank on the record. |
 | Birthday | `dob` | |
 | Email, Mobile\_Line | `email`, `phone` | Numbers that lost a leading zero to a numeric column get it back |
 | Name of school | `school` | |

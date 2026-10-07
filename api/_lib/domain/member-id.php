@@ -53,6 +53,59 @@ function member_is_ngg(array $m): bool {
 }
 
 /**
+ * A member's date — joined, or born — as YYYY-MM-DD.
+ *
+ * Returns '' for a blank, the ISO date when the value can be read, and null
+ * when it cannot. Null is not blank: a caller that writes it would store a
+ * date nobody can sort, count or show (the roster drew "—" for a join date
+ * that was on file as "15/03/2023"), so the importer reports it instead.
+ *
+ * What the roster workbook actually holds, in the order it is tried:
+ *  · ISO, with or without a time (2023-03-15, 2023-03-15T09:00:00Z)
+ *  · an Excel/Sheets serial (45000, 45000.375) — a date cell read raw
+ *  · day first, as Nigerian sheets write it (15/03/2023, 15-3-23, 15.03.2023)
+ *  · words (15 March 2023, March 15, 2023, 15-Mar-2023, Mar 2023)
+ * A month and year with no day is the first of that month; a bare year, its
+ * first of January. Month-first (03/15/2023) is not guessed at: 04/05 is
+ * ambiguous, and a sheet that is day-first everywhere else means 4 May.
+ */
+function member_date(string $raw): ?string {
+    $s = trim(preg_replace('/\s+/', ' ', $raw) ?? '');
+    if ($s === '') return '';
+    $ok = static function (int $y, int $mo, int $d): ?string {
+        if ($y < 1900 || $y > (int)gmdate('Y') + 1 || !checkdate($mo, $d, $y)) return null;
+        return sprintf('%04d-%02d-%02d', $y, $mo, $d);
+    };
+    if (preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/', $s, $m)) return $ok((int)$m[1], (int)$m[2], (int)$m[3]);
+    /* A bare year. As a serial, 2023 is a day in 1905 — not a date anybody
+       joined or was born on here — so it is the year, from its first day. */
+    if (preg_match('/^(19|20)\d{2}$/', $s)) return $ok((int)$s, 1, 1);
+    if (preg_match('/^\d{1,5}(?:\.\d+)?$/', $s)) {
+        $n = (int)floor((float)$s);
+        if ($n < 1 || $n > 80000) return null;
+        // Day 1 is 1900-01-01 with the 1900 leap-year bug, so the epoch is 1899-12-30.
+        $ts = gmmktime(0, 0, 0, 12, 30, 1899) + $n * 86400;
+        return $ok((int)gmdate('Y', $ts), (int)gmdate('n', $ts), (int)gmdate('j', $ts));
+    }
+    if (preg_match('#^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2}|\d{4})$#', $s, $m)) {
+        $y = (int)$m[3];
+        if (strlen($m[3]) === 2) $y += $y > ((int)gmdate('Y') % 100) + 1 ? 1900 : 2000;
+        return $ok($y, (int)$m[2], (int)$m[1]);
+    }
+    $months = ['jan' => 1, 'feb' => 2, 'mar' => 3, 'apr' => 4, 'may' => 5, 'jun' => 6,
+               'jul' => 7, 'aug' => 8, 'sep' => 9, 'oct' => 10, 'nov' => 11, 'dec' => 12];
+    $t = strtolower(str_replace([',', '.'], ' ', $s));
+    $t = trim(preg_replace('/(\d)(st|nd|rd|th)\b/', '$1', $t) ?? '');
+    $mon = '([a-z]{3,9})';
+    $sep = '[ \\-\\/]+';
+    $month = static fn(string $w): int => $months[substr($w, 0, 3)] ?? 0;
+    if (preg_match('/^(\\d{1,2})' . $sep . $mon . $sep . '(\\d{4})$/', $t, $m) && ($mo = $month($m[2]))) return $ok((int)$m[3], $mo, (int)$m[1]);
+    if (preg_match('/^' . $mon . $sep . '(\\d{1,2})' . $sep . '(\\d{4})$/', $t, $m) && ($mo = $month($m[1]))) return $ok((int)$m[3], $mo, (int)$m[2]);
+    if (preg_match('/^' . $mon . $sep . '(\\d{4})$/', $t, $m) && ($mo = $month($m[1]))) return $ok((int)$m[2], $mo, 1);
+    return null;
+}
+
+/**
  * The intake year a member's printed ID belongs to.
  *
  * `cohort` on a MEMBER row is the intake year — not a Summer School edition,

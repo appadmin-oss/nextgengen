@@ -271,6 +271,20 @@ function members_import_row(array $row, string $stampedOn): array
         'parentPhone' => trim((string)($row['parentPhone'] ?? '')),
     ];
 
+    /* Dates as the app reads them. The column used to take whatever the sheet
+       held, so "15/03/2023" was stored as written and the roster showed "—"
+       for it: no screen, sort or count can read a day-first string. A date
+       that cannot be read at all is left out and named, not stored. */
+    foreach (['joinDate' => 'join date', 'dob' => 'date of birth'] as $col => $what) {
+        $iso = member_date($patch[$col]);
+        if ($iso === null) {
+            $notes[] = "the {$what} \"{$patch[$col]}\" could not be read as a date — left blank";
+            $patch[$col] = '';
+        } else {
+            $patch[$col] = $iso;
+        }
+    }
+
     foreach (MEMBER_IMPORT_WIDTHS as $col => $max) {
         if (isset($patch[$col]) && mb_strlen($patch[$col]) > $max) {
             $patch[$col] = mb_substr($patch[$col], 0, $max);
