@@ -101,6 +101,11 @@
     let data = null;
     try { data = await res.json(); } catch (_) { data = {}; }
     if (!res.ok || data.ok === false) {
+      /* Say WHY in the console. The browser's own line ("Failed to load
+         resource: 400") names the status and nothing else, and that line is
+         what people copy into a support message — so the reason has to sit
+         beside it, or a refusal on a live site cannot be diagnosed at all. */
+      try { console.warn('[NGG] ' + method + ' ' + path.split('?')[0] + ' refused (HTTP ' + res.status + '): ' + (data.error || '(no error code — something in front of the site answered)') + (data.detail ? ' — ' + data.detail : '') + (data.message ? ' — ' + data.message : '')); } catch (_) {}
       const err = new Error(data.error || ('http_' + res.status));
       err.status = res.status;
       /* An expired or revoked session is not a per-screen problem, and every
