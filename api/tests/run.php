@@ -7208,6 +7208,21 @@ chk('the store persists an inline image and hands back a short, stable URL', (fu
         && strlen((string)$r['url']) <= 512                 // fits the column MySQL enforces
         && is_file(photo_store_path((string)$r['id']));
 })());
+/* The member editor's photo arrived as a data: URL and was written raw into
+   members.photoUrl — 64 KB of TEXT on MySQL — so a real photograph failed the
+   save with `internal` on the live database and nowhere else. */
+chk('a photo taken in the member editor is stored, and the record keeps a short URL', (function () use ($png) {
+    db_insert('members', ['memberId' => 'NGG-PHOTO-ED', 'fullName' => 'Photo Edit', 'email' => 'photo-ed@example.com', 'type' => 'NGG',
+        'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['memberId' => 'NGG-PHOTO-ED', 'photoUrl' => $png(900, 1100)]]);
+    $url = (string)db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PHOTO-ED'")['photoUrl'];
+    return !empty($r['ok']) && photo_is_stored_locally($url) && strlen($url) <= 512;
+})());
+chk('…and so is one a member sets on their own profile', (function () use ($png) {
+    $r = backend_dispatch('member.update', ['memberId' => 'NGG-PHOTO-ED', 'photoUrl' => $png(640, 800)]);
+    $url = (string)db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PHOTO-ED'")['photoUrl'];
+    return !empty($r['ok']) && photo_is_stored_locally($url) && strlen($url) <= 512;
+})());
 chk('…content-addressed, so the same photo twice is one file and one URL', (function () use ($png) {
     $a = photo_store_put($png(600, 750));
     $b = photo_store_put($png(600, 750));
@@ -7488,6 +7503,19 @@ chk('active promo is served publicly', (function () {
 chk('an expired promo is hidden', (function () {
     backend_dispatch('admin.promotions.set', ['requesterId' => 'NGG-2025-0099', 'promo' => ['text' => 'Old news', 'expires' => gmdate('Y-m-d\TH:i:s\Z', time() - 3600)]]);
     return backend_dispatch('public.siteContent', [])['promo'] === null;
+})());
+chk('the homepage banner needs the settings capability, not just a staff role', (function () {
+    db_insert('members', ['memberId' => 'NGG-PROMO-ED', 'fullName' => 'Promo Editor', 'email' => 'promo-ed@example.com', 'type' => 'NGG',
+        'status' => 'active', 'role' => 'editor', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $r = backend_dispatch('admin.promotions.set', ['requesterId' => 'NGG-PROMO-ED', 'promo' => ['text' => 'Not yours to change']]);
+    return ($r['error'] ?? '') === 'forbidden' && backend_dispatch('public.siteContent', [])['promo'] === null;
+})());
+chk('the audit log\'s staff filter lists every staff role, not three of them', (function () {
+    db_insert('members', ['memberId' => 'NGG-AUD-CLUB', 'fullName' => 'Audit Club Admin', 'email' => 'aud-club@example.com', 'type' => 'NGG',
+        'status' => 'active', 'role' => 'club_admin', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    audit('test.club_admin_act', 'NGG-AUD-CLUB', '', [], '');
+    $r = backend_dispatch('admin.audit.tail', ['requesterId' => 'NGG-2025-0099']);
+    return !empty($r['ok']) && in_array('NGG-AUD-CLUB', array_column($r['actors'], 'actorId'), true);
 })());
 
 // ── Account lifecycle: verified email change, staff invite, export, deletion ──

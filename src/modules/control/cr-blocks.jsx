@@ -210,11 +210,14 @@ function CrCards({ b, phone }) {
 
 /* ── form: edits are held here and reported up, so the unsaved bar is the shell's ── */
 function CrFormBlock({ b, ctx, phone }) {
-  const base = React.useMemo(() => {
-    const o = {};
-    b.groups.forEach(g => g.rows.forEach(r => { o[r.id] = r.value; }));
-    return o;
-  }, [b]);
+  /* Re-based on the stored VALUES, not on the block object: blocks() runs on
+     every shell render — including the one the unsaved bar causes — so keying
+     on `b` reset the form on the first keystroke. A reload that brings new
+     values from the server still resets it. */
+  const baseObj = {};
+  b.groups.forEach(g => g.rows.forEach(r => { baseObj[r.id] = r.value; }));
+  const baseSig = (b.key || "") + "\u0000" + JSON.stringify(baseObj);
+  const base = React.useMemo(() => baseObj, [baseSig]);
   const [vals, setVals] = React.useState(base);
   const [errs, setErrs] = React.useState({});
   React.useEffect(() => { setVals(base); setErrs({}); }, [base]);

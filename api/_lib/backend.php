@@ -763,6 +763,12 @@ function backend_dispatch(string $op, array $args = []): array {
         if (function_exists('ops_record')) {
             ops_record('error', $op, $e->getMessage(), basename($e->getFile()) . ':' . $e->getLine());
         }
-        return ['ok' => false, 'error' => 'internal', 'detail' => !empty($CONFIG['debug']) ? $e->getMessage() : null];
+        /* Staff ops say what broke. They are reached only through require_admin
+           routes, and "internal" alone left a live failure undiagnosable from the
+           console — the member editor's photo overflow was one. Public and member
+           ops still say nothing beyond the code. */
+        $staffOp = strncmp($op, 'admin.', 6) === 0;
+        return ['ok' => false, 'error' => 'internal', 'detail' => (!empty($CONFIG['debug']) || $staffOp)
+            ? 'The server could not finish this: ' . $e->getMessage() : null];
     }
 }
