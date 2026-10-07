@@ -13,7 +13,8 @@
      is how a line is learned by ear.
    - English too: after the saying, a breath, then its meaning in English —
      how a person would teach it, rather than two recordings pressed together.
-   - Share: the phone's own share sheet, or the saying copied with its meaning.
+   - Share: the share card (qow-card.jsx) — the saying as an image in three
+     sizes and six palettes — with the plain text one press away.
    A clip that will not play says so and offers the button again; it never
    leaves the control looking like it is working.
    ========================================================================== */
@@ -54,6 +55,7 @@ function QuoteOfWeek() {
   const [loop, setLoop] = React.useState(false);
   const [note, setNote] = React.useState("");          // a one-off message: copied, failed
   const [bVoice, setBVoice] = React.useState(null);
+  const [sharing, setSharing] = React.useState(false);
   const nativeRef = React.useRef(null);
   const enRef = React.useRef(null);
   const timer = React.useRef(0);
@@ -143,17 +145,11 @@ function QuoteOfWeek() {
     const v = !loop; setLoop(v);
     if (!v && phase === "again") stop();
   };
-  const share = async () => {
-    const lines = [s.text, s.translation ? "“" + s.translation + "”" : "", "— " + lang + " " + (QOW_KIND[s.kind] || "").toLowerCase() + ", Quote of the week at Next Generation Genius"].filter(Boolean);
-    const text = lines.join("\n");
-    const url = window.location.origin + "/";
-    if (navigator.share) {
-      try { await navigator.share({ title: "Quote of the week", text, url }); return; }
-      catch (e) { if (e && e.name === "AbortError") return; }
-    }
-    try { await navigator.clipboard.writeText(text + "\n" + url); say("Copied. Paste it anywhere."); }
-    catch (_) { say("Couldn’t copy. Select the saying to copy it."); }
-  };
+  /* Share opens the share card (qow-card.jsx): the saying as an image in the
+     handoff's three sizes and six palettes, with the text — saying, its
+     English, and the link — still one press away for a plain-text share. */
+  const shareText = [s.text, s.translation ? "“" + s.translation + "”" : "", "— " + lang + " " + (QOW_KIND[s.kind] || "").toLowerCase() + ", Quote of the week at Next Generation Genius", window.location.origin + "/"].filter(Boolean).join("\n");
+  const share = () => setSharing(true);
   const onTime = (e) => { const a = e.currentTarget; setProgress(a.duration ? a.currentTime / a.duration : 0); };
 
   const native = (QOW_NATIVE[s.language] || {})[s.kind];
@@ -217,7 +213,7 @@ function QuoteOfWeek() {
                 {open ? "Close" : "What it means"}
               </button>
             )}
-            <button type="button" className="qow-btn qow-share" onClick={share}>Share</button>
+            <button type="button" className="qow-btn qow-share" aria-haspopup="dialog" onClick={share}>Share</button>
           </div>
         </div>
 
@@ -232,6 +228,7 @@ function QuoteOfWeek() {
           {open && <p className="qow-meaning" id="qow-meaning"><span className="qow-k">Deeper meaning</span>{s.meaning}</p>}
         </div>
         {s.audioUrl && <audio ref={nativeRef} src={s.audioUrl} preload="none" onEnded={nativeEnded} onError={() => phase && failed()} onTimeUpdate={e => phase === "native" && onTime(e)}/>}
+        {sharing && <QowShareSheet saying={s} weekYmd={d.week} shareText={shareText} onClose={() => setSharing(false)}/>}
         {hasEn && <audio ref={enRef} src={s.audioUrlEn} preload="none" onEnded={finished} onError={() => phase && failed()} onTimeUpdate={e => phase === "english" && onTime(e)}/>}
       </div>
     </section>

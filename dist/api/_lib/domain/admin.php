@@ -229,6 +229,9 @@ function admin_members_with_consent(array $rows): array {
         // once a member has generated one; the card falls back to a member deep
         // link otherwise. Not added to public_member — this is a staff read.
         if (!empty($r['anchorCode'])) $m['anchorCode'] = (string)$r['anchorCode'];
+        // When they joined: the roster's Joined column and its default order.
+        // public_member() leaves it out; the roster sorted by a date it never showed.
+        $m['createdAt'] = (string)($r['createdAt'] ?? '');
         $cs = $byId[$mid] ?? [];
         $d = $decide[$mid] ?? ['mayName' => true, 'gated' => false];
         $m['consent'] = [
@@ -671,6 +674,17 @@ function admin_members_upsert(array $p): array {
     }
 
     // ── Validation ─────────────────────────────────────────────────────
+    /* A photo taken in the editor arrives as a data: URL when no image cloud is
+       configured (or the host blocks the config read that would find one). It
+       went into members.photoUrl as it came — a TEXT column, 64 KB on MySQL —
+       so a real photograph made the save throw `internal`, and only on the
+       live database: SQLite has no such limit. Every other intake stores the
+       bytes and keeps a short URL (photo_intake_url); this one now does too. */
+    if (array_key_exists('photoUrl', $data) && is_string($data['photoUrl']) && preg_match('#^data:#i', trim($data['photoUrl']))) {
+        $data['photoUrl'] = photo_intake_url($data['photoUrl']);
+        if ($data['photoUrl'] === '') return ['ok' => false, 'error' => 'bad_photo',
+            'detail' => 'That photo could not be stored. Try a JPEG or PNG under 10 MB.'];
+    }
     $v = admin_member_validate($data, $existing);
     if (!$v['ok']) return $v;
     $data = $v['data'];
@@ -1020,7 +1034,10 @@ function admin_promotions_get(array $p): array {
 }
 
 function admin_promotions_set(array $p): array {
-    $g = admin_gate($p); if (!$g['ok']) return $g;
+    /* The homepage banner is the public site's first line, and it sits in
+       Settings. Any staff role could rewrite it — an auditor, a check-in desk
+       volunteer — because this asked only "are you staff". */
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
     $promo = $p['promo'] ?? null;
     setting_set('homepage_promo', $promo ? json_encode($promo, JSON_UNESCAPED_SLASHES) : '', $g['requester']['memberId']);
     audit('admin.promo.set', $g['requester']['memberId'], '', ['promo' => $promo], (string)($p['ip'] ?? ''));
@@ -1087,10 +1104,15 @@ function admin_audit_tail(array $p): array {
     $rows = db_all($sql, array_merge($params, [$pageSize, $offset]));
 
     // Distinct staff actors seen in the log — powers the actor filter.
+    /* Every staff role, from the one role registry — a hand-written list of
+       three left club admins, coordinators, centre leads and auditors out of
+       the filter, though their acts are in the log. */
+    $staffRoles = staff_role_names();
     $actors = db_all(
         "SELECT DISTINCT a.actorId, m.fullName, m.role FROM audit_log a
          JOIN members m ON m.memberId = a.actorId
-         WHERE m.role IN ('editor','admin','super_admin') ORDER BY m.fullName"
+         WHERE m.role IN (" . implode(',', array_fill(0, count($staffRoles), '?')) . ") ORDER BY m.fullName",
+        $staffRoles
     );
     return ['ok' => true, 'audit' => $rows, 'actors' => $actors, 'total' => $total, 'page' => $page, 'pageSize' => $pageSize];
 }

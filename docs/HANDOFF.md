@@ -544,3 +544,33 @@ renderers were kept and are drawn in the slots unchanged.
   printed ID their number (never reissued) before the print window opens.
 - **The sheet follows the cards' size** instead of refusing anything not
   CR80 portrait; a mixed-size sheet is a red check with a one-click fix.
+
+## Quote of the week — the share card (design_handoff_quote_card v2)
+
+**Share** on the home page's quote of the week opens a sheet that makes the
+saying an image: feed 1080×1350, story 1080×1920, wide 1200×630, in the six
+palettes of the handoff, downloaded or shared as a PNG (`ngg-quote-w{week}-{kind}.png`,
+1×; 2× on request). The plain text is still one press away.
+
+- **The saying as written is the quote** (Hausa, Igbo or Yorùbá); "by" is the
+  language and kind ("Igbo proverb"); the source is "Quote of the week · Igbo".
+  The handoff's card has no slot for the English, and its rules forbid adding
+  copy — the shared post's text carries the translation.
+- **One renderer**: the export serialises the card the browser already laid out
+  into an SVG `<foreignObject>` with its stylesheet and fonts inlined
+  (`qcRenderPng`). html2canvas does not reproduce `box-decoration-break: clone`
+  or balanced wrapping, which the design depends on.
+- **Fonts are self-hosted** in `assets/fonts/qcard/` and load only when the sheet
+  opens. Bricolage (variable, opsz) has no ƙ ɗ ɓ ƴ: eight glyphs from Noto Sans
+  800 (1.4 KB, "QC Hooks") are the fallback for exactly those. Bricolage also
+  had no mark anchor for the combining grave, so ẹ̀/ọ̀ drew the grave beside the
+  letter: the three Bricolage files were patched to give the grave the acute's
+  anchor (same outline centre). ṣ is written s + U+0323, which it draws.
+- **Card sizes are classes, never inline**: styles.css rewrites inline
+  `font-size: 84px` (and friends) on phones by attribute selector.
+- **Not done**: the handoff asks for the wide card as `og:image` "where a quote
+  page exists". There is no quote page, and the host has no server-side
+  renderer, so link previews keep the site icon.
+- Test: `tests/qow-card.test.js` (in `test:all`) — sizes, the reference renders
+  within ±2 px, 220 characters fit, wrapping highlight, the languages, the sheet,
+  and a phone.

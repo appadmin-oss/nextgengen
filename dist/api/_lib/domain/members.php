@@ -169,6 +169,11 @@ function member_update(array $p): array {
             $patch[$k] = ($k === 'socials' && is_array($p[$k])) ? json_encode($p[$k], JSON_UNESCAPED_SLASHES) : $p[$k];
         }
     }
+    // An inline photo is stored and replaced by its short URL (see admin_members_upsert).
+    if (isset($patch['photoUrl']) && is_string($patch['photoUrl']) && preg_match('#^data:#i', trim($patch['photoUrl']))) {
+        $patch['photoUrl'] = photo_intake_url($patch['photoUrl']);
+        if ($patch['photoUrl'] === '') return ['ok' => false, 'error' => 'bad_photo'];
+    }
     db_update('members', $patch, ['id' => $member['id']]);
     audit('member.update', $memberId, $memberId, ['keys' => array_keys($patch)], (string)($p['ip'] ?? ''));
     return ['ok' => true];

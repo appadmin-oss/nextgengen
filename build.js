@@ -47,6 +47,7 @@ const ORDER = [
   'card-template.jsx',
   'page-home.jsx',
   'src/modules/qow/qow.jsx',
+  'src/modules/qow/qow-card.jsx',
   'src/modules/idcards/ids-core.jsx',
   'src/modules/idcards/ids-ui.jsx',
   'src/modules/idcards/ids-member-back.jsx',
