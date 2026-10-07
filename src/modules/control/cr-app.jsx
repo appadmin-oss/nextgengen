@@ -172,10 +172,10 @@ function CrRoom({ auth, setPage, unlockNote }) {
 
   /* ── Navigation ── */
   const [reloadKey, setReloadKey] = React.useState(0);
-  const confirm = c => new Promise(res => setConfirmQ(Object.assign({}, c, { res })));
+  const askConfirm = c => new Promise(res => setConfirmQ(Object.assign({}, c, { res })));
   const go = async (page, tab, sub, opts) => {
     if (dirtyN && !(opts && opts.keepDirty)) {
-      const ok = await confirm({ title: "Discard " + dirtyN + " unsaved change" + (dirtyN === 1 ? "" : "s") + "?", body: "You changed settings on this page and haven’t saved them.", cta: "Discard", danger: true, cancel: "Keep editing" });
+      const ok = await askConfirm({ title: "Discard " + dirtyN + " unsaved change" + (dirtyN === 1 ? "" : "s") + "?", body: "You changed settings on this page and haven’t saved them.", cta: "Discard", danger: true, cancel: "Keep editing" });
       if (!ok) return;
       Object.values(dirtyMap.current).forEach(v => v.discard());
     }
@@ -204,7 +204,7 @@ function CrRoom({ auth, setPage, unlockNote }) {
     api: NGGApi.admin, me, can: c => crCapOk(c, has), can1: has, phone, density, reloadKey,
     sub: cur.sub, page: cur.page, tab: cur.tab,
     setSub: s => { setLoc(l => Object.assign({}, l, { sub: s || "" })); history.replaceState({ page: "admin" }, "", crPath(cur.page, cur.tab, s)); },
-    toast: say, confirm,
+    toast: say, confirm: askConfirm,
     form: spec => { setDrawer(null); setForm(spec); },
     palette: scope => { setCmdScope(scope || "all"); setCmd(true); },
     drawer: spec => setDrawer(spec), closeDrawer: () => setDrawer(null),
