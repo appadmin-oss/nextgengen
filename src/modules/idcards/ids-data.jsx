@@ -74,9 +74,22 @@ async function idsLoad() {
 
 /* ── The size a card is, which the sheet must match ───────────────────────── */
 
-/** [w, h] in mm a record's card prints at: its assigned design's trim, else the standard card's. */
-function idsRecordMm(design) {
+/**
+ * [w, h] in mm a record's card prints at: its assigned design's trim first;
+ * else the standard card's own size, which comes from its SUBJECT first and
+ * the programme setting second (CLAUDE.md §7). A member card is ID-1 and its
+ * geometry is its renderer's; the Summer School and volunteer standard cards
+ * are the lanyard size the programme sets (idcard.widthMm × heightMm, 54 × 75
+ * by default). Reading CR80 for every subject printed a 54 × 75 card
+ * stretched to 85.6mm — the old Card Studio got this right and the rebuild
+ * lost it.
+ */
+function idsRecordMm(design, kind, program) {
   if (design) return [Number(design.wMm) || 54, Number(design.hMm) || 85];
+  if (kind && kind !== "member") {
+    const p = program || {};
+    return [Number(p.widthMm) || 54, Number(p.heightMm) || 75];
+  }
   return [IDS_SIZES.cr80p[2], IDS_SIZES.cr80p[3]];
 }
 function idsSameMm(a, b) { return Math.abs(a[0] - b[0]) <= IDS_SIZE_TOL && Math.abs(a[1] - b[1]) <= IDS_SIZE_TOL; }
@@ -131,7 +144,15 @@ function IdsTplFace({ design, side, row, boxW, boxH }) {
 /* ── The card for a record ────────────────────────────────────────────────── */
 
 /** The card renderer for a record, scaled into a box of w × h mm. `design` is its type's assigned design, or null. */
-function IdsRecordFace({ rec, face, program, wMm, hMm, design }) {
+function IdsRecordFace(props) {
+  /* One record the renderer chokes on costs its own slot, named, never the
+     whole sheet — the old studio's CardDrawFailed, restored. */
+  const r = props.rec || {};
+  const boxW = props.wMm * IDS_MM_PX, boxH = props.hMm * IDS_MM_PX;
+  const fallback = <div className="ids-face-blank is-bad" style={{ width: boxW, height: boxH }}>Couldn’t draw this card<br/><span className="ids-mono">{r.displayId || r.id}</span></div>;
+  return typeof SafeBlock !== "undefined" ? <SafeBlock label={"ids-face " + (r.key || "")} fallback={fallback}><IdsRecordFaceInner {...props}/></SafeBlock> : <IdsRecordFaceInner {...props}/>;
+}
+function IdsRecordFaceInner({ rec, face, program, wMm, hMm, design }) {
   const boxW = wMm * IDS_MM_PX, boxH = hMm * IDS_MM_PX;
   if (design && (face !== "back" || design.back)) return <IdsTplFace design={design} side={face} row={rec.raw} boxW={boxW} boxH={boxH}/>;
   if (rec.kind === "member") return <IdsMemberFace rec={rec} back={face === "back"} program={program} boxW={boxW} boxH={boxH}/>;

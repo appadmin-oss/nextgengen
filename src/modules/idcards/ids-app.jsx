@@ -14,6 +14,16 @@
      card. The sheet takes the size of the cards on it, never the reverse, and
      every run records the template and version the server says it used.
    ========================================================================== */
+/* RESTORE PROGRESS (features the 6c45071 rebuild dropped from the old Card
+   Studio / Control Room ID screens; a resumed run picks up from here):
+   [x] F1 standard card size per subject + the lanyard size setting
+   [x] F2 a card that fails to draw costs its slot, not the sheet
+   [ ] F3 no-centre filter + warning, range by date / ID number, paste IDs
+   [ ] F4 per-card edit photo, resend ID, PNG download
+   [ ] F5 print-ready PDF (bleed, crop marks, CMYK intent, duplex, dpi, QR verify, art probe) + PNG ZIP
+   [ ] F6 volunteer tiers (code + card colour)
+   [ ] F7 warm the hosted QR cache
+   [ ] F8 log paging, first/repeat + mark failed later in the run drawer, look up by record id */
 
 const IDS_DEFAULT_SETTINGS = { size: "cr80p", cw: 60, ch: 90, paper: "a4", margin: IDS_MARGIN.def, gap: IDS_GAP.def, skip: 0,
   backs: "off", marks: true, dpi: 300, order: "centre", breakBy: true, packing: true, reason: "new" };
@@ -78,7 +88,7 @@ function IdCardStudioPage({ setPage }) {
   }, [data.records]);
   const isBlocked = r => !r.photoUrl;
   const designOf = rec => (data.designs || {})[rec.subjectType] || null;
-  const mmOf = rec => idsRecordMm(designOf(rec));
+  const mmOf = rec => idsRecordMm(designOf(rec), rec.kind, (data.programs || {})[rec.kind]);
 
   /* ── Settings and queue ── */
   const [st, setSt] = React.useState(IDS_DEFAULT_SETTINGS);
@@ -317,8 +327,26 @@ function IdCardStudioPage({ setPage }) {
   const designsUI = kindsHere.map(k => {
     const t = IDS_KIND_FOR_RUN[k], d = (data.designs || {})[t] || null;
     return { kind: k, label: IDS_KIND_PLURAL[k], value: d ? d.templateId : "", options: (data.choices || {})[t] || [], busy: designBusy === k,
-      help: d ? idsMmLabel(idsRecordMm(d)) + " · " + (d.back ? "back: " + d.back.name + " v" + d.back.version : "standard back") : "Built in · " + idsMmLabel(idsRecordMm(null)) + " · front and back" };
+      help: d ? idsMmLabel(idsRecordMm(d)) + " · " + (d.back ? "back: " + d.back.name + " v" + d.back.version : "standard back") : "Built in · " + idsMmLabel(idsRecordMm(null, k, (data.programs || {})[k])) + " · front and back" };
   });
+  /* The standard lanyard card's size (Summer School and volunteers), restored
+     from the old studio's "card proportion" box. One programme setting
+     (idcard.widthMm × heightMm), saved through settings, so it needs that
+     permission and says so when refused. The member card is ID-1 and fixed. */
+  const lanyardProgram = (data.programs || {}).summer || (data.programs || {}).volunteer || null;
+  const [sizeBusy, setSizeBusy] = React.useState(false);
+  const saveLanyardSize = (w, h) => {
+    const W2 = Math.max(50, Math.min(60, Number(w) || 54)), H2 = Math.max(64, Math.min(100, Number(h) || 75));
+    setSizeBusy(true);
+    return NGGApi.admin.settings.set({ idcard: { widthMm: W2, heightMm: H2 } })
+      .then(() => {
+        setData(d => { const pr = Object.assign({}, d.programs); ["summer", "volunteer"].forEach(k => { if (pr[k]) pr[k] = Object.assign({}, pr[k], { widthMm: W2, heightMm: H2 }); }); return Object.assign({}, d, { programs: pr }); });
+        say("Summer School and volunteer cards are now " + W2 + " × " + H2 + " mm");
+      })
+      .catch(e => say(e && (e.status === 403 || e.code === "forbidden") ? "Changing the card size needs the Settings permission." : idsErrText(e, "Couldn’t save the size. Try again.")))
+      .then(() => setSizeBusy(false));
+  };
+  const lanyardUI = lanyardProgram ? { w: Number(lanyardProgram.widthMm) || 54, h: Number(lanyardProgram.heightMm) || 75, busy: sizeBusy, save: saveLanyardSize, hasMembers: data.kinds.includes("member") } : null;
   const [confirm, setConfirm] = React.useState(null);
   const [printJob, setPrintJob] = React.useState(null);   // { a, b, packing, test, proof }
   const [job, setJob] = React.useState(null);             // batch progress
@@ -512,7 +540,7 @@ function IdCardStudioPage({ setPage }) {
   const M = {
     G, st, settings: st, set, setOrder: o => set({ order: o }), scen, applyScenario, src, setSrc, records, uploadsUI, searchRef,
     recCount: recs.length, upFronts: uploads.filter(u => !u.backOf).length, centres, accent: accentOf, dataState: data.state, reload: load,
-    designsUI, setDesign, openDesigner: e => { e.preventDefault(); setPage && setPage("designer"); },
+    designsUI, setDesign, lanyardUI, openDesigner: e => { e.preventDefault(); setPage && setPage("designer"); },
     slots, skip: st.skip, backs: st.backs, marks: st.marks, proof: st.reason === "proof", nCards: cards.length, pads, stock, gap, fillable: ready.length, fillGap, breakActive,
     sheet: { idx: sheetIdx, go: setSheetIdx, count: nSheets, face, setFace, overview, setOverview },
     sel, select: setSel, selCard, moveSel, removeSel,

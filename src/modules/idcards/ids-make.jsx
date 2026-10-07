@@ -288,6 +288,24 @@ function IdsOverview({ M }) {
 
 /* ── Settings column ────────────────────────────────────────────────────── */
 
+/** The standard lanyard card's size (Summer School and volunteers). The member card is fixed at ID-1 and says so. */
+function IdsLanyardSize({ L }) {
+  const [w, setW] = React.useState(L.w), [h, setH] = React.useState(L.h);
+  React.useEffect(() => { setW(L.w); setH(L.h); }, [L.w, L.h]);
+  const dirty = w !== L.w || h !== L.h;
+  return (
+    <div className="ids-field">
+      <span className="ids-field-l">Standard Summer School and volunteer card</span>
+      <div className="ids-row">
+        <IdsNum id="ids-lw" label="Width (mm)" value={w} min={50} max={60} onChange={setW}/>
+        <IdsNum id="ids-lh" label="Height (mm)" value={h} min={64} max={100} onChange={setH}/>
+      </div>
+      <button type="button" className="ids-btn ids-btn--sm" disabled={!dirty || L.busy} onClick={() => L.save(w, h)}>{L.busy ? "Saving…" : "Save size"}</button>
+      <span className="ids-help">Default 54 × 75 mm, width 50–60, height 64–100. The card reflows to it; the preview, the sheet and the export follow.{L.hasMembers ? " Member cards are fixed at 54 × 85 mm (ID-1)." : ""}</span>
+    </div>
+  );
+}
+
 function IdsSettings({ M }) {
   const set = M.set, st = M.settings, G = M.G;
   return (
@@ -306,6 +324,7 @@ function IdsSettings({ M }) {
             </label>
           ))}
           {!M.designsUI.length && <p className="ids-note">No card type you can print.</p>}
+          {M.lanyardUI && <IdsLanyardSize L={M.lanyardUI}/>}
           <p className="ids-note">Only published designs are offered. Draw and publish them in the <a className="ids-linkbtn" href="/designer" onClick={M.openDesigner}>Design Studio</a>; every run logs the version it used.</p>
         </section>
 
