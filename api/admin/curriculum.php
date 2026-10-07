@@ -26,6 +26,16 @@ if ($method === 'GET') {
         $res = gs_call('admin.curriculum.file', ['requesterId' => $mid, 'tmp' => (string)$f['tmp_name'], 'name' => (string)$f['name'], 'ip' => client_ip()]);
     } else {
         $b = read_json_body();
+        /* The lessons may arrive as ONE string value (`rowsJson`) rather than a
+           nested array. This host's firewall counts the values in a JSON body and
+           refuses one with a few thousand — which a bundled course (48-72 lessons,
+           each with materials and checks) always is, and the refusal never reaches
+           PHP. The same workaround the roster import uses (admin/members.php). */
+        if (is_string($b['rowsJson'] ?? null) && trim($b['rowsJson']) !== '') {
+            $decoded = json_decode($b['rowsJson'], true);
+            if (!is_array($decoded)) json_error('bad_rows_json', 400, 'The lessons could not be read. Choose the file again.');
+            $b['rows'] = array_values($decoded);
+        }
         $action = (string)($b['action'] ?? '');
         $res = match ($action) {
             'upsert' => gs_call('admin.curriculum.upsert', ['requesterId' => $mid, 'data' => is_array($b['data'] ?? null) ? $b['data'] : [],

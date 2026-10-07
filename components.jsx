@@ -1258,11 +1258,20 @@ function humanizeError(message, code) {
     approval_pending: "Sent to an admin for approval — nothing changes until it is approved.",
     http_0: "Network trouble — check your connection.",
     http_500: "The server hit an error. Please try again shortly.",
+    http_403: "The host refused this request before it reached the site. Ask your host to allow it, or try a smaller file.",
+    http_406: "The host's firewall refused this request. Ask your host to allow it, or try a smaller file.",
+    http_413: "That is larger than this host accepts. Split it into smaller files.",
+    blocked_upstream: "The host's firewall refused this request before it reached the site. Ask your host to allow it, or try a smaller file.",
+    request_too_large: "That is larger than this host accepts. Split it into smaller files.",
+    bad_rows_json: "The lessons could not be read. Choose the file again.",
+    import_changed: "The file changed since it was checked — check it again.",
+    nothing_to_import: "There are no lessons to import.",
+    too_many: "That is more than the limit for one run — split the file.",
     http_503: "The service is busy. Please try again shortly.",
   };
   if (map[c]) return map[c];
   if (/network|fetch|Failed to fetch|offline/i.test(c)) return "Network trouble — check your connection and try again.";
-  return "Something went wrong. Please try again — if it persists, contact support.";
+  return "Something went wrong. Please try again — if it persists, contact support." + (code ? " (" + code + ")" : "");
 }
 
 /* ============================================================================

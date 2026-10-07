@@ -1069,7 +1069,26 @@
         upsert:  (data, allowNewCourse) => request('/admin/curriculum.php', { body: { action: 'upsert', data, allowNewCourse: !!allowNewCourse } }),
         status:  (status, unitIds) => request('/admin/curriculum.php', { body: { action: 'status', status, unitIds } }),
         seed:    (key) => request('/admin/curriculum.php' + qs({ view: 'seed', key: key || '' })),
-        importRows: (rows, opts) => request('/admin/curriculum.php', { body: Object.assign({ action: 'import', rows }, opts || {}), timeout: 180000 }),
+        /* The lessons travel as ONE string value first (`rowsJson`): the host's
+           firewall refuses a body with thousands of JSON values before PHP sees
+           it, and a bundled course is exactly that. If something in front of PHP
+           still refuses (no error code of ours), the nested shape is tried, and
+           a refusal of both is named for what it is. */
+        importRows: async (rows, opts) => {
+          const rest = Object.assign({ action: 'import' }, opts || {});
+          const send = (b) => request('/admin/curriculum.php', { body: Object.assign({}, rest, b), timeout: 180000 });
+          try { return await send({ rowsJson: JSON.stringify(rows) }); }
+          catch (e) {
+            if (!(e && e.status >= 400 && !e.code)) throw e;
+            try { return await send({ rows }); }
+            catch (e2) {
+              if (e2 && e2.code) throw e2;
+              const err = new Error('blocked_upstream'); err.code = 'blocked_upstream'; err.status = e2 && e2.status;
+              err.detail = 'The host refused the request with HTTP ' + (e2 && e2.status) + ' before it reached the site (its firewall, not the importer).';
+              throw err;
+            }
+          }
+        },
         ai:      (data) => request('/admin/curriculum.php', { body: Object.assign({ action: 'ai' }, data), timeout: 90000 }),
         /* A material file, stored on this server. Multipart, so it bypasses the
            JSON body; the CSRF header still travels. */
