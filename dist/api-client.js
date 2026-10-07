@@ -965,6 +965,8 @@
            was built with — a client-side union of the pages it happens to have
            loaded is a different set. */
         ids:    (q) => request('/admin/members.php' + qs(Object.assign({ view: 'ids' }, q || {}))),
+        // The four divisions (id, name, mandate) with member counts, for the editor's picker.
+        divisions: () => request('/admin/members.php' + qs({ view: 'divisions' })),
         /* Cards the CACENTRE gate reads: the secure MEMQR- card, and the
            printed formats older cards are decoded by (domain/member-cards.php). */
         cards: {

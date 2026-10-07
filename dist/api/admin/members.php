@@ -7,6 +7,14 @@ if ($method === 'GET') {
     /* Every id matching the current filters, for "apply to all N matching".
        Same filters, resolved by the SERVER, so the page and the bulk cannot
        disagree about who matched. */
+    /* The four divisions a member can be placed in, with counts — the editor's
+       picker reads them here rather than keeping its own copy (formation.php). */
+    if ((string)($_GET['view'] ?? '') === 'divisions') {
+        $res = gs_call('admin.divisions.overview', ['requesterId' => $s['mid']]);
+        if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+        unset($res['ok']);
+        json_ok($res);
+    }
     if ((string)($_GET['view'] ?? '') === 'ids') {
         $res = gs_call('admin.members.ids', [
             'requesterId' => $s['mid'],

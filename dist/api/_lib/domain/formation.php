@@ -198,7 +198,7 @@ function admin_divisions_overview(array $p): array {
     $g = admin_cap_gate($p, 'people');
     if (!$g['ok']) return $g;
 
-    $centres = function_exists('admin_centre_names_in_scope') ? admin_centre_names_in_scope($g) : null;
+    $centres = function_exists('admin_centre_names_in_scope') ? admin_centre_names_in_scope($g['requester']) : null;
     $where = "type = 'NGG' AND status = 'active'";
     $args = [];
     if (is_array($centres)) {

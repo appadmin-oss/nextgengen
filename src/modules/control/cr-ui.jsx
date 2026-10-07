@@ -186,6 +186,11 @@ function crErr(e, fallback) {
   if (!e) return fallback || "Something went wrong. Try again.";
   const d = e.data || {};
   if (d.message) return d.message;
+  /* The domain writes a sentence for a refusal the operator must act on
+     ("m8@x.org is already on Member 08's record") and the route forwards it as
+     `detail`. A bare token there (missing_cap:people) is not a sentence. */
+  const det = d.detail || e.detail;
+  if (typeof det === "string" && /\s/.test(det.trim())) return det;
   const code = d.error || e.code || e.message;
   return CR_ERRORS[code] || fallback || (code ? "Couldn’t do that (" + String(code).replace(/_/g, " ") + ")." : "Something went wrong. Try again.");
 }

@@ -243,6 +243,20 @@ account cannot open anything until one is given, in Access & roles.
 
 **People → Members.**
 
+### In the new Control Room (`/control`)
+
+**Members → Roster.** Search (name, member ID or email), filter by status,
+programme and centre, and sort by a column; the footer gives the true total.
+Click a member to open their record, then **Edit**. Only the fields you
+change are sent, and only those are checked, so an old value on a record you
+did not touch (an email typed as "N/A", say) no longer stops you saving a
+phone number. A refused save keeps the form open and says why, for example
+"…is already on Member 08's record". **Add member** gives an NGG member the
+next printed ID. Tick rows for **Set status** or **Post to centre**; staff
+accounts and your own are refused and named. A Club coordinator's change is
+sent to a second admin to approve, and the screen says so. Roles are not
+edited here: that is **Settings → Access & roles**.
+
 ### The dashboard
 
 The **Dashboard** tab counts the membership and, under **Conduct &
@@ -644,6 +658,21 @@ Club roster is not where member lifecycle is administered.
 person). Club staff with `club` can read the lessons but not change them; `audit` can also read the progress report.
 
 The curriculum is **NGG Club only**. Summer School does not use it.
+
+**Importing lessons** (new Control Room: **Learning → Curriculum → Import
+lessons**). Choose a **bundled course** (one that ships with the site) or a
+**file** (CSV, Excel .xlsx or JSON; **Download template** gives the columns).
+Pressing **Check the lessons** writes nothing: it lists every row as new,
+updated, unchanged or refused, with the reason. **Import N lessons** then
+writes exactly the rows that were checked. If the file changed in between,
+you are asked to check it again. Running the same course or file a second
+time reports every lesson as unchanged. Tick lessons to **Publish**,
+**Unpublish**, **Retire** or **Delete** them. A lesson somebody has started
+is retired rather than deleted.
+
+If an import or a save is refused with "the host's firewall refused this
+request", the hosting company's mod_security is blocking it before it reaches
+the site. Ask them to allow POSTs to `/api/admin/`.
 
 **Courses** (the *Courses* tab, needs `curriculum` to change) is the NGG
 Club's own course list, by faculty: what the NGG join form offers, what lessons

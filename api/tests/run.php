@@ -8194,6 +8194,23 @@ chk('an unrecognised status is refused rather than stored', (function () {
         'data' => ['fullName' => 'Odd Status', 'status' => 'kind-of-active', 'centre' => 'Egbeda']]);
     return ($r['error'] ?? '') === 'status_invalid';
 })());
+/* The editor posts the whole record back. A legacy value nobody touched must
+   not make the member impossible to save; a value that IS changed is still
+   held to every rule. */
+chk('a whole-record save goes through when only an untouched field is legacy-invalid', (function () {
+    db_insert('members', ['memberId' => 'NGG-LEGACY-1', 'fullName' => 'Legacy Record', 'email' => 'N/A', 'type' => 'NGV',
+        'status' => 'pending', 'role' => 'member', 'centre' => 'Egbeda', 'division' => 'Robotics', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $row = db_row("SELECT * FROM members WHERE memberId = 'NGG-LEGACY-1'");
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => array_merge($row, ['phone' => '08030000001', 'consent' => ['gated' => true]])]);
+    $after = db_row("SELECT phone, email, type, status FROM members WHERE memberId = 'NGG-LEGACY-1'");
+    return !empty($r['ok']) && $after['phone'] === '08030000001' && $after['email'] === 'N/A' && $after['status'] === 'pending';
+})());
+chk('…and a field that IS changed to something invalid is still refused', (function () {
+    $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099',
+        'data' => ['memberId' => 'NGG-LEGACY-1', 'fullName' => 'Legacy Record', 'email' => 'still not an email']]);
+    return ($r['error'] ?? '') === 'email_invalid';
+})());
 chk('an unrecognised centre is NOT refused — it is a cleanup task, not a blocked edit', (function () {
     /* members.centre stores a NAME, so renaming a centre orphans every
        member referencing the old one. Refusing here would make those
@@ -8692,6 +8709,14 @@ chk('a member in no division is counted as unplaced, not dropped', (function () 
         'fullName' => 'Unplaced Child', 'email' => 'div2@example.com', 'type' => 'NGG', 'centre' => 'Egbeda']]);
     $after = backend_dispatch('admin.divisions.overview', ['requesterId' => 'NGG-2025-0099'])['unplaced'];
     return $after === $before + 1;
+})());
+/* Scope was read from the gate result instead of the requester, so it was never
+   found and a centre-scoped admin was counted the whole organisation. */
+chk('a centre-scoped admin\'s division roll-up counts only their centres', (function () {
+    $r = backend_dispatch('admin.divisions.overview', ['requesterId' => 'NGG-SCOPED-ADM']);
+    $all = backend_dispatch('admin.divisions.overview', ['requesterId' => 'NGG-2025-0099']);
+    $mine = (int)db_row("SELECT COUNT(*) c FROM members WHERE type = 'NGG' AND status = 'active' AND centre = 'Scopeville'")['c'];
+    return !empty($r['ok']) && $r['total'] === $mine && $all['total'] > $mine;
 })());
 
 // ── The Courage Index (NGGC 2040 brief §14) ─────────────────────────────────

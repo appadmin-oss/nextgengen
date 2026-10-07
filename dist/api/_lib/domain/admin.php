@@ -609,6 +609,20 @@ function admin_members_upsert(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
     $data = $p['data'] ?? [];
     $memberId = trim((string)($data['memberId'] ?? ''));
+    $existing = $memberId !== '' ? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]) : null;
+    /* An edit is what CHANGED. The editor posts the whole record back, so a
+       value nobody touched — an old status, a type from before the closed set,
+       an address imported as "N/A" — was validated as if typed now, and one
+       such field made the member impossible to save at all: the refusal named
+       a field the operator could not see they had sent. A field equal to what
+       is stored is dropped before validation; a changed one is held to every
+       rule, as before. */
+    if ($existing) {
+        foreach ($data as $k => $v) {
+            if ($k === 'memberId' || is_array($v) || !array_key_exists($k, $existing)) continue;
+            if (trim((string)($v ?? '')) === trim((string)($existing[$k] ?? ''))) unset($data[$k]);
+        }
+    }
     // Only holders of the 'rbac' capability may set/change roles, and never
     // to a tier above their own (admin_may_manage). A role they may not give
     // is dropped from the edit, not silently coerced into another.
@@ -636,7 +650,6 @@ function admin_members_upsert(array $p): array {
             $data['division'] = $d['id'];
         }
     }
-    $existing = $memberId ? db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]) : null;
 
     // ── Scope ──────────────────────────────────────────────────────────
     // The roster is filtered by centre; these operations were not. A scoped
