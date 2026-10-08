@@ -1,14 +1,14 @@
 {
-  "buildId": "d7865b072d",
-  "builtAt": "2026-10-08T07:42:02.424Z",
+  "buildId": "1f947ef228",
+  "builtAt": "2026-10-08T08:21:12.101Z",
   "bundle": {
-    "file": "app.fedadf8737.min.js",
-    "bytes": 3108688,
-    "gzipBytes": 820592,
+    "file": "app.c5b25b859a.min.js",
+    "bytes": 3110624,
+    "gzipBytes": 821241,
     "files": 60
   },
   "assets": {
-    "app.min.js": "app.fedadf8737.min.js",
+    "app.min.js": "app.c5b25b859a.min.js",
     "styles.css": "styles.f6bb9c8225.css",
     "styles-app.css": "styles-app.6ef84f8d44.css",
     "data.js": "data.29d3739700.js",

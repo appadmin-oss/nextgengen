@@ -622,3 +622,22 @@ Studio are restored (checklist at the top of `ids-app.jsx`, F1–F8). The run
 drawer's people list has its own class (`.ids-runpeople`), and Look up says
 "Nobody on your lists has the ID …" when no record holds it, rather than
 claiming a card was never issued to an ID that belongs to nobody.
+
+## ID Card Studio — restored features verified end to end (2026-10-08)
+
+Every feature restored from the old Card Studio (F1–F8) was driven in a real
+browser against the lab backend. Four defects found and fixed on the way:
+
+- **Paste a list of IDs** searched only the queue, so a person who already had
+  a card came back "not found". It now names them ("already have a card") and
+  offers **Queue N reprints**, the existing route back onto a sheet. IDs on
+  record but hidden by the Kind/Centre filter are named as hidden. The report
+  quotes what was typed, not its normalised form.
+- **Resend ID** said "Nobody on file" whenever nothing went, even with an
+  email on file and mail down. `admin_id_resend` now returns `onFile`, and the
+  studio says which it was. PHP test added.
+- **A card that couldn't be drawn** kept its slot (correct) but then printed as
+  an error box on card stock and was logged as issued. Print now refuses and
+  names it; export leaves it out of the file and the log (`data-ids-failed`).
+- Export's failure line read "1 card … are NOT in the file"; it now agrees
+  with its count and names the cards.

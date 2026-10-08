@@ -94,6 +94,7 @@ function IdsRecords({ M }) {
 function IdsRange({ R }) {
   const [paste, setPaste] = React.useState("");
   const [pasteMsg, setPasteMsg] = React.useState(null);
+  const [reprintBusy, setReprintBusy] = React.useState(false);
   const lastDays = n => { const t = new Date(), f = new Date(t.getTime() - (n - 1) * 864e5); R.setRng({ dFrom: f.toISOString().slice(0, 10), dTo: t.toISOString().slice(0, 10) }); };
   const doPaste = () => {
     const res = R.pasteIds(paste);
@@ -101,9 +102,13 @@ function IdsRange({ R }) {
     const bits = [res.matched + " added"];
     if (res.otherSize) bits.push(res.otherSize + " another card size, for their own run");
     if (res.blocked.length) bits.push(res.blocked.length + " need a photo first");
-    if (res.miss.length) bits.push("not found: " + res.miss.slice(0, 6).join(", ") + (res.miss.length > 6 ? " +" + (res.miss.length - 6) : ""));
-    setPasteMsg({ tone: res.miss.length || res.blocked.length || res.otherSize ? "warn" : "ok", text: bits.join(" · ") });
-    if (!res.miss.length && !res.blocked.length && !res.otherSize) setPaste("");
+    const few = l => l.slice(0, 6).join(", ") + (l.length > 6 ? " +" + (l.length - 6) : "");
+    if (res.hidden.length) bits.push("hidden by the Kind or Centre filter: " + few(res.hidden));
+    if (res.carded.length) bits.push("already have a card: " + few(res.carded.map(r => r.displayId || r.id)));
+    if (res.miss.length) bits.push("not found: " + few(res.miss));
+    const short = res.miss.length || res.hidden.length || res.carded.length || res.blocked.length || res.otherSize;
+    setPasteMsg({ tone: short ? "warn" : "ok", text: bits.join(" · "), carded: res.carded });
+    if (!short) setPaste("");
   };
   return (
     <div className="ids-col ids-col--12">
@@ -135,6 +140,12 @@ function IdsRange({ R }) {
         <textarea id="ids-paste" className="ids-input ids-input--area" rows={3} placeholder="EG-26-041, EG-26-043 or just 41, 43" value={paste} onChange={e => setPaste(e.target.value)}/>
         <button type="button" className="ids-btn ids-btn--outline" disabled={!paste.trim()} onClick={doPaste}><IdsIcon name="plus"/>Put these on the sheet</button>
         {pasteMsg && <span className={"ids-rec-tag is-" + pasteMsg.tone} role="status">{pasteMsg.text}</span>}
+        {pasteMsg && pasteMsg.carded && pasteMsg.carded.length > 0 && (
+          <button type="button" className="ids-btn ids-btn--sm" disabled={reprintBusy}
+            onClick={async () => { setReprintBusy(true); const done = await R.queueReprints(pasteMsg.carded); setReprintBusy(false); if (done) setPasteMsg({ tone: "ok", text: idsN(pasteMsg.carded.length, "card") + " queued as reprints — paste again to put them on the sheet" }); }}>
+            {reprintBusy ? "Queuing…" : "Queue " + idsN(pasteMsg.carded.length, "reprint")}
+          </button>
+        )}
       </>}
       {(R.rmode === "date" || R.rmode === "number") && R.ranged && (
         <IdsCheck tone={R.inRangeN ? "info" : "warn"} text={(R.inRangeN ? R.inRangeN + " of " + R.preRangeN + " in this range." : "Nothing matches this range.")

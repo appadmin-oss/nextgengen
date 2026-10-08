@@ -221,7 +221,7 @@ function IdsExportResult({ res, onClose }) {
       </>}>
       {res.made > 0 && <IdsCheck tone="ok" text={idsN(res.made, "card") + (res.total && res.total !== res.made ? " of " + res.total : "") + " in " + res.fileName + (res.runIds ? ". Logged as " + res.runIds + "." : ".")}/>}
       {res.cancelled && res.made > 0 && <IdsCheck tone="warn" text="Stopped early: the file holds only the cards made before you pressed Stop."/>}
-      {res.failed.length > 0 && <IdsCheck tone="bad" text={idsN(res.failed.length, "card") + " couldn’t be drawn and are NOT in the file. Export again for them."}/>}
+      {res.failed.length > 0 && <IdsCheck tone="bad" text={idsN(res.failed.length, "card") + " couldn’t be drawn and " + (res.failed.length === 1 ? "is" : "are") + " NOT in the file: " + res.failed.slice(0, 4).join(", ") + (res.failed.length > 4 ? "…" : "") + ". Export again for " + (res.failed.length === 1 ? "it." : "them.")}/>}
       {res.qrBad.length > 0 && <IdsCheck tone="bad" text={idsN(res.qrBad.length, "card") + " ARE in the file but their QR didn’t read back from the exported image, so they may not scan at the gate. Try a higher resolution."}/>}
       {res.verify && !res.qrBad.length && res.made > 0 && !res.qrSkipped && <IdsCheck tone="ok" text="Every QR code read back from the exported image."/>}
       {res.qrSkipped > 0 && <IdsCheck tone="info" text="The QR check was skipped: the reader couldn’t be loaded. The cards were made; they just weren’t checked."/>}

@@ -153,7 +153,8 @@ function IdsRecordFace(props) {
      whole sheet — the old studio's CardDrawFailed, restored. */
   const r = props.rec || {};
   const boxW = props.wMm * IDS_MM_PX, boxH = props.hMm * IDS_MM_PX;
-  const fallback = <div className="ids-face-blank is-bad" style={{ width: boxW, height: boxH }}>Couldn’t draw this card<br/><span className="ids-mono">{r.displayId || r.id}</span></div>;
+  // data-ids-failed: print and export look for it, so a failed card is never printed or logged as issued.
+  const fallback = <div className="ids-face-blank is-bad" data-ids-failed={r.displayId || r.name || r.id || "a card"} style={{ width: boxW, height: boxH }}>Couldn’t draw this card<br/><span className="ids-mono">{r.displayId || r.id}</span></div>;
   return typeof SafeBlock !== "undefined" ? <SafeBlock label={"ids-face " + (r.key || "")} fallback={fallback}><IdsRecordFaceInner {...props}/></SafeBlock> : <IdsRecordFaceInner {...props}/>;
 }
 function IdsRecordFaceInner({ rec, face, program, wMm, hMm, design }) {

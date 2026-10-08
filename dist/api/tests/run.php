@@ -3621,7 +3621,17 @@ chk('…and adding a contact makes the ID deliverable, through the existing writ
         && !empty($up['ok']) && !empty($send['ok'])
         && count($sent) === 1                          // the ID actually went out
         && in_array('email', $send['channels'] ?? [], true)
+        && !empty($send['onFile'])                     // a contact on file is reported as such
         && !$still;                                    // and they leave the list
+})());
+chk('resending an ID says whether anybody is on file, so a failed send is not called "nobody to send to"', (function () {
+    $st = db_row("SELECT studentId, parentEmail, guardianPhone FROM summer_students WHERE token != '' LIMIT 1");
+    if (!$st) return true;
+    $sid = $st['studentId'];
+    db_update('summer_students', ['parentEmail' => '', 'guardianPhone' => ''], ['studentId' => $sid]);
+    $none = backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0099', 'kind' => 'student', 'id' => $sid]);
+    db_update('summer_students', ['parentEmail' => (string)$st['parentEmail'], 'guardianPhone' => (string)$st['guardianPhone']], ['studentId' => $sid]);
+    return !empty($none['ok']) && ($none['channels'] ?? null) === [] && array_key_exists('onFile', $none) && $none['onFile'] === false;
 })());
 chk('bulk resend targets only the families missing a QR, and says what is left', (function () {
     $st = db_all("SELECT studentId, token FROM summer_students WHERE token != '' AND regStatus = 'verified' AND parentEmail != '' LIMIT 2");
