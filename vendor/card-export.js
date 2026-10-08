@@ -756,7 +756,7 @@
       }
       // 'FAST' — the art is already JPEG-compressed; 'SLOW' re-encodes and is
       // dramatically slower on a full mass-print run for no visible gain.
-      doc.addImage(face.dataUrl, 'JPEG', x, y, w, h, undefined, 'FAST');
+      doc.addImage(face.bytes || face.dataUrl, 'JPEG', x, y, w, h, face.alias, face.bytes ? 'NONE' : 'FAST');
       if (turn) doc.internal.write('Q');
     }
 
@@ -1007,12 +1007,217 @@
     setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1500);
   }
 
+  /* ── The face renderer: snapDOM ────────────────────────────────────────
+   * html2canvas re-implements CSS in JavaScript and copies the WHOLE document
+   * for every capture, and its text is an approximation: letter-spaced
+   * capitals collapse ("VOLUNTEER" squashed into its own width), pills
+   * overflow, IDs lose their hyphens. snapDOM renders the node through the
+   * browser's own layout engine (an SVG <foreignObject>, fonts embedded), so
+   * the face prints exactly as the screen draws it, rasterised straight at the
+   * target size — text and QR modules land on device pixels, never upscaled.
+   *
+   * Chosen by measurement, not reputation: every card type, front and back,
+   * rendered at 300 dpi and diffed against Chromium's own screenshot of the
+   * same element. snapDOM 0.0% of pixels off at 16–40 ms a face; the next best
+   * library 1.3–2.3% off; html2canvas 4.7–6.2% off at 270–850 ms.
+   * (vendor-build.js pins it; the numbers are in docs/HANDOFF.md.)
+   *
+   * Any failure (a browser that refuses, a resource that taints the canvas)
+   * throws, and renderFaceFast falls back to html2canvas for that one face, so
+   * the faster engine never costs a card. */
+  var SNAPDOM_LIB = '/vendor/snapdom.js';
+  async function ensureSnapdom() {
+    if (!root.snapdom) await loadScript(SNAPDOM_LIB);
+    if (!root.snapdom) throw new Error('snapdom_unavailable');
+    return root.snapdom;
+  }
+  async function snapRaster(node, o) {
+    var sd = await ensureSnapdom();
+    var w = node.offsetWidth, h = node.offsetHeight;
+    if (!w || !h) throw new Error('empty_node');
+    var W = Math.round(o.widthPx), H = Math.round(W * h / w), b = Math.max(0, Math.round(o.bleedPx || 0));
+    var art = await sd.toCanvas(node, { width: W, height: H, dpr: 1, embedFonts: true, backgroundColor: o.bg || '#ffffff' });
+    var cv = document.createElement('canvas');
+    cv.width = W + 2 * b; cv.height = H + 2 * b;
+    var ctx = cv.getContext('2d');
+    ctx.fillStyle = o.bg || '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(art, b, b, W, H);
+    clampBleed(ctx, cv, W, H, b);
+    ctx.getImageData(0, 0, 1, 1);   // throws now on a tainted canvas, so the caller falls back
+    return { canvas: cv, trimWPx: W, trimHPx: H, bleedPx: b };
+  }
+
+  /* One face, ready for a PDF or a ZIP: snapDOM, else html2canvas.
+   * o: { trimW_mm, dpi, bleed_mm, type, quality } → { bytes, wPx, hPx, bleedPx, trimWPx, trimHPx, canvas, engine } */
+  async function renderFaceFast(node, o) {
+    o = o || {};
+    var trimW = o.trimW_mm || 54, dpi = o.dpi || 300;
+    var widthPx = trimW / 25.4 * dpi, bleedPx = (o.bleed_mm || 0) / 25.4 * dpi;
+    var r, engine = 'snapdom', why = '';
+    try { r = await withDeadline(snapRaster(node, { widthPx: widthPx, bleedPx: bleedPx }), 20000, 'snapdom'); }
+    catch (e) {
+      engine = 'html2canvas'; why = String(e && e.message || e);
+      var f = await renderFace(node, { trimW_mm: trimW, dpi: dpi, bleed_mm: o.bleed_mm || 0, type: 'image/png' });
+      var im = await loadImage(f.dataUrl), cv = document.createElement('canvas');
+      cv.width = im.width; cv.height = im.height; cv.getContext('2d').drawImage(im, 0, 0);
+      r = { canvas: cv, trimWPx: f.trimWPx, trimHPx: f.trimHPx, bleedPx: f.bleedPx };
+    }
+    var type = o.type || 'image/jpeg';
+    var blob = await new Promise(function (res, rej) { r.canvas.toBlob(function (b) { b ? res(b) : rej(new Error('encode_failed')); }, type, o.quality || 0.95); });
+    var bytes = new Uint8Array(await blob.arrayBuffer());
+    return { bytes: bytes, type: type, wPx: r.canvas.width, hPx: r.canvas.height, bleedPx: r.bleedPx, trimWPx: r.trimWPx, trimHPx: r.trimHPx, canvas: r.canvas, engine: engine, fallbackWhy: why };
+  }
+  /* A face that is already an image (a Design Studio template drawn by
+   * Fabric at the target dpi): sized to the trim and given the same clamped
+   * bleed, without going through the DOM at all. */
+  async function imageFace(src, o) {
+    var im = await loadImage(src);
+    var dpi = o.dpi || 300, W = Math.round((o.trimW_mm || 54) / 25.4 * dpi), H = Math.round((o.trimH_mm || 85.6) / 25.4 * dpi);
+    var b = Math.max(0, Math.round((o.bleed_mm || 0) / 25.4 * dpi));
+    var cv = document.createElement('canvas');
+    cv.width = W + 2 * b; cv.height = H + 2 * b;
+    var ctx = cv.getContext('2d');
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(im, b, b, W, H);
+    clampBleed(ctx, cv, W, H, b);
+    var type = o.type || 'image/jpeg';
+    var blob = await new Promise(function (res, rej) { cv.toBlob(function (bl) { bl ? res(bl) : rej(new Error('encode_failed')); }, type, o.quality || 0.95); });
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), type: type, wPx: cv.width, hPx: cv.height, bleedPx: b, trimWPx: W, trimHPx: H, canvas: cv, engine: 'image' };
+  }
+  function clampBleed(ctx, cv, W, H, b) {
+    if (!b) return;
+    // Every bleed pixel copies the nearest trim-edge pixel (see addBleed).
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(cv, b, b, 1, H, 0, b, b, H);
+    ctx.drawImage(cv, b + W - 1, b, 1, H, b + W, b, b, H);
+    ctx.drawImage(cv, 0, b, W + 2 * b, 1, 0, 0, W + 2 * b, b);
+    ctx.drawImage(cv, 0, b + H - 1, W + 2 * b, 1, 0, b + H, W + 2 * b, b);
+    ctx.imageSmoothingEnabled = true;
+  }
+
+  /* QR read-back straight from a canvas — no PNG round trip. */
+  async function verifyQRCanvas(cv, expected) {
+    var jsQR = await ensureQrDecoder();
+    if (!jsQR) return { ok: false, reason: 'no_decoder' };
+    var scales = [0.5, 1, 0.35], t = document.createElement('canvas'), ctx = t.getContext('2d', { willReadFrequently: true });
+    for (var i = 0; i < scales.length; i++) {
+      var w = Math.max(64, Math.round(cv.width * scales[i])), h = Math.max(64, Math.round(cv.height * scales[i]));
+      t.width = w; t.height = h; ctx.drawImage(cv, 0, 0, w, h);
+      var r = null;
+      try { r = jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' }); } catch (e) { r = null; }
+      if (r && r.data) {
+        var text = String(r.data);
+        if (expected == null || expected === '') return { ok: true, text: text };
+        var hit = text.indexOf(String(expected)) !== -1;
+        return { ok: hit, text: text, reason: hit ? '' : 'wrong_token' };
+      }
+    }
+    return { ok: false, reason: 'unreadable' };
+  }
+
+  /* ── The studio's own sheet, as a PDF ─────────────────────────────────────
+   * Print used to hand the page to the browser's print dialog, which brought
+   * the site's print stylesheet with it, re-laid the page out, and printed
+   * whatever scaling the dialog defaulted to. This writes the sheet the
+   * studio drew — every slot at its millimetre position, backs where the flip
+   * puts them, the cut marks, the packing list — straight into a PDF.
+   *
+   *   spec = {
+   *     pageW, pageH,                       mm
+   *     title,                              document title
+   *     packing: { title, sub, head:[…], rows:[[…]] } | null,
+   *     pages: [{ items:[{ face, x, y, w, h, rot, clip:{x,y,w,h} }],
+   *               marks:[{ x, y, w, h }], proof, label, test:[{x,y,w,h,n}] }],
+   *   }
+   * A face is { bytes|dataUrl, alias, bleedMm }: the art is trim + 2×bleed,
+   * hung `bleedMm` outside the slot and clipped to `clip`, so a face rendered
+   * once with full bleed serves every sheet, whatever its gap. */
+  async function buildSheetPDF(spec) {
+    var d = await ensureDeps();
+    var W = spec.pageW, H = spec.pageH;
+    var doc = new d.jsPDF({ unit: 'mm', orientation: H >= W ? 'portrait' : 'landscape', format: [W, H], compress: true });
+    var first = true;
+    var newPage = function () { if (!first) doc.addPage([W, H], H >= W ? 'portrait' : 'landscape'); first = false; };
+
+    if (spec.packing) {
+      var P = spec.packing, colW = P.widths || [];
+      var x0 = 14, y = 0, lh = 6.2, total = colW.reduce(function (a, b) { return a + b; }, 0);
+      var scale = (W - 2 * x0) / (total || 1);
+      var head = function () {
+        newPage(); y = 18;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(0, 0, 0);
+        doc.text(P.title, x0, y); y += 6;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(80, 80, 80);
+        doc.text(P.sub, x0, y); y += 8;
+        doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'bold');
+        var cx = x0;
+        P.head.forEach(function (h, i) { doc.text(String(h), cx + 1, y); cx += colW[i] * scale; });
+        y += 2; doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.3); doc.line(x0, y, W - x0, y); y += lh - 1.5;
+        doc.setFont('helvetica', 'normal');
+      };
+      head();
+      P.rows.forEach(function (r) {
+        if (y > H - 14) head();
+        var cx = x0;
+        r.forEach(function (c, i) {
+          var t = doc.splitTextToSize(String(c == null ? '' : c), colW[i] * scale - 2)[0] || '';
+          doc.text(t, cx + 1, y); cx += colW[i] * scale;
+        });
+        doc.setDrawColor(210, 210, 210); doc.setLineWidth(0.2); doc.line(x0, y + 2, W - x0, y + 2);
+        if (P.tick) { doc.setDrawColor(0, 0, 0); doc.rect(W - x0 - 5, y - 3.2, 3.6, 3.6, 'S'); }
+        y += lh;
+      });
+    }
+
+    var gs = null;
+    try { gs = new doc.GState({ opacity: 0.45 }); } catch (e) { gs = null; }
+    spec.pages.forEach(function (pg) {
+      newPage();
+      pg.items.forEach(function (it) {
+        var f = it.face, b = f.bleedMm || 0;
+        doc.saveGraphicsState();
+        var c = it.clip || { x: it.x, y: it.y, w: it.w, h: it.h };
+        doc.rect(c.x, c.y, c.w, c.h, null); doc.clip(); doc.discardPath();
+        var x = it.x - b, y2 = it.y - b, w = it.w + 2 * b, h = it.h + 2 * b;
+        if (it.rot) {
+          var cx2 = (x + w / 2) * MM, cy2 = (H - (y2 + h / 2)) * MM;
+          doc.internal.write('q', '-1 0 0 -1', (2 * cx2).toFixed(4), (2 * cy2).toFixed(4), 'cm');
+        }
+        doc.addImage(f.bytes || f.dataUrl, 'JPEG', x, y2, w, h, f.alias, 'NONE');
+        if (it.rot) doc.internal.write('Q');
+        doc.restoreGraphicsState();
+        if (pg.proof) {
+          if (gs) { doc.saveGraphicsState(); doc.setGState(gs); }
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(200, 0, 0);
+          doc.text('PROOF', it.x + it.w / 2, it.y + it.h / 2, { align: 'center', baseline: 'middle', angle: 30 });
+          if (gs) doc.restoreGraphicsState();
+        }
+      });
+      (pg.test || []).forEach(function (t) {
+        doc.setDrawColor(11, 11, 12); doc.setLineWidth(0.2); doc.rect(t.x, t.y, t.w, t.h, 'S');
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(0, 0, 0);
+        doc.text(String(t.n), t.x + t.w / 2, t.y + t.h / 2, { align: 'center', baseline: 'middle' });
+      });
+      if (pg.marks && pg.marks.length) {
+        doc.setFillColor(0, 0, 0);
+        pg.marks.forEach(function (m) { doc.rect(m.x, m.y, m.w, m.h, 'F'); });
+      }
+      if (pg.label) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(110, 110, 110);
+        doc.text(pg.label, W / 2, H - 3, { align: 'center', baseline: 'bottom' });
+      }
+    });
+    doc.setProperties({ title: spec.title || 'ID cards', creator: 'NGG ID Card Studio' });
+    return new Uint8Array(doc.output('arraybuffer'));
+  }
+
   root.CardExport = {
     ensureDeps: ensureDeps, ensureZip: ensureZip, ensureFonts: ensureFonts,
     nodeToImage: nodeToImage, addBleed: addBleed, verifyQR: verifyQR,
     renderFace: renderFace, scaleForDpi: scaleForDpi, zipStore: zipStore,
     buildImpositionPDF: buildImpositionPDF, download: download, dataUrlToBytes: dataUrlToBytes,
-    clearImageCache: clearImageCache,
+    clearImageCache: clearImageCache, ensureSnapdom: ensureSnapdom, renderFaceFast: renderFaceFast, verifyQRCanvas: verifyQRCanvas, buildSheetPDF: buildSheetPDF, imageFace: imageFace,
     INTENTS: INTENTS, LAYERS: LAYERS, SHEETS: SHEETS, MM: MM,
   };
 })(typeof window !== 'undefined' ? window : this);

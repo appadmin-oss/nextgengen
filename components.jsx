@@ -2,6 +2,26 @@
    NGG — Shared components
    Loaded as type=text/babel after React + data.js + photos.js
    ================================================================ */
+
+/**
+ * A photo URL a card or roster can draw, or "" for none.
+ *
+ * Photos stored on this site are written to the record as a SITE-RELATIVE
+ * address (/api/public/photo.php?p=…, see photo_store_relativise): baking the
+ * hostname into every row would break them all on the next move. Renderers
+ * that only accepted http(s) URLs treated every one of those as "no photo",
+ * and the member card printed an empty panel where the face should be. One
+ * test, used everywhere: absolute, site-relative and inline images all draw.
+ */
+function nggPhotoSrc(u) {
+  const s = String(u == null ? "" : u).trim();
+  if (!s) return "";
+  if (/^https?:\/\//i.test(s) || /^data:image\//i.test(s) || /^blob:/i.test(s)) return s;
+  if (/^\/(?!\/)/.test(s)) return s;                       // site-relative
+  if (/^api\/public\/photo\.php\?/i.test(s)) return "/" + s;  // relative, missing its slash
+  return "";
+}
+
 const { useState, useEffect, useRef, useMemo } = React;
 
 /* ---- Shared public-data hooks ----

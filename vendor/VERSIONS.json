@@ -12,8 +12,8 @@
     "card-export.js": {
       "package": null,
       "version": null,
-      "bytes": 56045,
-      "sha256": "4157b5399e71bb779e14174bf123d1deeb5c67e3e7840a70dce681fb6004d496",
+      "bytes": 67740,
+      "sha256": "9ed9b77cf2f5c2fcda899b239d607f6978f6242400ad5be0d97f42b3e1f21e73",
       "note": "first-party (this repo)"
     },
     "cropper.min.css": {
@@ -160,6 +160,13 @@
       "bytes": 1077,
       "sha256": "6a77faa16797bc76a1f0b38dbb408464a86fa33244e23b9229e9f81d80a05da4",
       "note": "licence text for tui-image-editor"
+    },
+    "licenses/zumer-snapdom-LICENSE.txt": {
+      "package": "@zumer/snapdom",
+      "version": "3.3.0",
+      "bytes": 1065,
+      "sha256": "c5fbd8d2221c17ff18fc7f3fee7ecf3346fb5a3f5bb2dbd3eb08f1c0397ed1a2",
+      "note": "vendor-build.js (LICENSE from the published tarball)"
     },
     "pdfjs-standard-fonts/FoxitDingbats.pfb": {
       "package": "pdfjs-dist",
@@ -333,6 +340,13 @@
       "bytes": 10751,
       "sha256": "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd",
       "note": "embedded version string"
+    },
+    "snapdom.js": {
+      "package": "@zumer/snapdom",
+      "version": "3.3.0",
+      "bytes": 264311,
+      "sha256": "c29e1985f6a7248dd2d45be5c2464b2ee07fe796c392439a4845f6b968bfa54f",
+      "note": "vendor-build.js COPY (dist/snapdom.js, verbatim)"
     },
     "tanstack-table.min.js": {
       "package": "@tanstack/react-table",

@@ -7949,11 +7949,10 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-app.is-phone .ids-brand span { display: none; }
 
 /* The hidden host the print window copies from: real size, off screen. */
-.ids-print-host { position: fixed; left: -40000px; top: 0; }
-.ids-print-host .ids-pg { position: relative; overflow: hidden; background: var(--ids-s0); }
-.ids-print-host .ids-ps { position: absolute; overflow: hidden; }
-.ids-print-host .ids-pg-mark { position: absolute; background: var(--ids-ink); }
-.ids-print-host .ids-x-face { position: relative; overflow: hidden; background: var(--ids-s0); }
+/* The face farm: faces mounted at their true size, off screen, to be rasterised. */
+.ids-farm { position: fixed; left: -40000px; top: 0; pointer-events: none; }
+.ids-farm .ids-x-face { position: relative; overflow: hidden; background: var(--ids-s0); }
+.ids-ready { margin: 0; font-size: 12px; color: var(--ids-ink-2); text-align: center; }
 /* ============================================================================
    Control Room v2 (/control) — CONTROL_ROOM.md §2–§6.
    One closed token set on .cr-app; every component reads these and carries

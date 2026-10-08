@@ -641,3 +641,72 @@ browser against the lab backend. Four defects found and fixed on the way:
   names it; export leaves it out of the file and the log (`data-ids-failed`).
 - Export's failure line read "1 card … are NOT in the file"; it now agrees
   with its count and names the cards.
+
+## ID Card Studio — print is a PDF; the card renderer is snapDOM; faces print; Cloudinary in bulk (2026-10-08)
+
+**Blank sheets.** A site-wide print rule from the timetable
+(`@media print { body * { visibility: hidden } }`, keyed to a `.tt-print`
+class nothing uses) hid everything on every printed page — the ID Card
+Studio's print window copied the site's stylesheets, so its sheets printed
+blank, and so did the timetable's own print frame. The rule is now scoped to
+`body:has(.tt-print)`. Every earlier print check read the print window's DOM,
+never what a printer sees.
+
+**Print no longer uses the browser.** Print builds the studio's sheet as a
+PDF (`CardExport.buildSheetPDF`, `idsSheetPages` in ids-print.jsx): each slot
+at its millimetre position, backs mirrored for the flip (short edge also turns
+the art 180°), cut marks, a packing list with tick boxes, a proof watermark,
+a footer saying "print at Actual size (100%)". The alignment test is a PDF
+too. The log calls these runs "Sheet PDF".
+
+**The renderer.** html2canvas (used by the export) re-implements CSS and got
+the cards' text wrong — letter-spaced capitals squashed ("VOLUNTEER"), pills
+overflowing, "VOL-LAB-1" losing its hyphens. Measured, not guessed: every
+card type, front and back, rendered at 300 dpi and pixel-diffed against
+Chromium's own screenshot of the same element.
+
+| renderer | pixels off | ms / face (warm) |
+|---|---|---|
+| **snapDOM 3.3.0** | **0.0%** | **16–39** |
+| hand-written foreignObject (tried, dropped) | 0.02–0.07% | 96–135 |
+| modern-screenshot 4.7.0 | 1.3–2.3% | 136–541 |
+| html-to-image 1.11.13 | 1.7–3.8% | 419–1050 |
+| html2canvas-pro 2.5.2 | 4.8–6.0% | 193–827 |
+| html2canvas 1.4.1 (was in use) | 4.7–6.2% | 269–845 |
+| dom-to-svg 0.12.2 (vector) | 4.2–13% | 78–164 |
+
+snapDOM is vendored (`vendor/snapdom.js`, pinned in vendor-build.js and
+VERSIONS.json, MIT). `CardExport.renderFaceFast` uses it and falls back to
+html2canvas for a face only if snapDOM throws.
+
+**Speed.** Faces are drawn once, at print dpi with 3 mm bleed, cached by what
+they show (record content, design + version, size, dpi), and drawn in the
+background while the sheet is being arranged (`drawFaces`, the hidden farm,
+12 at a time, three in flight). Print, the print-shop export and batches reuse
+them. 27 cards double-sided: Print → PDF in 0.2 s once prepared; 7.2 s from an
+empty cache (the old pipeline: ~1–2 s a face). The print-shop export went from
+3.7–6 s to 1.7–2.4 s for the same file.
+
+**Faces missing on member cards.** The member card drew a photo only when the
+URL began http(s). Photos stored on this site are saved site-relative
+(`/api/public/photo.php?p=…`, deliberately), so every one printed as an empty
+panel. `nggPhotoSrc()` (components.jsx) is now the one test, used by the
+member card (both renderers), the Control Room roster, the dashboard, the
+programme volunteer list and the data-quality "photo missing" check (which was
+flagging people WITH photos).
+
+**Cloudinary.** Edits used to refuse any photo not already on Cloudinary
+(`not_editable`), which on a deployment that stores photos locally was every
+photo. `cloudinary_adopt()` uploads such a photo once (signed, server side),
+then edits it. One implementation, `photo_edit_subject()`, behind both
+`admin.photo.edit` and the new `admin.photo.edit.bulk` (cap
+`PHOTO_EDIT_BULK_MAX` 200, validated before any write, scope per row,
+`unchanged` reported, background removal refused up front when credits are
+out, one audit event `photo.edited.bulk`). Members are now a photo subject
+throughout (`photo_apply_to_subject`, `photo_ingest`), so an edited member
+photo reaches their card. The studio's *Improve photos* sends 8 at a time.
+
+Known and left alone: `node vendor-build.js --check` reports every vendored
+file as mismatched because it compares a 16-character hash prefix with the
+full hash in VERSIONS.json. Pre-existing; `tests/build.test.js` does the real
+comparison and passes.

@@ -3333,7 +3333,7 @@ function AdminMemberIdBatch({ filters, sort, onFilter, onClose }) {
   const gaps = React.useMemo(() => {
     const r = roster || [];
     const miss = {
-      photo: m => !/^https?:\/\//.test(String(m.photoUrl || "")),
+      photo: m => !nggPhotoSrc(m.photoUrl),
       printedId: m => !String(m.displayId || "").trim(),
       discipline: m => !String(m.disciplines || m.track || "").trim(),
     };

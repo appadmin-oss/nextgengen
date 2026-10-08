@@ -1,90 +1,105 @@
 /* ============================================================================
    ID Card Studio — printing (ID_CARD_STUDIO.md §4).
 
-   The pages are drawn by React into a hidden host in THIS document, from the
-   same card faces the sheet preview draws, then copied into a print window
-   whose @page is the paper. Every slot is placed in millimetres, so the
-   printer receives the geometry the screen showed — there is no second
-   drawing of a card to drift away from the first.
+   Print makes a PDF; it never hands the page to the browser's print dialog.
+   The dialog brought the site's print stylesheet along (one rule blanked every
+   sheet), re-laid the page out, and printed at whatever scale it defaulted to.
+
+   Every face is drawn ONCE, at print resolution with 3 mm of generated bleed,
+   by the same component the sheet preview shows (rendered in a hidden farm at
+   its true millimetre size and rasterised by snapDOM — the browser's own
+   layout engine, so what prints is what the screen drew). Faces are cached by
+   what they show, and drawn in the background while the operator is still
+   arranging the sheet, so pressing Print usually only assembles the PDF.
+
+   The PDF is the studio's own sheet: each slot at its millimetre position,
+   backs where the flip puts them (long edge mirrors columns; short edge
+   mirrors rows AND turns the art 180°, because tumbling the sheet puts the
+   card's head at its foot), the cut marks, the packing list. The print shop
+   export imposes the same cached faces its own way (card-export.js).
    ========================================================================== */
 
-/** The packing list page: every card in the range, by sheet and slot, to tick off at the cutter. */
-function IdsPackingList({ pages, nSheets, from, to, proof }) {
-  return (
-    <section className="ids-pg ids-pg--list">
-      <h1>Packing list{proof ? " · PROOF" : ""}</h1>
-      <p>Sheets {from}–{to} of {nSheets} · tick each card as you cut and bag it · printed {new Date().toLocaleString("en-GB")}</p>
-      <table>
-        <thead><tr><th>Sheet</th><th>Slot</th><th>Name</th><th>ID</th><th>Centre</th><th>✓</th></tr></thead>
-        <tbody>
-          {pages.map(p => p.cards.map(c => (
-            <tr key={p.n + "-" + c.slot}><td>{p.n}</td><td>{c.slot}</td><td>{c.name}</td><td>{c.id}</td><td>{c.centre}</td><td/></tr>
-          )))}
-        </tbody>
-      </table>
-    </section>
-  );
+const IDS_FACE_BLEED = 3;          // mm drawn round every cached face
+const IDS_FARM_CHUNK = 12;         // faces mounted in the hidden farm at once
+const IDS_WARM_MAX = 400;          // faces drawn ahead in the background
+const IDS_FACE_CACHE_BYTES = 160 * 1024 * 1024;
+
+/** A short, stable hash for a cache key (FNV-1a). */
+function idsHash(str) {
+  let h = 0x811c9dc5;
+  const s = String(str);
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
 }
 
-/** One printed side of one sheet, every slot absolutely placed in mm. */
-function IdsPrintSide({ G, slots, sheetIdx, skip, face, backs, marks, proof, test, renderFace }) {
-  const out = [];
-  for (let i = 0; i < G.per; i++) {
-    const p = idsSlotPos(G, i, face === "back" ? backs : null);
-    const box = { left: p.x + "mm", top: p.y + "mm", width: G.cw + "mm", height: G.ch + "mm" };
-    if (test) { out.push(<div key={i} className="ids-ps ids-ps--test" style={box}>{i + 1}</div>); continue; }
-    const s = slots[sheetIdx * G.per + i - skip];
-    if (!s || s.pad) continue;
-    out.push(
-      <div key={i} className="ids-ps" style={box}>
-        {renderFace(s, face)}
-        {proof && <div className="ids-ps-proof">PROOF</div>}
-      </div>
-    );
+/* Faces drawn this session: key → { bytes, bleedMm, alias, … }. Bounded by
+   bytes, oldest first out (a Map keeps insertion order). */
+const _idsFaces = new Map();
+let _idsFaceBytes = 0;
+function idsFaceGet(key) {
+  const f = _idsFaces.get(key);
+  if (f) { _idsFaces.delete(key); _idsFaces.set(key, f); }
+  return f || null;
+}
+function idsFacePut(key, face) {
+  if (_idsFaces.has(key)) _idsFaceBytes -= _idsFaces.get(key).bytes.length;
+  _idsFaces.set(key, face); _idsFaceBytes += face.bytes.length;
+  for (const [k, f] of _idsFaces) {
+    if (_idsFaceBytes <= IDS_FACE_CACHE_BYTES) break;
+    _idsFaces.delete(k); _idsFaceBytes -= f.bytes.length;
   }
-  return (
-    <section className="ids-pg">
-      {marks && idsCutMarks(G).map((m, k) => <i key={"m" + k} className="ids-pg-mark" style={{ left: m.x + "mm", top: m.y + "mm", width: m.w + "mm", height: m.h + "mm" }}/>)}
-      {out}
-    </section>
-  );
 }
+function idsFaceForget() { _idsFaces.clear(); _idsFaceBytes = 0; }
 
-/* The print window's own stylesheet: it is a separate document and reads none of ours. */
-function idsPrintCss(G) {
-  return "@page{size:" + G.pw + "mm " + G.ph + "mm;margin:0}*{box-sizing:border-box}"
-    + "html,body{margin:0;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}"
-    + ".ids-pg{position:relative;width:" + G.pw + "mm;height:" + G.ph + "mm;overflow:hidden;page-break-after:always;break-after:page;background:#fff}"
-    + ".ids-pg-mark{position:absolute;background:#000}"
-    + ".ids-ps{position:absolute;overflow:hidden}"
-    + ".ids-ps--test{border:0.2mm solid #0b0b0c;display:flex;align-items:center;justify-content:center;font:10pt sans-serif}"
-    + ".ids-ps-proof{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transform:rotate(-30deg);font:700 14pt sans-serif;color:rgba(200,0,0,.45);letter-spacing:.2em}"
-    + ".ids-pg--list{padding:14mm;font:9pt Geist,Helvetica,Arial,sans-serif;height:auto;min-height:" + G.ph + "mm}"
-    + ".ids-pg--list h1{font-size:15pt;margin:0 0 2mm}.ids-pg--list p{margin:0 0 5mm;color:#555}"
-    + ".ids-pg--list table{width:100%;border-collapse:collapse}.ids-pg--list th{text-align:left;border-bottom:0.3mm solid #000;padding:1mm}"
-    + ".ids-pg--list td{padding:1mm;border-bottom:0.2mm solid #ddd}";
+/** Resolves once `node` has stopped changing for `quiet` ms (photos and the
+ *  member QR arrive after the first paint), or after `max` ms regardless. */
+function idsDomQuiet(node, quiet, max) {
+  return new Promise(resolve => {
+    if (!node || typeof MutationObserver === "undefined") return resolve();
+    let t = null;
+    const fin = () => { clearTimeout(t); clearTimeout(end); mo.disconnect(); resolve(); };
+    const end = setTimeout(fin, max);
+    const mo = new MutationObserver(() => { clearTimeout(t); t = setTimeout(fin, quiet); });
+    mo.observe(node, { subtree: true, childList: true, attributes: true, characterData: true });
+    t = setTimeout(fin, quiet);
+  });
 }
 
 /**
- * Open the print window from a rendered host node. Returns false when the
- * browser blocked the window, so the caller can say so and log nothing.
+ * The sheet PDF's pages for sheets a…b (1-based): each side's slots at their
+ * millimetre positions, with the face each slot carries. `faceOf(slot, side)`
+ * returns the cached face. Bleed shows only as far as the gap allows (half the
+ * gap, at most 1.5 mm), so a neighbour's art never reaches another card.
  */
-function idsOpenPrintWindow(host, G, title) {
-  const w = window.open("", "_blank");
-  if (!w) return false;
-  const sheets = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(l => '<link rel="stylesheet" href="' + l.href + '">').join("");
-  w.document.open();
-  w.document.write("<!doctype html><html><head><meta charset='utf-8'><title>" + String(title).replace(/[<&]/g, "") + "</title><base href='" + location.origin + "/'>"
-    + sheets + "<style>" + idsPrintCss(G) + "</style></head><body></body></html>");
-  w.document.close();
-  w.document.body.appendChild(w.document.importNode(host, true));
-  const go = () => { try { w.focus(); w.print(); } catch (_) {} };
-  // Fonts and photos must be in before the dialog snapshots the page.
-  Promise.race([
-    Promise.all([w.document.fonts ? w.document.fonts.ready : null].concat(Array.from(w.document.images).map(im => im.complete ? null : new Promise(r => { im.onload = im.onerror = r; })))),
-    new Promise(r => setTimeout(r, 4000)),
-  ]).then(go);
-  return true;
+function idsSheetPages({ G, slots, skip, a, b, backs, marks, proof, nSheets, faceOf }) {
+  const pages = [];
+  const bleed = Math.max(0, Math.min(1.5, G.g / 2));
+  const markList = marks ? idsCutMarks(G) : [];
+  const gridBottom = G.oy + G.rows * G.ch + Math.max(0, G.rows - 1) * G.g + (marks ? 5 : 0);
+  const roomForLabel = G.ph - gridBottom >= 7;
+  const flip = backs === "long" ? "double-sided, flip on the LONG edge" : backs === "short" ? "double-sided, flip on the SHORT edge" : "";
+  for (let p = a - 1; p < b; p++) {
+    (backs !== "off" ? ["front", "back"] : ["front"]).forEach(side => {
+      const items = [];
+      for (let i = 0; i < G.per; i++) {
+        const s = slots[p * G.per + i - skip];
+        if (!s || s.pad) continue;
+        const pos = idsSlotPos(G, i, side === "back" ? backs : null);
+        items.push({ face: faceOf(s, side), x: pos.x, y: pos.y, w: G.cw, h: G.ch, rot: side === "back" && backs === "short",
+          clip: { x: pos.x - bleed, y: pos.y - bleed, w: G.cw + 2 * bleed, h: G.ch + 2 * bleed } });
+      }
+      pages.push({ items, marks: markList, proof,
+        label: roomForLabel ? ["NGG ID cards" + (proof ? " · PROOF" : ""), "sheet " + (p + 1) + " of " + nSheets, side.toUpperCase(), idsMmLabel([G.cw, G.ch]), flip, "print at Actual size (100%)"].filter(Boolean).join(" · ") : "" });
+    });
+  }
+  return pages;
+}
+
+/** The alignment test: every slot outlined and numbered, nothing else. */
+function idsTestPage(G) {
+  const test = [];
+  for (let i = 0; i < G.per; i++) { const p = idsSlotPos(G, i, null); test.push({ x: p.x, y: p.y, w: G.cw, h: G.ch, n: i + 1 }); }
+  return { items: [], marks: idsCutMarks(G), test, label: "Alignment test · " + idsMmLabel([G.cw, G.ch]) + " · print at Actual size (100%), then measure with a ruler" };
 }
 
 /* ── Before printing: the confirmation dialog, §4.1 ─────────────────────────────────────────────────── */

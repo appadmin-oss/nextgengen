@@ -820,7 +820,7 @@ function photo_intake_url(string $incoming, int $max = 512): string {
 
 /** Create a governed asset for a freshly captured image (versions on re-capture). */
 function photo_ingest(string $subjectType, string $subjectId, string $sourceUrl, string $byId = ''): array {
-    $subjectType = in_array($subjectType, ['student', 'volunteer'], true) ? $subjectType : 'student';
+    $subjectType = in_array($subjectType, ['student', 'volunteer', 'member'], true) ? $subjectType : 'student';
     if ($sourceUrl === '' || !preg_match('#^https://#', $sourceUrl)) return ['ok' => false, 'error' => 'bad_source'];
     $prev = db_row("SELECT id, version FROM photo_assets WHERE subjectType = ? AND subjectId = ? AND status NOT IN ('superseded','rejected') ORDER BY version DESC LIMIT 1", [$subjectType, $subjectId]);
     $version = $prev ? ((int)$prev['version'] + 1) : 1;
@@ -1121,40 +1121,151 @@ function photo_reject(array $p): array {
     return ['ok' => true];
 }
 
-/**
- * Admin re-edit of ANY image — including already-live ones. Accepts an assetId
- * (review queue) OR a subjectType+subjectId (a live card photo with no open
- * asset). Rebuilds the delivery transform from the clean source per the given
- * spec, updates the asset if one exists, and always re-applies to the subject
- * so the card/profile update immediately. Returns the new URL for preview.
- */
-function admin_photo_edit(array $p): array {
-    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
-    $spec = is_array($p['spec'] ?? null) ? $p['spec'] : [];
-    $assetId = (string)($p['assetId'] ?? '');
-    $subjectType = (string)($p['subjectType'] ?? '');
-    $subjectId = (string)($p['subjectId'] ?? '');
+/* ── Bringing a photo into Cloudinary ─────────────────────────────────────
+ * Cloudinary's edits are delivery-URL transforms, so they only apply to an
+ * image Cloudinary holds. A photo stored on this site (/api/public/photo.php)
+ * or anywhere else used to be refused as `not_editable` — which, on a
+ * deployment that keeps its photos locally, meant no photo could be edited at
+ * all. Such a photo is uploaded once (signed, server side; the secret never
+ * leaves PHP) and the edit is applied to the uploaded copy.
+ * Test seam: $GLOBALS['__cloudinary_upload_mock'] = fn($file, $folder) => url. */
+function cloudinary_configured(): bool {
+    $c = $GLOBALS['CONFIG']['cloudinary'] ?? [];
+    return !empty($c['cloud_name']) && !empty($c['api_key']) && !empty($c['api_secret']);
+}
+function cloudinary_hosted(string $url): bool {
+    return (bool)preg_match('#^https://res\.cloudinary\.com/[^/]+/image/upload/#', $url);
+}
+function cloudinary_adopt(string $url): array {
+    $url = trim($url);
+    if ($url === '') return ['ok' => false, 'error' => 'no_photo'];
+    if (cloudinary_hosted($url)) return ['ok' => true, 'url' => cloudinary_base($url), 'adopted' => false];
+    if (!cloudinary_configured()) return ['ok' => false, 'error' => 'cloudinary_not_configured'];
+    $file = '';
+    if (photo_is_stored_locally($url) && preg_match('/p=([0-9a-f]{32}\.(jpg|png|webp))$/', $url, $m)) {
+        $path = photo_store_find($m[1]);
+        if ($path === '') return ['ok' => false, 'error' => 'photo_missing'];
+        $mime = $m[2] === 'png' ? 'image/png' : ($m[2] === 'webp' ? 'image/webp' : 'image/jpeg');
+        $file = 'data:' . $mime . ';base64,' . base64_encode((string)file_get_contents($path));
+    } elseif (preg_match('#^https://#', $url) || strpos($url, 'data:image/') === 0) {
+        $file = $url;                              // Cloudinary fetches a public URL itself
+    } else {
+        return ['ok' => false, 'error' => 'no_photo'];
+    }
+    $cfg = $GLOBALS['CONFIG']['cloudinary'];
+    $folder = trim((string)($cfg['folder'] ?? 'ngg'), '/') . '/photos';
+    if (isset($GLOBALS['__cloudinary_upload_mock']) && is_callable($GLOBALS['__cloudinary_upload_mock'])) {
+        $secure = (string)($GLOBALS['__cloudinary_upload_mock'])($file, $folder);
+        return $secure !== '' ? ['ok' => true, 'url' => $secure, 'adopted' => true] : ['ok' => false, 'error' => 'upload_failed'];
+    }
+    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'upload_failed'];
+    $ts = time();
+    $sig = sha1('folder=' . $folder . '&timestamp=' . $ts . $cfg['api_secret']);
+    $ch = curl_init('https://api.cloudinary.com/v1_1/' . rawurlencode((string)$cfg['cloud_name']) . '/image/upload');
+    curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 40, CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_POSTFIELDS => ['file' => $file, 'api_key' => (string)$cfg['api_key'], 'timestamp' => $ts, 'folder' => $folder, 'signature' => $sig]]);
+    $raw = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    $j = is_string($raw) ? json_decode($raw, true) : null;
+    $secure = is_array($j) ? (string)($j['secure_url'] ?? '') : '';
+    if ($code !== 200 || $secure === '') return ['ok' => false, 'error' => 'upload_failed', 'detail' => is_array($j) ? (string)($j['error']['message'] ?? '') : ''];
+    return ['ok' => true, 'url' => $secure, 'adopted' => true];
+}
 
+/** The table and key column holding a subject's photo. */
+function photo_subject_table(string $subjectType): ?array {
+    if ($subjectType === 'member') return ['members', 'memberId'];
+    if ($subjectType === 'volunteer') return ['volunteers', 'volunteerId'];
+    if ($subjectType === 'student') return ['summer_students', 'studentId'];
+    return null;
+}
+
+/** A manual edit spec, cleaned: the same controls the editor offers. */
+function photo_edit_spec(array $spec): array {
+    $g = (string)($spec['gravity'] ?? 'face');
+    return [
+        'gravity'  => in_array($g, ['face', 'faces', 'center', 'north', 'south', 'auto'], true) ? $g : 'face',
+        'zoom'     => max(1.0, min(2.5, (float)($spec['zoom'] ?? 1))),
+        'brighten' => !empty($spec['brighten']), 'sharpen' => !empty($spec['sharpen']), 'removeBg' => !empty($spec['removeBg']),
+    ];
+}
+
+/**
+ * Edit one subject's photo with Cloudinary and put the result on the record.
+ * The one implementation behind both the single edit and the bulk run, so the
+ * two cannot drift. No gate and no audit — the callers own those.
+ */
+function photo_edit_subject(string $subjectType, string $subjectId, string $assetId, array $spec): array {
     $a = null;
     if ($assetId !== '') $a = db_row('SELECT * FROM photo_assets WHERE assetId = ? LIMIT 1', [$assetId]);
     elseif ($subjectType !== '' && $subjectId !== '') $a = db_row("SELECT * FROM photo_assets WHERE subjectType = ? AND subjectId = ? AND status NOT IN ('rejected') ORDER BY version DESC LIMIT 1", [$subjectType, $subjectId]);
+    if ($a) { $subjectType = (string)$a['subjectType']; $subjectId = (string)$a['subjectId']; }
+    $tbl = photo_subject_table($subjectType);
+    $row = ($tbl && $subjectId !== '') ? db_row("SELECT photoUrl FROM {$tbl[0]} WHERE {$tbl[1]} = ? LIMIT 1", [$subjectId]) : null;
+    $before = $row ? (string)($row['photoUrl'] ?? '') : '';
+    $source = $a ? (string)$a['sourceUrl'] : cloudinary_base($before);
+    if ($source === '') return ['ok' => false, 'error' => 'no_photo'];
+    $ad = cloudinary_adopt($source);
+    if (empty($ad['ok'])) return $ad;
+    $edit = cloudinary_edit_manual($ad['url'], $spec);
+    if ($a) db_update('photo_assets', ($ad['adopted'] ? ['sourceUrl' => $ad['url']] : []) + ['editedUrl' => $edit['url'], 'transforms' => $edit['transforms'], 'updatedAt' => now_iso()], ['assetId' => $a['assetId']]);
+    $unchanged = $before !== '' && photo_store_relativise($edit['url']) === $before;
+    if (!$unchanged) photo_apply_to_subject(['subjectType' => $subjectType, 'subjectId' => $subjectId, 'editedUrl' => $edit['url']]);
+    return ['ok' => true, 'url' => $edit['url'], 'transforms' => $edit['transforms'], 'unchanged' => $unchanged, 'adopted' => !empty($ad['adopted']),
+        'subjectType' => $subjectType, 'subjectId' => $subjectId, 'assetId' => $a['assetId'] ?? ''];
+}
 
-    if ($a) { $source = (string)$a['sourceUrl']; $subjectType = (string)$a['subjectType']; $subjectId = (string)$a['subjectId']; }
-    else {
-        // No asset — derive the clean source from the subject's current photo.
-        $tbl = $subjectType === 'volunteer' ? 'volunteers' : 'summer_students';
-        $col = $subjectType === 'volunteer' ? 'volunteerId' : 'studentId';
-        $row = ($subjectId !== '') ? db_row("SELECT photoUrl FROM $tbl WHERE $col = ? LIMIT 1", [$subjectId]) : null;
-        if (!$row || empty($row['photoUrl'])) return ['ok' => false, 'error' => 'no_photo'];
-        $source = cloudinary_base((string)$row['photoUrl']);
+/**
+ * Admin edit — reframe/brighten/sharpen/remove the background of ONE photo.
+ */
+function admin_photo_edit(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $spec = photo_edit_spec(is_array($p['spec'] ?? null) ? $p['spec'] : []);
+    $r = photo_edit_subject((string)($p['subjectType'] ?? ''), (string)($p['subjectId'] ?? ''), (string)($p['assetId'] ?? ''), $spec);
+    if (empty($r['ok'])) return $r;
+    audit('photo.edited', $g['requester']['memberId'], ($r['subjectType'] . ':' . $r['subjectId']), ['spec' => $spec, 'assetId' => $r['assetId'], 'adopted' => $r['adopted']], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'url' => $r['url'], 'transforms' => $r['transforms'], 'unchanged' => $r['unchanged']];
+}
+
+const PHOTO_EDIT_BULK_MAX = 200;
+/**
+ * The same Cloudinary edit for many people at once (the ID Card Studio's
+ * "Improve photos"). Capped; the whole payload is validated before any
+ * write; centre scope refused per row; a background removal is refused up
+ * front when credits are out rather than half-applied; `unchanged` reported
+ * apart from applied; ONE audit event for the run. Each row goes through
+ * photo_edit_subject, the same code as a single edit.
+ */
+function admin_photo_edit_bulk(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $items = $p['items'] ?? null;
+    if (!is_array($items) || !$items) return ['ok' => false, 'error' => 'bad_items'];
+    if (count($items) > PHOTO_EDIT_BULK_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => PHOTO_EDIT_BULK_MAX];
+    $clean = []; $seen = [];
+    foreach (array_values($items) as $i => $it) {
+        $t = is_array($it) ? (string)($it['subjectType'] ?? '') : '';
+        $id = is_array($it) ? trim((string)($it['subjectId'] ?? '')) : '';
+        if (!photo_subject_table($t) || $id === '' || strlen($id) > 64) return ['ok' => false, 'error' => 'bad_item', 'index' => $i];
+        if (isset($seen[$t . ':' . $id])) continue;
+        $seen[$t . ':' . $id] = 1; $clean[] = [$t, $id];
     }
-    if (strpos($source, '/upload/') === false) return ['ok' => false, 'error' => 'not_editable']; // non-Cloudinary photo
-
-    $edit = cloudinary_edit_manual($source, $spec);
-    if ($a) db_update('photo_assets', ['editedUrl' => $edit['url'], 'transforms' => $edit['transforms'], 'updatedAt' => now_iso()], ['assetId' => $a['assetId']]);
-    photo_apply_to_subject(['subjectType' => $subjectType, 'subjectId' => $subjectId, 'editedUrl' => $edit['url']]);
-    audit('photo.edited', $g['requester']['memberId'], ($subjectType . ':' . $subjectId), ['spec' => $spec, 'assetId' => $a['assetId'] ?? ''], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'url' => $edit['url'], 'transforms' => $edit['transforms']];
+    $spec = photo_edit_spec(is_array($p['spec'] ?? null) ? $p['spec'] : []);
+    if (!cloudinary_configured()) return ['ok' => false, 'error' => 'cloudinary_not_configured'];
+    if ($spec['removeBg'] && !cloudinary_credits_ok()) return ['ok' => false, 'error' => 'credits_exhausted'];
+    $results = []; $applied = 0; $unchanged = 0; $refused = [];
+    foreach ($clean as [$t, $id]) {
+        $tbl = photo_subject_table($t);
+        $row = db_row("SELECT centre FROM {$tbl[0]} WHERE {$tbl[1]} = ? LIMIT 1", [$id]);
+        if (!$row) { $results[] = ['subjectType' => $t, 'subjectId' => $id, 'ok' => false, 'error' => 'not_found']; $refused['not_found'] = ($refused['not_found'] ?? 0) + 1; continue; }
+        if (!admin_centre_allowed($g['requester'], (string)($row['centre'] ?? ''))) { $results[] = ['subjectType' => $t, 'subjectId' => $id, 'ok' => false, 'error' => 'out_of_scope']; $refused['out_of_scope'] = ($refused['out_of_scope'] ?? 0) + 1; continue; }
+        $r = photo_edit_subject($t, $id, '', $spec);
+        if (empty($r['ok'])) { $e = (string)($r['error'] ?? 'failed'); $results[] = ['subjectType' => $t, 'subjectId' => $id, 'ok' => false, 'error' => $e]; $refused[$e] = ($refused[$e] ?? 0) + 1; continue; }
+        if ($r['unchanged']) $unchanged++; else $applied++;
+        $results[] = ['subjectType' => $t, 'subjectId' => $id, 'ok' => true, 'unchanged' => $r['unchanged'], 'url' => $r['url']];
+    }
+    audit('photo.edited.bulk', $g['requester']['memberId'], 'photos', ['count' => count($clean), 'applied' => $applied, 'unchanged' => $unchanged, 'refused' => $refused, 'spec' => $spec], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'ran' => count($clean), 'applied' => $applied, 'unchanged' => $unchanged, 'failed' => count($clean) - $applied - $unchanged, 'results' => $results];
 }
 
 /**
@@ -1207,6 +1318,8 @@ function photo_apply_to_subject(array $a): void {
     try {
         if ($a['subjectType'] === 'student')        db_update('summer_students', ['photoUrl' => $url, 'updatedAt' => now_iso()], ['studentId' => $a['subjectId']]);
         elseif ($a['subjectType'] === 'volunteer')  db_update('volunteers', ['photoUrl' => $url, 'updatedAt' => now_iso()], ['volunteerId' => $a['subjectId']]);
+        // Members too: an edited member photo never reached the record, so the card kept the old one.
+        elseif ($a['subjectType'] === 'member')     db_update('members', ['photoUrl' => $url, 'updatedAt' => now_iso()], ['memberId' => $a['subjectId']]);
     } catch (Throwable $e) { /* subject may not exist yet in tests */ }
 }
 

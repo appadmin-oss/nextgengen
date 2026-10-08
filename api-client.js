@@ -1498,6 +1498,7 @@
         reject:  (assetId, reason) => request('/admin/photos.php', { body: { action: 'reject', assetId, reason } }),
         // Re-edit ANY image (by assetId, or by subject for already-live photos).
         edit:    (target, spec) => request('/admin/photos.php', { body: Object.assign({ action: 'edit', spec }, target) }),
+        editBulk: (items, spec) => request('/admin/photos.php', { body: { action: 'edit_bulk', items, spec } }),
         replace: (subjectType, subjectId, sourceUrl) => request('/admin/photos.php', { body: { action: 'replace', subjectType, subjectId, sourceUrl } }),
         /* Children with NO photograph on file — a different question from the
            review queue, which can only show photos that exist. */

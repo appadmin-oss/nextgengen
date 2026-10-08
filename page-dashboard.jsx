@@ -926,7 +926,7 @@ function DashboardSidebar({ m, first, account, ngv, fines, counts, mentorNamed, 
   const [open, setOpen] = React.useState(false);
   const [active, setActive] = React.useState("sec-today");
   const owed = account ? account.payable : 0;
-  const hasPhoto = m.photoUrl && /^https?:\/\//.test(m.photoUrl);
+  const hasPhoto = !!nggPhotoSrc(m.photoUrl);
 
   const groups = [
     /* Every label is the heading of the card it lands on. "Activity" used to
@@ -1094,7 +1094,7 @@ function DashboardProfileModal({ m, onClose, onSaved }) {
       toast.error("Couldn't save: " + humanError(e));
     } finally { setBusy(false); }
   };
-  const hasPhoto = d.photoUrl && /^https?:\/\//.test(d.photoUrl);
+  const hasPhoto = !!nggPhotoSrc(d.photoUrl);
 
   // Password — opt-in. Members sign in with a code; setting a password here
   // lets them use the standard email + password login next time.

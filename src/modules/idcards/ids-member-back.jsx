@@ -5,7 +5,7 @@
    54 × 85 mm. This is its other side in the same idiom: the same navy and
    amber, the same faces (Poppins for words, IBM Plex Mono for the ID and the
    labels), the same caption grey measured at 4.83:1. It is drawn once, here;
-   the ID Card Studio's slots and its print window both place this component
+   the ID Card Studio's slots and its print PDF both place this component
    (CLAUDE.md §7: one renderer per card, never two). A Design Studio back,
    when one is assigned and paired, replaces it for that card type.
 

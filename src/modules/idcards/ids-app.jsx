@@ -7,7 +7,8 @@
      window's. Below 760px it is a Queue, never a sheet.
    - What is on the sheet is printed by the same faces, from a hidden host in
      millimetres; nothing is drawn twice.
-   - A print is logged only when the print window opened. A failed card found
+   - Print makes a PDF of the sheet (ids-print.jsx), never the browser's print
+     dialog. A print is logged only when the PDF was made; a failed card found
      afterwards is marked on the run it came from and goes back in the queue.
    - Each card type prints with the design assigned to it — a published,
      versioned Design Studio template and its paired back — or the standard
@@ -39,7 +40,7 @@ function idsAskedRecently(a) { return !!(a && a.at && Date.now() - Date.parse(a.
    their dashboard and the photo pipeline has no member target, so a member
    gets neither button rather than one that cannot act (CLAUDE.md §11). */
 const IDS_RESEND = { summer: { kind: "student", to: "their guardian" }, volunteer: { kind: "volunteer", to: "them" } };
-const IDS_PHOTO_EDIT = { summer: "student", volunteer: "volunteer" };
+const IDS_PHOTO_EDIT = { member: "member", summer: "student", volunteer: "volunteer" };
 /** A scannable PNG of a token's /q/ address, for the emailed ID (mail clients strip data: QR images, so the server hosts it). */
 function idsQrPng(token) {
   return new Promise(res => {
@@ -462,11 +463,9 @@ function IdCardStudioPage({ setPage }) {
   };
   const lanyardUI = lanyardProgram ? { w: Number(lanyardProgram.widthMm) || 54, h: Number(lanyardProgram.heightMm) || 75, busy: sizeBusy, save: saveLanyardSize, hasMembers: data.kinds.includes("member") } : null;
   const [confirm, setConfirm] = React.useState(null);
-  const [printJob, setPrintJob] = React.useState(null);   // { a, b, packing, test, proof }
   const [job, setJob] = React.useState(null);             // batch progress
   const [after, setAfter] = React.useState(null);         // { items, runs }
   const [runOpen, setRunOpen] = React.useState(null);
-  const hostRef = React.useRef(null);
   const programFor = rec => (data.programs[rec.kind] || {});
   const renderFace = (s, f) => s.upload
     ? <IdsUploadFace u={f === "back" ? (s.upload.back ? upById[s.upload.back] : null) : s.upload} cw={G.cw} ch={G.ch} back={f === "back"}/>
@@ -479,36 +478,6 @@ function IdCardStudioPage({ setPage }) {
       defaultReason: idsAutoReason(scen, nRecords, reprints.length) });
   };
 
-  // When the hidden host has drawn the pages, hand them to the print window and log what printed.
-  React.useEffect(() => {
-    if (!printJob) return undefined;
-    let live = true;
-    const go = async () => {
-      const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-      await frames();
-      // A design is drawn by Fabric, asynchronously: wait for the last card,
-      // then for React to put it in the host, before the window copies it.
-      await idsTplSettled();
-      await frames();
-      if (!live || !hostRef.current) return;
-      /* A card that couldn't be drawn would print as an error box on card
-         stock and be logged as issued. Refuse the print and name it. */
-      const failedDraw = Array.from(hostRef.current.querySelectorAll("[data-ids-failed]")).map(n => n.getAttribute("data-ids-failed"));
-      if (failedDraw.length && !printJob.test) {
-        setPrintJob(null);
-        return say(idsN(failedDraw.length, "card") + " couldn’t be drawn (" + failedDraw.slice(0, 4).join(", ") + (failedDraw.length > 4 ? "…" : "") + "). Take " + (failedDraw.length === 1 ? "it" : "them") + " off the sheet, then print. Nothing was printed or logged.");
-      }
-      const opened = idsOpenPrintWindow(hostRef.current, G, printJob.test ? "Alignment test" : "ID cards");
-      const pj = printJob;
-      setPrintJob(null);
-      if (!opened) return say("Allow pop-ups to print");
-      if (pj.test) return say("Alignment test sent. Measure it with a ruler before printing cards.");
-      await logPrinted(pj);
-    };
-    go();
-    return () => { live = false; };
-    // eslint-disable-next-line
-  }, [printJob]);
 
   const inRange = (a, b) => {
     const out = [];
@@ -548,8 +517,8 @@ function IdCardStudioPage({ setPage }) {
     }
     const ids = runs.map(r => r.runId).join(", ");
     if (pj.output) return ids;   // an export reports in its own result dialog; failures are marked from the print log
-    if (job || pj.batch) say("Batch sent · sheets " + pj.a + "–" + pj.b + " of " + nSheets + ". Print the next when it’s out.");
-    else { say("Sent to the printer and logged as " + ids); set({ skip: 0 }); setSheetIdx(0); }
+    if (job || pj.batch) say("Batch ready · sheets " + pj.a + "–" + pj.b + " of " + nSheets + " in " + pj.fileName + ". Print it, then make the next.");
+    else { say("Ready · " + pj.fileName + ", logged as " + ids + ". Print it at Actual size (100%)."); set({ skip: 0 }); setSheetIdx(0); }
     if (!proof && recItems.length) setAfter({ runs, items: recItems.map(x => ({ key: x.s.key, slot: x.s, name: x.s.label, sheet: x.sheet, slotN: x.slotN, cw: G.cw, ch: G.ch, rec: x.s.rec })) });
   };
 
@@ -575,10 +544,10 @@ function IdCardStudioPage({ setPage }) {
     if (reason !== "proof" && !(await mintMissing(recCards.filter(c => c.rec.kind === "member" && !c.rec.displayId)))) return;
     if (mode === "batch") {
       setJob({ batches, i: 0, total: nSheets, done: batches[0][1], next: batches[1] || batches[0], reason, packing });
-      setPrintJob({ a: batches[0][0], b: batches[0][1], packing, reason, batch: true });
+      runPrint({ a: batches[0][0], b: batches[0][1], packing, reason, batch: true });
     } else {
       const [a, b] = mode === "range" ? range : [1, nSheets];
-      setPrintJob({ a, b, packing, reason });
+      runPrint({ a, b, packing, reason });
     }
   };
   const printNextBatch = () => {
@@ -587,7 +556,7 @@ function IdCardStudioPage({ setPage }) {
     if (i >= job.batches.length) { setJob(null); return; }
     const [a, b] = job.batches[i];
     setJob(i + 1 >= job.batches.length ? null : Object.assign({}, job, { i, done: b, next: job.batches[i + 1] }));
-    setPrintJob({ a, b, packing: false, reason: job.reason, batch: true });
+    runPrint({ a, b, packing: false, reason: job.reason, batch: true });
   };
 
   const afterDone = async bad => {
@@ -606,44 +575,244 @@ function IdCardStudioPage({ setPage }) {
     } catch (_) { say("Couldn’t record the failures. Try again from the print log."); }
   };
 
-  /* ── Files for a print shop (restored from the old Card Studio) ──
-     A browser print is one route to paper; a trade printer wants a file. The
-     same faces the sheet shows are staged ONE card at a time in a hidden host
-     at their true millimetre size and rasterised by the vendored CardExport
-     toolkit — html2canvas clones the whole document per capture, so staging
-     one card keeps the cost per face flat however long the run. Out come a
-     print-ready PDF (3 mm generated bleed, crop and registration marks,
-     ISO 19593 layers, a FOGRA39 intent, backs interleaved and mirrored for the
-     press's flip) or a ZIP of PNGs at the same bleed and resolution, or one
-     card's PNG. The QR of every standard card is decoded back out of the
-     exported pixels with the gate's own reader. Nothing is drawn twice. */
-  const [stage, setStage] = React.useState(null);
-  const stageRef = React.useRef(null);
-  const stageDone = React.useRef(null);
+  /* ── Faces: drawn once, at print resolution, ahead of time (§4) ──
+     Every face on the sheet is rendered by the component the preview shows,
+     mounted IDS_FARM_CHUNK at a time in a hidden farm at its true millimetre
+     size, and rasterised by snapDOM (CardExport.renderFaceFast) with 3 mm of
+     generated bleed. A design is drawn straight from the Design Studio at the
+     print dpi instead — no DOM in between. Faces are cached by what they show
+     (the record, the design and its version, the size, the dpi), so Print,
+     the print-shop export, a batch and a reprint all reuse one drawing, and a
+     member minted a moment ago is a new face carrying their number.
+
+     While the operator arranges the sheet, the faces are drawn in the
+     background; any change supersedes the run in progress. Print and export
+     pre-empt it, so they never wait behind it. */
+  const byKeyRef = React.useRef(byKey);
+  byKeyRef.current = byKey;
+  const [farm, setFarm] = React.useState(null);        // { jobs: [{ key, s, face }] }
+  const farmRef = React.useRef(null);
+  const farmDone = React.useRef(null);
+  const farmLock = React.useRef(Promise.resolve());
+  const farmGen = React.useRef(0);
+  const [warm, setWarm] = React.useState({ ready: 0, total: 0, busy: false });
   const [xconfirm, setXconfirm] = React.useState(null);
-  const [xjob, setXjob] = React.useState(null);        // { i, n, note }
+  const [xjob, setXjob] = React.useState(null);        // { i, n, note, print }
   const [xresult, setXresult] = React.useState(null);
   const xcancel = React.useRef(false);
   React.useEffect(() => {
-    if (!stage || !stageDone.current) return;
-    const done = stageDone.current; stageDone.current = null;
+    if (!farm || !farmDone.current) return;
+    const done = farmDone.current; farmDone.current = null;
     (async () => {
       const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-      await frames(); await idsTplSettled(); await frames();
-      // Photos and the member QR arrive after the first paint: wait until the images stop changing.
-      const t0 = Date.now(); let prev = -1, calm = 0;
-      while (Date.now() - t0 < 6000) {
-        const imgs = stageRef.current ? Array.from(stageRef.current.querySelectorAll("img")) : [];
-        const n = imgs.filter(im => im.complete).length;
-        if (n === imgs.length && n === prev) { if (++calm >= 2) break; } else calm = 0;
-        prev = n;
-        await new Promise(r => setTimeout(r, 120));
-      }
+      await frames();
+      await idsTplSettled();
+      // Photos and the member QR arrive after the first paint: wait for the farm to go quiet, then for every image.
+      await idsDomQuiet(farmRef.current, 80, 4000);
+      const imgs = farmRef.current ? Array.from(farmRef.current.querySelectorAll("img")) : [];
+      await Promise.all(imgs.map(im => im.complete ? null : new Promise(r => { im.onload = im.onerror = r; setTimeout(r, 6000); })));
       done();
     })();
-  }, [stage]);
-  const stageSlot = s => new Promise(resolve => { stageDone.current = resolve; setStage({ s, n: Date.now() }); });
-  const budget = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error("face_timeout")), ms))]);
+  }, [farm]);
+  const mountFarm = jobs => new Promise(resolve => { farmDone.current = resolve; setFarm({ jobs }); });
+  const withFarm = fn => { const p = farmLock.current.then(fn, fn); farmLock.current = p.catch(() => {}); return p; };
+
+  const curSlot = s => s.rec ? Object.assign({}, s, { rec: byKeyRef.current[s.rec.key] || s.rec }) : s;
+  const faceSig = (s, f) => {
+    if (s.upload) { const u = f === "back" ? (s.upload.back ? upById[s.upload.back] : null) : s.upload; return ["u", s.base || s.key, f, u ? idsHash(u.src) + (u.rot || 0) + (u.fit || "") : "blank"].join("|"); }
+    const d = designOf(s.rec);
+    return [s.rec.key, f, idsHash(JSON.stringify(s.rec.raw || {})), d ? d.templateId + "v" + d.version + (d.back ? "+" + d.back.templateId + "v" + d.back.version : "") : "std", idsHash(JSON.stringify(programFor(s.rec)))].join("|");
+  };
+  const faceKey = (s, f, dpi, type) => faceSig(s, f) + "|" + G.cw + "x" + G.ch + "|" + dpi + "|" + (type || "jpeg");
+
+  /* Draw the faces for `jobs` ([{ s, face }]). Returns { faces, failed } with
+     faces[i] for jobs[i], or null when a newer background run superseded this
+     one. o: { dpi, type: "jpeg"|"png", gen, onTick } */
+  const drawFaces = async (jobs, o) => {
+    const CE = await loadVendor("cardExport");
+    const faces = new Array(jobs.length), failed = [];
+    let n = 0;
+    const tick = () => { n++; if (o.onTick) o.onTick(n, jobs.length); };
+    const stale = () => (o.gen != null && o.gen !== farmGen.current) || (o.cancel && o.cancel());
+    const mime = o.type === "png" ? "image/png" : "image/jpeg";
+    const dom = [];
+    for (let i = 0; i < jobs.length; i++) {
+      const s = curSlot(jobs[i].s), f = jobs[i].face, key = faceKey(s, f, o.dpi, o.type);
+      const hit = idsFaceGet(key);
+      if (hit) { faces[i] = hit; tick(); continue; }
+      const d = s.rec && designOf(s.rec), t = d && (f === "back" ? d.back : d);
+      if (t) {
+        if (stale()) return null;
+        try {
+          const fab = await loadVendor("fabric");
+          const art = await window.dsnRaster(Object.assign({}, t.published, { wMm: d.wMm, hMm: d.hMm }), s.rec.raw, fab, o.dpi);
+          const r = await CE.imageFace(art.url, { trimW_mm: G.cw, trimH_mm: G.ch, dpi: o.dpi, bleed_mm: IDS_FACE_BLEED, type: mime, quality: 0.95 });
+          faces[i] = { bytes: r.bytes, bleedMm: IDS_FACE_BLEED, bleedPx: r.bleedPx, trimWPx: r.trimWPx, trimHPx: r.trimHPx, alias: "f" + idsHash(key), engine: "design" };
+          idsFacePut(key, faces[i]);
+        } catch (_) { failed.push(i); }
+        tick(); continue;
+      }
+      dom.push({ i, s, face: f, key });
+    }
+    for (let c = 0; c < dom.length; c += IDS_FARM_CHUNK) {
+      if (stale()) return null;
+      const chunk = dom.slice(c, c + IDS_FARM_CHUNK);
+      const ok = await withFarm(async () => {
+        if (stale()) return false;
+        await mountFarm(chunk);
+        const nodes = farmRef.current ? Array.from(farmRef.current.querySelectorAll(".ids-x-face")) : [];
+        /* A few faces in flight at once: one rasterising while the last is
+           still being JPEG-encoded off the main thread. */
+        let next = 0;
+        const worker = async () => {
+          while (next < chunk.length) {
+            const k = next++, job = chunk[k], node = nodes[k];
+            try {
+              // A card its renderer choked on is never rasterised as if it were the card.
+              if (!node || node.querySelector("[data-ids-failed]")) throw new Error("draw_failed");
+              const r = await CE.renderFaceFast(node, { trimW_mm: G.cw, dpi: o.dpi, bleed_mm: IDS_FACE_BLEED, type: mime, quality: 0.95 });
+              faces[job.i] = { bytes: r.bytes, bleedMm: IDS_FACE_BLEED, bleedPx: r.bleedPx, trimWPx: r.trimWPx, trimHPx: r.trimHPx, alias: "f" + idsHash(job.key), engine: r.engine };
+              idsFacePut(job.key, faces[job.i]);
+            } catch (_) { failed.push(job.i); }
+            tick();
+          }
+        };
+        await Promise.all([worker(), worker(), worker()]);
+        return true;
+      });
+      if (!ok) return null;
+    }
+    setFarm(null);
+    return { faces, failed };
+  };
+
+  // The sheet's faces, drawn while the operator is still arranging it.
+  const sheetJobs = () => {
+    const jobs = [];
+    slots.forEach(s => { if (!s.pad) { jobs.push({ s, face: "front" }); if (st.backs !== "off") jobs.push({ s, face: "back" }); } });
+    return jobs;
+  };
+  const warmSig = tab === "make" && !phone ? slots.map(s => s.pad ? "_" : faceSig(curSlot(s), "front")).join(",") + "|" + st.backs + "|" + st.dpi + "|" + G.cw + "x" + G.ch : "";
+  React.useEffect(() => {
+    const gen = ++farmGen.current;
+    if (!warmSig || xjob) { setWarm({ ready: 0, total: 0, busy: false }); return undefined; }
+    const jobs = sheetJobs().slice(0, IDS_WARM_MAX);
+    if (!jobs.length) { setWarm({ ready: 0, total: 0, busy: false }); return undefined; }
+    const t = setTimeout(() => {
+      setWarm({ ready: 0, total: jobs.length, busy: true });
+      drawFaces(jobs, { dpi: st.dpi, gen, onTick: (k, total) => { if (gen === farmGen.current) setWarm({ ready: k, total, busy: k < total }); } })
+        .catch(() => null)
+        .then(() => { if (gen === farmGen.current) setWarm(w => Object.assign({}, w, { busy: false })); });
+    }, 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line
+  }, [warmSig, !!xjob]);
+
+  const today = () => new Date().toISOString().slice(0, 10);
+  const failedNames = (jobs, idx) => Array.from(new Set(idx.map(i => { const s = jobs[i].s; return s.label + (s.rec && s.rec.displayId ? " · " + s.rec.displayId : ""); })));
+
+  /* Print: the studio's sheet as a PDF, never the browser's print dialog. */
+  const runPrint = async pj => {
+    farmGen.current++;                       // the background run yields
+    xcancel.current = false;
+    let CE;
+    setXjob({ i: 0, n: 1, note: "Getting ready", print: true });
+    try { CE = await loadVendor("cardExport"); } catch (_) { setXjob(null); say("Couldn’t load the print tools. Check your connection and try again."); return false; }
+    try {
+      if (pj.test) {
+        const pdf = await CE.buildSheetPDF({ pageW: G.pw, pageH: G.ph, title: "Alignment test", pages: [idsTestPage(G)] });
+        CE.download(pdf, "alignment-test-" + IDS_PAPERS[G.paper][0] + ".pdf", "application/pdf");
+        setXjob(null);
+        say("Alignment test ready. Print it at Actual size (100%) and measure it with a ruler before printing cards.");
+        return true;
+      }
+      const proof = pj.reason === "proof";
+      const items = inRange(pj.a, pj.b);
+      const jobs = [];
+      items.forEach(x => { jobs.push({ s: x.s, face: "front" }); if (st.backs !== "off") jobs.push({ s: x.s, face: "back" }); });
+      const res = await drawFaces(jobs, { dpi: st.dpi, cancel: () => xcancel.current, onTick: (k, n) => setXjob({ i: k, n, note: "Preparing the cards", print: true }) });
+      if (!res || xcancel.current) { setXjob(null); say("Stopped. Nothing was printed or logged."); return false; }
+      if (res.failed.length) {
+        const names = failedNames(jobs, res.failed);
+        setXjob(null);
+        say(idsN(names.length, "card") + " couldn’t be drawn (" + names.slice(0, 4).join(", ") + (names.length > 4 ? "…" : "") + "). Take " + (names.length === 1 ? "it" : "them") + " off the sheet, then print. Nothing was printed or logged.");
+        return false;
+      }
+      setXjob({ i: jobs.length, n: jobs.length, note: "Making the PDF", print: true });
+      const byJob = new Map();
+      jobs.forEach((j, k) => byJob.set(j.s.key + "|" + j.face, res.faces[k]));
+      const pages = idsSheetPages({ G, slots, skip: st.skip, a: pj.a, b: pj.b, backs: st.backs, marks: st.marks, proof, nSheets, faceOf: (s, side) => byJob.get(s.key + "|" + side) });
+      const packing = pj.packing ? {
+        title: "Packing list" + (proof ? " · PROOF" : ""),
+        sub: "Sheets " + pj.a + "–" + pj.b + " of " + nSheets + " · tick each card as you cut and bag it · " + new Date().toLocaleString("en-GB"),
+        head: ["Sheet", "Slot", "Name", "ID", "Centre", ""], widths: [12, 10, 62, 30, 40, 8], tick: true,
+        rows: items.map(x => [x.sheet, x.slotN, x.s.label, x.s.rec ? (curSlot(x.s).rec.displayId || "Assigned on print") : "Uploaded", x.s.centre || "", ""]),
+      } : null;
+      const pdf = await CE.buildSheetPDF({ pageW: G.pw, pageH: G.ph, title: "NGG ID cards" + (proof ? " (proof)" : ""), packing, pages });
+      const fileName = "id-cards-" + today() + (proof ? "-proof" : "") + (pj.a === 1 && pj.b === nSheets ? "" : "-sheets-" + pj.a + "-" + pj.b) + ".pdf";
+      CE.download(pdf, fileName, "application/pdf");
+      setXjob(null);
+      await logPrinted(Object.assign({}, pj, { items, fileName }));
+      return true;
+    } catch (e) {
+      setXjob(null);
+      say("Couldn’t make the PDF. Nothing was printed or logged. Try again.");
+      return false;
+    }
+  };
+
+  /* Improve photos: one Cloudinary edit (admin.photo.edit.bulk) for every
+     photographed person on the sheet, sent a few at a time so a slow upload
+     never meets the host's request time limit. The count is read before the
+     confirm; per-person verdicts win over the batch's ok. */
+  const IDS_IMPROVE_KIND = { member: "member", summer: "student", volunteer: "volunteer" };
+  const IDS_IMPROVE_CHUNK = 8;
+  const [improve, setImprove] = React.useState(null);      // { n, items } while the dialog is open
+  const [improveRes, setImproveRes] = React.useState(null);
+  const improvable = () => {
+    const seen = new Set(), out = [];
+    cards.forEach(c => { const r = c.rec; if (!r || !IDS_IMPROVE_KIND[r.kind] || !r.photoUrl || seen.has(r.key)) return; seen.add(r.key); out.push(r); });
+    return out;
+  };
+  const improveN = React.useMemo(() => improvable().length, [cards]); // eslint-disable-line
+  const runImprove = async spec => {
+    const recs = improve.recs;
+    setImprove(null);
+    farmGen.current++;
+    xcancel.current = false;
+    let applied = 0, unchanged = 0;
+    const failed = [];
+    for (let i = 0; i < recs.length; i += IDS_IMPROVE_CHUNK) {
+      if (xcancel.current) break;
+      setXjob({ i, n: recs.length, note: "Improving photos" });
+      const part = recs.slice(i, i + IDS_IMPROVE_CHUNK);
+      try {
+        const res = await NGGApi.admin.photos.editBulk(part.map(r => ({ subjectType: IDS_IMPROVE_KIND[r.kind], subjectId: r.id })), spec);
+        (res.results || []).forEach(x => {
+          const r = part.find(p => p.id === x.subjectId);
+          if (x.ok) { if (x.unchanged) unchanged++; else applied++; }
+          else failed.push({ name: r ? r.name : x.subjectId, error: x.error || "failed" });
+        });
+      } catch (e) {
+        const c = e && (e.code || e.message);
+        setXjob(null);
+        if (c === "forbidden" || (e && e.status === 403)) return say("Improving photos needs the Content permission.");
+        if (c === "cloudinary_not_configured") return say("Cloudinary isn’t set up on this site, so photos can’t be improved. Its three keys go in api/config.php (docs/SETUP.md, “cloudinary”).");
+        if (c === "credits_exhausted") return say("Cloudinary’s credits are used up, so the background can’t be removed. Try again without “Plain grey background”.");
+        part.forEach(r => failed.push({ name: r.name, error: idsErrText(e, "failed") }));
+      }
+    }
+    setXjob(null);
+    _idsTplDone.clear(); idsFaceForget();
+    if (applied) load();
+    setImproveRes({ applied, unchanged, failed });
+  };
+
+  /* Files for a print shop: the same cached faces, imposed by CardExport with
+     3 mm bleed, crop and registration marks, ISO 19593 layers, a FOGRA39
+     intent and backs interleaved for the press's flip — or a ZIP of PNGs, or
+     one card's PNG. Every standard card's QR is read back out of the exported
+     pixels with the gate's own reader. Nothing is drawn twice. */
   const fileStem = s => String((s.rec ? s.rec.displayId || s.rec.id : s.upload.name.replace(IDS_IMG_EXT, "")) || "card").replace(/[^\w.-]+/g, "-");
   /* What the card's QR should carry, for the decode check: the token's /q/
      address, or a member's MEMQR token or member id. A design's QR binding is
@@ -669,60 +838,60 @@ function IdCardStudioPage({ setPage }) {
     const list = only ? [{ s: only, sheet: 0, slotN: 0 }] : inRange(1, nSheets);
     if (!list.length) return;
     if (!proof && !(await mintMissing(list.filter(x => x.s.rec && x.s.rec.kind === "member" && !x.s.rec.displayId).map(x => ({ rec: x.s.rec }))))) return;
+    farmGen.current++;
     xcancel.current = false;
-    setXjob({ i: 0, n: list.length, note: "Loading the export tools…" });
+    setXjob({ i: 0, n: list.length, note: "Getting ready" });
     let CE;
     try { CE = await loadVendor("cardExport"); } catch (_) { setXjob(null); return say("Couldn’t load the export tools. Check your connection and try again."); }
     const isPdf = format === "pdf";
+    const jobs = [];
+    list.forEach(x => { jobs.push({ s: x.s, face: "front" }); if (withBacks) jobs.push({ s: x.s, face: "back" }); });
+    const res = await drawFaces(jobs, { dpi, type: isPdf ? "jpeg" : "png", cancel: () => xcancel.current, onTick: (k, n) => setXjob({ i: k, n, note: "Drawing the cards" }) });
+    const cancelled = xcancel.current || !res;
+    const bad = new Set(res ? res.failed : []);
     const fronts = [], backsOut = [], files = [], failed = [], qrBad = [], ok = [];
     let qrSkipped = 0;
-    for (let i = 0; i < list.length; i++) {
-      if (xcancel.current) break;
-      // Each card is staged with its CURRENT record, so a member minted a moment ago prints their number.
-      const s0 = list[i].s, s = s0.rec ? Object.assign({}, s0, { rec: byKeyRef.current[s0.rec.key] || s0.rec }) : s0;
-      setXjob({ i, n: list.length, note: s.label });
-      try {
-        await stageSlot(s);
-        // Never rasterise the "couldn't draw" box as if it were the card: it lands in failed.
-        if (stageRef.current && stageRef.current.querySelector("[data-ids-failed]")) throw new Error("draw_failed");
-        const nodes = stageRef.current ? stageRef.current.querySelectorAll(".ids-x-face") : [];
-        const opt = { trimW_mm: G.cw, dpi, bleed_mm: 3, type: isPdf ? "image/jpeg" : "image/png", quality: 0.95 };
-        const f = await budget(CE.renderFace(nodes[0], opt), 30000);
-        const b = withBacks && nodes[1] ? await budget(CE.renderFace(nodes[1], opt), 30000) : null;
-        if (isPdf) { fronts.push(f); backsOut.push(b); }
-        else {
-          const stem = fileStem(s) + (only ? "" : "-" + String(i + 1).padStart(3, "0"));
-          files.push({ name: stem + "-front.png", bytes: CE.dataUrlToBytes(f.dataUrl) });
-          if (b) files.push({ name: stem + "-back.png", bytes: CE.dataUrlToBytes(b.dataUrl) });
-        }
-        const want = qrExpect(s);
-        if (verify && want !== null) {
-          const v = await CE.verifyQR(f.dataUrl, want);
-          if (v.reason === "no_decoder") qrSkipped++;
-          else if (!v.ok) qrBad.push({ name: s.label + (s.rec && s.rec.displayId ? " · " + s.rec.displayId : ""), reason: v.reason || "unreadable" });
-        }
-        ok.push(list[i]);
-      } catch (_) { failed.push(s.label + (s.rec && s.rec.displayId ? " · " + s.rec.displayId : "")); }
-      await new Promise(r => setTimeout(r, 0));
+    const per = withBacks ? 2 : 1;
+    for (let i = 0; res && i < list.length; i++) {
+      const s = curSlot(list[i].s), fi = i * per, bi = fi + 1;
+      const f = res.faces[fi], b = withBacks ? res.faces[bi] : null;
+      if (!f || bad.has(fi) || (withBacks && (!b || bad.has(bi)))) { failed.push(s.label + (s.rec && s.rec.displayId ? " · " + s.rec.displayId : "")); continue; }
+      const want = qrExpect(s);
+      if (verify && want !== null) {
+        setXjob({ i, n: list.length, note: "Checking every QR code" });
+        let v;
+        try {
+          const bmp = await createImageBitmap(new Blob([f.bytes], { type: isPdf ? "image/jpeg" : "image/png" }));
+          const cv = document.createElement("canvas"); cv.width = bmp.width; cv.height = bmp.height; cv.getContext("2d").drawImage(bmp, 0, 0);
+          v = await CE.verifyQRCanvas(cv, want);
+        } catch (_) { v = { ok: false, reason: "decode_failed" }; }
+        if (v.reason === "no_decoder") qrSkipped++;
+        else if (!v.ok) qrBad.push({ name: s.label + (s.rec && s.rec.displayId ? " · " + s.rec.displayId : ""), reason: v.reason || "unreadable" });
+      }
+      if (isPdf) { fronts.push(f); backsOut.push(b); }
+      else {
+        const stem = fileStem(s) + (only ? "" : "-" + String(i + 1).padStart(3, "0"));
+        files.push({ name: stem + "-front.png", bytes: f.bytes });
+        if (b) files.push({ name: stem + "-back.png", bytes: b.bytes });
+      }
+      ok.push(list[i]);
     }
-    setStage(null);
-    const cancelled = xcancel.current;
     if (!ok.length) { setXjob(null); setXresult({ format, made: 0, failed, qrBad, cancelled }); return; }
-    setXjob({ i: list.length, n: list.length, note: isPdf ? "Imposing the sheets…" : "Packing the ZIP…" });
+    setXjob({ i: list.length, n: list.length, note: isPdf ? "Imposing the sheets" : "Packing the ZIP" });
     const job = sheetKinds.map(k => IDS_KIND_PLURAL[k]).join(", ");
     let fileName = "";
     try {
       if (isPdf) {
         const pdf = await CE.buildImpositionPDF(fronts, { backs: withBacks ? backsOut : null, duplex: st.backs === "short" ? "short-edge" : "long-edge",
-          sheet: IDS_PAPERS[G.paper][0], trimW_mm: G.cw, trimH_mm: G.ch, bleed_mm: 3, safe_mm: 3, marks: true, layers: true, intent: "FOGRA39",
-          jobName: "NGG ID cards " + job + (proof ? " PROOF" : ""), date: new Date().toISOString().slice(0, 10) });
-        fileName = "id-cards-" + new Date().toISOString().slice(0, 10) + (proof ? "-proof" : "") + "-print.pdf";
+          sheet: IDS_PAPERS[G.paper][0], trimW_mm: G.cw, trimH_mm: G.ch, bleed_mm: IDS_FACE_BLEED, safe_mm: 3, marks: true, layers: true, intent: "FOGRA39",
+          jobName: "NGG ID cards " + job + (proof ? " PROOF" : ""), date: today() });
+        fileName = "id-cards-" + today() + (proof ? "-proof" : "") + "-print-shop.pdf";
         CE.download(pdf, fileName, "application/pdf");
       } else if (only) {
         files.forEach(f => CE.download(f.bytes, f.name, "image/png"));
         fileName = files.map(f => f.name).join(", ");
       } else {
-        fileName = "id-cards-" + new Date().toISOString().slice(0, 10) + "-png.zip";
+        fileName = "id-cards-" + today() + "-png.zip";
         CE.download(await CE.zipStore(files), fileName, "application/zip");
       }
     } catch (_) { setXjob(null); setXresult({ format, made: 0, failed: failed.concat(["The file couldn’t be assembled"]), qrBad, cancelled }); return; }
@@ -732,8 +901,6 @@ function IdCardStudioPage({ setPage }) {
     const runIds = only ? "" : await logPrinted({ items: ok, reason, output: isPdf ? "pdf" : "png", dpi, a: 1, b: nSheets });
     setXresult({ format, made: ok.length, failed, qrBad, qrSkipped, verify, cancelled, fileName, runIds: runIds || "", total: list.length });
   };
-  const byKeyRef = React.useRef(byKey);
-  byKeyRef.current = byKey;
 
   /* Warm the hosted QR cache, once, in the background (restored from the old
      Card Studio). Mail clients strip data: images, so an emailed ID needs a
@@ -785,7 +952,7 @@ function IdCardStudioPage({ setPage }) {
     runId: x.runId, at: x.startedAt ? new Date(x.startedAt).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "",
     design: x.templateName || (x.kind === "graphic" ? "External upload" : "Standard card"), version: x.templateVersion ? "v" + x.templateVersion : "",
     type: x.kind === "graphic" ? "external" : x.mode === "proof" ? "proof" : x.mode === "reprint" ? "reprint" : x.reason === IDS_REASON_LABEL.mixed ? "mixed" : "new",
-    cards: x.issued || x.requested || 0, failed: x.failed || 0, output: [x.output === "sheet" ? "Browser print" : x.output === "pdf" ? "Print-ready PDF" : x.output === "png" ? "PNG images" : x.output, x.dpi ? x.dpi + " dpi" : "", x.sheet].filter(Boolean).join(" · "),
+    cards: x.issued || x.requested || 0, failed: x.failed || 0, output: [x.output === "sheet" ? "Sheet PDF" : x.output === "pdf" ? "Print-ready PDF" : x.output === "png" ? "PNG images" : x.output, x.dpi ? x.dpi + " dpi" : "", x.sheet].filter(Boolean).join(" · "),
     by: x.actorName || "", kind: x.kind === "student" ? "summer" : x.kind, reprintable: x.kind !== "graphic", proof: x.mode === "proof",
   });
   const logRef = React.useRef(log);
@@ -868,8 +1035,8 @@ function IdCardStudioPage({ setPage }) {
     rotateSel: () => selCard && selCard.upload && setU(selCard.upload.uid, { rot: ((selCard.upload.rot || 0) + 90) % 360 }),
     toggleFitSel: () => selCard && selCard.upload && setU(selCard.upload.uid, { fit: selCard.upload.fit === "contain" ? "cover" : "contain" }),
     dropAt: (e, gi) => { e.preventDefault(); const k = e.dataTransfer.getData("text/plain"); if (k) reorder(k, gi); },
-    renderFace, checks, printBlock, startPrint, startExport, xjob, stopExport: () => { xcancel.current = true; },
-    pngSel: () => { const sl = selCard && slots.find(x => !x.pad && x.key === selCard.key); if (sl) runExport({ format: "png", dpi: st.dpi >= 300 ? st.dpi : 300, verify: false, reason: "proof", only: sl }); }, printTest: () => setPrintJob({ test: true, a: 1, b: 1 }), job, printNextBatch, stopJob: () => { setJob(null); say("Stopped. The sheets already out are logged."); },
+    renderFace, checks, printBlock, startPrint, startExport, xjob, warm, dpi: st.dpi, improve: { n: improveN, open: () => setImprove({ n: improveN, recs: improvable() }) }, stopExport: () => { xcancel.current = true; },
+    pngSel: () => { const sl = selCard && slots.find(x => !x.pad && x.key === selCard.key); if (sl) runExport({ format: "png", dpi: st.dpi >= 300 ? st.dpi : 300, verify: false, reason: "proof", only: sl }); }, printTest: () => runPrint({ test: true }), job, printNextBatch, stopJob: () => { setJob(null); say("Stopped. The sheets already out are logged."); },
   };
 
   const tabs = [["make", phone ? "Queue" : "Make cards", recs.filter(r => !isBlocked(r)).length], ["log", "Print log", null], ["lookup", phone ? "Look up" : "Look up a person", null]];
@@ -921,33 +1088,17 @@ function IdCardStudioPage({ setPage }) {
       {runOpen && <IdsRunDrawer run={runOpen} phone={phone} onClose={() => setRunOpen(null)} onReprint={reprintRun} onFailed={markRunFailed} onRetry={() => openRun(runOpen)}/>}
       {editPhoto && typeof PhotoEditor !== "undefined" && (
         <PhotoEditor target={{ subjectType: IDS_PHOTO_EDIT[editPhoto.kind], subjectId: editPhoto.id }} currentUrl={editPhoto.photoUrl} title={editPhoto.name}
-          onSaved={() => { say(editPhoto.name + "’s photo is updated"); _idsTplDone.clear(); load(); }} onClose={() => setEditPhoto(null)}/>
+          onSaved={() => { say(editPhoto.name + "’s photo is updated"); _idsTplDone.clear(); idsFaceForget(); load(); }} onClose={() => setEditPhoto(null)}/>
       )}
+      {improve && <IdsImproveDialog run={improve} onCancel={() => setImprove(null)} onStart={runImprove}/>}
+      {improveRes && <IdsImproveResult res={improveRes} onClose={() => setImproveRes(null)}/>}
       {xconfirm && <IdsExportDialog run={xconfirm} onCancel={() => setXconfirm(null)} onStart={runExport}/>}
       {xresult && <IdsExportResult res={xresult} onClose={() => setXresult(null)}/>}
       {toastNode}
-      {stage && (
-        <div className="ids-print-host" aria-hidden="true">
-          <div ref={stageRef}>
-            <div className="ids-x-face" style={{ width: G.cw + "mm", height: G.ch + "mm" }}>{renderFace(stage.s, "front")}</div>
-            {withBacks && <div className="ids-x-face" style={{ width: G.cw + "mm", height: G.ch + "mm" }}>{renderFace(stage.s, "back")}</div>}
-          </div>
-        </div>
-      )}
-
-      {printJob && (
-        <div className="ids-print-host" aria-hidden="true">
-          <div ref={hostRef}>
-            {printJob.test ? <IdsPrintSide G={G} slots={[]} sheetIdx={0} skip={0} face="front" backs="off" marks test renderFace={renderFace}/> : <>
-              {printJob.packing && <IdsPackingList nSheets={nSheets} from={printJob.a} to={printJob.b} proof={printJob.reason === "proof"}
-                pages={Array.from({ length: printJob.b - printJob.a + 1 }, (_, k) => {
-                  const p = printJob.a - 1 + k;
-                  return { n: p + 1, cards: inRange(p + 1, p + 1).map(x => ({ slot: x.slotN, name: x.s.label, id: x.s.rec ? (x.s.rec.displayId || "Assigned on print") : "Uploaded", centre: x.s.centre })) };
-                })}/>}
-              {Array.from({ length: printJob.b - printJob.a + 1 }, (_, k) => printJob.a - 1 + k).map(p => (st.backs !== "off" ? ["front", "back"] : ["front"]).map(f => (
-                <IdsPrintSide key={p + f} G={G} slots={slots} sheetIdx={p} skip={st.skip} face={f} backs={st.backs} marks={st.marks} proof={printJob.reason === "proof"} renderFace={renderFace}/>
-              )))}
-            </>}
+      {farm && (
+        <div className="ids-farm" aria-hidden="true">
+          <div ref={farmRef}>
+            {farm.jobs.map(j => <div key={j.key} className="ids-x-face" style={{ width: G.cw + "mm", height: G.ch + "mm" }}>{renderFace(j.s, j.face)}</div>)}
           </div>
         </div>
       )}

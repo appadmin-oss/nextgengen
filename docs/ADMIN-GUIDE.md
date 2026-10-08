@@ -1036,12 +1036,37 @@ nobody is marked as printed). The right column sets card size, paper,
 margins, order, backs and cut marks, and lists anything that would spoil the
 run. Red items must be fixed before *Print* works.
 
-**Printing.** The confirm lets you print everything, in batches (so a paper
-jam costs one batch), or only some sheets (to redo the ones that jammed).
-Print at 100%, not "fit to page". *Print an alignment test* first on a new
-printer and measure it with a ruler. After each run the studio asks which
-cards came out badly; tap them and they go straight back on the sheet as
-reprints, and the run in the log shows them as not printed.
+**Printing.** *Print* makes a **PDF of the sheet** and downloads it; it never
+opens the browser's print dialog. Open the PDF and print it at **Actual size
+(100%)**, not "fit to page" — the footer of every sheet says so, and which
+way to flip it for double-sided. The studio starts drawing the cards as soon
+as they are on the sheet (under the Print button: *Preparing in the
+background · 12 of 30*, then *Print-ready*), so pressing Print usually takes
+under a second. The confirm lets you print everything, in batches (so a paper
+jam costs one batch, one PDF each), or only some sheets (to redo the ones
+that jammed). *Print an alignment test* downloads a PDF of numbered slot
+outlines: print it first on a new printer and measure it with a ruler. After
+each run the studio asks which cards came out badly; tap them and they go
+straight back on the sheet as reprints, and the run in the log shows them as
+not printed.
+
+**Double-sided: long edge or short edge.** Choose the flip your printer
+does. *Long edge* (most printers) mirrors the backs left to right and they
+come out upright. *Short edge* puts each back in the opposite row and
+**upside down on the PDF** — that is correct: the printer turns the sheet top
+to bottom, and the back lands the right way up behind its front.
+
+**Improve photos.** *Improve photos* (above the sheet) applies one Cloudinary
+edit to everybody photographed on the sheet: focus on the face, centre, top
+or bottom, zoom, brighten, sharpen, and an optional plain grey background
+(that one uses Cloudinary credits, and is refused up front when they are
+used up). Nothing is generated — faces are reframed and adjusted, never
+redrawn. A photo stored on this site is uploaded to Cloudinary first. The
+result says how many were improved, how many already looked like that, and
+who could not be done and why; the cards on the sheet then redraw. It needs
+the **Content** permission and Cloudinary's keys in `api/config.php`. One
+person's photo is still edited with *Edit photo* on their card — members
+included now.
 
 **Print log** and **Look up a person** are tabs in the studio too: every run
 with the design it used, and every card ever issued to one printed ID.

@@ -383,7 +383,7 @@ Object.assign(CR_TAB_DEFS, {
             const src = CR_PG_DUTY_SRC[x.source] || [x.source || "—", "neutral"];
             return { key: x.centre, open: () => crPgDutyOpen(ctx, x), cells: [
               { k: "strong", t: x.centre },
-              x.volunteer ? { k: "person", t: x.volunteer.fullName, s: x.volunteer.role || "", photo: /^https?:\/\//.test(x.volunteer.photoUrl || "") ? x.volunteer.photoUrl : "" } : { k: "text", t: "Nobody" },
+              x.volunteer ? { k: "person", t: x.volunteer.fullName, s: x.volunteer.role || "", photo: nggPhotoSrc(x.volunteer.photoUrl) } : { k: "text", t: "Nobody" },
               { k: "status", t: src[0], tone: src[1] },
               x.completedAt ? { k: "status", t: "Closed · " + crNum(x.takenCount) + " present", tone: "ok" } : { k: "status", t: "Open", tone: "neutral" },
             ] };

@@ -83,6 +83,12 @@ const OVERRIDES = {
   'react': '18.3.1',
   'react-dom': '18.3.1',
   'react-konva': '18.2.10',
+  /* The ID Card Studio's face renderer. Measured against Chromium's own
+     screenshot of every card type at 300 dpi, it was the only renderer with no
+     pixel off (html2canvas: 5–6%, squashing letter-spaced text), and the
+     fastest (16–40 ms a face). It renders through the browser's own layout
+     engine via SVG foreignObject, so a card prints as the screen draws it. */
+  '@zumer/snapdom': '3.3.0',
 };
 
 /* Copied verbatim from the published tarball: package path → vendor filename. */
@@ -92,6 +98,7 @@ const COPY = [
   ['tui-image-editor', 'dist/tui-image-editor.min.css', 'tui-image-editor.min.css'],
   ['tui-color-picker', 'dist/tui-color-picker.min.js', 'tui-color-picker.min.js'],
   ['tui-color-picker', 'dist/tui-color-picker.min.css', 'tui-color-picker.min.css'],
+  ['@zumer/snapdom', 'dist/snapdom.js', 'snapdom.js'],
 ];
 
 const SHIMS = {
@@ -280,7 +287,7 @@ function build(outDir) {
   for (const [pkg] of Object.entries(PACKAGES).map(([k]) => [k])) {
     for (const cand of ['LICENSE', 'LICENSE.md', 'LICENSE.txt']) {
       const p = path.join(work, 'node_modules', pkg, cand);
-      if (fs.existsSync(p)) { fs.copyFileSync(p, path.join(LICENSES, pkg + '-LICENSE.txt')); break; }
+      if (fs.existsSync(p)) { fs.copyFileSync(p, path.join(LICENSES, pkg.replace(/^@/, '').replace(/\//g, '-') + '-LICENSE.txt')); break; }
     }
   }
   fs.rmSync(work, { recursive: true, force: true });

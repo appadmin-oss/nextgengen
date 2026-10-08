@@ -249,7 +249,7 @@ function IdsSheetCol({ M }) {
       {M.xjob && (
         <div className="ids-job" role="status">
           <IdsIcon name="file-arrow-down"/>
-          <span className="ids-grow">Exporting · {Math.min(M.xjob.i + 1, M.xjob.n)} of {M.xjob.n}{M.xjob.note ? " · " + M.xjob.note : ""}. Keep this tab in front; browsers slow down background tabs.<span className="ids-job-bar"><span style={{ width: (M.xjob.i / Math.max(1, M.xjob.n) * 100) + "%" }}/></span></span>
+          <span className="ids-grow">{M.xjob.note || (M.xjob.print ? "Preparing" : "Exporting")} · {Math.min(M.xjob.i, M.xjob.n)} of {M.xjob.n}<span className="ids-job-bar"><span style={{ width: (M.xjob.i / Math.max(1, M.xjob.n) * 100) + "%" }}/></span></span>
           <button type="button" className="ids-btn ids-btn--ghost-dark" onClick={M.stopExport}>Stop</button>
         </div>
       )}
@@ -263,6 +263,7 @@ function IdsSheetCol({ M }) {
         {M.backs !== "off" && <IdsSeg label="Side" size="sm" value={S.face} onChange={S.setFace} options={[["front", "Fronts"], ["back", "Backs"]]}/>}
         <span className="ids-stat">{idsN(M.nCards, "card")} · {idsN(S.count, "sheet")}{M.backs !== "off" ? " · double-sided" : ""}</span>
         <IdsSeg label="View" size="sm" value={S.overview ? "all" : "one"} onChange={v => S.setOverview(v === "all")} options={[["all", "All sheets", "squares-four"], ["one", "One sheet", "square"]]}/>
+        {M.improve.n > 0 && <button type="button" className="ids-btn ids-btn--sm" disabled={!!M.xjob} onClick={M.improve.open}><IdsIcon name="magic-wand"/>Improve photos</button>}
         {M.selCard && (
           <div className="ids-seltools" role="toolbar" aria-label={"Selected: " + M.selCard.label}>
             <span className="ids-seltools-name" title={M.selCard.label}>{M.selCard.label}</span>
@@ -549,12 +550,58 @@ function IdsSettings({ M }) {
         </section>
       </div>
       <div className="ids-set-foot">
-        <button type="button" className={"ids-btn ids-btn--print" + (M.printBlock ? " is-off" : "")} aria-disabled={!!M.printBlock || undefined} onClick={M.startPrint}>
+        <button type="button" className={"ids-btn ids-btn--print" + (M.printBlock ? " is-off" : "")} aria-disabled={!!M.printBlock || undefined} disabled={!!M.xjob} onClick={M.startPrint}>
           <IdsIcon name="printer"/>Print {idsN(M.nCards, "card")} · {idsN(M.sheet.count, "sheet")}
         </button>
+        {M.nCards > 0 && !M.printBlock && (
+          <p className="ids-ready" role="status" aria-live="polite">
+            {M.warm.busy ? "Preparing in the background · " + M.warm.ready + " of " + M.warm.total + " faces"
+              : M.warm.total && M.warm.ready >= M.warm.total ? "Print-ready · makes a PDF at " + M.dpi + " dpi" : "Makes a PDF at " + M.dpi + " dpi"}
+          </p>
+        )}
         <button type="button" className="ids-btn ids-btn--34" onClick={M.startExport} disabled={!!M.xjob}><IdsIcon name="file-pdf"/>Export files for a print shop</button>
-        <button type="button" className="ids-btn ids-btn--34" onClick={M.printTest} disabled={!G.per}>Print an alignment test</button>
+        <button type="button" className="ids-btn ids-btn--34" onClick={M.printTest} disabled={!G.per || !!M.xjob}>Print an alignment test</button>
       </div>
     </aside>
+  );
+}
+
+/* ── Improve photos: one Cloudinary edit for everybody on the sheet ─────────
+   The single-photo editor's controls, applied to every photographed person on
+   the sheet. The count is shown before anything runs, and the result says who
+   was changed, who already looked like this, and who could not be. */
+const IDS_FOCUS = [["face", "Face"], ["center", "Centre"], ["north", "Top"], ["south", "Bottom"]];
+function IdsImproveDialog({ run, onCancel, onStart }) {
+  const [spec, setSpec] = React.useState({ gravity: "face", zoom: 1, brighten: false, sharpen: false, removeBg: false });
+  const set = (k, v) => setSpec(x => Object.assign({}, x, { [k]: v }));
+  return (
+    <IdsDialog alert width={500} title={"Improve " + idsN(run.n, "photo") + "?"}
+      sub="Cloudinary reframes and cleans each photo, then the cards on the sheet redraw. A photo stored on this site is uploaded to Cloudinary first."
+      onClose={onCancel}
+      footer={<>
+        <button type="button" className="ids-btn" onClick={onCancel}>Cancel</button>
+        <button type="button" className="ids-btn ids-btn--primary" data-autofocus onClick={() => onStart(spec)}>Improve {idsN(run.n, "photo")}</button>
+      </>}>
+      <IdsSeg label="Focus on" value={spec.gravity} onChange={v => set("gravity", v)} options={IDS_FOCUS}/>
+      <IdsNum id="ids-imp-zoom" inline label="Zoom" help="1 keeps the whole photo; higher crops in on the focus" value={spec.zoom} min={1} max={2.5} step={0.05} onChange={v => set("zoom", v)}/>
+      <IdsSwitch id="ids-imp-bright" on={spec.brighten} onChange={v => set("brighten", v)} label="Brighten" help="Lifts dark, under-exposed photos"/>
+      <IdsSwitch id="ids-imp-sharp" on={spec.sharpen} onChange={v => set("sharpen", v)} label="Sharpen" help="For soft or slightly blurred photos"/>
+      <IdsSwitch id="ids-imp-bg" on={spec.removeBg} onChange={v => set("removeBg", v)} label="Plain grey background" help="Removes the background (uses Cloudinary credits)"/>
+      <p className="ids-note"><span>Every photo also gets Cloudinary’s automatic clean-up and a passport-shaped crop. Nothing is generated: faces are reframed and adjusted, never redrawn.</span></p>
+    </IdsDialog>
+  );
+}
+
+const IDS_IMPROVE_WHY = { no_photo: "no photo on file", photo_missing: "the stored photo file is missing", upload_failed: "Cloudinary didn’t accept the upload",
+  not_found: "no longer on the lists", out_of_scope: "outside your centres", cloudinary_not_configured: "Cloudinary isn’t set up" };
+function IdsImproveResult({ res, onClose }) {
+  return (
+    <IdsDialog width={500} title={res.applied ? "Photos improved" : "No photo was changed"} onClose={onClose}
+      footer={<button type="button" className="ids-btn ids-btn--primary" data-autofocus onClick={onClose}>Done</button>}>
+      {res.applied > 0 && <IdsCheck tone="ok" text={idsN(res.applied, "photo") + " improved. The cards on the sheet are redrawing."}/>}
+      {res.unchanged > 0 && <IdsCheck tone="info" text={idsN(res.unchanged, "photo") + " already looked like this, so " + (res.unchanged === 1 ? "it was" : "they were") + " left as " + (res.unchanged === 1 ? "it was." : "they were.")}/>}
+      {res.failed.length > 0 && <IdsCheck tone="bad" text={idsN(res.failed.length, "photo") + " couldn’t be improved:"}/>}
+      {res.failed.length > 0 && <ul className="ids-people" tabIndex={0} aria-label="Photos not improved">{res.failed.map((f, i) => <li key={i}>{f.name} · {IDS_IMPROVE_WHY[f.error] || f.error}</li>)}</ul>}
+    </IdsDialog>
   );
 }

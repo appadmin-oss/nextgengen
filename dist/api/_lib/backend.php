@@ -528,6 +528,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.photos.requestMissing' => 'admin_photos_request_missing',
             'admin.photo.reject'        => 'photo_reject',
             'admin.photo.edit'          => 'admin_photo_edit',
+            'admin.photo.edit.bulk'     => 'admin_photo_edit_bulk',
             'admin.photo.replace'       => 'admin_photo_replace',
             'admin.application.convert' => 'admin_application_convert',
             'admin.application.update'  => 'admin_application_update',

@@ -1072,7 +1072,7 @@ function MemberIDCard(props) {
 
   var name = String(m.fullName || "").trim() || "NGG Member";
   var initials = name.split(/\s+/).map(function (w) { return w[0]; }).join("").slice(0, 2).toUpperCase();
-  var hasPhoto = m.photoUrl && /^https?:\/\//.test(String(m.photoUrl));
+  var hasPhoto = !!nggPhotoSrc(m.photoUrl);
   var payload = _ngMemberQrPayload(m);
   var validYear = String(new Date().getFullYear());
 
@@ -1098,7 +1098,7 @@ function MemberIDCard(props) {
     ]),
     h("div", { key: "bd", style: { display: "flex", gap: 14, alignItems: "center", padding: "16px 18px" } }, [
       hasPhoto
-        ? h("img", { key: "ph", src: m.photoUrl, alt: "", crossOrigin: "anonymous", style: { width: 74, height: 74, borderRadius: 12, objectFit: "cover", border: "2px solid " + GOLD } })
+        ? h("img", { key: "ph", src: nggPhotoSrc(m.photoUrl), alt: "", crossOrigin: "anonymous", style: { width: 74, height: 74, borderRadius: 12, objectFit: "cover", border: "2px solid " + GOLD } })
         : h("div", { key: "ph", style: { width: 74, height: 74, borderRadius: 12, background: NAVY, color: GOLD, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 24 } }, initials || "★"),
       h("div", { key: "info", style: { minWidth: 0 } }, [
         h("div", { key: "n", style: { fontWeight: 800, fontSize: 17, lineHeight: 1.15 } }, name),
@@ -1189,7 +1189,7 @@ function NggcMemberCard(props) {
   var qrUrl = props.qrUrl || "";
   var nm = nggcName(m), disc = nggcDisciplines(m), did = nggcDisplayId(m);
   var role = String(m.role || (m.tier && m.tier.name) || "MEMBER").toUpperCase();
-  var photo = (m.photoUrl && /^https?:\/\//.test(String(m.photoUrl))) ? m.photoUrl : "";
+  var photo = nggPhotoSrc(m.photoUrl);
 
   /* CAP was #9AA0AC, which measures 2.63:1 on white — the same failure the
      template preflight refuses, shipped on the card a member downloads from

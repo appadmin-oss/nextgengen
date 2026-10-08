@@ -46,6 +46,19 @@ function loadChromium() {
   for (const m of [process.env.PLAYWRIGHT_MODULE, 'playwright-core', 'playwright'].filter(Boolean)) { try { return require(m).chromium; } catch (_) {} }
   return null;
 }
+/* What a downloaded PDF holds, read from its (uncompressed) object dictionaries. */
+function pdfFacts(buf) {
+  const t = buf.toString('latin1');
+  const widths = [...t.matchAll(/\/Subtype \/Image[^>]*?\/Width (\d+)/g)].map(m => +m[1]);
+  return { ok: t.startsWith('%PDF-'), pages: (t.match(/\/Type \/Page\b(?!s)/g) || []).length,
+    a4: /\/MediaBox \[0 0 595\.2\d* 841\.8\d*\]/.test(t), images: widths.length, minImageW: widths.length ? Math.min(...widths) : 0,
+    // Page text lives in Flate streams: inflate the ones that are not images.
+    text: [...t.matchAll(/\/FlateDecode[^>]*>>\s*stream\r?\n/g)].map(m => {
+      const start = m.index + m[0].length, end = t.indexOf('endstream', start);
+      try { return require('zlib').inflateSync(buf.subarray(start, end)).toString('latin1'); } catch (_) { return ''; }
+    }).join('\n') };
+}
+
 let server, browser, passed = 0, failed = 0;
 const chk = (m, c) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m); } };
 function cleanup() {
@@ -135,6 +148,15 @@ function cleanup() {
     await P.click('.ids-fchip:has-text("New")');
     await P.click('.ids-btn--outline:has-text("Add 10 to the sheet")');
     chk('"Add 10 to the sheet" adds them, with Undo', await toastHas(P, /10 cards added\s*Undo/));
+    // Improve photos: one Cloudinary edit for the whole sheet, the count asked before anything runs.
+    const imp = await P.$('button:has-text("Improve photos")');
+    chk('the sheet offers to improve its photos in one go', !!imp);
+    if (imp) {
+      await imp.click(); await P.waitForSelector('[role=alertdialog]');
+      chk('…naming how many photos before anything runs', /Improve \d+ photos?\?/.test(await P.innerText('[role=alertdialog]')));
+      await P.click('[role=alertdialog] .ids-btn--primary');
+      chk('…and with no Cloudinary keys it says so, rather than failing vaguely', await toastHas(P, /Cloudinary isn’t set up on this site/));
+    }
     await P.waitForTimeout(300);
     chk('the sheet is A4 at 3 × 3, so 10 cards are 2 sheets', /Sheet 1 of 2/.test(await P.innerText('.ids-pager')) && /9 cards/.test(await P.innerText('.ids-perline')));
     chk('…each slot draws the real member card', (await P.$$('.ids-slot.is-card')).length === 9 && (await P.$$('.ids-slot.is-card .ids-face-rec')).length === 9);
@@ -185,16 +207,19 @@ function cleanup() {
     chk('the Proof scenario sets 150 dpi and watermarks every slot', (await P.$eval('.ids-set .ids-field:has-text("Image quality") select', s => s.value)) === '150' && (await P.$$('.ids-slot-proof')).length > 0);
     await P.click('.ids-scen-btn:has-text("New intake")');
 
-    // Print: confirm, the print window, the log, the queue.
+    // Print: confirm, the PDF, the log, the queue. Print never opens the browser's print dialog.
     await P.click('.ids-btn--print');
     await P.waitForSelector('[role=alertdialog]');
     chk('the confirm asks, and sums up the run', /Print 10 cards\?/.test(await P.innerText('[role=alertdialog]')) && /2 × A4/.test(await P.innerText('.ids-sum')));
-    const [win] = await Promise.all([P.context().waitForEvent('page'), P.click('[role=alertdialog] .ids-btn--primary')]);
-    await win.waitForLoadState('domcontentloaded');
-    await win.waitForTimeout(600);
-    const pw = await win.evaluate(() => ({ css: document.querySelector('style').textContent, pages: document.querySelectorAll('.ids-pg').length, slots: document.querySelectorAll('.ids-ps').length, list: !!document.querySelector('.ids-pg--list') }));
-    chk('the print window is sized to the paper in mm, with a packing list and 2 sheets of 10 cards', /@page\{size:210mm 297mm;margin:0\}/.test(pw.css) && pw.list && pw.pages === 3 && pw.slots === 10);
-    await win.close();
+    const double = (await P.$eval('.ids-radio[aria-checked="true"]', b => b.innerText)).startsWith('Double');
+    let popped = false; const onPop = () => { popped = true; }; P.context().on('page', onPop);
+    const [dl] = await Promise.all([P.waitForEvent('download', { timeout: 120000 }), P.click('[role=alertdialog] .ids-btn--primary')]);
+    const pdf = pdfFacts(fs.readFileSync(await dl.path()));
+    P.context().off('page', onPop);
+    chk('Print makes a PDF, with no print window', /^id-cards-\d{4}-\d{2}-\d{2}\.pdf$/.test(dl.suggestedFilename()) && pdf.ok && !popped);
+    chk('…A4, a packing list and 2 sheets of 10 cards' + (double ? ', each with its back' : ''),
+      pdf.a4 && pdf.pages === 1 + 2 * (double ? 2 : 1) && pdf.images === 10 * (double ? 2 : 1) && /Packing list/.test(pdf.text));
+    chk('…every face drawn at the print resolution chosen, with bleed', pdf.minImageW >= Math.floor((53.98 + 6) / 25.4 * 300) - 2);
     chk('it is logged as a run', await toastHas(P, /logged as CRUN-/) && php(`echo db_row("SELECT COUNT(*) c FROM card_runs")['c'];`) === '2');
     chk('the member with no ID number was given one first, from the member series', /^\d{3}-\d{3,}$/.test(php(`echo db_row("SELECT displayId FROM members WHERE memberId = 'NGG-IDS-10'")['displayId'];`)));
     await P.waitForSelector('.ids-dialog:has-text("Did all 10 print properly?")', { timeout: 10000 });
@@ -236,10 +261,8 @@ function cleanup() {
     await P.click('.ids-btn--print');
     await P.waitForSelector('[role=alertdialog]');
     chk('the confirm names the design', /Club card v2/.test(await P.innerText('.ids-sum')));
-    const [win2] = await Promise.all([P.context().waitForEvent('page'), P.click('[role=alertdialog] .ids-btn--primary')]);
-    await win2.waitForLoadState('domcontentloaded');
-    chk('the print carries the drawn design', await win2.evaluate(() => document.querySelectorAll('.ids-ps img.ids-face-tpl').length) >= 1);
-    await win2.close();
+    const [dl2] = await Promise.all([P.waitForEvent('download', { timeout: 120000 }), P.click('[role=alertdialog] .ids-btn--primary')]);
+    chk('the print carries the drawn design', pdfFacts(fs.readFileSync(await dl2.path())).images >= 1);
     await toastHas(P, /logged as CRUN-/);
     chk('…and the run records that design and its version', php(`$r = db_row("SELECT templateId, templateVersion FROM card_runs ORDER BY id DESC LIMIT 1"); echo $r['templateId'] . '@' . $r['templateVersion'];`) === 'TPL-IDS-1@2');
     await P.context().close();
@@ -249,6 +272,7 @@ function cleanup() {
     await Q.waitForSelector('.ids-kpis', { timeout: 20000 });
     chk('/cards forwards to /club/id-cards', new URL(Q.url()).pathname === '/club/id-cards');
     chk('on a phone it is a Queue — no sheet, no settings', (await Q.innerText('.ids-tab.is-on')).startsWith('Queue') && !(await Q.$('.ids-sheet')) && !(await Q.$('.ids-set')));
+
     chk('…with the KPIs and the blocked count in red', /Blocked/.test(await Q.innerText('.ids-kpis')) && (await Q.$eval('.ids-kpi.is-bad b', b => b.textContent)) === '2');
     chk('nothing scrolls sideways', await Q.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     await Q.context().close();

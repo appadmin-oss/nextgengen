@@ -7917,6 +7917,72 @@ chk('admin.photo.edit re-crops a live student photo (no stacked transforms)', (f
     return strpos($now, 'g_center') !== false && strpos($now, 'c_crop,g_center,w_0.833') !== false && strpos($now, 'z_') === false
         && strpos($now, 'g_face,w_600,h_750/c_fill') === false && substr_count($now, '/upload/') === 1 && strpos($now, '/v17/') !== false;
 })());
+/* ── Cloudinary for photos stored on this site, and in bulk ─────────────── */
+$GLOBALS['__pe_png'] = (function () {   // a real photo-sized JPEG: the store refuses a 1-pixel image as unreadable
+    $im = imagecreatetruecolor(300, 375); imagefill($im, 0, 0, imagecolorallocate($im, 90, 140, 200));
+    imagefilledellipse($im, 150, 150, 120, 150, imagecolorallocate($im, 140, 90, 60));
+    ob_start(); imagejpeg($im, null, 85); $b = ob_get_clean();
+    return 'data:image/jpeg;base64,' . base64_encode($b);
+})();
+$GLOBALS['__pe_cfg'] = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+$GLOBALS['__pe_on'] = function () { $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'demo', 'api_key' => '1', 'api_secret' => 'testsecret', 'folder' => 'ngg'];
+    $GLOBALS['__pe_uploads'] = []; $GLOBALS['__cloudinary_upload_mock'] = function ($file, $folder) { $GLOBALS['__pe_uploads'][] = [$file, $folder]; return 'https://res.cloudinary.com/demo/image/upload/v1/' . $folder . '/u' . count($GLOBALS['__pe_uploads']) . '.jpg'; }; };
+$GLOBALS['__pe_off'] = function () { $GLOBALS['CONFIG']['cloudinary'] = $GLOBALS['__pe_cfg']; unset($GLOBALS['__cloudinary_upload_mock']); };
+chk('a photo stored on this site is uploaded to Cloudinary once, then edited — no longer "not editable"', (function () {
+    ($GLOBALS['__pe_on'])();
+    $st = photo_store_put($GLOBALS['__pe_png']); $local = photo_store_relativise((string)($st['url'] ?? ''));
+    db_update('members', ['photoUrl' => $local], ['memberId' => 'NGG-2025-0001']);
+    $r = backend_dispatch('admin.photo.edit', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'member', 'subjectId' => 'NGG-2025-0001', 'spec' => ['gravity' => 'face', 'brighten' => true]]);
+    $now = (string)db_row('SELECT photoUrl FROM members WHERE memberId = ?', ['NGG-2025-0001'])['photoUrl'];
+    $up = $GLOBALS['__pe_uploads'];
+    ($GLOBALS['__pe_off'])();
+    return $local !== '' && !empty($r['ok']) && count($up) === 1 && strpos($up[0][0], 'data:image/jpeg;base64,') === 0 && $up[0][1] === 'ngg/photos'
+        && strpos($now, 'https://res.cloudinary.com/demo/image/upload/') === 0 && strpos($now, 'e_brightness:18') !== false;  // and the MEMBER record got it
+})());
+chk('with no Cloudinary keys, an edit says so instead of failing vaguely', (function () {
+    $keep = $GLOBALS['CONFIG']['cloudinary'] ?? null; $GLOBALS['CONFIG']['cloudinary'] = [];
+    $st = photo_store_put($GLOBALS['__pe_png']); db_update('members', ['photoUrl' => photo_store_relativise((string)$st['url'])], ['memberId' => 'NGG-2025-0001']);
+    $r = backend_dispatch('admin.photo.edit', ['requesterId' => 'NGG-2025-0099', 'subjectType' => 'member', 'subjectId' => 'NGG-2025-0001', 'spec' => []]);
+    $b = backend_dispatch('admin.photo.edit.bulk', ['requesterId' => 'NGG-2025-0099', 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-2025-0001']], 'spec' => []]);
+    $GLOBALS['CONFIG']['cloudinary'] = $keep;
+    return ($r['error'] ?? '') === 'cloudinary_not_configured' && ($b['error'] ?? '') === 'cloudinary_not_configured';
+})());
+chk('bulk photo edit: per-row verdicts, duplicates once, unknown named, ONE audit event, unchanged on a re-run', (function () {
+    ($GLOBALS['__pe_on'])();
+    $st = photo_store_put($GLOBALS['__pe_png']); db_update('members', ['photoUrl' => photo_store_relativise((string)$st['url'])], ['memberId' => 'NGG-2025-0001']);
+    db_update('summer_students', ['photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v17/ngg/headshot/abc.jpg'], ['studentId' => 'SUM-R-1']);
+    $items = [['subjectType' => 'member', 'subjectId' => 'NGG-2025-0001'], ['subjectType' => 'student', 'subjectId' => 'SUM-R-1'],
+        ['subjectType' => 'member', 'subjectId' => 'NGG-2025-0001'], ['subjectType' => 'volunteer', 'subjectId' => 'NOBODY-X']];
+    $a0 = (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'photo.edited.bulk'")['c'];
+    $r = backend_dispatch('admin.photo.edit.bulk', ['requesterId' => 'NGG-2025-0099', 'items' => $items, 'spec' => ['gravity' => 'center', 'sharpen' => true]]);
+    $a1 = (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'photo.edited.bulk'")['c'];
+    $again = backend_dispatch('admin.photo.edit.bulk', ['requesterId' => 'NGG-2025-0099', 'items' => array_slice($items, 0, 2), 'spec' => ['gravity' => 'center', 'sharpen' => true]]);
+    $uploads = count($GLOBALS['__pe_uploads']);
+    ($GLOBALS['__pe_off'])();
+    $bad = array_values(array_filter($r['results'] ?? [], fn($x) => empty($x['ok'])));
+    return !empty($r['ok']) && $r['ran'] === 3 && $r['applied'] === 2 && $r['failed'] === 1 && ($bad[0]['error'] ?? '') === 'not_found'
+        && $a1 === $a0 + 1 && $uploads === 1                       // the local photo uploaded once; the Cloudinary one never
+        && !empty($again['ok']) && $again['unchanged'] === 2 && $again['applied'] === 0;
+})());
+chk('bulk photo edit: capped, the cap named; a bad row refuses the whole run before any write', (function () {
+    ($GLOBALS['__pe_on'])();
+    $before = (string)db_row('SELECT photoUrl FROM summer_students WHERE studentId = ?', ['SUM-R-1'])['photoUrl'];
+    $many = backend_dispatch('admin.photo.edit.bulk', ['requesterId' => 'NGG-2025-0099', 'items' => array_fill(0, PHOTO_EDIT_BULK_MAX + 1, ['subjectType' => 'student', 'subjectId' => 'SUM-R-1']), 'spec' => []]);
+    $bad = backend_dispatch('admin.photo.edit.bulk', ['requesterId' => 'NGG-2025-0099', 'items' => [['subjectType' => 'student', 'subjectId' => 'SUM-R-1'], ['subjectType' => 'alien', 'subjectId' => 'X']], 'spec' => ['gravity' => 'north']]);
+    $after = (string)db_row('SELECT photoUrl FROM summer_students WHERE studentId = ?', ['SUM-R-1'])['photoUrl'];
+    ($GLOBALS['__pe_off'])();
+    return ($many['error'] ?? '') === 'too_many' && ($many['max'] ?? 0) === PHOTO_EDIT_BULK_MAX
+        && ($bad['error'] ?? '') === 'bad_item' && ($bad['index'] ?? -1) === 1 && $before === $after;
+})());
+chk('bulk background removal is refused up front when Cloudinary credits are out, not half-applied', (function () {
+    ($GLOBALS['__pe_on'])();
+    $keep = setting_raw('cloudinary_credits'); setting_set('cloudinary_credits', 'exhausted', 'system');
+    $r = backend_dispatch('admin.photo.edit.bulk', ['requesterId' => 'NGG-2025-0099', 'items' => [['subjectType' => 'student', 'subjectId' => 'SUM-R-1']], 'spec' => ['removeBg' => true]]);
+    setting_set('cloudinary_credits', $keep === null || $keep === '' ? 'ok' : $keep, 'system');
+    ($GLOBALS['__pe_off'])();
+    return ($r['error'] ?? '') === 'credits_exhausted';
+})());
+chk('bulk photo edit is gated from non-staff', (backend_dispatch('admin.photo.edit.bulk', ['requesterId' => 'NGG-2025-0001', 'items' => [['subjectType' => 'student', 'subjectId' => 'SUM-R-1']], 'spec' => []])['error'] ?? '') === 'forbidden');
 /* ── Desk password expiry (fails CLOSED, unlike rotation) ───────────────── */
 chk('an expired desk password is refused even when it is the right one', (function () {
     $c = backend_dispatch('admin.gates.create', ['requesterId' => 'NGG-2025-0099', 'name' => 'Expiring desk', 'generate' => true, 'expiryDays' => 7]);

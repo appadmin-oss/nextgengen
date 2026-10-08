@@ -51,7 +51,7 @@ async function crMemQueued(p) {
    everybody having joined on the day of the import. */
 function crMemJoined(m) { return m.joinDate ? crDate(m.joinDate) : m.createdAt ? crDate(m.createdAt) : ""; }
 function crMemStatusLabel(s) { const f = CR_MEM_STATUS.find(x => x[0] === s); return f ? f[1] : (s || "—"); }
-function crMbPhoto(u) { return /^https?:\/\//.test(u || "") ? u : ""; }
+function crMbPhoto(u) { return nggPhotoSrc(u); }
 
 /* The editable fields, once: the Add form and the Edit form are the same form. */
 function crMemFields(centres, divisions) {
