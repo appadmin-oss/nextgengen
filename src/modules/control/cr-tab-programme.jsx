@@ -993,7 +993,9 @@ function crPgTrnDetailBlocks(d, ctx) {
   const games = [];
   keys.forEach(k => rounds[k].forEach(m => games.push(Object.assign({ key: k }, m))));
   const openGames = games.filter(m => m.status === "active" || m.status === "invited").length;
-  const draws = games.filter(m => m.result === "draw" && live);
+  /* A draw already replayed has a later game between the same two in the same round; it is not offered twice. */
+  const replayed = m => games.some(x => x.key === m.key && x.matchId !== m.matchId && x.a.id === m.b.id && x.b.id === m.a.id && x.status !== "complete");
+  const draws = games.filter(m => m.result === "draw" && live && !replayed(m));
   const entrants = [];
   Object.keys(centres).sort().forEach(c => centres[c].forEach(p => entrants.push(Object.assign({ centre: c }, p))));
   const entered = entrants.map(p => p.playerId);
@@ -1012,10 +1014,12 @@ function crPgTrnDetailBlocks(d, ctx) {
   if (draws.length) out.push({ type: "table", span: 6, title: crPlural(draws.length, "drawn game") + " to replay", sub: "A draw knocks nobody out. Replaying swaps the colours.", nosel: true,
     cols: ["Game", "Centre", "Round"],
     rows: draws.map(m => ({ key: "d" + m.matchId, open: () => ctx.drawer({ title: m.a.name + " v " + m.b.name, sub: crPgRoundLabel(m.key) + " · " + (m.centre || ""), fields: [["Result", "Drawn"], ["Centre", m.centre]],
-      actions: [{ l: "Replay", primary: true, run: () => crPgTrnReplay(ctx, t, m), disabled: !ctx.can("people") }] }), cells: [
+      actions: [{ l: "Replay", primary: true, run: () => crPgTrnReplay(ctx, t, m), disabled: !ctx.can("people"), why: ctx.can("people") ? undefined : "Replaying a game needs the people permission." }] }), cells: [
       { k: "strong", t: m.a.name + " v " + m.b.name }, { k: "text", t: m.centre || "—" }, { k: "text", t: crPgRoundLabel(m.key) },
     ] })) });
-  out.push({ type: "custom", span: 6, title: "Standings and pairings", render: () => <CrPgTrnTables id={t.tournamentId}/> });
+  const cn = Object.keys(centres).sort();
+  if (cn.length > 1) out.push({ type: "bars", span: 2, title: "Still in, by bracket", rows: cn.map(c => [(c || "No centre") + " · of " + crNum(centres[c].length), centres[c].filter(p => p.status === "active").length]), empty: "Nobody entered." });
+  out.push({ type: "custom", span: cn.length > 1 ? 4 : 6, title: "Standings and pairings", render: () => <CrPgTrnTables id={t.tournamentId}/> });
   const canEdit = t.status === "open" && ctx.can("people");
   out.push({ type: "table", span: 6, title: "Entrants", sub: "Grouped by the bracket they play in." + (t.status === "open" ? " Withdrawing is possible until round one is drawn." : ""),
     cols: ["Player", "Centre", "Standing"],
@@ -1029,14 +1033,16 @@ function crPgTrnDetailBlocks(d, ctx) {
     search: "Search entrants", filters: ["Centre", "Standing"], nosel: !canEdit,
     bulk: canEdit ? [{ l: "Withdraw", max: 200, run: async keys => crPgTrnEach(ctx, keys, id => NGGApi.admin.tournaments.withdraw(t.tournamentId, id), "withdrawn") }] : [],
     emptyText: t.status === "open" ? "Nobody entered yet. Add players below, or let them enter from the chess screen." : "Nobody entered." });
-  if (canEdit) {
-    const pool = (d.pool || []).filter(m => entered.indexOf(m.memberId) < 0);
-    out.push({ type: "table", span: 6, title: "Add players", sub: "Active " + (t.programme === "summer" ? "Summer School" : "NGG") + " members not yet entered" + (d.poolTotal > (d.pool || []).length ? " — the first " + crNum((d.pool || []).length) + " of " + crNum(d.poolTotal) + "; search to narrow" : "") + ". Select them and press Enter.",
-      cols: ["Member", "Centre"],
-      rows: pool.map(m => ({ key: m.memberId, cells: [{ k: "strong", t: m.fullName || m.memberId, s: m.displayId || m.memberId }, { k: "text", t: m.centre || "No centre" }] })),
-      search: "Search by name", filters: ["Centre"],
-      bulk: [{ l: "Enter", max: 200, run: async keys => crPgTrnEach(ctx, keys, id => NGGApi.admin.tournaments.enter(t.tournamentId, id), "entered") }],
-      emptyText: "Nobody left to add." });
+  if (canEdit && d.pool) {
+    out.push({ type: "table", span: 6, title: "Add players", sub: "Active " + (t.programme === "summer" ? "Summer School" : "NGG") + " members. Select them and press Enter; anyone already in is reported, not entered twice.",
+      cols: ["Member", "Centre", "Entry"], server: d.pool, search: "Search by name, ID or email",
+      filters: (d.centres || []).length ? [{ id: "centre", l: "Centre", opts: d.centres.map(c => ({ v: c, l: c })) }] : [],
+      bulk: [{ l: "Enter", max: 200, run: async keys => {
+        const fresh = keys.filter(k => entered.indexOf(k) < 0);
+        if (!fresh.length) { ctx.toast("They are already in."); return false; }
+        return crPgTrnEach(ctx, fresh, id => NGGApi.admin.tournaments.enter(t.tournamentId, id), "entered" + (keys.length > fresh.length ? " (" + crNum(keys.length - fresh.length) + " already in)" : ""));
+      } }],
+      emptyText: "No active " + (t.programme === "summer" ? "Summer School" : "NGG") + " members to add." });
   }
   if (games.length) out.push({ type: "table", span: 6, title: "Games", nosel: true, sortInit: null,
     cols: ["Round", "White", "Black", "Centre", "Result"],
@@ -1061,12 +1067,27 @@ Object.assign(CR_TAB_DEFS, {
       if (v) {
         const b = await NGGApi.admin.tournaments.bracket(v);
         const t = b.tournament;
-        let pool = [], poolTotal = 0;
+        /* Who can still be added: searched and paged ON THE SERVER, so a search
+           reaches every active member of the programme, not the first page of
+           them (v1 drew 200 and filtered those). Made once per load — a fresh
+           server object per render is an infinite fetch loop. */
+        let pool = null, centres = [];
         if (t.status === "open") {
-          const r = await NGGApi.admin.members.list({ status: "active", type: t.programme === "summer" ? "Summer" : "NGG", page: 1, pageSize: 200 }).catch(() => ({ members: [] }));
-          pool = r.members || []; poolTotal = r.total || pool.length;
+          const cs = await NGGApi.admin.registration.centres().catch(() => ({ centres: [] }));
+          centres = (cs.centres || []).filter(c => c.status !== "retired").map(c => c.name).filter(Boolean).sort((a, x) => a.localeCompare(x));
+          const inn = {};
+          Object.keys(b.centres || {}).forEach(c => (b.centres[c] || []).forEach(p => { inn[p.playerId] = true; }));
+          const type = t.programme === "summer" ? "Summer" : "NGG";
+          pool = { fetch: async ({ q, filters, page, pageSize }) => {
+            const r = await NGGApi.admin.members.list({ status: "active", type, q, centre: (filters && filters.centre) || "", page: page + 1, pageSize });
+            return { total: r.total || 0, rows: (r.members || []).map(m => ({ key: m.memberId, cells: [
+              { k: "strong", t: m.fullName || m.memberId, s: m.displayId || m.memberId },
+              { k: "text", t: m.centre || "No centre" },
+              inn[m.memberId] ? { k: "status", t: "Entered", tone: "ok" } : !m.centre ? { k: "status", t: "No centre — can’t be entered", tone: "warn" } : { k: "status", t: "Not entered", tone: "neutral" },
+            ] })) };
+          } };
         }
-        return { mode: "one", bracket: b, pool, poolTotal };
+        return { mode: "one", bracket: b, pool, centres };
       }
       const r = await NGGApi.admin.tournaments.list();
       return { mode: "list", tournaments: r.tournaments || [] };
