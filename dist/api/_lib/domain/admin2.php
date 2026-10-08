@@ -894,6 +894,15 @@ function admin_newsletter_send(array $p): array {
 }
 
 // ── Contact messages ─────────────────────────────────────────────────────────
+/** The longest reply the inbox sends. A reply, not a newsletter. */
+const CONTACT_REPLY_MAX = 5000;
+
+/**
+ * The contact inbox. Each message carries its conversation — every reply sent
+ * from the Control Room, oldest first — and how many OTHER messages the same
+ * address has sent, so whoever opens it knows whether this is a first contact
+ * or the fourth. Both are one grouped query each, never one per message.
+ */
 function admin_contact_list(array $p): array {
     $g = admin_cap_gate($p, 'inbox'); if (!$g['ok']) return $g;
     $where = []; $params = [];
@@ -901,7 +910,27 @@ function admin_contact_list(array $p): array {
     if (!empty($p['purpose'])) { $where[] = 'purpose = ?'; $params[] = $p['purpose']; }
     $sql = 'SELECT * FROM contact_messages' . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY id DESC LIMIT 500';
     $unread = (int)(db_row("SELECT COUNT(*) c FROM contact_messages WHERE status='new'")['c'] ?? 0);
-    return ['ok' => true, 'messages' => db_all($sql, $params), 'unread' => $unread];
+    $rows = db_all($sql, $params);
+    if ($rows) {
+        $ids = array_map(static fn($r) => (int)$r['id'], $rows);
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $replies = [];
+        foreach (db_all("SELECT id, messageId, body, sentBy, sentByName, sentAt, channel FROM contact_replies WHERE messageId IN ($ph) ORDER BY id ASC", $ids) as $r) {
+            $replies[(int)$r['messageId']][] = $r;
+        }
+        $emails = array_values(array_unique(array_filter(array_map(static fn($r) => strtolower(trim((string)$r['email'])), $rows))));
+        $byEmail = [];
+        if ($emails) {
+            $eph = implode(',', array_fill(0, count($emails), '?'));
+            foreach (db_all("SELECT lower(email) e, COUNT(*) c FROM contact_messages WHERE lower(email) IN ($eph) GROUP BY lower(email)", $emails) as $r) $byEmail[(string)$r['e']] = (int)$r['c'];
+        }
+        foreach ($rows as &$r) {
+            $r['replies'] = $replies[(int)$r['id']] ?? [];
+            $r['earlier'] = max(0, ($byEmail[strtolower(trim((string)$r['email']))] ?? 1) - 1);
+        }
+        unset($r);
+    }
+    return ['ok' => true, 'messages' => $rows, 'unread' => $unread];
 }
 
 function admin_contact_status(array $p): array {
@@ -913,6 +942,51 @@ function admin_contact_status(array $p): array {
     if (!$n) return ['ok' => false, 'error' => 'not_found'];
     audit('admin.contact.status', $g['requester']['memberId'], (string)$id, ['status' => $status], (string)($p['ip'] ?? ''));
     return ['ok' => true];
+}
+
+/**
+ * Reply to a contact message from the inbox. The reply is emailed to the
+ * sender with their message quoted under it, kept on the record, and the
+ * message moves to `replied` — or `archived` when the reply closes it.
+ *
+ * Nothing is recorded unless the mail actually left: a reply that says it was
+ * sent when it was not is worse than one that says "try again".
+ */
+function admin_contact_reply(array $p): array {
+    $g = admin_cap_gate($p, 'inbox'); if (!$g['ok']) return $g;
+    $id = (int)($p['id'] ?? 0);
+    $body = trim(str_replace("\r\n", "\n", (string)($p['body'] ?? '')));
+    if ($body === '') return ['ok' => false, 'error' => 'reply_empty', 'message' => 'Write the reply first.'];
+    if (mb_strlen($body) > CONTACT_REPLY_MAX) return ['ok' => false, 'error' => 'reply_too_long', 'message' => 'A reply is at most ' . CONTACT_REPLY_MAX . ' characters.'];
+    $m = db_row('SELECT * FROM contact_messages WHERE id = ? LIMIT 1', [$id]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $to = trim((string)$m['email']);
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'no_email', 'message' => 'This message has no email address to reply to.'];
+
+    $me = $g['requester'];
+    $first = explode(' ', trim((string)$m['name']))[0] ?: 'there';
+    $subject = 'Re: ' . ((string)$m['subject'] !== '' ? (string)$m['subject'] : 'Your message to Next Generation Genius') . ' (' . (string)$m['ref'] . ')';
+    $html = email_template([
+        'title' => 'A reply to your message',
+        'intro' => 'Hello ' . $first . ',',
+        'bodyHtml' => '<div style="font-size:15px;line-height:1.65">' . nl2br(esc_html($body)) . '</div>'
+            . '<p style="margin:18px 0 0;font-size:14px">— ' . esc_html((string)($me['fullName'] ?? 'The NGG team')) . ', Next Generation Genius</p>'
+            . '<div style="margin-top:22px;padding:12px 14px;border-left:3px solid #d6d6d3;color:#5d5d63;font-size:13px;line-height:1.55">'
+            . '<b>You wrote' . ((string)$m['createdAt'] !== '' ? ' on ' . esc_html(substr((string)$m['createdAt'], 0, 10)) : '') . ':</b><br>'
+            . nl2br(esc_html((string)$m['message'])) . '</div>',
+        'footNote' => 'Reference ' . (string)$m['ref'] . ' — reply to this email to continue the conversation.',
+    ]);
+    if (!send_mail($to, $subject, $html)) {
+        return ['ok' => false, 'error' => 'send_failed', 'message' => 'The email could not be sent, so nothing was recorded. Try again in a moment.'];
+    }
+    $at = now_iso();
+    db_insert('contact_replies', ['messageId' => $id, 'body' => $body, 'sentBy' => (string)$me['memberId'],
+        'sentByName' => (string)($me['fullName'] ?? ''), 'sentAt' => $at, 'channel' => 'email']);
+    $status = !empty($p['close']) ? 'archived' : 'replied';
+    db_update('contact_messages', ['status' => $status], ['id' => $id]);
+    audit('admin.contact.reply', $me['memberId'], (string)$id, ['ref' => (string)$m['ref'], 'chars' => mb_strlen($body), 'status' => $status], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'status' => $status,
+            'reply' => ['body' => $body, 'sentBy' => (string)$me['memberId'], 'sentByName' => (string)($me['fullName'] ?? ''), 'sentAt' => $at, 'channel' => 'email']];
 }
 
 // ── Site settings ───────────────────────────────────────────────────────────

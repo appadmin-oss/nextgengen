@@ -101,28 +101,85 @@ function cleanup() {
     chk('the inbox badge counts what is waiting', (await P.innerText('.cr-nav-item:has-text("Inbox") .cr-badge')).trim() === '3');
     await P.screenshot({ path: path.join(TMP, '..', 'cr-home.png') }).catch(() => {});
 
-    console.log('the Inbox queue (§3 queue)');
+    console.log('the Inbox workspace');
     await P.click('.cr-nav-item:has-text("Inbox")');
-    await P.waitForSelector('.cr-q-item', { timeout: 20000 });
-    chk('Inbox opens at /control/inbox on All, with every waiting item', new URL(P.url()).pathname === '/control/inbox' && (await P.$$('.cr-q-item')).length === 3);
-    const sel0 = await P.innerText('.cr-q-item[aria-current="true"] .cr-q-who b');
+    await P.waitForSelector('.cr-ib-row', { timeout: 20000 });
+    chk('Inbox opens at /control/inbox on All, with every waiting item', new URL(P.url()).pathname === '/control/inbox' && (await P.$$('.cr-ib-row')).length === 3);
+    chk('the views come from the registry, each with its own count',
+      (await P.getAttribute('.cr-ib-view[aria-current="page"]', 'aria-label')) === 'All, 3 waiting' && (await P.getAttribute('.cr-ib-view[title="Applications"]', 'aria-label')) === 'Applications, 2 waiting');
+    chk('the tab title carries what is waiting', /^\(3\) Inbox/.test(await P.title()));
+    chk('the list is triaged: the application waiting 4 days is overdue and first',
+      /overdue/i.test(await P.innerText('.cr-ib-ghead >> nth=0')) && /Chiamaka/.test(await P.innerText('.cr-ib-row >> nth=0')));
+    const selName = async () => (await P.innerText('.cr-ib-row.is-on .cr-ib-row1 b')).trim();
+    const sel0 = await selName();
     await P.keyboard.press('j');
-    const sel1 = await P.innerText('.cr-q-item[aria-current="true"] .cr-q-who b');
-    chk('j moves down the queue', sel0 !== sel1);
+    const sel1 = await selName();
+    chk('j moves down the list', sel0 !== sel1);
     await P.keyboard.press('k');
-    chk('k moves back up', (await P.innerText('.cr-q-item[aria-current="true"] .cr-q-who b')) === sel0);
-    await P.click('.cr-tab:has-text("Applications")');
-    await P.waitForSelector('.cr-q-item', { timeout: 20000 });
-    chk('a tab has its own address', new URL(P.url()).pathname === '/control/inbox/applications');
-    const who = await P.innerText('.cr-q-item[aria-current="true"] .cr-q-who b');
+    chk('k moves back up', (await selName()) === sel0);
+    await P.fill('.cr-ib-tools input', 'pick-up');
+    chk('search finds the message by its subject', (await P.$$('.cr-ib-row')).length === 1 && /Funke/.test(await P.innerText('.cr-ib-row')));
+    await P.fill('.cr-ib-tools input', '');
+
+    await P.click('.cr-ib-view[title="Applications"]');
+    await P.waitForFunction(() => location.pathname === '/control/inbox/applications');
+    chk('a view has its own address, and switching does not reload', (await P.$$('.cr-ib-row')).length === 2);
+    const who = await selName();
     await P.keyboard.press('2');
-    chk('pressing 2 runs the second action (Waitlist) and offers Undo', await toastHas(P, /Waitlisted · [\s\S]*Undo/));
+    chk('pressing 2 runs the second decision (Waitlist) and offers Undo', await toastHas(P, /Waitlisted · [\s\S]*Undo/));
     const st = () => php(`echo db_row("SELECT status FROM applications WHERE name = '${who}'")['status'];`);
     chk('…and the server has it', st() === 'waitlist');
-    chk('…the next item is selected and progress shows', /1 left · 1 done this session/.test(await P.innerText('.cr-q-prog')));
+    chk('…the item leaves the list and the next is open', (await P.$$('.cr-ib-row')).length === 1 && (await selName()) !== who);
     await P.click('.cr-toast-undo');
     await P.waitForTimeout(600);
-    chk('Undo puts it back, on the server too', st() === 'new' && (await P.$$('.cr-q-item')).length === 2);
+    chk('Undo puts it back, on the server too', st() === 'new' && (await P.$$('.cr-ib-row')).length === 2);
+
+    console.log('replying in the app');
+    await P.click('.cr-ib-view[title="Messages"]');
+    await P.waitForSelector('.cr-ib-pane textarea', { timeout: 20000 });
+    chk('a message opens as a conversation with its thread', /Is Saturday ending at 3pm now\?/.test(await P.innerText('.cr-ib-thread')));
+    chk('…and a reply box, not a link to a mail program', !(await P.$('a[href^="mailto:"]')) && /Reply to fa@example\.org/.test(await P.innerText('.cr-ib-compose-h')));
+    await P.click('button:has-text("Saved replies")');
+    await P.click('.cr-ib-tpls .cr-menuitem:has-text("Session times")');
+    chk('a saved reply fills in their name', /^Hello Funke,/.test(await P.inputValue('.cr-ib-pane textarea')));
+    if (process.env.CR_SHOTS) await P.screenshot({ path: path.join(process.env.CR_SHOTS, 'inbox-reply.png') });
+    await P.click('.cr-ib-compose-f button.is-primary');
+    /* This test server has no mail transport, so the send is refused — which
+       is the path that must be honest: nothing recorded, the words kept. */
+    chk('a reply the mail relay refuses says so', await toastHas(P, /could not be sent|wasn’t sent/));
+    chk('…records nothing', php(`echo db_row("SELECT COUNT(*) c FROM contact_replies")['c'];`) === '0');
+    chk('…and keeps what was typed', /^Hello Funke,/.test(await P.inputValue('.cr-ib-pane textarea')));
+    await P.waitForTimeout(1400);
+    chk('opening a new message marks it read on the server', php(`echo db_row("SELECT status FROM contact_messages WHERE ref = 'MSG-1'")['status'];`) === 'read');
+    await P.click('.cr-ib-quick button:has-text("Mark done")');
+    chk('Mark done clears it, with Undo', await toastHas(P, /Done · Funke Adeyemi[\s\S]*Undo/)
+      && php(`echo db_row("SELECT status FROM contact_messages WHERE ref = 'MSG-1'")['status'];`) === 'archived');
+    chk('an emptied view says so, while other views still wait', /This view is clear/.test(await P.innerText('.cr-ib-list')));
+    await P.screenshot({ path: path.join(TMP, '..', 'cr-inbox.png') }).catch(() => {});
+
+    console.log('the Inbox at other widths');
+    const SHOTS = process.env.CR_SHOTS || '';
+    const W = await open(1440, 900, '/control/inbox');
+    await W.waitForSelector('.cr-ib-row', { timeout: 20000 });
+    chk('wide: the rail shows its labels', /Applications/.test(await W.innerText('.cr-ib-rail')));
+    chk('wide: the conversation pane fills the rest, its composer on screen', await W.evaluate(() => {
+      const f = document.querySelector('.cr-ib-act'); if (!f) return false;
+      const r = f.getBoundingClientRect(); return r.bottom <= window.innerHeight + 1 && r.top > 0;
+    }));
+    if (SHOTS) { await W.waitForTimeout(2500); await W.screenshot({ path: path.join(SHOTS, 'inbox-1440.png') }); }
+    await W.context().close();
+    const M = await open(390, 844, '/control/inbox');
+    await M.waitForSelector('.cr-ib-row', { timeout: 20000 });
+    chk('phone: no conversation is open until one is chosen', !(await M.$('.cr-ib-sheet')));
+    if (SHOTS) { await M.waitForTimeout(2500); await M.screenshot({ path: path.join(SHOTS, 'inbox-390-list.png') }); }
+    await M.click('.cr-ib-rowbtn >> nth=0');
+    await M.waitForSelector('.cr-ib-sheet', { timeout: 8000 });
+    chk('phone: a chosen item opens full screen, decisions at the bottom, with a way back',
+      !!(await M.$('.cr-ib-sheet button[aria-label="Back to the list"]')) && !!(await M.$('.cr-ib-sheet .cr-ib-decide')));
+    if (SHOTS) await M.screenshot({ path: path.join(SHOTS, 'inbox-390-open.png') });
+    await M.click('.cr-ib-sheet button[aria-label="Back to the list"]');
+    chk('phone: back returns to the list', !(await M.$('.cr-ib-sheet')));
+    await M.context().close();
 
     console.log('palette (§4.1) and Escape order');
     await P.keyboard.press('Control+k');
@@ -142,8 +199,8 @@ function cleanup() {
 
     console.log('old addresses');
     const Q = await open(1280, 800, '/nextadmin?s=messages');
-    await Q.waitForSelector('.cr-q-item', { timeout: 20000 });
-    chk('/nextadmin?s=messages lands on Inbox › Messages at /control/inbox/messages', new URL(Q.url()).pathname === '/control/inbox/messages' && /Messages/.test(await Q.innerText('.cr-crumb')));
+    await Q.waitForSelector('.cr-ib-view[aria-current="page"]', { timeout: 20000 });
+    chk('/nextadmin?s=messages lands on Inbox › Messages at /control/inbox/messages', new URL(Q.url()).pathname === '/control/inbox/messages' && /Messages/.test(await Q.innerText('.cr-crumb')) && /^Messages/.test(await Q.getAttribute('.cr-ib-view[aria-current="page"]', 'aria-label')));
     await Q.context().close();
 
     chk('no page errors', errs.length === 0);

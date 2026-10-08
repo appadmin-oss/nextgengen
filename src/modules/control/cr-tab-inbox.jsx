@@ -1,41 +1,108 @@
 /* ============================================================================
-   Control Room v2 — Inbox (CONTROL_ROOM.md §3 queue). Every queue that waits
-   on staff, one source per tab and all of them together in "All". An item is
-   { id, kind, icon, who, at, when, unread, urgent, title, fields, body,
-   photoUrl, actions:[{ l, run(it, values) → undo?, form?(it), confirm?(it) }] }.
+   Control Room v2 — the Inbox, a workspace of its own.
+
+   Everything waiting on staff, in one place, worked like a mail client rather
+   than a stack of cards: a rail of views (from the ONE registry, CR_PAGES.inbox
+   — never a second list), a triaged list, and a conversation pane. A contact
+   message is answered here, in the app — the reply is emailed, kept on the
+   record and shown in the thread — not handed to somebody's own mail program.
+   A decision that needs a reason takes it in the pane, not in a pop-up.
+
+   An item is
+     { id, cat, kind, icon, who, at, unread, urgent, title, body, photoUrl,
+       facts: [[k, v]], search, note,
+       thread?: [{ who, at, body, mine }],            the conversation so far
+       reply?: { to, vars, templates, send(body, close) → { text } },
+       actions: [{ l, tone?, note?: { l, req, help, ph }, form?(it), confirm?(it),
+                   run(it, values) → { text, undo? } }] }
    A resolving action returns an undo where the server can genuinely reverse
    it; where it cannot (a member created, a comment deleted, an approval run)
    there is no Undo, and the irreversible ones ask first.
    ========================================================================== */
 
-function crQItem(o) { return Object.assign({ unread: false, urgent: false, fields: [], body: "", actions: [] }, o, { when: crAgo(o.at) || "now" }); }
-function crMask(phone) { const s = String(phone || "").replace(/\s+/g, ""); return s.length > 6 ? s.slice(0, 4) + " ••• " + s.slice(-3) : s; }
-const CR_REASON = (title, l, help) => () => ({ title, submit: l, fields: [{ id: "why", l: "Reason", type: "textarea", req: true, max: 400, help: help || "They read this." }] });
+const CR_PURPOSE = { general: "General", apply: "Admissions", mentor: "Mentoring", partner: "Partnership", media: "Media", support: "Support" };
+const CR_REASON_NOTE = (l, help, req) => ({ l: l || "Reason", req: req !== false, help: help || "They read this.", ph: "" });
 
-/* ── Sources ── */
+/* Saved replies, by topic. {first} {ref} {me} are filled in for the person. */
+const CR_INBOX_REPLIES = [
+  { l: "Thanks — we’re on it", for: null, t: "Hello {first},\n\nThank you for writing to Next Generation Genius. I’m looking into this now and will come back to you with an answer shortly.\n\n{me}" },
+  { l: "How to apply", for: "apply", t: "Hello {first},\n\nThank you for your interest in NGG. Applications are made online at nextgenerationgenius.org/join — choose the programme, fill in the form, and we confirm by email within a week.\n\nIf anything on the form is unclear, reply to this email and I’ll help.\n\n{me}" },
+  { l: "Mentoring next steps", for: "mentor", t: "Hello {first},\n\nThank you for offering to mentor with NGG. The next step is a short conversation so we can understand your experience and the time you can give. Please reply with two times that suit you this week.\n\n{me}" },
+  { l: "Partnership", for: "partner", t: "Hello {first},\n\nThank you for reaching out about working together. I’ve shared your message with our programme lead, and we’ll be in touch within the week to arrange a call.\n\n{me}" },
+  { l: "Session times", for: "general", t: "Hello {first},\n\nOur Saturday sessions run from 10am to 2pm at each centre. Please arrive ten minutes early for check-in.\n\n{me}" },
+  { l: "Support: fixed", for: "support", t: "Hello {first},\n\nThank you for letting us know. This is now fixed — please try again, and reply to this email if it still doesn’t work.\n\n{me}" },
+];
+
+/* Drafts are a per-person convenience on this device, never the record. */
+const CR_DRAFT_KEY = "ngg.cr.inbox.draft.";
+const crDraftGet = id => { try { return localStorage.getItem(CR_DRAFT_KEY + id) || ""; } catch (_) { return ""; } };
+const crDraftSet = (id, v) => { try { if (v) localStorage.setItem(CR_DRAFT_KEY + id, v); else localStorage.removeItem(CR_DRAFT_KEY + id); } catch (_) {} };
+
+function crItem(o) { return Object.assign({ unread: false, urgent: false, facts: [], body: "", actions: [], search: "" }, o); }
+function crMask(phone) { const s = String(phone || "").replace(/\s+/g, ""); return s.length > 6 ? s.slice(0, 4) + " ••• " + s.slice(-3) : s; }
+
+/* ── Sources: one per view; each knows its permission and its server calls ── */
 const CR_INBOX_SOURCES = {
+  messages: {
+    cap: "inbox",
+    async load(ctx) {
+      const r = await NGGApi.admin.contact.list({});
+      return (r.messages || []).filter(m => m.status === "new" || m.status === "read").map(m => {
+        const first = String(m.name || "").trim().split(/\s+/)[0] || "there";
+        const thread = [{ who: m.name || m.email, at: m.createdAt, body: m.message || "", mine: false }]
+          .concat((m.replies || []).map(x => ({ who: x.sentByName || "Staff", at: x.sentAt, body: x.body, mine: true })));
+        const set = (to, text) => async () => { await NGGApi.admin.contact.status(m.id, to); return { text, undo: () => NGGApi.admin.contact.status(m.id, m.status) }; };
+        return crItem({
+          id: "msg:" + m.id, cat: "messages", kind: "Message", icon: "envelope-simple", who: m.name || m.email, at: m.createdAt,
+          unread: m.status === "new", urgent: m.purpose === "support",
+          title: m.subject || (m.message || "").slice(0, 90), body: m.message || "",
+          search: [m.email, m.ref, CR_PURPOSE[m.purpose]].join(" "),
+          facts: [["Email", m.email || "—"], ["Phone", crMask(m.phone) || "—"], ["Topic", CR_PURPOSE[m.purpose] || m.purpose || "General"], ["Reference", m.ref || "—"]],
+          note: m.earlier > 0 ? "This address has written " + crPlural(m.earlier, "other time", "other times") + "." : "",
+          thread,
+          markRead: m.status === "new" ? () => NGGApi.admin.contact.status(m.id, "read") : null,
+          reply: m.email ? {
+            to: m.email, purpose: m.purpose,
+            vars: { first, name: m.name || "", ref: m.ref || "", me: ctx.me && ctx.me.name ? ctx.me.name + "\nNext Generation Genius" : "Next Generation Genius" },
+            send: async (body, close) => {
+              const x = await NGGApi.admin.contact.reply(m.id, body, close);
+              return { text: (close ? "Replied and closed · " : "Reply sent · ") + (m.name || m.email), status: x.status, reply: x.reply };
+            },
+          } : null,
+          actions: [{ l: "Mark done", run: set("archived", "Done · " + (m.name || m.email)) }],
+        });
+      });
+    },
+  },
   applications: {
     cap: "people",
     async load() {
-      const r = await NGGApi.admin.applications.list({ status: "new" });
-      const rv = await NGGApi.admin.applications.list({ status: "reviewing" }).catch(() => ({ applications: [] }));
+      const [r, rv] = await Promise.all([
+        NGGApi.admin.applications.list({ status: "new" }),
+        NGGApi.admin.applications.list({ status: "reviewing" }).catch(() => ({ applications: [] })),
+      ]);
       return (r.applications || []).concat(rv.applications || []).filter(a => a.kind !== "volunteer").map(a => {
         const prog = a.program === "summer" ? "Summer School" : "NGG membership";
-        const status = (to, prev) => async () => { await NGGApi.admin.applications.status(a.id, to); return { text: (to === "waitlist" ? "Waitlisted" : "Rejected") + " · " + a.name, undo: () => NGGApi.admin.applications.status(a.id, prev || "new") }; };
+        const status = (to, label) => async () => { await NGGApi.admin.applications.status(a.id, to); return { text: label + " · " + a.name, undo: () => NGGApi.admin.applications.status(a.id, a.status || "new") }; };
         const actions = a.kind === "teen" ? [
-          { l: "Accept & create member", confirm: () => ({ title: "Create a member for " + a.name + "?", body: "They get an NGG record and a member ID. This can’t be undone from here.", cta: "Accept & create member" }),
+          { l: "Accept & create member", tone: "primary",
+            confirm: () => ({ title: "Create a member for " + a.name + "?", body: "They get an NGG record and a member ID. This can’t be undone from here.", cta: "Accept & create member" }),
             run: async () => { const x = await NGGApi.admin.applications.convert(a.id); return { text: x.existed ? a.name + " already had a record · " + x.memberId : "Member created · " + x.memberId }; } },
-          { l: "Waitlist", run: status("waitlist", a.status) },
-          { l: "Reject", run: status("rejected", a.status) },
+          { l: "Waitlist", run: status("waitlist", "Waitlisted") },
+          { l: "Reject", run: status("rejected", "Rejected") },
         ] : [
-          { l: "Accept", run: async () => { await NGGApi.admin.applications.status(a.id, "accepted"); return { text: "Accepted · " + a.name, undo: () => NGGApi.admin.applications.status(a.id, a.status || "new") }; } },
-          { l: "Waitlist", run: status("waitlist", a.status) },
-          { l: "Reject", run: status("rejected", a.status) },
+          { l: "Accept", tone: "primary", run: status("accepted", "Accepted") },
+          { l: "Waitlist", run: status("waitlist", "Waitlisted") },
+          { l: "Reject", run: status("rejected", "Rejected") },
         ];
-        return crQItem({ id: "app:" + a.id, kind: "Application", icon: "envelope-simple", who: a.name || a.email || "Applicant", at: a.createdAt, unread: a.status === "new",
-          title: [prog, a.track || a.role].filter(Boolean).join(" · "), photoUrl: a.photoUrl || "",
-          fields: [["Age", a.age || a.dobAge || "—"], ["Centre", a.centre || "—"], ["Division", a.track || "—"], ["Role", a.role || ""], ["Email", a.email || "—"], ["Phone", crMask(a.phone)], ["Photo", a.photoUrl ? "Uploaded" : "Missing"], ["Reference", a.ref || ""]].filter(f => f[1] !== ""),
-          body: a.why ? "“" + a.why + "”" : "", actions });
+        return crItem({
+          id: "app:" + a.id, cat: "applications", kind: "Application", icon: "user-plus", who: a.name || a.email || "Applicant", at: a.createdAt,
+          unread: a.status === "new", title: [prog, a.track || a.role].filter(Boolean).join(" · "), body: a.why || "", photoUrl: a.photoUrl || "",
+          search: [a.email, a.centre, a.track, a.ref].join(" "),
+          facts: [["Age", a.age || a.dobAge || "—"], ["Centre", a.centre || "—"], ["Division", a.track || "—"], ["Role", a.role || ""], ["Email", a.email || "—"], ["Phone", crMask(a.phone) || "—"], ["Photo", a.photoUrl ? "Uploaded" : "Missing"], ["Reference", a.ref || ""]].filter(f => f[1] !== ""),
+          note: a.photoUrl ? "" : "No photo yet — their ID card cannot print until one is uploaded.",
+          actions,
+        });
       });
     },
   },
@@ -43,25 +110,28 @@ const CR_INBOX_SOURCES = {
     cap: "people",
     async load() {
       const [ap, fam] = await Promise.all([NGGApi.admin.approvals.list("pending"), NGGApi.admin.families.list({ status: "pending" }).catch(() => ({ rows: [] }))]);
-      const items = (ap.approvals || []).map(x => crQItem({
-        id: "apr:" + x.approvalId, kind: "Approval", icon: "seal-check", who: x.requesterName || x.requesterId, at: x.createdAt, unread: true,
-        title: x.summary, fields: [["Request", x.approvalId], ["Asked by", x.requesterName || x.requesterId], ["Runs as", "The person who asked, the moment you approve"]],
+      const items = (ap.approvals || []).map(x => crItem({
+        id: "apr:" + x.approvalId, cat: "approvals", kind: "Approval", icon: "seal-check", who: x.requesterName || x.requesterId, at: x.createdAt, unread: true,
+        title: x.summary, body: "", search: x.approvalId,
+        facts: [["Request", x.approvalId], ["Asked by", x.requesterName || x.requesterId], ["Runs as", "The person who asked, the moment you approve"]],
+        note: ap.canDecide ? "" : "You asked for this one. A second admin decides it.",
         actions: ap.canDecide ? [
-          { l: "Approve", confirm: () => ({ title: "Approve and run it now?", body: x.summary + "\n\nIt runs as " + (x.requesterName || "them") + " and can’t be undone from here.", cta: "Approve" }),
+          { l: "Approve", tone: "primary", confirm: () => ({ title: "Approve and run it now?", body: x.summary + "\n\nIt runs as " + (x.requesterName || "them") + " and can’t be undone from here.", cta: "Approve" }),
             run: async () => { const r = await NGGApi.admin.approvals.decide(x.approvalId, "approve", ""); if (r.status === "failed") throw Object.assign(new Error("failed"), { data: { message: "Approved, but the action itself was refused: " + ((r.result && (r.result.message || r.result.error)) || "no reason given") } }); return { text: "Approved and done · " + x.summary }; } },
-          { l: "Reject", form: CR_REASON("Reject this request", "Reject", "The person who asked reads this."), run: async (it, v) => { await NGGApi.admin.approvals.decide(x.approvalId, "reject", v.why); return { text: "Rejected · " + x.summary }; } },
+          { l: "Reject", note: CR_REASON_NOTE("Why it is rejected", "The person who asked reads this."), run: async (it, v) => { await NGGApi.admin.approvals.decide(x.approvalId, "reject", v.why); return { text: "Rejected · " + x.summary }; } },
         ] : [
           { l: "Withdraw", run: async () => { await NGGApi.admin.approvals.withdraw(x.approvalId); return { text: "Withdrawn — nothing was changed" }; } },
         ],
       }));
-      (fam.rows || []).forEach(f => items.push(crQItem({
-        id: "fam:" + f.linkId, kind: "Family link", icon: "house-line", who: f.guardianName || f.guardianEmail, at: f.createdAt, unread: true,
-        title: "Wants to connect to " + f.fullName, fields: [["Relationship", f.relationshipLabel || "—"], ["Child", f.fullName + (f.displayId ? " · " + f.displayId : "")], ["Centre", f.centre || "—"],
+      (fam.rows || []).forEach(f => items.push(crItem({
+        id: "fam:" + f.linkId, cat: "approvals", kind: "Family link", icon: "house-line", who: f.guardianName || f.guardianEmail, at: f.createdAt, unread: true,
+        title: "Wants to connect to " + f.fullName, body: f.note || "", search: [f.guardianEmail, f.fullName, f.displayId].join(" "),
+        facts: [["Relationship", f.relationshipLabel || "—"], ["Child", f.fullName + (f.displayId ? " · " + f.displayId : "")], ["Centre", f.centre || "—"],
           ["Guardian on record", (f.recordParentName || "—") + (f.recordParentEmail ? " · " + f.recordParentEmail : "")], ["Method", f.via === "code" ? "Child’s code" : "Record email"], ["Email", f.guardianEmail || "—"]],
-        body: f.note || "",
+        note: f.recordParentEmail && f.guardianEmail && f.recordParentEmail.toLowerCase() !== f.guardianEmail.toLowerCase() ? "The email asking is not the guardian email on the child’s record. Check before approving." : "",
         actions: [
-          { l: "Approve link", run: async () => { const r = await NGGApi.admin.families.decide("approve", [f.linkId]); const bad = (r.results || []).find(x => !x.ok); if (bad) throw Object.assign(new Error(bad.error), { code: bad.error }); return { text: "Connected · the parent has been emailed" }; } },
-          { l: "Decline", form: CR_REASON("Decline this connection", "Decline", "The parent reads this."), run: async (it, v) => { const r = await NGGApi.admin.families.decide("refuse", [f.linkId], v.why); const bad = (r.results || []).find(x => !x.ok); if (bad) throw Object.assign(new Error(bad.error), { code: bad.error }); return { text: "Declined · the parent has been emailed" }; } },
+          { l: "Approve link", tone: "primary", run: async () => { const r = await NGGApi.admin.families.decide("approve", [f.linkId]); const bad = (r.results || []).find(x => !x.ok); if (bad) throw Object.assign(new Error(bad.error), { code: bad.error }); return { text: "Connected · the parent has been emailed" }; } },
+          { l: "Decline", note: CR_REASON_NOTE("Why it is declined", "The parent reads this."), run: async (it, v) => { const r = await NGGApi.admin.families.decide("refuse", [f.linkId], v.why); const bad = (r.results || []).find(x => !x.ok); if (bad) throw Object.assign(new Error(bad.error), { code: bad.error }); return { text: "Declined · the parent has been emailed" }; } },
         ],
       })));
       return items;
@@ -79,40 +149,21 @@ const CR_INBOX_SOURCES = {
         if (x.kind === "leave") f.push(["From", x.fromDate ? crDate(x.fromDate) : "—"], ["To", x.toDate ? crDate(x.toDate) : "Open-ended"]);
         if (x.byFamily) f.push(["Raised by", (x.raisedByName || "Their family") + " · the parent is emailed your reply"]);
         const approve = pay ? (canMoney ? {
-          l: "Approve", form: () => ({ title: "Approve this payment", submit: "Approve and post", intro: "The amount you post is what arrived, not necessarily what was claimed.",
+          l: "Approve", tone: "primary", form: () => ({ title: "Approve this payment", submit: "Approve and post", intro: "The amount you post is what arrived, not necessarily what was claimed.",
             values: { amount: String(x.amount || ""), why: "" },
             fields: [{ id: "amount", l: "Amount to post (₦)", req: true, num: true, money: true, im: "decimal" }, { id: "why", l: "Your reply", type: "textarea", max: 2000, help: "The member reads this." }] }),
           run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || "", Number(String(v.amount).replace(/[^\d.]/g, ""))); return { text: "Payment posted · " + x.fullName }; },
         } : null) : {
-          l: "Approve", form: () => ({ title: "Approve this request", submit: "Approve", fields: [{ id: "why", l: "Your reply", type: "textarea", max: 2000, help: "The member reads this." }] }),
+          l: "Approve", tone: "primary", note: CR_REASON_NOTE("Your reply", "The member reads this.", false),
           run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, true, v.why || ""); return { text: "Approved · " + x.fullName }; },
         };
-        return crQItem({ id: "req:" + x.requestId, kind: x.kindLabel || "Member request", icon: pay ? "currency-ngn" : "hand", who: x.fullName || x.displayId, at: x.createdAt, unread: true,
-          title: x.subject || x.kindLabel, fields: f, body: x.body || "",
-          actions: [approve, { l: "Decline", form: CR_REASON("Decline this request", "Decline", "Say why — the member reads this."), run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, false, v.why); return { text: "Declined, with your reason" }; } }].filter(Boolean)
-            .concat(pay && !canMoney ? [] : []),
-          note: pay && !canMoney ? "Approving a payment needs the Fees permission." : "" });
-      });
-    },
-  },
-  messages: {
-    cap: "inbox",
-    async load() {
-      const r = await NGGApi.admin.contact.list({});
-      return (r.messages || []).filter(m => m.status === "new" || m.status === "read").map(m => {
-        const set = (to, label) => async () => { await NGGApi.admin.contact.status(m.id, to); return { text: label + " · " + m.name, undo: () => NGGApi.admin.contact.status(m.id, m.status) }; };
-        return crQItem({ id: "msg:" + m.id, kind: "Message", icon: "envelope-open", who: m.name, at: m.createdAt, unread: m.status === "new", urgent: m.purpose === "support",
-          title: m.subject || (m.message || "").slice(0, 80), body: m.message,
-          fields: [["Email", m.email || "—"], ["Phone", crMask(m.phone)], ["Topic", ({ general: "General", apply: "Admissions", mentor: "Mentoring", partner: "Partnership", media: "Media", support: "Support" })[m.purpose] || m.purpose || "—"], ["Reference", m.ref || ""]].filter(f => f[1] !== ""),
-          actions: [
-            { l: "Reply", run: async () => {
-              const href = "mailto:" + encodeURIComponent(m.email || "") + "?subject=" + encodeURIComponent("Re: " + (m.subject || "Your message") + (m.ref ? " (" + m.ref + ")" : ""));
-              window.location.href = href;
-              await NGGApi.admin.contact.status(m.id, "replied");
-              return { text: "Marked replied · " + m.name, undo: () => NGGApi.admin.contact.status(m.id, m.status) };
-            } },
-            { l: "Mark done", run: set("archived", "Done") },
-          ] });
+        return crItem({
+          id: "req:" + x.requestId, cat: "requests", kind: x.kindLabel || "Member request", icon: pay ? "currency-ngn" : "hand", who: x.fullName || x.displayId, at: x.createdAt, unread: true,
+          title: x.subject || x.kindLabel, body: x.body || "", search: [x.displayId, x.centre, x.reference].join(" "),
+          facts: f, thread: x.body ? [{ who: x.byFamily ? (x.raisedByName || "Their family") : (x.fullName || "Member"), at: x.createdAt, body: x.body, mine: false }] : null,
+          note: pay && !canMoney ? "Approving a payment needs the Fees permission." : "",
+          actions: [approve, { l: "Decline", note: CR_REASON_NOTE("Why it is declined", "Say why — the member reads this."), run: async (it, v) => { await NGGApi.admin.requests.decide(x.requestId, false, v.why); return { text: "Declined, with your reason" }; } }].filter(Boolean),
+        });
       });
     },
   },
@@ -122,14 +173,18 @@ const CR_INBOX_SOURCES = {
       const r = await NGGApi.admin.comments("pending");
       return (r.comments || []).map(c => {
         const link = /https?:\/\/|www\./i.test(c.body || "");
-        return crQItem({ id: "cmt:" + c.commentId, kind: "Comment", icon: "chat-circle", who: c.memberName || "Member", at: c.createdAt, unread: true,
-          title: "On “" + (c.postTitle || c.postSlug || c.postId) + "”", body: c.body,
-          fields: [["Post", c.postTitle || c.postSlug || c.postId], ["Flags", link ? "Link · check before approving" : "None"]],
+        return crItem({
+          id: "cmt:" + c.commentId, cat: "comments", kind: "Comment", icon: "chat-circle", who: c.memberName || "Member", at: c.createdAt, unread: true,
+          title: "On “" + (c.postTitle || c.postSlug || c.postId) + "”", body: c.body || "", search: c.postTitle || c.postSlug || "",
+          facts: [["Post", c.postTitle || c.postSlug || c.postId]],
+          thread: [{ who: c.memberName || "Member", at: c.createdAt, body: c.body || "", mine: false }],
+          note: link ? "It contains a link. Check where it goes before approving." : "",
           actions: [
-            { l: "Approve", run: async () => { await NGGApi.admin.commentModerate(c.commentId, "approve"); return { text: "Approved · it’s on the post now", undo: () => NGGApi.admin.commentModerate(c.commentId, "reject") }; } },
+            { l: "Approve", tone: "primary", run: async () => { await NGGApi.admin.commentModerate(c.commentId, "approve"); return { text: "Approved · it’s on the post now", undo: () => NGGApi.admin.commentModerate(c.commentId, "reject") }; } },
             { l: "Reject", run: async () => { await NGGApi.admin.commentModerate(c.commentId, "reject"); return { text: "Rejected · it stays hidden", undo: () => NGGApi.admin.commentModerate(c.commentId, "approve") }; } },
             { l: "Delete", confirm: () => ({ title: "Delete this comment?", body: "It is removed for good. This can’t be undone.", cta: "Delete", danger: true }), run: async () => { await NGGApi.admin.commentModerate(c.commentId, "delete"); return { text: "Deleted" }; } },
-          ] });
+          ],
+        });
       });
     },
   },
@@ -138,81 +193,433 @@ const CR_INBOX_SOURCES = {
     async load(ctx) {
       const r = await NGGApi.admin.photos.queue();
       return (r.queue || []).map(p => {
-        const f = p.aiFindings || {};
-        const flags = (f.flags || []).map(x => String(x).replace(/_/g, " "));
+        const fd = p.aiFindings || {};
+        const flags = (fd.flags || []).map(x => String(x).replace(/_/g, " "));
         const who = p.subjectName || (p.subjectType + " " + p.subjectId);
         const actions = [
-          { l: "Approve", run: async () => { await NGGApi.admin.photos.approve(p.assetId, p.editedUrl || "", ""); return { text: "Photo approved · " + who }; } },
-          { l: "Ask for reshoot", form: () => ({ title: "Ask for a reshoot", submit: "Send", fields: [{ id: "why", l: "What to fix", req: true, max: 300, ph: "Please retake against a plain wall.", help: p.subjectType === "student" ? "The guardian is emailed a reshoot link with this." : "They are told this." }] }),
+          { l: "Approve", tone: "primary", run: async () => { await NGGApi.admin.photos.approve(p.assetId, p.editedUrl || "", ""); return { text: "Photo approved · " + who }; } },
+          { l: "Ask for reshoot", note: { l: "What to fix", req: true, ph: "Please retake against a plain wall.", help: p.subjectType === "student" ? "The guardian is emailed a reshoot link with this." : "They are told this." },
             run: async (it, v) => { await NGGApi.admin.photos.retake(p.assetId, v.why); return { text: "Reshoot requested · " + who }; } },
         ];
-        if (ctx.can("people")) actions.push({ l: "Reject", form: CR_REASON("Reject this photo", "Reject", "Kept on the photo’s record."), run: async (it, v) => { await NGGApi.admin.photos.reject(p.assetId, v.why); return { text: "Photo rejected · " + who }; } });
-        return crQItem({ id: "pho:" + p.assetId, kind: "Headshot", icon: "image", who, at: p.createdAt, unread: p.status === "pending_review",
-          title: "New headshot for ID card", photoUrl: p.editedUrl || p.sourceUrl,
-          fields: [["Subject", (p.subjectType === "student" ? "Participant" : p.subjectType === "volunteer" ? "Volunteer" : "Member") + " · " + p.subjectId + (p.subjectCentre ? " · " + p.subjectCentre : "")],
+        if (ctx.can("people")) actions.push({ l: "Reject", note: CR_REASON_NOTE("Why it is rejected", "Kept on the photo’s record."), run: async (it, v) => { await NGGApi.admin.photos.reject(p.assetId, v.why); return { text: "Photo rejected · " + who }; } });
+        return crItem({
+          id: "pho:" + p.assetId, cat: "photos", kind: "Headshot", icon: "image", who, at: p.createdAt, unread: p.status === "pending_review",
+          title: "New headshot for an ID card", photoUrl: p.editedUrl || p.sourceUrl, search: [p.subjectId, p.subjectCentre].join(" "),
+          facts: [["Subject", (p.subjectType === "student" ? "Participant" : p.subjectType === "volunteer" ? "Volunteer" : "Member") + " · " + p.subjectId + (p.subjectCentre ? " · " + p.subjectCentre : "")],
             ["Check", p.aiScore == null ? "Not analysed — look carefully" : "Score " + p.aiScore + (flags.length ? " · " + flags.join(", ") : "")]]
-            .concat((f.issues || []).length ? [["Issues", f.issues.join("; ")]] : []).concat(p.status === "in_review" ? [["Status", "Claimed by another reviewer"]] : []),
-          actions });
+            .concat((fd.issues || []).length ? [["Issues", fd.issues.join("; ")]] : []),
+          note: p.status === "in_review" ? "Another reviewer has this open." : "",
+          actions,
+        });
       });
     },
   },
 };
+const CR_INBOX_ORDER = ["messages", "requests", "approvals", "applications", "photos", "comments"];
 
-/* The tabs. Each is one queue block; Photos adds the children with no photo at all. */
-function crInboxTab(key, extra) {
-  return Object.assign({
-    skeleton: ["queue"],
-    count: async ctx => { const ov = await crOverview(); const w = ov.waiting || {}; return key === "approvals" ? (w.approvals ? w.approvals.n : 0) : (w[key] ? w[key].n : 0); },
-    load: async ctx => ({ items: await CR_INBOX_SOURCES[key].load(ctx) }),
-    blocks: (d, ctx) => [{ type: "queue", span: 6, items: d.items, emptyText: "Nothing is waiting here.", onResolved: () => ctx.refreshCounts() }],
-  }, extra || {});
+/** Load every queue this person may see, at once. A queue that fails is named, not hidden. */
+async function crInboxLoad(ctx) {
+  const keys = CR_INBOX_ORDER.filter(k => ctx.can(CR_INBOX_SOURCES[k].cap));
+  const res = await Promise.all(keys.map(k => CR_INBOX_SOURCES[k].load(ctx).then(items => ({ k, items }), e => ({ k, items: [], error: e }))));
+  const failed = res.filter(r => r.error).map(r => r.k);
+  if (failed.length === keys.length && keys.length) throw res[0].error;
+  return { items: [].concat(...res.map(r => r.items)), failed, at: Date.now() };
 }
 
-Object.assign(CR_TAB_DEFS, {
-  applications: crInboxTab("applications", {
-    actions: (d, ctx) => [{ l: "Export CSV", icon: "download-simple", run: async () => {
+/* ── The workspace ─────────────────────────────────────────────────────── */
+
+function CrInbox({ ctx, phone, data }) {
+  const views = crTabsFor("inbox", ctx.can);
+  const view = ctx.view && views.some(v => v.id === ctx.view) ? ctx.view : (views[0] ? views[0].id : "all");
+  const [items, setItems] = React.useState(data.items);
+  React.useEffect(() => { setItems(data.items); }, [data]);
+  const [now, setNow] = React.useState(Date.now());
+  React.useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60000); return () => clearInterval(t); }, []);
+  const [q, setQ] = React.useState("");
+  const [chip, setChip] = React.useState("all");
+  const [sort, setSort] = React.useState(() => crLsGet("ngg.cr.inbox.sort", "triage"));
+  const [selId, setSelId] = React.useState(null);
+  const [picked, setPicked] = React.useState({});
+  const [handled, setHandled] = React.useState(0);
+  const [open, setOpen] = React.useState(false);           // phone: the conversation is open
+  const searchRef = React.useRef(null);
+  const paneRef = React.useRef(null);
+
+  const counts = crInboxCounts(items);
+  const shown = crInboxSort(crInboxFilter(items, { view, chip, q }, now), sort, now);
+  const groups = crInboxGroups(shown, sort, now);
+  const ids = shown.map(x => x.id);
+  const sel = shown.find(x => x.id === selId) || (phone ? null : shown[0]) || null;
+  const pickedItems = shown.filter(x => picked[x.id]);
+  const overdueN = crInboxFilter(items, { view, chip: "overdue" }, now).length;
+
+  /* Opening an item marks it read where the server keeps that state. */
+  React.useEffect(() => {
+    if (!sel || !sel.unread || !sel.markRead) return undefined;
+    const t = setTimeout(() => {
+      sel.markRead().then(() => setItems(xs => xs.map(x => x.id === sel.id ? Object.assign({}, x, { unread: false, markRead: null }) : x)), () => {});
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [sel && sel.id]);
+
+  const remove = id => setItems(xs => xs.filter(x => x.id !== id));
+  const restore = it => setItems(xs => xs.some(x => x.id === it.id) ? xs : xs.concat([it]));
+  const advance = id => { setSelId(crQueueAfterResolve(ids, id)); if (phone) setOpen(false); };
+
+  /** Run one action on one item: optimistic, undoable where the server can undo. */
+  const act = async (it, a, values) => {
+    if (a.form && !values) {
+      ctx.form(Object.assign({}, a.form(it), { onSubmit: async v => { await act(it, a, v); } }));
+      return false;
+    }
+    if (a.confirm && !values) { const ok = await ctx.confirm(Object.assign({ cta: a.l, danger: crIsDanger(a.l) }, a.confirm(it))); if (!ok) return false; }
+    advance(it.id); remove(it.id);
+    try {
+      const r = await a.run(it, values || {});
+      setHandled(n => n + 1);
+      const undo = r && r.undo;
+      ctx.toast((r && r.text) || (a.l + " · " + it.who), undo ? async () => {
+        try { await undo(); restore(it); setSelId(it.id); setHandled(n => Math.max(0, n - 1)); }
+        catch (e) { ctx.toast(crErr(e, "Couldn’t undo that."), null, true); }
+      } : null);
+      ctx.refreshCounts();
+      return true;
+    } catch (e) {
+      restore(it); setSelId(it.id);
+      ctx.toast(crErr(e, "Couldn’t " + a.l.toLowerCase() + ". Nothing changed."), null, true);
+      return false;
+    }
+  };
+
+  /** Send a reply in the app. The item leaves the list when the reply closes it; otherwise the thread grows. */
+  const send = async (it, body, close) => {
+    try {
+      const r = await it.reply.send(body, close);
+      crDraftSet(it.id, "");
+      setHandled(n => n + 1);
+      if (close) { advance(it.id); remove(it.id); }
+      else setItems(xs => xs.map(x => x.id === it.id ? Object.assign({}, x, { unread: false, thread: (x.thread || []).concat([{ who: (r.reply && r.reply.sentByName) || (ctx.me && ctx.me.name) || "You", at: (r.reply && r.reply.sentAt) || new Date().toISOString(), body, mine: true }]) }) : x));
+      ctx.toast(r.text);
+      ctx.refreshCounts();
+      return true;
+    } catch (e) {
+      ctx.toast(crErr(e, "The reply wasn’t sent. Your words are kept — try again."), null, true);
+      return false;
+    }
+  };
+
+  /** Several at once: count read before the confirm, every verdict reported. */
+  const bulk = async label => {
+    const list = pickedItems.slice(0, 100);
+    if (!list.length) return;
+    const ok = await ctx.confirm({ title: label + " " + crPlural(list.length, "item", "items") + "?", body: pickedItems.length > 100 ? "The first 100 are done now; run it again for the rest." : "Each is done one by one; any that are refused are named.", cta: label + " " + list.length, danger: crIsDanger(label) });
+    if (!ok) return;
+    let done = 0; const bad = [];
+    for (const it of list) {
+      const a = it.actions.find(x => x.l === label);
+      try { await a.run(it, {}); done++; remove(it.id); }
+      catch (e) { bad.push(it.who + ": " + crErr(e, "refused")); }
+    }
+    setPicked({}); setHandled(n => n + done); ctx.refreshCounts();
+    ctx.toast(bad.length ? label + " · " + done + " of " + list.length + " done. Not done — " + bad.slice(0, 3).join("; ") + (bad.length > 3 ? "…" : "") : label + " · " + crPlural(done, "item", "items"), null, bad.length > 0);
+  };
+
+  /* Keys, through the shell's handler so palette and forms keep priority. */
+  React.useEffect(() => {
+    ctx.setQueue({
+      key: e => {
+        const k = e.key;
+        if (k === "j" || k === "k") { setSelId(crQueueMove(ids, sel && sel.id, k === "j" ? 1 : -1)); return true; }
+        if (k === "s") { if (searchRef.current) searchRef.current.focus(); return true; }
+        if (!sel) return false;
+        if (k === "x") { setPicked(p => Object.assign({}, p, { [sel.id]: !p[sel.id] })); return true; }
+        if (k === "r" && sel.reply) { const t = paneRef.current && paneRef.current.querySelector("textarea"); if (t) t.focus(); return true; }
+        if (k === "e") { const a = sel.actions.find(x => x.l === "Mark done"); if (a) { act(sel, a); return true; } return false; }
+        if (/^[1-9]$/.test(k)) { const a = sel.actions[Number(k) - 1]; if (a) { paneRef.current && paneRef.current.dispatchEvent(new CustomEvent("cr-ib-act", { detail: Number(k) - 1 })); return true; } }
+        return false;
+      },
+    });
+    return () => ctx.setQueue(null);
+  });
+
+  const setSortP = v => { setSort(v); crLsSet("ngg.cr.inbox.sort", v); };
+  const goView = id => { setSelId(null); setPicked({}); setOpen(false); ctx.go("inbox", id); };
+  const viewLabel = (views.find(v => v.id === view) || {}).label || "Inbox";
+
+  const rail = (
+    <nav className="cr-ib-rail" aria-label="Inbox views">
+      {views.map(v => (
+        <button key={v.id} type="button" className="cr-ib-view" aria-current={v.id === view ? "page" : undefined} onClick={() => goView(v.id)}
+          aria-label={v.label + (counts[v.id] > 0 ? ", " + counts[v.id] + " waiting" : "")} title={v.label}>
+          <CrIcon n={v.id === "all" ? "tray" : (CR_INBOX_ICON[v.id] || "circle")}/>
+          <span className="cr-grow">{v.label}</span>
+          {counts[v.id] > 0 && <span className="cr-ib-n">{counts[v.id]}</span>}
+        </button>
+      ))}
+      <div className="cr-ib-rail-foot">
+        {handled > 0 && <span><CrIcon n="check-circle"/>{crPlural(handled, "item", "items")} handled</span>}
+        {data.failed && data.failed.length > 0 && <span className="cr-ib-warn"><CrIcon n="warning"/>{data.failed.map(k => (views.find(v => v.id === k) || {}).label || k).join(", ")} didn’t load</span>}
+        <button type="button" className="cr-linkbtn" onClick={() => ctx.reload()}><CrIcon n="arrow-clockwise"/>Refresh</button>
+      </div>
+    </nav>
+  );
+
+  const chips = [["all", "All"], ["unread", "Unread"], ["overdue", "Overdue" + (overdueN ? " · " + overdueN : "")], ["reply", "To reply"]]
+    .filter(c => c[0] !== "reply" || items.some(x => x.reply));
+
+  const list = (
+    <section className="cr-ib-list" aria-label={viewLabel}>
+      <div className="cr-ib-tools">
+        <div className="cr-searchbox" role="search">
+          <CrIcon n="magnifying-glass"/>
+          <input ref={searchRef} placeholder={"Search " + viewLabel.toLowerCase()} aria-label={"Search " + viewLabel} value={q} onChange={e => setQ(e.target.value)}/>
+          {q && <button type="button" className="cr-iconbtn is-xs" aria-label="Clear search" onClick={() => setQ("")}><CrIcon n="x"/></button>}
+        </div>
+        <div className="cr-ib-chiprow">
+          <div className="cr-ib-chips" role="group" aria-label="Show">
+            {chips.map(c => <button key={c[0]} type="button" className="cr-ib-chip" aria-pressed={chip === c[0]} onClick={() => setChip(c[0])}>{c[1]}</button>)}
+          </div>
+          <label className="cr-ib-sort"><span className="cr-sr">Order</span>
+            <select value={sort} onChange={e => setSortP(e.target.value)}>
+              <option value="triage">Needs you first</option><option value="oldest">Oldest first</option><option value="newest">Newest first</option>
+            </select>
+          </label>
+        </div>
+        <p className="cr-sr" role="status" aria-live="polite">{crPlural(shown.length, "item", "items")}</p>
+      </div>
+      {pickedItems.length > 0 && (
+        <div className="cr-ib-bulk" role="region" aria-label="Selected items">
+          <b>{pickedItems.length} selected</b>
+          {crInboxBulkActions(pickedItems).map(l => <button key={l} type="button" className={"cr-btn is-sm" + (crIsDanger(l) ? " is-danger" : "")} onClick={() => bulk(l)}>{l}</button>)}
+          {!crInboxBulkActions(pickedItems).length && <span className="cr-ib-bulk-why">These need a decision one at a time.</span>}
+          <button type="button" className="cr-linkbtn" onClick={() => setPicked({})}>Clear</button>
+        </div>
+      )}
+      <div className="cr-ib-rows">
+        {!items.length ? <CrInboxClear handled={handled} phone={phone}/> :
+         !shown.length ? <div className="cr-ib-none"><b>Nothing here</b><span>{q ? "No item matches “" + q + "”." : chip !== "all" ? "Nothing " + chips.find(c => c[0] === chip)[1].split(" ·")[0].toLowerCase() + " in this view." : "This view is clear."}</span>{(q || chip !== "all") && <button type="button" className="cr-btn is-sm" onClick={() => { setQ(""); setChip("all"); }}>Show everything</button>}</div> :
+         groups.map(g => (
+          <div key={g.key} role="group" aria-label={g.label || viewLabel}>
+            {g.label && <div className={"cr-ib-ghead" + (g.key === "overdue" ? " is-bad" : "")}>{g.label}<span>{g.items.length}</span></div>}
+            {g.items.map(it => <CrInboxRow key={it.id} it={it} now={now} on={sel && sel.id === it.id} picked={!!picked[it.id]} showKind={view === "all"}
+              onOpen={() => { setSelId(it.id); if (phone) setOpen(true); }} onPick={v => setPicked(p => Object.assign({}, p, { [it.id]: v }))}/>)}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+
+  const pane = sel ? <CrInboxPane key={sel.id} it={sel} now={now} ctx={ctx} phone={phone} paneRef={paneRef} act={act} send={send} onBack={() => setOpen(false)}/> : (
+    <section className="cr-ib-pane is-empty"><CrIcon n="tray"/><span>{items.length ? "Choose an item to read it." : "Nothing is waiting."}</span></section>
+  );
+
+  if (phone) return (
+    <div className="cr-ib is-phone">
+      <div className="cr-ib-pviews" role="tablist" aria-label="Inbox views">
+        {views.map(v => <button key={v.id} type="button" role="tab" className="cr-ib-chip" aria-selected={v.id === view} aria-pressed={v.id === view} onClick={() => goView(v.id)}>{v.label}{counts[v.id] > 0 ? " · " + counts[v.id] : ""}</button>)}
+      </div>
+      {list}
+      {open && sel && <div className="cr-ib-sheet" role="dialog" aria-modal="true" aria-label={sel.who}>{pane}</div>}
+    </div>
+  );
+  return <div className="cr-ib">{rail}{list}{pane}</div>;
+}
+const CR_INBOX_ICON = { messages: "envelope-simple", applications: "user-plus", approvals: "seal-check", requests: "hand", comments: "chat-circle", photos: "image" };
+
+function CrInboxClear({ handled }) {
+  return (
+    <div className="cr-ib-zero">
+      <span className="cr-ib-zero-ico"><CrIcon n="check"/></span>
+      <b>Inbox clear</b>
+      <span>{handled ? "You handled " + crPlural(handled, "item", "items") + ". New ones appear here as they arrive." : "Nothing is waiting on staff. New items appear here as they arrive."}</span>
+    </div>
+  );
+}
+
+function CrInboxRow({ it, now, on, picked, showKind, onOpen, onPick }) {
+  const sla = crInboxSla(it, now);
+  const draft = it.reply && crDraftGet(it.id);
+  return (
+    <div className={"cr-ib-row" + (it.unread ? " is-unread" : "") + (on ? " is-on" : "")}>
+      <label className="cr-ib-pick"><input type="checkbox" checked={picked} onChange={e => onPick(e.target.checked)} aria-label={"Select " + it.who}/></label>
+      <button type="button" className="cr-ib-rowbtn" aria-current={on ? "true" : undefined} onClick={onOpen}>
+        <CrAvatar className="cr-ib-av" name={it.who} photo={it.photoUrl}/>
+        <span className="cr-ib-rowt">
+          <span className="cr-ib-row1"><b>{it.who}</b><time className={"cr-ib-age is-" + sla.tone} dateTime={it.at} title={it.at ? crDate(it.at, true) : ""}>{crAgo(it.at, now) || "now"}</time></span>
+          <span className="cr-ib-row2">{showKind && <span className="cr-ib-kind"><CrIcon n={it.icon}/>{it.kind}</span>}<span className="cr-ib-title">{it.title}</span></span>
+          {it.body && <span className="cr-ib-row3">{it.body}</span>}
+          <span className="cr-ib-tags">
+            {it.urgent && <span className="cr-ib-tag is-bad">Urgent</span>}
+            {sla.overdue && <span className="cr-ib-tag is-bad">Overdue</span>}
+            {draft && <span className="cr-ib-tag">Draft</span>}
+            {it.thread && it.thread.some(t => t.mine) && <span className="cr-ib-tag is-ok">Replied</span>}
+          </span>
+        </span>
+      </button>
+    </div>
+  );
+}
+
+/** The conversation pane: who and what, the thread, and the one place to act. */
+function CrInboxPane({ it, now, ctx, phone, paneRef, act, send, onBack }) {
+  const sla = crInboxSla(it, now);
+  const [mode, setMode] = React.useState(it.reply ? "reply" : null);     // "reply" | index of a note action
+  const [text, setText] = React.useState(() => (it.reply ? crDraftGet(it.id) : ""));
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const [tpl, setTpl] = React.useState(false);
+  const taRef = React.useRef(null);
+  const endRef = React.useRef(null);
+  React.useEffect(() => { if (endRef.current && endRef.current.scrollIntoView) endRef.current.scrollIntoView({ block: "end" }); }, [it.thread && it.thread.length]);
+  React.useEffect(() => { if (mode === "reply") crDraftSet(it.id, text); }, [text]);
+
+  const noteAction = typeof mode === "number" ? it.actions[mode] : null;
+  const choose = (a, i) => {
+    setErr("");
+    if (a.note) { setMode(i); setText(""); setTimeout(() => taRef.current && taRef.current.focus(), 0); return; }
+    act(it, a);
+  };
+  React.useEffect(() => {
+    const el = paneRef.current; if (!el) return undefined;
+    const h = e => { const a = it.actions[e.detail]; if (a) choose(a, e.detail); };
+    el.addEventListener("cr-ib-act", h);
+    return () => el.removeEventListener("cr-ib-act", h);
+  });
+
+  const submit = async close => {
+    setErr("");
+    const body = text.trim();
+    if (noteAction) {
+      if (noteAction.note.req && !body) { setErr("Enter " + noteAction.note.l.toLowerCase() + "."); return; }
+      setBusy(true); const ok = await act(it, noteAction, { why: body }); setBusy(false);
+      if (!ok) return;
+      return;
+    }
+    if (!body) { setErr("Write the reply first."); return; }
+    setBusy(true); const ok = await send(it, body, close); setBusy(false);
+    if (ok) setText("");
+  };
+  const onKey = e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(e.shiftKey); }
+    if (e.key === "Escape" && noteAction) { e.stopPropagation(); setMode(it.reply ? "reply" : null); setText(it.reply ? crDraftGet(it.id) : ""); }
+  };
+  const templates = it.reply ? CR_INBOX_REPLIES.filter(t => !t.for || t.for === it.reply.purpose).concat(CR_INBOX_REPLIES.filter(t => t.for && t.for !== it.reply.purpose)) : [];
+  const useTpl = t => { setText(crFillReply(t.t, it.reply.vars)); setTpl(false); setTimeout(() => taRef.current && taRef.current.focus(), 0); };
+  const composing = mode === "reply" || noteAction;
+
+  return (
+    <section className="cr-ib-pane" ref={paneRef} aria-label={it.who}>
+      <header className="cr-ib-phead">
+        {phone && <button type="button" className="cr-p44" aria-label="Back to the list" onClick={onBack}><CrIcon n="caret-left"/></button>}
+        <CrAvatar className="cr-ib-av" name={it.who} photo={it.photoUrl}/>
+        <div className="cr-grow">
+          <h2>{it.who}</h2>
+          <p><span className="cr-ib-kind"><CrIcon n={it.icon}/>{it.kind}</span> · <span className={"cr-ib-age is-" + sla.tone}>{sla.overdue ? "Overdue · waiting " : "Waiting "}{crAgo(it.at, now) || "a moment"}</span></p>
+        </div>
+        {it.actions.filter(a => !a.note && a.tone !== "primary" && !a.form).length > 0 && (
+          <div className="cr-ib-quick">
+            {it.actions.map((a, i) => (!a.note && a.tone !== "primary" && !a.form) ? <button key={i} type="button" className={"cr-btn is-sm" + (crIsDanger(a.l) ? " is-danger" : "")} onClick={() => choose(a, i)} aria-keyshortcuts={String(i + 1)}>{a.l}</button> : null)}
+          </div>
+        )}
+      </header>
+
+      <div className="cr-ib-pbody">
+        <h3 className="cr-ib-subject">{it.title}</h3>
+        {it.note && <p className="cr-ib-callout"><CrIcon n="info"/>{it.note}</p>}
+        {it.photoUrl && it.cat === "photos" && <img className="cr-ib-photo" src={it.photoUrl} alt={"Headshot uploaded for " + it.who}/>}
+        {it.facts.length > 0 && <dl className="cr-ib-facts">{it.facts.map((f, i) => <div key={i}><dt>{f[0]}</dt><dd>{f[1] == null || f[1] === "" ? "—" : f[1]}</dd></div>)}</dl>}
+        {it.thread ? (
+          <ol className="cr-ib-thread" aria-label="Conversation">
+            {it.thread.map((m, i) => (
+              <li key={i} className={"cr-ib-msg" + (m.mine ? " is-mine" : "")}>
+                <span className="cr-ib-msgmeta"><b>{m.mine ? m.who : m.who}</b>{m.at ? " · " + crDate(m.at, true) : ""}{m.mine ? " · emailed" : ""}</span>
+                <p className="cr-ib-bubble">{m.body}</p>
+              </li>
+            ))}
+            <li ref={endRef} aria-hidden="true"/>
+          </ol>
+        ) : it.body ? <blockquote className="cr-ib-quote">{it.body}</blockquote> : null}
+      </div>
+
+      <footer className="cr-ib-act">
+        {composing ? (
+          <div className="cr-ib-compose">
+            <div className="cr-ib-compose-h">
+              {noteAction ? <b>{noteAction.l}{noteAction.note.req ? "" : " · optional note"}</b> : <b>Reply to {it.reply.to}</b>}
+              <span className="cr-grow"/>
+              {mode === "reply" && <div className="cr-ib-tplwrap">
+                <button type="button" className="cr-linkbtn" aria-haspopup="menu" aria-expanded={tpl} onClick={() => setTpl(v => !v)}><CrIcon n="lightning"/>Saved replies</button>
+                {tpl && <div className="cr-menu cr-ib-tpls" role="menu" aria-label="Saved replies">{templates.map((t, i) => <button key={i} type="button" role="menuitem" className="cr-menuitem" onClick={() => useTpl(t)}><span className="cr-grow">{t.l}</span>{t.for && t.for === it.reply.purpose && <span className="cr-ib-tag is-ok">Suggested</span>}</button>)}</div>}
+              </div>}
+              {noteAction && <button type="button" className="cr-linkbtn" onClick={() => { setMode(it.reply ? "reply" : null); setText(it.reply ? crDraftGet(it.id) : ""); setErr(""); }}>Cancel</button>}
+            </div>
+            <textarea ref={taRef} className="cr-ib-ta" rows={phone ? 4 : 7} value={text} maxLength={noteAction ? 2000 : 5000}
+              placeholder={noteAction ? (noteAction.note.ph || noteAction.note.help) : "Write a reply. It is emailed to them and kept here."}
+              aria-label={noteAction ? noteAction.note.l : "Reply"} aria-invalid={err ? "true" : undefined} aria-describedby={"cr-ib-help-" + it.id}
+              onChange={e => { setText(e.target.value); if (err) setErr(""); }} onKeyDown={onKey}/>
+            <div className="cr-ib-compose-f">
+              <span id={"cr-ib-help-" + it.id} className={err ? "cr-ib-err" : "cr-ib-help"} role={err ? "alert" : undefined}>{err || (noteAction ? noteAction.note.help : (text ? "Draft kept on this device · " : "") + "⌘↵ send · ⇧⌘↵ send and close")}</span>
+              {noteAction ? (
+                <button type="button" className={"cr-btn" + (crIsDanger(noteAction.l) ? " is-danger" : " is-primary")} disabled={busy} onClick={() => submit(false)}>{busy ? "Working…" : noteAction.l}</button>
+              ) : <>
+                <button type="button" className="cr-btn" disabled={busy || !text.trim()} onClick={() => submit(true)}>Send and close</button>
+                <button type="button" className="cr-btn is-primary" disabled={busy || !text.trim()} onClick={() => submit(false)}><CrIcon n="paper-plane-tilt"/>{busy ? "Sending…" : "Send"}</button>
+              </>}
+            </div>
+          </div>
+        ) : null}
+        {!noteAction && (it.actions.some(a => a.note || a.tone === "primary" || a.form)) && (
+          <div className="cr-ib-decide" role="group" aria-label="Decide">
+            {it.actions.map((a, i) => (a.note || a.tone === "primary" || a.form) ? (
+              <button key={i} type="button" className={"cr-btn" + (a.tone === "primary" ? " is-primary" : crIsDanger(a.l) ? " is-danger" : "")} aria-keyshortcuts={String(i + 1)} onClick={() => choose(a, i)}>{a.l}{!phone && <kbd className="cr-ib-kbd">{i + 1}</kbd>}</button>
+            ) : null)}
+            {!phone && <span className="cr-ib-keys">J/K move · X select{it.reply ? " · R reply" : ""}{it.actions.some(a => a.l === "Mark done") ? " · E done" : ""}</span>}
+          </div>
+        )}
+      </footer>
+    </section>
+  );
+}
+
+/* ── The tabs: one workspace, opened on the view the URL names ── */
+function crInboxTab(key) {
+  return {
+    workspace: true,
+    skeleton: ["queue"],
+    count: async () => {
+      const ov = await crOverview(); const w = ov.waiting || {};
+      if (key === "messages") return (ov.messages || {}).unread || 0;
+      return w[key] ? w[key].n : 0;
+    },
+    load: crInboxLoad,
+    facts: d => {
+      const c = crInboxCounts(d.items); const od = d.items.filter(x => crInboxSla(x).overdue).length;
+      return "Waiting on staff: " + Object.keys(c).filter(k => k !== "all").map(k => c[k] + " " + k).join(", ") + (od ? "; " + od + " overdue" : "");
+    },
+    blocks: () => [],
+    actions: (d, ctx) => key === "applications" && ctx.can("people") ? [{ l: "Export applications", icon: "download-simple", run: async () => {
       const r = await NGGApi.admin.applications.list({});
       crDownloadCsv("applications", ["Kind", "Programme", "Name", "Email", "Age", "Centre", "Division", "Role", "Status", "Submitted"],
         (r.applications || []).map(a => [a.kind, a.program, a.name, a.email, a.age, a.centre, a.track, a.role, a.status, a.createdAt]));
-    } }],
-  }),
+    } }] : key === "photos" && ctx.can("summer") ? [{ l: "Ask families for missing photos", icon: "camera", run: async () => {
+      const m = await NGGApi.admin.photos.missing(200).catch(() => null);
+      const due = m ? (m.students || []).filter(s => s.reachable && !s.askedAt).length : 0;
+      if (!due) return ctx.toast(m && m.total ? "Every family that can be asked has been asked in the last 3 days." : "Every participant has a photo on file.");
+      const ok = await ctx.confirm({ title: "Ask " + Math.min(50, due) + " families for a photo?", body: crPlural(m.total, "child", "children") + " in Summer School have no photo, so their ID cards can’t print. Each family gets an upload link. Up to 50 go now; run it again for the rest.", cta: "Send" });
+      if (!ok) return;
+      try { const r = await NGGApi.admin.photos.requestMissing(50, 3); ctx.toast(r.asked ? "Asked " + crPlural(r.asked, "family", "families") + (r.remaining ? " · " + r.remaining + " still due" : " · that’s everyone") : (r.message || "Nobody is due right now.")); }
+      catch (e) { ctx.toast(crErr(e), null, true); }
+    } }] : [],
+    render: (d, ctx, phone) => <CrInbox data={d} ctx={ctx} phone={phone}/>,
+  };
+}
+CR_PAGES.inbox.frame = "workspace";
+Object.assign(CR_TAB_DEFS, {
+  all: crInboxTab("all"),
+  applications: crInboxTab("applications"),
   approvals: crInboxTab("approvals"),
   requests: crInboxTab("requests"),
-  messages: crInboxTab("messages", { count: async () => { const ov = await crOverview(); return (ov.messages || {}).unread || 0; } }),
+  messages: crInboxTab("messages"),
   comments: crInboxTab("comments"),
-  photos: crInboxTab("photos", {
-    load: async ctx => {
-      const [items, missing] = await Promise.all([CR_INBOX_SOURCES.photos.load(ctx), ctx.can("summer") ? NGGApi.admin.photos.missing(200).catch(() => null) : null]);
-      return { items, missing };
-    },
-    blocks: (d, ctx) => {
-      const out = [];
-      const m = d.missing;
-      if (m && m.total > 0) {
-        const due = (m.students || []).filter(s => s.reachable && !s.askedAt).length;
-        out.push({ type: "note", span: 6, icon: "camera-slash", tone: "warn",
-          text: crPlural(m.total, "child", "children") + " in Summer School have no photo on file, so their ID cards can’t print.",
-          sub: (m.students || []).filter(s => !s.reachable).length + " have no guardian email. Families asked in the last 3 days are skipped.",
-          act: due ? { l: "Ask " + Math.min(50, due) + " families for a photo", run: async () => {
-            const ok = await ctx.confirm({ title: "Send photo requests?", body: "Each family gets a link to upload a photo. Up to 50 go now; run it again for the rest.", cta: "Send" });
-            if (!ok) return;
-            try { const r = await NGGApi.admin.photos.requestMissing(50, 3); ctx.toast(r.asked ? "Asked " + crPlural(r.asked, "family", "families") + (r.remaining ? " · " + r.remaining + " still due" : " · that’s everyone") : (r.message || "Nobody is due right now.")); ctx.reload(); }
-            catch (e) { ctx.toast(crErr(e), null, true); }
-          } } : null });
-      }
-      out.push({ type: "queue", span: 6, items: d.items, emptyText: "Clean photos approve themselves; only flagged ones land here.", onResolved: () => ctx.refreshCounts() });
-      return out;
-    },
-  }),
-  all: {
-    skeleton: ["queue"],
-    count: async () => 0,
-    load: async ctx => {
-      const keys = ["messages", "applications", "approvals", "requests", "photos", "comments"].filter(k => ctx.can(CR_INBOX_SOURCES[k].cap));
-      const lists = await Promise.all(keys.map(k => CR_INBOX_SOURCES[k].load(ctx).catch(() => [])));
-      const items = [].concat(...lists).sort((a, b) => (b.urgent - a.urgent) || (Date.parse(a.at || 0) - Date.parse(b.at || 0)));
-      return { items };
-    },
-    blocks: (d, ctx) => [{ type: "queue", span: 6, items: d.items, emptyText: "Nothing is waiting on staff. New items appear here as they arrive.", onResolved: () => ctx.refreshCounts() }],
-  },
+  photos: crInboxTab("photos"),
 });

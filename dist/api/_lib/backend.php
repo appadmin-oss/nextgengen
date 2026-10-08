@@ -535,6 +535,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.newsletter.send'   => 'admin_newsletter_send',
             'admin.contact.list'      => 'admin_contact_list',
             'admin.contact.status'    => 'admin_contact_status',
+            'admin.contact.reply'     => 'admin_contact_reply',
             'admin.settings.get'      => 'admin_settings_get',
             'admin.settings.set'      => 'admin_settings_set',
             'admin.mail.test'         => 'admin_mail_test',

@@ -1383,6 +1383,7 @@
       contact: {
         list:   (q) => request('/admin/contact.php' + qs(q || {})),
         status: (id, status) => request('/admin/contact.php', { body: { id, status } }),
+        reply:  (id, body, close) => request('/admin/contact.php', { body: { action: 'reply', id, body, close: !!close } }),
       },
       behaviour: {
         list:   (q) => request('/admin/behaviour.php' + qs(q || {})),

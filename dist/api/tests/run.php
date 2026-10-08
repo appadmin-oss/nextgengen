@@ -1071,6 +1071,41 @@ $firstMsg = backend_dispatch('admin.contact.list', ['requesterId' => 'NGG-2025-0
 backend_dispatch('admin.contact.status', ['requesterId' => 'NGG-2025-0099', 'id' => $firstMsg, 'status' => 'replied']);
 chk('admin sets contact status', db_row('SELECT status FROM contact_messages WHERE id=?', [$firstMsg])['status'] === 'replied');
 
+// ── Replying in the app (the inbox's conversation pane) ──
+$GLOBALS['__mail_sink'] = [];
+$rpMsg = backend_dispatch('public.contact', ['name' => 'Bisi Parent', 'email' => 'bisi-reply@example.com', 'subject' => 'Saturday times', 'message' => 'What time does the Saturday session start at Egbeda?', 'purpose' => 'general']);
+$rpId = (int)db_row('SELECT id FROM contact_messages WHERE ref = ?', [$rpMsg['ref']])['id'];
+$GLOBALS['__mail_sink'] = [];
+chk('reply: an empty reply is refused', backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => $rpId, 'body' => '   '])['error'] === 'reply_empty');
+chk('reply: only inbox staff can reply', backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0001', 'id' => $rpId, 'body' => 'Hello'])['error'] === 'forbidden');
+chk('reply: an unknown message is refused', backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => 999999, 'body' => 'Hello'])['error'] === 'not_found');
+chk('reply: an over-long reply is refused', backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => $rpId, 'body' => str_repeat('x', CONTACT_REPLY_MAX + 1)])['error'] === 'reply_too_long');
+$GLOBALS['__mail_fail'] = true;
+$rpFail = backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => $rpId, 'body' => 'It starts at 10am.']);
+unset($GLOBALS['__mail_fail']);
+chk('reply: a reply the mail relay refused is not recorded as sent',
+    $rpFail['error'] === 'send_failed' && (int)db_row('SELECT COUNT(*) c FROM contact_replies WHERE messageId = ?', [$rpId])['c'] === 0
+    && db_row('SELECT status FROM contact_messages WHERE id=?', [$rpId])['status'] === 'new');
+$rp = backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => $rpId, 'body' => "It starts at 10am.\nCome ten minutes early."]);
+$rpMail = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'bisi-reply@example.com'));
+chk('reply: it is emailed to the sender, with the reference and their message quoted',
+    !empty($rp['ok']) && count($rpMail) === 1 && str_contains($rpMail[0]['subject'], $rpMsg['ref'])
+    && str_contains($rpMail[0]['html'], 'Come ten minutes early') && str_contains($rpMail[0]['html'], 'What time does the Saturday session start'));
+chk('reply: it is kept on the record, and the message is marked replied',
+    db_row('SELECT status FROM contact_messages WHERE id=?', [$rpId])['status'] === 'replied'
+    && (string)db_row('SELECT sentBy FROM contact_replies WHERE messageId = ?', [$rpId])['sentBy'] === 'NGG-2025-0099');
+chk('reply: one audit event per reply', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'admin.contact.reply' AND subject = ?", [(string)$rpId])['c'] === 1);
+backend_dispatch('public.contact', ['name' => 'Bisi Parent', 'email' => 'bisi-reply@example.com', 'message' => 'Thank you. Is there a uniform for the first day?', 'purpose' => 'general']);
+$rpList = backend_dispatch('admin.contact.list', ['requesterId' => 'NGG-2025-0099'])['messages'];
+$rpRow = array_values(array_filter($rpList, fn($m) => (int)$m['id'] === $rpId))[0] ?? [];
+chk('reply: the inbox shows each message with its conversation, oldest reply first',
+    count($rpRow['replies'] ?? []) === 1 && str_contains($rpRow['replies'][0]['body'], '10am'));
+chk('reply: …and how many other messages the same address has sent', (int)($rpRow['earlier'] ?? -1) === 1);
+$rp2 = backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => $rpId, 'body' => 'And see you Saturday.', 'close' => true]);
+chk('reply: a reply that closes the conversation archives it', !empty($rp2['ok']) && db_row('SELECT status FROM contact_messages WHERE id=?', [$rpId])['status'] === 'archived'
+    && (int)db_row('SELECT COUNT(*) c FROM contact_replies WHERE messageId = ?', [$rpId])['c'] === 2);
+unset($GLOBALS['__mail_sink']);
+
 // ── Standard password login (opt-in) ──
 chk('login without a password → no_password', backend_dispatch('auth.login', ['identifier' => 'tunde@example.com', 'password' => 'anything'])['error'] === 'no_password');
 chk('set password rejects short', backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'short'])['error'] === 'password_too_short');

@@ -22,7 +22,7 @@ function CrDrawer({ d, phone, onClose }) {
         <div className="cr-pfull-who"><CrAvatar name={d.name || d.title} photo={d.photo} className="cr-sheet-ini"/><span>{d.sub}</span></div>
         {d.stats && d.stats.length > 0 && <div className="cr-pstats">{d.stats.map((s, i) => <div key={i}><span>{s[0]}</span><b>{s[1]}</b></div>)}</div>}
         {d.fields && d.fields.length > 0 && <div className="cr-pbox cr-pfields">{d.fields.map((f, i) => <div key={i}><span>{f[0]}</span><b>{f[1] == null || f[1] === "" ? "—" : f[1]}</b></div>)}</div>}
-        {sections.map((s, i) => <div key={i} className="cr-sheet-sec"><h4>{s.h}</h4>{s.rows ? <div className="cr-pbox cr-pfields">{s.rows.map((f, j) => <div key={j}><span>{f[0]}</span><b>{f[1] == null || f[1] === "" ? "—" : f[1]}</b></div>)}</div> : s.text ? <p className="cr-q-body" style={{ fontSize: 15 }}>{s.text}</p> : null}</div>)}
+        {sections.map((s, i) => <div key={i} className="cr-sheet-sec"><h4>{s.h}</h4>{s.rows ? <div className="cr-pbox cr-pfields">{s.rows.map((f, j) => <div key={j}><span>{f[0]}</span><b>{f[1] == null || f[1] === "" ? "—" : f[1]}</b></div>)}</div> : s.text ? <p className="cr-prose" style={{ fontSize: 15 }}>{s.text}</p> : null}</div>)}
       </div>
       {acts.length > 0 && <div className="cr-pfull-foot">{acts.map((a, i) => btn(a, i, true))}</div>}
     </div>
@@ -42,7 +42,7 @@ function CrDrawer({ d, phone, onClose }) {
             <div key={i} className="cr-sheet-sec">
               <h4>{s.h}</h4>
               {s.rows && <dl className="cr-dl">{s.rows.map((f, j) => <React.Fragment key={j}><dt>{f[0]}</dt><dd>{f[1] == null || f[1] === "" ? "—" : f[1]}</dd></React.Fragment>)}</dl>}
-              {s.text && <p className="cr-q-body" style={{ fontSize: 13.5 }}>{s.text}</p>}
+              {s.text && <p className="cr-prose" style={{ fontSize: 13.5 }}>{s.text}</p>}
               {s.list && <div className="cr-box cr-list">{s.list.length ? s.list.map((r, j) => <div key={j} className="cr-list-row"><span className="cr-list-ico"><CrIcon n={r.icon || "circle"}/></span><span className="cr-list-text"><b>{r.t}</b>{r.s && <span>{r.s}</span>}</span>{r.m && <span className="cr-list-m">{r.m}</span>}</div>) : <div className="cr-tempty" style={{ padding: 16 }}>{s.empty || "Nothing yet."}</div>}</div>}
             </div>
           ))}
@@ -134,7 +134,7 @@ function CrFormSheet({ f, phone, onClose, toast }) {
       </div>
     );
   };
-  const intro = f.intro ? <p className="cr-q-body" style={{ fontSize: phone ? 15 : 13.5, color: "var(--cr-muted-2)" }}>{f.intro}</p> : null;
+  const intro = f.intro ? <p className="cr-prose" style={{ fontSize: phone ? 15 : 13.5, color: "var(--cr-muted-2)" }}>{f.intro}</p> : null;
   if (phone) return (
     <form ref={ref} className="cr-pfull is-form" role="dialog" aria-modal="true" aria-label={f.title} onSubmit={submit} noValidate>
       <div className="cr-pfull-head"><button type="button" className="cr-p44" aria-label="Close" onClick={onClose}><CrIcon n="x"/></button><b>{f.title}</b></div>

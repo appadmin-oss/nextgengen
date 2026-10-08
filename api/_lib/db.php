@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 133;
+const NGG_SCHEMA_TARGET = 134;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3943,6 +3943,20 @@ function db_migrate(PDO $db): void {
         // ID Card Studio: the design each card type prints with, and which channels a photo ask reached.
         133 => "CREATE TABLE IF NOT EXISTS id_designs (kind TEXT PRIMARY KEY, templateId TEXT NOT NULL DEFAULT '', setBy TEXT NOT NULL DEFAULT '', setAt TEXT NOT NULL DEFAULT '');"
              . "ALTER TABLE id_photo_asks ADD COLUMN channels TEXT NOT NULL DEFAULT '';",
+        /* 134 — replies to contact messages, sent from the Control Room inbox
+           rather than from somebody's own mail app, so the conversation is on
+           the record and the next person to open it can see what was said. */
+        134 => "CREATE TABLE IF NOT EXISTS contact_replies (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  messageId INTEGER NOT NULL,
+                  body TEXT NOT NULL DEFAULT '',
+                  sentBy TEXT NOT NULL DEFAULT '',
+                  sentByName TEXT NOT NULL DEFAULT '',
+                  sentAt TEXT NOT NULL DEFAULT '',
+                  channel TEXT NOT NULL DEFAULT 'email'
+                );
+                CREATE INDEX IF NOT EXISTS idx_contact_replies_msg ON contact_replies(messageId);
+                CREATE INDEX IF NOT EXISTS idx_contact_email ON contact_messages(email);",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

@@ -170,16 +170,92 @@ function crQueueAfterResolve(ids, id) {
   if (i < 0) return ids[0] || null;
   return ids[i + 1] || ids[i - 1] || null;
 }
-/** Progress text and fraction for a queue: "N left · M done this session". */
-function crQueueProgress(total, done) {
-  const left = Math.max(0, total - done);
-  return { left, done, pct: total ? Math.round(done / total * 100) : 0, text: left + " left · " + done + " done this session" };
+/* ── Inbox triage (the inbox workspace, cr-tab-inbox.jsx) ─────────────────
+   Pure, so the rules that decide what a person sees first are held by tests
+   rather than by the look of the screen. An item is { id, cat, who, at,
+   unread, urgent, title, body, kind, search?, sla? }. */
+
+/** Hours a kind of item may wait before it is overdue. Messages are promised
+ *  an answer within 2 working days in the acknowledgement email. */
+const CR_INBOX_SLA = { messages: 48, requests: 48, applications: 72, approvals: 24, comments: 48, photos: 72 };
+
+/** How long an item has waited, and whether that is now too long. */
+function crInboxSla(it, now) {
+  const t = Date.parse(it.at || "");
+  const hours = isFinite(t) ? Math.max(0, ((now == null ? Date.now() : now) - t) / 3600000) : 0;
+  const limit = (it.sla != null ? it.sla : CR_INBOX_SLA[it.cat]) || 72;
+  const overdue = hours >= limit;
+  const tone = overdue ? "bad" : hours >= limit * 0.66 ? "warn" : "neutral";
+  return { hours, limit, overdue, tone, left: Math.max(0, limit - hours) };
 }
-/** The queue filter: who, title and kind. */
-function crQueueFilter(items, q) {
+
+/** Does an item match a search: who, title, body, kind and any extra words it carries (email, reference). */
+function crInboxMatch(it, q) {
   const s = String(q || "").trim().toLowerCase();
-  return s ? items.filter(it => ((it.who || "") + " " + (it.title || "") + " " + (it.kind || "")).toLowerCase().includes(s)) : items;
+  if (!s) return true;
+  const hay = [it.who, it.title, it.body, it.kind, it.search].filter(Boolean).join(" ").toLowerCase();
+  return s.split(/\s+/).every(w => hay.includes(w));
 }
+
+/**
+ * Order the inbox. "triage" (the default) puts first what is costing somebody
+ * most: urgent, then overdue, then unread, then the longest waiting. "newest"
+ * is plain reverse time; "oldest" plain time.
+ */
+function crInboxSort(items, mode, now) {
+  const at = it => { const t = Date.parse(it.at || ""); return isFinite(t) ? t : 0; };
+  const out = items.slice();
+  if (mode === "newest") return out.sort((a, b) => at(b) - at(a));
+  if (mode === "oldest") return out.sort((a, b) => at(a) - at(b));
+  return out.sort((a, b) => (!!b.urgent - !!a.urgent)
+    || (crInboxSla(b, now).overdue - crInboxSla(a, now).overdue)
+    || (!!b.unread - !!a.unread)
+    || (at(a) - at(b)));
+}
+
+/** The filter chips inside a view: everything, unread, overdue, or the ones that need a written reply. */
+function crInboxFilter(items, f, now) {
+  f = f || {};
+  return items.filter(it =>
+    (!f.view || f.view === "all" || it.cat === f.view)
+    && (!f.chip || f.chip === "all"
+        || (f.chip === "unread" && it.unread)
+        || (f.chip === "overdue" && crInboxSla(it, now).overdue)
+        || (f.chip === "reply" && !!it.reply))
+    && crInboxMatch(it, f.q));
+}
+
+/** Counts per view (and "all"), for the rail. */
+function crInboxCounts(items) {
+  const c = { all: items.length };
+  items.forEach(it => { c[it.cat] = (c[it.cat] || 0) + 1; });
+  return c;
+}
+
+/** Sorted items cut into labelled runs for the list: Overdue, New, Waiting. Empty runs are dropped. */
+function crInboxGroups(sorted, mode, now) {
+  if (mode && mode !== "triage") return [{ key: "all", label: "", items: sorted }];
+  const g = { overdue: [], fresh: [], waiting: [] };
+  sorted.forEach(it => { (crInboxSla(it, now).overdue ? g.overdue : it.unread ? g.fresh : g.waiting).push(it); });
+  return [["overdue", "Overdue"], ["fresh", "New"], ["waiting", "Waiting"]].map(([k, l]) => ({ key: k, label: l, items: g[k] })).filter(x => x.items.length);
+}
+
+/** A saved reply with its blanks filled: {first}, {name}, {ref}, {me}. Unknown blanks are left as written. */
+function crFillReply(tpl, vars) {
+  return String(tpl || "").replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null && vars[k] !== "") ? String(vars[k]) : m);
+}
+
+/**
+ * What can be done to several selected items at once: the actions every one
+ * of them offers by the same label that need nothing typed (no note, no form).
+ * Anything that asks a question per item stays one at a time.
+ */
+function crInboxBulkActions(items) {
+  if (!items.length) return [];
+  const simple = it => (it.actions || []).filter(a => !a.note && !a.form).map(a => a.l);
+  return simple(items[0]).filter(l => items.every(it => simple(it).indexOf(l) >= 0));
+}
+
 /** Which verb a resolving action is, for the toast: Declined, Done or Approved. */
 function crResolveVerb(label) {
   if (/^(Reject|Decline|Delete)/.test(label)) return "Declined";
