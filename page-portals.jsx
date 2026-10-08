@@ -57,7 +57,7 @@ function useAdminDrawer(onClose, guard = true) {
 }
 
 // Cross-section deep-link: jump the console to another section (and optionally a
-// specific sub-tab). window.__adminSection is exposed by AdminPage; a section
+// specific sub-tab). window.__adminSection is exposed by the Control Room shell (cr-app.jsx); a section
 // that supports tabs reads the pending tab on mount. Lets one screen point an
 // admin straight at where a piece of data is actually edited.
 /* ── The pending sub-tab, for a cross-section deep link ────────────────────

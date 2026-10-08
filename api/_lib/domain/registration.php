@@ -2102,23 +2102,26 @@ function admin_id_resend(array $p): array {
 
     if ($kind === 'volunteer') {
         $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
-        $v = db_row('SELECT volunteerId, token FROM volunteers WHERE volunteerId = ? LIMIT 1', [$id]);
+        $v = db_row('SELECT volunteerId, token, email, phone FROM volunteers WHERE volunteerId = ? LIMIT 1', [$id]);
         if (!$v) return ['ok' => false, 'error' => 'not_found'];
         if (empty($v['token'])) return ['ok' => false, 'error' => 'no_id'];
         if ($qrPng !== '') qr_cache_store((string)$v['token'], $qrPng);
         $channels = volunteer_send_id($id);
         audit('admin.id.resend', $g['requester']['memberId'], $id, ['kind' => 'volunteer', 'channels' => $channels, 'qr' => qr_cache_exists((string)$v['token'])], (string)($p['ip'] ?? ''));
-        return ['ok' => true, 'channels' => $channels, 'kind' => 'volunteer', 'qr' => qr_cache_exists((string)$v['token'])];
+        // onFile tells "nobody to send to" apart from a send that failed.
+        return ['ok' => true, 'channels' => $channels, 'kind' => 'volunteer', 'qr' => qr_cache_exists((string)$v['token']),
+            'onFile' => trim((string)$v['email']) !== '' || trim((string)$v['phone']) !== ''];
     }
 
     $g = admin_cap_gate($p, 'summer'); if (!$g['ok']) return $g;
-    $st = db_row('SELECT token FROM summer_students WHERE studentId = ? LIMIT 1', [$id]);
+    $st = db_row('SELECT token, parentEmail, guardianPhone FROM summer_students WHERE studentId = ? LIMIT 1', [$id]);
     if ($qrPng !== '' && $st && !empty($st['token'])) qr_cache_store((string)$st['token'], $qrPng);
     $res = student_send_id($id);
     if (empty($res['ok'])) return $res;
     $hasQr = $st && !empty($st['token']) && qr_cache_exists((string)$st['token']);
     audit('admin.id.resend', $g['requester']['memberId'], $id, ['kind' => 'student', 'channels' => $res['channels'], 'qr' => $hasQr], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'channels' => $res['channels'], 'kind' => 'student', 'qr' => $hasQr];
+    return ['ok' => true, 'channels' => $res['channels'], 'kind' => 'student', 'qr' => $hasQr,
+        'onFile' => $st && (trim((string)$st['parentEmail']) !== '' || trim((string)$st['guardianPhone']) !== '')];
 }
 
 /* ── Guardian photo re-shoot (public, token-authenticated) ────────────────── */

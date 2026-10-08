@@ -225,15 +225,32 @@ function IdCardStudioPage({ setPage }) {
      sequence. The matches go on the sheet; the misses are named. */
   const pasteIds = (text, pool) => {
     const norm = x => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-    const wanted = String(text || "").split(/[\s,;]+/).map(norm).filter(Boolean);
-    if (!wanted.length) return { matched: 0, miss: [], nothing: true };
-    const hit = [], miss = [], blocked = [];
-    wanted.forEach(w => {
-      const r = pool.find(c => norm(c.displayId) === w || norm(c.id) === w || (/^\d+$/.test(w) && c.seq === parseInt(w, 10)));
-      if (!r) miss.push(w); else if (isBlocked(r)) blocked.push(r.name); else if (!hit.includes(r) && !inQ.has(r.key)) hit.push(r);
+    // Report what was typed, not its normalised form ("026-003", not "026003").
+    const wanted = String(text || "").split(/[\s,;]+/).map(raw => ({ raw: raw.trim(), w: norm(raw) })).filter(x => x.w);
+    if (!wanted.length) return { matched: 0, miss: [], hidden: [], carded: [], nothing: true };
+    const hit = [], miss = [], hidden = [], carded = [], blocked = [];
+    const find = (list, w) => list.find(c => norm(c.displayId) === w || norm(c.id) === w || (/^\d+$/.test(w) && c.seq === parseInt(w, 10)));
+    wanted.forEach(({ raw, w }) => {
+      const r = find(pool, w);
+      /* On record but outside the Kind / Centre / search filters: say so, rather
+         than "not found" for somebody who is there. */
+      if (!r) {
+        if (find(recs, w)) hidden.push(raw);
+        /* Already carded, so off the queue: name them and offer the reprint
+           route, which is how a carded person goes back on a sheet. */
+        else { const c = find(data.records, w); if (c) { if (!carded.includes(c)) carded.push(c); } else miss.push(raw); }
+        return;
+      }
+      if (isBlocked(r)) blocked.push(r.name); else if (!hit.includes(r) && !inQ.has(r.key)) hit.push(r);
     });
     const added = hit.length ? addRecs(hit, idsN(hit.length, "card") + " matched from the list") : 0;
-    return { matched: added, otherSize: hit.length - added, miss, blocked };
+    return { matched: added, otherSize: hit.length - added, miss, hidden, carded, blocked };
+  };
+  const queueReprints = async list => {
+    const items = list.map(r => ({ subjectType: r.subjectType, subjectId: r.id, why: "Reprint asked for by ID" }));
+    if (!items.length) return false;
+    try { await NGGApi.admin.idStudio.reprint(items); say(idsN(items.length, "card") + " queued as reprints"); load(); return true; }
+    catch (e) { say(idsErrText(e, "Couldn’t queue the reprint. Try again.")); return false; }
   };
   /* Per-card acts the old Card Studio had on every card: resend the digital
      ID, and re-crop or replace the photo. */
@@ -247,7 +264,13 @@ function IdCardStudioPage({ setPage }) {
       const qrPng = r.raw && r.raw.token ? await idsQrPng(r.raw.token) : "";
       const res = await NGGApi.admin.registration.resendId(R0.kind, r.id, qrPng);
       const ch = res.channels || [];
-      say(ch.length ? r.name + "’s ID sent by " + ch.join(" and ") + (res.qr ? ", with the QR" : "") + "." : "Nobody on file to send " + r.name + "’s ID to. Nothing was sent.");
+      /* No channel went: say whether that is a record with no contact, or a
+         send that failed — "nobody on file" for somebody with an email on
+         file sends the operator to fix the wrong thing. */
+      const onFile = !!res.onFile;
+      say(ch.length ? r.name + "’s ID sent by " + ch.join(" and ") + (res.qr ? ", with the QR" : "") + "."
+        : onFile ? "Couldn’t send " + r.name + "’s ID — the email or text didn’t go. Check the mail settings, then try again."
+        : "Nobody on file to send " + r.name + "’s ID to. Add an email or phone to their record first.");
     } catch (e) {
       const c = e && (e.code || e.message);
       say(c === "no_id" ? "No ID has been issued to " + r.name + " yet." : c === "forbidden" || (e && e.status === 403) ? "Resending this ID needs the " + (r.kind === "summer" ? "Summer School" : "People") + " permission." : idsErrText(e, "Couldn’t resend " + r.name + "’s ID. Try again."));
@@ -256,7 +279,7 @@ function IdCardStudioPage({ setPage }) {
   const records = {
     q, setQ, kind, setKind, centre, setCentre, filter, setFilter: f => { setFilter(f); setLim(IDS_REC_PAGE); },
     noCentreCount, rmode, setRmode: m => { setRmode(m); setRng({ dFrom: "", dTo: "", nFrom: "", nTo: "" }); }, rng, setRng: p => setRng(r => Object.assign({}, r, p)),
-    undated, ranged: base.length !== preRange.length || undated > 0, inRangeN: base.length, preRangeN: preRange.length, pasteIds: list => pasteIds(list, preRange),
+    undated, ranged: base.length !== preRange.length || undated > 0, inRangeN: base.length, preRangeN: preRange.length, pasteIds: list => pasteIds(list, preRange), queueReprints,
     filters: [["new", "New", "ok"], ["reprint", "Reprints", "warn"], ["blocked", "Blocked", "bad"], ["all", "All", null]].map(([k, label, dot]) => ({ k, label, dot, n: cnt[k], on: filter === k })),
     shown, addable: addable.length, canAddAll: addable.length > 0, addAll: () => addRecs(addable),
     askable: askable.length, canAskAll: filter === "blocked" && askable.length > 1, askAll: () => setAskConfirm(askable.slice(0, IDS_ASK_MAX)),
@@ -468,6 +491,13 @@ function IdCardStudioPage({ setPage }) {
       await idsTplSettled();
       await frames();
       if (!live || !hostRef.current) return;
+      /* A card that couldn't be drawn would print as an error box on card
+         stock and be logged as issued. Refuse the print and name it. */
+      const failedDraw = Array.from(hostRef.current.querySelectorAll("[data-ids-failed]")).map(n => n.getAttribute("data-ids-failed"));
+      if (failedDraw.length && !printJob.test) {
+        setPrintJob(null);
+        return say(idsN(failedDraw.length, "card") + " couldn’t be drawn (" + failedDraw.slice(0, 4).join(", ") + (failedDraw.length > 4 ? "…" : "") + "). Take " + (failedDraw.length === 1 ? "it" : "them") + " off the sheet, then print. Nothing was printed or logged.");
+      }
       const opened = idsOpenPrintWindow(hostRef.current, G, printJob.test ? "Alignment test" : "ID cards");
       const pj = printJob;
       setPrintJob(null);
@@ -653,6 +683,8 @@ function IdCardStudioPage({ setPage }) {
       setXjob({ i, n: list.length, note: s.label });
       try {
         await stageSlot(s);
+        // Never rasterise the "couldn't draw" box as if it were the card: it lands in failed.
+        if (stageRef.current && stageRef.current.querySelector("[data-ids-failed]")) throw new Error("draw_failed");
         const nodes = stageRef.current ? stageRef.current.querySelectorAll(".ids-x-face") : [];
         const opt = { trimW_mm: G.cw, dpi, bleed_mm: 3, type: isPdf ? "image/jpeg" : "image/png", quality: 0.95 };
         const f = await budget(CE.renderFace(nodes[0], opt), 30000);

@@ -431,6 +431,62 @@ function photo_store_absolute(string $relOrId): string {
  * costs nothing to write and this is an unauthenticated intake path. The
  * extension we store under comes from what getimagesize actually found.
  */
+/* ── A photo uploaded in pieces (api/member/photo-chunk.php) ─────────────────
+ * For a host whose firewall refuses a large request body: the image's base64
+ * arrives in pieces small enough to pass, is joined here, and is stored by
+ * photo_store_put(). Pieces wait in the cache directory, keyed by who is
+ * uploading and an id they chose, so two people cannot write into one upload.
+ * Validated piece by piece; nothing is stored until the last piece arrives and
+ * the whole is a real image. */
+const PHOTO_CHUNK_MAX_PIECES = 80;
+const PHOTO_CHUNK_MAX_CHARS  = 96000;     // base64 per piece — far under any body limit
+
+function photo_chunk_dir(): string {
+    $base = rtrim((string)($GLOBALS['CONFIG']['cache_dir'] ?? sys_get_temp_dir()), '/') . '/photo-chunks';
+    if (!is_dir($base)) @mkdir($base, 0775, true);
+    return $base;
+}
+
+function photo_chunk_put(array $p): array {
+    $who = (string)($p['memberId'] ?? '');
+    $id = (string)($p['uploadId'] ?? '');
+    $i = (int)($p['index'] ?? -1); $n = (int)($p['total'] ?? 0);
+    $mime = strtolower((string)($p['mime'] ?? ''));
+    $data = (string)($p['data'] ?? '');
+    if ($who === '') return ['ok' => false, 'error' => 'unauthorized'];
+    if (!preg_match('/^[a-f0-9]{16,40}$/', $id)) return ['ok' => false, 'error' => 'bad_upload_id'];
+    if ($n < 1 || $n > PHOTO_CHUNK_MAX_PIECES || $i < 0 || $i >= $n) return ['ok' => false, 'error' => 'bad_piece'];
+    if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) return ['ok' => false, 'error' => 'photo_format'];
+    if ($data === '' || strlen($data) > PHOTO_CHUNK_MAX_CHARS || !preg_match('#^[A-Za-z0-9+/=]+$#', $data)) return ['ok' => false, 'error' => 'bad_piece'];
+
+    $dir = photo_chunk_dir();
+    if (!is_dir($dir) || !is_writable($dir)) return ['ok' => false, 'error' => 'storage_unwritable'];
+    // Pieces nobody finished are swept after an hour.
+    if (mt_rand(1, 20) === 1) {
+        foreach (glob($dir . '/*.part*') ?: [] as $old) { if (@filemtime($old) < time() - 3600) @unlink($old); }
+    }
+    $key = hash('sha256', $who . '|' . $id);
+    if (@file_put_contents($dir . '/' . $key . '.part' . $i, $data) === false) return ['ok' => false, 'error' => 'storage_unwritable'];
+    if ($i < $n - 1) return ['ok' => true, 'received' => $i + 1, 'total' => $n];
+
+    // The last piece: every piece must be here, in order.
+    $all = '';
+    for ($k = 0; $k < $n; $k++) {
+        $f = $dir . '/' . $key . '.part' . $k;
+        if (!is_file($f)) return ['ok' => false, 'error' => 'missing_piece', 'detail' => 'Piece ' . ($k + 1) . ' of ' . $n . ' never arrived. Try the photo again.'];
+        $all .= (string)file_get_contents($f);
+        if (strlen($all) > (int)ceil(PHOTO_STORE_MAX_BYTES * 4 / 3) + 8) { photo_chunk_clear($dir, $key, $n); return ['ok' => false, 'error' => 'too_large']; }
+    }
+    photo_chunk_clear($dir, $key, $n);
+    $st = photo_store_put('data:' . $mime . ';base64,' . $all);
+    if (empty($st['ok'])) return ['ok' => false, 'error' => (string)($st['error'] ?? 'photo_failed') === 'too_large' ? 'too_large' : 'photo_format'];
+    return ['ok' => true, 'url' => (string)$st['url'], 'id' => (string)$st['id']];
+}
+
+function photo_chunk_clear(string $dir, string $key, int $n): void {
+    for ($k = 0; $k < $n; $k++) @unlink($dir . '/' . $key . '.part' . $k);
+}
+
 function photo_store_put(string $dataUrl): array {
     if (!preg_match('#^data:image/([a-z0-9.+-]+);base64,#i', $dataUrl, $m)) return ['ok' => false, 'error' => 'not_data_url'];
     $raw = base64_decode(substr($dataUrl, strpos($dataUrl, ',') + 1) ?: '', true);

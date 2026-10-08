@@ -1,8 +1,8 @@
 /* ============================================================================
    Control Room v2 — the analytics tabs (Analytics page). Filled into CR_TAB_DEFS (see cr-pages.jsx).
 
-   PROGRESS (for a resumed run): dashboard — built · status — built.
-   Still to do: staff, behaviour, engagement.
+   PROGRESS (for a resumed run): dashboard, status, staff — built and verified.
+   Still to do: behaviour, engagement.
 
    dashboard  M&E overview: v1 mounted AnalyticsWorkspace (page-analytics.jsx)
               with no props. It still exists, so it is mounted here, not
@@ -272,4 +272,125 @@ Object.assign(CR_TAB_DEFS, {
         d.perf.staff.map(s => [s.fullName, s.kind, s.focus, s.centre, s.lastActive || "never", s.quietDays == null ? "" : s.quietDays, s.coverage == null ? "" : s.coverage, s.childrenStarred, s.classSize, s.stars, s.remarks, s.flags, s.sessions, s.skillMarks])) }],
     blocks: (d, ctx) => crAnStaffBlocks(d, ctx),
   },
+});
+
+/* ── Behaviour ────────────────────────────────────────────────────────────
+   admin.behaviour.*: log an observation (auto-triaged — AI when configured,
+   rules otherwise; wellbeing or urgent pages the team), list with status and
+   category filters, mark reviewed. The server returns at most 300 rows for a
+   filter, so the filters go to the server (never applied to a drawn page) and
+   a full 300 is said to be truncated. Reading needs people or summer; a write
+   about one person is gated by who that person is (behaviour_subject_gate). */
+const CR_AN_BEH_MAX = 300;
+const CR_AN_SEV = { urgent: ["Urgent", "bad"], concern: ["Concern", "warn"], positive: ["Positive", "ok"], info: ["Info", "neutral"] };
+const CR_AN_BEH_CATS = ["wellbeing", "commendation", "respect", "discipline", "peer", "participation"];
+const crAnBehCtx = { current: null };
+function crAnCap(s) { s = String(s || ""); return s ? s[0].toUpperCase() + s.slice(1) : ""; }
+
+function crAnBehServer() {
+  const cache = {};
+  return {
+    sortKeys: {},
+    fetch: async ({ filters, page, pageSize }) => {
+      const f = { status: filters.status || "", category: filters.category || "" };
+      const k = f.status + "|" + f.category;
+      if (!cache[k] || page === 0) cache[k] = (await NGGApi.admin.behaviour.list(f)).logs || [];
+      const all = cache[k];
+      return { total: all.length, rows: all.slice(page * pageSize, page * pageSize + pageSize).map(l => crAnBehRow(l)) };
+    },
+  };
+}
+function crAnBehRow(l) {
+  const sev = CR_AN_SEV[l.severity] || [crAnCap(l.severity), "neutral"];
+  const note = String(l.note || "");
+  return { key: l.logId, open: () => crAnBehOpen(crAnBehCtx.current, l), cells: [
+    { k: "person", t: l.subjectName || l.subjectId, s: l.subjectId },
+    { k: "status", t: crAnCap(l.category) + " · " + sev[0].toLowerCase(), tone: sev[1] },
+    { k: "text", t: note.length > 140 ? note.slice(0, 139) + "…" : note },
+    { k: "text", t: l.observerName || l.observerId, s: l.aiSource ? (l.aiSource === "manual" ? "Filed by hand" : l.aiSource === "ai" ? "Triaged by AI" : "Triaged by rules") : "" },
+    { k: "text", t: crDate(l.createdAt) },
+    l.status === "reviewed" ? { k: "status", t: "Reviewed", tone: "ok" } : { k: "status", t: "Open", tone: "neutral" },
+  ] };
+}
+
+function crAnBehOpen(ctx, l) {
+  const sev = CR_AN_SEV[l.severity] || [crAnCap(l.severity), "neutral"];
+  ctx.drawer({
+    title: l.subjectName || l.subjectId, name: l.subjectName || l.subjectId,
+    sub: [l.subjectId, crAnCap(l.category), sev[0]].filter(Boolean).join(" · "),
+    stats: [["Status", l.status === "reviewed" ? "Reviewed" : "Open"], ["Severity", sev[0]], ["Logged", crAgo(l.createdAt)]],
+    fields: [["Category", crAnCap(l.category)], ["Observer", l.observerName || l.observerId], ["Logged", crDate(l.createdAt, true)],
+      ["Triage", l.aiSource === "manual" ? "Chosen by the observer" : l.aiSource === "ai" ? "AI" : l.aiSource ? "Rules" : ""],
+      ["Reviewed", l.reviewedAt ? crDate(l.reviewedAt, true) + (l.reviewedBy ? " · " + l.reviewedBy : "") : ""]],
+    sections: [{ h: "Observation", text: l.note || "" }],
+    actions: l.status === "open" ? [{ l: "Mark reviewed", primary: true, run: async () => {
+      try {
+        await NGGApi.admin.behaviour.review(l.logId);
+        ctx.closeDrawer();
+        ctx.toast("Marked reviewed · " + (l.subjectName || l.subjectId));
+        ctx.reload();
+      } catch (e) { ctx.toast(crErr(e, "Couldn’t mark that reviewed."), null, true); }
+    } }] : [],
+  });
+}
+
+function crAnBehLog(ctx) {
+  const cats = (ctx.data && ctx.data.categories) || CR_AN_BEH_CATS;
+  ctx.form({
+    title: "Log an observation", submit: "Log observation", busyLabel: "Saving…",
+    intro: "About one member or Summer School participant. Leave category and severity blank and it is triaged for you. Wellbeing and urgent notes page the team. Members never see these.",
+    values: { subjectId: "", category: "", severity: "", note: "" },
+    fields: [
+      { id: "subjectId", l: "Member or participant ID", req: true, max: 40, ph: "LAB-M1", help: "The ID on their record." },
+      { id: "category", l: "Category", type: "select", ph: "Work it out from the note", opts: cats.map(c => [c, crAnCap(c)]) },
+      { id: "severity", l: "Severity", type: "select", ph: "Work it out from the note", opts: ["info", "concern", "urgent", "positive"].map(s => [s, CR_AN_SEV[s][0]]), when: v => !!v.category, help: "Used only when you choose a category." },
+      { id: "note", l: "Observation", type: "textarea", req: true, rows: 4, max: 1500, ph: "What happened, in a sentence or two.", check: v => String(v || "").trim().length < 5 ? "Write at least a few words." : "" },
+    ],
+    onSubmit: async v => {
+      const r = await NGGApi.admin.behaviour.log(String(v.subjectId).trim(), String(v.note).trim(), v.category || "", v.category ? (v.severity || "") : "");
+      ctx.setData(x => Object.assign({}, x, { rev: (x.rev || 0) + 1 }));
+      ctx.reload();
+      return r;
+    },
+    done: (v, r) => "Logged as " + r.category + " · " + r.severity + (r.aiSource === "manual" ? "" : " (" + (r.aiSource === "ai" ? "AI" : "rules") + ")"),
+  });
+}
+
+Object.assign(CR_TAB_DEFS, {
+  behaviour: {
+    skeleton: ["kpis", "table"],
+    load: async () => {
+      const r = await NGGApi.admin.behaviour.list({});
+      return { trend: r.trend || {}, openFlags: r.openFlags || 0, categories: r.categories || CR_AN_BEH_CATS, total: (r.logs || []).length,
+        open: (r.logs || []).filter(l => l.status === "open").length, server: crAnBehServer(), rev: 0 };
+    },
+    actions: (d, ctx) => [{ l: "Log observation", icon: "note-pencil", primary: true, run: () => crAnBehLog(ctx), disabled: !ctx.can(["people", "summer"]), why: "Needs the people or Summer School capability." }],
+    blocks: (d, ctx) => {
+      crAnBehCtx.current = ctx;
+      const trend = Object.keys(d.trend).map(k => [crAnCap(k), d.trend[k]]).sort((a, z) => z[1] - a[1]);
+      const last30 = trend.reduce((n, r) => n + r[1], 0);
+      return [
+        { type: "note", span: 6, icon: "info", text: "Patterns mentors should know about. Not a punishment list.", sub: "Each observation is triaged on arrival — by AI when it is configured, by rules otherwise. Wellbeing and urgent notes page the team through the configured integrations. They are staff-only." },
+        { type: "kpis", span: 6, items: [
+          { l: "Open flags", v: crNum(d.openFlags), dn: "wellbeing or urgent, not yet reviewed" },
+          { l: "Waiting for review", v: crNum(d.open), dn: d.total >= CR_AN_BEH_MAX ? "in the newest " + crNum(CR_AN_BEH_MAX) : "of " + crNum(d.total) + " logged" },
+          { l: "Last 30 days", v: crNum(last30), dn: "observations" },
+        ] },
+        { type: "bars", span: 2, title: "Last 30 days", sub: "By category", rows: trend, empty: "Nothing logged in the last 30 days." },
+        { type: "table", span: 4, title: "Observations", sub: "Newest first" + (d.total >= CR_AN_BEH_MAX ? " · the server returns the newest " + crNum(CR_AN_BEH_MAX) + " for a filter" : ""),
+          nosel: true, reloadKey: d.rev, server: d.server,
+          cols: ["Subject", "Category", { l: "Observation", wrap: true }, "Observer", "Logged", "Status"],
+          filters: [
+            { id: "status", l: "Status", opts: [{ v: "open", l: "Open" }, { v: "reviewed", l: "Reviewed" }] },
+            { id: "category", l: "Category", opts: (d.categories || CR_AN_BEH_CATS).map(c => ({ v: c, l: crAnCap(c) })) },
+          ],
+          emptyText: "No observations logged yet. Log one from the header when a mentor tells you something worth keeping." },
+      ];
+    },
+  },
+});
+
+/* engagement: the v1 panel, mounted (crPanel) until it is rebuilt as blocks. */
+Object.assign(CR_TAB_DEFS, {
+  engagement: crPanel(() => <EngagementPanel/>),
 });

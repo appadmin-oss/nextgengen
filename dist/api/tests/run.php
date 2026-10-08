@@ -3656,7 +3656,17 @@ chk('…and adding a contact makes the ID deliverable, through the existing writ
         && !empty($up['ok']) && !empty($send['ok'])
         && count($sent) === 1                          // the ID actually went out
         && in_array('email', $send['channels'] ?? [], true)
+        && !empty($send['onFile'])                     // a contact on file is reported as such
         && !$still;                                    // and they leave the list
+})());
+chk('resending an ID says whether anybody is on file, so a failed send is not called "nobody to send to"', (function () {
+    $st = db_row("SELECT studentId, parentEmail, guardianPhone FROM summer_students WHERE token != '' LIMIT 1");
+    if (!$st) return true;
+    $sid = $st['studentId'];
+    db_update('summer_students', ['parentEmail' => '', 'guardianPhone' => ''], ['studentId' => $sid]);
+    $none = backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0099', 'kind' => 'student', 'id' => $sid]);
+    db_update('summer_students', ['parentEmail' => (string)$st['parentEmail'], 'guardianPhone' => (string)$st['guardianPhone']], ['studentId' => $sid]);
+    return !empty($none['ok']) && ($none['channels'] ?? null) === [] && array_key_exists('onFile', $none) && $none['onFile'] === false;
 })());
 chk('bulk resend targets only the families missing a QR, and says what is left', (function () {
     $st = db_all("SELECT studentId, token FROM summer_students WHERE token != '' AND regStatus = 'verified' AND parentEmail != '' LIMIT 2");
@@ -7252,6 +7262,34 @@ chk('a photo taken in the member editor is stored, and the record keeps a short 
     $r = backend_dispatch('admin.members.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['memberId' => 'NGG-PHOTO-ED', 'photoUrl' => $png(900, 1100)]]);
     $url = (string)db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PHOTO-ED'")['photoUrl'];
     return !empty($r['ok']) && photo_is_stored_locally($url) && strlen($url) <= 512;
+})());
+/* A photo uploaded in pieces (api/member/photo-chunk.php): a host firewall
+   refused the large body a photo made inside a member's save. */
+chk('a photo sent in pieces is joined, stored, and answered with its short URL', (function () use ($png) {
+    $b64 = substr($png(800, 1000), strlen('data:image/png;base64,'));
+    $parts = str_split($b64, 4000); $n = count($parts); $last = null;
+    foreach ($parts as $i => $part) {
+        $last = backend_dispatch('photo.chunk', ['memberId' => 'NGG-2025-0001', 'uploadId' => 'abcdef0123456789aa', 'index' => $i, 'total' => $n, 'mime' => 'image/png', 'data' => $part]);
+        if (empty($last['ok'])) return false;
+    }
+    return $n > 1 && photo_is_stored_locally((string)($last['url'] ?? '')) && is_file(photo_store_path((string)$last['id']));
+})());
+chk('…a piece missing is refused by name, not stored half', (function () use ($png) {
+    $b64 = substr($png(300, 300), strlen('data:image/png;base64,'));
+    $parts = str_split($b64, (int)ceil(strlen($b64) / 3));
+    $r = backend_dispatch('photo.chunk', ['memberId' => 'NGG-2025-0001', 'uploadId' => 'abcdef0123456789bb', 'index' => 2, 'total' => 3, 'mime' => 'image/png', 'data' => $parts[2]]);
+    return ($r['error'] ?? '') === 'missing_piece';
+})());
+chk('…one person cannot finish another person\'s upload', (function () use ($png) {
+    $b64 = substr($png(300, 300), strlen('data:image/png;base64,'));
+    $parts = str_split($b64, (int)ceil(strlen($b64) / 2));
+    backend_dispatch('photo.chunk', ['memberId' => 'NGG-2025-0001', 'uploadId' => 'abcdef0123456789cc', 'index' => 0, 'total' => 2, 'mime' => 'image/png', 'data' => $parts[0]]);
+    $r = backend_dispatch('photo.chunk', ['memberId' => 'NGG-2025-0099', 'uploadId' => 'abcdef0123456789cc', 'index' => 1, 'total' => 2, 'mime' => 'image/png', 'data' => $parts[1]]);
+    return ($r['error'] ?? '') === 'missing_piece';
+})());
+chk('…and only an image type is taken', (function () {
+    $r = backend_dispatch('photo.chunk', ['memberId' => 'NGG-2025-0001', 'uploadId' => 'abcdef0123456789dd', 'index' => 0, 'total' => 1, 'mime' => 'text/html', 'data' => 'PGgxPg==']);
+    return ($r['error'] ?? '') === 'photo_format';
 })());
 chk('…and so is one a member sets on their own profile', (function () use ($png) {
     $r = backend_dispatch('member.update', ['memberId' => 'NGG-PHOTO-ED', 'photoUrl' => $png(640, 800)]);
@@ -15738,15 +15776,21 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     chk('…and the naira sign is written once on each side, not per screen', (function () {
         $php = (string)@file_get_contents(dirname(__DIR__) . '/_lib/domain/fees.php');
-        $jsx = (string)@file_get_contents(dirname(dirname(__DIR__)) . '/page-admin.jsx');
-        if ($php === '' || $jsx === '') return false;
+        $root = dirname(dirname(__DIR__));
+        $lib = (string)@file_get_contents($root . '/components.jsx');
+        $jsx = (string)@file_get_contents($root . '/page-admin.jsx') . (string)@file_get_contents($root . '/page-portals.jsx')
+             . (string)@file_get_contents($root . '/src/modules/control/cr-tab-money.jsx');
+        if ($php === '' || $lib === '' || $jsx === '') return false;
         /* In PHP the symbol appears in the currency map and in prose/comments,
            never as a second formatter: no `'₦' . number_format(` anywhere. */
         if (preg_match("/'₦'\s*\.\s*number_format/", $php)) return false;
         if (!function_exists('fees_money_text')) return false;
         if (fees_money_text(1000) !== '₦1,000') return false;
-        // One `naira` in the client, not a per-component copy.
-        return preg_match_all('/const naira = /', $jsx) === 1;
+        /* One formatter in the client — fmtMoney, in components.jsx — and no
+           screen building "₦" + a number of its own (the money screens, and the
+           v1 panels Control Room v2 mounts). */
+        return preg_match_all('/function fmtMoney\(/', $lib) === 1
+            && !preg_match('/₦\{|["\']₦["\']\s*\+|₦"\s*\+\s*(fmtN|Number|String)/u', $jsx);
     })());
 
     /* ── Fines, adjustments and waivers: the kinds nothing could post ──────

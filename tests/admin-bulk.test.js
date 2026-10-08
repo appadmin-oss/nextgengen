@@ -181,7 +181,11 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
 
     // ════════════════════════════════════════════════════════════════════
     const { page, errs } = await openAs(ADMIN);
-    await page.evaluate(() => window.__adminSection('members', 'roster'));
+    /* The v1 member desk (and its bulk bar) is mounted by Control Room v2 under
+       Members › Data quality (crPanel); its own Roster sub-tab is the roster. */
+    await page.evaluate(() => window.__adminSection('members', 'quality'));
+    await page.waitForSelector('.cr-panel [role=tab]', { timeout: 30000 });
+    await page.locator('.cr-panel [role=tab]', { hasText: /^Roster$/ }).first().click();
     await page.waitForSelector('.admin-main .admin-table tbody tr', { timeout: 30000 });
     await page.waitForTimeout(600);
 

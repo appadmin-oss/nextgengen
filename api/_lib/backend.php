@@ -34,6 +34,7 @@ function backend_dispatch(string $op, array $args = []): array {
             // Members
             'member.dashboard'        => 'member_dashboard',
             'member.update'           => 'member_update',
+            'photo.chunk'             => 'photo_chunk_put',
             'member.notifications'    => 'member_notifications',
             'member.notificationRead' => 'member_notification_read',
             'member.state.get'        => 'member_state_get',

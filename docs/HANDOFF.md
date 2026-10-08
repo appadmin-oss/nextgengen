@@ -599,3 +599,45 @@ reliably by import.
   is unchanged; `overwrite` replaces a date the desk set).
 - Tests: `api/tests/run.php` ("join dates: …"), `tests/roster-import.test.js`,
   `tests/control-members-curriculum.test.js` (column, form, save).
+
+## Control Room v2 — every tab works; the rest mount their v1 panels
+
+All 51 tabs in `CR_PAGES` have a definition. Rebuilt as blocks: Home, Inbox,
+the member Roster, Settings (all five), Money (all three), Check-in, Summer
+School, Events and Tournaments, Analytics' M&E overview, Status board, Staff
+and Behaviour, and Curriculum's lesson list and import. The other 23 mount
+the panel that served them in v1 — `page-admin.jsx`, restored WITHOUT its
+shell (no second section registry: `CR_PAGES` is the one) — through
+`crPanel()` in `cr-ui.jsx`. `members/quality` opens v1's member desk on Data
+quality, which also carries v1's member dashboard, import, export and bulk
+bar. Curriculum's "Lesson editor and reports" opens v1's curriculum desk at
+`/control/learning/curriculum/desk`. A tab rebuilt as blocks stops mounting
+its panel; the panel can then be deleted from `page-admin.jsx`.
+
+`adminJump()` (used by the panels and by page-portals.jsx, which called it
+while it did not exist) hands the section to the v2 shell.
+
+ID Card Studio: the features the 6c45071 rebuild dropped from the old Card
+Studio are restored (checklist at the top of `ids-app.jsx`, F1–F8). The run
+drawer's people list has its own class (`.ids-runpeople`), and Look up says
+"Nobody on your lists has the ID …" when no record holds it, rather than
+claiming a card was never issued to an ID that belongs to nobody.
+
+## ID Card Studio — restored features verified end to end (2026-10-08)
+
+Every feature restored from the old Card Studio (F1–F8) was driven in a real
+browser against the lab backend. Four defects found and fixed on the way:
+
+- **Paste a list of IDs** searched only the queue, so a person who already had
+  a card came back "not found". It now names them ("already have a card") and
+  offers **Queue N reprints**, the existing route back onto a sheet. IDs on
+  record but hidden by the Kind/Centre filter are named as hidden. The report
+  quotes what was typed, not its normalised form.
+- **Resend ID** said "Nobody on file" whenever nothing went, even with an
+  email on file and mail down. `admin_id_resend` now returns `onFile`, and the
+  studio says which it was. PHP test added.
+- **A card that couldn't be drawn** kept its slot (correct) but then printed as
+  an error box on card stock and was logged as issued. Print now refuses and
+  names it; export leaves it out of the file and the log (`data-ids-failed`).
+- Export's failure line read "1 card … are NOT in the file"; it now agrees
+  with its count and names the cards.

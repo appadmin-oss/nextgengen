@@ -920,3 +920,11 @@ Object.assign(CR_TAB_DEFS, {
     },
   },
 });
+
+/* ── The v1 panels these tabs mount until they are rebuilt as blocks (crPanel). */
+Object.assign(CR_TAB_DEFS, {
+  quality: crPanel(() => <AdminMembers/>, { tab: "quality" }),   // v1's Data quality and Duplicates, and the rest of its member desk
+  families: crPanel(() => <AdminFamilies/>),
+  centres: crPanel(() => <AdminCentres/>),
+  idcards: crPanel(() => <AdminIdCards/>),
+});

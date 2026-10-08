@@ -247,3 +247,29 @@ Object.assign(CR_TAB_DEFS, {
     },
   },
 });
+
+/* The rest of Learning mounts the v1 panels (crPanel) until each is rebuilt as
+   blocks. The Timetable Maker itself is /timetable; this is v1's slot desk. */
+Object.assign(CR_TAB_DEFS, {
+  sessions: crPanel(() => <AdminSessions/>),
+  missions: crPanel(() => <AdminMissions/>),
+  assignments: crPanel(() => <AdminAssignments/>),
+  anchor: crPanel(() => <AdminAnchor/>),
+  timetable: crPanel(() => <AdminTimetable/>),
+});
+
+/* Curriculum: the lessons, bulk status and import are rebuilt above; the lesson
+   editor, the Club's course list, the progress report, the submissions queue
+   and the schedule are still v1's curriculum desk — one press away at
+   /control/learning/curriculum/desk, so none of it is lost. */
+(function crLnCurriculumDesk() {
+  const base = CR_TAB_DEFS.curriculum;
+  CR_TAB_DEFS.curriculum = Object.assign({}, base, {
+    actions: (d, ctx) => ctx.sub === "desk"
+      ? [{ l: "Back to the lessons", icon: "arrow-left", primary: true, run: () => ctx.setSub("") }]
+      : (base.actions(d, ctx) || []).concat(d && d.canWrite ? [{ l: "Lesson editor and reports", icon: "pencil-simple", run: () => ctx.setSub("desk") }] : []),
+    blocks: (d, ctx) => ctx.sub === "desk"
+      ? [{ type: "custom", span: 6, render: c => <CrPanelMount render={() => <AdminCurriculum/>} ctx={c || ctx}/> }]
+      : base.blocks(d, ctx),
+  });
+})();

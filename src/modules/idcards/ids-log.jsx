@@ -82,7 +82,7 @@ function IdsRunDrawer({ run, onClose, onReprint, onFailed, onRetry, phone }) {
           {run.issuesState === "loading" && <IdsLoadState state="loading"/>}
           {run.issuesState === "error" && <IdsLoadState state="error" onRetry={onRetry} what="the people in this run"/>}
           {run.issuesState === "ready" && (issues.length ? (
-            <ul className="ids-tiers">
+            <ul className="ids-runpeople" aria-label="People in this run">
               {issues.map(i => {
                 const k = i.subjectType + ":" + i.subjectId;
                 return (

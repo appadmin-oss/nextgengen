@@ -7904,6 +7904,8 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-drawer-foot { padding: 14px 20px; border-top: 1px solid var(--ids-line); display: flex; flex-direction: column; gap: 6px; }
 .ids-people { margin: 0; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 4px; }
 .ids-tiers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+/* The people on one run, in the print log drawer: a row each, with the tick that marks a card spoiled. */
+.ids-runpeople { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .ids-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-radius: var(--ids-r-lg); background: var(--ids-ink); color: var(--ids-on-ink); font-size: 13px; box-shadow: var(--ids-dialog-shadow); max-width: calc(100% - 32px); }
 .ids-toast-undo { border: 0; background: none; color: var(--ids-gold); font-weight: 600; cursor: pointer; }
 
@@ -8771,3 +8773,7 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 }
 /* The public site's cursor follower is not part of this instrument (CONTROL_ROOM.md has none). */
 body:has(.cr-app) .ngg-cursor { display: none !important; }
+
+/* A v1 panel mounted as a Control Room v2 tab (crPanel, cr-ui.jsx): the shell
+   owns the page's spacing, so the panel's own outer padding is dropped. */
+.cr-panel.admin-main { padding: 0; min-width: 0; }
