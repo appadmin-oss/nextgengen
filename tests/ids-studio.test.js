@@ -211,8 +211,8 @@ function cleanup() {
     chk('the print log lists both runs, the new one with "1 not printed"', (await P.$$('.ids-logrow')).length === 2 && /1 not printed/.test(await P.innerText('.ids-log')));
     await P.click('.ids-logrow >> nth=0');
     await P.waitForSelector('.ids-drawer');
-    await P.waitForFunction(() => document.querySelectorAll('.ids-people li').length > 0, null, { timeout: 10000 });
-    chk('a run opens in a drawer with the people in it', (await P.$$('.ids-people li')).length === 10);
+    await P.waitForFunction(() => document.querySelectorAll('.ids-runpeople li').length > 0, null, { timeout: 10000 });
+    chk('a run opens in a drawer with the people in it', (await P.$$('.ids-runpeople li')).length === 10);
     await P.keyboard.press('Escape');
     await P.click('.ids-tab:has-text("Look up")');
     await P.fill('#ids-lq', 'eg-25-0012');
@@ -221,7 +221,7 @@ function cleanup() {
     chk('look up finds a person’s cards by printed ID, any case', /Member L Test/.test(await P.innerText('.ids-page')) && /1 card issued/.test(await P.innerText('.ids-page')));
     await P.fill('#ids-lq', 'EG-99-9999'); await P.keyboard.press('Enter');
     await P.waitForSelector('.ids-lookup-none', { timeout: 10000 });
-    chk('…and says plainly when nobody has a card under that ID', /No card has been issued to EG-99-9999/.test(await P.innerText('.ids-page')));
+    chk('…and says plainly when nobody on the lists has that ID', /Nobody on your lists has the ID EG-99-9999/.test(await P.innerText('.ids-page')));
 
     // Option 1: a card type prints with its assigned, published design.
     await P.click('.ids-tab:has-text("Make cards")');

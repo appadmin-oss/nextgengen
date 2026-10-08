@@ -15731,15 +15731,21 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     chk('…and the naira sign is written once on each side, not per screen', (function () {
         $php = (string)@file_get_contents(dirname(__DIR__) . '/_lib/domain/fees.php');
-        $jsx = (string)@file_get_contents(dirname(dirname(__DIR__)) . '/page-admin.jsx');
-        if ($php === '' || $jsx === '') return false;
+        $root = dirname(dirname(__DIR__));
+        $lib = (string)@file_get_contents($root . '/components.jsx');
+        $jsx = (string)@file_get_contents($root . '/page-admin.jsx') . (string)@file_get_contents($root . '/page-portals.jsx')
+             . (string)@file_get_contents($root . '/src/modules/control/cr-tab-money.jsx');
+        if ($php === '' || $lib === '' || $jsx === '') return false;
         /* In PHP the symbol appears in the currency map and in prose/comments,
            never as a second formatter: no `'₦' . number_format(` anywhere. */
         if (preg_match("/'₦'\s*\.\s*number_format/", $php)) return false;
         if (!function_exists('fees_money_text')) return false;
         if (fees_money_text(1000) !== '₦1,000') return false;
-        // One `naira` in the client, not a per-component copy.
-        return preg_match_all('/const naira = /', $jsx) === 1;
+        /* One formatter in the client — fmtMoney, in components.jsx — and no
+           screen building "₦" + a number of its own (the money screens, and the
+           v1 panels Control Room v2 mounts). */
+        return preg_match_all('/function fmtMoney\(/', $lib) === 1
+            && !preg_match('/₦\{|["\']₦["\']\s*\+|₦"\s*\+\s*(fmtN|Number|String)/u', $jsx);
     })());
 
     /* ── Fines, adjustments and waivers: the kinds nothing could post ──────

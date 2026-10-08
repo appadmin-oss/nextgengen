@@ -599,3 +599,26 @@ reliably by import.
   is unchanged; `overwrite` replaces a date the desk set).
 - Tests: `api/tests/run.php` ("join dates: …"), `tests/roster-import.test.js`,
   `tests/control-members-curriculum.test.js` (column, form, save).
+
+## Control Room v2 — every tab works; the rest mount their v1 panels
+
+All 51 tabs in `CR_PAGES` have a definition. Rebuilt as blocks: Home, Inbox,
+the member Roster, Settings (all five), Money (all three), Check-in, Summer
+School, Events and Tournaments, Analytics' M&E overview, Status board, Staff
+and Behaviour, and Curriculum's lesson list and import. The other 23 mount
+the panel that served them in v1 — `page-admin.jsx`, restored WITHOUT its
+shell (no second section registry: `CR_PAGES` is the one) — through
+`crPanel()` in `cr-ui.jsx`. `members/quality` opens v1's member desk on Data
+quality, which also carries v1's member dashboard, import, export and bulk
+bar. Curriculum's "Lesson editor and reports" opens v1's curriculum desk at
+`/control/learning/curriculum/desk`. A tab rebuilt as blocks stops mounting
+its panel; the panel can then be deleted from `page-admin.jsx`.
+
+`adminJump()` (used by the panels and by page-portals.jsx, which called it
+while it did not exist) hands the section to the v2 shell.
+
+ID Card Studio: the features the 6c45071 rebuild dropped from the old Card
+Studio are restored (checklist at the top of `ids-app.jsx`, F1–F8). The run
+drawer's people list has its own class (`.ids-runpeople`), and Look up says
+"Nobody on your lists has the ID …" when no record holds it, rather than
+claiming a card was never issued to an ID that belongs to nobody.

@@ -601,7 +601,7 @@ function MembersDashboard({ onFilter }) {
           <h3 className="admin-h3 mem-dash-sub">Conduct &amp; progression</h3>
           <div className="admin-tiles">
             <AdminTile n={fmtN(o.conduct.fined)} l="Fined" onClick={() => onFilter({ segment: "fined" })}/>
-            <AdminTile n={fmtN(o.conduct.finesOwedBy)} l={"Owing · ₦" + fmtN(o.conduct.finesOwed)}
+            <AdminTile n={fmtN(o.conduct.finesOwedBy)} l={"Owing · " + fmtMoney(o.conduct.finesOwed)}
                        onClick={() => onFilter({ segment: "fines_owed" })}/>
             <AdminTile n={fmtN(o.conduct.suspended)} l="Suspended now" onClick={() => onFilter({ segment: "suspended" })}/>
             <AdminTile n={fmtN(o.conduct.evicted)} l="Evicted" onClick={() => onFilter({ segment: "evicted" })}/>
@@ -611,8 +611,8 @@ function MembersDashboard({ onFilter }) {
                        onClick={() => onFilter({ segment: "promoted_ngv" })}/>
           </div>
           <p className="mem-consent">
-            Fines imposed to date: <strong>₦{fmtN(o.conduct.finesImposed)}</strong>, of which
-            {" "}<strong>₦{fmtN(o.conduct.finesOwed)}</strong> is still owed. Proposed, waived and lifted
+            Fines imposed to date: <strong>{fmtMoney(o.conduct.finesImposed)}</strong>, of which
+            {" "}<strong>{fmtMoney(o.conduct.finesOwed)}</strong> is still owed. Proposed, waived and lifted
             fines are not counted.
             {" "}<strong>{fmtN(o.conduct.promoted365)}</strong> promoted to NGV in the last 12 months.
           </p>
@@ -668,7 +668,7 @@ function MembersDashboard({ onFilter }) {
           <section className="admin-panel">
             <h3 className="admin-h3">Dues</h3>
             <MemberBar label="People with a balance" value={o.dues.people} max={Math.max(1, h.total)}/>
-            <div className="mem-consent">Outstanding: <strong>₦{fmtN(o.dues.outstanding)}</strong></div>
+            <div className="mem-consent">Outstanding: <strong>{fmtMoney(o.dues.outstanding)}</strong></div>
           </section>
         )}
 
@@ -2822,7 +2822,7 @@ function AdminRequests() {
             {r.body && <p style={{ margin: "8px 0 0", fontSize: 13 }}>{r.body}</p>}
             {r.kind === "payment" && (
               <div className="mono" style={{ fontSize: 12, marginTop: 6 }}>
-                Claims ₦{Number(r.amount || 0).toLocaleString("en-NG")}
+                Claims {fmtMoney(r.amount || 0)}
                 {r.reference ? " · ref " + r.reference : ""}{r.paidAt ? " · paid " + r.paidAt : ""}
               </div>
             )}
