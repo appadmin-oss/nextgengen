@@ -22044,6 +22044,59 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('roster import (web): who ran it is on the record',
         (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'member.import.web.apply' AND actorId = 'IMPADM-1'")['c'] === 1);
 
+    /* ── Join dates ──
+       The roster showed no join date for an imported member: the extractor read
+       only Excel serials, so a typed "15/03/2023" arrived blank — and a value in
+       any other shape was stored as written, which no screen can show. Both
+       ends read the same shapes now, and the database holds ISO. */
+    chk('join dates: every shape the workbook holds reads as the same day',
+        member_date('2023-03-15') === '2023-03-15' && member_date('2023-03-15T09:00:00Z') === '2023-03-15'
+        && member_date('45000') === '2023-03-15' && member_date('45000.375') === '2023-03-15'
+        && member_date('15/03/2023') === '2023-03-15' && member_date('15-3-23') === '2023-03-15'
+        && member_date('15.03.2023') === '2023-03-15' && member_date('15 March 2023') === '2023-03-15'
+        && member_date('March 15, 2023') === '2023-03-15' && member_date('15-Mar-2023') === '2023-03-15');
+    chk('join dates: a month alone is its first day, a year alone its first of January',
+        member_date('Mar 2023') === '2023-03-01' && member_date('2023') === '2023-01-01');
+    chk('join dates: blank is blank, and what cannot be read is null — not stored, not guessed',
+        member_date('') === '' && member_date('soon') === null && member_date('31/02/2023') === null
+        && member_date('03/15/2023') === null && member_date('2099-01-01') === null);
+
+    $wipe();
+    $jd = members_import_run([
+        $rowFor('IMP-061', ['joinDate' => '15/03/2023']),
+        $rowFor('IMP-062', ['joinDate' => 'sometime last year']),
+    ], ['apply' => true]);
+    chk('join dates: an import stores a day-first join date as ISO',
+        (string)$get('IMP-061')['joinDate'] === '2023-03-15');
+    chk('join dates: …and an unreadable one is left blank and named on the row, not stored',
+        (string)$get('IMP-062')['joinDate'] === ''
+        && (function () use ($jd) {
+            foreach ($jd['rows'] as $r) if (($r['ref'] ?? '') === 'IMP-062')
+                foreach ($r['warnings'] ?? [] as $w) if (str_contains($w, 'sometime last year')) return true;
+            return false;
+        })());
+    $fillJ = members_import_run([$rowFor('IMP-062', ['joinDate' => '2 May 2022'])], ['apply' => true]);
+    chk('join dates: a re-import fills a join date the first run could not read',
+        (string)$get('IMP-062')['joinDate'] === '2022-05-02' && $fillJ['updated'] === 1);
+
+    $mid = (string)$get('IMP-061')['memberId'];
+    $bad = admin_members_upsert(['requesterId' => 'IMPADM-1', 'data' => ['memberId' => $mid, 'joinDate' => 'last March']]);
+    chk('join dates: the desk is refused a join date nobody can read', ($bad['error'] ?? '') === 'joinDate_invalid');
+    $good = admin_members_upsert(['requesterId' => 'IMPADM-1', 'data' => ['memberId' => $mid, 'joinDate' => '06/01/2024']]);
+    chk('join dates: …and a day-first one typed on the desk is stored as ISO',
+        !empty($good['ok']) && (string)$get('IMP-061')['joinDate'] === '2024-01-06');
+
+    /* Joining is the join date, not the day the import made the record. */
+    db_update('members', ['joinDate' => '2019-02-01'], ['memberId' => $mid]);
+    $sorted = admin_members_list(['requesterId' => 'IMPADM-1', 'q' => 'import test imp-06', 'sort' => 'joined', 'dir' => 'asc']);
+    chk('join dates: the roster sorts on when they joined',
+        ($sorted['sort'] ?? '') === 'joined' && ($sorted['members'][0]['displayId'] ?? '') === 'IMP-061');
+    $new30 = fn() => (int)(admin_members_overview(['requesterId' => 'IMPADM-1'])['overview']['headline']['new30'] ?? -1);
+    $old = $new30();
+    db_update('members', ['joinDate' => gmdate('Y-m-d')], ['memberId' => $mid]);
+    chk('join dates: "joined in 30 days" counts the join date, not the day the record was imported',
+        $old >= 0 && $new30() === $old + 1);
+
     $wipe();
     db_exec("DELETE FROM members WHERE memberId IN ('IMPADM-1','IMPADM-2')");
     db_exec("DELETE FROM members WHERE fullName = 'Level Editable'");

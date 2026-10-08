@@ -154,7 +154,8 @@ function admin_members_list(array $p): array {
      * this list falls back to the default rather than erroring — a stale
      * bookmark should show the roster, not a failure. */
     $sortable = ['createdAt' => 'createdAt', 'fullName' => 'fullName', 'memberId' => 'memberId',
-                 'centre' => 'centre', 'status' => 'status', 'type' => 'type', 'role' => 'role'];
+                 'centre' => 'centre', 'status' => 'status', 'type' => 'type', 'role' => 'role',
+                 'joined' => 'joined'];
     $sortKey = (string)($p['sort'] ?? '');
     $sortCol = $sortable[$sortKey] ?? 'createdAt';
     $dir = strtolower((string)($p['dir'] ?? '')) === 'asc' ? 'ASC' : 'DESC';
@@ -164,6 +165,9 @@ function admin_members_list(array $p): array {
      * cannot show the same person twice or skip one. */
     $textCols = ['fullName', 'centre', 'status', 'type', 'role'];
     $orderExpr = in_array($sortCol, $textCols, true) ? "lower($sortCol)" : $sortCol;
+    /* When they joined: the roster's date where it has one, otherwise the day
+       the record was made — the same fallback the Joined column shows. */
+    if ($sortCol === 'joined') $orderExpr = "COALESCE(NULLIF(joinDate, ''), substr(createdAt, 1, 10))";
     $orderSql = " ORDER BY $orderExpr $dir, memberId ASC";
     // Accurate total for the filtered set, computed before paging so the client
     // can render "N–M of T" and page controls without loading every row.
@@ -326,6 +330,19 @@ function admin_member_validate(array $data, ?array $existing): array {
                 'detail' => 'A member needs a name. A nameless row cannot be found again by the person who created it.'];
     }
 
+    /* Stored as YYYY-MM-DD, whatever was typed, so the roster can show, sort
+       and count it. Unreadable is refused: a stored "last March" is a date
+       nobody downstream can use, and it would look as if it were on file. */
+    foreach (['joinDate' => 'join date', 'dob' => 'date of birth'] as $f => $what) {
+        if (!array_key_exists($f, $data) || is_array($data[$f])) continue;
+        $iso = member_date((string)($data[$f] ?? ''));
+        if ($iso === null) {
+            return ['ok' => false, 'error' => $f . '_invalid',
+                    'detail' => '"' . trim((string)$data[$f]) . '" is not a ' . $what . ' the roster can read. Use day/month/year, for example 15/03/2023.'];
+        }
+        $data[$f] = $iso;
+    }
+
     $email = (string)($data['email'] ?? '');
     if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         return ['ok' => false, 'error' => 'email_invalid',
@@ -437,12 +454,15 @@ function admin_members_overview(array $p): array {
         return $out;
     };
 
-    /* Growth: joins per month for a year. createdAt is an ISO string, so the
-       month is its first seven characters — no date function, which keeps
-       this identical on SQLite and MySQL. */
+    /* Growth: joins per month for a year. A join is the roster's joinDate
+       where there is one and the record's creation otherwise — counting
+       createdAt alone filed a whole imported roster under the month of the
+       import. Both are ISO strings, so the month is the first seven
+       characters — no date function, identical on SQLite and MySQL. */
+    $joined = "COALESCE(NULLIF(joinDate, ''), SUBSTR(createdAt, 1, 10))";
     $since = gmdate('Y-m', strtotime('-11 months')) . '-01';
     $growth = [];
-    foreach (db_all("SELECT SUBSTR(createdAt, 1, 7) m, COUNT(*) c $base AND createdAt >= ? GROUP BY m ORDER BY m",
+    foreach (db_all("SELECT SUBSTR($joined, 1, 7) m, COUNT(*) c $base AND $joined >= ? GROUP BY m ORDER BY m",
                     array_merge($args, [$since])) as $r) {
         $growth[(string)$r['m']] = (int)$r['c'];
     }
@@ -554,8 +574,8 @@ function admin_members_overview(array $p): array {
             'total'    => $total,
             'active'   => $active,
             'inactive' => $total - $active,
-            'new30'    => $one("SELECT COUNT(*) c $base AND createdAt >= ?", array_merge($args, [gmdate('Y-m-d', strtotime('-30 days'))])),
-            'new365'   => $one("SELECT COUNT(*) c $base AND createdAt >= ?", array_merge($args, [gmdate('Y-m-d', strtotime('-365 days'))])),
+            'new30'    => $one("SELECT COUNT(*) c $base AND $joined >= ?", array_merge($args, [gmdate('Y-m-d', strtotime('-30 days'))])),
+            'new365'   => $one("SELECT COUNT(*) c $base AND $joined >= ?", array_merge($args, [gmdate('Y-m-d', strtotime('-365 days'))])),
             'dormant'  => $dormant,
         ],
         'byStatus' => $group('status'),

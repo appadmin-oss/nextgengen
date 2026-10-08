@@ -75,7 +75,7 @@ function main(argv) {
     process.stderr.write(`    active ${stats.active} · inactive ${stats.inactive} · suspended ${stats.suspended} · graduated ${stats.graduated}\n`);
     process.stderr.write(`    ${Object.entries(stats.byCentre).map(([c, n]) => `${c} ${n}`).join(' · ')}\n`);
     process.stderr.write(`  Contactable        email ${stats.withEmail} · phone ${stats.withPhone} · guardian ${stats.withGuardian}\n`);
-    process.stderr.write(`  Profile depth      birthday ${stats.withDob} · school ${stats.withSchool}\n`);
+    process.stderr.write(`  Profile depth      joined ${stats.withJoinDate} · birthday ${stats.withDob} · school ${stats.withSchool}\n`);
     process.stderr.write(`  Cross-referenced   ${stats.matchedIntake} registrations · ${stats.matchedState} status entries\n`);
     if (stats.applicants) process.stderr.write(`  Applicants         ${stats.applicants} registered with no roster row — filed for the desk to confirm\n`);
     process.stderr.write(`${line}\n`);

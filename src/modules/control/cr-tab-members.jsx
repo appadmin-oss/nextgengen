@@ -23,7 +23,7 @@ const CR_MEM_TYPE = [["NGG", "NGG member"], ["Summer", "Summer School"]];
 const CR_MEM_TONE = { active: "ok", suspended: "bad", inactive: "neutral", "graduated-ngg": "gold", "graduated-vanguard": "gold" };
 /* Column index → the server's allow-listed sort key (admin_members_list).
    Division and level are not sortable on the server, so they are not offered. */
-const CR_MEM_SORT = { 0: "fullName", 1: "centre", 3: "type", 5: "status", 6: "createdAt" };
+const CR_MEM_SORT = { 0: "fullName", 1: "centre", 3: "type", 5: "status", 6: "joined" };
 const CR_MB_LEVELS = "ABCDEFG".split("");
 /* What is missing from a member's ID card — the values of $missingSql. */
 const CR_MB_MISSING = [["photo", "No photograph"], ["printedId", "No printed ID"], ["discipline", "No discipline"]];
@@ -46,6 +46,10 @@ async function crMemQueued(p) {
   try { return await p; }
   catch (e) { if (e && e.code === "approval_pending") return { queued: true }; throw e; }
 }
+/* When they joined: the roster's date, else the day the record was made. The
+   roster table used to show only the second, so an imported roster read as
+   everybody having joined on the day of the import. */
+function crMemJoined(m) { return m.joinDate ? crDate(m.joinDate) : m.createdAt ? crDate(m.createdAt) : ""; }
 function crMemStatusLabel(s) { const f = CR_MEM_STATUS.find(x => x[0] === s); return f ? f[1] : (s || "—"); }
 function crMbPhoto(u) { return /^https?:\/\//.test(u || "") ? u : ""; }
 
@@ -65,6 +69,7 @@ function crMemFields(centres, divisions) {
     { id: "displayId", l: "Printed ID", max: 24, help: "Leave blank and a new member is given the next number. A printed ID is never reissued." },
     { id: "photo", l: "Photograph", type: "file", accept: "image/*", help: "A head-and-shoulders photo for the ID card. Leave empty to keep the one on file." },
     { id: "dob", l: "Date of birth", type: "date" },
+    { id: "joinDate", l: "Date joined", type: "date", help: "The day they joined NGG, as on the roster. Blank shows the day the record was made." },
     { id: "school", l: "School", max: 160 },
     { id: "parentName", l: "Parent or guardian", max: 120 },
     { id: "parentPhone", l: "Guardian phone", type: "tel", im: "tel" },
@@ -72,7 +77,7 @@ function crMemFields(centres, divisions) {
     { id: "notes", l: "Staff notes", type: "textarea", rows: 3, max: 2000, help: "Staff see these. The member does not." },
   ];
 }
-const CR_MEM_KEYS = ["fullName", "email", "phone", "type", "status", "centre", "division", "level", "track", "disciplines", "displayId", "dob", "school", "parentName", "parentPhone", "parentEmail", "notes"];
+const CR_MEM_KEYS = ["fullName", "email", "phone", "type", "status", "centre", "division", "level", "track", "disciplines", "displayId", "dob", "joinDate", "school", "parentName", "parentPhone", "parentEmail", "notes"];
 function crMemValues(m) { const v = {}; CR_MEM_KEYS.forEach(k => { v[k] = m && m[k] != null ? String(m[k]) : ""; }); return v; }
 /** What changed on screen, and nothing else. */
 function crMemPatch(before, after) {
@@ -112,7 +117,7 @@ async function crMemOpen(ctx, memberId) {
     stats: [["XP", crNum(d.stats && d.stats.xp)], ["Missions verified", crNum(d.progress && d.progress.verified)], ["Streak", crNum(d.stats && d.stats.streak)]],
     fields: [["Status", crMemStatusLabel(m.status)], ["Member ID", m.memberId], ["Printed ID", m.displayId], ["Email", m.email], ["Phone", m.phone],
       ["Centre", m.centre], ["Division", div ? div.name : (m.division || "Not placed")], ["Level", m.level], ["Track", m.track], ["School", m.school],
-      ["Date of birth", m.dob ? crDate(m.dob) : ""], ["Joined", m.joinDate ? crDate(m.joinDate) : m.createdAt ? crDate(m.createdAt) : ""]],
+      ["Date of birth", m.dob ? crDate(m.dob) : ""], ["Joined", crMemJoined(m)]],
     sections: [
       { h: "Parent or guardian", rows: [["Name", m.parentName], ["Phone", m.parentPhone], ["Email", m.parentEmail]] },
       { h: "Mentor", rows: [["Mentor", d.mentor ? d.mentor.fullName : "None assigned"]] },
@@ -232,7 +237,7 @@ function crMemServer(d) {
             { k: "text", t: m.type === "Summer" ? "Summer School" : "NGG" },
             { k: "mono", t: m.level || "—" },
             { k: "status", t: crMemStatusLabel(m.status), tone: CR_MEM_TONE[m.status] || "neutral" },
-            { k: "text", t: m.createdAt ? crDate(m.createdAt) : "—" },
+            { k: "text", t: crMemJoined(m) || "—" },
           ],
           open: () => crMemOpen(crMemCtx.current, m.memberId),
         })),
@@ -254,8 +259,8 @@ async function crMbExport(ctx, onlyKeys) {
     let out = r.members || [];
     if (onlyKeys) { const want = new Set(onlyKeys); out = out.filter(m => want.has(m.memberId)); }
     if (!out.length) return ctx.toast("Nothing to export — no member matches.", null, true);
-    crDownloadCsv("members", ["memberId", "displayId", "fullName", "email", "type", "status", "centre", "level", "track", "division"],
-      out.map(m => [m.memberId, m.displayId || "", m.fullName, m.email, m.type, m.status, m.centre, m.level || "", m.track || "", m.division || ""]));
+    crDownloadCsv("members", ["memberId", "displayId", "fullName", "email", "type", "status", "centre", "level", "track", "division", "joinDate"],
+      out.map(m => [m.memberId, m.displayId || "", m.fullName, m.email, m.type, m.status, m.centre, m.level || "", m.track || "", m.division || "", m.joinDate || ""]));
     ctx.toast("Exported " + crPlural(out.length, "member") + (r.total > out.length && !onlyKeys ? " (the first " + crNum(out.length) + " of " + crNum(r.total) + ")" : ""));
   } catch (e) { ctx.toast(crErr(e, "Couldn’t export the roster."), null, true); }
 }
@@ -654,7 +659,7 @@ function crMbRecBlocks(d, ctx) {
       kv("identification-badge", "Member ID · printed ID", m.memberId + (m.displayId ? " · " + m.displayId : "")), kv("envelope-simple", "Email", m.email), kv("phone", "Phone", m.phone),
       kv("map-pin", "Centre", m.centre), kv("compass", "Division", div ? div.name : (m.division || "Not placed yet")), kv("stairs", "NGG level", m.level),
       kv("music-notes", "Track · disciplines", [m.track, m.disciplines].filter(Boolean).join(" · ")), kv("cake", "Date of birth", m.dob ? crDate(m.dob) : ""),
-      kv("calendar-check", "Joined", m.joinDate ? crDate(m.joinDate) : m.createdAt ? crDate(m.createdAt) : ""),
+      kv("calendar-check", "Joined", crMemJoined(m)),
     ] });
     out.push({ type: "list", span: 3, title: "Guardian and school", rows: [kv("user", "Parent or guardian", m.parentName), kv("phone", "Guardian phone", m.parentPhone), kv("envelope-simple", "Guardian email", m.parentEmail), kv("graduation-cap", "School", m.school)] });
     const STATUS_ACT = [["active", "Activate", "play-circle"], ["suspended", "Suspend", "pause-circle"], ["graduated-ngg", "Graduate from NGG", "graduation-cap"], ["graduated-vanguard", "Graduate as Vanguard", "medal"], ["inactive", "Deactivate", "minus-circle"]];

@@ -82,6 +82,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
       db_insert('centres', ['centreId'=>'CTR-EG','name'=>'Egbeda','code'=>'EG','color'=>'#3B5BDB','status'=>'active','capacity'=>0,'createdAt'=>$n]);
       db_insert('centres', ['centreId'=>'CTR-IJ','name'=>'Ijaiye','code'=>'IJ','color'=>'#76B043','status'=>'active','capacity'=>0,'createdAt'=>$n]);
       for ($i = 1; $i <= 30; $i++) db_insert('members', ['memberId'=>'CRMC-'.$i,'fullName'=>'Member '.sprintf('%02d',$i),'email'=>"crmc$i@example.org",'type'=>'NGG','status'=>'active','role'=>'member','centre'=>$i % 2 ? 'Egbeda' : 'Ijaiye','createdAt'=>$n,'updatedAt'=>$n]);
+      db_update('members', ['joinDate'=>'2021-05-02'], ['memberId'=>'CRMC-7']);
       echo session_issue(db_row("SELECT * FROM members WHERE memberId='CRMC-ADM'"), true);`);
 
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT, path.join(ROOT, '_router.php')], { cwd: ROOT, detached: true, stdio: 'ignore' });
@@ -112,6 +113,9 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     chk('the footer gives the true total', /of 31/.test(await body()));
     await page.fill('input[aria-label="Search by name, ID or email"]', 'Member 07');
     chk('search narrows on the server', await page.waitForFunction(() => document.querySelectorAll('table tbody tr').length === 1, null, { timeout: 15000 }).then(() => true, () => false));
+    /* Joined is the roster's join date, not the day the record was made —
+       an imported roster used to read as everybody joining on import day. */
+    chk('the Joined column shows the join date on file', /2 May 2021/.test(await page.innerText('table tbody tr')));
 
     // ── Edit, with no CSRF cookie to start with ──
     await page.evaluate(() => { document.cookie = 'ngg_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'; });
@@ -119,10 +123,13 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await page.click('.cr-sheet button:has-text("Edit")');
     await page.fill('#crf-phone', '08031234567');
     await page.selectOption('#crf-centre', 'Ijaiye');
+    chk('the form carries the join date on file', await page.inputValue('#crf-joinDate') === '2021-05-02');
+    await page.fill('#crf-joinDate', '2022-09-17');
     await page.click('button:has-text("Save changes")');
     chk('Edit saves and says so', await until(/Saved · Member 07/));
-    const m7 = one("SELECT phone, centre, email FROM members WHERE memberId='CRMC-7'");
+    const m7 = one("SELECT phone, centre, email, joinDate FROM members WHERE memberId='CRMC-7'");
     chk('…and the record holds the change, untouched fields intact', m7.phone === '08031234567' && m7.centre === 'Ijaiye' && m7.email === 'crmc7@example.org');
+    chk('…including a join date set by hand', m7.joinDate === '2022-09-17');
 
     await page.click('table tbody tr');
     await page.click('.cr-sheet button:has-text("Edit")');

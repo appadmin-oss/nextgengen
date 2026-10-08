@@ -574,3 +574,28 @@ palettes of the handoff, downloaded or shared as a PNG (`ngg-quote-w{week}-{kind
 - Test: `tests/qow-card.test.js` (in `test:all`) — sizes, the reference renders
   within ±2 px, 220 characters fit, wrapping highlight, the languages, the sheet,
   and a phone.
+
+## 2026-10-07 · NGG members' join dates: shown, editable, imported
+
+The roster's **Joined** column showed `createdAt` — for an imported roster, the
+day of the import for everybody — and the join date could not be set by hand or
+reliably by import.
+
+- **Shown.** The roster column, the member sheet and the CSV export show
+  `joinDate`, falling back to `createdAt` only when there is none
+  (`crMemJoined`). The column sorts on the same (`sort=joined`,
+  `COALESCE(NULLIF(joinDate,''), createdAt)`). "Joined in 30 days / 12 months"
+  and the month-by-month chart count that too, not the day a record was made.
+- **Editable.** Add/Edit member has a **Date joined** field.
+- **Imported.** The extractor read only Excel serials from one exact header
+  (`date_joined`), so a column typed as text, or re-headed "Date Joined",
+  arrived blank. `excelDate()` (tools/ngg-import/members.js) and
+  `member_date()` (domain/member-id.php) now read the same shapes: ISO, serial,
+  day-first, month names, month-year, a bare year. Month-first is never guessed.
+  The importer stores ISO and reports — never stores — a value it cannot read;
+  the desk refuses one (`joinDate_invalid`). `dob` gets the same treatment.
+- No migration: every stored join date came through the extractor, which only
+  ever wrote ISO or blank. Re-running the import fills the blanks (fill-blanks
+  is unchanged; `overwrite` replaces a date the desk set).
+- Tests: `api/tests/run.php` ("join dates: …"), `tests/roster-import.test.js`,
+  `tests/control-members-curriculum.test.js` (column, form, save).

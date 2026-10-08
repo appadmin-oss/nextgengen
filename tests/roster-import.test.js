@@ -145,6 +145,13 @@ chk('a cell that is not an address is dropped rather than stored', email('CACENT
 chk('an Excel serial reads as the date the desk typed', excelDate('45195.0') === '2023-09-26');
 chk('a birthday reads as a birthday, not 1970', excelDate('40291.0') === '2010-04-23');
 chk('an empty date cell stays empty', excelDate('') === '' && excelDate('0') === '');
+chk('a join date typed as text reads as the same day, day first',
+  excelDate('26/09/2023') === '2023-09-26' && excelDate('26-9-23') === '2023-09-26'
+  && excelDate('26 September 2023') === '2023-09-26' && excelDate('Sept 26, 2023') === '2023-09-26'
+  && excelDate('2023-09-26') === '2023-09-26');
+chk('…a month or a year alone is its first day', excelDate('Sep 2023') === '2023-09-01' && excelDate('2023') === '2023-01-01');
+chk('…and what is not a date stays empty rather than guessed',
+  excelDate('soon') === '' && excelDate('31/02/2023') === '' && excelDate('09/26/2023') === '');
 chk('a SHOUTED name is calmed down', properName('DANIEL LAWAL') === 'Daniel Lawal');
 chk('a whispered name is raised', properName('khaleed abdulrazak') === 'Khaleed Abdulrazak');
 chk('a name someone capitalised on purpose is left alone', properName('Eno-Obong McArthur') === 'Eno-Obong McArthur');
@@ -202,6 +209,26 @@ console.log('\nwho ends up on the roster');
   chk('both faculties reach the ID card', find(res, '023-001').disciplines === 'TECH,MEDIA');
   chk('the first faculty is the track the rest of the app reads',
     find(res, '023-001').track === 'TECH');
+}
+
+console.log('\njoin dates');
+{
+  const res = extractMembers(book({
+    master: [['023-001', 'A', 'Eleyinmi Josiah'], ['023-002', 'A', 'Lawal Daniel']],
+    registry: [reg('023-001', 'A', 'Josiah', 'Eleyinmi', { joined: '15/03/2023' })],
+  }));
+  chk('a registry join date typed as text reaches the roster file', find(res, '023-001').joinDate === '2023-03-15');
+  chk('…and is counted', res.stats.withJoinDate === 1);
+
+  const renamed = book({ registry: [reg('023-001', 'A', 'Josiah', 'Eleyinmi', { joined: '45195.0' })] });
+  renamed['NGGC MEMBERS'][0] = REGISTRY_HEADER.map((h) => (h === 'Date_Joined' ? 'Date Joined' : h));
+  chk('a re-typed "Date Joined" header is still the join date column',
+    find(extractMembers(renamed), '023-001').joinDate === '2023-09-26');
+
+  const master = book({ master: [['023-002', 'A', 'Lawal Daniel', '2 May 2022']] });
+  master['MEMBERS'][0] = ['Members ID', 'Level', 'Name', 'Date Joined'];
+  chk('a member only on the master list takes its join date when it has one',
+    find(extractMembers(master), '023-002').joinDate === '2022-05-02');
 }
 
 console.log('\nthe PASSIVE divider');
