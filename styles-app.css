@@ -8677,3 +8677,7 @@ button.cr-list-row:hover { background: var(--cr-s1); }
 }
 /* The public site's cursor follower is not part of this instrument (CONTROL_ROOM.md has none). */
 body:has(.cr-app) .ngg-cursor { display: none !important; }
+
+/* A v1 panel mounted as a Control Room v2 tab (crPanel, cr-ui.jsx): the shell
+   owns the page's spacing, so the panel's own outer padding is dropped. */
+.cr-panel.admin-main { padding: 0; min-width: 0; }

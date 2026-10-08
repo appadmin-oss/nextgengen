@@ -389,3 +389,8 @@ Object.assign(CR_TAB_DEFS, {
     },
   },
 });
+
+/* engagement: the v1 panel, mounted (crPanel) until it is rebuilt as blocks. */
+Object.assign(CR_TAB_DEFS, {
+  engagement: crPanel(() => <EngagementPanel/>),
+});

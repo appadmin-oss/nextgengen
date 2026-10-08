@@ -135,8 +135,14 @@
   let _configCache = null;
   async function getConfig() {
     if (_configCache) return _configCache;
-    try { _configCache = await request('/public/config.php'); }
-    catch (_) { _configCache = { uploads: { enabled: false } }; }
+    /* site-config.php first: a host firewall refuses any path ending in
+       config.php (403 before PHP runs), which left the app thinking no image
+       cloud existed. The old name stays as the fallback for an older server. */
+    try { _configCache = await request('/public/site-config.php'); }
+    catch (_) {
+      try { _configCache = await request('/public/config.php'); }
+      catch (__) { _configCache = { uploads: { enabled: false } }; }
+    }
     return _configCache;
   }
 
@@ -481,11 +487,38 @@
     }
     if (onProgress) onProgress(50);
     const url = await inlineImage(file);
-    if (onProgress) onProgress(100);
     // Only a fault when a cloud was configured and still could not be used. No
     // cloud at all is a supported way to run this and must not cry wolf.
     if (why && (canPublic || canSigned)) reportUploadFallback(kind, why);
+    /* Store it on this server, in pieces, before anything uses it. Sent inline,
+       the photo rode inside the save that used it — a member's record — and a
+       body that large is what this host's firewall refuses (403, or a reset
+       connection), failing the whole save. Signed-in only; a public form with
+       no session keeps the inline photo, which its own endpoint stores. */
+    try {
+      const stored = await storeInPieces(url, p => { if (onProgress) onProgress(50 + Math.round(p * 50)); });
+      if (stored) return { url: stored, inline: false, local: true, fallbackReason: why };
+    } catch (_) { /* not signed in, or the store refused: the inline image still works */ }
+    if (onProgress) onProgress(100);
     return { url: url, inline: true, bytes: url.length, fallbackReason: why };
+  }
+
+  const PHOTO_PIECE = 60000;   // base64 characters per request — far under any body limit
+  async function storeInPieces(dataUrl, onPart) {
+    const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl || '');
+    if (!m) return '';
+    const mime = m[1], b64 = m[2];
+    const total = Math.ceil(b64.length / PHOTO_PIECE);
+    if (total < 1 || total > 80) return '';
+    const bytes = new Uint8Array(12);
+    (window.crypto || {}).getRandomValues ? window.crypto.getRandomValues(bytes) : bytes.forEach((_, i) => { bytes[i] = Math.floor(Math.random() * 256); });
+    const uploadId = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    let last = null;
+    for (let i = 0; i < total; i++) {
+      last = await request('/member/photo-chunk.php', { body: { uploadId, index: i, total, mime, data: b64.slice(i * PHOTO_PIECE, (i + 1) * PHOTO_PIECE) }, timeout: 60000 });
+      if (onPart) onPart((i + 1) / total);
+    }
+    return (last && last.url) || '';
   }
 
   /* Tell the server, once per page, that a configured cloud refused an upload.

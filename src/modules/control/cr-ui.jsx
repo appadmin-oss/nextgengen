@@ -240,3 +240,23 @@ function crReadFile(file) {
     fr.readAsDataURL(file);
   });
 }
+
+/* ── A v1 panel, mounted as a tab (page-admin.jsx) ─────────────────────────
+   A tab not yet rebuilt as blocks mounts the panel that served it in v1, so
+   nothing an operator could do there is lost. `render` returns the panel
+   (resolved when the tab draws — page-admin.jsx loads after the tab files);
+   `tab` opens the panel on one of its own sub-tabs, set ONCE as the panel
+   mounts (the pending-tab store is consumed on mount; setting it on every
+   render would leak into the next panel opened). */
+function CrPanelMount({ tab, render, ctx }) {
+  React.useState(() => { if (tab && typeof setPendingAdminTab === "function") setPendingAdminTab(tab); return true; });
+  return <div className="cr-panel admin-main">{render(ctx)}</div>;
+}
+function crPanel(render, opts) {
+  const o = opts || {};
+  return {
+    skeleton: o.skeleton || ["table"],
+    actions: o.actions || null,
+    blocks: (d, ctx) => [{ type: "custom", span: 6, render: c => <CrPanelMount tab={o.tab} render={render} ctx={c || ctx}/> }],
+  };
+}

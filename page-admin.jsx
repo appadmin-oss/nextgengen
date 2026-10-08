@@ -7410,7 +7410,7 @@ const APPS_SCRIPT_SHEETS = `function doPost(e) {
   rows.forEach(function (r) { sheet.appendRow([new Date(), JSON.stringify(r)]); });
   return ok('ok');
 }
-function ok(msg){ return ContentService.createTextOutput(msg); }`;
+  function ok(msg){ return ContentService.createTextOutput(msg); }`;
 const APPS_SCRIPT_DRIVE = `function doPost(e) {
   var body = JSON.parse(e.postData.contents);
   var d = body.data;                       // { name, url, channel, author }

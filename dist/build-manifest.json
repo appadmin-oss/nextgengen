@@ -1,19 +1,19 @@
 {
-  "buildId": "0278859621",
-  "builtAt": "2026-10-07T22:59:34.812Z",
+  "buildId": "7a36f03330",
+  "builtAt": "2026-10-08T07:24:06.380Z",
   "bundle": {
-    "file": "app.53a4a10c46.min.js",
-    "bytes": 2496759,
-    "gzipBytes": 673523,
-    "files": 59
+    "file": "app.7c4dea7a80.min.js",
+    "bytes": 3108683,
+    "gzipBytes": 820599,
+    "files": 60
   },
   "assets": {
-    "app.min.js": "app.53a4a10c46.min.js",
+    "app.min.js": "app.7c4dea7a80.min.js",
     "styles.css": "styles.f6bb9c8225.css",
-    "styles-app.css": "styles-app.cd1be6f215.css",
+    "styles-app.css": "styles-app.63f1b8872c.css",
     "data.js": "data.29d3739700.js",
     "photos.js": "photos.fffb7d55bb.js",
-    "api-client.js": "api-client.7919d563d1.js",
+    "api-client.js": "api-client.6cca0aed7a.js",
     "outbox.js": "outbox.042a8c9122.js"
   },
   "node": "v22.22.0"

@@ -7218,6 +7218,34 @@ chk('a photo taken in the member editor is stored, and the record keeps a short 
     $url = (string)db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PHOTO-ED'")['photoUrl'];
     return !empty($r['ok']) && photo_is_stored_locally($url) && strlen($url) <= 512;
 })());
+/* A photo uploaded in pieces (api/member/photo-chunk.php): a host firewall
+   refused the large body a photo made inside a member's save. */
+chk('a photo sent in pieces is joined, stored, and answered with its short URL', (function () use ($png) {
+    $b64 = substr($png(800, 1000), strlen('data:image/png;base64,'));
+    $parts = str_split($b64, 4000); $n = count($parts); $last = null;
+    foreach ($parts as $i => $part) {
+        $last = backend_dispatch('photo.chunk', ['memberId' => 'NGG-2025-0001', 'uploadId' => 'abcdef0123456789aa', 'index' => $i, 'total' => $n, 'mime' => 'image/png', 'data' => $part]);
+        if (empty($last['ok'])) return false;
+    }
+    return $n > 1 && photo_is_stored_locally((string)($last['url'] ?? '')) && is_file(photo_store_path((string)$last['id']));
+})());
+chk('…a piece missing is refused by name, not stored half', (function () use ($png) {
+    $b64 = substr($png(300, 300), strlen('data:image/png;base64,'));
+    $parts = str_split($b64, (int)ceil(strlen($b64) / 3));
+    $r = backend_dispatch('photo.chunk', ['memberId' => 'NGG-2025-0001', 'uploadId' => 'abcdef0123456789bb', 'index' => 2, 'total' => 3, 'mime' => 'image/png', 'data' => $parts[2]]);
+    return ($r['error'] ?? '') === 'missing_piece';
+})());
+chk('…one person cannot finish another person\'s upload', (function () use ($png) {
+    $b64 = substr($png(300, 300), strlen('data:image/png;base64,'));
+    $parts = str_split($b64, (int)ceil(strlen($b64) / 2));
+    backend_dispatch('photo.chunk', ['memberId' => 'NGG-2025-0001', 'uploadId' => 'abcdef0123456789cc', 'index' => 0, 'total' => 2, 'mime' => 'image/png', 'data' => $parts[0]]);
+    $r = backend_dispatch('photo.chunk', ['memberId' => 'NGG-2025-0099', 'uploadId' => 'abcdef0123456789cc', 'index' => 1, 'total' => 2, 'mime' => 'image/png', 'data' => $parts[1]]);
+    return ($r['error'] ?? '') === 'missing_piece';
+})());
+chk('…and only an image type is taken', (function () {
+    $r = backend_dispatch('photo.chunk', ['memberId' => 'NGG-2025-0001', 'uploadId' => 'abcdef0123456789dd', 'index' => 0, 'total' => 1, 'mime' => 'text/html', 'data' => 'PGgxPg==']);
+    return ($r['error'] ?? '') === 'photo_format';
+})());
 chk('…and so is one a member sets on their own profile', (function () use ($png) {
     $r = backend_dispatch('member.update', ['memberId' => 'NGG-PHOTO-ED', 'photoUrl' => $png(640, 800)]);
     $url = (string)db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PHOTO-ED'")['photoUrl'];
