@@ -2093,15 +2093,17 @@ function PhotoCapture({ value, onChange, size = 96, label = "Photo" }) {
     const c = document.createElement("canvas");
     c.width = 720; c.height = 900;
     const ctx = c.getContext("2d");
-    // Cover-crop the video frame to a 4:5 portrait, baking in the same mirror
-    // the preview showed — front is mirrored, rear is not — so the reviewed
-    // still and the saved file match what the operator actually saw.
+    // Cover-crop the video frame to a 4:5 portrait. The live front-camera
+    // preview is shown mirrored, because that is how people expect to see
+    // themselves while they line up — but the photo is NOT saved mirrored.
+    // It goes on an ID card, which must show the face as everyone else sees
+    // it; a baked-in mirror reversed the face and any lettering on the
+    // clothing on every selfie-camera card. The frozen still shows the true
+    // image, so what is reviewed is exactly what is saved.
     const vw = v.videoWidth || 720, vh = v.videoHeight || 900;
     const scale = Math.max(c.width / vw, c.height / vh);
     const dw = vw * scale, dh = vh * scale;
-    if (facing !== "environment") { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
     ctx.drawImage(v, (c.width - dw) / 2, (c.height - dh) / 2, dw, dh);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
     setBusy(true); setErr(""); setAdvice(null);
     const check = await validateHeadshot(c, c.width, c.height);
     setBusy(false);

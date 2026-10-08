@@ -82,6 +82,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'session.ensureYear'      => 'session_ensure_year',
             // Admin
             'admin.members.list'      => 'admin_members_list',
+            'admin.members.suggest'   => 'admin_members_suggest',
             /* Bulk over the member roster, plus the id list that makes
                "apply to all N matching the filter" possible. Each bulk action
                declares its own capability and every row comes back with its
@@ -537,6 +538,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.newsletter.send'   => 'admin_newsletter_send',
             'admin.contact.list'      => 'admin_contact_list',
             'admin.contact.status'    => 'admin_contact_status',
+            'admin.contact.reply'     => 'admin_contact_reply',
             'admin.settings.get'      => 'admin_settings_get',
             'admin.settings.set'      => 'admin_settings_set',
             'admin.mail.test'         => 'admin_mail_test',

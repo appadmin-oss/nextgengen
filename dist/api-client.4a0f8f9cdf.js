@@ -1005,6 +1005,7 @@
         ids:    (q) => request('/admin/members.php' + qs(Object.assign({ view: 'ids' }, q || {}))),
         // The four divisions (id, name, mandate) with member counts, for the editor's picker.
         divisions: () => request('/admin/members.php' + qs({ view: 'divisions' })),
+        suggest: (q) => request('/admin/members.php' + qs({ view: 'suggest', q })),
         /* Cards the CACENTRE gate reads: the secure MEMQR- card, and the
            printed formats older cards are decoded by (domain/member-cards.php). */
         cards: {
@@ -1416,6 +1417,7 @@
       contact: {
         list:   (q) => request('/admin/contact.php' + qs(q || {})),
         status: (id, status) => request('/admin/contact.php', { body: { id, status } }),
+        reply:  (id, body, close) => request('/admin/contact.php', { body: { action: 'reply', id, body, close: !!close } }),
       },
       behaviour: {
         list:   (q) => request('/admin/behaviour.php' + qs(q || {})),

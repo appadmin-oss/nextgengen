@@ -225,6 +225,7 @@ function crMemServer(d) {
     sortKeys: CR_MEM_SORT,
     fetch: async ({ q, filters, sort, page, pageSize }) => {
       crMbLast.current = { q, filters, sort };
+      crMbSuggest(q);
       const r = await NGGApi.admin.members.list(Object.assign(crMbQuery(d, q, filters), { page: page + 1, pageSize, sort: sort ? CR_MEM_SORT[sort.ci] || "" : "", dir: sort ? sort.dir : "" }));
       return {
         total: r.total || 0,
@@ -244,6 +245,59 @@ function crMemServer(d) {
       };
     },
   };
+}
+/* "Did you mean…": who else the search may be looking for (admin_members_suggest)
+   — a Summer School participant on an accurate match, with Promote, and NGG
+   members whose names are a letter or two away. An aid beside the roster, so
+   a failed lookup shows nothing rather than an error over the list. */
+const crMbSuggestQ = { current: "" };
+function crMbSuggest(q) {
+  const t = String(q || "").trim();
+  if (t === crMbSuggestQ.current) return;
+  crMbSuggestQ.current = t;
+  const put = v => { const c = crMemCtx.current; if (c) c.setData(x => Object.assign({}, x, { suggest: v })); };
+  if (t.length < 3) return put(null);
+  NGGApi.admin.members.suggest(t).then(r => { if (crMbSuggestQ.current === t) put(r && ((r.summer || []).length || (r.near || []).length) ? r : null); }, () => put(null));
+}
+async function crMbPromoteParticipant(ctx, p) {
+  const ok = await ctx.confirm({ title: "Make " + p.fullName + " an NGG member?", cta: "Promote",
+    body: "They join the Club near " + (p.centre || "their Summer School centre") + " and get a member ID of their own. Their Summer School record stays as it is." });
+  if (!ok) return;
+  try {
+    const r = await NGGApi.admin.club.promote(p.studentId);
+    ctx.toast("Promoted · " + p.fullName + " is now a member" + (r.memberId ? " (" + r.memberId + ")" : ""));
+    crMbSuggestQ.current = ""; crMbSuggest(crMbLast.current.q);
+    ctx.setData(x => Object.assign({}, x, { rev: (x.rev || 0) + 1 }));
+  } catch (e) {
+    const c = e && (e.code || e.message);
+    ctx.toast(c === "already_promoted" ? p.fullName + " is already a member." : c === "forbidden" ? "Promoting needs the Club permission." : crErr(e, "Couldn’t promote " + p.fullName + "."), null, true);
+  }
+}
+function CrMbSuggest({ s, ctx }) {
+  return (
+    <section className="cr-sugg" aria-label="Other people this search may mean">
+      {s.summer.length > 0 && <div className="cr-sugg-group">
+        <h3>Summer School {s.summer.length === 1 ? "participant" : "participants"} matching “{s.q}”</h3>
+        <ul>{s.summer.map(p => (
+          <li key={p.studentId}>
+            <CrAvatar name={p.fullName} photo={nggPhotoSrc(p.photoUrl)}/>
+            <span className="cr-sugg-t"><b>{p.fullName}</b><span>{[p.displayId || p.studentId, p.centre, p.edition, p.age != null ? "age " + p.age : ""].filter(Boolean).join(" · ")}</span></span>
+            {p.promoted ? <CrPill tone="ok" t="Already a member"/>
+              : s.canPromote ? <button type="button" className="cr-btn is-sm" onClick={() => crMbPromoteParticipant(ctx, p)}>Promote to member</button>
+              : <span className="cr-sugg-why">Promoting needs the Club permission</span>}
+          </li>))}</ul>
+      </div>}
+      {s.near.length > 0 && <div className="cr-sugg-group">
+        <h3>Members with a very similar name</h3>
+        <ul>{s.near.map(m => (
+          <li key={m.memberId}>
+            <CrAvatar name={m.fullName} photo={nggPhotoSrc(m.photoUrl)}/>
+            <span className="cr-sugg-t"><b>{m.fullName}</b><span>{[m.displayId || m.memberId, m.centre, crMemStatusLabel(m.status)].filter(Boolean).join(" · ")}</span></span>
+            <button type="button" className="cr-btn is-sm" onClick={() => crMemOpen(ctx, m.memberId)}>Open</button>
+          </li>))}</ul>
+      </div>}
+    </section>
+  );
 }
 function crMbWithSeg(x, seg) {
   const n = Object.assign({}, x, { seg: seg || "" });
@@ -897,8 +951,9 @@ Object.assign(CR_TAB_DEFS, {
           { values: { off: "1" }, intro: "Off is a per-family opt-out. It stops the reminder only; the obligation and the balance are unchanged.", payload: v => ({ off: v.off === "1" ? 1 : 0 }) }) } : null,
         { l: "Export selected", run: async keys => { await crMbExport(ctx, keys); return false; } },
       ].filter(Boolean);
+      if (d.suggest) out.push({ key: "suggest", type: "custom", span: 6, render: c => <CrMbSuggest s={d.suggest} ctx={c}/> });
       out.push({
-        type: "table", span: 6, reloadKey: d.rev, search: "Search by name, ID or email",
+        key: "roster", type: "table", span: 6, reloadKey: d.rev, search: "Search by name, ID or email",
         cols: ["Member", "Centre", "Division", "Programme", "Level", "Status", "Joined"],
         server: d.server,
         filters: [

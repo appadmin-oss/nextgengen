@@ -92,8 +92,6 @@ chk('j moves down, k up, both stop at the ends', T.crQueueMove(ids, 'a1', 1) ===
 chk('resolving selects the next item', T.crQueueAfterResolve(ids, 'a1') === 'a2');
 chk('…the previous one when it was the last', T.crQueueAfterResolve(ids, 'p1') === 'a2');
 chk('…and nothing when it was the only one (all clear)', T.crQueueAfterResolve(['x'], 'x') === null);
-chk('progress text is “N left · M done this session”', T.crQueueProgress(5, 2).text === '3 left · 2 done this session' && T.crQueueProgress(5, 2).pct === 40);
-chk('queue filter reads who, title and kind', T.crQueueFilter([{ who: 'Mrs Adeyemi', title: 'Pick-up', kind: 'Message' }, { who: 'Bello', title: 'Link', kind: 'Family link' }], 'family').length === 1);
 chk('resolve verbs: Reject → Declined, Waitlist → Done, Approve → Approved', T.crResolveVerb('Reject') === 'Declined' && T.crResolveVerb('Waitlist') === 'Done' && T.crResolveVerb('Approve link') === 'Approved');
 chk('danger labels are recognised', T.crIsDanger('Decline') && T.crIsDanger('Delete & block') && !T.crIsDanger('Approve'));
 
@@ -122,6 +120,36 @@ sc = T.crColumnsScale([610, 968], false);
 chk('a count chart rounds its top up to a half step (968 → 1,000)', sc.top === 1000 && sc.yTop === '1,000' && sc.yMid === '500');
 chk('a zero bar is still drawn 2% tall so the week is visible', sc.h(0) === 2);
 chk('SMS parts count the “NGG: ” prefix (155 + 5 = 1 part; 156 + 5 = 2)', T.crSmsParts('x'.repeat(155)) === 1 && T.crSmsParts('x'.repeat(156)) === 2);
+
+
+console.log('inbox triage');
+{
+  const NOW = Date.parse('2026-10-08T12:00:00Z');
+  const h = n => new Date(NOW - n * 3600000).toISOString();
+  const I = [
+    { id: 'm-old', cat: 'messages', who: 'Mrs Adeyemi', title: 'Pick-up time', body: 'What time is pick-up?', kind: 'Message', at: h(60), unread: false, search: 'adeyemi@example.org MSG-1' },
+    { id: 'm-new', cat: 'messages', who: 'Bisi', title: 'Uniform', body: 'Is there a uniform?', kind: 'Message', at: h(2), unread: true, reply: {} },
+    { id: 'c-1', cat: 'comments', who: 'Tunde', title: 'On “Chess”', body: 'Great post', kind: 'Comment', at: h(30), unread: true, actions: [{ l: 'Approve' }, { l: 'Reject' }] },
+    { id: 'c-2', cat: 'comments', who: 'Ada', title: 'On “Chess”', body: 'Nice', kind: 'Comment', at: h(5), unread: true, actions: [{ l: 'Approve' }, { l: 'Reject' }, { l: 'Delete', confirm: true }] },
+    { id: 's-1', cat: 'messages', who: 'Kemi', title: 'App broken', body: 'Cannot sign in', kind: 'Message', at: h(1), unread: false, urgent: true },
+  ];
+  chk('a message past its 48 hours is overdue; one at 2 hours is not', T.crInboxSla(I[0], NOW).overdue && !T.crInboxSla(I[1], NOW).overdue);
+  chk('…and one two-thirds of the way there is a warning', T.crInboxSla({ cat: 'messages', at: h(33) }, NOW).tone === 'warn' && T.crInboxSla({ cat: 'messages', at: h(10) }, NOW).tone === 'neutral');
+  chk('triage order: urgent, then overdue, then unread, then the longest waiting',
+    eq(T.crInboxSort(I, 'triage', NOW).map(x => x.id), ['s-1', 'm-old', 'c-1', 'c-2', 'm-new']));
+  chk('newest and oldest are plain time', T.crInboxSort(I, 'newest', NOW)[0].id === 's-1' && T.crInboxSort(I, 'oldest', NOW)[0].id === 'm-old');
+  chk('search reads the email and reference too, every word', T.crInboxFilter(I, { q: 'adeyemi msg-1' }, NOW).length === 1 && T.crInboxFilter(I, { q: 'uniform' }, NOW)[0].id === 'm-new');
+  chk('a view shows its own kind only', T.crInboxFilter(I, { view: 'comments' }, NOW).length === 2 && T.crInboxFilter(I, { view: 'all' }, NOW).length === 5);
+  chk('the chips: unread, overdue, needs a reply', T.crInboxFilter(I, { chip: 'unread' }, NOW).length === 3
+    && eq(T.crInboxFilter(I, { chip: 'overdue' }, NOW).map(x => x.id), ['m-old']) && eq(T.crInboxFilter(I, { chip: 'reply' }, NOW).map(x => x.id), ['m-new']));
+  chk('the rail counts every view from the items themselves', eq(T.crInboxCounts(I), { all: 5, messages: 3, comments: 2 }));
+  const G = T.crInboxGroups(T.crInboxSort(I, 'triage', NOW), 'triage', NOW);
+  chk('the list is cut into Overdue, New, Waiting — empty runs dropped', eq(G.map(g => g.label), ['Overdue', 'New', 'Waiting']) && G[0].items.length === 1);
+  chk('…and not cut at all when sorted by time', T.crInboxGroups(I, 'newest', NOW).length === 1);
+  chk('a saved reply fills its blanks and leaves unknown ones as written', T.crFillReply('Hello {first}, ref {ref}. {nope}', { first: 'Bisi', ref: 'MSG-9' }) === 'Hello Bisi, ref MSG-9. {nope}');
+  chk('several at once: only what every one offers, needing nothing typed',
+    eq(T.crInboxBulkActions([I[2], I[3]]), ['Approve', 'Reject']) && eq(T.crInboxBulkActions([I[2], { actions: [{ l: 'Approve', note: {} }] }]), []));
+}
 
 console.log(`\n${failed ? '❌ FAIL' : '✅ PASS'}: ${passed} passed, ${failed} failed (control room core)`);
 process.exit(failed ? 1 : 0);

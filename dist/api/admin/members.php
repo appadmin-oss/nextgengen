@@ -15,6 +15,14 @@ if ($method === 'GET') {
         unset($res['ok']);
         json_ok($res);
     }
+    /* Who else the roster search might mean: a Summer School participant on an
+       accurate match, an NGG member on a very close one (admin_members_suggest). */
+    if ((string)($_GET['view'] ?? '') === 'suggest') {
+        $res = gs_call('admin.members.suggest', ['requesterId' => $s['mid'], 'q' => (string)($_GET['q'] ?? '')]);
+        if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+        unset($res['ok']);
+        json_ok($res);
+    }
     if ((string)($_GET['view'] ?? '') === 'ids') {
         $res = gs_call('admin.members.ids', [
             'requesterId' => $s['mid'],

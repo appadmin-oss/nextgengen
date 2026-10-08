@@ -85,7 +85,7 @@ function idsSheetPages({ G, slots, skip, a, b, backs, marks, proof, nSheets, fac
         const s = slots[p * G.per + i - skip];
         if (!s || s.pad) continue;
         const pos = idsSlotPos(G, i, side === "back" ? backs : null);
-        items.push({ face: faceOf(s, side), x: pos.x, y: pos.y, w: G.cw, h: G.ch, rot: side === "back" && backs === "short",
+        items.push({ face: faceOf(s, side), x: pos.x, y: pos.y, w: G.cw, h: G.ch, rot: pos.rot === 180,
           clip: { x: pos.x - bleed, y: pos.y - bleed, w: G.cw + 2 * bleed, h: G.ch + 2 * bleed } });
       }
       pages.push({ items, marks: markList, proof,

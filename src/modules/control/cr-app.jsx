@@ -139,6 +139,11 @@ function CrRoom({ auth, setPage, unlockNote }) {
       .then(rows => { const c = {}; let all = 0; rows.forEach(([k, n]) => { c[k] = n || 0; all += n || 0; }); c.all = all; setCounts(c); });
   }, [has]);
   React.useEffect(() => { loadCounts(); const t = setInterval(loadCounts, 120000); return () => clearInterval(t); }, [loadCounts]);
+  /* The browser tab says what is waiting, so the inbox is visible from any other tab. */
+  React.useEffect(() => {
+    const pg = CR_PAGES[cur.page];
+    document.title = (counts.all > 0 ? "(" + counts.all + ") " : "") + (pg ? pg.label + " · " : "") + "Control Room";
+  }, [counts.all, cur.page]);
 
   /* ── The tab's report back: header actions and facts ── */
   const [tabState, setTabState] = React.useState({ actions: [], facts: "", state: "loading" });
@@ -235,11 +240,12 @@ function CrRoom({ auth, setPage, unlockNote }) {
       if (confirmQ || form || drawer || cmd || acct || menu) return;
       if (e.key === "/") { e.preventDefault(); setCmdScope("all"); setCmd(true); return; }
       if (e.key === "[" && !phone) { setCollapsed(c => { crLsSet(CR_LS.collapsed, c ? "0" : "1"); return !c; }); return; }
+      /* A workspace (the inbox) owns its own keys while it is open:
+         j/k, x, r, e, s and 1–9. It says whether it used the key. */
       const q = queueRef.current;
-      if (q && (e.key === "j" || e.key === "k")) { e.preventDefault(); q.move(e.key === "j" ? 1 : -1); return; }
+      if (q && q.key && q.key(e)) { e.preventDefault(); return; }
       if (/^[1-9]$/.test(e.key)) {
         const n = Number(e.key) - 1;
-        if (q) { e.preventDefault(); q.act(n); return; }
         const a = tabState.actions[n];
         if (a && !a.disabled) { e.preventDefault(); a.run(); }
       }

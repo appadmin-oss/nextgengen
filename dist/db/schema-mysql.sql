@@ -3026,3 +3026,18 @@ CREATE TABLE IF NOT EXISTS id_designs (
 ALTER TABLE id_photo_asks ADD COLUMN channels VARCHAR(255) NOT NULL DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (133) ON DUPLICATE KEY UPDATE version = version;
+
+-- 134 · Replies to contact messages, sent from the Control Room inbox and kept on the record.
+CREATE TABLE IF NOT EXISTS contact_replies (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  messageId INT NOT NULL,
+  body TEXT NOT NULL,
+  sentBy VARCHAR(64) NOT NULL DEFAULT '',
+  sentByName VARCHAR(255) NOT NULL DEFAULT '',
+  sentAt VARCHAR(32) NOT NULL DEFAULT '',
+  channel VARCHAR(16) NOT NULL DEFAULT 'email',
+  INDEX idx_contact_replies_msg (messageId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE INDEX idx_contact_email ON contact_messages (email);
+
+INSERT INTO schema_version (version) VALUES (134) ON DUPLICATE KEY UPDATE version = version;

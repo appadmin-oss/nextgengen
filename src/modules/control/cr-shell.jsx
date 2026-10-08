@@ -19,10 +19,12 @@ function crFacts(blocks) {
 }
 
 /** One tab: load it, show the three states, and lay its blocks on the grid. */
-function CrTabView({ tabId, ctx, phone, mainW, onReady }) {
+function CrTabView({ tabId, ctx, phone, mainW, onReady, loadKey }) {
   const def = CR_TAB_DEFS[tabId] || null;
-  const L = useCrLoad(() => (def && def.load ? def.load(ctx) : null), [tabId, ctx.reloadKey]);
-  const tctx = Object.assign({}, ctx, { data: L.data, setData: L.setData, reload: () => L.reload(true), state: L.state });
+  /* A workspace page loads once for the page, not once per view: moving
+     between its views (the inbox's Messages, Requests…) must not refetch. */
+  const L = useCrLoad(() => (def && def.load ? def.load(ctx) : null), [loadKey || tabId, ctx.reloadKey]);
+  const tctx = Object.assign({}, ctx, { data: L.data, setData: L.setData, reload: () => L.reload(true), state: L.state, view: tabId });
   let blocks = [], actions = [], err = null;
   if (def && L.state === "ready") {
     try { blocks = (def.blocks(L.data, tctx) || []).filter(Boolean); } catch (e) { err = e; if (window.console) console.error(e); }
@@ -43,10 +45,14 @@ function CrTabView({ tabId, ctx, phone, mainW, onReady }) {
       : <CrError error={e} onRetry={() => L.reload()} what="this page"/>;
     return phone ? box : <div style={{ marginTop: 24 }}>{box}</div>;
   }
-  if (phone) return <>{blocks.map((b, i) => <CrBlock key={tabId + i} b={b} ctx={tctx} phone/>)}</>;
+  if (def.workspace && def.render) return def.render(L.data, tctx, !!phone);
+  /* A block may name its own key: one that comes and goes above it (a
+     suggestion panel over the roster) must not shift it to a new position and
+     re-create it, losing the search typed into it. */
+  if (phone) return <>{blocks.map((b, i) => <CrBlock key={tabId + (b.key || i)} b={b} ctx={tctx} phone/>)}</>;
   return (
     <div className="cr-grid">
-      {blocks.map((b, i) => <CrBlock key={tabId + i} b={b} ctx={tctx} span={crSpan(b.span || 6, mainW)}/>)}
+      {blocks.map((b, i) => <CrBlock key={tabId + (b.key || i)} b={b} ctx={tctx} span={crSpan(b.span || 6, mainW)}/>)}
     </div>
   );
 }
@@ -136,6 +142,18 @@ function CrDesktop({ S, nav, tabs, ctx, L }) {
             <button type="button" className="cr-banner-x" aria-label="Dismiss" onClick={S.dismissBanner}><CrIcon n="x"/></button>
           </div>
         )}
+        {p.frame === "workspace" ? (
+        <main id="cr-main" className="cr-main is-workspace" tabIndex={-1} ref={S.mainRef}>
+          <div className="cr-wshead">
+            <h1>{p.label}{S.counts.all > 0 && <span className="cr-wshead-n" aria-label={S.counts.all + " waiting"}>{S.counts.all}</span>}</h1>
+            <p>{tab.desc}</p>
+            <div className="cr-head-acts">{crHeaderButtons(S.actions)}</div>
+          </div>
+          <div className="cr-ws">
+            <CrTabView key={S.page} loadKey={S.page} tabId={tab.id} ctx={ctx} mainW={L.mainW} onReady={S.onReady}/>
+          </div>
+        </main>
+        ) : (
         <main id="cr-main" className="cr-main" tabIndex={-1} ref={S.mainRef}>
           <div className="cr-page">
             <div className="cr-head">
@@ -167,6 +185,7 @@ function CrDesktop({ S, nav, tabs, ctx, L }) {
             )}
           </div>
         </main>
+        )}
         {S.ask && L.ask === "overlay" && <CrAsk where={p.label + " › " + tab.label} facts={S.facts} mode="overlay" onClose={S.toggleAsk}/>}
       </div>
       {S.ask && L.ask === "side" && <CrAsk where={p.label + " › " + tab.label} facts={S.facts} mode="side" onClose={S.toggleAsk}/>}
@@ -195,7 +214,7 @@ function CrPhone({ S, nav, tabs, ctx }) {
           <button type="button" className="cr-p44" aria-label="Account and settings" onClick={S.openMenu}><span className="cr-p44-av">{crInitials(S.me.name)}</span></button>
         </div>
         <div className="cr-plarge"><div><h1>{p.label}</h1></div></div>
-        {tabs.length > 1 && (
+        {tabs.length > 1 && p.frame !== "workspace" && (
           <div className="cr-ptabs" role="tablist" aria-label={p.label + " sections"}>
             {tabs.map(t => <button key={t.id} type="button" role="tab" className="cr-ptab" aria-selected={t.id === tab.id} onClick={() => ctx.go(S.page, t.id)}>{t.label}{S.counts[t.id] > 0 && <span>{S.counts[t.id]}</span>}</button>)}
           </div>
@@ -203,9 +222,11 @@ function CrPhone({ S, nav, tabs, ctx }) {
       </header>
       {S.banner && S.page !== "home" && <button type="button" className="cr-pbanner" onClick={() => ctx.go("settings", "ops")}><CrIcon n="warning"/><span className="cr-grow">{S.banner.short}</span><CrIcon n="caret-right"/></button>}
       <main id="cr-pmain" className="cr-pmain" tabIndex={-1} ref={S.mainRef} onScroll={e => { const s = e.currentTarget.scrollTop > 8; if (s !== scrolled) setScrolled(s); }}>
-        <p className="cr-pdesc">{tab.desc}</p>
+        {p.frame !== "workspace" && <p className="cr-pdesc">{tab.desc}</p>}
         {S.actions.filter(a => a !== prim).length > 0 && <div className="cr-pchips">{S.actions.filter(a => a !== prim).map((a, i) => <button key={i} type="button" className="cr-chip" disabled={a.disabled} onClick={a.run}><CrIcon n={a.icon || "circle"}/>{a.l}</button>)}</div>}
-        <CrTabView key={tab.id} tabId={tab.id} ctx={ctx} phone mainW={390} onReady={S.onReady}/>
+        {p.frame === "workspace"
+          ? <CrTabView key={S.page} loadKey={S.page} tabId={tab.id} ctx={ctx} phone mainW={390} onReady={S.onReady}/>
+          : <CrTabView key={tab.id} tabId={tab.id} ctx={ctx} phone mainW={390} onReady={S.onReady}/>}
       </main>
       {S.dirty && (
         <div className="cr-punsaved" role="region" aria-label="Unsaved changes">

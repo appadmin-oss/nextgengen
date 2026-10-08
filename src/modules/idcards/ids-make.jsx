@@ -334,7 +334,8 @@ function IdsSlot({ M, i, scale }) {
          draggable onDragStart={e => { e.dataTransfer.setData("text/plain", s.key); e.dataTransfer.effectAllowed = "move"; }}
          onDragOver={e => e.preventDefault()} onDrop={e => M.dropAt(e, gi)}
          onClick={() => M.select(sel ? null : s.key)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); M.select(sel ? null : s.key); } }}>
-      <div className="ids-slot-face" style={{ width: G.cw + "mm", height: G.ch + "mm", transform: "scale(" + k + ")" }}>{M.renderFace(s, face)}</div>
+      {/* A short-edge back is drawn turned 180°, exactly as it prints. */}
+      <div className="ids-slot-face" style={{ width: G.cw + "mm", height: G.ch + "mm", transform: "scale(" + k + ")" + (p.rot ? " translate(100%, 100%) rotate(180deg)" : "") }}>{M.renderFace(s, face)}</div>
       <span className="ids-slot-n">{i + 1}</span>
       {warn && <span className={"ids-slot-warn is-" + warn.tone} title={warn.text}><IdsIcon name="warning"/></span>}
       {M.proof && <span className="ids-slot-proof">PROOF</span>}

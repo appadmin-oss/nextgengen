@@ -1198,3 +1198,103 @@ function admin_member_id_taken(string $id, string $memberId): ?array {
     }
     return null;
 }
+
+/* ── Roster search suggestions ─────────────────────────────────────────────
+ * The roster's own search finds what CONTAINS the words typed. Two people it
+ * cannot find, and a coordinator searching is usually looking for one of them:
+ *
+ *   · a Summer School participant who is not a member yet — shown only on an
+ *     ACCURATE match (the whole name, every word of it, their printed ID, or
+ *     a parent's email), never a loose one: a suggestion here leads to a
+ *     promotion, and promoting the wrong child is worse than finding nobody;
+ *   · an NGG member whose name is VERY close to what was typed but does not
+ *     contain it — a typo (Chukwura / Chukwurah), or the names in another
+ *     order (Ifeanyi Kosi / Kosi Ifeanyi).
+ *
+ * Reads only. Centre scope is applied per row. Participants are listed only
+ * for staff who hold `summer` or `club`; `canPromote` says whether this
+ * operator may promote (admin.club.promote is gated on `club`). */
+const MEMBER_SUGGEST_MAX = 5;
+function member_name_norm(string $s): string {
+    $s = mb_strtolower(trim($s), 'UTF-8');
+    if (function_exists('iconv')) { $t = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $s); if (is_string($t) && $t !== '') $s = strtolower($t); }
+    return trim(preg_replace('/\s+/', ' ', preg_replace('/[^a-z0-9@.\- ]+/', ' ', $s)));
+}
+/** Every query word is a whole word of the name. */
+function member_name_has_words(string $name, array $words): bool {
+    $nt = explode(' ', $name);
+    foreach ($words as $w) if (!in_array($w, $nt, true)) return false;
+    return true;
+}
+/** How close a name is to the query, or null when it is not "very close". Lower is closer. */
+function member_name_closeness(string $name, string $q, array $words): ?float {
+    if ($name === '' || $q === '') return null;
+    $nt = array_values(array_filter(explode(' ', $name)));
+    // The names in another order.
+    $a = $nt; $b = $words; sort($a); sort($b);
+    if (count($words) > 1 && $a === $b) return 0.5;
+    // A typo in the whole name: a letter or two, scaled to its length.
+    $d = levenshtein($q, $name);
+    if ($d > 0 && $d <= (strlen($q) >= 10 ? 2 : 1) && strlen($q) >= 5) return (float)$d;
+    // Every word typed is a word of the name, give or take one letter (at least one of them not exact).
+    if (count($words) >= 2) {
+        $sum = 0; $fuzzy = false;
+        foreach ($words as $w) {
+            $best = 99;
+            foreach ($nt as $t) { $best = min($best, levenshtein($w, $t)); }
+            if ($best > (strlen($w) >= 5 ? 1 : 0)) return null;
+            if ($best > 0) $fuzzy = true;
+            $sum += $best;
+        }
+        if ($fuzzy) return 1.0 + $sum;
+    }
+    return null;
+}
+function admin_members_suggest(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $raw = trim((string)($p['q'] ?? ''));
+    $q = member_name_norm($raw);
+    $caps = member_effective_caps($g['requester']);
+    $out = ['ok' => true, 'q' => $raw, 'summer' => [], 'near' => [], 'canPromote' => in_array('club', $caps, true)];
+    if (strlen($q) < 3) return $out;
+    $words = array_values(array_filter(explode(' ', $q)));
+
+    // NGG members: very close, and not already found by the roster's own search.
+    $near = [];
+    foreach (db_all("SELECT memberId, fullName, displayId, centre, status, photoUrl FROM members WHERE type = 'NGG'") as $m) {
+        $name = member_name_norm((string)$m['fullName']);
+        if ($name === '' || strpos($name, $q) !== false) continue;
+        if (stripos((string)$m['displayId'], $raw) !== false || stripos((string)$m['memberId'], $raw) !== false) continue;
+        // Names that differ only in their numbers (a test roster's "Member 07" / "Member 01") are not typos.
+        if (preg_replace('/\d+/', '', $name) === preg_replace('/\d+/', '', $q)) continue;
+        $c = member_name_closeness($name, $q, $words);
+        if ($c === null || !admin_centre_allowed($g['requester'], (string)$m['centre'])) continue;
+        $near[] = ['score' => $c, 'memberId' => $m['memberId'], 'fullName' => $m['fullName'], 'displayId' => (string)$m['displayId'], 'centre' => (string)$m['centre'], 'status' => (string)$m['status'], 'photoUrl' => (string)$m['photoUrl']];
+    }
+    usort($near, fn($x, $y) => $x['score'] <=> $y['score'] ?: strcmp($x['fullName'], $y['fullName']));
+    $out['near'] = array_map(function ($x) { unset($x['score']); return $x; }, array_slice($near, 0, MEMBER_SUGGEST_MAX));
+
+    // Summer School participants: accurate matches only.
+    if (array_intersect(['summer', 'club'], $caps)) {
+        $like = '%' . $words[0] . '%';
+        $rows = db_all("SELECT s.studentId, s.fullName, s.displayId, s.centre, s.status, s.photoUrl, s.parentEmail, s.age, c.name AS edition
+            FROM summer_students s LEFT JOIN summer_cohorts c ON c.cohortId = s.cohortId
+            WHERE lower(s.fullName) LIKE ? OR lower(s.displayId) = ? OR lower(s.studentId) = ? OR lower(s.parentEmail) = ?
+            ORDER BY s.fullName LIMIT 400", [$like, strtolower($raw), strtolower($raw), strtolower($raw)]);
+        $hits = [];
+        foreach ($rows as $s) {
+            $name = member_name_norm((string)$s['fullName']);
+            $exactId = strcasecmp((string)$s['displayId'], $raw) === 0 || strcasecmp((string)$s['studentId'], $raw) === 0;
+            $exactEmail = $s['parentEmail'] !== null && $s['parentEmail'] !== '' && strcasecmp((string)$s['parentEmail'], $raw) === 0;
+            $nameHit = $name === $q || (count($words) >= 2 && member_name_has_words($name, $words));
+            if (!$exactId && !$exactEmail && !$nameHit) continue;
+            if (!admin_centre_allowed($g['requester'], (string)$s['centre'])) continue;
+            $hits[] = ['studentId' => $s['studentId'], 'fullName' => $s['fullName'], 'displayId' => (string)$s['displayId'], 'centre' => (string)$s['centre'],
+                'edition' => (string)($s['edition'] ?? ''), 'age' => $s['age'] === null ? null : (int)$s['age'], 'photoUrl' => (string)$s['photoUrl'],
+                'promoted' => (string)$s['status'] === 'promoted', 'match' => $exactId ? 'id' : ($exactEmail ? 'email' : 'name')];
+            if (count($hits) >= MEMBER_SUGGEST_MAX) break;
+        }
+        $out['summer'] = $hits;
+    }
+    return $out;
+}

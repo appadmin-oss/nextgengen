@@ -1071,6 +1071,41 @@ $firstMsg = backend_dispatch('admin.contact.list', ['requesterId' => 'NGG-2025-0
 backend_dispatch('admin.contact.status', ['requesterId' => 'NGG-2025-0099', 'id' => $firstMsg, 'status' => 'replied']);
 chk('admin sets contact status', db_row('SELECT status FROM contact_messages WHERE id=?', [$firstMsg])['status'] === 'replied');
 
+// ── Replying in the app (the inbox's conversation pane) ──
+$GLOBALS['__mail_sink'] = [];
+$rpMsg = backend_dispatch('public.contact', ['name' => 'Bisi Parent', 'email' => 'bisi-reply@example.com', 'subject' => 'Saturday times', 'message' => 'What time does the Saturday session start at Egbeda?', 'purpose' => 'general']);
+$rpId = (int)db_row('SELECT id FROM contact_messages WHERE ref = ?', [$rpMsg['ref']])['id'];
+$GLOBALS['__mail_sink'] = [];
+chk('reply: an empty reply is refused', backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => $rpId, 'body' => '   '])['error'] === 'reply_empty');
+chk('reply: only inbox staff can reply', backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0001', 'id' => $rpId, 'body' => 'Hello'])['error'] === 'forbidden');
+chk('reply: an unknown message is refused', backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => 999999, 'body' => 'Hello'])['error'] === 'not_found');
+chk('reply: an over-long reply is refused', backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => $rpId, 'body' => str_repeat('x', CONTACT_REPLY_MAX + 1)])['error'] === 'reply_too_long');
+$GLOBALS['__mail_fail'] = true;
+$rpFail = backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => $rpId, 'body' => 'It starts at 10am.']);
+unset($GLOBALS['__mail_fail']);
+chk('reply: a reply the mail relay refused is not recorded as sent',
+    $rpFail['error'] === 'send_failed' && (int)db_row('SELECT COUNT(*) c FROM contact_replies WHERE messageId = ?', [$rpId])['c'] === 0
+    && db_row('SELECT status FROM contact_messages WHERE id=?', [$rpId])['status'] === 'new');
+$rp = backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => $rpId, 'body' => "It starts at 10am.\nCome ten minutes early."]);
+$rpMail = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => $m['to'] === 'bisi-reply@example.com'));
+chk('reply: it is emailed to the sender, with the reference and their message quoted',
+    !empty($rp['ok']) && count($rpMail) === 1 && str_contains($rpMail[0]['subject'], $rpMsg['ref'])
+    && str_contains($rpMail[0]['html'], 'Come ten minutes early') && str_contains($rpMail[0]['html'], 'What time does the Saturday session start'));
+chk('reply: it is kept on the record, and the message is marked replied',
+    db_row('SELECT status FROM contact_messages WHERE id=?', [$rpId])['status'] === 'replied'
+    && (string)db_row('SELECT sentBy FROM contact_replies WHERE messageId = ?', [$rpId])['sentBy'] === 'NGG-2025-0099');
+chk('reply: one audit event per reply', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'admin.contact.reply' AND subject = ?", [(string)$rpId])['c'] === 1);
+backend_dispatch('public.contact', ['name' => 'Bisi Parent', 'email' => 'bisi-reply@example.com', 'message' => 'Thank you. Is there a uniform for the first day?', 'purpose' => 'general']);
+$rpList = backend_dispatch('admin.contact.list', ['requesterId' => 'NGG-2025-0099'])['messages'];
+$rpRow = array_values(array_filter($rpList, fn($m) => (int)$m['id'] === $rpId))[0] ?? [];
+chk('reply: the inbox shows each message with its conversation, oldest reply first',
+    count($rpRow['replies'] ?? []) === 1 && str_contains($rpRow['replies'][0]['body'], '10am'));
+chk('reply: …and how many other messages the same address has sent', (int)($rpRow['earlier'] ?? -1) === 1);
+$rp2 = backend_dispatch('admin.contact.reply', ['requesterId' => 'NGG-2025-0099', 'id' => $rpId, 'body' => 'And see you Saturday.', 'close' => true]);
+chk('reply: a reply that closes the conversation archives it', !empty($rp2['ok']) && db_row('SELECT status FROM contact_messages WHERE id=?', [$rpId])['status'] === 'archived'
+    && (int)db_row('SELECT COUNT(*) c FROM contact_replies WHERE messageId = ?', [$rpId])['c'] === 2);
+unset($GLOBALS['__mail_sink']);
+
 // ── Standard password login (opt-in) ──
 chk('login without a password → no_password', backend_dispatch('auth.login', ['identifier' => 'tunde@example.com', 'password' => 'anything'])['error'] === 'no_password');
 chk('set password rejects short', backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'short'])['error'] === 'password_too_short');
@@ -7917,6 +7952,26 @@ chk('admin.photo.edit re-crops a live student photo (no stacked transforms)', (f
     return strpos($now, 'g_center') !== false && strpos($now, 'c_crop,g_center,w_0.833') !== false && strpos($now, 'z_') === false
         && strpos($now, 'g_face,w_600,h_750/c_fill') === false && substr_count($now, '/upload/') === 1 && strpos($now, '/v17/') !== false;
 })());
+/* ── Roster search suggestions: a participant on an accurate match, a member on a very close one ── */
+db_insert('members', ['memberId' => 'NGG-SG-1', 'fullName' => 'Bliss Chukwura', 'email' => 'bliss-sg@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('members', ['memberId' => 'NGG-SG-2', 'fullName' => 'Kosi Ifeanyi', 'email' => 'kosi-sg@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+db_insert('summer_students', ['studentId' => 'SUM-SG-1', 'cohortId' => '', 'handle' => 'sg-amara', 'fullName' => 'Amarachi Obinna Eze', 'displayId' => 'EG-26-777', 'parentEmail' => 'eze.family@example.com', 'centre' => 'Egbeda', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+$GLOBALS['__sg'] = fn($q, $who = 'NGG-2025-0099') => backend_dispatch('admin.members.suggest', ['requesterId' => $who, 'q' => $q]);
+chk('suggest: a typo in a member’s name finds them (Chukwurah → Bliss Chukwura)', in_array('NGG-SG-1', array_column(($GLOBALS['__sg'])('Bliss Chukwurah')['near'] ?? [], 'memberId'), true));
+chk('suggest: the names in another order find them (Ifeanyi Kosi → Kosi Ifeanyi)', in_array('NGG-SG-2', array_column(($GLOBALS['__sg'])('Ifeanyi Kosi')['near'] ?? [], 'memberId'), true));
+chk('suggest: a member the roster search already finds is not repeated as a "close" one', !in_array('NGG-SG-1', array_column(($GLOBALS['__sg'])('Chukwura')['near'] ?? [], 'memberId'), true));
+chk('suggest: a loose word is NOT a close match (Bless ≠ Bliss Chukwura on its own)', !in_array('NGG-SG-1', array_column(($GLOBALS['__sg'])('Bless')['near'] ?? [], 'memberId'), true));
+chk('suggest: a Summer School participant on an accurate match — every word of the name, any order', (function () {
+    $r = ($GLOBALS['__sg'])('eze amarachi');
+    $hit = array_values(array_filter($r['summer'] ?? [], fn($x) => $x['studentId'] === 'SUM-SG-1'));
+    return $hit && $hit[0]['match'] === 'name' && $hit[0]['promoted'] === false && $r['canPromote'] === true;
+})());
+chk('suggest: …or by their printed ID, or a parent’s email', in_array('SUM-SG-1', array_column(($GLOBALS['__sg'])('EG-26-777')['summer'] ?? [], 'studentId'), true)
+    && in_array('SUM-SG-1', array_column(($GLOBALS['__sg'])('eze.family@example.com')['summer'] ?? [], 'studentId'), true));
+chk('suggest: …but never on one loose word (a promotion must not start from a guess)', !in_array('SUM-SG-1', array_column(($GLOBALS['__sg'])('Amara')['summer'] ?? [], 'studentId'), true));
+chk('suggest: under three characters there is nothing to suggest', ($GLOBALS['__sg'])('Bl')['near'] === [] && ($GLOBALS['__sg'])('Bl')['summer'] === []);
+chk('suggest: gated on people', (($GLOBALS['__sg'])('Bliss Chukwurah', 'NGG-2025-0001')['error'] ?? '') === 'forbidden');
+
 /* ── Cloudinary for photos stored on this site, and in bulk ─────────────── */
 $GLOBALS['__pe_png'] = (function () {   // a real photo-sized JPEG: the store refuses a 1-pixel image as unreadable
     $im = imagecreatetruecolor(300, 375); imagefill($im, 0, 0, imagecolorallocate($im, 90, 140, 200));
