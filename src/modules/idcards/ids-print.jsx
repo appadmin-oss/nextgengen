@@ -37,7 +37,7 @@ function IdsPrintSide({ G, slots, sheetIdx, skip, face, backs, marks, proof, tes
     if (!s || s.pad) continue;
     out.push(
       <div key={i} className="ids-ps" style={box}>
-        {renderFace(s, face)}
+        {p.rot ? <div className="ids-ps-turn">{renderFace(s, face)}</div> : renderFace(s, face)}
         {proof && <div className="ids-ps-proof">PROOF</div>}
       </div>
     );
@@ -57,6 +57,7 @@ function idsPrintCss(G) {
     + ".ids-pg{position:relative;width:" + G.pw + "mm;height:" + G.ph + "mm;overflow:hidden;page-break-after:always;break-after:page;background:#fff}"
     + ".ids-pg-mark{position:absolute;background:#000}"
     + ".ids-ps{position:absolute;overflow:hidden}"
+    + ".ids-ps-turn{width:100%;height:100%;transform:rotate(180deg)}"
     + ".ids-ps--test{border:0.2mm solid #0b0b0c;display:flex;align-items:center;justify-content:center;font:10pt sans-serif}"
     + ".ids-ps-proof{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transform:rotate(-30deg);font:700 14pt sans-serif;color:rgba(200,0,0,.45);letter-spacing:.2em}"
     + ".ids-pg--list{padding:14mm;font:9pt Geist,Helvetica,Arial,sans-serif;height:auto;min-height:" + G.ph + "mm}"

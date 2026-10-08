@@ -31,7 +31,7 @@ const IDS_ORDERS = [["centre", "Centre"], ["kind", "Kind"], ["name", "Name"], ["
 const IDS_BACKS = [
   ["off", "Fronts only", "Single-sided"],
   ["long", "Double-sided · long edge", "Most printers. Backs are mirrored left to right"],
-  ["short", "Double-sided · short edge", "Backs mirrored top to bottom"],
+  ["short", "Double-sided · short edge", "Backs mirrored top to bottom and turned, so they read head to head"],
 ];
 const IDS_REASONS = [["new", "New issues"], ["reprint", "Reprints"], ["mixed", "New issues and reprints"], ["external", "External uploads"], ["proof", "Proof"]];
 const IDS_REC_PAGE = 60;      // record rows drawn at first
@@ -91,15 +91,25 @@ function idsGrid({ paper, size, customW, customH, margin, gap }) {
 }
 
 /**
- * Where slot i sits on the page, in mm. A back is mirrored so it lands behind
- * its front after the sheet is flipped: long-edge flips mirror the columns,
- * short-edge flips mirror the rows.
+ * Where slot i sits on the page, in mm, and which way up it is drawn.
+ *
+ * A back is placed so it lands behind its front once the sheet is flipped,
+ * and turned so it reads the right way up when the CARD is turned over side
+ * to side — the way an ID card is turned in a holder:
+ *   long edge  — the sheet turns about its vertical axis: the columns mirror,
+ *                the art stays upright (rot 0).
+ *   short edge — the sheet tumbles about its horizontal axis: the rows mirror,
+ *                and the art must ALSO be turned 180°, or every back reads
+ *                upside down against its front (rot 180).
+ * This is the rule the press PDF uses too (vendor/card-export.js, DUPLEX), so
+ * the sheet printed from the browser and the PDF sent to a shop agree. They
+ * did not: the browser sheet mirrored the rows and left the backs upright.
  */
 function idsSlotPos(G, i, mirror) {
   let col = i % G.cols, row = Math.floor(i / G.cols);
   if (mirror === "long") col = G.cols - 1 - col;
   if (mirror === "short") row = G.rows - 1 - row;
-  return { x: G.ox + col * (G.cw + G.g), y: G.oy + row * (G.ch + G.g), col, row };
+  return { x: G.ox + col * (G.cw + G.g), y: G.oy + row * (G.ch + G.g), col, row, rot: mirror === "short" ? 180 : 0 };
 }
 
 /** How many sheets a run needs (§3.4): ceil((skip + cards) / per), 0 when nothing fits. */

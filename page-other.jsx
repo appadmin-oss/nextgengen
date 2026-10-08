@@ -4516,10 +4516,9 @@ function GatePhoto({ photoUrl, setPhotoUrl, onBack, onNext, card, gold, goldInk,
     const ctx = c.getContext("2d");
     const scale = Math.max(c.width / v.videoWidth, c.height / v.videoHeight);
     const dx = (c.width - v.videoWidth * scale) / 2, dy = (c.height - v.videoHeight * scale) / 2;
-    // Save what the operator SAW. The front preview is mirrored, so the frame
-    // has to be mirrored to match it; the rear preview is not, so it must not
-    // be — otherwise every rear-camera headshot comes out flipped.
-    if (facing !== "environment") { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
+    // Saved as the camera sees it, never mirrored. The front preview is shown
+    // mirrored so lining up feels natural, but this photo goes on an ID card:
+    // a mirrored save reversed the face and any lettering on the clothing.
     ctx.drawImage(v, dx, dy, v.videoWidth * scale, v.videoHeight * scale);
     c.toBlob(b => b && uploadBlob(b), "image/jpeg", 0.9);
   };

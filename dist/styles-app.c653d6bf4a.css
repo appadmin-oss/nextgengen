@@ -7952,6 +7952,7 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-print-host { position: fixed; left: -40000px; top: 0; }
 .ids-print-host .ids-pg { position: relative; overflow: hidden; background: var(--ids-s0); }
 .ids-print-host .ids-ps { position: absolute; overflow: hidden; }
+.ids-print-host .ids-ps-turn, .ids-ps-turn { width: 100%; height: 100%; transform: rotate(180deg); }
 .ids-print-host .ids-pg-mark { position: absolute; background: var(--ids-ink); }
 .ids-print-host .ids-x-face { position: relative; overflow: hidden; background: var(--ids-s0); }
 /* ============================================================================

@@ -56,8 +56,36 @@ const f0 = T.idsSlotPos(g, 0), bl = T.idsSlotPos(g, 0, 'long'), bs = T.idsSlotPo
 chk('long edge mirrors the columns: slot 1’s back is in the last column, same row', bl.col === 2 && bl.row === 0 && near(bl.x, g.ox + 2 * (g.cw + g.g)));
 chk('short edge mirrors the rows', bs.col === 0 && bs.row === 2);
 chk('a mirrored back lands exactly behind its front once the sheet is flipped left to right', near(210 - (bl.x + g.cw), f0.x));
+chk('a short-edge back lands behind its front once the sheet is tumbled top to bottom', near(297 - (bs.y + g.ch), f0.y) && near(bs.x, f0.x));
+chk('long-edge backs stay upright; short-edge backs are turned 180° so they read head to head when the card is turned over',
+  bl.rot === 0 && bs.rot === 180 && f0.rot === 0);
+{
+  /* The same rule as the press PDF (vendor/card-export.js), read from its source,
+     so the sheet printed from the browser and the PDF a shop prints cannot disagree. */
+  const ce = fs.readFileSync(path.join(__dirname, '..', 'vendor/card-export.js'), 'utf8');
+  chk('…which is the press PDF’s rule too: long mirrors columns, short mirrors rows and turns the art',
+    /col: duplex === 'long-edge' \? cols - 1 - col : col/.test(ce) && /row: flipRows \? rows - 1 - row : row/.test(ce) && /rot: flipRows/.test(ce));
+}
+{
+  /* Every slot on a full sheet, both flips: the back of slot i sits behind slot i. */
+  let ok = true;
+  for (let i = 0; i < g.per; i++) {
+    const f = T.idsSlotPos(g, i), l = T.idsSlotPos(g, i, 'long'), s = T.idsSlotPos(g, i, 'short');
+    if (!near(g.pw - (l.x + g.cw), f.x) || !near(l.y, f.y)) ok = false;
+    if (!near(g.ph - (s.y + g.ch), f.y) || !near(s.x, f.x)) ok = false;
+  }
+  chk('every slot of a full sheet registers front to back, under both flips', ok);
+}
 chk('cut marks: 2 per card edge across and down (6 x-edges, 6 y-edges, each ticked twice)', T.idsCutMarks(g).length === 24);
 chk('…all outside the card block', T.idsCutMarks(g).every(m => m.y + m.h <= g.oy || m.y >= g.oy + 3 * g.ch + 2 * g.g || m.x + m.w <= g.ox || m.x >= g.ox + 3 * g.cw + 2 * g.g));
+
+console.log('photos for the card are never saved mirrored');
+for (const f of ['components.jsx', 'page-other.jsx']) {
+  const src = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+  /* The live selfie preview may mirror (CSS scaleX(-1) on the <video>); the
+     canvas the photo is saved from must not, or the card shows a reversed face. */
+  chk(f + ': the captured headshot is drawn unmirrored', !/ctx\.scale\(\s*-1\s*,\s*1\s*\)/.test(src) && /scaleX\(-1\)/.test(src));
+}
 
 console.log('uploaded images');
 const cr = [53.98, 85.6];
