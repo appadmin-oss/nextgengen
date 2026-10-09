@@ -100,6 +100,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.members.cardsBackfill'  => 'admin_member_cards_backfill',
             // Send everybody already promoted to NGV to Afrovanguard (domain/ngv-portal.php).
             'admin.members.ngvPortalSync'  => 'admin_members_ngv_portal_sync',
+            'admin.members.avCardLink'     => 'admin_members_av_card_link',
             'admin.members.ids'       => 'admin_members_ids',
             'admin.members.upsert'    => 'admin_members_upsert',
             'admin.members.import'    => 'admin_members_import',

@@ -131,3 +131,38 @@ function admin_members_ngv_portal_sync(array $p): array {
     audit('member.ngv.portalSync', (string)($g['requester']['memberId'] ?? ''), '', ['announced' => $n, 'delivered' => $ok], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'announced' => $n, 'delivered' => $ok, 'queued' => $n - $ok];
 }
+
+/**
+ * A signed link that opens a vanguard's Afrovanguard member card for printing.
+ *
+ * The card is Afrovanguard's (its design, its card number, its QR), so it is
+ * drawn and printed THERE — card/print.php, where the staff member's browser
+ * makes the PDF, the PNGs or an A4 sheet from the very partial the card is.
+ * Drawing it a second time here would be a second renderer that drifts.
+ *
+ * The link is signed with the shared secret this site already holds for the
+ * NGV integration (NGG_WEBHOOK_SECRET there): HMAC-SHA256 of
+ * "card-print|<memberId>|<ts>", good for ten minutes. Afrovanguard opens it
+ * only for an NGG member it has linked to an account.
+ */
+function admin_members_av_card_link(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    global $CONFIG;
+    $av = (array)($CONFIG['afrovanguard'] ?? []);
+    $secret = trim((string)($av['ngv_webhook_secret'] ?? ''));
+    if ($secret === '') return ['ok' => false, 'error' => 'not_configured',
+        'detail' => 'Set afrovanguard.ngv_webhook_secret in config.php (the same value as NGG_WEBHOOK_SECRET on Afrovanguard).'];
+    $id = trim((string)($p['memberId'] ?? ''));
+    $m = $id !== '' ? db_row('SELECT memberId, fullName, centre, ngvVolunteerId FROM members WHERE memberId = ? LIMIT 1', [$id]) : null;
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $scope = admin_centre_names_in_scope($g['requester']);
+    if ($scope !== null && !in_array((string)$m['centre'], $scope, true)) return ['ok' => false, 'error' => 'out_of_scope'];
+    if (trim((string)($m['ngvVolunteerId'] ?? '')) === '') return ['ok' => false, 'error' => 'not_ngv',
+        'detail' => 'Only a member promoted to NGV has an Afrovanguard card.'];
+    $ts = (string)time();
+    $sig = hash_hmac('sha256', 'card-print|' . $m['memberId'] . '|' . $ts, $secret);
+    $url = rtrim((string)($av['org_url'] ?? 'https://afrovanguard.org.ng'), '/') . '/card/print.php?'
+        . http_build_query(['ngg' => (string)$m['memberId'], 'ts' => $ts, 'sig' => $sig]);
+    audit('member.ngv.cardPrint', (string)($g['requester']['memberId'] ?? ''), (string)$m['memberId'], [], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'url' => $url, 'expiresIn' => 600];
+}

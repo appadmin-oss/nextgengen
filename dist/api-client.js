@@ -1028,6 +1028,8 @@
         },
         // Everybody already promoted to NGV → their NGV account on Afrovanguard.
         ngvPortalSync: () => request('/admin/members.php', { body: { action: 'ngvPortalSync' }, timeout: 120000 }),
+        // A vanguard's Afrovanguard member card, opened for printing there (signed link, 10 minutes).
+        avCardLink: (memberId) => request('/admin/members.php', { body: { action: 'avCardLink', memberId } }),
         reset2fa: (memberId) => request('/admin/members.php', { body: { action: 'reset2fa', memberId } }),
         resetPassword: (memberId) => request('/admin/members.php', { body: { action: 'resetPassword', memberId } }),
         // Record a guardian's publication decision. `method` is how it was

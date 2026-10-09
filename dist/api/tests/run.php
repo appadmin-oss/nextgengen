@@ -22944,6 +22944,20 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         !db_row("SELECT d.id FROM deliveries d JOIN outbox o ON o.eventId = d.eventId WHERE d.integrationId = 'INT-CHAT-ALL' AND o.kind = 'private.ngv.account'")
         && bus_subscribed('["*"]', 'member.promoted.ngv') && !bus_subscribed('["*"]', 'private.ngv.account') && !bus_subscribed('["private.*"]', 'private.ngv.account'));
 
+    /* Printing the Afrovanguard card: a link Afrovanguard's card/print.php checks. */
+    $cl = backend_dispatch('admin.members.avCardLink', ['requesterId' => $ADM, 'memberId' => 'NGG-PORT-1']);
+    $q = []; parse_str((string)parse_url((string)($cl['url'] ?? ''), PHP_URL_QUERY), $q);
+    chk('av card: a vanguard\'s card opens on Afrovanguard for printing, from a link signed the way card/print.php checks it',
+        !empty($cl['ok']) && str_starts_with((string)$cl['url'], 'https://afrovanguard.org.ng/card/print.php?')
+        && ($q['ngg'] ?? '') === 'NGG-PORT-1' && abs(time() - (int)($q['ts'] ?? 0)) < 5
+        && hash_equals(hash_hmac('sha256', 'card-print|NGG-PORT-1|' . ($q['ts'] ?? ''), 'av-ngv-secret'), (string)($q['sig'] ?? '')));
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-PORT-2'");
+    db_insert('members', ['memberId' => 'NGG-PORT-2', 'fullName' => 'Not Yet', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    chk('av card: …only for somebody promoted to NGV — nobody else has an Afrovanguard card',
+        (backend_dispatch('admin.members.avCardLink', ['requesterId' => $ADM, 'memberId' => 'NGG-PORT-2'])['error'] ?? '') === 'not_ngv');
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-PORT-2'");
+
     $calls = [];
     $GLOBALS['__bus_http_mock'] = fn($u, $b, $h) => ['ok' => false, 'error' => 'http_503'];
     db_update('volunteers', ['status' => 'inactive'], ['memberId' => 'NGG-PORT-1']);
