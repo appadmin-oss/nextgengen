@@ -24637,6 +24637,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $thanks = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains($m['subject'], 'Thank you')));
     chk('pay: …and the family is thanked, with the receipt', count($thanks) === 1 && str_contains($thanks[0]['html'], $invA2['receiptNo']) && str_contains($thanks[0]['html'], 'receipt.php?t=' . $invA2['receiptToken']));
     membership_paystack_verify($ref); membership_settle($invA['invoiceId'], 'paystack', $ref, 'paystack');
+    chk('pay: the family\'s page confirms a checkout of their own invoice (Paystack must name it)',
+        (backend_dispatch('public.membership.pay.verify', ['token' => $invA['payToken'], 'reference' => $ref])['invoice']['status'] ?? '') === 'paid');
     fees_accrue_member(db_row('SELECT * FROM members WHERE memberId = ?', [$memA['memberId']]), null, $start);
     chk('pay: settling twice and the dues accrual afterwards post nothing more — the ledger agrees with the invoice',
         count(db_all("SELECT id FROM member_ledger WHERE memberId = ? AND kind = 'payment'", [$memA['memberId']])) === 1
@@ -24714,6 +24716,12 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('pay: an invoice with a claim pending cannot be voided', (backend_dispatch('admin.membership.invoice.void', ['requesterId' => $A1, 'invoiceId' => $invC['invoiceId'], 'reason' => 'Family withdrew before starting'])['error'] ?? '') === 'offline_pending');
     $list = backend_dispatch('admin.membership.invoices', ['requesterId' => $A1, 'status' => 'pending']);
     chk('pay: the staff list shows what is waiting to be verified, with who recorded it', count($list['invoices'] ?? []) === 1 && ($list['invoices'][0]['offline']['recordedByName'] ?? '') === 'Pay NGG-MP-ADM2' && ($list['counts']['pending'] ?? 0) === 1);
+    // A centre-scoped admin sees their own centres' invoices and counts, filtered in the query.
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-MP-SCOPED'");
+    db_insert('members', ['memberId' => 'NGG-MP-SCOPED', 'fullName' => 'Scoped Fees', 'email' => 'mp-scoped@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'super_admin',
+        'centreScope' => json_encode(['Nowhere Centre']), 'createdAt' => $now, 'updatedAt' => $now]);
+    $sc = backend_dispatch('admin.membership.invoices', ['requesterId' => 'NGG-MP-SCOPED']);
+    chk('pay: an admin scoped to another centre sees none of these invoices, and no counts for them', !empty($sc['ok']) && ($sc['invoices'] ?? null) === [] && (int)($sc['counts']['pending'] ?? 0) === 0 && empty($sc['counts']['paid']));
     chk('pay: the bank details must be a 10-digit account number', (backend_dispatch('admin.membership.bank.set', ['requesterId' => $A1, 'bank' => ['bankName' => 'GTBank', 'accountName' => 'Afrovanguard', 'accountNumber' => '123']])['error'] ?? '') === 'bad_account_number'
         && !empty(backend_dispatch('admin.membership.bank.set', ['requesterId' => $A1, 'bank' => ['bankName' => 'GTBank', 'accountName' => 'Afrovanguard', 'accountNumber' => '0123456789']])['ok'])
         && (membership_fee_terms()['bank']['accountNumber'] ?? '') === '0123456789');

@@ -412,9 +412,13 @@ function public_membership_pay_verify(array $p): array {
     if (!$inv) return ['ok' => false, 'error' => 'not_found'];
     $ref = trim((string)($p['reference'] ?? ''));
     if ((string)$inv['status'] !== 'paid') {
-        if ($ref === '' || $ref !== (string)$inv['paystackRef']) return ['ok' => false, 'error' => 'bad_reference'];
+        /* Any of this invoice's checkouts, not only the latest: a family who
+           opened Paystack twice and paid in the first tab has paid. Paystack's
+           own answer must name THIS invoice, so another invoice's reference
+           pasted into this link settles nothing here. */
         $v = membership_paystack_verify($ref);
         if (empty($v['ok'])) return ['ok' => false, 'error' => $v['error'] ?? 'failed'];
+        if ((string)($v['invoice']['invoiceId'] ?? '') !== (string)$inv['invoiceId']) return ['ok' => false, 'error' => 'bad_reference'];
     }
     return public_membership_invoice(['token' => $inv['payToken']]);
 }
@@ -460,9 +464,21 @@ function membership_invoice_row(array $inv, array $members, array $pending): arr
 function admin_membership_invoices(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
     $status = (string)($p['status'] ?? '');
-    $where = ''; $args = [];
-    if (in_array($status, ['open', 'paid', 'void'], true)) { $where = 'WHERE status = ?'; $args[] = $status; }
-    elseif ($status === 'pending') $where = "WHERE status = 'open' AND invoiceId IN (SELECT invoiceId FROM offline_payments WHERE status = 'pending')";
+    /* Scope is applied IN the query, above the row cap — a filter applied to
+       the drawn rows filters the page (CLAUDE.md §6) — and the counts are the
+       operator's own centres', not the organisation's. */
+    $scope = admin_centre_names_in_scope($g['requester']);
+    $conds = []; $args = [];
+    if ($scope !== null) {
+        if (!$scope) return ['ok' => true, 'invoices' => [], 'counts' => [], 'terms' => membership_fee_terms(), 'bank' => membership_pay_settings(), 'methods' => MPAY_METHODS, 'me' => (string)$g['requester']['memberId'], 'evidenceMax' => MPAY_EVIDENCE_MAX];
+        $conds[] = 'memberId IN (SELECT memberId FROM members WHERE centre IN (' . implode(',', array_fill(0, count($scope), '?')) . '))';
+        $args = array_merge($args, $scope);
+    }
+    $scopeSql = $conds ? ' AND ' . implode(' AND ', $conds) : '';
+    $scopeArgs = $args;
+    if (in_array($status, ['open', 'paid', 'void'], true)) { $conds[] = 'status = ?'; $args[] = $status; }
+    elseif ($status === 'pending') $conds[] = "status = 'open' AND invoiceId IN (SELECT invoiceId FROM offline_payments WHERE status = 'pending')";
+    $where = $conds ? 'WHERE ' . implode(' AND ', $conds) : '';
     $rows = db_all("SELECT * FROM membership_invoices $where ORDER BY id DESC LIMIT " . MPAY_LIST_MAX, $args);
     $ids = array_values(array_unique(array_map(static fn($r) => (string)$r['memberId'], $rows)));
     $members = [];
@@ -474,16 +490,10 @@ function admin_membership_invoices(array $p): array {
         $k = (string)$op['invoiceId'];
         if (!isset($pending[$k]) || (string)$pending[$k]['status'] !== 'pending') $pending[$k] = $op;
     }
-    $scope = admin_centre_names_in_scope($g['requester']);
-    $out = [];
-    foreach ($rows as $r) {
-        $m = $members[(string)$r['memberId']] ?? [];
-        if ($scope !== null && !in_array((string)($m['centre'] ?? ''), $scope, true)) continue;
-        $out[] = membership_invoice_row($r, $members, $pending);
-    }
+    $out = array_map(static fn($r) => membership_invoice_row($r, $members, $pending), $rows);
     $counts = [];
-    foreach (db_all('SELECT status, COUNT(*) c FROM membership_invoices GROUP BY status') as $c) $counts[(string)$c['status']] = (int)$c['c'];
-    $counts['pending'] = (int)(db_row("SELECT COUNT(*) c FROM offline_payments WHERE status = 'pending'")['c'] ?? 0);
+    foreach (db_all('SELECT status, COUNT(*) c FROM membership_invoices WHERE 1 = 1' . $scopeSql . ' GROUP BY status', $scopeArgs) as $c) $counts[(string)$c['status']] = (int)$c['c'];
+    $counts['pending'] = (int)(db_row("SELECT COUNT(*) c FROM offline_payments WHERE status = 'pending' AND invoiceId IN (SELECT invoiceId FROM membership_invoices WHERE 1 = 1" . $scopeSql . ')', $scopeArgs)['c'] ?? 0);
     return ['ok' => true, 'invoices' => $out, 'counts' => $counts, 'terms' => membership_fee_terms(), 'bank' => membership_pay_settings(),
             'methods' => MPAY_METHODS, 'me' => (string)$g['requester']['memberId'], 'evidenceMax' => MPAY_EVIDENCE_MAX];
 }
