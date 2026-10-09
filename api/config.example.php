@@ -417,6 +417,15 @@ return [
         'default'      => ['max' => 60,  'window' => 60],
     ],
 
+    // Where uploaded photographs are kept. Put this OUTSIDE the website
+    // folder (beside it, not in it): kept in api/storage/photos, a deploy that
+    // deletes or replaces the folder deletes every photo with it. After
+    // setting it, Diagnostics → Photo storage → "Search this account" copies
+    // the existing photos across.
+    // 'photo_dir' => '/home/ACCOUNT/ngg-data/photos',
+    // Extra folders "Search this account" should look in for lost photos.
+    // 'photo_recover_dirs' => ['/home/ACCOUNT/old-site/api/storage/photos'],
+
     // Cache settings (filesystem cache, keyed by op + arg hash). Reduces
     // Apps Script round-trips for public reads.
     'cache_dir' => __DIR__ . '/_cache',

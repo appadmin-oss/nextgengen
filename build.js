@@ -340,10 +340,15 @@ async function build() {
     const p = path.join(DIST, junk);
     if (fs.existsSync(p)) fs.rmSync(p, { force: true });
   }
-  const cacheDir = path.join(DIST, 'api/_cache');
-  if (fs.existsSync(cacheDir)) {
-    for (const f of fs.readdirSync(cacheDir)) {
-      if (f !== '.htaccess' && f !== '.gitkeep') fs.rmSync(path.join(cacheDir, f), { recursive: true, force: true });
+  /* Runtime data never ships: the cache, the logs, and anything in storage
+     (photos, payment evidence, a database) belong to the server they were made
+     on. A deploy carries only each folder's .htaccess, so unpacking it over a
+     live site adds nothing there and replaces nothing there. */
+  for (const d of ['api/_cache', 'api/logs', 'api/storage']) {
+    const dir = path.join(DIST, d);
+    if (!fs.existsSync(dir)) continue;
+    for (const f of fs.readdirSync(dir)) {
+      if (f !== '.htaccess' && f !== '.gitkeep') fs.rmSync(path.join(dir, f), { recursive: true, force: true });
     }
   }
 

@@ -138,6 +138,66 @@ async function crSyOpsRun(ctx, job) {
     ctx.reload();
   } catch (e) { ctx.toast(crErr(e, "Couldn’t run that job."), null, true); }
 }
+/* Where to keep photos instead: beside the website folder, not in it. */
+function crSyPhotoDirHint(dir) {
+  const m = String(dir || "").match(/^(.*)\/[^/]+\/api\/storage\/photos\/?$/);
+  return m ? m[1] + "/ngg-data/photos" : "/home/<account>/ngg-data/photos";
+}
+
+/* Lost photo files back. A stored photo's file name is a fingerprint of its
+   exact bytes, so a file found under that name IS that photo: searching the
+   hosting account (an earlier deploy, a backup copy, the cache) and restoring
+   from a backup are both safe — nothing can be attached to the wrong person,
+   and no record changes. */
+function CrSyPhotoRecover({ ctx }) {
+  const [st, setSt] = React.useState({ busy: "", note: "" });
+  const fileRef = React.useRef(null);
+  const search = async () => {
+    setSt({ busy: "search", note: "Searching this hosting account…" });
+    try {
+      const r = await NGGApi.admin.photoFrame.recover();
+      const from = Object.keys(r.from || {});
+      const said = r.found
+        ? crPlural(r.found, "photo") + " found and put back" + (from.length ? " (from " + from.join(", ") + ")" : "") + ". " + (r.stillMissing ? crNum(r.stillMissing) + " still missing." : "None missing now.")
+        : "None of the missing photos were found in the " + crNum(r.searched) + " folders searched on this account. Restore them from a backup, or send retake links.";
+      setSt({ busy: "", note: said + (r.moved ? " " + crPlural(r.moved, "photo") + " copied out of the website folder into " + r.dir + "." : "") });
+      ctx.reload();
+    } catch (e) { setSt({ busy: "", note: crErr(e, "The search didn’t finish.") }); }
+  };
+  const copyNames = async () => {
+    try {
+      const r = await NGGApi.admin.photoFrame.lost();
+      await navigator.clipboard.writeText(r.names.join("\n"));
+      ctx.toast(crPlural(r.count, "file name") + " copied — search your backup for these.");
+    } catch (e) { ctx.toast(crErr(e, "Couldn’t list them."), null, true); }
+  };
+  const restore = async files => {
+    const list = Array.from(files || []).filter(f => /^[0-9a-f]{32}\.(jpg|png|webp)$/.test(f.name));
+    if (!list.length) { setSt({ busy: "", note: "None of those files are stored photos — their names are 32 letters and digits, like 3f9a…c1.jpg, as in api/storage/photos." }); return; }
+    let done = 0, skipped = 0;
+    for (let i = 0; i < list.length; i++) {
+      setSt({ busy: "restore", note: "Restoring " + (i + 1) + " of " + list.length + "…" });
+      const data = await new Promise(res => { const fr = new FileReader(); fr.onload = () => res(String(fr.result)); fr.onerror = () => res(""); fr.readAsDataURL(list[i]); });
+      try { const r = await NGGApi.admin.photoFrame.restore(list[i].name, data); if (r.restored) done++; else skipped++; }
+      catch (_) { skipped++; }
+    }
+    setSt({ busy: "", note: crPlural(done, "photo") + " restored" + (skipped ? "; " + skipped + " skipped (already there, not one of the missing, or not a readable image)" : "") + "." });
+    ctx.reload();
+  };
+  return (
+    <div className="cr-box cr-sy-frame">
+      <p className="cr-hint">Each stored photo’s file name is a fingerprint of the photo itself, so a copy found under that name is exactly that photo — it can’t end up on the wrong person. First search this hosting account (an earlier copy of the site, a backup folder, the cache). If you have a backup (a cPanel backup’s <code>api/storage/photos</code> folder, say), select its files to restore them. Whatever can’t be found needs a retake link from that person’s record.</p>
+      <div className="cr-sy-frame-acts">
+        <button type="button" className="cr-btn is-sm is-primary" disabled={!!st.busy} onClick={search}>{st.busy === "search" ? "Searching…" : "Search this account"}</button>
+        <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={() => fileRef.current && fileRef.current.click()}>Restore from a backup</button>
+        <button type="button" className="cr-btn is-sm" disabled={!!st.busy} onClick={copyNames}>Copy the missing file names</button>
+        <input ref={fileRef} type="file" multiple accept="image/jpeg,image/png,image/webp" hidden aria-label="Photo files from a backup" onChange={e => { restore(e.target.files); e.target.value = ""; }}/>
+      </div>
+      {st.note && <p className="cr-hint" role="status" aria-live="polite">{st.note}</p>}
+    </div>
+  );
+}
+
 function crSyLight(ok, label, detail) { return [label, ok ? "OK" : (detail || "Failing"), ok ? "ok" : "bad"]; }
 
 Object.assign(CR_TAB_DEFS, {
@@ -172,11 +232,16 @@ Object.assign(CR_TAB_DEFS, {
         items.push(["Held", crPlural(p.files || 0, "image") + (p.bytes ? " · " + (p.bytes / 1048576).toFixed(1) + " MB" : ""), "neutral"]);
         out.push({ type: "status", span: 3, title: "Photo storage", sub: p.where === "storage" ? "Checked just now by writing and reading back a test image" : "", summary: crPlural(pb, "check"), tone: pb ? "bad" : "ok", items });
         if (p.dir) out.push({ type: "note", span: 6, icon: "folder", text: "Photos are kept in " + p.dir + "." });
-        if (c.photoLinks && !c.photoLinks.ok) {
-          const w = c.photoLinks.where || {};
-          out.push({ type: "note", span: 6, icon: "image-broken", tone: "warn",
-            text: crPlural(c.photoLinks.missing, "image") + " referenced by a record " + (c.photoLinks.missing === 1 ? "is" : "are") + " no longer on disk" + (Object.keys(w).length ? " — " + Object.keys(w).map(k => w[k] + " in " + k).join(", ") : "") + ".",
-            sub: "The bytes can’t be recovered. Send those people a retake link from their record’s photo. Cards and rosters print without a headshot in the meantime." });
+        if (p.insideSite) out.push({ type: "note", span: 6, icon: "warning", tone: "warn",
+          text: "Photos are kept inside the website’s own folder, so a deploy that deletes or replaces that folder deletes every photo with it.",
+          sub: "Add  'photo_dir' => '" + crSyPhotoDirHint(p.dir) + "'  to api/config.php, then press “Search this account” below to bring the photos across. When deploying, unpack the new version over the old one; never delete the folder first." });
+        {
+          const lost = c.photoLinks && !c.photoLinks.ok, w = (c.photoLinks && c.photoLinks.where) || {};
+          out.push({ type: "custom", span: 6,
+            title: lost ? crPlural(c.photoLinks.missing, "photo") + " on record with no file on disk" : "Finding and moving photos",
+            sub: lost ? (Object.keys(w).length ? Object.keys(w).map(k => w[k] + " in " + k).join(", ") + "." : "")
+              : "Nothing is missing. After setting photo_dir, “Search this account” also copies every photo out of the website folder.",
+            render: () => <CrSyPhotoRecover ctx={ctx}/> });
         }
         if (!p.ok) out.push({ type: "note", span: 6, icon: "warning", tone: "bad",
           text: "Make api/storage writable by the web user (chmod 775, or 755 if PHP runs as the owner), then refresh.",

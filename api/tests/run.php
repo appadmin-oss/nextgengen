@@ -24950,5 +24950,60 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-FRAME-1'");
 })();
 
+/* ── Lost photo files, found again (domain/photos.php) ─────────────────────
+   A stored photo's name is a keyed fingerprint of its bytes, so a copy found
+   under that name anywhere is exactly that photo. */
+(function () use ($png) {
+    $SU = 'NGG-2025-0099';
+    $put = photo_store_put($png(300, 360));
+    $id = (string)$put['id'];
+    $path = photo_store_find($id);
+    $raw = (string)file_get_contents($path);
+    db_insert('members', ['memberId' => 'NGG-LOST-1', 'fullName' => 'Lost Photo', 'email' => 'lost1@example.com', 'type' => 'NGG', 'role' => 'member', 'status' => 'active',
+        'photoUrl' => '/api/public/photo.php?p=' . $id, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    // An audit row quoting another vanished photo is history, not somebody's missing photo.
+    audit('test.photo.quote', null, '', ['url' => '/api/public/photo.php?p=' . str_repeat('ab', 16) . '.jpg']);
+    $backup = sys_get_temp_dir() . '/ngg-old-site-' . rand_hex(4) . '/api/storage/photos';
+    @mkdir($backup, 0775, true);
+    rename($path, $backup . '/' . $id);
+    cache_delete('ops.photoLinks');
+    $br = photo_store_broken_refs(5000);
+    chk('lost photos: a record pointing at a vanished file is counted — and an audit row quoting one is not', $br['missing'] >= 1 && in_array($id, $br['ids'], true)
+        && !in_array(str_repeat('ab', 16) . '.jpg', array_keys(photo_store_missing_map() ?? []), true));
+    chk('lost photos: searching needs the Settings permission', (backend_dispatch('admin.photos.recover', ['requesterId' => 'NGG-DESK-A'])['error'] ?? '') === 'forbidden');
+    $GLOBALS['CONFIG']['photo_recover_dirs'] = [$backup];
+    $r = backend_dispatch('admin.photos.recover', ['requesterId' => $SU]);
+    chk('lost photos: a copy left in an old copy of the site is found and put back, byte for byte', !empty($r['ok']) && $r['found'] >= 1
+        && photo_store_find($id) !== '' && file_get_contents(photo_store_find($id)) === $raw
+        && db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-LOST-1'")['photoUrl'] === '/api/public/photo.php?p=' . $id);
+    unset($GLOBALS['CONFIG']['photo_recover_dirs']);
+
+    // Restoring from a backup, file by file.
+    @unlink(photo_store_find($id));
+    cache_delete('photos.missingNames');
+    $data = 'data:image/png;base64,' . base64_encode($raw);
+    chk('restore: needs the Settings permission', (backend_dispatch('admin.photos.restore', ['requesterId' => 'NGG-DESK-A', 'name' => $id, 'data' => $data])['error'] ?? '') === 'forbidden');
+    chk('restore: a file whose name is not a stored photo is skipped', (backend_dispatch('admin.photos.restore', ['requesterId' => $SU, 'name' => 'IMG_2041.jpg', 'data' => $data])['why'] ?? '') === 'not_a_store_file');
+    chk('restore: a stored-photo name nobody is missing is skipped — a backup cannot add files', (backend_dispatch('admin.photos.restore', ['requesterId' => $SU, 'name' => str_repeat('cd', 16) . '.png', 'data' => $data])['why'] ?? '') === 'not_missing');
+    $wrongType = substr($id, 0, 32) . '.jpg';
+    chk('restore: bytes that are not the named image type are refused', (function () use ($SU, $id, $data) {
+        $p = substr($id, 0, 32) . '.png';
+        $r = backend_dispatch('admin.photos.restore', ['requesterId' => $SU, 'name' => $p, 'data' => 'data:image/png;base64,' . base64_encode('not an image at all, just text pretending')]);
+        return ($r['restored'] ?? true) === false && photo_store_find($p) === '';
+    })());
+    $ok = backend_dispatch('admin.photos.restore', ['requesterId' => $SU, 'name' => $id, 'data' => $data]);
+    chk('restore: the missing photo comes back, verified against its fingerprint', !empty($ok['restored']) && !empty($ok['verified']) && file_get_contents(photo_store_find($id)) === $raw);
+    chk('restore: …and a second copy of it is skipped', (backend_dispatch('admin.photos.restore', ['requesterId' => $SU, 'name' => $id, 'data' => $data])['why'] ?? '') === 'already_there');
+
+    // Keeping photos outside the website folder.
+    $own = sys_get_temp_dir() . '/ngg-data-' . rand_hex(4) . '/photos';
+    $GLOBALS['CONFIG']['photo_dir'] = $own;
+    $mv = backend_dispatch('admin.photos.recover', ['requesterId' => $SU]);
+    chk('photo_dir: once set, the photos still inside the website folder are copied out to it', !empty($mv['ok']) && $mv['moved'] >= 1 && is_file($own . '/' . $id)
+        && file_get_contents($own . '/' . $id) === $raw);
+    unset($GLOBALS['CONFIG']['photo_dir']);
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-LOST-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

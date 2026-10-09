@@ -591,6 +591,9 @@ function cache_get(string $key, int $ttl = 0, string $stamp = '') {
     return $stamp === '' ? $hit : null;
 }
 
+/** Forget a memo, so the next read recomputes it. */
+function cache_delete(string $key): void { @unlink(cache_path($key)); }
+
 /** Write a memo directly. Same write-then-rename as cache_remember, so a
  *  concurrent reader never sees half a file. */
 function cache_put(string $key, $value, string $stamp = ''): bool {

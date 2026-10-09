@@ -241,6 +241,11 @@ function photo_store_dir(): string {
 
     $base = (string)($GLOBALS['CONFIG']['db']['sqlite_path'] ?? '');
     $primary = ($base !== '' ? dirname($base) : (__DIR__ . '/../../storage')) . '/photos';
+    /* `photo_dir` in config.php puts the store OUTSIDE the website folder,
+       where a deploy that replaces the folder cannot take the photographs
+       with it. Preferred whenever it is set. */
+    $own = rtrim((string)($GLOBALS['CONFIG']['photo_dir'] ?? ''), '/');
+    if ($own !== '') $primary = $own;
     $cache = (string)($GLOBALS['CONFIG']['cache_dir'] ?? '');
     $candidates = [$primary];
     if ($cache !== '') $candidates[] = rtrim($cache, '/') . '/photos';
@@ -330,6 +335,8 @@ function photo_store_url(string $id): string {
  */
 function photo_store_dirs(): array {
     $dirs = [];
+    $own = rtrim((string)($GLOBALS['CONFIG']['photo_dir'] ?? ''), '/');
+    if ($own !== '') $dirs[] = $own;
     $base = (string)($GLOBALS['CONFIG']['db']['sqlite_path'] ?? '');
     if ($base !== '') $dirs[] = dirname($base) . '/photos';   // primary (data dir)
     $dirs[] = __DIR__ . '/../../storage/photos';              // canonical fallback base
@@ -368,6 +375,8 @@ function photo_store_find(string $id): string {
  *  be purged. These are the targets a heal copies INTO. */
 function photo_store_durable_dirs(): array {
     $dirs = [];
+    $own = rtrim((string)($GLOBALS['CONFIG']['photo_dir'] ?? ''), '/');
+    if ($own !== '') $dirs[] = $own;
     $base = (string)($GLOBALS['CONFIG']['db']['sqlite_path'] ?? '');
     if ($base !== '') $dirs[] = dirname($base) . '/photos';
     $dirs[] = __DIR__ . '/../../storage/photos';
@@ -674,7 +683,9 @@ function photo_store_referenced(): ?array
                 foreach ($row as $col => $v) {
                     if (!is_string($v) || strpos($v, '/api/public/photo.php?p=') === false) continue;
                     if (!preg_match_all('/p=([0-9a-f]{32}\.(?:jpg|png|webp))/', $v, $m)) continue;
-                    foreach ($m[1] as $id) $referenced[$id] = $table . '.' . $col;
+                    // A record's column wins over the audit trail's quote of it, so the
+                    // diagnosis names where a person would go to fix it.
+                    foreach ($m[1] as $id) if (!isset($referenced[$id]) || strncmp($referenced[$id], 'audit_log.', 10) === 0) $referenced[$id] = $table . '.' . $col;
                 }
             }
         } catch (Throwable $e) {
@@ -716,6 +727,8 @@ function photo_store_broken_refs(int $limit = 400): array
 
     $missing = 0; $where = []; $ids = []; $checked = 0;
     foreach ($referenced as $id => $place) {
+        // Quoted only by the audit trail: history, not anybody's photo.
+        if (strncmp($place, 'audit_log.', 10) === 0) continue;
         if ($checked >= $limit) break;
         $checked++;
         $path = photo_store_find($id);
@@ -726,6 +739,154 @@ function photo_store_broken_refs(int $limit = 400): array
     }
     return ['scanned' => true, 'ok' => $missing === 0, 'checked' => $checked,
             'missing' => $missing, 'where' => $where, 'ids' => $ids];
+}
+
+/* ── Getting lost photographs back ─────────────────────────────────────────
+
+   A stored photo's file name is a keyed fingerprint of its exact bytes
+   (photo_store_put), so a file found anywhere under that name IS that photo,
+   and nothing else can pass for it. That makes two recoveries safe:
+
+   - search: look for the missing names in every folder on this hosting
+     account a copy plausibly survives in — an earlier deploy of the site, a
+     renamed or backup copy of it, the cache fallback, the temp directory —
+     and copy what is found back into the store;
+   - restore: an administrator selects photo files from a backup (a cPanel
+     backup's api/storage/photos, say), and each is accepted only if its name
+     is one of the missing photos and its bytes are an image of that type.
+
+   Neither ever changes a record: the record already points at the right name;
+   it only lacked the file. */
+
+/** Every photo a record points at whose file is gone (audit history excluded). id => place */
+function photo_store_missing_map(int $limit = 5000): ?array {
+    $referenced = photo_store_referenced();
+    if ($referenced === null) return null;
+    $out = [];
+    foreach ($referenced as $id => $place) {
+        if (strncmp($place, 'audit_log.', 10) === 0) continue;
+        if (photo_store_find($id) !== '') continue;
+        $out[$id] = $place;
+        if (count($out) >= $limit) break;
+    }
+    return $out;
+}
+
+/** Is this store directory inside the website's own folder (where a redeploy can delete it)? */
+function photo_store_inside_site(): bool {
+    $site = @realpath(__DIR__ . '/../../..') ?: '';
+    $dir = @realpath(photo_store_dir()) ?: photo_store_dir();
+    return $site !== '' && strncmp($dir, $site . '/', strlen($site) + 1) === 0;
+}
+
+/** Folders a copy of the store could have survived in, on this account. Bounded. */
+function photo_recover_dirs(): array {
+    $api = @realpath(__DIR__ . '/../..') ?: (__DIR__ . '/../..');
+    $site = dirname($api);
+    $home = dirname($site);
+    $dirs = photo_store_dirs();
+    foreach ((array)($GLOBALS['CONFIG']['photo_recover_dirs'] ?? []) as $d) if (is_string($d) && $d !== '') $dirs[] = rtrim($d, '/');
+    $cache = (string)($GLOBALS['CONFIG']['cache_dir'] ?? '');
+    if ($cache !== '') $dirs[] = rtrim($cache, '/') . '/photos';
+    $dirs[] = $api . '/_cache/photos';
+    $dirs[] = rtrim(sys_get_temp_dir(), '/') . '/photos';
+    // Other copies of the site on the same account: an earlier deploy folder,
+    // public_html, a backup or renamed copy, one or two levels down.
+    $patterns = [$home . '/*/api/storage/photos', $home . '/*/*/api/storage/photos', $home . '/*/api/_cache/photos', $home . '/*/*/api/_cache/photos',
+                 $home . '/*/storage/photos', $home . '/*/photos', $site . '/*/photos', $home . '/*/*/storage/photos'];
+    foreach ($patterns as $pat) foreach ((array)@glob($pat, GLOB_ONLYDIR | GLOB_NOSORT) as $d) $dirs[] = $d;
+    $seen = []; $out = [];
+    foreach ($dirs as $d) {
+        $k = @realpath($d) ?: '';
+        if ($k === '' || isset($seen[$k]) || !is_dir($k)) continue;
+        $seen[$k] = true; $out[] = $k;
+        if (count($out) >= 80) break;
+    }
+    return $out;
+}
+
+/** Put recovered bytes into the durable store, atomically. Refuses anything that is not an image of its named type. */
+function photo_store_restore_bytes(string $id, string $raw): array {
+    if (!preg_match('/^([0-9a-f]{32})\.(jpg|png|webp)$/', $id, $m)) return ['ok' => false, 'error' => 'bad_name'];
+    if ($raw === '' || strlen($raw) > PHOTO_STORE_MAX_BYTES) return ['ok' => false, 'error' => 'bad_size'];
+    $info = function_exists('getimagesizefromstring') ? @getimagesizefromstring($raw) : null;
+    $type = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp'][(int)($info[2] ?? 0)] ?? '';
+    if ($type !== $m[2]) return ['ok' => false, 'error' => 'not_that_image'];
+    $verified = substr(hash_hmac('sha256', $raw, (string)($GLOBALS['CONFIG']['cookie_secret'] ?? 'ngg')), 0, 32) === $m[1];
+    foreach (photo_store_durable_dirs() as $dir) {
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true)) continue;
+        if (!is_writable($dir)) continue;
+        $target = $dir . '/' . $id;
+        if (is_file($target)) return ['ok' => true, 'verified' => $verified, 'already' => true];
+        $tmp = $target . '.' . rand_hex(4) . '.part';
+        if (@file_put_contents($tmp, $raw) !== false && @rename($tmp, $target)) return ['ok' => true, 'verified' => $verified];
+        @unlink($tmp);
+    }
+    return ['ok' => false, 'error' => 'write_failed'];
+}
+
+/** admin.photos.recover — search this account for the missing photos and put back what is found. */
+function admin_photos_recover(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $missing = photo_store_missing_map();
+    if ($missing === null) return ['ok' => false, 'error' => 'scan_failed', 'detail' => 'The database could not be scanned for photo references, so nothing was searched.'];
+    $dirs = photo_recover_dirs();
+    $found = 0; $from = []; $bad = 0;
+    foreach (array_keys($missing) as $id) {
+        foreach ($dirs as $d) {
+            $path = $d . '/' . $id;
+            if (!is_file($path)) continue;
+            $r = photo_store_restore_bytes($id, (string)@file_get_contents($path));
+            if (!empty($r['ok'])) { $found++; $from[$d] = (int)($from[$d] ?? 0) + 1; unset($missing[$id]); break; }
+            $bad++;
+        }
+    }
+    /* With photo_dir set outside the website folder, every photo still living
+       inside it is copied across, so the next deploy cannot take it. Copies,
+       never moves: the old file stays until a person deletes it. */
+    $moved = 0;
+    $own = rtrim((string)($GLOBALS['CONFIG']['photo_dir'] ?? ''), '/');
+    $ownReal = $own !== '' ? (@realpath($own) ?: $own) : '';
+    if ($own !== '') {
+        $refs = photo_store_referenced() ?? [];
+        foreach (array_keys($refs) as $id) {
+            $path = photo_store_find($id);
+            if ($path === '' || strncmp(@realpath($path) ?: $path, $ownReal . '/', strlen($ownReal) + 1) === 0) continue;
+            if (photo_store_heal($id, $path) !== '') $moved++;
+        }
+    }
+    if (function_exists('cache_delete')) { cache_delete('ops.photoLinks'); cache_delete('photos.missingNames'); }
+    audit('photos.recover', (string)$g['requester']['memberId'], '', ['found' => $found, 'stillMissing' => count($missing), 'searched' => count($dirs), 'moved' => $moved], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'found' => $found, 'stillMissing' => count($missing), 'searched' => count($dirs), 'unreadable' => $bad, 'moved' => $moved,
+            'from' => (object)$from, 'insideSite' => photo_store_inside_site(), 'dir' => photo_store_dir()];
+}
+
+/** admin.photos.lost — the names of the photos whose files are gone, so a backup can be searched for them. */
+function admin_photos_lost(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $missing = photo_store_missing_map();
+    if ($missing === null) return ['ok' => false, 'error' => 'scan_failed'];
+    $where = [];
+    foreach ($missing as $place) $where[$place] = (int)($where[$place] ?? 0) + 1;
+    return ['ok' => true, 'count' => count($missing), 'names' => array_keys($missing), 'where' => (object)$where,
+            'dir' => photo_store_dir(), 'insideSite' => photo_store_inside_site()];
+}
+
+/** admin.photos.restore — one file from a backup: accepted only when its name is a missing photo and its bytes are that image type. */
+function admin_photos_restore(array $p): array {
+    $g = admin_cap_gate($p, 'settings'); if (!$g['ok']) return $g;
+    $name = basename(trim((string)($p['name'] ?? '')));
+    if (!preg_match('/^[0-9a-f]{32}\.(jpg|png|webp)$/', $name)) return ['ok' => true, 'restored' => false, 'why' => 'not_a_store_file'];
+    if (photo_store_find($name) !== '') return ['ok' => true, 'restored' => false, 'why' => 'already_there'];
+    $missing = cache_get('photos.missingNames', 600);
+    if (!is_array($missing)) { $m = photo_store_missing_map(); $missing = $m === null ? [] : array_fill_keys(array_keys($m), 1); cache_put('photos.missingNames', $missing); }
+    if (!isset($missing[$name])) return ['ok' => true, 'restored' => false, 'why' => 'not_missing'];
+    if (!preg_match('#^data:[^;,]*;base64,(.+)$#s', (string)($p['data'] ?? ''), $mm)) return ['ok' => false, 'error' => 'bad_data'];
+    $r = photo_store_restore_bytes($name, (string)base64_decode($mm[1], true));
+    if (empty($r['ok'])) return ['ok' => true, 'restored' => false, 'why' => (string)$r['error']];
+    if (function_exists('cache_delete')) cache_delete('ops.photoLinks');
+    audit('photos.restore', (string)$g['requester']['memberId'], '', ['name' => $name, 'verified' => !empty($r['verified'])], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'restored' => true, 'verified' => !empty($r['verified'])];
 }
 
 /**

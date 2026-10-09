@@ -171,6 +171,10 @@ function ops_health(): array {
                 $checks['photoLinks'] = ['ok' => !empty($br['ok']), 'checked' => (int)$br['checked'],
                                          'missing' => (int)$br['missing'], 'where' => (array)$br['where']];
             }
+            // Kept inside the website folder, a deploy that replaces the folder deletes every photo.
+            if (function_exists('photo_store_inside_site') && isset($checks['photos']) && is_array($checks['photos'])) {
+                $checks['photos']['insideSite'] = photo_store_inside_site();
+            }
         } catch (Throwable $e) { /* a diagnostic must never be the outage */ }
     }
 

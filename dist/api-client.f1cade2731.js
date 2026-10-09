@@ -1367,6 +1367,10 @@
         frame:   (urls, force) => request('/admin/photo-framing.php', { body: { action: 'frame', urls, force: !!force }, timeout: 180000 }),
         backlog: () => request('/admin/photo-framing.php', { body: { action: 'backlog' }, timeout: 180000 }),
         adjust:  (url, adjust, reset) => request('/admin/photo-framing.php', { body: { action: 'adjust', url, adjust: adjust || null, reset: !!reset } }),
+        // Lost photo files: search this hosting account, or restore from a backup (domain/photos.php).
+        recover: () => request('/admin/photo-framing.php', { body: { action: 'recover' }, timeout: 180000 }),
+        lost:    () => request('/admin/photo-framing.php', { body: { action: 'lost' }, timeout: 120000 }),
+        restore: (name, data) => request('/admin/photo-framing.php', { body: { action: 'restore', name, data }, timeout: 120000 }),
       },
       membership: {
         list:     (status) => request('/admin/membership.php' + qs({ status: status || '' })),
