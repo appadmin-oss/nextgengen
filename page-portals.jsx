@@ -3980,14 +3980,20 @@ function FieldTextarea({ label, value, onChange, rows }) {
 // centres an admin actually configured — not a hard-coded pair. A newly added
 // centre becomes selectable everywhere immediately.
 let _centreOptCache = null;
-function useCentreOptions() {
-  const [names, setNames] = React.useState(_centreOptCache || []);
+/* Centre names for a picker. With a programme ("ngg" | "summer"), only the open
+   centres that programme runs: a member is never posted to a Summer School
+   venue, and a retired centre is never offered. Without one, every name (for
+   filters over records that may name an old centre). */
+function useCentreOptions(programme) {
+  const pick = rows => (rows || []).filter(c => !programme || ((c.status || "active") === "active"
+    && (!c.programmes || String(c.programmes).split(",").map(x => x.trim()).includes(programme)))).map(c => c.name).filter(Boolean);
+  const [names, setNames] = React.useState(_centreOptCache ? pick(_centreOptCache) : []);
   React.useEffect(() => {
     let live = true;
-    if (_centreOptCache) { setNames(_centreOptCache); return; }
-    NGGApi.admin.registration.centres().then(r => { _centreOptCache = (r.centres || []).map(c => c.name).filter(Boolean); if (live) setNames(_centreOptCache); }).catch(() => {});
+    if (_centreOptCache) { setNames(pick(_centreOptCache)); return; }
+    NGGApi.admin.registration.centres().then(r => { _centreOptCache = r.centres || []; if (live) setNames(pick(_centreOptCache)); }).catch(() => {});
     return () => { live = false; };
-  }, []);
+  }, [programme]);
   return names;
 }
 // Labeled centre <select> populated from the live centres list. Keeps the
@@ -5481,8 +5487,10 @@ function ClubPromote({ onChange }) {
      nearest Club to their Summer venue); a coordinator's change is kept here
      and sent with the run, so the bulk bar and the row button agree. */
   const [picks, setPicks] = React.useState({});
-  const centreOpts = useCentreOptions();
-  const joinsFor = (s) => picks[s.studentId] ?? ((s.suggestedCentre && s.suggestedCentre.name) || s.centre || "");
+  const centreOpts = useCentreOptions("ngg");
+  const allCentres = useCentreOptions();
+  // The NGG centre they will join: a person's pick, else the nearest NGG centre — never their Summer venue.
+  const joinsFor = (s) => picks[s.studentId] ?? ((s.suggestedCentre && s.suggestedCentre.name) || "");
 
   const load = React.useCallback((p) => {
     setErr(""); setRefreshing(true);
@@ -5577,7 +5585,7 @@ function ClubPromote({ onChange }) {
           placeholder="Search name or student ID…" aria-label="Search the promotion list"/>
         <select className="admin-select" value={f.centre} onChange={e => setF(x => ({ ...x, centre: e.target.value }))}
           aria-label="Filter the promotion list by centre">
-          <option value="">All centres</option>{centreOpts.map(c => <option key={c} value={c}>{c}</option>)}
+          <option value="">All Summer centres</option>{allCentres.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
 
@@ -5633,7 +5641,7 @@ function ClubPromote({ onChange }) {
                       <div className="admin-cell-sub" title={s.suggestedCentre.reason}>
                         {picks[s.studentId] && picks[s.studentId] !== s.suggestedCentre.name
                           ? "Suggested: " + s.suggestedCentre.name
-                          : s.suggestedCentre.km != null ? "Nearest · " + s.suggestedCentre.km + " km" : "Not mapped — their own centre"}
+                          : s.suggestedCentre.km != null ? "Nearest · " + s.suggestedCentre.km + " km" : s.suggestedCentre.reason}
                       </div>
                     )}
                   </td>
@@ -5671,7 +5679,7 @@ function ClubRoster({ onChange }) {
   const [sort, setSort] = React.useState({ col: "createdAt", dir: "desc" });
   const [bulkForm, setBulkForm] = React.useState(null);
   const [exporting, setExporting] = React.useState(false);
-  const centreOpts = useCentreOptions();
+  const centreOpts = useCentreOptions("ngg");
 
   const load = React.useCallback((p, so) => {
     setErr(""); setRefreshing(true);

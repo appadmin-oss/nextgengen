@@ -60,11 +60,14 @@ const SERVICE_KEYS = [
     'twilio' => ['group' => 'sms', 'label' => 'Twilio', 'link' => 'https://console.twilio.com/',
         'what' => 'Text messages to numbers outside Nigeria, and a fallback for Termii.', 'test' => '',
         'fields' => [['sms.twilio.sid', 'Account SID', 'text', false, ''], ['sms.twilio.token', 'Auth token', 'secret', false, ''], ['sms.twilio.from', 'From number', 'text', true, '+1…']]],
+    'googlemaps' => ['group' => 'maps', 'label' => 'Google Maps', 'link' => 'https://console.cloud.google.com/google/maps-apis/credentials',
+        'what' => 'Finds where an address is, to suggest the nearest NGG centre. Without it, OpenStreetMap is used (free, less exact for Nigerian addresses). Enable the Geocoding API for the key.', 'test' => 'maps',
+        'fields' => [['maps.google_key', 'API key', 'secret', false, 'Starts “AIza”. Restrict it to the Geocoding API.']]],
     'spitch' => ['group' => 'voice', 'label' => 'Spitch', 'link' => 'https://spitch.app',
         'what' => 'Reads the Quote of the week aloud in Hausa, Igbo and Yoruba.', 'test' => '',
         'fields' => [['tts.spitch_key', 'API key', 'secret', false, '']]],
 ];
-const SERVICE_KEY_GROUPS = ['ai' => 'AI', 'photos' => 'Photos', 'payments' => 'Payments', 'email' => 'Email', 'sms' => 'Text messages', 'voice' => 'Voice'];
+const SERVICE_KEY_GROUPS = ['ai' => 'AI', 'photos' => 'Photos', 'payments' => 'Payments', 'email' => 'Email', 'sms' => 'Text messages', 'maps' => 'Maps', 'voice' => 'Voice'];
 
 /** Read a dotted path out of a nested array. */
 function service_cfg_read(array $cfg, string $path) {
@@ -289,6 +292,11 @@ function admin_keys_test(array $p): array {
             $pass = !empty($r['status']);
             $mode = str_starts_with(paystack_secret(), 'sk_test_') ? ' (test mode — no real money moves)' : '';
             return ['ok' => true] + $done(['pass' => $pass, 'detail' => $pass ? 'Paystack accepted the key' . $mode . '.' : 'Paystack refused it: ' . (string)($r['message'] ?? $r['error'] ?? 'no answer')]);
+        case 'maps':
+            $key = trim((string)service_cfg_read($c, 'maps.google_key'));
+            if ($key === '') return ['ok' => true, 'pass' => false, 'detail' => 'No key is set; addresses are looked up on OpenStreetMap.'];
+            $g = isset($GLOBALS['__geocode_mock']) && is_callable($GLOBALS['__geocode_mock']) ? ($GLOBALS['__geocode_mock'])('Egbeda, Lagos, Nigeria') : geo_google('Egbeda, Lagos, Nigeria', $key);
+            return ['ok' => true] + $done(['pass' => (bool)$g, 'detail' => $g ? 'Found Egbeda, Lagos at ' . round($g['lat'], 4) . ', ' . round($g['lng'], 4) . '.' : 'Google did not answer. Check the key, and that the Geocoding API is enabled for it.']);
         case 'mail':
             return ['ok' => true, 'pass' => null, 'detail' => 'Use “Send test email” to send one to yourself.'];
     }

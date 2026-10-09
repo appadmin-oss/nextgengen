@@ -1122,3 +1122,109 @@ Object.assign(CR_TAB_DEFS, {
     },
   },
 });
+
+
+/* ══ Summer School → Past editions ═════════════════════════════════════════
+   Every edition, and the register of a past one brought in from a
+   spreadsheet (domain/summer-history.php). The file is CHECKED first —
+   new / already there / refused, and which Summer School centres it would
+   create — and only the file that was checked can then be imported. */
+const CR_SH_TEMPLATE = "full_name,date_of_birth,sex,centre,course,group,guardian_name,guardian_phone,guardian_email,id,days_present,status,home_address,notes\n"
+  + "Bisi Adeyemi,09/03/2014,F,Egbeda,Robotics,EG-ROB-1,Mrs Adeyemi,0803 111 2222,bisi.mum@example.com,EG-24-001,18,,\"5 Akinola Street, Ikotun\",\n";
+async function crShReadFile(file) {
+  if (/\.xlsx$/i.test(file.name)) return crCurXlsxRows(await file.arrayBuffer());
+  if (/\.(xls|numbers|pdf|docx?)$/i.test(file.name)) throw Object.assign(new Error("bad_file"), { data: { message: "That file type can’t be read here. Save it as CSV or .xlsx." } });
+  return crCurParseCsv(await file.text());
+}
+function crShTally(t) { t = t || {}; return crNum(t.create) + " new · " + crNum(t.duplicate) + " already there · " + crNum(t.failed) + " refused"; }
+function crShImport(ctx) {
+  const eds = (ctx.data && ctx.data.editions || []).filter(e => e.status !== "active");
+  ctx.form({
+    title: "Import a past edition", submit: "Check the file", busyLabel: "Checking…",
+    intro: "Brings in who took part in a past season — name, date of birth, centre, course, guardian, the ID they were printed and days present. Nothing is written until you have read the check and pressed Import. Headers are matched loosely, so a register kept in a spreadsheet works as it is.",
+    values: { which: eds.length ? eds[0].editionId : "new", name: "", year: String(new Date().getFullYear() - 1), startDate: "", endDate: "" },
+    fields: [
+      { id: "which", l: "Edition", type: "chips", req: true, opts: eds.map(e => [e.editionId, e.name + (e.year ? " (" + e.year + ")" : "")]).concat([["new", "A new past edition"]]) },
+      { id: "name", l: "Name", req: true, max: 80, ph: "Summer School 2024", when: v => v.which === "new" },
+      { id: "year", l: "Year", req: true, im: "numeric", max: 4, when: v => v.which === "new" },
+      { id: "startDate", l: "Started", type: "date", req: true, when: v => v.which === "new" },
+      { id: "endDate", l: "Ended", type: "date", req: true, when: v => v.which === "new" },
+      { id: "file", l: "Register", type: "file", req: true, accept: ".csv,.xlsx,text/csv", help: "CSV or Excel (.xlsx), one row per participant. “Download the template” in the header shows the columns." },
+    ],
+    onSubmit: async v => {
+      let rows;
+      try { rows = await crShReadFile(v.file); } catch (e) { return { fieldErrors: { file: crErr(e, "That file couldn’t be read.") } }; }
+      if (!rows.length) return { fieldErrors: { file: "No rows found in that file." } };
+      const payload = v.which === "new" ? { edition: { name: v.name.trim(), year: parseInt(v.year, 10) || 0, startDate: v.startDate, endDate: v.endDate } } : { editionId: v.which };
+      try {
+        const res = await NGGApi.admin.summer.historyImport(Object.assign({ rows, dryRun: true }, payload));
+        ctx.setData(x => Object.assign({}, x, { plan: { rows, payload, res, file: v.file.name } }));
+        return res;
+      } catch (e) {
+        const f = { bad_name: "name", bad_year: "year", bad_dates: "endDate", not_past: "endDate", edition_live: "which", too_many_rows: "file" }[e.code];
+        if (f) return { fieldErrors: { [f]: crErr(e, "") } };
+        throw e;
+      }
+    },
+    done: (v, r) => "Checked · " + crShTally(r.tally),
+  });
+}
+async function crShApply(ctx) {
+  const p = ctx.data && ctx.data.plan; if (!p) return;
+  const n = p.res.tally.create || 0;
+  if (!n) { ctx.toast("Nothing to import: every row is already there or refused."); return; }
+  const nc = p.res.centresToCreate || [];
+  const ok = await ctx.confirm({ title: "Import " + crPlural(n, "participant") + " into " + p.res.edition.name + "?", cta: "Import",
+    body: crShTally(p.res.tally) + ". Refused rows are not imported." + (p.res.edition.new ? " The edition is created, closed." : "") + (nc.length ? " Summer School centres created, retired: " + nc.map(c => c.name).join(", ") + "." : "") });
+  if (!ok) return;
+  try {
+    const r = await NGGApi.admin.summer.historyImport(Object.assign({ rows: p.rows, digest: p.res.digest }, p.payload));
+    ctx.toast(crPlural(r.written || 0, "participant") + " imported into " + p.res.edition.name);
+    ctx.setData(x => Object.assign({}, x, { plan: null }));
+    ctx.reload();
+  } catch (e) { ctx.toast(crErr(e, "The import didn’t run."), null, true); }
+}
+Object.assign(CR_TAB_DEFS, {
+  "summer-history": {
+    skeleton: ["table"],
+    load: async () => { const r = await NGGApi.admin.summer.editions(); return { editions: r.editions || [], currentId: r.currentId, plan: null }; },
+    actions: (d, ctx) => [
+      { l: "Import a past edition", icon: "upload-simple", primary: true, run: () => crShImport(ctx) },
+      { l: "Download the template", icon: "download-simple", run: () => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([CR_SH_TEMPLATE], { type: "text/csv" }));
+        a.download = "summer-school-past-edition.csv"; document.body.appendChild(a); a.click(); a.remove();
+      } },
+    ],
+    blocks: (d, ctx) => {
+      const out = [];
+      const p = d.plan;
+      if (p) {
+        const t = p.res.tally || {};
+        out.push({ type: "kpis", span: 6, items: [
+          { l: "New", v: crNum(t.create) }, { l: "Already there", v: crNum(t.duplicate) }, { l: "Refused", v: crNum(t.failed) },
+          { l: "Centres to create", v: crNum((p.res.centresToCreate || []).length), dn: (p.res.centresToCreate || []).map(c => c.name).join(", ") },
+        ] });
+        out.push({ type: "note", span: 6, icon: "clipboard-text", tone: t.failed ? "warn" : "ok",
+          text: "Checked " + p.file + " for " + p.res.edition.name + (p.res.edition.new ? " (a new edition)" : "") + ". Nothing has been written.",
+          sub: "Each child is matched to their edition by name and guardian phone or email, so importing the same file twice adds nobody twice. A centre is matched to Summer School’s own record, never an NGG centre.",
+          act: t.create ? { l: "Import " + crPlural(t.create, "participant"), run: () => crShApply(ctx) } : { l: "Discard", run: () => ctx.setData(x => Object.assign({}, x, { plan: null })) } });
+        if ((p.res.rows || []).length) out.push({ type: "table", span: 6, title: "Rows not imported", nosel: true,
+          cols: [{ l: "Line", num: true }, "Name", "Why", { l: "Detail", wrap: true }],
+          rows: p.res.rows.map(x => ({ key: "l" + x.line, cells: [{ k: "num", t: String(x.line), v: x.line }, { k: "text", t: x.name || "—" },
+            { k: "status", t: x.verdict === "duplicate" ? "Already there" : "Refused", tone: x.verdict === "duplicate" ? "neutral" : "bad" }, { k: "text", t: x.detail || "" }] })) });
+      }
+      out.push({ type: "table", span: 6, title: "Editions", nosel: true,
+        cols: ["Edition", "Year", "Dates", "Status", { l: "Participants", num: true }],
+        rows: (d.editions || []).map(e => ({ key: e.editionId, cells: [
+          { k: "strong", t: e.name || e.editionId, s: e.editionId },
+          { k: "text", t: e.year ? String(e.year) : "" },
+          { k: "text", t: [e.startDate, e.endDate].filter(Boolean).join(" → ") },
+          { k: "status", t: e.status, tone: e.status === "active" ? "ok" : "neutral" },
+          { k: "num", t: crNum(e.participants), v: e.participants || 0 },
+        ] })),
+        emptyText: "No editions yet." });
+      return out;
+    },
+  },
+});

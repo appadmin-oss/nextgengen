@@ -100,7 +100,38 @@ function summer_editions_close_elapsed(?string $today = null): array {
         audit('summer.edition.status', 'system', (string)$r['cohortId'], ['from' => 'active', 'to' => 'closed', 'why' => 'season ended ' . $r['endDate']], '');
         $closed[] = (string)$r['cohortId'];
     }
-    return ['closed' => $closed];
+    $retired = $closed ? summer_centres_retire_unused() : [];
+    return ['closed' => $closed, 'centresRetired' => $retired];
+}
+
+/**
+ * When a season ends, its centres end with it. A centre that runs ONLY Summer
+ * School is retired once no live edition still uses it — no active edition's
+ * participant is there and no active edition's group meets there. A centre NGG
+ * also runs is never touched: the Club goes on all year. Retiring keeps every
+ * record resolving (CLAUDE.md §5 invariant 6); a coordinator brings a venue
+ * back for next season from Members → Centres. Returns the names retired.
+ */
+function summer_centres_retire_unused(): array {
+    $live = array_column(db_all("SELECT cohortId FROM summer_cohorts WHERE status = 'active'"), 'cohortId');
+    $usedNames = []; $usedIds = [];
+    if ($live) {
+        $ph = implode(',', array_fill(0, count($live), '?'));
+        foreach (db_all("SELECT DISTINCT centre FROM summer_students WHERE cohortId IN ($ph) AND status IN ('active','waitlisted')", $live) as $r) $usedNames[strtolower(trim((string)$r['centre']))] = true;
+        foreach (db_all("SELECT DISTINCT centreId FROM summer_groups WHERE cohortId IN ($ph) AND status IN ('planning','active')", $live) as $r) $usedIds[(string)$r['centreId']] = true;
+    }
+    $out = [];
+    foreach (db_all("SELECT centreId, name, programmes FROM centres WHERE status = 'active'") as $c) {
+        if (!centre_serves($c, 'summer') || centre_serves($c, 'ngg')) continue;
+        if (isset($usedIds[(string)$c['centreId']]) || isset($usedNames[strtolower(trim((string)$c['name']))])) continue;
+        db_update('centres', ['status' => 'retired', 'updatedAt' => now_iso()], ['centreId' => (string)$c['centreId']]);
+        $out[] = (string)$c['name'];
+    }
+    if ($out) {
+        audit('centre.retire', 'system', '', ['why' => 'Summer School edition ended', 'centres' => $out], '');
+        if (function_exists('cache_invalidate')) { try { cache_invalidate('centres'); } catch (\Throwable $e) {} }
+    }
+    return $out;
 }
 /** A group's lifecycle mirrors the edition's, minus the singleton rule. */
 const SUMMER_GROUP_STATES = ['planning', 'active', 'closed', 'archived'];
@@ -307,9 +338,20 @@ function admin_summer_edition_status(array $p): array {
     if ($status === 'active') {
         $demoted = db_exec("UPDATE summer_cohorts SET status = 'closed', updatedAt = ? WHERE cohortId != ? AND status = 'active'", [$now, $id]);
     }
+    // An edition closed by hand ends its centres the same way the nightly close does.
+    $retired = $status === 'closed' && (string)$e['status'] === 'active' ? summer_centres_retire_unused() : [];
+    // And going live brings back the Summer-only venues its groups meet at.
+    $revived = [];
+    if ($status === 'active') {
+        foreach (db_all("SELECT DISTINCT c.centreId, c.name, c.programmes FROM summer_groups g JOIN centres c ON c.centreId = g.centreId WHERE g.cohortId = ? AND c.status = 'retired'", [$id]) as $c) {
+            if (!centre_serves($c, 'summer') || centre_serves($c, 'ngg')) continue;
+            db_update('centres', ['status' => 'active', 'updatedAt' => $now], ['centreId' => (string)$c['centreId']]);
+            $revived[] = (string)$c['name'];
+        }
+    }
     audit('summer.edition.status', $g['requester']['memberId'], $id,
-        ['from' => (string)$e['status'], 'to' => $status, 'demoted' => $demoted], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'editionId' => $id, 'status' => $status, 'demoted' => (int)$demoted];
+        ['from' => (string)$e['status'], 'to' => $status, 'demoted' => $demoted, 'centresRetired' => $retired, 'centresRevived' => $revived], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'editionId' => $id, 'status' => $status, 'demoted' => (int)$demoted, 'centresRetired' => $retired, 'centresRevived' => $revived];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

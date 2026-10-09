@@ -63,6 +63,7 @@ if ($method === 'GET') {
         'checkout'     => 'admin.summer.checkout',
         'absenceAlert' => 'admin.summer.absence.alert',
         'import'       => 'admin.summer.import',
+        'historyImport'=> 'admin.summer.history.import',
     ];
     if (!isset($map[$action])) json_error('unknown_action', 400);
     // Never let the client set kiosk-only control flags: `gateAuthorized` skips

@@ -468,6 +468,12 @@ function db_run_seeds(PDO $db): void {
             }
             setting_set('seed_fees_cap_v1', '1', 'system');
         }
+        /* NGG centres apart from Summer School's, the defaults Egbeda and Ayobo
+           in place, members connected (domain/centres-ngg.php). Once. */
+        if (function_exists('centres_split_seed_once') && db_table_exists($db, 'centres') && db_table_exists($db, 'members')
+            && setting_raw('centres_split_seed') !== CENTRES_SPLIT_SEED) {
+            centres_split_seed_once();
+        }
     } catch (Throwable $e) {
         error_log('[db] seed: ' . $e->getMessage());
     }

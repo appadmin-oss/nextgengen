@@ -218,17 +218,22 @@ function admin_club_members_bulk(array $p): array {
  *
  * @return array{name:string,km:?float,reason:string,alternatives:list<array>}
  */
-function club_promote_suggestion(string $summerCentre, ?array $centres = null): array {
-    $ranked = centre_suggest_ngg($summerCentre, $centres);
-    if ($ranked) {
-        $best = $ranked[0];
+function club_promote_suggestion(string $summerCentre, ?array $centres = null, string $home = '', bool $network = false): array {
+    /* Only NGG centres, and only places already known (cached) unless asked:
+       a list of fifty participants must not wait on fifty map lookups. The
+       one-participant promote asks the map (admin_club_promote_options). */
+    $n = centre_ngg_nearest($home, $summerCentre, $network);
+    $measured = array_values(array_filter($n['ranked'], static fn($r) => $r['km'] !== null));
+    if ($measured) {
+        $best = $measured[0];
         return ['name' => $best['name'], 'km' => $best['km'],
-                'reason' => $best['same'] ? 'their own centre is also the nearest Club' : 'nearest Club to where their Summer School met',
-                'alternatives' => array_slice($ranked, 1, 3)];
+                'reason' => ['home' => 'nearest NGG centre to their home address', 'summer_venue' => 'nearest NGG centre to where their Summer School met',
+                             'summer_area' => 'nearest NGG centre to their Summer School centre’s area'][$n['from']] . ($best['approx'] ? ' (approximate — the centre is not mapped)' : ''),
+                'alternatives' => array_slice($measured, 1, 3)];
     }
-    $own = $summerCentre !== '' && db_row("SELECT name FROM centres WHERE name = ? AND status = 'active' LIMIT 1", [$summerCentre]);
-    return ['name' => $own ? $summerCentre : '', 'km' => null,
-            'reason' => $own ? 'their own centre — the venues are not mapped, so distance could not be measured' : 'no active centre could be suggested',
+    $only = count($n['ranked']) === 1 ? $n['ranked'][0]['name'] : '';
+    return ['name' => $only, 'km' => null,
+            'reason' => $only !== '' ? 'the only NGG centre' : ($n['ranked'] ? 'choose a centre — nothing could be placed on a map to measure' : 'no NGG centre is open'),
             'alternatives' => []];
 }
 
@@ -243,11 +248,13 @@ function admin_club_promote(array $p): array {
        active centre — a typo here is a member posted nowhere. */
     $chosen = trim((string)($p['centre'] ?? ''));
     if ($chosen !== '') {
-        $hit = db_row("SELECT name FROM centres WHERE lower(name) = lower(?) AND status = 'active' LIMIT 1", [$chosen]);
-        if (!$hit) return ['ok' => false, 'error' => 'invalid_centre'];
+        // An NGG centre: a member is never posted to a Summer School venue.
+        $hit = db_row("SELECT name, programmes FROM centres WHERE lower(name) = lower(?) AND status = 'active' LIMIT 1", [$chosen]);
+        if (!$hit || !centre_serves($hit, 'ngg')) return ['ok' => false, 'error' => 'invalid_centre', 'detail' => 'Choose one of the open NGG centres.'];
         $chosen = (string)$hit['name'];
     } else {
-        $chosen = club_promote_suggestion((string)($s['centre'] ?? ''))['name'];
+        $chosen = club_promote_suggestion((string)($s['centre'] ?? ''), null, participant_home_address($s), true)['name'];
+        if ($chosen === '') return ['ok' => false, 'error' => 'centre_required', 'detail' => 'Choose which NGG centre they will join.'];
     }
     $newId = new_id('NGG', 'members', 'memberId');
     /* Carry the record across.
@@ -272,7 +279,7 @@ function admin_club_promote(array $p): array {
     $__m = [
         'memberId' => $newId, 'fullName' => $s['fullName'],
         'email' => $guardianEmail, 'type' => 'NGG',
-        'status' => 'active', 'role' => 'member', 'centre' => $chosen ?: ($s['centre'] ?: 'Egbeda'),
+        'status' => 'active', 'role' => 'member', 'centre' => $chosen,
         'track' => $s['track'] ?: '', 'photoUrl' => $s['photoUrl'] ?: '',
         'dob' => (string)($s['dob'] ?? ''),
         'parentName' => (string)($s['guardianName'] ?? ''),

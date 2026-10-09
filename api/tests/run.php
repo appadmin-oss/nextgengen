@@ -97,6 +97,8 @@ require $ROOT . '/_lib/rate-limit.php';
 // send_mail must not attempt real delivery in tests. Override with a no-op
 // recorder BEFORE any handler calls it.
 $GLOBALS['__sent_mail'] = [];
+// No map lookups leave the suite: a place is unknown unless a test says where it is.
+$GLOBALS['__geocode_mock'] = fn($q) => null;
 if (!function_exists('__ngg_test_mail_installed')) {
     // We can't redefine send_mail (already declared), so neutralise SMTP/mail
     // by ensuring no smtp host + mail() failure is tolerated. email_members
@@ -2722,6 +2724,9 @@ chk('club gated from non-staff', backend_dispatch('admin.club.overview', ['reque
    real enrolment has them — promotion used to discard both and write a BLANK
    email besides. Not the shared $enr student: other assertions read that one's
    card and age, and moving its date of birth moves them. */
+// Promotion posts a member to an NGG centre, so the Club needs one to exist (removed after this block).
+$__promoCentre = !db_row("SELECT id FROM centres WHERE centreId = 'CEN-EG'");
+if ($__promoCentre) db_insert('centres', ['centreId' => 'CEN-EG', 'name' => 'Egbeda', 'code' => 'EG', 'color' => '#76B043', 'status' => 'active', 'createdAt' => now_iso()]);
 $promoEnr = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-0099',
     'data' => ['fullName' => 'Chidera Promoted', 'age' => 13, 'dob' => '2013-02-09',
                'centre' => 'Egbeda', 'track' => 'Tech',
@@ -2729,7 +2734,7 @@ $promoEnr = backend_dispatch('admin.summer.enroll', ['requesterId' => 'NGG-2025-
                'guardianName' => 'Ngozi Guardian', 'guardianPhone' => '+2348031119100']]);
 $stuId = (string)$promoEnr['studentId'];
 chk('promotable list carries active summer students', count(backend_dispatch('admin.club.promotable', ['requesterId' => 'NGG-2025-0701'])['students']) >= 1);
-$pr = backend_dispatch('admin.club.promote', ['requesterId' => 'NGG-2025-0701', 'studentId' => $stuId]);
+$pr = backend_dispatch('admin.club.promote', ['requesterId' => 'NGG-2025-0701', 'studentId' => $stuId, 'centre' => 'Egbeda']);
 chk('promote mints an NGG member', !empty($pr['memberId']));
 chk('promoted student flips to promoted', db_row('SELECT status FROM summer_students WHERE studentId=?', [$stuId])['status'] === 'promoted');
 chk('promoted member appears in the club roster', (function () use ($pr) {
@@ -2757,6 +2762,7 @@ chk('…and a set-password link, so signing in is not a standing dependency on a
     (int)(db_row("SELECT COUNT(*) c FROM auth_sessions WHERE memberId = ? AND purpose = 'reset'",
                  [(string)$pr['memberId']])['c'] ?? 0) === 1);
 chk('re-promoting the same student is rejected', backend_dispatch('admin.club.promote', ['requesterId' => 'NGG-2025-0701', 'studentId' => $stuId])['error'] === 'already_promoted');
+if ($__promoCentre) db_exec("DELETE FROM centres WHERE centreId = 'CEN-EG'");
 
 // ── AI insights (rule-based fallback) + archival/compression (Phase 2 tail) ──
 $ins = backend_dispatch('admin.summer.insights', ['requesterId' => 'NGG-2025-0099']);
@@ -5345,8 +5351,10 @@ chk('club: …and is bounded', (function () use ($CLUBADM) {
     $many = array_map(fn($i) => 'CB-GHOST-' . $i, range(1, CLUB_PROMOTE_MAX + 1));
     return backend_dispatch('admin.club.promote.bulk', ['requesterId' => $CLUBADM, 'studentIds' => $many])['error'] === 'too_many';
 })());
+chk('club: with several NGG centres and nothing on a map to measure, a promotion asks which centre rather than guessing',
+    (backend_dispatch('admin.club.promote', ['requesterId' => $CLUBADM, 'studentId' => 'CB-3'])['error'] ?? '') === 'centre_required');
 $CBULK = backend_dispatch('admin.club.promote.bulk', ['requesterId' => $CLUBADM,
-    'studentIds' => ['CB-1', 'CB-2', 'CB-GONE']]);
+    'studentIds' => ['CB-1', 'CB-2', 'CB-GONE'], 'centres' => ['CB-1' => 'Ijaiye', 'CB-2' => 'Ijaiye']]);
 chk('club: a graduating group is promoted in one action, partially', (function () use ($CBULK) {
     return !empty($CBULK['ok']) && $CBULK['promoted'] === 2 && $CBULK['refused'] === 1;
 })());
@@ -8295,7 +8303,7 @@ chk('gate rotate is gated from non-staff', (function () {
 chk('admin.photo.edit gated from non-staff', backend_dispatch('admin.photo.edit', ['requesterId' => 'NGG-2025-0001', 'subjectType' => 'student', 'subjectId' => 'SUM-R-1', 'spec' => []])['error'] === 'forbidden');
 
 // ── General dashboard (attendance + per-centre analytics) ───────────────────
-db_insert('centres', ['centreId' => 'CEN-EG', 'name' => 'Egbeda', 'code' => 'EG', 'color' => '#76B043', 'status' => 'active', 'createdAt' => now_iso()]);
+if (!db_row("SELECT id FROM centres WHERE centreId = 'CEN-EG'")) db_insert('centres', ['centreId' => 'CEN-EG', 'name' => 'Egbeda', 'code' => 'EG', 'color' => '#76B043', 'status' => 'active', 'createdAt' => now_iso()]);
 db_insert('attendance', ['cohortId' => 'RC1', 'studentId' => 'SUM-R-1', 'token' => 'SUMQR-RS1', 'date' => gmdate('Y-m-d'), 'checkInAt' => now_iso(), 'method' => 'qr', 'status' => 'present', 'lateMinutes' => 0, 'createdAt' => now_iso()]);
 chk('dashboard overview aggregates present + by centre', (function () {
     $r = backend_dispatch('admin.dashboard.overview', ['requesterId' => 'NGG-2025-0099']);
@@ -25130,5 +25138,118 @@ chk('centres: an edit that does not mention status leaves a retired centre retir
 })());
 chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply can always be encoded', text_utf8("Connexion refus\xe9e") === 'Connexion refusée'
     && text_utf8('already fine — ok') === 'already fine — ok' && json_encode(['e' => text_utf8("bad \xff\xfe bytes")]) !== false);
+/* ── NGG centres apart from Summer School's (domain/centres-ngg.php) ─────────
+   Run against a copy of the tables, so the rest of the suite's centres are
+   untouched. */
+(function () {
+    $SU = 'NGG-2025-0099';
+    $keep = ['centres' => db_all('SELECT * FROM centres'), 'members' => db_all('SELECT id, centre FROM members'), 'ss' => db_all('SELECT id, centre FROM summer_students'),
+             'seed' => setting_raw('centres_split_seed')];
+    db_exec('DELETE FROM centres');
+    $mk = fn($id, $name, $code, $prog, $extra = []) => db_insert('centres', array_merge(['centreId' => $id, 'name' => $name, 'code' => $code, 'color' => '#336699', 'status' => 'active', 'programmes' => $prog, 'slug' => strtolower($name), 'createdAt' => now_iso()], $extra));
+    $mk('T-EG', 'Egbeda', 'EG', '', ['address' => '12 Shasha Road, Egbeda', 'lat' => 6.5940, 'lng' => 3.2900, 'meetDays' => 'Saturdays', 'summerLat' => 6.6000, 'summerLng' => 3.2950]);
+    $mk('T-AY', 'Ayobo', 'AY', 'summer');
+    $mk('T-IK', 'Ikotun Hall', 'IKH', 'summer');
+    $mk('T-NG', 'Ikeja Club', 'IKJ', 'ngg', ['lat' => 6.6018, 'lng' => 3.3515]);
+    db_insert('members', ['memberId' => 'NGG-CS-1', 'fullName' => 'Centre One', 'email' => 'cs1@example.com', 'type' => 'NGG', 'role' => 'member', 'status' => 'active', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => 'NGG-CS-2', 'fullName' => 'Centre Two', 'email' => 'cs2@example.com', 'type' => 'NGG', 'role' => 'member', 'status' => 'active', 'centre' => 'ayobo centre ', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('summer_students', ['studentId' => 'SUM-CS-1', 'cohortId' => 'SUM-CS', 'token' => '', 'handle' => 'cs-kid-1', 'fullName' => 'Summer Kid', 'centre' => 'Egbeda', 'status' => 'active',
+        'formData' => json_encode(['homeAddress' => '5 Akinola Street, near Ikotun bus stop, Ikotun']), 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+    setting_set('centres_split_seed', '', 'test');
+    $r = centres_split_seed_once();
+    $c = fn($name) => db_row('SELECT * FROM centres WHERE name = ?', [$name]);
+    chk('centres split: a shared centre becomes Summer School’s own record, renamed, retired, keeping the code printed on Summer cards',
+        ($c('Egbeda (Summer School)')['status'] ?? '') === 'retired' && $c('Egbeda (Summer School)')['code'] === 'EG' && $c('Egbeda (Summer School)')['programmes'] === 'summer');
+    chk('centres split: …its Summer participants move with it', db_row("SELECT centre FROM summer_students WHERE studentId = 'SUM-CS-1'")['centre'] === 'Egbeda (Summer School)');
+    $eg = $c('Egbeda');
+    chk('centres split: NGG gets "Egbeda" under exactly that name, active and NGG-only, with the Club’s address, map point and meeting days',
+        $eg && $eg['status'] === 'active' && $eg['programmes'] === 'ngg' && $eg['address'] === '12 Shasha Road, Egbeda' && abs((float)$eg['lat'] - 6.594) < 1e-6 && $eg['meetDays'] === 'Saturdays' && $eg['code'] !== 'EG' && $eg['slug'] === 'egbeda');
+    chk('centres split: a member already at "Egbeda" is connected with no change', db_row("SELECT centre FROM members WHERE memberId = 'NGG-CS-1'")['centre'] === 'Egbeda');
+    chk('centres split: "Ayobo" is created for NGG too, and a member written "ayobo centre " is put on it', ($c('Ayobo')['programmes'] ?? '') === 'ngg' && $c('Ayobo')['status'] === 'active'
+        && db_row("SELECT centre FROM members WHERE memberId = 'NGG-CS-2'")['centre'] === 'Ayobo' && ($c('Ayobo (Summer School)')['status'] ?? '') === 'retired');
+    chk('centres split: every other Summer School centre is retired; an NGG centre is left alone', $c('Ikotun Hall')['status'] === 'retired' && $c('Ikeja Club')['status'] === 'active');
+    chk('centres split: it runs once', !empty(centres_split_seed_once()['already']));
+    chk('centres split: NGG forms offer the NGG centres only', array_values(array_diff(centre_names_for_programme('ngg'), ['Ayobo', 'Egbeda', 'Ikeja Club'])) === [] && !in_array('Egbeda (Summer School)', centre_names_for_programme('ngg'), true));
+
+    // The nearest NGG centre, from a home address that is mostly landmarks.
+    $GLOBALS['__geocode_mock'] = function ($q) {
+        if (stripos($q, 'akinola') !== false) return null;                                 // the street is not on the map…
+        if (stripos($q, 'ikotun bus stop') !== false) return ['lat' => 6.5507, 'lng' => 3.2617, 'label' => 'Ikotun bus stop', 'precise' => false, 'via' => 'test'];
+        if (stripos($q, 'ayobo') !== false) return ['lat' => 6.6118, 'lng' => 3.2470, 'label' => 'Ayobo', 'precise' => false, 'via' => 'test'];
+        if (stripos($q, 'allen avenue') !== false) return ['lat' => 12.0, 'lng' => 8.5, 'label' => 'Allen Avenue, Kano', 'precise' => false, 'via' => 'test'];
+        return null;
+    };
+    $o = backend_dispatch('admin.club.promote.options', ['requesterId' => $SU, 'studentId' => 'SUM-CS-1']);
+    chk('nearest: a home address the map cannot read is placed by its landmark ("near Ikotun bus stop")', ($o['basis'] ?? '') === 'home' && str_contains($o['why'], 'landmark'));
+    chk('nearest: NGG centres only, nearest first — Egbeda (mapped) before Ayobo (placed by its name) before Ikeja', array_column($o['centres'], 'name') === ['Egbeda', 'Ayobo', 'Ikeja Club']
+        && $o['suggested'] === 'Egbeda' && $o['centres'][1]['approx'] === true && $o['centres'][0]['km'] < $o['centres'][2]['km']);
+    chk('nearest: an answer outside Lagos for a Lagos address is a wrong match, not a place', geo_geocode('Allen Avenue', true) === null);
+    $GLOBALS['__drive_mock'] = fn($from, $tos) => array_map(fn($t) => abs($t['lat'] - 6.6118) < 0.001 ? 12 : 40, $tos);
+    $o2 = backend_dispatch('admin.club.promote.options', ['requesterId' => $SU, 'studentId' => 'SUM-CS-1']);
+    chk('nearest: with Google, the closest few are ordered by driving time — the lagoon is not a road', $o2['centres'][0]['name'] === 'Ayobo' && $o2['centres'][0]['minutes'] === 12 && str_contains($o2['why'], 'driving'));
+    unset($GLOBALS['__drive_mock']);
+    db_update('summer_students', ['formData' => ''], ['studentId' => 'SUM-CS-1']);
+    $o3 = backend_dispatch('admin.club.promote.options', ['requesterId' => $SU, 'studentId' => 'SUM-CS-1']);
+    chk('nearest: with no address, measured from where their Summer School met', $o3['basis'] === 'summer_venue' && $o3['suggested'] === 'Egbeda');
+    chk('promote: a Summer School venue is refused as the member’s centre', (backend_dispatch('admin.club.promote', ['requesterId' => $SU, 'studentId' => 'SUM-CS-1', 'centre' => 'Egbeda (Summer School)'])['error'] ?? '') === 'invalid_centre');
+    $GLOBALS['__geocode_mock'] = fn($q) => null;
+
+    // Summer School centres end with their edition, and come back with the next.
+    db_insert('summer_cohorts', ['cohortId' => 'SUM-CS-LIVE', 'name' => 'Live', 'year' => 2026, 'startDate' => gmdate('Y-m-d', time() - 40 * 86400), 'endDate' => gmdate('Y-m-d', time() - 86400), 'status' => 'active', 'createdAt' => now_iso()]);
+    $mk('T-SV', 'Summer Venue', 'SV', 'summer');
+    db_insert('summer_groups', ['groupId' => 'GRP-CS-1', 'cohortId' => 'SUM-CS-LIVE', 'centreId' => 'T-SV', 'code' => 'SV-1', 'name' => 'SV 1', 'status' => 'active', 'createdAt' => now_iso()]);
+    $cl = summer_editions_close_elapsed();
+    chk('editions: when a season ends its edition closes, and its Summer-only centres retire with it — NGG centres do not', in_array('SUM-CS-LIVE', $cl['closed'], true)
+        && in_array('Summer Venue', $cl['centresRetired'], true) && $c('Summer Venue')['status'] === 'retired' && $c('Egbeda')['status'] === 'active');
+    db_update('summer_cohorts', ['endDate' => gmdate('Y-m-d', time() + 30 * 86400)], ['cohortId' => 'SUM-CS-LIVE']);
+    $act = backend_dispatch('admin.summer.edition.status', ['requesterId' => $SU, 'editionId' => 'SUM-CS-LIVE', 'status' => 'active']);
+    chk('editions: going live brings back the Summer venues its groups meet at', in_array('Summer Venue', $act['centresRevived'] ?? [], true) && $c('Summer Venue')['status'] === 'active');
+    db_exec("DELETE FROM summer_groups WHERE groupId = 'GRP-CS-1'"); db_exec("DELETE FROM summer_cohorts WHERE cohortId = 'SUM-CS-LIVE'");
+
+    // A past edition's register.
+    $rows = [
+        ['Child’s Name' => 'Bisi Adeyemi', 'DOB' => '09/03/2014', 'Centre' => 'Egbeda', 'Course' => 'Robotics', 'Parent Phone' => '0803 111 2222', 'Email' => 'bisi.mum@example.com', 'ID' => 'EG-24-001', 'Days present' => '18'],
+        ['Child’s Name' => 'Tayo Bello', 'DOB' => '2013-07-21', 'Centre' => 'Agege', 'Course' => 'Music', 'Parent Phone' => '08022223333'],
+        ['Child’s Name' => 'Bisi Adeyemi', 'DOB' => '09/03/2014', 'Centre' => 'Egbeda', 'Parent Phone' => '+234 803 111 2222'],
+        ['Child’s Name' => '', 'Centre' => 'Egbeda'],
+        ['Child’s Name' => 'Kemi Bad', 'DOB' => '31/02/2014', 'Centre' => 'Egbeda'],
+    ];
+    $ed = ['name' => 'Summer School 2024', 'year' => 2024, 'startDate' => '2024-07-15', 'endDate' => '2024-08-30'];
+    chk('history: needs the Summer School permission', (backend_dispatch('admin.summer.history.import', ['requesterId' => 'NGG-DESK-E', 'edition' => $ed, 'rows' => $rows, 'dryRun' => true])['error'] ?? '') === 'forbidden');
+    chk('history: a "past" edition that ends in the future is refused', (backend_dispatch('admin.summer.history.import', ['requesterId' => $SU, 'edition' => ['endDate' => gmdate('Y-m-d', time() + 86400)] + $ed, 'rows' => $rows, 'dryRun' => true])['error'] ?? '') === 'not_past');
+    $before = (int)db_row('SELECT COUNT(*) c FROM summer_students')['c'];
+    $dry = backend_dispatch('admin.summer.history.import', ['requesterId' => $SU, 'edition' => $ed, 'rows' => $rows, 'dryRun' => true]);
+    chk('history: the check reads loose headers and reports per row — 2 new, 1 already in the file, 2 refused (no name; a 31 February) — and writes nothing',
+        $dry['tally'] === ['create' => 2, 'duplicate' => 1, 'failed' => 2] && (int)db_row('SELECT COUNT(*) c FROM summer_students')['c'] === $before && !db_row("SELECT id FROM summer_cohorts WHERE name = 'Summer School 2024'"));
+    chk('history: a place with no Summer School record is to be created as one; Egbeda goes to Summer School’s Egbeda, never the NGG centre',
+        array_column($dry['centresToCreate'], 'name') === ['Agege']);
+    chk('history: the import must be of the file that was checked', (backend_dispatch('admin.summer.history.import', ['requesterId' => $SU, 'edition' => $ed, 'rows' => array_slice($rows, 0, 2), 'digest' => $dry['digest']])['error'] ?? '') === 'not_checked');
+    $imp = backend_dispatch('admin.summer.history.import', ['requesterId' => $SU, 'edition' => $ed, 'rows' => $rows, 'digest' => $dry['digest']]);
+    $bisi = db_row("SELECT * FROM summer_students WHERE fullName = 'Bisi Adeyemi'");
+    $edRow = db_row("SELECT * FROM summer_cohorts WHERE cohortId = ?", [$imp['edition']['cohortId']]);
+    chk('history: the edition is created closed with its dates, and the participants with their ID, days present, date of birth (day first) and Summer centre',
+        $imp['written'] === 2 && $edRow['status'] === 'closed' && $edRow['endDate'] === '2024-08-30' && $bisi['displayId'] === 'EG-24-001' && (int)$bisi['daysPresent'] === 18
+        && $bisi['dob'] === '2014-03-09' && $bisi['centre'] === 'Egbeda (Summer School)' && $bisi['token'] === '');
+    chk('history: the created centre is Summer School’s and retired — on record, offered nowhere', ($c('Agege')['programmes'] ?? '') === 'summer' && $c('Agege')['status'] === 'retired');
+    $again = backend_dispatch('admin.summer.history.import', ['requesterId' => $SU, 'editionId' => $imp['edition']['cohortId'], 'rows' => $rows, 'dryRun' => true]);
+    chk('history: importing the same file into that edition again finds them already there', $again['tally']['create'] === 0 && $again['tally']['duplicate'] === 3);
+    chk('history: a live edition is refused — that is the registration import', (function () use ($SU, $rows) {
+        db_insert('summer_cohorts', ['cohortId' => 'SUM-CS-L2', 'name' => 'Live 2', 'year' => 2026, 'status' => 'active', 'createdAt' => now_iso()]);
+        $r = backend_dispatch('admin.summer.history.import', ['requesterId' => $SU, 'editionId' => 'SUM-CS-L2', 'rows' => $rows, 'dryRun' => true]);
+        db_exec("DELETE FROM summer_cohorts WHERE cohortId = 'SUM-CS-L2'");
+        return ($r['error'] ?? '') === 'edition_live';
+    })());
+
+    // Put the suite's centres back as they were.
+    db_exec("DELETE FROM summer_students WHERE studentId = 'SUM-CS-1' OR cohortId = ?", [$imp['edition']['cohortId']]);
+    db_exec('DELETE FROM summer_cohorts WHERE cohortId = ?', [$imp['edition']['cohortId']]);
+    db_exec("DELETE FROM members WHERE memberId IN ('NGG-CS-1', 'NGG-CS-2')");
+    db_exec('DELETE FROM centres');
+    foreach ($keep['centres'] as $row) { unset($row['id']); db_insert('centres', $row); }
+    foreach ($keep['members'] as $m) db_update('members', ['centre' => $m['centre']], ['id' => (int)$m['id']]);
+    foreach ($keep['ss'] as $m) db_update('summer_students', ['centre' => $m['centre']], ['id' => (int)$m['id']]);
+    setting_set('centres_split_seed', (string)$keep['seed'], 'test');
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

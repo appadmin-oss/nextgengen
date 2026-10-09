@@ -259,19 +259,37 @@ function crMbSuggest(q) {
   if (t.length < 3) return put(null);
   NGGApi.admin.members.suggest(t).then(r => { if (crMbSuggestQ.current === t) put(r && ((r.summer || []).length || (r.near || []).length) ? r : null); }, () => put(null));
 }
+/* Promotion asks WHICH NGG centre, nearest first: from their home address
+   when they gave one, else from where their Summer School met — measured on
+   the map, by driving time when Google can say it (domain/centres-ngg.php). */
 async function crMbPromoteParticipant(ctx, p) {
-  const ok = await ctx.confirm({ title: "Make " + p.fullName + " an NGG member?", cta: "Promote",
-    body: "They join the Club near " + (p.centre || "their Summer School centre") + " and get a member ID of their own. Their Summer School record stays as it is." });
-  if (!ok) return;
-  try {
-    const r = await NGGApi.admin.club.promote(p.studentId);
-    ctx.toast("Promoted · " + p.fullName + " is now a member" + (r.memberId ? " (" + r.memberId + ")" : ""));
-    crMbSuggestQ.current = ""; crMbSuggest(crMbLast.current.q);
-    ctx.setData(x => Object.assign({}, x, { rev: (x.rev || 0) + 1 }));
-  } catch (e) {
-    const c = e && (e.code || e.message);
-    ctx.toast(c === "already_promoted" ? p.fullName + " is already a member." : c === "forbidden" ? "Promoting needs the Club permission." : crErr(e, "Couldn’t promote " + p.fullName + "."), null, true);
-  }
+  let o;
+  try { ctx.toast("Finding the nearest NGG centres…"); o = await NGGApi.admin.club.promoteOptions(p.studentId); }
+  catch (e) { ctx.toast(crErr(e, "Couldn’t load the centres."), null, true); return; }
+  if (!(o.centres || []).length) { ctx.toast("No NGG centre is open. Add one in Members → Centres first.", null, true); return; }
+  const near = c => c.minutes != null ? "~" + c.minutes + " min drive" : c.km != null ? c.km + " km" + (c.approx ? " (approx.)" : "") : "";
+  ctx.form({
+    title: "Make " + p.fullName + " an NGG member",
+    intro: "They get a member ID of their own and join the NGG centre you choose. Their Summer School record stays as it is. " + o.why,
+    submit: "Promote",
+    values: { centre: o.suggested || "" },
+    fields: [{ id: "centre", l: "NGG centre", type: "chips", req: true,
+      opts: o.centres.map((c, i) => [c.name, c.name + (near(c) ? " · " + near(c) : "") + (i === 0 && near(c) ? " · nearest" : "")]),
+      help: o.homeAddress ? "Home address on their registration: " + o.homeAddress : "No home address on their registration." }],
+    onSubmit: async v => {
+      try { return await NGGApi.admin.club.promote(p.studentId, v.centre); }
+      catch (e) {
+        const c = e && (e.code || e.message);
+        if (c === "invalid_centre" || c === "centre_required") return { fieldErrors: { centre: crErr(e, "Choose an open NGG centre.") } };
+        throw Object.assign(e, { data: Object.assign({}, e.data, { message: c === "already_promoted" ? p.fullName + " is already a member." : c === "forbidden" ? "Promoting needs the Club permission." : crErr(e, "Couldn’t promote " + p.fullName + ".") }) });
+      }
+    },
+    done: (v, r) => {
+      crMbSuggestQ.current = ""; crMbSuggest(crMbLast.current.q);
+      ctx.setData(x => Object.assign({}, x, { rev: (x.rev || 0) + 1 }));
+      return "Promoted · " + p.fullName + " is now a member" + (r && r.memberId ? " (" + r.memberId + ")" : "") + " at " + v.centre;
+    },
+  });
 }
 function CrMbSuggest({ s, ctx }) {
   return (

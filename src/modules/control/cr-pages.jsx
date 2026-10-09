@@ -68,6 +68,7 @@ const CR_PAGES = {
        for an edition (CLAUDE.md §5, §11), so it is "Edition". */
     { id: "summer", label: "Edition", desc: "The Summer School edition that is running, at a glance.", cap: "summer" },
     { id: "assessment", label: "Assessments", desc: "Baseline at week 1, endline at week 12.", cap: "summer" },
+    { id: "summer-history", label: "Past editions", desc: "Every edition, and the registers of past ones brought in from a spreadsheet.", cap: "summer" },
   ] },
   learning: { label: "Learning", icon: "graduation-cap", tabs: [
     { id: "divisions", label: "Divisions & courses", desc: "The NGG Club’s four divisions and the courses in each — what the join form offers and the card prints.", cap: ["curriculum", "club", "people"] },

@@ -299,6 +299,8 @@ function backend_dispatch(string $op, array $args = []): array {
             // NGG Club coordinator (Summer → Club bridge)
             'admin.club.overview'         => 'admin_club_overview',
             'admin.club.promotable'       => 'admin_club_promotable',
+            'admin.club.promote.options'  => 'admin_club_promote_options',
+            'admin.summer.history.import' => 'admin_summer_history_import',
             'admin.club.promote'          => 'admin_club_promote',
             'admin.club.members'          => 'admin_club_members',
             /* A club coordinator's own bulk actions. Deliberately narrower

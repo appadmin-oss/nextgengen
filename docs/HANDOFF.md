@@ -807,3 +807,38 @@ be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
   stored photos and restore them from a backup, matched by file name (a keyed
   fingerprint of the bytes). `photo_dir` keeps photos outside the website
   folder; the build no longer ships cache, logs or storage contents.
+
+
+## 2026-10-09 — NGG centres split from Summer School's; nearest-centre promotion; past editions
+
+- `domain/centres-ngg.php` `centres_split_seed_once()` (run once from
+  `db_run_seeds`; no-op on an empty database): a centre both programmes shared
+  under an NGG default name (Egbeda, Ayobo) becomes Summer School's record
+  "<Name> (Summer School)" — keeps its code, its Summer venue and groups, its
+  participants and Summer applications move by name — and is retired; NGG gets
+  "Egbeda"/"Ayobo" with the Club's address, map point, contacts and page; other
+  Summer-only centres are retired; member spellings are tidied onto the exact
+  names. Recorded in the audit as `centres.split_seed`.
+- Centres are still referenced by NAME across ~28 tables. The split moved only
+  the Summer-side references (summer_students, Summer applications). A rename
+  through the directory still does not cascade; see the ETL note in this
+  session's report before renaming a centre that is in use.
+- Promotion: `admin_club_promote` requires an NGG centre (no more hard-coded
+  'Egbeda'); with none chosen it takes the nearest, measured from the
+  participant's home address (formData), else their Summer venue, else its
+  area; `centre_required` when nothing can be measured and there is a choice.
+  `admin.club.promote.options` feeds the Control Room's promotion form.
+- Geocoding (`geo_geocode`, `geo_geocode_smart`): Google when `maps.google_key`
+  is set (Settings → API keys → Google Maps), else Nominatim; Lagos-bounded
+  when Lagos is assumed, answers outside the bounds dropped; addresses tried
+  as written, without the house number, by landmark, by street, by area;
+  cached 30 days (misses 1 day); `maps.offline` turns lookups off. Distance
+  Matrix reorders the closest four by driving minutes when Google is set.
+- Summer centres retire when an edition closes (`summer_centres_retire_unused`,
+  from the nightly close, a manual close, and now web-cron); activating an
+  edition revives the Summer venues its groups use.
+- `domain/summer-history.php` `admin_summer_history_import`: a past edition's
+  register, dry run then digest-bound import; loose headers; day-first dates
+  and Excel serials; duplicates by name + guardian phone/email; centres matched
+  to Summer records, unknown ones created retired. Control Room → Summer School
+  → Past editions.

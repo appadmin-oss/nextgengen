@@ -385,8 +385,27 @@ so "who suspended forty people on Tuesday" has a readable answer.
 
 ## Centres
 
-**People → Centres.** A centre is a place. Adding, editing and retiring one
-needs the *Members* (`people`) permission.
+**Members → Centres.** A centre is a place. Adding, editing and retiring one
+needs the *Members* (`people`) permission. **Add a centre** is at the top of
+the page.
+
+**NGG centres and Summer School centres are separate records.** NGG is where a
+member belongs for years; Summer School is a season. In October 2026 the two
+were split, once, automatically:
+
+- **Egbeda** and **Ayobo** are the NGG centres. Every member, mentor and NGG
+  record that already said "Egbeda" or "Ayobo" is on them with no change, and
+  members written differently ("egbeda centre", "NGG Ayobo") were tidied onto
+  the exact name.
+- The centre Summer School shared with them became Summer School's own record,
+  **Egbeda (Summer School)** / **Ayobo (Summer School)**, keeping its code (the
+  prefix on the Summer cards already printed); its participants moved with it.
+- Every Summer School centre was **retired** — on record, offered nowhere.
+
+**Summer School centres end with their edition.** When an edition's season
+ends (or a coordinator closes it), every centre that runs only Summer School
+and that no live edition still uses is retired. Making an edition live brings
+back the Summer venues its groups meet at. NGG centres are never touched.
 
 **Programmes at this centre** (under *Identity* when you edit one): tick **NGG
 Club**, **Summer School**, or both. Each programme offers only its own
@@ -601,6 +620,25 @@ Rules the system enforces, so you do not have to remember them:
 system reads the day numbers out, removes duplicates, sorts them and drops
 anything out of range. `"6, 3, 1, 3, 9, 0"` is stored as `1,3,6`.
 
+### Past editions
+
+**Summer School → Past editions** lists every edition. **Import a past
+edition** brings in a season's register from a spreadsheet (CSV or .xlsx; the
+header has a template): name, date of birth, centre, course, guardian name,
+phone and email, the ID they were printed, days present, status and notes.
+Headers are matched loosely ("Child's Name", "Parent Phone", "Days present").
+
+- Choose an edition that is not running, or describe a new one (name, year,
+  start and end); a new one is created **closed**.
+- The file is **checked first**: new, already there (same name and the same
+  guardian phone or email), and refused rows with the reason (no name, a date
+  that is not a date, an ID that is somebody else's). Nothing is written.
+- **Import** writes exactly the file that was checked. No card is bound and
+  nobody is emailed.
+- A row's centre is matched to Summer School's own record of that place. A
+  place Summer School has no record of is created as a **retired** Summer
+  centre, so the history resolves and no form offers it.
+
 ### Assigning participants to a group
 
 Open a group → **Assign**. You get two lists: the group's current
@@ -708,6 +746,22 @@ open.
 Select and **Promote into the Club**, up to **200** at a time. Promoting in
 bulk runs exactly the same promotion as promoting one person, so the two
 cannot drift apart.
+
+**Every promotion asks which NGG centre** — never a Summer School venue. The
+nearest NGG centre is suggested and chosen for you:
+
+- measured from the **home address** on their registration when there is one.
+  Addresses are read the way people in Lagos write them: if the street is not
+  on the map, the landmark it is near ("near Ikotun bus stop") or its area is
+  used, and the form says so;
+- otherwise from **where their Summer School met**;
+- with a **Google Maps** key (Settings → API keys), the closest few are ordered
+  by **driving time**, not straight-line distance. Without one, OpenStreetMap
+  finds the places, free.
+
+If nothing can be placed on a map and there is more than one NGG centre, the
+promotion is not guessed: choose the centre. Mapping each centre (its **Map**
+button) makes the suggestions exact.
 
 ### The Club roster
 

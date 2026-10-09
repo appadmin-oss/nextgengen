@@ -7,7 +7,9 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
     $view = (string)($_GET['view'] ?? 'overview');
-    if ($view === 'promotable') {
+    if ($view === 'promoteOptions') {
+        $res = gs_call('admin.club.promote.options', ['requesterId' => $mid, 'studentId' => (string)($_GET['studentId'] ?? '')]);
+    } elseif ($view === 'promotable') {
         $res = gs_call('admin.club.promotable', ['requesterId' => $mid,
             'q' => $_GET['q'] ?? '', 'centre' => $_GET['centre'] ?? '', 'track' => $_GET['track'] ?? '',
             'editionId' => $_GET['editionId'] ?? '', 'groupId' => $_GET['groupId'] ?? '',

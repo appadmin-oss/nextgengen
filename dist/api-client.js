@@ -1333,6 +1333,8 @@
         cohort:       (data) => request('/admin/summer.php', { body: { action: 'cohort', data } }),
         editions:     () => request('/admin/summer.php?view=editions'),
         editionSave:  (data) => request('/admin/summer.php', { body: { action: 'editionSave', data } }),
+        // A past edition's register, checked then imported (domain/summer-history.php).
+        historyImport: (payload) => request('/admin/summer.php', { body: Object.assign({ action: 'historyImport' }, payload), timeout: 180000 }),
         editionStatus:(editionId, status) => request('/admin/summer.php', { body: { action: 'editionStatus', editionId, status } }),
         groups:       (editionId) => request('/admin/summer.php' + qs({ view: 'groups', editionId: editionId || '' })),
         groupSave:    (data) => request('/admin/summer.php', { body: { action: 'groupSave', data } }),
@@ -1450,6 +1452,8 @@
         members:    (opts) => request('/admin/club.php' + qs(Object.assign({ view: 'members' },
                       typeof opts === 'string' ? { q: opts } : (opts || {})))),
         promote:    (studentId, centre) => request('/admin/club.php', { body: { action: 'promote', studentId, centre: centre || '' } }),
+        // The NGG centres to offer for one participant, nearest first (domain/centres-ngg.php).
+        promoteOptions: (studentId) => request('/admin/club.php' + qs({ view: 'promoteOptions', studentId }), { timeout: 60000 }),
         /* Bulk, and PARTIAL: read `results` for the per-row verdicts, not just
            `ok`. Each promotion goes through the single promote path, so the
            bulk cannot drift from it. */
