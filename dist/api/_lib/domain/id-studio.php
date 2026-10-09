@@ -29,7 +29,9 @@
  * request that mixes subjects is refused row by row, never widened.
  */
 
-const IDS_SUBJECTS = ['member', 'student', 'volunteer'];
+/* `afrovanguard`: an Afrovanguard member card, printed here from Afrovanguard's own
+   card (domain/ngv-portal.php, admin_ids_av_*). Its owner is `people`. */
+const IDS_SUBJECTS = ['member', 'student', 'volunteer', 'afrovanguard'];
 const IDS_BATCH_MAX = 600;      // the same ceiling as a recorded run (CRUN_MAX_ISSUES)
 const IDS_ASK_MAX = 200;        // photo asks in one press
 const IDS_ASK_QUIET_DAYS = 3;   // nobody is asked again inside this window unless the operator insists
@@ -209,6 +211,8 @@ function admin_ids_run_failed(array $p): array {
 
 /** The person behind a subject, for a photo request: name, centre, and who can be told. */
 function ids_subject_contact(string $t, string $id): ?array {
+    /* Afrovanguard's members are Afrovanguard's to contact: no request from here. */
+    if ($t === 'afrovanguard') return null;
     if ($t === 'student') {
         $s = db_row('SELECT studentId, fullName, centre, parentEmail, photoUrl FROM summer_students WHERE studentId = ? LIMIT 1', [$id]);
         return $s ? ['name' => (string)$s['fullName'], 'centre' => (string)($s['centre'] ?? ''), 'email' => '', 'guardian' => (string)($s['parentEmail'] ?? ''), 'photo' => (string)($s['photoUrl'] ?? ''), 'row' => $s] : null;

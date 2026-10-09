@@ -133,9 +133,6 @@ if ($method === 'POST') {
     } elseif ($action === 'ngvPortalSync') {
         // Everybody already promoted to NGV, sent to Afrovanguard for their NGV account.
         $res = gs_call('admin.members.ngvPortalSync', ['requesterId' => $s['mid'], 'ip' => client_ip()]);
-    } elseif ($action === 'avCardLink') {
-        // A ten-minute signed link to print this vanguard's Afrovanguard card there.
-        $res = gs_call('admin.members.avCardLink', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'setCaps') {
         $args = ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'caps' => $body['caps'] ?? [], 'ip' => client_ip()];
         if (array_key_exists('centreScope', $body)) $args['centreScope'] = $body['centreScope']; // only when explicitly set — avoids clobbering

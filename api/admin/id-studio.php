@@ -8,7 +8,11 @@ $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
-    $res = gs_call('admin.ids.state', ['requesterId' => $s['mid']]);
+    /* Afrovanguard member cards (domain/ngv-portal.php): who has one, and the card's stylesheet. */
+    $view = (string)($_GET['view'] ?? '');
+    if ($view === 'av') $res = gs_call('admin.ids.av.list', ['requesterId' => $s['mid'], 'q' => (string)($_GET['q'] ?? '')]);
+    elseif ($view === 'avStyle') $res = gs_call('admin.ids.av.style', ['requesterId' => $s['mid'], 'design' => (string)($_GET['design'] ?? '')]);
+    else $res = gs_call('admin.ids.state', ['requesterId' => $s['mid']]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
     $base = ['requesterId' => $s['mid'], 'ip' => client_ip()];
@@ -19,6 +23,7 @@ if ($method === 'GET') {
         case 'askPhoto':  $res = gs_call('admin.ids.photo.ask', $base + ['items' => $b['items'] ?? null, 'force' => !empty($b['force'])]); break;
         case 'design':    $res = gs_call('admin.ids.design.set', $base + ['kind' => (string)($b['kind'] ?? ''), 'templateId' => (string)($b['templateId'] ?? '')]); break;
         // Printed IDs for exactly the members about to be printed.
+        case 'avFaces':   $res = gs_call('admin.ids.av.faces', $base + ['ids' => $b['ids'] ?? []]); break;
         case 'mintIds':   $res = gs_call('admin.ids.mint', $base + ['memberIds' => $b['memberIds'] ?? [], 'codesOnly' => !empty($b['codesOnly'])]); break;
         default: json_error('unknown_action', 400);
     }

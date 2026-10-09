@@ -663,18 +663,6 @@ async function crMbResendNgv(ctx, m) {
     ctx.toast(Array.isArray(r.sent) && r.sent.length ? "ID re-sent by " + r.sent.join(" and ") : "No email or phone on file to send it to.", null, !(Array.isArray(r.sent) && r.sent.length));
   } catch (e) { ctx.toast(crErr(e), null, true); }
 }
-/* The Afrovanguard member card is printed on Afrovanguard, from its own design:
-   the server signs a ten-minute link and the card opens there, ready for the
-   PDF, the PNGs or an A4 sheet. The tab opens first, inside the click, so a
-   popup blocker lets it through; then it is pointed at the link. */
-async function crMbAvCard(ctx, m) {
-  const w = window.open("", "_blank");
-  try {
-    const r = await NGGApi.admin.members.avCardLink(m.memberId);
-    if (!r || !r.url) throw new Error("no_link");
-    if (w) { w.opener = null; w.location.href = r.url; } else window.location.href = r.url;
-  } catch (e) { if (w) w.close(); ctx.toast(crErr(e), null, true); }
-}
 async function crMbDemoteNgv(ctx, m) {
   const ok = await ctx.confirm({ title: "Revoke NGV standing?", danger: true, cta: "Revoke NGV",
     body: "This deactivates " + (m.fullName || "this member") + "’s volunteer record and removes their NGV standing. Their attendance and hours are kept, and promoting them again reactivates the same record." });
@@ -755,7 +743,7 @@ function crMbRecBlocks(d, ctx) {
     out.push({ type: "list", span: 3, title: "Chain of command", rows: m.ngvVolunteerId ? [
       { icon: "shield-check", t: "Promoted to NGV · " + m.ngvVolunteerId, s: (m.ngvAt ? crDate(m.ngvAt) + " · " : "") + "Their NGV dashboard is active." },
       { icon: "paper-plane-tilt", t: "Resend their NGV ID", onClick: () => crMbResendNgv(ctx, m) },
-      { icon: "printer", t: "Print their Afrovanguard card", s: "Opens it on afrovanguard.org.ng: PDF for a card printer, PNGs, or an A4 sheet.", onClick: () => crMbAvCard(ctx, m) },
+      { icon: "printer", t: "Print their Afrovanguard card", s: "In the ID Card Studio, under Afrovanguard.", onClick: () => ctx.studio() },
       { icon: "shield-slash", t: "Revoke NGV", onClick: () => crMbDemoteNgv(ctx, m) },
     ] : [eligible ? { icon: "arrow-fat-up", t: "Promote to NGV", s: "Advances an active NGG member into the volunteer tier, with evidence of formation.", onClick: () => crMbPromote(ctx, m) }
       : { icon: "arrow-fat-up", t: "Not eligible for NGV", s: "Only an active NGG member can be promoted." }] });

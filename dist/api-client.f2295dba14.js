@@ -1028,8 +1028,6 @@
         },
         // Everybody already promoted to NGV → their NGV account on Afrovanguard.
         ngvPortalSync: () => request('/admin/members.php', { body: { action: 'ngvPortalSync' }, timeout: 120000 }),
-        // A vanguard's Afrovanguard member card, opened for printing there (signed link, 10 minutes).
-        avCardLink: (memberId) => request('/admin/members.php', { body: { action: 'avCardLink', memberId } }),
         reset2fa: (memberId) => request('/admin/members.php', { body: { action: 'reset2fa', memberId } }),
         resetPassword: (memberId) => request('/admin/members.php', { body: { action: 'resetPassword', memberId } }),
         // Record a guardian's publication decision. `method` is how it was
@@ -1275,6 +1273,10 @@
         design:    (kind, templateId) => request('/admin/id-studio.php', { body: { action: 'design', kind, templateId: templateId || '' } }),
         // Printed IDs for those with none, and every member's secure card code; `codesOnly` for a proof.
         mintIds:   (memberIds, codesOnly) => request('/admin/id-studio.php', { body: { action: 'mintIds', memberIds, codesOnly: !!codesOnly } }),
+        // Afrovanguard member cards: who has one, the card's stylesheet (fonts inlined, ~3 MB, cached per design), each card's markup.
+        avCards:   (q) => request('/admin/id-studio.php?view=av' + (q ? '&q=' + encodeURIComponent(q) : ''), { timeout: 40000 }),
+        avStyle:   (design) => request('/admin/id-studio.php?view=avStyle&design=' + encodeURIComponent(design || ''), { timeout: 60000 }),
+        avFaces:   (ids) => request('/admin/id-studio.php', { body: { action: 'avFaces', ids }, timeout: 60000 }),
       },
       wisdom: {
         list:     () => request('/admin/wisdom.php'),
