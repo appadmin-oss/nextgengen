@@ -366,7 +366,7 @@ function notify_people(array $members, array $n): int {
  * grant them per person (capsExtra).
  */
 const ADMIN_ROLES = [
-    'super_admin'  => ['label' => 'Super admin', 'tier' => 5, 'caps' => ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'checkin', 'curriculum', 'audit', 'journal', 'fees'],
+    'super_admin'  => ['label' => 'Super admin', 'tier' => 5, 'caps' => ['content', 'people', 'inbox', 'settings', 'rbac', 'summer', 'club', 'checkin', 'curriculum', 'audit', 'journal', 'fees', 'safeguarding'],
                        'summary' => 'Everything, including settings, roles and access. Keep to two or three people.'],
     'admin'        => ['label' => 'Admin', 'tier' => 4, 'caps' => ['content', 'people', 'inbox', 'club', 'summer', 'checkin', 'curriculum'],
                        'summary' => 'Runs the programme day to day: both programmes, members, the door, content and the inbox. No money, settings or roles.'],
@@ -392,6 +392,7 @@ const ADMIN_CAPS = [
     'inbox'      => 'Newsletter and messages',
     'fees'       => 'Dues, training fees, fines and payments',
     'journal'    => 'Writing the programme\'s institutional record',
+    'safeguarding' => 'Safeguarding cases: reading reports about young people and recording what was done',
     'audit'      => 'Monitoring & evaluation and the audit trail (read only)',
     'settings'   => 'Site settings, integrations, diagnostics and donations',
     'rbac'       => 'Staff roles, extra capabilities and centre scope',

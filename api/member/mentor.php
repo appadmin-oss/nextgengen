@@ -59,6 +59,7 @@ if ($method === 'GET') {
             'period'      => $b['period'] ?? '',
             'answers'     => $b['answers'] ?? [],
             'concern'     => !empty($b['concern']),
+            'trend'       => (string)($b['trend'] ?? ''),
             'ip'          => client_ip(),
         ]);
     } elseif ((string)($b['action'] ?? '') === 'courage') {

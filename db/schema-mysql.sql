@@ -3117,3 +3117,206 @@ CREATE TABLE IF NOT EXISTS photo_framing (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO schema_version (version) VALUES (136) ON DUPLICATE KEY UPDATE version = version;
+
+-- 137: Mentorship — Anchor Pods, phases, the choice of two, cadence, rules
+-- R1–R8, interventions, safeguarding, the Mentor Academy and the NGGC
+-- Mentorship Commitment & Conduct Policy (domain/mentorship-pods.php).
+CREATE TABLE IF NOT EXISTS mentor_matches (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  matchId VARCHAR(191) NOT NULL UNIQUE,
+  memberId VARCHAR(191) NOT NULL,
+  mentorId VARCHAR(191) NOT NULL DEFAULT '',
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  track VARCHAR(191) NOT NULL DEFAULT '',
+  phase VARCHAR(191) NOT NULL DEFAULT 'match',
+  status VARCHAR(191) NOT NULL DEFAULT 'offered',
+  offeredAt VARCHAR(191) NOT NULL DEFAULT '',
+  startedAt VARCHAR(191) NOT NULL DEFAULT '',
+  chosenBy VARCHAR(191) NOT NULL DEFAULT '',
+  agreementJson TEXT NULL,
+  closingAt VARCHAR(191) NOT NULL DEFAULT '',
+  closedAt VARCHAR(191) NOT NULL DEFAULT '',
+  closeReason TEXT NULL,
+  createdBy VARCHAR(191) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE INDEX idx_mmatch_member ON mentor_matches(memberId, status);
+CREATE INDEX idx_mmatch_mentor ON mentor_matches(mentorId, status);
+CREATE TABLE IF NOT EXISTS mentor_match_offers (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  matchId VARCHAR(191) NOT NULL,
+  mentorId VARCHAR(191) NOT NULL,
+  rank INT NOT NULL DEFAULT 1,
+  fit INT NOT NULL DEFAULT 0,
+  why TEXT NULL,
+  status VARCHAR(191) NOT NULL DEFAULT 'open'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE UNIQUE INDEX uq_moffer ON mentor_match_offers(matchId, mentorId);
+CREATE TABLE IF NOT EXISTS mentor_tasks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  matchId VARCHAR(191) NOT NULL DEFAULT '',
+  memberId VARCHAR(191) NOT NULL DEFAULT '',
+  mentorId VARCHAR(191) NOT NULL DEFAULT '',
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  kind VARCHAR(191) NOT NULL,
+  owner VARCHAR(191) NOT NULL DEFAULT 'mentor',
+  dueOn VARCHAR(191) NOT NULL,
+  status VARCHAR(191) NOT NULL DEFAULT 'open',
+  doneAt VARCHAR(191) NOT NULL DEFAULT '',
+  doneBy VARCHAR(191) NOT NULL DEFAULT '',
+  note TEXT NULL,
+  createdAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE INDEX idx_mtask_mentor ON mentor_tasks(mentorId, status, dueOn);
+CREATE INDEX idx_mtask_match ON mentor_tasks(matchId, kind, status);
+CREATE TABLE IF NOT EXISTS mentor_nudges (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  nudgeKey VARCHAR(191) NOT NULL UNIQUE,
+  rule VARCHAR(191) NOT NULL,
+  audience VARCHAR(191) NOT NULL,
+  mentorId VARCHAR(191) NOT NULL DEFAULT '',
+  memberId VARCHAR(191) NOT NULL DEFAULT '',
+  matchId VARCHAR(191) NOT NULL DEFAULT '',
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  title VARCHAR(191) NOT NULL DEFAULT '',
+  body TEXT NULL,
+  suggestion TEXT NULL,
+  status VARCHAR(191) NOT NULL DEFAULT 'open',
+  createdAt VARCHAR(191) NOT NULL DEFAULT '',
+  resolvedAt VARCHAR(191) NOT NULL DEFAULT '',
+  resolvedBy VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE INDEX idx_mnudge_open ON mentor_nudges(status, audience, centre);
+CREATE TABLE IF NOT EXISTS mentor_interventions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  matchId VARCHAR(191) NOT NULL DEFAULT '',
+  memberId VARCHAR(191) NOT NULL DEFAULT '',
+  mentorId VARCHAR(191) NOT NULL DEFAULT '',
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  rule VARCHAR(191) NOT NULL DEFAULT '',
+  reason TEXT NULL,
+  plan TEXT NULL,
+  ownerId VARCHAR(191) NOT NULL DEFAULT '',
+  ownerName VARCHAR(191) NOT NULL DEFAULT '',
+  reviewOn VARCHAR(191) NOT NULL DEFAULT '',
+  status VARCHAR(191) NOT NULL DEFAULT 'open',
+  outcome TEXT NULL,
+  createdBy VARCHAR(191) NOT NULL DEFAULT '',
+  createdAt VARCHAR(191) NOT NULL DEFAULT '',
+  closedAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE INDEX idx_miv_open ON mentor_interventions(status, centre);
+CREATE TABLE IF NOT EXISTS mentor_relationship_checks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  matchId VARCHAR(191) NOT NULL,
+  respondent VARCHAR(191) NOT NULL,
+  term VARCHAR(191) NOT NULL,
+  q1 INT NOT NULL,
+  q2 INT NOT NULL,
+  q3 INT NOT NULL,
+  q4 INT NOT NULL,
+  avg DOUBLE NOT NULL,
+  note TEXT NULL,
+  byId VARCHAR(191) NOT NULL DEFAULT '',
+  createdAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE UNIQUE INDEX uq_mrelchk ON mentor_relationship_checks(matchId, respondent, term);
+CREATE TABLE IF NOT EXISTS mentor_observations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(191) NOT NULL,
+  mentorId VARCHAR(191) NOT NULL,
+  matchId VARCHAR(191) NOT NULL DEFAULT '',
+  onDate VARCHAR(191) NOT NULL,
+  indicator VARCHAR(191) NOT NULL,
+  level INT NOT NULL DEFAULT 0,
+  evidence TEXT NULL,
+  strength TEXT NULL,
+  growth TEXT NULL,
+  nextChallenge TEXT NULL,
+  createdAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE UNIQUE INDEX uq_mobs ON mentor_observations(memberId, onDate, indicator);
+CREATE TABLE IF NOT EXISTS mentor_academy (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  mentorId VARCHAR(191) NOT NULL,
+  moduleId VARCHAR(191) NOT NULL,
+  score INT NOT NULL DEFAULT 0,
+  passedAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE UNIQUE INDEX uq_macad ON mentor_academy(mentorId, moduleId);
+CREATE TABLE IF NOT EXISTS mentor_policy (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  mentorId VARCHAR(191) NOT NULL,
+  policyVersion VARCHAR(191) NOT NULL,
+  signedName VARCHAR(191) NOT NULL DEFAULT '',
+  acceptedAt VARCHAR(191) NOT NULL DEFAULT '',
+  ip VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE UNIQUE INDEX uq_mpolicy ON mentor_policy(mentorId, policyVersion);
+CREATE TABLE IF NOT EXISTS mentor_obligations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  mentorId VARCHAR(191) NOT NULL,
+  kind VARCHAR(191) NOT NULL,
+  onDate VARCHAR(191) NOT NULL,
+  status VARCHAR(191) NOT NULL DEFAULT 'present',
+  note TEXT NULL,
+  recordedBy VARCHAR(191) NOT NULL DEFAULT '',
+  createdAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE UNIQUE INDEX uq_mobl ON mentor_obligations(mentorId, kind, onDate);
+CREATE TABLE IF NOT EXISTS mentor_checkins (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  mentorId VARCHAR(191) NOT NULL,
+  weekOf VARCHAR(191) NOT NULL,
+  feeling VARCHAR(191) NOT NULL DEFAULT '',
+  wins TEXT NULL,
+  hard TEXT NULL,
+  needSupport INT NOT NULL DEFAULT 0,
+  createdAt VARCHAR(191) NOT NULL DEFAULT '',
+  followedUpAt VARCHAR(191) NOT NULL DEFAULT '',
+  followedUpBy VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE INDEX idx_mchk_mentor ON mentor_checkins(mentorId, weekOf);
+CREATE TABLE IF NOT EXISTS safeguarding_cases (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  caseNo VARCHAR(191) NOT NULL UNIQUE,
+  reporterId VARCHAR(191) NOT NULL,
+  reporterName VARCHAR(191) NOT NULL DEFAULT '',
+  subjectId VARCHAR(191) NOT NULL DEFAULT '',
+  subjectName VARCHAR(191) NOT NULL DEFAULT '',
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  category VARCHAR(191) NOT NULL DEFAULT '',
+  body TEXT NULL,
+  officerId VARCHAR(191) NOT NULL DEFAULT '',
+  officerName VARCHAR(191) NOT NULL DEFAULT '',
+  status VARCHAR(191) NOT NULL DEFAULT 'received',
+  createdAt VARCHAR(191) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE INDEX idx_sgcase_centre ON safeguarding_cases(centre, status);
+CREATE TABLE IF NOT EXISTS safeguarding_notes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  caseNo VARCHAR(191) NOT NULL,
+  byId VARCHAR(191) NOT NULL DEFAULT '',
+  byName VARCHAR(191) NOT NULL DEFAULT '',
+  note TEXT NULL,
+  status VARCHAR(191) NOT NULL DEFAULT '',
+  createdAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS mentee_profiles (
+  memberId VARCHAR(64) NOT NULL PRIMARY KEY,
+  interests TEXT NULL,
+  wantsTo TEXT NULL,
+  supportArea TEXT NULL,
+  availability TEXT NULL,
+  style TEXT NULL,
+  updatedAt VARCHAR(191) NOT NULL DEFAULT '',
+  updatedBy VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE mentors ADD COLUMN leavingAt VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE mentors ADD COLUMN leavingNote TEXT NULL;
+ALTER TABLE mentors ADD COLUMN cimcAt VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE mentors ADD COLUMN anthemAt VARCHAR(64) NOT NULL DEFAULT '';
+ALTER TABLE mentor_reviews ADD COLUMN trend VARCHAR(64) NOT NULL DEFAULT '';
+
+INSERT INTO schema_version (version) VALUES (137) ON DUPLICATE KEY UPDATE version = version;

@@ -325,6 +325,14 @@ function member_merge_policy(): array {
         'community_homework_state' => 'MOVE_UNIQUE',
         'community_homework_nudge' => 'MOVE_UNIQUE',
         'community_typing'       => 'DROP',           // presence, not history
+        // Mentorship (Anchor Pods): the relationship, its cadence and record follow the child.
+        'mentor_matches'         => 'MOVE',
+        'mentor_tasks'           => 'MOVE',
+        'mentor_nudges'          => 'MOVE',
+        'mentor_interventions'   => 'MOVE',
+        'mentor_observations'    => 'MOVE_UNIQUE',    // one rating per indicator per Saturday
+        'mentee_profiles'        => 'MOVE_UNIQUE',    // the survivor's own answers stand
+        'safeguarding_cases'     => ['MOVE', 'subjectId'],
         'attendance'             => ['MOVE_UNIQUE', 'studentId'],
         'engagement_snapshots'   => ['MOVE_UNIQUE', 'personId'],
         'infractions'            => ['MOVE_UNIQUE', 'personId', "personType = 'member'"],
