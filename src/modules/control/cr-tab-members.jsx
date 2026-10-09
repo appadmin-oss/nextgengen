@@ -977,9 +977,45 @@ Object.assign(CR_TAB_DEFS, {
 });
 
 /* ── The v1 panels these tabs mount until they are rebuilt as blocks (crPanel). */
+/* Add a centre: name, the printed ID's code, the card colour, and which
+   programme runs there. Address, lead, contacts and meeting times are set
+   from Edit on its row afterwards. Gated on the server (people). */
+function crMbCentreAdd() {
+  const ctx = crMbCentreCtx.current;
+  if (!ctx) return;
+  ctx.form({
+    title: "Add a centre",
+    intro: "A centre is a place where NGG meets. Its code is the prefix on printed IDs (EG-26-001) and its colour is the card’s accent band, so both are effectively permanent once cards are printed. Add the address, lead and meeting times afterwards with Edit.",
+    submit: "Add the centre",
+    values: { name: "", code: "", color: "#76B043", programmes: "ngg", capacity: "" },
+    fields: [
+      { id: "name", l: "Name", req: true, max: 80, ph: "e.g. Egbeda" },
+      { id: "code", l: "Code (1–4 letters)", req: true, max: 4, ph: "EG", check: v => /^[A-Za-z]{1,4}$/.test(String(v).trim()) ? "" : "One to four letters." },
+      { id: "color", l: "Card colour", type: "color" },
+      { id: "programmes", l: "Runs", type: "chips", req: true, opts: [["ngg", "The NGG Club"], ["summer", "Summer School"], ["ngg,summer", "Both"]] },
+      { id: "capacity", l: "Summer School capacity", im: "numeric", ph: "0 for no limit", when: v => v.programmes !== "ngg", check: v => v === "" || /^\d+$/.test(String(v)) ? "" : "A whole number." },
+    ],
+    onSubmit: async v => {
+      try {
+        await NGGApi.admin.registration.centreUpsert({ name: v.name.trim(), code: v.code.trim().toUpperCase(), color: v.color, programmes: v.programmes.split(","), capacity: v.capacity === "" ? 0 : parseInt(v.capacity, 10) || 0 });
+      } catch (e) {
+        if (e.code === "code_taken" || e.code === "bad_code" || e.code === "code_reserved") return { fieldErrors: { code: crErr(e, "That code is already used by another centre.") } };
+        if (e.code === "name_taken" || e.code === "bad_name") return { fieldErrors: { name: crErr(e, "That name is already used.") } };
+        throw e;
+      }
+      if (typeof invalidateCentreOptCache === "function") invalidateCentreOptCache();
+      window.dispatchEvent(new Event("ngg:centres-changed"));
+    },
+    done: v => v.name.trim() + " added. Open Edit on its row to add the address, lead and meeting times.",
+  });
+}
+const crMbCentreCtx = { current: null };
+
 Object.assign(CR_TAB_DEFS, {
   quality: crPanel(() => <AdminMembers/>, { tab: "quality" }),   // v1's Data quality and Duplicates, and the rest of its member desk
   families: crPanel(() => <AdminFamilies/>),
-  centres: crPanel(() => <AdminCentres/>),
+  /* "Add a centre" in the header, as a labelled form: the directory's own
+     inline row reads as a filter bar, and people looked for it in Settings. */
+  centres: crPanel(() => <AdminCentres/>, { actions: (d, ctx) => { crMbCentreCtx.current = ctx; return ctx.can("people") ? [{ l: "Add a centre", icon: "plus", primary: true, run: crMbCentreAdd }] : []; } }),
   idcards: crPanel(() => <AdminIdCards/>),
 });

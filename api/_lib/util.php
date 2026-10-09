@@ -591,6 +591,13 @@ function cache_get(string $key, int $ttl = 0, string $stamp = '') {
     return $stamp === '' ? $hit : null;
 }
 
+/** Text from outside made valid UTF-8: a server's error line in Windows-1252 or Latin-1 reads as it was meant, not as an encode failure. */
+function text_utf8(string $s): string {
+    if ($s === '' || mb_check_encoding($s, 'UTF-8')) return $s;
+    $c = @mb_convert_encoding($s, 'UTF-8', 'Windows-1252');
+    return is_string($c) && mb_check_encoding($c, 'UTF-8') ? $c : (string)mb_scrub($s, 'UTF-8');
+}
+
 /** Forget a memo, so the next read recomputes it. */
 function cache_delete(string $key): void { @unlink(cache_path($key)); }
 

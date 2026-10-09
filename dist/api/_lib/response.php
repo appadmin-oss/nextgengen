@@ -19,7 +19,16 @@ declare(strict_types=1);
 function json_send(array $payload, int $status = 0): void {
     if ($status) http_response_code($status);
     $body = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    if ($body === false) {   // non-UTF8 in the payload — never emit a blank 200
+    /* Text from outside — an SMTP server's error line, a provider's reply, a
+       name typed in another encoding — can carry bytes that are not UTF-8,
+       and one such byte used to throw the whole answer away as encode_failed
+       (which is how "the test email fails" hid WHY it failed). Replace the bad
+       bytes and send the rest. */
+    if ($body === false && defined('JSON_INVALID_UTF8_SUBSTITUTE')) {
+        error_log('[json_send] invalid UTF-8 in a response, substituted: ' . json_last_error_msg());
+        $body = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+    }
+    if ($body === false) {   // still unencodable — never emit a blank 200
         http_response_code(500);
         $body = '{"ok":false,"error":"encode_failed"}';
     }

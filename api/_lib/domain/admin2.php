@@ -1125,12 +1125,22 @@ function admin_mail_test(array $p): array {
             $hints[] = 'PHPMailer is NOT present on the server (api/_lib/phpmailer/ missing from this deploy) — SMTP is using the fallback client, which fails against Gmail. Re-upload api/_lib/phpmailer/.';
         }
     }
+    // When it did not go: name the likely cause from the error, and where to fix it now.
+    $errText = text_utf8((string)($GLOBALS['__mail_last_error'] ?? ''));
+    if (!$delivered) {
+        if (preg_match('/connect|timed? ?out|network is unreachable|refused|could not connect/i', $errText)) {
+            $hints[] = 'This server could not reach the mail server at all — most shared hosts block outbound SMTP ports (25, 465, 587). Use Resend instead (email over HTTPS): Settings → API keys → Resend, and remove the SMTP server there or in api/config.php.';
+        } elseif (preg_match('/auth|535|534|username|password|credentials/i', $errText)) {
+            $hints[] = 'The mail server refused the sign-in. For Gmail or Workspace use an App Password, not the account password. Change it in Settings → API keys → Email (SMTP).';
+        }
+        $hints[] = 'SMTP, Resend and the sender address can all be set in Control Room → Settings → API keys, without editing api/config.php.';
+    }
     $phpmailer = function_exists('ngg_load_phpmailer') && ngg_load_phpmailer();
     // ok:true = the diagnostic ran; `delivered` says whether the send succeeded.
     return [
         'ok' => true, 'delivered' => $delivered, 'to' => $to, 'mode' => $mode,
         'phpmailer' => $phpmailer,
-        'error' => (string)($GLOBALS['__mail_last_error'] ?? ''),
+        'error' => $errText,
         'from' => (string)$from['email'], 'fromName' => (string)$from['name'],
         'replyTo' => (string)$from['replyTo'], 'fromDomain' => $fromDomain,
         'smtp' => $mode === 'smtp' ? [

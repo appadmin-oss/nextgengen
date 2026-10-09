@@ -11013,6 +11013,8 @@ function AdminCentres() {
     .then(r => { setCentres(r.centres || []); setLeadOptions(r.leadOptions || []); setCanWrite(r.canWrite !== false); setErr(""); })
     .catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
+  // A centre added from the Control Room's own "Add a centre" form appears here at once.
+  React.useEffect(() => { const f = () => load(); window.addEventListener("ngg:centres-changed", f); return () => window.removeEventListener("ngg:centres-changed", f); }, []);
   const add = async (e) => {
     e && e.preventDefault();
     setBusy(true);
@@ -11108,8 +11110,9 @@ function AdminCentres() {
           to add or amend one.
         </p>
       )}
+      {canWrite && <h3 className="admin-h3">Add a centre</h3>}
       {canWrite && (
-        <form onSubmit={add} className="admin-filters" style={{ alignItems: "center" }}>
+        <form onSubmit={add} className="admin-filters" style={{ alignItems: "center" }} aria-label="Add a centre">
           <input className="admin-input" placeholder="Centre name" aria-label="New centre name" value={d.name} onChange={e => setD({ ...d, name: e.target.value })} style={{ minWidth: 200 }}/>
           <input className="admin-input" placeholder="CODE" aria-label="New centre code (1–4 letters, the printed ID prefix)" value={d.code} maxLength={4} onChange={e => setD({ ...d, code: e.target.value.toUpperCase() })} style={{ maxWidth: 100 }}/>
           <input type="color" aria-label="New centre card colour" value={d.color} onChange={e => setD({ ...d, color: e.target.value })} style={{ width: 44, height: 38, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)", cursor: "pointer" }}/>

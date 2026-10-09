@@ -2978,9 +2978,12 @@ function admin_centres_upsert(array $p): array {
     // The code is the printed ID prefix — it must stay unique across centres.
     $clash = db_row('SELECT centreId FROM centres WHERE code = ? LIMIT 1', [$code]);
     if ($clash && (!$existing || $clash['centreId'] !== $id)) return ['ok' => false, 'error' => 'code_taken'];
-    $row = ['name' => $name, 'code' => $code, 'color' => $color,
-        'status' => in_array((string)($d['status'] ?? 'active'), ['active', 'archived'], true) ? (string)($d['status'] ?? 'active') : 'active',
-        'updatedAt' => now_iso()];
+    $row = ['name' => $name, 'code' => $code, 'color' => $color, 'updatedAt' => now_iso()];
+    /* Status moves only when the edit says so. An edit of the address used to
+       reset every centre to active — quietly bringing a retired or archived
+       centre back into every picker. A new centre starts active. */
+    if (array_key_exists('status', $d)) $row['status'] = in_array((string)$d['status'], ['active', 'archived'], true) ? (string)$d['status'] : 'active';
+    elseif (!$existing) $row['status'] = 'active';
     if (array_key_exists('capacity', $d)) $row['capacity'] = max(0, (int)$d['capacity']);
     if (array_key_exists('programmes', $d)) {
         $pr = centre_programmes_clean($d['programmes']);

@@ -114,6 +114,18 @@ function cleanup() {
     if (conf) await conf.click();
     await pg.waitForFunction(() => /Not set/.test(document.querySelector('article.cr-key[aria-label="Groq"]')?.innerText || ''), null, { timeout: 30000 });
     chk('Remove takes it away again', true);
+    // Centres: found from the page header, added through a labelled form.
+    await pg.goto(BASE + '/control/members/centres', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(pg);
+    await pg.waitForSelector('button:has-text("Add a centre")', { timeout: 60000 });
+    await pg.click('.cr-head-acts button:has-text("Add a centre")');
+    await pg.waitForSelector('form[aria-label="Add a centre"]');
+    await pg.fill('form[aria-label="Add a centre"] #crf-name', 'Ikorodu');
+    await pg.fill('form[aria-label="Add a centre"] #crf-code', 'ik');
+    await pg.click('form[aria-label="Add a centre"] button[type=submit]');
+    await pg.waitForFunction(() => /Ikorodu/.test(document.querySelector('.admin-section')?.innerText || ''), null, { timeout: 30000 });
+    chk('Members → Centres: “Add a centre” in the header adds an NGG centre, and it appears in the directory at once',
+      php(`echo json_encode(db_row("SELECT code, programmes, status FROM centres WHERE name = 'Ikorodu'"));`, ['bootstrap']) === '{"code":"IK","programmes":"ngg","status":"active"}');
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
   } catch (e) {

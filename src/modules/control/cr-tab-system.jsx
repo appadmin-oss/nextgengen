@@ -857,7 +857,8 @@ Object.assign(CR_TAB_DEFS, {
       crSyGenCtx.current = ctx;
       return [
         { type: "note", span: 6, icon: "compass", text: "Settings are grouped by what they change. Attendance times, what is printed on cards, and the keys that connect outside services each have their own tab above.",
-          act: { l: "Open API keys", run: () => ctx.go("settings", "keys") } },
+          sub: "Looking for centres? They are records, not settings: Members → Centres, where “Add a centre” is at the top.",
+          act: { l: "Open Centres", run: () => ctx.go("members", "centres") } },
         Object.assign(d.formMain, { title: "Programme" }),
         d.promoErr ? { type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the homepage banner. " + crErr(d.promoErr, ""), act: { l: "Try again", run: () => ctx.reload() } }
           : Object.assign(d.formPromo, { title: "Homepage promo banner" }),

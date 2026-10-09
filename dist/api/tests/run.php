@@ -25119,5 +25119,16 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-KEYS-2'");
 })();
 
+chk('centres: an edit that does not mention status leaves a retired centre retired', (function () {
+    $r = backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['name' => 'Retire Test', 'code' => 'RTQ', 'color' => '#336699', 'programmes' => ['ngg']]]);
+    $id = (string)($r['centre']['centreId'] ?? $r['centreId'] ?? db_row("SELECT centreId FROM centres WHERE code = 'RTQ'")['centreId'] ?? '');
+    db_exec("UPDATE centres SET status = 'retired' WHERE centreId = ?", [$id]);
+    backend_dispatch('admin.centres.upsert', ['requesterId' => 'NGG-2025-0099', 'data' => ['centreId' => $id, 'name' => 'Retire Test', 'code' => 'RTQ', 'color' => '#336699', 'address' => '1 New Road']]);
+    $st = db_row('SELECT status, address FROM centres WHERE centreId = ?', [$id]);
+    db_exec('DELETE FROM centres WHERE centreId = ?', [$id]);
+    return $id !== '' && $st['status'] === 'retired' && $st['address'] === '1 New Road';
+})());
+chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply can always be encoded', text_utf8("Connexion refus\xe9e") === 'Connexion refusée'
+    && text_utf8('already fine — ok') === 'already fine — ok' && json_encode(['e' => text_utf8("bad \xff\xfe bytes")]) !== false);
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
