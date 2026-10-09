@@ -16,6 +16,9 @@ declare(strict_types=1);
  */
 
 const NGG_SCHEMA_TARGET = 136;
+/** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
+ *  created fresh records it as done: there is nothing to split. */
+const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -4067,6 +4070,15 @@ function db_migrate(PDO $db): void {
             if ($db->inTransaction()) $db->rollBack();
             throw new RuntimeException("migration $v failed: " . $e->getMessage(), (int)$e->getCode(), $e);
         }
+    }
+    /* A database built from nothing has no shared centres to split, so the
+       one-time split is recorded as done — it is for deployments that existed
+       before it, and must never run over a fresh install's first centres. */
+    if ($current === 0) {
+        try {
+            $st = $db->prepare('INSERT OR IGNORE INTO settings (settingKey, settingValue, updatedAt, updatedBy) VALUES (?, ?, ?, ?)');
+            $st->execute(['centres_split_seed', CENTRES_SPLIT_SEED, gmdate('Y-m-d\TH:i:s\Z'), 'install']);
+        } catch (Throwable $e) { /* settings missing: the seed's own empty check covers it */ }
     }
 }
 

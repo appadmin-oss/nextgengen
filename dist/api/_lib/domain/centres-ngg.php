@@ -46,7 +46,6 @@ const NGG_DEFAULT_CENTRES = [
     ['name' => 'Egbeda', 'codes' => ['EGB', 'EGD', 'NEG', 'EG'], 'color' => '#E9A21B'],
     ['name' => 'Ayobo',  'codes' => ['AYO', 'AYB', 'NAY', 'AY'], 'color' => '#76B043'],
 ];
-const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
 const GEO_CACHE_DAYS = 30;
 
 /** A place name reduced to what identifies it: "NGG Egbeda Centre" → "egbeda". */
