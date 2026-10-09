@@ -245,6 +245,16 @@ function member_card_lookup(?string $token, ?string $format = null, ?string $val
  * initials only and no photograph. (A replaced card never reaches here.)
  */
 function member_card_public(array $m, bool $secure): array {
+    /* Opened by an older card's printed number or member id — both guessable,
+       and minted in sequence. It confirms only what the number itself claims:
+       that it is a member card, and whether that membership is active. No
+       initials, centre, course, division or status detail: a guessable number
+       must not become a directory of children. */
+    if (!$secure) {
+        return ['kind' => 'member', 'secure' => false, 'displayId' => (string)($m['displayId'] ?? ''),
+            'active' => (string)($m['status'] ?? 'active') === 'active',
+            'fullName' => '', 'initials' => '', 'photoUrl' => '', 'centre' => '', 'track' => '', 'division' => '', 'attendance' => [], 'attendanceCount' => 0];
+    }
     $division = function_exists('club_division_of') ? club_division_of((string)($m['track'] ?? '')) : '';
     $meta = null;
     if ($division !== '' && function_exists('club_divisions')) foreach (club_divisions() as $d) if ($d['name'] === $division) $meta = $d;

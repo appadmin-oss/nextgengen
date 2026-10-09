@@ -332,18 +332,27 @@ function admin_ids_mint(array $p): array {
     $ids = array_values(array_unique(array_filter(array_map(fn($x) => trim((string)$x), (array)($p['memberIds'] ?? [])))));
     if (!$ids) return ['ok' => false, 'error' => 'no_items'];
     if (count($ids) > IDS_BATCH_MAX) return ['ok' => false, 'error' => 'too_many', 'message' => 'At most ' . IDS_BATCH_MAX . ' at a time.'];
-    $issued = []; $refused = []; $reserved = [];
+    $issued = []; $refused = []; $reserved = []; $codes = [];
+    $codesOnly = !empty($p['codesOnly']);
     foreach ($ids as $id) {
         $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
         if (!$m) { $refused[] = ['memberId' => $id, 'error' => 'not_found']; continue; }
         if (!member_is_ngg($m)) { $refused[] = ['memberId' => $id, 'error' => 'not_ngg']; continue; }
         if (!admin_centre_allowed($g['requester'], (string)($m['centre'] ?? ''))) { $refused[] = ['memberId' => $id, 'error' => 'out_of_scope']; continue; }
+        /* The card about to print carries the member's SECURE code in its QR
+           (what /q/ opens in full). Issued here, at print, for this operator's
+           own centres — not when somebody merely lists the roster. */
+        if ((string)($m['status'] ?? 'active') === 'active' && function_exists('member_cards_ensure')) {
+            $c = member_cards_ensure($m, (string)$g['requester']['memberId'], 'print')['secure'];
+            if ($c) $codes[$id] = $c;
+        }
+        if ($codesOnly) continue;
         if ((string)($m['displayId'] ?? '') !== '') { $refused[] = ['memberId' => $id, 'error' => 'unchanged', 'displayId' => (string)$m['displayId']]; continue; }
         $did = member_mint_display_id($m, $reserved);
         $reserved[] = $did;
         db_update('members', ['displayId' => $did, 'updatedAt' => now_iso()], ['memberId' => $id]);
         $issued[$id] = $did;
     }
-    audit('ids.mint', (string)$g['requester']['memberId'], '', ['issued' => count($issued), 'refused' => count($refused)], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'issued' => (object)$issued, 'refused' => $refused];
+    audit('ids.mint', (string)$g['requester']['memberId'], '', ['issued' => count($issued), 'refused' => count($refused), 'codes' => count($codes)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'issued' => (object)$issued, 'refused' => $refused, 'codes' => (object)$codes];
 }
