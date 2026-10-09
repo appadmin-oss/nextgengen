@@ -1160,6 +1160,28 @@ chk('password sign-in now works for the reset account', !empty(backend_dispatch(
 chk('gateway now offers password after reset', backend_dispatch('auth.gateway', ['identifier' => 'nopass@example.com'])['methods'] === ['code', 'password']);
 chk('reset challenge is single-use (consumed code no longer matches)', backend_dispatch('auth.resetConfirm', ['memberId' => 'NGG-2025-0770', 'otp' => $rsRow['otp'], 'password' => 'anotherpass12'])['error'] === 'invalid');
 chk('reset token replay after use → already_used', backend_dispatch('auth.resetConfirm', ['token' => $rsRow['token'], 'password' => 'anotherpass12'])['error'] === 'already_used');
+(function () {
+    // Guessing the emailed code: only the newest code counts, and five misses lock the account's resets.
+    backend_dispatch('auth.resetRequest', ['identifier' => 'nopass@example.com']);
+    $ch = db_row("SELECT * FROM auth_sessions WHERE memberId='NGG-2025-0770' AND purpose='reset' ORDER BY id DESC LIMIT 1");
+    $wrong = str_pad((string)(((int)$ch['otp'] + 1) % 1000000), 6, '0', STR_PAD_LEFT);
+    db_insert('device_sessions', ['sid' => 'SID-RESET-1', 'memberId' => 'NGG-2025-0770', 'ip' => '', 'userAgent' => 'x', 'uaHash' => 'x', 'createdAt' => now_iso(), 'lastSeenAt' => now_iso()]);
+    attempt_reset('reset.otp', 'NGG-2025-0770');   // the single-use check above spent one guess
+    $errs = [];
+    for ($i = 0; $i < 5; $i++) $errs[] = backend_dispatch('auth.resetConfirm', ['memberId' => 'NGG-2025-0770', 'otp' => $wrong, 'password' => 'guesspass12'])['error'] ?? '';
+    chk('reset: five wrong codes, then the right one is refused too — guessing locks the reset', $errs === array_fill(0, 5, 'invalid')
+        && backend_dispatch('auth.resetConfirm', ['memberId' => 'NGG-2025-0770', 'otp' => $ch['otp'], 'password' => 'guesspass12'])['error'] === 'too_many_attempts');
+    attempt_reset('reset.otp', 'NGG-2025-0770');
+    chk('reset: a code guessed at five times is dead, link and all', backend_dispatch('auth.resetConfirm', ['token' => $ch['token'], 'password' => 'tokenpass12'])['error'] === 'too_many_attempts');
+    backend_dispatch('auth.resetRequest', ['identifier' => 'nopass@example.com']);
+    $ch2 = db_row("SELECT * FROM auth_sessions WHERE memberId='NGG-2025-0770' AND purpose='reset' ORDER BY id DESC LIMIT 1");
+    $ok = backend_dispatch('auth.resetConfirm', ['token' => $ch2['token'], 'password' => 'tokenpass12']);
+    chk('reset: a fresh emailed link works, and a new password ends every other session', !empty($ok['ok'])
+        && db_row("SELECT revokedAt FROM device_sessions WHERE sid = 'SID-RESET-1'")['revokedAt'] !== '');
+    $w = auth_welcome_link('NGG-2025-0770');
+    chk('reset: a welcome link is token-only — no week-long six-digit code to guess', $w !== ''
+        && db_row("SELECT otp FROM auth_sessions WHERE memberId='NGG-2025-0770' AND purpose='reset' ORDER BY id DESC LIMIT 1")['otp'] === '');
+})();
 chk('reset request for an unknown account still looks ok (no oracle)', !empty(backend_dispatch('auth.resetRequest', ['identifier' => 'ghost-nobody@example.com'])['ok']));
 
 // ── Mail transport selection (Apps Script is preferred once wired, like CEO) ──

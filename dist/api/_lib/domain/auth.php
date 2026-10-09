@@ -224,7 +224,9 @@ function auth_verify(array $p): array {
     if (!empty($ch['verifiedAt'])) { audit('login.fail.replay', $ch['memberId'], '', [], $ip); return ['ok' => false, 'error' => 'already_used']; }
     if ((int)$ch['attempts'] >= 5) return ['ok' => false, 'error' => 'too_many_attempts'];
 
-    db_update('auth_sessions', ['verifiedAt' => now_iso()], ['id' => $ch['id']]);
+    if (db_exec("UPDATE auth_sessions SET verifiedAt = ? WHERE id = ? AND (verifiedAt = '' OR verifiedAt IS NULL)", [now_iso(), (int)$ch['id']]) !== 1) {
+        return ['ok' => false, 'error' => 'already_used'];
+    }
 
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$ch['memberId']]);
     if (!$member) return ['ok' => false, 'error' => 'member_gone'];
@@ -309,12 +311,22 @@ function auth_welcome_link(string $memberId, int $days = 7): string {
     $now = time();
     db_insert('auth_sessions', [
         'token' => $token, 'memberId' => (string)$m['memberId'], 'email' => (string)$m['email'],
-        'otp' => new_otp(), 'attempts' => 0, 'purpose' => 'reset',
+        // Token only: a seven-day six-digit code that is never sent anywhere is
+        // just a week-long target for guessing.
+        'otp' => '', 'attempts' => 0, 'purpose' => 'reset',
         'createdAt' => gmdate('Y-m-d\TH:i:s\Z', $now),
         'expiresAt' => gmdate('Y-m-d\TH:i:s\Z', $now + max(1, $days) * 86400),
         'verifiedAt' => '', 'ip' => '', 'userAgent' => 'welcome',
     ]);
     return rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/?reset=' . rawurlencode($token);
+}
+
+/** End every live device session a member holds (a password reset, say). Returns how many. */
+function auth_revoke_sessions(string $memberId, string $why = ''): int {
+    if ($memberId === '') return 0;
+    $n = db_exec("UPDATE device_sessions SET revokedAt = ? WHERE memberId = ? AND (revokedAt IS NULL OR revokedAt = '')", [now_iso(), $memberId]);
+    if ($n > 0) audit('member.sessions.revoked', $memberId, $memberId, ['count' => $n, 'why' => $why], '');
+    return $n;
 }
 
 /**
@@ -336,7 +348,18 @@ function auth_reset_confirm(array $p): array {
     if ($token !== '') {
         $ch = db_row("SELECT * FROM auth_sessions WHERE token = ? AND purpose = 'reset' LIMIT 1", [$token]);
     } elseif ($memberId !== '' && $otp !== '') {
-        $ch = db_row("SELECT * FROM auth_sessions WHERE memberId = ? AND otp = ? AND purpose = 'reset' AND (verifiedAt = '' OR verifiedAt IS NULL) ORDER BY id DESC LIMIT 1", [$memberId, $otp]);
+        // A six-digit code is guessable, and a match against ANY live code (as
+        // this once was) let a guesser spread tries across every challenge and
+        // every IP. So: only the newest emailed code counts, each wrong guess
+        // spends one of its five attempts, and the account itself locks after
+        // five misses whatever the challenge or address.
+        if (attempt_locked('reset.otp', $memberId)) return ['ok' => false, 'error' => 'too_many_attempts'];
+        $ch = db_row("SELECT * FROM auth_sessions WHERE memberId = ? AND purpose = 'reset' AND otp <> '' AND (verifiedAt = '' OR verifiedAt IS NULL) ORDER BY id DESC LIMIT 1", [$memberId]);
+        if ($ch && (int)$ch['attempts'] < 5 && !hash_equals((string)$ch['otp'], $otp)) {
+            db_exec('UPDATE auth_sessions SET attempts = attempts + 1 WHERE id = ?', [(int)$ch['id']]);
+            $ch = null;
+        }
+        if (!$ch) attempt_fail('reset.otp', $memberId, 5, 1800);
     } else {
         return ['ok' => false, 'error' => 'no_credentials'];
     }
@@ -350,9 +373,15 @@ function auth_reset_confirm(array $p): array {
     if (!$member) return ['ok' => false, 'error' => 'member_gone'];
     if ((string)$member['status'] === 'suspended') return ['ok' => false, 'error' => 'account_suspended'];
 
-    db_update('auth_sessions', ['verifiedAt' => now_iso()], ['id' => $ch['id']]);
+    // Consume it conditionally: two requests racing on one challenge must not both win.
+    if (db_exec("UPDATE auth_sessions SET verifiedAt = ? WHERE id = ? AND (verifiedAt = '' OR verifiedAt IS NULL)", [now_iso(), (int)$ch['id']]) !== 1) {
+        return ['ok' => false, 'error' => 'already_used'];
+    }
     db_update('members', ['passwordHash' => password_hash_best($new), 'updatedAt' => now_iso()], ['id' => $member['id']]);
     auth_fail_reset($member);
+    attempt_reset('reset.otp', (string)$member['memberId']);
+    // A new password ends every session signed in with the old one.
+    if (function_exists('auth_revoke_sessions')) auth_revoke_sessions((string)$member['memberId'], 'password_reset');
     audit('password.reset.success', $member['memberId'], (string)$member['memberId'], [], $ip);
     return ['ok' => true, 'member' => public_member($member)];
 }
