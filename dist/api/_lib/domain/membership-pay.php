@@ -395,8 +395,22 @@ function membership_paystack_verify(string $reference): array {
     $invoiceId = (string)($d['metadata']['invoiceId'] ?? '');
     $inv = $invoiceId !== '' ? membership_invoice_by('invoiceId', $invoiceId) : membership_invoice_by('paystackRef', $reference);
     if (!$inv) return ['ok' => false, 'error' => 'not_found'];
+    $succeeded = !empty($r['status']) && ($d['status'] ?? '') === 'success';
+    /* Paid at Paystack, but the invoice is no longer open — voided, or paid
+       another way in the meantime. The family's money arrived; it is put on
+       the record for a person to refund or apply, never dropped. Once per
+       reference. */
+    $appliedHere = (string)$inv['status'] === 'paid' && (string)$inv['paidVia'] === 'paystack' && (string)$inv['paystackRef'] === $reference;
+    if ($succeeded && (string)$inv['status'] !== 'open' && !$appliedHere
+        && !db_row("SELECT id FROM audit_log WHERE event = 'membership.paystack.unapplied' AND meta LIKE ? LIMIT 1", ['%"' . $reference . '"%'])) {
+        audit('membership.paystack.unapplied', 'paystack', (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $reference, 'amount' => (int)($d['amount'] ?? 0), 'currency' => (string)($d['currency'] ?? ''), 'invoiceStatus' => (string)$inv['status']]);
+    }
     if ((string)$inv['status'] === 'paid') return ['ok' => true, 'status' => 'paid', 'invoice' => $inv];
-    if (empty($r['status']) || ($d['status'] ?? '') !== 'success') return ['ok' => true, 'status' => (string)($d['status'] ?? 'pending'), 'invoice' => $inv];
+    if ((string)$inv['status'] !== 'open') {
+        if ($succeeded) return ['ok' => false, 'error' => 'not_open', 'detail' => 'This invoice was cancelled after the payment started. The payment is recorded and the centre will refund or apply it.'];
+        return ['ok' => true, 'status' => (string)$inv['status'], 'invoice' => $inv];
+    }
+    if (!$succeeded) return ['ok' => true, 'status' => (string)($d['status'] ?? 'pending'), 'invoice' => $inv];
     if ((string)($d['reference'] ?? '') !== $reference || (int)($d['amount'] ?? 0) !== (int)$inv['total'] * 100
         || strtoupper((string)($d['currency'] ?? '')) !== strtoupper((string)$inv['currency'])) {
         audit('membership.paystack.mismatch', null, (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $reference, 'amount' => (int)($d['amount'] ?? 0), 'currency' => (string)($d['currency'] ?? '')]);
@@ -439,9 +453,14 @@ function membership_staff_name(string $id): string {
     return $r ? (string)$r['fullName'] : $id;
 }
 
-function membership_invoice_row(array $inv, array $members, array $pending): array {
+function membership_invoice_row(array $inv, array $members, array $pending, string $me = ''): array {
     $m = $members[(string)$inv['memberId']] ?? [];
     $op = $pending[(string)$inv['invoiceId']] ?? null;
+    /* The verifier types the reference and amount from the STATEMENT; shown the
+       recorded reference first, a verifier could copy it instead of checking.
+       Only the person who recorded a waiting claim sees its reference. */
+    $hideRef = $op && (string)$op['status'] === 'pending' && (string)$op['recordedBy'] !== $me;
+    $prior = $op ? (int)(db_row("SELECT COUNT(*) c FROM offline_payments WHERE referenceKey = ? AND status = 'rejected' AND paymentId <> ?", [(string)$op['referenceKey'], (string)$op['paymentId']])['c'] ?? 0) : 0;
     return [
         'invoiceId' => (string)$inv['invoiceId'], 'memberId' => (string)$inv['memberId'],
         'name' => (string)($m['fullName'] ?? ''), 'displayId' => (string)($m['displayId'] ?? ''), 'centre' => (string)($m['centre'] ?? ''),
@@ -452,7 +471,7 @@ function membership_invoice_row(array $inv, array $members, array $pending): arr
         'offline' => $op ? [
             'paymentId' => (string)$op['paymentId'], 'status' => (string)$op['status'], 'amount' => (int)$op['amount'], 'method' => (string)$op['method'],
             'methodLabel' => MPAY_METHODS[(string)$op['method']] ?? '', 'payerName' => (string)$op['payerName'], 'bankName' => (string)$op['bankName'],
-            'reference' => (string)$op['reference'], 'paidOn' => (string)$op['paidOn'], 'note' => (string)$op['note'], 'evidenceType' => (string)$op['evidenceType'],
+            'reference' => $hideRef ? '' : (string)$op['reference'], 'referenceHidden' => $hideRef, 'priorRejections' => $prior, 'paidOn' => (string)$op['paidOn'], 'note' => (string)$op['note'], 'evidenceType' => (string)$op['evidenceType'],
             'recordedBy' => (string)$op['recordedBy'], 'recordedByName' => membership_staff_name((string)$op['recordedBy']), 'recordedAt' => (string)$op['recordedAt'],
             'verifiedBy' => (string)$op['verifiedBy'], 'verifiedByName' => membership_staff_name((string)$op['verifiedBy']), 'verifiedAt' => (string)$op['verifiedAt'],
             'rejectReason' => (string)$op['rejectReason'],
@@ -490,12 +509,26 @@ function admin_membership_invoices(array $p): array {
         $k = (string)$op['invoiceId'];
         if (!isset($pending[$k]) || (string)$pending[$k]['status'] !== 'pending') $pending[$k] = $op;
     }
-    $out = array_map(static fn($r) => membership_invoice_row($r, $members, $pending), $rows);
+    $me = (string)$g['requester']['memberId'];
+    $out = array_map(static fn($r) => membership_invoice_row($r, $members, $pending, $me), $rows);
+    /* Money that arrived and could not be applied (a Paystack payment for an
+       invoice since voided or paid another way, or an amount that does not
+       match) — never silently dropped. In scope only. */
+    $alerts = [];
+    foreach (db_all("SELECT event, subject, meta, at FROM audit_log WHERE event IN ('membership.paystack.unapplied', 'membership.paystack.mismatch') ORDER BY id DESC LIMIT 100") as $a) {
+        if ($scope !== null && !admin_centre_allowed($g['requester'], (string)(db_row('SELECT centre FROM members WHERE memberId = ? LIMIT 1', [(string)$a['subject']])['centre'] ?? ''))) continue;
+        $meta = json_decode((string)$a['meta'], true) ?: [];
+        $alerts[] = ['kind' => $a['event'] === 'membership.paystack.mismatch' ? 'mismatch' : 'unapplied', 'memberId' => (string)$a['subject'], 'at' => (string)$a['at'],
+            'invoiceId' => (string)($meta['invoiceId'] ?? ''), 'reference' => (string)($meta['reference'] ?? ''), 'amount' => (int)round(((int)($meta['amount'] ?? 0)) / 100), 'status' => (string)($meta['invoiceStatus'] ?? '')];
+        if (count($alerts) >= 30) break;
+    }
     $counts = [];
     foreach (db_all('SELECT status, COUNT(*) c FROM membership_invoices WHERE 1 = 1' . $scopeSql . ' GROUP BY status', $scopeArgs) as $c) $counts[(string)$c['status']] = (int)$c['c'];
     $counts['pending'] = (int)(db_row("SELECT COUNT(*) c FROM offline_payments WHERE status = 'pending' AND invoiceId IN (SELECT invoiceId FROM membership_invoices WHERE 1 = 1" . $scopeSql . ')', $scopeArgs)['c'] ?? 0);
+    $pb = membership_bank_pending();
     return ['ok' => true, 'invoices' => $out, 'counts' => $counts, 'terms' => membership_fee_terms(), 'bank' => membership_pay_settings(),
-            'methods' => MPAY_METHODS, 'me' => (string)$g['requester']['memberId'], 'evidenceMax' => MPAY_EVIDENCE_MAX];
+            'bankPending' => $pb ? ['bank' => $pb['bank'], 'by' => (string)$pb['by'], 'byName' => membership_staff_name((string)$pb['by']), 'at' => (string)$pb['at']] : null,
+            'alerts' => $alerts, 'methods' => MPAY_METHODS, 'me' => $me, 'evidenceMax' => MPAY_EVIDENCE_MAX];
 }
 
 function membership_invoice_for_staff(array $g, string $invoiceId): array {
@@ -550,17 +583,89 @@ function admin_membership_invoice_void(array $p): array {
     return ['ok' => true];
 }
 
-/** admin.membership.bank.set — the transfer details printed on invoices. */
-function admin_membership_bank_set(array $p): array {
+/* ── The account families pay into ────────────────────────────────────────
+
+   Whoever can change it can send every family's money to themselves, so one
+   person cannot. Changing it takes the Fees AND Settings permissions, across
+   the whole organisation (no centre scope), and is a PROPOSAL until a second
+   such person confirms it by retyping the new account number. Every holder
+   of the Fees permission is told, so a change nobody expected is seen the day
+   it is made. Setting the details the first time, when there is no account to
+   divert from, is one step. */
+
+/** Who may propose or confirm a change of account: fees + settings, unscoped. */
+function membership_bank_gate(array $p): array {
     $g = admin_cap_gate($p, 'fees'); if (!$g['ok']) return $g;
+    if (!in_array('settings', member_effective_caps($g['requester']), true)) return ['ok' => false, 'error' => 'forbidden', 'detail' => 'Changing the bank account takes the Settings permission as well as Fees.'];
+    if (admin_centre_names_in_scope($g['requester']) !== null) return ['ok' => false, 'error' => 'out_of_scope', 'detail' => 'The account is the whole organisation’s; a centre-scoped account cannot change it.'];
+    return $g;
+}
+function membership_bank_pending(): ?array {
+    $s = setting_get('membership_pay_pending');
+    return is_array($s) && !empty($s['bank']['accountNumber']) ? $s : null;
+}
+/** Tell everybody who holds Fees that the account changed (or that a change is waiting). */
+function membership_bank_notify(string $subject, string $body, string $except = ''): int {
+    $n = 0;
+    foreach (db_all("SELECT memberId, fullName, email, role, capsExtra FROM members WHERE status = 'active' AND email <> '' LIMIT 500") as $m) {
+        if ((string)$m['memberId'] === $except || !in_array('fees', member_effective_caps($m), true)) continue;
+        if (function_exists('send_mail') && send_mail((string)$m['email'], $subject, email_template(['title' => $subject, 'intro' => $body]))) $n++;
+    }
+    return $n;
+}
+
+/** admin.membership.bank.set — propose new transfer details (or set them the first time). */
+function admin_membership_bank_set(array $p): array {
+    $g = membership_bank_gate($p); if (!$g['ok']) return $g;
+    $by = (string)$g['requester']['memberId'];
     $d = is_array($p['bank'] ?? null) ? $p['bank'] : [];
     $num = preg_replace('/\D+/', '', (string)($d['accountNumber'] ?? ''));
-    if ($num !== '' && strlen($num) !== 10) return ['ok' => false, 'error' => 'bad_account_number', 'detail' => 'A Nigerian account number (NUBAN) is 10 digits.'];
+    if (strlen($num) !== 10) return ['ok' => false, 'error' => 'bad_account_number', 'detail' => 'A Nigerian account number (NUBAN) is 10 digits.'];
     $clean = ['bankName' => mb_substr(trim((string)($d['bankName'] ?? '')), 0, 80), 'accountName' => mb_substr(trim((string)($d['accountName'] ?? '')), 0, 120), 'accountNumber' => $num];
-    setting_set('membership_pay', $clean, (string)$g['requester']['memberId']);
-    audit('membership.bank.set', (string)$g['requester']['memberId'], '', $clean, (string)($p['ip'] ?? ''));
+    if (mb_strlen($clean['bankName']) < 2 || mb_strlen($clean['accountName']) < 3) return ['ok' => false, 'error' => 'bank_required', 'detail' => 'The bank and the account name.'];
+    $cur = membership_pay_settings();
+    if ($cur['accountNumber'] === '') {
+        setting_set('membership_pay', $clean, $by);
+        audit('membership.bank.set', $by, '', $clean + ['first' => true], (string)($p['ip'] ?? ''));
+        membership_bank_notify('NGG payments: bank details set', 'The account printed on joining invoices is now ' . $clean['bankName'] . ' · ' . $clean['accountName'] . ' · ' . $clean['accountNumber'] . ', set by ' . membership_staff_name($by) . '.', $by);
+        if (function_exists('cache_invalidate')) cache_invalidate('catalogue');
+        return ['ok' => true, 'applied' => true, 'bank' => membership_pay_settings()];
+    }
+    if ($clean === $cur) return ['ok' => true, 'unchanged' => true, 'bank' => $cur];
+    setting_set('membership_pay_pending', ['bank' => $clean, 'by' => $by, 'at' => now_iso()], $by);
+    audit('membership.bank.proposed', $by, '', $clean + ['from' => $cur['accountNumber']], (string)($p['ip'] ?? ''));
+    membership_bank_notify('NGG payments: a change of bank account is waiting', membership_staff_name($by) . ' asked to change the account on joining invoices from ' . $cur['accountNumber'] . ' to ' . $clean['bankName'] . ' · ' . $clean['accountName'] . ' · ' . $clean['accountNumber'] . '. It takes effect only when another member of staff with the Fees and Settings permissions confirms it in Control Room → Money → Membership payments. If you did not expect this, cancel it there.', $by);
+    return ['ok' => true, 'applied' => false, 'pending' => membership_bank_pending(), 'bank' => $cur];
+}
+
+/** admin.membership.bank.confirm — a second person retypes the new account number, and it applies. */
+function admin_membership_bank_confirm(array $p): array {
+    $g = membership_bank_gate($p); if (!$g['ok']) return $g;
+    $by = (string)$g['requester']['memberId'];
+    $pend = membership_bank_pending();
+    if (!$pend) return ['ok' => false, 'error' => 'nothing_pending'];
+    if ($by === (string)$pend['by']) return ['ok' => false, 'error' => 'needs_second_person', 'detail' => 'You proposed this change. Another member of staff with the Fees and Settings permissions must confirm it.'];
+    if (preg_replace('/\D+/', '', (string)($p['confirmAccountNumber'] ?? '')) !== (string)$pend['bank']['accountNumber']) {
+        audit('membership.bank.confirm_mismatch', $by, '', [], (string)($p['ip'] ?? ''));
+        return ['ok' => false, 'error' => 'account_mismatch', 'detail' => 'The account number you typed is not the one proposed. Check it with the bank’s own letter or statement.'];
+    }
+    $from = membership_pay_settings();
+    setting_set('membership_pay', $pend['bank'], $by);
+    setting_set('membership_pay_pending', [], $by);
+    audit('membership.bank.set', $by, '', $pend['bank'] + ['proposedBy' => $pend['by'], 'from' => $from['accountNumber']], (string)($p['ip'] ?? ''));
+    membership_bank_notify('NGG payments: the bank account changed', 'Joining invoices now show ' . $pend['bank']['bankName'] . ' · ' . $pend['bank']['accountName'] . ' · ' . $pend['bank']['accountNumber'] . ' (was ' . $from['accountNumber'] . '). Proposed by ' . membership_staff_name((string)$pend['by']) . ', confirmed by ' . membership_staff_name($by) . '.');
     if (function_exists('cache_invalidate')) cache_invalidate('catalogue');
-    return ['ok' => true, 'bank' => membership_pay_settings()];
+    return ['ok' => true, 'applied' => true, 'bank' => membership_pay_settings()];
+}
+
+/** admin.membership.bank.cancel — withdraw a proposed change (anyone who may make one). */
+function admin_membership_bank_cancel(array $p): array {
+    $g = membership_bank_gate($p); if (!$g['ok']) return $g;
+    $pend = membership_bank_pending();
+    if (!$pend) return ['ok' => true, 'unchanged' => true];
+    setting_set('membership_pay_pending', [], (string)$g['requester']['memberId']);
+    audit('membership.bank.cancelled', (string)$g['requester']['memberId'], '', ['proposedBy' => $pend['by'], 'accountNumber' => $pend['bank']['accountNumber']], (string)($p['ip'] ?? ''));
+    return ['ok' => true];
 }
 
 /** A reference as it is compared: upper case, letters and digits only. */
@@ -623,6 +728,16 @@ function admin_membership_offline_record(array $p): array {
         audit('membership.offline.reused_evidence', $by, (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId']], (string)($p['ip'] ?? ''));
         return ['ok' => false, 'error' => 'evidence_reused', 'detail' => 'This exact file has already been used as evidence for a payment.'];
     }
+    /* A reference that was REJECTED is not free again: a claim turned down
+       because the money never arrived must not come back next week with a new
+       photo. It can be recorded again only on purpose (`resubmit`), and the
+       verifier then sees how many times it was refused before. */
+    $rej = db_row("SELECT paymentId, rejectReason FROM offline_payments WHERE referenceKey = ? AND status = 'rejected' ORDER BY id DESC LIMIT 1", [$refKey]);
+    if ($rej && empty($p['resubmit'])) {
+        audit('membership.offline.rejected_reference', $by, (string)$inv['memberId'], ['invoiceId' => $inv['invoiceId'], 'reference' => $reference, 'rejected' => $rej['paymentId']], (string)($p['ip'] ?? ''));
+        return ['ok' => false, 'error' => 'reference_rejected', 'detail' => 'A payment with the reference ' . $reference . ' was rejected before (' . $rej['paymentId'] . ': ' . $rej['rejectReason'] . '). Record it again only if you are sure, and say why in the note.'];
+    }
+    if ($rej && mb_strlen(trim((string)($p['note'] ?? ''))) < MPAY_REASON_MIN) return ['ok' => false, 'error' => 'note_required', 'detail' => 'Say in the note why a rejected reference is being recorded again.'];
     $dupe = db_row("SELECT invoiceId FROM offline_payments WHERE referenceKey = ? AND status <> 'rejected' LIMIT 1", [$refKey]);
     if (!$dupe) foreach (db_all("SELECT reference FROM member_ledger WHERE kind = 'payment' AND reference <> ''") as $lr) if (membership_ref_key((string)$lr['reference']) === $refKey) { $dupe = ['invoiceId' => 'the ledger']; break; }
     if ($dupe) {

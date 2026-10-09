@@ -6,7 +6,7 @@
  * POST {action:'revoke_others'} — sign out everywhere else.
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
-$s = require_session();
+$s = require_member_session();
 $mid = $s['mid'];
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 

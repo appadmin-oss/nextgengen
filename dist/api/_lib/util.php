@@ -200,6 +200,15 @@ function rand_hex(int $bytes): string { return bin2hex(random_bytes($bytes)); }
  * and the last resort is wide enough to be unique on its own rather than
  * returning a value known to be taken.
  */
+/** Is this id already somebody's, in any table a session can name? Accounts,
+ *  participants and volunteers all sign in by id, so their ids must not meet. */
+function id_taken_anywhere(string $id): bool {
+    foreach ([['members', 'memberId'], ['summer_students', 'studentId'], ['volunteers', 'volunteerId']] as [$t, $c]) {
+        try { if (db_row("SELECT 1 x FROM $t WHERE $c = ? LIMIT 1", [$id])) return true; } catch (\Throwable $e) {}
+    }
+    return false;
+}
+
 function new_id(string $prefix, string $table = '', string $column = ''): string {
     $mk = fn(int $digits) => $prefix . '-' . gmdate('Y') . '-'
         . str_pad((string)random_int(0, (int)(10 ** $digits) - 1), $digits, '0', STR_PAD_LEFT);
@@ -211,7 +220,7 @@ function new_id(string $prefix, string $table = '', string $column = ''): string
         $digits = $i < 6 ? 4 : ($i < 10 ? 6 : 8);
         $id = $mk($digits);
         try {
-            if (!db_row("SELECT 1 x FROM $table WHERE $column = ? LIMIT 1", [$id])) return $id;
+            if (!db_row("SELECT 1 x FROM $table WHERE $column = ? LIMIT 1", [$id]) && !id_taken_anywhere($id)) return $id;
         } catch (\Throwable $e) {
             return $mk(4);   // table not there yet — behave as before
         }

@@ -200,6 +200,8 @@ function admin_summer_enroll(array $p): array {
     // Sequential studentId within the cohort: SUM-<year>-####
     $n = (int)(db_row('SELECT COUNT(*) c FROM summer_students WHERE cohortId = ?', [$c['cohortId']])['c'] ?? 0) + 1;
     $studentId = $c['cohortId'] . '-' . str_pad((string)$n, 4, '0', STR_PAD_LEFT);
+    // Never an id a member account or a volunteer already signs in with.
+    while (id_taken_anywhere($studentId)) $studentId = $c['cohortId'] . '-' . str_pad((string)$n, 4, '0', STR_PAD_LEFT) . '-' . strtolower(rand_hex(2));
 
     // Public handle = "the name assigned to the QR" — slug + short suffix, unique.
     $base = summer_slug($name) ?: 'student';

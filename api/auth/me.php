@@ -14,7 +14,9 @@ if (!$s) json_ok(['member' => null, 'csrf' => $csrf]);
 // request — see session_touch().
 session_touch($s);
 
-$res = gs_call('auth.me', ['memberId' => $s['mid'] ?? '']);
+$kind = !empty($s['stu']) ? (strtolower((string)($s['role'] ?? '')) === 'volunteer' ? 'volunteer' : 'student') : (!empty($s['kiosk']) ? 'kiosk' : 'member');
+if (session_still_valid($s) !== '') { session_clear(); json_ok(['member' => null, 'csrf' => $csrf]); }
+$res = gs_call('auth.me', ['memberId' => $s['mid'] ?? '', 'kind' => $kind]);
 if (empty($res['ok'])) json_ok(['member' => null, 'csrf' => $csrf]);
 
 json_ok([

@@ -7852,7 +7852,8 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-face-tpl { display: block; object-fit: fill; }
 .ids-face-blank.is-bad { background: var(--ids-bad-bg); color: var(--ids-bad-fg); }
 .ids-face-up { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--ids-s0); }
-.ids-face-up img { position: absolute; left: 50%; top: 50%; }
+.ids-face-up-frame { position: absolute; left: 50%; top: 50%; overflow: hidden; }
+.ids-face-up-frame img { position: absolute; height: auto; max-width: none; max-height: none; display: block; }
 .ids-overview { width: 100%; display: flex; flex-direction: column; gap: 10px; }
 .ids-ov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 12px; }
 .ids-ov { display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: var(--ids-r); border: 1px solid var(--ids-line-2); background: var(--ids-s0); cursor: pointer; text-align: left; font-size: 12px; }

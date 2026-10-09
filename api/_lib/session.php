@@ -341,6 +341,13 @@ function require_session(): array {
             if (time() - $last > 300) {
                 try { db_update('device_sessions', ['lastSeenAt' => now_iso()], ['id' => $row['id']]); } catch (Throwable $e) {}
             }
+            // The cookie's role and status are a week old; the account's are now.
+            $why = function_exists('session_still_valid') ? session_still_valid($s) : '';
+            if ($why !== '') {
+                try { db_update('device_sessions', ['revokedAt' => now_iso()], ['id' => $row['id']]); } catch (Throwable $e) {}
+                session_clear();
+                json_error($why, $why === 'suspended' ? 403 : 401);
+            }
         } else {
             // No device row for a sid that should have one. Every session_issue()
             // inserts a row, and GC only removes rows revoked >30d ago, so a
@@ -352,6 +359,13 @@ function require_session(): array {
             if ($isStaff) { session_clear(); json_error('session_expired', 401); }
         }
     }
+    return $s;
+}
+
+/** A signed-in MEMBER account — never a card holder's or a desk's session. */
+function require_member_session(): array {
+    $s = require_session();
+    if (function_exists('session_is_cardholder') && session_is_cardholder($s)) json_error('forbidden', 403);
     return $s;
 }
 

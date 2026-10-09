@@ -75,6 +75,10 @@ function community_id_login(array $p): array {
             if ($person) $kind = 'volunteer';
         }
     } elseif ($idIn !== '' && strlen($phone) >= 7) {
+        /* The printed ID is on the card and the phone's last seven digits are
+         * the only secret, so guesses are counted per card as well as per
+         * address: eight misses lock that card's sign-in for half an hour. */
+        if (attempt_locked('card.login', strtoupper($idIn))) return ['ok' => false, 'error' => 'too_many_attempts'];
         $tail = fn($a, $b) => strlen($a) >= 7 && strlen($b) >= 7 && (substr($a, -7) === substr($b, -7));
         $cand = db_row("SELECT * FROM summer_students WHERE (displayId = ? OR studentId = ?) AND status = 'active' LIMIT 1", [$idIn, $idIn]);
         if ($cand) {
@@ -90,7 +94,11 @@ function community_id_login(array $p): array {
             }
         }
     }
-    if (!$person) return ['ok' => false, 'error' => 'bad_credentials'];
+    if (!$person) {
+        if ($token === '' && $idIn !== '') attempt_fail('card.login', strtoupper($idIn), 8, 1800);
+        return ['ok' => false, 'error' => 'bad_credentials'];
+    }
+    if ($token === '' && $idIn !== '') attempt_reset('card.login', strtoupper($idIn));
 
     // §2.3 — a suspension is "a 14-day total ban from the CACENTRE premises AND
     // digital channels", and eviction is a total termination of association.

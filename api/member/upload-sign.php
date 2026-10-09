@@ -16,7 +16,7 @@
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
 
-$s = require_session();
+$s = require_member_session();
 require_method('POST');
 
 // Cheap abuse throttle — a member should never need dozens of signatures/min.

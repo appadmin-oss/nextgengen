@@ -79,5 +79,32 @@ const urls = T.cphInfoUrls(P);
 chk('the face lookup asks for the landmarks only (no paid background removal re-run, no second request without a zoom)',
   urls.faces === 'https://res.cloudinary.com/ngg/image/upload/c_thumb,g_face,w_200,h_200,fl_getinfo/v17/ngg/headshot/abc.jpg' && urls.size === '' && urls.nSteps === 0);
 
+console.log('never stretched');
+// The drawn width in box pixels, and the height the browser gives it at the picture's own aspect.
+const drawn = (g, natW, natH, boxW) => ({ w: g.width / 100 * boxW, h: g.width / 100 * boxW * natH / natW });
+for (const [nw, nh, bw, bh] of [[600, 750, 404, 318], [1200, 400, 300, 300], [300, 900, 638, 446], [1000, 1000, 54, 85]]) {
+  const c = T.cphPlace(nw, nh, bw, bh, null, 'cover'), d = drawn(c, nw, nh, bw);
+  chk(`cover ${nw}×${nh} in ${bw}×${bh}: fills the box with no gap and keeps the picture's shape`,
+    d.w >= bw - 0.01 && d.h >= bh - 0.01 && c.left <= 0.0001 && c.top <= 0.0001 && c.left / 100 * bw + d.w >= bw - 0.01 && c.top / 100 * bh + d.h >= bh - 0.01);
+  const k = T.cphPlace(nw, nh, bw, bh, null, 'contain'), e = drawn(k, nw, nh, bw);
+  chk(`contain ${nw}×${nh} in ${bw}×${bh}: all of it inside the box, centred`,
+    e.w <= bw + 0.01 && e.h <= bh + 0.01 && (Math.abs(e.w - bw) < 0.01 || Math.abs(e.h - bh) < 0.01)
+    && Math.abs(k.left / 100 * bw + e.w / 2 - bw / 2) < 0.01 && Math.abs(k.top / 100 * bh + e.h / 2 - bh / 2) < 0.01);
+}
+const reg = T.cphPlace(600, 1800, 404, 318, { x: 100, y: 120, w: 400, h: 315 }, 'cover'), rd = drawn(reg, 600, 1800, 404);
+chk('a head-and-shoulders region fills the box: its top-left at the box’s corner, scaled by the region, not the picture',
+  Math.abs(rd.w - 600 * 404 / 400) < 0.5 && Math.abs(reg.left / 100 * 404 + 100 * 404 / 400) < 0.5 && Math.abs(reg.top / 100 * 318 + 120 * 404 / 400) < 0.5);
+chk('nothing measured yet: the box, never a guess', JSON.stringify(T.cphPlace(0, 0, 10, 10, null, 'cover')) === JSON.stringify({ left: 0, top: 0, width: 100, height: 100 }));
+
+console.log('the browser’s own face detector');
+const fb = T.cphFaceFromDetector([{ boundingBox: { x: 100, y: 200, width: 100, height: 120 } }, { boundingBox: { x: 400, y: 50, width: 200, height: 240 } }]);
+chk('a bare bounding box: the larger face, eyes 40% down it, 42% of its width apart', fb && fb.cx === 500 && Math.abs(fb.eyeY - 146) < 0.01 && Math.abs(fb.e - 84) < 0.01);
+const fl = T.cphFaceFromDetector([{ boundingBox: { x: 0, y: 0, width: 100, height: 100 },
+  landmarks: [{ type: 'eye', locations: [{ x: 30, y: 40 }] }, { type: 'eye', locations: [{ x: 70, y: 44 }] }, { type: 'mouth', locations: [{ x: 50, y: 80 }] }] }]);
+chk('with landmarks, the eyes themselves', fl && fl.cx === 50 && fl.eyeY === 42 && Math.abs(fl.e - Math.hypot(40, 4)) < 0.01);
+chk('no faces: nothing', T.cphFaceFromDetector([]) === null && T.cphFaceFromDetector(null) === null);
+const det = T.cphFrame(fb, 1000, 2400, 404 / 318);
+chk('a full-length photo framed by the browser’s detector is cropped to the head and shoulders', !!det && det.y < 146 && det.y + det.h > 146);
+
 console.log(`\n${failed ? '❌ FAIL' : '✅ PASS'}: ${passed} passed, ${failed} failed (card photos)`);
 process.exit(failed ? 1 : 0);

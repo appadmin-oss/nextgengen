@@ -321,6 +321,27 @@ function auth_welcome_link(string $memberId, int $days = 7): string {
     return rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . '/?reset=' . rawurlencode($token);
 }
 
+/**
+ * Is a signed member session still what the database says? The cookie is
+ * signed when it is issued and then carries its role and status for a week;
+ * a suspension, a demotion or a deleted account has to end it at the next
+ * request, not when it expires. Returns '' when it holds, else the refusal.
+ * Kiosk and card sessions carry no member row and are not checked here.
+ */
+function session_still_valid(array $s): string {
+    if (!empty($s['kiosk']) || !empty($s['stu']) || empty($s['sid'])) return '';
+    $m = db_row('SELECT role, status FROM members WHERE memberId = ? LIMIT 1', [(string)($s['mid'] ?? '')]);
+    if (!$m) return 'session_expired';
+    if ((string)$m['status'] === 'suspended') return 'suspended';
+    if (strtolower((string)$m['role']) !== strtolower((string)($s['role'] ?? ''))) return 'session_expired';
+    return '';
+}
+
+/** A card holder (a participant or a volunteer signed in with their ID card) is not a member account. */
+function session_is_cardholder(array $s): bool {
+    return !empty($s['stu']) || !empty($s['kiosk']) || in_array(strtolower((string)($s['role'] ?? '')), ['student', 'volunteer', 'kiosk'], true);
+}
+
 /** End every live device session a member holds (a password reset, say). Returns how many. */
 function auth_revoke_sessions(string $memberId, string $why = ''): int {
     if ($memberId === '') return 0;
@@ -431,7 +452,11 @@ function member_sessions_revoke(array $p): array {
 
 function auth_me(array $p): array {
     $mid = (string)($p['memberId'] ?? '');
-    $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$mid]);
+    /* A card session names its own table. A participant's id and a Summer
+     * account's id were minted in overlapping spaces, so looking in `members`
+     * first once handed a card holder somebody else's account. */
+    $kind = (string)($p['kind'] ?? '');
+    $member = in_array($kind, ['student', 'volunteer'], true) ? null : db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$mid]);
     if ($member) {
         $pm = public_member($member);
         /* Which Mentor Portal view, if any. /mentor had no link anywhere in the
@@ -445,7 +470,8 @@ function auth_me(array $p): array {
     }
     // Summer-student session (signed in with an ID card) — a minimal member
     // shape with no caps, so the app unlocks the Community but nothing else.
-    $stu = db_row("SELECT studentId, fullName, centre, photoUrl, track FROM summer_students WHERE studentId = ? AND status = 'active' LIMIT 1", [$mid]);
+    if ($kind === 'member') return ['ok' => false, 'error' => 'not_found'];
+    $stu = $kind === 'volunteer' ? null : db_row("SELECT studentId, fullName, centre, photoUrl, track FROM summer_students WHERE studentId = ? AND status = 'active' LIMIT 1", [$mid]);
     if ($stu) return ['ok' => true, 'member' => [
         'memberId' => (string)$stu['studentId'], 'fullName' => (string)$stu['fullName'], 'type' => 'SUMMER', 'role' => 'student',
         'caps' => [], 'centre' => (string)($stu['centre'] ?? ''), 'track' => (string)($stu['track'] ?? ''), 'photoUrl' => (string)($stu['photoUrl'] ?? ''),
@@ -453,7 +479,7 @@ function auth_me(array $p): array {
     // Volunteer-card session (instructors, mentors, coordinators). Without this
     // an instructor was signed in but every page reload resolved to not_found
     // and dropped them straight back out to the sign-in door.
-    $vol = db_row("SELECT volunteerId, fullName, role, centre, photoUrl FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$mid]);
+    $vol = $kind === 'student' ? null : db_row("SELECT volunteerId, fullName, role, centre, photoUrl FROM volunteers WHERE volunteerId = ? AND status = 'active' LIMIT 1", [$mid]);
     if ($vol) return ['ok' => true, 'member' => [
         'memberId' => (string)$vol['volunteerId'], 'fullName' => (string)$vol['fullName'], 'type' => 'VOLUNTEER', 'role' => 'volunteer',
         'caps' => [], 'centre' => (string)($vol['centre'] ?? ''), 'track' => (string)($vol['role'] ?? ''), 'photoUrl' => (string)($vol['photoUrl'] ?? ''),

@@ -11,7 +11,7 @@
  * between a self-service page and an enumeration endpoint over children.
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
-$s = require_session();
+$s = require_member_session();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {

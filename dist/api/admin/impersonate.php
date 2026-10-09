@@ -19,6 +19,12 @@ if ($action === 'stop') {
     if ($impBy === '') json_error('not_impersonating', 400);
     $admin = gs_call('auth.me', ['memberId' => $impBy]);
     if (empty($admin['ok'])) json_error('admin_gone', 400);
+    // Restored only to somebody who is still a super admin in good standing.
+    $row = db_row('SELECT role, status FROM members WHERE memberId = ? LIMIT 1', [$impBy]);
+    if (!$row || strtolower((string)$row['role']) !== 'super_admin' || (string)$row['status'] === 'suspended') {
+        session_clear();
+        json_error('forbidden', 403);
+    }
     // Restore the admin's session with adminOk=true. This is legitimate because
     // the `imp` claim proves they passed the 2FA gate below to start — there is
     // no path to "stop" that did not go through a fully-cleared "start".

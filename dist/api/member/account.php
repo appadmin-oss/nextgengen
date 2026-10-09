@@ -1,7 +1,7 @@
 <?php
 /** Member account self-service: email change, data export, account deletion. */
 require_once __DIR__ . '/../_lib/bootstrap.php';
-$s = require_session();
+$s = require_member_session();
 $mid = $s['mid'];
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 

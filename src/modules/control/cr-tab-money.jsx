@@ -765,6 +765,7 @@ function CrMembershipPayments({ ctx }) {
       { id: "paidOn", l: "Date paid", type: "date", req: true, check: v => v > today ? "That date is in the future." : "" },
       { id: "evidence", l: "Evidence", type: "file", req: true, accept: "image/jpeg,image/png,image/webp,application/pdf", help: "A clear photo or PDF of the slip, receipt or bank alert. A file can be used as evidence once." },
       { id: "note", l: "Note", type: "textarea", rows: 3, max: 500 },
+      { id: "resubmit", l: "This reference was rejected before, and I am recording it again on purpose (say why in the note)", type: "switch" },
     ],
     onSubmit: async v => {
       let evidence;
@@ -772,10 +773,10 @@ function CrMembershipPayments({ ctx }) {
       catch (e) { return { fieldErrors: { evidence: crMpErr(e, "That file couldn’t be read.") } }; }
       try {
         await NGGApi.admin.membership.record({ invoiceId: inv.invoiceId, method: v.method, amount: Number(String(v.amount).replace(/[^\d.]/g, "")),
-          payerName: v.payerName, bankName: v.method === "cash" ? "" : v.bankName, reference: v.reference, paidOn: v.paidOn, evidence, note: v.note || "" });
+          payerName: v.payerName, bankName: v.method === "cash" ? "" : v.bankName, reference: v.reference, paidOn: v.paidOn, evidence, note: v.note || "", resubmit: !!v.resubmit });
       } catch (e) {
         const code = e && e.code;
-        const field = { amount_mismatch: "amount", reference_reused: "reference", reference_required: "reference", evidence_reused: "evidence", evidence_type: "evidence", evidence_too_small: "evidence", evidence_too_large: "evidence",
+        const field = { amount_mismatch: "amount", reference_reused: "reference", reference_rejected: "reference", note_required: "note", reference_required: "reference", evidence_reused: "evidence", evidence_type: "evidence", evidence_too_small: "evidence", evidence_too_large: "evidence",
           date_in_future: "paidOn", date_before_invoice: "paidOn", bad_date: "paidOn", payer_required: "payerName", bank_required: "bankName" }[code];
         if (field) return { fieldErrors: { [field]: crMpErr(e) } };
         throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) });
@@ -835,13 +836,27 @@ function CrMembershipPayments({ ctx }) {
   };
   const copy = inv => { try { navigator.clipboard.writeText(inv.payUrl).then(() => ctx.toast("Payment link copied."), () => {}); } catch (_) {} };
   const bank = () => ctx.form({
-    title: "Bank details on invoices", intro: "Printed on every invoice and payment email for families who pay by transfer.",
-    submit: "Save", values: d.bank || {},
+    title: "Bank details on invoices", intro: d.bank && d.bank.accountNumber
+      ? "Printed on every invoice and payment email. A change is held until another member of staff with the Fees and Settings permissions confirms it, and everyone with Fees is emailed."
+      : "Printed on every invoice and payment email for families who pay by transfer.",
+    submit: d.bank && d.bank.accountNumber ? "Propose the change" : "Save", values: d.bank || {},
     fields: [{ id: "bankName", l: "Bank", req: true, max: 80 }, { id: "accountName", l: "Account name", req: true, max: 120 },
       { id: "accountNumber", l: "Account number", req: true, im: "numeric", pattern: /^\d{10}$/, patternMsg: "A Nigerian account number is 10 digits." }],
-    onSubmit: async v => { try { await NGGApi.admin.membership.bank(v); load(); } catch (e) { throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) }); } },
-    done: "Saved.",
+    onSubmit: async v => { try { const r = await NGGApi.admin.membership.bank(v); load(); return r; } catch (e) { throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) }); } },
+    done: (v, r) => r && r.applied === false ? "Proposed. It applies when a second person confirms it." : "Saved.",
   });
+  const bp = d.bankPending;
+  const bankConfirm = () => ctx.form({
+    title: "Confirm the new bank account", intro: bp ? bp.byName + " asked to change the account to " + bp.bank.bankName + " · " + bp.bank.accountName + ". Check it against the bank’s own letter or statement, then type the account number from THAT, not from this screen." : "",
+    submit: "Confirm the change",
+    fields: [{ id: "n", l: "Account number, from the bank’s document", req: true, im: "numeric", pattern: /^\d{10}$/, patternMsg: "A Nigerian account number is 10 digits." }],
+    onSubmit: async v => { try { await NGGApi.admin.membership.bankConfirm(v.n); load(); } catch (e) { if (e.code === "account_mismatch") return { fieldErrors: { n: crMpErr(e) } }; throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) }); } },
+    done: "The new account is on every invoice from now.",
+  });
+  const bankCancel = async () => {
+    if (!(await ctx.confirm({ title: "Cancel the proposed change?", body: "The account on invoices stays as it is.", cta: "Cancel the change" }))) return;
+    try { await NGGApi.admin.membership.bankCancel(); ctx.toast("Cancelled."); load(); } catch (e) { ctx.toast(crMpErr(e, "Couldn’t cancel it."), null, true); }
+  };
   const invoiceFor = () => ctx.form({
     title: "Invoice a member already on the roll", intro: "For an NGG member accepted before payments existed, or one starting later than planned. One joining invoice per member.",
     submit: "Create the invoice",
@@ -864,6 +879,10 @@ function CrMembershipPayments({ ctx }) {
       {!t.enabled && <div className="cr-box cr-mp-note is-warn"><CrIcon n="warning-circle"/><span>No invoices are made yet: switch on <b>Dues &amp; arrears</b> and set the membership fee and the monthly commitment fee. Accepting an NGG applicant then sends their family one invoice.</span>
         <button type="button" className="cr-btn is-sm" onClick={() => window.__adminSection && window.__adminSection("fees")}>Open Dues &amp; arrears</button></div>}
       {t.enabled && !t.paystack && <div className="cr-box cr-mp-note is-warn"><CrIcon n="warning-circle"/><span>Paystack isn’t set up, so families can only pay offline. Set <code>paystack.secret</code> in api/config.php and point the Paystack webhook at <code>/api/hooks/paystack.php</code>.</span></div>}
+      {bp && <div className="cr-box cr-mp-note is-warn"><CrIcon n="warning-circle"/><span><b>A change of bank account is waiting.</b> {bp.byName} proposed {bp.bank.bankName} · {bp.bank.accountName} · {bp.bank.accountNumber} on {crDate(bp.at)}. Invoices keep the current account until another person confirms it.</span>
+        {bp.by !== d.me && <button type="button" className="cr-btn is-sm" onClick={bankConfirm}>Confirm</button>}
+        <button type="button" className="cr-btn is-sm" onClick={bankCancel}>Cancel it</button></div>}
+      {(d.alerts || []).length > 0 && <div className="cr-box cr-mp-note is-warn" role="status"><CrIcon n="warning-circle"/><span><b>Money that could not be applied.</b> {d.alerts.map(a => (a.kind === "mismatch" ? "A Paystack payment that does not match its invoice" : "A Paystack payment for an invoice that was no longer open") + " — " + a.invoiceId + " · " + a.reference + (a.amount ? " · " + money(a.amount) : "") + " (" + crDate(a.at) + ")").join("; ")}. Refund it or apply it to the family’s account.</span></div>}
       <div className="cr-mp-kpis">
         <div className="cr-box"><span>Awaiting payment</span><b>{crNum(c.open || 0)}</b></div>
         <div className={"cr-box" + (c.pending ? " is-bad" : "")}><span>Waiting for a second check</span><b>{crNum(c.pending || 0)}</b></div>
@@ -894,7 +913,7 @@ function CrMembershipPayments({ ctx }) {
                     <td><span className="cr-mono">{inv.invoiceId}</span><span className="cr-hint">Starts {inv.startDate}{inv.sentAt ? " · sent " + crDate(inv.sentAt) : ""}</span></td>
                     <td className="cr-num">{money(inv.total)}</td>
                     <td><CrPill tone={st[1]} t={st[0]}/>
-                      {op && op.status === "pending" && <span className="cr-hint">{op.methodLabel} · ref {op.reference} · recorded by {op.recordedByName}</span>}
+                      {op && op.status === "pending" && <span className="cr-hint">{op.methodLabel} · {op.referenceHidden ? "reference hidden until checked" : "ref " + op.reference} · recorded by {op.recordedByName}{op.priorRejections ? " · this reference was rejected " + op.priorRejections + "× before" : ""}</span>}
                       {op && op.status === "rejected" && inv.status === "open" && <span className="cr-hint">Last claim rejected: {op.rejectReason}</span>}
                       {inv.status === "paid" && <span className="cr-hint">{inv.paidVia === "paystack" ? "Paystack" : (op && op.methodLabel) || inv.paidVia} · {crDate(inv.paidAt)}{op && op.verifiedByName ? " · checked by " + op.verifiedByName : ""}</span>}
                     </td>

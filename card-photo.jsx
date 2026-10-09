@@ -173,10 +173,107 @@ async function cardPhotosSettled() {
   while (_cphWait.size) await Promise.all(Array.from(_cphWait.values()));
 }
 
+/* ── Placement: the picture is never stretched ───────────────────────────
+
+   CSS object-fit is not used to fit a photograph. html2canvas ignores it and
+   draws the image at the box's size, which squashes a face; a box whose real
+   shape differs a little from the shape the photo was delivered at did the
+   same in subtler ways. Instead the photograph's own pixel size is known
+   before it is drawn, and it is placed with an explicit width, height and
+   offset that keep its aspect EXACTLY — in percentages of its box, so every
+   renderer at every scale lays it out the same. */
+
+/**
+ * Where to put an image of natW × natH in a box of boxW × boxH, as
+ * percentages of the box: { left, top, width, height }. `region` (in image
+ * pixels) is the part that must be seen — a head-and-shoulders crop — or null
+ * for the whole picture. "cover" fills the box (cropping the overflow evenly),
+ * "contain" shows all of the region. The image's width/height ratio is always
+ * natW/natH: nothing here can stretch it.
+ */
+function cphPlace(natW, natH, boxW, boxH, region, fit) {
+  if (!(natW > 0) || !(natH > 0) || !(boxW > 0) || !(boxH > 0)) return { left: 0, top: 0, width: 100, height: 100 };
+  const r = region || { x: 0, y: 0, w: natW, h: natH };
+  const s = fit === "cover" ? Math.max(boxW / r.w, boxH / r.h) : Math.min(boxW / r.w, boxH / r.h);
+  const w = natW * s, h = natH * s;
+  // The region's centre at the box's centre…
+  let left = boxW / 2 - (r.x + r.w / 2) * s, top = boxH / 2 - (r.y + r.h / 2) * s;
+  // …but a covering picture never leaves a gap at an edge.
+  if (fit === "cover") {
+    left = Math.min(0, Math.max(boxW - w, left));
+    top = Math.min(0, Math.max(boxH - h, top));
+  }
+  const pc = v => Math.round(v * 10000) / 10000;
+  return { left: pc(left / boxW * 100), top: pc(top / boxH * 100), width: pc(w / boxW * 100), height: pc(h / boxH * 100) };
+}
+
+/**
+ * A face from the browser's own detector (the Shape Detection API, where the
+ * browser has it), in the same { cx, eyeY, e } terms as cphFace. Landmarks
+ * give the eyes; a bare bounding box is read by the face's proportions (the
+ * eyes sit about 40% down it and are about 42% of its width apart). The
+ * largest face is the subject.
+ */
+function cphFaceFromDetector(faces) {
+  let best = null;
+  (faces || []).forEach(f => {
+    const b = f && f.boundingBox; if (!b || !(b.width > 0)) return;
+    const eyes = (f.landmarks || []).filter(l => l && l.type === "eye" && l.locations && l.locations.length);
+    let cx = b.x + b.width / 2, eyeY = b.y + b.height * 0.4, e = b.width * 0.42;
+    if (eyes.length >= 2) {
+      const c = eyes.slice(0, 2).map(l => ({ x: l.locations.reduce((a, p) => a + p.x, 0) / l.locations.length, y: l.locations.reduce((a, p) => a + p.y, 0) / l.locations.length }));
+      const d = Math.hypot(c[0].x - c[1].x, c[0].y - c[1].y);
+      if (d > b.width * 0.2) { cx = (c[0].x + c[1].x) / 2; eyeY = (c[0].y + c[1].y) / 2; e = d; }
+    }
+    if (!best || e > best.e) best = { cx, eyeY, e };
+  });
+  return best;
+}
+
+/* The delivered picture's own size, and (for a photo no cloud framed) where
+   the face is — both known before anything is drawn. Cached per URL, and
+   tracked in _cphWait so a print waits for them like it waits for the face
+   lookup. Never rejects. */
+function cphMeasure(src, detect) {
+  const key = (detect ? "d|" : "m|") + src;
+  if (_cphDone.has(key)) return Promise.resolve(_cphDone.get(key));
+  if (_cphWait.has(key)) return _cphWait.get(key);
+  const p = new Promise(res => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => res(img);
+    img.onerror = () => res(null);
+    img.src = src;
+  }).then(async img => {
+    if (!img || !img.naturalWidth) return { failed: true };
+    const out = { w: img.naturalWidth, h: img.naturalHeight, face: null };
+    if (detect && typeof window !== "undefined" && typeof window.FaceDetector === "function") {
+      try { out.face = cphFaceFromDetector(await new window.FaceDetector({ fastMode: false, maxDetectedFaces: 4 }).detect(img)); } catch (_) {}
+    }
+    return out;
+  }).then(v => { _cphDone.set(key, v); _cphWait.delete(key); return v; });
+  _cphWait.set(key, p);
+  return p;
+}
+function useCphMeasure(src, detect) {
+  const key = src ? (detect ? "d|" : "m|") + src : "";
+  const [v, setV] = React.useState(() => (key && _cphDone.get(key)) || null);
+  React.useEffect(() => {
+    if (!key) return undefined;
+    let live = true;
+    if (_cphDone.has(key)) { setV(_cphDone.get(key)); return undefined; }
+    setV(null);
+    cphMeasure(src, detect).then(r => { if (live) setV(r); });
+    return () => { live = false; };
+    // eslint-disable-next-line
+  }, [key]);
+  return v;
+}
+
 /**
  * The photo to draw in a box of wPx × hPx (the resolution to deliver at):
- * { src, mode } where mode is "framed" (a Cloudinary URL already the box's
- * shape), "plain" (any other URL, shown whole by CSS) or "wait".
+ * { src, mode, region } where mode is "framed" (a Cloudinary URL already the
+ * box's shape), "plain" (any other URL, framed here) or "wait".
  */
 function useCardPhoto(url, wPx, hPx) {
   const src0 = typeof nggPhotoSrc === "function" ? nggPhotoSrc(url) : String(url || "");
@@ -192,11 +289,18 @@ function useCardPhoto(url, wPx, hPx) {
     return () => { live = false; };
     // eslint-disable-next-line
   }, [key]);
+  const crop = parts && info && !info.failed ? cphFrame(info.face, info.w, info.h, wPx / hPx) : null;
+  const src = !src0 ? "" : !parts ? src0 : info ? cphCardUrl(parts, wPx, hPx, crop) : "";
+  // The delivered picture's real size; for a photo no cloud framed, the face too.
+  const meas = useCphMeasure(src, !!src && !parts);
   if (!src0) return { src: "", mode: "none" };
-  if (!parts) return { src: src0, mode: "plain" };
-  if (!info) return { src: "", mode: "wait" };
-  const crop = info.failed ? null : cphFrame(info.face, info.w, info.h, wPx / hPx);
-  return { src: cphCardUrl(parts, wPx, hPx, crop), mode: "framed", cropped: !!crop };
+  if (parts && !info) return { src: "", mode: "wait" };
+  if (!meas) return { src: "", mode: "wait" };
+  if (meas.failed) return { src: "", mode: "none" };
+  if (parts) return { src, mode: "framed", cropped: !!crop, w: meas.w, h: meas.h, region: null };
+  // Any other host: framed here, by the browser's own face detector when it has one.
+  const region = meas.face ? cphFrame(meas.face, meas.w, meas.h, wPx / hPx) : null;
+  return { src, mode: "plain", cropped: !!region, w: meas.w, h: meas.h, region };
 }
 
 /**
@@ -208,15 +312,34 @@ function CardPhoto({ url, wPx, hPx, imgStyle, onState }) {
   const h = React.createElement;
   const p = useCardPhoto(url, wPx, hPx);
   React.useEffect(() => { if (onState) onState(p.mode); }, [p.mode]); // eslint-disable-line
-  const fill = { position: "absolute", inset: 0, width: "100%", height: "100%", display: "block" };
-  if (!p.src) return h("div", { "data-card-photo": p.mode, style: { position: "relative", width: "100%", height: "100%" } });
+  /* The box's REAL shape, measured: the one it was asked to deliver at is a
+     request, and a box laid out a little differently must still never
+     stretch the picture. Layout size, so a scaled preview reads the same. */
+  const ref = React.useRef(null);
+  const [ar, setAr] = React.useState(wPx / hPx);
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && el.offsetWidth > 0 && el.offsetHeight > 0) { const a = el.offsetWidth / el.offsetHeight; if (Math.abs(a - ar) > 0.002) setAr(a); }
+  });
+  const BW = ar * 1000, BH = 1000;
+  const box = { position: "relative", width: "100%", height: "100%", overflow: "hidden" };
+  if (!p.src) return h("div", { ref, "data-card-photo": p.mode, style: box });
+  /* Width and offset are set; the height is the picture's own (auto), so
+     whatever any renderer makes of the rest, it cannot change the aspect. */
+  const at = g => ({ position: "absolute", left: g.left + "%", top: g.top + "%", width: g.width + "%", height: "auto",
+    maxWidth: "none", maxHeight: "none", display: "block" });
   if (p.mode === "framed") {
-    return h("img", { src: p.src, alt: "", crossOrigin: "anonymous", "data-card-photo": p.cropped ? "cropped" : "whole",
-      style: Object.assign({ width: "100%", height: "100%", objectFit: "cover", display: "block" }, imgStyle) });
+    // Already the box's shape and padded with its own colours; placed, not stretched, in case the box is not quite that shape.
+    return h("div", { ref, "data-card-photo": p.cropped ? "cropped" : "whole", style: box },
+      h("img", { src: p.src, alt: "", crossOrigin: "anonymous", style: Object.assign(at(cphPlace(p.w, p.h, BW, BH, null, "cover")), imgStyle) }));
   }
-  // Any other host: the whole photo, over a soft, enlarged copy of itself so the box has no bars.
-  return h("div", { "data-card-photo": "plain", style: { position: "relative", width: "100%", height: "100%", overflow: "hidden" } },
+  // Any other host: the head and shoulders when a face was found, else the whole photo over a soft copy of itself.
+  if (p.region) {
+    return h("div", { ref, "data-card-photo": "cropped", style: box },
+      h("img", { src: p.src, alt: "", crossOrigin: "anonymous", style: Object.assign(at(cphPlace(p.w, p.h, BW, BH, p.region, "cover")), imgStyle) }));
+  }
+  return h("div", { ref, "data-card-photo": "plain", style: box },
     h("img", { key: "bg", src: p.src, alt: "", crossOrigin: "anonymous", "aria-hidden": "true",
-      style: Object.assign({}, fill, { objectFit: "cover", filter: "blur(6px)", transform: "scale(1.15)", opacity: 0.7 }, imgStyle && imgStyle.filter ? { filter: imgStyle.filter + " blur(6px)" } : null) }),
-    h("img", { key: "fg", src: p.src, alt: "", crossOrigin: "anonymous", style: Object.assign({}, fill, { objectFit: "contain" }, imgStyle) }));
+      style: Object.assign(at(cphPlace(p.w, p.h, BW, BH, null, "cover")), { filter: "blur(6px)", transform: "scale(1.15)", opacity: 0.7 }, imgStyle && imgStyle.filter ? { filter: imgStyle.filter + " blur(6px)" } : null) }),
+    h("img", { key: "fg", src: p.src, alt: "", crossOrigin: "anonymous", style: Object.assign(at(cphPlace(p.w, p.h, BW, BH, null, "contain")), imgStyle) }));
 }

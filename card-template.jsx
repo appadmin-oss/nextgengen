@@ -1098,7 +1098,8 @@ function MemberIDCard(props) {
     ]),
     h("div", { key: "bd", style: { display: "flex", gap: 14, alignItems: "center", padding: "16px 18px" } }, [
       hasPhoto
-        ? h("img", { key: "ph", src: nggPhotoSrc(m.photoUrl), alt: "", crossOrigin: "anonymous", style: { width: 74, height: 74, borderRadius: 12, objectFit: "cover", border: "2px solid " + GOLD } })
+        ? h("div", { key: "ph", style: { width: 74, height: 74, borderRadius: 12, overflow: "hidden", border: "2px solid " + GOLD, flex: "none", boxSizing: "border-box" } },
+            h(CardPhoto, { url: m.photoUrl, wPx: 300, hPx: 300 }))
         : h("div", { key: "ph", style: { width: 74, height: 74, borderRadius: 12, background: NAVY, color: GOLD, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 24 } }, initials || "★"),
       h("div", { key: "info", style: { minWidth: 0 } }, [
         h("div", { key: "n", style: { fontWeight: 800, fontSize: 17, lineHeight: 1.15 } }, name),

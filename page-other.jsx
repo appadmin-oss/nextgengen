@@ -1280,7 +1280,7 @@ function DonateWidget() {
     setBusy(true);
     try {
       const r = await NGGApi.public.donate({ email: d.email.trim(), name: d.name.trim(), amount: parseInt(d.amount, 10) });
-      if (r.authorizationUrl) window.location.href = r.authorizationUrl;
+      if (nggPaystackUrlOk(r.authorizationUrl)) window.location.href = r.authorizationUrl;
     } catch (ex) {
       if ((ex.code || ex.message) === "donations_unavailable") { setHidden(true); return; }
       if (typeof toast !== "undefined") toast.error("Couldn't start the donation. Please try again.", "Donate");
@@ -1518,6 +1518,11 @@ function MemberCardView({ m, token, auth }) {
    and the receipt arrives without anybody sending this link again. After
    Paystack sends the family back (?reference=…) the page asks the server to
    confirm with Paystack itself; it never takes the browser's word. */
+/* A family is only ever sent to Paystack's own checkout. The address comes
+   from our server, but the page should not carry anybody's money to wherever
+   a tampered response points it. */
+function nggPaystackUrlOk(u) { return /^https:\/\/checkout\.paystack\.com\/[A-Za-z0-9_-]+\/?$/.test(String(u || "")); }
+
 function MembershipPayPage({ setPage }) {
   const token = decodeURIComponent(((window.location.pathname || "").split("/").filter(Boolean)[1]) || "");
   const [st, setSt] = React.useState({ state: "loading" });
@@ -1539,7 +1544,7 @@ function MembershipPayPage({ setPage }) {
   React.useEffect(load, [load]);
   const pay = async () => {
     setBusy(true); setErr("");
-    try { const r = await NGGApi.public.membershipPay(token); window.location.assign(r.authorizationUrl); }
+    try { const r = await NGGApi.public.membershipPay(token); if (!nggPaystackUrlOk(r.authorizationUrl)) throw new Error("bad_checkout"); window.location.assign(r.authorizationUrl); }
     catch (e) {
       setBusy(false);
       setErr({ already_paid: "This invoice is already paid.", offline_pending: "A payment you made by transfer or cash is being checked by the centre. Please don’t pay again.", payments_unavailable: "Online payment isn’t available right now — pay by transfer to the account below.", init_failed: "Paystack didn’t respond. Try again in a moment." }[e.code] || "Couldn’t start the payment. Try again.");

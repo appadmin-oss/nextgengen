@@ -1255,6 +1255,23 @@ function admin_fees_payment(array $p): array {
     $amount = fees_money($p['amount'] ?? null, 0);
     if ($amount <= 0) return ['ok' => false, 'error' => 'bad_amount'];
     $by = (string)($g['requester']['memberId'] ?? '');
+    /* Nobody credits their own account, and the joining invoice is not paid
+       around: crediting it here and then voiding the invoice skipped the
+       evidence and the second person (domain/membership-pay.php). */
+    if ($by === $id) return ['ok' => false, 'error' => 'own_account'];
+    if (function_exists('membership_invoice_by') && db_row("SELECT invoiceId FROM membership_invoices WHERE memberId = ? AND status = 'open' LIMIT 1", [$id])) {
+        return ['ok' => false, 'error' => 'use_invoice', 'detail' => 'This member has an unpaid joining invoice. Record the payment against it (Membership payments), where it is checked by a second person.'];
+    }
+    /* A bank reference is money that arrived once: it is accepted once,
+       across manual payments and offline claims alike. */
+    $method = (string)($p['method'] ?? 'cash');
+    $refKey = function_exists('membership_ref_key') ? membership_ref_key((string)($p['reference'] ?? '')) : '';
+    if ($method !== 'cash' && strlen($refKey) < 4) return ['ok' => false, 'error' => 'reference_required', 'detail' => 'The transaction reference on the slip or alert.'];
+    if ($refKey !== '') {
+        $seen = db_row("SELECT invoiceId FROM offline_payments WHERE referenceKey = ? AND status <> 'rejected' LIMIT 1", [$refKey]);
+        if (!$seen) foreach (db_all("SELECT reference FROM member_ledger WHERE kind = 'payment' AND reference <> '' AND (voidedAt IS NULL OR voidedAt = '')") as $lr) if (membership_ref_key((string)$lr['reference']) === $refKey) { $seen = true; break; }
+        if ($seen) { audit('fees.payment.reused_reference', $by, $id, ['reference' => (string)$p['reference']], (string)($p['ip'] ?? '')); return ['ok' => false, 'error' => 'reference_reused', 'detail' => 'That reference is already recorded.']; }
+    }
     $e = fees_post($id, 'payment', $amount, [
         'note' => (string)($p['note'] ?? ''), 'method' => (string)($p['method'] ?? 'cash'),
         'reference' => (string)($p['reference'] ?? ''), 'by' => $by,

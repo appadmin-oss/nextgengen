@@ -25,7 +25,8 @@ if ($method === 'GET') {
     $b = read_json_body();
     $map = [
         'create' => 'admin.membership.invoice.create', 'resend' => 'admin.membership.invoice.resend', 'void' => 'admin.membership.invoice.void',
-        'bank' => 'admin.membership.bank.set', 'record' => 'admin.membership.offline.record',
+        'bank' => 'admin.membership.bank.set', 'bankConfirm' => 'admin.membership.bank.confirm', 'bankCancel' => 'admin.membership.bank.cancel',
+        'record' => 'admin.membership.offline.record',
         'verify' => 'admin.membership.offline.verify', 'reject' => 'admin.membership.offline.reject',
     ];
     $action = (string)($b['action'] ?? '');

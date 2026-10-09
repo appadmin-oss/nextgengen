@@ -254,6 +254,15 @@ chk('non-super cannot set role', (function () {
     $m = db_row("SELECT role FROM members WHERE memberId='NGG-2025-0001'");
     return $m['role'] === 'member'; // unchanged
 })());
+chk('an admin cannot take over a super admin through a people edit — email, phone and status are refused', (function () {
+    $pa = db_row("SELECT memberId FROM members WHERE email='pa@example.com'")['memberId'];
+    $before = db_row("SELECT email, status FROM members WHERE memberId='NGG-2025-0099'");
+    $e = backend_dispatch('admin.members.upsert', ['requesterId' => $pa, 'data' => ['memberId' => 'NGG-2025-0099', 'email' => 'attacker@example.com']]);
+    $st = backend_dispatch('admin.members.upsert', ['requesterId' => $pa, 'data' => ['memberId' => 'NGG-2025-0099', 'status' => 'suspended']]);
+    $after = db_row("SELECT email, status FROM members WHERE memberId='NGG-2025-0099'");
+    $own = backend_dispatch('admin.members.upsert', ['requesterId' => $pa, 'data' => ['memberId' => $pa, 'status' => 'suspended']]);
+    return ($e['error'] ?? '') === 'staff_account' && ($st['error'] ?? '') === 'staff_account' && $after === $before && ($own['error'] ?? '') === 'own_account';
+})());
 
 // Anchor missions self-seed a 12-week starter set on first access (empty table).
 chk('anchor missions self-seed a 12-week starter set', (function () {
@@ -7716,18 +7725,23 @@ chk('only super can edit capabilities', backend_dispatch('admin.members.caps', [
 
 // ── Donations (Paystack, mocked) ──
 chk('donations are unavailable without a Paystack secret', backend_dispatch('public.donate.init', ['email' => 'giver@example.com', 'amount' => 5000])['error'] === 'donations_unavailable');
-chk('donation init returns a checkout URL and banks a pending row', (function () {
+chk('donation init returns a checkout URL and banks a pending row; verify settles only Paystack’s answer for the pledged amount', (function () {
     $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
     $GLOBALS['__paystack_mock'] = function ($method, $path, $body) {
         if (strpos($path, '/transaction/initialize') === 0) return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/xyz', 'reference' => $body['reference']]];
-        return ['status' => true, 'data' => ['status' => 'success', 'channel' => 'card']];
+        $ref = substr($path, strlen('/transaction/verify/'));
+        return ['status' => true, 'data' => ['status' => 'success', 'channel' => 'card', 'reference' => $ref, 'amount' => ($GLOBALS['__don_kobo'] ?? 500000), 'currency' => 'NGN']];
     };
+    $GLOBALS['__don_kobo'] = 10000;   // ₦100 paid against a ₦5,000 pledge
+    $cheap = backend_dispatch('public.donate.init', ['email' => 'giver@example.com', 'name' => 'Ada', 'amount' => 5000]);
+    $refused = (donation_verify($cheap['reference'])['error'] ?? '') === 'payment_mismatch' && db_row('SELECT status FROM donations WHERE reference = ?', [$cheap['reference']])['status'] === 'pending';
+    unset($GLOBALS['__don_kobo']);
     $r = backend_dispatch('public.donate.init', ['email' => 'giver@example.com', 'name' => 'Ada', 'amount' => 5000]);
     $ok = !empty($r['ok']) && strpos($r['authorizationUrl'], 'paystack.com') !== false && db_row('SELECT status FROM donations WHERE reference = ?', [$r['reference']])['status'] === 'pending';
     $v = donation_verify($r['reference']);
     $paid = ($v['status'] ?? '') === 'paid' && db_row('SELECT status FROM donations WHERE reference = ?', [$r['reference']])['status'] === 'paid';
     unset($GLOBALS['__paystack_mock'], $GLOBALS['CONFIG']['paystack']);
-    return $ok && $paid;
+    return $ok && $paid && $refused;
 })());
 chk('donations ledger totals paid amounts (settings cap)', (function () {
     $r = backend_dispatch('admin.donations.list', ['requesterId' => 'NGG-2025-0099']);
@@ -9766,6 +9780,24 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
         return !empty($r['ok']) && $r['kind'] === 'student';
     })());
     chk('community login: the wrong phone is refused', backend_dispatch('community.login', ['displayId' => $cmDid, 'guardianPhone' => '08099999999'])['error'] === 'bad_credentials');
+    chk('community login: guessing phone numbers against one card locks that card, and the right number is refused while it lasts', (function () use ($cmDid) {
+        attempt_reset('card.login', strtoupper($cmDid));
+        for ($i = 0; $i < 8; $i++) backend_dispatch('community.login', ['displayId' => $cmDid, 'guardianPhone' => '0809' . str_pad((string)$i, 7, '0', STR_PAD_LEFT)]);
+        $locked = backend_dispatch('community.login', ['displayId' => $cmDid, 'guardianPhone' => '0803 123 4567'])['error'] ?? '';
+        attempt_reset('card.login', strtoupper($cmDid));
+        return $locked === 'too_many_attempts' && !empty(backend_dispatch('community.login', ['displayId' => $cmDid, 'guardianPhone' => '0803 123 4567'])['ok']);
+    })());
+    chk('auth.me: a card session resolves to the card holder, never a member account that shares the id', (function () use ($cmStu) {
+        $sid = $cmStu['studentId'];
+        db_insert('members', ['memberId' => $sid, 'fullName' => 'Collision Account', 'email' => 'collide@example.com', 'type' => 'Summer', 'role' => 'member', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        $asCard = auth_me(['memberId' => $sid, 'kind' => 'student']);
+        $asMember = auth_me(['memberId' => $sid, 'kind' => 'member']);
+        db_exec('DELETE FROM members WHERE memberId = ?', [$sid]);
+        return ($asCard['member']['role'] ?? '') === 'student' && ($asCard['member']['fullName'] ?? '') === 'Community Chidi'
+            && ($asMember['member']['fullName'] ?? '') === 'Collision Account';
+    })());
+    chk('ids: a new id never meets one a participant, a volunteer or an account already signs in with', id_taken_anywhere($cmStu['studentId']) && !id_taken_anywhere('SUM-1999-0000')
+        && !in_array(new_id('SUM', 'members', 'memberId'), [$cmStu['studentId']], true));
 
     // A volunteer of this block's own, so an earlier test's sweep cannot have
     // already evicted whoever happens to be first in the table.
@@ -14670,8 +14702,27 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 (function () {
     $mk = fn(string $role, string $gate = '') => array_filter(['role' => $role, 'gate' => $gate]);
 
-    chk('gate: a staff account opens any gate desk', gate_operator_ok(['role' => 'admin'], 'GL-ONE')
-        && gate_operator_ok(['role' => 'super_admin'], 'GL-ONE'));
+    $staff = function (string $id, string $role, string $status = 'active') {
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Desk ' . $role, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG', 'role' => $role, 'status' => $status, 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        return ['mid' => $id, 'role' => $role];
+    };
+    chk('gate: a staff account holding the desk’s capability opens it', gate_operator_ok($staff('NGG-DESK-A', 'admin'), 'GL-ONE')
+        && gate_operator_ok($staff('NGG-DESK-S', 'super_admin'), 'GL-ONE') && gate_operator_ok($staff('NGG-DESK-C', 'summer_admin'), 'GL-ONE'));
+    chk('gate: staff WITHOUT the check-in capability (an editor, an auditor) cannot register children at a desk',
+        gate_operator_ok($staff('NGG-DESK-E', 'editor'), 'GL-ONE') === false && gate_operator_ok($staff('NGG-DESK-U', 'audit'), 'GL-ONE') === false);
+    $sus = $staff('NGG-DESK-X', 'admin', 'suspended');
+    $staff('NGG-DESK-D', 'member');
+    chk('gate: the cookie’s role is not trusted — a suspended or demoted account is refused though its cookie says admin',
+        gate_operator_ok($sus, 'GL-ONE') === false && gate_operator_ok(['mid' => 'NGG-DESK-D', 'role' => 'admin'], 'GL-ONE') === false
+        && gate_operator_ok(['mid' => 'NGG-NOBODY', 'role' => 'admin'], 'GL-ONE') === false);
+    chk('session: a live cookie dies when the account is suspended, demoted or gone', session_still_valid(['sid' => 'x', 'mid' => 'NGG-DESK-A', 'role' => 'admin']) === ''
+        && session_still_valid(['sid' => 'x', 'mid' => 'NGG-DESK-X', 'role' => 'admin']) === 'suspended'
+        && session_still_valid(['sid' => 'x', 'mid' => 'NGG-DESK-D', 'role' => 'admin']) === 'session_expired'
+        && session_still_valid(['sid' => 'x', 'mid' => 'NGG-NOBODY', 'role' => 'member']) === 'session_expired'
+        && session_still_valid(['mid' => 'kiosk:GL-ONE', 'role' => 'kiosk', 'kiosk' => true]) === '');
+    chk('session: a card holder is not a member account', session_is_cardholder(['mid' => 'SUM-2026-0001', 'role' => 'student', 'stu' => 'SUM-2026-0001'])
+        && session_is_cardholder(['role' => 'volunteer', 'stu' => 'VOL-1']) && !session_is_cardholder(['mid' => 'NGG-DESK-A', 'role' => 'admin', 'sid' => 'x']));
 
     chk('gate: a kiosk session opens the gate it was unlocked for', (function () {
         return gate_operator_ok(['role' => 'kiosk', 'gate' => 'GL-ONE'], 'GL-ONE') === true;
@@ -24738,7 +24789,12 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('pay: rejecting needs a reason', ($rej(['reason' => 'no'])['error'] ?? '') === 'reason_required');
     chk('pay: a rejected claim leaves the invoice open', !empty($rej(['reason' => 'No such credit on the Access statement for that day.'])['ok']) && db_row('SELECT status FROM membership_invoices WHERE id = ?', [$invC['id']])['status'] === 'open');
     chk('pay: …and its evidence can never be used again', ($recC(['evidence' => $evC, 'reference' => 'ACC-99999'])['error'] ?? '') === 'evidence_reused');
-    chk('pay: …while a genuine payment with new evidence can then be recorded', !empty($recC(['reference' => 'ACC-55501'])['ok']));
+    chk('pay: …nor its reference, unless recorded again on purpose — the refusal names the earlier rejection', (function () use ($recC) {
+        $r = $recC(['reference' => 'ACC 55501']);
+        return ($r['error'] ?? '') === 'reference_rejected' && str_contains((string)($r['detail'] ?? ''), 'No such credit')
+            && ($recC(['reference' => 'ACC-55501', 'resubmit' => true, 'note' => 'ok'])['error'] ?? '') === 'note_required';
+    })());
+    chk('pay: …while a genuine payment with new evidence can then be recorded', !empty($recC(['reference' => 'ACC-55501', 'resubmit' => true, 'note' => 'The bank confirmed the credit landed a day late.'])['ok']));
     $pC = db_row("SELECT * FROM offline_payments WHERE invoiceId = ? AND status = 'pending'", [$invC['invoiceId']]);
     $ev = backend_dispatch('admin.membership.evidence', ['requesterId' => $A1, 'paymentId' => $pC['paymentId']]);
     chk('pay: staff with Fees open the evidence; it is checked against its hash first', !empty($ev['ok']) && $ev['type'] === 'image/png'

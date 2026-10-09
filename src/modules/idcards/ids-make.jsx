@@ -9,9 +9,15 @@ function IdsUploadFace({ u, cw, ch, back }) {
   if (!u) return <div className="ids-face-blank">Blank back</div>;
   const side = (u.rot || 0) % 180 !== 0;
   const rot = back ? -(u.rot || 0) : (u.rot || 0);
+  /* The picture is placed at its own aspect inside the (unrotated) frame, not
+     fitted by object-fit, which some rasterisers ignore and stretch. */
+  const fw = side ? ch : cw, fh = side ? cw : ch;
+  const g = cphPlace(u.w, u.h, fw, fh, null, u.fit === "cover" ? "cover" : "contain");
   return (
     <div className="ids-face-up">
-      <img src={u.src} alt="" draggable="false" style={{ width: (side ? ch : cw) + "mm", height: (side ? cw : ch) + "mm", objectFit: u.fit, transform: "translate(-50%, -50%) rotate(" + rot + "deg)" }}/>
+      <div className="ids-face-up-frame" style={{ width: fw + "mm", height: fh + "mm", transform: "translate(-50%, -50%) rotate(" + rot + "deg)" }}>
+        <img src={u.src} alt="" draggable="false" style={{ left: g.left + "%", top: g.top + "%", width: g.width + "%" }}/>
+      </div>
     </div>
   );
 }

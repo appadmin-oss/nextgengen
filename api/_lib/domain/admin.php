@@ -674,6 +674,23 @@ function admin_members_upsert(array $p): array {
         }
     }
 
+    // ── Tier ───────────────────────────────────────────────────────────
+    /* A staff account's sign-in identity and lifecycle belong to Access &
+       roles, not to the roster. Changing a super admin's email to your own and
+       then resetting "their" password was a whole-console takeover through an
+       ordinary people edit; suspending somebody above you skipped the
+       last-super-admin rule. So the fields that decide who can sign in as a
+       staff account move only for somebody allowed to manage that tier. */
+    if ($existing && is_admin_role((string)($existing['role'] ?? ''))) {
+        $touch = array_intersect(array_keys($data), ['email', 'status', 'type', 'phone']);
+        $self = (string)$existing['memberId'] === (string)($g['requester']['memberId'] ?? '');
+        if ($self && array_key_exists('status', $data)) return ['ok' => false, 'error' => 'own_account'];
+        if ($touch && !$self && !admin_may_manage($g['requester'], (string)$existing['role'])) {
+            return ['ok' => false, 'error' => 'staff_account',
+                    'detail' => 'A staff account’s email, phone, type and status are changed in Access & roles, by somebody who manages that tier.'];
+        }
+    }
+
     // ── Scope ──────────────────────────────────────────────────────────
     // The roster is filtered by centre; these operations were not. A scoped
     // admin could edit, re-centre or re-type any member in the organisation

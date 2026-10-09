@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../_lib/bootstrap.php';
 require_method('POST');
-$s = require_session();
+$s = require_member_session();
 $body = read_json_body();
 
 $res = gs_call('member.update', array_merge($body, [

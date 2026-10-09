@@ -1201,7 +1201,17 @@ function gate_unlock(array $p): array {
  * without anyone noticing.
  */
 function gate_operator_ok(array $session, string $reqGate): bool {
-    if (is_admin_role((string)($session['role'] ?? ''))) return true;
+    if (is_admin_role((string)($session['role'] ?? ''))) {
+        /* A member of staff, as the DATABASE has them now (a cookie's role is a
+         * week old), with the capability this desk's kind needs: the door is
+         * `checkin`, the sign-up desks are `summer`. Being staff at all used to
+         * be enough, so an editor or an auditor could register children. */
+        $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($session['mid'] ?? '')]);
+        if (!$m || (string)$m['status'] === 'suspended' || !is_admin_role((string)$m['role'])) return false;
+        $gate = $reqGate !== '' ? db_row('SELECT kind FROM gate_links WHERE gateId = ? LIMIT 1', [$reqGate]) : null;
+        $cap = GATE_KINDS[gate_kind_of($gate['kind'] ?? '')]['cap'];
+        return in_array($cap, member_effective_caps($m), true);
+    }
     if (strtolower((string)($session['role'] ?? '')) !== 'kiosk') return false;
     $bound = (string)($session['gate'] ?? '');
     if ($bound === '' || $reqGate === '') return false;
@@ -1395,7 +1405,7 @@ function gate_register(array $p): array {
     // Create the student in 'parent_pending' — no QR/ID until consent.
     $n = (int)(db_row('SELECT COUNT(*) c FROM summer_students WHERE cohortId = ?', [$c['cohortId']])['c'] ?? 0) + 1;
     $studentId = $c['cohortId'] . '-' . str_pad((string)$n, 4, '0', STR_PAD_LEFT);
-    if (db_row('SELECT id FROM summer_students WHERE studentId = ?', [$studentId])) $studentId .= '-' . strtolower(rand_hex(2));
+    while (id_taken_anywhere($studentId)) $studentId = $c['cohortId'] . '-' . str_pad((string)$n, 4, '0', STR_PAD_LEFT) . '-' . strtolower(rand_hex(2));
     $base = summer_slug((string)$d['fullName']) ?: 'student';
     $handle = $base . '-' . strtolower(rand_hex(2));
     $vtoken = 'VR' . rand_hex(16);

@@ -1363,6 +1363,8 @@
         resend:   (invoiceId) => request('/admin/membership.php', { body: { action: 'resend', invoiceId } }),
         void:     (invoiceId, reason) => request('/admin/membership.php', { body: { action: 'void', invoiceId, reason } }),
         bank:     (bank) => request('/admin/membership.php', { body: { action: 'bank', bank } }),
+        bankConfirm: (confirmAccountNumber) => request('/admin/membership.php', { body: { action: 'bankConfirm', confirmAccountNumber } }),
+        bankCancel:  () => request('/admin/membership.php', { body: { action: 'bankCancel' } }),
         // The evidence travels as a data URL, compressed in the browser first (a host refuses big bodies).
         record:   (data) => request('/admin/membership.php', { body: Object.assign({ action: 'record' }, data), timeout: 120000 }),
         verify:   (paymentId, confirmReference, confirmAmount, checked) => request('/admin/membership.php', { body: { action: 'verify', paymentId, confirmReference, confirmAmount, checked: !!checked } }),
