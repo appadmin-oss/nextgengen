@@ -573,26 +573,38 @@ function IdCardStudioPage({ setPage }) {
     if (!proof && recItems.length) setAfter({ runs, items: recItems.map(x => ({ key: x.s.key, slot: x.s, name: x.s.label, sheet: x.sheet, slotN: x.slotN, cw: x.s.cw || G.cw, ch: x.s.ch || G.ch, rec: x.s.rec })) });
   };
 
-  /* A member printed for the first time is given their ID number first — minted
-     on the server from the highest serial, never reissued — so the card in
-     their hand carries the number the record does. */
-  const mintMissing = async list => {
-    if (!list.length) return true;
+  /* Before a print, every member on it is made ready on the server: a member
+     printed for the first time is given their ID number (minted from the
+     highest serial, never reissued), and every member's card is given its
+     SECURE code — the QR a phone scans to open their page. Issued here, by a
+     scoped POST at print time; listing the roster issues nothing. A proof
+     mints no ID numbers, but its QR still needs a real code. */
+  const mintMissing = async (list, proof) => {
+    const all = Array.from(new Set(list.map(c => c.rec.id)));
+    if (!all.length) return true;
     try {
-      const res = await NGGApi.admin.idStudio.mintIds(list.map(c => c.rec.id));
-      const got = Object.assign({}, res.issued || {});
-      (res.refused || []).forEach(x => { if (x.error === "unchanged" && x.displayId) got[x.memberId] = x.displayId; });
-      const upd = r => r.kind === "member" && got[r.id] ? Object.assign({}, r, { displayId: got[r.id], raw: Object.assign({}, r.raw, { displayId: got[r.id], displayIdMissing: false }) }) : r;
+      const got = {}, codes = {};
+      for (let i = 0; i < all.length; i += 600) {
+        const res = await NGGApi.admin.idStudio.mintIds(all.slice(i, i + 600), !!proof);
+        Object.assign(got, res.issued || {}); Object.assign(codes, res.codes || {});
+        (res.refused || []).forEach(x => { if (x.error === "unchanged" && x.displayId) got[x.memberId] = x.displayId; });
+      }
+      const upd = r => {
+        if (r.kind !== "member" || (!got[r.id] && !codes[r.id])) return r;
+        const raw = Object.assign({}, r.raw, got[r.id] ? { displayId: got[r.id], displayIdMissing: false } : {}, codes[r.id] ? { token: codes[r.id], cardSecure: true } : {});
+        return Object.assign({}, r, got[r.id] ? { displayId: got[r.id] } : {}, { raw });
+      };
       setData(d => Object.assign({}, d, { records: d.records.map(upd), queue: d.queue.map(upd) }));
-      const left = list.length - Object.keys(got).length;
+      byKeyRef.current = Object.fromEntries(Object.entries(byKeyRef.current).map(([k, r]) => [k, upd(r)]));
+      const left = proof ? 0 : list.filter(c => !c.rec.displayId && !got[c.rec.id]).length;
       if (left) { say(idsN(left, "member") + " couldn’t be given an ID number, so nothing was printed. Take them off the sheet, or check their records."); return false; }
       return true;
-    } catch (e) { say(idsErrText(e, "Couldn’t assign ID numbers, so nothing was printed. Try again.")); return false; }
+    } catch (e) { say(idsErrText(e, "Couldn’t prepare the members’ cards, so nothing was printed. Try again.")); return false; }
   };
 
   const onConfirmPrint = async ({ mode, batches, range, packing, reason }) => {
     setConfirm(null);
-    if (reason !== "proof" && !(await mintMissing(recCards.filter(c => c.rec.kind === "member" && !c.rec.displayId)))) return;
+    if (!(await mintMissing(recCards.filter(c => c.rec.kind === "member"), reason === "proof"))) return;
     if (mode === "batch") {
       setJob({ batches, i: 0, total: nSheets, done: batches[0][1], next: batches[1] || batches[0], reason, packing });
       runPrint({ a: batches[0][0], b: batches[0][1], packing, reason, batch: true });
@@ -910,7 +922,7 @@ function IdCardStudioPage({ setPage }) {
     const proof = reason === "proof";
     const list = only ? [{ s: only, sheet: 0, slotN: 0 }] : inRange(1, nSheets);
     if (!list.length) return;
-    if (!proof && !(await mintMissing(list.filter(x => x.s.rec && x.s.rec.kind === "member" && !x.s.rec.displayId).map(x => ({ rec: x.s.rec }))))) return;
+    if (!(await mintMissing(list.filter(x => x.s.rec && x.s.rec.kind === "member").map(x => ({ rec: x.s.rec })), proof))) return;
     farmGen.current++;
     xcancel.current = false;
     setXjob({ i: 0, n: list.length, note: "Getting ready" });

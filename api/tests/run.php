@@ -4327,15 +4327,22 @@ chk('a screen that has drawn a QR can hand it over for the emails that have no b
         && ($r2['stored'] ?? -1) === 0 && ($r2['skipped'] ?? 0) === 1
         && ($r3['stored'] ?? -1) === 0;
 })());
-chk('…and junk that is not a PNG is refused rather than written', (function () {
+chk('…and the hosted image is the server\'s own drawing — a browser cannot plant a QR that opens another address', (function () {
+    /* Anybody with `summer` could send any PNG as a token's QR; the email and
+       /api/public/qr.php then served it. The bytes sent are now ignored. */
     $tok = db_row("SELECT token FROM summer_students WHERE token != '' LIMIT 1")['token'] ?? '';
     if ($tok === '') return true;
     @unlink(qr_cache_path($tok));
-    $r = backend_dispatch('admin.qr.warm', ['requesterId' => 'NGG-2025-0099',
-        'items' => [['token' => $tok, 'qrPng' => 'data:image/png;base64,' . base64_encode('not a png at all, just some bytes here to pad it out past sixty characters')]]]);
-    $bad = qr_cache_exists($tok);
+    $im = imagecreatetruecolor(40, 40); imagefill($im, 0, 0, imagecolorallocate($im, 255, 0, 0));
+    ob_start(); imagepng($im); $evil = ob_get_clean(); imagedestroy($im);
+    backend_dispatch('admin.qr.warm', ['requesterId' => 'NGG-2025-0099', 'items' => [['token' => $tok, 'qrPng' => 'data:image/png;base64,' . base64_encode($evil)]]]);
+    $hosted = (string)@file_get_contents(qr_cache_path($tok));
+    $own = qr_encode_png(qr_payload_for($tok), 8);
+    // …and a resend cannot overwrite it either.
+    qr_cache_store($tok, 'data:image/png;base64,' . base64_encode($evil));
+    $after = (string)@file_get_contents(qr_cache_path($tok));
     @unlink(qr_cache_path($tok));
-    return ($r['stored'] ?? -1) === 0 && !$bad;
+    return $hosted !== '' && $hosted !== $evil && $hosted === $own && $after === $own;
 })());
 chk('the QR warm op is admin-gated', backend_dispatch('admin.qr.warm', ['requesterId' => '', 'items' => [['token' => 'x', 'qrPng' => 'y']]])['ok'] !== true);
 chk('the studio asks which QR images are missing before sending any: only real, un-hosted tokens come back', (function () {
@@ -7927,8 +7934,11 @@ chk('resend ID: issued student ⇒ ok + audited', (function () {
 })());
 // Emailable QR image cache
 $TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR4nGP8z8Dwn4EIwDiqEAAlWAMBn1QzqQAAAABJRU5ErkJggg==';
-chk('QR cache rejects a non-PNG payload', qr_cache_store('SUMQR-RS1', 'data:image/gif;base64,R0lGODlhAQAB') === false);
-chk('QR cache stores a real PNG for a token', qr_cache_store('SUMQR-RS1', $TINY_PNG) === true && qr_cache_exists('SUMQR-RS1'));
+chk('QR cache never writes what the caller sent: a GIF, or any PNG, leaves the server\'s own drawing', (function () use ($TINY_PNG) {
+    @unlink(qr_cache_path('SUMQR-RS1'));
+    $ok = qr_cache_store('SUMQR-RS1', 'data:image/gif;base64,R0lGODlhAQAB') && qr_cache_store('SUMQR-RS1', $TINY_PNG);
+    return $ok && (string)@file_get_contents(qr_cache_path('SUMQR-RS1')) === qr_encode_png(qr_payload_for('SUMQR-RS1'), 8);
+})());
 chk('resend with QR ⇒ qr:true (email will embed the hosted image)', (function () use ($TINY_PNG) {
     $r = backend_dispatch('admin.id.resend', ['requesterId' => 'NGG-2025-0099', 'kind' => 'student', 'id' => 'SUM-R-1', 'qrPng' => $TINY_PNG]);
     return !empty($r['ok']) && ($r['qr'] ?? false) === true;
@@ -24748,16 +24758,19 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-SCAN-1'"); db_exec("DELETE FROM member_cards WHERE memberId = 'NGG-SCAN-1'");
     db_insert('members', ['memberId' => 'NGG-SCAN-1', 'fullName' => 'Scan Ada Okafor', 'email' => 'scan1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
         'centre' => 'Egbeda', 'track' => 'Robotics', 'displayId' => '026-701', 'joinDate' => '2026-03-07', 'photoUrl' => '/assets/logo.png', 'createdAt' => $now, 'updatedAt' => $now]);
-    chk('scan: a member with no secure card yet gets one the moment their card row is drawn for printing', member_card_secure('NGG-SCAN-1') === null
-        && preg_match('/^MEMQR-/', (string)card_row_member(db_row("SELECT * FROM members WHERE memberId = 'NGG-SCAN-1'"), [])['token']) && member_card_secure('NGG-SCAN-1') !== null);
+    chk('scan: listing card rows issues nothing — reading the roster never writes a card', member_card_secure('NGG-SCAN-1') === null
+        && card_row_member(db_row("SELECT * FROM members WHERE memberId = 'NGG-SCAN-1'"), [])['token'] === 'NGG-SCAN-1' && member_card_secure('NGG-SCAN-1') === null);
+    $mint = backend_dispatch('admin.ids.mint', ['requesterId' => 'NGG-2025-0099', 'memberIds' => ['NGG-SCAN-1'], 'codesOnly' => true]);
+    chk('scan: the print step issues the secure code (a proof issues the code but no printed ID)', preg_match('/^MEMQR-/', (string)($mint['codes']->{'NGG-SCAN-1'} ?? '')) && member_card_secure('NGG-SCAN-1') === $mint['codes']->{'NGG-SCAN-1'});
     $code = member_card_secure('NGG-SCAN-1');
     $p = backend_dispatch('public.summerProfile', ['token' => $code])['profile'] ?? [];
     chk('scan: the secure code opens the NGG member page — name, photo, division, course, centre, member since', ($p['kind'] ?? '') === 'member' && $p['secure'] === true && $p['fullName'] === 'Scan Ada Okafor'
         && $p['photoUrl'] !== '' && $p['active'] === true && $p['memberSince'] === '2026' && $p['track'] === 'Robotics' && $p['centre'] === 'Egbeda');
     chk('scan: …with the division the course belongs to', ($p['division'] ?? '') === club_division_of('Robotics'));
     $old = backend_dispatch('public.summerProfile', ['token' => 'NGG-SCAN-1'])['profile'] ?? [];
-    chk('scan: an older card that carried only the member id still opens the page — but names nobody and shows no face', ($old['kind'] ?? '') === 'member' && $old['secure'] === false
-        && $old['fullName'] === '' && $old['photoUrl'] === '' && $old['initials'] === 'S.A.' && $old['displayId'] === '026-701' && $old['attendance'] === []);
+    chk('scan: an older card that carried only the member id still opens the page — but says only that it is an active member card', ($old['kind'] ?? '') === 'member' && $old['secure'] === false
+        && $old['active'] === true && $old['displayId'] === '026-701' && $old['fullName'] === '' && $old['initials'] === '' && $old['photoUrl'] === ''
+        && $old['centre'] === '' && $old['track'] === '' && $old['division'] === '' && !isset($old['status']) && !isset($old['memberSince']) && $old['attendance'] === []);
     chk('scan: …the printed number works the same way', (backend_dispatch('public.summerProfile', ['token' => '026-701'])['profile']['displayId'] ?? '') === '026-701');
     member_card_issue('NGG-SCAN-1', 'test');
     chk('scan: a replaced card opens nothing', (backend_dispatch('public.summerProfile', ['token' => $code])['error'] ?? '') === 'not_found');

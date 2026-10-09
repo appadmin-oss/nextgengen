@@ -1270,7 +1270,8 @@
         failed:    (runId, items) => request('/admin/id-studio.php', { body: { action: 'failed', runId, items } }),
         askPhoto:  (items, force) => request('/admin/id-studio.php', { body: { action: 'askPhoto', items, force: !!force } }),
         design:    (kind, templateId) => request('/admin/id-studio.php', { body: { action: 'design', kind, templateId: templateId || '' } }),
-        mintIds:   (memberIds) => request('/admin/id-studio.php', { body: { action: 'mintIds', memberIds } }),
+        // Printed IDs for those with none, and every member's secure card code; `codesOnly` for a proof.
+        mintIds:   (memberIds, codesOnly) => request('/admin/id-studio.php', { body: { action: 'mintIds', memberIds, codesOnly: !!codesOnly } }),
       },
       wisdom: {
         list:     () => request('/admin/wisdom.php'),

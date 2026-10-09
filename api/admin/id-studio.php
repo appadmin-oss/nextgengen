@@ -19,7 +19,7 @@ if ($method === 'GET') {
         case 'askPhoto':  $res = gs_call('admin.ids.photo.ask', $base + ['items' => $b['items'] ?? null, 'force' => !empty($b['force'])]); break;
         case 'design':    $res = gs_call('admin.ids.design.set', $base + ['kind' => (string)($b['kind'] ?? ''), 'templateId' => (string)($b['templateId'] ?? '')]); break;
         // Printed IDs for exactly the members about to be printed.
-        case 'mintIds':   $res = gs_call('admin.ids.mint', $base + ['memberIds' => $b['memberIds'] ?? []]); break;
+        case 'mintIds':   $res = gs_call('admin.ids.mint', $base + ['memberIds' => $b['memberIds'] ?? [], 'codesOnly' => !empty($b['codesOnly'])]); break;
         default: json_error('unknown_action', 400);
     }
 } else {

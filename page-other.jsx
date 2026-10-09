@@ -1497,7 +1497,7 @@ function MemberCardView({ m, token, auth }) {
               </div>
             </div>
             {!m.active && <p className="mcv-warn">This membership is not active. The card does not admit its holder; ask them to see the centre.</p>}
-            {!m.secure && <p className="mcv-note">This is an older card that carries only a member number, so this page shows no name or photo. Ask the centre for a reprint: the new card opens the member’s full page.</p>}
+            {!m.secure && <p className="mcv-note">This is an older card that carries only a member number, so this page confirms the membership and nothing else. Ask the centre for a reprint: the new card opens the member’s full page.</p>}
           </div>
           {staff && token && m.active ? <ProfileCheckin token={token} name={m.fullName || "this member"}/> : null}
           {m.secure && att.length > 0 && (

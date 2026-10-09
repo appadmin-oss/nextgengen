@@ -1793,14 +1793,15 @@ function qr_payload_for(string $token): string {
     $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
     return $origin . '/q/' . $token;
 }
-/** Persist a client-rendered QR PNG (a data: URL). Validates it's a real,
- *  reasonably-sized PNG before writing — never trust the bytes blindly. */
-function qr_cache_store(string $token, string $dataUrl): bool {
-    if ($token === '' || strpos($dataUrl, 'data:image/png;base64,') !== 0) return false;
-    $bytes = base64_decode(substr($dataUrl, strlen('data:image/png;base64,')), true);
-    if ($bytes === false || strlen($bytes) < 60 || strlen($bytes) > 262144) return false;
-    if (substr($bytes, 0, 8) !== "\x89PNG\r\n\x1a\n") return false; // PNG magic
-    return @file_put_contents(qr_cache_path($token), $bytes) !== false;
+/** Make sure a token's hosted QR exists — drawn HERE, never taken from the
+ *  caller. It used to write the PNG a browser sent, after checking only that it
+ *  was a PNG, so anybody holding `summer` could host, under a child's (or a
+ *  volunteer's) token, a QR that opened any address — and the ID resend
+ *  path overwrote an existing image to do it. The server has had its own
+ *  encoder since (qr-encode.php), so the browser's bytes are ignored: the
+ *  argument is kept only so existing callers need not change. */
+function qr_cache_store(string $token, string $dataUrl = ''): bool {
+    return qr_ensure_cached($token);
 }
 /** The public URL the email uses for a token's QR (served by api/public/qr.php). */
 function qr_public_url(string $token): string {
@@ -3570,10 +3571,10 @@ function card_row_member(array $m, array $centres): array {
            CACENTRE gate reads and what /q/ opens. A member with none yet falls
            back to the member id, which the gate still reads by NGG's
            "app-card" format — the shape every card printed before this has. */
-        /* A card about to be printed is given its secure code now if it has
-           none: a member id in the QR opened the home page when a phone
-           scanned it, and a member number is not a secret. */
-        'token'     => (function_exists('member_cards_ensure') ? member_cards_ensure($m, 'card', 'created')['secure'] : null) ?? (string)($m['memberId'] ?? ''),
+        /* Read-only: a secure code is issued when a card is PRINTED
+           (admin.ids.mint, a scoped POST), never by listing rows — reading the
+           roster must not write, and must not hand out codes. */
+        'token'     => (function_exists('member_card_secure') ? member_card_secure((string)($m['memberId'] ?? '')) : null) ?? (string)($m['memberId'] ?? ''),
         'cardSecure' => function_exists('member_card_secure') && member_card_secure((string)($m['memberId'] ?? '')) !== null,
         'photoUrl'  => normalize_image_url((string)($m['photoUrl'] ?? '')),
         'joinDate'  => (string)($m['joinDate'] ?? ''),

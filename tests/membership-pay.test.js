@@ -234,7 +234,7 @@ function cleanup() {
     chk('a phone scanning a member card opens the NGG member page — not the Summer School one', /Tobi Ade/.test(mc) && /Active member/.test(mc) && /Technology & Applied Engineering/.test(mc) && /Robotics/.test(mc) && !/SUMMER SCHOOL/i.test(mc));
     await R.goto(BASE + '/?m=' + inv.memberId, { waitUntil: 'domcontentloaded' }); await waitForBoot(R);
     await R.waitForSelector('.mcv-card', { timeout: 20000 });
-    chk('an old card that carried /?m=<member id> opens the member page too — initials only, no name', new URL(R.url()).pathname === '/q/' + inv.memberId && /T\.A\./.test(await R.innerText('.mcv-card')) && !/Tobi Ade/.test(await R.innerText('.mcv-card')));
+    chk('an old card that carried /?m=<member id> opens the member page too — confirming the membership, naming nobody', new URL(R.url()).pathname === '/q/' + inv.memberId && /Active member/.test(await R.innerText('.mcv-card')) && !/Tobi|T\.A\.|Robotics|Egbeda/.test(await R.innerText('.mcv-card')));
     await R.context().close();
 
     chk('no page errors anywhere', errs.length === 0);
