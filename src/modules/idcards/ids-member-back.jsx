@@ -76,6 +76,8 @@ function NggcMemberCardBack({ member, program, qrUrl: given }) {
   const mm = v => v + "mm", pt = v => v + "pt";
   const email = String(p.email || "next@afrovanguard.org.ng");
   const handle = String(p.socialHandle || "nextgengen37").replace(/^@/, "");
+  // Where a found card goes back to (Control Room → Settings → ID card branding).
+  const address = String(p.address || "CACENTRE, Alimosho, Lagos");
   const payload = m.memberId && typeof window !== "undefined" && window._ngMemberQrPayload ? window._ngMemberQrPayload(m) : "";
   const [qr, setQr] = React.useState(given || "");
   React.useEffect(() => {
@@ -107,6 +109,9 @@ function NggcMemberCardBack({ member, program, qrUrl: given }) {
               : <div style={{ width: "100%", height: "100%", background: "#eef0f4" }}/>}
         </div>
       </div>
+      {/* Where a found card goes back to, just above the band, clear of the QR. */}
+      <div style={{ position: "absolute", left: mm(4), right: mm(4), bottom: mm(BAND + 1.6), textAlign: "center", color: "#fff", opacity: 0.88,
+        fontWeight: 500, fontSize: pt(4.2), lineHeight: 1.3 }}>If found, please return to {address}</div>
       {/* The amber band: how to reach the programme. */}
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: mm(BAND), background: NGGC_BACK.AMBER, display: "flex", alignItems: "center", justifyContent: "center",
         gap: mm(2.2), padding: "0 " + mm(2), boxSizing: "border-box", color: NGGC_BACK.INK, fontWeight: 700, fontSize: pt(4.6), whiteSpace: "nowrap" }}>

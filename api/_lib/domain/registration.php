@@ -3899,7 +3899,7 @@ function idcard_program(string $subject = 'student'): array {
         $ngg = is_array($p['ngg'] ?? null) ? $p['ngg'] : [];
         // Only the SHARED organisation identity carries over; everything that
         // describes the programme or the card is NGG's own.
-        $shared = array_intersect_key($p, array_flip(['website', 'phone', 'logoLockup', 'logoOkun']));
+        $shared = array_intersect_key($p, array_flip(['website', 'phone', 'address', 'logoLockup', 'logoOkun']));
         $p = $ngg + $shared + [
             'program'      => 'NGG',
             'motto'        => 'EMPOWERED 360°',
@@ -3916,6 +3916,9 @@ function idcard_program(string $subject = 'student'): array {
     $p += [
         'program' => 'LCASP', 'year' => gmdate('Y'), 'motto' => 'EMPOWERED 360°',
         'website' => $siteHost, 'phone' => '+234 903 777 6318',
+        /* Where a found card goes back to: the organisation's address, printed
+           on every card's back (owner, 2026-10-09). Shared by both programmes. */
+        'address' => 'CACENTRE, Alimosho, Lagos',
         'logoLockup' => '/assets/idcard/logo-lockup.png',
         'logoOkun' => '/assets/idcard/logo-okun.png',
         'widthMm' => 54, 'heightMm' => 75,
@@ -3947,8 +3950,15 @@ function idcard_program_save(array $in, string $by, string $subject = 'student')
        are the exception and stay at the root, because they describe the
        organisation rather than either programme. */
     $clean = $isMember ? (is_array($root['ngg'] ?? null) ? $root['ngg'] : []) : $root;
-    foreach (['program', 'year', 'motto', 'website', 'phone', 'logoLockup', 'logoOkun'] as $k) {
+    foreach (['program', 'year', 'motto', 'website', 'phone', 'address', 'logoLockup', 'logoOkun'] as $k) {
         if (array_key_exists($k, $in)) $clean[$k] = substr(trim((string)$in[$k]), 0, 512);
+    }
+    /* The member card's back prints an email and a social handle. They were
+       read (NggcMemberCardBack) but nothing could save them, so every card
+       carried the built-in defaults. NGG's own block keeps them. */
+    if ($isMember) {
+        if (array_key_exists('email', $in)) $clean['email'] = substr(trim((string)$in['email']), 0, 120);
+        if (array_key_exists('socialHandle', $in)) $clean['socialHandle'] = substr(ltrim(trim((string)$in['socialHandle']), '@'), 0, 60);
     }
     // Card proportions (mm) — validated to the same safe range as on read.
     if (array_key_exists('widthMm', $in))  $clean['widthMm']  = idcard_clamp_mm($in['widthMm'], 50, 60, 54);
@@ -3963,7 +3973,7 @@ function idcard_program_save(array $in, string $by, string $subject = 'student')
         $clean['validityDays'] = $d <= 0 ? 0 : max(1, min(3650, $d));
     }
     if ($isMember) {
-        foreach (['website', 'phone', 'logoLockup', 'logoOkun'] as $k) {
+        foreach (['website', 'phone', 'address', 'logoLockup', 'logoOkun'] as $k) {
             if (array_key_exists($k, $clean)) { $root[$k] = $clean[$k]; unset($clean[$k]); }
         }
         $root['ngg'] = $clean;

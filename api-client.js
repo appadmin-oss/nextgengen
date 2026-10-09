@@ -1273,6 +1273,10 @@
         design:    (kind, templateId) => request('/admin/id-studio.php', { body: { action: 'design', kind, templateId: templateId || '' } }),
         // Printed IDs for those with none, and every member's secure card code; `codesOnly` for a proof.
         mintIds:   (memberIds, codesOnly) => request('/admin/id-studio.php', { body: { action: 'mintIds', memberIds, codesOnly: !!codesOnly } }),
+        // Afrovanguard member cards: who has one, the card's stylesheet (fonts inlined, ~3 MB, cached per design), each card's markup.
+        avCards:   (q) => request('/admin/id-studio.php?view=av' + (q ? '&q=' + encodeURIComponent(q) : ''), { timeout: 40000 }),
+        avStyle:   (design) => request('/admin/id-studio.php?view=avStyle&design=' + encodeURIComponent(design || ''), { timeout: 60000 }),
+        avFaces:   (ids) => request('/admin/id-studio.php', { body: { action: 'avFaces', ids }, timeout: 60000 }),
       },
       wisdom: {
         list:     () => request('/admin/wisdom.php'),

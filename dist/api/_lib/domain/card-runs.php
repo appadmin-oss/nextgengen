@@ -43,7 +43,7 @@ declare(strict_types=1);
  */
 
 /** Subject types a card can be issued to. */
-const CRUN_SUBJECTS = ['member', 'student', 'volunteer'];
+const CRUN_SUBJECTS = ['member', 'student', 'volunteer', 'afrovanguard'];
 /** Run modes. `proof` is a single card for checking, and is recorded so a
  *  proof cannot be mistaken for an issue in the counts. */
 const CRUN_MODES = ['print', 'reprint', 'proof'];
@@ -96,7 +96,7 @@ function admin_card_run_record(array $p): array {
     $me = (string)($g['requester']['memberId'] ?? '');
 
     $kind = (string)($p['kind'] ?? 'member');
-    if (!in_array($kind, ['member', 'student', 'volunteer', 'graphic'], true)) return ['ok' => false, 'error' => 'bad_kind'];
+    if (!in_array($kind, ['member', 'student', 'volunteer', 'afrovanguard', 'graphic'], true)) return ['ok' => false, 'error' => 'bad_kind'];
     $mode = (string)($p['mode'] ?? 'print');
     if (!in_array($mode, CRUN_MODES, true)) return ['ok' => false, 'error' => 'bad_mode'];
 

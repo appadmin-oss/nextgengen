@@ -131,3 +131,120 @@ function admin_members_ngv_portal_sync(array $p): array {
     audit('member.ngv.portalSync', (string)($g['requester']['memberId'] ?? ''), '', ['announced' => $n, 'delivered' => $ok], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'announced' => $n, 'delivered' => $ok, 'queued' => $n - $ok];
 }
+
+/* ── Afrovanguard member cards, printed in the ID Card Studio ─────────────
+
+   Afrovanguard's member cards are printed here, in the ID Card Studio, with
+   its sheets, print log and reprint queue (owner, 2026-10-09). The card stays
+   ONE renderer — Afrovanguard's own partial. Afrovanguard hands it over
+   (integrations/ngg-cards.php there): who has a card, the card's stylesheet
+   with every asset inlined, and each card's markup. The studio lays that out
+   alone in a same-origin iframe at the design's 10px/mm and rasterises it with
+   snapDOM (src/modules/idcards/ids-av.jsx); it is never drawn a second time.
+
+   Server to server, signed with the shared secret the NGV integration already
+   uses (afrovanguard.ngv_webhook_secret = NGG_WEBHOOK_SECRET there):
+   X-NGG-Signature: sha256=hex(HMAC_SHA256(secret, "cards." + ts + "." + body)). */
+
+const AV_CARDS_FACES_MAX = 24;
+const AV_CARDS_STYLE_TTL = 7 * 86400;
+
+/** One signed request to Afrovanguard. ['ok' => true, …] or ['ok' => false, 'error']. */
+function av_cards_call(string $op, array $payload = [], int $timeout = 25): array {
+    if (isset($GLOBALS['__av_cards_mock']) && is_callable($GLOBALS['__av_cards_mock'])) return ($GLOBALS['__av_cards_mock'])($op, $payload);
+    global $CONFIG;
+    $av = (array)($CONFIG['afrovanguard'] ?? []);
+    $secret = trim((string)($av['ngv_webhook_secret'] ?? ''));
+    if ($secret === '') return ['ok' => false, 'error' => 'not_configured',
+        'detail' => 'NGG has no Afrovanguard secret. Set afrovanguard.ngv_webhook_secret in api/config.php to the same value as Afrovanguard’s Studio → Settings → NextGen Genius → Shared secret.'];
+    $url = rtrim((string)($av['org_url'] ?? 'https://afrovanguard.org.ng'), '/') . '/integrations/ngg-cards.php';
+    $body = (string)json_encode(['op' => $op] + $payload, JSON_UNESCAPED_SLASHES);
+    $ts = (string)time();
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body,
+        CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 8,
+        // afrovanguard.org.ng → www / http → https: follow, and keep it a POST
+        // (a plain redirect turns it into a GET, which the endpoint refuses).
+        CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 3,
+        CURLOPT_POSTREDIR => 7,   // CURL_REDIR_POST_ALL
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json', 'X-NGG-Timestamp: ' . $ts,
+            'X-NGG-Signature: sha256=' . hash_hmac('sha256', 'cards.' . $ts . '.' . $body, $secret)],
+    ]);
+    $raw = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $cerr = (string)curl_error($ch);
+    $final = (string)curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+    curl_close($ch);
+    $d = is_string($raw) ? json_decode($raw, true) : null;
+    if (!is_array($d)) {
+        $why = $cerr !== '' ? 'could not connect (' . $cerr . ')'
+             : ($code === 404 ? 'the card endpoint was not found — deploy integrations/ngg-cards.php on Afrovanguard'
+             : 'answered HTTP ' . $code . ' without data');
+        return ['ok' => false, 'error' => 'av_unreachable', 'detail' => 'Afrovanguard at ' . ($final ?: $url) . ' ' . $why . '.'];
+    }
+    if (empty($d['ok'])) {
+        $e = (string)($d['error'] ?? 'av_refused');
+        $detail = match (true) {
+            $e === 'bad_signature' => 'Afrovanguard refused the signature: the two secrets differ, or the two servers’ clocks are more than 5 minutes apart.',
+            $e === 'not-configured' => 'Afrovanguard has no NGG secret set. Set it in Afrovanguard’s Studio → Settings → NextGen Genius → Shared secret (the same value as here).',
+            default => 'Afrovanguard refused the request (' . $e . ', HTTP ' . $code . ').',
+        };
+        return ['ok' => false, 'error' => $e, 'detail' => $detail];
+    }
+    return $d;
+}
+
+/**
+ * Everybody on Afrovanguard with a card, as studio rows (the shape idsRecord
+ * reads for kind "afrovanguard").
+ */
+function admin_ids_av_list(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $r = av_cards_call('list', ['q' => mb_substr((string)($p['q'] ?? ''), 0, 80)]);
+    if (empty($r['ok'])) return $r;
+    $rows = [];
+    foreach ((array)($r['cards'] ?? []) as $c) {
+        if (!is_array($c) || (string)($c['id'] ?? '') === '') continue;
+        $rows[] = [
+            'avId' => (string)$c['id'], 'fullName' => (string)($c['name'] ?? ''),
+            'displayId' => (string)($c['printedId'] ?? ''), 'number' => (string)($c['number'] ?? ''),
+            'level' => (string)($c['level'] ?? ''), 'avKind' => (string)($c['kind'] ?? ''),
+            // What the printed QR must decode to contain: the card's code (its /q/ address).
+            'token' => (string)($c['cardCode'] ?? ''), 'scanUrl' => (string)($c['scanUrl'] ?? ''),
+            'hasPhoto' => !empty($c['photo']), 'status' => (string)($c['status'] ?? ''),
+            'version' => (string)($c['version'] ?? ''), 'design' => (string)($r['design'] ?? ''),
+        ];
+    }
+    return ['ok' => true, 'cards' => $rows, 'design' => (string)($r['design'] ?? ''),
+            'program' => ['name' => 'Afrovanguard', 'widthMm' => 54, 'heightMm' => 85.6]];
+}
+
+/** The card's stylesheet, fonts and seal inlined. Kept a week per design version. */
+function admin_ids_av_style(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    global $CONFIG;
+    $design = preg_replace('/[^a-z0-9-]/i', '', (string)($p['design'] ?? ''));
+    $file = $design !== '' ? ($CONFIG['cache_dir'] ?? sys_get_temp_dir()) . '/av_card_style__' . $design . '.json' : '';
+    if ($file !== '' && is_file($file) && time() - (int)filemtime($file) < AV_CARDS_STYLE_TTL) {
+        $hit = json_decode((string)file_get_contents($file), true);
+        if (is_array($hit) && !empty($hit['css'])) return ['ok' => true] + $hit;
+    }
+    $r = av_cards_call('style', [], 40);
+    if (empty($r['ok'])) return $r;
+    $out = ['version' => (string)($r['version'] ?? ''), 'css' => (string)($r['css'] ?? ''), 'seal' => (string)($r['seal'] ?? ''),
+            'mm' => $r['mm'] ?? ['w' => 54, 'h' => 85.6], 'pxPerMm' => (int)($r['pxPerMm'] ?? 10)];
+    if ($file !== '' && $out['version'] === $design) @file_put_contents($file, json_encode($out, JSON_UNESCAPED_SLASHES));
+    return ['ok' => true] + $out;
+}
+
+/** Front and back markup for up to 24 cards. */
+function admin_ids_av_faces(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $ids = array_values(array_unique(array_filter(array_map(static fn($x) => preg_replace('/\D/', '', (string)$x), (array)($p['ids'] ?? [])))));
+    if (!$ids) return ['ok' => false, 'error' => 'no_items'];
+    if (count($ids) > AV_CARDS_FACES_MAX) return ['ok' => false, 'error' => 'too_many', 'max' => AV_CARDS_FACES_MAX];
+    $r = av_cards_call('faces', ['ids' => $ids], 40);
+    if (empty($r['ok'])) return $r;
+    return ['ok' => true, 'faces' => (object)($r['faces'] ?? []), 'design' => (string)($r['design'] ?? '')];
+}

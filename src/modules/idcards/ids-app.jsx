@@ -29,7 +29,7 @@
 const IDS_DEFAULT_SETTINGS = { size: "cr80p", cw: 60, ch: 90, paper: "a4", margin: IDS_MARGIN.def, gap: IDS_GAP.def, skip: 0,
   backs: "off", marks: true, dpi: 300, order: "centre", breakBy: true, packing: true, reason: "new" };
 const IDS_REASON_LABEL = Object.fromEntries(IDS_REASONS);
-const IDS_KIND_FOR_RUN = { member: "member", summer: "student", volunteer: "volunteer" };
+const IDS_KIND_FOR_RUN = { member: "member", summer: "student", volunteer: "volunteer", afrovanguard: "afrovanguard" };
 const IDS_ASK_QUIET_MS = 3 * 864e5;   // the server's quiet period: asking again inside it needs an explicit press
 const IDS_ASK_MAX = 200;              // and its cap per request
 const IDS_QR_WARM_CHUNK = 8;          // hosted QR PNGs sent per request (~30 KB), so no request trips a host's body filter
@@ -110,7 +110,7 @@ function IdCardStudioPage({ setPage }) {
   const [data, setData] = React.useState({ state: "loading", records: [], queue: [], programs: {}, kinds: [], designs: {}, choices: {} });
   const load = React.useCallback(() => {
     setData(d => Object.assign({}, d, { state: "loading" }));
-    idsLoad().then(r => setData(Object.assign({ state: "ready" }, r)))
+    idsLoad().then(r => { setData(Object.assign({ state: "ready" }, r)); if (r.avNote) say(r.avNote); })
       .catch(e => setData(d => Object.assign({}, d, { state: e && e.forbidden ? "forbidden" : "error" })));
   }, []);
   React.useEffect(load, [load]);
@@ -124,8 +124,11 @@ function IdCardStudioPage({ setPage }) {
     data.records.forEach(r => { if (r.centreObj && r.centreObj.color) m[r.centre] = r.centreObj.color; });
     return c => m[c] || "var(--ids-centre-other)";
   }, [data.records]);
-  const isBlocked = r => !r.photoUrl;
-  const designOf = rec => (data.designs || {})[rec.subjectType] || null;
+  // An Afrovanguard card without a photo prints the member's initials, as Afrovanguard designed it.
+  const isBlocked = r => r.kind !== "afrovanguard" && !r.photoUrl;
+  const designOfKind = k => k === "afrovanguard" ? null : (data.designs || {})[IDS_KIND_FOR_RUN[k]] || null;
+  // Afrovanguard's card is Afrovanguard's design: no studio template is ever put on it.
+  const designOf = rec => rec.kind === "afrovanguard" ? null : (data.designs || {})[rec.subjectType] || null;
   const mmOf = rec => idsRecordMm(designOf(rec), rec.kind, (data.programs || {})[rec.kind]);
 
   /* ── Settings and queue ── */
@@ -282,7 +285,7 @@ function IdCardStudioPage({ setPage }) {
     more: Math.max(0, shown.length - lim), showMore: () => setLim(l => l + IDS_REC_MORE),
     rows: shown.slice(0, lim).map(r => {
       const b = isBlocked(r), on = inQ.has(r.key), wasAsked = askedOf(r), recent = idsAskedRecently(wasAsked);
-      const tag = b ? (wasAsked ? "No photo yet · asked " + idsAskedOn(wasAsked) : "No photo yet · can’t print") : r.reason === "reprint" ? "Reprint · " + (r.why || "requested") : r.divMissing ? "New · division is blank" : "New card";
+      const tag = b ? (wasAsked ? "No photo yet · asked " + idsAskedOn(wasAsked) : "No photo yet · can’t print") : r.reason === "reprint" ? "Reprint · " + (r.why || "requested") : r.divMissing ? "New · division is blank" : r.kind === "afrovanguard" && !r.hasPhoto ? "New card · no photo, prints initials" : "New card";
       return Object.assign({}, r, { blocked: b, on, tag, tagTone: b ? (recent ? "muted" : "bad") : r.reason === "reprint" || r.divMissing ? "warn" : "muted",
         aria: (on ? "Take " : "Put ") + r.name + (on ? " off the sheet" : " on the sheet"), toggle: () => toggleRec(r),
         askLabel: recent ? "Ask again" : "Ask for photo", ask: () => askOne(r),
@@ -482,10 +485,10 @@ function IdCardStudioPage({ setPage }) {
   /* Which design each card type prints with — the header says it, the confirm
      says it for the kinds on this sheet, and the Designs section changes it. */
   const designName = d => d ? d.name + " v" + d.version : "Standard card";
-  const kindsHere = data.kinds.filter(k => (data.choices || {})[IDS_KIND_FOR_RUN[k]] !== undefined || (data.designs || {})[IDS_KIND_FOR_RUN[k]] !== undefined);
+  const kindsHere = data.kinds.filter(k => k !== "afrovanguard").filter(k => (data.choices || {})[IDS_KIND_FOR_RUN[k]] !== undefined || (data.designs || {})[IDS_KIND_FOR_RUN[k]] !== undefined);
   const designHead = kindsHere.map(k => IDS_KINDS[k] + ": " + designName((data.designs || {})[IDS_KIND_FOR_RUN[k]])).join(" · ") || "Standard card";
   const sheetKinds = [...new Set(recCards.map(c => c.rec.kind))];
-  const designLabel = sheetKinds.map(k => (sheetKinds.length > 1 ? IDS_KINDS[k] + ": " : "") + designName((data.designs || {})[IDS_KIND_FOR_RUN[k]])).join(" · ") || "Standard card";
+  const designLabel = sheetKinds.map(k => (sheetKinds.length > 1 ? IDS_KINDS[k] + ": " : "") + (k === "afrovanguard" ? "Afrovanguard’s card" : designName(designOfKind(k)))).join(" · ") || "Standard card";
   const [designBusy, setDesignBusy] = React.useState("");
   const setDesign = (kind, templateId) => {
     const t = IDS_KIND_FOR_RUN[kind];
@@ -689,6 +692,7 @@ function IdCardStudioPage({ setPage }) {
       const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       await frames();
       await idsTplSettled();
+      if (typeof idsAvSettled === "function") await idsAvSettled();
       // A card photo asks Cloudinary where the face is before it settles on a URL (card-photo.jsx).
       if (typeof cardPhotosSettled === "function") await cardPhotosSettled();
       // Photos and the member QR arrive after the first paint: wait for the farm to go quiet, then for every image.
@@ -730,6 +734,19 @@ function IdCardStudioPage({ setPage }) {
       const s = curSlot(jobs[i].s), f = jobs[i].face, key = faceKey(s, f, o.dpi, o.type);
       const hit = idsFaceGet(key);
       if (hit) { faces[i] = hit; tick(); continue; }
+      if (s.rec && s.rec.kind === "afrovanguard") {
+        /* Afrovanguard's own card, laid out alone and rasterised at this dpi
+           (ids-av.jsx), then given the studio's bleed like a design is. */
+        if (stale()) return null;
+        try {
+          const art = await idsAvRaster(s.rec, f === "back" ? "back" : "front", o.dpi);
+          if (art.failed) throw new Error(art.why || "draw_failed");
+          const r = await CE.imageFace(art.url, { trimW_mm: s.cw || G.cw, trimH_mm: s.ch || G.ch, dpi: o.dpi, bleed_mm: IDS_FACE_BLEED, type: mime, quality: 0.95 });
+          faces[i] = { bytes: r.bytes, bleedMm: IDS_FACE_BLEED, bleedPx: r.bleedPx, trimWPx: r.trimWPx, trimHPx: r.trimHPx, alias: "f" + idsHash(key), engine: "afrovanguard" };
+          idsFacePut(key, faces[i]);
+        } catch (e) { fail(i, e); }
+        tick(); continue;
+      }
       const d = s.rec && designOf(s.rec), t = d && (f === "back" ? d.back : d);
       if (t) {
         if (stale()) return null;
@@ -1034,7 +1051,8 @@ function IdCardStudioPage({ setPage }) {
   React.useEffect(() => {
     // The server gates the warm-up on Summer School; an operator without it has nothing to warm.
     if (qrWarmed.current || data.state !== "ready" || !data.kinds.includes("summer")) return undefined;
-    const tokens = data.records.filter(r => r.kind !== "member").map(r => String((r.raw || {}).token || "")).filter(Boolean);
+    // Afrovanguard's codes are Afrovanguard's: its own site answers them.
+    const tokens = data.records.filter(r => r.kind !== "member" && r.kind !== "afrovanguard").map(r => String((r.raw || {}).token || "")).filter(Boolean);
     if (!tokens.length) return undefined;
     const t = setTimeout(async () => {
       qrWarmed.current = true;

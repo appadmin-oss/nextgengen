@@ -23,10 +23,10 @@ const IDS_CUSTOM_LIMITS = { min: 20, maxW: 200, maxH: 280 };
 const IDS_MARGIN = { def: 10, min: 3, max: 30 };
 const IDS_GAP = { def: 4, min: 0, max: 20 };
 const IDS_DPI = [[150, "150 dpi · proof"], [300, "300 dpi · print"], [600, "600 dpi · fine"]];
-const IDS_KINDS = { member: "Member", summer: "Summer School", volunteer: "Volunteer" };
-const IDS_KIND_IDS = ["member", "summer", "volunteer"];
+const IDS_KINDS = { member: "Member", summer: "Summer School", volunteer: "Volunteer", afrovanguard: "Afrovanguard" };
+const IDS_KIND_IDS = ["member", "summer", "volunteer", "afrovanguard"];
 /* The printed kind label on the sheet's packing list and filters. */
-const IDS_KIND_PLURAL = { member: "NGG members", summer: "Summer School", volunteer: "Volunteers" };
+const IDS_KIND_PLURAL = { member: "NGG members", summer: "Summer School", volunteer: "Volunteers", afrovanguard: "Afrovanguard members" };
 const IDS_ORDERS = [["centre", "Centre"], ["kind", "Kind"], ["name", "Name"], ["mine", "My order"]];
 const IDS_BACKS = [
   ["off", "Fronts only", "Single-sided"],

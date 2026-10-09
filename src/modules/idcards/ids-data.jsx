@@ -2,7 +2,8 @@
    ID Card Studio — the data, and the card faces.
 
    Records come from the three existing card ops (members, Summer School
-   participants, volunteers), each under its own capability; a list the
+   participants, volunteers) and from Afrovanguard (its member cards, through
+   ids-av.jsx and domain/ngv-portal.php), each under its own capability; a list the
    operator may not read is simply not offered, never an error on the page.
    Who already has a card, open reprint requests, photo asks and the design
    each card type prints with come from one call (admin.ids.state), so the
@@ -26,18 +27,20 @@ const IDS_SIZE_TOL = 0.6;                     // mm: CR80's 53.98 × 85.6 and th
 /** One row from any of the three lists, in the studio's shape. `raw` is what the renderer gets. */
 function idsRecord(kind, raw, state) {
   const subjectType = kind === "summer" ? "student" : kind;
-  const id = String(kind === "member" ? raw.memberId : kind === "summer" ? raw.studentId : raw.volunteerId || "");
-  const name = kind === "member" ? String(raw.fullName || "") : [raw.firstName, raw.surname].filter(Boolean).join(" ");
+  const id = String(kind === "member" ? raw.memberId : kind === "summer" ? raw.studentId : kind === "afrovanguard" ? raw.avId : raw.volunteerId || "");
+  const name = kind === "member" || kind === "afrovanguard" ? String(raw.fullName || "") : [raw.firstName, raw.surname].filter(Boolean).join(" ");
   const centre = raw.centre && raw.centre.name ? raw.centre : null;
   const key = subjectType + ":" + id;
   const issued = (state.issued || {})[key] || null;
   const re = (state.reprints || {})[key] || null;
-  const division = kind === "member" ? ((raw.disciplines || []).length ? raw.disciplines.join(" · ") : raw.track) : kind === "summer" ? raw.track : (raw.faculty || raw.role);
+  const division = kind === "afrovanguard" ? (raw.avKind === "NGV" ? "NextGen Vanguard" : "Level " + (raw.level || "")) : kind === "member" ? ((raw.disciplines || []).length ? raw.disciplines.join(" · ") : raw.track) : kind === "summer" ? raw.track : (raw.faculty || raw.role);
   const displayId = kind === "member" && raw.displayIdMissing ? "" : String(raw.displayId || "");
   return {
     key, id, subjectType, kind, name, raw,
     centre: centre ? centre.name : "", centreObj: centre,
-    displayId, photoUrl: String(raw.photoUrl || ""),
+    // An Afrovanguard card's photo is inside its own markup; without one it prints initials, as designed.
+    displayId, photoUrl: kind === "afrovanguard" ? "" : String(raw.photoUrl || ""),
+    hasPhoto: kind === "afrovanguard" ? !!raw.hasPhoto : !!raw.photoUrl,
     // A reprint is somebody already holding a card and asked for again; a
     // person with a card and no request is done, not queued.
     reason: re ? "reprint" : "new", why: re ? re.why : "",
@@ -55,7 +58,8 @@ function idsRecord(kind, raw, state) {
 async function idsLoad() {
   const R = NGGApi.admin.registration;
   const soft = p => p.then(r => ({ ok: true, r }), e => ({ ok: false, forbidden: !!e && (e.status === 403 || e.code === "forbidden"), e }));
-  const [st, mem, sum, vol] = await Promise.all([soft(NGGApi.admin.idStudio.state()), soft(R.memberCards()), soft(R.cards()), soft(R.volunteerCards())]);
+  const [st, mem, sum, vol, av] = await Promise.all([soft(NGGApi.admin.idStudio.state()), soft(R.memberCards()), soft(R.cards()), soft(R.volunteerCards()),
+    soft(NGGApi.admin.idStudio.avCards())]);
   const lists = [["member", mem], ["summer", sum], ["volunteer", vol]];
   if (!st.ok || lists.every(([, x]) => !x.ok && x.forbidden)) {
     const err = new Error(st.ok ? "forbidden" : "failed");
@@ -63,6 +67,11 @@ async function idsLoad() {
     throw err;
   }
   if (lists.some(([, x]) => !x.ok && !x.forbidden)) throw new Error("failed");
+  /* Afrovanguard is another site: a failure is said on the page, with its
+     reason (not set up, wrong secret, unreachable), never a reason the
+     studio's own cards cannot print. */
+  const avNote = av.ok || av.forbidden ? "" : "Afrovanguard cards couldn’t be fetched: " + ((av.e && (av.e.detail || av.e.message)) || "no answer") + "";
+  if (av.ok) lists.push(["afrovanguard", av]);
   const state = st.r || {};
   const records = [], programs = {};
   lists.forEach(([kind, x]) => {
@@ -72,7 +81,7 @@ async function idsLoad() {
   });
   // Only people who still need a card: never printed, or asked for again.
   const queue = records.filter(r => !r.printedBefore || r.reason === "reprint");
-  return { records, queue, programs, kinds: lists.filter(([, x]) => x.ok).map(([k]) => k),
+  return { records, queue, programs, kinds: lists.filter(([, x]) => x.ok).map(([k]) => k), avNote,
     designs: state.designs || {}, choices: state.choices || {} };
 }
 
@@ -90,6 +99,8 @@ async function idsLoad() {
  */
 function idsRecordMm(design, kind, program) {
   if (design) return [Number(design.wMm) || 54, Number(design.hMm) || 85];
+  // Afrovanguard's card is ID-1, 54 × 85.6 mm: its own geometry, never a setting here.
+  if (kind === "afrovanguard") return [54, 85.6];
   if (kind && kind !== "member") {
     const p = program || {};
     return [Number(p.widthMm) || 54, Number(p.heightMm) || 75];
@@ -159,6 +170,7 @@ function IdsRecordFace(props) {
 }
 function IdsRecordFaceInner({ rec, face, program, wMm, hMm, design }) {
   const boxW = wMm * IDS_MM_PX, boxH = hMm * IDS_MM_PX;
+  if (rec.kind === "afrovanguard") return <IdsAvFace rec={rec} side={face === "back" ? "back" : "front"} boxW={boxW} boxH={boxH}/>;
   if (design && (face !== "back" || design.back)) return <IdsTplFace design={design} side={face} row={rec.raw} boxW={boxW} boxH={boxH}/>;
   if (rec.kind === "member") return <IdsMemberFace rec={rec} back={face === "back"} program={program} boxW={boxW} boxH={boxH}/>;
   const H = Math.round(IDS_FRONT_W * hMm / wMm);

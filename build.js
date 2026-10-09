@@ -52,6 +52,7 @@ const ORDER = [
   'src/modules/idcards/ids-core.jsx',
   'src/modules/idcards/ids-ui.jsx',
   'src/modules/idcards/ids-member-back.jsx',
+  'src/modules/idcards/ids-av.jsx',
   'src/modules/idcards/ids-data.jsx',
   'src/modules/idcards/ids-print.jsx',
   'src/modules/idcards/ids-log.jsx',

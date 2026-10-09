@@ -524,13 +524,13 @@ const CR_SY_ATT_TYPES = [["member", "NGG members"], ["student", "Summer School p
 const CR_SY_CLOSE_TYPES = [["member", "NGG members"], ["student", "Summer School participants"], ["volunteer", "Summer volunteers"]];
 const CR_SY_IDLE = [["900", "15 minutes"], ["1800", "30 minutes (default)"], ["3600", "1 hour"], ["14400", "4 hours"], ["43200", "12 hours — a full working day"], ["0", "Never — only for a locked, private office"]];
 const CR_SY_TOGGLES = ["applications_open", "mentor_applications_open", "volunteer_applications_open", "intake_photo_required", "photo_gate_issuance", "geofence_enabled", "volunteer_sms_notify", "checkin_state_emails", "qotw_mail", "companion_enabled"];
-const CR_SY_ID_KEYS = ["program", "year", "motto", "validityDays", "website", "phone", "logoLockup", "logoOkun"];
+const CR_SY_ID_KEYS = ["program", "year", "motto", "validityDays", "website", "phone", "address", "logoLockup", "logoOkun"];
 const crSyTime = v => !v || /^([01]?\d|2[0-3]):[0-5]\d$/.test(v) ? "" : "Use a time like 09:00.";
 const crSyInt = (lo, hi, what) => v => /^-?\d+$/.test(String(v).trim()) && +v >= lo && +v <= hi ? "" : "Enter " + what + " from " + lo + " to " + hi + ".";
 
 /* One form per Settings tab, from one definition: `part` picks its groups. */
 function crSyGenForm(d, part) {
-  const s = d.settings || {}, a = s.attendance || {}, rbt = a.resumptionByType || {}, cbt = a.closeByType || {}, id = s.idcard || {};
+  const s = d.settings || {}, a = s.attendance || {}, rbt = a.resumptionByType || {}, cbt = a.closeByType || {}, id = s.idcard || {}, idm = s.idcardMember || {};
   const tog = (k, l, help) => ({ id: k, l, help, c: "toggle", value: !!s[k] });
   const sessOpts = [["", "None"]].concat((d.sessions || []).map(x => [x.sessionId, (x.name || x.code || x.sessionId) + (x.startDate ? " · from " + crDate(x.startDate) : "")]));
   if (s.featured_session_id && !sessOpts.some(o => o[0] === s.featured_session_id)) sessOpts.push([s.featured_session_id, s.featured_session_id + " (not this year)"]);
@@ -566,13 +566,16 @@ function crSyGenForm(d, part) {
       { part: "general", h: "Staff sign-in", help: "How long a Control Room session may sit untouched before it locks. A warning appears two minutes before; reading or clicking anywhere keeps it alive.", rows: [
         { id: "session_idle_admin", l: "Sign staff out after", c: "select", opts: CR_SY_IDLE.concat(CR_SY_IDLE.some(o => o[0] === String(s.session_idle_admin)) || s.session_idle_admin == null ? [] : [[String(s.session_idle_admin), Math.round(s.session_idle_admin / 60) + " minutes"]]), value: String(s.session_idle_admin == null ? 1800 : s.session_idle_admin) },
       ] },
-      { part: "branding", h: "ID card branding", help: "Printed on the Summer School cards and the digital IDs. The card’s QR always opens the holder’s /q/ profile page.", rows: [
+      { part: "branding", h: "ID card branding", help: "Printed on the NGG member cards, the Summer School cards and the digital IDs. The card’s QR always opens the holder’s /q/ profile page.", rows: [
         { id: "id_program", l: "Programme name", c: "input", max: 512, value: id.program || "" },
         { id: "id_year", l: "Year", c: "input", max: 512, value: id.year == null ? "" : String(id.year) },
         { id: "id_motto", l: "Motto", c: "input", max: 512, value: id.motto || "" },
         { id: "id_validityDays", l: "A new card is valid for", help: "Days. 0 means it never expires. Cards already issued keep the expiry they were issued with.", c: "input", type: "number", value: String(id.validityDays == null ? 90 : id.validityDays), check: crSyInt(0, 3650, "days") },
         { id: "id_website", l: "Website printed on the card", c: "input", max: 512, value: id.website || "" },
         { id: "id_phone", l: "Phone printed on the card", c: "input", type: "tel", max: 512, value: id.phone || "" },
+        { id: "id_address", l: "Organisation address", help: "Printed on the back of every card — where a found card goes back to.", c: "input", max: 512, value: id.address || "" },
+        { id: "idm_email", l: "Email on the NGG member card’s back", c: "input", type: "email", max: 120, value: idm.email || "" },
+        { id: "idm_socialHandle", l: "Social handle on the NGG member card’s back", help: "Without the @.", c: "input", max: 60, value: idm.socialHandle || "" },
         { id: "id_logoLockup", l: "Lockup logo address", c: "input", max: 512, value: id.logoLockup || "" },
         { id: "id_logoOkun", l: "Partner logo address (card back)", c: "input", max: 512, value: id.logoOkun || "" },
       ] },
@@ -589,6 +592,8 @@ function crSyGenForm(d, part) {
       });
       const idk = Object.keys(patch).filter(k => k.indexOf("id_") === 0);
       if (idk.length) { out.idcard = {}; idk.forEach(k => { const f = k.slice(3); out.idcard[f] = f === "validityDays" ? parseInt(patch[k], 10) || 0 : String(patch[k]).trim(); }); }
+      const idmk = Object.keys(patch).filter(k => k.indexOf("idm_") === 0);
+      if (idmk.length) { out.idcardMember = {}; idmk.forEach(k => { out.idcardMember[k.slice(4)] = String(patch[k]).trim(); }); }
       if (Object.keys(patch).some(k => k.indexOf("att_") === 0)) {
         const res = Object.assign({}, rbt), close = {};
         CR_SY_ATT_TYPES.forEach(([t]) => { const v = String(all["att_res_" + t] || "").trim(); if (v) res[t] = v; else delete res[t]; });

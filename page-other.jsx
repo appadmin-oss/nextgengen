@@ -6014,7 +6014,9 @@ function CardBack({ card, program, S, H = CARD_DESIGN_H }) {
         <span aria-hidden="true" style={{ width: 1.5, height: px(44), background: "#C9CDD8" }}/>
         <img src={(program && program.logoLockup) || "/assets/idcard/logo-lockup.png"} alt="Programme lockup" style={{ width: px(230) }}/>
       </div>
-      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: "#00225F" }}/>
+      {/* The navy foot carries the organisation's address: where a found card goes back to. */}
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(28), background: "#00225F", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+        fontWeight: 600, fontSize: px(14), letterSpacing: px(0.4), whiteSpace: "nowrap", overflow: "hidden" }}>{program.address ? "If found, return to " + program.address : ""}</div>
     </div>
   );
 }

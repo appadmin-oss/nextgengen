@@ -743,6 +743,7 @@ function crMbRecBlocks(d, ctx) {
     out.push({ type: "list", span: 3, title: "Chain of command", rows: m.ngvVolunteerId ? [
       { icon: "shield-check", t: "Promoted to NGV · " + m.ngvVolunteerId, s: (m.ngvAt ? crDate(m.ngvAt) + " · " : "") + "Their NGV dashboard is active." },
       { icon: "paper-plane-tilt", t: "Resend their NGV ID", onClick: () => crMbResendNgv(ctx, m) },
+      { icon: "printer", t: "Print their Afrovanguard card", s: "In the ID Card Studio, under Afrovanguard.", onClick: () => ctx.studio() },
       { icon: "shield-slash", t: "Revoke NGV", onClick: () => crMbDemoteNgv(ctx, m) },
     ] : [eligible ? { icon: "arrow-fat-up", t: "Promote to NGV", s: "Advances an active NGG member into the volunteer tier, with evidence of formation.", onClick: () => crMbPromote(ctx, m) }
       : { icon: "arrow-fat-up", t: "Not eligible for NGV", s: "Only an active NGG member can be promoted." }] });

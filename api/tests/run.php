@@ -5662,6 +5662,19 @@ chk('idcard: the organisation is shared, not duplicated', (function () {
     $stu = idcard_program(); $mem = idcard_program('member');
     return $stu['phone'] === '+234 000 000 0000' && $mem['phone'] === '+234 000 000 0000';
 })());
+chk('idcard: the organisation\'s address is printed on every card back — one setting, both programmes', (function () {
+    $def = idcard_program('member')['address'] ?? '';
+    idcard_program_save(['address' => 'CACENTRE, Egbeda, Lagos'], 'tester', 'member');
+    $stu = idcard_program(); $mem = idcard_program('member');
+    $src = (string)file_get_contents(dirname(__DIR__, 2) . '/src/modules/idcards/ids-member-back.jsx') . (string)file_get_contents(dirname(__DIR__, 2) . '/page-other.jsx');
+    return $def === 'CACENTRE, Alimosho, Lagos' && $stu['address'] === 'CACENTRE, Egbeda, Lagos' && $mem['address'] === 'CACENTRE, Egbeda, Lagos'
+        && str_contains($src, 'If found, please return to {address}') && str_contains($src, '"If found, return to " + program.address');
+})());
+chk('idcard: the member card back\'s email and handle can be set now — they were read but never saved', (function () {
+    idcard_program_save(['email' => 'cards@example.org', 'socialHandle' => '@ngg.cards'], 'tester', 'member');
+    $mem = idcard_program('member'); $stu = idcard_program();
+    return $mem['email'] === 'cards@example.org' && $mem['socialHandle'] === 'ngg.cards' && !isset($stu['email']);
+})());
 chk('idcard: an existing deployment keeps its settings without a migration', (function () {
     // The stored blob IS the Summer config, untouched. A deployment that has
     // never saved an NGG block still gets a sane member card.
@@ -22943,6 +22956,42 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('ngv portal: a room subscribed to everything is not handed somebody\'s email and birthday',
         !db_row("SELECT d.id FROM deliveries d JOIN outbox o ON o.eventId = d.eventId WHERE d.integrationId = 'INT-CHAT-ALL' AND o.kind = 'private.ngv.account'")
         && bus_subscribed('["*"]', 'member.promoted.ngv') && !bus_subscribed('["*"]', 'private.ngv.account') && !bus_subscribed('["private.*"]', 'private.ngv.account'));
+
+    /* Afrovanguard member cards, printed in the ID Card Studio (domain/ngv-portal.php). */
+    $seen = [];
+    $GLOBALS['__av_cards_mock'] = function (string $op, array $payload) use (&$seen) {
+        $seen[] = $op;
+        if ($op === 'list') return ['ok' => true, 'design' => '2-abc', 'cards' => [
+            ['id' => '41', 'name' => 'Babatunde Adeola', 'printedId' => 'E-AVM-17-0001', 'number' => 'AVM-17-0001', 'level' => 'E', 'kind' => 'AVM',
+             'cardCode' => 'AVQR-ABCD1234EFGH5678', 'scanUrl' => 'https://afrovanguard.org.ng/q/AVQR-ABCD1234EFGH5678', 'photo' => true, 'status' => 'Active member', 'version' => 'v1'],
+            ['id' => '', 'name' => 'no id'],
+        ]];
+        if ($op === 'style') return ['ok' => true, 'version' => '2-abc', 'css' => '.avc{}', 'seal' => 'data:image/png;base64,AA', 'mm' => ['w' => 54, 'h' => 85.6], 'pxPerMm' => 10];
+        if ($op === 'faces') return ['ok' => true, 'design' => '2-abc', 'faces' => ['41' => ['front' => '<article class="avc">F</article>', 'back' => '<article class="avc">B</article>']]];
+        return ['ok' => false, 'error' => 'unknown_op'];
+    };
+    $al = backend_dispatch('admin.ids.av.list', ['requesterId' => $ADM]);
+    chk('av cards: the studio lists Afrovanguard’s cards as its own rows — id, name, the printed ID, the QR it must read',
+        !empty($al['ok']) && count($al['cards']) === 1 && $al['cards'][0]['avId'] === '41' && $al['cards'][0]['displayId'] === 'E-AVM-17-0001'
+        && $al['cards'][0]['token'] === 'AVQR-ABCD1234EFGH5678' && $al['cards'][0]['version'] === 'v1' && ($al['program']['heightMm'] ?? 0) == 85.6);
+    $as = backend_dispatch('admin.ids.av.style', ['requesterId' => $ADM, 'design' => '2-abc']);
+    $before = count($seen);
+    $as2 = backend_dispatch('admin.ids.av.style', ['requesterId' => $ADM, 'design' => '2-abc']);
+    chk('av cards: the stylesheet (fonts inlined, megabytes) is fetched once per design version, then kept',
+        !empty($as['ok']) && $as['css'] === '.avc{}' && !empty($as2['ok']) && count($seen) === $before);
+    $af = backend_dispatch('admin.ids.av.faces', ['requesterId' => $ADM, 'ids' => ['41', '41', 'x']]);
+    chk('av cards: each card’s markup is Afrovanguard’s own', !empty($af['ok']) && str_contains(json_encode($af['faces']), 'avc'));
+    chk('av cards: at most 24 faces a request', (backend_dispatch('admin.ids.av.faces', ['requesterId' => $ADM, 'ids' => range(1, 30)])['error'] ?? '') === 'too_many');
+    chk('av cards: an Afrovanguard card is a subject the studio may log and requeue',
+        in_array('afrovanguard', IDS_SUBJECTS, true) && in_array('afrovanguard', CRUN_SUBJECTS, true) && ids_subject_contact('afrovanguard', '41') === null);
+    $run = backend_dispatch('admin.card.run.record', ['requesterId' => $ADM, 'kind' => 'afrovanguard', 'subjectType' => 'afrovanguard', 'mode' => 'print',
+        'items' => [['subjectId' => '41', 'displayId' => 'E-AVM-17-0001']]]);
+    chk('av cards: a printed Afrovanguard card is on the print log', !empty($run['ok']));
+    unset($GLOBALS['__av_cards_mock']);
+    $CONFIG['afrovanguard']['ngv_webhook_secret'] = '';
+    chk('av cards: with no shared secret, the studio says how to set it up',
+        (backend_dispatch('admin.ids.av.list', ['requesterId' => $ADM])['error'] ?? '') === 'not_configured');
+    $CONFIG['afrovanguard']['ngv_webhook_secret'] = 'av-ngv-secret';
 
     $calls = [];
     $GLOBALS['__bus_http_mock'] = fn($u, $b, $h) => ['ok' => false, 'error' => 'http_503'];
