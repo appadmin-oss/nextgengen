@@ -5662,6 +5662,19 @@ chk('idcard: the organisation is shared, not duplicated', (function () {
     $stu = idcard_program(); $mem = idcard_program('member');
     return $stu['phone'] === '+234 000 000 0000' && $mem['phone'] === '+234 000 000 0000';
 })());
+chk('idcard: the organisation\'s address is printed on every card back — one setting, both programmes', (function () {
+    $def = idcard_program('member')['address'] ?? '';
+    idcard_program_save(['address' => 'CACENTRE, Egbeda, Lagos'], 'tester', 'member');
+    $stu = idcard_program(); $mem = idcard_program('member');
+    $src = (string)file_get_contents(dirname(__DIR__, 2) . '/src/modules/idcards/ids-member-back.jsx') . (string)file_get_contents(dirname(__DIR__, 2) . '/page-other.jsx');
+    return $def === 'CACENTRE, Alimosho, Lagos' && $stu['address'] === 'CACENTRE, Egbeda, Lagos' && $mem['address'] === 'CACENTRE, Egbeda, Lagos'
+        && str_contains($src, 'If found, please return to {address}') && str_contains($src, '"If found, return to " + program.address');
+})());
+chk('idcard: the member card back\'s email and handle can be set now — they were read but never saved', (function () {
+    idcard_program_save(['email' => 'cards@example.org', 'socialHandle' => '@ngg.cards'], 'tester', 'member');
+    $mem = idcard_program('member'); $stu = idcard_program();
+    return $mem['email'] === 'cards@example.org' && $mem['socialHandle'] === 'ngg.cards' && !isset($stu['email']);
+})());
 chk('idcard: an existing deployment keeps its settings without a migration', (function () {
     // The stored blob IS the Summer config, untouched. A deployment that has
     // never saved an NGG block still gets a sane member card.

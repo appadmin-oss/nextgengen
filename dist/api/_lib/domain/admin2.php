@@ -1031,6 +1031,7 @@ function admin_settings_get(array $p): array {
         'intake_photo_required'     => (setting_raw('intake_photo_required') ?? '1') !== '0',
         'site_content'              => site_content(),
         'idcard'                    => idcard_program(),
+        'idcardMember'              => idcard_program('member'),
         'attendance'                => attendance_settings(),
     ]];
 }
@@ -1059,6 +1060,10 @@ function admin_settings_set(array $p): array {
     // ID-card branding block (program/year/motto/website/phone/logos).
     if (array_key_exists('idcard', $data) && is_array($data['idcard'])) {
         idcard_program_save($data['idcard'], $g['requester']['memberId']);
+    }
+    // The NGG member card's own fields (its back's email and social handle).
+    if (array_key_exists('idcardMember', $data) && is_array($data['idcardMember'])) {
+        idcard_program_save(array_intersect_key($data['idcardMember'], array_flip(['email', 'socialHandle'])), $g['requester']['memberId'], 'member');
     }
     // Attendance punctuality (resumption time per member type + grace).
     if (array_key_exists('attendance', $data) && is_array($data['attendance'])) {
