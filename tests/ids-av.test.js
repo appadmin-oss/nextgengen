@@ -54,6 +54,21 @@ function pdfFacts(buf) {
   return { ok: t.startsWith('%PDF-'), pages: (t.match(/\/Type \/Page\b(?!s)/g) || []).length, images: widths.length, minImageW: widths.length ? Math.min(...widths) : 0 };
 }
 
+/* Per page, where each image is drawn: [{x, y, w, h}] from "w 0 0 h x y cm … Do". */
+function pdfPlacements(buf) {
+  const t = buf.toString('latin1'), zlib = require('zlib');
+  const pages = [];
+  for (const m of t.matchAll(/\/Type \/Page\b(?!s)[\s\S]*?\/Contents (\d+) 0 R/g)) {
+    const obj = new RegExp('\\n' + m[1] + ' 0 obj[\\s\\S]*?stream\\r?\\n').exec(t);
+    if (!obj) { pages.push([]); continue; }
+    const start = obj.index + obj[0].length, end = t.indexOf('endstream', start);
+    let s = '';
+    try { s = zlib.inflateSync(buf.subarray(start, end)).toString('latin1'); } catch (_) { s = buf.subarray(start, end).toString('latin1'); }
+    pages.push([...s.matchAll(/([\d.-]+) 0 0 ([\d.-]+) ([\d.-]+) ([\d.-]+) cm\s*\/I\w* Do/g)].map(k => ({ w: +k[1], h: +k[2], x: +k[3], y: +k[4] })));
+  }
+  return pages;
+}
+
 let server, browser, passed = 0, failed = 0;
 const chk = (m, c) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m); } };
 function cleanup() {
@@ -142,6 +157,19 @@ function cleanup() {
     await P.click('.ids-seg-opt:has-text("Backs")');
     await P.waitForFunction(() => [...document.querySelectorAll('.ids-slot.is-card')].every(s => s.querySelector('.ids-face-tpl')), null, { timeout: 90000 }).catch(() => {});
     chk('the backs are Afrovanguard’s backs', (await P.$$('.ids-slot.is-card .ids-face-tpl')).length === 9);
+    /* Mirrored like NGG's: a long-edge flip turns the sheet left to right, so
+       each row runs the other way on the back — the back of the card in the
+       first column sits in the last, behind its own front. */
+    const where = () => P.$$eval('.ids-slot.is-card', els => els.map(e => { const r = e.getBoundingClientRect(); return { who: (e.getAttribute('aria-label') || '').replace(/^Slot \d+: /, '').replace(/,.*$/, ''), x: Math.round(r.x), y: Math.round(r.y) }; }));
+    const backs = await where();
+    await P.click('.ids-seg-opt:has-text("Fronts")');
+    await P.waitForTimeout(200);
+    const fronts = await where();
+    const xs = [...new Set(fronts.map(f => f.x))].sort((a, b) => a - b);
+    const mirrored = fronts.every(f => { const b = backs.find(k => k.who === f.who); return b && b.y === f.y && b.x === xs[xs.length - 1 - xs.indexOf(f.x)]; });
+    if (!mirrored) console.error('       fronts ' + JSON.stringify(fronts.slice(0, 3)) + ' backs ' + JSON.stringify(backs.slice(0, 3)));
+    chk('long edge: every back is mirrored left to right, behind its own front, same row', mirrored && xs.length === 3);
+    await P.click('.ids-seg-opt:has-text("Backs")');
     if (OUT) await (await P.$('.ids-sheet')).screenshot({ path: path.join(OUT, 'av-sheet-backs.png') });
     await P.click('.ids-seg-opt:has-text("Fronts")');
     if (OUT) await (await P.$('.ids-sheet')).screenshot({ path: path.join(OUT, 'av-sheet-fronts.png') });
@@ -155,6 +183,18 @@ function cleanup() {
     const pdf = pdfFacts(buf);
     chk('Print makes a PDF: nine fronts and nine backs', pdf.ok && pdf.images === 18);
     chk('…every face at 300 dpi with bleed', pdf.minImageW >= Math.floor((54 + 6) / 25.4 * 300) - 2);
+    /* The PDF itself: where each sheet page draws its faces (the cm matrix
+       before each image). Slot i's back must sit at slot i's front mirrored
+       across the page — the same rule the screen showed. */
+    const placed = pdfPlacements(buf).filter(pg => pg.length === 9);
+    const pageW = 595.28;
+    const pmirror = placed.length === 2 && placed[0].every((f, i) => {
+      const b = placed[1][i];
+      return Math.abs(b.y - f.y) < 0.5 && Math.abs((b.x + b.w) - (pageW - f.x)) < 0.5;
+    });
+    if (!pmirror) console.error('       pdf placements ' + JSON.stringify(placed.map(pg => pg.slice(0, 3))));
+    chk('…and in the PDF, every back is drawn mirrored across the page from its front, same height, not rotated', pmirror
+      && placed[1].every(b => b.w > 0 && b.h > 0));
     await P.waitForFunction(() => /logged as CRUN-/.test((document.querySelector('.ids-toast') || {}).innerText || ''), null, { timeout: 20000 }).catch(() => {});
     chk('the run is logged under Afrovanguard, one issue per person',
       php(`echo db_row("SELECT COUNT(*) c FROM card_issues WHERE subjectType = 'afrovanguard' AND ok = 1")['c'];`) === '9');
