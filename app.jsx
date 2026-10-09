@@ -407,7 +407,7 @@ function App() {
     "club-admin":   <ClubAdminPortal   setPage={setPage}/>,
     circle:     <CirclePortal   setPage={setPage}/>,
     family:     <FamilyPage     setPage={setPage}/>,
-    mentor:     <MentorPortal/>,
+    mentor:     <MentorHome/>,
     apply:      <SelfRegisterPage/>,
     review:     <ReviewDeskPage/>,
     gate:       <GatePage/>,

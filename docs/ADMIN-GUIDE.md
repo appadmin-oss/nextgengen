@@ -22,6 +22,7 @@ those five words to mean something else.
 8. [Summer School](#summer-school)
 9. [The NGG Club](#the-ngg-club)
    - [The curriculum](#the-curriculum)
+   - [Mentorship: Anchor Pods](#mentorship-anchor-pods)
 10. [Applications, sign-ups and verification](#applications-sign-ups-and-verification)
 11. [ID cards](#id-cards)
 12. [How bulk actions behave](#how-bulk-actions-behave)
@@ -180,7 +181,9 @@ opens — read from the same list the server enforces, so it is always true.
 | **Auditor (M&E)** | `audit` | Reads; changes nothing. |
 
 **Deliberately in no role but the super admin's:** `fees` (money), `journal`
-(the record), `settings` and `rbac` (the system). Grant them to a named person.
+(the record), `safeguarding` (reports about young people), `settings` and `rbac`
+(the system). Grant them to a named person — `safeguarding` to the centre's
+safeguarding officer, with their centre scope.
 
 **Nobody grants upward.** Changing someone's role, or resetting their 2FA or
 password, needs `rbac` — and never reaches a role further than your own. Only a
@@ -1097,6 +1100,73 @@ Parents choose per child which emails they get: every sign-in and sign-out,
 the Monday weekly summary, and an alert when a fine is issued.
 
 ---
+
+### Mentorship: Anchor Pods
+
+**Control Room → People → Mentorship** (`/control/mentorship`) is HQ's and the
+leads' workspace. Mentors use the **Mentor Portal** at `/mentor`.
+
+**A pod** is one mentor and the members matched to them, at one centre: at
+least **five** (the Commitment Policy) and at most **eight**. Every match moves
+through five phases — **Match** (the offer), **Connect** (weeks 1–6, getting to
+know each other: no goals yet), **Grow** (7–40, one goal at a time), **Lead**
+(41–50, the mentee leads something for the pod) and **Close** (51–52, a
+planned ending, never a silent stop).
+
+**Matching is a choice of two.** In **Match queue**, open a member and approve
+two mentors; the member (or their guardian) picks one — from their own account,
+or you record the choice from the match in **Relationships**. Only mentors who
+are **cleared** appear, at the member's centre, with a place free. *Undo* on the
+toast withdraws an offer nobody has chosen yet. Once chosen, the portal
+schedules the cadence: weekly one-to-ones in Connect, then every two weeks, a
+monthly goal check and parent summary, the termly relationship check, two lead
+check-ins in the first month, and the closure conversation.
+
+**Cleared** means three things, all required before a mentor sees any child's
+record: screening (record it in **Mentors**), all **13 Mentor Academy modules**
+(the mentor takes them in the portal; answers are checked by the server; child
+safeguarding is renewed yearly), and the signed **NGGC Mentorship Commitment &
+Conduct Policy**.
+
+**The adaptive rules** run every six hours (and on *Run the rules now*). They
+write a nudge; nothing is ever sent to a child.
+
+| Rule | When | Who sees it |
+|---|---|---|
+| R1 | A mentee misses two Saturdays the centre met | Mentor, with a ready message to the parent |
+| R2 | No one-to-one for 21 days | Mentor — top of Today |
+| R3 | Two weekly reviews say “worse”, or a concern is raised | Lead, with an intervention opened |
+| R4 | A goal is completed | Mentor — the next goal from this week’s Anchor theme |
+| R5 | The first six weeks | Goal tools hidden; two lead check-ins scheduled |
+| R6 | A mentor’s reviews under half the pod for three weeks | Lead only — a private support chat, never a public flag |
+| R7 | A low termly relationship check, either side | Lead, with an intervention opened |
+| R8 | A mentor is leaving | Lead — every match moves to a planned closure; nobody is re-matched until it is done |
+| P1 | A month short on the Commitment Policy | Lead only, privately |
+
+**The Commitment Policy, measured.** In **Mentors**, *Record commitment
+attendance* records who came to CIMC training (Saturday 7:00am), the weekly
+Mentor Preparation session (7–8pm), Saturday 9:30 mentoring (at least twice a
+month), the Tuesday STS meeting and the quarterly retreat. A mentor who has
+completed CIMC training is marked so once and no longer needs Saturday 7:00am.
+The month also counts the pod (five or more), parent summaries and the Anthem
+and Pledge. The conduct commitments (values, accountability, feedback,
+leadership) are listed for the lead's own review and are not scored.
+
+**Safeguarding.** *Report a concern* is on every screen of the Mentor Portal,
+for every mentor, cleared or not. A report goes to the safeguarding officer for
+that centre (the staff member holding `safeguarding` with the centre in scope),
+gets a case number, and cannot be edited by the reporter. The **Safeguarding**
+tab is drawn only for people holding that capability; notes and status changes
+sit beside the report, never over it, and every opening of a case is recorded.
+
+**Impact** shows six measures against fixed targets — match length (≥ 70%
+reach 12 months), contact (≥ 85% with a one-to-one in 14 days), weekly reviews
+(≥ 90%), relationship quality (≥ 4 of 5), goals completed on time (≥ 60%) and
+mentor retention (≥ 75%) — each with the counts it came from.
+
+Not built yet: the portal's **Reflections**, **Pod growth** and **Mentee list**
+screens, *Mark here* from the pod, and the assistant's suggested plans. The
+older class roster stays at `/mentor?view=class`.
 
 ## Applications, sign-ups and verification
 

@@ -297,7 +297,10 @@ function ms_pool(): array {
  * close of their last match. One query, scoped by centre.
  */
 function ms_waiting(?array $centres, int $limit = 200): array {
-    $where = "m.type = 'NGG' AND m.status = 'active'
+    /* Members only: staff and the programme's own mentors hold NGG rows too,
+       and none of them is waiting for a mentor. */
+    $where = "m.type = 'NGG' AND m.status = 'active' AND COALESCE(m.role, 'member') IN ('', 'member')
+        AND NOT EXISTS (SELECT 1 FROM mentors t WHERE t.memberId = m.memberId AND t.status = 'active')
         AND NOT EXISTS (SELECT 1 FROM mentor_matches x WHERE x.memberId = m.memberId AND x.status IN ('offered','active','paused','closing'))
         AND NOT EXISTS (SELECT 1 FROM mentor_assignments a WHERE a.memberId = m.memberId AND a.status = 'active')";
     $args = [];
@@ -1254,6 +1257,8 @@ function ms_portal_gate(array $p): array {
     if ($mid === '') return ['ok' => false, 'error' => 'no_mentor_record'];
     $m = db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [$mid]);
     if (!$m) return ['ok' => false, 'error' => 'no_mentor_record'];
+    // Pods are NGG's. A Summer School mentor keeps the class roster.
+    if (!ms_mentor_is_ngg($m)) return ['ok' => false, 'error' => 'not_a_pod_mentor'];
     return ['ok' => true, 'g' => $g, 'mentor' => $m, 'clearance' => ms_clearance($m)];
 }
 /** Gate + "this mentee is in MY pod". Anything else is a 403. */

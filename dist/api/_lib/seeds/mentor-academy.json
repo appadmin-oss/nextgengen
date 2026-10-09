@@ -1,0 +1,595 @@
+{
+ "pass": 80,
+ "groups": [
+  "Foundations",
+  "Keeping young people safe",
+  "Mentoring practice"
+ ],
+ "modules": [
+  {
+   "id": "a01",
+   "group": 0,
+   "title": "Understanding NGG",
+   "mins": 12,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "What NGG is for",
+     "body": "NGG helps young people aged 10–17 grow in character, competence and contribution. Saturdays are where development is practised; mentoring is where it is noticed and named."
+    },
+    {
+     "h": "Where you fit",
+     "body": "You are one of three adults around each young person: their guardian, their centre team and you. You don't replace any of them."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "Where is development mostly practised at NGG?",
+     "options": [
+      "In mentor messages",
+      "At Saturday sessions",
+      "At school"
+     ],
+     "answer": 1,
+     "why": "Saturdays are the development lab. Mentoring helps the young person notice and build on it."
+    }
+   ]
+  },
+  {
+   "id": "a02",
+   "group": 0,
+   "title": "The role of a mentor",
+   "mins": 15,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Relationship first",
+     "body": "Matches that start with friendship and trust last longer and do more good than matches that start with fixing problems. Spend the first month getting to know them."
+    },
+    {
+     "h": "Consistency beats intensity",
+     "body": "Short, regular contact matters more than long, rare meetings. Matches that end early can leave a young person worse off than having no mentor, so only commit to what you can keep."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "A new mentee is quiet in your first meeting. What helps most?",
+     "options": [
+      "Set three goals straight away",
+      "Do something together and let them lead the talk",
+      "Ask about their school grades"
+     ],
+     "answer": 1,
+     "why": "Youth-led, activity-based time builds trust. Goals come after."
+    }
+   ]
+  },
+  {
+   "id": "a03",
+   "group": 0,
+   "title": "Building trust",
+   "mins": 14,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Show up",
+     "body": "Be on time, every time. If you can't make it, tell the coordinator and the young person through the portal."
+    },
+    {
+     "h": "Listen more than you talk",
+     "body": "Ask open questions. Repeat back what you heard. Don't judge what they tell you."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "You can't make Saturday. What do you do?",
+     "options": [
+      "Nothing, they'll understand",
+      "Message the mentee on WhatsApp",
+      "Tell the coordinator and message through the portal"
+     ],
+     "answer": 2,
+     "why": "All contact goes through the portal, and the coordinator can arrange cover."
+    }
+   ]
+  },
+  {
+   "id": "a04",
+   "group": 1,
+   "title": "Child safeguarding",
+   "mins": 30,
+   "note": "Renew yearly",
+   "required": true,
+   "renewDays": 365,
+   "lessons": [
+    {
+     "h": "Your duty",
+     "body": "Safeguarding is everyone's job. If you are worried about a young person, you must report it the same day. You do not need proof, and you must not investigate yourself."
+    },
+    {
+     "h": "Signs to notice",
+     "body": "Changes in mood, behaviour or appearance; unexplained injuries; fear of going home; talk of harm; sudden withdrawal from the group."
+    },
+    {
+     "h": "If a young person tells you something",
+     "body": "Stay calm and listen. Don't promise to keep it secret. Say you'll need to tell someone whose job is to help. Write down their words, the date and time, then report through the portal."
+    }
+   ],
+   "scenario": {
+    "situation": "Mariam says: “If I tell you something, promise you won't tell anyone?”",
+    "options": [
+     {
+      "text": "“I promise.”",
+      "right": false,
+      "why": "You can't keep this promise if she's at risk. Breaking it later damages trust more."
+     },
+     {
+      "text": "“I can't promise that. If you're in danger, I'll need to tell someone whose job is to help. You can still talk to me.”",
+      "right": true,
+      "why": "Honest and kind. She can decide what to say knowing the truth."
+     },
+     {
+      "text": "“Let's talk about it another time.”",
+      "right": false,
+      "why": "She's chosen this moment. Putting it off can mean she never tells anyone."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "You're worried but have no proof. What do you do?",
+     "options": [
+      "Wait until you're sure",
+      "Report it today through the portal",
+      "Ask the guardian first"
+     ],
+     "answer": 1,
+     "why": "Report concerns, not certainties. The safeguarding officer decides what happens next."
+    },
+    {
+     "q": "A young person discloses harm. What do you write down?",
+     "options": [
+      "Your opinion of what happened",
+      "Their exact words, date and time",
+      "Nothing until you've asked more questions"
+     ],
+     "answer": 1,
+     "why": "Their words, unchanged. Don't lead or question further."
+    },
+    {
+     "q": "Who investigates a concern?",
+     "options": [
+      "You, the mentor",
+      "The safeguarding officer",
+      "The young person's friends"
+     ],
+     "answer": 1,
+     "why": "Never investigate yourself."
+    }
+   ]
+  },
+  {
+   "id": "a05",
+   "group": 1,
+   "title": "Boundaries",
+   "mins": 20,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Where you meet",
+     "body": "Only at the centre or in the NGG call room. Never alone off-site, never at your home or theirs, never in your car."
+    },
+    {
+     "h": "Money and gifts",
+     "body": "Don't give or lend money. Small, equal gifts only through the centre, such as a book at the end of term."
+    },
+    {
+     "h": "Touch and language",
+     "body": "Handshakes and high-fives in public. No private jokes, nicknames or comments about appearance."
+    }
+   ],
+   "scenario": {
+    "situation": "Tolulope's parent asks if you can drive her home after the session because it's raining.",
+    "options": [
+     {
+      "text": "Agree, it's only ten minutes",
+      "right": false,
+      "why": "Mentors don't transport mentees. It protects both of you."
+     },
+     {
+      "text": "Say no kindly and ask the centre lead to help arrange safe transport",
+      "right": true,
+      "why": "The centre has a process for this."
+     },
+     {
+      "text": "Give her money for a taxi",
+      "right": false,
+      "why": "No money changes hands between mentor and mentee."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "Where can you meet your mentee?",
+     "options": [
+      "Anywhere public",
+      "Only at the centre or the NGG call room",
+      "At their home with a parent present"
+     ],
+     "answer": 1,
+     "why": "Meeting places are fixed so everyone knows where young people are."
+    }
+   ]
+  },
+  {
+   "id": "a06",
+   "group": 1,
+   "title": "Digital communication",
+   "mins": 18,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Portal only",
+     "body": "Message only through the NGG portal. No WhatsApp, Instagram, TikTok or phone calls. Messages are kept and can be seen by the safeguarding team."
+    },
+    {
+     "h": "Hours",
+     "body": "Between 8am and 8pm. If a young person messages late, reply the next morning."
+    },
+    {
+     "h": "Photos",
+     "body": "Don't take or share photos of a young person on your own phone. The centre handles photos with media consent."
+    }
+   ],
+   "scenario": {
+    "situation": "Kelechi sends you a friend request on Instagram.",
+    "options": [
+     {
+      "text": "Accept, it's harmless",
+      "right": false,
+      "why": "Personal social media is off limits, even if it seems friendly."
+     },
+     {
+      "text": "Ignore it and say nothing",
+      "right": false,
+      "why": "Better to explain, so he doesn't feel rejected."
+     },
+     {
+      "text": "Decline and explain in the portal that you only chat on NGG",
+      "right": true,
+      "why": "Clear and kind."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "A mentee messages at 10pm. What do you do?",
+     "options": [
+      "Reply straight away",
+      "Reply after 8am the next day",
+      "Call them"
+     ],
+     "answer": 1,
+     "why": "Keep to the hours. If it's urgent or worrying, report it."
+    }
+   ]
+  },
+  {
+   "id": "a07",
+   "group": 1,
+   "title": "Reporting concerns",
+   "mins": 12,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "How to report",
+     "body": "Tap Report a concern, pick a category and write what happened. It goes straight to the safeguarding officer."
+    },
+    {
+     "h": "In an emergency",
+     "body": "If a child is in immediate danger, call 112 first, then the safeguarding officer."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "A child is in immediate danger. First step?",
+     "options": [
+      "Report in the portal",
+      "Call 112",
+      "Message the coordinator"
+     ],
+     "answer": 1,
+     "why": "Emergency services first, then the officer."
+    }
+   ]
+  },
+  {
+   "id": "a08",
+   "group": 2,
+   "title": "Development conversations",
+   "mins": 20,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Five mentor actions",
+     "body": "Express care, challenge growth, provide support, share power, expand possibilities."
+    },
+    {
+     "h": "Ask, don't tell",
+     "body": "Help them work out what they think. “What would you do differently?” beats “You should…”"
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "Which is ‘sharing power’?",
+     "options": [
+      "Choosing their goal for them",
+      "Letting them pick what you work on next",
+      "Correcting every mistake"
+     ],
+     "answer": 1,
+     "why": "Young people grow more when they help decide."
+    }
+   ]
+  },
+  {
+   "id": "a09",
+   "group": 2,
+   "title": "Saturday observation and evidence",
+   "mins": 25,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Ten indicators",
+     "body": "Voice, courage, thinking, creativity, collaboration, responsibility, character, identity, initiative, reflection. Four levels: not seen, emerging, demonstrated, exemplary."
+    },
+    {
+     "h": "Rate what you saw, not who they are",
+     "body": "Rate today's behaviour. A quiet day doesn't make a quiet child."
+    },
+    {
+     "h": "Evidence",
+     "body": "For any rise or for exemplary, write what they did: “Volunteered to present first.” Not “Excellent.”"
+    }
+   ],
+   "scenario": {
+    "situation": "You want to rate Ibrahim's Initiative as Exemplary. Which evidence works?",
+    "options": [
+     {
+      "text": "“Great initiative today!”",
+      "right": false,
+      "why": "Says how good, not what happened."
+     },
+     {
+      "text": "“Noticed his group had no plan, wrote one on the board and gave each person a job.”",
+      "right": true,
+      "why": "Specific and observable. Another mentor would rate it the same."
+     },
+     {
+      "text": "“He's always a leader.”",
+      "right": false,
+      "why": "About who he is, not what he did today."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "Which needs written evidence?",
+     "options": [
+      "Every rating",
+      "Any rise, and any exemplary",
+      "Only low ratings"
+     ],
+     "answer": 1,
+     "why": "Rises and exemplary ratings must be backed by what you saw."
+    }
+   ]
+  },
+  {
+   "id": "a10",
+   "group": 2,
+   "title": "The Anchor Journal",
+   "mins": 10,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Theirs, not yours",
+     "body": "The journal is private unless they choose to share. You only see what they share with you."
+    },
+    {
+     "h": "Responding",
+     "body": "Reply briefly and warmly. Ask one question. Never correct spelling or grammar."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "A mentee shares a journal entry. Best reply?",
+     "options": [
+      "Correct the spelling",
+      "“What helped you do it?”",
+      "Forward it to their parent"
+     ],
+     "answer": 1,
+     "why": "Warm, curious, short."
+    }
+   ]
+  },
+  {
+   "id": "a11",
+   "group": 2,
+   "title": "Giving feedback",
+   "mins": 12,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Specific and soon",
+     "body": "Name what they did, why it mattered and one thing to try next, on the same day."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "Most useful feedback?",
+     "options": [
+      "“Good job”",
+      "“You explained your idea clearly; next time try looking at the group”",
+      "“You can do better”"
+     ],
+     "answer": 1,
+     "why": "Specific, kind, one next step."
+    }
+   ]
+  },
+  {
+   "id": "a12",
+   "group": 2,
+   "title": "Handling difficult situations",
+   "mins": 20,
+   "note": "",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "When they go quiet",
+     "body": "Keep showing up. Send one short message a week. Tell the coordinator after two weeks of silence."
+    },
+    {
+     "h": "Conflict in the pod",
+     "body": "Stay calm, separate if needed, and hear each side privately. Log it."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "A mentee hasn't replied for two weeks. What now?",
+     "options": [
+      "Stop messaging",
+      "Tell the coordinator",
+      "Message their parent directly"
+     ],
+     "answer": 1,
+     "why": "Coordinators help re-engage. Don't go round the portal."
+    }
+   ]
+  },
+  {
+   "id": "a13",
+   "group": 2,
+   "title": "Closing a match well",
+   "mins": 15,
+   "note": "New this term",
+   "required": true,
+   "renewDays": 0,
+   "lessons": [
+    {
+     "h": "Why endings matter",
+     "body": "Abrupt endings can hurt. A planned ending, with time to say goodbye, protects what you built."
+    },
+    {
+     "h": "The steps",
+     "body": "Tell the coordinator first. Agree a last meeting. Review their goals and achievements together. Write a final note. Say goodbye properly, even if you're staying at NGG."
+    },
+    {
+     "h": "What you mustn't do",
+     "body": "Don't just stop turning up. Don't promise to stay in touch outside NGG."
+    }
+   ],
+   "scenario": {
+    "situation": "You're moving to Abuja next month. When do you tell Tolulope?",
+    "options": [
+     {
+      "text": "On the last Saturday, so she isn't upset for weeks",
+      "right": false,
+      "why": "A surprise ending feels like rejection."
+     },
+     {
+      "text": "After telling the coordinator, with at least three weeks to plan a proper goodbye",
+      "right": true,
+      "why": "Time to review, celebrate and hand over."
+     },
+     {
+      "text": "Not at all, the coordinator will tell her",
+      "right": false,
+      "why": "She should hear it from you, with support."
+     }
+    ]
+   },
+   "quiz": [
+    {
+     "q": "Who do you tell first about ending a match?",
+     "options": [
+      "Your mentee",
+      "The coordinator",
+      "The guardian"
+     ],
+     "answer": 1,
+     "why": "The coordinator plans the closure with you."
+    },
+    {
+     "q": "Which is part of a good closure?",
+     "options": [
+      "Swapping phone numbers",
+      "Reviewing their goals and achievements together",
+      "Ending by message"
+     ],
+     "answer": 1,
+     "why": "Celebrate what they achieved."
+    }
+   ]
+  },
+  {
+   "id": "a14",
+   "group": 1,
+   "title": "Refresher: digital safety",
+   "mins": 10,
+   "note": "Yearly refresher",
+   "required": false,
+   "renewDays": 365,
+   "lessons": [
+    {
+     "h": "What's changed",
+     "body": "New this year: voice notes are allowed in the portal. They are kept like messages. Video calls only in the NGG call room, which is recorded."
+    }
+   ],
+   "scenario": null,
+   "quiz": [
+    {
+     "q": "Where can you video call a mentee?",
+     "options": [
+      "WhatsApp video",
+      "The NGG call room",
+      "Zoom"
+     ],
+     "answer": 1,
+     "why": "Only the NGG call room, which is recorded."
+    }
+   ]
+  }
+ ]
+}

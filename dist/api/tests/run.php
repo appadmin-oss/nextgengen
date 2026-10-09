@@ -25300,5 +25300,183 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     setting_set('centres_split_seed', (string)$keep['seed'], 'test');
 })();
 
+/* ── Mentorship: Anchor Pods, R1–R8, the commitment policy ─────────────── */
+(function () {
+    $SU = 'NGG-2025-0099';
+    $T = '2026-10-10';                       // a Saturday
+    $now = now_iso();
+    $mk = static function (string $id, string $name, string $type = 'NGG') use ($now) {
+        db_insert('members', ['memberId' => $id, 'fullName' => $name, 'email' => strtolower(str_replace(' ', '', $name)) . '@pod.example', 'type' => $type,
+            'status' => 'active', 'role' => 'member', 'centre' => 'Podville', 'track' => 'tech', 'joinDate' => '2026-01-05', 'createdAt' => $now, 'updatedAt' => $now]);
+    };
+    foreach ([1, 2, 3] as $i) {
+        $mk("NGG-PODM-$i", "Pod Mentor $i");
+        db_insert('mentors', ['mentorId' => "MEN-POD-$i", 'fullName' => "Pod Mentor $i", 'email' => "podmentor$i@pod.example", 'status' => 'active',
+            'centre' => 'Podville', 'tracks' => 'tech', 'skills' => 'robotics coding', 'programme' => 'ngg', 'memberId' => "NGG-PODM-$i",
+            'checkedAt' => $now, 'maxMentees' => 8, 'joinedAt' => '2025-01-01', 'createdAt' => $now]);
+    }
+    foreach (range(1, 6) as $i) $mk("NGG-POD-K$i", "Pod Kid $i");
+    db_exec("UPDATE mentors SET checkedAt = '' WHERE mentorId = 'MEN-POD-3'");   // not screened
+    $clear = static function (string $mentorId) {
+        foreach (ms_required_modules() as $mod) db_upsert('mentor_academy', ['mentorId' => $mentorId, 'moduleId' => $mod, 'score' => 100, 'passedAt' => now_iso()], ['mentorId', 'moduleId'], ['score' => 100]);
+    };
+
+    // Clearance gate.
+    $today0 = backend_dispatch('member.ms.today', ['requesterId' => 'NGG-PODM-1']);
+    chk('pods: an uncleared mentor gets their clearance and no mentee data', !empty($today0['ok']) && $today0['cleared'] === false && $today0['pod'] === []
+        && in_array('academy', $today0['clearance']['missing'], true) && in_array('policy', $today0['clearance']['missing'], true));
+    chk('pods: the Academy requires thirteen modules', count(ms_required_modules()) === 13);
+    $acad = backend_dispatch('member.ms.academy', ['requesterId' => 'NGG-PODM-1']);
+    chk('pods: the Academy is sent without its answers', !empty($acad['ok']) && !isset($acad['modules'][0]['quiz'][0]['answer']));
+    $wrong = backend_dispatch('member.ms.academy.check', ['requesterId' => 'NGG-PODM-1', 'moduleId' => 'a01', 'answers' => [0]]);
+    $right = backend_dispatch('member.ms.academy.check', ['requesterId' => 'NGG-PODM-1', 'moduleId' => 'a01', 'answers' => [1]]);
+    chk('pods: a module check is graded on the server; a wrong answer does not pass', $wrong['passed'] === false && $right['passed'] === true && $right['score'] === 100);
+    chk('pods: the policy is signed against its current version', (backend_dispatch('member.ms.policy.accept', ['requesterId' => 'NGG-PODM-1', 'signedName' => 'Pod Mentor 1', 'version' => '2001-01'])['error'] ?? '') === 'policy_changed');
+    foreach ([1, 2, 3] as $i) {
+        $clear("MEN-POD-$i");
+        backend_dispatch('member.ms.policy.accept', ['requesterId' => "NGG-PODM-$i", 'signedName' => "Pod Mentor $i", 'version' => MS_POLICY_VERSION]);
+    }
+    chk('pods: screening + thirteen modules + the policy clears a mentor; an unscreened one stays uncleared',
+        ms_clearance(db_row("SELECT * FROM mentors WHERE mentorId = 'MEN-POD-1'"))['cleared'] === true
+        && ms_clearance(db_row("SELECT * FROM mentors WHERE mentorId = 'MEN-POD-3'"))['missing'] === ['screening']);
+    chk('pods: the policy carries the seventeen commitments and the standard', count(mentorship_policy()['items']) === 17 && str_contains(mentorship_policy()['standard'], 'follows through'));
+
+    // The queue and the choice of two.
+    $q = backend_dispatch('admin.ms.queue', ['requesterId' => $SU, 'centre' => 'Podville']);
+    $k1 = array_values(array_filter($q['waiting'], static fn($w) => $w['memberId'] === 'NGG-POD-K1'))[0] ?? null;
+    chk('pods: the queue recommends only cleared mentors at the mentee\'s centre', $k1 && count($k1['recommended']) === 2
+        && !in_array('MEN-POD-3', array_column($k1['recommended'], 'mentorId'), true) && $k1['canOffer'] === true);
+    chk('pods: mentors and staff are never in the queue for a mentor', !array_intersect(['NGG-PODM-1', 'NGG-PODM-2', $SU], array_column($q['waiting'], 'memberId')));
+    chk('pods: approval needs two mentors — the mentee chooses', (backend_dispatch('admin.ms.match.approve', ['requesterId' => $SU, 'memberId' => 'NGG-POD-K1', 'mentorIds' => ['MEN-POD-1']])['error'] ?? '') === 'need_two_mentors');
+    chk('pods: an uncleared mentor cannot be offered', (backend_dispatch('admin.ms.match.approve', ['requesterId' => $SU, 'memberId' => 'NGG-POD-K1', 'mentorIds' => ['MEN-POD-1', 'MEN-POD-3']])['error'] ?? '') === 'mentor_not_eligible');
+    $ap = backend_dispatch('admin.ms.match.approve', ['requesterId' => $SU, 'memberId' => 'NGG-POD-K1', 'mentorIds' => ['MEN-POD-1', 'MEN-POD-2']]);
+    $offer = backend_dispatch('member.ms.offer', ['requesterId' => 'NGG-POD-K1']);
+    chk('pods: approval offers the mentee a choice of two and assigns nobody', !empty($ap['ok']) && count($offer['offer']['options'] ?? []) === 2
+        && !db_row("SELECT 1 FROM mentor_assignments WHERE memberId = 'NGG-POD-K1' AND status = 'active'"));
+    chk('pods: undo withdraws the offer entirely', !empty(backend_dispatch('admin.ms.match.undo', ['requesterId' => $SU, 'matchId' => $ap['matchId']])['ok'])
+        && !db_row('SELECT 1 FROM mentor_matches WHERE matchId = ?', [$ap['matchId']]) && !db_row('SELECT 1 FROM mentor_match_offers WHERE matchId = ?', [$ap['matchId']]));
+    $ap = backend_dispatch('admin.ms.match.approve', ['requesterId' => $SU, 'memberId' => 'NGG-POD-K1', 'mentorIds' => ['MEN-POD-1', 'MEN-POD-2']]);
+    $ch = backend_dispatch('member.ms.choose', ['requesterId' => 'NGG-POD-K1', 'matchId' => $ap['matchId'], 'mentorId' => 'MEN-POD-1']);
+    $x1 = db_row('SELECT * FROM mentor_matches WHERE matchId = ?', [$ap['matchId']]);
+    chk('pods: the mentee\'s choice starts the match in Connect, with the pairing and the cadence', !empty($ch['ok']) && $x1['status'] === 'active' && $x1['phase'] === 'connect'
+        && db_row("SELECT 1 FROM mentor_assignments WHERE memberId = 'NGG-POD-K1' AND mentorId = 'MEN-POD-1' AND status = 'active'")
+        && (int)db_row("SELECT COUNT(*) c FROM mentor_tasks WHERE matchId = ? AND kind = 'one_to_one'", [$ap['matchId']])['c'] === 6);
+    chk('pods: undo after the choice is refused — ending a match is a closure', (backend_dispatch('admin.ms.match.undo', ['requesterId' => $SU, 'matchId' => $ap['matchId']])['error'] ?? '') === 'already_chosen');
+
+    // R5 — the first six weeks: two lead check-ins, and no goals.
+    chk('R5: a new match schedules two lead check-ins', (int)db_row("SELECT COUNT(*) c FROM mentor_tasks WHERE matchId = ? AND kind = 'lead_checkin' AND owner = 'lead'", [$ap['matchId']])['c'] === 2);
+    chk('R5: goals are refused in the Connect phase', (backend_dispatch('member.mentor.goal.save', ['requesterId' => 'NGG-PODM-1', 'subjectId' => 'NGG-POD-K1', 'goal' => 'Present first'])['error'] ?? '') === 'goals_locked_connect');
+
+    // Start every match long enough ago that the season rules apply; pod of K1..K5 with MEN-POD-1.
+    foreach (['K2', 'K3', 'K4', 'K5'] as $k) {
+        $a = backend_dispatch('admin.ms.match.approve', ['requesterId' => $SU, 'memberId' => "NGG-POD-$k", 'mentorIds' => ['MEN-POD-1', 'MEN-POD-2']]);
+        backend_dispatch('admin.ms.match.choose', ['requesterId' => $SU, 'matchId' => $a['matchId'], 'mentorId' => 'MEN-POD-1', 'chosenBy' => 'guardian']);
+    }
+    db_exec("UPDATE mentor_matches SET startedAt = '2026-08-01' WHERE mentorId = 'MEN-POD-1'");
+    chk('R5: after six weeks a goal can be set', !empty(backend_dispatch('member.mentor.goal.save', ['requesterId' => 'NGG-PODM-1', 'subjectId' => 'NGG-POD-K1', 'goal' => 'Present first'])['ok']));
+
+    // Pod gate and evidence.
+    chk('pods: a mentee outside the mentor\'s pod is refused', (backend_dispatch('member.ms.case', ['requesterId' => 'NGG-PODM-1', 'memberId' => 'NGG-POD-K6'])['error'] ?? '') === 'not_in_pod');
+    chk('pods: a rating above Not seen needs evidence', (backend_dispatch('member.ms.observe', ['requesterId' => 'NGG-PODM-1', 'memberId' => 'NGG-POD-K1',
+        'ratings' => [['indicator' => 'Courage', 'level' => 2, 'evidence' => '']]])['error'] ?? '') === 'evidence_required');
+    chk('pods: with evidence the observation saves', (backend_dispatch('member.ms.observe', ['requesterId' => 'NGG-PODM-1', 'memberId' => 'NGG-POD-K1', 'today' => $T,
+        'ratings' => [['indicator' => 'Courage', 'level' => 2, 'evidence' => 'Volunteered to present first.'], ['indicator' => 'Voice', 'level' => 0, 'evidence' => '']]])['saved'] ?? 0) === 2);
+
+    // R1 — K2 missed the last two Saturdays the centre met; K1 was there.
+    foreach (['2026-10-03', '2026-10-10'] as $d) db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-POD-K1', 'token' => '', 'date' => $d, 'checkInAt' => $d . 'T09:00:00Z', 'method' => 'qr']);
+    db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-POD-K3', 'token' => '', 'date' => '2026-10-10', 'checkInAt' => '2026-10-10T09:00:00Z', 'method' => 'qr']);
+    // R2 — K1 had a one-to-one last week; everyone else none since August.
+    db_insert('mentor_meetings', ['subjectId' => 'NGG-POD-K1', 'subjectType' => 'member', 'mentorId' => 'NGG-PODM-1', 'metOn' => '2026-10-03', 'kind' => 'one-to-one', 'discussed' => 'School', 'centre' => 'Podville', 'createdAt' => $now, 'updatedAt' => $now]);
+    // R3 — K4 reviewed "worse" two weeks running.
+    foreach (['2026-W40', '2026-W39'] as $per) db_insert('mentor_reviews', ['subjectId' => 'NGG-POD-K4', 'period' => $per, 'answers' => '{}', 'answered' => 1, 'trend' => 'worse', 'mentorId' => 'NGG-PODM-1', 'centre' => 'Podville', 'createdAt' => $now, 'updatedAt' => $now]);
+    // R4 — K1's goal was completed yesterday.
+    db_exec("UPDATE mentor_goals SET status = 'done', closedOn = '2026-10-09' WHERE subjectId = 'NGG-POD-K1'");
+    // R7 — K5's mentee-side relationship check is low.
+    $x5 = db_row("SELECT * FROM mentor_matches WHERE memberId = 'NGG-POD-K5'");
+    ms_relcheck_write($x5, 'mentee', ['q1' => 2, 'q2' => 2, 'q3' => 3, 'q4' => 2], 'NGG-POD-K5', $T);
+    $fired = ms_rules_run($T);
+    $n = static fn($rule, $mem = null) => db_all('SELECT * FROM mentor_nudges WHERE rule = ?' . ($mem ? ' AND memberId = ?' : ''), $mem ? [$rule, $mem] : [$rule]);
+    chk('R1: two missed Saturdays prompt the mentor, with a ready message to the parent', count($n('R1', 'NGG-POD-K2')) === 1 && !$n('R1', 'NGG-POD-K1')
+        && $n('R1', 'NGG-POD-K2')[0]['audience'] === 'mentor' && str_contains($n('R1', 'NGG-POD-K2')[0]['suggestion'], 'last two Saturdays'));
+    chk('R1: a Saturday the child attended breaks the run (K3 was there last week)', !$n('R1', 'NGG-POD-K3'));
+    chk('R2: no one-to-one for 21 days puts them on the mentor\'s list; a recent one does not', count($n('R2', 'NGG-POD-K2')) === 1 && !$n('R2', 'NGG-POD-K1'));
+    $td = backend_dispatch('member.ms.today', ['requesterId' => 'NGG-PODM-1', 'today' => $T]);
+    chk('R2: Today puts the longest wait first and marks 21 days as overdue', $td['oneToOnes'][0]['overdue'] === true && end($td['oneToOnes'])['memberId'] === 'NGG-POD-K1');
+    chk('R3: "worse" twice alerts the lead and opens an intervention', count($n('R3', 'NGG-POD-K4')) === 1 && $n('R3', 'NGG-POD-K4')[0]['audience'] === 'lead'
+        && db_row("SELECT 1 FROM mentor_interventions WHERE memberId = 'NGG-POD-K4' AND status = 'open' AND rule = 'R3'"));
+    chk('R4: a completed goal suggests the next one from this week\'s Anchor theme', count($n('R4', 'NGG-POD-K1')) === 1 && str_contains($n('R4', 'NGG-POD-K1')[0]['body'], 'Anchor theme'));
+    chk('R6: reviews under half for three weeks book a private support chat', count($n('R6')) === 1 && $n('R6')[0]['audience'] === 'lead');
+    chk('R6: the support chat is never on the mentor\'s own screen', !in_array('R6', array_column($td['needsYou'], 'rule'), true));
+    chk('R7: a low relationship check calls for lead coaching', count($n('R7', 'NGG-POD-K5')) === 1 && db_row("SELECT 1 FROM mentor_interventions WHERE memberId = 'NGG-POD-K5' AND rule = 'R7'"));
+    $again = ms_rules_run($T);
+    chk('pods: the rules are idempotent — a second run writes nothing', array_sum($again) === 0 && array_sum($fired) >= 6);
+    chk('pods: nothing is sent to a child — every nudge is for a mentor or a lead', !db_row("SELECT 1 FROM mentor_nudges WHERE audience NOT IN ('mentor','lead')"));
+    $one = backend_dispatch('member.ms.onetoone', ['requesterId' => 'NGG-PODM-1', 'memberId' => 'NGG-POD-K2', 'discussed' => 'How things are at home', 'minutes' => 15]);
+    chk('R2: logging the one-to-one clears the nudge and books the next', !empty($one['ok']) && !db_row("SELECT 1 FROM mentor_nudges WHERE rule = 'R2' AND memberId = 'NGG-POD-K2' AND status = 'open'"));
+
+    // R8 — the mentor is leaving: planned closures, no re-match.
+    $lv = backend_dispatch('admin.ms.mentor.leaving', ['requesterId' => $SU, 'mentorId' => 'MEN-POD-1', 'note' => 'Moving city']);
+    $waitIds = array_column(ms_waiting(['Podville']), 'memberId');
+    chk('R8: a leaving mentor\'s matches move to a planned closure with a closure conversation', ($lv['closing'] ?? 0) === 5
+        && (int)db_row("SELECT COUNT(*) c FROM mentor_matches WHERE mentorId = 'MEN-POD-1' AND status = 'closing'")['c'] === 5
+        && db_row("SELECT 1 FROM mentor_tasks WHERE memberId = 'NGG-POD-K1' AND kind = 'closure' AND status = 'open'") && count($n('R8')) === 1);
+    chk('R8: nobody is re-matched while their closure is open', !in_array('NGG-POD-K1', $waitIds, true)
+        && !db_row("SELECT 1 FROM mentor_matches WHERE memberId = 'NGG-POD-K1' AND status IN ('offered','active')"));
+    chk('R8: a closure needs a reason, and is not a jump from active', (backend_dispatch('admin.ms.match.status', ['requesterId' => $SU, 'matchId' => $x1['matchId'], 'status' => 'closed'])['error'] ?? '') === 'reason_required');
+    backend_dispatch('admin.ms.match.status', ['requesterId' => $SU, 'matchId' => $x1['matchId'], 'status' => 'closed', 'reason' => 'Closure conversation held; certificate given']);
+    chk('R8: once the closure is done the mentee returns to the queue, with their history kept',
+        in_array('NGG-POD-K1', array_column(ms_waiting(['Podville']), 'memberId'), true) && db_row('SELECT 1 FROM mentor_matches WHERE matchId = ? AND status = \'closed\'', [$x1['matchId']])
+        && !db_row("SELECT 1 FROM mentor_assignments WHERE memberId = 'NGG-POD-K1' AND status = 'active'"));
+
+    // The commitment policy, measured.
+    db_exec("UPDATE mentors SET leavingAt = '' WHERE mentorId = 'MEN-POD-1'");
+    db_exec("UPDATE mentor_matches SET status = 'active' WHERE mentorId = 'MEN-POD-1' AND status = 'closing'");
+    $ob = backend_dispatch('admin.ms.obligations.record', ['requesterId' => $SU, 'kind' => 'saturday', 'date' => '2026-09-05', 'mentorIds' => ['MEN-POD-1', 'MEN-NOPE']]);
+    chk('policy: attendance is recorded per mentor and an unknown one is refused by name', $ob['applied'] === 1 && $ob['results'][1]['error'] === 'not_found');
+    backend_dispatch('admin.ms.obligations.record', ['requesterId' => $SU, 'kind' => 'saturday', 'date' => '2026-09-19', 'mentorIds' => ['MEN-POD-1']]);
+    $cm = ms_commitments(db_row("SELECT * FROM mentors WHERE mentorId = 'MEN-POD-1'"), '2026-09');
+    $item = static fn($k) => array_values(array_filter($cm['items'], static fn($i) => $i['key'] === $k))[0];
+    chk('policy: twice a month at 9:30 is met by two Saturdays; STS counts the month\'s Tuesdays; a pod of four is under five',
+        $item('saturday')['ok'] === true && $item('sts')['expected'] === 5 && $item('sts')['ok'] === false && $item('five')['done'] === 4 && $item('five')['ok'] === false);
+    db_exec("UPDATE mentors SET cimcAt = ? WHERE mentorId = 'MEN-POD-1'", [$now]);
+    chk('policy: completing CIMC training replaces the Saturday 7am session', $item('cimc')['expected'] > 0
+        && array_values(array_filter(ms_commitments(db_row("SELECT * FROM mentors WHERE mentorId = 'MEN-POD-1'"), '2026-09')['items'], static fn($i) => $i['key'] === 'cimc'))[0]['expected'] === 0);
+    chk('policy: a short month is a private lead nudge, once', ms_rules_run('2026-10-03')['P1'] >= 1 && ms_rules_run('2026-10-03')['P1'] === 0
+        && db_row("SELECT audience FROM mentor_nudges WHERE rule = 'P1' AND mentorId = 'MEN-POD-1'")['audience'] === 'lead');
+
+    // Safeguarding.
+    $rep = backend_dispatch('member.ms.concern', ['requesterId' => 'NGG-PODM-2', 'subjectId' => 'NGG-POD-K6', 'category' => 'Bullying', 'body' => 'She said older boys took her phone at the gate.']);
+    chk('safeguarding: a report returns its case number from the server', !empty($rep['ok']) && preg_match('/^C-\d{7}$/', (string)$rep['caseNo']));
+    chk('safeguarding: the capability is a separate trust — not in admin, held by super admin', !in_array('safeguarding', admin_role_caps('admin'), true) && in_array('safeguarding', admin_role_caps('super_admin'), true));
+    db_insert('members', ['memberId' => 'NGG-POD-ADM', 'fullName' => 'Pod Admin', 'email' => 'podadm@pod.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Podville', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('safeguarding: an admin without the capability cannot list cases', (backend_dispatch('admin.sg.cases', ['requesterId' => 'NGG-POD-ADM'])['error'] ?? '') === 'forbidden');
+    $cases = backend_dispatch('admin.sg.cases', ['requesterId' => $SU]);
+    chk('safeguarding: the safeguarding officer sees it', in_array($rep['caseNo'], array_column($cases['cases'] ?? [], 'caseNo'), true));
+    backend_dispatch('admin.sg.note', ['requesterId' => $SU, 'caseNo' => $rep['caseNo'], 'note' => 'Spoke to guardian', 'status' => 'reviewing']);
+    $case = backend_dispatch('admin.sg.case', ['requesterId' => $SU, 'caseNo' => $rep['caseNo']]);
+    chk('safeguarding: notes sit beside the report, which is never edited', $case['case']['status'] === 'reviewing' && $case['case']['body'] === 'She said older boys took her phone at the gate.' && count($case['notes']) === 1);
+    chk('safeguarding: the workspace counts cases only for those who may see them', !isset(backend_dispatch('admin.ms.overview', ['requesterId' => 'NGG-POD-ADM'])['counts']['safe'])
+        || backend_dispatch('admin.ms.overview', ['requesterId' => 'NGG-POD-ADM'])['counts']['safe'] === null);
+
+    // Impact against a hand-computed fixture: 4 active matches in MEN-POD-1's
+    // pod (K1 closed). One-to-ones in the last 14 days of 2026-10-10: K2 (logged today) → 1 of 4.
+    db_exec("UPDATE mentor_meetings SET metOn = '2026-10-10' WHERE subjectId = 'NGG-POD-K2' AND kind = 'one-to-one'");
+    $imp = array_column(backend_dispatch('admin.ms.impact', ['requesterId' => $SU, 'today' => $T])['measures'], null, 'key');
+    $active = (int)db_row("SELECT COUNT(*) c FROM mentor_matches WHERE status = 'active'")['c'];
+    chk('impact: contact is mentees with a one-to-one in 14 days over active matches', $imp['contact']['d'] === $active && $imp['contact']['n'] === 1 && $imp['contact']['target'] === 85);
+    chk('impact: relationship quality averages the mentor and mentee checks this term', $imp['relationship']['value'] === 2.25 && $imp['relationship']['met'] === false);
+
+    // Tidy.
+    foreach (['mentor_matches', 'mentor_match_offers', 'mentor_tasks', 'mentor_nudges', 'mentor_interventions', 'mentor_relationship_checks', 'mentor_observations',
+              'mentor_academy', 'mentor_policy', 'mentor_obligations', 'safeguarding_cases', 'safeguarding_notes'] as $t) db_exec("DELETE FROM $t");
+    db_exec("DELETE FROM mentor_assignments WHERE memberId LIKE 'NGG-POD-%'");
+    db_exec("DELETE FROM mentor_meetings WHERE subjectId LIKE 'NGG-POD-%'");
+    db_exec("DELETE FROM mentor_goals WHERE subjectId LIKE 'NGG-POD-%'");
+    db_exec("DELETE FROM mentor_reviews WHERE subjectId LIKE 'NGG-POD-%'");
+    db_exec("DELETE FROM attendance WHERE studentId LIKE 'NGG-POD-%'");
+    db_exec("DELETE FROM mentors WHERE mentorId LIKE 'MEN-POD-%'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-POD%'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

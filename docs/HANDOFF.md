@@ -842,3 +842,28 @@ be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
   and Excel serials; duplicates by name + guardian phone/email; centres matched
   to Summer records, unknown ones created retired. Control Room → Summer School
   → Past editions.
+
+
+## 2026-10-09 — Mentorship: Anchor Pods (handoff v5 + NGGC Commitment Policy)
+
+- Migration 137 (`domain/mentorship-pods.php`): `mentor_matches` (phase +
+  status, never deleted after a choice), `mentor_match_offers`, `mentor_tasks`
+  (cadence), `mentor_nudges` (rules R1–R8 + P1, unique key per firing),
+  `mentor_interventions`, `mentor_relationship_checks`, `mentor_observations`,
+  `mentor_academy`, `mentor_policy`, `mentor_obligations`, `mentor_checkins`,
+  `safeguarding_cases` / `safeguarding_notes`, `mentee_profiles`; mentors gain
+  `leavingAt`, `cimcAt`, `anthemAt`; `mentor_reviews.trend`.
+- One pairing: choosing a mentor writes the `mentor_assignments` row older
+  screens read; finishing a closure ends it.
+- Approval offers two cleared mentors; a single-mentor approval is refused
+  (`need_two_mentors`). Pod data needs screening + the 13 Academy modules
+  (`seeds/mentor-academy.json`, graded server-side) + the current policy
+  version. `ms_pod_open` 403s a mentee outside the mentor's pod.
+- R5 is enforced in `mentor_goal_save` (`goals_locked_connect`); R4 fires from
+  `mentor_goal_status`. Rules run from the web-cron job `mentorship` (6h).
+- New capability `safeguarding`, super admin only by default, like `fees`.
+- Control Room page `mentorship` (tabs `ms-*`; the old `mentorship` Pairings tab
+  keeps its id). `/mentor` renders `MentorHome`: the pod portal
+  (`src/modules/mentor/mt-portal.jsx`, `.mt-*`) for an NGG mentor record, the
+  class roster otherwise or at `?view=class`.
+- Tests: 49 PHP checks (one per rule), `tests/mentorship.test.js` end to end.

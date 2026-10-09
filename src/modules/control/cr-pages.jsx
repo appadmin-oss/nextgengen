@@ -13,7 +13,7 @@
 
 const CR_GROUPS = [
   { h: null, items: ["home", "inbox", "analytics"] },
-  { h: "People", items: ["members", "mentors", "money"] },
+  { h: "People", items: ["members", "mentors", "mentorship", "money"] },
   { h: "Programme", items: ["checkin", "summer", "learning", "events"] },
   { h: "Publishing", items: ["content", "community", "comms"] },
   { h: "System", items: ["settings"] },
@@ -52,6 +52,20 @@ const CR_PAGES = {
     { id: "mentorship", label: "Pairings", desc: "Who mentors whom, and whether the weekly review is happening.", cap: "people" },
     { id: "volunteers", label: "Volunteers", desc: "Everyone helping on Saturdays.", cap: "people" },
     { id: "companion", label: "Companion check-ins", desc: "How members say they are doing, between sessions.", cap: "club" },
+  ] },
+  /* The Anchor Pods workspace (MENTORSHIP.md §4.2; cr-tab-mentorship.jsx).
+     Its tab ids carry an ms- prefix because "mentorship" is already the old
+     Pairings tab's id — /control/mentorship now opens this page, which is
+     where a mentorship link should land. */
+  mentorship: { label: "Mentorship", icon: "users-three", tabs: [
+    { id: "ms-overview", label: "Overview", desc: "This week across the pods: who needs a person, relationship health and the match lifecycle.", cap: "people" },
+    { id: "ms-queue", label: "Match queue", desc: "Mentees waiting for a mentor. Each is offered two and chooses one.", cap: "people" },
+    { id: "ms-rel", label: "Relationships", desc: "Every live match, its phase and its health.", cap: "people" },
+    { id: "ms-checkins", label: "Check-ins", desc: "The cadence every match carries, and what is overdue.", cap: "people" },
+    { id: "ms-interventions", label: "Interventions", desc: "Every flag becomes a plan with an owner and a review date.", cap: "people" },
+    { id: "ms-safeguarding", label: "Safeguarding", desc: "Concerns reported about young people. Visible only to safeguarding roles.", cap: "safeguarding" },
+    { id: "ms-mentors", label: "Mentors", desc: "From application to first match: screening, the Academy, the Commitment Policy and each pod.", cap: "people" },
+    { id: "ms-impact", label: "Impact", desc: "Six measures against fixed targets.", cap: "people" },
   ] },
   money: { label: "Money", icon: "wallet", tabs: [
     { id: "membership", label: "Membership payments", desc: "Joining invoices: Paystack, and offline payments a second person checks against their evidence.", cap: "fees" },

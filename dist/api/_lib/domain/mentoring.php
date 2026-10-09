@@ -291,6 +291,12 @@ function mentor_goal_save(array $p): array {
         return ['ok' => true, 'id' => $id];
     }
 
+    /* R5 (MENTORSHIP.md §3): the first six weeks of a match are for getting
+     * to know each other. Goal tools are hidden on screen and refused here,
+     * so an older page cannot set one either. */
+    if (function_exists('ms_goals_locked') && (string)$s['kind'] === 'member' && ms_goals_locked((string)$s['id'])) {
+        return ['ok' => false, 'error' => 'goals_locked_connect'];
+    }
     $newId = db_insert('mentor_goals', [
         'subjectId' => (string)$s['id'], 'subjectType' => (string)$s['kind'], 'goal' => $goal,
         'setById' => $me, 'setByName' => (string)($g['mentor']['fullName'] ?? $g['member']['fullName'] ?? ''),
@@ -326,6 +332,8 @@ function mentor_goal_status(array $p): array {
         'updatedAt' => now_iso(),
     ], ['id' => $id]);
     audit('mentor.goal.status', $me, (string)$s['id'], ['id' => $id, 'status' => $status], (string)($p['ip'] ?? ''));
+    // R4: a goal done suggests the next, from this week's Anchor theme.
+    if ($status === 'done' && (string)$row['status'] !== 'done' && function_exists('ms_on_goal_done')) ms_on_goal_done((string)$s['id'], $id);
     return ['ok' => true];
 }
 
@@ -662,6 +670,9 @@ function mentor_review_save(array $p): array {
         'answers' => json_encode($answers, JSON_UNESCAPED_UNICODE),
         'answered' => $answered,
         'concern' => !empty($p['concern']) ? 1 : 0,
+        /* How they are doing against last week: better | same | worse. Two
+           "worse" in a row alerts the lead (MENTORSHIP.md R3). */
+        'trend' => in_array((string)($p['trend'] ?? ''), ['better', 'same', 'worse'], true) ? (string)$p['trend'] : '',
         'mentorId' => (string)$g['member']['memberId'],
         'mentorName' => (string)($g['mentor']['fullName'] ?? $g['member']['fullName'] ?? ''),
         'centre' => (string)($s['centre'] ?? ''),

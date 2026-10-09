@@ -25346,6 +25346,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $k1 = array_values(array_filter($q['waiting'], static fn($w) => $w['memberId'] === 'NGG-POD-K1'))[0] ?? null;
     chk('pods: the queue recommends only cleared mentors at the mentee\'s centre', $k1 && count($k1['recommended']) === 2
         && !in_array('MEN-POD-3', array_column($k1['recommended'], 'mentorId'), true) && $k1['canOffer'] === true);
+    chk('pods: mentors and staff are never in the queue for a mentor', !array_intersect(['NGG-PODM-1', 'NGG-PODM-2', $SU], array_column($q['waiting'], 'memberId')));
     chk('pods: approval needs two mentors — the mentee chooses', (backend_dispatch('admin.ms.match.approve', ['requesterId' => $SU, 'memberId' => 'NGG-POD-K1', 'mentorIds' => ['MEN-POD-1']])['error'] ?? '') === 'need_two_mentors');
     chk('pods: an uncleared mentor cannot be offered', (backend_dispatch('admin.ms.match.approve', ['requesterId' => $SU, 'memberId' => 'NGG-POD-K1', 'mentorIds' => ['MEN-POD-1', 'MEN-POD-3']])['error'] ?? '') === 'mentor_not_eligible');
     $ap = backend_dispatch('admin.ms.match.approve', ['requesterId' => $SU, 'memberId' => 'NGG-POD-K1', 'mentorIds' => ['MEN-POD-1', 'MEN-POD-2']]);

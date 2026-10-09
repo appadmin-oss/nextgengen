@@ -651,6 +651,12 @@
     member: {
       dashboard:     () => request('/member/dashboard.php'),
       anchor:        () => request('/member/anchor.php'),
+      /* Mentor Portal — the mentor's pod (and the mentee's own offer and
+         relationship check). read(view): today | case | academy | policy | offer. */
+      pod: {
+        read: (view, memberId) => request('/member/pod.php' + qs({ view, memberId: memberId || '' })),
+        act:  (action, body) => request('/member/pod.php', { body: Object.assign({ action }, body || {}) }),
+      },
       mentorRoster:  (centre, scope) => request('/member/mentor.php' + qs({ centre: centre || '', scope: scope || '' })),
       // The mentoring record for one child: history, meetings, goals.
       mentorChild:   (subjectId) => request('/member/mentor.php' + qs({ view: 'child', subjectId })),
@@ -1085,6 +1091,20 @@
            the caller could never find it and the Mentors section threw on
            every visit. */
         duplicates: () => request('/admin/mentors.php' + qs({ view: 'duplicates' })),
+      },
+      /* Mentorship workspace — Anchor Pods (domain/mentorship-pods.php).
+         read(view): overview | queue | relationships | match | checkins |
+         nudges | interventions | impact | pipeline. act(action, body): see
+         MSW_WRITES in api/admin/mentorship-pods.php. */
+      pods: {
+        read: (view, opts) => request('/admin/mentorship-pods.php' + qs(Object.assign({ view }, opts || {}))),
+        act:  (action, body) => request('/admin/mentorship-pods.php', { body: Object.assign({ action }, body || {}) }),
+      },
+      // Safeguarding cases: the `safeguarding` capability only; every read is audited.
+      safeguarding: {
+        list: (centre) => request('/admin/safeguarding.php' + qs({ centre: centre || '' })),
+        get:  (caseNo) => request('/admin/safeguarding.php' + qs({ caseNo })),
+        note: (caseNo, note, status) => request('/admin/safeguarding.php', { body: { caseNo, note: note || '', status: status || '' } }),
       },
       mentorship: {
         overview: () => request('/admin/mentorship.php?view=overview'),
