@@ -221,13 +221,13 @@ function ai_call_candidate(array $cand, string $system, array $turns, int $maxTo
     // Gemini
     $contents = [];
     foreach ($turns as $t) $contents[] = ['role' => (($t['role'] ?? '') === 'coach' ? 'model' : 'user'), 'parts' => [['text' => (string)($t['text'] ?? '')]]];
-    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($cand['model']) . ':generateContent?key=' . urlencode($cand['api_key']);
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($cand['model']) . ':generateContent';
     $body = json_encode([
         'systemInstruction' => ['parts' => [['text' => $system]]],
         'contents' => $contents,
         'generationConfig' => ['maxOutputTokens' => $maxTokens, 'temperature' => $temp],
     ], JSON_UNESCAPED_SLASHES);
-    $r = ai_http_post($url, $body, ['Content-Type: application/json']);
+    $r = ai_http_post($url, $body, ['Content-Type: application/json', 'x-goog-api-key: ' . $cand['api_key']]);
     if (!$r['ok']) return $r;
     $j = json_decode($r['body'], true);
     $text = $j['candidates'][0]['content']['parts'][0]['text'] ?? '';
@@ -341,7 +341,7 @@ function ai_photo_review(string $imageUrl): array {
         . 'flags may include any of: no_face, multiple_faces, not_a_child_headshot, inappropriate, too_dark, too_blurry, low_resolution, busy_background. '
         . 'Flag genuinely unusable photos (heavy blur, very low resolution) so a human requests a fresh capture — do not assume detail can be reconstructed. '
         . 'score is overall usability for a printed ID (100 = perfect).';
-    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($cand['model']) . ':generateContent?key=' . urlencode($cand['api_key']);
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($cand['model']) . ':generateContent';
     $body = json_encode([
         'systemInstruction' => ['parts' => [['text' => $system]]],
         'contents' => [['role' => 'user', 'parts' => [
@@ -350,7 +350,7 @@ function ai_photo_review(string $imageUrl): array {
         ]]],
         'generationConfig' => ['maxOutputTokens' => 320, 'temperature' => 0.1],
     ], JSON_UNESCAPED_SLASHES);
-    $r = ai_http_post($url, $body, ['Content-Type: application/json']);
+    $r = ai_http_post($url, $body, ['Content-Type: application/json', 'x-goog-api-key: ' . $cand['api_key']]);
     if (!$r['ok']) return $r;
     $j = json_decode($r['body'], true);
     $text = $j['candidates'][0]['content']['parts'][0]['text'] ?? '';

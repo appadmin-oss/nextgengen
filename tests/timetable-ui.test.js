@@ -77,7 +77,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     const now = 'now_iso()';
     php(`db_migrate(db_conn());`
       + `db_insert('members', ['memberId'=>'NGG-TU-ADM','fullName'=>'Timetable Admin','email'=>'tu-adm@example.org','type'=>'NGG','status'=>'active','role'=>'club_admin','createdAt'=>${now},'updatedAt'=>${now}]);`
-      + `db_insert('members', ['memberId'=>'NGG-TU-M','fullName'=>'Ada Learner','email'=>'tu-m@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','track'=>'Piano','createdAt'=>${now},'updatedAt'=>${now}]);`
+      + `db_insert('members', ['memberId'=>'NGG-TU-M','fullName'=>'Ada Learner','email'=>'tu-m@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Egbeda','track'=>'Music','createdAt'=>${now},'updatedAt'=>${now}]);`
       + `db_insert('centres', ['centreId'=>'CEN-TU-1','name'=>'Egbeda','code'=>'EG','status'=>'active','meetDays'=>'Saturdays','meetTime'=>'9am - 2pm','slug'=>'egbeda','createdAt'=>${now}]);`
       + `db_insert('volunteers', ['volunteerId'=>'VOL-TU-1','fullName'=>'Ife Instructor','email'=>'tu-v@example.org','role'=>'instructor','status'=>'active','createdAt'=>${now},'updatedAt'=>${now}]);`);
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
@@ -114,18 +114,18 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
       if (instructor) await ap.selectOption('.admin-drawer-panel select >> nth=3', instructor);
       await ap.click('.admin-drawer-panel button[type=submit]');
     };
-    await addSlot('Piano', '10:00', '11:30', '', 'VOL-TU-1');
-    await ap.waitForSelector('.tt-table td:has-text("Piano")', { timeout: 15000 });
+    await addSlot('Music', '10:00', '11:30', '', 'VOL-TU-1');
+    await ap.waitForSelector('.tt-table td:has-text("Music")', { timeout: 15000 });
     chk('the Control Room adds a slot to the centre\'s timetable', php(`echo db_row("SELECT COUNT(*) c FROM timetable_slots WHERE status = 'active'")['c'];`) === '1');
-    await addSlot('Guitar', '11:00', '12:00', '', '');
+    await addSlot('Acting', '11:00', '12:00', '', '');
     await ap.waitForSelector('.admin-drawer-panel .admin-form-err', { timeout: 15000 });
     const why = await ap.$eval('.admin-drawer-panel .admin-form-err', el => el.innerText);
-    chk('a clash is refused, and the drawer says what it clashes with', /clashes/i.test(why) && /main room already has Piano/i.test(why)
+    chk('a clash is refused, and the drawer says what it clashes with', /clashes/i.test(why) && /main room already has Music/i.test(why)
       && php(`echo db_row("SELECT COUNT(*) c FROM timetable_slots WHERE status = 'active'")['c'];`) === '1');
     await ap.fill('.admin-drawer-panel input[type=time] >> nth=0', '11:30');
     await ap.fill('.admin-drawer-panel input[type=time] >> nth=1', '12:30');
     await ap.click('.admin-drawer-panel button[type=submit]');
-    await ap.waitForSelector('.tt-table td:has-text("Guitar")', { timeout: 15000 });
+    await ap.waitForSelector('.tt-table td:has-text("Acting")', { timeout: 15000 });
     chk('moving it to the next hour saves', php(`echo db_row("SELECT COUNT(*) c FROM timetable_slots WHERE status = 'active'")['c'];`) === '2');
     chk('the timetable is a real table: a caption and column headers', await ap.$eval('.tt-table', t => !!t.querySelector('caption') && t.querySelectorAll('th[scope=col]').length >= 4));
     await ap.screenshot({ path: path.join(SHOTS, 'admin.png'), fullPage: true });
@@ -138,7 +138,7 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await mp.waitForSelector('.tt-table', { timeout: 40000 });
     const mine = await mp.$eval('.tt-table tr.is-mine', el => el.innerText);
     chk('the member\'s dashboard has a Timetable tab with their centre\'s week', (await mp.$$('.tt-table tbody tr')).length === 2);
-    chk('…their own course marked in words, not only colour', /Piano/.test(mine) && /Your course/.test(mine));
+    chk('…their own course marked in words, not only colour', /Music/.test(mine) && /Your course/.test(mine));
     chk('…readable on a phone without sideways scrolling', await mp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     chk('…and "Design my own timetable" opens the maker on their centre', await mp.$eval('a:has-text("Design my own timetable")', a => /\/timetable\?centre=egbeda$/.test(a.getAttribute('href'))).catch(() => false));
     await mp.screenshot({ path: path.join(SHOTS, 'member-phone.png'), fullPage: true });

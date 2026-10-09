@@ -119,7 +119,9 @@ function admin_ai_keys_set(array $p): array {
         if (!empty($p['clear' . ucfirst($slot)])) { $cur[$slot] = ''; $meta[$slot] = ['at' => now_iso(), 'byName' => membership_staff_name($by)]; $changed[] = $slot . ':cleared'; continue; }
         $v = trim((string)($p[$slot . 'Key'] ?? ''));
         if ($v === '') continue;
-        if (!preg_match('/^[A-Za-z0-9_\-]{30,80}$/', $v)) return ['ok' => false, 'error' => 'bad_key', 'field' => $slot, 'detail' => 'That doesn’t look like a Gemini API key (from Google AI Studio, usually starting “AIza”).'];
+        /* Both of Google AI Studio's formats: the older "AIza…" keys and the
+           newer "AQ.…" ones, which carry a dot. Letters, digits and . _ - only. */
+        if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9._\-]{19,199}$/', $v)) return ['ok' => false, 'error' => 'bad_key', 'field' => $slot, 'detail' => 'That doesn’t look like a Gemini API key from Google AI Studio (they start “AQ.” or “AIza”). Paste it without spaces.'];
         $cur[$slot] = ai_ui_seal($v);
         $meta[$slot] = ['at' => now_iso(), 'byName' => membership_staff_name($by)];
         $changed[] = $slot;
@@ -246,7 +248,7 @@ function photo_frame_schema(): array {
 /** One request to one key. Returns ['ok', 'data'] or ['ok' => false, 'error']. */
 function photo_frame_ask(array $cand, array $img, string $extra = ''): array {
     if (isset($GLOBALS['__pframe_mock']) && is_callable($GLOBALS['__pframe_mock'])) return ($GLOBALS['__pframe_mock'])($cand, $extra);
-    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($cand['model']) . ':generateContent?key=' . urlencode($cand['api_key']);
+    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($cand['model']) . ':generateContent';
     $gen = ['temperature' => 0, 'maxOutputTokens' => 600, 'responseMimeType' => 'application/json', 'responseSchema' => photo_frame_schema()];
     // Detection is most accurate with thinking off (2.5 models); older models do not take the field.
     if (preg_match('/^gemini-2\.5/', (string)$cand['model'])) $gen['thinkingConfig'] = ['thinkingBudget' => 0];
@@ -258,7 +260,7 @@ function photo_frame_ask(array $cand, array $img, string $extra = ''): array {
         ]]],
         'generationConfig' => $gen,
     ], JSON_UNESCAPED_SLASHES);
-    $r = ai_http_post($url, $body, ['Content-Type: application/json']);
+    $r = ai_http_post($url, $body, ['Content-Type: application/json', 'x-goog-api-key: ' . $cand['api_key']]);
     if (!$r['ok']) return $r;
     $j = json_decode($r['body'], true);
     $text = (string)($j['candidates'][0]['content']['parts'][0]['text'] ?? '');

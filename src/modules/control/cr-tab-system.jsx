@@ -604,9 +604,9 @@ function crSyKeysForm(ctx, k) {
     submit: "Save keys",
     values: { framingKey: "", secondKey: "", model: (k && k.model) || "", clearFraming: false, clearSecond: false },
     fields: [
-      { id: "framingKey", l: "Key 1 — headshot framing", type: "password", ac: "new-password", max: 80, ph: k && k.framing.set ? "Saved · ends " + k.framing.ending : "AIza…",
+      { id: "framingKey", l: "Key 1 — headshot framing", type: "password", ac: "new-password", max: 80, ph: k && k.framing.set ? "Saved · ends " + k.framing.ending : "AQ.… or AIza…",
         help: "Measures each photo so the card shows an accurate head-and-shoulders, whatever shape the photo was." },
-      { id: "secondKey", l: "Key 2 — photo checks, and backup for framing", type: "password", ac: "new-password", max: 80, ph: k && k.second.set ? "Saved · ends " + k.second.ending : "AIza…" },
+      { id: "secondKey", l: "Key 2 — photo checks, and backup for framing", type: "password", ac: "new-password", max: 80, ph: k && k.second.set ? "Saved · ends " + k.second.ending : "AQ.… or AIza…" },
       { id: "model", l: "Model", max: 60, ph: (k && k.defaultModel) || "gemini-2.5-flash", help: "Leave blank for " + ((k && k.defaultModel) || "gemini-2.5-flash") + ", which measures well and quickly." },
       k && k.framing.set ? { id: "clearFraming", l: "Remove key 1", type: "switch" } : null,
       k && k.second.set ? { id: "clearSecond", l: "Remove key 2", type: "switch" } : null,

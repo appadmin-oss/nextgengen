@@ -24189,6 +24189,13 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 (function () {
     $now = now_iso();
     db_insert('members', ['memberId' => 'NGG-SEED-ADM', 'fullName' => 'Seed Admin', 'email' => 'seed-adm@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'club_admin', 'createdAt' => $now, 'updatedAt' => $now]);
+    /* Against the catalogue a deployment actually has — the seeded NGG
+       divisions — not whatever earlier tests left. The importer also accepts a
+       course that already has lessons, which is how this bundle once passed
+       here while a fresh deployment refused every one of its 72 lessons. */
+    $prevCat = setting_get('club_catalogue');
+    setting_set('club_catalogue', club_catalogue_default(), 'test');
+    db_exec("DELETE FROM curriculum_units WHERE course = 'Practical Coding'");
     $list = backend_dispatch('admin.curriculum.seed', ['requesterId' => 'NGG-SEED-ADM']);
     $seed = array_values(array_filter($list['seeds'] ?? [], fn($x) => $x['key'] === 'practical-coding-2026'))[0] ?? null;
     chk('seed: the Practical Coding 2026 course ships with the platform', $seed !== null && $seed['lessons'] === 72);
@@ -24196,7 +24203,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $byWeek = [];
     foreach ($rows as $r) $byWeek[$r['week']][] = $r['position'];
     chk('seed: 24 weeks of three lessons — one per class day, not a "week" per session', count($byWeek) === 24 && !array_filter($byWeek, fn($p) => $p !== [1, 2, 3]));
-    chk('seed: every lesson has a check, and the course is filed under the catalogue\'s Practical Coding', !array_filter($rows, fn($r) => !$r['checks'] || $r['course'] !== 'Practical Coding'));
+    chk('seed: every lesson has a check, and the course is filed under the NGG catalogue\'s Coding', !array_filter($rows, fn($r) => !$r['checks'] || $r['course'] !== 'Coding') && in_array('Coding', club_courses(), true));
     $titles = array_column($rows, 'title');
     chk('seed: the gaps are filled — Git, going live by week 4, mobile-first, the box model before layout, a required back end',
         in_array('Git and GitHub: saving your work properly', $titles, true)
@@ -24221,6 +24228,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     if ($ids) { $ph = implode(',', array_fill(0, count($ids), '?'));
         db_exec("DELETE FROM curriculum_checks WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_materials WHERE unitId IN ($ph)", $ids); db_exec("DELETE FROM curriculum_units WHERE unitId IN ($ph)", $ids); }
     db_exec("DELETE FROM members WHERE memberId = 'NGG-SEED-ADM'");
+    if ($prevCat) setting_set('club_catalogue', $prevCat, 'test');
 })();
 
 /* ── Roles, tasks and access per administrative level ── */
@@ -24865,7 +24873,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $GLOBALS['CONFIG']['ai'] = [];
     db_exec("DELETE FROM settings WHERE settingKey = 'ai_ui_keys'");
     db_exec('DELETE FROM photo_framing');
-    $k1 = 'AIzaSyFRAMINGkey000000000000000000001a2b'; $k2 = 'AIzaSySECONDkey0000000000000000000009z8y';
+    // Made-up keys in both of Google's formats: the newer "AQ." one carries a dot.
+    $k1 = 'AQ.Ab8RTESTframingKEY0000000000000000000000001a2b'; $k2 = 'AIzaSySECONDkey0000000000000000000009z8y';
     chk('framing: keys need the Settings permission', (backend_dispatch('admin.ai.keys.set', ['requesterId' => 'NGG-DESK-A', 'framingKey' => $k1])['error'] ?? '') === 'forbidden');
     chk('framing: something that is not a key is refused, naming the field', (backend_dispatch('admin.ai.keys.set', ['requesterId' => $SU, 'secondKey' => 'hello'])['field'] ?? '') === 'second');
     $set = backend_dispatch('admin.ai.keys.set', ['requesterId' => $SU, 'framingKey' => $k1, 'secondKey' => $k2]);
@@ -24877,7 +24886,10 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('framing: key 1 frames with key 2 as its backup; photo checks use key 2 first', $fr[0]['api_key'] === $k1 && $fr[1]['api_key'] === $k2 && $ph[0]['api_key'] === $k2 && $fr[0]['model'] === PFRAME_MODEL_DEFAULT);
     chk('framing: a blank field keeps the key already saved', !empty(backend_dispatch('admin.ai.keys.set', ['requesterId' => $SU, 'framingKey' => '', 'model' => 'gemini-2.5-pro'])['ok']) && ai_ui_keys()['framing'] === $k1 && ai_ui_keys()['model'] === 'gemini-2.5-pro');
     backend_dispatch('admin.ai.keys.set', ['requesterId' => $SU, 'model' => '']);
-    chk('framing: the key-change audit names the slots, never the values', !str_contains((string)db_row("SELECT meta FROM audit_log WHERE event = 'ai.keys.set' ORDER BY id DESC LIMIT 1")['meta'], 'AIza'));
+    chk('framing: the key-change audit names the slots, never the values', !str_contains((string)db_row("SELECT meta FROM audit_log WHERE event = 'ai.keys.set' ORDER BY id DESC LIMIT 1")['meta'], 'AIza')
+        && !str_contains((string)db_row("SELECT meta FROM audit_log WHERE event = 'ai.keys.set' ORDER BY id DESC LIMIT 1")['meta'], 'AQ.'));
+    chk('framing: a key with a space or a stray character is refused', (backend_dispatch('admin.ai.keys.set', ['requesterId' => $SU, 'framingKey' => 'AQ.Ab8R TEST'])['error'] ?? '') === 'bad_key'
+        && (backend_dispatch('admin.ai.keys.set', ['requesterId' => $SU, 'framingKey' => 'AQ.Ab8R<script>xxxxxxxxxxxxxxx'])['error'] ?? '') === 'bad_key');
 
     // The photograph behind a URL.
     $cu = 'https://res.cloudinary.com/ngg/image/upload/c_thumb,g_face,w_600,h_750,e_improve/v17/ngg/headshot/abc.jpg';

@@ -101,9 +101,9 @@ async function contextFor(memberId, admin, viewport) {
     const now = 'now_iso()';
     php(`db_migrate(db_conn());`
       + `db_insert('members', ['memberId'=>'NGG-CU-ADM','fullName'=>'Curriculum Admin','email'=>'cu-adm@example.org','type'=>'NGG','status'=>'active','role'=>'club_admin','createdAt'=>${now},'updatedAt'=>${now}]);`
-      + `db_insert('members', ['memberId'=>'NGG-CU-M1','fullName'=>'Ada Learner','email'=>'cu-m1@example.org','type'=>'NGG','status'=>'active','role'=>'member','track'=>'Piano','centre'=>'Egbeda','createdAt'=>${now},'updatedAt'=>${now}]);`
+      + `db_insert('members', ['memberId'=>'NGG-CU-M1','fullName'=>'Ada Learner','email'=>'cu-m1@example.org','type'=>'NGG','status'=>'active','role'=>'member','track'=>'Music','centre'=>'Egbeda','createdAt'=>${now},'updatedAt'=>${now}]);`
       + `db_insert('members', ['memberId'=>'NGG-CU-INS','fullName'=>'Tobi Instructor','email'=>'cu-ins@example.org','type'=>'NGG','status'=>'active','role'=>'member','createdAt'=>${now},'updatedAt'=>${now}]);`
-      + `db_insert('volunteers', ['volunteerId'=>'VOL-CU-1','fullName'=>'Tobi Instructor','email'=>'cu-ins@example.org','role'=>'instructor','courses'=>'["Piano"]','centre'=>'Egbeda','status'=>'active','programme'=>'ngg','safeguarding'=>'cleared','createdAt'=>${now},'updatedAt'=>${now}]);`);
+      + `db_insert('volunteers', ['volunteerId'=>'VOL-CU-1','fullName'=>'Tobi Instructor','email'=>'cu-ins@example.org','role'=>'instructor','courses'=>'["Music"]','centre'=>'Egbeda','status'=>'active','programme'=>'ngg','safeguarding'=>'cleared','createdAt'=>${now},'updatedAt'=>${now}]);`);
 
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
@@ -119,17 +119,18 @@ async function contextFor(memberId, admin, viewport) {
     const { ctx: actx } = await contextFor('NGG-CU-ADM', true);
     const ap = await actx.newPage();
     ap.on('pageerror', e => errs.push('admin: ' + String(e).slice(0, 200)));
-    await ap.goto(BASE + '/nextadmin', { waitUntil: 'domcontentloaded' });
+    /* The lesson editor, import, submissions and progress are the curriculum
+       desk inside the Control Room (cr-tab-learning.jsx), one press below the
+       lesson list — addressed directly. */
+    await ap.goto(BASE + '/control/learning/curriculum/desk', { waitUntil: 'domcontentloaded' });
     await waitForBoot(ap);
-    await ap.waitForFunction(() => !!window.__adminSection, null, { timeout: 60000 });
-    await ap.evaluate(() => window.__adminSection('curriculum'));
-    await ap.waitForSelector('.admin-empty, .admin-table', { timeout: 30000 });
+    await ap.waitForSelector('.admin-empty, .admin-table', { timeout: 60000 });
     chk('the curriculum section opens, empty, saying how to start', /No lessons yet/.test(await ap.$eval('.admin-main', el => el.innerText)));
 
     await ap.click('button:has-text("New lesson")');
     await ap.waitForSelector('.cur-ed');
     await ap.fill('.cur-ed input[placeholder="e.g. Finding middle C"]', 'Finding middle C');
-    await ap.selectOption('.cur-ed-grid select >> nth=0', 'Piano');
+    await ap.selectOption('.cur-ed-grid select >> nth=0', 'Music');
     await ap.selectOption('.cur-ed-grid select >> nth=1', 'published');
     await ap.fill('.cur-ed textarea[placeholder^="Two or three"]', 'Where every pianist starts.');
     await ap.fill('.cur-ed-body', 'Middle C sits in the centre.\n\n- Find the two black keys\n- C is just to their left');
@@ -166,9 +167,9 @@ async function contextFor(memberId, admin, viewport) {
     await ap.click('.admin-tab:has-text("Import")');
     const csv = path.join(TMP, 'lessons.csv');
     fs.writeFileSync(csv, 'course,week,position,title,summary,check1,check1_answer,check1_rubric\n'
-      + 'Piano,1,2,"Hand position, and posture",Curved fingers.,Why curve your fingers?,Control and speed,Mentions control\n'
+      + 'Music,1,2,"Hand position, and posture",Curved fingers.,Why curve your fingers?,Control and speed,Mentions control\n'
       + ',1,1,Welcome to the Club,Who we are.,,,\n'
-      + 'Pianno,2,1,Misspelt course,,,,\n');
+      + 'Musik,2,1,Misspelt course,,,,\n');
     await ap.setInputFiles('.cur-imp input[type=file]', csv);
     await ap.waitForSelector('button:has-text("Check the file")');
     chk('a quoted comma stays in one cell', /3 lessons/.test(await ap.$eval('.cur-imp', el => el.innerText)));
@@ -178,7 +179,7 @@ async function contextFor(memberId, admin, viewport) {
     const tally = await ap.$eval('.cur-imp-tally', el => el.innerText);
     chk('the check reports per row and writes nothing', /2\s*new/.test(tally) && /1\s*refused/.test(tally) && /nothing written/.test(tally)
       && php(`echo (int)db_row("SELECT COUNT(*) c FROM curriculum_units")['c'];`) === '1');
-    chk('the misspelt course is refused with the nearest catalogue course', /did you mean Piano/i.test(await ap.$eval('.cur-imp-plan', el => el.innerText)));
+    chk('the misspelt course is refused with the nearest catalogue course', /did you mean Music/i.test(await ap.$eval('.cur-imp-plan', el => el.innerText)));
     await ap.click('.cur-imp-plan button:has-text("Import")');
     await ap.click('.modal-ok, button:has-text("Import") >> nth=-1').catch(() => {});
     await ap.waitForFunction(() => /imported\./.test(document.querySelector('.cur-imp-tally')?.innerText || ''), null, { timeout: 15000 });
@@ -218,7 +219,7 @@ async function contextFor(memberId, admin, viewport) {
       && /Finding middle C/.test(docHtml.body) && /Save as PDF/.test(docHtml.body) && !/Control and speed/.test(docHtml.body));
     const docWord = await get(BASE + '/api/member/curriculum-doc.php?format=doc', { Cookie: 'ngg_sess=' + mtoken });
     chk('…and downloads as a Word file', docWord.status === 200 && docWord.headers['content-type'].startsWith('application/msword')
-      && /attachment; filename="Piano-curriculum-Ada-Learner\.doc"/.test(docWord.headers['content-disposition']));
+      && /attachment; filename="Music-curriculum-Ada-Learner\.doc"/.test(docWord.headers['content-disposition']));
     chk('…and is nobody else\'s to read', (await get(BASE + '/api/member/curriculum-doc.php')).status === 401);
     const dp = await mctx.newPage();
     await dp.goto(BASE + '/api/member/curriculum-doc.php');
