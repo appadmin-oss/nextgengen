@@ -198,9 +198,14 @@ function cleanup() {
 
     await P.click('.ids-radio:has-text("Double-sided · long edge")');
     await P.click('.ids-seg-opt:has-text("Backs")');
+    await P.waitForFunction(() => { const i = document.querySelector('.ids-slot.is-card .nggc-back img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 15000 }).catch(() => {});
     const back = await P.innerText('.ids-slot.is-card >> nth=0');
-    chk('a member card has a back: who it belongs to, where to return it, and no money or medical details',
-      /if found, please return to/i.test(back) && /no money and no medical details/i.test(back) && /holder’s signature/i.test(back));
+    const backQr = await P.$eval('.ids-slot.is-card >> nth=0', el => { const i = el.querySelector('.nggc-back img'); return i ? i.getAttribute('src') : ''; }).catch(() => '');
+    if (process.env.IDS_SHOTS) { const el = await P.$('.ids-slot.is-card >> nth=0'); await el.screenshot({ path: process.env.IDS_SHOTS + '/member-back.png', scale: 'device' }); }
+    if (!/^data:image\//.test(backQr)) console.error('       back QR src: ' + String(backQr).slice(0, 40) + ' · text: ' + back.replace(/\s+/g, ' ').slice(0, 200));
+    chk('a member card has the NGG back: the member\'s QR in the middle and how to reach the programme',
+      /^data:image\//.test(backQr) && /next@afrovanguard\.org\.ng/.test(back) && /nextgengen37/.test(back));
+    chk('…and the side a stranger sees first carries no name', !/Member A Test|Member B Test/.test(back));
     await P.click('.ids-seg-opt:has-text("Fronts")');
     await P.click('.ids-radio:has-text("Fronts only")');
 
