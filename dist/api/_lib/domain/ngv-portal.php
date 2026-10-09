@@ -156,7 +156,7 @@ function av_cards_call(string $op, array $payload = [], int $timeout = 25): arra
     $av = (array)($CONFIG['afrovanguard'] ?? []);
     $secret = trim((string)($av['ngv_webhook_secret'] ?? ''));
     if ($secret === '') return ['ok' => false, 'error' => 'not_configured',
-        'detail' => 'Set afrovanguard.ngv_webhook_secret in config.php (the same value as NGG_WEBHOOK_SECRET on Afrovanguard).'];
+        'detail' => 'NGG has no Afrovanguard secret. Set afrovanguard.ngv_webhook_secret in api/config.php to the same value as Afrovanguard’s Studio → Settings → NextGen Genius → Shared secret.'];
     $url = rtrim((string)($av['org_url'] ?? 'https://afrovanguard.org.ng'), '/') . '/integrations/ngg-cards.php';
     $body = (string)json_encode(['op' => $op] + $payload, JSON_UNESCAPED_SLASHES);
     $ts = (string)time();
@@ -164,16 +164,34 @@ function av_cards_call(string $op, array $payload = [], int $timeout = 25): arra
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body,
         CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 8,
-        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-NGG-Timestamp: ' . $ts,
+        // afrovanguard.org.ng → www / http → https: follow, and keep it a POST
+        // (a plain redirect turns it into a GET, which the endpoint refuses).
+        CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 3,
+        CURLOPT_POSTREDIR => 7,   // CURL_REDIR_POST_ALL
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json', 'X-NGG-Timestamp: ' . $ts,
             'X-NGG-Signature: sha256=' . hash_hmac('sha256', 'cards.' . $ts . '.' . $body, $secret)],
     ]);
     $raw = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $cerr = (string)curl_error($ch);
+    $final = (string)curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
     curl_close($ch);
     $d = is_string($raw) ? json_decode($raw, true) : null;
-    if (!is_array($d)) return ['ok' => false, 'error' => 'av_unreachable', 'detail' => 'Afrovanguard did not answer (HTTP ' . $code . ').'];
-    if (empty($d['ok'])) return ['ok' => false, 'error' => (string)($d['error'] ?? 'av_refused'),
-        'detail' => $code === 401 ? 'Afrovanguard refused the signature — the two secrets differ.' : 'Afrovanguard refused the request.'];
+    if (!is_array($d)) {
+        $why = $cerr !== '' ? 'could not connect (' . $cerr . ')'
+             : ($code === 404 ? 'the card endpoint was not found — deploy integrations/ngg-cards.php on Afrovanguard'
+             : 'answered HTTP ' . $code . ' without data');
+        return ['ok' => false, 'error' => 'av_unreachable', 'detail' => 'Afrovanguard at ' . ($final ?: $url) . ' ' . $why . '.'];
+    }
+    if (empty($d['ok'])) {
+        $e = (string)($d['error'] ?? 'av_refused');
+        $detail = match (true) {
+            $e === 'bad_signature' => 'Afrovanguard refused the signature: the two secrets differ, or the two servers’ clocks are more than 5 minutes apart.',
+            $e === 'not-configured' => 'Afrovanguard has no NGG secret set. Set it in Afrovanguard’s Studio → Settings → NextGen Genius → Shared secret (the same value as here).',
+            default => 'Afrovanguard refused the request (' . $e . ', HTTP ' . $code . ').',
+        };
+        return ['ok' => false, 'error' => $e, 'detail' => $detail];
+    }
     return $d;
 }
 

@@ -67,10 +67,10 @@ async function idsLoad() {
     throw err;
   }
   if (lists.some(([, x]) => !x.ok && !x.forbidden)) throw new Error("failed");
-  /* Afrovanguard is another site: unreachable is said on the page, never a
-     reason the studio's own cards cannot print. Not set up is silent — the
-     kind is simply not offered on a site that does not print them. */
-  const avNote = av.ok || av.forbidden || (av.e && av.e.code === "not_configured") ? "" : "Afrovanguard cards couldn’t be fetched just now.";
+  /* Afrovanguard is another site: a failure is said on the page, with its
+     reason (not set up, wrong secret, unreachable), never a reason the
+     studio's own cards cannot print. */
+  const avNote = av.ok || av.forbidden ? "" : "Afrovanguard cards couldn’t be fetched: " + ((av.e && (av.e.detail || av.e.message)) || "no answer") + "";
   if (av.ok) lists.push(["afrovanguard", av]);
   const state = st.r || {};
   const records = [], programs = {};
