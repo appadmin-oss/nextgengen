@@ -83,6 +83,8 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     php(`db_migrate(db_conn());`
       + `db_insert('members', ['memberId'=>'NGG-SEP-ADM','fullName'=>'Sep Admin','email'=>'sep-adm@example.org','type'=>'NGG','status'=>'active','role'=>'super_admin','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`
       + `setting_set('academy_catalogue', ['Music' => ['Piano', 'Talking Drums']], 't');`
+      // The NGG divisions seed is marked done so this fixture's own Club list stands.
+      + `setting_set('club_catalogue_seed', 'ngg-divisions-2026-10', 't');`
       + `setting_set('club_catalogue', ['Media' => ['Media Lab'], 'AI & Technology' => ['Practical Coding']], 't');`
       + `foreach ([['CEN-1','Ayobo Club House','AY','ngg'],['CEN-2','Ijaiye Summer Venue','IJ','summer'],['CEN-3','Egbeda','EG','ngg,summer']] as $c) db_insert('centres', ['centreId'=>$c[0],'name'=>$c[1],'code'=>$c[2],'status'=>'active','programmes'=>$c[3],'slug'=>strtolower($c[2]),'createdAt'=>now_iso()]);`);
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
@@ -137,14 +139,15 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await ap.goto(BASE + '/nextadmin', { waitUntil: 'domcontentloaded' });
     await waitForBoot(ap);
     await ap.waitForFunction(() => !!window.__adminSection, null, { timeout: 60000 });
-    await ap.evaluate(() => window.__adminSection('curriculum', 'courses'));
-    await ap.waitForSelector('text=Save Club courses, text=Saved', { timeout: 30000 }).catch(() => {});
+    // The Club's course list lives in Learning → Divisions & courses.
+    await ap.evaluate(() => window.__adminSection('divisions'));
+    await ap.waitForSelector('.cr-dv-card', { timeout: 30000 }).catch(() => {});
     await ap.waitForFunction(() => /media lab/i.test(document.querySelector('.admin-main')?.innerText || ''), null, { timeout: 30000 });
     const main = await ap.$eval('.admin-main', el => el.innerText);
-    chk('Curriculum → Courses shows the Club\'s own list and says Summer School keeps its own', /media lab/i.test(main) && !/talking drums/i.test(main) && /Summer School keeps its own catalogue/.test(main));
+    chk('Learning → Divisions & courses shows the Club\'s own list and says Summer School keeps its own', /media lab/i.test(main) && !/talking drums/i.test(main) && /Summer School keeps its own catalogue/.test(main));
     await ap.fill('input[placeholder="Add a course…"] >> nth=0', 'Video Editing');
     await ap.keyboard.press('Enter');
-    await ap.click('button:has-text("Save Club courses")');
+    await ap.click('button:has-text("Save divisions")');
     await ap.waitForFunction(() => /Saved/.test(document.querySelector('.admin-main')?.innerText || ''), null, { timeout: 15000 });
     chk('saving changes the Club\'s list only', php(`echo json_encode([setting_get('club_catalogue')['Media'] ?? [], setting_get('academy_catalogue')]);`) === '[["Media Lab","Video Editing"],{"Music":["Piano","Talking Drums"]}]');
     await ap.screenshot({ path: path.join(SHOTS, 'club-courses.png'), fullPage: false });

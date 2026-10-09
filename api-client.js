@@ -965,6 +965,10 @@
       timetableTerm: () => request('/public/timetable-term.php'),
       // One programme's own courses and centres, for the join form.
       programme: (program) => request('/public/programme.php' + qs({ program: program === 'summer' ? 'summer' : 'anchor' })),
+      // A family's joining invoice, by its private token (/pay/<token>).
+      membershipInvoice: (token) => request('/public/membership-pay.php' + qs({ token })),
+      membershipPay:     (token) => request('/public/membership-pay.php', { body: { action: 'init', token } }),
+      membershipVerify:  (token, reference) => request('/public/membership-pay.php', { body: { action: 'verify', token, reference } }),
       circle: {
         // The child's name is required, not optional: the code alone no longer
         // resolves to anything, so a guessed code cannot reveal who it belongs to.
@@ -1242,7 +1246,8 @@
       applications: {
         list:    (q) => request('/admin/applications.php' + qs(q || {})),
         status:  (id, status) => request('/admin/applications.php', { body: { id, status } }),
-        convert: (id) => request('/admin/applications.php', { body: { action: 'convert', id } }),
+        // `startDate` prices the first month's commitment fee (only the meeting days left are charged).
+        convert: (id, startDate) => request('/admin/applications.php', { body: { action: 'convert', id, startDate: startDate || '' } }),
         update:  (id, data) => request('/admin/applications.php', { body: { action: 'update', id, data } }),
         remove:  (id) => request('/admin/applications.php', { body: { action: 'delete', id } }),
       },
@@ -1349,6 +1354,20 @@
       /* Member obligations — membership fee, monthly dues, training fee.
          A LEDGER: `payment` RECORDS money somebody already handed over by cash
          or transfer. There is no gateway behind any of these. */
+      /* Joining invoices, and offline payments held until a second member of
+         staff verifies them against their evidence (domain/membership-pay.php). */
+      membership: {
+        list:     (status) => request('/admin/membership.php' + qs({ status: status || '' })),
+        create:   (memberId, startDate, send) => request('/admin/membership.php', { body: { action: 'create', memberId, startDate: startDate || '', send: !!send } }),
+        resend:   (invoiceId) => request('/admin/membership.php', { body: { action: 'resend', invoiceId } }),
+        void:     (invoiceId, reason) => request('/admin/membership.php', { body: { action: 'void', invoiceId, reason } }),
+        bank:     (bank) => request('/admin/membership.php', { body: { action: 'bank', bank } }),
+        // The evidence travels as a data URL, compressed in the browser first (a host refuses big bodies).
+        record:   (data) => request('/admin/membership.php', { body: Object.assign({ action: 'record' }, data), timeout: 120000 }),
+        verify:   (paymentId, confirmReference, confirmAmount, checked) => request('/admin/membership.php', { body: { action: 'verify', paymentId, confirmReference, confirmAmount, checked: !!checked } }),
+        reject:   (paymentId, reason) => request('/admin/membership.php', { body: { action: 'reject', paymentId, reason } }),
+        evidenceUrl: (paymentId) => BASE + '/admin/membership.php' + qs({ view: 'evidence', paymentId }),
+      },
       fees: {
         settings:    () => request('/admin/fees.php'),
         settingsSet: (data) => request('/admin/fees.php', { body: { action: 'settings', data } }),

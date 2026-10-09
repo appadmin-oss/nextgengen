@@ -1723,6 +1723,7 @@ body.cm-app .fab-top { display: none; }
 /* The members roster carries a fifth control (rows with something missing).
    Its own modifier rather than a wider default, because the other filter rows
    — requests, submissions — have fewer and would grow a dead column. */
+.admin-seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .admin-filters-5 { grid-template-columns: 2fr repeat(4, minmax(0, 1fr)); }
 .admin-filters-6 { grid-template-columns: 2fr repeat(5, minmax(0, 1fr)); }
 @media (max-width: 1300px) { .admin-filters-6 { grid-template-columns: 2fr repeat(3, minmax(0, 1fr)); } }
@@ -8046,6 +8047,49 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .cr-t-bad { --t-bg: var(--cr-bad-bg); --t-fg: var(--cr-bad-fg); --t-dot: var(--cr-bad-dot); }
 .cr-t-neutral { --t-bg: var(--cr-neutral-bg); --t-fg: var(--cr-neutral-fg); --t-dot: var(--cr-neutral-dot); }
 .cr-t-gold { --t-bg: var(--cr-gold-bg); --t-fg: var(--cr-gold-fg); --t-dot: var(--cr-gold-dot); }
+
+/* ── Money → Membership payments (cr-tab-money.jsx) ── */
+.cr-mp, .cr-dv { display: flex; flex-direction: column; gap: 16px; container-type: inline-size; }
+.cr-mp-note { display: flex; align-items: center; gap: 10px; padding: 12px 14px; font-size: 13.5px; flex-wrap: wrap; }
+.cr-mp-note > span { flex: 1 1 260px; }
+.cr-mp-note.is-warn { background: var(--cr-warn-bg); color: var(--cr-warn-fg); border-color: transparent; }
+.cr-mp-note.is-bad { background: var(--cr-bad-bg); color: var(--cr-bad-fg); border-color: transparent; }
+.cr-mp-note code { font-family: var(--cr-mono); font-size: 12.5px; }
+.cr-mp-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@container (max-width: 720px) { .cr-mp-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cr-mp-kpis > .cr-box { padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.cr-mp-kpis > .cr-box > span:first-child { font-size: 12.5px; color: var(--cr-muted-3); }
+.cr-mp-kpis > .cr-box > b { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cr-mp-kpis > .cr-box.is-bad > b { color: var(--cr-bad-fg); }
+.cr-mp-kpis > .cr-mp-terms > b { font-size: 14px; }
+.cr-mp-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cr-mp-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.cr-mp-table th { text-align: left; font-weight: 500; font-size: 12.5px; color: var(--cr-muted-3); padding: 10px 14px; border-bottom: 1px solid var(--cr-line); }
+.cr-mp-table td { padding: 12px 14px; border-bottom: 1px solid var(--cr-line); vertical-align: top; }
+.cr-mp-table tr:last-child td { border-bottom: 0; }
+.cr-mp-table td > .cr-hint { display: block; margin-top: 3px; }
+.cr-mp-acts { text-align: right; white-space: nowrap; }
+.cr-mp-acts > * + * { margin-left: 6px; }
+.cr-mp-claim { display: flex; flex-direction: column; gap: 8px; }
+
+/* ── Learning → Divisions & courses (cr-tab-learning.jsx) ── */
+.cr-dv-intro { padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+.cr-dv-intro p { margin: 0; }
+.cr-dv-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.cr-dv-card { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.cr-dv-head { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+.cr-dv-icon { width: 52px; text-align: center; font-size: 18px; }
+.cr-dv-name { font-weight: 600; min-width: 200px; }
+.cr-dv-short { display: flex; flex-direction: column; gap: 4px; }
+.cr-dv-short .cr-input { width: 150px; font-family: var(--cr-mono); font-size: 13px; letter-spacing: .06em; }
+.cr-dv-move { display: inline-flex; gap: 2px; }
+.cr-dv-blurb { width: 100%; }
+.cr-dv-courses { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cr-dv-x { border: 0; background: transparent; padding: 0 0 0 4px; color: var(--cr-muted-3); display: inline-flex; align-items: center; min-width: 24px; min-height: 24px; justify-content: center; }
+.cr-dv-x:hover { color: var(--cr-danger); }
+.cr-dv-add { display: inline-flex; gap: 6px; }
+.cr-dv-add .cr-input { width: 180px; height: 34px; }
+.cr-dv-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .cr-pill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: var(--cr-r-pill); background: var(--t-bg); color: var(--t-fg); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .cr-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--t-dot); flex: none; }
 

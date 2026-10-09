@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 134;
+const NGG_SCHEMA_TARGET = 135;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -3957,6 +3957,63 @@ function db_migrate(PDO $db): void {
                 );
                 CREATE INDEX IF NOT EXISTS idx_contact_replies_msg ON contact_replies(messageId);
                 CREATE INDEX IF NOT EXISTS idx_contact_email ON contact_messages(email);",
+        /* 135 — paying to join (domain/membership-pay.php). An accepted NGG
+           applicant is sent ONE invoice: the membership fee and the joining
+           month's commitment fee, pro-rated to the day they start. It is paid
+           through Paystack, or offline — and an offline payment is a claim
+           until a second member of staff has checked it against its evidence.
+           The evidence's hash and the bank reference are unique, so one
+           transfer slip cannot settle two invoices. */
+        135 => "CREATE TABLE IF NOT EXISTS membership_invoices (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  invoiceId TEXT NOT NULL UNIQUE,
+                  memberId TEXT NOT NULL,
+                  applicationId INTEGER NOT NULL DEFAULT 0,
+                  payToken TEXT NOT NULL UNIQUE,
+                  items TEXT NOT NULL DEFAULT '[]',
+                  total INTEGER NOT NULL DEFAULT 0,
+                  currency TEXT NOT NULL DEFAULT 'NGN',
+                  startDate TEXT NOT NULL DEFAULT '',
+                  status TEXT NOT NULL DEFAULT 'open',
+                  paystackRef TEXT NOT NULL DEFAULT '',
+                  paidVia TEXT NOT NULL DEFAULT '',
+                  paidAt TEXT NOT NULL DEFAULT '',
+                  receiptNo TEXT NOT NULL DEFAULT '',
+                  receiptToken TEXT NOT NULL DEFAULT '',
+                  sentTo TEXT NOT NULL DEFAULT '',
+                  sentAt TEXT NOT NULL DEFAULT '',
+                  createdBy TEXT NOT NULL DEFAULT '',
+                  createdAt TEXT NOT NULL DEFAULT '',
+                  voidReason TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_minv_member ON membership_invoices(memberId);
+                CREATE INDEX IF NOT EXISTS idx_minv_status ON membership_invoices(status);
+                CREATE TABLE IF NOT EXISTS offline_payments (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  paymentId TEXT NOT NULL UNIQUE,
+                  invoiceId TEXT NOT NULL,
+                  memberId TEXT NOT NULL,
+                  amount INTEGER NOT NULL DEFAULT 0,
+                  method TEXT NOT NULL DEFAULT '',
+                  payerName TEXT NOT NULL DEFAULT '',
+                  bankName TEXT NOT NULL DEFAULT '',
+                  reference TEXT NOT NULL DEFAULT '',
+                  referenceKey TEXT NOT NULL DEFAULT '',
+                  paidOn TEXT NOT NULL DEFAULT '',
+                  evidenceSha256 TEXT NOT NULL UNIQUE,
+                  evidenceFile TEXT NOT NULL DEFAULT '',
+                  evidenceType TEXT NOT NULL DEFAULT '',
+                  evidenceBytes INTEGER NOT NULL DEFAULT 0,
+                  note TEXT NOT NULL DEFAULT '',
+                  status TEXT NOT NULL DEFAULT 'pending',
+                  recordedBy TEXT NOT NULL DEFAULT '',
+                  recordedAt TEXT NOT NULL DEFAULT '',
+                  verifiedBy TEXT NOT NULL DEFAULT '',
+                  verifiedAt TEXT NOT NULL DEFAULT '',
+                  rejectReason TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_offpay_invoice ON offline_payments(invoiceId);
+                CREATE INDEX IF NOT EXISTS idx_offpay_ref ON offline_payments(referenceKey);",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

@@ -770,6 +770,14 @@ function admin_application_convert(array $p): array {
      */
     $intakeEmail = (string)$a['email'];
     $intakePhone = trim((string)($a['phone'] ?? ''));
+    /* The day they start. It prices the first month's commitment fee (only the
+       meeting days left are charged), so staff may set it when a child starts
+       later than the day they are accepted. */
+    $start = trim((string)($p['startDate'] ?? ''));
+    if ($start !== '' && function_exists('membership_start_ok') && !membership_start_ok($start)) return ['ok' => false, 'error' => 'bad_start', 'detail' => 'The start date must be within a month before or three months after today.'];
+    if ($start === '') $start = gmdate('Y-m-d');
+    // An NGG member is filed under their division; the card prints its short label.
+    $division = $type === 'NGG' ? (trim((string)($a['faculty'] ?? '')) ?: (function_exists('club_division_of') ? club_division_of((string)$a['track']) : '')) : '';
     /* An approved applicant becomes a MEMBER, so they are issued a member's
        printed ID at the same moment — see domain/member-id.php. */
     $__m = [
@@ -782,7 +790,8 @@ function admin_application_convert(array $p): array {
         'parentPhone' => $intakePhone,
         // When they joined, which public_member() publishes and the ID card
         // prints. It was left empty on every member who arrived this way.
-        'joinDate' => gmdate('Y-m-d'),
+        'joinDate' => $start,
+        'disciplines' => $division !== '' && function_exists('club_division_short') ? club_division_short($division) : '',
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ];
     if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_and_claim($__m, $newId);
@@ -809,8 +818,22 @@ function admin_application_convert(array $p): array {
             'ctaUrl' => $welcome !== '' ? $welcome : (($GLOBALS['CONFIG']['app_origin'] ?? '') . '/#dashboard'),
             'footNote' => 'Welcome to the movement.',
         ]));
-    audit('admin.application.convert', $g['requester']['memberId'], $newId, ['applicationId' => $id, 'type' => $type], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'memberId' => $newId];
+    /* Payment is asked for only now, after acceptance: one invoice — the
+       membership fee and the pro-rated first month — and a private link to it.
+       With fees switched off the member is accepted all the same, and the
+       screen is told why no invoice went. */
+    $invoice = null;
+    if ($type === 'NGG' && function_exists('membership_invoice_create')) {
+        $ir = membership_invoice_create($__m, (string)$g['requester']['memberId'], $id, $start);
+        if (!empty($ir['ok'])) {
+            $sent = membership_invoice_send($ir['invoice'], $__m);
+            $invoice = ['invoiceId' => (string)$ir['invoice']['invoiceId'], 'total' => (int)$ir['invoice']['total'], 'sent' => !empty($sent['ok']), 'to' => $sent['to'] ?? ''];
+        } else {
+            $invoice = ['error' => (string)($ir['error'] ?? 'failed')];
+        }
+    }
+    audit('admin.application.convert', $g['requester']['memberId'], $newId, ['applicationId' => $id, 'type' => $type, 'start' => $start], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'memberId' => $newId, 'invoice' => $invoice];
 }
 
 /** Correct a pending application's data before converting/approving it. Only

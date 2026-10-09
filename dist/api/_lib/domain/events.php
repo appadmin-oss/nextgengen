@@ -576,6 +576,25 @@ function public_apply(array $p): array {
             if ($hit) $centre = (string)$hit['name'];
         }
         if ($track !== '') foreach (programme_courses($progKey) as $c) if (strcasecmp($c, $track) === 0) { $track = $c; break; }
+        /* An NGG applicant chooses a DIVISION and a course inside it. The
+           division is checked against the Club's own list, and a course that
+           belongs to another division is refused rather than filed wrongly.
+           A form from before divisions sends only the course; its division is
+           the one that course belongs to. */
+        if ($progKey === 'ngg' && function_exists('club_divisions')) {
+            $want = trim((string)($p['division'] ?? ''));
+            $names = array_column(club_divisions(), 'name');
+            if ($want !== '') {
+                $hit = null; foreach ($names as $n) if (strcasecmp($n, $want) === 0) $hit = $n;
+                if ($hit === null) return ['ok' => false, 'error' => 'bad_division'];
+                $want = $hit;
+            }
+            $ofCourse = $track !== '' ? club_division_of($track) : '';
+            if ($want !== '' && $ofCourse !== '' && $ofCourse !== $want) return ['ok' => false, 'error' => 'course_not_in_division', 'detail' => $track . ' is taught in ' . $ofCourse . '.'];
+            $faculty = $want !== '' ? $want : $ofCourse;
+            // The current form always sends a division; a client that never knew about them is not refused for it.
+            if ($faculty === '' && array_key_exists('division', $p)) return ['ok' => false, 'error' => 'division_required'];
+        }
     } elseif ($kind === 'volunteer') {
         // Structured taxonomy: Volunteer → admin | mentor | instructor.
         // Every volunteer picks a home CENTRE (required, must be an active
@@ -771,10 +790,18 @@ function programme_catalogue(string $programme): array {
 function public_programme(array $p): array {
     $prog = in_array(strtolower((string)($p['program'] ?? '')), ['summer'], true) ? 'summer' : 'ngg';
     $fac = [];
-    foreach (programme_catalogue($prog) as $f => $cs) $fac[] = ['faculty' => (string)$f, 'courses' => array_values(array_map('strval', $cs))];
+    if ($prog === 'ngg' && function_exists('club_divisions')) {
+        // The NGG Club's divisions, with what a family needs to choose one.
+        foreach (club_divisions() as $d) $fac[] = ['faculty' => $d['name'], 'icon' => $d['icon'], 'short' => $d['short'], 'blurb' => $d['blurb'], 'courses' => $d['courses']];
+    } else {
+        foreach (programme_catalogue($prog) as $f => $cs) $fac[] = ['faculty' => (string)$f, 'courses' => array_values(array_map('strval', $cs))];
+    }
     $centres = array_map(static fn($c) => ['name' => (string)$c['name'], 'slug' => (string)($c['slug'] ?? ''), 'area' => (string)($prog === 'summer' && trim((string)($c['summerArea'] ?? '')) !== '' ? $c['summerArea'] : ($c['area'] ?? ''))],
         centres_for_programme($prog, 'name, slug, area, summerArea'));
-    return ['ok' => true, 'program' => $prog === 'summer' ? 'summer' : 'anchor', 'faculties' => $fac, 'centres' => $centres];
+    $out = ['ok' => true, 'program' => $prog === 'summer' ? 'summer' : 'anchor', 'faculties' => $fac, 'centres' => $centres];
+    // What joining NGG costs, said before anybody applies (nothing is paid until a place is offered).
+    if ($prog === 'ngg' && function_exists('membership_fee_terms')) $out['fees'] = membership_fee_terms();
+    return $out;
 }
 
 /** Public-safe centre catalogue for the volunteer form (no PII, active only). */

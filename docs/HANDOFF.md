@@ -750,3 +750,36 @@ be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
   studio probes each photo on the sheet and blocks the print with a one-press
   fix rather than printing an empty photo box.
 
+## NGG divisions, joining fees, offline payments, member scans
+
+- **Divisions.** `club_catalogue()` used to SEED the NGG course list by copying
+  Summer School's academy catalogue, which is why the two programmes looked
+  like one. It is now seeded once (`CLUB_DIVISIONS_SEED`) with the four NGG
+  divisions; per-division icon, card label and family-facing blurb live in
+  `club_division_meta`; the list held before the seed is kept in
+  `club_catalogue_before_seed`. Edited in Learning → Divisions & courses
+  (`cr-tab-learning.jsx`), which replaces the Club portal's course editor as
+  the Control Room surface (the old `curriculum/courses` deep link had no tab
+  and the programme-separation test timed out on it). A course may sit in one
+  division only. Applications carry the division in `applications.faculty`;
+  acceptance writes the division's card label to `members.disciplines`.
+- **Joining invoices** (`domain/membership-pay.php`, migration 135). Accepting
+  an NGG applicant creates one invoice (membership fee + the first month's
+  commitment fee pro-rated by meeting days left, `membership_prorate`) and
+  emails a `/pay/<token>` link. The SAME pro-rating now prices the first month
+  in `fees_accrue_member`, so ledger and invoice agree; already-posted charges
+  are never re-priced. Settlement (`membership_settle`) is the only place an
+  invoice becomes paid — Paystack verify or a verified offline payment — and
+  is idempotent (the ledger credit is keyed `minv:<invoiceId>`).
+- **Offline payments** are claims until a different `fees` holder verifies
+  them by re-typing the statement's reference and amount. Evidence SHA-256 and
+  the normalised reference are each usable once; evidence lives in
+  `api/storage/payment-evidence/` and is hash-checked before it is shown.
+- **Member scans.** `card_row_member` now ensures a secure MEMQR code before a
+  card is drawn, so new cards never fall back to `/?m=<memberId>`. Old cards
+  resolve: `/?m=` rewrites to `/q/`, and an unknown `/q/` token that is a
+  member id or printed number opens a limited page (initials, no photo).
+  Members get their own page (`MemberCardView`), not the Summer layout.
+- Fee-test fixtures that joined mid-month were moved to the 1st (the subject
+  was ledger mechanics), and the first-month figure is tested on its own.
+

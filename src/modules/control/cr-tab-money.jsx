@@ -697,3 +697,231 @@ Object.assign(CR_TAB_DEFS, {
     facts: d => "Payable " + fmtMoney((d.arr && d.arr.totalPayable) || 0) + " across " + crPlural((d.arr && d.arr.matched) || 0, "member") + ". Dues " + (d.cfg.enabled ? "on" : "off") + "; monthly dues " + fmtMoney(d.cfg.monthlyDues) + ", training fee " + fmtMoney(d.cfg.trainingFee) + ".",
   },
 });
+
+/* ── Membership payments ─────────────────────────────────────────────────────
+   Joining invoices (domain/membership-pay.php): what each accepted NGG member
+   was asked to pay, whether Paystack or an offline payment settled it, and the
+   offline payments waiting on a SECOND member of staff to check them against
+   their evidence. The server enforces every rule (exact amount, a reference
+   and an evidence file used once, recorder ≠ verifier); this screen says them
+   before they are hit, and shows the refusal in words when one is. */
+const CR_MP_STATUS = { open: ["Awaiting payment", "warn"], paid: ["Paid", "ok"], void: ["Void", "neutral"], pending: ["Check the payment", "bad"] };
+const CR_MP_ERRORS = {
+  evidence_required: "Attach the slip, receipt or bank alert.", evidence_unreadable: "That file couldn’t be read. Attach it again.",
+  bad_date: "Enter the date the money was paid.", bad_method: "Choose how it was paid.", not_open: "This invoice is no longer open.",
+  offline_pending: "A payment for this invoice is already waiting to be verified.", not_pending: "This payment has already been dealt with.",
+  fees_off: "Turn on Dues & arrears and set the membership and commitment fees first.", nothing_to_pay: "With these fees there is nothing to invoice.",
+  no_email: "There is no email on this member’s record (or their guardian’s) to send it to.", payments_unavailable: "Paystack isn’t set up on this site.",
+  evidence_missing: "The evidence file is missing from the server.", evidence_altered: "The evidence file on the server has been changed since it was recorded. Do not verify this payment; tell an admin.",
+};
+function crMpErr(e, fb) { const c = e && (e.code || (e.data && e.data.error)); const d = (e && e.data && e.data.detail) || (e && e.detail); return (typeof d === "string" && /\s/.test(d)) ? d : (CR_MP_ERRORS[c] || crErr(e, fb)); }
+
+/** An evidence file, ready to send: a photo is shrunk to a sharp JPEG (a host refuses big bodies); a PDF goes as it is. */
+async function crMpEvidence(file, max) {
+  if (!file) return "";
+  if (file.type === "application/pdf") {
+    if (file.size > max) throw Object.assign(new Error("too_big"), { data: { detail: "That PDF is over " + Math.round(max / 1048576) + " MB. Photograph the slip instead." } });
+    return await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(file); });
+  }
+  if (!/^image\//.test(file.type)) throw Object.assign(new Error("type"), { data: { detail: "A photo (JPG, PNG, WebP) or a PDF of the slip, receipt or bank alert." } });
+  const url = URL.createObjectURL(file);
+  try {
+    const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const k = Math.min(1, 2000 / Math.max(im.naturalWidth, im.naturalHeight));
+    const cv = document.createElement("canvas");
+    cv.width = Math.round(im.naturalWidth * k); cv.height = Math.round(im.naturalHeight * k);
+    const g = cv.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(im, 0, 0, cv.width, cv.height);
+    return cv.toDataURL("image/jpeg", 0.88);
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function CrMembershipPayments({ ctx }) {
+  const [filter, setFilter] = React.useState("");
+  const [d, setD] = React.useState({ state: "loading" });
+  const load = React.useCallback(() => {
+    setD(x => Object.assign({}, x, { state: x.invoices ? "ready" : "loading" }));
+    NGGApi.admin.membership.list(filter).then(r => setD(Object.assign({ state: "ready" }, r))).catch(e => setD({ state: "error", error: e }));
+  }, [filter]);
+  React.useEffect(load, [load]);
+  if (d.state === "loading") return <CrSkeleton kind="table"/>;
+  if (d.state === "error") return <CrError error={d.error} onRetry={load} what="the joining invoices"/>;
+  const t = d.terms || {}, rows = d.invoices || [], c = d.counts || {};
+  const money = n => fmtMoney(n || 0);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const record = inv => ctx.form({
+    title: "Record an offline payment",
+    intro: "For " + inv.name + " · " + inv.invoiceId + " · " + money(inv.total) + ". It is held as a claim until a different member of staff checks it against the bank statement or the cash book; only then is the family sent the receipt.",
+    submit: "Record for checking", busyLabel: "Recording…",
+    values: { method: "transfer", amount: String(inv.total), paidOn: today },
+    fields: [
+      { id: "method", l: "How it was paid", type: "chips", req: true, opts: Object.entries(d.methods || {}) },
+      { id: "amount", l: "Amount paid (₦)", req: true, num: true, money: true, im: "numeric", help: "The invoice total, exactly. A part-payment is not recorded here.",
+        check: v => Number(String(v).replace(/[^\d.]/g, "")) !== inv.total ? "The invoice is " + money(inv.total) + ". Record it only when that has been paid in full." : "" },
+      { id: "payerName", l: "Paid by", req: true, ph: "The name on the slip or receipt", max: 160 },
+      { id: "bankName", l: "Bank", req: true, ph: "GTBank, Access, OPay…", max: 120, when: v => v.method !== "cash" },
+      { id: "reference", l: "Reference", req: true, max: 120, help: "The transaction reference or session ID on the slip or alert — for cash, the number on the receipt you wrote. Each reference is accepted once.",
+        check: v => String(v).replace(/[^A-Za-z0-9]/g, "").length < 4 ? "That reference is too short." : "" },
+      { id: "paidOn", l: "Date paid", type: "date", req: true, check: v => v > today ? "That date is in the future." : "" },
+      { id: "evidence", l: "Evidence", type: "file", req: true, accept: "image/jpeg,image/png,image/webp,application/pdf", help: "A clear photo or PDF of the slip, receipt or bank alert. A file can be used as evidence once." },
+      { id: "note", l: "Note", type: "textarea", rows: 3, max: 500 },
+    ],
+    onSubmit: async v => {
+      let evidence;
+      try { evidence = await crMpEvidence(v.evidence, d.evidenceMax || 3145728); }
+      catch (e) { return { fieldErrors: { evidence: crMpErr(e, "That file couldn’t be read.") } }; }
+      try {
+        await NGGApi.admin.membership.record({ invoiceId: inv.invoiceId, method: v.method, amount: Number(String(v.amount).replace(/[^\d.]/g, "")),
+          payerName: v.payerName, bankName: v.method === "cash" ? "" : v.bankName, reference: v.reference, paidOn: v.paidOn, evidence, note: v.note || "" });
+      } catch (e) {
+        const code = e && e.code;
+        const field = { amount_mismatch: "amount", reference_reused: "reference", reference_required: "reference", evidence_reused: "evidence", evidence_type: "evidence", evidence_too_small: "evidence", evidence_too_large: "evidence",
+          date_in_future: "paidOn", date_before_invoice: "paidOn", bad_date: "paidOn", payer_required: "payerName", bank_required: "bankName" }[code];
+        if (field) return { fieldErrors: { [field]: crMpErr(e) } };
+        throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) });
+      }
+      load();
+    },
+    done: "Recorded. Another member of staff with the Fees permission must now verify it.",
+  });
+
+  const verify = inv => {
+    const op = inv.offline;
+    const mine = op.recordedBy === d.me;
+    if (mine) return ctx.toast("You recorded this payment, so someone else must verify it. That second check is what makes an offline payment safe.", null, true);
+    ctx.form({
+      title: "Verify " + inv.name + "’s payment",
+      intro: <span className="cr-mp-claim">
+        <span><b>{money(op.amount)}</b> by {op.methodLabel}{op.bankName ? " (" + op.bankName + ")" : ""} on {op.paidOn}, paid by {op.payerName}. Recorded by {op.recordedByName}.</span>
+        <a className="cr-linkbtn" href={NGGApi.admin.membership.evidenceUrl(op.paymentId)} target="_blank" rel="noopener noreferrer"><CrIcon n="file-magnifying-glass"/> Open the evidence</a>
+        <span>Open the bank statement or the cash book — not the slip — and type what it shows. Do not copy from the record above.</span>
+      </span>,
+      submit: "Verify and send the receipt", busyLabel: "Verifying…",
+      fields: [
+        { id: "ref", l: "Reference on the statement", req: true, max: 120 },
+        { id: "amt", l: "Amount on the statement (₦)", req: true, num: true, money: true, im: "numeric" },
+        { id: "checked", l: "I checked that this money arrived (bank statement, alert in the account, or the cash book)", type: "switch" },
+      ],
+      onSubmit: async v => {
+        if (!v.checked) return { fieldErrors: { checked: "Confirm you checked the money arrived." } };
+        try { return await NGGApi.admin.membership.verify(op.paymentId, v.ref, Number(String(v.amt).replace(/[^\d.]/g, "")), true).then(r => { load(); return r; }); }
+        catch (e) {
+          if (e.code === "reference_mismatch") return { fieldErrors: { ref: crMpErr(e) } };
+          if (e.code === "amount_mismatch") return { fieldErrors: { amt: crMpErr(e) } };
+          throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) });
+        }
+      },
+      done: (v, r) => "Verified. Receipt " + ((r && r.receiptNo) || "") + " is on its way to the family" + (r && r.receipt && r.receipt.to ? " (" + r.receipt.to + ")" : "") + ".",
+    });
+  };
+  const reject = inv => ctx.form({
+    title: "Reject this payment?",
+    intro: "The invoice stays open and the family can pay again. The evidence file can never be used again.",
+    submit: "Reject", fields: [{ id: "reason", l: "Why", type: "textarea", req: true, rows: 3, max: 500, check: v => v.length < 10 ? "Say why, in at least 10 characters." : "" }],
+    onSubmit: async v => { try { await NGGApi.admin.membership.reject(inv.offline.paymentId, v.reason); load(); } catch (e) { throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) }); } },
+    done: "Rejected. The invoice is open again.",
+  });
+  const voidInv = inv => ctx.form({
+    title: "Void " + inv.invoiceId + "?", intro: "Nobody can pay a void invoice. Use it when a family withdrew before starting, or the invoice was wrong.",
+    submit: "Void the invoice", fields: [{ id: "reason", l: "Why", type: "textarea", req: true, rows: 3, max: 250, check: v => v.length < 10 ? "Say why, in at least 10 characters." : "" }],
+    onSubmit: async v => { try { await NGGApi.admin.membership.void(inv.invoiceId, v.reason); load(); } catch (e) { throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) }); } },
+    done: "Voided.",
+  });
+  const resend = async inv => {
+    const ok = await ctx.confirm({ title: "Send the payment link again?", body: "It goes to " + (inv.sentTo || "the family") + ". Only resend if they have not paid by transfer or cash — record that instead.", cta: "Send again" });
+    if (!ok) return;
+    try { const r = await NGGApi.admin.membership.resend(inv.invoiceId); ctx.toast("Sent to " + (r.to || "the family") + "."); load(); }
+    catch (e) { ctx.toast(crMpErr(e, "Couldn’t send it."), null, true); }
+  };
+  const copy = inv => { try { navigator.clipboard.writeText(inv.payUrl).then(() => ctx.toast("Payment link copied."), () => {}); } catch (_) {} };
+  const bank = () => ctx.form({
+    title: "Bank details on invoices", intro: "Printed on every invoice and payment email for families who pay by transfer.",
+    submit: "Save", values: d.bank || {},
+    fields: [{ id: "bankName", l: "Bank", req: true, max: 80 }, { id: "accountName", l: "Account name", req: true, max: 120 },
+      { id: "accountNumber", l: "Account number", req: true, im: "numeric", pattern: /^\d{10}$/, patternMsg: "A Nigerian account number is 10 digits." }],
+    onSubmit: async v => { try { await NGGApi.admin.membership.bank(v); load(); } catch (e) { throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) }); } },
+    done: "Saved.",
+  });
+  const invoiceFor = () => ctx.form({
+    title: "Invoice a member already on the roll", intro: "For an NGG member accepted before payments existed, or one starting later than planned. One joining invoice per member.",
+    submit: "Create the invoice",
+    fields: [{ id: "q", l: "Member ID or printed ID", req: true, max: 40 }, { id: "start", l: "Start date", type: "date", req: true, help: "Prices the first month: only the meeting days left from this date are charged." },
+      { id: "send", l: "Email the payment link now", type: "switch" }],
+    values: { start: today, send: true },
+    onSubmit: async v => {
+      const found = await NGGApi.admin.fees.lookup(v.q).catch(() => ({ members: [] }));
+      const m = (found.members || found.results || []).find(x => [x.memberId, x.displayId].map(s => String(s || "").toUpperCase()).includes(v.q.trim().toUpperCase())) || (found.members || found.results || [])[0];
+      if (!m) return { fieldErrors: { q: "Nobody with that ID." } };
+      try { const r = await NGGApi.admin.membership.create(m.memberId, v.start, v.send); load(); return r; }
+      catch (e) { if (e.code === "bad_start") return { fieldErrors: { start: crMpErr(e) } }; throw Object.assign(e, { data: Object.assign({}, e.data, { message: crMpErr(e) }) }); }
+    },
+    done: (v, r) => r && r.existed ? "That member already has a joining invoice (" + r.invoiceId + ")." : "Invoice " + ((r && r.invoiceId) || "") + " created" + (r && r.sent && r.sent.ok ? " and sent." : "."),
+  });
+
+  const statusOf = inv => inv.offline && inv.offline.status === "pending" ? "pending" : inv.status;
+  return (
+    <div className="cr-mp">
+      {!t.enabled && <div className="cr-box cr-mp-note is-warn"><CrIcon n="warning-circle"/><span>No invoices are made yet: switch on <b>Dues &amp; arrears</b> and set the membership fee and the monthly commitment fee. Accepting an NGG applicant then sends their family one invoice.</span>
+        <button type="button" className="cr-btn is-sm" onClick={() => window.__adminSection && window.__adminSection("fees")}>Open Dues &amp; arrears</button></div>}
+      {t.enabled && !t.paystack && <div className="cr-box cr-mp-note is-warn"><CrIcon n="warning-circle"/><span>Paystack isn’t set up, so families can only pay offline. Set <code>paystack.secret</code> in api/config.php and point the Paystack webhook at <code>/api/hooks/paystack.php</code>.</span></div>}
+      <div className="cr-mp-kpis">
+        <div className="cr-box"><span>Awaiting payment</span><b>{crNum(c.open || 0)}</b></div>
+        <div className={"cr-box" + (c.pending ? " is-bad" : "")}><span>Waiting for a second check</span><b>{crNum(c.pending || 0)}</b></div>
+        <div className="cr-box"><span>Paid</span><b>{crNum(c.paid || 0)}</b></div>
+        <div className="cr-box cr-mp-terms">
+          <span>Joining costs</span>
+          <b>{money(t.membershipFee)} membership{t.membershipEveryMonths === 12 ? " a year" : ""} + {money(t.monthlyCommitment)} a month</b>
+          <span className="cr-hint">The first month is charged only for the meeting days left from the start date.</span>
+        </div>
+      </div>
+      <div className="cr-mp-bar">
+        <CrSeg label="Show" value={filter} onChange={setFilter} options={[["", "All"], ["pending", "To verify" + (c.pending ? " · " + c.pending : "")], ["open", "Unpaid"], ["paid", "Paid"], ["void", "Void"]]}/>
+        <span className="cr-grow"/>
+        <button type="button" className="cr-btn is-sm" onClick={bank}><CrIcon n="bank"/>{d.bank && d.bank.accountNumber ? "Bank: " + d.bank.bankName + " · " + d.bank.accountNumber : "Add bank details"}</button>
+        <button type="button" className="cr-btn is-sm" disabled={!t.enabled} onClick={invoiceFor}><CrIcon n="plus"/>Invoice a member</button>
+      </div>
+      {!rows.length ? <p className="cr-tempty">{filter === "pending" ? "Nothing is waiting to be verified." : "No joining invoices yet. They are made when an NGG applicant is accepted."}</p> : (
+        <div className="cr-box cr-tscroll">
+          <table className="cr-mp-table">
+            <thead><tr><th scope="col">Member</th><th scope="col">Invoice</th><th scope="col">Total</th><th scope="col">Status</th><th scope="col"><span className="cr-sr">Actions</span></th></tr></thead>
+            <tbody>
+              {rows.map(inv => {
+                const st = CR_MP_STATUS[statusOf(inv)] || [inv.status, "neutral"];
+                const op = inv.offline;
+                return (
+                  <tr key={inv.invoiceId}>
+                    <td><b>{inv.name || inv.memberId}</b><span className="cr-hint">{[inv.displayId, inv.centre].filter(Boolean).join(" · ")}</span></td>
+                    <td><span className="cr-mono">{inv.invoiceId}</span><span className="cr-hint">Starts {inv.startDate}{inv.sentAt ? " · sent " + crDate(inv.sentAt) : ""}</span></td>
+                    <td className="cr-num">{money(inv.total)}</td>
+                    <td><CrPill tone={st[1]} t={st[0]}/>
+                      {op && op.status === "pending" && <span className="cr-hint">{op.methodLabel} · ref {op.reference} · recorded by {op.recordedByName}</span>}
+                      {op && op.status === "rejected" && inv.status === "open" && <span className="cr-hint">Last claim rejected: {op.rejectReason}</span>}
+                      {inv.status === "paid" && <span className="cr-hint">{inv.paidVia === "paystack" ? "Paystack" : (op && op.methodLabel) || inv.paidVia} · {crDate(inv.paidAt)}{op && op.verifiedByName ? " · checked by " + op.verifiedByName : ""}</span>}
+                    </td>
+                    <td className="cr-mp-acts">
+                      {inv.status === "paid" && <a className="cr-btn is-sm" href={inv.receiptUrl} target="_blank" rel="noopener noreferrer"><CrIcon n="receipt"/>{inv.receiptNo}</a>}
+                      {op && op.status === "pending" && <>
+                        <a className="cr-btn is-sm" href={NGGApi.admin.membership.evidenceUrl(op.paymentId)} target="_blank" rel="noopener noreferrer"><CrIcon n="file-magnifying-glass"/>Evidence</a>
+                        <button type="button" className="cr-btn is-sm is-primary" aria-disabled={op.recordedBy === d.me || undefined} title={op.recordedBy === d.me ? "You recorded it, so someone else verifies it." : ""} onClick={() => verify(inv)}>Verify</button>
+                        <button type="button" className="cr-btn is-sm is-danger" onClick={() => reject(inv)}>Reject</button>
+                      </>}
+                      {inv.status === "open" && !(op && op.status === "pending") && <>
+                        <button type="button" className="cr-btn is-sm is-primary" onClick={() => record(inv)}><CrIcon n="hand-coins"/>Record offline payment</button>
+                        <button type="button" className="cr-btn is-sm" onClick={() => resend(inv)}>Resend link</button>
+                        <button type="button" className="cr-iconbtn" aria-label={"Copy " + inv.name + "’s payment link"} onClick={() => copy(inv)}><CrIcon n="link"/></button>
+                        <button type="button" className="cr-iconbtn" aria-label={"Void " + inv.invoiceId} onClick={() => voidInv(inv)}><CrIcon n="prohibit"/></button>
+                      </>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+Object.assign(CR_TAB_DEFS, {
+  membership: crPanel(ctx => <CrMembershipPayments ctx={ctx}/>, { skeleton: ["kpis", "table"] }),
+});

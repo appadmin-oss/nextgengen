@@ -9,7 +9,7 @@ if ($method === 'GET') {
     $b = read_json_body();
     $act = (string)($b['action'] ?? '');
     if ($act === 'convert') {
-        $res = gs_call('admin.application.convert', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'ip' => client_ip()]);
+        $res = gs_call('admin.application.convert', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'startDate' => (string)($b['startDate'] ?? ''), 'ip' => client_ip()]);
     } elseif ($act === 'update') {
         $res = gs_call('admin.application.update', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'data' => $b['data'] ?? [], 'ip' => client_ip()]);
     } elseif ($act === 'delete') {

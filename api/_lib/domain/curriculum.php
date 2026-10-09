@@ -154,62 +154,161 @@ function curriculum_load(string $where = '1=1', array $args = [], string $order 
 }
 
 /**
- * The NGG Club's course list — faculty → courses, the Club's own.
+ * The NGG Club's divisions and their courses — the Club's own, never Summer
+ * School's.
  *
- * It used to be Summer School's academy catalogue, read by both programmes and
- * editable only with the `summer` capability: a coordinator tidying a season's
- * offer took courses off the Club's timetable and curriculum without either
- * screen saying so, and a Club-only course (the Media Lab) could not be listed
- * at all. The Club owns this list now, under the `curriculum` capability, and
- * Summer School keeps its catalogue for its season.
+ * NGG is organised in DIVISIONS (Creative & Performing Arts; Media & Content
+ * Strategy; Technology & Applied Engineering; Business Strategy, Operations &
+ * Administration), each with the courses a child can take inside it. The
+ * structure is the same faculty → courses map every reader already takes
+ * (`club_catalogue`), and a division carries three more things in
+ * `club_division_meta`: its icon, the short label the member card prints
+ * (TECH, MEDIA…) and the sentence the join form shows a family.
  *
- * Stored in `club_catalogue`. The first read on a deployment that has never
- * saved one COPIES the academy catalogue as it stands — the two lists start out
- * equal, then diverge only by somebody's deliberate edit — and stores the copy,
- * so a later Summer edit cannot reach the Club through the fallback.
+ * This list used to be SEEDED FROM SUMMER SCHOOL'S catalogue — the first read
+ * copied the academy list and stored it — so the NGG join form offered Summer
+ * courses under Summer faculty names, and the two programmes looked like one.
+ * The Club's divisions are now seeded from CLUB_DIVISIONS_DEFAULT, once per
+ * seed version (CLUB_DIVISIONS_SEED): the list held before the seed is kept in
+ * `club_catalogue_before_seed`, and an admin's later edits are never
+ * overwritten, because the seed runs once.
  */
+const CLUB_DIVISIONS_SEED = 'ngg-divisions-2026-10';
+const CLUB_DIVISIONS_DEFAULT = [
+    ['name' => 'Creative & Performing Arts', 'icon' => '🎭', 'short' => 'CREATIVE ARTS',
+     'blurb' => 'For children interested in music, catering, musical instruments, acting, stagecraft, vocal training, adire, crafts, music production and other creative expressions.',
+     'courses' => ['Music', 'Musical Instruments', 'Vocal Training', 'Music Production', 'Acting', 'Stagecraft', 'Catering', 'Adire', 'Crafts']],
+    ['name' => 'Media & Content Strategy', 'icon' => '🎥', 'short' => 'MEDIA',
+     'blurb' => 'For children interested in video production, cinematography, graphic design, branding, digital content creation, social media and visual storytelling.',
+     'courses' => ['Video Production', 'Cinematography', 'Graphic Design', 'Branding', 'Digital Content Creation', 'Social Media', 'Visual Storytelling']],
+    ['name' => 'Technology & Applied Engineering', 'icon' => '💻', 'short' => 'TECH',
+     'blurb' => 'For children interested in artificial intelligence, coding, software development, robotics, automation, tech product design and cybersecurity.',
+     'courses' => ['Artificial Intelligence', 'Coding', 'Software Development', 'Robotics', 'Automation', 'Tech Product Design', 'Cybersecurity']],
+    ['name' => 'Business Strategy, Operations & Administration', 'icon' => '📊', 'short' => 'BUSINESS',
+     'blurb' => 'For children interested in project management, product management, data analysis, business development, finance, HR, operations, administration and strategic thinking.',
+     'courses' => ['Project Management', 'Product Management', 'Data Analysis', 'Business Development', 'Finance', 'Human Resources', 'Operations', 'Administration', 'Strategic Thinking']],
+];
+/** Bounds on what the divisions editor may save. */
+const CLUB_DIVISIONS_MAX = 12;
+const CLUB_DIVISION_SHORT_MAX = 14;
+const CLUB_DIVISION_BLURB_MAX = 300;
+
+function club_catalogue_default(): array {
+    $out = [];
+    foreach (CLUB_DIVISIONS_DEFAULT as $d) $out[$d['name']] = $d['courses'];
+    return $out;
+}
+function club_division_meta_default(): array {
+    $out = [];
+    foreach (CLUB_DIVISIONS_DEFAULT as $d) $out[$d['name']] = ['icon' => $d['icon'], 'short' => $d['short'], 'blurb' => $d['blurb']];
+    return $out;
+}
+/** Seed the NGG divisions, once per seed version. */
+function club_divisions_seed_once(): void {
+    if ((string)setting_raw('club_catalogue_seed') === CLUB_DIVISIONS_SEED) return;
+    $prev = setting_get('club_catalogue');
+    if ($prev) setting_set('club_catalogue_before_seed', $prev, 'system');
+    setting_set('club_catalogue', club_catalogue_default(), 'system');
+    setting_set('club_division_meta', club_division_meta_default(), 'system');
+    setting_set('club_catalogue_seed', CLUB_DIVISIONS_SEED, 'system');
+    if (function_exists('cache_invalidate')) cache_invalidate('catalogue');
+}
 function club_catalogue(): array {
+    club_divisions_seed_once();
     $saved = academy_catalogue_clean(setting_get('club_catalogue'));
-    if ($saved) return $saved;
-    $seed = academy_catalogue();
-    setting_set('club_catalogue', $seed, 'system');
-    return $seed;
+    return $saved ?: club_catalogue_default();
 }
 function club_courses(): array { $out = []; foreach (club_catalogue() as $courses) foreach ($courses as $c) if (!in_array($c, $out, true)) $out[] = $c; return $out; }
 
-/** admin.club.catalogue.get — the Club's course list, for its editor. */
+/** Clean a division's icon, short label and blurb. */
+function club_division_meta_clean(string $name, $m): array {
+    $m = is_array($m) ? $m : [];
+    $icon = trim((string)($m['icon'] ?? ''));
+    if (mb_strlen($icon) > 4) $icon = mb_substr($icon, 0, 4);
+    $short = strtoupper(trim(preg_replace('/[^\p{L}\p{N} &\/-]+/u', '', (string)($m['short'] ?? ''))));
+    if ($short === '') $short = strtoupper(mb_substr(preg_replace('/\s*[&,].*$/u', '', $name), 0, CLUB_DIVISION_SHORT_MAX));
+    return ['icon' => $icon, 'short' => mb_substr($short, 0, CLUB_DIVISION_SHORT_MAX), 'blurb' => mb_substr(trim((string)($m['blurb'] ?? '')), 0, CLUB_DIVISION_BLURB_MAX)];
+}
+/** Every division, in order: name, icon, short, blurb, courses. */
+function club_divisions(): array {
+    $meta = setting_get('club_division_meta');
+    $meta = is_array($meta) ? $meta : [];
+    $out = [];
+    foreach (club_catalogue() as $name => $courses) {
+        $out[] = array_merge(['name' => (string)$name], club_division_meta_clean((string)$name, $meta[$name] ?? null), ['courses' => array_values($courses)]);
+    }
+    return $out;
+}
+/** The division a course belongs to ('' when none does). */
+function club_division_of(string $course): string {
+    foreach (club_catalogue() as $name => $courses) foreach ($courses as $c) if (strcasecmp($c, $course) === 0) return (string)$name;
+    return '';
+}
+/** The short label the member card prints for a division. */
+function club_division_short(string $division): string {
+    foreach (club_divisions() as $d) if (strcasecmp($d['name'], $division) === 0) return $d['short'];
+    return '';
+}
+
+/** admin.club.catalogue.get — the Club's divisions and courses, for its editor. */
 function admin_club_catalogue_get(array $p): array {
     $g = admin_cap_gate_any($p, ['curriculum', 'club', 'people']); if (!$g['ok']) return $g;
-    $emit = static function (array $map): array { $out = []; foreach ($map as $f => $cs) $out[] = ['faculty' => $f, 'courses' => array_values($cs)]; return $out; };
     $inUse = [];
     foreach (db_all("SELECT DISTINCT course FROM curriculum_units WHERE course <> '' AND COALESCE(status,'') <> 'archived'") as $r) $inUse[(string)$r['course']] = true;
     foreach (db_all("SELECT DISTINCT course FROM timetable_slots WHERE status = 'active'") as $r) $inUse[(string)$r['course']] = true;
-    return ['ok' => true, 'catalogue' => $emit(club_catalogue()), 'defaults' => $emit(academy_catalogue()), 'customised' => true,
-            'inUse' => array_keys($inUse), 'canEdit' => admin_cap_gate($p, 'curriculum')['ok']];
+    // How many members are in each course and division, so the editor can say what a change touches.
+    $members = [];
+    foreach (db_all("SELECT track, COUNT(*) c FROM members WHERE COALESCE(type,'NGG') = 'NGG' AND COALESCE(status,'active') = 'active' AND COALESCE(track,'') <> '' GROUP BY track") as $r) $members[(string)$r['track']] = (int)$r['c'];
+    $divs = club_divisions();
+    return ['ok' => true, 'catalogue' => array_map(static fn($d) => ['faculty' => $d['name'], 'courses' => $d['courses']], $divs),
+            'divisions' => $divs, 'defaults' => array_map(static fn($d) => array_merge(['faculty' => $d['name']], $d), CLUB_DIVISIONS_DEFAULT),
+            'customised' => true, 'inUse' => array_keys($inUse), 'members' => $members,
+            'centres' => function_exists('centres_for_programme') ? array_column(centres_for_programme('ngg', 'name'), 'name') : [],
+            'canEdit' => admin_cap_gate($p, 'curriculum')['ok']];
 }
-/** admin.club.catalogue.set — save it (`curriculum`). `reset` copies Summer's catalogue again. */
+/** admin.club.catalogue.set — save the divisions (`curriculum`). `reset` restores the NGG divisions. */
 function admin_club_catalogue_set(array $p): array {
     $g = admin_cap_gate($p, 'curriculum'); if (!$g['ok']) return $g;
     $by = (string)$g['requester']['memberId'];
     if (!empty($p['reset'])) {
-        setting_set('club_catalogue', academy_catalogue(), $by);
+        setting_set('club_catalogue', club_catalogue_default(), $by);
+        setting_set('club_division_meta', club_division_meta_default(), $by);
         audit('club.catalogue.reset', $by, '', [], (string)($p['ip'] ?? ''));
         if (function_exists('cache_invalidate')) cache_invalidate('catalogue');
         return ['ok' => true, 'reset' => true];
     }
     $raw = $p['catalogue'] ?? null;
+    $metaIn = [];
     if (is_array($raw) && $raw && isset($raw[0]) && is_array($raw[0])) {
         $map = [];
-        foreach ($raw as $row) if (is_array($row)) $map[(string)($row['faculty'] ?? '')] = is_array($row['courses'] ?? null) ? $row['courses'] : [];
+        foreach ($raw as $row) {
+            if (!is_array($row)) continue;
+            $name = trim((string)($row['faculty'] ?? $row['name'] ?? ''));
+            if (isset($map[$name])) return ['ok' => false, 'error' => 'duplicate_division', 'detail' => $name . ' is listed twice.'];
+            $map[$name] = is_array($row['courses'] ?? null) ? $row['courses'] : [];
+            $metaIn[$name] = $row;
+        }
         $raw = $map;
     }
     $clean = academy_catalogue_clean($raw);
     if (!$clean) return ['ok' => false, 'error' => 'catalogue_empty'];
-    if (count($clean) > 40) return ['ok' => false, 'error' => 'too_many_faculties'];
+    if (count($clean) > CLUB_DIVISIONS_MAX) return ['ok' => false, 'error' => 'too_many_faculties', 'detail' => 'At most ' . CLUB_DIVISIONS_MAX . ' divisions.'];
+    // A course belongs to one division: the same name in two would file a member under either.
+    $seen = [];
+    foreach ($clean as $name => $courses) foreach ($courses as $c) {
+        $k = mb_strtolower($c);
+        if (isset($seen[$k])) return ['ok' => false, 'error' => 'course_in_two_divisions', 'detail' => $c . ' is in both ' . $seen[$k] . ' and ' . $name . '.'];
+        $seen[$k] = $name;
+    }
+    $old = setting_get('club_division_meta');
+    $old = is_array($old) ? $old : [];
+    $meta = [];
+    foreach (array_keys($clean) as $name) $meta[$name] = club_division_meta_clean($name, $metaIn[$name] ?? ($old[$name] ?? null));
     setting_set('club_catalogue', $clean, $by);
-    audit('club.catalogue.set', $by, '', ['faculties' => count($clean)], (string)($p['ip'] ?? ''));
+    setting_set('club_division_meta', $meta, $by);
+    audit('club.catalogue.set', $by, '', ['divisions' => count($clean)], (string)($p['ip'] ?? ''));
     if (function_exists('cache_invalidate')) cache_invalidate('catalogue');
-    return ['ok' => true, 'faculties' => count($clean)];
+    return ['ok' => true, 'faculties' => count($clean), 'divisions' => club_divisions()];
 }
 
 /** The courses an editor may file a lesson under: the Club's course list, plus

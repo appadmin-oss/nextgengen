@@ -1748,16 +1748,20 @@ function public_summer_profile(array $p): array {
        consent-gated; it shows only what the card itself carries. */
     if ($token !== '' && stripos($token, 'MEMQR-') === 0 && function_exists('member_card_lookup')) {
         $hit = member_card_lookup($token);
+        /* A replaced card opens nothing: it may be a lost card in a stranger's
+           hand, and the page would give them a child's name and face. */
         if (!$hit || $hit['void']) return ['ok' => false, 'error' => 'not_found'];
-        $mm = $hit['member'];
-        $days = (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [(string)$mm['memberId']])['c'] ?? 0);
-        return ['ok' => true, 'profile' => [
-            'kind' => 'member', 'studentId' => (string)$mm['memberId'], 'fullName' => (string)$mm['fullName'],
-            'track' => (string)($mm['track'] ?? ''), 'centre' => (string)($mm['centre'] ?? ''),
-            'cohortId' => (string)($mm['displayId'] ?? ''), 'displayId' => (string)($mm['displayId'] ?? ''),
-            'photoUrl' => normalize_image_url((string)($mm['photoUrl'] ?? '')), 'status' => (string)($mm['status'] ?? ''),
-            'attendanceCount' => $days, 'attendance' => [],
-        ]];
+        return ['ok' => true, 'profile' => member_card_public($hit['member'], true)];
+    }
+    /* A member card printed before secure codes: its QR carried the member id
+       (/?m=…, /q/<id>) or the printed number. It still opens the member's
+       page, but a member number is guessable, so this page names nobody and
+       shows no face — initials, the number, the centre and whether the
+       membership is active. */
+    if ($token !== '' && !db_row('SELECT 1 FROM qr_codes WHERE token = ? LIMIT 1', [$token]) && preg_match('/^[A-Za-z0-9-]{3,40}$/', $token) && function_exists('member_card_public')) {
+        $mm = db_row("SELECT * FROM members WHERE (UPPER(memberId) = ? OR UPPER(displayId) = ?) AND COALESCE(type,'NGG') = 'NGG' LIMIT 1", [strtoupper($token), strtoupper($token)]);
+        if ($mm && function_exists('member_follow_merge')) $mm = member_follow_merge($mm);
+        if ($mm) return ['ok' => true, 'profile' => member_card_public($mm, false)];
     }
     if ($token !== '') {
         $qr = db_row('SELECT studentId FROM qr_codes WHERE token = ? LIMIT 1', [$token]);

@@ -237,6 +237,38 @@ function member_card_lookup(?string $token, ?string $format = null, ?string $val
     return $m ? ['member' => $m, 'void' => false, 'kind' => 'printed'] : null;
 }
 
+/**
+ * The page a scanned NGG member card opens (/q/<code>) — the member's own,
+ * not a Summer School participant's. `secure`: opened by the member's secure
+ * code, the bearer credential printed on their card, so their name, photo and
+ * days present are shown. Opened by an older card's guessable number, it shows
+ * initials only and no photograph. (A replaced card never reaches here.)
+ */
+function member_card_public(array $m, bool $secure): array {
+    $division = function_exists('club_division_of') ? club_division_of((string)($m['track'] ?? '')) : '';
+    $meta = null;
+    if ($division !== '' && function_exists('club_divisions')) foreach (club_divisions() as $d) if ($d['name'] === $division) $meta = $d;
+    $name = trim((string)($m['fullName'] ?? ''));
+    $initials = implode('', array_map(static fn($w) => mb_strtoupper(mb_substr($w, 0, 1)) . '.', array_slice(preg_split('/\s+/', $name) ?: [], 0, 2)));
+    $memberId = (string)($m['memberId'] ?? '');
+    $days = $secure ? (int)(db_row('SELECT COUNT(*) c FROM attendance WHERE studentId = ?', [$memberId])['c'] ?? 0) : 0;
+    $recent = $secure ? array_map(static fn($r) => ['date' => (string)$r['date'], 'checkInAt' => (string)($r['checkInAt'] ?? '')],
+        db_all('SELECT date, checkInAt FROM attendance WHERE studentId = ? ORDER BY date DESC LIMIT 24', [$memberId])) : [];
+    $since = substr((string)($m['joinDate'] ?? ''), 0, 4);
+    return [
+        'kind' => 'member', 'secure' => $secure,
+        'studentId' => $secure ? $memberId : '', 'fullName' => $secure ? $name : '', 'initials' => $initials,
+        'displayId' => (string)($m['displayId'] ?? ''), 'cohortId' => '',
+        'track' => (string)($m['track'] ?? ''), 'centre' => (string)($m['centre'] ?? ''),
+        'division' => $division, 'divisionIcon' => $meta['icon'] ?? '', 'divisionShort' => $meta['short'] ?? '',
+        'memberSince' => preg_match('/^\d{4}$/', $since) ? $since : '',
+        'active' => (string)($m['status'] ?? 'active') === 'active',
+        'status' => (string)($m['status'] ?? ''),
+        'photoUrl' => $secure ? normalize_image_url((string)($m['photoUrl'] ?? '')) : '',
+        'attendanceCount' => $days, 'attendance' => $recent,
+    ];
+}
+
 /* ── Admin ───────────────────────────────────────────────────────────────── */
 
 /** The formats, and — for an importer — whether a sample decodes under one. */

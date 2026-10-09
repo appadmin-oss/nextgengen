@@ -273,3 +273,120 @@ Object.assign(CR_TAB_DEFS, {
       : base.blocks(d, ctx),
   });
 })();
+
+/* ── Divisions & courses ─────────────────────────────────────────────────────
+   The NGG Club's own structure (domain/curriculum.php club_divisions): four
+   divisions, each with its icon, the short label a member card prints, the
+   sentence a family reads on the join form, and its courses. Summer School
+   keeps its own catalogue; nothing here touches it. A course belongs to ONE
+   division (the server refuses it in two), and a course with members, lessons
+   or classes is marked so taking it off is a decision, not an accident. */
+function CrDivisions({ ctx }) {
+  const [d, setD] = React.useState({ state: "loading" });
+  const [rows, setRows] = React.useState([]);
+  const [dirty, setDirty] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const [adding, setAdding] = React.useState({});
+  const load = React.useCallback(() => {
+    NGGApi.admin.curriculum.courses().then(r => { setD(Object.assign({ state: "ready" }, r)); setRows((r.divisions || []).map(x => Object.assign({}, x, { courses: x.courses.slice() }))); setDirty(false); setErr(""); })
+      .catch(e => setD({ state: "error", error: e }));
+  }, []);
+  React.useEffect(load, [load]);
+  // Unsaved edits are reported to the Control Room, which offers to save or discard them before leaving.
+  const saveRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!ctx || !ctx.setDirty) return undefined;
+    ctx.setDirty("divisions", dirty ? { n: 1, save: () => saveRef.current && saveRef.current(), discard: load } : null);
+    return () => ctx.setDirty("divisions", null);
+  }, [dirty]); // eslint-disable-line
+  if (d.state === "loading") return <CrSkeleton kind="table"/>;
+  if (d.state === "error") return <CrError error={d.error} onRetry={load} what="the divisions"/>;
+  const can = !!d.canEdit, inUse = new Set(d.inUse || []), members = d.members || {};
+  const edit = (i, p) => { setRows(rs => rs.map((r, k) => k === i ? Object.assign({}, r, p) : r)); setDirty(true); };
+  const move = (i, dir) => { setRows(rs => { const n = rs.slice(); const j = i + dir; if (j < 0 || j >= n.length) return rs; [n[i], n[j]] = [n[j], n[i]]; return n; }); setDirty(true); };
+  const addCourse = i => {
+    const c = String(adding[i] || "").trim();
+    if (!c) return;
+    const owner = rows.findIndex(r => r.courses.some(x => x.toLowerCase() === c.toLowerCase()));
+    if (owner >= 0) { const same = rows[owner].courses.find(x => x.toLowerCase() === c.toLowerCase()); setErr(same + " is already in " + rows[owner].name + ". A course belongs to one division."); return; }
+    edit(i, { courses: rows[i].courses.concat([c]) }); setAdding(a => Object.assign({}, a, { [i]: "" })); setErr("");
+  };
+  const dropCourse = async (i, c) => {
+    const n = members[c] || 0;
+    if (n || inUse.has(c)) {
+      const ok = await ctx.confirm({ title: "Take " + c + " off?", body: (n ? n + " member" + (n === 1 ? " is" : "s are") + " in it" : "It has lessons or classes on the timetable") + ". They keep it on their record and their lessons stay findable; it just stops being offered.", cta: "Take it off", danger: true });
+      if (!ok) return;
+    }
+    edit(i, { courses: rows[i].courses.filter(x => x !== c) });
+  };
+  const dropDivision = async i => {
+    const n = rows[i].courses.reduce((t, c) => t + (members[c] || 0), 0);
+    const ok = await ctx.confirm({ title: "Remove " + (rows[i].name || "this division") + "?", body: n ? n + " member" + (n === 1 ? " is" : "s are") + " in its courses. They keep their course; the division stops being offered on the join form." : "Its courses stop being offered on the join form.", cta: "Remove", danger: true });
+    if (ok) { setRows(rs => rs.filter((_, k) => k !== i)); setDirty(true); }
+  };
+  const save = async () => {
+    setBusy(true); setErr("");
+    try {
+      await NGGApi.admin.curriculum.coursesSet(rows.map(r => ({ faculty: r.name, icon: r.icon, short: r.short, blurb: r.blurb, courses: r.courses })));
+      ctx.toast("Saved. The join form and new member cards use it now.");
+      load();
+    } catch (e) { setErr(crErr(e, "Couldn’t save. Your changes are still here.")); }
+    finally { setBusy(false); }
+  };
+  saveRef.current = save;
+  const reset = async () => {
+    const ok = await ctx.confirm({ title: "Go back to the NGG divisions?", body: "Creative & Performing Arts; Media & Content Strategy; Technology & Applied Engineering; Business Strategy, Operations & Administration — with their standard courses. Your changes here are replaced.", cta: "Reset", danger: true });
+    if (!ok) return;
+    try { await NGGApi.admin.curriculum.coursesReset(); ctx.toast("Back to the NGG divisions."); load(); } catch (e) { setErr(crErr(e)); }
+  };
+  return (
+    <div className="cr-dv">
+      <div className="cr-box cr-dv-intro">
+        <p>The <b>NGG Club</b>’s divisions and courses: what the NGG join form offers, what a member is filed under, and the label their card prints. <b>Summer School keeps its own catalogue</b> (Summer School → Structure); nothing here changes it.</p>
+        <p className="cr-hint">Centres running the NGG Club: {(d.centres || []).length ? d.centres.join(", ") : "none yet"}. <button type="button" className="cr-linkbtn" onClick={() => window.__adminSection && window.__adminSection("centres")}>Manage centres</button></p>
+      </div>
+      {err && <div className="cr-box cr-mp-note is-bad" role="alert"><CrIcon n="warning-circle"/><span>{err}</span></div>}
+      <ol className="cr-dv-list">
+        {rows.map((r, i) => (
+          <li key={i} className="cr-box cr-dv-card">
+            <div className="cr-dv-head">
+              <input className="cr-input cr-dv-icon" aria-label={"Icon for " + (r.name || "this division")} value={r.icon || ""} maxLength={4} disabled={!can} onChange={e => edit(i, { icon: e.target.value })}/>
+              <input className="cr-input cr-grow cr-dv-name" aria-label="Division name" value={r.name} maxLength={80} disabled={!can} onChange={e => edit(i, { name: e.target.value })}/>
+              <label className="cr-dv-short"><span className="cr-hint">On the card</span><input className="cr-input" aria-label={"Card label for " + (r.name || "this division")} value={r.short || ""} maxLength={14} disabled={!can} onChange={e => edit(i, { short: e.target.value.toUpperCase() })}/></label>
+              {can && <span className="cr-dv-move">
+                <button type="button" className="cr-iconbtn" aria-label={"Move " + r.name + " up"} disabled={i === 0} onClick={() => move(i, -1)}><CrIcon n="arrow-up"/></button>
+                <button type="button" className="cr-iconbtn" aria-label={"Move " + r.name + " down"} disabled={i === rows.length - 1} onClick={() => move(i, 1)}><CrIcon n="arrow-down"/></button>
+                <button type="button" className="cr-iconbtn" aria-label={"Remove " + r.name} onClick={() => dropDivision(i)}><CrIcon n="trash"/></button>
+              </span>}
+            </div>
+            <textarea className="cr-textarea cr-dv-blurb" rows={2} aria-label={"What " + (r.name || "this division") + " is for, as families read it"} value={r.blurb || ""} maxLength={300} disabled={!can} placeholder="For children interested in…" onChange={e => edit(i, { blurb: e.target.value })}/>
+            <ul className="cr-dv-courses" aria-label={"Courses in " + r.name}>
+              {r.courses.map(c => (
+                <li key={c} className="cr-chip">
+                  {c}{members[c] ? <span className="cr-hint"> · {members[c]}</span> : null}
+                  {can && <button type="button" className="cr-dv-x" aria-label={"Take " + c + " off"} onClick={() => dropCourse(i, c)}><CrIcon n="x"/></button>}
+                </li>
+              ))}
+              {can && <li className="cr-dv-add">
+                <input className="cr-input" placeholder="Add a course…" aria-label={"Add a course to " + r.name} value={adding[i] || ""} maxLength={80}
+                       onChange={e => setAdding(a => Object.assign({}, a, { [i]: e.target.value }))} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCourse(i); } }}/>
+                <button type="button" className="cr-btn is-sm" onClick={() => addCourse(i)}>Add</button>
+              </li>}
+            </ul>
+          </li>
+        ))}
+      </ol>
+      {can && <div className="cr-dv-foot">
+        <button type="button" className="cr-btn" onClick={() => { setRows(rs => rs.concat([{ name: "New division", icon: "", short: "", blurb: "", courses: [] }])); setDirty(true); }}><CrIcon n="plus"/>Add a division</button>
+        <button type="button" className="cr-linkbtn" onClick={reset}>Reset to the NGG divisions</button>
+        <span className="cr-grow"/>
+        <button type="button" className="cr-btn is-primary" disabled={busy || !dirty} onClick={save}>{busy ? "Saving…" : dirty ? "Save divisions" : "Saved"}</button>
+      </div>}
+      {!can && <p className="cr-hint">Changing the divisions needs the Curriculum permission.</p>}
+    </div>
+  );
+}
+Object.assign(CR_TAB_DEFS, {
+  divisions: crPanel(ctx => <CrDivisions ctx={ctx}/>),
+});

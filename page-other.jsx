@@ -680,7 +680,7 @@ function JoinPage({ setPage }) {
   const isSummer = program === "summer";
   const [restored, setRestored] = useState(false);
   const [data, setData] = useState(() => {
-    const base = { firstName: "", lastName: "", otherName: "", sex: "", dob: "", city: "", track: "", why: "", parentEmail: "", parentPhone: "", photoUrl: "" };
+    const base = { firstName: "", lastName: "", otherName: "", sex: "", dob: "", city: "", division: "", track: "", why: "", parentEmail: "", parentPhone: "", photoUrl: "" };
     /* "Apply to THIS centre" has to arrive at a form with that centre already
        chosen, or the button is decoration. Same for a course picked off the
        Summer School page. A saved draft still wins — somebody halfway through
@@ -717,7 +717,7 @@ function JoinPage({ setPage }) {
   }, []);
   const [busy, setBusy] = useState(false);
   const [fieldErr, setFieldErr] = useState("");
-  const steps = ["Identity", "Course", "Story", "Parent"];
+  const steps = ["Identity", isSummer ? "Course" : "Division", "Story", "Parent"];
   const session = useSession();
   const applyEyebrow = isSummer
     ? "APPLY · SUMMER STUDENTS"
@@ -753,6 +753,14 @@ function JoinPage({ setPage }) {
       let n = d;
       const course = offerCourses.find(c => c.toLowerCase() === String(d.track || "").toLowerCase());
       if (d.track && !course) n = { ...n, track: "" }; else if (course && course !== d.track) n = { ...n, track: course };
+      /* NGG: the division follows the course (a course is in exactly one), and
+         a division this programme does not have is cleared. */
+      if (!isSummer) {
+        const fac = (offer.faculties || []).find(f => course && f.courses.includes(course))
+          || (offer.faculties || []).find(f => f.faculty.toLowerCase() === String(d.division || "").toLowerCase());
+        const want = fac ? fac.faculty : "";
+        if ((n.division || "") !== want) n = { ...n, division: want };
+      }
       const names = (offer.centres || []).map(c => c.name);
       const centre = names.find(c => c.toLowerCase() === String(d.city || "").toLowerCase() || c.toLowerCase().endsWith(" " + String(d.city || "").toLowerCase()));
       if (d.city && d.city !== "Other" && !centre) n = { ...n, city: "" }; else if (centre && centre !== d.city) n = { ...n, city: centre };
@@ -773,7 +781,8 @@ function JoinPage({ setPage }) {
       if (!data.photoUrl) return "Add a headshot — take or upload a photo to continue.";
       if (!data.city) return "Choose the centre closest to you, or “Neither — I'll travel”.";
     }
-    if (s === 1 && offerCourses.length && !data.track) return "Pick the course you'd like to start with.";
+    if (s === 1 && !isSummer && offerCourses.length && !data.division) return "Choose the division that fits your child best.";
+    if (s === 1 && offerCourses.length && !data.track) return isSummer ? "Pick the course you'd like to start with." : "Pick a course in " + data.division + ".";
     if (s === 2 && data.why.trim().length < 20) {
       return "Give us at least a sentence or two — 20 characters minimum.";
     }
@@ -804,6 +813,7 @@ function JoinPage({ setPage }) {
         dob: data.dob,
         centre: data.city,
         track: data.track,
+        ...(isSummer ? {} : { division: data.division }),
         why: data.why.trim(),
         email: data.parentEmail.trim(),
         phone: data.parentPhone.trim(),
@@ -836,6 +846,10 @@ function JoinPage({ setPage }) {
         bad_otherName: "That middle name is too long — keep it under 60 characters.",
         email_too_long: "That email address is too long — check it for a typo.",
         why_too_long: "That answer is too long — keep it under 2,000 characters.",
+        division_required: "Choose a division on step 2.",
+        bad_division: "That division is no longer offered — choose another on step 2.",
+        course_not_in_division: (e.data && e.data.detail) || "That course is in another division — check step 2.",
+        centre_not_offered: (e.data && e.data.detail) || "That centre doesn't run this programme — choose another on step 1.",
       };
       const text = map[code] || "Couldn't submit your application. Your draft is saved — try again.";
       setFieldErr(text);
@@ -863,7 +877,7 @@ function JoinPage({ setPage }) {
           {restored && (
             <div role="status" style={{display:"flex", alignItems:"center", gap:12, justifyContent:"space-between", marginBottom:20, padding:"12px 16px", borderRadius:12, background:"rgba(245,176,38,0.14)", border:"1px solid rgba(245,176,38,0.4)", fontSize:14, color:"var(--ink-900)"}}>
               <span>↩︎ We saved your progress — pick up where you left off.</span>
-              <button type="button" onClick={() => { try { localStorage.removeItem(joinDraftKey(program)); } catch (_) {} setData({ firstName: "", lastName: "", otherName: "", sex: "", dob: "", city: "", track: "", why: "", parentEmail: "", parentPhone: "", photoUrl: "" }); setStep(0); setRestored(false); }} className="mono" style={{background:"none", border:"none", cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--ink-500)", fontWeight:600}}>Start fresh</button>
+              <button type="button" onClick={() => { try { localStorage.removeItem(joinDraftKey(program)); } catch (_) {} setData({ firstName: "", lastName: "", otherName: "", sex: "", dob: "", city: "", division: "", track: "", why: "", parentEmail: "", parentPhone: "", photoUrl: "" }); setStep(0); setRestored(false); }} className="mono" style={{background:"none", border:"none", cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--ink-500)", fontWeight:600}}>Start fresh</button>
             </div>
           )}
 
@@ -950,10 +964,10 @@ function JoinPage({ setPage }) {
                 </div>
               </div>
             )}
-            {step === 1 && (
+            {step === 1 && isSummer && (
               <div>
                 <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:"0 0 8px", letterSpacing:"-0.02em"}}>Pick a starting course.</h2>
-                <p style={{color:"var(--ink-500)", margin:"0 0 24px"}}>{isSummer ? "The courses Summer School is teaching this season." : "The courses the NGG Club teaches. You can switch in your first four weeks."}</p>
+                <p style={{color:"var(--ink-500)", margin:"0 0 24px"}}>The courses Summer School is teaching this season.</p>
                 {offerErr ? <ErrorState title="Couldn't load the courses" message={offerErr.message} code={offerErr.code} onRetry={loadOffer}/>
                   : !offer ? <div className="dash-spinner" role="status" aria-label="Loading the courses"/>
                   : !offerCourses.length ? <p className="join-course-none">No courses are listed yet — carry on, and we'll place you.</p>
@@ -970,6 +984,46 @@ function JoinPage({ setPage }) {
                         </fieldset>
                       ))}
                     </div>}
+              </div>
+            )}
+            {/* NGG: a DIVISION first — the four the Club is organised in, each
+                said in a family's words — then a course inside it. */}
+            {step === 1 && !isSummer && (
+              <div>
+                <h2 style={{fontFamily:"var(--font-display)", fontSize:32, margin:"0 0 8px", letterSpacing:"-0.02em"}}>Choose a division.</h2>
+                <p style={{color:"var(--ink-500)", margin:"0 0 24px"}}>NGG is organised in divisions. Pick the one that fits your child best, then a course to start with — they can switch course in the first four weeks.</p>
+                {offerErr ? <ErrorState title="Couldn't load the divisions" message={offerErr.message} code={offerErr.code} onRetry={loadOffer}/>
+                  : !offer ? <div className="dash-spinner" role="status" aria-label="Loading the divisions"/>
+                  : !offerCourses.length ? <p className="join-course-none">No divisions are listed yet — carry on, and we'll place you.</p>
+                  : <>
+                      <div className="join-divs" role="radiogroup" aria-label="Division">
+                        {offer.faculties.map(f => {
+                          const on = data.division === f.faculty;
+                          return (
+                            <button key={f.faculty} type="button" role="radio" aria-checked={on} className={"join-div" + (on ? " is-on" : "")}
+                              onClick={() => setData({ ...data, division: f.faculty, track: f.courses.includes(data.track) ? data.track : "" })}>
+                              {f.icon ? <span className="join-div-ico" aria-hidden="true">{f.icon}</span> : null}
+                              <span className="join-div-t">{f.faculty}</span>
+                              {f.blurb ? <span className="join-div-b">{f.blurb}</span> : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {data.division && (() => {
+                        const f = offer.faculties.find(x => x.faculty === data.division);
+                        return f ? (
+                          <fieldset className="join-fac join-fac--courses">
+                            <legend>Start with a course in {f.faculty}</legend>
+                            <div className="join-fac-grid">
+                              {f.courses.map(c => (
+                                <button key={c} type="button" className={"join-course" + (data.track === c ? " is-on" : "")} aria-pressed={data.track === c}
+                                  onClick={() => setData({ ...data, track: c })}>{c}</button>
+                              ))}
+                            </div>
+                          </fieldset>
+                        ) : null;
+                      })()}
+                    </>}
               </div>
             )}
             {step === 2 && (
@@ -997,15 +1051,27 @@ function JoinPage({ setPage }) {
                     <input type="tel" value={data.parentPhone} onChange={e => setData({...data, parentPhone: e.target.value})} autoComplete="tel" placeholder="0803 000 0000"/>
                   </div>
                 </div>
-                <div className="card" style={{padding:18, background:"var(--cream-50)", border:"1px solid var(--cream-200)"}}>
+                <div className="card join-sum">
                   <div className="eyebrow" style={{color:"var(--ink-500)"}}>APPLICATION SUMMARY</div>
-                  <div style={{display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:14, marginTop:12, fontSize:14}}>
-                    <div><b>Name</b><br/>{[data.firstName, data.otherName, data.lastName].filter(Boolean).join(" ") || "—"}</div>
-                    <div><b>Age</b><br/>{data.dob ? dobToAge(data.dob) : "—"}</div>
-                    <div><b>Centre</b><br/>{data.city}</div>
-                    <div><b>Track</b><br/>{data.track}</div>
-                  </div>
+                  <dl className="join-sum-grid">
+                    <div><dt>Name</dt><dd>{[data.firstName, data.otherName, data.lastName].filter(Boolean).join(" ") || "—"}</dd></div>
+                    <div><dt>Age</dt><dd>{data.dob ? dobToAge(data.dob) : "—"}</dd></div>
+                    <div><dt>Centre</dt><dd>{data.city || "—"}</dd></div>
+                    {!isSummer && <div><dt>Division</dt><dd>{data.division || "—"}</dd></div>}
+                    <div><dt>Course</dt><dd>{data.track || "—"}</dd></div>
+                  </dl>
                 </div>
+                {/* What joining costs, said before anybody applies — and that nothing is paid until a place is offered. */}
+                {!isSummer && offer && offer.fees && offer.fees.enabled && (
+                  <div className="card join-costs" role="note">
+                    <div className="eyebrow" style={{color:"var(--ink-500)"}}>WHAT JOINING COSTS</div>
+                    <ul>
+                      {offer.fees.membershipFee > 0 && <li><b>{fmtMoney(offer.fees.membershipFee)}</b> membership fee{offer.fees.membershipEveryMonths === 12 ? ", once a year" : ""}</li>}
+                      {offer.fees.monthlyCommitment > 0 && <li><b>{fmtMoney(offer.fees.monthlyCommitment)}</b> commitment fee a month — the first month is charged only for the meetings left from the day your child starts</li>}
+                    </ul>
+                    <p>Nothing is paid now. If your child is offered a place, we email one invoice you can pay online{offer.fees.bank ? " or by bank transfer" : ""}, and send a receipt when it is paid.</p>
+                  </div>
+                )}
               </div>
             )}
             {step === 4 && (
@@ -1394,6 +1460,146 @@ function ProfileCheckin({ token, name }) {
   );
 }
 
+/* ── A scanned NGG member card (/q/<code>) ───────────────────────────────────
+   The member's own page — NGG, not the Summer School participant layout it
+   used to borrow. Opened by the card's secure code it shows who they are,
+   their division and course, their centre and their days present; opened by
+   an older card that carried only a member number it names nobody and shows
+   no face (the number is not a secret). An inactive membership says so first,
+   in red. A replaced card opens nothing at all (the server answers not_found). */
+function MemberCardView({ m, token, auth }) {
+  const name = m.fullName || m.initials || "NGG member";
+  const ini = (m.fullName || m.initials || "?").replace(/\./g, "").trim().split(/\s+/).map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  const staff = auth && auth.isSignedIn && (auth.isAdmin || (auth.hasCap && (auth.hasCap("club") || auth.hasCap("people") || auth.hasCap("checkin"))));
+  const att = m.attendance || [];
+  return (
+    <div className="page mcv" data-screen-label="Member card">
+      <section className="section mcv-sec">
+        <div className="container mcv-wrap">
+          <div className={"mcv-card" + (m.active ? "" : " is-off")}>
+            <div className="mcv-band">
+              <img src="/assets/logo.png" alt="" className="mcv-logo"/>
+              <div><b>Next Generation Genius</b><span>Member ID card</span></div>
+              <span className={"mcv-state" + (m.active ? " is-ok" : " is-bad")} role="status">{m.active ? "✓ Active member" : "Not an active member"}</span>
+            </div>
+            <div className="mcv-body">
+              <div className="mcv-photo">{m.photoUrl ? <img src={m.photoUrl} alt="" onError={e => { e.target.style.display = "none"; }}/> : <span aria-hidden="true">{ini}</span>}</div>
+              <div className="mcv-who">
+                <h1>{name}</h1>
+                {m.displayId && <div className="mcv-id">{m.displayId}</div>}
+                <dl className="mcv-facts">
+                  {m.division && <div><dt>Division</dt><dd>{m.divisionIcon ? m.divisionIcon + " " : ""}{m.division}</dd></div>}
+                  {m.track && m.secure && <div><dt>Course</dt><dd>{m.track}</dd></div>}
+                  {m.centre && <div><dt>Centre</dt><dd>{m.centre}</dd></div>}
+                  {m.memberSince && <div><dt>Member since</dt><dd>{m.memberSince}</dd></div>}
+                  {m.secure && <div><dt>Days present</dt><dd>{m.attendanceCount || 0}</dd></div>}
+                </dl>
+              </div>
+            </div>
+            {!m.active && <p className="mcv-warn">This membership is not active. The card does not admit its holder; ask them to see the centre.</p>}
+            {!m.secure && <p className="mcv-note">This is an older card that carries only a member number, so this page shows no name or photo. Ask the centre for a reprint: the new card opens the member’s full page.</p>}
+          </div>
+          {staff && token && m.active ? <ProfileCheckin token={token} name={m.fullName || "this member"}/> : null}
+          {m.secure && att.length > 0 && (
+            <div className="card mcv-att">
+              <h2>Recent days present</h2>
+              <div className="mcv-days">{att.map((a, i) => <span key={i} className="chip chip-lime" title={a.checkInAt}>{a.date}</span>)}</div>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* ── A family's joining invoice (/pay/<token>) ────────────────────────────────
+   Sent once their child is accepted. Pay it through Paystack, or by transfer to
+   the account printed here — in which case the centre records it, checks it,
+   and the receipt arrives without anybody sending this link again. After
+   Paystack sends the family back (?reference=…) the page asks the server to
+   confirm with Paystack itself; it never takes the browser's word. */
+function MembershipPayPage({ setPage }) {
+  const token = decodeURIComponent(((window.location.pathname || "").split("/").filter(Boolean)[1]) || "");
+  const [st, setSt] = React.useState({ state: "loading" });
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const load = React.useCallback(() => {
+    let ref = "";
+    try { const q = new URLSearchParams(window.location.search); ref = q.get("reference") || q.get("trxref") || ""; } catch (_) {}
+    setSt({ state: ref ? "confirming" : "loading" });
+    const req = ref ? NGGApi.public.membershipVerify(token, ref) : NGGApi.public.membershipInvoice(token);
+    req.then(r => {
+      setSt({ state: "ready", inv: r.invoice });
+      if (ref) { try { history.replaceState({ page: "pay" }, "", "/pay/" + encodeURIComponent(token)); } catch (_) {} }
+    }).catch(e => {
+      if (ref && e.code !== "not_found") { setErr(e.code === "payment_mismatch" ? "Paystack reported a payment that does not match this invoice. Nothing was recorded — contact the centre before paying again." : "We couldn’t confirm the payment yet. If money left your account, do not pay again — refresh this page in a minute."); return NGGApi.public.membershipInvoice(token).then(r => setSt({ state: "ready", inv: r.invoice }), () => setSt({ state: "error", e })); }
+      setSt({ state: e.code === "not_found" ? "missing" : "error", e });
+    });
+  }, [token]);
+  React.useEffect(load, [load]);
+  const pay = async () => {
+    setBusy(true); setErr("");
+    try { const r = await NGGApi.public.membershipPay(token); window.location.assign(r.authorizationUrl); }
+    catch (e) {
+      setBusy(false);
+      setErr({ already_paid: "This invoice is already paid.", offline_pending: "A payment you made by transfer or cash is being checked by the centre. Please don’t pay again.", payments_unavailable: "Online payment isn’t available right now — pay by transfer to the account below.", init_failed: "Paystack didn’t respond. Try again in a moment." }[e.code] || "Couldn’t start the payment. Try again.");
+      if (e.code === "already_paid" || e.code === "offline_pending") load();
+    }
+  };
+  const inv = st.inv;
+  const money = n => (inv && inv.symbol ? inv.symbol : "₦") + Number(n || 0).toLocaleString("en-NG");
+  return (
+    <main className="mpay" data-screen-label="Pay membership">
+      <div className="mpay-card">
+        <header className="mpay-head"><img src="/assets/logo.png" alt="" width="40" height="40"/><div><b>Next Generation Genius</b><span>Membership</span></div></header>
+        {st.state === "loading" || st.state === "confirming" ? (
+          <div className="mpay-wait" role="status"><div className="dash-spinner"/><p>{st.state === "confirming" ? "Confirming your payment with Paystack…" : "Loading your invoice…"}</p></div>
+        ) : st.state === "missing" ? (
+          <div className="mpay-msg"><h1>This link isn’t valid</h1><p>It may have been replaced, or typed wrongly. Use the link in your most recent email from NGG, or contact your centre.</p><button className="btn btn-ghost" onClick={() => setPage("home")}>Back to home</button></div>
+        ) : st.state === "error" ? (
+          <div className="mpay-msg"><h1>We couldn’t load your invoice</h1><p>Check your connection and try again.</p><button className="btn btn-primary" onClick={load}>Try again</button></div>
+        ) : (
+          <>
+            <h1 className="mpay-title">{inv.status === "paid" ? "Thank you — " + (inv.firstName || "your child") + " is fully enrolled." : "Complete " + (inv.firstName ? inv.firstName + "’s" : "your") + " membership"}</h1>
+            <p className="mpay-sub">Invoice <span className="mpay-mono">{inv.invoiceId}</span>{inv.displayId ? <> · member <span className="mpay-mono">{inv.displayId}</span></> : null}{inv.centre ? " · " + inv.centre : ""}</p>
+            <table className="mpay-items">
+              <tbody>
+                {inv.items.map((it, i) => <tr key={i}><td><b>{it.label}</b>{it.detail ? <span>{it.detail}</span> : null}</td><td>{money(it.amount)}</td></tr>)}
+              </tbody>
+              <tfoot><tr><td>{inv.status === "paid" ? "Total paid" : "Total to pay"}</td><td>{money(inv.total)}</td></tr></tfoot>
+            </table>
+            {err && <div className="mpay-err" role="alert">{err}</div>}
+            {inv.status === "paid" ? (
+              <div className="mpay-done">
+                <p>Paid {inv.paidAt ? new Date(inv.paidAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : ""}. Receipt <b>{inv.receiptNo}</b> has been emailed to you.</p>
+                <a className="btn btn-primary" href={inv.receiptUrl} target="_blank" rel="noopener noreferrer">View and print the receipt</a>
+              </div>
+            ) : inv.status === "void" ? (
+              <div className="mpay-msg"><p>This invoice was cancelled. Contact your centre if you think that is a mistake.</p></div>
+            ) : inv.pendingOffline ? (
+              <div className="mpay-note" role="status"><b>Your {String(inv.pendingOffline.method || "offline").toLowerCase()} payment is being checked.</b> The centre records it and a second member of staff confirms it against the bank statement; your receipt is emailed as soon as that is done. Please don’t pay again.</div>
+            ) : (
+              <div className="mpay-actions">
+                {inv.paystack && <button className="btn btn-primary btn-lg mpay-pay" onClick={pay} disabled={busy}>{busy ? "Opening Paystack…" : "Pay " + money(inv.total) + " securely"}</button>}
+                {inv.paystack && <p className="mpay-fine">Card, bank transfer or USSD through Paystack. We never see card details.</p>}
+                {inv.bank && (
+                  <div className="mpay-bank">
+                    <b>{inv.paystack ? "Or pay by bank transfer" : "Pay by bank transfer"}</b>
+                    <dl><div><dt>Bank</dt><dd>{inv.bank.bankName}</dd></div><div><dt>Account number</dt><dd className="mpay-mono">{inv.bank.accountNumber}</dd></div><div><dt>Account name</dt><dd>{inv.bank.accountName}</dd></div><div><dt>Narration</dt><dd className="mpay-mono">{inv.invoiceId}</dd></div></dl>
+                    <p>Keep your slip or alert and show it at the centre. Once a member of staff has checked it, your receipt is emailed to you.</p>
+                  </div>
+                )}
+                {!inv.paystack && !inv.bank && <p className="mpay-fine">Pay at your centre; you’ll get a receipt once it is recorded and checked.</p>}
+              </div>
+            )}
+            <p className="mpay-fine">The first month’s commitment fee covers only the meeting days left from the start date, {inv.startDate ? new Date(inv.startDate + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "long" }) : "the day your child starts"}. From next month it is charged in full.</p>
+          </>
+        )}
+      </div>
+    </main>
+  );
+}
+
 function SummerProfilePage({ setPage }) {
   const [state, setState] = React.useState({ loading: true, profile: null, token: "" });
   // Called unconditionally (hooks rule) — lets a signed-in staffer mark this
@@ -1411,13 +1617,15 @@ function SummerProfilePage({ setPage }) {
   if (!state.profile) return (
     <div className="page"><section className="section"><div className="container" style={{ textAlign: "center", padding: "80px 0" }}>
       <div className="mono" style={{ color: "var(--coral)", letterSpacing: "0.14em" }}>PROFILE NOT FOUND</div>
-      <h1 className="display" style={{ fontSize: "clamp(40px,6vw,80px)", margin: "12px 0" }}>No student here.</h1>
-      <p style={{ color: "var(--ink-500)" }}>That QR card isn't assigned yet, or the link is wrong.</p>
+      <h1 className="display" style={{ fontSize: "clamp(40px,6vw,80px)", margin: "12px 0" }}>Nobody on this card.</h1>
+      <p style={{ color: "var(--ink-500)" }}>That card isn't assigned to anybody yet, or the link is wrong. If it is an NGG member card, ask the centre to check it.</p>
       <button className="btn btn-primary mt-24" onClick={() => setPage("home")}>Back to home →</button>
     </div></section></div>
   );
 
   const m = state.profile;
+  // An NGG member's card opens the member's own page, not the participant layout.
+  if (m.kind === "member") return <MemberCardView m={m} token={state.token} auth={auth}/>;
   const att = m.attendance || [];
   const isVol = m.kind === "volunteer";
   /* The backend blanks fullName on the public handle route when the guardian

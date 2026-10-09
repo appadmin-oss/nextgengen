@@ -278,6 +278,8 @@ function member_event_sentence(string $event, array $meta): string {
 function member_merge_policy(): array {
     return [
         'member_ledger'          => 'BLOCK',          // money: never combined silently
+        'membership_invoices'    => 'BLOCK',          // a joining invoice and its receipt name one member
+        'offline_payments'       => 'BLOCK',          // evidence of money paid for one member
         'member_stats'           => 'KEEP_SURVIVOR',  // xp/streak are not additive
         'member_progress'        => 'MOVE_UNIQUE',
         'member_state'           => 'MOVE_UNIQUE',

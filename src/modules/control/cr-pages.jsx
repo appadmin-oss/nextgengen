@@ -54,6 +54,7 @@ const CR_PAGES = {
     { id: "companion", label: "Companion check-ins", desc: "How members say they are doing, between sessions.", cap: "club" },
   ] },
   money: { label: "Money", icon: "wallet", tabs: [
+    { id: "membership", label: "Membership payments", desc: "Joining invoices: Paystack, and offline payments a second person checks against their evidence.", cap: "fees" },
     { id: "fees", label: "Dues & arrears", desc: "Every naira owed, paid and waived, with the reason kept on the account.", cap: "fees" },
     { id: "conduct", label: "Conduct & fines", desc: "Clear rules, transparent records, no humiliation.", cap: ["people", "summer"] },
     { id: "donations", label: "Donations", desc: "Gifts received through Paystack and bank transfer.", cap: "settings" },
@@ -69,6 +70,7 @@ const CR_PAGES = {
     { id: "assessment", label: "Assessments", desc: "Baseline at week 1, endline at week 12.", cap: "summer" },
   ] },
   learning: { label: "Learning", icon: "graduation-cap", tabs: [
+    { id: "divisions", label: "Divisions & courses", desc: "The NGG Club’s four divisions and the courses in each — what the join form offers and the card prints.", cap: ["curriculum", "club", "people"] },
     { id: "curriculum", label: "Curriculum", desc: "The four divisions. Chess is compulsory in all of them.", cap: "curriculum" },
     { id: "sessions", label: "Sessions", desc: "Each session is 12 weeks.", cap: "content" },
     { id: "missions", label: "Missions", desc: "Anchor missions members complete and mentors verify.", cap: "content" },

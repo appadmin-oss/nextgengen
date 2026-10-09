@@ -75,7 +75,10 @@ const ROUTES = [
   // ── Member-facing, signed in ─────────────────────────────────────────────
   { id: "profile",     title: "Member profile · NGG",                      desc: "An NGG member's public profile — work, badges, mentor notes.", index: false },
   { id: "dashboard",   title: "My dashboard · NGG",                        desc: "Your missions, mentor, streak and journal — the member dashboard.", index: false },
-  { id: "summerprofile", title: "Summer School participant · NGG",         desc: "A Summer School participant's standard profile.", addressable: false },
+  { id: "summerprofile", title: "ID card · NGG",                           desc: "The page an NGG or Summer School card opens when it is scanned.", addressable: false, index: false },
+  /* A family's joining invoice, by its private token (/pay/<token>). Own
+     chrome, never indexed: the address is a capability, sent by email. */
+  { id: "pay",          title: "Complete membership · NGG",                desc: "", chrome: "own", index: false, addressable: false },
 
   // ── Staff & operational surfaces (own chrome, never indexed) ─────────────
   { id: "admin",        title: "Control Room · NGG",                       desc: "", chrome: "own", index: false },
@@ -232,12 +235,22 @@ const ANCHOR_IDS = ["main", "mentor-apply"];
 // /assets are excluded server-side.
 function pageFromPath() {
   const seg = (window.location.pathname || "/").replace(/^\/+|\/+$/g, "").split("/")[0];
-  if (!seg) return "home";
+  if (!seg) {
+    /* Member cards printed before secure codes carried /?m=<memberId>, which
+       opened the home page. They open the card's page now, like any scan. */
+    try {
+      const m = new URLSearchParams(window.location.search).get("m");
+      if (m && /^[A-Za-z0-9-]{3,40}$/.test(m)) { history.replaceState({ page: "summerprofile" }, "", "/q/" + encodeURIComponent(m)); return "summerprofile"; }
+    } catch (_) {}
+    return "home";
+  }
   // /login and /signin are conventional entry points — resolve to home; the
   // auth provider opens the sign-in modal (or redirects signed-in users).
   if (seg === "login" || seg === "signin") return "home";
-  // Summer School participant profiles: /q/<qr-token> or /s/<handle>.
+  // What a scanned card opens: /q/<qr-token> (NGG member, Summer participant, volunteer) or /s/<handle>.
   if (seg === "q" || seg === "s") return "summerprofile";
+  // A joining invoice: /pay/<token>.
+  if (seg === "pay") return "pay";
   // Volunteer service certificates: /cert/<certId> — public + printable.
   if (seg === "cert") return "certificate";
   // The staff Control Room lives at /control (it owns the subtree
@@ -309,7 +322,8 @@ function App() {
     /* The Control Room owns /control/<page>/<tab> and resolves the old
        /nextadmin?s=… addresses itself (src/modules/control/cr-app.jsx). */
     const inControlSubtree = page === "admin" && /^\/(control|nextadmin|hq|admin)(\/|$)/.test(window.location.pathname || "");
-    if (page !== "_notfound" && page !== "summerprofile" && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && window.location.pathname !== pathForPage(page)) {
+    const prefixRoute = ROUTES.some(r => r.id === page && r.addressable === false);
+    if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
     }
     // Expose for the sign-in modal / magic link consumer.
@@ -403,6 +417,7 @@ function App() {
     "id-cards": <IdCardStudioPage setPage={setPage}/>,
     designer:   <DesignerPage/>,
     certificate: <CertificatePage/>,
+    pay: <MembershipPayPage setPage={setPage}/>,
     "journal-entry": <JournalEntryPage/>,
     legal:      <LegalPage setPage={setPage}/>,
   };

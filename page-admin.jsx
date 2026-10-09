@@ -11002,7 +11002,11 @@ function AdminCentres() {
   const [canWrite, setCanWrite] = React.useState(true);
   const [err, setErr] = React.useState("");
   const [q, setQ] = React.useState("");
-  const [d, setD] = React.useState({ name: "", code: "", color: "#76B043", capacity: "" });
+  const [d, setD] = React.useState({ name: "", code: "", color: "#76B043", capacity: "", programmes: "ngg" });
+  /* NGG and Summer School keep separate centre lists: which programme a centre
+     runs decides which forms, desks and timetables offer it. The directory is
+     filtered by programme so each list can be read on its own. */
+  const [prog, setProg] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [openId, setOpenId] = React.useState("");   // "" | "<id>:edit" | "<id>:map"
   const load = () => NGGApi.admin.registration.centres()
@@ -11012,7 +11016,7 @@ function AdminCentres() {
   const add = async (e) => {
     e && e.preventDefault();
     setBusy(true);
-    try { await NGGApi.admin.registration.centreUpsert({ ...d, capacity: d.capacity === "" ? 0 : parseInt(d.capacity, 10) || 0 }); invalidateCentreOptCache(); setD({ name: "", code: "", color: "#76B043", capacity: "" }); toast.success("Centre added — open Edit to add its address, lead and contacts."); load(); }
+    try { await NGGApi.admin.registration.centreUpsert({ ...d, programmes: d.programmes.split(","), capacity: d.capacity === "" ? 0 : parseInt(d.capacity, 10) || 0 }); invalidateCentreOptCache(); setD({ name: "", code: "", color: "#76B043", capacity: "", programmes: "ngg" }); toast.success("Centre added — open Edit to add its address, lead and contacts."); load(); }
     catch (e2) {
       toast.error(e2.code === "code_taken" ? "That code is already used — it's the printed ID prefix, so it has to be unique."
         : e2.code === "forbidden" ? "Adding a centre needs the member-desk (people) capability."
@@ -11074,13 +11078,13 @@ function AdminCentres() {
      its honest error with a retry (CLAUDE.md §9). */
   const rows = React.useMemo(() => {
     const needle = q.trim().toLowerCase();
-    const all = centres || [];
+    const all = (centres || []).filter(c => !prog || centreProgrammes(c).indexOf(prog) !== -1);
     if (!needle) return all;
     return all.filter(c => (c.name || "").toLowerCase().indexOf(needle) !== -1
       || (c.code || "").toLowerCase().indexOf(needle) !== -1
       || (c.area || "").toLowerCase().indexOf(needle) !== -1
       || (c.address || "").toLowerCase().indexOf(needle) !== -1);
-  }, [centres, q]);
+  }, [centres, q, prog]);
 
   if (err) return <ErrorState title="Couldn't load the centre directory" code={err} onRetry={load}/>;
 
@@ -11109,22 +11113,32 @@ function AdminCentres() {
           <input className="admin-input" placeholder="Centre name" aria-label="New centre name" value={d.name} onChange={e => setD({ ...d, name: e.target.value })} style={{ minWidth: 200 }}/>
           <input className="admin-input" placeholder="CODE" aria-label="New centre code (1–4 letters, the printed ID prefix)" value={d.code} maxLength={4} onChange={e => setD({ ...d, code: e.target.value.toUpperCase() })} style={{ maxWidth: 100 }}/>
           <input type="color" aria-label="New centre card colour" value={d.color} onChange={e => setD({ ...d, color: e.target.value })} style={{ width: 44, height: 38, borderRadius: 8, border: "1px solid rgba(12,20,50,0.15)", cursor: "pointer" }}/>
-          <input className="admin-input" type="number" min="0" placeholder="Summer capacity (0=∞)" aria-label="Summer School capacity, 0 for unlimited" value={d.capacity} onChange={e => setD({ ...d, capacity: e.target.value })} style={{ maxWidth: 180 }}/>
+          <select className="admin-input" aria-label="Which programme the new centre runs" value={d.programmes} onChange={e => setD({ ...d, programmes: e.target.value })}>
+            <option value="ngg">Runs the NGG Club</option>
+            <option value="summer">Runs Summer School</option>
+            <option value="ngg,summer">Runs both</option>
+          </select>
+          {d.programmes !== "ngg" && <input className="admin-input" type="number" min="0" placeholder="Summer capacity (0=∞)" aria-label="Summer School capacity, 0 for unlimited" value={d.capacity} onChange={e => setD({ ...d, capacity: e.target.value })} style={{ maxWidth: 180 }}/>}
           <button className="btn btn-primary btn-sm" disabled={busy || d.name.length < 2 || !d.code}>{busy ? "…" : "+ Add centre"}</button>
         </form>
       )}
-      {(centres || []).length > 6 && (
-        <div className="admin-filters">
-          <input className="admin-input" value={q} onChange={e => setQ(e.target.value)}
-            placeholder="Search centres by name, code or area…" aria-label="Search the centre directory"/>
+      <div className="admin-filters">
+        <div className="admin-seg" role="radiogroup" aria-label="Show centres that run">
+          {[["", "All centres"], ["ngg", "NGG Club"], ["summer", "Summer School"]].map(([k, l]) => (
+            <button key={k} type="button" role="radio" aria-checked={prog === k} className={"btn btn-sm " + (prog === k ? "btn-primary" : "btn-ghost")} onClick={() => setProg(k)}>
+              {l}{centres ? " · " + fmtNum(centres.filter(c => !k || centreProgrammes(c).indexOf(k) !== -1).length) : ""}
+            </button>
+          ))}
         </div>
-      )}
+        {(centres || []).length > 6 && <input className="admin-input" value={q} onChange={e => setQ(e.target.value)}
+            placeholder="Search centres by name, code or area…" aria-label="Search the centre directory"/>}
+      </div>
       {centres === null ? <div className="dash-spinner"/> :
         centres.length === 0
           ? <EmptyState icon="◉" title="No centres yet"
               message="A centre is a place the whole organisation uses. Its code becomes the ID prefix on every member card issued there, so pick it carefully."/>
         : rows.length === 0
-          ? <div className="admin-empty">No centre matches “{q}”. <button className="btn btn-ghost btn-sm" onClick={() => setQ("")}>Clear the search</button></div>
+          ? <div className="admin-empty">{q ? <>No centre matches “{q}”. <button className="btn btn-ghost btn-sm" onClick={() => setQ("")}>Clear the search</button></> : <>No centre runs {prog === "ngg" ? "the NGG Club" : "Summer School"} yet. <button className="btn btn-ghost btn-sm" onClick={() => setProg("")}>Show every centre</button></>}</div>
         : <div className="admin-table-wrap"><table className="admin-table">
           <caption className="sr-only">NGG centres, with the year-round membership and the current Summer School edition counted separately</caption>
           <thead><tr>
@@ -11143,7 +11157,7 @@ function AdminCentres() {
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: 4, background: c.color, border: "1px solid rgba(0,0,0,0.1)", flex: "0 0 auto" }}/><b>{c.name}</b> <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-500)" }}>{c.code}</span></span>
                 {c.status === "retired" && <span className="chip status-archived" style={{ marginLeft: 8 }} title="Kept so existing records still resolve; no longer offered anywhere">retired</span>}
                 {c.status === "archived" && <span className="chip status-archived" style={{ marginLeft: 8 }}>archived</span>}
-                {centreProgrammes(c).length === 1 && <span className="chip" style={{ marginLeft: 8 }} title="Only this programme's forms and lists offer this centre">{centreProgrammes(c)[0] === "ngg" ? "NGG Club only" : "Summer only"}</span>}
+                <span className="chip" style={{ marginLeft: 8 }} title="Which programme's forms, desks and lists offer this centre">{centreProgrammes(c).length === 2 ? "NGG + Summer" : centreProgrammes(c)[0] === "ngg" ? "NGG Club only" : "Summer only"}</span>
                 {c.pageStatus === "published"
                   ? <a className="chip chip-lime" href={"/centres/" + (c.slug || "")} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8, textDecoration: "none" }}>page live ↗</a>
                   : <span className="chip" style={{ marginLeft: 8, opacity: 0.7 }}>page draft</span>}

@@ -85,9 +85,26 @@ const CR_INBOX_SOURCES = {
         const prog = a.program === "summer" ? "Summer School" : "NGG membership";
         const status = (to, label) => async () => { await NGGApi.admin.applications.status(a.id, to); return { text: label + " · " + a.name, undo: () => NGGApi.admin.applications.status(a.id, a.status || "new") }; };
         const actions = a.kind === "teen" ? [
-          { l: "Accept & create member", tone: "primary",
-            confirm: () => ({ title: "Create a member for " + a.name + "?", body: "They get an NGG record and a member ID. This can’t be undone from here.", cta: "Accept & create member" }),
-            run: async () => { const x = await NGGApi.admin.applications.convert(a.id); return { text: x.existed ? a.name + " already had a record · " + x.memberId : "Member created · " + x.memberId }; } },
+          a.program === "summer" ? { l: "Accept & create member", tone: "primary",
+            confirm: () => ({ title: "Create a member for " + a.name + "?", body: "They get a Summer School record. This can’t be undone from here.", cta: "Accept & create member" }),
+            run: async () => { const x = await NGGApi.admin.applications.convert(a.id); return { text: x.existed ? a.name + " already had a record · " + x.memberId : "Member created · " + x.memberId }; } }
+          : { l: "Accept & create member", tone: "primary",
+            /* An NGG place is paid for only once it is offered: accepting sends
+               the family one invoice — the membership fee and the first
+               month's commitment fee, charged only for the meeting days left
+               from the start date set here. */
+            form: () => ({ title: "Accept " + a.name + " into NGG", submit: "Accept and send the invoice",
+              intro: "They get an NGG record, a member ID and a card number. Their family is emailed one invoice to pay: the membership fee and the commitment fee for the meeting days left in their first month.",
+              values: { start: new Date().toISOString().slice(0, 10) },
+              fields: [{ id: "start", l: "Start date", type: "date", req: true, help: "The first day they attend. Only the meeting days from this date are charged for the first month." }] }),
+            run: async (it, v) => {
+              const x = await NGGApi.admin.applications.convert(a.id, v.start);
+              if (x.existed) return { text: a.name + " already had a record · " + x.memberId };
+              const inv = x.invoice || {};
+              const tail = inv.invoiceId ? (inv.sent ? " · invoice " + fmtMoney(inv.total) + " sent to " + inv.to : " · invoice made, but the email didn’t go — resend it from Money → Membership payments")
+                : inv.error === "fees_off" ? " · no invoice: membership fees are off" : inv.error ? " · no invoice (" + inv.error.replace(/_/g, " ") + ")" : "";
+              return { text: "Member created · " + x.memberId + tail };
+            } },
           { l: "Waitlist", run: status("waitlist", "Waitlisted") },
           { l: "Reject", run: status("rejected", "Rejected") },
         ] : [
@@ -99,7 +116,7 @@ const CR_INBOX_SOURCES = {
           id: "app:" + a.id, cat: "applications", kind: "Application", icon: "user-plus", who: a.name || a.email || "Applicant", at: a.createdAt,
           unread: a.status === "new", title: [prog, a.track || a.role].filter(Boolean).join(" · "), body: a.why || "", photoUrl: a.photoUrl || "",
           search: [a.email, a.centre, a.track, a.ref].join(" "),
-          facts: [["Age", a.age || a.dobAge || "—"], ["Centre", a.centre || "—"], ["Division", a.track || "—"], ["Role", a.role || ""], ["Email", a.email || "—"], ["Phone", crMask(a.phone) || "—"], ["Photo", a.photoUrl ? "Uploaded" : "Missing"], ["Reference", a.ref || ""]].filter(f => f[1] !== ""),
+          facts: [["Age", a.age || a.dobAge || "—"], ["Centre", a.centre || "—"], ["Division", a.program === "summer" ? "" : (a.faculty || "—")], ["Course", a.track || "—"], ["Role", a.role || ""], ["Email", a.email || "—"], ["Phone", crMask(a.phone) || "—"], ["Photo", a.photoUrl ? "Uploaded" : "Missing"], ["Reference", a.ref || ""]].filter(f => f[1] !== ""),
           note: a.photoUrl ? "" : "No photo yet — their ID card cannot print until one is uploaded.",
           actions,
         });

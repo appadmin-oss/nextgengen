@@ -1004,9 +1004,16 @@ function fees_accrue_member(array $member, ?array $cfg = null, ?string $asOf = n
         }
     }
     if ((int)$cfg['monthlyDues'] > 0) {
+        $firstMonth = substr($ten['start'], 0, 7);
         foreach (fees_due_months($ten['start'], $asOf ?? gmdate('Y-m-d')) as $mk) {
-            if (fees_post($memberId, 'dues', (int)$cfg['monthlyDues'],
-                          ['periodKey' => $mk, 'note' => 'Monthly dues ' . $mk, 'by' => 'accrual'])) {
+            /* The month a member starts is charged only for the meeting days
+               left in it — the same figure their joining invoice quoted
+               (membership_prorate), so the two cannot disagree. A charge
+               already on the ledger is never re-priced. */
+            $amt = (int)$cfg['monthlyDues'];
+            if ($mk === $firstMonth && function_exists('membership_prorate')) $amt = membership_prorate($amt, $ten['start'], $member)['amount'];
+            if ($amt > 0 && fees_post($memberId, 'dues', $amt,
+                          ['periodKey' => $mk, 'note' => ($mk === $firstMonth && $amt < (int)$cfg['monthlyDues'] ? 'Commitment fee ' . $mk . ' (from ' . $ten['start'] . ')' : 'Monthly dues ' . $mk), 'by' => 'accrual'])) {
                 $out['dues']++;
             }
         }

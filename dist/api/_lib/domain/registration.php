@@ -3570,7 +3570,10 @@ function card_row_member(array $m, array $centres): array {
            CACENTRE gate reads and what /q/ opens. A member with none yet falls
            back to the member id, which the gate still reads by NGG's
            "app-card" format — the shape every card printed before this has. */
-        'token'     => (function_exists('member_card_secure') ? member_card_secure((string)($m['memberId'] ?? '')) : null) ?? (string)($m['memberId'] ?? ''),
+        /* A card about to be printed is given its secure code now if it has
+           none: a member id in the QR opened the home page when a phone
+           scanned it, and a member number is not a secret. */
+        'token'     => (function_exists('member_cards_ensure') ? member_cards_ensure($m, 'card', 'created')['secure'] : null) ?? (string)($m['memberId'] ?? ''),
         'cardSecure' => function_exists('member_card_secure') && member_card_secure((string)($m['memberId'] ?? '')) !== null,
         'photoUrl'  => normalize_image_url((string)($m['photoUrl'] ?? '')),
         'joinDate'  => (string)($m['joinDate'] ?? ''),

@@ -3041,3 +3041,57 @@ CREATE TABLE IF NOT EXISTS contact_replies (
 CREATE INDEX idx_contact_email ON contact_messages (email);
 
 INSERT INTO schema_version (version) VALUES (134) ON DUPLICATE KEY UPDATE version = version;
+
+-- 135 · Paying to join: one invoice per accepted NGG applicant, and offline payments held as claims until verified against evidence.
+CREATE TABLE IF NOT EXISTS membership_invoices (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  invoiceId VARCHAR(40) NOT NULL UNIQUE,
+  memberId VARCHAR(64) NOT NULL,
+  applicationId INT NOT NULL DEFAULT 0,
+  payToken VARCHAR(64) NOT NULL UNIQUE,
+  items TEXT NOT NULL,
+  total INT NOT NULL DEFAULT 0,
+  currency VARCHAR(8) NOT NULL DEFAULT 'NGN',
+  startDate VARCHAR(16) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'open',
+  paystackRef VARCHAR(64) NOT NULL DEFAULT '',
+  paidVia VARCHAR(16) NOT NULL DEFAULT '',
+  paidAt VARCHAR(32) NOT NULL DEFAULT '',
+  receiptNo VARCHAR(40) NOT NULL DEFAULT '',
+  receiptToken VARCHAR(64) NOT NULL DEFAULT '',
+  sentTo VARCHAR(255) NOT NULL DEFAULT '',
+  sentAt VARCHAR(32) NOT NULL DEFAULT '',
+  createdBy VARCHAR(64) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  voidReason VARCHAR(255) NOT NULL DEFAULT '',
+  INDEX idx_minv_member (memberId),
+  INDEX idx_minv_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS offline_payments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  paymentId VARCHAR(40) NOT NULL UNIQUE,
+  invoiceId VARCHAR(40) NOT NULL,
+  memberId VARCHAR(64) NOT NULL,
+  amount INT NOT NULL DEFAULT 0,
+  method VARCHAR(16) NOT NULL DEFAULT '',
+  payerName VARCHAR(160) NOT NULL DEFAULT '',
+  bankName VARCHAR(120) NOT NULL DEFAULT '',
+  reference VARCHAR(120) NOT NULL DEFAULT '',
+  referenceKey VARCHAR(120) NOT NULL DEFAULT '',
+  paidOn VARCHAR(16) NOT NULL DEFAULT '',
+  evidenceSha256 CHAR(64) NOT NULL UNIQUE,
+  evidenceFile VARCHAR(255) NOT NULL DEFAULT '',
+  evidenceType VARCHAR(40) NOT NULL DEFAULT '',
+  evidenceBytes INT NOT NULL DEFAULT 0,
+  note VARCHAR(500) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  recordedBy VARCHAR(64) NOT NULL DEFAULT '',
+  recordedAt VARCHAR(32) NOT NULL DEFAULT '',
+  verifiedBy VARCHAR(64) NOT NULL DEFAULT '',
+  verifiedAt VARCHAR(32) NOT NULL DEFAULT '',
+  rejectReason VARCHAR(500) NOT NULL DEFAULT '',
+  INDEX idx_offpay_invoice (invoiceId),
+  INDEX idx_offpay_ref (referenceKey)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO schema_version (version) VALUES (135) ON DUPLICATE KEY UPDATE version = version;

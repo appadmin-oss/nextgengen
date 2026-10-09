@@ -631,6 +631,73 @@ The Club is where Summer School participants continue year-round. It has
 its own permission (`club`), so a Club coordinator sees the Club and nothing
 else.
 
+### Divisions and courses
+
+NGG is organised in **four divisions**, and every NGG course sits in exactly
+one of them:
+
+| Division | Card label | Courses (as seeded) |
+|---|---|---|
+| 🎭 Creative & Performing Arts | CREATIVE ARTS | Music, Musical Instruments, Vocal Training, Music Production, Acting, Stagecraft, Catering, Adire, Crafts |
+| 🎥 Media & Content Strategy | MEDIA | Video Production, Cinematography, Graphic Design, Branding, Digital Content Creation, Social Media, Visual Storytelling |
+| 💻 Technology & Applied Engineering | TECH | Artificial Intelligence, Coding, Software Development, Robotics, Automation, Tech Product Design, Cybersecurity |
+| 📊 Business Strategy, Operations & Administration | BUSINESS | Project Management, Product Management, Data Analysis, Business Development, Finance, Human Resources, Operations, Administration, Strategic Thinking |
+
+Edit them in **Learning → Divisions & courses** (needs `curriculum`): the
+icon, the name, the label the member card prints, the sentence families read
+on the join form, and the courses. **Summer School keeps its own catalogue**
+(Summer School → Structure) and nothing here changes it. A course already
+holding members, lessons or classes asks before it is taken off; its members
+keep it on their record. *Reset to the NGG divisions* puts the table above
+back.
+
+The NGG join form asks for a **division first**, then a course inside it, and
+says what joining costs before anybody applies.
+
+### Joining fees: the membership invoice
+
+Nothing is paid until a child is **accepted**. In **Inbox → Applications**,
+*Accept & create member* asks for the **start date**, then creates the member
+and emails the family **one invoice**:
+
+- the **membership fee** (Money → Dues & arrears → membership fee), and
+- the **commitment fee** for the first month, charged **only for the meeting
+  days left** from the start date (their centre's meeting days on the Club
+  calendar; calendar days if no calendar is set). Joining with one Saturday of
+  four left costs a quarter of the month. From the next month the commitment
+  fee (monthly dues) is charged in full.
+
+The fees must be switched on under Dues & arrears; with them off the member is
+still accepted and the screen says no invoice went.
+
+The family pays through the link (Paystack), or by bank transfer or cash.
+**Money → Membership payments** lists every invoice:
+
+- **Resend link** — only while unpaid and with no offline payment waiting.
+- **Record offline payment** — for a transfer, deposit, POS or cash payment.
+  It needs the **exact invoice total**, who paid, the bank, the **reference**
+  (for cash: the number on the receipt you wrote), the date paid, and the
+  **evidence** — a photo or PDF of the slip, receipt or bank alert. It is held
+  as a claim; nothing is paid yet and the family is **not** sent the link
+  again.
+- **Verify** — a **different** member of staff with `fees` opens the
+  evidence, then types the **reference and amount from the bank statement or
+  cash book** (not from the record) and confirms the money arrived. Only then
+  is the invoice paid: the charges and the payment go on the member's ledger,
+  a numbered receipt (`NGG-RCT-2026-00001`) is issued, and the family is
+  emailed a thank-you with the receipt.
+- **Reject** — with a reason; the invoice stays open.
+
+What the server refuses, whoever asks: a different amount; a future date, or
+one before the invoice; a reference already used anywhere (spacing and case
+do not matter); an evidence file already used, even on a rejected claim; the
+recorder verifying their own entry; anybody recording or verifying a payment
+on their own account; a second claim while one is pending; a mismatched
+reference or amount at verification. Every step is in the audit log.
+
+Bank details printed on the invoice are set from the **Bank** button on the
+same screen (a 10-digit account number).
+
 ### Promoting into the Club
 
 The **promotable** list is the Summer School participants who look ready:
@@ -981,7 +1048,8 @@ the Monday weekly summary, and an alert when a fine is issued.
 
 Three different queues, for three different things:
 
-- **People → Applications** — year-round NGG applications.
+- **People → Applications** — year-round NGG applications. Accepting an NGG
+  applicant sends the joining invoice (see *Joining fees* under The NGG Club).
 - **Summer School → Pending sign-ups** — this edition's intake.
 - **Content → Photo review** — photographs submitted by members,
   volunteers and Summer School participants, waiting on approval before
@@ -995,6 +1063,14 @@ to.
 ---
 
 ## ID cards
+
+**Scanning a card with a phone.** A member card's QR opens the member's page
+(`/q/<code>`): name, photo, division, course, centre, member since, days
+present, and whether the membership is active. Every card printed from the ID
+Card Studio now carries the member's secure code. An older card that carried
+only the member number (`/?m=…`) still opens the page, but with initials only
+and no photo, because a member number is not a secret; reprint it. A replaced
+card opens nothing.
 
 There are **two studios**, and they do different jobs. Each names the other
 on screen, so you do not have to remember which is which.

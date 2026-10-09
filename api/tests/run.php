@@ -5789,7 +5789,8 @@ chk('mcards: a centre-scoped admin gets their own centre and only their own', (f
     $r = backend_dispatch('admin.mcards.data', ['requesterId' => 'NGG-SCOPED-ADM']);
     if (empty($r['ok']) || !$r['cards']) return false;
     $names = array_map(fn($c) => (string)($c['centre']['name'] ?? ''), $r['cards']);
-    $ids   = array_map(fn($c) => (string)($c['token'] ?? ''), $r['cards']);
+    // By member id: a printed card now carries the member's secure code as its token.
+    $ids   = array_map(fn($c) => (string)($c['memberId'] ?? ''), $r['cards']);
     return in_array('NGG-INSCOPE', $ids, true)
         && array_unique($names) === ['Scopeville'];
 })());
@@ -15204,7 +15205,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             'parentEmail' => 'g-' . strtolower($id) . '@example.com',
             'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     };
-    $D = fn(int $monthsAgo) => gmdate('Y-m-d', strtotime('-' . $monthsAgo . ' months'));
+    // Joined on the 1st, so the first month is a full one (a mid-month start is pro-rated; tested on its own below).
+    $D = fn(int $monthsAgo) => gmdate('Y-m-01', strtotime(gmdate('Y-m-15') . ' -' . $monthsAgo . ' months'));
     // Joined 20 months ago: 18 months training done, 2 months into service.
     $mk('NGG-FEE-A', $D(20));
     // Joined this month: nothing has accrued but the joining fee.
@@ -15647,7 +15649,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
         db_insert('members', ['memberId' => $id, 'fullName' => 'Uprate Next', 'email' => 'up2@example.com',
             'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
-            'joinDate' => gmdate('Y-m-d', strtotime('-1 month')), 'parentEmail' => 'up2g@example.com',
+            'joinDate' => gmdate('Y-m-01', strtotime(gmdate('Y-m-15') . ' -1 month')), 'parentEmail' => 'up2g@example.com',
             'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
         $m = fn() => db_row('SELECT * FROM members WHERE memberId = ?', [$id]);
         // Charge last month at 1000, then raise, then charge this month.
@@ -22296,6 +22298,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         'trainingFee' => 0, 'balanceCap' => 0, 'remindEnabled' => false]]);
 
     // ── The statement ──
+    $GLOBALS['__selfMem'] = $MEM;
     fees_accrue_member(db_row('SELECT * FROM members WHERE memberId = ?', [$MEM]), null, '2025-04-10');
     fees_post($MEM, 'payment', 2000, ['note' => 'Cash at the desk', 'by' => $ADMIN]);
     fees_post($MEM, 'training', 75000, ['periodKey' => 'S-X', 'note' => 'Training', 'by' => 'accrual']);
@@ -22306,12 +22309,16 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('self-service: …the running total is the real money, not the programme cost',
         (function () use ($st) {
             $last = end($st['lines']);
-            // membership 5000 + 4 months dues 4000 − 2000 paid = 7000. The 75k
-            // training is a programme cost and stays out of what is payable.
-            return (int)$st['closingPayable'] === 7000 && (int)$last['runningPayable'] === 7000;
+            // membership 5000 + dues (January from the 6th, pro-rated, then
+            // three full months) − 2000 paid. The 75k training is a programme
+            // cost and stays out of what is payable.
+            $jan = membership_prorate(1000, '2025-01-06', db_row('SELECT * FROM members WHERE memberId = ?', [$GLOBALS['__selfMem']]))['amount'];
+            $want = 5000 + $jan + 3000 - 2000;
+            return $jan > 0 && $jan < 1000 && (int)$st['closingPayable'] === $want && (int)$last['runningPayable'] === $want;
         })());
+    $GLOBALS['__selfP0'] = (int)$st['closingPayable'];
     chk('self-service: …while the whole-account total does include it',
-        (int)$st['closingTotal'] === 82000);
+        (int)$st['closingTotal'] === (int)$st['closingPayable'] + 75000);
     chk('self-service: …and a training line is marked as a programme cost, not a bill',
         (bool)array_filter($st['lines'], fn($l) => $l['kind'] === 'training' && $l['real'] === false));
     chk('self-service: with fees switched off the statement says so rather than erroring',
@@ -22362,7 +22369,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     /* THE ONE THAT MATTERS. The claim is the member telling the desk to look —
        it must not have moved a single naira on its own. */
     chk('self-service: raising a claim does NOT touch the ledger',
-        (int)member_statement(['memberId' => $MEM])['closingPayable'] === 7000
+        (int)member_statement(['memberId' => $MEM])['closingPayable'] === $GLOBALS['__selfP0']
         && !db_row("SELECT id FROM member_ledger WHERE memberId = ? AND reference = 'TRF-99'", [$MEM]));
 
     chk('self-service: a member sees their own requests and nobody else\'s',
@@ -22413,7 +22420,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             $r = admin_request_decide(['requesterId' => 'SELF-PPL', 'requestId' => $claim['request']['requestId'], 'approve' => true, 'decision' => 'ok']);
             $row = db_row('SELECT status FROM member_requests WHERE requestId = ?', [$claim['request']['requestId']]);
             return ($r['error'] ?? '') === 'forbidden' && (string)$row['status'] === 'open'
-                && (int)member_statement(['memberId' => $MEM])['closingPayable'] === 7000;
+                && (int)member_statement(['memberId' => $MEM])['closingPayable'] === $GLOBALS['__selfP0'];
         })());
     chk('self-service (desk): approving a claim posts the payment through the ledger\'s own door',
         (function () use ($ADMIN, $MEM, $claim) {
@@ -22423,7 +22430,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             $entry = db_row('SELECT * FROM member_ledger WHERE entryId = ?', [(string)$row['ledgerEntryId']]);
             return !empty($r['ok']) && (string)$row['status'] === 'approved'
                 && $entry && (int)$entry['amount'] === 3000 && (string)$entry['kind'] === 'payment'
-                && (int)member_statement(['memberId' => $MEM])['closingPayable'] === 4000;
+                && (int)member_statement(['memberId' => $MEM])['closingPayable'] === $GLOBALS['__selfP0'] - 3000;
         })());
     chk('self-service (desk): …and the member is told, without being told who decided it',
         (function () use ($MEM, $claim) {
@@ -22439,7 +22446,7 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
             $c = member_request_create(['memberId' => $MEM, 'kind' => 'payment', 'amount' => 9000]);
             admin_request_decide(['requesterId' => $ADMIN, 'requestId' => $c['request']['requestId'],
                                   'approve' => true, 'decision' => 'Only 1,000 arrived.', 'amount' => 1000]);
-            return (int)member_statement(['memberId' => $MEM])['closingPayable'] === 3000;
+            return (int)member_statement(['memberId' => $MEM])['closingPayable'] === $GLOBALS['__selfP0'] - 4000;
         })());
     chk('self-service (desk): a decided request cannot be decided twice',
         (function () use ($ADMIN, $claim) {
@@ -23105,6 +23112,12 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 /* ── The NGG Club curriculum ─────────────────────────────────────────────── */
 (function () {
     $now = now_iso();
+    /* These fixtures are written against the legacy course names (Piano,
+       Guitar…). They test lessons, checks and the timetable, not which courses
+       the Club teaches, so the Club's list is pinned to those names — with the
+       NGG divisions seed marked done, so the first read does not replace it. */
+    setting_set('club_catalogue_seed', CLUB_DIVISIONS_SEED, 'test');
+    setting_set('club_catalogue', academy_catalogue_default(), 'test');
     $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Cur ' . $id, 'email' => strtolower($id) . '@example.com',
         'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now], $extra));
     $mk('NGG-CUR-ADM', 'club_admin'); $mk('NGG-CUR-ED', 'editor');
@@ -24251,14 +24264,26 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 (function () {
     $now = now_iso();
     $keepClub = setting_get('club_catalogue'); $keepAcad = setting_get('academy_catalogue');
-    db_exec("DELETE FROM settings WHERE settingKey = 'club_catalogue'");
+    db_exec("DELETE FROM settings WHERE settingKey IN ('club_catalogue', 'club_catalogue_seed', 'club_division_meta')");
     $mk = fn($id, $role, $extra = []) => db_insert('members', array_merge(['memberId' => $id, 'fullName' => 'Sep ' . $id, 'email' => strtolower($id) . '@example.com',
         'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now], $extra));
     $mk('NGG-SEP-SUP', 'super_admin'); $mk('NGG-SEP-SUM', 'member', ['capsExtra' => json_encode(['summer'])]); $mk('NGG-SEP-CLUB', 'club_admin');
 
     // Courses.
     $first = club_courses();
-    chk('separation: the Club\'s course list starts as a copy of the catalogue, and is stored', $first === academy_courses() && is_array(setting_get('club_catalogue')));
+    /* The Club's list is seeded with the NGG DIVISIONS — never a copy of
+       Summer School's catalogue, which is how the two programmes used to look
+       like one. */
+    $divs = club_divisions();
+    chk('separation: the Club is seeded with the four NGG divisions, not a copy of Summer School\'s catalogue',
+        array_column($divs, 'name') === ['Creative & Performing Arts', 'Media & Content Strategy', 'Technology & Applied Engineering', 'Business Strategy, Operations & Administration']
+        && in_array('Robotics', $first, true) && in_array('Adire', $first, true) && !in_array('Piano', $first, true) && (string)setting_raw('club_catalogue_seed') === CLUB_DIVISIONS_SEED);
+    chk('separation: each division carries its icon, the short label its card prints, and its description',
+        $divs[2]['icon'] === '💻' && $divs[2]['short'] === 'TECH' && str_contains($divs[2]['blurb'], 'cybersecurity') && club_division_of('Robotics') === 'Technology & Applied Engineering');
+    chk('separation: the seed runs once — an admin\'s later edit is not overwritten',
+        !empty(backend_dispatch('admin.club.catalogue.set', ['requesterId' => 'NGG-SEP-SUP', 'catalogue' => [['faculty' => 'Media & Content Strategy', 'icon' => '🎥', 'courses' => ['Guitar', 'Video Production']]]])['ok'])
+        && club_courses() === ['Guitar', 'Video Production'] && club_divisions()[0]['short'] === 'MEDIA');
+    chk('separation: one course cannot sit in two divisions', (backend_dispatch('admin.club.catalogue.set', ['requesterId' => 'NGG-SEP-SUP', 'catalogue' => [['faculty' => 'A', 'courses' => ['Coding']], ['faculty' => 'B', 'courses' => ['coding']]]])['error'] ?? '') === 'course_in_two_divisions');
     $r = backend_dispatch('admin.academy.catalogue.set', ['requesterId' => 'NGG-SEP-SUP', 'catalogue' => ['Music' => ['Piano']]]);
     chk('separation: Summer School trimming its catalogue does not take courses off the Club', !empty($r['ok']) && academy_courses() === ['Piano'] && in_array('Guitar', club_courses(), true) && in_array('Guitar', curriculum_courses(), true));
     $r = backend_dispatch('admin.club.catalogue.set', ['requesterId' => 'NGG-SEP-CLUB', 'catalogue' => [['faculty' => 'Media', 'courses' => ['Media Lab', 'Video Editing']], ['faculty' => 'Music', 'courses' => ['Guitar']]]]);
@@ -24525,6 +24550,210 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('id studio: every op is in the map', count(array_filter(['admin.ids.state', 'admin.ids.reprint.request', 'admin.ids.reprint.done', 'admin.ids.run.failed', 'admin.ids.photo.ask', 'admin.ids.design.set', 'admin.ids.mint'],
         fn($op) => (backend_dispatch($op, ['requesterId' => ''])['error'] ?? '') === 'unknown_op')) === 0);
     db_exec("DELETE FROM id_reprints"); db_exec("DELETE FROM id_photo_asks"); db_exec("DELETE FROM members WHERE memberId = 'NGG-IDS-ED'");
+})();
+
+/* ── Paying to join: the joining invoice, Paystack, and offline payments
+      held until a second person verifies them (domain/membership-pay.php) ── */
+(function () {
+    $now = now_iso();
+    $A1 = 'NGG-MP-ADM1'; $A2 = 'NGG-MP-ADM2'; $PPL = 'NGG-MP-PPL';
+    foreach ([[$A1, 'super_admin'], [$A2, 'super_admin'], [$PPL, 'admin']] as [$id, $role]) {
+        db_exec('DELETE FROM members WHERE memberId = ?', [$id]);
+        db_insert('members', ['memberId' => $id, 'fullName' => 'Pay ' . $id, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => $role, 'createdAt' => $now, 'updatedAt' => $now]);
+    }
+    $keepFees = setting_get('fees'); $keepCal = setting_get('memberProgramme');
+    $keepSeed = setting_raw('club_catalogue_seed'); $keepClub = setting_get('club_catalogue'); $keepMeta = setting_get('club_division_meta');
+    db_exec("DELETE FROM settings WHERE settingKey IN ('club_catalogue_seed','club_catalogue','club_division_meta','memberProgramme')");
+    $png = function (int $w = 320, int $h = 320) {
+        $im = imagecreatetruecolor($w, $h);
+        for ($i = 0; $i < 40; $i++) imagesetpixel($im, random_int(0, $w - 1), random_int(0, $h - 1), random_int(0, 0xFFFFFF));
+        ob_start(); imagepng($im); $b = ob_get_clean(); imagedestroy($im);
+        return 'data:image/png;base64,' . base64_encode($b);
+    };
+
+    // ── Fair to the start date ──
+    $p = membership_prorate(4000, '2026-02-14', null);
+    chk('pay: with no meeting calendar the first month is pro-rated by calendar days (15 of 28)', $p['basis'] === 'calendar' && $p['remaining'] === 15 && $p['total'] === 28 && $p['amount'] === 2140);
+    setting_set('memberProgramme', ['enabled' => true, 'startDate' => '2026-01-01', 'endDate' => '2026-12-31', 'weekdays' => [6], 'holidays' => [], 'extraDays' => []], 'test');
+    $p = membership_prorate(4000, '2026-02-14', null);
+    chk('pay: with the Club calendar it is the meeting days left — 3 of February\'s 4 Saturdays', $p['basis'] === 'meeting' && $p['remaining'] === 3 && $p['total'] === 4 && $p['amount'] === 3000);
+    chk('pay: …a start on or before the first meeting pays the whole month, and after the last pays nothing', membership_prorate(4000, '2026-02-01', null)['amount'] === 4000 && membership_prorate(4000, '2026-02-28', null)['amount'] === 1000);
+    db_exec("DELETE FROM settings WHERE settingKey = 'memberProgramme'");
+
+    // ── Applying with a division ──
+    backend_dispatch('admin.fees.settings.set', ['requesterId' => $A1, 'data' => ['enabled' => true, 'membershipFee' => 10000, 'membershipEveryMonths' => 12, 'monthlyDues' => 4000, 'trainingFee' => 0, 'balanceCap' => 0, 'remindEnabled' => false]]);
+    $apply = fn(array $o) => backend_dispatch('public.apply', array_merge(['kind' => 'teen', 'program' => 'anchor', 'firstName' => 'Pay', 'lastName' => 'Kid', 'dob' => gmdate('Y-m-d', strtotime('-13 years')),
+        'sex' => 'female', 'phone' => '08031112222', 'photoUrl' => '', 'centre' => '', 'why' => 'I like robots'], $o));
+    $GLOBALS['CONFIG']['intake_photo_required'] = false; setting_set('intake_photo_required', '0', 'test');
+    $bad = $apply(['email' => 'pay-x@example.com', 'division' => 'Media & Content Strategy', 'track' => 'Robotics']);
+    chk('pay: an application refuses a course from another division', ($bad['error'] ?? '') === 'course_not_in_division');
+    $ra = $apply(['email' => 'pay-a@example.com', 'division' => 'Technology & Applied Engineering', 'track' => 'robotics']);
+    $appA = db_row("SELECT * FROM applications WHERE email = 'pay-a@example.com' ORDER BY id DESC LIMIT 1");
+    chk('pay: the application is filed under its division, with the course spelt as the Club spells it', !empty($ra['ok']) && $appA && $appA['faculty'] === 'Technology & Applied Engineering' && $appA['track'] === 'Robotics');
+    $pubN = backend_dispatch('public.programme', ['program' => 'anchor']);
+    chk('pay: the join form is told what joining costs, before anybody applies', ($pubN['fees']['membershipFee'] ?? 0) === 10000 && ($pubN['fees']['monthlyCommitment'] ?? 0) === 4000 && ($pubN['faculties'][2]['icon'] ?? '') === '💻');
+
+    // ── Accepted → one invoice, sent ──
+    $GLOBALS['__mail_sink'] = [];
+    $start = gmdate('Y-m-d', strtotime('+3 days'));
+    $cv = backend_dispatch('admin.application.convert', ['requesterId' => $A1, 'id' => (int)$appA['id'], 'startDate' => $start]);
+    $memA = db_row('SELECT * FROM members WHERE memberId = ?', [(string)($cv['memberId'] ?? '')]);
+    $invA = $memA ? db_row('SELECT * FROM membership_invoices WHERE memberId = ?', [$memA['memberId']]) : null;
+    $itemsA = $invA ? membership_items($invA) : [];
+    $wantDues = membership_prorate(4000, $start, $memA)['amount'];
+    chk('pay: acceptance files the member under the division the card prints, from the start date chosen', $memA && $memA['disciplines'] === 'TECH' && $memA['joinDate'] === $start && $memA['track'] === 'Robotics');
+    chk('pay: …and creates one invoice: the membership fee and the pro-rated first month', $invA && count($itemsA) === 2 && $itemsA[0]['amount'] === 10000 && $itemsA[1]['amount'] === $wantDues && (int)$invA['total'] === 10000 + $wantDues);
+    $payMail = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains($m['subject'], 'Complete')));
+    chk('pay: …and only then emails the family a private link to pay it', $invA && count($payMail) === 1 && str_contains($payMail[0]['html'], '/pay/' . $invA['payToken']) && ($cv['invoice']['sent'] ?? false) === true);
+    $again = membership_invoice_create($memA, 'test');
+    chk('pay: asking again returns the same invoice — nobody is billed twice', !empty($again['existed']) && $again['invoice']['invoiceId'] === $invA['invoiceId']);
+    $pub = backend_dispatch('public.membership.invoice', ['token' => $invA['payToken']]);
+    chk('pay: the family\'s page shows the invoice by its token, and a wrong token shows nothing', ($pub['invoice']['total'] ?? 0) === (int)$invA['total'] && ($pub['invoice']['firstName'] ?? '') === 'Pay'
+        && (backend_dispatch('public.membership.invoice', ['token' => 'nope'])['error'] ?? '') === 'not_found');
+
+    // ── Paystack ──
+    chk('pay: without Paystack keys the page cannot start a payment, and says so', (backend_dispatch('public.membership.pay.init', ['token' => $invA['payToken']])['error'] ?? '') === 'payments_unavailable');
+    $GLOBALS['CONFIG']['paystack'] = ['secret' => 'sk_test_x'];
+    $paid = ['amount' => (int)$invA['total'] * 100, 'currency' => 'NGN'];
+    $GLOBALS['__paystack_mock'] = function ($method, $path, $body) use (&$paid, $invA) {
+        if (strpos($path, '/transaction/initialize') === 0) return ['status' => true, 'data' => ['authorization_url' => 'https://checkout.paystack.com/m1', 'reference' => $body['reference']]];
+        $ref = rawurldecode(substr($path, strlen('/transaction/verify/')));
+        return ['status' => true, 'data' => ['status' => 'success', 'reference' => $ref, 'amount' => $paid['amount'], 'currency' => $paid['currency'], 'channel' => 'card', 'metadata' => ['invoiceId' => $invA['invoiceId']]]];
+    };
+    $in = backend_dispatch('public.membership.pay.init', ['token' => $invA['payToken']]);
+    $ref = (string)($in['reference'] ?? '');
+    chk('pay: Paystack starts a checkout tagged with this invoice', !empty($in['ok']) && preg_match('/^NGGM-[A-F0-9]{16}$/', $ref) && db_row('SELECT paystackRef FROM membership_invoices WHERE id = ?', [$invA['id']])['paystackRef'] === $ref);
+    $paid['amount'] = 10000;
+    chk('pay: a successful Paystack payment for the wrong amount does NOT settle the invoice', (membership_paystack_verify($ref)['error'] ?? '') === 'payment_mismatch' && db_row('SELECT status FROM membership_invoices WHERE id = ?', [$invA['id']])['status'] === 'open');
+    $paid['amount'] = (int)$invA['total'] * 100;
+    $GLOBALS['__mail_sink'] = [];
+    $vv = backend_dispatch('public.membership.pay.verify', ['token' => $invA['payToken'], 'reference' => $ref]);
+    $invA2 = db_row('SELECT * FROM membership_invoices WHERE id = ?', [$invA['id']]);
+    $led = db_all('SELECT kind, amount, periodKey FROM member_ledger WHERE memberId = ? ORDER BY id', [$memA['memberId']]);
+    chk('pay: the right payment settles it: paid, numbered receipt', ($vv['invoice']['status'] ?? '') === 'paid' && $invA2['paidVia'] === 'paystack' && preg_match('/^NGG-RCT-\d{4}-\d{5}$/', $invA2['receiptNo']));
+    chk('pay: …the charges and the payment are on the member\'s ledger, once', count(array_filter($led, fn($l) => $l['kind'] === 'payment')) === 1
+        && array_sum(array_map(fn($l) => $l['kind'] === 'payment' ? (int)$l['amount'] : 0, $led)) === (int)$invA['total']
+        && count(array_filter($led, fn($l) => $l['kind'] === 'dues')) === 1 && count(array_filter($led, fn($l) => $l['kind'] === 'membership')) === 1);
+    $thanks = array_values(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains($m['subject'], 'Thank you')));
+    chk('pay: …and the family is thanked, with the receipt', count($thanks) === 1 && str_contains($thanks[0]['html'], $invA2['receiptNo']) && str_contains($thanks[0]['html'], 'receipt.php?t=' . $invA2['receiptToken']));
+    membership_paystack_verify($ref); membership_settle($invA['invoiceId'], 'paystack', $ref, 'paystack');
+    fees_accrue_member(db_row('SELECT * FROM members WHERE memberId = ?', [$memA['memberId']]), null, $start);
+    chk('pay: settling twice and the dues accrual afterwards post nothing more — the ledger agrees with the invoice',
+        count(db_all("SELECT id FROM member_ledger WHERE memberId = ? AND kind = 'payment'", [$memA['memberId']])) === 1
+        && (int)db_row("SELECT SUM(amount) s FROM member_ledger WHERE memberId = ? AND kind = 'dues'", [$memA['memberId']])['s'] === $wantDues);
+    $html = membership_receipt_html($invA2);
+    chk('pay: the receipt is a document of its own: number, member, method, reference, total', str_contains($html, $invA2['receiptNo']) && str_contains($html, 'PAID') && str_contains($html, $ref) && str_contains($html, 'Pay Kid'));
+    unset($GLOBALS['__paystack_mock']);
+
+    // ── Offline: a claim until a second person checks it ──
+    $mkMember = function (string $email) use ($apply, $A1) {
+        $apply(['email' => $email, 'division' => 'Creative & Performing Arts', 'track' => 'Adire']);
+        $a = db_row('SELECT * FROM applications WHERE email = ? ORDER BY id DESC LIMIT 1', [$email]);
+        $c = backend_dispatch('admin.application.convert', ['requesterId' => $A1, 'id' => (int)$a['id']]);
+        return db_row('SELECT * FROM membership_invoices WHERE memberId = ?', [(string)$c['memberId']]);
+    };
+    $invB = $mkMember('pay-b@example.com');
+    $evB = $png();
+    $rec = fn(array $o) => backend_dispatch('admin.membership.offline.record', array_merge(['requesterId' => $A1, 'invoiceId' => $invB['invoiceId'], 'method' => 'transfer', 'amount' => (int)$invB['total'],
+        'payerName' => 'Mrs Kid', 'bankName' => 'GTBank', 'reference' => 'GTB-778-2231', 'paidOn' => gmdate('Y-m-d'), 'evidence' => $evB], $o));
+    chk('pay: an offline payment for anything but the invoice total is refused', ($rec(['amount' => (int)$invB['total'] - 100])['error'] ?? '') === 'amount_mismatch');
+    chk('pay: …without evidence is refused', ($rec(['evidence' => ''])['error'] ?? '') === 'evidence_required');
+    chk('pay: …with a picture too small to read is refused', ($rec(['evidence' => $png(40, 40)])['error'] ?? '') === 'evidence_too_small');
+    chk('pay: …with a file that is not an image or PDF is refused, whatever it calls itself', ($rec(['evidence' => 'data:image/png;base64,' . base64_encode('<?php echo 1; ?> not a picture at all')])['error'] ?? '') === 'evidence_type');
+    chk('pay: …dated in the future is refused', ($rec(['paidOn' => gmdate('Y-m-d', strtotime('+5 days'))])['error'] ?? '') === 'date_in_future');
+    chk('pay: …dated before the invoice existed is refused', ($rec(['paidOn' => gmdate('Y-m-d', strtotime('-20 days'))])['error'] ?? '') === 'date_before_invoice');
+    chk('pay: …with no reference is refused', ($rec(['reference' => 'x'])['error'] ?? '') === 'reference_required');
+    chk('pay: …by staff without the Fees permission is refused', ($rec(['requesterId' => $PPL])['error'] ?? '') === 'forbidden');
+    $GLOBALS['__mail_sink'] = [];
+    $okB = $rec([]);
+    $pend = db_row('SELECT * FROM offline_payments WHERE paymentId = ?', [(string)($okB['paymentId'] ?? '')]);
+    chk('pay: a complete record is held as PENDING — the invoice is not paid yet', ($okB['status'] ?? '') === 'pending' && $pend && db_row('SELECT status FROM membership_invoices WHERE id = ?', [$invB['id']])['status'] === 'open');
+    chk('pay: …its evidence is stored outside the web root, under its own hash', $pend && is_file(membership_evidence_dir() . '/' . $pend['evidenceFile']) && hash_file('sha256', membership_evidence_dir() . '/' . $pend['evidenceFile']) === $pend['evidenceSha256']);
+    chk('pay: while it is pending, the link cannot take a second payment, and staff cannot resend it',
+        (backend_dispatch('public.membership.pay.init', ['token' => $invB['payToken']])['error'] ?? '') === 'offline_pending'
+        && (backend_dispatch('admin.membership.invoice.resend', ['requesterId' => $A1, 'invoiceId' => $invB['invoiceId']])['error'] ?? '') === 'offline_pending'
+        && !empty(backend_dispatch('public.membership.invoice', ['token' => $invB['payToken']])['invoice']['pendingOffline']));
+    chk('pay: …and a second claim on the same invoice is refused', ($rec(['evidence' => $png(), 'reference' => 'OTHER-123'])['error'] ?? '') === 'offline_pending');
+    $ver = fn(array $o) => backend_dispatch('admin.membership.offline.verify', array_merge(['requesterId' => $A2, 'paymentId' => $pend['paymentId'], 'checked' => true, 'confirmReference' => 'gtb 778 2231', 'confirmAmount' => (int)$invB['total']], $o));
+    chk('pay: the person who recorded a payment cannot verify it', ($ver(['requesterId' => $A1])['error'] ?? '') === 'needs_second_person');
+    chk('pay: verifying needs the Fees permission', ($ver(['requesterId' => $PPL])['error'] ?? '') === 'forbidden');
+    chk('pay: the verifier must say they checked the statement', ($ver(['checked' => false])['error'] ?? '') === 'not_checked');
+    chk('pay: …and must type the reference they see on it — a different one is refused and audited', ($ver(['confirmReference' => 'GTB-778-2239'])['error'] ?? '') === 'reference_mismatch'
+        && db_row("SELECT id FROM audit_log WHERE event = 'membership.offline.verify_mismatch' ORDER BY id DESC LIMIT 1"));
+    chk('pay: …and the amount they see on it', ($ver(['confirmAmount' => 1])['error'] ?? '') === 'amount_mismatch');
+    $vb = $ver([]);
+    $invB2 = db_row('SELECT * FROM membership_invoices WHERE id = ?', [$invB['id']]);
+    chk('pay: a second person\'s check settles it: paid by transfer, with a receipt and the ledger posted', !empty($vb['ok']) && $invB2['status'] === 'paid' && $invB2['paidVia'] === 'transfer'
+        && $invB2['receiptNo'] !== '' && $invB2['receiptNo'] !== $invA2['receiptNo']
+        && (int)db_row("SELECT SUM(amount) s FROM member_ledger WHERE memberId = ? AND kind = 'payment'", [$invB['memberId']])['s'] === (int)$invB['total']);
+    $mailsB = $GLOBALS['__mail_sink'];
+    chk('pay: …the family gets thanks and the receipt — and no payment link', count(array_filter($mailsB, fn($m) => str_contains($m['subject'], 'Thank you'))) === 1
+        && !array_filter($mailsB, fn($m) => str_contains($m['subject'], 'Complete')));
+    chk('pay: the receipt names the method, the reference and who paid', (function () use ($invB2) { $h = membership_receipt_html($invB2); return str_contains($h, 'Bank transfer') && str_contains($h, 'GTB-778-2231') && str_contains($h, 'Mrs Kid'); })());
+    chk('pay: a verified payment cannot be verified or rejected again', ($ver([])['error'] ?? '') === 'not_pending');
+
+    // Once, ever: the evidence and the reference.
+    $invC = $mkMember('pay-c@example.com');
+    $recC = fn(array $o) => backend_dispatch('admin.membership.offline.record', array_merge(['requesterId' => $A2, 'invoiceId' => $invC['invoiceId'], 'method' => 'transfer', 'amount' => (int)$invC['total'],
+        'payerName' => 'Mr Kid', 'bankName' => 'Access', 'reference' => 'ACC-55501', 'paidOn' => gmdate('Y-m-d'), 'evidence' => $png()], $o));
+    chk('pay: the same slip cannot pay a second child\'s invoice', ($recC(['evidence' => $evB])['error'] ?? '') === 'evidence_reused');
+    chk('pay: …nor the same bank reference, however it is spaced or cased', ($recC(['reference' => 'gtb778 2231'])['error'] ?? '') === 'reference_reused');
+    $evC = $png();
+    $rc = $recC(['evidence' => $evC]);
+    $rej = fn(array $o) => backend_dispatch('admin.membership.offline.reject', array_merge(['requesterId' => $A1, 'paymentId' => (string)($rc['paymentId'] ?? '')], $o));
+    chk('pay: rejecting needs a reason', ($rej(['reason' => 'no'])['error'] ?? '') === 'reason_required');
+    chk('pay: a rejected claim leaves the invoice open', !empty($rej(['reason' => 'No such credit on the Access statement for that day.'])['ok']) && db_row('SELECT status FROM membership_invoices WHERE id = ?', [$invC['id']])['status'] === 'open');
+    chk('pay: …and its evidence can never be used again', ($recC(['evidence' => $evC, 'reference' => 'ACC-99999'])['error'] ?? '') === 'evidence_reused');
+    chk('pay: …while a genuine payment with new evidence can then be recorded', !empty($recC(['reference' => 'ACC-55501'])['ok']));
+    $pC = db_row("SELECT * FROM offline_payments WHERE invoiceId = ? AND status = 'pending'", [$invC['invoiceId']]);
+    $ev = backend_dispatch('admin.membership.evidence', ['requesterId' => $A1, 'paymentId' => $pC['paymentId']]);
+    chk('pay: staff with Fees open the evidence; it is checked against its hash first', !empty($ev['ok']) && $ev['type'] === 'image/png'
+        && (backend_dispatch('admin.membership.evidence', ['requesterId' => $PPL, 'paymentId' => $pC['paymentId']])['error'] ?? '') === 'forbidden');
+    file_put_contents(membership_evidence_dir() . '/' . $pC['evidenceFile'], 'tampered');
+    chk('pay: …and a file changed on disk is refused, not shown', (backend_dispatch('admin.membership.evidence', ['requesterId' => $A1, 'paymentId' => $pC['paymentId']])['error'] ?? '') === 'evidence_altered');
+    chk('pay: an invoice with a claim pending cannot be voided', (backend_dispatch('admin.membership.invoice.void', ['requesterId' => $A1, 'invoiceId' => $invC['invoiceId'], 'reason' => 'Family withdrew before starting'])['error'] ?? '') === 'offline_pending');
+    $list = backend_dispatch('admin.membership.invoices', ['requesterId' => $A1, 'status' => 'pending']);
+    chk('pay: the staff list shows what is waiting to be verified, with who recorded it', count($list['invoices'] ?? []) === 1 && ($list['invoices'][0]['offline']['recordedByName'] ?? '') === 'Pay NGG-MP-ADM2' && ($list['counts']['pending'] ?? 0) === 1);
+    chk('pay: the bank details must be a 10-digit account number', (backend_dispatch('admin.membership.bank.set', ['requesterId' => $A1, 'bank' => ['bankName' => 'GTBank', 'accountName' => 'Afrovanguard', 'accountNumber' => '123']])['error'] ?? '') === 'bad_account_number'
+        && !empty(backend_dispatch('admin.membership.bank.set', ['requesterId' => $A1, 'bank' => ['bankName' => 'GTBank', 'accountName' => 'Afrovanguard', 'accountNumber' => '0123456789']])['ok'])
+        && (membership_fee_terms()['bank']['accountNumber'] ?? '') === '0123456789');
+
+    // Clean up.
+    foreach (db_all('SELECT evidenceFile FROM offline_payments') as $f) @unlink(membership_evidence_dir() . '/' . $f['evidenceFile']);
+    $ids = array_column(db_all("SELECT memberId FROM membership_invoices"), 'memberId');
+    foreach ($ids as $id) { db_exec('DELETE FROM member_ledger WHERE memberId = ?', [$id]); db_exec('DELETE FROM member_cards WHERE memberId = ?', [$id]); db_exec('DELETE FROM members WHERE memberId = ?', [$id]); }
+    db_exec('DELETE FROM membership_invoices'); db_exec('DELETE FROM offline_payments');
+    db_exec("DELETE FROM applications WHERE email LIKE 'pay-%@example.com'");
+    db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-MP-%'");
+    unset($GLOBALS['__mail_sink'], $GLOBALS['CONFIG']['paystack']);
+    foreach (['fees' => $keepFees, 'memberProgramme' => $keepCal, 'club_catalogue' => $keepClub, 'club_division_meta' => $keepMeta, 'club_catalogue_seed' => $keepSeed, 'membership_pay' => null] as $k => $v) {
+        if ($v === null) db_exec('DELETE FROM settings WHERE settingKey = ?', [$k]); else setting_set($k, $v, 'test');
+    }
+    chk('pay: every op is in the map', count(array_filter(['public.membership.invoice', 'public.membership.pay.init', 'public.membership.pay.verify', 'admin.membership.invoices', 'admin.membership.invoice.create', 'admin.membership.invoice.resend',
+        'admin.membership.invoice.void', 'admin.membership.bank.set', 'admin.membership.offline.record', 'admin.membership.offline.verify', 'admin.membership.offline.reject', 'admin.membership.evidence'],
+        fn($op) => (backend_dispatch($op, ['requesterId' => ''])['error'] ?? '') === 'unknown_op')) === 0);
+})();
+
+/* ── A scanned NGG member card opens the member's own page ── */
+(function () {
+    $now = now_iso();
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-SCAN-1'"); db_exec("DELETE FROM member_cards WHERE memberId = 'NGG-SCAN-1'");
+    db_insert('members', ['memberId' => 'NGG-SCAN-1', 'fullName' => 'Scan Ada Okafor', 'email' => 'scan1@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member',
+        'centre' => 'Egbeda', 'track' => 'Robotics', 'displayId' => '026-701', 'joinDate' => '2026-03-07', 'photoUrl' => '/assets/logo.png', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('scan: a member with no secure card yet gets one the moment their card row is drawn for printing', member_card_secure('NGG-SCAN-1') === null
+        && preg_match('/^MEMQR-/', (string)card_row_member(db_row("SELECT * FROM members WHERE memberId = 'NGG-SCAN-1'"), [])['token']) && member_card_secure('NGG-SCAN-1') !== null);
+    $code = member_card_secure('NGG-SCAN-1');
+    $p = backend_dispatch('public.summerProfile', ['token' => $code])['profile'] ?? [];
+    chk('scan: the secure code opens the NGG member page — name, photo, division, course, centre, member since', ($p['kind'] ?? '') === 'member' && $p['secure'] === true && $p['fullName'] === 'Scan Ada Okafor'
+        && $p['photoUrl'] !== '' && $p['active'] === true && $p['memberSince'] === '2026' && $p['track'] === 'Robotics' && $p['centre'] === 'Egbeda');
+    chk('scan: …with the division the course belongs to', ($p['division'] ?? '') === club_division_of('Robotics'));
+    $old = backend_dispatch('public.summerProfile', ['token' => 'NGG-SCAN-1'])['profile'] ?? [];
+    chk('scan: an older card that carried only the member id still opens the page — but names nobody and shows no face', ($old['kind'] ?? '') === 'member' && $old['secure'] === false
+        && $old['fullName'] === '' && $old['photoUrl'] === '' && $old['initials'] === 'S.A.' && $old['displayId'] === '026-701' && $old['attendance'] === []);
+    chk('scan: …the printed number works the same way', (backend_dispatch('public.summerProfile', ['token' => '026-701'])['profile']['displayId'] ?? '') === '026-701');
+    member_card_issue('NGG-SCAN-1', 'test');
+    chk('scan: a replaced card opens nothing', (backend_dispatch('public.summerProfile', ['token' => $code])['error'] ?? '') === 'not_found');
+    db_exec("DELETE FROM member_cards WHERE memberId = 'NGG-SCAN-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-SCAN-1'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

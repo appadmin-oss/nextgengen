@@ -214,6 +214,18 @@ import used to post an array of 136 objects and hit exactly this. See
 [ROSTER-IMPORT.md](ROSTER-IMPORT.md#how-the-file-reaches-the-server--and-the-406)
 for the measurements and how to reproduce them with `curl`.
 
+### Paystack (joining invoices and donations)
+
+Set `'paystack' => ['secret' => 'sk_live_…']` in `api/config.php`, and in the
+Paystack dashboard point the webhook at `https://<your-site>/api/hooks/paystack.php`.
+Joining invoices use references starting `NGGM-`; the webhook and the family's
+return to `/pay/<token>` both settle an invoice only from Paystack's own verify
+answer (success, NGN, the invoice's exact amount, tagged with that invoice).
+Without the secret, families see the bank details and pay offline.
+
+Offline-payment evidence is stored in `api/storage/payment-evidence/`, which
+the storage `.htaccess` keeps off the web. Back it up with the database.
+
 ### An image 404s from photo.php
 
 A `/api/public/photo.php?p=…` that answers **404** means a record points at
