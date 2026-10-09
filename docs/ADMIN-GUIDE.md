@@ -1309,6 +1309,45 @@ Every active NGG member gets the email once a week; each has a one-click
 "Stop these quote emails" link. **Settings → Email NGG members the Quote of
 the Week** turns the email off for everyone.
 
+## Settings and connected services
+
+Settings (Control Room → Settings) is split by what a setting changes:
+
+- **General** — whether sign-ups are open, the messages the programme sends,
+  volunteer hours, the featured session, how long staff stay signed in, and
+  the homepage banner.
+- **Attendance** — when somebody counts as late, the grace period, and the
+  closing time before which nobody can sign out.
+- **Card branding** — what is printed on Summer School cards and digital IDs.
+  Layouts and printing are in the ID Card Studio.
+- **API keys** — every outside service, one card each.
+
+### API keys
+
+Each card says whether the service is **Connected** (a key entered here),
+**Connected · config.php** (a key in the server's config file), **Incomplete**
+or **Not set**, what it powers, and where to get a key ("Get a key"). Add,
+Change, Test and Remove act on that one service.
+
+- A key typed here is **encrypted on the server** and never shown again — the
+  card shows only its last four characters. To change one, paste the new key;
+  a blank field keeps what is saved.
+- A key entered here is used **instead of** the one in `api/config.php`.
+  Remove it and the file's key is used again.
+- **Test** sends one small real request. A key that is set but refused looks
+  exactly like a working one until you do.
+- **Paystack** takes money, so its keys follow the bank-account rule: once a
+  secret key is in use, a change is a *proposal*, every member of staff with
+  Fees is emailed, and it applies only when a second person with Fees and
+  Settings confirms it by pasting the same key from the Paystack dashboard.
+- **Gemini** keys from Google AI Studio now start `AQ.`; older ones start
+  `AIza`. Both work. Leave the model blank: the key uses the newest Gemini
+  model Google lets it use, and moves on by itself when one is retired.
+
+The **Photo framing** keys (two Gemini keys: one measures every headshot, the
+other checks photos and backs it up) and the table of which provider answers
+each AI feature are on the same page.
+
 ## How bulk actions behave
 
 Every bulk action in the Control Room goes through the same machinery, so

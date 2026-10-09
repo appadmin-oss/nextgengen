@@ -98,7 +98,10 @@ const CR_PAGES = {
     { id: "newsletter", label: "Newsletter", desc: "The monthly email to subscribers.", cap: "inbox" },
   ] },
   settings: { label: "Settings", icon: "gear", tabs: [
-    { id: "settings", label: "General", desc: "How the Control Room and the member apps behave.", cap: "settings" },
+    { id: "settings", label: "General", desc: "Sign-ups, messages, staff sign-in and the homepage banner.", cap: "settings" },
+    { id: "attendance-rules", label: "Attendance", desc: "When somebody is late, and when they may leave.", cap: "settings" },
+    { id: "card-branding", label: "Card branding", desc: "What is printed on the Summer School cards and digital IDs.", cap: "settings" },
+    { id: "keys", label: "API keys", desc: "Connect AI, photo storage, payments, email and text messages.", cap: "settings" },
     { id: "access", label: "Access & roles", desc: "Who can do what. Give people the least they need.", cap: "rbac" },
     { id: "integrations", label: "Integrations", desc: "Services that send, store and take payments.", cap: "settings" },
     { id: "ops", label: "Diagnostics", desc: "Health checks for the server and storage.", cap: "settings" },

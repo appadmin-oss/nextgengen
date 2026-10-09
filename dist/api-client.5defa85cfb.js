@@ -1312,6 +1312,12 @@
         consentDocSave: (doc) => request('/admin/summer.php', { body: { action: 'consentDoc', doc } }),
         aiStatus:     (probe) => request('/admin/settings.php' + qs({ view: 'ai', probe: probe ? 1 : '' })),
         aiKeys:       () => request('/admin/settings.php' + qs({ view: 'aiKeys' })),
+        // Every outside service's keys (domain/service-keys.php).
+        keys:         () => request('/admin/settings.php' + qs({ view: 'keys' })),
+        keysSet:      (service, values, clear) => request('/admin/settings.php', { body: { action: 'keysSet', service, values: values || {}, clear: clear || [] } }),
+        keysConfirm:  (confirm) => request('/admin/settings.php', { body: { action: 'keysConfirm', confirm } }),
+        keysCancel:   () => request('/admin/settings.php', { body: { action: 'keysCancel' } }),
+        keysTest:     (service) => request('/admin/settings.php', { body: { action: 'keysTest', service }, timeout: 60000 }),
         aiKeysSet:    (data) => request('/admin/settings.php', { body: Object.assign({ action: 'aiKeys' }, data) }),
         aiKeysTest:   () => request('/admin/settings.php', { body: { action: 'aiKeysTest' }, timeout: 60000 }),
         qrList:       (status, batch) => request('/admin/summer.php' + qs({ view: 'qr', status, batch })),

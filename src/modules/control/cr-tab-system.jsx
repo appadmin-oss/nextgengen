@@ -528,15 +528,16 @@ const CR_SY_ID_KEYS = ["program", "year", "motto", "validityDays", "website", "p
 const crSyTime = v => !v || /^([01]?\d|2[0-3]):[0-5]\d$/.test(v) ? "" : "Use a time like 09:00.";
 const crSyInt = (lo, hi, what) => v => /^-?\d+$/.test(String(v).trim()) && +v >= lo && +v <= hi ? "" : "Enter " + what + " from " + lo + " to " + hi + ".";
 
-function crSyGenForm(d) {
+/* One form per Settings tab, from one definition: `part` picks its groups. */
+function crSyGenForm(d, part) {
   const s = d.settings || {}, a = s.attendance || {}, rbt = a.resumptionByType || {}, cbt = a.closeByType || {}, id = s.idcard || {};
   const tog = (k, l, help) => ({ id: k, l, help, c: "toggle", value: !!s[k] });
   const sessOpts = [["", "None"]].concat((d.sessions || []).map(x => [x.sessionId, (x.name || x.code || x.sessionId) + (x.startDate ? " · from " + crDate(x.startDate) : "")]));
   if (s.featured_session_id && !sessOpts.some(o => o[0] === s.featured_session_id)) sessOpts.push([s.featured_session_id, s.featured_session_id + " (not this year)"]);
   return {
-    type: "form", span: 6, key: "settings-general",
+    type: "form", span: 6, key: "settings-" + (part || "general"),
     groups: [
-      { h: "Sign-ups", help: "Whether the public forms take new applications.", rows: [
+      { part: "general", h: "Sign-ups", help: "Whether the public forms take new applications.", rows: [
         tog("applications_open", "Teen applications open"),
         tog("mentor_applications_open", "Mentor applications open"),
         tog("volunteer_applications_open", "Volunteer registration open"),
@@ -544,28 +545,28 @@ function crSyGenForm(d) {
         tog("photo_gate_issuance", "Hold the ID until the photo is approved", "The ID is bound only once parent consent is in and the headshot is approved in Photo review. A registration with no photo is never held."),
         tog("geofence_enabled", "Geo-fenced registration", "Picks the centre by location and refuses off-site sign-ups. Map each centre’s point under Members → Centres."),
       ] },
-      { h: "Messages", rows: [
+      { part: "general", h: "Messages", rows: [
         tog("volunteer_sms_notify", "Text volunteers their ID by SMS", "When a phone number is on file."),
         tog("checkin_state_emails", "Email a note on check-in", "Award-focused when somebody is doing well, a nudge otherwise."),
         tog("qotw_mail", "Email NGG members the quote of the week every Monday", "The same quote as their Anchor Journal."),
         tog("companion_enabled", "Companion check-ins", "Assess every NGG member weekly and email them, and their parent, the check-in."),
       ] },
-      { h: "Volunteers and the homepage", rows: [
+      { part: "general", h: "Volunteers and the homepage", rows: [
         { id: "volunteer_session_hours", l: "Hours credited per volunteer session", c: "input", type: "number", value: String(s.volunteer_session_hours == null ? 4 : s.volunteer_session_hours), check: crSyInt(1, 12, "hours") },
         { id: "featured_session_id", l: "Featured session", help: "The homepage countdown counts down to it.", c: "select", opts: sessOpts, value: s.featured_session_id || "" },
       ] },
-      { h: "Attendance and punctuality", help: "Every card scan is stamped present or late against these times, and the check-in desk shows it live.", rows: [
+      { part: "attendance", h: "Attendance and punctuality", help: "Every card scan is stamped present or late against these times, and the check-in desk shows it live.", rows: [
         { id: "att_enabled", l: "Flag lateness at check-in", c: "toggle", value: a.enabled !== false },
       ].concat(CR_SY_ATT_TYPES.map(([t, l]) => ({ id: "att_res_" + t, l: "Due time · " + l, c: "input", type: "time", value: rbt[t] || "", help: t === "member" && !rbt[t] ? "Blank: uses the time for everyone else." : undefined, check: crSyTime })), [
         { id: "att_grace", l: "Grace period before ‘late’", help: "Minutes.", c: "input", type: "number", value: String(a.graceMinutes == null ? 10 : a.graceMinutes), check: crSyInt(0, 180, "minutes") },
         { id: "att_tz", l: "Time zone offset from UTC", help: "Minutes. West Africa Time is 60.", c: "input", type: "number", value: String(a.tzOffset == null ? 60 : a.tzOffset), check: crSyInt(-720, 840, "minutes") },
       ]) },
-      { h: "Closing time", help: "Nobody can sign out before closing time — the desk, the kiosk and the gate all refuse it, so a sign-out is proof somebody stayed. An admin can still let a person go early with a written reason, which is recorded. Leave a time blank for no closing time.",
+      { part: "attendance", h: "Closing time", help: "Nobody can sign out before closing time — the desk, the kiosk and the gate all refuse it, so a sign-out is proof somebody stayed. An admin can still let a person go early with a written reason, which is recorded. Leave a time blank for no closing time.",
         rows: CR_SY_CLOSE_TYPES.map(([t, l]) => ({ id: "att_close_" + t, l: "Closing time · " + l, c: "input", type: "time", value: cbt[t] || "", check: crSyTime })) },
-      { h: "Staff sign-in", help: "How long a Control Room session may sit untouched before it locks. A warning appears two minutes before; reading or clicking anywhere keeps it alive.", rows: [
+      { part: "general", h: "Staff sign-in", help: "How long a Control Room session may sit untouched before it locks. A warning appears two minutes before; reading or clicking anywhere keeps it alive.", rows: [
         { id: "session_idle_admin", l: "Sign staff out after", c: "select", opts: CR_SY_IDLE.concat(CR_SY_IDLE.some(o => o[0] === String(s.session_idle_admin)) || s.session_idle_admin == null ? [] : [[String(s.session_idle_admin), Math.round(s.session_idle_admin / 60) + " minutes"]]), value: String(s.session_idle_admin == null ? 1800 : s.session_idle_admin) },
       ] },
-      { h: "ID card branding", help: "Printed on the Summer School cards and the digital IDs. The card’s QR always opens the holder’s /q/ profile page.", rows: [
+      { part: "branding", h: "ID card branding", help: "Printed on the Summer School cards and the digital IDs. The card’s QR always opens the holder’s /q/ profile page.", rows: [
         { id: "id_program", l: "Programme name", c: "input", max: 512, value: id.program || "" },
         { id: "id_year", l: "Year", c: "input", max: 512, value: id.year == null ? "" : String(id.year) },
         { id: "id_motto", l: "Motto", c: "input", max: 512, value: id.motto || "" },
@@ -575,7 +576,7 @@ function crSyGenForm(d) {
         { id: "id_logoLockup", l: "Lockup logo address", c: "input", max: 512, value: id.logoLockup || "" },
         { id: "id_logoOkun", l: "Partner logo address (card back)", c: "input", max: 512, value: id.logoOkun || "" },
       ] },
-    ],
+    ].filter(g => g.part === (part || "general")),
     /* Only what changed goes back. Attendance is the exception: the server
        replaces that setting whole, so it is sent whole — every field of it is
        on this screen — built over what was loaded. */
@@ -655,6 +656,107 @@ async function crSyAiProbe(ctx) {
     const bad = (r.ai || []).filter(x => x.probe && !x.probe.ok).length;
     ctx.toast(bad ? crPlural(bad, "profile") + " failed the test" : "Keys tested", null, bad > 0);
   } catch (e) { ctx.toast(crErr(e, "Couldn’t test the keys."), null, true); }
+}
+
+/* ══ API keys: one card per outside service ═════════════════════════════════
+   Status in words (connected here, from config.php, not set), what the service
+   powers, where to get a key, and Add / Change / Test / Remove. A secret is
+   never shown — only how it ends — and a blank field keeps what is saved. */
+function crSyKeyEdit(ctx, s) {
+  const ids = s.fields.map((f, i) => "f" + i);
+  const vals = {};
+  s.fields.forEach((f, i) => { vals[ids[i]] = f.kind === "secret" ? "" : (f.source === "here" ? f.value : ""); });
+  ctx.form({
+    title: (s.setHere || s.connected ? "Change " : "Connect ") + s.label,
+    intro: s.what + (s.guarded ? " Once a secret key is in use, a change waits until a second person with Fees and Settings confirms it, and everyone with Fees is emailed." : ""),
+    submit: s.guarded && s.connected ? "Propose the change" : "Save",
+    values: vals,
+    fields: s.fields.map((f, i) => ({
+      id: ids[i], l: f.label, req: false, max: 400,
+      type: f.kind === "secret" ? "password" : f.kind === "port" ? "text" : f.kind === "email" ? "email" : "text",
+      ac: f.kind === "secret" ? "new-password" : "off", im: f.kind === "port" ? "numeric" : undefined,
+      ph: f.kind === "secret" ? (f.set ? "Saved · ends " + f.ending + (f.source === "file" ? " (config.php)" : "") + " — leave blank to keep" : "Paste the key")
+        : (f.source === "file" ? f.value + " (config.php)" : ""),
+      help: [f.help, f.optional ? "" : ""].filter(Boolean).join(" ") || undefined,
+    })),
+    onSubmit: async v => {
+      const values = {}, clear = [];
+      s.fields.forEach((f, i) => {
+        const x = String(v[ids[i]] == null ? "" : v[ids[i]]).trim();
+        if (x !== "") values[f.path] = x;
+        else if (f.kind !== "secret" && f.source === "here") clear.push(f.path);
+      });
+      try { return await NGGApi.admin.summer.keysSet(s.id, values, clear); }
+      catch (e) {
+        if (e.code === "bad_value" && e.data && e.data.field) { const i = s.fields.findIndex(f => f.path === e.data.field); if (i >= 0) return { fieldErrors: { [ids[i]]: crErr(e, "Check this value.") } }; }
+        throw e;
+      }
+    },
+    done: (v, r) => { ctx.reload(); return r && r.pending ? "Proposed. It applies when a second person with Fees confirms it." : r && r.unchanged ? "Nothing changed." : s.label + " saved. Press Test to check it works."; },
+  });
+}
+function CrSyKeyCard({ ctx, s }) {
+  const [res, setRes] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const tone = s.connected ? "ok" : "neutral";
+  const state = s.connected ? (s.setHere ? "Connected" : "Connected · config.php") : s.fields.some(f => f.set) ? "Incomplete" : "Not set";
+  const test = async () => {
+    setBusy(true); setRes(null);
+    try { const r = await NGGApi.admin.summer.keysTest(s.id); setRes(r); }
+    catch (e) { setRes({ pass: false, detail: crErr(e, "The test didn’t run.") }); }
+    setBusy(false);
+  };
+  const remove = async () => {
+    const here = s.fields.filter(f => f.source === "here").map(f => f.path);
+    if (!(await ctx.confirm({ title: "Remove the " + s.label + " keys set here?", body: s.fields.some(f => f.source === "here" && f.set) ? "Anything set in api/config.php is used again; if nothing is, " + s.label + " stops working." : "", cta: "Remove", danger: true }))) return;
+    try { const r = await NGGApi.admin.summer.keysSet(s.id, {}, here); ctx.toast(r.pending ? "Proposed — a second person confirms it." : "Removed."); ctx.reload(); }
+    catch (e) { ctx.toast(crErr(e, "Couldn’t remove them."), null, true); }
+  };
+  return (
+    <article className={"cr-box cr-key" + (s.connected ? " is-on" : "")} aria-label={s.label}>
+      <div className="cr-key-head"><b>{s.label}</b><CrPill tone={tone} t={state}/></div>
+      <p className="cr-key-what">{s.what}</p>
+      <dl className="cr-key-fields">
+        {s.fields.map(f => (
+          <div key={f.path}><dt>{f.label}</dt>
+            <dd>{!f.set ? <span className="cr-hint">{f.optional ? "—" : "Not set"}</span>
+              : f.kind === "secret" ? <span className="cr-mono">•••• {f.ending}</span> : <span className="cr-mono">{f.value}</span>}
+              {f.set && f.source === "file" && <span className="cr-key-src">config.php</span>}</dd></div>
+        ))}
+      </dl>
+      {s.changedAt && <p className="cr-hint">Changed {crAgo(s.changedAt)}{s.changedBy ? " by " + s.changedBy : ""}</p>}
+      {res && <p className={"cr-key-res" + (res.pass === true ? " is-ok" : res.pass === false ? " is-bad" : "")} role="status"><CrIcon n={res.pass === true ? "check-circle" : res.pass === false ? "warning-circle" : "info"}/>{res.detail}{res.ms ? " · " + crNum(res.ms) + " ms" : ""}</p>}
+      <div className="cr-key-acts">
+        <button type="button" className={"cr-btn is-sm" + (s.connected ? "" : " is-primary")} onClick={() => crSyKeyEdit(ctx, s)}>{s.connected || s.setHere ? "Change" : "Add key"}</button>
+        {s.testable && <button type="button" className="cr-btn is-sm" disabled={busy || !s.connected} title={s.connected ? "" : "Add the key first."} onClick={test}>{busy ? "Testing…" : "Test"}</button>}
+        {s.setHere && <button type="button" className="cr-btn is-sm" onClick={remove}>Remove</button>}
+        <span className="cr-grow"/>
+        <a className="cr-key-link" href={s.link} target="_blank" rel="noopener noreferrer">Get a key<CrIcon n="arrow-up-right"/><span className="cr-sr"> (opens {s.label} in a new tab)</span></a>
+      </div>
+    </article>
+  );
+}
+function CrSyKeysPending({ ctx, svc }) {
+  const p = svc.pending, s = (svc.services || []).find(x => x.id === p.service) || { label: p.service };
+  const mine = p.by === svc.me;
+  const confirm = () => ctx.form({
+    title: "Confirm the new " + s.label + " keys", intro: p.byName + " proposed new " + s.label + " keys. Open the " + s.label + " dashboard yourself, copy the secret key from there, and paste it here. It must match what was proposed.",
+    submit: "Confirm the change",
+    fields: [{ id: "k", l: "Secret key, from the " + s.label + " dashboard", type: "password", ac: "off", req: true, max: 400 }],
+    onSubmit: async v => { try { return await NGGApi.admin.summer.keysConfirm(v.k.trim()); } catch (e) { if (e.code === "mismatch") return { fieldErrors: { k: crErr(e, "") } }; throw e; } },
+    done: () => { ctx.reload(); return "The new " + s.label + " keys are in use."; },
+  });
+  const cancel = async () => {
+    if (!(await ctx.confirm({ title: "Cancel the proposed change?", body: "The keys in use stay as they are.", cta: "Cancel the change" }))) return;
+    try { await NGGApi.admin.summer.keysCancel(); ctx.toast("Cancelled."); ctx.reload(); } catch (e) { ctx.toast(crErr(e, "Couldn’t cancel it."), null, true); }
+  };
+  return (
+    <div className="cr-box cr-mp-note is-warn" role="status"><CrIcon n="warning-circle"/>
+      <span><b>A change of {s.label} keys is waiting.</b> {p.byName} proposed it {crAgo(p.at)}. The keys in use stay until {mine ? "another person" : "you or another person"} with Fees and Settings confirms it.</span>
+      {!mine && svc.canMoney && <button type="button" className="cr-btn is-sm is-primary" onClick={confirm}>Confirm</button>}
+      <button type="button" className="cr-btn is-sm" onClick={cancel}>Cancel it</button>
+    </div>
+  );
 }
 
 /* ══ Photo framing: two Gemini keys, entered here ═══════════════════════════
@@ -738,35 +840,85 @@ Object.assign(CR_TAB_DEFS, {
   settings: {
     skeleton: ["table", "table"],
     load: async () => {
-      const [st, sess, promo, ai, keys] = await Promise.all([
+      const [st, sess, promo] = await Promise.all([
         NGGApi.admin.settings.get(),
         NGGApi.admin.sessions.list(new Date().getFullYear()).catch(() => ({ sessions: [] })),
         NGGApi.admin.promotions.get().catch(e => ({ promoErr: e })),
-        NGGApi.admin.summer.aiStatus(false).catch(e => ({ aiErr: e })),
-        NGGApi.admin.summer.aiKeys().catch(() => null),
       ]);
-      const d = { settings: st.settings || {}, sessions: sess.sessions || [], promo: promo.promo || null, promoErr: promo.promoErr || null, ai, keys };
-      d.formMain = crSyGenForm(d);
+      const d = { settings: st.settings || {}, sessions: sess.sessions || [], promo: promo.promo || null, promoErr: promo.promoErr || null };
+      d.formMain = crSyGenForm(d, "general");
       d.formPromo = crSyPromoForm(d);
       return d;
     },
     actions: (d, ctx) => [
       { l: "Send test email", icon: "envelope-simple", primary: true, run: () => crSyMailTest(ctx) },
-      { l: "Test the AI keys", icon: "sparkle", run: () => crSyAiProbe(ctx), disabled: !(d.ai && d.ai.anyEnabled), why: d.ai && d.ai.anyEnabled ? "Sends one real request per profile" : "No AI provider key is configured, so there is nothing to test." },
     ],
     blocks: (d, ctx) => {
       crSyGenCtx.current = ctx;
-      const ai = d.ai || {}, rows = ai.ai || [];
       return [
-        Object.assign(d.formMain, { title: "Programme settings" }),
+        { type: "note", span: 6, icon: "compass", text: "Settings are grouped by what they change. Attendance times, what is printed on cards, and the keys that connect outside services each have their own tab above.",
+          act: { l: "Open API keys", run: () => ctx.go("settings", "keys") } },
+        Object.assign(d.formMain, { title: "Programme" }),
         d.promoErr ? { type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the homepage banner. " + crErr(d.promoErr, ""), act: { l: "Try again", run: () => ctx.reload() } }
           : Object.assign(d.formPromo, { title: "Homepage promo banner" }),
         d.promo && d.promo.text ? { type: "note", span: 6, icon: "megaphone", text: "The banner is live: “" + d.promo.text + "”" + (d.promo.expires ? " until " + crDate(d.promo.expires) : "") + ".", act: { l: "Clear the banner", run: () => crSyPromoClear(ctx, d.promo) } }
           : { type: "note", span: 6, icon: "megaphone", text: "No homepage banner is showing. Write one above and save to put it up." },
+        /* Mounted, not rebuilt: A11ySettingsPanel (components.jsx) is the one
+           implementation of these per-device preferences (CLAUDE.md §11). */
+        { type: "custom", span: 6, title: "Accessibility on this device", sub: "Applies to the Control Room and the public site in this browser only. Nothing is saved to your account.",
+          render: () => <div className="cr-box cr-sy-a11y" style={{ padding: "8px 20px 16px" }}><A11ySettingsPanel/></div> },
+      ];
+    },
+  },
+  /* Attendance and card branding: the same settings, each on its own tab so a
+     person looking for a closing time does not scroll past forty switches. */
+  "attendance-rules": {
+    skeleton: ["table"],
+    load: async () => { const st = await NGGApi.admin.settings.get(); const d = { settings: st.settings || {} }; d.form = crSyGenForm(d, "attendance"); return d; },
+    blocks: (d, ctx) => { crSyGenCtx.current = ctx; return [Object.assign(d.form, { title: "Attendance and closing times" })]; },
+  },
+  "card-branding": {
+    skeleton: ["table"],
+    load: async () => { const st = await NGGApi.admin.settings.get(); const d = { settings: st.settings || {} }; d.form = crSyGenForm(d, "branding"); return d; },
+    blocks: (d, ctx) => {
+      crSyGenCtx.current = ctx;
+      return [Object.assign(d.form, { title: "Card branding" }),
+        { type: "note", span: 6, icon: "identification-card", text: "Card layouts, sheets and printing are in the ID Card Studio.", act: { l: "Open the ID Card Studio", run: () => { window.location.href = "/club/id-cards"; } } }];
+    },
+  },
+  /* Every outside service's keys, the photo-framing keys, and which provider
+     answers each AI feature — one page for "is this connected?". */
+  keys: {
+    skeleton: ["cards", "table"],
+    load: async () => {
+      const [k, ai, fk] = await Promise.all([
+        NGGApi.admin.summer.keys(),
+        NGGApi.admin.summer.aiStatus(false).catch(e => ({ aiErr: e })),
+        NGGApi.admin.summer.aiKeys().catch(() => null),
+      ]);
+      return { svc: k, ai, keys: fk };
+    },
+    actions: (d, ctx) => [
+      { l: "Test the AI keys", icon: "sparkle", run: () => crSyAiProbe(ctx), disabled: !(d.ai && d.ai.anyEnabled), why: d.ai && d.ai.anyEnabled ? "Sends one real request per AI feature" : "No AI key is set yet, so there is nothing to test." },
+      { l: "Send test email", icon: "envelope-simple", run: () => crSyMailTest(ctx) },
+    ],
+    blocks: (d, ctx) => {
+      const ai = d.ai || {}, rows = ai.ai || [], svc = d.svc || {};
+      const list = svc.services || [];
+      const out = [
+        { type: "note", span: 6, icon: "lock-key", text: "Keys entered here are encrypted on the server and never shown again — only how each one ends. A key entered here is used instead of the one in api/config.php; remove it to go back to the file.",
+          sub: svc.sealed === false ? "This server cannot encrypt (PHP openssl is missing), so keys can only be set in api/config.php." : "" },
+      ];
+      if (svc.pending) out.push({ type: "custom", span: 6, render: () => <CrSyKeysPending ctx={ctx} svc={svc}/> });
+      Object.keys(svc.groups || {}).forEach(g => {
+        const mine = list.filter(x => x.group === g);
+        if (mine.length) out.push({ type: "custom", span: 6, title: svc.groups[g], render: () => <div className="cr-keys">{mine.map(x => <CrSyKeyCard key={x.id} ctx={ctx} s={x} svc={svc}/>)}</div> });
+      });
+      out.push(
         ai.aiErr ? { type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t read the AI status. " + crErr(ai.aiErr, ""), act: { l: "Try again", run: () => ctx.reload() } }
           : { type: "note", span: 6, icon: "sparkle", tone: ai.anyEnabled ? "ok" : "warn",
             text: ai.anyEnabled ? "AI is on. The table shows which provider answers each feature." : "AI is off — everything still works.",
-            sub: ai.anyEnabled ? "Use “Test the AI keys” to send one real request per profile: a key that is set but rejected looks exactly like a working one until you do." : "No provider key is configured, so every feature below runs on its built-in rules. Nothing is broken; it just isn’t intelligent. Add a Groq or Gemini key in api/config.php to switch it on — or the two Gemini keys under Photo framing below, which also check photos." },
+            sub: ai.anyEnabled ? "Use “Test the AI keys” to send one real request per profile: a key that is set but rejected looks exactly like a working one until you do." : "No provider key is configured, so every feature below runs on its built-in rules. Nothing is broken; it just isn’t intelligent. Add a Gemini or Groq key above to switch it on (both have free tiers)." },
         d.keys ? { type: "custom", span: 6, title: "Photo framing (Gemini)", sub: "Two keys: one measures every headshot so cards frame it accurately at their own shape, the other checks photos and backs it up. Existing photos are measured with “Measure existing photos”; new ones when their cards are printed.",
           render: () => <CrSyFraming ctx={ctx} k={d.keys}/> } : null,
         ai.aiErr ? null : { type: "table", span: 6, title: "AI features", nosel: true,
@@ -778,11 +930,8 @@ Object.assign(CR_TAB_DEFS, {
             !r.probe ? { k: "text", t: "Not tested" } : r.probe.ok ? { k: "status", t: "OK · " + crNum(r.probe.ms) + " ms", tone: "ok" } : { k: "status", t: r.probe.error || "Failed", tone: "bad" },
           ] })),
           emptyText: "This server reports no AI features." },
-        /* Mounted, not rebuilt: A11ySettingsPanel (components.jsx) is the one
-           implementation of these per-device preferences (CLAUDE.md §11). */
-        { type: "custom", span: 6, title: "Accessibility on this device", sub: "Applies to the Control Room and the public site in this browser only. Nothing is saved to your account.",
-          render: () => <div className="cr-box cr-sy-a11y" style={{ padding: "8px 20px 16px" }}><A11ySettingsPanel/></div> },
-      ];
+      );
+      return out;
     },
   },
 });

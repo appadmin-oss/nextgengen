@@ -25060,5 +25060,64 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     unset($GLOBALS['__gemini_http']);
 })();
 
+/* ── API keys entered on screen (domain/service-keys.php) ─────────────────── */
+(function () {
+    $SU = 'NGG-2025-0099';
+    db_exec("DELETE FROM settings WHERE settingKey IN ('service_keys', 'service_keys_pending')");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-KEYS-2'");
+    db_insert('members', ['memberId' => 'NGG-KEYS-2', 'fullName' => 'Second Keyholder', 'email' => 'keys2@example.com', 'type' => 'NGG', 'role' => 'super_admin', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    unset($GLOBALS['__config_file']);
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'from-file', 'api_key' => '111', 'api_secret' => 'filesecret', 'folder' => 'ngg'];
+    unset($GLOBALS['CONFIG']['paystack']);
+    service_keys_apply(true);
+    $svc = fn($id) => array_values(array_filter(backend_dispatch('admin.keys.list', ['requesterId' => $SU])['services'], fn($x) => $x['id'] === $id))[0];
+    $cl = $svc('cloudinary');
+    chk('keys: a service set in config.php shows as connected from the file — the secret only by how it ends', $cl['connected'] === true && $cl['setHere'] === false
+        && $cl['fields'][0]['source'] === 'file' && $cl['fields'][0]['value'] === 'from-file' && $cl['fields'][2]['value'] === '' && $cl['fields'][2]['ending'] === 'cret');
+    chk('keys: only Settings may see or change them', (backend_dispatch('admin.keys.list', ['requesterId' => 'NGG-DESK-A'])['error'] ?? '') === 'forbidden'
+        && (backend_dispatch('admin.keys.set', ['requesterId' => 'NGG-DESK-A', 'service' => 'gemini', 'values' => ['ai.gemini_api_key' => 'AQ.abcdefghijk']])['error'] ?? '') === 'forbidden');
+    chk('keys: a field outside the service is refused, and a bad value names its field', (backend_dispatch('admin.keys.set', ['requesterId' => $SU, 'service' => 'gemini', 'values' => ['paystack.secret' => 'sk_live_xxxxxxxx']])['error'] ?? '') === 'unknown_field'
+        && (backend_dispatch('admin.keys.set', ['requesterId' => $SU, 'service' => 'smtp', 'values' => ['mail.smtp.port' => 'abc']])['field'] ?? '') === 'mail.smtp.port');
+    $g = backend_dispatch('admin.keys.set', ['requesterId' => $SU, 'service' => 'gemini', 'values' => ['ai.gemini_api_key' => 'AQ.Ab8RTESTgeminiFROMscreen0000000009f9f']]);
+    $raw = (string)db_row("SELECT settingValue FROM settings WHERE settingKey = 'service_keys'")['settingValue'];
+    chk('keys: a key entered on screen is stored sealed, and used at once', !empty($g['applied']) && !str_contains($raw, 'FROMscreen')
+        && ($GLOBALS['CONFIG']['ai']['gemini_api_key'] ?? '') === 'AQ.Ab8RTESTgeminiFROMscreen0000000009f9f' && ai_enabled());
+    chk('keys: …and never comes back to the screen', !str_contains(json_encode(backend_dispatch('admin.keys.list', ['requesterId' => $SU])), 'FROMscreen'));
+    backend_dispatch('admin.keys.set', ['requesterId' => $SU, 'service' => 'cloudinary', 'values' => ['cloudinary.cloud_name' => 'from-screen']]);
+    chk('keys: a value set here wins over config.php; the other fields stay as the file has them', $GLOBALS['CONFIG']['cloudinary']['cloud_name'] === 'from-screen' && $GLOBALS['CONFIG']['cloudinary']['api_secret'] === 'filesecret'
+        && $svc('cloudinary')['fields'][0]['source'] === 'here');
+    backend_dispatch('admin.keys.set', ['requesterId' => $SU, 'service' => 'cloudinary', 'clear' => ['cloudinary.cloud_name']]);
+    chk('keys: removing it goes back to config.php', $GLOBALS['CONFIG']['cloudinary']['cloud_name'] === 'from-file' && $svc('cloudinary')['fields'][0]['source'] === 'file');
+    chk('keys: the audit names the service and fields, never a value', !str_contains((string)db_row("SELECT meta FROM audit_log WHERE event = 'keys.set' ORDER BY id DESC LIMIT 1")['meta'], 'from-')
+        && !str_contains(json_encode(db_all("SELECT meta FROM audit_log WHERE event = 'keys.set'")), 'FROMscreen'));
+
+    // Paystack: the first key is one step; replacing one in use takes a second person.
+    $first = backend_dispatch('admin.keys.set', ['requesterId' => $SU, 'service' => 'paystack', 'values' => ['paystack.secret' => 'sk_test_FIRSTkey000000000000000000', 'paystack.public' => 'pk_test_first']]);
+    chk('keys: the first Paystack key is set in one step', !empty($first['applied']) && paystack_secret() === 'sk_test_FIRSTkey000000000000000000');
+    $GLOBALS['__mail_sink'] = [];
+    $prop = backend_dispatch('admin.keys.set', ['requesterId' => $SU, 'service' => 'paystack', 'values' => ['paystack.secret' => 'sk_live_ATTACKERkey0000000000000000']]);
+    chk('keys: replacing a Paystack secret in use is only a proposal — the old key keeps taking payments, and Fees holders are emailed', !empty($prop['pending'])
+        && paystack_secret() === 'sk_test_FIRSTkey000000000000000000' && count(array_filter($GLOBALS['__mail_sink'], fn($m) => str_contains($m['subject'], 'Paystack keys is waiting'))) >= 1);
+    unset($GLOBALS['__mail_sink']);
+    chk('keys: removing the secret in use is a proposal too', !empty(backend_dispatch('admin.keys.set', ['requesterId' => $SU, 'service' => 'paystack', 'clear' => ['paystack.secret']])['pending']) && paystack_secret() !== '');
+    backend_dispatch('admin.keys.set', ['requesterId' => $SU, 'service' => 'paystack', 'values' => ['paystack.secret' => 'sk_live_NEWkey00000000000000000000']]);
+    chk('keys: the proposer cannot confirm their own change', (backend_dispatch('admin.keys.confirm', ['requesterId' => $SU, 'confirm' => 'sk_live_NEWkey00000000000000000000'])['error'] ?? '') === 'needs_second_person');
+    chk('keys: a second person must enter the same key, from the dashboard', (backend_dispatch('admin.keys.confirm', ['requesterId' => 'NGG-KEYS-2', 'confirm' => 'sk_live_OTHER'])['error'] ?? '') === 'mismatch'
+        && paystack_secret() === 'sk_test_FIRSTkey000000000000000000');
+    $ok = backend_dispatch('admin.keys.confirm', ['requesterId' => 'NGG-KEYS-2', 'confirm' => 'sk_live_NEWkey00000000000000000000']);
+    chk('keys: …and then it applies', !empty($ok['applied']) && paystack_secret() === 'sk_live_NEWkey00000000000000000000' && $GLOBALS['CONFIG']['paystack']['public'] === 'pk_test_first');
+    $GLOBALS['__paystack_mock'] = fn($m, $p, $b) => str_starts_with($p, '/transaction') ? ['status' => true, 'data' => []] : ['status' => false];
+    $t = backend_dispatch('admin.keys.test', ['requesterId' => $SU, 'service' => 'paystack']);
+    chk('keys: Test asks Paystack with the key in effect', ($t['pass'] ?? false) === true && str_contains($t['detail'], 'accepted'));
+    unset($GLOBALS['__paystack_mock']);
+
+    // Tidy: back to the suite's own config.
+    db_exec("DELETE FROM settings WHERE settingKey IN ('service_keys', 'service_keys_pending')");
+    unset($GLOBALS['CONFIG']['cloudinary'], $GLOBALS['CONFIG']['paystack'], $GLOBALS['CONFIG']['ai']['gemini_api_key']);
+    unset($GLOBALS['__config_file']);
+    service_keys_apply(true);
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-KEYS-2'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

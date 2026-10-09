@@ -136,7 +136,7 @@ require_once __DIR__ . '/anchor-content.php';
 require_once __DIR__ . '/ai.php';
 require_once __DIR__ . '/bus.php';
 require_once __DIR__ . '/sms.php';
-foreach (['formation', 'auth', 'members', 'members-admin', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'mentoring', 'summer', 'summer-editions', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'analytics-depth', 'growth', 'insight', 'insight-chat', 'journal', 'profiles', 'community', 'arcade', 'chess', 'chess-variants', 'chess-clock', 'matches', 'match-review', 'chess-social', 'tournament-pairing', 'tournaments', 'tournaments2', 'promos', 'mathlab', 'card-templates', 'card-runs', 'design-assets', 'merge', 'assessment', 'fees', 'engagement', 'community-engagement', 'community-homework', 'journal-mine', 'members-import', 'members-bulk', 'member-id', 'member-cards', 'checkin', 'approvals', 'curriculum', 'ngv-portal', 'member-self', 'wisdom', 'companion', 'family', 'timetable', 'timetable-personal', 'id-studio', 'status', 'member-record', 'membership-pay', 'photo-framing'] as $__d) {
+foreach (['formation', 'auth', 'members', 'members-admin', 'anchor', 'assignments', 'events', 'admin', 'admin2', 'mentorship', 'mentoring', 'summer', 'summer-editions', 'policy', 'club', 'circle', 'momentum', 'integrations', 'registration', 'selfreg', 'hooks', 'behaviour', 'volunteers', 'photos', 'mentor', 'instructor', 'ops', 'analytics', 'analytics-depth', 'growth', 'insight', 'insight-chat', 'journal', 'profiles', 'community', 'arcade', 'chess', 'chess-variants', 'chess-clock', 'matches', 'match-review', 'chess-social', 'tournament-pairing', 'tournaments', 'tournaments2', 'promos', 'mathlab', 'card-templates', 'card-runs', 'design-assets', 'merge', 'assessment', 'fees', 'engagement', 'community-engagement', 'community-homework', 'journal-mine', 'members-import', 'members-bulk', 'member-id', 'member-cards', 'checkin', 'approvals', 'curriculum', 'ngv-portal', 'member-self', 'wisdom', 'companion', 'family', 'timetable', 'timetable-personal', 'id-studio', 'status', 'member-record', 'membership-pay', 'photo-framing', 'service-keys'] as $__d) {
     require_once __DIR__ . '/domain/' . $__d . '.php';
 }
 require_once __DIR__ . '/backend.php';
@@ -148,6 +148,10 @@ require_once __DIR__ . '/csrf.php';
 require_once __DIR__ . '/validate.php';
 require_once __DIR__ . '/nudges.php';
 require_once __DIR__ . '/webcron.php';
+
+// Keys entered in Control Room → Settings → API keys, laid over config.php
+// (domain/service-keys.php). Never fatal: config.php alone still works.
+try { service_keys_apply(); } catch (Throwable $e) { error_log('[service_keys_apply] ' . $e->getMessage()); }
 
 // CSRF check happens once per request, for every write method. The
 // individual endpoint then validates further (session, role, input).

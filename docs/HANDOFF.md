@@ -783,3 +783,27 @@ be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
 - Fee-test fixtures that joined mid-month were moved to the 1st (the subject
   was ledger mechanics), and the first-month figure is tested on its own.
 
+
+
+## 2026-10-09 — Settings split by purpose; outside services' keys on screen
+
+- Settings → General was one form of forty fields. It is now General,
+  Attendance and Card branding (one form definition, `crSyGenForm(d, part)`),
+  plus **API keys**.
+- `domain/service-keys.php`: one registry (`SERVICE_KEYS`) of the services
+  whose keys may be entered on screen — Gemini, Groq, Anthropic, OpenRouter,
+  Cloudinary, Paystack, SMTP, Resend, Termii, Twilio, Spitch — and the config
+  paths each may set. Stored values (secrets sealed with AES-256-GCM) are laid
+  over `$CONFIG` once per request in bootstrap (`service_keys_apply`), so no
+  consumer changed. A value set here wins; removing it falls back to the file.
+- Paystack secret changes, once one is in use, need a second person (Fees +
+  Settings) who pastes the same key; Fees holders are emailed.
+- Gemini (`ai.php` `gemini_*`): Google limited the 2.5 models to accounts that
+  already used them (Sept 2026), so a new project's key got 404. The model is
+  now asked of the key's own `models.list` (cached a day), a 404 re-asks, and
+  requests are shaped per family (3.x thinkingLevel, no temperature; 2.5
+  thinkingBudget). Keys go in `x-goog-api-key`; "AQ." keys are accepted.
+- Lost photo files: Diagnostics can search the hosting account for missing
+  stored photos and restore them from a backup, matched by file name (a keyed
+  fingerprint of the bytes). `photo_dir` keeps photos outside the website
+  folder; the build no longer ships cache, logs or storage contents.

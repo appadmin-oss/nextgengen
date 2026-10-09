@@ -8072,6 +8072,23 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .cr-mp-note { display: flex; align-items: center; gap: 10px; padding: 12px 14px; font-size: 13.5px; flex-wrap: wrap; }
 .cr-mp-note > span { flex: 1 1 260px; }
 .cr-mp-note.is-warn { background: var(--cr-warn-bg); color: var(--cr-warn-fg); border-color: transparent; }
+/* Settings → API keys: one card per outside service */
+.cr-keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 12px; }
+.cr-key { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.cr-key.is-on { box-shadow: inset 3px 0 0 var(--cr-ok-dot); }
+.cr-key-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cr-key-head b { font-size: 15px; }
+.cr-key-what { margin: 0; font-size: 13px; color: var(--cr-muted-2); }
+.cr-key-fields { margin: 0; display: grid; gap: 6px; font-size: 13px; }
+.cr-key-fields > div { display: flex; justify-content: space-between; gap: 12px; }
+.cr-key-fields dt { color: var(--cr-muted-2); }
+.cr-key-fields dd { margin: 0; display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.cr-key-src { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--cr-neutral-bg); color: var(--cr-neutral-fg); }
+.cr-key-res { margin: 0; display: flex; align-items: flex-start; gap: 6px; font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--cr-neutral-bg); color: var(--cr-neutral-fg); }
+.cr-key-res.is-ok { background: var(--cr-ok-bg); color: var(--cr-ok-fg); }
+.cr-key-res.is-bad { background: var(--cr-bad-bg); color: var(--cr-bad-fg); }
+.cr-key-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+.cr-key-link { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
 .cr-mp-note.is-bad { background: var(--cr-bad-bg); color: var(--cr-bad-fg); border-color: transparent; }
 .cr-mp-note code { font-family: var(--cr-mono); font-size: 12.5px; }
 .cr-mp-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }

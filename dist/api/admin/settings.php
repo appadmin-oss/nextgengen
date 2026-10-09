@@ -4,7 +4,9 @@ require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'GET') {
-    if ((string)($_GET['view'] ?? '') === 'aiKeys') {
+    if ((string)($_GET['view'] ?? '') === 'keys') {
+        $res = gs_call('admin.keys.list', ['requesterId' => $s['mid']]);
+    } elseif ((string)($_GET['view'] ?? '') === 'aiKeys') {
         $res = gs_call('admin.ai.keys.get', ['requesterId' => $s['mid']]);
     } elseif ((string)($_GET['view'] ?? '') === 'ai') {
         // ?probe=1 sends one real request per live profile — the only way to
@@ -15,7 +17,10 @@ if ($method === 'GET') {
     }
 } elseif ($method === 'POST') {
     $b = read_json_body();
-    if (($b['action'] ?? '') === 'aiKeys') {
+    $keyOps = ['keysSet' => 'admin.keys.set', 'keysConfirm' => 'admin.keys.confirm', 'keysCancel' => 'admin.keys.cancel', 'keysTest' => 'admin.keys.test'];
+    if (isset($keyOps[(string)($b['action'] ?? '')])) {
+        $res = gs_call($keyOps[(string)$b['action']], array_merge($b, ['requesterId' => $s['mid'], 'ip' => client_ip()]));
+    } elseif (($b['action'] ?? '') === 'aiKeys') {
         $res = gs_call('admin.ai.keys.set', array_merge($b, ['requesterId' => $s['mid'], 'ip' => client_ip()]));
     } elseif (($b['action'] ?? '') === 'aiKeysTest') {
         $res = gs_call('admin.ai.keys.test', ['requesterId' => $s['mid'], 'ip' => client_ip()]);
