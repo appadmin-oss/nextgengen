@@ -37,7 +37,7 @@ declare(strict_types=1);
    about is framed exactly as before.
    ========================================================================== */
 
-const PFRAME_MODEL_DEFAULT = 'gemini-2.5-flash';
+const PFRAME_MODEL_DEFAULT = '';   // blank: the best model the key can use (gemini_pick_model)
 const PFRAME_ENSURE_MAX = 40;     // photographs one "frame these" request may analyse
 const PFRAME_BACKLOG_STEP = 10;   // photographs one backlog press analyses
 const PFRAME_READ_MAX = 80;       // photographs one public read may ask about
@@ -74,7 +74,7 @@ function ai_ui_keys(): array {
     return [
         'framing' => ai_ui_open((string)($s['framing'] ?? '')),
         'second'  => ai_ui_open((string)($s['second'] ?? '')),
-        'model'   => preg_match('/^gemini-[a-z0-9.\-]{1,60}$/', $model) ? $model : PFRAME_MODEL_DEFAULT,
+        'model'   => preg_match('/^gemini-[a-z0-9.\-]{1,60}$/', $model) ? $model : PFRAME_MODEL_DEFAULT,   // '' = automatic
         'meta'    => is_array($s['meta'] ?? null) ? $s['meta'] : [],
     ];
 }
@@ -128,7 +128,7 @@ function admin_ai_keys_set(array $p): array {
     }
     if (array_key_exists('model', $p)) {
         $m = trim((string)$p['model']);
-        if ($m !== '' && !preg_match('/^gemini-[a-z0-9.\-]{1,60}$/', $m)) return ['ok' => false, 'error' => 'bad_model', 'detail' => 'A Gemini model name, such as ' . PFRAME_MODEL_DEFAULT . '.'];
+        if ($m !== '' && !preg_match('/^gemini-[a-z0-9.\-]{1,60}$/', $m)) return ['ok' => false, 'error' => 'bad_model', 'detail' => 'A Gemini model name, such as gemini-3.8-flash — or leave it blank to use the best one each key can.'];
         if ($m !== (string)($cur['model'] ?? '')) { $cur['model'] = $m; $changed[] = 'model'; }
     }
     $cur['meta'] = $meta;
@@ -146,10 +146,18 @@ function admin_ai_keys_test(array $p): array {
     foreach (['framing', 'second'] as $slot) {
         if ($k[$slot] === '') { $out[$slot] = ['ok' => false, 'error' => 'not_set']; continue; }
         $t = microtime(true);
-        $r = isset($GLOBALS['__ai_mock']) && is_callable($GLOBALS['__ai_mock'])
-            ? ($GLOBALS['__ai_mock'])('keytest', '', [])
-            : ai_call_candidate(['provider' => 'gemini', 'api_key' => $k[$slot], 'model' => $k['model']], 'Reply with the single word OK.', [['role' => 'me', 'text' => 'Test']], 5, 0.0);
-        $out[$slot] = ['ok' => !empty($r['ok']), 'error' => empty($r['ok']) ? (string)($r['error'] ?? 'failed') : '', 'ms' => (int)round((microtime(true) - $t) * 1000)];
+        // First: does Google accept the key at all, and which models may it use?
+        $err = null;
+        $models = gemini_models($k[$slot], true, $err);
+        if (!$models) {
+            $out[$slot] = ['ok' => false, 'error' => (string)($err['error'] ?? 'no_models'), 'detail' => (string)($err['detail'] ?? 'Google listed no models this key can use.'), 'ms' => (int)round((microtime(true) - $t) * 1000)];
+            continue;
+        }
+        // Then one small request on the model framing would use.
+        $r = gemini_generate(['provider' => 'gemini', 'api_key' => $k[$slot], 'model' => $k['model']], 'Reply with the single word OK.',
+            [['role' => 'user', 'parts' => [['text' => 'Test']]]], ['maxTokens' => 16, 'thinking' => 'off']);
+        $out[$slot] = ['ok' => !empty($r['ok']), 'error' => empty($r['ok']) ? (string)($r['error'] ?? 'failed') : '', 'detail' => (string)($r['detail'] ?? ''),
+                       'model' => (string)($r['model'] ?? ''), 'models' => count($models), 'ms' => (int)round((microtime(true) - $t) * 1000)];
     }
     audit('ai.keys.test', (string)$g['requester']['memberId'], '', ['framing' => $out['framing']['ok'], 'second' => $out['second']['ok']], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'results' => $out, 'model' => $k['model']];
@@ -248,22 +256,13 @@ function photo_frame_schema(): array {
 /** One request to one key. Returns ['ok', 'data'] or ['ok' => false, 'error']. */
 function photo_frame_ask(array $cand, array $img, string $extra = ''): array {
     if (isset($GLOBALS['__pframe_mock']) && is_callable($GLOBALS['__pframe_mock'])) return ($GLOBALS['__pframe_mock'])($cand, $extra);
-    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($cand['model']) . ':generateContent';
-    $gen = ['temperature' => 0, 'maxOutputTokens' => 600, 'responseMimeType' => 'application/json', 'responseSchema' => photo_frame_schema()];
-    // Detection is most accurate with thinking off (2.5 models); older models do not take the field.
-    if (preg_match('/^gemini-2\.5/', (string)$cand['model'])) $gen['thinkingConfig'] = ['thinkingBudget' => 0];
-    $body = json_encode([
-        'systemInstruction' => ['parts' => [['text' => PFRAME_PROMPT]]],
-        'contents' => [['role' => 'user', 'parts' => [
+    // Detection is most accurate with thinking at its lowest; the schema keeps the answer to the shape we check.
+    $r = gemini_generate($cand, PFRAME_PROMPT, [['role' => 'user', 'parts' => [
             ['inline_data' => ['mime_type' => $img['mime'], 'data' => $img['b64']]],
             ['text' => 'Measure the subject of this photograph.' . ($extra !== '' ? ' ' . $extra : '')],
-        ]]],
-        'generationConfig' => $gen,
-    ], JSON_UNESCAPED_SLASHES);
-    $r = ai_http_post($url, $body, ['Content-Type: application/json', 'x-goog-api-key: ' . $cand['api_key']]);
-    if (!$r['ok']) return $r;
-    $j = json_decode($r['body'], true);
-    $text = (string)($j['candidates'][0]['content']['parts'][0]['text'] ?? '');
+        ]]], ['maxTokens' => 600, 'temperature' => 0, 'thinking' => 'off', 'json' => photo_frame_schema()]);
+    if (empty($r['ok'])) return $r;
+    $text = (string)$r['text'];
     if (preg_match('/\{.*\}/s', $text, $mm)) $text = $mm[0];
     $data = json_decode($text, true);
     return is_array($data) ? ['ok' => true, 'data' => $data] : ['ok' => false, 'error' => 'ai_bad_json'];
@@ -327,7 +326,7 @@ function photo_frame_measure(array $basis): array {
         $r = photo_frame_ask($cand, $img, $extra);
         if (empty($r['ok'])) { $last = $r; continue; }
         $c = photo_frame_clean($r['data']);
-        if (!empty($c['ok'])) return ['ok' => true, 'geom' => $c['geom'], 'model' => (string)$cand['model'], 'tries' => $tries];
+        if (!empty($c['ok'])) return ['ok' => true, 'geom' => $c['geom'], 'model' => (string)($r['model'] ?? $cand['model']), 'tries' => $tries];
         $extra = 'A previous measurement was rejected: ' . $c['why'] . ' Measure again carefully.';
         $last = ['ok' => false, 'error' => 'implausible', 'detail' => $c['why']];
     }

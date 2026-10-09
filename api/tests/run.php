@@ -25005,5 +25005,60 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-LOST-1'");
 })();
 
+/* ── Gemini as Google serves it now (ai.php gemini_*) ──────────────────────
+   A new project's key gets 404 for a model closed to it; the layer asks the
+   key's own model list, uses the best it has, heals a 404 by asking again,
+   and shapes each request for its model family. */
+(function () {
+    $calls = [];
+    $list = ['gemini-2.0-flash', 'gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.8-flash-tts', 'text-embedding-004'];
+    $gone = ['gemini-2.5-flash'];
+    $refuse = '';
+    $GLOBALS['__gemini_http'] = function ($method, $path, $body) use (&$calls, &$list, &$gone, &$refuse) {
+        $calls[] = [$method, $path, $body];
+        if ($method === 'GET') return ['ok' => true, 'body' => json_encode(['models' => array_map(fn($m) => ['name' => 'models/' . $m,
+            'supportedGenerationMethods' => str_contains($m, 'embedding') ? ['embedContent'] : ['generateContent']], $list)])];
+        preg_match('#/models/([^:]+):generateContent#', $path, $m);
+        if (in_array(rawurldecode($m[1]), $gone, true)) return ['ok' => false, 'error' => 'ai_http_404', 'status' => 404, 'detail' => 'models/' . $m[1] . ' is not found for API version v1beta'];
+        if ($refuse !== '' && isset($body['generationConfig'][$refuse])) return ['ok' => false, 'error' => 'ai_http_400', 'status' => 400, 'detail' => 'Invalid JSON payload: unknown field thinkingConfig'];
+        return ['ok' => true, 'body' => json_encode(['candidates' => [['content' => ['parts' => [['text' => 'OK from ' . rawurldecode($m[1])]]]]]])];
+    };
+    $key = 'AQ.Ab8RTESTkeyFORgemini000000000000000000aaaa';
+    chk('gemini: with no model chosen, the key uses the newest Flash it may (not a TTS or embedding model)', gemini_pick_model($key, '', true) === 'gemini-3.8-flash');
+    chk('gemini: a chosen model the key has is kept; one it lacks gives way to the best it has', gemini_pick_model($key, 'gemini-3.5-flash-lite') === 'gemini-3.5-flash-lite' && gemini_pick_model($key, 'gemini-2.5-flash') === 'gemini-3.8-flash');
+    $calls = [];
+    $r = gemini_generate(['api_key' => $key, 'model' => ''], 'sys', [['role' => 'user', 'parts' => [['text' => 'hi']]]], ['maxTokens' => 20, 'temperature' => 0.2, 'thinking' => 'off']);
+    $gen = $calls[0][2]['generationConfig'] ?? [];
+    chk('gemini: a 3.x request carries a thinking LEVEL (3.8 starts at low) and no deprecated temperature', !empty($r['ok']) && $r['model'] === 'gemini-3.8-flash'
+        && ($gen['thinkingConfig']['thinkingLevel'] ?? '') === 'low' && !isset($gen['temperature']));
+    chk('gemini: the key never goes in the URL', !str_contains(json_encode($calls), $key) && !str_contains((string)$calls[0][1], 'key='));
+    $g25 = gemini_gen_config('gemini-2.5-flash', ['maxTokens' => 10, 'temperature' => 0.1, 'thinking' => 'off']);
+    $g35 = gemini_gen_config('gemini-3.5-flash-lite', ['thinking' => 'off', 'json' => ['type' => 'OBJECT']]);
+    chk('gemini: 2.5 takes a thinking budget and temperature; 3.5 Flash-Lite thinks "minimal"; JSON asks for a schema', ($g25['thinkingConfig']['thinkingBudget'] ?? -1) === 0 && $g25['temperature'] === 0.1
+        && ($g35['thinkingConfig']['thinkingLevel'] ?? '') === 'minimal' && $g35['responseMimeType'] === 'application/json' && $g35['responseSchema'] === ['type' => 'OBJECT']);
+    // The model the cache remembers is retired: a 404 re-asks the list and retries.
+    $list = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+    $gone = ['gemini-3.8-flash'];
+    gemini_models($key, true);
+    $list = ['gemini-3.5-flash-lite'];
+    $calls = [];
+    $r2 = gemini_generate(['api_key' => $key, 'model' => ''], '', [['role' => 'user', 'parts' => [['text' => 'hi']]]], ['maxTokens' => 20]);
+    chk('gemini: a 404 for a retired model asks the key’s list again and succeeds on what it has', !empty($r2['ok']) && $r2['model'] === 'gemini-3.5-flash-lite' && $r2['text'] === 'OK from gemini-3.5-flash-lite');
+    $gone = [];
+    $refuse = 'thinkingConfig';
+    $r3 = gemini_generate(['api_key' => $key, 'model' => ''], '', [['role' => 'user', 'parts' => [['text' => 'hi']]]], ['thinking' => 'off']);
+    chk('gemini: a setting the model refuses is dropped and the request retried once', !empty($r3['ok']));
+    $refuse = '';
+    $list = [];
+    $GLOBALS['__gemini_http'] = fn($m, $p, $b) => ['ok' => false, 'error' => 'ai_http_400', 'status' => 400, 'detail' => 'API key not valid. Please pass a valid API key.'];
+    db_exec("DELETE FROM settings WHERE settingKey = 'ai_ui_keys'");
+    backend_dispatch('admin.ai.keys.set', ['requesterId' => 'NGG-2025-0099', 'framingKey' => 'AQ.Ab8RBADkeyBADkeyBAD000000000000000000bbbb']);
+    $t = backend_dispatch('admin.ai.keys.test', ['requesterId' => 'NGG-2025-0099']);
+    chk('gemini: the key test says Google’s own reason, not a bare status code', ($t['results']['framing']['ok'] ?? true) === false && str_contains($t['results']['framing']['detail'] ?? '', 'API key not valid')
+        && ($t['results']['second']['error'] ?? '') === 'not_set');
+    backend_dispatch('admin.ai.keys.set', ['requesterId' => 'NGG-2025-0099', 'clearFraming' => true]);
+    unset($GLOBALS['__gemini_http']);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

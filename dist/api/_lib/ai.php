@@ -12,16 +12,16 @@ declare(strict_types=1);
  *     // Legacy single-key block — still honoured as the 'default' profile:
  *     'provider'       => 'groq',
  *     'groq_api_key'   => '…', 'groq_model'   => 'llama-3.1-8b-instant',
- *     'gemini_api_key' => '…', 'gemini_model' => 'gemini-1.5-flash',
+ *     'gemini_api_key' => '…', 'gemini_model' => '' (automatic),
  *
  *     // Per-purpose profiles. Each has its own provider + key (+ optional
  *     // fallback). A missing profile falls back to the default block above.
  *     'profiles' => [
- *       'coach'      => ['provider' => 'gemini', 'api_key' => '…', 'model' => 'gemini-1.5-flash',
+ *       'coach'      => ['provider' => 'gemini', 'api_key' => '…', 'model' => '',
  *                        'fallback' => ['provider' => 'groq', 'api_key' => '…', 'model' => 'llama-3.1-8b-instant']],
  *       'behaviour'  => ['provider' => 'groq',   'api_key' => '…', 'model' => 'llama-3.1-8b-instant',
- *                        'fallback' => ['provider' => 'gemini', 'api_key' => '…', 'model' => 'gemini-1.5-flash']],
- *       'analysis'   => ['provider' => 'gemini', 'api_key' => '…', 'model' => 'gemini-1.5-flash'],
+ *                        'fallback' => ['provider' => 'gemini', 'api_key' => '…', 'model' => '']],
+ *       'analysis'   => ['provider' => 'gemini', 'api_key' => '…', 'model' => ''],
  *       'moderation' => ['provider' => 'groq',   'api_key' => '…', 'model' => 'llama-3.1-8b-instant'],
  *     ],
  *   ]
@@ -38,7 +38,8 @@ declare(strict_types=1);
 const AI_PROVIDERS = ['groq', 'gemini', 'anthropic', 'openrouter'];
 const AI_DEFAULT_MODEL = [
     'groq'       => 'llama-3.1-8b-instant',
-    'gemini'     => 'gemini-1.5-flash',
+    // Blank: the best Gemini model the key can use, asked of Google (gemini_pick_model).
+    'gemini'     => '',
     'anthropic'  => 'claude-haiku-4-5-20251001',
     'openrouter' => 'meta-llama/llama-3.1-8b-instruct',
 ];
@@ -158,8 +159,150 @@ function ai_http_post(string $url, string $body, array $headers): array {
     $err = curl_error($ch);
     curl_close($ch);
     if ($out === false) return ['ok' => false, 'error' => 'ai_network', 'detail' => $err];
-    if ($code < 200 || $code >= 300) return ['ok' => false, 'error' => 'ai_http_' . $code];
+    if ($code < 200 || $code >= 300) return ['ok' => false, 'error' => 'ai_http_' . $code, 'status' => $code, 'detail' => ai_provider_message((string)$out)];
     return ['ok' => true, 'body' => (string)$out];
+}
+
+/** The provider's own words for a refusal ("API key not valid", "model not found"), trimmed — never the request. */
+function ai_provider_message(string $body): string {
+    $j = json_decode($body, true);
+    $m = is_array($j) ? (string)($j['error']['message'] ?? ($j['error']['status'] ?? ($j['message'] ?? ''))) : '';
+    return mb_substr(trim(preg_replace('/\s+/', ' ', $m)), 0, 240);
+}
+
+/** GET from a fixed, https-only provider endpoint. */
+function ai_http_get(string $url, array $headers): array {
+    if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'no_curl'];
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_HTTPHEADER => $headers, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_FOLLOWLOCATION => false, CURLOPT_PROTOCOLS => defined('CURLPROTO_HTTPS') ? CURLPROTO_HTTPS : 2,
+    ]);
+    $out = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($out === false) return ['ok' => false, 'error' => 'ai_network', 'detail' => $err];
+    if ($code < 200 || $code >= 300) return ['ok' => false, 'error' => 'ai_http_' . $code, 'status' => $code, 'detail' => ai_provider_message((string)$out)];
+    return ['ok' => true, 'body' => (string)$out];
+}
+
+/* ── Gemini ────────────────────────────────────────────────────────────────
+
+   One door for every Gemini request, because Google moves underneath it:
+
+   - Keys. Google AI Studio now issues "AQ." auth keys as well as the older
+     "AIza" ones. Both go in the x-goog-api-key header (never the URL, where
+     they would land in logs); nothing else differs.
+   - Models. Models are retired or closed to new projects (in September 2026
+     the 2.5 models were limited to accounts that had used them, so a new key
+     got 404 for gemini-2.5-flash). So the model is not hard-coded: the key's
+     own model list is asked (models.list, cached a day per key) and the best
+     available is used — the one configured if the key can use it, else the
+     newest Flash. A 404 re-asks and retries once, so the next retirement
+     heals itself instead of switching a feature off.
+   - Settings. 3.x models take a thinking LEVEL (3.7/3.8 Flash start at
+     "low"; others have "minimal") and have temperature deprecated; 2.5 takes
+     a thinking BUDGET. A request is shaped for the model it goes to, and a
+     400 naming a setting is retried once without it. */
+const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
+const GEMINI_PREFERRED = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+
+function gemini_http(string $method, string $path, string $key, ?array $body = null): array {
+    if (isset($GLOBALS['__gemini_http']) && is_callable($GLOBALS['__gemini_http'])) return ($GLOBALS['__gemini_http'])($method, $path, $body);
+    $h = ['x-goog-api-key: ' . $key];
+    return $method === 'GET' ? ai_http_get(GEMINI_API . $path, $h)
+        : ai_http_post(GEMINI_API . $path, json_encode($body, JSON_UNESCAPED_SLASHES), array_merge($h, ['Content-Type: application/json']));
+}
+
+/** The models this key may call generateContent on (ids without "models/"). Cached a day per key; [] when it cannot be asked. */
+function gemini_models(string $key, bool $fresh = false, ?array &$err = null): array {
+    $ck = 'gemini.models.' . substr(hash('sha256', 'gm|' . $key), 0, 20);
+    if (!$fresh && function_exists('cache_get')) { $c = cache_get($ck, 86400); if (is_array($c) && isset($c['ids'])) return $c['ids']; }
+    $ids = [];
+    $page = '';
+    for ($i = 0; $i < 5; $i++) {
+        $r = gemini_http('GET', '/models?pageSize=200' . ($page !== '' ? '&pageToken=' . rawurlencode($page) : ''), $key);
+        if (empty($r['ok'])) { $err = $r; break; }
+        $j = json_decode((string)$r['body'], true) ?: [];
+        foreach ((array)($j['models'] ?? []) as $m) {
+            $id = preg_replace('#^models/#', '', (string)($m['name'] ?? ''));
+            if ($id !== '' && in_array('generateContent', (array)($m['supportedGenerationMethods'] ?? []), true)) $ids[] = $id;
+        }
+        $page = (string)($j['nextPageToken'] ?? '');
+        if ($page === '') break;
+    }
+    if ($ids && function_exists('cache_put')) cache_put($ck, ['ids' => $ids]);
+    return $ids;
+}
+
+/** The model to use: the one wanted if the key has it, else the best Flash it has. */
+function gemini_pick_model(string $key, string $wanted, bool $fresh = false): string {
+    $have = gemini_models($key, $fresh);
+    if (!$have) return $wanted !== '' ? $wanted : GEMINI_PREFERRED[0];
+    if ($wanted !== '' && in_array($wanted, $have, true)) return $wanted;
+    foreach (GEMINI_PREFERRED as $m) if (in_array($m, $have, true)) return $m;
+    // A newer Flash than this list knows: the highest-numbered plain Flash.
+    $flash = array_values(array_filter($have, static fn($m) => (bool)preg_match('/^gemini-\d+(\.\d+)?-flash(-lite)?$/', $m)));
+    usort($flash, static fn($a, $b) => version_compare(preg_replace('/^gemini-([\d.]+).*/', '$1', $b), preg_replace('/^gemini-([\d.]+).*/', '$1', $a)) ?: strcmp($a, $b));
+    return $flash[0] ?? ($wanted !== '' ? $wanted : $have[0]);
+}
+
+/** generationConfig for this model: $o = ['maxTokens', 'temperature', 'thinking' => 'off'|'low'|'', 'json' => schema|null]. */
+function gemini_gen_config(string $model, array $o): array {
+    $g = ['maxOutputTokens' => (int)($o['maxTokens'] ?? 400)];
+    $three = (bool)preg_match('/^gemini-(\d+)/', $model, $mm) && (int)$mm[1] >= 3;
+    if (!$three && isset($o['temperature'])) $g['temperature'] = (float)$o['temperature'];
+    $t = (string)($o['thinking'] ?? '');
+    if ($t !== '') {
+        if ($three) $g['thinkingConfig'] = ['thinkingLevel' => $t === 'off' ? (preg_match('/^gemini-3\.[78]/', $model) ? 'low' : 'minimal') : $t];
+        elseif (preg_match('/^gemini-2\.5/', $model)) $g['thinkingConfig'] = ['thinkingBudget' => $t === 'off' ? 0 : 1024];
+        // Thinking counts against the output allowance; leave room for the answer.
+        $g['maxOutputTokens'] += $three ? 2048 : 0;
+    }
+    if (!empty($o['json'])) { $g['responseMimeType'] = 'application/json'; if (is_array($o['json'])) $g['responseSchema'] = $o['json']; }
+    return $g;
+}
+
+/**
+ * One generateContent request. $parts: the user's parts ([['text'=>…], ['inline_data'=>…]]).
+ * Returns ['ok', 'text', 'model'] or ['ok' => false, 'error', 'detail'].
+ */
+function gemini_generate(array $cand, string $system, array $contents, array $o): array {
+    $key = (string)$cand['api_key'];
+    $model = gemini_pick_model($key, (string)($cand['model'] ?? ''));
+    $tries = 0; $strip = [];
+    while (true) {
+        $tries++;
+        $gen = gemini_gen_config($model, $o);
+        foreach ($strip as $f) unset($gen[$f]);
+        $body = ['contents' => $contents, 'generationConfig' => $gen];
+        if ($system !== '') $body['systemInstruction'] = ['parts' => [['text' => $system]]];
+        $r = gemini_http('POST', '/models/' . rawurlencode($model) . ':generateContent', $key, $body);
+        if (!empty($r['ok'])) {
+            $j = json_decode((string)$r['body'], true) ?: [];
+            $text = '';
+            foreach ((array)($j['candidates'][0]['content']['parts'] ?? []) as $p) if (empty($p['thought'])) $text .= (string)($p['text'] ?? '');
+            return $text !== '' ? ['ok' => true, 'text' => trim($text), 'model' => $model, 'provider' => 'gemini']
+                : ['ok' => false, 'error' => 'ai_empty', 'detail' => (string)($j['candidates'][0]['finishReason'] ?? ($j['promptFeedback']['blockReason'] ?? '')), 'model' => $model];
+        }
+        if ($tries >= 3) return $r + ['model' => $model];
+        $status = (int)($r['status'] ?? 0);
+        // The model went away: ask again what this key may use, and use that.
+        if ($status === 404) {
+            $next = gemini_pick_model($key, '', true);
+            if ($next === $model) return $r + ['model' => $model];
+            $model = $next; continue;
+        }
+        // A setting this model does not take: once more without it.
+        if ($status === 400) {
+            $d = strtolower((string)($r['detail'] ?? ''));
+            $fields = array_keys(array_filter(['thinkingConfig' => 'think', 'responseSchema' => 'schema', 'temperature' => 'temperature'], static fn($n) => str_contains($d, $n)));
+            $fields = array_diff($fields, $strip);
+            if ($fields) { $strip = array_merge($strip, $fields); continue; }
+        }
+        return $r + ['model' => $model];
+    }
 }
 
 /** One call against one concrete provider candidate. $turns: [{role,text}]. */
@@ -218,20 +361,11 @@ function ai_call_candidate(array $cand, string $system, array $turns, int $maxTo
         return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'groq'] : ['ok' => false, 'error' => 'ai_empty'];
     }
 
-    // Gemini
+    // Gemini (gemini_generate: the model the key can use, shaped for it)
     $contents = [];
     foreach ($turns as $t) $contents[] = ['role' => (($t['role'] ?? '') === 'coach' ? 'model' : 'user'), 'parts' => [['text' => (string)($t['text'] ?? '')]]];
-    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($cand['model']) . ':generateContent';
-    $body = json_encode([
-        'systemInstruction' => ['parts' => [['text' => $system]]],
-        'contents' => $contents,
-        'generationConfig' => ['maxOutputTokens' => $maxTokens, 'temperature' => $temp],
-    ], JSON_UNESCAPED_SLASHES);
-    $r = ai_http_post($url, $body, ['Content-Type: application/json', 'x-goog-api-key: ' . $cand['api_key']]);
-    if (!$r['ok']) return $r;
-    $j = json_decode($r['body'], true);
-    $text = $j['candidates'][0]['content']['parts'][0]['text'] ?? '';
-    return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'gemini'] : ['ok' => false, 'error' => 'ai_empty'];
+    if (!$contents) $contents[] = ['role' => 'user', 'parts' => [['text' => '']]];
+    return gemini_generate($cand, $system, $contents, ['maxTokens' => $maxTokens, 'temperature' => $temp, 'thinking' => 'off']);
 }
 
 /** Walk the profile's candidate chain until one answers. Never throws.
@@ -341,19 +475,12 @@ function ai_photo_review(string $imageUrl): array {
         . 'flags may include any of: no_face, multiple_faces, not_a_child_headshot, inappropriate, too_dark, too_blurry, low_resolution, busy_background. '
         . 'Flag genuinely unusable photos (heavy blur, very low resolution) so a human requests a fresh capture — do not assume detail can be reconstructed. '
         . 'score is overall usability for a printed ID (100 = perfect).';
-    $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($cand['model']) . ':generateContent';
-    $body = json_encode([
-        'systemInstruction' => ['parts' => [['text' => $system]]],
-        'contents' => [['role' => 'user', 'parts' => [
+    $r = gemini_generate($cand, $system, [['role' => 'user', 'parts' => [
             ['inline_data' => ['mime_type' => $img['mime'], 'data' => $img['b64']]],
             ['text' => 'Inspect this headshot for use on a printed ID card.'],
-        ]]],
-        'generationConfig' => ['maxOutputTokens' => 320, 'temperature' => 0.1],
-    ], JSON_UNESCAPED_SLASHES);
-    $r = ai_http_post($url, $body, ['Content-Type: application/json', 'x-goog-api-key: ' . $cand['api_key']]);
-    if (!$r['ok']) return $r;
-    $j = json_decode($r['body'], true);
-    $text = $j['candidates'][0]['content']['parts'][0]['text'] ?? '';
+        ]]], ['maxTokens' => 320, 'temperature' => 0.1, 'thinking' => 'off', 'json' => true]);
+    if (empty($r['ok'])) return $r;
+    $text = (string)$r['text'];
     if (preg_match('/\{.*\}/s', $text, $m)) $text = $m[0];
     $data = json_decode($text, true);
     if (!is_array($data)) return ['ok' => false, 'error' => 'ai_bad_json'];

@@ -672,7 +672,7 @@ function crSyKeysForm(ctx, k) {
       { id: "framingKey", l: "Key 1 — headshot framing", type: "password", ac: "new-password", max: 80, ph: k && k.framing.set ? "Saved · ends " + k.framing.ending : "AQ.… or AIza…",
         help: "Measures each photo so the card shows an accurate head-and-shoulders, whatever shape the photo was." },
       { id: "secondKey", l: "Key 2 — photo checks, and backup for framing", type: "password", ac: "new-password", max: 80, ph: k && k.second.set ? "Saved · ends " + k.second.ending : "AQ.… or AIza…" },
-      { id: "model", l: "Model", max: 60, ph: (k && k.defaultModel) || "gemini-2.5-flash", help: "Leave blank for " + ((k && k.defaultModel) || "gemini-2.5-flash") + ", which measures well and quickly." },
+      { id: "model", l: "Model", max: 60, ph: "Automatic", help: "Leave blank: each key uses the newest Gemini Flash model Google lets it use (gemini-3.8-flash today), and moves on by itself when Google retires one. Type a model name only to pin one." },
       k && k.framing.set ? { id: "clearFraming", l: "Remove key 1", type: "switch" } : null,
       k && k.second.set ? { id: "clearSecond", l: "Remove key 2", type: "switch" } : null,
     ].filter(Boolean),
@@ -687,7 +687,8 @@ async function crSyKeysTest(ctx) {
   ctx.toast("Sending one small request with each key…");
   try {
     const r = await NGGApi.admin.summer.aiKeysTest();
-    const say = (n, x) => n + ": " + (x.ok ? "works (" + crNum(x.ms) + " ms)" : x.error === "not_set" ? "not set" : "refused — " + x.error);
+    const say = (n, x) => n + ": " + (x.ok ? "works, using " + x.model + " (" + crNum(x.ms) + " ms)"
+      : x.error === "not_set" ? "not set" : "refused — " + (x.detail || x.error) + (x.model ? " [" + x.model + "]" : ""));
     ctx.toast(say("Key 1", r.results.framing) + " · " + say("Key 2", r.results.second), null, !(r.results.framing.ok || r.results.second.ok));
   } catch (e) { ctx.toast(crErr(e, "Couldn’t test the keys."), null, true); }
 }
@@ -717,7 +718,7 @@ function CrSyFraming({ ctx, k }) {
       <div className="cr-sy-frame-keys">
         <span><b>Key 1 · framing</b> {k.framing.set ? "set · ends " + k.framing.ending : "not set"}{k.framing.updatedBy ? " · " + k.framing.updatedBy : ""}</span>
         <span><b>Key 2 · checks &amp; backup</b> {k.second.set ? "set · ends " + k.second.ending : "not set"}</span>
-        <span><b>Model</b> {k.model}</span>
+        <span><b>Model</b> {k.model || "Automatic — the best each key can use"}</span>
       </div>
       <p className="cr-hint" role="status" aria-live="polite">
         {run ? "Measuring… " + crNum(run.done) + " done" + (run.failed ? ", " + run.failed + " couldn’t be read" : "") + ", " + crNum(run.left) + " to go."
