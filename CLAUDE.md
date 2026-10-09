@@ -382,8 +382,10 @@ Two studios, one record. Say which is which in any UI that mentions them.
     requester. `id_photo_asks.channels` records what actually went; a 3-day
     quiet period needs `force` to override; at most 200 a press.
   - **The member card's back** is `NggcMemberCardBack`
-    (`ids-member-back.jsx`): return-to, the holder, a signature line, and
-    never money or medical details.
+    (`ids-member-back.jsx`), to the programme's design: navy field, the NGG
+    mark, the member's secure QR in scan brackets, and an amber band with the
+    programme's email and social handle. It carries no name, money or medical
+    details — it is the side a finder sees first.
 - **Design Studio** (`/designer`) draws, binds, publishes and prints
   templates, including card **backs**. Its workspace has two modes:
   **design** (layers | canvas | properties) and **print**
