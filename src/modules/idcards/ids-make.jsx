@@ -222,8 +222,10 @@ function IdsSheetCol({ M }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const G = M.G;
+  const G = M.sheetG;   // the grid of the sheet on screen: each card size has its own
   const scale = G.pw ? Math.max(0.4, Math.min((area.w - 48) / G.pw, (area.h - 72) / G.ph, 3.2)) : 1;
+  const [askRemove, setAskRemove] = React.useState(false);
+  const onSheet = S.sec ? idsCardsOnSheets(M.sections, S.idx + 1, S.idx + 1).length : 0;
   return (
     <main className="ids-sheetcol" aria-label="Sheet preview">
       <div className="ids-scen">
@@ -257,8 +259,12 @@ function IdsSheetCol({ M }) {
       <div className="ids-toolbar">
         <div className="ids-pager">
           <button type="button" className="ids-iconbtn" aria-label="Previous sheet" disabled={S.idx <= 0} onClick={() => S.go(S.idx - 1)}><IdsIcon name="caret-left"/></button>
-          <span aria-live="polite">Sheet {S.count ? S.idx + 1 : 0} of {S.count}</span>
+          <span aria-live="polite">Sheet {S.count ? S.idx + 1 : 0} of {S.count}{S.sec && M.sections.length > 1 ? <span className="ids-pager-size"> · {idsMmLabel(S.sec.mm)}</span> : null}</span>
           <button type="button" className="ids-iconbtn" aria-label="Next sheet" disabled={S.idx >= S.count - 1} onClick={() => S.go(S.idx + 1)}><IdsIcon name="caret-right"/></button>
+          {onSheet > 0 && !S.overview && (
+            <button type="button" className="ids-iconbtn ids-iconbtn--danger" aria-label={"Remove sheet " + (S.idx + 1) + " and its " + idsN(onSheet, "card")} title="Remove this sheet"
+                    disabled={!!M.xjob} onClick={() => setAskRemove(true)}><IdsIcon name="trash"/></button>
+          )}
         </div>
         {M.backs !== "off" && <IdsSeg label="Side" size="sm" value={S.face} onChange={S.setFace} options={[["front", "Fronts"], ["back", "Backs"]]}/>}
         <span className="ids-stat">{idsN(M.nCards, "card")} · {idsN(S.count, "sheet")}{M.backs !== "off" ? " · double-sided" : ""}</span>
@@ -280,6 +286,16 @@ function IdsSheetCol({ M }) {
           </div>
         )}
       </div>
+
+      {askRemove && (
+        <IdsDialog alert width={460} title={"Remove sheet " + (S.idx + 1) + "?"} onClose={() => setAskRemove(false)}
+          footer={<>
+            <button type="button" className="ids-btn" onClick={() => setAskRemove(false)}>Cancel</button>
+            <button type="button" className="ids-btn ids-btn--primary" data-autofocus onClick={() => { setAskRemove(false); S.remove(S.idx); }}>Remove {idsN(onSheet, "card")}</button>
+          </>}>
+          <p className="ids-note"><span>The {idsN(onSheet, "card")} on it come off this run; the sheets after it move up. Nothing is deleted from anyone’s record, and you can undo it.</span></p>
+        </IdsDialog>
+      )}
 
       {M.gap > 0 && !M.breakActive && (
         <div className="ids-gapbar">
@@ -307,7 +323,7 @@ function IdsSheetCol({ M }) {
               {Array.from({ length: G.per }, (_, i) => <IdsSlot key={i} M={M} i={i} scale={scale}/>)}
             </div>
             <figcaption className="ids-sheet-cap">
-              {IDS_PAPERS[G.paper][0]} · {G.cols} × {G.rows} cards at {G.cw} × {G.ch} mm{M.backs !== "off" ? " · mirrored for " + M.backs + "-edge flip" : ""} · drag to reorder
+              {IDS_PAPERS[G.paper][0]} · {G.cols} × {G.rows} cards at {idsMmLabel([G.cw, G.ch])}{M.backs !== "off" ? " · mirrored for " + M.backs + "-edge flip" : ""} · drag, or select and use the arrow keys, to reorder
             </figcaption>
           </figure>
         )}
@@ -317,22 +333,22 @@ function IdsSheetCol({ M }) {
 }
 
 function IdsSlot({ M, i, scale }) {
-  const G = M.G, S = M.sheet;
+  const G = M.sheetG, S = M.sheet;
   const face = S.face;
   const p = idsSlotPos(G, i, face === "back" ? M.backs : null);
-  const gi = S.idx * G.per + i - M.skip;
-  const s = gi >= 0 ? M.slots[gi] : null;
+  const { s, used } = idsSlotAt(M.sections, S.idx, i);
+  const secKey = S.sec ? S.sec.key : "";
   const box = { left: p.x * scale, top: p.y * scale, width: G.cw * scale, height: G.ch * scale, borderRadius: G.cw * scale * 0.06 };
-  if (S.idx === 0 && i < M.skip) return <div className="ids-slot is-used" style={box}><span>Used</span></div>;
-  if (!s || s.pad) return <div className="ids-slot is-empty" style={box} onClick={() => M.select(null)} onDragOver={e => e.preventDefault()} onDrop={e => M.dropAt(e, gi)}/>;
+  if (used) return <div className="ids-slot is-used" style={box}><span>Used</span></div>;
+  if (!s || s.pad) return <div className="ids-slot is-empty" style={box} onClick={() => M.select(null)} onDragOver={e => e.preventDefault()} onDrop={e => M.dropAt(e, null, secKey)}/>;
   const k = (G.cw * scale) / (G.cw * 3.7795);   // css px per real px at true mm size
   const sel = M.sel === s.key;
   const warn = s.warn;
   return (
     <div className={"ids-slot is-card" + (sel ? " is-sel" : "")} style={box} role="button" tabIndex={0} aria-pressed={sel}
-         aria-label={"Slot " + (i + 1) + ": " + s.label + (sel ? ", selected" : "")}
+         aria-label={"Slot " + (i + 1) + ": " + s.label + (warn ? " — " + warn.text : "") + (sel ? ", selected" : "")}
          draggable onDragStart={e => { e.dataTransfer.setData("text/plain", s.key); e.dataTransfer.effectAllowed = "move"; }}
-         onDragOver={e => e.preventDefault()} onDrop={e => M.dropAt(e, gi)}
+         onDragOver={e => e.preventDefault()} onDrop={e => M.dropAt(e, s.key, secKey)}
          onClick={() => M.select(sel ? null : s.key)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); M.select(sel ? null : s.key); } }}>
       {/* A short-edge back is drawn turned 180°, exactly as it prints. */}
       <div className="ids-slot-face" style={{ width: G.cw + "mm", height: G.ch + "mm", transform: "scale(" + k + ")" + (p.rot ? " translate(100%, 100%) rotate(180deg)" : "") }}>{M.renderFace(s, face)}</div>
@@ -344,18 +360,17 @@ function IdsSlot({ M, i, scale }) {
 }
 
 function IdsOverview({ M }) {
-  const G = M.G, S = M.sheet;
+  const S = M.sheet;
   const n = Math.min(S.count, IDS_OVERVIEW_MAX);
   return (
     <div className="ids-overview">
       <div className="ids-ov-grid">
         {Array.from({ length: n }, (_, p) => {
           const cells = [], centres = new Set();
+          const at = idsSheetAt(M.sections, p), G = at ? at.sec.G : M.sheetG;
           let filled = 0;
           for (let i = 0; i < G.per; i++) {
-            const gi = p * G.per + i - M.skip;
-            const s = gi >= 0 ? M.slots[gi] : null;
-            const used = p === 0 && i < M.skip;
+            const { s, used } = idsSlotAt(M.sections, p, i);
             if (s && !s.pad) { filled++; if (s.centre) centres.add(s.centre); }
             cells.push(<span key={i} className={"ids-ov-cell" + (used ? " is-used" : !s || s.pad ? " is-empty" : s.upload ? " is-up" : "")}
                              style={s && !s.pad && !s.upload ? { "--ids-accent": M.accent(s.centre) } : undefined}/>);
@@ -364,7 +379,7 @@ function IdsOverview({ M }) {
             <button key={p} type="button" className={"ids-ov" + (p === S.idx ? " is-on" : "")} onClick={() => { S.go(p); S.setOverview(false); }}>
               <span className="ids-ov-sheet" style={{ gridTemplateColumns: "repeat(" + G.cols + ", 1fr)", aspectRatio: G.pw + " / " + G.ph }}>{cells}</span>
               <b>Sheet {p + 1}</b>
-              <span className="ids-muted">{filled}/{G.per}{centres.size ? " · " + [...centres].join(", ") : ""}</span>
+              <span className="ids-muted">{filled}/{G.per}{M.sections.length > 1 ? " · " + idsMmLabel([G.cw, G.ch]) : ""}{centres.size ? " · " + [...centres].join(", ") : ""}</span>
             </button>
           );
         })}
@@ -489,6 +504,7 @@ function IdsSettings({ M }) {
 
         <section className="ids-sec">
           <h2 className="ids-h2">Card size</h2>
+          <p className="ids-note"><span>Cards from records print at their own design’s size. This size is for uploaded images. When a run holds more than one size, each size gets its own sheets.</span></p>
           <div className="ids-sizes" role="radiogroup" aria-label="Card size">
             {IDS_SIZE_IDS.map(k => (
               <button key={k} type="button" role="radio" aria-checked={st.size === k} className={"ids-size" + (st.size === k ? " is-on" : "")} onClick={() => set({ size: k })}>
@@ -511,8 +527,11 @@ function IdsSettings({ M }) {
             <IdsNum id="ids-margin" label="Margin (mm)" value={st.margin} min={IDS_MARGIN.min} max={IDS_MARGIN.max} onChange={v => set({ margin: v })}/>
             <IdsNum id="ids-gap" label="Gap (mm)" value={st.gap} min={IDS_GAP.min} max={IDS_GAP.max} onChange={v => set({ gap: v })}/>
           </div>
-          <p className="ids-perline" aria-live="polite"><b>{idsN(G.per, "card")}</b> per sheet · {G.cols} across, {G.rows} down</p>
-          <IdsNum id="ids-skip" inline label="Skip used slots on sheet 1" help="For a part-used sheet of card stock" value={st.skip} min={0} max={Math.max(0, G.per - 1)} onChange={v => set({ skip: v })}/>
+          {(M.sections.length ? M.sections : [{ key: "up", mm: [G.cw, G.ch], G }]).map(sec => (
+            <p key={sec.key} className="ids-perline" aria-live="polite"><b>{idsN(sec.G.per, "card")}</b> per sheet · {sec.G.cols} across, {sec.G.rows} down{M.sections.length > 1 ? " · " + idsMmLabel(sec.mm) : ""}</p>
+          ))}
+          {!G.per && <IdsCheck tone="bad" text={"Cards this size don’t fit on " + IDS_PAPERS[G.paper][0] + " with these margins."}/>}
+          <IdsNum id="ids-skip" inline label="Skip used slots on sheet 1" help="For a part-used sheet of card stock" value={st.skip} min={0} max={Math.max(0, ((M.sections[0] || {}).G || G).per - 1)} onChange={v => set({ skip: v })}/>
         </section>
 
         <section className="ids-sec">
@@ -561,7 +580,7 @@ function IdsSettings({ M }) {
           </p>
         )}
         <button type="button" className="ids-btn ids-btn--34" onClick={M.startExport} disabled={!!M.xjob}><IdsIcon name="file-pdf"/>Export files for a print shop</button>
-        <button type="button" className="ids-btn ids-btn--34" onClick={M.printTest} disabled={!G.per || !!M.xjob}>Print an alignment test</button>
+        <button type="button" className="ids-btn ids-btn--34" onClick={M.printTest} disabled={!M.sheetG.per || !!M.xjob}>Print an alignment test</button>
       </div>
     </aside>
   );

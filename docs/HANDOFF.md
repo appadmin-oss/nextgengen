@@ -710,3 +710,43 @@ Known and left alone: `node vendor-build.js --check` reports every vendored
 file as mismatched because it compares a 16-character hash prefix with the
 full hash in VERSIONS.json. Pre-existing; `tests/build.test.js` does the real
 comparison and passes.
+
+## ID Card Studio: printing on the live site, sizes, sheets, card photos
+
+Reported: every print and export failed ("Nothing could be exported … couldn't
+be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
+`ERR_HTTP2_PROTOCOL_ERROR` on `/api/admin/registration.php` in the console.
+
+- **Root cause of the failed prints:** `/vendor/*.js` keeps its name across
+  deploys and is cached for 7 days (and the service worker fetches through
+  that cache). A browser that had the studio open the week before 79bf2bf
+  held the old `card-export.js`, which has no `renderFaceFast` / `imageFace`;
+  every face threw and was reported as "couldn't be drawn". `loadVendor` now
+  versions vendor URLs by build id (`nggVendorUrl`, also used by
+  card-export.js's own loader), and a library declares `ok(global)`: a copy
+  that loads without what callers need is fetched once more past the cache.
+  `tests/ids-print.test.js` serves the old file for the unversioned URL; with
+  the check removed the print never produces a file.
+- **CSP:** `connect-src` now allows res.cloudinary.com and the Google Fonts
+  hosts. snapDOM inlines photos and fonts with `fetch()`; under the old policy
+  a Cloudinary photo printed as an empty box, silently.
+- **QR warm-up:** sent every token's PNG on every visit, 60 a request
+  (~240 KB). Now `probe: true` asks which tokens are missing and only those
+  are sent, 8 a request.
+- **Sizes:** `idsSections` (ids-core) gives each card size its own sheets and
+  grid. The "Card size" setting is the uploads' size; the old "the sheet
+  mixes sizes" red check is gone.
+- **Draw failures** carry a reason (`idsFaceWhy`), shown in a dialog with
+  Try again / Take them off. Copies of one upload are drawn once (they shared a
+  farm key; duplicate React keys can misalign the farm's nodes), and the farm
+  is unmounted inside its lock.
+- **Card photos** (`card-photo.jsx`, `tests/card-photo.test.js`): whole photo,
+  padded with `b_auto:predominant_gradient`; cropped to head and shoulders
+  only when Cloudinary's `fl_getinfo` landmarks show the photo holds more.
+  Machine framing (c_thumb/c_fill face crops) in a stored URL is dropped;
+  a person's edits (colour, background removal, an editor zoom) are kept.
+  `cardFacePhoto` is removed. Prints wait on `cardPhotosSettled()`.
+- **Missing photo files** (photo.php 404) can't be recovered from here; the
+  studio probes each photo on the sheet and blocks the print with a one-press
+  fix rather than printing an empty photo box.
+

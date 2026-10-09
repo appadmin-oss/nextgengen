@@ -240,7 +240,14 @@ const VENDOR_LIBS = {
      zips. The design studio's data merge produces exactly the artefacts this
      already knows how to lay out, and a second imposition engine written for
      posters would be a second place for the bleed arithmetic to be wrong. */
-  cardExport: { js: ["/vendor/card-export.js"], global: "CardExport" },
+  /* `ok` names what the callers use. /vendor files keep their names across
+     deploys and are cached for a week, so a browser that opened the studio the
+     week before a deploy held the OLD card-export.js — without renderFaceFast —
+     and every card on every sheet failed to draw ("Nothing could be exported").
+     A library that loads without what `ok` asks for is fetched once more,
+     past the cache. */
+  cardExport: { js: ["/vendor/card-export.js"], global: "CardExport",
+    ok: g => typeof g.renderFaceFast === "function" && typeof g.imageFace === "function" && typeof g.buildSheetPDF === "function" },
   /* docx 9.7.1 — a real Word file for the Analyst's report draft. Bundled by
      vendor-build.js because the package is ESM/CJS with no UMD. 414KB, so it is
      fetched by the Export button and never by the page. */
@@ -260,6 +267,16 @@ const VENDOR_LIBS = {
   pdfjs: { js: ["/vendor/pdfjs.min.js"], global: "pdfjsLib" },
 };
 const _vendorLoads = {};
+/* A vendor file's URL for this build. The production build stamps its id on
+   the page (<meta name="ngg-build">), so each deploy asks for the files under a
+   new URL and a week-old cached copy cannot be served for them. `bust` forces
+   a fresh fetch where there is no build id (the source deploy). */
+function nggVendorUrl(url, bust) {
+  const m = typeof document !== "undefined" && document.querySelector('meta[name="ngg-build"]');
+  const v = bust || (m && m.content) || "";
+  return v ? url + (url.indexOf("?") === -1 ? "?" : "&") + "v=" + encodeURIComponent(v) : url;
+}
+window.nggVendorUrl = nggVendorUrl;
 function loadVendorAsset(url, kind) {
   return new Promise((resolve, reject) => {
     const sel = kind === "css" ? 'link[href="' + url + '"]' : 'script[src="' + url + '"]';
@@ -276,7 +293,8 @@ function loadVendorAsset(url, kind) {
 function loadVendor(name) {
   const spec = VENDOR_LIBS[name];
   if (!spec) return Promise.reject(new Error("unknown library: " + name));
-  if (window[spec.global]) return Promise.resolve(window[spec.global]);
+  const fresh = g => !!g && (!spec.ok || spec.ok(g));
+  if (fresh(window[spec.global])) return Promise.resolve(window[spec.global]);
   if (_vendorLoads[name]) return _vendorLoads[name];
   if (spec.needs && !spec.needs()) return Promise.reject(new Error(name + " needs React on the page first"));
   _vendorLoads[name] = (async () => {
@@ -290,9 +308,16 @@ function loadVendor(name) {
     // Stylesheets in parallel; scripts in ORDER, because tui-image-editor reads
     // tui.colorPicker at evaluation time.
     await Promise.all((spec.css || []).map(u => loadVendorAsset(u, "css")));
-    for (const u of spec.js) await loadVendorAsset(u, "js");
+    for (const u of spec.js) await loadVendorAsset(nggVendorUrl(u), "js");
+    if (window[spec.global] && !fresh(window[spec.global])) {
+      // A stale copy from the HTTP cache: drop it and fetch past the cache, once.
+      try { delete window[spec.global]; } catch (_) { window[spec.global] = undefined; }
+      const bust = "r" + Date.now().toString(36);
+      for (const u of spec.js) await loadVendorAsset(nggVendorUrl(u, bust), "js");
+    }
     saved.forEach(([k, v, had]) => { if (had) window[k] = v; else delete window[k]; });
     if (!window[spec.global]) throw new Error(name + " loaded but did not define window." + spec.global);
+    if (!fresh(window[spec.global])) { const e = new Error(name + " is out of date in this browser"); e.code = "vendor_stale"; throw e; }
     return window[spec.global];
   })();
   // A failed load must not be cached as a permanent failure: the usual cause is

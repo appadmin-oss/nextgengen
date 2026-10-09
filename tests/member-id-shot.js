@@ -152,7 +152,7 @@ function View() {
       + 'which matters here, because nobody imported from the members workbook has one.'),
     e('div', { className: 'row' },
       e(Lane, { member: withPhoto, size: 'a5', title: 'A5 · with a headshot',
-        note: 'A portrait is cropped to the box, high rather than centred, because a passport-style photograph puts the face in the upper half.' }),
+        note: 'A head-and-shoulders photo is shown whole; only a photo with more in it is cropped to the head and shoulders (card-photo.jsx).' }),
       e(Lane, { member: m, size: 'a5', title: 'A5 · no headshot — as imported', facts: true,
         note: 'The same layout with an empty box. Content measures exactly 210mm either way; it used to measure 223mm here and lose the footer off the bottom of the trim.' }),
       e(Lane, { member: m, size: 'wallet', title: 'Wallet · 54×85mm, no headshot',

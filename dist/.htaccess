@@ -105,12 +105,19 @@ AddDefaultCharset UTF-8
   # default-src 'self', the workers are refused, and every resize falls back to
   # the main thread — correct output, but it janks the tab on a large photo.
   # blob: workers are same-origin-derived, so this is not a real loosening.
+  #
+  # connect-src lists res.cloudinary.com and the two Google Fonts hosts because
+  # the ID card printer reads them with fetch(), not an <img>: snapDOM inlines
+  # every photo and font into the card it rasterises, and the card photo asks
+  # Cloudinary where the face is (fl_getinfo). Without them a printed card came
+  # out with a blank photo box and a fallback font, and nothing said so. data:
+  # is an uploaded card image being inlined the same way.
   Header always set Content-Security-Policy "default-src 'self'; \
 script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
 img-src 'self' data: https: blob:; \
 font-src 'self' https://fonts.gstatic.com data:; \
-connect-src 'self' https://api.cloudinary.com blob:; \
+connect-src 'self' https://api.cloudinary.com https://res.cloudinary.com https://fonts.googleapis.com https://fonts.gstatic.com data: blob:; \
 worker-src 'self' blob:; \
 frame-src 'self' https://res.cloudinary.com https://www.youtube-nocookie.com https://www.youtube.com https://player.vimeo.com; \
 media-src 'self' https: blob:; \

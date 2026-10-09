@@ -4338,6 +4338,24 @@ chk('…and junk that is not a PNG is refused rather than written', (function ()
     return ($r['stored'] ?? -1) === 0 && !$bad;
 })());
 chk('the QR warm op is admin-gated', backend_dispatch('admin.qr.warm', ['requesterId' => '', 'items' => [['token' => 'x', 'qrPng' => 'y']]])['ok'] !== true);
+chk('the studio asks which QR images are missing before sending any: only real, un-hosted tokens come back', (function () {
+    /* Sending every token's PNG on every visit was a quarter of a megabyte a
+       request, and a shared host reset the connection for it. The probe sends
+       tokens only, and the answer names the ones worth a PNG. */
+    $tok = db_row("SELECT token FROM summer_students WHERE token != '' LIMIT 1")['token'] ?? '';
+    if ($tok === '') return true;
+    @unlink(qr_cache_path($tok));
+    $r = backend_dispatch('admin.qr.warm', ['requesterId' => 'NGG-2025-0099', 'probe' => true,
+        'items' => [['token' => $tok], ['token' => $tok], ['token' => 'NOT-A-REAL-TOKEN']]]);
+    $im = imagecreatetruecolor(24, 24);
+    imagefill($im, 0, 0, imagecolorallocate($im, 255, 255, 255));
+    ob_start(); imagepng($im); $png = ob_get_clean(); imagedestroy($im);
+    backend_dispatch('admin.qr.warm', ['requesterId' => 'NGG-2025-0099', 'items' => [['token' => $tok, 'qrPng' => 'data:image/png;base64,' . base64_encode($png)]]]);
+    $r2 = backend_dispatch('admin.qr.warm', ['requesterId' => 'NGG-2025-0099', 'probe' => true, 'items' => [['token' => $tok]]]);
+    $wrote = qr_cache_exists($tok);
+    @unlink(qr_cache_path($tok));
+    return !empty($r['ok']) && ($r['missing'] ?? null) === [$tok] && $wrote && ($r2['missing'] ?? null) === [];
+})());
 
 /* ── Consent given off-line ───────────────────────────────────────────────────
  * A desk registration waits for a parent to click a link, and most do. The ones

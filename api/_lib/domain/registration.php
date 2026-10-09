@@ -1880,6 +1880,24 @@ function admin_qr_cache_warm(array $p): array {
     if (!$items) return ['ok' => false, 'error' => 'no_items'];
     if (count($items) > 600) return ['ok' => false, 'error' => 'too_many'];
 
+    /* probe: which of these tokens still need an image? The studio used to send
+       every token's PNG on every visit — sixty to a request, a quarter of a
+       megabyte each — and a shared host's request filter reset the connection
+       (ERR_HTTP2_PROTOCOL_ERROR in the console) for images it already held.
+       Now it asks first and sends only what is missing, a few at a time. */
+    if (!empty($p['probe'])) {
+        $missing = [];
+        foreach ($items as $it) {
+            $token = trim((string)(is_array($it) ? ($it['token'] ?? '') : $it));
+            if ($token === '' || in_array($token, $missing, true) || qr_cache_exists($token)) continue;
+            $known = db_row('SELECT 1 FROM qr_codes WHERE token = ? LIMIT 1', [$token])
+                  || db_row('SELECT 1 FROM summer_students WHERE token = ? LIMIT 1', [$token])
+                  || db_row('SELECT 1 FROM volunteers WHERE token = ? LIMIT 1', [$token]);
+            if ($known) $missing[] = $token;
+        }
+        return ['ok' => true, 'missing' => $missing];
+    }
+
     $stored = 0; $skipped = 0;
     foreach ($items as $it) {
         $token = trim((string)($it['token'] ?? ''));

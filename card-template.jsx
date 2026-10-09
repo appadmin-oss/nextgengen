@@ -1262,9 +1262,10 @@ function NggcMemberCard(props) {
         background: photo ? "transparent" : "#eef0f4",
         WebkitMaskImage: "linear-gradient(#000 84%,transparent)", maskImage: "linear-gradient(#000 84%,transparent)" } },
       photo ? [
-        h("img", { key: "im", src: photo, crossOrigin: "anonymous", alt: "",
-          style: { width: "100%", height: "100%", objectFit: "cover", objectPosition: "center 22%",
-                   display: "block", filter: "grayscale(1) contrast(1.03)" } }),
+        /* The whole photograph, cropped to head and shoulders only when it holds
+           more (card-photo.jsx). Delivered at the box's shape at 300 dpi. */
+        h(CardPhoto, { key: "im", url: photo, wPx: Math.round(S.photoW / 25.4 * 300), hPx: Math.round(S.photoH / 25.4 * 300),
+          imgStyle: { filter: "grayscale(1) contrast(1.03)" } }),
         h("div", { key: "tint", style: { position: "absolute", inset: 0, background: NAVY, opacity: 0.34, mixBlendMode: "multiply" } }),
       ] : null),
   ]);

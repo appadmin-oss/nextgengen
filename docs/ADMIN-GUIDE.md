@@ -1012,9 +1012,30 @@ a design's paired back comes with it. *Standard card* is the built-in one;
 members' standard card has a back too (return-to address, the holder's name
 and ID, a signature line — never money or medical details). The header shows
 what each type prints with, and every run in the log records the design and
-its version. The sheet takes the size of the cards on it: if you change a
-design or the card size so they disagree, a red check says so and offers the
-one-click fix.
+its version. Every card prints at its own size — a record at its design's
+size, an uploaded image at the *Card size* you set for uploads. **Cards of
+different sizes go onto sheets of their own automatically**, after the others;
+the pager says each sheet's size, the confirm lists each size and its sheets,
+and the print is still one PDF (the print-shop export makes one PDF per size).
+
+**Removing a sheet.** The bin next to the sheet arrows takes every card on that
+sheet off the run (an uploaded image loses only the copies that were on it).
+It asks first, and Undo puts it back. Nobody's record changes.
+
+**Photos on the card.** A head-and-shoulders photo is shown whole. A photo
+with more in it (half or full length, a wide scene) is cropped to the head and
+shoulders, using Cloudinary's face detection; photos stored on this site are
+always shown whole. Uploaded card images are shown whole too (*Fill the card*
+crops them on purpose).
+
+**A photo that can't be loaded** (the file is missing on the server) is named
+in red before printing, with *Take it off*. Replace the photo from the card's
+*Edit photo*, or print the others first.
+
+**When a card can't be drawn**, nothing is printed and a dialog names the
+cards, says why, and offers *Try again* or *Take them off the sheet*. If it
+says the browser holds an old copy of the print tools, reload the page
+(Ctrl+Shift+R).
 
 The old address `/cards` still works and opens the ID Card Studio.
 

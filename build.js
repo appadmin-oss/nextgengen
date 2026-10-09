@@ -44,6 +44,7 @@ const ORDER = [
   'tweaks-panel.jsx',
   'components.jsx',
   'table.jsx',
+  'card-photo.jsx',
   'card-template.jsx',
   'page-home.jsx',
   'src/modules/qow/qow.jsx',

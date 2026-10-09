@@ -102,6 +102,8 @@
   var IMAGE_TIMEOUT = 8000;     // ms — html2canvas; images are inlined by then
 
   function loadScript(src) {
+    // The page's build-versioned URL (components.jsx nggVendorUrl), so a deploy is never served last week's copy.
+    if (root.nggVendorUrl && src.charAt(0) === '/') src = root.nggVendorUrl(src);
     return new Promise(function (res, rej) {
       var have = Array.prototype.some.call(document.scripts, function (s) { return s.src && s.src.indexOf(src) !== -1; });
       if (have) return res();

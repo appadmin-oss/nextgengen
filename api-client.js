@@ -1527,6 +1527,8 @@
            no browser present (a parent clicking a consent link at 2am) can still
            embed a scannable code rather than only a link. */
         qrWarm: (items) => request('/admin/registration.php', { body: { action: 'qr_warm', items }, timeout: 120000 }),
+        // Which of these tokens have no hosted QR yet: [token, …] in, { missing } out. Nothing is sent but the tokens.
+        qrMissing: (tokens) => request('/admin/registration.php', { body: { action: 'qr_warm', probe: true, items: tokens.map(token => ({ token })) }, timeout: 60000 }),
         /* How many verified families are holding an ID email with no scannable
            code, and the action that fixes it. Read first, send second — a bulk
            whose size you cannot see before pressing it is one people press once. */

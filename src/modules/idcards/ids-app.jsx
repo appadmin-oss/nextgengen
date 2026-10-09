@@ -32,6 +32,7 @@ const IDS_REASON_LABEL = Object.fromEntries(IDS_REASONS);
 const IDS_KIND_FOR_RUN = { member: "member", summer: "student", volunteer: "volunteer" };
 const IDS_ASK_QUIET_MS = 3 * 864e5;   // the server's quiet period: asking again inside it needs an explicit press
 const IDS_ASK_MAX = 200;              // and its cap per request
+const IDS_QR_WARM_CHUNK = 8;          // hosted QR PNGs sent per request (~30 KB), so no request trips a host's body filter
 /* "The records with no centre on file": a value no real centre can collide with, so the filter stays one value. */
 const IDS_NO_CENTRE = "\u0000none";
 function idsAskedRecently(a) { return !!(a && a.at && Date.now() - Date.parse(a.at) < IDS_ASK_QUIET_MS); }
@@ -78,7 +79,7 @@ function idsReadUploadFiles(files) {
     fr.onload = () => {
       const img = new Image();
       img.onload = () => resolve({ uid: "u" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), name: file.name, src: fr.result,
-        w: img.naturalWidth, h: img.naturalHeight, copies: 1, rot: 0, fit: "cover", backOf: null, back: "" });
+        w: img.naturalWidth, h: img.naturalHeight, copies: 1, rot: 0, fit: "contain", backOf: null, back: "" });
       img.onerror = () => resolve(null);
       img.src = fr.result;
     };
@@ -145,8 +146,9 @@ function IdCardStudioPage({ setPage }) {
   const [overview, setOverview] = React.useState(false);
   const searchRef = React.useRef(null);
   // The model names the custom size customW/customH; the settings keep it as cw/ch.
+  // G is the grid for UPLOADED images (the "Card size" setting); a record's card prints at its own size.
   const G = idsGrid(Object.assign({}, st, { customW: st.cw, customH: st.ch }));
-  const sheetMm = [G.cw, G.ch];
+  const upMm = [G.cw, G.ch];
 
   const inQ = React.useMemo(() => new Set(queue.map(x => x.t === "r" ? x.key : x.uid)), [queue]);
   const upById = React.useMemo(() => Object.fromEntries(uploads.map(u => [u.uid, u])), [uploads]);
@@ -175,29 +177,21 @@ function IdCardStudioPage({ setPage }) {
   const cnt = { new: base.filter(r => !isBlocked(r) && r.reason === "new").length, reprint: base.filter(r => !isBlocked(r) && r.reason === "reprint").length, blocked: base.filter(isBlocked).length, all: base.length };
   const shown = base.filter(r => filter === "all" ? true : filter === "blocked" ? isBlocked(r) : !isBlocked(r) && r.reason === filter);
   const addable = shown.filter(r => !isBlocked(r) && !inQ.has(r.key));
-  /* The sheet takes the size of the cards on it. An empty sheet follows the
-     first record's design; once it holds cards, a record of another size is
-     refused here and named, rather than squeezed into the wrong slot. */
-  const sizeFor = list => {
-    const target = cards.length ? sheetMm : mmOf(list[0]);
-    if (!cards.length && !idsSameMm(target, sheetMm)) set(idsSizeSettings(target));
-    return target;
-  };
+  /* Every card prints at its own size: a record at its design's (or its
+     standard card's) size, an uploaded image at the size set for uploads. A
+     card of another size is never refused or squeezed into the wrong slot; it
+     goes onto sheets of its own (idsSections), after the others. */
   const addRecs = (list, msg) => {
     if (!list.length) return 0;
-    const target = sizeFor(list);
-    const fit = list.filter(r => idsSameMm(mmOf(r), target)), other = list.length - fit.length;
-    if (!fit.length) { say("These cards are " + idsMmLabel(mmOf(list[0])) + " and the sheet is " + idsMmLabel(target) + ". Print them in their own run."); return 0; }
     const prev = queue;
-    setQueue(prev.concat(fit.map(r => ({ t: "r", key: r.key }))));
-    say((msg || idsN(fit.length, "card") + " added") + (other ? ". " + other + " of another size left for their own run" : ""), () => setQueue(prev));
-    return fit.length;
+    setQueue(prev.concat(list.map(r => ({ t: "r", key: r.key }))));
+    const sizes = new Set(list.map(r => idsMmLabel(mmOf(r))).concat(cards.map(c => idsMmLabel(c.mm))));
+    say((msg || idsN(list.length, "card") + " added") + (sizes.size > 1 ? ". Each card size prints on its own sheets" : ""), () => setQueue(prev));
+    return list.length;
   };
   const toggleRec = r => {
     if (isBlocked(r)) return say("Needs a photo first");
     if (inQ.has(r.key)) { setQueue(qq => qq.filter(x => !(x.t === "r" && x.key === r.key))); setSel(null); return; }
-    const target = sizeFor([r]);
-    if (!idsSameMm(mmOf(r), target)) return say(r.name + "’s card is " + idsMmLabel(mmOf(r)) + " and the sheet is " + idsMmLabel(target) + ". Print it in its own run.");
     setQueue(qq => qq.concat([{ t: "r", key: r.key }]));
   };
 
@@ -330,27 +324,56 @@ function IdCardStudioPage({ setPage }) {
   const cards = React.useMemo(() => {
     const out = [];
     queue.forEach(x => {
-      if (x.t === "r") { const r = byKey[x.key]; if (r) out.push({ key: r.key, base: r.key, rec: r, label: r.name, centre: r.centre, kind: r.kind, name: r.name }); }
-      else { const u = upById[x.uid]; if (u) for (let c = 0; c < u.copies; c++) out.push({ key: u.uid + "#" + c, base: u.uid, upload: u, label: u.name, centre: "", kind: "upload", name: u.name }); }
+      if (x.t === "r") { const r = byKey[x.key]; if (r) out.push({ key: r.key, base: r.key, rec: r, label: r.name, centre: r.centre, kind: r.kind, name: r.name, mm: mmOf(r) }); }
+      else { const u = upById[x.uid]; if (u) for (let c = 0; c < u.copies; c++) out.push({ key: u.uid + "#" + c, base: u.uid, upload: u, label: u.name, centre: "", kind: "upload", name: u.name, mm: upMm }); }
     });
     return out;
-  }, [queue, byKey, upById]);
+    // eslint-disable-next-line
+  }, [queue, byKey, upById, upMm[0], upMm[1], data.designs, data.programs]);
   const sorted = React.useMemo(() => idsSort(cards, st.order, c => ({ centre: c.centre, kind: c.kind, name: c.name })), [cards, st.order]);
   const breakActive = st.breakBy && (st.order === "centre" || st.order === "kind");
-  const { slots: rawSlots, pads } = React.useMemo(() => idsLayout(sorted, G.per, st.skip, breakActive ? (c => st.order === "centre" ? c.centre : c.kind) : null), [sorted, G.per, st.skip, breakActive, st.order]);
-  const slots = rawSlots.map(s => {
+  /* One section per card size, each on its own sheets and its own grid. */
+  const layout = React.useMemo(() => idsSections(sorted, c => c.mm, { paper: st.paper, margin: st.margin, gap: st.gap }, st.skip,
+    breakActive ? (c => st.order === "centre" ? c.centre : c.kind) : null, IDS_SIZE_TOL), [sorted, st.paper, st.margin, st.gap, st.skip, breakActive, st.order]);
+  const [badPhotos, setBadPhotos] = React.useState({});   // photoUrl → true when it can't be loaded
+  const sections = layout.sections.map(sec => Object.assign({}, sec, { slots: sec.slots.map(s => {
     if (s.pad) return s;
     let warn = null;
     if (s.rec && s.rec.divMissing) warn = { tone: "warn", text: "Division is blank on the record" };
-    if (s.upload) { const d = idsDpiChip(idsEffDpi(s.upload, G.cw, G.ch), st.dpi); if (d.tone !== "ok") warn = { tone: d.tone, text: d.label }; }
-    return Object.assign({}, s, { warn });
-  });
-  const nSheets = idsSheetCount(G.per, st.skip, slots.length);
-  const stock = idsStock(cards.length, slots.length, G.per, st.skip, st.backs);
+    if (s.rec && badPhotos[s.rec.photoUrl]) warn = { tone: "bad", text: "The photo file is missing on the server" };
+    if (s.upload) { const d = idsDpiChip(idsEffDpi(s.upload, sec.G.cw, sec.G.ch), st.dpi); if (d.tone !== "ok") warn = { tone: d.tone, text: d.label }; }
+    return Object.assign({}, s, { warn, cw: sec.G.cw, ch: sec.G.ch, sec: sec.key });
+  }) }));
+  const slots = [].concat(...sections.map(sec => sec.slots));
+  const pads = sections.reduce((n, sec) => n + sec.pads, 0);
+  const nSheets = layout.nSheets;
+  const stock = { sheets: nSheets, sides: nSheets * (st.backs === "off" ? 1 : 2),
+    used: nSheets ? Math.round(cards.length / sections.reduce((n, sec) => n + sec.count * sec.G.per, 0) * 100) : 0 };
   React.useEffect(() => { if (sheetIdx > Math.max(0, nSheets - 1)) setSheetIdx(Math.max(0, nSheets - 1)); }, [nSheets, sheetIdx]);
-  const gap = nSheets && !breakActive ? nSheets * G.per - st.skip - slots.length : 0;
+  const lastSec = sections[sections.length - 1] || null;
+  const gap = lastSec && lastSec.count && !breakActive ? lastSec.count * lastSec.G.per - lastSec.skip - lastSec.slots.length : 0;
   const ready = recs.filter(r => !isBlocked(r) && !inQ.has(r.key));
-  const fillGap = () => addRecs(ready.slice(0, gap), "Filled " + idsN(Math.min(gap, ready.length), "slot"));
+  // The last sheet is filled with cards of ITS size; another size would start a sheet of its own.
+  const fillable = lastSec ? ready.filter(r => idsSameMm(mmOf(r), lastSec.mm)) : [];
+  const fillGap = () => addRecs(fillable.slice(0, gap), "Filled " + idsN(Math.min(gap, fillable.length), "slot"));
+  const here = idsSheetAt(sections, sheetIdx);
+  const sheetG = here ? here.sec.G : G;
+
+  /* Delete a sheet: everything on it comes off the run, with Undo. An uploaded
+     image printed in copies loses only the copies that were on this sheet. */
+  const removeSheet = idx => {
+    const on = idsCardsOnSheets(sections, idx + 1, idx + 1);
+    if (!on.length) return;
+    const prevQ = queue, prevU = uploads;
+    const recKeys = new Set(on.filter(x => x.s.rec).map(x => x.s.rec.key));
+    const upCut = {};
+    on.filter(x => x.s.upload).forEach(x => { upCut[x.s.upload.uid] = (upCut[x.s.upload.uid] || 0) + 1; });
+    const gone = new Set(Object.keys(upCut).filter(uid => (upById[uid] || {}).copies <= upCut[uid]));
+    setUploads(us => us.map(u => upCut[u.uid] && !gone.has(u.uid) ? Object.assign({}, u, { copies: u.copies - upCut[u.uid] }) : u));
+    setQueue(qq => qq.filter(x => x.t === "r" ? !recKeys.has(x.key) : !gone.has(x.uid)));
+    setSel(null);
+    say("Sheet " + (idx + 1) + " removed · " + idsN(on.length, "card") + " off the run", () => { setQueue(prevQ); setUploads(prevU); });
+  };
 
   /* Reorder: everything happens in "My order", on the sheet's own sequence. */
   const reorder = (fromKey, toIdx) => {
@@ -366,7 +389,12 @@ function IdCardStudioPage({ setPage }) {
     if (st.order !== "mine") { set({ order: "mine" }); say("Switched to your own order"); }
   };
   const selCard = sel ? cards.find(c => c.key === sel) : null;
-  const moveSel = d => { if (!selCard) return; const i = sorted.findIndex(c => c.key === sel); reorder(sel, i + d); };
+  // Moves among the cards of its own size: a step past a card of another size would change nothing on any sheet.
+  const moveSel = d => {
+    if (!selCard) return;
+    const same = sorted.filter(c => idsSameMm(c.mm, selCard.mm)), j = same.findIndex(c => c.key === sel), to = same[j + d];
+    if (to) reorder(sel, sorted.indexOf(to));
+  };
   const removeSel = () => {
     if (!selCard) return;
     const prev = queue;
@@ -382,23 +410,18 @@ function IdCardStudioPage({ setPage }) {
   const sideways = upFronts.filter(u => idsFitChip(u, G.cw, G.ch).sideways);
   const noBack = st.backs !== "off" ? upFronts.filter(u => !u.back) : [];
   const designNoBack = st.backs !== "off" ? recCards.filter(c => { const d = designOf(c.rec); return d && !d.back; }) : [];
-  const wrongSize = recCards.filter(c => !idsSameMm(mmOf(c.rec), sheetMm));
-  const sizeGroups = {};
-  recCards.forEach(c => { const mm = mmOf(c.rec), k = idsMmLabel(mm); (sizeGroups[k] = sizeGroups[k] || { mm, cards: [] }).cards.push(c); });
-  const sizeList = Object.values(sizeGroups).sort((a, b) => b.cards.length - a.cards.length);
+  const photoGone = recCards.filter(c => badPhotos[c.rec.photoUrl]);
   const needId = st.reason === "proof" ? [] : recCards.filter(c => c.rec.kind === "member" && !c.rec.displayId);
   const noDiv = recCards.filter(c => c.rec.divMissing);
   const reprints = recCards.filter(c => c.rec.reason === "reprint");
   const blockedCount = recs.filter(isBlocked).length;
   const checks = [];
-  if (!G.per) checks.push({ tone: "bad", text: "Cards this size don’t fit on " + IDS_PAPERS[G.paper][0] + " with these margins." });
-  if (sizeList.length > 1) {
-    const keep = sizeList[0], drop = new Set(sizeList.slice(1).flatMap(g => g.cards.map(c => c.base)));
-    checks.push({ tone: "bad", text: "The sheet mixes card sizes (" + sizeList.map(g => g.cards.length + " at " + idsMmLabel(g.mm)).join(", ") + "). Print each size in its own run.",
-      action: "Keep the " + idsMmLabel(keep.mm) + " cards", onAction: () => { setQueue(qq => qq.filter(x => !(x.t === "r" && drop.has(x.key)))); set(idsSizeSettings(keep.mm)); } });
-  } else if (wrongSize.length) {
-    checks.push({ tone: "bad", text: idsN(wrongSize.length, "card") + " " + (wrongSize.length === 1 ? "is" : "are") + " designed at " + idsMmLabel(sizeList[0].mm) + " but the sheet is set to " + idsMmLabel(sheetMm) + ".",
-      action: "Use " + idsMmLabel(sizeList[0].mm), onAction: () => set(idsSizeSettings(sizeList[0].mm)) });
+  sections.filter(sec => !sec.G.per).forEach(sec => checks.push({ tone: "bad", text: "Cards at " + idsMmLabel(sec.mm) + " don’t fit on " + IDS_PAPERS[st.paper][0] + " with these margins. Use bigger paper or smaller margins." }));
+  if (sections.length > 1) checks.push({ tone: "info", text: "Cards in " + sections.length + " sizes, so each size prints on its own sheets: " + sections.map(sec => idsN(sec.n, "card") + " at " + idsMmLabel(sec.mm) + " (" + idsSheetSpan(sec) + ")").join(", ") + "." });
+  if (photoGone.length) {
+    const gone = new Set(photoGone.map(c => c.base));
+    checks.push({ tone: "bad", text: idsN(photoGone.length, "photo") + " can’t be loaded (" + photoGone.slice(0, 3).map(c => c.label).join(", ") + (photoGone.length > 3 ? "…" : "") + "): the file is missing on the server, so the card would print with an empty photo box. Replace the photo, or take " + (photoGone.length === 1 ? "it" : "them") + " off the sheet.",
+      action: "Take " + (photoGone.length === 1 ? "it" : "them") + " off", onAction: () => setQueue(qq => qq.filter(x => !(x.t === "r" && gone.has(x.key)))) });
   }
   if (lowDpi.length) checks.push({ tone: lowDpi.some(u => idsDpiChip(idsEffDpi(u, G.cw, G.ch), st.dpi).tone === "bad") ? "bad" : "warn", text: idsN(lowDpi.length, "uploaded image") + " " + (lowDpi.length === 1 ? "is" : "are") + " below " + st.dpi + " dpi at this size and may print soft." });
   if (sideways.length) checks.push({ tone: "warn", text: idsN(sideways.length, "image") + " look sideways for this card.", action: "Rotate them", onAction: () => setUploads(us => us.map(u => sideways.some(s => s.uid === u.uid) ? Object.assign({}, u, { rot: ((u.rot || 0) + 90) % 360 }) : u)) });
@@ -411,6 +434,38 @@ function IdCardStudioPage({ setPage }) {
   if (!checks.some(c => c.tone === "warn" || c.tone === "bad") && cards.length) checks.push({ tone: "ok", text: "Ready to print. Everything on the sheet checks out." });
   const hasBad = checks.some(c => c.tone === "bad");
   const printBlock = !cards.length ? "Put some cards on the sheet first" : hasBad ? "Fix the red item first" : "";
+
+  /* A record's photo that will not load — a stored file gone from the server
+     (photo.php answers 404) — would print as an empty photo box. Each photo on
+     the sheet is tried once, a few at a time, and a failure is named on its
+     slot and in the checks before anything prints. */
+  const photoTried = React.useRef({});
+  const sheetPhotos = recCards.map(c => c.rec.photoUrl).filter(Boolean);
+  const sheetPhotosSig = [...new Set(sheetPhotos)].join("\n");
+  React.useEffect(() => {
+    const todo = [...new Set(sheetPhotos)].filter(u => !(u in photoTried.current));
+    if (!todo.length) return undefined;
+    todo.forEach(u => { photoTried.current[u] = null; });
+    const tryOne = u => new Promise(res => {
+      const im = new Image();
+      const t = setTimeout(() => res(true), 15000);           // slow is not missing
+      im.onload = () => { clearTimeout(t); res(true); };
+      im.onerror = () => { clearTimeout(t); res(false); };
+      im.src = typeof nggPhotoSrc === "function" ? nggPhotoSrc(u) : u;
+    });
+    (async () => {
+      for (let i = 0; i < todo.length; i += 6) {
+        const part = todo.slice(i, i + 6);
+        const ok = await Promise.all(part.map(tryOne));
+        part.forEach((u, k) => { photoTried.current[u] = ok[k]; });
+        const bad = part.filter((u, k) => !ok[k]);
+        // Kept even if the sheet changed meanwhile: the verdict is about the URL, not the sheet.
+        if (bad.length) setBadPhotos(b => Object.assign({}, b, Object.fromEntries(bad.map(u => [u, true]))));
+      }
+    })();
+    return undefined;
+    // eslint-disable-next-line
+  }, [sheetPhotosSig]);
 
   /* ── Scenarios (§3.2.1) ── */
   const applyScenario = key => {
@@ -468,22 +523,18 @@ function IdCardStudioPage({ setPage }) {
   const [runOpen, setRunOpen] = React.useState(null);
   const programFor = rec => (data.programs[rec.kind] || {});
   const renderFace = (s, f) => s.upload
-    ? <IdsUploadFace u={f === "back" ? (s.upload.back ? upById[s.upload.back] : null) : s.upload} cw={G.cw} ch={G.ch} back={f === "back"}/>
-    : <IdsRecordFace rec={s.rec} face={f} program={programFor(s.rec)} wMm={G.cw} hMm={G.ch} design={designOf(s.rec)}/>;
+    ? <IdsUploadFace u={f === "back" ? (s.upload.back ? upById[s.upload.back] : null) : s.upload} cw={s.cw || G.cw} ch={s.ch || G.ch} back={f === "back"}/>
+    : <IdsRecordFace rec={s.rec} face={f} program={programFor(s.rec)} wMm={s.cw || G.cw} hMm={s.ch || G.ch} design={designOf(s.rec)}/>;
 
   const startPrint = () => {
     if (printBlock) return say(printBlock);
     const nRecords = recCards.length, nUploads = upCards.length;
-    setConfirm({ nCards: cards.length, nRecords, nUploads, nSheets, G, backs: st.backs, skip: st.skip, designLabel, packing: st.packing, slots,
+    setConfirm({ nCards: cards.length, nRecords, nUploads, nSheets, sections, backs: st.backs, designLabel, packing: st.packing,
       defaultReason: idsAutoReason(scen, nRecords, reprints.length) });
   };
 
 
-  const inRange = (a, b) => {
-    const out = [];
-    for (let p = a - 1; p < b; p++) for (let i = 0; i < G.per; i++) { const s = slots[p * G.per + i - st.skip]; if (s && !s.pad) out.push({ s, sheet: p + 1, slotN: i + 1 }); }
-    return out;
-  };
+  const inRange = (a, b) => idsCardsOnSheets(sections, a, b);
 
   const logPrinted = async pj => {
     const items = pj.items || inRange(pj.a, pj.b);
@@ -519,7 +570,7 @@ function IdCardStudioPage({ setPage }) {
     if (pj.output) return ids;   // an export reports in its own result dialog; failures are marked from the print log
     if (job || pj.batch) say("Batch ready · sheets " + pj.a + "–" + pj.b + " of " + nSheets + " in " + pj.fileName + ". Print it, then make the next.");
     else { say("Ready · " + pj.fileName + ", logged as " + ids + ". Print it at Actual size (100%)."); set({ skip: 0 }); setSheetIdx(0); }
-    if (!proof && recItems.length) setAfter({ runs, items: recItems.map(x => ({ key: x.s.key, slot: x.s, name: x.s.label, sheet: x.sheet, slotN: x.slotN, cw: G.cw, ch: G.ch, rec: x.s.rec })) });
+    if (!proof && recItems.length) setAfter({ runs, items: recItems.map(x => ({ key: x.s.key, slot: x.s, name: x.s.label, sheet: x.sheet, slotN: x.slotN, cw: x.s.cw || G.cw, ch: x.s.ch || G.ch, rec: x.s.rec })) });
   };
 
   /* A member printed for the first time is given their ID number first — minted
@@ -607,6 +658,8 @@ function IdCardStudioPage({ setPage }) {
       const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       await frames();
       await idsTplSettled();
+      // A card photo asks Cloudinary where the face is before it settles on a URL (card-photo.jsx).
+      if (typeof cardPhotosSettled === "function") await cardPhotosSettled();
       // Photos and the member QR arrive after the first paint: wait for the farm to go quiet, then for every image.
       await idsDomQuiet(farmRef.current, 80, 4000);
       const imgs = farmRef.current ? Array.from(farmRef.current.querySelectorAll("img")) : [];
@@ -623,19 +676,25 @@ function IdCardStudioPage({ setPage }) {
     const d = designOf(s.rec);
     return [s.rec.key, f, idsHash(JSON.stringify(s.rec.raw || {})), d ? d.templateId + "v" + d.version + (d.back ? "+" + d.back.templateId + "v" + d.back.version : "") : "std", idsHash(JSON.stringify(programFor(s.rec)))].join("|");
   };
-  const faceKey = (s, f, dpi, type) => faceSig(s, f) + "|" + G.cw + "x" + G.ch + "|" + dpi + "|" + (type || "jpeg");
+  const faceKey = (s, f, dpi, type) => faceSig(s, f) + "|" + (s.cw || G.cw) + "x" + (s.ch || G.ch) + "|" + dpi + "|" + (type || "jpeg");
 
-  /* Draw the faces for `jobs` ([{ s, face }]). Returns { faces, failed } with
-     faces[i] for jobs[i], or null when a newer background run superseded this
-     one. o: { dpi, type: "jpeg"|"png", gen, onTick } */
+  /* Draw the faces for `jobs` ([{ s, face }]). Returns { faces, failed, why }
+     with faces[i] for jobs[i] and, for a failure, why[i] in words — or null
+     when a newer background run superseded this one. Each face is drawn at
+     its own card's size. o: { dpi, type: "jpeg"|"png", gen, onTick } */
   const drawFaces = async (jobs, o) => {
     const CE = await loadVendor("cardExport");
-    const faces = new Array(jobs.length), failed = [];
+    const faces = new Array(jobs.length), failed = [], why = {};
+    const fail = (i, e) => { failed.push(i); why[i] = idsFaceWhy(e); };
     let n = 0;
     const tick = () => { n++; if (o.onTick) o.onTick(n, jobs.length); };
     const stale = () => (o.gen != null && o.gen !== farmGen.current) || (o.cancel && o.cancel());
     const mime = o.type === "png" ? "image/png" : "image/jpeg";
-    const dom = [];
+    /* One drawing per distinct face. Copies of an uploaded image are the same
+       face under the same key; mounted side by side they gave React duplicate
+       keys, the farm's nodes stopped lining up with its jobs, and cards that
+       had nothing wrong with them were reported as not drawn. */
+    const dom = [], domByKey = {};
     for (let i = 0; i < jobs.length; i++) {
       const s = curSlot(jobs[i].s), f = jobs[i].face, key = faceKey(s, f, o.dpi, o.type);
       const hit = idsFaceGet(key);
@@ -646,13 +705,15 @@ function IdCardStudioPage({ setPage }) {
         try {
           const fab = await loadVendor("fabric");
           const art = await window.dsnRaster(Object.assign({}, t.published, { wMm: d.wMm, hMm: d.hMm }), s.rec.raw, fab, o.dpi);
-          const r = await CE.imageFace(art.url, { trimW_mm: G.cw, trimH_mm: G.ch, dpi: o.dpi, bleed_mm: IDS_FACE_BLEED, type: mime, quality: 0.95 });
+          const r = await CE.imageFace(art.url, { trimW_mm: s.cw || G.cw, trimH_mm: s.ch || G.ch, dpi: o.dpi, bleed_mm: IDS_FACE_BLEED, type: mime, quality: 0.95 });
           faces[i] = { bytes: r.bytes, bleedMm: IDS_FACE_BLEED, bleedPx: r.bleedPx, trimWPx: r.trimWPx, trimHPx: r.trimHPx, alias: "f" + idsHash(key), engine: "design" };
           idsFacePut(key, faces[i]);
-        } catch (_) { failed.push(i); }
+        } catch (e) { fail(i, e); }
         tick(); continue;
       }
-      dom.push({ i, s, face: f, key });
+      if (domByKey[key]) { domByKey[key].dups.push(i); continue; }
+      domByKey[key] = { i, s, face: f, key, dups: [] };
+      dom.push(domByKey[key]);
     }
     for (let c = 0; c < dom.length; c += IDS_FARM_CHUNK) {
       if (stale()) return null;
@@ -670,20 +731,24 @@ function IdCardStudioPage({ setPage }) {
             try {
               // A card its renderer choked on is never rasterised as if it were the card.
               if (!node || node.querySelector("[data-ids-failed]")) throw new Error("draw_failed");
-              const r = await CE.renderFaceFast(node, { trimW_mm: G.cw, dpi: o.dpi, bleed_mm: IDS_FACE_BLEED, type: mime, quality: 0.95 });
+              const r = await CE.renderFaceFast(node, { trimW_mm: job.s.cw || G.cw, dpi: o.dpi, bleed_mm: IDS_FACE_BLEED, type: mime, quality: 0.95 });
               faces[job.i] = { bytes: r.bytes, bleedMm: IDS_FACE_BLEED, bleedPx: r.bleedPx, trimWPx: r.trimWPx, trimHPx: r.trimHPx, alias: "f" + idsHash(job.key), engine: r.engine };
               idsFacePut(job.key, faces[job.i]);
-            } catch (_) { failed.push(job.i); }
+              job.dups.forEach(d => { faces[d] = faces[job.i]; tick(); });
+            } catch (e) { fail(job.i, e); job.dups.forEach(d => { fail(d, e); tick(); }); }
             tick();
           }
         };
         await Promise.all([worker(), worker(), worker()]);
+        /* Unmounted INSIDE the lock. It was unmounted after the loop, outside
+           it, where a background run finishing could take down the farm a
+           print had just mounted — and every card in that chunk then failed. */
+        setFarm(null);
         return true;
       });
       if (!ok) return null;
     }
-    setFarm(null);
-    return { faces, failed };
+    return { faces, failed, why };
   };
 
   // The sheet's faces, drawn while the operator is still arranging it.
@@ -692,7 +757,7 @@ function IdCardStudioPage({ setPage }) {
     slots.forEach(s => { if (!s.pad) { jobs.push({ s, face: "front" }); if (st.backs !== "off") jobs.push({ s, face: "back" }); } });
     return jobs;
   };
-  const warmSig = tab === "make" && !phone ? slots.map(s => s.pad ? "_" : faceSig(curSlot(s), "front")).join(",") + "|" + st.backs + "|" + st.dpi + "|" + G.cw + "x" + G.ch : "";
+  const warmSig = tab === "make" && !phone ? slots.map(s => s.pad ? "_" : faceSig(curSlot(s), "front") + "@" + s.cw + "x" + s.ch).join(",") + "|" + st.backs + "|" + st.dpi : "";
   React.useEffect(() => {
     const gen = ++farmGen.current;
     if (!warmSig || xjob) { setWarm({ ready: 0, total: 0, busy: false }); return undefined; }
@@ -710,6 +775,10 @@ function IdCardStudioPage({ setPage }) {
 
   const today = () => new Date().toISOString().slice(0, 10);
   const failedNames = (jobs, idx) => Array.from(new Set(idx.map(i => { const s = jobs[i].s; return s.label + (s.rec && s.rec.displayId ? " · " + s.rec.displayId : ""); })));
+  const failedWhy = (res) => Array.from(new Set(res.failed.map(i => res.why[i]).filter(Boolean)));
+  const failedBases = (jobs, idx) => new Set(idx.map(i => jobs[i].s.base));
+  /* Take the cards that couldn't be drawn off the sheet (uploads entirely, all copies). */
+  const dropBases = bases => { const prev = queue; setQueue(qq => qq.filter(x => !bases.has(x.t === "r" ? x.key : x.uid))); say(idsN(bases.size, "card") + " taken off the sheet", () => setQueue(prev)); };
 
   /* Print: the studio's sheet as a PDF, never the browser's print dialog. */
   const runPrint = async pj => {
@@ -717,10 +786,11 @@ function IdCardStudioPage({ setPage }) {
     xcancel.current = false;
     let CE;
     setXjob({ i: 0, n: 1, note: "Getting ready", print: true });
-    try { CE = await loadVendor("cardExport"); } catch (_) { setXjob(null); say("Couldn’t load the print tools. Check your connection and try again."); return false; }
+    try { CE = await loadVendor("cardExport"); } catch (e) { setXjob(null); say(idsVendorWhy(e, "print")); return false; }
     try {
       if (pj.test) {
-        const pdf = await CE.buildSheetPDF({ pageW: G.pw, pageH: G.ph, title: "Alignment test", pages: [idsTestPage(G)] });
+        const TG = sheetG.per ? sheetG : G;
+        const pdf = await CE.buildSheetPDF({ pageW: TG.pw, pageH: TG.ph, title: "Alignment test", pages: [idsTestPage(TG)] });
         CE.download(pdf, "alignment-test-" + IDS_PAPERS[G.paper][0] + ".pdf", "application/pdf");
         setXjob(null);
         say("Alignment test ready. Print it at Actual size (100%) and measure it with a ruler before printing cards.");
@@ -733,22 +803,25 @@ function IdCardStudioPage({ setPage }) {
       const res = await drawFaces(jobs, { dpi: st.dpi, cancel: () => xcancel.current, onTick: (k, n) => setXjob({ i: k, n, note: "Preparing the cards", print: true }) });
       if (!res || xcancel.current) { setXjob(null); say("Stopped. Nothing was printed or logged."); return false; }
       if (res.failed.length) {
-        const names = failedNames(jobs, res.failed);
+        const names = failedNames(jobs, res.failed), bases = failedBases(jobs, res.failed);
         setXjob(null);
-        say(idsN(names.length, "card") + " couldn’t be drawn (" + names.slice(0, 4).join(", ") + (names.length > 4 ? "…" : "") + "). Take " + (names.length === 1 ? "it" : "them") + " off the sheet, then print. Nothing was printed or logged.");
+        // Kept on screen, with why and what to do — not a toast that is gone before it is read.
+        setXresult({ print: true, made: 0, failed: names, qrBad: [], why: failedWhy(res),
+          retry: () => { setXresult(null); runPrint(pj); }, drop: () => { setXresult(null); dropBases(bases); } });
         return false;
       }
       setXjob({ i: jobs.length, n: jobs.length, note: "Making the PDF", print: true });
       const byJob = new Map();
       jobs.forEach((j, k) => byJob.set(j.s.key + "|" + j.face, res.faces[k]));
-      const pages = idsSheetPages({ G, slots, skip: st.skip, a: pj.a, b: pj.b, backs: st.backs, marks: st.marks, proof, nSheets, faceOf: (s, side) => byJob.get(s.key + "|" + side) });
+      const pages = idsSheetPages({ sections, a: pj.a, b: pj.b, backs: st.backs, marks: st.marks, proof, nSheets, faceOf: (s, side) => byJob.get(s.key + "|" + side) });
       const packing = pj.packing ? {
         title: "Packing list" + (proof ? " · PROOF" : ""),
         sub: "Sheets " + pj.a + "–" + pj.b + " of " + nSheets + " · tick each card as you cut and bag it · " + new Date().toLocaleString("en-GB"),
         head: ["Sheet", "Slot", "Name", "ID", "Centre", ""], widths: [12, 10, 62, 30, 40, 8], tick: true,
         rows: items.map(x => [x.sheet, x.slotN, x.s.label, x.s.rec ? (curSlot(x.s).rec.displayId || "Assigned on print") : "Uploaded", x.s.centre || "", ""]),
       } : null;
-      const pdf = await CE.buildSheetPDF({ pageW: G.pw, pageH: G.ph, title: "NGG ID cards" + (proof ? " (proof)" : ""), packing, pages });
+      const PG = (sections[0] || {}).G || G;
+      const pdf = await CE.buildSheetPDF({ pageW: PG.pw, pageH: PG.ph, title: "NGG ID cards" + (proof ? " (proof)" : ""), packing, pages });
       const fileName = "id-cards-" + today() + (proof ? "-proof" : "") + (pj.a === 1 && pj.b === nSheets ? "" : "-sheets-" + pj.a + "-" + pj.b) + ".pdf";
       CE.download(pdf, fileName, "application/pdf");
       setXjob(null);
@@ -756,7 +829,7 @@ function IdCardStudioPage({ setPage }) {
       return true;
     } catch (e) {
       setXjob(null);
-      say("Couldn’t make the PDF. Nothing was printed or logged. Try again.");
+      say(e && e.code === "vendor_stale" ? idsVendorWhy(e, "print") : "Couldn’t make the PDF (" + idsFaceWhy(e) + ") Nothing was printed or logged. Try again.");
       return false;
     }
   };
@@ -828,7 +901,7 @@ function IdCardStudioPage({ setPage }) {
 
   const startExport = () => {
     if (printBlock) return say(printBlock);
-    setXconfirm({ nCards: cards.length, nRecords: recCards.length, backs: st.backs, G, dpi: st.dpi === 150 ? 300 : st.dpi,
+    setXconfirm({ nCards: cards.length, nRecords: recCards.length, backs: st.backs, sections, dpi: st.dpi === 150 ? 300 : st.dpi,
       defaultReason: idsAutoReason(scen, recCards.length, reprints.length), designLabel });
   };
 
@@ -842,20 +915,23 @@ function IdCardStudioPage({ setPage }) {
     xcancel.current = false;
     setXjob({ i: 0, n: list.length, note: "Getting ready" });
     let CE;
-    try { CE = await loadVendor("cardExport"); } catch (_) { setXjob(null); return say("Couldn’t load the export tools. Check your connection and try again."); }
+    try { CE = await loadVendor("cardExport"); } catch (e) { setXjob(null); return say(idsVendorWhy(e, "export")); }
     const isPdf = format === "pdf";
     const jobs = [];
     list.forEach(x => { jobs.push({ s: x.s, face: "front" }); if (withBacks) jobs.push({ s: x.s, face: "back" }); });
-    const res = await drawFaces(jobs, { dpi, type: isPdf ? "jpeg" : "png", cancel: () => xcancel.current, onTick: (k, n) => setXjob({ i: k, n, note: "Drawing the cards" }) });
+    let res;
+    try { res = await drawFaces(jobs, { dpi, type: isPdf ? "jpeg" : "png", cancel: () => xcancel.current, onTick: (k, n) => setXjob({ i: k, n, note: "Drawing the cards" }) }); }
+    catch (e) { setXjob(null); return say(e && e.code === "vendor_stale" ? idsVendorWhy(e, "export") : "Couldn’t draw the cards (" + idsFaceWhy(e) + ") Try again."); }
     const cancelled = xcancel.current || !res;
     const bad = new Set(res ? res.failed : []);
-    const fronts = [], backsOut = [], files = [], failed = [], qrBad = [], ok = [];
+    const fronts = [], backsOut = [], files = [], failed = [], qrBad = [], ok = [], okSec = [];
+    const failBases = new Set();
     let qrSkipped = 0;
     const per = withBacks ? 2 : 1;
     for (let i = 0; res && i < list.length; i++) {
       const s = curSlot(list[i].s), fi = i * per, bi = fi + 1;
       const f = res.faces[fi], b = withBacks ? res.faces[bi] : null;
-      if (!f || bad.has(fi) || (withBacks && (!b || bad.has(bi)))) { failed.push(s.label + (s.rec && s.rec.displayId ? " · " + s.rec.displayId : "")); continue; }
+      if (!f || bad.has(fi) || (withBacks && (!b || bad.has(bi)))) { failed.push(s.label + (s.rec && s.rec.displayId ? " · " + s.rec.displayId : "")); failBases.add(s.base); continue; }
       const want = qrExpect(s);
       if (verify && want !== null) {
         setXjob({ i, n: list.length, note: "Checking every QR code" });
@@ -874,19 +950,30 @@ function IdCardStudioPage({ setPage }) {
         files.push({ name: stem + "-front.png", bytes: f.bytes });
         if (b) files.push({ name: stem + "-back.png", bytes: b.bytes });
       }
-      ok.push(list[i]);
+      ok.push(list[i]); okSec.push(s.sec || "");
     }
-    if (!ok.length) { setXjob(null); setXresult({ format, made: 0, failed, qrBad, cancelled }); return; }
+    const why = res ? failedWhy(res) : [];
+    const again = failed.length ? { retry: () => { setXresult(null); runExport({ format, dpi, verify, reason, only }); }, drop: () => { setXresult(null); dropBases(failBases); } } : {};
+    if (!ok.length) { setXjob(null); setXresult(Object.assign({ format, made: 0, failed, qrBad, cancelled, why }, again)); return; }
     setXjob({ i: list.length, n: list.length, note: isPdf ? "Imposing the sheets" : "Packing the ZIP" });
     const job = sheetKinds.map(k => IDS_KIND_PLURAL[k]).join(", ");
     let fileName = "";
     try {
       if (isPdf) {
-        const pdf = await CE.buildImpositionPDF(fronts, { backs: withBacks ? backsOut : null, duplex: st.backs === "short" ? "short-edge" : "long-edge",
-          sheet: IDS_PAPERS[G.paper][0], trimW_mm: G.cw, trimH_mm: G.ch, bleed_mm: IDS_FACE_BLEED, safe_mm: 3, marks: true, layers: true, intent: "FOGRA39",
-          jobName: "NGG ID cards " + job + (proof ? " PROOF" : ""), date: today() });
-        fileName = "id-cards-" + today() + (proof ? "-proof" : "") + "-print-shop.pdf";
-        CE.download(pdf, fileName, "application/pdf");
+        /* The imposition takes one trim size, so a run in several sizes is one
+           PDF per size, each named by its size. */
+        const secKeys = [...new Set(okSec)], names = [];
+        for (const k of secKeys) {
+          const sec = sections.find(x => x.key === k) || { G: { cw: (ok[0].s.cw || G.cw), ch: (ok[0].s.ch || G.ch) }, mm: [ok[0].s.cw || G.cw, ok[0].s.ch || G.ch] };
+          const idx = okSec.map((x, j) => x === k ? j : -1).filter(j => j >= 0);
+          const pdf = await CE.buildImpositionPDF(idx.map(j => fronts[j]), { backs: withBacks ? idx.map(j => backsOut[j]) : null, duplex: st.backs === "short" ? "short-edge" : "long-edge",
+            sheet: IDS_PAPERS[st.paper][0], trimW_mm: sec.G.cw, trimH_mm: sec.G.ch, bleed_mm: IDS_FACE_BLEED, safe_mm: 3, marks: true, layers: true, intent: "FOGRA39",
+            jobName: "NGG ID cards " + job + (proof ? " PROOF" : ""), date: today() });
+          const nm = "id-cards-" + today() + (proof ? "-proof" : "") + "-print-shop" + (secKeys.length > 1 ? "-" + idsMmLabel(sec.mm).replace(/ × /, "x").replace(/ mm$/, "mm") : "") + ".pdf";
+          CE.download(pdf, nm, "application/pdf");
+          names.push(nm);
+        }
+        fileName = names.join(", ");
       } else if (only) {
         files.forEach(f => CE.download(f.bytes, f.name, "image/png"));
         fileName = files.map(f => f.name).join(", ");
@@ -894,12 +981,12 @@ function IdCardStudioPage({ setPage }) {
         fileName = "id-cards-" + today() + "-png.zip";
         CE.download(await CE.zipStore(files), fileName, "application/zip");
       }
-    } catch (_) { setXjob(null); setXresult({ format, made: 0, failed: failed.concat(["The file couldn’t be assembled"]), qrBad, cancelled }); return; }
+    } catch (e) { setXjob(null); setXresult({ format, made: 0, failed, qrBad, cancelled, why: why.concat(["The file couldn’t be assembled: " + idsFaceWhy(e)]) }); return; }
     setXjob(null);
     // One run in the log per kind, with the cards that are actually in the file. A single
     // card's PNG is a download, not an issue, so it is not logged.
     const runIds = only ? "" : await logPrinted({ items: ok, reason, output: isPdf ? "pdf" : "png", dpi, a: 1, b: nSheets });
-    setXresult({ format, made: ok.length, failed, qrBad, qrSkipped, verify, cancelled, fileName, runIds: runIds || "", total: list.length });
+    setXresult(Object.assign({ format, made: ok.length, failed, qrBad, qrSkipped, verify, cancelled, fileName, runIds: runIds || "", total: list.length, why }, again));
   };
 
   /* Warm the hosted QR cache, once, in the background (restored from the old
@@ -907,7 +994,10 @@ function IdCardStudioPage({ setPage }) {
      hosted QR PNG, and the server has no QR encoder — only this browser does.
      After one visit every participant and volunteer token has a hosted image,
      so an ID mailed at 2am by a consent link still carries a scannable code.
-     Batched 60 at a time; the server skips tokens it already holds. */
+     It asks the server which tokens are missing first and sends only those,
+     IDS_QR_WARM_CHUNK to a request: sixty PNGs on every visit was a quarter of
+     a megabyte a request, which a shared host's request filter answered by
+     resetting the connection (ERR_HTTP2_PROTOCOL_ERROR on registration.php). */
   const qrWarmed = React.useRef(false);
   React.useEffect(() => {
     // The server gates the warm-up on Summer School; an operator without it has nothing to warm.
@@ -919,10 +1009,14 @@ function IdCardStudioPage({ setPage }) {
       try {
         if (!(await idsQrPng(""))) { /* loads the encoder; "" makes no image */ }
         if (!window.qrcode) return;
-        const items = [];
-        tokens.forEach(tok => { const png = idsQrPngWith(window.qrcode, tok); if (png) items.push({ token: tok, qrPng: png }); });
-        for (let i = 0; i < items.length; i += 60) {
-          try { await NGGApi.admin.registration.qrWarm(items.slice(i, i + 60)); } catch (_) { break; }
+        const missing = [];
+        for (let i = 0; i < tokens.length; i += 500) {
+          try { missing.push(...((await NGGApi.admin.registration.qrMissing(tokens.slice(i, i + 500))).missing || [])); } catch (_) { return; }
+        }
+        for (let i = 0; i < missing.length; i += IDS_QR_WARM_CHUNK) {
+          const items = [];
+          missing.slice(i, i + IDS_QR_WARM_CHUNK).forEach(tok => { const png = idsQrPngWith(window.qrcode, tok); if (png) items.push({ token: tok, qrPng: png }); });
+          try { if (items.length) await NGGApi.admin.registration.qrWarm(items); } catch (_) { break; }
         }
       } catch (_) {}
     }, 1500);
@@ -1026,15 +1120,24 @@ function IdCardStudioPage({ setPage }) {
     G, st, settings: st, set, setOrder: o => set({ order: o }), scen, applyScenario, src, setSrc, records, uploadsUI, searchRef,
     recCount: recs.length, upFronts: uploads.filter(u => !u.backOf).length, centres, accent: accentOf, dataState: data.state, reload: load,
     designsUI, setDesign, lanyardUI, hasVolunteers: data.kinds.includes("volunteer"), openDesigner: e => { e.preventDefault(); setPage && setPage("designer"); },
-    slots, skip: st.skip, backs: st.backs, marks: st.marks, proof: st.reason === "proof", nCards: cards.length, pads, stock, gap, fillable: ready.length, fillGap, breakActive,
-    sheet: { idx: sheetIdx, go: setSheetIdx, count: nSheets, face, setFace, overview, setOverview },
+    slots, sections, sheetG, skip: st.skip, backs: st.backs, marks: st.marks, proof: st.reason === "proof", nCards: cards.length, pads, stock, gap, fillable: fillable.length, fillGap, breakActive,
+    sheet: { idx: sheetIdx, go: setSheetIdx, count: nSheets, face, setFace, overview, setOverview, remove: removeSheet, sec: here ? here.sec : null, page: here ? here.page : 0 },
     sel, select: setSel, selCard, moveSel, removeSel,
     resendSel: () => selCard && selCard.rec && resendOne(selCard.rec), resending,
     canResendSel: !!(selCard && selCard.rec && IDS_RESEND[selCard.rec.kind] && selCard.rec.raw && selCard.rec.raw.token),
     canEditPhotoSel: !!(selCard && selCard.rec && IDS_PHOTO_EDIT[selCard.rec.kind]), editPhotoSel: () => selCard && selCard.rec && setEditPhoto(selCard.rec),
     rotateSel: () => selCard && selCard.upload && setU(selCard.upload.uid, { rot: ((selCard.upload.rot || 0) + 90) % 360 }),
     toggleFitSel: () => selCard && selCard.upload && setU(selCard.upload.uid, { fit: selCard.upload.fit === "contain" ? "cover" : "contain" }),
-    dropAt: (e, gi) => { e.preventDefault(); const k = e.dataTransfer.getData("text/plain"); if (k) reorder(k, gi); },
+    /* Dropped on a card: it takes that card's place. Dropped on an empty slot:
+       it goes after the last card of that sheet's size. */
+    dropAt: (e, target, secKey) => {
+      e.preventDefault();
+      const k = e.dataTransfer.getData("text/plain");
+      if (!k) return;
+      if (target) return reorder(k, sorted.findIndex(c => c.key === target));
+      const last = sorted.map((c, j) => (slots.find(x => !x.pad && x.key === c.key) || {}).sec === secKey ? j : -1).filter(j => j >= 0).pop();
+      reorder(k, last == null ? sorted.length : last + 1);
+    },
     renderFace, checks, printBlock, startPrint, startExport, xjob, warm, dpi: st.dpi, improve: { n: improveN, open: () => setImprove({ n: improveN, recs: improvable() }) }, stopExport: () => { xcancel.current = true; },
     pngSel: () => { const sl = selCard && slots.find(x => !x.pad && x.key === selCard.key); if (sl) runExport({ format: "png", dpi: st.dpi >= 300 ? st.dpi : 300, verify: false, reason: "proof", only: sl }); }, printTest: () => runPrint({ test: true }), job, printNextBatch, stopJob: () => { setJob(null); say("Stopped. The sheets already out are logged."); },
   };
@@ -1093,12 +1196,12 @@ function IdCardStudioPage({ setPage }) {
       {improve && <IdsImproveDialog run={improve} onCancel={() => setImprove(null)} onStart={runImprove}/>}
       {improveRes && <IdsImproveResult res={improveRes} onClose={() => setImproveRes(null)}/>}
       {xconfirm && <IdsExportDialog run={xconfirm} onCancel={() => setXconfirm(null)} onStart={runExport}/>}
-      {xresult && <IdsExportResult res={xresult} onClose={() => setXresult(null)}/>}
+      {xresult && <IdsExportResult res={xresult} onClose={() => setXresult(null)} onRetry={xresult.retry} onDrop={xresult.drop}/>}
       {toastNode}
       {farm && (
         <div className="ids-farm" aria-hidden="true">
           <div ref={farmRef}>
-            {farm.jobs.map(j => <div key={j.key} className="ids-x-face" style={{ width: G.cw + "mm", height: G.ch + "mm" }}>{renderFace(j.s, j.face)}</div>)}
+            {farm.jobs.map(j => <div key={j.key} className="ids-x-face" style={{ width: (j.s.cw || G.cw) + "mm", height: (j.s.ch || G.ch) + "mm" }}>{renderFace(j.s, j.face)}</div>)}
           </div>
         </div>
       )}

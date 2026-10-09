@@ -5307,36 +5307,8 @@ function nameFontPx(text, base, maxChars) {
   const n = ((text || "").trim().length) || 1;
   return n > maxChars ? Math.max(base * 0.62, base * maxChars / n) : base;
 }
-// Bake a face-aware fill crop into the Cloudinary URL at the frame's aspect
-// ratio, so the delivered image already IS the frame shape — it can't sit
-// off-frame even in a rasteriser that ignores CSS object-fit. Non-Cloudinary
-// URLs pass through unchanged (CSS object-fit still covers them).
-function cardFacePhoto(url, w, h) {
-  if (!url || url.indexOf("/upload/") === -1) return url;
-  const i = url.indexOf("/upload/");
-  let tail = url.slice(i + 8);                       // "<transform>/v123/id" or "v123/id"
-  const slash = tail.indexOf("/");
-  const seg = slash === -1 ? "" : tail.slice(0, slash);
-  const hasTransform = seg && !/^v\d+$/.test(seg) && /[,_]/.test(seg);
-  const rest = hasTransform ? tail.slice(slash + 1) : tail;
-  let params;
-  if (hasTransform) {
-    // Preserve the admin's edit (gravity, zoom, brighten, sharpen, background) —
-    // only retarget the crop to this frame's aspect so the delivered pixels ARE
-    // the box shape (html2canvas ignores object-fit, so a mismatched aspect
-    // would distort). Drop the stored sizing/crop/aspect; keep everything else.
-    params = seg.split(",").filter(p => p && !/^(w_|h_|c_|ar_|dpr_)/.test(p));
-    if (!params.some(p => /^g_/.test(p))) params.unshift("g_face");
-    params.unshift("c_fill");
-    params.push("w_" + w, "h_" + h);
-    if (!params.some(p => /^f_/.test(p))) params.push("f_auto");
-    if (!params.some(p => /^q_/.test(p))) params.push("q_auto:good");
-  } else {
-    // Raw upload with no transform yet — face-crop to the frame with a light enhance.
-    params = ["c_fill", "g_face", "w_" + w, "h_" + h, "f_auto", "q_auto:good", "e_improve:30"];
-  }
-  return url.slice(0, i + 8) + params.join(",") + "/" + rest;
-}
+// Card photos are framed by CardPhoto (card-photo.jsx): the whole photograph,
+// cropped to head and shoulders only when it holds more.
 
 /* ── Centre colour, made context-aware ───────────────────────────────────────
  * A centre's colour is chosen by an admin in a colour picker, so it can be
@@ -5559,7 +5531,7 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
       <img src={lockup} alt="Programme lockup" style={{ width: px(290), flex: "none" }}/>
       <div style={{ flex: "1 1 0", minHeight: px(6) }}/>
       <CardCentreRing centre={centre} size={photoD} px={px} radius="50%">
-        {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, 900, 900)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
+        {card.photoUrl && <CardPhoto url={card.photoUrl} wPx={900} hPx={900}/>}
       </CardCentreRing>
       <div style={{ width: px(30), height: px(6), borderRadius: px(3), background: "#8FA3C8", margin: px(15) + "px 0 " + px(9) + "px", flex: "none" }}/>
       <div style={{ textAlign: "center", fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(nameFontPx(card.firstName, 42, 12)), lineHeight: 1.04, color: CARD_CRIMSON, textTransform: "uppercase", letterSpacing: px(-1), whiteSpace: "nowrap", flex: "none", maxWidth: "100%" }}>{card.firstName}</div>
@@ -5726,7 +5698,7 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
             frame's own aspect because html2canvas ignores object-fit, so a
             mismatch that looks right on screen distorts in the exported PNG. */}
         <div style={{ width: px(phW), height: px(phH), borderRadius: px(22), overflow: "hidden", background: "#eef0f4", flex: "none" }}>
-          {card.photoUrl && <img src={cardFacePhoto(card.photoUrl, phW * 2, phH * 2)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>}
+          {card.photoUrl && <CardPhoto url={card.photoUrl} wPx={phW * 2} hPx={phH * 2}/>}
         </div>
         <div style={{ flex: "1 1 0", minHeight: px(14) }}/>
         {/* Sentence case, light, grey — the quiet half of the pair. */}

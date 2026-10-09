@@ -178,10 +178,11 @@ function cleanup() {
     chk('…and Undo puts it back', /10 cards ·/.test(await P.innerText('.ids-stat')));
 
     await P.click('.ids-size:has-text("A6 portrait")');
-    chk('cards designed at one size on a sheet of another block the print, with the fix one click away', /designed at 54 × 85.6 mm but the sheet is set to 105 × 148 mm/.test(await P.innerText('.ids-set'))
-      && await P.$eval('.ids-btn--print', b => b.getAttribute('aria-disabled') === 'true'));
-    await P.click('.ids-set .ids-linkbtn:has-text("Use 54 × 85.6 mm")');
-    chk('…which puts the sheet back to the cards’ size', (await P.getAttribute('.ids-size:has-text("CR80 portrait")', 'aria-checked')) === 'true');
+    await P.waitForTimeout(200);
+    chk('the card-size setting is for uploads: record cards keep their own size, and nothing blocks the print',
+      /Sheet 1 of 2/.test(await P.innerText('.ids-pager')) && (await P.$$('.ids-slot.is-card')).length === 9
+      && await P.$eval('.ids-btn--print', b => b.getAttribute('aria-disabled') !== 'true'));
+    await P.click('.ids-size:has-text("CR80 portrait")');
     await P.click('.ids-size:has-text("Custom")');
     await P.fill('#ids-cw', '200'); await P.press('#ids-cw', 'Enter');
     await P.fill('#ids-ch', '280'); await P.press('#ids-ch', 'Enter');

@@ -66,23 +66,27 @@ function idsDomQuiet(node, quiet, max) {
 }
 
 /**
- * The sheet PDF's pages for sheets a…b (1-based): each side's slots at their
- * millimetre positions, with the face each slot carries. `faceOf(slot, side)`
+ * The sheet PDF's pages for sheets a…b (1-based, across the run): each side's
+ * slots at their millimetre positions, on the grid of the section (card size)
+ * that sheet belongs to, with the face each slot carries. `faceOf(slot, side)`
  * returns the cached face. Bleed shows only as far as the gap allows (half the
  * gap, at most 1.5 mm), so a neighbour's art never reaches another card.
  */
-function idsSheetPages({ G, slots, skip, a, b, backs, marks, proof, nSheets, faceOf }) {
+function idsSheetPages({ sections, a, b, backs, marks, proof, nSheets, faceOf }) {
   const pages = [];
-  const bleed = Math.max(0, Math.min(1.5, G.g / 2));
-  const markList = marks ? idsCutMarks(G) : [];
-  const gridBottom = G.oy + G.rows * G.ch + Math.max(0, G.rows - 1) * G.g + (marks ? 5 : 0);
-  const roomForLabel = G.ph - gridBottom >= 7;
   const flip = backs === "long" ? "double-sided, flip on the LONG edge" : backs === "short" ? "double-sided, flip on the SHORT edge" : "";
   for (let p = a - 1; p < b; p++) {
+    const at = idsSheetAt(sections, p);
+    if (!at) continue;
+    const G = at.sec.G;
+    const bleed = Math.max(0, Math.min(1.5, G.g / 2));
+    const markList = marks ? idsCutMarks(G) : [];
+    const gridBottom = G.oy + G.rows * G.ch + Math.max(0, G.rows - 1) * G.g + (marks ? 5 : 0);
+    const roomForLabel = G.ph - gridBottom >= 7;
     (backs !== "off" ? ["front", "back"] : ["front"]).forEach(side => {
       const items = [];
       for (let i = 0; i < G.per; i++) {
-        const s = slots[p * G.per + i - skip];
+        const { s } = idsSlotAt(sections, p, i);
         if (!s || s.pad) continue;
         const pos = idsSlotPos(G, i, side === "back" ? backs : null);
         items.push({ face: faceOf(s, side), x: pos.x, y: pos.y, w: G.cw, h: G.ch, rot: pos.rot === 180,
@@ -95,6 +99,9 @@ function idsSheetPages({ G, slots, skip, a, b, backs, marks, proof, nSheets, fac
   return pages;
 }
 
+/** "sheets 1–2" / "sheet 3", for a section. */
+function idsSheetSpan(sec) { return sec.count > 1 ? "sheets " + (sec.first + 1) + "–" + (sec.first + sec.count) : "sheet " + (sec.first + 1); }
+
 /** The alignment test: every slot outlined and numbered, nothing else. */
 function idsTestPage(G) {
   const test = [];
@@ -102,10 +109,30 @@ function idsTestPage(G) {
   return { items: [], marks: idsCutMarks(G), test, label: "Alignment test · " + idsMmLabel([G.cw, G.ch]) + " · print at Actual size (100%), then measure with a ruler" };
 }
 
+/* Why a face could not be drawn, in words an operator can act on. The
+   reasons come from drawFaces (ids-app.jsx) and CardExport. */
+function idsFaceWhy(e) {
+  const m = String((e && (e.code || e.message)) || e || "");
+  if (/draw_failed/.test(m)) return "the card’s design couldn’t be drawn from its record — open the person’s record and check it.";
+  if (/vendor_stale|renderFaceFast|imageFace|is not a function/.test(m)) return "this browser is holding an old copy of the print tools. Reload the page (Ctrl+Shift+R), then try again.";
+  if (/empty_node/.test(m)) return "the card was drawn with no size. Try again.";
+  if (/encode_failed|allocation|memory|too large/i.test(m)) return "the browser ran out of memory making the image. Print fewer sheets at once, or a lower image quality.";
+  if (/timeout|deadline/i.test(m)) return "drawing took too long — usually a photo that is slow to download. Try again.";
+  if (/tainted|SecurityError|cross-origin/i.test(m)) return "a picture on the card came from a site that doesn’t allow it to be printed.";
+  return m ? "the browser said: " + m.slice(0, 160) + "." : "the browser gave no reason.";
+}
+/** What to say when the print tools themselves won't load. */
+function idsVendorWhy(e, what) {
+  return e && e.code === "vendor_stale"
+    ? "This browser is holding an old copy of the " + what + " tools. Reload the page (Ctrl+Shift+R), then try again."
+    : "Couldn’t load the " + what + " tools. Check your connection and try again.";
+}
+
 /* ── Before printing: the confirmation dialog, §4.1 ─────────────────────────────────────────────────── */
 
 function IdsConfirm({ run, onCancel, onPrint }) {
-  const { nCards, nRecords, nUploads, nSheets, G, backs, skip, designLabel, defaultReason } = run;
+  const { nCards, nRecords, nUploads, nSheets, sections, backs, designLabel, defaultReason } = run;
+  const G = sections[0].G;
   const [mode, setMode] = React.useState("all");          // all | batch | range
   const [batch, setBatch] = React.useState(IDS_BIG_RUN);
   const [from, setFrom] = React.useState(1);
@@ -114,7 +141,7 @@ function IdsConfirm({ run, onCancel, onPrint }) {
   const [reason, setReason] = React.useState(defaultReason);
   const batches = idsBatches(nSheets, batch);
   const [ra, rb] = idsRange(nSheets, from, to);
-  const inRange = idsCardsInRange(run.slots, G.per, skip, ra, rb);
+  const inRange = idsCardsOnSheets(sections, ra, rb).length;
   const double = backs !== "off";
   const cta = mode === "batch" ? "Print sheets " + batches[0][0] + "–" + batches[0][1] : mode === "range" ? "Print sheets " + ra + "–" + rb : "Print " + nCards;
   const go = () => onPrint({ mode, batches, range: [ra, rb], packing, reason });
@@ -127,7 +154,8 @@ function IdsConfirm({ run, onCancel, onPrint }) {
       <dl className="ids-sum">
         <dt>Cards</dt><dd>{[nRecords ? nRecords + " from records" : "", nUploads ? nUploads + " uploaded" : ""].filter(Boolean).join(", ")}</dd>
         <dt>Sheets</dt><dd>{nSheets} × {IDS_PAPERS[G.paper][0]}{double ? ", double-sided (" + nSheets * 2 + " pages)" : ""}</dd>
-        <dt>Card size</dt><dd>{G.cw} × {G.ch} mm, {G.per} per sheet{skip ? ", skipping " + skip + " used" : ""}</dd>
+        <dt>{sections.length > 1 ? "Card sizes" : "Card size"}</dt>
+        <dd>{sections.map(sec => <span key={sec.key} className="ids-sum-line">{idsMmLabel(sec.mm)} · {idsN(sec.n, "card")}, {sec.G.per} per sheet{sections.length > 1 ? " · " + idsSheetSpan(sec) : ""}{sec.skip ? ", skipping " + sec.skip + " used" : ""}</span>)}</dd>
         <dt>Design</dt><dd>{nRecords ? designLabel : "Uploaded images as they are"}</dd>
       </dl>
       {nSheets > IDS_BIG_RUN && <IdsCheck tone="warn" text={nSheets + " sheets is a big run. Printing in batches stops one paper jam from spoiling the lot."}/>}
@@ -151,7 +179,7 @@ function IdsConfirm({ run, onCancel, onPrint }) {
           {IDS_REASONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
         </select>
       </label>
-      <p className="ids-foot-note">Opens your printer’s dialog. Print at 100% (actual size), not “fit to page”.</p>
+      <p className="ids-foot-note">Downloads a PDF of the sheets. Open it and print at 100% (Actual size), not “Fit to page”.</p>
     </IdsDialog>
   );
 }
@@ -187,7 +215,8 @@ const IDS_EXPORT_DPI = [[300, "300 dpi · digital press"], [350, "350 dpi · off
 const IDS_QR_WHY = { unreadable: "no code could be read", wrong_token: "it reads, but not this person’s code", decode_failed: "the image couldn’t be read", canvas_tainted: "a picture blocked the check" };
 
 function IdsExportDialog({ run, onCancel, onStart }) {
-  const { nCards, nRecords, backs, G, designLabel } = run;
+  const { nCards, nRecords, backs, sections, designLabel } = run;
+  const G = sections[0].G, sizes = sections.map(sec => idsMmLabel(sec.mm));
   const [format, setFormat] = React.useState("pdf");
   const [dpi, setDpi] = React.useState(run.dpi || 350);
   const [verify, setVerify] = React.useState(true);
@@ -201,7 +230,7 @@ function IdsExportDialog({ run, onCancel, onStart }) {
       </>}>
       <IdsSeg label="What to make" value={format} onChange={setFormat} options={[["pdf", "Print-ready PDF", "file-pdf"], ["png", "PNG images (.zip)", "file-zip"]]}/>
       <p className="ids-note"><span>{format === "pdf"
-        ? "Cards imposed on " + IDS_PAPERS[G.paper][0] + " at an exact " + G.cw + " × " + G.ch + " mm trim with 3 mm bleed, crop and registration marks, a colour bar and a CMYK (FOGRA39) output intent" + (double ? ", each back sheet after its front, mirrored for a " + backs + "-edge flip." : ", fronts only.")
+        ? "Cards imposed on " + IDS_PAPERS[G.paper][0] + " at an exact " + sizes.join(" and ") + " trim with 3 mm bleed, crop and registration marks, a colour bar and a CMYK (FOGRA39) output intent" + (double ? ", each back sheet after its front, mirrored for a " + backs + "-edge flip." : ", fronts only.") + (sections.length > 1 ? " One PDF per card size." : "")
         : "One PNG per face at the same resolution and 3 mm bleed, named by printed ID, for a print merge or a card printer’s own software."}</span></p>
       <label className="ids-field">
         <span className="ids-field-l">Resolution</span>
@@ -222,21 +251,26 @@ function IdsExportDialog({ run, onCancel, onStart }) {
 }
 
 /** What the export made, and — kept on screen, not in a toast — what it could not. */
-function IdsExportResult({ res, onClose }) {
+function IdsExportResult({ res, onClose, onRetry, onDrop }) {
   const [copied, setCopied] = React.useState(false);
   const names = res.failed.concat(res.qrBad.map(q => q.name));
   const copy = () => { try { navigator.clipboard.writeText(names.join("\n")).then(() => setCopied(true), () => {}); } catch (_) {} };
-  const title = !res.made ? (res.cancelled ? "Stopped before anything was made" : "Nothing could be exported")
+  const title = res.print ? "Nothing was printed" : !res.made ? (res.cancelled ? "Stopped before anything was made" : "Nothing could be exported")
     : res.failed.length || res.qrBad.length ? "Exported, with gaps" : "Exported";
   return (
     <IdsDialog width={520} title={title} onClose={onClose}
       footer={<>
         {names.length > 0 && <button type="button" className="ids-btn" onClick={copy}>{copied ? "Copied" : "Copy names"}</button>}
-        <button type="button" className="ids-btn ids-btn--primary" data-autofocus onClick={onClose}>Done</button>
+        {res.failed.length > 0 && onDrop && <button type="button" className="ids-btn" onClick={onDrop}>Take {res.failed.length === 1 ? "it" : "them"} off the sheet</button>}
+        {res.failed.length > 0 && onRetry && <button type="button" className="ids-btn ids-btn--primary" data-autofocus onClick={onRetry}>Try again</button>}
+        {!(res.failed.length > 0 && onRetry) && <button type="button" className="ids-btn ids-btn--primary" data-autofocus onClick={onClose}>Done</button>}
       </>}>
       {res.made > 0 && <IdsCheck tone="ok" text={idsN(res.made, "card") + (res.total && res.total !== res.made ? " of " + res.total : "") + " in " + res.fileName + (res.runIds ? ". Logged as " + res.runIds + "." : ".")}/>}
       {res.cancelled && res.made > 0 && <IdsCheck tone="warn" text="Stopped early: the file holds only the cards made before you pressed Stop."/>}
-      {res.failed.length > 0 && <IdsCheck tone="bad" text={idsN(res.failed.length, "card") + " couldn’t be drawn and " + (res.failed.length === 1 ? "is" : "are") + " NOT in the file: " + res.failed.slice(0, 4).join(", ") + (res.failed.length > 4 ? "…" : "") + ". Export again for " + (res.failed.length === 1 ? "it." : "them.")}/>}
+      {res.failed.length > 0 && <IdsCheck tone="bad" text={res.print
+        ? idsN(res.failed.length, "card") + " couldn’t be drawn, so no PDF was made and nothing was logged."
+        : idsN(res.failed.length, "card") + " couldn’t be drawn and " + (res.failed.length === 1 ? "is" : "are") + " NOT in the file: " + res.failed.slice(0, 4).join(", ") + (res.failed.length > 4 ? "…" : "") + "."}/>}
+      {(res.why || []).length > 0 && <IdsCheck tone="info" text={"Why: " + res.why.join(" ")}/>}
       {res.qrBad.length > 0 && <IdsCheck tone="bad" text={idsN(res.qrBad.length, "card") + " ARE in the file but their QR didn’t read back from the exported image, so they may not scan at the gate. Try a higher resolution."}/>}
       {res.verify && !res.qrBad.length && res.made > 0 && !res.qrSkipped && <IdsCheck tone="ok" text="Every QR code read back from the exported image."/>}
       {res.qrSkipped > 0 && <IdsCheck tone="info" text="The QR check was skipped: the reader couldn’t be loaded. The cards were made; they just weren’t checked."/>}

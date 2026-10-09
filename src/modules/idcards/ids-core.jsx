@@ -159,6 +159,68 @@ function idsLayout(cards, per, skip, groupOf) {
   return { slots, pads };
 }
 
+/**
+ * The run when its cards come in more than one size: each size prints on its
+ * OWN sheets, laid out on its own grid, one after another — never one size
+ * squeezed into another's slots, and never a refusal to print both. Sizes
+ * within `tol` mm are one size (CR80's 53.98 × 85.6 and the member card's
+ * 54 × 85 are the same card). Sections come in the order their first card
+ * does; the used slots on sheet 1 belong to the first section only.
+ *
+ * Returns { sections: [{ key, mm, G, slots, pads, skip, first, count, n }], nSheets },
+ * where `first` is the section's first sheet (0-based) across the whole run.
+ */
+function idsSections(cards, sizeOf, base, skip, groupOf, tol) {
+  const t = tol == null ? 0.6 : tol, groups = [];
+  cards.forEach(c => {
+    const mm = sizeOf(c);
+    let g = groups.find(x => Math.abs(x.mm[0] - mm[0]) <= t && Math.abs(x.mm[1] - mm[1]) <= t);
+    if (!g) { g = { mm: [mm[0], mm[1]], cards: [] }; groups.push(g); }
+    g.cards.push(c);
+  });
+  const sections = [];
+  let first = 0;
+  groups.forEach((g, n) => {
+    const G = idsGrid(Object.assign({}, base, { size: "custom", customW: g.mm[0], customH: g.mm[1] }));
+    const sk = n === 0 ? Math.max(0, Math.min(Math.floor(skip) || 0, G.per - 1)) : 0;
+    const { slots, pads } = idsLayout(g.cards, G.per, sk, groupOf);
+    const count = idsSheetCount(G.per, sk, slots.length);
+    sections.push({ key: (+g.mm[0].toFixed(2)) + "x" + (+g.mm[1].toFixed(2)), mm: g.mm, G, slots, pads, skip: sk, first, count, n: g.cards.length });
+    first += count;
+  });
+  return { sections, nSheets: first };
+}
+
+/** Sheet p (0-based, across the run): { sec, page } — its section and its page within it — or null. */
+function idsSheetAt(sections, p) {
+  for (const sec of sections) if (p >= sec.first && p < sec.first + sec.count) return { sec, page: p - sec.first };
+  return null;
+}
+
+/** What slot i of sheet p holds: { s, used } — a card, a pad, nothing, or a used slot on the first sheet. */
+function idsSlotAt(sections, p, i) {
+  const at = idsSheetAt(sections, p);
+  if (!at) return { s: null, used: false };
+  const { sec, page } = at;
+  if (page === 0 && i < sec.skip) return { s: null, used: true };
+  const gi = page * sec.G.per + i - sec.skip;
+  return { s: gi >= 0 ? sec.slots[gi] || null : null, used: false };
+}
+
+/** Every card on sheets a…b (1-based, inclusive): [{ s, sheet, slotN, G }]. */
+function idsCardsOnSheets(sections, a, b) {
+  const out = [];
+  for (let p = a - 1; p < b; p++) {
+    const at = idsSheetAt(sections, p);
+    if (!at) continue;
+    for (let i = 0; i < at.sec.G.per; i++) {
+      const { s } = idsSlotAt(sections, p, i);
+      if (s && !s.pad) out.push({ s, sheet: p + 1, slotN: i + 1, G: at.sec.G });
+    }
+  }
+  return out;
+}
+
 /** Sort the queue for an order key. "mine" keeps the order it was built in. */
 function idsSort(cards, order, keyOf) {
   if (order === "mine") return cards.slice();
