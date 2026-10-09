@@ -282,6 +282,7 @@ function IdsSheetCol({ M }) {
             <button type="button" className="ids-iconbtn" aria-label="Move earlier" onClick={() => M.moveSel(-1)}><IdsIcon name="arrow-left"/></button>
             <button type="button" className="ids-iconbtn" aria-label="Move later" onClick={() => M.moveSel(1)}><IdsIcon name="arrow-right"/></button>
             {M.canEditPhotoSel && <button type="button" className="ids-btn ids-btn--sm" onClick={M.editPhotoSel}><IdsIcon name="camera"/>Edit photo</button>}
+            {M.canFrameSel && <button type="button" className="ids-btn ids-btn--sm" onClick={M.frameSel}><IdsIcon name="crop"/>Frame photo</button>}
             {M.canResendSel && <button type="button" className="ids-btn ids-btn--sm" disabled={!!M.resending} onClick={M.resendSel}><IdsIcon name="paper-plane-tilt"/>{M.resending === M.selCard.key ? "Sending…" : "Resend ID"}</button>}
             {M.selCard.upload && <>
               <button type="button" className="ids-btn ids-btn--sm" onClick={M.rotateSel}><IdsIcon name="arrow-clockwise"/>Rotate 90°</button>
@@ -628,6 +629,114 @@ function IdsImproveResult({ res, onClose }) {
       {res.unchanged > 0 && <IdsCheck tone="info" text={idsN(res.unchanged, "photo") + " already looked like this, so " + (res.unchanged === 1 ? "it was" : "they were") + " left as " + (res.unchanged === 1 ? "it was." : "they were.")}/>}
       {res.failed.length > 0 && <IdsCheck tone="bad" text={idsN(res.failed.length, "photo") + " couldn’t be improved:"}/>}
       {res.failed.length > 0 && <ul className="ids-people" tabIndex={0} aria-label="Photos not improved">{res.failed.map((f, i) => <li key={i}>{f.name} · {IDS_IMPROVE_WHY[f.error] || f.error}</li>)}</ul>}
+    </IdsDialog>
+  );
+}
+
+/* ── Frame one photo by hand ──────────────────────────────────────────────
+   Gemini's measurement frames every card; this is where a person corrects it
+   for one photograph — zoom, move, or show the whole photo — and the choice
+   applies on every card that photo is on (photo_framing.adjustJson). Three
+   previews at three card shapes, so a framing that works on one is seen on
+   the others. Every control is a button, and the arrow and +/− keys work
+   too: nothing needs a drag. */
+const IDS_FRAME_STEP = { zoom: 0.08, move: 0.03 };
+const IDS_FRAME_SHAPES = [["Member card", 0.82], ["Summer School", 404 / 318], ["Round", 1]];
+function IdsPhotoFrame({ rec, say, onClose, onSaved }) {
+  const url = nggPhotoSrc(rec.photoUrl);
+  const start = React.useRef(undefined);
+  const [adj, setAdj] = React.useState(null);
+  const [busy, setBusy] = React.useState("");
+  const [note, setNote] = React.useState("");
+  const base = { zoom: 1, dx: 0, dy: 0, whole: false };
+  React.useEffect(() => {
+    let live = true;
+    cphHintGet(url).then(h => { if (!live) return; start.current = h || null; setAdj(Object.assign({}, base, h && h.adjust)); });
+    return () => { live = false; };
+  }, [url]); // eslint-disable-line
+  // Live preview: the working choice goes into the shared cache, and back out on cancel.
+  React.useEffect(() => { if (adj && start.current !== undefined) cphHintsPut({ [url]: { geom: start.current && start.current.geom, adjust: adj } }); }, [adj]); // eslint-disable-line
+  const cancel = () => { if (start.current !== undefined) cphHintsPut({ [url]: start.current }); onClose(); };
+  const geom = start.current && start.current.geom;
+  const measured = !!(geom && geom.subject);
+  const step = (k, d) => setAdj(a => {
+    const n = Object.assign({}, a, { whole: false });
+    if (k === "zoom") n.zoom = Math.round(Math.max(0.6, Math.min(2, n.zoom + d)) * 100) / 100;
+    else n[k] = Math.round(Math.max(-0.5, Math.min(0.5, n[k] + d)) * 100) / 100;
+    return n;
+  });
+  const keys = e => {
+    const m = { ArrowLeft: ["dx", -IDS_FRAME_STEP.move], ArrowRight: ["dx", IDS_FRAME_STEP.move], ArrowUp: ["dy", -IDS_FRAME_STEP.move], ArrowDown: ["dy", IDS_FRAME_STEP.move],
+      "+": ["zoom", IDS_FRAME_STEP.zoom], "=": ["zoom", IDS_FRAME_STEP.zoom], "-": ["zoom", -IDS_FRAME_STEP.zoom] }[e.key];
+    if (m && !(e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName))) { e.preventDefault(); step(m[0], m[1]); }
+  };
+  const save = async (reset) => {
+    setBusy(reset ? "reset" : "save");
+    try {
+      const r = await NGGApi.admin.photoFrame.adjust(url, reset ? null : adj, !!reset);
+      start.current = { geom: r.geom || null, adjust: r.adjust || null };
+      cphHintsPut({ [url]: start.current });
+      onSaved && onSaved();
+      say(reset ? rec.name + "’s photo is framed automatically again" : rec.name + "’s photo framing is saved, on every card it’s on");
+      onClose();
+    } catch (e) { setNote(idsErrText(e, "Couldn’t save the framing.")); setBusy(""); }
+  };
+  const remeasure = async () => {
+    setBusy("ai"); setNote("");
+    try {
+      const r = await NGGApi.admin.photoFrame.frame([url], true);
+      const v = (r.framing || {})[url] || {};
+      start.current = { geom: v.geom || null, adjust: (start.current && start.current.adjust) || null };
+      setAdj(a => Object.assign({}, a));
+      setNote(v.geom && v.geom.subject ? "Measured again: " + (v.geom.kind === "headshot" ? "a headshot" : v.geom.kind === "half" ? "a half-length photo" : v.geom.kind === "full" ? "a full-length photo" : v.geom.kind) + (v.geom.people > 1 ? ", " + v.geom.people + " people in it — framed on the main one" : "") + "."
+        : v.status === "failed" ? "Gemini couldn’t read this photo. Frame it by hand, or replace the photo." : "No single clear face was found. Frame it by hand, or replace the photo.");
+    } catch (e) { setNote(e && e.code === "ai_disabled" ? "Add a Gemini key in Control Room → Settings → Photo framing first." : idsErrText(e, "Couldn’t measure it.")); }
+    setBusy("");
+  };
+  const footer = (
+    <>
+      <button type="button" className="ids-btn" onClick={() => save(true)} disabled={!!busy}>Automatic again</button>
+      <span className="ids-grow"/>
+      <button type="button" className="ids-btn" onClick={cancel} disabled={busy === "save"}>Cancel</button>
+      <button type="button" className="ids-btn ids-btn--primary" onClick={() => save(false)} disabled={!!busy || !adj}>{busy === "save" ? "Saving…" : "Save framing"}</button>
+    </>
+  );
+  return (
+    <IdsDialog title={"Frame " + rec.name + "’s photo"} onClose={cancel} width={640} footer={footer} className="ids-frame"
+      sub={measured ? "Framed from Gemini’s measurement of the head and face. Adjust it here; it applies on every card this photo is on." : "This photo hasn’t been measured by Gemini yet, so it is framed by its face landmarks. Measure it, or adjust it by hand."}>
+      <div className="ids-frame-body" onKeyDown={keys}>
+        <div className="ids-frame-previews">
+          {IDS_FRAME_SHAPES.map(([label, ar]) => (
+            <figure key={label} className="ids-frame-fig">
+              <div className={"ids-frame-box" + (ar === 1 ? " is-round" : "")} style={{ aspectRatio: String(ar) }}>
+                {adj && <CardPhoto url={rec.photoUrl} wPx={Math.round(600 * Math.min(1, ar))} hPx={Math.round(600 * Math.min(1, ar) / ar)}/>}
+              </div>
+              <figcaption>{label}</figcaption>
+            </figure>
+          ))}
+        </div>
+        <div className="ids-frame-ctl" role="group" aria-label="Framing">
+          <div className="ids-frame-row">
+            <span className="ids-frame-l">Size</span>
+            <button type="button" className="ids-btn ids-btn--sm" aria-label="Zoom out" onClick={() => step("zoom", -IDS_FRAME_STEP.zoom)} disabled={!adj || adj.zoom <= 0.6}><IdsIcon name="minus"/></button>
+            <span className="ids-frame-v" aria-live="polite">{adj ? Math.round(adj.zoom * 100) + "%" : "—"}</span>
+            <button type="button" className="ids-btn ids-btn--sm" aria-label="Zoom in" onClick={() => step("zoom", IDS_FRAME_STEP.zoom)} disabled={!adj || adj.zoom >= 2}><IdsIcon name="plus"/></button>
+          </div>
+          <div className="ids-frame-row">
+            <span className="ids-frame-l">Move</span>
+            <button type="button" className="ids-btn ids-btn--sm" aria-label="Move left" onClick={() => step("dx", -IDS_FRAME_STEP.move)} disabled={!adj}><IdsIcon name="arrow-left"/></button>
+            <button type="button" className="ids-btn ids-btn--sm" aria-label="Move right" onClick={() => step("dx", IDS_FRAME_STEP.move)} disabled={!adj}><IdsIcon name="arrow-right"/></button>
+            <button type="button" className="ids-btn ids-btn--sm" aria-label="Move up" onClick={() => step("dy", -IDS_FRAME_STEP.move)} disabled={!adj}><IdsIcon name="arrow-up"/></button>
+            <button type="button" className="ids-btn ids-btn--sm" aria-label="Move down" onClick={() => step("dy", IDS_FRAME_STEP.move)} disabled={!adj}><IdsIcon name="arrow-down"/></button>
+          </div>
+          <div className="ids-frame-row">
+            <button type="button" className={"ids-btn ids-btn--sm" + (adj && adj.whole ? " is-on" : "")} aria-pressed={!!(adj && adj.whole)} onClick={() => setAdj(a => Object.assign({}, a, { whole: !a.whole }))} disabled={!adj}>Show the whole photo</button>
+            <button type="button" className="ids-btn ids-btn--sm" onClick={remeasure} disabled={!!busy}>{busy === "ai" ? "Measuring…" : measured ? "Measure again with Gemini" : "Measure with Gemini"}</button>
+          </div>
+          <p className="ids-frame-hint">Arrow keys move it, + and − change the size. The head is never cut and the photo is never stretched.</p>
+          {note && <p className="ids-frame-note" role="status">{note}</p>}
+        </div>
+      </div>
     </IdsDialog>
   );
 }

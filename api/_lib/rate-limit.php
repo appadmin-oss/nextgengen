@@ -118,6 +118,7 @@ function rate_limit_default(string $op): ?array {
          * here is that the id is an unguessable HMAC of the bytes — this is a
          * runaway ceiling, nothing finer. */
         'photo'              => ['max' => 600, 'window' => 60],
+        'photo.framing'      => ['max' => 120, 'window' => 60],
         'qr'                 => ['max' => 300, 'window' => 60],
         // Starting a round writes a row and generates a question set. The limit
         // is keyed on IP, and a whole centre shares one connection — a class of

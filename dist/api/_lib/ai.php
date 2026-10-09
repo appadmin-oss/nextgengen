@@ -85,6 +85,8 @@ function ai_profile_candidates(string $profile = 'default'): array {
             ];
         }
     };
+    // Keys entered on screen (Settings → Photo framing) come first for their profiles.
+    if (function_exists('ai_ui_candidates')) foreach (ai_ui_candidates($profile) as $p) $push($p);
     if ($profile !== 'default') {
         $prof = $c['profiles'][$profile] ?? null;
         if (is_array($prof)) { $push($prof); $push($prof['fallback'] ?? null); }
@@ -292,11 +294,17 @@ function ai_classify(string $instructions, string $input, int $maxTokens = 300, 
 /** Fetch an https image and inline it as base64 for a vision request. */
 function ai_fetch_image(string $url): array {
     if (!preg_match('#^https://#', $url)) return ['ok' => false, 'error' => 'bad_url'];
+    /* Only where our photographs live: Cloudinary, and this site. Any other
+       host — and any redirect — would let a submitted URL make this server
+       fetch from inside its own network. */
+    $host = strtolower((string)parse_url($url, PHP_URL_HOST));
+    $own = strtolower((string)parse_url((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), PHP_URL_HOST));
+    if ($host !== 'res.cloudinary.com' && ($own === '' || $host !== $own)) return ['ok' => false, 'error' => 'bad_host'];
     if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'no_curl'];
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_CONNECTTIMEOUT => 8,
-        CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 3,
+        CURLOPT_FOLLOWLOCATION => false,
         CURLOPT_PROTOCOLS => defined('CURLPROTO_HTTPS') ? CURLPROTO_HTTPS : 2,
     ]);
     $out = curl_exec($ch);
@@ -381,6 +389,7 @@ const AI_PROFILE_USES = [
     'coach'             => ['The Anchor Journal coaching replies.', AI_RULES_FALLBACK],
     'analysis'          => ['Narrative summaries on the analytics boards.', AI_RULES_FALLBACK],
     'photo'             => ['Checks uploaded headshots are usable.', AI_RULES_FALLBACK],
+    'framing'           => ['Measures each headshot (head, face, eyes, shoulders) so every card frames it as an accurate headshot.', 'Cards frame photos from Cloudinary’s face landmarks, or show the whole photo.'],
     'marking'           => ['Marks open curriculum answers (written, essay, reflection, project, code) — capable models only; otherwise an instructor marks.', 'Left for the instructor to mark.'],
     // The Analyst (Level 7). Listed so an operator seeing "the analyst is
     // unavailable" on the board can tell here whether a key is missing or a

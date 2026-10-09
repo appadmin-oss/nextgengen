@@ -173,6 +173,102 @@ async function cardPhotosSettled() {
   while (_cphWait.size) await Promise.all(Array.from(_cphWait.values()));
 }
 
+/* ── Framing from Gemini's measurement ────────────────────────────────────
+
+   domain/photo-framing.php asks a vision model, once per photograph, for the
+   head (crown of the hair to the chin), the face, the eyes and the shoulders,
+   as fractions of the image. The frame for any box is built from that here,
+   to the conventions of an ID headshot: the head fills a fixed share of the
+   height, with a set margin above the hair, centred between the eyes. The
+   frame never cuts through the head and never leaves the picture; when the
+   photo is too tight for the ideal frame, the frame shrinks (the head gets a
+   little larger) rather than padding or cropping hair. A person's adjustment
+   (zoom, move) is applied on top, within the same limits. */
+const CPH_AI_HEAD = 0.56;   // the head's share of the frame height
+const CPH_AI_TOP = 0.11;    // the margin above the crown, as a share of the frame height
+
+function cphFrameAi(g, W, H, aspect, adj) {
+  if (!g || !g.subject || !g.head || !(W > 0) || !(H > 0) || !(aspect > 0)) return null;
+  const a = adj || {};
+  const zoom = Math.max(0.6, Math.min(2, Number(a.zoom) || 1));
+  const hx0 = g.head.x0 * W, hx1 = g.head.x1 * W, hy0 = g.head.y0 * H, hy1 = g.head.y1 * H;
+  const headW = hx1 - hx0, headH = hy1 - hy0;
+  if (!(headW > 0) || !(headH > 0)) return null;
+  let fh = headH / (CPH_AI_HEAD * zoom);
+  let fw = fh * aspect;
+  // Air either side of the head, and never narrower or shorter than the head itself.
+  const minW = Math.max(headW * 1.05, headW * 1.45 / zoom), minH = headH * 1.1;
+  if (fw < minW) { fw = minW; fh = fw / aspect; }
+  if (fh < minH) { fh = minH; fw = fh * aspect; }
+  // Inside the picture: a frame too big for it shrinks, keeping its shape.
+  const s = Math.min(1, W / fw, H / fh);
+  fw *= s; fh *= s;
+  const cx = (g.eyes && g.eyes.length === 2 ? (g.eyes[0].x + g.eyes[1].x) / 2 * W : (hx0 + hx1) / 2) + (Number(a.dx) || 0) * fw;
+  let x = cx - fw / 2;
+  let y = hy0 - CPH_AI_TOP * fh + (Number(a.dy) || 0) * fh;
+  // Keep the whole head in when the frame can hold it…
+  if (fw >= headW) x = Math.min(hx0, Math.max(hx1 - fw, x));
+  if (fh >= headH) y = Math.min(hy0, Math.max(hy1 - fh, y));
+  // …and the frame inside the picture.
+  x = Math.min(Math.max(0, x), W - fw);
+  y = Math.min(Math.max(0, y), H - fh);
+  return { x: Math.round(x), y: Math.round(y), w: Math.round(fw), h: Math.round(fh) };
+}
+
+/* The stored measurements, fetched in batches for whatever is on screen and
+   cached for the visit. A page that changes them (the studio framing a
+   batch, a person adjusting one) seeds the cache and every card showing that
+   photograph redraws. */
+const _cphHint = new Map();
+const _cphHintSubs = new Set();
+let _cphHintQueue = [];
+let _cphHintTimer = null;
+function cphHintsNotify() { _cphHintSubs.forEach(f => { try { f(); } catch (_) {} }); }
+function cphHintsPut(map) {
+  Object.keys(map || {}).forEach(u => _cphHint.set(u, map[u] && (map[u].geom || map[u].adjust) ? { geom: map[u].geom || null, adjust: map[u].adjust || null } : null));
+  cphHintsNotify();
+}
+function cphHintGet(url) {
+  if (!url) return Promise.resolve(null);
+  if (_cphHint.has(url)) return Promise.resolve(_cphHint.get(url));
+  const key = "h|" + url;
+  if (_cphWait.has(key)) return _cphWait.get(key);
+  const p = new Promise(res => {
+    _cphHintQueue.push({ url, res });
+    if (!_cphHintTimer) _cphHintTimer = setTimeout(() => {
+      const q = _cphHintQueue; _cphHintQueue = []; _cphHintTimer = null;
+      const urls = Array.from(new Set(q.map(x => x.url)));
+      const api = typeof NGGApi !== "undefined" && NGGApi.public && NGGApi.public.photoFraming;
+      const chunks = []; for (let i = 0; i < urls.length; i += 60) chunks.push(urls.slice(i, i + 60));
+      Promise.all(chunks.map(c => api ? api(c).then(r => (r && r.framing) || {}).catch(() => ({})) : Promise.resolve({})))
+        .then(rs => {
+          const all = Object.assign({}, ...rs);
+          urls.forEach(u => { const v = all[u]; _cphHint.set(u, v && (v.geom || v.adjust) ? { geom: v.geom || null, adjust: v.adjust || null } : null); });
+          q.forEach(x => x.res(_cphHint.get(x.url)));
+        });
+    }, 25);
+  }).then(v => { _cphWait.delete(key); return v; });
+  _cphWait.set(key, p);
+  return p;
+}
+/** What a cached drawing of this photo depends on: its measurement and any adjustment. */
+function cphHintSig(url) {
+  const u = typeof nggPhotoSrc === "function" ? nggPhotoSrc(url) : String(url || "");
+  return u && _cphHint.has(u) ? JSON.stringify(_cphHint.get(u)) : "";
+}
+function useCphHint(url) {
+  const [v, setV] = React.useState(() => (url && _cphHint.has(url) ? { hint: _cphHint.get(url) } : null));
+  React.useEffect(() => {
+    if (!url) return undefined;
+    let live = true;
+    const read = () => { if (live && _cphHint.has(url)) setV({ hint: _cphHint.get(url) }); };
+    _cphHintSubs.add(read);
+    if (_cphHint.has(url)) read(); else cphHintGet(url).then(read);
+    return () => { live = false; _cphHintSubs.delete(read); };
+  }, [url]);
+  return v;
+}
+
 /* ── Placement: the picture is never stretched ───────────────────────────
 
    CSS object-fit is not used to fit a photograph. html2canvas ignores it and
@@ -289,17 +385,26 @@ function useCardPhoto(url, wPx, hPx) {
     return () => { live = false; };
     // eslint-disable-next-line
   }, [key]);
-  const crop = parts && info && !info.failed ? cphFrame(info.face, info.w, info.h, wPx / hPx) : null;
+  const hv = useCphHint(src0);
+  const hint = hv && hv.hint;
+  const adj = hint && hint.adjust;
+  const aspect = wPx / hPx;
+  /* The order of trust: a person's choice, then Gemini's measurement, then
+     Cloudinary's landmarks, then the whole photo. */
+  const crop = !parts || !info || info.failed || (adj && adj.whole) ? null
+    : (cphFrameAi(hint && hint.geom, info.w, info.h, aspect, adj) || cphFrame(info.face, info.w, info.h, aspect));
   const src = !src0 ? "" : !parts ? src0 : info ? cphCardUrl(parts, wPx, hPx, crop) : "";
   // The delivered picture's real size; for a photo no cloud framed, the face too.
   const meas = useCphMeasure(src, !!src && !parts);
   if (!src0) return { src: "", mode: "none" };
+  if (!hv) return { src: "", mode: "wait" };
   if (parts && !info) return { src: "", mode: "wait" };
   if (!meas) return { src: "", mode: "wait" };
   if (meas.failed) return { src: "", mode: "none" };
   if (parts) return { src, mode: "framed", cropped: !!crop, w: meas.w, h: meas.h, region: null };
   // Any other host: framed here, by the browser's own face detector when it has one.
-  const region = meas.face ? cphFrame(meas.face, meas.w, meas.h, wPx / hPx) : null;
+  const region = adj && adj.whole ? null
+    : (cphFrameAi(hint && hint.geom, meas.w, meas.h, aspect, adj) || (meas.face ? cphFrame(meas.face, meas.w, meas.h, aspect) : null));
   return { src, mode: "plain", cropped: !!region, w: meas.w, h: meas.h, region };
 }
 

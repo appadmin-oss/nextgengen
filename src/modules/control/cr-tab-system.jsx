@@ -592,17 +592,94 @@ async function crSyAiProbe(ctx) {
   } catch (e) { ctx.toast(crErr(e, "Couldn’t test the keys."), null, true); }
 }
 
+/* ══ Photo framing: two Gemini keys, entered here ═══════════════════════════
+   The first key measures every headshot (head, face, eyes, shoulders) so each
+   card frames it as an accurate headshot at its own shape; the second checks
+   photos and backs the first up. Keys are sealed on the server and never come
+   back to the browser — this shows only that one is set and how it ends. */
+function crSyKeysForm(ctx, k) {
+  ctx.form({
+    title: "Gemini keys for photos",
+    intro: "From Google AI Studio (aistudio.google.com → Get API key). Leave a field blank to keep the key already saved. Keys are encrypted on the server and never shown again.",
+    submit: "Save keys",
+    values: { framingKey: "", secondKey: "", model: (k && k.model) || "", clearFraming: false, clearSecond: false },
+    fields: [
+      { id: "framingKey", l: "Key 1 — headshot framing", type: "password", ac: "new-password", max: 80, ph: k && k.framing.set ? "Saved · ends " + k.framing.ending : "AIza…",
+        help: "Measures each photo so the card shows an accurate head-and-shoulders, whatever shape the photo was." },
+      { id: "secondKey", l: "Key 2 — photo checks, and backup for framing", type: "password", ac: "new-password", max: 80, ph: k && k.second.set ? "Saved · ends " + k.second.ending : "AIza…" },
+      { id: "model", l: "Model", max: 60, ph: (k && k.defaultModel) || "gemini-2.5-flash", help: "Leave blank for " + ((k && k.defaultModel) || "gemini-2.5-flash") + ", which measures well and quickly." },
+      k && k.framing.set ? { id: "clearFraming", l: "Remove key 1", type: "switch" } : null,
+      k && k.second.set ? { id: "clearSecond", l: "Remove key 2", type: "switch" } : null,
+    ].filter(Boolean),
+    onSubmit: async v => {
+      try { return await NGGApi.admin.summer.aiKeysSet({ framingKey: v.framingKey.trim(), secondKey: v.secondKey.trim(), model: v.model.trim(), clearFraming: !!v.clearFraming, clearSecond: !!v.clearSecond }); }
+      catch (e) { if (e.code === "bad_key") return { fieldErrors: { [((e.data && e.data.field) || "framing") + "Key"]: crErr(e, "") } }; if (e.code === "bad_model") return { fieldErrors: { model: crErr(e, "") } }; throw e; }
+    },
+    done: () => { ctx.reload(); return "Saved. Use “Test” to check Google accepts them."; },
+  });
+}
+async function crSyKeysTest(ctx) {
+  ctx.toast("Sending one small request with each key…");
+  try {
+    const r = await NGGApi.admin.summer.aiKeysTest();
+    const say = (n, x) => n + ": " + (x.ok ? "works (" + crNum(x.ms) + " ms)" : x.error === "not_set" ? "not set" : "refused — " + x.error);
+    ctx.toast(say("Key 1", r.results.framing) + " · " + say("Key 2", r.results.second), null, !(r.results.framing.ok || r.results.second.ok));
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t test the keys."), null, true); }
+}
+function CrSyFraming({ ctx, k }) {
+  const [run, setRun] = React.useState(null);
+  const stop = React.useRef(false);
+  React.useEffect(() => () => { stop.current = true; }, []);
+  if (!k) return null;
+  const on = k.framing.set || k.second.set;
+  const frameAll = async () => {
+    stop.current = false;
+    let done = 0, failed = 0, left = k.backlog;
+    setRun({ done, failed, left });
+    try {
+      while (!stop.current) {
+        const r = await NGGApi.admin.photoFrame.backlog();
+        done += r.done; failed += r.failed; left = r.remaining;
+        setRun({ done, failed, left });
+        if (!r.remaining || !r.done) break;
+      }
+      ctx.toast(crPlural(done, "photo") + " measured" + (failed ? ", " + failed + " couldn’t be read" : "") + ".", null, failed > 0);
+    } catch (e) { ctx.toast(crErr(e, "Framing stopped."), null, true); }
+    setRun(null); ctx.reload();
+  };
+  return (
+    <div className="cr-box cr-sy-frame">
+      <div className="cr-sy-frame-keys">
+        <span><b>Key 1 · framing</b> {k.framing.set ? "set · ends " + k.framing.ending : "not set"}{k.framing.updatedBy ? " · " + k.framing.updatedBy : ""}</span>
+        <span><b>Key 2 · checks &amp; backup</b> {k.second.set ? "set · ends " + k.second.ending : "not set"}</span>
+        <span><b>Model</b> {k.model}</span>
+      </div>
+      <p className="cr-hint" role="status" aria-live="polite">
+        {run ? "Measuring… " + crNum(run.done) + " done" + (run.failed ? ", " + run.failed + " couldn’t be read" : "") + ", " + crNum(run.left) + " to go."
+          : crNum(k.framed) + " photos measured · " + crNum(k.backlog) + " on cards not measured yet." + (on ? "" : " Add a key to start.")}
+      </p>
+      <div className="cr-sy-frame-acts">
+        <button type="button" className="cr-btn is-sm is-primary" onClick={() => crSyKeysForm(ctx, k)}>{on ? "Change keys" : "Enter keys"}</button>
+        <button type="button" className="cr-btn is-sm" disabled={!on || !!run} onClick={() => crSyKeysTest(ctx)}>Test</button>
+        {run ? <button type="button" className="cr-btn is-sm" onClick={() => { stop.current = true; }}>Stop</button>
+          : <button type="button" className="cr-btn is-sm" disabled={!on || !k.backlog} title={!on ? "Add a key first." : !k.backlog ? "Every photo on a card is measured." : ""} onClick={frameAll}>Measure existing photos</button>}
+      </div>
+    </div>
+  );
+}
+
 Object.assign(CR_TAB_DEFS, {
   settings: {
     skeleton: ["table", "table"],
     load: async () => {
-      const [st, sess, promo, ai] = await Promise.all([
+      const [st, sess, promo, ai, keys] = await Promise.all([
         NGGApi.admin.settings.get(),
         NGGApi.admin.sessions.list(new Date().getFullYear()).catch(() => ({ sessions: [] })),
         NGGApi.admin.promotions.get().catch(e => ({ promoErr: e })),
         NGGApi.admin.summer.aiStatus(false).catch(e => ({ aiErr: e })),
+        NGGApi.admin.summer.aiKeys().catch(() => null),
       ]);
-      const d = { settings: st.settings || {}, sessions: sess.sessions || [], promo: promo.promo || null, promoErr: promo.promoErr || null, ai };
+      const d = { settings: st.settings || {}, sessions: sess.sessions || [], promo: promo.promo || null, promoErr: promo.promoErr || null, ai, keys };
       d.formMain = crSyGenForm(d);
       d.formPromo = crSyPromoForm(d);
       return d;
@@ -623,7 +700,9 @@ Object.assign(CR_TAB_DEFS, {
         ai.aiErr ? { type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t read the AI status. " + crErr(ai.aiErr, ""), act: { l: "Try again", run: () => ctx.reload() } }
           : { type: "note", span: 6, icon: "sparkle", tone: ai.anyEnabled ? "ok" : "warn",
             text: ai.anyEnabled ? "AI is on. The table shows which provider answers each feature." : "AI is off — everything still works.",
-            sub: ai.anyEnabled ? "Use “Test the AI keys” to send one real request per profile: a key that is set but rejected looks exactly like a working one until you do." : "No provider key is configured, so every feature below runs on its built-in rules. Nothing is broken; it just isn’t intelligent. Add a Groq or Gemini key in api/config.php to switch it on." },
+            sub: ai.anyEnabled ? "Use “Test the AI keys” to send one real request per profile: a key that is set but rejected looks exactly like a working one until you do." : "No provider key is configured, so every feature below runs on its built-in rules. Nothing is broken; it just isn’t intelligent. Add a Groq or Gemini key in api/config.php to switch it on — or the two Gemini keys under Photo framing below, which also check photos." },
+        d.keys ? { type: "custom", span: 6, title: "Photo framing (Gemini)", sub: "Two keys: one measures every headshot so cards frame it accurately at their own shape, the other checks photos and backs it up. Existing photos are measured with “Measure existing photos”; new ones when their cards are printed.",
+          render: () => <CrSyFraming ctx={ctx} k={d.keys}/> } : null,
         ai.aiErr ? null : { type: "table", span: 6, title: "AI features", nosel: true,
           cols: [{ l: "Feature", wrap: true }, { l: "Status", wrap: true }, "Provider", "Test"],
           rows: rows.map(r => ({ key: r.profile, cells: [

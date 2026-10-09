@@ -7888,6 +7888,24 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-dialog-body { padding: 16px 22px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
 .ids-dialog-foot { padding: 14px 22px; border-top: 1px solid var(--ids-line); display: flex; justify-content: flex-end; gap: 8px; }
 .ids-dialog-foot .ids-btn { height: 40px; padding: 0 16px; }
+/* Frame one photo by hand (IdsPhotoFrame) */
+.ids-frame-body { display: flex; flex-direction: column; gap: 16px; }
+.ids-frame-previews { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.ids-frame-fig { margin: 0; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.ids-frame-fig figcaption { font-size: 12px; color: var(--ids-muted); }
+.ids-frame-box { width: 100%; max-height: 190px; overflow: hidden; border-radius: var(--ids-r); background: var(--ids-s1); border: 1px solid var(--ids-line); }
+.ids-frame-box.is-round { border-radius: 50%; max-width: 160px; }
+.ids-frame-ctl { display: flex; flex-direction: column; gap: 10px; }
+.ids-frame-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ids-frame-l { width: 44px; font-size: 13px; color: var(--ids-muted); }
+.ids-frame-v { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; font-size: 13px; }
+.ids-btn.is-on { background: var(--ids-s1); border-color: var(--ids-ink); }
+.ids-frame-hint, .ids-frame-note { margin: 0; font-size: 12.5px; color: var(--ids-muted); }
+.ids-frame-note { color: var(--ids-ink); }
+@container (max-width: 520px) { .ids-frame-previews { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cr-sy-frame { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+.cr-sy-frame-keys { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 13px; }
+.cr-sy-frame-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .ids-sum { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; margin: 0; font-size: 13px; }
 .ids-sum dt { color: var(--ids-muted); } .ids-sum dd { margin: 0; }
 .ids-sum-line { display: block; }

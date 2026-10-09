@@ -813,6 +813,14 @@ function photo_intake_url(string $incoming, int $max = 512): string {
     // Already hosted somewhere. Only http(s) and our own served path are URLs;
     // anything else (javascript:, file:, a bare filename) is not a photo.
     if (!preg_match('#^(https?://|/api/public/photo\.php\?)#i', $u)) return '';
+    /* And only where our photographs are kept: Cloudinary, or this site's own
+       store. Anything else is later fetched by the photo pipeline, so a public
+       form could otherwise point this server at an address inside its network. */
+    if (preg_match('#^https?://#i', $u)) {
+        $host = strtolower((string)parse_url($u, PHP_URL_HOST));
+        $own = strtolower((string)parse_url((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), PHP_URL_HOST));
+        if ($host !== 'res.cloudinary.com' && !($own !== '' && $host === $own && photo_is_stored_locally($u))) return '';
+    }
     return substr($u, 0, $max);
 }
 

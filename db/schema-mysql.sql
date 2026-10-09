@@ -3095,3 +3095,25 @@ CREATE TABLE IF NOT EXISTS offline_payments (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO schema_version (version) VALUES (135) ON DUPLICATE KEY UPDATE version = version;
+
+-- 136: the money rules held by the database (MySQL has no partial index, so a
+-- generated column carries the value only while the rule applies — NULLs do
+-- not collide), and the measured framing of each photograph.
+ALTER TABLE membership_invoices ADD COLUMN receiptKey VARCHAR(40) AS (NULLIF(receiptNo, '')) STORED, ADD UNIQUE INDEX uq_minv_receipt (receiptKey);
+ALTER TABLE offline_payments ADD COLUMN liveRefKey VARCHAR(120) AS (IF(status <> 'rejected', referenceKey, NULL)) STORED, ADD UNIQUE INDEX uq_offpay_live_ref (liveRefKey);
+ALTER TABLE offline_payments ADD COLUMN pendingInvoice VARCHAR(40) AS (IF(status = 'pending', invoiceId, NULL)) STORED, ADD UNIQUE INDEX uq_offpay_one_pending (pendingInvoice);
+CREATE TABLE IF NOT EXISTS photo_framing (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  urlKey CHAR(40) NOT NULL UNIQUE,
+  url VARCHAR(500) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'none',
+  geomJson TEXT NOT NULL,
+  adjustJson TEXT NOT NULL,
+  model VARCHAR(80) NOT NULL DEFAULT '',
+  error VARCHAR(80) NOT NULL DEFAULT '',
+  createdAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(32) NOT NULL DEFAULT '',
+  updatedBy VARCHAR(64) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO schema_version (version) VALUES (136) ON DUPLICATE KEY UPDATE version = version;

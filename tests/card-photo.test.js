@@ -106,5 +106,26 @@ chk('no faces: nothing', T.cphFaceFromDetector([]) === null && T.cphFaceFromDete
 const det = T.cphFrame(fb, 1000, 2400, 404 / 318);
 chk('a full-length photo framed by the browser’s detector is cropped to the head and shoulders', !!det && det.y < 146 && det.y + det.h > 146);
 
+console.log('framed from Gemini’s measurement');
+// A half-length phone photo, 1000 × 1500: head from y 300 to 520 (crown to chin), x 400–580, eyes at y 420.
+const G = { subject: true, head: { x0: 0.40, y0: 0.20, x1: 0.58, y1: 520 / 1500 }, face: { x0: 0.42, y0: 0.24, x1: 0.56, y1: 520 / 1500 },
+  eyes: [{ x: 0.45, y: 0.28 }, { x: 0.53, y: 0.28 }] };
+const box = 404 / 318;
+const f1 = T.cphFrameAi(G, 1000, 1500, box, null);
+const headH = 520 - 300;
+chk('the head takes its share of the frame, with room above the hair', f1 && Math.abs(headH / f1.h - 0.56) < 0.02 && Math.abs((300 - f1.y) / f1.h - 0.11) < 0.02);
+chk('…at the box’s exact shape — nothing to stretch', f1 && Math.abs(f1.w / f1.h - box) < 0.01);
+chk('…centred between the eyes', f1 && Math.abs(f1.x + f1.w / 2 - 490) <= 1);
+chk('…and the whole head is in it', f1 && f1.x <= 400 && f1.x + f1.w >= 580 && f1.y <= 300 && f1.y + f1.h >= 520);
+const tight = T.cphFrameAi({ subject: true, head: { x0: 0.1, y0: 0.02, x1: 0.9, y1: 0.85 }, face: { x0: 0.2, y0: 0.2, x1: 0.8, y1: 0.85 } }, 600, 750, 54 / 85 * 1.6, null);
+chk('a passport photo tighter than the ideal frame: the frame shrinks to fit inside it, keeping its shape', tight && tight.x >= 0 && tight.y >= 0 && tight.x + tight.w <= 600 && tight.y + tight.h <= 750 && Math.abs(tight.w / tight.h - 54 / 85 * 1.6) < 0.02);
+const edgeHead = T.cphFrameAi({ subject: true, head: { x0: 0.0, y0: 0.0, x1: 0.2, y1: 0.15 }, face: { x0: 0.02, y0: 0.03, x1: 0.18, y1: 0.15 } }, 1000, 1500, 1, null);
+chk('a head at the corner of the photo: the frame stays inside the picture', edgeHead && edgeHead.x === 0 && edgeHead.y === 0);
+const zin = T.cphFrameAi(G, 1000, 1500, box, { zoom: 2 }), zout = T.cphFrameAi(G, 1000, 1500, box, { zoom: 0.6 });
+chk('a person’s zoom: in makes the head larger, out shows more — and neither ever cuts the head', zin.h < f1.h && zout.h > f1.h && zin.y <= 300 && zin.y + zin.h >= 520 && zin.x <= 400 && zin.x + zin.w >= 580);
+const moved = T.cphFrameAi(G, 1000, 1500, box, { dx: 0.2, dy: 0.1 });
+chk('…and a move shifts the frame, still around the head', moved.x > f1.x && moved.x <= 400 && moved.y + moved.h >= 520);
+chk('no subject, or no measurement: nothing — the card falls back to the landmarks or the whole photo', T.cphFrameAi({ subject: false }, 100, 100, 1, null) === null && T.cphFrameAi(null, 100, 100, 1, null) === null);
+
 console.log(`\n${failed ? '❌ FAIL' : '✅ PASS'}: ${passed} passed, ${failed} failed (card photos)`);
 process.exit(failed ? 1 : 0);

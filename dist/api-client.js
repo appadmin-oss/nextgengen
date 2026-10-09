@@ -967,6 +967,7 @@
       programme: (program) => request('/public/programme.php' + qs({ program: program === 'summer' ? 'summer' : 'anchor' })),
       // A family's joining invoice, by its private token (/pay/<token>).
       membershipInvoice: (token) => request('/public/membership-pay.php' + qs({ token })),
+      photoFraming:      (urls) => request('/public/photo-framing.php' + qs({ u: JSON.stringify(urls) })),
       membershipPay:     (token) => request('/public/membership-pay.php', { body: { action: 'init', token } }),
       membershipVerify:  (token, reference) => request('/public/membership-pay.php', { body: { action: 'verify', token, reference } }),
       circle: {
@@ -1310,6 +1311,9 @@
         students:     (q, cohortId, opts) => request('/admin/summer.php' + qs(Object.assign({ view: 'students', q, cohortId }, opts || {}))),
         consentDocSave: (doc) => request('/admin/summer.php', { body: { action: 'consentDoc', doc } }),
         aiStatus:     (probe) => request('/admin/settings.php' + qs({ view: 'ai', probe: probe ? 1 : '' })),
+        aiKeys:       () => request('/admin/settings.php' + qs({ view: 'aiKeys' })),
+        aiKeysSet:    (data) => request('/admin/settings.php', { body: Object.assign({ action: 'aiKeys' }, data) }),
+        aiKeysTest:   () => request('/admin/settings.php', { body: { action: 'aiKeysTest' }, timeout: 60000 }),
         qrList:       (status, batch) => request('/admin/summer.php' + qs({ view: 'qr', status, batch })),
         qrVoid:       (token) => request('/admin/summer.php', { body: { action: 'qr_void', token } }),
         qrReassign:   (token, studentId) => request('/admin/summer.php', { body: { action: 'qr_reassign', token, studentId } }),
@@ -1357,6 +1361,13 @@
          or transfer. There is no gateway behind any of these. */
       /* Joining invoices, and offline payments held until a second member of
          staff verifies them against their evidence (domain/membership-pay.php). */
+      /* Smart headshot framing (domain/photo-framing.php): Gemini measures each
+         photograph once; every card frames it from that measurement. */
+      photoFrame: {
+        frame:   (urls, force) => request('/admin/photo-framing.php', { body: { action: 'frame', urls, force: !!force }, timeout: 180000 }),
+        backlog: () => request('/admin/photo-framing.php', { body: { action: 'backlog' }, timeout: 180000 }),
+        adjust:  (url, adjust, reset) => request('/admin/photo-framing.php', { body: { action: 'adjust', url, adjust: adjust || null, reset: !!reset } }),
+      },
       membership: {
         list:     (status) => request('/admin/membership.php' + qs({ status: status || '' })),
         create:   (memberId, startDate, send) => request('/admin/membership.php', { body: { action: 'create', memberId, startDate: startDate || '', send: !!send } }),

@@ -251,6 +251,7 @@ function IdCardStudioPage({ setPage }) {
      ID, and re-crop or replace the photo. */
   const [resending, setResending] = React.useState("");
   const [editPhoto, setEditPhoto] = React.useState(null);
+  const [framePhoto, setFramePhoto] = React.useState(null);
   const resendOne = async r => {
     const R0 = IDS_RESEND[r.kind];
     if (!R0 || resending) return;
@@ -602,9 +603,27 @@ function IdCardStudioPage({ setPage }) {
     } catch (e) { say(idsErrText(e, "Couldn’t prepare the members’ cards, so nothing was printed. Try again.")); return false; }
   };
 
+  /* Before anything prints, every photo on it is measured by Gemini (once per
+     photograph, ever — the server keeps the answer) so the card frames an
+     accurate headshot. With no key set this is skipped and the cards frame
+     from Cloudinary's landmarks, exactly as before. */
+  const framePhotos = async recs => {
+    const urls = Array.from(new Set(recs.map(r => nggPhotoSrc(r && r.photoUrl)).filter(Boolean)));
+    if (!urls.length || !NGGApi.admin.photoFrame || typeof cphHintsPut !== "function") return;
+    try {
+      for (let i = 0; i < urls.length; i += 40) {
+        const r = await NGGApi.admin.photoFrame.frame(urls.slice(i, i + 40));
+        cphHintsPut(r.framing || {});
+      }
+    } catch (e) {
+      if (e && e.code !== "ai_disabled" && e.code !== "forbidden") say("Some photos couldn’t be measured (" + idsErrText(e, "no answer") + "); they print framed by their face landmarks.");
+    }
+  };
+
   const onConfirmPrint = async ({ mode, batches, range, packing, reason }) => {
     setConfirm(null);
     if (!(await mintMissing(recCards.filter(c => c.rec.kind === "member"), reason === "proof"))) return;
+    await framePhotos(recCards.map(c => c.rec));
     if (mode === "batch") {
       setJob({ batches, i: 0, total: nSheets, done: batches[0][1], next: batches[1] || batches[0], reason, packing });
       runPrint({ a: batches[0][0], b: batches[0][1], packing, reason, batch: true });
@@ -686,7 +705,7 @@ function IdCardStudioPage({ setPage }) {
   const faceSig = (s, f) => {
     if (s.upload) { const u = f === "back" ? (s.upload.back ? upById[s.upload.back] : null) : s.upload; return ["u", s.base || s.key, f, u ? idsHash(u.src) + (u.rot || 0) + (u.fit || "") : "blank"].join("|"); }
     const d = designOf(s.rec);
-    return [s.rec.key, f, idsHash(JSON.stringify(s.rec.raw || {})), d ? d.templateId + "v" + d.version + (d.back ? "+" + d.back.templateId + "v" + d.back.version : "") : "std", idsHash(JSON.stringify(programFor(s.rec)))].join("|");
+    return [s.rec.key, f, idsHash(JSON.stringify(s.rec.raw || {}) + (typeof cphHintSig === "function" ? cphHintSig(s.rec.photoUrl) : "")), d ? d.templateId + "v" + d.version + (d.back ? "+" + d.back.templateId + "v" + d.back.version : "") : "std", idsHash(JSON.stringify(programFor(s.rec)))].join("|");
   };
   const faceKey = (s, f, dpi, type) => faceSig(s, f) + "|" + (s.cw || G.cw) + "x" + (s.ch || G.ch) + "|" + dpi + "|" + (type || "jpeg");
 
@@ -923,6 +942,7 @@ function IdCardStudioPage({ setPage }) {
     const list = only ? [{ s: only, sheet: 0, slotN: 0 }] : inRange(1, nSheets);
     if (!list.length) return;
     if (!(await mintMissing(list.filter(x => x.s.rec && x.s.rec.kind === "member").map(x => ({ rec: x.s.rec })), proof))) return;
+    await framePhotos(list.filter(x => x.s.rec).map(x => x.s.rec));
     farmGen.current++;
     xcancel.current = false;
     setXjob({ i: 0, n: list.length, note: "Getting ready" });
@@ -1138,6 +1158,7 @@ function IdCardStudioPage({ setPage }) {
     resendSel: () => selCard && selCard.rec && resendOne(selCard.rec), resending,
     canResendSel: !!(selCard && selCard.rec && IDS_RESEND[selCard.rec.kind] && selCard.rec.raw && selCard.rec.raw.token),
     canEditPhotoSel: !!(selCard && selCard.rec && IDS_PHOTO_EDIT[selCard.rec.kind]), editPhotoSel: () => selCard && selCard.rec && setEditPhoto(selCard.rec),
+    canFrameSel: !!(selCard && selCard.rec && selCard.rec.photoUrl), frameSel: () => selCard && selCard.rec && setFramePhoto(selCard.rec),
     rotateSel: () => selCard && selCard.upload && setU(selCard.upload.uid, { rot: ((selCard.upload.rot || 0) + 90) % 360 }),
     toggleFitSel: () => selCard && selCard.upload && setU(selCard.upload.uid, { fit: selCard.upload.fit === "contain" ? "cover" : "contain" }),
     /* Dropped on a card: it takes that card's place. Dropped on an empty slot:
@@ -1201,6 +1222,7 @@ function IdCardStudioPage({ setPage }) {
       )}
       {after && <IdsAfterPrint items={after.items} renderFace={renderFace} onLater={() => { setAfter(null); say("You can mark failures from the print log later."); }} onDone={afterDone}/>}
       {runOpen && <IdsRunDrawer run={runOpen} phone={phone} onClose={() => setRunOpen(null)} onReprint={reprintRun} onFailed={markRunFailed} onRetry={() => openRun(runOpen)}/>}
+      {framePhoto && <IdsPhotoFrame rec={framePhoto} say={say} onClose={() => setFramePhoto(null)} onSaved={() => { idsFaceForget(); setData(d => Object.assign({}, d)); }}/>}
       {editPhoto && typeof PhotoEditor !== "undefined" && (
         <PhotoEditor target={{ subjectType: IDS_PHOTO_EDIT[editPhoto.kind], subjectId: editPhoto.id }} currentUrl={editPhoto.photoUrl} title={editPhoto.name}
           onSaved={() => { say(editPhoto.name + "’s photo is updated"); _idsTplDone.clear(); idsFaceForget(); load(); }} onClose={() => setEditPhoto(null)}/>

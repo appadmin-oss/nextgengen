@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 135;
+const NGG_SCHEMA_TARGET = 136;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -4014,6 +4014,27 @@ function db_migrate(PDO $db): void {
                 );
                 CREATE INDEX IF NOT EXISTS idx_offpay_invoice ON offline_payments(invoiceId);
                 CREATE INDEX IF NOT EXISTS idx_offpay_ref ON offline_payments(referenceKey);",
+        // 136 — what the money rules say, held by the database too, so two
+        // requests racing past the checks in membership-pay.php still cannot
+        // mint one receipt number twice, accept one bank reference twice, or
+        // hold two claims waiting on one invoice. And the measured framing of
+        // each photograph (domain/photo-framing.php).
+        136 => "CREATE UNIQUE INDEX IF NOT EXISTS uq_minv_receipt ON membership_invoices(receiptNo) WHERE receiptNo <> '';
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_offpay_live_ref ON offline_payments(referenceKey) WHERE status <> 'rejected';
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_offpay_one_pending ON offline_payments(invoiceId) WHERE status = 'pending';
+                CREATE TABLE IF NOT EXISTS photo_framing (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  urlKey TEXT NOT NULL UNIQUE,
+                  url TEXT NOT NULL DEFAULT '',
+                  status TEXT NOT NULL DEFAULT 'none',
+                  geomJson TEXT NOT NULL DEFAULT '',
+                  adjustJson TEXT NOT NULL DEFAULT '',
+                  model TEXT NOT NULL DEFAULT '',
+                  error TEXT NOT NULL DEFAULT '',
+                  createdAt TEXT NOT NULL DEFAULT '',
+                  updatedAt TEXT NOT NULL DEFAULT '',
+                  updatedBy TEXT NOT NULL DEFAULT ''
+                );",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

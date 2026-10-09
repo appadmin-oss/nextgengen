@@ -7395,7 +7395,8 @@ chk('photo_intake_url takes either shape and never returns something unstorable'
         && photo_intake_url('') === ''
         && photo_intake_url('javascript:alert(1)') === ''      // not a photo
         && photo_intake_url('data:text/html;base64,PGI+') === ''
-        && strlen(photo_intake_url('https://example.org/' . str_repeat('a', 900))) === 512;
+        && strlen(photo_intake_url('https://res.cloudinary.com/demo/image/upload/' . str_repeat('a', 900))) === 512
+        && photo_intake_url('https://example.org/a.jpg') === '';   // not where our photos live
 })());
 /* Write-on-intake plus a refusable intake means abandoned originals, and a
  * shared host with a disk quota is not a good place to learn that. */
@@ -24853,6 +24854,88 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     member_card_issue('NGG-SCAN-1', 'test');
     chk('scan: a replaced card opens nothing', (backend_dispatch('public.summerProfile', ['token' => $code])['error'] ?? '') === 'not_found');
     db_exec("DELETE FROM member_cards WHERE memberId = 'NGG-SCAN-1'"); db_exec("DELETE FROM members WHERE memberId = 'NGG-SCAN-1'");
+})();
+
+/* ── Smart headshot framing (domain/photo-framing.php) ──────────────────────
+   Two Gemini keys entered on screen, sealed on the server; each photograph
+   measured once; an implausible answer asked again with the second key; a
+   person's adjustment stored beside the measurement and read by every card. */
+(function () {
+    $SU = 'NGG-2025-0099';
+    $GLOBALS['CONFIG']['ai'] = [];
+    db_exec("DELETE FROM settings WHERE settingKey = 'ai_ui_keys'");
+    db_exec('DELETE FROM photo_framing');
+    $k1 = 'AIzaSyFRAMINGkey000000000000000000001a2b'; $k2 = 'AIzaSySECONDkey0000000000000000000009z8y';
+    chk('framing: keys need the Settings permission', (backend_dispatch('admin.ai.keys.set', ['requesterId' => 'NGG-DESK-A', 'framingKey' => $k1])['error'] ?? '') === 'forbidden');
+    chk('framing: something that is not a key is refused, naming the field', (backend_dispatch('admin.ai.keys.set', ['requesterId' => $SU, 'secondKey' => 'hello'])['field'] ?? '') === 'second');
+    $set = backend_dispatch('admin.ai.keys.set', ['requesterId' => $SU, 'framingKey' => $k1, 'secondKey' => $k2]);
+    $raw = (string)(db_row("SELECT settingValue FROM settings WHERE settingKey = 'ai_ui_keys'")['settingValue'] ?? '');
+    chk('framing: keys are stored sealed — the database never holds them in the clear', !empty($set['ok']) && $raw !== '' && !str_contains($raw, $k1) && !str_contains($raw, $k2));
+    chk('framing: …and the screen sees only that each is set and how it ends', $set['framing']['set'] === true && $set['framing']['ending'] === '1a2b' && $set['second']['ending'] === '9z8y'
+        && !str_contains(json_encode($set), $k1) && !str_contains(json_encode(backend_dispatch('admin.ai.keys.get', ['requesterId' => $SU])), $k2));
+    $fr = ai_profile_candidates('framing'); $ph = ai_profile_candidates('photo');
+    chk('framing: key 1 frames with key 2 as its backup; photo checks use key 2 first', $fr[0]['api_key'] === $k1 && $fr[1]['api_key'] === $k2 && $ph[0]['api_key'] === $k2 && $fr[0]['model'] === PFRAME_MODEL_DEFAULT);
+    chk('framing: a blank field keeps the key already saved', !empty(backend_dispatch('admin.ai.keys.set', ['requesterId' => $SU, 'framingKey' => '', 'model' => 'gemini-2.5-pro'])['ok']) && ai_ui_keys()['framing'] === $k1 && ai_ui_keys()['model'] === 'gemini-2.5-pro');
+    backend_dispatch('admin.ai.keys.set', ['requesterId' => $SU, 'model' => '']);
+    chk('framing: the key-change audit names the slots, never the values', !str_contains((string)db_row("SELECT meta FROM audit_log WHERE event = 'ai.keys.set' ORDER BY id DESC LIMIT 1")['meta'], 'AIza'));
+
+    // The photograph behind a URL.
+    $cu = 'https://res.cloudinary.com/ngg/image/upload/c_thumb,g_face,w_600,h_750,e_improve/v17/ngg/headshot/abc.jpg';
+    $b = photo_frame_basis($cu);
+    chk('framing: a Cloudinary photo is measured as the person left it — the machine’s face crop taken out, their edits kept', $b && $b['kind'] === 'cloudinary'
+        && $b['fetch'] === 'https://res.cloudinary.com/ngg/image/upload/e_improve/c_limit,w_1024,h_1024,f_jpg,q_auto/v17/ngg/headshot/abc.jpg'
+        && photo_frame_basis('https://res.cloudinary.com/ngg/image/upload/c_fill,w_10/e_improve/v17/ngg/headshot/abc.jpg')['key'] === $b['key']);
+    chk('framing: anything not ours is not measured (no fetching other hosts)', photo_frame_basis('https://evil.example/x.jpg') === null && photo_frame_basis('http://169.254.169.254/latest') === null);
+
+    $GLOBALS['__pframe_bytes'] = fn($basis) => ['ok' => true, 'mime' => 'image/jpeg', 'b64' => base64_encode('x')];
+    $good = ['subjectFound' => true, 'people' => 1, 'kind' => 'half', 'head' => [200, 400, 347, 580], 'face' => [240, 420, 347, 560], 'leftEye' => [280, 450], 'rightEye' => [280, 530], 'shoulders' => ['y' => 400, 'left' => 300, 'right' => 700]];
+    $calls = [];
+    $GLOBALS['__pframe_mock'] = function ($cand, $extra) use (&$calls, $good) {
+        $calls[] = [$cand['api_key'], $extra];
+        // Key 1 answers with the face outside the head; key 2, told why, answers properly.
+        return count($calls) === 1 ? ['ok' => true, 'data' => array_merge($good, ['face' => [100, 100, 900, 900]])] : ['ok' => true, 'data' => $good];
+    };
+    $r = backend_dispatch('admin.photos.frame', ['requesterId' => $SU, 'urls' => [$cu]]);
+    $v = $r['framing']->{$cu} ?? [];
+    chk('framing: an implausible answer is asked again with the second key, told what was wrong', count($calls) === 2 && $calls[0][0] === $k1 && $calls[1][0] === $k2 && str_contains($calls[1][1], 'face box was not inside the head box'));
+    chk('framing: the measurement is stored as fractions of the photo — head, face, eyes, shoulders', !empty($v['ok']) && $v['geom']['subject'] === true && abs($v['geom']['head']['y0'] - 0.2) < 1e-9
+        && abs($v['geom']['head']['x1'] - 0.58) < 1e-9 && count($v['geom']['eyes']) === 2 && abs($v['geom']['shoulders']['y'] - 0.4) < 1e-9 && $v['geom']['kind'] === 'half');
+    $calls = [];
+    backend_dispatch('admin.photos.frame', ['requesterId' => $SU, 'urls' => [$cu]]);
+    chk('framing: a photograph is measured once — asking again costs nothing', $calls === []);
+    $calls = [];
+    backend_dispatch('admin.photos.frame', ['requesterId' => $SU, 'urls' => [$cu], 'force' => true]);
+    chk('framing: …unless somebody asks for it again', count($calls) >= 1);
+    chk('framing: printing staff may ask; somebody without card permissions may not', (backend_dispatch('admin.photos.frame', ['requesterId' => 'NGG-DESK-E', 'urls' => [$cu]])['error'] ?? '') === 'forbidden');
+    chk('framing: at most 40 photos a request', (backend_dispatch('admin.photos.frame', ['requesterId' => $SU, 'urls' => array_map(fn($i) => $cu . '?' . $i, range(1, 41))])['error'] ?? '') === 'too_many');
+
+    $adj = backend_dispatch('admin.photos.frame.adjust', ['requesterId' => $SU, 'url' => $cu, 'adjust' => ['zoom' => 9, 'dx' => 0.1, 'dy' => -2, 'whole' => false]]);
+    chk('framing: a person’s adjustment is kept beside the measurement, held to its limits', !empty($adj['ok']) && $adj['adjust']['zoom'] == 2 && $adj['adjust']['dy'] == -0.5 && $adj['geom']['subject'] === true);
+    $alt = 'https://res.cloudinary.com/ngg/image/upload/c_fill,g_face,w_300,h_300/e_improve/v17/ngg/headshot/abc.jpg';
+    $pub = backend_dispatch('public.photos.framing', ['urls' => [$cu, $alt, 'https://evil.example/x.jpg']]);
+    chk('framing: a card anywhere reads the framing for the photo it shows, by any form of its URL — and only for our photos', isset($pub['framing']->{$cu})
+        && $pub['framing']->{$alt}['adjust']['zoom'] == 2 && !isset($pub['framing']->{'https://evil.example/x.jpg'}) && !isset($pub['framing']->{$cu}['model']));
+    chk('framing: “automatic again” clears the adjustment and keeps the measurement', (function () use ($SU, $cu) { $r = backend_dispatch('admin.photos.frame.adjust', ['requesterId' => $SU, 'url' => $cu, 'reset' => true]); return $r['adjust'] === null && $r['geom']['subject'] === true; })());
+
+    $GLOBALS['__pframe_mock'] = fn($cand, $extra) => ['ok' => true, 'data' => ['subjectFound' => false, 'people' => 0, 'kind' => 'none', 'head' => [0, 0, 0, 0], 'face' => [0, 0, 0, 0], 'leftEye' => [0, 0], 'rightEye' => [0, 0]]];
+    $none = backend_dispatch('admin.photos.frame', ['requesterId' => $SU, 'urls' => ['https://res.cloudinary.com/ngg/image/upload/v1/ngg/headshot/landscape.jpg']]);
+    chk('framing: a photo with no clear face is stored as such — the card keeps its old framing', ($none['framing']->{'https://res.cloudinary.com/ngg/image/upload/v1/ngg/headshot/landscape.jpg'}['geom']['subject'] ?? null) === false);
+
+    // The backlog: every photo already on a card.
+    db_insert('members', ['memberId' => 'NGG-FRAME-1', 'fullName' => 'Frame One', 'email' => 'frame1@example.com', 'type' => 'NGG', 'role' => 'member', 'status' => 'active',
+        'photoUrl' => 'https://res.cloudinary.com/ngg/image/upload/v1/ngg/headshot/frame1.jpg', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $GLOBALS['__pframe_mock'] = fn($cand, $extra) => ['ok' => true, 'data' => $good];
+    $before = count(photo_frame_backlog_urls(5000));
+    $bl = backend_dispatch('admin.photos.frame.backlog', ['requesterId' => $SU]);
+    chk('framing: existing photos are worked through in steps, and the count of what is left goes down', $before >= 1 && !empty($bl['ok']) && $bl['done'] >= 1 && $bl['remaining'] < $before
+        && db_row("SELECT status FROM photo_framing WHERE urlKey = ?", [photo_frame_basis('https://res.cloudinary.com/ngg/image/upload/v1/ngg/headshot/frame1.jpg')['key']])['status'] === 'ok');
+
+    unset($GLOBALS['__pframe_mock'], $GLOBALS['__pframe_bytes']);
+    backend_dispatch('admin.ai.keys.set', ['requesterId' => $SU, 'clearFraming' => true, 'clearSecond' => true]);
+    chk('framing: with no key, nothing is asked and nothing changes', (backend_dispatch('admin.photos.frame', ['requesterId' => $SU, 'urls' => ['https://res.cloudinary.com/ngg/image/upload/v1/ngg/headshot/new.jpg']])['error'] ?? '') === 'ai_disabled');
+    chk('ssrf: a public photo URL is accepted only from where our photos live', photo_intake_url('https://res.cloudinary.com/ngg/image/upload/v1/x.jpg') !== '' && photo_intake_url('https://10.0.0.5/x.jpg') === ''
+        && photo_intake_url('https://evil.example/x.jpg') === '' && ai_fetch_image('https://169.254.169.254/latest/meta-data')['error'] === 'bad_host');
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-FRAME-1'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
