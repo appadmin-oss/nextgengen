@@ -53,3 +53,6 @@ api/storage/*
 tests/_*_fixture.html
 !tests/_bench_fixture.html
 .claude/
+
+# Throwaway files a running test writes and removes
+tests/_fixture-*
