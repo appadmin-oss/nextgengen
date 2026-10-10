@@ -21,10 +21,10 @@
  * Each named tab is fully replaced (cleared, then headers + rows written).
  */
 
-/* The Africa GATES protocol — {action, token, data}. The token is the SECRET in
+/* The mail protocol — {action, token, data}. The token is the SECRET in
    Script properties (Project Settings → Script properties → SECRET), and the
    NGG Control Room holds the same value (Settings → API keys → Google Apps
-   Script). An Africa GATES deployment answers these too, so either works. */
+   Script). */
 function gatesAction_(body) {
   const secret = PropertiesService.getScriptProperties().getProperty('SECRET') || PropertiesService.getScriptProperties().getProperty('SHARED_SECRET');
   if (!secret) return gatesRespond_(false, 'This Apps Script has no SECRET set, so mail is refused. Set SECRET in Script properties and the same value in the Control Room.');

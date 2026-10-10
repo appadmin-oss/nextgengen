@@ -52,7 +52,7 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
     $smtp = $mail['smtp'] ?? [];
     $errors = [];
 
-    // Path 1 — Google Apps Script MailApp (the Africa GATES pattern, signed).
+    // Path 1 — Google Apps Script MailApp (signed with the script's SECRET).
     // Google sends from the authenticated account: no SMTP ports, no SPF/DKIM,
     // no third-party key — the path that delivers on shared hosting. Set it in
     // Settings → API keys → Google Apps Script (or apps_script_url +
@@ -81,8 +81,8 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
         }
     }
 
-    // Path 2b — Brevo's relay, set in Settings → API keys → Brevo (the Africa
-    // GATES transport: smtp-relay.brevo.com:587, STARTTLS, login + SMTP key).
+    // Path 2b — Brevo's relay, set in Settings → API keys → Brevo
+    // (smtp-relay.brevo.com:587, STARTTLS, login + SMTP key).
     $brevo = $mail['brevo'] ?? [];
     if (trim((string)($brevo['user'] ?? '')) !== '' && trim((string)($brevo['pass'] ?? '')) !== '') {
         $bFrom = filter_var((string)($brevo['from'] ?? ''), FILTER_VALIDATE_EMAIL) ? array_merge($from, ['email' => (string)$brevo['from']]) : $from;
@@ -130,7 +130,7 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
 function mail_apps_script_cfg(): array {
     global $CONFIG;
     $mail = $CONFIG['mail'] ?? [];
-    $url = trim((string)($mail['apps_script_url'] ?? '')) ?: trim((string)($CONFIG['apps_script_url'] ?? ''));
+    $url = rtrim(trim((string)($mail['apps_script_url'] ?? '')) ?: trim((string)($CONFIG['apps_script_url'] ?? '')), '/');
     $secret = (string)($mail['apps_script_secret'] ?? '') ?: (string)($CONFIG['shared_secret'] ?? '');
     if ($secret === 'REPLACE_ME_64_HEX_BYTES') $secret = '';
     return [$url, $secret];
@@ -169,10 +169,9 @@ function appsscript_send(string $url, string $secret, array $from, string $to, s
 }
 
 /**
- * One call to the Apps Script Web App, in the Africa GATES protocol:
+ * One call to the Apps Script Web App:
  * POST {action, token, data, source} → {ok|success, message, …}. The token is
- * the script's SECRET, so the deployment Africa GATES already runs (mail.send,
- * mail.quota) serves NGG unchanged, and apps-script/Code.gs speaks it too.
+ * the script's SECRET; apps-script/Code.gs answers mail.send and mail.quota.
  * /exec answers with a 302 to googleusercontent; the body is at the far end.
  * Returns the JSON on success; throws with a sentence an operator can act on.
  */

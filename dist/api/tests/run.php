@@ -25528,11 +25528,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('mail: the Apps Script test names a mismatched secret in words', $t['pass'] === false && str_contains($t['detail'], 'does not match'));
     $GLOBALS['CONFIG']['mail']['apps_script_secret'] = 'gas-secret-123456';
     $t = admin_keys_test(['requesterId' => 'NGG-2025-0099', 'service' => 'appsscript']);
-    chk('mail: a working script reports its account and today’s quota (Africa GATES mail.quota)', $t['pass'] === true && str_contains($t['detail'], '97 more recipients today'));
+    chk('mail: a working script reports its account and today’s quota', $t['pass'] === true && str_contains($t['detail'], '97 more recipients today'));
+    chk('mail: a Workspace deployment URL, a trailing slash and stray spaces are accepted', service_key_check('gasurl', 'https://script.google.com/a/macros/afrovanguard.org.ng/s/AKfycbxABCDEFGHIJKLMNOPQRST/exec') === ''
+        && service_key_check('gasurl', 'https://script.google.com/macros/s/AKfycbxABCDEFGHIJKLMNOPQRST/exec/') === '');
     chk('mail: only a script.google.com /exec URL is accepted', service_key_check('gasurl', 'https://script.google.com/macros/s/AKfycbxABCDEFGHIJKLMNOPQRST/exec') === ''
-        && service_key_check('gasurl', 'https://evil.example/macros/s/AKfycbxABCDEFGHIJKLMNOPQRST/exec') !== '' && service_key_check('gasurl', 'https://script.google.com/macros/s/AKfycbxABCDEFGHIJKLMNOPQRST/dev') !== '');
+        && service_key_check('gasurl', 'https://evil.example/macros/s/AKfycbxABCDEFGHIJKLMNOPQRST/exec') !== '' && service_key_check('gasurl', 'https://script.google.com/home') !== '');
     $GLOBALS['CONFIG']['mail'] = ['brevo' => ['user' => '7a1b2c001@smtp-brevo.com', 'pass' => 'xsmtpsib-abc']];
-    chk('mail: Brevo (the Africa GATES relay) is a path of its own', mail_mode() === 'brevo' && isset(SERVICE_KEYS['brevo']) && isset(SERVICE_KEYS['appsscript']));
+    chk('mail: Brevo is a path of its own', mail_mode() === 'brevo' && isset(SERVICE_KEYS['brevo']) && isset(SERVICE_KEYS['appsscript']));
     unset($GLOBALS['__gas_mock']);
     if ($sink !== null) $GLOBALS['__mail_sink'] = $sink;
     $GLOBALS['CONFIG']['mail'] = $keep;
