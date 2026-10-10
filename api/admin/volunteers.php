@@ -7,7 +7,8 @@ $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
-    if (($_GET['view'] ?? '') === 'needs') $res = gs_call('admin.volunteers.needs.list', ['requesterId' => $s['mid']]);
+    if (($_GET['view'] ?? '') === 'nggOptions') $res = gs_call('admin.volunteers.ngg.options', ['requesterId' => $s['mid'], 'volunteerId' => (string)($_GET['volunteerId'] ?? '')]);
+    elseif (($_GET['view'] ?? '') === 'needs') $res = gs_call('admin.volunteers.needs.list', ['requesterId' => $s['mid']]);
     else $res = gs_call('admin.volunteers.list', ['requesterId' => $s['mid'], 'programme' => (string)($_GET['programme'] ?? '')]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
@@ -18,6 +19,7 @@ if ($method === 'GET') {
     elseif ($action === 'safeguard') $res = gs_call('admin.volunteers.safeguard', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'status' => $b['status'] ?? '', 'ip' => $ip]);
     elseif ($action === 'caps')      $res = gs_call('admin.volunteers.caps', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'caps' => $b['caps'] ?? [], 'ip' => $ip]);
     elseif ($action === 'update')   $res = gs_call('admin.volunteers.update', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'data' => $b['data'] ?? [], 'ip' => $ip]);
+    elseif ($action === 'promoteNgg') $res = gs_call('admin.volunteers.promote.ngg', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'centre' => $b['centre'] ?? '', 'keepSummer' => !empty($b['keepSummer']), 'ip' => $ip]);
     elseif ($action === 'delete')   $res = gs_call('admin.volunteers.delete', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'need_upsert') $res = gs_call('admin.volunteers.needs.upsert', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'role' => $b['role'] ?? '', 'faculty' => $b['faculty'] ?? '', 'needCount' => $b['needCount'] ?? 0, 'ip' => $ip]);
     elseif ($action === 'need_delete') $res = gs_call('admin.volunteers.needs.delete', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'role' => $b['role'] ?? '', 'faculty' => $b['faculty'] ?? '', 'ip' => $ip]);

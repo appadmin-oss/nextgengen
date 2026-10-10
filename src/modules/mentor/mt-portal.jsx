@@ -43,28 +43,40 @@ function mtUsePhone() {
 /** /mentor: the pod portal for a pod mentor; the class roster for everyone else. */
 function MentorHome() {
   const auth = (window.useAuth || (() => null))();
-  const classView = typeof location !== "undefined" && new URLSearchParams(location.search).get("view") === "class";
-  const [probe, setProbe] = React.useState(classView ? "class" : "loading");
+  const view = typeof location !== "undefined" ? new URLSearchParams(location.search).get("view") : "";
+  const [probe, setProbe] = React.useState("loading");
   const [today, setToday] = React.useState(null);
   const load = React.useCallback(() => {
-    if (classView) return;
     /* Anything but a real pod reply — signed out, not a mentor, a Summer
        School mentor, an older API — opens the class roster, which says why. */
     let p;
     try { p = mtPod("today"); } catch (e) { setProbe("class"); return; }
-    /* Staff who also hold a mentor record keep the class roster until they are
-       cleared: their reach comes from their role, and locking them on the
-       Academy checklist took their class away overnight. */
     Promise.resolve(p).then(r => {
-      if (r && r.mentor && r.clearance && (r.cleared || r.role !== "admin")) { setToday(r); setProbe("pod"); }
-      else setProbe("class");
-    })
-      .catch(() => setProbe("class"));
-  }, [classView]);
+      if (!(r && r.mentor && r.clearance)) { setProbe("class"); return; }
+      setToday(r);
+      /* Staff choose: the class roster (Summer School and NGG) by default, the
+         NGG pods at ?view=pod. Staff who also hold an uncleared mentor record
+         keep the roster rather than an Academy checklist. A mentor's own pod
+         is their home, and ?view=class still opens the roster. */
+      if (view === "class") setProbe("class");
+      else if (r.role === "admin") setProbe(view === "pod" && r.cleared ? "pod" : "class");
+      else setProbe("pod");
+    }).catch(() => setProbe("class"));
+  }, [view]);
   React.useEffect(() => { load(); }, [load, auth && auth.isSignedIn]);
+  const staff = !!(today && today.role === "admin");
+  const both = staff || !!(today && today.cleared);
   if (probe === "loading") return <div className="mt-app"><div className="mt-boot"><div className="dash-spinner"/></div></div>;
-  if (probe === "class") return <MentorPortal/>;
+  if (probe === "class") return <>{both && <MtViewSwitch on="class" staff={staff}/>}<MentorPortal/></>;
   return <MtPortal initial={today} reloadToday={() => mtPod("today").then(setToday)}/>;
+}
+
+/** Staff (and cleared pod mentors) move between the two mentor pages here. */
+function MtViewSwitch({ on, staff }) {
+  return <nav className="mt-viewswitch" aria-label="Mentor pages">
+    <a href="/mentor?view=pod" aria-current={on === "pod" ? "page" : undefined}>{staff ? "NGG pods" : "My pod"}</a>
+    <a href="/mentor?view=class" aria-current={on === "class" ? "page" : undefined}>{staff ? "Class roster · Summer School and NGG" : "Class roster"}</a>
+  </nav>;
 }
 
 function MtPortal({ initial, reloadToday }) {
@@ -103,11 +115,17 @@ function MtPortal({ initial, reloadToday }) {
 
   const me = (d && d.mentor) || {};
   const cl = (d && d.clearance) || {};
-  const allowed = cleared ? MT_NAV : MT_NAV.filter(n => ["academy", "commit", "support"].indexOf(n[0]) >= 0);
+  /* Staff read every pod in their scope; the writing screens (Saturday,
+     reviews) and a mentor's own record (check-ins, Academy, commitments) are
+     the mentors'. */
+  const staffView = !!(d && d.staffView);
+  const allowed = staffView ? MT_NAV.filter(n => ["today", "pod", "support"].indexOf(n[0]) >= 0)
+    : cleared ? MT_NAV : MT_NAV.filter(n => ["academy", "commit", "support"].indexOf(n[0]) >= 0);
   let body;
   if (screen === "concern") body = <MtConcern pod={pod} say={say}/>;
   else if (!cleared && ["academy", "commit", "support"].indexOf(screen) < 0) body = <MtGate d={d} go={go}/>;
-  else if (screen === "case" && caseId) body = <MtCase id={caseId} go={go} say={say} refresh={refresh} pod={pod}/>;
+  else if (staffView && screen !== "case" && !allowed.some(n => n[0] === screen)) body = <MtToday d={d} go={go} say={say} refresh={refresh}/>;
+  else if (screen === "case" && caseId) body = <MtCase id={caseId} go={go} say={say} refresh={refresh} pod={pod} readOnly={staffView}/>;
   else if (screen === "pod") body = <MtPodList pod={pod} go={go} searchRef={searchRef} say={say}/>;
   else if (screen === "observe") body = <MtObserve pod={pod} d={d} say={say} refresh={refresh}/>;
   else if (screen === "reviews") body = <MtReviews pod={pod} say={say} refresh={refresh}/>;
@@ -121,7 +139,7 @@ function MtPortal({ initial, reloadToday }) {
   return (
     <div className="mt-app">
       {!phone && <aside className="mt-side" aria-label="Mentor portal">
-        <div className="mt-brand"><b>Mentor portal</b><span>Mentor · {me.centre || "NGG"}</span></div>
+        <div className="mt-brand"><b>Mentor portal</b><span>{staffView ? "Coordinator view · every pod" : "Mentor · " + (me.centre || "NGG")}</span></div>
         <nav className="mt-nav">
           {allowed.map(([id, l, ic]) => <button key={id} className={"mt-nav-i" + (screen === id || (id === "pod" && screen === "case") ? " is-on" : "")} aria-current={screen === id ? "page" : undefined} onClick={() => go(id)}>
             <i className={"ph ph-" + ic} aria-hidden="true"/><span>{l}</span>
@@ -134,6 +152,7 @@ function MtPortal({ initial, reloadToday }) {
         <a className="mt-switch" href="/mentor?view=class">Open the class roster</a>
       </aside>}
       <main className="mt-main">
+        {(staffView || cleared) && <MtViewSwitch on="pod" staff={staffView}/>}
         {phone && <header className="mt-ph-head">
           {(screen === "case" || screen === "concern" || screen === "support") ? <button className="mt-icon" aria-label="Back" onClick={() => go(screen === "case" ? "pod" : "today")}><i className="ph ph-caret-left"/></button> : <span className="mt-icon-sp"/>}
           <b>{title}</b>
@@ -142,7 +161,7 @@ function MtPortal({ initial, reloadToday }) {
         </header>}
         <div className="mt-body">{body}</div>
         {phone && cleared && <nav className="mt-tabbar" aria-label="Sections">
-          {MT_PHONE_TABS.map(id => { const n = MT_NAV.find(x => x[0] === id); return <button key={id} className={screen === id || (id === "pod" && screen === "case") ? "is-on" : ""} onClick={() => go(id)}><i className={"ph ph-" + n[2]} aria-hidden="true"/><span>{n[1] === "My pod" ? "Pod" : n[1]}</span></button>; })}
+          {MT_PHONE_TABS.filter(id => allowed.some(n => n[0] === id)).map(id => { const n = MT_NAV.find(x => x[0] === id); return <button key={id} className={screen === id || (id === "pod" && screen === "case") ? "is-on" : ""} onClick={() => go(id)}><i className={"ph ph-" + n[2]} aria-hidden="true"/><span>{n[1] === "My pod" ? "Pod" : n[1]}</span></button>; })}
         </nav>}
       </main>
       {toast && <div className={"mt-toast" + (toast.bad ? " is-bad" : "")} role="status" aria-live="polite">{toast.t}</div>}
@@ -230,7 +249,7 @@ function MtPodList({ pod, go, searchRef, say }) {
 }
 
 /* ── Mentee case file ───────────────────────────────────────────────────── */
-function MtCase({ id, go, say, refresh, pod }) {
+function MtCase({ id, go, say, refresh, pod, readOnly }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [tab, setTab] = React.useState("overview");
@@ -252,7 +271,8 @@ function MtCase({ id, go, say, refresh, pod }) {
     <div className="mt-case-head">
       <div><h1 className="mt-h1">{k.fullName}</h1>
         <p className="mt-sub">{age !== null ? "Age " + age + " · " : ""}{MT_PHASE[x.phaseNow]} phase · week {x.week}{i >= 0 ? " · " + (i + 1) + " of " + pod.length : ""}</p></div>
-      <div className="mt-row-acts"><button className="mt-btn" onClick={() => go("observe", id)}>Observe</button><button className="mt-btn is-primary" onClick={() => setForm("1to1")}>Log a one-to-one</button></div>
+      {readOnly ? <p className="mt-sub">Mentor · {x.mentorName || "—"} · read only</p>
+        : <div className="mt-row-acts"><button className="mt-btn" onClick={() => go("observe", id)}>Observe</button><button className="mt-btn is-primary" onClick={() => setForm("1to1")}>Log a one-to-one</button></div>}
     </div>
     <div className="mt-tabs" role="tablist">{tabs.map(([t, l]) => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "is-on" : ""} onClick={() => setTab(t)}>{l}</button>)}</div>
     {form === "1to1" && <MtOneToOne onCancel={() => setForm(null)} onSave={save1to1}/>}
@@ -263,7 +283,7 @@ function MtCase({ id, go, say, refresh, pod }) {
         <ul className="mt-ind">{(d.indicators || []).map(n => { const o = latest[n]; return <li key={n}><b>{n}</b><span className={"mt-lvl is-" + (o ? o.level : 0)}>{o ? MT_LEVELS[o.level] : "Not seen"}</span>{o && o.evidence && <em>“{o.evidence}”</em>}</li>; })}</ul></div>
       <div className="mt-card"><h2>Interested in · wants to</h2><p>{d.profile ? [d.profile.interests, d.profile.wantsTo, d.profile.supportArea].filter(Boolean).join(" · ") || "Not recorded yet." : "Not recorded yet."}</p></div>
       <div className="mt-card"><h2>Last time we talked</h2><p>{(d.meetings || [])[0] ? mtDate(d.meetings[0].metOn) + " · " + d.meetings[0].discussed + (d.meetings[0].agreed ? " · Agreed: " + d.meetings[0].agreed : "") : "No one-to-one yet."}</p>
-        <button className="mt-btn" onClick={() => setForm("rel")}>Termly relationship check</button></div>
+        {!readOnly && <button className="mt-btn" onClick={() => setForm("rel")}>Termly relationship check</button>}</div>
     </>}
     {tab === "timeline" && <div className="mt-card"><ul className="mt-list">
       {[].concat((d.meetings || []).map(m => ({ d: m.metOn, t: m.concern ? "Concern" : "One-to-one", s: m.discussed })), (d.observations || []).map(o => ({ d: o.onDate, t: "Observation", s: o.indicator + " · " + MT_LEVELS[o.level] + (o.evidence ? " · " + o.evidence : "") })))

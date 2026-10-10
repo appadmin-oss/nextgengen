@@ -707,6 +707,69 @@ function admin_volunteer_update(array $p): array {
     return ['ok' => true, 'volunteerId' => $volunteerId];
 }
 
+/**
+ * admin.volunteers.ngg.options — where a Summer School volunteer could serve
+ * in NGG: the open NGG centres, nearest to where their Summer School met first.
+ */
+function admin_volunteer_ngg_options(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [(string)($p['volunteerId'] ?? '')]);
+    if (!$v) return ['ok' => false, 'error' => 'not_found'];
+    if (!admin_centre_allowed($g['requester'], (string)($v['centre'] ?? ''))) return ['ok' => false, 'error' => 'out_of_scope'];
+    $n = function_exists('centre_ngg_nearest') ? centre_ngg_nearest('', (string)($v['centre'] ?? '')) : ['ranked' => []];
+    $ranked = array_values(array_filter($n['ranked'], static fn($r) => admin_centre_allowed($g['requester'], (string)$r['name'])));
+    /* A suggestion is made only on evidence: the NGG centre their Summer
+       venue was split from ("Egbeda (Summer School)" → "Egbeda"), else the
+       nearest one actually measured. With neither, the list is alphabetical
+       and its first entry means nothing, so nothing is suggested. */
+    $base = trim((string)preg_replace('/\s*\(Summer School.*\)$/i', '', (string)($v['centre'] ?? '')));
+    $suggested = '';
+    foreach ($ranked as $i => $r) if ($base !== '' && strcasecmp($r['name'], $base) === 0) {
+        $suggested = $r['name'];
+        array_unshift($ranked, $r); unset($ranked[$i + 1]); $ranked = array_values($ranked);
+        break;
+    }
+    if ($suggested === '' && isset($ranked[0]) && $ranked[0]['km'] !== null) $suggested = (string)$ranked[0]['name'];
+    return ['ok' => true, 'volunteerId' => (string)$v['volunteerId'], 'fullName' => (string)$v['fullName'], 'programme' => volunteer_programme($v),
+            'summerCentre' => (string)($v['centre'] ?? ''), 'centres' => $ranked, 'suggested' => $suggested];
+}
+
+/**
+ * admin.volunteers.promote.ngg — bring a Summer School volunteer into NGG.
+ *
+ * Their volunteer record moves to `ngg` (or `both`, when they keep serving
+ * Summer School too) at an open NGG centre — never a Summer School venue,
+ * which are retired between editions. A mentor record linked to them moves
+ * with it, so the Mentor Portal opens their NGG class rather than last
+ * summer's. Delegates to admin_volunteer_update, so the card's clock moves by
+ * the same rule as any programme change; the card itself is not reissued.
+ */
+function admin_volunteer_promote_ngg(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $volunteerId = (string)($p['volunteerId'] ?? '');
+    $v = db_row('SELECT * FROM volunteers WHERE volunteerId = ? LIMIT 1', [$volunteerId]);
+    if (!$v) return ['ok' => false, 'error' => 'not_found'];
+    if ((string)($v['status'] ?? '') !== 'active') return ['ok' => false, 'error' => 'not_active'];
+    if (volunteer_programme($v) !== 'summer') return ['ok' => false, 'error' => 'already_ngg'];
+    $to = !empty($p['keepSummer']) ? 'both' : 'ngg';
+    $centre = trim((string)($p['centre'] ?? ''));
+    if ($centre === '') {
+        $o = admin_volunteer_ngg_options($p);
+        $centre = (string)($o['suggested'] ?? '');
+        if ($centre === '') return ['ok' => false, 'error' => 'centre_required', 'detail' => 'Choose the NGG centre they will serve.'];
+    }
+    $hit = db_row("SELECT name, programmes FROM centres WHERE lower(name) = lower(?) AND status = 'active' LIMIT 1", [$centre]);
+    if (!$hit || !centre_serves($hit, 'ngg')) return ['ok' => false, 'error' => 'invalid_centre', 'detail' => 'Choose one of the open NGG centres.'];
+    $centre = (string)$hit['name'];
+    $r = admin_volunteer_update(['requesterId' => $p['requesterId'] ?? '', 'volunteerId' => $volunteerId, 'ip' => $p['ip'] ?? '',
+                                 'data' => ['programme' => $to, 'centre' => $centre]]);
+    if (empty($r['ok'])) return $r;
+    $moved = db_exec("UPDATE mentors SET programme = ?, centre = ?, updatedAt = ? WHERE volunteerId = ? AND status = 'active'", [$to, $centre, now_iso(), $volunteerId]);
+    audit('volunteer.promote.ngg', (string)$g['requester']['memberId'], $volunteerId,
+          ['from' => (string)($v['centre'] ?? ''), 'to' => $centre, 'programme' => $to, 'mentorRecords' => $moved], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'volunteerId' => $volunteerId, 'programme' => $to, 'centre' => $centre, 'mentorRecords' => $moved];
+}
+
 /** Delete a volunteer record and release its check-in QR token. */
 function admin_volunteer_delete(array $p): array {
     $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;

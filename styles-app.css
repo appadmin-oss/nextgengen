@@ -8867,3 +8867,12 @@ body:has(.cr-app) .ngg-cursor { display: none !important; }
 /* A v1 panel mounted as a Control Room v2 tab (crPanel, cr-ui.jsx): the shell
    owns the page's spacing, so the panel's own outer padding is dropped. */
 .cr-panel.admin-main { padding: 0; min-width: 0; }
+
+/* Volunteers › Bring into NGG (page-admin.jsx VolunteerNggMove) */
+.vol-ngg-cell { background: rgba(12, 20, 50, 0.03); }
+.vol-ngg { display: flex; flex-direction: column; gap: 10px; padding: 8px 4px; }
+.vol-ngg-lead { margin: 0; }
+.vol-ngg-centres { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.vol-ngg-centres legend { font-weight: 600; margin-bottom: 6px; padding: 0; }
+.vol-ngg-opt { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; }
+.vol-ngg-acts { display: flex; gap: 8px; }

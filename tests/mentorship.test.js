@@ -169,6 +169,41 @@ async function as(memberId, admin, viewport) {
     await am.waitForFunction(() => /STAFF|Pick a centre|MENTOR PORTAL/i.test(document.body.innerText), null, { timeout: 60000 });
     chk('an admin with an uncleared mentor record lands on the class roster, not the Academy checklist', !/Before you meet your pod/.test(await am.innerText('body')));
 
+    // ── A super admin reaches both mentor pages ─────────────────────────
+    const su = await as('NGG-MS-ADM', true);
+    await su.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(su);
+    await su.waitForSelector('.mt-viewswitch', { timeout: 60000 });
+    chk('super admin: /mentor opens the class roster (Summer School and NGG) with a switch to the NGG pods',
+      /Class roster · Summer School and NGG/.test(await su.innerText('.mt-viewswitch')) && await su.isVisible('.mt-viewswitch a:has-text("NGG pods")'));
+    await su.click('.mt-viewswitch a:has-text("NGG pods")');
+    await su.waitForSelector('.mt-app .mt-body h1', { timeout: 60000 });
+    const sv = await su.innerText('body');
+    chk('super admin: the NGG pods page is the coordinator view of every pod, read only',
+      /Coordinator view · every pod/.test(sv) && /pod of 2/.test(sv) && !/Before you meet your pod/.test(sv));
+    await su.goto(BASE + '/mentor?view=pod&s=case&m=NGG-MS-K1', { waitUntil: 'domcontentloaded' });
+    await su.waitForSelector('.mt-tabs', { timeout: 60000 });
+    chk('super admin: a case file opens read only, naming the mentor', /Mentor · Ngozi Eke · read only/.test(await su.innerText('.mt-body')) && !(await su.isVisible('button:has-text("Log a one-to-one")')));
+
+    // ── A Summer School volunteer brought into NGG ──────────────────────
+    php(`db_insert('centres', ['centreId' => 'C-EG', 'name' => 'Egbeda', 'code' => 'EG', 'status' => 'active', 'programmes' => 'ngg', 'slug' => 'egbeda', 'createdAt' => now_iso()]);
+         db_insert('centres', ['centreId' => 'C-EGS', 'name' => 'Egbeda (Summer School)', 'code' => 'EGS', 'status' => 'retired', 'programmes' => 'summer', 'slug' => 'egbeda-summer', 'createdAt' => now_iso()]);
+         db_insert('volunteers', ['volunteerId' => 'VOL-MS-1', 'fullName' => 'Sade Summer', 'email' => 'sade@pod.example', 'role' => 'mentor', 'programme' => 'summer', 'centre' => 'Egbeda (Summer School)', 'status' => 'active', 'safeguarding' => 'cleared', 'token' => 'tok-ms-1', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);`);
+    await su.goto(BASE + '/control/mentors/volunteers', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(su);
+    await su.waitForSelector('button:has-text("Roster")', { timeout: 60000 });
+    await su.click('button:has-text("Roster")');
+    await su.waitForSelector('tr:has-text("Sade Summer") button:has-text("Bring into NGG")', { timeout: 30000 });
+    await su.click('tr:has-text("Sade Summer") button:has-text("Bring into NGG")');
+    await su.waitForSelector('.vol-ngg-centres', { timeout: 30000 });
+    chk('Bring into NGG: Egbeda (the centre her Summer venue was split from) is suggested; no Summer venue is offered',
+      await su.isChecked('.vol-ngg-opt:has-text("Egbeda · suggested") input') && !(await su.$$eval('.vol-ngg-centres .vol-ngg-opt', ls => ls.some(l => /Summer School/.test(l.textContent)))));
+    await su.click('.vol-ngg button:has-text("Bring into NGG")');
+    await su.waitForFunction(() => /now serves NGG and Summer School at Egbeda/.test(document.body.innerText), null, { timeout: 30000 });
+    chk('…and she serves both, at Egbeda', JSON.stringify(q(`db_row("SELECT programme, centre FROM volunteers WHERE volunteerId = 'VOL-MS-1'")`)) === JSON.stringify({ programme: 'both', centre: 'Egbeda' }));
+    chk('no page errors for the super admin', su.errs.length === 0);
+    if (su.errs.length) console.error(su.errs.join('\n'));
+
     // ── The workspace, as HQ ────────────────────────────────────────────
     const hq = await as('NGG-MS-ADM', true);
     await hq.goto(BASE + '/control/mentorship', { waitUntil: 'domcontentloaded' });

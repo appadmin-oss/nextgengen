@@ -1254,18 +1254,40 @@ function ms_portal_gate(array $p): array {
     $g = mentor_gate($p);
     if (empty($g['ok'])) return $g;
     $mid = (string)($g['mentorId'] ?? '');
-    if ($mid === '') return ['ok' => false, 'error' => 'no_mentor_record'];
-    $m = db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [$mid]);
+    $m = $mid !== '' ? db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [$mid]) : null;
+    /* Staff see every pod in their scope (the coordinator's view), unless they
+       run a cleared NGG pod of their own. Their reach is their role's, not the
+       Academy's; they read, and leave the mentoring to the mentors. */
+    $own = $m && ms_mentor_is_ngg($m) ? ms_clearance($m) : null;
+    if (($g['role'] ?? '') === 'admin' && in_array('ngg', (array)($g['programmes'] ?? []), true) && !($own['cleared'] ?? false)) {
+        $staff = $g['member'];
+        return ['ok' => true, 'g' => $g, 'staffView' => true, 'centres' => $g['centres'] ?? null,
+                'mentor' => ['mentorId' => '', 'fullName' => (string)($staff['fullName'] ?? ''), 'centre' => (string)($g['mentor']['centre'] ?? ''), 'rank' => 'coord', 'maxMentees' => 0],
+                'clearance' => ['cleared' => true, 'staff' => true, 'screened' => true, 'modulesDone' => 0, 'modulesRequired' => count(ms_required_modules()), 'policy' => true, 'missing' => []]];
+    }
     if (!$m) return ['ok' => false, 'error' => 'no_mentor_record'];
     // Pods are NGG's. A Summer School mentor keeps the class roster.
     if (!ms_mentor_is_ngg($m)) return ['ok' => false, 'error' => 'not_a_pod_mentor'];
-    return ['ok' => true, 'g' => $g, 'mentor' => $m, 'clearance' => ms_clearance($m)];
+    return ['ok' => true, 'g' => $g, 'mentor' => $m, 'clearance' => $own];
+}
+/** The Academy and the policy are a mentor's own record; the staff view has none. */
+function ms_portal_gate_own(array $p): array {
+    $o = ms_portal_gate($p);
+    if (!empty($o['staffView'])) return ['ok' => false, 'error' => 'no_mentor_record'];
+    return $o;
 }
 /** Gate + "this mentee is in MY pod". Anything else is a 403. */
-function ms_pod_open(array $p): array {
+function ms_pod_open(array $p, bool $write = false): array {
     $o = ms_portal_gate($p);
     if (!$o['ok']) return $o;
     if (!$o['clearance']['cleared']) return ['ok' => false, 'error' => 'not_cleared', 'clearance' => $o['clearance']];
+    if (!empty($o['staffView'])) {
+        // Staff read any pod in their scope; the record is written by its mentor.
+        if ($write) return ['ok' => false, 'error' => 'staff_view_read_only'];
+        $x = db_row("SELECT * FROM mentor_matches WHERE memberId = ? AND status IN ('active','paused','closing') LIMIT 1", [(string)($p['memberId'] ?? $p['subjectId'] ?? '')]);
+        if (!$x || ($o['centres'] !== null && !in_array((string)$x['centre'], $o['centres'], true))) return ['ok' => false, 'error' => 'not_in_pod'];
+        return $o + ['match' => $x];
+    }
     $x = db_row("SELECT * FROM mentor_matches WHERE memberId = ? AND mentorId = ? AND status IN ('active','paused','closing') LIMIT 1",
                 [(string)($p['memberId'] ?? $p['subjectId'] ?? ''), (string)$o['mentor']['mentorId']]);
     if (!$x) return ['ok' => false, 'error' => 'not_in_pod'];
@@ -1278,10 +1300,11 @@ function member_ms_today(array $p): array {
     $base = ['ok' => true, 'mentor' => ['mentorId' => $m['mentorId'], 'fullName' => $m['fullName'], 'centre' => $m['centre'], 'rank' => $m['rank'] ?? 'mentor'],
              'clearance' => $o['clearance'], 'policy' => ['version' => MS_POLICY_VERSION, 'accepted' => $o['clearance']['policy'] ?? false],
              // 'admin' when the person is staff: their reach comes from their role, not the Academy.
-             'role' => (string)($o['g']['role'] ?? 'mentor')];
+             'role' => (string)($o['g']['role'] ?? 'mentor'), 'staffView' => !empty($o['staffView'])];
     if (!$o['clearance']['cleared']) return $base + ['cleared' => false, 'pod' => [], 'needsYou' => [], 'oneToOnes' => [], 'todo' => []];
-    $g = ['centres' => null];
-    $rels = ms_relationships($g, '', $today, (string)$m['mentorId']);
+    $staff = !empty($o['staffView']);
+    $g = ['centres' => $staff ? $o['centres'] : null];
+    $rels = ms_relationships($g, '', $today, $staff ? null : (string)$m['mentorId']);
     $ids = array_column($rels, 'memberId');
     $here = []; $obs = []; $rev = [];
     if ($ids) {
@@ -1299,11 +1322,20 @@ function member_ms_today(array $p): array {
                 'days' => ms_days_between($from, $today), 'overdue' => ms_days_between($from, $today) >= MS_ONE_TO_ONE_GAP];
     }, $rels);
     usort($oto, static fn($a, $b) => [$b['overdue'], $b['days']] <=> [$a['overdue'], $a['days']]);
+    if ($staff) {
+        $a1 = []; $cf1 = ms_centre_filter($g, 'centre', $a1);
+        $needs = db_all("SELECT id, rule, memberId, matchId, title, body, suggestion, createdAt FROM mentor_nudges
+                         WHERE status = 'open' AND audience = 'mentor'$cf1 ORDER BY CASE rule WHEN 'R2' THEN 0 WHEN 'R1' THEN 1 ELSE 2 END, createdAt LIMIT 60", $a1);
+        $a2 = []; $cf2 = ms_centre_filter($g, 'k.centre', $a2);
+        $todo = db_all("SELECT k.id, k.kind, k.dueOn, k.memberId, mm.fullName menteeName FROM mentor_tasks k LEFT JOIN members mm ON mm.memberId = k.memberId
+                        WHERE k.owner = 'mentor' AND k.status = 'open' AND k.dueOn <= ?$cf2 ORDER BY k.dueOn LIMIT 50", array_merge([ms_add_days($today, 7)], $a2));
+    } else {
     $needs = db_all("SELECT id, rule, memberId, matchId, title, body, suggestion, createdAt FROM mentor_nudges
                      WHERE status = 'open' AND audience = 'mentor' AND mentorId = ? ORDER BY CASE rule WHEN 'R2' THEN 0 WHEN 'R1' THEN 1 ELSE 2 END, createdAt", [$m['mentorId']]);
     $todo = db_all("SELECT k.id, k.kind, k.dueOn, k.memberId, mm.fullName menteeName FROM mentor_tasks k LEFT JOIN members mm ON mm.memberId = k.memberId
                     WHERE k.mentorId = ? AND k.owner = 'mentor' AND k.status = 'open' AND k.dueOn <= ? ORDER BY k.dueOn LIMIT 50", [$m['mentorId'], ms_add_days($today, 7)]);
-    return $base + ['cleared' => true, 'pod' => $pod, 'podSize' => count($pod), 'podMin' => MS_POD_MIN, 'podMax' => ms_mentor_cap($m),
+    }
+    return $base + ['cleared' => true, 'pod' => $pod, 'podSize' => count($pod), 'podMin' => MS_POD_MIN, 'podMax' => $staff ? 0 : ms_mentor_cap($m),
         'counters' => ['here' => count($here), 'observed' => count($obs), 'reviewed' => count($rev), 'of' => count($pod)],
         'needsYou' => $needs, 'oneToOnes' => $oto, 'todo' => $todo, 'indicators' => MS_INDICATORS, 'levels' => MS_LEVELS];
 }
@@ -1311,6 +1343,7 @@ function member_ms_today(array $p): array {
 function member_ms_case(array $p): array {
     $o = ms_pod_open($p); if (!$o['ok']) return $o;
     $x = $o['match']; $id = (string)$x['memberId']; $today = ms_today($p);
+    $x['mentorName'] = (string)(db_row('SELECT fullName FROM mentors WHERE mentorId = ?', [(string)$x['mentorId']])['fullName'] ?? '');
     $kid = db_row('SELECT memberId, fullName, dob, centre, track, photoUrl FROM members WHERE memberId = ? LIMIT 1', [$id]);
     $sats = [];
     $seen = []; foreach (db_all('SELECT date FROM attendance WHERE studentId = ? AND date >= ?', [$id, ms_add_days($today, -63)]) as $r) $seen[$r['date']] = true;
@@ -1332,7 +1365,7 @@ function member_ms_case(array $p): array {
  * seen": say what they did, not how good it was.
  */
 function member_ms_observe(array $p): array {
-    $o = ms_pod_open($p); if (!$o['ok']) return $o;
+    $o = ms_pod_open($p, true); if (!$o['ok']) return $o;
     $x = $o['match'];
     $ratings = (array)($p['ratings'] ?? []);
     if (!$ratings && isset($p['indicator'])) $ratings = [['indicator' => $p['indicator'], 'level' => $p['level'] ?? 0, 'evidence' => $p['evidence'] ?? '']];
@@ -1361,7 +1394,7 @@ function member_ms_observe(array $p): array {
 
 /** A one-to-one, logged against the pod and the shared meetings record. */
 function member_ms_onetoone(array $p): array {
-    $o = ms_pod_open($p); if (!$o['ok']) return $o;
+    $o = ms_pod_open($p, true); if (!$o['ok']) return $o;
     $x = $o['match'];
     $discussed = trim((string)($p['discussed'] ?? ''));
     if ($discussed === '') return ['ok' => false, 'error' => 'discussed_required'];
@@ -1387,7 +1420,7 @@ function member_ms_onetoone(array $p): array {
 }
 
 function member_ms_task_done(array $p): array {
-    $o = ms_portal_gate($p); if (!$o['ok']) return $o;
+    $o = ms_portal_gate_own($p); if (!$o['ok']) return $o;
     if (!$o['clearance']['cleared']) return ['ok' => false, 'error' => 'not_cleared'];
     $t = db_row("SELECT * FROM mentor_tasks WHERE id = ? AND mentorId = ? AND owner = 'mentor' LIMIT 1", [(int)($p['id'] ?? 0), (string)$o['mentor']['mentorId']]);
     if (!$t) return ['ok' => false, 'error' => 'not_found'];
@@ -1395,7 +1428,7 @@ function member_ms_task_done(array $p): array {
     return ['ok' => true];
 }
 function member_ms_nudge_done(array $p): array {
-    $o = ms_portal_gate($p); if (!$o['ok']) return $o;
+    $o = ms_portal_gate_own($p); if (!$o['ok']) return $o;
     $n = db_exec("UPDATE mentor_nudges SET status = 'done', resolvedAt = ?, resolvedBy = ? WHERE id = ? AND audience = 'mentor' AND mentorId = ? AND status = 'open'",
                  [now_iso(), (string)$o['mentor']['mentorId'], (int)($p['id'] ?? 0), (string)$o['mentor']['mentorId']]);
     return $n ? ['ok' => true] : ['ok' => false, 'error' => 'not_found'];
@@ -1403,7 +1436,7 @@ function member_ms_nudge_done(array $p): array {
 
 /** The mentor's side of the termly relationship check. */
 function member_ms_relcheck(array $p): array {
-    $o = ms_pod_open($p); if (!$o['ok']) return $o;
+    $o = ms_pod_open($p, true); if (!$o['ok']) return $o;
     return ms_relcheck_write($o['match'], 'mentor', (array)($p['answers'] ?? []), (string)$o['mentor']['mentorId'], ms_today($p), (string)($p['note'] ?? ''));
 }
 /** The mentee's side, answered separately from their own account. */
@@ -1416,7 +1449,7 @@ function member_ms_relcheck_mentee(array $p): array {
 
 /** The mentor's own check-in with their coordinator. */
 function member_ms_coord_checkin(array $p): array {
-    $o = ms_portal_gate($p); if (!$o['ok']) return $o;
+    $o = ms_portal_gate_own($p); if (!$o['ok']) return $o;
     $m = $o['mentor'];
     $need = !empty($p['needSupport']);
     $week = iso_week_period(strtotime(ms_today($p) . 'T12:00:00Z'));
@@ -1434,7 +1467,7 @@ function member_ms_concern(array $p): array { return sg_report($p); }
 /* ── Academy and policy (the mentor's own) ──────────────────────────────── */
 
 function member_ms_academy(array $p): array {
-    $o = ms_portal_gate($p); if (!$o['ok']) return $o;
+    $o = ms_portal_gate_own($p); if (!$o['ok']) return $o;
     $a = ms_academy();
     $done = [];
     foreach (db_all('SELECT moduleId, score, passedAt FROM mentor_academy WHERE mentorId = ?', [$o['mentor']['mentorId']]) as $r) $done[$r['moduleId']] = $r;
@@ -1449,7 +1482,7 @@ function member_ms_academy(array $p): array {
     return ['ok' => true, 'pass' => (int)$a['pass'], 'groups' => $a['groups'], 'modules' => $mods, 'clearance' => $o['clearance']];
 }
 function member_ms_academy_check(array $p): array {
-    $o = ms_portal_gate($p); if (!$o['ok']) return $o;
+    $o = ms_portal_gate_own($p); if (!$o['ok']) return $o;
     $mod = null; foreach (ms_academy()['modules'] as $m) if ($m['id'] === (string)($p['moduleId'] ?? '')) $mod = $m;
     if (!$mod) return ['ok' => false, 'error' => 'not_found'];
     $ans = array_values((array)($p['answers'] ?? []));
@@ -1470,13 +1503,13 @@ function member_ms_academy_check(array $p): array {
     return ['ok' => true, 'score' => $score, 'passed' => $pass, 'feedback' => $feedback, 'clearance' => $c];
 }
 function member_ms_policy(array $p): array {
-    $o = ms_portal_gate($p); if (!$o['ok']) return $o;
+    $o = ms_portal_gate_own($p); if (!$o['ok']) return $o;
     $acc = db_row('SELECT signedName, acceptedAt FROM mentor_policy WHERE mentorId = ? AND policyVersion = ?', [$o['mentor']['mentorId'], MS_POLICY_VERSION]);
     return ['ok' => true, 'policy' => mentorship_policy(), 'accepted' => $acc,
             'commitments' => ms_commitments($o['mentor'], substr(ms_today($p), 0, 7))];
 }
 function member_ms_policy_accept(array $p): array {
-    $o = ms_portal_gate($p); if (!$o['ok']) return $o;
+    $o = ms_portal_gate_own($p); if (!$o['ok']) return $o;
     $name = trim((string)($p['signedName'] ?? ''));
     if (mb_strlen($name) < 3) return ['ok' => false, 'error' => 'sign_with_your_name'];
     if ((string)($p['version'] ?? '') !== MS_POLICY_VERSION) return ['ok' => false, 'error' => 'policy_changed', 'version' => MS_POLICY_VERSION];

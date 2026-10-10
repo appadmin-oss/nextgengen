@@ -7726,3 +7726,6 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
   .mt-ind em { grid-column: 1 / -1; }
 }
 .mt-btn-link { display: inline-flex; align-items: center; text-decoration: none; }
+.mt-viewswitch { display: flex; gap: 4px; padding: 10px 16px 0; max-width: 860px; margin: 0 auto; flex-wrap: wrap; }
+.mt-viewswitch a { padding: 8px 12px; border-radius: 999px; font: 600 13.5px var(--font-body); color: var(--mt-muted, #5E5E66); background: rgba(11, 11, 12, .05); text-decoration: none; }
+.mt-viewswitch a[aria-current=page] { background: var(--mt-ink, #0B0B0C); color: #FFFFFF; }

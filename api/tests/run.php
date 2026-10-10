@@ -25466,6 +25466,38 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('impact: contact is mentees with a one-to-one in 14 days over active matches', $imp['contact']['d'] === $active && $imp['contact']['n'] === 1 && $imp['contact']['target'] === 85);
     chk('impact: relationship quality averages the mentor and mentee checks this term', $imp['relationship']['value'] === 2.25 && $imp['relationship']['met'] === false);
 
+    // Staff see every pod (the coordinator's view), read only.
+    $staffToday = backend_dispatch('member.ms.today', ['requesterId' => $SU]);
+    chk('pods: a super admin with no mentor record gets the coordinator view of every pod', !empty($staffToday['staffView']) && $staffToday['cleared'] === true
+        && count($staffToday['pod']) === (int)db_row("SELECT COUNT(*) c FROM mentor_matches WHERE status IN ('active','paused','closing')")['c']);
+    chk('pods: staff can read a mentee’s case file in scope, but cannot write to it',
+        !empty(backend_dispatch('member.ms.case', ['requesterId' => $SU, 'memberId' => 'NGG-POD-K2'])['ok'])
+        && (backend_dispatch('member.ms.onetoone', ['requesterId' => $SU, 'memberId' => 'NGG-POD-K2', 'discussed' => 'x'])['error'] ?? '') === 'staff_view_read_only'
+        && (backend_dispatch('member.ms.academy', ['requesterId' => $SU])['error'] ?? '') === 'no_mentor_record');
+
+    // A Summer School volunteer brought into NGG.
+    db_insert('centres', ['centreId' => 'C-POD', 'name' => 'Podville', 'code' => 'POD', 'status' => 'active', 'programmes' => 'ngg', 'slug' => 'podville', 'createdAt' => $now]);
+    db_insert('centres', ['centreId' => 'C-PODS', 'name' => 'Podville (Summer School)', 'code' => 'PODS', 'status' => 'retired', 'programmes' => 'summer', 'slug' => 'podville-summer', 'createdAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'VOL-POD-1', 'fullName' => 'Sade Summer', 'email' => 'sade@pod.example', 'role' => 'mentor', 'programme' => 'summer',
+        'centre' => 'Podville (Summer School)', 'status' => 'active', 'safeguarding' => 'cleared', 'token' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'MEN-POD-V', 'fullName' => 'Sade Summer', 'status' => 'active', 'centre' => 'Podville (Summer School)', 'programme' => 'summer', 'volunteerId' => 'VOL-POD-1', 'createdAt' => $now]);
+    $vo = backend_dispatch('admin.volunteers.ngg.options', ['requesterId' => $SU, 'volunteerId' => 'VOL-POD-1']);
+    chk('volunteer → NGG: only open NGG centres are offered, never a Summer venue', ($vo['suggested'] ?? '') === 'Podville' && !in_array('Podville (Summer School)', array_column($vo['centres'], 'name'), true));
+    db_insert('volunteers', ['volunteerId' => 'VOL-POD-2', 'fullName' => 'Nowhere Volunteer', 'email' => 'nw@pod.example', 'role' => 'mentor', 'programme' => 'summer',
+        'centre' => 'Atlantis', 'status' => 'active', 'safeguarding' => 'cleared', 'token' => '', 'createdAt' => $now, 'updatedAt' => $now]);
+    chk('volunteer → NGG: with nothing to measure, nothing is suggested and a centre must be chosen',
+        (backend_dispatch('admin.volunteers.ngg.options', ['requesterId' => $SU, 'volunteerId' => 'VOL-POD-2'])['suggested'] ?? 'x') === ''
+        && (backend_dispatch('admin.volunteers.promote.ngg', ['requesterId' => $SU, 'volunteerId' => 'VOL-POD-2'])['error'] ?? '') === 'centre_required');
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-POD-2'");
+    chk('volunteer → NGG: a Summer School venue is refused', (backend_dispatch('admin.volunteers.promote.ngg', ['requesterId' => $SU, 'volunteerId' => 'VOL-POD-1', 'centre' => 'Podville (Summer School)'])['error'] ?? '') === 'invalid_centre');
+    $pv = backend_dispatch('admin.volunteers.promote.ngg', ['requesterId' => $SU, 'volunteerId' => 'VOL-POD-1', 'keepSummer' => true]);
+    chk('volunteer → NGG: they serve both at the suggested NGG centre, and their mentor record moves with them',
+        ($pv['programme'] ?? '') === 'both' && db_row("SELECT programme, centre FROM volunteers WHERE volunteerId = 'VOL-POD-1'") === ['programme' => 'both', 'centre' => 'Podville']
+        && db_row("SELECT programme, centre FROM mentors WHERE mentorId = 'MEN-POD-V'") === ['programme' => 'both', 'centre' => 'Podville']);
+    chk('volunteer → NGG: doing it twice is refused, not repeated', (backend_dispatch('admin.volunteers.promote.ngg', ['requesterId' => $SU, 'volunteerId' => 'VOL-POD-1'])['error'] ?? '') === 'already_ngg');
+    db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-POD-1'");
+    db_exec("DELETE FROM centres WHERE centreId IN ('C-POD', 'C-PODS')");
+
     // Tidy.
     foreach (['mentor_matches', 'mentor_match_offers', 'mentor_tasks', 'mentor_nudges', 'mentor_interventions', 'mentor_relationship_checks', 'mentor_observations',
               'mentor_academy', 'mentor_policy', 'mentor_obligations', 'safeguarding_cases', 'safeguarding_notes'] as $t) db_exec("DELETE FROM $t");

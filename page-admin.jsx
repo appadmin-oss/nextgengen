@@ -10018,6 +10018,51 @@ function VolunteerNeedsEditor() {
 
 /* Edit an active volunteer's data — name, contact, role, centre, faculty,
    courses, visibility consent, status, photo. Mirrors admin.volunteers.update. */
+/**
+ * Summer School → NGG for one volunteer. The centre list is the open NGG
+ * centres, nearest to where their Summer School met; Summer venues are never
+ * offered. "Keep serving Summer School" makes them both. Their mentor record,
+ * if they have one, moves with them (admin_volunteer_promote_ngg).
+ */
+function VolunteerNggMove({ v, onDone }) {
+  const [opts, setOpts] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [centre, setCentre] = React.useState("");
+  const [keep, setKeep] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
+  const load = () => { setErr(""); NGGApi.admin.volunteers.nggOptions(v.volunteerId).then(r => { setOpts(r); setCentre(r.suggested || ""); }).catch(e => setErr(e.code || e.message)); };
+  React.useEffect(load, [v.volunteerId]);
+  const go = async () => {
+    setBusy(true);
+    try {
+      const r = await NGGApi.admin.volunteers.promoteNgg(v.volunteerId, centre, keep);
+      toast.success(v.fullName + " now serves " + (r.programme === "both" ? "NGG and Summer School" : "NGG") + " at " + r.centre + (r.mentorRecords ? " · mentor record moved too" : "") + ".");
+      onDone();
+    } catch (e) { toast.error(({ invalid_centre: "Choose one of the open NGG centres.", centre_required: "Choose the NGG centre they will serve.", already_ngg: "They already serve NGG." })[e.code] || e.message); setBusy(false); }
+  };
+  if (err) return <div className="vol-ngg"><p role="alert">Couldn’t load the NGG centres ({err}).</p><button className="btn btn-ghost btn-sm" onClick={load}>Try again</button></div>;
+  if (!opts) return <div className="vol-ngg"><p>Loading the NGG centres…</p></div>;
+  return (
+    <div className="vol-ngg">
+      <p className="vol-ngg-lead">Bring <b>{v.fullName}</b> from Summer School into the NGG Club. Their ID card stays the same; it keeps working all year.</p>
+      {!opts.centres.length ? <p role="alert">There are no open NGG centres you can place them at. Add one in Members → Centres.</p> : <>
+        <fieldset className="vol-ngg-centres">
+          <legend>NGG centre{opts.summerCentre ? " · nearest to " + opts.summerCentre + " first" : ""}</legend>
+          {opts.centres.map((c, i) => <label key={c.name} className="vol-ngg-opt">
+            <input type="radio" name={"ngg-" + v.volunteerId} checked={centre === c.name} onChange={() => setCentre(c.name)}/>
+            {c.name}{c.minutes != null ? " · " + c.minutes + " min drive" : c.km != null ? " · " + c.km + " km" : ""}{i === 0 && opts.suggested === c.name ? " · suggested" : ""}
+          </label>)}
+        </fieldset>
+        <label className="vol-ngg-opt"><input type="checkbox" checked={keep} onChange={e => setKeep(e.target.checked)}/> Keep serving Summer School too</label>
+        <div className="vol-ngg-acts">
+          <button className="btn btn-primary btn-sm" disabled={busy || !centre} onClick={go}>{busy ? "Moving…" : "Bring into NGG"}</button>
+          <button className="btn btn-ghost btn-sm" onClick={onDone} disabled={busy}>Cancel</button>
+        </div>
+      </>}
+    </div>
+  );
+}
+
 function VolunteerEditor({ v, onSaved, onDelete }) {
   const centreOpts = useCentreOptions();
   const [f, setF] = React.useState({
@@ -10295,11 +10340,16 @@ function AdminVolunteers() {
                       <td className="mono" style={{ fontSize: 12 }}><a href={"/q/" + v.token} target="_blank" rel="noreferrer">/q/{(v.token || "").slice(0, 10)}…</a></td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         <button className="btn btn-ghost btn-sm" onClick={() => setEditId(editId === v.volunteerId ? "" : v.volunteerId)}>{editId === v.volunteerId ? "Close" : "Edit"}</button>
+                        {(v.programme || "summer") === "summer" && v.status === "active" &&
+                          <button className="btn btn-ghost btn-sm" onClick={() => setEditId(editId === "ngg:" + v.volunteerId ? "" : "ngg:" + v.volunteerId)}>{editId === "ngg:" + v.volunteerId ? "Close" : "Bring into NGG"}</button>}
                         {v.safeguarding === "cleared"
                           ? <button className="btn btn-ghost btn-sm" disabled={busy === "s" + v.volunteerId} onClick={() => setSafeguard(v, "pending")}>Un-clear</button>
                           : <button className="btn btn-primary btn-sm" disabled={busy === "s" + v.volunteerId} onClick={() => setSafeguard(v, "cleared")}>{busy === "s" + v.volunteerId ? "…" : "Mark screened"}</button>}
                       </td>
                     </tr>
+                    {editId === "ngg:" + v.volunteerId && <tr><td colSpan={8} className="vol-ngg-cell">
+                      <VolunteerNggMove v={v} onDone={() => { setEditId(""); load(); }}/>
+                    </td></tr>}
                     {editId === v.volunteerId && <tr><td colSpan={8} style={{ background: "rgba(12,20,50,0.03)" }}>
                       <VolunteerEditor v={v} onSaved={() => { setEditId(""); load(); }} onDelete={() => removeVol(v)}/>
                       <VolunteerPortalAccess v={v} onSaved={load}/>
