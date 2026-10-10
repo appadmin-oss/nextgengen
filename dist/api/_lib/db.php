@@ -219,6 +219,47 @@ function db_driver(): string {
  * break the request. Gated by a content hash in schema_meta so the full replay
  * only runs when the mirror actually changes (steady state = two tiny queries).
  */
+/**
+ * Every table in ONE collation — the one `members` was created with.
+ *
+ * The mirror's older tables take the server's default (utf8mb4_general_ci on
+ * most shared hosts); twenty-odd newer ones named utf8mb4_unicode_ci. MySQL
+ * refuses to compare a column of one with a column of the other ("1267
+ * Illegal mix of collations"), so any join between an old table and a new one
+ * — members with mentor_matches, say — failed the whole request. The fix is
+ * not to pick a collation in the mirror but to make the database agree with
+ * itself: whatever `members` uses, every other table is converted to.
+ *
+ * Runs with the mirror (once per deploy). A table whose conversion fails is
+ * logged and skipped; the rest still convert. Returns false if any failed.
+ */
+function db_mysql_unify_collation(PDO $db): bool {
+    try {
+        $st = $db->query("SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'members'");
+        $target = $st ? (string)($st->fetchColumn() ?: '') : '';
+        if (!preg_match('/^utf8mb4_[a-z0-9_]+$/', $target)) return true;   // nothing to anchor on
+        $st = $db->prepare("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' AND TABLE_COLLATION <> ?
+                            UNION SELECT DISTINCT TABLE_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND COLLATION_NAME IS NOT NULL AND COLLATION_NAME <> ?");
+        $st->execute([$target, $target]);
+        $tables = $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    } catch (Throwable $e) {
+        error_log('[db] collation check: ' . $e->getMessage());
+        return false;
+    }
+    $ok = true;
+    foreach ($tables as $t) {
+        if (!preg_match('/^[A-Za-z0-9_]+$/', (string)$t)) continue;
+        try {
+            $db->exec("ALTER TABLE `$t` CONVERT TO CHARACTER SET utf8mb4 COLLATE $target");
+            error_log("[db] collation: $t converted to $target");
+        } catch (Throwable $e) {
+            $ok = false;
+            error_log("[db] collation: $t not converted — " . $e->getMessage());
+        }
+    }
+    return $ok;
+}
+
 function db_apply_mysql_schema(PDO $db): void {
     global $CONFIG;
     $file = (string)($CONFIG['mysql_schema_path'] ?? (__DIR__ . '/../../db/schema-mysql.sql'));
@@ -283,6 +324,7 @@ function db_apply_mysql_schema(PDO $db): void {
             }
         }
     }
+    if (!db_mysql_unify_collation($db)) $allOk = false;
     /* Data fixups the mirror cannot carry — see NGG_MYSQL_ROW_FIXUPS.
      *
      * Reached only when the mirror's hash changed, i.e. once per deploy, and

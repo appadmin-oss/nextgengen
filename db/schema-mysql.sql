@@ -2977,7 +2977,7 @@ CREATE TABLE IF NOT EXISTS member_timetables (
   memberId VARCHAR(64) NOT NULL PRIMARY KEY,
   doc MEDIUMTEXT NOT NULL,
   updatedAt VARCHAR(32) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS timetable_links (
   tokenHash CHAR(64) NOT NULL PRIMARY KEY,
   email VARCHAR(190) NOT NULL,
@@ -2987,7 +2987,7 @@ CREATE TABLE IF NOT EXISTS timetable_links (
   expiresAt VARCHAR(32) NOT NULL,
   revokedAt VARCHAR(32) NOT NULL DEFAULT '',
   KEY idx_timetable_links_email (email, createdAt)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (131) ON DUPLICATE KEY UPDATE version = version;
 
@@ -3002,7 +3002,7 @@ CREATE TABLE IF NOT EXISTS id_reprints (
   doneRunId VARCHAR(40) NOT NULL DEFAULT '',
   doneAt VARCHAR(32) NOT NULL DEFAULT '',
   KEY idx_id_reprints_subject (subjectType, subjectId, doneAt)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS id_photo_asks (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -3012,7 +3012,7 @@ CREATE TABLE IF NOT EXISTS id_photo_asks (
   askedAt VARCHAR(32) NOT NULL,
   sent TINYINT NOT NULL DEFAULT 0,
   KEY idx_id_photo_asks_subject (subjectType, subjectId)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (132) ON DUPLICATE KEY UPDATE version = version;
 
@@ -3022,7 +3022,7 @@ CREATE TABLE IF NOT EXISTS id_designs (
   templateId VARCHAR(64) NOT NULL DEFAULT '',
   setBy VARCHAR(64) NOT NULL DEFAULT '',
   setAt VARCHAR(32) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ALTER TABLE id_photo_asks ADD COLUMN channels VARCHAR(255) NOT NULL DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (133) ON DUPLICATE KEY UPDATE version = version;
@@ -3037,7 +3037,7 @@ CREATE TABLE IF NOT EXISTS contact_replies (
   sentAt VARCHAR(32) NOT NULL DEFAULT '',
   channel VARCHAR(16) NOT NULL DEFAULT 'email',
   INDEX idx_contact_replies_msg (messageId)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE INDEX idx_contact_email ON contact_messages (email);
 
 INSERT INTO schema_version (version) VALUES (134) ON DUPLICATE KEY UPDATE version = version;
@@ -3066,7 +3066,7 @@ CREATE TABLE IF NOT EXISTS membership_invoices (
   voidReason VARCHAR(255) NOT NULL DEFAULT '',
   INDEX idx_minv_member (memberId),
   INDEX idx_minv_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS offline_payments (
   id INT AUTO_INCREMENT PRIMARY KEY,
   paymentId VARCHAR(40) NOT NULL UNIQUE,
@@ -3092,7 +3092,7 @@ CREATE TABLE IF NOT EXISTS offline_payments (
   rejectReason VARCHAR(500) NOT NULL DEFAULT '',
   INDEX idx_offpay_invoice (invoiceId),
   INDEX idx_offpay_ref (referenceKey)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (135) ON DUPLICATE KEY UPDATE version = version;
 
@@ -3114,7 +3114,7 @@ CREATE TABLE IF NOT EXISTS photo_framing (
   createdAt VARCHAR(32) NOT NULL DEFAULT '',
   updatedAt VARCHAR(32) NOT NULL DEFAULT '',
   updatedBy VARCHAR(64) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT INTO schema_version (version) VALUES (136) ON DUPLICATE KEY UPDATE version = version;
 
@@ -3139,7 +3139,7 @@ CREATE TABLE IF NOT EXISTS mentor_matches (
   closeReason TEXT NULL,
   createdBy VARCHAR(191) NOT NULL DEFAULT '',
   updatedAt VARCHAR(191) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE INDEX idx_mmatch_member ON mentor_matches(memberId, status);
 CREATE INDEX idx_mmatch_mentor ON mentor_matches(mentorId, status);
 CREATE TABLE IF NOT EXISTS mentor_match_offers (
@@ -3150,7 +3150,7 @@ CREATE TABLE IF NOT EXISTS mentor_match_offers (
   fit INT NOT NULL DEFAULT 0,
   why TEXT NULL,
   status VARCHAR(191) NOT NULL DEFAULT 'open'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE UNIQUE INDEX uq_moffer ON mentor_match_offers(matchId, mentorId);
 CREATE TABLE IF NOT EXISTS mentor_tasks (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -3166,7 +3166,7 @@ CREATE TABLE IF NOT EXISTS mentor_tasks (
   doneBy VARCHAR(191) NOT NULL DEFAULT '',
   note TEXT NULL,
   createdAt VARCHAR(191) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE INDEX idx_mtask_mentor ON mentor_tasks(mentorId, status, dueOn);
 CREATE INDEX idx_mtask_match ON mentor_tasks(matchId, kind, status);
 CREATE TABLE IF NOT EXISTS mentor_nudges (
@@ -3185,7 +3185,7 @@ CREATE TABLE IF NOT EXISTS mentor_nudges (
   createdAt VARCHAR(191) NOT NULL DEFAULT '',
   resolvedAt VARCHAR(191) NOT NULL DEFAULT '',
   resolvedBy VARCHAR(191) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE INDEX idx_mnudge_open ON mentor_nudges(status, audience, centre);
 CREATE TABLE IF NOT EXISTS mentor_interventions (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -3204,7 +3204,7 @@ CREATE TABLE IF NOT EXISTS mentor_interventions (
   createdBy VARCHAR(191) NOT NULL DEFAULT '',
   createdAt VARCHAR(191) NOT NULL DEFAULT '',
   closedAt VARCHAR(191) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE INDEX idx_miv_open ON mentor_interventions(status, centre);
 CREATE TABLE IF NOT EXISTS mentor_relationship_checks (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -3219,7 +3219,7 @@ CREATE TABLE IF NOT EXISTS mentor_relationship_checks (
   note TEXT NULL,
   byId VARCHAR(191) NOT NULL DEFAULT '',
   createdAt VARCHAR(191) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE UNIQUE INDEX uq_mrelchk ON mentor_relationship_checks(matchId, respondent, term);
 CREATE TABLE IF NOT EXISTS mentor_observations (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -3234,7 +3234,7 @@ CREATE TABLE IF NOT EXISTS mentor_observations (
   growth TEXT NULL,
   nextChallenge TEXT NULL,
   createdAt VARCHAR(191) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE UNIQUE INDEX uq_mobs ON mentor_observations(memberId, onDate, indicator);
 CREATE TABLE IF NOT EXISTS mentor_academy (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -3242,7 +3242,7 @@ CREATE TABLE IF NOT EXISTS mentor_academy (
   moduleId VARCHAR(191) NOT NULL,
   score INT NOT NULL DEFAULT 0,
   passedAt VARCHAR(191) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE UNIQUE INDEX uq_macad ON mentor_academy(mentorId, moduleId);
 CREATE TABLE IF NOT EXISTS mentor_policy (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -3251,7 +3251,7 @@ CREATE TABLE IF NOT EXISTS mentor_policy (
   signedName VARCHAR(191) NOT NULL DEFAULT '',
   acceptedAt VARCHAR(191) NOT NULL DEFAULT '',
   ip VARCHAR(191) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE UNIQUE INDEX uq_mpolicy ON mentor_policy(mentorId, policyVersion);
 CREATE TABLE IF NOT EXISTS mentor_obligations (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -3262,7 +3262,7 @@ CREATE TABLE IF NOT EXISTS mentor_obligations (
   note TEXT NULL,
   recordedBy VARCHAR(191) NOT NULL DEFAULT '',
   createdAt VARCHAR(191) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE UNIQUE INDEX uq_mobl ON mentor_obligations(mentorId, kind, onDate);
 CREATE TABLE IF NOT EXISTS mentor_checkins (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -3275,7 +3275,7 @@ CREATE TABLE IF NOT EXISTS mentor_checkins (
   createdAt VARCHAR(191) NOT NULL DEFAULT '',
   followedUpAt VARCHAR(191) NOT NULL DEFAULT '',
   followedUpBy VARCHAR(191) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE INDEX idx_mchk_mentor ON mentor_checkins(mentorId, weekOf);
 CREATE TABLE IF NOT EXISTS safeguarding_cases (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -3292,7 +3292,7 @@ CREATE TABLE IF NOT EXISTS safeguarding_cases (
   status VARCHAR(191) NOT NULL DEFAULT 'received',
   createdAt VARCHAR(191) NOT NULL DEFAULT '',
   updatedAt VARCHAR(191) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE INDEX idx_sgcase_centre ON safeguarding_cases(centre, status);
 CREATE TABLE IF NOT EXISTS safeguarding_notes (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -3302,7 +3302,7 @@ CREATE TABLE IF NOT EXISTS safeguarding_notes (
   note TEXT NULL,
   status VARCHAR(191) NOT NULL DEFAULT '',
   createdAt VARCHAR(191) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS mentee_profiles (
   memberId VARCHAR(64) NOT NULL PRIMARY KEY,
   interests TEXT NULL,
@@ -3312,7 +3312,7 @@ CREATE TABLE IF NOT EXISTS mentee_profiles (
   style TEXT NULL,
   updatedAt VARCHAR(191) NOT NULL DEFAULT '',
   updatedBy VARCHAR(191) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ALTER TABLE mentors ADD COLUMN leavingAt VARCHAR(64) NOT NULL DEFAULT '';
 ALTER TABLE mentors ADD COLUMN leavingNote TEXT NULL;
 ALTER TABLE mentors ADD COLUMN cimcAt VARCHAR(64) NOT NULL DEFAULT '';
