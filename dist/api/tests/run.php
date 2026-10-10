@@ -25553,6 +25553,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('mail: only a script.google.com /exec URL is accepted', service_key_check('gasurl', 'https://script.google.com/macros/s/AKfycbxABCDEFGHIJKLMNOPQRST/exec') === ''
         && service_key_check('gasurl', 'https://evil.example/macros/s/AKfycbxABCDEFGHIJKLMNOPQRST/exec') !== '' && service_key_check('gasurl', 'https://script.google.com/home') !== '');
     $GLOBALS['CONFIG']['mail'] = ['brevo' => ['user' => '7a1b2c001@smtp-brevo.com', 'pass' => 'xsmtpsib-abc']];
+    $body = appsscript_body(['op' => 'sendMail', 'html' => '<p>Delivery test — no action needed. “Hi”</p>']);
+    chk('mail: the signed body is pure ASCII, so Apps Script’s HMAC matches PHP’s on dashes and curly quotes', !preg_match('/[^\x20-\x7E]/', $body)
+        && json_decode($body, true)['html'] === '<p>Delivery test — no action needed. “Hi”</p>');
     chk('mail: Brevo is a path of its own', mail_mode() === 'brevo' && isset(SERVICE_KEYS['brevo']) && isset(SERVICE_KEYS['appsscript']));
     unset($GLOBALS['__gas_mock']);
     if ($sink !== null) $GLOBALS['__mail_sink'] = $sink;

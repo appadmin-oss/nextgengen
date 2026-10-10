@@ -135,7 +135,7 @@ function verifySignature_(rawBody, providedSig) {
   if (!providedSig) return false;
   const secret = PropertiesService.getScriptProperties().getProperty('SHARED_SECRET');
   if (!secret) throw new Error('SHARED_SECRET not configured');
-  const mac = Utilities.computeHmacSha256Signature(rawBody, secret);
+  const mac = Utilities.computeHmacSha256Signature(rawBody, secret, Utilities.Charset.UTF_8);
   const hex = mac.map(b => ('0' + (b & 0xff).toString(16)).slice(-2)).join('');
   const a = hex, b = String(providedSig).toLowerCase();
   if (a.length !== b.length) return false;

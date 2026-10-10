@@ -367,7 +367,7 @@ function doGet() { return out_({ ok: true, service: 'ngg-mail' }); }
 function verify_(raw, sig) {
   var secret = PropertiesService.getScriptProperties().getProperty('SHARED_SECRET');
   if (!secret) throw new Error('SHARED_SECRET not configured');
-  var hex = Utilities.computeHmacSha256Signature(raw, secret).map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
+  var hex = Utilities.computeHmacSha256Signature(raw, secret, Utilities.Charset.UTF_8).map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
   sig = String(sig).toLowerCase();
   if (!sig || hex.length !== sig.length) return false;
   var r = 0; for (var i = 0; i < hex.length; i++) r |= hex.charCodeAt(i) ^ sig.charCodeAt(i);

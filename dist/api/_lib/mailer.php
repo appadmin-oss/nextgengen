@@ -185,8 +185,7 @@ function appsscript_call(string $url, string $secret, string $action, array $dat
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => (string)json_encode(['action' => $action, 'token' => $secret, 'data' => $data, 'source' => 'ngg'],
-                                                      JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE),
+        CURLOPT_POSTFIELDS     => appsscript_body(['action' => $action, 'token' => $secret, 'data' => $data, 'source' => 'ngg']),
         CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
         CURLOPT_TIMEOUT        => 25,
         CURLOPT_CONNECTTIMEOUT => 6,
@@ -212,13 +211,22 @@ function appsscript_call(string $url, string $secret, string $action, array $dat
     throw new RuntimeException($msg);
 }
 
+/** A request body for the script: JSON in pure ASCII (non-ASCII as \uXXXX), so a signature over it is the same on both sides. */
+function appsscript_body(array $payload): string {
+    return (string)json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+}
+
 /** The earlier NGG Code.gs: POST {op, …} with ?sig=HMAC-SHA256(body, secret). */
 function appsscript_call_signed(string $url, string $secret, string $action, array $data): array {
     $payload = $action === 'mail.send'
         ? ['op' => 'sendMail', 'to' => $data['to'] ?? '', 'subject' => $data['subject'] ?? '', 'html' => $data['html'] ?? '',
            'text' => $data['text'] ?? '', 'fromName' => $data['name'] ?? '', 'replyTo' => $data['reply_to'] ?? '']
         : ['op' => 'ping'];
-    $body = (string)json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    /* Pure ASCII on the wire. Apps Script's computeHmacSha256Signature(text, key)
+       does not hash text as UTF-8, so a body with “—” or curly quotes signed
+       differently on each side: a short ping matched and every real email was
+       refused. \uXXXX escapes keep the body ASCII; JSON.parse restores it. */
+    $body = appsscript_body($payload);
     $ch = curl_init($url . (strpos($url, '?') === false ? '?' : '&') . 'sig=' . hash_hmac('sha256', $body, $secret));
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body,
