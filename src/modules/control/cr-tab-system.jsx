@@ -342,6 +342,45 @@ const CR_SY_SCRIPT_DRIVE = `function doPost(e) {
   return ContentService.createTextOutput('ok');
 }`;
 function crSyKindLabel(k) { const f = CR_SY_INT_KINDS.find(x => x[0] === k); return f ? f[1] : k; }
+/* The email sender, for Settings → API keys → Google Apps Script. A trimmed
+   copy of apps-script/Code.gs (sendMail + ping, HMAC-signed): paste into a new
+   Apps Script project, set SHARED_SECRET in Script properties, deploy as a Web
+   app (Execute as: Me · Who has access: Anyone). */
+const CR_SY_SCRIPT_MAIL = `// NGG — email sender. Script properties: SHARED_SECRET (the secret in Control Room).
+function doPost(e) {
+  try {
+    var raw = (e && e.postData && e.postData.contents) || '{}';
+    if (!verify_(raw, (e && e.parameter && e.parameter.sig) || '')) return out_({ ok: false, error: 'bad_signature' });
+    var p = JSON.parse(raw);
+    if (p.op === 'ping') return out_({ ok: true, quota: MailApp.getRemainingDailyQuota(), account: Session.getEffectiveUser().getEmail() });
+    if (p.op !== 'sendMail') return out_({ ok: false, error: 'unknown_op' });
+    if (!p.to) return out_({ ok: false, error: 'no_recipient' });
+    if (MailApp.getRemainingDailyQuota() < 1) return out_({ ok: false, error: 'quota_exhausted' });
+    var o = { to: String(p.to), subject: String(p.subject || ''), htmlBody: String(p.html || ''), name: String(p.fromName || 'Next Generation Genius') };
+    if (p.text) o.body = String(p.text);
+    if (p.replyTo) o.replyTo = String(p.replyTo);
+    MailApp.sendEmail(o);
+    return out_({ ok: true, sent: 1 });
+  } catch (err) { return out_({ ok: false, error: 'internal', detail: String(err && err.message || err) }); }
+}
+function doGet() { return out_({ ok: true, service: 'ngg-mail' }); }
+function verify_(raw, sig) {
+  var secret = PropertiesService.getScriptProperties().getProperty('SHARED_SECRET');
+  if (!secret) throw new Error('SHARED_SECRET not configured');
+  var hex = Utilities.computeHmacSha256Signature(raw, secret).map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
+  sig = String(sig).toLowerCase();
+  if (!sig || hex.length !== sig.length) return false;
+  var r = 0; for (var i = 0; i < hex.length; i++) r |= hex.charCodeAt(i) ^ sig.charCodeAt(i);
+  return r === 0;
+}
+function out_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+// Run once from the editor to grant the Mail permission: authorise() .
+function authorise() { MailApp.getRemainingDailyQuota(); }
+`;
+function crSyNewSecret() {
+  const a = new Uint8Array(24); (window.crypto || window.msCrypto).getRandomValues(a);
+  return Array.from(a, b => ("0" + b.toString(16)).slice(-2)).join("");
+}
 async function crSyCopy(ctx, text, what) {
   try { await navigator.clipboard.writeText(text); ctx.toast(what + " copied"); }
   catch (_) { ctx.toast("Couldn’t reach the clipboard. Select the text in the guide and copy it.", null, true); }
@@ -735,6 +774,8 @@ function CrSyKeyCard({ ctx, s }) {
         <button type="button" className={"cr-btn is-sm" + (s.connected ? "" : " is-primary")} onClick={() => crSyKeyEdit(ctx, s)}>{s.connected || s.setHere ? "Change" : "Add key"}</button>
         {s.testable && <button type="button" className="cr-btn is-sm" disabled={busy || !s.connected} title={s.connected ? "" : "Add the key first."} onClick={test}>{busy ? "Testing…" : "Test"}</button>}
         {s.setHere && <button type="button" className="cr-btn is-sm" onClick={remove}>Remove</button>}
+        {s.id === "appsscript" && <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, CR_SY_SCRIPT_MAIL, "The Apps Script")}>Copy the Apps Script</button>}
+        {s.id === "appsscript" && <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, crSyNewSecret(), "A new secret")} title="Paste it into the script’s SHARED_SECRET and into Change here.">Copy a new secret</button>}
         <span className="cr-grow"/>
         <a className="cr-key-link" href={s.link} target="_blank" rel="noopener noreferrer">Get a key<CrIcon n="arrow-up-right"/><span className="cr-sr"> (opens {s.label} in a new tab)</span></a>
       </div>

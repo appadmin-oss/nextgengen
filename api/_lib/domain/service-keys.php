@@ -46,6 +46,13 @@ const SERVICE_KEYS = [
     'paystack' => ['group' => 'payments', 'label' => 'Paystack', 'link' => 'https://dashboard.paystack.com/#/settings/developers',
         'what' => 'Card and bank payments for joining invoices and donations. Point its webhook at /api/hooks/paystack.php.', 'test' => 'paystack', 'guard' => true,
         'fields' => [['paystack.secret', 'Secret key', 'secret', false, 'sk_live_… (or sk_test_… while testing).'], ['paystack.public', 'Public key', 'text', true, 'pk_live_…']]],
+    'appsscript' => ['group' => 'email', 'label' => 'Google Apps Script', 'link' => 'https://script.google.com/home',
+        'what' => 'Sends every email through a Google account with MailApp, the way Africa GATES does: no SMTP ports, no DNS setup. Tried first whenever it is set. The Africa GATES deployment works as it is — paste its /exec URL (GAS_URL) and its SECRET (GAS_SECRET). About 100 emails a day on a Gmail account, 1,500 on Workspace.', 'test' => 'appsscript',
+        'fields' => [['mail.apps_script_url', 'Web app URL', 'gasurl', false, 'Ends in /exec — the same as GAS_URL in Africa GATES.'], ['mail.apps_script_secret', 'Secret', 'secret', false, 'The SECRET at the top of the script — GAS_SECRET in Africa GATES.']]],
+    'brevo' => ['group' => 'email', 'label' => 'Brevo', 'link' => 'https://app.brevo.com/settings/keys/smtp',
+        'what' => 'Email through Brevo’s relay (smtp-relay.brevo.com, port 587) — the way Africa GATES sends. The same Brevo login and SMTP key work here; the sender address must be one verified in Brevo.', 'test' => 'mail',
+        'fields' => [['mail.brevo.user', 'SMTP login', 'text', false, 'From Brevo → SMTP & API, e.g. 7a1b2c001@smtp-brevo.com.'], ['mail.brevo.pass', 'SMTP key', 'secret', false, 'The SMTP key (xsmtpsib-…), not the API key.'],
+                     ['mail.brevo.from', 'Send from', 'email', true, 'A sender verified in Brevo, e.g. noreply@afrovanguard.org.ng.']]],
     'smtp' => ['group' => 'email', 'label' => 'Email (SMTP)', 'link' => 'https://support.google.com/accounts/answer/185833',
         'what' => 'Sends every email: sign-in codes, invoices, receipts, alerts. For Gmail or Workspace use an app password.', 'test' => 'mail',
         'fields' => [['mail.smtp.host', 'Server', 'text', false, 'e.g. smtp.gmail.com'], ['mail.smtp.port', 'Port', 'port', true, '587 (TLS) or 465 (SSL)'],
@@ -163,6 +170,7 @@ function service_key_check(string $kind, string $v): string {
         case 'port':   return preg_match('/^\d{2,5}$/', $v) && (int)$v <= 65535 ? '' : 'A port number, such as 587 or 465.';
         case 'secure': return in_array($v, ['tls', 'ssl'], true) ? '' : 'tls, ssl, or blank for none.';
         case 'email':  return filter_var($v, FILTER_VALIDATE_EMAIL) ? '' : 'An email address.';
+        case 'gasurl': return preg_match('#^https://script\.google\.com/(a/[^/]+/)?macros/s/[A-Za-z0-9_-]{20,}/exec$#', $v) ? '' : 'The Web app URL from Deploy, ending in /exec.';
         case 'model':  return preg_match('/^[A-Za-z0-9._:\/\-]{1,100}$/', $v) ? '' : 'A model name, such as gemini-3.8-flash.';
         default:       return preg_match('/^[^\x00-\x1f]{1,300}$/u', $v) ? '' : 'Too long, or it has a line break in it.';
     }
@@ -299,6 +307,20 @@ function admin_keys_test(array $p): array {
             return ['ok' => true] + $done(['pass' => (bool)$g, 'detail' => $g ? 'Found Egbeda, Lagos at ' . round($g['lat'], 4) . ', ' . round($g['lng'], 4) . '.' : 'Google did not answer. Check the key, and that the Geocoding API is enabled for it.']);
         case 'mail':
             return ['ok' => true, 'pass' => null, 'detail' => 'Use “Send test email” to send one to yourself.'];
+        case 'appsscript':
+            [$url, $secret] = mail_apps_script_cfg();
+            if ($url === '' || $secret === '') return ['ok' => true, 'pass' => false, 'detail' => 'Set the Web app URL and the shared secret.'];
+            try {
+                $r = appsscript_call($url, $secret, 'mail.quota');
+                $left = isset($r['remaining']) ? (int)$r['remaining'] : null;
+                return ['ok' => true] + $done(['pass' => $left === null || $left > 0, 'detail' => 'The Apps Script answered' . (!empty($r['account']) ? ' as ' . $r['account'] : '')
+                    . ($left !== null ? '; it may send to ' . $left . ' more recipient' . ($left === 1 ? '' : 's') . ' today.' : '.')]);
+            } catch (\Throwable $e) {
+                $m = $e->getMessage();
+                $why = $m === 'Bad token' ? 'The secret does not match the SECRET in the script.'
+                     : (preg_match('/HTTP (401|403|404)/', $m) ? 'Google refused the URL. Deploy as a Web app with access “Anyone”, and use the /exec URL.' : ucfirst($m) . '.');
+                return ['ok' => true] + $done(['pass' => false, 'detail' => $why]);
+            }
     }
     return ['ok' => true, 'pass' => null, 'detail' => 'This service has no safe test; it is used the next time it is needed.'];
 }

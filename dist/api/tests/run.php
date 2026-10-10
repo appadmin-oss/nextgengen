@@ -25510,5 +25510,33 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-POD%'");
 })();
 
+/* ── Email through Google Apps Script (first when set), and Brevo ──────── */
+(function () {
+    $keep = $GLOBALS['CONFIG']['mail'] ?? [];
+    $sent = [];
+    $GLOBALS['__gas_mock'] = function ($url, $secret, $action, $data) use (&$sent) {
+        if ($secret !== 'gas-secret-123456') throw new RuntimeException('Bad token');
+        if ($action === 'mail.quota') return ['ok' => true, 'remaining' => 97, 'account' => 'next@afrovanguard.org.ng'];
+        $sent[] = ['action' => $action] + $data; return ['ok' => true];
+    };
+    $GLOBALS['CONFIG']['mail'] = ['smtp' => ['host' => 'smtp.invalid.example', 'port' => 587], 'apps_script_url' => 'https://script.google.com/macros/s/AKfycbTESTtestTESTtest123/exec', 'apps_script_secret' => 'gas-secret-123456'];
+    $sink = $GLOBALS['__mail_sink'] ?? null; unset($GLOBALS['__mail_sink']);
+    chk('mail: Apps Script is the first path when it is set, ahead of SMTP', mail_mode() === 'apps_script'
+        && send_mail('kid@example.com', 'Hello', '<p>Hi</p>') === true && ($sent[0]['to'] ?? '') === 'kid@example.com' && $sent[0]['action'] === 'mail.send');
+    $GLOBALS['CONFIG']['mail']['apps_script_secret'] = 'wrong-secret-0000';
+    $t = admin_keys_test(['requesterId' => 'NGG-2025-0099', 'service' => 'appsscript']);
+    chk('mail: the Apps Script test names a mismatched secret in words', $t['pass'] === false && str_contains($t['detail'], 'does not match'));
+    $GLOBALS['CONFIG']['mail']['apps_script_secret'] = 'gas-secret-123456';
+    $t = admin_keys_test(['requesterId' => 'NGG-2025-0099', 'service' => 'appsscript']);
+    chk('mail: a working script reports its account and today’s quota (Africa GATES mail.quota)', $t['pass'] === true && str_contains($t['detail'], '97 more recipients today'));
+    chk('mail: only a script.google.com /exec URL is accepted', service_key_check('gasurl', 'https://script.google.com/macros/s/AKfycbxABCDEFGHIJKLMNOPQRST/exec') === ''
+        && service_key_check('gasurl', 'https://evil.example/macros/s/AKfycbxABCDEFGHIJKLMNOPQRST/exec') !== '' && service_key_check('gasurl', 'https://script.google.com/macros/s/AKfycbxABCDEFGHIJKLMNOPQRST/dev') !== '');
+    $GLOBALS['CONFIG']['mail'] = ['brevo' => ['user' => '7a1b2c001@smtp-brevo.com', 'pass' => 'xsmtpsib-abc']];
+    chk('mail: Brevo (the Africa GATES relay) is a path of its own', mail_mode() === 'brevo' && isset(SERVICE_KEYS['brevo']) && isset(SERVICE_KEYS['appsscript']));
+    unset($GLOBALS['__gas_mock']);
+    if ($sink !== null) $GLOBALS['__mail_sink'] = $sink;
+    $GLOBALS['CONFIG']['mail'] = $keep;
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

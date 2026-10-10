@@ -52,7 +52,24 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
     $smtp = $mail['smtp'] ?? [];
     $errors = [];
 
-    // Path 1 — SMTP (authenticated relay). Most reliable when the host permits
+    // Path 1 — Google Apps Script MailApp (the Africa GATES pattern, signed).
+    // Google sends from the authenticated account: no SMTP ports, no SPF/DKIM,
+    // no third-party key — the path that delivers on shared hosting. Set it in
+    // Settings → API keys → Google Apps Script (or apps_script_url +
+    // shared_secret in config.php). First whenever it is set, so a slow or
+    // broken SMTP relay never stands in front of it.
+    [$asUrl, $asSecret] = mail_apps_script_cfg();
+    if (($mail['apps_script'] ?? true) !== false && $asUrl !== '' && $asSecret !== '') {
+        try {
+            if (appsscript_send($asUrl, $asSecret, $from, $to, $subject, $html, $text)) return true;
+            $errors[] = 'apps_script: send failed';
+        } catch (Throwable $e) {
+            $errors[] = 'apps_script: ' . $e->getMessage();
+            error_log('[send_mail/apps_script] ' . $e->getMessage());
+        }
+    }
+
+    // Path 2 — SMTP (authenticated relay). Most reliable when the host permits
     // outbound 587/465 and the relay is aligned with the From domain.
     if (!empty($smtp['host'])) {
         try {
@@ -64,21 +81,18 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
         }
     }
 
-    // Path 2 — Google Apps Script MailApp. If an Apps Script Web App is wired
-    // up (apps_script_url + shared_secret — the same one the Sheets mirror
-    // uses), Google sends the mail from the authenticated account. This is the
-    // most reliable path on shared hosting and is exactly how the STS CEO site
-    // delivers: no SMTP ports, no SPF/DKIM setup, no third-party key.
-    $asUrl = trim((string)($CONFIG['apps_script_url'] ?? ''));
-    $asSecret = (string)($CONFIG['shared_secret'] ?? '');
-    if (($mail['apps_script'] ?? true) !== false
-        && $asUrl !== '' && $asSecret !== '' && $asSecret !== 'REPLACE_ME_64_HEX_BYTES') {
+    // Path 2b — Brevo's relay, set in Settings → API keys → Brevo (the Africa
+    // GATES transport: smtp-relay.brevo.com:587, STARTTLS, login + SMTP key).
+    $brevo = $mail['brevo'] ?? [];
+    if (trim((string)($brevo['user'] ?? '')) !== '' && trim((string)($brevo['pass'] ?? '')) !== '') {
+        $bFrom = filter_var((string)($brevo['from'] ?? ''), FILTER_VALIDATE_EMAIL) ? array_merge($from, ['email' => (string)$brevo['from']]) : $from;
         try {
-            if (appsscript_send($asUrl, $asSecret, $from, $to, $subject, $html, $text)) return true;
-            $errors[] = 'apps_script: send failed';
+            if (smtp_send(['host' => 'smtp-relay.brevo.com', 'port' => 587, 'secure' => 'tls', 'user' => (string)$brevo['user'], 'pass' => (string)$brevo['pass']],
+                          $bFrom, $to, $subject, $html, $text)) return true;
+            $errors[] = 'brevo: send returned false';
         } catch (Throwable $e) {
-            $errors[] = 'apps_script: ' . $e->getMessage();
-            error_log('[send_mail/apps_script] ' . $e->getMessage());
+            $errors[] = 'brevo: ' . $e->getMessage();
+            error_log('[send_mail/brevo] ' . $e->getMessage());
         }
     }
 
@@ -112,15 +126,24 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
     return false;
 }
 
+/** The Apps Script mail endpoint: Settings (mail.apps_script_*) first, then config.php's apps_script_url + shared_secret. */
+function mail_apps_script_cfg(): array {
+    global $CONFIG;
+    $mail = $CONFIG['mail'] ?? [];
+    $url = trim((string)($mail['apps_script_url'] ?? '')) ?: trim((string)($CONFIG['apps_script_url'] ?? ''));
+    $secret = (string)($mail['apps_script_secret'] ?? '') ?: (string)($CONFIG['shared_secret'] ?? '');
+    if ($secret === 'REPLACE_ME_64_HEX_BYTES') $secret = '';
+    return [$url, $secret];
+}
+
 /** Which delivery path send_mail() will try first — for the Control Room diagnostic. */
 function mail_mode(): string {
     global $CONFIG;
     $mail = $CONFIG['mail'] ?? [];
+    [$asUrl, $asSecret] = mail_apps_script_cfg();
+    if (($mail['apps_script'] ?? true) !== false && $asUrl !== '' && $asSecret !== '') return 'apps_script';
     if (!empty($mail['smtp']['host'] ?? '')) return 'smtp';
-    $asUrl = trim((string)($CONFIG['apps_script_url'] ?? ''));
-    $asSecret = (string)($CONFIG['shared_secret'] ?? '');
-    if (($mail['apps_script'] ?? true) !== false
-        && $asUrl !== '' && $asSecret !== '' && $asSecret !== 'REPLACE_ME_64_HEX_BYTES') return 'apps_script';
+    if (trim((string)($mail['brevo']['user'] ?? '')) !== '' && trim((string)($mail['brevo']['pass'] ?? '')) !== '') return 'brevo';
     $k = trim((string)($mail['resend_key'] ?? ''));
     if ($k !== '' && $k !== 'YOUR_RESEND_KEY_HERE') return 'resend';
     return 'php_mail';
@@ -134,26 +157,37 @@ function mail_mode(): string {
  * googleusercontent, so redirects must be followed.
  */
 function appsscript_send(string $url, string $secret, array $from, string $to, string $subject, string $html, string $text): bool {
-    if (!function_exists('curl_init')) throw new RuntimeException('curl_unavailable');
-    $body = json_encode([
-        'op'       => 'sendMail',
+    appsscript_call($url, $secret, 'mail.send', [
         'to'       => $to,
         'subject'  => $subject,
         'html'     => $html,
         'text'     => $text,
-        'fromName' => $from['name'] ?? '',
-        'replyTo'  => $from['replyTo'] ?? '',
-    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    $sig = hash_hmac('sha256', $body, $secret);
+        'name'     => $from['name'] ?? '',
+        'reply_to' => $from['replyTo'] ?? '',
+    ]);
+    return true;
+}
 
-    $ch = curl_init($url . (strpos($url, '?') === false ? '?' : '&') . 'sig=' . $sig);
+/**
+ * One call to the Apps Script Web App, in the Africa GATES protocol:
+ * POST {action, token, data, source} → {ok|success, message, …}. The token is
+ * the script's SECRET, so the deployment Africa GATES already runs (mail.send,
+ * mail.quota) serves NGG unchanged, and apps-script/Code.gs speaks it too.
+ * /exec answers with a 302 to googleusercontent; the body is at the far end.
+ * Returns the JSON on success; throws with a sentence an operator can act on.
+ */
+function appsscript_call(string $url, string $secret, string $action, array $data = []): array {
+    if (isset($GLOBALS['__gas_mock']) && is_callable($GLOBALS['__gas_mock'])) return ($GLOBALS['__gas_mock'])($url, $secret, $action, $data);
+    if (!function_exists('curl_init')) throw new RuntimeException('PHP has no curl extension');
+    $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => $body,
+        CURLOPT_POSTFIELDS     => (string)json_encode(['action' => $action, 'token' => $secret, 'data' => $data, 'source' => 'ngg'],
+                                                      JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE),
         CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
-        CURLOPT_TIMEOUT        => 15,
-        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_TIMEOUT        => 25,
+        CURLOPT_CONNECTTIMEOUT => 6,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_SSL_VERIFYPEER => true,
     ]);
@@ -161,11 +195,14 @@ function appsscript_send(string $url, string $secret, array $from, string $to, s
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $cerr = curl_error($ch);
     curl_close($ch);
-
-    if ($raw === false) throw new RuntimeException('curl: ' . $cerr);
+    if ($raw === false) throw new RuntimeException('could not reach it (' . $cerr . ')');
+    if ($code < 200 || $code >= 400) throw new RuntimeException('could not reach it (HTTP ' . $code . ')');
     $j = json_decode((string)$raw, true);
-    if (is_array($j) && !empty($j['ok'])) return true;
-    throw new RuntimeException('HTTP ' . $code . ' · ' . substr((string)$raw, 0, 160));
+    if (!is_array($j)) throw new RuntimeException('it did not answer JSON — usually an old deployment, or access not set to “Anyone”: paste the latest script and Deploy → Manage deployments → New version');
+    if (!empty($j['ok']) || !empty($j['success'])) return $j;
+    $msg = (string)($j['message'] ?? $j['error'] ?? 'refused');
+    if (str_starts_with($msg, 'Unknown action')) $msg = 'the deployed script is older than the mail action — paste the latest script and deploy a New version';
+    throw new RuntimeException($msg);
 }
 
 /**
