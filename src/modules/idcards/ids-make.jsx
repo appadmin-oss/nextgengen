@@ -40,7 +40,7 @@ function IdsRecords({ M }) {
     <div className="ids-col ids-col--12">
       <form role="search" className="ids-search" onSubmit={e => e.preventDefault()}>
         <IdsIcon name="magnifying-glass"/>
-        <input ref={M.searchRef} className="ids-input" type="search" placeholder="Name or ID" aria-label="Search records" value={R.q} onChange={e => R.setQ(e.target.value)}/>
+        <input ref={M.searchRef} className="ids-input" type="search" placeholder="Anyone, by name or ID" aria-label="Search records" value={R.q} onChange={e => R.setQ(e.target.value)}/>
       </form>
       <div className="ids-chips" role="radiogroup" aria-label="Show">
         {R.filters.map(f => (
@@ -89,8 +89,44 @@ function IdsRecords({ M }) {
         </ul>
       )}
       {M.dataState === "ready" && R.more > 0 && <button type="button" className="ids-btn ids-btn--more" onClick={R.showMore}>Show {Math.min(IDS_REC_MORE, R.more)} more · {R.rows.length} of {R.shown.length} shown</button>}
-      {M.dataState === "ready" && !R.shown.length && <p className="ids-empty">{R.filter === "blocked" ? "Nobody is blocked. Every record has a photo." : "Nobody matches."}</p>}
+      {M.dataState === "ready" && !R.shown.length && <p className="ids-empty">{R.filter === "blocked" ? "Nobody is blocked. Every record has a photo." : R.carded.length ? "Nobody in the queue matches." : R.q.trim() ? "Nobody matches \u201c" + R.q.trim() + "\u201d. Try part of the name or the ID number." : "Nobody matches."}</p>}
+      {M.dataState === "ready" && R.carded.length > 0 && <IdsCarded M={M} R={R}/>}
     </div>
+  );
+}
+
+/* People the search found who already hold a card. Not in the queue, so not
+   on the list above; each carries the reasons a card is reprinted. */
+function IdsCarded({ M, R }) {
+  return (
+    <section className="ids-carded" aria-label="Already have a card">
+      <h3 className="ids-carded-h"><IdsIcon name="identification-card"/>Already have a card<span className="ids-fchip-n">{R.carded.length + R.cardedMore}</span></h3>
+      <ul className="ids-recs">
+        {R.carded.map(r => (
+          <li key={r.key} className={"ids-rec ids-rec--carded" + (r.open ? " is-open" : "")}>
+            <span className="ids-thumb" style={{ "--ids-accent": M.accent(r.centre) }}>
+              {r.photoUrl ? <img src={r.photoUrl} alt="" loading="lazy"/> : idsInitials(r.name)}
+            </span>
+            <span className="ids-grow ids-rec-text">
+              <span className="ids-rec-name">{r.name}</span>
+              <span className="ids-rec-meta"><span className="ids-mono">{r.displayId || r.id}</span> · {r.centre || "No centre"} · {IDS_KINDS[r.kind]}</span>
+              <span className="ids-rec-tag is-ok">{"Has a card" + (r.printedOn ? " · printed " + r.printedOn : "")}</span>
+            </span>
+            <button type="button" className={"ids-btn ids-btn--28" + (r.open ? " is-on" : "")} aria-expanded={r.open} onClick={r.toggleOpen} aria-label={"Reprint " + r.name + "’s card"}>
+              <IdsIcon name="arrow-counter-clockwise"/>Reprint
+            </button>
+            {r.open && (
+              <div className="ids-reasons ids-rec-why" role="group" aria-label={"Why is " + r.name + "’s card being reprinted?"}>
+                <span className="ids-muted">Why?</span>
+                {IDS_REPRINT_REASONS.map(([k, l, help]) => <button key={k} type="button" className="ids-btn ids-btn--sm ids-btn--outline" title={help} disabled={r.busy} onClick={() => r.reprint(k)}>{l}</button>)}
+                <span className="ids-help">Lost and never received get a new QR; the old card stops opening.</span>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      {R.cardedMore > 0 && <p className="ids-empty">{R.cardedMore} more with a card. Type more of the name to narrow it.</p>}
+    </section>
   );
 }
 

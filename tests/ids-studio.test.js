@@ -271,6 +271,19 @@ function cleanup() {
     chk('the print carries the drawn design', pdfFacts(fs.readFileSync(await dl2.path())).images >= 1);
     await toastHas(P, /logged as CRUN-/);
     chk('…and the run records that design and its version', php(`$r = db_row("SELECT templateId, templateVersion FROM card_runs ORDER BY id DESC LIMIT 1"); echo $r['templateId'] . '@' . $r['templateVersion'];`) === 'TPL-IDS-1@2');
+
+    // A name search reaches people who already hold a card, with a Reprint on their row.
+    // Close the "did they all print?" dialog the last print left open.
+    for (let i = 0; i < 3 && await P.$('.ids-scrim'); i++) { await P.keyboard.press('Escape'); await P.waitForTimeout(150); }
+    await P.fill('.ids-search input', 'Member L');
+    await P.waitForSelector('.ids-carded', { timeout: 8000 });
+    chk('searching a carded person’s name finds them under "Already have a card"', /Member L Test/.test(await P.innerText('.ids-carded')) && /Has a card · printed/.test(await P.innerText('.ids-carded')));
+    await P.click('.ids-carded .ids-btn--28:has-text("Reprint")');
+    await P.click('.ids-rec-why .ids-btn:has-text("Damaged")');
+    chk('…Reprint with a reason queues it and says so', await toastHas(P, /1 card queued as reprints/));
+    chk('…recorded with its cause', php(`echo db_row("SELECT cause FROM id_reprints WHERE subjectId = 'NGG-IDS-12' AND doneAt = ''")['cause'] ?? '';`) === 'damaged');
+    await P.waitForFunction(() => !document.querySelector('.ids-carded') && /Member L Test/.test((document.querySelector('.ids-recs') || {}).innerText || ''), null, { timeout: 10000 });
+    chk('…and they move into the queue, on the sheet', await P.$eval('.ids-rec:has-text("Member L Test") .ids-cb', b => b.getAttribute('aria-checked')) === 'true');
     await P.context().close();
 
     console.log('phone (390) and the old address');

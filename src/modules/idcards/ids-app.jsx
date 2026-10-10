@@ -35,6 +35,7 @@ const IDS_ASK_MAX = 200;              // and its cap per request
 const IDS_QR_WARM_CHUNK = 8;          // hosted QR PNGs sent per request (~30 KB), so no request trips a host's body filter
 /* "The records with no centre on file": a value no real centre can collide with, so the filter stays one value. */
 const IDS_NO_CENTRE = "\u0000none";
+const IDS_CARDED_MAX = 8;   // people with a card shown under a name search
 function idsAskedRecently(a) { return !!(a && a.at && Date.now() - Date.parse(a.at) < IDS_ASK_QUIET_MS); }
 /* The subjects that have somewhere to send their ID, and whose photo the
    shared PhotoEditor can re-crop or replace. Members issue their own card from
@@ -276,6 +277,25 @@ function IdCardStudioPage({ setPage }) {
       say(c === "no_id" ? "No ID has been issued to " + r.name + " yet." : c === "forbidden" || (e && e.status === 403) ? "Resending this ID needs the " + (r.kind === "summer" ? "Summer School" : "People") + " permission." : idsErrText(e, "Couldn’t resend " + r.name + "’s ID. Try again."));
     } finally { setResending(""); }
   };
+  /* A name search reaches everyone, not only the queue: somebody who already
+     holds a card is found too, with a Reprint on their row. "Lost her card"
+     starts with typing her name, and the queue does not have her in it. */
+  const [reprintOpen, setReprintOpen] = React.useState("");
+  const [reprinting, setReprinting] = React.useState("");
+  const queuedKeys = React.useMemo(() => new Set(recs.map(r => r.key)), [recs]);
+  const carded = ql.length >= 2 ? data.records.filter(r => r.printedBefore && !queuedKeys.has(r.key) && (!kind || r.kind === kind) && inCentre(r)
+    && (r.name + " " + r.displayId + " " + r.id).toLowerCase().includes(ql)) : [];
+  const reprintOne = async (r, cause) => {
+    if (reprinting) return;
+    setReprinting(r.key);
+    const ok = await queueReprints([r], cause);
+    setReprinting("");
+    if (!ok) return;
+    setReprintOpen("");
+    // Straight onto the sheet: the operator searched for them to print them.
+    if (!isBlocked(r) && !inQ.has(r.key)) setQueue(qq => qq.concat([{ t: "r", key: r.key }]));
+    if (filter !== "all" && filter !== "reprint") setFilter("reprint");
+  };
   const records = {
     q, setQ, kind, setKind, centre, setCentre, filter, setFilter: f => { setFilter(f); setLim(IDS_REC_PAGE); },
     noCentreCount, rmode, setRmode: m => { setRmode(m); setRng({ dFrom: "", dTo: "", nFrom: "", nTo: "" }); }, rng, setRng: p => setRng(r => Object.assign({}, r, p)),
@@ -284,6 +304,12 @@ function IdCardStudioPage({ setPage }) {
     shown, addable: addable.length, canAddAll: addable.length > 0, addAll: () => addRecs(addable),
     askable: askable.length, canAskAll: filter === "blocked" && askable.length > 1, askAll: () => setAskConfirm(askable.slice(0, IDS_ASK_MAX)),
     more: Math.max(0, shown.length - lim), showMore: () => setLim(l => l + IDS_REC_MORE),
+    carded: carded.slice(0, IDS_CARDED_MAX).map(r => {
+      const at = r.lastIssue && r.lastIssue.at ? idsAskedOn(r.lastIssue) + " " + String(r.lastIssue.at).slice(0, 4) : "";
+      return Object.assign({}, r, { printedOn: at, open: reprintOpen === r.key, busy: reprinting === r.key,
+        toggleOpen: () => setReprintOpen(k => k === r.key ? "" : r.key), reprint: cause => reprintOne(r, cause) });
+    }),
+    cardedMore: Math.max(0, carded.length - IDS_CARDED_MAX),
     rows: shown.slice(0, lim).map(r => {
       const b = isBlocked(r), on = inQ.has(r.key), wasAsked = askedOf(r), recent = idsAskedRecently(wasAsked);
       const tag = b ? (wasAsked ? "No photo yet · asked " + idsAskedOn(wasAsked) : "No photo yet · can’t print") : r.reason === "reprint" ? "Reprint · " + (r.why || "requested") : r.divMissing ? "New · division is blank" : r.kind === "afrovanguard" && !r.hasPhoto ? "New card · no photo, prints initials" : "New card";
