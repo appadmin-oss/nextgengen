@@ -90,31 +90,36 @@ function cleanup() {
 
     console.log('the join form (phone, 390)');
     const J = await open('/join?program=anchor', null, 390);
-    await J.evaluate(() => localStorage.setItem('ngg.join.draft.anchor', JSON.stringify({ firstName: 'Tobi', lastName: 'Ade', otherName: '', sex: 'Female', dob: (new Date().getFullYear() - 13) + '-03-02', city: 'Egbeda', division: '', track: '', why: '', parentEmail: '', parentPhone: '', photoUrl: '/assets/logo.png' })));
+    // Everything up to Interests answered already, as a resumed draft would have it.
+    await J.evaluate(() => localStorage.setItem('ngg-apply', JSON.stringify({ step: 5, v: {
+      filledBy: 'parent', centre: 'Egbeda', firstName: 'Tobi', middleName: '', surname: 'Ade', dob: (new Date().getFullYear() - 13) + '-03-02', sex: 'Female',
+      email: 'tobi.parent@example.org', mobile: '08031234567', school: 'Egbeda Senior High School', class: 'JSS 2', classArm: '',
+      address: '4 Ola Street, Egbeda', resState: 'Lagos', resLga: 'Alimosho', originState: 'Ogun', originLga: '', nationality: 'Nigerian',
+      parent1Rel: 'Mother', parent1Name: 'Bola Ade', parent1Phone: '08031234567', parent2None: true, hobbies: [], influenceAreas: [],
+      photoUrl: '/assets/logo.png', heardFrom: 'WhatsApp' } })));
     await J.reload({ waitUntil: 'domcontentloaded' }); await waitForBoot(J);
-    await J.waitForFunction(() => document.querySelectorAll('#join-centre option').length > 1, null, { timeout: 30000 });
+    await J.waitForSelector('.apf-cgroup', { timeout: 30000 });
+    const divs = await J.$$eval('.apf-cgroup', g => g.map(x => x.innerText.replace(/\s+/g, ' ')));
+    chk('the NGG form groups courses by the four NGG divisions, each in a family\'s words', divs.length === 5 && /Creative & Performing Arts/.test(divs[0]) && /cybersecurity/i.test(divs[2]) && /Business Strategy, Operations & Administration/.test(divs[3]) && /Not sure yet/.test(divs[4]));
+    chk('…and no Summer School course is on it', !/Talking Drums|Piano|Tie & Dye/.test(await J.innerText('.apf-courses')));
     await J.click('button:has-text("Continue")');
-    await J.waitForSelector('.join-div', { timeout: 20000 });
-    const divs = await J.$$eval('.join-div', b => b.map(x => x.innerText.replace(/\s+/g, ' ')));
-    chk('the NGG form asks for a division first: the four NGG divisions, each in a family\'s words', divs.length === 4 && /🎭\s*Creative & Performing Arts/.test(divs[0]) && /cybersecurity/.test(divs[2]) && /Business Strategy, Operations & Administration/.test(divs[3]));
-    chk('…and no Summer School course is on it', !/Talking Drums|Piano|Tie & Dye/.test(await J.innerText('.card')));
+    chk('continuing without a course says what is missing', /Choose an option/.test(await J.innerText('.apf-errsum')));
+    await J.click('.apf-course:has-text("Robotics")');
+    await J.click('.apf-starters button >> nth=0');
+    await J.type('#apf-in-vision', 'an engineer who builds robots that sort plastic waste.');
+    await J.click('#apf-fld-hobbies .apf-chip:has-text("Reading")');
+    await J.click('#apf-fld-influenceAreas .apf-chip:has-text("Education")');
     await J.click('button:has-text("Continue")');
-    chk('continuing without a division says what is missing', /Choose the division/.test(await J.innerText('[role=alert]')));
-    await J.click('.join-div:has-text("Technology")');
-    chk('choosing a division shows its courses', /Start with a course in Technology & Applied Engineering/i.test(await J.innerText('.card')) && !!(await J.$('.join-course:has-text("Robotics")')));
-    await J.click('.join-course:has-text("Robotics")');
-    await J.click('button:has-text("Continue")');
-    await J.fill('textarea', 'I want to build a robot that sorts plastic waste for my street.');
-    await J.click('button:has-text("Continue")');
-    await J.waitForSelector('.join-costs', { timeout: 10000 });
-    const costs = await J.innerText('.join-costs');
-    chk('before applying, the family is told what joining costs and that nothing is paid now', /₦10,000/.test(costs) && /₦4,000/.test(costs) && /first month is charged only for the meetings left/.test(costs) && /Nothing is paid now/.test(costs));
-    chk('the summary names the division and the course', /Technology & Applied Engineering/.test(await J.innerText('.join-sum')) && /Robotics/.test(await J.innerText('.join-sum')));
+    await J.waitForSelector('#apf-fld-agree', { timeout: 10000 });
+    const costs = await J.innerText('.apf-info');
+    chk('before applying, the family is told what joining costs and that nothing is paid now', /₦10,000/.test(costs) && /₦4,000/.test(costs) && /first month is charged only for the meetings left/.test(costs) && /Nothing to pay today/.test(costs));
     chk('nothing on the form scrolls sideways on a phone', await J.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
-    await J.fill('input[type=email]', 'tobi.parent@example.org');
-    await J.fill('input[type=tel]', '08031234567');
-    await J.click('button:has-text("Submit application")');
-    await J.waitForSelector('text=APPLICATION RECEIVED', { timeout: 20000 });
+    await J.click('button:has-text("Agree to all")');
+    await J.click('button:has-text("Review")');
+    await J.waitForSelector('.apf-review', { timeout: 10000 });
+    chk('the review names the course', /Robotics/.test(await J.innerText('.apf-review')));
+    await J.click('button:has-text("Send application")');
+    await J.waitForSelector('.apf-done', { timeout: 20000 });
     const app = JSON.parse(php(`echo json_encode(db_row("SELECT id, faculty, track, program FROM applications WHERE email = 'tobi.parent@example.org'"));`));
     chk('the application is filed under its division and course', app && app.faculty === 'Technology & Applied Engineering' && app.track === 'Robotics' && app.program === 'anchor');
     await J.context().close();

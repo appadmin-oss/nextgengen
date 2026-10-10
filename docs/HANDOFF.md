@@ -904,3 +904,34 @@ be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
   - Every print, reprint and mark op checks centre scope per row against the
     record. Summer School staff can log participant runs.
   - Proofs never make a real first card a "reprint".
+
+## 2026-10-10 — The Club application (v2026.10) and /policies
+
+- `/join` now opens the seven-step Club application (`page-apply.jsx`,
+  `ClubApplyPage`) unless `program=summer`, which keeps the four-step form
+  (`JoinFormPage`). Breakpoints follow the form's own width (ResizeObserver).
+  Draft key `ngg-apply`. `/policies` is a route of its own; the form opens
+  the same document (`ClubPolicies`) as a drawer or bottom sheet.
+- `public.apply` with a `details` object: `club_apply_details()` validates
+  and normalises every answer the old Google Form asked, stored as JSON in
+  `applications.details` (migration 141). `club_apply_consents()` requires
+  participation, medical, data, comms, media and site_visibility; trips is
+  optional. Rows go to `consents` under `APP:<ref>` with `policyVersion`, and
+  are copied to the member on convert.
+- **Owner decision (2026-10-10):** photos, the website feature and family
+  updates are conditions of NGG Club membership. This is enforced for the
+  Club application only. `CONSENT_TYPES` (Summer School parent verification)
+  was deliberately NOT changed: there `media` and `site_visibility` stay
+  "must answer, may decline". Changing it would refuse a child's Summer place
+  for declining photo consent, which needs its own decision.
+- 18 and over on the Club form → `age_ngv`, and the form links to NGV
+  registration on Afrovanguard (`afrovanguard.ngv_url`, served as
+  `config.afrovanguard.ngvUrl`).
+- Dedupe for the Club form is email + date of birth: an undecided application
+  is updated (`updated: true`, same ref); the 24-hour guard is also email +
+  dob, so siblings on one email are not collapsed.
+- Not done: importing the 116 rows of `Form responses 1.csv` (the CSV was
+  not supplied), and serving the school list from the server (it is a
+  client list of about 60 schools for now). No pre-send "applied before"
+  check: answering it would tell anyone with an email and a birth date
+  whether that child applied.

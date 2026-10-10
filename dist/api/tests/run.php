@@ -1067,6 +1067,52 @@ chk('invalid program falls back to anchor', (function () {
     return db_row("SELECT program FROM applications WHERE email='junkprog@example.com'")['program'] === 'anchor';
 })());
 
+// ── The Club application (v2026.10): every answer kept, email+dob dedupe, NGV door, agreements ──
+$clubApp = function (array $over = [], array $det = [], array $cons = []) {
+    $d = array_merge(['filledBy' => 'parent', 'school' => 'egbeda senior high school', 'class' => 'JSS 2', 'classArm' => 'B',
+        'address' => '12 Ola Street, Egbeda', 'resState' => 'Lagos', 'resLga' => 'Alimosho', 'originState' => 'Ogun', 'originLga' => '',
+        'nationality' => 'Nigerian', 'parent1Rel' => 'Mother', 'parent1Name' => 'adunni adebayo', 'parent1Phone' => '8031234567',
+        'parent2None' => true, 'hobbies' => ['Reading', 'chess', 'Reading'], 'influenceAreas' => ['Education', 'Health'],
+        'heardFrom' => 'WhatsApp', 'promoCode' => 'nextgen26'], $det);
+    $c = array_merge(['participation' => true, 'medical' => true, 'data' => true, 'comms' => true, 'media' => true, 'site_visibility' => true, 'trips' => false], $cons);
+    return backend_dispatch('public.apply', array_merge(['kind' => 'teen', 'program' => 'anchor', 'sex' => 'Female', 'firstName' => 'Tolu', 'lastName' => 'Adebayo',
+        'email' => 'club.family@example.com', 'phone' => '08031112233', 'dob' => '2013-04-02', 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg',
+        'why' => 'I want to become a doctor who opens a free clinic in my community.', 'details' => $d, 'consents' => $c], $over));
+};
+chk('club apply: 18 and over is sent to NGV by name, not refused as too old', ($r = $clubApp(['dob' => (date('Y') - 20) . '-01-01'])) && $r['error'] === 'age_ngv' && (int)$r['age'] >= 19);
+chk('club apply: Summer School keeps its own age refusal', $clubApp(['program' => 'summer', 'dob' => (date('Y') - 20) . '-01-01'])['error'] === 'bad_age');
+chk('club apply: a refused agreement saves nothing and names it', ($r = $clubApp([], [], ['media' => false])) && $r['error'] === 'consent_required' && $r['missing'] === ['media']
+    && !db_row("SELECT id FROM applications WHERE email = 'club.family@example.com'"));
+chk('club apply: a promo code with a phone number in it is refused', ($r = $clubApp([], ['promoCode' => '07046536485 NEXTGENREG'])) && $r['error'] === 'bad_promo' && $r['field'] === 'promoCode');
+chk('club apply: "Yes" is not a vision', $clubApp(['why' => 'Yes'])['error'] === 'vision_too_short');
+chk('club apply: a 10-digit parent phone is refused when it is not a Nigerian mobile', $clubApp([], ['parent1Phone' => '12345'])['field'] === 'parent1Phone');
+chk('club apply: a free-text class is refused', $clubApp([], ['class' => 'Jss3F'])['field'] === 'class');
+$cr1 = $clubApp();
+$crow = db_row("SELECT * FROM applications WHERE email = 'club.family@example.com'");
+$cdet = json_decode((string)$crow['details'], true);
+chk('club apply: accepted, every answer kept and normalised', !empty($cr1['ok']) && empty($cr1['updated'])
+    && $cdet['school'] === 'Egbeda Senior High School' && $cdet['parent1Name'] === 'Adunni Adebayo' && $cdet['parent1Phone'] === '08031234567'
+    && $cdet['hobbies'] === ['Reading', 'Chess'] && $cdet['promoCode'] === 'NEXTGEN26' && $cdet['policyVersion'] === '2026.10');
+chk('club apply: the agreements are in the ledger with the policy version, trips declined', (function () use ($cr1) {
+    $rows = db_all("SELECT type, status, policyVersion, method FROM consents WHERE studentId = ?", ['APP:' . $cr1['ref']]);
+    $by = array_column($rows, 'status', 'type');
+    return count($rows) === 7 && $by['media'] === 'granted' && $by['trips'] === 'declined'
+        && !array_filter($rows, fn($x) => $x['policyVersion'] !== '2026.10' || $x['method'] !== 'online-application');
+})());
+$cr2 = $clubApp(['why' => 'I want to become an engineer who builds bridges across Lagos.']);
+chk('club apply: the same child again (email + date of birth) updates the application, same reference', !empty($cr2['updated']) && $cr2['ref'] === $cr1['ref']
+    && (int)db_row("SELECT COUNT(*) c FROM applications WHERE email = 'club.family@example.com'")['c'] === 1
+    && strpos((string)db_row("SELECT why FROM applications WHERE email = 'club.family@example.com'")['why'], 'engineer') !== false);
+$cr3 = $clubApp(['firstName' => 'Kemi', 'dob' => '2011-09-09'], ['class' => 'SSS 1']);
+chk('club apply: a sibling on the same email is a separate application', !empty($cr3['ok']) && empty($cr3['updated']) && $cr3['ref'] !== $cr1['ref']
+    && (int)db_row("SELECT COUNT(*) c FROM applications WHERE email = 'club.family@example.com'")['c'] === 2);
+$cconv = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => (int)$crow['id']]);
+$cmem = db_row('SELECT * FROM members WHERE memberId = ?', [$cconv['memberId'] ?? '']);
+chk('club apply → member: the parent by name and number, the school and class, the agreements inherited', $cmem
+    && $cmem['parentName'] === 'Adunni Adebayo' && $cmem['parentPhone'] === '08031234567' && $cmem['school'] === 'Egbeda Senior High School · JSS 2 B'
+    && (int)db_row("SELECT COUNT(DISTINCT type) c FROM consents WHERE studentId = ? AND policyVersion = '2026.10'", [$cmem['memberId']])['c'] === 7
+    && (consent_state($cmem['memberId'])['media']['status'] ?? '') === 'granted');
+
 // ── Contact form ──
 chk('contact stores message', !empty(backend_dispatch('public.contact', ['name' => 'Ada Visitor', 'email' => 'ada@example.com', 'message' => 'I would love to learn more about mentoring.', 'purpose' => 'mentor'])['ref']));
 chk('contact honeypot silently drops', (function () {

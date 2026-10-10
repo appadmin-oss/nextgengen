@@ -639,7 +639,19 @@ function ApplySuccessCard({ variant = "application", refCode, whatsapp, centreNa
   );
 }
 
+/* /join: the Club application for NGG (page-apply.jsx), the four-step form
+   below for Summer School. Which one is the URL's `program`, read the same
+   way the form reads it; the legacy global is honoured once. */
 function JoinPage({ setPage }) {
+  const [club] = useState(() => {
+    let q = "";
+    try { q = (new URLSearchParams(window.location.search).get("program") || "").toLowerCase(); } catch (_) {}
+    return !(q === "summer" || (typeof window !== "undefined" && window.__nggProgram === "summer"));
+  });
+  return club ? <ClubApplyPage setPage={setPage}/> : <JoinFormPage setPage={setPage}/>;
+}
+
+function JoinFormPage({ setPage }) {
   // Restore a saved draft so "we save as you go" is true.
   const [step, setStep] = useState(0);
   const [appRef, setAppRef] = useState("");

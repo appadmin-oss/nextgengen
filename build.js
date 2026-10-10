@@ -82,6 +82,7 @@ const ORDER = [
   'page-club.jsx',
   'page-anchor.jsx',
   'page-other.jsx',
+  'page-apply.jsx',
   'src/modules/mentor/mp-shell.jsx',
   'src/modules/mentor/mp-week.jsx',
   'src/modules/mentor/mp-work.jsx',

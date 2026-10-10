@@ -1179,6 +1179,33 @@ Three different queues, for three different things:
   volunteers and Summer School participants, waiting on approval before
   they appear anywhere or print on a card.
 
+**The Club application** (`/join`, policy version 2026.10) replaced the
+Google Form. Seven steps: who is filling it in and the centre; the child;
+school and class; home and origin; both parents; course, vision, hobbies and
+areas of influence; photo and agreements. Then a review.
+
+- What it refuses, in the form and again on the server: ages under 10; a
+  surname typed as the first name; an email with no proper domain (it offers
+  the likely fix); a phone that is not an 11-digit Nigerian mobile (it mends
+  `803…` and `+234…`); "Yes" as a vision (40 characters at least); a promo
+  code with spaces or a phone number in it; a photo too small, too dark or
+  too bright for the card.
+- **18 and over** is not refused, it is sent to **NGV registration on
+  Afrovanguard** (`afrovanguard.ngv_url` in `api/config.php`; empty means
+  `{org_url}/ngv/register`).
+- **The same child sent twice** (same email and date of birth) updates the
+  application you already have, as long as it is not yet decided. A brother or
+  sister on the same parent's email is a separate application.
+- **All six agreements are required to join the Club**: taking part,
+  emergency care, privacy, family updates, and photos, videos and the website.
+  Off-site trips are the family's choice. Each is recorded with the policy
+  version and the date; when you accept the child, the member inherits them.
+  Summer School's parent verification keeps its own rules.
+- Accepting copies the parent's name and number, the school and class, and
+  the child's own mobile onto the member. Everything else (address, origin,
+  hobbies, how they heard) stays on the application.
+- The policies a family agrees to are at **/policies**.
+
 Photo review matters more than it looks: a member with no approved
 photograph prints a card with a blank where the face goes. The **Missing:
 photo** filter on the member roster is the list of people that will happen

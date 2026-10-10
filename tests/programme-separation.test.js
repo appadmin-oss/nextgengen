@@ -100,16 +100,19 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
 
     const centresOn = async () => pg.$$eval('#join-centre option', os => os.map(o => o.value).filter(Boolean));
-    // NGG.
+    // NGG: the Club application, whose centres are its own radio cards.
+    const clubCentres = () => pg.$$eval('#apf-fld-centre [role=radio] b', bs => bs.map(b => b.textContent));
+    const clubDraft = () => pg.evaluate(() => (JSON.parse(localStorage.getItem('ngg-apply') || '{}').v || {}));
     await pg.goto(BASE + '/join?program=anchor', { waitUntil: 'domcontentloaded' });
     await waitForBoot(pg);
-    await pg.waitForFunction(() => document.querySelectorAll('#join-centre option').length > 2, null, { timeout: 30000 });
-    const ngg = await centresOn();
+    await pg.waitForFunction(() => document.querySelectorAll('#apf-fld-centre [role=radio]').length > 1, null, { timeout: 30000 });
+    const ngg = await clubCentres();
     chk('the NGG form offers the Club\'s centres and not a Summer-only venue', ngg.includes('Ayobo Club House') && ngg.includes('Egbeda') && !ngg.includes('Ijaiye Summer Venue'));
     const offerN = await pg.evaluate(() => NGGApi.public.programme('anchor'));
     chk('the NGG form offers the Club\'s courses and not Summer School\'s', JSON.stringify(offerN.faculties).includes('Media Lab') && !JSON.stringify(offerN.faculties).includes('Piano'));
-    await pg.selectOption('#join-centre', 'Ayobo Club House');
-    await pg.evaluate(() => { const d = JSON.parse(localStorage.getItem('ngg.join.draft.anchor') || '{}'); return d.city; }).then(c => chk('the NGG draft is saved under its own key', c === 'Ayobo Club House'));
+    await pg.click('#apf-fld-centre [role=radio]:has-text("Ayobo Club House")');
+    await pg.waitForFunction(() => (JSON.parse(localStorage.getItem('ngg-apply') || '{}').v || {}).centre === 'Ayobo Club House', null, { timeout: 5000 })
+      .then(() => chk('the NGG draft is saved under its own key', true), () => chk('the NGG draft is saved under its own key', false));
 
     // Summer, in the same browser: the NGG draft must not leak into it.
     await pg.goto(BASE + '/join?program=summer', { waitUntil: 'domcontentloaded' });
@@ -121,12 +124,14 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     const offerS = await pg.evaluate(() => NGGApi.public.programme('summer'));
     chk('the Summer form offers Summer School\'s catalogue and not the Club\'s courses', JSON.stringify(offerS.faculties).includes('Piano') && !JSON.stringify(offerS.faculties).includes('Media Lab'));
 
-    // A Summer course link landing on the NGG form is cleared, not submitted.
-    await pg.evaluate(() => { localStorage.removeItem('ngg.join.draft.anchor'); });
+    // A Summer venue in a link to the NGG form is cleared, not submitted.
+    await pg.evaluate(() => { localStorage.removeItem('ngg-apply'); });
     await pg.goto(BASE + '/join?program=anchor&track=Piano&centre=Ijaiye%20Summer%20Venue', { waitUntil: 'domcontentloaded' });
     await waitForBoot(pg);
-    await pg.waitForFunction(() => document.querySelectorAll('#join-centre option').length > 2, null, { timeout: 30000 });
-    await pg.waitForFunction(() => { const d = JSON.parse(localStorage.getItem('ngg.join.draft.anchor') || '{}'); return d.track === '' && d.city === ''; }, null, { timeout: 10000 }).then(() => chk('a Summer course or venue in a link to the NGG form is cleared', true), () => chk('a Summer course or venue in a link to the NGG form is cleared', false));
+    await pg.waitForFunction(() => document.querySelectorAll('#apf-fld-centre [role=radio]').length > 1, null, { timeout: 30000 });
+    await pg.waitForFunction(() => { const d = JSON.parse(localStorage.getItem('ngg-apply') || '{}').v || {}; return d.centre === '' && !d.course; }, null, { timeout: 10000 })
+      .then(() => chk('a Summer course or venue in a link to the NGG form is cleared', true), () => chk('a Summer course or venue in a link to the NGG form is cleared', false));
+    void clubDraft;
     await pg.screenshot({ path: path.join(SHOTS, 'join-ngg.png') });
 
     // Control Room: Curriculum → Courses, and People → Centres.

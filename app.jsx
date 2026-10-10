@@ -59,12 +59,13 @@ const ROUTES = [
   { id: "mentors",     title: "The mentors · NGG",                         desc: "The Afrovanguard Street-To-Stardom volunteers who show up every Saturday." },
   { id: "blog",        title: "The Journal · NGG",                         desc: "Long-form writing from mentors, members and the editorial team." },
   { id: "contact",     title: "Contact · NGG",                             desc: "Questions about a session, mentoring, partnerships or press — a human replies within two working days." },
+  { id: "policies",    title: "Member and family policies · NGG",          desc: "What a family agrees to when a child joins the NGG Club: taking part, safeguarding, medical care, privacy, updates, photos, trips and fees." },
   { id: "legal",       title: "Legal & data protection · NGG",             desc: "Privacy, terms, safeguarding, parental consent, cookies and your data rights under the NDPA/NDPR." },
   { id: "s-status",    title: "Live status · Summer School · NGG",         desc: "A live, public view of attendance and participation across every NGG Summer School centre — aggregate numbers only." },
   { id: "v-status",    title: "Volunteer status · Next Generation Genius",  desc: "A live, public view of volunteer needs and fulfilment across every NGG centre — aggregate counts only, never a volunteer's name." },
 
   // ── Intake ───────────────────────────────────────────────────────────────
-  { id: "join",        title: "Apply · Summer School · NGG",               desc: "Four short steps. About six minutes. Pause and come back — we save as you go." },
+  { id: "join",        title: "Apply · NGG",                               desc: "Apply to the NGG Club or Summer School. We save as you go." },
   { id: "volunteer",   title: "Volunteer registration · NGG",              desc: "Register to volunteer — as an admin, a mentor, or an instructor teaching a course." },
   /* Direct Apply: the public, gate-scoped sign-up a centre hands to a family
      (`/apply?g=…`). A real page with a real title — and noindexed, because it
@@ -399,6 +400,7 @@ function App() {
     volunteer: <VolunteerRegisterPage setPage={setPage}/>,
     mentors:   <MentorsPage    setPage={setPage}/>,
     join:      <JoinPage      setPage={setPage}/>,
+    policies:  <PoliciesPage  setPage={setPage}/>,
     blog:      <BlogPage      setPage={setPage}/>,
     contact:   <ContactPage   setPage={setPage}/>,
     "s-status": <StatusPage    setPage={setPage}/>,

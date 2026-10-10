@@ -382,6 +382,9 @@ return [
         'sts_url'        => '',   // empty ⇒ NGG (app_origin); set when STS is live
         'volunteer_url'  => '',   // empty ⇒ NGG's own /volunteer
         'mentor_program' => 'Street-To-Stardom · Next Gen',
+        // Where 18-and-over applicants register for NGV, on Afrovanguard.
+        // The Club application's NGV panel links here. Empty ⇒ {org_url}/ngv/register.
+        'ngv_url'        => '',
         // Sync: pull Afrovanguard's approved mentor/volunteer pool into NGG's
         // mentors table (source='afrovanguard'). Leave `api_token` empty to
         // disable the sync. Mint the token in Afrovanguard's Studio →
