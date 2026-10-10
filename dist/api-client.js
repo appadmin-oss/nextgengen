@@ -1599,7 +1599,7 @@
         /* Summer School → NGG: the open NGG centres nearest their Summer venue,
            then the move (keepSummer = they serve both). */
         nggOptions: (volunteerId) => request('/admin/volunteers.php' + qs({ view: 'nggOptions', volunteerId })),
-        promoteNgg: (volunteerId, centre, keepSummer) => request('/admin/volunteers.php', { body: { action: 'promoteNgg', volunteerId, centre: centre || '', keepSummer: !!keepSummer } }),
+        promoteNgg: (volunteerId, centre, keepSummer, newCard) => request('/admin/volunteers.php', { body: { action: 'promoteNgg', volunteerId, centre: centre || '', keepSummer: !!keepSummer, newCard: !!newCard } }),
         remove:  (volunteerId) => request('/admin/volunteers.php', { body: { action: 'delete', volunteerId } }),
         needsList:  () => request('/admin/volunteers.php?view=needs'),
         needUpsert: (centreId, role, faculty, needCount) => request('/admin/volunteers.php', { body: { action: 'need_upsert', centreId, role, faculty: faculty || '', needCount } }),

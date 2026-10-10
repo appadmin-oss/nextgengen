@@ -10029,14 +10029,17 @@ function VolunteerNggMove({ v, onDone }) {
   const [err, setErr] = React.useState("");
   const [centre, setCentre] = React.useState("");
   const [keep, setKeep] = React.useState(true);
+  const [newCard, setNewCard] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const load = () => { setErr(""); NGGApi.admin.volunteers.nggOptions(v.volunteerId).then(r => { setOpts(r); setCentre(r.suggested || ""); }).catch(e => setErr(e.code || e.message)); };
   React.useEffect(load, [v.volunteerId]);
   const go = async () => {
     setBusy(true);
     try {
-      const r = await NGGApi.admin.volunteers.promoteNgg(v.volunteerId, centre, keep);
-      toast.success(v.fullName + " now serves " + (r.programme === "both" ? "NGG and Summer School" : "NGG") + " at " + r.centre + (r.mentorRecords ? " · mentor record moved too" : "") + ".");
+      const r = await NGGApi.admin.volunteers.promoteNgg(v.volunteerId, centre, keep, newCard);
+      toast.success(v.fullName + " now serves " + (r.programme === "both" ? "NGG and Summer School" : "NGG") + " at " + r.centre + (r.mentorRecords ? " · mentor record moved too" : "")
+        + ". " + (r.card && r.card.keeps ? "Their card scans at NGG desks from now on" + (r.card.expiresAt ? ", until " + r.card.expiresAt : "") + "." : "")
+        + (r.queued ? " An NGG-style card is queued in the ID Card Studio." : ""));
       onDone();
     } catch (e) { toast.error(({ invalid_centre: "Choose one of the open NGG centres.", centre_required: "Choose the NGG centre they will serve.", already_ngg: "They already serve NGG." })[e.code] || e.message); setBusy(false); }
   };
@@ -10054,6 +10057,7 @@ function VolunteerNggMove({ v, onDone }) {
           </label>)}
         </fieldset>
         <label className="vol-ngg-opt"><input type="checkbox" checked={keep} onChange={e => setKeep(e.target.checked)}/> Keep serving Summer School too</label>
+        <label className="vol-ngg-opt"><input type="checkbox" checked={newCard} onChange={e => setNewCard(e.target.checked)}/> Also print them an NGG-style card (their current card keeps working)</label>
         <div className="vol-ngg-acts">
           <button className="btn btn-primary btn-sm" disabled={busy || !centre} onClick={go}>{busy ? "Moving…" : "Bring into NGG"}</button>
           <button className="btn btn-ghost btn-sm" onClick={onDone} disabled={busy}>Cancel</button>

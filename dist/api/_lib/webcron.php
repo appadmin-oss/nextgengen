@@ -343,6 +343,7 @@ function web_cron_accrue(): void {
 
 function web_cron_maintenance(): void {
     $now = now_iso();
+    if (function_exists('volunteer_cards_ngg_clock_fix')) volunteer_cards_ngg_clock_fix();
     db_exec("UPDATE posts SET status='published', updatedAt=? WHERE status='draft' AND publishAt != '' AND publishAt IS NOT NULL AND publishAt <= ?", [$now, $now]);
     $promo = setting_get('homepage_promo');
     if (is_array($promo) && !empty($promo['expires']) && strtotime((string)$promo['expires']) < time()) {

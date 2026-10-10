@@ -1476,6 +1476,36 @@ function admin_photo_replace(array $p): array {
     return ['ok' => true, 'assetId' => $ing['assetId'], 'status' => $proc['status'] ?? 'captured', 'editedUrl' => $applied];
 }
 
+/**
+ * The Cloudinary public id behind a delivery URL on OUR cloud, or '' — another
+ * account's image, or not Cloudinary, is never ours to delete. Transformations
+ * and the version segment are skipped: an edit of an upload is the same upload.
+ */
+function cloudinary_public_id(string $url): string {
+    $cfg = $GLOBALS['CONFIG']['cloudinary'] ?? [];
+    $cloud = (string)($cfg['cloud_name'] ?? '');
+    if ($cloud === '' || !preg_match('#^https://res\.cloudinary\.com/([^/]+)/image/upload/(.+)$#', $url, $m) || $m[1] !== $cloud) return '';
+    $parts = explode('/', strtok($m[2], '?'));
+    // Drop leading transformation segments (they contain commas or a known prefix like c_, w_, e_…) and the version.
+    while ($parts && (strpos($parts[0], ',') !== false || preg_match('/^[a-z]{1,3}_[^\/]*$/', $parts[0]) || preg_match('/^v\d+$/', $parts[0]))) array_shift($parts);
+    $id = implode('/', $parts);
+    return (string)preg_replace('/\.[a-z0-9]{2,5}$/i', '', $id);
+}
+/** Delete an upload from our Cloudinary (signed, server side). Test seam: $GLOBALS['__cloudinary_destroy_mock']. */
+function cloudinary_destroy(string $publicId): bool {
+    if ($publicId === '') return false;
+    if (isset($GLOBALS['__cloudinary_destroy_mock']) && is_callable($GLOBALS['__cloudinary_destroy_mock'])) return (bool)($GLOBALS['__cloudinary_destroy_mock'])($publicId);
+    if (!cloudinary_configured() || !function_exists('curl_init')) return false;
+    $cfg = $GLOBALS['CONFIG']['cloudinary']; $ts = time();
+    $sig = sha1('invalidate=true&public_id=' . $publicId . '&timestamp=' . $ts . $cfg['api_secret']);
+    $ch = curl_init('https://api.cloudinary.com/v1_1/' . rawurlencode((string)$cfg['cloud_name']) . '/image/destroy');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 12, CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => ['public_id' => $publicId, 'timestamp' => $ts, 'invalidate' => 'true', 'api_key' => $cfg['api_key'], 'signature' => $sig]]);
+    $raw = curl_exec($ch); curl_close($ch);
+    $r = json_decode((string)$raw, true);
+    return is_array($r) && in_array((string)($r['result'] ?? ''), ['ok', 'not found'], true);
+}
+
 /** The store id inside one of our URLs ('' for a hosted or foreign URL). */
 function photo_store_id_of(string $url): string {
     return preg_match('/p=([0-9a-f]{32}\.(?:jpg|png|webp))/', $url, $m) ? $m[1] : '';
@@ -1488,7 +1518,8 @@ function photo_store_id_of(string $url): string {
  * Returns null when the answer is unknown, which a caller treats as "in use".
  */
 function photo_store_live_refs(string $id, array $skip = ['audit_log', 'photo_assets']): ?array {
-    if (!preg_match('/^[0-9a-f]{32}\.(jpg|png|webp)$/', $id)) return null;
+    // A store id, or a hosted image's public id: anything specific enough to search for.
+    if (!preg_match('/^[0-9a-f]{32}\.(jpg|png|webp)$/', $id) && !preg_match('#^[A-Za-z0-9_./-]{8,200}$#', $id)) return null;
     $columns = photo_store_ref_columns();
     if (!$columns) return null;
     $q = db_driver() === 'mysql' ? '`' : '"';
@@ -1561,6 +1592,14 @@ function photo_supersede(string $subjectType, string $subjectId, string $oldUrl,
             foreach (photo_store_dirs() as $dir) { $f = $dir . '/' . $oldId; if (is_file($f) && @unlink($f)) $deleted = true; }
             try { db_exec('DELETE FROM photo_framing WHERE url LIKE ?', ['%' . $oldId . '%']); } catch (Throwable $e) {}
         }
+    }
+    /* A hosted original on OUR Cloudinary goes too — unless the new photo is an
+       edit of the same upload (same public id), or anything live still uses it. */
+    $oldPid = $oldId === '' && function_exists('cloudinary_public_id') ? cloudinary_public_id($old) : '';
+    if ($oldPid !== '' && $oldPid !== cloudinary_public_id($new)) {
+        $refs = photo_store_live_refs($oldPid);
+        if ($refs === [] && !db_row("SELECT 1 FROM photo_assets WHERE status <> 'superseded' AND (sourceUrl LIKE ? OR editedUrl LIKE ?) LIMIT 1", ['%' . $oldPid . '%', '%' . $oldPid . '%'])) $deleted = cloudinary_destroy($oldPid);
+        else $kept = 'in use';
     }
     audit('photo.superseded', $by !== '' ? $by : null, $subjectType . ':' . $subjectId, ['deleted' => $deleted, 'keptFor' => $kept, 'hosted' => $oldId === ''], '');
     return ['ok' => true, 'deleted' => $deleted, 'keptFor' => $kept];

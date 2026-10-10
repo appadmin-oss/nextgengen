@@ -23211,11 +23211,11 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $v2 = db_row('SELECT * FROM volunteers WHERE volunteerId = ?', [$r2['volunteer']['volunteerId'] ?? '']);
     $exp = fn($v) => (string)(db_row('SELECT expiresAt FROM qr_codes WHERE token = ?', [(string)$v['token']])['expiresAt'] ?? 'missing');
     chk('volunteers: a Club volunteer is approved as one', $v1 && $v1['programme'] === 'ngg');
-    chk('volunteers: …and their card runs on the year-round clock, not the season', $v1 && $exp($v1) === idcard_expiry_for());
+    chk('volunteers: …and their card runs on NGG\'s clock (no expiry by default), not the season', $v1 && $exp($v1) === volunteer_card_expiry('ngg', '') && $exp($v1) === '');
     chk('volunteers: a Summer volunteer\'s card still ends with the season', $v2 && $exp($v2) === summer_edition_card_expiry((string)$c['cohortId']));
     chk('volunteers: moving someone onto the Club moves their card\'s clock, not their card',
         !empty(backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-VPR-ADM', 'volunteerId' => $v2['volunteerId'], 'data' => ['programme' => 'both']])['ok'])
-        && $exp($v2) === idcard_expiry_for() && db_row('SELECT token FROM volunteers WHERE volunteerId = ?', [$v2['volunteerId']])['token'] === $v2['token']);
+        && $exp($v2) === volunteer_card_expiry('both', '') && db_row('SELECT token FROM volunteers WHERE volunteerId = ?', [$v2['volunteerId']])['token'] === $v2['token']);
     chk('volunteers: the editor refuses an unknown programme', (backend_dispatch('admin.volunteers.update', ['requesterId' => 'NGG-VPR-ADM', 'volunteerId' => $v2['volunteerId'], 'data' => ['programme' => 'x']])['error'] ?? '') === 'bad_programme');
     setting_set('intake_photo_required', $keep === null ? '1' : (string)$keep, 'test');
     foreach ([$v1, $v2] as $v) if ($v) { db_exec('DELETE FROM qr_codes WHERE token = ?', [(string)$v['token']]); db_exec('DELETE FROM volunteers WHERE volunteerId = ?', [$v['volunteerId']]); }
@@ -25537,7 +25537,25 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         ($pv['programme'] ?? '') === 'both' && db_row("SELECT programme, centre FROM volunteers WHERE volunteerId = 'VOL-POD-1'") === ['programme' => 'both', 'centre' => 'Podville']
         && db_row("SELECT programme, centre FROM mentors WHERE mentorId = 'MEN-POD-V'") === ['programme' => 'both', 'centre' => 'Podville']);
     chk('volunteer → NGG: doing it twice is refused, not repeated', (backend_dispatch('admin.volunteers.promote.ngg', ['requesterId' => $SU, 'volunteerId' => 'VOL-POD-1'])['error'] ?? '') === 'already_ngg');
-    db_exec("DELETE FROM volunteers WHERE volunteerId = 'VOL-POD-1'");
+    // The card they already hold keeps working at NGG desks — even one whose Summer season ended.
+    db_insert('volunteers', ['volunteerId' => 'VOL-POD-3', 'fullName' => 'Kemi Keepcard', 'email' => 'kk@pod.example', 'role' => 'volunteer', 'programme' => 'summer',
+        'centre' => 'Podville (Summer School)', 'status' => 'active', 'safeguarding' => 'cleared', 'token' => 'VOLQR-KEEP1', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('qr_codes', ['token' => 'VOLQR-KEEP1', 'batch' => 'VOL', 'cohortId' => '', 'status' => 'assigned', 'studentId' => 'VOL-POD-3', 'assignedName' => 'Kemi Keepcard', 'createdAt' => $now, 'assignedAt' => $now, 'expiresAt' => '2026-08-31']);
+    chk('volunteer → NGG: before, the old Summer card is refused as expired', (summer_checkin(['token' => 'VOLQR-KEEP1', 'requesterId' => $SU])['error'] ?? '') === 'id_expired');
+    $kp = backend_dispatch('admin.volunteers.promote.ngg', ['requesterId' => $SU, 'volunteerId' => 'VOL-POD-3', 'centre' => 'Podville']);
+    chk('volunteer → NGG: they keep the card in their hand — same QR, no NGG expiry', !empty($kp['card']['keeps']) && $kp['card']['token'] === 'VOLQR-KEEP1' && $kp['card']['expiresAt'] === '');
+    $sc = summer_checkin(['token' => 'VOLQR-KEEP1', 'requesterId' => $SU]);
+    chk('volunteer → NGG: …and it scans at the desk again', !empty($sc['ok']) && ($sc['student']['volunteerId'] ?? $sc['student']['id'] ?? '') !== '');
+    db_insert('volunteers', ['volunteerId' => 'VOL-POD-4', 'fullName' => 'No Record', 'email' => 'nr@pod.example', 'role' => 'volunteer', 'programme' => 'summer',
+        'centre' => 'Podville (Summer School)', 'status' => 'active', 'safeguarding' => 'cleared', 'token' => 'VOLQR-NOREC', 'createdAt' => $now, 'updatedAt' => $now]);
+    backend_dispatch('admin.volunteers.promote.ngg', ['requesterId' => $SU, 'volunteerId' => 'VOL-POD-4', 'centre' => 'Podville']);
+    chk('volunteer → NGG: a card whose door record was missing has it put back, not replaced', !empty(summer_checkin(['token' => 'VOLQR-NOREC', 'requesterId' => $SU])['ok']));
+    setting_set('vol_card_ngg_clock_fixed', null);
+    db_update('qr_codes', ['expiresAt' => '2026-12-01'], ['token' => 'VOLQR-KEEP1']);
+    chk('volunteer → NGG: cards issued on the old 90-day clock are moved onto NGG\'s, once', volunteer_cards_ngg_clock_fix() >= 1
+        && db_row("SELECT expiresAt FROM qr_codes WHERE token = 'VOLQR-KEEP1'")['expiresAt'] === '' && volunteer_cards_ngg_clock_fix() === 0);
+    db_exec("DELETE FROM volunteers WHERE volunteerId IN ('VOL-POD-1', 'VOL-POD-3', 'VOL-POD-4')");
+    db_exec("DELETE FROM qr_codes WHERE token IN ('VOLQR-KEEP1', 'VOLQR-NOREC')");
     db_exec("DELETE FROM centres WHERE centreId IN ('C-POD', 'C-PODS')");
 
     // Tidy.

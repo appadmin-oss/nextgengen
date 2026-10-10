@@ -705,7 +705,15 @@ function admin_volunteer_update(array $p): array {
        same; only when it stops opening the door changes. */
     if (isset($row['programme']) && $row['programme'] !== volunteer_programme($v) && !empty($v['token'])) {
         $qr = db_row('SELECT cohortId FROM qr_codes WHERE token = ? LIMIT 1', [(string)$v['token']]);
-        if ($qr) db_update('qr_codes', ['expiresAt' => volunteer_card_expiry($row['programme'], (string)$qr['cohortId'])], ['token' => (string)$v['token']]);
+        if ($qr) db_update('qr_codes', ['expiresAt' => volunteer_card_expiry($row['programme'], (string)$qr['cohortId']), 'status' => 'assigned', 'studentId' => $volunteerId], ['token' => (string)$v['token']]);
+        else {
+            /* An older volunteer whose card's door record is missing: the card
+               in their hand carries this token, so the record is put back
+               rather than the card replaced. */
+            $c = summer_ensure_cohort();
+            db_insert('qr_codes', ['token' => (string)$v['token'], 'batch' => 'VOL', 'cohortId' => (string)$c['cohortId'], 'status' => 'assigned', 'studentId' => $volunteerId,
+                'assignedName' => (string)($v['fullName'] ?? ''), 'createdAt' => now_iso(), 'assignedAt' => now_iso(), 'expiresAt' => volunteer_card_expiry($row['programme'], (string)$c['cohortId'])]);
+        }
     }
     audit('volunteer.update', $g['requester']['memberId'], $volunteerId, ['fields' => array_keys($row)], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'volunteerId' => $volunteerId];
@@ -771,7 +779,13 @@ function admin_volunteer_promote_ngg(array $p): array {
     $moved = db_exec("UPDATE mentors SET programme = ?, centre = ?, updatedAt = ? WHERE volunteerId = ? AND status = 'active'", [$to, $centre, now_iso(), $volunteerId]);
     audit('volunteer.promote.ngg', (string)$g['requester']['memberId'], $volunteerId,
           ['from' => (string)($v['centre'] ?? ''), 'to' => $centre, 'programme' => $to, 'mentorRecords' => $moved], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'volunteerId' => $volunteerId, 'programme' => $to, 'centre' => $centre, 'mentorRecords' => $moved];
+    // The card they already hold is their NGG card now: same QR, NGG's clock.
+    $qr = !empty($v['token']) ? db_row('SELECT expiresAt FROM qr_codes WHERE token = ? LIMIT 1', [(string)$v['token']]) : null;
+    // Optional: an NGG-style card in the studio's queue. The old one keeps working; this one is the same QR in NGG's style.
+    $queued = false;
+    if (!empty($p['newCard']) && function_exists('ids_reprints_open')) { ids_reprints_open([['subjectType' => 'volunteer', 'subjectId' => $volunteerId, 'why' => 'NGG card (moved from Summer School)', 'cause' => 'other']], (string)$g['requester']['memberId']); $queued = true; }
+    return ['ok' => true, 'volunteerId' => $volunteerId, 'programme' => $to, 'centre' => $centre, 'mentorRecords' => $moved, 'queued' => $queued,
+            'card' => ['keeps' => !empty($v['token']), 'token' => (string)($v['token'] ?? ''), 'expiresAt' => (string)($qr['expiresAt'] ?? '')]];
 }
 
 /** Delete a volunteer record and release its check-in QR token. */
@@ -918,7 +932,7 @@ function admin_member_promote_ngv(array $p): array {
     ]);
     db_insert('qr_codes', ['token' => $token, 'batch' => 'VOL', 'cohortId' => $c['cohortId'], 'status' => 'assigned',
         'studentId' => $volunteerId, 'assignedName' => (string)$m['fullName'], 'createdAt' => now_iso(),
-        'assignedAt' => now_iso(), 'expiresAt' => idcard_expiry_for()]);
+        'assignedAt' => now_iso(), 'expiresAt' => volunteer_card_expiry('ngg', (string)$c['cohortId'])]);
     db_update('members', ['ngvVolunteerId' => $volunteerId, 'ngvAt' => now_iso(), 'updatedAt' => now_iso()], ['memberId' => $memberId]);
 
     /* The record §20 asks for: why, by whom, and what the formation record
@@ -1065,8 +1079,35 @@ function volunteer_programme_label(string $p): string {
 /** When a volunteer's card stops opening the door: a Summer-only volunteer's
  *  with the season, as before; anyone who serves the Club is year-round, so on
  *  the programme's own validity clock (blank = does not expire). */
+/**
+ * When a volunteer's card stops opening the door. Summer School: with its
+ * edition. NGG (or both): on NGG's own clock — the NGG card does not expire on
+ * a season's timer (idcard_program('member') validityDays, 0 by default). It
+ * used to take Summer School's 90 days, so a Summer volunteer brought into NGG
+ * — told to keep their card — found it dead three months later.
+ */
 function volunteer_card_expiry(string $programme, string $cohortId): string {
-    return $programme === 'summer' ? summer_edition_card_expiry($cohortId) : idcard_expiry_for();
+    if ($programme === 'summer') return summer_edition_card_expiry($cohortId);
+    $days = (int)(idcard_program('member')['validityDays'] ?? 0);
+    return $days > 0 ? gmdate('Y-m-d', time() + min(3650, $days) * 86400) : '';
+}
+
+/**
+ * Once per deployment: NGG volunteers' cards issued on Summer School's 90-day
+ * clock (before volunteer_card_expiry() knew NGG's) are moved onto NGG's. The
+ * card in their hand is unchanged; only when it stops opening the door is.
+ */
+function volunteer_cards_ngg_clock_fix(): int {
+    if (setting_get('vol_card_ngg_clock_fixed')) return 0;
+    $n = 0;
+    foreach (db_all("SELECT v.volunteerId, v.programme, v.token, q.cohortId, q.expiresAt FROM volunteers v JOIN qr_codes q ON q.token = v.token
+                     WHERE v.status = 'active' AND v.programme IN ('ngg','both') AND v.token <> ''") as $r) {
+        $want = volunteer_card_expiry((string)$r['programme'], (string)$r['cohortId']);
+        if ((string)$r['expiresAt'] !== $want) { db_update('qr_codes', ['expiresAt' => $want], ['token' => (string)$r['token']]); $n++; }
+    }
+    setting_set('vol_card_ngg_clock_fixed', ['at' => now_iso(), 'moved' => $n], 'system');
+    if ($n) audit('volunteer.cards.ngg_clock', null, '', ['moved' => $n], '');
+    return $n;
 }
 
 /** Live filled counts from the active roster, keyed for O(1) lookup. */
