@@ -7954,6 +7954,16 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-lookup-form { display: flex; gap: 8px; }
 .ids-lookup-res { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
 .ids-reasons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ids-rec-tag.is-ok { color: var(--ids-ok-fg); }
+/* A name search's second list: people who already hold a card, each with a Reprint. */
+.ids-carded { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--ids-line); display: flex; flex-direction: column; gap: 4px; }
+.ids-carded-h { margin: 0 0 2px; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--ids-muted); }
+.ids-rec--carded { flex-wrap: wrap; }
+.ids-rec--carded .ids-rec-text { cursor: default; min-width: 0; }
+.ids-rec--carded.is-open { background: var(--ids-s0); }
+.ids-rec--carded .ids-btn.is-on { border-color: var(--ids-ink); }
+.ids-rec-why { flex-basis: 100%; padding: 6px 0 2px 46px; }
+.ids-rec-why .ids-help { flex-basis: 100%; }
 .ids-lookup-name { margin: 0; font-size: 17px; font-weight: 600; }
 .ids-lookup-none { margin-top: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
 .ids-hist { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--ids-line); }

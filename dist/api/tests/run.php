@@ -25916,6 +25916,21 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $d = photo_store_put($mkPng(44));
     $s = photo_supersede('member', 'NGG-PHR-1', $c['url'], $d['url']);
     chk('photo replace: a file another person still uses is kept, and says who', $s['deleted'] === false && str_contains($s['keptFor'], 'members') && photo_store_find($c['id']) !== '');
+    // A hosted (Cloudinary) original on our cloud is deleted too — never when the new photo is an edit of the same upload.
+    $keepCfg = $GLOBALS['CONFIG']['cloudinary'] ?? null;
+    $GLOBALS['CONFIG']['cloudinary'] = ['cloud_name' => 'nggtest', 'api_key' => 'k', 'api_secret' => 's'];
+    $destroyed = []; $GLOBALS['__cloudinary_destroy_mock'] = function ($pid) use (&$destroyed) { $destroyed[] = $pid; return true; };
+    chk('photo replace: a Cloudinary URL gives its public id, transformations and version skipped',
+        cloudinary_public_id('https://res.cloudinary.com/nggtest/image/upload/c_fill,g_face,w_600/v1712345/ngg/kids/abc123.jpg') === 'ngg/kids/abc123'
+        && cloudinary_public_id('https://res.cloudinary.com/othercloud/image/upload/v1/x.jpg') === '');
+    $h1 = 'https://res.cloudinary.com/nggtest/image/upload/v1/ngg/kids/old111.jpg';
+    db_update('members', ['photoUrl' => $h1], ['memberId' => 'NGG-PHR-1']);
+    photo_set_subject('member', 'NGG-PHR-1', 'https://res.cloudinary.com/nggtest/image/upload/e_improve/v2/ngg/kids/old111.jpg');
+    chk('photo replace: an edit of the same hosted upload deletes nothing', $destroyed === []);
+    photo_set_subject('member', 'NGG-PHR-1', 'https://res.cloudinary.com/nggtest/image/upload/v3/ngg/kids/new222.jpg');
+    chk('photo replace: a new hosted photo deletes the old hosted original', $destroyed === ['ngg/kids/old111']);
+    unset($GLOBALS['__cloudinary_destroy_mock']);
+    if ($keepCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $keepCfg;
     $GLOBALS['__photo_ref_force_fail'] = false;
 })();
 
