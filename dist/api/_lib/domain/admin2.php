@@ -1104,7 +1104,7 @@ function admin_mail_test(array $p): array {
     } elseif ($mode === 'apps_script') {
         $last = (string)($GLOBALS['__mail_last_error'] ?? '');
         $hints[] = str_contains($last, 'apps_script: Bad token')
-            ? 'The Apps Script refused the secret. In Settings → API keys → Google Apps Script, press Change and paste the exact SECRET from the script (Project Settings → Script properties, or the line const SECRET = … at the top of the script), then send the test again.'
+            ? 'The Apps Script refused the secret. In Settings → API keys → Google Apps Script, press Change and paste the exact SHARED_SECRET (or SECRET) from the script’s Project Settings → Script properties, then send the test again.'
             : 'Sending through the Google Apps Script Web App (MailApp), from the Google account that deployed it. It is set in Settings → API keys → Google Apps Script.';
     } elseif ($mode === 'resend') {
         $hints[] = 'Using the Resend HTTPS API. Make sure mail.from_email is on a domain you have verified in the Resend dashboard, or delivery will be rejected.';

@@ -48,7 +48,7 @@ const SERVICE_KEYS = [
         'fields' => [['paystack.secret', 'Secret key', 'secret', false, 'sk_live_… (or sk_test_… while testing).'], ['paystack.public', 'Public key', 'text', true, 'pk_live_…']]],
     'appsscript' => ['group' => 'email', 'label' => 'Google Apps Script', 'link' => 'https://script.google.com/home',
         'what' => 'Sends every email through a Google account with MailApp: no SMTP ports, no DNS setup. Tried first whenever it is set. Deploy the script as a Web app (Execute as: Me · Who has access: Anyone) and paste its /exec URL and its SECRET here. About 100 emails a day on a Gmail account, 1,500 on Workspace.', 'test' => 'appsscript',
-        'fields' => [['mail.apps_script_url', 'Web app URL', 'gasurl', false, 'From Deploy → Manage deployments. Ends in /exec.'], ['mail.apps_script_secret', 'Secret', 'secret', false, 'The SECRET set in the script.']]],
+        'fields' => [['mail.apps_script_url', 'Web app URL', 'gasurl', false, 'From Deploy → Manage deployments. Ends in /exec.'], ['mail.apps_script_secret', 'Secret', 'secret', false, 'The script’s secret: SHARED_SECRET (or SECRET) in Project Settings → Script properties.']]],
     'brevo' => ['group' => 'email', 'label' => 'Brevo', 'link' => 'https://app.brevo.com/settings/keys/smtp',
         'what' => 'Email through Brevo’s relay (smtp-relay.brevo.com, port 587). The sender address must be one verified in Brevo.', 'test' => 'mail',
         'fields' => [['mail.brevo.user', 'SMTP login', 'text', false, 'From Brevo → SMTP & API, e.g. 7a1b2c001@smtp-brevo.com.'], ['mail.brevo.pass', 'SMTP key', 'secret', false, 'The SMTP key (xsmtpsib-…), not the API key.'],
@@ -327,7 +327,7 @@ function admin_keys_test(array $p): array {
                     . ' and accepted the secret' . ($left !== null ? '; it may send to ' . $left . ' more recipient' . ($left === 1 ? '' : 's') . ' today.' : '.')]);
             } catch (\Throwable $e) {
                 $m = $e->getMessage();
-                $why = $m === 'Bad token' ? 'The secret does not match the script’s (SECRET, or SHARED_SECRET in an older copy of the script, under Project Settings → Script properties).'
+                $why = $m === 'Bad token' ? 'The secret does not match the script’s SHARED_SECRET (or SECRET) in Project Settings → Script properties.'
                      : (preg_match('/HTTP (401|403|404)/', $m) ? 'Google refused the URL. Deploy as a Web app with access “Anyone”, and use the /exec URL.' : ucfirst($m) . '.');
                 return ['ok' => true] + $done(['pass' => false, 'detail' => $why]);
             }
