@@ -91,7 +91,7 @@ async function as(memberId, admin, viewport) {
       // Mariam's match began 30 days ago (Grow soon; no one-to-one since → R2). Daniel's 10 days ago (Connect → R5).
       db_exec("UPDATE mentor_matches SET startedAt = ? WHERE memberId = 'NGG-MS-K1'", [gmdate('Y-m-d', time() - 30 * 86400)]);
       db_exec("UPDATE mentor_matches SET startedAt = ? WHERE memberId = 'NGG-MS-K2'", [gmdate('Y-m-d', time() - 10 * 86400)]);
-      db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-MS-K1', 'token' => '', 'date' => gmdate('Y-m-d'), 'checkInAt' => $now, 'method' => 'qr']);
+      db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-MS-K1', 'token' => '', 'date' => mp_today(), 'checkInAt' => $now, 'method' => 'qr']);
       echo json_encode(ms_rules_run());`);
     server = spawn('php', ['-S', '127.0.0.1:' + PORT, '-t', ROOT], { cwd: ROOT, detached: true, stdio: 'ignore' });
     await waitForServer(BASE);
@@ -218,7 +218,7 @@ async function as(memberId, admin, viewport) {
     php(`db_insert('members', ['memberId' => 'NGG-MS-SUMM', 'fullName' => 'Sola Summer', 'email' => 'sola@pod.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
          db_insert('mentors', ['mentorId' => 'MEN-MS-SUMM', 'fullName' => 'Sola Summer', 'email' => 'sola@pod.example', 'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'summer', 'memberId' => 'NGG-MS-SUMM', 'checkedAt' => now_iso(), 'createdAt' => now_iso()]);
          db_insert('summer_students', ['studentId' => 'SUM-MS-1', 'cohortId' => '', 'handle' => 'sum-ms-1', 'fullName' => 'Tobi Participant', 'centre' => 'Egbeda', 'track' => 'Robotics', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
-         db_insert('attendance', ['cohortId' => '', 'studentId' => 'SUM-MS-1', 'token' => '', 'date' => gmdate('Y-m-d'), 'checkInAt' => now_iso(), 'method' => 'qr']);`);
+         db_insert('attendance', ['cohortId' => '', 'studentId' => 'SUM-MS-1', 'token' => '', 'date' => mp_today(), 'checkInAt' => now_iso(), 'method' => 'qr']);`);
     const sm = await as('NGG-MS-SUMM', false, { width: 390, height: 844 });
     await sm.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
     await waitForBoot(sm);

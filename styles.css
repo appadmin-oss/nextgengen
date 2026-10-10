@@ -7803,9 +7803,12 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 .apf-topsteps-t { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--apf-ink-3); }
 .apf-topsteps ol { margin: 0; padding: 0; list-style: none; display: flex; gap: 4px; }
 .apf-topsteps li { flex: 1; min-width: 0; }
-.apf-topsteps li button { width: 100%; height: 8px; border: 0; border-radius: 4px; background: #e6e5e0; cursor: pointer; padding: 0; }
-.apf-topsteps li button.is-done { background: var(--apf-ok); }
-.apf-topsteps li button.is-cur { background: var(--apf-ink); }
+/* An 8px bar to look at, a 44px target to tap: the bar is drawn inside the button. */
+.apf-topsteps ol { margin: -18px 0; }
+.apf-topsteps li button { width: 100%; height: 44px; border: 0; background: none; cursor: pointer; padding: 0; display: flex; align-items: center; }
+.apf-topsteps li button::before { content: ""; display: block; width: 100%; height: 8px; border-radius: 4px; background: #e6e5e0; }
+.apf-topsteps li button.is-done::before { background: var(--apf-ok); }
+.apf-topsteps li button.is-cur::before { background: var(--apf-ink); }
 .apf-topsteps li button:disabled { cursor: default; }
 
 /* The card */
@@ -8080,7 +8083,7 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 .pol-toc a { padding: 6px 10px; border-radius: 8px; text-decoration: none; color: var(--apf-ink); }
 .pol-toc a:hover { background: #ecebe6; }
 .pol-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.pol-back { align-self: flex-start; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; color: var(--apf-ink); }
+.pol-back { align-self: flex-start; min-height: 44px; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; color: var(--apf-ink); }
 .pol-doc { background: #fff; border: 1px solid var(--apf-line); border-radius: var(--apf-r-card); padding: 20px; min-width: 0; max-width: 760px; font-size: 15.5px; line-height: 1.6; color: var(--apf-ink); }
 .pol-page.is-wide .pol-doc { padding: 36px; }
 .pol-doc.is-embed { border: 0; border-radius: 0; max-width: none; }
