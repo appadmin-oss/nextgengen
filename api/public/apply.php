@@ -22,7 +22,8 @@ $phone = v_safe_text(v_max(trim((string)$body['phone']), 32), 32);
 // layer validates/normalises it — forward the raw choice so it isn't dropped.
 $sex   = v_safe_text(v_max(trim((string)($body['sex'] ?? '')), 16), 16);
 // Teens are 10–17; mentors/volunteers are adults (16+ minimum).
-$dob   = v_dob($body['dob'], $kind === 'teen' ? 10 : 16, $kind === 'teen' ? 17 : 100);
+// 18 and over on the teen form is the domain's call: it answers age_ngv (register for NGV instead).
+$dob   = v_dob($body['dob'], $kind === 'teen' ? 10 : 16, $kind === 'teen' ? 40 : 100);
 $why   = v_safe_text($body['why'] ?? '', 2000);
 
 $payload = [
@@ -77,7 +78,9 @@ if ($kind === 'teen') {
 $res = gs_call('public.apply', array_merge($body, $payload));
 if (empty($res['ok'])) {
     $code = $res['error'] ?? 'apply_failed';
-    json_error($code, $code === 'rate_limited' ? 429 : 400);
+    // Which field, which agreements, what age: the form points at the answer to fix.
+    json_send(['ok' => false, 'error' => $code, 'detail' => $res['detail'] ?? null, 'field' => $res['field'] ?? null,
+               'missing' => $res['missing'] ?? null, 'age' => $res['age'] ?? null], $code === 'rate_limited' ? 429 : 400);
 }
 unset($res['ok']);
 json_ok($res);

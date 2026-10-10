@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 140;
+const NGG_SCHEMA_TARGET = 141;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4479,6 +4479,17 @@ function db_migrate(PDO $db): void {
             ALTER TABLE card_runs ADD COLUMN clientToken TEXT DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_crun_token ON card_runs(clientToken);
             ALTER TABLE id_reprints ADD COLUMN cause TEXT DEFAULT '';",
+        /* The Club application (v2026.10): everything the old Google Form
+         * collected that has no column of its own — school and class, home and
+         * origin, both parents, hobbies, areas of influence, how they heard —
+         * as one JSON object, so an application keeps every answer without a
+         * column per question. And the policy version a consent was given
+         * against, because "agreed" means nothing without "to which text". */
+        141 => "
+            ALTER TABLE applications ADD COLUMN details TEXT DEFAULT '';
+            ALTER TABLE applications ADD COLUMN updatedAt TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_apps_email_dob ON applications(email, dob);
+            ALTER TABLE consents ADD COLUMN policyVersion TEXT DEFAULT '';",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

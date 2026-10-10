@@ -794,8 +794,27 @@ function admin_application_convert(array $p): array {
         'disciplines' => $division !== '' && function_exists('club_division_short') ? club_division_short($division) : '',
         'createdAt' => now_iso(), 'updatedAt' => now_iso(),
     ];
+    /* The Club application (v2026.10) knows more: the parent by name and
+       their own number, the school and class, and the child's own mobile when
+       it is not the parent's. The rest stays on the application. */
+    $det = json_decode((string)($a['details'] ?? ''), true);
+    if (is_array($det) && $det) {
+        if (!empty($det['parent1Phone'])) $__m['parentPhone'] = (string)$det['parent1Phone'];
+        if (!empty($det['parent1Name'])) $__m['parentName'] = (string)$det['parent1Name'];
+        $sch = trim((string)($det['school'] ?? ''));
+        $cls = trim(implode(' ', array_filter([(string)($det['class'] ?? ''), (string)($det['classArm'] ?? '')])));
+        if ($sch !== '') $__m['school'] = $sch . ($cls !== '' ? ' · ' . $cls : '');
+        if ($intakePhone !== '' && function_exists('club_phone') && club_phone($intakePhone) !== '' && club_phone($intakePhone) !== (string)($det['parent1Phone'] ?? '')) $__m['phone'] = $intakePhone;
+    }
     if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_and_claim($__m, $newId);
     db_insert('members', $__m);
+    /* The agreements were given on the application; the member inherits them,
+       with the policy version and how they were given, never re-asked. */
+    $aref = intake_reference('teen', (int)$a['id']);
+    foreach (db_all("SELECT type, status, method, actorName, policyVersion, createdAt FROM consents WHERE studentId = ? ORDER BY id", ['APP:' . $aref]) as $c) {
+        db_insert('consents', ['studentId' => $newId, 'type' => $c['type'], 'status' => $c['status'], 'method' => $c['method'],
+            'actorName' => $c['actorName'], 'policyVersion' => (string)($c['policyVersion'] ?? ''), 'createdAt' => $c['createdAt']]);
+    }
     member_cards_ensure($__m, 'intake', 'created');
     db_update('applications', ['status' => 'accepted'], ['id' => $id]);
 

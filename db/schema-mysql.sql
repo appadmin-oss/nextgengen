@@ -3489,3 +3489,10 @@ ALTER TABLE card_runs ADD COLUMN clientToken VARCHAR(64) DEFAULT '';
 CREATE INDEX idx_crun_token ON card_runs(clientToken);
 ALTER TABLE id_reprints ADD COLUMN cause VARCHAR(16) DEFAULT '';
 INSERT INTO schema_version (version) VALUES (140) ON DUPLICATE KEY UPDATE version = version;
+
+-- 141: Club application v2026.10 — every answer kept as JSON; the policy version a consent was given against.
+ALTER TABLE applications ADD COLUMN details MEDIUMTEXT;
+ALTER TABLE applications ADD COLUMN updatedAt VARCHAR(32) DEFAULT '';
+CREATE INDEX idx_apps_email_dob ON applications(email, dob);
+ALTER TABLE consents ADD COLUMN policyVersion VARCHAR(16) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (141) ON DUPLICATE KEY UPDATE version = version;
