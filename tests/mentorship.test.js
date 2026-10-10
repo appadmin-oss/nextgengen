@@ -103,87 +103,97 @@ async function as(memberId, admin, viewport) {
     const mt = await as('NGG-MS-M1', false);
     await mt.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
     await waitForBoot(mt);
-    await mt.waitForSelector('.mt-app h1', { timeout: 60000 });
-    const today = await mt.innerText('.mt-body');
-    chk('Today: greets the mentor and counts the pod', /Good (morning|afternoon|evening), Ngozi/.test(today) && /pod of 2/.test(today));
-    chk('R2 in the portal: “No one-to-one with Mariam” is in Needs you', /No one-to-one with Mariam Yusuf for \d+ days/.test(today));
-    const first = await mt.innerText('.mt-card:has(h2:has-text("One-to-ones")) li:first-child');
-    chk('R2 in the portal: Mariam is at the top of one-to-ones, marked 21 days+', /Mariam Yusuf/.test(first) && /21 days\+/.test(first));
-    chk('the Report a concern button is always visible', await mt.isVisible('.mt-concern'));
+    await mt.waitForSelector('.mp-app h1', { timeout: 60000 });
+    const week = await mt.innerText('.mp-main');
+    chk('This week: the subtitle counts the mentees and names the role', /2 mentees · pod mentor/.test(week));
+    chk('Due now: the overdue one-to-ones are a row, worded as the handoff says', /2 one-to-ones overdue/.test(week) && /Not seen one-to-one in over 14 days/.test(week));
+    chk('Report a concern is always in the sidebar', await mt.isVisible('.mp-concern-btn'));
 
-    await mt.goto(BASE + '/mentor?s=case&m=NGG-MS-K2', { waitUntil: 'domcontentloaded' });
-    await mt.waitForSelector('.mt-tabs', { timeout: 60000 });
-    await mt.click('.mt-tabs button:has-text("Goals")');
-    chk('R5 in the portal: goal tools are hidden in the first six weeks', /Goals start in week 7/.test(await mt.innerText('.mt-body')));
+    await mt.click('.mp-nav-i:has-text("Mentees")');
+    await mt.waitForSelector('.mp-gr', { timeout: 30000 });
+    chk('Mentees: both mentees, each with the One-to-one overdue pill', (await mt.$$('.mp-gr')).length === 2 && (await mt.$$('.mp-gr .mp-pill:has-text("One-to-one overdue")')).length === 2);
+    await mt.click('.mp-gr:has-text("Daniel Okafor") .mp-who');
+    await mt.waitForSelector('.mp-ptabs', { timeout: 30000 });
+    chk('the profile URL is /mentor/mentees/<id>', /\/mentor\/mentees\/NGG-MS-K2/.test(mt.url()));
+    await mt.click('.mp-ptabs button:has-text("Goals")');
+    await mt.waitForSelector('text=has no goal yet', { timeout: 30000 });
+    chk('Goals in the Connect phase: Start a goal waits for week 3', await mt.isDisabled('button:has-text("Start a goal")'));
 
-    await mt.goto(BASE + '/mentor?s=case&m=NGG-MS-K3', { waitUntil: 'domcontentloaded' });
-    await mt.waitForFunction(() => /not in your pod/.test(document.body.innerText), null, { timeout: 60000 });
-    chk('a mentee outside the pod is refused by the server', q(`backend_dispatch('member.ms.case', ['requesterId' => 'NGG-MS-M1', 'memberId' => 'NGG-MS-K3'])['error']`) === 'not_in_pod');
+    await mt.goto(BASE + '/mentor/mentees/NGG-MS-K3', { waitUntil: 'domcontentloaded' });
+    await mt.waitForFunction(() => /not in your care/.test(document.body.innerText), null, { timeout: 60000 });
+    chk('a child outside the caseload is refused by the server', q(`backend_dispatch('member.mentor.mentee', ['requesterId' => 'NGG-MS-M1', 'subjectId' => 'NGG-MS-K3'])['error']`) === 'not_in_caseload');
 
-    await mt.goto(BASE + '/mentor?s=observe', { waitUntil: 'domcontentloaded' });
-    await mt.waitForSelector('.mt-obs', { timeout: 60000 });
-    chk('Saturday: only mentees here today are observed (Mariam), away ones skipped', /Mariam Yusuf/.test(await mt.innerText('.mt-body h1')) && /1 of 1/.test(await mt.innerText('.mt-body')));
-    await mt.click('.mt-obs:has(legend:has-text("Courage")) button:has-text("Demonstrated")');
-    const save = 'button:has-text("Save and go to next")';
-    chk('Saturday: a rating without evidence cannot be saved', await mt.isDisabled(save) && /Evidence needed for this rating: Courage/.test(await mt.innerText('.mt-body')));
-    await mt.fill('.mt-obs:has(legend:has-text("Courage")) input', 'Volunteered to present first.');
-    await mt.click(save);
-    await mt.waitForFunction(() => /Everyone here today has been observed/.test(document.body.innerText), null, { timeout: 30000 });
-    chk('…and with evidence it saves, and the Saturday is done', q(`db_row("SELECT level, evidence FROM mentor_observations WHERE memberId = 'NGG-MS-K1' AND indicator = 'Courage'")`).evidence === 'Volunteered to present first.');
+    // Log a one-to-one for Mariam: her overdue row clears at once.
+    await mt.goto(BASE + '/mentor/sessions?child=NGG-MS-K1', { waitUntil: 'domcontentloaded' });
+    await mt.waitForSelector('.mp-log', { timeout: 60000 });
+    await mt.fill('.mp-log textarea', 'Talked about her week at school and the debate club.');
+    await mt.click('.mp-log button:has-text("Save session")');
+    await mt.waitForSelector('.mp-toast:has-text("is no longer overdue")', { timeout: 30000 });
+    chk('Log a session: the one-to-one is saved with its length', q(`db_row("SELECT kind, minutes FROM mentor_meetings WHERE subjectId = 'NGG-MS-K1' ORDER BY id DESC")`).minutes === 20);
+    chk('…and Mariam is no longer overdue', q(`backend_dispatch('member.mentor.caseload', ['requesterId' => 'NGG-MS-M1'])['mentees']`).find(m => m.id === 'NGG-MS-K1').flags.contact === false);
 
-    await mt.click('.mt-concern');
-    await mt.waitForSelector('text=call 112 first');
-    await mt.selectOption('.mt-form select >> nth=0', 'Bullying');
-    await mt.fill('.mt-form textarea', 'She said older boys took her phone at the gate.');
-    await mt.click('button:has-text("Send to safeguarding")');
-    await mt.waitForFunction(() => /Case C-\d+/.test(document.body.innerText), null, { timeout: 30000 });
-    const caseNo = (await mt.innerText('.mt-body')).match(/Case (C-\d+)/)[1];
-    chk('Report a concern: the case number comes from the server', q(`db_row("SELECT category FROM safeguarding_cases WHERE caseNo = '${caseNo}'")`).category === 'Bullying');
+    // Saturday › During: the register saves as tapped.
+    await mt.goto(BASE + '/mentor/saturday/during', { waitUntil: 'domcontentloaded' });
+    await mt.waitForSelector('.mp-reg', { timeout: 60000 });
+    await mt.click('.mp-reg:has-text("Daniel Okafor") .mp-here');
+    await mt.click('.mp-reg:has-text("Daniel Okafor") .mp-val:has-text("Courage")');
+    await mt.waitForFunction(() => true);
+    await new Promise(r => setTimeout(r, 1200));
+    chk('Saturday: Here and a value tapped are saved to the register', /Courage/.test(q(`db_row("SELECT observed FROM mentor_register WHERE subjectId = 'NGG-MS-K2'")`).observed));
+
+    // Report a concern: the sent state carries the SG reference.
+    await mt.goto(BASE + '/mentor/concern', { waitUntil: 'domcontentloaded' });
+    await mt.waitForSelector('text=call 112', { timeout: 60000 });
+    await mt.click('button:has-text("Send to the safeguarding officer")');
+    chk('an incomplete concern names what is missing first', /Choose the child first/.test(await mt.innerText('.mp-main')));
+    await mt.fill('#mp-cn-who', 'Mari');
+    await mt.click('.mp-combo-list li:has-text("Mariam Yusuf")');
+    await mt.click('.mp-chip:has-text("Something they told me")');
+    await mt.fill('.mp-concern textarea', 'She said older boys took her phone at the gate.');
+    await mt.click('button:has-text("Send to the safeguarding officer")');
+    await mt.waitForFunction(() => /Reference SG-\d{6}/.test(document.body.innerText), null, { timeout: 30000 });
+    const ref = (await mt.innerText('.mp-main')).match(/Reference (SG-\d{6})/)[1];
+    chk('Report a concern: one queue, the server’s SG reference, never on the child’s record',
+      q(`db_row("SELECT category, subjectId FROM safeguarding_cases WHERE caseNo = '${ref}'")`).category === 'Something they told me'
+      && q(`db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MS-K1' AND concern = 1")`).c === 0);
     chk('no page errors in the portal', mt.errs.length === 0);
     if (mt.errs.length) console.error(mt.errs.join('\n'));
 
-    // Phone: the five-tab bar.
+    // Phone: the four tabs and More.
     const ph = await as('NGG-MS-M1', false, { width: 390, height: 844 });
     await ph.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
-    await ph.waitForSelector('.mt-tabbar', { timeout: 60000 });
-    chk('phone: Today · Pod · Saturday · Reviews · Check-ins in the tab bar, and no sideways scroll',
-      (await ph.innerText('.mt-tabbar')).replace(/\s+/g, ' ').trim() === 'Today Pod Saturday Reviews Check-ins'
+    await ph.waitForSelector('.mp-tabs', { timeout: 60000 });
+    chk('phone: This week · Mentees · Saturday · Messages · More, and no sideways scroll',
+      (await ph.innerText('.mp-tabs')).replace(/\s+/g, ' ').trim() === 'This week Mentees Saturday Messages More'
       && await ph.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    await ph.click('.mp-tabs button:has-text("More")');
+    await ph.waitForSelector('.mp-sheet', { timeout: 10000 });
+    await ph.keyboard.press('Escape');
+    chk('phone: More opens a sheet with the rest, and Escape closes it', !(await ph.isVisible('.mp-sheet')));
 
-    // The Academy gate, as Bola.
+    // Bola: screened, Academy not done — the portal opens; the Academy shows what is left.
     const un = await as('NGG-MS-M3', false);
-    await un.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
-    await un.waitForSelector('.mt-steps', { timeout: 60000 });
-    chk('Academy gate: an uncertified mentor sees the steps, and gets no mentee data from the server',
-      /Before you meet your pod/.test(await un.innerText('.mt-body')) && q(`backend_dispatch('member.ms.today', ['requesterId' => 'NGG-MS-M3'])['pod']`).length === 0);
+    await un.goto(BASE + '/mentor/academy', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(un);
+    await un.waitForSelector('.mp-mod', { timeout: 60000 });
+    chk('Academy: a mentor sees 0 of 13 modules complete', /0 of 13 modules complete/.test(await un.innerText('.mp-main')));
+    php(`db_exec("UPDATE mentors SET checkedAt = '' WHERE mentorId = 'MEN-MS-3'"); db_insert('members', ['memberId' => 'NGG-MS-K9', 'fullName' => 'Ife Ola', 'email' => 'ife@pod.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+         db_insert('mentor_assignments', ['memberId' => 'NGG-MS-K9', 'mentorId' => 'MEN-MS-3', 'status' => 'active', 'startedAt' => '2026-01-01']);`);
+    chk('an unscreened mentor gets no child’s record from the server', q(`backend_dispatch('member.mentor.caseload', ['requesterId' => 'NGG-MS-M3'])['mentees']`).length === 0);
 
-    await un.click('a:has-text("Open my class")');
-    await un.waitForFunction(() => /MENTOR PORTAL|Pick a centre|students/i.test(document.body.innerText) && !/Before you meet your pod/.test(document.body.innerText), null, { timeout: 60000 });
-    chk('…and is never locked out: “Open my class” opens the class roster as before', /view=class/.test(un.url()));
-    // Staff who also hold an NGG mentor record keep the class roster until cleared.
-    php(`db_insert('members', ['memberId' => 'NGG-MS-ADM2', 'fullName' => 'Admin Mentor', 'email' => 'am@pod.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
-         db_insert('mentors', ['mentorId' => 'MEN-MS-AM', 'fullName' => 'Admin Mentor', 'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'memberId' => 'NGG-MS-ADM2', 'createdAt' => now_iso()]);`);
-    const am = await as('NGG-MS-ADM2', true, { width: 390, height: 844 });
-    await am.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
-    await waitForBoot(am);
-    await am.waitForFunction(() => /STAFF|Pick a centre|MENTOR PORTAL/i.test(document.body.innerText), null, { timeout: 60000 });
-    chk('an admin with an uncleared mentor record lands on the class roster, not the Academy checklist', !/Before you meet your pod/.test(await am.innerText('body')));
-
-    // ── A super admin reaches both mentor pages ─────────────────────────
+    // ── A super admin: coordinator of the portal, and the class roster one link away ──
     const su = await as('NGG-MS-ADM', true);
     await su.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
     await waitForBoot(su);
-    await su.waitForSelector('.mt-viewswitch', { timeout: 60000 });
-    chk('super admin: /mentor opens the class roster (Summer School and NGG) with a switch to the NGG pods',
-      /Class roster · Summer School and NGG/.test(await su.innerText('.mt-viewswitch')) && await su.isVisible('.mt-viewswitch a:has-text("NGG pods")'));
-    await su.click('.mt-viewswitch a:has-text("NGG pods")');
-    await su.waitForSelector('.mt-app .mt-body h1', { timeout: 60000 });
-    const sv = await su.innerText('body');
-    chk('super admin: the NGG pods page is the coordinator view of every pod, read only',
-      /Coordinator view · every pod/.test(sv) && /pod of 2/.test(sv) && !/Before you meet your pod/.test(sv));
-    await su.goto(BASE + '/mentor?view=pod&s=case&m=NGG-MS-K1', { waitUntil: 'domcontentloaded' });
-    await su.waitForSelector('.mt-tabs', { timeout: 60000 });
-    chk('super admin: a case file opens read only, naming the mentor', /Mentor · Ngozi Eke · read only/.test(await su.innerText('.mt-body')) && !(await su.isVisible('button:has-text("Log a one-to-one")')));
+    await su.waitForSelector('.mp-view-switch', { timeout: 60000 });
+    chk('super admin: /mentor is the coordinator view, with the Mentors section and a link to the class roster',
+      /Centre coordinator/.test(await su.innerText('.mp-side')) && await su.isVisible('.mp-nav-i:has-text("Mentors")') && await su.isVisible('.mp-view-switch a:has-text("Class roster")'));
+    await su.click('.mp-nav-i:has-text("Academy")');
+    await su.waitForSelector('text=don’t need to pass through the Academy', { timeout: 30000 });
+    chk('super admin: never sent through the Academy', true);
+    await su.goto(BASE + '/mentor?view=class', { waitUntil: 'domcontentloaded' });
+    await su.waitForFunction(() => /Pick a centre|MENTOR PORTAL|students/i.test(document.body.innerText), null, { timeout: 60000 });
+    chk('super admin: ?view=class still opens the class roster for Summer School and NGG', !(await su.isVisible('.mp-app')));
 
     // ── A Summer School volunteer brought into NGG ──────────────────────
     php(`db_insert('centres', ['centreId' => 'C-EG', 'name' => 'Egbeda', 'code' => 'EG', 'status' => 'active', 'programmes' => 'ngg', 'slug' => 'egbeda', 'createdAt' => now_iso()]);
@@ -223,7 +233,7 @@ async function as(memberId, admin, viewport) {
     await hq.waitForFunction(() => /Offer withdrawn/.test(document.body.innerText), null, { timeout: 30000 });
     chk('Undo reverses everything', !q(`db_row("SELECT 1 FROM mentor_matches WHERE memberId = 'NGG-MS-K3'")`));
     await hq.goto(BASE + '/control/mentorship/ms-safeguarding', { waitUntil: 'domcontentloaded' });
-    await hq.waitForFunction(c => document.body.innerText.indexOf(c) >= 0, caseNo, { timeout: 60000 });
+    await hq.waitForFunction(c => document.body.innerText.indexOf(c) >= 0, ref, { timeout: 60000 });
     chk('Safeguarding: the case reaches the safeguarding role', true);
     chk('no page errors in the workspace', hq.errs.length === 0);
     if (hq.errs.length) console.error(hq.errs.join('\n'));

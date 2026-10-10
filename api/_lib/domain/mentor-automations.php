@@ -573,7 +573,7 @@ function mpa_job_leadDigest(array $ctx): array {
             if ($rows && $seen * 100 < 80 * count($rows)) $below[] = mp_first((string)$m['fullName']) . ' (' . $seen . ' of ' . count($rows) . ' seen)';
             $missing += count($open[$mid] ?? []);
         }
-        $concerns = (int)(db_row("SELECT COUNT(*) c FROM community_safeguarding WHERE status = 'open' AND centre = ?", [(string)$lead['centre']])['c'] ?? 0);
+        $concerns = (int)(db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE status <> 'resolved' AND centre = ?", [(string)$lead['centre']])['c'] ?? 0);
         $html = '<p><strong>Below standard:</strong> ' . ($below ? esc_html(implode(', ', $below)) : 'nobody') . '</p><p><strong>Weekly reviews missing:</strong> ' . $missing . '</p><p><strong>Open safeguarding concerns at ' . esc_html((string)$lead['centre']) . ':</strong> ' . $concerns . ' (details in the Control Room only)</p>';
         if (filter_var((string)$lead['email'], FILTER_VALIDATE_EMAIL)) { try { send_mail((string)$lead['email'], 'Your mentors this week', email_template(['title' => 'Your mentors this week', 'intro' => 'Mentor contact report for ' . esc_html((string)$lead['centre']) . '.', 'bodyHtml' => $html])); } catch (\Throwable $e) {} }
         mpa_push((string)$lead['memberId'], count($below) . ' below standard · ' . $missing . ' reviews missing', 'mentor');

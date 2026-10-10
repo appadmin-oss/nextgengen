@@ -322,8 +322,10 @@ function App() {
     /* The Control Room owns /control/<page>/<tab> and resolves the old
        /nextadmin?s=… addresses itself (src/modules/control/cr-app.jsx). */
     const inControlSubtree = page === "admin" && /^\/(control|nextadmin|hq|admin)(\/|$)/.test(window.location.pathname || "");
+    /* The Mentor Portal owns /mentor/<screen>/<id>/<tab> (mp-shell.jsx). */
+    const inMentorSubtree = page === "mentor" && /^\/mentor(\/|$)/.test(window.location.pathname || "");
     const prefixRoute = ROUTES.some(r => r.id === page && r.addressable === false);
-    if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && window.location.pathname !== pathForPage(page)) {
+    if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && !inMentorSubtree && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
     }
     // Expose for the sign-in modal / magic link consumer.

@@ -3472,6 +3472,10 @@ ALTER TABLE community_safeguarding ADD COLUMN category VARCHAR(191) NOT NULL DEF
 ALTER TABLE community_safeguarding ADD COLUMN centre VARCHAR(191) NOT NULL DEFAULT '';
 ALTER TABLE community_safeguarding ADD COLUMN officerId VARCHAR(191) NOT NULL DEFAULT '';
 ALTER TABLE community_safeguarding ADD COLUMN officerName VARCHAR(191) NOT NULL DEFAULT '';
-INSERT IGNORE INTO community_safeguarding (caseId, authorId, authorName, surface, channelSlug, body, status, acknowledgedBy, acknowledgedAt, createdAt, subjectId, subjectName, category, centre, officerId, officerName) SELECT caseNo, reporterId, reporterName, 'mentor', '', body, CASE status WHEN 'resolved' THEN 'acknowledged' ELSE 'open' END, '', '', createdAt, subjectId, subjectName, category, centre, officerId, officerName FROM safeguarding_cases;
 
 INSERT INTO schema_version (version) VALUES (138) ON DUPLICATE KEY UPDATE version = version;
+
+-- 139: the Academy recorded by hand (mentors.academyClearedAt / academyClearedBy).
+ALTER TABLE mentors ADD COLUMN academyClearedAt VARCHAR(40) DEFAULT '';
+ALTER TABLE mentors ADD COLUMN academyClearedBy VARCHAR(64) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (139) ON DUPLICATE KEY UPDATE version = version;

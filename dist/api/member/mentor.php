@@ -6,7 +6,7 @@ require_once __DIR__ . '/../_lib/bootstrap.php';
 
 /** GET ?view= → op. */
 const MENTOR_PORTAL_VIEWS = [
-    'week' => 'member.mentor.week', 'caseload' => 'member.mentor.caseload', 'mentee' => 'member.mentor.mentee',
+    'week' => 'member.mentor.week', 'caseload' => 'member.mentor.caseload', 'goals' => 'member.mentor.goals', 'summer' => 'member.mentor.summer', 'mentee' => 'member.mentor.mentee',
     'scorecard' => 'member.mentor.scorecard', 'index' => 'member.mentor.index', 'sessions' => 'member.mentor.sessions',
     'saturday' => 'member.mentor.saturday', 'messages' => 'member.mentor.messages', 'commitments' => 'member.mentor.commitments',
     'team' => 'member.mentor.team', 'academy' => 'member.mentor.academy',
@@ -20,17 +20,21 @@ const MENTOR_PORTAL_ACTIONS = [
     'relCheck'        => ['member.mentor.rel.save', ['subjectId', 'answers'], 'mentor.meeting'],
     'relFit'          => ['member.mentor.rel.fit', ['subjectId'], 'mentor.meeting'],
     'familySend'      => ['member.mentor.family.send', ['subjectId', 'body', 'draftId'], 'mentor.family'],
+    'familyDrafts'    => ['member.mentor.family.drafts', ['subjectIds'], 'mentor.meeting'],
     'concern'         => ['member.mentor.concern.create', ['subjectId', 'category', 'body'], 'mentor.concern'],
     'supervisionPrep' => ['member.mentor.supervision.prep', ['answers'], 'mentor.meeting'],
     'supervisionBook' => ['member.mentor.supervision.book', ['mentorId'], 'mentor.meeting'],
     'retreatBook'     => ['member.mentor.retreat.book', ['retreatId'], ''],
     'academyResult'   => ['member.mentor.academy.result', ['moduleId', 'answers'], 'mentor.meeting'],
     'saturdayPlan'    => ['member.mentor.saturday.plan', ['date', 'agenda', 'oneToOnes', 'share'], ''],
+    'oneToOnesAdd'    => ['member.mentor.onetoones.add', ['subjectIds'], ''],
     'register'        => ['member.mentor.register', ['date', 'rows', 'close'], ''],
     'weekReview'      => ['member.mentor.week.review', ['subjectId', 'date', 'effort', 'character', 'wellbeing', 'line'], 'mentor.review'],
     'weekReviewUndo'  => ['member.mentor.week.review.undo', ['subjectId', 'period'], ''],
     'messageRead'     => ['member.mentor.message.read', ['threadId'], ''],
     'messageReply'    => ['member.mentor.message.reply', ['threadId', 'subjectId', 'body'], 'mentor.meeting'],
+    'messageLead'     => ['member.mentor.message.lead', ['body', 'toId'], 'mentor.meeting'],
+    'summerReview'    => ['member.mentor.summer.review', ['subjectId', 'effort', 'character', 'wellbeing', 'line'], 'mentor.review'],
     'nudgeDone'       => ['member.mentor.nudge.done', ['id'], ''],
 ];
 $s = require_session();
@@ -62,7 +66,7 @@ if ($method === 'GET') {
         // The Mentor Portal's screens (design handoff v14). Every one is gated
         // by mentor_gate in the domain; these lines only carry the query.
         $res = gs_call(MENTOR_PORTAL_VIEWS[$view], ['requesterId' => $s['mid']]
-            + array_intersect_key($_GET, array_flip(['centre', 'subjectId', 'month', 'date', 'days'])));
+            + array_intersect_key($_GET, array_flip(['centre', 'subjectId', 'month', 'date', 'days', 'scope'])));
     } else {
         // `centre` narrows an admin (or anyone else covering more than one) to a
         // single class. The gate rejects a centre outside their scope.

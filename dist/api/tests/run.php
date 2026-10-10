@@ -25698,9 +25698,9 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
         && (backend_dispatch('member.mentor.concern.create', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'category' => 'Made up', 'body' => 'A long enough account']))['error'] ?? '') === 'choose_the_kind');
     $before = (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MPK1'")['c'];
     $cn = backend_dispatch('member.mentor.concern.create', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'category' => 'Something they told me', 'body' => 'They said something at home worries them.']));
-    $case = db_row('SELECT * FROM community_safeguarding WHERE caseId = ?', [$cn['ref'] ?? '']);
-    chk('portal: a concern opens a case in the one safeguarding queue with an SG- reference', !empty($cn['ok']) && preg_match('/^SG-\d{6}$/', $cn['ref']) && $case
-        && $case['surface'] === 'mentor' && $case['subjectId'] === 'NGG-MPK1' && $case['centre'] === 'Portalville');
+    $case = db_row('SELECT * FROM safeguarding_cases WHERE caseNo = ?', [$cn['ref'] ?? '']);
+    chk('portal: a concern opens a case in the officer\'s queue with an SG- reference', !empty($cn['ok']) && preg_match('/^SG-\d{6}$/', $cn['ref']) && $case
+        && $case['status'] === 'received' && $case['subjectId'] === 'NGG-MPK1' && $case['centre'] === 'Portalville');
     chk('portal: a concern never lands on the child\'s mentoring record', (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MPK1'")['c'] === $before);
 
     // Messages: a journal entry shared with the mentor reaches them; a private one never does.
@@ -25780,6 +25780,40 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('jobs: the run log reports per job', (backend_dispatch('admin.mentor.automations.log', ['requesterId' => $SU, 'days' => 3650])['byJob']['overdueOneToOne']['runs'] ?? 0) >= 3);
     chk('jobs: a mentor cannot reach the admin controls', empty(backend_dispatch('admin.mentor.automations.list', ['requesterId' => 'NGG-MP1'])['ok']));
     setting_set('mentor_automation', null);
+
+    // The Academy recorded by hand, screening's self-protection, staff need neither.
+    chk('clearance: an admin records the Academy as completed in person', !empty(backend_dispatch('admin.ms.mentor.mark', ['requesterId' => $SU, 'mentorId' => 'MEN-MP1', 'what' => 'academy', 'on' => true])['ok'])
+        && ($c = ms_clearance(db_row("SELECT * FROM mentors WHERE mentorId = 'MEN-MP1'")))['modulesDone'] === $c['modulesRequired'] && $c['academyByHand'] === true
+        && db_row("SELECT academyClearedBy FROM mentors WHERE mentorId = 'MEN-MP1'")['academyClearedBy'] === $SU);
+    chk('clearance: clearing it puts the modules back', !empty(backend_dispatch('admin.ms.mentor.mark', ['requesterId' => $SU, 'mentorId' => 'MEN-MP1', 'what' => 'academy', 'on' => false])['ok'])
+        && ms_clearance(db_row("SELECT * FROM mentors WHERE mentorId = 'MEN-MP1'"))['modulesDone'] < count(ms_required_modules()));
+    db_insert('mentors', ['mentorId' => 'MEN-MPSU', 'fullName' => 'Admin User', 'email' => 'admin@example.com', 'status' => 'active', 'centre' => 'Portalville', 'programme' => 'ngg', 'memberId' => $SU, 'checkedAt' => '', 'createdAt' => $now]);
+    $suc = ms_clearance(db_row("SELECT * FROM mentors WHERE mentorId = 'MEN-MPSU'"));
+    chk('clearance: a super admin with a mentor record is cleared without the Academy, screening or the policy', $suc['cleared'] === true && $suc['staff'] === true);
+    chk('clearance: nobody records their own screening or Academy', (backend_dispatch('admin.ms.mentor.mark', ['requesterId' => $SU, 'mentorId' => 'MEN-MPSU', 'what' => 'screened', 'on' => true])['error'] ?? '') === 'own_account'
+        && (backend_dispatch('admin.ms.mentor.mark', ['requesterId' => $SU, 'mentorId' => 'MEN-MPSU', 'what' => 'academy', 'on' => true])['error'] ?? '') === 'own_account');
+    db_exec("UPDATE mentors SET checkedAt = '' WHERE mentorId = 'MEN-MP1'");
+    chk('portal: an unscreened mentor sees no child\'s record until the check is recorded', count(backend_dispatch('member.mentor.caseload', $p('NGG-MP1'))['mentees']) === 0
+        && backend_dispatch('member.mentor.week', $p('NGG-MP1'))['me']['screened'] === false);
+    db_exec("UPDATE mentors SET checkedAt = ? WHERE mentorId = 'MEN-MP1'", [$now]);
+    db_exec("DELETE FROM mentors WHERE mentorId = 'MEN-MPSU'");
+
+    // The Summer School view: participants, a short review, a concern about a participant.
+    $mk('NGG-MPS', 'Sola Summer', ['dob' => '1995-01-01']);
+    db_insert('mentors', ['mentorId' => 'MEN-MPS', 'fullName' => 'Sola Summer', 'email' => 'solasummer@mp.example', 'status' => 'active', 'centre' => 'Portalville', 'programme' => 'summer', 'memberId' => 'NGG-MPS', 'checkedAt' => $now, 'createdAt' => $now]);
+    db_insert('summer_students', ['studentId' => 'SUM-MP-1', 'cohortId' => '', 'handle' => 'mp-sum-1', 'fullName' => 'Tobi Participant', 'centre' => 'Portalville', 'track' => 'Robotics', 'status' => 'active', 'enrolledAt' => $now, 'updatedAt' => $now]);
+    $sw = backend_dispatch('member.mentor.week', $p('NGG-MPS'));
+    chk('summer: a Summer School mentor is read as not NGG, so the Summer view opens', !empty($sw['ok']) && $sw['me']['ngg'] === false);
+    $sv = backend_dispatch('member.mentor.summer', ['requesterId' => 'NGG-MPS', 'centre' => 'Portalville', 'today' => $T]);
+    $tobi = array_values(array_filter($sv['participants'] ?? [], static fn($x) => $x['id'] === 'SUM-MP-1'))[0] ?? null;
+    chk('summer: participants only (no NGG members), each flagged until a note this week', $tobi && $tobi['notSeen'] === true
+        && !array_filter($sv['participants'], static fn($x) => str_starts_with($x['id'], 'NGG-')) && (bool)array_filter($sv['due'], static fn($d) => $d['key'] === 'reviews'));
+    chk('summer: a review needs all three levels', (backend_dispatch('member.mentor.summer.review', ['requesterId' => 'NGG-MPS', 'subjectId' => 'SUM-MP-1', 'effort' => 'Strong'])['error'] ?? '') === 'rate_all_three');
+    chk('summer: a review saves for the participant this week', !empty(backend_dispatch('member.mentor.summer.review', ['requesterId' => 'NGG-MPS', 'subjectId' => 'SUM-MP-1', 'effort' => 'Strong', 'character' => 'Steady', 'wellbeing' => 'Strong', 'line' => 'Built the arm'])['ok'])
+        && db_row("SELECT subjectType FROM mentor_reviews WHERE subjectId = 'SUM-MP-1'")['subjectType'] === 'student');
+    chk('summer: the NGG review refuses a participant', (backend_dispatch('member.mentor.summer.review', ['requesterId' => 'NGG-MP1', 'subjectId' => 'NGG-MPK1', 'effort' => 'Strong', 'character' => 'Steady', 'wellbeing' => 'Strong'])['error'] ?? '') === 'not_a_participant');
+    $sc = backend_dispatch('member.mentor.concern.create', ['requesterId' => 'NGG-MPS', 'subjectId' => 'SUM-MP-1', 'category' => 'Injury or harm', 'body' => 'He had a bruise he would not explain.']);
+    chk('summer: a concern about a participant reaches the officer\'s queue', !empty($sc['ok']) && db_row('SELECT subjectName FROM safeguarding_cases WHERE caseNo = ?', [$sc['ref']])['subjectName'] === 'Tobi Participant');
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

@@ -201,18 +201,32 @@ function ms_clearance_bulk(array $mentors, ?string $today = null): array {
         $vph = implode(',', array_fill(0, count($volIds), '?'));
         foreach (db_all("SELECT volunteerId FROM volunteers WHERE safeguarding = 'cleared' AND volunteerId IN ($vph)", $volIds) as $r) $volClear[(string)$r['volunteerId']] = true;
     }
+    /* Staff with admin access (a coordinator, a super admin) who also hold a
+     * mentor record are not sent through the Academy: they set its policy.
+     * One grouped read for the member rows behind the mentor records. */
+    $staff = [];
+    $mids = array_values(array_filter(array_map(static fn($m) => (string)($m['memberId'] ?? ''), $mentors)));
+    if ($mids && function_exists('member_effective_caps') && function_exists('mentor_admin_programmes')) {
+        $mp = implode(',', array_fill(0, count($mids), '?'));
+        foreach (db_all("SELECT * FROM members WHERE status = 'active' AND COALESCE(role,'') NOT IN ('', 'member') AND memberId IN ($mp)", $mids) as $r) {
+            if (mentor_admin_programmes(member_effective_caps($r))) $staff[(string)$r['memberId']] = true;
+        }
+    }
     $out = [];
     foreach ($mentors as $m) {
         $id = (string)$m['mentorId'];
-        $screened = trim((string)($m['checkedAt'] ?? '')) !== '' || isset($volClear[(string)($m['volunteerId'] ?? '')]);
-        $done = count(array_intersect($required, array_keys($passed[$id] ?? [])));
-        $pol = isset($policy[$id]);
+        $isStaff = isset($staff[(string)($m['memberId'] ?? '')]);
+        $byHand = trim((string)($m['academyClearedAt'] ?? '')) !== '';
+        $screened = $isStaff || trim((string)($m['checkedAt'] ?? '')) !== '' || isset($volClear[(string)($m['volunteerId'] ?? '')]);
+        $done = ($isStaff || $byHand) ? count($required) : count(array_intersect($required, array_keys($passed[$id] ?? [])));
+        $pol = $isStaff || isset($policy[$id]);
         $missing = [];
         if (!$screened) $missing[] = 'screening';
         if ($done < count($required)) $missing[] = 'academy';
         if (!$pol) $missing[] = 'policy';
         $out[$id] = ['screened' => $screened, 'modulesDone' => $done, 'modulesRequired' => count($required),
-                     'policy' => $pol, 'policyVersion' => MS_POLICY_VERSION, 'cleared' => !$missing, 'missing' => $missing];
+                     'policy' => $pol, 'policyVersion' => MS_POLICY_VERSION, 'cleared' => !$missing, 'missing' => $missing,
+                     'staff' => $isStaff, 'academyByHand' => $byHand && !$isStaff, 'academyClearedAt' => (string)($m['academyClearedAt'] ?? ''), 'academyClearedBy' => (string)($m['academyClearedBy'] ?? '')];
     }
     return $out;
 }
@@ -899,10 +913,13 @@ function admin_ms_mentor_mark(array $p): array {
     $m = db_row('SELECT * FROM mentors WHERE mentorId = ? LIMIT 1', [(string)($p['mentorId'] ?? '')]);
     if (!$m) return ['ok' => false, 'error' => 'not_found'];
     if (!ms_in_scope($g, (string)$m['centre'])) return ['ok' => false, 'error' => 'out_of_scope'];
-    $field = ['cimc' => 'cimcAt', 'anthem' => 'anthemAt', 'screened' => 'checkedAt'][(string)($p['what'] ?? '')] ?? '';
+    $field = ['cimc' => 'cimcAt', 'anthem' => 'anthemAt', 'screened' => 'checkedAt', 'academy' => 'academyClearedAt'][(string)($p['what'] ?? '')] ?? '';
     if ($field === '') return ['ok' => false, 'error' => 'bad_field'];
     $on = !empty($p['on']);
-    db_update('mentors', [$field => $on ? now_iso() : ''], ['mentorId' => $m['mentorId']]);
+    $by = (string)$g['requester']['memberId'];
+    // Nobody records their own safeguarding check or their own training.
+    if (in_array($field, ['academyClearedAt', 'checkedAt'], true) && $by === (string)$m['memberId']) return ['ok' => false, 'error' => 'own_account'];
+    db_update('mentors', [$field => $on ? now_iso() : ''] + ($field === 'academyClearedAt' ? ['academyClearedBy' => $on ? $by : ''] : []), ['mentorId' => $m['mentorId']]);
     audit('admin.mentorship.mentor.mark', (string)$g['requester']['memberId'], (string)$m['mentorId'], ['what' => $p['what'], 'on' => $on], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }

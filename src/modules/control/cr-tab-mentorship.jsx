@@ -157,10 +157,12 @@ function crMsMentorOpen(ctx, m) {
   const [cl] = crMsClearLabel(m.clearance);
   ctx.drawer({
     title: m.fullName, sub: [m.centre, m.rank === "lead" ? "Lead mentor" : "Mentor", cl].filter(Boolean).join(" · "),
-    stats: [["Pod", m.pod + " of " + m.cap], ["Academy", m.clearance.modulesDone + "/" + m.clearance.modulesRequired], ["Policy", m.clearance.policy ? "Signed" : "Not signed"]],
-    fields: [["Screening", m.clearance.screened ? "Cleared" : "Not yet"], ["CIMC training", m.cimc ? "Completed" : "Attends Saturday 7:00am"], ["Anthem and Pledge", m.anthem ? "Known" : "Not yet checked"], ["Leaving", m.leaving ? "Yes — closures planned" : "No"]],
+    stats: [["Pod", m.pod + " of " + m.cap], ["Academy", m.clearance.staff ? "Staff" : m.clearance.academyByHand ? "Recorded" : m.clearance.modulesDone + "/" + m.clearance.modulesRequired], ["Policy", m.clearance.policy ? "Signed" : "Not signed"]],
+    fields: [["Screening", m.clearance.staff ? "Staff · not required" : m.clearance.screened ? "Cleared" : "Not yet"],
+      ["Academy", m.clearance.staff ? "Staff · not required" : m.clearance.academyByHand ? "Completed in person · recorded " + String(m.clearance.academyClearedAt).slice(0, 10) : (m.clearance.modulesDone + " of " + m.clearance.modulesRequired + " modules online")], ["CIMC training", m.cimc ? "Completed" : "Attends Saturday 7:00am"], ["Anthem and Pledge", m.anthem ? "Known" : "Not yet checked"], ["Leaving", m.leaving ? "Yes — closures planned" : "No"]],
     sections: [{ h: "Commitments this month", rows: (m.commitments || []).map(i => [i.label, i.done + " of " + i.expected + (i.ok ? "" : " · short") + (i.note ? " · " + i.note : "")]) }],
-    actions: [mark("screened", m.clearance.screened, "screening cleared"), mark("cimc", m.cimc, "CIMC training completed"), mark("anthem", m.anthem, "knows the Anthem and Pledge")]
+    actions: (m.clearance.staff ? [] : [mark("screened", m.clearance.screened && !m.clearance.staff, "screening cleared"),
+      mark("academy", !!m.clearance.academyByHand, "Academy completed in person")]).concat([mark("cimc", m.cimc, "CIMC training completed"), mark("anthem", m.anthem, "knows the Anthem and Pledge")])
       .concat(m.leaving ? [] : [{ l: "Mentor is leaving", run: () => {
         ctx.closeDrawer();
         ctx.form({ title: m.fullName + " is leaving", intro: "Every mentee in their pod moves to a planned closure with a closure conversation. Nobody is re-matched until it has happened (R8).",

@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 138;
+const NGG_SCHEMA_TARGET = 139;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4455,6 +4455,16 @@ function db_migrate(PDO $db): void {
             ALTER TABLE community_safeguarding ADD COLUMN officerName TEXT DEFAULT '';
             INSERT OR IGNORE INTO community_safeguarding (caseId, authorId, authorName, surface, channelSlug, body, status, acknowledgedBy, acknowledgedAt, createdAt, subjectId, subjectName, category, centre, officerId, officerName)
               SELECT caseNo, reporterId, reporterName, 'mentor', '', body, CASE status WHEN 'resolved' THEN 'acknowledged' ELSE 'open' END, '', '', createdAt, subjectId, subjectName, category, centre, officerId, officerName FROM safeguarding_cases;",
+        /* 139 — the Academy recorded by hand: a mentor trained in person (or by
+         * an earlier programme) is cleared by an admin, who is named. Counts
+         * as every required module passed; clearing it puts the modules back.
+         * It also removes the copies 138 made of safeguarding cases into the
+         * community queue: the officer's queue is safeguarding_cases, and a
+         * second copy is a second place a case can be marked handled. */
+        139 => "
+            ALTER TABLE mentors ADD COLUMN academyClearedAt TEXT DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN academyClearedBy TEXT DEFAULT '';
+            DELETE FROM community_safeguarding WHERE surface = 'mentor' AND caseId IN (SELECT caseNo FROM safeguarding_cases);",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

@@ -1792,6 +1792,10 @@
     'public.apply':   (p) => request('/public/apply.php', { body: p }),
     'public.contact': (p) => request('/public/contact.php', { body: p }),
     'reshoot.submit': (p) => request('/public/reshoot.php', { body: p }),
+    /* Mentor Portal writes that must survive a Saturday with no signal: the
+       register, weekly reviews and session notes. Each is an upsert or a
+       single row on the server, so a replay after a dropped reply is safe. */
+    'mentor.act':     (p) => request('/member/mentor.php', { body: p }),
   };
 
   global.NGGApi = API;
