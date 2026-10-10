@@ -5803,7 +5803,12 @@ function CardFront({ card, program, S, H = CARD_DESIGN_H }) {
 function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
   const px = (n) => n * S;
   const tier = card.tier || {};                 // same hazard as centre, above
-  const tTint = tier.color || "#00225F";
+  /* An NGG volunteer's card is the programme's, not their role's: one navy
+     card for everybody, whatever they do — no colour per volunteer type — with
+     a gold disc, and their centre as a stripe in its own colour above the foot.
+     A Summer School volunteer's card keeps the tier colour it has always had. */
+  const ngg = card.programme === "ngg" || card.programme === "both";
+  const tTint = ngg ? CARD_NAVY : (tier.color || "#00225F");
   const tInk = cardInk(tTint);
   /* The centre this card should show — a real one, or the programme mark for
      somebody who genuinely works across all of them. Never nothing: the centre
@@ -5811,8 +5816,11 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
      second card geometry in the same print run, which reads as a misprint rather
      than as "works everywhere" (see cardCentreOf). */
   const centre = cardCentreOf(card) || CARD_ALL_CENTRES;
-  const cTint = centre.color || "#76B043";
+  const placeTint = centre.color || "#76B043";
+  const cTint = ngg ? CARD_NAVY : placeTint;
   const cInk = cardInk(cTint);
+  const discTint = ngg ? "#F5B026" : tTint;
+  const discInk = cardInk(discTint);
   /* Role, qualified by faculty when there is one. "INSTRUCTOR" alone identifies
      nobody at a site where every third person is one. */
   const role = [String(card.role || tier.name || "").trim(), String(card.faculty || "").trim()]
@@ -5856,6 +5864,7 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
           over an identical background: the paint is the same either way, and an
           element that owns its colour can be measured — by a test, and by anyone
           reading this — instead of inferred from what sits behind it. */}
+      {ngg && <div aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: px(96), height: px(8), background: placeTint, zIndex: 1 }}/>}
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(112), background: cTint, color: cInk.ink,
                     display: "grid", placeItems: "center", overflow: "hidden" }}>
         {(() => {
@@ -5887,11 +5896,11 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
           the tier colour is pale. */}
       <div style={{ position: "absolute", top: px(2), left: "50%", transform: "translateX(-50%)", width: px(110), height: px(110), zIndex: 2,
                     borderRadius: "50%", background: "#fff", display: "grid", placeItems: "center" }}>
-        <div style={{ position: "relative", width: px(92), height: px(92), borderRadius: "50%", background: tTint, display: "grid", placeItems: "center" }}>
+        <div style={{ position: "relative", width: px(92), height: px(92), borderRadius: "50%", background: discTint, display: "grid", placeItems: "center" }}>
           {/* Ink from the tier colour rather than assumed white — a pale tier
               printed a white STS on a near-white disc. Only ever seen if the SVG
               below it fails to load. */}
-          <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(28), letterSpacing: px(1), color: tInk.ink }}>STS</span>
+          <span style={{ fontFamily: '"Inter", sans-serif', fontWeight: 800, fontSize: px(28), letterSpacing: px(1), color: discInk.ink }}>STS</span>
           {/* Clipped to its own disc. The supplied SVG carries a near-white
               square across its full canvas — invisible against a screen, and a
               faint grey box around the badge once it is printed on card stock.

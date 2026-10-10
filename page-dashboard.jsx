@@ -867,6 +867,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
                 <div className="dash-main">
                   <section id="sec-today" className="ngg-anchor"><DashboardToday today={today} member={m} onMutate={onMutate} session={session}/></section>
                   <section id="sec-assignments" className="ngg-anchor"><DashboardAssignments assignments={data.assignments || []} onMutate={onMutate}/></section>
+                  {mentor && <section id="sec-checkin" className="ngg-anchor"><DashboardCheckin/></section>}
                   <section id="sec-activity" className="ngg-anchor"><DashboardActivityFeed memberId={m.memberId} session={session} reloadKey={mutateSeq}/></section>
                   <section id="sec-journal" className="ngg-anchor"><DashboardJournal onMutate={onMutate}/></section>
                   {/* The account and what is coming up are not rail furniture.
@@ -936,6 +937,7 @@ function DashboardSidebar({ m, first, account, ngv, fines, counts, mentorNamed, 
     { g: "Today", items: [
       { id: "sec-today", label: "Today's missions", badge: counts.today || null },
       { id: "sec-assignments", label: "Set work" },
+      ...(mentorNamed ? [{ id: "sec-checkin", label: "Weekly check-in" }] : []),
       { id: "sec-activity", label: "Your trail" },
       { id: "sec-journal", label: "Journal" },
       ...(account ? [{ id: "sec-account", label: "Your account", badge: owed > 0 ? naira(owed) : null }] : []),
@@ -2024,6 +2026,93 @@ const ACCOUNT_KIND_LABEL = {
   payment: "You paid", writeoff: "Written off", waiver: "Waived",
 };
 
+/* ── Your week, with your mentor ───────────────────────────────────────────
+   The member's side of the Mentor Portal: how this week went (and, if they
+   want, sleep, stress and energy), their side of the relationship check when
+   their mentor asks for it, their own Leadership Index scores once a month,
+   and the goal they agreed. A "Need help" reaches their mentor at once and the
+   safeguarding lead too — so the card says so before they press it. Nothing
+   here is shared with other members. */
+const DCI_FEEL = [["Okay", "I’m okay", "smiley"], ["Struggling", "It’s been hard", "smiley-meh"], ["Need help", "I need help", "lifebuoy"]];
+const DCI_EXTRA = [["sleep", "Sleep", ["Very poor", "Poor", "Okay", "Good", "Great"]], ["stress", "Stress", ["None", "A little", "Some", "A lot", "Too much"]], ["energy", "Energy", ["Empty", "Low", "Okay", "Good", "Full"]]];
+function DashboardCheckin() {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState(null);
+  const [edit, setEdit] = React.useState(false);
+  const [v, setV] = React.useState({ wellbeing: "", sleep: 0, stress: 0, energy: 0, note: "" });
+  const [more, setMore] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [rel, setRel] = React.useState([0, 0, 0, 0]);
+  const [scoring, setScoring] = React.useState(false);
+  const [sc, setSc] = React.useState(null);
+  const load = () => NGGApi.member.pod.read("mine").then(r => { setD(r); setErr(null); if (r.checkin) setV({ wellbeing: r.checkin.wellbeing, sleep: +r.checkin.sleep, stress: +r.checkin.stress, energy: +r.checkin.energy, note: r.checkin.note || "" }); }, setErr);
+  React.useEffect(() => { load(); }, []);
+  if (err && !d) return <div className="dash-card"><div className="dash-card-head"><h3 className="dash-card-h-sm">Your week.</h3></div>
+    <p className="dash-account-sub" style={{ margin: "8px 0 12px" }}>Couldn’t load your check-in just now.</p><button className="btn btn-ghost btn-sm" onClick={load}>Try again</button></div>;
+  if (!d) return <div className="dash-card dci" aria-busy="true"><div className="dash-card-head"><h3 className="dash-card-h-sm">Your week.</h3></div><div className="dci-skel"/></div>;
+  if (!d.mentor) return null;
+  const done = !!d.checkin && !edit;
+  const send = () => {
+    if (!v.wellbeing) { toast.error("Choose how your week has been first."); return; }
+    setBusy(true);
+    NGGApi.member.pod.act("weekCheckin", v).then(() => {
+      toast.success(v.wellbeing === "Okay" ? "Thanks. " + d.mentor.first + " can see it." : v.wellbeing === "Need help" ? d.mentor.first + " has been told and will reach you today." : "Thanks for telling us. " + d.mentor.first + " will check in with you.", "Check-in sent");
+      setEdit(false); load();
+    }, e => toast.error((e && e.message) || "Couldn’t send it. Try again.")).finally(() => setBusy(false));
+  };
+  const sendRel = () => {
+    if (rel.some(x => !x)) { toast.error("Answer all four first."); return; }
+    NGGApi.member.pod.act("relChild", { answers: rel }).then(() => { toast.success("Thank you. Only the coordinator sees your answers.", "Sent"); load(); }, e => toast.error((e && e.message) || "Couldn’t send it."));
+  };
+  const sendScores = () => NGGApi.member.pod.act("selfScore", { scores: sc }).then(() => { toast.success("Your mentor will see these next to theirs.", "Scores saved"); setScoring(false); load(); }, e => toast.error((e && e.message) || "Couldn’t save them."));
+  const g = d.goal;
+  return (
+    <div className="dash-card dci">
+      <div className="dash-card-head"><h3 className="dash-card-h-sm">Your week.</h3><span className="dci-with">{"With " + d.mentor.name}</span></div>
+      {done ? (
+        <div className="dci-done">
+          <span className={"dci-done-chip is-" + (d.checkin.wellbeing === "Okay" ? "ok" : "warn")}>{(DCI_FEEL.find(f => f[0] === d.checkin.wellbeing) || DCI_FEEL[0])[1]}</span>
+          <span className="dci-muted">{"Checked in this week" + (d.checkin.note ? " · “" + d.checkin.note + "”" : "")}</span>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEdit(true)}>Change</button>
+        </div>
+      ) : (
+        <div className="dci-form">
+          <p className="dci-q" id="dci-q">How has your week been?</p>
+          <div className="dci-feel" role="radiogroup" aria-labelledby="dci-q">
+            {DCI_FEEL.map(([k, l, ic]) => <button key={k} type="button" role="radio" aria-checked={v.wellbeing === k} className={"dci-feel-b is-" + k.replace(/\s/, "").toLowerCase()} onClick={() => setV(Object.assign({}, v, { wellbeing: k }))}>
+              <i className={"ph ph-" + ic} aria-hidden="true"/><span>{l}</span></button>)}
+          </div>
+          {v.wellbeing === "Need help" && <p className="dci-help" role="note">{d.mentor.first + " is told straight away, and so is the person at your centre who keeps young people safe. If you are in danger right now, call 112."}</p>}
+          {!more ? <button type="button" className="dci-link" onClick={() => setMore(true)}>Add sleep, stress and energy</button> : DCI_EXTRA.map(([k, l, words]) => (
+            <div key={k} className="dci-extra"><span className="dci-extra-l" id={"dci-" + k}>{l}</span>
+              <div className="dci-scale" role="radiogroup" aria-labelledby={"dci-" + k}>{words.map((w, i) => <button key={w} type="button" role="radio" aria-checked={v[k] === i + 1} onClick={() => setV(Object.assign({}, v, { [k]: i + 1 }))}>{w}</button>)}</div></div>))}
+          <textarea className="dci-note" rows={2} maxLength={600} placeholder={"Anything you want " + d.mentor.first + " to know? (optional)"} aria-label="Note for your mentor" value={v.note} onChange={e => setV(Object.assign({}, v, { note: e.target.value }))}/>
+          <div className="dci-actions"><button className="btn btn-primary btn-sm" disabled={busy || !v.wellbeing} onClick={send}>{busy ? "Sending…" : "Send to " + d.mentor.first}</button>
+            {edit && <button className="btn btn-ghost btn-sm" onClick={() => setEdit(false)}>Cancel</button>}</div>
+        </div>
+      )}
+      {g && <div className="dci-goal"><span className="dci-label">Your goal</span><b>{g.goal}</b>
+        <span className="dci-segs" aria-label={"How close: " + (g.progress || 0) + " of 5"}>{[1, 2, 3, 4, 5].map(i => <i key={i} className={i <= (g.progress || 0) ? "is-on" : ""}/>)}</span>
+        {g.plan && <span className="dci-muted">{"Your plan: " + g.plan}</span>}</div>}
+      {d.relAsked && !d.relDone && <div className="dci-rel"><span className="dci-label">{d.mentor.first + " asked how mentoring is going"}</span>
+        <span className="dci-muted">Four quick questions. Only the coordinator sees your answers; your mentor sees one number.</span>
+        {d.relQuestions.map((q, i) => <div key={q} className="dci-extra"><span className="dci-extra-l" id={"dci-rq" + i}>{q}</span>
+          <div className="dci-scale" role="radiogroup" aria-labelledby={"dci-rq" + i}>{[1, 2, 3, 4, 5].map(n => <button key={n} type="button" role="radio" aria-checked={rel[i] === n} onClick={() => setRel(r => r.map((x, j) => j === i ? n : x))}>{n}</button>)}</div></div>)}
+        <span className="dci-muted">1 = not at all · 5 = very much</span>
+        <div className="dci-actions"><button className="btn btn-primary btn-sm" onClick={sendRel}>Send my answers</button></div></div>}
+      {d.selfScoreDue && (!scoring ? <div className="dci-score"><span className="dci-label">Your Leadership Index</span>
+          <span className="dci-muted">{"Score yourself for this month. " + d.mentor.first + " scores you too; the difference is a good conversation."}</span>
+          <div className="dci-actions"><button className="btn btn-ghost btn-sm" onClick={() => { setSc((d.selfScore && d.selfScore.scores) || d.skills.map(() => 5)); setScoring(true); }}>Score myself</button></div></div>
+        : <div className="dci-score"><span className="dci-label">Your Leadership Index · 0 to 10</span>
+          {d.skills.map(([name, desc], i) => <div key={name} className="dci-sk"><span><b>{name}</b><em>{desc}</em></span>
+            <span className="dci-step"><button type="button" aria-label={"Lower " + name} disabled={sc[i] <= 0} onClick={() => setSc(x => x.map((y, j) => j === i ? y - 1 : y))}>−</button>
+              <output aria-live="polite">{sc[i]}</output>
+              <button type="button" aria-label={"Raise " + name} disabled={sc[i] >= 10} onClick={() => setSc(x => x.map((y, j) => j === i ? y + 1 : y))}>+</button></span></div>)}
+          <div className="dci-actions"><button className="btn btn-primary btn-sm" onClick={sendScores}>Save my scores</button><button className="btn btn-ghost btn-sm" onClick={() => setScoring(false)}>Cancel</button></div></div>)}
+    </div>
+  );
+}
+
 function DashboardMentor({ mentor }) {
   return (
     <div className="dash-card dash-mentor">
@@ -2035,7 +2124,7 @@ function DashboardMentor({ mentor }) {
         <div>
           <div className="dash-mentor-name">{mentor.fullName}</div>
           <div className="dash-mentor-meta">
-            {(mentor.tracks || []).join(" · ") || "Mentor"} · CACENTRE {mentor.centre}
+            {(mentor.tracks || []).join(" · ") || "Mentor"}{mentor.centre ? " · " + mentor.centre : ""}
           </div>
         </div>
       </div>

@@ -38,7 +38,9 @@ const MP_SKILLS = [
     ['Multiplication', 'Grows other people, not just themselves'],
 ];
 const MP_DEFAULTS = ['overdueDays' => 14, 'stalledDays' => 21, 'familyDays' => 30, 'relGap' => 2, 'relLow' => 2, 'relWeeks' => 6,
-                     'minCaseload' => 5, 'minSaturdays' => 2, 'goalCheckDays' => 14, 'scorecardLockDay' => 8, 'peerMax' => 3];
+                     'minCaseload' => 5, 'minSaturdays' => 2, 'goalCheckDays' => 14, 'scorecardLockDay' => 8, 'peerMax' => 3,
+                     'checkinSilenceWeeks' => 3, 'absentSaturdays' => 2, 'mentorQuietDays' => 14, 'unmatchedDays' => 30, 'scoreDrop' => 8,
+                     'supervisionDays' => 45, 'concernHours' => 24];
 const MP_LEVELS = ['Low', 'Steady', 'Strong', 'Exceptional'];
 const MP_VALUES = ['Courage', 'Responsibility', 'Respect', 'Teamwork'];
 const MP_SESSION_KINDS = ['One-to-one' => 'one-to-one', 'Pod session' => 'pod', 'Family' => 'family', 'Phone or message' => 'phone', 'Note' => 'note'];

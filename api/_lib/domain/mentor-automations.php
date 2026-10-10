@@ -31,40 +31,55 @@ declare(strict_types=1);
  * covered there by a live rule, and the nudge serves the digest and the log).
  */
 const MPA_JOBS = [
-    'goalSchedule'     => ['on' => 'goal.activated',       'locked' => true,  'label' => 'Goal check-in schedule', 'effect' => 'Schedules a check-in every 14 days and reminders before the review date; cancelled when the goal leaves Active.'],
-    'goalAchieved'     => ['on' => 'goal.check(5)',         'locked' => true,  'label' => 'Goal achieved',          'effect' => 'A check-in of 5 marks the goal Achieved and tells the member.'],
-    'sessionFollowUp'  => ['on' => 'session.created(next)', 'locked' => false, 'label' => 'Session follow-up',      'effect' => 'A session with a next step becomes a follow-up for the next Saturday.', 'due' => true],
-    'relChildSide'     => ['on' => 'rel.saved',             'locked' => true,  'label' => 'Child’s side of the check','effect' => 'Asks the child their side in the member portal.'],
-    'registerSync'     => ['on' => 'register.closed',       'locked' => true,  'label' => 'Register sync',          'effect' => 'Copies Saturday attendance to the centre record.'],
-    'concernRoute'     => ['on' => 'concern.created',       'locked' => true,  'label' => 'Concern routing',        'effect' => 'Tells the safeguarding officer at once and opens a case.'],
-    'wellbeingAlert'   => ['on' => 'checkin(!Okay)',        'locked' => true,  'label' => 'Wellbeing alert',        'effect' => 'Tells the mentor, and the safeguarding lead on “Need help”.'],
+    'goalSchedule'     => ['on' => 'goal.activated',       'locked' => true,  'label' => 'Goal check-in schedule', 'effect' => 'Schedules a check-in every 14 days and reminders before the review date; cancelled when the goal leaves Active.', 'cat' => 'goals', 'trigger' => 'A goal is made active', 'if' => '—', 'then' => ['Schedule a check-in reminder every {goalCheckDays} days', 'Remind 7 days before and on the review date'], 'uses' => ['goalCheckDays']],
+    'goalAchieved'     => ['on' => 'goal.check(5)',         'locked' => true,  'label' => 'Goal achieved',          'effect' => 'A check-in of 5 marks the goal Achieved and tells the member.', 'cat' => 'goals', 'trigger' => 'A goal check-in of 5 is added', 'if' => 'The goal is active', 'then' => ['Mark the goal Achieved', 'Tell the member', 'Add it to their growth passport'], 'uses' => []],
+    'sessionFollowUp'  => ['on' => 'session.created(next)', 'locked' => false, 'label' => 'Session follow-up',      'effect' => 'A session with a next step becomes a follow-up for the next Saturday.', 'due' => true, 'cat' => 'contact', 'trigger' => 'A session is logged with a next step', 'if' => '—', 'then' => ['Add a follow-up to Due now for the next Saturday'], 'uses' => []],
+    'relChildSide'     => ['on' => 'rel.saved',             'locked' => true,  'label' => 'Child’s side of the check','effect' => 'Asks the child their side in the member portal.', 'cat' => 'relationship', 'trigger' => 'A mentor saves their relationship check', 'if' => '—', 'then' => ['Ask the child their side in the member portal'], 'uses' => []],
+    'registerSync'     => ['on' => 'register.closed',       'locked' => true,  'label' => 'Register sync',          'effect' => 'Copies Saturday attendance to the centre record.', 'cat' => 'saturday', 'trigger' => 'The Saturday register is closed', 'if' => '—', 'then' => ['Copy attendance to the centre record'], 'uses' => []],
+    'concernRoute'     => ['on' => 'concern.created',       'locked' => true,  'label' => 'Concern routing',        'effect' => 'Tells the safeguarding officer at once and opens a case.', 'cat' => 'safety', 'trigger' => 'A concern is reported', 'if' => '—', 'then' => ['Tell the safeguarding officer by email and SMS', 'Open a case in the Control Room'], 'uses' => []],
+    'wellbeingAlert'   => ['on' => 'checkin(!Okay)',        'locked' => true,  'label' => 'Wellbeing alert',        'effect' => 'Tells the mentor, and the safeguarding lead on “Need help”.', 'cat' => 'safety', 'trigger' => 'A member’s weekly check-in is not Okay', 'if' => '—', 'then' => ['Put it at the top of the mentor’s Due now', 'Push to the mentor', 'Email the safeguarding lead on “Need help”'], 'uses' => []],
 
-    'pickOneToOnes'    => ['cron' => '0 18 * * 4',  'locked' => false, 'label' => 'Pick Saturday one-to-ones', 'effect' => 'Adds the three mentees with the longest gap to Saturday › Before.'],
-    'reviewReminder'   => ['cron' => '0 18 * * 0',  'locked' => false, 'label' => 'Review reminder',         'effect' => 'One reminder listing the weekly reviews still open.'],
-    'reviewOverdue'    => ['cron' => '0 9 * * 2',   'locked' => true,  'label' => 'Reviews overdue',         'effect' => 'Tells the lead which mentors have reviews open on Tuesday.'],
-    'overdueOneToOne'  => ['cron' => '0 7 * * *',   'locked' => true,  'label' => 'One-to-one overdue',      'effect' => 'Flags mentees not seen one-to-one for longer than the threshold.'],
-    'goalCheckDue'     => ['cron' => '0 7 * * *',   'locked' => false, 'label' => 'Goal check-in due',       'effect' => 'Asks the member “How close are you now?” and reminds the mentor.', 'due' => true],
-    'goalStalled'      => ['cron' => '0 9 * * 1',   'locked' => false, 'label' => 'Goal stalled',            'effect' => 'Nudges the member on a stalled goal.'],
-    'goalReviewDate'   => ['cron' => '0 7 * * *',   'locked' => false, 'label' => 'Goal review date',        'effect' => 'Reminds the mentor 7 days before and on a goal’s review date.', 'due' => true],
-    'noGoalAfterWeek3' => ['cron' => '0 9 * * 1',   'locked' => false, 'label' => 'No goal after week 3',    'effect' => 'Reminds the mentor to set a goal with a mentee who has none.', 'due' => true],
-    'scorecardDue'     => ['cron' => '0 8 1 * *',   'locked' => false, 'label' => 'Scorecard due',           'effect' => 'Reminds the mentor to score last month’s Leadership Index.', 'due' => true],
-    'scorecardLock'    => ['cron' => '0 0 8 * *',   'locked' => true,  'label' => 'Scorecard lock',          'effect' => 'Locks last month’s scorecards.'],
-    'relCheckDue'      => ['cron' => '0 7 * * *',   'locked' => true,  'label' => 'Relationship check due',  'effect' => 'Asks the child their side every 6 weeks and reminds the mentor.'],
-    'familyDraft'      => ['cron' => '0 7 1 * *',   'locked' => false, 'label' => 'Family update drafts',    'effect' => 'Drafts one update per family from observations and goals. Never sends.', 'due' => true],
-    'familyOverdue'    => ['cron' => '0 7 * * *',   'locked' => false, 'label' => 'Family update overdue',   'effect' => 'Flags families with no update for longer than the threshold.'],
-    'journalReply'     => ['cron' => '0 7 * * *',   'locked' => false, 'label' => 'Journal reply',           'effect' => 'Reminds the mentor of shared journal entries unanswered for 5 days.', 'due' => true],
-    'supervisionPrep'  => ['cron' => '0 8 * * 1',   'locked' => false, 'label' => 'Supervision prep',        'effect' => 'Sends the month’s numbers ahead of supervision this week.', 'due' => true],
-    'prepSession'      => ['cron' => '0 16 * * *',  'locked' => false, 'label' => 'Preparation Session',     'effect' => 'Reminds mentors of the Mentor Preparation Session, 7–8pm, on its day.'],
-    'stsMeeting'       => ['cron' => '0 8 * * 2',   'locked' => false, 'label' => 'STS meeting',             'effect' => 'Reminds mentors of Tuesday’s STS meeting.'],
-    'cimcTraining'     => ['cron' => '0 18 * * 5',  'locked' => false, 'label' => 'CIMC training',           'effect' => 'Reminds mentors who have not finished CIMC of Saturday 7:00am.'],
-    'twiceMonthly'     => ['cron' => '0 9 15,L-3 * *', 'locked' => true, 'label' => 'Twice a month',         'effect' => 'Reminds a mentor who has mentored fewer than two Saturdays this month.', 'due' => true],
-    'caseloadCheck'    => ['cron' => '0 6 1 * *',   'locked' => true,  'label' => 'Caseload check',          'effect' => 'Tells the lead about mentors below the minimum caseload.'],
-    'retreatBooking'   => ['cron' => '0 9 * * *',   'locked' => false, 'label' => 'Retreat booking',         'effect' => 'Reminds mentors not booked for a retreat 30 days out.', 'due' => true],
-    'academyRenewal'   => ['cron' => '0 7 * * *',   'locked' => true,  'label' => 'Academy renewal',         'effect' => 'Reminds mentors of a required module expiring within 30 days.', 'due' => true],
-    'commitmentsRecalc'=> ['cron' => '0 2 * * *',   'locked' => true,  'label' => 'Commitments',             'effect' => 'Recomputes the 12 commitments for every mentor.'],
-    'leadDigest'       => ['cron' => '0 17 * * 5',  'locked' => true,  'label' => 'Lead digest',             'effect' => 'Sends each lead the week: mentors below standard, reviews missing, concerns.'],
+    'pickOneToOnes'    => ['cron' => '0 18 * * 4',  'locked' => false, 'label' => 'Pick Saturday one-to-ones', 'effect' => 'Adds the three mentees with the longest gap to Saturday › Before.', 'cat' => 'saturday', 'trigger' => 'Every Thursday', 'if' => 'The mentor hasn’t chosen Saturday’s one-to-ones', 'then' => ['Pick the 3 mentees longest since a one-to-one'], 'uses' => []],
+    'reviewReminder'   => ['cron' => '0 18 * * 0',  'locked' => false, 'label' => 'Review reminder',         'effect' => 'One reminder listing the weekly reviews still open.', 'cat' => 'saturday', 'trigger' => 'Every Sunday', 'if' => 'Weekly reviews from Saturday are still open', 'then' => ['Remind the mentor once, listing who'], 'uses' => []],
+    'reviewOverdue'    => ['cron' => '0 9 * * 2',   'locked' => true,  'label' => 'Reviews overdue',         'effect' => 'Tells the lead which mentors have reviews open on Tuesday.', 'cat' => 'lead', 'trigger' => 'Every Tuesday', 'if' => 'Weekly reviews are still open', 'then' => ['Tell the lead mentor', 'Commitment 5 at risk'], 'uses' => []],
+    'overdueOneToOne'  => ['cron' => '0 7 * * *',   'locked' => true,  'label' => 'One-to-one overdue',      'effect' => 'Flags mentees not seen one-to-one for longer than the threshold.', 'cat' => 'contact', 'trigger' => 'Every day', 'if' => 'No one-to-one for more than {overdueDays} days', 'then' => ['Add to Due now', 'Raise in Saturday’s picks'], 'uses' => ['overdueDays']],
+    'goalCheckDue'     => ['cron' => '0 7 * * *',   'locked' => false, 'label' => 'Goal check-in due',       'effect' => 'Asks the member “How close are you now?” and reminds the mentor.', 'due' => true, 'cat' => 'goals', 'trigger' => 'Every day', 'if' => 'An active goal has had no check-in for {goalCheckDays} days', 'then' => ['Ask the member “How close are you now?”', 'Add to the mentor’s Due now'], 'uses' => ['goalCheckDays']],
+    'goalStalled'      => ['cron' => '0 9 * * 1',   'locked' => false, 'label' => 'Goal stalled',            'effect' => 'Nudges the member on a stalled goal.', 'cat' => 'goals', 'trigger' => 'Every Monday', 'if' => 'A goal has no check-in for {stalledDays} days, or no movement', 'then' => ['Nudge the member'], 'uses' => ['stalledDays']],
+    'goalReviewDate'   => ['cron' => '0 7 * * *',   'locked' => false, 'label' => 'Goal review date',        'effect' => 'Reminds the mentor 7 days before and on a goal’s review date.', 'due' => true, 'cat' => 'goals', 'trigger' => 'Every day', 'if' => 'A goal’s review date is 7 days away or today', 'then' => ['Remind the mentor'], 'uses' => []],
+    'noGoalAfterWeek3' => ['cron' => '0 9 * * 1',   'locked' => false, 'label' => 'No goal after week 3',    'effect' => 'Reminds the mentor to set a goal with a mentee who has none.', 'due' => true, 'cat' => 'goals', 'trigger' => 'Every Monday', 'if' => 'A mentee is past week 3 with no active goal', 'then' => ['Remind the mentor: “Set a goal with …”'], 'uses' => []],
+    'scorecardDue'     => ['cron' => '0 8 1 * *',   'locked' => false, 'label' => 'Scorecard due',           'effect' => 'Reminds the mentor to score last month’s Leadership Index.', 'due' => true, 'cat' => 'scorecard', 'trigger' => 'The 1st of each month', 'if' => 'A mentee has no Leadership Index for last month', 'then' => ['Remind the mentor', 'Add to Due now'], 'uses' => []],
+    'scorecardLock'    => ['cron' => '0 0 8 * *',   'locked' => true,  'label' => 'Scorecard lock',          'effect' => 'Locks last month’s scorecards.', 'cat' => 'scorecard', 'trigger' => 'Monthly, on day {scorecardLockDay}', 'if' => '—', 'then' => ['Lock last month’s scorecards'], 'uses' => ['scorecardLockDay']],
+    'relCheckDue'      => ['cron' => '0 7 * * *',   'locked' => true,  'label' => 'Relationship check due',  'effect' => 'Asks the child their side every 6 weeks and reminds the mentor.', 'cat' => 'relationship', 'trigger' => 'Every day', 'if' => '{relWeeks} weeks since the last relationship check', 'then' => ['Ask the child their side', 'Remind the mentor'], 'uses' => ['relWeeks', 'relGap', 'relLow']],
+    'familyDraft'      => ['cron' => '0 7 1 * *',   'locked' => false, 'label' => 'Family update drafts',    'effect' => 'Drafts one update per family from observations and goals. Never sends.', 'due' => true, 'cat' => 'family', 'trigger' => 'The 1st of each month', 'if' => 'The mentor is not a peer mentor', 'then' => ['Draft one update per family from the month’s observations', 'Never sends'], 'uses' => []],
+    'familyOverdue'    => ['cron' => '0 7 * * *',   'locked' => false, 'label' => 'Family update overdue',   'effect' => 'Flags families with no update for longer than the threshold.', 'cat' => 'family', 'trigger' => 'Every day', 'if' => 'No family update for more than {familyDays} days', 'then' => ['Add to Due now', 'Commitment 8 at risk'], 'uses' => ['familyDays']],
+    'journalReply'     => ['cron' => '0 7 * * *',   'locked' => false, 'label' => 'Journal reply',           'effect' => 'Reminds the mentor of shared journal entries unanswered for 5 days.', 'due' => true, 'cat' => 'contact', 'trigger' => 'Every day', 'if' => 'A shared journal entry is unanswered for 5 days', 'then' => ['Remind the mentor', 'At 7 days, commitment 6 at risk'], 'uses' => []],
+    'supervisionPrep'  => ['cron' => '0 8 * * 1',   'locked' => false, 'label' => 'Supervision prep',        'effect' => 'Sends the month’s numbers ahead of supervision this week.', 'due' => true, 'cat' => 'lead', 'trigger' => 'Every Monday', 'if' => 'Supervision is booked this week', 'then' => ['Send the mentor the month’s numbers'], 'uses' => []],
+    'prepSession'      => ['cron' => '0 16 * * *',  'locked' => false, 'label' => 'Preparation Session',     'effect' => 'Reminds mentors of the Mentor Preparation Session, 7–8pm, on its day.', 'cat' => 'commitments', 'trigger' => 'Daily, on the session day', 'if' => 'Today is the Preparation Session day', 'then' => ['Remind mentors: 7:00–8:00pm'], 'uses' => ['prepDay']],
+    'stsMeeting'       => ['cron' => '0 8 * * 2',   'locked' => false, 'label' => 'STS meeting',             'effect' => 'Reminds mentors of Tuesday’s STS meeting.', 'cat' => 'commitments', 'trigger' => 'Every Tuesday', 'if' => '—', 'then' => ['Remind mentors of the STS meeting'], 'uses' => []],
+    'cimcTraining'     => ['cron' => '0 18 * * 5',  'locked' => false, 'label' => 'CIMC training',           'effect' => 'Reminds mentors who have not finished CIMC of Saturday 7:00am.', 'cat' => 'commitments', 'trigger' => 'Every Friday', 'if' => 'The mentor hasn’t finished CIMC', 'then' => ['Remind them of Saturday 7:00am'], 'uses' => []],
+    'twiceMonthly'     => ['cron' => '0 9 15,L-3 * *', 'locked' => true, 'label' => 'Twice a month',         'effect' => 'Reminds a mentor who has mentored fewer than two Saturdays this month.', 'due' => true, 'cat' => 'commitments', 'trigger' => 'The 15th and 3 days before month end', 'if' => 'Fewer than {minSaturdays} Saturdays mentored this month', 'then' => ['Remind the mentor', 'Add to Due now'], 'uses' => ['minSaturdays']],
+    'caseloadCheck'    => ['cron' => '0 6 1 * *',   'locked' => true,  'label' => 'Caseload check',          'effect' => 'Tells the lead about mentors below the minimum caseload.', 'cat' => 'lead', 'trigger' => 'The 1st of each month', 'if' => 'A mentor has fewer than {minCaseload} children (not peers)', 'then' => ['Tell the lead mentor'], 'uses' => ['minCaseload']],
+    'retreatBooking'   => ['cron' => '0 9 * * *',   'locked' => false, 'label' => 'Retreat booking',         'effect' => 'Reminds mentors not booked for a retreat 30 days out.', 'due' => true, 'cat' => 'commitments', 'trigger' => 'Every day', 'if' => 'A retreat is within 30 days and the mentor hasn’t booked', 'then' => ['Remind the mentor', 'Add to Due now'], 'uses' => []],
+    'academyRenewal'   => ['cron' => '0 7 * * *',   'locked' => true,  'label' => 'Academy renewal',         'effect' => 'Reminds mentors of a required module expiring within 30 days.', 'due' => true, 'cat' => 'commitments', 'trigger' => 'Every day', 'if' => 'A required module expires within 30 days', 'then' => ['Remind the mentor', 'Show on the Academy badge'], 'uses' => []],
+    'commitmentsRecalc'=> ['cron' => '0 2 * * *',   'locked' => true,  'label' => 'Commitments',             'effect' => 'Recomputes the 12 commitments for every mentor.', 'cat' => 'commitments', 'trigger' => 'Every night', 'if' => '—', 'then' => ['Recompute the 12 commitments for every mentor'], 'uses' => []],
+    // Beyond the handoff: the member's side, drift, outcomes, gaps, and safeguarding escalation.
+    'memberCheckinPrompt' => ['cron' => '0 17 * * 0', 'locked' => false, 'label' => 'Weekly check-in prompt', 'effect' => 'Asks members with a mentor how their week was.', 'cat' => 'safety', 'trigger' => 'Every Sunday', 'if' => 'The member has a mentor and hasn’t checked in this week', 'then' => ['Ask them “How has your week been?” in the member portal'], 'uses' => []],
+    'checkinSilence'   => ['cron' => '0 9 * * 1',   'locked' => false, 'label' => 'Silent mentee', 'effect' => 'Tells the mentor when a mentee has stopped checking in.', 'due' => true, 'cat' => 'safety', 'trigger' => 'Every Monday', 'if' => 'No weekly check-in for {checkinSilenceWeeks} weeks', 'then' => ['Add to the mentor’s Due now: “Ask how they are”'], 'uses' => ['checkinSilenceWeeks']],
+    'missedSaturdays'  => ['cron' => '0 8 * * 1',   'locked' => true,  'label' => 'Missed Saturdays', 'effect' => 'Tells the mentor when a mentee has missed Saturdays the centre met.', 'due' => true, 'cat' => 'contact', 'trigger' => 'Every Monday', 'if' => 'Missed the last {absentSaturdays} Saturdays the centre met', 'then' => ['Add to the mentor’s Due now: “Call them this week”'], 'uses' => ['absentSaturdays']],
+    'birthday'         => ['cron' => '0 7 * * *',   'locked' => false, 'label' => 'Birthdays', 'effect' => 'Reminds the mentor of a mentee’s birthday.', 'due' => true, 'cat' => 'contact', 'trigger' => 'Every day', 'if' => 'It is a mentee’s birthday', 'then' => ['Add to the mentor’s Due now'], 'uses' => []],
+    'mentorQuiet'      => ['cron' => '0 9 * * 1',   'locked' => true,  'label' => 'Quiet mentor', 'effect' => 'Tells the lead when a mentor has logged nothing for a while.', 'cat' => 'lead', 'trigger' => 'Every Monday', 'if' => 'A mentor with mentees has logged no session for {mentorQuietDays} days', 'then' => ['Tell their lead mentor', 'Push the mentor once'], 'uses' => ['mentorQuietDays']],
+    'supervisionGap'   => ['cron' => '0 9 * * 1',   'locked' => false, 'label' => 'Supervision gap', 'effect' => 'Tells the lead when a mentor has not been supervised for a while.', 'cat' => 'lead', 'trigger' => 'Every Monday', 'if' => 'No supervision for {supervisionDays} days', 'then' => ['Tell their lead mentor: “Book supervision”'], 'uses' => ['supervisionDays']],
+    'scoreDrop'        => ['cron' => '0 8 2 * *',   'locked' => false, 'label' => 'Leadership Index drop', 'effect' => 'Flags a sharp fall in a mentee’s Leadership Index.', 'due' => true, 'cat' => 'scorecard', 'trigger' => 'The 2nd of each month', 'if' => 'A mentee’s total fell by {scoreDrop} or more since the month before', 'then' => ['Add to the mentor’s Due now', 'Tell their lead mentor'], 'uses' => ['scoreDrop']],
+    'relLowTwice'      => ['cron' => '0 8 * * 1',   'locked' => true,  'label' => 'Relationship low twice', 'effect' => 'Raises a relationship rated low two checks running.', 'cat' => 'relationship', 'trigger' => 'Every Monday', 'if' => 'The child rated it low in two checks running', 'then' => ['Tell the lead mentor: “Talk about fit”'], 'uses' => []],
+    'unmatched'        => ['cron' => '0 8 * * 1',   'locked' => true,  'label' => 'No mentor yet', 'effect' => 'Tells the centre’s lead about members waiting for a mentor.', 'cat' => 'lead', 'trigger' => 'Every Monday', 'if' => 'An NGG member has been without a mentor for {unmatchedDays} days', 'then' => ['Tell the centre’s lead mentor, one list per centre'], 'uses' => ['unmatchedDays']],
+    'concernEscalate'  => ['cron' => '0 * * * *',   'locked' => true,  'label' => 'Unopened concern', 'effect' => 'Escalates a safeguarding concern nobody has opened.', 'cat' => 'safety', 'trigger' => 'Every hour', 'if' => 'A concern is still unopened after {concernHours} hours', 'then' => ['Email the officer again', 'Email every admin who holds safeguarding', 'Record it in Diagnostics'], 'uses' => ['concernHours']],
+    'leadDigest'       => ['cron' => '0 17 * * 5',  'locked' => true,  'label' => 'Lead digest',             'effect' => 'Sends each lead the week: mentors below standard, reviews missing, concerns.', 'cat' => 'lead', 'trigger' => 'Every Friday', 'if' => 'The person is a lead mentor', 'then' => ['Email and push the week: below standard, reviews missing, open concerns'], 'uses' => []],
 ];
 /** Thresholds the admin tunes, with the floor and ceiling each may take. */
+/** How the panel groups the automations, in order. */
+const MPA_CATEGORIES = ['safety' => ['Safety and wellbeing', 'shield-check'], 'contact' => ['Contact', 'chats-circle'], 'goals' => ['Goals', 'target'],
+    'relationship' => ['Relationship', 'handshake'], 'saturday' => ['Saturday', 'calendar-check'], 'scorecard' => ['Leadership Index', 'chart-bar'],
+    'family' => ['Family', 'house-line'], 'commitments' => ['Commitments', 'list-checks'], 'lead' => ['Lead mentors', 'chalkboard-teacher']];
 const MPA_THRESHOLDS = [
     'overdueDays' => [7, 42, 'One-to-one overdue after (days)'], 'stalledDays' => [7, 60, 'Goal stalled after (days)'],
     'goalCheckDays' => [7, 42, 'Goal check-in every (days)'], 'familyDays' => [14, 90, 'Family update due after (days)'],
@@ -72,6 +87,10 @@ const MPA_THRESHOLDS = [
     'minCaseload' => [1, 12, 'Minimum caseload'], 'minSaturdays' => [1, 4, 'Saturdays mentored each month'],
     'relGap' => [1, 4, 'Relationship gap that flags'], 'relLow' => [1, 4, 'Relationship score that flags'],
     'prepDay' => [0, 6, 'Preparation Session day (0 = Sunday)'],
+    'checkinSilenceWeeks' => [2, 8, 'Silent after (weeks)'], 'absentSaturdays' => [1, 6, 'Missed Saturdays that flag'],
+    'mentorQuietDays' => [7, 60, 'Mentor quiet after (days)'], 'unmatchedDays' => [7, 120, 'Without a mentor after (days)'],
+    'scoreDrop' => [3, 40, 'Index drop that flags (points)'], 'supervisionDays' => [14, 120, 'Supervision due after (days)'],
+    'concernHours' => [2, 72, 'Escalate an unopened concern after (hours)'],
 ];
 
 /* ── Settings ───────────────────────────────────────────────────────────── */
@@ -582,6 +601,204 @@ function mpa_job_leadDigest(array $ctx): array {
     return ['found' => $sent, 'detail' => $sent . ' leads sent the digest'];
 }
 
+
+/* ── Beyond the handoff ─────────────────────────────────────────────────── */
+
+function mpa_job_memberCheckinPrompt(array $ctx): array {
+    $all = array_keys($ctx['rows']); $n = 0;
+    if (!$all) return ['found' => 0, 'detail' => 'no mentees'];
+    $week = iso_week_period($ctx['now'] + 3600);
+    $done = [];
+    foreach (array_chunk($all, 500) as $chunk) {
+        $ph = implode(',', array_fill(0, count($chunk), '?'));
+        foreach (db_all("SELECT memberId FROM member_checkins WHERE week = ? AND memberId IN ($ph)", array_merge([$week], $chunk)) as $r) $done[$r['memberId']] = true;
+    }
+    foreach ($ctx['kids'] as $mid => $ids) {
+        if (!mpa_centre_on('memberCheckinPrompt', $ctx['mentors'][$mid])) continue;
+        foreach ($ids as $id) if (!isset($done[$id]) && isset($ctx['rows'][$id])) { mpa_push($id, 'How has your week been? Tell ' . mp_first((string)$ctx['mentors'][$mid]['fullName']) . ' in one tap.', 'dashboard'); $n++; }
+    }
+    return ['found' => $n, 'detail' => $n . ' members asked'];
+}
+function mpa_job_checkinSilence(array $ctx): array {
+    $weeks = $ctx['o']['checkinSilenceWeeks']; $cut = gmdate('Y-m-d', strtotime($ctx['today']) - $weeks * 7 * 86400);
+    $all = array_keys($ctx['rows']); $last = [];
+    foreach (array_chunk($all, 500) as $chunk) {
+        $ph = implode(',', array_fill(0, count($chunk), '?'));
+        foreach (db_all("SELECT memberId, MAX(createdAt) d FROM member_checkins WHERE memberId IN ($ph) GROUP BY memberId", $chunk) as $r) $last[$r['memberId']] = substr((string)$r['d'], 0, 10);
+    }
+    $want = [];
+    foreach ($ctx['kids'] as $mid => $ids) {
+        $m = $ctx['mentors'][$mid];
+        if (!mpa_centre_on('checkinSilence', $m)) continue;
+        foreach ($ids as $id) {
+            // Silent only after they have checked in at least once — a member who never has is the prompt's job.
+            if (!isset($last[$id]) || $last[$id] >= $cut || !isset($ctx['rows'][$id])) continue;
+            $want['J:checkinSilence:' . $id . ':' . mpa_week_key($ctx['today'])] = ['mentorId' => $mid, 'memberId' => $id, 'centre' => (string)$m['centre'],
+                'title' => $ctx['rows'][$id]['first'] . ' hasn’t checked in for ' . $weeks . ' weeks', 'body' => 'Ask how they are, in person if you can'];
+        }
+    }
+    return ['found' => mpa_reconcile('checkinSilence', $want), 'detail' => count($want) . ' silent'];
+}
+function mpa_job_missedSaturdays(array $ctx): array {
+    $need = $ctx['o']['absentSaturdays']; $all = array_keys($ctx['rows']);
+    if (!$all) return ['found' => mpa_reconcile('missedSaturdays', []), 'detail' => '0'];
+    $since = gmdate('Y-m-d', strtotime($ctx['today']) - 10 * 7 * 86400);
+    // Saturdays each centre actually met (anyone checked in), newest first.
+    $met = [];
+    foreach (db_all("SELECT DISTINCT a.date d, m.centre c FROM attendance a JOIN members m ON m.memberId = a.studentId WHERE a.date >= ? AND a.date <= ?", [$since, $ctx['today']]) as $r)
+        if (gmdate('w', strtotime($r['d'] . 'T12:00:00Z')) === '6') $met[(string)$r['c']][] = (string)$r['d'];
+    foreach ($met as &$l) { rsort($l); } unset($l);
+    $here = [];
+    foreach (array_chunk($all, 500) as $chunk) {
+        $ph = implode(',', array_fill(0, count($chunk), '?'));
+        foreach (db_all("SELECT studentId, date FROM attendance WHERE date >= ? AND studentId IN ($ph)", array_merge([$since], $chunk)) as $r) $here[$r['studentId']][$r['date']] = true;
+        foreach (db_all("SELECT subjectId, onDate FROM mentor_register WHERE here = 1 AND onDate >= ? AND subjectId IN ($ph)", array_merge([$since], $chunk)) as $r) $here[$r['subjectId']][$r['onDate']] = true;
+    }
+    $want = [];
+    foreach ($ctx['kids'] as $mid => $ids) {
+        $m = $ctx['mentors'][$mid];
+        foreach ($ids as $id) {
+            $r = $ctx['rows'][$id] ?? null; if (!$r) continue;
+            $sats = array_slice($met[$r['centre']] ?? [], 0, $need);
+            if (count($sats) < $need) continue;
+            if (array_filter($sats, static fn($d) => isset($here[$id][$d]))) continue;
+            $want['J:missedSaturdays:' . $id . ':' . $sats[0]] = ['mentorId' => $mid, 'memberId' => $id, 'centre' => (string)$m['centre'],
+                'title' => $r['first'] . ' has missed ' . $need . ' Saturdays', 'body' => 'Call them or their family this week'];
+        }
+    }
+    return ['found' => mpa_reconcile('missedSaturdays', $want), 'detail' => count($want) . ' absent'];
+}
+function mpa_job_birthday(array $ctx): array {
+    $all = array_keys($ctx['rows']); $md = substr($ctx['today'], 5, 5); $want = [];
+    $dob = [];
+    foreach (array_chunk($all, 500) as $chunk) {
+        $ph = implode(',', array_fill(0, count($chunk), '?'));
+        foreach (db_all("SELECT memberId, dob FROM members WHERE memberId IN ($ph) AND dob <> ''", $chunk) as $r) $dob[$r['memberId']] = (string)$r['dob'];
+    }
+    foreach ($ctx['kids'] as $mid => $ids) {
+        $m = $ctx['mentors'][$mid];
+        if (!mpa_centre_on('birthday', $m)) continue;
+        foreach ($ids as $id) if (isset($dob[$id]) && substr($dob[$id], 5, 5) === $md && isset($ctx['rows'][$id])) {
+            $age = mp_age($dob[$id], $ctx['today']);
+            $want['J:birthday:' . $id . ':' . $ctx['today']] = ['mentorId' => $mid, 'memberId' => $id, 'centre' => (string)$m['centre'],
+                'title' => 'It’s ' . $ctx['rows'][$id]['first'] . '’s birthday' . ($age ? ' (' . $age . ')' : ''), 'body' => 'A message from you today means more than you think'];
+        }
+    }
+    return ['found' => mpa_reconcile('birthday', $want), 'detail' => count($want) . ' birthdays'];
+}
+function mpa_job_mentorQuiet(array $ctx): array {
+    $days = $ctx['o']['mentorQuietDays']; $since = gmdate('Y-m-d', strtotime($ctx['today']) - $days * 86400);
+    $logged = [];
+    foreach (db_all('SELECT mentorId, MAX(metOn) d FROM mentor_meetings WHERE concern = 0 GROUP BY mentorId') as $r) $logged[$r['mentorId']] = (string)$r['d'];
+    $want = [];
+    foreach ($ctx['mentors'] as $mid => $m) {
+        if (empty($ctx['kids'][$mid]) || trim((string)$m['memberId']) === '') continue;
+        $last = $logged[(string)$m['memberId']] ?? '';
+        if ($last !== '' && $last >= $since) continue;
+        $lead = mpa_lead_of($ctx, $m);
+        $want['J:mentorQuiet:' . $mid . ':' . mpa_week_key($ctx['today'])] = ['audience' => 'lead', 'mentorId' => (string)($lead['mentorId'] ?? ''), 'centre' => (string)$m['centre'],
+            'title' => mp_first((string)$m['fullName']) . ' has logged nothing for ' . ($last === '' ? 'a while' : mp_days($last, $ctx['today']) . ' days'), 'body' => mp_plural_mentees(count($ctx['kids'][$mid])) . ' · check in with them'];
+        mpa_push((string)$m['memberId'], 'Your mentees haven’t had a session logged for ' . $days . ' days.');
+    }
+    return ['found' => mpa_reconcile('mentorQuiet', $want), 'detail' => count($want) . ' quiet mentors'];
+}
+function mp_plural_mentees(int $n): string { return $n . ' mentee' . ($n === 1 ? '' : 's'); }
+function mpa_job_supervisionGap(array $ctx): array {
+    $days = $ctx['o']['supervisionDays']; $since = gmdate('Y-m-d', strtotime($ctx['today']) - $days * 86400);
+    $last = [];
+    foreach (db_all('SELECT mentorId, MAX(onDate) d FROM mentor_supervision GROUP BY mentorId') as $r) $last[$r['mentorId']] = (string)$r['d'];
+    $want = [];
+    foreach ($ctx['mentors'] as $mid => $m) {
+        if (($ctx['roles'][$mid] ?? '') === 'lead' || empty($ctx['kids'][$mid]) || !mpa_centre_on('supervisionGap', $m)) continue;
+        if (($last[$mid] ?? '') >= $since) continue;
+        $lead = mpa_lead_of($ctx, $m); if (!$lead) continue;
+        $want['J:supervisionGap:' . $mid . ':' . substr($ctx['today'], 0, 7)] = ['audience' => 'lead', 'mentorId' => (string)$lead['mentorId'], 'centre' => (string)$m['centre'],
+            'title' => 'Book supervision with ' . mp_first((string)$m['fullName']), 'body' => isset($last[$mid]) ? 'Last on ' . gmdate('j F', strtotime($last[$mid])) : 'Never supervised yet'];
+    }
+    return ['found' => mpa_reconcile('supervisionGap', $want), 'detail' => count($want) . ' due'];
+}
+function mpa_job_scoreDrop(array $ctx): array {
+    $month = mp_prev_month(substr($ctx['today'], 0, 7)); $before = mp_prev_month($month); $drop = $ctx['o']['scoreDrop'];
+    $all = array_keys($ctx['rows']); $t = [];
+    foreach (array_chunk($all, 500) as $chunk) {
+        $ph = implode(',', array_fill(0, count($chunk), '?'));
+        foreach (db_all("SELECT subjectId, month, total FROM mentor_scorecards WHERE byKind = 'mentor' AND month IN (?, ?) AND subjectId IN ($ph)", array_merge([$month, $before], $chunk)) as $r) $t[$r['subjectId']][$r['month']] = (int)$r['total'];
+    }
+    $want = [];
+    foreach ($ctx['kids'] as $mid => $ids) {
+        $m = $ctx['mentors'][$mid];
+        if (!mpa_centre_on('scoreDrop', $m)) continue;
+        foreach ($ids as $id) {
+            if (!isset($t[$id][$month], $t[$id][$before]) || $t[$id][$before] - $t[$id][$month] < $drop) continue;
+            $first = $ctx['rows'][$id]['first'] ?? '';
+            $want['J:scoreDrop:' . $id . ':' . $month] = ['mentorId' => $mid, 'memberId' => $id, 'centre' => (string)$m['centre'],
+                'title' => $first . '’s Leadership Index fell ' . ($t[$id][$before] - $t[$id][$month]) . ' points', 'body' => $t[$id][$before] . ' → ' . $t[$id][$month] . ' in ' . gmdate('F', strtotime($month . '-01'))];
+            $lead = mpa_lead_of($ctx, $m);
+            if ($lead) $want['J:scoreDrop:lead:' . $id . ':' . $month] = ['audience' => 'lead', 'mentorId' => (string)$lead['mentorId'], 'memberId' => $id, 'centre' => (string)$m['centre'],
+                'title' => $first . '’s Leadership Index fell sharply', 'body' => 'Mentor: ' . mp_first((string)$m['fullName'])];
+        }
+    }
+    return ['found' => mpa_reconcile('scoreDrop', $want), 'detail' => count(array_filter(array_keys($want), static fn($k) => !str_contains($k, ':lead:'))) . ' sharp drops'];
+}
+function mpa_job_relLowTwice(array $ctx): array {
+    $low = $ctx['o']['relLow']; $want = [];
+    $all = array_keys($ctx['rows']); $by = [];
+    foreach (array_chunk($all, 500) as $chunk) {
+        $ph = implode(',', array_fill(0, count($chunk), '?'));
+        foreach (db_all("SELECT subjectId, score, cycle FROM mentor_rel_checks WHERE side = 'child' AND subjectId IN ($ph) ORDER BY createdAt DESC", $chunk) as $r) $by[$r['subjectId']][] = (int)$r['score'];
+    }
+    foreach ($ctx['kids'] as $mid => $ids) {
+        $m = $ctx['mentors'][$mid]; $lead = mpa_lead_of($ctx, $m);
+        foreach ($ids as $id) {
+            $s = $by[$id] ?? [];
+            if (count($s) < 2 || $s[0] > $low || $s[1] > $low) continue;
+            $want['J:relLowTwice:' . $id] = ['audience' => 'lead', 'mentorId' => (string)($lead['mentorId'] ?? ''), 'memberId' => $id, 'centre' => (string)$m['centre'],
+                'title' => 'Talk about fit: ' . ($ctx['rows'][$id]['first'] ?? '') . ' and ' . mp_first((string)$m['fullName']), 'body' => 'The child rated the relationship ' . $s[1] . ' then ' . $s[0] . ' out of 5'];
+        }
+    }
+    return ['found' => mpa_reconcile('relLowTwice', $want), 'detail' => count($want) . ' pairs'];
+}
+function mpa_job_unmatched(array $ctx): array {
+    $days = $ctx['o']['unmatchedDays']; $cut = gmdate('Y-m-d', strtotime($ctx['today']) - $days * 86400);
+    $rows = db_all("SELECT m.memberId, m.fullName, m.centre FROM members m WHERE m.status = 'active' AND m.type = 'NGG' AND COALESCE(m.role,'member') IN ('', 'member')
+                    AND COALESCE(NULLIF(m.joinDate,''), substr(m.createdAt, 1, 10)) <= ?
+                    AND NOT EXISTS (SELECT 1 FROM mentor_assignments a WHERE a.memberId = m.memberId AND a.status = 'active')
+                    AND NOT EXISTS (SELECT 1 FROM mentors t WHERE t.memberId = m.memberId AND t.status = 'active') LIMIT 2000", [$cut]);
+    $byCentre = [];
+    foreach ($rows as $r) $byCentre[(string)$r['centre']][] = mp_first((string)$r['fullName']);
+    $want = [];
+    foreach ($byCentre as $c => $names) {
+        $lead = null; foreach ($ctx['mentors'] as $x) if ((string)$x['rank'] === 'lead' && (string)$x['centre'] === $c) { $lead = $x; break; }
+        if (!$lead || !mpa_job_on('unmatched', $c)) continue;
+        $want['J:unmatched:' . $c . ':' . mpa_week_key($ctx['today'])] = ['audience' => 'lead', 'mentorId' => (string)$lead['mentorId'], 'centre' => $c,
+            'title' => count($names) . ' member' . (count($names) === 1 ? '' : 's') . ' at ' . $c . ' still without a mentor', 'body' => implode(', ', array_slice($names, 0, 8)) . (count($names) > 8 ? '…' : '') . ' · match them in the Control Room'];
+    }
+    return ['found' => mpa_reconcile('unmatched', $want), 'detail' => count($rows) . ' without a mentor'];
+}
+/** A concern nobody has opened: email the officer again and every safeguarding admin — once per case. */
+function mpa_job_concernEscalate(array $ctx): array {
+    $hours = $ctx['o']['concernHours']; $cut = gmdate('Y-m-d\TH:i:s\Z', $ctx['now'] - $hours * 3600);
+    $cases = db_all("SELECT c.* FROM safeguarding_cases c WHERE c.status = 'received' AND c.createdAt <= ?
+                     AND NOT EXISTS (SELECT 1 FROM safeguarding_notes n WHERE n.caseNo = c.caseNo) LIMIT 50", [$cut]);
+    $n = 0;
+    foreach ($cases as $c) {
+        if (db_row("SELECT 1 FROM mentor_nudges WHERE nudgeKey = ?", ['J:concernEscalate:' . $c['caseNo']])) continue;
+        ms_nudge('J:concernEscalate:' . $c['caseNo'], 'J:concernEscalate', ['audience' => 'lead', 'mentorId' => '', 'centre' => (string)$c['centre'],
+            'title' => 'Unopened concern ' . $c['caseNo'], 'body' => 'Escalated after ' . $hours . ' hours']);
+        $to = [];
+        foreach (db_all("SELECT * FROM members WHERE status = 'active' AND COALESCE(role,'') NOT IN ('', 'member')") as $s) {
+            if (!in_array('safeguarding', member_effective_caps($s), true)) continue;
+            $sc = admin_centre_names_in_scope($s);
+            if ($sc !== null && !in_array((string)$c['centre'], $sc, true)) continue;
+            if (filter_var((string)$s['email'], FILTER_VALIDATE_EMAIL)) $to[] = (string)$s['email'];
+        }
+        foreach (array_unique($to) as $e) { try { send_mail($e, 'Unopened safeguarding concern ' . $c['caseNo'], '<p>A concern reported at ' . esc_html((string)$c['centre']) . ' (' . esc_html((string)$c['caseNo']) . ') has not been opened for ' . $hours . ' hours.</p><p>Open it today: Control Room → People → Mentorship → Safeguarding. The details are not sent by email.</p>'); } catch (\Throwable $e2) {} }
+        if (function_exists('ops_record')) ops_record('error', 'safeguarding.unopened', 'A safeguarding concern has not been opened', $c['caseNo'] . ' at ' . $c['centre']);
+        $n++;
+    }
+    return ['found' => $n, 'detail' => $n . ' escalated'];
+}
+
 /* ── Control Room › Settings › Mentorship automations ───────────────────── */
 
 function admin_mentor_automations_list(array $p): array {
@@ -591,20 +808,28 @@ function admin_mentor_automations_list(array $p): array {
     foreach (db_all('SELECT job, MAX(ranAt) ranAt FROM mentor_job_log GROUP BY job') as $r) $last[$r['job']] = (string)$r['ranAt'];
     $lastRow = [];
     if ($last) foreach (db_all('SELECT job, ranAt, found, detail FROM mentor_job_log WHERE ranAt IN (' . implode(',', array_fill(0, count($last), '?')) . ')', array_values($last)) as $r) $lastRow[$r['job']] = $r;
+    $stats = [];
+    foreach (db_all("SELECT job, COUNT(*) runs, SUM(found) found, SUM(CASE WHEN detail LIKE 'failed:%' THEN 1 ELSE 0 END) failed FROM mentor_job_log WHERE ranAt >= ? GROUP BY job", [gmdate('Y-m-d', time() - 30 * 86400)]) as $r)
+        $stats[$r['job']] = ['runs' => (int)$r['runs'], 'found' => (int)$r['found'], 'failed' => (int)$r['failed']];
     foreach (MPA_JOBS as $key => $j) {
         $cron = isset($j['cron']) ? mpa_job_cron($key) : '';
         $jobs[] = ['key' => $key, 'label' => $j['label'], 'effect' => $j['effect'], 'locked' => !empty($j['locked']), 'event' => $j['on'] ?? '',
-                   'cron' => $cron, 'when' => $cron !== '' ? mpa_cron_words($cron) : 'When it happens', 'hour' => $cron !== '' ? (int)explode(' ', $cron)[1] : null,
+                   'cat' => (string)($j['cat'] ?? 'commitments'), 'trigger' => (string)($j['trigger'] ?? ''), 'if' => (string)($j['if'] ?? ''), 'then' => (array)($j['then'] ?? []),
+                   'uses' => (array)($j['uses'] ?? []), 'stats' => $stats[$key] ?? ['runs' => 0, 'found' => 0, 'failed' => 0],
+                   'cron' => $cron, 'when' => $cron !== '' ? mpa_cron_words($cron) : 'When it happens', 'hour' => $cron !== '' && explode(' ', $cron)[1] !== '*' ? (int)explode(' ', $cron)[1] : null,
                    'on' => mpa_job_on($key), 'centresOff' => array_values((array)($s['centresOff'][$key] ?? [])), 'shows' => !empty($j['due']) ? 'Due now' : '',
                    'lastRun' => $lastRow[$key] ?? null];
     }
     $th = [];
     foreach (MPA_THRESHOLDS as $k => [$lo, $hi, $label]) $th[] = ['key' => $k, 'label' => $label, 'value' => $k === 'prepDay' ? mpa_prep_day() : (int)($o[$k] ?? 0), 'min' => $lo, 'max' => $hi, 'default' => $k === 'prepDay' ? 3 : (int)(MP_DEFAULTS[$k] ?? 0)];
-    return ['ok' => true, 'jobs' => $jobs, 'thresholds' => $th, 'quiet' => ['from' => '20:00', 'to' => '08:00', 'tz' => 'Africa/Lagos'],
+    $cats = [];
+    foreach (MPA_CATEGORIES as $k => [$l, $ic]) $cats[] = ['key' => $k, 'label' => $l, 'icon' => $ic];
+    return ['ok' => true, 'jobs' => $jobs, 'thresholds' => $th, 'categories' => $cats, 'quiet' => ['from' => '20:00', 'to' => '08:00', 'tz' => 'Africa/Lagos'],
             'canEditAll' => $g['centres'] === null, 'centres' => $g['centres'] ?? array_column(db_all("SELECT name FROM centres WHERE COALESCE(status,'active') <> 'retired' ORDER BY name"), 'name')];
 }
 function mpa_cron_words(string $cron): string {
     [$mi, $h, $dom, , $dow] = preg_split('/\s+/', $cron);
+    if ($h === '*') return 'Every hour';
     $t = sprintf('%d:%02d%s', ((int)$h % 12) ?: 12, (int)$mi, (int)$h < 12 ? 'am' : 'pm');
     $days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     if ($dow !== '*') return $days[(int)$dow] . 's at ' . $t;

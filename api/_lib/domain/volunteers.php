@@ -150,6 +150,8 @@ function card_row_volunteer(array $v, array $centres, string $expiry): array {
            for roles where it means nothing, so the card can leave it out
            rather than print a blank. */
         'faculty' => (string)($v['faculty'] ?? ''),
+        // Which programme's card this is: an NGG volunteer's card is one style for everybody.
+        'programme' => volunteer_programme($v),
         'tier' => ['name' => $tier['name'], 'code' => $tier['code'], 'color' => $tier['color']],
         'centre' => $cRow
             ? ['name' => $cRow['name'], 'code' => $cRow['code'], 'color' => $cRow['color']]

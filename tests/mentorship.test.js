@@ -214,6 +214,61 @@ async function as(memberId, admin, viewport) {
     chk('no page errors for the super admin', su.errs.length === 0);
     if (su.errs.length) console.error(su.errs.join('\n'));
 
+    // ── The Summer School mentor view: minimal ───────────────────────────
+    php(`db_insert('members', ['memberId' => 'NGG-MS-SUMM', 'fullName' => 'Sola Summer', 'email' => 'sola@pod.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+         db_insert('mentors', ['mentorId' => 'MEN-MS-SUMM', 'fullName' => 'Sola Summer', 'email' => 'sola@pod.example', 'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'summer', 'memberId' => 'NGG-MS-SUMM', 'checkedAt' => now_iso(), 'createdAt' => now_iso()]);
+         db_insert('summer_students', ['studentId' => 'SUM-MS-1', 'cohortId' => '', 'handle' => 'sum-ms-1', 'fullName' => 'Tobi Participant', 'centre' => 'Egbeda', 'track' => 'Robotics', 'status' => 'active', 'enrolledAt' => now_iso(), 'updatedAt' => now_iso()]);
+         db_insert('attendance', ['cohortId' => '', 'studentId' => 'SUM-MS-1', 'token' => '', 'date' => gmdate('Y-m-d'), 'checkInAt' => now_iso(), 'method' => 'qr']);`);
+    const sm = await as('NGG-MS-SUMM', false, { width: 390, height: 844 });
+    await sm.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(sm);
+    await sm.waitForSelector('.mp-sum-row', { timeout: 60000 });
+    chk('summer: a Summer mentor gets the minimal view — no sidebar, three tabs, today’s participants', !(await sm.isVisible('.mp-side'))
+      && (await sm.innerText('.mp-sum-tabs')).replace(/\s+/g, ' ').trim().startsWith('Today Everyone Reviews') && /Tobi Participant/.test(await sm.innerText('.mp-sum-list')));
+    await sm.click('.mp-sum-row:has-text("Tobi") .mp-val >> nth=0');
+    await sm.waitForSelector('.mp-toast', { timeout: 30000 });
+    chk('summer: a value is one tap on the row', !!q(`db_row("SELECT 1 FROM member_stars WHERE subjectId = 'SUM-MS-1'")`));
+    chk('summer: no sideways scroll on a phone, and no page errors', await sm.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth) && sm.errs.length === 0);
+    if (sm.errs.length) console.error(sm.errs.join('\n'));
+
+    // ── Settings › Mentorship automations: an automation board ──────────
+    const au = await as('NGG-MS-ADM', true);
+    await au.goto(BASE + '/control/settings/mentor-automations', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(au);
+    await au.waitForSelector('.cr-mpa-card', { timeout: 60000 });
+    if (process.env.SHOTS) await au.screenshot({ path: process.env.SHOTS + '/automations.png', fullPage: false });
+    chk('automations: every automation is a card with When and Then', (await au.$$('.cr-mpa-card')).length >= 35 && /When/i.test(await au.innerText('.cr-mpa-card >> nth=0')));
+    await au.fill('.cr-mpa-search input', 'birthday');
+    chk('automations: search narrows the board', (await au.$$('.cr-mpa-card')).length === 1);
+    await au.fill('.cr-mpa-search input', 'one-to-one');
+    const num = au.locator('.cr-mpa-card:has-text("One-to-one overdue") .cr-mpa-num').first();
+    await num.fill('21'); await num.press('Enter');
+    await au.waitForFunction(() => /applies from the next run/.test(document.body.innerText), null, { timeout: 30000 });
+    chk('automations: a number edited in the sentence is saved', q(`mp_opts()['overdueDays']`) === 21);
+    await au.fill('.cr-mpa-search input', 'birthday');
+    await au.click('.cr-mpa-card:has-text("Birthdays") [role=switch]');
+    await au.waitForFunction(() => /Birthdays is paused/.test(document.body.innerText), null, { timeout: 30000 });
+    chk('automations: an automation is paused from its card', q(`mpa_job_on('birthday') ? 1 : 0`) === 0);
+    chk('no page errors on the automation board', au.errs.length === 0);
+    if (au.errs.length) console.error(au.errs.join('\n'));
+
+    // ── The member's own weekly check-in ────────────────────────────────
+    const mem = await as('NGG-MS-K1', false);
+    await mem.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(mem);
+    await mem.waitForSelector('.dci-feel', { timeout: 60000 });
+    if (process.env.SHOTS) await mem.locator('.dci').screenshot({ path: process.env.SHOTS + '/checkin.png' });
+    await mem.click('.dci-feel-b:has-text("It’s been hard")');
+    await mem.click('.dci-link');
+    await mem.click('.dci-extra:has-text("Sleep") button:has-text("Poor")');
+    await mem.click('.dci button:has-text("Send to")');
+    await mem.waitForSelector('.dci-done', { timeout: 30000 });
+    chk('check-in: a member says how their week was, and their mentor hears at once',
+      q(`db_row("SELECT wellbeing, sleep FROM member_checkins WHERE memberId = 'NGG-MS-K1'")`).wellbeing === 'Struggling'
+      && !!q(`db_row("SELECT 1 FROM mentor_nudges WHERE rule = 'J:wellbeingAlert' AND memberId = 'NGG-MS-K1'")`));
+    chk('no page errors on the member dashboard', mem.errs.length === 0);
+    if (mem.errs.length) console.error(mem.errs.join('\n'));
+
     // ── The workspace, as HQ ────────────────────────────────────────────
     const hq = await as('NGG-MS-ADM', true);
     await hq.goto(BASE + '/control/mentorship', { waitUntil: 'domcontentloaded' });

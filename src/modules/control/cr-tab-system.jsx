@@ -1279,3 +1279,169 @@ Object.assign(CR_TAB_DEFS, {
     },
   },
 });
+
+/* ══ Mentorship automations ══════════════════════════════════════════════════
+   The Mentor Portal's background jobs (domain/mentor-automations.php). Mentors
+   never see this: they see the result in This week › Due now. Here the NGG
+   admin tunes the numbers each job uses, the hour each scheduled job runs,
+   which jobs run at which centres, and reads what each run found.
+
+   The server decides who may change what: thresholds, hours and on/off for
+   everyone need an unscoped admin; a centre-scoped admin may only switch an
+   unlocked job off for their own centres; a locked job cannot be switched off
+   at all. The screen mirrors that so nobody presses a control that will be
+   refused — and when the server refuses anyway, it says why. */
+const CR_MPA_ERR = { needs_unscoped_admin: "Only an admin who covers every centre can change that.", job_locked: "This job is locked on: it protects a child or a record.", out_of_range: "That number is outside the allowed range.", event_job_has_no_time: "This job runs when something happens, so it has no time." };
+function crMpaErr(e, fb) { const c = e && (e.code || e.message); return CR_MPA_ERR[c] || crErr(e, fb); }
+const CR_MPA_HOURS = Array.from({ length: 24 }, (_, h) => [String(h), ((h % 12) || 12) + ":00" + (h < 12 ? "am" : "pm")]);
+
+/** "{overdueDays}" in a sentence → the value, editable in place when allowed. */
+function CrMpaSentence({ text, d, editable, onSet }) {
+  const th = Object.fromEntries((d.thresholds || []).map(t => [t.key, t]));
+  const parts = String(text || "").split(/(\{[a-zA-Z]+\})/);
+  return <>{parts.map((p, i) => {
+    const m = p.match(/^\{([a-zA-Z]+)\}$/);
+    if (!m || !th[m[1]]) return <React.Fragment key={i}>{p}</React.Fragment>;
+    const t = th[m[1]];
+    return editable ? <CrMpaNum key={i} t={t} onSet={onSet}/> : <b key={i} className="cr-mpa-val">{t.value}</b>;
+  })}</>;
+}
+function CrMpaNum({ t, onSet }) {
+  const [v, setV] = React.useState(String(t.value));
+  React.useEffect(() => setV(String(t.value)), [t.value]);
+  const commit = () => { const n = Number(v); if (String(n) === String(t.value)) return; if (!/^\d+$/.test(v.trim()) || n < t.min || n > t.max) { setV(String(t.value)); onSet(null, "Between " + t.min + " and " + t.max); return; } onSet({ [t.key]: n }); };
+  return <input className="cr-mpa-num" type="number" inputMode="numeric" min={t.min} max={t.max} value={v} aria-label={t.label}
+    title={t.label + " · default " + t.default} onChange={e => setV(e.target.value)} onBlur={commit} onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setV(String(t.value)); e.currentTarget.blur(); } }}/>;
+}
+const CR_MPA_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** One automation, as a card: When → If → Then, its switch, its last run. */
+function CrMpaCard({ ctx, d, j, busy, act, run, history }) {
+  const [centresOpen, setCentresOpen] = React.useState(false);
+  const lr = j.lastRun; const failedLast = lr && /^failed:/.test(lr.detail || "");
+  const off = (j.centresOff || []).length;
+  const edit = d.canEditAll;
+  const setTh = (patch, msg) => {
+    if (!patch) { ctx.toast(msg, null, true); return; }
+    NGGApi.admin.mentorAutomations.thresholds(patch).then(r => { ctx.setData(x => Object.assign({}, x, r)); ctx.toast("Saved. It applies from the next run."); }, e => ctx.toast(crMpaErr(e, "Couldn’t save that."), null, true));
+  };
+  const state = !j.on ? ["Paused", "neutral"] : failedLast ? ["Last run failed", "bad"] : j.locked ? ["Always on", "ok"] : ["Active", "ok"];
+  const prep = (j.uses || []).indexOf("prepDay") >= 0 ? (d.thresholds || []).find(t => t.key === "prepDay") : null;
+  const extra = (j.uses || []).filter(k => !new RegExp("\\{" + k + "\\}").test(j.trigger + j.if + (j.then || []).join(" ")) && k !== "prepDay");
+  return <article className={"cr-mpa-card" + (j.on ? "" : " is-off")} aria-labelledby={"mpa-" + j.key}>
+    <header className="cr-mpa-head">
+      <span className="cr-mpa-title"><b id={"mpa-" + j.key}>{j.label}</b><CrPill tone={state[1]} t={state[0]}/>{j.shows && <span className="cr-mpa-tag">Shows in Due now</span>}</span>
+      {j.locked ? <span className="cr-mpa-lock" title="Protects a child or a record, so it cannot be switched off"><CrIcon n="lock-simple"/>Locked on</span>
+        : <CrSwitch on={j.on} label={(j.on ? "Pause " : "Turn on ") + j.label} disabled={!edit || busy === j.key} onChange={v => act(j.key, { on: v }, j.label + (v ? " is on" : " is paused"))}/>}
+    </header>
+    <ol className="cr-mpa-flow">
+      <li><span className="cr-mpa-k"><CrIcon n={j.cron ? "clock" : "lightning"}/>When</span>
+        <span className="cr-mpa-v"><CrMpaSentence text={j.trigger} d={d} editable={edit} onSet={setTh}/>
+          {j.cron && (edit ? <> at <select className="cr-mpa-sel" aria-label={"Time for " + j.label} value={String(j.hour)} disabled={busy === j.key}
+            onChange={e => act(j.key, { hour: +e.target.value }, j.label + " now runs at " + CR_MPA_HOURS[+e.target.value][1])}>{CR_MPA_HOURS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></>
+            : " at " + CR_MPA_HOURS[j.hour][1])}
+          {prep && <> (<select className="cr-mpa-sel" aria-label={prep.label} value={String(prep.value)} disabled={!edit} onChange={e => setTh({ prepDay: +e.target.value })}>{CR_MPA_DAYS.map((x, i) => <option key={x} value={i}>{x}</option>)}</select>)</>}
+          {j.cron ? <em> · Lagos time</em> : null}</span></li>
+      {j.if && j.if !== "—" && <li><span className="cr-mpa-k"><CrIcon n="funnel-simple"/>If</span><span className="cr-mpa-v"><CrMpaSentence text={j.if} d={d} editable={edit} onSet={setTh}/>
+        {extra.map(k => { const t = d.thresholds.find(x => x.key === k); return t ? <span key={k} className="cr-mpa-also">{t.label} <CrMpaNum t={t} onSet={setTh}/></span> : null; })}</span></li>}
+      <li><span className="cr-mpa-k"><CrIcon n="arrow-bend-down-right"/>Then</span><span className="cr-mpa-v cr-mpa-then">{(j.then || []).map((t, i) => <span key={i}><CrMpaSentence text={t} d={d} editable={edit} onSet={setTh}/></span>)}</span></li>
+    </ol>
+    <footer className="cr-mpa-foot">
+      <span className="cr-mpa-run">{lr ? <><CrIcon n={failedLast ? "warning-circle" : "check-circle"}/>{"Last ran " + crDate(lr.ranAt) + " · " + (failedLast ? lr.detail.replace(/^failed:\s*/, "") : lr.detail || crPlural(+lr.found || 0, "item"))}</>
+        : j.cron ? "Hasn’t run yet. It starts at its next time." : "Runs the moment it happens."}
+        {j.stats && j.stats.runs ? <span className="cr-mpa-30">{" · " + crPlural(j.stats.runs, "run") + ", " + crPlural(j.stats.found, "item") + " in 30 days" + (j.stats.failed ? ", " + j.stats.failed + " failed" : "")}</span> : null}
+        {off ? <span className="cr-mpa-30">{" · paused at " + crPlural(off, "centre")}</span> : null}</span>
+      <span className="cr-mpa-acts">
+        {!j.locked && <button type="button" className="cr-btn is-sm" aria-expanded={centresOpen} onClick={() => setCentresOpen(!centresOpen)}><CrIcon n="map-pin"/>Centres</button>}
+        {j.cron && <button type="button" className="cr-btn is-sm" onClick={() => history(j)}><CrIcon n="clock-counter-clockwise"/>History</button>}
+        {j.cron && edit && <button type="button" className="cr-btn is-sm" disabled={busy === j.key || !j.on} title={!j.on ? "Turn it on first" : "Run once now, outside its schedule"} onClick={() => run(j)}><CrIcon n="play"/>{busy === j.key ? "Running…" : "Run now"}</button>}
+      </span>
+    </footer>
+    {centresOpen && <div className="cr-mpa-centres" role="group" aria-label={"Centres where " + j.label + " runs"}>
+      {(d.centres || []).map(c => { const isOff = (j.centresOff || []).indexOf(c) >= 0;
+        return <label key={c} className="cr-mpa-centre"><input type="checkbox" checked={!isOff} disabled={busy === j.key}
+          onChange={() => act(j.key, { centresOff: isOff ? j.centresOff.filter(x => x !== c) : (j.centresOff || []).concat(c) }, j.label + (isOff ? " runs at " : " is paused at ") + c)}/>{c}</label>; })}
+      {!(d.centres || []).length && <span className="cr-muted">No centres in your scope.</span>}
+    </div>}
+  </article>;
+}
+
+/** The automation list: summary, search, filters, grouped cards. */
+function CrMpaBoard({ ctx, d }) {
+  const [busy, setBusy] = React.useState("");
+  const [q, setQ] = React.useState("");
+  const [f, setF] = React.useState("all");
+  const jobs = d.jobs || [];
+  const act = async (key, patch, ok) => {
+    setBusy(key);
+    try { const r = await NGGApi.admin.mentorAutomations.update(key, patch); ctx.setData(x => Object.assign({}, x, r)); ctx.toast(ok); }
+    catch (e) { ctx.toast(crMpaErr(e, "Couldn’t save that."), null, true); }
+    finally { setBusy(""); }
+  };
+  const run = async j => {
+    setBusy(j.key);
+    try { const r = await NGGApi.admin.mentorAutomations.run(j.key); ctx.toast(j.label + " ran · " + (r.detail || crPlural(r.found || 0, "item")) + (r.notified ? " · " + crPlural(r.notified, "person") + " told" : "")); ctx.reload(); }
+    catch (e) { ctx.toast(crMpaErr(e, "Couldn’t run it."), null, true); }
+    finally { setBusy(""); }
+  };
+  const history = async j => {
+    let runs = [];
+    try { runs = (await NGGApi.admin.mentorAutomations.log({ days: 90, job: j.key })).runs || []; } catch (e) { ctx.toast(crErr(e, "Couldn’t load the history."), null, true); return; }
+    ctx.drawer({ title: j.label, sub: j.when + " · the last 90 days",
+      stats: [["Runs", String(runs.length)], ["Found", String(runs.reduce((a, r) => a + (+r.found || 0), 0))], ["Failed", String(runs.filter(r => /^failed:/.test(r.detail || "")).length)]],
+      sections: [{ h: "Runs, newest first", rows: runs.length ? runs.slice(0, 60).map(r => [crDate(r.ranAt), (/^failed:/.test(r.detail || "") ? "Failed · " : crPlural(+r.found || 0, "item") + " · ") + (r.detail || "")]) : [["", "No runs in the last 90 days."]] }] });
+  };
+  const failedLast = j => j.lastRun && /^failed:/.test(j.lastRun.detail || "");
+  const filters = [["all", "All", jobs.length], ["on", "Active", jobs.filter(j => j.on).length], ["paused", "Paused", jobs.filter(j => !j.on || (j.centresOff || []).length).length],
+    ["failed", "Needs attention", jobs.filter(failedLast).length], ["scheduled", "Scheduled", jobs.filter(j => j.cron).length], ["event", "Instant", jobs.filter(j => !j.cron).length]];
+  const n = q.trim().toLowerCase();
+  const shown = jobs.filter(j => (f === "all" || (f === "on" ? j.on : f === "paused" ? (!j.on || (j.centresOff || []).length) : f === "failed" ? failedLast(j) : f === "scheduled" ? !!j.cron : !j.cron))
+    && (!n || [j.label, j.effect, j.trigger, j.if].concat(j.then || []).join(" ").toLowerCase().indexOf(n) >= 0));
+  const runs30 = jobs.reduce((a, j) => a + ((j.stats && j.stats.runs) || 0), 0), found30 = jobs.reduce((a, j) => a + ((j.stats && j.stats.found) || 0), 0);
+  return <div className="cr-mpa">
+    <div className="cr-mpa-kpis">
+      <div><b>{jobs.filter(j => j.on).length}<em>{" of " + jobs.length}</em></b><span>Automations on</span></div>
+      <div><b>{crNum(runs30)}</b><span>Runs in 30 days</span></div>
+      <div><b>{crNum(found30)}</b><span>Things surfaced for mentors</span></div>
+      <div className={jobs.some(failedLast) ? "is-bad" : ""}><b>{jobs.filter(failedLast).length}</b><span>Need attention</span></div>
+    </div>
+    <div className="cr-mpa-bar">
+      <label className="cr-mpa-search" role="search"><CrIcon n="magnifying-glass"/><input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search automations" aria-label="Search automations"/></label>
+      <div className="cr-mpa-chips" role="group" aria-label="Filter">{filters.map(([k, l, c]) => <button key={k} type="button" className="cr-mpa-chip" aria-pressed={f === k} onClick={() => setF(k)}>{l}<em>{c}</em></button>)}</div>
+      <span className="cr-muted" role="status">{crPlural(shown.length, "automation")}</span>
+    </div>
+    {!shown.length ? <div className="cr-box cr-mpa-empty"><b>No automation matches.</b><button type="button" className="cr-btn is-sm" onClick={() => { setQ(""); setF("all"); }}>Show all</button></div>
+      : (d.categories || []).map(c => { const list = shown.filter(j => j.cat === c.key); if (!list.length) return null;
+        return <section key={c.key} className="cr-mpa-group" aria-labelledby={"mpa-cat-" + c.key}>
+          <h3 id={"mpa-cat-" + c.key}><CrIcon n={c.icon}/>{c.label}<em>{list.length}</em></h3>
+          <div className="cr-mpa-grid">{list.map(j => <CrMpaCard key={j.key} ctx={ctx} d={d} j={j} busy={busy} act={act} run={run} history={history}/>)}</div>
+        </section>; })}
+  </div>;
+}
+
+Object.assign(CR_TAB_DEFS, {
+  "mentor-automations": {
+    skeleton: ["kpis", "cards"],
+    load: async () => {
+      const [l, rt] = await Promise.all([NGGApi.admin.mentorAutomations.list(), NGGApi.admin.mentorAutomations.retreats().catch(() => ({ retreats: [] }))]);
+      return Object.assign({}, l, { retreats: rt.retreats || [] });
+    },
+    actions: (d, ctx) => [
+      { l: "Schedule a retreat", icon: "calendar-plus", run: () => crMpaRetreat(ctx, null) },
+    ],
+    blocks: (d, ctx) => [
+      { type: "note", span: 6, icon: "robot", text: "Automations do the follow-up so mentors can do the mentoring. Mentors never see these settings; they see the results in This week › Due now.",
+        sub: "Nothing reaches a family or a phone between " + d.quiet.from + " and " + d.quiet.to + " (" + d.quiet.tz + "). Change a number in a sentence and it applies from the next run."
+          + (d.canEditAll ? "" : " You can pause unlocked automations at your own centres; numbers and times are set by an admin who covers every centre.") },
+      { type: "custom", span: 6, render: () => <CrMpaBoard ctx={ctx} d={d}/> },
+      { type: "list", span: 6, title: "Quarterly retreats", sub: "Mentors book their place from My role; those not booked 30 days out are reminded.", empty: "No retreat scheduled yet. Use “Schedule a retreat”.",
+        rows: (d.retreats || []).map(r => ({ icon: "tent", t: (r.title || "Retreat") + " · " + crDate(r.onDate), s: [r.place, crPlural(+r.booked || 0, "mentor") + " booked"].filter(Boolean).join(" · "), onClick: () => crMpaRetreat(ctx, r) })) },
+    ],
+  },
+});
+function crMpaRetreat(ctx, r) {
+  ctx.form({ title: r ? "Edit the retreat" : "Schedule a retreat", submit: r ? "Save" : "Schedule",
+    values: { retreatId: r ? r.retreatId : "", title: r ? r.title : "Quarterly retreat", onDate: r ? r.onDate : "", place: r ? r.place : "" },
+    fields: [{ id: "title", l: "Name", max: 120 }, { id: "onDate", l: "Date", type: "date", req: true }, { id: "place", l: "Where", max: 160 }],
+    onSubmit: async v => { await NGGApi.admin.mentorAutomations.retreatSave(v); ctx.reload(); }, done: r ? "Retreat saved." : "Retreat scheduled." });
+}

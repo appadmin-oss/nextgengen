@@ -25799,10 +25799,32 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('jobs: the tick runs a job whose slot has come, once', isset(mpa_tick(strtotime('2026-10-22T17:30:00Z'), 40)['pickOneToOnes']) && !isset(mpa_tick(strtotime('2026-10-22T17:40:00Z'), 40)['pickOneToOnes']));
     chk('jobs: a slot more than a day old is let go, not replayed', !isset(mpa_tick(strtotime('2026-10-24T19:00:00Z'), 40)['pickOneToOnes']));
 
+    // The broader automations.
+    db_update('members', ['dob' => '2012-10-24'], ['memberId' => 'NGG-MPK5']);
+    $bd = mpa_run('birthday', strtotime('2026-10-24T06:30:00Z'));
+    chk('jobs: a mentee\'s birthday reaches the mentor\'s Due now', $bd['found'] === 1 && (bool)db_row("SELECT 1 FROM mentor_nudges WHERE rule = 'J:birthday' AND memberId = 'NGG-MPK5' AND status = 'open' AND title LIKE '%birthday (14)%'"));
+    db_insert('member_checkins', ['memberId' => 'NGG-MPK2', 'week' => '2026-W36', 'wellbeing' => 'Okay', 'createdAt' => '2026-09-01T10:00:00Z']);
+    chk('jobs: a mentee who stopped checking in is flagged after three weeks', mpa_run('checkinSilence', strtotime($T . 'T10:00:00Z'))['found'] >= 1
+        && (bool)db_row("SELECT 1 FROM mentor_nudges WHERE rule = 'J:checkinSilence' AND memberId = 'NGG-MPK2' AND status = 'open'"));
+    foreach (['2026-09-26', '2026-10-03'] as $dt) db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-MPK1', 'token' => '', 'date' => $dt, 'checkInAt' => $dt . 'T09:00:00Z', 'method' => 'qr']);
+    $ms = mpa_run('missedSaturdays', strtotime('2026-10-05T08:30:00Z'));
+    chk('jobs: missing the last two Saturdays the centre met is flagged; attending one is not', (bool)db_row("SELECT 1 FROM mentor_nudges WHERE rule = 'J:missedSaturdays' AND memberId = 'NGG-MPK3' AND status = 'open'")
+        && !db_row("SELECT 1 FROM mentor_nudges WHERE rule = 'J:missedSaturdays' AND memberId = 'NGG-MPK1' AND status = 'open'"));
+    db_exec("UPDATE safeguarding_cases SET createdAt = '2026-01-01T00:00:00Z' WHERE caseNo = ?", [$cn['ref']]);
+    $GLOBALS['__sent_mail'] = [];
+    $ce = mpa_run('concernEscalate', strtotime($T . 'T12:00:00Z'));
+    chk('jobs: a concern unopened after 24 hours is escalated, once', (bool)db_row('SELECT 1 FROM mentor_nudges WHERE nudgeKey = ?', ['J:concernEscalate:' . $cn['ref']])
+        && mpa_run('concernEscalate', strtotime($T . 'T13:00:00Z'))['found'] === 0);
+    chk('jobs: an hourly job shows "Every hour" and has no time to change', (function () use ($SU) { $l = backend_dispatch('admin.mentor.automations.list', ['requesterId' => $SU]);
+        $j = array_values(array_filter($l['jobs'], static fn($x) => $x['key'] === 'concernEscalate'))[0]; return $j['when'] === 'Every hour' && $j['hour'] === null; })());
+
     // Admin controls.
     $al = backend_dispatch('admin.mentor.automations.list', ['requesterId' => $SU]);
     chk('jobs: the admin list names every job with its time in words', count($al['jobs']) === count(MPA_JOBS)
         && array_values(array_filter($al['jobs'], static fn($j) => $j['key'] === 'pickOneToOnes'))[0]['when'] === 'Thursdays at 6:00pm');
+    chk('jobs: every automation says when, if and then, in a known category, and names the numbers it uses', !array_filter($al['jobs'], static fn($j) => $j['trigger'] === '' || !$j['then'] || !isset(MPA_CATEGORIES[$j['cat']])
+        || array_diff($j['uses'], array_keys(MPA_THRESHOLDS))));
+    chk('jobs: every threshold is used by some automation, so each can be edited where it acts', !array_diff(array_keys(MPA_THRESHOLDS), array_merge(...array_map(static fn($j) => $j['uses'], $al['jobs']))));
     chk('jobs: a locked job cannot be switched off', (backend_dispatch('admin.mentor.automations.update', ['requesterId' => $SU, 'job' => 'wellbeingAlert', 'on' => false])['error'] ?? '') === 'job_locked');
     backend_dispatch('admin.mentor.automations.update', ['requesterId' => $SU, 'job' => 'familyDraft', 'on' => false]);
     chk('jobs: an unlocked job switches off', mpa_job_on('familyDraft') === false && (mpa_run('pickOneToOnes')['ok'] ?? false));
