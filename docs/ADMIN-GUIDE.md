@@ -1366,6 +1366,28 @@ before printing.
 
 ---
 
+### When a card needs reprinting
+
+The studio puts somebody back in the queue on its own when the card in their hand no longer matches their record:
+
+- their photo was replaced
+- their name was corrected
+- their printed ID changed
+- their QR was reissued, so the old card no longer opens
+
+A newer card design alone does not. A card in last year's design is still a good card. Use **Look up a person** to see why, and to queue a reprint on purpose.
+
+Choose the reason when you queue one:
+
+- **Lost** and **Never received**: the new card gets a new QR, and the lost card stops working at the gate.
+- **Damaged** and **Details changed**: the person keeps the same QR.
+
+Logging a print closes the requests it satisfied. A proof closes nothing.
+
+### Replacing a photo
+
+A replaced or edited photo replaces the old one. The old file is deleted at once and older versions keep no picture. The only exception is when another person's record still uses the same file; then it stays until that changes.
+
 ## Quote of the week
 
 **Content → Quote of the week** (needs the `content` capability). The home page

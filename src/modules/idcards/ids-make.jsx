@@ -101,6 +101,7 @@ function IdsRange({ R }) {
   const [paste, setPaste] = React.useState("");
   const [pasteMsg, setPasteMsg] = React.useState(null);
   const [reprintBusy, setReprintBusy] = React.useState(false);
+  const [reprintWhy, setReprintWhy] = React.useState("damaged");
   const lastDays = n => { const t = new Date(), f = new Date(t.getTime() - (n - 1) * 864e5); R.setRng({ dFrom: f.toISOString().slice(0, 10), dTo: t.toISOString().slice(0, 10) }); };
   const doPaste = () => {
     const res = R.pasteIds(paste);
@@ -147,8 +148,13 @@ function IdsRange({ R }) {
         <button type="button" className="ids-btn ids-btn--outline" disabled={!paste.trim()} onClick={doPaste}><IdsIcon name="plus"/>Put these on the sheet</button>
         {pasteMsg && <span className={"ids-rec-tag is-" + pasteMsg.tone} role="status">{pasteMsg.text}</span>}
         {pasteMsg && pasteMsg.carded && pasteMsg.carded.length > 0 && (
+          <label className="ids-field"><span className="ids-muted">Why they need a new card</span>
+            <select className="ids-input" value={reprintWhy} onChange={e => setReprintWhy(e.target.value)}>
+              {IDS_REPRINT_REASONS.map(([k, l, help]) => <option key={k} value={k}>{l + " — " + help.split(" — ").pop()}</option>)}</select></label>
+        )}
+        {pasteMsg && pasteMsg.carded && pasteMsg.carded.length > 0 && (
           <button type="button" className="ids-btn ids-btn--sm" disabled={reprintBusy}
-            onClick={async () => { setReprintBusy(true); const done = await R.queueReprints(pasteMsg.carded); setReprintBusy(false); if (done) setPasteMsg({ tone: "ok", text: idsN(pasteMsg.carded.length, "card") + " queued as reprints — paste again to put them on the sheet" }); }}>
+            onClick={async () => { setReprintBusy(true); const done = await R.queueReprints(pasteMsg.carded, reprintWhy); setReprintBusy(false); if (done) setPasteMsg({ tone: "ok", text: idsN(pasteMsg.carded.length, "card") + " queued as reprints — paste again to put them on the sheet" }); }}>
             {reprintBusy ? "Queuing…" : "Queue " + idsN(pasteMsg.carded.length, "reprint")}
           </button>
         )}

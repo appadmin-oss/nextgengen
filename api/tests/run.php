@@ -5621,8 +5621,9 @@ chk('history: a member with no card says so rather than erroring', (function () 
     $h = backend_dispatch('admin.card.history', ['requesterId' => $CARDADM, 'subjectId' => 'NGG-CARD-NOBODY']);
     return !empty($h['ok']) && $h['count'] === 0 && $h['latest'] === null && $h['designMovedOn'] === null;
 })());
-chk('runs: every card op is gated on the member desk', (function () {
-    return backend_dispatch('admin.card.runs', ['requesterId' => 'NGG-2025-0700'])['error'] === 'forbidden'
+chk('runs: member card ops are gated on the member desk; a Summer admin reads participant runs only', (function () {
+    $r = backend_dispatch('admin.card.runs', ['requesterId' => 'NGG-2025-0700']);
+    return !empty($r['ok']) && !array_filter($r['runs'], fn($x) => $x['kind'] !== 'student')
         && backend_dispatch('admin.card.history', ['requesterId' => 'NGG-2025-0700', 'subjectId' => 'x'])['error'] === 'forbidden'
         && backend_dispatch('admin.card.run.record', ['requesterId' => 'NGG-2025-0700', 'items' => []])['error'] === 'forbidden';
 })());
@@ -24628,6 +24629,8 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     $SUMADM = 'NGG-2025-0700';   // summer_admin: Summer School's cards, not members'
     $st = backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM]);
     $key = 'member:NGG-CARD-1';
+    // The studio refuses subjects that do not exist; the card fixtures above may have been tidied away.
+    if (!db_row("SELECT 1 FROM members WHERE memberId = 'NGG-CARD-1'")) db_insert('members', ['memberId' => 'NGG-CARD-1', 'fullName' => 'Amina Bello', 'email' => 'card1b@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     $last = db_row("SELECT i.runId, i.displayId FROM card_issues i JOIN card_runs r ON r.runId = i.runId
                     WHERE i.subjectType = 'member' AND i.subjectId = 'NGG-CARD-1' AND r.mode != 'proof' AND i.ok = 1 ORDER BY i.id DESC LIMIT 1");
     chk('id studio: the state says who already has a card, from the issue log', !empty($st['ok']) && $last && ($st['issued']->$key['runId'] ?? '') === $last['runId']);
@@ -24661,8 +24664,38 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('id studio: …and goes back in the queue as a reprint', $f['requeued'] === 1 && (backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['reprints']->$key['why'] ?? '') === 'Didn’t print properly');
     chk('id studio: an unknown run is not_found', (backend_dispatch('admin.ids.run.failed', ['requesterId' => $CARDADM, 'runId' => 'CRUN-NOPE', 'items' => [['subjectType' => 'member', 'subjectId' => 'x']]])['error'] ?? '') === 'not_found');
 
-    $d = backend_dispatch('admin.ids.reprint.done', ['requesterId' => $CARDADM, 'runId' => 'CRUN-NEXT', 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-CARD-1']]]);
-    chk('id studio: printing closes the open request', !empty($d['ok']) && $d['closed'] === 1 && !property_exists(backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['reprints'], $key));
+    chk('id studio: a request cannot be closed against a run that does not exist', (backend_dispatch('admin.ids.reprint.done', ['requesterId' => $CARDADM, 'runId' => 'CRUN-NEXT', 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-CARD-1']]])['error'] ?? '') === 'run_not_found');
+    $pf = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member', 'mode' => 'proof', 'items' => [['subjectId' => 'NGG-CARD-1']]]);
+    chk('id studio: a proof satisfies no request', !empty($pf['ok']) && $pf['closed'] === 0 && property_exists(backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['reprints'], $key));
+    $tok = 'tok-' . bin2hex(random_bytes(4));
+    $pr = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member', 'token' => $tok, 'items' => [['subjectId' => 'NGG-CARD-1']]]);
+    chk('id studio: logging the print closes the open request in the same step', !empty($pr['ok']) && $pr['closed'] === 1 && !property_exists(backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['reprints'], $key));
+    $again = backend_dispatch('admin.card.run.record', ['requesterId' => $CARDADM, 'kind' => 'member', 'token' => $tok, 'items' => [['subjectId' => 'NGG-CARD-1']]]);
+    chk('id studio: a replayed log is the same run, not a second one', !empty($again['replayed']) && $again['runId'] === $pr['runId']
+        && (int)db_row('SELECT COUNT(*) c FROM card_runs WHERE clientToken = ?', [$tok])['c'] === 1);
+    $snap = db_row('SELECT fullName, photoUrl, faceSig FROM card_issues WHERE runId = ?', [$pr['runId']]);
+    chk('id studio: the run records what the card carried, from the record', $snap['fullName'] === (string)db_row("SELECT fullName FROM members WHERE memberId = 'NGG-CARD-1'")['fullName'] && $snap['faceSig'] !== '');
+    // The card in their hand no longer matches: a new photo and a corrected name put them back in the queue.
+    db_update('members', ['photoUrl' => '/api/public/photo.php?p=' . str_repeat('a', 32) . '.jpg', 'fullName' => 'Amina B. Bello'], ['memberId' => 'NGG-CARD-1']);
+    $stale = backend_dispatch('admin.ids.state', ['requesterId' => $CARDADM])['stale']->$key ?? [];
+    chk('id studio: a photo or name changed since the print is named as stale', in_array('photo', $stale, true) && in_array('name', $stale, true));
+    $h = backend_dispatch('admin.card.history', ['requesterId' => $CARDADM, 'subjectId' => 'NGG-CARD-1']);
+    chk('id studio: history says what changed since the card was printed', in_array('photo', $h['changedSincePrint'], true) && $h['latest']['mode'] !== 'proof');
+    // Out of scope, per row.
+    db_insert('members', ['memberId' => 'NGG-IDS-SCOPED', 'fullName' => 'Scoped Admin', 'email' => 'scoped-ids@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Ijaiye', 'centreScope' => json_encode([(string)(db_row("SELECT centreId FROM centres WHERE name = 'Ijaiye'")['centreId'] ?? 'C-NONE')]), 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $sc = backend_dispatch('admin.ids.reprint.request', ['requesterId' => 'NGG-IDS-SCOPED', 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-CARD-1', 'why' => 'x']]]);
+    chk('id studio: a centre-scoped admin cannot queue another centre\'s card — refused per row', ($sc['refused'][0]['error'] ?? '') === 'out_of_scope' && $sc['added'] === 0);
+    // A lost card: the reprint gets a new QR, once, and the old one stops opening.
+    backend_dispatch('admin.ids.reprint.request', ['requesterId' => $CARDADM, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-CARD-1', 'why' => 'Lost on the bus']]]);
+    $before = (string)(db_row("SELECT code FROM member_cards WHERE memberId = 'NGG-CARD-1' AND kind = 'secure' AND status = 'active'")['code'] ?? '');
+    $mt1 = backend_dispatch('admin.ids.mint', ['requesterId' => $CARDADM, 'memberIds' => ['NGG-CARD-1']]);
+    $mt2 = backend_dispatch('admin.ids.mint', ['requesterId' => $CARDADM, 'memberIds' => ['NGG-CARD-1']]);
+    chk('id studio: a lost card is reprinted with a NEW QR, and a retried print keeps that one', in_array('NGG-CARD-1', $mt1['newQr'] ?? [], true)
+        && ($mt1['codes']->{'NGG-CARD-1'} ?? '') !== $before && ($mt2['codes']->{'NGG-CARD-1'} ?? '') === ($mt1['codes']->{'NGG-CARD-1'} ?? '') && !in_array('NGG-CARD-1', $mt2['newQr'] ?? [], true));
+    chk('id studio: …and a later "damaged" does not cancel the lost card\'s new QR', (function () use ($CARDADM) {
+        backend_dispatch('admin.ids.reprint.request', ['requesterId' => $CARDADM, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-CARD-1', 'why' => 'Damaged too']]]);
+        return db_row("SELECT cause FROM id_reprints WHERE subjectId = 'NGG-CARD-1' AND doneAt = ''")['cause'] === 'lost';
+    })());
 
     // Photo requests reach the person and the admins who own the card, once per quiet period.
     db_insert('members', ['memberId' => 'NGG-IDS-NOPIC', 'fullName' => 'Pat Nophoto', 'email' => 'pat-nopic@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'photoUrl' => '', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);

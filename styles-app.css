@@ -7953,6 +7953,7 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 @keyframes ids-shimmer { to { background-position: -200% 0; } }
 .ids-lookup-form { display: flex; gap: 8px; }
 .ids-lookup-res { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+.ids-reasons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .ids-lookup-name { margin: 0; font-size: 17px; font-weight: 600; }
 .ids-lookup-none { margin-top: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
 .ids-hist { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--ids-line); }

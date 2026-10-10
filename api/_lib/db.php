@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 139;
+const NGG_SCHEMA_TARGET = 140;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4465,6 +4465,20 @@ function db_migrate(PDO $db): void {
             ALTER TABLE mentors ADD COLUMN academyClearedAt TEXT DEFAULT '';
             ALTER TABLE mentors ADD COLUMN academyClearedBy TEXT DEFAULT '';
             DELETE FROM community_safeguarding WHERE surface = 'mentor' AND caseId IN (SELECT caseNo FROM safeguarding_cases);",
+        /* 140 — what each card carried, so "does the card in their hand still
+         * match the record" has an answer: the photo, name and secure code
+         * printed (and one signature over them); a client token that makes a
+         * replayed run log idempotent; and WHY a reprint was asked for as a
+         * code (lost, damaged, photo, name, design, qr, failed, asked), because
+         * a lost card needs a new QR and a damaged one does not. */
+        140 => "
+            ALTER TABLE card_issues ADD COLUMN photoUrl TEXT DEFAULT '';
+            ALTER TABLE card_issues ADD COLUMN fullName TEXT DEFAULT '';
+            ALTER TABLE card_issues ADD COLUMN secureCode TEXT DEFAULT '';
+            ALTER TABLE card_issues ADD COLUMN faceSig TEXT DEFAULT '';
+            ALTER TABLE card_runs ADD COLUMN clientToken TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_crun_token ON card_runs(clientToken);
+            ALTER TABLE id_reprints ADD COLUMN cause TEXT DEFAULT '';",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

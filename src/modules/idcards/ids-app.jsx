@@ -244,8 +244,9 @@ function IdCardStudioPage({ setPage }) {
     const added = hit.length ? addRecs(hit, idsN(hit.length, "card") + " matched from the list") : 0;
     return { matched: added, otherSize: hit.length - added, miss, hidden, carded, blocked };
   };
-  const queueReprints = async list => {
-    const items = list.map(r => ({ subjectType: r.subjectType, subjectId: r.id, why: "Reprint asked for by ID" }));
+  const queueReprints = async (list, cause) => {
+    const rs = IDS_REPRINT_REASONS.find(x => x[0] === cause);
+    const items = list.map(r => ({ subjectType: r.subjectType, subjectId: r.id, cause: cause || "asked", why: rs ? rs[1] : "Reprint asked for by ID" }));
     if (!items.length) return false;
     try { await NGGApi.admin.idStudio.reprint(items); say(idsN(items.length, "card") + " queued as reprints"); load(); return true; }
     catch (e) { say(idsErrText(e, "Couldn’t queue the reprint. Try again.")); return false; }
@@ -433,7 +434,12 @@ function IdCardStudioPage({ setPage }) {
   if (designNoBack.length) checks.push({ tone: "info", text: idsN(designNoBack.length, "card") + " use a design with no paired back, so the standard back prints behind them." });
   if (needId.length) checks.push({ tone: "info", text: (needId.length === 1 ? "1 member gets their ID number" : needId.length + " members get their ID numbers") + " when you print. It’s theirs for good, and never reissued." });
   if (noDiv.length) checks.push({ tone: "warn", text: idsN(noDiv.length, "card") + " show no division, because it’s blank on the record." });
-  if (reprints.length) checks.push({ tone: "info", text: idsN(reprints.length, "reprint") + " will use the current design, and the old cards stop working at the gate once printed." });
+  if (reprints.length) {
+    const newQr = reprints.filter(c => ["lost", "never_received", "qr"].indexOf(c.rec.cause) >= 0).length;
+    checks.push({ tone: "info", text: idsN(reprints.length, "reprint") + " will use the current design. "
+      + (newQr ? idsN(newQr, "lost card") + " get" + (newQr === 1 ? "s" : "") + " a new QR, and the lost " + (newQr === 1 ? "card stops" : "cards stop") + " working at the gate. " : "")
+      + (reprints.length - newQr ? (newQr ? "The rest keep" : "They keep") + " the QR already on their card, so the old card still opens until it is handed back." : "") });
+  }
   if (blockedCount) checks.push({ tone: "info", text: idsN(blockedCount, "person", "people") + " are left out because they have no photo yet.", action: "See who", onAction: () => { setSrc("records"); setFilter("blocked"); } });
   if (!checks.some(c => c.tone === "warn" || c.tone === "bad") && cards.length) checks.push({ tone: "ok", text: "Ready to print. Everything on the sheet checks out." });
   const hasBad = checks.some(c => c.tone === "bad");
@@ -551,7 +557,10 @@ function IdCardStudioPage({ setPage }) {
       recItems.forEach(x => { const k = IDS_KIND_FOR_RUN[x.s.rec.kind]; (groups[k] = groups[k] || []).push(x); });
       for (const k of Object.keys(groups)) {
         const d = (data.designs || {})[k];
-        const res = await NGGApi.admin.registration.cardRun({ kind: k, subjectType: k, mode: proof ? "proof" : undefined, output, dpi: runDpi, sheet: IDS_PAPERS[G.paper][0],
+        /* One token per run: if the reply is lost and the log is sent again,
+           the server returns the same run instead of logging the cards twice. */
+        const token = (pj.token || (pj.token = "ids-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8))) + "-" + k;
+        const res = await NGGApi.admin.registration.cardRun({ kind: k, subjectType: k, token, mode: proof ? "proof" : undefined, output, dpi: runDpi, sheet: IDS_PAPERS[G.paper][0],
           templateId: d ? d.templateId : "",
           reason: IDS_REASON_LABEL[pj.reason] || "", items: groups[k].map(x => ({ subjectId: x.s.rec.id, displayId: x.s.rec.displayId })) });
         runs.push({ runId: res.runId, subjectType: k, items: groups[k] });
@@ -561,7 +570,7 @@ function IdCardStudioPage({ setPage }) {
         runs.push({ runId: res.runId, subjectType: "graphic", items: [] });
       }
       if (!proof && recItems.length) {
-        await NGGApi.admin.idStudio.printed(recItems.map(x => ({ subjectType: x.s.rec.subjectType, subjectId: x.s.rec.id })), runs[0] ? runs[0].runId : "").catch(() => {});
+        // Logging the run closed their reprint requests in the same step, on the server.
         const gone = new Set(recItems.map(x => x.s.rec.key));
         setDone(d => { const n = Object.assign({}, d); gone.forEach(k => { n[k] = true; }); return n; });
         setQueue(qq => qq.filter(x => !(x.t === "r" && gone.has(x.key))));
@@ -1157,11 +1166,14 @@ function IdCardStudioPage({ setPage }) {
       run: i.runId, design: (i.templateName || "Standard card") + (i.templateVersion ? " v" + i.templateVersion : ""), type: (i.reprint ? "Reprint" : "New issue") + (i.mode === "proof" ? " · proof" : ""), ok: i.ok !== false, reprint: !!i.reprint, output: i.output || "" }));
     const l = res.latest || {};
     const moved = !!(res.stale || l.stale || res.designMovedOn === true);
-    return { name: rec.name, displayId: rec.displayId, rows, moved, current: res.designMovedOn === false, unversioned: res.designMovedOn === null && rows.length > 0,
+    return { name: rec.name, displayId: rec.displayId, rows, moved, changed: res.changedSincePrint || [], current: res.designMovedOn === false, unversioned: res.designMovedOn === null && rows.length > 0,
       latestDesign: l.templateName ? l.templateName + (l.templateVersion ? " v" + l.templateVersion : "") : "", queueable: true, rec };
   };
-  const queueReprint = async d => {
-    try { await NGGApi.admin.idStudio.reprint([{ subjectType: d.rec.subjectType, subjectId: d.rec.id, why: "Design changed" }]); say(d.name + " is queued for a reprint"); load(); }
+  const queueReprint = async (d, cause) => {
+    const rs = IDS_REPRINT_REASONS.find(x => x[0] === cause);
+    const why = rs ? rs[1] : d.changed && d.changed.length ? idsStaleWhy(d.changed) : "Design changed";
+    try { await NGGApi.admin.idStudio.reprint([{ subjectType: d.rec.subjectType, subjectId: d.rec.id, cause: cause || (d.changed && d.changed.length ? d.changed[0] : "design"), why }]);
+      say(d.name + " is queued for a reprint" + (cause === "lost" || cause === "never_received" ? ". Their card gets a new QR when it prints" : "")); load(); }
     catch (_) { say("Couldn’t queue the reprint. Try again."); }
   };
 

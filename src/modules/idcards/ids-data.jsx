@@ -33,6 +33,11 @@ function idsRecord(kind, raw, state) {
   const key = subjectType + ":" + id;
   const issued = (state.issued || {})[key] || null;
   const re = (state.reprints || {})[key] || null;
+  /* The card in their hand no longer matches the record — the server compares
+     what was PRINTED (photo, name, ID, QR) with the record now. A newer design
+     alone is not a reason: a card in last year's design is still a good card. */
+  const staleAll = (state.stale || {})[key] || [];
+  const stale = staleAll.filter(x => x !== "design");
   const division = kind === "afrovanguard" ? (raw.avKind === "NGV" ? "NextGen Vanguard" : "Level " + (raw.level || "")) : kind === "member" ? ((raw.disciplines || []).length ? raw.disciplines.join(" · ") : raw.track) : kind === "summer" ? raw.track : (raw.faculty || raw.role);
   const displayId = kind === "member" && raw.displayIdMissing ? "" : String(raw.displayId || "");
   return {
@@ -43,7 +48,8 @@ function idsRecord(kind, raw, state) {
     hasPhoto: kind === "afrovanguard" ? !!raw.hasPhoto : !!raw.photoUrl,
     // A reprint is somebody already holding a card and asked for again; a
     // person with a card and no request is done, not queued.
-    reason: re ? "reprint" : "new", why: re ? re.why : "",
+    reason: re || stale.length ? "reprint" : "new", why: re ? re.why : stale.length ? idsStaleWhy(stale) : "",
+    cause: re ? (re.cause || "") : stale.length ? "changed" : "", stale, designOld: staleAll.indexOf("design") >= 0,
     printedBefore: !!issued, lastIssue: issued,
     divMissing: !String(division || "").trim(),
     // When they registered (participants, volunteers) or joined (members): what a run "by date" cuts on.
@@ -53,6 +59,13 @@ function idsRecord(kind, raw, state) {
     asked: (state.asked || {})[key] || null,      // { at, channels } of the last photo request
   };
 }
+
+/** "Card no longer matches: photo changed, name corrected". */
+const IDS_STALE_WORDS = { photo: "photo changed", name: "name corrected", id: "ID number changed", qr: "QR reissued, the old card no longer opens" };
+function idsStaleWhy(list) { return "Card no longer matches: " + list.map(x => IDS_STALE_WORDS[x] || x).join(", "); }
+/** Reprint reasons an operator picks; the server keeps them as codes (lost and never received get a new QR). */
+const IDS_REPRINT_REASONS = [["lost", "Lost", "Lost or stolen — gets a new QR, the old card stops working"], ["damaged", "Damaged", "Damaged or faded — same QR"],
+  ["never_received", "Never received", "Never reached them — gets a new QR"], ["name", "Details changed", "Name or details corrected"]];
 
 /** Load everything the studio shows. Each list is optional: a 403 means that desk is not this operator's. */
 async function idsLoad() {

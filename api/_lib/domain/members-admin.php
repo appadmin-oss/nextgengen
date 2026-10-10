@@ -343,6 +343,9 @@ function member_merge_policy(): array {
         'infractions'            => ['MOVE_UNIQUE', 'personId', "personType = 'member'"],
         'sanctions'              => ['BLOCK',       'personId', "personType = 'member'"], // fines carry amounts
         'card_issues'            => ['MOVE',        'subjectId', "subjectType = 'member'"],
+        // The retired record's open reprint request and photo asks follow the person.
+        'id_reprints'            => ['MOVE',        'subjectId', "subjectType = 'member'"],
+        'id_photo_asks'          => ['MOVE',        'subjectId', "subjectType = 'member'"],
         /* A printed ID's claim follows the person: the card from the retired
            record is still in a wallet, and it must resolve to the survivor
            rather than become free for the next mint to hand out again. */

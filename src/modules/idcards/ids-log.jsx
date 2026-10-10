@@ -136,6 +136,19 @@ function IdsLookup({ lookup, design, onQueue }) {
           <p className="ids-muted">{idsN(d.rows.length, "card")} issued · {d.rows.filter(r => r.reprint).length} of them replacements</p>
           {d.current && <IdsCheck tone="ok" text={"Their card is the current design" + (d.latestDesign ? ": " + d.latestDesign : "") + "."}/>}
           {d.unversioned && <IdsCheck tone="info" text="Their last card was the standard card, which carries no version, so whether it matches today’s can’t be told from the record."/>}
+          {d.changed && d.changed.length > 0 && (
+            <div className="ids-check is-warn">
+              <IdsIcon name="warning"/>
+              <span className="ids-grow">{"The card in their hand no longer matches their record: " + d.changed.map(x => IDS_STALE_WORDS[x] || x).join(", ") + "."}</span>
+              {d.queueable && <button type="button" className="ids-linkbtn" onClick={() => onQueue(d)}>Queue a reprint</button>}
+            </div>
+          )}
+          {d.queueable && (
+            <div className="ids-reasons" role="group" aria-label="Queue a reprint because the card was">
+              <span className="ids-muted">Queue a reprint:</span>
+              {IDS_REPRINT_REASONS.map(([k, l, help]) => <button key={k} type="button" className="ids-btn ids-btn--sm ids-btn--outline" title={help} onClick={() => onQueue(d, k)}>{l}</button>)}
+            </div>
+          )}
           {d.moved && (
             <div className="ids-check is-warn">
               <IdsIcon name="warning"/>

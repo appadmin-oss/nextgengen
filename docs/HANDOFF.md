@@ -867,3 +867,40 @@ be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
   (`src/modules/mentor/mt-portal.jsx`, `.mt-*`) for an NGG mentor record, the
   class roster otherwise or at `?view=class`.
 - Tests: 49 PHP checks (one per rule), `tests/mentorship.test.js` end to end.
+
+## Mentor Portal v14, the Summer School view, photos that replace, the ID card reprint audit
+
+- **Mentor Portal v14** (`src/modules/mentor/mp-*.jsx`, `.mp-*`, domain
+  `mentor-portal.php`) replaces the v5 pod portal (`mt-portal.jsx` is gone).
+  - Five roles from `auth/me().mentorRole`. Every flag and urgency is the server's.
+  - The URL is `/mentor/<screen>/<id>/<tab>`.
+  - Summer School mentors get the same shell (`mp-summer.jsx`); `?view=class`
+    keeps the class roster.
+  - Migrations 137–139.
+  - A mentor sees no child's record until their safeguarding check is
+    recorded. Admins can record the Academy as done in person
+    (`admin.ms.mentor.mark` `what=academy`). Staff are never sent through it.
+  - Nobody marks their own screening or Academy.
+- **Background jobs** (`mentor-automations.php`): 25 jobs at their own Lagos
+  times, from the web-cron tick (`mpa_tick`). Each reconciles its nudges, so a
+  re-run changes nothing. Admin controls live at `/api/admin/mentor-automations.php`.
+- **Safeguarding**: portal concerns go into `safeguarding_cases` (SG-
+  references), the officer's queue. Migration 139 removed the copies 138
+  made into `community_safeguarding`.
+- **A replaced photo replaces** (`photo_set_subject` / `photo_supersede`).
+  - The old file is deleted at once unless another live record uses it, or
+    it is the live version's source.
+  - Earlier pipeline versions are marked superseded and keep no image link.
+  - The audit trail quoting a URL no longer keeps a file alive.
+- **ID card reprints** (migration 140): each `card_issues` row snapshots the
+  photo, name, ID and QR it printed (`faceSig`).
+  - `admin.ids.state` returns `stale` per person: photo, name, id, qr or design.
+    Everything except design puts them back in the queue.
+  - Recording a run closes the reprint requests it satisfied, in one
+    transaction. A client `token` makes a replayed log idempotent.
+  - A reprint whose cause is `lost` or `never_received` gets a new secure QR,
+    once per request. A QR reissue queues a reprint.
+  - The mint claims IDs with `member_mint_and_claim` and a conditional write.
+  - Every print, reprint and mark op checks centre scope per row against the
+    record. Summer School staff can log participant runs.
+  - Proofs never make a real first card a "reprint".

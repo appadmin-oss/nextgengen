@@ -763,6 +763,9 @@ function admin_members_upsert(array $p): array {
         }
         $patch['updatedAt'] = now_iso();
         db_update('members', $patch, ['id' => $existing['id']]);
+        // A replaced photo replaces; the old file does not linger (photo_supersede).
+        if (array_key_exists('photoUrl', $patch) && function_exists('photo_supersede'))
+            photo_supersede('member', (string)$existing['memberId'], (string)($existing['photoUrl'] ?? ''), (string)$patch['photoUrl'], (string)$g['requester']['memberId']);
         // Newly promoted to a staff tier → send an invite/onboarding email.
         $wasStaff = is_admin_role((string)$existing['role']);
         if ($newRole !== null && !$wasStaff && in_array($newRole, staff_role_names(), true)) {

@@ -45,6 +45,44 @@ function ids_can(array $requester, string $subjectType): bool {
     return in_array($subjectType, IDS_SUBJECTS, true) && in_array(ids_cap_for($subjectType), member_effective_caps($requester), true);
 }
 
+/** Reprint causes, as codes. A lost card needs a NEW QR; a damaged one does not. */
+const IDS_CAUSES = ['lost', 'damaged', 'never_received', 'photo', 'name', 'design', 'qr', 'failed', 'asked', 'other'];
+const IDS_CAUSE_NEW_QR = ['lost', 'never_received'];
+/** The cause behind a free-text reason, when the caller did not give one. */
+function ids_cause_of(string $why, string $cause = ''): string {
+    if (in_array($cause, IDS_CAUSES, true)) return $cause;
+    $w = strtolower($why);
+    if (preg_match('/\b(lost|stolen|missing)\b/', $w)) return 'lost';
+    if (preg_match('/never (got|received|arrived)/', $w)) return 'never_received';
+    if (preg_match('/damag|broken|cracked|faded|print(ed)? (badly|properly)|didn.t print/', $w)) return 'damaged';
+    if (str_contains($w, 'photo')) return 'photo';
+    if (str_contains($w, 'name')) return 'name';
+    if (str_contains($w, 'design')) return 'design';
+    return 'asked';
+}
+
+/**
+ * The live rows behind a list of subjects of one type — centre for scope, and
+ * the fields a card prints — in one IN query per 500. id => row.
+ */
+function ids_subject_rows(string $type, array $ids): array {
+    $map = ['member' => ['members', 'memberId', 'fullName', 'displayId'], 'student' => ['summer_students', 'studentId', 'fullName', 'displayId'],
+            'volunteer' => ['volunteers', 'volunteerId', 'fullName', "''"]];
+    if (!isset($map[$type]) || !$ids) return [];
+    [$table, $key, $name, $did] = $map[$type];
+    $out = [];
+    foreach (array_chunk(array_values(array_unique(array_map('strval', $ids))), 500) as $chunk) {
+        $ph = implode(',', array_fill(0, count($chunk), '?'));
+        foreach (db_all("SELECT $key id, $name fullName, COALESCE(centre,'') centre, COALESCE(photoUrl,'') photoUrl, COALESCE($did,'') displayId, COALESCE(status,'') status FROM $table WHERE $key IN ($ph)", $chunk) as $r) $out[(string)$r['id']] = $r;
+    }
+    return $out;
+}
+/** One signature over what a card carries: the photo, the name, the printed ID. */
+function ids_face_sig(string $photoUrl, string $fullName, string $displayId): string {
+    $photo = function_exists('photo_store_relativise') ? photo_store_relativise($photoUrl) : $photoUrl;
+    return substr(sha1($photo . '|' . trim($fullName) . '|' . trim($displayId)), 0, 24);
+}
+
 /** The assigned design for a card type, with its published front (and paired back) — or null for the standard card. */
 function ids_design_for(string $kind): ?array {
     $d = db_row('SELECT * FROM id_designs WHERE kind = ? LIMIT 1', [$kind]);
@@ -82,7 +120,7 @@ function admin_ids_state(array $p): array {
     $ph = implode(',', array_fill(0, count($types), '?'));
 
     $issued = [];
-    $rows = db_all("SELECT i.subjectType, i.subjectId, i.displayId, i.runId, i.templateVersion, i.ok, i.at
+    $rows = db_all("SELECT i.subjectType, i.subjectId, i.displayId, i.runId, i.templateId, i.templateVersion, i.ok, i.at, i.photoUrl, i.fullName, i.secureCode, i.faceSig
                     FROM card_issues i
                     JOIN (SELECT ci.subjectType, ci.subjectId, MAX(ci.id) mid FROM card_issues ci
                           JOIN card_runs cr ON cr.runId = ci.runId
@@ -96,9 +134,10 @@ function admin_ids_state(array $p): array {
         ];
     }
     $reprints = [];
-    foreach (db_all("SELECT subjectType, subjectId, why, requestedAt FROM id_reprints WHERE doneAt = '' AND subjectType IN ($ph)", $types) as $r) {
-        $reprints[$r['subjectType'] . ':' . $r['subjectId']] = ['why' => (string)$r['why'], 'at' => (string)$r['requestedAt']];
+    foreach (db_all("SELECT subjectType, subjectId, why, cause, requestedAt FROM id_reprints WHERE doneAt = '' AND subjectType IN ($ph)", $types) as $r) {
+        $reprints[$r['subjectType'] . ':' . $r['subjectId']] = ['why' => (string)$r['why'], 'cause' => (string)($r['cause'] ?? ''), 'at' => (string)$r['requestedAt']];
     }
+    $stale = ids_stale($rows, $types);
     $asked = [];
     foreach (db_all("SELECT a.subjectType, a.subjectId, a.askedAt, a.channels FROM id_photo_asks a
                      JOIN (SELECT subjectType, subjectId, MAX(id) mid FROM id_photo_asks WHERE subjectType IN ($ph) GROUP BY subjectType, subjectId) last
@@ -111,8 +150,51 @@ function admin_ids_state(array $p): array {
         $choices[$t] = array_map(fn($r) => ['templateId' => (string)$r['templateId'], 'name' => (string)$r['name'], 'version' => (int)$r['version'], 'paired' => (string)($r['pairId'] ?? '') !== ''],
             db_all("SELECT templateId, name, version, pairId FROM card_templates WHERE kind = ? AND face IN ('single','front') AND publishedJson IS NOT NULL AND publishedJson != '' ORDER BY name LIMIT 100", [$t]));
     }
-    return ['ok' => true, 'issued' => (object)$issued, 'reprints' => (object)$reprints, 'asked' => (object)$asked,
+    return ['ok' => true, 'issued' => (object)$issued, 'reprints' => (object)$reprints, 'stale' => (object)$stale, 'asked' => (object)$asked,
             'designs' => (object)$designs, 'choices' => (object)$choices, 'types' => $types];
+}
+
+/**
+ * Does the card in somebody's hand still match their record?
+ *
+ * Compares each person's latest good issue with the live row, in one grouped
+ * read per subject type: the photo, the name, the printed ID, the QR (a member
+ * whose secure code was reissued holds a card that no longer opens), and the
+ * assigned design. "key" => ['photo','name',…]. A card printed before cards
+ * were snapshotted (migration 140) has nothing to compare photo or name with,
+ * so those are not claimed — "unknown" is not "changed".
+ */
+function ids_stale(array $issues, array $types): array {
+    $by = [];
+    foreach ($issues as $r) $by[(string)$r['subjectType']][(string)$r['subjectId']] = $r;
+    $out = [];
+    foreach ($types as $t) {
+        if (empty($by[$t])) continue;
+        $live = ids_subject_rows($t, array_keys($by[$t]));
+        $design = ids_design_for($t);
+        $codes = [];
+        if ($t === 'member') {
+            foreach (array_chunk(array_keys($by[$t]), 500) as $chunk) {
+                $ph = implode(',', array_fill(0, count($chunk), '?'));
+                foreach (db_all("SELECT memberId, code FROM member_cards WHERE kind = 'secure' AND status = 'active' AND memberId IN ($ph)", $chunk) as $c) $codes[(string)$c['memberId']] = (string)$c['code'];
+            }
+        }
+        foreach ($by[$t] as $id => $i) {
+            $l = $live[$id] ?? null;
+            if (!$l) continue;
+            $why = [];
+            // Snapshotted (faceSig set): even an empty photo was what printed, so a photo added since counts.
+            $snap = (string)($i['faceSig'] ?? '') !== '';
+            if ($snap && photo_store_relativise((string)$i['photoUrl']) !== photo_store_relativise((string)$l['photoUrl'])) $why[] = 'photo';
+            if ($snap && trim((string)$i['fullName']) !== trim((string)$l['fullName'])) $why[] = 'name';
+            if ((string)$i['displayId'] !== '' && (string)$l['displayId'] !== '' && (string)$i['displayId'] !== (string)$l['displayId']) $why[] = 'id';
+            if ($t === 'member' && (string)$i['secureCode'] !== '' && ($codes[$id] ?? '') !== '' && $codes[$id] !== (string)$i['secureCode']) $why[] = 'qr';
+            $dId = $design ? (string)$design['templateId'] : '';
+            if ($dId !== (string)$i['templateId'] || ($design && (int)$design['version'] > (int)$i['templateVersion'])) $why[] = 'design';
+            if ($why) $out[$t . ':' . $id] = $why;
+        }
+    }
+    return $out;
 }
 
 /**
@@ -151,7 +233,20 @@ function ids_items(array $g, $raw, bool $needWhy = false): array {
         if (!ids_can($g['requester'], $t)) { $refused[] = ['subjectId' => $id, 'error' => 'forbidden']; continue; }
         $why = trim(preg_replace('/\s+/', ' ', (string)($it['why'] ?? '')));
         if ($needWhy && $why === '') $why = 'Reprint';
-        $ok[$t . ':' . $id] = ['subjectType' => $t, 'subjectId' => $id, 'why' => mb_substr($why, 0, IDS_WHY_MAX)];
+        $ok[$t . ':' . $id] = ['subjectType' => $t, 'subjectId' => $id, 'why' => mb_substr($why, 0, IDS_WHY_MAX),
+                               'cause' => ids_cause_of($why, (string)($it['cause'] ?? ''))];
+    }
+    /* Scope is enforced on the way in, per row, against the RECORD — never the
+       list the client had on screen. A subject that does not exist is refused
+       too, or a stray id would sit in the queue (or close somebody else's). */
+    $byType = [];
+    foreach ($ok as $k => $it) $byType[$it['subjectType']][] = $it['subjectId'];
+    foreach ($byType as $t => $list) {
+        $rows = ids_subject_rows($t, $list);
+        foreach ($list as $id) {
+            if (!isset($rows[$id])) { $refused[] = ['subjectId' => $id, 'error' => 'not_found']; unset($ok[$t . ':' . $id]); continue; }
+            if (!admin_centre_allowed($g['requester'], (string)$rows[$id]['centre'])) { $refused[] = ['subjectId' => $id, 'error' => 'out_of_scope']; unset($ok[$t . ':' . $id]); }
+        }
     }
     return ['ok' => true, 'items' => array_values($ok), 'refused' => $refused];
 }
@@ -160,25 +255,49 @@ function ids_items(array $g, $raw, bool $needWhy = false): array {
 function admin_ids_reprint_request(array $p): array {
     $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
     $v = ids_items($g, $p['items'] ?? null, true); if (!$v['ok']) return $v;
-    $now = now_iso(); $by = (string)$g['requester']['memberId']; $added = 0; $updated = 0;
-    foreach ($v['items'] as $it) {
-        $open = db_row("SELECT id FROM id_reprints WHERE subjectType = ? AND subjectId = ? AND doneAt = '' LIMIT 1", [$it['subjectType'], $it['subjectId']]);
-        if ($open) { db_update('id_reprints', ['why' => $it['why'], 'requestedAt' => $now, 'requestedBy' => $by], ['id' => $open['id']]); $updated++; }
-        else { db_insert('id_reprints', ['subjectType' => $it['subjectType'], 'subjectId' => $it['subjectId'], 'why' => $it['why'], 'requestedBy' => $by, 'requestedAt' => $now, 'doneRunId' => '', 'doneAt' => '']); $added++; }
+    $r = ids_reprints_open($v['items'], (string)$g['requester']['memberId']);
+    audit('ids.reprint.request', (string)$g['requester']['memberId'], '', ['added' => $r['added'], 'updated' => $r['updated'], 'refused' => count($v['refused'])], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'added' => $r['added'], 'updated' => $r['updated'], 'refused' => $v['refused']];
+}
+/**
+ * Open (or refresh) reprint requests for validated items. An open request is
+ * updated, not doubled; the most recent reason wins, except that a LOST card
+ * stays lost — a later "damaged" must not quietly cancel its new QR.
+ */
+function ids_reprints_open(array $items, string $by): array {
+    $now = now_iso(); $added = 0; $updated = 0;
+    foreach ($items as $it) {
+        $cause = (string)($it['cause'] ?? ids_cause_of((string)($it['why'] ?? '')));
+        $open = db_row("SELECT id, cause FROM id_reprints WHERE subjectType = ? AND subjectId = ? AND doneAt = '' ORDER BY id LIMIT 1", [$it['subjectType'], $it['subjectId']]);
+        if ($open) {
+            if (in_array((string)$open['cause'], IDS_CAUSE_NEW_QR, true) && !in_array($cause, IDS_CAUSE_NEW_QR, true)) $cause = (string)$open['cause'];
+            db_update('id_reprints', ['why' => $it['why'], 'cause' => $cause, 'requestedAt' => $now, 'requestedBy' => $by], ['id' => $open['id']]); $updated++;
+            // A racing writer that doubled the request is folded back into one.
+            db_exec("DELETE FROM id_reprints WHERE subjectType = ? AND subjectId = ? AND doneAt = '' AND id <> ?", [$it['subjectType'], $it['subjectId'], (int)$open['id']]);
+        } else {
+            db_insert('id_reprints', ['subjectType' => $it['subjectType'], 'subjectId' => $it['subjectId'], 'why' => $it['why'], 'cause' => $cause, 'requestedBy' => $by, 'requestedAt' => $now, 'doneRunId' => '', 'doneAt' => '']); $added++;
+        }
     }
-    audit('ids.reprint.request', $by, '', ['added' => $added, 'updated' => $updated, 'refused' => count($v['refused'])], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'added' => $added, 'updated' => $updated, 'refused' => $v['refused']];
+    return ['added' => $added, 'updated' => $updated];
 }
 
 /** Close the open requests a print has satisfied. */
 function admin_ids_reprint_done(array $p): array {
     $g = admin_cap_gate_any($p, ['people', 'summer']); if (!$g['ok']) return $g;
     $v = ids_items($g, $p['items'] ?? null); if (!$v['ok']) return $v;
-    $runId = substr((string)($p['runId'] ?? ''), 0, 40); $now = now_iso(); $n = 0;
+    /* Normally a no-op now: recording a run closes the requests it satisfied,
+       in the same transaction (admin_card_run_record). Kept for older pages,
+       and held to the same rule — a request closes only against a real,
+       non-proof run that printed THAT person, never against any string. */
+    $runId = substr((string)($p['runId'] ?? ''), 0, 40); $now = now_iso(); $n = 0; $refused = $v['refused'];
+    $run = $runId !== '' ? db_row('SELECT runId, mode FROM card_runs WHERE runId = ? LIMIT 1', [$runId]) : null;
+    if (!$run || (string)$run['mode'] === 'proof') return ['ok' => false, 'error' => 'run_not_found'];
     foreach ($v['items'] as $it) {
+        if (!db_row('SELECT 1 FROM card_issues WHERE runId = ? AND subjectType = ? AND subjectId = ? AND ok = 1 LIMIT 1', [$runId, $it['subjectType'], $it['subjectId']])) { $refused[] = ['subjectId' => $it['subjectId'], 'error' => 'not_in_run']; continue; }
         $n += db_exec("UPDATE id_reprints SET doneAt = ?, doneRunId = ? WHERE subjectType = ? AND subjectId = ? AND doneAt = ''", [$now, $runId, $it['subjectType'], $it['subjectId']]);
     }
-    return ['ok' => true, 'closed' => $n, 'refused' => $v['refused']];
+    if ($n) audit('ids.reprint.done', (string)$g['requester']['memberId'], $runId, ['closed' => $n, 'refused' => count($refused)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'closed' => $n, 'refused' => $refused];
 }
 
 /**
@@ -192,18 +311,21 @@ function admin_ids_run_failed(array $p): array {
     $run = db_row('SELECT * FROM card_runs WHERE runId = ? LIMIT 1', [$runId]);
     if (!$run) return ['ok' => false, 'error' => 'not_found'];
     $v = ids_items($g, $p['items'] ?? null, true); if (!$v['ok']) return $v;
-    $marked = 0;
+    $marked = 0; $hit = []; $refused = $v['refused'];
     foreach ($v['items'] as $it) {
-        $marked += db_exec("UPDATE card_issues SET ok = 0, note = ? WHERE runId = ? AND subjectType = ? AND subjectId = ? AND ok = 1",
+        $n = db_exec("UPDATE card_issues SET ok = 0, note = ? WHERE runId = ? AND subjectType = ? AND subjectId = ? AND ok = 1",
             ['Didn’t print properly', $runId, $it['subjectType'], $it['subjectId']]);
+        // Only somebody actually in this run goes back in the queue for it.
+        if ($n) { $marked += $n; $hit[] = array_merge($it, ['why' => 'Didn’t print properly', 'cause' => 'failed']); }
+        else $refused[] = ['subjectId' => $it['subjectId'], 'error' => 'not_in_run'];
     }
     $failed = (int)(db_row('SELECT COUNT(*) c FROM card_issues WHERE runId = ? AND ok = 0', [$runId])['c'] ?? 0);
-    db_update('card_runs', ['failed' => $failed], ['runId' => $runId]);
-    // The reason is THIS one, whatever the caller sent: array_merge, because + keeps the left-hand key.
-    $items = array_map(fn($it) => array_merge($it, ['why' => 'Didn’t print properly']), $v['items']);
-    $re = admin_ids_reprint_request(['requesterId' => $p['requesterId'] ?? '', 'items' => $items, 'ip' => $p['ip'] ?? '']);
-    audit('ids.run.failed', (string)$g['requester']['memberId'], $runId, ['marked' => $marked, 'failed' => $failed], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'marked' => $marked, 'failed' => $failed, 'requeued' => (int)($re['added'] ?? 0) + (int)($re['updated'] ?? 0), 'refused' => $v['refused']];
+    $issued = (int)(db_row('SELECT COUNT(*) c FROM card_issues WHERE runId = ? AND ok = 1', [$runId])['c'] ?? 0);
+    db_update('card_runs', ['failed' => $failed, 'issued' => $issued], ['runId' => $runId]);
+    $re = $hit ? ids_reprints_open($hit, (string)$g['requester']['memberId']) : ['added' => 0, 'updated' => 0];
+    // One event for the run: the marks and the requeue together.
+    audit('ids.run.failed', (string)$g['requester']['memberId'], $runId, ['marked' => $marked, 'failed' => $failed, 'requeued' => $re['added'] + $re['updated']], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'marked' => $marked, 'failed' => $failed, 'requeued' => $re['added'] + $re['updated'], 'refused' => $refused];
 }
 
 
@@ -336,7 +458,7 @@ function admin_ids_mint(array $p): array {
     $ids = array_values(array_unique(array_filter(array_map(fn($x) => trim((string)$x), (array)($p['memberIds'] ?? [])))));
     if (!$ids) return ['ok' => false, 'error' => 'no_items'];
     if (count($ids) > IDS_BATCH_MAX) return ['ok' => false, 'error' => 'too_many', 'message' => 'At most ' . IDS_BATCH_MAX . ' at a time.'];
-    $issued = []; $refused = []; $reserved = []; $codes = [];
+    $issued = []; $refused = []; $reserved = []; $codes = []; $newQr = [];
     $codesOnly = !empty($p['codesOnly']);
     foreach ($ids as $id) {
         $m = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$id]);
@@ -347,16 +469,32 @@ function admin_ids_mint(array $p): array {
            (what /q/ opens in full). Issued here, at print, for this operator's
            own centres — not when somebody merely lists the roster. */
         if ((string)($m['status'] ?? 'active') === 'active' && function_exists('member_cards_ensure')) {
-            $c = member_cards_ensure($m, (string)$g['requester']['memberId'], 'print')['secure'];
+            /* A card reprinted because the old one was LOST gets a new QR: the
+               lost card must stop opening the member's page and the gate. Not
+               on a proof (codesOnly) — a proof is nobody's card. Every other
+               reprint keeps the code the member already carries. */
+            $lostReq = $codesOnly ? null : db_row("SELECT requestedAt FROM id_reprints WHERE subjectType = 'member' AND subjectId = ? AND doneAt = '' AND cause IN ('lost','never_received') ORDER BY id DESC LIMIT 1", [$id]);
+            // Once per request: a retried print reuses the code this request already issued.
+            $cur = $lostReq ? db_row("SELECT issuedAt FROM member_cards WHERE memberId = ? AND kind = 'secure' AND status = 'active' ORDER BY id DESC LIMIT 1", [$id]) : null;
+            $lost = $lostReq && (!$cur || (string)$cur['issuedAt'] < (string)$lostReq['requestedAt']);
+            $c = $lost && function_exists('member_card_issue') ? member_card_issue($id, (string)$g['requester']['memberId'], 'reprint-lost')
+                : member_cards_ensure($m, (string)$g['requester']['memberId'], 'print')['secure'];
             if ($c) $codes[$id] = $c;
+            if ($lost) $newQr[] = $id;
         }
         if ($codesOnly) continue;
         if ((string)($m['displayId'] ?? '') !== '') { $refused[] = ['memberId' => $id, 'error' => 'unchanged', 'displayId' => (string)$m['displayId']]; continue; }
-        $did = member_mint_display_id($m, $reserved);
+        /* Claimed, not just computed: two operators printing at once would
+           otherwise mint the same next serial for two members. The write is
+           conditional too, so a racing mint never replaces an ID already
+           rendered onto somebody's card. */
+        $did = member_mint_and_claim($m, $id, $reserved);
+        if ($did === '') { $refused[] = ['memberId' => $id, 'error' => 'mint_failed']; continue; }
         $reserved[] = $did;
-        db_update('members', ['displayId' => $did, 'updatedAt' => now_iso()], ['memberId' => $id]);
+        $won = db_exec("UPDATE members SET displayId = ?, updatedAt = ? WHERE memberId = ? AND COALESCE(displayId,'') = ''", [$did, now_iso(), $id]);
+        if (!$won) { $now = (string)(db_row('SELECT displayId FROM members WHERE memberId = ?', [$id])['displayId'] ?? ''); $refused[] = ['memberId' => $id, 'error' => 'unchanged', 'displayId' => $now]; continue; }
         $issued[$id] = $did;
     }
-    audit('ids.mint', (string)$g['requester']['memberId'], '', ['issued' => count($issued), 'refused' => count($refused), 'codes' => count($codes)], (string)($p['ip'] ?? ''));
-    return ['ok' => true, 'issued' => (object)$issued, 'refused' => $refused, 'codes' => (object)$codes];
+    audit('ids.mint', (string)$g['requester']['memberId'], '', ['issued' => count($issued), 'refused' => count($refused), 'codes' => count($codes), 'newQr' => count($newQr)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'issued' => (object)$issued, 'refused' => $refused, 'codes' => (object)$codes, 'newQr' => $newQr];
 }

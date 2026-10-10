@@ -3479,3 +3479,13 @@ INSERT INTO schema_version (version) VALUES (138) ON DUPLICATE KEY UPDATE versio
 ALTER TABLE mentors ADD COLUMN academyClearedAt VARCHAR(40) DEFAULT '';
 ALTER TABLE mentors ADD COLUMN academyClearedBy VARCHAR(64) DEFAULT '';
 INSERT INTO schema_version (version) VALUES (139) ON DUPLICATE KEY UPDATE version = version;
+
+-- 140: card snapshots, idempotent run logs, reprint causes.
+ALTER TABLE card_issues ADD COLUMN photoUrl VARCHAR(512) DEFAULT '';
+ALTER TABLE card_issues ADD COLUMN fullName VARCHAR(160) DEFAULT '';
+ALTER TABLE card_issues ADD COLUMN secureCode VARCHAR(64) DEFAULT '';
+ALTER TABLE card_issues ADD COLUMN faceSig VARCHAR(64) DEFAULT '';
+ALTER TABLE card_runs ADD COLUMN clientToken VARCHAR(64) DEFAULT '';
+CREATE INDEX idx_crun_token ON card_runs(clientToken);
+ALTER TABLE id_reprints ADD COLUMN cause VARCHAR(16) DEFAULT '';
+INSERT INTO schema_version (version) VALUES (140) ON DUPLICATE KEY UPDATE version = version;

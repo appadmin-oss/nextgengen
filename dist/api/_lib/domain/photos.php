@@ -1476,6 +1476,111 @@ function admin_photo_replace(array $p): array {
     return ['ok' => true, 'assetId' => $ing['assetId'], 'status' => $proc['status'] ?? 'captured', 'editedUrl' => $applied];
 }
 
+/** The store id inside one of our URLs ('' for a hosted or foreign URL). */
+function photo_store_id_of(string $url): string {
+    return preg_match('/p=([0-9a-f]{32}\.(?:jpg|png|webp))/', $url, $m) ? $m[1] : '';
+}
+
+/**
+ * Who, other than the audit trail and the pipeline's own history, still points
+ * at one stored image. One LIKE per table, for ONE id — the narrow form of
+ * photo_store_referenced(), because a replace must answer now, not tonight.
+ * Returns null when the answer is unknown, which a caller treats as "in use".
+ */
+function photo_store_live_refs(string $id, array $skip = ['audit_log', 'photo_assets']): ?array {
+    if (!preg_match('/^[0-9a-f]{32}\.(jpg|png|webp)$/', $id)) return null;
+    $columns = photo_store_ref_columns();
+    if (!$columns) return null;
+    $q = db_driver() === 'mysql' ? '`' : '"';
+    $byTable = [];
+    foreach ($columns as [$table, $col]) if (!in_array($table, $skip, true)) $byTable[$table][] = $col;
+    $refs = [];
+    foreach ($byTable as $table => $cols) {
+        $where = implode(' OR ', array_map(fn($c) => $q . $c . $q . ' LIKE ?', $cols));
+        try {
+            $n = (int)(db_row("SELECT COUNT(*) c FROM " . $q . $table . $q . " WHERE $where", array_fill(0, count($cols), '%' . $id . '%'))['c'] ?? 0);
+            if ($n > 0) $refs[$table] = $n;
+        } catch (Throwable $e) { return null; }
+    }
+    return $refs;
+}
+
+/**
+ * A replaced or edited photo REPLACES the old one — it does not sit beside it.
+ *
+ * Every path that changes a person's photoUrl calls this with the URL it just
+ * replaced. Before it existed, "replace" meant "add another": the store is
+ * content-addressed, so the new image was a new file, the old one stayed, and
+ * the sweep could never collect it because the audit trail (and the pipeline's
+ * earlier versions) quoted its URL. Three versions of a child's face could sit
+ * on disk indefinitely and an old one could reappear wherever a copy of the URL
+ * had been made.
+ *
+ *  1. The person's earlier pipeline versions are marked `superseded` and lose
+ *     their image links (the review decisions stay; the picture does not).
+ *  2. Records that carried a COPY of the same photo for the same person — their
+ *     mentor record — move to the new one, so nothing keeps showing the old face.
+ *  3. The old file is deleted from every directory it could be in, unless a
+ *     DIFFERENT live record still uses it (two people cannot share bytes by
+ *     accident, but a merge or an import can make it so) or the check cannot
+ *     run — then it is left for the sweep, never deleted on a guess.
+ *
+ * Hosted (Cloudinary) originals are not ours to delete; only the links go.
+ */
+function photo_supersede(string $subjectType, string $subjectId, string $oldUrl, string $newUrl, string $by = ''): array {
+    $old = trim($oldUrl); $new = trim($newUrl);
+    if ($old === '' || $subjectId === '' || photo_store_relativise($old) === photo_store_relativise($new)) return ['ok' => true, 'deleted' => false];
+    $oldId = photo_store_id_of($old); $newId = photo_store_id_of($new);
+    if ($oldId !== '' && $oldId === $newId) return ['ok' => true, 'deleted' => false];
+    $needle = $oldId !== '' ? '%' . $oldId . '%' : $old;
+    $op = $oldId !== '' ? 'LIKE' : '=';
+    // The version that produced the NEW image (its source is often the old
+    // file) is the live one: it is never superseded, and keeps its source.
+    $newNeedle = $newId !== '' ? '%' . $newId . '%' : '%' . $new . '%';
+    try {
+        db_exec("UPDATE photo_assets SET status = 'superseded', sourceUrl = CASE WHEN sourceUrl $op ? THEN '' ELSE sourceUrl END,
+                 editedUrl = CASE WHEN editedUrl $op ? THEN '' ELSE editedUrl END, updatedAt = ?
+                 WHERE subjectType = ? AND subjectId = ? AND (sourceUrl $op ? OR editedUrl $op ?)
+                   AND COALESCE(editedUrl, '') NOT LIKE ? AND COALESCE(sourceUrl, '') NOT LIKE ?",
+                [$needle, $needle, now_iso(), $subjectType, $subjectId, $needle, $needle, $newNeedle, $newNeedle]);
+    } catch (Throwable $e) {}
+    try {
+        $rel = photo_store_relativise($new);
+        if ($subjectType === 'member') db_exec('UPDATE mentors SET photoUrl = ?, updatedAt = ? WHERE memberId = ? AND photoUrl = ?', [$rel, now_iso(), $subjectId, $old]);
+        if ($subjectType === 'volunteer') db_exec('UPDATE mentors SET photoUrl = ?, updatedAt = ? WHERE volunteerId = ? AND photoUrl = ?', [$rel, now_iso(), $subjectId, $old]);
+    } catch (Throwable $e) {}
+    $deleted = false; $kept = '';
+    if ($oldId !== '') {
+        $refs = photo_store_live_refs($oldId);
+        // Still the SOURCE of the live version (the edit was made from it): it
+        // is part of the current photo, kept so an editor can re-crop from it.
+        if ($refs !== null && db_row("SELECT 1 FROM photo_assets WHERE status <> 'superseded' AND (sourceUrl LIKE ? OR editedUrl LIKE ?) LIMIT 1", ['%' . $oldId . '%', '%' . $oldId . '%'])) $refs['photo_assets'] = 1;
+        if ($refs === null) $kept = 'unknown';
+        elseif ($refs) $kept = implode(',', array_keys($refs));
+        else {
+            foreach (photo_store_dirs() as $dir) { $f = $dir . '/' . $oldId; if (is_file($f) && @unlink($f)) $deleted = true; }
+            try { db_exec('DELETE FROM photo_framing WHERE url LIKE ?', ['%' . $oldId . '%']); } catch (Throwable $e) {}
+        }
+    }
+    audit('photo.superseded', $by !== '' ? $by : null, $subjectType . ':' . $subjectId, ['deleted' => $deleted, 'keptFor' => $kept, 'hosted' => $oldId === ''], '');
+    return ['ok' => true, 'deleted' => $deleted, 'keptFor' => $kept];
+}
+
+/**
+ * The one way to set a person's photo. Reads what was there, writes the new
+ * URL, then supersedes the old one. Every writer goes through here so none of
+ * them can forget step 3 of photo_supersede().
+ */
+function photo_set_subject(string $subjectType, string $subjectId, string $url, string $by = ''): void {
+    $map = ['student' => ['summer_students', 'studentId'], 'volunteer' => ['volunteers', 'volunteerId'], 'member' => ['members', 'memberId']];
+    if (!isset($map[$subjectType]) || $subjectId === '') return;
+    [$table, $key] = $map[$subjectType];
+    $rel = photo_store_relativise($url);
+    $old = (string)(db_row("SELECT photoUrl FROM $table WHERE $key = ? LIMIT 1", [$subjectId])['photoUrl'] ?? '');
+    db_update($table, ['photoUrl' => $rel, 'updatedAt' => now_iso()], [$key => $subjectId]);
+    if ($old !== '' && $old !== $rel) photo_supersede($subjectType, $subjectId, $old, $rel, $by);
+}
+
 /** Push the approved (edited) image back onto the subject's record so the ID
  *  card + profile always render the approved photo. Best-effort. */
 function photo_apply_to_subject(array $a): void {
@@ -1484,12 +1589,10 @@ function photo_apply_to_subject(array $a): void {
     // Writing that into the row would bake today's hostname into every record.
     $url = photo_store_relativise((string)($a['editedUrl'] ?? '') ?: (string)($a['sourceUrl'] ?? ''));
     if ($url === '') return;
-    try {
-        if ($a['subjectType'] === 'student')        db_update('summer_students', ['photoUrl' => $url, 'updatedAt' => now_iso()], ['studentId' => $a['subjectId']]);
-        elseif ($a['subjectType'] === 'volunteer')  db_update('volunteers', ['photoUrl' => $url, 'updatedAt' => now_iso()], ['volunteerId' => $a['subjectId']]);
-        // Members too: an edited member photo never reached the record, so the card kept the old one.
-        elseif ($a['subjectType'] === 'member')     db_update('members', ['photoUrl' => $url, 'updatedAt' => now_iso()], ['memberId' => $a['subjectId']]);
-    } catch (Throwable $e) { /* subject may not exist yet in tests */ }
+    // Members too: an edited member photo never reached the record, so the card kept the old one.
+    // Through photo_set_subject, so the photo it replaces is superseded, not kept.
+    try { photo_set_subject((string)$a['subjectType'], (string)$a['subjectId'], $url, (string)($a['by'] ?? '')); }
+    catch (Throwable $e) { /* subject may not exist yet in tests */ }
 }
 
 /** Is a subject's current photo approved? (The issuance gate reads this.) */

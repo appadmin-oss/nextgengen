@@ -338,6 +338,12 @@ function admin_member_card_reissue(array $p): array {
     if (!empty($p['voidPrinted'])) {
         db_exec("UPDATE member_cards SET status = 'void', voidedAt = ? WHERE memberId = ? AND kind = 'printed' AND status = 'active'", [now_iso(), (string)$m['memberId']]);
     }
+    /* The card in their hand stopped opening the gate a moment ago. If they
+       hold a printed card, they need a new one: queue it, or the studio goes
+       on showing them as carded with a card that no longer works. */
+    if (function_exists('ids_reprints_open') && db_row("SELECT 1 FROM card_issues WHERE subjectType = 'member' AND subjectId = ? AND ok = 1 LIMIT 1", [(string)$m['memberId']])) {
+        ids_reprints_open([['subjectType' => 'member', 'subjectId' => (string)$m['memberId'], 'why' => 'New QR issued — the old card no longer opens the gate', 'cause' => 'qr']], (string)($g['requester']['memberId'] ?? ''));
+    }
     audit('member.card.reissue', (string)($g['requester']['memberId'] ?? ''), (string)$m['memberId'], ['voidPrinted' => !empty($p['voidPrinted'])], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'code' => $code, 'cards' => member_cards_of((string)$m['memberId'])];
 }
