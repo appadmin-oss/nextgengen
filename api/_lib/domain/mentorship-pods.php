@@ -335,7 +335,8 @@ function ms_live_match(string $memberId): ?array {
 function ms_goals_locked(string $memberId, ?string $today = null): bool {
     $m = db_row("SELECT startedAt FROM mentor_matches WHERE memberId = ? AND status IN ('active','paused') ORDER BY id DESC LIMIT 1", [$memberId]);
     if (!$m) return false;
-    return ms_phase_for((string)$m['startedAt'], $today ?? gmdate('Y-m-d')) === 'connect';
+    // No goal before week 3 of the match (mentor portal handoff); from then on they may be set.
+    return ms_week_of((string)$m['startedAt'], $today ?? gmdate('Y-m-d')) < 3;
 }
 
 /**
@@ -736,7 +737,7 @@ function ms_rules_run(?string $today = null): array {
         // R4 — a goal completed in the last week: suggest the next from the
         // Anchor 12 theme for this week of the match.
         $weeks = anchor_content()['weeks'] ?? [];
-        foreach (db_all("SELECT id, subjectId, goal, closedOn FROM mentor_goals WHERE status = 'done' AND closedOn >= ? AND subjectId IN ($ph)", array_merge([ms_add_days($today, -7)], $ids)) as $goal) {
+        foreach (db_all("SELECT id, subjectId, goal, closedOn FROM mentor_goals WHERE status = 'achieved' AND closedOn >= ? AND subjectId IN ($ph)", array_merge([ms_add_days($today, -7)], $ids)) as $goal) {
             foreach ($active as $x) if ($x['memberId'] === $goal['subjectId']) {
                 if (ms_rule_r4($x, $goal, $today, $weeks)) $fired['R4']++;
             }
@@ -1046,7 +1047,7 @@ function ms_impact(array $g, string $today): array {
     }
     $rel = db_row("SELECT AVG(c.avg) a, COUNT(*) n FROM mentor_relationship_checks c JOIN mentor_matches x ON x.matchId = c.matchId
                    WHERE c.respondent IN ('mentor','mentee') AND c.term = ?$cf", array_merge([ms_term($today)], $args));
-    $goals = db_row("SELECT SUM(CASE WHEN gl.status = 'done' AND (gl.dueOn = '' OR gl.closedOn <= gl.dueOn) THEN 1 ELSE 0 END) ok, COUNT(*) n
+    $goals = db_row("SELECT SUM(CASE WHEN gl.status = 'achieved' AND (gl.dueOn = '' OR gl.closedOn <= gl.dueOn) THEN 1 ELSE 0 END) ok, COUNT(*) n
                      FROM mentor_goals gl WHERE gl.dueOn <> '' AND gl.dueOn <= ?
                      AND EXISTS (SELECT 1 FROM mentor_matches x WHERE x.memberId = gl.subjectId AND x.startedAt <> ''$cf)", array_merge([$today], $args));
     $margs = []; $mcf = ms_centre_filter($g, 'centre', $margs);

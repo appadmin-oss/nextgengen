@@ -680,6 +680,33 @@
       /* Who nobody has reviewed this week — the question §18 exists to ask. */
       mentorReviewsDue: (opts) => request('/member/mentor.php' + qs(Object.assign({ view: 'due' }, opts || {}))),
       bulkAward: (subjectIds, opts) => request('/member/mentor.php', { body: Object.assign({ action: 'bulk', subjectIds }, opts || {}) }),
+      /* The Mentor Portal (design handoff v14). Reads are ?view=, writes are
+         an action; every one is gated by mentor_gate on the server. */
+      mentorView:    (view, opts) => request('/member/mentor.php' + qs(Object.assign({ view }, opts || {}))),
+      mentorAct:     (action, body) => request('/member/mentor.php', { body: Object.assign({ action }, body || {}) }),
+      mentorWeek:    (centre) => request('/member/mentor.php' + qs({ view: 'week', centre: centre || '' })),
+      mentorCaseload: (centre) => request('/member/mentor.php' + qs({ view: 'caseload', centre: centre || '' })),
+      mentorMentee:  (subjectId, centre) => request('/member/mentor.php' + qs({ view: 'mentee', subjectId, centre: centre || '' })),
+      mentorScorecard: (subjectId, month) => request('/member/mentor.php' + qs({ view: 'scorecard', subjectId, month: month || '' })),
+      mentorScorecardSave: (subjectId, month, scores) => request('/member/mentor.php', { body: { action: 'scorecard', subjectId, month, scores } }),
+      mentorIndex:   (centre, month) => request('/member/mentor.php' + qs({ view: 'index', centre: centre || '', month: month || '' })),
+      mentorGoalCheckin: (subjectId, goalId, progress, note) => request('/member/mentor.php', { body: { action: 'goalCheckin', subjectId, goalId, progress, note: note || '' } }),
+      mentorSession: (body) => request('/member/mentor.php', { body: Object.assign({ action: 'session' }, body || {}) }),
+      mentorSessionDelete: (id) => request('/member/mentor.php', { body: { action: 'sessionDelete', id } }),
+      mentorSessions: (centre) => request('/member/mentor.php' + qs({ view: 'sessions', centre: centre || '' })),
+      mentorRelCheck: (subjectId, answers) => request('/member/mentor.php', { body: { action: 'relCheck', subjectId, answers } }),
+      mentorRelFit:  (subjectId) => request('/member/mentor.php', { body: { action: 'relFit', subjectId } }),
+      mentorFamilySend: (subjectId, body, draftId) => request('/member/mentor.php', { body: { action: 'familySend', subjectId, body, draftId: draftId || 0 } }),
+      mentorConcern: (subjectId, category, body) => request('/member/mentor.php', { body: { action: 'concern', subjectId, category, body } }),
+      mentorCommitments: (month) => request('/member/mentor.php' + qs({ view: 'commitments', month: month || '' })),
+      mentorSupervisionPrep: (answers) => request('/member/mentor.php', { body: { action: 'supervisionPrep', answers } }),
+      mentorRetreatBook: (retreatId) => request('/member/mentor.php', { body: { action: 'retreatBook', retreatId } }),
+      mentorTeam:    (centre) => request('/member/mentor.php' + qs({ view: 'team', centre: centre || '' })),
+      mentorSupervisionBook: (mentorId) => request('/member/mentor.php', { body: { action: 'supervisionBook', mentorId } }),
+      mentorAcademy: () => request('/member/mentor.php' + qs({ view: 'academy' })),
+      mentorAcademyResult: (moduleId, answers) => request('/member/mentor.php', { body: { action: 'academyResult', moduleId, answers } }),
+      mentorSaturday: (date, centre) => request('/member/mentor.php' + qs({ view: 'saturday', date: date || '', centre: centre || '' })),
+      mentorMessages: () => request('/member/mentor.php' + qs({ view: 'messages' })),
       /* The teaching record. One endpoint, three views — an instructor's day
          is one screen that switches between the class, a child and the grid. */
       session:      (course, centre, date) => request('/member/teaching.php?view=session&course=' + encodeURIComponent(course || '') + '&centre=' + encodeURIComponent(centre || '') + '&date=' + encodeURIComponent(date || '')),
@@ -1099,6 +1126,19 @@
       pods: {
         read: (view, opts) => request('/admin/mentorship-pods.php' + qs(Object.assign({ view }, opts || {}))),
         act:  (action, body) => request('/admin/mentorship-pods.php', { body: Object.assign({ action }, body || {}) }),
+      },
+      /* Mentorship automations — the Mentor Portal's background jobs
+         (domain/mentor-automations.php). Global changes need an unscoped admin;
+         a centre-scoped one may switch an unlocked job off for their centres. */
+      mentorAutomations: {
+        list:   () => request('/admin/mentor-automations.php' + qs({ view: 'list' })),
+        update: (job, patch) => request('/admin/mentor-automations.php', { body: Object.assign({ action: 'update', job: job || '' }, patch || {}) }),
+        thresholds: (thresholds) => request('/admin/mentor-automations.php', { body: { action: 'update', thresholds } }),
+        log:    (opts) => request('/admin/mentor-automations.php' + qs(Object.assign({ view: 'log' }, opts || {}))),
+        run:    (job) => request('/admin/mentor-automations.php', { body: { action: 'run', job } }),
+        retreats: () => request('/admin/mentor-automations.php' + qs({ view: 'retreats' })),
+        retreatSave: (r) => request('/admin/mentor-automations.php', { body: Object.assign({ action: 'retreat' }, r || {}) }),
+        scorecardUnlock: (subjectId, month) => request('/admin/mentor-automations.php', { body: { action: 'unlock', subjectId, month } }),
       },
       // Safeguarding cases: the `safeguarding` capability only; every read is audited.
       safeguarding: {

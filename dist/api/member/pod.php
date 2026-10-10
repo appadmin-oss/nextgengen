@@ -8,14 +8,17 @@ $s = require_session();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 const POD_READS = ['today' => 'member.ms.today', 'case' => 'member.ms.case', 'academy' => 'member.ms.academy',
-                   'policy' => 'member.ms.policy', 'offer' => 'member.ms.offer'];
+                   'policy' => 'member.ms.policy', 'offer' => 'member.ms.offer', 'mine' => 'member.mentor.mine'];
 const POD_WRITES = ['observe' => 'member.ms.observe', 'onetoone' => 'member.ms.onetoone', 'taskDone' => 'member.ms.task.done',
                     'nudgeDone' => 'member.ms.nudge.done', 'relcheck' => 'member.ms.relcheck', 'relcheckMentee' => 'member.ms.relcheck.mentee',
                     'checkin' => 'member.ms.coord.checkin', 'concern' => 'member.ms.concern', 'academyCheck' => 'member.ms.academy.check',
-                    'policyAccept' => 'member.ms.policy.accept', 'choose' => 'member.ms.choose'];
+                    'policyAccept' => 'member.ms.policy.accept', 'choose' => 'member.ms.choose',
+                    // The member's own side of the Mentor Portal (domain/mentor-portal.php).
+                    'weekCheckin' => 'member.checkin.save', 'selfScore' => 'member.mentor.selfscore', 'relChild' => 'member.mentor.rel.child'];
 const POD_FIELDS = ['memberId', 'subjectId', 'subjectName', 'ratings', 'indicator', 'level', 'evidence', 'strength', 'growth', 'nextChallenge',
                     'discussed', 'agreed', 'minutes', 'where', 'seemed', 'metOn', 'concern', 'id', 'note', 'answers', 'feeling', 'wins', 'hard',
-                    'needSupport', 'category', 'body', 'moduleId', 'signedName', 'version', 'matchId', 'mentorId'];
+                    'needSupport', 'category', 'body', 'moduleId', 'signedName', 'version', 'matchId', 'mentorId',
+                    'wellbeing', 'sleep', 'stress', 'energy', 'scores'];
 
 if ($method === 'GET') {
     $op = POD_READS[(string)($_GET['view'] ?? 'today')] ?? null;

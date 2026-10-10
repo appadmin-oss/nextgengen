@@ -466,6 +466,8 @@ function auth_me(array $p): array {
          * the mentors table", which hid the portal from the admins and
          * instructors who also belong there. */
         $pm['portal'] = mentor_portal_role((string)$member['memberId']);
+        // Which Mentor Portal they get: pod | peer | instructor | lead | coord.
+        $pm['mentorRole'] = $pm['portal'] !== '' && function_exists('mp_role_for') ? mp_role_for((string)$member['memberId']) : '';
         return ['ok' => true, 'member' => $pm];
     }
     // Summer-student session (signed in with an ID card) — a minimal member

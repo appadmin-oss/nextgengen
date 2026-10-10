@@ -19916,50 +19916,59 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     /* ── Goals ──────────────────────────────────────────────────────────── */
 
-    chk('a goal with no words is not a goal',
-        backend_dispatch('member.mentor.goal.save', ['requesterId' => 'NGG-MENT-1',
-            'subjectId' => 'NGG-KID-1', 'goal' => '   '])['error'] === 'empty');
-    $g1 = backend_dispatch('member.mentor.goal.save', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
-        'goal' => 'Present her project to the whole centre.', 'dueOn' => gmdate('Y-m-d', time() + 30 * 86400)]);
-    $g2 = backend_dispatch('member.mentor.goal.save', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
-        'goal' => 'Read one book a fortnight.', 'dueOn' => '2020-01-01']);   // long past
-    chk('a goal is set with a date', !empty($g1['ok']) && !empty($g2['ok']));
-
+    $G = static fn(array $x) => backend_dispatch('member.mentor.goal.save', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1'] + $x);
+    $GS = static fn(int $id, string $st) => backend_dispatch('member.mentor.goal.status', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1', 'id' => $id, 'status' => $st]);
+    // A goal starts as a Draft, written with the mentee (WOOP). It may be empty to begin with.
+    $g0 = $G([]);
+    chk('a new goal is a Draft, and a goal with no words cannot go live', ($g0['status'] ?? '') === 'draft'
+        && ($GS((int)$g0['id'], 'active')['error'] ?? '') === 'no_wish');
+    db_exec('DELETE FROM mentor_goals WHERE id = ?', [(int)$g0['id']]);
+    $g1 = $G(['goal' => 'Present her project to the whole centre.', 'reviewBy' => gmdate('Y-m-d', time() + 30 * 86400), 'area' => 'Leadership',
+              'outcome' => 'She speaks for five minutes without notes.', 'obstacle' => 'She freezes when people look at her.', 'plan' => 'If I freeze, then I look at my first slide and breathe.']);
+    $g2 = $G(['goal' => 'Read one book a fortnight.', 'reviewBy' => '2020-01-01']);   // long past
+    chk('a goal is set with a review date', !empty($g1['ok']) && !empty($g2['ok']));
+    chk('a goal goes live only once the mentee has agreed it', ($GS((int)$g2['id'], 'active')['error'] ?? '') === 'not_agreed');
+    $G(['id' => (int)$g2['id'], 'agreed' => true]);
+    $GS((int)$g2['id'], 'active');
     $c = backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1']);
     $byId = [];
     foreach ($c['goals'] as $gl) $byId[$gl['id']] = $gl;
-    chk('a goal past its date is flagged overdue, and one ahead of it is not',
-        $byId[(int)$g2['id']]['overdue'] === true && $byId[(int)$g1['id']]['overdue'] === false);
+    chk('a live goal past its review date is flagged overdue, and a draft is not', $byId[(int)$g2['id']]['overdue'] === true && $byId[(int)$g1['id']]['overdue'] === false
+        && $byId[(int)$g1['id']]['area'] === 'Leadership' && str_starts_with($byId[(int)$g1['id']]['plan'], 'If I freeze'));
 
-    chk('a goal can only take a status that means something',
-        backend_dispatch('member.mentor.goal.status', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
-            'id' => (int)$g1['id'], 'status' => 'brilliant'])['error'] === 'bad_status');
-    /* 'dropped' exists on purpose: without it the only way to clear a goal that
-       stopped being the right goal is to mark it done, and a record where
+    chk('a goal can only take a status that means something', ($GS((int)$g1['id'], 'brilliant')['error'] ?? '') === 'bad_status');
+    $G(['id' => (int)$g1['id'], 'agreed' => true]);
+    $r = $GS((int)$g1['id'], 'active');
+    chk('one active goal per mentee: making a second active pauses the first, and says which', ($r['pausedGoalId'] ?? 0) === (int)$g2['id']
+        && (string)db_row('SELECT status FROM mentor_goals WHERE id = ?', [(int)$g2['id']])['status'] === 'paused');
+    /* Paused exists on purpose: without it the only way to clear a goal that
+       stopped being the right goal is to mark it achieved, and a record where
        everything is always achieved is a record nobody believes. */
-    backend_dispatch('member.mentor.goal.status', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
-        'id' => (int)$g2['id'], 'status' => 'dropped']);
-    chk('a goal that stopped being the right goal can be dropped, not faked as done',
-        (string)db_row('SELECT status FROM mentor_goals WHERE id = ?', [(int)$g2['id']])['status'] === 'dropped');
-    chk('…and closing one stamps the day it closed',
-        (string)db_row('SELECT closedOn FROM mentor_goals WHERE id = ?', [(int)$g2['id']])['closedOn'] === gmdate('Y-m-d'));
-    backend_dispatch('member.mentor.goal.status', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
-        'id' => (int)$g2['id'], 'status' => 'open']);
+    chk('older screens still work: dropped means paused, open means active, done means achieved',
+        ($GS((int)$g2['id'], 'dropped')['status'] ?? '') === 'paused');
+    $ci = backend_dispatch('member.mentor.goal.checkin', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1', 'goalId' => (int)$g1['id'], 'progress' => 3, 'note' => 'Practised twice']);
+    chk('a check-in is recorded on the goal', !empty($ci['ok']) && $ci['status'] === 'active');
+    chk('a check-in out of range is refused', (backend_dispatch('member.mentor.goal.checkin', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1', 'goalId' => (int)$g1['id'], 'progress' => 9])['error'] ?? '') === 'bad_progress');
+    $ci = backend_dispatch('member.mentor.goal.checkin', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1', 'goalId' => (int)$g1['id'], 'progress' => 5, 'note' => 'Did it']);
+    chk('a check-in of 5 on an active goal marks it achieved, and stamps the day', ($ci['status'] ?? '') === 'achieved'
+        && (string)db_row('SELECT closedOn FROM mentor_goals WHERE id = ?', [(int)$g1['id']])['closedOn'] === gmdate('Y-m-d'));
+    $GS((int)$g1['id'], 'paused');
     chk('reopening a goal clears the closing date rather than leaving a lie behind',
-        (string)db_row('SELECT closedOn FROM mentor_goals WHERE id = ?', [(int)$g2['id']])['closedOn'] === '');
+        (string)db_row('SELECT closedOn FROM mentor_goals WHERE id = ?', [(int)$g1['id']])['closedOn'] === '');
+    chk('a stalled goal: active with no movement across the last three check-ins', (function () {
+        $g = ['status' => 'active', 'createdAt' => gmdate('Y-m-d'), 'updatedAt' => gmdate('Y-m-d'),
+              'checks' => [['at' => gmdate('Y-m-d', time() - 9 * 86400), 'progress' => 3], ['at' => gmdate('Y-m-d', time() - 4 * 86400), 'progress' => 3], ['at' => gmdate('Y-m-d'), 'progress' => 2]]];
+        $old = ['status' => 'active', 'createdAt' => '2020-01-01', 'updatedAt' => '2020-01-01', 'checks' => [['at' => gmdate('Y-m-d', time() - 30 * 86400), 'progress' => 2]]];
+        $fresh = ['status' => 'active', 'createdAt' => gmdate('Y-m-d'), 'updatedAt' => gmdate('Y-m-d'), 'checks' => [['at' => gmdate('Y-m-d'), 'progress' => 2], ['at' => gmdate('Y-m-d'), 'progress' => 3], ['at' => gmdate('Y-m-d'), 'progress' => 4]]];
+        return mentor_goal_stalled($g, gmdate('Y-m-d')) && mentor_goal_stalled($old, gmdate('Y-m-d')) && !mentor_goal_stalled($fresh, gmdate('Y-m-d'));
+    })());
 
-    chk('open goals sort ahead of closed ones',
-        // `use ($g1)` matters: a closure does not inherit scope in PHP, and
-        // without it this marked goal id 0 as done and then asserted that the
-        // still-untouched first goal was open — passing for the wrong reason.
-        (function () use ($g1) {
-            backend_dispatch('member.mentor.goal.status', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1',
-                'id' => (int)$g1['id'], 'status' => 'done']);
-            $c = backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1']);
-            return count($c['goals']) === 2
-                && $c['goals'][0]['status'] === 'open'
-                && $c['goals'][1]['status'] === 'done';
-        })());
+    chk('active goals sort ahead of closed ones', (function () use ($g1, $g2, $GS) {
+        $GS((int)$g1['id'], 'active'); $GS((int)$g1['id'], 'achieved');
+        $GS((int)$g2['id'], 'active');   // past its review date: the lead's queue below finds it
+        $c = backend_dispatch('member.mentor.child', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1']);
+        return count($c['goals']) === 2 && $c['goals'][0]['status'] === 'active' && $c['goals'][1]['status'] === 'achieved';
+    })());
 
     /* ── What needs attention ───────────────────────────────────────────── */
 
@@ -25390,7 +25399,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     // R3 — K4 reviewed "worse" two weeks running.
     foreach (['2026-W40', '2026-W39'] as $per) db_insert('mentor_reviews', ['subjectId' => 'NGG-POD-K4', 'period' => $per, 'answers' => '{}', 'answered' => 1, 'trend' => 'worse', 'mentorId' => 'NGG-PODM-1', 'centre' => 'Podville', 'createdAt' => $now, 'updatedAt' => $now]);
     // R4 — K1's goal was completed yesterday.
-    db_exec("UPDATE mentor_goals SET status = 'done', closedOn = '2026-10-09' WHERE subjectId = 'NGG-POD-K1'");
+    db_exec("UPDATE mentor_goals SET status = 'achieved', closedOn = '2026-10-09' WHERE subjectId = 'NGG-POD-K1'");
     // R7 — K5's mentee-side relationship check is low.
     $x5 = db_row("SELECT * FROM mentor_matches WHERE memberId = 'NGG-POD-K5'");
     ms_relcheck_write($x5, 'mentee', ['q1' => 2, 'q2' => 2, 'q3' => 3, 'q4' => 2], 'NGG-POD-K5', $T);
@@ -25560,6 +25569,217 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     unset($GLOBALS['__gas_mock']);
     if ($sink !== null) $GLOBALS['__mail_sink'] = $sink;
     $GLOBALS['CONFIG']['mail'] = $keep;
+})();
+
+/* ── The Mentor Portal: roles, Due now, the Index, Saturday, concerns, jobs ── */
+(function () {
+    $SU = 'NGG-2025-0099';
+    $T = '2026-10-10';                       // a Saturday
+    $now = now_iso();
+    $mk = static function (string $id, string $name, array $x = []) use ($now) {
+        db_insert('members', $x + ['memberId' => $id, 'fullName' => $name, 'email' => strtolower(str_replace(' ', '', $name)) . '@mp.example', 'type' => 'NGG',
+            'status' => 'active', 'role' => 'member', 'centre' => 'Portalville', 'track' => 'tech', 'joinDate' => '2026-01-05', 'dob' => '2012-03-01',
+            'parentName' => 'Mrs Guardian', 'parentPhone' => '+2348031234567', 'createdAt' => $now, 'updatedAt' => $now]);
+    };
+    $mentor = static function (string $mid, string $memberId, string $name, array $x = []) use ($mk, $now) {
+        $mk($memberId, $name, ['dob' => $x['dob'] ?? '1990-01-01']);
+        db_insert('mentors', ['mentorId' => $mid, 'fullName' => $name, 'email' => strtolower(str_replace(' ', '', $name)) . '@mp.example', 'status' => 'active',
+            'centre' => 'Portalville', 'programme' => 'ngg', 'memberId' => $memberId, 'checkedAt' => $now, 'maxMentees' => 8, 'joinedAt' => '2025-01-01',
+            'rank' => $x['rank'] ?? 'mentor', 'kind' => $x['kind'] ?? '', 'leadId' => $x['leadId'] ?? '', 'createdAt' => $now]);
+    };
+    $mentor('MEN-MPL', 'NGG-MPL', 'Lara Lead', ['rank' => 'lead']);
+    $mentor('MEN-MP1', 'NGG-MP1', 'Tunde Pod', ['leadId' => 'MEN-MPL']);
+    $mentor('MEN-MPP', 'NGG-MPP', 'Pelumi Peer', ['dob' => '2009-05-05', 'leadId' => 'MEN-MPL']);
+    foreach (range(1, 6) as $i) $mk("NGG-MPK$i", "Kid$i Portal");
+    foreach (range(1, 5) as $i) db_insert('mentor_assignments', ['memberId' => "NGG-MPK$i", 'mentorId' => 'MEN-MP1', 'status' => 'active', 'startedAt' => '2026-07-01']);
+    db_insert('mentor_assignments', ['memberId' => 'NGG-MPK6', 'mentorId' => 'MEN-MPP', 'status' => 'active', 'startedAt' => '2026-07-01']);
+    $p = static fn(string $who, array $x = []) => ['requesterId' => $who, 'today' => $T, 'ip' => '127.0.0.1'] + $x;
+
+    // Roles.
+    chk('portal: roles — a lead, a pod mentor, a peer mentor under 20, staff as coordinator',
+        mp_role_for('NGG-MPL') === 'lead' && mp_role_for('NGG-MP1') === 'pod' && mp_role_for('NGG-MPP') === 'peer' && mp_role_for($SU) === 'coord');
+    chk('portal: auth/me carries the mentor role', (auth_me(['mid' => 'NGG-MP1', 'kind' => 'member'])['member']['mentorRole'] ?? null) === 'pod'
+        || (backend_dispatch('auth.me', ['mid' => 'NGG-MP1'])['member']['mentorRole'] ?? 'pod') === 'pod');
+    $cl = backend_dispatch('member.mentor.caseload', $p('NGG-MP1'));
+    chk('portal: the caseload is the mentor\'s own five, with phase and masked guardian phone', !empty($cl['ok']) && count($cl['mentees']) === 5
+        && $cl['mentees'][0]['guardianPhoneMasked'] === '2348 ••• 567' && !isset($cl['mentees'][0]['guardianPhone']));
+    $lead = backend_dispatch('member.mentor.caseload', $p('NGG-MPL'));
+    chk('portal: a lead sees the children of the mentors they lead', count($lead['mentees']) === 6);
+    chk('portal: a child outside the caseload is refused', (backend_dispatch('member.mentor.mentee', $p('NGG-MP1', ['subjectId' => 'NGG-MPK6']))['error'] ?? '') === 'not_in_caseload');
+
+    // Flags and urgency: K1 struggling, K2 seen this week.
+    db_insert('member_checkins', ['memberId' => 'NGG-MPK1', 'week' => '2026-W41', 'wellbeing' => 'Struggling', 'note' => 'Exams', 'createdAt' => '2026-10-08T10:00:00Z']);
+    $r = backend_dispatch('member.mentor.session.save', $p('NGG-MP1', ['type' => 'One-to-one', 'subjectId' => 'NGG-MPK2', 'date' => '2026-10-09', 'minutes' => 20, 'what' => 'Talked about school.', 'next' => 'Bring the maths homework']));
+    chk('portal: a one-to-one logs with its length', !empty($r['ok']) && (int)db_row('SELECT minutes FROM mentor_meetings WHERE id = ?', [$r['ids'][0]])['minutes'] === 20);
+    chk('portal: a next step becomes a Saturday follow-up', (bool)db_row("SELECT 1 FROM mentor_nudges WHERE rule = 'J:sessionFollowUp' AND memberId = 'NGG-MPK2' AND status = 'open'"));
+    chk('portal: a session must say what happened, and cannot be in the future',
+        (backend_dispatch('member.mentor.session.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK2', 'what' => 'ok']))['error'] ?? '') === 'say_what_happened'
+        && (backend_dispatch('member.mentor.session.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK2', 'what' => 'Talked a lot', 'date' => '2026-12-01']))['error'] ?? '') === 'bad_date');
+    $cl = backend_dispatch('member.mentor.caseload', $p('NGG-MP1'));
+    $by = array_column($cl['mentees'], null, 'id');
+    chk('portal: a struggling child sorts first, with the Struggling pill', $cl['mentees'][0]['id'] === 'NGG-MPK1' && $cl['mentees'][0]['pills'][0]['label'] === 'Struggling');
+    chk('portal: a one-to-one clears the contact flag; the others are overdue', $by['NGG-MPK2']['flags']['contact'] === false && $by['NGG-MPK3']['flags']['contact'] === true);
+    $wk = backend_dispatch('member.mentor.week', $p('NGG-MP1'));
+    $keys = array_column($wk['due'], 'key');
+    chk('portal: Due now leads with the struggling child, then overdue one-to-ones', ($keys[0] ?? '') === 'well:NGG-MPK1' && in_array('contact', $keys, true));
+    chk('portal: Due now carries the job rows that add something (the follow-up)', (bool)array_filter($wk['due'], static fn($d) => str_starts_with($d['key'], 'job:') && str_contains($d['title'], 'Follow up with Kid2')));
+    chk('portal: the week lists this week\'s commitments', count($wk['week']) >= 3 && $wk['week'][0]['label'] === 'STS meeting');
+    chk('portal: a peer mentor cannot log a family session or message a family',
+        (backend_dispatch('member.mentor.session.save', $p('NGG-MPP', ['type' => 'Family', 'subjectId' => 'NGG-MPK6', 'what' => 'Spoke to mum']))['error'] ?? '') === 'peer_no_family'
+        && (backend_dispatch('member.mentor.family.send', $p('NGG-MPP', ['subjectId' => 'NGG-MPK6', 'body' => 'Hello']))['error'] ?? '') === 'peer_no_family');
+    $peer = backend_dispatch('member.mentor.session.save', $p('NGG-MPP', ['subjectId' => 'NGG-MPK6', 'what' => 'Played chess and talked about exams.']));
+    chk('portal: a peer mentor\'s notes are shared with their lead', !empty($peer['ok']) && (int)db_row('SELECT sharedWithLead FROM mentor_meetings WHERE id = ?', [$peer['ids'][0]])['sharedWithLead'] === 1
+        && (bool)db_row("SELECT 1 FROM mentor_messages WHERE kind = 'Peer session note' AND toId = 'NGG-MPL'"));
+
+    // Goals + session check-in in one request.
+    $g = backend_dispatch('member.mentor.goal.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK3', 'goal' => 'Speak up in class', 'outcome' => 'Teacher notices', 'obstacle' => 'Nerves', 'plan' => 'If nervous, then breathe', 'agreed' => true]));
+    backend_dispatch('member.mentor.goal.status', $p('NGG-MP1', ['subjectId' => 'NGG-MPK3', 'id' => $g['id'], 'status' => 'active']));
+    $s = backend_dispatch('member.mentor.session.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK3', 'what' => 'Practised a question to ask', 'goalId' => $g['id'], 'progress' => 3]));
+    chk('portal: logging a session can check in on the goal discussed', !empty($s['ok']) && ($s['goal']['progress'] ?? 0) === 3
+        && (int)db_row('SELECT sessionId FROM mentor_goal_checkins WHERE goalId = ?', [$g['id']])['sessionId'] === $s['ids'][0]);
+
+    // Scorecard and the Index.
+    $sc = [5, 6, 4, 7, 5, 6, 5, 8, 6, 3];
+    chk('portal: a scorecard needs ten whole scores 0–10', (backend_dispatch('member.mentor.scorecard.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'month' => '2026-10', 'scores' => [1, 2]]))['error'] ?? '') === 'ten_scores'
+        && (backend_dispatch('member.mentor.scorecard.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'month' => '2026-10', 'scores' => array_fill(0, 10, 11)]))['error'] ?? '') === 'bad_score');
+    $sv = backend_dispatch('member.mentor.scorecard.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'month' => '2026-10', 'scores' => $sc]));
+    chk('portal: a scorecard saves with its total', !empty($sv['ok']) && $sv['total'] === 55);
+    chk('portal: a month whose lock day has passed is refused', (backend_dispatch('member.mentor.scorecard.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'month' => '2026-01', 'scores' => $sc]))['error'] ?? '') === 'locked');
+    chk('portal: an admin can unlock a past month for one child', !empty(backend_dispatch('admin.mentor.scorecard.unlock', ['requesterId' => $SU, 'subjectId' => 'NGG-MPK1', 'month' => '2026-01'])['ok'])
+        && !empty(backend_dispatch('member.mentor.scorecard.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'month' => '2026-01', 'scores' => $sc]))['ok']));
+    db_insert('mentor_scorecards', ['subjectId' => 'NGG-MPK1', 'month' => '2026-09', 'scores' => '4,5,4,6,5,5,4,7,5,3', 'total' => 48, 'byKind' => 'mentor', 'mentorId' => 'MEN-MP1', 'centre' => 'Portalville', 'locked' => 1, 'createdAt' => $now, 'updatedAt' => $now]);
+    $ix = backend_dispatch('member.mentor.index', $p('NGG-MP1', ['month' => '2026-10']));
+    $acc = array_values(array_filter($ix['skills'], static fn($x) => $x['skill'] === 'Accountability'))[0];
+    chk('portal: the Index averages each skill and its change from last month', $acc['avg'] === 8.0 && $acc['change'] === 1.0 && $ix['scored'] === 1 && $ix['of'] === 5
+        && $ix['byMentee'][0]['lowSkill'] === 'Multiplication' && $ix['byMentee'][0]['prevTotal'] === 48);
+
+    // Relationship check: the mentor's side, then the child's; only the coordinator reads the child's answers.
+    chk('portal: the relationship check needs all four answers 1–5', (backend_dispatch('member.mentor.rel.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK4', 'answers' => [5, 5, 5]]))['error'] ?? '') === 'answer_all_four');
+    backend_dispatch('member.mentor.rel.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK4', 'answers' => [5, 5, 4, 5]]));
+    backend_dispatch('member.mentor.rel.child', ['requesterId' => 'NGG-MPK4', 'answers' => [2, 3, 2, 3]]);
+    $m4 = backend_dispatch('member.mentor.mentee', $p('NGG-MP1', ['subjectId' => 'NGG-MPK4']));
+    chk('portal: a gap of two between the sides flags the relationship; the mentor sees the child\'s score, not their answers',
+        $m4['mentee']['flags']['rel'] === true && $m4['rel']['child']['score'] === 3 && $m4['rel']['child']['answers'] === null);
+    chk('portal: fit goes to the lead, nothing changes', !empty(backend_dispatch('member.mentor.rel.fit', $p('NGG-MP1', ['subjectId' => 'NGG-MPK4']))['ok'])
+        && (bool)db_row("SELECT 1 FROM mentor_nudges WHERE rule = 'R7' AND memberId = 'NGG-MPK4' AND audience = 'lead'")
+        && (bool)db_row("SELECT 1 FROM mentor_assignments WHERE memberId = 'NGG-MPK4' AND status = 'active'"));
+
+    // Family update: quiet hours hold it; inside hours it goes, and is logged as a family contact.
+    chk('portal: quiet hours are 8pm–8am Lagos', mp_in_quiet_hours(strtotime('2026-10-10T20:30:00Z')) && !mp_in_quiet_hours(strtotime('2026-10-10T10:00:00Z'))
+        && mp_next_send_time(strtotime('2026-10-10T21:00:00Z')) === '2026-10-11T07:00:00Z');
+    $GLOBALS['__mp_sms_sink'] = [];
+    $fs = backend_dispatch('member.mentor.family.send', $p('NGG-MP1', ['subjectId' => 'NGG-MPK5', 'body' => 'Kid5 led the huddle today.']));
+    chk('portal: a family update is sent (or held until morning) and logged as a family contact', !empty($fs['ok'])
+        && ($fs['queued'] ? (bool)db_row("SELECT 1 FROM mentor_messages WHERE status = 'queued' AND subjectId = 'NGG-MPK5'") : count($GLOBALS['__mp_sms_sink']) === 1)
+        && (bool)db_row("SELECT 1 FROM mentor_meetings WHERE subjectId = 'NGG-MPK5' AND kind = 'family'"));
+    db_exec("UPDATE mentor_messages SET status = 'queued', sendAfter = '2026-01-01T07:00:00Z' WHERE subjectId = 'NGG-MPK5' AND kind = 'Family update'");
+    $flushed = mp_in_quiet_hours() ? null : mp_family_flush();
+    chk('portal: a held family message goes out when the morning comes', $flushed === null || ($flushed === 1 && (bool)db_row("SELECT 1 FROM mentor_messages WHERE status = 'sent' AND subjectId = 'NGG-MPK5' AND kind = 'Family update'")));
+    unset($GLOBALS['__mp_sms_sink']);
+
+    // Saturday.
+    $sat = backend_dispatch('member.mentor.saturday', $p('NGG-MP1'));
+    chk('portal: Saturday picks the three longest since a one-to-one, never one seen this week', count($sat['oneToOnes']) === 3 && !in_array('NGG-MPK2', $sat['oneToOnes'], true) && count($sat['agenda']) === 4);
+    chk('portal: the fixed agenda items cannot be removed', (backend_dispatch('member.mentor.saturday.plan', $p('NGG-MP1', ['date' => $T, 'agenda' => [['title' => 'Activity', 'minutes' => 30]]]))['error'] ?? '') === 'fixed_item_missing');
+    $reg = backend_dispatch('member.mentor.register', $p('NGG-MP1', ['date' => $T, 'close' => true, 'rows' => [
+        ['subjectId' => 'NGG-MPK1', 'here' => true, 'observed' => ['Courage', 'Bogus']], ['subjectId' => 'NGG-MPK2', 'here' => false, 'observed' => ['Courage']], ['subjectId' => 'NGG-MPK6', 'here' => true]]]));
+    chk('portal: the register saves only my children and only the four values; Away carries no values', $reg['saved'] === 2
+        && db_row("SELECT observed FROM mentor_register WHERE subjectId = 'NGG-MPK1'")['observed'] === '["Courage"]'
+        && db_row("SELECT observed FROM mentor_register WHERE subjectId = 'NGG-MPK2'")['observed'] === '[]');
+    chk('portal: closing the register copies Here to the centre record', (bool)db_row("SELECT 1 FROM attendance WHERE studentId = 'NGG-MPK1' AND date = ? AND method = 'mentor'", [$T]));
+    chk('portal: a weekly review needs all three ratings', (backend_dispatch('member.mentor.week.review', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'date' => $T, 'effort' => 'Strong']))['error'] ?? '') === 'rate_all_three');
+    $rv = backend_dispatch('member.mentor.week.review', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'date' => $T, 'effort' => 'Strong', 'character' => 'Steady', 'wellbeing' => 'Low', 'line' => 'Led the huddle']));
+    chk('portal: a weekly review saves and logs the pod session once', !empty($rv['ok']) && (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MPK1' AND kind = 'pod' AND metOn = ?", [$T])['c'] === 1
+        && !empty(backend_dispatch('member.mentor.week.review', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'date' => $T, 'effort' => 'Strong', 'character' => 'Strong', 'wellbeing' => 'Low']))['ok'])
+        && (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MPK1' AND kind = 'pod' AND metOn = ?", [$T])['c'] === 1);
+
+    // Concern: one queue, the officer, nothing on the child's record.
+    chk('portal: a concern needs the kind and more than ten characters', (backend_dispatch('member.mentor.concern.create', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'category' => 'Neglect', 'body' => 'short']))['error'] ?? '') === 'say_what_happened'
+        && (backend_dispatch('member.mentor.concern.create', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'category' => 'Made up', 'body' => 'A long enough account']))['error'] ?? '') === 'choose_the_kind');
+    $before = (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MPK1'")['c'];
+    $cn = backend_dispatch('member.mentor.concern.create', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1', 'category' => 'Something they told me', 'body' => 'They said something at home worries them.']));
+    $case = db_row('SELECT * FROM community_safeguarding WHERE caseId = ?', [$cn['ref'] ?? '']);
+    chk('portal: a concern opens a case in the one safeguarding queue with an SG- reference', !empty($cn['ok']) && preg_match('/^SG-\d{6}$/', $cn['ref']) && $case
+        && $case['surface'] === 'mentor' && $case['subjectId'] === 'NGG-MPK1' && $case['centre'] === 'Portalville');
+    chk('portal: a concern never lands on the child\'s mentoring record', (int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MPK1'")['c'] === $before);
+
+    // Messages: a journal entry shared with the mentor reaches them; a private one never does.
+    db_insert('journal', ['entryId' => 'JMP1', 'memberId' => 'NGG-MPK2', 'title' => 'My week', 'body' => 'I tried', 'visibility' => 'mentor', 'isPrivate' => 0, 'createdAt' => '2026-10-08T09:00:00Z']);
+    db_insert('journal', ['entryId' => 'JMP2', 'memberId' => 'NGG-MPK2', 'title' => 'Secret', 'body' => 'Private', 'visibility' => 'private', 'isPrivate' => 1, 'createdAt' => '2026-10-08T09:00:00Z']);
+    $ms = backend_dispatch('member.mentor.messages', $p('NGG-MP1'));
+    $ids = array_column($ms['messages'], 'id');
+    chk('portal: shared journal entries and check-ins reach the mentor; private entries never', in_array('journal:JMP1', $ids, true) && !in_array('journal:JMP2', $ids, true)
+        && (bool)array_filter($ms['messages'], static fn($m) => $m['kind'] === 'Check-in' && str_contains($m['body'], 'Struggling')));
+    $unread = mp_unread_count(mp_gate($p('NGG-MP1')), ['NGG-MPK2']);
+    backend_dispatch('member.mentor.message.read', $p('NGG-MP1', ['threadId' => 'journal:JMP1']));
+    chk('portal: reading an entry marks it read', mp_unread_count(mp_gate($p('NGG-MP1')), ['NGG-MPK2']) === $unread - 1);
+    chk('portal: replying to someone outside the caseload is refused', (backend_dispatch('member.mentor.message.reply', $p('NGG-MP1', ['threadId' => 'journal:JMP1', 'subjectId' => 'NGG-MPK6', 'body' => 'Hi']))['error'] ?? '') === 'not_in_caseload');
+
+    // Member's own check-in tells the mentor.
+    $ci = backend_dispatch('member.checkin.save', ['requesterId' => 'NGG-MPK3', 'wellbeing' => 'Need help', 'sleep' => 2, 'note' => 'Bad week']);
+    chk('portal: a member\'s Need help check-in reaches their mentor at once', !empty($ci['ok']) && (bool)db_row("SELECT 1 FROM mentor_nudges WHERE rule = 'J:wellbeingAlert' AND memberId = 'NGG-MPK3' AND mentorId = 'MEN-MP1'"));
+    chk('portal: one check-in per member per week (the second amends it)', !empty(backend_dispatch('member.checkin.save', ['requesterId' => 'NGG-MPK3', 'wellbeing' => 'Okay'])['ok'])
+        && (int)db_row("SELECT COUNT(*) c FROM member_checkins WHERE memberId = 'NGG-MPK3'")['c'] === 1);
+    $mine = backend_dispatch('member.mentor.mine', ['requesterId' => 'NGG-MPK3']);
+    chk('portal: the member sees their agreed goal, mentor and this week\'s check-in', !empty($mine['ok']) && $mine['mentor']['first'] === 'Tunde' && $mine['goal']['goal'] === 'Speak up in class' && $mine['checkin']['wellbeing'] === 'Okay');
+
+    // My role and the team.
+    $role = backend_dispatch('member.mentor.commitments', $p('NGG-MP1'));
+    chk('portal: My role has twelve commitments with statuses and sources', !empty($role['ok']) && count($role['commitments']) === 12
+        && $role['commitments'][3]['status'] === 'ok' && $role['commitments'][3]['statusText'] === '5 children');
+    chk('portal: a peer mentor\'s caseload commitment is met at three', backend_dispatch('member.mentor.commitments', $p('NGG-MPP'))['commitments'][3]['status'] === 'ok');
+    chk('portal: the Mentors view is for leads and coordinators only', (backend_dispatch('member.mentor.team', $p('NGG-MP1'))['error'] ?? '') === 'forbidden');
+    $team = backend_dispatch('member.mentor.team', $p('NGG-MPL'));
+    chk('portal: a lead sees each mentor\'s caseload and contact rate', count($team['mentors']) === 2 && (bool)array_filter($team['mentors'], static fn($m) => $m['name'] === 'Tunde Pod' && $m['mentees'] === 5));
+    $bk = backend_dispatch('member.mentor.supervision.book', $p('NGG-MPL', ['mentorId' => 'MEN-MP1']));
+    chk('portal: a lead books supervision on the next Tuesday', !empty($bk['ok']) && $bk['date'] === '2026-10-13');
+    chk('portal: supervision prep reaches the lead', !empty(backend_dispatch('member.mentor.supervision.prep', $p('NGG-MP1', ['answers' => ['Kid3 spoke up', '', 'Time']]))['ok'])
+        && (bool)db_row("SELECT 1 FROM mentor_messages WHERE kind = 'Supervision prep' AND toId = 'NGG-MPL'"));
+    $rt = backend_dispatch('admin.mentor.retreat.save', ['requesterId' => $SU, 'onDate' => '2026-11-07', 'place' => 'Egbeda hall']);
+    chk('portal: a mentor books the retreat once', !empty(backend_dispatch('member.mentor.retreat.book', $p('NGG-MP1', ['retreatId' => $rt['retreatId']]))['ok'])
+        && !empty(backend_dispatch('member.mentor.retreat.book', $p('NGG-MP1', ['retreatId' => $rt['retreatId']]))['ok'])
+        && (int)db_row('SELECT COUNT(*) c FROM mentor_retreat_bookings WHERE retreatId = ?', [$rt['retreatId']])['c'] === 1);
+
+    // Background jobs.
+    chk('jobs: the cron matcher finds the last slot (Thu 18:00 Lagos = 17:00 UTC)', mpa_last_fire('0 18 * * 4', strtotime('2026-10-10T12:00:00Z')) === strtotime('2026-10-08T17:00:00Z'));
+    chk('jobs: L-3 is three days before the month ends', mpa_last_fire('0 9 15,L-3 * *', strtotime('2026-10-29T09:00:00Z')) === strtotime('2026-10-28T08:00:00Z'));
+    $o2 = mpa_run('overdueOneToOne', strtotime($T . 'T10:00:00Z'));
+    $o3 = mpa_run('overdueOneToOne', strtotime($T . 'T10:00:00Z'));
+    $open = (int)db_row("SELECT COUNT(*) c FROM mentor_nudges WHERE rule = 'J:overdueOneToOne' AND status = 'open'")['c'];
+    chk('jobs: a job is idempotent — a second run adds nothing', $o2['found'] === $o3['found'] && $open === $o2['found'] && $o2['found'] >= 3);
+    backend_dispatch('member.mentor.session.save', $p('NGG-MP1', ['subjectId' => 'NGG-MPK4', 'what' => 'Caught up on the week.', 'date' => $T]));
+    mpa_run('overdueOneToOne', strtotime($T . 'T10:00:00Z'));
+    chk('jobs: logging the one-to-one clears that child\'s overdue row', !db_row("SELECT 1 FROM mentor_nudges WHERE rule = 'J:overdueOneToOne' AND memberId = 'NGG-MPK4' AND status = 'open'"));
+    chk('jobs: every run is logged', (int)db_row("SELECT COUNT(*) c FROM mentor_job_log WHERE job = 'overdueOneToOne'")['c'] === 3);
+    mpa_run('scorecardLock', strtotime('2026-10-08T00:30:00Z'));
+    chk('jobs: the lock job locks last month\'s scorecards', (int)db_row("SELECT locked FROM mentor_scorecards WHERE subjectId = 'NGG-MPK1' AND month = '2026-09'")['locked'] === 1);
+    $fd = mpa_run('familyDraft', strtotime('2026-10-01T06:00:00Z'));
+    chk('jobs: family drafts are written for a pod mentor, never for a peer, and never sent', $fd['found'] === 5
+        && !db_row("SELECT 1 FROM mentor_messages WHERE kind = 'Family draft' AND subjectId = 'NGG-MPK6'")
+        && !db_row("SELECT 1 FROM mentor_messages WHERE kind = 'Family draft' AND status <> 'draft'"));
+    chk('jobs: a family draft shows on the mentee\'s Family tab', !empty(backend_dispatch('member.mentor.mentee', $p('NGG-MP1', ['subjectId' => 'NGG-MPK1']))['familyDraft']['body']));
+    $pk = mpa_run('pickOneToOnes', strtotime('2026-10-15T17:00:00Z'));
+    chk('jobs: Thursday picks the one-to-ones for a mentor who has not chosen', $pk['found'] >= 1 && count(json_decode((string)db_row("SELECT oneToOnesJson FROM mentor_saturdays WHERE mentorId = 'MEN-MP1' AND onDate = '2026-10-17'")['oneToOnesJson'], true)) === 3);
+    $ld = mpa_run('leadDigest', strtotime($T . 'T16:00:00Z'));
+    chk('jobs: the lead digest goes to each lead', $ld['found'] === 1);
+    $GLOBALS['__mp_case'] = [];
+    chk('jobs: the tick runs a job whose slot has come, once', isset(mpa_tick(strtotime('2026-10-22T17:30:00Z'), 40)['pickOneToOnes']) && !isset(mpa_tick(strtotime('2026-10-22T17:40:00Z'), 40)['pickOneToOnes']));
+    chk('jobs: a slot more than a day old is let go, not replayed', !isset(mpa_tick(strtotime('2026-10-24T19:00:00Z'), 40)['pickOneToOnes']));
+
+    // Admin controls.
+    $al = backend_dispatch('admin.mentor.automations.list', ['requesterId' => $SU]);
+    chk('jobs: the admin list names every job with its time in words', count($al['jobs']) === count(MPA_JOBS)
+        && array_values(array_filter($al['jobs'], static fn($j) => $j['key'] === 'pickOneToOnes'))[0]['when'] === 'Thursdays at 6:00pm');
+    chk('jobs: a locked job cannot be switched off', (backend_dispatch('admin.mentor.automations.update', ['requesterId' => $SU, 'job' => 'wellbeingAlert', 'on' => false])['error'] ?? '') === 'job_locked');
+    backend_dispatch('admin.mentor.automations.update', ['requesterId' => $SU, 'job' => 'familyDraft', 'on' => false]);
+    chk('jobs: an unlocked job switches off', mpa_job_on('familyDraft') === false && (mpa_run('pickOneToOnes')['ok'] ?? false));
+    chk('jobs: thresholds are range-checked and then rule', (backend_dispatch('admin.mentor.automations.update', ['requesterId' => $SU, 'thresholds' => ['overdueDays' => 400]])['error'] ?? '') === 'out_of_range'
+        && !empty(backend_dispatch('admin.mentor.automations.update', ['requesterId' => $SU, 'thresholds' => ['overdueDays' => 21]])['ok']) && mp_opts()['overdueDays'] === 21);
+    backend_dispatch('admin.mentor.automations.update', ['requesterId' => $SU, 'job' => 'pickOneToOnes', 'hour' => 17]);
+    chk('jobs: an admin moves a job\'s time', mpa_job_cron('pickOneToOnes') === '0 17 * * 4');
+    chk('jobs: the run log reports per job', (backend_dispatch('admin.mentor.automations.log', ['requesterId' => $SU, 'days' => 3650])['byJob']['overdueOneToOne']['runs'] ?? 0) >= 3);
+    chk('jobs: a mentor cannot reach the admin controls', empty(backend_dispatch('admin.mentor.automations.list', ['requesterId' => 'NGG-MP1'])['ok']));
+    setting_set('mentor_automation', null);
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

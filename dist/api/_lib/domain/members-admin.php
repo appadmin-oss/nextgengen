@@ -332,6 +332,11 @@ function member_merge_policy(): array {
         'mentor_interventions'   => 'MOVE',
         'mentor_observations'    => 'MOVE_UNIQUE',    // one rating per indicator per Saturday
         'mentee_profiles'        => 'MOVE_UNIQUE',    // the survivor's own answers stand
+        'member_checkins'        => 'MOVE_UNIQUE',    // one weekly check-in per person; the survivor's stands
+        'mentor_scorecards'      => ['MOVE_UNIQUE', 'subjectId'],
+        'mentor_rel_checks'      => ['MOVE_UNIQUE', 'subjectId'],
+        'mentor_register'        => ['MOVE_UNIQUE', 'subjectId'],
+        'mentor_goal_checkins'   => ['MOVE', 'subjectId'],
         'safeguarding_cases'     => ['MOVE', 'subjectId'],
         'attendance'             => ['MOVE_UNIQUE', 'studentId'],
         'engagement_snapshots'   => ['MOVE_UNIQUE', 'personId'],

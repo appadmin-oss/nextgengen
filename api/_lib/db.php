@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 137;
+const NGG_SCHEMA_TARGET = 138;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -87,6 +87,11 @@ const NGG_BACKFILL_MEMBER_LEVELS = "
  * rather than doing it silently.
  */
 const NGG_MYSQL_ROW_FIXUPS = [
+    /* 138 — goal statuses become draft | active | achieved | paused. */
+    'mentor_goals.status' => "
+        UPDATE mentor_goals SET status = CASE status WHEN 'open' THEN 'active' WHEN 'done' THEN 'achieved' WHEN 'dropped' THEN 'paused' ELSE status END
+         WHERE status IN ('open', 'done', 'dropped')
+    ",
     /* 60 — one "Full name" box, split into the parts the ID card needs. */
     'summer_students.firstName' => "
         UPDATE summer_students
@@ -4289,6 +4294,167 @@ function db_migrate(PDO $db): void {
             ALTER TABLE mentors ADD COLUMN cimcAt TEXT DEFAULT '';
             ALTER TABLE mentors ADD COLUMN anthemAt TEXT DEFAULT '';
             ALTER TABLE mentor_reviews ADD COLUMN trend TEXT DEFAULT '';",
+
+        /* 138 — The Mentor Portal (design handoff: mentor portal v14):
+         * WOOP goals with check-ins, sessions with a length, the NGG
+         * Leadership Index scored monthly, the relationship check by side
+         * and cycle, Saturday (agenda, register, weekly review), messages
+         * and family updates, supervision and the retreat, the member's own
+         * weekly check-in, the role a mentor plays, and the background jobs'
+         * run log. One safeguarding queue: mentor concerns join
+         * community_safeguarding. (domain/mentor-portal.php) */
+        138 => "
+            ALTER TABLE mentor_meetings ADD COLUMN minutes INTEGER DEFAULT 0;
+            ALTER TABLE mentor_meetings ADD COLUMN goalId INTEGER DEFAULT 0;
+            ALTER TABLE mentor_meetings ADD COLUMN sharedWithLead INTEGER DEFAULT 0;
+            ALTER TABLE mentor_goals ADD COLUMN area TEXT DEFAULT 'Character';
+            ALTER TABLE mentor_goals ADD COLUMN outcome TEXT DEFAULT '';
+            ALTER TABLE mentor_goals ADD COLUMN obstacle TEXT DEFAULT '';
+            ALTER TABLE mentor_goals ADD COLUMN plan TEXT DEFAULT '';
+            ALTER TABLE mentor_goals ADD COLUMN agreed INTEGER DEFAULT 0;
+            ALTER TABLE mentor_goals ADD COLUMN reviewBy TEXT DEFAULT '';
+            UPDATE mentor_goals SET status = 'active' WHERE status = 'open';
+            UPDATE mentor_goals SET status = 'achieved' WHERE status = 'done';
+            UPDATE mentor_goals SET status = 'paused' WHERE status = 'dropped';
+            CREATE TABLE IF NOT EXISTS mentor_goal_checkins (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              goalId INTEGER NOT NULL,
+              subjectId TEXT NOT NULL,
+              progress INTEGER NOT NULL,
+              note TEXT NOT NULL DEFAULT '',
+              byKind TEXT NOT NULL DEFAULT 'mentor',
+              byId TEXT NOT NULL DEFAULT '',
+              sessionId INTEGER NOT NULL DEFAULT 0,
+              checkedOn TEXT NOT NULL,
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mgc_goal ON mentor_goal_checkins(goalId, checkedOn);
+            CREATE TABLE IF NOT EXISTS mentor_scorecards (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectId TEXT NOT NULL,
+              month TEXT NOT NULL,
+              scores TEXT NOT NULL,
+              total INTEGER NOT NULL,
+              byKind TEXT NOT NULL DEFAULT 'mentor',
+              mentorId TEXT NOT NULL DEFAULT '',
+              centre TEXT NOT NULL DEFAULT '',
+              locked INTEGER NOT NULL DEFAULT 0,
+              createdAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_msc_one ON mentor_scorecards(subjectId, month, byKind);
+            CREATE INDEX IF NOT EXISTS idx_msc_centre ON mentor_scorecards(centre, month);
+            CREATE TABLE IF NOT EXISTS mentor_rel_checks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              subjectId TEXT NOT NULL,
+              side TEXT NOT NULL,
+              answers TEXT NOT NULL,
+              score INTEGER NOT NULL,
+              cycle TEXT NOT NULL,
+              byId TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mrc_one ON mentor_rel_checks(subjectId, side, cycle);
+            ALTER TABLE mentor_reviews ADD COLUMN effort TEXT DEFAULT '';
+            ALTER TABLE mentor_reviews ADD COLUMN characterLevel TEXT DEFAULT '';
+            ALTER TABLE mentor_reviews ADD COLUMN wellbeing TEXT DEFAULT '';
+            ALTER TABLE mentor_reviews ADD COLUMN line TEXT DEFAULT '';
+            CREATE TABLE IF NOT EXISTS mentor_saturdays (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              mentorId TEXT NOT NULL,
+              onDate TEXT NOT NULL,
+              agendaJson TEXT NOT NULL DEFAULT '',
+              oneToOnesJson TEXT NOT NULL DEFAULT '',
+              registerClosedAt TEXT NOT NULL DEFAULT '',
+              sharedAt TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_msat_one ON mentor_saturdays(mentorId, onDate);
+            CREATE TABLE IF NOT EXISTS mentor_register (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              onDate TEXT NOT NULL,
+              subjectId TEXT NOT NULL,
+              mentorId TEXT NOT NULL,
+              here INTEGER NOT NULL DEFAULT 0,
+              observed TEXT NOT NULL DEFAULT '',
+              updatedAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mreg_one ON mentor_register(onDate, subjectId);
+            CREATE TABLE IF NOT EXISTS mentor_messages (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              threadId TEXT NOT NULL,
+              kind TEXT NOT NULL,
+              subjectId TEXT NOT NULL DEFAULT '',
+              fromId TEXT NOT NULL DEFAULT '',
+              fromName TEXT NOT NULL DEFAULT '',
+              toId TEXT NOT NULL DEFAULT '',
+              channel TEXT NOT NULL DEFAULT 'portal',
+              body TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'sent',
+              sendAfter TEXT NOT NULL DEFAULT '',
+              readAt TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mmsg_to ON mentor_messages(toId, readAt);
+            CREATE INDEX IF NOT EXISTS idx_mmsg_thread ON mentor_messages(threadId, createdAt);
+            CREATE TABLE IF NOT EXISTS member_checkins (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL,
+              week TEXT NOT NULL,
+              wellbeing TEXT NOT NULL,
+              sleep INTEGER NOT NULL DEFAULT 0,
+              stress INTEGER NOT NULL DEFAULT 0,
+              energy INTEGER NOT NULL DEFAULT 0,
+              note TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mchkin_one ON member_checkins(memberId, week);
+            CREATE TABLE IF NOT EXISTS mentor_supervision (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              mentorId TEXT NOT NULL,
+              leadId TEXT NOT NULL DEFAULT '',
+              onDate TEXT NOT NULL DEFAULT '',
+              prepJson TEXT NOT NULL DEFAULT '',
+              agreedJson TEXT NOT NULL DEFAULT '',
+              feedback TEXT NOT NULL DEFAULT '',
+              feedbackAt TEXT NOT NULL DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'booked',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_msup_mentor ON mentor_supervision(mentorId, onDate);
+            CREATE TABLE IF NOT EXISTS mentor_retreats (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              retreatId TEXT NOT NULL UNIQUE,
+              title TEXT NOT NULL DEFAULT '',
+              onDate TEXT NOT NULL,
+              place TEXT NOT NULL DEFAULT '',
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS mentor_retreat_bookings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              retreatId TEXT NOT NULL,
+              mentorId TEXT NOT NULL,
+              createdAt TEXT NOT NULL DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_mrb_one ON mentor_retreat_bookings(retreatId, mentorId);
+            CREATE TABLE IF NOT EXISTS mentor_job_log (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              job TEXT NOT NULL,
+              ranAt TEXT NOT NULL,
+              found INTEGER NOT NULL DEFAULT 0,
+              detail TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_mjl_job ON mentor_job_log(job, ranAt);
+            ALTER TABLE mentors ADD COLUMN kind TEXT DEFAULT '';
+            ALTER TABLE mentors ADD COLUMN leadId TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN subjectId TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN subjectName TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN category TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN centre TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN officerId TEXT DEFAULT '';
+            ALTER TABLE community_safeguarding ADD COLUMN officerName TEXT DEFAULT '';
+            INSERT OR IGNORE INTO community_safeguarding (caseId, authorId, authorName, surface, channelSlug, body, status, acknowledgedBy, acknowledgedAt, createdAt, subjectId, subjectName, category, centre, officerId, officerName)
+              SELECT caseNo, reporterId, reporterName, 'mentor', '', body, CASE status WHEN 'resolved' THEN 'acknowledged' ELSE 'open' END, '', '', createdAt, subjectId, subjectName, category, centre, officerId, officerName FROM safeguarding_cases;",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

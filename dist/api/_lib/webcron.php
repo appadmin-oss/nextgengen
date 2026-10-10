@@ -195,6 +195,10 @@ function web_cron_run(): void {
                 if (web_cron_due('editions', web_cron_cfg('editions', 21600)) && function_exists('summer_editions_close_elapsed')) web_cron_guard('editions_close', fn() => summer_editions_close_elapsed());
                 // Mentorship's adaptive rules (R1–R8): nudges for a mentor or a lead, never a child.
                 if (web_cron_due('mentorship', web_cron_cfg('mentorship', 21600)) && function_exists('ms_rules_run')) web_cron_guard('mentorship_rules', fn() => ms_rules_run());
+                // Mentor Portal jobs (AUTOMATIONS.md): each runs at its own Lagos time;
+                // this tick only asks whether a slot has come. Family messages held
+                // for quiet hours go out here too.
+                if (web_cron_due('mentor_jobs', web_cron_cfg('mentor_jobs', 600)) && function_exists('mpa_tick')) web_cron_guard('mentor_jobs', fn() => mpa_tick());
                 /* Flag anybody whose clock ran out while nobody was watching.
                  * The board poll catches this the instant somebody looks; two
                  * players who both closed the tab leave a game open forever,

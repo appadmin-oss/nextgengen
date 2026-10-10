@@ -3320,3 +3320,158 @@ ALTER TABLE mentors ADD COLUMN anthemAt VARCHAR(64) NOT NULL DEFAULT '';
 ALTER TABLE mentor_reviews ADD COLUMN trend VARCHAR(64) NOT NULL DEFAULT '';
 
 INSERT INTO schema_version (version) VALUES (137) ON DUPLICATE KEY UPDATE version = version;
+
+-- 138: The Mentor Portal — WOOP goals and check-ins, session length, the NGG
+-- Leadership Index (monthly scorecards), relationship checks by side and cycle,
+-- Saturday (agenda, register, weekly review), messages, member check-ins,
+-- supervision, retreats, the jobs' run log; mentor concerns join
+-- community_safeguarding (domain/mentor-portal.php).
+ALTER TABLE mentor_meetings ADD COLUMN minutes INT NOT NULL DEFAULT 0;
+ALTER TABLE mentor_meetings ADD COLUMN goalId INT NOT NULL DEFAULT 0;
+ALTER TABLE mentor_meetings ADD COLUMN sharedWithLead INT NOT NULL DEFAULT 0;
+ALTER TABLE mentor_goals ADD COLUMN area VARCHAR(24) NOT NULL DEFAULT 'Character';
+ALTER TABLE mentor_goals ADD COLUMN outcome TEXT NULL;
+ALTER TABLE mentor_goals ADD COLUMN obstacle TEXT NULL;
+ALTER TABLE mentor_goals ADD COLUMN plan TEXT NULL;
+ALTER TABLE mentor_goals ADD COLUMN agreed INT NOT NULL DEFAULT 0;
+ALTER TABLE mentor_goals ADD COLUMN reviewBy VARCHAR(191) NOT NULL DEFAULT '';
+CREATE TABLE IF NOT EXISTS mentor_goal_checkins (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  goalId INT NOT NULL,
+  subjectId VARCHAR(191) NOT NULL,
+  progress INT NOT NULL,
+  note TEXT NULL,
+  byKind VARCHAR(191) NOT NULL DEFAULT 'mentor',
+  byId VARCHAR(191) NOT NULL DEFAULT '',
+  sessionId INT NOT NULL DEFAULT 0,
+  checkedOn VARCHAR(191) NOT NULL,
+  createdAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE INDEX idx_mgc_goal ON mentor_goal_checkins(goalId, checkedOn);
+CREATE TABLE IF NOT EXISTS mentor_scorecards (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectId VARCHAR(191) NOT NULL,
+  month VARCHAR(191) NOT NULL,
+  scores TEXT NULL,
+  total INT NOT NULL,
+  byKind VARCHAR(191) NOT NULL DEFAULT 'mentor',
+  mentorId VARCHAR(191) NOT NULL DEFAULT '',
+  centre VARCHAR(191) NOT NULL DEFAULT '',
+  locked INT NOT NULL DEFAULT 0,
+  createdAt VARCHAR(191) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE UNIQUE INDEX uq_msc_one ON mentor_scorecards(subjectId, month, byKind);
+CREATE INDEX idx_msc_centre ON mentor_scorecards(centre, month);
+CREATE TABLE IF NOT EXISTS mentor_rel_checks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subjectId VARCHAR(191) NOT NULL,
+  side VARCHAR(191) NOT NULL,
+  answers TEXT NULL,
+  score INT NOT NULL,
+  cycle VARCHAR(191) NOT NULL,
+  byId VARCHAR(191) NOT NULL DEFAULT '',
+  createdAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE UNIQUE INDEX uq_mrc_one ON mentor_rel_checks(subjectId, side, cycle);
+ALTER TABLE mentor_reviews ADD COLUMN effort VARCHAR(191) NOT NULL DEFAULT '';
+ALTER TABLE mentor_reviews ADD COLUMN characterLevel VARCHAR(191) NOT NULL DEFAULT '';
+ALTER TABLE mentor_reviews ADD COLUMN wellbeing VARCHAR(191) NOT NULL DEFAULT '';
+ALTER TABLE mentor_reviews ADD COLUMN line TEXT NULL;
+CREATE TABLE IF NOT EXISTS mentor_saturdays (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  mentorId VARCHAR(191) NOT NULL,
+  onDate VARCHAR(191) NOT NULL,
+  agendaJson TEXT NULL,
+  oneToOnesJson TEXT NULL,
+  registerClosedAt VARCHAR(191) NOT NULL DEFAULT '',
+  sharedAt VARCHAR(191) NOT NULL DEFAULT '',
+  updatedAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE UNIQUE INDEX uq_msat_one ON mentor_saturdays(mentorId, onDate);
+CREATE TABLE IF NOT EXISTS mentor_register (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  onDate VARCHAR(191) NOT NULL,
+  subjectId VARCHAR(191) NOT NULL,
+  mentorId VARCHAR(191) NOT NULL,
+  here INT NOT NULL DEFAULT 0,
+  observed TEXT NULL,
+  updatedAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE UNIQUE INDEX uq_mreg_one ON mentor_register(onDate, subjectId);
+CREATE TABLE IF NOT EXISTS mentor_messages (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  threadId VARCHAR(191) NOT NULL,
+  kind VARCHAR(191) NOT NULL,
+  subjectId VARCHAR(191) NOT NULL DEFAULT '',
+  fromId VARCHAR(191) NOT NULL DEFAULT '',
+  fromName VARCHAR(191) NOT NULL DEFAULT '',
+  toId VARCHAR(191) NOT NULL DEFAULT '',
+  channel VARCHAR(191) NOT NULL DEFAULT 'portal',
+  body TEXT NULL,
+  status VARCHAR(191) NOT NULL DEFAULT 'sent',
+  sendAfter VARCHAR(191) NOT NULL DEFAULT '',
+  readAt VARCHAR(191) NOT NULL DEFAULT '',
+  createdAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE INDEX idx_mmsg_to ON mentor_messages(toId, readAt);
+CREATE INDEX idx_mmsg_thread ON mentor_messages(threadId, createdAt);
+CREATE TABLE IF NOT EXISTS member_checkins (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(191) NOT NULL,
+  week VARCHAR(191) NOT NULL,
+  wellbeing VARCHAR(191) NOT NULL,
+  sleep INT NOT NULL DEFAULT 0,
+  stress INT NOT NULL DEFAULT 0,
+  energy INT NOT NULL DEFAULT 0,
+  note TEXT NULL,
+  createdAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE UNIQUE INDEX uq_mchkin_one ON member_checkins(memberId, week);
+CREATE TABLE IF NOT EXISTS mentor_supervision (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  mentorId VARCHAR(191) NOT NULL,
+  leadId VARCHAR(191) NOT NULL DEFAULT '',
+  onDate VARCHAR(191) NOT NULL DEFAULT '',
+  prepJson TEXT NULL,
+  agreedJson TEXT NULL,
+  feedback TEXT NULL,
+  feedbackAt VARCHAR(191) NOT NULL DEFAULT '',
+  status VARCHAR(191) NOT NULL DEFAULT 'booked',
+  createdAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE INDEX idx_msup_mentor ON mentor_supervision(mentorId, onDate);
+CREATE TABLE IF NOT EXISTS mentor_retreats (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  retreatId VARCHAR(191) NOT NULL UNIQUE,
+  title VARCHAR(191) NOT NULL DEFAULT '',
+  onDate VARCHAR(191) NOT NULL,
+  place VARCHAR(191) NOT NULL DEFAULT '',
+  createdAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS mentor_retreat_bookings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  retreatId VARCHAR(191) NOT NULL,
+  mentorId VARCHAR(191) NOT NULL,
+  createdAt VARCHAR(191) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE UNIQUE INDEX uq_mrb_one ON mentor_retreat_bookings(retreatId, mentorId);
+CREATE TABLE IF NOT EXISTS mentor_job_log (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  job VARCHAR(191) NOT NULL,
+  ranAt VARCHAR(191) NOT NULL,
+  found INT NOT NULL DEFAULT 0,
+  detail TEXT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE INDEX idx_mjl_job ON mentor_job_log(job, ranAt);
+ALTER TABLE mentors ADD COLUMN kind VARCHAR(191) NOT NULL DEFAULT '';
+ALTER TABLE mentors ADD COLUMN leadId VARCHAR(191) NOT NULL DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN subjectId VARCHAR(191) NOT NULL DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN subjectName VARCHAR(191) NOT NULL DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN category VARCHAR(191) NOT NULL DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN centre VARCHAR(191) NOT NULL DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN officerId VARCHAR(191) NOT NULL DEFAULT '';
+ALTER TABLE community_safeguarding ADD COLUMN officerName VARCHAR(191) NOT NULL DEFAULT '';
+INSERT IGNORE INTO community_safeguarding (caseId, authorId, authorName, surface, channelSlug, body, status, acknowledgedBy, acknowledgedAt, createdAt, subjectId, subjectName, category, centre, officerId, officerName) SELECT caseNo, reporterId, reporterName, 'mentor', '', body, CASE status WHEN 'resolved' THEN 'acknowledged' ELSE 'open' END, '', '', createdAt, subjectId, subjectName, category, centre, officerId, officerName FROM safeguarding_cases;
+
+INSERT INTO schema_version (version) VALUES (138) ON DUPLICATE KEY UPDATE version = version;

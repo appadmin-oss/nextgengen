@@ -3,6 +3,36 @@
  *  person to a mentor, an instructor or an admin and works out whose children
  *  they may see. GET roster · POST a star. */
 require_once __DIR__ . '/../_lib/bootstrap.php';
+
+/** GET ?view= → op. */
+const MENTOR_PORTAL_VIEWS = [
+    'week' => 'member.mentor.week', 'caseload' => 'member.mentor.caseload', 'mentee' => 'member.mentor.mentee',
+    'scorecard' => 'member.mentor.scorecard', 'index' => 'member.mentor.index', 'sessions' => 'member.mentor.sessions',
+    'saturday' => 'member.mentor.saturday', 'messages' => 'member.mentor.messages', 'commitments' => 'member.mentor.commitments',
+    'team' => 'member.mentor.team', 'academy' => 'member.mentor.academy',
+];
+/** POST action → [op, body keys carried, rate-limit bucket]. Writes are limited; reads of state are not. */
+const MENTOR_PORTAL_ACTIONS = [
+    'session'         => ['member.mentor.session.save', ['type', 'subjectId', 'subjectIds', 'date', 'minutes', 'what', 'next', 'goalId', 'progress'], 'mentor.meeting'],
+    'sessionDelete'   => ['member.mentor.session.delete', ['id'], ''],
+    'goalCheckin'     => ['member.mentor.goal.checkin', ['subjectId', 'goalId', 'progress', 'note'], 'mentor.meeting'],
+    'scorecard'       => ['member.mentor.scorecard.save', ['subjectId', 'month', 'scores'], 'mentor.meeting'],
+    'relCheck'        => ['member.mentor.rel.save', ['subjectId', 'answers'], 'mentor.meeting'],
+    'relFit'          => ['member.mentor.rel.fit', ['subjectId'], 'mentor.meeting'],
+    'familySend'      => ['member.mentor.family.send', ['subjectId', 'body', 'draftId'], 'mentor.family'],
+    'concern'         => ['member.mentor.concern.create', ['subjectId', 'category', 'body'], 'mentor.concern'],
+    'supervisionPrep' => ['member.mentor.supervision.prep', ['answers'], 'mentor.meeting'],
+    'supervisionBook' => ['member.mentor.supervision.book', ['mentorId'], 'mentor.meeting'],
+    'retreatBook'     => ['member.mentor.retreat.book', ['retreatId'], ''],
+    'academyResult'   => ['member.mentor.academy.result', ['moduleId', 'answers'], 'mentor.meeting'],
+    'saturdayPlan'    => ['member.mentor.saturday.plan', ['date', 'agenda', 'oneToOnes', 'share'], ''],
+    'register'        => ['member.mentor.register', ['date', 'rows', 'close'], ''],
+    'weekReview'      => ['member.mentor.week.review', ['subjectId', 'date', 'effort', 'character', 'wellbeing', 'line'], 'mentor.review'],
+    'weekReviewUndo'  => ['member.mentor.week.review.undo', ['subjectId', 'period'], ''],
+    'messageRead'     => ['member.mentor.message.read', ['threadId'], ''],
+    'messageReply'    => ['member.mentor.message.reply', ['threadId', 'subjectId', 'body'], 'mentor.meeting'],
+    'nudgeDone'       => ['member.mentor.nudge.done', ['id'], ''],
+];
 $s = require_session();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -28,6 +58,11 @@ if ($method === 'GET') {
             'requesterId' => $s['mid'],
             'centre'      => (string)($_GET['centre'] ?? ''),
         ]);
+    } elseif (isset(MENTOR_PORTAL_VIEWS[$view])) {
+        // The Mentor Portal's screens (design handoff v14). Every one is gated
+        // by mentor_gate in the domain; these lines only carry the query.
+        $res = gs_call(MENTOR_PORTAL_VIEWS[$view], ['requesterId' => $s['mid']]
+            + array_intersect_key($_GET, array_flip(['centre', 'subjectId', 'month', 'date', 'days'])));
     } else {
         // `centre` narrows an admin (or anyone else covering more than one) to a
         // single class. The gate rejects a centre outside their scope.
@@ -123,7 +158,7 @@ if ($method === 'GET') {
             'goal'        => $b['goal'] ?? '',
             'dueOn'       => $b['dueOn'] ?? '',
             'ip'          => client_ip(),
-        ]);
+        ] + array_intersect_key($b, array_flip(['outcome', 'obstacle', 'plan', 'area', 'reviewBy', 'agreed'])));
     } elseif ((string)($b['action'] ?? '') === 'goalStatus') {
         $res = gs_call('member.mentor.goal.status', [
             'requesterId' => $s['mid'],
@@ -132,6 +167,10 @@ if ($method === 'GET') {
             'status'      => $b['status'] ?? '',
             'ip'          => client_ip(),
         ]);
+    } elseif (isset(MENTOR_PORTAL_ACTIONS[(string)($b['action'] ?? '')])) {
+        [$op, $keys, $bucket] = MENTOR_PORTAL_ACTIONS[(string)$b['action']];
+        if ($bucket !== '') rate_limit_check($bucket);
+        $res = gs_call($op, ['requesterId' => $s['mid'], 'ip' => client_ip()] + array_intersect_key($b, array_flip(array_merge($keys, ['centre']))));
     } else { json_error('unknown_action', 400); }
 } else {
     json_error('method_not_allowed', 405);
