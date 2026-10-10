@@ -315,12 +315,13 @@ function admin_keys_test(array $p): array {
             if ($url === '' || $secret === '') return ['ok' => true, 'pass' => false, 'detail' => 'Set the Web app URL and the shared secret.'];
             try {
                 $r = appsscript_call($url, $secret, 'mail.quota');
+                if (!empty($r['legacy'])) return ['ok' => true] + $done(['pass' => true, 'detail' => 'The Apps Script answered and accepted the secret. It is an older copy of the script: email will send, and pasting the latest apps-script/Code.gs (Deploy → New version) also shows today’s quota.']);
                 $left = isset($r['remaining']) ? (int)$r['remaining'] : null;
                 return ['ok' => true] + $done(['pass' => $left === null || $left > 0, 'detail' => 'The Apps Script answered' . (!empty($r['account']) ? ' as ' . $r['account'] : '')
                     . ($left !== null ? '; it may send to ' . $left . ' more recipient' . ($left === 1 ? '' : 's') . ' today.' : '.')]);
             } catch (\Throwable $e) {
                 $m = $e->getMessage();
-                $why = $m === 'Bad token' ? 'The secret does not match the SECRET in the script.'
+                $why = $m === 'Bad token' ? 'The secret does not match the script’s (SECRET, or SHARED_SECRET in an older copy of the script, under Project Settings → Script properties).'
                      : (preg_match('/HTTP (401|403|404)/', $m) ? 'Google refused the URL. Deploy as a Web app with access “Anyone”, and use the /exec URL.' : ucfirst($m) . '.');
                 return ['ok' => true] + $done(['pass' => false, 'detail' => $why]);
             }

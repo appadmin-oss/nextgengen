@@ -199,9 +199,43 @@ function appsscript_call(string $url, string $secret, string $action, array $dat
     $j = json_decode((string)$raw, true);
     if (!is_array($j)) throw new RuntimeException('it did not answer JSON — usually an old deployment, or access not set to “Anyone”: paste the latest script and Deploy → Manage deployments → New version');
     if (!empty($j['ok']) || !empty($j['success'])) return $j;
+    /* An earlier NGG Code.gs checks an HMAC of the body (?sig=) before it reads
+       anything, so it answers this format with bad_signature. Speak its
+       format instead: the same secret signs the body, and its ops are
+       sendMail (and ping, on newer copies). */
+    if (($j['error'] ?? '') === 'bad_signature') return appsscript_call_signed($url, $secret, $action, $data);
     $msg = (string)($j['message'] ?? $j['error'] ?? 'refused');
     if (str_starts_with($msg, 'Unknown action')) $msg = 'the deployed script is older than the mail action — paste the latest script and deploy a New version';
     throw new RuntimeException($msg);
+}
+
+/** The earlier NGG Code.gs: POST {op, …} with ?sig=HMAC-SHA256(body, secret). */
+function appsscript_call_signed(string $url, string $secret, string $action, array $data): array {
+    $payload = $action === 'mail.send'
+        ? ['op' => 'sendMail', 'to' => $data['to'] ?? '', 'subject' => $data['subject'] ?? '', 'html' => $data['html'] ?? '',
+           'text' => $data['text'] ?? '', 'fromName' => $data['name'] ?? '', 'replyTo' => $data['reply_to'] ?? '']
+        : ['op' => 'ping'];
+    $body = (string)json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    $ch = curl_init($url . (strpos($url, '?') === false ? '?' : '&') . 'sig=' . hash_hmac('sha256', $body, $secret));
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'], CURLOPT_TIMEOUT => 25, CURLOPT_CONNECTTIMEOUT => 6,
+        CURLOPT_FOLLOWLOCATION => true, CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $raw = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $cerr = curl_error($ch);
+    curl_close($ch);
+    if ($raw === false) throw new RuntimeException('could not reach it (' . $cerr . ')');
+    $j = json_decode((string)$raw, true);
+    if (!is_array($j)) throw new RuntimeException('could not reach it (HTTP ' . $code . ')');
+    if (!empty($j['ok'])) return $j;
+    $err = (string)($j['error'] ?? '');
+    if ($err === 'bad_signature') throw new RuntimeException('Bad token');
+    // Signed and accepted, but too old to answer ping: the URL and the secret are right.
+    if ($err === 'unknown_op' && $action === 'mail.quota') return ['ok' => true, 'legacy' => true];
+    if (str_contains((string)($j['detail'] ?? ''), 'SHARED_SECRET')) throw new RuntimeException('the script has no SHARED_SECRET in its Script properties');
+    throw new RuntimeException($err !== '' ? $err . (isset($j['detail']) ? ' (' . $j['detail'] . ')' : '') : 'refused');
 }
 
 /**
