@@ -7725,3 +7725,4 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
   .mt-ind li { grid-template-columns: 1fr auto; }
   .mt-ind em { grid-column: 1 / -1; }
 }
+.mt-btn-link { display: inline-flex; align-items: center; text-decoration: none; }

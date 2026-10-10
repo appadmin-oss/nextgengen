@@ -1276,7 +1276,9 @@ function member_ms_today(array $p): array {
     $o = ms_portal_gate($p); if (!$o['ok']) return $o;
     $m = $o['mentor']; $today = ms_today($p);
     $base = ['ok' => true, 'mentor' => ['mentorId' => $m['mentorId'], 'fullName' => $m['fullName'], 'centre' => $m['centre'], 'rank' => $m['rank'] ?? 'mentor'],
-             'clearance' => $o['clearance'], 'policy' => ['version' => MS_POLICY_VERSION, 'accepted' => $o['clearance']['policy'] ?? false]];
+             'clearance' => $o['clearance'], 'policy' => ['version' => MS_POLICY_VERSION, 'accepted' => $o['clearance']['policy'] ?? false],
+             // 'admin' when the person is staff: their reach comes from their role, not the Academy.
+             'role' => (string)($o['g']['role'] ?? 'mentor')];
     if (!$o['clearance']['cleared']) return $base + ['cleared' => false, 'pod' => [], 'needsYou' => [], 'oneToOnes' => [], 'todo' => []];
     $g = ['centres' => null];
     $rels = ms_relationships($g, '', $today, (string)$m['mentorId']);

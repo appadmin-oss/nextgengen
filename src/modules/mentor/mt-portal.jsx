@@ -52,7 +52,13 @@ function MentorHome() {
        School mentor, an older API — opens the class roster, which says why. */
     let p;
     try { p = mtPod("today"); } catch (e) { setProbe("class"); return; }
-    Promise.resolve(p).then(r => { if (r && r.mentor && r.clearance) { setToday(r); setProbe("pod"); } else setProbe("class"); })
+    /* Staff who also hold a mentor record keep the class roster until they are
+       cleared: their reach comes from their role, and locking them on the
+       Academy checklist took their class away overnight. */
+    Promise.resolve(p).then(r => {
+      if (r && r.mentor && r.clearance && (r.cleared || r.role !== "admin")) { setToday(r); setProbe("pod"); }
+      else setProbe("class");
+    })
       .catch(() => setProbe("class"));
   }, [classView]);
   React.useEffect(() => { load(); }, [load, auth && auth.isSignedIn]);
@@ -159,6 +165,8 @@ function MtGate({ d, go }) {
       {step((c.modulesDone || 0) >= (c.modulesRequired || 13), "Mentor Academy", (c.modulesDone || 0) + " of " + (c.modulesRequired || 13) + " modules", <button className="mt-btn is-primary" onClick={() => go("academy")}>Open the Academy</button>)}
       {step(c.policy, "Commitment Policy", c.policy ? "Signed" : "Read and sign the NGGC Mentorship Commitment & Conduct Policy.", <button className="mt-btn" onClick={() => go("commit")}>Read and sign</button>)}
     </ul>
+    <div className="mt-card"><h2>Your class in the meantime</h2><p>Until you are cleared for a pod, your class works as it did before.</p>
+      <a className="mt-btn is-primary mt-btn-link" href="/mentor?view=class">Open my class</a></div>
   </section>;
 }
 
@@ -454,6 +462,7 @@ function MtSupport({ go }) {
       <li><span><b>A mentee I’m worried about</b><em>Report it the same day. You don’t need proof.</em></span><button className="mt-btn is-red" onClick={() => go("concern")}>Report a concern about a young person</button></li>
       <li><span><b>Feeling stretched</b><em>Your coordinator will call you this week.</em></span><button className="mt-btn" onClick={() => go("checkin")}>Check in</button></li>
       <li><span><b>Mentor Academy</b><em>Modules, refreshers and practice.</em></span><button className="mt-btn" onClick={() => go("academy")}>Open</button></li>
+      <li><span><b>The class roster</b><em>The whole centre’s class, as before the pods.</em></span><a className="mt-btn mt-btn-link" href="/mentor?view=class">Open</a></li>
     </ul></div></section>;
 }
 function MtConcern({ pod, say }) {

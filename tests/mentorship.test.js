@@ -157,6 +157,18 @@ async function as(memberId, admin, viewport) {
     chk('Academy gate: an uncertified mentor sees the steps, and gets no mentee data from the server',
       /Before you meet your pod/.test(await un.innerText('.mt-body')) && q(`backend_dispatch('member.ms.today', ['requesterId' => 'NGG-MS-M3'])['pod']`).length === 0);
 
+    await un.click('a:has-text("Open my class")');
+    await un.waitForFunction(() => /MENTOR PORTAL|Pick a centre|students/i.test(document.body.innerText) && !/Before you meet your pod/.test(document.body.innerText), null, { timeout: 60000 });
+    chk('…and is never locked out: “Open my class” opens the class roster as before', /view=class/.test(un.url()));
+    // Staff who also hold an NGG mentor record keep the class roster until cleared.
+    php(`db_insert('members', ['memberId' => 'NGG-MS-ADM2', 'fullName' => 'Admin Mentor', 'email' => 'am@pod.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'admin', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+         db_insert('mentors', ['mentorId' => 'MEN-MS-AM', 'fullName' => 'Admin Mentor', 'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'memberId' => 'NGG-MS-ADM2', 'createdAt' => now_iso()]);`);
+    const am = await as('NGG-MS-ADM2', true, { width: 390, height: 844 });
+    await am.goto(BASE + '/mentor', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(am);
+    await am.waitForFunction(() => /STAFF|Pick a centre|MENTOR PORTAL/i.test(document.body.innerText), null, { timeout: 60000 });
+    chk('an admin with an uncleared mentor record lands on the class roster, not the Academy checklist', !/Before you meet your pod/.test(await am.innerText('body')));
+
     // ── The workspace, as HQ ────────────────────────────────────────────
     const hq = await as('NGG-MS-ADM', true);
     await hq.goto(BASE + '/control/mentorship', { waitUntil: 'domcontentloaded' });
