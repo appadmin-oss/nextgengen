@@ -109,6 +109,7 @@ function cleanup() {
     chk('the key saves: Groq reads Connected, ending wxyz, and the key itself is nowhere on the page', /•••• wxyz/.test(g2) && !/FROMtheSCREEN/.test(await pg.innerText('body')));
     chk('…stored sealed on the server', !php(`echo (string)(db_row("SELECT settingValue FROM settings WHERE settingKey = 'service_keys'")['settingValue'] ?? '');`, ['bootstrap']).includes('FROMtheSCREEN'));
     pg.once('dialog', dlg => dlg.accept());
+    await groq.locator('button:has-text("Manage")').click();
     await groq.locator('button:has-text("Remove")').click();
     const conf = await pg.waitForSelector('.cr-layer button:has-text("Remove"), [role=alertdialog] button:has-text("Remove"), [role=dialog] button:has-text("Remove")', { timeout: 10000 }).catch(() => null);
     if (conf) await conf.click();

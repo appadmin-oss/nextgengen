@@ -159,6 +159,7 @@ function admin_keys_list(array $p): array {
     return ['ok' => true, 'groups' => SERVICE_KEY_GROUPS, 'services' => array_map(static fn($s) => service_key_view($s, $stored), array_keys(SERVICE_KEYS)),
             'pending' => $pend ? ['service' => $pend['service'], 'by' => (string)$pend['by'], 'byName' => (string)$pend['byName'], 'at' => (string)$pend['at'], 'fields' => array_keys((array)$pend['v'])] : null,
             'me' => (string)$g['requester']['memberId'], 'sealed' => function_exists('openssl_encrypt'),
+            'mailMode' => function_exists('mail_mode') ? mail_mode() : '',
             'canMoney' => in_array('fees', member_effective_caps($g['requester']), true)];
 }
 

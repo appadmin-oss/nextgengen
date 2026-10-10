@@ -285,7 +285,7 @@ function CrFormBlock({ b, ctx, phone }) {
   return (
     <div className="cr-form">
       {b.groups.map((g, gi) => (
-        <div key={gi} className="cr-box cr-fgroup">
+        <div key={gi} className="cr-box cr-fgroup" id={g.h ? crAnchor(g.h) : undefined}>
           {(g.h || g.help) && <div className="cr-fgroup-h">{g.h && <b>{g.h}</b>}{g.help && <span>{g.help}</span>}</div>}
           {g.rows.map(r => (
             <div key={r.id} className="cr-frow">
@@ -541,3 +541,18 @@ const CR_BLOCKS = {
   kpis: CrKpis, attention: CrAttention, status: CrStatus, columns: CrColumns, bars: CrBars, list: CrList,
   note: CrNote, cards: CrCards, form: CrFormBlock, compose: CrCompose, table: CrTable, custom: CrCustom,
 };
+
+/** An in-page anchor for a section heading ("Staff sign-in" → cr-sec-staff-sign-in), so an index can jump to it. */
+function crAnchor(h) { return "cr-sec-" + String(h || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
+/** "On this page": one chip per section, each jumping to it. */
+function CrJumpIndex({ items, foot }) {
+  const go = h => { const el = document.getElementById(crAnchor(h)); if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); const f = el.querySelector("button, input, select, textarea"); if (f) f.focus({ preventScroll: true }); } };
+  return (
+    <div className="cr-jump">
+      <nav aria-label="On this page"><span className="cr-jump-h">On this page</span>
+        {items.map(h => <button key={h} type="button" className="cr-keys-chip" onClick={() => go(h)}>{h}</button>)}
+      </nav>
+      {foot && <p className="cr-jump-foot">{foot}</p>}
+    </div>
+  );
+}

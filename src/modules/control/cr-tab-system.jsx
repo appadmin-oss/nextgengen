@@ -739,11 +739,30 @@ function crSyKeyEdit(ctx, s) {
     done: (v, r) => { ctx.reload(); return r && r.pending ? "Proposed. It applies when a second person with Fees confirms it." : r && r.unchanged ? "Nothing changed." : s.label + " saved. Press Test to check it works."; },
   });
 }
-function CrSyKeyCard({ ctx, s }) {
+/* API keys, as one structured list (§ Settings → API keys): a summary of
+   what is connected, one section per group saying what is in use, and one row
+   per service — icon, name, a one-line purpose, its state and the one thing to
+   do next. The row opens in place for its fields, Test, Remove and the
+   provider's link, so the page reads as a checklist rather than a wall of
+   cards. Each row stays an article named for its service. */
+const CR_SY_KEY_ICON = { gemini: "sparkle", groq: "lightning", anthropic: "brain", openrouter: "shuffle", cloudinary: "cloud", paystack: "credit-card",
+  appsscript: "google-logo", brevo: "paper-plane-tilt", smtp: "envelope-simple", resend: "paper-plane-right", termii: "chat-text", twilio: "phone",
+  googlemaps: "map-pin", spitch: "speaker-high" };
+const CR_SY_MAIL_LABEL = { apps_script: "Google Apps Script", smtp: "SMTP", brevo: "Brevo", resend: "Resend", php_mail: "PHP mail() — usually dropped" };
+function crSyKeyState(s) {
+  if (s.connected) return { t: s.setHere ? "Connected" : "Connected · config.php", tone: "ok" };
+  return s.fields.some(f => f.set) ? { t: "Incomplete", tone: "warn" } : { t: "Not set", tone: "neutral" };
+}
+function crSyFirstSentence(t) {
+  const parts = String(t || "").match(/[^.!?]+[.!?]+(\s|$)/g) || [String(t || "")];
+  let out = parts[0].trim();
+  if (out.length < 30 && parts[1]) out += " " + parts[1].trim();   // "Paid." alone says too little
+  return out;
+}
+function CrSyKeyCard({ ctx, s, open, onToggle }) {
   const [res, setRes] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
-  const tone = s.connected ? "ok" : "neutral";
-  const state = s.connected ? (s.setHere ? "Connected" : "Connected · config.php") : s.fields.some(f => f.set) ? "Incomplete" : "Not set";
+  const st = crSyKeyState(s);
   const test = async () => {
     setBusy(true); setRes(null);
     try { const r = await NGGApi.admin.summer.keysTest(s.id); setRes(r); }
@@ -756,30 +775,82 @@ function CrSyKeyCard({ ctx, s }) {
     try { const r = await NGGApi.admin.summer.keysSet(s.id, {}, here); ctx.toast(r.pending ? "Proposed — a second person confirms it." : "Removed."); ctx.reload(); }
     catch (e) { ctx.toast(crErr(e, "Couldn’t remove them."), null, true); }
   };
+  const pid = "cr-key-" + s.id;
   return (
-    <article className={"cr-box cr-key" + (s.connected ? " is-on" : "")} aria-label={s.label}>
-      <div className="cr-key-head"><b>{s.label}</b><CrPill tone={tone} t={state}/></div>
-      <p className="cr-key-what">{s.what}</p>
-      <dl className="cr-key-fields">
-        {s.fields.map(f => (
-          <div key={f.path}><dt>{f.label}</dt>
-            <dd>{!f.set ? <span className="cr-hint">{f.optional ? "—" : "Not set"}</span>
-              : f.kind === "secret" ? <span className="cr-mono">•••• {f.ending}</span> : <span className="cr-mono">{f.value}</span>}
-              {f.set && f.source === "file" && <span className="cr-key-src">config.php</span>}</dd></div>
-        ))}
-      </dl>
-      {s.changedAt && <p className="cr-hint">Changed {crAgo(s.changedAt)}{s.changedBy ? " by " + s.changedBy : ""}</p>}
-      {res && <p className={"cr-key-res" + (res.pass === true ? " is-ok" : res.pass === false ? " is-bad" : "")} role="status"><CrIcon n={res.pass === true ? "check-circle" : res.pass === false ? "warning-circle" : "info"}/>{res.detail}{res.ms ? " · " + crNum(res.ms) + " ms" : ""}</p>}
-      <div className="cr-key-acts">
-        <button type="button" className={"cr-btn is-sm" + (s.connected ? "" : " is-primary")} onClick={() => crSyKeyEdit(ctx, s)}>{s.connected || s.setHere ? "Change" : "Add key"}</button>
-        {s.testable && <button type="button" className="cr-btn is-sm" disabled={busy || !s.connected} title={s.connected ? "" : "Add the key first."} onClick={test}>{busy ? "Testing…" : "Test"}</button>}
-        {s.setHere && <button type="button" className="cr-btn is-sm" onClick={remove}>Remove</button>}
-        {s.id === "appsscript" && <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, CR_SY_SCRIPT_MAIL, "The Apps Script")}>Copy the Apps Script</button>}
-        {s.id === "appsscript" && <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, crSyNewSecret(), "A new secret")} title="Paste it into the script’s SHARED_SECRET and into Change here.">Copy a new secret</button>}
-        <span className="cr-grow"/>
-        <a className="cr-key-link" href={s.link} target="_blank" rel="noopener noreferrer">Get a key<CrIcon n="arrow-up-right"/><span className="cr-sr"> (opens {s.label} in a new tab)</span></a>
+    <article className={"cr-key" + (s.connected ? " is-on" : "") + (open ? " is-open" : "")} aria-label={s.label}>
+      <div className="cr-key-row">
+        <span className={"cr-key-ico cr-t-" + st.tone} aria-hidden="true"><CrIcon n={CR_SY_KEY_ICON[s.id] || "key"}/></span>
+        <button type="button" className="cr-key-name" aria-expanded={open} aria-controls={pid} onClick={onToggle}>
+          <b>{s.label}</b><span>{crSyFirstSentence(s.what)}</span>
+        </button>
+        {s.connected && (() => { const k = s.fields.find(f => f.kind === "secret" && f.set) || s.fields.find(f => f.set);
+          return k ? <span className="cr-key-peek cr-mono">{k.kind === "secret" ? "•••• " + k.ending : k.value}</span> : null; })()}
+        <CrPill tone={st.tone} t={st.t}/>
+        {s.connected || s.setHere
+          ? <button type="button" className="cr-btn is-sm" aria-expanded={open} aria-controls={pid} onClick={onToggle}>{open ? "Close" : "Manage"}</button>
+          : <button type="button" className="cr-btn is-sm" onClick={() => crSyKeyEdit(ctx, s)}>Add key</button>}
+      </div>
+      <div className="cr-key-body" id={pid} hidden={!open}>
+        <p className="cr-key-what">{s.what}</p>
+        <dl className="cr-key-fields">
+          {s.fields.map(f => (
+            <div key={f.path}><dt>{f.label}{f.optional ? <em> · optional</em> : null}</dt>
+              <dd>{!f.set ? <span className="cr-hint">{f.optional ? "—" : "Not set"}</span>
+                : f.kind === "secret" ? <span className="cr-mono">•••• {f.ending}</span> : <span className="cr-mono">{f.value}</span>}
+                {f.set && f.source === "file" && <span className="cr-key-src">config.php</span>}</dd></div>
+          ))}
+        </dl>
+        {res && <p className={"cr-key-res" + (res.pass === true ? " is-ok" : res.pass === false ? " is-bad" : "")} role="status"><CrIcon n={res.pass === true ? "check-circle" : res.pass === false ? "warning-circle" : "info"}/>{res.detail}{res.ms ? " · " + crNum(res.ms) + " ms" : ""}</p>}
+        <div className="cr-key-acts">
+          {(s.connected || s.setHere) && <button type="button" className="cr-btn is-sm is-primary" onClick={() => crSyKeyEdit(ctx, s)}>Change</button>}
+          {s.testable && <button type="button" className="cr-btn is-sm" disabled={busy || !s.connected} title={s.connected ? "" : "Add the key first."} onClick={test}>{busy ? "Testing…" : "Test"}</button>}
+          {s.setHere && <button type="button" className="cr-btn is-sm" onClick={remove}>Remove</button>}
+          {s.id === "appsscript" && <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, CR_SY_SCRIPT_MAIL, "The Apps Script")}>Copy the Apps Script</button>}
+          {s.id === "appsscript" && <button type="button" className="cr-btn is-sm" onClick={() => crSyCopy(ctx, crSyNewSecret(), "A new secret")} title="Paste it into the script’s SHARED_SECRET and into Change here.">Copy a new secret</button>}
+          <span className="cr-grow"/>
+          {s.changedAt && <span className="cr-hint">Changed {crAgo(s.changedAt)}{s.changedBy ? " by " + s.changedBy : ""}</span>}
+          <a className="cr-key-link" href={s.link} target="_blank" rel="noopener noreferrer">{s.connected ? "Open " + s.label : "Get a key"}<CrIcon n="arrow-up-right"/><span className="cr-sr"> (opens in a new tab)</span></a>
+        </div>
       </div>
     </article>
+  );
+}
+/** The whole API keys list: summary, group index, and the rows. */
+function CrSyKeysList({ ctx, svc }) {
+  const list = svc.services || [], groups = svc.groups || {};
+  const [open, setOpen] = React.useState(null);
+  const conn = list.filter(s => s.connected).length;
+  const jump = g => { const el = document.getElementById("cr-keyg-" + g); if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); const b = el.querySelector("button"); if (b) b.focus({ preventScroll: true }); } };
+  const groupNote = g => {
+    const on = list.filter(s => s.group === g && s.connected);
+    if (g === "email") return svc.mailMode === "php_mail" ? "Nothing is connected, so email falls back to PHP mail(), which most hosts drop. Set up Google Apps Script." 
+      : svc.mailMode ? "Sending through " + (CR_SY_MAIL_LABEL[svc.mailMode] || svc.mailMode) + ". The order tried: Apps Script, SMTP, Brevo, Resend." : "";
+    if (g === "ai") return on.length ? "Each AI feature uses the first connected provider; the table below shows which." : "Without a key every feature runs on its built-in rules.";
+    return "";
+  };
+  return (
+    <div className="cr-keys">
+      <div className="cr-keys-sum">
+        <div className="cr-keys-count"><b>{conn}</b><span>of {list.length} services connected</span></div>
+        <nav className="cr-keys-idx" aria-label="Groups">
+          {Object.keys(groups).map(g => { const m = list.filter(s => s.group === g); if (!m.length) return null; const c = m.filter(s => s.connected).length;
+            return <button key={g} type="button" className={"cr-keys-chip" + (c ? " is-on" : "")} onClick={() => jump(g)}>{groups[g]}<span>{c}/{m.length}</span></button>; })}
+        </nav>
+        <p className="cr-keys-lock"><CrIcon n="lock-key"/>{svc.sealed === false ? "This server cannot encrypt (PHP openssl is missing), so keys can only be set in api/config.php."
+          : "Keys are encrypted on the server and never shown again — only how each ends. A key here overrides api/config.php."}</p>
+      </div>
+      {Object.keys(groups).map(g => {
+        const mine = list.filter(x => x.group === g);
+        if (!mine.length) return null;
+        const note = groupNote(g);
+        return (
+          <section key={g} className="cr-keys-group" id={"cr-keyg-" + g} aria-labelledby={"cr-keyh-" + g}>
+            <header><h3 id={"cr-keyh-" + g}>{groups[g]}</h3>{note && <p>{note}</p>}</header>
+            <div className="cr-keys-rows">{mine.map(x => <CrSyKeyCard key={x.id} ctx={ctx} s={x} open={open === x.id} onToggle={() => setOpen(open === x.id ? null : x.id)}/>)}</div>
+          </section>
+        );
+      })}
+    </div>
   );
 }
 function CrSyKeysPending({ ctx, svc }) {
@@ -902,9 +973,9 @@ Object.assign(CR_TAB_DEFS, {
     blocks: (d, ctx) => {
       crSyGenCtx.current = ctx;
       return [
-        { type: "note", span: 6, icon: "compass", text: "Settings are grouped by what they change. Attendance times, what is printed on cards, and the keys that connect outside services each have their own tab above.",
-          sub: "Looking for centres? They are records, not settings: Members → Centres, where “Add a centre” is at the top.",
-          act: { l: "Open Centres", run: () => ctx.go("members", "centres") } },
+        { type: "custom", span: 6, render: () => <CrJumpIndex
+            items={(d.formMain.groups || []).filter(g => g.h).map(g => g.h).concat(["Homepage banner", "Accessibility on this device"])}
+            foot={<>Attendance times, card branding and the keys for outside services each have their own tab. Centres are records, not settings: <button type="button" className="cr-link" onClick={() => ctx.go("members", "centres")}>Members → Centres</button>.</>}/> },
         Object.assign(d.formMain, { title: "Programme" }),
         d.promoErr ? { type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t load the homepage banner. " + crErr(d.promoErr, ""), act: { l: "Try again", run: () => ctx.reload() } }
           : Object.assign(d.formPromo, { title: "Homepage promo banner" }),
@@ -913,7 +984,7 @@ Object.assign(CR_TAB_DEFS, {
         /* Mounted, not rebuilt: A11ySettingsPanel (components.jsx) is the one
            implementation of these per-device preferences (CLAUDE.md §11). */
         { type: "custom", span: 6, title: "Accessibility on this device", sub: "Applies to the Control Room and the public site in this browser only. Nothing is saved to your account.",
-          render: () => <div className="cr-box cr-sy-a11y" style={{ padding: "8px 20px 16px" }}><A11ySettingsPanel/></div> },
+          render: () => <div className="cr-box cr-sy-a11y cr-fgroup" id={crAnchor("Accessibility on this device")} style={{ padding: "8px 20px 16px" }}><A11ySettingsPanel/></div> },
       ];
     },
   },
@@ -952,15 +1023,9 @@ Object.assign(CR_TAB_DEFS, {
     blocks: (d, ctx) => {
       const ai = d.ai || {}, rows = ai.ai || [], svc = d.svc || {};
       const list = svc.services || [];
-      const out = [
-        { type: "note", span: 6, icon: "lock-key", text: "Keys entered here are encrypted on the server and never shown again — only how each one ends. A key entered here is used instead of the one in api/config.php; remove it to go back to the file.",
-          sub: svc.sealed === false ? "This server cannot encrypt (PHP openssl is missing), so keys can only be set in api/config.php." : "" },
-      ];
+      const out = [];
       if (svc.pending) out.push({ type: "custom", span: 6, render: () => <CrSyKeysPending ctx={ctx} svc={svc}/> });
-      Object.keys(svc.groups || {}).forEach(g => {
-        const mine = list.filter(x => x.group === g);
-        if (mine.length) out.push({ type: "custom", span: 6, title: svc.groups[g], render: () => <div className="cr-keys">{mine.map(x => <CrSyKeyCard key={x.id} ctx={ctx} s={x} svc={svc}/>)}</div> });
-      });
+      if (list.length) out.push({ type: "custom", span: 6, render: () => <CrSyKeysList ctx={ctx} svc={svc}/> });
       out.push(
         ai.aiErr ? { type: "note", span: 6, icon: "warning-circle", tone: "bad", text: "Couldn’t read the AI status. " + crErr(ai.aiErr, ""), act: { l: "Try again", run: () => ctx.reload() } }
           : { type: "note", span: 6, icon: "sparkle", tone: ai.anyEnabled ? "ok" : "warn",
