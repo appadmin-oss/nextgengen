@@ -175,6 +175,8 @@ function member_update(array $p): array {
         if ($patch['photoUrl'] === '') return ['ok' => false, 'error' => 'bad_photo'];
     }
     db_update('members', $patch, ['id' => $member['id']]);
+    // A new photo replaces the old one; it does not sit beside it.
+    if (isset($patch['photoUrl']) && function_exists('photo_supersede')) photo_supersede('member', $memberId, (string)($member['photoUrl'] ?? ''), (string)$patch['photoUrl'], $memberId);
     audit('member.update', $memberId, $memberId, ['keys' => array_keys($patch)], (string)($p['ip'] ?? ''));
     return ['ok' => true];
 }

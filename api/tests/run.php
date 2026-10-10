@@ -25816,5 +25816,35 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('summer: a concern about a participant reaches the officer\'s queue', !empty($sc['ok']) && db_row('SELECT subjectName FROM safeguarding_cases WHERE caseNo = ?', [$sc['ref']])['subjectName'] === 'Tobi Participant');
 })();
 
+
+/* ── A replaced photo replaces: the old file goes, history keeps no picture ── */
+(function () {
+    $mkPng = function (int $seed) { $im = imagecreatetruecolor(40, 40); imagefill($im, 0, 0, imagecolorallocate($im, $seed % 255, 80, 120)); ob_start(); imagepng($im); $b = ob_get_clean(); imagedestroy($im); return 'data:image/png;base64,' . base64_encode($b); };
+    if (!function_exists('imagecreatetruecolor')) { chk('photo replace: GD missing, skipped', true); return; }
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-PHR-1', 'fullName' => 'Photo Person', 'email' => 'phr1@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-PHR-2', 'fullName' => 'Photo Twin', 'email' => 'phr2@x.example', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('mentors', ['mentorId' => 'MEN-PHR', 'fullName' => 'Photo Person', 'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'memberId' => 'NGG-PHR-1', 'createdAt' => $now]);
+    $a = photo_store_put($mkPng(11)); $b = photo_store_put($mkPng(22)); $c = photo_store_put($mkPng(33));
+    db_update('members', ['photoUrl' => $a['url']], ['memberId' => 'NGG-PHR-1']);
+    db_update('mentors', ['photoUrl' => $a['url']], ['mentorId' => 'MEN-PHR']);
+    db_insert('photo_assets', ['assetId' => 'PA-PHR-1', 'subjectType' => 'member', 'subjectId' => 'NGG-PHR-1', 'version' => 1, 'status' => 'approved', 'sourceUrl' => $a['url'], 'editedUrl' => $a['url']]);
+    audit('photo.test', null, 'x', ['url' => $a['url']]);   // the audit trail quoting it must not keep it alive
+    $r = member_update(['memberId' => 'NGG-PHR-1', 'photoUrl' => $mkPng(22)]);
+    chk('photo replace: the new photo is on the record', !empty($r['ok']) && db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PHR-1'")['photoUrl'] === $b['url']);
+    chk('photo replace: the old file is deleted at once, though the audit trail quotes it', photo_store_find($a['id']) === '');
+    chk('photo replace: earlier versions are superseded and keep no picture', db_row("SELECT status, sourceUrl, editedUrl FROM photo_assets WHERE assetId = 'PA-PHR-1'") == ['status' => 'superseded', 'sourceUrl' => '', 'editedUrl' => '']);
+    chk('photo replace: the mentor record that carried the same photo moves to the new one', db_row("SELECT photoUrl FROM mentors WHERE mentorId = 'MEN-PHR'")['photoUrl'] === $b['url']);
+    // An edit through the pipeline's apply path replaces too.
+    photo_apply_to_subject(['subjectType' => 'member', 'subjectId' => 'NGG-PHR-1', 'editedUrl' => $c['url']]);
+    chk('photo edit: the edited image replaces the one before it', db_row("SELECT photoUrl FROM members WHERE memberId = 'NGG-PHR-1'")['photoUrl'] === $c['url'] && photo_store_find($b['id']) === '');
+    // Another person still using the same bytes: kept.
+    db_update('members', ['photoUrl' => $c['url']], ['memberId' => 'NGG-PHR-2']);
+    $d = photo_store_put($mkPng(44));
+    $s = photo_supersede('member', 'NGG-PHR-1', $c['url'], $d['url']);
+    chk('photo replace: a file another person still uses is kept, and says who', $s['deleted'] === false && str_contains($s['keptFor'], 'members') && photo_store_find($c['id']) !== '');
+    $GLOBALS['__photo_ref_force_fail'] = false;
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

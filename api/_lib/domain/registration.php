@@ -2219,7 +2219,8 @@ function reshoot_submit(array $p): array {
     // The retake IS the new photo — apply it whether or not the governed
     // pipeline can run, or a guardian who did what they were asked would see
     // the old picture on the card indefinitely.
-    db_update('summer_students', ['photoUrl' => photo_store_relativise($url), 'updatedAt' => now_iso()], ['studentId' => (string)$s['studentId']]);
+    if (function_exists('photo_set_subject')) photo_set_subject('student', (string)$s['studentId'], $url, 'guardian');
+    else db_update('summer_students', ['photoUrl' => photo_store_relativise($url), 'updatedAt' => now_iso()], ['studentId' => (string)$s['studentId']]);
     if (!function_exists('photo_ingest')) {
         audit('photo.reshoot', 'guardian', (string)$s['studentId'], ['stored' => true, 'pipeline' => false], (string)($p['ip'] ?? ''));
         return ['ok' => true, 'status' => 'captured', 'version' => 1];

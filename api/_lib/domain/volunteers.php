@@ -696,6 +696,8 @@ function admin_volunteer_update(array $p): array {
         $row['status'] = (string)$d['status'];
     }
     db_update('volunteers', $row, ['volunteerId' => $volunteerId]);
+    if (array_key_exists('photoUrl', $row) && function_exists('photo_supersede'))
+        photo_supersede('volunteer', $volunteerId, (string)($v['photoUrl'] ?? ''), (string)$row['photoUrl'], (string)($g['requester']['memberId'] ?? ''));
     /* Moving someone onto (or off) the Club moves their card's clock with
        them. The card itself is not reissued — the token in their hand is the
        same; only when it stops opening the door changes. */
