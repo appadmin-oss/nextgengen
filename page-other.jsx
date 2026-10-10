@@ -5805,8 +5805,8 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
   const tier = card.tier || {};                 // same hazard as centre, above
   /* An NGG volunteer's card is the programme's, not their role's: one navy
      card for everybody, whatever they do — no colour per volunteer type — with
-     a gold disc, and their centre as a stripe in its own colour above the foot.
-     A Summer School volunteer's card keeps the tier colour it has always had. */
+     a gold disc, and their centre named in the foot band (no stripe: it read as
+     a misprint). A Summer School volunteer's card keeps the tier colour it has always had. */
   const ngg = card.programme === "ngg" || card.programme === "both";
   const tTint = ngg ? CARD_NAVY : (tier.color || "#00225F");
   const tInk = cardInk(tTint);
@@ -5864,7 +5864,6 @@ function VolunteerCardFront({ card, S, H = CARD_DESIGN_H }) {
           over an identical background: the paint is the same either way, and an
           element that owns its colour can be measured — by a test, and by anyone
           reading this — instead of inferred from what sits behind it. */}
-      {ngg && <div aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: px(96), height: px(8), background: placeTint, zIndex: 1 }}/>}
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: px(112), background: cTint, color: cInk.ink,
                     display: "grid", placeItems: "center", overflow: "hidden" }}>
         {(() => {
