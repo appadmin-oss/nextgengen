@@ -25516,6 +25516,7 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $sent = [];
     $GLOBALS['__gas_mock'] = function ($url, $secret, $action, $data) use (&$sent) {
         if ($secret !== 'gas-secret-123456') throw new RuntimeException('Bad token');
+        if ($action === 'mail.send' && !str_contains((string)($data['to'] ?? ''), '@')) throw new RuntimeException('No valid recipient.');
         if ($action === 'mail.quota') return ['ok' => true, 'remaining' => 97, 'account' => 'next@afrovanguard.org.ng'];
         $sent[] = ['action' => $action] + $data; return ['ok' => true];
     };
@@ -25523,6 +25524,24 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $sink = $GLOBALS['__mail_sink'] ?? null; unset($GLOBALS['__mail_sink']);
     chk('mail: Apps Script is the first path when it is set, ahead of SMTP', mail_mode() === 'apps_script'
         && send_mail('kid@example.com', 'Hello', '<p>Hi</p>') === true && ($sent[0]['to'] ?? '') === 'kid@example.com' && $sent[0]['action'] === 'mail.send');
+    // A script that answers the quota without checking the token: the test must still catch a wrong secret.
+    $GLOBALS['__gas_mock'] = function ($url, $secret, $action, $data) {
+        if ($action === 'mail.quota') return ['ok' => true, 'remaining' => 97, 'account' => 'next@afrovanguard.org.ng'];
+        if ($secret !== 'gas-secret-123456') throw new RuntimeException('Bad token');
+        throw new RuntimeException('No valid recipient.');
+    };
+    $GLOBALS['CONFIG']['mail']['apps_script_secret'] = 'wrong-secret-0000';
+    $t = admin_keys_test(['requesterId' => 'NGG-2025-0099', 'service' => 'appsscript']);
+    chk('mail: a script that answers the quota unauthenticated still has its token proved', $t['pass'] === false && str_contains($t['detail'], 'does not match'));
+    $GLOBALS['CONFIG']['mail']['apps_script_secret'] = 'gas-secret-123456';
+    $t = admin_keys_test(['requesterId' => 'NGG-2025-0099', 'service' => 'appsscript']);
+    chk('…and with the right token it passes without sending anything', $t['pass'] === true && str_contains($t['detail'], 'accepted the secret'));
+    $GLOBALS['__gas_mock'] = function ($url, $secret, $action, $data) use (&$sent) {
+        if ($secret !== 'gas-secret-123456') throw new RuntimeException('Bad token');
+        if ($action === 'mail.send' && !str_contains((string)($data['to'] ?? ''), '@')) throw new RuntimeException('No valid recipient.');
+        if ($action === 'mail.quota') return ['ok' => true, 'remaining' => 97, 'account' => 'next@afrovanguard.org.ng'];
+        $sent[] = ['action' => $action] + $data; return ['ok' => true];
+    };
     $GLOBALS['CONFIG']['mail']['apps_script_secret'] = 'wrong-secret-0000';
     $t = admin_keys_test(['requesterId' => 'NGG-2025-0099', 'service' => 'appsscript']);
     chk('mail: the Apps Script test names a mismatched secret in words', $t['pass'] === false && str_contains($t['detail'], 'does not match'));

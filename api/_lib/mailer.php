@@ -119,6 +119,9 @@ function send_mail(string $to, string $subject, string $html, ?string $text = nu
         error_log('[send_mail/native] ' . $e->getMessage());
     }
 
+    /* A relay that fails mid-TLS can echo binary into its error text; keep
+       only what a person can read, so the report says what went wrong. */
+    $errors = array_map(static fn($e) => trim((string)preg_replace('/\s{2,}/', ' ', (string)preg_replace('/[^\x20-\x7E\x{2018}-\x{201D}]+/u', ' ', mb_convert_encoding((string)$e, 'UTF-8', 'UTF-8')))), $errors);
     $GLOBALS['__mail_last_error'] = $errors
         ? implode(' | ', $errors)
         : 'No delivery path available. Set mail.smtp.* or mail.resend_key in api/config.php.';
