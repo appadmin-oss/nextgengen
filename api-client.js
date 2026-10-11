@@ -743,6 +743,8 @@
       classPlan:   (slot, plan) => request('/member/teaching.php', { body: Object.assign({ action: 'classPlan', plan }, slot || {}) }),
       classHinge:  (slot, h) => request('/member/teaching.php', { body: Object.assign({ action: 'classHinge' }, slot || {}, h || {}) }),
       classExit:   (slot, x) => request('/member/teaching.php', { body: Object.assign({ action: 'classExit' }, slot || {}, x || {}) }),
+      classHistory: (slot) => request('/member/teaching.php' + qs(Object.assign({ view: 'history' }, slot || {}))),
+      teachStudent: (studentId) => request('/member/teaching.php' + qs({ view: 'student', studentId })),
       classLog:    (slot, l) => request('/member/teaching.php', { body: Object.assign({ action: 'classLog' }, slot || {}, l || {}) }),
       /* The class's school results (Progress → School results). Filtered and paged on the server. */
       classResults:  (o) => request('/member/teaching.php' + qs(Object.assign({ view: 'results' }, o || {}))),

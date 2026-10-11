@@ -526,3 +526,82 @@ function member_today(array $p): array {
             'indexMonth' => (string)($sc[0]['month'] ?? ''), 'level' => (int)($stats['level'] ?? 1), 'streak' => (int)($stats['streak'] ?? 0), 'week' => (int)($stats['currentWeek'] ?? 0)],
         'badges' => (object)$badges];
 }
+
+/* ── Analytics and the student profile ───────────────────────────────────── */
+
+/**
+ * instructor.class.history — the last N Saturdays of one class: who was here,
+ * how the exit ticket went, whether the log was filed. Feeds Analytics.
+ */
+function instructor_class_history(array $p): array {
+    $g = club_class_gate($p); if (empty($g['ok'])) return $g;
+    $slot = club_class_slot($g, $p + ['date' => results_today()]); if (empty($slot['ok'])) return $slot;
+    $roster = club_class_roster($g, $slot['course'], $slot['centre'], $slot['date']);
+    $ids = array_column($roster, 'memberId');
+    $rows = db_all('SELECT * FROM club_class_sessions WHERE course = ? AND centre = ? AND date <= ? ORDER BY date DESC LIMIT 12', [$slot['course'], $slot['centre'], $slot['date']]);
+    $weeks = [];
+    $per = array_fill_keys($ids, ['here' => 0, 'of' => 0, 'got' => 0, 'exits' => 0]);
+    foreach (array_reverse($rows) as $r) {
+        $roll = club_json($r['rollJson']); $exit = club_json($r['exitJson']);
+        $res = (array)($exit['results'] ?? []);
+        $c = array_count_values(array_values($res));
+        $here = count(array_filter($roll, static fn($v) => $v !== 'away'));
+        $weeks[] = ['date' => (string)$r['date'], 'here' => $here, 'away' => count($roll) - $here, 'closed' => (string)$r['rollClosedAt'] !== '',
+            'exit' => ['got' => $c['got'] ?? 0, 'partly' => $c['partly'] ?? 0, 'not' => $c['not'] ?? 0], 'filed' => (string)$r['filedAt'] !== '',
+            'aim' => (string)(club_json($r['planJson'])['aim'] ?? '')];
+        if ((string)$r['rollClosedAt'] !== '') foreach ($ids as $id) { $per[$id]['of']++; if (isset($roll[$id]) && $roll[$id] !== 'away') $per[$id]['here']++; }
+        foreach ($res as $id => $v) if (isset($per[$id])) { $per[$id]['exits']++; if ($v === 'got') $per[$id]['got']++; }
+    }
+    $students = [];
+    $levels = club_class_levels($roster, $slot['course']);
+    foreach ($roster as $r) {
+        $x = $per[$r['memberId']];
+        $students[] = ['memberId' => $r['memberId'], 'fullName' => $r['fullName'],
+            'attendance' => $x['of'] ? (int)round($x['here'] / $x['of'] * 100) : null, 'exitGot' => $x['exits'] ? (int)round($x['got'] / $x['exits'] * 100) : null,
+            'level' => $levels['by'][$r['memberId']] ?? null];
+    }
+    // Skill distribution: how many members sit at each level, per skill.
+    $dist = [];
+    if ($levels['skills'] && $ids) {
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        foreach ($levels['skills'] as $sk) $dist[$sk] = [1 => 0, 2 => 0, 3 => 0, 4 => 0];
+        foreach (db_all("SELECT skill, level FROM skill_marks WHERE course = ? AND subjectId IN ($ph)", array_merge([$slot['course']], $ids)) as $r)
+            if (isset($dist[(string)$r['skill']][(int)$r['level']])) $dist[(string)$r['skill']][(int)$r['level']]++;
+    }
+    return ['ok' => true, 'course' => $slot['course'], 'centre' => $slot['centre'], 'weeks' => $weeks, 'students' => $students,
+        'skills' => $levels['skills'], 'distribution' => (object)$dist, 'levels' => SKILL_LEVELS];
+}
+
+/** instructor.student — one member of the class: overview, skills, attendance, remarks, results, history. */
+function instructor_student(array $p): array {
+    $g = club_class_gate($p); if (empty($g['ok'])) return $g;
+    $m = results_staff_member($g, (string)($p['studentId'] ?? ''));
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $id = (string)$m['memberId'];
+    $course = (string)$m['track'];
+    $skills = course_skills($course);
+    $marks = [];
+    foreach (db_all('SELECT skill, level, prevLevel, evidence, markedByName, updatedAt FROM skill_marks WHERE subjectId = ? AND course = ?', [$id, $course]) as $r)
+        $marks[(string)$r['skill']] = ['level' => (int)$r['level'], 'prev' => $r['prevLevel'] === null ? null : (int)$r['prevLevel'], 'evidence' => (string)$r['evidence'], 'by' => (string)$r['markedByName'], 'at' => (string)$r['updatedAt']];
+    $att = array_map(static fn($r) => ['date' => (string)$r['date'], 'status' => (string)($r['status'] ?? ''), 'method' => (string)$r['method']],
+        db_all("SELECT date, status, method FROM attendance WHERE studentId = ? ORDER BY date DESC LIMIT 12", [$id]));
+    $sessions = db_all('SELECT date, rollJson, exitJson, logJson FROM club_class_sessions WHERE course = ? AND centre = ? ORDER BY date DESC LIMIT 12', [$course, (string)$m['centre']]);
+    $timeline = [];
+    foreach ($sessions as $s) {
+        $roll = club_json($s['rollJson']); $exit = club_json($s['exitJson']); $log = club_json($s['logJson']);
+        $timeline[] = ['date' => (string)$s['date'], 'roll' => (string)($roll[$id] ?? ''), 'exit' => (string)(((array)($exit['results'] ?? []))[$id] ?? ''), 'remark' => (string)(((array)($log['remarks'] ?? []))[$id] ?? '')];
+    }
+    $rem = remark_list(['requesterId' => (string)$g['member']['memberId'], 'subjectId' => $id]);
+    $mentor = results_mentor_of($id);
+    $term = (string)(db_row('SELECT term FROM results_uploads WHERE memberId = ? AND status = ? ORDER BY term DESC LIMIT 1', [$id, 'sent'])['term'] ?? '');
+    $history = array_merge(
+        array_map(static fn($r) => ['at' => (string)$r['at'], 'who' => (string)$r['who'], 'what' => (string)$r['what'], 'type' => 'results'], results_history($id, '', 20)),
+        array_map(static fn($r) => ['at' => (string)$r['createdAt'], 'who' => (string)$r['authorName'], 'what' => ucfirst((string)$r['kind']) . ' remark', 'type' => 'remark'], array_slice((array)($rem['remarks'] ?? []), 0, 20)),
+        array_map(static fn($k, $v) => ['at' => (string)$v['at'], 'who' => (string)$v['by'], 'what' => $k . ': ' . (SKILL_LEVELS[$v['level']] ?? '') . ($v['evidence'] !== '' ? ' — ' . $v['evidence'] : ''), 'type' => 'skill'], array_keys($marks), $marks));
+    usort($history, static fn($a, $b) => strcmp($b['at'], $a['at']));
+    return ['ok' => true, 'member' => ['memberId' => $id, 'fullName' => (string)$m['fullName'], 'first' => mp_first((string)$m['fullName']), 'track' => $course, 'centre' => (string)$m['centre'],
+            'mentor' => $mentor ? (string)$mentor['fullName'] : ''],
+        'skills' => $skills, 'marks' => (object)$marks, 'levels' => SKILL_LEVELS, 'attendance' => $att, 'timeline' => $timeline,
+        'remarks' => (array)($rem['remarks'] ?? []), 'remarkKinds' => REMARK_KINDS,
+        'results' => $term !== '' ? results_record($m, $term, results_today()) : null, 'history' => array_slice($history, 0, 40)];
+}

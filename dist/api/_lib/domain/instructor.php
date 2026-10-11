@@ -523,8 +523,14 @@ function instructor_skills_board(array $p): array {
     if ($reach !== null && !in_array($centre, $reach, true)) return ['ok' => false, 'error' => 'not_your_centre'];
 
     $skills = course_skills($course);
-    $roster = db_all("SELECT studentId, fullName FROM summer_students
-                      WHERE status = 'active' AND centre = ? AND track = ? ORDER BY fullName LIMIT 200", [$centre, $course]);
+    $roster = mentor_covers($g, 'summer') ? db_all("SELECT studentId, fullName FROM summer_students
+                      WHERE status = 'active' AND centre = ? AND track = ? ORDER BY fullName LIMIT 200", [$centre, $course]) : [];
+    /* The Club's class too: NGG members of this centre and course — children
+     * only (results_in_loop), the same class the Saturday screens read. */
+    if (mentor_covers($g, 'ngg') && function_exists('results_in_loop')) {
+        foreach (db_all("SELECT memberId, fullName, role, dob FROM members WHERE status = 'active' AND COALESCE(type,'NGG') <> 'Summer' AND centre = ? AND track = ? ORDER BY fullName LIMIT 200", [$centre, $course]) as $mm)
+            if (results_in_loop($mm)) $roster[] = ['studentId' => (string)$mm['memberId'], 'fullName' => (string)$mm['fullName']];
+    }
     $ids = array_column($roster, 'studentId');
     // One read for the whole grid, not one per child — the same mistake the
     // roster made before it was batched.

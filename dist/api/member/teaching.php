@@ -36,6 +36,10 @@ if ($method === 'GET') {
         // The instructor's Today, or one class's whole Saturday (roll, plan, hinge, exit ticket, log).
         $res = gs_call($view === 'today' ? 'instructor.today' : 'instructor.class', ['requesterId' => $s['mid']]
             + array_intersect_key($_GET, array_flip(['course', 'centre', 'date', 'term'])));
+    } elseif ($view === 'history') {
+        $res = gs_call('instructor.class.history', ['requesterId' => $s['mid']] + array_intersect_key($_GET, array_flip(['course', 'centre'])));
+    } elseif ($view === 'student') {
+        $res = gs_call('instructor.student', ['requesterId' => $s['mid'], 'studentId' => (string)($_GET['studentId'] ?? '')]);
     } elseif ($view === 'results') {
         // The class's school results for a term — filtered and paged on the server.
         $res = gs_call('instructor.results', ['requesterId' => $s['mid']]
