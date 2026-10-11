@@ -125,7 +125,7 @@ function cleanup() {
     await pg.waitForSelector('form[aria-label^="Make Kemi Adewale"]', { timeout: 30000 });
     const form = await pg.innerText('form[aria-label^="Make Kemi Adewale"]');
     chk('Promote asks for the NGG centre: NGG centres only, the nearest to where her Summer School met first and chosen',
-      /Egbeda · [\d.]+ km · nearest/.test(form) && /Ikeja/.test(form) && !/Summer School\)/.test(form.replace(/Summer School record/, ''))
+      /Egbeda · [^\n]*(min drive|km)[^\n]* · nearest/.test(form) && /Ikeja/.test(form) && !/Summer School\)/.test(form.replace(/Summer School record/, ''))
       && (await pg.$eval('form[aria-label^="Make Kemi Adewale"] [role=radio][aria-checked=true]', el => el.innerText)).startsWith('Egbeda'));
     await pg.click('form[aria-label^="Make Kemi Adewale"] [role=radio]:has-text("Ikeja")');
     await pg.click('form[aria-label^="Make Kemi Adewale"] button[type=submit]');
