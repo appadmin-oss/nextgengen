@@ -3508,3 +3508,57 @@ CREATE TABLE IF NOT EXISTS schools (
   INDEX idx_schools_key (nameKey), INDEX idx_schools_place (state, lga)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (142) ON DUPLICATE KEY UPDATE version = version;
+
+-- ---------------------------------------------------------------------------
+-- Reconcile: columns the SQLite ladder adds with ALTER that this mirror only
+-- ever declared inside a CREATE TABLE. CREATE TABLE IF NOT EXISTS skips a
+-- table that already exists, so a database created before the column was
+-- added never got it — "Unknown column 'duesRemindOff'" on a live host. Each
+-- ALTER is a no-op where the column exists (1060, ignored by the replay).
+-- api/tests/run.php fails if a migration's ALTER has no mirror here again.
+-- ---------------------------------------------------------------------------
+ALTER TABLE applications ADD COLUMN courses TEXT;
+ALTER TABLE applications ADD COLUMN dob VARCHAR(40) DEFAULT '';
+ALTER TABLE applications ADD COLUMN firstName VARCHAR(80) DEFAULT '';
+ALTER TABLE applications ADD COLUMN lastName VARCHAR(80) DEFAULT '';
+ALTER TABLE applications ADD COLUMN otherName VARCHAR(80) DEFAULT '';
+ALTER TABLE applications ADD COLUMN phone VARCHAR(24) DEFAULT '';
+ALTER TABLE applications ADD COLUMN photoUrl VARCHAR(512) DEFAULT '';
+ALTER TABLE applications ADD COLUMN program VARCHAR(16) DEFAULT '';
+ALTER TABLE assessment_instruments ADD COLUMN adaptNote TEXT;
+ALTER TABLE assessment_instruments ADD COLUMN catalogueKey VARCHAR(64) DEFAULT '';
+ALTER TABLE assessment_instruments ADD COLUMN citation TEXT;
+ALTER TABLE assessment_instruments ADD COLUMN higherIsBetter TINYINT DEFAULT 1;
+ALTER TABLE assessment_instruments ADD COLUMN licence VARCHAR(255) DEFAULT '';
+ALTER TABLE assessment_instruments ADD COLUMN scale VARCHAR(16) DEFAULT 'points';
+ALTER TABLE assessment_instruments ADD COLUMN source VARCHAR(255) DEFAULT '';
+ALTER TABLE assessment_instruments ADD COLUMN sourceUrl VARCHAR(255) DEFAULT '';
+ALTER TABLE assessment_instruments ADD COLUMN unit VARCHAR(64) DEFAULT '';
+ALTER TABLE auth_sessions ADD COLUMN purpose VARCHAR(16) DEFAULT 'login';
+ALTER TABLE curriculum_materials ADD COLUMN note TEXT;
+ALTER TABLE curriculum_materials ADD COLUMN reviewNote TEXT;
+ALTER TABLE curriculum_materials ADD COLUMN reviewedAt TEXT;
+ALTER TABLE curriculum_materials ADD COLUMN reviewedBy TEXT;
+ALTER TABLE curriculum_materials ADD COLUMN submittedBy TEXT;
+ALTER TABLE members ADD COLUMN anchorCode VARCHAR(12);
+ALTER TABLE members ADD COLUMN duesRemindOff TINYINT DEFAULT 0;
+ALTER TABLE members ADD COLUMN duesRemindedAt VARCHAR(40) DEFAULT '';
+ALTER TABLE members ADD COLUMN mouAt VARCHAR(40) DEFAULT '';
+ALTER TABLE members ADD COLUMN mouBy VARCHAR(64) DEFAULT '';
+ALTER TABLE members ADD COLUMN passwordHash VARCHAR(255) DEFAULT '';
+ALTER TABLE mentors ADD COLUMN afrovanguardRef VARCHAR(255) DEFAULT '';
+ALTER TABLE mentors ADD COLUMN linkedin VARCHAR(255) DEFAULT '';
+ALTER TABLE mentors ADD COLUMN program VARCHAR(64) DEFAULT '';
+ALTER TABLE mentors ADD COLUMN skills TEXT;
+ALTER TABLE mentors ADD COLUMN source VARCHAR(24) DEFAULT 'ngg';
+ALTER TABLE summer_students ADD COLUMN archivedAt VARCHAR(40);
+ALTER TABLE summer_students ADD COLUMN attendanceRate INT;
+ALTER TABLE summer_students ADD COLUMN daysPresent INT;
+ALTER TABLE summer_students ADD COLUMN firstSeen VARCHAR(12);
+ALTER TABLE summer_students ADD COLUMN lastSeen VARCHAR(12);
+ALTER TABLE volunteers ADD COLUMN dob VARCHAR(40) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN firstName VARCHAR(80) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN lastName VARCHAR(80) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN otherName VARCHAR(80) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN safeguarding VARCHAR(16) DEFAULT 'pending';
+CREATE UNIQUE INDEX idx_members_anchorcode ON members(anchorCode);

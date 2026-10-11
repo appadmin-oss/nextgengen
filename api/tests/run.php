@@ -1130,6 +1130,14 @@ chk('schools: GRID3 Nigeria\'s Lagos and Ogun schools load once, and a search fi
         && $local && $local[0]['name'] === 'Ayobo Senior High School'
         && count(backend_dispatch('public.schools', ['q' => 'a'])['schools']) === 0 && count($ogun) <= 20;
 })());
+chk('mysql mirror: every column a SQLite migration adds with ALTER is added by an ALTER in db/schema-mysql.sql (a CREATE TABLE alone never reaches an existing table)', (function () {
+    preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(\w+)/', (string)file_get_contents(__DIR__ . '/../_lib/db.php'), $a, PREG_SET_ORDER);
+    preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(?:IF NOT EXISTS\s+)?(\w+)/i', (string)file_get_contents(__DIR__ . '/../../db/schema-mysql.sql'), $b, PREG_SET_ORDER);
+    $have = array_flip(array_map(fn($m) => $m[1] . '.' . $m[2], $b));
+    $miss = array_values(array_unique(array_filter(array_map(fn($m) => $m[1] . '.' . $m[2], $a), fn($k) => !isset($have[$k]))));
+    if ($miss) fwrite(STDERR, '  missing in mysql mirror: ' . implode(', ', $miss) . "\n");
+    return !$miss;
+})());
 chk('summer signup: Apply finds the live public sign-up link — the centre\'s own, else the all-centres one, never an expired or desk link', (function () {
     db_exec("UPDATE gate_links SET status = 'revoked' WHERE kind = 'self'");
     $none = public_summer_signup([]);
