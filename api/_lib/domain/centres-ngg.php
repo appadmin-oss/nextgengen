@@ -152,7 +152,11 @@ function geo_tidy_address(string $a): string {
     $a = preg_replace('/\b(c\/o|p\.?o\.? box)\b.*$/i', ' ', (string)$a);
     $a = trim(preg_replace('/\s+/', ' ', str_replace(["\n", ';'], ', ', (string)$a)), " ,.");
     if ($a === '') return '';
-    if (!preg_match('/\b(lagos|ogun|oyo|abuja|fct|rivers|kano|kaduna|edo|delta|anambra|enugu|osun|ondo|ekiti|kwara|plateau|imo|abia|akwa ibom|cross river)\b/i', $a)) $a .= ', Lagos';
+    /* No state named: Lagos, unless the place is one of the Ogun towns at
+       Lagos's edge where families also live — "Sango Ota" with ", Lagos"
+       stuck on it was placed in Lagos, or not at all. */
+    if (!preg_match('/\b(lagos|ogun|oyo|abuja|fct|rivers|kano|kaduna|edo|delta|anambra|enugu|osun|ondo|ekiti|kwara|plateau|imo|abia|akwa ibom|cross river)\b/i', $a))
+        $a .= preg_match('/\b(' . GEO_OGUN_PLACES . ')\b/i', $a) ? ', Ogun' : ', Lagos';
     if (!preg_match('/\bnigeria\b/i', $a)) $a .= ', Nigeria';
     return $a;
 }
@@ -190,6 +194,8 @@ function geo_geocode(string $place, bool $network = true): ?array {
 /** Nigeria, and Lagos State (with the Ogun towns at its edge, where families also live). */
 const GEO_NIGERIA = [4.0, 14.0, 2.6, 14.7];          // minLat, maxLat, minLng, maxLng
 const GEO_LAGOS   = [6.25, 6.95, 2.65, 4.40];
+/* Ogun towns and LGAs near Lagos, as people write them. */
+const GEO_OGUN_PLACES = 'ota|sango|sango-ota|ado-odo|agbara|ifo|akute|ojodu-abiodun|mowe|ibafo|arepo|magboro|warewa|owode|atan|igbesa|abeokuta|sagamu|shagamu|ijebu|ikenne|ilaro|obafemi|ewekoro|itele|onihale|lafenwa|joju|iyana-iyesi';
 function geo_in_bounds(float $lat, float $lng, bool $lagos): bool {
     [$a, $b, $c, $d] = $lagos ? GEO_LAGOS : GEO_NIGERIA;
     return $lat >= $a && $lat <= $b && $lng >= $c && $lng <= $d;
@@ -208,7 +214,7 @@ function geo_google(string $q, string $key, bool $lagos = false): ?array {
 }
 function geo_nominatim(string $q, bool $lagos = false): ?array {
     $origin = (string)($GLOBALS['CONFIG']['app_origin'] ?? 'https://afrovanguard.org.ng');
-    $args = ['q' => $q, 'format' => 'jsonv2', 'limit' => 1, 'countrycodes' => 'ng'];
+    $args = ['q' => $q, 'format' => 'jsonv2', 'limit' => 6, 'countrycodes' => 'ng'];
     // Prefer Lagos when Lagos is meant, without refusing a place just over the edge.
     if ($lagos) $args['viewbox'] = GEO_LAGOS[2] . ',' . GEO_LAGOS[1] . ',' . GEO_LAGOS[3] . ',' . GEO_LAGOS[0];
     $url = 'https://nominatim.openstreetmap.org/search?' . http_build_query($args);
@@ -216,10 +222,23 @@ function geo_nominatim(string $q, bool $lagos = false): ?array {
     $r = ai_http_get($url, ['User-Agent: NGG-ControlRoom/1.0 (' . $origin . ')', 'Accept-Language: en']);
     if (empty($r['ok'])) return null;
     $j = json_decode((string)$r['body'], true);
-    $g = $j[0] ?? null;
+    $g = geo_nominatim_best(is_array($j) ? $j : [], $lagos);
     if (!$g) return null;
     return ['lat' => (float)$g['lat'], 'lng' => (float)$g['lon'], 'label' => (string)($g['display_name'] ?? $q),
-            'precise' => in_array((string)($g['addresstype'] ?? $g['type'] ?? ''), ['house', 'building', 'amenity', 'school'], true), 'via' => 'openstreetmap'];
+            'precise' => in_array((string)($g['addresstype'] ?? $g['type'] ?? ''), GEO_PRECISE_TYPES, true), 'via' => 'openstreetmap'];
+}
+const GEO_PRECISE_TYPES = ['house', 'building', 'amenity', 'school', 'shop', 'office', 'place_of_worship', 'bus_stop', 'road'];
+/**
+ * The first of Nominatim's answers that lies inside the area meant (Lagos
+ * when Lagos was said), in Nominatim's own relevance order. Taking only its
+ * first answer meant a same-named place in another state was found, thrown
+ * away by the bounds check, and the address left unplaced. (Re-ranking by
+ * "most specific" was tried and is worse: "Sango Ota" became a primary school
+ * of that name near Ijebu.)
+ */
+function geo_nominatim_best(array $hits, bool $lagos): ?array {
+    foreach ($hits as $h) if (isset($h['lat'], $h['lon']) && geo_in_bounds((float)$h['lat'], (float)$h['lon'], $lagos)) return $h;
+    return null;
 }
 /**
  * An address the way people in Lagos write one, tried until it lands: as
@@ -261,6 +280,55 @@ function geo_geocode_smart(string $address, bool $network = true): ?array {
  * answered; [] without a key.
  */
 function geo_drive_minutes(array $from, array $tos, bool $network = true): array {
+    return array_map(static fn($r) => $r['min'], array_filter(geo_route_table($from, $tos, $network), static fn($r) => $r['min'] !== null));
+}
+
+/**
+ * Road minutes AND road kilometres from one point to several: Google's
+ * Distance Matrix when a key is set, else the free OSRM router on
+ * OpenStreetMap's roads (maps.osrm_url; the public demo server by default,
+ * light use, cached a month per pair). [index => ['min' => int|null, 'km' => float|null]].
+ */
+function geo_route_table(array $from, array $tos, bool $network = true): array {
+    $key = trim((string)($GLOBALS['CONFIG']['maps']['google_key'] ?? ''));
+    $mock = isset($GLOBALS['__drive_mock']) && is_callable($GLOBALS['__drive_mock']);
+    if ($key === '' && !$mock) return geo_osrm_table($from, $tos, $network);
+    return array_map(static fn($m) => ['min' => $m, 'km' => null], geo_drive_minutes_google($from, $tos, $network));
+}
+
+function geo_osrm_table(array $from, array $tos, bool $network = true): array {
+    $cfg = $GLOBALS['CONFIG']['maps'] ?? [];
+    $mock = isset($GLOBALS['__osrm_mock']) && is_callable($GLOBALS['__osrm_mock']);
+    $base = rtrim((string)($cfg['osrm_url'] ?? 'https://router.project-osrm.org'), '/');
+    // Off when told, and never from a test that mocks the map (no network in a test).
+    if (!$mock && ($base === '' || !empty($cfg['offline']) || isset($GLOBALS['__geocode_mock']))) return [];
+    $out = []; $ask = [];
+    foreach ($tos as $i => $t) {
+        $ck = 'osrm.' . substr(sha1(round($from['lat'], 4) . ',' . round($from['lng'], 4) . '>' . round($t['lat'], 4) . ',' . round($t['lng'], 4)), 0, 24);
+        $hit = $mock ? null : cache_get($ck, GEO_CACHE_DAYS * 86400);
+        if (is_array($hit) && array_key_exists('min', $hit)) $out[$i] = ['min' => $hit['min'], 'km' => $hit['km']];
+        else $ask[$i] = $ck;
+    }
+    if (!$ask || !$network) return $out;
+    $keys = array_keys($ask);
+    $res = [];
+    if ($mock) $res = ($GLOBALS['__osrm_mock'])($from, array_intersect_key($tos, $ask));
+    else {
+        $coords = [$from['lng'] . ',' . $from['lat']];
+        foreach ($keys as $i) $coords[] = $tos[$i]['lng'] . ',' . $tos[$i]['lat'];
+        $origin = (string)($GLOBALS['CONFIG']['app_origin'] ?? 'https://afrovanguard.org.ng');
+        $r = ai_http_get($base . '/table/v1/driving/' . implode(';', $coords) . '?sources=0&annotations=duration,distance', ['User-Agent: NGG-ControlRoom/1.0 (' . $origin . ')']);
+        $j = !empty($r['ok']) ? json_decode((string)$r['body'], true) : null;
+        if (($j['code'] ?? '') === 'Ok') foreach ($keys as $n => $i) {
+            $sec = $j['durations'][0][$n + 1] ?? null; $m = $j['distances'][0][$n + 1] ?? null;
+            if ($sec !== null) $res[$i] = ['min' => (int)max(1, round($sec / 60)), 'km' => $m !== null ? round($m / 1000, 1) : null];
+        }
+    }
+    foreach ($ask as $i => $ck) if (isset($res[$i])) { $out[$i] = $res[$i]; if (!$mock) cache_put($ck, $res[$i]); }
+    return $out;
+}
+
+function geo_drive_minutes_google(array $from, array $tos, bool $network = true): array {
     $key = trim((string)($GLOBALS['CONFIG']['maps']['google_key'] ?? ''));
     $mock = isset($GLOBALS['__drive_mock']) && is_callable($GLOBALS['__drive_mock']);
     if ($key === '' && !$mock) return [];
@@ -343,15 +411,18 @@ function centre_ngg_nearest(string $homeAddress, string $summerCentre, bool $net
         $pt = $origin ? centre_ngg_point($c, $network) : null;
         $ranked[] = ['name' => (string)$c['name'], 'code' => (string)$c['code'],
                      'km' => $pt ? round(geo_distance_m((float)$origin['lat'], (float)$origin['lng'], (float)$pt['lat'], (float)$pt['lng']) / 1000, 1) : null,
-                     'minutes' => null, 'approx' => $pt ? !empty($pt['approx']) : true, '_pt' => $pt];
+                     'minutes' => null, 'roadKm' => null, 'approx' => $pt ? !empty($pt['approx']) : true, '_pt' => $pt];
     }
     usort($ranked, static fn($a, $b) => ($a['km'] === null) <=> ($b['km'] === null) ?: ($a['km'] <=> $b['km']) ?: strcmp($a['name'], $b['name']));
-    // The closest few, re-ordered by driving time when Google can say it.
+    /* By road, not as the crow flies: every centre that can be placed (a
+       programme has a handful, well inside one routing request), re-ordered
+       by driving time. Three kilometres across the lagoon can be forty
+       minutes by road; the straight line is only the fallback. */
     if ($origin) {
-        $top = array_slice(array_keys(array_filter($ranked, static fn($r) => $r['_pt'] !== null)), 0, 4);
-        $mins = geo_drive_minutes($origin, array_combine($top, array_map(static fn($i) => $ranked[$i]['_pt'], $top)) ?: [], $network);
-        foreach ($mins as $i => $m) $ranked[$i]['minutes'] = $m;
-        if (count($mins) >= 2) {
+        $top = array_slice(array_keys(array_filter($ranked, static fn($r) => $r['_pt'] !== null)), 0, 25);
+        $routes = geo_route_table($origin, array_combine($top, array_map(static fn($i) => $ranked[$i]['_pt'], $top)) ?: [], $network);
+        foreach ($routes as $i => $rt) { $ranked[$i]['minutes'] = $rt['min']; $ranked[$i]['roadKm'] = $rt['km']; }
+        if (count(array_filter($routes, static fn($rt) => $rt['min'] !== null)) >= 2) {
             $head = array_slice($ranked, 0, count($top)); $tail = array_slice($ranked, count($top));
             usort($head, static fn($a, $b) => ($a['minutes'] === null) <=> ($b['minutes'] === null) ?: ($a['minutes'] <=> $b['minutes']) ?: ($a['km'] <=> $b['km']));
             $ranked = array_merge($head, $tail);
@@ -371,7 +442,7 @@ function admin_club_promote_options(array $p): array {
     $n = centre_ngg_nearest($home, (string)($s['centre'] ?? ''));
     $prec = ['address' => '', 'landmark' => ' — placed by the landmark in it', 'street' => ' — placed by its street', 'area' => ' — placed by its area only, so distances are rough'][$n['precision'] ?? ''] ?? '';
     $why = ['home' => 'Measured from their home address' . ($home !== '' ? ' (' . mb_substr($home, 0, 80) . ')' : '') . $prec . '.'
-                . (array_filter($n['ranked'], static fn($r) => $r['minutes'] !== null) ? ' The closest are ordered by driving time.' : ''),
+                . (array_filter($n['ranked'], static fn($r) => $r['minutes'] !== null) ? ' Ordered by driving time on the roads.' : ''),
             'summer_venue' => 'No usable home address, so measured from where their Summer School met.',
             'summer_area' => 'No usable home address, so measured from the area of their Summer School centre.',
             '' => 'Nothing could be placed on a map, so the centres are in alphabetical order. Add their address, or map the centres, for a suggestion.'][$n['from']];

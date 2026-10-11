@@ -267,7 +267,7 @@ async function crMbPromoteParticipant(ctx, p) {
   try { ctx.toast("Finding the nearest NGG centres…"); o = await NGGApi.admin.club.promoteOptions(p.studentId); }
   catch (e) { ctx.toast(crErr(e, "Couldn’t load the centres."), null, true); return; }
   if (!(o.centres || []).length) { ctx.toast("No NGG centre is open. Add one in Members → Centres first.", null, true); return; }
-  const near = c => c.minutes != null ? "~" + c.minutes + " min drive" : c.km != null ? c.km + " km" + (c.approx ? " (approx.)" : "") : "";
+  const near = c => c.minutes != null ? "~" + c.minutes + " min drive" + (c.roadKm != null ? " · " + c.roadKm + " km by road" : "") + (c.approx ? " (approx.)" : "") : c.km != null ? c.km + " km in a straight line" + (c.approx ? " (approx.)" : "") : "";
   ctx.form({
     title: "Make " + p.fullName + " an NGG member",
     intro: "They get a member ID of their own and join the NGG centre you choose. Their Summer School record stays as it is. " + o.why,

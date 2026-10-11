@@ -10053,7 +10053,7 @@ function VolunteerNggMove({ v, onDone }) {
           <legend>NGG centre{opts.summerCentre ? " · nearest to " + opts.summerCentre + " first" : ""}</legend>
           {opts.centres.map((c, i) => <label key={c.name} className="vol-ngg-opt">
             <input type="radio" name={"ngg-" + v.volunteerId} checked={centre === c.name} onChange={() => setCentre(c.name)}/>
-            {c.name}{c.minutes != null ? " · " + c.minutes + " min drive" : c.km != null ? " · " + c.km + " km" : ""}{i === 0 && opts.suggested === c.name ? " · suggested" : ""}
+            {c.name}{c.minutes != null ? " · ~" + c.minutes + " min drive" + (c.roadKm != null ? ", " + c.roadKm + " km by road" : "") : c.km != null ? " · " + c.km + " km in a straight line" : ""}{i === 0 && opts.suggested === c.name ? " · suggested" : ""}
           </label>)}
         </fieldset>
         <label className="vol-ngg-opt"><input type="checkbox" checked={keep} onChange={e => setKeep(e.target.checked)}/> Keep serving Summer School too</label>

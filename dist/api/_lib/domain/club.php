@@ -226,7 +226,7 @@ function club_promote_suggestion(string $summerCentre, ?array $centres = null, s
     $measured = array_values(array_filter($n['ranked'], static fn($r) => $r['km'] !== null));
     if ($measured) {
         $best = $measured[0];
-        return ['name' => $best['name'], 'km' => $best['km'],
+        return ['name' => $best['name'], 'km' => $best['km'], 'minutes' => $best['minutes'] ?? null, 'roadKm' => $best['roadKm'] ?? null,
                 'reason' => ['home' => 'nearest NGG centre to their home address', 'summer_venue' => 'nearest NGG centre to where their Summer School met',
                              'summer_area' => 'nearest NGG centre to their Summer School centre’s area'][$n['from']] . ($best['approx'] ? ' (approximate — the centre is not mapped)' : ''),
                 'alternatives' => array_slice($measured, 1, 3)];

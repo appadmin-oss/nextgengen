@@ -25338,6 +25338,18 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $o2 = backend_dispatch('admin.club.promote.options', ['requesterId' => $SU, 'studentId' => 'SUM-CS-1']);
     chk('nearest: with Google, the closest few are ordered by driving time — the lagoon is not a road', $o2['centres'][0]['name'] === 'Ayobo' && $o2['centres'][0]['minutes'] === 12 && str_contains($o2['why'], 'driving'));
     unset($GLOBALS['__drive_mock']);
+    $GLOBALS['__osrm_mock'] = fn($from, $tos) => array_map(fn($t) => abs($t['lat'] - 6.6118) < 0.001 ? ['min' => 9, 'km' => 4.1] : ['min' => 35, 'km' => 15.2], $tos);
+    $o4 = backend_dispatch('admin.club.promote.options', ['requesterId' => $SU, 'studentId' => 'SUM-CS-1']);
+    chk('nearest: with no Google key, OpenStreetMap roads (OSRM) order every centre by driving time, with road kilometres', $o4['centres'][0]['name'] === 'Ayobo'
+        && $o4['centres'][0]['minutes'] === 9 && $o4['centres'][0]['roadKm'] === 4.1 && $o4['centres'][1]['minutes'] === 35 && str_contains($o4['why'], 'driving'));
+    unset($GLOBALS['__osrm_mock']);
+    chk('geocode: an Ogun town with no state named is looked for in Ogun, not Lagos', str_ends_with(geo_tidy_address('12 Iyana Iyesi road, Ota'), 'Ota, Ogun, Nigeria') && str_ends_with(geo_tidy_address('Egbeda'), 'Egbeda, Lagos, Nigeria'));
+    chk('geocode: of several OpenStreetMap answers, the first inside Lagos wins, not the first overall', (function () {
+        $hits = [['lat' => 9.06, 'lon' => 7.49, 'addresstype' => 'building', 'importance' => 0.9], ['lat' => 6.59, 'lon' => 3.29, 'addresstype' => 'suburb', 'importance' => 0.5],
+                 ['lat' => 6.60, 'lon' => 3.28, 'addresstype' => 'road', 'importance' => 0.2]];
+        $b = geo_nominatim_best($hits, true);
+        return $b && (float)$b['lat'] === 6.59;
+    })());
     db_update('summer_students', ['formData' => ''], ['studentId' => 'SUM-CS-1']);
     $o3 = backend_dispatch('admin.club.promote.options', ['requesterId' => $SU, 'studentId' => 'SUM-CS-1']);
     chk('nearest: with no address, measured from where their Summer School met', $o3['basis'] === 'summer_venue' && $o3['suggested'] === 'Egbeda');

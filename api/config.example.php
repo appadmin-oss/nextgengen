@@ -377,6 +377,19 @@ return [
     // (this site + /volunteer); only set them once the external STS site is
     // actually live, so nothing links users to an unbuilt destination.
     // -----------------------------------------------------------------------
+    // -----------------------------------------------------------------------
+    // Maps: placing addresses and measuring distance to the centres.
+    // Google (geocoding + Distance Matrix) when a key is set; otherwise free
+    // OpenStreetMap: Nominatim to place an address, OSRM for driving time and
+    // road distance (the public demo server by default; light use, cached a
+    // month). 'offline' => true never asks the network.
+    // -----------------------------------------------------------------------
+    'maps' => [
+        'google_key' => '',
+        'osrm_url'   => 'https://router.project-osrm.org',
+        'offline'    => false,
+    ],
+
     'afrovanguard' => [
         'org_url'        => 'https://afrovanguard.org.ng',   // parent org (optional)
         'sts_url'        => '',   // empty ⇒ NGG (app_origin); set when STS is live

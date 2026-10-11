@@ -5641,7 +5641,8 @@ function ClubPromote({ onChange }) {
                       <div className="admin-cell-sub" title={s.suggestedCentre.reason}>
                         {picks[s.studentId] && picks[s.studentId] !== s.suggestedCentre.name
                           ? "Suggested: " + s.suggestedCentre.name
-                          : s.suggestedCentre.km != null ? "Nearest · " + s.suggestedCentre.km + " km" : s.suggestedCentre.reason}
+                          : s.suggestedCentre.minutes != null ? "Nearest · ~" + s.suggestedCentre.minutes + " min drive" + (s.suggestedCentre.roadKm != null ? ", " + s.suggestedCentre.roadKm + " km by road" : "")
+                          : s.suggestedCentre.km != null ? "Nearest · " + s.suggestedCentre.km + " km in a straight line" : s.suggestedCentre.reason}
                       </div>
                     )}
                   </td>
