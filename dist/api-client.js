@@ -719,6 +719,7 @@
       mentorPlanApprove: (planId, note) => request('/member/mentor.php', { body: { action: 'planApprove', planId, note: note || '' } }),
       mentorPlanReturn:  (planId, note) => request('/member/mentor.php', { body: { action: 'planReturn', planId, note } }),
       /* School results and the growth plan — the member's own (Grow → School results). */
+      today:          () => request('/member/today.php'),
       results:        (term) => request('/member/results.php' + qs({ term: term || '' })),
       resultsUpload:  (term, fileUrl, mime, size) => request('/member/results.php', { body: { action: 'upload', term, fileUrl, mime, size } }),
       resultsRead:    (uploadId) => request('/member/results.php', { body: { action: 'read', uploadId } }),
@@ -735,6 +736,14 @@
       skillsMark:   (subjectId, course, marks, evidence) => request('/member/teaching.php', { body: { action: 'skills', subjectId, course, marks, evidence: evidence || {} } }),
       remarks:      (subjectId) => request('/member/teaching.php?view=remarks&subjectId=' + encodeURIComponent(subjectId || '')),
       remarkAdd:    (subjectId, kind, body) => request('/member/teaching.php', { body: { action: 'remark', subjectId, kind, body } }),
+      /* The instructor's Today, and one Club class's Saturday in teaching order. */
+      teachToday:  (o) => request('/member/teaching.php' + qs(Object.assign({ view: 'today' }, o || {}))),
+      teachClass:  (o) => request('/member/teaching.php' + qs(Object.assign({ view: 'class' }, o || {}))),
+      classRoll:   (slot, marks, close, awayRest) => request('/member/teaching.php', { body: Object.assign({ action: 'classRoll', marks: marks || {}, close: !!close, awayRest: !!awayRest }, slot || {}) }),
+      classPlan:   (slot, plan) => request('/member/teaching.php', { body: Object.assign({ action: 'classPlan', plan }, slot || {}) }),
+      classHinge:  (slot, h) => request('/member/teaching.php', { body: Object.assign({ action: 'classHinge' }, slot || {}, h || {}) }),
+      classExit:   (slot, x) => request('/member/teaching.php', { body: Object.assign({ action: 'classExit' }, slot || {}, x || {}) }),
+      classLog:    (slot, l) => request('/member/teaching.php', { body: Object.assign({ action: 'classLog' }, slot || {}, l || {}) }),
       /* The class's school results (Progress → School results). Filtered and paged on the server. */
       classResults:  (o) => request('/member/teaching.php' + qs(Object.assign({ view: 'results' }, o || {}))),
       classResult:   (studentId, term) => request('/member/teaching.php' + qs({ view: 'result', studentId, term })),

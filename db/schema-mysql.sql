@@ -3627,3 +3627,17 @@ CREATE TABLE IF NOT EXISTS results_log (
 ALTER TABLE skill_marks ADD COLUMN evidence TEXT;
 ALTER TABLE skill_marks ADD COLUMN prevLevel INT NULL;
 INSERT INTO schema_version (version) VALUES (144) ON DUPLICATE KEY UPDATE version = version;
+
+-- 145: The Club class's Saturday — roll, plan, hinge, exit ticket, log (domain/club-class.php).
+CREATE TABLE IF NOT EXISTS club_class_sessions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sessionId VARCHAR(40) NOT NULL, course VARCHAR(120) NOT NULL, centre VARCHAR(120) NOT NULL, date VARCHAR(12) NOT NULL,
+  instructorId VARCHAR(64) DEFAULT '', instructorName VARCHAR(160) DEFAULT '',
+  rollJson MEDIUMTEXT, rollClosedAt VARCHAR(40) DEFAULT '',
+  planJson MEDIUMTEXT, planAt VARCHAR(40) DEFAULT '',
+  hingeJson TEXT, exitJson MEDIUMTEXT, exitAt VARCHAR(40) DEFAULT '',
+  logJson MEDIUMTEXT, filedAt VARCHAR(40) DEFAULT '',
+  createdAt VARCHAR(40) DEFAULT '', updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_ccs_session (sessionId), UNIQUE KEY idx_ccs_slot (course, centre, date), INDEX idx_ccs_instr (instructorId, date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (145) ON DUPLICATE KEY UPDATE version = version;

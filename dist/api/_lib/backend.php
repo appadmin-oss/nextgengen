@@ -128,6 +128,15 @@ function backend_dispatch(string $op, array $args = []): array {
             'instructor.skills.board' => 'instructor_skills_board',
             'instructor.skills.mark'  => 'instructor_skills_mark',
             // School results and the growth plan (domain/school-results.php).
+            // The Club class's Saturday and the portals' Today pages (domain/club-class.php).
+            'instructor.today'          => 'instructor_today',
+            'instructor.class'          => 'instructor_class',
+            'instructor.class.roll'     => 'instructor_class_roll',
+            'instructor.class.plan'     => 'instructor_class_plan',
+            'instructor.class.hinge'    => 'instructor_class_hinge',
+            'instructor.class.exit'     => 'instructor_class_exit',
+            'instructor.class.log'      => 'instructor_class_log',
+            'member.today'              => 'member_today',
             'instructor.results'        => 'instructor_results',
             'instructor.result'         => 'instructor_result',
             'instructor.result.note'    => 'instructor_result_note',

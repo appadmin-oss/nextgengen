@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 144;
+const NGG_SCHEMA_TARGET = 145;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4580,6 +4580,23 @@ function db_migrate(PDO $db): void {
             CREATE INDEX IF NOT EXISTS idx_rl_kind ON results_log(kind, memberId, at);
             ALTER TABLE skill_marks ADD COLUMN evidence TEXT DEFAULT '';
             ALTER TABLE skill_marks ADD COLUMN prevLevel INTEGER;",
+        /* The Club class's Saturday (domain/club-class.php): the roll, the
+         * plan, the hinge question, the exit ticket and the filed log — one
+         * row per course, centre and date. The Summer School's course_sessions
+         * stays as it is; that one keys on participants, this one on members. */
+        145 => "
+            CREATE TABLE IF NOT EXISTS club_class_sessions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sessionId TEXT NOT NULL UNIQUE, course TEXT NOT NULL, centre TEXT NOT NULL, date TEXT NOT NULL,
+              instructorId TEXT DEFAULT '', instructorName TEXT DEFAULT '',
+              rollJson TEXT DEFAULT '', rollClosedAt TEXT DEFAULT '',
+              planJson TEXT DEFAULT '', planAt TEXT DEFAULT '',
+              hingeJson TEXT DEFAULT '', exitJson TEXT DEFAULT '', exitAt TEXT DEFAULT '',
+              logJson TEXT DEFAULT '', filedAt TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '', updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_ccs_slot ON club_class_sessions(course, centre, date);
+            CREATE INDEX IF NOT EXISTS idx_ccs_instr ON club_class_sessions(instructorId, date);",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

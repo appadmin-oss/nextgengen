@@ -26302,5 +26302,82 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     $GLOBALS['__skills_keep'] = setting_get('course_skills');
 })();
 
+// ── The Club class's Saturday and the Today pages (domain/club-class.php) ──
+(function () {
+    $pp = static fn(array $x = []) => $x + ['requesterId' => 'NGG-RSI', 'ip' => '127.0.0.1', 'course' => 'tech', 'centre' => 'Resultsville', 'date' => '2026-10-10'];
+    chk('class: the Club meets on Saturday — today if it is one, else the next', club_class_next_date('2026-10-10') === '2026-10-10' && club_class_next_date('2026-10-11') === '2026-10-17' && club_class_next_date('2026-10-16') === '2026-10-17');
+    $c = backend_dispatch('instructor.class', $pp());
+    $ids = array_column($c['roster'] ?? [], 'memberId');
+    chk('class: the roster is the children of this centre and course — no adults, no other course, no Summer accounts', !empty($c['ok'])
+        && in_array('NGG-RS-1', $ids, true) && in_array('NGG-RSP', $ids, true) && !in_array('NGG-RSI', $ids, true) && !in_array('NGG-RS-4', $ids, true) && !in_array('NGG-RS-S', $ids, true));
+    chk('class: nothing done yet — the next action is the roll', $c['loop']['next']['step'] === 'roll' && $c['loop']['steps']['log'] === 'todo');
+    chk('class: a course outside the instructor\'s reach is refused', (backend_dispatch('instructor.class', $pp(['course' => 'music']))['error'] ?? '') === 'not_your_course');
+    chk('class: a mentor cannot open the instructor\'s class', (backend_dispatch('instructor.class', $pp(['requesterId' => 'NGG-RSM']))['error'] ?? '') === 'forbidden_role');
+
+    // Roll: marks saved as tapped; a stranger's id is ignored; closing with gaps names them.
+    db_insert('attendance', ['cohortId' => '', 'studentId' => 'NGG-RS-2', 'token' => 't', 'date' => '2026-10-10', 'checkInAt' => '2026-10-10T08:05:00Z', 'method' => 'qr', 'status' => 'late']);
+    $r = backend_dispatch('instructor.class.roll', $pp(['marks' => ['NGG-RS-1' => 'here', 'NGG-RS-4' => 'here', 'NGG-RSP' => 'away']]));
+    chk('class: roll marks save, a child from another class is ignored', !empty($r['ok']) && !isset(((array)$r['session']['roll'])['NGG-RS-4']) && ((array)$r['session']['roll'])['NGG-RS-1'] === 'here');
+    $before = (int)db_row("SELECT COUNT(*) n FROM attendance WHERE date = '2026-10-10'")['n'];
+    $classIds = array_column(club_class_roster(club_class_gate(['requesterId' => 'NGG-RSI']), 'tech', 'Resultsville', '2026-10-10'), 'memberId');
+    $unmarked = array_values(array_diff($classIds, ['NGG-RS-1', 'NGG-RSP', 'NGG-RS-2']));
+    $cl = backend_dispatch('instructor.class.roll', $pp(['close' => true]));
+    chk('class: closing with members unmarked names them (the gate scan counts as marked)', ($cl['error'] ?? '') === ($unmarked ? 'unmarked' : '') || !empty($cl['ok']));
+    $cl = backend_dispatch('instructor.class.roll', $pp(['close' => true, 'awayRest' => true]));
+    $roll = (array)$cl['session']['roll'];
+    chk('class: closing — the gate\'s late scan stands, the rest are away, and only here/late add attendance (never an absence, never a duplicate)', !empty($cl['ok'])
+        && $roll['NGG-RS-2'] === 'late' && $roll['NGG-RSP'] === 'away' && $cl['attendanceAdded'] === 1
+        && (int)db_row("SELECT COUNT(*) n FROM attendance WHERE date = '2026-10-10'")['n'] === $before + 1
+        && db_row("SELECT method FROM attendance WHERE studentId = 'NGG-RS-1' AND date = '2026-10-10'")['method'] === 'instructor'
+        && !db_row("SELECT 1 FROM attendance WHERE studentId = 'NGG-RSP' AND date = '2026-10-10'"));
+
+    // Plan, hinge, exit, log.
+    chk('class: a plan needs an aim', (backend_dispatch('instructor.class.plan', $pp(['plan' => ['aim' => '']]))['error'] ?? '') === 'aim_required');
+    $pl = backend_dispatch('instructor.class.plan', $pp(['plan' => ['aim' => 'Loops: repeat a block a set number of times', 'steps' => [['title' => 'Warm-up', 'minutes' => 10], ['title' => 'Build', 'minutes' => 40], ['title' => '', 'minutes' => 5]]]]));
+    chk('class: the plan saves its steps and their total time', !empty($pl['ok']) && count($pl['session']['plan']->steps ?? ((array)$pl['session']['plan'])['steps']) === 2 && ((array)$pl['session']['plan'])['minutes'] === 50);
+    chk('class: a hinge needs a question and two options', (backend_dispatch('instructor.class.hinge', $pp(['question' => 'Which loop runs 3 times?', 'options' => ['A']]))['error'] ?? '') === 'question_and_two_options');
+    $h = backend_dispatch('instructor.class.hinge', $pp(['question' => 'Which loop runs 3 times?', 'options' => ['for i in range(3)', 'for i in range(1,3)'], 'correct' => 0, 'tally' => [7, 4], 'trippedUp' => 'Off-by-one on the start']));
+    chk('class: the hinge tally is kept', !empty($h['ok']) && ((array)$h['session']['hinge'])['tally'] === [7, 4]);
+    chk('class: an exit ticket cannot be finished with no results', (backend_dispatch('instructor.class.exit', $pp(['done' => true]))['error'] ?? '') === 'no_results');
+    $x = backend_dispatch('instructor.class.exit', $pp(['question' => 'Write a loop that prints 1 to 5', 'results' => ['NGG-RS-1' => 'not', 'NGG-RS-2' => 'got', 'NGG-RS-4' => 'got'], 'misconception' => 'range(1,5) stops at 4', 'done' => true]));
+    chk('class: exit results are counted, a child from another class ignored', !empty($x['ok']) && $x['summary'] === ['got' => 1, 'partly' => 0, 'not' => 1]);
+    $lg = backend_dispatch('instructor.class.log', $pp(['summary' => '', 'file' => true]));
+    chk('class: filing a log needs a summary', ($lg['error'] ?? '') === 'summary_required');
+    $lg = backend_dispatch('instructor.class.log', $pp(['summary' => 'Loops. Most got it.', 'remarks' => ['NGG-RS-1' => 'Struggled with range; keen though.', 'NGG-RS-4' => 'x'], 'file' => true]));
+    $lg2 = backend_dispatch('instructor.class.log', $pp(['summary' => 'Loops. Most got it.', 'remarks' => ['NGG-RS-1' => 'Struggled with range; keen though.'], 'file' => true]));
+    chk('class: filing sends each remark to the child\'s thread once — a refile does not resend', !empty($lg['ok']) && $lg['remarksSent'] === 1 && $lg2['remarksSent'] === 0
+        && (int)db_row("SELECT COUNT(*) n FROM student_remarks WHERE subjectId = 'NGG-RS-1' AND body LIKE 'Struggled with range%'")['n'] === 1);
+    $c2 = backend_dispatch('instructor.class', $pp());
+    chk('class: every step done, the loop says so', $c2['loop']['next'] === null && $c2['loop']['steps'] === ['roll' => 'done', 'plan' => 'done', 'teach' => 'done', 'exit' => 'done', 'log' => 'done']);
+    $nx = backend_dispatch('instructor.class', $pp(['date' => '2026-10-17']));
+    chk('class: next week carries over who didn\'t get the exit ticket, and the misconception', $nx['carryOver']['from'] === '2026-10-10'
+        && array_column($nx['carryOver']['notYet'], 'memberId') === ['NGG-RS-1'] && $nx['carryOver']['misconception'] === 'range(1,5) stops at 4');
+
+    // Mixed levels.
+    $roster = [['memberId' => 'A', 'fullName' => 'Ada'], ['memberId' => 'B', 'fullName' => 'Ben'], ['memberId' => 'C', 'fullName' => 'Cy'], ['memberId' => 'D', 'fullName' => 'Di']];
+    $mix = club_class_groups($roster, ['by' => ['A' => 1.0, 'B' => 2.5, 'C' => 3.5, 'D' => null]], []);
+    chk('class: the mix puts each member by level (unmarked in core) and pairs the strongest with the one needing support',
+        array_column($mix['groups']['support'], 'memberId') === ['A'] && array_column($mix['groups']['stretch'], 'memberId') === ['C']
+        && array_column($mix['groups']['core'], 'memberId') === ['B', 'D'] && $mix['pairs'][0][0]['memberId'] === 'C' && $mix['pairs'][0][1]['memberId'] === 'A');
+
+    // Instructor Today: To do in server order.
+    $t = backend_dispatch('instructor.today', $pp(['date' => '2026-10-17']));
+    $keys = array_column($t['todo'] ?? [], 'key');
+    chk('today (instructor): results needing attention come before preparation, and the carry-over is listed', !empty($t['ok'])
+        && array_search('results-attn', $keys, true) !== false && array_search('plan', $keys, true) !== false
+        && array_search('results-attn', $keys, true) < array_search('plan', $keys, true) && in_array('carry', $keys, true));
+    chk('today (instructor): rows carry icon, title, subtitle, cta, route and tone — and no internal rank', isset($t['todo'][0]['icon'], $t['todo'][0]['cta'], $t['todo'][0]['route'], $t['todo'][0]['tone']) && !isset($t['todo'][0]['rank']));
+
+    // Member Today.
+    $m = backend_dispatch('member.today', ['memberId' => 'NGG-RS-2']);
+    $mk = array_column($m['todo'] ?? [], 'key');
+    chk('today (member): results still owed are a deadline row with a badge on Grow → School results', !empty($m['ok']) && in_array('results', $mk, true)
+        && (((array)$m['badges'])['grow/results'] ?? '') === 'due' && $m['week']['saturday'] === club_class_next_date(results_today()));
+    $m1 = backend_dispatch('member.today', ['memberId' => 'NGG-RS-1']);
+    chk('today (member): a live plan shows this week\'s promises and a row for the sessions left', !empty($m1['ok']) && $m1['promises']['status'] === 'live'
+        && in_array('promises', array_column($m1['todo'], 'key'), true) && !in_array('results', array_column($m1['todo'], 'key'), true) && $m1['week']['mentor']['first'] === 'Remi');
+    chk('today (member): a Summer account is refused', (backend_dispatch('member.today', ['memberId' => 'NGG-RS-S'])['error'] ?? '') === 'not_ngg_member');
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

@@ -32,6 +32,10 @@ if ($method === 'GET') {
             'requesterId' => $s['mid'],
             'subjectId' => (string)($_GET['subjectId'] ?? ''),
         ]);
+    } elseif ($view === 'today' || $view === 'class') {
+        // The instructor's Today, or one class's whole Saturday (roll, plan, hinge, exit ticket, log).
+        $res = gs_call($view === 'today' ? 'instructor.today' : 'instructor.class', ['requesterId' => $s['mid']]
+            + array_intersect_key($_GET, array_flip(['course', 'centre', 'date', 'term'])));
     } elseif ($view === 'results') {
         // The class's school results for a term — filtered and paged on the server.
         $res = gs_call('instructor.results', ['requesterId' => $s['mid']]
@@ -64,6 +68,13 @@ if ($method === 'GET') {
             'subjectId' => $b['subjectId'] ?? '', 'course' => $b['course'] ?? '',
             'marks' => $b['marks'] ?? [], 'evidence' => $b['evidence'] ?? [], 'ip' => $ip,
         ]);
+    } elseif (in_array($action, ['classRoll', 'classPlan', 'classHinge', 'classExit', 'classLog'], true)) {
+        rate_limit_check('results.write', $s['mid']);
+        $op = ['classRoll' => 'instructor.class.roll', 'classPlan' => 'instructor.class.plan', 'classHinge' => 'instructor.class.hinge',
+               'classExit' => 'instructor.class.exit', 'classLog' => 'instructor.class.log'][$action];
+        $res = gs_call($op, ['requesterId' => $s['mid'], 'ip' => $ip] + array_intersect_key($b, array_flip(['course', 'centre', 'date',
+            'marks', 'close', 'awayRest', 'plan', 'question', 'options', 'correct', 'tally', 'trippedUp', 'results', 'misconception', 'feedback', 'done',
+            'summary', 'remarks', 'file'])));
     } elseif (in_array($action, ['resultNote', 'resultSeen', 'resultRemind'], true)) {
         rate_limit_check($action === 'resultRemind' ? 'results.remind' : 'results.write', $s['mid']);
         $op = ['resultNote' => 'instructor.result.note', 'resultSeen' => 'instructor.result.seen', 'resultRemind' => 'instructor.result.remind'][$action];
