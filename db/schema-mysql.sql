@@ -3566,3 +3566,64 @@ CREATE UNIQUE INDEX idx_members_anchorcode ON members(anchorCode);
 -- 143: the member record drive — answers a member row has no column for (sex, class, address, LGA, state), as JSON.
 ALTER TABLE members ADD COLUMN profileJson MEDIUMTEXT;
 INSERT INTO schema_version (version) VALUES (143) ON DUPLICATE KEY UPDATE version = version;
+
+-- 144: School results and the growth plan (domain/school-results.php); skill-mark evidence.
+CREATE TABLE IF NOT EXISTS results_uploads (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  uploadId VARCHAR(40) NOT NULL, memberId VARCHAR(64) NOT NULL, term VARCHAR(16) NOT NULL,
+  fileUrl VARCHAR(600) DEFAULT '', fileMime VARCHAR(80) DEFAULT '', fileBytes INT DEFAULT 0,
+  status VARCHAR(12) DEFAULT 'draft', ocrJson MEDIUMTEXT, ocrBy VARCHAR(40) DEFAULT '',
+  confirmedAt VARCHAR(40) DEFAULT '', sentAt VARCHAR(40) DEFAULT '',
+  createdAt VARCHAR(40) DEFAULT '', updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_ru_upload (uploadId), UNIQUE KEY idx_ru_one (memberId, term)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS results_subjects (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  uploadId VARCHAR(40) NOT NULL, subject VARCHAR(60) NOT NULL, score INT NULL,
+  ocrScore INT NULL, confidence DOUBLE NULL, lastScore INT NULL, position INT DEFAULT 0,
+  INDEX idx_rs_upload (uploadId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS growth_plans (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  planId VARCHAR(40) NOT NULL, uploadId VARCHAR(40) NOT NULL, memberId VARCHAR(64) NOT NULL, term VARCHAR(16) NOT NULL,
+  summary TEXT, flagsJson TEXT, habit VARCHAR(240) DEFAULT '',
+  aiModel VARCHAR(80) DEFAULT '', aiPromptVersion VARCHAR(16) DEFAULT '',
+  status VARCHAR(12) DEFAULT 'draft', committed TINYINT DEFAULT 0, recipientsJson VARCHAR(255) DEFAULT '',
+  returnNote TEXT, approvedBy VARCHAR(64) DEFAULT '', approvedByName VARCHAR(160) DEFAULT '', approvedAt VARCHAR(40) DEFAULT '',
+  sentAt VARCHAR(40) DEFAULT '', familySentAt VARCHAR(40) DEFAULT '', createdAt VARCHAR(40) DEFAULT '', updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_gp_plan (planId), UNIQUE KEY idx_gp_one (memberId, term), INDEX idx_gp_status (status, sentAt)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS growth_plan_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  itemId VARCHAR(40) NOT NULL, planId VARCHAR(40) NOT NULL, subject VARCHAR(60) NOT NULL,
+  current INT NULL, target INT NULL, method VARCHAR(16) DEFAULT 'retrieval',
+  what TEXT, whenWhere VARCHAR(240) DEFAULT '', sessionsPerWeek INT DEFAULT 3,
+  helper VARCHAR(16) DEFAULT 'self', position INT DEFAULT 0,
+  UNIQUE KEY idx_gpi_item (itemId), INDEX idx_gpi_plan (planId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS plan_checkins (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  itemId VARCHAR(40) NOT NULL, memberId VARCHAR(64) NOT NULL, weekStart VARCHAR(12) NOT NULL,
+  done INT DEFAULT 0, planned INT DEFAULT 0, updatedAt VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_pc_one (itemId, weekStart), INDEX idx_pc_member (memberId, weekStart)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS plan_notes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  planId VARCHAR(40) NOT NULL, authorId VARCHAR(64) NOT NULL, authorName VARCHAR(160) DEFAULT '', authorRole VARCHAR(24) DEFAULT '',
+  text TEXT NOT NULL, createdAt VARCHAR(40) DEFAULT '',
+  INDEX idx_pn_plan (planId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS plan_acks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  planId VARCHAR(40) NOT NULL, userId VARCHAR(64) NOT NULL, at VARCHAR(40) DEFAULT '',
+  UNIQUE KEY idx_pa_one (planId, userId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS results_log (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  memberId VARCHAR(64) NOT NULL, term VARCHAR(16) NOT NULL, actorId VARCHAR(64) DEFAULT '', actorName VARCHAR(160) DEFAULT '',
+  actorRole VARCHAR(24) DEFAULT '', what VARCHAR(400) NOT NULL, kind VARCHAR(24) DEFAULT '', at VARCHAR(40) DEFAULT '',
+  INDEX idx_rl_member (memberId, term, at), INDEX idx_rl_kind (kind, memberId, at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE skill_marks ADD COLUMN evidence TEXT;
+ALTER TABLE skill_marks ADD COLUMN prevLevel INT NULL;
+INSERT INTO schema_version (version) VALUES (144) ON DUPLICATE KEY UPDATE version = version;

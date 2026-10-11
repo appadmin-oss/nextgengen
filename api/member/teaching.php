@@ -32,6 +32,13 @@ if ($method === 'GET') {
             'requesterId' => $s['mid'],
             'subjectId' => (string)($_GET['subjectId'] ?? ''),
         ]);
+    } elseif ($view === 'results') {
+        // The class's school results for a term — filtered and paged on the server.
+        $res = gs_call('instructor.results', ['requesterId' => $s['mid']]
+            + array_intersect_key($_GET, array_flip(['term', 'filter', 'q', 'cursor', 'centre'])));
+    } elseif ($view === 'result') {
+        $res = gs_call('instructor.result', ['requesterId' => $s['mid']]
+            + array_intersect_key($_GET, array_flip(['studentId', 'term'])));
     } else { json_error('unknown_view', 400); }
 } elseif ($method === 'POST') {
     $b = read_json_body();
@@ -55,11 +62,16 @@ if ($method === 'GET') {
         $res = gs_call('instructor.skills.mark', [
             'requesterId' => $s['mid'],
             'subjectId' => $b['subjectId'] ?? '', 'course' => $b['course'] ?? '',
-            'marks' => $b['marks'] ?? [], 'ip' => $ip,
+            'marks' => $b['marks'] ?? [], 'evidence' => $b['evidence'] ?? [], 'ip' => $ip,
         ]);
+    } elseif (in_array($action, ['resultNote', 'resultSeen', 'resultRemind'], true)) {
+        rate_limit_check($action === 'resultRemind' ? 'results.remind' : 'results.write', $s['mid']);
+        $op = ['resultNote' => 'instructor.result.note', 'resultSeen' => 'instructor.result.seen', 'resultRemind' => 'instructor.result.remind'][$action];
+        $res = gs_call($op, ['requesterId' => $s['mid'], 'ip' => $ip] + array_intersect_key($b, array_flip(['studentId', 'term', 'text'])));
     } else { json_error('unknown_action', 400); }
 } else {
     json_error('method_not_allowed', 405);
 }
-if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+// Extra fields (which skills need evidence, when a reminder may go again) are what the screen acts on.
+if (empty($res['ok'])) json_send(['ok' => false, 'error' => $res['error'] ?? 'failed'] + array_diff_key($res, ['ok' => 1]), 400);
 unset($res['ok']); json_ok($res);

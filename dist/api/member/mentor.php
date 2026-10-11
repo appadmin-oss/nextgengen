@@ -10,6 +10,7 @@ const MENTOR_PORTAL_VIEWS = [
     'scorecard' => 'member.mentor.scorecard', 'index' => 'member.mentor.index', 'sessions' => 'member.mentor.sessions',
     'saturday' => 'member.mentor.saturday', 'messages' => 'member.mentor.messages', 'commitments' => 'member.mentor.commitments',
     'team' => 'member.mentor.team', 'academy' => 'member.mentor.academy',
+    'plans' => 'member.mentor.plans', 'plan' => 'member.mentor.plan',
 ];
 /** POST action → [op, body keys carried, rate-limit bucket]. Writes are limited; reads of state are not. */
 const MENTOR_PORTAL_ACTIONS = [
@@ -36,6 +37,8 @@ const MENTOR_PORTAL_ACTIONS = [
     'messageLead'     => ['member.mentor.message.lead', ['body', 'toId'], 'mentor.meeting'],
     'summerReview'    => ['member.mentor.summer.review', ['subjectId', 'effort', 'character', 'wellbeing', 'line'], 'mentor.review'],
     'nudgeDone'       => ['member.mentor.nudge.done', ['id'], ''],
+    'planApprove'     => ['member.mentor.plan.approve', ['planId', 'note'], 'mentor.meeting'],
+    'planReturn'      => ['member.mentor.plan.return', ['planId', 'note'], 'mentor.meeting'],
 ];
 $s = require_session();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -66,7 +69,7 @@ if ($method === 'GET') {
         // The Mentor Portal's screens (design handoff v14). Every one is gated
         // by mentor_gate in the domain; these lines only carry the query.
         $res = gs_call(MENTOR_PORTAL_VIEWS[$view], ['requesterId' => $s['mid']]
-            + array_intersect_key($_GET, array_flip(['centre', 'subjectId', 'month', 'date', 'days', 'scope'])));
+            + array_intersect_key($_GET, array_flip(['centre', 'subjectId', 'month', 'date', 'days', 'scope', 'term'])));
     } else {
         // `centre` narrows an admin (or anyone else covering more than one) to a
         // single class. The gate rejects a centre outside their scope.

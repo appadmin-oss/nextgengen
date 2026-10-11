@@ -292,6 +292,14 @@ function web_cron_reminders(): void {
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'curriculum.due', $e->getMessage()); }
     }
 
+    /* School results: the Sunday "tick your week", the Monday stalled-plan
+     * note to the mentor, and the Saturday due reminder. Each send is keyed in
+     * results_log per week, so a 15-minute tick sends it once. */
+    if (function_exists('results_job_run')) {
+        try { results_job_run(); }
+        catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'results.job', $e->getMessage()); }
+    }
+
     if (function_exists('nudges_run')) {
         try { nudges_run(attendance_today(), NUDGE_CRON_BATCH); }
         catch (Throwable $e) { if (function_exists('ops_record')) ops_record('error', 'nudges', $e->getMessage()); }

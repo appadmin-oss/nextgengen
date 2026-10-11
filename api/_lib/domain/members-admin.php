@@ -338,6 +338,11 @@ function member_merge_policy(): array {
         'mentor_register'        => ['MOVE_UNIQUE', 'subjectId'],
         'mentor_goal_checkins'   => ['MOVE', 'subjectId'],
         'safeguarding_cases'     => ['MOVE', 'subjectId'],
+        // School results (domain/school-results.php): one report and one plan per term — the survivor's stands.
+        'results_uploads'        => 'MOVE_UNIQUE',
+        'growth_plans'           => 'MOVE_UNIQUE',
+        'plan_checkins'          => 'MOVE',
+        'results_log'            => 'MOVE',           // the history is never dropped
         'attendance'             => ['MOVE_UNIQUE', 'studentId'],
         'engagement_snapshots'   => ['MOVE_UNIQUE', 'personId'],
         'infractions'            => ['MOVE_UNIQUE', 'personId', "personType = 'member'"],

@@ -9500,3 +9500,15 @@ html.ngs-lock, html.ngs-lock body { overflow: hidden; }
 .cr-rec-table td { padding: 8px; border-bottom: 1px solid var(--cr-line, #e4e6ec); vertical-align: top; }
 .cr-rec-table td b { display: block; }
 .cr-rec-empty { margin: 0; font-size: 13.5px; color: var(--cr-muted-3, #5c6478); }
+
+/* Skills board: the evidence a level-up needs (RESEARCH R8). Dark portal surface. */
+.skill-evidence { margin: 10px 0 2px; padding: 12px; border-radius: 12px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,206,84,.35); display: grid; gap: 8px; }
+.skill-evidence label { font-size: 13px; color: rgba(230,238,255,.9); }
+.skill-evidence input { min-height: 44px; padding: 10px 12px; border-radius: 10px; font: inherit; font-size: 15px; color: #eef2fb; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.2); }
+.skill-evidence input:focus-visible { outline: 2px solid #ffce54; outline-offset: 1px; }
+.skill-evidence-row { display: flex; gap: 8px; justify-content: flex-end; }
+.skill-evidence-row button { min-height: 44px; padding: 8px 14px; border-radius: 10px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; border: 1px solid rgba(255,255,255,.2); background: transparent; color: #eef2fb; }
+.skill-evidence-row button[type="submit"] { background: #ffce54; border-color: #ffce54; color: #14110a; }
+.skill-evidence-row button:disabled { opacity: .5; cursor: not-allowed; }
+.skill-evidence-err { margin: 0; font-size: 13px; color: #ffb4a8; }
+.skill-evidence-last { margin: 6px 0 0; font-size: 12.5px; color: rgba(230,238,255,.62); }

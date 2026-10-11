@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 143;
+const NGG_SCHEMA_TARGET = 144;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4512,6 +4512,74 @@ function db_migrate(PDO $db): void {
          * accepted application fills them and a member completes the rest. */
         143 => "
             ALTER TABLE members ADD COLUMN profileJson TEXT DEFAULT '';",
+        /* School results and the growth plan (domain/school-results.php): a
+         * member uploads a term's report, confirms what was read off it,
+         * writes a plan, and the mentor approves it before a family sees it.
+         * results_log is the append-only history the member and staff read
+         * ("Nothing is deleted"). skill_marks gains the evidence a level-up
+         * now needs, and the level it moved from. */
+        144 => "
+            CREATE TABLE IF NOT EXISTS results_uploads (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              uploadId TEXT NOT NULL UNIQUE, memberId TEXT NOT NULL, term TEXT NOT NULL,
+              fileUrl TEXT DEFAULT '', fileMime TEXT DEFAULT '', fileBytes INTEGER DEFAULT 0,
+              status TEXT DEFAULT 'draft', ocrJson TEXT DEFAULT '', ocrBy TEXT DEFAULT '',
+              confirmedAt TEXT DEFAULT '', sentAt TEXT DEFAULT '',
+              createdAt TEXT DEFAULT '', updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_ru_one ON results_uploads(memberId, term);
+            CREATE TABLE IF NOT EXISTS results_subjects (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              uploadId TEXT NOT NULL, subject TEXT NOT NULL, score INTEGER,
+              ocrScore INTEGER, confidence REAL, lastScore INTEGER, position INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_rs_upload ON results_subjects(uploadId);
+            CREATE TABLE IF NOT EXISTS growth_plans (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              planId TEXT NOT NULL UNIQUE, uploadId TEXT NOT NULL, memberId TEXT NOT NULL, term TEXT NOT NULL,
+              summary TEXT DEFAULT '', flagsJson TEXT DEFAULT '', habit TEXT DEFAULT '',
+              aiModel TEXT DEFAULT '', aiPromptVersion TEXT DEFAULT '',
+              status TEXT DEFAULT 'draft', committed INTEGER DEFAULT 0, recipientsJson TEXT DEFAULT '',
+              returnNote TEXT DEFAULT '', approvedBy TEXT DEFAULT '', approvedByName TEXT DEFAULT '', approvedAt TEXT DEFAULT '',
+              sentAt TEXT DEFAULT '', familySentAt TEXT DEFAULT '', createdAt TEXT DEFAULT '', updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_gp_one ON growth_plans(memberId, term);
+            CREATE INDEX IF NOT EXISTS idx_gp_status ON growth_plans(status, sentAt);
+            CREATE TABLE IF NOT EXISTS growth_plan_items (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              itemId TEXT NOT NULL UNIQUE, planId TEXT NOT NULL, subject TEXT NOT NULL,
+              current INTEGER, target INTEGER, method TEXT DEFAULT 'retrieval',
+              what TEXT DEFAULT '', whenWhere TEXT DEFAULT '', sessionsPerWeek INTEGER DEFAULT 3,
+              helper TEXT DEFAULT 'self', position INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_gpi_plan ON growth_plan_items(planId);
+            CREATE TABLE IF NOT EXISTS plan_checkins (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              itemId TEXT NOT NULL, memberId TEXT NOT NULL, weekStart TEXT NOT NULL,
+              done INTEGER DEFAULT 0, planned INTEGER DEFAULT 0, updatedAt TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_pc_one ON plan_checkins(itemId, weekStart);
+            CREATE INDEX IF NOT EXISTS idx_pc_member ON plan_checkins(memberId, weekStart);
+            CREATE TABLE IF NOT EXISTS plan_notes (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              planId TEXT NOT NULL, authorId TEXT NOT NULL, authorName TEXT DEFAULT '', authorRole TEXT DEFAULT '',
+              text TEXT NOT NULL, createdAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_pn_plan ON plan_notes(planId);
+            CREATE TABLE IF NOT EXISTS plan_acks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              planId TEXT NOT NULL, userId TEXT NOT NULL, at TEXT DEFAULT ''
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_pa_one ON plan_acks(planId, userId);
+            CREATE TABLE IF NOT EXISTS results_log (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              memberId TEXT NOT NULL, term TEXT NOT NULL, actorId TEXT DEFAULT '', actorName TEXT DEFAULT '',
+              actorRole TEXT DEFAULT '', what TEXT NOT NULL, kind TEXT DEFAULT '', at TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_rl_member ON results_log(memberId, term, at);
+            CREATE INDEX IF NOT EXISTS idx_rl_kind ON results_log(kind, memberId, at);
+            ALTER TABLE skill_marks ADD COLUMN evidence TEXT DEFAULT '';
+            ALTER TABLE skill_marks ADD COLUMN prevLevel INTEGER;",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

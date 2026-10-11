@@ -471,7 +471,13 @@ function instructor_skills_mark(array $p): array {
 
     $in = is_array($p['marks'] ?? null) ? $p['marks'] : [];
     if (!$in) return ['ok' => false, 'error' => 'no_marks'];
+    $evidence = is_array($p['evidence'] ?? null) ? $p['evidence'] : [];
     $now = now_iso(); $saved = 0;
+    /* Moving a child UP a level needs a line of evidence — what they did that
+     * showed it (RESEARCH R8: a bare number without a descriptor and evidence
+     * is not a reliable mark). Checked for the whole payload before any write,
+     * so a half-saved board never happens. Holding or lowering a level does not. */
+    $plan = []; $needs = [];
     foreach ($in as $skill => $level) {
         $skill = trim((string)$skill);
         $level = (int)$level;
@@ -479,15 +485,25 @@ function instructor_skills_mark(array $p): array {
         // stale client — skip it rather than storing a mark nothing can read.
         if (!in_array($skill, $known, true)) continue;
         if (!isset(SKILL_LEVELS[$level])) continue;
-        $row = ['level' => $level, 'markedById' => (string)$me['memberId'],
+        $ex = db_row("SELECT id, level, evidence FROM skill_marks WHERE subjectId = ? AND course = ? AND skill = ? LIMIT 1",
+                     [(string)$s['studentId'], $course, $skill]);
+        $prev = $ex ? (int)$ex['level'] : 0;
+        $ev = mb_substr(trim((string)($evidence[$skill] ?? '')), 0, 400);
+        if ($level > $prev && $prev > 0 && mb_strlen($ev) < 4) { $needs[] = $skill; continue; }
+        $plan[] = [$skill, $level, $prev, $ev, $ex];
+    }
+    if ($needs) return ['ok' => false, 'error' => 'evidence_required', 'skills' => $needs, 'subjectId' => (string)$s['studentId']];
+    foreach ($plan as [$skill, $level, $prev, $ev, $ex]) {
+        if ($ex && (int)$ex['level'] === $level && $ev === '') continue;
+        $row = ['level' => $level, 'prevLevel' => $ex ? $prev : null, 'markedById' => (string)$me['memberId'],
                 'markedByName' => (string)($g['mentor']['fullName'] ?? $me['fullName'] ?? ''),
                 'centre' => (string)($s['centre'] ?? ''), 'updatedAt' => $now];
-        $ex = db_row("SELECT id FROM skill_marks WHERE subjectId = ? AND course = ? AND skill = ? LIMIT 1",
-                     [(string)$s['studentId'], $course, $skill]);
+        if ($ev !== '') $row['evidence'] = $ev;
         if ($ex) db_update('skill_marks', $row, ['id' => (int)$ex['id']]);
         else db_insert('skill_marks', $row + ['subjectId' => (string)$s['studentId'], 'course' => $course, 'skill' => $skill]);
         $saved++;
     }
+    if (!$saved && $plan) return ['ok' => true, 'saved' => 0, 'unchanged' => true];
     if (!$saved) return ['ok' => false, 'error' => 'no_valid_marks'];
     audit('instructor.skills.mark', (string)$me['memberId'], (string)$s['studentId'],
           ['course' => $course, 'skills' => $saved], (string)($p['ip'] ?? ''));
@@ -512,12 +528,13 @@ function instructor_skills_board(array $p): array {
     $ids = array_column($roster, 'studentId');
     // One read for the whole grid, not one per child — the same mistake the
     // roster made before it was batched.
-    $marks = [];
+    $marks = []; $evid = [];
     if ($ids) {
         $in = '(' . implode(',', array_fill(0, count($ids), '?')) . ')';
-        foreach (db_all("SELECT subjectId, skill, level FROM skill_marks WHERE course = ? AND subjectId IN $in",
+        foreach (db_all("SELECT subjectId, skill, level, evidence FROM skill_marks WHERE course = ? AND subjectId IN $in",
                         array_merge([$course], $ids)) as $r) {
             $marks[(string)$r['subjectId']][(string)$r['skill']] = (int)$r['level'];
+            if ((string)($r['evidence'] ?? '') !== '') $evid[(string)$r['subjectId']][(string)$r['skill']] = (string)$r['evidence'];
         }
     }
     $students = [];
@@ -525,7 +542,7 @@ function instructor_skills_board(array $p): array {
         $id = (string)$r['studentId'];
         $mine = $marks[$id] ?? [];
         $students[] = ['studentId' => $id, 'fullName' => (string)$r['fullName'],
-            'marks' => $mine, 'marked' => count($mine), 'of' => count($skills)];
+            'marks' => $mine, 'evidence' => $evid[$id] ?? (object)[], 'marked' => count($mine), 'of' => count($skills)];
     }
     return ['ok' => true, 'course' => $course, 'centre' => $centre,
             'skills' => $skills, 'levels' => SKILL_LEVELS, 'students' => $students];

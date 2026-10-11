@@ -11290,9 +11290,20 @@ chk('seed: refreshes a stale auto-generated form, preserves a human-published on
         (int)db_row("SELECT COUNT(*) c FROM skill_marks WHERE subjectId='SUM-DRUM-1'")['c'] === 1);
     chk('re-marking overwrites rather than appending — the question is what they can do NOW', (function () {
         backend_dispatch('instructor.skills.mark', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-DRUM-1',
-            'course' => 'Talking Drums', 'marks' => ['Holds a steady pulse' => 4]]);
-        $rows = db_all("SELECT level FROM skill_marks WHERE subjectId='SUM-DRUM-1' AND skill='Holds a steady pulse'");
-        return count($rows) === 1 && (int)$rows[0]['level'] === 4;
+            'course' => 'Talking Drums', 'marks' => ['Holds a steady pulse' => 4], 'evidence' => ['Holds a steady pulse' => 'Kept the pulse for the whole call-and-response round']]);
+        $rows = db_all("SELECT level, prevLevel, evidence FROM skill_marks WHERE subjectId='SUM-DRUM-1' AND skill='Holds a steady pulse'");
+        return count($rows) === 1 && (int)$rows[0]['level'] === 4 && (int)$rows[0]['prevLevel'] === 3 && str_starts_with((string)$rows[0]['evidence'], 'Kept the pulse');
+    })());
+    chk('moving a child UP a level without evidence is refused, naming the skill (R8); the first mark and a lower one need none', (function () {
+        $up = backend_dispatch('instructor.skills.mark', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-DRUM-2',
+            'course' => 'Talking Drums', 'marks' => ['Holds a steady pulse' => 2]]);
+        $up2 = backend_dispatch('instructor.skills.mark', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-DRUM-2',
+            'course' => 'Talking Drums', 'marks' => ['Holds a steady pulse' => 3]]);
+        $down = backend_dispatch('instructor.skills.mark', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-DRUM-2',
+            'course' => 'Talking Drums', 'marks' => ['Holds a steady pulse' => 1]]);
+        $ok = !empty($up['ok']) && ($up2['error'] ?? '') === 'evidence_required' && ($up2['skills'] ?? []) === ['Holds a steady pulse'] && !empty($down['ok']);
+        db_exec("DELETE FROM skill_marks WHERE subjectId = 'SUM-DRUM-2'");
+        return $ok;
     })());
     chk('a skill cannot be marked on a child outside the instructor\'s reach at all',
         backend_dispatch('instructor.skills.mark', ['requesterId' => 'VOL-INS-1', 'subjectId' => 'SUM-R-1',
@@ -26100,6 +26111,195 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     unset($GLOBALS['__cloudinary_destroy_mock']);
     if ($keepCfg === null) unset($GLOBALS['CONFIG']['cloudinary']); else $GLOBALS['CONFIG']['cloudinary'] = $keepCfg;
     $GLOBALS['__photo_ref_force_fail'] = false;
+})();
+
+// ── School results and the growth plan: member → mentor → instructor ──
+(function () {
+    $now = now_iso();
+    $mk = static function (string $id, string $name, array $x = []) use ($now) {
+        db_insert('members', $x + ['memberId' => $id, 'fullName' => $name, 'email' => strtolower(str_replace(' ', '', $name)) . '@rs.example', 'type' => 'NGG',
+            'status' => 'active', 'role' => 'member', 'centre' => 'Resultsville', 'track' => 'tech', 'joinDate' => '2025-01-05', 'dob' => '2011-03-01',
+            'createdAt' => $now, 'updatedAt' => $now]);
+    };
+    $mk('NGG-RS-1', 'Amaka Results'); $mk('NGG-RS-2', 'Bola Results'); $mk('NGG-RS-3', 'Chidi Newjoin', ['joinDate' => '2026-09-20']);
+    $mk('NGG-RS-4', 'Dayo Otherclass', ['track' => 'music']); $mk('NGG-RS-S', 'Sam Summer', ['type' => 'Summer']);
+    $mk('NGG-RSM', 'Remi Mentor', ['dob' => '1990-01-01']); $mk('NGG-RSP', 'Pat Peer', ['dob' => '2010-01-01']);
+    foreach ([['MEN-RSM', 'NGG-RSM', 'Remi Mentor'], ['MEN-RSP', 'NGG-RSP', 'Pat Peer']] as [$mid, $mem, $nm]) {
+        db_insert('mentors', ['mentorId' => $mid, 'fullName' => $nm, 'email' => strtolower(str_replace(' ', '', $nm)) . '@rs.example', 'status' => 'active',
+            'centre' => 'Resultsville', 'programme' => 'ngg', 'memberId' => $mem, 'checkedAt' => $now, 'maxMentees' => 8, 'joinedAt' => '2025-01-01', 'rank' => 'mentor', 'createdAt' => $now]);
+    }
+    db_insert('mentor_assignments', ['memberId' => 'NGG-RS-1', 'mentorId' => 'MEN-RSM', 'status' => 'active', 'startedAt' => '2026-01-01']);
+    db_insert('mentor_assignments', ['memberId' => 'NGG-RS-2', 'mentorId' => 'MEN-RSP', 'status' => 'active', 'startedAt' => '2026-01-01']);
+    $mk('NGG-RSI', 'Ife Instructor', ['dob' => '1992-01-01', 'email' => 'ife.instructor@rs.example']);
+    db_insert('volunteers', ['volunteerId' => 'VOL-RSI', 'fullName' => 'Ife Instructor', 'email' => 'ife.instructor@rs.example', 'role' => 'instructor', 'status' => 'active',
+        'centre' => 'Resultsville', 'courses' => json_encode(['tech']), 'programme' => 'ngg', 'createdAt' => $now]);
+
+    $today = results_today();
+    $term = results_terms($today, 1)[0]['key'];
+    $prevTerm = results_term_prev($term);
+    chk('results: terms — the newest ended term comes first and names its school year', preg_match('/^\d{4}\/\d{2}-[123]$/', $term) === 1
+        && results_term_parse($term)['endsOn'] <= $today && results_term_parse('2025/26-2')['label'] === 'Second term 2025/26'
+        && results_term_prev('2026/27-1') === '2025/26-3' && results_term_prev('2025/26-3') === '2025/26-2' && results_term_parse('2025/27-1') === null);
+    chk('results: the week starts on Monday', results_week_start('2026-10-11') === '2026-10-05' && results_week_start('2026-10-05') === '2026-10-05');
+
+    $st = backend_dispatch('member.results.state', ['memberId' => 'NGG-RS-1']);
+    chk('results: a member owes the newest term, at the upload step', !empty($st['ok']) && $st['term'] === $term && ($st['due']['step'] ?? '') === 'upload' && count($st['methods']) === 5);
+    chk('results: a member who joined after the term ended owes nothing', backend_dispatch('member.results.state', ['memberId' => 'NGG-RS-3'])['due'] === null);
+    chk('results: a Summer account has no results loop', (backend_dispatch('member.results.state', ['memberId' => 'NGG-RS-S'])['error'] ?? '') === 'not_ngg_member');
+
+    // Last term's confirmed results, for the change column.
+    db_insert('results_uploads', ['uploadId' => 'RU-PREV', 'memberId' => 'NGG-RS-1', 'term' => $prevTerm, 'status' => 'sent', 'createdAt' => $now, 'updatedAt' => $now]);
+    foreach ([['Mathematics', 60], ['English Language', 70], ['Biology', 66]] as $i => [$n, $sc]) db_insert('results_subjects', ['uploadId' => 'RU-PREV', 'subject' => $n, 'score' => $sc, 'position' => $i]);
+
+    $url = 'https://res.cloudinary.com/nggtest/image/upload/v1/ngg/results/r1.jpg';
+    $up = static fn(array $x) => backend_dispatch('member.results.upload', $x + ['memberId' => 'NGG-RS-1', 'term' => $term, 'fileUrl' => $url, 'mime' => 'image/jpeg', 'size' => 300000]);
+    chk('results: a file from another host is refused', ($up(['fileUrl' => 'https://evil.example/r.jpg'])['error'] ?? '') === 'bad_file_url');
+    chk('results: a Word file is refused', ($up(['mime' => 'application/msword'])['error'] ?? '') === 'unsupported_type');
+    chk('results: over 10 MB is refused, with the limit', ($up(['size' => 11 * 1024 * 1024])['error'] ?? '') === 'file_too_large');
+    chk('results: a term that has not ended is refused', ($up(['term' => results_term_key((int)substr($today, 0, 4) + 1, 1)])['error'] ?? '') === 'bad_term');
+    $u = $up([]);
+    chk('results: a report uploads', !empty($u['ok']) && str_starts_with($u['uploadId'], 'RU-'));
+
+    // The reading: a mock vision model, one cell unsure.
+    $calls = 0;
+    $GLOBALS['__ai_results_mock'] = function () use (&$calls) { $calls++; return ['ok' => true, 'by' => 'mock-vision', 'subjects' => [
+        ['name' => 'Mathematics', 'score' => 48, 'confidence' => 0.95], ['name' => 'English Language', 'score' => 72, 'confidence' => 0.9],
+        ['name' => 'Biology', 'score' => 58, 'confidence' => 0.4], ['name' => 'mathematics', 'score' => 99], ['name' => 'Civic Education', 'score' => 81, 'confidence' => 0.92]]]; };
+    $rd = backend_dispatch('member.results.read', ['memberId' => 'NGG-RS-1', 'uploadId' => $u['uploadId']]);
+    chk('results: the reading comes back de-duplicated, with last term beside it and the unsure cell flagged', !empty($rd['ok']) && count($rd['subjects']) === 4
+        && $rd['subjects'][0]['last'] === 60 && $rd['subjects'][2]['low'] === true && $rd['subjects'][0]['low'] === false);
+    backend_dispatch('member.results.read', ['memberId' => 'NGG-RS-1', 'uploadId' => $u['uploadId']]);
+    chk('results: a file is read once — the second read is the stored answer, not a second paid call', $calls === 1);
+    chk('results: another member cannot read this upload', (backend_dispatch('member.results.read', ['memberId' => 'NGG-RS-2', 'uploadId' => $u['uploadId']])['error'] ?? '') === 'not_found');
+    chk('results: a plan cannot be drafted before the scores are checked', (backend_dispatch('member.results.plan.draft', ['memberId' => 'NGG-RS-1', 'uploadId' => $u['uploadId']])['error'] ?? '') === 'check_first');
+    chk('results: a missing score is named, not guessed', (backend_dispatch('member.results.confirm', ['memberId' => 'NGG-RS-1', 'uploadId' => $u['uploadId'],
+        'subjects' => [['name' => 'Mathematics', 'score' => 48], ['name' => 'Biology', 'score' => null]]])['subjects'] ?? []) === ['Biology']);
+    $cf = backend_dispatch('member.results.confirm', ['memberId' => 'NGG-RS-1', 'uploadId' => $u['uploadId'], 'subjects' => [
+        ['name' => 'Mathematics', 'score' => 48], ['name' => 'English Language', 'score' => 72], ['name' => 'Biology', 'score' => 61], ['name' => 'Physics', 'score' => 55]]]);
+    $log = array_column(results_history('NGG-RS-1', $term), 'what');
+    chk('results: the member\'s corrections are each logged (changed, added, removed)', !empty($cf['ok']) && $cf['changes'] === 3
+        && in_array('Changed Biology 58 → 61', $log, true) && in_array('Added Physics: 55', $log, true) && in_array('Removed Civic Education', $log, true));
+    chk('results: the stored row keeps what was read beside what was confirmed', (int)db_row("SELECT ocrScore FROM results_subjects WHERE uploadId = ? AND subject = 'Biology'", [$u['uploadId']])['ocrScore'] === 58);
+
+    // The draft: rules always; the AI only words it.
+    $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) { return ['ok' => true, 'provider' => 'mock-ai', 'text' => json_encode(['summary' => 'You worked steadily this term.',
+        'items' => [['subject' => 'Mathematics', 'what' => 'Do one past question cold, then check the worked answer.'], ['subject' => 'Geography', 'what' => 'ignored']]])]; };
+    $dr = backend_dispatch('member.results.plan.draft', ['memberId' => 'NGG-RS-1', 'uploadId' => $u['uploadId']]);
+    $pl = $dr['plan'] ?? [];
+    $subs = array_column($pl['items'] ?? [], 'subject');
+    chk('results: the draft picks at most three subjects, lowest and falling first', !empty($dr['ok']) && $subs === ['Mathematics', 'Physics', 'Biology']);
+    chk('results: each target is current + 8 and each method is from the five, with its evidence line', $pl['items'][0]['target'] === 56 && $pl['items'][0]['method'] === 'worked'
+        && $pl['items'][0]['ref'] === 'R2' && $pl['items'][1]['method'] === 'interleave');
+    chk('results: the AI words the summary and the "what", and cannot add a subject', $pl['summary'] === 'You worked steadily this term.'
+        && $pl['items'][0]['what'] === 'Do one past question cold, then check the worked answer.' && $pl['draftedBy'] === 'ai' && count($pl['items']) === 3);
+    chk('results: the draft leaves "when and where" for the member to write', $pl['items'][0]['whenWhere'] === '');
+    chk('results: the drop of 12 in Mathematics is flagged', in_array('Mathematics dropped -12 points since last term.', $pl['flags'], true));
+    unset($GLOBALS['__ai_mock']);
+
+    $items = $pl['items'];
+    $save = static fn(array $its, array $x = []) => backend_dispatch('member.results.plan.save', $x + ['memberId' => 'NGG-RS-1', 'planId' => $pl['planId'], 'items' => $its, 'habit' => 'Phone in the kitchen at 9pm', 'recipients' => ['family' => true]]);
+    chk('results: a fourth subject is refused', ($save(array_merge($items, [['subject' => 'English Language', 'target' => 80, 'method' => 'retrieval', 'sessionsPerWeek' => 2]]))['error'] ?? '') === 'too_many_subjects');
+    chk('results: a subject not on the report is refused', ($save([['subject' => 'Geography', 'target' => 70, 'method' => 'retrieval']])['error'] ?? '') === 'unknown_subject');
+    chk('results: a target below the current score is refused', ($save([['subject' => 'Mathematics', 'target' => 40, 'method' => 'worked']])['error'] ?? '') === 'target_below_current');
+    chk('results: an unknown method is refused', ($save([['subject' => 'Mathematics', 'target' => 60, 'method' => 'highlighting']])['error'] ?? '') === 'bad_method');
+    chk('results: 8 sessions a week is refused', ($save([['subject' => 'Mathematics', 'target' => 60, 'method' => 'worked', 'sessionsPerWeek' => 8]])['error'] ?? '') === 'bad_sessions');
+    $items[0]['whenWhere'] = 'Monday and Thursday after school, at the dining table';
+    $items[1]['whenWhere'] = '';
+    $items[2]['whenWhere'] = 'Saturday 4pm at the centre';
+    chk('results: the draft saves', !empty($save($items)['ok']));
+    $send = static fn(array $x = []) => backend_dispatch('member.results.plan.send', $x + ['memberId' => 'NGG-RS-1', 'planId' => $pl['planId']]);
+    $e = $send();
+    chk('results: sending without "when and where" names the subjects (R3)', ($e['error'] ?? '') === 'when_required' && $e['subjects'] === ['Physics']);
+    $items[1]['whenWhere'] = 'Wednesday 5pm in my room';
+    chk('results: sending needs the commitment ticked', ($send(['items' => $items, 'habit' => 'x', 'recipients' => ['family' => true]])['error'] ?? '') === 'commit_required');
+    $notesBefore = (int)db_row("SELECT COUNT(*) n FROM notifications WHERE memberId = 'NGG-RSM'")['n'];
+    $sn = $send(['items' => $items, 'habit' => 'Phone in the kitchen at 9pm', 'recipients' => ['family' => true], 'committed' => true]);
+    chk('results: the plan sends to the mentor and the instructor', !empty($sn['ok']) && $sn['mentor'] === 'Remi Mentor' && $sn['instructors'] === 1
+        && (int)db_row("SELECT COUNT(*) n FROM notifications WHERE memberId = 'NGG-RSM'")['n'] === $notesBefore + 1
+        && (int)db_row("SELECT COUNT(*) n FROM notifications WHERE memberId = 'NGG-RSI' AND kind = 'teaching'")['n'] === 1);
+    chk('results: a sent plan cannot be edited, and the report cannot be replaced', ($save($items)['error'] ?? '') === 'already_sent' && ($up([])['error'] ?? '') === 'already_sent');
+    chk('results: once sent, nothing is due', backend_dispatch('member.results.state', ['memberId' => 'NGG-RS-1'])['due'] === null);
+
+    // Ticks.
+    $it0 = $items[0]['itemId'];
+    $t1 = backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0]);
+    backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0]); backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0]);
+    $t4 = backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0]);
+    chk('results: ticks count up to the sessions planned and no further', !empty($t1['ok']) && $t1['done'] === 1 && $t4['done'] === 3 && $t4['planned'] === 3);
+    chk('results: a tick can be taken back', backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0, 'delta' => -1])['done'] === 2);
+    chk('results: an old week cannot be ticked', (backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-1', 'itemId' => $it0, 'weekStart' => '2026-01-05'])['error'] ?? '') === 'week_closed');
+    chk('results: another member cannot tick this plan', (backend_dispatch('member.results.tick', ['memberId' => 'NGG-RS-2', 'itemId' => $it0])['error'] ?? '') === 'not_found');
+
+    // Adherence: completed weeks only, silence counts as nothing done.
+    $its = [['itemId' => 'A', 'sessionsPerWeek' => 2], ['itemId' => 'B', 'sessionsPerWeek' => 2]];
+    chk('results: adherence is null until a full week has passed', results_adherence($its, '2026-10-06T10:00:00Z', '2026-10-11', []) === null);
+    chk('results: adherence is done over planned across the completed weeks, an unticked week counting as none',
+        // 2 weeks × 2 items × 2 planned = 8; done 2 + 1 + min(2, 5) = 5, and B's silent week is 0 → 63%.
+        results_adherence($its, '2026-09-21T10:00:00Z', '2026-10-11', [['itemId' => 'A', 'weekStart' => '2026-09-28', 'done' => 2], ['itemId' => 'B', 'weekStart' => '2026-09-28', 'done' => 1], ['itemId' => 'A', 'weekStart' => '2026-09-21', 'done' => 5]]) === 63);
+
+    // Mentor.
+    $pp = static fn(string $who, array $x = []) => ['requesterId' => $who, 'ip' => '127.0.0.1'] + $x;
+    $q = backend_dispatch('member.mentor.plans', $pp('NGG-RSM'));
+    chk('mentor: the sent plan is waiting for their approval', !empty($q['ok']) && count($q['waiting']) === 1 && $q['waiting'][0]['subjectId'] === 'NGG-RS-1');
+    $one = backend_dispatch('member.mentor.plan', $pp('NGG-RSM', ['subjectId' => 'NGG-RS-1']));
+    chk('mentor: they read the term — scores, plan and history', !empty($one['ok']) && $one['canApprove'] === true && count($one['record']['subjects']) === 4 && $one['record']['plan']['status'] === 'sent');
+    chk('mentor: another mentor\'s mentee is not theirs to read', (backend_dispatch('member.mentor.plan', $pp('NGG-RSP', ['subjectId' => 'NGG-RS-1']))['error'] ?? '') === 'not_found');
+    chk('mentor: a peer mentor cannot approve a plan', (backend_dispatch('member.mentor.plan.approve', $pp('NGG-RSP', ['planId' => $pl['planId']]))['error'] ?? '') === 'peer_cannot_approve');
+    chk('mentor: sending it back needs a note', (backend_dispatch('member.mentor.plan.return', $pp('NGG-RSM', ['planId' => $pl['planId'], 'note' => '']))['error'] ?? '') === 'note_required');
+    $ret = backend_dispatch('member.mentor.plan.return', $pp('NGG-RSM', ['planId' => $pl['planId'], 'note' => 'Make Physics two evenings, not one.']));
+    $st2 = backend_dispatch('member.results.state', ['memberId' => 'NGG-RS-1']);
+    chk('mentor: a returned plan is the member\'s draft again, with the note, and due again', !empty($ret['ok']) && $st2['record']['plan']['status'] === 'draft'
+        && $st2['record']['plan']['returnNote'] === 'Make Physics two evenings, not one.' && ($st2['due']['step'] ?? '') === 'returned' && $st2['record']['plan']['committed'] === false);
+    $items[1]['sessionsPerWeek'] = 2;
+    $send(['items' => $items, 'habit' => 'Phone in the kitchen at 9pm', 'recipients' => ['family' => true], 'committed' => true]);
+    db_insert('guardians', ['guardianId' => 'GRD-RS', 'email' => 'mum.results@rs.example', 'fullName' => 'Mrs Results', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardian_wards', ['linkId' => 'GW-RS', 'guardianId' => 'GRD-RS', 'memberId' => 'NGG-RS-1', 'status' => 'active', 'notify' => json_encode(['weekly' => true]), 'createdAt' => $now]);
+    $mails = []; $GLOBALS['__mail_mock'] = function ($to, $subject) use (&$mails) { $mails[] = [$to, $subject]; return true; };
+    $ap = backend_dispatch('member.mentor.plan.approve', $pp('NGG-RSM', ['planId' => $pl['planId'], 'note' => 'Good plan.']));
+    unset($GLOBALS['__mail_mock']);
+    $live = db_row('SELECT * FROM growth_plans WHERE planId = ?', [$pl['planId']]);
+    chk('mentor: approving makes the plan live, records who, and only now tells the family', !empty($ap['ok']) && $live['status'] === 'live' && $live['approvedByName'] === 'Remi Mentor'
+        && $ap['family'] === 1 && $live['familySentAt'] !== '');
+    chk('mentor: approving twice changes nothing', !empty(backend_dispatch('member.mentor.plan.approve', $pp('NGG-RSM', ['planId' => $pl['planId']]))['unchanged']));
+
+    // Instructor.
+    $ir = backend_dispatch('instructor.results', $pp('NGG-RSI', ['term' => $term]));
+    $ids = array_column($ir['rows'] ?? [], 'studentId');
+    chk('instructor: the class is the NGG members of their centre and course who owe this term', !empty($ir['ok']) && in_array('NGG-RS-1', $ids, true) && in_array('NGG-RS-2', $ids, true)
+        && !in_array('NGG-RS-3', $ids, true) && !in_array('NGG-RS-4', $ids, true) && !in_array('NGG-RS-S', $ids, true));
+    chk('instructor: counts are for the class, and the uploaded member below 55 needs attention', $ir['counts']['up'] === 1 && $ir['counts']['missing'] >= 1
+        && $ir['rows'][0]['studentId'] === 'NGG-RS-1' && $ir['rows'][0]['attention'] === true && $ir['rows'][0]['avg'] === 59 && $ir['rows'][0]['status'] === 'live');
+    chk('instructor: filters run on the server — the missing list is the children still owing, never an adult mentor or instructor account',
+        array_column(backend_dispatch('instructor.results', $pp('NGG-RSI', ['term' => $term, 'filter' => 'missing']))['rows'], 'studentId') === ['NGG-RS-2', 'NGG-RSP']
+        && count(backend_dispatch('instructor.results', $pp('NGG-RSI', ['term' => $term, 'q' => 'amaka']))['rows']) === 1);
+    chk('results: an adult staff account is not in the results loop', (backend_dispatch('member.results.state', ['memberId' => 'NGG-RSM'])['error'] ?? '') === 'not_ngg_member');
+    chk('instructor: a mentor is not an instructor here', (backend_dispatch('instructor.results', $pp('NGG-RSM'))['error'] ?? '') === 'forbidden_role');
+    $d = backend_dispatch('instructor.result', $pp('NGG-RSI', ['studentId' => 'NGG-RS-1', 'term' => $term]));
+    chk('instructor: one member\'s results and plan', !empty($d['ok']) && count($d['record']['subjects']) === 4 && $d['record']['plan']['status'] === 'live' && $d['seen'] === false);
+    chk('instructor: a member in another course is out of reach', (backend_dispatch('instructor.result', $pp('NGG-RSI', ['studentId' => 'NGG-RS-4', 'term' => $term]))['error'] ?? '') === 'not_found');
+    $n = backend_dispatch('instructor.result.note', $pp('NGG-RSI', ['studentId' => 'NGG-RS-1', 'term' => $term, 'text' => 'Physics: she rushes the units. Worth a word.']));
+    chk('instructor: a note reaches the mentor', !empty($n['ok']) && $n['mentorTold'] === true
+        && (bool)db_row("SELECT 1 FROM notifications WHERE memberId = 'NGG-RSM' AND title LIKE 'A note from Ife%'"));
+    chk('instructor: marking as seen is recorded once', !empty(backend_dispatch('instructor.result.seen', $pp('NGG-RSI', ['studentId' => 'NGG-RS-1', 'term' => $term]))['ok'])
+        && !empty(backend_dispatch('instructor.result.seen', $pp('NGG-RSI', ['studentId' => 'NGG-RS-1', 'term' => $term]))['unchanged']));
+    chk('instructor: a member who has sent cannot be reminded', (backend_dispatch('instructor.result.remind', $pp('NGG-RSI', ['studentId' => 'NGG-RS-1', 'term' => $term]))['error'] ?? '') === 'already_sent');
+    $r1 = backend_dispatch('instructor.result.remind', $pp('NGG-RSI', ['studentId' => 'NGG-RS-2', 'term' => $term]));
+    $r2 = backend_dispatch('instructor.result.remind', $pp('NGG-RSI', ['studentId' => 'NGG-RS-2', 'term' => $term]));
+    chk('instructor: a reminder goes, and a second one within a day is refused with the wait', !empty($r1['ok']) && ($r2['error'] ?? '') === 'rate_limited' && $r2['retryHours'] >= 23);
+
+    // The history is append-only and readable by the member.
+    $h = backend_dispatch('member.results.state', ['memberId' => 'NGG-RS-1'])['history'];
+    $kinds = array_column($h, 'kind');
+    chk('results: the history holds every step, newest first', $h[0]['kind'] === 'seen' && count(array_intersect(['upload', 'confirm', 'correct', 'draft', 'send', 'return', 'approve', 'family', 'note'], $kinds)) === 9);
+
+    // The job: Sunday tick reminder once a week; Saturday due reminder.
+    $sun = gmdate('Y-m-d', strtotime(results_week_start($today) . 'T00:00:00Z') + 6 * 86400);
+    $j1 = results_job_run($sun); $j2 = results_job_run($sun);
+    chk('job: the Sunday "tick your week" goes once per member per week', $j1['tick'] >= 1 && $j2['tick'] === 0);
+    unset($GLOBALS['__ai_results_mock']);
+
+    // Skills: moving a child up needs evidence.
+    $GLOBALS['__skills_keep'] = setting_get('course_skills');
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

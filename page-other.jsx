@@ -7067,10 +7067,19 @@ function SkillsPanel({ courses, centre }) {
 
   const skills = (d && d.skills) || [];
   const levels = (d && d.levels) || {};
-  const mark = async (studentId, skill, level) => {
+  /* Moving a child UP a level asks for one line of evidence — what they did
+     that showed it. The server refuses a level-up without it (evidence_required),
+     so the line is asked for here rather than the tap silently failing. */
+  const [ask, setAsk] = React.useState(null);     // { studentId, skill, level, text, err }
+  const mark = async (studentId, skill, level, evidence) => {
     setBusy(studentId + "|" + skill);
-    try { await NGGApi.member.skillsMark(studentId, course, { [skill]: level }); await load(); }
-    catch (_) { /* the grid reloads either way; a failed mark simply stays unset */ }
+    try {
+      await NGGApi.member.skillsMark(studentId, course, { [skill]: level }, evidence ? { [skill]: evidence } : {});
+      setAsk(null); await load();
+    } catch (e) {
+      if (e && e.code === "evidence_required") setAsk({ studentId, skill, level, text: evidence || "", err: evidence ? "Say a little more: what did they do?" : "" });
+      else setAsk(a => a && a.studentId === studentId && a.skill === skill ? Object.assign({}, a, { err: "That didn’t save. Try again." }) : a);
+    }
     setBusy("");
   };
 
@@ -7122,6 +7131,22 @@ function SkillsPanel({ courses, centre }) {
                         );
                       })}
                     </div>
+                    {ask && ask.studentId === s.studentId && ask.skill === sk && (
+                      <form className="skill-evidence" onSubmit={e => { e.preventDefault(); if (ask.text.trim().length >= 4) mark(s.studentId, sk, ask.level, ask.text.trim()); }}>
+                        <label htmlFor={"ev-" + s.studentId + sk}>What did {String(s.fullName).split(" ")[0]} do that shows “{levels[ask.level]}”?</label>
+                        <input id={"ev-" + s.studentId + sk} autoFocus value={ask.text} maxLength={400} placeholder="e.g. kept the pulse through the whole round"
+                          onChange={e => setAsk(Object.assign({}, ask, { text: e.target.value, err: "" }))}
+                          onKeyDown={e => { if (e.key === "Escape") setAsk(null); }}/>
+                        {ask.err && <p role="alert" className="skill-evidence-err">{ask.err}</p>}
+                        <div className="skill-evidence-row">
+                          <button type="button" onClick={() => setAsk(null)}>Cancel</button>
+                          <button type="submit" disabled={ask.text.trim().length < 4 || busy === s.studentId + "|" + sk}>Save the level</button>
+                        </div>
+                      </form>
+                    )}
+                    {(s.evidence || {})[sk] && !(ask && ask.studentId === s.studentId && ask.skill === sk) && (
+                      <p className="skill-evidence-last">Evidence: {(s.evidence || {})[sk]}</p>
+                    )}
                   </div>
                 ))}
               </div>

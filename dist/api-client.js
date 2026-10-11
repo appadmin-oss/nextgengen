@@ -713,14 +713,34 @@
       mentorAcademyResult: (moduleId, answers) => request('/member/mentor.php', { body: { action: 'academyResult', moduleId, answers } }),
       mentorSaturday: (date, centre) => request('/member/mentor.php' + qs({ view: 'saturday', date: date || '', centre: centre || '' })),
       mentorMessages: () => request('/member/mentor.php' + qs({ view: 'messages' })),
+      /* Growth plans waiting for the mentor, and one mentee's term (results + plan + history). */
+      mentorPlans:   (centre) => request('/member/mentor.php' + qs({ view: 'plans', centre: centre || '' })),
+      mentorPlan:    (subjectId, term) => request('/member/mentor.php' + qs({ view: 'plan', subjectId, term: term || '' })),
+      mentorPlanApprove: (planId, note) => request('/member/mentor.php', { body: { action: 'planApprove', planId, note: note || '' } }),
+      mentorPlanReturn:  (planId, note) => request('/member/mentor.php', { body: { action: 'planReturn', planId, note } }),
+      /* School results and the growth plan — the member's own (Grow → School results). */
+      results:        (term) => request('/member/results.php' + qs({ term: term || '' })),
+      resultsUpload:  (term, fileUrl, mime, size) => request('/member/results.php', { body: { action: 'upload', term, fileUrl, mime, size } }),
+      resultsRead:    (uploadId) => request('/member/results.php', { body: { action: 'read', uploadId } }),
+      resultsConfirm: (uploadId, subjects) => request('/member/results.php', { body: { action: 'confirm', uploadId, subjects } }),
+      resultsDraft:   (uploadId, fresh) => request('/member/results.php', { body: { action: 'draft', uploadId, fresh: !!fresh } }),
+      resultsSave:    (plan) => request('/member/results.php', { body: Object.assign({ action: 'save' }, plan || {}) }),
+      resultsSend:    (plan) => request('/member/results.php', { body: Object.assign({ action: 'send' }, plan || {}) }),
+      resultsTick:    (itemId, delta) => request('/member/results.php', { body: { action: 'tick', itemId, delta: delta < 0 ? -1 : 1 } }),
       /* The teaching record. One endpoint, three views — an instructor's day
          is one screen that switches between the class, a child and the grid. */
       session:      (course, centre, date) => request('/member/teaching.php?view=session&course=' + encodeURIComponent(course || '') + '&centre=' + encodeURIComponent(centre || '') + '&date=' + encodeURIComponent(date || '')),
       sessionSave:  (data) => request('/member/teaching.php', { body: Object.assign({ action: 'session' }, data || {}) }),
       skillsBoard:  (course, centre) => request('/member/teaching.php?view=skills&course=' + encodeURIComponent(course || '') + '&centre=' + encodeURIComponent(centre || '')),
-      skillsMark:   (subjectId, course, marks) => request('/member/teaching.php', { body: { action: 'skills', subjectId, course, marks } }),
+      skillsMark:   (subjectId, course, marks, evidence) => request('/member/teaching.php', { body: { action: 'skills', subjectId, course, marks, evidence: evidence || {} } }),
       remarks:      (subjectId) => request('/member/teaching.php?view=remarks&subjectId=' + encodeURIComponent(subjectId || '')),
       remarkAdd:    (subjectId, kind, body) => request('/member/teaching.php', { body: { action: 'remark', subjectId, kind, body } }),
+      /* The class's school results (Progress → School results). Filtered and paged on the server. */
+      classResults:  (o) => request('/member/teaching.php' + qs(Object.assign({ view: 'results' }, o || {}))),
+      classResult:   (studentId, term) => request('/member/teaching.php' + qs({ view: 'result', studentId, term })),
+      resultNote:    (studentId, term, text) => request('/member/teaching.php', { body: { action: 'resultNote', studentId, term, text } }),
+      resultSeen:    (studentId, term) => request('/member/teaching.php', { body: { action: 'resultSeen', studentId, term } }),
+      resultRemind:  (studentId, term) => request('/member/teaching.php', { body: { action: 'resultRemind', studentId, term } }),
       submitMission: (data) => request('/member/mission.php', { body: data }),
       journal:       () => request('/member/journal.php'),
       /* "Mine" — §8a in one request, and the writer's three verbs. */
