@@ -11,7 +11,7 @@
    Layout follows the form's OWN width (a ResizeObserver on the root), never
    the window's: < 680 one column with a fixed Back / Continue bar, 680–999 the
    6-column field grid, ≥ 1000 the step list on the left, ≥ 1280 the ID card
-   preview on the right. Summer School keeps its own form (JoinFormPage).
+   preview on the right. Summer School registers through its gated sign-up link (SummerSignupForward).
    ========================================================================== */
 
 const APF_DRAFT_KEY = "ngg-apply";

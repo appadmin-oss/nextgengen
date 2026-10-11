@@ -99,7 +99,6 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     const pg = await ctx.newPage();
     pg.on('pageerror', e => errs.push(String(e).slice(0, 200)));
 
-    const centresOn = async () => pg.$$eval('#join-centre option', os => os.map(o => o.value).filter(Boolean));
     // NGG: the Club application, whose centres are its own radio cards.
     const clubCentres = () => pg.$$eval('#apf-fld-centre [role=radio] b', bs => bs.map(b => b.textContent));
     const clubDraft = () => pg.evaluate(() => (JSON.parse(localStorage.getItem('ngg-apply') || '{}').v || {}));
@@ -114,14 +113,9 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await pg.waitForFunction(() => (JSON.parse(localStorage.getItem('ngg-apply') || '{}').v || {}).centre === 'Ayobo Club House', null, { timeout: 5000 })
       .then(() => chk('the NGG draft is saved under its own key', true), () => chk('the NGG draft is saved under its own key', false));
 
-    // Summer, in the same browser: the NGG draft must not leak into it.
-    await pg.goto(BASE + '/join?program=summer', { waitUntil: 'domcontentloaded' });
-    await waitForBoot(pg);
-    await pg.waitForFunction(() => document.querySelectorAll('#join-centre option').length > 2, null, { timeout: 30000 });
-    const sum = await centresOn();
-    chk('the Summer form offers Summer centres and not a Club-only centre', sum.includes('Ijaiye Summer Venue') && sum.includes('Egbeda') && !sum.includes('Ayobo Club House'));
-    chk('the NGG application\'s centre does not carry into the Summer form', (await pg.$eval('#join-centre', s => s.value)) === '');
+    // Summer School registers through its gated sign-up link, which offers Summer's own centres and courses.
     const offerS = await pg.evaluate(() => NGGApi.public.programme('summer'));
+    chk('Summer School\'s list offers Summer centres and not a Club-only centre', offerS.centres.map(c => c.name).includes('Ijaiye Summer Venue') && !offerS.centres.map(c => c.name).includes('Ayobo Club House'));
     chk('the Summer form offers Summer School\'s catalogue and not the Club\'s courses', JSON.stringify(offerS.faculties).includes('Piano') && !JSON.stringify(offerS.faculties).includes('Media Lab'));
 
     // A Summer venue in a link to the NGG form is cleared, not submitted.

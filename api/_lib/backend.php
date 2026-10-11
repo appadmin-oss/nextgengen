@@ -518,6 +518,7 @@ function backend_dispatch(string $op, array $args = []): array {
                and the centres with what runs at each, in one cacheable read.
                See domain/summer-editions.php. */
             'public.summer'               => 'public_summer_page',
+            'public.summer.signup'        => 'public_summer_signup',
             'gate.context'                => 'gate_context',
             'gate.register'               => 'gate_register',
             'parent.verify.context'       => 'parent_verify_context',

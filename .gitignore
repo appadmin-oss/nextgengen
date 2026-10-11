@@ -56,3 +56,6 @@ tests/_*_fixture.html
 
 # Throwaway files a running test writes and removes
 tests/_fixture-*
+
+# Screenshots the browser suites write on every run (regenerated; not committed)
+tests/screens/

@@ -1130,6 +1130,17 @@ chk('schools: GRID3 Nigeria\'s Lagos and Ogun schools load once, and a search fi
         && $local && $local[0]['name'] === 'Ayobo Senior High School'
         && count(backend_dispatch('public.schools', ['q' => 'a'])['schools']) === 0 && count($ogun) <= 20;
 })());
+chk('summer signup: Apply finds the live public sign-up link — the centre\'s own, else the all-centres one, never an expired or desk link', (function () {
+    db_exec("UPDATE gate_links SET status = 'revoked' WHERE kind = 'self'");
+    $none = public_summer_signup([]);
+    db_insert('gate_links', ['gateId' => 'SELF-ALL', 'kind' => 'self', 'name' => 'Public', 'cohortId' => '', 'centreId' => '', 'status' => 'active', 'createdAt' => now_iso()]);
+    db_insert('gate_links', ['gateId' => 'SELF-EG', 'kind' => 'self', 'name' => 'Egbeda', 'cohortId' => '', 'centreId' => 'Egbeda', 'status' => 'active', 'createdAt' => now_iso()]);
+    db_insert('gate_links', ['gateId' => 'SELF-OLD', 'kind' => 'self', 'name' => 'Old', 'cohortId' => '', 'centreId' => 'Ayobo', 'status' => 'active', 'expiresAt' => '2020-01-01T00:00:00Z', 'createdAt' => now_iso()]);
+    db_insert('gate_links', ['gateId' => 'DESK-AY', 'kind' => 'desk', 'name' => 'Desk', 'cohortId' => '', 'centreId' => 'Ayobo', 'status' => 'active', 'createdAt' => now_iso()]);
+    $eg = public_summer_signup(['centre' => 'egbeda']); $ay = public_summer_signup(['centre' => 'Ayobo']); $any = public_summer_signup([]);
+    db_exec("UPDATE gate_links SET status = 'revoked' WHERE gateId IN ('SELF-ALL', 'SELF-EG', 'SELF-OLD', 'DESK-AY')");
+    return $none['url'] === '' && $eg['url'] === '/apply?g=SELF-EG' && $eg['centre'] === 'Egbeda' && $ay['url'] === '/apply?g=SELF-ALL' && $any['url'] === '/apply?g=SELF-ALL';
+})());
 $cconv = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => (int)$crow['id']]);
 $cmem = db_row('SELECT * FROM members WHERE memberId = ?', [$cconv['memberId'] ?? '']);
 chk('club apply → member: the parent by name and number, the school and class, the agreements inherited', $cmem

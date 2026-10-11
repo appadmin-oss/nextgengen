@@ -1,22 +1,12 @@
 #!/usr/bin/env node
 /* ============================================================================
    Every drop-down opens as the application's list (installNggSelect,
-   components.jsx). Tested on a real React form (the Summer School join form
-   and the contact form): mouse, keyboard, search, a phone's sheet, and that
-   the page's own state changes — the <select> stays the source of truth.
+   components.jsx), tested on a real React form (the contact form): mouse,
+   keyboard, search, a phone's sheet, and that the page's own state holds the
+   choice — the <select> stays the source of truth. Also: Summer School's
+   Apply goes to its gated public sign-up link (/apply?g=…).
 
    Run:  node tests/select-layer.test.js
-   ==========================================================================
-   (harness below is shared with the Club application test)
-   against the real PHP backend: the bad data the old Google Form took cannot
-   be sent (a surname typed twice, "@gmail", a ten-digit phone, a dark photo,
-   a phone number as a promo code); 18 and over is sent to NGV; the answers
-   are normalised; the agreements land in the ledger with the policy version;
-   the same child sent again updates the application; "Apply for another
-   child" keeps the family; the policy opens in place; and the phone layout is
-   its own (full-screen pickers, a fixed Back / Continue bar).
-
-   Run:  node tests/club-apply.test.js
    ========================================================================== */
 'use strict';
 
@@ -84,49 +74,57 @@ const yearsAgo = (n, md) => (new Date().getFullYear() - n) + '-' + (md || '01-15
       await waitForBoot(p);
       return p;
     };
-    const draftCity = p => p.evaluate(() => (JSON.parse(localStorage.getItem('ngg.join.draft.summer') || '{}')).city || '');
 
-    console.log('desktop: the Summer School join form');
-    const P = await open(1280, 900, '/join?program=summer');
-    await P.waitForFunction(() => document.querySelectorAll('#join-centre option').length > 2, null, { timeout: 30000 });
-    await P.click('#join-centre');
+    console.log('desktop: the contact form');
+    const sel = 'form select';
+    const P = await open(1280, 900, '/contact');
+    await P.waitForSelector(sel, { timeout: 30000 });
+    await P.click(sel);
     await P.waitForSelector('.ngs--pop', { timeout: 5000 });
     fs.mkdirSync(path.join(ROOT, 'tests', 'screens', 'select-layer'), { recursive: true });
     await P.screenshot({ path: path.join(ROOT, 'tests', 'screens', 'select-layer', 'desktop.png') });
-    chk('clicking a drop-down opens the application-style list, not the OS one', (await P.$$eval('.ngs--pop .ngs-o', bs => bs.map(b => b.textContent))).some(t => /Ayobo/.test(t)));
-    await P.click('.ngs--pop .ngs-o:has-text("Ayobo")');
-    chk('choosing sets the select and the page’s own state (its draft) follows', (await P.$eval('#join-centre', s => s.value)) === 'Ayobo' && !(await P.$('.ngs')) && /Ayobo/.test(await draftCity(P)));
-    await P.focus('#join-centre');
+    chk('clicking a drop-down opens the application-style list, not the OS one', (await P.$$eval('.ngs--pop .ngs-o', bs => bs.map(b => b.textContent))).some(t => /Press/.test(t)));
+    await P.click('.ngs--pop .ngs-o:has-text("Press")');
+    await P.fill('form input[type=email]', 'someone@example.org');   // a re-render: React would put back a value it never heard about
+    chk('choosing sets the select, and the page’s own state holds it through a re-render', (await P.$eval(sel, s => s.options[s.selectedIndex].text)) === 'Press / media' && !(await P.$('.ngs')));
+    await P.focus(sel);
     await P.keyboard.press('Enter');
     await P.waitForSelector('.ngs--pop');
-    chk('the chosen option is ticked when it opens again', !!(await P.$('.ngs-o[aria-selected="true"]:has-text("Ayobo") i.ph-check')));
+    chk('the chosen option is ticked when it opens again', !!(await P.$('.ngs-o[aria-selected="true"]:has-text("Press") i.ph-check')));
     await P.keyboard.press('ArrowDown'); await P.keyboard.press('Enter');
-    chk('keyboard: Enter opens, arrows move, Enter picks, focus returns to the field', (await P.$eval('#join-centre', s => s.value)) !== 'Ayobo' && await P.evaluate(() => document.activeElement && document.activeElement.id === 'join-centre'));
+    chk('keyboard: Enter opens, arrows move, Enter picks, focus returns to the field', (await P.$eval(sel, s => s.options[s.selectedIndex].text)) !== 'Press / media'
+      && await P.evaluate(s => document.activeElement === document.querySelector(s), sel));
     await P.keyboard.press('Enter'); await P.waitForSelector('.ngs--pop'); await P.keyboard.press('Escape');
     chk('Escape closes without changing anything', !(await P.$('.ngs')));
     await P.context().close();
 
     console.log('phone: a sheet');
-    const M = await open(390, 844, '/join?program=summer', true);
-    await M.waitForFunction(() => document.querySelectorAll('#join-centre option').length > 2, null, { timeout: 30000 });
-    await M.tap('#join-centre');
+    const M = await open(390, 844, '/contact', true);
+    await M.waitForSelector(sel, { timeout: 30000 });
+    await M.tap(sel);
     await M.waitForSelector('.ngs--sheet', { timeout: 5000 });
     await M.screenshot({ path: path.join(ROOT, 'tests', 'screens', 'select-layer', 'phone.png') });
-    chk('on a phone the list is a full-screen sheet with its label and a search box', /centre|Centre/.test(await M.innerText('.ngs-h b')) && !!(await M.$('.ngs--sheet .ngs-s input')));
-    await M.fill('.ngs-s input', 'ikot');
+    chk('on a phone the list is a full-screen sheet with its label and a search box', (await M.innerText('.ngs-h b')).trim().length > 0 && !!(await M.$('.ngs--sheet .ngs-s input')));
+    await M.fill('.ngs-s input', 'partner');
     chk('…and the search filters', (await M.$$('.ngs-o')).length === 1);
-    await M.tap('.ngs-o:has-text("Ikotun")');
-    chk('…a tap picks', (await M.$eval('#join-centre', s => s.value)) === 'Ikotun' && !(await M.$('.ngs')));
+    await M.tap('.ngs-o:has-text("Partnership")');
+    chk('…a tap picks', /Partnership/.test(await M.$eval(sel, s => s.options[s.selectedIndex].text)) && !(await M.$('.ngs')));
     await M.context().close();
 
-    console.log('contact form');
-    const C = await open(1280, 900, '/contact');
-    const csel = await C.waitForSelector('select', { timeout: 30000 });
-    await csel.click();
-    await C.waitForSelector('.ngs--pop');
-    await C.click('.ngs-o:has-text("Press")');
-    chk('another form’s drop-down works the same way', (await C.$eval('select', s => s.options[s.selectedIndex].text)) === 'Press / media');
-    await C.context().close();
+    console.log('Summer School: Apply goes to the gated sign-up link');
+    php(`db_insert('gate_links', ['gateId'=>'GATE-SL-ALL','kind'=>'self','name'=>'Public sign-up','cohortId'=>'','centreId'=>'','status'=>'active','createdAt'=>now_iso()]);`
+      + `db_insert('gate_links', ['gateId'=>'GATE-SL-AY','kind'=>'self','name'=>'Ayobo sign-up','cohortId'=>'','centreId'=>'Ayobo','status'=>'active','createdAt'=>now_iso()]);`);
+    const S = await open(1280, 900, '/join?program=summer');
+    await S.waitForFunction(() => location.pathname === '/apply', null, { timeout: 30000 }).catch(() => {});
+    chk('/join?program=summer forwards to the live public sign-up link', new URL(S.url()).pathname === '/apply' && new URL(S.url()).searchParams.get('g') === 'GATE-SL-ALL');
+    await S.goto(BASE + '/join?program=summer&centre=Ayobo', { waitUntil: 'domcontentloaded' }); await waitForBoot(S);
+    await S.waitForFunction(() => location.pathname === '/apply', null, { timeout: 30000 }).catch(() => {});
+    chk('…to that centre’s own link when the button named a centre', new URL(S.url()).searchParams.get('g') === 'GATE-SL-AY');
+    php(`db_exec("UPDATE gate_links SET status = 'revoked'");`);
+    await S.goto(BASE + '/join?program=summer', { waitUntil: 'domcontentloaded' }); await waitForBoot(S);
+    await S.waitForSelector('.summer-fwd [role=status] h1', { timeout: 30000 });
+    chk('…and with no link open, it says so and points to the centres (no old form)', /isn’t open online right now/.test(await S.innerText('.summer-fwd')));
+    await S.context().close();
 
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));
