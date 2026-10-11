@@ -210,6 +210,7 @@ async function contextFor(memberId, admin, viewport) {
     await mp.click('.cur-mats button.cur-mat');
     chk('a PDF material opens inside the lesson, without leaving the platform', !!(await mp.waitForSelector('.cur-viewer iframe', { timeout: 10000 })));
     await mp.goto(BASE + '/dashboard/learning', { waitUntil: 'domcontentloaded' });
+    await waitForBoot(mp);
     await mp.waitForSelector('.cur-item', { timeout: 40000 });
     const mat = await get(BASE + matUrl, { Cookie: 'ngg_sess=' + mtoken });
     chk('the stored material serves to a signed-in member, as the PDF it was', mat.status === 200 && mat.headers['content-type'] === 'application/pdf' && mat.body.toString().startsWith('%PDF'));

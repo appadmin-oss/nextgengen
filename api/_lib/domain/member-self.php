@@ -33,6 +33,12 @@ const MEMBER_REQUEST_KINDS = [
     'appeal'  => 'Appeal a charge',
     'leave'   => 'Leave of absence',
     'idcard'  => 'Replacement ID card',
+    /* The member portal's profile is read-only ("Managed by NGG"): a wrong
+       name, school or guardian number is asked for here, checked with the
+       family by the desk, and corrected in the Control Room. */
+    'details' => 'Correct my details',
+    'mentor'  => 'Change of mentor',
+    'help'    => 'Tell us about something',
 ];
 
 const MEMBER_REQUEST_STATUSES = ['open', 'approved', 'declined', 'withdrawn'];
@@ -288,6 +294,11 @@ function member_request_create(array $p): array
         if ($row['toDate'] !== '' && $row['toDate'] < $row['fromDate']) [$row['fromDate'], $row['toDate']] = [$row['toDate'], $row['fromDate']];
         if ($body === '') return ['ok' => false, 'error' => 'need_reason', 'detail' => 'Say why, so the desk can answer without asking.'];
         if ($row['subject'] === '') $row['subject'] = 'Leave from ' . $row['fromDate'];
+    } elseif (in_array($kind, ['details', 'mentor', 'help'], true)) {
+        if (mb_strlen($body) < 6) return ['ok' => false, 'error' => 'need_reason', 'detail' => [
+            'details' => 'Say what is wrong and what it should be.', 'mentor' => 'Say what is not working, so the coordinator can help.',
+            'help' => 'Tell us what happened.'][$kind]];
+        if ($row['subject'] === '') $row['subject'] = MEMBER_REQUEST_KINDS[$kind];
     } elseif ($kind === 'appeal') {
         if ($body === '') return ['ok' => false, 'error' => 'need_reason', 'detail' => 'An appeal needs the reason it is being appealed.'];
         /* Which charge, if they picked one. Checked against their OWN ledger so

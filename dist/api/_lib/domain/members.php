@@ -162,7 +162,14 @@ function member_update(array $p): array {
     $member = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [$memberId]);
     if (!$member) return ['ok' => false, 'error' => 'not_found'];
 
-    $allowed = ['bio', 'photoUrl', 'socials', 'phone', 'parentEmail', 'parentPhone', 'school', 'fullName'];
+    /* What a member may change about themselves: how they present (bio,
+     * socials, photo). Their name, school and guardian contacts are the
+     * programme's record — checked with the family and changed by the desk
+     * through a "Correct my details" request — so a write of any of those is
+     * refused, not silently dropped. */
+    $allowed = ['bio', 'photoUrl', 'socials'];
+    $managed = array_values(array_intersect(['phone', 'parentEmail', 'parentPhone', 'school', 'fullName', 'dob', 'centre', 'track', 'email'], array_keys($p)));
+    if ($managed) return ['ok' => false, 'error' => 'managed_by_ngg', 'fields' => $managed];
     $patch = ['updatedAt' => now_iso()];
     foreach ($allowed as $k) {
         if (array_key_exists($k, $p)) {

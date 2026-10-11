@@ -976,3 +976,31 @@ be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
   2018, in the printed ID's intake year); imports never overwrite one.
 - Pre-existing failures noted, not changed: tests/summer-editions.test.js and
   tests/family-ui.test.js still drive the v1 Control Room (removed 10-08).
+
+## 2026-10-11 — Portals v2: the Member Portal, school results and the growth plan
+
+The handoff `ngg_portals_handoff_v2` reorganised the Member, Mentor and Instructor
+portals into five areas each. Built for real, not copied from the prototype:
+
+- **One shell** (`src/modules/portal/portal-shell.jsx`): sidebar ≥ 760px, bottom
+  tab bar below, area tab strip, ⌘K palette (it takes the shortcut from the
+  site palette while a portal is on screen). The URL is the state:
+  `/member/{area}/{tab}`. `/dashboard` and its old sub-paths forward.
+- **Member Portal** (`member-portal.jsx`): Today is one server read
+  (`member.today`): standing, account, To do in server order (safeguarding →
+  deadlines → replies → preparation), a one-tap weekly mood, this week, where
+  you stand. Mentor has a real chat (`chat:<memberId>` in `mentor_messages`,
+  answered from the mentor's existing inbox; crisis phrases go to the
+  safeguarding officer and show the member who to call). The profile is
+  read-only: `member.update` refuses name, school and guardian fields
+  (`managed_by_ngg`); "Ask for a change" raises a `details` request.
+- **School results** (`domain/school-results.php`, migration 144): upload (Cloudinary
+  or this server's photo store), a vision read the member checks (each
+  correction logged), a plan for at most three subjects with a required
+  "when and where", mentor approval before any family hears, weekly ticks
+  and adherence, instructor follow-up (note, seen, remind once a day), and a
+  Sunday/Monday/Saturday job. Adults with member accounts are never in the loop.
+- **Club class** (`domain/club-class.php`, migration 145): the instructor's
+  Saturday — roll (never writes an absence), plan, hinge, exit ticket, log —
+  and `instructor.today`. Server and tests done; the instructor screens are next.
+- Skill level-ups need a line of evidence (`evidence_required`).

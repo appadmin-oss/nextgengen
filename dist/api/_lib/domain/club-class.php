@@ -515,7 +515,14 @@ function member_today(array $p): array {
     $stats = db_row('SELECT level, streak, currentWeek FROM member_stats WHERE memberId = ? LIMIT 1', [$mid]) ?: [];
     $sc = db_all("SELECT month, total FROM mentor_scorecards WHERE subjectId = ? AND byKind = 'mentor' ORDER BY month DESC LIMIT 2", [$mid]);
     $mentor = results_mentor_of($mid);
-    return ['ok' => true, 'today' => $today, 'firstName' => mp_first((string)$m['fullName']),
+    $age = trim((string)($m['dob'] ?? '')) !== '' ? mp_age(substr((string)$m['dob'], 0, 10), $today) : null;
+    $profile = ['fullName' => (string)$m['fullName'], 'displayId' => (string)($m['displayId'] ?? ''), 'memberId' => $mid,
+        'centre' => (string)$m['centre'], 'track' => (string)$m['track'], 'school' => (string)($m['school'] ?? ''),
+        'dob' => (string)($m['dob'] ?? ''), 'joinDate' => (string)($m['joinDate'] ?? ''), 'email' => (string)($m['email'] ?? ''),
+        'phone' => (string)($m['phone'] ?? ''), 'guardianName' => (string)($m['parentName'] ?? ''),
+        // Masked: the member's own screen does not need a guardian's full number on display.
+        'guardianPhone' => function_exists('mp_mask_phone') ? mp_mask_phone((string)($m['parentPhone'] ?? '')) : ''];
+    return ['ok' => true, 'today' => $today, 'firstName' => mp_first((string)$m['fullName']), 'age' => $age, 'profile' => $profile,
         'standing' => $standing, 'account' => $account,
         'todo' => array_map(static fn($t) => array_diff_key($t, ['rank' => 1]), $todo),
         'checkin' => ['done' => (bool)$chk, 'wellbeing' => (string)($chk['wellbeing'] ?? ''), 'week' => $week],

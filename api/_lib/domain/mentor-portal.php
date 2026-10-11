@@ -881,6 +881,10 @@ function member_mp_messages(array $p): array {
             $out[] = ['id' => $t, 'threadId' => $t, 'kind' => 'Journal entry shared with you', 'filter' => 'journal', 'from' => (string)$j['fullName'], 'subjectId' => (string)$j['memberId'],
                       'at' => (string)$j['createdAt'], 'body' => trim(((string)$j['title'] !== '' ? $j['title'] . "\n\n" : '') . (string)$j['body']), 'read' => isset($read[$t])];
         }
+        foreach (db_all("SELECT * FROM mentor_messages WHERE kind = 'From your mentee' AND subjectId IN ($ph) ORDER BY createdAt DESC LIMIT 60", $ids) as $mm) {
+            $out[] = ['id' => 'm:' . $mm['id'], 'threadId' => (string)$mm['threadId'], 'kind' => 'Message from your mentee', 'filter' => 'chat', 'from' => (string)$mm['fromName'],
+                      'subjectId' => (string)$mm['subjectId'], 'at' => (string)$mm['createdAt'], 'body' => (string)$mm['body'], 'read' => (string)$mm['readAt'] !== ''];
+        }
         foreach (db_all("SELECT c.id, c.memberId, c.wellbeing, c.note, c.createdAt, m.fullName FROM member_checkins c JOIN members m ON m.memberId = c.memberId
                          WHERE c.memberId IN ($ph) AND (c.note <> '' OR c.wellbeing <> 'Okay') ORDER BY c.createdAt DESC LIMIT 40", $ids) as $c) {
             $t = 'checkin:' . $c['id'];
@@ -950,9 +954,81 @@ function member_mp_message_reply(array $p): array {
     $later = mp_next_send_time();
     mp_message_put($t, 'Reply', $subject, $g['me'], (string)($g['mentorRow']['fullName'] ?? $g['member']['fullName'] ?? ''), $subject, $body, $later !== '' ? 'queued' : 'sent', $later);
     if ($subject !== '' && $later === '' && function_exists('push_notification') && !str_starts_with($t, 'family:')) {
-        push_notification($subject, ['kind' => 'mentor', 'title' => 'Your mentor replied', 'body' => mb_substr($body, 0, 140), 'linkPage' => 'journal']);
+        push_notification($subject, ['kind' => 'mentor', 'title' => 'Your mentor replied', 'body' => mb_substr($body, 0, 140), 'linkPage' => str_starts_with($t, 'journal:') ? 'journal' : 'dashboard']);
     }
     return ['ok' => true, 'queued' => $later !== ''];
+}
+
+/* ── The member's chat with their mentor ─────────────────────────────────
+ * One thread per member (`chat:<memberId>`) in mentor_messages, so the mentor
+ * reads and answers it in the inbox they already use (filter "Mentees"), and
+ * their reply goes through the same quiet-hours rule. The member's view also
+ * shows the mentor's replies to their check-ins and shared journal entries:
+ * everything their mentor wrote them, in one place.
+ *
+ * A message matching the crisis phrases (COACH_CRISIS_RE) still goes to the
+ * mentor, is flagged, and is sent to the centre's safeguarding officer at once;
+ * the member is shown who to call now. It is never held back.
+ */
+const MP_CHAT_MAX = 1200;
+
+function mp_chat_mentor(string $memberId): ?array {
+    $a = db_row("SELECT a.mentorId, t.memberId mentorMember, t.fullName FROM mentor_assignments a LEFT JOIN mentors t ON t.mentorId = a.mentorId
+                 WHERE a.memberId = ? AND a.status = 'active' ORDER BY a.id DESC LIMIT 1", [$memberId]);
+    return ($a && (string)$a['mentorMember'] !== '') ? $a : null;
+}
+
+/** member.mentor.chat — the conversation, oldest first; marks the mentor's messages read. */
+function member_mp_chat(array $p): array {
+    $me = (string)($p['memberId'] ?? '');
+    $m = db_row("SELECT memberId, fullName FROM members WHERE memberId = ? LIMIT 1", [$me]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $a = mp_chat_mentor($me);
+    $threads = ['chat:' . $me];
+    foreach (db_all("SELECT id FROM member_checkins WHERE memberId = ? ORDER BY id DESC LIMIT 20", [$me]) as $c) $threads[] = 'checkin:' . $c['id'];
+    foreach (db_all("SELECT entryId FROM journal WHERE memberId = ? AND visibility = 'mentor' ORDER BY createdAt DESC LIMIT 20", [$me]) as $j) $threads[] = 'journal:' . $j['entryId'];
+    $ph = implode(',', array_fill(0, count($threads), '?'));
+    $now = now_iso();
+    $rows = db_all("SELECT id, threadId, kind, fromId, fromName, body, status, sendAfter, readAt, createdAt FROM mentor_messages
+                    WHERE threadId IN ($ph) AND kind IN ('From your mentee', 'Reply') ORDER BY createdAt, id LIMIT 300", $threads);
+    $out = [];
+    foreach ($rows as $r) {
+        $mine = (string)$r['fromId'] === $me;
+        // A reply held for quiet hours is not shown until it is due.
+        if (!$mine && (string)$r['status'] === 'queued' && (string)$r['sendAfter'] > $now) continue;
+        $out[] = ['id' => (int)$r['id'], 'mine' => $mine, 'from' => $mine ? 'You' : (string)$r['fromName'], 'body' => (string)$r['body'], 'at' => (string)$r['createdAt'],
+            'about' => str_starts_with((string)$r['threadId'], 'checkin:') ? 'Your check-in' : (str_starts_with((string)$r['threadId'], 'journal:') ? 'Your journal entry' : ''),
+            'read' => $mine ? (string)$r['readAt'] !== '' : true];
+    }
+    db_exec("UPDATE notifications SET readAt = ? WHERE memberId = ? AND kind = 'mentor' AND (readAt = '' OR readAt IS NULL)", [$now, $me]);
+    return ['ok' => true, 'mentor' => $a ? ['name' => (string)$a['fullName'], 'first' => mp_first((string)$a['fullName'])] : null,
+        'messages' => $out, 'quiet' => mp_in_quiet_hours(), 'max' => MP_CHAT_MAX];
+}
+
+/** member.mentor.chat.send — a message to the member's own mentor. */
+function member_mp_chat_send(array $p): array {
+    $me = (string)($p['memberId'] ?? '');
+    $m = db_row("SELECT memberId, fullName, centre, status FROM members WHERE memberId = ? LIMIT 1", [$me]);
+    if (!$m) return ['ok' => false, 'error' => 'not_found'];
+    $body = trim((string)($p['body'] ?? ''));
+    if ($body === '') return ['ok' => false, 'error' => 'write_a_message'];
+    if (mb_strlen($body) > MP_CHAT_MAX) return ['ok' => false, 'error' => 'too_long', 'max' => MP_CHAT_MAX];
+    $a = mp_chat_mentor($me);
+    if (!$a) return ['ok' => false, 'error' => 'no_mentor'];
+    $crisis = defined('COACH_CRISIS_RE') && preg_match(COACH_CRISIS_RE, $body) === 1;
+    $id = mp_message_put('chat:' . $me, 'From your mentee', $me, $me, (string)$m['fullName'], (string)$a['mentorMember'], $body);
+    $first = mp_first((string)$m['fullName']);
+    push_notification((string)$a['mentorMember'], ['kind' => 'mentor', 'title' => ($crisis ? 'Urgent: ' : '') . $first . ' wrote to you', 'body' => mb_substr($body, 0, 140), 'linkPage' => 'mentor']);
+    if ($crisis) {
+        $o = function_exists('sg_officer') ? sg_officer((string)$m['centre']) : null;
+        if ($o && filter_var((string)($o['email'] ?? ''), FILTER_VALIDATE_EMAIL)) {
+            try { send_mail((string)$o['email'], 'Urgent: a member may be at risk', '<p>A message ' . esc_html($first) . ' at ' . esc_html((string)$m['centre']) . ' sent to their mentor matched the safeguarding phrases. Their mentor has it too. Read it in the Control Room → People → Mentorship today.</p>'); } catch (\Throwable $e) {}
+        }
+        if (function_exists('event_emit')) event_emit('behaviour.flagged', ['ref' => 'chat:' . $id, 'subject' => 'A child', 'category' => 'safeguarding', 'severity' => 'urgent', 'source' => 'member.chat']);
+        audit('safeguarding.chat', $me, $me, ['messageId' => $id], (string)($p['ip'] ?? ''));
+    }
+    return ['ok' => true, 'id' => $id, 'crisis' => $crisis, 'mentor' => mp_first((string)$a['fullName']),
+        'help' => $crisis ? 'If you are in danger now, call 112. You can also call NGG safeguarding on +234 903 777 6318. You are not in trouble, and you are not alone.' : ''];
 }
 
 /* ── The member's own weekly check-in ───────────────────────────────────── */
@@ -994,7 +1070,14 @@ function member_mp_mine(array $p): array {
             'relAsked' => $a !== null && ($mentorSide !== null || ($childSide === null && db_row("SELECT 1 FROM mentor_nudges WHERE status = 'open' AND rule = 'J:relCheckDue' AND memberId = ?", [$me]) !== null)),
             'relDone' => $childSide !== null, 'relQuestions' => MP_REL_Q_CHILD, 'goal' => $goal,
             'selfScore' => $self ? ['month' => (string)$self['month'], 'scores' => array_map('intval', explode(',', (string)$self['scores']))] : null,
-            'selfScoreDue' => !$self || (string)$self['month'] < gmdate('Y-m', mp_lagos_now()), 'skills' => MP_SKILLS];
+            'selfScoreDue' => !$self || (string)$self['month'] < gmdate('Y-m', mp_lagos_now()), 'skills' => MP_SKILLS,
+            /* The member's own Leadership Index as their mentor scored it — theirs
+             * to read (a ladder somebody climbs without being told where they are
+             * is assessment, not formation). The last three months, for the trend;
+             * never a rank against anybody else. */
+            'mentorScores' => array_map(static fn($r) => ['month' => (string)$r['month'], 'scores' => array_map('intval', explode(',', (string)$r['scores'])), 'total' => (int)$r['total']],
+                db_all("SELECT month, scores, total FROM mentor_scorecards WHERE subjectId = ? AND byKind = 'mentor' ORDER BY month DESC LIMIT 3", [$me])),
+            'checkins' => db_all('SELECT week, wellbeing, sleep, stress, energy FROM member_checkins WHERE memberId = ? ORDER BY week DESC LIMIT 8', [$me])];
 }
 
 /** wellbeingAlert (event job): tell the mentor now, and the safeguarding lead when they asked for help. */

@@ -720,6 +720,8 @@
       mentorPlanReturn:  (planId, note) => request('/member/mentor.php', { body: { action: 'planReturn', planId, note } }),
       /* School results and the growth plan — the member's own (Grow → School results). */
       today:          () => request('/member/today.php'),
+      chat:           () => request('/member/chat.php'),
+      chatSend:       (body) => request('/member/chat.php', { body: { body } }),
       results:        (term) => request('/member/results.php' + qs({ term: term || '' })),
       resultsUpload:  (term, fileUrl, mime, size) => request('/member/results.php', { body: { action: 'upload', term, fileUrl, mime, size } }),
       resultsRead:    (uploadId) => request('/member/results.php', { body: { action: 'read', uploadId } }),

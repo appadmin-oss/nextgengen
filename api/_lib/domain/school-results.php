@@ -161,6 +161,7 @@ function results_ocr(string $url, string $mime): array {
         if (($c['provider'] ?? '') === 'gemini') { $cand = $c; break; }
     }
     if (!$cand) return ['ok' => false, 'error' => 'no_vision_provider'];
+    if (str_starts_with($url, '/')) $url = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/') . $url;
     $img = ai_fetch_image($url);
     if (empty($img['ok'])) return $img;
     $mimeIn = str_starts_with($mime, 'application/pdf') ? 'application/pdf' : $img['mime'];
@@ -432,6 +433,8 @@ function results_term_ok(array $m, string $term): ?array {
 
 /** The file must be ours: Cloudinary (the signer's target) or this site. */
 function results_file_ok(string $url): bool {
+    // This server's own photo store (no Cloudinary on the host): a photo of the report, stored in pieces.
+    if (preg_match('#^/api/public/photo\.php\?[A-Za-z0-9=&_.%-]{1,200}$#', $url)) return true;
     if (!preg_match('#^https://#', $url) || strlen($url) > 600) return false;
     $host = strtolower((string)parse_url($url, PHP_URL_HOST));
     $own = strtolower((string)parse_url((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), PHP_URL_HOST));
