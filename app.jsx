@@ -331,6 +331,9 @@ function App() {
     }
     // Expose for the sign-in modal / magic link consumer.
     window.__navigate = setPage;
+    /* A member whose record is locked by the record drive is sent to the one
+       screen that opens it again (RecordDrive on the dashboard). */
+    window.__onRecordIncomplete = () => { if (page !== "dashboard") setPage("dashboard"); };
     // Per-page document title + meta description — actually visible to
     // browser tabs, screen readers, share-link previews and SEO crawlers.
     const meta = PAGE_META[page] || { title: "Page not found · NGG", desc: "" };

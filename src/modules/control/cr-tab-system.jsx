@@ -1445,3 +1445,108 @@ function crMpaRetreat(ctx, r) {
     fields: [{ id: "title", l: "Name", max: 120 }, { id: "onDate", l: "Date", type: "date", req: true }, { id: "place", l: "Where", max: 160 }],
     onSubmit: async v => { await NGGApi.admin.mentorAutomations.retreatSave(v); ctx.reload(); }, done: r ? "Retreat saved." : "Retreat scheduled." });
 }
+
+/* ── Member records: the record drive (domain/profile-drive.php) ──────────────
+   Off → collecting (with a deadline; locked after it) → required. Staff see
+   how complete the roster is, field by field, and who is still missing what,
+   and can email the families a reminder. */
+const CR_REC_PHASES = [["off", "Off", "Nothing asked, nothing locked."],
+  ["collect", "Collecting", "Members are asked for what is missing. After the deadline the dashboard opens on the form until the record is complete."],
+  ["required", "Required", "Every save of an active member needs these fields. Use it once the records are in."]];
+
+function CrRecDrive({ ctx, d }) {
+  const dr = d.drive || {}, st = d.stats || {}, labels = d.fieldsAll || {};
+  const [cfg, setCfg] = React.useState({ phase: dr.phase || "off", deadline: dr.deadline || "", fields: dr.fields || d.defaults || [], types: dr.types || ["NGG"] });
+  const [busy, setBusy] = React.useState(false);
+  const [q, setQ] = React.useState("");
+  const [sel, setSel] = React.useState({});
+  const pct = st.total ? Math.round(st.complete * 100 / st.total) : 0;
+  const dirty = JSON.stringify(cfg) !== JSON.stringify({ phase: dr.phase || "off", deadline: dr.deadline || "", fields: dr.fields || [], types: dr.types || ["NGG"] });
+  const save = async () => {
+    if (cfg.phase === "required" && st.total && st.complete < st.total) {
+      const ok = await ctx.confirm({ title: "Make the fields required now?", body: (st.total - st.complete) + " active members are still incomplete. They stay locked out until they complete their record, and staff can’t save an active incomplete member until the fields are filled.", cta: "Make them required" });
+      if (!ok) return;
+    }
+    setBusy(true);
+    try { await NGGApi.admin.memberRecords.set(cfg); ctx.toast("Saved. " + (cfg.phase === "off" ? "The drive is off." : cfg.phase === "collect" ? "Members are being asked." : "The fields are required.")); ctx.reload(); }
+    catch (e) { ctx.toast(e.data && e.data.detail || "Couldn’t save that.", null, true); }
+    finally { setBusy(false); }
+  };
+  const list = (d.incomplete || []).filter(m => !q || (m.fullName + " " + m.displayId + " " + m.centre).toLowerCase().includes(q.toLowerCase()));
+  const picked = Object.keys(sel).filter(k => sel[k]);
+  const remind = async ids => {
+    const ok = await ctx.confirm({ title: "Email " + ids.length + (ids.length === 1 ? " family" : " families") + "?", body: "Each gets the list of what is missing" + (dr.deadline ? " and the deadline" : "") + ", with a link to the dashboard.", cta: "Send " + ids.length });
+    if (!ok) return;
+    const r = await NGGApi.admin.memberRecords.remind(ids);
+    const bad = (r.results || []).filter(x => !x.ok);
+    ctx.toast("Sent " + r.sent + (bad.length ? " · " + bad.length + " not sent (" + [...new Set(bad.map(x => x.error.replace(/_/g, " ")))].join(", ") + ")" : ""));
+    setSel({});
+  };
+  return (
+    <div className="cr-rec">
+      <div className="cr-rec-kpis">
+        <div><b>{st.total || 0}</b><span>active members asked</span></div>
+        <div><b>{st.complete || 0}</b><span>complete</span></div>
+        <div><b>{pct}%</b><span>of the roster</span></div>
+        <div><b>{dr.deadline ? crDate(dr.deadline) : "—"}</b><span>{dr.locked ? "deadline passed · locked" : "deadline"}</span></div>
+      </div>
+      <section className="cr-rec-card">
+        <h3>The drive</h3>
+        <div role="radiogroup" aria-label="Phase" className="cr-rec-phases">
+          {CR_REC_PHASES.map(([k, l, s]) => (
+            <button key={k} type="button" role="radio" aria-checked={cfg.phase === k} className={"cr-rec-phase" + (cfg.phase === k ? " is-on" : "")} onClick={() => setCfg(c => Object.assign({}, c, { phase: k }))}>
+              <b>{l}</b><span>{s}</span>
+            </button>
+          ))}
+        </div>
+        <label className="cr-rec-row"><span>Deadline</span>
+          <input type="date" value={cfg.deadline} onChange={e => setCfg(c => Object.assign({}, c, { deadline: e.target.value }))} aria-label="Deadline"/>
+          <em>{cfg.phase === "collect" ? "Required while collecting." : "Kept for the record."}</em></label>
+        <fieldset className="cr-rec-fields"><legend>Fields a complete record needs</legend>
+          {Object.keys(labels).map(k => (
+            <label key={k}><input type="checkbox" checked={cfg.fields.includes(k)} onChange={e => setCfg(c => Object.assign({}, c, { fields: e.target.checked ? c.fields.concat([k]) : c.fields.filter(x => x !== k) }))}/>
+              {labels[k]}{st.byField && st.byField[k] != null ? <em>{st.byField[k]} missing</em> : null}</label>
+          ))}
+        </fieldset>
+        <fieldset className="cr-rec-fields"><legend>Who is asked</legend>
+          {["NGG", "Summer"].map(t => <label key={t}><input type="checkbox" checked={cfg.types.includes(t)} onChange={e => setCfg(c => Object.assign({}, c, { types: e.target.checked ? c.types.concat([t]) : c.types.filter(x => x !== t) }))}/>{t === "NGG" ? "NGG members" : "Summer School accounts"}</label>)}
+          <p className="cr-rec-help">Only ACTIVE members are asked. Suspended, inactive and graduated members are never asked, locked or refused on save.</p>
+        </fieldset>
+        <div className="cr-rec-actions"><button type="button" className="cr-btn is-primary" disabled={busy || !dirty} onClick={save}>{busy ? "Saving…" : "Save the drive"}</button></div>
+      </section>
+      <section className="cr-rec-card">
+        <div className="cr-rec-listh">
+          <h3>Still incomplete <span>{(d.incomplete || []).length}</span></h3>
+          <div className="cr-searchbox" role="search"><i className="ph ph-magnifying-glass" aria-hidden="true"/><input value={q} onChange={e => setQ(e.target.value)} placeholder="Name, ID or centre" aria-label="Find a member"/></div>
+          <button type="button" className="cr-btn" disabled={!picked.length} onClick={() => remind(picked)}>Email {picked.length || ""} reminder{picked.length === 1 ? "" : "s"}</button>
+          <button type="button" className="cr-btn" disabled={!list.length} onClick={() => crDownloadCsv("incomplete-records", ["memberId", "printedId", "name", "centre", "missing"], list.map(m => [m.memberId, m.displayId, m.fullName, m.centre, m.missing.map(k => labels[k] || k).join("; ")]))}>Export</button>
+        </div>
+        <span className="cr-sr" role="status" aria-live="polite">{list.length} shown, {picked.length} selected</span>
+        {!list.length ? <p className="cr-rec-empty">{(d.incomplete || []).length ? "Nobody matches." : "Every active member’s record is complete."}</p> : (
+          <table className="cr-rec-table">
+            <thead><tr><th scope="col"><input type="checkbox" aria-label="Select all shown" checked={list.length > 0 && list.every(m => sel[m.memberId])} onChange={e => setSel(e.target.checked ? Object.fromEntries(list.map(m => [m.memberId, true])) : {})}/></th>
+              <th scope="col">Member</th><th scope="col">Centre</th><th scope="col">Missing</th></tr></thead>
+            <tbody>{list.slice(0, 300).map(m => (
+              <tr key={m.memberId}>
+                <td><input type="checkbox" aria-label={"Select " + m.fullName} checked={!!sel[m.memberId]} onChange={e => setSel(x => Object.assign({}, x, { [m.memberId]: e.target.checked }))}/></td>
+                <td><b>{m.fullName || m.memberId}</b><em>{m.displayId || m.memberId}{m.contact ? "" : " · no email on file"}</em></td>
+                <td>{m.centre || "—"}</td>
+                <td>{m.missing.map(k => labels[k] || k).join(", ")}</td>
+              </tr>))}</tbody>
+          </table>)}
+      </section>
+    </div>
+  );
+}
+
+Object.assign(CR_TAB_DEFS, {
+  "member-records": {
+    skeleton: ["kpis", "cards"],
+    load: () => NGGApi.admin.memberRecords.get(),
+    blocks: (d, ctx) => [
+      { type: "note", span: 6, icon: "clipboard-text", text: "Make every member’s record complete in three steps: collect with a deadline, then make the fields required.",
+        sub: "Collecting asks active members on their dashboard. After the deadline their dashboard opens on the form until it is done; nothing else breaks. Suspended or departed members are left as they are. The join date is not on the member’s form: staff correct it with a reason from the member’s record." },
+      { type: "custom", span: 6, render: () => <CrRecDrive ctx={ctx} d={d}/> },
+    ],
+  },
+});

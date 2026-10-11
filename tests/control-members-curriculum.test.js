@@ -123,13 +123,24 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await page.click('.cr-sheet button:has-text("Edit")');
     await page.fill('#crf-phone', '08031234567');
     await page.selectOption('#crf-centre', 'Ijaiye');
-    chk('the form carries the join date on file', await page.inputValue('#crf-joinDate') === '2021-05-02');
-    await page.fill('#crf-joinDate', '2022-09-17');
+    // The join date is not on the edit form any more: it is corrected with a reason (profile-drive.php).
+    chk('the edit form does not carry the join date', !(await page.$('#crf-joinDate')));
     await page.click('button:has-text("Save changes")');
     chk('Edit saves and says so', await until(/Saved · Member 07/));
     const m7 = one("SELECT phone, centre, email, joinDate FROM members WHERE memberId='CRMC-7'");
     chk('…and the record holds the change, untouched fields intact', m7.phone === '08031234567' && m7.centre === 'Ijaiye' && m7.email === 'crmc7@example.org');
-    chk('…including a join date set by hand', m7.joinDate === '2022-09-17');
+    chk('…the join date untouched by the edit', m7.joinDate === '2021-05-02');
+    // Corrected through its own action, inside the intake year the printed ID carries.
+    const did = one("SELECT displayId FROM members WHERE memberId='CRMC-7'").displayId || '';
+    const yr = /^\d{3}-/.test(did) ? 2000 + (Number(did.slice(0, 3)) % 100) : 2021;
+    await page.click('table tbody tr');
+    await page.click('.cr-sheet button:has-text("Correct the join date")');
+    await page.waitForSelector('form:has-text("Why it is being corrected")');
+    await page.fill('form input[type=date]', yr + '-09-17');
+    await page.fill('form textarea', 'The register shows September');
+    await page.click('form button[type=submit]');
+    chk('…and corrected with a reason through “Correct the join date”', await until(/Join date corrected/)
+      && one("SELECT joinDate FROM members WHERE memberId='CRMC-7'").joinDate === yr + '-09-17');
 
     await page.click('table tbody tr');
     await page.click('.cr-sheet button:has-text("Edit")');

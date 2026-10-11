@@ -1130,6 +1130,67 @@ chk('schools: GRID3 Nigeria\'s Lagos and Ogun schools load once, and a search fi
         && $local && $local[0]['name'] === 'Ayobo Senior High School'
         && count(backend_dispatch('public.schools', ['q' => 'a'])['schools']) === 0 && count($ogun) <= 20;
 })());
+// ── The member record drive: collect, lock after the deadline, require, and the join date ──
+(function () {
+    $now = now_iso();
+    db_insert('members', ['memberId' => 'NGG-RD-1', 'fullName' => 'Ada', 'email' => 'rd1@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'joinDate' => '2025-02-01', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('members', ['memberId' => 'NGG-RD-2', 'fullName' => 'Bayo Old', 'email' => 'rd2@example.org', 'type' => 'NGG', 'status' => 'suspended', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    $SU = 'NGG-2025-0099';
+    setting_set('profile_drive', ['phase' => 'off'], 't');
+    chk('record drive: off by default — nobody asked, nothing locked', profile_gate_for('NGG-RD-1')['asked'] === false
+        && !isset(backend_dispatch('member.requests', ['memberId' => 'NGG-RD-1'])['error']) || (backend_dispatch('member.requests', ['memberId' => 'NGG-RD-1'])['error'] ?? '') !== 'record_incomplete');
+    $set = backend_dispatch('admin.profile.drive.set', ['requesterId' => $SU, 'phase' => 'collect', 'deadline' => gmdate('Y-m-d', time() + 14 * 86400)]);
+    $st = backend_dispatch('member.profile.status', ['memberId' => 'NGG-RD-1']);
+    chk('record drive: collecting — an active member is asked for what is missing, with the days left, and nothing is locked yet',
+        !empty($set['ok']) && $st['asked'] === true && $st['locked'] === false && in_array('dob', $st['missing'], true) && in_array('fullName', $st['missing'], true)
+        && $st['daysLeft'] >= 13 && (backend_dispatch('member.requests', ['memberId' => 'NGG-RD-1'])['error'] ?? '') !== 'record_incomplete');
+    chk('record drive: a suspended member is never asked', profile_gate_for('NGG-RD-2')['asked'] === false);
+    chk('record drive: collecting needs a deadline', (backend_dispatch('admin.profile.drive.set', ['requesterId' => $SU, 'phase' => 'collect', 'deadline' => ''])['error'] ?? '') === 'deadline_required');
+    backend_dispatch('admin.profile.drive.set', ['requesterId' => $SU, 'phase' => 'collect', 'deadline' => gmdate('Y-m-d', time() - 2 * 86400)]);
+    $lockedOp = backend_dispatch('member.requests', ['memberId' => 'NGG-RD-1']);
+    chk('record drive: after the deadline every member action but completing the record answers record_incomplete (a refusal, not an error)',
+        ($lockedOp['error'] ?? '') === 'record_incomplete' && in_array('dob', $lockedOp['missing'], true)
+        && !empty(backend_dispatch('member.profile.status', ['memberId' => 'NGG-RD-1'])['ok']));
+    chk('record drive: a suspended member is not locked out', (backend_dispatch('member.requests', ['memberId' => 'NGG-RD-2'])['error'] ?? '') !== 'record_incomplete');
+    $bad = backend_dispatch('member.profile.complete', ['memberId' => 'NGG-RD-1', 'values' => ['fullName' => 'Ada', 'dob' => 'last year', 'parentEmail' => 'nope', 'centre' => 'Ikeja']]);
+    chk('record drive: answers are checked one by one and nothing is written on a refusal; staff-only fields are ignored',
+        ($bad['error'] ?? '') === 'record_invalid' && isset($bad['errors']['fullName'], $bad['errors']['dob'], $bad['errors']['parentEmail']) && !isset($bad['errors']['centre'])
+        && db_row("SELECT dob FROM members WHERE memberId = 'NGG-RD-1'")['dob'] == '');
+    $good = backend_dispatch('member.profile.complete', ['memberId' => 'NGG-RD-1', 'values' => [
+        'fullName' => 'ada okafor', 'dob' => '14/03/2013', 'sex' => 'Female', 'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg', 'school' => 'egbeda senior high school',
+        'class' => 'JSS 2', 'address' => '12 Ola Street, Egbeda', 'resState' => 'Lagos', 'resLga' => 'Alimosho', 'parentName' => 'bola okafor', 'parentPhone' => '8031234567', 'parentEmail' => 'Bola@Example.org']]);
+    $row = db_row("SELECT * FROM members WHERE memberId = 'NGG-RD-1'");
+    chk('record drive: completing it unlocks the account, with the answers normalised (columns and the record JSON)',
+        $good['asked'] === false && $good['locked'] === false && $row['fullName'] === 'Ada Okafor' && $row['dob'] === '2013-03-14' && $row['parentPhone'] === '08031234567'
+        && $row['parentEmail'] === 'bola@example.org' && (json_decode($row['profileJson'], true)['class'] ?? '') === 'JSS 2'
+        && (backend_dispatch('member.requests', ['memberId' => 'NGG-RD-1'])['error'] ?? '') !== 'record_incomplete');
+    backend_dispatch('admin.profile.drive.set', ['requesterId' => $SU, 'phase' => 'required']);
+    db_insert('members', ['memberId' => 'NGG-RD-3', 'fullName' => 'Chi Gap', 'email' => 'rd3@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => $now, 'updatedAt' => $now]);
+    $edit = backend_dispatch('admin.members.upsert', ['requesterId' => $SU, 'data' => ['memberId' => 'NGG-RD-3', 'school' => 'Some School']]);
+    $susp = backend_dispatch('admin.members.upsert', ['requesterId' => $SU, 'data' => ['memberId' => 'NGG-RD-3', 'status' => 'suspended']]);
+    $old = backend_dispatch('admin.members.upsert', ['requesterId' => $SU, 'data' => ['memberId' => 'NGG-RD-2', 'school' => 'Another School']]);
+    chk('record drive: required — an active member saves only complete, naming what is missing; suspending one always works; a suspended record saves as it is',
+        ($edit['error'] ?? '') === 'record_required' && in_array('dob', $edit['missing'], true) && !empty($susp['ok']) && !empty($old['ok']));
+    $staffAns = backend_dispatch('admin.members.upsert', ['requesterId' => $SU, 'data' => ['memberId' => 'NGG-RD-1', 'profile' => ['class' => 'SSS 1', 'sex' => 'Female']]]);
+    chk('record drive: staff can fill the answers with no column (data.profile)', !empty($staffAns['ok']) && (json_decode(db_row("SELECT profileJson FROM members WHERE memberId = 'NGG-RD-1'")['profileJson'], true)['class'] ?? '') === 'SSS 1');
+    // The join date
+    $jd1 = backend_dispatch('admin.members.upsert', ['requesterId' => $SU, 'data' => ['memberId' => 'NGG-RD-1', 'joinDate' => '2024-05-05']]);
+    chk('join date: not a free field — the member edit refuses it and points to the correction', ($jd1['error'] ?? '') === 'joindate_locked' && db_row("SELECT joinDate FROM members WHERE memberId = 'NGG-RD-1'")['joinDate'] === '2025-02-01');
+    chk('join date: a correction needs a reason, a real past date, not before 2018',
+        (backend_dispatch('admin.member.joindate', ['requesterId' => $SU, 'memberId' => 'NGG-RD-1', 'date' => '2025-01-01', 'reason' => ''])['error'] ?? '') === 'reason_required'
+        && (backend_dispatch('admin.member.joindate', ['requesterId' => $SU, 'memberId' => 'NGG-RD-1', 'date' => gmdate('Y-m-d', time() + 86400 * 3), 'reason' => 'Typed wrong at intake'])['error'] ?? '') === 'joindate_future'
+        && (backend_dispatch('admin.member.joindate', ['requesterId' => $SU, 'memberId' => 'NGG-RD-1', 'date' => '2017-06-01', 'reason' => 'Typed wrong at intake'])['error'] ?? '') === 'joindate_too_early');
+    db_update('members', ['displayId' => '025-901'], ['memberId' => 'NGG-RD-1']);
+    chk('join date: it sits in the intake year the printed ID carries (025-… ⇒ 2025)',
+        (backend_dispatch('admin.member.joindate', ['requesterId' => $SU, 'memberId' => 'NGG-RD-1', 'date' => '2024-09-01', 'reason' => 'Typed wrong at intake'])['error'] ?? '') === 'joindate_intake_mismatch');
+    $fix = backend_dispatch('admin.member.joindate', ['requesterId' => $SU, 'memberId' => 'NGG-RD-1', 'date' => '15/01/2025', 'reason' => 'Register shows the first Saturday was 15 January']);
+    $aud = db_row("SELECT meta FROM audit_log WHERE event = 'admin.member.joindate' ORDER BY id DESC LIMIT 1");
+    chk('join date: corrected through the one path, with the old date and the reason on record', !empty($fix['ok']) && $fix['joinDate'] === '2025-01-15' && $fix['was'] === '2025-02-01'
+        && strpos((string)($aud['meta'] ?? ''), '2025-02-01') !== false && strpos((string)($aud['meta'] ?? ''), 'first Saturday') !== false);
+    $newM = backend_dispatch('admin.members.upsert', ['requesterId' => $SU, 'data' => ['fullName' => 'Dayo New Member', 'email' => 'rd4@example.org', 'status' => 'inactive', 'type' => 'NGG']]);
+    chk('join date: a new member is given today when none is set', !empty($newM['ok']) && db_row('SELECT joinDate FROM members WHERE memberId = ?', [$newM['memberId']])['joinDate'] === gmdate('Y-m-d'));
+    setting_set('profile_drive', ['phase' => 'off'], 't');
+})();
 chk('mysql mirror: every column a SQLite migration adds with ALTER is added by an ALTER in db/schema-mysql.sql (a CREATE TABLE alone never reaches an existing table)', (function () {
     preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(\w+)/', (string)file_get_contents(__DIR__ . '/../_lib/db.php'), $a, PREG_SET_ORDER);
     preg_match_all('/ALTER TABLE\s+(\w+)\s+ADD COLUMN\s+(?:IF NOT EXISTS\s+)?(\w+)/i', (string)file_get_contents(__DIR__ . '/../../db/schema-mysql.sql'), $b, PREG_SET_ORDER);
@@ -1152,7 +1213,7 @@ chk('summer signup: Apply finds the live public sign-up link — the centre\'s o
 $cconv = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => (int)$crow['id']]);
 $cmem = db_row('SELECT * FROM members WHERE memberId = ?', [$cconv['memberId'] ?? '']);
 chk('club apply → member: the parent by name and number, the school and class, the agreements inherited', $cmem
-    && $cmem['parentName'] === 'Adunni Adebayo' && $cmem['parentPhone'] === '08031234567' && $cmem['school'] === 'Egbeda Senior High School · JSS 2 B'
+    && $cmem['parentName'] === 'Adunni Adebayo' && $cmem['parentPhone'] === '08031234567' && $cmem['school'] === 'Egbeda Senior High School' && (json_decode((string)$cmem['profileJson'], true)['class'] ?? '') === 'JSS 2'
     && (int)db_row("SELECT COUNT(DISTINCT type) c FROM consents WHERE studentId = ? AND policyVersion = '2026.10'", [$cmem['memberId']])['c'] === 7
     && (consent_state($cmem['memberId'])['media']['status'] ?? '') === 'granted');
 chk('schools: a school the family typed joins the list once their child is accepted', (function () {
@@ -22446,9 +22507,10 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         (string)$get('IMP-062')['joinDate'] === '2022-05-02' && $fillJ['updated'] === 1);
 
     $mid = (string)$get('IMP-061')['memberId'];
-    $bad = admin_members_upsert(['requesterId' => 'IMPADM-1', 'data' => ['memberId' => $mid, 'joinDate' => 'last March']]);
-    chk('join dates: the desk is refused a join date nobody can read', ($bad['error'] ?? '') === 'joinDate_invalid');
-    $good = admin_members_upsert(['requesterId' => 'IMPADM-1', 'data' => ['memberId' => $mid, 'joinDate' => '06/01/2024']]);
+    // The desk corrects a join date through admin.member.joindate (profile-drive.php), with a reason.
+    $bad = admin_member_joindate(['requesterId' => 'IMPADM-1', 'memberId' => $mid, 'date' => 'last March', 'reason' => 'Fixing the import row']);
+    chk('join dates: the desk is refused a join date nobody can read', ($bad['error'] ?? '') === 'joindate_invalid');
+    $good = admin_member_joindate(['requesterId' => 'IMPADM-1', 'memberId' => $mid, 'date' => '06/01/2024', 'reason' => 'Fixing the import row']);
     chk('join dates: …and a day-first one typed on the desk is stored as ISO',
         !empty($good['ok']) && (string)$get('IMP-061')['joinDate'] === '2024-01-06');
 

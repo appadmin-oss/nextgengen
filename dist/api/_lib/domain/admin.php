@@ -658,6 +658,45 @@ function admin_members_upsert(array $p): array {
     }
 
     $cols = ['fullName','email','phone','type','status','role','centre','photoUrl','track','cohort','joinDate','dob','parentName','parentEmail','parentPhone','school','bio','socials','notes','displayId','disciplines','level','division'];
+
+    /* ── The join date is not a free field (domain/profile-drive.php) ──
+       Set when the member is made (blank means today), and changed afterwards
+       only through admin.member.joindate, with a reason, on the record. */
+    if ($existing && array_key_exists('joinDate', $data)) {
+        return ['ok' => false, 'error' => 'joindate_locked',
+                'detail' => 'The join date is changed with “Correct the join date”, which asks for a reason and keeps the old date on record.'];
+    }
+    if (!$existing && trim((string)($data['joinDate'] ?? '')) !== '') {
+        $jd = function_exists('member_date') ? member_date((string)$data['joinDate']) : (string)$data['joinDate'];
+        if (!$jd || $jd > gmdate('Y-m-d') || (defined('PROFILE_JOIN_EARLIEST') && $jd < PROFILE_JOIN_EARLIEST)) {
+            return ['ok' => false, 'error' => 'joindate_invalid', 'detail' => 'A join date is a real date between 2018 and today.'];
+        }
+        $data['joinDate'] = $jd;
+    }
+
+    /* ── Record answers with no column (sex, class, address, LGA, state) ──
+       Sent as data.profile; checked by the record drive's own rules and kept
+       in profileJson. A blank answer clears it. */
+    $profilePatch = null;
+    if (is_array($data['profile'] ?? null) && function_exists('profile_fields')) {
+        $pf = profile_fields(); $pj = $existing ? profile_json($existing) : []; $changed = false;
+        foreach ($data['profile'] as $k => $raw) {
+            if (($pf[$k]['store'] ?? '') !== 'json') continue;
+            if (trim((string)$raw) === '') { if (isset($pj[$k])) { unset($pj[$k]); $changed = true; } continue; }
+            [$v, $err] = profile_clean((string)$k, $raw);
+            if ($err !== '') return ['ok' => false, 'error' => 'record_invalid', 'field' => $k, 'detail' => $pf[$k]['label'] . ': ' . $err];
+            if (($pj[$k] ?? null) !== $v) { $pj[$k] = $v; $changed = true; }
+        }
+        if ($changed) $profilePatch = json_encode($pj, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+    /* While the drive is `required`, an ACTIVE member saves only complete. A
+       save that suspends, deactivates or graduates them is always allowed. */
+    if (function_exists('profile_required_check')) {
+        $merged = array_merge($existing ?: ['status' => 'active', 'type' => 'NGG', 'role' => 'member'], db_pick($data, $cols));
+        if ($profilePatch !== null) $merged['profileJson'] = $profilePatch;
+        $rc = profile_required_check($merged);
+        if (empty($rc['ok'])) return $rc;
+    }
     /* A closed set, refused rather than coerced. The four divisions are the
      * brief's (domain/formation.php) and a fifth is a typo, not a new
      * division — accepting it would put a member somewhere no report counts
@@ -750,6 +789,7 @@ function admin_members_upsert(array $p): array {
         }
 
         $patch = db_pick($data, $cols);
+        if ($profilePatch !== null) $patch['profileJson'] = $profilePatch;
         /* A printed id typed on the desk is CLAIMED first: one that another
            record holds is refused, naming them, rather than giving one id to
            two people. Correcting an id is allowed; the old one stays claimed,
@@ -778,6 +818,8 @@ function admin_members_upsert(array $p): array {
 
     $newId = new_id(($data['type'] ?? '') === 'Summer' ? 'SUM' : 'NGG', 'members', 'memberId');
     $insert = db_pick($data, $cols);
+    if ($profilePatch !== null) $insert['profileJson'] = $profilePatch;
+    if (trim((string)($insert['joinDate'] ?? '')) === '') $insert['joinDate'] = gmdate('Y-m-d');
     $insert['memberId'] = $newId;
     $insert['status'] = $insert['status'] ?? ($data['status'] ?? 'active');
     $insert['role'] = $insert['role'] ?? ($data['role'] ?? 'member');

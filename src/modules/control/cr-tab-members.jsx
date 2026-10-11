@@ -54,7 +54,29 @@ function crMemStatusLabel(s) { const f = CR_MEM_STATUS.find(x => x[0] === s); re
 function crMbPhoto(u) { return nggPhotoSrc(u); }
 
 /* The editable fields, once: the Add form and the Edit form are the same form. */
-function crMemFields(centres, divisions) {
+/* The record answers a member row has no column for (domain/profile-drive.php),
+   edited here as data.profile. Class options are the Club application's. */
+const CR_MEM_PROFILE = [
+  { id: "p_sex", key: "sex", l: "Sex", type: "select", ph: "Not recorded", opts: ["Female", "Male"] },
+  { id: "p_class", key: "class", l: "Class", type: "select", ph: "Not recorded", opts: null },   // filled when the form opens (page-apply.jsx loads later)
+  { id: "p_address", key: "address", l: "Home address", type: "textarea", rows: 2, max: 300 },
+  { id: "p_resState", key: "resState", l: "State they live in", max: 60 },
+  { id: "p_resLga", key: "resLga", l: "Local government they live in", max: 60 },
+];
+function crMemProfileValues(m) {
+  let j = {}; try { j = JSON.parse((m && m.profileJson) || "{}") || {}; } catch (_) {}
+  const v = {}; CR_MEM_PROFILE.forEach(f => { v[f.id] = j[f.key] != null ? String(j[f.key]) : ""; }); return v;
+}
+function crMemFields(centres, divisions, editing) {
+  const f = crMemFieldsAll(centres, divisions);
+  /* The join date is set when the member is made and corrected only with a
+     reason ("Correct the join date"), so the edit form does not carry it. */
+  const base = editing ? f.filter(x => x.id !== "joinDate") : f;
+  const at = base.findIndex(x => x.id === "school") + 1;
+  const classes = typeof APF_CLASSES !== "undefined" ? APF_CLASSES.flatMap(g => g[1]) : [];
+  return base.slice(0, at).concat(CR_MEM_PROFILE.map(x => { const y = Object.assign({}, x, x.key === "class" ? { opts: classes } : {}); delete y.key; return y; }), base.slice(at));
+}
+function crMemFieldsAll(centres, divisions) {
   return [
     { id: "fullName", l: "Full name", req: true, max: 120 },
     { id: "email", l: "Email", type: "email", email: true, help: "The address they sign in with." },
@@ -69,7 +91,7 @@ function crMemFields(centres, divisions) {
     { id: "displayId", l: "Printed ID", max: 24, help: "Leave blank and a new member is given the next number. A printed ID is never reissued." },
     { id: "photo", l: "Photograph", type: "file", accept: "image/*", help: "A head-and-shoulders photo for the ID card. Leave empty to keep the one on file." },
     { id: "dob", l: "Date of birth", type: "date" },
-    { id: "joinDate", l: "Date joined", type: "date", help: "The day they joined NGG, as on the roster. Blank shows the day the record was made." },
+    { id: "joinDate", l: "Date joined", type: "date", help: "The day they joined NGG. Blank means today. Once set, it is changed only with “Correct the join date”." },
     { id: "school", l: "School", max: 160 },
     { id: "parentName", l: "Parent or guardian", max: 120 },
     { id: "parentPhone", l: "Guardian phone", type: "tel", im: "tel" },
@@ -125,6 +147,7 @@ async function crMemOpen(ctx, memberId) {
     ],
     actions: [
       { l: "Edit", primary: true, run: () => crMemEdit(ctx, m) },
+      { l: "Correct the join date", run: () => crMemJoinDate(ctx, m) },
       { l: "Open full record", run: () => { ctx.closeDrawer(); ctx.setSub(m.memberId); } },
     ],
   });
@@ -132,14 +155,14 @@ async function crMemOpen(ctx, memberId) {
 
 function crMemEdit(ctx, m, after) {
   const data = ctx.data || {};
-  const before = crMemValues(m);
+  const before = Object.assign(crMemValues(m), crMemProfileValues(m));
   ctx.closeDrawer();
   ctx.form({
     title: "Edit " + (m.fullName || "member"), submit: "Save changes", busyLabel: "Saving…",
     /* A field whose STORED value already breaks its own format rule ("N/A" for
        an email) is not checked here: the rule would refuse every save of the
        record for a field nobody touched. The server still checks it if changed. */
-    values: before, fields: crMemFields(data.centres || [], data.divisions || []).map(f => {
+    values: before, fields: crMemFields(data.centres || [], data.divisions || [], true).map(f => {
       const v = before[f.id];
       if (!v) return f;
       const breaks = (f.email && !/^\S+@\S+\.\S+$/.test(v)) || (f.check && f.check(v, before)) || (f.max && v.length > f.max);
@@ -147,6 +170,9 @@ function crMemEdit(ctx, m, after) {
     }),
     onSubmit: async v => {
       const patch = crMemPatch(before, v);
+      delete patch.joinDate;
+      const prof = {}; CR_MEM_PROFILE.forEach(f => { if (String(v[f.id] || "").trim() !== String(before[f.id] || "").trim()) prof[f.key] = String(v[f.id] || "").trim(); });
+      if (Object.keys(prof).length) patch.profile = prof;
       const photoUrl = await crMbPhotoUrl(v.photo);
       if (photoUrl) patch.photoUrl = photoUrl;
       if (!Object.keys(patch).length) return { nothing: true };
@@ -159,15 +185,39 @@ function crMemEdit(ctx, m, after) {
   });
 }
 
+/** The one way to change a join date once set: a date and a reason, kept on record with the old date. */
+function crMemJoinDate(ctx, m, after) {
+  ctx.closeDrawer && ctx.closeDrawer();
+  ctx.form({
+    title: "Correct the join date", submit: "Correct it", busyLabel: "Saving…",
+    intro: (m.fullName || "This member") + (m.joinDate ? " joined on " + crDate(m.joinDate) + " by the record." : " has no join date yet.")
+      + " Correct it only when the record is wrong; the old date and your reason are kept.",
+    values: { date: m.joinDate || "", reason: "" },
+    fields: [
+      { id: "date", l: "Date joined", type: "date", req: true, help: m.displayId ? "Their printed ID " + m.displayId + " sets the year they joined." : "Between 2018 and today." },
+      { id: "reason", l: "Why it is being corrected", type: "textarea", rows: 2, req: true, max: 300, check: v => String(v || "").trim().length >= 8 ? "" : "Say why, in a few words." },
+    ],
+    onSubmit: async v => {
+      const r = await NGGApi.admin.memberRecords.joinDate(m.memberId, v.date, v.reason);
+      ctx.setData(x => Object.assign({}, x, { rev: (x.rev || 0) + 1 }));
+      if (after) after();
+      return r;
+    },
+    done: (v, r) => r && r.unchanged ? "That is already the join date." : "Join date corrected · " + crDate(r.joinDate),
+  });
+}
+
 function crMemAdd(ctx) {
   const data = ctx.data || {};
   ctx.form({
     title: "Add member", submit: "Add member", busyLabel: "Adding…",
     intro: "They get a member record and, as an NGG member, the next printed ID.",
-    values: Object.assign(crMemValues({}), { type: "NGG", status: "active", centre: (data.centres || []).length === 1 ? data.centres[0] : "" }),
+    values: Object.assign(crMemValues({}), crMemProfileValues({}), { type: "NGG", status: "active", centre: (data.centres || []).length === 1 ? data.centres[0] : "" }),
     fields: crMemFields(data.centres || [], data.divisions || []),
     onSubmit: async v => {
       const row = {}; CR_MEM_KEYS.forEach(k => { if (String(v[k] || "").trim() !== "") row[k] = k === "level" ? String(v[k]).trim().toUpperCase() : String(v[k]).trim(); });
+      const prof = {}; CR_MEM_PROFILE.forEach(f => { if (String(v[f.id] || "").trim() !== "") prof[f.key] = String(v[f.id]).trim(); });
+      if (Object.keys(prof).length) row.profile = prof;
       const photoUrl = await crMbPhotoUrl(v.photo);
       if (photoUrl) row.photoUrl = photoUrl;
       const r = await crMemQueued(NGGApi.admin.members.upsert(row));
@@ -918,6 +968,7 @@ Object.assign(CR_TAB_DEFS, {
         const rec = d.rec && d.rec.id === ctx.sub ? d.rec : null, m = rec ? rec.detail.member || {} : null;
         return [
           { l: "Edit", icon: "pencil-simple", primary: true, disabled: !m, why: m ? undefined : "Loading the record", run: () => crMemEdit(ctx, m, () => crMbRecReload(ctx, m.memberId)) },
+          { l: "Correct the join date", icon: "calendar-check", disabled: !m, why: m ? undefined : "Loading the record", run: () => crMemJoinDate(ctx, m, () => crMbRecReload(ctx, m.memberId)) },
           { l: "All members", icon: "users", run: () => ctx.setSub("") },
         ];
       }

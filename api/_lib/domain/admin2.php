@@ -815,9 +815,13 @@ function admin_application_convert(array $p): array {
         if (!empty($det['parent1Phone'])) $__m['parentPhone'] = (string)$det['parent1Phone'];
         if (!empty($det['parent1Name'])) $__m['parentName'] = (string)$det['parent1Name'];
         $sch = trim((string)($det['school'] ?? ''));
-        $cls = trim(implode(' ', array_filter([(string)($det['class'] ?? ''), (string)($det['classArm'] ?? '')])));
-        if ($sch !== '') $__m['school'] = $sch . ($cls !== '' ? ' · ' . $cls : '');
+        if ($sch !== '') $__m['school'] = $sch;   // the class has its own field in the record (profileJson)
         // A school the family typed joins the picker's list once their child is accepted.
+        // The answers a member row has no column for go to its record (profile-drive.php).
+        $pj = array_filter(['sex' => (string)($a['sex'] ?? ''), 'class' => (string)($det['class'] ?? ''), 'address' => (string)($det['address'] ?? ''),
+            'resState' => (string)($det['resState'] ?? ''), 'resLga' => (string)($det['resLga'] ?? ''), 'originState' => (string)($det['originState'] ?? ''),
+            'nationality' => (string)($det['nationality'] ?? ''), 'classArm' => (string)($det['classArm'] ?? '')], fn($v) => $v !== '');
+        if ($pj) $__m['profileJson'] = json_encode($pj, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if ($sch !== '' && function_exists('school_learn')) school_learn($sch, (string)($det['resLga'] ?? ''), (string)($det['resState'] ?? ''));
         if ($intakePhone !== '' && function_exists('club_phone') && club_phone($intakePhone) !== '' && club_phone($intakePhone) !== (string)($det['parent1Phone'] ?? '')) $__m['phone'] = $intakePhone;
     }

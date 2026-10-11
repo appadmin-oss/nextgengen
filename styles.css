@@ -8080,3 +8080,25 @@ body.own-chrome[data-page="timetable"] { overflow: hidden; }
 .summer-fwd h1 { font-size: clamp(26px, 4vw, 36px); margin: 0 0 12px; }
 .summer-fwd p { font-size: 16px; color: var(--ink-500); margin: 0 0 20px; }
 .summer-fwd-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* ── The record drive card / screen (RecordDrive, page-dashboard.jsx) ───── */
+.rec { max-width: 980px; margin: 24px auto 0; padding: 20px 22px; border-radius: 18px; background: #fff; border: 1px solid var(--cream-200, #e8e5dd); box-shadow: 0 1px 0 rgba(12,20,50,.04); }
+.rec.is-locked { margin: 48px auto; border-color: var(--navy-900, #0c1432); }
+.rec-head { display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+.rec-head > i { font-size: 26px; color: var(--navy-900, #0c1432); margin-top: 2px; }
+.rec-head-t { flex: 1; min-width: 220px; }
+.rec-head-t h2 { margin: 0 0 4px; font-size: 20px; }
+.rec-head-t p { margin: 0; color: var(--ink-700, #3d4560); font-size: 14.5px; line-height: 1.5; }
+.rec-count { margin: 16px 0 4px; font-size: 14px; color: var(--ink-700, #3d4560); }
+.rec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 14px 16px; margin-top: 10px; }
+.rec-fld { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rec-fld.is-wide { grid-column: 1 / -1; }
+.rec-fld label { font-size: 14px; font-weight: 600; }
+.rec-input { min-height: 46px; padding: 10px 12px; border: 1px solid var(--ink-300, #c6cad6); border-radius: 12px; font: inherit; font-size: 16px; background: #fff; width: 100%; }
+.rec-input[aria-invalid="true"] { border-color: #b0361c; }
+textarea.rec-input { min-height: 84px; resize: vertical; }
+.rec-err { font-size: 13px; color: #b0361c; display: flex; align-items: center; gap: 6px; }
+.rec-note { margin: 14px 0 0; font-size: 13.5px; color: var(--ink-700, #3d4560); }
+.rec-msg { margin: 14px 0 0; font-size: 14px; color: #1d6b30; }
+.rec-msg.is-bad { color: #b0361c; }
+.rec-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }

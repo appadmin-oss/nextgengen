@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 142;
+const NGG_SCHEMA_TARGET = 143;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4506,6 +4506,12 @@ function db_migrate(PDO $db): void {
             );
             CREATE INDEX IF NOT EXISTS idx_schools_key ON schools(nameKey);
             CREATE INDEX IF NOT EXISTS idx_schools_place ON schools(state, lga);",
+        /* The member record drive (domain/profile-drive.php): the answers a
+         * member row has no column for — sex, class, home address, LGA and
+         * state, origin — under the Club application's own keys, so an
+         * accepted application fills them and a member completes the rest. */
+        143 => "
+            ALTER TABLE members ADD COLUMN profileJson TEXT DEFAULT '';",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

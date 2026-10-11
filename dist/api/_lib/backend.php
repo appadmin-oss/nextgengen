@@ -34,6 +34,12 @@ function backend_dispatch(string $op, array $args = []): array {
             // Members
             'member.dashboard'        => 'member_dashboard',
             'member.update'           => 'member_update',
+            'member.profile.status'   => 'member_profile_status',
+            'member.profile.complete' => 'member_profile_complete',
+            'admin.profile.drive'     => 'admin_profile_drive',
+            'admin.profile.drive.set' => 'admin_profile_drive_set',
+            'admin.profile.remind'    => 'admin_profile_remind',
+            'admin.member.joindate'   => 'admin_member_joindate',
             'photo.chunk'             => 'photo_chunk_put',
             'member.notifications'    => 'member_notifications',
             'member.notificationRead' => 'member_notification_read',
@@ -864,6 +870,8 @@ function backend_dispatch(string $op, array $args = []): array {
            instead of run (domain/approvals.php). Here, at the one seam every
            op passes through, so no screen can reach one around the queue. */
         if (function_exists('approval_intercept') && ($queued = approval_intercept($op, $args)) !== null) return $queued;
+        // A member whose record is locked by the record drive may only complete it (domain/profile-drive.php).
+        if (function_exists('profile_gate_intercept') && ($gated = profile_gate_intercept($op, $args)) !== null) return $gated;
         /* Intake writes are idempotent when the client supplies a submissionId.
          *
          * Declared here, in one place, rather than wrapped inside each of the

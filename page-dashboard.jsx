@@ -531,6 +531,16 @@ function DashboardPage({ setPage }) {
   const [mutateSeq, setMutateSeq] = React.useState(0);
   const [err, setErr] = React.useState("");
   const [refreshing, setRefreshing] = React.useState(false);
+  /* The record drive (domain/profile-drive.php): what is missing from this
+     member's record, and whether the account is locked until it is done. */
+  const [rec, setRec] = React.useState(null);
+  const loadRec = React.useCallback(() => { NGGApi.member.record().then(setRec, () => {}); }, []);
+  React.useEffect(() => { if (isSignedIn) loadRec(); }, [isSignedIn, loadRec]);
+  React.useEffect(() => {
+    const f = () => loadRec();
+    window.addEventListener("ngg:record-incomplete", f);
+    return () => window.removeEventListener("ngg:record-incomplete", f);
+  }, [loadRec]);
 
   // A real user mutation (mission submit, journal, RSVP) bumps both the
   // dashboard reload and a mutation sequence the activity feed listens to —
@@ -582,14 +592,21 @@ function DashboardPage({ setPage }) {
   }
   // Full error screen only when we have nothing to show.
   if (err && !data) {
+    if (rec && rec.locked) return <DashboardShell><RecordDrive status={rec} locked onSaved={setRec} onSignOut={signOut}/></DashboardShell>;
     return <DashboardShell><DashboardError code={err} onRetry={() => setReload(r => r + 1)}/></DashboardShell>;
   }
   if (!data) {
     return <DashboardShell><DashboardSkeleton/></DashboardShell>;
   }
 
+  // The record drive: past its deadline, an incomplete record is the only screen.
+  if (rec && rec.locked) {
+    return <DashboardShell><RecordDrive status={rec} locked onSaved={setRec} onSignOut={signOut}/></DashboardShell>;
+  }
+
   return (
     <DashboardShell>
+      {rec && rec.asked && <RecordDrive status={rec} onSaved={setRec}/>}
       <DashboardLive
         data={data}
         setPage={setPage}
@@ -599,6 +616,84 @@ function DashboardPage({ setPage }) {
         onSignOut={signOut}
       />
     </DashboardShell>
+  );
+}
+
+/* ── The record drive: complete your record ─────────────────────────────────
+   Before the deadline, a card at the top of the dashboard with the days left;
+   after it, the only screen until the record is complete. Each missing field
+   is asked once, checked by the same rules the server uses, and saved in one
+   go; a refusal names each field. */
+function RecordDrive({ status, locked, onSaved, onSignOut }) {
+  const [open, setOpen] = React.useState(!!locked);
+  const [vals, setVals] = React.useState(() => Object.fromEntries((status.fields || []).map(f => [f.key, f.value || ""])));
+  const [errs, setErrs] = React.useState({});
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState("");
+  const fields = (status.fields || []).filter(f => f.self);
+  const staffOnly = (status.fields || []).filter(f => !f.self);
+  const set = (k, v) => { setVals(x => Object.assign({}, x, { [k]: v })); setErrs(e => (e[k] ? Object.assign({}, e, { [k]: "" }) : e)); };
+  const days = status.daysLeft;
+  const when = status.deadline ? new Date(status.deadline + "T00:00").toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }) : "";
+  const save = async () => {
+    setBusy(true); setMsg("");
+    try {
+      const r = await NGGApi.member.recordSave(Object.fromEntries(fields.map(f => [f.key, vals[f.key]])));
+      setErrs({});
+      onSaved && onSaved(r);
+      if (!r.asked) setMsg("Thank you. Your record is complete.");
+    } catch (e) {
+      const ee = (e && e.data && e.data.errors) || null;
+      if (ee) { setErrs(ee); setMsg("A few answers need another look."); }
+      else setMsg("We couldn’t save that. Check your connection and try again.");
+    } finally { setBusy(false); }
+  };
+  const lgaList = vals.resState && typeof APF_LGAS !== "undefined" ? APF_LGAS[vals.resState] : null;
+  const input = f => {
+    const id = "rec-" + f.key, bad = !!errs[f.key];
+    const common = { id, "aria-invalid": bad || undefined, "aria-describedby": bad ? id + "-e" : undefined };
+    if (f.type === "photo") return <PhotoCapture value={vals[f.key]} onChange={u => set(f.key, u)} label="Passport photo"/>;
+    if (f.type === "choice" || (f.key === "resState" && typeof APF_STATES !== "undefined") || (f.key === "resLga" && lgaList)) {
+      const opts = f.key === "resState" ? APF_STATES : f.key === "resLga" ? lgaList : f.options;
+      return <select {...common} className="rec-input" value={vals[f.key]} onChange={e => set(f.key, e.target.value)}>
+        <option value="">Choose…</option>{opts.map(o => <option key={o} value={o}>{o}</option>)}</select>;
+    }
+    if (f.type === "textarea") return <textarea {...common} className="rec-input" rows={3} value={vals[f.key]} onChange={e => set(f.key, e.target.value)}/>;
+    return <input {...common} className="rec-input" type={f.type === "date" ? "date" : f.type === "tel" ? "tel" : f.type === "email" ? "email" : "text"}
+      inputMode={f.type === "tel" ? "tel" : f.type === "email" ? "email" : undefined} value={vals[f.key]} onChange={e => set(f.key, e.target.value)}/>;
+  };
+  return (
+    <section className={"rec" + (locked ? " is-locked" : "")} aria-labelledby="rec-h">
+      <div className="rec-head">
+        <i className={"ph " + (locked ? "ph-lock-simple" : "ph-clipboard-text")} aria-hidden="true"/>
+        <div className="rec-head-t">
+          <h2 id="rec-h">{locked ? "Complete your record to carry on" : "Complete your record"}</h2>
+          <p>{locked
+            ? "The deadline" + (when ? " (" + when + ")" : "") + " has passed. Fill in what is missing below and your dashboard opens again straight away."
+            : (days != null && days >= 0 ? (days === 0 ? "Due today" : days + (days === 1 ? " day" : " days") + " left") + (when ? ", by " + when : "") + ". " : "")
+              + "NGG is making every member’s record complete. After the deadline, the dashboard opens on this form until it is done."}</p>
+        </div>
+        {!locked && <button type="button" className="btn btn-primary btn-sm" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? "Later" : "Complete now"}</button>}
+      </div>
+      {open && <>
+        <p className="rec-count" role="status">{fields.length === 1 ? "One thing is missing." : fields.length + " things are missing."} Ask a parent or guardian to help with their details.</p>
+        <div className="rec-grid">
+          {fields.map(f => (
+            <div key={f.key} className={"rec-fld" + (f.type === "textarea" || f.type === "photo" ? " is-wide" : "")}>
+              <label htmlFor={"rec-" + f.key}>{f.label}</label>
+              {input(f)}
+              {errs[f.key] && <span className="rec-err" id={"rec-" + f.key + "-e"}><i className="ph ph-warning-circle" aria-hidden="true"/>{errs[f.key]}</span>}
+            </div>
+          ))}
+        </div>
+        {staffOnly.length > 0 && <p className="rec-note">Your centre also needs to set: {staffOnly.map(f => f.label.toLowerCase()).join(", ")}. Ask at the desk on Saturday; you can’t change {staffOnly.length === 1 ? "it" : "them"} here.</p>}
+        {msg && <p className={"rec-msg" + (Object.keys(errs).length ? " is-bad" : "")} role="status">{msg}</p>}
+        <div className="rec-actions">
+          {fields.length > 0 && <button type="button" className="btn btn-primary" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save my record"}</button>}
+          {locked && onSignOut && <button type="button" className="btn btn-ghost" onClick={onSignOut}>Sign out</button>}
+        </div>
+      </>}
+    </section>
   );
 }
 

@@ -3562,3 +3562,7 @@ ALTER TABLE volunteers ADD COLUMN lastName VARCHAR(80) DEFAULT '';
 ALTER TABLE volunteers ADD COLUMN otherName VARCHAR(80) DEFAULT '';
 ALTER TABLE volunteers ADD COLUMN safeguarding VARCHAR(16) DEFAULT 'pending';
 CREATE UNIQUE INDEX idx_members_anchorcode ON members(anchorCode);
+
+-- 143: the member record drive — answers a member row has no column for (sex, class, address, LGA, state), as JSON.
+ALTER TABLE members ADD COLUMN profileJson MEDIUMTEXT;
+INSERT INTO schema_version (version) VALUES (143) ON DUPLICATE KEY UPDATE version = version;

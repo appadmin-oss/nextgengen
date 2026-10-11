@@ -955,3 +955,24 @@ be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
   the form warns while it is being filled in.
 - Control Room applications show every Club form answer; the export has the
   Google Form's columns plus the new ones.
+
+## 2026-10-11 — MySQL columns, the member record drive, the join date
+
+- **MySQL "Unknown column 'duesRemindOff'"**: 44 columns were declared only
+  inside the mirror's CREATE TABLE, so databases created before them never
+  got them. Every SQLite ALTER now has a MySQL ALTER (same type as the
+  CREATE), plus the anchorCode unique index; a PHP check keeps it so.
+  Verified on MariaDB.
+- **Record drive** (domain/profile-drive.php, migration 143
+  `members.profileJson`): setting `profile_drive` {phase off|collect|required,
+  deadline, fields, types}. `profile_gate_intercept` in backend_dispatch
+  refuses member ops with `record_incomplete` once a collect deadline passes
+  (wrapped so a failure lets the request through). `profile_required_check`
+  in admin_members_upsert applies only to ACTIVE members and never to a save
+  that makes them non-active. Ops: member.profile.status/complete,
+  admin.profile.drive(.set), admin.profile.remind, admin.member.joindate.
+- **Join date**: refused by the general member edit (`joindate_locked`);
+  corrected only by admin.member.joindate (reason, not future, not before
+  2018, in the printed ID's intake year); imports never overwrite one.
+- Pre-existing failures noted, not changed: tests/summer-editions.test.js and
+  tests/family-ui.test.js still drive the v1 Control Room (removed 10-08).

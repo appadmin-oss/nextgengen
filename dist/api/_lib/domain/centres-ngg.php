@@ -310,6 +310,11 @@ function geo_osrm_table(array $from, array $tos, bool $network = true): array {
         else $ask[$i] = $ck;
     }
     if (!$ask || !$network) return $out;
+    /* A few live routing calls per request, then cache only: a bulk promotion
+       of two hundred children must not wait on two hundred trips to the
+       router. Those beyond the budget fall back to the straight line. */
+    static $budget = 3;
+    if (!$mock && $budget-- <= 0) return $out;
     $keys = array_keys($ask);
     $res = [];
     if ($mock) $res = ($GLOBALS['__osrm_mock'])($from, array_intersect_key($tos, $ask));
@@ -317,7 +322,7 @@ function geo_osrm_table(array $from, array $tos, bool $network = true): array {
         $coords = [$from['lng'] . ',' . $from['lat']];
         foreach ($keys as $i) $coords[] = $tos[$i]['lng'] . ',' . $tos[$i]['lat'];
         $origin = (string)($GLOBALS['CONFIG']['app_origin'] ?? 'https://afrovanguard.org.ng');
-        $r = ai_http_get($base . '/table/v1/driving/' . implode(';', $coords) . '?sources=0&annotations=duration,distance', ['User-Agent: NGG-ControlRoom/1.0 (' . $origin . ')']);
+        $r = ai_http_get($base . '/table/v1/driving/' . implode(';', $coords) . '?sources=0&annotations=duration,distance', ['User-Agent: NGG-ControlRoom/1.0 (' . $origin . ')'], 4);
         $j = !empty($r['ok']) ? json_decode((string)$r['body'], true) : null;
         if (($j['code'] ?? '') === 'Ok') foreach ($keys as $n => $i) {
             $sec = $j['durations'][0][$n + 1] ?? null; $m = $j['distances'][0][$n + 1] ?? null;

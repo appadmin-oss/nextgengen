@@ -743,6 +743,8 @@ function members_import_run(array $rows, array $opts = []): array
         foreach ($patch as $col => $value) {
             if ($value === '' || in_array($col, $locked, true)) continue;
             $current = (string)($existing[$col] ?? '');
+            // A join date on record is changed only with a reason (admin.member.joindate), never by a sheet.
+            if ($col === 'joinDate' && $current !== '') continue;
             if ($col === 'notes') {
                 $value = members_import_merge_note($current, $value);
             } elseif ($current !== '' && !$overwrite) {

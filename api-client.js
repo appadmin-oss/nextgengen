@@ -29,6 +29,10 @@
     try { return await requestRaw(path, opts); }
     catch (e) {
       if (write && e && e.code === 'csrf_failed' && await mintCsrf()) return await requestRaw(path, opts);
+      /* The record drive locked this member's account until their record is
+         complete (domain/profile-drive.php): tell the app, which shows the
+         form, whatever screen asked. */
+      if (e && e.code === 'record_incomplete') { try { window.dispatchEvent(new CustomEvent('ngg:record-incomplete')); if (window.__onRecordIncomplete) window.__onRecordIncomplete(); } catch (_) {} }
       throw e;
     }
   }
@@ -649,6 +653,8 @@
       adminLock:       () => request('/auth/admin-lock.php', { method: 'POST' }),
     },
     member: {
+      record:      () => request('/member/record.php'),
+      recordSave:  (values) => request('/member/record.php', { body: { values } }),
       dashboard:     () => request('/member/dashboard.php'),
       anchor:        () => request('/member/anchor.php'),
       /* Mentor Portal — the mentor's pod (and the mentee's own offer and
@@ -1327,6 +1333,12 @@
       },
       /* ID Card Studio (/club/id-cards): who has a card, the reprint queue,
          one-person photo asks, after-print failures, printed IDs. */
+      memberRecords: {
+        get:      () => request('/admin/member-records.php'),
+        set:      (cfg) => request('/admin/member-records.php', { body: Object.assign({ action: 'set' }, cfg) }),
+        remind:   (memberIds) => request('/admin/member-records.php', { body: { action: 'remind', memberIds } }),
+        joinDate: (memberId, date, reason) => request('/admin/member-records.php', { body: { action: 'joindate', memberId, date, reason } }),
+      },
       idStudio: {
         state:     () => request('/admin/id-studio.php'),
         reprint:   (items) => request('/admin/id-studio.php', { body: { action: 'reprint', items } }),

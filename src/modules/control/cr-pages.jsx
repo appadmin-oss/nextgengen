@@ -116,6 +116,7 @@ const CR_PAGES = {
     { id: "settings", label: "General", desc: "Sign-ups, messages, staff sign-in and the homepage banner.", cap: "settings" },
     { id: "attendance-rules", label: "Attendance", desc: "When somebody is late, and when they may leave.", cap: "settings" },
     { id: "card-branding", label: "Card branding", desc: "What is printed on the Summer School cards and digital IDs.", cap: "settings" },
+    { id: "member-records", label: "Member records", desc: "Make every member’s record complete: the fields asked for, the deadline, who is still missing what, and reminders.", cap: "people" },
     { id: "mentor-automations", label: "Mentorship automations", desc: "The Mentor Portal's background jobs: their thresholds, times and centres, and what each run found.", cap: "people" },
     { id: "keys", label: "API keys", desc: "Connect AI, photo storage, payments, email and text messages.", cap: "settings" },
     { id: "access", label: "Access & roles", desc: "Who can do what. Give people the least they need.", cap: "rbac" },

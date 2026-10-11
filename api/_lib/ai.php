@@ -171,11 +171,11 @@ function ai_provider_message(string $body): string {
 }
 
 /** GET from a fixed, https-only provider endpoint. */
-function ai_http_get(string $url, array $headers): array {
+function ai_http_get(string $url, array $headers, int $timeout = 15): array {
     if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'no_curl'];
     $ch = curl_init($url);
     curl_setopt_array($ch, [
-        CURLOPT_HTTPHEADER => $headers, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_HTTPHEADER => $headers, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => max(1, $timeout), CURLOPT_CONNECTTIMEOUT => min(8, max(1, $timeout)),
         CURLOPT_FOLLOWLOCATION => false, CURLOPT_PROTOCOLS => defined('CURLPROTO_HTTPS') ? CURLPROTO_HTTPS : 2,
     ]);
     $out = curl_exec($ch);

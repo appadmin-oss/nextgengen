@@ -1168,6 +1168,37 @@ Not built yet: the portal's **Reflections**, **Pod growth** and **Mentee list**
 screens, *Mark here* from the pod, and the assistant's suggested plans. The
 older class roster stays at `/mentor?view=class`.
 
+## Member records: from optional to required
+
+The roster was seeded quickly, so many records have gaps. **Control Room →
+Settings → Member records** closes them in three steps:
+
+1. **Off** (the default). Nothing is asked. The page still shows how
+   complete the roster is and who is missing what.
+2. **Collecting**, with a deadline. Active members see *Complete your
+   record* on their dashboard with the days left. Nothing is locked before
+   the deadline. After it, the dashboard opens on the form until the record
+   is complete, and other member screens send them back to it. Use **Email
+   reminders** on the list to send families exactly what is missing.
+3. **Required**, once the records are in. Saving an active member needs
+   every chosen field; the message names what is missing.
+
+Choose the fields a complete record needs (name, date of birth, sex, photo,
+school, class, home address and LGA, parent's name, phone and email,
+centre…) and who is asked (NGG members; Summer School accounts optional).
+
+**Suspended, inactive and graduated members are never asked, locked or
+refused on save.** Their record keeps what it has. Suspending a member
+always works, even with gaps. Making them active again puts them under the
+drive like everybody else.
+
+**The join date** is not on the member's form or the general edit form. It
+is set when the member is made (blank means today), by acceptance and
+promotion, and by an import only where none is on file. To change it, open
+the member and use **Correct the join date**: a date and a reason. The date
+must sit in the intake year their printed ID shows (026-… is 2026), cannot
+be in the future, and the old date and your reason are kept.
+
 ## Applications, sign-ups and verification
 
 Three different queues, for three different things:
