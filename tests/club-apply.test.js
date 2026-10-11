@@ -130,6 +130,9 @@ const yearsAgo = (n, md) => (new Date().getFullYear() - n) + '-' + (md || '01-15
     await cont(P);
 
     await P.waitForSelector('#apf-in-school');
+    await P.fill('#apf-in-school', 'salvation army ayobo');
+    chk('the school list searches every school in Lagos and Ogun (GRID3 open data), each with its LGA',
+      await P.waitForFunction(() => /Salvation Army[^]*Alimosho, Lagos/.test((document.querySelector('.apf-lb') || {}).innerText || ''), null, { timeout: 15000 }).then(() => true, () => false));
     await pickCombo(P, 'school', 'Egbeda Sen');
     await pickCombo(P, 'class', 'jss 2');
     chk('the school and class pickers search and pick with the keyboard', (await P.inputValue('#apf-in-school')) === 'Egbeda Senior High School' && (await P.inputValue('#apf-in-class')) === 'JSS 2');

@@ -1119,12 +1119,28 @@ chk('public.apply.check: yes/no on email + date of birth, nothing else', (functi
     $n = backend_dispatch('public.apply.check', ['email' => 'club.family@example.com', 'dob' => '2013-04-03']);
     return $y['seen'] === true && $y['open'] === true && $n['seen'] === false && array_keys($y) === ['ok', 'seen', 'open'];
 })());
+chk('schools: GRID3 Nigeria\'s Lagos and Ogun schools load once, and a search finds by every word, with the LGA', (function () {
+    $r = schools_seed_once();
+    $n = (int)db_row("SELECT COUNT(*) c FROM schools WHERE source = 'grid3'")['c'];
+    $hit = backend_dispatch('public.schools', ['q' => 'salvation army ayobo'])['schools'];
+    $local = backend_dispatch('public.schools', ['q' => 'ayobo senior'])['schools'];
+    $ogun = backend_dispatch('public.schools', ['q' => 'ota'])['schools'];
+    return !empty($r['loaded']) && $n > 10000 && !empty(schools_seed_once()['already'])
+        && $hit && !array_filter($hit, fn($h) => stripos($h['name'], 'ayobo') === false || stripos($h['name'], 'salvation') === false) && $hit[0]['lga'] === 'Alimosho'
+        && $local && $local[0]['name'] === 'Ayobo Senior High School'
+        && count(backend_dispatch('public.schools', ['q' => 'a'])['schools']) === 0 && count($ogun) <= 20;
+})());
 $cconv = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => (int)$crow['id']]);
 $cmem = db_row('SELECT * FROM members WHERE memberId = ?', [$cconv['memberId'] ?? '']);
 chk('club apply → member: the parent by name and number, the school and class, the agreements inherited', $cmem
     && $cmem['parentName'] === 'Adunni Adebayo' && $cmem['parentPhone'] === '08031234567' && $cmem['school'] === 'Egbeda Senior High School · JSS 2 B'
     && (int)db_row("SELECT COUNT(DISTINCT type) c FROM consents WHERE studentId = ? AND policyVersion = '2026.10'", [$cmem['memberId']])['c'] === 7
     && (consent_state($cmem['memberId'])['media']['status'] ?? '') === 'granted');
+chk('schools: a school the family typed joins the list once their child is accepted', (function () {
+    school_learn('Bright Future Model College, Egbeda', 'Alimosho', 'Lagos');
+    $h = backend_dispatch('public.schools', ['q' => 'bright future model'])['schools'];
+    return $h && $h[0]['name'] === 'Bright Future Model College, Egbeda';
+})());
 
 // ── Contact form ──
 chk('contact stores message', !empty(backend_dispatch('public.contact', ['name' => 'Ada Visitor', 'email' => 'ada@example.com', 'message' => 'I would love to learn more about mentoring.', 'purpose' => 'mentor'])['ref']));

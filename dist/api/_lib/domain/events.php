@@ -877,6 +877,79 @@ function public_apply_check(array $p): array {
     return ['ok' => true, 'seen' => (bool)$row, 'open' => $row && in_array((string)$row['status'], ['new', 'reviewing', 'waitlist', ''], true)];
 }
 
+/* ── Schools (the Club application's picker) ───────────────────────────────── */
+
+const SCHOOLS_SEED_FILE = __DIR__ . '/../seeds/schools-lagos-ogun.json.gz';
+const SCHOOLS_SEED_VERSION = 'grid3-2023-08-lagos-ogun-2';
+
+function school_key(string $name): string {
+    return trim(preg_replace('/[^a-z0-9]+/', ' ', mb_strtolower($name)));
+}
+
+/**
+ * Load GRID3 Nigeria's schools for Lagos and Ogun, once per seed version.
+ * Free, open data (CC BY 4.0): https://data.humdata.org/dataset/nigeria-education-facilities
+ * A family's own schools (source 'application') are kept across reloads.
+ */
+function schools_seed_once(): array {
+    if (setting_raw('schools_seed') === SCHOOLS_SEED_VERSION) return ['ok' => true, 'already' => true];
+    if (!is_file(SCHOOLS_SEED_FILE)) return ['ok' => false, 'error' => 'seed_missing'];
+    $j = json_decode((string)gzdecode((string)file_get_contents(SCHOOLS_SEED_FILE)), true);
+    $rows = is_array($j['rows'] ?? null) ? $j['rows'] : [];
+    if (!$rows) return ['ok' => false, 'error' => 'seed_empty'];
+    $db = db_conn();
+    $db->beginTransaction();
+    try {
+        db_exec("DELETE FROM schools WHERE source = 'grid3'");
+        $st = $db->prepare('INSERT INTO schools (name, nameKey, lga, state, ward, level, management, lat, lng, source, addedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+        $now = now_iso();
+        foreach ($rows as [$name, $lga, $state, $ward, $level, $mg, $lat, $lng]) {
+            $st->execute([$name, school_key($name), $lga, $state, $ward, $level, $mg, $lat, $lng, 'grid3', $now]);
+        }
+        $db->commit();
+    } catch (Throwable $e) { $db->rollBack(); return ['ok' => false, 'error' => 'seed_failed']; }
+    setting_set('schools_seed', SCHOOLS_SEED_VERSION, 'system');
+    return ['ok' => true, 'loaded' => count($rows)];
+}
+
+/**
+ * public.schools — schools matching what a family typed: every word must
+ * appear, names that START with it first, then those in the LGA or state they
+ * named. At most 20, each with its LGA so two schools of one name can be told
+ * apart. {ok, schools: [{name, lga, state, level}]}
+ */
+function public_schools(array $p): array {
+    $q = school_key((string)($p['q'] ?? ''));
+    if (mb_strlen($q) < 2) return ['ok' => true, 'schools' => []];
+    if (!(int)(db_row("SELECT COUNT(*) c FROM schools WHERE source = 'grid3'")['c'] ?? 0)) schools_seed_once();
+    $words = array_slice(array_values(array_filter(explode(' ', $q), fn($w) => $w !== '')), 0, 5);
+    $where = implode(' AND ', array_fill(0, count($words), 'nameKey LIKE ?'));
+    $args = array_map(fn($w) => '%' . $w . '%', $words);
+    $lga = trim((string)($p['lga'] ?? '')); $state = trim((string)($p['state'] ?? ''));
+    $rows = db_all("SELECT name, lga, state, level, nameKey FROM schools WHERE $where LIMIT 400", $args);
+    usort($rows, function ($a, $b) use ($q, $lga, $state) {
+        $sa = (int)(strpos($a['nameKey'], $q) === 0) * 4 + (int)($lga !== '' && strcasecmp($a['lga'], $lga) === 0) * 2 + (int)($state !== '' && strcasecmp($a['state'], $state) === 0);
+        $sb = (int)(strpos($b['nameKey'], $q) === 0) * 4 + (int)($lga !== '' && strcasecmp($b['lga'], $lga) === 0) * 2 + (int)($state !== '' && strcasecmp($b['state'], $state) === 0);
+        return $sb <=> $sa ?: strcmp($a['nameKey'], $b['nameKey']);
+    });
+    $out = []; $seen = [];
+    foreach ($rows as $r) {
+        $k = $r['nameKey'] . '|' . strtolower($r['lga']);
+        if (isset($seen[$k])) continue; $seen[$k] = true;
+        $out[] = ['name' => $r['name'], 'lga' => $r['lga'], 'state' => $r['state'], 'level' => $r['level']];
+        if (count($out) >= 20) break;
+    }
+    return ['ok' => true, 'schools' => $out];
+}
+
+/** A school a family typed, added to the list once staff accept their child. */
+function school_learn(string $name, string $lga = '', string $state = ''): void {
+    $name = trim(preg_replace('/\s+/', ' ', $name)); $k = school_key($name);
+    if (mb_strlen($k) < 3) return;
+    if (db_row('SELECT id FROM schools WHERE nameKey = ? LIMIT 1', [$k])) return;
+    db_insert('schools', ['name' => $name, 'nameKey' => $k, 'lga' => $lga, 'state' => $state, 'source' => 'application', 'addedAt' => now_iso()]);
+}
+
 /** Every required agreement must be true; trips is the family's choice. */
 function club_apply_consents(array $c): array {
     $miss = array_values(array_filter(CLUB_APPLY_REQUIRED, fn($k) => ($c[$k] ?? null) !== true));

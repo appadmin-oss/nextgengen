@@ -942,6 +942,7 @@
       communityShowcase: () => request('/public/community.php' + qs({ view: 'showcase' })),
       newsletter: (email, source) => request('/public/newsletter.php', { body: { email, source: source || 'site' } }),
       apply:      (data) => request('/public/apply.php', { body: data }),
+      schools:    (q) => request('/public/schools.php?q=' + encodeURIComponent(q), { method: 'GET' }),
       applyCheck: (email, dob) => request('/public/apply-check.php', { body: { email, dob, program: 'anchor' } }),
       volunteer:  { context: () => request('/public/volunteer.php') },
       cert:       (id) => request('/public/cert.php' + qs({ id })),

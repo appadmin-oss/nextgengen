@@ -817,6 +817,8 @@ function admin_application_convert(array $p): array {
         $sch = trim((string)($det['school'] ?? ''));
         $cls = trim(implode(' ', array_filter([(string)($det['class'] ?? ''), (string)($det['classArm'] ?? '')])));
         if ($sch !== '') $__m['school'] = $sch . ($cls !== '' ? ' · ' . $cls : '');
+        // A school the family typed joins the picker's list once their child is accepted.
+        if ($sch !== '' && function_exists('school_learn')) school_learn($sch, (string)($det['resLga'] ?? ''), (string)($det['resState'] ?? ''));
         if ($intakePhone !== '' && function_exists('club_phone') && club_phone($intakePhone) !== '' && club_phone($intakePhone) !== (string)($det['parent1Phone'] ?? '')) $__m['phone'] = $intakePhone;
     }
     if (trim((string)($__m['displayId'] ?? '')) === '' && member_is_ngg($__m)) $__m['displayId'] = member_mint_and_claim($__m, $newId);

@@ -3496,3 +3496,15 @@ ALTER TABLE applications ADD COLUMN updatedAt VARCHAR(32) DEFAULT '';
 CREATE INDEX idx_apps_email_dob ON applications(email, dob);
 ALTER TABLE consents ADD COLUMN policyVersion VARCHAR(16) DEFAULT '';
 INSERT INTO schema_version (version) VALUES (141) ON DUPLICATE KEY UPDATE version = version;
+
+-- 142: Schools for the Club application — GRID3 Nigeria open data (Lagos, Ogun), loaded once from api/_lib/seeds; families' schools added on acceptance.
+CREATE TABLE IF NOT EXISTS schools (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(200) NOT NULL, nameKey VARCHAR(200) NOT NULL,
+  lga VARCHAR(80) DEFAULT '', state VARCHAR(40) DEFAULT '', ward VARCHAR(80) DEFAULT '',
+  level VARCHAR(4) DEFAULT '', management VARCHAR(4) DEFAULT '',
+  lat DOUBLE NULL, lng DOUBLE NULL,
+  source VARCHAR(16) DEFAULT 'grid3', addedAt VARCHAR(40) DEFAULT '',
+  INDEX idx_schools_key (nameKey), INDEX idx_schools_place (state, lga)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT INTO schema_version (version) VALUES (142) ON DUPLICATE KEY UPDATE version = version;

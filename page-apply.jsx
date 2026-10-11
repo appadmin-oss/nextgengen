@@ -108,7 +108,7 @@ function apfSteps(v, offer) {
       { id: "email", type: "text", inType: "email", inputMode: "email", ac: "email", label: "Email address", req: 1, ph: "name@gmail.com", hint: "We send the application copy and portal sign-in here. A parent’s email is fine." },
       { id: "mobile", type: "text", inType: "tel", inputMode: "tel", ac: "tel", label: kid ? "Your mobile number" : "Child’s mobile number", prefix: "+234", ph: "0803 123 4567", hint: "If they don’t have one, use the parent’s number.", req: 1 }] },
     { id: "school", l: "School", t: "School", s: "Helps us group members and support schoolwork.", f: [
-      { id: "school", type: "combo", label: "Name of school", req: 1, ph: "Start typing the school name", opts: APF_SCHOOLS, free: 1 },
+      { id: "school", type: "combo", label: "Name of school", req: 1, ph: "Start typing the school name", opts: APF_SCHOOLS, free: 1, remote: "schools" },
       { id: "class", type: "combo", label: "Class", req: 1, ph: "Search, e.g. JSS 2", groups: APF_CLASSES },
       { id: "classArm", type: "text", label: "Class arm or department", ph: "e.g. A, D, Science", hint: "Optional." }] },
     { id: "home", l: "Home", t: "Home and origin", s: "Where " + you + " live now, and where the family is from.", f: [
@@ -672,8 +672,22 @@ function ApfCombo({ f, val, pick, touch, shown, inputId, errId, phone }) {
   const [open, setOpen] = React.useState(false);
   const [hi, setHi] = React.useState(0);
   const qq = (q || "").trim().toLowerCase();
+  /* A remote list (the schools of Lagos and Ogun, from GRID3's open data)
+     is searched on the server as the family types; the short local list is
+     what shows before they type and if the server cannot be reached. */
+  const [remote, setRemote] = React.useState(null);   // null | [{name, lga, state}]
+  React.useEffect(() => {
+    // The previous search's answers never stand in for this one's: until the
+    // server answers, the local list filters what was typed.
+    setRemote(null);
+    if (!f.remote || qq.length < 2 || !(NGGApi.public && NGGApi.public[f.remote])) return;
+    let live = true;
+    const t = setTimeout(() => NGGApi.public[f.remote](qq).then(r => { if (live) setRemote((r && r.schools) || []); }, () => { if (live) setRemote(null); }), 220);
+    return () => { live = false; clearTimeout(t); };
+  }, [qq, f.remote]);
   const list = [], flat = [];
   if (f.groups) f.groups.forEach(([h, items]) => { const it = items.filter(o => !qq || o.toLowerCase().includes(qq)); if (it.length) { list.push({ g: h }); it.forEach(o => { list.push({ o }); flat.push(o); }); } });
+  else if (remote) remote.forEach(r => { list.push({ o: r.name, sub: [r.lga, r.state].filter(Boolean).join(", ") }); flat.push(r.name); });
   else (f.opts || []).filter(o => !qq || o.toLowerCase().includes(qq)).slice(0, 40).forEach(o => { list.push({ o }); flat.push(o); });
   const h = Math.min(hi, Math.max(0, flat.length - 1));
   const listId = "apf-lb-" + f.id;
@@ -690,9 +704,9 @@ function ApfCombo({ f, val, pick, touch, shown, inputId, errId, phone }) {
   const options = (big) => list.map((x, i) => {
     if (x.g) return <span key={"g" + i} className="apf-lb-g" role="presentation">{x.g}</span>;
     k++; const idx = k;
-    return <button key={x.o} type="button" role="option" id={listId + "-" + idx} aria-selected={idx === h} className={"apf-lb-o" + (idx === h ? " is-hi" : "") + (big ? " is-big" : "")}
+    return <button key={x.o + "|" + (x.sub || "") + "|" + idx} type="button" role="option" id={listId + "-" + idx} aria-selected={idx === h} className={"apf-lb-o" + (idx === h ? " is-hi" : "") + (big ? " is-big" : "")}
       onMouseDown={e => { e.preventDefault(); choose(x.o); }} onClick={big ? () => choose(x.o) : undefined}>
-      <span>{x.o}</span>{x.o === val && <i className="ph-bold ph-check" aria-hidden="true"/>}
+      <span>{x.o}{x.sub && <em className="apf-lb-sub">{x.sub}</em>}</span>{x.o === val && <i className="ph-bold ph-check" aria-hidden="true"/>}
     </button>;
   });
   const none = flat.length === 0 && <div className="apf-lb-none"><span>No match for “{typed}”.</span>{f.free && typed && <button type="button" onMouseDown={e => { e.preventDefault(); choose(apfTitle(typed)); }} onClick={() => choose(apfTitle(typed))}>Use “{typed}”</button>}</div>;

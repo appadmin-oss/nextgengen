@@ -935,3 +935,23 @@ be drawn") for a record and an uploaded image alike, with `photo.php` 404 and
   client list of about 60 schools for now). No pre-send "applied before"
   check: answering it would tell anyone with an email and a birth date
   whether that child applied.
+
+## 2026-10-11 — Schools, maps, applied-before, staff view
+
+- **Schools** (migration 142, `schools`): the Club form's school picker
+  searches GRID3 Nigeria's open education-facilities data (HDX, CC BY 4.0) —
+  12,089 primary and secondary schools in Lagos and Ogun with LGA and ward —
+  plus 47 local schools from the form design that GRID3 lacks. Shipped as
+  `api/_lib/seeds/schools-lagos-ogun.json.gz`, loaded once by
+  `schools_seed_once()` (first search, or the nightly job); bump
+  `SCHOOLS_SEED_VERSION` to reload. A school a family typed is added
+  (`school_learn`) when their child is accepted. Overpass (live OSM) was
+  tried and timed out repeatedly, so the list is not fetched live.
+- **Maps**: with no Google key, driving time and road km come from the free
+  OSRM router (`maps.osrm_url`); every centre is routed, not the four nearest
+  by straight line. Nominatim takes the first answer inside the area meant.
+  Ogun towns are not given ", Lagos".
+- `public.apply.check` (rate limited) answers {seen, open} on email + dob;
+  the form warns while it is being filled in.
+- Control Room applications show every Club form answer; the export has the
+  Google Form's columns plus the new ones.

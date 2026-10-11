@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 141;
+const NGG_SCHEMA_TARGET = 142;
 /** The one-time NGG/Summer centre split (domain/centres-ngg.php). A database
  *  created fresh records it as done: there is nothing to split. */
 const CENTRES_SPLIT_SEED = 'ngg-centres-2026-10';
@@ -4490,6 +4490,22 @@ function db_migrate(PDO $db): void {
             ALTER TABLE applications ADD COLUMN updatedAt TEXT DEFAULT '';
             CREATE INDEX IF NOT EXISTS idx_apps_email_dob ON applications(email, dob);
             ALTER TABLE consents ADD COLUMN policyVersion TEXT DEFAULT '';",
+        /* Schools a family can pick on the Club application, from GRID3
+         * Nigeria's open education-facilities data (Lagos and Ogun, primary
+         * and secondary), loaded once from api/_lib/seeds; plus the schools
+         * families typed in, added when their child is accepted. nameKey is
+         * the name lower-cased with punctuation removed, for matching. */
+        142 => "
+            CREATE TABLE IF NOT EXISTS schools (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              name TEXT NOT NULL, nameKey TEXT NOT NULL,
+              lga TEXT DEFAULT '', state TEXT DEFAULT '', ward TEXT DEFAULT '',
+              level TEXT DEFAULT '', management TEXT DEFAULT '',
+              lat REAL, lng REAL,
+              source TEXT DEFAULT 'grid3', addedAt TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_schools_key ON schools(nameKey);
+            CREATE INDEX IF NOT EXISTS idx_schools_place ON schools(state, lga);",
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

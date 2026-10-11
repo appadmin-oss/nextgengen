@@ -1205,6 +1205,9 @@ areas of influence; photo and agreements. Then a review.
   the child's own mobile onto the member. Everything else (address, origin,
   hobbies, how they heard) stays on the application.
 - The policies a family agrees to are at **/policies**.
+- **The school list** is every primary and secondary school in Lagos and Ogun
+  from GRID3 Nigeria's open data, plus schools families have typed in: a
+  school a family types is added to the list when you accept their child.
 
 Photo review matters more than it looks: a member with no approved
 photograph prints a card with a blank where the face goes. The **Missing:

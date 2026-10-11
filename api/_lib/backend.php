@@ -832,6 +832,7 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.members.caps'      => 'admin_member_caps_set',
             'public.apply'            => 'public_apply',
             'public.apply.check'      => 'public_apply_check',
+            'public.schools'          => 'public_schools',
             'public.volunteer.context' => 'public_volunteer_context',
             'public.volunteer.status'  => 'public_volunteer_status',
             'public.cert'             => 'public_cert',
