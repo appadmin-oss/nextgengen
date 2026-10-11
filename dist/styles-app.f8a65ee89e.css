@@ -9427,13 +9427,45 @@ button.mp-stat { cursor: pointer; }
    halo surrounds it, never a ring on the bare text area inside. Matched by
    shape, so a new search box gets it without being listed here. Zero
    specificity (:where), so a field that styles its own :focus-within keeps it. */
-:where(div, label, span, form):where(:not(.apf-input, .apf-addown)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color])), :has(> input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color]) ~ :is(i, svg, .ph, button, [class*="-ic"]))):focus-within {
+:where(div, label, span, form):where(:not(.apf-input, .apf-addown, .ngs-s)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color])), :has(> input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color]) ~ :is(i, svg, .ph, button, [class*="-ic"]))):focus-within {
   outline: none;
   border-color: currentColor;
   box-shadow: 0 0 0 1px currentColor, 0 0 0 5px color-mix(in srgb, currentColor 14%, transparent);
 }
-:where(div, label, span, form):where(:not(.apf-input, .apf-addown)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input), :has(> input ~ :is(i, svg, .ph, button, [class*="-ic"]))) > input:focus-visible {
+:where(div, label, span, form):where(:not(.apf-input, .apf-addown, .ngs-s)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input), :has(> input ~ :is(i, svg, .ph, button, [class*="-ic"]))) > input:focus-visible {
   /* Beats the site-wide input:focus-visible safety ring (styles.css), which
      otherwise draws a second ring on the bare input inside the box. */
   outline: none;
 }
+
+/* ── Every drop-down, the application's way (installNggSelect, components.jsx) ── */
+.ngs {
+  --ngs-bg: #fff; --ngs-ink: #0b0b0c; --ngs-muted: #6b6b72; --ngs-line: #d6d4cc; --ngs-rule: #f0efea; --ngs-hi: #f4f4f2; --ngs-field: #fcfcfb;
+  position: fixed; z-index: 1200; font-family: var(--font-body, "Inter", system-ui, sans-serif); color: var(--ngs-ink); font-size: 15px;
+  display: flex; flex-direction: column; background: var(--ngs-bg);
+}
+.ngs.is-dark { --ngs-bg: #17191f; --ngs-ink: #eceef2; --ngs-muted: #a3a8b4; --ngs-line: #353945; --ngs-rule: #23262e; --ngs-hi: #262a33; --ngs-field: #1d2027; }
+.ngs--pop { border: 1px solid var(--ngs-line); border-radius: 12px; box-shadow: 0 14px 34px rgba(11,11,12,.18); padding: 4px; max-height: var(--ngs-max, 320px); }
+.ngs--sheet { inset: 0; }
+.ngs-h { display: flex; align-items: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) 8px 8px; border-bottom: 1px solid var(--ngs-rule); }
+.ngs-h b { flex: 1; min-width: 0; font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ngs-x { width: 44px; height: 44px; border: 0; border-radius: 10px; background: none; color: inherit; cursor: pointer; font-size: 20px; display: grid; place-items: center; }
+.ngs-s { display: flex; align-items: center; gap: 8px; height: 44px; margin: 4px 4px 6px; padding: 0 12px; border: 1px solid var(--ngs-line); border-radius: 10px; background: var(--ngs-field); flex: none; }
+.ngs--sheet .ngs-s { height: 50px; margin: 12px; border: 1.5px solid var(--ngs-ink); border-radius: 12px; }
+.ngs-s i { color: var(--ngs-muted); }
+.ngs-s input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; font-size: 16px; }
+.ngs-s:focus-within { border-color: var(--ngs-ink); }
+.ngs-l { overflow-y: auto; outline: 0; flex: 1; min-height: 0; }
+.ngs--sheet .ngs-l { padding: 0 12px calc(16px + env(safe-area-inset-bottom)); }
+.ngs-g { display: block; padding: 8px 10px 4px; font-size: 12px; font-weight: 600; color: var(--ngs-muted); }
+.ngs--sheet .ngs-g { padding: 14px 4px 6px; font-size: 12.5px; }
+.ngs-o { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 6px 10px; border: 0; border-radius: 8px; background: none; color: inherit; text-align: left; cursor: pointer; font: inherit; font-size: 15px; }
+.ngs-o span { flex: 1; min-width: 0; }
+.ngs-o.is-hi, .ngs-o:hover { background: var(--ngs-hi); }
+.ngs-o[aria-selected="true"] { font-weight: 600; }
+.ngs-o:disabled { color: var(--ngs-muted); cursor: default; background: none; }
+.ngs--sheet .ngs-o { min-height: 52px; padding: 6px 4px; border-radius: 0; border-bottom: 1px solid var(--ngs-rule); font-size: 16px; }
+.ngs-none { padding: 12px 10px; font-size: 14px; color: var(--ngs-muted); }
+html.ngs-lock, html.ngs-lock body { overflow: hidden; }
+.ngs-l:focus-visible, .ngs-l:focus { outline: none; }
+.ngs-o.is-placeholder { color: var(--ngs-muted); }

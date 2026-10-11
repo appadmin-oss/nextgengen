@@ -3728,3 +3728,179 @@ function curriculumStatusLabel(p) {
   if (p.attempts > 0) return { label: "Try again", tone: "is-retry" };
   return { label: "Started", tone: "is-started" };
 }
+
+/* ============================================================================
+   Every drop-down opens as the application's list (page-apply.jsx's picker):
+   a searchable list under the field on a wide screen, a full-screen sheet
+   with a search box on a phone, the chosen option ticked, groups as headings.
+
+   One layer for every <select> in the site and the Control Room, rather than
+   two hundred rewrites: the <select> stays the source of truth (its value,
+   its React onChange, its form submission, Playwright's selectOption); only
+   the OS's own option list is replaced. Choosing sets the value through the
+   native setter and fires `input` and `change`, which is what React listens
+   for. Opt out with data-native on the <select>; a multiple or sized list is
+   left alone.
+   ========================================================================== */
+function installNggSelect() {
+  if (typeof document === "undefined" || window.__ngsInstalled) return;
+  window.__ngsInstalled = true;
+  const PHONE = 640, SEARCH_FROM = 8;
+  let cur = null;   // { sel, root, items, hi, input, list }
+  const eligible = el => el && el.tagName === "SELECT" && !el.multiple && !(el.size > 1) && !el.disabled && !el.hasAttribute("data-native") && !el.closest("[data-native-selects]");
+  const labelOf = sel => sel.getAttribute("aria-label") || (sel.id && document.querySelector('label[for="' + CSS.escape(sel.id) + '"]') || {}).textContent || (sel.closest("label") || {}).textContent || "Choose";
+  const isDark = el => {
+    for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+      const c = getComputedStyle(n).backgroundColor, m = c && c.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/);
+      if (m && (m[4] === undefined || +m[4] > 0.5)) return (0.299 * m[1] + 0.587 * m[2] + 0.114 * m[3]) < 110;
+    }
+    return false;
+  };
+  const setValue = (sel, v) => {
+    if (sel.value === v) return;
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(sel, v);
+    sel.dispatchEvent(new Event("input", { bubbles: true }));
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const close = refocus => {
+    if (!cur) return;
+    const { sel, root } = cur;
+    cur = null;
+    root.remove();
+    sel.removeAttribute("aria-expanded");
+    document.documentElement.classList.remove("ngs-lock");
+    if (refocus) try { sel.focus({ preventScroll: true }); } catch (_) {}
+  };
+  const render = () => {
+    const { sel, list, input } = cur;
+    const q = input ? input.value.trim().toLowerCase() : "";
+    list.textContent = "";
+    cur.items = [];
+    const add = (opt) => {
+      if (q && !opt.text.toLowerCase().includes(q)) return;
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "ngs-o" + (opt.value === "" ? " is-placeholder" : ""); b.setAttribute("role", "option");
+      b.id = "ngs-o-" + cur.items.length;
+      b.setAttribute("aria-selected", String(opt.value === sel.value));
+      if (opt.disabled) { b.disabled = true; b.setAttribute("aria-disabled", "true"); }
+      const t = document.createElement("span"); t.textContent = opt.text || " "; b.appendChild(t);
+      if (opt.value === sel.value && opt.value !== "") { const i = document.createElement("i"); i.className = "ph-bold ph-check"; i.setAttribute("aria-hidden", "true"); b.appendChild(i); }
+      b.addEventListener("mousedown", e => e.preventDefault());
+      b.addEventListener("click", () => { if (!opt.disabled) { setValue(sel, opt.value); close(true); } });
+      list.appendChild(b);
+      if (!opt.disabled) cur.items.push({ b, opt });
+    };
+    for (const node of sel.children) {
+      if (node.tagName === "OPTGROUP") {
+        const kids = [...node.children].filter(o => !q || o.text.toLowerCase().includes(q));
+        if (!kids.length) continue;
+        const g = document.createElement("span"); g.className = "ngs-g"; g.setAttribute("role", "presentation"); g.textContent = node.label; list.appendChild(g);
+        kids.forEach(add);
+      } else if (node.tagName === "OPTION" && !node.hidden) add(node);
+    }
+    if (!cur.items.length) { const n = document.createElement("div"); n.className = "ngs-none"; n.textContent = q ? "No match for “" + input.value.trim() + "”." : "Nothing to choose."; list.appendChild(n); }
+    const at = cur.items.findIndex(x => x.opt.value === sel.value);
+    move(at >= 0 ? at : 0, true);
+  };
+  const move = (i, quiet) => {
+    if (!cur || !cur.items.length) return;
+    cur.hi = Math.max(0, Math.min(cur.items.length - 1, i));
+    cur.items.forEach((x, k) => x.b.classList.toggle("is-hi", k === cur.hi));
+    const b = cur.items[cur.hi].b;
+    (cur.input || cur.list).setAttribute("aria-activedescendant", b.id);
+    if (!quiet || cur.hi) b.scrollIntoView({ block: "nearest" });
+  };
+  const open = sel => {
+    if (cur && cur.sel === sel) { close(true); return; }
+    close(false);
+    const phone = window.innerWidth < PHONE;
+    const root = document.createElement("div");
+    root.className = "ngs" + (phone ? " ngs--sheet" : " ngs--pop") + (isDark(sel) ? " is-dark" : "");
+    root.setAttribute("role", "dialog"); root.setAttribute("aria-label", labelOf(sel).trim());
+    if (phone) root.setAttribute("aria-modal", "true");
+    const many = sel.options.length > SEARCH_FROM;
+    let head = "";
+    if (phone) head = '<div class="ngs-h"><button type="button" class="ngs-x" aria-label="Close"><i class="ph ph-x" aria-hidden="true"></i></button><b></b></div>';
+    root.innerHTML = head + (many || phone ? '<div class="ngs-s"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><input type="search" autocomplete="off" placeholder="Search" aria-label="Search the options"></div>' : "") + '<div class="ngs-l" role="listbox" tabindex="-1"></div>';
+    if (phone) root.querySelector(".ngs-h b").textContent = labelOf(sel).trim();
+    // Inside the dialog the select is in, so a dialog's focus trap keeps the list.
+    (sel.closest('dialog, [role="dialog"], [aria-modal="true"]') || document.body).appendChild(root);
+    const input = root.querySelector(".ngs-s input"), list = root.querySelector(".ngs-l");
+    list.id = "ngs-l";
+    list.setAttribute("aria-label", labelOf(sel).trim());
+    if (input) input.setAttribute("aria-controls", "ngs-l");
+    cur = { sel, root, input, list, items: [], hi: 0 };
+    sel.setAttribute("aria-expanded", "true");
+    if (phone) { document.documentElement.classList.add("ngs-lock"); root.querySelector(".ngs-x").addEventListener("click", () => close(true)); }
+    else place(sel, root);
+    if (input) input.addEventListener("input", render);
+    render();
+    (input || list).focus({ preventScroll: true });
+  };
+  /* Under the field (above it when there is no room below), as wide as the
+     field and at least 220. Called again on scroll, so it follows the field. */
+  const place = (sel, root) => {
+    const r = sel.getBoundingClientRect(), w = Math.min(Math.max(r.width, 220), window.innerWidth - 16);
+    const below = window.innerHeight - r.bottom - 12, above = r.top - 12;
+    const up = below < 260 && above > below;
+    root.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + "px";
+    root.style.width = w + "px";
+    root.style.top = up ? "" : (r.bottom + 4) + "px";
+    root.style.bottom = up ? (window.innerHeight - r.top + 4) + "px" : "";
+    root.style.setProperty("--ngs-max", Math.max(160, Math.min(360, up ? above : below)) + "px");
+    /* Inside a transformed dialog "fixed" is relative to the dialog, not the
+       window: measure where it landed and correct by the difference. */
+    const want = parseFloat(root.style.left), got = root.getBoundingClientRect();
+    if (Math.abs(got.left - want) > 1) root.style.left = (want + (want - got.left)) + "px";
+    if (!up) { const wantTop = r.bottom + 4; if (Math.abs(got.top - wantTop) > 1) root.style.top = (wantTop + (wantTop - got.top)) + "px"; }
+    return r;
+  };
+  const onKeyInside = e => {
+    if (!cur) return;
+    const k = e.key;
+    if (k === "ArrowDown") { e.preventDefault(); move(cur.hi + 1); }
+    else if (k === "ArrowUp") { e.preventDefault(); move(cur.hi - 1); }
+    else if (k === "Home" && !cur.input) { e.preventDefault(); move(0); }
+    else if (k === "End" && !cur.input) { e.preventDefault(); move(cur.items.length - 1); }
+    else if (k === "Enter") { e.preventDefault(); const x = cur.items[cur.hi]; if (x) { setValue(cur.sel, x.opt.value); close(true); } }
+    else if (k === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); }
+    else if (k === "Tab") close(true);
+    else if (!cur.input && k.length === 1) {   // type-ahead when there is no search box
+      const i = cur.items.findIndex(x => x.opt.text.toLowerCase().startsWith(k.toLowerCase()));
+      if (i >= 0) move(i);
+    }
+  };
+  document.addEventListener("keydown", e => {
+    if (cur && cur.root.contains(e.target)) return onKeyInside(e);
+    const sel = e.target;
+    if (!eligible(sel)) return;
+    if (e.key === "Enter" || e.key === " " || e.key === "F4" || (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp"))) { e.preventDefault(); open(sel); }
+  }, true);
+  document.addEventListener("mousedown", e => {
+    if (cur && !cur.root.contains(e.target) && e.target !== cur.sel) close(false);
+    const sel = e.target;
+    if (e.button !== 0 || !eligible(sel)) return;
+    e.preventDefault();
+    try { sel.focus({ preventScroll: true }); } catch (_) {}
+    open(sel);
+  }, true);
+  /* Touch: the OS picker opens on the tap, so the tap is taken (a swipe that
+     starts on a select still scrolls the page). */
+  let touch = null;
+  document.addEventListener("touchstart", e => { touch = eligible(e.target) ? { sel: e.target, x: e.touches[0].clientX, y: e.touches[0].clientY } : null; }, { capture: true, passive: true });
+  document.addEventListener("touchend", e => {
+    if (!touch || e.target !== touch.sel) { touch = null; return; }
+    const t = e.changedTouches[0];
+    if (Math.abs(t.clientX - touch.x) > 10 || Math.abs(t.clientY - touch.y) > 10) { touch = null; return; }
+    e.preventDefault();
+    const sel = touch.sel; touch = null;
+    open(sel);
+  }, { capture: true, passive: false });
+  window.addEventListener("resize", () => { if (cur && !cur.root.classList.contains("ngs--sheet")) close(false); });
+  document.addEventListener("scroll", e => {
+    if (!cur || cur.root.contains(e.target) || cur.root.classList.contains("ngs--sheet")) return;
+    const r = place(cur.sel, cur.root);
+    if (r.bottom < 0 || r.top > window.innerHeight) close(false);   // the field scrolled away
+  }, true);
+}
+installNggSelect();
