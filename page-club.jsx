@@ -214,7 +214,7 @@ function SummerPage({ setPage }) {
             sub="One box. Type a place to find your centre, or a craft to find the course and everywhere it is taught." />
           <form className="summer-search" role="search" onSubmit={e => e.preventDefault()}>
             <label className="sr-only" htmlFor="summer-q">Search centres, courses and this summer's class</label>
-            <span className="summer-search-ic" aria-hidden="true">⌕</span>
+            <i className="ph ph-magnifying-glass summer-search-ic" aria-hidden="true"/>
             <input id="summer-q" className="summer-search-in" type="search" value={q}
               onChange={e => setQ(e.target.value)}
               placeholder="Try “Ijaiye”, “piano”, “coding”…"

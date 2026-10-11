@@ -43,6 +43,8 @@ function rate_limit_default(string $op): ?array {
 
         'apply'              => ['max' => 6,  'window' => 60],    // sends an acknowledgement email to a client-supplied address
         'apply.hour'         => ['max' => 30, 'window' => 3600],  // mail-amplification ceiling per IP
+        'apply.check'        => ['max' => 10, 'window' => 60],    // "applied before?" — yes/no on email + date of birth
+        'apply.check.hour'   => ['max' => 40, 'window' => 3600],  // so it cannot be walked through a list of birthdays
         'contact'            => ['max' => 5,  'window' => 60],    // notifies admins on every send
         'donate'             => ['max' => 10, 'window' => 60],    // inserts a row + outbound Paystack call
         'membership.pay'     => ['max' => 20, 'window' => 60],    // a family's invoice: read, start Paystack, verify

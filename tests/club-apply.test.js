@@ -114,7 +114,7 @@ const yearsAgo = (n, md) => (new Date().getFullYear() - n) + '-' + (md || '01-15
       && /ADEBAYO, Tolu/.test(await P.innerText('.apf-idprev')) && /ID card: ADEBAYO, Tolu/.test(await P.innerText('#apf-fld-surname')));
     await P.fill('#apf-in-dob', yearsAgo(20)); await blurField(P, '#apf-in-dob');
     chk('18 and over is sent to NGV, by name, not just refused', /Tolu is 20: register for NGV instead/.test(await P.innerText('.apf-ngv')) && /At 18 and over, register for NGV/.test(await P.innerText('#apf-fld-dob')));
-    chk('…on Afrovanguard, where NGV registers', (await P.getAttribute('.apf-ngv-btn', 'href')) === 'https://afrovanguard.org.ng/ngv/register');
+    chk('…on Afrovanguard, where NGV registers', (await P.getAttribute('.apf-ngv-btn', 'href')) === 'https://afrovanguard.org.ng/academy/ngv/');
     await P.fill('#apf-in-dob', yearsAgo(6)); await blurField(P, '#apf-in-dob');
     chk('under 10 says the age the date makes them', /This date makes them [56]\./.test(await P.innerText('#apf-fld-dob')));
     await P.fill('#apf-in-dob', yearsAgo(13)); await blurField(P, '#apf-in-dob');
@@ -218,6 +218,15 @@ const yearsAgo = (n, md) => (new Date().getFullYear() - n) + '-' + (md || '01-15
 
     console.log('the same child again');
     const S = await open(1100, 900);
+    await S.evaluate(() => localStorage.removeItem('ngg-apply'));
+    await S.click('#apf-fld-filledBy [role=radio] >> nth=0'); await S.click('#apf-fld-centre [role=radio] >> nth=0'); await cont(S);
+    await S.waitForSelector('#apf-in-email');
+    await S.fill('#apf-in-email', 'tolu.family@gmail.com'); await S.fill('#apf-in-dob', row.dob); await blurField(S, '#apf-in-dob');
+    chk('while filling in, a child who applied before is noticed: sending will update, not duplicate',
+      await S.waitForFunction(() => /applied before\. Sending this will update/.test((document.querySelector('.apf-note') || {}).innerText || ''), null, { timeout: 8000 }).then(() => true, () => false));
+    await S.fill('#apf-in-dob', '2012-02-02'); await blurField(S, '#apf-in-dob');
+    chk('…and a different date of birth on the same email (a sibling) is not', await S.waitForFunction(() => !document.querySelector('.apf-note'), null, { timeout: 8000 }).then(() => true, () => false));
+    chk('…the check says yes or no and nothing else', JSON.stringify(Object.keys(await S.evaluate(d => NGGApi.public.applyCheck('tolu.family@gmail.com', d), row.dob)).filter(k => k !== 'ok').sort()) === JSON.stringify(['open', 'seen']));
     await S.evaluate(v => localStorage.setItem('ngg-apply', JSON.stringify({ step: 7, v })), Object.assign({ filledBy: 'parent', centre: 'Egbeda', firstName: 'Tolu', middleName: '', surname: 'Adebayo', dob: det && row.dob, sex: 'Female',
       email: 'tolu.family@gmail.com', mobile: '08031234567', school: 'Egbeda Senior High School', class: 'JSS 3', classArm: '', address: '12 Ola Street, Egbeda', resState: 'Lagos', resLga: 'Alimosho',
       originState: 'Ogun', originLga: '', nationality: 'Nigerian', parent1Rel: 'Mother', parent1Name: 'Adunni Adebayo', parent1Phone: '08031234567', parent2None: true, course: 'Robotics',

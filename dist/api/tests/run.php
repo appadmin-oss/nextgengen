@@ -1106,6 +1106,19 @@ chk('club apply: the same child again (email + date of birth) updates the applic
 $cr3 = $clubApp(['firstName' => 'Kemi', 'dob' => '2011-09-09'], ['class' => 'SSS 1']);
 chk('club apply: a sibling on the same email is a separate application', !empty($cr3['ok']) && empty($cr3['updated']) && $cr3['ref'] !== $cr1['ref']
     && (int)db_row("SELECT COUNT(*) c FROM applications WHERE email = 'club.family@example.com'")['c'] === 2);
+chk('club apply: staff see every answer and the agreements on the application list', (function () use ($cr1) {
+    foreach (backend_dispatch('admin.applications.list', ['requesterId' => 'NGG-2025-0099'])['applications'] as $a) {
+        if (($a['ref'] ?? '') !== $cr1['ref']) continue;
+        return ($a['details']['school'] ?? '') === 'Egbeda Senior High School' && ($a['details']['parent1Name'] ?? '') === 'Adunni Adebayo'
+            && ($a['agreements']['media']['status'] ?? '') === 'granted' && ($a['agreements']['trips']['status'] ?? '') === 'declined';
+    }
+    return false;
+})());
+chk('public.apply.check: yes/no on email + date of birth, nothing else', (function () {
+    $y = backend_dispatch('public.apply.check', ['email' => 'CLUB.family@example.com', 'dob' => '2013-04-02']);
+    $n = backend_dispatch('public.apply.check', ['email' => 'club.family@example.com', 'dob' => '2013-04-03']);
+    return $y['seen'] === true && $y['open'] === true && $n['seen'] === false && array_keys($y) === ['ok', 'seen', 'open'];
+})());
 $cconv = backend_dispatch('admin.application.convert', ['requesterId' => 'NGG-2025-0099', 'id' => (int)$crow['id']]);
 $cmem = db_row('SELECT * FROM members WHERE memberId = ?', [$cconv['memberId'] ?? '']);
 chk('club apply → member: the parent by name and number, the school and class, the agreements inherited', $cmem

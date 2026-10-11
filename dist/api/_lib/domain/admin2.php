@@ -714,8 +714,21 @@ function admin_applications_list(array $p): array {
         $r['ref'] = function_exists('intake_reference') ? intake_reference((string)($r['kind'] ?? 'teen'), (int)($r['id'] ?? 0)) : '';
         $r['courses'] = $r['courses'] ? (json_decode((string)$r['courses'], true) ?: []) : [];
         $r['dobAge'] = !empty($r['dob']) && function_exists('dob_age') ? dob_age((string)$r['dob']) : null;
+        // The Club application's other answers, and the agreements as given.
+        $r['details'] = json_decode((string)($r['details'] ?? ''), true) ?: null;
     }
     unset($r);
+    /* Agreements: the latest decision per type for each application, in one read. */
+    $refs = array_values(array_filter(array_map(fn($r) => $r['details'] ? 'APP:' . $r['ref'] : '', $rows)));
+    if ($refs) {
+        $ph = implode(',', array_fill(0, count($refs), '?'));
+        $agree = [];
+        foreach (db_all("SELECT studentId, type, status, policyVersion FROM consents WHERE studentId IN ($ph) ORDER BY id", $refs) as $c) {
+            $agree[(string)$c['studentId']][(string)$c['type']] = ['status' => (string)$c['status'], 'version' => (string)($c['policyVersion'] ?? '')];
+        }
+        foreach ($rows as &$r) if ($r['details']) $r['agreements'] = $agree['APP:' . $r['ref']] ?? (object)[];
+        unset($r);
+    }
     return ['ok' => true, 'applications' => $rows];
 }
 

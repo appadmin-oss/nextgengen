@@ -315,6 +315,16 @@ function ClubApplyPage({ setPage }) {
     finally { URL.revokeObjectURL(url); }
   };
 
+  /* "Applied before?" — asked once the email and date of birth are both
+     good, debounced. The server answers yes or no and nothing else. */
+  const [seen, setSeen] = React.useState(null);     // null | { seen, open }
+  React.useEffect(() => {
+    setSeen(null);
+    const email = String(v.email || "").trim().toLowerCase();
+    if (!apfEmailOk(email) || apfAge(v.dob) == null || !NGGApi.public.applyCheck) return;
+    const t = setTimeout(() => { NGGApi.public.applyCheck(email, v.dob).then(r => setSeen(r && r.seen ? r : null), () => {}); }, 700);
+    return () => clearTimeout(t);
+  }, [v.email, v.dob]);
   const steps = apfSteps(v, offer);
   const last = steps.length - 1;
   const st = steps[Math.min(step, last)];
@@ -446,13 +456,19 @@ function ClubApplyPage({ setPage }) {
                 </div>
               )}
               {sendErr && <div className="apf-errsum" role="alert"><b><i className="ph ph-warning-circle" aria-hidden="true"/>{sendErr}</b></div>}
+              {st.id === "about" && seen && (
+                <div className="apf-note" role="note"><i className="ph ph-info" aria-hidden="true"/>
+                  <span>{seen.open ? "Looks like this child has applied before. Sending this will update that application instead of creating a second one."
+                    : "Looks like this child has applied before, and that application has been decided. If you’re not sure, contact us before sending another."}</span>
+                </div>
+              )}
               {ngvOn && (
                 <div className="apf-ngv" role="alert">
                   <span className="apf-ngv-k">NEXT GENERATION VANGUARD</span>
                   <b>{(v.firstName ? v.firstName + " is " : "You’re ") + age + ": register for NGV instead"}</b>
                   <span>NGG is for ages 10 to 17. At 18 and over, members join NGV, our leadership class: mentor younger members, lead projects and grow as a young leader.</span>
                   <div className="apf-ngv-row">
-                    <a href={ngvUrl || "https://afrovanguard.org.ng/ngv/register"} className="apf-ngv-btn" rel="noopener">Register for NGV<i className="ph ph-arrow-right" aria-hidden="true"/></a>
+                    <a href={ngvUrl || "https://afrovanguard.org.ng/academy/ngv/"} className="apf-ngv-btn" rel="noopener">Register for NGV<i className="ph ph-arrow-right" aria-hidden="true"/></a>
                     <span>Wrong date of birth? Fix it below.</span>
                   </div>
                 </div>

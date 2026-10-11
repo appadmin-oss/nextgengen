@@ -863,6 +863,20 @@ function club_apply_details(array $d, string $vision): array {
     return ['ok' => true, 'details' => $o];
 }
 
+/**
+ * public.apply.check — has this child (email + date of birth) applied to the
+ * programme before? {seen, open}: open means still undecided, so sending again
+ * updates it. Nothing else is said about the application.
+ */
+function public_apply_check(array $p): array {
+    $email = strtolower(trim((string)($p['email'] ?? '')));
+    $dob = trim((string)($p['dob'] ?? ''));
+    if (!preg_match('/^[^\s@]+@[^\s@]+\.[^\s@]+$/', $email) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dob)) return ['ok' => true, 'seen' => false, 'open' => false];
+    $program = (string)($p['program'] ?? '') === 'summer' ? 'summer' : 'anchor';
+    $row = db_row("SELECT status FROM applications WHERE kind = 'teen' AND lower(email) = ? AND dob = ? AND program = ? ORDER BY id DESC LIMIT 1", [$email, $dob, $program]);
+    return ['ok' => true, 'seen' => (bool)$row, 'open' => $row && in_array((string)$row['status'], ['new', 'reviewing', 'waitlist', ''], true)];
+}
+
 /** Every required agreement must be true; trips is the family's choice. */
 function club_apply_consents(array $c): array {
     $miss = array_values(array_filter(CLUB_APPLY_REQUIRED, fn($k) => ($c[$k] ?? null) !== true));

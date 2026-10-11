@@ -116,7 +116,8 @@ const CR_INBOX_SOURCES = {
           id: "app:" + a.id, cat: "applications", kind: "Application", icon: "user-plus", who: a.name || a.email || "Applicant", at: a.createdAt,
           unread: a.status === "new", title: [prog, a.track || a.role].filter(Boolean).join(" · "), body: a.why || "", photoUrl: a.photoUrl || "",
           search: [a.email, a.centre, a.track, a.ref].join(" "),
-          facts: [["Age", a.age || a.dobAge || "—"], ["Centre", a.centre || "—"], ["Division", a.program === "summer" ? "" : (a.faculty || "—")], ["Course", a.track || "—"], ["Role", a.role || ""], ["Email", a.email || "—"], ["Phone", crMask(a.phone) || "—"], ["Photo", a.photoUrl ? "Uploaded" : "Missing"], ["Reference", a.ref || ""]].filter(f => f[1] !== ""),
+          facts: [["Age", a.age || a.dobAge || "—"], ["Centre", a.centre || "—"], ["Division", a.program === "summer" ? "" : (a.faculty || "—")], ["Course", a.track || (a.details && a.details.courseOther ? "Something else: " + a.details.courseOther : "—")], ["Role", a.role || ""], ["Email", a.email || "—"], ["Phone", crMask(a.phone) || "—"], ["Photo", a.photoUrl ? "Uploaded" : "Missing"], ["Reference", a.ref || ""]]
+            .concat(crAppDetailFacts(a)).filter(f => f[1] !== ""),
           note: a.photoUrl ? "" : "No photo yet — their ID card cannot print until one is uploaded.",
           actions,
         });
@@ -232,6 +233,47 @@ const CR_INBOX_SOURCES = {
     },
   },
 };
+/* The Club application's answers (applications.details), as facts on the
+   item. A parent's number is masked like the applicant's. */
+function crAppDetailFacts(a) {
+  const d = a.details; if (!d) return [];
+  const ag = a.agreements || {}, req = ["participation", "medical", "data", "comms", "media", "site_visibility"];
+  const agreed = req.every(t => ag[t] && ag[t].status === "granted");
+  const ver = (ag.participation && ag.participation.version) || d.policyVersion || "";
+  const parent = (n, r, ph) => n ? n + (r ? " (" + r + ")" : "") + (ph ? " · " + crMask(ph) : "") : "";
+  return [
+    ["Filled in by", d.filledBy === "child" ? "The applicant" : d.filledBy ? "Parent or guardian" : ""],
+    ["School", [d.school, [d.class, d.classArm].filter(Boolean).join(" ")].filter(Boolean).join(" · ")],
+    ["Lives in", [d.address, d.resLga, d.resState].filter(Boolean).join(", ")],
+    ["Origin", [d.originLga, d.originState].filter(Boolean).join(", ")],
+    ["Nationality", d.nationality || ""],
+    ["Main contact", parent(d.parent1Name, d.parent1Rel, d.parent1Phone)],
+    ["Second contact", d.parent2None ? "None" : parent(d.parent2Name, d.parent2Rel, d.parent2Phone)],
+    ["Hobbies", (d.hobbies || []).join(", ")],
+    ["Wants to lead in", (d.influenceAreas || []).join(", ")],
+    ["Heard from", d.heardFrom || ""],
+    ["Promo code", d.promoCode || ""],
+    ["Agreements", agreed ? "All agreed" + (ver ? " (v" + ver + ")" : "") : "Incomplete"],
+    ["Off-site trips", ag.trips ? (ag.trips.status === "granted" ? "Yes" : "No") : ""],
+  ];
+}
+/* The applications export: every column the old Google Form had, then the new ones. */
+const CR_APP_PARENT = (d, rel, k) => d.parent1Rel === rel ? d["parent1" + k] : d.parent2Rel === rel && !d.parent2None ? d["parent2" + k] : "";
+const CR_APP_EXPORT = [
+  ["Timestamp", a => a.createdAt], ["Reference", a => a.ref], ["Kind", a => a.kind], ["Programme", a => a.program], ["Status", a => a.status],
+  ["First name", a => a.firstName], ["Middle name", a => a.otherName], ["Surname", a => a.lastName], ["Date of birth", a => a.dob], ["Age", a => a.dobAge != null ? a.dobAge : a.age],
+  ["Email", a => a.email], ["Sex", a => a.sex], ["Name of school", (a, d) => d.school], ["Class", (a, d) => d.class], ["Class arm", (a, d) => d.classArm],
+  ["Mobile number", a => a.phone], ["Address", (a, d) => d.address], ["Local government", (a, d) => d.resLga], ["State", (a, d) => d.resState], ["Country", (a, d) => d.nationality ? "Nigeria" : ""],
+  ["Father's full name", (a, d) => CR_APP_PARENT(d, "Father", "Name")], ["Father's number", (a, d) => CR_APP_PARENT(d, "Father", "Phone")],
+  ["Mother's full name", (a, d) => CR_APP_PARENT(d, "Mother", "Name")], ["Mother's number", (a, d) => CR_APP_PARENT(d, "Mother", "Phone")],
+  ["Guardian's full name", (a, d) => CR_APP_PARENT(d, "Guardian", "Name")], ["Guardian's number", (a, d) => CR_APP_PARENT(d, "Guardian", "Phone")],
+  ["Your vision", a => a.why], ["Hobbies", (a, d) => (d.hobbies || []).join(", ")], ["Courses", (a, d) => a.track || d.courseOther || ""], ["Division", a => a.faculty],
+  ["Areas of influence", (a, d) => (d.influenceAreas || []).join(", ")], ["How did you hear", (a, d) => d.heardFrom], ["Promo code", (a, d) => d.promoCode], ["Centre", a => a.centre],
+  ["Filled in by", (a, d) => d.filledBy], ["State of origin", (a, d) => d.originState], ["LGA of origin", (a, d) => d.originLga], ["Nationality", (a, d) => d.nationality],
+  ["Main contact", (a, d) => d.parent1Rel], ["No second parent", (a, d) => d.parent2None ? "Yes" : ""],
+  ["Agreements", a => { const g = a.agreements || {}; return Object.keys(g).length ? Object.keys(g).map(t => t + ":" + g[t].status).join(" ") : ""; }],
+  ["Policy version", (a, d) => d.policyVersion], ["Photo", a => a.photoUrl ? "Yes" : "No"], ["Role", a => a.role],
+];
 const CR_INBOX_ORDER = ["messages", "requests", "approvals", "applications", "photos", "comments"];
 
 /** Load every queue this person may see, at once. A queue that fails is named, not hidden. */
@@ -616,8 +658,7 @@ function crInboxTab(key) {
     blocks: () => [],
     actions: (d, ctx) => key === "applications" && ctx.can("people") ? [{ l: "Export applications", icon: "download-simple", run: async () => {
       const r = await NGGApi.admin.applications.list({});
-      crDownloadCsv("applications", ["Kind", "Programme", "Name", "Email", "Age", "Centre", "Division", "Role", "Status", "Submitted"],
-        (r.applications || []).map(a => [a.kind, a.program, a.name, a.email, a.age, a.centre, a.track, a.role, a.status, a.createdAt]));
+      crDownloadCsv("applications", CR_APP_EXPORT.map(c => c[0]), (r.applications || []).map(a => CR_APP_EXPORT.map(c => c[1](a, a.details || {}))));
     } }] : key === "photos" && ctx.can("summer") ? [{ l: "Ask families for missing photos", icon: "camera", run: async () => {
       const m = await NGGApi.admin.photos.missing(200).catch(() => null);
       const due = m ? (m.students || []).filter(s => s.reachable && !s.askedAt).length : 0;

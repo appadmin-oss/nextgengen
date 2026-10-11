@@ -9419,3 +9419,21 @@ button.mp-stat { cursor: pointer; }
 .mp-sum-note { padding: 10px 0 0 48px; display: flex; flex-direction: column; gap: 8px; }
 .mp-sum-more { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; margin-top: 12px; font-size: 13px; color: var(--mt-subtle); }
 @media (max-width: 760px) { .mp-sum .mp-col { border: 0; } }
+
+/* ── One focus ring for one field ─────────────────────────────────────────
+   A field drawn as a box around an input — a search icon, a +234 prefix, a
+   clear or Subscribe button inside the same outline — is ONE control to the
+   person using it, so the WHOLE box shows focus: its edge darkens and a soft
+   halo surrounds it, never a ring on the bare text area inside. Matched by
+   shape, so a new search box gets it without being listed here. Zero
+   specificity (:where), so a field that styles its own :focus-within keeps it. */
+:where(div, label, span, form):where(:not(.apf-input, .apf-addown)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color])), :has(> input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color]) ~ :is(i, svg, .ph, button, [class*="-ic"]))):focus-within {
+  outline: none;
+  border-color: currentColor;
+  box-shadow: 0 0 0 1px currentColor, 0 0 0 5px color-mix(in srgb, currentColor 14%, transparent);
+}
+:where(div, label, span, form):where(:not(.apf-input, .apf-addown)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input), :has(> input ~ :is(i, svg, .ph, button, [class*="-ic"]))) > input:focus-visible {
+  /* Beats the site-wide input:focus-visible safety ring (styles.css), which
+     otherwise draws a second ring on the bare input inside the box. */
+  outline: none;
+}

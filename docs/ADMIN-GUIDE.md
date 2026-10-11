@@ -1192,7 +1192,7 @@ areas of influence; photo and agreements. Then a review.
   too bright for the card.
 - **18 and over** is not refused, it is sent to **NGV registration on
   Afrovanguard** (`afrovanguard.ngv_url` in `api/config.php`; empty means
-  `{org_url}/ngv/register`).
+  `{org_url}/academy/ngv/`).
 - **The same child sent twice** (same email and date of birth) updates the
   application you already have, as long as it is not yet decided. A brother or
   sister on the same parent's email is a separate application.
