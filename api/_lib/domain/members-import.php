@@ -507,6 +507,23 @@ function members_import_run(array $rows, array $opts = []): array
         if ($r['printed'] === 'taken') $report['cards']['taken']++;
     };
 
+    /* Permissions. Every member on the roster signed the programme's paper
+       form, which grants every permission, so an imported member arrives with
+       every consent type recorded as granted — by paper, by the import —
+       instead of none (which read as "may not be named or photographed").
+       A decision already on file is never overwritten: an explicit decline is
+       kept and counted, because a family's recorded "no" outranks a sheet. */
+    $report['consents'] = ['members' => 0, 'granted' => 0, 'wouldGrant' => 0, 'declinedKept' => 0];
+    $consent = static function (array $member) use (&$report, $apply, $actor): void {
+        $id = (string)($member['memberId'] ?? '');
+        if ($id === '' && $apply) return;
+        $r = member_paper_consents($id, 'Roster import (' . $actor . ')', $apply);
+        if ($r['granted'] || $r['would']) $report['consents']['members']++;
+        $report['consents']['granted'] += $r['granted'];
+        $report['consents']['wouldGrant'] += $r['would'];
+        $report['consents']['declinedKept'] += $r['declinedKept'];
+    };
+
     /* ── IDs, before any row is written ─────────────────────────────────────
      * Every id in the file is read first, so that:
      *   · an id on two rows of the file is caught before either is written
@@ -680,10 +697,11 @@ function members_import_run(array $rows, array $opts = []): array
                     $listId(is_array($row) ? $row : [], $patch['fullName'], $insert['displayId'], 'normalized', $apply ? $insert['memberId'] : '');
                 }
             }
-            if (!$apply) $card($insert + ['memberId' => ''], is_array($row) ? $row : []);
+            if (!$apply) { $card($insert + ['memberId' => ''], is_array($row) ? $row : []); $consent($insert + ['memberId' => '']); }
             if ($apply) {
                 db_insert('members', $insert);
                 $card($insert, is_array($row) ? $row : []);
+                $consent($insert);
                 audit('member.import.create', $actor, $insert['memberId'], ['displayId' => $patch['displayId']], '');
                 if ($emitEvents) event_emit('member.created', [
                     'memberId' => $insert['memberId'], 'fullName' => $patch['fullName'],
@@ -755,6 +773,7 @@ function members_import_run(array $rows, array $opts = []): array
         }
 
         $card($existing, is_array($row) ? $row : []);
+        $consent($existing);
         if (!$changes) {
             $report['unchanged']++;
             $report['rows'][] = ['ref' => $label, 'action' => 'unchanged', 'name' => $patch['fullName'],
@@ -943,3 +962,63 @@ function admin_members_import(array $p): array
         fn($r) => $r['action'] !== 'unchanged' || !empty($r['warnings'])));
     return $report;
 }
+
+/* ── Permissions on paper ──────────────────────────────────────────────────
+ * The method every paper grant is recorded with: a ledger row must say how the
+ * decision was obtained (consent_record). */
+const MEMBER_PAPER_CONSENT_METHOD = 'Paper form';
+const MEMBER_PAPER_CONSENT_MAX = 2000;
+/**
+ * Record every consent type that has no answer as granted on paper.
+ * Returns ['granted' => rows written, 'would' => rows a dry run would write,
+ * 'declinedKept' => explicit declines left as they are].
+ */
+function member_paper_consents(string $memberId, string $actorName, bool $apply): array
+{
+    $out = ['granted' => 0, 'would' => 0, 'declinedKept' => 0];
+    $state = $memberId !== '' ? consent_state($memberId) : [];
+    foreach (CONSENT_TYPES as $type => $_) {
+        $cur = (string)($state[$type]['status'] ?? '');
+        if ($cur === 'granted') continue;
+        if ($cur === 'declined') { $out['declinedKept']++; continue; }
+        if (!$apply) { $out['would']++; continue; }
+        $r = consent_record($memberId, $type, 'granted', MEMBER_PAPER_CONSENT_METHOD, $actorName);
+        if (!empty($r['ok'])) $out['granted']++;
+    }
+    return $out;
+}
+
+/** Members who came in through a roster import: its note stamp, or a card it issued. */
+function members_imported_ids(): array
+{
+    $rows = db_all("SELECT memberId, centre FROM members WHERE type = 'NGG' AND (notes LIKE ? OR memberId IN (SELECT memberId FROM member_cards WHERE source = 'import'))",
+        ['%' . MEMBER_IMPORT_NOTE_OPEN . '%']);
+    return $rows;
+}
+
+/**
+ * Grant every permission on paper to the imported members still missing one —
+ * the members imported before the import did this itself. `apply` false is
+ * the count shown before the confirm. Centre-scoped per member; capped; an
+ * explicit decline is kept and counted; one audit event for the run.
+ */
+function admin_members_paper_consents(array $p): array
+{
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $apply = !empty($p['apply']);
+    $rows = members_imported_ids();
+    $out = ['ok' => true, 'applied' => $apply, 'imported' => count($rows), 'members' => 0, 'granted' => 0, 'wouldGrant' => 0,
+            'declinedKept' => 0, 'outOfScope' => 0, 'max' => MEMBER_PAPER_CONSENT_MAX];
+    $todo = 0;
+    foreach ($rows as $m) {
+        if (!admin_centre_allowed($g['requester'], (string)$m['centre'])) { $out['outOfScope']++; continue; }
+        if ($apply && $todo >= MEMBER_PAPER_CONSENT_MAX) { $out['capped'] = true; break; }
+        $r = member_paper_consents((string)$m['memberId'], (string)($g['requester']['fullName'] ?? 'Staff') . ' — imported roster', $apply);
+        if ($r['granted'] || $r['would']) { $out['members']++; $todo++; }
+        $out['granted'] += $r['granted']; $out['wouldGrant'] += $r['would']; $out['declinedKept'] += $r['declinedKept'];
+    }
+    if ($apply) audit('member.consents.paper', $g['requester']['memberId'], 'imported-members',
+        ['members' => $out['members'], 'granted' => $out['granted'], 'declinedKept' => $out['declinedKept'], 'outOfScope' => $out['outOfScope']], (string)($p['ip'] ?? ''));
+    return $out;
+}
+

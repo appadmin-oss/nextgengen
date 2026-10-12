@@ -143,6 +143,9 @@ if ($method === 'POST') {
         $res = gs_call('admin.members.consent', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '',
             'type' => $body['type'] ?? '', 'status' => $body['status'] ?? '', 'method' => $body['method'] ?? '',
             'ip' => client_ip()]);
+    } elseif ($action === 'paperConsents') {
+        // Every permission, granted on the paper form, for imported members still missing one.
+        $res = gs_call('admin.members.paperConsents', ['requesterId' => $s['mid'], 'apply' => !empty($body['apply']), 'ip' => client_ip()]);
     } elseif ($action === 'resetPassword') {
         $res = gs_call('admin.members.resetPassword', ['requesterId' => $s['mid'], 'memberId' => $body['memberId'] ?? '', 'ip' => client_ip()]);
     } elseif ($action === 'promoteNgv') {

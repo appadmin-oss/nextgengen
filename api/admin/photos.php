@@ -5,6 +5,18 @@ require_once __DIR__ . '/../_lib/bootstrap.php';
 $s = require_admin();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+if ($method === 'GET' && (string)($_GET['view'] ?? '') === 'backup') {
+    // Every stored photo as one .zip, to keep before an update (photo_backup_zip).
+    $res = gs_call('admin.photos.backup', ['requesterId' => $s['mid'], 'ip' => client_ip()]);
+    if (empty($res['ok'])) json_error($res['error'] ?? 'failed', 400);
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $res['name'] . '"');
+    header('Content-Length: ' . (string)filesize($res['path']));
+    header('Cache-Control: no-store');
+    readfile($res['path']);
+    @unlink($res['path']);
+    exit;
+}
 if ($method === 'GET') {
     // ?view=missing lists children with NO photograph on file — a different
     // question from the review queue, which only shows photos that exist.
@@ -21,6 +33,7 @@ if ($method === 'GET') {
     elseif ($action === 'retake')  $res = gs_call('admin.photo.retake', $base + ['reason' => $b['reason'] ?? '']);
     elseif ($action === 'reject')  $res = gs_call('admin.photo.reject', $base + ['reason' => $b['reason'] ?? '']);
     elseif ($action === 'edit')    $res = gs_call('admin.photo.edit', ['requesterId' => $s['mid'], 'ip' => $ip, 'assetId' => $b['assetId'] ?? '', 'subjectType' => $b['subjectType'] ?? '', 'subjectId' => $b['subjectId'] ?? '', 'spec' => $b['spec'] ?? []]);
+    elseif ($action === 'secure')  $res = gs_call('admin.photos.secure', ['requesterId' => $s['mid'], 'ip' => $ip]);
     elseif ($action === 'edit_bulk') $res = gs_call('admin.photo.edit.bulk', ['requesterId' => $s['mid'], 'ip' => $ip, 'items' => $b['items'] ?? [], 'spec' => $b['spec'] ?? []]);
     elseif ($action === 'request_missing') $res = gs_call('admin.photos.requestMissing', ['requesterId' => $s['mid'], 'ip' => $ip,
         'limit' => $b['limit'] ?? 50, 'quietDays' => $b['quietDays'] ?? 3]);

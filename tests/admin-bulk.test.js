@@ -331,6 +331,10 @@ const chk = (m, cond) => cond ? ok(m) : bad(m);
     t = await main(club.page);
     chk('both can be selected at once', /2 students selected/.test(t));
     chk('…and the bar warns about the missing guardian email', /1 with no guardian email/i.test(t));
+    /* Which NGG centre each joins: nothing here is on a map, so nothing can be
+       suggested and the screen asks — a coordinator picks, per graduate. */
+    for (const sel of await club.page.$$('.admin-main select.promote-joins')) await sel.selectOption('Ijaiye');
+    await club.page.waitForTimeout(200);
     await clickText(club.page, 'Promote into the Club', '.admin-bulkbar');
     await club.page.waitForTimeout(500);
     t = await club.page.evaluate(() => document.body.innerText);

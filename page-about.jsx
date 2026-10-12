@@ -63,6 +63,7 @@ function DivisionPanel({ d, open, onToggle }) {
         </div>
         <h3 className="ab-h ab-h-panel">{d.name}</h3>
         <p className="ab-body ab-body-lg">{d.mandate}</p>
+        {d.audience && <p className="ab-body ab-div-audience">{d.audience}</p>}
 
         <button
           className="btn btn-ghost ab-div-more"

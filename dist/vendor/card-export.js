@@ -407,6 +407,10 @@
     var d = await ensureDeps();
     await ensureFonts();
     var restore = await inlineImages(node);
+    // html2canvas ignores object-fit and stretches every photo to its box. Hand it
+    // pixels already the box's shape, so it has nothing to distort.
+    var unfit = await fitImagesForRaster(node);
+    var restoreAll = function () { unfit(); restore(); };
     var unquiesce = quiesceDocument(node);
     try {
       var canvas = await withDeadline(d.html2canvas(node, {
@@ -418,7 +422,48 @@
       var type = o.type || 'image/png', q = o.quality || 0.95;
       var dataUrl = canvas.toDataURL(type, q);
       return { dataUrl: dataUrl, bytes: dataUrlToBytes(dataUrl), wPx: canvas.width, hPx: canvas.height };
-    } finally { unquiesce(); restore(); }
+    } finally { unquiesce(); restoreAll(); }
+  }
+
+  /* Crop (cover) or letterbox (contain) every object-fit image to its box's
+   * exact shape, honouring object-position, at the image's own resolution.
+   * Returns a function that puts every image back. A photo is never scaled
+   * on one axis more than the other. */
+  async function fitImagesForRaster(node) {
+    var undo = [], loads = [];
+    Array.prototype.forEach.call(node.querySelectorAll('img'), function (im) {
+      try {
+        var cs = getComputedStyle(im), fit = cs.objectFit;
+        if (fit !== 'cover' && fit !== 'contain' && fit !== 'scale-down') return;
+        var bw = im.clientWidth, bh = im.clientHeight, nw = im.naturalWidth, nh = im.naturalHeight;
+        if (!bw || !bh || !nw || !nh) return;
+        var cover = fit === 'cover';
+        var k = cover ? Math.max(bw / nw, bh / nh) : Math.min(bw / nw, bh / nh, fit === 'scale-down' ? 1 : Infinity);
+        var dw = nw * k, dh = nh * k;
+        var pos = String(cs.objectPosition || '50% 50%').split(/\s+/);
+        var frac = function (v, free) { if (/%$/.test(v)) return parseFloat(v) / 100; if (/px$/.test(v)) return free ? parseFloat(v) / free : 0.5; return v === 'left' || v === 'top' ? 0 : v === 'right' || v === 'bottom' ? 1 : 0.5; };
+        var ox = (bw - dw) * frac(pos[0] || '50%', bw - dw), oy = (bh - dh) * frac(pos[1] || '50%', bh - dh);
+        // Work at the source's own pixel density, so nothing is lost.
+        var s = Math.max(1, 1 / k);
+        var cv = document.createElement('canvas');
+        cv.width = Math.round(bw * s); cv.height = Math.round(bh * s);
+        var ctx = cv.getContext('2d');
+        ctx.imageSmoothingQuality = 'high';
+        // html2canvas ignores CSS filters too (the member card's photo is greyscale): bake it in.
+        var filt = cs.filter && cs.filter !== 'none' ? cs.filter : '';
+        if (filt && 'filter' in ctx) ctx.filter = filt;
+        ctx.drawImage(im, ox * s, oy * s, dw * s, dh * s);
+        var src = im.getAttribute('src'), styleFit = im.style.objectFit, styleFilter = im.style.filter;
+        im.setAttribute('src', cv.toDataURL('image/png'));
+        im.style.objectFit = 'fill';
+        if (filt && 'filter' in ctx) im.style.filter = 'none';
+        // html2canvas draws img.currentSrc, which moves to the new pixels only once they decode.
+        if (im.decode) loads.push(im.decode().catch(function () {}));
+        undo.push(function () { im.setAttribute('src', src); im.style.objectFit = styleFit; im.style.filter = styleFilter; });
+      } catch (e) { /* a tainted image keeps its own fit; inlineImages ran first to prevent that */ }
+    });
+    await Promise.all(loads);
+    return function () { for (var i = undo.length - 1; i >= 0; i--) undo[i](); };
   }
 
   /* The html2canvas scale that lands a `cssW`-wide node on `trimW_mm` of paper
@@ -494,7 +539,22 @@
 
   /* Rasterise + bleed in one call — what the studio uses per face.
    *   opts: { trimW_mm, dpi, bleed_mm, bleedMode, type, quality, bg, retries } */
+  /* One face for every caller (the member card's own downloads, the studios):
+   * snapDOM first — the browser's own rendering, so object-fit, letter-spacing
+   * and transforms are exactly what the screen shows — and html2canvas only if
+   * snapDOM cannot. Same return shape either way. */
   async function renderFace(node, opts) {
+    opts = opts || {};
+    var trimW = opts.trimW_mm || 54, dpi = opts.dpi || 350;
+    try {
+      var r = await withDeadline(snapRaster(node, { widthPx: trimW / 25.4 * dpi, bleedPx: (opts.bleed_mm == null ? 3 : opts.bleed_mm) / 25.4 * dpi, bg: opts.bg }), 20000, 'snapdom');
+      var url = r.canvas.toDataURL(opts.type || 'image/jpeg', opts.quality || 0.95);
+      return { dataUrl: url, wPx: r.canvas.width, hPx: r.canvas.height, bleedPx: r.bleedPx, trimWPx: r.trimWPx, trimHPx: r.trimHPx, engine: 'snapdom' };
+    } catch (e) {
+      return renderFaceH2c(node, opts);
+    }
+  }
+  async function renderFaceH2c(node, opts) {
     opts = opts || {};
     var cssW = node.offsetWidth || 295;
     var scale = opts.scale || scaleForDpi(cssW, opts.trimW_mm || 54, opts.dpi || 350);
@@ -1059,7 +1119,7 @@
     try { r = await withDeadline(snapRaster(node, { widthPx: widthPx, bleedPx: bleedPx }), 20000, 'snapdom'); }
     catch (e) {
       engine = 'html2canvas'; why = String(e && e.message || e);
-      var f = await renderFace(node, { trimW_mm: trimW, dpi: dpi, bleed_mm: o.bleed_mm || 0, type: 'image/png' });
+      var f = await renderFaceH2c(node, { trimW_mm: trimW, dpi: dpi, bleed_mm: o.bleed_mm || 0, type: 'image/png' });
       var im = await loadImage(f.dataUrl), cv = document.createElement('canvas');
       cv.width = im.width; cv.height = im.height; cv.getContext('2d').drawImage(im, 0, 0);
       r = { canvas: cv, trimWPx: f.trimWPx, trimHPx: f.trimHPx, bleedPx: f.bleedPx };
@@ -1081,7 +1141,9 @@
     var ctx = cv.getContext('2d');
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height);
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(im, b, b, W, H);
+    // Never stretched: fit the art inside the trim at its own aspect, centred.
+    var k = Math.min(W / im.width, H / im.height), dw = im.width * k, dh = im.height * k;
+    ctx.drawImage(im, b + (W - dw) / 2, b + (H - dh) / 2, dw, dh);
     clampBleed(ctx, cv, W, H, b);
     var type = o.type || 'image/jpeg';
     var blob = await new Promise(function (res, rej) { cv.toBlob(function (bl) { bl ? res(bl) : rej(new Error('encode_failed')); }, type, o.quality || 0.95); });
@@ -1219,7 +1281,7 @@
     nodeToImage: nodeToImage, addBleed: addBleed, verifyQR: verifyQR,
     renderFace: renderFace, scaleForDpi: scaleForDpi, zipStore: zipStore,
     buildImpositionPDF: buildImpositionPDF, download: download, dataUrlToBytes: dataUrlToBytes,
-    clearImageCache: clearImageCache, ensureSnapdom: ensureSnapdom, renderFaceFast: renderFaceFast, verifyQRCanvas: verifyQRCanvas, buildSheetPDF: buildSheetPDF, imageFace: imageFace,
+    clearImageCache: clearImageCache, ensureSnapdom: ensureSnapdom, renderFaceFast: renderFaceFast, verifyQRCanvas: verifyQRCanvas, buildSheetPDF: buildSheetPDF, imageFace: imageFace, renderFaceH2c: renderFaceH2c, fitImagesForRaster: fitImagesForRaster,
     INTENTS: INTENTS, LAYERS: LAYERS, SHEETS: SHEETS, MM: MM,
   };
 })(typeof window !== 'undefined' ? window : this);

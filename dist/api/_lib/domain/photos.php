@@ -235,6 +235,40 @@ const PHOTO_STORE_TYPES = ['jpeg' => 'jpg', 'jpg' => 'jpg', 'png' => 'png', 'web
  * fine, so `photo_store_where()` reports it and the diagnostics screen says so
  * out loud rather than leaving the deployment quietly degraded.
  */
+/** The site's own folder (where index.html and api/ live): what a deploy replaces. */
+function photo_site_root(): string {
+    return (string)(@realpath(__DIR__ . '/../../..') ?: dirname(__DIR__, 3));
+}
+/** Is a path inside the deployed site, where an update can replace it? */
+function photo_inside_site(string $path): bool {
+    $root = rtrim(photo_site_root(), '/') . '/';
+    $real = @realpath($path) ?: $path;
+    if ($real === '' || $real[0] !== '/') $real = dirname(__DIR__, 2) . '/' . ltrim($real, '/');
+    return strpos(rtrim($real, '/') . '/', $root) === 0;
+}
+/**
+ * A photo folder OUTSIDE the deployed site — `ngg-data/photos` beside the web
+ * root (/home/user/ngg-data/photos next to /home/user/public_html) — when the
+ * host lets PHP create and write it. Chosen once and remembered, so the store
+ * never moves between requests. '' when the host does not allow it (an
+ * open_basedir that stops at the web root), and the default stays.
+ */
+function photo_safe_home(): string {
+    static $home = null;
+    if ($home !== null) return $home;
+    try {
+        $remembered = function_exists('setting_raw') ? (string)setting_raw('photo_safe_dir') : '';
+        if ($remembered !== '' && is_dir($remembered) && is_writable($remembered)) return $home = $remembered;
+    } catch (Throwable $e) { /* settings not ready: decide below */ }
+    $cand = dirname(photo_site_root()) . '/ngg-data/photos';
+    if (!@is_dir($cand)) @mkdir($cand, 0775, true);
+    if (!@is_dir($cand) || !@is_writable($cand)) return $home = '';
+    $ht = $cand . '/.htaccess';
+    if (!is_file($ht)) @file_put_contents($ht, "<IfModule mod_authz_core.c>\n  Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n  Order allow,deny\n  Deny from all\n</IfModule>\nOptions -Indexes\n");
+    try { if (function_exists('setting_set')) setting_set('photo_safe_dir', $cand, 'system'); } catch (Throwable $e) {}
+    return $home = $cand;
+}
+
 function photo_store_dir(): string {
     static $resolved = null;
     if ($resolved !== null) return $resolved;
@@ -246,6 +280,9 @@ function photo_store_dir(): string {
        with it. Preferred whenever it is set. */
     $own = rtrim((string)($GLOBALS['CONFIG']['photo_dir'] ?? ''), '/');
     if ($own !== '') $primary = $own;
+    // None set: a folder beside the web root when the host allows one, so an
+    // update can never take the photographs with it (photo_safe_home).
+    elseif (photo_inside_site($primary) && ($safe = photo_safe_home()) !== '') $primary = $safe;
     $cache = (string)($GLOBALS['CONFIG']['cache_dir'] ?? '');
     $candidates = [$primary];
     if ($cache !== '') $candidates[] = rtrim($cache, '/') . '/photos';
@@ -337,6 +374,7 @@ function photo_store_dirs(): array {
     $dirs = [];
     $own = rtrim((string)($GLOBALS['CONFIG']['photo_dir'] ?? ''), '/');
     if ($own !== '') $dirs[] = $own;
+    $dirs[] = photo_store_dir();                             // where writes go now — the safe home when there is one
     $base = (string)($GLOBALS['CONFIG']['db']['sqlite_path'] ?? '');
     if ($base !== '') $dirs[] = dirname($base) . '/photos';   // primary (data dir)
     $dirs[] = __DIR__ . '/../../storage/photos';              // canonical fallback base
@@ -377,6 +415,8 @@ function photo_store_durable_dirs(): array {
     $dirs = [];
     $own = rtrim((string)($GLOBALS['CONFIG']['photo_dir'] ?? ''), '/');
     if ($own !== '') $dirs[] = $own;
+    // Where writes go now — the safe home when there is one — but never the cache fallback.
+    if (photo_store_where() === 'storage') $dirs[] = photo_store_dir();
     $base = (string)($GLOBALS['CONFIG']['db']['sqlite_path'] ?? '');
     if ($base !== '') $dirs[] = dirname($base) . '/photos';
     $dirs[] = __DIR__ . '/../../storage/photos';
@@ -676,16 +716,26 @@ function photo_store_referenced(): ?array
     $referenced = [];
     foreach ($byTable as $table => $cols) {
         $sel = implode(', ', array_map(fn($c) => $q . $c . $q, $cols));
+        /* Every way the address is written, not only the literal one. A photo
+           referenced from inside JSON is stored with escaped slashes
+           (`\/api\/public\/photo.php?p=…`, json_encode's default), and one
+           inside a URL is percent-encoded (`photo.php%3Fp%3D…`). Matching only
+           the literal form read those references as absent, and the sweep
+           deleted photographs that were still on records — photos that were
+           there, and a week later were not. */
         $where = implode(' OR ', array_map(
-            fn($c) => $q . $c . $q . " LIKE '%/api/public/photo.php?p=%'", $cols));
+            fn($c) => $q . $c . $q . " LIKE '%photo.php%'", $cols));
         try {
             foreach (db_all("SELECT $sel FROM " . $q . $table . $q . " WHERE $where") as $row) {
                 foreach ($row as $col => $v) {
-                    if (!is_string($v) || strpos($v, '/api/public/photo.php?p=') === false) continue;
-                    if (!preg_match_all('/p=([0-9a-f]{32}\.(?:jpg|png|webp))/', $v, $m)) continue;
+                    if (!is_string($v) || stripos($v, 'photo.php') === false) continue;
+                    $n = preg_match_all('/photo\.php(?:\?|%3f)p(?:=|%3d)([0-9a-f]{32}\.(?:jpg|png|webp))/i', $v, $m);
+                    // A pattern that errors must not read as "nothing referenced here": fail closed.
+                    if ($n === false) { error_log('[photo_store_referenced] pattern failed: ' . preg_last_error_msg()); return null; }
+                    if (!$n) continue;
                     // A record's column wins over the audit trail's quote of it, so the
                     // diagnosis names where a person would go to fix it.
-                    foreach ($m[1] as $id) if (!isset($referenced[$id]) || strncmp($referenced[$id], 'audit_log.', 10) === 0) $referenced[$id] = $table . '.' . $col;
+                    foreach ($m[1] as $id) { $id = strtolower($id); if (!isset($referenced[$id]) || strncmp($referenced[$id], 'audit_log.', 10) === 0) $referenced[$id] = $table . '.' . $col; }
                 }
             }
         } catch (Throwable $e) {
@@ -774,9 +824,7 @@ function photo_store_missing_map(int $limit = 5000): ?array {
 
 /** Is this store directory inside the website's own folder (where a redeploy can delete it)? */
 function photo_store_inside_site(): bool {
-    $site = @realpath(__DIR__ . '/../../..') ?: '';
-    $dir = @realpath(photo_store_dir()) ?: photo_store_dir();
-    return $site !== '' && strncmp($dir, $site . '/', strlen($site) + 1) === 0;
+    return photo_inside_site(photo_store_dir());
 }
 
 /** Folders a copy of the store could have survived in, on this account. Bounded. */
@@ -1638,3 +1686,63 @@ function photo_apply_to_subject(array $a): void {
 function photo_approved_for(string $subjectType, string $subjectId): bool {
     return (bool)db_row("SELECT id FROM photo_assets WHERE subjectType = ? AND subjectId = ? AND status = 'approved' ORDER BY version DESC LIMIT 1", [$subjectType, $subjectId]);
 }
+
+/* ── Keeping photographs through an update ─────────────────────────────────
+ * Every stored photo is COPIED into the store (outside the site when it can
+ * be) from wherever else it sits — api/storage/photos, the cache fallback — so
+ * an update that replaces api/ cannot take it. The originals stay where they
+ * are; nothing is moved or deleted here. Batched, so a big store finishes
+ * over a few nights (webcron) or a few presses (Control Room → System). */
+function photo_store_secure(int $limit = 500): array {
+    $target = photo_store_dir();
+    $out = ['ok' => true, 'dir' => $target, 'safe' => !photo_inside_site($target), 'copied' => 0, 'remaining' => 0, 'failed' => 0];
+    if (!is_dir($target) || !is_writable($target)) return ['ok' => false, 'error' => 'unwritable', 'dir' => $target];
+    $tReal = @realpath($target) ?: $target;
+    foreach (photo_store_dirs() as $dir) {
+        if ((@realpath($dir) ?: $dir) === $tReal || !is_dir($dir)) continue;
+        foreach ((array)@scandir($dir) as $f) {
+            if (!preg_match('/^[0-9a-f]{32}\.(jpg|png|webp)$/', (string)$f) || is_file($target . '/' . $f)) continue;
+            if ($out['copied'] >= $limit) { $out['remaining']++; continue; }
+            $tmp = $target . '/' . $f . '.' . bin2hex(random_bytes(4)) . '.part';
+            if (@copy($dir . '/' . $f, $tmp) && @rename($tmp, $target . '/' . $f)) $out['copied']++;
+            else { @unlink($tmp); $out['failed']++; }
+        }
+    }
+    return $out;
+}
+function admin_photos_secure(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    $r = photo_store_secure(2000);
+    if (!empty($r['ok']) && $r['copied']) audit('photo.store.secured', $g['requester']['memberId'], '', ['copied' => $r['copied'], 'remaining' => $r['remaining'], 'dir' => $r['dir']], (string)($p['ip'] ?? ''));
+    return $r;
+}
+
+/**
+ * Every stored photo in one .zip, to keep a copy before an update. Built in
+ * the store's own temp area (STORED — the images are already compressed) and
+ * handed to the route to stream; the caller deletes it. One file per id,
+ * wherever it sits.
+ */
+function photo_backup_zip(array $p): array {
+    $g = admin_cap_gate($p, 'content'); if (!$g['ok']) return $g;
+    if (!class_exists('ZipArchive')) return ['ok' => false, 'error' => 'zip_unavailable'];
+    $tmp = rtrim(sys_get_temp_dir(), '/') . '/ngg-photos-' . gmdate('Ymd-His') . '-' . bin2hex(random_bytes(3)) . '.zip';
+    $zip = new ZipArchive();
+    if ($zip->open($tmp, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) return ['ok' => false, 'error' => 'zip_failed'];
+    $seen = []; $n = 0;
+    foreach (photo_store_dirs() as $dir) {
+        if (!is_dir($dir)) continue;
+        foreach ((array)@scandir($dir) as $f) {
+            if (!preg_match('/^[0-9a-f]{32}\.(jpg|png|webp)$/', (string)$f) || isset($seen[$f])) continue;
+            $seen[$f] = 1;
+            if ($zip->addFile($dir . '/' . $f, 'photos/' . $f)) { $zip->setCompressionName('photos/' . $f, ZipArchive::CM_STORE); $n++; }
+        }
+    }
+    $zip->addFromString('README.txt', "NGG photographs, " . gmdate('Y-m-d H:i') . " UTC. " . $n . " images.\n"
+        . "To restore: copy the files in photos/ into the site's photo folder (Control Room -> System -> Photo storage names it).\n"
+        . "Records point at them as /api/public/photo.php?p=<file name>.\n");
+    $zip->close();
+    audit('photo.store.backup', $g['requester']['memberId'], '', ['images' => $n], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'path' => $tmp, 'images' => $n, 'name' => 'ngg-photos-' . gmdate('Y-m-d') . '.zip'];
+}
+

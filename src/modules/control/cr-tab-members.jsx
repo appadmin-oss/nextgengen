@@ -367,6 +367,23 @@ function CrMbSuggest({ s, ctx }) {
     </section>
   );
 }
+/* Imported members signed the paper form, which grants every permission: record
+   it for the ones still missing an answer (admin.members.paperConsents). The
+   count comes first; a decision already on file is never overwritten. */
+async function crMbPaperConsents(ctx) {
+  let pre;
+  try { pre = await NGGApi.admin.members.paperConsents(false); }
+  catch (e) { return ctx.toast(crErr(e, "Couldn’t count the imported members."), null, true); }
+  if (!pre.wouldGrant) return ctx.toast("Every imported member already has every permission on file" + (pre.declinedKept ? " (" + crPlural(pre.declinedKept, "explicit decline") + " kept as recorded)." : "."));
+  const ok = await ctx.confirm({ title: "Grant every permission to " + crPlural(pre.members, "imported member") + "?", cta: "Record " + crNum(pre.wouldGrant),
+    body: crPlural(pre.wouldGrant, "permission") + " with no answer on file will be recorded as granted on the paper form — participation, emergency medical care, data, photos, the website, trips and updates — with your name as the person who recorded it."
+      + (pre.declinedKept ? " " + crPlural(pre.declinedKept, "explicit decline") + " already on file stay as they are." : "") });
+  if (!ok) return;
+  try {
+    const r = await NGGApi.admin.members.paperConsents(true);
+    ctx.toast("Recorded · " + crPlural(r.granted, "permission") + " for " + crPlural(r.members, "member") + (r.capped ? " — run it again for the rest" : "") + ".");
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t record the permissions."), null, true); }
+}
 function crMbWithSeg(x, seg) {
   const n = Object.assign({}, x, { seg: seg || "" });
   n.server = crMemServer(n);
@@ -990,6 +1007,7 @@ Object.assign(CR_TAB_DEFS, {
         { l: "Print ID cards", icon: "printer", run: () => ctx.studio() },
         { l: "Issue cards", icon: "qr-code", run: () => crMbIssueCards(ctx) },
         { l: "Send NGVs to Afrovanguard", icon: "paper-plane-tilt", run: () => crMbSyncNgv(ctx) },
+        { l: "Grant paper permissions", icon: "signature", run: () => crMbPaperConsents(ctx) },
       ];
     },
     blocks: (d, ctx) => {

@@ -8,6 +8,23 @@
 /* ── Shared: the role registry, from the server (admin.roles). The screen keeps
    no copy of the roles (CLAUDE.md §11); loaded once per page, retried on fail. */
 let crSyRolesP = null;
+
+/* Every stored photo as one .zip (admin.photos.backup), to keep before an update. */
+function crSyPhotoBackup(ctx) {
+  const a = document.createElement("a");
+  a.href = "/api/admin/photos.php?view=backup"; a.rel = "noopener";
+  document.body.appendChild(a); a.click(); a.remove();
+  ctx.toast("Preparing the download — a big store can take a minute.");
+}
+async function crSyPhotoSecure(ctx) {
+  try {
+    const r = await NGGApi.admin.photos.secure();
+    ctx.toast(r.copied ? "Copied " + crPlural(r.copied, "photo") + " to safe storage" + (r.remaining ? " — " + crNum(r.remaining) + " left, press again" : "") + "."
+      : "Every photo is already in safe storage.");
+    ctx.reload();
+  } catch (e) { ctx.toast(crErr(e, "Couldn’t copy the photos."), null, true); }
+}
+
 function crSyRoles() {
   if (!crSyRolesP) crSyRolesP = NGGApi.admin.roles().catch(e => { crSyRolesP = null; throw e; });
   return crSyRolesP;
@@ -231,16 +248,23 @@ Object.assign(CR_TAB_DEFS, {
         const pb = items.filter(x => x[2] !== "ok").length;
         items.push(["Held", crPlural(p.files || 0, "image") + (p.bytes ? " · " + (p.bytes / 1048576).toFixed(1) + " MB" : ""), "neutral"]);
         out.push({ type: "status", span: 3, title: "Photo storage", sub: p.where === "storage" ? "Checked just now by writing and reading back a test image" : "", summary: crPlural(pb, "check"), tone: pb ? "bad" : "ok", items });
-        if (p.dir) out.push({ type: "note", span: 6, icon: "folder", text: "Photos are kept in " + p.dir + "." });
-        if (p.insideSite) out.push({ type: "note", span: 6, icon: "warning", tone: "warn",
-          text: "Photos are kept inside the website’s own folder, so a deploy that deletes or replaces that folder deletes every photo with it.",
-          sub: "Add  'photo_dir' => '" + crSyPhotoDirHint(p.dir) + "'  to api/config.php, then press “Search this account” below to bring the photos across. When deploying, unpack the new version over the old one; never delete the folder first." });
+        /* Will an update wipe them? Said plainly, with what to do about it. */
+        if (p.dir) out.push(!p.insideSite
+          ? { type: "note", span: 6, icon: "shield-check", tone: "ok", text: "Photos are kept in " + p.dir + ", outside the website folder — an update does not touch them.",
+              sub: "Photos stored before this are copied across every night. Keep a copy anyway before a big change.",
+              act: { l: "Download all photos", run: () => crSyPhotoBackup(ctx) } }
+          : { type: "note", span: 6, icon: "warning", tone: "warn",
+              text: "Photos are kept inside the website’s own folder (" + p.dir + "), so a deploy that deletes or replaces that folder deletes every photo with it.",
+              sub: "This host didn’t let the site make a folder beside the website. Add  'photo_dir' => '" + crSyPhotoDirHint(p.dir) + "'  to api/config.php, then press “Search this account” below to bring the photos across. When deploying, unpack the new version over the old one; never delete the folder first.",
+              act: { l: "Download all photos", run: () => crSyPhotoBackup(ctx) } });
+        if (p.dir && !p.insideSite) out.push({ type: "note", span: 6, icon: "copy", text: "Copy every photo still sitting in the website folder to safe storage now, rather than waiting for tonight.",
+          act: { l: "Copy them now", run: () => crSyPhotoSecure(ctx) } });
         {
           const lost = c.photoLinks && !c.photoLinks.ok, w = (c.photoLinks && c.photoLinks.where) || {};
           out.push({ type: "custom", span: 6,
             title: lost ? crPlural(c.photoLinks.missing, "photo") + " on record with no file on disk" : "Finding and moving photos",
             sub: lost ? (Object.keys(w).length ? Object.keys(w).map(k => w[k] + " in " + k).join(", ") + "." : "")
-              : "Nothing is missing. After setting photo_dir, “Search this account” also copies every photo out of the website folder.",
+              : "Nothing is missing. “Search this account” also copies every photo out of the website folder.",
             render: () => <CrSyPhotoRecover ctx={ctx}/> });
         }
         if (!p.ok) out.push({ type: "note", span: 6, icon: "warning", tone: "bad",

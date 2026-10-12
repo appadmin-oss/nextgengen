@@ -7666,6 +7666,75 @@ chk('…and one referenced from a mission proof', (function () use ($png) {
     photo_store_sweep(7, 100);
     return is_file(photo_store_path((string)$b['id']));
 })());
+chk('…and one referenced from inside JSON, where the slashes are escaped (photos went missing a week after upload)', (function () use ($png) {
+    $c = photo_store_put($png(628, 788));
+    if (empty($c['ok'])) return false;
+    $json = json_encode(['photoUrl' => (string)$c['url'], 'note' => 'escaped']);   // json_encode's default: \/api\/public\/photo.php
+    if (strpos($json, '\/api\/public\/photo.php') === false) return false;      // the case under test really is escaped
+    setting_set('sweep_probe_json', $json, 'test');
+    @touch(photo_store_path((string)$c['id']), time() - 30 * 86400);
+    photo_store_sweep(7, 100);
+    $kept = is_file(photo_store_path((string)$c['id']));
+    db_exec("DELETE FROM settings WHERE settingKey = 'sweep_probe_json'");
+    return $kept;
+})());
+chk('…and one referenced inside a link, percent-encoded', (function () use ($png) {
+    $d = photo_store_put($png(632, 792));
+    if (empty($d['ok'])) return false;
+    setting_set('sweep_probe_enc', 'https://example.org/share?img=' . rawurlencode((string)$d['url']), 'test');
+    @touch(photo_store_path((string)$d['id']), time() - 30 * 86400);
+    photo_store_sweep(7, 100);
+    $kept = is_file(photo_store_path((string)$d['id']));
+    db_exec("DELETE FROM settings WHERE settingKey = 'sweep_probe_enc'");
+    return $kept;
+})());
+chk('…while a photo nothing points at, in any form, is still collected', (function () use ($png) {
+    $e = photo_store_put($png(636, 796));
+    if (empty($e['ok'])) return false;
+    @touch(photo_store_path((string)$e['id']), time() - 30 * 86400);
+    photo_store_sweep(7, 100);
+    return !is_file(photo_store_path((string)$e['id']));
+})());
+chk('photo_dir: a configured store outside the deploy is where photos go, and an old photo is copied across when read', (function () use ($png) {
+    $old = photo_store_put($png(640, 800));                       // stored where the store is today
+    if (empty($old['ok'])) return false;
+    $oldPath = photo_store_find((string)$old['id']);
+    $dir = sys_get_temp_dir() . '/ngg-photo-dir-' . getmypid();
+    $GLOBALS['CONFIG']['photo_dir'] = $dir;
+    $dirs = photo_store_dirs();
+    $healed = photo_store_heal((string)$old['id'], $oldPath);
+    unset($GLOBALS['CONFIG']['photo_dir']);
+    $ok = $dirs[0] === $dir && $healed === $dir . '/' . $old['id'] && is_file($healed) && is_file($oldPath);
+    @unlink($healed); @unlink($dir . '/.htaccess'); @rmdir($dir);
+    return $ok;
+})());
+chk('update-safe: the store knows whether a folder is inside the website an update replaces', photo_inside_site(dirname(__DIR__) . '/storage/photos') === true
+    && photo_inside_site(sys_get_temp_dir() . '/elsewhere') === false);
+chk('update-safe: a photo left in the in-site folder is COPIED to the store, never moved', (function () use ($png) {
+    $site = dirname(__DIR__) . '/storage/photos';
+    if (!is_dir($site)) @mkdir($site, 0775, true);
+    $id = bin2hex(random_bytes(16)) . '.jpg';
+    $src = $site . '/' . $id;
+    $a = photo_store_put($png(644, 804)); if (empty($a['ok'])) return false;
+    copy(photo_store_path((string)$a['id']), $src);                       // a real image, as an old deploy left it
+    $store = photo_store_dir();
+    if ((@realpath($store) ?: $store) === (@realpath($site) ?: $site)) { @unlink($src); return true; }   // nothing to copy between
+    $r = photo_store_secure(100000);
+    $ok = !empty($r['ok']) && is_file($store . '/' . $id) && is_file($src) && $r['copied'] >= 1;
+    $again = photo_store_secure(100000);
+    @unlink($store . '/' . $id); @unlink($src);
+    return $ok && $again['copied'] === 0;                                  // once, not on every run
+})());
+chk('update-safe: "Download all photos" is one zip of every stored image, with a README', (function () use ($png) {
+    if (!class_exists('ZipArchive')) return true;
+    $b = photo_store_put($png(648, 808)); if (empty($b['ok'])) return false;
+    $r = photo_backup_zip(['requesterId' => 'NGG-2025-0099']);
+    if (empty($r['ok'])) return false;
+    $z = new ZipArchive(); $z->open($r['path']);
+    $has = $z->locateName('photos/' . $b['id']) !== false && $z->locateName('README.txt') !== false;
+    $z->close(); @unlink($r['path']);
+    return $has && $r['images'] >= 1 && (photo_backup_zip(['requesterId' => 'NGG-2025-0001'])['error'] ?? '') === 'forbidden';
+})());
 /* The scan has to stay all-or-nothing. "I could not read the schema" must never
    be read as "nothing references anything", which would delete the store. */
 /* A check that cannot run must say so rather than reporting a clean bill of
@@ -8195,6 +8264,25 @@ chk('admin.photo.edit re-crops a live student photo (no stacked transforms)', (f
     return strpos($now, 'g_center') !== false && strpos($now, 'c_crop,g_center,w_0.833') !== false && strpos($now, 'z_') === false
         && strpos($now, 'g_face,w_600,h_750/c_fill') === false && substr_count($now, '/upload/') === 1 && strpos($now, '/v17/') !== false;
 })());
+/* ── divisions: one list of courses, everywhere a division is shown ── */
+chk('divisions: each division is for the children it names, with the NGG courses and Chess', (function () {
+    $by = []; foreach (nggc_divisions() as $d) $by[$d['id']] = $d;
+    $cat = club_catalogue_default();
+    foreach ($by as $d) if (array_values(array_diff($d['courses'], ['Chess'])) !== array_values($cat[$d['name']] ?? ['?'])) return false;
+    return in_array('Catering', $by['arts']['courses'], true) && in_array('Chess', $by['tech']['courses'], true)
+        && strpos($by['tech']['audience'], 'For children interested in') === 0;
+})());
+chk('divisions: the About page\'s copy (formation.jsx) carries exactly the server\'s courses — no second list drifting', (function () {
+    $src = (string)file_get_contents(dirname(__DIR__, 2) . '/formation.jsx');
+    foreach (nggc_divisions() as $d) {
+        if (!preg_match('/id: "' . $d['id'] . '".*?courses: \[([^\]]*)\]/s', $src, $m)) return false;
+        if (json_decode('[' . $m[1] . ']', true) !== $d['courses']) return false;
+    }
+    return true;
+})());
+chk('divisions: a member\'s course places them in its division (Catering → arts); Chess places nobody',
+    nggc_division_for_track('Catering') === 'arts' && nggc_division_for_track('Branding') === 'media' && nggc_division_for_track('Chess') === '');
+
 /* ── Roster search suggestions: a participant on an accurate match, a member on a very close one ── */
 db_insert('members', ['memberId' => 'NGG-SG-1', 'fullName' => 'Bliss Chukwura', 'email' => 'bliss-sg@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
 db_insert('members', ['memberId' => 'NGG-SG-2', 'fullName' => 'Kosi Ifeanyi', 'email' => 'kosi-sg@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
@@ -9143,7 +9231,7 @@ chk('the division roll-up counts members and names the unplaced', (function () {
     foreach ($r['divisions'] as $d) $byId[$d['id']] = $d;
     // Every row carries the mandate, so a report can say what a division is for.
     foreach ($byId as $d) if (trim((string)$d['mandate']) === '') return false;
-    return $byId['business']['courses'] === 11 && $byId['tech']['courses'] === 10
+    return $byId['business']['courses'] === 10 && $byId['tech']['courses'] === 8
         && array_key_exists('unplaced', $r) && $r['unplaced'] >= 0;
 })());
 /* The unplaced are a first-class number, not the difference between a total
@@ -21978,6 +22066,28 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         (int)db_row("SELECT COUNT(*) c FROM members WHERE displayId = 'IMP-001'")['c'] === 1);
     chk('roster import: …nor a second copy of the notes block',
         substr_count((string)$get('IMP-001')['notes'], MEMBER_IMPORT_NOTE_OPEN) === 1);
+    // ── Permissions: the paper form grants every one ──
+    $cs = fn(string $ref) => consent_state((string)$get($ref)['memberId']);
+    $allGranted = function (array $st) { foreach (CONSENT_TYPES as $t => $_) if (($st[$t]['status'] ?? '') !== 'granted') return false; return true; };
+    chk('roster import: an imported member has EVERY permission granted, recorded as the paper form',
+        $allGranted($cs('IMP-001')) && ($cs('IMP-001')['media']['method'] ?? '') === MEMBER_PAPER_CONSENT_METHOD && count($cs('IMP-001')) === count(CONSENT_TYPES));
+    chk('roster import: …a second run writes no second set', (int)db_row('SELECT COUNT(*) c FROM consents WHERE studentId = ?', [(string)$get('IMP-001')['memberId']])['c'] === count(CONSENT_TYPES)
+        && ($again['consents']['granted'] ?? -1) === 0);
+    chk('roster import: …and a dry run counts what it would grant without writing', ($dry['consents']['wouldGrant'] ?? 0) === count(CONSENT_TYPES));
+    // The backfill for members imported before this: an explicit decline is kept.
+    $mid2 = (string)$get('IMP-002')['memberId'];
+    db_exec('DELETE FROM consents WHERE studentId = ?', [$mid2]);
+    consent_record($mid2, 'media', 'declined', 'Online form', 'A Parent');
+    $pre = backend_dispatch('admin.members.paperConsents', ['requesterId' => 'NGG-2025-0099']);
+    $afterPre = (int)db_row('SELECT COUNT(*) c FROM consents WHERE studentId = ?', [$mid2])['c'];
+    $run2 = backend_dispatch('admin.members.paperConsents', ['requesterId' => 'NGG-2025-0099', 'apply' => true]);
+    $st2 = consent_state($mid2);
+    chk('paper permissions: the count comes first and writes nothing',
+        !empty($pre['ok']) && $pre['applied'] === false && $pre['wouldGrant'] === count(CONSENT_TYPES) - 1 && $pre['declinedKept'] >= 1 && $afterPre === 1);
+    chk('paper permissions: the run fills every missing permission, and keeps an explicit decline', !empty($run2['ok']) && ($st2['media']['status'] ?? '') === 'declined'
+        && ($st2['trips']['status'] ?? '') === 'granted' && ($st2['participation']['method'] ?? '') === MEMBER_PAPER_CONSENT_METHOD && $run2['declinedKept'] >= 1);
+    chk('paper permissions: one audit event for the run', (int)db_row("SELECT COUNT(*) c FROM audit_log WHERE event = 'member.consents.paper'")['c'] === 1);
+    chk('paper permissions: gated on people', (backend_dispatch('admin.members.paperConsents', ['requesterId' => 'NGG-2025-0001'])['error'] ?? '') === 'forbidden');
 
     // ── The desk outranks the spreadsheet ──
     db_update('members', ['school' => 'The School They Actually Attend', 'phone' => ''],

@@ -6207,6 +6207,7 @@ img { background-color: rgba(12,20,50,0.04); }
 .ab-body { font-size: 15px; line-height: 1.55; color: var(--ink-500); margin: 0; }
 .on-dark .ab-body { color: rgba(255,255,255,0.78); }
 .ab-body-lg { font-size: 16px; line-height: 1.6; color: var(--ink-700); }
+.ab-div-audience { font-size: 14px; line-height: 1.55; color: var(--ink-700); margin-top: 6px; }
 .ab-measure { max-width: 62ch; }
 /* Pushed to the foot of a flex card and ruled off, so a note reads as a note
    however tall the card above it grew. */

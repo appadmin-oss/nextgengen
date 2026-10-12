@@ -388,6 +388,8 @@ function web_cron_maintenance(): void {
      * so without this a shared host's disk quota fills over a season. Bounded,
      * conservative (a week old before it is even a candidate) and it does
      * nothing at all if it cannot read what is referenced. */
+    // Copy stored photos out of the folder an update replaces BEFORE sweeping anything.
+    if (function_exists('photo_store_secure')) photo_store_secure(500);
     if (function_exists('photo_store_sweep')) photo_store_sweep(7, 200);
     /* Keep the analyst panel warm, so Monday morning reads an answer instead of
      * watching four model calls. Off unless an admin turns it on — this is the

@@ -72,14 +72,16 @@ function doctrineSuite() {
   // programme is not just four unrelated syllabuses, so it is asserted per list.
   ok('chess appears in every division\'s course list (it is compulsory)',
      D.NGGC_DIVISIONS.every(d => d.courses.includes('Chess')));
-  /* Not a flat ten: the brief gives Business Strategy eleven (it carries
-     Compliance on top of the other nine plus chess). Asserting "ten" here is
-     what caught the About page claiming "forty courses" when the divisions
-     hold forty-one — so the floor is asserted, and the total is computed. */
-  ok('every division lists at least ten courses',
-     D.NGGC_DIVISIONS.every(d => d.courses.length >= 10));
-  ok('the divisions hold 41 courses between them',
-     D.NGGC_DIVISIONS.reduce((n, d) => n + d.courses.length, 0) === 41);
+  /* The programme's Divisional Heads list (2026-10): arts 10, media 8, tech 8,
+     business 10, chess in each. A flat number here once caught the About page
+     claiming a total the divisions did not hold — so the lists are pinned per
+     division and the page's total is computed from them. */
+  ok('each division lists the programme\'s courses (10 · 8 · 8 · 10)',
+     D.NGGC_DIVISIONS.map(d => d.courses.length).join() === '10,8,8,10');
+  ok('the divisions hold 36 courses between them',
+     D.NGGC_DIVISIONS.reduce((n, d) => n + d.courses.length, 0) === 36);
+  ok('each division says which children it is for',
+     D.NGGC_DIVISIONS.every(d => /^For children interested in /.test(d.audience || '')));
   ok('no division repeats a course',
      D.NGGC_DIVISIONS.every(d => new Set(d.courses).size === d.courses.length));
 
@@ -238,8 +240,8 @@ async function renderSuite() {
     ok('a division\'s courses are collapsed until asked for',
        (await page.locator('#division-courses-media').isVisible()) === false);
     await page.locator('button[aria-controls="division-courses-media"]').click();
-    ok('opening a division reveals its ten courses',
-       (await page.locator('#division-courses-media li').count()) === 10);
+    ok('opening a division reveals its eight courses',
+       (await page.locator('#division-courses-media li').count()) === 8);
 
     await page.locator('button[aria-controls="about-weekly-review"]').click();
     ok('the mentor\'s weekly review opens to twelve questions',

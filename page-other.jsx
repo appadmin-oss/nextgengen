@@ -7052,6 +7052,8 @@ function SkillsPanel({ courses, centre }) {
   const [state, setState] = React.useState("loading");
   const [open, setOpen] = React.useState("");   // studentId whose card is expanded
   const [busy, setBusy] = React.useState("");
+  // A hook after the early returns below crashed the tab the moment the grid loaded (more hooks than the loading render).
+  const [ask, setAsk] = React.useState(null);     // { studentId, skill, level, text, err }
   const LEVEL_COLOR = { 1: "rgba(255,255,255,.16)", 2: "rgba(245,176,38,.35)", 3: "rgba(127,209,166,.4)", 4: "rgba(127,209,166,.75)" };
 
   const load = React.useCallback(() => {
@@ -7069,8 +7071,8 @@ function SkillsPanel({ courses, centre }) {
   const levels = (d && d.levels) || {};
   /* Moving a child UP a level asks for one line of evidence — what they did
      that showed it. The server refuses a level-up without it (evidence_required),
-     so the line is asked for here rather than the tap silently failing. */
-  const [ask, setAsk] = React.useState(null);     // { studentId, skill, level, text, err }
+     so the line is asked for here rather than the tap silently failing.
+     (`ask` is declared with the other hooks, above the early returns.) */
   const mark = async (studentId, skill, level, evidence) => {
     setBusy(studentId + "|" + skill);
     try {

@@ -481,6 +481,15 @@ return [
     //
     // Get these from your Cloudinary dashboard → Settings → API Keys.
     // -----------------------------------------------------------------------
+    /* Where locally-stored photographs live. Leave empty for api/storage/photos,
+     * which is INSIDE the folder a deploy replaces: an upload of a fresh api/
+     * folder, or an FTP mirror that deletes what the repository does not have,
+     * takes every stored photo with it. Point this at a folder outside the web
+     * root (e.g. '/home/youruser/ngg-photos'), writable by PHP, and back it up
+     * with the database. Photos already in api/storage/photos are still found
+     * and moved across as they are read. */
+    'photo_dir' => '',
+
     'cloudinary' => [
         'cloud_name'  => '',               // e.g. 'ngg-afrovanguard'
         'api_key'     => '',               // numeric key

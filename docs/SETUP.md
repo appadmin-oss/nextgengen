@@ -253,6 +253,18 @@ of every locally-stored image, and an FTP sync set to mirror-and-delete will
 remove it because it is not in the repository. Exclude `api/storage` from
 deployment, and back it up with the database.
 
+**Better: keep the photos outside the deploy.** Set `'photo_dir'` in
+`api/config.php` to a folder outside the web root (for example
+`/home/youruser/ngg-photos`), writable by PHP. New photos are stored there, and
+a deploy can then replace `api/` without touching them. Photos already in
+`api/storage/photos` are still found, and are moved across as they are read.
+
+A third way they were lost has been fixed: the sweep recognised a photo's
+address only when it was written out literally, so a photo referenced from
+inside JSON (where the slashes are escaped, `\/api\/public\/photo.php`) or
+inside a percent-encoded link was deleted a week after upload. Every encoding
+is recognised now, and a scan that cannot be completed deletes nothing.
+
 ### Photos without Cloudinary
 
 Cloudinary needs three keys, and until they are set there is nowhere to upload

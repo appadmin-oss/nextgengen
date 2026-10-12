@@ -1004,3 +1004,39 @@ portals into five areas each. Built for real, not copied from the prototype:
   Saturday — roll (never writes an absence), plan, hinge, exit ticket, log —
   and `instructor.today`. Server and tests done; the instructor screens are next.
 - Skill level-ups need a line of evidence (`evidence_required`).
+
+## Re-applied on top of the parallel session's work (2026-10-12)
+
+The other session landed the NGG divisions with their editor, `photo_dir` and
+lost-photo recovery, explicit photo geometry and the bundled coding course while
+this session's work was uncommitted. What was already there was dropped from
+this change (the Club catalogue seed, its test fixture); what was not is below.
+
+- **Permissions on paper.** The roster import records every `CONSENT_TYPES`
+  permission as granted, method "Paper form", for each member it touches (dry
+  run counts them); an explicit decline on file is kept and counted.
+  `admin.members.paperConsents` backfills imported members (the import's note
+  stamp or an import-issued card): count first, centre-scoped, capped 2000,
+  one audit event. Control Room → Members → "Grant paper permissions".
+- **Photos the sweep deleted from under their records.** The reference scan
+  matched only the literal `/api/public/photo.php?p=`; inside JSON (escaped
+  slashes, json_encode's default) or a percent-encoded link a live photo read
+  as unreferenced and was deleted a week later. Every encoding is recognised,
+  and a pattern error fails closed (the scan answers "I don't know").
+- **Photos survive an update without anybody configuring anything.** With no
+  `photo_dir`, the store is `ngg-data/photos` beside the web root when the host
+  lets PHP create it (`photo_safe_home`, chosen once, remembered); otherwise
+  the old default and the Diagnostics warning. `photo_store_secure` copies
+  photos out of the website folder (never moves or deletes), 500 a night in
+  webcron before the sweep, or on demand ("Copy them now"). "Download all
+  photos" is one .zip of every stored image (`admin.photos.backup`).
+  `photo_store_inside_site()` now asks the one helper, `photo_inside_site()`.
+- **Card renders.** `CardExport.renderFace` (the member card's own downloads
+  and batch) renders with snapDOM first; html2canvas, the fallback, squashed
+  letter-spaced text. The fallback is handed `object-fit` images pre-cropped at
+  their box's shape with the CSS filter baked in, and waits for the new pixels
+  to decode (html2canvas draws `currentSrc`).
+- **Divisions everywhere.** `nggc_divisions()` and formation.jsx (the About page,
+  the member dashboard) carry the same courses as the seeded catalogue
+  (`CLUB_DIVISIONS_DEFAULT`) and each division's "For children interested in…"
+  line; Chess stays as the compulsory board (§6).

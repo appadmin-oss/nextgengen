@@ -1108,6 +1108,7 @@
         // Record a guardian's publication decision. `method` is how it was
         // obtained (paper form, phone, in person) and the server requires it.
         consent:       (memberId, type, status, method) => request('/admin/members.php', { body: { action: 'consent', memberId, type, status, method } }),
+        paperConsents: (apply) => request('/admin/members.php', { body: { action: 'paperConsents', apply: !!apply } }),
         remove: (memberId) => request('/admin/members.php', { body: { action: 'delete', memberId } }),
         // Promote an NGG member into the NGV / volunteer tier — auto-provisions
         // their volunteer record + ID card (idempotent).
@@ -1664,6 +1665,7 @@
         // Re-edit ANY image (by assetId, or by subject for already-live photos).
         edit:    (target, spec) => request('/admin/photos.php', { body: Object.assign({ action: 'edit', spec }, target) }),
         editBulk: (items, spec) => request('/admin/photos.php', { body: { action: 'edit_bulk', items, spec } }),
+        secure:   () => request('/admin/photos.php', { body: { action: 'secure' } }),
         replace: (subjectType, subjectId, sourceUrl) => request('/admin/photos.php', { body: { action: 'replace', subjectType, subjectId, sourceUrl } }),
         /* Children with NO photograph on file — a different question from the
            review queue, which can only show photos that exist. */

@@ -178,6 +178,7 @@ function backend_dispatch(string $op, array $args = []): array {
             // Admin
             'admin.members.list'      => 'admin_members_list',
             'admin.members.suggest'   => 'admin_members_suggest',
+            'admin.members.paperConsents' => 'admin_members_paper_consents',
             /* Bulk over the member roster, plus the id list that makes
                "apply to all N matching the filter" possible. Each bulk action
                declares its own capability and every row comes back with its
@@ -697,6 +698,8 @@ function backend_dispatch(string $op, array $args = []): array {
             'admin.photo.reject'        => 'photo_reject',
             'admin.photo.edit'          => 'admin_photo_edit',
             'admin.photo.edit.bulk'     => 'admin_photo_edit_bulk',
+            'admin.photos.secure'       => 'admin_photos_secure',
+            'admin.photos.backup'       => 'photo_backup_zip',
             'admin.photo.replace'       => 'admin_photo_replace',
             'admin.application.convert' => 'admin_application_convert',
             'admin.application.update'  => 'admin_application_update',

@@ -1870,6 +1870,7 @@ function DashboardDivision({ m }) {
           <div className="mono dash-division-code">DIVISION {d.code}</div>
           <div className="dash-division-name">{d.name}</div>
           <p className="dash-division-mandate">{d.mandate}</p>
+          {d.audience && <p className="dash-division-audience">{d.audience}</p>}
           <ul className="dash-division-courses">
             {d.courses.map(c => (
               <li key={c} className={c === "Chess" ? "is-chess" : ""}>{c}</li>
