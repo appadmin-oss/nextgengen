@@ -6583,6 +6583,217 @@ function StaffCurriculumPanel() {
   );
 }
 
+/* ── School results: the mentor's half of the growth plan ─────────────────────
+ * A member uploads their report, checks the scores and writes a plan for at
+ * most three subjects (dashboard → School results). It goes live only when
+ * their mentor approves it here; sent back, it returns to the member with the
+ * note. Server: member.mentor.plans / plan / plan.approve / plan.return
+ * (domain/school-results.php). Plans below the adherence line are listed so a
+ * mentor can ask what got in the way. */
+const MTR_PLAN_ERR = { note_required: "Write a short note so they know what to change.", not_waiting: "This plan is no longer waiting for you.",
+  peer_cannot_approve: "A peer mentor can read plans but not approve them.", not_found: "That plan is not in your care.", not_a_mentor: "This account has no mentees." };
+function mtrPlanErr(e) { const c = e && (e.code || e.message); return MTR_PLAN_ERR[c] || "That didn’t work. Try again."; }
+
+function MentorPlans({ centre }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [open, setOpen] = React.useState(null); // { id, term } of the plan on screen
+  const load = React.useCallback(() => {
+    setErr(""); setD(null);
+    NGGApi.member.mentorPlans(centre || "").then(setD).catch(e => setErr(mtrPlanErr(e)));
+  }, [centre]);
+  React.useEffect(() => { load(); }, [load]);
+  if (open) return <MentorPlan subjectId={open.id} term={open.term} onBack={() => { setOpen(null); load(); }}/>;
+  if (err) return <div className="mtr-plans-msg" role="alert"><p>{err}</p><button type="button" className="mtr-btn" onClick={load}>Try again</button></div>;
+  if (!d) return <div className="mtr-plans-msg"><div className="dash-spinner" aria-label="Loading plans"/></div>;
+  const row = (r, extra) => (
+    <li key={r.planId}>
+      <button type="button" className="mtr-plan-row" onClick={() => setOpen({ id: r.subjectId, term: r.term })}>
+        <span><b>{r.name}</b><small>{r.termLabel}</small></span>
+        <span className="mtr-plan-tag">{extra}</span>
+      </button>
+    </li>
+  );
+  return (
+    <div className="mtr-plans">
+      <section className="mtr-panel" aria-labelledby="mtr-wait-h">
+        <h2 id="mtr-wait-h">Waiting for you <span className="mono" aria-live="polite">{d.waiting.length}</span></h2>
+        {d.waiting.length
+          ? <ul className="mtr-plan-list">{d.waiting.map(r => row(r, r.days === 0 ? "Sent today" : "Sent " + r.days + " day" + (r.days === 1 ? "" : "s") + " ago"))}</ul>
+          : <p className="mtr-quiet">No plans waiting. When a mentee sends their results and plan, it appears here.</p>}
+      </section>
+      {d.stalled.length > 0 && (
+        <section className="mtr-panel" aria-labelledby="mtr-stall-h">
+          <h2 id="mtr-stall-h">Plans that have stalled</h2>
+          <p className="mtr-quiet">Fewer study sessions kept than planned over the last weeks. Ask what got in the way.</p>
+          <ul className="mtr-plan-list">{d.stalled.map(r => row(r, r.adherence + "% kept"))}</ul>
+        </section>
+      )}
+      <p className="mtr-quiet">{d.live} plan{d.live === 1 ? "" : "s"} live in your care.</p>
+    </div>
+  );
+}
+
+function MentorPlan({ subjectId, term, onBack }) {
+  const [d, setD] = React.useState(null);
+  const [err, setErr] = React.useState("");
+  const [note, setNote] = React.useState("");
+  const [busy, setBusy] = React.useState("");
+  const [msg, setMsg] = React.useState("");
+  const load = React.useCallback(() => {
+    setErr("");
+    NGGApi.member.mentorPlan(subjectId, term).then(setD).catch(e => setErr(mtrPlanErr(e)));
+  }, [subjectId, term]);
+  React.useEffect(() => { load(); }, [load]);
+  const act = (kind) => {
+    if (busy) return;
+    if (kind === "return" && note.trim().length < 4) { setMsg(MTR_PLAN_ERR.note_required); return; }
+    setBusy(kind); setMsg("");
+    const call = kind === "approve" ? NGGApi.member.mentorPlanApprove(d.record.plan.planId, note.trim())
+                                    : NGGApi.member.mentorPlanReturn(d.record.plan.planId, note.trim());
+    call.then(r => {
+      setNote("");
+      setMsg(kind === "approve" ? "Approved. The plan is live" + (r && r.family ? " and the family has been sent it." : ".") : "Sent back with your note.");
+      load();
+    }).catch(e => setMsg(mtrPlanErr(e))).finally(() => setBusy(""));
+  };
+  const back = <button type="button" className="mtr-back" onClick={onBack} aria-label="Back to plans">← Plans</button>;
+  if (err) return <div className="mtr-plans">{back}<div className="mtr-plans-msg" role="alert"><p>{err}</p><button type="button" className="mtr-btn" onClick={load}>Try again</button></div></div>;
+  if (!d) return <div className="mtr-plans">{back}<div className="mtr-plans-msg"><div className="dash-spinner" aria-label="Loading the plan"/></div></div>;
+  const rec = d.record || {}, plan = rec.plan, k = rec.kpis || {};
+  const first = String(d.member.fullName || "").split(/\s+/)[0];
+  const waiting = plan && plan.status === "sent";
+  return (
+    <div className="mtr-plans">
+      {back}
+      <header className="mtr-plan-head">
+        <h2>{d.member.fullName}</h2>
+        <p>{rec.termLabel}{plan ? " · " + ({ sent: "waiting for you", live: "live", draft: "with " + first, closed: "closed" }[plan.status] || plan.status) : ""}</p>
+      </header>
+      <section className="mtr-panel" aria-label="Scores">
+        <div className="mtr-kpis">
+          <div><small>Average</small><b>{k.avg == null ? "–" : k.avg}</b></div>
+          <div><small>Since last term</small><b>{k.change == null ? "–" : (k.change > 0 ? "+" : "") + k.change}</b></div>
+          <div><small>Subjects</small><b>{(rec.subjects || []).length}</b></div>
+        </div>
+        {(rec.subjects || []).length > 0 && (
+          <table className="mtr-scores">
+            <thead><tr><th scope="col">Subject</th><th scope="col">Score</th><th scope="col">Last term</th></tr></thead>
+            <tbody>{rec.subjects.map(x => <tr key={x.name}><td>{x.name}</td><td className="mono">{x.score == null ? "–" : x.score}</td><td className="mono">{x.last == null ? "–" : x.last}</td></tr>)}</tbody>
+          </table>
+        )}
+        {rec.upload && rec.upload.fileUrl && <a className="mtr-link" href={rec.upload.fileUrl} target="_blank" rel="noopener">See the report card</a>}
+      </section>
+      {!plan ? <section className="mtr-panel"><p className="mtr-quiet">{first} has not written a plan for this term yet.</p></section> : (
+        <section className="mtr-panel" aria-label="The plan">
+          <h2>The plan</h2>
+          <ol className="mtr-items">
+            {plan.items.map(it => (
+              <li key={it.itemId}>
+                <b>{it.subject}</b> <span className="mono">{it.current == null ? "–" : it.current} → {it.target}</span>
+                <p>{it.methodLabel ? it.methodLabel + " · " : ""}{it.what}</p>
+                <p className="mtr-quiet">{it.whenWhere} · {it.sessionsPerWeek} a week{plan.status === "live" ? " · " + it.doneThisWeek + " done this week" : ""}</p>
+              </li>
+            ))}
+          </ol>
+          {plan.habit && <p><b>Habit for the term:</b> {plan.habit}</p>}
+          {plan.status === "live" && plan.adherence != null && <p className="mtr-quiet">{plan.adherence}% of study sessions kept so far.</p>}
+          {plan.recipients && plan.recipients.family && <p className="mtr-quiet">{first} chose to share it with their family once you approve it.</p>}
+          {waiting && d.canApprove && (
+            <div className="mtr-decide">
+              <label htmlFor="mtr-note">A note for {first} <span className="mtr-quiet">(needed to send it back)</span></label>
+              <textarea id="mtr-note" value={note} onChange={e => setNote(e.target.value)} maxLength={600} rows={3}/>
+              <div className="mtr-decide-acts">
+                <button type="button" className="mtr-btn mtr-btn--gold" disabled={!!busy} onClick={() => act("approve")}>{busy === "approve" ? "Approving…" : "Approve the plan"}</button>
+                <button type="button" className="mtr-btn" disabled={!!busy} onClick={() => act("return")}>{busy === "return" ? "Sending…" : "Send it back"}</button>
+              </div>
+            </div>
+          )}
+          {waiting && !d.canApprove && <p className="mtr-quiet">{MTR_PLAN_ERR.peer_cannot_approve}</p>}
+          {msg && <p className="mtr-msg" role="status">{msg}</p>}
+          {(rec.notes || []).length > 0 && (
+            <div className="mtr-notes"><h3>Notes</h3>
+              <ul>{rec.notes.map((n, i) => <li key={i}><b>{n.who}</b> {n.text}</li>)}</ul></div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+/* ── Report a concern ────────────────────────────────────────────────────────
+ * To the safeguarding officer for the child's centre, into the one queue the
+ * Control Room reads (member.mentor.concern.create → safeguarding_cases). Not
+ * on the child's record, not shown to the family, not editable once sent. The
+ * button is in the portal's header for every mentor, cleared or not. */
+const MTR_CONCERN_KINDS = ["Something they told me", "Injury or harm", "Neglect", "Online safety", "An adult’s behaviour", "Something else"];
+const MTR_CONCERN_ERR = { choose_the_child: "Choose the child first.", choose_the_kind: "Choose what kind of concern it is.",
+  say_what_happened: "Say what happened, in your own words.", not_found: "That child could not be found." };
+function MentorConcernSheet({ students, onClose }) {
+  const [who, setWho] = React.useState("");
+  const [cat, setCat] = React.useState("");
+  const [body, setBody] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState("");
+  const [sent, setSent] = React.useState(null);
+  const first = React.useRef(null);
+  React.useEffect(() => {
+    const back = document.activeElement;
+    if (first.current) first.current.focus();
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); if (back && back.focus) back.focus(); };
+  }, []);
+  const send = (e) => {
+    e.preventDefault();
+    const miss = !who ? "choose_the_child" : !cat ? "choose_the_kind" : body.trim().length <= 10 ? "say_what_happened" : "";
+    if (miss) { setErr(MTR_CONCERN_ERR[miss]); return; }
+    setBusy(true); setErr("");
+    NGGApi.member.mentorConcern(who, cat, body.trim()).then(setSent)
+      .catch(x => setErr((MTR_CONCERN_ERR[x && (x.code || x.message)] || "It didn’t send. Try again.") + " If a child is in danger now, call 112."))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="mtr-sheet-wrap" onClick={onClose}>
+      <div className="mtr-sheet" role="dialog" aria-modal="true" aria-labelledby="mtr-cn-h" onClick={e => e.stopPropagation()}>
+        <div className="mtr-sheet-head">
+          <h2 id="mtr-cn-h">Report a concern</h2>
+          <button type="button" className="mtr-x" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <p className="mtr-danger">If a child is in danger now, call <b>112</b>, then tell the safeguarding officer.</p>
+        {sent ? (
+          <div className="mtr-sent" role="status">
+            <p><b>Sent to {sent.officerName || "the safeguarding officer"}.</b> Reference <span className="mono">{sent.ref}</span>.</p>
+            <p className="mtr-quiet">They read it today and call you if they need more. It is not on the child’s record and you cannot edit it.</p>
+            {!sent.assigned && <p className="mtr-quiet">No safeguarding officer is set for this centre yet, so the NGG admin has been alerted. Tell your coordinator today as well.</p>}
+            <button type="button" className="mtr-btn mtr-btn--gold" onClick={onClose}>Done</button>
+          </div>
+        ) : (
+          <form onSubmit={send} className="mtr-cn-form">
+            <label htmlFor="mtr-cn-who">Which child</label>
+            <select id="mtr-cn-who" ref={first} value={who} onChange={e => setWho(e.target.value)}>
+              <option value="">Choose…</option>
+              {students.map(s => <option key={s.studentId} value={s.studentId}>{s.fullName}</option>)}
+            </select>
+            <fieldset>
+              <legend>What kind of concern</legend>
+              <div className="mtr-chips">
+                {MTR_CONCERN_KINDS.map(k => (
+                  <button key={k} type="button" aria-pressed={cat === k} className={"mtr-chip" + (cat === k ? " is-on" : "")} onClick={() => setCat(k)}>{k}</button>
+                ))}
+              </div>
+            </fieldset>
+            <label htmlFor="mtr-cn-body">What happened, in your own words</label>
+            <textarea id="mtr-cn-body" rows={5} value={body} onChange={e => setBody(e.target.value)} maxLength={8000}/>
+            {err && <p className="mtr-err" role="alert">{err}</p>}
+            <button type="submit" className="mtr-btn mtr-btn--gold" disabled={busy}>{busy ? "Sending…" : "Send to the safeguarding officer"}</button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MentorPortal() {
   const auth = (window.useAuth || (() => null))();
   const [data, setData] = React.useState(null);
@@ -6595,11 +6806,13 @@ function MentorPortal() {
   /* Which centre's class is on screen. Only ever set by someone who covers
      more than one — a mentor at a single centre never sees the control. */
   const [centre, setCentre] = React.useState("");
-  const [tabState, setTabState] = React.useState("");   // "" = the role's default
+  /* ?tab=results is where the "sent their results and plan" email lands. */
+  const [tabState, setTabState] = React.useState(() => { try { return new URLSearchParams(location.search).get("tab") || ""; } catch (_) { return ""; } });
   /* "" lets the SERVER decide: my mentees if I have any, the centre otherwise.
      Deciding it here would mean guessing before the roster has loaded. */
   const [scope, setScope] = React.useState("");
   const [childOn, setChildOn] = React.useState(null);  // whose record is open
+  const [concernOn, setConcernOn] = React.useState(false);
   const [remarkOn, setRemarkOn] = React.useState(null); // child whose thread is open
   const navy = "#16223e", gold = "#ffce54";
   const load = React.useCallback((c, sc) => {
@@ -6772,7 +6985,7 @@ function MentorPortal() {
   const servesClub = (m.programmes || []).includes("ngg");
   const tabList = (canTeach ? [["session", "Today's session"], ["class", "Stars & notes"], ["skills", "Skills"]]
                             : [["class", "Stars & notes"]])
-    .concat(servesClub ? [["curriculum", "Curriculum"]] : [])
+    .concat(servesClub ? [["curriculum", "Curriculum"], ["results", "School results"]] : [])
     .concat(canOversee ? [["attention", "Needs attention"]] : []);
 
   /* An explicit choice wins, but only if it is a tab this person actually has —
@@ -6795,10 +7008,14 @@ function MentorPortal() {
   );
 
   const header = (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>{roleMeta.eyebrow}</div>
-      <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{m.name || "Your class"}</h1>
-      <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0" }}>{m.centre || "All centres"}{m.department ? " · " + m.department : ""} · {students.length} student{students.length === 1 ? "" : "s"} · {done} starred today</p>
+    <div className="mtr-head">
+      <div>
+        <div style={{ font: "700 10px var(--font-mono, monospace)", letterSpacing: ".2em", color: gold }}>{roleMeta.eyebrow}</div>
+        <h1 style={{ fontSize: 24, margin: "4px 0 0", fontWeight: 800 }}>{m.name || "Your class"}</h1>
+        <p style={{ color: "rgba(230,238,255,.62)", fontSize: 13, margin: "6px 0 0" }}>{m.centre || "All centres"}{m.department ? " · " + m.department : ""} · {students.length} student{students.length === 1 ? "" : "s"} · {done} starred today</p>
+      </div>
+      <button type="button" className="mtr-btn mtr-concern-btn" onClick={() => setConcernOn(true)}>Report a concern</button>
+      {concernOn && <MentorConcernSheet students={students} onClose={() => setConcernOn(false)}/>}
     </div>
   );
 
@@ -6807,6 +7024,9 @@ function MentorPortal() {
   </>);
   if (tab === "curriculum") return shell(<>{header}{centrePicker}{tabs}
     <StaffCurriculumPanel/>
+  </>);
+  if (tab === "results") return shell(<>{header}{centrePicker}{tabs}
+    <MentorPlans centre={data.centre || m.centre || ""}/>
   </>);
   if (tab === "skills") return shell(<>{header}{centrePicker}{tabs}
     <SkillsPanel courses={teachCourses} centre={data.centre || m.centre || ""}/>

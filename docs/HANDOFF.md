@@ -1040,3 +1040,33 @@ this change (the Club catalogue seed, its test fixture); what was not is below.
   the member dashboard) carry the same courses as the seeded catalogue
   (`CLUB_DIVISIONS_DEFAULT`) and each division's "For children interested in…"
   line; Chess stays as the compulsory board (§6).
+
+## 2026-10-13 — The Member and Mentor portals of 10-09…10-11 withdrawn
+
+The programme found the new Member Portal (`/member/{area}/{tab}`, a grey
+five-area shell) and the v14 Mentor Portal (`/mentor/*`, mp-*) ugly and no
+more capable than the screens they replaced, which had more on them (missions,
+tally, account, ID card; stars, V3, conversations, goals, courage). Both
+originals are back: `/dashboard` is `DashboardPage`, `/mentor` is `MentorPortal`.
+
+Kept, because they work and something depends on them:
+- **School results** (`domain/school-results.php`) is a dashboard section,
+  `/dashboard/results`, drawing `MbrResults` in the dashboard's palette
+  (`.dash-results` sets the `--pt-*` tokens). The mentor's half, which the
+  withdrawn portal never drew, is the Mentor Portal's **School results** tab
+  (`MentorPlans` / `MentorPlan`: approve, or send back with a required note).
+  The "sent their results" email links to `/mentor?tab=results`.
+- **Report a concern** is in the Mentor Portal's header (`MentorConcernSheet`
+  → `member.mentor.concern.create` → `safeguarding_cases`), so the route to the
+  safeguarding officer is not lost with the v14 form.
+- `member.update` still refuses name, school and guardian fields
+  (`managed_by_ngg`); Edit profile shows school and phone read-only with "Ask
+  for a change" → Requests (`details`). It had been failing every save since
+  10-11 because it still sent `phone` and `school`.
+- Every server op, table, job and the Control Room's Mentorship workspace.
+
+`/member/*` addresses forward to the matching dashboard section (app.jsx).
+Removed: `portal-shell.jsx`, `member-portal.jsx`, `mp-*.jsx`, the `.mp-*` CSS,
+`tests/member-portal.test.js`. New: `tests/dashboard-results.test.js` (26,
+`npm run test:dashresults`); `tests/mentorship.test.js` drives the restored
+portal (roster, School results tab, Report a concern).

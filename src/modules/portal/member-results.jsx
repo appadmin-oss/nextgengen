@@ -1,4 +1,4 @@
-/* ── Grow › School results (member portal) ────────────────────────────────────
+/* ── School results (the member dashboard's "School results" section) ─────────────
  *
  * Upload · Check · Plan · Send, then the plan lived with week by week.
  * Server: api/member/results.php → domain/school-results.php. The server
@@ -6,6 +6,62 @@
  * a target never below the current score); this screen shows the member what
  * it will ask before it asks, and names the field when it refuses.
  */
+
+/* ── Building blocks (from the withdrawn portal shell; only what this flow uses) ── */
+
+/** Phosphor icon: regular when inactive, fill when active. */
+function PIcon({ name, on, className }) {
+  return <i className={"ph" + (on ? "-fill" : "") + " ph-" + name + (className ? " " + className : "")} aria-hidden="true"/>;
+}
+
+
+function PtCard({ title, meta, action, children, tone, className }) {
+  return (
+    <section className={"pt-card" + (tone ? " pt-card--" + tone : "") + (className ? " " + className : "")}>
+      {(title || action) && (
+        <div className="pt-card-h">
+          <div><h2>{title}</h2>{meta && <p className="pt-card-meta">{meta}</p>}</div>
+          {action}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+}
+
+/** The three states that are not optional: loading, an honest error with a retry, and ready. */
+function PtLoad({ state, onRetry, rows, children, what }) {
+  const [slow, setSlow] = React.useState(false);
+  React.useEffect(() => { if (state !== "loading") return; const t = setTimeout(() => setSlow(true), 300); return () => clearTimeout(t); }, [state]);
+  if (state === "loading") return slow ? <div className="pt-skel" aria-busy="true" aria-label="Loading">{Array.from({ length: rows || 3 }).map((_, i) => <div key={i} className="pt-skel-row"/>)}</div> : null;
+  if (state === "error") return (
+    <div className="pt-error" role="alert">
+      <PIcon name="cloud-slash"/>
+      <div><b>We couldn’t load {what || "this"}.</b><p>Check your connection, then try again.</p></div>
+      <button type="button" className="pt-btn" onClick={onRetry}>Try again</button>
+    </div>
+  );
+  return children;
+}
+
+
+/** A figure that is a button to the screen that explains it. */
+function PtStat({ label, value, sub, onClick, tone }) {
+  return (
+    <button type="button" className={"pt-stat" + (tone ? " pt-tone-" + tone : "")} onClick={onClick}>
+      <small>{label}</small><b>{value}</b>{sub && <span>{sub}</span>}
+    </button>
+  );
+}
+
+
+function ptDate(iso, opts) {
+  if (!iso) return "";
+  const d = new Date(String(iso).length === 10 ? iso + "T12:00:00Z" : iso);
+  if (isNaN(d)) return String(iso);
+  return d.toLocaleDateString("en-GB", Object.assign({ day: "numeric", month: "short" }, opts || {}));
+}
+
 
 const RS_STEPS = [["upload", "Upload"], ["check", "Check"], ["plan", "Plan"], ["send", "Send"]];
 const RS_ERR = {

@@ -50,6 +50,23 @@ function DashSectionShell({ title, sub, children, err, onRetry, loading }) {
   );
 }
 
+/* ── School results ──────────────────────────────────────────────────────────
+ * Upload the term's report, check the scores, plan at most three subjects with
+ * a "when and where", and send it to the mentor, who approves it in the Mentor
+ * Portal. The flow is MbrResults (src/modules/portal/member-results.jsx); this
+ * is its place on the dashboard, in the dashboard's own palette (.dash-results). */
+function DashResults() {
+  return (
+    <section className="ngg-anchor dash-results" style={{ maxWidth: 860 }}>
+      <header style={{ marginBottom: 16 }}>
+        <h2 className="ngg-head-name" style={{ fontSize: 26, margin: 0 }}>School results</h2>
+        <p className="ngg-head-sub" style={{ margin: "6px 0 0" }}>Upload your report card, check the scores, and plan next term with your mentor.</p>
+      </header>
+      <MbrResults/>
+    </section>
+  );
+}
+
 /* ── Money & account ─────────────────────────────────────────────────────────
  * The statement is the point: a list of charges with no running total cannot
  * answer "how did it get to this number", which is the first thing anybody
@@ -460,6 +477,7 @@ var DASH_SECTIONS = [
   { id: "overview", path: "", label: "Overview" },
   { id: "timetable", path: "timetable", label: "Timetable" },
   { id: "learning", path: "learning", label: "Curriculum" },
+  { id: "results",  path: "results",  label: "School results" },
   { id: "companion", path: "companion", label: "Companion" },
   { id: "account",  path: "account",  label: "Money & account" },
   { id: "records",  path: "records",  label: "Records" },
@@ -913,7 +931,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
 
   return (
     <React.Fragment>
-      {editProfile && <DashboardProfileModal m={m} onClose={() => setEditProfile(false)} onSaved={() => { setEditProfile(false); onMutate(); }}/>}
+      {editProfile && <DashboardProfileModal m={m} onClose={() => setEditProfile(false)} onSaved={() => { setEditProfile(false); onMutate(); }} onAsk={(k) => { setEditProfile(false); askFor(k); }}/>}
       <section className="dash-section ngg-dash" data-screen-label="05 Dashboard">
         <div className="container ngg-dash-wrap">
 
@@ -948,6 +966,7 @@ function DashboardLive({ data, setPage, refreshing, mutateSeq, onMutate, onSignO
               <DashSectionTabs section={section} go={goSection} openRequests={openRequests}/>
 
               {section === "learning" && <DashCurriculum/>}
+              {section === "results"  && <DashResults/>}
               {section === "companion" && <DashCompanion/>}
               {section === "timetable" && <DashTimetable/>}
               {section === "account"  && <DashAccount onRaise={askFor}/>}
@@ -1167,14 +1186,12 @@ function DashboardKpis({ session, prog, stats, account, acctState }) {
 // ----------------------------------------------------------------------------
 
 // Compact member profile editor with a Cloudinary avatar upload.
-function DashboardProfileModal({ m, onClose, onSaved }) {
+function DashboardProfileModal({ m, onClose, onSaved, onAsk }) {
   const socials = (m.socials && typeof m.socials === "object") ? m.socials : {};
   const [d, setD] = React.useState({
     photoUrl: m.photoUrl || "",
     bio: m.bio || "",
-    phone: m.phone || "",
     instagram: socials.instagram || "",
-    school: m.school || "",
   });
   const [busy, setBusy] = React.useState(false);
   const set = (k, v) => setD(o => Object.assign({}, o, { [k]: v }));
@@ -1182,7 +1199,7 @@ function DashboardProfileModal({ m, onClose, onSaved }) {
     setBusy(true);
     try {
       await NGGApi.member.updateProfile({
-        photoUrl: d.photoUrl, bio: d.bio, phone: d.phone, school: d.school,
+        photoUrl: d.photoUrl, bio: d.bio,
         socials: { instagram: d.instagram },
       });
       toast.success("Profile updated");
@@ -1231,9 +1248,13 @@ function DashboardProfileModal({ m, onClose, onSaved }) {
             </div>
           </div>
           <label className="admin-field"><span>Short bio</span><textarea className="admin-input" rows={3} value={d.bio} onChange={(e) => set("bio", e.target.value)} placeholder="One or two lines about you."/></label>
-          <div className="admin-fields-row">
-            <label className="admin-field"><span>Phone</span><input className="admin-input" value={d.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+234…"/></label>
-            <label className="admin-field"><span>School</span><input className="admin-input" value={d.school} onChange={(e) => set("school", e.target.value)} placeholder="Your school"/></label>
+          {/* Name, phone, school and guardian contacts are the programme's record
+              (member.update refuses them: managed_by_ngg). A correction is a
+              "Correct my details" request, checked with the family. */}
+          <div className="dash-managed">
+            <p><span>School</span><b>{m.school || "—"}</b></p>
+            <p><span>Phone</span><b>{m.phone || "—"}</b></p>
+            <p className="dash-managed-note">Managed by NGG.{onAsk && <> <button type="button" className="dash-link" onClick={() => onAsk("details")}>Ask for a change</button></>}</p>
           </div>
           <label className="admin-field"><span>Instagram</span><input className="admin-input" value={d.instagram} onChange={(e) => set("instagram", e.target.value)} placeholder="@handle or link"/></label>
 

@@ -75,10 +75,7 @@ const ROUTES = [
 
   // ── Member-facing, signed in ─────────────────────────────────────────────
   { id: "profile",     title: "Member profile · NGG",                      desc: "An NGG member's public profile — work, badges, mentor notes.", index: false },
-  /* The Member Portal (src/modules/portal/member-portal.jsx). The id stays
-     "dashboard" because every "Open my dashboard" in the product navigates to
-     it; its address is /member/{area}/{tab}, and /dashboard/* forwards. */
-  { id: "dashboard",   title: "Member portal · NGG",                       desc: "Your day, your mentor, your growth, your lessons and your account.", chrome: "own", index: false },
+  { id: "dashboard",   title: "My dashboard · NGG",                        desc: "Your missions, mentor, streak and journal — the member dashboard.", index: false },
   { id: "summerprofile", title: "ID card · NGG",                           desc: "The page an NGG or Summer School card opens when it is scanned.", addressable: false, index: false },
   /* A family's joining invoice, by its private token (/pay/<token>). Own
      chrome, never indexed: the address is a capability, sent by email. */
@@ -253,13 +250,15 @@ function pageFromPath() {
   if (seg === "login" || seg === "signin") return "home";
   // What a scanned card opens: /q/<qr-token> (NGG member, Summer participant, volunteer) or /s/<handle>.
   if (seg === "q" || seg === "s") return "summerprofile";
-  /* The Member Portal owns /member/<area>/<tab>. The old dashboard addresses
-     are in bookmarks and emails, so each forwards to the screen that replaced it. */
-  if (seg === "member") return "dashboard";
-  if (seg === "dashboard") {
-    const sub = (window.location.pathname || "").replace(/^\/+|\/+$/g, "").split("/")[1] || "";
-    const to = { account: "/member/account/money", records: "/member/account/records", requests: "/member/account/records",
-                 learning: "/member/learn", timetable: "/member/learn/timetable", companion: "/member/mentor/companion" }[sub] || "/member";
+  /* /member/<area>/<tab> was the address of the 2026-10-11 Member Portal, which
+     was withdrawn. Its links are in notifications and bookmarks, so each forwards
+     to the dashboard section that holds the same thing. */
+  if (seg === "member") {
+    const parts = (window.location.pathname || "").replace(/^\/+|\/+$/g, "").split("/");
+    const key = (parts[1] || "") + "/" + (parts[2] || "");
+    const to = { "grow/results": "/dashboard/results", "account/money": "/dashboard/account", "account/records": "/dashboard/records",
+                 "learn/": "/dashboard/learning", "learn/timetable": "/dashboard/timetable", "mentor/companion": "/dashboard/companion" }[key]
+            || ({ grow: "/dashboard/results", learn: "/dashboard/learning" }[parts[1] || ""]) || "/dashboard";
     try { history.replaceState({ page: "dashboard" }, "", to + window.location.search); } catch (_) {}
     return "dashboard";
   }
@@ -283,7 +282,6 @@ function pageFromPath() {
 }
 function pathForPage(page) {
   if (page === "admin") return "/control";
-  if (page === "dashboard") return "/member";
   if (page === "id-cards") return "/club/id-cards";
   return page === "home" ? "/" : "/" + page;
 }
@@ -333,14 +331,12 @@ function App() {
        /dashboard/requests. Its own router (see page-dashboard.jsx) pushes those,
        and rewriting them back to /dashboard here would undo a deep link the
        moment the page mounted, which reads as "the tab does not work". */
-    const inDashSubtree = page === "dashboard" && /^\/member(\/|$)/.test(window.location.pathname || "");
+    const inDashSubtree = page === "dashboard" && (window.location.pathname || "").replace(/\/+$/, "").startsWith("/dashboard");
     /* The Control Room owns /control/<page>/<tab> and resolves the old
        /nextadmin?s=… addresses itself (src/modules/control/cr-app.jsx). */
     const inControlSubtree = page === "admin" && /^\/(control|nextadmin|hq|admin)(\/|$)/.test(window.location.pathname || "");
-    /* The Mentor Portal owns /mentor/<screen>/<id>/<tab> (mp-shell.jsx). */
-    const inMentorSubtree = page === "mentor" && /^\/mentor(\/|$)/.test(window.location.pathname || "");
     const prefixRoute = ROUTES.some(r => r.id === page && r.addressable === false);
-    if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && !inMentorSubtree && window.location.pathname !== pathForPage(page)) {
+    if (page !== "_notfound" && !prefixRoute && page !== "certificate" && !inCentresSubtree && !inDashSubtree && !inControlSubtree && window.location.pathname !== pathForPage(page)) {
       history.pushState({ page }, "", pathForPage(page) + window.location.search);
     }
     // Expose for the sign-in modal / magic link consumer.
@@ -409,7 +405,7 @@ function App() {
     community:  <CommunityPage setPage={setPage}/>,
     anchor:    <AnchorPage    setPage={setPage}/>,
     profile:   <ProfilePage   setPage={setPage}/>,
-    dashboard: <MemberPortal setPage={setPage}/>,
+    dashboard: <DashboardPage setPage={setPage}/>,
     book:      <BookPage      setPage={setPage}/>,
     media:     <MediaPage     setPage={setPage}/>,
     parents:   <ParentsPage   setPage={setPage}/>,
@@ -428,7 +424,7 @@ function App() {
     "club-admin":   <ClubAdminPortal   setPage={setPage}/>,
     circle:     <CirclePortal   setPage={setPage}/>,
     family:     <FamilyPage     setPage={setPage}/>,
-    mentor:     <MentorHome/>,
+    mentor:     <MentorPortal/>,
     apply:      <SelfRegisterPage/>,
     review:     <ReviewDeskPage/>,
     gate:       <GatePage/>,

@@ -1152,7 +1152,7 @@ The month also counts the pod (five or more), parent summaries and the Anthem
 and Pledge. The conduct commitments (values, accountability, feedback,
 leadership) are listed for the lead's own review and are not scored.
 
-**Safeguarding.** *Report a concern* is on every screen of the Mentor Portal,
+**Safeguarding.** *Report a concern* is in the Mentor Portal's header,
 for every mentor, cleared or not. A report goes to the safeguarding officer for
 that centre (the staff member holding `safeguarding` with the centre in scope),
 gets a case number, and cannot be edited by the reporter. The **Safeguarding**
@@ -1164,9 +1164,20 @@ reach 12 months), contact (≥ 85% with a one-to-one in 14 days), weekly reviews
 (≥ 90%), relationship quality (≥ 4 of 5), goals completed on time (≥ 60%) and
 mentor retention (≥ 75%) — each with the counts it came from.
 
-Not built yet: the portal's **Reflections**, **Pod growth** and **Mentee list**
-screens, *Mark here* from the pod, and the assistant's suggested plans. The
-older class roster stays at `/mentor?view=class`.
+The Mentor Portal (`/mentor`) is the class roster: *Stars & notes* (stars, V3,
+conversations, goals, courage and the weekly review on each child's record),
+*Curriculum*, *School results* and, for leads, *Needs attention*. Pod screens
+from the October 2026 portal (This week, Saturday register, Academy online,
+Messages) were withdrawn; their server rules (R1–R8, the Academy gate, the
+nightly jobs) still run.
+
+**School results.** A member uploads their term report on their dashboard
+(**School results** tab), checks the scores and writes a plan for at most three
+subjects, each with a "when and where". It goes to their mentor, who approves it
+or sends it back with a note in the Mentor Portal's **School results** tab
+(`/mentor?tab=results`, where the email links). Approved, it is live; the family
+hears only if the member chose that. Plans whose study sessions are mostly
+missed are listed there too.
 
 ## Member records: from optional to required
 

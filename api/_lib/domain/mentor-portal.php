@@ -449,7 +449,7 @@ function member_mp_mentee(array $p): array {
         $timeline[] = ['at' => (string)$c['observedOn'], 'icon' => 'flame', 'text' => 'Courage ' . (int)$c['score'] . ' of 5: ' . mb_substr((string)$c['evidence'], 0, 120), 'source' => 'Courage ladder'];
     }
     foreach (db_all("SELECT week, wellbeing, note, createdAt FROM member_checkins WHERE memberId = ? ORDER BY createdAt DESC LIMIT 6", [$id]) as $c) {
-        $timeline[] = ['at' => substr((string)$c['createdAt'], 0, 10), 'icon' => 'heartbeat', 'text' => 'Weekly check-in: ' . $c['wellbeing'], 'source' => 'Member portal'];
+        $timeline[] = ['at' => substr((string)$c['createdAt'], 0, 10), 'icon' => 'heartbeat', 'text' => 'Weekly check-in: ' . $c['wellbeing'], 'source' => 'Dashboard'];
     }
     usort($timeline, static fn($a, $b) => strcmp($b['at'], $a['at']));
     return ['ok' => true, 'me' => mp_me($g, $o), 'today' => $today, 'mentee' => $row,

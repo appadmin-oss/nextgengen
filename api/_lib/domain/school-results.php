@@ -744,7 +744,7 @@ function member_results_plan_send(array $p): array {
     if ($mentor && (string)$mentor['mentorMember'] !== '') {
         notify_people([['memberId' => (string)$mentor['mentorMember'], 'email' => (string)$mentor['email']]], ['kind' => 'mentor',
             'title' => "{$first} sent their results and plan", 'body' => ($t['label'] ?? '') . ': read it and approve it so it goes live.',
-            'linkPage' => 'mentor', 'eyebrow' => 'NGG Mentor Portal', 'ctaPath' => '/mentor/mentees/' . rawurlencode((string)$m['memberId']), 'ctaLabel' => 'Open the plan →']);
+            'linkPage' => 'mentor', 'eyebrow' => 'NGG Mentor Portal', 'ctaPath' => '/mentor?tab=results', 'ctaLabel' => 'Open the plan →']);
         $told[] = 'mentor';
     }
     $instr = results_instructors_of($m);
@@ -1083,7 +1083,7 @@ function instructor_result_remind(array $p): array {
     if ($wait > 0) return ['ok' => false, 'error' => 'rate_limited', 'retryHours' => $wait];
     $actor = results_staff_actor($g);
     push_notification((string)$m['memberId'], ['kind' => 'reminder', 'title' => 'Your ' . strtolower($t['label']) . ' results',
-        'body' => mp_first($actor['name']) . ' asked for your results. Upload them in Grow → School results. It takes about three minutes.', 'linkPage' => 'dashboard']);
+        'body' => mp_first($actor['name']) . ' asked for your results. Upload them in your dashboard → School results. It takes about three minutes.', 'linkPage' => 'dashboard']);
     results_log((string)$m['memberId'], $term, $actor, 'Sent a reminder to upload the results', 'remind');
     return ['ok' => true];
 }
@@ -1110,7 +1110,7 @@ function results_job_run(?string $today = null, int $limit = 200): array {
         foreach (db_all("SELECT g.planId, g.memberId, g.term FROM growth_plans g JOIN members m ON m.memberId = g.memberId
                          WHERE g.status IN ('sent','live') AND m.status = 'active' ORDER BY g.id LIMIT " . (int)$limit) as $r) {
             if (!$once((string)$r['memberId'], (string)$r['term'], 'job.tick')) continue;
-            push_notification((string)$r['memberId'], ['kind' => 'reminder', 'title' => 'Tick your week', 'body' => 'How many study sessions did you do this week? Tick them in Grow → School results.', 'linkPage' => 'dashboard']);
+            push_notification((string)$r['memberId'], ['kind' => 'reminder', 'title' => 'Tick your week', 'body' => 'How many study sessions did you do this week? Tick them in your dashboard → School results.', 'linkPage' => 'dashboard']);
             results_log((string)$r['memberId'], (string)$r['term'], $sys, 'Sunday reminder to tick the week', 'job.tick');
             $sent['tick']++;
         }
@@ -1135,7 +1135,7 @@ function results_job_run(?string $today = null, int $limit = 200): array {
                          ORDER BY m.memberId LIMIT " . (int)$limit, [$t['key']]) as $m) {
             if (!results_in_loop($m) || !results_owed($m, $t) || !$once((string)$m['memberId'], $t['key'], 'job.due')) continue;
             push_notification((string)$m['memberId'], ['kind' => 'reminder', 'title' => 'Your ' . strtolower($t['label']) . ' results',
-                'body' => 'Upload them in Grow → School results by ' . gmdate('j F', strtotime($t['dueOn'])) . '. It takes about three minutes.', 'linkPage' => 'dashboard']);
+                'body' => 'Upload them in your dashboard → School results by ' . gmdate('j F', strtotime($t['dueOn'])) . '. It takes about three minutes.', 'linkPage' => 'dashboard']);
             results_log((string)$m['memberId'], $t['key'], $sys, 'Reminder: results due', 'job.due');
             $sent['due']++;
         }
