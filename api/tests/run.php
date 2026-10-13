@@ -1283,6 +1283,12 @@ chk('login wrong password fails', backend_dispatch('auth.login', ['identifier' =
 chk('login unknown account fails uniformly', backend_dispatch('auth.login', ['identifier' => 'ghost@example.com', 'password' => 'x'])['error'] === 'invalid_login');
 chk('change password needs correct current', backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'brandnewpass9', 'current' => 'wrong'])['error'] === 'bad_current_password');
 chk('change password with current ok', !empty(backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'brandnewpass9', 'current' => 'correcthorse9'])['ok']));
+// The current password cannot be guessed without limit by whoever holds the session.
+for ($i = 0; $i < 4; $i++) backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'attackerpass9', 'current' => 'guess' . $i]);
+chk('change password: the fifth wrong current password locks it', (backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'attackerpass9', 'current' => 'guess4'])['error'] ?? '') === 'too_many_attempts');
+chk('change password: while locked, even the right current password is refused', (backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'attackerpass9', 'current' => 'brandnewpass9'])['error'] ?? '') === 'too_many_attempts');
+chk('change password: the password did not change', password_verify('brandnewpass9', (string)db_row("SELECT passwordHash FROM members WHERE memberId = 'NGG-2025-0001'")['passwordHash']));
+attempt_reset('pw.current', 'NGG-2025-0001');
 chk('old password no longer works', backend_dispatch('auth.login', ['identifier' => 'NGG-2025-0001', 'password' => 'correcthorse9'])['error'] === 'invalid_login');
 
 // ── Sign-in gateway (one door, no account-type leaks) ──
