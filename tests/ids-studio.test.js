@@ -61,6 +61,8 @@ function pdfFacts(buf) {
 
 let server, browser, passed = 0, failed = 0;
 const chk = (m, c) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m); } };
+// Layout and Designs are closed sections in the settings column: open one (and leave it open).
+const openMore = (pg, title) => pg.evaluate(t => { const d = [...document.querySelectorAll('details.ids-more')].find(x => x.querySelector('.ids-more-t').textContent === t); if (d && !d.open) d.open = true; }, title).then(() => pg.waitForTimeout(150));
 function cleanup() {
   try { if (server) process.kill(-server.pid); } catch (_) {}
   try { fs.unlinkSync(CFG); } catch (_) {}
@@ -177,6 +179,7 @@ function cleanup() {
     await P.waitForTimeout(200);
     chk('…and Undo puts it back', /10 cards ·/.test(await P.innerText('.ids-stat')));
 
+    await openMore(P, 'Layout');
     await P.click('.ids-size:has-text("A6 portrait")');
     await P.waitForTimeout(200);
     chk('the card-size setting is for uploads: record cards keep their own size, and nothing blocks the print',
@@ -257,6 +260,7 @@ function cleanup() {
     // Option 1: a card type prints with its assigned, published design.
     await P.click('.ids-tab:has-text("Make cards")');
     const pick = '.ids-set .ids-field:has-text("NGG members") select';
+    await openMore(P, 'Designs');
     await P.waitForSelector(pick);
     chk('only published designs are offered — the draft is not', await P.$eval(pick, s => [...s.options].map(o => o.value).join(',')) === ',TPL-IDS-1');
     await P.selectOption(pick, 'TPL-IDS-1');

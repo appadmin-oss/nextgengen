@@ -64,6 +64,8 @@ const CSP = (fs.readFileSync(path.join(ROOT, '.htaccess'), 'utf8').match(/Conten
 // card-export.js as it was before renderFaceFast existed: what a browser cached the week before the deploy.
 const OLD_CE = execSync('git show 79bf2bf^:vendor/card-export.js', { cwd: ROOT, maxBuffer: 1 << 26 }).toString();
 const chk = (m, c) => { if (c) { passed++; console.log('  ✓ ' + m); } else { failed++; console.error('  ✗ FAIL: ' + m); } };
+// Layout and Designs are closed sections in the settings column: open one (and leave it open).
+const openMore = (pg, title) => pg.evaluate(t => { const d = [...document.querySelectorAll('details.ids-more')].find(x => x.querySelector('.ids-more-t').textContent === t); if (d && !d.open) d.open = true; }, title).then(() => pg.waitForTimeout(150));
 function cleanup() {
   try { if (server) process.kill(-server.pid); } catch (_) {}
   try { fs.unlinkSync(CFG); } catch (_) {}
@@ -150,6 +152,7 @@ function cleanup() {
     await P.waitForSelector('.ids-up');
     chk('an uploaded image is shown whole by default', /Fill the card|White bars|Fits the card/.test(await P.innerText('.ids-up')) && !/Edges cropped/.test(await P.innerText('.ids-up')));
     await P.click('.ids-up .ids-stepper button[aria-label="One more"]');
+    await openMore(P, 'Layout');
     await P.click('.ids-size:has-text("A6 portrait")');
     await P.waitForTimeout(400);
     chk('cards of another size go onto sheets of their own: 4 member cards on one, 2 A6 images on two more', /Sheet 1 of 3/.test(await P.innerText('.ids-pager')) && /2 sizes/.test(await P.innerText('.ids-set')));

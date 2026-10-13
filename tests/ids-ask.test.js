@@ -125,6 +125,13 @@ function cleanup() {
       return P.innerText('.ids-ask-card');
     };
 
+    console.log('a calmer studio');
+    chk('layout and designs are closed sections, each summed up on one line', (await P.$$('details.ids-more:not([open])')).length === 2
+      && /Margin 10 mm · gap 4 mm · uploads CR80 portrait/.test(await P.innerText('.ids-set')) && /Designs\s*Standard cards/.test(await P.innerText('.ids-set')));
+    chk('the settings every print uses come first: backs, paper, order, finish', await P.$$eval('.ids-set-scroll > .ids-sec .ids-h2', hs => hs.slice(0, 4).map(h => h.textContent).join('|')) === 'Backs|Paper|Order on the sheet|Finish');
+    chk('the header says “Standard cards” once, not per type', /Design:\s*Standard cards/.test(await P.innerText('.ids-head')) && !/Summer School: Standard card/.test(await P.innerText('.ids-head')));
+    chk('a deployment with no Afrovanguard link is not told so on every visit', !/Afrovanguard/.test(await P.evaluate(() => (document.querySelector('.ids-toast') || {}).innerText || '')));
+
     console.log('the prompt bar');
     if (process.env.SHOTS) await P.screenshot({ path: path.join(process.env.SHOTS, 'ids-ask-empty.png') });
     chk('the bar sits above the workspace, with examples to start from', (await P.$$('.ids-ask-chip')).length === 4 && !!(await P.$('.ids-make-wrap > .ids-ask + .ids-make')));
@@ -138,6 +145,8 @@ function cleanup() {
     chk('…shows the sheet it will print, the settings it changed marked', /Double-sided · long edge/.test(await P.innerText('.ids-ask-how li.is-changed')) && /Crop marks/.test(card) && /A4/.test(card));
     chk('…and says what read it', /Read by the studio’s rules/.test(card));
     if (process.env.SHOTS) await P.screenshot({ path: path.join(process.env.SHOTS, 'ids-ask.png') });
+    chk('while the plan is on screen its Print is the one solid button; the panel’s steps back', await P.$eval('.ids-btn--print', b => b.classList.contains('is-quiet'))
+      && /Most printers/.test(await P.innerText('.ids-radio.is-on')) && !/Single-sided/.test(await P.innerText('.ids-radios')));
     chk('the six cards are on the sheet, and the settings panel agrees', (await nOnSheet()) === 6 && (await P.$eval('.ids-radio[aria-checked="true"]', b => b.innerText)).startsWith('Double'));
     chk('the list on the left shows the same centre', (await P.$eval('.ids-src select >> nth=1', s => s.options[s.selectedIndex].text).catch(() => '')).includes('Egbeda') || /Egbeda/.test(await P.innerText('.ids-src')));
     chk('with each centre on its own sheets, no empty slot is offered to another centre', !/empty slot/.test(card));
@@ -202,12 +211,13 @@ function cleanup() {
     await P.keyboard.press('Escape');
     chk('Escape clears the bar, then closes the result', !(await P.$('.ids-ask-card')));
     chk('recent requests come back as chips', (await P.$$('.ids-ask-chip.is-recent')).length >= 1 && /members who joined this week|hello there|new cards for Egbda/.test(await P.innerText('.ids-ask-ex')));
-    await P.click('.ids-ask-ex', { position: { x: 1, y: 1 } }).catch(() => {});
-    await P.click('.ids-sheetcol', { position: { x: 5, y: 5 } }).catch(() => {});
+    await P.evaluate(() => document.activeElement && document.activeElement.blur());
     await P.keyboard.press('/');
     chk('"/" goes to the bar', await P.evaluate(() => document.activeElement && document.activeElement.id === 'ids-ask-in'));
     await P.keyboard.press('ArrowUp');
-    chk('↑ in the empty bar brings back the last request', (await P.inputValue('.ids-ask-in')) === 'hello there');
+    const upVal = await P.inputValue('.ids-ask-in');
+    chk('↑ in the empty bar brings back the last request', upVal === 'hello there');
+    if (upVal !== 'hello there') console.error('       bar holds: ' + JSON.stringify(upVal) + ' · focus: ' + await P.evaluate(() => document.activeElement && document.activeElement.id));
 
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));

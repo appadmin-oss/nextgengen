@@ -518,7 +518,13 @@ function IdCardStudioPage({ setPage }) {
      says it for the kinds on this sheet, and the Designs section changes it. */
   const designName = d => d ? d.name + " v" + d.version : "Standard card";
   const kindsHere = data.kinds.filter(k => k !== "afrovanguard").filter(k => (data.choices || {})[IDS_KIND_FOR_RUN[k]] !== undefined || (data.designs || {})[IDS_KIND_FOR_RUN[k]] !== undefined);
-  const designHead = kindsHere.map(k => IDS_KINDS[k] + ": " + designName((data.designs || {})[IDS_KIND_FOR_RUN[k]])).join(" · ") || "Standard card";
+  /* The header names only the card types printing with a design of their own;
+     every other type prints the standard card, said once. */
+  const designHead = (() => {
+    const own = kindsHere.filter(k => (data.designs || {})[IDS_KIND_FOR_RUN[k]]);
+    const std = kindsHere.length - own.length;
+    return own.map(k => IDS_KINDS[k] + ": " + designName((data.designs || {})[IDS_KIND_FOR_RUN[k]])).concat(std ? [own.length ? "the rest standard" : "Standard cards"] : []).join(" · ") || "Standard cards";
+  })();
   const sheetKinds = [...new Set(recCards.map(c => c.rec.kind))];
   const designLabel = sheetKinds.map(k => (sheetKinds.length > 1 ? IDS_KINDS[k] + ": " : "") + (k === "afrovanguard" ? "Afrovanguard’s card" : designName(designOfKind(k)))).join(" · ") || "Standard card";
   const [designBusy, setDesignBusy] = React.useState("");
@@ -1335,6 +1341,8 @@ function IdCardStudioPage({ setPage }) {
       const last = sorted.map((c, j) => (slots.find(x => !x.pad && x.key === c.key) || {}).sec === secKey ? j : -1).filter(j => j >= 0).pop();
       reorder(k, last == null ? sorted.length : last + 1);
     },
+    // While a plan from the prompt bar is on screen its Print is the one solid button.
+    askActive: !!(askRes && askRes.n),
     renderFace, checks, printBlock, startPrint, startExport, xjob, warm, dpi: st.dpi, improve: { n: improveN, open: () => setImprove({ n: improveN, recs: improvable() }) }, stopExport: () => { xcancel.current = true; },
     pngSel: () => { const sl = selCard && slots.find(x => !x.pad && x.key === selCard.key); if (sl) runExport({ format: "png", dpi: st.dpi >= 300 ? st.dpi : 300, verify: false, reason: "proof", only: sl }); }, printTest: () => runPrint({ test: true }), job, printNextBatch, stopJob: () => { setJob(null); say("Stopped. The sheets already out are logged."); },
   };
