@@ -52,6 +52,11 @@ function crm_push_sign(array $rows, string $secret, ?int $now = null): string {
     return 'v1.' . $payload . '.' . $b64(hash_hmac('sha256', $payload, $secret, true));
 }
 
+/** A ref that always fits CACENTRE's 64 characters, and is the same every time for the same key. */
+function crm_push_ref(string $prefix, string $key): string {
+    return strlen($prefix . $key) <= 64 ? $prefix . $key : $prefix . sha1($key);
+}
+
 function crm_push_cursors(): array { $c = setting_get('crm_push'); return is_array($c) ? $c : []; }
 
 /** A volunteer the CRM may hold: provably an adult, or with nothing suggesting a child. */
@@ -81,7 +86,7 @@ function crm_push_collect(int $limit = CRM_PUSH_BATCH): array {
     foreach (db_all('SELECT id, email, source, status, createdAt, updatedAt FROM newsletter
                      WHERE id > ? OR COALESCE(updatedAt, \'\') > ? ORDER BY id LIMIT ' . max(0, $room()), [$id, $up]) as $r) {
         $st = in_array((string)$r['status'], ['subscribed', 'unsubscribed', 'bounced', 'complained'], true) ? (string)$r['status'] : 'subscribed';
-        $rows[] = ['kind' => 'subscriber', 'ref' => 'news:' . strtolower(trim((string)$r['email'])), 'email' => (string)$r['email'],
+        $rows[] = ['kind' => 'subscriber', 'ref' => 'news:' . sha1(strtolower(trim((string)$r['email']))), 'email' => (string)$r['email'],
                    'list' => 'NGG newsletter', 'status' => $st, 'at' => $at($r['updatedAt'] ?: $r['createdAt'])];
         $next['newsletter.id'] = (string)max((int)$r['id'], (int)($next['newsletter.id'] ?? $id));
         if ((string)$r['updatedAt'] > (string)($next['newsletter.at'] ?? $up)) $next['newsletter.at'] = (string)$r['updatedAt'];
@@ -93,7 +98,7 @@ function crm_push_collect(int $limit = CRM_PUSH_BATCH): array {
         foreach (db_all('SELECT id, ref, purpose, name, email, phone, subject, createdAt FROM contact_messages WHERE id > ? ORDER BY id LIMIT ' . $room(), [$id]) as $r) {
             $next['contact.id'] = (string)$r['id'];
             if (trim((string)$r['email']) === '' && trim((string)$r['phone']) === '') continue;
-            $rows[] = ['kind' => 'enquiry', 'ref' => 'contact:' . (string)$r['ref'], 'email' => (string)$r['email'], 'phone' => (string)$r['phone'],
+            $rows[] = ['kind' => 'enquiry', 'ref' => crm_push_ref('contact:', (string)$r['ref']), 'email' => (string)$r['email'], 'phone' => (string)$r['phone'],
                        'name' => (string)$r['name'], 'list' => 'NGG contact form', 'status' => 'active',
                        'detail' => trim(ucfirst((string)$r['purpose']) . ': ' . (string)$r['subject'], ': '), 'at' => $at($r['createdAt'])];
         }
@@ -108,7 +113,7 @@ function crm_push_collect(int $limit = CRM_PUSH_BATCH): array {
             if (!filter_var((string)$r['email'], FILTER_VALIDATE_EMAIL)) continue;
             /* Stored in whole naira (events.php donation_start), not kobo. */
             $amt = (string)$r['currency'] === 'NGN' ? '₦' . number_format((int)$r['amount']) : (string)$r['currency'] . ' ' . number_format((int)$r['amount']);
-            $rows[] = ['kind' => 'donor', 'ref' => 'gift:' . (string)$r['reference'], 'email' => (string)$r['email'], 'name' => (string)$r['name'],
+            $rows[] = ['kind' => 'donor', 'ref' => crm_push_ref('gift:', (string)$r['reference']), 'email' => (string)$r['email'], 'name' => (string)$r['name'],
                        'list' => 'NGG donors', 'status' => 'active', 'detail' => 'Gave ' . $amt, 'at' => $at($r['paidAt'])];
         }
     }
@@ -121,7 +126,7 @@ function crm_push_collect(int $limit = CRM_PUSH_BATCH): array {
             $next['volunteers.id'] = (string)$r['id'];
             if (!crm_push_volunteer_is_adult($r)) continue;
             if (trim((string)$r['email']) === '' && trim((string)$r['phone']) === '') continue;
-            $rows[] = ['kind' => 'volunteer', 'ref' => 'vol:' . (string)$r['volunteerId'], 'email' => (string)$r['email'], 'phone' => (string)$r['phone'],
+            $rows[] = ['kind' => 'volunteer', 'ref' => crm_push_ref('vol:', (string)$r['volunteerId']), 'email' => (string)$r['email'], 'phone' => (string)$r['phone'],
                        'name' => (string)$r['fullName'], 'list' => ((string)($r['programme'] ?? '') === 'ngg' ? 'NGG Club volunteers' : 'Summer School volunteers'),
                        'status' => (string)$r['status'] === 'active' ? 'active' : 'closed',
                        'detail' => ucfirst((string)$r['role']), 'at' => $at($r['createdAt'])];
@@ -133,7 +138,7 @@ function crm_push_collect(int $limit = CRM_PUSH_BATCH): array {
         $id = (int)($cur['guardians.id'] ?? 0); $up = (string)($cur['guardians.at'] ?? '');
         foreach (db_all('SELECT id, guardianId, email, fullName, phone, status, createdAt, updatedAt FROM guardians
                          WHERE id > ? OR COALESCE(updatedAt, \'\') > ? ORDER BY id LIMIT ' . $room(), [$id, $up]) as $r) {
-            $rows[] = ['kind' => 'account', 'ref' => 'guardian:' . (string)$r['guardianId'], 'email' => (string)$r['email'], 'phone' => (string)$r['phone'],
+            $rows[] = ['kind' => 'account', 'ref' => crm_push_ref('guardian:', (string)$r['guardianId']), 'email' => (string)$r['email'], 'phone' => (string)$r['phone'],
                        'name' => (string)$r['fullName'], 'list' => 'NGG parents & guardians',
                        'status' => (string)$r['status'] === 'active' ? 'active' : 'closed', 'at' => $at($r['updatedAt'] ?: $r['createdAt'])];
             $next['guardians.id'] = (string)max((int)$r['id'], (int)($next['guardians.id'] ?? $id));
@@ -150,27 +155,33 @@ function crm_push_collect(int $limit = CRM_PUSH_BATCH): array {
  */
 function crm_push_run(int $maxPushes = 6): array {
     if (crm_push_secret() === '') return ['ok' => true, 'skipped' => true, 'sent' => 0, 'why' => 'no CRM secret set'];
-    $sent = 0;
+    $sent = 0; $refused = 0;
     for ($i = 0; $i < $maxPushes; $i++) {
         $c = crm_push_collect();
         if (!$c['rows'] && !$c['cursors']) break;
+        $r = ['ok' => true, 'refused' => []];
         if ($c['rows']) {
             $r = crm_push_post($c['rows']);
             if (!$r['ok']) {
                 crm_push_note('failed: ' . $r['error']);
                 return ['ok' => false, 'sent' => $sent, 'error' => $r['error']];
             }
+            /* A row CACENTRE refused BY NAME is not resent — it would be refused for ever
+               and hold everything behind it — but it is counted and said, never reported
+               as sent. */
+            $refused += count($r['refused']);
+            if ($r['refused']) error_log('[crm-push] refused: ' . json_encode(array_slice($r['refused'], 0, 5)));
         }
         /* Only now: CACENTRE has it (or nothing in the batch was sendable). */
         setting_set('crm_push', array_merge(crm_push_cursors(), $c['cursors']), 'system');
-        $sent += count($c['rows']);
+        $sent += count($c['rows']) - count($r['refused']);
         if (count($c['rows']) < CRM_PUSH_BATCH && $c['rows'] !== []) break;
     }
-    crm_push_note('sent ' . $sent);
-    return ['ok' => true, 'sent' => $sent];
+    crm_push_note('sent ' . $sent . ($refused ? ', ' . $refused . ' refused by CACENTRE (see the error log)' : ''));
+    return ['ok' => true, 'sent' => $sent, 'refused' => $refused];
 }
 
-/** @return array{ok:bool, error?:string} */
+/** @return array{ok:bool, error?:string, refused?:list<array{ref:string,why:string}>} */
 function crm_push_post(array $rows): array {
     $body = (string)json_encode(['token' => crm_push_sign($rows, crm_push_secret())], JSON_UNESCAPED_SLASHES);
     $t = $GLOBALS['__crm_push_transport'] ?? null;
@@ -189,7 +200,9 @@ function crm_push_post(array $rows): array {
     }
     $code = (int)($r['code'] ?? 0);
     $j = json_decode((string)($r['body'] ?? ''), true);
-    if ($code === 200 && is_array($j) && !empty($j['ok'])) return ['ok' => true];
+    if ($code === 200 && is_array($j) && !empty($j['ok'])) {
+        return ['ok' => true, 'refused' => array_values(array_filter((array)($j['refused'] ?? []), 'is_array'))];
+    }
     $err = is_array($j) ? (string)($j['error'] ?? '') : '';
     if ($err === 'bad-signature')  return ['ok' => false, 'error' => 'CACENTRE refused the signature — the secret here differs from the one it generated.'];
     if ($err === 'not-configured') return ['ok' => false, 'error' => 'CACENTRE has no secret for NGG yet — generate one in the CRM under Audience → Sites.'];
@@ -197,6 +210,13 @@ function crm_push_post(array $rows): array {
     return ['ok' => false, 'error' => 'CACENTRE answered ' . $code . ($err !== '' ? ' (' . $err . ')' : '') . '.'];
 }
 
+/* Stored as an array: setting_get() decodes JSON, and a bare string reads back as null. */
 function crm_push_note(string $what): void {
-    try { setting_set('crm_push_last', gmdate('Y-m-d H:i') . ' UTC · ' . mb_substr($what, 0, 200), 'system'); } catch (Throwable $e) {}
+    try { setting_set('crm_push_last', ['at' => now_iso(), 'text' => mb_substr($what, 0, 200)], 'system'); } catch (Throwable $e) {}
+}
+
+/** The last run, in words, for a status screen: "" when it has never run. */
+function crm_push_last(): string {
+    $v = setting_get('crm_push_last');
+    return is_array($v) ? trim((string)($v['at'] ?? '') . ' · ' . (string)($v['text'] ?? ''), ' ·') : '';
 }

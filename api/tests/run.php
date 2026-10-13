@@ -26638,12 +26638,14 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
 
     $c = crm_push_collect();
     $by = array_column($c['rows'], null, 'ref');
-    chk('crm: a newsletter subscriber is sent', ($by['news:ada@example.org']['status'] ?? '') === 'subscribed');
+    chk('crm: a newsletter subscriber is sent', ($by['news:' . sha1('ada@example.org')]['status'] ?? '') === 'subscribed');
     chk('crm: an enquiry is sent with its subject but never the message', ($by['contact:CT-1']['detail'] ?? '') === 'Partnership: A visit' && !str_contains(json_encode($c['rows']), 'private words'));
     chk('crm: a paid donation is sent in naira; a pending one is not', ($by['gift:NGGD-1']['detail'] ?? '') === 'Gave ₦5,000' && !isset($by['gift:NGGD-2']));
     chk('crm: an adult volunteer is sent', isset($by['vol:CRMV-A']));
     chk('crm: a volunteer under 18 is never sent', !isset($by['vol:CRMV-C']) && !str_contains(json_encode($c['rows']), 'young@example.org'));
     chk('crm: a member who volunteers, with no date of birth, is treated as a child and not sent', !isset($by['vol:CRMV-M']));
+    chk('crm: every ref fits CACENTRE\'s 64 characters', max(array_map(static fn($r) => strlen((string)$r['ref']), $c['rows'])) <= 64
+        && strlen(crm_push_ref('gift:', str_repeat('x', 191))) === 45);
     chk('crm: a guardian is sent as a contact, with no ward named', ($by['guardian:G-1']['list'] ?? '') === 'NGG parents & guardians' && !isset($by['guardian:G-1']['detail']));
     chk('crm: nothing is read from members, applications or Summer School participants', !preg_match('/\bFROM\s+(members|applications|summer_students)\b/i', (string)file_get_contents(dirname(__DIR__) . '/_lib/domain/crm-push.php')));
 
@@ -26666,7 +26668,13 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     usleep(1100000);
     db_update('newsletter', ['status' => 'unsubscribed', 'updatedAt' => now_iso()], ['email' => 'ada@example.org']);
     crm_push_run();
-    chk('crm: an unsubscribe is sent under the same ref', count($sent) === 1 && ($sent[0][0]['ref'] ?? '') === 'news:ada@example.org' && $sent[0][0]['status'] === 'unsubscribed');
+    chk('crm: an unsubscribe is sent under the same ref', count($sent) === 1 && ($sent[0][0]['ref'] ?? '') === 'news:' . sha1('ada@example.org') && $sent[0][0]['status'] === 'unsubscribed');
+
+    db_insert('contact_messages', ['ref' => 'CT-2', 'name' => 'Odd', 'email' => 'odd@example.org', 'subject' => 'x', 'createdAt' => now_iso()]);
+    $GLOBALS['__crm_push_transport'] = static fn() => ['code' => 200, 'body' => '{"ok":true,"refused":[{"ref":"contact:CT-2","why":"bad-ref"}]}'];
+    $r = crm_push_run();
+    chk('crm: a row CACENTRE refused is counted as refused, not sent', $r['ok'] && $r['refused'] === 1 && $r['sent'] === 0
+        && str_contains(crm_push_last(), '1 refused by CACENTRE'));
 
     chk('crm: the secret is an API key on the Settings screen, sealed', isset(SERVICE_KEYS['cacentre']) && SERVICE_KEYS['cacentre']['fields'][0][0] === 'cacentre.crm_secret' && SERVICE_KEYS['cacentre']['fields'][0][2] === 'secret');
     chk('crm: the web-cron and the external cron both run it', str_contains((string)file_get_contents(dirname(__DIR__) . '/_lib/webcron.php'), 'crm_push_run()')
