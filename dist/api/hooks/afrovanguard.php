@@ -7,7 +7,9 @@
  * NGG_WEBHOOK_SECRET there), under its own purpose:
  *   X-NGG-Timestamp: unix seconds (±300 s)
  *   X-NGG-Signature: sha256=hex(HMAC_SHA256(secret, "volunteers." + ts + "." + body))
- * Body: {op: "volunteers", after?: cursor, limit?: ≤200}.
+ * Body: {op: "volunteers", after?: cursor, limit?: ≤200}
+ *    or {op: "volunteer_sessions", after?: attendance id, limit?: 1..500 (200)}
+ *       → every session an NGG volunteer served (av_volunteer_sessions).
  * With no secret configured the endpoint does not exist.
  */
 require_once __DIR__ . '/../_lib/bootstrap.php';
@@ -27,6 +29,11 @@ if (!is_array($body)) json_error('bad_json', 422);
 
 if ((string)($body['op'] ?? '') === 'volunteers') {
     $res = av_volunteer_feed($body);
+    unset($res['ok']);
+    json_ok($res);
+}
+if ((string)($body['op'] ?? '') === 'volunteer_sessions') {
+    $res = av_volunteer_sessions($body);
     unset($res['ok']);
     json_ok($res);
 }

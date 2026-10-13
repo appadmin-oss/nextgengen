@@ -163,6 +163,57 @@ function av_volunteer_feed(array $in): array {
     return ['ok' => true, 'volunteers' => $out, 'next' => count($rows) === $limit ? $last : null, 'done' => count($rows) < $limit];
 }
 
+/**
+ * Every session an NGG volunteer served, one attendance row each, so
+ * Afrovanguard can credit them as volunteer hours: {sessions, next, done}.
+ *
+ * Paged by the attendance row id (`after` = the last id seen, `limit` 1..500,
+ * default 200), so it is incremental and stable. Only rows whose studentId is
+ * an NGG-programme volunteer's volunteerId are sent; a Summer volunteer's
+ * sessions stay home. Minutes are the gate's in→out span when both exist and
+ * it is 15 min..12 h ('gate'), otherwise the standard credit per session
+ * ('standard', volunteer_session_hours() × 60).
+ *
+ * The attendance table has no updatedAt (a check-out added later rewrites
+ * checkOutAt in place, behind the cursor), so `updatedAt` is only sent if such
+ * a column ever appears; until then a correction is not re-announced.
+ */
+function av_volunteer_sessions(array $in): array {
+    $after = max(0, (int)($in['after'] ?? 0));
+    $limit = max(1, min(500, (int)($in['limit'] ?? 200)));
+    $rows = db_all("SELECT a.*, v.email AS vEmail, v.centre AS vCentre, v.role AS vRole, v.programme AS vProgramme
+                      FROM attendance a JOIN volunteers v ON v.volunteerId = a.studentId
+                     WHERE a.id > ? AND v.programme = 'ngg' ORDER BY a.id LIMIT " . $limit, [$after]);
+    $std = volunteer_session_hours() * 60;
+    $out = [];
+    $last = $after;
+    foreach ($rows as $r) {
+        $last = (int)$r['id'];
+        if (volunteer_programme(['programme' => $r['vProgramme'] ?? '']) !== 'ngg') continue;
+        $checkIn = (string)($r['checkInAt'] ?? '');
+        $checkOut = (string)($r['checkOutAt'] ?? '');
+        $minutes = $std; $source = 'standard';
+        $ti = $checkIn !== '' ? strtotime($checkIn) : false;
+        $to = $checkOut !== '' ? strtotime($checkOut) : false;
+        if ($ti !== false && $to !== false) {
+            $span = intdiv($to - $ti, 60);
+            if ($span >= 15 && $span <= 720) { $minutes = $span; $source = 'gate'; }
+        }
+        $s = [
+            'id' => (int)$r['id'], 'volunteerId' => (string)$r['studentId'],
+            'email' => strtolower(trim((string)($r['vEmail'] ?? ''))),
+            'date' => substr((string)($r['date'] ?? ''), 0, 10),
+            'checkInAt' => $checkIn, 'checkOutAt' => $checkOut,
+            'minutes' => (int)$minutes, 'minutesSource' => $source,
+            'centre' => (string)(($r['centre'] ?? '') !== '' ? $r['centre'] : ($r['vCentre'] ?? '')),
+            'role' => (string)($r['vRole'] ?? ''), 'method' => (string)($r['method'] ?? ''),
+        ];
+        if (array_key_exists('updatedAt', $r)) $s['updatedAt'] = (string)($r['updatedAt'] ?? '');
+        $out[] = $s;
+    }
+    return ['ok' => true, 'sessions' => $out, 'next' => count($rows) === $limit ? $last : null, 'done' => count($rows) < $limit];
+}
+
 /** The signature Afrovanguard sends: sha256=HMAC(secret, "volunteers." + ts + "." + body). */
 function av_volunteer_signature_ok(string $secret, string $ts, string $raw, string $sig): bool {
     if ($secret === '' || !ctype_digit($ts) || abs(time() - (int)$ts) > 300) return false;

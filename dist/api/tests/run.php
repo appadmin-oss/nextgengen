@@ -22028,6 +22028,88 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-AVF-1'");
 })();
 
+/* ── Afrovanguard: every session an NGG volunteer served (op "volunteer_sessions") ── */
+(function () {
+    $clean = function () {
+        db_exec("DELETE FROM attendance WHERE studentId LIKE 'VOL-AVS-%'");
+        db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-AVS-%'");
+    };
+    $clean();
+    $mk = function (string $id, string $programme, array $f = []) {
+        db_insert('volunteers', $f + ['volunteerId' => $id, 'fullName' => 'AVS ' . $id, 'email' => strtolower($id) . '@AVSess.test', 'role' => 'mentor',
+            'centre' => 'Egbeda', 'status' => 'active', 'programme' => $programme, 'dob' => '2000-01-01', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    };
+    $mk('VOL-AVS-1', 'ngg', ['email' => 'Ngozi.AVS@AVSess.TEST', 'role' => 'lead']);
+    $mk('VOL-AVS-2', 'summer');
+    $mk('VOL-AVS-3', 'ngg', ['centre' => 'Ayobo']);
+    $att = function (string $sid, string $date, string $in, string $out = '', string $method = 'qr') {
+        db_insert('attendance', ['cohortId' => '', 'studentId' => $sid, 'token' => 'tok-secret', 'date' => $date, 'checkInAt' => $in, 'checkOutAt' => $out, 'method' => $method, 'byId' => 'X', 'device' => 'gate-1']);
+        return (int) db_row('SELECT id FROM attendance WHERE studentId = ? AND date = ?', [$sid, $date])['id'];
+    };
+    $ids = [];
+    $ids['gate']  = $att('VOL-AVS-1', '2026-03-07', '2026-03-07T09:00:00Z', '2026-03-07T12:30:00Z');        // 210 min from the gate
+    $ids['sum1']  = $att('VOL-AVS-2', '2026-03-07', '2026-03-07T09:00:00Z', '2026-03-07T12:00:00Z');        // Summer: never sent
+    $ids['noout'] = $att('VOL-AVS-1', '2026-03-14', '2026-03-14T09:00:00Z');                                // no check-out → standard
+    $ids['short'] = $att('VOL-AVS-3', '2026-03-14', '2026-03-14T09:00:00Z', '2026-03-14T09:05:00Z', 'manual'); // 5 min → standard
+    $ids['sum2']  = $att('VOL-AVS-2', '2026-03-14', '2026-03-14T09:00:00Z');
+    $ids['long']  = $att('VOL-AVS-3', '2026-03-21', '2026-03-21T06:00:00Z', '2026-03-21T20:00:00Z');        // 14 h → standard
+    $std = volunteer_session_hours() * 60;
+    $mine = array_values($ids);
+    $start = min($mine) - 1;
+    $seen = []; $dupe = false; $pages = 0; $after = $start; $cursorsOk = true; $endsDone = false;
+    for ($i = 0; $i < 500; $i++) {
+        $r = av_volunteer_sessions(['after' => $after, 'limit' => 2]);
+        $pages++;
+        foreach ($r['sessions'] as $s) {
+            if (strpos($s['volunteerId'], 'VOL-AVS-') !== 0) continue;
+            if (isset($seen[$s['id']])) $dupe = true;
+            $seen[$s['id']] = $s;
+        }
+        if ($r['done']) { $endsDone = $r['next'] === null; break; }
+        if (!is_int($r['next']) || $r['next'] <= $after) { $cursorsOk = false; break; }
+        $after = $r['next'];
+    }
+    chk('av sessions: only NGG volunteers\' sessions are sent — a Summer volunteer\'s are not',
+        isset($seen[$ids['gate']], $seen[$ids['noout']], $seen[$ids['short']], $seen[$ids['long']]) && !isset($seen[$ids['sum1']]) && !isset($seen[$ids['sum2']]));
+    chk('av sessions: paging with a small limit visits every row once; the cursor only moves forward; the last page is done with next = null',
+        !$dupe && count($seen) === 4 && $cursorsOk && $endsDone && $pages >= 2);
+    $g = $seen[$ids['gate']] ?? [];
+    chk('av sessions: gate in and out → the real span in minutes',
+        ($g['minutes'] ?? 0) === 210 && ($g['minutesSource'] ?? '') === 'gate' && ($g['checkOutAt'] ?? '') === '2026-03-07T12:30:00Z');
+    chk('av sessions: no check-out, under 15 min or over 12 h → the standard credit',
+        ($seen[$ids['noout']]['minutes'] ?? 0) === $std && ($seen[$ids['noout']]['minutesSource'] ?? '') === 'standard' && ($seen[$ids['noout']]['checkOutAt'] ?? null) === ''
+        && ($seen[$ids['short']]['minutesSource'] ?? '') === 'standard' && ($seen[$ids['short']]['minutes'] ?? 0) === $std
+        && ($seen[$ids['long']]['minutesSource'] ?? '') === 'standard' && ($seen[$ids['long']]['minutes'] ?? 0) === $std);
+    chk('av sessions: matched by lower-cased email, with date, centre, role and method',
+        ($g['email'] ?? '') === 'ngozi.avs@avsess.test' && ($g['date'] ?? '') === '2026-03-07' && ($g['centre'] ?? '') === 'Egbeda' && ($g['role'] ?? '') === 'lead'
+        && ($g['method'] ?? '') === 'qr' && ($g['volunteerId'] ?? '') === 'VOL-AVS-1' && ($g['id'] ?? 0) === $ids['gate']
+        && ($seen[$ids['short']]['centre'] ?? '') === 'Ayobo' && ($seen[$ids['short']]['method'] ?? '') === 'manual');
+    $allowed = ['id', 'volunteerId', 'email', 'date', 'checkInAt', 'checkOutAt', 'minutes', 'minutesSource', 'centre', 'role', 'method', 'updatedAt'];
+    chk('av sessions: …and nothing else — no token, device, birthday or name', !array_diff(array_keys($g), $allowed) && !array_key_exists('token', $g) && !array_key_exists('device', $g));
+    // Incremental: a cursor at the newest row sees nothing more until a new session arrives.
+    $tail = av_volunteer_sessions(['after' => max($mine), 'limit' => 500]);
+    $tailMine = array_filter($tail['sessions'], fn($s) => strpos($s['volunteerId'], 'VOL-AVS-') === 0);
+    $new = $att('VOL-AVS-1', '2026-03-28', '2026-03-28T09:00:00Z', '2026-03-28T11:00:00Z');
+    $tail2 = av_volunteer_sessions(['after' => max($mine), 'limit' => 500]);
+    $ids2 = array_column($tail2['sessions'], 'id');
+    chk('av sessions: incremental — from the last cursor only the new session comes', !$tailMine && in_array($new, $ids2, true) && !in_array($ids['gate'], $ids2, true) && $tail2['done'] === true && $tail2['next'] === null);
+    $one = av_volunteer_sessions(['after' => $start, 'limit' => 1]);
+    $big = av_volunteer_sessions(['after' => $start, 'limit' => 9999]);
+    $zero = av_volunteer_sessions(['after' => $start, 'limit' => 0]);
+    chk('av sessions: limit is clamped to 1..500; a full page gives the cursor and is not done',
+        count($one['sessions']) === 1 && $one['done'] === false && $one['next'] === $one['sessions'][0]['id']
+        && count($big['sessions']) <= 500 && count($zero['sessions']) <= 1);
+    $raw = '{"op":"volunteer_sessions","after":0,"limit":50}'; $ts = (string) time();
+    chk('av sessions: the hook\'s signature check is shared — the right one passes, a bad one is refused',
+        av_volunteer_signature_ok('s3cret', $ts, $raw, 'sha256=' . hash_hmac('sha256', 'volunteers.' . $ts . '.' . $raw, 's3cret'))
+        && !av_volunteer_signature_ok('s3cret', $ts, $raw, 'sha256=' . hash_hmac('sha256', 'volunteers.' . $ts . '.' . $raw, 'wrong'))
+        && !av_volunteer_signature_ok('s3cret', $ts, $raw, 'sha256=' . hash_hmac('sha256', 'volunteers.' . $ts . '.{"op":"volunteer_sessions","after":0,"limit":500}', 's3cret')));
+    $hook = (string) file_get_contents(__DIR__ . '/../hooks/afrovanguard.php');
+    chk('av sessions: the hook routes the op after the same signature check',
+        strpos($hook, "'volunteer_sessions'") !== false && strpos($hook, 'av_volunteer_sessions(') > strpos($hook, 'av_volunteer_signature_ok('));
+    $clean();
+})();
+
 /* ── NGG's own volunteer door (/join/volunteer): year-round, its own activities ── */
 (function () {
     $ADM = 'NGG-2025-0099';
