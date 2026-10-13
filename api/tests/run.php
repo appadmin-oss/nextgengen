@@ -21971,5 +21971,40 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM members WHERE memberId = 'NGG-PORT-1'");
 })();
 
+/* ── NGG volunteers for Afrovanguard (api/hooks/afrovanguard.php) ── */
+(function () {
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-AVF-%'");
+    db_exec("DELETE FROM applications WHERE email LIKE '%@avfeed.test'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-AVF-1'");
+    $app = function (string $email, string $program) {
+        db_insert('applications', ['kind' => 'volunteer', 'name' => 'App ' . $program, 'email' => $email, 'program' => $program, 'status' => 'accepted', 'createdAt' => now_iso()]);
+        return (int) db_row('SELECT id FROM applications WHERE email = ? ORDER BY id DESC LIMIT 1', [$email])['id'];
+    };
+    $mk = function (string $id, array $f) { db_insert('volunteers', $f + ['volunteerId' => $id, 'role' => 'mentor', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]); };
+    $mk('VOL-AVF-1', ['applicationId' => $app('ngg@avfeed.test', 'anchor'), 'fullName' => 'Ada NGG', 'email' => 'Ada.NGG@AVFeed.test', 'phone' => '0803', 'centre' => 'Egbeda', 'dob' => '2001-01-01', 'safeguarding' => 'cleared']);
+    $mk('VOL-AVF-2', ['applicationId' => $app('sum@avfeed.test', 'summer'), 'fullName' => 'Sam Summer', 'email' => 'sam@avfeed.test']);
+    $mk('VOL-AVF-3', ['applicationId' => $app('old@avfeed.test', ''), 'fullName' => 'Lee Legacy', 'email' => 'lee@avfeed.test']);
+    db_insert('members', ['memberId' => 'NGG-AVF-1', 'fullName' => 'Pat Promoted', 'type' => 'NGG', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $mk('VOL-AVF-4', ['memberId' => 'NGG-AVF-1', 'fullName' => 'Pat Promoted', 'email' => 'pat@avfeed.test']);
+    $all = [];
+    $after = (int)(db_row("SELECT MIN(id) - 1 m FROM volunteers WHERE volunteerId LIKE 'VOL-AVF-%'")['m'] ?? 0);
+    for ($i = 0; $i < 10; $i++) { $r = av_volunteer_feed(['after' => $after, 'limit' => 2]); foreach ($r['volunteers'] as $v) $all[$v['volunteerId']] = $v; if ($r['done']) break; $after = (int)$r['next']; }
+    chk('av volunteers: NGG volunteers are sent — from an NGG application, or an NGG member promoted', isset($all['VOL-AVF-1']) && isset($all['VOL-AVF-4']));
+    chk('av volunteers: …Summer volunteers are not, nor a legacy application with no programme', !isset($all['VOL-AVF-2']) && !isset($all['VOL-AVF-3']));
+    $a = $all['VOL-AVF-1'] ?? [];
+    chk('av volunteers: matched by email (lower-cased), with role, centre and NGG\'s count of their service',
+        ($a['email'] ?? '') === 'ada.ngg@avfeed.test' && ($a['centre'] ?? '') === 'Egbeda' && array_key_exists('hours', $a) && array_key_exists('level', $a) && ($a['safeguardingCleared'] ?? false) === true);
+    chk('av volunteers: …and nothing it does not need — no birthday', !array_key_exists('dob', $a) && !array_key_exists('token', $a));
+    $raw = '{"op":"volunteers"}'; $ts = (string) time();
+    chk('av volunteers: signed with the shared secret under its own purpose', av_volunteer_signature_ok('s3cret', $ts, $raw, 'sha256=' . hash_hmac('sha256', 'volunteers.' . $ts . '.' . $raw, 's3cret')));
+    chk('av volunteers: …a promotion\'s signature (no purpose) cannot be replayed here, nor an old one, nor with no secret',
+        !av_volunteer_signature_ok('s3cret', $ts, $raw, 'sha256=' . hash_hmac('sha256', $ts . '.' . $raw, 's3cret'))
+        && !av_volunteer_signature_ok('s3cret', (string)(time() - 900), $raw, 'sha256=' . hash_hmac('sha256', 'volunteers.' . (time() - 900) . '.' . $raw, 's3cret'))
+        && !av_volunteer_signature_ok('', $ts, $raw, 'sha256=x'));
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-AVF-%'");
+    db_exec("DELETE FROM applications WHERE email LIKE '%@avfeed.test'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-AVF-1'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
