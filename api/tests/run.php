@@ -26489,5 +26489,156 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('today (member): a Summer account is refused', (backend_dispatch('member.today', ['memberId' => 'NGG-RS-S'])['error'] ?? '') === 'not_ngg_member');
 })();
 
+/* ══ The person directory push ════════════════════════════════════════════
+ *
+ * NGG is the store the matcher refuses WHOLESALE — neither table enforces
+ * one row per address, and siblings share a parent's inbox — so every row
+ * this sends lands in a human review queue over at CACENTRE. What is tested
+ * here is therefore not "does it link", which it must never do, but: does
+ * exactly the agreed data leave, and does the envelope agree to the byte
+ * with three implementations in three other repositories.
+ */
+(function () {
+    $KEY = 'ngg-directory-test-key-0123456789';
+
+    /* ── The shared vectors ──────────────────────────────────────────────
+       An identical copy of this file is asserted in cacentre-site (the
+       verifier and CFIS) and in afrovanguard-site. No package is shared
+       between any of them, so this is the only thing that makes four
+       implementations one wire format. */
+    $vec = json_decode((string)@file_get_contents(__DIR__ . '/directory-vectors.json'), true);
+    chk('dirpush: the shared vectors parse', is_array($vec));
+
+    $body = rtrim(strtr(base64_encode((string)$vec['sign']['payload']), '+/', '-_'), '=');
+    $mac  = rtrim(strtr(base64_encode(hash_hmac('sha256', $body, (string)$vec['secret'], true)), '+/', '-_'), '=');
+    chk('dirpush: a known payload and key produce the known token',
+        'v1.' . $body . '.' . $mac === (string)$vec['sign']['token']);
+
+    /* A MAC is over serialised bytes, so the ORDER of the claims is part of
+       the format whether anybody intended it or not. Two senders that
+       assemble the same claims differently produce different signatures and
+       neither is wrong — the failure no single side can find. */
+    $tok = dirpush_mint([['store' => 'members', 'local_id' => '1']], $KEY, 1760000000);
+    $cl  = json_decode((string)base64_decode(strtr(explode('.', $tok)[1], '-_', '+/') . '=='), true);
+    chk('dirpush: claims are assembled in the order the format fixes',
+        array_keys($cl) === ['rows', 'iss', 'typ', 'nonce', 'iat', 'exp']);
+    chk('dirpush: we name ourselves ngg', ($cl['iss'] ?? '') === 'ngg');
+    chk('dirpush: as a roster push, which an SSO assertion is not', ($cl['typ'] ?? '') === 'dir.push');
+    chk('dirpush: in the window the receiver allows', ($cl['exp'] ?? 0) === 1760000300);
+
+    /* ── NOTHING ABOUT A CHILD LEAVES BUT THEIR NAME ─────────────────────
+       This programme holds children's data. The directory asks who somebody
+       is; it gets that and nothing else. Asserted as a SET so a column added
+       to a shaper fails here rather than on another organisation's disk. */
+    $allowed = ['store', 'local_id', 'email', 'email_verified', 'name', 'local_role', 'local_status', 'last_seen_at'];
+
+    $m = dirpush_from_member([
+        'id' => 41, 'fullName' => 'Ada Nwosu', 'email' => ' Ada@Example.ORG ', 'type' => 'NGG',
+        'role' => 'member', 'status' => 'active',
+        /* Every one of these is on the real row and none may travel. */
+        'passwordHash' => '$2y$10$SECRETHASH', 'totpSecret' => 'TOTPSEED', 'dob' => '2012-04-01',
+        'phone' => '080...', 'parentEmail' => 'mum@example.org', 'parentPhone' => '081...',
+        'school' => 'A School', 'notes' => 'private note', 'cohort' => '2023',
+    ]);
+    $got = array_keys($m); sort($got); $want = $allowed; sort($want);
+    chk('dirpush: a member sends exactly the agreed fields and no others', $got === $want);
+
+    $wire = (string)json_encode($m);
+    chk('dirpush: NO password hash leaves this programme', !str_contains($wire, 'SECRETHASH'));
+    chk('dirpush: no TOTP seed either', !str_contains($wire, 'TOTPSEED'));
+    chk('dirpush: no date of birth', !str_contains($wire, '2012-04-01'));
+    chk('dirpush: no parent contact details', !str_contains($wire, 'mum@example.org') && !str_contains($wire, '081...'));
+    chk('dirpush: no school and no notes', !str_contains($wire, 'A School') && !str_contains($wire, 'private note'));
+    /* `members.cohort` is the INTAKE YEAR on a member row, not a Summer
+       edition — one word, two meanings — and the directory has no use for
+       either, so it does not travel and cannot be mistaken over there. */
+    chk('dirpush: and not members.cohort, which is the intake year and means nothing there',
+        !str_contains($wire, '2023'));
+
+    chk('dirpush: the address is normalised the way the matcher will read it', $m['email'] === 'ada@example.org');
+    chk('dirpush: the local id is the row\'s own key, as text', $m['local_id'] === '41');
+
+    /* ── THE TWO POPULATIONS STAY TELLABLE APART ─────────────────────────
+       `members` holds both, `type` is NGG or Summer, and the agreed payload
+       has no field for which. local_role carries it, because the difference
+       IS role-shaped in this programme's vocabulary: a Summer person is a
+       participant — never a student, never a member — and an operator
+       deciding whether two records are one human has to know which they are
+       looking at. */
+    chk('dirpush: an NGG member keeps their own role', $m['local_role'] === 'member');
+    $s = dirpush_from_member(['id' => 9, 'fullName' => 'A Child', 'email' => 'c@example.org', 'type' => 'Summer', 'role' => 'member', 'status' => 'active']);
+    chk('dirpush: a Summer account travels as a participant', $s['local_role'] === 'participant');
+    chk('dirpush: and never as a student or a member, which send an operator to the wrong screen',
+        $s['local_role'] !== 'student' && $s['local_role'] !== 'member');
+
+    /* ── Volunteers ──────────────────────────────────────────────────────
+       The second NGG store, and the reason CACENTRE could not see the
+       estate's volunteers at all until now: it was not in the registry. */
+    $v = dirpush_from_volunteer([
+        'id' => 7, 'fullName' => 'Chidi Eze', 'email' => 'chidi@example.org', 'role' => 'mentor',
+        'status' => 'active', 'token' => 'VOLTOKEN', 'photoUrl' => 'https://x/y.jpg',
+        'safeguarding' => 'cleared', 'memberId' => 'NGG-0001',
+    ]);
+    $got = array_keys($v); sort($got);
+    chk('dirpush: a volunteer sends exactly the agreed fields too', $got === $want);
+    $wire = (string)json_encode($v);
+    chk('dirpush: a volunteer\'s token is a credential and does not travel', !str_contains($wire, 'VOLTOKEN'));
+    /* A safeguarding clearance is a judgement about somebody working with
+       children. It belongs on the screen that can act on it; a copy on
+       another host is a copy nobody will remember to withdraw. */
+    chk('dirpush: nor does their safeguarding state', !str_contains($wire, 'cleared'));
+    chk('dirpush: the role the source records travels', $v['local_role'] === 'mentor');
+    chk('dirpush: and the status', $v['local_status'] === 'active');
+
+    /* Neither table tracks verification at all, so both answer null — the
+       third state. False would mark every child and every volunteer in the
+       programme "unverified" on a screen that is not about them. */
+    chk('dirpush: a member\'s address is "not tracked", not "unverified"', $m['email_verified'] === null);
+    chk('dirpush: and so is a volunteer\'s', $v['email_verified'] === null);
+
+    /* ── The sweep ───────────────────────────────────────────────────────
+       A rolling sweep, not a diff: updatedAt is a VARCHAR written by several
+       code paths over the years, exactly the column that quietly stops being
+       comparable. Every row is re-sent once a sweep and upserts over there. */
+    $b = dirpush_batch('members', 0, 2);
+    chk('dirpush: a page is the size asked for', count($b['rows']) === 2);
+    chk('dirpush: and a full page is not the end of the table', $b['wrapped'] === false);
+    chk('dirpush: the cursor is the last id sent', $b['cursor'] > 0);
+
+    $seen = []; $cursor = 0;
+    for ($i = 0; $i < 400; $i++) {
+        $p = dirpush_batch('members', $cursor, 50);
+        foreach ($p['rows'] as $r) $seen[] = (int)$r['local_id'];
+        $cursor = $p['cursor'];
+        if ($p['wrapped']) break;
+    }
+    chk('dirpush: one sweep covers every member exactly once', count($seen) === count(array_unique($seen)));
+    chk('dirpush: and ends back at the top so the next sweep starts again', $cursor === 0);
+    $total = (int)db_row('SELECT COUNT(*) c FROM members')['c'];
+    chk('dirpush: covering all of them', count($seen) === $total);
+
+    $b = dirpush_batch('volunteers', 0, 50);
+    chk('dirpush: the volunteers page the same way', is_array($b['rows']));
+    chk('dirpush: a store this app does not own pages nothing',
+        dirpush_batch('lms_users', 0, 50)['rows'] === []);
+
+    /* ── Off until a real key is set ─────────────────────────────────── */
+    foreach (['', 'short', 'changeme-changeme-changeme-changeme',
+              '<set this to something random>', 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'] as $bad) {
+        $GLOBALS['CONFIG']['dir_push_secret'] = $bad;
+        chk('dirpush: a key of "' . substr($bad, 0, 12) . '" is not a key', !dirpush_ready());
+    }
+    $GLOBALS['CONFIG']['dir_push_secret'] = $KEY;
+    chk('dirpush: a real key is', dirpush_ready());
+    unset($GLOBALS['CONFIG']['dir_push_secret']);
+    chk('dirpush: and with none the tick does nothing rather than erroring every hour',
+        (dirpush_tick()['skipped'] ?? '') === 'no key');
+
+    chk('dirpush: only this app\'s own two stores are ever named',
+        DIRPUSH_STORES === ['members', 'volunteers']);
+    chk('dirpush: and the batch cap matches the one the receiver names in its refusal',
+        DIRPUSH_BATCH === 500);
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
