@@ -1070,3 +1070,23 @@ Removed: `portal-shell.jsx`, `member-portal.jsx`, `mp-*.jsx`, the `.mp-*` CSS,
 `tests/member-portal.test.js`. New: `tests/dashboard-results.test.js` (26,
 `npm run test:dashresults`); `tests/mentorship.test.js` drives the restored
 portal (roster, School results tab, Report a concern).
+
+## 2026-10-13 — OpenAI as a provider; print from a prompt in the ID Card Studio
+
+- **OpenAI** joins `AI_PROVIDERS` (ai.php): `ai.openai_api_key` / `ai.openai_model`
+  (default `gpt-4.1-mini`), on the Service keys screen, usable in any profile and
+  as a fallback like the others. Chat Completions with `max_completion_tokens`;
+  reasoning models (`o*`, `gpt-5*`) get no temperature. `ai_http_post` has a test
+  seam (`$GLOBALS['__ai_http']`) so the request shape is pinned in run.php.
+- **Print from a prompt** (`src/modules/idcards/ids-ask.jsx`, `admin.ids.plan` in
+  `domain/id-studio.php`). The server reads the request into a plan through the
+  `studio` AI profile when a key is set, and always with `ids_plan_rules`; the
+  model's fields win one by one, the IDs the rules saw are kept, and everything
+  is cleaned against allow-lists (kinds the operator may print, their centres,
+  fixed sides/paper/dpi/order). The op reads and writes nothing but an audit
+  line; the studio applies the plan to the lists it already shows
+  (`idsPlanSelect`, pure), sets its own controls, and shows the count before the
+  one Print press, which refuses if the sheet changed. Undo restores the sheet.
+  Rate limit `ids.plan` 30 per 10 minutes.
+- Tests: run.php (rules, AI merge and cleaning, scope, OpenAI request shape),
+  `tests/ids-ask.test.js` (19, `npm run test:idsask`).

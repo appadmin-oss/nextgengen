@@ -7377,6 +7377,34 @@ chk('report: one finding gets the checks but no model call spent restating it', 
 })());
 
 /* ── The providers ───────────────────────────────────────────────────────── */
+chk('openai: a profile or the flat block can name it, and it gets gpt-4.1-mini by default', (function () {
+    $keep = $GLOBALS['CONFIG']['ai'] ?? null;
+    $GLOBALS['CONFIG']['ai'] = ['provider' => 'openai', 'openai_api_key' => 'sk-o', 'groq_api_key' => 'g',
+        'profiles' => ['p_oa' => ['provider' => 'openai', 'api_key' => 'sk-p']]];
+    $flat = ai_profile_candidates('default'); $prof = ai_profile_candidates('p_oa');
+    $GLOBALS['CONFIG']['ai'] = $keep;
+    return $flat[0]['provider'] === 'openai' && $flat[0]['model'] === 'gpt-4.1-mini' && $prof[0]['api_key'] === 'sk-p' && $prof[0]['model'] === 'gpt-4.1-mini';
+})());
+chk('openai: the call goes to api.openai.com with a bearer key and max_completion_tokens, and the reply is read', (function () {
+    $seen = [];
+    $GLOBALS['__ai_http'] = function ($url, $body, $headers) use (&$seen) { $seen[] = [$url, json_decode($body, true), $headers];
+        return ['ok' => true, 'body' => json_encode(['choices' => [['message' => ['content' => ' Hello. ']]]])]; };
+    $a = ai_call_candidate(['provider' => 'openai', 'api_key' => 'sk-x', 'model' => 'gpt-4.1-mini'], 'sys', [['role' => 'me', 'text' => 'hi'], ['role' => 'coach', 'text' => 'yo']], 50, 0.3);
+    $b = ai_call_candidate(['provider' => 'openai', 'api_key' => 'sk-x', 'model' => 'o4-mini'], 'sys', [['role' => 'me', 'text' => 'hi']], 50, 0.3);
+    unset($GLOBALS['__ai_http']);
+    [$u, $j, $h] = $seen[0];
+    return $a === ['ok' => true, 'text' => 'Hello.', 'provider' => 'openai'] && $u === 'https://api.openai.com/v1/chat/completions'
+        && in_array('Authorization: Bearer sk-x', $h, true) && $j['max_completion_tokens'] === 50 && !isset($j['max_tokens']) && $j['temperature'] === 0.3
+        && $j['messages'][0] === ['role' => 'system', 'content' => 'sys'] && $j['messages'][2]['role'] === 'assistant'
+        && !isset($seen[1][1]['temperature']) && $b['ok'];
+})());
+chk('openai: a refusal comes back as the provider error, so the next provider is tried', (function () {
+    $GLOBALS['__ai_http'] = fn() => ['ok' => false, 'error' => 'ai_http_401', 'status' => 401];
+    $r = ai_call_candidate(['provider' => 'openai', 'api_key' => 'bad', 'model' => 'gpt-4.1'], 's', [], 10, 0.1);
+    unset($GLOBALS['__ai_http']);
+    return empty($r['ok']) && $r['error'] === 'ai_http_401';
+})());
+chk('openai: it is a key on the Service keys screen', isset(SERVICE_KEYS['openai']) && SERVICE_KEYS['openai']['fields'][0][0] === 'ai.openai_api_key');
 chk('a profile can name anthropic or openrouter, and gets a sane default model', (function () {
     $keep = $GLOBALS['CONFIG']['ai'] ?? null;
     $GLOBALS['CONFIG']['ai'] = ['profiles' => [
@@ -24973,6 +25001,53 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         backend_dispatch('admin.ids.reprint.request', ['requesterId' => $CARDADM, 'items' => [['subjectType' => 'member', 'subjectId' => 'NGG-CARD-1', 'why' => 'Damaged too']]]);
         return db_row("SELECT cause FROM id_reprints WHERE subjectId = 'NGG-CARD-1' AND doneAt = ''")['cause'] === 'lost';
     })());
+
+    // ── Print from a prompt (admin.ids.plan): the request read into a checked plan ──
+    db_insert('centres', ['centreId' => 'CEN-PLAN-1', 'name' => 'Planford', 'code' => 'PLF', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('centres', ['centreId' => 'CEN-PLAN-2', 'name' => 'Planwick Hall', 'code' => 'PLW', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $plan = fn($who, $text) => backend_dispatch('admin.ids.plan', ['requesterId' => $who, 'prompt' => $text]);
+    $aiKeep = $GLOBALS['CONFIG']['ai'] ?? null;
+    $GLOBALS['CONFIG']['ai'] = [];   // no key: the rules alone
+    $r = $plan($CARDADM, 'New cards for Planford members, front and back, with crop marks on A4');
+    $pl = (array)($r['plan'] ?? []);
+    chk('id plan: with no AI key the rules read kind, centre, new, double-sided, crop marks and paper', !empty($r['ok']) && $r['by'] === 'rules'
+        && $pl['kind'] === 'member' && $pl['centre'] === 'Planford' && $pl['which'] === 'new' && $pl['backs'] === 'long' && $pl['marks'] === true && $pl['paper'] === 'a4');
+    $pl = (array)$plan($CARDADM, 'reprint 026-003 and EG-26-001, fronts only, no crop marks')['plan'];
+    chk('id plan: printed IDs are found in the text, and "fronts only" / "no crop marks" are read', $pl['which'] === 'reprint'
+        && $pl['ids'] === ['026-003', 'EG-26-001'] && $pl['backs'] === 'off' && $pl['marks'] === false && !isset($pl['centre']));
+    $pl = (array)$plan($CARDADM, 'members who joined last week at PLW, cards 40 to 80, proof')['plan'];
+    $mon = (new DateTime(ids_plan_today()))->modify('monday last week')->format('Y-m-d');
+    chk('id plan: "last week" is Monday to Sunday, a centre code after "at" is the centre, a number block and a proof', $pl['dateFrom'] === $mon
+        && $pl['dateTo'] === (new DateTime($mon))->modify('+6 days')->format('Y-m-d') && $pl['centre'] === 'Planwick Hall'
+        && $pl['numFrom'] === 40 && $pl['numTo'] === 80 && $pl['proof'] === true && $pl['dpi'] === 150);
+    chk('id plan: a Summer admin is not offered member cards', !in_array('member', $plan($SUMADM, 'summer participants')['kinds'], true)
+        && ((array)$plan($SUMADM, 'summer participants')['plan'])['kind'] === 'summer');
+    chk('id plan: an empty or overlong request is refused, naming the limit', ($plan($CARDADM, '   ')['error'] ?? '') === 'empty_prompt'
+        && ($plan($CARDADM, str_repeat('a', IDS_PLAN_PROMPT_MAX + 1))['error'] ?? '') === 'prompt_too_long');
+    chk('id plan: needs the People or Summer School permission', ($plan('NGG-2025-0001', 'members')['error'] ?? '') !== '' && empty($plan('NGG-2025-0001', 'members')['ok']));
+
+    // With a model: its reading wins field by field, cleaned against allow-lists; the IDs the rules saw are kept.
+    $GLOBALS['__ai_mock'] = function ($profile, $system, $turns) {
+        return ['ok' => true, 'provider' => 'openai', 'text' => json_encode(['kind' => 'volunteer', 'centre' => 'planwick', 'which' => 'all', 'backs' => 'short',
+            'paper' => 'tabloid', 'dpi' => 999, 'ids' => ['VOL-1', '<script>'], 'names' => ['Ada Obi', 'DROP TABLE;'], 'limit' => 5000, 'order' => 'name', 'marks' => 'yes', 'extra' => 'x',
+            'profileSeen' => $profile])];
+    };
+    $r = $plan($CARDADM, 'all the volunteers at planwick incl. 026-014, short edge, by name');
+    $pl = (array)$r['plan'];
+    chk('id plan: the model is asked through the studio profile and its answer is used', $r['by'] === 'ai' && $r['provider'] === 'openai');
+    chk('id plan: a centre the model names loosely resolves to the one centre it can mean', $pl['centre'] === 'Planwick Hall' && $pl['kind'] === 'volunteer' && $pl['which'] === 'all');
+    chk('id plan: values off the allow-lists are dropped, never passed on', !isset($pl['paper']) && !isset($pl['dpi']) && !isset($pl['marks']) && !isset($pl['extra'])
+        && $pl['ids'] === ['VOL-1', '026-014'] && $pl['names'] === ['Ada Obi'] && $pl['limit'] === IDS_BATCH_MAX && $pl['backs'] === 'short' && $pl['order'] === 'name');
+    $GLOBALS['__ai_mock'] = fn() => ['ok' => true, 'provider' => 'gemini', 'text' => json_encode(['kind' => 'member', 'centre' => 'Atlantis'])];
+    $r = $plan($SUMADM, 'members at Atlantis');
+    chk('id plan: a kind the operator may not print, and a centre that does not exist, are named in notes rather than applied',
+        !isset(((array)$r['plan'])['kind']) && !isset(((array)$r['plan'])['centre']) && count($r['notes']) === 2);
+    $GLOBALS['__ai_mock'] = fn() => ['ok' => false, 'error' => 'ai_http_429'];
+    $r = $plan($CARDADM, 'Planford volunteers, double-sided');
+    chk('id plan: a model that fails falls back to the rules and says why', $r['by'] === 'rules' && $r['aiError'] === 'ai_http_429'
+        && ((array)$r['plan'])['centre'] === 'Planford' && ((array)$r['plan'])['backs'] === 'long');
+    unset($GLOBALS['__ai_mock']);
+    $GLOBALS['CONFIG']['ai'] = $aiKeep;
 
     // Photo requests reach the person and the admins who own the card, once per quiet period.
     db_insert('members', ['memberId' => 'NGG-IDS-NOPIC', 'fullName' => 'Pat Nophoto', 'email' => 'pat-nopic@example.org', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'photoUrl' => '', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);

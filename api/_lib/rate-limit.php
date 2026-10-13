@@ -45,6 +45,7 @@ function rate_limit_default(string $op): ?array {
         'results.draft'      => ['max' => 6,  'window' => 600],   // drafts a plan, may call a model
         'results.write'      => ['max' => 60, 'window' => 60],    // saves, ticks, sends
         'results.remind'     => ['max' => 20, 'window' => 600],   // pushes a reminder to a child
+        'ids.plan'           => ['max' => 30, 'window' => 600],   // reads a print request, may call a model
 
         'apply'              => ['max' => 6,  'window' => 60],    // sends an acknowledgement email to a client-supplied address
         'apply.hour'         => ['max' => 30, 'window' => 3600],  // mail-amplification ceiling per IP

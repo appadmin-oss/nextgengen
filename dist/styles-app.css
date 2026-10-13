@@ -7758,6 +7758,39 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-design b { color: var(--ids-ink); font-weight: 600; }
 
 /* ── Make: three columns, each scrolling on its own ── */
+/* ── Print from a prompt (ids-ask.jsx): one bar above the workspace, and the
+   plan it read. On the studio's own tokens; the Print here is the one fill. */
+.ids-make-wrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.ids-ask { flex: none; padding: 10px 16px; border-bottom: 1px solid var(--ids-line); background: var(--ids-s1); display: flex; flex-direction: column; gap: 8px; }
+.ids-ask-bar { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 5px 0 12px; border: 1px solid var(--ids-line-2); border-radius: var(--ids-r-lg); background: var(--ids-s0); }
+.ids-ask-bar:focus-within { border-color: var(--ids-ink); box-shadow: 0 0 0 3px rgba(11, 11, 12, 0.08); }
+.ids-ask-ic { font-size: 18px; color: var(--ids-gold); flex: none; }
+.ids-ask-in { flex: 1 1 auto; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; font: inherit; font-size: 14px; color: var(--ids-ink); }
+.ids-ask-in::placeholder { color: var(--ids-muted-2); }
+.ids-app .ids-ask-in:focus-visible { outline: 0; }
+.ids-ask-ex { display: flex; flex-wrap: wrap; gap: 6px; }
+.ids-ask-chip { height: 28px; padding: 0 10px; border: 1px solid var(--ids-line-2); border-radius: var(--ids-r-pill); background: var(--ids-s0); color: var(--ids-muted); font-size: 12px; cursor: pointer; }
+.ids-ask-chip:hover { color: var(--ids-ink); border-color: var(--ids-line-3); }
+.ids-ask-card { display: flex; gap: 16px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--ids-line-2); border-radius: var(--ids-r-lg); background: var(--ids-s0); }
+.ids-ask-card.is-bad { align-items: center; gap: 8px; background: var(--ids-bad-bg); border-color: var(--ids-bad-bg); color: var(--ids-bad-fg); font-size: 13px; }
+.ids-ask-card.is-warn { background: var(--ids-warn-bg); border-color: var(--ids-warn-bg); }
+.ids-ask-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.ids-ask-h { margin: 0; font-size: 15px; font-weight: 600; }
+.ids-ask-h .ids-mono { font-size: 16px; }
+.ids-ask-what, .ids-ask-how { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.ids-ask-what li { font-size: 13px; color: var(--ids-ink-2); }
+.ids-ask-what li + li::before { content: "·"; margin-right: 6px; color: var(--ids-faint); }
+.ids-ask-how li { height: 24px; display: inline-flex; align-items: center; padding: 0 8px; border-radius: var(--ids-r-pill); background: var(--ids-neutral-bg); color: var(--ids-neutral-fg); font-size: 12px; }
+.ids-ask-how li.is-changed { background: var(--ids-s0); color: var(--ids-ink); box-shadow: inset 0 0 0 1px var(--ids-ink); font-weight: 600; }
+.ids-ask-issue { margin: 0; display: flex; gap: 6px; align-items: flex-start; font-size: 12.5px; line-height: 1.4; padding: 6px 8px; border-radius: var(--ids-r-sm); }
+.ids-ask-issue .ph { font-size: 15px; flex: none; margin-top: 1px; }
+.ids-ask-issue.is-warn { background: var(--ids-warn-bg); color: var(--ids-warn-fg); }
+.ids-ask-issue.is-bad { background: var(--ids-bad-bg); color: var(--ids-bad-fg); }
+.ids-ask-issue.is-info { background: var(--ids-info-bg); color: var(--ids-info-fg); }
+.ids-ask-by { margin: 0; font-size: 11.5px; color: var(--ids-muted-2); }
+.ids-ask-acts { flex: none; display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 170px; }
+@container (max-width: 720px) { .ids-ask-card { flex-direction: column; } .ids-ask-acts { flex-direction: row; flex-wrap: wrap; min-width: 0; } }
+.ids-make-wrap { container-type: inline-size; }
 .ids-make { flex: 1 1 auto; min-height: 0; display: grid; }
 .ids-make.is-roomy { grid-template-columns: 340px minmax(0, 1fr) 300px; grid-template-areas: "src sheet set"; }
 .ids-make.is-wide { grid-template-columns: 280px minmax(0, 1fr) 260px; grid-template-areas: "src sheet set"; }

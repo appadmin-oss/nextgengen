@@ -769,7 +769,7 @@ function crSyKeyEdit(ctx, s) {
    do next. The row opens in place for its fields, Test, Remove and the
    provider's link, so the page reads as a checklist rather than a wall of
    cards. Each row stays an article named for its service. */
-const CR_SY_KEY_ICON = { gemini: "sparkle", groq: "lightning", anthropic: "brain", openrouter: "shuffle", cloudinary: "cloud", paystack: "credit-card",
+const CR_SY_KEY_ICON = { gemini: "sparkle", groq: "lightning", anthropic: "brain", openai: "open-ai-logo", openrouter: "shuffle", cloudinary: "cloud", paystack: "credit-card",
   appsscript: "google-logo", brevo: "paper-plane-tilt", smtp: "envelope-simple", resend: "paper-plane-right", termii: "chat-text", twilio: "phone",
   googlemaps: "map-pin", spitch: "speaker-high" };
 const CR_SY_MAIL_LABEL = { apps_script: "Google Apps Script", smtp: "SMTP", brevo: "Brevo", resend: "Resend", php_mail: "PHP mail() — usually dropped" };

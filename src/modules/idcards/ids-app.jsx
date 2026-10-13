@@ -1203,6 +1203,96 @@ function IdCardStudioPage({ setPage }) {
     catch (_) { say("Couldn’t queue the reprint. Try again."); }
   };
 
+  /* ── Print from a prompt (ids-ask.jsx) ──
+     The plan selects from what the studio shows and sets its own controls;
+     the result names the count, and Print goes straight to the PDF only while
+     the sheet still holds exactly that many cards. */
+  const [askBusy, setAskBusy] = React.useState(false);
+  const [askErr, setAskErr] = React.useState("");
+  const [askRes, setAskRes] = React.useState(null);
+  const askUndo = React.useRef(null);
+  const askAgain = React.useRef("");
+  const applyPlan = (res, prompt) => {
+    const plan = res.plan || {};
+    const empty = !Object.keys(plan).length;
+    if (empty) { setAskRes({ empty: true, by: res.by, provider: res.provider, aiError: res.aiError, issues: [], what: [] }); return; }
+    const sel = idsPlanSelect(plan, { pool: recs, all: data.records, isBlocked });
+    const issues = (res.notes || []).map(t => ({ tone: "info", text: t }));
+    if (sel.blocked.length) issues.push({ tone: "warn", text: idsN(sel.blocked.length, "person", "people") + " left out: no photo yet (" + sel.blocked.slice(0, 3).map(r => r.name).join(", ") + (sel.blocked.length > 3 ? "…" : "") + ").",
+      action: "Ask for photos", onAction: () => setAskConfirm(sel.blocked.filter(r => !idsAskedRecently(askedOf(r))).slice(0, IDS_ASK_MAX)) });
+    if (sel.missing.length) issues.push({ tone: "bad", text: "Not found: " + sel.missing.slice(0, 8).join(", ") + (sel.missing.length > 8 ? "…" : "") + "." });
+    sel.ambiguous.forEach(a => issues.push({ tone: "warn", text: "“" + a.name + "” matches " + a.n + " people. Add a surname or their ID number." }));
+    if (sel.cut) issues.push({ tone: "info", text: idsN(sel.cut, "more card") + " matched beyond the limit and " + (sel.cut === 1 ? "was" : "were") + " left for the next run." });
+    let n = sel.pick.length;
+    if (sel.carded.length) {
+      const list = sel.carded;
+      issues.push({ tone: "info", text: idsN(list.length, "person", "people") + " already " + (list.length === 1 ? "has" : "have") + " a card (" + list.slice(0, 3).map(r => r.name).join(", ") + (list.length > 3 ? "…" : "") + ").",
+        action: "Reprint " + (list.length === 1 ? "it" : "them"), onAction: async () => {
+          if (!(await queueReprints(list, "asked"))) return;
+          const add = list.filter(r => !isBlocked(r));
+          setQueue(qq => qq.concat(add.filter(r => !qq.some(x => x.t === "r" && x.key === r.key)).map(r => ({ t: "r", key: r.key }))));
+          set({ reason: n ? "mixed" : "reprint" });
+          setAskRes(a => a && Object.assign({}, a, { n: a.n + add.length, issues: a.issues.filter(x => x.onAction !== undefined ? !/already/.test(x.text) : true) }));
+        } });
+    }
+    const out = { by: res.by, provider: res.provider, aiError: res.aiError, what: idsPlanWhat(plan), issues, n, applied: false, prompt };
+    if (n) {
+      askUndo.current = { queue, st, kind, centre, filter, rmode, rng };
+      const reasons = new Set(sel.pick.map(r => r.reason));
+      const patch = { reason: plan.proof ? "proof" : reasons.size > 1 ? "mixed" : reasons.has("reprint") ? "reprint" : "new", skip: 0 };
+      ["backs", "marks", "paper", "dpi", "order"].forEach(k => { if (plan[k] !== undefined) patch[k] = plan[k]; });
+      if (plan.order) patch.breakBy = plan.order !== "name";
+      setQueue(sel.pick.map(r => ({ t: "r", key: r.key })));
+      set(patch);
+      // The list on the left shows the same people, so what the plan chose can be checked and changed by hand.
+      setSrc("records"); setScen("batch");
+      setKind(plan.kind || ""); setCentre(plan.centre === "none" ? IDS_NO_CENTRE : plan.centre || "");
+      setFilter((plan.ids || []).length || (plan.names || []).length || plan.which === "all" ? "all" : plan.which || "new");
+      if (plan.dateFrom || plan.dateTo) { setRmode("date"); setRng({ dFrom: plan.dateFrom || "", dTo: plan.dateTo || "", nFrom: "", nTo: "" }); }
+      else if (plan.numFrom != null || plan.numTo != null) { setRmode("number"); setRng({ dFrom: "", dTo: "", nFrom: plan.numFrom != null ? String(plan.numFrom) : "", nTo: plan.numTo != null ? String(plan.numTo) : "" }); }
+      else { setRmode(""); setRng({ dFrom: "", dTo: "", nFrom: "", nTo: "" }); }
+      setSel(null); setSheetIdx(0);
+      out.applied = true;
+      out.changed = Object.keys(patch);
+    }
+    setAskRes(out);
+  };
+  const askPlan = prompt => {
+    askAgain.current = prompt;
+    setAskBusy(true); setAskErr("");
+    NGGApi.admin.idStudio.plan(prompt).then(res => applyPlan(res, prompt))
+      .catch(e => setAskErr(e && e.code === "rate_limited" ? "That’s a lot of plans in a few minutes. Wait a moment, then try again."
+        : e && e.code === "prompt_too_long" ? "Keep it under 400 characters." : idsErrText(e, "Couldn’t read that. Check your connection, then try again.")))
+      .finally(() => setAskBusy(false));
+  };
+  const askClose = () => { setAskRes(null); setAskErr(""); };
+  const askUndoIt = () => {
+    const u = askUndo.current;
+    if (!u) return;
+    setQueue(u.queue); setSt(u.st); setKind(u.kind); setCentre(u.centre); setFilter(u.filter); setRmode(u.rmode); setRng(u.rng);
+    askUndo.current = null;
+    setAskRes(null);
+    say("The sheet is back as it was");
+  };
+  const askPrint = () => {
+    if (!askRes || !askRes.n) return;
+    if (cards.length !== askRes.n) return say("The sheet has changed since the plan (" + idsN(cards.length, "card") + " now). Check it, then use Print in the panel.");
+    if (printBlock) return say(printBlock);
+    setAskRes(null);
+    onConfirmPrint({ mode: "all", packing: st.packing, reason: st.reason });
+  };
+  const askLive = askRes && askRes.n ? {
+    sheets: nSheets, block: printBlock,
+    settings: [
+      { label: IDS_PAPERS[st.paper][0], k: "paper" },
+      { label: (IDS_BACKS.find(b => b[0] === st.backs) || IDS_BACKS[0])[1], k: "backs" },
+      { label: st.marks ? "Crop marks" : "No crop marks", k: "marks" },
+      { label: st.dpi + " dpi", k: "dpi" },
+      { label: "Sorted by " + ((IDS_ORDERS.find(o => o[0] === st.order) || IDS_ORDERS[0])[1]).toLowerCase(), k: "order" },
+    ].concat(st.reason === "proof" ? [{ label: "Proof", k: "reason" }] : []).map(x => Object.assign(x, { changed: (askRes.changed || []).includes(x.k) })),
+  } : null;
+  const A = { ask: askPlan, busy: askBusy, err: askErr, result: askRes, live: askLive, print: askPrint, undo: askUndoIt, close: askClose };
+
   /* ── Everything the Make tab reads ── */
   const M = {
     G, st, settings: st, set, setOrder: o => set({ order: o }), scen, applyScenario, src, setSrc, records, uploadsUI, searchRef,
@@ -1257,10 +1347,13 @@ function IdCardStudioPage({ setPage }) {
       ) : tab === "make" ? (phone
         ? (data.state === "ready" ? <IdsPhoneQueue recs={recs} isBlocked={isBlocked} onAsk={askOne}/> : <div className="ids-page"><IdsLoadState state={data.state} onRetry={load} what="the records"/></div>)
         : (
+          <div className="ids-make-wrap">
+          {data.state === "ready" && <IdsAsk A={A}/>}
           <div className={"ids-make " + gridCls}>
             <IdsSource M={M}/>
             <IdsSheetCol M={M}/>
             <IdsSettings M={M}/>
+          </div>
           </div>
         )) : tab === "log" ? <IdsLog log={log} state={log.state === "idle" ? "loading" : log.state} onFilter={f => loadLog(f)} onMore={() => loadLog(null, true)} onRetry={() => loadLog()} onOpen={openRun} narrow={W < 900}/>
         : <IdsLookup lookup={lookup} design={designHead} onQueue={queueReprint}/>}

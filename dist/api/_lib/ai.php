@@ -33,14 +33,15 @@ declare(strict_types=1);
  *
  * openrouter is the one that scales: a single key reaches hundreds of models
  * from every major lab, so adding a model is a config line rather than a
- * deploy. anthropic is direct because a programme paying for it should not be
- * paying a proxy margin too. */
-const AI_PROVIDERS = ['groq', 'gemini', 'anthropic', 'openrouter'];
+ * deploy. anthropic and openai are direct because a programme paying for
+ * them should not be paying a proxy margin too. */
+const AI_PROVIDERS = ['groq', 'gemini', 'anthropic', 'openai', 'openrouter'];
 const AI_DEFAULT_MODEL = [
     'groq'       => 'llama-3.1-8b-instant',
     // Blank: the best Gemini model the key can use, asked of Google (gemini_pick_model).
     'gemini'     => '',
     'anthropic'  => 'claude-haiku-4-5-20251001',
+    'openai'     => 'gpt-4.1-mini',
     'openrouter' => 'meta-llama/llama-3.1-8b-instruct',
 ];
 
@@ -141,6 +142,8 @@ function ai_provider(string $profile = 'default'): string {
 
 /** POST to a fixed, https-only provider endpoint. */
 function ai_http_post(string $url, string $body, array $headers): array {
+    // Test seam: fn($url, $body, $headers) => ['ok'=>…, 'body'=>…]. Never set in production.
+    if (isset($GLOBALS['__ai_http']) && is_callable($GLOBALS['__ai_http'])) return ($GLOBALS['__ai_http'])($url, $body, $headers);
     if (!function_exists('curl_init')) return ['ok' => false, 'error' => 'no_curl'];
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -305,6 +308,11 @@ function gemini_generate(array $cand, string $system, array $contents, array $o)
     }
 }
 
+/** An OpenAI reasoning model (o1, o3, o4-mini, gpt-5…): fixed temperature. */
+function ai_openai_is_reasoning(string $model): bool {
+    return (bool)preg_match('/^(o\d|gpt-5)/i', trim($model));
+}
+
 /** One call against one concrete provider candidate. $turns: [{role,text}]. */
 function ai_call_candidate(array $cand, string $system, array $turns, int $maxTokens, float $temp): array {
     /* Anthropic. Its own shape: the system prompt is a top-level field rather
@@ -346,6 +354,23 @@ function ai_call_candidate(array $cand, string $system, array $turns, int $maxTo
         $j = json_decode($r['body'], true);
         $text = $j['choices'][0]['message']['content'] ?? '';
         return $text !== '' ? ['ok' => true, 'text' => trim($text), 'provider' => 'openrouter'] : ['ok' => false, 'error' => 'ai_empty'];
+    }
+
+    /* OpenAI, direct. Chat Completions: `max_completion_tokens`, because the
+     * reasoning models (o-series, gpt-5) refuse `max_tokens`, and no
+     * temperature for them either: they accept only their default. */
+    if ($cand['provider'] === 'openai') {
+        $msgs = [['role' => 'system', 'content' => $system]];
+        foreach ($turns as $t) $msgs[] = ['role' => (($t['role'] ?? '') === 'coach' ? 'assistant' : 'user'), 'content' => (string)($t['text'] ?? '')];
+        $req = ['model' => $cand['model'], 'max_completion_tokens' => $maxTokens, 'messages' => $msgs];
+        if (!ai_openai_is_reasoning((string)$cand['model'])) $req['temperature'] = $temp;
+        $r = ai_http_post('https://api.openai.com/v1/chat/completions', json_encode($req, JSON_UNESCAPED_SLASHES), [
+            'Authorization: Bearer ' . $cand['api_key'], 'Content-Type: application/json',
+        ]);
+        if (!$r['ok']) return $r;
+        $j = json_decode($r['body'], true);
+        $text = $j['choices'][0]['message']['content'] ?? '';
+        return $text !== '' ? ['ok' => true, 'text' => trim((string)$text), 'provider' => 'openai'] : ['ok' => false, 'error' => 'ai_empty'];
     }
 
     if ($cand['provider'] === 'groq') {
