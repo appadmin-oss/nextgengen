@@ -2753,4 +2753,9 @@ CREATE TABLE IF NOT EXISTS member_cards (
   INDEX idx_member_cards_member (memberId, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT INTO schema_version (version) VALUES (121) ON DUPLICATE KEY UPDATE version = version;
+-- ── 122 · Volunteer programme: Summer School or NGG (backfill in NGG_MYSQL_ROW_FIXUPS) ──
+ALTER TABLE volunteers ADD COLUMN programme VARCHAR(16) DEFAULT '';
+ALTER TABLE volunteers ADD COLUMN programmeAt VARCHAR(40) DEFAULT '';
+CREATE INDEX idx_vol_programme ON volunteers(programme);
+
+INSERT INTO schema_version (version) VALUES (122) ON DUPLICATE KEY UPDATE version = version;

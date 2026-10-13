@@ -11307,6 +11307,7 @@ function AdminVolunteers() {
   const [tab, setTab] = useAdminTab("pending");
   const [q, setQ] = React.useState("");
   const [vCentre, setVCentre] = React.useState("");
+  const [vProg, setVProg] = React.useState("");
   const [expanded, setExpanded] = React.useState(() => new Set());
   const toggleExpand = (id) => setExpanded(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const load = () => NGGApi.admin.volunteers.list().then(r => { setData(r); setErr(""); }).catch(e => setErr(e.code || e.message));
@@ -11336,11 +11337,34 @@ function AdminVolunteers() {
     finally { setBusy(""); }
   };
   const [editId, setEditId] = React.useState("");
+  /* Summer volunteering is seasonal; NGG runs all year. A Summer volunteer who
+     stays on is promoted — same ID, same hours, now on NGG's roster (and
+     Afrovanguard's, which only ever sees NGG volunteers). */
+  const setProgramme = async (v, to) => {
+    const promote = to === "ngg";
+    const note = await dialog.prompt({
+      title: promote ? "Promote " + v.fullName + " to NGG volunteer?" : "Move " + v.fullName + " back to Summer?",
+      body: promote ? "They keep their volunteer ID and hours, join NGG's year-round roster, and get an email saying so. Optional note for the record:" : "Undo a promotion. Nothing is sent to the volunteer. Optional note for the record:",
+      placeholder: promote ? "e.g. Stayed on after the 2026 season" : "e.g. Promoted by mistake",
+      cta: promote ? "Promote to NGG" : "Move to Summer",
+    });
+    if (note === null) return;
+    setBusy("p" + v.volunteerId);
+    try {
+      const r = await NGGApi.admin.volunteers.programme(v.volunteerId, to, { note });
+      toast.success(promote ? v.fullName + " is now an NGG volunteer" + (r.emailed ? " · emailed" : "") + "." : v.fullName + " is back on Summer.");
+      load();
+    } catch (e) { toast.error(e.code || e.message); }
+    finally { setBusy(""); }
+  };
   const removeVol = async (v) => {
     if (!(await dialog.confirm({ title: "Delete " + v.fullName + "?", body: "This permanently removes the volunteer record and their check-in QR. This can't be undone.", cta: "Delete", danger: true }))) return;
     try { await NGGApi.admin.volunteers.remove(v.volunteerId); toast.success("Volunteer deleted."); setEditId(""); load(); } catch (e) { toast.error(e.code || e.message); }
   };
 
+  const progChip = (p) => p === "ngg"
+    ? <span className="chip chip-navy" title="NGG volunteer — year-round">NGG</span>
+    : <span className="chip" title="Summer School volunteer — the summer season">Summer</span>;
   const roleChip = (r) => <span className={"chip " + (r === "instructor" ? "chip-gold" : r === "mentor" ? "chip-lime" : "chip-navy")}>{r}</span>;
   const pending = (data && data.pending) || [];
   const all = (data && data.volunteers) || [];
@@ -11356,8 +11380,10 @@ function AdminVolunteers() {
     if (vCentre) return c === vCentre;
     return true;
   };
+  const nggCount = all.filter(v => v.programme === "ngg").length;
   const roster = all.filter(v => {
     if (!inCentre(v)) return false;
+    if (vProg && (v.programme || "summer") !== vProg) return false;
     if (!q.trim()) return true;
     const s = (v.fullName + " " + v.volunteerId + " " + v.email + " " + v.role).toLowerCase();
     return s.includes(q.trim().toLowerCase());
@@ -11368,7 +11394,7 @@ function AdminVolunteers() {
       <div className="admin-section-head">
         <h2 className="admin-h2">Volunteers {data ? <span className="mono" style={{ color: "var(--ink-500)", fontSize: 13 }}>· {pending.length} pending · {(data.volunteers || []).length} active</span> : null}</h2>
         <div className="admin-section-actions">
-          <button className="btn btn-ghost btn-sm" disabled={!data || !(data.volunteers || []).length} onClick={() => downloadCsv("volunteers", (data.volunteers || []).map(v => ({ volunteerId: v.volunteerId, name: v.fullName, email: v.email, phone: v.phone || "", role: v.role, centre: v.centre || "", faculty: v.faculty || "", courses: (v.courses || []).join("; "), safeguarding: v.safeguarding, status: v.status, createdAt: v.createdAt })))}>Export CSV</button>
+          <button className="btn btn-ghost btn-sm" disabled={!data || !(data.volunteers || []).length} onClick={() => downloadCsv("volunteers", (data.volunteers || []).map(v => ({ volunteerId: v.volunteerId, name: v.fullName, email: v.email, phone: v.phone || "", role: v.role, programme: v.programme || "summer", centre: v.centre || "", faculty: v.faculty || "", courses: (v.courses || []).join("; "), safeguarding: v.safeguarding, status: v.status, createdAt: v.createdAt })))}>Export CSV</button>
         </div>
       </div>
 
@@ -11376,9 +11402,14 @@ function AdminVolunteers() {
         <button className={"admin-tab" + (tab === "pending" ? " is-active" : "")} onClick={() => setTab("pending")}>Review queue{pending.length ? " · " + pending.length : ""}</button>
         <button className={"admin-tab" + (tab === "roster" ? " is-active" : "")} onClick={() => setTab("roster")}>Roster · {(data && (data.volunteers || []).length) || 0}</button>
         <button className={"admin-tab" + (tab === "needs" ? " is-active" : "")} onClick={() => setTab("needs")}>Needs &amp; /v-status</button>
+        <button className={"admin-tab" + (tab === "ngg-activities" ? " is-active" : "")} onClick={() => setTab("ngg-activities")}>NGG activities</button>
       </div>
 
       {tab === "needs" ? <VolunteerNeedsEditor/> :
+        tab === "ngg-activities" ? <AcademyCatalogue
+          api={{ get: () => NGGApi.admin.volunteers.nggCatalogue(), set: (c) => NGGApi.admin.volunteers.nggCatalogueSet(c), reset: () => NGGApi.admin.volunteers.nggCatalogueReset() }}
+          unit={{ group: "area", item: "activity", groupEg: "Area (e.g. Mentoring)" }}
+          hint={<>What NGG volunteers can sign up for on <a href="/join/volunteer" target="_blank" rel="noreferrer">/join/volunteer</a> — NGG runs all year, so these are its own areas and activities, separate from the Summer School's courses (Structure → Academy catalogue).</>}/> :
         err ? <ErrorState title="Couldn't load" code={err} onRetry={load}/> :
         data === null ? <div className="dash-spinner"/> :
 
@@ -11389,7 +11420,7 @@ function AdminVolunteers() {
               <div className="admin-app" key={a.id}>
                 <div className="admin-app-top">
                   <div>
-                    <div className="admin-cell-name">{a.name} {roleChip(a.role)}</div>
+                    <div className="admin-cell-name">{a.name} {progChip(a.programme)} {roleChip(a.role)}</div>
                     <div className="mono admin-cell-sub">{a.email}{a.phone ? " · " + a.phone : " · no phone"}{a.centre ? " · 🏫 " + a.centre : ""}{a.faculty ? " · " + a.faculty : ""}{(a.courses || []).length ? " · " + a.courses.join(", ") : ""} · {fmtDate(a.createdAt)}</div>
                   </div>
                   {a.role === "instructor" && !a.phone && <span className="chip status-archived">phone required</span>}
@@ -11413,6 +11444,11 @@ function AdminVolunteers() {
                 {centreOpts.map(c => <option key={c} value={c}>{c} · {all.filter(v => (v.centre || "").trim() === c).length}</option>)}
                 {noCentre > 0 && <option value={VOL_NO_CENTRE}>⚠ No centre on file · {noCentre}</option>}
               </select>
+              <select className="admin-select" value={vProg} onChange={e => setVProg(e.target.value)} aria-label="Filter volunteers by programme">
+                <option value="">Summer + NGG · {all.length}</option>
+                <option value="ngg">NGG (year-round) · {nggCount}</option>
+                <option value="summer">Summer (seasonal) · {all.length - nggCount}</option>
+              </select>
               {noCentre > 0 && vCentre !== VOL_NO_CENTRE &&
                 <button className="btn btn-ghost btn-sm" onClick={() => setVCentre(VOL_NO_CENTRE)}>⚠ {noCentre} with no centre</button>}
             </div>
@@ -11428,7 +11464,7 @@ function AdminVolunteers() {
                   {roster.map(v => (
                     <React.Fragment key={v.volunteerId}>
                     <tr>
-                      <td><div className="admin-cell-name">{v.fullName}</div><div className="mono admin-cell-sub">{v.volunteerId} · {v.email}</div></td>
+                      <td><div className="admin-cell-name">{v.fullName} {progChip(v.programme)}</div><div className="mono admin-cell-sub">{v.volunteerId} · {v.email}</div></td>
                       <td>{roleChip(v.role)}</td>
                       <td className="mono" style={{ fontSize: 12 }}>{v.centre || "—"}</td>
                       <td className="mono" style={{ fontSize: 12 }}>{[v.faculty, (v.courses || []).join(", ")].filter(Boolean).join(" · ") || "—"}</td>
@@ -11447,6 +11483,8 @@ function AdminVolunteers() {
                       </td>
                       <td className="mono" style={{ fontSize: 12 }}><a href={"/q/" + v.token} target="_blank" rel="noreferrer">/q/{(v.token || "").slice(0, 10)}…</a></td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                        {v.programme !== "ngg" &&
+                          <button className="btn btn-ghost btn-sm" disabled={busy === "p" + v.volunteerId} onClick={() => setProgramme(v, "ngg")} title="Summer is seasonal — keep them on all year">{busy === "p" + v.volunteerId ? "…" : "↑ Promote to NGG"}</button>}
                         <button className="btn btn-ghost btn-sm" onClick={() => setEditId(editId === v.volunteerId ? "" : v.volunteerId)}>{editId === v.volunteerId ? "Close" : "Edit"}</button>
                         {v.safeguarding === "cleared"
                           ? <button className="btn btn-ghost btn-sm" disabled={busy === "s" + v.volunteerId} onClick={() => setSafeguard(v, "pending")}>Un-clear</button>
@@ -11456,6 +11494,8 @@ function AdminVolunteers() {
                     {editId === v.volunteerId && <tr><td colSpan={7} style={{ background: "rgba(12,20,50,0.03)" }}>
                       <VolunteerEditor v={v} onSaved={() => { setEditId(""); load(); }} onDelete={() => removeVol(v)}/>
                       <VolunteerPortalAccess v={v} onSaved={load}/>
+                      {v.programme === "ngg" &&
+                        <div style={{ padding: "6px 4px 10px" }}><button className="btn btn-ghost btn-sm" disabled={busy === "p" + v.volunteerId} onClick={() => setProgramme(v, "summer")}>Move back to Summer</button> <span className="admin-hint">Undo a promotion made by mistake.</span></div>}
                     </td></tr>}
                     </React.Fragment>
                   ))}
@@ -11699,7 +11739,8 @@ function AdminSettings() {
       <div className="admin-fields" style={{ maxWidth: 520 }}>
         <FieldCheckbox label="Teen applications open" value={s.applications_open} onChange={v => setS(o => ({ ...o, applications_open: v }))}/>
         <FieldCheckbox label="Mentor applications open" value={s.mentor_applications_open} onChange={v => setS(o => ({ ...o, mentor_applications_open: v }))}/>
-        <FieldCheckbox label="Volunteer registration open" value={s.volunteer_applications_open} onChange={v => setS(o => ({ ...o, volunteer_applications_open: v }))}/>
+        <FieldCheckbox label="Summer volunteer registration open (/volunteer — the summer season only)" value={s.volunteer_applications_open} onChange={v => setS(o => ({ ...o, volunteer_applications_open: v }))}/>
+        <FieldCheckbox label="NGG volunteer registration open (/join/volunteer — all year)" value={s.ngg_volunteer_applications_open !== false} onChange={v => setS(o => ({ ...o, ngg_volunteer_applications_open: v }))}/>
         <FieldCheckbox label="Text volunteer IDs by SMS (when phone on file)" value={s.volunteer_sms_notify} onChange={v => setS(o => ({ ...o, volunteer_sms_notify: v }))}/>
         <FieldCheckbox label="Email a state note on check-in (award-focus when doing well, a nudge otherwise)" value={s.checkin_state_emails} onChange={v => setS(o => ({ ...o, checkin_state_emails: v }))}/>
         <Field label="Hours credited per volunteer session" type="number" value={s.volunteer_session_hours} onChange={v => setS(o => ({ ...o, volunteer_session_hours: v }))}/>
@@ -11825,7 +11866,11 @@ function AdminSettings() {
  * form (instructors pick courses UNDER their chosen faculty), the student course
  * list, and the /v-status faculty/course breakdowns. Fully editable; "Reset"
  * reverts to the seeded default. */
-function AcademyCatalogue() {
+function AcademyCatalogue({ api, hint, unit } = {}) {
+  // The Summer School's academy catalogue by default; the NGG volunteer
+  // activities editor passes its own api/hint/unit and reuses the rest.
+  const src = api || { get: () => NGGApi.admin.registration.catalogue(), set: (c) => NGGApi.admin.registration.catalogueSet(c), reset: () => NGGApi.admin.registration.catalogueReset() };
+  const U = unit || { group: "faculty", item: "course", groupEg: "Faculty name (e.g. Music)" };
   const [rows, setRows] = React.useState(null);   // [{faculty, courses:[]}]
   const [customised, setCustomised] = React.useState(false);
   const [orig, setOrig] = React.useState("");
@@ -11834,7 +11879,7 @@ function AcademyCatalogue() {
   const [draftCourse, setDraftCourse] = React.useState({});   // facultyIndex -> input text
 
   const norm = (cat) => (cat || []).map(r => ({ faculty: String(r.faculty || ""), courses: (r.courses || []).map(String) }));
-  const load = () => NGGApi.admin.registration.catalogue()
+  const load = () => src.get()
     .then(r => { const n = norm(r.catalogue); setRows(n); setCustomised(!!r.customised); setOrig(JSON.stringify(n)); setErr(""); })
     .catch(e => setErr(e.code || e.message));
   React.useEffect(() => { load(); }, []);
@@ -11856,16 +11901,16 @@ function AcademyCatalogue() {
     const clean = rows
       .map(r => ({ faculty: r.faculty.trim(), courses: r.courses.map(c => c.trim()).filter(Boolean) }))
       .filter(r => r.faculty !== "" && r.courses.length > 0);
-    if (!clean.length) { toast.error("Add at least one faculty with one course."); return; }
+    if (!clean.length) { toast.error("Add at least one " + U.group + " with one " + U.item + "."); return; }
     setBusy(true);
-    try { const r = await NGGApi.admin.registration.catalogueSet(clean); toast.success("Catalogue saved — " + (r.faculties || clean.length) + " faculties live now."); load(); }
-    catch (e) { toast.error(e.code === "catalogue_empty" ? "Add at least one faculty with one course." : (e.code || e.message)); }
+    try { const r = await src.set(clean); toast.success("Catalogue saved — " + (r.faculties || clean.length) + " " + U.group + (clean.length === 1 ? "" : "s") + " live now."); load(); }
+    catch (e) { toast.error(e.code === "catalogue_empty" ? "Add at least one " + U.group + " with one " + U.item + "." : (e.code || e.message)); }
     finally { setBusy(false); }
   };
   const reset = async () => {
-    if (!(await dialog.confirm({ title: "Reset to the seeded catalogue?", body: "Your custom faculties and courses will be replaced by the built-in default.", cta: "Reset" }))) return;
+    if (!(await dialog.confirm({ title: "Reset to the seeded catalogue?", body: "Your custom " + U.group + "s and " + U.item + "s will be replaced by the built-in default.", cta: "Reset" }))) return;
     setBusy(true);
-    try { await NGGApi.admin.registration.catalogueReset(); toast.success("Reverted to the seeded catalogue."); load(); }
+    try { await src.reset(); toast.success("Reverted to the seeded catalogue."); load(); }
     catch (e) { toast.error(e.code || e.message); } finally { setBusy(false); }
   };
 
@@ -11873,16 +11918,17 @@ function AcademyCatalogue() {
   if (rows === null) return <div className="dash-spinner"/>;
   return (
     <div>
-      <p className="admin-hint">The academies (faculties) and the courses within each. This is the single source that drives the <b>volunteer form</b> — instructors pick courses <b>under</b> the faculty they choose — plus the student course list and the /v-status breakdowns. {customised ? <span className="chip chip-lime">customised</span> : <span className="chip">seeded default</span>}</p>
+      {hint ? <p className="admin-hint">{hint} {customised ? <span className="chip chip-lime">customised</span> : <span className="chip">seeded default</span>}</p> :
+      <p className="admin-hint">The academies (faculties) and the courses within each. This is the single source that drives the <b>volunteer form</b> — instructors pick courses <b>under</b> the faculty they choose — plus the student course list and the /v-status breakdowns. {customised ? <span className="chip chip-lime">customised</span> : <span className="chip">seeded default</span>}</p>}
       <div style={{ display: "grid", gap: 16 }}>
         {rows.map((r, i) => (
           <div key={i} className="admin-card" style={{ padding: 16, border: "1px solid rgba(12,20,50,0.12)", borderRadius: 12 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
-              <input className="admin-input" value={r.faculty} placeholder="Faculty name (e.g. Music)" onChange={e => setFacultyName(i, e.target.value)} style={{ fontWeight: 700, flex: 1, minWidth: 180 }}/>
-              <button className="btn btn-ghost btn-sm" onClick={() => removeFaculty(i)} title="Remove this faculty">✕ Faculty</button>
+              <input className="admin-input" value={r.faculty} placeholder={U.groupEg} onChange={e => setFacultyName(i, e.target.value)} style={{ fontWeight: 700, flex: 1, minWidth: 180 }}/>
+              <button className="btn btn-ghost btn-sm" onClick={() => removeFaculty(i)} title={"Remove this " + U.group}>✕ {U.group[0].toUpperCase() + U.group.slice(1)}</button>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-              {r.courses.length === 0 ? <span className="admin-cell-sub" style={{ fontSize: 12.5 }}>No courses yet — add the first below.</span> :
+              {r.courses.length === 0 ? <span className="admin-cell-sub" style={{ fontSize: 12.5 }}>No {U.item}s yet — add the first below.</span> :
                 r.courses.map(c => (
                   <span key={c} className="chip" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                     {c}<button onClick={() => removeCourse(i, c)} title="Remove" style={{ border: "none", background: "none", cursor: "pointer", color: "var(--ink-500)", fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
@@ -11890,16 +11936,16 @@ function AcademyCatalogue() {
                 ))}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <input className="admin-input" placeholder="Add a course…" value={draftCourse[i] || ""}
+              <input className="admin-input" placeholder={"Add a " + U.item + "…"} value={draftCourse[i] || ""}
                 onChange={e => setDraftCourse(d => ({ ...d, [i]: e.target.value }))}
                 onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCourse(i); } }} style={{ flex: 1, minWidth: 160 }}/>
-              <button className="btn btn-ghost btn-sm" onClick={() => addCourse(i)}>+ Course</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => addCourse(i)}>+ {U.item[0].toUpperCase() + U.item.slice(1)}</button>
             </div>
           </div>
         ))}
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 16, flexWrap: "wrap" }}>
-        <button className="btn btn-ghost btn-sm" onClick={addFaculty}>+ Add faculty</button>
+        <button className="btn btn-ghost btn-sm" onClick={addFaculty}>+ Add {U.group}</button>
         <div style={{ flex: 1 }}/>
         {customised && <button className="btn btn-ghost btn-sm" onClick={reset} disabled={busy}>Reset to default</button>}
         <button className="btn btn-primary btn-sm" onClick={save} disabled={busy || !dirty}>{busy ? "Saving…" : dirty ? "Save catalogue" : "Saved"}</button>

@@ -517,7 +517,11 @@ function public_apply(array $p): array {
     $kind = (string)($p['kind'] ?? 'teen');
     if (!in_array($kind, ['teen', 'mentor', 'volunteer'], true)) return ['ok' => false, 'error' => 'bad_kind'];
     // Respect the admin toggles (default open).
-    $openKey = $kind === 'teen' ? 'applications_open' : ($kind === 'mentor' ? 'mentor_applications_open' : 'volunteer_applications_open');
+    // Volunteering has two doors: /volunteer is the Summer School, open only in
+    // its season; /join/volunteer (program 'anchor') is NGG, open all year.
+    $nggVolunteer = $kind === 'volunteer' && (string)($p['program'] ?? '') === 'anchor';
+    $openKey = $kind === 'teen' ? 'applications_open' : ($kind === 'mentor' ? 'mentor_applications_open'
+        : ($nggVolunteer ? 'ngg_volunteer_applications_open' : 'volunteer_applications_open'));
     if (setting_raw($openKey) === '0') return ['ok' => false, 'error' => 'applications_closed'];
     // Structured name: first + last required, other optional. Legacy `name`
     // stays populated (composed) so downstream reads/emails keep working.
@@ -570,15 +574,31 @@ function public_apply(array $p): array {
         // pick both a faculty and the course(s) they can teach.
         $role = strtolower(trim((string)($p['role'] ?? '')));
         if (!in_array($role, ['admin', 'mentor', 'instructor'], true)) return ['ok' => false, 'error' => 'bad_role'];
+        // /volunteer is the Summer School form and sends no program;
+        // /join/volunteer sends 'anchor' — an NGG volunteer on approval.
+        $program = (string)($p['program'] ?? '') === 'anchor' ? 'anchor' : '';
         $centre = substr(trim((string)($p['centre'] ?? '')), 0, 80);
         if ($centre === '') return ['ok' => false, 'error' => 'centre_required'];
         if (!db_row("SELECT id FROM centres WHERE name = ? AND status = 'active' LIMIT 1", [$centre])) return ['ok' => false, 'error' => 'invalid_centre'];
-        if ($role === 'mentor' || $role === 'instructor') {
+        if ($program === 'anchor') {
+            // NGG volunteers serve year-round activities, not the Summer
+            // School's courses: an area from the NGG catalogue, and at least
+            // one activity under it, whatever the role.
+            $cat = ngg_volunteer_catalogue();
+            $faculty = substr(trim((string)($p['faculty'] ?? '')), 0, 80);
+            if ($faculty === '') return ['ok' => false, 'error' => 'area_required'];
+            if (!isset($cat[$faculty])) return ['ok' => false, 'error' => 'invalid_area'];
+            foreach ((is_array($p['courses'] ?? null) ? $p['courses'] : []) as $c) {
+                $c = (string)$c;
+                if (in_array($c, $cat[$faculty], true) && !in_array($c, $courses, true)) $courses[] = $c;
+            }
+            if (!$courses) return ['ok' => false, 'error' => 'activity_required'];
+        } elseif ($role === 'mentor' || $role === 'instructor') {
             $faculty = substr(trim((string)($p['faculty'] ?? '')), 0, 80);
             if ($faculty === '') return ['ok' => false, 'error' => 'faculty_required'];
             if (!in_array($faculty, volunteer_faculty_options(), true)) return ['ok' => false, 'error' => 'invalid_faculty'];
         }
-        if ($role === 'instructor') {
+        if ($program !== 'anchor' && $role === 'instructor') {
             $offered = volunteer_courses_accepted();
             foreach ((is_array($p['courses'] ?? null) ? $p['courses'] : []) as $c) {
                 $c = (string)$c;
@@ -632,7 +652,7 @@ function public_apply(array $p): array {
         ]);
     }
     // Notify the admissions inbox so applications don't sit unseen.
-    $label = $kind === 'volunteer' ? ('volunteer · ' . $role) : ($kind === 'mentor' ? 'mentor' : ($program === 'summer' ? 'Summer' : 'Anchor 12'));
+    $label = $kind === 'volunteer' ? (($program === 'anchor' ? 'NGG volunteer · ' : 'Summer volunteer · ') . $role) : ($kind === 'mentor' ? 'mentor' : ($program === 'summer' ? 'Summer' : 'Anchor 12'));
     intake_admin_alert("New {$label} application — {$name}", [
         'title' => 'New application',
         'intro' => "{$name} just applied.",
@@ -657,8 +677,11 @@ function public_apply(array $p): array {
         $body = '<p style="margin:0 0 12px">We review every application by hand and write back within a week.</p>'
             . '<p style="margin:0 0 12px"><b>Role:</b> ' . esc_html($roleLabel)
             . ($courses ? '<br><b>Courses:</b> ' . esc_html(implode(', ', $courses)) : '')
+            . '<br><b>Programme:</b> ' . ($program === 'anchor' ? 'Next Generation Genius' : 'Summer School')
             . '<br><b>Reference:</b> ' . esc_html($ref) . '</p>'
-            . '<p style="margin:0 0 12px">Please read the <b>LCASP Summer Impact School 2026 Operations Manual</b> before your first deployment — it covers the five core pillars, the daily rhythm, and the Volunteer Vanguard Code (conduct, punctuality and safeguarding). One movement, one standard.</p>'
+            . ($program === 'anchor'
+                ? '<p style="margin:0 0 12px">NGG volunteering runs all year, alongside our members at their centre — not only in the summer season. Your coordinator will walk you through the activities you picked.</p>'
+                : '<p style="margin:0 0 12px">Please read the <b>LCASP Summer Impact School 2026 Operations Manual</b> before your first deployment — it covers the five core pillars, the daily rhythm, and the Volunteer Vanguard Code (conduct, punctuality and safeguarding). One movement, one standard.</p>')
             . '<p style="margin:0">Volunteers working directly with young people complete safeguarding screening before their first session.</p>';
         intake_acknowledge($email, 'We received your volunteer application — Next Generation Genius', [
             'title' => 'Application received',
@@ -726,6 +749,58 @@ function public_centre_options(): array {
     return array_map(fn($r) => ['name' => (string)$r['name'], 'code' => (string)$r['code'], 'color' => (string)$r['color']], $rows);
 }
 
+/**
+ * NGG volunteering's own catalogue: area → the activities in it. NGG runs all
+ * year (clubs, mentoring, events, media, operations), so it is not the Summer
+ * School's course list; admins edit it under Volunteers → NGG activities.
+ */
+function ngg_volunteer_catalogue_default(): array {
+    return [
+        'Clubs & Teaching'       => ['Weekend club sessions', 'Coding & tech club', 'Creative arts club', 'Music club', 'Reading & debate club'],
+        'Mentoring'              => ['One-to-one mentoring', 'Small-group circles', 'Career & life talks'],
+        'Events & Outreach'      => ['Community events', 'School outreach', 'Showcases & competitions'],
+        'Media & Communications' => ['Photography', 'Video', 'Social media', 'Writing & newsletters'],
+        'Operations'             => ['Centre administration', 'Records & data', 'Logistics', 'Parent liaison'],
+    ];
+}
+
+function ngg_volunteer_catalogue(): array {
+    $saved = academy_catalogue_clean(setting_get('ngg_volunteer_catalogue'));
+    return $saved ?: ngg_volunteer_catalogue_default();
+}
+
+function admin_ngg_volunteer_catalogue_get(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    $saved = academy_catalogue_clean(setting_get('ngg_volunteer_catalogue'));
+    $emit = function (array $map): array {
+        $out = [];
+        foreach ($map as $area => $acts) $out[] = ['faculty' => $area, 'courses' => array_values($acts)];
+        return $out;
+    };
+    return ['ok' => true, 'customised' => (bool)$saved, 'catalogue' => $emit($saved ?: ngg_volunteer_catalogue_default()), 'defaults' => $emit(ngg_volunteer_catalogue_default())];
+}
+
+function admin_ngg_volunteer_catalogue_set(array $p): array {
+    $g = admin_cap_gate($p, 'people'); if (!$g['ok']) return $g;
+    if (!empty($p['reset'])) {
+        setting_set('ngg_volunteer_catalogue', '', $g['requester']['memberId']);
+        audit('volunteer.ngg_catalogue.reset', $g['requester']['memberId'], '', [], (string)($p['ip'] ?? ''));
+        return ['ok' => true, 'reset' => true];
+    }
+    $raw = $p['catalogue'] ?? null;
+    if (is_array($raw) && $raw && isset($raw[0]) && is_array($raw[0])) {
+        $map = [];
+        foreach ($raw as $row) if (is_array($row)) $map[(string)($row['faculty'] ?? '')] = is_array($row['courses'] ?? null) ? $row['courses'] : [];
+        $raw = $map;
+    }
+    $clean = academy_catalogue_clean($raw);
+    if (!$clean) return ['ok' => false, 'error' => 'catalogue_empty'];
+    if (count($clean) > 40) return ['ok' => false, 'error' => 'too_many_faculties'];
+    setting_set('ngg_volunteer_catalogue', $clean, $g['requester']['memberId']);
+    audit('volunteer.ngg_catalogue.set', $g['requester']['memberId'], '', ['areas' => count($clean)], (string)($p['ip'] ?? ''));
+    return ['ok' => true, 'faculties' => count($clean)];
+}
+
 function public_volunteer_context(): array {
     // The courses an instructor may pick are filtered by the faculty they
     // choose. Give the form the full catalogue map (faculty→courses); the form
@@ -733,7 +808,9 @@ function public_volunteer_context(): array {
     // any offered faculty the catalogue doesn't map.
     return [
         'ok' => true,
-        'open' => setting_raw('volunteer_applications_open') !== '0',
+        'open' => setting_raw('volunteer_applications_open') !== '0',          // Summer School (seasonal)
+        'nggOpen' => setting_raw('ngg_volunteer_applications_open') !== '0',   // NGG (year-round)
+        'nggCatalogue' => ngg_volunteer_catalogue(),                            // area → activities
         'roles' => ['admin', 'mentor', 'instructor'],
         'courses' => volunteer_course_options(),
         'coursesByFaculty' => academy_catalogue(),

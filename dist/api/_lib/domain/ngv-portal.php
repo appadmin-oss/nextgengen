@@ -100,3 +100,71 @@ function admin_members_ngv_portal_sync(array $p): array {
     audit('member.ngv.portalSync', (string)($g['requester']['memberId'] ?? ''), '', ['announced' => $n, 'delivered' => $ok], (string)($p['ip'] ?? ''));
     return ['ok' => true, 'announced' => $n, 'delivered' => $ok];
 }
+
+/* ══ NGG volunteers for Afrovanguard (api/hooks/afrovanguard.php) ═══════════
+ *
+ * Afrovanguard recognises NGG's volunteers when they sign in there and lists
+ * them in its Volunteer dashboard, so it asks for them — signed with the same
+ * shared secret as the NGV promotions, under its own purpose ("volunteers.")
+ * so neither signature can be replayed at the other's endpoint.
+ *
+ * NGG volunteers only. Summer School volunteers are not Afrovanguard's: a
+ * volunteer is NGG's when the application they came through was for the NGG
+ * programme ("anchor"), or when they are an NGG member promoted to volunteer.
+ * A legacy application with no programme counts as Summer, exactly as intake
+ * reads it (admin2.php), so nobody is sent on a guess.
+ *
+ * What is sent is what recognising somebody needs: who they are, how to match
+ * them (email, phone), their role and centre, and what NGG has counted of
+ * their service. Not their birthday, sex, faculty or anything about the
+ * children they work with.
+ */
+function av_volunteer_is_ngg(array $v): bool {
+    // The volunteer's own programme (migration 122): Summer volunteers stay
+    // home, NGG volunteers — applied via /join/volunteer, made one from an NGG
+    // member, or promoted from Summer — are Afrovanguard's to see.
+    return volunteer_programme($v) === 'ngg';
+}
+
+function av_volunteer_row(array $v): array {
+    $origin = rtrim((string)($GLOBALS['CONFIG']['app_origin'] ?? ''), '/');
+    $photo = (string)($v['photoUrl'] ?? '');
+    if ($photo !== '' && !preg_match('#^https?://#i', $photo)) $photo = $origin . '/' . ltrim($photo, '/');
+    $tier = vol_tier_for((string)($v['role'] ?? ''));
+    $ledger = volunteer_ledger((string)$v['volunteerId']);
+    $game = (array)($ledger['game'] ?? []);
+    return [
+        'volunteerId' => (string)$v['volunteerId'], 'memberId' => (string)($v['memberId'] ?? ''),
+        'name' => (string)($v['fullName'] ?? ''), 'email' => strtolower(trim((string)($v['email'] ?? ''))), 'phone' => (string)($v['phone'] ?? ''),
+        'role' => (string)($v['role'] ?? ''), 'roleLabel' => (string)($tier['name'] ?? ''), 'centre' => (string)($v['centre'] ?? ''),
+        'programme' => 'ngg', 'status' => (string)($v['status'] ?? 'active'), 'safeguardingCleared' => (string)($v['safeguarding'] ?? 'pending') === 'cleared',
+        'photoUrl' => $photo, 'joinedAt' => (string)($v['createdAt'] ?? ''), 'updatedAt' => (string)($v['updatedAt'] ?? ''),
+        'sessions' => (int)($ledger['sessions'] ?? 0), 'hours' => (int)($ledger['hours'] ?? 0),
+        'certificates' => count((array)($ledger['certificates'] ?? [])),
+        'points' => (int)($game['points'] ?? 0), 'level' => (string)($game['levelName'] ?? ($game['level']['name'] ?? '')),
+    ];
+}
+
+/**
+ * One page of NGG volunteers, oldest first by row: {volunteers, next, done}.
+ * `after` is the cursor from the previous page; `limit` at most 200.
+ */
+function av_volunteer_feed(array $in): array {
+    $after = max(0, (int)($in['after'] ?? 0));
+    $limit = max(1, min(200, (int)($in['limit'] ?? 100)));
+    $rows = db_all('SELECT * FROM volunteers WHERE id > ? ORDER BY id LIMIT ' . $limit, [$after]);
+    $out = [];
+    $last = $after;
+    foreach ($rows as $v) {
+        $last = (int)$v['id'];
+        if (!av_volunteer_is_ngg($v)) continue;
+        $out[] = av_volunteer_row($v);
+    }
+    return ['ok' => true, 'volunteers' => $out, 'next' => count($rows) === $limit ? $last : null, 'done' => count($rows) < $limit];
+}
+
+/** The signature Afrovanguard sends: sha256=HMAC(secret, "volunteers." + ts + "." + body). */
+function av_volunteer_signature_ok(string $secret, string $ts, string $raw, string $sig): bool {
+    if ($secret === '' || !ctype_digit($ts) || abs(time() - (int)$ts) > 300) return false;
+    return hash_equals('sha256=' . hash_hmac('sha256', 'volunteers.' . $ts . '.' . $raw, $secret), $sig);
+}

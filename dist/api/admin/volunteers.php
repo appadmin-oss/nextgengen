@@ -8,6 +8,7 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET') {
     if (($_GET['view'] ?? '') === 'needs') $res = gs_call('admin.volunteers.needs.list', ['requesterId' => $s['mid']]);
+    elseif (($_GET['view'] ?? '') === 'ngg_catalogue') $res = gs_call('admin.volunteers.nggCatalogue.get', ['requesterId' => $s['mid']]);
     else $res = gs_call('admin.volunteers.list', ['requesterId' => $s['mid']]);
 } elseif ($method === 'POST') {
     $b = read_json_body();
@@ -17,6 +18,8 @@ if ($method === 'GET') {
     elseif ($action === 'decline')  $res = gs_call('admin.volunteers.decline', ['requesterId' => $s['mid'], 'id' => $b['id'] ?? 0, 'reason' => $b['reason'] ?? '', 'ip' => $ip]);
     elseif ($action === 'safeguard') $res = gs_call('admin.volunteers.safeguard', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'status' => $b['status'] ?? '', 'ip' => $ip]);
     elseif ($action === 'caps')      $res = gs_call('admin.volunteers.caps', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'caps' => $b['caps'] ?? [], 'ip' => $ip]);
+    elseif ($action === 'programme') $res = gs_call('admin.volunteers.programme', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'programme' => $b['programme'] ?? '', 'note' => $b['note'] ?? '', 'notify' => ($b['notify'] ?? true) !== false, 'ip' => $ip]);
+    elseif ($action === 'ngg_catalogue_set') $res = gs_call('admin.volunteers.nggCatalogue.set', ['requesterId' => $s['mid'], 'catalogue' => $b['catalogue'] ?? null, 'reset' => !empty($b['reset']), 'ip' => $ip]);
     elseif ($action === 'update')   $res = gs_call('admin.volunteers.update', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'data' => $b['data'] ?? [], 'ip' => $ip]);
     elseif ($action === 'delete')   $res = gs_call('admin.volunteers.delete', ['requesterId' => $s['mid'], 'volunteerId' => $b['volunteerId'] ?? '', 'ip' => $ip]);
     elseif ($action === 'need_upsert') $res = gs_call('admin.volunteers.needs.upsert', ['requesterId' => $s['mid'], 'centreId' => $b['centreId'] ?? '', 'role' => $b['role'] ?? '', 'faculty' => $b['faculty'] ?? '', 'needCount' => $b['needCount'] ?? 0, 'ip' => $ip]);

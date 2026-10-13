@@ -21911,5 +21911,174 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     db_exec("DELETE FROM settings WHERE settingKey = 'gate.cardFormats'");
 })();
 
+/* ── Promoted to NGV ⇒ an NGV account on Afrovanguard (domain/ngv-portal.php) ── */
+(function () {
+    global $CONFIG;
+    $ADM = 'NGG-2025-0099';
+    $keep = $CONFIG['afrovanguard'] ?? [];
+    db_exec("DELETE FROM volunteers WHERE memberId = 'NGG-PORT-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-PORT-1'");
+    db_exec("DELETE FROM integrations WHERE integrationId IN ('INT-AV-NGV','INT-CHAT-ALL')");
+    db_insert('members', ['memberId' => 'NGG-PORT-1', 'fullName' => 'Port Vanguard', 'email' => 'Port.V@Example.com', 'phone' => '08031112222',
+        'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'dob' => '2005-03-09', 'track' => 'TECH',
+        'parentName' => 'A Guardian', 'school' => 'A School', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    /* A Google Chat room subscribed to everything — it must not receive this. */
+    db_insert('integrations', ['integrationId' => 'INT-CHAT-ALL', 'kind' => 'gchat', 'name' => 'Room', 'config' => '{"url":"https://chat.googleapis.com/x"}',
+        'events' => '["*"]', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+
+    $CONFIG['afrovanguard'] = ['org_url' => 'https://afrovanguard.org.ng', 'ngv_webhook_secret' => ''];
+    $calls = [];
+    $GLOBALS['__bus_http_mock'] = function ($url, $body, $headers) use (&$calls) { $calls[] = [$url, $body, $headers]; return ['ok' => true, 'body' => '{"ok":true,"status":"created"}']; };
+    chk('ngv portal: with no secret configured nothing is sent, and the sync says how to switch it on',
+        ngv_portal_integration() === '' && (backend_dispatch('admin.members.ngvPortalSync', ['requesterId' => $ADM])['error'] ?? '') === 'not_configured');
+
+    $CONFIG['afrovanguard']['ngv_webhook_secret'] = 'av-ngv-secret';
+    $r = backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-PORT-1', 'sendId' => false,
+        'evidence' => 'Led the robotics circle for a term and coached two juniors to the showcase.']);
+    $av = array_values(array_filter($calls, fn($c) => $c[0] === 'https://afrovanguard.org.ng/integrations/ngg.php'));
+    chk('ngv portal: a promotion to NGV is sent to Afrovanguard at once', !empty($r['ok']) && ($r['ngvPortal'] ?? '') === 'delivered' && count($av) === 1);
+    $body = json_decode($av[0][1] ?? '{}', true);
+    $hdr = implode("\n", $av[0][2] ?? []);
+    preg_match('/X-NGG-Timestamp: (\d+)/', $hdr, $ts);
+    chk('ngv portal: signed the way Afrovanguard checks it', (bool)preg_match('/X-NGG-Signature: sha256=' . hash_hmac('sha256', ($ts[1] ?? '') . '.' . ($av[0][1] ?? ''), 'av-ngv-secret') . '/', $hdr));
+    chk('ngv portal: with what an account needs — email, name, phone, centre, birthday, track',
+        ($body['event'] ?? '') === 'private.ngv.account' && ($body['data']['nggMemberId'] ?? '') === 'NGG-PORT-1' && ($body['data']['email'] ?? '') === 'port.v@example.com'
+        && ($body['data']['dob'] ?? '') === '2005-03-09' && ($body['data']['volunteerId'] ?? '') === ($r['volunteerId'] ?? '-'));
+    chk('ngv portal: …and nothing about guardians or school', !isset($body['data']['parentName']) && !isset($body['data']['school']));
+    chk('ngv portal: a room subscribed to everything is not handed somebody\'s email and birthday',
+        !db_row("SELECT d.id FROM deliveries d JOIN outbox o ON o.eventId = d.eventId WHERE d.integrationId = 'INT-CHAT-ALL' AND o.kind = 'private.ngv.account'")
+        && bus_subscribed('["*"]', 'member.promoted.ngv') && !bus_subscribed('["*"]', 'private.ngv.account') && !bus_subscribed('["private.*"]', 'private.ngv.account'));
+
+    $calls = [];
+    $GLOBALS['__bus_http_mock'] = fn($u, $b, $h) => ['ok' => false, 'error' => 'http_503'];
+    db_update('volunteers', ['status' => 'inactive'], ['memberId' => 'NGG-PORT-1']);
+    $again = backend_dispatch('admin.members.promoteNgv', ['requesterId' => $ADM, 'memberId' => 'NGG-PORT-1']);
+    $left = db_row("SELECT d.status FROM deliveries d JOIN outbox o ON o.eventId = d.eventId WHERE d.integrationId = 'INT-AV-NGV' ORDER BY d.id DESC LIMIT 1");
+    chk('ngv portal: re-promoted, they are sent again; Afrovanguard down, it waits for the dispatcher to retry',
+        !empty($again['already']) && ($again['ngvPortal'] ?? '') === 'queued' && ($left['status'] ?? '') === 'failed');
+
+    $GLOBALS['__bus_http_mock'] = fn($u, $b, $h) => ['ok' => true, 'body' => '{}'];
+    $sync = backend_dispatch('admin.members.ngvPortalSync', ['requesterId' => $ADM]);
+    chk('ngv portal: "Send NGVs to Afrovanguard" sends everybody already promoted', !empty($sync['ok']) && $sync['announced'] >= 1 && $sync['delivered'] === $sync['announced']);
+
+    unset($GLOBALS['__bus_http_mock']);
+    $CONFIG['afrovanguard'] = $keep;
+    db_exec("DELETE FROM deliveries WHERE integrationId IN ('INT-AV-NGV','INT-CHAT-ALL')");
+    db_exec("DELETE FROM integrations WHERE integrationId IN ('INT-AV-NGV','INT-CHAT-ALL')");
+    db_exec("DELETE FROM qr_codes WHERE studentId IN (SELECT volunteerId FROM volunteers WHERE memberId = 'NGG-PORT-1')");
+    db_exec("DELETE FROM volunteers WHERE memberId = 'NGG-PORT-1'");
+    db_exec("DELETE FROM member_promotions WHERE memberId = 'NGG-PORT-1'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-PORT-1'");
+})();
+
+/* ── NGG volunteers for Afrovanguard (api/hooks/afrovanguard.php) ── */
+(function () {
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-AVF-%'");
+    db_exec("DELETE FROM applications WHERE email LIKE '%@avfeed.test'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-AVF-1'");
+    $app = function (string $email, string $program) {
+        db_insert('applications', ['kind' => 'volunteer', 'name' => 'App ' . $program, 'email' => $email, 'program' => $program, 'status' => 'accepted', 'createdAt' => now_iso()]);
+        return (int) db_row('SELECT id FROM applications WHERE email = ? ORDER BY id DESC LIMIT 1', [$email])['id'];
+    };
+    $mk = function (string $id, array $f) { db_insert('volunteers', $f + ['volunteerId' => $id, 'role' => 'mentor', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]); };
+    $mk('VOL-AVF-1', ['applicationId' => $app('ngg@avfeed.test', 'anchor'), 'fullName' => 'Ada NGG', 'email' => 'Ada.NGG@AVFeed.test', 'phone' => '0803', 'centre' => 'Egbeda', 'dob' => '2001-01-01', 'safeguarding' => 'cleared']);
+    $mk('VOL-AVF-2', ['applicationId' => $app('sum@avfeed.test', 'summer'), 'fullName' => 'Sam Summer', 'email' => 'sam@avfeed.test']);
+    $mk('VOL-AVF-3', ['applicationId' => $app('old@avfeed.test', ''), 'fullName' => 'Lee Legacy', 'email' => 'lee@avfeed.test']);
+    db_insert('members', ['memberId' => 'NGG-AVF-1', 'fullName' => 'Pat Promoted', 'type' => 'NGG', 'status' => 'active', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    $mk('VOL-AVF-4', ['memberId' => 'NGG-AVF-1', 'fullName' => 'Pat Promoted', 'email' => 'pat@avfeed.test']);
+    /* Rows written before migration 122 have no programme: the backfill is what
+       decides — NGG application or NGG member → 'ngg', everything else Summer. */
+    db_exec("UPDATE volunteers SET programme = '' WHERE volunteerId LIKE 'VOL-AVF-%'");
+    foreach (array_filter(array_map('trim', explode(';', NGG_BACKFILL_VOLUNTEER_PROGRAMME))) as $sql) db_exec($sql);
+    $prog = fn($id) => (string)(db_row('SELECT programme FROM volunteers WHERE volunteerId = ?', [$id])['programme'] ?? '');
+    chk('volunteer programme backfill: NGG application and NGG member → ngg; Summer and legacy → summer',
+        $prog('VOL-AVF-1') === 'ngg' && $prog('VOL-AVF-4') === 'ngg' && $prog('VOL-AVF-2') === 'summer' && $prog('VOL-AVF-3') === 'summer');
+    $all = [];
+    $after = (int)(db_row("SELECT MIN(id) - 1 m FROM volunteers WHERE volunteerId LIKE 'VOL-AVF-%'")['m'] ?? 0);
+    for ($i = 0; $i < 10; $i++) { $r = av_volunteer_feed(['after' => $after, 'limit' => 2]); foreach ($r['volunteers'] as $v) $all[$v['volunteerId']] = $v; if ($r['done']) break; $after = (int)$r['next']; }
+    chk('av volunteers: NGG volunteers are sent — from an NGG application, or an NGG member promoted', isset($all['VOL-AVF-1']) && isset($all['VOL-AVF-4']));
+    chk('av volunteers: …Summer volunteers are not, nor a legacy application with no programme', !isset($all['VOL-AVF-2']) && !isset($all['VOL-AVF-3']));
+    $a = $all['VOL-AVF-1'] ?? [];
+    chk('av volunteers: matched by email (lower-cased), with role, centre and NGG\'s count of their service',
+        ($a['email'] ?? '') === 'ada.ngg@avfeed.test' && ($a['centre'] ?? '') === 'Egbeda' && array_key_exists('hours', $a) && array_key_exists('level', $a) && ($a['safeguardingCleared'] ?? false) === true);
+    chk('av volunteers: …and nothing it does not need — no birthday', !array_key_exists('dob', $a) && !array_key_exists('token', $a));
+    $raw = '{"op":"volunteers"}'; $ts = (string) time();
+    chk('av volunteers: signed with the shared secret under its own purpose', av_volunteer_signature_ok('s3cret', $ts, $raw, 'sha256=' . hash_hmac('sha256', 'volunteers.' . $ts . '.' . $raw, 's3cret')));
+    chk('av volunteers: …a promotion\'s signature (no purpose) cannot be replayed here, nor an old one, nor with no secret',
+        !av_volunteer_signature_ok('s3cret', $ts, $raw, 'sha256=' . hash_hmac('sha256', $ts . '.' . $raw, 's3cret'))
+        && !av_volunteer_signature_ok('s3cret', (string)(time() - 900), $raw, 'sha256=' . hash_hmac('sha256', 'volunteers.' . (time() - 900) . '.' . $raw, 's3cret'))
+        && !av_volunteer_signature_ok('', $ts, $raw, 'sha256=x'));
+    // A Summer volunteer promoted to NGG joins the feed; moved back, they leave it.
+    $ADM = 'NGG-2025-0099';
+    $pr = backend_dispatch('admin.volunteers.programme', ['requesterId' => $ADM, 'volunteerId' => 'VOL-AVF-2', 'programme' => 'ngg', 'note' => 'Stayed on after summer', 'notify' => false]);
+    chk('promote: a Summer volunteer becomes an NGG volunteer, audited', !empty($pr['ok']) && $pr['from'] === 'summer' && $prog('VOL-AVF-2') === 'ngg'
+        && db_row("SELECT id FROM audit_log WHERE event = 'volunteer.programme' AND subject = 'VOL-AVF-2' LIMIT 1"));
+    chk('promote: …and Afrovanguard now sees them', av_volunteer_is_ngg(db_row("SELECT * FROM volunteers WHERE volunteerId = 'VOL-AVF-2'")));
+    chk('promote: again is a no-op; a bad programme is refused; non-admins cannot',
+        !empty(backend_dispatch('admin.volunteers.programme', ['requesterId' => $ADM, 'volunteerId' => 'VOL-AVF-2', 'programme' => 'ngg'])['already'])
+        && (backend_dispatch('admin.volunteers.programme', ['requesterId' => $ADM, 'volunteerId' => 'VOL-AVF-2', 'programme' => 'club'])['error'] ?? '') === 'bad_programme'
+        && empty(backend_dispatch('admin.volunteers.programme', ['requesterId' => 'NGG-NOBODY', 'volunteerId' => 'VOL-AVF-2', 'programme' => 'summer'])['ok']));
+    backend_dispatch('admin.volunteers.programme', ['requesterId' => $ADM, 'volunteerId' => 'VOL-AVF-2', 'programme' => 'summer']);
+    chk('promote: moved back to Summer, they leave the feed', $prog('VOL-AVF-2') === 'summer' && !av_volunteer_is_ngg(db_row("SELECT * FROM volunteers WHERE volunteerId = 'VOL-AVF-2'")));
+    $list = backend_dispatch('admin.volunteers.list', ['requesterId' => $ADM]);
+    $byId = []; foreach ($list['volunteers'] ?? [] as $v) $byId[$v['volunteerId']] = $v;
+    chk('admin roster: every volunteer carries its programme', ($byId['VOL-AVF-1']['programme'] ?? '') === 'ngg' && ($byId['VOL-AVF-2']['programme'] ?? '') === 'summer');
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'VOL-AVF-%'");
+    db_exec("DELETE FROM applications WHERE email LIKE '%@avfeed.test'");
+    db_exec("DELETE FROM members WHERE memberId = 'NGG-AVF-1'");
+})();
+
+/* ── NGG's own volunteer door (/join/volunteer): year-round, its own activities ── */
+(function () {
+    $ADM = 'NGG-2025-0099';
+    db_exec("DELETE FROM applications WHERE email LIKE '%@nggdoor.test'");
+    $centre = (string)(db_row("SELECT name FROM centres WHERE status = 'active' ORDER BY id LIMIT 1")['name'] ?? '');
+    $cat = ngg_volunteer_catalogue();
+    $area = array_key_first($cat); $act = $cat[$area][0];
+    $base = ['kind' => 'volunteer', 'program' => 'anchor', 'role' => 'mentor', 'sex' => 'Female', 'firstName' => 'Ngozi', 'lastName' => 'Door',
+             'phone' => '08031239999', 'dob' => '1995-05-05', 'centre' => $centre, 'why' => 'All year, every Saturday.',
+             'photoUrl' => 'https://res.cloudinary.com/demo/image/upload/v1/face.jpg'];
+    chk('ngg door: NGG has its own catalogue, not the Summer School courses', $cat && !in_array($act, academy_courses(), true));
+    chk('ngg door: an area is required, and must be NGG\'s',
+        (backend_dispatch('public.apply', $base + ['email' => 'a@nggdoor.test', 'courses' => [$act]])['error'] ?? '') === 'area_required'
+        && (backend_dispatch('public.apply', $base + ['email' => 'b@nggdoor.test', 'faculty' => academy_faculties()[0], 'courses' => [$act]])['error'] ?? '') === 'invalid_area');
+    chk('ngg door: …and an activity from that area — a Summer course does not count',
+        (backend_dispatch('public.apply', $base + ['email' => 'c@nggdoor.test', 'faculty' => $area, 'courses' => [academy_courses()[0]]])['error'] ?? '') === 'activity_required');
+    $ok = backend_dispatch('public.apply', $base + ['email' => 'd@nggdoor.test', 'faculty' => $area, 'courses' => [$act]]);
+    $appRow = db_row("SELECT id, program, courses FROM applications WHERE email = 'd@nggdoor.test'");
+    chk('ngg door: a complete registration is stored as an NGG (anchor) application', !empty($ok['ok']) && ($appRow['program'] ?? '') === 'anchor' && strpos((string)$appRow['courses'], $act) !== false);
+    $list = backend_dispatch('admin.volunteers.list', ['requesterId' => $ADM]);
+    $pend = array_values(array_filter($list['pending'] ?? [], fn($a) => (int)$a['id'] === (int)$appRow['id']));
+    chk('ngg door: the review queue labels it NGG', ($pend[0]['programme'] ?? '') === 'ngg');
+    $appr = backend_dispatch('admin.volunteers.approve', ['requesterId' => $ADM, 'id' => (int)$appRow['id']]);
+    $vid = (string)($appr['volunteer']['volunteerId'] ?? '');
+    $vrow = db_row('SELECT * FROM volunteers WHERE volunteerId = ?', [$vid]);
+    chk('ngg door: approval makes an NGG volunteer, which Afrovanguard sees', ($vrow['programme'] ?? '') === 'ngg' && av_volunteer_is_ngg($vrow));
+
+    // The Summer door is seasonal: closing it leaves NGG's open, and the other way round.
+    setting_set('volunteer_applications_open', '0', $ADM);
+    $sum = backend_dispatch('public.apply', array_diff_key($base, ['program' => 1]) + ['email' => 'e@nggdoor.test']);
+    $ngg = backend_dispatch('public.apply', $base + ['email' => 'f@nggdoor.test', 'faculty' => $area, 'courses' => [$act]]);
+    chk('seasons: Summer registration closed → the Summer form refuses, NGG\'s still takes people', ($sum['error'] ?? '') === 'applications_closed' && !empty($ngg['ok']));
+    setting_set('volunteer_applications_open', '1', $ADM);
+    setting_set('ngg_volunteer_applications_open', '0', $ADM);
+    chk('seasons: …and NGG\'s has its own switch', (backend_dispatch('public.apply', $base + ['email' => 'g@nggdoor.test', 'faculty' => $area, 'courses' => [$act]])['error'] ?? '') === 'applications_closed'
+        && public_volunteer_context()['nggOpen'] === false && public_volunteer_context()['open'] === true);
+    setting_set('ngg_volunteer_applications_open', '1', $ADM);
+
+    // Admins edit NGG's activities without touching the Summer catalogue.
+    $summerBefore = academy_catalogue();
+    $set = backend_dispatch('admin.volunteers.nggCatalogue.set', ['requesterId' => $ADM, 'catalogue' => [['faculty' => 'Clubs', 'courses' => ['Chess club', ' Chess club ', '']]]]);
+    $got = backend_dispatch('admin.volunteers.nggCatalogue.get', ['requesterId' => $ADM]);
+    chk('ngg activities: saved cleaned, and the Summer catalogue is untouched',
+        !empty($set['ok']) && !empty($got['customised']) && ($got['catalogue'][0]['courses'] ?? []) === ['Chess club'] && academy_catalogue() === $summerBefore);
+    chk('ngg activities: empty is refused; reset brings back the default; non-admins cannot',
+        (backend_dispatch('admin.volunteers.nggCatalogue.set', ['requesterId' => $ADM, 'catalogue' => []])['error'] ?? '') === 'catalogue_empty'
+        && !empty(backend_dispatch('admin.volunteers.nggCatalogue.set', ['requesterId' => $ADM, 'reset' => true])['ok']) && ngg_volunteer_catalogue() === ngg_volunteer_catalogue_default()
+        && empty(backend_dispatch('admin.volunteers.nggCatalogue.get', ['requesterId' => 'NGG-NOBODY'])['ok']));
+    if ($vid !== '') { db_exec('DELETE FROM qr_codes WHERE studentId = ?', [$vid]); db_exec('DELETE FROM volunteers WHERE volunteerId = ?', [$vid]); }
+    db_exec("DELETE FROM applications WHERE email LIKE '%@nggdoor.test'");
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);

@@ -369,10 +369,10 @@ function VolunteersPage({ setPage }) {
             <p style={{fontSize:19, lineHeight:1.5, color:"rgba(255,255,255,0.78)", maxWidth:560, margin:0}}>
               We do not need experts. We need adults who can listen first, model their craft on camera, and stay present for twelve weeks. If that is you, we have a role.
             </p>
-            <button
-              className="btn btn-lime btn-lg mt-32"
-              onClick={() => setPage("volunteer")}
-            >Register as a volunteer →</button>
+            <div className="mt-32" style={{display:"flex", gap:12, flexWrap:"wrap"}}>
+              <button className="btn btn-lime btn-lg" onClick={() => setPage("ngg-volunteer")}>Volunteer with NGG · all year →</button>
+              <button className="btn btn-ghost btn-lg" onClick={() => setPage("volunteer")}>Summer School only (seasonal)</button>
+            </div>
           </div>
           <Photo name="mentor" style={{height:420}} overlay>
             <div style={{position:"absolute", bottom:20, left:20, right:20, color:"white"}}>
@@ -423,9 +423,12 @@ function VolunteersPage({ setPage }) {
       <section className="section" style={{paddingTop:0}}>
         <div className="container" style={{maxWidth:760, textAlign:"center"}}>
           <div className="card" style={{padding:"44px 36px"}}>
-            <h2 className="display" style={{fontSize:"clamp(28px,4vw,44px)", margin:"0 0 10px"}}>Ready? It takes two minutes.</h2>
-            <p style={{color:"var(--ink-500)", fontSize:15, margin:"0 0 22px"}}>One form — pick Admin, Mentor or Instructor, and instructors choose their courses.</p>
-            <button className="btn btn-gold btn-lg" onClick={() => setPage("volunteer")}>Register as a volunteer →</button>
+            <h2 className="display" style={{fontSize:"clamp(28px,4vw,44px)", margin:"0 0 10px"}}>Ready? Pick your door.</h2>
+            <p style={{color:"var(--ink-500)", fontSize:15, margin:"0 0 22px"}}>NGG runs all year — clubs, mentoring, events, media. The Summer School runs only in the summer, with its own courses.</p>
+            <div style={{display:"flex", gap:12, flexWrap:"wrap", justifyContent:"center"}}>
+              <button className="btn btn-gold btn-lg" onClick={() => setPage("ngg-volunteer")}>Volunteer with NGG →</button>
+              <button className="btn btn-ghost btn-lg" onClick={() => setPage("volunteer")}>Summer School volunteer</button>
+            </div>
           </div>
         </div>
       </section>
@@ -994,6 +997,324 @@ function JoinPage({ setPage }) {
                 </button>
               </div>
             </React.Fragment>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* =================== NGG VOLUNTEER (/join/volunteer) ===================
+ * Volunteering has two doors. /volunteer is the Summer School's — seasonal,
+ * open only while summer runs, built around its courses and Operations Manual.
+ * This one is NGG's: year-round, alongside members at their centre, with its
+ * own areas and activities (admin: Volunteers → NGG activities). It is styled
+ * like /join because it is the same kind of thing — a stepper, a draft saved as
+ * you go — and it posts program 'anchor', so an approval makes an NGG volunteer
+ * (and Afrovanguard, which only sees NGG volunteers, recognises them).
+ */
+const NGG_VOL_DRAFT_KEY = "ngg_ngg_volunteer_draft_v1";
+const NGG_VOL_LANES = [
+  { key: "mentor",     icon: "🧭", name: "Mentor",          line: "Walk with a small circle of members through the year. Listen first." },
+  { key: "instructor", icon: "🎓", name: "Facilitator",     line: "Lead club sessions and activities — your skill, shared every week." },
+  { key: "admin",      icon: "🗂", name: "Operations",      line: "Records, events, media, parent liaison — what keeps a centre running." },
+];
+const NGG_VOL_BLANK = { role: "", centre: "", area: "", activities: [], firstName: "", lastName: "", otherName: "", sex: "", dob: "", email: "", phone: "", photoUrl: "", why: "", availability: "", visibilityConsent: false };
+
+function NggVolunteerPage({ setPage }) {
+  const steps = ["You", "Serve", "Story", "Review"];
+  const [step, setStep] = useState(0);
+  const [ctx, setCtx] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [done, setDone] = useState(null);   // { ref, whatsapp }
+  const [restored, setRestored] = useState(false);
+  const [d, setD] = useState(() => {
+    let seed = {};
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const role = (q.get("role") || "").toLowerCase();
+      if (NGG_VOL_LANES.some(l => l.key === role)) seed.role = role;
+      if (q.get("centre")) seed.centre = q.get("centre");
+    } catch (_) {}
+    try {
+      const saved = JSON.parse(localStorage.getItem(NGG_VOL_DRAFT_KEY) || "null");
+      if (saved && typeof saved === "object") return Object.assign({}, NGG_VOL_BLANK, seed, saved);
+    } catch (_) {}
+    return Object.assign({}, NGG_VOL_BLANK, seed);
+  });
+  React.useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(NGG_VOL_DRAFT_KEY) || "null");
+      if (saved && (saved.firstName || saved.email || saved.why || saved.photoUrl)) setRestored(true);
+    } catch (_) {}
+    NGGApi.public.volunteer.context().then(setCtx).catch(() => setCtx({ ok: false }));
+  }, []);
+  // Save as you go — everything but the busy/done state.
+  React.useEffect(() => { if (!done) { try { localStorage.setItem(NGG_VOL_DRAFT_KEY, JSON.stringify(d)); } catch (_) {} } }, [d, done]);
+
+  const set = (k, v) => { setD(o => ({ ...o, [k]: v })); if (err) setErr(""); };
+  const catalogue = (ctx && ctx.nggCatalogue) || {};
+  const areas = Object.keys(catalogue);
+  const activityOpts = d.area && catalogue[d.area] ? catalogue[d.area] : [];
+  const chooseArea = (a) => setD(o => ({ ...o, area: a, activities: o.activities.filter(x => (catalogue[a] || []).includes(x)) }));
+  const toggleActivity = (a) => setD(o => ({ ...o, activities: o.activities.includes(a) ? o.activities.filter(x => x !== a) : [...o.activities, a] }));
+  const centres = (ctx && ctx.centres) || [];
+  const age = d.dob ? dobToAge(d.dob) : 0;
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim());
+  const closed = ctx && ctx.nggOpen === false;
+  const lane = NGG_VOL_LANES.find(l => l.key === d.role);
+
+  function problem(s) {
+    if (s === 0) {
+      if (!d.firstName.trim()) return "Enter your first name.";
+      if (!d.lastName.trim()) return "Enter your last name.";
+      if (!d.dob) return "Enter your date of birth.";
+      if (age < 16 || age > 100) return "NGG volunteers must be 16 or older.";
+      if (!d.sex) return "Select your sex.";
+      if (!emailOk) return "Enter a valid email address.";
+      if (d.phone.trim().length < 7) return "Add a phone number we can reach you on.";
+      if (!d.photoUrl) return "Add a headshot — it goes on your volunteer ID.";
+    }
+    if (s === 1) {
+      if (!d.role) return "Pick how you'd like to serve.";
+      if (!d.centre) return "Choose your home centre.";
+      if (!d.area) return "Choose an area.";
+      if (!d.activities.length) return "Pick at least one activity.";
+    }
+    if (s === 2 && d.why.trim().length < 10) return "Tell us a little about why — a couple of sentences is plenty.";
+    return "";
+  }
+  function goToStep(i) { if (i < step) { setErr(""); setStep(i); } }
+  function back() { setErr(""); setStep(Math.max(0, step - 1)); }
+  async function next() {
+    const p = problem(step);
+    if (p) { setErr(p); return; }
+    setErr("");
+    if (step < 3) { setStep(step + 1); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+    setBusy(true);
+    try {
+      const why = d.why.trim() + (d.availability ? "\n\nAvailability: " + d.availability : "");
+      const r = await sendIntake("public.apply", {
+        kind: "volunteer", program: "anchor", role: d.role,
+        firstName: d.firstName.trim(), lastName: d.lastName.trim(), otherName: d.otherName.trim(),
+        sex: d.sex, dob: d.dob, email: d.email.trim(), phone: d.phone.trim(),
+        centre: d.centre, faculty: d.area, courses: d.activities,
+        why, photoUrl: d.photoUrl || "", visibilityConsent: !!d.visibilityConsent,
+      }, "ngg_apply_ngg_volunteer");
+      try { localStorage.removeItem(NGG_VOL_DRAFT_KEY); } catch (_) {}
+      setDone({ ref: (r && r.ref) || "", whatsapp: (r && r.whatsapp) || "" });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (e) {
+      const code = e.code || e.message;
+      const text = {
+        rate_limited: "Too many submissions from this connection — wait a few minutes and try again.",
+        applications_closed: "NGG volunteer registration is paused right now. Check back soon.",
+        centre_required: "Choose your home centre.",
+        invalid_centre: "That centre isn't active — pick one from the list.",
+        area_required: "Choose an area.",
+        invalid_area: "That area isn't offered any more — pick one from the list.",
+        activity_required: "Pick at least one activity.",
+        phone_required: "A phone number is required.",
+        photo_required: "A headshot is required — add a photo and try again.",
+        bad_email: "That email doesn't look right.",
+        bad_dob: "Enter a valid date of birth.",
+        dob_too_young: "NGG volunteers must be at least 16 years old.",
+        bad_sex: "Select your sex.",
+        bad_firstName: "Enter your first name.",
+        bad_lastName: "Enter your last name.",
+        upstream_unreachable: "We couldn't reach the server. Your draft is saved — try again in a moment.",
+      }[code] || "Couldn't submit. Your draft is saved — try again.";
+      setErr(text);
+      if (typeof toast !== "undefined") toast.error(text, "NGG volunteer");
+    } finally { setBusy(false); }
+  }
+
+  const choice = (on) => ({
+    padding: 18, borderRadius: 14, textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+    background: on ? "var(--navy-900)" : "white", color: on ? "white" : "var(--ink-900)",
+    border: on ? "2px solid var(--gold-500)" : "1px solid rgba(12,20,50,0.12)",
+  });
+  const pill = (on) => ({
+    padding: "9px 14px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 600,
+    background: on ? "var(--navy-900)" : "white", color: on ? "white" : "var(--ink-900)",
+    border: on ? "1.5px solid var(--gold-500)" : "1px solid rgba(12,20,50,0.14)",
+  });
+  const h2 = { fontFamily: "var(--font-display)", fontSize: 32, margin: 0, letterSpacing: "-0.02em" };
+
+  return (
+    <div className="page ngv-join" data-screen-label="NGG volunteer · join">
+      <style>{".ngv-join .nv-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.ngv-join .nv-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.ngv-join .nv-sum{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}@media(max-width:700px){.ngv-join .nv-2,.ngv-join .nv-3,.ngv-join .nv-sum{grid-template-columns:1fr}.ngv-join .nv-card{padding:24px!important}.ngv-join .nv-step-label{display:none}}"}</style>
+      <section className="page-hero page-hero-light" style={{ background: "var(--paper)", padding: "56px 0 88px", minHeight: "calc(100vh - 71px)" }}>
+        <div className="container" style={{ maxWidth: 980 }}>
+          <div style={{ textAlign: "center", marginBottom: 40 }}>
+            <span className="eyebrow" style={{ color: "var(--gold-500)" }}>VOLUNTEER · NEXT GENERATION GENIUS · ALL YEAR</span>
+            <h1 className="display" style={{ fontSize: "clamp(44px, 6vw, 84px)", margin: "10px 0 0" }}>
+              Serve the <em style={{ fontStyle: "normal", color: "var(--coral)" }}>movement.</em>
+            </h1>
+            <p style={{ fontSize: 17, color: "var(--ink-500)", maxWidth: 560, margin: "16px auto 0", lineHeight: 1.5 }}>
+              NGG runs all year — clubs, mentoring, events, media. Four short steps; we save as you go.
+            </p>
+            <p style={{ fontSize: 14, color: "var(--ink-500)", margin: "10px auto 0" }}>
+              Here for the Summer School only? <a href="/volunteer" onClick={(e) => { e.preventDefault(); setPage("volunteer"); }} style={{ color: "var(--navy-900)", fontWeight: 600, display: "inline-flex", alignItems: "center", minHeight: 44 }}>Summer volunteering is seasonal — register there →</a>
+            </p>
+          </div>
+
+          {done ? (
+            <ApplySuccessCard
+              variant="volunteer"
+              refCode={done.ref}
+              whatsapp={done.whatsapp}
+              centreName={d.centre}
+              footNote={"We've emailed a copy to " + (d.email.trim() || "you") + "."}
+              actions={[{ label: "Back to home", onClick: () => setPage("home"), primary: true }]}
+            />
+          ) : closed ? (
+            <div className="card nv-card" style={{ padding: 48, textAlign: "center" }}>
+              <h2 style={h2}>Registration is paused.</h2>
+              <p style={{ color: "var(--ink-500)", margin: "10px 0 0" }}>We're placing the volunteers we have. Check back soon, or write to us from the contact page.</p>
+            </div>
+          ) : (
+          <React.Fragment>
+          {restored && (
+            <div role="status" style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", marginBottom: 20, padding: "12px 16px", borderRadius: 12, background: "rgba(245,176,38,0.14)", border: "1px solid rgba(245,176,38,0.4)", fontSize: 14, color: "var(--ink-900)" }}>
+              <span>↩︎ We saved your progress — pick up where you left off.</span>
+              <button type="button" onClick={() => { try { localStorage.removeItem(NGG_VOL_DRAFT_KEY); } catch (_) {} setD({ ...NGG_VOL_BLANK }); setStep(0); setRestored(false); }} className="mono" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-500)", fontWeight: 600 }}>Start fresh</button>
+            </div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32, padding: "0 12px" }}>
+            {steps.map((s, i) => {
+              const isDone = i < step;
+              return (
+                <React.Fragment key={s}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flex: "0 0 auto" }}>
+                    <button type="button" onClick={() => goToStep(i)} disabled={!isDone}
+                      aria-label={isDone ? ("Go back to step " + (i + 1) + ": " + s) : ("Step " + (i + 1) + ": " + s + (i === step ? " (current)" : ""))}
+                      aria-current={i === step ? "step" : undefined}
+                      style={{
+                        width: 44, height: 44, borderRadius: "50%", padding: 0,
+                        background: isDone ? "var(--navy-900)" : i === step ? "var(--gold-500)" : "var(--cream-100)",
+                        color: i <= step ? (i === step ? "var(--navy-900)" : "white") : "var(--ink-400)",
+                        display: "grid", placeItems: "center", fontWeight: 700, fontFamily: "var(--font-display)", fontSize: 18,
+                        border: i === step ? "2px solid var(--navy-900)" : "none", cursor: isDone ? "pointer" : "default",
+                      }}>{isDone ? "✓" : i + 1}</button>
+                    <div className="mono nv-step-label" style={{ fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: i === step ? 700 : 400, color: i === step ? "var(--navy-900)" : "var(--ink-500)" }}>{s}</div>
+                  </div>
+                  {i < steps.length - 1 && <div style={{ flex: 1, height: 2, background: i < step ? "var(--navy-900)" : "var(--cream-200)", margin: "-22px 12px 0" }}/>}
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          <div className="card nv-card" style={{ padding: 48, minHeight: 380 }}>
+            {step === 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                <h2 style={h2}>Who's volunteering?</h2>
+                <p style={{ color: "var(--ink-500)", margin: 0 }}>Your legal names, as they'll appear on your NGG volunteer ID.</p>
+                <div className="nv-2" style={{ marginTop: 14 }}>
+                  <div className="field"><label>First name</label><input value={d.firstName} onChange={e => set("firstName", e.target.value)} autoComplete="given-name" placeholder="e.g. Tolu"/></div>
+                  <div className="field"><label>Last name</label><input value={d.lastName} onChange={e => set("lastName", e.target.value)} autoComplete="family-name" placeholder="e.g. Adebayo"/></div>
+                  <div className="field"><label>Other name · optional</label><input value={d.otherName} onChange={e => set("otherName", e.target.value)} autoComplete="additional-name" placeholder="Middle name(s)"/></div>
+                  <div className="field"><label>Date of birth</label><input type="date" value={d.dob} max={new Date().toISOString().slice(0, 10)} onChange={e => set("dob", e.target.value)} autoComplete="bday"/></div>
+                  <div className="field"><label>Sex</label>
+                    <select value={d.sex} onChange={e => set("sex", e.target.value)}>
+                      <option value="" disabled>Select…</option><option value="Male">Male</option><option value="Female">Female</option>
+                    </select>
+                  </div>
+                  <div className="field"><label>Phone</label><input type="tel" value={d.phone} onChange={e => set("phone", e.target.value)} autoComplete="tel" placeholder="0803 000 0000"/></div>
+                  <div className="field" style={{ gridColumn: "1 / -1" }}><label>Email</label><input type="email" value={d.email} onChange={e => set("email", e.target.value)} autoComplete="email" placeholder="you@example.com"/></div>
+                </div>
+                <div style={{ marginTop: 6 }}>
+                  <PhotoCapture value={d.photoUrl} onChange={(url) => set("photoUrl", url)} size={64} label="A friendly headshot (required)"/>
+                </div>
+              </div>
+            )}
+            {step === 1 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                <div>
+                  <h2 style={h2}>How will you serve?</h2>
+                  <p style={{ color: "var(--ink-500)", margin: "8px 0 0" }}>Pick a role, your home centre, and the activities you'd give your time to.</p>
+                </div>
+                <div className="nv-3">
+                  {NGG_VOL_LANES.map(l => (
+                    <button type="button" key={l.key} onClick={() => set("role", l.key)} style={choice(d.role === l.key)} aria-pressed={d.role === l.key}>
+                      <div style={{ fontSize: 28, marginBottom: 8 }}>{l.icon}</div>
+                      <div style={{ fontWeight: 700 }}>{l.name}</div>
+                      <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4, lineHeight: 1.35 }}>{l.line}</div>
+                    </button>
+                  ))}
+                </div>
+                <div className="nv-2">
+                  <div className="field"><label>Home centre</label>
+                    <select value={d.centre} onChange={e => set("centre", e.target.value)}>
+                      <option value="">{ctx ? "Select a centre…" : "Loading centres…"}</option>
+                      {centres.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="field"><label>Area</label>
+                    <select value={d.area} onChange={e => chooseArea(e.target.value)}>
+                      <option value="">{ctx ? "Select an area…" : "Loading…"}</option>
+                      {areas.map(a => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {d.area && (
+                  <div>
+                    <div className="mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-500)", marginBottom: 10 }}>Activities in {d.area} · pick any</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {activityOpts.map(a => <button type="button" key={a} onClick={() => toggleActivity(a)} style={pill(d.activities.includes(a))} aria-pressed={d.activities.includes(a)}>{d.activities.includes(a) ? "✓ " : ""}{a}</button>)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {step === 2 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                <h2 style={h2}>Tell us one thing.</h2>
+                <p style={{ color: "var(--ink-500)", margin: 0 }}>Why NGG, and what would you like a member to walk away with after a year alongside you?</p>
+                <div className="field"><label>Your answer</label>
+                  <textarea rows={6} value={d.why} onChange={e => set("why", e.target.value)} placeholder="A short answer is fine. Be honest, not impressive."/>
+                </div>
+                <div className="field"><label>When can you usually serve? · optional</label>
+                  <select value={d.availability} onChange={e => set("availability", e.target.value)}>
+                    <option value="">Select…</option>
+                    <option>Saturdays</option><option>Weekday evenings</option><option>Weekends</option><option>Flexible / as needed</option><option>Remote only</option>
+                  </select>
+                </div>
+                <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 14, color: "var(--ink-700)" }}>
+                  <input type="checkbox" checked={!!d.visibilityConsent} onChange={e => set("visibilityConsent", e.target.checked)} style={{ marginTop: 3 }}/>
+                  <span>You may feature my photo and first name on the NGG site. (Optional.)</span>
+                </label>
+              </div>
+            )}
+            {step === 3 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                <h2 style={h2}>Check and send.</h2>
+                <p style={{ color: "var(--ink-500)", margin: 0 }}>A coordinator reads every registration and writes back within a week. Anyone working with young people is safeguarding-screened before their first session.</p>
+                <div className="card" style={{ padding: 18, background: "var(--cream-50)", border: "1px solid var(--cream-200)" }}>
+                  <div className="eyebrow" style={{ color: "var(--ink-500)" }}>NGG VOLUNTEER · SUMMARY</div>
+                  <div className="nv-sum" style={{ marginTop: 12, fontSize: 14 }}>
+                    <div><b>Name</b><br/>{[d.firstName, d.otherName, d.lastName].filter(Boolean).join(" ") || "—"}</div>
+                    <div><b>Contact</b><br/>{d.email || "—"}{d.phone ? " · " + d.phone : ""}</div>
+                    <div><b>Role</b><br/>{lane ? lane.name : "—"}</div>
+                    <div><b>Centre</b><br/>{d.centre || "—"}</div>
+                    <div style={{ gridColumn: "1 / -1" }}><b>{d.area || "Activities"}</b><br/>{d.activities.join(", ") || "—"}</div>
+                    {d.availability && <div><b>Availability</b><br/>{d.availability}</div>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {err && (
+            <div role="alert" style={{ marginTop: 18, padding: "12px 16px", borderRadius: 12, background: "rgba(255,90,60,0.1)", border: "1px solid rgba(255,90,60,0.3)", color: "#a3331c", fontSize: 14, fontWeight: 500 }}>{err}</div>
+          )}
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 24, gap: 12 }}>
+            <button className="btn btn-ghost" onClick={back} disabled={step === 0 || busy} style={{ visibility: step === 0 ? "hidden" : "visible" }}>← Back</button>
+            <button className="btn btn-primary btn-lg" onClick={next} disabled={busy}>{busy ? "Submitting…" : step === 3 ? "Register as an NGG volunteer →" : "Continue →"}</button>
+          </div>
+          </React.Fragment>
           )}
         </div>
       </section>
@@ -1938,12 +2259,15 @@ function VolunteerRegisterPage({ setPage }) {
     <div className="page" data-screen-label="Volunteer · register">
       <section className="section" style={{ paddingTop: 72 }}>
         <div className="container" style={{ maxWidth: 760 }}>
-          <span className="eyebrow" style={{ color: "var(--gold-500)" }}>VOLUNTEER · NEXT GENERATION GENIUS</span>
+          <span className="eyebrow" style={{ color: "var(--gold-500)" }}>SUMMER SCHOOL VOLUNTEER · SEASONAL</span>
           <h1 className="display" style={{ fontSize: "clamp(44px,6vw,84px)", margin: "10px 0 14px", lineHeight: 0.95 }}>
             Give a season.<br/>Shape a genius.
           </h1>
           <p style={{ fontSize: 17, color: "var(--ink-500)", lineHeight: 1.6, maxWidth: 560, margin: 0 }}>
-            One form, three ways in. Tell us the shape of your time and we'll take it from there.
+            One form, three ways in — for the Summer School, which runs only in the summer. Tell us the shape of your time and we'll take it from there.
+          </p>
+          <p style={{ fontSize: 14, color: "var(--ink-500)", margin: "12px 0 0" }}>
+            Want to serve all year? <a href="/join/volunteer" onClick={(e) => { e.preventDefault(); setPage("ngg-volunteer"); }} style={{ color: "var(--navy-900)", fontWeight: 600, display: "inline-flex", alignItems: "center", minHeight: 44 }}>Volunteer with NGG →</a>
           </p>
 
           <HandbookSummary/>
@@ -8521,7 +8845,7 @@ function LegalPage({ setPage }) {
   );
 }
 
-Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegisterPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, InstructorRoster, CertificatePage, LegalPage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio, MentorPortal, SelfRegisterPage, ReviewDeskPage, CardFront, VolunteerCardFront, CardBack,
+Object.assign(window, { MediaPage, ParentsPage, VolunteersPage, VolunteerRegisterPage, NggVolunteerPage, JoinPage, ContactPage, MentorsPage, SummerProfilePage, InstructorRoster, CertificatePage, LegalPage, FAQList, MentorApplySection, MediaModal, CirclePortal, ParentVerifyPage, GatePage, CardStudio, MentorPortal, SelfRegisterPage, ReviewDeskPage, CardFront, VolunteerCardFront, CardBack,
   /* Pure helpers, exported so the card rules can be tested as rules rather than
      inferred from pixels. Both of these shipped with a bug that a rendering
      assertion had actually LOCKED IN — the long-name test asserted the shrunk

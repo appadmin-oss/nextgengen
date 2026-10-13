@@ -61,7 +61,8 @@ const ROUTES = [
 
   // ── Intake ───────────────────────────────────────────────────────────────
   { id: "join",        title: "Apply · Summer School · NGG",               desc: "Four short steps. About six minutes. Pause and come back — we save as you go." },
-  { id: "volunteer",   title: "Volunteer registration · NGG",              desc: "Register to volunteer — as an admin, a mentor, or an instructor teaching a course." },
+  { id: "volunteer",   title: "Summer School volunteer · NGG",             desc: "Volunteer for the Summer School season — as an admin, a mentor, or an instructor teaching a course." },
+  { id: "ngg-volunteer", title: "Volunteer with NGG · All year",           desc: "Serve Next Generation Genius all year — mentoring, club sessions, events, media and operations. Four short steps." },
   /* Direct Apply: the public, gate-scoped sign-up a centre hands to a family
      (`/apply?g=…`). A real page with a real title — and noindexed, because it
      collects a child's identity and the address is meant to be given out, not
@@ -239,10 +240,13 @@ function pageFromPath() {
   // Resolve old bookmarks/shared links transparently (the router then rewrites
   // the address bar to /s-status via pathForPage in the effect below).
   if (seg === "status") return "s-status";
+  // NGG's own volunteer door lives under /join (the Summer one is /volunteer).
+  if (seg === "join" && (window.location.pathname || "").replace(/\/+$/, "").split("/")[2] === "volunteer") return "ngg-volunteer";
   return PAGE_IDS.includes(seg) ? seg : "_notfound";
 }
 function pathForPage(page) {
   if (page === "admin") return "/nextadmin";
+  if (page === "ngg-volunteer") return "/join/volunteer";
   return page === "home" ? "/" : "/" + page;
 }
 
@@ -363,6 +367,7 @@ function App() {
     parents:   <ParentsPage   setPage={setPage}/>,
     volunteers:<VolunteersPage setPage={setPage}/>,
     volunteer: <VolunteerRegisterPage setPage={setPage}/>,
+    "ngg-volunteer": <NggVolunteerPage setPage={setPage}/>,
     mentors:   <MentorsPage    setPage={setPage}/>,
     join:      <JoinPage      setPage={setPage}/>,
     blog:      <BlogPage      setPage={setPage}/>,

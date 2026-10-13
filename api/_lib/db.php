@@ -15,7 +15,7 @@ declare(strict_types=1);
  * mirrored statement in db/schema-mysql.sql.
  */
 
-const NGG_SCHEMA_TARGET = 121;
+const NGG_SCHEMA_TARGET = 122;
 
 /**
  * Backfill for migration 109 — recover a member's level from the note the
@@ -52,6 +52,20 @@ const NGG_BACKFILL_MEMBER_LEVELS = "
      WHERE (level IS NULL OR level = '')
        AND INSTR(notes, '[roster-import]') > 0
        AND INSTR(notes, 'Level ') > 0
+";
+
+/**
+ * 122 — which programme a volunteer serves. NGG when they came in through an
+ * NGG (anchor) application, or were made a volunteer straight from an NGG
+ * member record; Summer otherwise. Fills blanks only.
+ */
+const NGG_BACKFILL_VOLUNTEER_PROGRAMME = "
+    UPDATE volunteers SET programme = 'ngg'
+     WHERE (programme IS NULL OR programme = '')
+       AND ( applicationId IN (SELECT id FROM applications WHERE program = 'anchor')
+          OR ( (applicationId IS NULL OR applicationId = 0)
+               AND memberId IN (SELECT memberId FROM members WHERE UPPER(type) = 'NGG') ) );
+    UPDATE volunteers SET programme = 'summer' WHERE programme IS NULL OR programme = '';
 ";
 
 /**
@@ -143,6 +157,17 @@ const NGG_MYSQL_ROW_FIXUPS = [
     'members.level' => NGG_BACKFILL_MEMBER_LEVELS,
     /* 115 — the member's division, out of their track. */
     'members.division' => NGG_BACKFILL_MEMBER_DIVISION,
+    /* 122 — Summer or NGG, for every volunteer. */
+    'volunteers.programme.ngg' => "
+        UPDATE volunteers SET programme = 'ngg'
+         WHERE (programme IS NULL OR programme = '')
+           AND ( applicationId IN (SELECT id FROM applications WHERE program = 'anchor')
+              OR ( (applicationId IS NULL OR applicationId = 0)
+                   AND memberId IN (SELECT memberId FROM members WHERE UPPER(type) = 'NGG') ) )
+    ",
+    'volunteers.programme.summer' => "
+        UPDATE volunteers SET programme = 'summer' WHERE programme IS NULL OR programme = ''
+    ",
 ];
 
 function db_conn(): PDO {
@@ -3691,6 +3716,14 @@ function db_migrate(PDO $db): void {
             CREATE UNIQUE INDEX IF NOT EXISTS uq_member_cards_code ON member_cards(kind, format, code);
             CREATE INDEX IF NOT EXISTS idx_member_cards_member ON member_cards(memberId, status);
         ",
+        // 122 — a volunteer serves either the Summer School or NGG itself.
+        // Summer is the default (the /volunteer form); NGG volunteers apply
+        // through /join/volunteer or are promoted from Summer by an admin.
+        122 => "
+            ALTER TABLE volunteers ADD COLUMN programme TEXT DEFAULT '';
+            ALTER TABLE volunteers ADD COLUMN programmeAt TEXT DEFAULT '';
+            CREATE INDEX IF NOT EXISTS idx_vol_programme ON volunteers(programme);
+        " . NGG_BACKFILL_VOLUNTEER_PROGRAMME,
     ];
 
     // Guard the ladder before touching the DB (contiguous keys, target matches).

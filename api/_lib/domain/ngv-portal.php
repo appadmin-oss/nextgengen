@@ -120,16 +120,10 @@ function admin_members_ngv_portal_sync(array $p): array {
  * children they work with.
  */
 function av_volunteer_is_ngg(array $v): bool {
-    if ((int)($v['applicationId'] ?? 0) > 0) {
-        $a = db_row('SELECT program FROM applications WHERE id = ? LIMIT 1', [(int)$v['applicationId']]);
-        if ($a) return (string)$a['program'] === 'anchor';
-    }
-    $mid = trim((string)($v['memberId'] ?? ''));
-    if ($mid !== '') {
-        $m = db_row('SELECT type FROM members WHERE memberId = ? LIMIT 1', [$mid]);
-        return $m && strtoupper((string)$m['type']) === 'NGG';
-    }
-    return false;
+    // The volunteer's own programme (migration 122): Summer volunteers stay
+    // home, NGG volunteers — applied via /join/volunteer, made one from an NGG
+    // member, or promoted from Summer — are Afrovanguard's to see.
+    return volunteer_programme($v) === 'ngg';
 }
 
 function av_volunteer_row(array $v): array {
@@ -143,7 +137,7 @@ function av_volunteer_row(array $v): array {
         'volunteerId' => (string)$v['volunteerId'], 'memberId' => (string)($v['memberId'] ?? ''),
         'name' => (string)($v['fullName'] ?? ''), 'email' => strtolower(trim((string)($v['email'] ?? ''))), 'phone' => (string)($v['phone'] ?? ''),
         'role' => (string)($v['role'] ?? ''), 'roleLabel' => (string)($tier['name'] ?? ''), 'centre' => (string)($v['centre'] ?? ''),
-        'status' => (string)($v['status'] ?? 'active'), 'safeguardingCleared' => (string)($v['safeguarding'] ?? 'pending') === 'cleared',
+        'programme' => 'ngg', 'status' => (string)($v['status'] ?? 'active'), 'safeguardingCleared' => (string)($v['safeguarding'] ?? 'pending') === 'cleared',
         'photoUrl' => $photo, 'joinedAt' => (string)($v['createdAt'] ?? ''), 'updatedAt' => (string)($v['updatedAt'] ?? ''),
         'sessions' => (int)($ledger['sessions'] ?? 0), 'hours' => (int)($ledger['hours'] ?? 0),
         'certificates' => count((array)($ledger['certificates'] ?? [])),
