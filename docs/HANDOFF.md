@@ -1090,3 +1090,28 @@ portal (roster, School results tab, Report a concern).
   Rate limit `ids.plan` 30 per 10 minutes.
 - Tests: run.php (rules, AI merge and cleaning, scope, OpenAI request shape),
   `tests/ids-ask.test.js` (19, `npm run test:idsask`).
+
+## 2026-10-13 — Print from a prompt, round 2: a conversation, not a form
+
+- **Follow-ups refine the plan on screen.** The studio sends the current plan
+  with the request (`current`, cleaned on the server like anything from the
+  browser). `ids_plan_is_refinement` decides: a request that names who (kind,
+  new/reprint, a list of IDs) starts again; anything else adjusts
+  (`ids_plan_refine`). The model is shown the current plan and returns the
+  whole updated one with `refine`.
+- **`also` and `exclude`**: people added on top of a filtered selection and
+  people left out ("except", "not", "remove"), each from its own clause, so
+  "except 026-002" never puts 026-002 on the sheet. Leaving out wins over an
+  earlier add.
+- **Near spellings**: centres (`ids_plan_typo_room`: none under 5 letters, one
+  under 8, two above, a unique best only) and names (`idsNameMatch`). Number
+  words ("the first ten"), months ("in October", last year's when it is
+  still to come), "since Monday", "since 3 October".
+- **On screen**: each understood part is a chip whose × re-applies the plan
+  without it (no second reading); "Updated"; the settings outlined are only
+  those that differ from before the plan; the last sheet's empty slots can be
+  filled from the cards still waiting (none when each centre starts its own
+  sheet); recent requests (localStorage, this browser), ↑ to recall, "/" to
+  focus. A fresh request that finds nobody leaves the sheet alone; a
+  follow-up always re-applies.
+- Tests: run.php +16; `tests/ids-ask.test.js` 32.

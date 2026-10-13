@@ -140,6 +140,25 @@ function cleanup() {
     if (process.env.SHOTS) await P.screenshot({ path: path.join(process.env.SHOTS, 'ids-ask.png') });
     chk('the six cards are on the sheet, and the settings panel agrees', (await nOnSheet()) === 6 && (await P.$eval('.ids-radio[aria-checked="true"]', b => b.innerText)).startsWith('Double'));
     chk('the list on the left shows the same centre', (await P.$eval('.ids-src select >> nth=1', s => s.options[s.selectedIndex].text).catch(() => '')).includes('Egbeda') || /Egbeda/.test(await P.innerText('.ids-src')));
+    chk('with each centre on its own sheets, no empty slot is offered to another centre', !/empty slot/.test(card));
+
+    console.log('follow-ups refine the plan on screen');
+    chk('with a plan on screen the bar asks for a change', /Change it/.test(await P.getAttribute('.ids-ask-in', 'placeholder')) && /Update/.test(await P.innerText('.ids-ask-bar button')));
+    card = await ask('fronts only');
+    chk('"fronts only" keeps the six and changes the sides, marked Updated', /6\s*cards on the sheet/.test(card) && /Updated/.test(card) && (await P.$eval('.ids-radio[aria-checked="true"]', b => b.innerText)).startsWith('Fronts'));
+    card = await ask('not Ada Obbi');
+    chk('"not <name>", misspelt, leaves that person out and says so', /5\s*cards on the sheet/.test(card) && /Left out as asked: Ada Obi/.test(card) && (await nOnSheet()) === 5);
+    await P.click('.ids-ask-what li:has-text("not Ada Obbi") .ids-ask-x');
+    await P.waitForFunction(() => /6\s*cards on the sheet/.test((document.querySelector('.ids-ask-card') || {}).innerText || ''), null, { timeout: 5000 });
+    chk('a chip’s × takes that part out on the spot', (await nOnSheet()) === 6 && !(await P.$('.ids-ask-what li:has-text("not Ada")')));
+    card = await ask('add 025-101');
+    chk('"add <ID>" puts a card from another centre on top of the selection, on a sheet of its own', /7\s*cards on the sheet · 2 sheets/.test(card) && /\+ 025-101/.test(card));
+    card = await ask('sort them by name');
+    chk('"by name" puts everyone on one sheet and offers its empty slots to the cards still waiting', /7\s*cards on the sheet · 1 sheet/.test(card) && /The last sheet has 2 empty slots/.test(card) && /Fill it with 1 more waiting card/.test(card));
+    if (process.env.SHOTS) await P.locator('.ids-ask').screenshot({ path: path.join(process.env.SHOTS, 'ids-ask-refined.png') });
+    await P.click('.ids-ask-issue button:has-text("Fill")');
+    await P.waitForFunction(() => /8\s*cards on the sheet/.test((document.querySelector('.ids-ask-card') || {}).innerText || ''), null, { timeout: 5000 });
+    chk('filling the last sheet adds the waiting card and the count follows', (await nOnSheet()) === 8);
     await P.click('.ids-ask-acts button:has-text("Undo")');
     await P.waitForFunction(() => !document.querySelector('.ids-ask-card'), null, { timeout: 5000 });
     chk('Undo puts the sheet back as it was', (await nOnSheet()) <= 0 && (await P.$eval('.ids-radio[aria-checked="true"]', b => b.innerText)).startsWith('Fronts'));
@@ -153,6 +172,9 @@ function cleanup() {
       && (await nOnSheet()) === 2);
     card = await ask('reprint 999-999');
     chk('an ID nobody holds is named as not found, and the sheet is left alone', /Not found: 999-999/.test(card) && /Nothing to put on the sheet/.test(card) && (await nOnSheet()) === 2);
+    await P.click('.ids-ask-acts button:has-text("Close")');
+    card = await ask('new cards for Egbda members');
+    chk('a misspelt centre is still the centre', /6\s*cards on the sheet/.test(card) && /Egbeda/.test(card));
     await P.click('.ids-ask-acts button:has-text("Close")');
 
     console.log('dates, then Print');
@@ -176,7 +198,16 @@ function cleanup() {
     chk('it says it could not tell, and changes nothing', /couldn’t tell what to print/.test(card) && (await nOnSheet()) === before);
     await P.fill('.ids-ask-in', 'x');
     await P.keyboard.press('Escape');
-    chk('Escape in the bar closes the result', !(await P.$('.ids-ask-card')));
+    chk('Escape with text in the bar clears the text first', (await P.inputValue('.ids-ask-in')) === '' && !!(await P.$('.ids-ask-card')));
+    await P.keyboard.press('Escape');
+    chk('Escape clears the bar, then closes the result', !(await P.$('.ids-ask-card')));
+    chk('recent requests come back as chips', (await P.$$('.ids-ask-chip.is-recent')).length >= 1 && /members who joined this week|hello there|new cards for Egbda/.test(await P.innerText('.ids-ask-ex')));
+    await P.click('.ids-ask-ex', { position: { x: 1, y: 1 } }).catch(() => {});
+    await P.click('.ids-sheetcol', { position: { x: 5, y: 5 } }).catch(() => {});
+    await P.keyboard.press('/');
+    chk('"/" goes to the bar', await P.evaluate(() => document.activeElement && document.activeElement.id === 'ids-ask-in'));
+    await P.keyboard.press('ArrowUp');
+    chk('↑ in the empty bar brings back the last request', (await P.inputValue('.ids-ask-in')) === 'hello there');
 
     chk('no page errors', errs.length === 0);
     if (errs.length) console.error(errs.join('\n'));

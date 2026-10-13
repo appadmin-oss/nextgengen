@@ -25047,6 +25047,48 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     chk('id plan: a model that fails falls back to the rules and says why', $r['by'] === 'rules' && $r['aiError'] === 'ai_http_429'
         && ((array)$r['plan'])['centre'] === 'Planford' && ((array)$r['plan'])['backs'] === 'long');
     unset($GLOBALS['__ai_mock']);
+    $GLOBALS['CONFIG']['ai'] = [];
+
+    // Smarter reading, with no key.
+    $C = [['name' => 'Egbeda', 'code' => 'EG'], ['name' => 'Ijaiye', 'code' => 'IJ'], ['name' => 'Planwick Hall', 'code' => 'PLW']];
+    $K = IDS_PLAN_KINDS;
+    $rd = fn($t, $today = '2026-10-14') => ids_plan_rules($t, $K, $C, $today);
+    $x = $rd('new cards for Egbda kids, the first ten');
+    chk('id plan rules: a misspelt centre, "kids" and "the first ten" are read', $x['centre'] === 'Egbeda' && $x['kind'] === 'member' && $x['limit'] === 10 && $x['which'] === 'new');
+    chk('id plan rules: a short word is never a misspelt centre', !isset($rd('print the card for Iya')['centre']));
+    $x = $rd('Egbeda members except 026-002 and Bayo Ade');
+    chk('id plan rules: "except" leaves people out, and never puts them on the sheet', $x['exclude'] === ['ids' => ['026-002'], 'names' => ['Bayo Ade']] && !isset($x['ids']) && $x['centre'] === 'Egbeda');
+    $x = $rd('members at Ijaiye, add 026-010 and Ada Obi');
+    chk('id plan rules: "add" puts named people on top of the selection', $x['also'] === ['ids' => ['026-010'], 'names' => ['Ada Obi']] && $x['centre'] === 'Ijaiye');
+    chk('id plan rules: "without a card" and "no crop marks" are not exclusions', !isset($rd('members without a card, no crop marks')['exclude']) && $rd('members without a card, no crop marks')['marks'] === false);
+    $x = $rd('participants who joined in October');
+    chk('id plan rules: "in October" is the month, to today', $x['dateFrom'] === '2026-10-01' && $x['dateTo'] === '2026-10-14' && $x['kind'] === 'summer');
+    chk('id plan rules: a month still to come this year means last year’s', $rd('members in November')['dateFrom'] === '2025-11-01' && $rd('members in November')['dateTo'] === '2025-11-30');
+    chk('id plan rules: "since 3 October" and "since Monday"', $rd('members since 3 October')['dateFrom'] === '2026-10-03' && $rd('members since Monday')['dateFrom'] === '2026-10-12');
+
+    // Follow-ups refine the plan on screen.
+    $cur = ['kind' => 'member', 'centre' => 'Planford', 'which' => 'new', 'backs' => 'long'];
+    $f = fn($t, $current) => (array)(backend_dispatch('admin.ids.plan', ['requesterId' => $CARDADM, 'prompt' => $t, 'current' => $current]));
+    $r = $f('fronts only', $cur); $pl = (array)$r['plan'];
+    chk('id plan: "fronts only" after a plan changes the sides and keeps the selection', $r['refined'] === true && $pl['backs'] === 'off' && $pl['centre'] === 'Planford' && $pl['kind'] === 'member');
+    $pl = (array)$f('only Planwick Hall', $cur)['plan'];
+    chk('id plan: "only <centre>" swaps the centre', $pl['centre'] === 'Planwick Hall' && $pl['which'] === 'new');
+    $pl = (array)$f('add 026-010, not Ada Obi', $cur)['plan'];
+    chk('id plan: "add …, not …" adds on top and leaves out', $pl['also'] === ['ids' => ['026-010']] && $pl['exclude'] === ['names' => ['Ada Obi']] && $pl['centre'] === 'Planford');
+    $pl = (array)$f('remove 026-010', ['kind' => 'member', 'also' => ['ids' => ['026-010']]])['plan'];
+    chk('id plan: leaving somebody out wins over an earlier add', !isset($pl['also']) && $pl['exclude'] === ['ids' => ['026-010']]);
+    $pl = (array)$f('add 026-011', ['ids' => ['026-003']])['plan'];
+    chk('id plan: a named list grows by name', $pl['ids'] === ['026-003', '026-011'] && !isset($pl['also']));
+    $r = $f('volunteers at Planford', $cur);
+    chk('id plan: a request that names who starts again', $r['refined'] === false && ((array)$r['plan'])['kind'] === 'volunteer' && !isset(((array)$r['plan'])['backs']));
+    $pl = (array)$f('make it a proof', ['kind' => 'member', 'centre' => 'Atlantis', 'paper' => 'tabloid'])['plan'];
+    chk('id plan: the plan sent back from the browser is cleaned before it is used', $pl['proof'] === true && !isset($pl['centre']) && !isset($pl['paper']));
+    $GLOBALS['__ai_mock'] = fn($profile, $system) => ['ok' => true, 'provider' => 'anthropic', 'text' => json_encode(['refine' => true, 'kind' => 'member', 'backs' => 'off',
+        'sawCurrent' => str_contains($system, '"centre":"Planford"')])];
+    $r = $f('just the fronts please, and drop the centre filter', $cur); $pl = (array)$r['plan'];
+    chk('id plan: the model sees the plan on screen and its whole updated plan is used (a field it dropped stays dropped)', $r['by'] === 'ai' && $r['refined'] === true
+        && $pl['backs'] === 'off' && !isset($pl['centre']) && $pl['kind'] === 'member');
+    unset($GLOBALS['__ai_mock']);
     $GLOBALS['CONFIG']['ai'] = $aiKeep;
 
     // Photo requests reach the person and the admins who own the card, once per quiet period.

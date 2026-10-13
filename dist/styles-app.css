@@ -7778,8 +7778,17 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-ask-h { margin: 0; font-size: 15px; font-weight: 600; }
 .ids-ask-h .ids-mono { font-size: 16px; }
 .ids-ask-what, .ids-ask-how { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.ids-ask-what li { font-size: 13px; color: var(--ids-ink-2); }
-.ids-ask-what li + li::before { content: "·"; margin-right: 6px; color: var(--ids-faint); }
+.ids-ask-what li { height: 26px; display: inline-flex; align-items: center; gap: 2px; padding: 0 4px 0 10px; border-radius: var(--ids-r-pill); background: var(--ids-s2); color: var(--ids-ink-2); font-size: 12.5px; }
+.ids-ask-what li:not(:has(.ids-ask-x)) { padding-right: 10px; }
+.ids-ask-what li.is-add { background: var(--ids-ok-bg); color: var(--ids-ok-fg); }
+.ids-ask-what li.is-out { background: var(--ids-bad-bg); color: var(--ids-bad-fg); }
+.ids-ask-x { width: 22px; height: 22px; display: inline-grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; font-size: 12px; opacity: .7; }
+.ids-ask-x:hover { opacity: 1; background: rgba(11, 11, 12, 0.08); }
+.ids-ask-tag { margin-left: 8px; padding: 1px 8px; border-radius: var(--ids-r-pill); background: var(--ids-s2); color: var(--ids-muted); font-size: 11px; font-weight: 600; vertical-align: 2px; }
+.ids-ask-kbd { flex: none; min-width: 22px; height: 22px; display: inline-grid; place-items: center; border: 1px solid var(--ids-line-2); border-radius: 6px; color: var(--ids-muted-2); font: 500 12px var(--ids-mono); }
+.ids-ask-chip { display: inline-flex; align-items: center; gap: 6px; }
+.ids-ask-chip .ph { font-size: 13px; }
+.ids-ask-chip.is-recent { color: var(--ids-ink-2); }
 .ids-ask-how li { height: 24px; display: inline-flex; align-items: center; padding: 0 8px; border-radius: var(--ids-r-pill); background: var(--ids-neutral-bg); color: var(--ids-neutral-fg); font-size: 12px; }
 .ids-ask-how li.is-changed { background: var(--ids-s0); color: var(--ids-ink); box-shadow: inset 0 0 0 1px var(--ids-ink); font-weight: 600; }
 .ids-ask-issue { margin: 0; display: flex; gap: 6px; align-items: flex-start; font-size: 12.5px; line-height: 1.4; padding: 6px 8px; border-radius: var(--ids-r-sm); }
