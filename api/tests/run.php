@@ -26606,5 +26606,75 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('today (member): a Summer account is refused', (backend_dispatch('member.today', ['memberId' => 'NGG-RS-S'])['error'] ?? '') === 'not_ngg_member');
 })();
 
+// ── CACENTRE CRM: NGG's adults pushed to the Audience; no child leaves ──
+(function () {
+    $GLOBALS['CONFIG']['cacentre'] = ['crm_secret' => '', 'crm_url' => ''];
+    foreach (['newsletter', 'contact_messages', 'donations', 'guardians'] as $t) db_exec("DELETE FROM {$t}");
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'CRMV-%'");
+    db_exec("DELETE FROM settings WHERE settingKey IN ('crm_push', 'crm_push_last')");
+    $now = now_iso();
+    db_insert('newsletter', ['email' => 'ada@example.org', 'source' => 'site', 'status' => 'subscribed', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('contact_messages', ['ref' => 'CT-1', 'purpose' => 'partnership', 'name' => 'Bola', 'email' => 'bola@example.org', 'phone' => '0803 111 0000', 'subject' => 'A visit', 'message' => 'private words', 'createdAt' => $now]);
+    db_insert('donations', ['reference' => 'NGGD-1', 'email' => 'chi@example.org', 'name' => 'Chi', 'amount' => 5000, 'currency' => 'NGN', 'status' => 'paid', 'paidAt' => $now, 'createdAt' => $now]);
+    db_insert('donations', ['reference' => 'NGGD-2', 'email' => 'pending@example.org', 'name' => 'P', 'amount' => 1000, 'currency' => 'NGN', 'status' => 'pending', 'createdAt' => $now]);
+    $adultDob = gmdate('Y-m-d', strtotime('-30 years')); $childDob = gmdate('Y-m-d', strtotime('-14 years'));
+    db_insert('volunteers', ['volunteerId' => 'CRMV-A', 'fullName' => 'Dayo Adult', 'email' => 'dayo@example.org', 'dob' => $adultDob, 'role' => 'mentor', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'CRMV-C', 'fullName' => 'Young Volunteer', 'email' => 'young@example.org', 'dob' => $childDob, 'role' => 'helper', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'CRMV-M', 'memberId' => 'NGG-X1', 'fullName' => 'Member Volunteer', 'email' => 'member@example.org', 'role' => 'helper', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'G-1', 'email' => 'eko@example.org', 'fullName' => 'Eko Parent', 'phone' => '0803 222 0000', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+
+    $calls = 0;
+    $GLOBALS['__crm_push_transport'] = static function () use (&$calls) { $calls++; return ['code' => 200, 'body' => '{"ok":true}']; };
+    $r = crm_push_run();
+    chk('crm: with no secret set, nothing is sent', !empty($r['skipped']) && $calls === 0);
+
+    $secret = str_repeat('n', 43);
+    $tok = crm_push_sign([['kind' => 'subscriber', 'ref' => 'x', 'email' => 'x@example.org']], $secret, 1800000000);
+    $p = explode('.', $tok);
+    $un = static fn(string $s): string => (string)base64_decode(strtr($s, '-_', '+/') . str_repeat('=', (4 - strlen($s) % 4) % 4), true);
+    $claims = json_decode($un($p[1]), true);
+    chk('crm: the envelope is v1, HMAC-SHA256 over the payload, app ngg, five minutes',
+        $p[0] === 'v1' && hash_equals(hash_hmac('sha256', $p[1], $secret, true), $un($p[2])) && $claims['app'] === 'ngg' && $claims['exp'] - $claims['iat'] === 300);
+
+    $c = crm_push_collect();
+    $by = array_column($c['rows'], null, 'ref');
+    chk('crm: a newsletter subscriber is sent', ($by['news:ada@example.org']['status'] ?? '') === 'subscribed');
+    chk('crm: an enquiry is sent with its subject but never the message', ($by['contact:CT-1']['detail'] ?? '') === 'Partnership: A visit' && !str_contains(json_encode($c['rows']), 'private words'));
+    chk('crm: a paid donation is sent in naira; a pending one is not', ($by['gift:NGGD-1']['detail'] ?? '') === 'Gave ₦5,000' && !isset($by['gift:NGGD-2']));
+    chk('crm: an adult volunteer is sent', isset($by['vol:CRMV-A']));
+    chk('crm: a volunteer under 18 is never sent', !isset($by['vol:CRMV-C']) && !str_contains(json_encode($c['rows']), 'young@example.org'));
+    chk('crm: a member who volunteers, with no date of birth, is treated as a child and not sent', !isset($by['vol:CRMV-M']));
+    chk('crm: a guardian is sent as a contact, with no ward named', ($by['guardian:G-1']['list'] ?? '') === 'NGG parents & guardians' && !isset($by['guardian:G-1']['detail']));
+    chk('crm: nothing is read from members, applications or Summer School participants', !preg_match('/\bFROM\s+(members|applications|summer_students)\b/i', (string)file_get_contents(dirname(__DIR__) . '/_lib/domain/crm-push.php')));
+
+    $GLOBALS['CONFIG']['cacentre']['crm_secret'] = $secret;
+    $GLOBALS['__crm_push_transport'] = static fn() => ['code' => 403, 'body' => '{"ok":false,"error":"bad-signature"}'];
+    $r = crm_push_run();
+    chk('crm: a refused push says why, and moves no cursor', $r['ok'] === false && str_contains($r['error'], 'secret here differs') && crm_push_cursors() === []);
+
+    $sent = [];
+    $GLOBALS['__crm_push_transport'] = static function (string $url, string $body) use (&$sent, $un) {
+        $sent[] = json_decode($un(explode('.', json_decode($body, true)['token'])[1]), true)['rows'];
+        return ['code' => 200, 'body' => '{"ok":true}'];
+    };
+    $r = crm_push_run();
+    chk('crm: a good push sends every row to CACENTRE\'s intake', $r['ok'] && $r['sent'] === count($c['rows']) && str_ends_with(crm_push_url(), '/api/crm-intake.php'));
+    $sent = [];
+    crm_push_run();
+    chk('crm: the next run sends nothing it already sent', $sent === []);
+
+    usleep(1100000);
+    db_update('newsletter', ['status' => 'unsubscribed', 'updatedAt' => now_iso()], ['email' => 'ada@example.org']);
+    crm_push_run();
+    chk('crm: an unsubscribe is sent under the same ref', count($sent) === 1 && ($sent[0][0]['ref'] ?? '') === 'news:ada@example.org' && $sent[0][0]['status'] === 'unsubscribed');
+
+    chk('crm: the secret is an API key on the Settings screen, sealed', isset(SERVICE_KEYS['cacentre']) && SERVICE_KEYS['cacentre']['fields'][0][0] === 'cacentre.crm_secret' && SERVICE_KEYS['cacentre']['fields'][0][2] === 'secret');
+    chk('crm: the web-cron and the external cron both run it', str_contains((string)file_get_contents(dirname(__DIR__) . '/_lib/webcron.php'), 'crm_push_run()')
+        && str_contains((string)file_get_contents(dirname(__DIR__) . '/public/cron.php'), 'crm_push_run()'));
+
+    $GLOBALS['__crm_push_transport'] = null;
+    $GLOBALS['CONFIG']['cacentre'] = ['crm_secret' => '', 'crm_url' => ''];
+})();
+
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
 exit($failed ? 1 : 0);
