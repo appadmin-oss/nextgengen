@@ -1316,6 +1316,10 @@ $rq2 = backend_dispatch('auth.request', ['identifier' => 'nopass@example.com']);
 unset($GLOBALS['__mail_fail']);
 chk('auth.request mail failure stays ok with delivery=false', !empty($rq2['ok']) && $rq2['delivery'] === false && !empty($rq2['masked']));
 chk('auth.request still banks the OTP when mail fails', (int)db_row("SELECT COUNT(*) c FROM auth_sessions WHERE email='nopass@example.com'")['c'] === $before + 1);
+// The emailed code works with the EMAIL the member signed in with, not only their Member ID.
+$lc = db_row("SELECT otp FROM auth_sessions WHERE email='nopass@example.com' AND (purpose='login' OR purpose IS NULL) ORDER BY id DESC LIMIT 1");
+chk('a sign-in code is accepted with the email it was sent to', ($vv = backend_dispatch('auth.verify', ['memberId' => 'NoPass@Example.com', 'otp' => $lc['otp']])) && !empty($vv['ok']) && ($vv['member']['memberId'] ?? '') === 'NGG-2025-0770');
+chk('…an email with no account reads exactly like a wrong code', (backend_dispatch('auth.verify', ['memberId' => 'ghost@example.com', 'otp' => '123456'])['error'] ?? '') === 'invalid');
 
 // ── Self-service password reset (set a password with no prior session) ──
 $GLOBALS['__mail_sink'] = [];

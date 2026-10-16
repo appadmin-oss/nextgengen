@@ -421,11 +421,13 @@ function SignInModal({ seed, onClose, onVerified }) {
     finally { setBusy(false); }
   };
 
-  const verifyOtp = async (e) => {
+  // `code` is passed when the sixth digit arrives, before the state has caught up.
+  const verifyOtp = async (e, code) => {
     if (e) e.preventDefault();
+    if (busy) return;
     setErr(""); setBusy(true);
     try {
-      const r = await NGGApi.auth.verify({ memberId: identifier.trim(), otp: otp.replace(/\s+/g, ""), remember });
+      const r = await NGGApi.auth.verify({ memberId: identifier.trim(), otp: String(code || otp).replace(/\s+/g, ""), remember });
       onVerified(r.member);
     } catch (e) {
       setErr(humanizeAuthError(e.code || e.message));
@@ -439,268 +441,194 @@ function SignInModal({ seed, onClose, onVerified }) {
   // closing the modal mid-input.
   const scrimMouseDown = React.useRef(false);
 
+  /* One job per screen: one field (or the code), one button, and at most one
+     quiet way out. On the Control Room v2 design system (the --cr-* tokens,
+     declared for .signin-scrim in styles-app.css). Errors sit under the field
+     they are about. */
+  const fieldErr = err ? <p role="alert" className="signin-ferr"><i className="ph ph-warning-circle" aria-hidden="true"/>{err}</p> : null;
+  const submit = (label, off) => (
+    <button className="signin-submit" type="submit" disabled={busy || off} aria-busy={busy || undefined}>
+      {busy ? <span className="signin-spin" role="status" aria-label="Working"/> : label}
+    </button>
+  );
+  const pwField = (id, value, onChange, autoComplete, ref, minLength) => (
+    <div className="signin-pw">
+      <input id={id} ref={ref} className={"signin-input" + (err ? " is-bad" : "")} type={showPw ? "text" : "password"} autoComplete={autoComplete}
+        value={value} onChange={(e) => { setErr(""); onChange(e); }} required minLength={minLength} aria-invalid={!!err || undefined}/>
+      <button type="button" className="signin-eye" onClick={() => setShowPw(v => !v)}
+        aria-label={showPw ? "Hide password" : "Show password"} aria-pressed={showPw}>
+        <i className={"ph ph-" + (showPw ? "eye-slash" : "eye")} aria-hidden="true"/>
+      </button>
+    </div>
+  );
+  // Who is signing in, once they have said, with the way back to change it.
+  const who = (
+    <div className="signin-who">
+      <span className="signin-who-av" aria-hidden="true">{(identifier.trim().charAt(0) || "?").toUpperCase()}</span>
+      <span className="signin-who-id"><span className="cr-sr">Signing in as </span>{identifier.trim()}</span>
+      <button type="button" className="signin-change" onClick={() => { setStage("id"); setOtp(""); setNewPw(""); setPassword(""); setResetToken(""); setErr(""); setCooldown(0); }}>Change</button>
+    </div>
+  );
+  const resend = (onClick) => (
+    <button type="button" className="signin-link" onClick={onClick} disabled={busy || cooldown > 0 || identifier.trim().length < 3}>
+      {cooldown > 0 ? "Resend code in " + cooldown + "s" : "Resend code"}
+    </button>
+  );
+  const knownId = identifier.trim().length >= 3 && (masked || stage === "password");
+
+  const title = stage === "enter-otp" ? "Check your email"
+    : stage === "password" ? "Welcome back"
+    : (stage === "reset-request" || stage === "reset-new") ? "Set a new password" : "Sign in";
+  const sub = stage === "id" ? "Use your Member ID or email."
+    : stage === "password" ? null
+    : stage === "reset-request" ? "We’ll email you a code to set a new password."
+    : stage === "reset-new" ? (resetToken ? "Choose a password. You’ll be signed in straight after." : masked ? <>Enter the code we sent to <b>{masked}</b>, then choose a password.</> : "Enter the code from your email, then choose a password.")
+    : masked ? <>Enter the 6-digit code we sent to <b>{masked}</b>.</> : "Enter your Member ID and the 6-digit code from your email.";
+
   return (
     <div
       className="signin-scrim"
       onMouseDown={(e) => { scrimMouseDown.current = e.target === e.currentTarget; }}
       onMouseUp={(e) => { if (scrimMouseDown.current && e.target === e.currentTarget) onClose(); scrimMouseDown.current = false; }}
     >
-      <div ref={cardRef} className="signin-card" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="signin-h">
-        <button className="signin-close" onClick={onClose} aria-label="Close">✕</button>
-
-        <div className="signin-brand">
-          <div className="signin-eyebrow">SIGN IN · MEMBERS ONLY</div>
-          <div id="signin-h" className="signin-headline">
-            {stage === "enter-otp" ? "Check your email."
-              : (stage === "reset-request" || stage === "reset-new") ? "Set a password."
-              : "Welcome back."}
-          </div>
-          <div className="signin-sub">
-            {stage === "id"
-              ? "Your Member ID or email — we'll take it from there."
-              : stage === "password"
-                ? (methods.includes("code") ? "Enter your password, or get a code by email instead." : "Enter your password to continue.")
-              : stage === "reset-request"
-                ? "We'll email you a link and code to set a new password."
-              : stage === "reset-new"
-                ? "Choose a new password — you'll be signed in straight after."
-                : masked ? <>We sent a magic link and a 6-digit code to <b>{masked}</b>. Either works.</>
-                         : "Paste the 6-digit code from your email."}
-          </div>
-        </div>
+      <div ref={cardRef} className="signin-card" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="signin-h" aria-describedby={sub ? "signin-sub" : undefined}>
+        <button type="button" className="signin-close" onClick={onClose} aria-label="Close"><i className="ph ph-x" aria-hidden="true"/></button>
+        <header className="signin-head">
+          <img className="signin-logo" src="/assets/logo.png" alt="Next Generation Genius" width="40" height="40"/>
+          <h2 id="signin-h" className="signin-headline">{title}</h2>
+          {sub && <p id="signin-sub" className="signin-sub">{sub}</p>}
+        </header>
 
         {stage === "id" && (
-          <form onSubmit={continueId} className="signin-form">
-            <label className="signin-label" htmlFor="signin-idp">Email or Member ID</label>
-            <input
-              id="signin-idp"
-              ref={inputRef}
-              className="signin-input"
-              type="text"
-              autoComplete="username"
-              placeholder="you@email.com  or  NGG-2025-0042"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              required
-              minLength={3}
-            />
-            {err && <div role="alert" className="signin-err">{err}</div>}
-            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || identifier.trim().length < 3}>
-              {busy ? "One moment…" : "Continue →"}
-            </button>
-            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-otp"); }}>
-              I already have a code
-            </button>
-            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("reset-request"); }}>
-              Set or reset a password
-            </button>
+          <form onSubmit={continueId} className="signin-form" noValidate>
+            <label className="signin-label" htmlFor="signin-idp">Member ID or email</label>
+            <input id="signin-idp" ref={inputRef} className={"signin-input" + (err ? " is-bad" : "")} type="text" autoComplete="username" spellCheck="false" autoCapitalize="none"
+              placeholder="NGG-2025-0042" value={identifier} onChange={(e) => { setErr(""); setIdentifier(e.target.value); }} aria-invalid={!!err || undefined}/>
+            {fieldErr}
+            {submit("Continue", identifier.trim().length < 3)}
+            <div className="signin-alts">
+              <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("enter-otp"); }}>I have a code</button>
+            </div>
           </form>
         )}
 
         {stage === "password" && (
-          <form onSubmit={loginPassword} className="signin-form">
-            <div className="signin-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span>Signing in as <b>{identifier.trim()}</b></span>
-              <button type="button" className="signin-link" style={{ margin: 0 }} onClick={() => { setErr(""); setPassword(""); setStage("id"); }}>Change</button>
+          <form onSubmit={loginPassword} className="signin-form" noValidate>
+            {who}
+            <div className="signin-label-row">
+              <label className="signin-label" htmlFor="signin-pw">Password</label>
+              <button type="button" className="signin-link signin-link--sm" onClick={() => { setErr(""); setPassword(""); setStage("reset-request"); }}>Forgot?</button>
             </div>
-            <label className="signin-label" htmlFor="signin-pw">Password</label>
-            <div className="signin-pw-wrap" style={{ position: "relative" }}>
-              <input
-                id="signin-pw"
-                ref={inputRef}
-                className="signin-input"
-                type={showPw ? "text" : "password"}
-                autoComplete="current-password"
-                placeholder="Your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                style={{ paddingRight: 64 }}
-              />
-              <button
-                type="button"
-                className="signin-pw-toggle"
-                onClick={() => setShowPw(v => !v)}
-                aria-label={showPw ? "Hide password" : "Show password"}
-                style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink-500)", letterSpacing: "0.06em" }}
-              >{showPw ? "HIDE" : "SHOW"}</button>
-            </div>
-            {err && <div role="alert" className="signin-err">{err}</div>}
+            {pwField("signin-pw", password, (e) => setPassword(e.target.value), "current-password", inputRef)}
+            {fieldErr}
             <label className="signin-remember">
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}/>
-              <span>Stay signed in for 30 days</span>
+              <span>Keep me signed in on this device</span>
             </label>
-            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || !identifier.trim() || !password}>
-              {busy ? "Signing in…" : "Sign in →"}
-            </button>
+            {submit("Sign in", !password)}
             {methods.includes("code") && (
-              <button type="button" className="signin-link" onClick={requestLink} disabled={busy}>
-                Email me a sign-in code instead
-              </button>
+              <div className="signin-alts">
+                <button type="button" className="signin-link" onClick={requestLink} disabled={busy}>Email me a code instead</button>
+              </div>
             )}
-            <button type="button" className="signin-link" onClick={() => { setErr(""); setPassword(""); setStage("reset-request"); }}>
-              Forgot your password?
-            </button>
           </form>
         )}
 
         {stage === "enter-otp" && (
-          <form onSubmit={verifyOtp} className="signin-form">
-            {!seed && (
+          <form onSubmit={verifyOtp} className="signin-form" noValidate>
+            {seed ? null : knownId ? who : (
               <>
-                <label className="signin-label" htmlFor="signin-id2">Member ID</label>
-                <input
-                  id="signin-id2"
-                  className="signin-input"
-                  type="text"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="NGG-2025-0042"
-                  autoComplete="username"
-                />
+                <label className="signin-label" htmlFor="signin-id2">Member ID or email</label>
+                <input id="signin-id2" ref={inputRef} className="signin-input" type="text" value={identifier} onChange={(e) => setIdentifier(e.target.value)}
+                  placeholder="NGG-2025-0042" autoComplete="username" spellCheck="false" autoCapitalize="none"/>
               </>
             )}
-            {!deliveryOk && (
-              <p className="signin-hint" style={{ margin: "0 0 8px", padding: "8px 10px", fontSize: 13, borderRadius: 8, background: "var(--amber-50, #fff7ed)", color: "var(--amber-800, #9a3412)", border: "1px solid var(--amber-200, #fed7aa)" }}>
-                We had trouble sending your email just now. If it doesn't arrive, use <b>Resend code</b>, sign in with your <b>password</b>, or contact admin.
-              </p>
-            )}
-            {masked
-              ? <p className="signin-hint" style={{ margin: "0 0 4px", fontSize: 13, color: "var(--ink-500)" }}>We sent a 6-digit code to <b>{masked}</b>. It expires in 15 minutes.</p>
-              : <p className="signin-hint" style={{ margin: "0 0 4px", fontSize: 13, color: "var(--ink-500)" }}>Enter your ID above, then send yourself a fresh code.</p>}
-            <label className="signin-label" htmlFor="signin-otp">6-digit code</label>
-            <input
-              id="signin-otp"
-              ref={inputRef}
-              className="signin-input signin-otp"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={7}
-              pattern="[0-9 ]*"
-              placeholder="••• •••"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/[^\d ]/g, ""))}
-              required
-            />
-            {err && <div role="alert" className="signin-err">{err}</div>}
-            <label className="signin-remember">
-              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}/>
-              <span>Stay signed in for 30 days</span>
-            </label>
-            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || otp.replace(/\s/g, "").length !== 6}>
-              {busy ? "Verifying…" : "Sign in →"}
-            </button>
-            <button type="button" className="signin-link" onClick={sendCode} disabled={busy || cooldown > 0 || identifier.trim().length < 3}>
-              {cooldown > 0 ? "Resend code in " + cooldown + "s" : (masked ? "Resend code" : "Send me a code")}
-            </button>
-            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("reset-request"); }}>
-              Set or reset a password instead
-            </button>
-            <button type="button" className="signin-link" onClick={() => { setStage("id"); setOtp(""); setErr(""); setCooldown(0); }}>
-              ← Start over
-            </button>
+            {!deliveryOk && <p className="signin-note"><i className="ph ph-envelope-simple" aria-hidden="true"/>The email may be slow to arrive. Check spam, or resend in a moment.</p>}
+            <span className="signin-label" id="signin-otp-l">6-digit code</span>
+            <SignInCode id="signin-otp" labelledBy="signin-otp-l" value={otp} bad={!!err} autoFocus={!!(seed || knownId)} inputRef={seed || knownId ? inputRef : null}
+              onChange={(v) => { setErr(""); setOtp(v); }} onComplete={(v) => { if (identifier.trim().length >= 3 || seed) verifyOtp(null, v); }}/>
+            {fieldErr}
+            {submit("Sign in", otp.replace(/\s/g, "").length !== 6)}
+            <div className="signin-alts">{resend(sendCode)}</div>
           </form>
         )}
 
         {stage === "reset-request" && (
-          <form onSubmit={sendReset} className="signin-form">
-            <label className="signin-label" htmlFor="signin-rid">Email or Member ID</label>
-            <input
-              id="signin-rid"
-              ref={inputRef}
-              className="signin-input"
-              type="text"
-              autoComplete="username"
-              placeholder="you@email.com  or  NGG-2025-0042"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              required
-              minLength={3}
-            />
-            <p className="signin-hint" style={{ margin: "4px 0 0", fontSize: 13, color: "var(--ink-500)" }}>
-              We'll email a link and a 6-digit code so you can set a new password.
-            </p>
-            {err && <div role="alert" className="signin-err">{err}</div>}
-            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || identifier.trim().length < 3}>
-              {busy ? "Sending…" : "Email me a set-password link →"}
-            </button>
-            <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("id"); }}>
-              ← Back to sign in
-            </button>
+          <form onSubmit={sendReset} className="signin-form" noValidate>
+            <label className="signin-label" htmlFor="signin-rid">Member ID or email</label>
+            <input id="signin-rid" ref={inputRef} className={"signin-input" + (err ? " is-bad" : "")} type="text" autoComplete="username" spellCheck="false" autoCapitalize="none"
+              placeholder="NGG-2025-0042" value={identifier} onChange={(e) => { setErr(""); setIdentifier(e.target.value); }}/>
+            {fieldErr}
+            {submit("Email me a code", identifier.trim().length < 3)}
+            <div className="signin-alts">
+              <button type="button" className="signin-link" onClick={() => { setErr(""); setStage("id"); }}>Back to sign in</button>
+            </div>
           </form>
         )}
 
         {stage === "reset-new" && (
-          <form onSubmit={confirmReset} className="signin-form">
-            {!deliveryOk && (
-              <p className="signin-hint" style={{ margin: "0 0 8px", padding: "8px 10px", fontSize: 13, borderRadius: 8, background: "var(--amber-50, #fff7ed)", color: "var(--amber-800, #9a3412)", border: "1px solid var(--amber-200, #fed7aa)" }}>
-                We had trouble sending your email just now. Check spam, or use <b>Resend code</b> in a moment.
-              </p>
-            )}
+          <form onSubmit={confirmReset} className="signin-form" noValidate>
+            {!deliveryOk && <p className="signin-note"><i className="ph ph-envelope-simple" aria-hidden="true"/>The email may be slow to arrive. Check spam, or resend in a moment.</p>}
             {!resetToken && (
               <>
-                <p className="signin-hint" style={{ margin: "0 0 4px", fontSize: 13, color: "var(--ink-500)" }}>
-                  {masked ? <>We sent a 6-digit code to <b>{masked}</b>. It expires in 30 minutes.</> : "Enter the code we emailed you."}
-                </p>
-                <label className="signin-label" htmlFor="signin-rotp">6-digit code</label>
-                <input
-                  id="signin-rotp"
-                  className="signin-input signin-otp"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={7}
-                  pattern="[0-9 ]*"
-                  placeholder="••• •••"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/[^\d ]/g, ""))}
-                  required
-                />
+                <span className="signin-label" id="signin-rotp-l">6-digit code</span>
+                <SignInCode id="signin-rotp" labelledBy="signin-rotp-l" value={otp} bad={false} autoFocus inputRef={null}
+                  onChange={(v) => { setErr(""); setOtp(v); }} onComplete={() => { const el = document.getElementById("signin-newpw"); if (el) el.focus(); }}/>
               </>
             )}
             <label className="signin-label" htmlFor="signin-newpw">New password</label>
-            <div className="signin-pw-wrap" style={{ position: "relative" }}>
-              <input
-                id="signin-newpw"
-                ref={resetToken ? inputRef : null}
-                className="signin-input"
-                type={showPw ? "text" : "password"}
-                autoComplete="new-password"
-                placeholder="At least 8 characters"
-                value={newPw}
-                onChange={(e) => setNewPw(e.target.value)}
-                required
-                minLength={8}
-                style={{ paddingRight: 64 }}
-              />
-              <button
-                type="button"
-                className="signin-pw-toggle"
-                onClick={() => setShowPw(v => !v)}
-                aria-label={showPw ? "Hide password" : "Show password"}
-                style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink-500)", letterSpacing: "0.06em" }}
-              >{showPw ? "HIDE" : "SHOW"}</button>
-            </div>
-            {err && <div role="alert" className="signin-err">{err}</div>}
-            <button className="btn btn-primary btn-lg signin-submit" type="submit" disabled={busy || newPw.length < 8 || (!resetToken && otp.replace(/\s/g, "").length !== 6)}>
-              {busy ? "Setting…" : "Set password & sign in →"}
-            </button>
-            {!resetToken && (
-              <button type="button" className="signin-link" onClick={sendReset} disabled={busy || cooldown > 0 || identifier.trim().length < 3}>
-                {cooldown > 0 ? "Resend code in " + cooldown + "s" : "Resend code"}
-              </button>
-            )}
-            <button type="button" className="signin-link" onClick={() => { setStage("id"); setOtp(""); setNewPw(""); setResetToken(""); setErr(""); setCooldown(0); }}>
-              ← Start over
-            </button>
+            {pwField("signin-newpw", newPw, (e) => setNewPw(e.target.value), "new-password", resetToken ? inputRef : null, 8)}
+            {fieldErr || <p className="signin-help">At least 8 characters.</p>}
+            {submit("Set password and sign in", newPw.length < 8 || (!resetToken && otp.replace(/\s/g, "").length !== 6))}
+            {!resetToken && <div className="signin-alts">{resend(sendReset)}</div>}
           </form>
         )}
 
-        <div className="signin-foot">
-          New here? <a href="#" onClick={(e) => { e.preventDefault(); onClose(); window.__navigate && window.__navigate("join"); }}>Apply for a session</a>
-        </div>
+        <p className="signin-foot">
+          New to NGG? <a href="/join" onClick={(e) => { e.preventDefault(); onClose(); window.__navigate && window.__navigate("join"); }}>Apply for a session</a>
+        </p>
       </div>
+    </div>
+  );
+}
+
+/* The six-digit code as six boxes. Typing moves on, Backspace moves back,
+   a paste or the phone's one-time-code autofill fills them all, and the
+   sixth digit hands the code to onComplete — no extra press. */
+function SignInCode({ id, labelledBy, value, onChange, onComplete, bad, autoFocus, inputRef }) {
+  const refs = React.useRef([]);
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 6).split("");
+  React.useEffect(() => { if (autoFocus && refs.current[0] && !inputRef) refs.current[0].focus(); }, []);
+  const put = (from, text) => {
+    const add = String(text || "").replace(/\D/g, "");
+    if (!add) return;
+    const next = digits.slice(0, from).concat(add.split("")).slice(0, 6);
+    onChange(next.join(""));
+    const at = Math.min(next.length, 5);
+    if (refs.current[at]) refs.current[at].focus();
+    if (next.length === 6) onComplete && onComplete(next.join(""));
+  };
+  return (
+    <div className={"signin-code" + (bad ? " is-bad" : "")} role="group" aria-labelledby={labelledBy}>
+      {[0, 1, 2, 3, 4, 5].map(i => (
+        <input key={i} id={i === 0 ? id : undefined}
+          ref={el => { refs.current[i] = el; if (i === 0 && inputRef) inputRef.current = el; }}
+          className="signin-digit" type="text" inputMode="numeric" pattern="[0-9]*"
+          autoComplete={i === 0 ? "one-time-code" : "off"} maxLength={i === 0 ? 6 : 1}
+          aria-label={"Digit " + (i + 1) + " of 6"} value={digits[i] || ""}
+          onFocus={e => e.target.select()}
+          onChange={e => {
+            const v = e.target.value.replace(/\D/g, "");
+            if (!v) { onChange(digits.slice(0, i).concat(digits.slice(i + 1)).join("")); return; }
+            put(i, v);
+          }}
+          onKeyDown={e => {
+            if (e.key === "Backspace" && !digits[i] && i > 0) { e.preventDefault(); onChange(digits.slice(0, i - 1).join("")); refs.current[i - 1].focus(); }
+            else if (e.key === "ArrowLeft" && i > 0) { e.preventDefault(); refs.current[i - 1].focus(); }
+            else if (e.key === "ArrowRight" && i < 5) { e.preventDefault(); refs.current[i + 1].focus(); }
+          }}
+          onPaste={e => { e.preventDefault(); put(i, (e.clipboardData || window.clipboardData).getData("text")); }}/>
+      ))}
     </div>
   );
 }
@@ -708,7 +636,9 @@ function SignInModal({ seed, onClose, onVerified }) {
 function humanizeAuthError(code) {
   const map = {
     rate_limited: "Too many tries. Wait a minute and try again.",
-    invalid: "That code or link isn't valid. Request a fresh one.",
+    invalid: "That code isn’t right. Check it, or resend a new one.",
+    bad_otp_format: "Enter the 6 digits from your email.",
+    bad_member_id: "Check your Member ID (like NGG-2025-0042), or use your email.",
     expired: "Link or code expired. They're only good for 15 minutes — request a new one.",
     already_used: "That code was already used. Request a fresh one.",
     too_many_attempts: "Too many wrong tries on that code. Request a new one.",
