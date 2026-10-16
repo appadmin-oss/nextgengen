@@ -7804,6 +7804,11 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
 .ids-ai-ran li { display: flex; align-items: center; gap: 6px; }
 .ids-ai-ran .ph { color: var(--ids-ok-fg); }
 .ids-ai-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.ids-ai-card.is-done { gap: 6px; }
+.ids-ai-next { display: flex; flex-wrap: wrap; gap: 6px; }
+.ids-ai-nextbtn { height: 28px; padding: 0 10px; border: 1px solid var(--ids-line-2); border-radius: var(--ids-r-pill); background: var(--ids-s0); color: var(--ids-ink-2); font-size: 12px; cursor: pointer; }
+.ids-ai-nextbtn:hover { border-color: var(--ids-ink); color: var(--ids-ink); }
+.ids-ai-bar .ids-iconbtn.is-on { background: var(--ids-bad-bg); color: var(--ids-bad-fg); }
 .ids-ai-by { margin: 0; font-size: 11.5px; color: var(--ids-muted-2); }
 .ids-ai-reading { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ids-muted); }
 .ids-ai-dots { display: inline-flex; gap: 3px; }

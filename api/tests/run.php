@@ -25255,6 +25255,25 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     // Follow-ups refine the plan on screen.
     $cur = ['kind' => 'member', 'centre' => 'Planford', 'which' => 'new', 'backs' => 'long'];
     $f = fn($t, $current) => (array)(backend_dispatch('admin.ids.plan', ['requesterId' => $CARDADM, 'prompt' => $t, 'current' => $current]));
+    // Commands, not only selections (the assistant's whitelist): layout in millimetres and slots, and three acts.
+    $pl = (array)$plan($CARDADM, 'margin 5mm, gap 2 mm, skip the first 3 slots')['plan'];
+    chk('id plan: margin, gap and skipped slots are read, and "the first 3" there is not a limit', $pl === ['margin' => 5, 'gap' => 2, 'skip' => 3]);
+    $pl = (array)$plan($CARDADM, 'margin 1mm and a gap of 50')['plan'];
+    chk('id plan: margin and gap are clamped to the studio’s range (3–30, 0–20)', $pl['margin'] === 3 && $pl['gap'] === 20);
+    $pl = (array)$plan($CARDADM, 'don’t split by centre, no packing list')['plan'];
+    chk('id plan: "don’t split" lets groups share sheets; "no packing list" turns it off', $pl['breakBy'] === false && $pl['packing'] === false);
+    $pl = (array)$plan($CARDADM, 'new sheet for each centre, with a packing list')['plan'];
+    chk('id plan: "new sheet for each centre" and "packing list" turn them on', $pl['breakBy'] === true && $pl['packing'] === true);
+    chk('id plan: "clear the sheet" is the clear act', ((array)$plan($CARDADM, 'clear the sheet')['plan'])['do'] === 'clear');
+    $pl = (array)$plan($CARDADM, 'ask the Planford members with no photo for photos')['plan'];
+    chk('id plan: "ask … for photos" is the ask act, narrowed to who was named', $pl['do'] === 'askPhotos' && $pl['kind'] === 'member' && $pl['centre'] === 'Planford');
+    chk('id plan: "fill the gaps" is the fill act', ((array)$plan($CARDADM, 'fill the gaps on the last sheet')['plan'])['do'] === 'fill');
+    $r = $f('clear the sheet', $cur);
+    chk('id plan: an act after a plan stands on its own rather than refining it', $r['refined'] === false && ((array)$r['plan'])['do'] === 'clear');
+    chk('id plan: an act the studio does not have is dropped, never passed on', !isset(ids_plan_clean(['do' => 'print'], ['member'], [])['plan']['do'])
+      && !isset(ids_plan_clean(['do' => 'markPrinted'], ['member'], [])['plan']['do']));
+    $pl = (array)$f('make it A3 with a 4mm margin', $cur)['plan'];
+    chk('id plan: a settings change after a plan keeps the selection', $pl['paper'] === 'a3' && $pl['margin'] === 4 && $pl['centre'] === 'Planford');
     $r = $f('fronts only', $cur); $pl = (array)$r['plan'];
     chk('id plan: "fronts only" after a plan changes the sides and keeps the selection', $r['refined'] === true && $pl['backs'] === 'off' && $pl['centre'] === 'Planford' && $pl['kind'] === 'member');
     $pl = (array)$f('only Planwick Hall', $cur)['plan'];

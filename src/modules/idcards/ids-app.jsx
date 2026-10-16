@@ -1314,8 +1314,9 @@ function IdCardStudioPage({ setPage }) {
       if (!askUndo.current) askUndo.current = { queue, st, kind, centre, filter, rmode, rng };
       const reasons = new Set(sel.pick.map(r => r.reason));
       const patch = { reason: plan.proof ? "proof" : reasons.size > 1 ? "mixed" : reasons.has("reprint") ? "reprint" : "new", skip: 0 };
-      ["backs", "marks", "paper", "dpi", "order"].forEach(k => { if (plan[k] !== undefined) patch[k] = plan[k]; });
+      ["backs", "marks", "paper", "dpi", "order", "margin", "gap", "skip", "packing"].forEach(k => { if (plan[k] !== undefined) patch[k] = plan[k]; });
       if (plan.order) patch.breakBy = plan.order !== "name";
+      if (plan.breakBy !== undefined) patch.breakBy = plan.breakBy;
       setQueue(sel.pick.map(r => ({ t: "r", key: r.key })));
       set(patch);
       // The list on the left shows the same people, so what the plan chose can be checked and changed by hand.
@@ -1328,7 +1329,7 @@ function IdCardStudioPage({ setPage }) {
       setSel(null); setSheetIdx(0);
       out.applied = true;
       const base = askUndo.current.st;
-      out.changed = ["backs", "marks", "paper", "dpi", "order", "reason"].filter(k => patch[k] !== undefined && patch[k] !== base[k]);
+      out.changed = ["backs", "marks", "paper", "dpi", "order", "reason", "margin", "gap", "skip", "packing"].filter(k => patch[k] !== undefined && patch[k] !== base[k]);
     }
     setAskRes(out);
     return out;
@@ -1341,8 +1342,8 @@ function IdCardStudioPage({ setPage }) {
   };
   const ranOf = (out, n) => {
     const ran = [];
-    if (out.applied) ran.push("put " + idsN(n, "card") + " on the sheet");
-    (out.changed || []).forEach(k => ran.push("set " + ({ backs: "backs", marks: "cut marks", paper: "paper", dpi: "image quality", order: "the order", reason: "the reason for the log" })[k]));
+    if (out.applied) ran.push("Put " + idsN(n, "card") + " on the sheet");
+    (out.changed || []).forEach(k => ran.push("Set " + ({ backs: "backs", marks: "cut marks", paper: "paper", dpi: "image quality", order: "the order", reason: "the reason for the log", margin: "the margin", gap: "the gap", skip: "skipped slots", packing: "the packing list" })[k]));
     return ran;
   };
   const commit = (id, res, prompt) => {
@@ -1351,9 +1352,95 @@ function IdCardStudioPage({ setPage }) {
     setLiveId(id);
     setChat(c => c.map(m => m.id === id ? Object.assign({}, m, { pending: false, ran: ranOf(out, out.n) }) : m));
   };
+  /* ── Commands: settings on the sheet as it is, and the three acts ──
+     A request with no "who" in it ("make it A3", "margin 5mm", "fill the
+     gaps", "clear the sheet") changes the sheet on screen; it never reselects
+     people. Asking for photos opens the same confirm as the button, with the
+     count — the assistant never sends on its own. */
+  const [lastCmdId, setLastCmdId] = React.useState(0);
+  const runCmd = plan => {
+    const undo = { queue, st };
+    const ran = [], notes = [];
+    const patch = {};
+    IDS_ASK_SET_KEYS.forEach(k => {
+      if (plan[k] === undefined) return;
+      if (k === "proof") { const want = plan.proof ? "proof" : (st.reason === "proof" ? "new" : st.reason); if (want !== st.reason) { patch.reason = want; if (plan.proof) patch.dpi = 150; ran.push("Set " + idsCmdLabel(k, plan[k], st)); } return; }
+      if (plan[k] !== st[k]) { patch[k] = plan[k]; ran.push("Set " + idsCmdLabel(k, plan[k], Object.assign({}, st, patch))); }
+      else notes.push("It was already " + idsCmdLabel(k, plan[k], st) + ".");
+    });
+    if (Object.keys(patch).length) set(patch);
+    if (plan.do === "clear") {
+      if (!queue.length) notes.push("The sheet was already empty.");
+      else { setQueue([]); setSel(null); ran.push("Took " + idsN(cards.length, "card") + " off the sheet"); }
+    }
+    if (plan.do === "fill") {
+      const k = Math.min(gap, fillable.length);
+      if (!cards.length) notes.push("The sheet is empty, so there are no gaps to fill. Tell me who to put on it.");
+      else if (!gap) notes.push("Every slot on the last sheet is already used.");
+      else if (!k) notes.push("No card that is ready to print fits the " + idsN(gap, "empty slot") + ".");
+      else { fillGap(); ran.push("Filled " + idsN(k, "empty slot") + " with cards that were waiting"); }
+    }
+    if (plan.do === "askPhotos") {
+      const p = Object.assign({}, plan); delete p.do;
+      const pool = idsPlanHasSel(p) ? idsPlanSelect(p, { pool: recs, all: data.records, isBlocked }).blocked : recs.filter(isBlocked);
+      const list = pool.filter(r => !idsAskedRecently(askedOf(r))).slice(0, IDS_ASK_MAX);
+      const recent = pool.length - pool.filter(r => !idsAskedRecently(askedOf(r))).length;
+      if (!pool.length) notes.push("Nobody " + (idsPlanHasSel(p) ? "there " : "") + "is waiting for a photo.");
+      else if (!list.length) notes.push("All " + pool.length + " were asked in the last 3 days. Ask one again from their row if you need to.");
+      else { setAskConfirm(list); ran.push("Opened the photo request for " + idsN(list.length, "person", "people") + ". Check the count and send it"); if (recent) notes.push(recent + " asked in the last 3 days " + (recent === 1 ? "is" : "are") + " left out."); }
+    }
+    return { ran, notes, undo: ran.length && plan.do !== "askPhotos" ? undo : null };
+  };
+  const commitCmd = (id, plan) => {
+    const r = runCmd(plan);
+    if (r.undo) setLastCmdId(id);
+    setChat(c => c.map(m => m.id === id ? Object.assign({}, m, { pending: false, ran: r.ran, notes: r.notes, undo: r.undo }) : m));
+  };
+  const undoCmd = m => {
+    if (!m.undo) return;
+    setQueue(m.undo.queue); setSt(m.undo.st);
+    setChat(c => c.map(x => x.id === m.id ? Object.assign({}, x, { undone: true }) : x));
+    setLastCmdId(0);
+    say("The sheet is back as it was");
+  };
+  /* What the answers read: the studio as it is now. */
+  const askCtx = () => {
+    const norm = x => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const statusOf = r => {
+      const q = recs.find(x => x.key === r.key);
+      if (q && inQ.has(q.key)) return "is on the sheet now";
+      if (q && isBlocked(q)) { const a = askedOf(q); return "is waiting for a photo" + (a ? " (asked " + idsAskedOn(a) + ")" : ", and hasn’t been asked yet"); }
+      if (q && q.reason === "reprint") return "is waiting for a reprint" + (q.why ? " (" + q.why.toLowerCase() + ")" : "");
+      if (q) return "is waiting for their first card, ready to print";
+      if (r.printedBefore) return "has a card" + (r.lastIssue && r.lastIssue.at ? ", printed " + idsAskedOn(r.lastIssue) + " " + String(r.lastIssue.at).slice(0, 4) : "");
+      return "isn’t waiting for a card";
+    };
+    const lookup = text => {
+      const t = " " + String(text || "").toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, " ") + " ";
+      const ids = (String(text).match(/\b(?:[a-z]{2,4}-\d{2}-\d{3,4}|\d{3}-\d{3,4})\b/gi) || []).map(norm);
+      const hits = data.records.filter(r => {
+        if (ids.length) return ids.includes(norm(r.displayId)) || ids.includes(norm(r.id));
+        const words = String(r.name || "").toLowerCase().split(/\s+/).filter(w => w.length > 1);
+        return words.length >= 2 && t.includes(" " + words[0] + " ") && t.includes(" " + words[words.length - 1] + " ");
+      });
+      return hits.map(r => ({ name: r.name, displayId: r.displayId, centre: r.centre, status: statusOf(r) }));
+    };
+    const byC = {};
+    recs.filter(r => !isBlocked(r)).forEach(r => { const k = r.centre || "No centre"; byC[k] = (byC[k] || 0) + 1; });
+    return {
+      n: cards.length, sheets: nSheets, block: printBlock, stock, gap, fillable: fillable.length,
+      bad: checks.filter(c => c.tone === "bad").map(c => c.text), warn: checks.filter(c => c.tone === "warn").map(c => c.text),
+      blocked: recs.filter(isBlocked).length, ready: ready.length, reprints: recs.filter(r => !isBlocked(r) && r.reason === "reprint").length,
+      blockedList: recs.filter(isBlocked).map(r => ({ name: r.name, asked: idsAskedRecently(askedOf(r)) })),
+      onSheet: sorted.map(c => c.label), byCentre: Object.entries(byC).sort((a, b) => b[1] - a[1]).map(([centre, n]) => ({ centre, n })), lookup,
+    };
+  };
   const askPlan = prompt => {
     askLast.current = prompt;
     say2("me", { text: prompt });
+    // A question about the sheet or a person is answered here, from the studio's own data; nothing is sent.
+    const local = idsAskAnswer(prompt, askCtx());
+    if (local) { say2("studio", { kind: "answer", text: local }); return; }
     setAskBusy(true);
     const current = askRes && askRes.plan ? askRes.plan : (chat.slice().reverse().find(m => m.kind === "plan" && m.res) || {}).res ? (chat.slice().reverse().find(m => m.kind === "plan" && m.res)).res.plan : null;
     NGGApi.admin.idStudio.plan(prompt, current).then(res => {
@@ -1362,6 +1449,13 @@ function IdCardStudioPage({ setPage }) {
         const bad = checks.filter(c => c.tone === "bad").map(c => c.text), warn = checks.filter(c => c.tone === "warn").map(c => c.text);
         const answer = idsAskAnswer(prompt, { n: cards.length, sheets: nSheets, block: printBlock, bad, warn, blocked: recs.filter(isBlocked).length, ready: ready.length });
         say2("studio", answer ? { kind: "answer", text: answer } : Object.assign({ kind: "empty" }, meta));
+        return;
+      }
+      const plan = res.plan;
+      const live0 = !!(askRes && askRes.plan && liveId);
+      if (plan.do || (!idsPlanHasSel(plan) && !live0)) {
+        const id = say2("studio", Object.assign({ kind: "cmd", plan, preview: idsCmdPreview(plan, st), pending: askMode === "ask" }, meta));
+        if (askMode === "act") commitCmd(id, plan);
         return;
       }
       // Each reply keeps what it said, so it still reads right once a later one is live.
@@ -1400,6 +1494,30 @@ function IdCardStudioPage({ setPage }) {
     startPrint();
   };
   const askFill = () => { const k = fillGap(); if (k) setAskRes(a => a && Object.assign({}, a, { n: a.n + k })); };
+  /* Starters from the studio's real queue, and the next steps after a reply. */
+  const askStarters = (() => {
+    const out = [];
+    const byC = {};
+    recs.filter(r => !isBlocked(r) && r.reason === "new").forEach(r => { if (r.centre) byC[r.centre] = (byC[r.centre] || 0) + 1; });
+    const top = Object.entries(byC).sort((a, b) => b[1] - a[1])[0];
+    if (top) out.push("New cards for everyone at " + top[0] + ", front and back");
+    const rp = recs.filter(r => !isBlocked(r) && r.reason === "reprint").length;
+    if (rp) out.push("Print the " + rp + " " + (rp === 1 ? "reprint" : "reprints"));
+    const bl = recs.filter(isBlocked).length;
+    if (bl) out.push("Who is waiting for a photo?");
+    return out;
+  })();
+  const askNext = (() => {
+    const out = [];
+    if (!cards.length) return out;
+    if (gap > 0 && fillable.length && !(breakActive && pads)) out.push("Fill the gaps");
+    if (printBlock) out.push("Why can’t I print yet?");
+    if (st.backs === "off") out.push("Front and back");
+    if (st.reason !== "proof") out.push("Make it a proof");
+    if (recs.some(isBlocked)) out.push("Ask the ones with no photo for photos");
+    if (!printBlock) out.push("Who is on the sheet?");
+    return out.slice(0, 3);
+  })();
   const askLive = askRes && askRes.n && liveId ? {
     sheets: nSheets, block: printBlock, gap, fill: Math.min(gap, fillable.length),
     settings: [
@@ -1408,10 +1526,11 @@ function IdCardStudioPage({ setPage }) {
       { label: st.marks ? "Crop marks" : "No crop marks", k: "marks" },
       { label: st.dpi + " dpi", k: "dpi" },
       { label: "Sorted by " + ((IDS_ORDERS.find(o => o[0] === st.order) || IDS_ORDERS[0])[1]).toLowerCase(), k: "order" },
-    ].concat(st.reason === "proof" ? [{ label: "Proof", k: "reason" }] : []).map(x => Object.assign(x, { changed: (askRes.changed || []).includes(x.k) })),
+    ].concat((askRes.changed || []).filter(k => k === "margin" || k === "gap" || k === "skip" || k === "packing").map(k => ({ label: idsCmdLabel(k, st[k], st).replace(/^./, c => c.toUpperCase()), k }))).concat(st.reason === "proof" ? [{ label: "Proof", k: "reason" }] : []).map(x => Object.assign(x, { changed: (askRes.changed || []).includes(x.k) })),
   } : null;
   const A = { ask: askPlan, retry: () => askLast.current && askPlan(askLast.current), busy: askBusy, result: askRes, live: askLive,
-    chat, liveId, mode: askMode, setMode: setAskMode, reset: askReset, apply: m => commit(m.id, m.res, m.prompt),
+    chat, liveId, mode: askMode, setMode: setAskMode, reset: askReset, apply: m => m.kind === "cmd" ? commitCmd(m.id, m.plan) : commit(m.id, m.res, m.prompt),
+    lastCmdId, undoCmd, starters: askStarters, next: askNext,
     bindInput: ref => { aiInput.current = ref.current; },
     people: q => { const t = String(q || "").toLowerCase(); return data.records.filter(r => !t || (r.name + " " + (r.displayId || "")).toLowerCase().includes(t)).slice(0, 6); },
     print: askPrint, undo: askUndoIt, canUndo: !!(askRes && askUndo.current && liveId), drop: askDrop, fill: askFill };

@@ -155,25 +155,92 @@ function idsPlanWhat(p) {
   return out;
 }
 
-/* Questions about the sheet ("why can't I print yet?") are answered here,
-   from the checks the studio already runs, not by a model: the answer has to
-   be true of THIS sheet. Returns null when the text is not such a question. */
+/* Questions are answered here, from what the studio holds — the checks it
+   runs, the queue, the records — never by a model, because the answer has to
+   be true of THIS sheet and THESE people. Returns null when the text is not a
+   question this can answer; the request then goes to the planner.
+   `c` is the studio's state, built in ids-app.jsx (askCtx). */
+const IDS_ASK_SEL_KEYS = ["kind", "centre", "which", "ids", "names", "also", "exclude", "dateFrom", "dateTo", "numFrom", "numTo", "limit"];
+const idsPlanHasSel = p => IDS_ASK_SEL_KEYS.some(k => p && p[k] !== undefined);
+function idsAskIsQuestion(text) {
+  const t = String(text || "").trim().toLowerCase();
+  if (/^(can|could|would|will) you\b/.test(t) && !/\b(help|do|tell|explain|show)\b/.test(t)) return false;   // a request, politely put
+  return /\?$/.test(t) || /^(why|what|what's|whats|how|who|who's|whos|which|where|when|is|are|do|does|did|has|have|can|any|tell me|show me|explain)\b/.test(t);
+}
+const idsList = (names, max) => names.slice(0, max || 8).join(", ") + (names.length > (max || 8) ? " and " + (names.length - (max || 8)) + " more" : "");
 function idsAskAnswer(text, c) {
+  if (!idsAskIsQuestion(text)) return null;
   const t = String(text || "").toLowerCase();
-  const q = /\?$/.test(t.trim()) || /^(why|what|how|can|is|are|do|does|which|who)\b/.test(t.trim());
-  if (!q) return null;
-  const n = c.n, sheets = c.sheets;
-  if (/print|ready|blocked|stop/.test(t)) {
-    if (!n) return "Nothing is on the sheet yet, so there is nothing to print. Tick people on the left, or ask me: “new cards for every member at Egbeda”.";
-    if (c.block) return "Not yet. " + c.bad.map(x => x.replace(/\s+$/, "")).join(" ") + (c.bad.length ? "" : c.block + ".") + " Fix the red item" + (c.bad.length > 1 ? "s" : "") + " in Settings → Checks, then press **Print " + n + "**.";
-    return "You **can** print. The sheet has **" + n + " " + (n === 1 ? "card" : "cards") + "** on " + sheets + " " + (sheets === 1 ? "sheet" : "sheets") + " and every check passes. Press **Print " + n + "** when you’re ready."
-      + (c.blocked ? "\n\nNote: " + c.blocked + " " + (c.blocked === 1 ? "person is" : "people are") + " left out because they have no photo yet. Ask for their photos from the Blocked list." : "")
+  const n = c.n, sheets = c.sheets, cardsW = k => k + " " + (k === 1 ? "card" : "cards"), sheetsW = k => k + " " + (k === 1 ? "sheet" : "sheets");
+  if (/\b(what can you do|what do you do|help|how do (i|you) use|how does this work|what can i (say|ask))\b/.test(t)) {
+    return "I set up the sheet from what you write, and answer questions about it from the studio’s own records.\n\n"
+      + "**Choose who**: “new cards for Egbeda members”, “reprint 026-003 and 026-014”, “participants who registered this week”, “volunteers, by name”.\n\n"
+      + "**Change it**: “fronts only”, “only Ijaiye”, “add 026-010”, “not Ada”, “make it A3”, “margin 5mm”, “skip the first 3 slots”, “make it a proof”.\n\n"
+      + "**Act**: “fill the gaps”, “ask the ones with no photo for photos”, “clear the sheet”.\n\n"
+      + "**Ask**: “why can’t I print yet?”, “who’s blocked?”, “who’s on the sheet?”, “has Ada Obi got a card?”, “how much card stock?”.\n\n"
+      + "I can’t print and I can’t mark anyone as printed: Print stays your press, with the count on it.";
+  }
+  // A person, by printed ID or name.
+  const people = c.lookup(text);
+  if (people.length) {
+    return people.slice(0, 5).map(p => "**" + p.name + "**" + (p.displayId ? " (" + p.displayId + (p.centre ? ", " + p.centre : "") + ")" : p.centre ? " (" + p.centre + ")" : "") + " " + p.status + ".").join("\n\n")
+      + (people.length > 5 ? "\n\n" + (people.length - 5) + " more match. Add a surname or the ID." : "");
+  }
+  if (/\b(blocked|no photo|without (a )?photo|missing photos?|need(s)? (a )?photos?|waiting (for|on) (a )?photos?)\b/.test(t)) {
+    if (!c.blockedList.length) return "Nobody is blocked. Everyone waiting has a photo.";
+    const asked = c.blockedList.filter(p => p.asked).length;
+    return "**" + c.blockedList.length + "** " + (c.blockedList.length === 1 ? "person is" : "people are") + " waiting for a photo: " + idsList(c.blockedList.map(p => p.name)) + "."
+      + (asked ? " " + asked + " " + (asked === 1 ? "has" : "have") + " been asked already." : "") + "\n\nSay “ask them for photos” and I’ll open the request, with the count, for you to send.";
+  }
+  if (/\b(on the sheet|who('s| is) (on|printing)|which cards|what('s| is) on)\b/.test(t)) {
+    if (!n) return "The sheet is empty.";
+    return "**" + cardsW(n) + "** on " + sheetsW(sheets) + ": " + idsList(c.onSheet) + ".";
+  }
+  if (/\b(print|ready|stop|stopping|can i)\b/.test(t) && !/\b(stock|paper)\b/.test(t)) {
+    if (!n) return "Nothing is on the sheet yet, so there is nothing to print. Tell me who, for example “new cards for every member at Egbeda”.";
+    if (c.block) return "Not yet. " + (c.bad.length ? c.bad.join(" ") : c.block + ".") + " Fix " + (c.bad.length > 1 ? "those" : "that") + ", then press **Print " + n + "**.";
+    return "You **can** print. The sheet has **" + cardsW(n) + "** on " + sheetsW(sheets) + " and every check passes. Press **Print " + n + "** when you’re ready."
+      + (c.blocked ? "\n\nNote: " + c.blocked + " " + (c.blocked === 1 ? "person is" : "people are") + " left out because they have no photo yet." : "")
       + (c.warn.length ? "\n\nWorth a look first: " + c.warn.join(" ") : "");
   }
-  if (/how many|count|left|waiting/.test(t)) {
-    return "**" + n + "** on the sheet (" + sheets + " " + (sheets === 1 ? "sheet" : "sheets") + "). " + c.ready + " more " + (c.ready === 1 ? "is" : "are") + " ready to add, and " + c.blocked + " " + (c.blocked === 1 ? "is" : "are") + " waiting for a photo.";
+  if (/\b(stock|paper|sheets?|how much)\b/.test(t)) {
+    if (!n) return "No card stock yet: the sheet is empty.";
+    return "**" + sheetsW(c.stock.sheets) + "** of card stock, " + c.stock.sides + " printed " + (c.stock.sides === 1 ? "side" : "sides") + ", " + c.stock.used + "% of the slots used."
+      + (c.gap ? " The last sheet has " + c.gap + " empty " + (c.gap === 1 ? "slot" : "slots") + (c.fillable ? "; say “fill the gaps” to use them." : ".") : "");
+  }
+  if (/\b(centres?|centers?|where)\b/.test(t) && c.byCentre.length) {
+    return "Waiting for a card, by centre: " + c.byCentre.map(x => x.centre + " " + x.n).join(", ") + ".";
+  }
+  if (/\b(how many|count|left|waiting|queue)\b/.test(t)) {
+    return "**" + n + "** on the sheet (" + sheetsW(sheets) + "). " + c.ready + " more " + (c.ready === 1 ? "is" : "are") + " ready to add, " + c.reprints + " waiting for a reprint, and " + c.blocked + " waiting for a photo.";
   }
   return null;
+}
+
+/* What a command will do, and what it did, in the operator's words. */
+const IDS_ASK_SET_KEYS = ["paper", "backs", "marks", "dpi", "order", "margin", "gap", "skip", "breakBy", "packing", "proof"];
+function idsCmdLabel(k, v, st) {
+  switch (k) {
+    case "paper": return "paper " + ((IDS_PAPERS[v] || [v])[0]);
+    case "backs": return ((IDS_BACKS.find(b => b[0] === v) || [v, v])[1]).toLowerCase();
+    case "marks": return v ? "cut marks on" : "cut marks off";
+    case "dpi": return v + " dpi";
+    case "order": return "sorted by " + ((IDS_ORDERS.find(o => o[0] === v) || [v, v])[1]).toLowerCase();
+    case "margin": return "margin " + v + " mm";
+    case "gap": return "gap " + v + " mm";
+    case "skip": return v ? "skip " + v + " used " + (v === 1 ? "slot" : "slots") + " on sheet 1" : "no slots skipped";
+    case "breakBy": return v ? "a new sheet for each " + (st && st.order === "kind" ? "kind" : "centre") + " that fills one" : "groups share sheets";
+    case "packing": return v ? "packing list on" : "no packing list";
+    case "proof": return v ? "a proof: 150 dpi, watermarked" : "not a proof";
+    default: return k;
+  }
+}
+function idsCmdPreview(plan, st) {
+  const out = IDS_ASK_SET_KEYS.filter(k => plan[k] !== undefined).map(k => "set " + idsCmdLabel(k, plan[k], st));
+  if (plan.do === "clear") out.push("take every card off the sheet");
+  if (plan.do === "fill") out.push("fill the empty slots on the last sheet");
+  if (plan.do === "askPhotos") out.push("open a photo request for the people with no photo" + (plan.centre ? " at " + plan.centre : "") + " (you confirm the count before it sends)");
+  return out;
 }
 
 /** **bold** in a sentence. Nothing else is interpreted. */
@@ -245,7 +312,27 @@ function IdsAssistant({ A, onClose }) {
       setHist(i); setText(i >= 0 ? recent[i] : "");
     }
   };
-  const starters = recent.slice(0, 2).map(x => ({ x, recent: true })).concat(IDS_ASK_EXAMPLES.filter(x => !recent.includes(x)).map(x => ({ x }))).slice(0, 4);
+  // Starters come from the studio's real counts and centres; examples fill any gap.
+  // With real starters, one example shows the other kind of request (by ID); without, the examples stand in.
+  const base = A.starters && A.starters.length ? A.starters.concat(["Reprint 026-003 and 026-014"]) : IDS_ASK_EXAMPLES;
+  const starters = recent.slice(0, 2).map(x => ({ x, recent: true })).concat(base.filter(x => !recent.includes(x)).map(x => ({ x }))).slice(0, 5);
+  /* Voice: the browser's own speech recognition, where it has one. Nothing is
+     sent anywhere by the studio; the words land in the composer to be read
+     and sent like typing. */
+  const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+  const [listening, setListening] = React.useState(false);
+  const recRef = React.useRef(null);
+  const listen = () => {
+    if (!SR) return;
+    if (listening && recRef.current) { recRef.current.stop(); return; }
+    const r = new SR();
+    r.lang = "en-GB"; r.interimResults = true; r.maxAlternatives = 1;
+    r.onresult = e => setText(Array.from(e.results).map(x => x[0].transcript).join(" "));
+    r.onend = () => { setListening(false); inputRef.current && inputRef.current.focus(); };
+    r.onerror = () => setListening(false);
+    recRef.current = r; setListening(true);
+    try { r.start(); } catch (_) { setListening(false); }
+  };
   return (
     <section className="ids-ai" aria-label="Assistant">
       <div className="ids-ai-log" ref={logRef} role="log" aria-live="polite" aria-label="Conversation">
@@ -259,7 +346,7 @@ function IdsAssistant({ A, onClose }) {
                   {rc ? <IdsIcon name="clock-counter-clockwise"/> : <IdsIcon name="arrow-up-right"/>}<span>{x}</span>
                 </button></li>
               ))}
-              <li><button type="button" className="ids-ai-starter" onClick={() => { setText("Why can’t I print yet?"); inputRef.current && inputRef.current.focus(); }}><IdsIcon name="question"/><span>Why can’t I print yet?</span></button></li>
+              <li><button type="button" className="ids-ai-starter" onClick={() => { setText("What can you do?"); inputRef.current && inputRef.current.focus(); }}><IdsIcon name="question"/><span>What can you do?</span></button></li>
             </ul>
           </div>
         )}
@@ -267,6 +354,11 @@ function IdsAssistant({ A, onClose }) {
           ? <div key={m.id} className="ids-ai-me"><span>{m.text}</span></div>
           : <IdsAskReply key={m.id} m={m} A={A}/>)}
         {A.busy && <div className="ids-ai-reading" role="status"><span className="ids-ai-dots" aria-hidden="true"><i/><i/><i/></span>Reading…</div>}
+        {!A.busy && A.chat.length > 0 && A.next.length > 0 && (
+          <div className="ids-ai-next" role="group" aria-label="Suggested next steps">
+            {A.next.map(x => <button key={x} type="button" className="ids-ai-nextbtn" onClick={() => send(x)}>{x}</button>)}
+          </div>
+        )}
       </div>
       <form className="ids-ai-compose" onSubmit={e => { e.preventDefault(); send(); }}>
         {pop && (pop.kind === "people" ? people.length > 0 : true) && (
@@ -291,6 +383,7 @@ function IdsAssistant({ A, onClose }) {
             <button type="button" aria-pressed={A.mode === "act"} className={A.mode === "act" ? "is-on" : ""} onClick={() => A.setMode("act")} title="Sets up the sheet straight away"><IdsIcon name="lightning"/>Act</button>
           </span>
           <span className="ids-grow"/>
+          {SR && <button type="button" className={"ids-iconbtn" + (listening ? " is-on" : "")} aria-pressed={listening} aria-label={listening ? "Stop listening" : "Speak your request"} title={listening ? "Listening… press to stop" : "Speak your request"} onClick={listen}><IdsIcon name={listening ? "microphone-slash" : "microphone"}/></button>}
           {A.chat.length > 0 && <button type="button" className="ids-iconbtn" aria-label="New conversation" title="New conversation" onClick={A.reset}><IdsIcon name="note-pencil"/></button>}
           <button type="submit" className="ids-ai-send" aria-label="Send" disabled={!text.trim() || A.busy}><IdsIcon name="arrow-up"/></button>
         </div>
@@ -310,6 +403,20 @@ function IdsAskReply({ m, A }) {
     </div>
   );
   if (m.kind === "answer") return <div className="ids-ai-card"><span className="ids-ai-who">Assistant</span><IdsAskMini text={m.text}/></div>;
+  if (m.kind === "cmd") return (
+    <div className={"ids-ai-card" + (m.pending ? "" : " is-done")}>
+      <span className="ids-ai-who">Assistant{m.undone ? " · undone" : ""}</span>
+      {m.pending ? <>
+        <p className="ids-ai-p">I’ll {m.preview.join(", then ")}.</p>
+        <div className="ids-ai-acts"><button type="button" className="ids-btn ids-btn--sm ids-btn--outline" onClick={() => A.apply(m)}>Apply</button></div>
+      </> : <>
+        {m.ran && m.ran.length > 0 && <ul className="ids-ai-ran" aria-label="What it did">{m.ran.map((x, i) => <li key={i}><IdsIcon name="check"/>{x}</li>)}</ul>}
+        {(m.notes || []).map((x, i) => <p key={i} className="ids-ask-issue is-info"><IdsIcon name="info"/><span className="ids-grow">{x}</span></p>)}
+        {m.undo && !m.undone && m.id === A.lastCmdId && <div className="ids-ai-acts"><button type="button" className="ids-btn ids-btn--sm" onClick={() => A.undoCmd(m)}>Undo</button></div>}
+      </>}
+      {by && <p className="ids-ai-by">{by}</p>}
+    </div>
+  );
   if (m.kind === "empty") return (
     <div className="ids-ai-card is-warn">
       <span className="ids-ai-who">Assistant</span>
@@ -333,7 +440,7 @@ function IdsAskReply({ m, A }) {
   return (
     <div className="ids-ai-card is-live">
       <span className="ids-ai-who">Assistant{r.refined ? " · updated" : ""}</span>
-      {m.ran && m.ran.length > 0 && <ul className="ids-ai-ran" aria-label="What it did">{m.ran.map((x, i) => <li key={i}><IdsIcon name="check"/>Ran {x}</li>)}</ul>}
+      {m.ran && m.ran.length > 0 && <ul className="ids-ai-ran" aria-label="What it did">{m.ran.map((x, i) => <li key={i}><IdsIcon name="check"/>{x}</li>)}</ul>}
       <p className="ids-ai-h">
         {r.n ? <><b className="ids-mono">{r.n}</b> {r.n === 1 ? "card" : "cards"} on the sheet</> : "Nothing to put on the sheet"}
         {r.n > 0 && L && <span className="ids-muted"> · {L.sheets} {L.sheets === 1 ? "sheet" : "sheets"}</span>}

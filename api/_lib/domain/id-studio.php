@@ -525,7 +525,16 @@ const IDS_PLAN_ORDERS = ['centre', 'kind', 'name'];
 const IDS_PLAN_IDS_MAX = 600;
 const IDS_PLAN_NAMES_MAX = 50;
 const IDS_PLAN_NONE = 'none';            // "people with no centre on their record"
-const IDS_PLAN_SCALARS = ['kind', 'centre', 'which', 'dateFrom', 'dateTo', 'numFrom', 'numTo', 'limit', 'backs', 'marks', 'paper', 'dpi', 'order', 'proof'];
+const IDS_PLAN_SCALARS = ['kind', 'centre', 'which', 'dateFrom', 'dateTo', 'numFrom', 'numTo', 'limit', 'backs', 'marks', 'paper', 'dpi', 'order', 'proof',
+    'margin', 'gap', 'skip', 'breakBy', 'packing'];
+/* One-off acts the assistant may ask the studio to do (v4's whitelist). Each
+   is carried out in the browser through the studio's own controls, and the
+   ones that reach people (asking for photos) still go through the confirm
+   that states the count. None of them prints, and none marks anyone printed. */
+const IDS_PLAN_DO = ['clear', 'fill', 'askPhotos'];
+const IDS_PLAN_MARGIN = [3, 30];
+const IDS_PLAN_GAP = [0, 20];
+const IDS_PLAN_SKIP_MAX = 60;
 const IDS_PLAN_NUMBER_WORDS = ['one' => 1, 'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5, 'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9, 'ten' => 10,
     'eleven' => 11, 'twelve' => 12, 'a dozen' => 12, 'dozen' => 12, 'fifteen' => 15, 'twenty' => 20, 'thirty' => 30, 'forty' => 40, 'fifty' => 50, 'a hundred' => 100, 'hundred' => 100];
 const IDS_PLAN_MONTHS = ['jan' => 1, 'feb' => 2, 'mar' => 3, 'apr' => 4, 'may' => 5, 'jun' => 6, 'jul' => 7, 'aug' => 8, 'sep' => 9, 'oct' => 10, 'nov' => 11, 'dec' => 12];
@@ -638,6 +647,12 @@ function ids_plan_clean(array $in, array $kinds, array $centres): array {
     $order = strtolower((string)($in['order'] ?? ''));
     if (in_array($order, IDS_PLAN_ORDERS, true)) $out['order'] = $order;
     if (isset($in['proof']) && is_bool($in['proof'])) $out['proof'] = $in['proof'];
+    if (isset($in['margin']) && is_numeric($in['margin'])) $out['margin'] = max(IDS_PLAN_MARGIN[0], min(IDS_PLAN_MARGIN[1], (int)round((float)$in['margin'])));
+    if (isset($in['gap']) && is_numeric($in['gap'])) $out['gap'] = max(IDS_PLAN_GAP[0], min(IDS_PLAN_GAP[1], (int)round((float)$in['gap'])));
+    if (isset($in['skip']) && is_numeric($in['skip']) && (int)$in['skip'] >= 0) $out['skip'] = min(IDS_PLAN_SKIP_MAX, (int)$in['skip']);
+    foreach (['breakBy', 'packing'] as $k) if (isset($in[$k]) && is_bool($in[$k])) $out[$k] = $in[$k];
+    $do = (string)($in['do'] ?? '');
+    if (in_array($do, IDS_PLAN_DO, true)) $out['do'] = $do;
     return ['plan' => $out, 'notes' => $notes];
 }
 
@@ -765,8 +780,24 @@ function ids_plan_rules(string $prompt, array $kinds, array $centres, string $to
     if (preg_match('/\b(by name|alphabetical(ly)?|a to z|a-z)\b/u', $t)) $p['order'] = 'name';
     elseif (preg_match('/\bby (centre|center)\b/u', $t)) $p['order'] = 'centre';
     elseif (preg_match('/\bby (kind|type)\b/u', $t)) $p['order'] = 'kind';
+    // Layout, said in millimetres or slots.
+    // "margin 5mm" and "a 5mm margin" both.
+    if (preg_match('/\bmargins?\s*(?:of|to|at|=)?\s*(\d{1,2}(?:\.\d)?)\s*(?:mm|millimet(?:re|er)s?)?\b/u', $t, $r)
+        || preg_match('/\b(\d{1,2}(?:\.\d)?)\s*(?:mm|millimet(?:re|er)s?)\s+margins?\b/u', $t, $r)) $p['margin'] = (float)$r[1];
+    if (preg_match('/\b(?:gaps?|gutters?|spacing)\s*(?:of|to|at|=|between cards)?\s*(\d{1,2}(?:\.\d)?)\s*(?:mm|millimet(?:re|er)s?)?\b/u', $t, $r)
+        || preg_match('/\b(\d{1,2}(?:\.\d)?)\s*(?:mm|millimet(?:re|er)s?)\s+(?:gaps?|gutters?|spacing)\b/u', $t, $r)) $p['gap'] = (float)$r[1];
+    if (preg_match('/\bskip\s+(?:the\s+)?(?:first\s+)?(\d{1,2})\b/u', $t, $r) || preg_match('/\b(\d{1,2})\s+(?:slots?|spaces?|cards?)\s+(?:are\s+)?(?:already\s+)?used\b/u', $t, $r)) $p['skip'] = (int)$r[1];
+    elseif (preg_match('/\b(?:fresh|new|full|unused)\s+sheet of (?:card )?stock\b|\bdon.?t skip\b|\bno skipp?ing\b/u', $t)) $p['skip'] = 0;
+    if (preg_match('/\b(?:don.?t|do not|no need to)\s+(?:split|separate|break)\b|\b(?:share|mix)\s+(?:the\s+)?sheets?\b|\bone pile\b/u', $t)) $p['breakBy'] = false;
+    elseif (preg_match('/\b(?:new|own|separate|fresh)\s+sheets?\s+(?:for|per)\s+(?:each\s+|every\s+)?(?:centre|center|kind|group)\b|\bkeep (?:the )?(?:centres|piles) apart\b/u', $t)) $p['breakBy'] = true;
+    if (preg_match('/\b(?:no|without(?: a)?)\s+packing list\b/u', $t)) $p['packing'] = false;
+    elseif (preg_match('/\bpacking list\b/u', $t)) $p['packing'] = true;
+    // Acts. Asked for in so many words, never inferred.
+    if (preg_match('/\b(?:clear|empty|reset|wipe)\b.*\bsheets?\b|\bstart (?:over|again)\b|\btake (?:everyone|everybody|them all|all the cards) off\b/u', $t)) $p['do'] = 'clear';
+    elseif (preg_match('/\b(?:ask|chase|request|remind|nudge)\b.*\bphotos?\b/u', $t)) $p['do'] = 'askPhotos';
+    elseif (preg_match('/\bfill\b.*\b(?:gaps?|slots?|sheet|spaces?|blanks?)\b/u', $t)) $p['do'] = 'fill';
     $nw = implode('|', array_map(fn($w) => preg_quote($w, '/'), array_keys(IDS_PLAN_NUMBER_WORDS)));
-    if (preg_match('/\b(?:first|only|just|up to|at most|no more than)\s+(\d{1,3}|' . $nw . ')\b/u', $mt, $r)) $p['limit'] = is_numeric($r[1]) ? (int)$r[1] : IDS_PLAN_NUMBER_WORDS[$r[1]];
+    if (!preg_match('/\bskip\b/u', $mt) && preg_match('/\b(?:first|only|just|up to|at most|no more than)\s+(\d{1,3}|' . $nw . ')\b/u', $mt, $r)) $p['limit'] = is_numeric($r[1]) ? (int)$r[1] : IDS_PLAN_NUMBER_WORDS[$r[1]];
     return ids_plan_clean($p, $kinds, $centres)['plan'];
 }
 
@@ -781,6 +812,7 @@ function ids_plan_union(array $a, array $b): array {
 function ids_plan_is_refinement(string $prompt, array $current, array $read): bool {
     if (!$current) return false;
     if (preg_match(IDS_PLAN_REFINE_RE, mb_strtolower($prompt))) return true;
+    if (isset($read['do'])) return false;   // an act stands on its own; the browser applies it to what is on screen
     // A fresh request names who: a kind, new/reprint, or a whole list of IDs. Anything else adjusts the plan on screen.
     return !isset($read['kind']) && !isset($read['which']) && empty($read['ids']);
 }
@@ -831,6 +863,10 @@ function ids_plan_instructions(array $kinds, array $centres, string $today, arra
         . "dpi: 150, 300 or 600.\n"
         . "order: \"centre\", \"kind\" or \"name\".\n"
         . "proof: true for a proof or test print, false to undo one.\n"
+        . "margin: millimetres round the sheet (3-30). gap: millimetres between cards (0-20). skip: slots already used on the first sheet (0-60).\n"
+        . "breakBy: true for a new sheet for each centre (or kind), false to let them share sheets. packing: true/false for a packing list.\n"
+        . "do: ONE act, only when asked in so many words: \"clear\" (take every card off the sheet), \"fill\" (fill the empty slots on the last sheet), \"askPhotos\" (ask the people with no photo for one). You can never print and never mark anyone printed; if asked to, leave do out.\n"
+        . "A request that only changes settings (\"make it A3\", \"margin 5mm\") holds only those fields.\n"
         . "Never invent people, ids, centres or dates that the request does not support.";
 }
 

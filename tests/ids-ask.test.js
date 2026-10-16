@@ -154,7 +154,7 @@ function cleanup() {
     await P.click('.ids-ai-card:last-child button:has-text("Apply")');
     await P.waitForSelector('.ids-ai-card.is-live');
     card = await live();
-    chk('Apply puts it on the sheet and says what it ran', /6\s*cards on the sheet/.test(card) && /Ran put 6 cards on the sheet/.test(card) && (await nOnSheet()) === 6);
+    chk('Apply puts it on the sheet and says what it ran', /6\s*cards on the sheet/.test(card) && /Put 6 cards on the sheet/.test(card) && (await nOnSheet()) === 6);
     chk('…what it understood', /New cards/.test(card) && /NGG members/.test(card) && /Egbeda/.test(card));
     chk('…who was left out and why, with the way to fix it', /1 person left out: no photo yet \(Gbenga Nophoto\)/.test(card) && /Ask for photos/.test(card));
     chk('…the settings it changed, marked', /Double-sided · long edge/.test(await P.innerText('.ids-ask-how li.is-changed')) && /Crop marks/.test(card) && /A4/.test(card));
@@ -221,6 +221,49 @@ function cleanup() {
     await P.waitForSelector('.ids-dialog:has-text("Did all 3 print properly?")', { timeout: 20000 });
     chk('…then asks, as every print does, whether all three printed properly', true);
     await P.click('.ids-dialog button:has-text("Check later")');
+
+    console.log('answers from the studio’s own data');
+    await P.click('.ids-ai-bar button[aria-label="New conversation"]');
+    card = await ask('What can you do?');
+    chk('"what can you do?" lists what it can choose, change, do and answer — and that it cannot print', /Choose who/.test(card) && /Change it/.test(card) && /Act/.test(card) && /can’t print/.test(card));
+    card = await ask('Has Jumoke Carded got a card?');
+    // Her card was printed at seeding, and a reprint was queued for her earlier in this run.
+    chk('a person, by name: her status, from the queue — a reprint is waiting', /Jumoke Carded \(025-103, Ijaiye\)/.test(card) && /(waiting for a reprint|on the sheet now)/.test(card));
+    if (!/Jumoke/.test(card)) console.error('       person card: ' + card.replace(/\s+/g, ' ').slice(0, 200));
+    card = await ask('where is 025-005?');
+    chk('a person, by printed ID: it says where they are in the queue', /Efe Okon/.test(card) && /waiting for their first card/.test(card));
+    card = await ask('Who is waiting for a photo?');
+    chk('"who is waiting for a photo?" names them, and offers the request', /Gbenga Nophoto/.test(card) && /ask them for photos/.test(card));
+    chk('…answered without asking the planner (no "Read by" line)', !/Read by/.test(card));
+
+    console.log('commands on the sheet as it is');
+    card = await ask('New cards for Egbeda members');
+    const onSheet0 = await nOnSheet();
+    chk('a plan to work on', onSheet0 === 3 || onSheet0 === 6);
+    chk('after a reply, next steps are suggested', (await P.$$('.ids-ai-nextbtn')).length >= 1);
+    await P.click('.ids-ai-bar button[aria-label="New conversation"]');
+    card = await ask('make it A3 with a 6mm margin');
+    chk('a settings-only request changes the sheet, not who is on it', /Set paper A3/.test(card) && /Set margin 6 mm/.test(card) && (await nOnSheet()) === onSheet0);
+    await P.click('.ids-ai-card >> nth=-1 >> button:has-text("Undo")');
+    await P.waitForTimeout(200);
+    await P.click('.ids-panes button:has-text("Settings")');
+    chk('…and its Undo puts the settings back', (await P.getAttribute('.ids-seg-opt:has-text("A4")', 'aria-checked')) === 'true' && (await P.inputValue('#ids-margin')) === '10');
+    await P.click('.ids-panes button:has-text("Assistant")');
+    card = await ask('fill the gaps');
+    chk('"fill the gaps" fills the last sheet from the cards waiting, or says why not', /Filled \d+ empty slots?/.test(card) || /already used|No card that is ready/.test(card));
+    card = await ask('ask the ones with no photo for photos');
+    await P.waitForSelector('[role=alertdialog]');
+    chk('"ask … for photos" opens the request with its count; nothing is sent until it is confirmed',
+      /Ask 1 person for a photo\?/.test(await P.innerText('[role=alertdialog]')) && /Opened the photo request for 1 person/.test(card));
+    await P.click('[role=alertdialog] button:has-text("Cancel")');
+    const beforeClear = await nOnSheet();
+    card = await ask('clear the sheet');
+    chk('"clear the sheet" takes every card off, and says how many', new RegExp('Took ' + beforeClear + ' cards? off the sheet').test(card) && (await nOnSheet()) <= 0);
+    await P.click('.ids-ai-card >> nth=-1 >> button:has-text("Undo")');
+    await P.waitForTimeout(200);
+    chk('…with Undo', (await nOnSheet()) === beforeClear);
+    card = await ask('print them and mark them printed');
+    chk('asked to print, it does not: Print stays a press', (await nOnSheet()) === beforeClear && !(await P.$('[role=alertdialog]')) && !/Took/.test(card));
 
     console.log('a request it cannot read, and the keys');
     await P.click('.ids-ai-bar button[aria-label="New conversation"]');

@@ -1297,3 +1297,39 @@ instructors, Summer mentors and its own tabs. The Saturday Formation Schedule is
 (migration 148, `domain/saturday-formation.php`), read per audience by `public.formation` and
 edited by `admin.formation.save`; the web-cron sends its block reminders and three family
 emails once each. Progress log: `docs/PORTALS-HANDOFF.md`.
+
+## 2026-10-16 — The studio's assistant, much more capable
+
+The assistant pane (ids-ask.jsx) did one thing: read a request into a
+selection. It now does five, and none of them prints.
+
+- **Commands on the sheet as it is.** The planner (`ids_plan_rules`, and the
+  AI's instructions) reads `margin`, `gap` (clamped 3–30 / 0–20 mm), `skip`
+  (used slots on sheet 1), `breakBy` and `packing`, and one act, `do`:
+  `clear` | `fill` | `askPhotos` (`IDS_PLAN_DO`; anything else is dropped, so
+  "print" and "mark printed" can never come back as acts).
+  - A request with no "who" in it ("make it A3", "margin 5mm") changes the
+    sheet without reselecting anybody (`runCmd`), with Undo.
+  - An act stands on its own rather than refining the plan on screen.
+  - `askPhotos` opens the same confirm as the button, count first; nothing is
+    sent until it is confirmed.
+- **Answers from the studio's own data, never a model** (`idsAskAnswer`):
+  - what it can do;
+  - one person's status, by name or printed ID (on the sheet, waiting for a
+    photo and whether asked, waiting for a reprint, waiting for a first card,
+    has a card and when);
+  - who is blocked, who is on the sheet;
+  - card stock, counts by centre, and why you can or can't print.
+  
+  A question is answered before anything is sent to the planner.
+- **Next steps after every reply**, from the sheet: fill the gaps, front and
+  back, make it a proof, ask for photos, why can't I print.
+- **Starters from the real queue**: the centre with most new cards, the
+  reprints waiting, who is waiting for a photo.
+- **Voice input** where the browser has speech recognition. The words land in
+  the composer, to be read and sent like typing.
+
+Tests: `run.php` +11 (the new plan fields, clamping, acts, refusal of unknown
+acts); `ids-ask.test.js` 44 → 58 (answers, settings-only commands with Undo,
+fill, ask-for-photos through the confirm, clear with Undo, and a request to
+print that does not print).
