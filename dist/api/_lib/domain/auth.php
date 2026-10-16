@@ -179,10 +179,22 @@ function auth_set_password(array $p): array {
     if (strlen($new) < 8) return ['ok' => false, 'error' => 'password_too_short'];
     if (strlen($new) > 200) return ['ok' => false, 'error' => 'password_too_long'];
     if (!empty($member['passwordHash'])) {
+        /* The current password is a guess somebody holding the session can make — a
+         * cookie lifted from a shared family laptop, a phone left signed in at a centre —
+         * and before this the guesses were unlimited, so the session alone was enough to
+         * find the password and then change it. Five wrong answers lock it for fifteen
+         * minutes, on the same per-subject guard the sign-in codes use. */
+        $mid = (string)$member['memberId'];
+        if (attempt_locked('pw.current', $mid)) return ['ok' => false, 'error' => 'too_many_attempts'];
         $current = (string)($p['current'] ?? '');
         if (!password_verify($current, (string)$member['passwordHash'])) {
+            if (attempt_fail('pw.current', $mid, 5, 900)) {
+                audit('member.password.locked', $mid, $mid, [], (string)($p['ip'] ?? ''));
+                return ['ok' => false, 'error' => 'too_many_attempts'];
+            }
             return ['ok' => false, 'error' => 'bad_current_password'];
         }
+        attempt_reset('pw.current', $mid);
     }
     db_update('members', ['passwordHash' => password_hash_best($new), 'updatedAt' => now_iso()], ['id' => $member['id']]);
     audit('member.password.set', $member['memberId'], (string)$member['memberId'], ['changed' => !empty($member['passwordHash'])], (string)($p['ip'] ?? ''));

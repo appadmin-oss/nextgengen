@@ -1258,10 +1258,20 @@ function member_mp_review_undo(array $p): array {
  * Not added to the child's record, not shown to the family, not editable by
  * the reporter. The officer is told now (email, and SMS when a phone is set).
  */
+/**
+ * Report a concern from the Mentor Portal's header.
+ *
+ * The reporter must be someone the portal serves — staff, a mentor (screened
+ * or not: the duty to report does not wait for the Academy), an instructor —
+ * and the child must be one they could have picked from their own roster.
+ * It had no reporter check at all, so any member session could open a case
+ * about any child id and learn from the answer whether that id existed. A
+ * member who wants to raise a concern has sg_report, which is built for it.
+ * Out of scope and unknown are the same answer, on purpose.
+ */
 function member_mp_concern(array $p): array {
-    $me = db_row('SELECT * FROM members WHERE memberId = ? LIMIT 1', [(string)($p['requesterId'] ?? '')]);
-    if (!$me) $me = function_exists('mentor_requester') ? mentor_requester((string)($p['requesterId'] ?? '')) : null;
-    if (!$me) return ['ok' => false, 'error' => 'no_requester'];
+    $g = mentor_gate($p);
+    if (empty($g['ok'])) return ['ok' => false, 'error' => 'not_a_mentor'];
     $sid = trim((string)($p['subjectId'] ?? ''));
     if ($sid === '') return ['ok' => false, 'error' => 'choose_the_child'];
     $cat = (string)($p['category'] ?? '');
@@ -1269,14 +1279,27 @@ function member_mp_concern(array $p): array {
     $body = trim((string)($p['body'] ?? ''));
     if (mb_strlen($body) <= 10) return ['ok' => false, 'error' => 'say_what_happened'];
     // A member or a Summer School participant: the duty to report covers both.
-    $sub = function_exists('mentoring_subject') ? mentoring_subject($sid) : null;
-    $kid = $sub ? ['memberId' => (string)$sub['id'], 'fullName' => (string)$sub['fullName'], 'centre' => (string)$sub['centre']] : null;
-    if (!$kid) return ['ok' => false, 'error' => 'not_found'];
+    $sub = mentoring_subject($sid);
+    if (!$sub || !mentor_scope_ok($g, $sub)) return ['ok' => false, 'error' => 'not_found'];
+    return mp_concern_file($g['member'], $sub, $cat, $body, (string)($p['ip'] ?? ''), 'mentor.concern');
+}
+
+/**
+ * Open a safeguarding case and tell the centre's officer — the ONE way a
+ * concern enters the record. The portal's Report-a-concern sheet and a
+ * meeting note marked as a concern both come through here, so both carry the
+ * same guarantee: a case in safeguarding_cases (which concernEscalate
+ * watches), the officer told by email and SMS, and an ops alarm when the
+ * centre has nobody to tell. Two paths with different guarantees is how a
+ * flagged concern ended up reaching nobody.
+ */
+function mp_concern_file(array $reporter, array $sub, string $cat, string $body, string $ip, string $source): array {
+    $kid = ['memberId' => (string)$sub['id'], 'fullName' => (string)$sub['fullName'], 'centre' => (string)$sub['centre']];
     $officer = function_exists('sg_officer') ? sg_officer((string)$kid['centre']) : null;
     $ref = '';
     for ($i = 0; $i < 6 && $ref === ''; $i++) { $c = 'SG-' . str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT); if (!db_row('SELECT 1 FROM safeguarding_cases WHERE caseNo = ?', [$c])) $ref = $c; }
     $now = now_iso();
-    db_insert('safeguarding_cases', ['caseNo' => $ref, 'reporterId' => (string)$me['memberId'], 'reporterName' => (string)($me['fullName'] ?? ''),
+    db_insert('safeguarding_cases', ['caseNo' => $ref, 'reporterId' => (string)$reporter['memberId'], 'reporterName' => (string)($reporter['fullName'] ?? ''),
         'subjectId' => (string)$kid['memberId'], 'subjectName' => (string)$kid['fullName'], 'centre' => (string)$kid['centre'], 'category' => $cat,
         'body' => mb_substr($body, 0, 8000), 'officerId' => (string)($officer['memberId'] ?? ''), 'officerName' => (string)($officer['fullName'] ?? ''),
         'status' => 'received', 'createdAt' => $now, 'updatedAt' => $now]);
@@ -1288,8 +1311,8 @@ function member_mp_concern(array $p): array {
     } elseif (function_exists('ops_record')) {
         ops_record('error', 'safeguarding.unassigned', 'A concern has no safeguarding officer to go to', $ref . ' at ' . (string)$kid['centre']);
     }
-    if (function_exists('event_emit')) event_emit('behaviour.flagged', ['ref' => $ref, 'subject' => 'A child', 'category' => 'safeguarding', 'severity' => 'urgent', 'source' => 'mentor.concern']);
-    audit('safeguarding.report', (string)$me['memberId'], $ref, ['centre' => (string)$kid['centre']], (string)($p['ip'] ?? ''));
+    if (function_exists('event_emit')) event_emit('behaviour.flagged', ['ref' => $ref, 'subject' => 'A child', 'category' => 'safeguarding', 'severity' => 'urgent', 'source' => $source]);
+    audit('safeguarding.report', (string)$reporter['memberId'], $ref, ['centre' => (string)$kid['centre'], 'source' => $source], $ip);
     return ['ok' => true, 'ref' => $ref, 'at' => $now, 'officerName' => (string)($officer['fullName'] ?? ''), 'assigned' => (bool)$officer];
 }
 

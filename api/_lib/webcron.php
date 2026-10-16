@@ -207,7 +207,17 @@ function web_cron_run(): void {
                 // Weekly engagement snapshot — captured opportunistically at most
                 // once every 7 days even with no external cron. Idempotent per
                 // week, so a slightly-early or -late firing just refreshes the row.
+                // The CACENTRE CRM's Audience: NGG's adults, pushed (signed). A no-op with no secret set.
+                if (web_cron_due('crm_push', web_cron_cfg('crm_push', 900)) && function_exists('crm_push_run')) web_cron_guard('crm_push', fn() => crm_push_run());
                 if (web_cron_due('eng_snapshot', web_cron_cfg('eng_snapshot', 604800))) web_cron_guard('engagement_snapshot', fn() => engagement_snapshot_week());
+                /* One page of each roster to CACENTRE's person directory, so
+                   one human is one record across the estate's five apps
+                   instead of several unrelated rows. Hourly: the sweep is a
+                   rolling one, so this is how fast the whole roster is
+                   revisited rather than how urgent any single row is, and
+                   every row upserts on its source key so a missed tick costs
+                   nothing. Does nothing at all until a push secret is set. */
+                if (web_cron_due('dirpush', web_cron_cfg('dirpush', 3600)) && function_exists('dirpush_tick')) web_cron_guard('directory_push', fn() => dirpush_tick());
             } finally { @flock($lock, LOCK_UN); }
         }
         @fclose($lock);

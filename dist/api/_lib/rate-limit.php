@@ -56,6 +56,7 @@ function rate_limit_default(string $op): ?array {
         'donate'             => ['max' => 10, 'window' => 60],    // inserts a row + outbound Paystack call
         'membership.pay'     => ['max' => 20, 'window' => 60],    // a family's invoice: read, start Paystack, verify
         'membership.receipt' => ['max' => 30, 'window' => 60],
+        'cert'               => ['max' => 30, 'window' => 60],    // a certificate names a child, their centre and attendance
         'application.status' => ['max' => 20, 'window' => 300],   // (ref,email) brute-force lookup
         'summer.profile'     => ['max' => 12, 'window' => 300],   // a minor's name + photo + attendance, by guessable handle
         'student.login'      => ['max' => 8,  'window' => 300],   // ID-card credential check — brute-force ceiling

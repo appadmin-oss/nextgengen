@@ -196,6 +196,36 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
         chk('the card fits a phone with no sideways scroll', await mp.evaluate(() => document.querySelector('.qow').scrollWidth <= window.innerWidth));
     await (await mp.$('.qow')).screenshot({ path: path.join(SHOTS, 'home-phone.png') });
 
+    // The Community: the same quote as a card at the top of Today's feed.
+    php(`db_insert('members', ['memberId'=>'NGG-WS-MEM','fullName'=>'Ada Member','email'=>'ws-mem@example.org','type'=>'NGG','status'=>'active','role'=>'member','centre'=>'Main','createdAt'=>now_iso(),'updatedAt'=>now_iso()]);`);
+    const memTok = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = 'NGG-WS-MEM'"), false);`, ['session']);
+    for (const [label, W, H] of [['phone', 390, 844], ['laptop', 1280, 900]]) {
+      const cctx = await browser.newContext({ viewport: { width: W, height: H } });
+      await cctx.addCookies([{ name: 'ngg_sess', value: memTok, domain: '127.0.0.1', path: '/', httpOnly: true }]);
+      const cp = await cctx.newPage();
+      cp.on('pageerror', e => errs.push('community: ' + String(e).slice(0, 200)));
+      await cp.goto(BASE + '/community', { waitUntil: 'domcontentloaded' });
+      await waitForBoot(cp);
+      const shown = await cp.waitForSelector('.cmm-feed .qow-cm .qow-text', { timeout: 30000 }).then(() => true, () => false);
+      chk('community (' + label + '): the quote of the week leads the Today feed', shown
+          && await cp.$eval('.cmm-feed .qow-cm .qow-text', el => el.textContent) === s.text
+          && await cp.$eval('.cmm-feed', f => f.firstElementChild && f.firstElementChild.classList.contains('qow-cm')));
+      chk('community (' + label + '): it is a card inside the feed, not the home page’s full-bleed band',
+          await cp.$eval('.qow-cm', el => { const b = el.getBoundingClientRect(), f = el.parentElement.getBoundingClientRect();
+            return b.left >= f.left - 1 && b.right <= f.right + 1 && parseFloat(getComputedStyle(el).borderTopLeftRadius) > 0; }));
+      chk('community (' + label + '): no sideways scroll', await cp.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+      if (s.meaning) {
+        await cp.click('.qow-cm .qow-btn:has-text("What it means")');
+        chk('community (' + label + '): its controls work — the meaning opens',
+            (await cp.$eval('.qow-cm', el => el.innerText)).includes(s.meaning.slice(0, 30)));
+      }
+      await (await cp.$('.qow-cm')).screenshot({ path: path.join(SHOTS, 'community-' + label + '.png') });
+      await cp.click('.cmm-chip:has-text("Mentions"), [role=tab]:has-text("Mentions"), button:has-text("Mentions")').catch(() => {});
+      await cp.waitForTimeout(300);
+      chk('community (' + label + '): a filtered view (Mentions) does not repeat it', (await cp.$$('.qow-cm')).length === 0);
+      await cctx.close();
+    }
+
     // The Control Room screen.
     const token = php(`echo session_issue(db_row("SELECT * FROM members WHERE memberId = '${ADMIN}'"), true);`, ['session']);
     const actx = await browser.newContext({ viewport: { width: 1440, height: 1100 } });

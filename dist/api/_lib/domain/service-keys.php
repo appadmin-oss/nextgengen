@@ -73,11 +73,14 @@ const SERVICE_KEYS = [
     'googlemaps' => ['group' => 'maps', 'label' => 'Google Maps', 'link' => 'https://console.cloud.google.com/google/maps-apis/credentials',
         'what' => 'Finds where an address is, to suggest the nearest NGG centre. Without it, OpenStreetMap is used (free, less exact for Nigerian addresses). Enable the Geocoding API for the key.', 'test' => 'maps',
         'fields' => [['maps.google_key', 'API key', 'secret', false, 'Starts “AIza”. Restrict it to the Geocoding API.']]],
+    'cacentre' => ['group' => 'crm', 'label' => 'CACENTRE CRM', 'link' => 'https://cacentre.afrovanguard.org.ng/crm/audience.php#sites',
+        'what' => 'Sends NGG’s newsletter subscribers (and unsubscribes), contact-form enquiries, donors, adult volunteers and parents to the CACENTRE CRM’s Audience, signed. No child’s record is ever sent. In the CACENTRE console: Audience → Sites → Next Generation Genius → Generate secret, and paste it here.', 'test' => '',
+        'fields' => [['cacentre.crm_secret', 'Audience secret', 'secret', false, 'Shown once by CACENTRE when generated.'], ['cacentre.crm_url', 'CACENTRE address', 'text', true, 'Blank: https://cacentre.afrovanguard.org.ng']]],
     'spitch' => ['group' => 'voice', 'label' => 'Spitch', 'link' => 'https://spitch.app',
         'what' => 'Reads the Quote of the week aloud in Hausa, Igbo and Yoruba.', 'test' => '',
         'fields' => [['tts.spitch_key', 'API key', 'secret', false, '']]],
 ];
-const SERVICE_KEY_GROUPS = ['ai' => 'AI', 'photos' => 'Photos', 'payments' => 'Payments', 'email' => 'Email', 'sms' => 'Text messages', 'maps' => 'Maps', 'voice' => 'Voice'];
+const SERVICE_KEY_GROUPS = ['ai' => 'AI', 'photos' => 'Photos', 'payments' => 'Payments', 'email' => 'Email', 'sms' => 'Text messages', 'maps' => 'Maps', 'voice' => 'Voice', 'crm' => 'CACENTRE CRM'];
 
 /** Read a dotted path out of a nested array. */
 function service_cfg_read(array $cfg, string $path) {

@@ -3641,3 +3641,7 @@ CREATE TABLE IF NOT EXISTS club_class_sessions (
   UNIQUE KEY idx_ccs_session (sessionId), UNIQUE KEY idx_ccs_slot (course, centre, date), INDEX idx_ccs_instr (instructorId, date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT INTO schema_version (version) VALUES (145) ON DUPLICATE KEY UPDATE version = version;
+
+-- 146 · one active mentor per child. Data only: the UPDATE is in
+-- NGG_MYSQL_ROW_FIXUPS (api/_lib/db.php), which the replay runs.
+INSERT INTO schema_version (version) VALUES (146) ON DUPLICATE KEY UPDATE version = version;

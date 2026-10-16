@@ -1283,6 +1283,12 @@ chk('login wrong password fails', backend_dispatch('auth.login', ['identifier' =
 chk('login unknown account fails uniformly', backend_dispatch('auth.login', ['identifier' => 'ghost@example.com', 'password' => 'x'])['error'] === 'invalid_login');
 chk('change password needs correct current', backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'brandnewpass9', 'current' => 'wrong'])['error'] === 'bad_current_password');
 chk('change password with current ok', !empty(backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'brandnewpass9', 'current' => 'correcthorse9'])['ok']));
+// The current password cannot be guessed without limit by whoever holds the session.
+for ($i = 0; $i < 4; $i++) backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'attackerpass9', 'current' => 'guess' . $i]);
+chk('change password: the fifth wrong current password locks it', (backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'attackerpass9', 'current' => 'guess4'])['error'] ?? '') === 'too_many_attempts');
+chk('change password: while locked, even the right current password is refused', (backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'attackerpass9', 'current' => 'brandnewpass9'])['error'] ?? '') === 'too_many_attempts');
+chk('change password: the password did not change', password_verify('brandnewpass9', (string)db_row("SELECT passwordHash FROM members WHERE memberId = 'NGG-2025-0001'")['passwordHash']));
+attempt_reset('pw.current', 'NGG-2025-0001');
 chk('old password no longer works', backend_dispatch('auth.login', ['identifier' => 'NGG-2025-0001', 'password' => 'correcthorse9'])['error'] === 'invalid_login');
 
 // ── Sign-in gateway (one door, no account-type leaks) ──
@@ -8900,7 +8906,8 @@ chk('scoped dashboard volunteer counts are scoped too', (function () use ($SCOPE
 
 // ── Mentor Portal + stars ───────────────────────────────────────────────────
 db_insert('members', ['memberId' => 'NGG-2025-0500', 'fullName' => 'Mia Mentor', 'email' => 'mentor@example.com', 'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda', 'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
-db_insert('mentors', ['mentorId' => 'MEN-1', 'fullName' => 'Mia Mentor', 'email' => 'mentor@example.com', 'status' => 'active', 'centre' => 'Egbeda', 'createdAt' => now_iso()]);
+// Screened: these mentors write children's records, which an unscreened mentor may not (mentoring_open).
+db_insert('mentors', ['mentorId' => 'MEN-1', 'fullName' => 'Mia Mentor', 'email' => 'mentor@example.com', 'status' => 'active', 'centre' => 'Egbeda', 'checkedAt' => '2026-01-01', 'createdAt' => now_iso()]);
 chk('mentor roster lists their centre class only', (function () {
     $r = backend_dispatch('member.mentor.roster', ['requesterId' => 'NGG-2025-0500']);
     if (empty($r['ok'])) return false;
@@ -9399,7 +9406,7 @@ chk('a member can read their own courage record', (function () {
         'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
         'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_insert('mentors', ['mentorId' => 'MEN-COURAGE', 'fullName' => 'Nia NGG-Mentor', 'email' => 'couragementor@example.com',
-        'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'createdAt' => now_iso()]);
+        'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'checkedAt' => '2026-01-01', 'createdAt' => now_iso()]);
     $mk = backend_dispatch('member.mentor.courage.mark', ['requesterId' => 'NGG-2025-0511',
         'subjectId' => 'NGG-2025-0510', 'score' => 4,
         'evidence' => 'Apologised to the group without being prompted.']);
@@ -19999,21 +20006,21 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
         'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_insert('mentors', ['mentorId' => 'MEN-NGG-1', 'fullName' => 'Nkechi Mentor', 'email' => 'nkechi@example.com',
         'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'rank' => 'mentor',
-        'memberId' => 'NGG-MENT-1', 'createdAt' => now_iso()]);
+        'memberId' => 'NGG-MENT-1', 'checkedAt' => '2026-01-01', 'createdAt' => now_iso()]);
     // A second mentor at the same centre, so "mine" is provably not "everyone".
     db_insert('members', ['memberId' => 'NGG-MENT-2', 'fullName' => 'Segun Mentor', 'email' => 'segun@example.com',
         'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
         'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_insert('mentors', ['mentorId' => 'MEN-NGG-2', 'fullName' => 'Segun Mentor', 'email' => 'segun@example.com',
         'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'rank' => 'mentor',
-        'memberId' => 'NGG-MENT-2', 'createdAt' => now_iso()]);
+        'memberId' => 'NGG-MENT-2', 'checkedAt' => '2026-01-01', 'createdAt' => now_iso()]);
     // A lead at the centre — the person a raised concern must reach.
     db_insert('members', ['memberId' => 'NGG-LEAD-1', 'fullName' => 'Folake Lead', 'email' => 'folake@example.com',
         'type' => 'NGG', 'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
         'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
     db_insert('mentors', ['mentorId' => 'MEN-LEAD-1', 'fullName' => 'Folake Lead', 'email' => 'folake@example.com',
         'status' => 'active', 'centre' => 'Egbeda', 'programme' => 'ngg', 'rank' => 'lead',
-        'memberId' => 'NGG-LEAD-1', 'createdAt' => now_iso()]);
+        'memberId' => 'NGG-LEAD-1', 'checkedAt' => '2026-01-01', 'createdAt' => now_iso()]);
 
     // Four children at Egbeda, one at Ayobo.
     foreach ([['NGG-KID-1', 'Ada Child', 'Egbeda'], ['NGG-KID-2', 'Bola Child', 'Egbeda'],
@@ -20205,6 +20212,16 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
 
     $G = static fn(array $x) => backend_dispatch('member.mentor.goal.save', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1'] + $x);
     $GS = static fn(int $id, string $st) => backend_dispatch('member.mentor.goal.status', ['requesterId' => 'NGG-MENT-1', 'subjectId' => 'NGG-KID-1', 'id' => $id, 'status' => $st]);
+    /* Admin pairing now starts a match (admin_assign_mentor_sync_match), and
+       a new relationship is in its Connect phase: goals are locked for three
+       weeks (R5). The pairing above is fresh, so that is what it gets. */
+    chk('a fresh admin pairing starts a match, with its cadence tasks, in Connect',
+        ($mx = ms_live_match('NGG-KID-1')) && $mx['status'] === 'active' && $mx['mentorId'] === 'MEN-NGG-1' && $mx['phase'] === 'connect'
+        && (int)db_row("SELECT COUNT(*) c FROM mentor_tasks WHERE matchId = ? AND status = 'open'", [$mx['matchId']])['c'] > 0);
+    chk('…so goals are locked for its first weeks, as for a chosen match',
+        ($G(['goal' => 'Anything at all.'])['error'] ?? '') === 'goals_locked_connect');
+    // The goal rules below are about an established relationship: two months in.
+    db_exec("UPDATE mentor_matches SET startedAt = ? WHERE memberId = 'NGG-KID-1' AND status = 'active'", [gmdate('Y-m-d', time() - 60 * 86400)]);
     // A goal starts as a Draft, written with the mentee (WOOP). It may be empty to begin with.
     $g0 = $G([]);
     chk('a new goal is a Draft, and a goal with no words cannot go live', ($g0['status'] ?? '') === 'draft'
@@ -20275,6 +20292,9 @@ db_exec("DELETE FROM centres WHERE centreId = 'GCT'");
     // Leave the fixtures behind for the suites that follow.
     db_exec("DELETE FROM mentor_meetings WHERE subjectId LIKE 'NGG-KID%'");
     db_exec("DELETE FROM mentor_goals WHERE subjectId LIKE 'NGG-KID%'");
+    // Admin pairing now opens matches and their cadence; they leave with the children.
+    db_exec("DELETE FROM mentor_tasks WHERE memberId LIKE 'NGG-KID%'");
+    db_exec("DELETE FROM mentor_matches WHERE memberId LIKE 'NGG-KID%'");
     db_exec("DELETE FROM mentor_assignments WHERE mentorId LIKE 'MEN-NGG%'");
     db_exec("DELETE FROM members WHERE memberId LIKE 'NGG-KID%'");
     db_exec("DELETE FROM members WHERE memberId IN ('NGG-MENT-1','NGG-MENT-2','NGG-LEAD-1')");
@@ -26608,6 +26628,328 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('today (member): a live plan shows this week\'s promises and a row for the sessions left', !empty($m1['ok']) && $m1['promises']['status'] === 'live'
         && in_array('promises', array_column($m1['todo'], 'key'), true) && !in_array('results', array_column($m1['todo'], 'key'), true) && $m1['week']['mentor']['first'] === 'Remi');
     chk('today (member): a Summer account is refused', (backend_dispatch('member.today', ['memberId' => 'NGG-RS-S'])['error'] ?? '') === 'not_ngg_member');
+})();
+
+/* ══ The person directory push ════════════════════════════════════════════
+ *
+ * NGG is the store the matcher refuses WHOLESALE — neither table enforces
+ * one row per address, and siblings share a parent's inbox — so every row
+ * this sends lands in a human review queue over at CACENTRE. What is tested
+ * here is therefore not "does it link", which it must never do, but: does
+ * exactly the agreed data leave, and does the envelope agree to the byte
+ * with three implementations in three other repositories.
+ */
+(function () {
+    $KEY = 'ngg-directory-test-key-0123456789';
+
+    /* ── The shared vectors ──────────────────────────────────────────────
+       An identical copy of this file is asserted in cacentre-site (the
+       verifier and CFIS) and in afrovanguard-site. No package is shared
+       between any of them, so this is the only thing that makes four
+       implementations one wire format. */
+    $vec = json_decode((string)@file_get_contents(__DIR__ . '/directory-vectors.json'), true);
+    chk('dirpush: the shared vectors parse', is_array($vec));
+
+    $body = rtrim(strtr(base64_encode((string)$vec['sign']['payload']), '+/', '-_'), '=');
+    $mac  = rtrim(strtr(base64_encode(hash_hmac('sha256', $body, (string)$vec['secret'], true)), '+/', '-_'), '=');
+    chk('dirpush: a known payload and key produce the known token',
+        'v1.' . $body . '.' . $mac === (string)$vec['sign']['token']);
+
+    /* A MAC is over serialised bytes, so the ORDER of the claims is part of
+       the format whether anybody intended it or not. Two senders that
+       assemble the same claims differently produce different signatures and
+       neither is wrong — the failure no single side can find. */
+    $tok = dirpush_mint([['store' => 'members', 'local_id' => '1']], $KEY, 1760000000);
+    $cl  = json_decode((string)base64_decode(strtr(explode('.', $tok)[1], '-_', '+/') . '=='), true);
+    chk('dirpush: claims are assembled in the order the format fixes',
+        array_keys($cl) === ['rows', 'iss', 'typ', 'nonce', 'iat', 'exp']);
+    chk('dirpush: we name ourselves ngg', ($cl['iss'] ?? '') === 'ngg');
+    chk('dirpush: as a roster push, which an SSO assertion is not', ($cl['typ'] ?? '') === 'dir.push');
+    chk('dirpush: in the window the receiver allows', ($cl['exp'] ?? 0) === 1760000300);
+
+    /* ── NOTHING ABOUT A CHILD LEAVES BUT THEIR NAME ─────────────────────
+       This programme holds children's data. The directory asks who somebody
+       is; it gets that and nothing else. Asserted as a SET so a column added
+       to a shaper fails here rather than on another organisation's disk. */
+    $allowed = ['store', 'local_id', 'email', 'email_verified', 'name', 'local_role', 'local_status', 'last_seen_at'];
+
+    $m = dirpush_from_member([
+        'id' => 41, 'fullName' => 'Ada Nwosu', 'email' => ' Ada@Example.ORG ', 'type' => 'NGG',
+        'role' => 'member', 'status' => 'active',
+        /* Every one of these is on the real row and none may travel. */
+        'passwordHash' => '$2y$10$SECRETHASH', 'totpSecret' => 'TOTPSEED', 'dob' => '2012-04-01',
+        'phone' => '080...', 'parentEmail' => 'mum@example.org', 'parentPhone' => '081...',
+        'school' => 'A School', 'notes' => 'private note', 'cohort' => '2023',
+    ]);
+    $got = array_keys($m); sort($got); $want = $allowed; sort($want);
+    chk('dirpush: a member sends exactly the agreed fields and no others', $got === $want);
+
+    $wire = (string)json_encode($m);
+    chk('dirpush: NO password hash leaves this programme', !str_contains($wire, 'SECRETHASH'));
+    chk('dirpush: no TOTP seed either', !str_contains($wire, 'TOTPSEED'));
+    chk('dirpush: no date of birth', !str_contains($wire, '2012-04-01'));
+    chk('dirpush: no parent contact details', !str_contains($wire, 'mum@example.org') && !str_contains($wire, '081...'));
+    chk('dirpush: no school and no notes', !str_contains($wire, 'A School') && !str_contains($wire, 'private note'));
+    /* `members.cohort` is the INTAKE YEAR on a member row, not a Summer
+       edition — one word, two meanings — and the directory has no use for
+       either, so it does not travel and cannot be mistaken over there. */
+    chk('dirpush: and not members.cohort, which is the intake year and means nothing there',
+        !str_contains($wire, '2023'));
+
+    chk('dirpush: the address is normalised the way the matcher will read it', $m['email'] === 'ada@example.org');
+    chk('dirpush: the local id is the row\'s own key, as text', $m['local_id'] === '41');
+
+    /* ── THE TWO POPULATIONS STAY TELLABLE APART ─────────────────────────
+       `members` holds both, `type` is NGG or Summer, and the agreed payload
+       has no field for which. local_role carries it, because the difference
+       IS role-shaped in this programme's vocabulary: a Summer person is a
+       participant — never a student, never a member — and an operator
+       deciding whether two records are one human has to know which they are
+       looking at. */
+    chk('dirpush: an NGG member keeps their own role', $m['local_role'] === 'member');
+    $s = dirpush_from_member(['id' => 9, 'fullName' => 'A Child', 'email' => 'c@example.org', 'type' => 'Summer', 'role' => 'member', 'status' => 'active']);
+    chk('dirpush: a Summer account travels as a participant', $s['local_role'] === 'participant');
+    chk('dirpush: and never as a student or a member, which send an operator to the wrong screen',
+        $s['local_role'] !== 'student' && $s['local_role'] !== 'member');
+
+    /* ── Volunteers ──────────────────────────────────────────────────────
+       The second NGG store, and the reason CACENTRE could not see the
+       estate's volunteers at all until now: it was not in the registry. */
+    $v = dirpush_from_volunteer([
+        'id' => 7, 'fullName' => 'Chidi Eze', 'email' => 'chidi@example.org', 'role' => 'mentor',
+        'status' => 'active', 'token' => 'VOLTOKEN', 'photoUrl' => 'https://x/y.jpg',
+        'safeguarding' => 'cleared', 'memberId' => 'NGG-0001',
+    ]);
+    $got = array_keys($v); sort($got);
+    chk('dirpush: a volunteer sends exactly the agreed fields too', $got === $want);
+    $wire = (string)json_encode($v);
+    chk('dirpush: a volunteer\'s token is a credential and does not travel', !str_contains($wire, 'VOLTOKEN'));
+    /* A safeguarding clearance is a judgement about somebody working with
+       children. It belongs on the screen that can act on it; a copy on
+       another host is a copy nobody will remember to withdraw. */
+    chk('dirpush: nor does their safeguarding state', !str_contains($wire, 'cleared'));
+    chk('dirpush: the role the source records travels', $v['local_role'] === 'mentor');
+    chk('dirpush: and the status', $v['local_status'] === 'active');
+
+    /* Neither table tracks verification at all, so both answer null — the
+       third state. False would mark every child and every volunteer in the
+       programme "unverified" on a screen that is not about them. */
+    chk('dirpush: a member\'s address is "not tracked", not "unverified"', $m['email_verified'] === null);
+    chk('dirpush: and so is a volunteer\'s', $v['email_verified'] === null);
+
+    /* ── The sweep ───────────────────────────────────────────────────────
+       A rolling sweep, not a diff: updatedAt is a VARCHAR written by several
+       code paths over the years, exactly the column that quietly stops being
+       comparable. Every row is re-sent once a sweep and upserts over there. */
+    $b = dirpush_batch('members', 0, 2);
+    chk('dirpush: a page is the size asked for', count($b['rows']) === 2);
+    chk('dirpush: and a full page is not the end of the table', $b['wrapped'] === false);
+    chk('dirpush: the cursor is the last id sent', $b['cursor'] > 0);
+
+    $seen = []; $cursor = 0;
+    for ($i = 0; $i < 400; $i++) {
+        $p = dirpush_batch('members', $cursor, 50);
+        foreach ($p['rows'] as $r) $seen[] = (int)$r['local_id'];
+        $cursor = $p['cursor'];
+        if ($p['wrapped']) break;
+    }
+    chk('dirpush: one sweep covers every member exactly once', count($seen) === count(array_unique($seen)));
+    chk('dirpush: and ends back at the top so the next sweep starts again', $cursor === 0);
+    $total = (int)db_row('SELECT COUNT(*) c FROM members')['c'];
+    chk('dirpush: covering all of them', count($seen) === $total);
+
+    $b = dirpush_batch('volunteers', 0, 50);
+    chk('dirpush: the volunteers page the same way', is_array($b['rows']));
+    chk('dirpush: a store this app does not own pages nothing',
+        dirpush_batch('lms_users', 0, 50)['rows'] === []);
+
+    /* ── Off until a real key is set ─────────────────────────────────── */
+    foreach (['', 'short', 'changeme-changeme-changeme-changeme',
+              '<set this to something random>', 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'] as $bad) {
+        $GLOBALS['CONFIG']['dir_push_secret'] = $bad;
+        chk('dirpush: a key of "' . substr($bad, 0, 12) . '" is not a key', !dirpush_ready());
+    }
+    $GLOBALS['CONFIG']['dir_push_secret'] = $KEY;
+    chk('dirpush: a real key is', dirpush_ready());
+    unset($GLOBALS['CONFIG']['dir_push_secret']);
+    chk('dirpush: and with none the tick does nothing rather than erroring every hour',
+        (dirpush_tick()['skipped'] ?? '') === 'no key');
+
+    chk('dirpush: only this app\'s own two stores are ever named',
+        DIRPUSH_STORES === ['members', 'volunteers']);
+    chk('dirpush: and the batch cap matches the one the receiver names in its refusal',
+        DIRPUSH_BATCH === 500);
+})();
+
+// ── CACENTRE CRM: NGG's adults pushed to the Audience; no child leaves ──
+(function () {
+    $GLOBALS['CONFIG']['cacentre'] = ['crm_secret' => '', 'crm_url' => ''];
+    foreach (['newsletter', 'contact_messages', 'donations', 'guardians'] as $t) db_exec("DELETE FROM {$t}");
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'CRMV-%'");
+    db_exec("DELETE FROM settings WHERE settingKey IN ('crm_push', 'crm_push_last')");
+    $now = now_iso();
+    db_insert('newsletter', ['email' => 'ada@example.org', 'source' => 'site', 'status' => 'subscribed', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('contact_messages', ['ref' => 'CT-1', 'purpose' => 'partnership', 'name' => 'Bola', 'email' => 'bola@example.org', 'phone' => '0803 111 0000', 'subject' => 'A visit', 'message' => 'private words', 'createdAt' => $now]);
+    db_insert('donations', ['reference' => 'NGGD-1', 'email' => 'chi@example.org', 'name' => 'Chi', 'amount' => 5000, 'currency' => 'NGN', 'status' => 'paid', 'paidAt' => $now, 'createdAt' => $now]);
+    db_insert('donations', ['reference' => 'NGGD-2', 'email' => 'pending@example.org', 'name' => 'P', 'amount' => 1000, 'currency' => 'NGN', 'status' => 'pending', 'createdAt' => $now]);
+    $adultDob = gmdate('Y-m-d', strtotime('-30 years')); $childDob = gmdate('Y-m-d', strtotime('-14 years'));
+    db_insert('volunteers', ['volunteerId' => 'CRMV-A', 'fullName' => 'Dayo Adult', 'email' => 'dayo@example.org', 'dob' => $adultDob, 'role' => 'mentor', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'CRMV-C', 'fullName' => 'Young Volunteer', 'email' => 'young@example.org', 'dob' => $childDob, 'role' => 'helper', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'CRMV-M', 'memberId' => 'NGG-X1', 'fullName' => 'Member Volunteer', 'email' => 'member@example.org', 'role' => 'helper', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'G-1', 'email' => 'eko@example.org', 'fullName' => 'Eko Parent', 'phone' => '0803 222 0000', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+
+    $calls = 0;
+    $GLOBALS['__crm_push_transport'] = static function () use (&$calls) { $calls++; return ['code' => 200, 'body' => '{"ok":true}']; };
+    $r = crm_push_run();
+    chk('crm: with no secret set, nothing is sent', !empty($r['skipped']) && $calls === 0);
+
+    $secret = str_repeat('n', 43);
+    $tok = crm_push_sign([['kind' => 'subscriber', 'ref' => 'x', 'email' => 'x@example.org']], $secret, 1800000000);
+    $p = explode('.', $tok);
+    $un = static fn(string $s): string => (string)base64_decode(strtr($s, '-_', '+/') . str_repeat('=', (4 - strlen($s) % 4) % 4), true);
+    $claims = json_decode($un($p[1]), true);
+    chk('crm: the envelope is v1, HMAC-SHA256 over the payload, app ngg, five minutes',
+        $p[0] === 'v1' && hash_equals(hash_hmac('sha256', $p[1], $secret, true), $un($p[2])) && $claims['app'] === 'ngg' && $claims['exp'] - $claims['iat'] === 300);
+
+    $c = crm_push_collect();
+    $by = array_column($c['rows'], null, 'ref');
+    chk('crm: a newsletter subscriber is sent', ($by['news:' . sha1('ada@example.org')]['status'] ?? '') === 'subscribed');
+    chk('crm: an enquiry is sent with its subject but never the message', ($by['contact:CT-1']['detail'] ?? '') === 'Partnership: A visit' && !str_contains(json_encode($c['rows']), 'private words'));
+    chk('crm: a paid donation is sent in naira; a pending one is not', ($by['gift:NGGD-1']['detail'] ?? '') === 'Gave ₦5,000' && !isset($by['gift:NGGD-2']));
+    chk('crm: an adult volunteer is sent', isset($by['vol:CRMV-A']));
+    chk('crm: a volunteer under 18 is never sent', !isset($by['vol:CRMV-C']) && !str_contains(json_encode($c['rows']), 'young@example.org'));
+    chk('crm: a member who volunteers, with no date of birth, is treated as a child and not sent', !isset($by['vol:CRMV-M']));
+    chk('crm: every ref fits CACENTRE\'s 64 characters', max(array_map(static fn($r) => strlen((string)$r['ref']), $c['rows'])) <= 64
+        && strlen(crm_push_ref('gift:', str_repeat('x', 191))) === 45);
+    chk('crm: a guardian is sent as a contact, with no ward named', ($by['guardian:G-1']['list'] ?? '') === 'NGG parents & guardians' && !isset($by['guardian:G-1']['detail']));
+    chk('crm: nothing is read from members, applications or Summer School participants', !preg_match('/\bFROM\s+(members|applications|summer_students)\b/i', (string)file_get_contents(dirname(__DIR__) . '/_lib/domain/crm-push.php')));
+
+    $GLOBALS['CONFIG']['cacentre']['crm_secret'] = $secret;
+    $GLOBALS['__crm_push_transport'] = static fn() => ['code' => 403, 'body' => '{"ok":false,"error":"bad-signature"}'];
+    $r = crm_push_run();
+    chk('crm: a refused push says why, and moves no cursor', $r['ok'] === false && str_contains($r['error'], 'secret here differs') && crm_push_cursors() === []);
+
+    $sent = [];
+    $GLOBALS['__crm_push_transport'] = static function (string $url, string $body) use (&$sent, $un) {
+        $sent[] = json_decode($un(explode('.', json_decode($body, true)['token'])[1]), true)['rows'];
+        return ['code' => 200, 'body' => '{"ok":true}'];
+    };
+    $r = crm_push_run();
+    chk('crm: a good push sends every row to CACENTRE\'s intake', $r['ok'] && $r['sent'] === count($c['rows']) && str_ends_with(crm_push_url(), '/api/crm-intake.php'));
+    $sent = [];
+    crm_push_run();
+    chk('crm: the next run sends nothing it already sent', $sent === []);
+
+    usleep(1100000);
+    db_update('newsletter', ['status' => 'unsubscribed', 'updatedAt' => now_iso()], ['email' => 'ada@example.org']);
+    crm_push_run();
+    chk('crm: an unsubscribe is sent under the same ref', count($sent) === 1 && ($sent[0][0]['ref'] ?? '') === 'news:' . sha1('ada@example.org') && $sent[0][0]['status'] === 'unsubscribed');
+
+    db_insert('contact_messages', ['ref' => 'CT-2', 'name' => 'Odd', 'email' => 'odd@example.org', 'subject' => 'x', 'createdAt' => now_iso()]);
+    $GLOBALS['__crm_push_transport'] = static fn() => ['code' => 200, 'body' => '{"ok":true,"refused":[{"ref":"contact:CT-2","why":"bad-ref"}]}'];
+    $r = crm_push_run();
+    chk('crm: a row CACENTRE refused is counted as refused, not sent', $r['ok'] && $r['refused'] === 1 && $r['sent'] === 0
+        && str_contains(crm_push_last(), '1 refused by CACENTRE'));
+
+    chk('crm: the secret is an API key on the Settings screen, sealed', isset(SERVICE_KEYS['cacentre']) && SERVICE_KEYS['cacentre']['fields'][0][0] === 'cacentre.crm_secret' && SERVICE_KEYS['cacentre']['fields'][0][2] === 'secret');
+    chk('crm: the web-cron and the external cron both run it', str_contains((string)file_get_contents(dirname(__DIR__) . '/_lib/webcron.php'), 'crm_push_run()')
+        && str_contains((string)file_get_contents(dirname(__DIR__) . '/public/cron.php'), 'crm_push_run()'));
+
+    $GLOBALS['__crm_push_transport'] = null;
+    $GLOBALS['CONFIG']['cacentre'] = ['crm_secret' => '', 'crm_url' => ''];
+})();
+
+// ── Mentor Portal functional pass (2026-10-16): the live findings ─────────
+(function () {
+    $C = 'Fixville'; $now = now_iso();
+    $wipe = function () {
+        foreach (['members' => 'memberId', 'mentor_assignments' => 'memberId', 'mentor_matches' => 'memberId', 'mentor_tasks' => 'memberId',
+                  'mentor_meetings' => 'subjectId', 'safeguarding_cases' => 'subjectId'] as $t => $c) {
+            db_exec("DELETE FROM $t WHERE $c LIKE 'FIX-%'");
+        }
+        db_exec("DELETE FROM members WHERE memberId LIKE 'FIXM-%'");
+        db_exec("DELETE FROM mentors WHERE mentorId LIKE 'FIXT-%'");
+    };
+    $wipe();
+    $mem = function ($id, $name, $role = 'member') use ($C, $now) {
+        db_insert('members', ['memberId' => $id, 'fullName' => $name, 'email' => strtolower($id) . '@example.com', 'type' => 'NGG',
+            'status' => 'active', 'role' => $role, 'centre' => $C, 'createdAt' => $now, 'updatedAt' => $now]);
+    };
+    $ment = function ($tid, $mid, $name, $screened, $rank = 'mentor') use ($C, $now, $mem) {
+        $mem($mid, $name);
+        db_insert('mentors', ['mentorId' => $tid, 'fullName' => $name, 'email' => strtolower($mid) . '@example.com', 'status' => 'active',
+            'centre' => $C, 'programme' => 'ngg', 'rank' => $rank, 'memberId' => $mid, 'checkedAt' => $screened ? '2026-01-01' : '', 'createdAt' => $now]);
+    };
+    $mem('FIX-KID-1', 'Kemi Child'); $mem('FIX-KID-2', 'Tobi Child'); $mem('FIXM-ADM', 'Fix Admin', 'super_admin'); $mem('FIXM-PLAIN', 'Plain Member');
+    $ment('FIXT-A', 'FIXM-A', 'Ada Screened', true);
+    $ment('FIXT-B', 'FIXM-B', 'Bola Screened', true);
+    $ment('FIXT-U', 'FIXM-U', 'Uche Unscreened', false);
+
+    // 1. Screening on the record.
+    chk('fix · an unscreened mentor cannot open a child\'s record',
+        (backend_dispatch('member.mentor.child', ['requesterId' => 'FIXM-U', 'subjectId' => 'FIX-KID-1'])['error'] ?? '') === 'not_screened');
+    chk('fix · …nor write a meeting about them',
+        (backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'FIXM-U', 'subjectId' => 'FIX-KID-1', 'discussed' => 'Anything'])['error'] ?? '') === 'not_screened');
+    chk('fix · a screened mentor at the centre still can',
+        !empty(backend_dispatch('member.mentor.child', ['requesterId' => 'FIXM-A', 'subjectId' => 'FIX-KID-1'])['ok']));
+
+    // 5. Admin pairing keeps the match in step, and one mentor per child.
+    db_insert('mentor_assignments', ['memberId' => 'FIX-KID-1', 'mentorId' => 'FIXT-B', 'track' => '', 'sessionId' => 'OLD-TERM', 'status' => 'active', 'startedAt' => '2025-01-01', 'endedAt' => '']);
+    $as = backend_dispatch('admin.mentor.assign', ['requesterId' => 'FIXM-ADM', 'memberId' => 'FIX-KID-1', 'mentorId' => 'FIXT-A', 'sessionId' => 'THIS-TERM']);
+    $act = db_all("SELECT mentorId FROM mentor_assignments WHERE memberId = 'FIX-KID-1' AND status = 'active'");
+    chk('fix · pairing ends a pairing from another session — one active mentor', count($act) === 1 && $act[0]['mentorId'] === 'FIXT-A');
+    $m1 = ms_live_match('FIX-KID-1');
+    chk('fix · pairing starts a match with its cadence', ($as['match'] ?? '') === 'started' && $m1 && $m1['mentorId'] === 'FIXT-A'
+        && (int)db_row("SELECT COUNT(*) c FROM mentor_tasks WHERE matchId = ? AND status = 'open'", [$m1['matchId']])['c'] > 0);
+    $as2 = backend_dispatch('admin.mentor.assign', ['requesterId' => 'FIXM-ADM', 'memberId' => 'FIX-KID-1', 'mentorId' => 'FIXT-B']);
+    $old = db_row('SELECT * FROM mentor_matches WHERE matchId = ?', [$m1['matchId']]);
+    $m2 = ms_live_match('FIX-KID-1');
+    chk('fix · reassigning closes the old match and cancels its tasks; the new mentor gets a new one',
+        ($as2['match'] ?? '') === 'reassigned' && $old['status'] === 'closed'
+        && (int)db_row("SELECT COUNT(*) c FROM mentor_tasks WHERE matchId = ? AND status = 'open'", [$m1['matchId']])['c'] === 0
+        && $m2 && $m2['mentorId'] === 'FIXT-B' && $m2['matchId'] !== $m1['matchId']);
+    chk('fix · the old mentor no longer counts the child in their pod', !isset(ms_pod_loads()['FIXT-A']));
+    chk('fix · pairing the same mentor again changes nothing',
+        (backend_dispatch('admin.mentor.assign', ['requesterId' => 'FIXM-ADM', 'memberId' => 'FIX-KID-1', 'mentorId' => 'FIXT-B'])['match'] ?? '') === 'unchanged');
+    $un = backend_dispatch('admin.mentor.assign', ['requesterId' => 'FIXM-ADM', 'memberId' => 'FIX-KID-1', 'mentorId' => '']);
+    chk('fix · unpairing closes the live match', ($un['match'] ?? '') === 'closed' && !ms_live_match('FIX-KID-1')
+        && !db_row("SELECT 1 FROM mentor_assignments WHERE memberId = 'FIX-KID-1' AND status = 'active'"));
+    chk('fix · an unknown mentor is refused rather than paired',
+        (backend_dispatch('admin.mentor.assign', ['requesterId' => 'FIXM-ADM', 'memberId' => 'FIX-KID-2', 'mentorId' => 'FIXT-NOBODY'])['error'] ?? '') === 'mentor_not_found');
+
+    // 3. A concern marked on a meeting opens a case — with or without a lead.
+    backend_dispatch('admin.mentor.assign', ['requesterId' => 'FIXM-ADM', 'memberId' => 'FIX-KID-2', 'mentorId' => 'FIXT-A']);
+    $mt = backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'FIXM-A', 'subjectId' => 'FIX-KID-2', 'discussed' => 'Said someone at home hits her.', 'concern' => true]);
+    $cases = db_all("SELECT * FROM safeguarding_cases WHERE subjectId = 'FIX-KID-2'");
+    chk('fix · a meeting marked as a concern opens a safeguarding case (this centre has no lead mentor)',
+        !empty($mt['ok']) && count($cases) === 1 && $cases[0]['caseNo'] === $mt['caseRef'] && $cases[0]['reporterId'] === 'FIXM-A'
+        && str_contains($cases[0]['body'], 'Said someone at home hits her.'));
+    backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'FIXM-A', 'subjectId' => 'FIX-KID-2', 'id' => (int)$mt['id'], 'discussed' => 'Said someone at home hits her. Spoke to her again.', 'concern' => true]);
+    chk('fix · editing a note that is already a concern does not open a second case',
+        (int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE subjectId = 'FIX-KID-2'")['c'] === 1);
+    $plain = backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'FIXM-A', 'subjectId' => 'FIX-KID-2', 'discussed' => 'Talked about football.']);
+    $flip = backend_dispatch('member.mentor.meeting.save', ['requesterId' => 'FIXM-A', 'subjectId' => 'FIX-KID-2', 'id' => (int)$plain['id'], 'discussed' => 'Talked about football. Then said she is scared to go home.', 'concern' => true]);
+    chk('fix · marking an existing note as a concern opens its case then', !empty($flip['caseRef'])
+        && (int)db_row("SELECT COUNT(*) c FROM safeguarding_cases WHERE subjectId = 'FIX-KID-2'")['c'] === 2);
+
+    // 2. Who reads concern text in the attention queue.
+    $att = fn($who) => array_column(backend_dispatch('member.mentor.attention', ['requesterId' => $who])['concerns'] ?? [], 'subjectId');
+    chk('fix · the child\'s own mentor (and author) sees the concern', in_array('FIX-KID-2', $att('FIXM-A'), true));
+    chk('fix · another mentor at the centre does not', !in_array('FIX-KID-2', $att('FIXM-B'), true));
+    chk('fix · an unscreened mentor sees no concerns at all', $att('FIXM-U') === []);
+    $ment('FIXT-L', 'FIXM-L', 'Lola Lead', true, 'lead');
+    chk('fix · a lead mentor at the centre does', in_array('FIX-KID-2', $att('FIXM-L'), true));
+
+    // 4. Report a concern: mentors and staff, about children in their scope.
+    $rep = fn($who, $kid) => backend_dispatch('member.mentor.concern.create', ['requesterId' => $who, 'subjectId' => $kid,
+        'category' => 'Something they told me', 'body' => 'She told me something worrying today.']);
+    chk('fix · a plain member cannot file a case through the mentor sheet', ($rep('FIXM-PLAIN', 'FIX-KID-1')['error'] ?? '') === 'not_a_mentor');
+    chk('fix · an unscreened mentor still can — the duty to report does not wait', !empty($rep('FIXM-U', 'FIX-KID-1')['ok']));
+    $mem('FIX-FAR-1', 'Far Child'); db_exec("UPDATE members SET centre = 'Elsewhere' WHERE memberId = 'FIX-FAR-1'");
+    chk('fix · a child outside their scope reads as not found, same as an id that does not exist',
+        ($rep('FIXM-A', 'FIX-FAR-1')['error'] ?? '') === 'not_found' && ($rep('FIXM-A', 'FIX-NOBODY')['error'] ?? '') === 'not_found');
+
+    $wipe();
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");
