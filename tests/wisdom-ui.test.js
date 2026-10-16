@@ -190,9 +190,15 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     chk('Stop ends the loop', await mp.waitForTimeout(2500).then(() => mp.$eval('.qow-play', b => b.getAttribute('aria-pressed') === 'false')));
     // Share: the phone's sheet where there is one, else the saying copied with its meaning.
     await mp.evaluate(() => { try { Object.defineProperty(navigator, 'share', { value: undefined, configurable: true }); } catch (_) {} navigator.clipboard.writeText = t => { window.__copied = t; return Promise.resolve(); }; });
+    // Share opens the share card (qow-card.jsx); the plain text is one press inside it.
     await mp.click('.qow-share');
+    await mp.waitForSelector('.qcs', { timeout: 15000 });
+    await mp.click('.qcs-btn:has-text("Copy the text")');
+    await mp.waitForFunction(() => !!window.__copied, null, { timeout: 5000 }).catch(() => {});
     const copied = await mp.evaluate(() => window.__copied || '');
-    chk('Share copies the saying, its meaning and where it came from, and says so', copied.includes(s.text) && (!s.translation || copied.includes(s.translation)) && /Copied/.test(await mp.$eval('.qow-listen', el => el.textContent)));
+    chk('Share opens the share card, and its Copy the text copies the saying, its meaning and where it came from, and says so',
+        copied.includes(s.text) && (!s.translation || copied.includes(s.translation)) && /Copied/.test(await mp.$eval('.qcs', el => el.innerText)));
+    await mp.keyboard.press('Escape');
         chk('the card fits a phone with no sideways scroll', await mp.evaluate(() => document.querySelector('.qow').scrollWidth <= window.innerWidth));
     await (await mp.$('.qow')).screenshot({ path: path.join(SHOTS, 'home-phone.png') });
 
@@ -255,7 +261,10 @@ const chk = (m, cond) => { if (cond) { passed++; console.log('  ✓ ' + m); } el
     await ap.click('.wis-tab:has-text("Yorùbá")');
     chk('the Yorùbá tab lists the four proverbs, tone marks intact',
         (await ap.$$('.wis-item')).length === 4 && (await ap.$eval('.admin-main', el => el.innerText)).includes('A kì í fi orí wé orí Mọkírè'));
-    chk('the schedule has Yorùbá in the third week', /Yorùbá\s*#1/.test(await ap.$eval('.wis-sched', el => el.innerText)));
+    // The rotation moves with the calendar, so pin the pattern, not a number: every third week is Yorùbá's.
+    chk('the schedule takes turns: Hausa, Igbo, Yorùbá, then again', await ap.$$eval('.wis-sched-lang', els => {
+        const L = els.map(e => e.textContent.replace(/\s*#\d+/, '').trim());
+        return L.length === 9 && L.every((l, i) => l === L[i % 3]) && new Set(L.slice(0, 3)).size === 3; }));
     await ap.screenshot({ path: path.join(SHOTS, 'admin.png'), fullPage: false });
 
     /* ── With a Spitch key. Every saying already has its saved clips and its
