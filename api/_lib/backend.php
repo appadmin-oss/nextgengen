@@ -176,6 +176,10 @@ function backend_dispatch(string $op, array $args = []): array {
             'session.list'            => 'session_list',
             'session.ensureYear'      => 'session_ensure_year',
             // Admin
+            /* The accounts desk: who cannot sign in, and the members behind each
+               number. Nothing here ends an account — that is the MoU's question. */
+            'admin.accounts.overview' => 'admin_accounts_overview',
+            'admin.accounts.unlock'   => 'admin_account_unlock',
             'admin.members.list'      => 'admin_members_list',
             'admin.members.suggest'   => 'admin_members_suggest',
             'admin.members.paperConsents' => 'admin_members_paper_consents',

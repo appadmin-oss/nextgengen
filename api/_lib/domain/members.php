@@ -403,9 +403,28 @@ function member_erase(string $mid, string $by, string $ip = ''): array {
     return ['ok' => true];
 }
 
+/**
+ * A member cannot end their own membership.
+ *
+ * This called member_erase() directly, and the member dashboard had a "Delete
+ * my account" button wired to it. So a child of ten to seventeen could scrub
+ * their profile, journal, missions and XP, revoke every session and blank
+ * their ledger's notes — irreversibly, in two confirmations, with nothing
+ * recoverable by anybody, including the people answerable for them.
+ *
+ * Whether a membership continues is settled by the MoU between NGG and the
+ * family. That is a document and a conversation, so there is no button and no
+ * request queue standing in for one — a queue is the same decision moved one
+ * screen along. The refusal names who to speak to instead of going quiet.
+ *
+ * What a member keeps is member_export(): a copy of everything held about
+ * them, one press. That half was never the problem. And admin_member_delete()
+ * still erases, from the desk, restricted to a super admin, for the
+ * obligations the programme itself carries.
+ */
 function member_delete_account(array $p): array {
-    $mid = (string)($p['memberId'] ?? '');
-    return member_erase($mid, $mid, (string)($p['ip'] ?? ''));
+    return ['ok' => false, 'error' => 'self_delete_disabled',
+            'detail' => 'Your membership is set by the agreement between NGG and your parent or guardian — speak to your centre lead or your mentor.'];
 }
 
 function admin_member_delete(array $p): array {

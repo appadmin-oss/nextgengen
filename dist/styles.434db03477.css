@@ -8103,3 +8103,16 @@ textarea.rec-input { min-height: 84px; resize: vertical; }
 .rec-msg { margin: 14px 0 0; font-size: 14px; color: #1d6b30; }
 .rec-msg.is-bad { color: #b0361c; }
 .rec-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+
+/* The member's own account panel: what governs the membership, said where the
+   "Delete my account" button used to be. */
+.dash-account-note {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-700, #3a4256);
+  background: var(--cream-50, #faf9f5);
+  border: 1px solid var(--cream-200, #e4e2da);
+  border-radius: 10px;
+}

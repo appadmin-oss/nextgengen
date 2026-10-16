@@ -185,11 +185,16 @@ function ngg_parse_mysql_schema(string $sql): array {
             foreach (ngg_split_top_commas($m[2]) as $frag) {
                 $frag = trim($frag);
                 if ($frag === '' || preg_match('/^(PRIMARY|UNIQUE|KEY|INDEX|CONSTRAINT|FOREIGN|FULLTEXT|CHECK)\b/i', $frag)) continue;
-                if (preg_match('/^`?(\w+)`?/', $frag, $cm)) $cols[] = $cm[1];
+                // The DEFINITION is kept, not just the name: a column that exists
+                // in both but is NOT NULL without a default on MySQL only is a
+                // write that works in dev and is a hard error under
+                // STRICT_ALL_TABLES in production. That is the drift that hid
+                // member_promotions.evidence until the suite could not run.
+                if (preg_match('/^`?(\w+)`?\s*(.*)$/s', $frag, $cm)) $cols[$cm[1]] = trim($cm[2]);
             }
             $tables[$m[1]] = $cols;
-        } elseif (preg_match('/^ALTER TABLE\s+`?(\w+)`?\s+(.*)$/is', $stmt, $m) && preg_match_all('/ADD COLUMN\s+`?(\w+)`?/i', $m[2], $am)) {
-            foreach ($am[1] as $c) $tables[$m[1]][] = $c;
+        } elseif (preg_match('/^ALTER TABLE\s+`?(\w+)`?\s+(.*)$/is', $stmt, $m) && preg_match_all('/ADD COLUMN\s+`?(\w+)`?\s*([^,]*)/i', $m[2], $am, PREG_SET_ORDER)) {
+            foreach ($am as $a) $tables[$m[1]][$a[1]] = trim($a[2]);
         }
     }
     return $tables;
@@ -204,18 +209,31 @@ $parityTmp = sys_get_temp_dir() . '/ngg-parity-' . bin2hex(random_bytes(3)) . '.
 $parityDb = new PDO('sqlite:' . $parityTmp, null, null,
     [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
 db_migrate($parityDb);
-$drift = [];
+$drift = []; $nullDrift = [];
 foreach ($parityDb->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'") as $tr) {
     $t = (string)$tr['name'];
     if (in_array($t, ['schema_version', 'schema_meta'], true)) continue;
     if (!isset($mysqlSchema[$t])) { $drift[] = "MISSING TABLE $t"; continue; }
     foreach ($parityDb->query("PRAGMA table_info(\"$t\")") as $ci) {
         $col = (string)$ci['name'];
-        if (!in_array($col, $mysqlSchema[$t], true)) $drift[] = "$t.$col";
+        if (!array_key_exists($col, $mysqlSchema[$t])) { $drift[] = "$t.$col"; continue; }
+        /* Same column, different insertability. An INSERT that omits this
+         * column succeeds on SQLite and throws 1364 under STRICT_ALL_TABLES,
+         * so the failure only ever appears on the driver production runs —
+         * which is the one the suite was least often pointed at. PRIMARY KEY
+         * and UNIQUE columns are exempt: SQLite leaves a PK nullable, the code
+         * always supplies one, and that looseness is SQLite's, not the mirror's. */
+        $def = (string)$mysqlSchema[$t][$col];
+        $sqliteInsertable = (int)$ci['notnull'] !== 1 || $ci['dflt_value'] !== null;
+        $mysqlInsertable  = !preg_match('/\bNOT\s+NULL\b/i', $def)
+                            || preg_match('/\bDEFAULT\b|AUTO_INCREMENT|PRIMARY\s+KEY|\bUNIQUE\b/i', $def);
+        if ($sqliteInsertable && !$mysqlInsertable) $nullDrift[] = "$t.$col";
     }
 }
 $parityDb = null; @unlink($parityTmp);
 chk('migrator: SQLite⇄MySQL mirror parity — every table+column present' . ($drift ? ' [DRIFT: ' . implode(', ', array_slice($drift, 0, 15)) . ']' : ''), empty($drift));
+chk('migrator: SQLite⇄MySQL mirror parity — a column insertable in dev is insertable in prod'
+    . ($nullDrift ? ' [NOT NULL without a default on MySQL only: ' . implode(', ', array_slice($nullDrift, 0, 15)) . ']' : ''), empty($nullDrift));
 
 /* The reverse direction, only meaningful when actually running on MySQL: every
  * table the mirror declares must really exist in the live database. The parity
@@ -1283,6 +1301,12 @@ chk('login wrong password fails', backend_dispatch('auth.login', ['identifier' =
 chk('login unknown account fails uniformly', backend_dispatch('auth.login', ['identifier' => 'ghost@example.com', 'password' => 'x'])['error'] === 'invalid_login');
 chk('change password needs correct current', backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'brandnewpass9', 'current' => 'wrong'])['error'] === 'bad_current_password');
 chk('change password with current ok', !empty(backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'brandnewpass9', 'current' => 'correcthorse9'])['ok']));
+// The current password cannot be guessed without limit by whoever holds the session.
+for ($i = 0; $i < 4; $i++) backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'attackerpass9', 'current' => 'guess' . $i]);
+chk('change password: the fifth wrong current password locks it', (backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'attackerpass9', 'current' => 'guess4'])['error'] ?? '') === 'too_many_attempts');
+chk('change password: while locked, even the right current password is refused', (backend_dispatch('auth.setPassword', ['memberId' => 'NGG-2025-0001', 'password' => 'attackerpass9', 'current' => 'brandnewpass9'])['error'] ?? '') === 'too_many_attempts');
+chk('change password: the password did not change', password_verify('brandnewpass9', (string)db_row("SELECT passwordHash FROM members WHERE memberId = 'NGG-2025-0001'")['passwordHash']));
+attempt_reset('pw.current', 'NGG-2025-0001');
 chk('old password no longer works', backend_dispatch('auth.login', ['identifier' => 'NGG-2025-0001', 'password' => 'correcthorse9'])['error'] === 'invalid_login');
 
 // ── Sign-in gateway (one door, no account-type leaks) ──
@@ -26604,6 +26628,229 @@ chk('text_utf8: a mail server’s Latin-1 error reads as written, and the reply 
     chk('today (member): a live plan shows this week\'s promises and a row for the sessions left', !empty($m1['ok']) && $m1['promises']['status'] === 'live'
         && in_array('promises', array_column($m1['todo'], 'key'), true) && !in_array('results', array_column($m1['todo'], 'key'), true) && $m1['week']['mentor']['first'] === 'Remi');
     chk('today (member): a Summer account is refused', (backend_dispatch('member.today', ['memberId' => 'NGG-RS-S'])['error'] ?? '') === 'not_ngg_member');
+})();
+
+// ── CACENTRE CRM: NGG's adults pushed to the Audience; no child leaves ──
+(function () {
+    $GLOBALS['CONFIG']['cacentre'] = ['crm_secret' => '', 'crm_url' => ''];
+    foreach (['newsletter', 'contact_messages', 'donations', 'guardians'] as $t) db_exec("DELETE FROM {$t}");
+    db_exec("DELETE FROM volunteers WHERE volunteerId LIKE 'CRMV-%'");
+    db_exec("DELETE FROM settings WHERE settingKey IN ('crm_push', 'crm_push_last')");
+    $now = now_iso();
+    db_insert('newsletter', ['email' => 'ada@example.org', 'source' => 'site', 'status' => 'subscribed', 'createdAt' => $now, 'updatedAt' => $now]);
+    db_insert('contact_messages', ['ref' => 'CT-1', 'purpose' => 'partnership', 'name' => 'Bola', 'email' => 'bola@example.org', 'phone' => '0803 111 0000', 'subject' => 'A visit', 'message' => 'private words', 'createdAt' => $now]);
+    db_insert('donations', ['reference' => 'NGGD-1', 'email' => 'chi@example.org', 'name' => 'Chi', 'amount' => 5000, 'currency' => 'NGN', 'status' => 'paid', 'paidAt' => $now, 'createdAt' => $now]);
+    db_insert('donations', ['reference' => 'NGGD-2', 'email' => 'pending@example.org', 'name' => 'P', 'amount' => 1000, 'currency' => 'NGN', 'status' => 'pending', 'createdAt' => $now]);
+    $adultDob = gmdate('Y-m-d', strtotime('-30 years')); $childDob = gmdate('Y-m-d', strtotime('-14 years'));
+    db_insert('volunteers', ['volunteerId' => 'CRMV-A', 'fullName' => 'Dayo Adult', 'email' => 'dayo@example.org', 'dob' => $adultDob, 'role' => 'mentor', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'CRMV-C', 'fullName' => 'Young Volunteer', 'email' => 'young@example.org', 'dob' => $childDob, 'role' => 'helper', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('volunteers', ['volunteerId' => 'CRMV-M', 'memberId' => 'NGG-X1', 'fullName' => 'Member Volunteer', 'email' => 'member@example.org', 'role' => 'helper', 'status' => 'active', 'createdAt' => $now]);
+    db_insert('guardians', ['guardianId' => 'G-1', 'email' => 'eko@example.org', 'fullName' => 'Eko Parent', 'phone' => '0803 222 0000', 'status' => 'active', 'createdAt' => $now, 'updatedAt' => $now]);
+
+    $calls = 0;
+    $GLOBALS['__crm_push_transport'] = static function () use (&$calls) { $calls++; return ['code' => 200, 'body' => '{"ok":true}']; };
+    $r = crm_push_run();
+    chk('crm: with no secret set, nothing is sent', !empty($r['skipped']) && $calls === 0);
+
+    $secret = str_repeat('n', 43);
+    $tok = crm_push_sign([['kind' => 'subscriber', 'ref' => 'x', 'email' => 'x@example.org']], $secret, 1800000000);
+    $p = explode('.', $tok);
+    $un = static fn(string $s): string => (string)base64_decode(strtr($s, '-_', '+/') . str_repeat('=', (4 - strlen($s) % 4) % 4), true);
+    $claims = json_decode($un($p[1]), true);
+    chk('crm: the envelope is v1, HMAC-SHA256 over the payload, app ngg, five minutes',
+        $p[0] === 'v1' && hash_equals(hash_hmac('sha256', $p[1], $secret, true), $un($p[2])) && $claims['app'] === 'ngg' && $claims['exp'] - $claims['iat'] === 300);
+
+    $c = crm_push_collect();
+    $by = array_column($c['rows'], null, 'ref');
+    chk('crm: a newsletter subscriber is sent', ($by['news:' . sha1('ada@example.org')]['status'] ?? '') === 'subscribed');
+    chk('crm: an enquiry is sent with its subject but never the message', ($by['contact:CT-1']['detail'] ?? '') === 'Partnership: A visit' && !str_contains(json_encode($c['rows']), 'private words'));
+    chk('crm: a paid donation is sent in naira; a pending one is not', ($by['gift:NGGD-1']['detail'] ?? '') === 'Gave ₦5,000' && !isset($by['gift:NGGD-2']));
+    chk('crm: an adult volunteer is sent', isset($by['vol:CRMV-A']));
+    chk('crm: a volunteer under 18 is never sent', !isset($by['vol:CRMV-C']) && !str_contains(json_encode($c['rows']), 'young@example.org'));
+    chk('crm: a member who volunteers, with no date of birth, is treated as a child and not sent', !isset($by['vol:CRMV-M']));
+    chk('crm: every ref fits CACENTRE\'s 64 characters', max(array_map(static fn($r) => strlen((string)$r['ref']), $c['rows'])) <= 64
+        && strlen(crm_push_ref('gift:', str_repeat('x', 191))) === 45);
+    chk('crm: a guardian is sent as a contact, with no ward named', ($by['guardian:G-1']['list'] ?? '') === 'NGG parents & guardians' && !isset($by['guardian:G-1']['detail']));
+    chk('crm: nothing is read from members, applications or Summer School participants', !preg_match('/\bFROM\s+(members|applications|summer_students)\b/i', (string)file_get_contents(dirname(__DIR__) . '/_lib/domain/crm-push.php')));
+
+    $GLOBALS['CONFIG']['cacentre']['crm_secret'] = $secret;
+    $GLOBALS['__crm_push_transport'] = static fn() => ['code' => 403, 'body' => '{"ok":false,"error":"bad-signature"}'];
+    $r = crm_push_run();
+    chk('crm: a refused push says why, and moves no cursor', $r['ok'] === false && str_contains($r['error'], 'secret here differs') && crm_push_cursors() === []);
+
+    $sent = [];
+    $GLOBALS['__crm_push_transport'] = static function (string $url, string $body) use (&$sent, $un) {
+        $sent[] = json_decode($un(explode('.', json_decode($body, true)['token'])[1]), true)['rows'];
+        return ['code' => 200, 'body' => '{"ok":true}'];
+    };
+    $r = crm_push_run();
+    chk('crm: a good push sends every row to CACENTRE\'s intake', $r['ok'] && $r['sent'] === count($c['rows']) && str_ends_with(crm_push_url(), '/api/crm-intake.php'));
+    $sent = [];
+    crm_push_run();
+    chk('crm: the next run sends nothing it already sent', $sent === []);
+
+    usleep(1100000);
+    db_update('newsletter', ['status' => 'unsubscribed', 'updatedAt' => now_iso()], ['email' => 'ada@example.org']);
+    crm_push_run();
+    chk('crm: an unsubscribe is sent under the same ref', count($sent) === 1 && ($sent[0][0]['ref'] ?? '') === 'news:' . sha1('ada@example.org') && $sent[0][0]['status'] === 'unsubscribed');
+
+    db_insert('contact_messages', ['ref' => 'CT-2', 'name' => 'Odd', 'email' => 'odd@example.org', 'subject' => 'x', 'createdAt' => now_iso()]);
+    $GLOBALS['__crm_push_transport'] = static fn() => ['code' => 200, 'body' => '{"ok":true,"refused":[{"ref":"contact:CT-2","why":"bad-ref"}]}'];
+    $r = crm_push_run();
+    chk('crm: a row CACENTRE refused is counted as refused, not sent', $r['ok'] && $r['refused'] === 1 && $r['sent'] === 0
+        && str_contains(crm_push_last(), '1 refused by CACENTRE'));
+
+    chk('crm: the secret is an API key on the Settings screen, sealed', isset(SERVICE_KEYS['cacentre']) && SERVICE_KEYS['cacentre']['fields'][0][0] === 'cacentre.crm_secret' && SERVICE_KEYS['cacentre']['fields'][0][2] === 'secret');
+    chk('crm: the web-cron and the external cron both run it', str_contains((string)file_get_contents(dirname(__DIR__) . '/_lib/webcron.php'), 'crm_push_run()')
+        && str_contains((string)file_get_contents(dirname(__DIR__) . '/public/cron.php'), 'crm_push_run()'));
+
+    $GLOBALS['__crm_push_transport'] = null;
+    $GLOBALS['CONFIG']['cacentre'] = ['crm_secret' => '', 'crm_url' => ''];
+})();
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MEMBER ACCOUNTS — a membership is not a setting
+   ═══════════════════════════════════════════════════════════════════════════
+
+   `member.deleteAccount` called member_erase() directly, and the member's own
+   dashboard had a "Delete my account" button wired to it. So a child of ten to
+   seventeen could scrub their profile, journal, missions and XP, revoke every
+   session and blank their ledger's notes — irreversibly, in two confirmations,
+   with nothing recoverable by anybody, including the people answerable for
+   them.
+
+   Whether a membership continues is settled by the MoU between NGG and the
+   family. It is a document and a conversation, not a control, so there is no
+   self-service route and no request queue standing in for one. What a member
+   keeps is the other half, untouched: a copy of everything held about them,
+   still one press and still theirs alone.
+
+   What the desk gets instead is the screen for the problem the roster assumes
+   away — people who are supposed to be able to sign in and cannot.
+*/
+(function () {
+    $A = 'ACCT-ADM'; $P = 'ACCT-PEOPLE';
+    db_exec("DELETE FROM members WHERE memberId LIKE 'ACCT-%'");
+    db_insert('members', ['memberId' => $A, 'fullName' => 'Acct Super', 'email' => 'acct-adm@example.com',
+        'role' => 'super_admin', 'status' => 'active', 'type' => 'NGG', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    db_insert('members', ['memberId' => $P, 'fullName' => 'Acct People', 'email' => 'acct-people@example.com',
+        'role' => 'admin', 'status' => 'active', 'type' => 'NGG', 'centre' => 'Egbeda',
+        'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    /* `$extra` FIRST: PHP's array + keeps the LEFT operand on a duplicate key,
+       so defaults-then-extra silently discards every override — which is what
+       made the first version of this fixture assert nothing. */
+    $mk = function (string $id, array $extra = []) {
+        db_insert('members', $extra + ['memberId' => $id, 'fullName' => 'Acct ' . $id, 'type' => 'NGG',
+            'status' => 'active', 'role' => 'member', 'centre' => 'Egbeda',
+            'email' => strtolower($id) . '@example.com', 'lastLoginAt' => now_iso(),
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+    };
+
+    chk('accounts: a member cannot erase their own record', (function () use ($mk) {
+        $mk('ACCT-SELF');
+        $r = member_delete_account(['memberId' => 'ACCT-SELF']);
+        if (($r['ok'] ?? true) !== false || ($r['error'] ?? '') !== 'self_delete_disabled') return false;
+        // And nothing happened to them: still there, still named, still active.
+        $m = db_row("SELECT fullName, status FROM members WHERE memberId = 'ACCT-SELF'");
+        return $m && $m['fullName'] === 'Acct ACCT-SELF' && $m['status'] === 'active';
+    })());
+    chk('accounts: …and the refusal says what to do instead, rather than "no"',
+        strpos((string)(member_delete_account(['memberId' => 'ACCT-SELF'])['detail'] ?? ''), 'centre lead') !== false);
+    chk('accounts: there is no request kind for it either', (function () {
+        /* A queue standing in for the button is the same decision moved one
+           screen along. The MoU decides this, so the product does not ask. */
+        if (isset(MEMBER_REQUEST_KINDS['closure'])) return false;
+        $r = member_request_create(['memberId' => 'ACCT-SELF', 'kind' => 'closure', 'body' => 'please']);
+        return ($r['error'] ?? '') === 'unknown_kind';
+    })());
+    chk('accounts: taking a copy of everything is untouched', (function () {
+        $r = member_export(['memberId' => 'ACCT-SELF']);
+        return !empty($r['ok']) && isset($r['export']['profile']) && isset($r['export']['ledger']);
+    })());
+    /* The desk's own erase is unchanged and still super-admin. It exists for
+       obligations the programme carries, not for a member to reach. */
+    chk('accounts: the desk\'s erase is still super-admin only, and still works', (function () use ($P, $A, $mk) {
+        $mk('ACCT-ERASE');
+        if ((admin_member_delete(['requesterId' => $P, 'memberId' => 'ACCT-ERASE'])['error'] ?? '') !== 'forbidden') return false;
+        if (empty(admin_member_delete(['requesterId' => $A, 'memberId' => 'ACCT-ERASE'])['ok'])) return false;
+        return (string)db_row("SELECT status FROM members WHERE memberId = 'ACCT-ERASE'")['status'] === 'deleted';
+    })());
+
+    // ── The desk's screen ──────────────────────────────────────────────────
+    chk('accounts: the desk is shown who cannot sign in, and why it matters', (function () use ($A, $mk) {
+        $mk('ACCT-LOCK',  ['lockedUntil' => gmdate('Y-m-d\TH:i:s\Z', time() + 600), 'failedLogins' => 5]);
+        $mk('ACCT-NOMAIL', ['email' => '']);
+        $mk('ACCT-NEVER', ['lastLoginAt' => '']);
+        $r = admin_accounts_overview(['requesterId' => $A]);
+        if (empty($r['ok'])) return false;
+        $by = [];
+        foreach ($r['signals'] as $s) $by[$s['id']] = $s;
+        foreach (['locked', 'noWayIn', 'neverSignedIn', 'staffNo2fa', 'suspended'] as $id) {
+            if (!isset($by[$id])) return false;
+            // A count with no sentence is a number nobody can act on.
+            if (trim((string)$by[$id]['why']) === '') return false;
+        }
+        $names = fn($id) => array_column($by[$id]['members'], 'memberId');
+        return in_array('ACCT-LOCK', $names('locked'), true)
+            && in_array('ACCT-NOMAIL', $names('noWayIn'), true)
+            && in_array('ACCT-NEVER', $names('neverSignedIn'), true);
+    })());
+    chk('accounts: a lock that has already expired is not somebody who needs help', (function () use ($A, $mk) {
+        $mk('ACCT-OLDLOCK', ['lockedUntil' => gmdate('Y-m-d\TH:i:s\Z', time() - 600)]);
+        $r = admin_accounts_overview(['requesterId' => $A]);
+        foreach ($r['signals'] as $s) if ($s['id'] === 'locked') {
+            return !in_array('ACCT-OLDLOCK', array_column($s['members'], 'memberId'), true);
+        }
+        return false;
+    })());
+    chk('accounts: every number comes with the members behind it', (function () use ($A) {
+        $r = admin_accounts_overview(['requesterId' => $A]);
+        foreach ($r['signals'] as $s) {
+            if ($s['count'] > 0 && !count($s['members'])) return false;
+            // Bounded: this is a working list, not an export.
+            if (count($s['members']) > $r['signalMax']) return false;
+        }
+        return true;
+    })());
+    chk('accounts: a lock can be lifted, and the counter goes with it', (function () use ($A) {
+        /* The lock expires by itself, but "by itself" is fifteen minutes to a
+           member on the phone to a centre lead. Clearing failedLogins too, or
+           the next wrong guess re-locks them immediately. */
+        $r = admin_account_unlock(['requesterId' => $A, 'memberId' => 'ACCT-LOCK']);
+        if (empty($r['ok'])) return false;
+        $m = db_row("SELECT lockedUntil, failedLogins FROM members WHERE memberId = 'ACCT-LOCK'");
+        return trim((string)$m['lockedUntil']) === '' && (int)$m['failedLogins'] === 0;
+    })());
+    chk('accounts: …and it is audited, because it is somebody letting somebody in',
+        db_row("SELECT id FROM audit_log WHERE event = 'account.unlock' AND subject = 'ACCT-LOCK'") !== null);
+    chk('accounts: the screen is gated, and a plain member cannot read it',
+        (admin_accounts_overview(['requesterId' => 'NGG-2025-0001'])['error'] ?? '') === 'forbidden'
+        && (admin_account_unlock(['requesterId' => 'NGG-2025-0001', 'memberId' => 'ACCT-NEVER'])['error'] ?? '') === 'forbidden');
+    chk('accounts: a member-desk admin CAN read it — seeing a lockout is how it gets said',
+        !empty(admin_accounts_overview(['requesterId' => $P])['ok']));
+    chk('accounts: centre scope holds, so a dashboard is not a way around it', (function () use ($P) {
+        /* The direction a scope leak usually arrives from: a screen that
+           aggregates rather than lists, and forgets it is still people. */
+        db_insert('members', ['memberId' => 'ACCT-OTHER', 'fullName' => 'Acct Elsewhere', 'type' => 'NGG',
+            'status' => 'active', 'role' => 'member', 'centre' => 'Ayobo', 'email' => '',
+            'createdAt' => now_iso(), 'updatedAt' => now_iso()]);
+        backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0099', 'memberId' => $P,
+            'caps' => [], 'centreScope' => ['CEN-EG']]);
+        $r = admin_accounts_overview(['requesterId' => $P]);
+        $seen = [];
+        foreach ($r['signals'] as $s) foreach ($s['members'] as $m) $seen[] = $m['memberId'];
+        $scoped = !in_array('ACCT-OTHER', $seen, true);
+        // And the unlock is refused per row, not silently skipped.
+        $u = admin_account_unlock(['requesterId' => $P, 'memberId' => 'ACCT-OTHER']);
+        backend_dispatch('admin.members.caps', ['requesterId' => 'NGG-2025-0099', 'memberId' => $P,
+            'caps' => [], 'centreScope' => []]);
+        return $scoped && ($u['error'] ?? '') === 'out_of_scope';
+    })());
+
+    db_exec("DELETE FROM members WHERE memberId LIKE 'ACCT-%'");
+    db_exec("DELETE FROM audit_log WHERE event = 'account.unlock'");
 })();
 
 echo "\n" . ($failed ? "❌ FAIL: $passed passed, $failed failed\n" : "✅ PASS: $passed passed, 0 failed\n");

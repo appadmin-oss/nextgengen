@@ -1352,37 +1352,6 @@ function DashboardAccount({ m }) {
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     } catch (e) { toast.error(humanError(e)); } finally { setBusy(""); }
   };
-  const del = async () => {
-    /* The most destructive thing anybody can do in this product, and it was
-       two stacked native confirms — the second of them "Are you absolutely
-       sure? There is no undo." Two generic dialogs in a row is not twice the
-       friction; it is a rhythm people click through, and neither one said what
-       actually gets destroyed.
-
-       One dialog that names it, then a typed word. Type-to-confirm is reserved
-       for the genuinely catastrophic and this qualifies: a child's journal is
-       not recoverable from anywhere once this runs. */
-    const ok = await dialog.confirm({
-      title: "Delete your account?",
-      body: "This removes your profile, your journal entries, your missions and your XP, "
-          + "and signs you out everywhere. Nobody — not your mentor, not an admin — can get it back. "
-          + "If you only want to stop for a while, ask a mentor to pause your account instead.",
-      cta: "I understand, continue", cancel: "Keep my account", danger: true,
-    });
-    if (!ok) return;
-    const typed = await dialog.prompt({
-      title: "Type DELETE to confirm",
-      body: "Last step. This is here so nobody deletes their journal by accident.",
-      label: "Type DELETE", placeholder: "DELETE", cta: "Delete my account", cancel: "Cancel",
-    });
-    if (String(typed || "").trim().toUpperCase() !== "DELETE") {
-      if (typed !== null) toast.error("That did not match, so nothing was deleted.", "Account kept");
-      return;
-    }
-    setBusy("delete");
-    try { await NGGApi.member.deleteAccount(); toast.success("Your account has been deleted."); setTimeout(() => { window.location.href = "/"; }, 800); }
-    catch (e) { toast.error(humanError(e)); setBusy(""); }
-  };
   return (
     <div style={{ borderTop: "1px solid rgba(12,20,50,0.08)", margin: "6px 0 2px", paddingTop: 16 }}>
       <div style={{ fontWeight: 700, fontSize: 15 }}>Account</div>
@@ -1395,8 +1364,20 @@ function DashboardAccount({ m }) {
       </label>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
         <button type="button" className="btn btn-ghost btn-sm" disabled={busy === "export"} onClick={exportData}>{busy === "export" ? "Preparing…" : "Download my data"}</button>
-        <button type="button" className="btn btn-ghost btn-sm" disabled={busy === "delete"} onClick={del} style={{ color: "#b03535" }}>Delete my account</button>
       </div>
+      {/* There was a "Delete my account" button here.
+          It called member_erase() directly, so a ten-to-seventeen-year-old
+          could scrub their own profile, journal, missions and XP, revoke every
+          session and blank their ledger's notes — in two confirmations, with
+          nothing recoverable by anybody, including the people answerable for
+          them. Whether a membership continues is not a setting: it is what the
+          MoU between NGG and the family says, and it is settled between people.
+          Taking a copy of everything, above, is untouched and still one press. */}
+      <p className="dash-account-note">
+        Your membership is governed by the agreement between NGG and your parent
+        or guardian, so it is not something to switch off here. If something
+        needs to change, speak to your centre lead or your mentor.
+      </p>
     </div>
   );
 }
