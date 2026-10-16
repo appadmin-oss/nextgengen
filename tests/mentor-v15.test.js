@@ -124,6 +124,8 @@ async function as(memberId, admin, viewport) {
     if (up.length) { await up[0].click(); await up[0].click(); }
     await mt.click('main button:has-text("scores")');
     await mt.waitForFunction(() => /scores saved for Mariam/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
+    await mt.waitForTimeout(800);
+    await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/scorecard.png' : path.join(TMP, 'scorecard.png') });
     chk('Scorecard: saving writes ten integers for this month', (q(`db_row("SELECT scores FROM mentor_scorecards WHERE subjectId = 'NGG-MS-K1' AND byKind = 'mentor'")`) || {}).scores?.split(',').length === 10);
     // Log a one-to-one from the record
     await mt.click('main button:has-text("Log a session")');
@@ -134,6 +136,13 @@ async function as(memberId, admin, viewport) {
     await mt.waitForFunction(() => /Session saved/.test(document.body.innerText), null, { timeout: 15000 }).catch(() => {});
     chk('Sessions: a one-to-one is logged on her record by this mentor',
       q(`(int)db_row("SELECT COUNT(*) c FROM mentor_meetings WHERE subjectId = 'NGG-MS-K1' AND kind = 'one-to-one' AND mentorId = 'NGG-MS-M1'")['c']`) === 1);
+    // Pod growth: the Leadership Index board, from the saved scorecard
+    await mt.click('nav >> text=Mentees');
+    await mt.click('main >> text=Pod growth');
+    await mt.waitForFunction(() => /Communication|Leadership/.test(document.querySelector('main').innerText) && !document.querySelector('.m15x-load'), null, { timeout: 30000 });
+    await mt.waitForTimeout(600);
+    chk('Pod growth shows the Leadership Index from the server', /of 1 scored|1 of 2 scored/.test(await mt.innerText('main')));
+    await mt.screenshot({ path: process.env.MP15_SHOTS ? process.env.MP15_SHOTS + '/growth.png' : path.join(TMP, 'growth.png'), fullPage: true });
     // Saturday: Before shows the formation day and the 8:30 breakout agenda
     await mt.click('nav >> text=Saturday');
     await mt.waitForFunction(() => /Musing/.test(document.querySelector('main').innerText), null, { timeout: 30000 });

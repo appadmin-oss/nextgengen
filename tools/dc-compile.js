@@ -189,7 +189,7 @@ function emitNode(n, scope, ind) {
         /* A value that IS data is handed over as a custom property and read by
            the element's own class, so the declaration still lives in the
            stylesheet and a :hover rule on that class wins by specificity. */
-        if (/\{\{/.test(v)) { const r = interp(v, scope); const varName = '--dc-' + p.replace(/^-+/, ''); dynStyle.push(JSON.stringify(varName) + ': ' + r.js); st.push(p + ':var(' + varName + ')'); }
+        if (/\{\{/.test(v)) { const r = interp(v, scope); const varName = '--dc-' + p.replace(/^-+/, ''); dynStyle.push(JSON.stringify(varName) + ': ' + r.js); st.push(p + ':var(' + varName + ', unset)'); }
         else st.push(p + ':' + v);
       }
       const c = classFor(st.join(';'));

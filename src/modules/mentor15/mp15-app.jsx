@@ -702,7 +702,7 @@ class Mp15Portal extends React.Component {
       bmCols: c.wideCols ? 'minmax(0, 1.4fr) minmax(0, 1fr) 96px 56px' : 'minmax(0, 1fr) 96px 48px',
       bmRows: bmShow.map(r => { const d = r.prevTotal === null || r.prevTotal === undefined ? null : r.total - r.prevTotal; return { ini: r.initials, name: r.name, low: r.lowSkill, tot: r.total, d: d ? (d > 0 ? '+' : '') + d : '–', dFg: d > 0 ? '#1d6b30' : d < 0 ? '#b0361c' : '#9a9aa0', go: () => this.go('kid', { kid: r.subjectId, ktab: 'score' }) }; }),
       bmMore: bm.length > 8 && !S.bmAll, bmMoreL: 'Show all ' + bm.length, bmShowAll: () => set({ bmAll: true }),
-      liMeta: (ix.scored ? 'out of 10 · ' + ix.scored + ' of ' + ix.of + ' scored for ' + mp15Month(ix.month) + (ix.prevMonth ? ' · change since ' + mp15Month(ix.prevMonth) : '') : 'Nobody scored for ' + mp15Month(ix.month || today.slice(0, 7)) + ' yet'), liRows,
+      liMeta: (ix.scored ? 'out of 10 · ' + ix.scored + ' of ' + ix.of + ' scored for ' + mp15Month(ix.month) + ((ix.skills || []).some(x => x.change !== null && x.change !== undefined) ? ' · change since ' + mp15Month(ix.prevMonth) : ' · no earlier month to compare') : 'Nobody scored for ' + mp15Month(ix.month || today.slice(0, 7)) + ' yet'), liRows,
       md,
       acText: acMods.filter(c.modDone).length + ' of ' + acMods.length + ' modules complete',
       acGroups: (A.groups || []).map((h, gi) => ({ h, mods: acMods.filter(m => m.group === gi).map(m => { const done = c.modDone(m); const lapsed = !!m.passedAt && !done;
