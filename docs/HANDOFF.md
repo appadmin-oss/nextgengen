@@ -1115,3 +1115,27 @@ portal (roster, School results tab, Report a concern).
   focus. A fresh request that finds nobody leaves the sheet alone; a
   follow-up always re-applies.
 - Tests: run.php +16; `tests/ids-ask.test.js` 32.
+
+## 2026-10-16 — The sign-in pop-up, on the Control Room v2 design system
+
+- **One job per screen** (`SignInModal`, auth.jsx): one field or the code, one
+  button, at most one quiet link ("I have a code", "Forgot?" beside the
+  password label, "Email me a code instead", "Resend code"). "Change" on the
+  identity chip replaces "Start over". "Keep me signed in" (on by default, as
+  before) shows only on the password screen. Errors sit under their field.
+- **The code is six boxes** (`SignInCode`): typing moves on, Backspace moves
+  back, a paste or the phone's one-time-code autofill fills all six, and the
+  sixth digit signs in. The first box carries `autocomplete="one-time-code"`.
+- **Tokens**: the `--cr-*` block is now declared for `.cr-app, .signin-scrim,
+  .portal-login-card` (one source); the layout props stay on `.cr-app`.
+- **Geist is self-hosted for real**: `@font-face` for Geist 400/500/600 and
+  Geist Mono 500 from `assets/fonts/qcard`. The Control Room's `--cr-font`
+  named Geist but nothing outside the ID studio loaded it, so it had been
+  rendering in the system sans.
+- **Bug fixed, server**: an emailed sign-in code typed by someone who signed in
+  with their EMAIL was refused (`bad_member_id`, "Something went wrong"),
+  because verify accepted only a Member ID. `auth_resolve_member_id` resolves
+  an email for `auth.verify` and `auth.resetConfirm`; an email with no account
+  reads "invalid", exactly like a wrong code (no account enumeration).
+- The site-wide "one focus ring for one field" rule now skips `.signin-form`,
+  `.signin-pw` and the portal gate's form, which it was boxing whole.

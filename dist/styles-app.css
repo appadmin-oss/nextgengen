@@ -556,123 +556,124 @@ body.cm-app .fab-top { display: none; }
    2. SIGN-IN MODAL
    ============================================================ */
 
+/* On the Control Room v2 design system: the --cr-* tokens are declared for
+   .signin-scrim with the Control Room's own (see "The Control Room v2 tokens").
+   One job per screen; the card is the only thing on the page. */
 .signin-scrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(12, 20, 50, 0.55);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  z-index: 200;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  animation: signin-scrim-in 0.22s ease;
+  position: fixed; inset: 0; z-index: 200;
+  display: grid; place-items: center; padding: 16px;
+  background: rgba(11, 11, 12, .45);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  font-family: var(--cr-font); color: var(--cr-ink); -webkit-font-smoothing: antialiased;
+  animation: signin-scrim-in .18s var(--cr-ease);
 }
 @keyframes signin-scrim-in { from { opacity: 0; } to { opacity: 1; } }
-
+.signin-scrim *, .signin-scrim *::before, .signin-scrim *::after { box-sizing: border-box; }
 .signin-card {
-  position: relative;
-  width: 100%;
-  max-width: 440px;
-  background: var(--paper);
-  border-radius: 24px;
-  padding: 36px 32px 28px;
-  box-shadow: 0 30px 80px -20px rgba(12, 20, 50, 0.5);
-  animation: signin-card-in 0.28s cubic-bezier(0.2, 0.7, 0.2, 1);
+  position: relative; width: 100%; max-width: 400px; max-height: calc(100dvh - 32px); overflow: auto;
+  background: var(--cr-bg); border-radius: var(--cr-r-xl); box-shadow: var(--cr-sh-cmd);
+  padding: 36px 32px 24px;
+  animation: signin-card-in .22s var(--cr-ease);
 }
-@keyframes signin-card-in {
-  from { opacity: 0; transform: translateY(20px) scale(0.97); }
-  to   { opacity: 1; transform: none; }
-}
+@keyframes signin-card-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+.signin-card :focus-visible { outline: 2px solid var(--cr-ink); outline-offset: 2px; }
+
 .signin-close {
-  position: absolute; top: 14px; right: 14px;
-  background: transparent; border: none;
-  width: 32px; height: 32px;
-  border-radius: 50%;
-  font-size: 16px; color: var(--ink-700);
-  cursor: pointer;
+  position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; display: inline-grid; place-items: center;
+  border: 0; border-radius: var(--cr-r); background: transparent; color: var(--cr-muted-3); font-size: 18px; cursor: pointer;
 }
-.signin-close:hover { background: rgba(12,20,50,0.06); }
+.signin-close:hover { background: var(--cr-s2); color: var(--cr-ink); }
 
-.signin-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.24em;
-  color: var(--gold-500);
-  text-transform: uppercase;
-  margin-bottom: 10px;
-}
-.signin-headline {
-  font-family: var(--font-display);
-  font-size: 36px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  color: var(--ink-900);
-}
-.signin-sub {
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--ink-500);
-  margin-top: 12px;
-}
-.signin-brand { margin-bottom: 24px; }
+.signin-head { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 28px; }
+.signin-logo { width: 40px; height: 40px; border-radius: var(--cr-r); margin-bottom: 18px; }
+.signin-headline { margin: 0; font-size: 24px; line-height: 1.2; font-weight: 600; letter-spacing: -.02em; color: var(--cr-ink); }
+.signin-sub { margin: 8px 0 0; max-width: 300px; font-size: 14px; line-height: 1.5; color: var(--cr-muted-2); }
+.signin-sub b { color: var(--cr-ink); font-weight: 600; }
 
-.signin-form { display: flex; flex-direction: column; gap: 12px; }
-.signin-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.2em;
-  color: var(--ink-500);
-  text-transform: uppercase;
-}
+.signin-form { display: flex; flex-direction: column; }
+.signin-label { display: block; margin: 0 0 6px; font-size: 13px; font-weight: 500; color: var(--cr-text); }
+.signin-label-row { display: flex; align-items: baseline; justify-content: space-between; margin-top: 16px; }
+.signin-label-row .signin-label { margin-bottom: 6px; }
 .signin-input {
-  width: 100%;
-  border: 1.5px solid rgba(12,20,50,0.16);
-  border-radius: 12px;
-  padding: 14px 16px;
-  font-size: 16px;
-  font-family: inherit;
-  background: white;
-  outline: none;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  width: 100%; height: 44px; padding: 0 14px;
+  border: 1px solid var(--cr-line-strong); border-radius: var(--cr-r); background: var(--cr-bg);
+  font: inherit; font-size: 15px; color: var(--cr-ink); outline: none;
+  transition: border-color .15s var(--cr-ease), box-shadow .15s var(--cr-ease);
 }
-.signin-input:focus {
-  border-color: var(--navy-900);
-  box-shadow: 0 0 0 4px rgba(12,20,50,0.08);
+.signin-input::placeholder { color: var(--cr-faint); }
+.signin-input:hover { border-color: var(--cr-line-hover); }
+.signin-input:focus, .signin-input:focus-visible { outline: none; border-color: var(--cr-ink); box-shadow: 0 0 0 3px rgba(11, 11, 12, .08); }
+.signin-input.is-bad { border-color: var(--cr-err-line); }
+.signin-input.is-bad:focus { box-shadow: 0 0 0 3px rgba(194, 52, 52, .12); }
+.signin-input + .signin-label, .signin-code + .signin-label, .signin-pw + .signin-label, .signin-who + .signin-label, .signin-note + .signin-label { margin-top: 16px; }
+/* Kept for the portal gate's sign-in card, which still uses it. */
+.signin-otp { font-family: var(--cr-mono); font-size: 20px; letter-spacing: .3em; text-align: center; }
+.signin-err { padding: 10px 12px; border-radius: var(--cr-r); background: var(--cr-bad-bg); color: var(--cr-bad-fg); font-size: 13px; line-height: 1.45; }
+
+.signin-pw { position: relative; }
+.signin-pw .signin-input { padding-right: 46px; }
+.signin-eye {
+  position: absolute; right: 4px; top: 4px; width: 36px; height: 36px; display: inline-grid; place-items: center;
+  border: 0; border-radius: var(--cr-r-sm); background: transparent; color: var(--cr-muted-3); font-size: 18px; cursor: pointer;
 }
-.signin-otp {
-  font-family: var(--font-mono);
-  font-size: 24px;
-  letter-spacing: 0.4em;
-  text-align: center;
+.signin-eye:hover { color: var(--cr-ink); }
+
+/* The code: six boxes, one digit each. */
+.signin-code { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.signin-code .signin-digit:nth-child(3) { margin-right: 6px; }
+.signin-digit {
+  width: 100%; height: 52px; padding: 0; text-align: center;
+  border: 1px solid var(--cr-line-strong); border-radius: var(--cr-r); background: var(--cr-bg);
+  font: 500 22px var(--cr-mono); color: var(--cr-ink); caret-color: var(--cr-ink); outline: none;
+  transition: border-color .15s var(--cr-ease), box-shadow .15s var(--cr-ease);
 }
-.signin-err {
-  font-size: 13px;
-  color: var(--coral);
-  background: rgba(255, 90, 60, 0.08);
-  border-radius: 10px;
-  padding: 10px 12px;
+.signin-digit:hover { border-color: var(--cr-line-hover); }
+.signin-digit:focus, .signin-digit:focus-visible { outline: none; border-color: var(--cr-ink); box-shadow: 0 0 0 3px rgba(11, 11, 12, .08); }
+.signin-code.is-bad .signin-digit { border-color: var(--cr-err-line); }
+
+.signin-who { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 6px 0 8px; border: 1px solid var(--cr-line); border-radius: var(--cr-r); background: var(--cr-s1); }
+.signin-who-av { width: 28px; height: 28px; display: inline-grid; place-items: center; flex: none; border-radius: 50%; background: var(--cr-ink); color: var(--cr-on-ink); font-size: 12px; font-weight: 600; }
+.signin-who-id { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
+.signin-change { height: 32px; padding: 0 10px; border: 0; border-radius: var(--cr-r-sm); background: transparent; font: inherit; font-size: 13px; font-weight: 500; color: var(--cr-muted-2); cursor: pointer; }
+.signin-change:hover { background: var(--cr-s3); color: var(--cr-ink); }
+
+.signin-ferr { display: flex; gap: 6px; align-items: flex-start; margin: 8px 0 0; font-size: 13px; line-height: 1.4; color: var(--cr-bad-fg); }
+.signin-ferr .ph { font-size: 15px; flex: none; margin-top: 1px; }
+.signin-help { margin: 8px 0 0; font-size: 12.5px; color: var(--cr-muted-3); }
+.signin-note { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 4px; padding: 10px 12px; border-radius: var(--cr-r); background: var(--cr-warn-bg); color: var(--cr-warn-fg); font-size: 13px; line-height: 1.4; }
+.signin-who + .signin-note { margin-top: 16px; }
+.signin-note .ph { font-size: 15px; flex: none; margin-top: 1px; }
+
+.signin-remember { display: flex; align-items: center; gap: 10px; margin-top: 14px; font-size: 13.5px; color: var(--cr-muted); cursor: pointer; user-select: none; }
+.signin-remember input { width: 16px; height: 16px; margin: 0; accent-color: var(--cr-ink); cursor: pointer; flex: none; }
+
+/* The one solid button on the card. */
+.signin-submit {
+  display: inline-flex; align-items: center; justify-content: center; width: 100%; height: 44px; margin-top: 20px;
+  border: 0; border-radius: var(--cr-r); background: var(--cr-ink); color: var(--cr-on-ink);
+  font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; transition: background .15s var(--cr-ease), opacity .15s var(--cr-ease);
 }
-.signin-submit { margin-top: 6px; }
-.signin-remember { display: flex; align-items: center; gap: 9px; margin: 4px 0 2px; font-size: 13.5px; color: var(--ink-700, #46506e); cursor: pointer; user-select: none; }
-.signin-remember input { width: 17px; height: 17px; accent-color: var(--navy-900, #0c1432); cursor: pointer; flex: none; }
+.signin-submit:hover:not(:disabled) { background: #26262a; }
+.signin-submit:disabled { opacity: .35; cursor: not-allowed; }
+.signin-submit[aria-busy="true"] { opacity: 1; }
+.signin-spin { width: 18px; height: 18px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: signin-spin .7s linear infinite; }
+@keyframes signin-spin { to { transform: rotate(360deg); } }
+
+.signin-alts { display: flex; justify-content: center; margin-top: 12px; }
 .signin-link {
-  background: transparent; border: none;
-  font-family: inherit; font-size: 13px;
-  color: var(--ink-500); text-decoration: underline;
-  cursor: pointer; padding: 8px 0;
+  min-height: 32px; padding: 0 4px; border: 0; background: transparent;
+  font: inherit; font-size: 13.5px; font-weight: 500; color: var(--cr-muted-2); cursor: pointer;
 }
-.signin-link:hover { color: var(--navy-900); }
-.signin-foot {
-  margin-top: 24px;
-  padding-top: 18px;
-  border-top: 1px solid rgba(12, 20, 50, 0.08);
-  font-size: 13px;
-  color: var(--ink-500);
-  text-align: center;
-}
-.signin-foot a { color: var(--navy-900); font-weight: 600; }
+.signin-link:hover:not(:disabled) { color: var(--cr-ink); text-decoration: underline; text-underline-offset: 3px; }
+.signin-link:disabled { color: var(--cr-faint); cursor: default; }
+.signin-link--sm { min-height: 24px; font-size: 13px; }
+
+.signin-foot { margin: 24px 0 0; font-size: 13px; color: var(--cr-muted-3); text-align: center; }
+.signin-foot a { color: var(--cr-ink); font-weight: 500; text-decoration: underline; text-decoration-color: var(--cr-line-hover); text-underline-offset: 3px; }
+.signin-foot a:hover { text-decoration-color: currentColor; }
+@media (max-width: 420px) { .signin-card { padding: 32px 20px 20px; } .signin-code { gap: 6px; } }
+@media (pointer: coarse) { .signin-link, .signin-close, .signin-eye, .signin-change { min-height: 44px; min-width: 44px; } .signin-input { height: 48px; font-size: 16px; } .signin-digit { height: 56px; } }
+@media (prefers-reduced-motion: reduce) { .signin-scrim, .signin-card { animation: none; } .signin-spin { animation-duration: 2s; } }
 
 /* ============================================================
    3. NAV AUTH SLOT
@@ -2110,7 +2111,7 @@ body.cm-app .fab-top { display: none; }
   font: inherit; font-size: 13px; font-weight: 600;
   color: var(--ink-500); padding: 4px; margin-top: 2px;
 }
-.portal-login-card .signin-link:hover { color: var(--navy-900); }
+.portal-login-card .signin-link:hover { color: var(--cr-ink); }
 .portal-login-badge {
   width: 56px; height: 56px; margin: 0 auto 14px;
   display: grid; place-items: center;
@@ -3687,8 +3688,6 @@ button:focus-visible, .nav-link:focus-visible, .btn:focus-visible {
   .dash-mission-cta { grid-column: 2; justify-self: flex-start; margin-top: 8px; }
   .dash-session-badge { min-width: 0; padding: 12px 16px; }
   .dash-session-num { font-size: 32px; }
-  .signin-card { padding: 26px 22px 22px; }
-  .signin-headline { font-size: 28px; }
   .book-hero { padding: 48px 0; }
   .book-hero-meta { grid-template-columns: 1fr 1fr; gap: 16px; }
   .book-chapters-sec { padding: 56px 0; }
@@ -3945,7 +3944,6 @@ button:focus-visible, .nav-link:focus-visible, .btn:focus-visible {
 }
 
 /* --- Form input focus on dark backgrounds (auth modal etc) --- */
-.signin-input:focus,
 .admin-input:focus,
 .admin-select:focus,
 .field input:focus, .field select:focus, .field textarea:focus {
@@ -8046,7 +8044,22 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
    no hex of its own. Prefix .cr- only. Layout follows the root's own width
    (the React tree branches on it); nothing here keys off the window.
    ========================================================================== */
-.cr-app {
+/* Geist, self-hosted (assets/fonts/qcard, OFL): the type of the Control Room
+   v2 system, the sign-in pop-up and the studios. Latin and Latin Extended,
+   400 / 500 / 600, and Geist Mono 500. Without these the system's
+   `--cr-font` fell back to the device's own sans-serif. */
+@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 400; src: url(/assets/fonts/qcard/geist-latin-400-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 400; src: url(/assets/fonts/qcard/geist-latin-ext-400-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 500; src: url(/assets/fonts/qcard/geist-latin-500-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 500; src: url(/assets/fonts/qcard/geist-latin-ext-500-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 600; src: url(/assets/fonts/qcard/geist-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Geist"; font-style: normal; font-display: swap; font-weight: 600; src: url(/assets/fonts/qcard/geist-latin-ext-600-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Geist Mono"; font-style: normal; font-display: swap; font-weight: 500; src: url(/assets/fonts/qcard/geist-mono-latin-500-normal.woff2) format("woff2"); }
+
+/* The Control Room v2 tokens. Declared once, for the Control Room and for the
+   surfaces that share its design system outside it: the sign-in pop-up and the
+   portal gate's sign-in card. */
+.cr-app, .signin-scrim, .portal-login-card {
   --cr-ink: #0b0b0c;
   --cr-text: #2b2b30;
   --cr-muted: #4a4a50;
@@ -8104,10 +8117,13 @@ button.st-kpi:focus-visible { outline: 3px solid var(--gold-500, #f5b026); outli
   --cr-ease: cubic-bezier(.2, 0, 0, 1);
   --cr-pad: 10px;          /* density: row padding (§3) */
   --cr-row-font: 13.5px;   /* density: table font */
+}
+.cr-app {
   position: relative; width: 100%; height: 100dvh; overflow: hidden;
   display: flex; flex-direction: column;
   font-family: var(--cr-font); color: var(--cr-ink); font-size: 14px; line-height: 1.4;
   background: var(--cr-bg); -webkit-font-smoothing: antialiased;
+
 }
 .cr-app.is-compact { --cr-pad: 6px; --cr-row-font: 13px; }
 .cr-app.is-comfortable { --cr-pad: 14px; }
@@ -9000,12 +9016,12 @@ body:has(.cr-app) .ngg-cursor { display: none !important; }
    halo surrounds it, never a ring on the bare text area inside. Matched by
    shape, so a new search box gets it without being listed here. Zero
    specificity (:where), so a field that styles its own :focus-within keeps it. */
-:where(div, label, span, form):where(:not(.apf-input, .apf-addown, .ngs-s)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color])), :has(> input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color]) ~ :is(i, svg, .ph, button, [class*="-ic"]))):focus-within {
+:where(div, label, span, form):where(:not(.apf-input, .apf-addown, .ngs-s, .signin-form, .signin-pw, .portal-login-card form)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color])), :has(> input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=color]) ~ :is(i, svg, .ph, button, [class*="-ic"]))):focus-within {
   outline: none;
   border-color: currentColor;
   box-shadow: 0 0 0 1px currentColor, 0 0 0 5px color-mix(in srgb, currentColor 14%, transparent);
 }
-:where(div, label, span, form):where(:not(.apf-input, .apf-addown, .ngs-s)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input), :has(> input ~ :is(i, svg, .ph, button, [class*="-ic"]))) > input:focus-visible {
+:where(div, label, span, form):where(:not(.apf-input, .apf-addown, .ngs-s, .signin-form, .signin-pw, .portal-login-card form)):where(:has(> :is(i, svg, .ph, [class*="-ic"], [class*="prefix"]) ~ input), :has(> input ~ :is(i, svg, .ph, button, [class*="-ic"]))) > input:focus-visible {
   /* Beats the site-wide input:focus-visible safety ring (styles.css), which
      otherwise draws a second ring on the bare input inside the box. */
   outline: none;

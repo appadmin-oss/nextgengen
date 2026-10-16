@@ -20,7 +20,8 @@ if ($token !== '' && !preg_match('/^[a-f0-9]{32,128}$/i', $token)) {
 if ($otp !== '' && !preg_match('/^\d{6}$/', preg_replace('/\s+/', '', $otp))) {
     json_error('bad_otp_format', 422);
 }
-if ($memberId !== '' && !preg_match('/^[A-Z]{2,6}-\d{4}-\d{3,5}$/i', $memberId)) {
+// A Member ID, or the email the code was sent to (resolved in auth_verify).
+if ($memberId !== '' && !preg_match('/^[A-Z]{2,6}-\d{4}-\d{3,5}$/i', $memberId) && !filter_var($memberId, FILTER_VALIDATE_EMAIL)) {
     json_error('bad_member_id', 422);
 }
 

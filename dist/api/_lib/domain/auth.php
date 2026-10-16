@@ -189,10 +189,21 @@ function auth_set_password(array $p): array {
     return ['ok' => true];
 }
 
+/** The emailed code is checked against a Member ID, and people sign in with
+ *  their email as often as their ID. An email resolves to its member here; one
+ *  with no account stays as typed, matches no challenge and reads "invalid",
+ *  exactly like a wrong code — nothing says whether the email has an account. */
+function auth_resolve_member_id(string $idOrEmail): string {
+    $v = trim($idOrEmail);
+    if ($v === '' || strpos($v, '@') === false) return $v;
+    $m = db_row('SELECT memberId FROM members WHERE lower(email) = ? ORDER BY id LIMIT 1', [strtolower($v)]);
+    return $m ? (string)$m['memberId'] : $v;
+}
+
 function auth_verify(array $p): array {
     $ip = (string)($p['ip'] ?? '');
     $token = trim((string)($p['token'] ?? ''));
-    $memberId = trim((string)($p['memberId'] ?? ''));
+    $memberId = auth_resolve_member_id((string)($p['memberId'] ?? ''));
     $otp = trim((string)($p['otp'] ?? ''));
 
     if ($token !== '') {
@@ -360,7 +371,7 @@ function auth_revoke_sessions(string $memberId, string $why = ''): int {
 function auth_reset_confirm(array $p): array {
     $ip = (string)($p['ip'] ?? '');
     $token = trim((string)($p['token'] ?? ''));
-    $memberId = trim((string)($p['memberId'] ?? ''));
+    $memberId = auth_resolve_member_id((string)($p['memberId'] ?? ''));
     $otp = trim((string)($p['otp'] ?? ''));
     $new = (string)($p['password'] ?? '');
     if (strlen($new) < 8) return ['ok' => false, 'error' => 'password_too_short'];
